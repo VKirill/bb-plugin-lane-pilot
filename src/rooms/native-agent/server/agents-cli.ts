@@ -33,7 +33,7 @@ export async function runAgentsCli(deps: Deps, args: string[]): Promise<Result> 
   if (sub === "list") {
     const rows = (await deps.list()).filter((row) => !rest.includes("--custom") || row.custom);
     if (json) return out({ agents: rows });
-    return out(rows.length ? rows.map((row) => `${row.id.padEnd(22)} ${row.kind.padEnd(11)} ${row.custom ? "custom" : "bundled"}  ${row.displayName}`).join("\n") : "no agents");
+    return out(rows.length ? rows.map((row) => `${row.id.padEnd(22)} ${row.kind.padEnd(11)} ${row.custom ? "custom" : "bundled"}  ${(row.domain ?? "general").padEnd(10)} ${(row.machineAffinity ?? "any").padEnd(10)} ${row.displayName}`).join("\n") : "no agents");
   }
   if (sub === "show" && positional[0]) {
     const row = (await deps.list()).find((item) => item.id === positional[0]);

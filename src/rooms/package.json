@@ -5,6 +5,7 @@
   "sideEffects": [
     "./runs/failure-class-judgment.ts",
     "./phase/intake.ts",
+    "./critique/critic-screen.ts",
     "./workflow/route-workflow.ts",
     "./learning/pm-rules.ts",
     "./learning/signals.ts",
@@ -12,6 +13,17 @@
     "./anamnesis/judgment.ts",
     "./workflow/ui/workflow-graph-parts.tsx",
     "./writer/writer-model-pick.ts",
-    "./session-hooks/cli.ts"
+    "./session-hooks/cli.ts",
+    "./learning/rule-diff.ts",
+    "./verification/test-hint.ts",
+    "./writer/log-trim.ts",
+    "./writer/session-digest.ts",
+    "./jev/judgments.ts",
+    "./anamnesis/index.ts",
+    "./learning/index.ts",
+    "./phase/index.ts",
+    "./runs/index.ts",
+    "./workflow/index.ts",
+    "./writer/index.ts"
   ]
 }

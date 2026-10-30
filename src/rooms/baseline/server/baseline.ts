@@ -4,7 +4,7 @@ import type { RollbackApi, RollbackTarget } from "../../rollback/server";
 import type { ServerCore, Services } from "../../core/server";
 import {
   baselineSummary, baselineVerdict, CHECK_NOTE_TAIL, estimateSec, parseBaselineSettings, planChecks, RED_OUTSIDE_KINDS, redBeforeAndAfter, redOutsideMessage, redOutsideTaskFiles,
-  requiresRedOnBase, turnedRed, unrunnableMessage, unrunnableReason, vacuousChecks, vacuousMessage,
+  closesWhenAlreadyGreen, requiresRedOnBase, turnedRed, unrunnableMessage, unrunnableReason, vacuousChecks, vacuousMessage,
   type BaselineCheck, type BaselineSettings,
 } from "../logic";
 import { cachedChecks, checkKey, getBaseline, insertBaseline, listBaselines, setBaselineAfter, type BaselineRecord } from "../store";
@@ -57,9 +57,10 @@ export function createBaseline(ctx: ServerCore, services: Services) {
 
   /**
    * Runs the baseline of a task about to start and says whether the attempt may. Never throws; `stop` is the reason the attempt ends with
-   * (a block verdict, so the task goes to the PM and is not redone as it is).
+   * (a block verdict, so the task goes to the PM and is not redone as it is). `alreadyDone` means every check is already green on a
+   * `fix` or `check`: the attempt closes accepted and no writer starts. Any other kind with the same result still blocks.
    */
-  async function preflight(input: BaselineInput): Promise<{ stop: string | null; record: BaselineRecord | null }> {
+  async function preflight(input: BaselineInput): Promise<{ stop: string | null; record: BaselineRecord | null; alreadyDone?: string }> {
     const started = Date.now();
     try {
       const settings = await settingsOf(input.projectId, input.runId);
@@ -68,7 +69,10 @@ export function createBaseline(ctx: ServerCore, services: Services) {
       // stopped, is asked again (the answers of the base are cached, so only a new command costs a run).
       const earlier = getBaseline(db, input.runId, input.taskId);
       const sameChecks = earlier && earlier.checks.length === input.task.verification.length && earlier.checks.every((check, index) => check.command === input.task.verification[index]!.command);
-      if (earlier && sameChecks && earlier.action !== "stopped") return { stop: null, record: null };
+      if (earlier && sameChecks && earlier.action !== "stopped") {
+        if (earlier.summary.startsWith("already done:")) return { stop: null, alreadyDone: earlier.summary, record: earlier };
+        return { stop: null, record: null };
+      }
       const basePath = taskBasePath(db, input.runId, input.taskId) ?? input.task.project_cwd;
       const hostId = input.config.hostId;
       const skipped = (reason: string, baseSha: string | null = null): { stop: null; record: BaselineRecord | null } => {
@@ -149,14 +153,28 @@ export function createBaseline(ctx: ServerCore, services: Services) {
         }
         return { stop: `verdict_block: ${code}: ${detail.slice(0, 600)}. ${unrunnable.length ? "Fix the command or cwd, or drop the check" : "Narrow the check to the task's files or widen owns_paths"}; nothing was started and no attempt was spent`, record: getBaseline(db, input.runId, input.taskId) ?? null };
       }
-      // Red before green: a task of medium risk or more whose every check is already green on the base has no check that can tell its work.
+      // Red before green. An all-green fix or check is the failure no longer reproducing: close accepted. Any other kind
+      // whose checks are all green still blocks: those checks do not tell done from not done. A fix whose only red checks
+      // are existence tests (`test -f` of a file that is not there yet) still blocks: that work is not done.
+      const allGreen = checks.length > 0 && checks.every((check) => check.status === "green");
+      if (allGreen && closesWhenAlreadyGreen(settings.requireRed, input.task)) {
+        const summary = `already done: ${baselineSummary(verdict, checks, baseSha)}`;
+        record(input, { baseSha, state: "ran", verdict, mode: settings.mode, action: "notified", summary, checks, durationMs: Date.now() - started });
+        log(`baseline ${input.taskId}: ${summary}; closing accepted without a writer`);
+        await tellPmAlreadyDone(input, checks, baseSha);
+        return { stop: null, alreadyDone: summary, record: getBaseline(db, input.runId, input.taskId) ?? null };
+      }
       const vacuous = requiresRedOnBase(settings.requireRed, input.task) ? vacuousChecks(checks, { behaviour: input.task.kind === "fix" }) : [];
       if (vacuous.length) {
         const summary = `${baselineSummary(verdict, checks, baseSha)}; no check is red on the base (checks.require_red_on_base=${settings.requireRed}, risk ${input.task.risk})`;
         record(input, { baseSha, state: "ran", verdict, mode: settings.mode, action: "stopped", summary, checks, durationMs: Date.now() - started });
         log(`baseline ${input.taskId}: ${summary}; the attempt does not start`);
-        await tellPmVacuous(input, vacuous, baseSha);
-        return { stop: `verdict_block: no_red_on_base: ${summary}. Every check of ${input.taskId} passes before any writer, so none can fail when the work is missing; add a check that is red now and nothing was started`, record: getBaseline(db, input.runId, input.taskId) ?? null };
+        const proveNothing = "проверки уже зелёные — они не отличают сделанное от несделанного; добавь проверку, которая сейчас красная";
+        if (allGreen) await tellPmGreenProvesNothing(input, checks, proveNothing);
+        else await tellPmVacuous(input, vacuous, baseSha);
+        const why = allGreen ? `${proveNothing}. Nothing was started`
+          : `Every check of ${input.taskId} passes before any writer, so none can fail when the work is missing; add a check that is red now and nothing was started`;
+        return { stop: `verdict_block: no_red_on_base: ${summary}. ${why}`, record: getBaseline(db, input.runId, input.taskId) ?? null };
       }
       const stop = verdict === "already_built" && settings.mode === "stop";
       const action = verdict === "already_built" ? (stop ? "stopped" : "notified") : "proceed";
@@ -185,6 +203,21 @@ export function createBaseline(ctx: ServerCore, services: Services) {
       : `Lane Pilot: ${fact}: задача, возможно, уже сделана. Писатель всё равно стартует (baseline.already_built=notify); карточка приёмки покажет эти проверки.\n${list}\nЕсли работа уже сделана, остановите задачу (lane_pilot_cancel); если проверки слабые, усильте их.`;
     if (stopped) noteToldPmDirectly(input.pmThreadId, input.taskId);
     await bb.sdk.threads.send({ threadId: input.pmThreadId, mode: "queue-if-active", input: [{ type: "text", text, mentions: [] }] } as never).catch(() => undefined);
+  }
+
+  async function tellPmAlreadyDone(input: BaselineInput, checks: BaselineCheck[], baseSha: string | null): Promise<void> {
+    if (!input.pmThreadId) return;
+    const list = checks.map((check) => `- ${check.command}`).join("\n");
+    const text = `Lane Pilot: задача ${input.taskId} закрыта принятой без писателя — все ${checks.length} проверок(и) уже зелёные на базе${baseSha ? ` ${baseSha.slice(0, 10)}` : ""}, до писателя.\n${list}\nЕсли баг на самом деле не исправлен, переоткрой задачу с проверкой, которая его воспроизводит.`;
+    noteToldPmDirectly(input.pmThreadId, input.taskId);
+    await bb.sdk.threads.send({ threadId: input.pmThreadId, mode: "queue-if-active", input: [{ type: "text", text, mentions: [] }] } as never).catch(() => undefined);
+  }
+
+  async function tellPmGreenProvesNothing(input: BaselineInput, checks: BaselineCheck[], sentence: string): Promise<void> {
+    if (!input.pmThreadId) return;
+    const list = checks.map((check) => `- ${check.command}`).join("\n");
+    noteToldPmDirectly(input.pmThreadId, input.taskId);
+    await bb.sdk.threads.send({ threadId: input.pmThreadId, mode: "queue-if-active", input: [{ type: "text", text: `Lane Pilot: задача ${input.taskId} не запущена: ${sentence}.\n${list}`, mentions: [] }] } as never).catch(() => undefined);
   }
 
   async function tellPmVacuous(input: BaselineInput, vacuous: BaselineCheck[], baseSha: string | null): Promise<void> {

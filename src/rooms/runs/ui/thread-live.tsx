@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
-import { useBbNavigate, useRpc } from "@get-bb/plugin-sdk/app";
+import { useState } from "react";
+import { useBbNavigate } from "@get-bb/plugin-sdk/app";
 import { t, type I18nKey } from "@lane-pilot/i18n";
 import type { rpcContract } from "../../contracts";
 import { StageSteps, StageStrip, type Strip } from "../../work-graph/ui";
 import { StatusIcon, shortTaskId } from "./task-board";
+import { useLpRpcQuery } from "../../ui-shell/ui";
 
 type Item = {
   key: string; runId: string; taskId: string | null; title: string; column: "queued" | "running" | "checking" | "blocked" | "done"; phase: string;
@@ -50,16 +51,8 @@ function Row({ item, strip, locale, open, onToggle }: { item: Item; strip: Strip
  * click) and those of the week; a writer or helper thread, the task it works on. Nothing at all in a thread Lane Pilot has no part in.
  */
 export function ThreadLive({ threadId, locale }: { threadId: string; locale: string }) {
-  const rpc = useRpc<typeof rpcContract>();
-  const [live, setLive] = useState<Live>(null);
   const [open, setOpen] = useState<Record<string, boolean>>({});
-  useEffect(() => {
-    let alive = true;
-    const read = () => void rpc.call("thread_live", { threadId }).then((result) => { if (alive) setLive(result as Live); }).catch(() => undefined);
-    read();
-    const timer = setInterval(read, POLL_MS);
-    return () => { alive = false; clearInterval(timer); };
-  }, [rpc, threadId]);
+  const live = (useLpRpcQuery("thread_live", { threadId }, { pollMs: POLL_MS }).data ?? null) as Live;
   if (!live || !live.items.length) return null;
   const active = live.items.filter((item) => item.column !== "done");
   const done = live.items.filter((item) => item.column === "done");

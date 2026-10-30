@@ -6,7 +6,7 @@ import { detectLocale, t, type I18nKey } from "@lane-pilot/i18n";
 import { Badge } from "@lane-pilot/ui-kit";
 import { Button } from "@lane-pilot/ui-kit";
 import { Disclosure } from "@lane-pilot/ui-kit";
-import { useLpRealtime } from "../../ui-shell/ui";
+import { useLpPoll, useLpRealtime } from "../../ui-shell/ui";
 
 type Proposal = {
   id: string; rule: string; author: "sweep" | "pm" | "owner" | "model"; state: "proposed" | "accepted" | "rejected" | "revoked";
@@ -91,11 +91,7 @@ export function RuleProposals({ projectId }: { projectId: string }) {
   // while a scan runs the slow poll still checks it, and the scan itself lives on the server.
   const pollMs = useLpRealtime(projectId, ["rules"], () => { void load(); });
   const scanning = listed?.scan.state === "running";
-  useEffect(() => {
-    if (!scanning) return;
-    const timer = setInterval(() => { void load(); }, pollMs);
-    return () => clearInterval(timer);
-  }, [scanning, load, pollMs]);
+  useLpPoll(scanning ? pollMs : undefined, () => { void load(); });
 
   const decide = async (proposal: Proposal, action: "accept" | "reject" | "revoke") => {
     setBusy(proposal.id);

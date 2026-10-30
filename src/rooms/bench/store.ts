@@ -13,14 +13,20 @@ type SetRow = { id: string; version: string; manifest_sha256: string; task_count
 type TaskRow = {
   task_id: string; position: number; project_id: string; project_name: string; host_id: string; repo_path: string; stratum: string; hard: number; risk: string; area: string;
   initial_head_sha: string; solution_commit: string; solution_patch_sha256: string; contract_json: string; warm_json: string;
+  validator?: string | null;
 };
 
 const setFrom = (row: SetRow): BenchSet => ({ id: row.id, version: row.version, manifestSha256: row.manifest_sha256, taskCount: row.task_count, candidateCount: row.candidate_count, rejected: json(row.rejected_json, []), config: json(row.config_json, {}), createdAt: row.created_at });
-const taskFrom = (row: TaskRow): ManifestTask => ({
-  taskId: row.task_id, position: row.position, projectId: row.project_id, projectName: row.project_name, hostId: row.host_id, repoPath: row.repo_path, stratum: row.stratum,
-  hard: row.hard === 1, risk: row.risk as ManifestTask["risk"], area: row.area, initialHeadSha: row.initial_head_sha, solutionCommit: row.solution_commit,
-  solutionPatchSha256: row.solution_patch_sha256, contract: json(row.contract_json, {}), warm: json(row.warm_json, { base: [], solution: [], discriminating: [], applied: "apply", files: [] }),
-});
+const taskFrom = (row: TaskRow): ManifestTask => {
+  const warm = json<ManifestTask["warm"] & { validator?: string }>(row.warm_json, { base: [], solution: [], discriminating: [], applied: "apply", files: [] });
+  const validator = row.validator ?? warm.validator ?? null;
+  delete warm.validator;
+  return {
+    taskId: row.task_id, position: row.position, projectId: row.project_id, projectName: row.project_name, hostId: row.host_id, repoPath: row.repo_path, stratum: row.stratum,
+    hard: row.hard === 1, risk: row.risk as ManifestTask["risk"], area: row.area, initialHeadSha: row.initial_head_sha, solutionCommit: row.solution_commit,
+    solutionPatchSha256: row.solution_patch_sha256, contract: json(row.contract_json, {}), warm, ...(validator ? { validator } : {}),
+  };
+};
 
 /** Writes a set once. A version that exists is refused: a set is never changed, a different one is a new version. */
 export function insertSet(db: BenchDb, input: { version: string; tasks: ManifestTask[]; rejected: Rejection[]; candidateCount: number; config: Record<string, unknown>; now?: number }): BenchSet {
@@ -31,10 +37,10 @@ export function insertSet(db: BenchDb, input: { version: string; tasks: Manifest
   db.transaction(() => {
     db.prepare("INSERT INTO lane_pilot_bench_set(id,version,manifest_sha256,task_count,candidate_count,rejected_json,config_json,created_at) VALUES(?,?,?,?,?,?,?,?)")
       .run(id, input.version, hash, input.tasks.length, input.candidateCount, JSON.stringify(input.rejected), JSON.stringify(input.config), now);
-    const insert = db.prepare(`INSERT INTO lane_pilot_bench_task(set_id,task_id,position,project_id,project_name,host_id,repo_path,stratum,hard,risk,area,initial_head_sha,solution_commit,solution_patch_sha256,contract_json,warm_json)
-      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+    const insert = db.prepare(`INSERT INTO lane_pilot_bench_task(set_id,task_id,position,project_id,project_name,host_id,repo_path,stratum,hard,risk,area,initial_head_sha,solution_commit,solution_patch_sha256,contract_json,warm_json,validator)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
     for (const task of input.tasks) insert.run(id, task.taskId, task.position, task.projectId, task.projectName, task.hostId, task.repoPath, task.stratum, task.hard ? 1 : 0, task.risk, task.area,
-      task.initialHeadSha, task.solutionCommit, task.solutionPatchSha256, JSON.stringify(task.contract), JSON.stringify(task.warm));
+      task.initialHeadSha, task.solutionCommit, task.solutionPatchSha256, JSON.stringify(task.contract), JSON.stringify(task.warm), task.validator ?? null);
   })();
   return { id, version: input.version, manifestSha256: hash, taskCount: input.tasks.length, candidateCount: input.candidateCount, rejected: input.rejected, config: input.config, createdAt: now };
 }
@@ -87,6 +93,24 @@ export function startRunRow(db: BenchDb, input: { setId: string; arm: string; re
     .run(id, input.setId, input.arm, input.repeat, JSON.stringify(input.config), input.budgetTokens, input.budgetHours, now);
   return { id, setId: input.setId, arm: input.arm, repeat: input.repeat, state: "running", stopReason: null, config: input.config, budgetTokens: input.budgetTokens, budgetHours: input.budgetHours, spentTokens: 0, startedAt: now, finishedAt: null };
 }
+
+/**
+ * A set the night planned but never ran because the shared budget went to earlier sets: a closed row the gate can
+ * tell apart from a real run by its `skipped:` reason. It counts no task and spends nothing.
+ */
+export function markSkippedRun(db: BenchDb, input: { setId: string; arm: string; repeat: number; reason: string; now?: number }): BenchRun {
+  const existing = getRun(db, input.setId, input.arm, input.repeat);
+  if (existing) return existing;
+  const id = `benchrun_${randomUUID().replaceAll("-", "").slice(0, 12)}`;
+  const now = input.now ?? Date.now();
+  db.prepare("INSERT INTO lane_pilot_bench_run(id,set_id,arm,repeat_no,state,stop_reason,config_json,budget_tokens,budget_hours,started_at,finished_at) VALUES(?,?,?,?,'stopped_budget',?,?,?,?,?,?)")
+    .run(id, input.setId, input.arm, input.repeat, input.reason, "{}", null, null, now, now);
+  return { id, setId: input.setId, arm: input.arm, repeat: input.repeat, state: "stopped_budget", stopReason: input.reason, config: {}, budgetTokens: null, budgetHours: null, spentTokens: 0, startedAt: now, finishedAt: now };
+}
+
+/** Whether this run is a night's budget mark, not a real stopped series. */
+export const isSkippedByBudget = (run: { state: string; stopReason: string | null }): boolean =>
+  run.state === "stopped_budget" && (run.stopReason ?? "").startsWith("skipped:");
 
 export function finishRunRow(db: BenchDb, runId: string, state: BenchRun["state"], stopReason: string | null, now = Date.now()): void {
   db.prepare("UPDATE lane_pilot_bench_run SET state=?, stop_reason=?, finished_at=? WHERE id=?").run(state, stopReason, now, runId);

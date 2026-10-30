@@ -134,6 +134,12 @@ export const rpcNative = {
       agentId: z.string().min(1),
       profileMode: z.enum(["installed", "session-override"]),
       cliAgentsCollision: z.enum(["pending", "thread", "mention"]).nullable(),
+      environment: z.object({
+        type: z.literal("host"),
+        hostId: z.string(),
+        workspace: z.object({ type: z.literal("unmanaged"), path: z.string() }).strict(),
+      }).strict().nullable(),
+      placementNote: z.string().nullable(),
     }).strict(),
   },
   /** Whether an existing chat can change its agent, and which agent it runs (or will on its next message). */
@@ -169,5 +175,10 @@ export const rpcNative = {
         edges: z.array(z.object({ from: z.string(), to: z.string(), kind: z.enum(["depends", "files", "folder", "question"]) }).strict()),
       }).strict().optional(),
     }).strict(),
+  },
+  /** Role labels for sidebar row marks (`experimental_threadRowMetadata`): threadId → its LP role, only for LP threads. */
+  helper_thread_labels: {
+    input: z.object({ threadIds: z.array(z.string().min(1)).min(1).max(200) }).strict(),
+    output: z.object({ labels: z.record(z.string(), z.string()) }).strict(),
   },
 };

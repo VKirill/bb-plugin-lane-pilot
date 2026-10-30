@@ -27,6 +27,7 @@
  "stability > runs": 4,
  "storage > learning": 1,
  "tools > tasks": 1,
+ "ui-shell > contracts": 1,
  "ui-shell > docs": 1,
  "ui-shell > native-agent": 2,
  "ui-shell > runs": 2,

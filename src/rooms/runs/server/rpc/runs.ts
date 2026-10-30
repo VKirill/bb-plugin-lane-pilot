@@ -1,7 +1,7 @@
 import { t } from "@lane-pilot/i18n";
 import { setRunHalted } from "../runs-halt";
 import { PARKED_KEY } from "../../../stability/server";
-import { agentPickerLabel, pickableAgent } from "../../../native-agent";
+import { agentPickerLabel, employeeView, pickableAgent, placeEmployeeOn } from "../../../native-agent";
 import { compileEffectiveMainAgent, detectCompiledMainAgentCapability } from "../../../native-agent";
 import { countAttempts, createAttempt, getActivation, getAttempt, transitionAttempt } from "../../../storage";
 import { detectRequiredSessionPolicyCapability } from "../../../native-agent";
@@ -17,7 +17,7 @@ import { buildTaskBoard, readTaskCard, type CardThread } from "../task-board";
 import { readThreadLive } from "../thread-live";
 import { cancelAttemptById } from "../cancel";
 import { pauseRun } from "../runs-pause";
-import { id, stringAt, valueAt } from "../../../core/server";
+import { folderEnvironment, id, projectSources, stringAt, valueAt } from "../../../core/server";
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import { rpcContract } from "../../../contracts";
 import type { ServerCore } from "../../../core/server";
@@ -43,7 +43,21 @@ export function runsRpc(ctx: ServerCore, services: Services) {
     prepare_native_session: async ({ projectId, agentId }) => {
       const { selection: record, description } = await storeNativeSelection(ctx, { projectId, agentId: agentId || DEFAULT_NATIVE_AGENT });
       const label = agentPickerLabel({ id: record.agentId, description }, t);
-      return { token: record.token, label, agentId: record.agentId, profileMode: record.profileMode, cliAgentsCollision: null };
+      const pinned = employeeView(record.agentId).machineAffinity !== "any";
+      const place = pinned ? await placeEmployeeOn(bb, record.agentId, await projectSources(bb, projectId)) : { mode: "inherit" as const };
+      const environment = place.mode === "folder" ? folderEnvironment({ hostId: place.hostId, path: place.path }) : null;
+      const placementNote = place.mode === "fallback" ? place.reason : null;
+      return { token: record.token, label, agentId: record.agentId, profileMode: record.profileMode, cliAgentsCollision: null, environment, placementNote };
+    },
+    // threadId → its LP role from the thread's plugin metadata (the sidebar row mark; empty for threads that are not Lane Pilot's).
+    helper_thread_labels: async ({ threadIds }) => {
+      const labels: Record<string, string> = {};
+      await Promise.all((threadIds as string[]).map(async (threadId) => {
+        const meta = await bb.sdk.threads.getPluginMetadata({ threadId }).catch(() => null);
+        const role = meta && typeof meta === "object" ? (meta as Record<string, unknown>).role : null;
+        if (typeof role === "string" && role) labels[threadId] = role;
+      }));
+      return { labels };
     },
     // The PM chat's helpers that are still working: writers, specialists, the browser check, council seats, critics.
     list_helper_threads: async ({ threadId }) => {
@@ -315,7 +329,7 @@ export function runsRpc(ctx: ServerCore, services: Services) {
         requiredSessionPolicy: detectRequiredSessionPolicyCapability((bb as { agents?: { experimental_vkRequiredSessionPolicy?: unknown } }).agents ?? {}) ? "required" : "none",
       };
     },
-    cancel_attempt: async ({ attemptId }) => cancelAttemptById(ctx, attemptId, services.rollback),
+    cancel_attempt: async ({ attemptId }) => cancelAttemptById(ctx, attemptId, services.rollback, "canceled by RPC"),
     pause_run: async ({ runId }) => await pauseRun(ctx, runId, "pause"),
     resume_run: async ({ runId }) => await pauseRun(ctx, runId, "resume"),
     halt_run: async ({ runId }) => {
@@ -347,6 +361,6 @@ export function runsRpc(ctx: ServerCore, services: Services) {
       return { ok: true, state: "queued", attemptId: nextId, reason: null };
     },
     resume_runs: ({ projectId }) => services.resumeOrphans(projectId),
-  } satisfies Pick<PluginRpcHandlers<typeof rpcContract>, "finish_run" | "activate_pm" | "native_install_start" | "native_install_status" | "prepare_native_session" | "list_helper_threads" | "task_board" | "thread_live" | "task_card" | "get_run_card" | "native_thread" | "activation_context" | "cancel_attempt" | "pause_run" | "resume_run" | "halt_run" | "retry_attempt" | "resume_runs">;
+  } satisfies Pick<PluginRpcHandlers<typeof rpcContract>, "finish_run" | "activate_pm" | "native_install_start" | "native_install_status" | "prepare_native_session" | "helper_thread_labels" | "list_helper_threads" | "task_board" | "thread_live" | "task_card" | "get_run_card" | "native_thread" | "activation_context" | "cancel_attempt" | "pause_run" | "resume_run" | "halt_run" | "retry_attempt" | "resume_runs">;
   return handlers;
 }

@@ -86,11 +86,12 @@ export function coreRequiredSessionAdvertisement(): RequiredSessionAdvertisement
  */
 export type HelperRole =
   | "writer" | "code-repair" | "night-fixer"
-  | "plan-critic" | "code-critic" | "specialist-reviewer" | "night-reviewer" | "gate-triage" | "pm-reader"
+  | "plan-critic" | "code-critic" | "critic-tiebreak" | "specialist-reviewer" | "night-reviewer" | "gate-triage" | "pm-reader"
   | "docs-maintainer" | "onboarder" | "memory-maintainer" | "project-life"
   | "browser-qa" | "errand" | "council-seat" | "rules-analyzer"
   | "analyst" | "planner" | "auditor" | "debugger"
-  | "specialist:design-lead" | "specialist:copy-lead" | "specialist:seo-specialist" | "specialist:tavily" | "specialist:video-lead";
+  | "specialist:design-lead" | "specialist:copy-lead" | "specialist:seo-specialist" | "specialist:tavily" | "specialist:video-lead"
+  | "specialist:3d-artist" | "specialist:game-dev" | "specialist:social-manager" | "specialist:billing-assistant" | "specialist:visual-artist" | "specialist:macos-operator";
 
 type RoleProfile = { bbPlugins: string[]; skills: string[]; mcpServers: string[] };
 const CODER: RoleProfile = { bbPlugins: [], skills: ["writer-practices", "karpathy-guidelines"], mcpServers: ["gitnexus", "metamcp"] };
@@ -111,6 +112,7 @@ export const ROLE_PROFILES: Record<HelperRole, RoleProfile> = {
   "night-fixer": CODER,
   "plan-critic": ONE_SHOT,
   "code-critic": READER,
+  "critic-tiebreak": ONE_SHOT,
   "specialist-reviewer": READER,
   "night-reviewer": READER,
   "gate-triage": READER,
@@ -132,11 +134,17 @@ export const ROLE_PROFILES: Record<HelperRole, RoleProfile> = {
   "debugger": READER,
   "council-seat": { bbPlugins: [], skills: [], mcpServers: [] },
   "rules-analyzer": { bbPlugins: [], skills: [], mcpServers: [] },
-  "specialist:design-lead": { bbPlugins: ["env-catalog"], skills: ["env-catalog", "ui-ux-pro-max", "project-design", "project-onboard", "web-design", "design-taste", "impeccable-ui", "page-prototype"], mcpServers: ["metamcp"] },
-  "specialist:copy-lead": { bbPlugins: ["env-catalog"], skills: ["env-catalog", "copy-project-life", "site-copy-audience", "site-copy-headlines", "site-copy-ux", "copy-research", "tavily", "page-prototype", "ru-text", "ru-check", "ru-score"], mcpServers: [] },
-  "specialist:seo-specialist": { bbPlugins: ["env-catalog"], skills: ["env-catalog", "seo-project-life", "seo-drmax-orchestrator", "cocoon-chainsmith", "drmax-cocoon-engine-x4", "drmax-brandcore", "drmax-text-humanization", "ai-detect", "drmax-signalforge", "drmax-latent-intent", "drmax-market-scoped", "google", "yandex", "seo-tools", "page-prototype", "ru-text", "ru-check", "ru-score"], mcpServers: [] },
+  "specialist:design-lead": { bbPlugins: ["env-catalog"], skills: ["env-catalog", "project-design"], mcpServers: ["metamcp"] },
+  "specialist:copy-lead": { bbPlugins: ["env-catalog"], skills: ["env-catalog", "copywriter"], mcpServers: [] },
+  "specialist:seo-specialist": { bbPlugins: ["env-catalog"], skills: ["env-catalog", "seo-drmax-orchestrator"], mcpServers: [] },
   "specialist:tavily": { bbPlugins: ["env-catalog"], skills: ["env-catalog", "tavily"], mcpServers: [] },
-  "specialist:video-lead": { bbPlugins: ["env-catalog"], skills: ["env-catalog", "video-lead-playbook", "hyperframes", "hyperframes-cli", "hyperframes-registry", "media-use", "procedural-film", "video-to-reels", "business-motion-film", "video-transcribe", "video-sound", "manimgx", "anatomy", "claude-video", "remotion:remotion-best-practices", "remotion:remotion-render", "remotion:remotion-create"], mcpServers: [] },
+  "specialist:video-lead": { bbPlugins: ["env-catalog"], skills: ["env-catalog", "video-lead-playbook"], mcpServers: [] },
+  "specialist:3d-artist": { bbPlugins: [], skills: ["blender-director"], mcpServers: ["blender"] },
+  "specialist:game-dev": { bbPlugins: [], skills: [], mcpServers: [] },
+  "specialist:social-manager": { bbPlugins: ["env-catalog"], skills: ["env-catalog", "telegram-user"], mcpServers: [] },
+  "specialist:billing-assistant": { bbPlugins: ["env-catalog"], skills: ["env-catalog", "kontur-elba"], mcpServers: [] },
+  "specialist:visual-artist": { bbPlugins: ["image-studio"], skills: ["image-prompting"], mcpServers: [] },
+  "specialist:macos-operator": { bbPlugins: ["browser-automation", "env-catalog"], skills: ["env-catalog", "computer-use"], mcpServers: [] },
 };
 
 /** The profile of a specialist the owner defined: it has no entry above, so it starts with Env Catalog; its own skills and MCP servers come in as `extra` on the spawn. */

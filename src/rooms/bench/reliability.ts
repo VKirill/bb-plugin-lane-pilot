@@ -1,4 +1,4 @@
-import { finishRunRow, listRuns, type BenchDb } from "./store";
+import { finishRunRow, listRuns, type BenchDb, type BenchRun } from "./store";
 
 /** Why a series must wait: the host is under the free-space floor. The `deferred:` prefix is what the night retries; the rest matches the old stop text. */
 export function diskDeferral(freeGb: number | null, minFreeGb: number, hostId: string): string | null {
@@ -43,4 +43,33 @@ export function sweepStuckRuns(db: BenchDb, now = Date.now(), opts: { defaultHou
     closed.push({ id: run.id, arm: run.arm, stopReason: reason });
   }
   return closed;
+}
+
+/** Hours a 02:00 nightly run is still fresh the next day. */
+export const RELEASE_GATE_HOURS = 30;
+
+export type ReleaseGate = { ok: boolean; reason: string; arm: string | null; at: number | null };
+
+type GateRun = Pick<BenchRun, "arm" | "state" | "startedAt" | "finishedAt"> & { stopReason?: string | null };
+
+/** Whether this run is a night's budget mark, not a real stopped series (store.ts writes it with a `skipped:` reason). */
+const skippedByBudget = (run: GateRun): boolean => run.state === "stopped_budget" && (run.stopReason ?? "").startsWith("skipped:");
+
+/** Can a release go out: the newest night arm finished `done` on EVERY set the night ran, and not longer ago than
+ * `maxAgeHours`. A set the night marked `skipped:` (the shared budget ended before it) does not fail the gate — it is
+ * named in the reason instead. `stopped_budget` of a real series is not a pass. */
+export function releaseGate(runs: readonly GateRun[], now: number, maxAgeHours = RELEASE_GATE_HOURS): ReleaseGate {
+  const night = runs.filter((run) => run.arm.startsWith("night-"));
+  if (!night.length) return { ok: false, reason: "no nightly bench run", arm: null, at: null };
+  let lastAt = -1;
+  for (const run of night) lastAt = Math.max(lastAt, run.finishedAt ?? run.startedAt);
+  const arm = night.find((run) => (run.finishedAt ?? run.startedAt) === lastAt)!.arm;
+  const armRuns = night.filter((run) => run.arm === arm);
+  const skipped = armRuns.filter(skippedByBudget);
+  const bad = armRuns.filter((run) => run.state !== "done" && !skippedByBudget(run));
+  const ageHours = (now - lastAt) / 3_600_000;
+  const mark = skipped.length ? ` (${skipped.length} set(s) skipped by the night budget)` : "";
+  if (bad.length) return { ok: false, reason: `nightly bench ${arm}: ${bad.length} of ${armRuns.length} sets is ${bad[0]!.state}, not done${mark}`, arm, at: lastAt };
+  if (ageHours > maxAgeHours) return { ok: false, reason: `nightly bench ${arm} is ${ageHours.toFixed(1)}h old, past ${maxAgeHours}h${mark}`, arm, at: lastAt };
+  return { ok: true, reason: `nightly bench ${arm} passed ${ageHours.toFixed(1)}h ago${mark}`, arm, at: lastAt };
 }

@@ -2,7 +2,11 @@ import { taskV2Schema } from "../../contracts";
 import { getRun, getTask, listAttemptsForTask, listStageReceipts } from "../../storage";
 import { resolveManagedWorkspace } from "../../verification";
 import { recordStage } from "../../runs/server";
-import { stringAt, valueAt } from "../../core/server";
+import { GIT_PLUGIN_ID, gitCallRpc, stringAt, valueAt } from "../../core/server";
+
+/** The retired environments.status/diff calls, kept as the fallback where bb--git RPC fails (older BB served them directly). */
+const legacyEnvironments = (bb: unknown) => ((bb as { sdk?: { environments?: { status?: (a:{environmentId:string})=>Promise<unknown>; diff?: (a:{environmentId:string;target:string})=>Promise<unknown> } } }).sdk?.environments ?? {});
+import { z } from "zod";
 import type { ServerCore } from "../../core/server";
 
 export function createNightStages(ctx: ServerCore) {
@@ -31,10 +35,18 @@ export function createNightStages(ctx: ServerCore) {
       const environment=await bb.sdk.environments.get({environmentId:workspace.environmentId});
       const managedWorkspace=resolveManagedWorkspace(environment,config.hostId);
       if(managedWorkspace.path!==task.project_cwd) throw new Error("managed workspace path does not match the accepted task workspace");
-      const [status,diff]=await Promise.all([
-        bb.sdk.environments.status({environmentId:managedWorkspace.environmentId}),
-        bb.sdk.environments.diff({environmentId:managedWorkspace.environmentId,target:"uncommitted"}),
-      ]);
+      const gitRpc=gitCallRpc(bb);
+      const anything=z.unknown();
+      const [status,diff]=await Promise.all(gitRpc?[
+        gitRpc({pluginId:GIT_PLUGIN_ID,method:"workspaceStatus",input:{environmentId:managedWorkspace.environmentId},outputSchema:anything}),
+        gitRpc({pluginId:GIT_PLUGIN_ID,method:"diff",input:{environmentId:managedWorkspace.environmentId,target:{type:"uncommitted"}},outputSchema:anything}),
+      ]:[
+        legacyEnvironments(bb).status?.({environmentId:managedWorkspace.environmentId}),
+        legacyEnvironments(bb).diff?.({environmentId:managedWorkspace.environmentId,target:"uncommitted"}),
+      ]).catch(()=>Promise.all([
+        legacyEnvironments(bb).status?.({environmentId:managedWorkspace.environmentId}),
+        legacyEnvironments(bb).diff?.({environmentId:managedWorkspace.environmentId,target:"uncommitted"}),
+      ]));
       const statusJson=JSON.stringify(status),diffJson=JSON.stringify(diff),maxBytes=24_000;
       const result={environmentId:managedWorkspace.environmentId,hostId:managedWorkspace.hostId,path:managedWorkspace.path,
         status:statusJson.slice(0,maxBytes),statusTruncated:statusJson.length>maxBytes,

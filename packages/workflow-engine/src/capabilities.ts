@@ -104,7 +104,7 @@ export const WORKFLOW_REFERENCE = {
     errand: "work outside the code: the owner's browser (browser-automation, computer-use), Env Catalog accounts by name (env_get), mail, consoles",
     "browser-qa": "a browser check of a URL with cases; browser-automation only",
     "project-life": "may write .agents/ and CHANGELOG.md",
-    "specialist:design-lead, specialist:copy-lead, specialist:seo-specialist, specialist:tavily, specialist:video-lead, specialist:<id of an agent the owner created>": "the specialists with their skills (an owner's agent runs with its own prompt, skills, MCP servers and model; the ids are in the specialists section of the capabilities); may write .agents/",
+    "specialist:design-lead, specialist:copy-lead, specialist:seo-specialist, specialist:tavily, specialist:video-lead, specialist:3d-artist, specialist:game-dev, specialist:social-manager, specialist:billing-assistant, specialist:visual-artist, specialist:macos-operator, specialist:<id of an agent the owner created>": "the specialists. A known employee can also be named by its bare id (game-dev, 3d-artist, social-manager). Each keeps a few core skills and looks up the rest in the skill catalog; an owner's agent runs with its own prompt, skills, MCP servers and model. They may write .agents/",
     note: "every role but project-life and the specialists is read-only for the repository: a changed file fails the step (repo_edited). A file the chain must leave in the project goes through an `fs.write` action or an lp-task node; notes go under .bb/chats/",
   },
   models: {
@@ -113,7 +113,7 @@ export const WORKFLOW_REFERENCE = {
   },
   requires: "`skills` (a hint on a step; only the ones listed here are checked before a run), `plugins` and `mcp` (those named on agent steps are added by themselves), `secrets` (Env Catalog names, `NAME?` when optional), `tools` (commands: `ffmpeg`, `a|b`), `platforms` (threads, instagram, facebook, vk are checked, x is not), `machines` (shown to the owner, not passed to a step), `browserSession`. A step that needs an account or a key runs as role `errand`: it reads the value by name with env_get and never prints it",
   actions: {
-    code: "items.dedupe, dag.validate, digest.check, citations.check, verdict.aggregate, lp.propose_workflow; `emit` ends the chain",
+    code: "items.dedupe, dag.validate, digest.check, citations.check, verdict.aggregate, lp.path_class, lp.propose_workflow; `emit` ends the chain",
     "plugin state and checkout": "lp.state_probe, lp.run_status, lp.run_close, lp.lint_contract, lp.integration_gate_status (answers skipped today), fs.write, git.diff_files",
     "run in an errand helper with its skills and accounts": "telegram.send_rich, shell.skill_script, shell.repo_script, deploy.post_check, lp.preflight, lp.project_checks; the node takes `model_preset` and `params.skill`",
     note: "an action name outside these lists has no executor: it runs on stubs in the test and a live run stops there",

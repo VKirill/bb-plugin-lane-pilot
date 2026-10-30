@@ -6,7 +6,7 @@ import { Button } from "@lane-pilot/ui-kit";
 import { LP_ALL_PROJECTS } from "@lane-pilot/ui-kit/realtime-channel";
 import type { BoardColumn, ErrandDefaultView, RunView, ScheduleView } from "../views";
 import { Surface, SurfaceBody, SurfaceHeader } from "@lane-pilot/ui-kit";
-import { useLpRealtime } from "../../ui-shell/ui";
+import { useLpPoll, useLpRealtime } from "../../ui-shell/ui";
 import { ScheduleCalendar } from "./schedule-calendar";
 import { ScheduleDefaultBlock } from "./schedule-default";
 import { ScheduleDetail } from "./schedule-detail";
@@ -91,7 +91,7 @@ export function ScheduleBoard({ projectId, projects = [], locale }: { projectId:
   const loadRef = useRef(load);
   loadRef.current = load;
   const pollMs = useLpRealtime(projectId ?? LP_ALL_PROJECTS, ["schedule"], () => { void loadRef.current(); });
-  useEffect(() => { const timer = setInterval(() => void loadRef.current(), pollMs); return () => clearInterval(timer); }, [pollMs]);
+  useLpPoll(pollMs, () => void loadRef.current());
 
   const schedules = listing?.schedules ?? [];
   const groups = useMemo(() => groupByColumn(schedules), [schedules]);

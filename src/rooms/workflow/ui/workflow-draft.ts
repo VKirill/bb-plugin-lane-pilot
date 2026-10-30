@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRpc } from "@get-bb/plugin-sdk/app";
 import type { z } from "zod";
 import type { rpcContract, workflowDraftCheckSchema, workflowDraftSummarySchema } from "../../contracts";
+import { useLpPoll } from "../../ui-shell/ui";
 import { useLpRealtime } from "../../ui-shell/ui/use-lp-realtime";
 
 /**
@@ -50,11 +51,7 @@ export function useWorkflowDraft(projectId: string | null, draftId: string | nul
   readNow.current = read;
   const pollMs = useLpRealtime(projectId, ["workflow-draft"], (signal) => { if (!signal?.draftId || signal.draftId === latest.current) void readNow.current(); });
   useEffect(() => { void read(); }, [read]);
-  useEffect(() => {
-    if (!draftId) return;
-    const timer = setInterval(() => { void readNow.current(); }, pollMs);
-    return () => clearInterval(timer);
-  }, [draftId, pollMs]);
+  useLpPoll(draftId ? pollMs : undefined, () => { void readNow.current(); });
 
   return { ...state, reload: () => { void read(); } };
 }

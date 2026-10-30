@@ -45,6 +45,7 @@ import { EXCAVATE_LOG_ARGS, approvalSuggestions, costPerVerified, excavate, html
 import { smaCheckedPercent, smaCounts, smaDonePercent, smaRows } from "../../sma-map";
 import { loadLiveExam } from "../../policy";
 import { RULES_USAGE, runRulesCli } from "../../rule-forms";
+import { JEV_USAGE, runJevCli } from "../../jev";
 import { retireAdoptedRule } from "../../self-repair/server";
 import { ROLLBACK_USAGE, runRollbackCli } from "../../rollback/server";
 import { CODE_CRITIC_DEFAULTS, isCodeCriticDefault } from "../../critique";
@@ -101,6 +102,7 @@ export function registerCli(ctx: ServerCore, services: Services) {
     SMA_MAP_USAGE,
     PHASE_USAGE,
     RULES_USAGE,
+    JEV_USAGE,
   ].join("\n");
 
   bb.cli.register({
@@ -289,6 +291,7 @@ export function registerCli(ctx: ServerCore, services: Services) {
         if (command === "waiting") {
           return runWaitingCli(db, args);
         }
+        if (command === "jev") return runJevCli({ db, saveProjectSetting: (p, k, v) => saveProjectSetting(db, p, k, v), settings: async (p) => (await effectiveProjectSettings(p)).values as Record<string, unknown> }, args);
         if (command === "rules") {
           const hostAt = args.indexOf("--host");
           const hostId = hostAt >= 0 ? args[hostAt + 1] : undefined;
@@ -467,7 +470,7 @@ export function registerCli(ctx: ServerCore, services: Services) {
           const attempt = getAttempt(db, args[0]!);
           if (!attempt) return { exitCode:1, stdout:JSON.stringify({ok:false,attemptId:args[0],state:"missing",reason:"attempt does not exist"}) };
           if (!attempt.thread_id) {
-            const canceled=cancelQueuedAttempt(attempt);
+            const canceled=cancelQueuedAttempt(attempt, "canceled from the CLI");
             return {exitCode:canceled.ok?0:1,stdout:JSON.stringify({attemptId:attempt.id,...canceled})};
           }
           const rejection = cancelRejection(db, attempt);
@@ -479,7 +482,7 @@ export function registerCli(ctx: ServerCore, services: Services) {
           const status = confirmed.status;
           if (!confirmed.stopped) throw new Error(`writer stop was not independently observed (status=${status ?? "unknown"}, waited ${Math.round(confirmed.waitedMs / 1000)}s)`);
           await services.rollback.noteStopped(attempt.id).catch(() => undefined);
-          transitionAttempt(db, attempt.id, "canceled", { threadId:attempt.thread_id });
+          transitionAttempt(db, attempt.id, "canceled", { threadId:attempt.thread_id, reason:"canceled from the CLI" });
           return { exitCode:0, stdout:JSON.stringify({
             ok:true, attemptId:attempt.id, threadId:attempt.thread_id, state:"canceled", observedStatus:status,
           }) };

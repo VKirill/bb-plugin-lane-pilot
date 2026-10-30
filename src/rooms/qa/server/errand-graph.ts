@@ -83,7 +83,8 @@ export function mountErrandGraph(ctx: ServerCore, services: Services, core: Erra
       if (!resolved.ok) throw new Error(`${resolved.blocked.reason}: ${resolved.blocked.fix.join(" ")}`);
       const detached = input("detached") === true || rt.origin === "schedule";
       const tier = text(input("serviceTier"));
-      const place = { projectId: rt.projectId, pmThreadId: rt.pmThreadId };
+      const agentId = text(input("agentId")) || undefined;
+      const place = { projectId: rt.projectId, pmThreadId: rt.pmThreadId, ...(agentId ? { agentId } : {}) };
       const snapshot = await c.effect<ErrandSnapshot | null>("before", "errand.before", () => core.errandSnapshot(place), { reconcile: async () => ({ happened: false }) });
       const spawnId = c.spawnKey;
       const started = await c.effect<{ threadId: string; browserMachine: string | null }>("spawn", "errand.spawn", () => core.startErrand({

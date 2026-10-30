@@ -5,6 +5,7 @@ import { DISPATCH_IDEMPOTENT_WINDOW_MS, DISPATCH_STAGES_PENDING } from "../../ru
 import { taskV2Schema } from "../../contracts";
 import type { TaskV2 } from "../../contracts";
 import { QUALITY_MODE_SETTING, browserQaRequired, resolveQualityMode, taskQaPlan } from "../../critique";
+import { reserveAppetite, resolveBestOf } from "../best-of";
 import type { CodeCriticDefault } from "../../critique";
 import { saveCriticCodeDefault } from "./critic-override";
 import { getRunObjective, setRunObjective, createAttempt, createTask, freeTaskId, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getRunWriterHost, getTask, getTaskGitBase, getTaskPlan, latestTaskAttemptState, listAttemptsForTask, listOpenAttempts, listRunsWithAttempts, listStageReceipts, listTaskKinds, listTaskTerminalStates, loadProjectSettings, saveTaskPlan, setRunState, transitionAttempt } from "../../storage";
@@ -19,6 +20,8 @@ import { closeWriterStages, recordStage, resetHelperStages } from "../../runs/se
 import { id, stringAt, valueAt } from "../../core/server";
 import { buildTask } from "./writer-task";
 import { dispatchReply, dispatchRunKey, startDispatchRun, pipelineUnavailable } from "./dispatch-workflow";
+import { suggestTests, testHintLine } from "../../verification";
+import { jev } from "@lane-pilot/jev";
 import { batchAdviceFor, topicLoopGuard } from "./dispatch-guards";
 import { reviveCanceledTask } from "./revive";
 import { countRunNudges } from "./writer-silence";
@@ -226,7 +229,10 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
     const budgetNow = services.runBudgets.get(runId)?.snapshot();
     if (budgetNow?.limits.maxTokens && task.appetite?.tokens) {
       const openAppetites = listOpenAttempts(db).filter((row) => row.run_id === runId).map((row) => Number((getTask(db, row.task_id)?.contract as { appetite?: { tokens?: number } } | undefined)?.appetite?.tokens ?? 0));
-      const reserve = spendReserve({ budgetTokens:budgetNow.limits.maxTokens, spentTokens:budgetNow.tokens, openAppetites, appetite:task.appetite.tokens });
+      // Best-of-3 (quality_mode full + writer.best_of) runs three candidates: the reserve holds all of them.
+      const dispatchSettings = loadProjectSettings(db, args.projectId, getRunSettingsScopes(db, runId));
+      const bestOf = resolveBestOf(dispatchSettings, resolveQualityMode(task, dispatchSettings[QUALITY_MODE_SETTING]));
+      const reserve = spendReserve({ budgetTokens:budgetNow.limits.maxTokens, spentTokens:budgetNow.tokens, openAppetites, appetite:reserveAppetite(task.appetite.tokens, bestOf) });
       if (!reserve.ok) return lintReply(runId, [{ code:"spend_reserve", message:`spend reserve: ${reserve.why}; lower the appetite, wait for an open task, or raise the run's budget` }]);
     }
     // The pipeline runs only on the workflow engine: when the engine cannot take it, nothing is created and the PM is told so. The warning is a wall entry (the journal reads the plugin log).
@@ -257,6 +263,19 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
     for (const stageId of ["writer-agent", "verification", "acceptance-receipt"] as const) {
       recordStage(db, { runId, taskId, stageId, state:"pending", input:canonicalPlan });
     }
+    // jgrep-style hint: the test files that cover this task's owns_paths — name and import links in code, Jev on the
+    // rest. A hint in the reply only; the contract's verification commands never change on their own.
+    const testHintPromise = (async (): Promise<string> => {
+      try {
+        const ls = await runOnHost(host, { hostId:config.hostId, cwd:task.project_cwd, command:"git ls-files", timeoutSec:20, timeoutMs:25_000 }).catch(() => null);
+        if (!ls || ls.exitCode !== 0 || typeof ls.stdout !== "string") return "";
+        const readFile = async (path:string): Promise<string | null> => {
+          const file = await host.call("readBoundedFile", { requestedHostId:config.hostId, projectCwd:task.project_cwd, relativePath:path, offset:0, maxLines:80 }, { hostId:config.hostId, timeoutMs:10_000 }).catch(() => null);
+          return typeof file?.content === "string" ? file.content : null;
+        };
+        return testHintLine(await suggestTests(jev(), { changedFiles:task.owns_paths, repoFiles:ls.stdout.split("\n").filter(Boolean), readFile }, { projectId:args.projectId, runId, subject:taskId }));
+      } catch { return ""; }
+    })();
     const pendingReply = (): Record<string,unknown> => ({ runId, taskId, attemptId, writerThreadId:null, state:"queued", stagesPending:true, stages:listStageReceipts(db, runId, taskId),
       note:"pm-read and plan critique are still running; the writer starts by itself once they pass. Poll lane_pilot_wait_writer or end your turn; Lane Pilot sends you the results. Do not send the task again: the same id and contract returns this task." });
     // The pipeline is a workflow run (workflows/lp-task-pipeline.json, executors in dispatch-workflow.ts); there is no other path.
@@ -279,8 +298,10 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const early = await Promise.race([work, new Promise<null>((done) => { timer = setTimeout(() => done(null), dispatchAnswerMs()); })]);
     clearTimeout(timer);
-    if (early) return withAdvice(early);
-    return withAdvice(pendingReply());
+    const testHint = await testHintPromise.catch(() => "");
+    const replyWithHint = (reply:Record<string,unknown>): Record<string,unknown> => testHint ? { ...reply, testHint } : reply;
+    if (early) return replyWithHint(withAdvice(early));
+    return replyWithHint(withAdvice(pendingReply()));
   }
 
   /**

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { useLpRpcQuery } from "../../ui-shell/ui";
 import { useRpc } from "@get-bb/plugin-sdk/app";
 import { toast } from "sonner";
 import { t, type I18nKey } from "@lane-pilot/i18n";
@@ -104,17 +105,11 @@ function PushSettings() {
 
 export function OwnerWaitingBoard({ projects }: { projects: Array<{ id: string; name: string }> }) {
   const rpc = useRpc<typeof rpcContract>();
-  const [waiting, setWaiting] = useState<OwnerWaiting | null>(null);
-  const [failed, setFailed] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
-  const load = useCallback(async () => {
-    try { setWaiting(await rpc.call("owner_waiting", {}) as OwnerWaiting); setFailed(false); } catch { setFailed(true); }
-  }, [rpc]);
-  useEffect(() => {
-    void load();
-    const timer = setInterval(() => { void load(); }, POLL_MS);
-    return () => clearInterval(timer);
-  }, [load]);
+  const query = useLpRpcQuery("owner_waiting", {}, { pollMs: POLL_MS });
+  const waiting = (query.data ?? null) as OwnerWaiting | null;
+  const failed = query.error != null;
+  const load = useCallback(async () => { await query.refetch(); }, [query.refetch]);
 
   const run = async (item: OwnerItem, action: OwnerAction) => {
     if (!action.rpc) return;
@@ -181,13 +176,6 @@ export function OwnerWaitingBoard({ projects }: { projects: Array<{ id: string; 
 /** The number next to the screen's name in the rail; nothing while it is 0 or cannot be read. */
 export function OwnerWaitingBadge() {
   const rpc = useRpc<typeof rpcContract>();
-  const [count, setCount] = useState(0);
-  useEffect(() => {
-    let live = true;
-    const read = () => { void rpc.call("owner_waiting", {}).then((value) => { if (live) setCount((value as OwnerWaiting).items.length); }).catch(() => undefined); };
-    read();
-    const timer = setInterval(read, 60_000);
-    return () => { live = false; clearInterval(timer); };
-  }, [rpc]);
+  const count = ((useLpRpcQuery("owner_waiting", {}, { pollMs: 60_000 }).data ?? null) as OwnerWaiting | null)?.items.length ?? 0;
   return count ? <span className="ml-1.5 rounded-full bg-secondary px-1.5 text-[11px] leading-5 text-muted-foreground" data-testid="owner-badge">{count}</span> : null;
 }

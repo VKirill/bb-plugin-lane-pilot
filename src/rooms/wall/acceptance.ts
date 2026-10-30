@@ -56,6 +56,28 @@ export type Acceptance = {
 export const RECURRENCE_MIN_ATTEMPTS = 10;
 /** How long a deployed repair waits for its evidence (a bench result, enough attempts of the new version) before it is settled as inconclusive. */
 export const EVIDENCE_WAIT_MS = 72 * 3_600_000;
+/** How long an open repair (running, fixed, held, merged) may sit without a verdict. Same horizon as a harness trial. */
+export const REPAIR_DEADLINE_MS = 14 * 86_400_000;
+
+export type RepairDeadlineInput = {
+  state: string;
+  createdAt: number;
+  now: number;
+  /** A verdict already computed from collected evidence. Absent means nothing was measured. */
+  collected?: "accepted" | "red" | "rolled_back" | "inconclusive" | "pending" | null;
+};
+
+/**
+ * Past the deadline an open repair is closed from what was collected: accept, reject, or insufficient data.
+ * Inside the deadline it stays open.
+ */
+export function closeExpiredRepair(row: RepairDeadlineInput, deadlineMs = REPAIR_DEADLINE_MS): { close: false } | { close: true; state: "accepted" | "red" | "unproven"; reason: string } {
+  if (row.now - row.createdAt < deadlineMs) return { close: false };
+  if (row.collected === "accepted") return { close: true, state: "accepted", reason: "deadline passed; the collected evidence accepts the repair" };
+  if (row.collected === "red" || row.collected === "rolled_back") return { close: true, state: "red", reason: "deadline passed; the collected evidence rejects the repair" };
+  const days = Math.round(deadlineMs / 86_400_000);
+  return { close: true, state: "unproven", reason: `insufficient data: open as ${row.state} past the ${days}-day deadline without a verdict` };
+}
 
 export function decideAcceptance(e: AcceptanceEvidence): Acceptance {
   const checks: AcceptanceCheck[] = [];

@@ -5,6 +5,7 @@ import type { rpcContract } from "../../contracts";
 import type { ExecutorRow, StageBlock, TaskGraph } from "../logic";
 import { StageStrip } from "./stage-strip";
 import { duration, fill, money, roleName, shortModel, stageName, stageState, tokens } from "./format";
+import { useLpRpcQuery } from "../../ui-shell/ui";
 
 const POLL_MS = 10_000;
 /** A stage the project's settings turned off never ran: one line names them all instead of a card each. */
@@ -71,17 +72,9 @@ function StageCard({ block, locale, onThread }: { block: StageBlock; locale: str
 
 /** A task's run, stage by stage: the summary line, then who ran each stage with its rounds, model, turns, time, tokens and cost. */
 export function WorkBreakdown({ runId, taskId, locale }: { runId: string; taskId: string; locale: string }) {
-  const rpc = useRpc<typeof rpcContract>();
   const navigate = useBbNavigate();
-  const [graph, setGraph] = useState<TaskGraph | null>(null);
+  const graph = (useLpRpcQuery("work_graph_task", { runId, taskId }, { pollMs: POLL_MS }).data ?? null) as TaskGraph | null;
   const running = graph?.cells.some((cell) => cell.state === "running" || cell.state === "pending") ?? true;
-  useEffect(() => {
-    let alive = true;
-    const read = () => void rpc.call("work_graph_task", { runId, taskId }).then((result) => { if (alive) setGraph(result as TaskGraph); }).catch(() => undefined);
-    read();
-    const timer = running ? setInterval(read, POLL_MS) : undefined;
-    return () => { alive = false; if (timer) clearInterval(timer); };
-  }, [rpc, runId, taskId, running]);
   if (!graph) return <p className="text-sm text-muted-foreground">{t("graphLoading")}</p>;
   if (!graph.cells.length) return <p className="text-sm text-muted-foreground">{t("graphNoStages")}</p>;
   const { summary } = graph;

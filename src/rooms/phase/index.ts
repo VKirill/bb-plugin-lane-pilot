@@ -6,3 +6,4 @@ export {
 } from "./logic";
 export type { AcceptanceLine, BookPart, BookSection, ContextDoc, FrozenVerdict, GateResult, NextAction, Phase, PhaseRecord, PhaseStage, PhaseState, PlanItem, TaskFact } from "./logic";
 export { getPhase, listParts, listPhases } from "./store";
+export { intakeJudgment, pathClassJudgment } from "./intake";

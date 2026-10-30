@@ -49,6 +49,7 @@ function setup() {
 function services(db:ReturnType<typeof openDatabase>, script:Step[]) {
   let turn = 0;
   const spawned: string[] = [];
+  const emergencies: Array<{ providerId:string; model:string }> = [];
   const base = {
     activeWriterTasks:new Set<string>(),
     providerBreaker:{ record:() => undefined },
@@ -59,8 +60,9 @@ function services(db:ReturnType<typeof openDatabase>, script:Step[]) {
     startAfterAcceptance: () => undefined,
     workspaceDirt:async () => ({ ok:true, paths:[], snapshots:[] }),
     isLiveFolder:async () => false,
-    spawnWriterAttempt:async (input:{ attemptId:string }) => {
+    spawnWriterAttempt:async (input:{ attemptId:string; emergency?:{ providerId:string; model:string } }) => {
       spawned.push(input.attemptId);
+      if (input.emergency) emergencies.push({ providerId:input.emergency.providerId, model:input.emergency.model });
       setAttemptWorkspace(db, input.attemptId, { path:WORKTREE, environmentId:null, decision:{} });
       transitionAttempt(db, input.attemptId, "spawn_requested");
       transitionAttempt(db, input.attemptId, "running", { threadId:"thr_w" });
@@ -83,7 +85,7 @@ function services(db:ReturnType<typeof openDatabase>, script:Step[]) {
     },
   };
   const all = base as unknown as Services;
-  return { all, spawned };
+  return { all, spawned, emergencies };
 }
 
 let clock = 0;
@@ -137,14 +139,15 @@ it(`stops at ${SESSION_MAX_TURNS} turns with the last reason and starts no other
   await env.harness.lifecycle.dispose();
 });
 
-it("stops early only when the failure and the diff are both unchanged between two turns", async () => {
+it("after a repeated red check, the next attempt goes to the next writer in the chain, not the same writer again", async () => {
   const env = setup();
-  const { all, spawned } = services(env.db, [{ diff:"same" }, { diff:"same" }, { accept:true }]);
+  const { all, spawned, emergencies } = services(env.db, [{ diff:"same" }, { diff:"same" }, { diff:"again" }]);
   start(env, all);
   await vi.waitFor(() => expect(writerStage(env.db).state).toBe("failed"));
-  expect(spawned).toHaveLength(1);
-  expect(env.sends).toHaveLength(1);
-  expect(writerStage(env.db).reason).toMatch(/^no progress: the same failure and the same diff in two turns in a row: verification failed/);
+  // One feedback turn in the writer's own thread, then a different writer. Not another spawn of p/wm.
+  expect(env.sends.filter((send) => send.threadId === "thr_w")).toHaveLength(1);
+  expect(spawned).toHaveLength(2);
+  expect(emergencies).toEqual([{ providerId:"opencode2", model:"zai-coding-plan/glm-5.3-flash" }]);
   await env.harness.lifecycle.dispose();
 });
 

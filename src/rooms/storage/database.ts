@@ -425,6 +425,16 @@ export const migrations = [
   ...workflowNotVerifiedMigrations,
   // Hash of the files a note named when it was written (packages/memory-core/src/fingerprint.ts). Append only.
   `ALTER TABLE lane_pilot_memory ADD COLUMN file_fingerprint TEXT`,
+  // The page a thread reconcile had reached. A reload continues from it instead of scanning from the first page again.
+  `CREATE TABLE lane_pilot_reconcile_cursor (scan_key TEXT PRIMARY KEY, attempt_id TEXT NOT NULL, page INTEGER NOT NULL, updated_at INTEGER NOT NULL)`,
+  // When the fact itself began to hold (Graphiti-style validity window, arXiv X-3); NULL = since it was written. Append only.
+  `ALTER TABLE lane_pilot_memory ADD COLUMN valid_from INTEGER`,
+  // The task that produced the record: an audit trail from a stored note back to its run (arXiv #10). Append only.
+  `ALTER TABLE lane_pilot_memory ADD COLUMN origin_task_id TEXT`,
+  // Verifier signals on the row: each source that vouched for the fact (arXiv #21 MemGuard). Append only.
+  `ALTER TABLE lane_pilot_memory ADD COLUMN verification_json TEXT`,
+  // Bench task validator (src/rooms/bench/validator.ts). Null on a code task. `artifact` checks that the result exists and is not empty.
+  `ALTER TABLE lane_pilot_bench_task ADD COLUMN validator TEXT`,
   // Critic mixes (packages/memory-core/src/lifecycle.ts). Not a writer use, so usefulness ignores it. Append only.
   `ALTER TABLE lane_pilot_memory ADD COLUMN critic_count INTEGER NOT NULL DEFAULT 0`,
   // One row per retrieval that reached an agent. Ids and token count only; no note text (F07-1). Append only.
@@ -575,7 +585,7 @@ export function setRunState(db: LanePilotDatabase, runId: string, state: string)
   db.prepare("UPDATE lane_pilot_run SET state=?, updated_at=? WHERE id=?").run(state, Date.now(), runId);
 }
 
-export function closeRun(db: LanePilotDatabase, runId: string, closedBy: "rpc" | "cli" | "sweep"): boolean {
+export function closeRun(db: LanePilotDatabase, runId: string, closedBy: "rpc" | "cli" | "sweep" | "ttl"): boolean {
   return db.transaction(() => {
     const run = db.prepare("SELECT state,closed_at FROM lane_pilot_run WHERE id=?").get(runId) as
       {state:string;closed_at:number|null}|undefined;

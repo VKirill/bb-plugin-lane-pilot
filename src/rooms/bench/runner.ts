@@ -1,11 +1,14 @@
 import { TASK_KINDS } from "../contracts";
 import { mapVerificationCwd } from "../tasks";
 import type { AttemptMetrics } from "../usage/server";
-import { q, realClock, type BenchProjectRef, type Clock, type HostPort, type PipelinePort } from "./ports";
+import { q, realClock, type BenchProjectRef, type Clock, type HostPort, type PipelinePort, type TaskOutcome } from "./ports";
 import { diskDeferral, isDiskDeferral } from "./reliability";
 import {
   addSpent, deleteRunRow, finishRunRow, getRun, getSet, listResults, listRuns, saveResult, startRunRow, verifySet, type BenchDb, type BenchResult, type BenchRun,
 } from "./store";
+import { resolveRepoPath } from "./repos";
+import { judgeValidator, runValidator } from "./validator";
+import { jevalsLine, type JevalsResult } from "./jevals";
 import { BENCH_PROJECT_PREFIX, BENCH_PROJECTS, benchProjectName, type ManifestTask, type VerificationItem } from "./types";
 import { MIN_FREE_GB, freeGb, linkDependenciesCommand } from "./warmup";
 
@@ -38,6 +41,8 @@ export type SeriesInput = {
   minFreeGb?: number;
   /** Machine the series runs on. Absent: each bench project's own machine. */
   hostId?: string;
+  /** Checkout root on that machine. A stored Mac path is cloned from `<root>/<folder>` (scripts/bench-sync-repos.sh). */
+  reposRoot?: string | null;
 };
 
 export type RunnerDeps = {
@@ -48,6 +53,8 @@ export type RunnerDeps = {
   log?: (line: string) => void;
   /** The «LP bench …» project name for a manifest task (default: benchProjectName(project, repo)). */
   projectNameFor?: (task: ManifestTask) => string;
+  /** The jevals trace evals (audit top-10): absent, they are skipped. */
+  jevals?: (input: { task: ManifestTask; outcome: TaskOutcome; attempts: readonly AttemptMetrics[]; reason: string | null }) => Promise<JevalsResult | null>;
 };
 
 export const DEFAULT_BUDGET_TOKENS = 120_000_000;
@@ -211,6 +218,14 @@ export async function runSeries(deps: RunnerDeps, input: SeriesInput): Promise<S
     try {
       for (const task of list) {
         if (done.has(task.taskId) || stopReason) continue;
+        if (task.stratum === "noncode") {
+          const source = resolveRepoPath(task.repoPath, input.reposRoot);
+          const probe = await deps.host.run(placed.hostId, "/", `[ -e ${q(source)} ] && { [ -s ${q(source)} ] || [ -n "$(find ${q(source)} -mindepth 1 -print -quit)" ]; }`, 30).catch(() => null);
+          const verdict = await runValidator(task.validator, probe && probe.exitCode === 0 ? source : null, { host: deps.host, hostId: placed.hostId });
+          saveResult(deps.db, { runId: run.id, taskId: task.taskId, position: task.position, state: verdict.ok ? "accepted" : "not_accepted", accepted: verdict.ok, benchTaskId: null, lpRunId: lp?.runId ?? null, attempts: 0, stagesPassed: 0, stagesFailed: 0, tokens: null, costUsd: null, costState: "not_measured", seconds: 0, reason: verdict.reason, recordedAt: clock.now() });
+          log(`bench ${input.arm} r${repeat}: ${task.taskId} validator ${task.validator ?? "artifact"} ${verdict.ok ? "accepted" : "not accepted"}`);
+          continue;
+        }
         // Stop BEFORE the cap: the next task is expected to cost what the finished ones did on average.
         const finished = [...armResults(), ...listResults(deps.db, run.id)].filter((row, index, all) => all.findIndex((other) => other.runId === row.runId && other.taskId === row.taskId) === index);
         const spentTokens = finished.reduce((sum, row) => sum + (row.tokens ?? 0), 0), spentSeconds = finished.reduce((sum, row) => sum + (row.seconds ?? 0), 0);
@@ -221,7 +236,8 @@ export async function runSeries(deps: RunnerDeps, input: SeriesInput): Promise<S
         const low = diskDeferral(await free(placed.hostId), input.minFreeGb ?? MIN_FREE_GB, placed.hostId);
         if (low) { stopReason = low; break; }
 
-        const prepared = await deps.host.run(placed.hostId, "/", prepareCheckoutCommand(task.repoPath, placed.path, task.initialHeadSha), 900);
+        const source = resolveRepoPath(task.repoPath, input.reposRoot);
+        const prepared = await deps.host.run(placed.hostId, "/", prepareCheckoutCommand(source, placed.path, task.initialHeadSha), 900);
         if (prepared.exitCode !== 0) {
           saveResult(deps.db, { runId: run.id, taskId: task.taskId, position: task.position, state: "error", accepted: false, benchTaskId: null, lpRunId: null, attempts: 0, stagesPassed: 0, stagesFailed: 0, tokens: null, costUsd: null, costState: "not_measured", seconds: null, reason: `checkout failed: ${(prepared.stderr || prepared.stdout).trim().slice(-300)}`, recordedAt: clock.now() });
           continue;
@@ -258,6 +274,12 @@ export async function runSeries(deps: RunnerDeps, input: SeriesInput): Promise<S
           runId: run.id, taskId: task.taskId, position: task.position, state: reason && !sent.ok ? "error" : accepted ? "accepted" : "not_accepted", accepted,
           benchTaskId, lpRunId: lp.runId, ...sums, reason: reason ?? (accepted ? null : `ended ${outcome.latestState ?? "without an attempt"}`), recordedAt: clock.now(),
         }, attempts);
+        const evals = deps.jevals ? await deps.jevals({ task, outcome, attempts, reason: reason ?? (accepted ? null : `ended ${outcome.latestState ?? "without an attempt"}`) }).catch(() => null) : null;
+        if (evals) {
+          const line = jevalsLine(evals);
+          if (line) log(`bench ${input.arm} r${repeat}: ${benchTaskId} ${line}`);
+          deps.db.prepare("UPDATE lane_pilot_bench_result SET metrics_json=? WHERE run_id=? AND task_id=?").run(JSON.stringify([...attempts, { jevals: evals }]), run.id, task.taskId);
+        }
         if (sums.tokens) addSpent(deps.db, run.id, sums.tokens);
         log(`bench ${input.arm} r${repeat}: ${benchTaskId} ${accepted ? "accepted" : "not accepted"}, ${sums.attempts} attempts, stages ${sums.stagesPassed}, cost ${sums.costUsd === null ? "not measured" : `$${sums.costUsd.toFixed(3)}`}, ${sums.seconds ?? "?"}s`);
       }

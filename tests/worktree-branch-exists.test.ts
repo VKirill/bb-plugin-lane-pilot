@@ -65,6 +65,58 @@ describe("an attempt's worktree whose branch already exists", () => {
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 
+  it("reuses an unmerged branch that belongs to the same task", async () => {
+    const { root, base, target } = await repo();
+    try {
+      await createWorktree({ basePath: base, targetPath: target, name: "lpattempt_x", taskId: "T1" });
+      await writeFile(join(target, "work.txt"), "kept\n");
+      git(target, "add", "-A");
+      git(target, "commit", "-q", "-m", "writer");
+      const tip = git(target, "rev-parse", "HEAD");
+      await rm(target, { recursive: true, force: true });
+      const again = await createWorktree({ basePath: base, targetPath: target, name: "lpattempt_x", taskId: "T1" });
+      expect(again).toMatchObject({ status: "ready", path: target, branch: "lane/lpattempt_x" });
+      expect(git(target, "rev-parse", "HEAD")).toBe(tip);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it("deletes a merged branch and starts the retry from current HEAD", async () => {
+    const { root, base, target } = await repo();
+    try {
+      await createWorktree({ basePath: base, targetPath: target, name: "lpattempt_x", taskId: "T1" });
+      await writeFile(join(target, "work.txt"), "old\n");
+      git(target, "add", "-A");
+      git(target, "commit", "-q", "-m", "writer");
+      const old = git(target, "rev-parse", "HEAD");
+      git(base, "merge", "--no-ff", "--no-edit", "lane/lpattempt_x");
+      await writeFile(join(base, "later.txt"), "later\n");
+      git(base, "add", "-A");
+      git(base, "commit", "-q", "-m", "later");
+      const head = git(base, "rev-parse", "HEAD");
+      const again = await createWorktree({ basePath: base, targetPath: target, name: "lpattempt_x", taskId: "T1" });
+      expect(again.status).toBe("ready");
+      expect(git(again.path!, "rev-parse", "HEAD")).toBe(head);
+      expect(git(again.path!, "rev-parse", "HEAD")).not.toBe(old);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it("deletes a branch that belongs to another task", async () => {
+    const { root, base, target } = await repo();
+    try {
+      await createWorktree({ basePath: base, targetPath: target, name: "lpattempt_x", taskId: "T1" });
+      await writeFile(join(target, "work.txt"), "theirs\n");
+      git(target, "add", "-A");
+      git(target, "commit", "-q", "-m", "theirs");
+      const old = git(target, "rev-parse", "HEAD");
+      const main = git(base, "rev-parse", "HEAD");
+      const again = await createWorktree({ basePath: base, targetPath: target, name: "lpattempt_x", taskId: "T2" });
+      expect(again.status).toBe("ready");
+      expect(git(again.path!, "rev-parse", "HEAD")).toBe(main);
+      expect(git(again.path!, "rev-parse", "HEAD")).not.toBe(old);
+      expect(git(base, "config", "--get", "branch.lane/lpattempt_x.laneTask")).toBe("T2");
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
   it("reads the folder that holds a branch from git's porcelain list", () => {
     const porcelain = "worktree /r\nHEAD aaa\nbranch refs/heads/main\n\nworktree /w/lpattempt_x\nHEAD bbb\nbranch refs/heads/lane/lpattempt_x\n";
     expect(worktreeOfBranch(porcelain, "lane/lpattempt_x")).toBe("/w/lpattempt_x");

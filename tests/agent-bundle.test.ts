@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { EMPLOYEES } from "../src/rooms/native-agent/employee-manifest";
 import {
   compileEffectiveMainAgent,
   compileMainAgentProfile,
@@ -18,6 +19,12 @@ describe("bundled BB session profiles", () => {
       "project-onboarder",
       "tavily",
       "video-lead",
+      "3d-artist",
+      "game-dev",
+      "social-manager",
+      "billing-assistant",
+      "visual-artist",
+      "macos-operator",
       "workflow-architect",
       "advisor-researcher",
       "ai-researcher",
@@ -35,8 +42,9 @@ describe("bundled BB session profiles", () => {
 
   it("loads every bundled profile under schema limits with resources and no model fields", () => {
     for (const id of MAIN_AGENT_PROFILE_IDS) {
-      const bundled = (bundledAgents as unknown as Record<string, { displayName: string; skills: string[]; mcpServers: string[] } | undefined>)[id] ?? (id === "video-lead" ? { displayName: "Video", skills: compileMainAgentProfile(id).skills ?? [], mcpServers: [] } : { displayName: "Workflow architect", skills: [], mcpServers: [] });
       const compiled = compileMainAgentProfile(id);
+      const json = (bundledAgents as unknown as Record<string, { displayName: string; skills: string[]; mcpServers: string[] } | undefined>)[id];
+      const bundled = json ?? { displayName: compiled.description, skills: [] as string[], mcpServers: [] as string[] };
       expect(compiled.sourceVersion).toBe(PROFILE_SOURCE_VERSION);
       expect(compiled.description).toBe(bundled.displayName);
       expect(compiled.description.length).toBeLessThanOrEqual(400);
@@ -47,7 +55,8 @@ describe("bundled BB session profiles", () => {
       expect(compiled).not.toHaveProperty("model");
       expect(compiled).not.toHaveProperty("permissionMode");
       expect(compiled).not.toHaveProperty("effort");
-      if (bundled.skills.length) expect(compiled.skills).toEqual(bundled.skills);
+      if (json?.skills.length && !EMPLOYEES[id]) expect(compiled.skills).toEqual(json.skills);
+      if (EMPLOYEES[id]) expect(compiled.skills ?? []).toEqual([...EMPLOYEES[id].coreSkills]);
       if (bundled.mcpServers.length) expect(compiled.mcpServers).toEqual(bundled.mcpServers);
     }
     const copy = compileMainAgentProfile("copy-lead");
@@ -63,11 +72,7 @@ describe("bundled BB session profiles", () => {
       expect(compiled.prompt, id).not.toMatch(/lane-ctl|run-controller|run-supervisor|SendMessage|docs-maintain-project/);
       expect(compiled.tools?.join(" ") ?? "", id).not.toMatch(/SendMessage|ListAgents|lane-ctl|run-controller/);
     }
-    expect(compileMainAgentProfile("video-lead").skills).toEqual([
-      "video-lead-playbook", "hyperframes", "hyperframes-cli", "hyperframes-registry", "media-use", "procedural-film", "video-to-reels", "business-motion-film",
-      "video-transcribe", "video-sound", "manimgx", "anatomy", "claude-video",
-      "remotion:remotion-best-practices", "remotion:remotion-render", "remotion:remotion-create",
-    ]);
+    expect(compileMainAgentProfile("video-lead").skills).toEqual(["video-lead-playbook"]);
   });
 
   it("upgrades unchanged stubs and CLI dumps and keeps edited compiled snapshots plus resource overlays", () => {
@@ -85,7 +90,7 @@ describe("bundled BB session profiles", () => {
     const upgraded = compileEffectiveMainAgent("copy-lead", stub as never);
     expect(upgraded.prompt).toContain("docs/audiences/copy.md");
     expect(upgraded.prompt).not.toContain("Boot **copy-lead**");
-    expect(upgraded.skills).toHaveLength(10);
+    expect(upgraded.skills).toEqual(["copywriter"]);
     const overlay = compileEffectiveMainAgent("copy-lead", {
       description: LEGACY_STOCK_TEMPLATES["copy-lead"].description,
       prompt: LEGACY_STOCK_TEMPLATES["copy-lead"].prompt,

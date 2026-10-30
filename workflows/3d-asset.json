@@ -1,0 +1,389 @@
+{
+  "id": "3d-asset",
+  "name": {
+    "en": "3D Asset (Blender)",
+    "ru": "3D-ассет (Blender)"
+  },
+  "description": {
+    "en": "Full 3D asset pipeline: brief, concept generation via Image Studio, modeling in Blender on Mac mini, QA geometry and preview verification (n-gons, normals, polycount vs budget), and production export.",
+    "ru": "Полный пайплайн 3D-ассета: бриф, генерация концепта через Image Studio, моделирование в Blender на Mac mini, проверка геометрии и превью (n-гоны, нормали, поликаунт против бюджета) и экспорт."
+  },
+  "examples": {
+    "ru": [
+      "Сделай 3D-модель сундука с золотой отделкой в Blender",
+      "Создай низкополигональную модель дрона до 3000 полигонов",
+      "Смоделируй средневековый меч и экспортируй в GLB",
+      "Сделай модель космического корабля по концепту с проверкой геометрии"
+    ],
+    "en": [
+      "Create a 3D model of a treasure chest with gold trim in Blender",
+      "Make a low-poly drone asset under 3000 polygons",
+      "Model a medieval sword and export to GLB",
+      "Create a spaceship 3D model from concept with geometry checks"
+    ]
+  },
+  "not_for": [
+    "roblox-asset",
+    "reels",
+    "ui-audit"
+  ],
+  "status": "published",
+  "tags": [
+    "3d",
+    "blender",
+    "asset",
+    "modeling"
+  ],
+  "inputs": {
+    "prompt": {
+      "type": "string",
+      "required": true,
+      "note": "описание ассета, назначение и пожелания"
+    },
+    "poly_budget": {
+      "type": "int",
+      "default": 5000,
+      "note": "бюджет треугольников или полигонов"
+    },
+    "format": {
+      "type": "glb|fbx|obj",
+      "default": "glb",
+      "note": "формат экспорта"
+    },
+    "style": {
+      "type": "string",
+      "default": "stylized",
+      "note": "стиль: stylized|lowpoly|realistic|scifi"
+    },
+    "concept_image": {
+      "type": "string",
+      "default": "",
+      "note": "путь или ссылка на готовый концепт (если есть)"
+    }
+  },
+  "outputs": {
+    "status": "done|partial|blocked",
+    "asset_path": "string",
+    "preview_path": "string",
+    "poly_count": "int",
+    "report_path": "string"
+  },
+  "requires": {
+    "plugins": [
+      "lane-pilot",
+      "image-studio"
+    ],
+    "skills": [
+      "blender-director",
+      "blender-modeler",
+      "qa-review"
+    ],
+    "machines": [
+      "Mac mini with Blender MCP and Metal acceleration"
+    ],
+    "tools": [
+      "blender",
+      "image-studio"
+    ]
+  },
+  "budget": {
+    "max_steps": 20,
+    "max_minutes": 120,
+    "max_usd": 10
+  },
+  "entry": "concept",
+  "nodes": [
+    {
+      "id": "concept",
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "3d-artist",
+      "title": {
+        "en": "Generate concept blueprint",
+        "ru": "Генерация концепта и чертежа"
+      },
+      "skip_when": "$inputs.concept_image != ''",
+      "skip_out": {
+        "ok": true,
+        "concept_path": "$inputs.concept_image",
+        "status": "done"
+      },
+      "profile": {
+        "skills": [
+          "image-prompting"
+        ]
+      },
+      "prompt": "Сгенерируй концепт-арт или ортографический чертеж (blueprint) для 3D-модели по брифу: '{{$inputs.prompt}}' в стиле {{$inputs.style}}. Навыки каталога: «Генерация изображений и визуала» (image-prompting, nano-banana). Используй инструменты плагина image-studio (image_studio_model mode blueprint или image_studio_generate). Сохрани концепт и запиши путь в concept_path. Если генерация не удалась, верни статус blocked. При успехе верни статус done.",
+      "out": {
+        "ok": "bool",
+        "concept_path": "string",
+        "status": "done|blocked"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 25
+      }
+    },
+    {
+      "id": "model",
+      "consumes": [
+        {
+          "kind": "report",
+          "version": 1,
+          "from": "concept"
+        }
+      ],
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "3d-artist",
+      "title": {
+        "en": "Model asset in Blender",
+        "ru": "Моделирование в Blender на Mac mini"
+      },
+      "profile": {
+        "skills": [
+          "blender-modeler",
+          "blender-director"
+        ]
+      },
+      "prompt": "Создай 3D-модель в Blender на Mac mini по концепту ({{concept.concept_path}}) и брифу '{{$inputs.prompt}}'. Навыки каталога: «3D и Blender/Моделирование» (blender-modeler, hard-surface, prop-artist) и «3D и Blender/Материалы и свет» (materials, uv-workflow). Соблюдай бюджет полигонов: {{$inputs.poly_budget}} полигонов, стиль: {{$inputs.style}}. Настрой сетку без лишней геометрии, UV-развертку, базовые материалы. Сохрани файл сцены в .agents/3d/scene.blend. Выведи poly_count. Верни статус done или blocked.",
+      "out": {
+        "ok": "bool",
+        "blend_path": "string",
+        "poly_count": "int",
+        "status": "done|blocked"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 60
+      }
+    },
+    {
+      "id": "verify",
+      "consumes": [
+        {
+          "kind": "report",
+          "version": 1,
+          "from": "model"
+        }
+      ],
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "auditor",
+      "title": {
+        "en": "Check geometry and render preview",
+        "ru": "Проверка геометрии и рендер превью"
+      },
+      "profile": {
+        "skills": [
+          "qa-review",
+          "asset-optimization"
+        ]
+      },
+      "prompt": "Проверь геометрию созданной модели {{model.blend_path}} и сделай рендер превью. Навыки каталога: «3D и Blender/Пайплайн и экспорт» (qa-review, asset-optimization). Проверь: 1) отсутствие n-гонов (чистые quads/tris, ngon_count), 2) нормали (normal_errors), 3) поликаунт против лимита брифа: {{model.poly_count}} против {{$inputs.poly_budget}}, 4) UV. Отрендери превью (clay + beauty) в .agents/3d/preview.png. Сформируй отчёт geometry_report.json. Если найдены дефекты (n-гоны, превышение поликаунта), верни status rework со списком замечаний в issues. Если модель корректна, верни status pass.",
+      "out": {
+        "status": "pass|rework",
+        "ngon_count": "int",
+        "normal_errors": "int",
+        "poly_count": "int",
+        "preview_path": "string",
+        "report_path": "string",
+        "issues": "string[]"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 25
+      }
+    },
+    {
+      "id": "export",
+      "consumes": [
+        {
+          "kind": "report",
+          "version": 1,
+          "from": "verify"
+        }
+      ],
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "3d-artist",
+      "title": {
+        "en": "Export production model",
+        "ru": "Экспорт производственного ассета"
+      },
+      "profile": {
+        "skills": [
+          "export-pipeline"
+        ]
+      },
+      "prompt": "Экспортируй проверенную 3D-модель из {{model.blend_path}} в формат {{$inputs.format}}. Навыки каталога: «3D и Blender/Пайплайн и экспорт» (export-pipeline, lod-pipeline). Проверь масштаб (scale 1.0), пивот по центру/основанию (origin at base), материалы и текстуры. Сохрани результат в .agents/3d/export/ с расширением {{$inputs.format}}. Верни status done или blocked.",
+      "out": {
+        "ok": "bool",
+        "asset_path": "string",
+        "format": "string",
+        "status": "done|blocked"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 20
+      }
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "done",
+        "asset_path": "export.asset_path",
+        "preview_path": "verify.preview_path",
+        "poly_count": "verify.poly_count",
+        "report_path": "verify.report_path"
+      }
+    },
+    {
+      "id": "partial",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "partial",
+        "preview_path": "verify.preview_path",
+        "poly_count": "verify.poly_count",
+        "report_path": "verify.report_path"
+      }
+    },
+    {
+      "id": "blocked",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "blocked"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "concept",
+      "to": "model",
+      "pass": "artifact",
+      "when": "concept.ok"
+    },
+    {
+      "from": "concept",
+      "to": "blocked",
+      "pass": "artifact"
+    },
+    {
+      "from": "model",
+      "to": "verify",
+      "pass": "artifact",
+      "when": "model.ok"
+    },
+    {
+      "from": "model",
+      "to": "blocked",
+      "pass": "artifact"
+    },
+    {
+      "from": "verify",
+      "to": "model",
+      "pass": "same-session",
+      "when": "verify.status == 'rework' && visits('verify') < 2",
+      "label": "rework geometry"
+    },
+    {
+      "from": "verify",
+      "to": "export",
+      "pass": "artifact",
+      "when": "verify.status == 'pass'"
+    },
+    {
+      "from": "verify",
+      "to": "partial",
+      "pass": "artifact"
+    },
+    {
+      "from": "export",
+      "to": "done",
+      "pass": "artifact",
+      "when": "export.ok"
+    },
+    {
+      "from": "export",
+      "to": "blocked",
+      "pass": "artifact"
+    }
+  ],
+  "test": {
+    "id": "3d-1",
+    "sim": {
+      "input": {
+        "prompt": "Low-poly wooden treasure chest",
+        "poly_budget": 3000,
+        "format": "glb",
+        "style": "lowpoly"
+      },
+      "stubs": {
+        "concept": {
+          "ok": true,
+          "concept_path": "image-studio/model/chest/blueprint.png",
+          "status": "done"
+        },
+        "model": {
+          "ok": true,
+          "blend_path": ".agents/3d/chest/scene.blend",
+          "poly_count": 2400,
+          "status": "done"
+        },
+        "verify": {
+          "status": "pass",
+          "ngon_count": 0,
+          "normal_errors": 0,
+          "poly_count": 2400,
+          "preview_path": ".agents/3d/chest/preview.png",
+          "report_path": ".agents/3d/chest/geometry_report.json",
+          "issues": []
+        },
+        "export": {
+          "ok": true,
+          "asset_path": ".agents/3d/chest/export/chest.glb",
+          "format": "glb",
+          "status": "done"
+        }
+      },
+      "expect_path": [
+        "concept",
+        "model",
+        "verify",
+        "export",
+        "done"
+      ],
+      "expect_outputs": [
+        "status == 'done'",
+        "poly_count == 2400",
+        "asset_path != ''"
+      ]
+    },
+    "live": "Реальное создание 3D-модели сундука в Blender на Mac mini через MCP, генерация превью и отчёта поликаунта, экспорт в GLB",
+    "note": "Tested on stubs: outside actions (Image Studio, Blender MCP on Mac mini) answer from stubs. Live run requires Mac mini with Blender MCP."
+  }
+}

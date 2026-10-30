@@ -215,6 +215,7 @@ export function stageTitle(stageId: string): string {
   const labels: Record<string, I18nKey> = {
     "plan-critique":"stagePlanCritique",
     "code-critique":"stageCodeCritique",
+    "critic-tiebreak":"stageCriticTiebreak",
     "writer-agent":"stageWriterAgent",
     verification:"stageVerification",
     "acceptance-receipt":"stageAcceptanceReceipt",

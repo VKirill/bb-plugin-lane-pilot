@@ -49,6 +49,40 @@ export async function closeAbandonedRuns(bb: BbPluginApi, db: ReturnType<typeof 
   return closed;
 }
 
+/** A running run with nobody writing, past six hours, or a blocked run left for three days. */
+export const STALE_RUNNING_MS = 6 * 60 * 60 * 1000;
+export const STALE_BLOCKED_MS = 72 * 60 * 60 * 1000;
+
+/**
+ * A run the PM can still open used to stay running or blocked with no writer at work: the sweep only closed a run
+ * whose chat was gone. Past the lifetime it is closed (`closed_by` ttl) and the PM is told, so the project can take
+ * another run. A run with an open attempt stays. Hub rows are not touched here; the next sweep on the hub applies it.
+ */
+export async function closeStaleRuns(bb: BbPluginApi, db: ReturnType<typeof openDatabase>, now = Date.now(), signal?: AbortSignal): Promise<string[]> {
+  const rows = db.prepare("SELECT id, project_id, state, pm_thread_id, updated_at FROM lane_pilot_run WHERE closed_at IS NULL AND state IN ('running', 'blocked')")
+    .all() as Array<{ id: string; project_id: string; state: string; pm_thread_id: string | null; updated_at: number }>;
+  const closed: string[] = [];
+  for (const row of rows) {
+    signal?.throwIfAborted();
+    const limit = row.state === "running" ? STALE_RUNNING_MS : STALE_BLOCKED_MS;
+    const idle = now - Number(row.updated_at);
+    if (idle < limit) continue;
+    if (!closeRun(db, row.id, "ttl")) continue;
+    releaseActivation(db, row.project_id, row.id);
+    await cleanupRunEnvironments(bb, db, row.id);
+    const hours = Math.max(1, Math.round(idle / 3_600_000));
+    const text = row.state === "running"
+      ? `Lane Pilot: run ${row.id} stayed running for ${hours}h with no writer at work, so it is closed. Start the unfinished tasks again if they are still wanted.`
+      : `Lane Pilot: run ${row.id} stayed blocked for ${hours}h, so it is closed and the project can take another run. Start the unfinished tasks again if they are still wanted.`;
+    if (row.pm_thread_id) {
+      await bb.sdk.threads.send({ threadId: row.pm_thread_id, mode: "queue-if-active",
+        input: [{ type: "text", text, mentions: [] }] } as never).catch(() => undefined);
+    }
+    closed.push(row.id);
+  }
+  return closed;
+}
+
 /**
  * A closed run's attempt worktrees that BB made (managed environments) are archived with their threads and
  * deleted, so they do not pile up on the host. Kept while the run is open, so the owner can still read the writers.

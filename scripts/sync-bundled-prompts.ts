@@ -7,13 +7,21 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { laneSessionOverlayPrompt } from "../src/rooms/native-agent/native-agent-overlay";
 
 const file = new URL("../src/rooms/native-agent/bundled-agents.json", import.meta.url);
-const bundled = JSON.parse(readFileSync(file, "utf8")) as Record<string, { prompt: string }>;
+const bundled = JSON.parse(readFileSync(file, "utf8")) as Record<string, { prompt: string; provenance?: { file?: string; sha256?: string; bytes?: number } }>;
 let changed = 0;
 for (const [id, agent] of Object.entries(bundled)) {
   const overlay = laneSessionOverlayPrompt(id);
-  if (!overlay || agent.prompt === overlay) continue;
-  agent.prompt = overlay;
-  changed += 1;
+  if (overlay && agent.prompt !== overlay) {
+    agent.prompt = overlay;
+    changed += 1;
+  }
+  // The overlay moved to src/rooms/native-agent/; the bundled copy carries its real path (sha/bytes stay empty, as
+  // agent-profile.ts writes them: the file changes faster than a fossil hash can be trusted).
+  const provenance = agent.provenance ?? (agent.provenance = {});
+  if (provenance.file !== "src/rooms/native-agent/native-agent-overlay.ts" || provenance.sha256 !== "" || provenance.bytes !== 0) {
+    Object.assign(provenance, { file: "src/rooms/native-agent/native-agent-overlay.ts", sha256: "", bytes: 0 });
+    changed += 1;
+  }
 }
 if (changed) writeFileSync(file, `${JSON.stringify(bundled, null, 2)}\n`);
 console.log(`${changed} bundled prompt(s) updated`);

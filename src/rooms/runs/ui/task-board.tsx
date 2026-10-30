@@ -6,6 +6,7 @@ import type { z } from "zod";
 import type { rpcContract } from "../../contracts";
 import { AcceptanceCard } from "../../acceptance/ui";
 import { StageModelStats, StageStrip, WorkBreakdown, useStageStrips } from "../../work-graph/ui";
+import { useLpRpcQuery } from "../../ui-shell/ui";
 type Board = z.infer<(typeof rpcContract)["task_board"]["output"]>;
 type Card = NonNullable<z.infer<(typeof rpcContract)["task_card"]["output"]>>;
 type Item = Board["items"][number];
@@ -130,19 +131,10 @@ export function TaskBoard({ projects = [], serviceProjectIds = [], initialProjec
   const [doneHours, setDoneHours] = useState(24);
   const [drills, setDrills] = useState(false);
   const [query, setQuery] = useState("");
-  const [items, setItems] = useState<Item[] | null>(null);
-  const [offline, setOffline] = useState(false);
   const [open, setOpen] = useState<Item | null>(null);
-  useEffect(() => {
-    let alive = true;
-    setItems(null);
-    setOffline(false);
-    const read = () => void rpc.call("task_board", { ...(projectId === "all" ? {} : { projectId }), doneHours })
-      .then((result) => { if (alive) { setItems(result.items); setOffline(false); } }).catch(() => { if (alive) setOffline(true); });
-    read();
-    const timer = setInterval(read, POLL_MS);
-    return () => { alive = false; clearInterval(timer); };
-  }, [rpc, projectId, doneHours]);
+  const board = useLpRpcQuery("task_board", { ...(projectId === "all" ? {} : { projectId }), doneHours }, { pollMs: POLL_MS });
+  const items = (board.data as { items?: Item[] } | undefined)?.items ?? null;
+  const offline = board.error != null;
   const names = useMemo(() => new Map(projects.map((project) => [project.id, project.name])), [projects]);
   const service = useMemo(() => new Set(serviceProjectIds), [serviceProjectIds]);
   const projectName = (id: string | null) => (id ? names.get(id) ?? id : "—");

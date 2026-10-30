@@ -1,0 +1,72 @@
+{
+  "id": "lp.critic-edit",
+  "startedBy": "critic-edit-monthly",
+  "name": {
+    "en": "Critic edit",
+    "ru": "Правка критика"
+  },
+  "description": {
+    "en": "Once a month, for a project: read how often each critic's verdict matched the outcome, and when accuracy is under half on four or more verdicts write a prompt proposal. The proposal is stored. The trial flag lp.critic.edit.trial is on unless set off. The gate is the harness bench gate on the nightly set: it holds until that verdict, and the same 14-day deadline retires it when no verdict lands. A prompt is not changed without a passed verdict. No model is called.",
+    "ru": "Раз в месяц по проекту: смотрит, как часто вердикт каждого критика совпал с исходом, и если точность ниже половины на четырёх и более вердиктах, пишет предложение правки промпта. Предложение сохраняется. Флаг испытания lp.critic.edit.trial включён, пока его не выключат. Гейт — тот же бенч харнесса на ночном наборе: держит, пока нет вердикта, и тот же срок в 14 дней снимает испытание, если вердикта нет. Промпт без прошедшего вердикта не меняется. Модель не вызывается."
+  },
+  "not_for": [
+    "changing a critic prompt without a bench",
+    "anything a person asks in a chat: Lane Pilot starts this itself on the first day of the month"
+  ],
+  "status": "published",
+  "tags": ["critique", "night"],
+  "triggers": ["manual"],
+  "inputs": {
+    "project_id": { "type": "string" },
+    "bench": { "type": "string", "default": "", "note": "on only when a bench will score the proposal; anything else holds the trial" }
+  },
+  "outputs": {
+    "status": "held|trial|skipped|retired",
+    "detail": "string"
+  },
+  "budget": { "max_steps": 4, "max_minutes": 10 },
+  "nodes": [
+    {
+      "id": "prepare",
+      "type": "action",
+      "action": "lp.critic_edit_prepare",
+      "title": { "en": "Propose a prompt edit from calibration", "ru": "Предложить правку промпта по калибровке" },
+      "rule": "code: a proposal when a critic's calibration is low; otherwise skipped. The text is stored and no prompt is edited",
+      "out": { "status": "ready|skipped", "detail": "string", "proposal": "string" },
+      "guards": { "timeoutMin": 5 }
+    },
+    {
+      "id": "gate",
+      "type": "action",
+      "action": "lp.critic_edit_gate",
+      "title": { "en": "Hold until the nightly bench verdict", "ru": "Держать до вердикта ночного бенча" },
+      "rule": "code: judgeSharedTrial on the nightly bench. Wait and retire do not edit a prompt. Adopt lifts the hold and still does not write the prompt in this node",
+      "out": { "status": "held|trial|skipped", "detail": "string" },
+      "guards": { "timeoutMin": 5 }
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": { "status": "gate.status", "detail": "gate.detail" }
+    }
+  ],
+  "edges": [
+    { "from": "start", "to": "prepare" },
+    { "from": "prepare", "to": "gate" },
+    { "from": "gate", "to": "done" }
+  ],
+  "test": {
+    "id": "critic-edit-1",
+    "sim": {
+      "input": { "project_id": "proj-1", "bench": "" },
+      "stubs": {
+        "prepare": { "status": "ready", "detail": "code-critique is low", "proposal": "code-critique (gemini) matched 2 of 5 outcomes.", "handoff": "ready" },
+        "gate": { "status": "held", "detail": "the trial stays off", "handoff": "held" }
+      },
+      "expect_path": ["prepare", "gate", "done"],
+      "expect_output": { "status": "held" }
+    },
+    "live": "the critic-edit-monthly cron, or a manual run of lp.critic-edit; the gate stays held while the flag is off"
+  }
+}

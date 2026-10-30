@@ -8,12 +8,12 @@ import { reopenWriterStages } from "../../runs/server";
 import { sendServiceMessage } from "../../relay/server";
 import { CONFIG_KEY as SELF_REPAIR_CONFIG_KEY, SELF_REPAIR_DEFAULTS, VERSION, readRepairRecord, readTail, setRepairHooks } from "../../self-repair/server";
 import type { SelfRepairConfig } from "../../self-repair/server";
-import { DRILL_KEY, SANDBOX_PROJECT_ID, isDrillTask, isSandboxProjectName } from "../../stability/server";
+import { DRILL_KEY, isSandboxProjectName } from "../../stability/server";
 import type { DrillOutcome } from "../../stability/server";
 import { threadUsage } from "../../usage/server";
 import { id as newId } from "../../core/server";
 import { saveVerdict } from "../../bench";
-import { benchArmStatus } from "../../bench/server";
+import { benchArmStatus, isLiveProject } from "../../bench/server";
 import { wallLogLines } from "../logs";
 import { revertMerge, type RevertHost } from "../revert";
 import { builtinWorkflow } from "../../workflow";
@@ -55,8 +55,8 @@ export function createPluginWall(ctx: ServerCore, services: Services): WallApi {
     }
     const ids = sandbox?.ids ?? new Set<string>();
     return {
-      isReal: (projectId, taskId) => projectId !== SANDBOX_PROJECT_ID && !ids.has(projectId) && !isDrillTask(taskId),
-      scopeOf: (projectId) => (benchIds.has(projectId) ? "bench" : projectId === SANDBOX_PROJECT_ID || ids.has(projectId) ? "sandbox" : "real"),
+      isReal: (projectId, taskId) => isLiveProject(projectId, null, taskId) && !ids.has(projectId),
+      scopeOf: (projectId) => (benchIds.has(projectId) ? "bench" : !isLiveProject(projectId, null, "") || ids.has(projectId) ? "sandbox" : "real"),
     };
   };
 

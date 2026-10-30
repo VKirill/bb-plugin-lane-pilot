@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { LP_ALL_PROJECTS } from "@lane-pilot/ui-kit/realtime-channel";
 import { CONTROL_H } from "@lane-pilot/ui-kit";
 import { Surface, SurfaceBody, SurfaceHeader } from "@lane-pilot/ui-kit";
-import { useLpRealtime } from "../../ui-shell/ui";
+import { useLpPoll, useLpRealtime } from "../../ui-shell/ui";
 import { WorkflowDetail, type NodePanelRenderer } from "./workflow-detail";
 import { WorkflowDraftDetail } from "./workflow-draft-detail";
 import { listDrafts, startArchitect, type DraftRow } from "./workflow-drafts";
@@ -93,11 +93,7 @@ export function WorkflowsScreen({ locale, projectId, architectProjectId = projec
     if (!openId && !openDraft) void load();
   });
   const hasActive = listing?.workflows.some((row) => row.stats.active > 0) ?? false;
-  useEffect(() => {
-    if ((!hasActive && !drafts.length) || openId || openDraft) return;
-    const timer = setInterval(() => void load(), pollMs);
-    return () => clearInterval(timer);
-  }, [hasActive, drafts.length, openId, openDraft, pollMs, load]);
+  useLpPoll(!openId && !openDraft && (hasActive || drafts.length) ? pollMs : undefined, () => void load());
 
   const buildWithArchitect = async () => {
     if (!architectProjectId) return;

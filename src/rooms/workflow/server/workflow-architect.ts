@@ -20,7 +20,7 @@ import { definitionSha256, globalWorkflowDir } from "../../storage";
 import { loadWorkflow } from "@lane-pilot/workflow-engine";
 import { configuredSetting } from "../../core/server";
 import { SPECIALIST_ROLES } from "../../critique/server";
-import { isCustomAgentId } from "../../native-agent";
+import { EMPLOYEE_IDS, isCustomAgentId, isEmployeeSpecialist } from "../../native-agent";
 import { modelCatalogOf } from "../../core/server";
 import { registerObservedTool, ToolError } from "../../core/server";
 import { stringAt } from "../../core/server";
@@ -61,7 +61,7 @@ export function realDeps(ctx: ServerCore, services: Services): ArchitectDeps {
   return {
     globalDir: () => globalWorkflowDir(),
     specialistKnown: (id) => {
-      if (SPECIALIST_ROLES.includes(id as never)) return true;
+      if (SPECIALIST_ROLES.includes(id as never) || isEmployeeSpecialist(id)) return true;
       const own = ctx.knownCustomAgentIds();
       return own ? own.has(id) : null;
     },
@@ -98,7 +98,7 @@ export function realDeps(ctx: ServerCore, services: Services): ArchitectDeps {
         const value = configuredSetting(loadProjectSettings(db, projectId, runId ? getRunSettingsScopes(db, runId) : []), QA_HOST_KEY);
         return typeof value === "string" && value.trim() ? value.trim() : null;
       },
-      specialists: async () => [...SPECIALIST_ROLES, ...Object.entries(await ctx.ownedAgents()).filter(([id, row]) => isCustomAgentId(id) && !row.compiledCorrupt).map(([id]) => id)],
+      specialists: async () => [...new Set([...SPECIALIST_ROLES, ...EMPLOYEE_IDS, ...Object.entries(await ctx.ownedAgents()).filter(([id, row]) => isCustomAgentId(id) && !row.compiledCorrupt).map(([id]) => id)])],
       models: async () => {
         const read = await Promise.race([catalog.get(), new Promise<null>((resolveTimeout) => setTimeout(() => resolveTimeout(null), 6_000))]);
         if (!read) return null;
@@ -358,7 +358,7 @@ export function mountWorkflowArchitect(ctx: ServerCore, services: Services, arch
     name: "lane_pilot_workflow_draft_create",
     description: "Start a draft of a workflow (a chain of agent, action, human and code steps) that you build and test before it is published.",
     instructions: "Use from the Workflow architect chat (or a PM chat when the owner asks for a repeatable chain) after you know the goal. `name` and `description` are one string or {en, ru}; `scope` is project (stored in the project's own .lane-pilot/workflows) or global (the owner's ~/.lane-pilot/workflows, usable in every project). Returns the draftId: pass it to every other lane_pilot_workflow_draft_* tool. The open Workflows tab shows the graph and redraws after each patch.",
-    parameters: z.object({ name: bilingual, description: bilingual, scope: z.enum(["global", "project"]).default("global"), workflowId: z.string().regex(/^[a-z][a-z0-9.-]{0,47}$/).optional() }).strict(),
+    parameters: z.object({ name: bilingual, description: bilingual, scope: z.enum(["global", "project"]).default("global"), workflowId: z.string().regex(/^[a-z0-9][a-z0-9.-]{0,47}$/).optional() }).strict(),
     execute: async (params, context) => { const c = needChat(context); return json(architect.create({ projectId: c.projectId, threadId: c.threadId, ...params })); },
   });
 

@@ -6,7 +6,7 @@ type Db = Pick<Database.Database, "prepare">;
 
 type Row = {
   task_id: string; run_id: string; project_id: string; contract_json: string; initial_head_sha: string; base_sha: string | null;
-  attempt_id: string; attempt_no: number;
+  attempt_id: string; attempt_no: number; accepted_at: number;
 };
 
 /** A check that needs the network, a login or the machine outside the checkout cannot be replayed on a clone. */
@@ -45,7 +45,7 @@ export type CandidateInput = {
  * `rejected` counts the reasons so the report can say where the 843 went.
  */
 export function loadCandidates(db: Db, input: CandidateInput): { candidates: Candidate[]; rejected: Rejection[]; counts: Record<string, number> } {
-  const rows = db.prepare(`SELECT t.id AS task_id, t.run_id, r.project_id, t.contract_json, g.initial_head_sha, g.base_sha, a.id AS attempt_id, a.attempt_no
+  const rows = db.prepare(`SELECT t.id AS task_id, t.run_id, r.project_id, t.contract_json, g.initial_head_sha, g.base_sha, a.id AS attempt_id, a.attempt_no, a.updated_at AS accepted_at
     FROM lane_pilot_task t
     JOIN lane_pilot_run r ON r.id = t.run_id
     JOIN lane_pilot_task_git_base g ON g.task_id = t.id
@@ -71,7 +71,7 @@ export function loadCandidates(db: Db, input: CandidateInput): { candidates: Can
     if (why) { reject(row.task_id, why); continue; }
     candidates.push({
       taskId: row.task_id, runId: row.run_id, projectId: row.project_id, projectName: project.name, attemptId: row.attempt_id, attemptNo: row.attempt_no,
-      hard: row.attempt_no > 1, risk: contract.risk as Risk, area: typeof contract.area === "string" ? contract.area : "", repoPath: cwd, hostId,
+      hard: row.attempt_no > 1, risk: contract.risk as Risk, area: typeof contract.area === "string" ? contract.area : "", repoPath: cwd, hostId, acceptedAt: row.accepted_at,
       initialHeadSha: row.initial_head_sha, baseSha: row.base_sha, contract,
     });
   }

@@ -152,6 +152,9 @@ export const SETTING_META: Record<string, SettingMeta> = {
   
   "run.gate": { label: "settingRunGate", help: "settingRunGateHelp" },
   "checks.require_red_on_base": { label: "field_s506", help: "reason_s506" },
+  "writer.best_of": { label: "field_s507", help: "reason_s507" },
+  "writer.best_of.token_budget": { label: "field_s508", help: "reason_s508" },
+  "writer.best_of.slot_cap": { label: "field_s509", help: "reason_s509" },
   "wall.enabled": { label: "field_s478", help: "reason_s478" },
   "wall.max_classes_per_night": { label: "field_s479", help: "reason_s479", unit: "fieldUnitClasses" },
   "wall.rounds_per_night": { label: "field_s480", help: "reason_s480", unit: "fieldUnitRounds" },

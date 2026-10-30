@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
-import { useRpc } from "@get-bb/plugin-sdk/app";
+import { useState } from "react";
+
 import type { rpcContract } from "../../contracts";
 import type { StageCell, TaskSummary } from "../logic";
 import { fill, stageName, stageState } from "./format";
+import { useLpRpcQuery } from "../../ui-shell/ui";
 
 const COLOR: Record<StageCell["state"], string> = {
   passed: "bg-[var(--color-success,#16a34a)]",
@@ -35,17 +36,5 @@ const POLL_MS = 15_000;
 
 /** The cells of the given tasks (`runId:taskId`), read again every 15 s while the list is open. */
 export function useStageStrips(keys: ReadonlyArray<{ runId: string; taskId: string }>): Record<string, Strip> {
-  const rpc = useRpc<typeof rpcContract>();
-  const [strips, setStrips] = useState<Record<string, Strip>>({});
-  const signature = keys.map((key) => `${key.runId}:${key.taskId}`).join("|");
-  useEffect(() => {
-    if (!keys.length) return;
-    let alive = true;
-    const read = () => void rpc.call("work_graph_strips", { keys: keys.slice(0, 300).map(({ runId, taskId }) => ({ runId, taskId })) })
-      .then((result) => { if (alive) setStrips(result as Record<string, Strip>); }).catch(() => undefined);
-    read();
-    const timer = setInterval(read, POLL_MS);
-    return () => { alive = false; clearInterval(timer); };
-  }, [rpc, signature]); // eslint-disable-line react-hooks/exhaustive-deps
-  return strips;
+  return (useLpRpcQuery("work_graph_strips", { keys: keys.slice(0, 300).map(({ runId, taskId }) => ({ runId, taskId })) }, { pollMs: POLL_MS, enabled: keys.length > 0 }).data ?? {}) as Record<string, Strip>;
 }

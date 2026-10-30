@@ -7,7 +7,7 @@ import { saveBlockedBy, type BlockedBy } from "../../runs/server";
 import { relayFor } from "../../relay/server";
 import type { HelperPolicySnapshot } from "../../native-agent";
 import { writerExecutionSelection } from "@lane-pilot/models";
-import { actionableFindings, buildCandidateEvidence, codeCritiqueSource, codeRepairPrompt, findingsHash, nextRepairAction, parseCodeCritiqueSettings, parseWriterRepairReply, repairLedgerFromResult, sameUnresolvedFindings, sameWriterIdentity, settingsFromFrozenPolicy, shouldRequestRepair } from "../../critique";
+import { actionableFindings, advisoryFeedback, buildCandidateEvidence, codeCritiqueSource, codeRepairPrompt, findingsHash, nextRepairAction, parseCodeCritiqueSettings, parseWriterRepairReply, repairLedgerFromResult, sameUnresolvedFindings, sameWriterIdentity, settingsFromFrozenPolicy, shouldRequestRepair } from "../../critique";
 import type { WriterIdentity } from "../../critique";
 import { CODE_CRITIC_DEFAULT_SETTING, QUALITY_MODE_SETTING, applyCodeCriticDefault, applyQualityMode, resolveCodeCriticDefault, resolveQualityMode } from "../../critique";
 import { loadCriticCodeDefault } from "./critic-override";
@@ -20,7 +20,7 @@ import { stringAt } from "../../core/server";
 import { wasAnsweredByDefault } from "./question-default";
 import { needsHumanQuestion, outputText, providerLimitNotice, providerStreamError, WRITER_STREAM_ERROR, writerContextBlocks, writerSetupLines } from "./writer-task";
 import { isLiveDecision } from "../live-folder";
-import { TASK_WORDS_KEY, acceptanceProofGap, isMainfixTask, landingWordGap, ownerWordsOn, questionsFromFile, referenceTestEdits, taskWordKey, writerMarkers } from "../../tasks";
+import { TASK_WORDS_KEY, acceptanceProofGap, isMainfixTask, landingWordGap, ownerWordsOn, questionsFromFile, referenceTestEdits, taskWordKey, testFitFindings, writerMarkers } from "../../tasks";
 import type { TaskWord } from "../../tasks";
 import type { StageId } from "../../tasks";
 import { readCheckRun } from "../../tasks/server";
@@ -41,6 +41,8 @@ import { REPLAY_CHECK_FAILED, WRITER_SILENT_REASON, beginChecks, checksMoved, fa
 import { bookkeepingSetting } from "@lane-pilot/settings-catalog";
 import { attemptMergeMessage, clearMergeIntent, recordMergeIntent } from "../../verification/server";
 import { sendServiceMessage } from "../../relay/server";
+import { judgeRulesOnDiff, ruleViolationRemark } from "../../learning";
+import { jev } from "@lane-pilot/jev";
 import { runOnHost } from "@lane-pilot/host-calls";
 import { pollPause } from "@lane-pilot/kit";
 
@@ -322,6 +324,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
       const criticDefault = resolveCodeCriticDefault(projectSettings[CODE_CRITIC_DEFAULT_SETTING], taskCriticDefault);
       const liveCritiquePolicy = frozenPolicy ?? parseCodeCritiqueSettings(applyCodeCriticDefault(applyQualityMode(projectSettings,qualityMode),qualityMode,input.task.risk,criticDefault));
       const baselineHashes = Object.fromEntries(input.dirtBefore.map((row) => [row.path, row.sha256 || null]));
+      let lastPatches: Record<string, string> | undefined;
       const captureEvidence = async () => {
         const dirt = await services.workspaceDirt(input.config, input.task.project_cwd, input.runId);
         const byPath = new Map((dirt.ok ? dirt.snapshots : []).map((row) => [row.path, row.sha256 || null]));
@@ -333,12 +336,13 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
           }).catch(() => ({ content:null }));
           files.push({ path, content:typeof file.content === "string" ? file.content : null });
         }
+        lastPatches = await candidatePatches(bb, db, { runId:input.runId, taskId:input.taskId, hostId:input.config.hostId, cwd:input.task.project_cwd, paths:candidate.produced ?? [] });
         return buildCandidateEvidence({
           produced:candidate.produced ?? [],
           hashes,
           baselineHashes,
           files,
-          patches:await candidatePatches(bb, db, { runId:input.runId, taskId:input.taskId, hostId:input.config.hostId, cwd:input.task.project_cwd, paths:candidate.produced ?? [] }),
+          patches:lastPatches,
           verification:(candidate.verification ?? []).map((row) => ({
             command:row.command, exitCode:row.exitCode,
             stdout:row.stdout, stderr:row.stderr,
@@ -350,9 +354,20 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
           dirtReason:dirt.ok ? undefined : dirt.reason,
         });
       };
+      let criticNotes = "";
+      const keepAdvisory = (row: { settings?: { mode?: string }; parsed?: Parameters<typeof advisoryFeedback>[0] } | undefined) => {
+        if (row?.settings?.mode !== "advisory" || !row.parsed) return;
+        const text = advisoryFeedback(row.parsed);
+        if (text) criticNotes = text;
+      };
       if (liveCritiquePolicy.enabled) {
       for (;;) {
         const evidence = await captureEvidence();
+        // abide-style: the accepted writer rules against this diff, before the critic. A break is a remark on the
+        // writer's repair turn, never a block; shadow (the default) only records what it would have said.
+        const ruleRemark = ruleViolationRemark(await judgeRulesOnDiff(jev(), db, input.projectId,
+          Object.values(lastPatches ?? {}).join("\n"),
+          { projectId:input.projectId, runId:input.runId, subject:input.taskId, settings:projectSettings }).catch(() => []));
         const ledger = repairLedgerFromResult(listStageReceipts(db, input.runId, input.taskId).find((row) => row.stageId === "code-critique")?.result);
         if (ledger?.policy) frozenPolicy = ledger.policy;
         if (ledger?.repairRound) repairRound = Math.max(repairRound, ledger.repairRound);
@@ -364,7 +379,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
             workflow:pipelineWriterStep(db, input.runId, input.taskId) ?? undefined,
           });
           if (recritique.policy) frozenPolicy = recritique.policy;
-          if (recritique.allowed) { review = recritique.review; approvedArtifact = evidence.artifactRevisionSha256; break; }
+          if (recritique.allowed) { keepAdvisory(recritique); review = recritique.review; approvedArtifact = evidence.artifactRevisionSha256; break; }
           recordGateEvaluation(db,{projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"rejected",
             attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{writerStatus:"code_critique_blocked",reason:recritique.reason}});
           transitionAttempt(db, input.attemptId, "blocked", { reason:recritique.reason });
@@ -422,7 +437,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
           workflow:pipelineWriterStep(db, input.runId, input.taskId) ?? undefined,
         });
         if (critique.policy) frozenPolicy = critique.policy;
-        if (critique.allowed) { review = critique.review; approvedArtifact = evidence.artifactRevisionSha256; break; }
+        if (critique.allowed) { keepAdvisory(critique); review = critique.review; approvedArtifact = evidence.artifactRevisionSha256; break; }
         const parsed = critique.parsed;
         const critiqueSettings = frozenPolicy ? settingsFromFrozenPolicy(frozenPolicy) : critique.settings;
         if (!parsed || !critiqueSettings || !shouldRequestRepair({ settings:critiqueSettings, result:parsed, round:repairRound })) {
@@ -533,11 +548,11 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
             transitionAttempt(db, input.attemptId, "blocked", { reason });
             return { status:"blocked", reason, attemptId:input.attemptId, writerThreadId };
           }
-          const repairPrompt = codeRepairPrompt({
+          const repairPrompt = [ruleRemark, codeRepairPrompt({
             task:input.task, findings:frozenFindings, agent:dispatch.agent,
             setupLines:writerSetupLines(isLiveDecision(bound.workspace_decision)),
             contextBlocks:writerContextBlocks(input.task, dispatch.memoryText, dispatch.executionPacket, dispatch.pmReadContext, dispatch.rulesText ?? ""),
-          });
+          })].filter(Boolean).join("\n\n");
           const environment = bound.environment_id
             ? { type:"reuse" as const, environmentId:bound.environment_id }
             : { type:"host" as const, hostId:input.config.hostId, workspace:{ type:"unmanaged" as const, path:writerSnapshot.workspacePath } };
@@ -634,10 +649,10 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
         continue;
       }
       const confirm = await captureEvidence();
-      if (confirm.truncated || !approvedArtifact || confirm.artifactRevisionSha256 !== approvedArtifact) {
-        const reason = confirm.truncated
-          ? `code_critique_evidence_unknown:${confirm.truncateReason ?? "truncated"}`
-          : "code_critique_stale_revision";
+      // A packet the critic could not read is a skipped receipt (runCodeCritique) and does not stop the writer.
+      // A revision that moved after the critique still does.
+      if (!confirm.truncated && (!approvedArtifact || confirm.artifactRevisionSha256 !== approvedArtifact)) {
+        const reason = "code_critique_stale_revision";
         recordGateEvaluation(db,{projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"rejected",
           attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{writerStatus:"code_critique_blocked",reason}});
         transitionAttempt(db, input.attemptId, "blocked", { reason });
@@ -657,25 +672,47 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
         transitionAttempt(db, input.attemptId, "validation_failed", { reason:planFact.refusal });
         return { status:"validation_failed", reason:planFact.refusal, output:candidate.output, produced:candidate.produced, verification:candidate.verification, attemptId:input.attemptId, writerThreadId };
       }
-      // Approach and lesson markers, and the reference-test edit trace (src/rooms/tasks/rails.ts): what the writer says it did and learned,
-      // and which tests that existed before the attempt it changed. Kept for the window's task screen and the critic (not a gate event: an accept is counted once); they warn, they do not block.
+      // Approach and lesson markers warn. A weakened test (test_fit) blocks acceptance; any other edit of a test that already existed stays a warning.
       const markers = writerMarkers(`${candidate.output ?? ""}\n${answer}`);
       const testEdits: string[] = [];
+      const fitFiles: Array<{ path:string; before:string | null; after:string | null }> = [];
+      const fitAttempt = getAttempt(db, input.attemptId);
+      const basePathForTests = taskBasePath(db, input.runId, input.taskId);
+      // ponytail: the first 400 lines only. A deletion past that line is missed; raise the cap if a real test file is longer.
+      const readFit = (cwd:string | null | undefined, path:string) => cwd
+        ? host.call("readBoundedFile", { requestedHostId:input.config.hostId, projectCwd:cwd, relativePath:path, offset:0, maxLines:400 }, { hostId:input.config.hostId, timeoutMs:10_000 }).then((file) => file.content, () => null)
+        : Promise.resolve(null);
       for (const path of referenceTestEdits((candidate.produced ?? []).map((path) => ({ path, status:"M" }))).slice(0, 20)) {
-        const basePathForTests = taskBasePath(db, input.runId, input.taskId);
-        const existed = basePathForTests ? await host.call("readBoundedFile", { requestedHostId:input.config.hostId, projectCwd:basePathForTests, relativePath:path, offset:0, maxLines:1 }, { hostId:input.config.hostId, timeoutMs:10_000 }).then(() => true, () => false) : false;
-        if (existed) testEdits.push(path);
+        const before = await readFit(basePathForTests, path);
+        if (before === null) continue;
+        testEdits.push(path);
+        fitFiles.push({ path, before, after: await readFit(fitAttempt?.workspace_path, path) });
+      }
+      for (const path of (candidate.produced ?? []).filter((path) => /(^|\/)package\.json$|\.(?:sh|ya?ml)$/.test(path)).slice(0, 10)) {
+        fitFiles.push({ path, before: await readFit(basePathForTests, path), after: await readFit(fitAttempt?.workspace_path, path) });
+      }
+      const fitHits = testFitFindings(fitFiles);
+      if (fitHits.length) {
+        const reason = `test_fit: ${fitHits.slice(0, 5).map((hit) => `${hit.path}: ${hit.evidence}`).join("; ")}`.slice(0, 500);
+        recordGateEvaluation(db,{projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"rejected",
+          attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{writerStatus:"test_fit",reason}});
+        transitionAttempt(db, input.attemptId, "validation_failed", { reason });
+        return { status:"validation_failed", reason, output:candidate.output, produced:candidate.produced, verification:candidate.verification, attemptId:input.attemptId, writerThreadId };
       }
       const markerWarnings = [
         ...(!markers.approach ? ["the report has no APPROACH line"] : []),
         ...(!markers.lesson && !markers.noLessonReason ? ["the report has no LESSON line (a lesson, or none with the reason)"] : []),
         ...(testEdits.length ? [`the writer changed tests that existed before the attempt (reference tests): ${testEdits.join(", ")} — the critic checks they were not weakened`] : []),
       ];
+      if (criticNotes) {
+        markerWarnings.push(criticNotes);
+        void sendServiceMessage(bb, { threadId: writerThreadId, senderThreadId: input.pmThreadId, text: criticNotes }).catch(() => undefined);
+      }
       if (markerWarnings.length) candidate.warnings = [...(candidate.warnings ?? []), ...markerWarnings];
       // The approach note the window's task screen shows (the gate keeps only the hash of its summary).
       await bb.storage.kv.set(`lp.task.approach:${input.runId}:${input.taskId}`, { approach:markers.approach, lesson:markers.lesson, noLessonReason:markers.noLessonReason, referenceTestEdits:testEdits, at:Date.now() } as never).catch(() => undefined);
       // Stage questions from files and the execution checkpoint: the task folder's QUESTIONS.md and CHECKPOINT.md, read from the attempt's copy.
-      const attemptRow = getAttempt(db, input.attemptId);
+      const attemptRow = fitAttempt;
       const folderOf = (name:string) => `.agents/plans/items/${input.taskId}/${name}`;
       const readTaskFile = async (name:string) => attemptRow?.workspace_path ? await host.call("readBoundedFile", { requestedHostId:input.config.hostId, projectCwd:attemptRow.workspace_path, relativePath:folderOf(name), offset:0, maxLines:200 }, { hostId:input.config.hostId, timeoutMs:10_000 }).then((file) => file.content, () => null) : null;
       const questionsText = await readTaskFile("QUESTIONS.md");

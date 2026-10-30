@@ -14,6 +14,8 @@ describe("bounded emergency writer policy", () => {
     expect(emergencyFallbackDecision({state:"timeout",stopConfirmed:false}).run).toBe(false);
     expect(emergencyFallbackDecision({state:"timeout",stopConfirmed:true})).toEqual({run:true,reason:"primary_timeout_stopped"});
     expect(emergencyFallbackDecision({state:"spawn_rejected",reason:"writer_provider_unavailable:codex"}).run).toBe(true);
+    expect(emergencyFallbackDecision({state:"validation_failed",reason:"verification failed (npm test): boom",checkEscalation:true})).toEqual({run:true,reason:"repeated_check"});
+    expect(emergencyFallbackDecision({state:"validation_failed",reason:"verification failed (npm test): boom"}).run).toBe(false);
     expect(emergencyFallbackDecision({state:"spawn_rejected",reason:"execution_packet_failed:missing"}).run).toBe(false);
   });
 

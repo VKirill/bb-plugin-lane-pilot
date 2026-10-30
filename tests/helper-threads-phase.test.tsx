@@ -102,7 +102,7 @@ describe("Helper chips & panel phase rendering", () => {
     const panelAction = app.threadPanelActions.find((a) => a.id === "lane-helper-thread");
     if (!panelAction) throw new Error("missing panel action");
 
-    const slot = renderSlot(panelAction, { threadId: "thr_pm", params: {} }, {
+    const slot = renderSlot(panelAction, { threadId: "thr_pm", params: {}, environment: null }, {
       context: { projectId: "proj_1", threadId: "thr_pm" },
       rpc: {
         list_helper_threads: () => ({
@@ -115,7 +115,7 @@ describe("Helper chips & panel phase rendering", () => {
     });
 
     await waitFor(() => expect(slot.getByTestId("helper-panel-list")).toBeTruthy());
-    expect(slot.getByText("Writer: Task 1 (приёмка)")).toBeTruthy();
+    await waitFor(() => expect(slot.getByText("Writer: Task 1 (приёмка)")).toBeTruthy());
     expect(slot.getByTestId("helper-panel-queue").textContent).toContain("task-queued-1");
     slot.lifecycle.unmount();
   });
@@ -124,7 +124,7 @@ describe("Helper chips & panel phase rendering", () => {
     const app = await loadPluginApp(() => import("../app"));
     const panelAction = app.threadPanelActions.find((a) => a.id === "lane-helper-thread");
     if (!panelAction) throw new Error("missing panel action");
-    const slot = renderSlot(panelAction, { threadId: "thr_pm", params: {} }, {
+    const slot = renderSlot(panelAction, { threadId: "thr_pm", params: {}, environment: null }, {
       context: { projectId: "proj_1", threadId: "thr_pm" },
       rpc: {
         list_helper_threads: () => ({

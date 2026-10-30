@@ -1,0 +1,110 @@
+{
+  "anamnesis.fragment": {
+    "fingerprint": "1c32c18a5144081b",
+    "thresholds": {
+      "min_kind_p": 0.45,
+      "min_margin": 0.1,
+      "min_about": 0.5
+    }
+  },
+  "anamnesis.match": {
+    "fingerprint": "ee71c9c7ebff8155",
+    "thresholds": {
+      "min_same": 0.65,
+      "min_contradicts": 0.65
+    }
+  },
+  "failure.class": {
+    "fingerprint": "797647fdcc714323",
+    "thresholds": {
+      "min_p": 0.7,
+      "min_margin": 0.3
+    }
+  },
+  "intake.path_class": {
+    "fingerprint": "6451d3fb458f39f5",
+    "thresholds": {
+      "min_p": 0.55
+    }
+  },
+  "intake.weight": {
+    "fingerprint": "046ef93b32ab157f",
+    "thresholds": {
+      "min_p": 0.55
+    }
+  },
+  "invoice.check": {
+    "fingerprint": "6e076601f6748e5b",
+    "thresholds": {
+      "min_same": 0.8,
+      "max_different": 0.25
+    }
+  },
+  "learning.complexity": {
+    "fingerprint": "cea74f6229fdcad1",
+    "thresholds": {}
+  },
+  "learning.owner_message": {
+    "fingerprint": "977829ea8f0f72ca",
+    "thresholds": {
+      "route_low": 0.35,
+      "route_high": 0.6
+    }
+  },
+  "learning.owner_question": {
+    "fingerprint": "b4dd4e196e12f794",
+    "thresholds": {
+      "min_p": 0.6
+    }
+  },
+  "learning.pm_rule_relevance": {
+    "fingerprint": "85f2f9033068cc0b",
+    "thresholds": {
+      "min_p": 0.06
+    }
+  },
+  "learning.same_as": {
+    "fingerprint": "94c9c3ce260b4f2b",
+    "thresholds": {
+      "min_p": 0.6
+    }
+  },
+  "learning.unkept_promise": {
+    "fingerprint": "140faf35bbec9f3c",
+    "thresholds": {
+      "min_p": 0.6
+    }
+  },
+  "output.guard": {
+    "fingerprint": "abdb5523f3aa144a",
+    "thresholds": {
+      "block_secret": 0.85,
+      "block_injection": 0.9
+    }
+  },
+  "route.workflow": {
+    "fingerprint": "3085640c6e374fb8",
+    "thresholds": {
+      "min_p": 0.6,
+      "min_margin": 0.25,
+      "max_none": 0.3,
+      "max_broad": 0.9,
+      "broad_clarify": 0.95,
+      "min_stated": 0.7,
+      "min_input_p": 0.6
+    }
+  },
+  "selfrepair.group": {
+    "fingerprint": "dcd6e1691d6e6eaa",
+    "thresholds": {
+      "min_p": 0.75,
+      "min_margin": 0.3
+    }
+  },
+  "writer.model": {
+    "fingerprint": "a0366313f071476f",
+    "thresholds": {
+      "min_p": 0.45
+    }
+  }
+}

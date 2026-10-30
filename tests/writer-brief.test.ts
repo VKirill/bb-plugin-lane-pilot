@@ -3,7 +3,8 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { taskV2Schema } from "../src/rooms/contracts";
 import { compactContract, pathAnchors, pmReadBrief, writerMemory } from "../src/rooms/writer/writer-brief";
-import { needsHumanQuestion, stickyTurnPrompt, writerPrompt, previousAttemptBrief } from "../src/rooms/writer/server/writer-task";
+import { renderThreadEvents } from "@lane-pilot/harness-core";
+import { needsHumanQuestion, stickyTurnPrompt, writerPrompt, previousAttemptBrief, attemptFeedback } from "../src/rooms/writer/server/writer-task";
 
 // The real brief SelfyStudio's writer got for gc-pages-polish-2 on 2026-10-02 (4130 tokens, 64% memory).
 const original = readFileSync(join(__dirname, "fixtures/writer-brief-gc-pages-polish-2.md"), "utf8");
@@ -230,6 +231,27 @@ describe("writer brief", () => {
     expect(answered).toMatch(/→ change the files the contract's expected_outputs name/);
     const silent = previousAttemptBrief({ status:"empty_output", reason:"writer returned no output", verification:[], produced:[] });
     expect(silent).toMatch(/→ /);
+  });
+
+  it("the third attempt's feedback is the digest, not the raw trace", () => {
+    const sentinel = `RAW_TRACE_SENTINEL_${"z".repeat(8_000)}`;
+    const events = [
+      { type: "item/completed", seq: 1, data: { item: { type: "fileChange", status: "completed", changes: [{ path: "src/button.ts", kind: "update" }] } } },
+      { type: "item/completed", seq: 2, data: { item: { type: "commandExecution", command: "npx vitest run tests/button.test.ts", status: "failed", exitCode: 1, aggregatedOutput: sentinel } } },
+    ];
+    const raw = renderThreadEvents(events);
+    expect(raw).toContain("RAW_TRACE_SENTINEL_");
+    expect(raw).toContain("[ACTION]");
+    const third = attemptFeedback(3, events, raw);
+    expect(third).toContain("Did:");
+    expect(third).toContain("Failed:");
+    expect(third).toContain("Check: npx vitest run tests/button.test.ts");
+    expect(third).toContain("Files:");
+    expect(third).toContain("src/button.ts");
+    expect(third).not.toContain(sentinel);
+    expect(third).not.toContain("[ACTION]");
+    expect(third.length).toBeLessThanOrEqual(2_000);
+    expect(attemptFeedback(2, events, raw)).toBe(raw);
   });
 
   it("no write path stores a credential or an instruction override", async () => {

@@ -8,3 +8,7 @@ export { learningFor, mountLearning } from "./service";
 export { memoryUnanswered } from "./unanswered";
 export type { MemoryUnanswered } from "./unanswered";
 export { pmResumeInstructions, pmRulesOf, pmRulesPromptBlock } from "./pm-rules";
+export { judgeRulesOnDiff, ruleViolationRemark } from "./rule-diff";
+export { ownerMessageJudgment, sameAsJudgment } from "./judgment";
+export { pmRuleRelevance } from "./pm-rules";
+export { unkeptPromise, ownerQuestion, complexity } from "./signals";

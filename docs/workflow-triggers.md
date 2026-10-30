@@ -1,3 +1,15 @@
+---
+title: Workflow triggers
+type: component
+created: 2026-10-30
+updated: 2026-10-30
+status: active
+confidence: medium
+tags: [workflow, triggers]
+sources:
+  - src/rooms/workflow/server/workflow-triggers.ts
+---
+
 # Workflow triggers (W9)
 
 A workflow starts four ways. Every one of them goes through the same checks as the PM's `lane_pilot_run_workflow`: the workflow

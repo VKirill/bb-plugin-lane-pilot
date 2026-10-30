@@ -4,4 +4,9 @@ export { CARD_BODY, CARD_HEAD, COEXISTENCE_MANAGER_KEYS, COEXISTENCE_VALUE_KEYS,
 export type { ScreenPayload, StageSummary } from "./page-model";
 export { Pill } from "./pill";
 export type { LpPage } from "./use-lp-page";
+export { openThreadPanelTab, useOpenThreadPanel } from "./open-thread-panel";
+export type { OpenThreadPanelOptions } from "./open-thread-panel";
 export { useLpRealtime } from "./use-lp-realtime";
+export { useOwnerWaitingBadge } from "./owner-badge";
+export { useLpPoll, useLpRpcQuery } from "./use-lp-rpc-query";
+export type { LpRpcQueryState } from "./use-lp-rpc-query";

@@ -274,6 +274,10 @@ async function setup(critiqueOutput:string, browserQaResult?:Record<string,unkno
           return [{pluginId:"provider-codex"}];
         },
         callRpc:async ({pluginId,method,input}:{pluginId:string;method:string;input?:unknown})=>{
+          if(pluginId==="bb--git"){
+            if(method==="workspaceStatus") return {outcome:"available",workspace:{branch:{currentBranch:"lane-pilot-run",defaultBranch:"main"}}};
+            if(method==="diff") {expect(input).toMatchObject({target:{type:"uncommitted"}});return {outcome:"available",diff:{diff:"diff --git a/note.txt b/note.txt",files:"note.txt",shortstat:"1 file changed",truncated:false}};}
+          }
           if(pluginId==="concurrency-limit"){
             if(!concurrencyPlugin) throw new Error("plugin concurrency-limit is not enabled");
             concurrencyCalls.push(method);
@@ -314,8 +318,6 @@ async function setup(critiqueOutput:string, browserQaResult?:Record<string,unkno
           }
           return {id:environmentId,hostId:config.hostId,path:config.writerWorkspacePath,status:"ready",managed:true,workspaceProvisionType:"managed-worktree"} as never;
         },
-        status:async ()=>({outcome:"available",workspace:{branch:{currentBranch:"lane-pilot-run",defaultBranch:"main"}}}) as never,
-        diff:async (args)=>{expect(args).toMatchObject({target:"uncommitted"});return {outcome:"available",diff:{diff:"diff --git a/note.txt b/note.txt",files:"note.txt",shortstat:"1 file changed",truncated:false}} as never;},
       },
       projects:{
         get:async ({ projectId:id }) => ({ id, name:id, sources:[] }),
@@ -2307,15 +2309,16 @@ describe("stage → native writer → receipt", () => {
     await harness.lifecycle.dispose();
   },20_000);
 
-  it("blocks when candidate evidence hashes are missing",async()=>{
+  it("a missing evidence hash skips the code critic and does not block the writer",async()=>{
     const {db,harness}=await setupCode([
       [],[],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt"}],[{path:"note.txt"}],
     ]);
     await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,objective:"Проверка диспетча",plan:"Write a verified fixture",task},{threadId:pmThreadId,projectId});
     const waited=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:5},{threadId:pmThreadId,projectId})));
-    expect(waited.state).toBe("blocked");
-    expect(String(waited.reason)).toContain("code_critique_evidence_unknown");
-    expect(listStageReceipts(db,"stage-run",task.id).find((row)=>row.stageId==="code-critique")?.state).toBe("blocked");
+    expect(waited.state).toBe("accepted");
+    const receipt=listStageReceipts(db,"stage-run",task.id).find((row)=>row.stageId==="code-critique");
+    expect(receipt?.state).toBe("skipped");
+    expect(receipt?.reason).toContain("code_critique_evidence_unknown");
     await harness.lifecycle.dispose();
   },20_000);
 
@@ -2459,15 +2462,16 @@ describe("stage → native writer → receipt", () => {
     await harness.lifecycle.dispose();
   },20_000);
 
-  it("blocks when host-read bytes do not match the captured dirt hash",async()=>{
-    const {harness}=await setupCode([
+  it("a host-read hash mismatch skips the code critic and does not block the writer",async()=>{
+    const {db,harness}=await setupCode([
       [],[],[{path:"note.txt",sha256:"0".repeat(64)}],[{path:"note.txt",sha256:"0".repeat(64)}],[{path:"note.txt",sha256:"0".repeat(64)}],
     ]);
     await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,objective:"Проверка диспетча",plan:"Write a verified fixture",task},{threadId:pmThreadId,projectId});
     const waited=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:5},{threadId:pmThreadId,projectId})));
-    expect(waited.state).toBe("blocked");
-    expect(String(waited.reason)).toContain("code_critique_evidence_unknown");
-    expect(String(waited.reason)).toContain("content_hash_mismatch");
+    expect(waited.state).toBe("accepted");
+    const receipt=listStageReceipts(db,"stage-run",task.id).find((row)=>row.stageId==="code-critique");
+    expect(receipt?.state).toBe("skipped");
+    expect(receipt?.reason).toContain("content_hash_mismatch");
     await harness.lifecycle.dispose();
   },20_000);
 

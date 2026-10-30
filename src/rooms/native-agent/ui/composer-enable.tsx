@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState } from "react";
-import { useComposer, useComposerView, useRpc } from "@get-bb/plugin-sdk/app";
+import { useComposer, useRpc } from "@get-bb/plugin-sdk/app";
 import type { rpcContract } from "../../contracts";
-import { t, detectLocale, setLocaleOverride } from "@lane-pilot/i18n";
+import { t, detectLocale, setLocaleOverride, type I18nKey } from "@lane-pilot/i18n";
 import { agentKind, composerAgentLabel, type PickableAgent } from "../agent-display";
 import { Button } from "@lane-pilot/ui-kit";
 import { Label } from "@lane-pilot/ui-kit";
 import { Popover, PopoverContent, PopoverTrigger } from "@lane-pilot/ui-kit";
 import { Switch } from "@lane-pilot/ui-kit";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@lane-pilot/ui-kit";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@lane-pilot/ui-kit";
 import { CONTROL_H } from "@lane-pilot/ui-kit";
 import {
   activationDisabledPredicate,
@@ -23,6 +23,34 @@ import { takeArchitectLaunch } from "../../workflow/ui";
 
 /** The «Без агента» row of the agent dropdown (a Select item cannot have an empty value). */
 const NO_AGENT = "__none__";
+
+const DOMAIN_ORDER = ["design", "copy", "seo", "video", "3d", "games", "visual", "social", "billing", "macos", "research", "general"];
+const DOMAIN_KEY: Record<string, I18nKey> = {
+  design: "domain.design",
+  copy: "domain.copy",
+  seo: "domain.seo",
+  video: "domain.video",
+  "3d": "domain.3d",
+  games: "domain.games",
+  visual: "domain.visual",
+  social: "domain.social",
+  billing: "domain.billing",
+  macos: "domain.macos",
+  research: "domain.research",
+  general: "domain.general",
+};
+
+function groupsOf(agents: PickableAgent[]): Array<{ id: string; agents: PickableAgent[] }> {
+  const buckets = new Map<string, PickableAgent[]>();
+  for (const agent of agents) {
+    const domain = agent.domain || "general";
+    const list = buckets.get(domain) ?? [];
+    list.push(agent);
+    buckets.set(domain, list);
+  }
+  const ids = [...DOMAIN_ORDER.filter((id) => buckets.has(id)), ...[...buckets.keys()].filter((id) => !DOMAIN_ORDER.includes(id))];
+  return ids.map((id) => ({ id, agents: buckets.get(id)! }));
+}
 
 type ContextPayload = {
   projectId: string | null;
@@ -57,8 +85,8 @@ function lockedCopy(reason: NonNullable<ChatState["reason"]>): string | null {
 
 export function EnableLanePilotAction() {
   const rpc = useRpc<typeof rpcContract>();
-  const composer = useComposer();
-  const view = useComposerView();
+  const view = useComposer();
+  const composer = view;
   // In an existing chat the same popover changes the agent from the chat's next message (switch_chat_agent).
   const threadId = view.scope.kind === "thread" ? view.scope.threadId : null;
   const [chat, setChat] = useState<ChatState | null>(null);
@@ -135,7 +163,7 @@ export function EnableLanePilotAction() {
       // Opus 5.5 with the 1M context when the machine offers it, the standard context otherwise.
       let selected = false;
       for (const model of ["claude-opus-5-5[1m]", "claude-opus-5-5"]) {
-        const selection = await composer.experimental_setSelection({ providerId: "claude-code", model, permissionMode: "full" });
+        const selection = await composer.setSelection({ providerId: "claude-code", model, permissionMode: "full" });
         if (selection.providerId === "claude-code" && selection.model === model) { selected = true; break; }
       }
       if (!selected) throw new Error(t("nativeComposerModelUnavailable"));
@@ -149,6 +177,8 @@ export function EnableLanePilotAction() {
       }
       const result = await rpc.call("prepare_native_session", { projectId, agentId: agent });
       attach!({ token: result.token });
+      // New thread only. An existing chat cannot change host: this branch already returned when threadId is set.
+      if (result.environment) await composer.setSelection({ environment: result.environment });
       // Claude Lane may still need installing on that machine; start now so the first send does not wait.
       if (hostId) void rpc.call("native_install_start", { hostId }).catch(() => undefined);
       setPendingNativeAgent({ agentId: result.agentId, description: result.label });
@@ -160,11 +190,11 @@ export function EnableLanePilotAction() {
     }
   };
 
-  useEffect(() => composer.experimental_onSubmitted(() => {
+  useEffect(() => composer.onSubmitted(() => {
     if (threadId) { noteChatAgentChanged(); return; }
     setSelected(null);
     setPendingNativeAgent(null);
-  }), [composer.experimental_onSubmitted, threadId]);
+  }), [composer.onSubmitted, threadId]);
 
   // A project with a main agent starts every new chat with Lane Pilot on and that agent picked, once per composer;
   // turning it off by hand stays off.
@@ -206,7 +236,7 @@ export function EnableLanePilotAction() {
   const specialists = agents.filter((agent) => agentKind(agent) === "specialist");
   const laneOn = selected?.id === coordinatorId;
   const locked = chat && !chat.eligible ? lockedCopy(chat.reason!) : null;
-  const running = Boolean(threadId) && view.run.isRunning;
+  const running = Boolean(threadId) && view.isRunning;
   const busy = blocked || pending || Boolean(chat && !chat.eligible) || running;
   const triggerLabel = pending ? t("enabling") : error ? t("failed") : !selected ? t("composerAgentMenu") : laneOn ? t("panelTitle") : composerAgentLabel(agents.find((agent) => agent.id === selected.id) ?? selected, t);
 
@@ -248,7 +278,12 @@ export function EnableLanePilotAction() {
             <SelectTrigger id="lp-composer-agent" className={`${CONTROL_H} w-full min-w-0`} aria-label={t("composerAgentLabel")}><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value={NO_AGENT}>{t("composerAgentNone")}</SelectItem>
-              {specialists.map((agent) => <SelectItem key={agent.id} value={agent.id}>{composerAgentLabel(agent, t)}</SelectItem>)}
+              {groupsOf(specialists).map((group) => (
+                <SelectGroup key={group.id}>
+                  <SelectLabel>{t(DOMAIN_KEY[group.id] ?? "domain.general")}</SelectLabel>
+                  {group.agents.map((agent) => <SelectItem key={agent.id} value={agent.id}>{composerAgentLabel(agent, t)}</SelectItem>)}
+                </SelectGroup>
+              ))}
             </SelectContent>
           </Select>
         </div>

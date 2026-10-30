@@ -10,3 +10,4 @@ export { TURN_REQUESTED, isOwnerThread, ownerMessagesOf } from "./owner-messages
 export type { EventLike, OwnerMessage, OwnerMessageConsumer, OwnerMessageHub, OwnerMessageMeta, ThreadLike } from "./owner-messages";
 export { maskPii } from "./pii";
 export { anamnesisFor, mountAnamnesis } from "./wiring";
+export { fragmentJudgment, matchJudgment } from "./judgment";

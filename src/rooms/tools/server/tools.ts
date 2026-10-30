@@ -11,7 +11,8 @@ import { mountHandoff } from "../../relay/server";
 import { mountInsights } from "../../self-repair/server";
 import { mountHealth } from "../../stability/server";
 import { mountCouncilTools } from "../../council/server";
-import { mountSpecialists } from "../../critique/server";
+import { mountSpecialists, SPECIALIST_ROLES } from "../../critique/server";
+import { installEmployeeSpecialists } from "../../native-agent";
 import { mountRelay, ownerLocale } from "../../relay/server";
 import { ownerAnswerText } from "../owner-answer-text";
 import { mountWorkflowTools } from "../../workflow/server";
@@ -103,7 +104,8 @@ export function registerTools(ctx: ServerCore, services: Services) {
       for (const taskId of params.taskIds) {
         const attempts = open.filter((row) => row.task_id === taskId);
         if (!attempts.length) { results.push({ taskId, ok:false, state:"not_open", reason:"no open attempt of this task in this run" }); continue; }
-        for (const attempt of attempts) results.push({ taskId, attemptId:attempt.id, ...await cancelAttemptById(ctx, attempt.id, services.rollback) });
+        const why = params.words?.trim() ? `PM canceled: ${params.words.trim()}` : "PM canceled the task";
+        for (const attempt of attempts) results.push({ taskId, attemptId:attempt.id, ...await cancelAttemptById(ctx, attempt.id, services.rollback, why) });
         // The PM canceled it: its «canceled» is no news for the batched results.
         noteToldPmDirectly(context.threadId, taskId, Date.now() + 5 * 60_000);
         if (params.words) db.prepare("UPDATE lane_pilot_task SET closed_words=? WHERE id=?").run(params.words, taskId);
@@ -310,6 +312,8 @@ export function registerTools(ctx: ServerCore, services: Services) {
   mountInsights(ctx);
   mountHealth(ctx, services);
   mountCouncilTools(ctx, services.council, (threadId) => services.phaseIntake.launchRefusal(threadId));
+  // ponytail: specialists.ts is owned by the critics branch. Push until that file lists the new ids.
+  installEmployeeSpecialists(SPECIALIST_ROLES as unknown as string[]);
   mountSpecialists(ctx, services);
   services.errands = mountErrands(ctx, services);
   // The browser step and the browser check of an accepted task (graphs browser-step and lp.browser-qa), next to the errand graph:

@@ -1,5 +1,5 @@
 // Public API of stability: what other rooms import. Everything else in this room is private.
 // Add a name here to make it public; scripts/refactor/barrels.ts wrote the first version from the existing imports.
 export { parseOpenCodeToolTelemetry } from "./opencode-telemetry";
-export { reconcile, reconcileCritic } from "./reconcile";
-export type { ReconcileResult } from "./reconcile";
+export { reconcile, reconcileCritic, reconcileCursor } from "./reconcile";
+export type { ReconcileCursor, ReconcileResult } from "./reconcile";

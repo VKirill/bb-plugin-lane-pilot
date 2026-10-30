@@ -1,4 +1,5 @@
 import type { RouterModel, RouterModelOutput } from "@lane-pilot/workflow-engine";
+import { filterByPolicy, routePolicyOf } from "./route-policy";
 import { NONE, routeWorkflow } from "./route-workflow";
 import { choiceOf } from "@lane-pilot/jev";
 import type { Answers } from "@lane-pilot/jev";
@@ -37,8 +38,13 @@ export function createJevRouterModel(deps: RouteModelDeps): RouterModel {
     const jev = deps.jev();
     const settings = await deps.settings().catch(() => ({} as JevSettings));
     if (!jev || !jev.enabled(settings)) return await escalate();
-    const verdict = await jev.judge(routeWorkflow, input, { projectId: deps.projectId, runId: deps.runId, subject: "route", settings });
-    if (verdict.by === "jev") return verdict.decision;
+    // Candidates the project's route policy forbids (a secret left out of secrets.allow, a risk above route.max_risk) are cut
+    // here, before Jev sees them; with none left the model step decides as before.
+    const { allowed, rejected } = filterByPolicy(input.candidates, routePolicyOf(settings as Record<string, unknown>));
+    if (!allowed.length) return await escalate();
+    const filtered = rejected.length ? { ...input, candidates: allowed } : input;
+    const verdict = await jev.judge(routeWorkflow, filtered, { projectId: deps.projectId, runId: deps.runId, subject: "route", settings });
+    if (verdict.by === "jev") return rejected.length ? { ...verdict.decision, rejected: [...verdict.decision.rejected, ...rejected] } : verdict.decision;
     if (verdict.by === "fallback" && verdict.status !== "shadow" && verdict.status !== "off") throw new Error(`Jev gave no answer (${verdict.status}); the scorer decides`);
     if (verdict.by === "fallback" && verdict.status === "off") return await escalate();
     // Shadow or an unclear case: the helper thread answers, and the two are compared.
