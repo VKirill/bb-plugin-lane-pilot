@@ -9,6 +9,7 @@ import { reconcileCritic } from "../../stability";
 import { resolveStageWriterSelection } from "../../writer";
 import { MAX_FILE_EXCERPT_BYTES } from "../code-critique";
 import { codeCritiquePrompt, codeCritiqueSource, codeCritiqueStops, critiqueFromStageResult, critiquePolicyFromResult, freezeCritiquePolicy, parseCodeCritique, parseCodeCritiqueSettings, persistLedgerFields, settingsFromFrozenPolicy } from "../code-critique";
+import { critiqueFromScreen, screenCodeCritique } from "../critic-screen";
 import type { CandidateEvidence, FrozenCritiquePolicy } from "../code-critique";
 import { sha256 } from "../../tasks";
 import { critiquePrompt, parseCritique, shouldRunPlanCritique } from "../critique";
@@ -550,6 +551,16 @@ export async function runCodeCritique(input:{
     const reason = `code_critique_evidence_unknown:${input.evidence.truncateReason ?? "truncated"}`;
     recordStage(input.db, { ...base, state:"skipped", reason, result:{ ...ledgerCarry, ...hashFields, truncated:true, policy } });
     return { allowed:true, reason, review:"not_required", settings:parsed, policy };
+  }
+  const screened = await screenCodeCritique(settings, { projectId: input.projectId, runId: input.runId, taskId: input.taskId, task: input.task, evidence: input.evidence });
+  if (screened) {
+    const critique = critiqueFromScreen(screened);
+    const blocked = codeCritiqueStops(parsed.mode, critique);
+    const result = { ...ledgerCarry, ...hashFields, ...critique, mode: parsed.mode, by: "jev", policy };
+    recordStage(input.db, { ...base, state: blocked ? "blocked" : "passed", result, reason: blocked ? verdictReasons(critique, "code-critique").receipt : undefined });
+    return blocked
+      ? { allowed: false, reason: verdictReasons(critique, "code-critique").returned, critique: result, parsed: critique, settings: parsed, review: "not_required", policy }
+      : { allowed: true, critique: result, parsed: critique, settings: parsed, review: "passed", policy };
   }
   const snapshot = {
     ...ledgerCarry,
