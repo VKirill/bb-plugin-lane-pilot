@@ -3,7 +3,8 @@ import { taskV2Schema } from "../../contracts";
 import { jev } from "@lane-pilot/jev";
 import { memoryRerankJudgment } from "@lane-pilot/jev/judgments/memory-rerank";
 import { enrichMemoryContext, episodeCandidates } from "../../memory-tiers/server";
-import { claimStageSpawn, getRun, getRunSettingsScopes, getTask, listStageReceipts, searchMemoryRecords } from "../../storage";
+import { appendAcceptedFact, claimStageSpawn, getRun, getRunSettingsScopes, getTask, listAcceptedFacts, listOpenAttempts, listPendingAcceptedFacts, listStageReceipts, markAcceptedFactsSummarized, searchMemoryRecords } from "../../storage";
+import { shouldTriggerProjectLife } from "../../project-life";
 import { coreShelf, dropMemoryIndexes, memoryEntrySupported, pathsNamed, retireStaleCuratorClaims, storeMemoryRecordsKeepingOverflow } from "@lane-pilot/memory-core";
 import { applyScopeMigration } from "../../../../scripts/memory-scope-dry-run";
 import { bbServiceTier, writerExecutionSelection } from "@lane-pilot/models";
@@ -35,6 +36,10 @@ export function createMemoryStage(ctx: ServerCore, services: Services) {
     const task=workspace.task;
     const accepted=listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="acceptance-receipt");
     if(accepted?.state!=="passed"||!accepted.outputSha256) throw new Error("memory maintenance requires an accepted writer receipt first");
+    // J-002: the append-only fact of this accepted task — free, durable, written before any model is chosen. It is the
+    // batch input the wave-idle maintainer summarizes, and readers can list it even when no helper ever ran.
+    appendAcceptedFact(db,{projectId:args.projectId,runId:args.runId,taskId:args.taskId,
+      fact:{taskId:args.taskId,title:task.title,objective:task.objective,acceptedResult:compactAcceptedResult(accepted.result)}});
     retireStaleCuratorClaims(db, args.projectId, (projectId, id) => dropMemoryIndexes(db, projectId, id));
     const settings=await stageHelperSettings(bb,db,args.projectId,args.runId);
     const memoryAgent=boundedAgentName(settings["memory.agent"],"memory-maintainer");
@@ -63,6 +68,30 @@ export function createMemoryStage(ctx: ServerCore, services: Services) {
       const reason=!memorySettings.enabled?"disabled_by_project_setting":"memory_maintain_disabled";
       recordStage(db,{...base,state:"skipped",reason,result:{stored:0,audience:memorySettings.audience}});
       return {runId:args.runId,taskId:args.taskId,state:"skipped",reason};
+    }
+    // J-002 wave mode (memory.maintain_mode; "task" restores one helper per task): the fact is already stored, so while
+    // the wave is still busy the stage is done. Once the wave goes idle the last task's stage runs one maintainer for
+    // every pending fact of the run — several events, one summary.
+    const maintainMode=configuredSetting(settings,"memory.maintain_mode")==="task"?"task":"wave";
+    let waveFacts:Array<{taskId:string;title:string;acceptedResult:unknown}>=[];
+    let waveFactTaskIds:string[]=[];
+    if(maintainMode==="wave" && !liveChild) {
+      const skip=(reason:string)=>{
+        recordStage(db,{...base,state:"skipped",reason,result:{stored:0,audience:memorySettings.audience}});
+        return {runId:args.runId,taskId:args.taskId,state:"skipped",reason};
+      };
+      const fact=listAcceptedFacts(db,args.runId).find((row)=>row.taskId===args.taskId);
+      if(fact && fact.summarizedAt!==null) return skip("fact_already_summarized");
+      if(!shouldTriggerProjectLife(listOpenAttempts(db).map((attempt)=>attempt.run_id),args.runId)) return skip("wave_not_idle");
+      const pending=listPendingAcceptedFacts(db,args.runId);
+      if(!pending.length) return skip("no_pending_facts");
+      const inFlight=listStageReceipts(db,args.runId).find((row)=>row.stageId==="memory-maintenance"&&["pending","running"].includes(row.state)&&row.taskId!==args.taskId);
+      if(inFlight) return skip("memory_in_flight_elsewhere");
+      waveFacts=pending.map((row)=>{
+        const body=row.fact as {title?:unknown;objective?:unknown;acceptedResult?:unknown};
+        return {taskId:row.taskId,title:typeof body.title==="string"?body.title:row.taskId,acceptedResult:body.acceptedResult};
+      });
+      waveFactTaskIds=pending.map((row)=>row.taskId);
     }
     const claimed=listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="memory-maintenance");
     if(claimed?.state==="pending") recordStage(db,{...base,state:"running",providerId:memoryProviderId,model:memoryModel,threadId:claimed.threadId,result:claimed.result,reason:"memory_spawn_requested"});
@@ -130,7 +159,9 @@ export function createMemoryStage(ctx: ServerCore, services: Services) {
         if(!row) throw new Error("memory_record_ids_missing_after_store");
         if(row.sourceSha256===snapshot.acceptanceSha256) recordIds.push(id);
       }
-      const result={stored:recordIds.length,recordIds,unsupportedDropped,...(records.demoted?{coreDemotedToNotes:records.demoted}:{}),evictedIds:records.evictedIds,supersededIds:records.supersededIds,sourceSha256:snapshot.acceptanceSha256,audience:snapshot.settings.audience,personalBot:snapshot.settings.personalBot,
+      // The batch these facts fed is now durable memory: stamp them so the next accepted task's stage does not re-summarize them.
+      if(snapshot.factTaskIds?.length) markAcceptedFactsSummarized(db,args.runId,snapshot.factTaskIds);
+      const result={stored:recordIds.length,recordIds,unsupportedDropped,...(records.demoted?{coreDemotedToNotes:records.demoted}:{}),evictedIds:records.evictedIds,supersededIds:records.supersededIds,sourceSha256:snapshot.acceptanceSha256,audience:snapshot.settings.audience,personalBot:snapshot.settings.personalBot,factsSummarized:snapshot.factTaskIds?.length??0,
         reasoningEffort:memoryEffort,serviceTier:memoryTier,
         budgets:{core:snapshot.settings.coreBudget,note:snapshot.settings.noteBudget,index:snapshot.settings.indexBudget},
         retrievedForWriter:snapshot.settings.inject&&snapshot.settings.audience==="subagent",threadId:childId,snapshot};
@@ -156,7 +187,8 @@ export function createMemoryStage(ctx: ServerCore, services: Services) {
       }
       if(threadId) return await finishObservation(threadId,snapshot);
       if(!snapshot){
-        snapshot={acceptanceSha256:accepted.outputSha256,settings:memorySettings,agent:memoryAgent,dispatchInput:JSON.parse(base.input)};
+        snapshot={acceptanceSha256:accepted.outputSha256,settings:memorySettings,agent:memoryAgent,dispatchInput:JSON.parse(base.input),
+          ...(waveFacts.length?{facts:waveFacts,factTaskIds:waveFactTaskIds}:{})};
         persistRunning(null,{snapshot},"memory_spawn_requested");
         receipt=listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="memory-maintenance");
       }
@@ -199,7 +231,7 @@ export function createMemoryStage(ctx: ServerCore, services: Services) {
       const spawned=await fullAccessSpawn(bb, {...placement,...requiredPolicyField(bb, helperPolicy, memoryProviderId, "memory-maintainer"),
         ...writerExecutionSelection(memoryProviderId,memoryModel,memoryEffort,tier),
         prompt:memoryMaintenancePrompt({task,acceptedResult:compactAcceptedResult(accepted.result),settings:snapshot.settings,agent:snapshot.agent,
-          existing,excerpts,
+          existing,excerpts,facts:snapshot.facts,
           core:(({tokens,replaceable})=>({tokens,records:replaceable}))(coreShelf(db,args.projectId,snapshot.settings.personalBot,snapshot.settings.audience,getRunSettingsScopes(db,args.runId)))}),
         environment:workspaceExecutionEnvironment(config.hostId,workspace),
         pluginMetadata:{role:"memory-maintainer",lanePilotRunId:args.runId,lanePilotTaskId:args.taskId,

@@ -114,6 +114,7 @@ switches: `quick` disables both critiques, `full` enables them (`src/rooms/criti
 | `memory.index_budget` | `65536` | — | stage setting: cap total project index tokens |
 | `memory.inject` | `true` | — | stage setting: retrieve bounded relevant project memory for a writer |
 | `memory.maintain` | `true` | — | stage setting: maintain durable project memory after accepted work |
+| `memory.maintain_mode` | `wave` | — | stage setting: `wave` appends an accepted-task fact per task and runs one memory maintainer when the wave goes idle; `task` restores a helper per accepted task |
 | `memory.note_budget` | `24000` | — | stage setting: cap note memory tokens |
 | `memory.personal_bot` | — | — | keeps bot-scoped project memory isolated across maintenance and retrieval |
 | `memory.provider` | `codex / DEFAULT_ONBOARD_MODEL / DEFAULT_ONBOARD_EFFORT / standard` | — | stage uses the BB provider/model selection for project memory maintenance |

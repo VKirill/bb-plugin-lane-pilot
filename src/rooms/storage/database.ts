@@ -441,6 +441,16 @@ export const migrations = [
   `CREATE TABLE IF NOT EXISTS lane_pilot_memory_receipt (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, role TEXT NOT NULL, returned_ids TEXT NOT NULL, packed_ids TEXT NOT NULL, tokens INTEGER NOT NULL, created_at INTEGER NOT NULL)`,
   // Jev receipt: the state's field names and serialized sizes (names+sizes, never content; audit C-requirement). Append only.
   `ALTER TABLE lane_pilot_jev_receipt ADD COLUMN fields_json TEXT`,
+  // J-002: one append-only fact per accepted task. The wave-idle memory maintainer summarizes pending facts in one batch
+  // (summarized_at) instead of running a writer per task. Rows are never updated except the summary stamp.
+  `CREATE TABLE lane_pilot_accepted_fact (
+    project_id TEXT NOT NULL,
+    run_id TEXT NOT NULL,
+    task_id TEXT PRIMARY KEY,
+    fact_json TEXT NOT NULL,
+    summarized_at INTEGER,
+    created_at INTEGER NOT NULL
+  )`,
 ];
 
 export function openDatabase(bb: BbPluginApi): LanePilotDatabase {
@@ -1813,4 +1823,35 @@ export function listCheckTimeouts(db: LanePilotDatabase, projectId: string, chec
 export function listCheckDurations(db: LanePilotDatabase, projectId: string, check: CheckRef, limit = 20): number[] {
   return (db.prepare("SELECT duration_ms FROM lane_pilot_check_duration WHERE project_id=? AND command_key IN (?,?) AND exit_code=0 ORDER BY at DESC, rowid DESC LIMIT ?")
     .all(projectId, sha256Buffer(checkHistoryKey(check)), legacyCheckKey(check.command), limit) as Array<{ duration_ms: number }>).map((row) => row.duration_ms);
+}
+
+export type AcceptedFactRow = { taskId: string; runId: string; fact: unknown; summarizedAt: number | null; createdAt: number };
+
+/** J-002: the append-only fact of one accepted task. INSERT OR IGNORE keeps the first write: a fact is never overwritten. */
+export function appendAcceptedFact(db: LanePilotDatabase, input: { projectId: string; runId: string; taskId: string; fact: unknown; at?: number }): void {
+  db.prepare("INSERT OR IGNORE INTO lane_pilot_accepted_fact (project_id,run_id,task_id,fact_json,created_at) VALUES(?,?,?,?,?)")
+    .run(input.projectId, input.runId, input.taskId, JSON.stringify(input.fact ?? {}), input.at ?? Date.now());
+}
+
+const factRow = (row: { task_id: string; run_id: string; fact_json: string; summarized_at: number | null; created_at: number }): AcceptedFactRow => {
+  let fact: unknown = {};
+  try { fact = JSON.parse(row.fact_json) as unknown; } catch { /* a broken row is still a row: the task stays covered */ }
+  return { taskId: row.task_id, runId: row.run_id, fact, summarizedAt: row.summarized_at, createdAt: row.created_at };
+};
+
+export function listAcceptedFacts(db: LanePilotDatabase, runId: string): AcceptedFactRow[] {
+  return (db.prepare("SELECT task_id,run_id,fact_json,summarized_at,created_at FROM lane_pilot_accepted_fact WHERE run_id=? ORDER BY created_at")
+    .all(runId) as Array<{ task_id: string; run_id: string; fact_json: string; summarized_at: number | null; created_at: number }>).map(factRow);
+}
+
+/** Facts of this run no wave-idle summary has covered yet — the batch the next idle memory maintainer gets. */
+export function listPendingAcceptedFacts(db: LanePilotDatabase, runId: string): AcceptedFactRow[] {
+  return (db.prepare("SELECT task_id,run_id,fact_json,summarized_at,created_at FROM lane_pilot_accepted_fact WHERE run_id=? AND summarized_at IS NULL ORDER BY created_at")
+    .all(runId) as Array<{ task_id: string; run_id: string; fact_json: string; summarized_at: number | null; created_at: number }>).map(factRow);
+}
+
+export function markAcceptedFactsSummarized(db: LanePilotDatabase, runId: string, taskIds: readonly string[], at = Date.now()): void {
+  if (!taskIds.length) return;
+  const stamp = db.prepare("UPDATE lane_pilot_accepted_fact SET summarized_at=? WHERE run_id=? AND task_id=? AND summarized_at IS NULL");
+  db.transaction(() => { for (const taskId of taskIds) stamp.run(at, runId, taskId); })();
 }
