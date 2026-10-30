@@ -107,7 +107,7 @@ export async function pickSkillTree(
   const ask = async (level: "section" | "subsection" | "skill", path: string, options: Record<string, string>) => {
     const verdict = await judge.judge(skillTreePickJudgment, { task: text, level, path, options }, ctx);
     const picked = verdict.by === "jev" ? verdict.decision.picked : verdict.by === "fallback" && verdict.shadow?.decision ? verdict.shadow.decision.picked : [];
-    return { picked, active: verdict.by === "jev" as boolean };
+    return { picked, active: verdict.by === "jev" };
   };
   const sections = await ask("section", "/", Object.fromEntries(tree.sections.map((s) => [s.id, s.titleEn ?? s.title])));
   const skills: string[] = [], picked: string[] = [...sections.picked];

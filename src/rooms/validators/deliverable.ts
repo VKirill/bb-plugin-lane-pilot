@@ -171,7 +171,6 @@ async function validate3d(path: string, deps: ValidatorDeps): Promise<Verdict> {
   const shadow = verdict.by === "fallback" && verdict.shadow?.decision ? `; jev shadow: ${renderMatchJudgment.describe(verdict.shadow.decision)}` : "";
   return { ...clean, reason: clean.reason + shadow };
 }
-}
 
 /* ---- video: ffprobe streams + EBU R128 loudness ---- */
 
