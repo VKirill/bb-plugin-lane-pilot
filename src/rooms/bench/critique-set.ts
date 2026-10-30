@@ -68,8 +68,8 @@ export function critiqueRecallLine(tasks: readonly ManifestTask[], receipts: (ta
   return { line: `critique: found ${found}/${total} known bugs${missed.length ? ` (missed e.g. ${missed.slice(0, 3).join(", ")})` : ""}`, found, total };
 }
 
-/** A sealed set entry: one PR-shaped task — a buggy patch, its reference finding. */
-export type SealedEntry = { taskId: string; title: string; risk?: Risk; diff: string; expected_findings: ExpectedFinding[]; hard?: boolean };
+/** A sealed set entry: one PR-shaped task — a buggy patch, its reference finding. `outcome` marks real history (S4): how the PR ended. */
+export type SealedEntry = { taskId: string; title: string; risk?: Risk; diff: string; expected_findings?: ExpectedFinding[]; hard?: boolean; outcome?: "accepted" | "reverted" | "fixed_after" };
 
 /**
  * Loads a sealed manifest (JSON array or { tasks: [...] }) as a bench set. The tasks travel as contract text —
@@ -81,7 +81,7 @@ export function loadSealedSet(db: BenchDb, input: { version: string; manifest: {
     taskId: entry.taskId, position: index, projectId: "critic-eval", projectName: "critic-eval", hostId: "", repoPath: "",
     stratum: "critique", hard: entry.hard ?? false, risk: entry.risk ?? "medium", area: "critique",
     initialHeadSha: "sealed", solutionCommit: "sealed", solutionPatchSha256: "",
-    contract: { title: entry.title, diff: entry.diff, expected_findings: entry.expected_findings, kind: "critic_eval" },
+    contract: { title: entry.title, diff: entry.diff, expected_findings: entry.expected_findings ?? [], kind: "critic_eval", ...(entry.outcome ? { outcome: entry.outcome } : {}) },
     warm: { base: [], solution: [], discriminating: [], applied: "apply" as const, files: [] },
     validator: "critique_finds",
   }));
@@ -89,12 +89,38 @@ export function loadSealedSet(db: BenchDb, input: { version: string; manifest: {
 }
 
 import sealedManifest from "../../../bench/known-bugs-v1.json";
+import realPrsManifest from "../../../bench/real-prs-v1.json";
 import { getSet } from "./store";
+
+/** The severity a critic finding needs on an accepted PR to count as a false alarm; an unmarked note is just a note. */
+const ALARM_SEVERITIES = new Set(["blocker", "critical", "high", "error"]);
+
+/**
+ * S4: the advisory score of the code critic on real history. A bad PR (reverted, fixed after) is caught when the critic
+ * names one of its expected findings; a clean one is a false alarm when a finding claims blocker/critical/high severity.
+ */
+export function advisoryCritiqueLine(tasks: readonly ManifestTask[], receipts: (taskId: string) => unknown): { line: string | null; caught: number; bad: number; falseAlarms: number; clean: number } {
+  let caught = 0, bad = 0, falseAlarms = 0, clean = 0;
+  for (const task of tasks) {
+    const outcome = (task.contract as { outcome?: string }).outcome;
+    if (!outcome) continue;
+    const findings = findingsOfResult(receipts(task.taskId));
+    if (outcome === "accepted") {
+      clean += 1;
+      if (findings.some((finding) => ALARM_SEVERITIES.has((finding.severity ?? "").toLowerCase()))) falseAlarms += 1;
+    } else {
+      bad += 1;
+      if (judgeCriticFindings(findings, expectedFindings(task.contract)).found > 0) caught += 1;
+    }
+  }
+  if (!bad && !clean) return { line: null, caught: 0, bad: 0, falseAlarms: 0, clean: 0 };
+  return { line: `advisory critique: caught ${caught}/${bad} bad PRs, ${falseAlarms} false alarm${falseAlarms === 1 ? "" : "s"} on ${clean} clean PRs`, caught, bad, falseAlarms, clean };
+}
 
 /** Registers the bundled sealed sets once (mount, idempotent by version): the night then picks them up like any set. */
 export function ensureSealedSets(db: BenchDb): string[] {
   const added: string[] = [];
-  const manifests = [sealedManifest as { version: string; tasks: SealedEntry[] }];
+  const manifests = [sealedManifest as { version: string; tasks: SealedEntry[] }, realPrsManifest as { version: string; tasks: SealedEntry[] }];
   for (const manifest of manifests) {
     if (!getSet(db, manifest.version)) {
       loadSealedSet(db, { version: manifest.version, manifest });

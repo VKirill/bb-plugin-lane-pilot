@@ -6,7 +6,7 @@ import { cohortCounts, cohortOf } from "./stratify";
 import { renderStratumMetrics, stratumMetrics, type StratumRow } from "./stratum-metrics";
 import { statsEpochMs, STATS_EPOCH_SETTING, listStageReceipts } from "../storage";
 import { critiqueFromStageResult } from "../critique";
-import { critiqueRecallLine } from "./critique-set";
+import { advisoryCritiqueLine, critiqueRecallLine } from "./critique-set";
 import type { HostPort, PipelinePort } from "./ports";
 import { releaseGate, sweepStuckRuns } from "./reliability";
 import { isSealedVersion } from "./store";
@@ -306,6 +306,9 @@ export function createBench(deps: BenchDeps) {
       };
       const recall = critiqueRecallLine(set.tasks, receipt);
       if (recall.line) lines.push(recall.line);
+      // Real-history sets (S4) report the advisory score instead: caught bad PRs vs false alarms on clean ones.
+      const advisory = advisoryCritiqueLine(set.tasks, receipt);
+      if (advisory.line) lines.push(advisory.line);
     }
     return lines;
   }

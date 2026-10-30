@@ -58,7 +58,7 @@ describe("critic eval set: known-bugs-v1", () => {
 
   it("the night path runs each sealed task through the critic port and records the verdict", async () => {
     const { db } = benchWorld();
-    expect(ensureSealedSets(db)).toEqual(["known-bugs-v1"]);           // mount is idempotent by version
+    expect(ensureSealedSets(db)).toEqual(["known-bugs-v1", "real-prs-v1"]); // mount is idempotent by version
     expect(ensureSealedSets(db)).toEqual([]);
     const calls: string[] = [];
     const reports = await runSeries({
