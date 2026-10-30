@@ -3,7 +3,7 @@ import type { HeadPart } from "@lane-pilot/contracts";
 import { extractModelJson } from "../critique";
 import type { ChangeDescriptor } from "../policy";
 import { EVIDENCE_WAIT_MS, closeExpiredRepair, decideAcceptance, gateRepair, laterReleaseTouches, repairChange, type Acceptance, type AcceptanceEvidence, type GateDecision, type RepairFile } from "./acceptance";
-import { analysisPrompt, hunterPrompt, parseNightReport, repairBrief, taskWallMessage } from "./brief";
+import { analysisPrompt, hunterPrompt, parseNightReport, parsePrediction, predictionHeld, repairBrief, taskWallMessage } from "./brief";
 import { nightArm } from "../bench/server";
 import { statsEpochMs, statsEpochLine, STATS_EPOCH_SETTING } from "../storage";
 import { loadProjectSettings } from "../storage";
@@ -641,7 +641,9 @@ export function createWall(deps: WallDeps) {
         if (view?.verdict && !(await ports.repair.busy(row.threadId))) {
           const report = await ports.repair.report(row.threadId).catch(() => "");
           const night = parseNightReport(report);
-          updateRepair(db, row.id, { verdict: view.verdict, outcome: `${view.verdict}; ${night.sites} sites listed${night.sitesOpen ? `, ${night.sitesOpen} left open` : ""}${night.test ? `; test ${night.test}` : "; no regression test named"}` }, now);
+          const prediction = parsePrediction(report);
+          updateRepair(db, row.id, { verdict: view.verdict, outcome: `${view.verdict}; ${night.sites} sites listed${night.sitesOpen ? `, ${night.sitesOpen} left open` : ""}${night.test ? `; test ${night.test}` : "; no regression test named"}`,
+            ...(prediction ? { acceptance: { ...(row.acceptance as Record<string, unknown> | null ?? {}), prediction } } : {}) }, now);
           if (view.verdict !== "fixed") {
             // The watcher releases the worktree and calls `settled`; a verdict that is not «fixed» is a failed move for the ladder.
             notes.push(`${row.id}: verdict ${view.verdict}`);
@@ -731,7 +733,11 @@ export function createWall(deps: WallDeps) {
     const recurrence = recurrenceOn(row.classKey, evidence, deployedAt);
     const requireBench = (row.policy as { requireBench?: boolean } | null)?.requireBench === true;
     const result = decideAcceptance({ merged: true, versionBefore: mergedAt, deployedVersion: evidence, drill, deployedAt, canary, bench, recurrence, trainRolledBack: false, requireBench, supersededBy: superseded, now });
-    return await settleAcceptance(row, result, { ...acceptance, deployedAt, ...(benchScore !== undefined ? { benchScore } : {}), ...(baselineScore !== undefined ? { baselineScore } : {}), ...(benchCompare ? { benchCompare } : {}) }, now, recurrence);
+    // C3: the declared prediction is checked against the evidence the same acceptance weighed — a broken one is recorded, never a pass.
+    const prediction = (acceptance as { prediction?: { fixes_class: string | null; must_not_move: string[] } }).prediction;
+    const predicted = prediction && result.state !== "pending" ? predictionHeld(prediction, { recurred: recurrence ? recurrence.failures > 0 : null, benchScore, baselineScore }) : null;
+    if (predicted && !predicted.held) failMove(row, `prediction unmet: ${predicted.notes.join("; ")}`, now);
+    return await settleAcceptance(row, result, { ...acceptance, deployedAt, ...(predicted ? { predictionHeld: predicted.held, predictionNotes: predicted.notes } : {}), ...(benchScore !== undefined ? { benchScore } : {}), ...(baselineScore !== undefined ? { baselineScore } : {}), ...(benchCompare ? { benchCompare } : {}) }, now, recurrence);
   }
 
   /**
