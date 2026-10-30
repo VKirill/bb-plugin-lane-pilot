@@ -32,8 +32,8 @@ export function jevEnabled(settings: JevSettings | undefined): boolean {
 }
 
 /** The thresholds of one judgment: the registry defaults, then the certified calibration, then the project's values clamped to the allowed range. */
-export function resolveThresholds(judgment: Pick<Judgment<unknown, unknown>, "id" | "version" | "questions" | "decide" | "thresholds">, settings: JevSettings | undefined): Thresholds {
-  const out: Thresholds = calibratedThresholds(judgment, settings) ?? Object.fromEntries(Object.entries(judgment.thresholds).map(([name, spec]) => [name, spec.default]));
+export function resolveThresholds(judgment: Pick<Judgment<unknown, unknown>, "id" | "version" | "questions" | "decide" | "thresholds">, settings: JevSettings | undefined, model?: string | null): Thresholds {
+  const out: Thresholds = calibratedThresholds(judgment, settings, model) ?? Object.fromEntries(Object.entries(judgment.thresholds).map(([name, spec]) => [name, spec.default]));
   for (const [key, raw] of pairs(settings?.[JEV_THRESHOLDS_KEY])) {
     if (!key.startsWith(`${judgment.id}.`)) continue;
     const name = key.slice(judgment.id.length + 1), spec = judgment.thresholds[name], value = Number(raw);

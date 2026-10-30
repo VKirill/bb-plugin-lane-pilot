@@ -43,7 +43,7 @@ describe("Jev provider status", () => {
     expect(status).toEqual({
       chosen: "openlux", effective: "openlux", catalog: "ok",
       providers: [
-        { id: "typesafe", keyName: "TYPESAFE_API_KEY", model: "jev-latest", hasKey: true },
+        { id: "typesafe", keyName: "TYPESAFE_API_KEY", model: "jev-1.14.0", hasKey: true },
         { id: "openlux", keyName: "OPENLUX_API_KEY", model: "jev-1.14.0:stable", hasKey: true },
       ],
     });
@@ -127,7 +127,7 @@ describe("Jev provider test request", () => {
     await rpc.jev_provider_save_key({ provider: "typesafe", key: TYPE_KEY });
     const fetchMock = fakeFetch({ body: { answers: { check: { type: "noul", noul: 0.9 } } } });
     vi.stubGlobal("fetch", fetchMock);
-    expect(await rpc.jev_provider_test()).toMatchObject({ ok: true, provider: "typesafe", model: "jev-latest" });
+    expect(await rpc.jev_provider_test()).toMatchObject({ ok: true, provider: "typesafe", model: "jev-1.14.0" });
     expect(String(fetchMock.mock.calls[0]![0])).toBe("https://api.typesafe.ai/v1/systemone");
     await harness.lifecycle.dispose();
   });

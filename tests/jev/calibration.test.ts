@@ -23,11 +23,18 @@ describe("calibrated thresholds", () => {
   it("a saved calibration applies while the fingerprint matches; a reworded question falls back to defaults", () => {
     const j1 = makeUrgency("Is this urgent?"), j2 = makeUrgency("Is this pressing?");
     expect(judgmentFingerprint(j1)).not.toBe(judgmentFingerprint(j2));
-    const settings = { [JEV_CALIBRATED_KEY]: JSON.stringify({ [j1.id]: { fingerprint: judgmentFingerprint(j1), thresholds: { min_p: 0.9 } } }) };
-    expect(resolveThresholds(j1, settings).min_p).toBe(0.9);
+    const settings = { [JEV_CALIBRATED_KEY]: JSON.stringify({ [j1.id]: { fingerprint: judgmentFingerprint(j1), model: "jev-1.14.0", thresholds: { min_p: 0.9 } } }) };
+    expect(resolveThresholds(j1, settings, "jev-1.14.0").min_p).toBe(0.9);
+    // A route suffix is not a different model: the alias-less base id is what binds.
+    expect(resolveThresholds(j1, settings, "jev-1.14.0:stable").min_p).toBe(0.9);
+    // The model moved under the same wording: the certified value is refused, the default stands until a recalibration.
+    expect(resolveThresholds(j1, settings, "jev-1.15.0").min_p).toBe(0.8);
+    // An entry saved before model binding (no model field) does not apply either.
+    const unbound = { [JEV_CALIBRATED_KEY]: JSON.stringify({ [j1.id]: { fingerprint: judgmentFingerprint(j1), thresholds: { min_p: 0.9 } } }) };
+    expect(resolveThresholds(j1, unbound, "jev-1.14.0").min_p).toBe(0.8);
     // Reworded without recalibration: the certified value is refused, the default stands.
-    const stale = { [JEV_CALIBRATED_KEY]: JSON.stringify({ [j1.id]: { fingerprint: judgmentFingerprint(j2), thresholds: { min_p: 0.9 } } }) };
-    expect(resolveThresholds(j1, stale).min_p).toBe(0.8);
+    const stale = { [JEV_CALIBRATED_KEY]: JSON.stringify({ [j1.id]: { fingerprint: judgmentFingerprint(j2), model: "jev-1.14.0", thresholds: { min_p: 0.9 } } }) };
+    expect(resolveThresholds(j1, stale, "jev-1.14.0").min_p).toBe(0.8);
   });
 });
 

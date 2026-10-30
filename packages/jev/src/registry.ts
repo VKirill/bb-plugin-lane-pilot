@@ -23,7 +23,7 @@ export type Judgment<I, D> = {
   id: string;
   /** Raise it when the questions or the decision rule change: receipts of different versions are not comparable. */
   version: number;
-  /** A pinned model for tuning thresholds; `jev-latest` when not set. */
+  /** A pinned model for tuning thresholds; the provider's pinned model when not set. */
   model?: string;
   /** The mode when the project does not set one: a new judgment starts in `shadow`. */
   defaultMode: JudgmentMode;
