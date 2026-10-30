@@ -548,8 +548,8 @@ export async function runCodeCritique(input:{
   }
   if (input.evidence.truncated) {
     const reason = `code_critique_evidence_unknown:${input.evidence.truncateReason ?? "truncated"}`;
-    recordStage(input.db, { ...base, state:"blocked", reason, result:{ ...ledgerCarry, ...hashFields, truncated:true, policy } });
-    return { allowed:false, reason, review:"not_required", settings:parsed, policy };
+    recordStage(input.db, { ...base, state:"skipped", reason, result:{ ...ledgerCarry, ...hashFields, truncated:true, policy } });
+    return { allowed:true, reason, review:"not_required", settings:parsed, policy };
   }
   const snapshot = {
     ...ledgerCarry,

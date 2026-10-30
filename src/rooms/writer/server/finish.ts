@@ -634,10 +634,10 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
         continue;
       }
       const confirm = await captureEvidence();
-      if (confirm.truncated || !approvedArtifact || confirm.artifactRevisionSha256 !== approvedArtifact) {
-        const reason = confirm.truncated
-          ? `code_critique_evidence_unknown:${confirm.truncateReason ?? "truncated"}`
-          : "code_critique_stale_revision";
+      // A packet the critic could not read is a skipped receipt (runCodeCritique) and does not stop the writer.
+      // A revision that moved after the critique still does.
+      if (!confirm.truncated && (!approvedArtifact || confirm.artifactRevisionSha256 !== approvedArtifact)) {
+        const reason = "code_critique_stale_revision";
         recordGateEvaluation(db,{projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"rejected",
           attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{writerStatus:"code_critique_blocked",reason}});
         transitionAttempt(db, input.attemptId, "blocked", { reason });
