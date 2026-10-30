@@ -1,4 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { resolveRoleModel } from "@lane-pilot/models";
+import { resolveTaskQualityMode } from "@lane-pilot/workflow-engine";
+import { applyCodeCriticDefault } from "../../src/rooms/critique/quality-mode";
+import { shortPathCriticDefault } from "../../src/rooms/workflow/server/workflow-executors";
 import { finding, firstInput, modeOf, out, pathOf, task } from "./chain-helpers";
 import { chainStore, runSim } from "./chain-harness";
 
@@ -222,36 +226,66 @@ describe("issue-batch", () => {
 
 describe("issue-quick", () => {
   const input = { title: "Typo in button label", text: "The Send button says 'Sned'." };
-  const stubs = (severity: string) => ({ triage: { clear: true, severity }, "lp.plan": { status: "ok", task_count: 1, tasks: [task("q1")] }, "lp.build": { status: "done", merged_commits: ["q1"] } });
+  const one = { ...task("q1"), acceptance: ["npx vitest run tests/button.test.ts"] };
+  const plan = { status: "ok", clear: true, task_count: 1, risk: "low", already_met: false, objective: "Fix the Send button label", tasks: [one], task: one, waves: [["q1"]] };
+  const stubs = () => ({ plan, write: { state: "accepted", merged_commits: ["q1"] } });
+  const modelSteps = (path: string, workflow: { nodes: Array<{ id: string; type: string }> }) => {
+    const model = new Set(workflow.nodes.filter((node) => node.type === "agent" || node.type === "lp-task").map((node) => node.id));
+    return path.split(" ").filter((id) => model.has(id));
+  };
 
-  it("the spec's case: a low-severity issue goes triage, plan, build, closed", async () => {
-    const r = await runSim("issue-quick", { input, stubs: stubs("low") });
-    expect(pathOf(r)).toBe("triage plan build closed");
+  it("a tiny low issue is class, one cheap plan, lint, the writer, closed, in at most three model calls", async () => {
+    const r = await runSim("issue-quick", { input, stubs: stubs() });
+    expect(pathOf(r)).toBe("class plan lint write closed");
+    expect(modelSteps(pathOf(r), r.workflow).length).toBeLessThanOrEqual(3);
     expect(out(r)).toMatchObject({ status: "closed", resolution: "fixed", severity: "low", merged_commits: ["q1"] });
     expect(modeOf(r)).toBe("quick");
-    expect(firstInput(r, "plan")).toMatchObject({ goal: "Typo in button label", gaps: "The Send button says 'Sned'." });
+    const planNode = r.workflow.nodes.find((node) => node.id === "plan");
+    expect(planNode).toMatchObject({ type: "agent", role: "triager" });
+    expect(resolveRoleModel("triager", {}).model).not.toMatch(/opus/i);
+    expect(r.summary.status).toBe("succeeded");
   });
 
-  it("a goal the planner finds already met closes the issue without a build", async () => {
-    const r = await runSim("issue-quick", { input, stubs: { ...stubs("low"), "lp.plan": { status: "ok", task_count: 0, tasks: [], already_met: true } } });
-    expect(pathOf(r)).toBe("triage plan already");
+  it("a goal the plan finds already met closes without a writer", async () => {
+    const r = await runSim("issue-quick", { input, stubs: { plan: { ...plan, task_count: 0, tasks: [], already_met: true } } });
+    expect(pathOf(r)).toBe("class plan already");
     expect(out(r)).toMatchObject({ status: "closed", resolution: "fixed" });
+    expect(r.summary.status).toBe("succeeded");
   });
 
-  it("a critical or high issue is proposed to issue-full, with the same issue as its inputs", async () => {
-    const r = await runSim("issue-quick", { input: { ...input, context: "app.tsx" }, stubs: stubs("critical") });
-    expect(pathOf(r)).toBe("triage escalate proposed");
-    expect(out(r)).toMatchObject({ status: "proposed", proposed_workflow: "issue-full", severity: "critical" });
-    const step = r.db.prepare("SELECT receipt_json FROM lane_pilot_wf_step WHERE run_id=? AND node_id='escalate'").get(r.summary.runId) as { receipt_json: string };
-    const proposal = (JSON.parse(step.receipt_json) as { detail?: { proposed?: string; inputs?: Record<string, unknown> } }).detail;
+  it("medium risk writes with the code critic; low does not", async () => {
+    const r = await runSim("issue-quick", { input, stubs: { plan: { ...plan, risk: "medium" }, "write-medium": { state: "accepted", merged_commits: ["q1"] } } });
+    expect(pathOf(r)).toBe("class plan lint write-medium closed");
+    expect(pathOf(r)).not.toContain(" write ");
+    const node = r.workflow.nodes.find((item) => item.id === "write-medium");
+    expect(node).toMatchObject({ type: "lp-task", quality_mode: "standard" });
+    expect(shortPathCriticDefault("issue-quick", "standard")).toBe("medium");
+    expect(shortPathCriticDefault("issue-quick", "quick")).toBeUndefined();
+    expect(applyCodeCriticDefault({}, "standard", "medium", "medium")["code_critique.enabled"]).toBe(true);
+    expect(applyCodeCriticDefault({}, "quick", "medium", "medium")["code_critique.enabled"]).toBeUndefined();
+  });
+
+  it("a critical issue, a large issue and a plan of many tasks are proposed to issue-full and do not write", async () => {
+    const critical = await runSim("issue-quick", { input: { ...input, context: "app.tsx", severity: "critical" } });
+    expect(pathOf(critical)).toBe("class escalate proposed");
+    expect(out(critical)).toMatchObject({ status: "proposed", proposed_workflow: "issue-full", severity: "critical" });
+    const step = critical.db.prepare("SELECT receipt_json FROM lane_pilot_wf_step WHERE run_id=? AND node_id='escalate'").get(critical.summary.runId) as { receipt_json: string };
+    const proposal = (JSON.parse(step.receipt_json) as { detail?: { inputs?: Record<string, unknown> } }).detail;
     expect(proposal?.inputs).toMatchObject({ title: "Typo in button label", text: "The Send button says 'Sned'.", context: "app.tsx", severity: "critical" });
+    const large = await runSim("issue-quick", { input: { title: "Rewrite the architecture of the settings page", text: "Split settings into modules." } });
+    expect(pathOf(large)).toBe("class escalate proposed");
+    const many = await runSim("issue-quick", { input, stubs: { plan: { ...plan, task_count: 2, tasks: [task("q1"), task("q2")] } } });
+    expect(pathOf(many)).toBe("class plan escalate proposed");
+    expect(pathOf(many)).not.toMatch(/write/);
   });
 
-  it("the mode is quick whatever is asked; a vague issue is blocked; a failed build reports the issue open", async () => {
-    expect(modeOf(await runSim("issue-quick", { input, mode: "full", stubs: stubs("low") }))).toBe("quick");
-    expect(pathOf(await runSim("issue-quick", { input, stubs: { triage: { clear: false } } }))).toBe("triage blocked");
-    const r = await runSim("issue-quick", { input, stubs: { ...stubs("low"), "lp.build": { status: "partial" } } });
-    expect(pathOf(r)).toBe("triage plan build partial");
+  it("the mode stays quick and a full contract still conflicts; a vague issue is blocked; a failed write stays open", async () => {
+    const asked = await runSim("issue-quick", { input, mode: "full", stubs: stubs() });
+    expect(modeOf(asked)).toBe("quick");
+    expect(resolveTaskQualityMode({ contract: "full", node: "quick", asked: "quick", workflow: asked.workflow.quality_mode }).ok).toBe(false);
+    expect(pathOf(await runSim("issue-quick", { input, stubs: { plan: { ...plan, clear: false, task_count: 0, tasks: [] } } }))).toBe("class plan blocked");
+    const r = await runSim("issue-quick", { input, stubs: { plan, write: { state: "blocked", merged_commits: [] } } });
+    expect(pathOf(r)).toBe("class plan lint write partial");
     expect(out(r)).toMatchObject({ status: "partial", resolution: "open" });
   });
 });
