@@ -20,3 +20,4 @@ import "@lane-pilot/jev/judgments/memory-rerank";
 import "@lane-pilot/jev/judgments/invoice-scan";
 import "@lane-pilot/jev/judgments/log-find";
 import "@lane-pilot/jev/judgments/skill-tree-pick";
+import "@lane-pilot/jev/judgments/accept-composite";
