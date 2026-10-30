@@ -2,7 +2,7 @@
 title: Protecting Lane Pilot database access
 type: decisions
 created: 2026-10-08
-updated: 2026-10-19
+updated: 2026-10-30
 status: active
 confidence: low
 tags: [database, access-control, operations]
@@ -44,7 +44,7 @@ Active. This record describes the code boundary and the chosen host-permission c
 ## Consequences
 
 - RPC validation remains a contract check and does not stop a process with direct filesystem access from changing SQLite data (`src/rooms/contracts/index.ts:18-27`, `src/rooms/core/server/rpc.ts:28-30`; see [RPC and host-call contracts](../rpc-callers.md)).
-- The repository does not define an operational review procedure for host process placement or database-directory ownership; `openDatabase` only obtains BB storage, enables foreign keys, and applies migrations (`src/rooms/storage/database.ts:336-340`).
+- The repository does not define an operational review procedure for host process placement or database-directory ownership; `openDatabase` only obtains BB storage, enables foreign keys, and applies migrations (`src/rooms/storage/database.ts:428-433`).
 
 <!-- lane-pilot:backlinks -->
 ## Referenced by
