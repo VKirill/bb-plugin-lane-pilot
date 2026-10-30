@@ -29,9 +29,9 @@ function setup(answers: { secret: number; injection: number }) {
   };
   const kv = new Map<string, unknown>();
   const logs: string[] = [];
-  const guard = (mode: string) => createOutputGuard({
+  const guard = (mode: string, extra: Record<string, unknown> = {}) => createOutputGuard({
     jev: () => createJev({ client, db }),
-    settings: async () => (mode ? { "jev.modes": `output.guard=${mode}` } : {}),
+    settings: async () => (mode ? { "jev.modes": `output.guard=${mode}`, ...extra } : extra),
     kv: { get: async (key: string) => (kv.get(key) ?? null) as never, set: async (key: string, value: unknown) => { kv.set(key, value); } },
     log: (line) => logs.push(line), now: () => 1234, random: () => 0,
   });
@@ -125,7 +125,8 @@ describe("J-11 what a shadow guard lets leave", () => {
     expect(sent.length).toBeLessThanOrEqual(SHADOW_CHARS + 10);
     expect(sent.startsWith("START")).toBe(true);
     expect(sent.endsWith("END")).toBe(true);
-    await env.guard("active")({ kind: "writer", text: long, projectId: "proj" });
+    // `writer` is not in the default active kinds; the setting opens it for the full-length read.
+    await env.guard("active", { "output-guard.kinds": "writer" })({ kind: "writer", text: long, projectId: "proj" });
     expect(String((env.states[1] as { output: string }).output).length).toBeGreaterThan(SHADOW_CHARS * 2);
   });
 
@@ -144,5 +145,19 @@ describe("J-11 what a shadow guard lets leave", () => {
     expect(env.states).toEqual([]);
     expect(env.kv.get(GUARD_STATS_KEY)).toBeTruthy();
     expect(looksSensitive(CLEAN, CLEAN)).toBe(false);
+  });
+});
+
+describe("J-11 selective active", () => {
+  it("an active mode blocks only the kinds output-guard.kinds names; the rest keep the shadow sample", async () => {
+    const env = setup({ secret: 0.97, injection: 0.1 });
+    // Default kinds: browser and errand are really blocked; a writer's output is sampled, not blocked.
+    expect(await env.guard("active")({ kind: "errand", text: REPORT, projectId: "proj" })).toMatchObject({ blocked: true });
+    const sampled = setup({ secret: 0.97, injection: 0.1 });
+    await sampled.guard("active")({ kind: "writer", text: CLEAN, projectId: "proj" });
+    expect(sampled.states).toHaveLength(1); // asked (random 0 ⇒ sampled), but the verdict cannot block
+    expect(env.kv.get(GUARD_BLOCKED_KEY)).toHaveLength(1);
+    const listed = setup({ secret: 0.97, injection: 0.1 });
+    expect(await listed.guard("active", { "output-guard.kinds": "writer" })({ kind: "writer", text: REPORT, projectId: "proj" })).toMatchObject({ blocked: true });
   });
 });
