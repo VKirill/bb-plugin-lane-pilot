@@ -3260,6 +3260,29 @@
    "evidence": "packages/memory-core/src/context-pack.ts:20",
    "matrixStatus": "readonly",
    "storageKey": "memory.pack_mode"
+  },
+  {
+   "id": "s526",
+   "index": 501,
+   "area": "Lane Pilot checkers",
+   "setting": "checkers.diff_hidden_limit",
+   "location": "src/rooms/checkers/diff-hidden.ts:1",
+   "category": "user",
+   "invType": "int",
+   "values": ">=0",
+   "defaultValue": "0",
+   "scope": "project",
+   "control": "number",
+   "options": [],
+   "min": 0,
+   "max": null,
+   "section": "stages",
+   "channel": "OWN",
+   "uiStatus": "editable",
+   "rationale": "How many accepted tasks one night loop runs the diff-hidden audit on to detect blind passes and phantom findings; 0 turns the audit off. Default 0.",
+   "evidence": "src/rooms/checkers/diff-hidden.ts:1",
+   "matrixStatus": "readonly",
+   "storageKey": "checkers.diff_hidden_limit"
   }
  ],
  "fields": {

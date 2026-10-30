@@ -1002,6 +1002,8 @@ export const fieldEn = {
   reason_s537: "The most failed or rejected verification gate evaluations a task may accumulate before it ends with verify_passes_exhausted instead of another writer pass. Default 10.",
   field_s538: "Retry safety gate",
   reason_s538: "on blocks an automatic retry when the failed attempt's work area was touched after it ended: foreign commits or file edits, rewritten check evidence, or a catalog secret value still in the worktree diff; off keeps the unconditional retry. Default on.",
+  field_s526: "Diff-hidden audit limit",
+  reason_s526: "How many accepted tasks one night loop runs the diff-hidden audit on to detect blind passes and phantom findings; 0 turns the audit off. Default 0.",
 } as const;
 
 export const fieldRu: { [K in keyof typeof fieldEn]: string } = {
@@ -2007,4 +2009,6 @@ export const fieldRu: { [K in keyof typeof fieldEn]: string } = {
   reason_s537: "Сколько упавших или отклонённых оценок гейта верификации может накопить задача, прежде чем завершится с verify_passes_exhausted вместо очередного прохода исполнителя. По умолчанию 10.",
   field_s538: "Гейт безопасности ретрая",
   reason_s538: "on блокирует авто-ретрай, если рабочую область упавшей попытки трогали после её конца: чужие коммиты или правки файлов, переписанные квитанции проверок или значение секрета из каталога, оставшееся в диффе worktree; off оставляет безусловный ретрай. По умолчанию on.",
+  field_s526: "Лимит аудита со скрытым диффом",
+  reason_s526: "Сколько принятых задач за одну ночную петлю проверяются аудитом со скрытым диффом для выявления слепых пропусков и фантомных замечаний; 0 выключает аудит. По умолчанию 0.",
 };

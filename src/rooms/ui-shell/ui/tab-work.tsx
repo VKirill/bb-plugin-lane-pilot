@@ -41,7 +41,7 @@ export function WorkTab({ page }: { page: LpPage }) {
         </section>
         <section className="space-y-2" data-testid="settings-group-quality">
           <CatalogField page={page} keyName="quality_mode" />
-          <AdvancedRows show={advanced}><CatalogFields page={page} keys={["sandbox.backend", "verification.sandbox_unsafe", "secrets.allow", "plan_fact.mode"]} /></AdvancedRows>
+          <AdvancedRows show={advanced}><CatalogFields page={page} keys={["sandbox.backend", "verification.sandbox_unsafe", "secrets.allow", "plan_fact.mode", "checkers.diff_hidden_limit"]} /></AdvancedRows>
         </section>
       </SettingsGroup>
 

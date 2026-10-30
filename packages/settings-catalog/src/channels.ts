@@ -279,6 +279,7 @@ export const SETTING_CATALOG: SettingSpec[] = [
     channel:"NONE",
     reason: UNAPPLIED_REASON.nightReviewModel,
   },
+  { key:"checkers.diff_hidden_limit", channel:"OWN", reason:"Native Lane Pilot checkers: task limit for nightly diff-hidden audit, default 0" },
 ];
 
 export const CONSUMER_KEYS = new Set(
