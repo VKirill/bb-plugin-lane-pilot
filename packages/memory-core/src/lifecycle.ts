@@ -75,7 +75,9 @@ export function sameSubject(a: { content: string; concepts: string[] }, b: { con
  * use does not decide. A record never used is neutral (0.5).
  */
 export function memoryUsefulness(record: Pick<MemoryRecord, "useCount" | "acceptedCount">): number {
-  return ((record.acceptedCount ?? 0) + 1) / ((record.useCount ?? 0) + 2);
+  const raw = ((record.acceptedCount ?? 0) + 1) / ((record.useCount ?? 0) + 2);
+  // Accepted counted without a use scored 4.5. One rejection stays below an unused note, so the floor is not raised.
+  return Math.min(1.5, raw);
 }
 
 /** Records mixed into a brief: counts the use and when it happened. */
