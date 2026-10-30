@@ -13,9 +13,13 @@ export type TrialConfig = {
   minPerArmLate: number;
   /** Acceptance may drop by this much and still count as "not worse" (noise on small samples). */
   acceptanceSlack: number;
+  /** Days a trial may stay open without a bench verdict before it retires as not proven (J-001: freeze the queue, an open trial gets this long). */
+  proveDays: number;
+  /** Open trials per project at which new candidates are frozen. */
+  maxOpen: number;
 };
 
-export const TRIAL_DEFAULTS: TrialConfig = { minPerArm: 6, maxDays: 14, minPerArmLate: 3, acceptanceSlack: 0.05 };
+export const TRIAL_DEFAULTS: TrialConfig = { minPerArm: 6, maxDays: 14, minPerArmLate: 3, acceptanceSlack: 0.05, proveDays: 7, maxOpen: 1 };
 
 export type ArmMetrics = { attempts: number; tasks: number; accepted: number; acceptanceRate: number; retries: number; retriesPerTask: number; blockingFindings: number; blockingPerAttempt: number };
 
@@ -57,6 +61,11 @@ export function decideTrial(rows: readonly ArmAttempt[], startedAt: number, now:
   }
   const ageDays = (now - startedAt) / 86_400_000;
   // No comparison yet: the live alternation can still retire a tree that is worse or unused, but it cannot adopt.
+  if (live.action === "retire") return live;
+  // J-001: a trial that stayed open `proveDays` without a bench verdict is not proven and retires, whatever the live arms say.
+  if (ageDays >= config.proveDays) {
+    return { action: "retire", reason: `not proven: ${Math.floor(ageDays)} days without a bench verdict (the proof window is ${config.proveDays})`, arms: live.arms };
+  }
   // Past the deadline a missing bench is not a reason to wait: the collected live arms close the trial.
   if (ageDays >= config.maxDays && live.action === "adopt") {
     return { action: "retire", reason: `insufficient data: the ${config.maxDays}-day deadline passed without a bench comparison, so it is not adopted. Live observation: ${live.reason}`, arms: live.arms };

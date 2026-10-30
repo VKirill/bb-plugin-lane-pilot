@@ -480,6 +480,8 @@ export function createHarness(ctx: ServerCore, services: Services) {
     const cfg = await config(input.projectId);
     if (!cfg.enabled) return { status: "skipped", detail: "harness editing is off for this project", ...none };
     if (trialHarness(db, input.projectId, input.area, input.writerKey)) return { status: "skipped", detail: "a candidate is already on trial for this key", ...none };
+    const openTrials = listHarnesses(db, input.projectId, { states: ["trial"] }).length;
+    if (openTrials >= cfg.trial.maxOpen) return { status: "skipped", detail: `frozen: ${openTrials} trial(s) already open (trial.max_open ${cfg.trial.maxOpen})`, ...none };
     const where = await place(input.projectId, input.area);
     if (!where) throw new Error("no reachable folder for the editor: the key's runs name no host and workspace, and the project binding has no folder");
     return { status: "ready", detail: "", hostId: where.hostId, path: where.path };
@@ -593,6 +595,10 @@ export function createHarness(ctx: ServerCore, services: Services) {
     }
     const open = trialHarness(db, projectId, area, writerKey);
     if (open) return { status: "trial", detail: inventory(open.tree), candidateId: open.id };
+    // J-001 freeze: with `trial.max_open` or more trials already open the project takes no new candidates until one decides.
+    const openCount = listHarnesses(db, projectId, { states: ["trial"] }).length;
+    const maxOpen = (await config(projectId)).trial.maxOpen;
+    if (openCount >= maxOpen) return { status: "keep_base", detail: `frozen: ${openCount} trial(s) already open (trial.max_open ${maxOpen}); new candidates wait for a verdict`, candidateId: "" };
     const active = activeHarness(db, projectId, area, writerKey);
     const candidate = insertHarness(db, { projectId, area, writerKey, tree, state: "trial", createdBy: "editor", parentId: active.id,
       notes: [`## inv\n${notes.inv}`, `## dom\n${notes.dom}`, `## compose\n${notes.compose ?? ""}`].join("\n\n").slice(0, 20_000), reason: input.reason });
