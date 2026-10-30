@@ -82,4 +82,11 @@ describe("K8 defect 3: a note from a CLI session does not reach writers at once"
     storeMemoryRecords(db, { projectId: "P", ...limits, coreBudget: 99, noteBudget: 99, indexBudget: 999, entries: [note("Greeting-card pages live in components/greeting-cards.", ["greeting-cards"])] });
     expect(writerSees(db)).toBe(1);
   });
+
+  it("stores a hedged maintainer note as observed, so writers do not read it yet", () => {
+    const db = newDb();
+    const stored = storeMemoryRecords(db, { projectId: "P", ...limits, coreBudget: 99, noteBudget: 99, indexBudget: 999, entries: [note("Greeting-card pages might stay under components/greeting-cards.", ["greeting-cards"])] });
+    expect(db.prepare("SELECT trust FROM lane_pilot_memory WHERE id=?").get(stored.insertedIds[0])).toEqual({ trust: "observed" });
+    expect(writerSees(db)).toBe(0);
+  });
 });

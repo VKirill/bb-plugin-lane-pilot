@@ -1,6 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { searchMemoryRecords, storeMemoryRecords } from "../../packages/memory-core/src";
+import { hideRecord, searchMemoryRecords, storeMemoryRecords } from "../../packages/memory-core/src";
 import { queryWords } from "../../src/rooms/memory-tiers";
 import { enrichMemoryContext, tierReport } from "../../src/rooms/memory-tiers/server";
 import { createAttempt, createRun, createTask, openDatabase, transitionAttempt } from "../../src/rooms/storage/database";
@@ -41,6 +41,15 @@ describe("memory tiers around the PM's query", () => {
     expect(db.prepare("SELECT status FROM lane_pilot_memory WHERE content LIKE 'Greeting%'").get()).toEqual({ status: "expired" });
     expect(searchMemoryRecords(db, "P", "greeting cards share", 5, "auto", "subagent", "").map((row) => row.content)).not.toContain("Greeting cards render their share button through components/cards/share.ts");
     expect(tierReport(db, "P", NOW)).toMatchObject({ cold: 1, promoted: 0, misses: [] });
+  });
+
+  it("does not offer a budget-evicted note as a cold candidate", () => {
+    const db = world();
+    const id = storeMemoryRecords(db, { projectId: "P", ...limits, entries: [{ kind: "note", content: "Kubernetes ingress certificates live in deploy/ingress.yaml", concepts: ["kubernetes"] }], now: NOW }).insertedIds[0]!;
+    expect(hideRecord(db, "P", id, "expired", null, () => {}, "budget")).toBe(true);
+    const result = enrichMemoryContext(db, { projectId: "P", query: "kubernetes ingress certificates", activeCount: 0, now: NOW });
+    expect(result.text).not.toContain("ingress.yaml");
+    expect(result.miss).toBe(true);
   });
 
   it("does not search the cold tier when enough active notes answer, and a query that finds nothing anywhere is a miss", () => {

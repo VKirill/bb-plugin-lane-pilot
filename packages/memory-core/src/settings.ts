@@ -21,7 +21,9 @@ export type MemoryCandidate=MemoryCore & {
 export type MemoryRecord=MemoryCore & {id:string;projectId:string;personalBot:string;sourceSha256:string;createdAt:number;
   status?:MemoryStatus;trust?:MemoryTrust;validUntil?:number|null;supersededBy?:string|null;sourceFileId?:string|null;
   /** How often the record was mixed into a brief, how many of those attempts were accepted, and when it was last mixed. */
-  useCount?:number;acceptedCount?:number;lastUsedAt?:number|null};
+  useCount?:number;acceptedCount?:number;lastUsedAt?:number|null;
+  /** Hash of the files the note named when it was written. Absent: the write could not read them, so a later brief does not treat the note as drifted. */
+  fileFingerprint?:string|null};
 
 export const MAX_BUDGET=1_000_000;
 /** The settings keys `parseMemorySettings` reads. */
