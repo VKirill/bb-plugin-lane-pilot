@@ -40,7 +40,7 @@ describe("abandoned run sweep", () => {
     await harness.lifecycle.dispose();
   });
 
-  it("closes a blocked run parked for three days and a running run idle for six hours, and tells the PM", async () => {
+  it("closes a blocked run parked for three days and a running run idle for six hours, and does not wake the idle PM chat", async () => {
     const { bb: host, harness } = createFakePluginHost({ pluginId:"lane-pilot" });
     const db = openDatabase(host);
     const sent: string[] = [];
@@ -74,9 +74,8 @@ describe("abandoned run sweep", () => {
     expect(closedBy("run_blocked_old")).toBe("ttl");
     expect(closedBy("run_running_old")).toBe("ttl");
     for (const id of ["run_blocked_fresh", "run_running_fresh", "run_running_busy"]) expect(getRun(db, id)?.closed_at).toBeNull();
-    expect(sent.some((line) => line.startsWith("thr_pm:") && /blocked/.test(line))).toBe(true);
-    expect(sent.some((line) => line.startsWith("thr_pm2:") && /running/.test(line))).toBe(true);
-    expect(sent.some((line) => line.includes("run_running_busy"))).toBe(false);
+    // 2026-10-30: the first sweep of 0.1.390 sent this note into 44 PM chats idle for days and woke them all.
+    expect(sent).toEqual([]);
     await harness.lifecycle.dispose();
   });
 });

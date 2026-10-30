@@ -1,5 +1,5 @@
 import { getRun } from "../../storage";
-import { scheduleIsolated, type ServerCore, type Services } from "../../core/server";
+import { scheduleIsolated, sendPmNotice, type ServerCore, type Services } from "../../core/server";
 import { goalVerdict, pmGoalMessage, runReady, type TaskState } from "../logic";
 import { getRunGoal, saveRunGoal, type RunGoalRecord } from "../store";
 
@@ -30,13 +30,13 @@ export function createRunGoal(ctx: ServerCore, services: Services) {
     const record: RunGoalRecord = { runId, projectId: run.project_id, state: verdict.state, tasks: tasks.filter((task) => task.state === "accepted").length, headSha: pass.head ?? null, red: verdict.red, detail: verdict.detail, at: Date.now(), coverage: verdict.coverage };
     saveRunGoal(db, record);
     if (verdict.state === "failed" && run.pm_thread_id) {
-      await bb.sdk.threads.send({ threadId: run.pm_thread_id, mode: "queue-if-active", input: [{ type: "text", text: pmGoalMessage(runId, verdict.red), mentions: [] }] } as never).catch(() => undefined);
+      await sendPmNotice(bb, run.pm_thread_id, pmGoalMessage(runId, verdict.red));
     }
     // A partial or inconclusive verdict is not a pass either: the PM sees it once, with what did not run.
     if ((verdict.state === "partial" || verdict.state === "inconclusive") && run.pm_thread_id) {
       const detail = verdict.detail ?? `planned ${verdict.coverage.planned}, ran ${verdict.coverage.ran}, skipped ${verdict.coverage.skipped}`;
       const text = `Lane Pilot: goal check of run ${runId} is ${verdict.state} — ${detail}. The run is not proven end-to-end; re-check with bb lane-pilot run-goal ${runId} once the missing checks can run.`;
-      await bb.sdk.threads.send({ threadId: run.pm_thread_id, mode: "queue-if-active", input: [{ type: "text", text, mentions: [] }] } as never).catch(() => undefined);
+      await sendPmNotice(bb, run.pm_thread_id, text);
     }
     ctx.log(`run-goal: ${runId} ${verdict.state}${verdict.red.length ? ` (${verdict.red.length} red)` : ""}${verdict.detail ? `: ${verdict.detail}` : ""}`);
     return record;

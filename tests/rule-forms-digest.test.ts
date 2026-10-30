@@ -72,7 +72,13 @@ describe("the weekly digest reaches the PM", () => {
     proposePromotions(db, "p", { repoPath: "/tmp/repo" });
     pmSetup(db, "p");
     const sent: Array<{ threadId: string; text: string }> = [];
-    const bb = { sdk: { threads: { send: async (args: { threadId: string; input: Array<{ text: string }> }) => { sent.push({ threadId: args.threadId, text: args.input[0]!.text }); return {}; } } }, log: { warn: () => {} } };
+    let updatedAt = Date.now();
+    const bb = { sdk: { threads: { get: async () => ({ updatedAt }), send: async (args: { threadId: string; input: Array<{ text: string }> }) => { sent.push({ threadId: args.threadId, text: args.input[0]!.text }); return {}; } } }, log: { warn: () => {} } };
+    // A PM chat idle for days is not woken for the digest.
+    updatedAt = Date.now() - 3 * 24 * 3_600_000;
+    expect(await deliverPromotionDigests(bb as never, db as never)).toEqual({ sent: 0, skipped: 1 });
+    expect(sent).toEqual([]);
+    updatedAt = Date.now();
     const result = await deliverPromotionDigests(bb as never, db as never);
     expect(result).toEqual({ sent: 1, skipped: 0 });
     expect(sent[0]!.threadId).toBe("thr_pm");

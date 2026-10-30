@@ -1,6 +1,6 @@
 import { markMechanized } from "@lane-pilot/run-insights";
 import { getActivation, getRun } from "../storage";
-import { scheduleIsolated } from "../core/server";
+import { scheduleIsolated, sendPmNotice } from "../core/server";
 import type { ServerCore, Services } from "../core/server";
 export type PromotionServiceApi = ReturnType<typeof createPromotionService>;
 import { acceptPromotion, dismissPromotion, listPromotions, type PromotionRow } from "./promotion";
@@ -22,8 +22,8 @@ export async function deliverPromotionDigests(bb: Pick<BbPluginApi, "sdk" | "log
     const run = getRun(db, activation.run_id);
     if (!run || run.closed_at || run.pm_thread_id !== activation.pm_thread_id) { skipped++; continue; }
     try {
-      await bb.sdk.threads.send({ threadId: activation.pm_thread_id, mode: "queue-if-active", input: [{ type: "text", text: lines.join("\n"), mentions: [] }] } as never);
-      sent++;
+      // A cold PM chat is not woken for the digest; the open candidates stay in lane_pilot_learned op:promotion.
+      if (await sendPmNotice(bb, activation.pm_thread_id, lines.join("\n"))) sent++; else skipped++;
     } catch (cause) {
       bb.log.warn(`Lane Pilot promotion digest for ${projectId} not sent: ${cause instanceof Error ? cause.message : String(cause)}`);
       skipped++;

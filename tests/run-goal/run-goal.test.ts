@@ -121,6 +121,7 @@ describe("the sweep", () => {
   function world(red: boolean) {
     const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
     const sent: string[] = [];
+    harness.sdk.stub("threads.get", async () => ({ updatedAt: Date.now() }));
     harness.sdk.stub("threads.send", async (args: { input: Array<{ text: string }> }) => { sent.push(args.input[0]!.text); return undefined; });
     const db = openDatabase(bb);
     createRun(db, "run1", "P", "bb", "/repo");
@@ -169,6 +170,7 @@ describe("the sweep", () => {
   it("tells the PM once a goal is only partial, and retries a check that crashed", async () => {
     const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
     const sent: string[] = [];
+    harness.sdk.stub("threads.get", async () => ({ updatedAt: Date.now() }));
     harness.sdk.stub("threads.send", async (args: { input: Array<{ text: string }> }) => { sent.push(args.input[0]!.text); return undefined; });
     const db = openDatabase(bb);
     createRun(db, "runP", "P", "bb", "/repo");
