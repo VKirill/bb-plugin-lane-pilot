@@ -8,7 +8,9 @@ export { loadCandidates } from "../candidates";
 export { findSolutionCommit } from "../warmup";
 export type { Candidate } from "../types";
 export type { HostPort } from "../ports";
-export { mountBenchSweep, mountBenchWeekly, weekArm } from "./weekly";
+export { mountBenchNightly, mountBenchSweep, mountBenchWeekly, weekArm } from "./weekly";
 // The wall (src/rooms/wall) shows the bench arm of a version and starts the night one.
 export { benchArmStatus } from "../reliability";
 export { nightArm } from "../runner";
+export { isLiveProject, liveStability, renderLiveStability } from "../live-rate";
+export type { LiveAttempt, LiveStability } from "../live-rate";

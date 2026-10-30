@@ -16,9 +16,13 @@ week(){ q 7 "$1"; }
 since="(select ms from lp_cut)"
 ver=$(day "select v from lp_floor")
 win=$(week "select case when count(*)=0 then 'ещё нет реальных попыток на этой версии' else 'день '||min(7, cast((strftime('%s','now')-min(created_at)/1000)/86400 as integer)+1)||' из 7, с '||date(min(created_at)/1000,'unixepoch') end from lp_attempt where scope='real' and cur=1")
-acc=$(day "select count(*)||' попыток, принято '||coalesce(round(100.0*sum(state='accepted')/nullif(count(*),0),1),0)||'%' from lp_attempt where scope='real' and cur=1 and created_at>$since")
-accw=$(week "select coalesce(round(100.0*sum(state='accepted')/nullif(count(*),0),1),0)||'%' from lp_attempt where scope='real' and cur=1 and created_at>$since")
-fault=$(day "select count(*)||' из '||(select count(*) from lp_attempt_class where scope='real' and cur=1 and cls is not null and created_at>$since) from lp_attempt_class where scope='real' and cur=1 and cls='harness' and created_at>$since")
+# The headline is tasks of live projects (src/rooms/bench/live-rate.ts), not attempts. When this file is copied to ~/.config/lp-metrics, the checkout is the primary one.
+if [ -z "${LP_PLUGIN_ROOT:-}" ]; then
+  here=$(cd "$(dirname "$0")" && pwd)
+  if [ -f "$here/../src/rooms/bench/live-rate.ts" ]; then LP_PLUGIN_ROOT=$(cd "$here/.." && pwd); else LP_PLUGIN_ROOT=/home/ubuntu/BB-service/bb-plugin-lane-pilot; fi
+fi
+live=$(cd "$LP_PLUGIN_ROOT" && npx tsx scripts/print-live-stability.ts --db "$DB" --core "$CORE" --days 1 --floor "$ver")
+livew=$(cd "$LP_PLUGIN_ROOT" && npx tsx scripts/print-live-stability.ts --db "$DB" --core "$CORE" --days 7 --floor "$ver")
 orig=$(day "select group_concat(origin||' '||n, ', ') from (select origin, count(*) n from lp_triage where scope='real' and cur=1 and failed_at>$since group by origin order by n desc)")
 orch=$(day "select coalesce(round(100.0*sum(origin='orchestrator')/nullif(count(*),0),1),0)||'%' from lp_triage where scope='real' and cur=1 and failed_at>$since")
 sys=$(day "select count(*) from lp_triage where scope='real' and cur=1 and failed_at>$since and (reason like '%page_cap%' or reason like '%lost in a plugin reload%' or reason like '%illegal stage transition%' or reason like '%factory registration%' or reason like '%stale API handle%' or reason like '%not a git repository%' or reason like '%owns_paths rejected .agents/%' or reason like '%SIGKILL%')")
@@ -29,7 +33,7 @@ usage=$(week "select coalesce(group_concat(provider||' '||m||'/'||n, ', '), 'н�
 # A hub whose plugin has no such table yet gives an empty line, not an error.
 now_ms="$(( $(date +%s) * 1000 ))"
 dfr=$(day "select 'Отсрочки: просрочено '||coalesce(sum(state in ('open','overdue') and due_at<$now_ms and owner_ref is not null and due_source in ('explicit','relative','weekday')),0)||', открыто '||coalesce(sum(state in ('open','overdue') and due_at>=$now_ms and owner_ref is not null and due_source in ('explicit','relative','weekday')),0)||coalesce((select ' (просрочено: '||group_concat(substr(what,1,60)||' ['||id||']', '; ')||')' from (select id, what from lane_pilot_deferral where state in ('open','overdue') and due_at<$now_ms and owner_ref is not null and due_source in ('explicit','relative','weekday') order by due_at limit 3)),'') from lane_pilot_deferral" 2>/dev/null) || dfr=""
-text="📊 Lane Pilot за сутки, реальные проекты на версии ≥${ver}: ${acc} (за 7 дней ${accw}). Окно стабильности: ${win}. Вина Lane Pilot (harness): ${fault}. Провалы: ${orig:-нет}. Доля orchestrator: ${orch}. Системных причин: ${sys}. Цель: orchestrator <5%, системных 0, принято ≥60%, 7 дней подряд. Старые версии (до ${ver}), для сравнения: ${old}. Песочницы и учения отдельно: ${sand}. Токены писателей за 7 дней (измерено/попыток): ${usage}; где провайдер не отдаёт расход (acp-cursor), цена «не измерено», не 0 (bb lane-pilot metrics).${dfr:+ ${dfr}.}"
+text="📊 Lane Pilot за сутки. ${live} За 7 дней: ${livew}. Окно стабильности: ${win}. Провалы: ${orig:-нет}. Доля orchestrator: ${orch}. Системных причин: ${sys}. Цель: orchestrator <5%, системных 0, принято ≥60%, 7 дней подряд. Старые версии (до ${ver}), для сравнения: ${old}. Песочницы и учения отдельно: ${sand}. Токены писателей за 7 дней (измерено/попыток): ${usage}; где провайдер не отдаёт расход (acp-cursor), цена «не измерено», не 0 (bb lane-pilot metrics).${dfr:+ ${dfr}.}"
 # The morning list (four lines of a report, scripts/lp-morning.sql: rules, red, accepted, deferrals): never blocks the report;
 # no file just leaves it out, and a failing line (a database without the owner-waiting tables) leaves out only itself.
 now_s=$(date +%s)

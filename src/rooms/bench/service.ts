@@ -2,8 +2,10 @@ import { hubFields, writeHubFields } from "../improvement";
 import { baselineMetrics } from "./baseline";
 import { buildSet, type BuildReport } from "./build";
 import { compareArms, computeNoise, noiseOfRepeats, passReport, renderComparison, summarizeArm, type ArmSummary, type Comparison } from "./compare";
+import { cohortCounts, cohortOf } from "./stratify";
 import type { HostPort, PipelinePort } from "./ports";
-import { sweepStuckRuns } from "./reliability";
+import { releaseGate, sweepStuckRuns } from "./reliability";
+import { BENCH_REPOS_ROOT_ENV } from "./repos";
 import { DEFAULT_BUDGET_HOURS, DEFAULT_BUDGET_TOKENS, defaultProjectName, runSeries, type BenchWriter, type SeriesInput, type SeriesReport } from "./runner";
 import {
   getSet, latestNoise, listResults, listRuns, listSets, saveNoise, saveVerdict, type BenchDb, type BenchRun, type NoiseRecord,
@@ -25,8 +27,8 @@ export type BenchDeps = {
 };
 
 export type BenchSettings = { budgetTokens: number; budgetHours: number };
-/** Where a series runs, and the optional same-set repeats. Stored next to the old budget record; empty host means the project's own machine. */
-export type BenchPlacement = { hostId: string | null; noiseRepeats: number };
+/** Where a series runs, and the optional same-set repeats. Stored next to the old budget record; empty host means the project's own machine. `reposRoot` remaps stored checkout paths (see repos.ts). */
+export type BenchPlacement = { hostId: string | null; noiseRepeats: number; reposRoot: string | null };
 const CONFIG_KEY = "bench:config";
 
 function writerOf(run: BenchRun): BenchWriter | null {
@@ -53,7 +55,9 @@ export function createBench(deps: BenchDeps) {
     const hostId = typeof stored?.hostId === "string" && stored.hostId.trim() ? stored.hostId.trim() : null;
     const noise = stored?.noiseRepeats;
     const noiseRepeats = Number.isInteger(noise) && (noise as number) >= 0 && (noise as number) <= 10 ? noise as number : 0;
-    return { hostId, noiseRepeats };
+    const fromEnv = process.env[BENCH_REPOS_ROOT_ENV]?.trim() || null;
+    const reposRoot = typeof stored?.reposRoot === "string" && stored.reposRoot.trim() ? stored.reposRoot.trim() : fromEnv;
+    return { hostId, noiseRepeats, reposRoot };
   }
   async function writePlacement(patch: Partial<BenchPlacement>): Promise<void> {
     const prev = await deps.kv.get(CONFIG_KEY).catch(() => null) as Record<string, unknown> | null;
@@ -74,6 +78,7 @@ export function createBench(deps: BenchDeps) {
       if (!Number.isInteger(patch.noiseRepeats) || patch.noiseRepeats < 0 || patch.noiseRepeats > 10) throw new Error("noiseRepeats must be an integer from 0 to 10");
       place.noiseRepeats = patch.noiseRepeats;
     }
+    if ("reposRoot" in patch) place.reposRoot = typeof patch.reposRoot === "string" && patch.reposRoot.trim() ? patch.reposRoot.trim() : null;
     if (Object.keys(place).length) await writePlacement(place);
     return settings();
   }
@@ -89,10 +94,12 @@ export function createBench(deps: BenchDeps) {
 
   async function build(input: { version: string; seed?: string; only?: string[]; triesFactor?: number; dryRun?: boolean; planOnly?: boolean; wait?: boolean; minFreeGb?: number; checkTimeoutSec?: number }) {
     return await job(`build:${input.version}`, input.wait ?? false, async () => {
+      const place = await placement();
       const { report } = await buildSet({
         db: deps.db, host: deps.host, version: input.version, projectNames: await deps.projectNames(), isSandboxName: deps.isSandboxName, log: deps.log,
         ...(input.seed ? { seed: input.seed } : {}), ...(input.only ? { only: input.only } : {}), ...(input.triesFactor ? { triesFactor: input.triesFactor } : {}),
         ...(input.dryRun ? { dryRun: true } : {}), ...(input.planOnly ? { planOnly: true } : {}), ...(input.minFreeGb ? { minFreeGb: input.minFreeGb } : {}), ...(input.checkTimeoutSec ? { checkTimeoutSec: input.checkTimeoutSec } : {}),
+        ...(place.reposRoot ? { reposRoot: place.reposRoot } : {}), ...(place.hostId ? { hostId: place.hostId } : {}),
       });
       await deps.kv.set(BUILD_KEY(input.version), report as never).catch(() => undefined);
       return report;
@@ -112,12 +119,13 @@ export function createBench(deps: BenchDeps) {
     const place = await placement();
     const repeats = Math.max(1, input.repeat ?? (input.noise && place.noiseRepeats >= 2 ? place.noiseRepeats : 1));
     const hostId = input.hostId ?? place.hostId ?? undefined;
+    const reposRoot = input.reposRoot ?? place.reposRoot ?? undefined;
     return await job(`run:${input.version}:${input.arm}`, input.wait ?? false, async () => {
       const closed = sweepStuckRuns(deps.db, Date.now(), { defaultHours: caps.budgetHours, exceptArm: input.arm });
       for (const row of closed) deps.log(`bench-sweep: ${row.id} ${row.arm} ${row.stopReason}`);
       const reports: SeriesReport[] = [];
       for (let repeat = 1; repeat <= repeats; repeat++) {
-        const report = await runSeries({ db: deps.db, host: deps.host, pipeline: deps.pipeline, log: deps.log, ...(deps.projectNameFor ? { projectNameFor: deps.projectNameFor } : {}) }, { ...input, repeat, ...(hostId ? { hostId } : {}), budgetTokens: input.budgetTokens ?? caps.budgetTokens, budgetHours: input.budgetHours ?? caps.budgetHours });
+        const report = await runSeries({ db: deps.db, host: deps.host, pipeline: deps.pipeline, log: deps.log, ...(deps.projectNameFor ? { projectNameFor: deps.projectNameFor } : {}) }, { ...input, repeat, ...(hostId ? { hostId } : {}), ...(reposRoot ? { reposRoot } : {}), budgetTokens: input.budgetTokens ?? caps.budgetTokens, budgetHours: input.budgetHours ?? caps.budgetHours });
         reports.push(report);
         if (report.state === "stopped_budget" || report.state === "failed" || report.state === "deferred" || report.state === "unavailable") break;
       }
@@ -174,20 +182,25 @@ export function createBench(deps: BenchDeps) {
 
   function status(version?: string) {
     const sets = listSets(deps.db).filter((row) => !version || row.version === version);
-    return sets.map((set) => ({
-      version: set.version, manifestSha256: set.manifestSha256, tasks: set.taskCount, candidates: set.candidateCount, createdAt: set.createdAt,
-      runs: listRuns(deps.db, set.id).map((row) => {
-        const results = listResults(deps.db, row.id);
-        return { arm: row.arm, repeat: row.repeat, state: row.state, stopReason: row.stopReason, spentTokens: row.spentTokens, tasks: results.length, accepted: results.filter((r) => r.accepted).length, skipped: results.filter((r) => r.state === "skipped_budget").length };
-      }),
-    }));
+    return sets.map((set) => {
+      const tasks = getSet(deps.db, set.version)?.tasks ?? [];
+      return {
+        version: set.version, manifestSha256: set.manifestSha256, tasks: set.taskCount, candidates: set.candidateCount, createdAt: set.createdAt,
+        runs: listRuns(deps.db, set.id).map((row) => {
+          const results = listResults(deps.db, row.id);
+          return { arm: row.arm, repeat: row.repeat, state: row.state, stopReason: row.stopReason, spentTokens: row.spentTokens, tasks: results.length, accepted: results.filter((r) => r.accepted).length, skipped: results.filter((r) => r.state === "skipped_budget").length, cohorts: cohortCounts(tasks, results) };
+        }),
+      };
+    });
   }
 
   function show(version: string) {
     const set = getSet(deps.db, version);
     if (!set) return null;
     return {
-      version: set.version, manifestSha256: set.manifestSha256, candidates: set.candidateCount, tasks: set.tasks.map((task) => ({
+      version: set.version, manifestSha256: set.manifestSha256, candidates: set.candidateCount,
+      cohorts: { fixed: set.tasks.filter((task) => cohortOf(task.stratum) === "fixed").length, fresh: set.tasks.filter((task) => cohortOf(task.stratum) === "fresh").length },
+      tasks: set.tasks.map((task) => ({
         position: task.position, taskId: task.taskId, project: task.projectName, repo: task.repoPath, stratum: task.stratum, hard: task.hard, risk: task.risk, area: task.area,
         base: task.initialHeadSha.slice(0, 10), solution: task.solutionCommit.slice(0, 10), discriminating: task.warm.discriminating.length,
       })),
@@ -211,7 +224,12 @@ export function createBench(deps: BenchDeps) {
   /** The three model-free numbers of the baseline metric bench (SMA k_lib_bench), over the accepted attempts of the last `days`. */
   const baseline = (opts: { days?: number; projectId?: string } = {}) => baselineMetrics(deps.db, deps.host, opts);
 
-  return { settings, placement, configure, build, lastBuild, run, noise, compare, status, show, prepare, armSummary, baseline, sweep };
+  /** The deploy script asks this. A night that stopped on budget, failed, or never ran is not a pass. */
+  function gate(maxAgeHours?: number, now = Date.now()) {
+    return releaseGate(listRuns(deps.db), now, maxAgeHours);
+  }
+
+  return { settings, placement, configure, build, lastBuild, run, noise, compare, status, show, prepare, armSummary, baseline, sweep, gate };
 }
 
 export type BenchApi = ReturnType<typeof createBench>;

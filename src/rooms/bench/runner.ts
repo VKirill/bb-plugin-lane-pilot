@@ -6,6 +6,7 @@ import { diskDeferral, isDiskDeferral } from "./reliability";
 import {
   addSpent, deleteRunRow, finishRunRow, getRun, getSet, listResults, listRuns, saveResult, startRunRow, verifySet, type BenchDb, type BenchResult, type BenchRun,
 } from "./store";
+import { resolveRepoPath } from "./repos";
 import { BENCH_PROJECT_PREFIX, BENCH_PROJECTS, benchProjectName, type ManifestTask, type VerificationItem } from "./types";
 import { MIN_FREE_GB, freeGb, linkDependenciesCommand } from "./warmup";
 
@@ -38,6 +39,8 @@ export type SeriesInput = {
   minFreeGb?: number;
   /** Machine the series runs on. Absent: each bench project's own machine. */
   hostId?: string;
+  /** Checkout root on that machine. A stored Mac path is cloned from `<root>/<folder>` (scripts/bench-sync-repos.sh). */
+  reposRoot?: string | null;
 };
 
 export type RunnerDeps = {
@@ -221,7 +224,8 @@ export async function runSeries(deps: RunnerDeps, input: SeriesInput): Promise<S
         const low = diskDeferral(await free(placed.hostId), input.minFreeGb ?? MIN_FREE_GB, placed.hostId);
         if (low) { stopReason = low; break; }
 
-        const prepared = await deps.host.run(placed.hostId, "/", prepareCheckoutCommand(task.repoPath, placed.path, task.initialHeadSha), 900);
+        const source = resolveRepoPath(task.repoPath, input.reposRoot);
+        const prepared = await deps.host.run(placed.hostId, "/", prepareCheckoutCommand(source, placed.path, task.initialHeadSha), 900);
         if (prepared.exitCode !== 0) {
           saveResult(deps.db, { runId: run.id, taskId: task.taskId, position: task.position, state: "error", accepted: false, benchTaskId: null, lpRunId: null, attempts: 0, stagesPassed: 0, stagesFailed: 0, tokens: null, costUsd: null, costState: "not_measured", seconds: null, reason: `checkout failed: ${(prepared.stderr || prepared.stdout).trim().slice(-300)}`, recordedAt: clock.now() });
           continue;
