@@ -10,6 +10,7 @@ import "./judgments";
  * `jev.calibrated_thresholds`, where resolveThresholds picks them up only while the judgment's fingerprint still matches.
  */
 export const JEV_USAGE = "bb lane-pilot jev calibrate [project] [--since <date>] [--min-labeled N] [--json] [--save]   (accuracy by judgment over the receipts, with the gate/sort-only/dead verdict; --save writes the certified thresholds to the project's jev.calibrated_thresholds)\n"
+  + "bb lane-pilot jev planfact [--json]   (where the shadow Jev read of the acceptance items disagrees with the code's plan-fact check; decided_by=jev only)\n"
   + "bb lane-pilot jev watch [--since <date>|--hours N] [--days N] [--json]   (jaggedness: per judgment+project slices of the window against the same slices' baseline; drift findings, read-only)";
 
 const DAY = 86_400_000;
@@ -45,6 +46,25 @@ export function runJevCli(deps: { db: Database.Database; saveProjectSetting?: (p
     if (flags.has("json")) return { exitCode: 0, stdout: JSON.stringify(report, null, 2) };
     const lines = report.map((r) => `${r.judgment}: ${r.labeled} labeled, ${r.ready ? `suggested p>=${r.suggested_p} (acc ${r.accuracy} vs ${r.baseline})` : "not enough data"}`);
     return { exitCode: 0, stdout: lines.join("\n") || "no labeled receipts yet" };
+  }
+  if (sub === "planfact") {
+    // Jev's blind read is measured only where it decided itself; shadow/fallback receipts say nothing about accuracy.
+    const rows = deps.db.prepare(`SELECT r.id, r.run_id, r.subject, r.decision, s.state, s.result_json FROM lane_pilot_jev_receipt r
+      JOIN lane_pilot_stage_receipt s ON s.run_id = r.run_id AND s.task_id = r.subject AND s.stage_id = 'plan-fact'
+      WHERE r.judgment = 'plan.fact' AND r.status = 'ok' AND r.decided_by = 'jev'`).all() as Array<{ id: number; run_id: string; subject: string; decision: string | null; state: string; result_json: string | null }>;
+    const items: Array<{ runId: string; taskId: string; jev: Record<string, string>; code: Record<string, string>; state: string }> = [];
+    for (const row of rows) {
+      let result: { items?: Array<{ item: number; verdict: string }>; jev?: Record<string, string> } | null = null;
+      try { result = row.result_json ? JSON.parse(row.result_json) : null; } catch { /* unreadable */ }
+      if (!result?.jev) continue;
+      const code = Object.fromEntries((result.items ?? []).map((item) => [String(item.item), item.verdict === "proven" ? "done" : "not_done"]));
+      const diffs: Record<string, string> = {}, codeDiffs: Record<string, string> = {};
+      for (const [item, verdict] of Object.entries(result.jev)) {
+        if (verdict !== "unseen" && code[item] && code[item] !== verdict) { diffs[item] = verdict; codeDiffs[item] = code[item]!; }
+      }
+      if (Object.keys(diffs).length) items.push({ runId: row.run_id, taskId: row.subject, jev: diffs, code: codeDiffs, state: row.state });
+    }
+    return { exitCode: 0, stdout: JSON.stringify(items, null, args.includes("--json") ? 2 : 2) };
   }
   if (sub !== "calibrate") return { exitCode: 1, stderr: `usage: ${JEV_USAGE}` };
   const flags = new Map<string, string | true>(), positional: string[] = [];

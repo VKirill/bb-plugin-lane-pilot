@@ -141,3 +141,25 @@ describe("route.workflow outcome labels", () => {
     expect([outcome(a), outcome(b), outcome(c), outcome(escalated)]).toEqual(["agree", "disagree", "disagree", null]);
   });
 });
+
+describe("plan.fact outcome labels", () => {
+  it("an accepted task labels the shadow read: matching items agree, a differing item disagrees", async () => {
+    const { createFakePluginHost } = await import("@get-bb/plugin-sdk/testing");
+    const { openDatabase } = await import("../../src/rooms/storage/database");
+    const { insertReceipt } = await import("@lane-pilot/jev");
+    const { sweepPlanFactOutcomes } = await import("../../src/rooms/runs/failure-class-model");
+    const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
+    const db = openDatabase(bb), now = Date.now();
+    const run = (id: string) => db.prepare("INSERT INTO lane_pilot_run (id, project_id, pm_thread_id, state, created_at, updated_at) VALUES (?,?,?,?,?,?)").run(id, "p", "pm", "accepted", now, now);
+    const task = (id: string, runId: string) => db.prepare("INSERT INTO lane_pilot_task (id, run_id, kind, contract_json, created_at) VALUES (?,?,?,?,?)").run(id, runId, "bb", "{}", now);
+    const attempt = (id: string, runId: string, taskId: string) => db.prepare("INSERT INTO lane_pilot_attempt (id, run_id, task_id, state, created_at, updated_at) VALUES (?,?,?,?,?,?)").run(id, runId, taskId, "accepted", now, now);
+    const stage = (runId: string, taskId: string, jev: Record<string, string>) => db.prepare("INSERT INTO lane_pilot_stage_receipt (run_id, task_id, stage_id, contract_version, state, input_sha256, attempt, result_json, updated_at) VALUES (?,?,?,?,?,?,?,?,?)").run(runId, taskId, "plan-fact", 1, "passed", "sha", 0, JSON.stringify({ items: [{ item: 1, verdict: "proven" }, { item: 2, verdict: "unproven" }], jev }), now);
+    const receipt = (runId: string, subject: string) => insertReceipt(db, { judgment: "plan.fact", version: 1, mode: "shadow", projectId: "p", runId, subject, inputSha256: `pf${runId}${subject}`, inputChars: 1, questions: 2, status: "ok", decision: "done:1", decidedBy: "fallback", at: now });
+    run("pr_a"); task("pt_a", "pr_a"); attempt("pa_a", "pr_a", "pt_a"); stage("pr_a", "pt_a", { "1": "done", "2": "not_done" });
+    run("pr_b"); task("pt_b", "pr_b"); attempt("pa_b", "pr_b", "pt_b"); stage("pr_b", "pt_b", { "1": "not_done", "2": "unseen" });
+    const a = receipt("pr_a", "pt_a"), b = receipt("pr_b", "pt_b");
+    expect(sweepPlanFactOutcomes(db)).toBe(2);
+    const outcome = (id: number) => (db.prepare("SELECT outcome FROM lane_pilot_jev_receipt WHERE id=?").get(id) as { outcome: string | null }).outcome;
+    expect([outcome(a), outcome(b)]).toEqual(["agree", "disagree"]);
+  });
+});
