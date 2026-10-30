@@ -34,12 +34,36 @@ export const verdictFindingSchema = z.object({
   verificationExpectation: optionalText(500),
 });
 
+/** One row of the fixed rubric. The host reads `ok` or `fail`; it does not read the model's status word when this array is present. */
+export const verdictRubricItemSchema = z.object({
+  id: z.string().min(1).max(80),
+  result: z.enum(["ok", "fail"]),
+  evidence: z.preprocess((value) => value == null ? "" : value, z.string().max(2000)),
+});
+export type VerdictRubricItem = z.infer<typeof verdictRubricItemSchema>;
+
+/** The ids each critic fills in. An id outside its list does not count. */
+export const CRITIC_RUBRIC = {
+  plan: ["acceptance", "dependencies", "scope", "read_first"],
+  code: ["acceptance", "checks", "tests", "substance"],
+  specialist: ["risk", "mitigation"],
+} as const satisfies Record<VerdictKind, readonly string[]>;
+
+const MIN_RUBRIC_EVIDENCE = 12;
+
+/** The line a critic prompt adds so the answer names every rubric result the parser accepts. */
+export function rubricPromptLine(kind: VerdictKind): string {
+  return `rubric: array of {id, result, evidence} for these ids: ${CRITIC_RUBRIC[kind].join(", ")}. result is "ok" or "fail". A fail counts only when evidence quotes what you saw (at least ${MIN_RUBRIC_EVIDENCE} characters). When rubric is present the host sets status from it and does not use the status word. Omit rubric to answer with status alone.`;
+}
+
 export const verdictSchema = z.object({
   status: z.enum(VERDICT_STATUSES),
   summary: optionalText(2000),
   findings: z.array(verdictFindingSchema).max(30),
   /** What was examined and how, so the verdict can be checked. */
   evidence: clipped(4000),
+  /** Fixed checklist. Absent: the host reads status and findings as before. */
+  rubric: z.array(verdictRubricItemSchema).max(12).optional(),
 });
 
 export type VerdictFinding = z.infer<typeof verdictFindingSchema>;
@@ -136,6 +160,36 @@ export function settleVerdict(verdict: Verdict, kind: VerdictKind): SettledVerdi
   }
   if (status === "pass" && critical + high > 0) status = "rework";
   return { verdict: { ...verdict, status, findings }, demoted };
+}
+
+/**
+ * When the critic sent a rubric, status comes from its ok/fail rows, not from the status word.
+ * A fail counts only for an id of this critic and only with quoted evidence. Each counted fail becomes a high
+ * finding so the repair path has something to fix. No rubric: the settled verdict stands.
+ */
+export function applyRubric(verdict: Verdict, kind: VerdictKind): Verdict {
+  const items = verdict.rubric;
+  if (!items?.length) return verdict;
+  const known = new Set<string>(CRITIC_RUBRIC[kind]);
+  const fails = items.filter((item) => known.has(item.id) && item.result === "fail" && item.evidence.trim().length >= MIN_RUBRIC_EVIDENCE);
+  if (!fails.length) {
+    if (verdict.findings.some(isSerious)) return verdict;
+    return { ...verdict, status: "pass" };
+  }
+  const added = fails
+    .filter((item) => !verdict.findings.some((finding) => finding.criterion === item.id && isSerious(finding)))
+    .map((item) => ({
+      file: kind === "plan" ? "PLAN" : "TASK",
+      line: 1,
+      severity: "high" as const,
+      evidence: item.evidence.trim(),
+      id: `rubric-${item.id}`,
+      finding: `rubric item ${item.id} failed`,
+      criterion: item.id,
+    }));
+  const findings = [...verdict.findings, ...added];
+  const status: VerdictStatus = verdict.status === "block" && findings.some(isHardCritical) ? "block" : "rework";
+  return { ...verdict, status, findings };
 }
 
 /** The text a verdict that tells the PM to stop carries; the same string is the attempt's reason and the receipt's. */

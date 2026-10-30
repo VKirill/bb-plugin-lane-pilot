@@ -3,7 +3,7 @@ import { clipped, extractModelJson, NO_TOOLS_LINE } from "@lane-pilot/workflow-e
 import { CODE_CRITIC_METHOD } from "./role-method";
 import { demoteUncited } from "./citations";
 import type { Citation } from "./citations";
-import { VERDICT_STATUSES, isVerdictShape, legacyOutputToVerdict, settleVerdict, verdictSchema, verdictSeverityToLegacy, verdictSummary, withoutDecision } from "@lane-pilot/workflow-engine";
+import { VERDICT_STATUSES, applyRubric, isVerdictShape, legacyOutputToVerdict, rubricPromptLine, settleVerdict, verdictSchema, verdictSeverityToLegacy, verdictSummary, withoutDecision } from "@lane-pilot/workflow-engine";
 import type { Verdict, VerdictFinding, VerdictStatus } from "@lane-pilot/workflow-engine";
 import { sha256Hex } from "@lane-pilot/kit";
 
@@ -348,6 +348,7 @@ export function codeCritiquePrompt(input: {
     "Judge only in-scope owns_paths against the task contract, host-read file bytes/diff, writer reply hash, and verification stdout/stderr. Exit codes alone are not sufficient.",
     ...CODE_CRITIC_METHOD,
     "Answer with one JSON object and nothing else: no text before or after it. Keys: status (\"pass\", \"rework\" or \"block\"), summary (string, at most 2000 characters), findings (at most 30 objects), evidence (string, what you examined and how, at most 4000 characters). Finding keys: file, line (positive integer), severity (\"critical\", \"high\", \"medium\", \"low\" or \"info\"), evidence (at most 2000 characters: the quoted code or output line); optional id (at most 80 characters), finding (at most 1000: what is wrong), criterion (at most 500: the acceptance line or rule), dimension (at most 80), impact, trigger, verificationExpectation (each at most 500). Other keys are ignored.",
+    rubricPromptLine("code"),
     "status follows the thresholds above. block: the task stops, with no repair round and no redo (a critical finding that is a security hole, data loss or a break of a rule the task forbids, or more than 5 high). rework: the writer fixes the findings in its own thread (a critical unmet or stubbed requirement, or 1 to 5 high). pass: no critical and no high; medium, low and info findings go with pass. The host reads a critical or high finding without a file, a line and quoted evidence as medium, a rework with no critical or high finding as a pass, and a block below the threshold as a rework. For a security hole or data loss put \"security\" in the finding's dimension. Build each id from the file and the criterion in kebab case (for example src/a.ts:rate-limit-missing) so the same problem gets the same id when the code is reviewed again.",
     "Cosmetic preferences are severity info and must not be high. Ambiguous issues stay uncertain; do not invent rewrites.",
     "TASK CONTRACT:", JSON.stringify(input.task),
@@ -389,7 +390,7 @@ export function parseCodeCritique(output: string, cites?: Citation): CodeCritiqu
   const raw = extractModelJson(output);
   if (isVerdictShape(raw)) {
     const cited = demoteUncited(verdictSchema.parse(withoutDecision(raw)), cites);
-    const settled = settleVerdict(cited.verdict, "code");
+    const settled = settleVerdict(applyRubric(cited.verdict, "code"), "code");
     const { verdict } = settled, demoted = settled.demoted + cited.demoted;
     return {
       decision: verdict.status === "pass" ? "approve" : "changes_requested",
