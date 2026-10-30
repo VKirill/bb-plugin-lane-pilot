@@ -222,7 +222,14 @@ export function storeMemoryRecords(db: MemoryDatabase, input: StoreMemoryInput):
     }
     const verify = db.prepare(`UPDATE lane_pilot_memory SET trust='confirmed',
         verification_json=json_insert(COALESCE(verification_json,'[]'),'$[#]',json_object('by',?,'sha',?,'at',?)) WHERE project_id=? AND id=?`);
-    for (const id of corroborate) verify.run(origin, input.sourceSha256, now, input.projectId, id);
+    const verifyObserved = db.prepare(`UPDATE lane_pilot_memory SET
+        verification_json=json_insert(COALESCE(verification_json,'[]'),'$[#]',json_object('by',?,'sha',?,'at',?)) WHERE project_id=? AND id=?`);
+    const contentOf = db.prepare("SELECT content FROM lane_pilot_memory WHERE project_id=? AND id=?");
+    for (const id of corroborate) {
+      // A corroborated hedged claim is still a hedge: the repeat adds a source, not certainty (session records too).
+      const hedged = claimIsHedged((contentOf.get(input.projectId, id) as { content: string } | undefined)?.content ?? "");
+      (hedged ? verifyObserved : verify).run(origin, input.sourceSha256, now, input.projectId, id);
+    }
     const mine = new Set(input.entries.map((entry) => memoryRecordId(input.projectId, entry.kind, entry.content, personalBot, input.audience, scope)));
     const records = (db.prepare(`SELECT ${cols()} FROM lane_pilot_memory WHERE project_id=? AND personal_bot=? ORDER BY created_at DESC`).all(input.projectId, personalBot) as Row[])
       .filter((row) => row.status === "active" || mine.has(row.id)).map(toRecord);

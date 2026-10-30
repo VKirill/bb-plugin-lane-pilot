@@ -96,6 +96,8 @@ export const rpcKnowledge = {
       createdAt: z.number().int(), rule: z.boolean(),
       /** Times the note went into a brief, and how many of those attempts were accepted. */
       useCount: z.number().int(), acceptedCount: z.number().int(), originTaskId: z.string().nullable(),
+      /** Whose authority this record carries (maintainer/session/probe…) and where it applies: the section chain it was written under. */
+      origin: z.string(), scope: z.array(z.string()),
       /** Independent confirmations the record carries (one per accepted write that corroborated it). */
       sources: z.number().int(),
     }).strict()) }).strict(),

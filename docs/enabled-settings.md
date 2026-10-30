@@ -14,7 +14,7 @@ sources:
   - docs/enabled-settings.snapshot.json
 ---
 
-<!-- enabled-settings:structure 38b60e0446568f98 -->
+<!-- enabled-settings:structure 1e880846a96ea348 -->
 
 # Enabled settings (generated)
 
@@ -120,6 +120,7 @@ switches: `quick` disables both critiques, `full` enables them (`src/rooms/criti
 | `memory.note_budget` | `24000` | — | stage setting: cap note memory tokens |
 | `memory.personal_bot` | — | — | keeps bot-scoped project memory isolated across maintenance and retrieval |
 | `memory.provider` | `codex / DEFAULT_ONBOARD_MODEL / DEFAULT_ONBOARD_EFFORT / standard` | — | stage uses the BB provider/model selection for project memory maintenance |
+| `memory.salience_min` | `40` | — | stage setting: admission floor for maintainer memory notes |
 | `memory.search_engine` | `auto` | — | stage setting: choose FTS5 or BM25 retrieval |
 | `night_review.agent` | `lane-reviewer` | — | stage consumes this reviewer role label in its prompt |
 | `night_review.auto_merge` | `off` | — | stage setting: merge only a verified, approved PR in a managed worktree |

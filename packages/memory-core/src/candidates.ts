@@ -33,6 +33,19 @@ export function memoryEntrySupported(content:string, sourceText:string):boolean 
   return claims.every((claim)=>source.includes(claim.toLowerCase()));
 }
 
+/**
+ * SLICE-Mem admission score, 0..100, no model call: a record worth keeping points at something a future task can
+ * reuse — named concepts to retrieve it by, a concrete claim (path, version, number), and enough text to carry it.
+ * A bare "task went well" scores near zero; the gate drops only entries below the configured floor.
+ */
+export function memoryEntrySalience(entry:{kind:string;content:string;concepts:readonly string[]}):number {
+  let score=0;
+  if(entry.concepts.length)score+=40;
+  if(SPECIFIC.test(entry.content))score+=35; SPECIFIC.lastIndex=0;
+  if(entry.content.trim().length>=60)score+=25;
+  return score;
+}
+
 export function estimateTokens(text:string):number { return Math.ceil(Buffer.byteLength(text,"utf8")/4); }
 
 /**

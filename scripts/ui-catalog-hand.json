@@ -3085,6 +3085,29 @@
    "evidence": "src/rooms/writer/best-of.ts:1",
    "matrixStatus": "readonly",
    "storageKey": "writer.best_of.rounds"
+  },
+  {
+   "id": "s516",
+   "index": 491,
+   "area": "Lane Pilot memory maintainer",
+   "setting": "memory.salience_min",
+   "location": "packages/memory-core/src/settings.ts:61",
+   "category": "user",
+   "invType": "int",
+   "values": "0..100",
+   "defaultValue": "40",
+   "scope": "project",
+   "control": "number",
+   "options": [],
+   "min": 1,
+   "max": null,
+   "section": "memory",
+   "channel": "OWN",
+   "uiStatus": "editable",
+   "rationale": "Admission floor for maintainer memory candidates, 0..100; a note below the score is not stored (SLICE-Mem). 0 keeps everything, default 40 is soft.",
+   "evidence": "src/rooms/memory/server/memory.ts:162",
+   "matrixStatus": "readonly",
+   "storageKey": "memory.salience_min"
   }
  ],
  "fields": {

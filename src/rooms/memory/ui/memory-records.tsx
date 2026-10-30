@@ -7,7 +7,7 @@ import { Badge } from "@lane-pilot/ui-kit";
 import { Button } from "@lane-pilot/ui-kit";
 import { Disclosure } from "@lane-pilot/ui-kit";
 
-type MemoryRecord = { id: string; kind: "core" | "note"; audience: string; content: string; concepts: string[]; createdAt: number; rule: boolean; originTaskId: string | null; sources: number };
+type MemoryRecord = { id: string; kind: "core" | "note"; audience: string; content: string; concepts: string[]; createdAt: number; rule: boolean; originTaskId: string | null; origin: string; scope: string[]; sources: number };
 
 /** What the project memory holds: the facts writers may get and the rules, newest first; a fact can be removed. */
 export function MemoryRecords({ projectId }: { projectId: string }) {
@@ -42,6 +42,7 @@ export function MemoryRecords({ projectId }: { projectId: string }) {
         {record.sources > 1 && <Badge variant="outline">{t("memorySources").replace("{n}", String(record.sources))}</Badge>}
         <span className="text-muted-foreground">{new Date(record.createdAt).toLocaleDateString()}</span>
         {record.originTaskId ? <span className="text-muted-foreground" title={record.originTaskId}>task {record.originTaskId.slice(0, 12)}</span> : null}
+        <span className="text-muted-foreground" title={record.origin}>{record.origin} · {record.scope.length ? record.scope.join(" / ") : "project"}</span>
         {record.rule ? null : (
           <Button size="sm" variant="ghost" className="ml-auto h-6 px-2" disabled={busy === record.id}
             aria-label={t("memoryRecordRemove")} onClick={() => void remove(record.id)}>{t("memoryRecordRemove")}</Button>
