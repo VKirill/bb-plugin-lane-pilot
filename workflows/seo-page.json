@@ -132,7 +132,7 @@
           "drmax-text-humanization"
         ]
       },
-      "prompt": "На основе архитектуры кокона ({{cocoon.handoff_path}}) и GIST-логики напиши полный текст целевой страницы по теме '{{$inputs.page_topic}}'. Раздел каталога: «SEO и семантика» (gist-content-logic, drmax-text-humanization). Структура: заголовок H1, интент-блоки, решение задач пользователя (JTBD), перелинковка на родительские и дочерние узлы кокона, мета-теги (title, description). Сохрани черновик в .agents/seo/page_raw.md. Верни статус done или blocked.",
+      "prompt": "На основе архитектуры кокона ({{cocoon.handoff_path}}) и GIST-логики напиши полный текст целевой страницы по теме '{{$inputs.page_topic}}'. Раздел каталога: «SEO и семантика». Структура: заголовок H1, интент-блоки, решение задач пользователя, перелинковка на родительские и дочерние узлы кокона, мета-теги. Сохрани черновик в .agents/seo/page_raw.md. Верни статус done или blocked.",
       "out": {
         "ok": "bool",
         "raw_page_path": "string",
@@ -171,7 +171,7 @@
           "ru-text"
         ]
       },
-      "prompt": "Вычитай созданный текст {{write_content.raw_page_path}} по правилам ru-check: типографика, удаление штампов и нейрослопа, проверка естественности. Раздел каталога: «Тексты и редактура» (ru-check, ru-text, ru-score). Запиши очищенный текст в .agents/seo/page_clean.md и оцени качество ru_score (0-10). Если балл ниже 7, верни status rework. При успехе верни status pass.",
+      "prompt": "Вычитай созданный текст {{write_content.raw_page_path}} по правилам ru-check: типографика, удаление штампов и нейрослопа, проверка естественности. Раздел каталога: «Тексты и редактура». Запиши очищенный текст в .agents/seo/page_clean.md и оцени качество ru_score. Если балл ниже 7, верни status rework. При успехе верни status pass.",
       "out": {
         "status": "pass|rework",
         "clean_page_path": "string",
@@ -209,7 +209,7 @@
           "seo-agent"
         ]
       },
-      "prompt": "Сохрани вычитанный текст {{proofread.clean_page_path}} и метаданные страницы в файлы сайта по пути {{$inputs.site_dir}}. Раздел каталога: «SEO и семантика» (seo-agent). Создай файл страницы с URL-слагом, title, description, h1 и телом статьи. Запиши путь в site_page_path. Верни статус done или blocked.",
+      "prompt": "Сохрани вычитанный текст {{proofread.clean_page_path}} и метаданные страницы в файлы сайта по пути {{$inputs.site_dir}}. Раздел каталога: «SEO и семантика». Создай файл страницы с URL-слагом, title, description, h1 и телом статьи. Запиши путь в site_page_path. Верни статус done или blocked.",
       "out": {
         "ok": "bool",
         "site_page_path": "string",

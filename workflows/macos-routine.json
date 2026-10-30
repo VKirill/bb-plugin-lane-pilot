@@ -44,7 +44,7 @@
     "apps": {
       "type": "string[]",
       "default": [],
-      "note": "задействованные приложения (Finder, Chrome, Terminal)"
+      "note": "задействованные приложения"
     },
     "target_dir": {
       "type": "string",
@@ -97,7 +97,7 @@
           "computer-use"
         ]
       },
-      "prompt": "Разбей задачу '{{$inputs.task}}' на последовательность безопасных действий в macOS на Mac mini host_7sea4qaad8. Раздел каталога: «macOS рутина и управление компьютером» (computer-use, personal-toolkit). Определи задействованные приложения ({{$inputs.apps}}), системные команды, целевые файлы. Запрещены разрушительные действия без бэкапа и правки репозитория проекта. Сформируй steps_plan. Верни статус done или blocked.",
+      "prompt": "Разбей задачу '{{$inputs.task}}' на последовательность безопасных действий в macOS на Mac mini host_7sea4qaad8. Раздел каталога: «macOS рутина и управление компьютером». Определи задействованные приложения ({{$inputs.apps}}), системные команды, целевые файлы. Запрещены разрушительные действия без бэкапа и правки репозитория проекта. Сформируй steps_plan. Верни статус done или blocked.",
       "out": {
         "ok": "bool",
         "steps_plan": "string",
@@ -135,7 +135,7 @@
           "personal-toolkit"
         ]
       },
-      "prompt": "Выполни шаги плана ({{plan.steps_plan}}) на Mac mini host_7sea4qaad8. Раздел каталога: «macOS рутина и управление компьютером» (computer-use, personal-toolkit). Используй локальный шелл macOS, AppleScript или браузер. Сохраняй файлы в {{$inputs.target_dir}} или .agents/macos/. Обязательно сделай скриншот подтверждения выполненного действия (окно приложения, терминал, Finder) и сохрани в screenshot_path (.agents/macos/evidence.png). Запиши затронутые файлы в affected_files. Верни статус done или blocked.",
+      "prompt": "Выполни шаги плана ({{plan.steps_plan}}) на Mac mini host_7sea4qaad8. Раздел каталога: «macOS рутина и управление компьютером». Используй локальный шелл macOS, AppleScript или браузер. Сохраняй файлы в {{$inputs.target_dir}} или .agents/macos/. Обязательно сделай скриншот подтверждения выполненного действия (окно приложения, терминал, Finder) и сохрани в screenshot_path (.agents/macos/evidence.png). Запиши затронутые файлы в affected_files. Верни статус done или blocked.",
       "out": {
         "ok": "bool",
         "output": "string",

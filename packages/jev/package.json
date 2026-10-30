@@ -14,6 +14,15 @@
     "./judgments/invoice-check": "./src/judgments/invoice-check.ts",
     "./judgments/repair-group": "./src/judgments/repair-group.ts",
     "./judgments/skill-pick": "./src/judgments/skill-pick.ts",
-    "./judgments/trace-checks": "./src/judgments/trace-checks.ts"
+    "./judgments/trace-checks": "./src/judgments/trace-checks.ts",
+    "./judgments/ui-shots": "./src/judgments/ui-shots.ts",
+    "./judgments/host-command": "./src/judgments/host-command.ts",
+    "./judgments/citation-check": "./src/judgments/citation-check.ts",
+    "./judgments/memory-rerank": "./src/judgments/memory-rerank.ts",
+    "./judgments/invoice-scan": "./src/judgments/invoice-scan.ts",
+    "./judgments/log-find": "./src/judgments/log-find.ts",
+    "./judgments/skill-tree-pick": "./src/judgments/skill-tree-pick.ts",
+    "./judgments/accept-composite": "./src/judgments/accept-composite.ts",
+    "./judgments/render-match": "./src/judgments/render-match.ts"
   }
 }

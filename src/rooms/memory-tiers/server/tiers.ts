@@ -58,6 +58,11 @@ export function promote(db: Db, projectId: string, notes: ReadonlyArray<{ id: st
 }
 
 export function episodes(db: Db, projectId: string, query: string, limit = 3, read: Omit<TierRead, "projectId"> = {}): Episode[] {
+  return episodeCandidates(db, projectId, query, limit, read);
+}
+
+/** The lexical shortlist Jev can re-rank (B6): same query and rows as `episodes`, a deeper cut for the judge. */
+export function episodeCandidates(db: Db, projectId: string, query: string, limit = 3, read: Omit<TierRead, "projectId"> = {}): Episode[] {
   const words = queryWords(query);
   if (!words.length) return [];
   const rows = db.prepare(`SELECT t.id AS task_id, t.contract_json, t.created_at,
@@ -91,11 +96,11 @@ function fitLines(header: string, lines: readonly string[], room: number): { tex
 }
 
 /** What the PM gets on top of the active notes: cold candidates and past tasks, inside the same token budget. A miss is recorded when nothing at all was found. Status is not changed. */
-export function enrichMemoryContext(db: Db, input: { projectId: string; query: string; activeCount: number; now?: number; chain?: readonly string[]; audience?: MemoryAudience; personalBot?: string; role?: string; includeObserved?: boolean; budget?: number; activeTokens?: number }): { text: string; promoted: string[]; episodes: number; miss: boolean; addedTokens: number } {
+export function enrichMemoryContext(db: Db, input: { projectId: string; query: string; activeCount: number; now?: number; chain?: readonly string[]; audience?: MemoryAudience; personalBot?: string; role?: string; includeObserved?: boolean; budget?: number; activeTokens?: number; episodesList?: Episode[] }): { text: string; promoted: string[]; episodes: number; miss: boolean; addedTokens: number } {
   const now = input.now ?? Date.now();
   const read: Omit<TierRead, "projectId"> = { chain: input.chain, audience: input.audience, personalBot: input.personalBot, role: input.role, includeObserved: input.includeObserved, now };
   const cold = input.activeCount < 3 ? coldMatches(db, input.projectId, input.query, 3, read) : [];
-  const past = episodes(db, input.projectId, input.query, 3, read);
+  const past = input.episodesList ?? episodes(db, input.projectId, input.query, 3, read);
   const room = input.budget == null ? Number.POSITIVE_INFINITY : Math.max(0, input.budget - (input.activeTokens ?? 0));
   const coldLines = cold.map((note) => `- ${note.content.replace(/\s+/g, " ").trim()}`);
   const coldFit = fitLines("Notes from the cold tier (still expired; a write decides whether they come back):", coldLines, room);

@@ -1,5 +1,6 @@
 import { classifyFailure, type FailureClass } from "./failure-class";
 import { failureClassJudgment } from "./failure-class-judgment";
+import { logFindJudgment } from "@lane-pilot/jev/judgments/log-find";
 import type { Jev } from "@lane-pilot/jev";
 import type { JevSettings } from "@lane-pilot/jev";
 
@@ -23,7 +24,17 @@ export async function judgedFailureClass(deps: JudgedFailureDeps, state: string,
   try {
     const settings = await deps.settings().catch(() => ({} as JevSettings));
     if (!instance.enabled(settings)) return rules.cls;
-    const verdict = await instance.judge(failureClassJudgment, { state, reason }, { projectId: deps.projectId, runId: deps.runId, subject: subject ?? "attempt", settings });
+    // B8: a pointed failure line found in the log sharpens the class question (shadow records it either way).
+    const lines = reason.split("\n").map((line) => line.trim()).filter(Boolean);
+    let pointed: string | null = null;
+    if (lines.length > 12) {
+      const found = await instance.judge(logFindJudgment, { task: subject ?? "attempt", command: state.slice(0, 200), lines }, { projectId: deps.projectId, runId: deps.runId, subject: subject ?? "attempt", settings }).catch(() => null);
+      const pick = found?.by === "jev" ? found.decision.line : found?.by === "fallback" ? (found.shadow?.decision?.line ?? null) : null;
+      if (pick !== null && pick !== undefined) pointed = lines[pick] ?? null;
+    }
+    const judged = pointed ? `${state}
+pointed line: ${pointed}` : state;
+    const verdict = await instance.judge(failureClassJudgment, { state: judged, reason }, { projectId: deps.projectId, runId: deps.runId, subject: subject ?? "attempt", settings });
     return verdict.by === "jev" ? verdict.decision.cls : rules.cls;
   } catch { return rules.cls; }
 }

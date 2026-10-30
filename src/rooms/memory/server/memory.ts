@@ -1,6 +1,8 @@
 import { resolve } from "node:path";
 import { taskV2Schema } from "../../contracts";
-import { enrichMemoryContext } from "../../memory-tiers/server";
+import { jev } from "@lane-pilot/jev";
+import { memoryRerankJudgment } from "@lane-pilot/jev/judgments/memory-rerank";
+import { enrichMemoryContext, episodeCandidates } from "../../memory-tiers/server";
 import { claimStageSpawn, getRun, getRunSettingsScopes, getTask, listStageReceipts, searchMemoryRecords } from "../../storage";
 import { coreShelf, dropMemoryIndexes, memoryEntrySupported, pathsNamed, retireStaleCuratorClaims, storeMemoryRecordsKeepingOverflow } from "@lane-pilot/memory-core";
 import { applyScopeMigration } from "../../../../scripts/memory-scope-dry-run";
@@ -253,7 +255,17 @@ export function createMemoryStage(ctx: ServerCore, services: Services) {
     const selected=pmMemoryContext(db,args.projectId,memorySettings,args.query,chain);
     // The cold tier, past tasks like this one and the misses (src/rooms/memory-tiers): never fails the query. Candidates stay expired.
     let tiers:{text:string;promoted:string[];episodes:number;miss:boolean;addedTokens:number}={text:"",promoted:[],episodes:0,miss:false,addedTokens:0};
-    try { tiers=enrichMemoryContext(db,{projectId:args.projectId,query:args.query,activeCount:selected.records.length,chain,audience:memorySettings.audience,personalBot:memorySettings.personalBot,role:"pm",budget:memorySettings.contextBudget,activeTokens:selected.estimatedTokens}); } catch (cause) { ctx.log(`memory tiers skipped: ${cause instanceof Error ? cause.message : String(cause)}`); }
+    // B6: Jev re-ranks the lexical episode shortlist (shadow first; active delivers only the ones it keeps).
+    let episodesList: import("../../memory-tiers/logic").Episode[] | undefined;
+    const judge=jev();
+    if(judge){
+      const candidates=episodeCandidates(db,args.projectId,args.query,8,{chain});
+      if(candidates.length){
+        const verdict=await judge.judge(memoryRerankJudgment,{query:args.query,passages:candidates.map((e)=>`${e.title}: ${e.state}${e.reason?` — ${e.reason}`:""}`)},{projectId:args.projectId,runId:args.runId,settings:settings as Record<string,unknown>}).catch(()=>null);
+        if(verdict?.by==="jev") episodesList=verdict.decision.keep.slice(0,3).map((i)=>candidates[i]!);
+      }
+    }
+    try { tiers=enrichMemoryContext(db,{projectId:args.projectId,query:args.query,activeCount:selected.records.length,chain,audience:memorySettings.audience,personalBot:memorySettings.personalBot,role:"pm",budget:memorySettings.contextBudget,activeTokens:selected.estimatedTokens,episodesList}); } catch (cause) { ctx.log(`memory tiers skipped: ${cause instanceof Error ? cause.message : String(cause)}`); }
     return {runId:args.runId,state:"passed",audience:memorySettings.audience,personalBot:memorySettings.personalBot,querySha256:sha256(args.query),
       recordIds:[...selected.records.map((item)=>item.id),...tiers.promoted],estimatedTokens:selected.estimatedTokens+tiers.addedTokens,context:[selected.text,tiers.text].filter(Boolean).join("\n\n"),
       ...(tiers.promoted.length?{promotedFromCold:tiers.promoted.length}:{}),...(tiers.episodes?{episodes:tiers.episodes}:{})};

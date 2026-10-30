@@ -1,8 +1,8 @@
 {
   "id": "3d-asset",
   "name": {
-    "en": "3D Asset (Blender)",
-    "ru": "3D-ассет (Blender)"
+    "en": "3D Asset",
+    "ru": "3D-ассет"
   },
   "description": {
     "en": "Full 3D asset pipeline: brief, concept generation via Image Studio, modeling in Blender on Mac mini, QA geometry and preview verification (n-gons, normals, polycount vs budget), and production export.",
@@ -118,7 +118,7 @@
           "image-prompting"
         ]
       },
-      "prompt": "Сгенерируй концепт-арт или ортографический чертеж (blueprint) для 3D-модели по брифу: '{{$inputs.prompt}}' в стиле {{$inputs.style}}. Навыки каталога: «Генерация изображений и визуала» (image-prompting, nano-banana). Используй инструменты плагина image-studio (image_studio_model mode blueprint или image_studio_generate). Сохрани концепт и запиши путь в concept_path. Если генерация не удалась, верни статус blocked. При успехе верни статус done.",
+      "prompt": "Сгенерируй концепт-арт или ортографический чертеж для 3D-модели по брифу: '{{$inputs.prompt}}' в стиле {{$inputs.style}}. Навыки каталога: «Генерация изображений и визуала». Используй инструменты плагина image-studio (image_studio_model mode blueprint или image_studio_generate). Сохрани концепт и запиши путь в concept_path. Если генерация не удалась, верни статус blocked. При успехе верни статус done.",
       "out": {
         "ok": "bool",
         "concept_path": "string",
@@ -156,7 +156,7 @@
           "blender-director"
         ]
       },
-      "prompt": "Создай 3D-модель в Blender на Mac mini по концепту ({{concept.concept_path}}) и брифу '{{$inputs.prompt}}'. Навыки каталога: «3D и Blender/Моделирование» (blender-modeler, hard-surface, prop-artist) и «3D и Blender/Материалы и свет» (materials, uv-workflow). Соблюдай бюджет полигонов: {{$inputs.poly_budget}} полигонов, стиль: {{$inputs.style}}. Настрой сетку без лишней геометрии, UV-развертку, базовые материалы. Сохрани файл сцены в .agents/3d/scene.blend. Выведи poly_count. Верни статус done или blocked.",
+      "prompt": "Создай 3D-модель в Blender на Mac mini по концепту ({{concept.concept_path}}) и брифу '{{$inputs.prompt}}'. Навыки каталога: «3D и Blender/Моделирование» и «3D и Blender/Материалы и свет». Соблюдай бюджет полигонов: {{$inputs.poly_budget}} полигонов, стиль: {{$inputs.style}}. Настрой сетку без лишней геометрии, UV-развертку, базовые материалы. Сохрани файл сцены в .agents/3d/scene.blend. Выведи poly_count. Верни статус done или blocked.",
       "out": {
         "ok": "bool",
         "blend_path": "string",
@@ -195,7 +195,7 @@
           "asset-optimization"
         ]
       },
-      "prompt": "Проверь геометрию созданной модели {{model.blend_path}} и сделай рендер превью. Навыки каталога: «3D и Blender/Пайплайн и экспорт» (qa-review, asset-optimization). Проверь: 1) отсутствие n-гонов (чистые quads/tris, ngon_count), 2) нормали (normal_errors), 3) поликаунт против лимита брифа: {{model.poly_count}} против {{$inputs.poly_budget}}, 4) UV. Отрендери превью (clay + beauty) в .agents/3d/preview.png. Сформируй отчёт geometry_report.json. Если найдены дефекты (n-гоны, превышение поликаунта), верни status rework со списком замечаний в issues. Если модель корректна, верни status pass.",
+      "prompt": "Проверь геометрию созданной модели {{model.blend_path}} и сделай рендер превью. Навыки каталога: «3D и Blender/Пайплайн и экспорт». Проверь: 1) отсутствие n-гонов (чистые quads/tris, ngon_count), 2) нормали, 3) поликаунт против лимита брифа: {{model.poly_count}} против {{$inputs.poly_budget}}, 4) UV. Отрендери превью (clay + beauty) в .agents/3d/preview.png. Сформируй отчёт geometry_report.json. Если найдены дефекты (n-гоны, превышение поликаунта), верни status rework со списком замечаний в issues. Если модель корректна, верни status pass.",
       "out": {
         "status": "pass|rework",
         "ngon_count": "int",
@@ -236,7 +236,7 @@
           "export-pipeline"
         ]
       },
-      "prompt": "Экспортируй проверенную 3D-модель из {{model.blend_path}} в формат {{$inputs.format}}. Навыки каталога: «3D и Blender/Пайплайн и экспорт» (export-pipeline, lod-pipeline). Проверь масштаб (scale 1.0), пивот по центру/основанию (origin at base), материалы и текстуры. Сохрани результат в .agents/3d/export/ с расширением {{$inputs.format}}. Верни status done или blocked.",
+      "prompt": "Экспортируй проверенную 3D-модель из {{model.blend_path}} в формат {{$inputs.format}}. Навыки каталога: «3D и Blender/Пайплайн и экспорт». Проверь масштаб (scale 1.0), пивот по центру/основанию (origin at base), материалы и текстуры. Сохрани результат в .agents/3d/export/ с расширением {{$inputs.format}}. Верни status done или blocked.",
       "out": {
         "ok": "bool",
         "asset_path": "string",
