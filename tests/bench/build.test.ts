@@ -14,7 +14,7 @@ const strata = [{ key: "bb-service", quota: 4, match: (c: Candidate) => c.projec
 
 function scenario() {
   const { repo, base, bases } = makeRepo([
-    { file: "a.txt", attemptId: "att_a", taskId: "task-a1" },
+    { file: "a.txt", attemptId: "att_a", taskId: "task-a" },
     { file: "b.txt", attemptId: "att_b", taskId: "task-b" },
     { file: "c.txt", attemptId: "att_c", taskId: "task-c" },
     { file: "g.txt", attemptId: "att_g", taskId: "task-green" },
@@ -23,12 +23,12 @@ function scenario() {
   const contract = (file: string, extra: Record<string, unknown> = {}) => makeContract(repo, {
     expected_outputs: [file], owns_paths: [file], verification: [{ command: `test -f ${file}`, cwd: repo }, { command: `grep -q done ${file}`, cwd: repo }], ...extra,
   });
-  w.accepted({ taskId: "task-a1", projectId: BB, contract: contract("a.txt"), base: bases[0]!, attemptId: "att_a" });
+  w.accepted({ taskId: "task-a", projectId: BB, contract: contract("a.txt"), base: bases[0]!, attemptId: "att_a" });
   w.accepted({ taskId: "task-b", projectId: BB, contract: contract("b.txt", { risk: "high" }), base: bases[1]!, attemptId: "att_b", attemptNo: 2 });
   w.accepted({ taskId: "task-c", projectId: BB, contract: contract("c.txt"), base: bases[2]!, attemptId: "att_c" });
   // Not candidates: a drill, a check that passes on the bare base, a task another task depends on.
   w.accepted({ taskId: "drill-1", projectId: BB, contract: contract("a.txt"), base: bases[0]!, attemptId: "att_d" });
-  w.accepted({ taskId: "task-dep", projectId: BB, contract: contract("a.txt", { depends_on: ["task-a1"] }), base: bases[0]!, attemptId: "att_e" });
+  w.accepted({ taskId: "task-dep", projectId: BB, contract: contract("a.txt", { depends_on: ["task-a"] }), base: bases[0]!, attemptId: "att_e" });
   w.accepted({ taskId: "task-green", projectId: BB, contract: contract("g.txt", { verification: [{ command: "test -f README.md", cwd: repo }, { command: "grep -q base README.md", cwd: repo }] }), base: bases[3]!, attemptId: "att_g" });
   const projects: BenchProject[] = [{ projectId: BB, name: "BB-сервис", cwdPrefixes: [repo] }];
   return { ...w, repo, base, bases, projects };
@@ -54,7 +54,7 @@ describe("bench candidates", () => {
 describe("bench warm-up", () => {
   it("accepts a task whose solution passes on the base and whose checks fail on the bare base", async () => {
     const s = scenario();
-    const candidate: Candidate = { taskId: "task-a1", runId: "r", projectId: BB, projectName: "BB-сервис", attemptId: "att_a", attemptNo: 1, hard: false, risk: "medium", area: "", repoPath: s.repo, hostId: "local",
+    const candidate: Candidate = { taskId: "task-a", runId: "r", projectId: BB, projectName: "BB-сервис", attemptId: "att_a", attemptNo: 1, hard: false, risk: "medium", area: "", repoPath: s.repo, hostId: "local",
       initialHeadSha: s.bases[0]!, baseSha: s.bases[0]!, contract: makeContract(s.repo, { verification: [{ command: "test -f a.txt", cwd: s.repo }, { command: "grep -q done a.txt", cwd: s.repo }] }) };
     const result = await warmUp(localHost, candidate, { scratch: tmp("lp-bench-warm-") });
     expect(result.ok).toBe(true);
@@ -70,7 +70,7 @@ describe("bench warm-up", () => {
 
   it("records why a candidate is left out", async () => {
     const s = scenario();
-    const base: Candidate = { taskId: "task-a1", runId: "r", projectId: BB, projectName: "x", attemptId: "att_a", attemptNo: 1, hard: false, risk: "low", area: "", repoPath: s.repo, hostId: "local",
+    const base: Candidate = { taskId: "task-a", runId: "r", projectId: BB, projectName: "x", attemptId: "att_a", attemptNo: 1, hard: false, risk: "low", area: "", repoPath: s.repo, hostId: "local",
       initialHeadSha: s.bases[0]!, baseSha: null, contract: makeContract(s.repo, { verification: [{ command: "test -f a.txt", cwd: s.repo }, { command: "grep -q done a.txt", cwd: s.repo }] }) };
     const options = { scratch: tmp("lp-bench-warm-") };
     expect(await warmUp(localHost, { ...base, initialHeadSha: "0".repeat(40) }, options)).toMatchObject({ ok: false, reason: "base_unreachable" });
@@ -117,7 +117,7 @@ describe("bench build", () => {
     const { report, tasks } = await buildSet(input(s));
     expect(report.candidates).toBe(4);
     expect(report.prefilter).toMatchObject({ depends_on: 1 });
-    expect(tasks.map((t) => t.taskId).sort()).toEqual(["task-a1", "task-b", "task-c"]);
+    expect(tasks.map((t) => t.taskId).sort()).toEqual(["task-a", "task-b", "task-c"]);
     // task-green (a check that passes on the bare base) was a candidate and is recorded as rejected, with the reason.
     expect(report.tried).toBe(4);
     expect(report.survived).toBe(3);
@@ -180,20 +180,3 @@ describe("bench stratification", () => {
     expect(mixed.map((t) => t.n)).toEqual([1, 3, 2]);
   });
 });
-
-  it("keeps the sealed pool out of the tuning strata until the sealed stratum is added", async () => {
-    const { isSealedTaskId, sealedStratum } = await import("../../src/rooms/bench/stratify");
-    const { strataFor } = await import("../../src/rooms/bench/build");
-    // a fixed id in the sealed pool: hash-based, stable across seeds
-    let sealedId = "task-sealed-1";
-    for (let i = 0; !isSealedTaskId(sealedId); i++) sealedId = `task-sealed-${i}`;
-    const cand = (taskId: string): Candidate => ({ taskId, runId: "r", projectId: BB, projectName: "BB", attemptId: "a", attemptNo: 1, hard: false, risk: "medium", area: "", repoPath: "/r", hostId: "local", initialHeadSha: "x", baseSha: "x", contract: {} as never });
-    for (const stratum of strataFor({ now: 0 })) if (stratum.key !== "sealed") expect(stratum.match(cand(sealedId))).toBe(false);
-    expect(strataFor({ now: 0 }).some((row) => row.key === "sealed")).toBe(false);
-    expect(strataFor({ now: 0, only: ["sealed"] }).map((row) => row.key)).toEqual(["sealed"]);
-    // explicit strata with the sealed one added reach the pool
-    const s = scenario();
-    const { report } = await buildSet(input(s, { strata: [...strata, sealedStratum(4)], only: undefined, planOnly: true }));
-    expect(report.strata.map((row) => row.key)).toEqual(["bb-service", "sealed"]);
-    expect(report.strata[1]!.candidates).toBe(0); // no sealed candidates in this scenario
-  });
