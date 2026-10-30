@@ -1,5 +1,5 @@
 import { DISPATCH_STAGES_PENDING } from "../../runs";
-import { markCancelCode } from "../../runs/server/cancel";
+import { markCancelCode } from "../../storage";
 import { taskV2Schema } from "../../contracts";
 import { countAttempts, endSpawnFailure, getAttempt, getRun, getTask, getTaskPlan, listOpenAttempts, setAttemptHolderThread, transitionAttempt } from "../../storage";
 import { closeHelperStages, closeWriterStages } from "../../runs/server/stage-records";

@@ -10,3 +10,4 @@ export type { SmaCard, SmaKind, SmaLinkKind, SmaNode } from "./graph";
 export { SMA_CONTRACT_TESTS } from "./contracts";
 export { SMA_ENTRIES } from "./entries";
 export type { SmaEntry, SmaStatus } from "./entries";
+export { darkTableNames } from "./live";

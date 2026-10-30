@@ -15,6 +15,7 @@
  "relay > native-agent": 2,
  "runs > native-agent": 3,
  "runs > settings": 1,
+ "runs > usage": 1,
  "runs > writer": 1,
  "self-repair > learning": 1,
  "self-repair > writer": 1,
@@ -26,6 +27,7 @@
  "stability > native-agent": 1,
  "stability > runs": 4,
  "storage > learning": 1,
+ "tasks > verification": 1,
  "tools > tasks": 1,
  "ui-shell > contracts": 1,
  "ui-shell > docs": 1,
@@ -38,5 +40,6 @@
  "verification > writer": 1,
  "workflow > tasks": 1,
  "workflow > ui-shell": 1,
- "writer > tasks": 4
+ "writer > critique": 1,
+ "writer > tasks": 5
 }

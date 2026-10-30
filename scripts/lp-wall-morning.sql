@@ -65,6 +65,8 @@ with dark(name) as (
   union all
   select 'lane_pilot_deferral' as name where (select count(*) from lane_pilot_deferral where created_at >= (select since from lp_morning_30)) = 0
   union all
+  select 'lane_pilot_diff_hidden_audit' as name where (select count(*) from lane_pilot_diff_hidden_audit where recorded_at >= (select since from lp_morning_30)) = 0
+  union all
   select 'lane_pilot_failure_triage' as name where (select count(*) from lane_pilot_failure_triage where triaged_at >= (select since from lp_morning_30)) = 0
   union all
   select 'lane_pilot_gate_event' as name where (select count(*) from lane_pilot_gate_event where occurred_at >= (select since from lp_morning_30)) = 0
@@ -98,6 +100,8 @@ with dark(name) as (
   select 'lane_pilot_memory_promotion' as name where (select count(*) from lane_pilot_memory_promotion where at >= (select since from lp_morning_30)) = 0
   union all
   select 'lane_pilot_memory_receipt' as name where (select count(*) from lane_pilot_memory_receipt where created_at >= (select since from lp_morning_30)) = 0
+  union all
+  select 'lane_pilot_model_rebench' as name where (select count(*) from lane_pilot_model_rebench where recorded_at >= (select since from lp_morning_30)) = 0
   union all
   select 'lane_pilot_outage' as name where (select count(*) from lane_pilot_outage where noticed_at >= (select since from lp_morning_30)) = 0
   union all
@@ -138,6 +142,8 @@ with dark(name) as (
   select 'lane_pilot_secret_issuance' as name where (select count(*) from lane_pilot_secret_issuance where at >= (select since from lp_morning_30)) = 0
   union all
   select 'lane_pilot_setting_generation' as name where (select count(*) from lane_pilot_setting_generation) = 0
+  union all
+  select 'lane_pilot_skill_metric' as name where (select count(*) from lane_pilot_skill_metric where recorded_at >= (select since from lp_morning_30)) = 0
   union all
   select 'lane_pilot_stage_event' as name where (select count(*) from lane_pilot_stage_event where occurred_at >= (select since from lp_morning_30)) = 0
   union all

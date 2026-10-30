@@ -1,4 +1,4 @@
-import { darkTableNames } from "../sma-map/live";
+import { darkTableNames } from "../sma-map";
 import type { WallDb } from "./journal";
 
 /**

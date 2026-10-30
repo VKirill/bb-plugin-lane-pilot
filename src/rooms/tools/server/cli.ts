@@ -1,7 +1,7 @@
 import { prototypeConfigSchema, taskV2Schema } from "../../contracts";
 import { getActivation, getAttempt, getRun, getTask, importSettingsOnce, inspectAttempt, inspectState, listRunsWithAttempts, loadProjectSettings, loadPrototypeConfig, savePrototypeConfig, saveProjectSetting, transitionAttempt } from "../../storage";
 import { cancelRejection, confirmWriterStopped, finishRunSafely, pauseRun } from "../../runs/server";
-import { markCancelCode } from "../../runs/server/cancel";
+import { markCancelCode } from "../../storage";
 import { stringAt, valueAt } from "../../core/server";
 import { outputText } from "../../writer/server";
 import { THREAD_WATCH_EVENT_TYPES, decideThreadCompletion, eventsListQueryLabel, listThreadEventsRaw, waitThreadIdle } from "@lane-pilot/thread-observe";

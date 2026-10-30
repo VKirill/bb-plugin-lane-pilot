@@ -1,20 +1,10 @@
-import { getAttempt, getTask, getTaskPlan, listStageReceipts, transitionAttempt } from "../../storage";
+import { getAttempt, getTask, getTaskPlan, listStageReceipts, markCancelCode, transitionAttempt, type CancelCode } from "../../storage";
+export { CANCEL_CODES, markCancelCode, type CancelCode } from "../../storage";
 import { cancelRejection } from "./run-finish";
 import { closeHelperStages, recordStage } from "./stage-records";
 import { valueAt } from "../../core/server";
 import { confirmWriterStopped } from "./writer-stop";
 import type { ServerCore } from "../../core/server";
-
-/** The closed list of cancel codes (W31 rank 6): every cancel names one, a caller that names none records `unknown`. The morning
- * summary's cancel Pareto reads `lane_pilot_attempt.cancel_code`. */
-export const CANCEL_CODES = ["owner_cancel", "superseded", "run_closed", "wrong_contract", "stuck", "duplicate", "reassign", "unknown"] as const;
-export type CancelCode = (typeof CANCEL_CODES)[number];
-
-/** Stamps the cancel code on the attempt row; the first stamp wins (a request-time `reassign`/`owner_cancel` outranks the
- * generic `stuck` a recovery writes when it settles the request). NULL stays for cancels written before the codes existed. */
-export function markCancelCode(db: Pick<ServerCore["db"], "prepare">, attemptId: string, code: CancelCode): void {
-  db.prepare("UPDATE lane_pilot_attempt SET cancel_code=COALESCE(cancel_code, ?) WHERE id=?").run(code, attemptId);
-}
 
 /** Stops the task's helper threads still running and closes their receipts canceled, so a canceled task leaves no helper running. */
 async function cancelStageHelpers(ctx: Pick<ServerCore, "bb" | "db">, attempt: NonNullable<ReturnType<typeof getAttempt>>): Promise<void> {

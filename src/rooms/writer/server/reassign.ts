@@ -1,6 +1,6 @@
 import { getAttempt, getTask, getRunSettingsScopes, listAttemptsForTask, listOpenAttempts, loadPrototypeConfig, loadProjectSettings, transitionAttempt } from "../../storage";
 import { retireAreaWriter } from "./sticky";
-import { markCancelCode } from "../../runs/server/cancel";
+import { markCancelCode } from "../../storage";
 import type { ServerCore } from "../../core/server";
 
 /**
