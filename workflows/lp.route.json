@@ -47,7 +47,7 @@
     {
       "id": "route",
       "type": "agent",
-      "role": "pm-reader",
+      "role": "triager",
       "uses": "lp.route",
       "title": {
         "en": "Choose the workflow",

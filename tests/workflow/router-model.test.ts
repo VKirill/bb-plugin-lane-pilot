@@ -32,7 +32,7 @@ describe("the router's model step as a graph", () => {
   it("lp.route is a built-in starter graph (offered to no one) that passes the validator", () => {
     const route = builtinWorkflow("lp.route")!;
     expect(route).toMatchObject({ id: "lp.route", startedBy: "lane_pilot_route", status: "published" });
-    expect(route.nodes.find((node) => node.id === "route")).toMatchObject({ type: "agent", uses: "lp.route", role: "pm-reader" });
+    expect(route.nodes.find((node) => node.id === "route")).toMatchObject({ type: "agent", uses: "lp.route", role: "triager" });
     expect(validateWorkflow(route).filter((problem) => problem.level === "error")).toEqual([]);
   });
 
@@ -43,7 +43,7 @@ describe("the router's model step as a graph", () => {
     const [run] = w.runs("lp.route");
     expect(run).toMatchObject({ status: "succeeded", workflow_id: "lp.route" });
     expect(requests).toHaveLength(1);
-    expect(requests[0]).toMatchObject({ workflowRunId: run!.id, workflowId: "lp.route", nodeId: "route", role: "pm-reader" });
+    expect(requests[0]).toMatchObject({ workflowRunId: run!.id, workflowId: "lp.route", nodeId: "route", role: "triager" });
     expect(requests[0]!.workflowRunId).not.toMatch(/^route-/);
     const step = w.db.prepare("SELECT state FROM lane_pilot_wf_step WHERE run_id=? AND step_key=?").get(requests[0]!.workflowRunId, requests[0]!.stepKey) as { state: string } | undefined;
     expect(step).toBeDefined();
