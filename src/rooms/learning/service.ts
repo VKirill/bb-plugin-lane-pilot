@@ -122,7 +122,7 @@ export function createLearning(ctx: ServerCore, services: Services) {
     db, rules, notes,
     // A-b4: the server writes the preference itself; the saved id or the CLI error lands on the item (its receipt).
     runBb: (args) => new Promise<string>((resolve, reject) => {
-      execFile(process.env.LANE_PILOT_BB_BIN || "bb", args, { timeout: 30_000, maxBuffer: 4 * 1024 * 1024, env: { ...process.env, PATH: [process.env.PATH, "/opt/homebrew/bin", "/usr/local/bin"].filter(Boolean).join(":") } },
+      execFile(process.env.LANE_PILOT_BB_BIN || process.env.BB_CLI || "bb", args, { timeout: 30_000, maxBuffer: 4 * 1024 * 1024, env: { ...process.env, PATH: [process.env.PATH, "/opt/homebrew/bin", "/usr/local/bin"].filter(Boolean).join(":") } },
         (error, stdout) => (error ? reject(error) : resolve(stdout)));
     }),
     remind: async (item) => {
