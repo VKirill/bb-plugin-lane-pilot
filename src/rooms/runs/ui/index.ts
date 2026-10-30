@@ -8,3 +8,4 @@ export { readRunsWindow } from "./runs-window";
 export { TaskBoard } from "./task-board";
 export { LaneContextDetails, LaneContextSummary, useLaneContextVisible } from "./context-segment";
 export { ThreadLive } from "./thread-live";
+export { bindThreadRowStatus } from "./thread-row-status";

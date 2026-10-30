@@ -11,7 +11,7 @@ import { ComposerAgentBadge } from "./src/rooms/native-agent/ui";
 import { EnableLanePilotAction } from "./src/rooms/native-agent/ui";
 import { HELPER_PANEL_ACTION, HelperThreadPanel, useHelperThreadIndex } from "./src/rooms/native-agent/ui";
 import { RUN_CARD_DIRECTIVE, RunCardDirective, ThreadLive, LaneContextDetails, LaneContextSummary, useLaneContextVisible } from "./src/rooms/runs/ui";
-import { bindThreadRowStatus } from "./src/rooms/runs/ui/thread-row-status";
+import { bindThreadRowStatus } from "./src/rooms/runs/ui";
 
 /** VK core 0.46.1-vk.5: a section of the thread's info panel (feature-tested; older cores get a panel tab instead). */
 type VkThreadInfoSection = (registration: { id: string; title: string; component: ComponentType<{ threadId: string; projectId: string }> }) => void;
