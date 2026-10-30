@@ -975,6 +975,8 @@ export const fieldEn = {
   reason_s508: "The most tokens the parallel candidates of one task may spend together; 0 leaves the run's own budget the only bound. Default 0.",
   field_s509: "Best-of-3: parallel slots",
   reason_s509: "How many best-of candidates of a task may run at once; 1 runs the three in turn. Default 3.",
+  field_s510: "Nightly bench sets",
+  reason_s510: "Which bench sets the 01:30 UTC night runs: every set (all, default) or the named versions (v3,v5). The night's token budget is shared evenly between the sets.",
 } as const;
 
 export const fieldRu: { [K in keyof typeof fieldEn]: string } = {
@@ -1954,4 +1956,6 @@ export const fieldRu: { [K in keyof typeof fieldEn]: string } = {
   reason_s508: "Сколько токенов суммарно могут потратить параллельные кандидаты одной задачи; 0 оставляет единственной границей бюджет запуска. По умолчанию 0.",
   field_s509: "Best-of-3: параллельные слоты",
   reason_s509: "Сколько кандидатов задачи может идти одновременно; 1 гонит три по очереди. По умолчанию 3.",
+  field_s510: "Наборы ночного бенча",
+  reason_s510: "Какие наборы бенча гоняет ночь в 01:30 UTC: все (all, по умолчанию) или названные версии (v3,v5). Токен-бюджет ночи делится между наборами поровну.",
 };

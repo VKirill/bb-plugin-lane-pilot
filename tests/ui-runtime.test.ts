@@ -16,7 +16,7 @@ function representativeValues(row: CatalogRow, spec: SettingSpec): unknown[] {
   if (spec.key === "ops.provider_pool") return ["codex=2, claude-code=3"];
   if (spec.key === "jev.thresholds") return ["route.workflow.min_p=0.7"];
   if (spec.key === "jev.modes") return ["route.workflow=active"];
-  if (spec.key === "jev.provider") return ["openlux", "typesafe"];
+  if (spec.key === "jev.provider") return ["typesafe", "openlux"];
   if (spec.booleanFlag || spec.key.startsWith("jev.")) return [true, false];
   if (spec.key === "install.LANE_INSTALL_LOCAL_MARKETPLACE" || spec.key === "install.LANE_INSTALL_CLAUDE_PLUGIN") {
     return [true, false];
@@ -117,7 +117,7 @@ describe("UI storage keys feed runtime channels", () => {
     const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
     await plugin(bb);
     const editable = UI_CATALOG.filter((row) => row.uiStatus === "editable");
-    expect(editable).toHaveLength(235); // 0.1.236: tasks.mirror is gone; 0.1.341: workflow.agent.* gone; 2026-10-29: CLI-only ops rows are readonly; adoc.041/042 do not choose a worktree
+    expect(editable).toHaveLength(239); // batch2-next: four rows joined the catalog; 0.1.341: workflow.agent.* gone; 2026-10-29: CLI-only ops rows are readonly; adoc.041/042 do not choose a worktree
     const atomicPickerKeys = new Set([
       "memory.provider", "memory.model", "memory.reasoning_effort", "memory.service_tier",
       "night_review.provider", "night_review.model", "night_review.reasoning_effort", "night_review.service_tier",
@@ -163,7 +163,7 @@ describe("UI storage keys feed runtime channels", () => {
     const booleanFlags = SETTING_CATALOG.filter((spec) => spec.booleanFlag);
     expect(booleanFlags.map((spec) => spec.key)).toEqual([]);
     const editable = UI_CATALOG.filter((row) => row.uiStatus === "editable");
-    expect(editable).toHaveLength(235); // 0.1.236: tasks.mirror is gone; 0.1.341: workflow.agent.* gone; 2026-10-29: CLI-only ops rows are readonly; adoc.041/042 do not choose a worktree
+    expect(editable).toHaveLength(239); // batch2-next: four rows joined the catalog; 0.1.341: workflow.agent.* gone; 2026-10-29: CLI-only ops rows are readonly; adoc.041/042 do not choose a worktree
     expect(new Set(editable.map((row) => row.storageKey)).size).toBeLessThan(editable.length);
     for (const row of editable) {
       if (row.storageKey === "ui.language") {

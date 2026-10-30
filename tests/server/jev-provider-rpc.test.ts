@@ -41,7 +41,7 @@ describe("Jev provider status", () => {
     const { rpc, calls, harness } = setup({ OPENLUX_API_KEY: OPEN_KEY, TYPESAFE_API_KEY: TYPE_KEY });
     const status = await rpc.jev_provider_status();
     expect(status).toEqual({
-      chosen: "openlux", effective: "openlux", catalog: "ok",
+      chosen: "typesafe", effective: "typesafe", catalog: "ok",
       providers: [
         { id: "typesafe", keyName: "TYPESAFE_API_KEY", model: "jev-latest", hasKey: true },
         { id: "openlux", keyName: "OPENLUX_API_KEY", model: "jev-1.14.0:stable", hasKey: true },
@@ -54,15 +54,15 @@ describe("Jev provider status", () => {
 
   it("follows the global setting and reports the provider Jev really runs on", async () => {
     const onlyTypesafe = setup({ TYPESAFE_API_KEY: TYPE_KEY });
-    expect(await onlyTypesafe.rpc.jev_provider_status()).toMatchObject({ chosen: "openlux", effective: "typesafe", catalog: "ok" });
+    expect(await onlyTypesafe.rpc.jev_provider_status()).toMatchObject({ chosen: "typesafe", effective: "typesafe", catalog: "ok" });
     await onlyTypesafe.harness.lifecycle.dispose();
 
     const chosenTypesafe = setup({ OPENLUX_API_KEY: OPEN_KEY }, { provider: "typesafe" });
-    expect(await chosenTypesafe.rpc.jev_provider_status()).toMatchObject({ chosen: "typesafe", effective: null });
+    expect(await chosenTypesafe.rpc.jev_provider_status()).toMatchObject({ chosen: "typesafe", effective: "openlux" });
     await chosenTypesafe.harness.lifecycle.dispose();
 
     const none = setup({});
-    expect(await none.rpc.jev_provider_status()).toMatchObject({ chosen: "openlux", effective: null, catalog: "ok" });
+    expect(await none.rpc.jev_provider_status()).toMatchObject({ chosen: "typesafe", effective: null, catalog: "ok" });
     await none.harness.lifecycle.dispose();
   });
 
@@ -81,7 +81,7 @@ describe("Jev provider key save", () => {
     const status = await rpc.jev_provider_save_key({ provider: "openlux", key: `  ${OPEN_KEY}\n` });
     expect(catalog).toEqual({ OPENLUX_API_KEY: OPEN_KEY });
     expect(calls.find((call) => call.method === "env_save")!.input).toMatchObject({ name: "OPENLUX_API_KEY", kind: "secret", value: OPEN_KEY });
-    expect(status).toMatchObject({ chosen: "openlux", effective: "openlux" });
+    expect(status).toMatchObject({ chosen: "typesafe", effective: "openlux" });
     expect(status.providers.find((provider) => provider.id === "openlux")!.hasKey).toBe(true);
     expect(JSON.stringify(status)).not.toContain(OPEN_KEY);
     await harness.lifecycle.dispose();
@@ -110,12 +110,12 @@ describe("Jev provider test request", () => {
     const fetchMock = fakeFetch({ body: { answers: { check: { type: "noul", noul: 0.98 } }, model: "jev-1.13.0", usage: { input_tokens: 10, output_tokens: 1 } } });
     vi.stubGlobal("fetch", fetchMock);
     const result = await rpc.jev_provider_test();
-    expect(result).toMatchObject({ ok: true, provider: "openlux", model: "jev-1.13.0", error: null });
+    expect(result).toMatchObject({ ok: true, provider: "typesafe", model: "jev-1.13.0", error: null });
     expect(Number.isInteger(result.latencyMs)).toBe(true);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0]!;
-    expect(String(url)).toBe("https://api.openlux.ai/v1/systemone");
-    expect((init!.headers as Record<string, string>).authorization).toBe(`Bearer ${OPEN_KEY}`);
+    expect(String(url)).toBe("https://api.typesafe.ai/v1/systemone");
+    expect((init!.headers as Record<string, string>).authorization).toBe(`Bearer ${TYPE_KEY}`);
     expect(JSON.stringify(result)).not.toContain(OPEN_KEY);
     await harness.lifecycle.dispose();
   });
@@ -133,18 +133,18 @@ describe("Jev provider test request", () => {
   });
 
   it("reports a refused key as an error, not as a throw", async () => {
-    const { rpc, harness } = setup({ OPENLUX_API_KEY: OPEN_KEY });
+    const { rpc, harness } = setup({ TYPESAFE_API_KEY: TYPE_KEY });
     vi.stubGlobal("fetch", fakeFetch({ status: 401 }));
     const result = await rpc.jev_provider_test();
-    expect(result).toMatchObject({ ok: false, provider: "openlux", model: null, error: "http 401" });
+    expect(result).toMatchObject({ ok: false, provider: "typesafe", model: null, error: "http 401" });
     await harness.lifecycle.dispose();
   });
 
   it("does not call out when the chosen provider has no key", async () => {
-    const { rpc, harness } = setup({ TYPESAFE_API_KEY: TYPE_KEY });
+    const { rpc, harness } = setup({});
     const fetchMock = fakeFetch({});
     vi.stubGlobal("fetch", fetchMock);
-    expect(await rpc.jev_provider_test()).toMatchObject({ ok: false, provider: "openlux", error: "no OPENLUX_API_KEY in Env Catalog" });
+    expect(await rpc.jev_provider_test()).toMatchObject({ ok: false, provider: "typesafe", error: "no TYPESAFE_API_KEY in Env Catalog" });
     expect(fetchMock).not.toHaveBeenCalled();
     await harness.lifecycle.dispose();
   });

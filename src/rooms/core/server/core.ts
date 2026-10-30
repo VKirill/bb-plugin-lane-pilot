@@ -46,9 +46,10 @@ export function createCore(bb: BbPluginApi, db: LanePilotDatabase) {
 
   const rawHost = bb.hosts.experimental_client({ contract:hostContract });
 
-  // Jev's provider is the global setting jev.provider (OpenLux by default, TypeSafe the official one); its key lives in BB's Env
-  // Catalog (OPENLUX_API_KEY / TYPESAFE_API_KEY). The server reads both and sends the key and the provider id with each Jev call, so
-  // machines need no ~/secrets/typesafe.env. Without Env Catalog or the record a machine falls back to its own (TypeSafe).
+  // Jev's provider is the global setting jev.provider (TypeSafe by default — the official one; OpenLux the cheaper reseller);
+  // its key lives in BB's Env Catalog (TYPESAFE_API_KEY / OPENLUX_API_KEY). The server reads both and sends the key and the
+  // provider id with each Jev call, so machines need no ~/secrets/typesafe.env. Without Env Catalog or the record a machine
+  // falls back to its own (TypeSafe). A dead TypeSafe (5xx, timeout) is retried once on OpenLux when that key exists.
   const JEV_METHODS = new Set(["classifyPlan","councilJudge","docsAnchors","docsFlows","docsDepth","docsVerifyCitations","docsStaleness"]);
   const jevKeyCache = new Map<string, { value: string | undefined; at: number }>();
   async function catalogKey(name: string): Promise<string | undefined> {
@@ -74,9 +75,16 @@ export function createCore(bb: BbPluginApi, db: LanePilotDatabase) {
   async function jevEndpoint(): Promise<JevEndpoint> {
     const wanted = resolveJevProvider(loadProjectSettings(db, GLOBAL_SETTINGS_PROJECT_ID)["jev.provider"]);
     let endpoint: JevEndpoint = { provider: wanted, apiKey: await catalogKey(wanted.keyName) };
-    if (!endpoint.apiKey && wanted.id !== "typesafe") {
-      const apiKey = await catalogKey(JEV_PROVIDERS.typesafe.keyName);
-      if (apiKey) endpoint = { provider: JEV_PROVIDERS.typesafe, apiKey };
+    if (!endpoint.apiKey) {
+      const other = JEV_PROVIDERS[wanted.id === "typesafe" ? "openlux" : "typesafe"];
+      const apiKey = await catalogKey(other.keyName);
+      if (apiKey) endpoint = { provider: other, apiKey };
+    }
+    // The chosen TypeSafe gets OpenLux as the one-retry standby when that key exists (and back for OpenLux's own choice).
+    if (endpoint.apiKey) {
+      const other = JEV_PROVIDERS[endpoint.provider.id === "typesafe" ? "openlux" : "typesafe"];
+      const spareKey = await catalogKey(other.keyName);
+      if (spareKey) endpoint = { ...endpoint, fallback: { provider: other, apiKey: spareKey } };
     }
     const serving = `${endpoint.provider.id}:${Boolean(endpoint.apiKey)}`;
     if (serving !== jevServing) {
