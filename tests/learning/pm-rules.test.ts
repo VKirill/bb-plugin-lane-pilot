@@ -139,6 +139,16 @@ describe("the PM's rules block (T4)", () => {
     expect(pmRulesPromptBlock(db, "proj_1", [], 1600)).toContain("whole project");
   });
 
+  it("applies a path selector only when the caller passes the task paths", () => {
+    const db = database();
+    const row = adopted(db, "Read the verification room before changing its checks.");
+    db.prepare("UPDATE lane_pilot_rule_proposal SET scope_json=? WHERE id=?").run(JSON.stringify(["verification"]), row.id);
+    expect(pmRulesOf(db, "proj_1", ["section:a"]).map((rule) => rule.id)).not.toContain(row.id);
+    expect(pmRulesOf(db, "proj_1", ["section:a"], ["src/rooms/memory/store.ts"]).map((rule) => rule.id)).not.toContain(row.id);
+    expect(pmRulesOf(db, "proj_1", ["section:a"], ["src/rooms/verification/check.ts"]).map((rule) => rule.id)).toContain(row.id);
+    expect(pmResumeInstructions(db, "proj_1", ["section:a"]) ?? "").not.toContain("verification room");
+  });
+
   it("picks the rules that apply to a text with Jev, and keeps them all when Jev cannot be asked", async () => {
     const db = database();
     const rules = [{ rule: "Before deploying run the drill." }, { rule: "Reports are written in Russian." }];

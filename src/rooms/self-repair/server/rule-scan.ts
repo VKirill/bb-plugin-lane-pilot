@@ -216,6 +216,15 @@ export function createRuleScan(ctx: ServerCore, services: Services) {
     return splitRejectedPaths(attempt.reason, (path) => fileAllowedByOwns(path, owns) && !fileBlockedByNeverTouch(path, never));
   }
 
+  /** Paths the task owns or reads, so a path-scoped rule is considered only for that task. */
+  function attemptPaths(attempt: FailedAttempt): string[] {
+    try {
+      const contract = JSON.parse(attempt.contractJson) as { owns_paths?: unknown; read_first?: unknown };
+      const list = (value: unknown) => Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+      return [...list(contract.owns_paths), ...list(contract.read_first)];
+    } catch { return []; }
+  }
+
   async function projectPlace(projectId: string): Promise<{ hostId: string; path: string } | null> {
     const resolved = await services.resolveProjectWriterHost({ projectId }).catch(() => null);
     return resolved && resolved.status === "resolved" && resolved.hostId ? { hostId: resolved.hostId, path: resolved.path } : null;
@@ -246,7 +255,7 @@ export function createRuleScan(ctx: ServerCore, services: Services) {
           continue;
         }
         // Only rules of the attempt's own sections can be the mistake it repeats.
-        const rules = known.filter((rule) => scopeApplies(rule.scope, chains.get(attempt.runId) ?? [])).slice(0, 8);
+        const rules = known.filter((rule) => scopeApplies(rule.scope, chains.get(attempt.runId) ?? [], attemptPaths(attempt))).slice(0, 8);
         const questions = triageQuestions(rules);
         const judged = await host.call("councilJudge", {
           requestedHostId: place.hostId, state: JSON.stringify(triageState(attempt, split)).slice(0, 60_000), questions,
@@ -318,7 +327,7 @@ export function createRuleScan(ctx: ServerCore, services: Services) {
     const prompt = analyzerPrompt({
       category: group.category, locale, group: evidence, scopeLabel: await scopeLabel(projectId, group.scope),
       others: rest.map((row) => ({ taskId: row.taskId, failureReason: row.reason.slice(0, 300) })),
-      rules: listRuleProposals(db, projectId).filter((row) => row.state === "accepted" && scopeApplies(row.scope, group.scope)).map((row) => row.rule),
+      rules: listRuleProposals(db, projectId).filter((row) => row.state === "accepted" && scopeApplies(row.scope, group.scope, [...new Set(group.failures.flatMap(attemptPaths))])).map((row) => row.rule),
     });
     const title = analyzerThreadTitle({ kind: "analyze", locale, place: await placeLabel(projectId, group.scope), taskIds: group.failures.map((row) => row.taskId) });
     return { id: `analyze:${spawnTextId(`${group.category}|${group.scope.join(",")}|${group.failures.map((row) => row.taskId).join(",")}`)}`, kind: "analyze", title, prompt, category: group.category, scope: [...group.scope], known: [...group.failures, ...rest].map(citeOf) };

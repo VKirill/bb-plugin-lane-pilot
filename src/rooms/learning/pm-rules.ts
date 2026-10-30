@@ -17,10 +17,10 @@ export type PmRule = Pick<RuleProposal, "id" | "rule" | "always" | "trialState" 
 
 const priority = (rule: PmRule): number => (rule.always ? 0 : rule.trialState !== "trial" ? 1 : 2);
 
-/** The project's rules the PM must follow, in the order they are given. */
-export function pmRulesOf(db: Db, projectId: string, chain?: readonly string[]): PmRule[] {
+/** The project's rules the PM must follow, in the order they are given. Path selectors apply only when `paths` is passed (a task being read or contracted). */
+export function pmRulesOf(db: Db, projectId: string, chain?: readonly string[], paths?: readonly string[]): PmRule[] {
   return listRuleProposals(db as never, projectId, { state: "accepted", limit: 500 })
-    .filter((rule) => rule.audience !== "writer" && rule.memoryId !== null && (!chain || scopeApplies(rule.scope, chain)))
+    .filter((rule) => rule.audience !== "writer" && rule.memoryId !== null && (!chain || scopeApplies(rule.scope, chain, paths)))
     .sort((a, b) => priority(a) - priority(b) || (b.decidedAt ?? 0) - (a.decidedAt ?? 0));
 }
 

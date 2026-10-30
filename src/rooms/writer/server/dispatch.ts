@@ -27,6 +27,7 @@ import type { ServerCore } from "../../core/server";
 import type { Services } from "../../core/server";
 import { runOnHost } from "@lane-pilot/host-calls";
 import { pollPause } from "@lane-pilot/kit";
+import { pmRulesOf } from "../../learning";
 
 /** How long a dispatch waits for its stages before it answers «queued» and lets them go on in the background. */
 const dispatchAnswerMs = () => {
@@ -211,7 +212,12 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
     const lint = await lintTask(args.projectId, runId, task, taskBase, config.hostId);
     // The queue the task joins, said once in the answer: which open tasks hold it and on what, and how to cut the batch if three own one path.
     const batchAdvice = batchAdviceFor(db, args.projectId, task);
-    const withAdvice = (reply:Record<string,unknown>): Record<string,unknown> => batchAdvice.length && reply.state === "queued" ? { ...reply, batchAdvice } : reply;
+    const withAdvice = (reply:Record<string,unknown>): Record<string,unknown> => {
+      const advised = batchAdvice.length && reply.state === "queued" ? { ...reply, batchAdvice } : reply;
+      if (reply.state !== "queued") return advised;
+      const pathRules = pmRulesOf(db, args.projectId, getRunSettingsScopes(db, runId), [...task.owns_paths, ...task.read_first]);
+      return pathRules.length ? { ...advised, pathRules: pathRules.map((rule) => ({ id: rule.id, rule: rule.rule, scope: rule.scope })) } : advised;
+    };
     // The run's objective (the Tasks board groups by it) comes with the PM's first dispatch; Lane Pilot's own dispatches (mainfix, workflows) need none.
     const noObjective:LintFinding[] = args.requireObjective && !getRunObjective(db, runId)
       ? [{ code:"objective_missing", message:"objective is missing: this run has none yet; add objective to this first dispatch, one phrase in the language the owner writes in saying what the whole batch is for (later dispatches may leave it out)" }] : [];

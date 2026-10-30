@@ -61,7 +61,7 @@ export const MEMORY_PATHS: readonly MemoryPath[] = [
   { id: "pm.start", consumer: "a PM's first prompt (activation)", carries: ["rule"], alwaysOn: ["rule"], status: "probed", live: "pm-prompt",
     sites: [
       { file: "src/rooms/native-agent/server/activation.ts", primitive: "pmRulesPromptBlock", count: 1 },
-      { file: "src/rooms/learning/pm-rules.ts", primitive: "pmRulesBlock", count: 2 },
+      { file: "src/rooms/learning/pm-rules.ts", primitive: "pmRulesBlock", count: 3 },
       { file: "src/rooms/learning/pm-rules.ts", primitive: "pmRulesOf", count: 2 },
     ] },
   { id: "pm.resume", consumer: "a PM session that starts or resumes (contributeInstructions)", carries: ["rule"], alwaysOn: ["rule"], status: "probed",
@@ -71,6 +71,9 @@ export const MEMORY_PATHS: readonly MemoryPath[] = [
     ] },
   { id: "pm.rules_tool", consumer: "the PM tool lane_pilot_memory {action:\"learned\", op:\"rules\"}", carries: ["rule"], alwaysOn: ["rule"], status: "probed",
     sites: [{ file: "src/rooms/learning/service.ts", primitive: "pmRulesOf", count: 1 }] },
+  { id: "pm.contract", consumer: "path-scoped rules returned with a queued task contract", carries: ["rule"], alwaysOn: [], status: "exempt",
+    reason: "Handed back on the dispatch reply for the task's paths. Startup and resume do not pass paths, so a path selector stays quiet there.",
+    sites: [{ file: "src/rooms/writer/server/dispatch.ts", primitive: "pmRulesOf", count: 1 }] },
   { id: "pm.memory_tool", consumer: "the PM tool lane_pilot_memory {action:\"context\"}", carries: ["note", "core"], alwaysOn: [], status: "probed",
     sites: [
       { file: "src/rooms/memory/server/memory.ts", primitive: "pmMemoryContext", count: 1 },
