@@ -291,17 +291,28 @@ export function createWorkflowAgents() {
       const detached = !rt.runId || req.workflowId === AGENT_ROUTINE;
       const placement = !detached ? await helperChildPlacement({ bb, db, projectId: rt.projectId, runId: rt.runId!, role: spec.metadata, taskTitle: `${req.title}`.slice(0, 80) })
         : hiddenPlacement(rt.projectId, `Lane Pilot ${req.workflowId === AGENT_ROUTINE ? "scheduled agent" : "workflow"}: ${req.title}`, chatSection);
-      const spawned = await fullAccessSpawn(bb, {
-        ...placement,
+      const args = (placementArg: typeof placement, parent: Record<string, unknown>) => ({
+        ...placementArg,
         ...requiredPolicyField(bb, policy, providerId, spec.helper, withProfileAccess(extraAccessOf(req), own?.access)),
         ...writerExecutionSelection(providerId, req.model ?? DEFAULT_MODEL, req.reasoning ?? DEFAULT_REASONING, req.serviceTier ?? "default"),
         prompt: req.prompt,
         environment,
         pluginMetadata: {
-          role: spec.metadata, ...(spec.specialist ? { specialist: spec.specialist } : {}), ...(rt.origin ? { origin: rt.origin } : {}), spawnId: req.spawnKey, ...(rt.runId ? { lanePilotRunId: rt.runId } : {}), ...(rt.pmThreadId && !detached ? { parentPmThreadId: rt.pmThreadId } : {}), helperMode: policy.mode,
+          role: spec.metadata, ...(spec.specialist ? { specialist: spec.specialist } : {}), ...(rt.origin ? { origin: rt.origin } : {}), spawnId: req.spawnKey, ...(rt.runId ? { lanePilotRunId: rt.runId } : {}), ...parent, helperMode: policy.mode,
           lanePilotWorkflowRunId: req.workflowRunId, lanePilotWorkflowStep: req.stepKey, lanePilotWorkflowSpawn: req.spawnKey, lanePilotWorkflowNode: req.nodeId,
         },
       } as Parameters<typeof fullAccessSpawn>[1]);
+      let spawned: Awaited<ReturnType<typeof fullAccessSpawn>>;
+      try {
+        spawned = await fullAccessSpawn(bb, args(placement, !detached && rt.pmThreadId ? { parentPmThreadId: rt.pmThreadId } : {}));
+      } catch (cause) {
+        // lp.analyze hit this 12 times in 31 runs (G11): the phase's PM chat is gone or sealed, so the API refuses the
+        // child. The work still needs doing — spawn hidden, without a parent, instead of failing the run.
+        if (!detached && /parent thread is invalid/i.test(String(cause instanceof Error ? cause.message : cause))) {
+          bb.log.warn(`Lane Pilot ${req.workflowId}: parent thread ${rt.pmThreadId} invalid, the helper spawns hidden instead`);
+          spawned = await fullAccessSpawn(bb, args(hiddenPlacement(rt.projectId, `Lane Pilot workflow: ${req.title}`, chatSection), {}));
+        } else throw cause;
+      }
       const id = stringAt(spawned, "id");
       if (!id) throw new HelperFailure("thread_id_missing", "the helper thread was not created");
       // The PM asks for a specialist by its thread: the run behind it is looked up from here.
