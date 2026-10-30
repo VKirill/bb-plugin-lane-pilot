@@ -1,7 +1,7 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import { createAttempt, createRun, createTask, getRun, openDatabase, setRunThread, transitionAttempt } from "../src/rooms/storage/database";
-import { cleanupRunEnvironments, closeAbandonedRuns } from "../src/rooms/runs/server/run-finish";
+import { cleanupRunEnvironments, closeAbandonedRuns, closeStaleRuns } from "../src/rooms/runs/server/run-finish";
 import { isProjectRootCheckout } from "../src/rooms/writer/server/spawn";
 
 describe("abandoned run sweep", () => {
@@ -37,6 +37,46 @@ describe("abandoned run sweep", () => {
     expect(closed.sort()).toEqual(["run_archived", "run_deleted", "run_orphan_old"]);
     for (const id of ["run_live", "run_idle", "run_flaky", "run_busy", "run_orphan_new"]) expect(getRun(db, id)?.closed_at).toBeNull();
     expect(getRun(db, "run_deleted")?.state).toBe("closed");
+    await harness.lifecycle.dispose();
+  });
+
+  it("closes a blocked run parked for three days and a running run idle for six hours, and tells the PM", async () => {
+    const { bb: host, harness } = createFakePluginHost({ pluginId:"lane-pilot" });
+    const db = openDatabase(host);
+    const sent: string[] = [];
+    const bb = { sdk: { threads: { send: async (request: { threadId: string; input: Array<{ text: string }> }) => {
+      sent.push(`${request.threadId}:${request.input[0]?.text ?? ""}`);
+    } } } } as never;
+    const now = Date.now();
+    const blockedLife = 72 * 60 * 60 * 1000;
+    const runningLife = 6 * 60 * 60 * 1000;
+    for (const [id, state, age, thread] of [
+      ["run_blocked_old", "blocked", blockedLife + 60_000, "thr_pm"],
+      ["run_blocked_fresh", "blocked", 60 * 60_000, "thr_pm"],
+      ["run_running_old", "running", runningLife + 60_000, "thr_pm2"],
+      ["run_running_fresh", "running", 60 * 60_000, "thr_pm2"],
+      ["run_running_busy", "running", runningLife + 60_000, "thr_pm2"],
+    ] as const) {
+      createRun(db, id, "P", "cli");
+      setRunThread(db, id, thread);
+      db.prepare("UPDATE lane_pilot_run SET state=?, updated_at=? WHERE id=?").run(state, now - age, id);
+    }
+    createTask(db, { id:"task_busy", runId:"run_running_busy", kind:"bb", contract:{} });
+    createAttempt(db, { id:"attempt_busy", runId:"run_running_busy", taskId:"task_busy" });
+    transitionAttempt(db, "attempt_busy", "spawn_requested");
+    transitionAttempt(db, "attempt_busy", "running", { threadId:"thr_writer" });
+    db.prepare("UPDATE lane_pilot_run SET updated_at=? WHERE id='run_running_busy'").run(now - runningLife - 60_000);
+
+    const closed = await closeStaleRuns(bb, db, now);
+    expect(closed.sort()).toEqual(["run_blocked_old", "run_running_old"]);
+    expect(getRun(db, "run_blocked_old")?.state).toBe("closed");
+    const closedBy = (id: string) => (db.prepare("SELECT closed_by FROM lane_pilot_run WHERE id=?").get(id) as { closed_by: string | null }).closed_by;
+    expect(closedBy("run_blocked_old")).toBe("ttl");
+    expect(closedBy("run_running_old")).toBe("ttl");
+    for (const id of ["run_blocked_fresh", "run_running_fresh", "run_running_busy"]) expect(getRun(db, id)?.closed_at).toBeNull();
+    expect(sent.some((line) => line.startsWith("thr_pm:") && /blocked/.test(line))).toBe(true);
+    expect(sent.some((line) => line.startsWith("thr_pm2:") && /running/.test(line))).toBe(true);
+    expect(sent.some((line) => line.includes("run_running_busy"))).toBe(false);
     await harness.lifecycle.dispose();
   });
 });
