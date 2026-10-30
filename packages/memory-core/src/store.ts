@@ -121,6 +121,8 @@ export function storeMemoryRecords(db: MemoryDatabase, input: StoreMemoryInput):
     for (const entry of input.entries) { const issue = memoryContentIssue(entry.content); if (issue) throw new Error(issue); }
     // A rule concept is the rules pipeline (`origin: "rule"`). A maintainer that emits one is refused here, not only in the prompt.
     if (origin !== "rule") for (const entry of input.entries) if (entry.concepts.includes("rule")) throw new Error("memory rule concept is owned by the rules pipeline");
+    // Agentmemory is an observation archive. It does not author project core or, by the check above, rules.
+    if (origin === "agentmemory") for (const entry of input.entries) if (entry.kind === "core") throw new Error("memory core is not written by agentmemory");
     const expiredIds = expireMemory(db, input.projectId, personalBot, now, (projectId, id) => dropMemoryIndexes(db, projectId, id));
     const rows = db.prepare(`SELECT ${cols()}, scope_json FROM lane_pilot_memory WHERE project_id=? AND personal_bot=?`).all(input.projectId, personalBot) as Array<Row & { scope_json: string | null }>;
     const scope = input.scope ?? [];
