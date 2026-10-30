@@ -61,19 +61,18 @@ describe("learning without the owner", () => {
     expect(config().mode).toBe("observe");
   });
 
-  it("accepts what waited for the owner's yes and hands a global preference to the PM to save", async () => {
+  it("accepts what waited for the owner's yes; the server saves the global preference itself", async () => {
     const db = database();
     const base: Item = { id: "lrn_g", obsId: "thr_a:1:0", projectId: "proj_1", threadId: "thr_a", kind: "preference", text: "Always answer in Russian", audience: "both", reach: "owner", dueAt: null,
       state: "pending_owner", target: "bb-memory", evidence: "owner message thr_a:1:0", duplicateOf: null, confirmations: 0, note: null, createdAt: NOW, decidedAt: null, announcedAt: null };
     insertItem(db, base);
     insertItem(db, { ...base, id: "lrn_d", kind: "deadline", reach: "project", target: "reminder", text: "Release on Friday" });
     const { autonomy, sent } = harness(db, allRight, {
-      accept: async (id) => ({ item: { ...getItem(db, id)!, state: "accepted" }, ...(id === "lrn_g" ? { run: "bb memory add --scope global" } : {}) }),
+      accept: async (id) => ({ item: { ...getItem(db, id)!, state: "accepted", ...(id === "lrn_g" ? { target: "bb-memory:mem_1" } : {}) }, ...(id === "lrn_g" ? { note: "Saved as a global preference (mem_1)." } : {}) }),
     });
     const settled = await autonomy.settleWaiting();
     expect(settled.map((row) => row.id).sort()).toEqual(["lrn_d", "lrn_g"]);
-    expect(sent).toHaveLength(1);
-    expect(sent[0]![0]).toBe("thr_pm");
-    expect(sent[0]![1]).toMatch(/^Lane Pilot: .*bb memory add --scope global/s);
+    // A-b4: no PM step — the write already happened in accept; nothing is handed to a chat.
+    expect(sent).toHaveLength(0);
   });
 });
