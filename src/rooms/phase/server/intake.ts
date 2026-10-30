@@ -57,7 +57,7 @@ export function createPhaseIntake(ctx: Deps, phases: IntakePhases, train?: Intak
         if (verdict.by === "jev") {
           // Self-consistency on the border zone: a pick that just cleared the bar is re-asked with the options reversed;
           // a flip means the order carried it, and an unsure message starts nothing.
-          const pick = choiceOf(verdict.answers, "weight");
+          const pick = choiceOf(verdict.answers ?? {}, "weight");
           const minP = resolveThresholds(intakeJudgment, settings as JevSettings, null).min_p!;
           if (pick && verdict.decision.kind !== "reply" && (pick.p < minP + 0.15 || pick.margin < 0.1)) {
             const again = await instance.judge(intakeJudgment, { text, previous, reverse: true }, { projectId, runId, subject: "intake", settings: settings as JevSettings }).catch(() => null);
