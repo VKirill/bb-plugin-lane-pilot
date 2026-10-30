@@ -178,11 +178,20 @@ export function createMemoryStage(ctx: ServerCore, services: Services) {
         bb, db, projectId:args.projectId, runId:args.runId, role:"memory-maintainer",
       });
       spawnCalled=true;
+      const existing=searchMemoryRecords(db,args.projectId,`${task.title}\n${task.objective}`,8,snapshot.settings.searchEngine,snapshot.settings.audience,snapshot.settings.personalBot,{chain:getRunSettingsScopes(db,args.runId)})
+        .filter((record)=>record.kind==="note"&&!record.concepts.includes("rule")).map((record)=>({id:record.id,content:record.content}));
+      // A few files the notes name, read through the same file reader the writer uses. The model still gets no tools.
+      const named=pathsNamed(existing.map((item)=>item.content).join("\n")).slice(0,4);
+      const excerptRead=await snapshotFileRead(named,async(relativePath)=>{
+        const file=await bb.sdk.files.read({hostId:config.hostId,rootPath:workspace.path,path:resolve(workspace.path,relativePath)}).catch(()=>null);
+        const content=file&&typeof file==="object"?(file as {content?:unknown}).content:null;
+        return typeof content==="string"?new TextEncoder().encode(content):null;
+      });
+      const excerpts=named.flatMap((path)=>{const bytes=excerptRead(path);return bytes?[`FILE ${path}:\n${new TextDecoder().decode(bytes).slice(0,2000)}`]:[];}).join("\n\n");
       const spawned=await fullAccessSpawn(bb, {...placement,...requiredPolicyField(bb, helperPolicy, memoryProviderId, "memory-maintainer"),
         ...writerExecutionSelection(memoryProviderId,memoryModel,memoryEffort,tier),
         prompt:memoryMaintenancePrompt({task,acceptedResult:compactAcceptedResult(accepted.result),settings:snapshot.settings,agent:snapshot.agent,
-          existing:searchMemoryRecords(db,args.projectId,`${task.title}\n${task.objective}`,8,snapshot.settings.searchEngine,snapshot.settings.audience,snapshot.settings.personalBot,{chain:getRunSettingsScopes(db,args.runId)})
-            .filter((record)=>record.kind==="note"&&!record.concepts.includes("rule")).map((record)=>({id:record.id,content:record.content})),
+          existing,excerpts,
           core:(({tokens,replaceable})=>({tokens,records:replaceable}))(coreShelf(db,args.projectId,snapshot.settings.personalBot,snapshot.settings.audience,getRunSettingsScopes(db,args.runId)))}),
         environment:workspaceExecutionEnvironment(config.hostId,workspace),
         pluginMetadata:{role:"memory-maintainer",lanePilotRunId:args.runId,lanePilotTaskId:args.taskId,

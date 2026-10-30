@@ -77,5 +77,9 @@ describe("a full project core no longer refuses the maintainer batch", () => {
 
   it("tells the maintainer to keep a date and a version verbatim", () => {
     expect(memoryMaintenancePrompt({ task: {}, acceptedResult: {}, settings })).toContain("Keep a date, a version number and a deadline verbatim");
+    const withFile = memoryMaintenancePrompt({ task: {}, acceptedResult: {}, settings, excerpts: "FILE src/theme/base.css:\nbody{color:red}" });
+    expect(withFile).toContain("FILE src/theme/base.css:");
+    expect(withFile).toContain("Call no tools");
+    expect(withFile.indexOf("FILE EXCERPTS")).toBeLessThan(withFile.indexOf("TASK:"));
   });
 });
