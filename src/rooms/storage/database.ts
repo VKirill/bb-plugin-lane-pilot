@@ -423,6 +423,8 @@ export const migrations = [
   `ALTER TABLE lane_pilot_memory ADD COLUMN expired_reason TEXT`,
   // A user workflow run not verified against its goals is `not_verified` (the wf_run CHECK is rebuilt; packages/workflow-engine/src/ops-store.ts). Append only.
   ...workflowNotVerifiedMigrations,
+  // Hash of the files a note named when it was written (packages/memory-core/src/fingerprint.ts). Append only.
+  `ALTER TABLE lane_pilot_memory ADD COLUMN file_fingerprint TEXT`,
 ];
 
 export function openDatabase(bb: BbPluginApi): LanePilotDatabase {

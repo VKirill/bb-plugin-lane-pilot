@@ -1,11 +1,12 @@
+import { resolve } from "node:path";
 import { taskV2Schema } from "../../contracts";
 import { enrichMemoryContext } from "../../memory-tiers/server";
 import { claimStageSpawn, getRun, getRunSettingsScopes, getTask, listStageReceipts, searchMemoryRecords } from "../../storage";
-import { coreShelf, storeMemoryRecordsKeepingOverflow } from "@lane-pilot/memory-core";
+import { coreShelf, pathsNamed, storeMemoryRecordsKeepingOverflow } from "@lane-pilot/memory-core";
 import { bbServiceTier, writerExecutionSelection } from "@lane-pilot/models";
 import { sha256 } from "../../tasks";
 import { memoryMaintenancePrompt, memoryRecordId, parseMemoryCandidates, parseMemorySettings } from "../memory";
-import { pmMemoryContext } from "./memory-mix";
+import { pmMemoryContext, snapshotFileRead } from "./memory-mix";
 import { boundedAgentName } from "../../critique";
 import { MemoryChildSnapshot, childResultObject, memoryChildSnapshot, spawnRefused } from "../../runs/server";
 import { compactAcceptedResult } from "../../tasks/server";
@@ -100,9 +101,14 @@ export function createMemoryStage(ctx: ServerCore, services: Services) {
       const parsed=parseMemoryCandidates(output,snapshot.settings);
       // What a task taught belongs to its section of a shared project (Мои проекты: several games and FeedGen in one project).
       const scope=getRunSettingsScopes(db,args.runId);
+      const readFile=await snapshotFileRead(parsed.flatMap((entry)=>pathsNamed(entry.content)),async(relativePath)=>{
+        const file=await bb.sdk.files.read({hostId:config.hostId,rootPath:workspace.path,path:resolve(workspace.path,relativePath)}).catch(()=>null);
+        const content=file&&typeof file==="object"?(file as {content?:unknown}).content:null;
+        return typeof content==="string"?new TextEncoder().encode(content):null;
+      });
       // A full core keeps the batch: a core entry it cannot take is stored as a note, not a refusal of every entry.
       const records=storeMemoryRecordsKeepingOverflow(db,{projectId:args.projectId,personalBot:snapshot.settings.personalBot,audience:snapshot.settings.audience,sourceSha256:snapshot.acceptanceSha256,
-        entries:parsed,coreBudget:snapshot.settings.coreBudget,noteBudget:snapshot.settings.noteBudget,indexBudget:snapshot.settings.indexBudget,scope});
+        entries:parsed,coreBudget:snapshot.settings.coreBudget,noteBudget:snapshot.settings.noteBudget,indexBudget:snapshot.settings.indexBudget,scope,readFile});
       // Notes that now disagree with an active one are held, both, until a person settles it (memory-conflicts.ts); a failure here never loses the write.
       try { services.memoryConflicts.sweepMoot(args.projectId); services.memoryConflicts.detect(args.projectId,new Set(records.insertedIds)); } catch(cause) { bb.log.warn(`Lane Pilot memory conflicts after ${args.taskId} failed: ${cause instanceof Error?cause.message:String(cause)}`); }
       const byId=new Map(records.records.map((row)=>[row.id,row]));

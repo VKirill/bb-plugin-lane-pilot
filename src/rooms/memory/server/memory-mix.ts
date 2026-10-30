@@ -1,4 +1,4 @@
-import { MEMORY_SETTING_KEYS, REVIEWER_CONCEPTS, estimateTokens, listMemory, memoryContext, parseMemorySettings, searchMemoryRecords, type MemorySearchEngine, type MemorySettings } from "@lane-pilot/memory-core";
+import { MEMORY_SETTING_KEYS, REVIEWER_CONCEPTS, estimateTokens, filesDrifted, listMemory, memoryContext, parseMemorySettings, pathsNamed, searchMemoryRecords, type MemoryRecord, type MemorySearchEngine, type MemorySettings } from "@lane-pilot/memory-core";
 import type { TaskV2 } from "../../contracts";
 import { getRunSettingsScopes, loadProjectSettings, type LanePilotDatabase } from "../../storage";
 import { memoryLine, reviewerMemoryPicks, writerMemory, writerMemoryPicks } from "../../writer";
@@ -11,11 +11,32 @@ type TaskPaths = Pick<TaskV2, "owns_paths" | "read_first">;
  * useful first. Confirmed rules are left out (the rules block carries them). The caller records the mix once the
  * brief is final (`recordMemoryMixed`), so a mix that never reached a writer is not counted.
  */
-export function mixWriterMemory(db: LanePilotDatabase, input: { projectId: string; query: string; task: TaskPaths; searchEngine: MemorySearchEngine; personalBot: string; ruleMemoryIds: ReadonlySet<string>;
+type WriterMixInput = { projectId: string; query: string; task: TaskPaths; searchEngine: MemorySearchEngine; personalBot: string; ruleMemoryIds: ReadonlySet<string>;
   /** The run's sections: notes of a sibling section of a shared project are not this writer's. */
-  chain?: readonly string[] }): { text: string; ids: string[] } {
-  const found = searchMemoryRecords(db, input.projectId, input.query, 100, input.searchEngine, "subagent", input.personalBot, { chain: input.chain ?? [] }).filter((record) => !input.ruleMemoryIds.has(record.id));
-  return { text: writerMemory(found, input.task), ids: writerMemoryPicks(found, input.task).map((record) => record.id) };
+  chain?: readonly string[];
+  /** Current bytes of a repo-relative path. A note whose stored file hash no longer matches is left out of the brief. */
+  readFile?: (path: string) => Uint8Array | null };
+
+function writerCandidates(db: LanePilotDatabase, input: WriterMixInput): MemoryRecord[] {
+  return searchMemoryRecords(db, input.projectId, input.query, 100, input.searchEngine, "subagent", input.personalBot, { chain: input.chain ?? [] }).filter((record) => !input.ruleMemoryIds.has(record.id));
+}
+
+/** Paths the writer's candidate notes name, so a caller can read them before `mixWriterMemory` drops the ones that drifted. */
+export function writerMemoryPaths(db: LanePilotDatabase, input: WriterMixInput): string[] {
+  return [...new Set(writerCandidates(db, input).flatMap((record) => pathsNamed(record.content)))];
+}
+
+/** Reads each path once. A path the reader throws on is missing. */
+export async function snapshotFileRead(paths: readonly string[], readBytes: (path: string) => Promise<Uint8Array | null>): Promise<(path: string) => Uint8Array | null> {
+  const cache = new Map<string, Uint8Array | null>();
+  for (const path of [...new Set(paths)]) cache.set(path, await readBytes(path).catch(() => null));
+  return (path) => cache.get(path) ?? null;
+}
+
+export function mixWriterMemory(db: LanePilotDatabase, input: WriterMixInput): { text: string; ids: string[] } {
+  const found = writerCandidates(db, input);
+  const kept = input.readFile ? found.filter((record) => !filesDrifted(record.fileFingerprint, pathsNamed(record.content), input.readFile!)) : found;
+  return { text: writerMemory(kept, input.task), ids: writerMemoryPicks(kept, input.task).map((record) => record.id) };
 }
 
 type ReviewTask = TaskPaths & Partial<Pick<TaskV2, "title" | "objective" | "acceptance">>;
