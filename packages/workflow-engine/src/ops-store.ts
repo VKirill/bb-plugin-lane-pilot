@@ -38,6 +38,11 @@ export const workflowOpsMigrations: string[] = [
   // Stats per real workflow: until 0.1.187 the per-task pipeline (one run per dispatched task, keyed `lp-task:<attempt>`) was called
   // analyze-plan-execute, the id the outer chain of the chains spec has now. Those runs are attributed to the pipeline they were.
   PIPELINE_RUNS_ATTRIBUTION,
+];
+
+/** Appended at the end of the plugin's migrations (src/rooms/storage/database.ts), never inside workflowOpsMigrations, which is spread in the
+ * middle of that list: an entry added there shifts every later index and the hub refuses the plugin (0.1.389 deploy, 2026-10-30). */
+export const workflowNotVerifiedMigrations: string[] = [
   // A user run whose goals were empty or whose audit could not be made is `not_verified`, not `succeeded`. SQLite cannot widen a CHECK, so the table is rebuilt.
   `CREATE TABLE lane_pilot_wf_run_nv (
     id TEXT PRIMARY KEY,

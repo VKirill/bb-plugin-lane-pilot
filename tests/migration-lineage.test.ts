@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import { migrations, openDatabase } from "../src/rooms/storage/database";
+import migrationLock from "./fixtures/migrations.lock.json";
 
 const installed011MigrationHashes = [
   "ee647cc1d58d276e464d6d6a6fb2ce5926998c0d6f28bdb8bae9608fdb65bc02",
@@ -29,6 +30,17 @@ const installed011MigrationHashes = [
   "c7be7ec04ff0029f8268581bd43cc481c6ae52a743b0d08760959ba2876f4447",
   "7b57e7a86bb5b2ec749205abb11cb2dc63902b34f4aad09b1db70a766c9eeb4b",
 ];
+
+describe("the migration lock", () => {
+  // The hub records every applied statement by index and refuses a plugin whose statement at an index differs. A list such as
+  // workflowOpsMigrations is spread in the middle of `migrations`: an entry added there shifts every later index (0.1.389 deploy, 2026-10-30).
+  it("keeps every locked statement at its index; a new one is appended at the end and its hash added to tests/fixtures/migrations.lock.json", () => {
+    const hashes = migrations.map((statement) => createHash("sha256").update(statement).digest("hex"));
+    const moved = (migrationLock as string[]).flatMap((hash, index) => (hashes[index] === hash ? [] : [`${index}: ${(migrations[index] ?? "(gone)").trim().split("\n")[0]!.slice(0, 90)}`]));
+    expect(moved, "a locked migration changed or moved: append new statements at the end of src/rooms/storage/database.ts migrations instead").toEqual([]);
+    expect(hashes.length, "a new migration is not in tests/fixtures/migrations.lock.json: append its hash").toBe((migrationLock as string[]).length);
+  });
+});
 
 describe("installed 0.1.11 migration lineage", () => {
   it("keeps all applied statements byte-identical and upgrades populated storage", async () => {

@@ -15,7 +15,7 @@ import packageJson from "../../../package.json";
 import { IllegalTransitionError, isLegalMove } from "../runs";
 import { memoryConflictMigrations, recordMemoryAccepted } from "@lane-pilot/memory-core";
 import { workflowMigrations } from "@lane-pilot/workflow-engine";
-import { workflowOpsMigrations } from "@lane-pilot/workflow-engine";
+import { workflowNotVerifiedMigrations, workflowOpsMigrations } from "@lane-pilot/workflow-engine";
 import { draftMigrations } from "@lane-pilot/workflow-engine";
 import { jevMigrations } from "@lane-pilot/jev";
 import { learningMigrations } from "../learning/migrations";
@@ -421,6 +421,8 @@ export const migrations = [
   ...runGoalCoverageMigrations,
   // Why an active note left the corpus. Cold reads return candidates; they do not promote, so the reason stays the one the write door recorded.
   `ALTER TABLE lane_pilot_memory ADD COLUMN expired_reason TEXT`,
+  // A user workflow run not verified against its goals is `not_verified` (the wf_run CHECK is rebuilt; packages/workflow-engine/src/ops-store.ts). Append only.
+  ...workflowNotVerifiedMigrations,
 ];
 
 export function openDatabase(bb: BbPluginApi): LanePilotDatabase {

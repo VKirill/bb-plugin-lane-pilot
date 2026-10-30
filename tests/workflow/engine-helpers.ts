@@ -3,7 +3,7 @@ import type { LanePilotDatabase } from "../../src/rooms/storage/database";
 import { CrashError, WorkflowEngine } from "@lane-pilot/workflow-engine";
 import type { EngineOptions, NodeExecutor, StepContext } from "@lane-pilot/workflow-engine";
 import { workflowMigrations } from "@lane-pilot/workflow-engine";
-import { createStatusResolver, workflowOpsMigrations } from "@lane-pilot/workflow-engine";
+import { createStatusResolver, workflowNotVerifiedMigrations, workflowOpsMigrations } from "@lane-pilot/workflow-engine";
 import { definitionSha256 } from "@lane-pilot/workflow-engine";
 import type { Workflow } from "@lane-pilot/workflow-engine";
 import { parseWorkflow } from "@lane-pilot/workflow-engine";
@@ -13,7 +13,7 @@ import { workflow } from "./fixtures";
 export function journalDb(): LanePilotDatabase {
   const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
   const db = bb.storage.database();
-  bb.storage.migrate(db, [...workflowMigrations, ...workflowOpsMigrations]);
+  bb.storage.migrate(db, [...workflowMigrations, ...workflowOpsMigrations, ...workflowNotVerifiedMigrations]);
   return db;
 }
 
