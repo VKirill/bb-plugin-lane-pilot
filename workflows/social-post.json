@@ -1,0 +1,343 @@
+{
+  "id": "social-post",
+  "name": {
+    "en": "Social Post (Telegram Rich Message)",
+    "ru": "Пост для соцсетей (Telegram Rich Message)"
+  },
+  "description": {
+    "en": "Turns a topic into an audience-validated social post: extracts pains and insights via insights-post, writes text in Kirill Vechkasov's author voice, formats as a Telegram Rich Message, and delivers a preview for the owner to publish.",
+    "ru": "Превращает тему в проверенный пост для соцсетей: собирает боли и инсайты аудитории через insights-post, пишет текст в голосе автора (vechkasov-voice), оформляет в Telegram Rich Message и отдаёт превью владельцу (без автопубликации)."
+  },
+  "examples": {
+    "ru": [
+      "Напиши пост в телеграм про выгорание на основе обсуждений",
+      "Сделай пост с инсайтами аудитории про удалёнку в авторском стиле",
+      "Подготовь Telegram Rich Message по теме ремонт квартир с превью",
+      "Напиши пост в канал про найм разработчиков с цитатами и болями"
+    ],
+    "en": [
+      "Write a Telegram post about burnout based on audience discussions",
+      "Create an insights post about remote work in the author's voice",
+      "Prepare a Telegram Rich Message about home renovation with preview",
+      "Write a channel post about hiring developers with quotes and pains"
+    ]
+  },
+  "not_for": [
+    "x-to-telegram-digest",
+    "insights-post"
+  ],
+  "status": "published",
+  "tags": [
+    "social",
+    "telegram",
+    "content",
+    "copywriting"
+  ],
+  "inputs": {
+    "topic": {
+      "type": "string",
+      "required": true,
+      "note": "тема поста или тезис"
+    },
+    "platform": {
+      "type": "threads|instagram|vk",
+      "default": "threads",
+      "note": "площадка для поиска инсайтов"
+    },
+    "posts_count": {
+      "type": "int",
+      "default": 2,
+      "note": "число постов для анализа инсайтов"
+    },
+    "post_urls": {
+      "type": "string[]",
+      "default": [],
+      "note": "готовые ссылки на посты (если есть)"
+    }
+  },
+  "outputs": {
+    "status": "done|partial|blocked",
+    "post_text": "string",
+    "draft_path": "string",
+    "message_card": "string",
+    "owner_decision": "string"
+  },
+  "requires": {
+    "plugins": [
+      "lane-pilot",
+      "browser-automation"
+    ],
+    "skills": [
+      "vechkasov-voice",
+      "telegram-rich-messages",
+      "social-insights"
+    ],
+    "machines": [
+      "browser machine with Threads/Instagram/VK login for insights"
+    ],
+    "tools": [
+      "python3"
+    ]
+  },
+  "budget": {
+    "max_steps": 30,
+    "max_minutes": 120,
+    "max_usd": 10
+  },
+  "entry": "insights",
+  "nodes": [
+    {
+      "id": "insights",
+      "type": "subworkflow",
+      "workflow": "insights-post",
+      "title": {
+        "en": "Mine audience insights",
+        "ru": "Сбор инсайтов аудитории"
+      },
+      "with": {
+        "topic": "$inputs.topic",
+        "platform": "$inputs.platform",
+        "posts_count": "$inputs.posts_count",
+        "post_urls": "$inputs.post_urls",
+        "draft": false
+      },
+      "out": {
+        "status": "string",
+        "writing_pack_path": "string",
+        "dossier_path": "string",
+        "posts": "string[]"
+      },
+      "guards": {
+        "timeoutMin": 60
+      }
+    },
+    {
+      "id": "write_post",
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "social-manager",
+      "title": {
+        "en": "Write text in author's voice",
+        "ru": "Написание текста в голосе автора"
+      },
+      "profile": {
+        "skills": [
+          "vechkasov-voice",
+          "ru-text"
+        ]
+      },
+      "prompt": "Изучи собранный пакет инсайтов ({{insights.writing_pack_path}}) и досье ({{insights.dossier_path}}). Напиши пост по теме '{{$inputs.topic}}' в голосе автора Кирилла Вечкасова. Разделы навыков каталога: «Тексты и редактура» (vechkasov-voice, ru-text, ru-check, copywriter). Стиль: плотный, честный, с реальными болями и языком аудитории, без корпоративных штампов и нейрослопа. Проверь текст по ru-check. Сохрани черновик в .agents/social/post.md. Верни статус done или blocked.",
+      "out": {
+        "status": "done|blocked",
+        "post_text": "string",
+        "draft_path": "string",
+        "ru_score": "int"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 25
+      }
+    },
+    {
+      "id": "format_telegram",
+      "consumes": [
+        {
+          "kind": "report",
+          "version": 1,
+          "from": "write_post"
+        }
+      ],
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "social-manager",
+      "title": {
+        "en": "Format Telegram Rich Message",
+        "ru": "Оформление Telegram Rich Message"
+      },
+      "profile": {
+        "skills": [
+          "telegram-rich-messages"
+        ]
+      },
+      "prompt": "Оформи текст {{write_post.post_text}} в формат Telegram Rich Message. Разделы навыков каталога: «Соцсети и Telegram» (telegram-rich-messages) и «Тексты и редактура» (ru-text). Сформируй заголовок, акценты жирным/курсивом, цитату или скрытый блок, призыв к обсуждению. Проверь валидность разметки и лимит символов (< 4096). Сохрани карточку сообщения в .agents/social/telegram-card.md. Верни статус done или blocked.",
+      "out": {
+        "status": "done|blocked",
+        "formatted_text": "string",
+        "char_count": "int",
+        "message_card_path": "string"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 20
+      }
+    },
+    {
+      "id": "preview",
+      "type": "human",
+      "role": "owner",
+      "title": {
+        "en": "Preview post for owner",
+        "ru": "Превью поста владельцу"
+      },
+      "prompt": "Покажи владельцу оформленное Telegram-сообщение для проверки. Владелец копирует и публикует сам (без автопубликации). Варианты: approve (всё отлично, готово к публикации), edit (доработать текст), abort (отмена).",
+      "out": {
+        "answer": "string",
+        "answer_kind": "approve|edit|abort|timeout"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 240
+      }
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "done",
+        "post_text": "format_telegram.formatted_text",
+        "draft_path": "write_post.draft_path",
+        "message_card": "format_telegram.message_card_path",
+        "owner_decision": "preview.answer_kind"
+      }
+    },
+    {
+      "id": "partial",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "partial",
+        "post_text": "format_telegram.formatted_text",
+        "draft_path": "write_post.draft_path",
+        "message_card": "format_telegram.message_card_path"
+      }
+    },
+    {
+      "id": "blocked",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "blocked"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "insights",
+      "to": "write_post",
+      "pass": "artifact",
+      "when": "insights.status == 'done'"
+    },
+    {
+      "from": "insights",
+      "to": "blocked",
+      "pass": "artifact"
+    },
+    {
+      "from": "write_post",
+      "to": "format_telegram",
+      "pass": "artifact",
+      "when": "write_post.status == 'done'"
+    },
+    {
+      "from": "write_post",
+      "to": "blocked",
+      "pass": "artifact"
+    },
+    {
+      "from": "format_telegram",
+      "to": "preview",
+      "pass": "artifact",
+      "when": "format_telegram.status == 'done'"
+    },
+    {
+      "from": "format_telegram",
+      "to": "blocked",
+      "pass": "artifact"
+    },
+    {
+      "from": "preview",
+      "to": "write_post",
+      "pass": "same-session",
+      "when": "preview.answer_kind == 'edit' && visits('preview') < 2",
+      "label": "edit text"
+    },
+    {
+      "from": "preview",
+      "to": "done",
+      "pass": "artifact",
+      "when": "preview.answer_kind == 'approve'"
+    },
+    {
+      "from": "preview",
+      "to": "partial",
+      "pass": "artifact",
+      "when": "preview.answer_kind == 'edit'"
+    },
+    {
+      "from": "preview",
+      "to": "blocked",
+      "pass": "artifact"
+    }
+  ],
+  "test": {
+    "id": "soc-1",
+    "sim": {
+      "input": {
+        "topic": "Удаленная работа и продуктивность",
+        "platform": "threads",
+        "posts_count": 2
+      },
+      "stubs": {
+        "insights": {
+          "status": "done",
+          "writing_pack_path": "fixtures/writing_pack.md",
+          "dossier_path": "fixtures/dossier.md",
+          "posts": [
+            "p1",
+            "p2"
+          ]
+        },
+        "write_post": {
+          "status": "done",
+          "post_text": "Удаленка не убивает продуктивность, её убивает отсутствие границ.",
+          "draft_path": ".agents/social/post.md",
+          "ru_score": 9
+        },
+        "format_telegram": {
+          "status": "done",
+          "formatted_text": "<b>Удаленка и границы</b>\n\nУдаленка не убивает продуктивность...",
+          "char_count": 450,
+          "message_card_path": ".agents/social/telegram-card.md"
+        }
+      },
+      "human_answers": {
+        "preview": "approve"
+      },
+      "expect_path": [
+        "insights",
+        "write_post",
+        "format_telegram",
+        "preview",
+        "done"
+      ],
+      "expect_outputs": [
+        "status == 'done'",
+        "post_text != ''",
+        "owner_decision == 'approve'"
+      ]
+    },
+    "live": "Сбор инсайтов по теме, написание поста в авторском стиле, оформление Telegram Rich Message и превью владельцу",
+    "note": "Tested on stubs: subworkflow and model calls answer from stubs. No auto-publishing."
+  }
+}

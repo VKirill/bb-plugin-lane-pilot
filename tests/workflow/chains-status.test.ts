@@ -10,7 +10,7 @@ import { chainStore } from "./chain-harness";
  */
 const dir = __dirname;
 const sources = readdirSync(dir).filter((name) => /^chains-.*\.test\.ts$/.test(name) && name !== "chains-status.test.ts").map((name) => readFileSync(join(dir, name), "utf8")).join("\n");
-const withCase = new Set([...sources.matchAll(/runSim\("([a-z][a-z0-9.-]*)"/g)].map((match) => match[1]!));
+const withCase = new Set([...sources.matchAll(/runSim\("([a-z0-9][a-z0-9.-]*)"/g)].map((match) => match[1]!));
 const OWN = ["about-site", "deploy", "insights-post", "invoice-send", "reels", "resume", "seo-cocoon", "web-research", "x-to-telegram-digest", "year-review"];
 
 describe("status of the built-in chains", () => {
@@ -46,6 +46,7 @@ describe("status of the built-in chains", () => {
     expect(ids).toEqual(expect.arrayContaining(OWN));
     expect(ids.filter((id) => store.get(id)!.workflow.internal).sort()).toEqual(["ins.post", "lp.analyze", "lp.brainstorm", "lp.build", "lp.close", "lp.draw", "lp.plan", "lp.review"]);
     expect(ids).toEqual(expect.arrayContaining(["validate-phase", "eval-review", "ai-integration-phase", "spike", "ship", "pr-branch", "cleanup", "new-milestone", "plan-review-convergence", "project-start"]));
-    expect(ids).toHaveLength(70);
+    expect(ids).toEqual(expect.arrayContaining(["3d-asset", "roblox-asset", "social-post"]));
+    expect(ids).toHaveLength(73);
   });
 });
