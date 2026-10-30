@@ -1,6 +1,8 @@
 import { THREAD_WATCH_EVENT_TYPES, listThreadEventsRaw, waitThreadIdle } from "@lane-pilot/thread-observe";
 import { getRunSettingsScopes } from "../../storage";
 import { writerExecutionSelection, findModelIn, isZcodeProvider, zcodeEnvironmentError } from "@lane-pilot/models";
+import { jev } from "@lane-pilot/jev";
+import { stepTrivialJudgment } from "@lane-pilot/jev/judgments/step-trivial";
 import { providerLimitNotice } from "../../writer/server";
 import { MAIN_AGENT_ID, ROLE_PROFILES, compileEffectiveMainAgent, employeeView, isCustomAgentId, isEmployeeSpecialist, mentionContext, placeEmployeeOn } from "../../native-agent";
 import type { ExtraAccess, HelperRole } from "../../native-agent";
@@ -25,7 +27,7 @@ import { detectRepoEdits, gitRepoStatus } from "../../verification/server";
 import { SPECIALIST_GRAPH, SPECIALIST_ROLES, rememberSpecialistThread } from "../../critique/server";
 import { findThreadsByMetadata, keyedSpawnSupported } from "../../core/server";
 import { modelCatalogOf, pmHostOf, resolveSpawnModel, spawnUsageOf, warmSpawnUsage } from "../../core/server";
-import { roleRowOf } from "@lane-pilot/models";
+import { modelTier, ROLE_IDS, ROLE_MODEL_OPTIONS, roleRowOf } from "@lane-pilot/models";
 import { threadUsage } from "../../usage/server";
 import { stringAt } from "../../core/server";
 import { AUTHOR_ROWS, AUTHOR_ROW_IDS, DEFAULT_MODEL, pmAuthorOf, DEFAULT_PROVIDER, DEFAULT_REASONING } from "./workflow-agent-model";
@@ -66,6 +68,14 @@ function routineModel(inputs: Record<string, unknown>): Pick<HelperRequest, "mod
 }
 
 /** What a node's `role` means here: the profile of the helper, the role in its metadata, and which repository files it may touch (none, except the notes of its own chat). */
+const TIER_RANK: Record<string, number> = { light: 0, standard: 1, strong: 2 };
+/** Roles Jev may never cheapen: judges, critics, the planner/PM chair (a code writer is not a table row at all, so it is never touched). */
+const NO_DOWNGRADE = new Set(["plan-critic", "specialist-reviewer", "code-critic", "critic-tiebreak", "auditor", "council", "debugger", "triager", "rules-analyzer", "planner", "pm", "dev-orchestrator", "writer", "analyst", "worker"]);
+export function downgradableRole(role: string): boolean {
+  const row = roleRowOf(role);
+  return !NO_DOWNGRADE.has(role) && ROLE_IDS.includes(row) && !NO_DOWNGRADE.has(row);
+}
+
 export function roleSpec(role: string): RoleSpec {
   // Graphs name an employee either as `specialist:game-dev` or as the bare id (`game-dev` in roblox-asset).
   const named = role.startsWith("specialist:") ? role.slice("specialist:".length) : role;
@@ -136,6 +146,8 @@ export type HelperRequest = {
   plugins?: readonly string[]; mcp?: readonly string[];
   /** Same session: send into this thread (a step that goes on in the earlier helper's session). */
   intoThread?: string | null;
+  /** The step's declared risk (`$inputs.risk` of the graph), for the model downgrade guard: high/critical never cheapens. */
+  risk?: string;
   /** The step contract (`produces`, `gates`): an answer that breaks it gets the same one repair turn as an answer without a JSON block. */
   contract?: ContractNode;
   signal?: AbortSignal;
@@ -455,6 +467,7 @@ export function agentRequest(ctx: StepContext<ChainRuntime>, node: Extract<Graph
     rt, workflowRunId: ctx.runId, workflowId: ctx.workflow.id, stepKey: ctx.stepKey, nodeId: node.id, spawnKey: ctx.spawnKey, role, title, prompt: body, fields,
     ...(routine ? routineModel(ctx.inputs ?? {}) : {}),
     skills: [...new Set([...(node.skills ?? []), ...(node.profile?.skills ?? [])])], plugins: [...new Set(node.plugins ?? [])], mcp: [...new Set(node.mcp ?? [])], intoThread, signal: ctx.signal,
+    ...(typeof ctx.inputs.risk === "string" ? { risk: ctx.inputs.risk } : {}),
     ...(node.produces?.length || node.gates?.length ? { contract: { id: node.id, produces: node.produces, gates: node.gates } } : {}),
   };
 }
@@ -518,6 +531,21 @@ export async function withResolvedModel(request: HelperRequest, options: { avoid
   const usage = spawnUsageOf({ bb: rt.ctx.bb, log: rt.ctx.log });
   await warmSpawnUsage(usage, hostId);
   const chosen = resolveSpawnModel({ role: request.role, pinned, settings, pm, author, catalog: read, hostId, avoidProvider: avoid, usage });
+  // №9: a trivial step may run one model tier cheaper — only unpinned picks of a downgradable table role (a code
+  // writer is not in the table at all, judges stay their own family, high/critical risk never cheapens).
+  if (!pinned.model) {
+    const judge = jev();
+    if (judge?.enabled(settings as never) && downgradableRole(request.role) && request.risk !== "high" && request.risk !== "critical") {
+      const verdict = await judge.judge(stepTrivialJudgment, { nodeType: "agent", role: roleRowOf(request.role), inputChars: request.prompt.length, ...(request.risk ? { risk: request.risk } : {}) }, { projectId: rt.projectId, runId: rt.runId, subject: `spawn:${request.nodeId}`, settings: settings as never }).catch(() => null);
+      if (verdict?.by === "jev" && verdict.decision.trivial) {
+        const cheaper = ROLE_MODEL_OPTIONS.find((o) => o.providerId === chosen.providerId && TIER_RANK[o.tier] === (TIER_RANK[modelTier(chosen.model) ?? "strong"] - 1));
+        if (cheaper && cheaper.id !== chosen.model) {
+          rt.ctx.log?.(`Lane Pilot: ${request.role} step ${request.nodeId} is trivial (jev); it runs on ${cheaper.id} instead of ${chosen.model}`);
+          chosen.providerId = cheaper.providerId; chosen.model = cheaper.id;
+        }
+      }
+    }
+  }
   if (AUTHOR_ROW_IDS.includes(row)) await rememberAuthor(rt, request.workflowRunId, row, chosen);
   const where = `the ${request.role} of ${request.workflowId ?? "a workflow"}/${request.nodeId}`;
   if (chosen.issues.includes("crossed_family")) rt.ctx.log?.(`Lane Pilot: ${where} would have judged work of its own model family; it runs on ${chosen.providerId}/${chosen.model} (the other family)`);

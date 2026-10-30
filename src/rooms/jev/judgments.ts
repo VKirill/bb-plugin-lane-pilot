@@ -24,3 +24,4 @@ import "@lane-pilot/jev/judgments/skill-tree-pick";
 import "@lane-pilot/jev/judgments/accept-composite";
 import "@lane-pilot/jev/judgments/render-match";
 import "@lane-pilot/jev/judgments/employee-remark";
+import "@lane-pilot/jev/judgments/step-trivial";
