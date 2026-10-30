@@ -41,6 +41,8 @@ import { REPLAY_CHECK_FAILED, WRITER_SILENT_REASON, beginChecks, checksMoved, fa
 import { bookkeepingSetting } from "@lane-pilot/settings-catalog";
 import { attemptMergeMessage, clearMergeIntent, recordMergeIntent } from "../../verification/server";
 import { sendServiceMessage } from "../../relay/server";
+import { judgeRulesOnDiff, ruleViolationRemark } from "../../learning/rule-diff";
+import { jev } from "@lane-pilot/jev";
 import { runOnHost } from "@lane-pilot/host-calls";
 import { pollPause } from "@lane-pilot/kit";
 
@@ -322,6 +324,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
       const criticDefault = resolveCodeCriticDefault(projectSettings[CODE_CRITIC_DEFAULT_SETTING], taskCriticDefault);
       const liveCritiquePolicy = frozenPolicy ?? parseCodeCritiqueSettings(applyCodeCriticDefault(applyQualityMode(projectSettings,qualityMode),qualityMode,input.task.risk,criticDefault));
       const baselineHashes = Object.fromEntries(input.dirtBefore.map((row) => [row.path, row.sha256 || null]));
+      let lastPatches: Record<string, string> | undefined;
       const captureEvidence = async () => {
         const dirt = await services.workspaceDirt(input.config, input.task.project_cwd, input.runId);
         const byPath = new Map((dirt.ok ? dirt.snapshots : []).map((row) => [row.path, row.sha256 || null]));
@@ -333,12 +336,13 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
           }).catch(() => ({ content:null }));
           files.push({ path, content:typeof file.content === "string" ? file.content : null });
         }
+        lastPatches = await candidatePatches(bb, db, { runId:input.runId, taskId:input.taskId, hostId:input.config.hostId, cwd:input.task.project_cwd, paths:candidate.produced ?? [] });
         return buildCandidateEvidence({
           produced:candidate.produced ?? [],
           hashes,
           baselineHashes,
           files,
-          patches:await candidatePatches(bb, db, { runId:input.runId, taskId:input.taskId, hostId:input.config.hostId, cwd:input.task.project_cwd, paths:candidate.produced ?? [] }),
+          patches:lastPatches,
           verification:(candidate.verification ?? []).map((row) => ({
             command:row.command, exitCode:row.exitCode,
             stdout:row.stdout, stderr:row.stderr,
@@ -353,6 +357,11 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
       if (liveCritiquePolicy.enabled) {
       for (;;) {
         const evidence = await captureEvidence();
+        // abide-style: the accepted writer rules against this diff, before the critic. A break is a remark on the
+        // writer's repair turn, never a block; shadow (the default) only records what it would have said.
+        const ruleRemark = ruleViolationRemark(await judgeRulesOnDiff(jev(), db, input.projectId,
+          Object.values(lastPatches ?? {}).join("\n"),
+          { projectId:input.projectId, runId:input.runId, subject:input.taskId, settings:projectSettings }).catch(() => []));
         const ledger = repairLedgerFromResult(listStageReceipts(db, input.runId, input.taskId).find((row) => row.stageId === "code-critique")?.result);
         if (ledger?.policy) frozenPolicy = ledger.policy;
         if (ledger?.repairRound) repairRound = Math.max(repairRound, ledger.repairRound);
@@ -533,11 +542,11 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
             transitionAttempt(db, input.attemptId, "blocked", { reason });
             return { status:"blocked", reason, attemptId:input.attemptId, writerThreadId };
           }
-          const repairPrompt = codeRepairPrompt({
+          const repairPrompt = [ruleRemark, codeRepairPrompt({
             task:input.task, findings:frozenFindings, agent:dispatch.agent,
             setupLines:writerSetupLines(isLiveDecision(bound.workspace_decision)),
             contextBlocks:writerContextBlocks(input.task, dispatch.memoryText, dispatch.executionPacket, dispatch.pmReadContext, dispatch.rulesText ?? ""),
-          });
+          })].filter(Boolean).join("\n\n");
           const environment = bound.environment_id
             ? { type:"reuse" as const, environmentId:bound.environment_id }
             : { type:"host" as const, hostId:input.config.hostId, workspace:{ type:"unmanaged" as const, path:writerSnapshot.workspacePath } };
