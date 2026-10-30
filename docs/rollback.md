@@ -2,9 +2,9 @@
 title: Rolling work back, trusted tooling and pause
 type: component
 created: 2026-10-22
-updated: 2026-10-22
+updated: 2026-10-30
 status: active
-confidence: medium
+confidence: low
 tags: [rollback, reverify, revert, pause, trusted-tooling, sma]
 sources:
   - src/rooms/rollback/migrations.ts
@@ -46,11 +46,27 @@ TL;DR: every attempt has its base and its changed files on record, accepted work
 
 ## Purpose
 
-SMA wall 3 says «stopped» has two conditions; wall 4 says every job rolls back to the state before it and the record names that state without opening the workspace; rule 9 says a stop is a confirmed exit and the work returned. Before this page's work the record could say a job *could* be rolled back, not *to what*: `lane_pilot_task_git_base` holds one ownership base per task, not one per attempt, and no merge commit was kept (`src/rooms/storage/database.ts:206-214`). All four items are protection from mistakes: no login, no form, no caller check.
+SMA wall 3 says «stopped» has two conditions; wall 4 says every job rolls back to the state before it and the record names that state without opening the workspace; rule 9 says a stop is a confirmed exit and the work returned. Before this page's work the record could say a job *could* be rolled back, not *to what*: `lane_pilot_task_git_base` holds one ownership base per task, not one per attempt, and no merge commit was kept (`src/rooms/storage/database.ts:219-227`). All four items are protection from mistakes: no login, no form, no caller check.
+
+## How it works
+
+1. The record is filled where each fact becomes known: the spawn writes the base commit, the merge writes main's previous HEAD and the merge commit, a failed attempt's worktree state and patch are written before the worktree is removed, and an attempt older than the record is found in main by its merge trailer (`src/rooms/verification/git-integrate.ts:288`, `src/rooms/writer/server/start.ts:340-343`, `src/rooms/verification/git-rollback.ts:69-99`).
+2. `reverify` builds a fresh worktree of the accepted attempt's merge commit and reruns the task's `verification[]` item by item; exit 0 only when every item passes (`src/rooms/rollback/server/rollback.ts:224-262`).
+3. `revert` reverts the accepted merge commits in a scratch worktree, runs the checks that can block and the project gate, then merges through the base-checkout lock; a conflict aborts the whole revert and refuses with the next step (`src/rooms/verification/git-rollback.ts:104-138`, `src/rooms/rollback/server/rollback.ts:265-345`).
+4. Trusted tooling is appended to `never_touch` whenever the contract is normalised and again when the task lands in a repository; the ownership and output gates refuse a hit with the one thing to do (`src/rooms/tasks/trusted-tooling.ts:10`, `:52-75`, `:103-108`).
+5. `pause` sets a flag in the plugin's key-value store: a not-started task waits before it takes any slot, a running attempt finishes its stage and waits, parked tasks stay parked; `resume` clears the flag (`src/rooms/runs/server/runs-pause.ts:38-53`).
+6. `cancel` asks the writer thread for up to 30 seconds, writes the worktree state down, then cancels; cleanup saves uncommitted edits and unmerged commits as a patch before removal (`src/rooms/runs/server/writer-stop.ts:13-27`, `src/rooms/verification/git-integrate.ts:745-761`).
+
+| Operation | Modes | Failure |
+|---|---|---|
+| `reverify <task\|attempt>` | The task's latest accepted attempt, or the one named. | Refusal receipts with the next step: no accepted attempt, no `verification[]`, no merge commit, reverted since (`src/rooms/rollback/server/rollback.ts:224-262`). |
+| `revert <task>` | `--dry-run` stops before the merge; `--no-gate` skips the project gate. | A conflict aborts the revert, drops the worktree and refuses with the files, the later commits and the tasks to revert first (`src/rooms/rollback/server/rollback.ts:281-312`); a check red on the reverted tree and green before blocks. |
+| `pause <run-id>` / `resume <run-id>` | Flag in KV, kept across a reload; the older `resume <project-id>` reconcile is unchanged. | None: the answer lists what runs and what waits; a paused run's wall budget keeps counting. |
+| Trusted tooling | A pattern is left out when the task names something inside it in `owns_paths`, `expected_outputs` or `files[]`. | The gate refusal names the hits and the fix (`src/rooms/tasks/trusted-tooling.ts:103-108`). |
 
 ## The record of an attempt
 
-`lane_pilot_attempt_change` has one row per attempt: `base_sha` (the commit the worktree started from, the first one sticks), `merge_parent` (main right before the merge), `merge_commit`, `outcome`, `changed_json` (files with A/M/D/T, deletions included) and `worktree_json` (what the worktree held when the stop was confirmed or it was returned) (`src/rooms/rollback/migrations.ts:12-37`). The migrations are spread at the end of the list (`src/rooms/storage/database.ts:356-358`). `lane_pilot_task_receipt` is append only (update and delete triggers refuse) and holds the receipts of `reverify` and `revert` (`src/rooms/rollback/migrations.ts:27-44`).
+`lane_pilot_attempt_change` has one row per attempt: `base_sha` (the commit the worktree started from, the first one sticks), `merge_parent` (main right before the merge), `merge_commit`, `outcome`, `changed_json` (files with A/M/D/T, deletions included) and `worktree_json` (what the worktree held when the stop was confirmed or it was returned) (`src/rooms/rollback/migrations.ts:12-37`). The migrations are spread at the end of the list (`src/rooms/storage/database.ts:371`). `lane_pilot_task_receipt` is append only (update and delete triggers refuse) and holds the receipts of `reverify` and `revert` (`src/rooms/rollback/migrations.ts:27-44`).
 
 It is filled where the facts are known:
 
@@ -68,7 +84,7 @@ Takes the accepted attempt (the task's latest, or the one named), finds its merg
 ## `bb lane-pilot revert <task> [--dry-run] [--no-gate]`
 
 1. The accepted attempts' merge commits, newest first (a task already reverted is refused).
-2. A scratch worktree of main's current HEAD and `git revert` of those commits in it, a merge commit against its first parent. No reset, no force, no touching main (`src/rooms/verification/git-rollback.ts:109-139`). A conflict aborts the revert, drops the worktree and refuses with the conflicting files and the later commits that touch them, and the tasks to revert first (their commits start with `<task id>: `) (`src/rooms/rollback/server/rollback.ts:281-312`).
+2. A scratch worktree of main's current HEAD and `git revert` of those commits in it, a merge commit against its first parent. No reset, no force, no touching main (`src/rooms/verification/git-rollback.ts:104-138`). A conflict aborts the revert, drops the worktree and refuses with the conflicting files and the later commits that touch them, and the tasks to revert first (their commits start with `<task id>: `) (`src/rooms/rollback/server/rollback.ts:281-312`).
 3. Checks, only where they mean something. The task's `verification[]` runs on the reverted tree; a command that is red there and was green on the commit before the task blocks, one that is red there and before (it tests the feature itself, or main was red already) is only noted (`src/rooms/rollback/server/rollback.ts:325-345`). The project's checks are the integration gate command, explicit or detected, run on the reverted tree; red there but green on main blocks, red on main too does not (`--no-gate` skips it).
 4. `--dry-run` stops here, with a receipt. Otherwise the revert is merged through `gitIntegrate`, the same base-checkout lock every writer merge takes, waiting up to 15 minutes in the queue (`src/rooms/rollback/server/rollback.ts:265-279`), and a `merged` receipt names the revert commit.
 
@@ -78,7 +94,7 @@ Scratch worktrees are removed in every outcome. Every refusal is a receipt with 
 
 `.git/hooks/**`, `.husky/**`, `.claude/**`, `lane-stack/hooks/**` and `.github/workflows/**` are added to every task's `never_touch`, and so are the check scripts its `verification[]` runs (`bash scripts/check.sh`, `node tools/verify.mjs`, `npx tsx bin/probe.ts`, `./gate.sh`; not test files) (`src/rooms/tasks/trusted-tooling.ts:10`, `src/rooms/tasks/trusted-tooling.ts:52-75`). A pattern is left out when the task names something inside it or around it in `owns_paths`, `expected_outputs` or `files[]`; a catch-all like `**` names nothing (`src/rooms/tasks/trusted-tooling.ts:41-46`, `src/rooms/tasks/trusted-tooling.ts:82-94`).
 
-It is applied where the contract is normalised: `validateTaskV2` (dispatch, update, workflows) and again after a task moves into a repository (`src/rooms/tasks/task-v2.ts:50`, `src/rooms/tasks/task-base.ts:94`); an update compares with the old contract as it would be stored now, so no change is invented (`src/rooms/writer/server/update-task.ts:198`). The ownership and output gates then refuse such a change like any `never_touch` hit, and the reason ends with what to do: undo it, or dispatch the task again with that exact path in `owns_paths` (`src/rooms/tasks/validate-output.ts:67`, `src/rooms/writer/server/verify.ts:392`, `src/rooms/tasks/trusted-tooling.ts:104-109`). Not covered: edits to the `scripts` of `package.json` (a path pattern cannot see a diff inside an owned file).
+It is applied where the contract is normalised: `validateTaskV2` (dispatch, update, workflows) and again after a task moves into a repository (`src/rooms/tasks/task-v2.ts:50`, `src/rooms/tasks/task-base.ts:94`); an update compares with the old contract as it would be stored now, so no change is invented (`src/rooms/writer/server/update-task.ts:198`). The ownership and output gates then refuse such a change like any `never_touch` hit, and the reason ends with what to do: undo it, or dispatch the task again with that exact path in `owns_paths` (`src/rooms/tasks/validate-output.ts:67`, `src/rooms/writer/server/verify.ts:392`, `src/rooms/tasks/trusted-tooling.ts:103-108`). Not covered: edits to the `scripts` of `package.json` (a path pattern cannot see a diff inside an owned file).
 
 ## Pause at a safe boundary (P2-8)
 

@@ -2,7 +2,7 @@
 title: Shared packages
 type: component
 created: 2026-10-10
-updated: 2026-10-29
+updated: 2026-10-30
 status: active
 confidence: low
 tags: [packages, api, monorepo]
@@ -100,7 +100,7 @@ The small packages provide reusable contracts and utilities to root rooms; the w
 
 1. Room modules import package APIs by their workspace specifiers; for example, the runs contract imports `@lane-pilot/contracts` and session memory imports `@lane-pilot/memory-core` (`src/rooms/contracts/rpc-runs.ts:1-2`, `src/rooms/memory/server/session-memory.ts:1-10`).
 2. The package exposes domain functions and types; the consuming room supplies BB, SQLite, or host dependencies where required (`packages/jev/src/run.ts:56-63`, `packages/host-calls/src/run-on-host.ts:8-31`). Harness-core itself is pure parsing, rendering and tree logic; `src/rooms/harness` owns host, thread, KV and SQLite effects (`packages/harness-core/src/index.ts:1-14`, `src/rooms/harness/server/harness.ts:161-179`, `:211-250`).
-3. The room composes those exports into server RPCs, UI behavior, and scheduled work (`src/rooms/core/server/rpc.ts:27-51`, `src/rooms/storage/database.ts:230-333`).
+3. The room composes those exports into server RPCs, UI behavior, and scheduled work (`src/rooms/core/server/rpc.ts:27-51`, `src/rooms/storage/database.ts:47-426`).
 
 ## Modes and package variants
 
@@ -109,7 +109,7 @@ The small packages provide reusable contracts and utilities to root rooms; the w
 | Node-oriented helpers | `@lane-pilot/kit` root includes Node-based helpers; `owns-paths` is a browser-safe subpath (`packages/kit/package.json:1-15`, `packages/kit/src/index.ts:1-9`). | UI code that reaches Node imports cannot use the root entry. |
 | Judgment registration | Each judgment module calls `defineJudgment`; the registry stores it by id and rejects a different judgment with the same id (`packages/jev/src/registry.ts:41-48`, `packages/jev/src/judgments/output-guard.ts:22-28`). | A judgment is absent from the registry until its defining module is imported; the package root does not import the judgment catalog (`packages/jev/src/index.ts:1-9`). |
 | Server and UI package entries | UI kit exposes its component entry and a realtime-channel subpath, while workflow engine exposes a separate `./ui` entry (`packages/ui-kit/package.json:14-17`, `packages/ui-kit/src/index.ts:1-32`, `packages/workflow-engine/package.json:7-13`, `packages/workflow-engine/src/ui.ts:1-4`). See the [UI kit overview](../packages/ui-kit/docs/overview.md) and [workflow engine overview](../packages/workflow-engine/docs/overview.md) for package-owned details. | Workspace-specific APIs and gotchas are owned by those linked docs. |
-| Domain package with database migrations | Council, handoff, Jev, and run-insights export migrations consumed by the root storage migration list (`packages/council/src/index.ts:19-30`, `packages/handoff/src/index.ts:21-38`, `src/rooms/storage/database.ts:230-333`). | Migration ownership stays with the package that defines each table. |
+| Domain package with database migrations | Council, handoff, Jev, and run-insights export migrations consumed by the root storage migration list (`packages/council/src/index.ts:19-30`, `packages/handoff/src/index.ts:21-38`, `src/rooms/storage/database.ts:47-426`). | Migration ownership stays with the package that defines each table. |
 
 ## Business rules
 
