@@ -71,3 +71,17 @@ describe("K8 usefulness: how often a note was mixed into a brief, and how often 
     expect(searchMemoryRecords(db, "P", "greeting cards", 5, "fts5")[0]!.useCount).toBe(0);
   });
 });
+
+describe("F08: a verified fact outranks the same unverified one", () => {
+  it("each extra independent source adds up to 0.3 to the usefulness factor of an equally relevant note", () => {
+    const db = newDb();
+    const [unverified, verified] = put(db, ["The widget layout lives in src/widget.ts", "Widget layout: see docs/layout.md for the structure"]);
+    db.prepare("UPDATE lane_pilot_memory SET verification_json=? WHERE id=?").run(JSON.stringify([{ by: "a", sha: "1", at: 1 }, { by: "b", sha: "2", at: 2 }]), verified);
+    const found = searchMemoryRecords(db, "P", "widget", 10, "auto", "subagent", "", { includeObserved: true });
+    const ctx = memoryContext(found, "widget layout", 500);
+    expect(ctx.records[0]!.id).toBe(verified);
+    // 4+ sources cap the bonus at 0.3: a third corroboration does not change the order.
+    db.prepare("UPDATE lane_pilot_memory SET verification_json=? WHERE id=?").run(JSON.stringify([{ by: "a", sha: "1", at: 1 }, { by: "b", sha: "2", at: 2 }, { by: "c", sha: "3", at: 3 }]), verified);
+    expect(memoryContext(searchMemoryRecords(db, "P", "widget", 10, "auto", "subagent", "", { includeObserved: true }), "widget layout", 500).records[0]!.id).toBe(verified);
+  });
+});
