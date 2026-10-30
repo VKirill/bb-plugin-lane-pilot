@@ -274,6 +274,7 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
     saveProjectSetting(db, input.config.projectId, "writer.lastResult", stored);
     const patch = writerPatchFromOutput(input.output);
     if (patch) saveProjectSetting(db, input.config.projectId, "writer.lastPatch", patch);
+    services.promotions?.settleTask({ taskId: input.taskId, outcome: "accepted" });
     return stored;
   }
 

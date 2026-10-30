@@ -192,6 +192,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
           runId:input.runId, taskId:input.taskId, plan:getTaskPlan(db, input.taskId) ?? "",
           terminal:"failed", attempt:countAttempts(db, input.runId, input.taskId), reason, threadId:input.writerThreadId,
         });
+        services.promotions?.settleTask({ taskId: input.taskId, outcome: "failed", reason });
         return { status:"blocked", reason, attemptId:input.attemptId, writerThreadId:input.writerThreadId };
       };
       // A continued thread is idle from its previous task until the new turn starts: wait for the turn sent after `since`.

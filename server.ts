@@ -15,6 +15,7 @@ import { createReconcile } from "./src/rooms/stability/server";
 import { createStability } from "./src/rooms/stability/server";
 import { adoptWaitingRules } from "./src/rooms/self-repair/server";
 import { createRuleScan } from "./src/rooms/self-repair/server";
+import { createPromotionService } from "./src/rooms/rule-forms";
 import { mountNightGraphs } from "./src/rooms/night-graphs/server";
 import { createHarness } from "./src/rooms/harness/server";
 import { createDeferrals, sdkOwnerMessagePort } from "./src/rooms/deferral/server";
@@ -114,6 +115,7 @@ export default async function plugin(bb: BbPluginApi) {
     { canary: createCanary(ctx, () => services.providerBreaker) },
     { memoryProbe: createMemoryProbe(ctx, services) },
     { ruleScan: createRuleScan(ctx, services) },
+    { promotions: createPromotionService(ctx, services) },
     { harness: createHarness(ctx, services) },
     { deferrals },
     { memoryConflicts: createMemoryConflicts({ db, deferrals: () => services.deferrals, log: ctx.log }) },

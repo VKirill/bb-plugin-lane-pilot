@@ -184,3 +184,18 @@ export function listPromotions(db: PromotionDb, projectId: string): PromotionRow
     .all(projectId) as Array<{ rule_id: string; project_id: string; mechanism: MechanismKind; state: PromotionState; task_json: string; tier: Tier; created_at: number; updated_at: number }>)
     .map((row) => ({ ruleId: row.rule_id, projectId: row.project_id, mechanism: row.mechanism, state: row.state, task: JSON.parse(row.task_json) as TaskV2, tier: row.tier, createdAt: row.created_at, updatedAt: row.updated_at }));
 }
+
+/** Accepts one stored candidate: marks it dispatched and returns its contract — one command for the PM. */
+export function acceptPromotion(db: PromotionDb, projectId: string, ruleId: string, now: number = Date.now()): PromotionRow | null {
+  const row = listPromotions(db, projectId).find((row) => row.ruleId === ruleId || row.ruleId.startsWith(ruleId));
+  if (!row || row.state === "dispatched" || row.state === "done") return null;
+  db.prepare("UPDATE lane_pilot_rule_promotion SET state='dispatched', updated_at=? WHERE rule_id=? AND project_id=?").run(now, row.ruleId, projectId);
+  return { ...row, state: "dispatched", updatedAt: now };
+}
+
+export function dismissPromotion(db: PromotionDb, projectId: string, ruleId: string, now: number = Date.now()): PromotionRow | null {
+  const row = listPromotions(db, projectId).find((row) => row.ruleId === ruleId || row.ruleId.startsWith(ruleId));
+  if (!row || row.state === "dismissed") return null;
+  db.prepare("UPDATE lane_pilot_rule_promotion SET state='dismissed', updated_at=? WHERE rule_id=? AND project_id=?").run(now, row.ruleId, projectId);
+  return { ...row, state: "dismissed", updatedAt: now };
+}
