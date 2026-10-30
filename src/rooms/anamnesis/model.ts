@@ -66,7 +66,7 @@ export const recordSchema = z.object({
   id: z.string(), kind: z.enum(KINDS), title: z.string(), statement: z.string(), attributes: z.record(z.string(), z.unknown()),
   sensitivity: z.enum(SENSITIVITIES), confidence: z.number(), status: z.enum(STATUSES),
   firstSeen: z.number().nullable(), lastSeen: z.number().nullable(), manualAt: z.number(), createdAt: z.number(), updatedAt: z.number(),
-  evidenceCount: z.number().int(),
+  evidenceCount: z.number().int(), authoredBy: z.enum(["owner", "model"]).nullable().optional(),
 }).strict();
 export type AnamnesisRecord = z.infer<typeof recordSchema>;
 export const recordWithEvidenceSchema = recordSchema.extend({ evidence: z.array(evidenceSchema) }).strict();

@@ -52,6 +52,15 @@ describe("the memory-profile card moves into anamnesis (A9)", () => {
     expect((await hub.ask({ op: "history", id: "self:identity" })).history[0]).toMatchObject({ actor: "owner", reason: "moved from the memory-profile card" });
   });
 
+  it("does not confirm a field the model wrote", async () => {
+    const result = await hub.ask({ op: "import_profile", profile: profileSchema.parse({ ...CARD, authoredBy: "model" }) });
+    expect(result).toMatchObject({ imported: 6, skipped: [] });
+    const { records } = await hub.ask({ op: "list" });
+    expect(records).toHaveLength(6);
+    expect(records.every((record) => record.status === "draft" && record.authoredBy === "model")).toBe(true);
+    expect((await hub.ask({ op: "card" })).text).not.toContain("Kirill");
+  });
+
   it("a second import changes nothing, and a draft that already exists under the same name is confirmed with the card", async () => {
     await hub.ask({ op: "upsert", actor: "auto:git", reason: "t", records: [{ kind: "project", key: "Lane Pilot", title: "Lane Pilot", evidence: [{ source: "git", ref: "lp@1", at: 5 }] }] });
     expect((await hub.ask({ op: "get", id: "project:lane-pilot" })).record).toMatchObject({ status: "draft" });

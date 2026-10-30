@@ -83,10 +83,11 @@ async function execute(request: AnamnesisRequest, store: Store, context: HostCon
     case "import_profile": {
       const { records, skipped } = profileRecords(request.profile, now);
       const reason = "moved from the memory-profile card";
+      const modelWritten = request.profile.authoredBy === "model";
       const results = store.transaction(() => records.map((record) => {
-        const result = store.upsert(record, { actor: "owner", reason, now });
-        // The card was the owner's own text: a record that already existed as a draft is confirmed with it.
-        const stored = result.id && result.action !== "invalid" && result.action !== "ignored" ? store.get(result.id, { includeSensitive: true }) : null;
+        const result = store.upsert(record, { actor: modelWritten ? "auto:memory-profile" : "owner", reason, now });
+        // The card was the owner's own text: a record that already existed as a draft is confirmed with it. A field the model wrote stays a draft.
+        const stored = !modelWritten && result.id && result.action !== "invalid" && result.action !== "ignored" ? store.get(result.id, { includeSensitive: true }) : null;
         if (stored && stored.status !== "confirmed") store.edit(stored.id, { status: "confirmed" }, reason, now);
         return result;
       }));
