@@ -1,12 +1,13 @@
 import { classifyUnformed, listRuleForms, markMechanized, RULE_FORMS, type RuleFormRow, type RulesDatabase } from "@lane-pilot/run-insights";
 import { applyJevForms, type FormAsk } from "./jev-forms";
 import { MECHANISMS, mechanismFor } from "./mechanisms";
-import { listPromotions, proposePromotions } from "./promotion";
+import { acceptPromotion, dismissPromotion, listPromotions, proposePromotions } from "./promotion";
 
 export const RULES_USAGE = [
   "bb lane-pilot rules forms [project] [--form check|hook|skill|memory|always] [--state accepted|proposed|all] [--json]   the rules by form, with the mechanism that enforces each",
   "bb lane-pilot rules classify [project] [--all] [--jev --host <host-id>] [--dry]   give every rule without a form one (heuristics first, System One for the undecided rest); --dry writes nothing",
   "bb lane-pilot rules promote <project> [--repo <path>] [--list] [--json]   task contracts for the recurring check/hook rules (stored for the night loop, nothing dispatched)",
+  "bb lane-pilot rules promote accept|dismiss <project> <rule-id>   one command: the candidate leaves (or enters) the dispatched list; the contract comes back for the handoff",
   "bb lane-pilot rules mechanize [project] [--apply]   rules that a mechanism of this repository fully refuses: record it and retire their text from the brief (dry without --apply)",
 ].join("\n");
 
@@ -92,6 +93,14 @@ export async function runRulesCli(deps: RulesCliDeps, args: string[]): Promise<O
       for (const result of results) counts[result.verdict.form] = (counts[result.verdict.form] ?? 0) + 1;
       return { exitCode: 0, stdout: json({ dry, classified: results.length, byForm: counts, decided: results.length - undecided.length, undecided: undecided.length, jev: flags.has("jev") ? jev ?? "skipped (dry)" : "not asked",
         undecidedRules: undecided.slice(0, 20).map((row) => ({ id: row.id, rule: clip(row.rule, 120) })) }) };
+    }
+    if (op === "promote" && (rest[0] === "accept" || rest[0] === "dismiss")) {
+      const sub = rest[0];
+      const project = rest[1] ?? null, id = rest[2] ?? null;
+      if (!project || !id) return { exitCode: 1, stderr: `promote ${sub} needs a project and a rule id\n${RULES_USAGE}` };
+      const row = sub === "accept" ? acceptPromotion(deps.db, project, id, now) : dismissPromotion(deps.db, project, id, now);
+      if (!row) return { exitCode: 1, stderr: `no open candidate ${id} in ${project}` };
+      return { exitCode: 0, stdout: json({ ruleId: row.ruleId, state: row.state, mechanism: row.mechanism, tier: row.tier, task: row.task }) };
     }
     if (op === "promote") {
       if (!projectId) return { exitCode: 1, stderr: `promote needs a project id\n${RULES_USAGE}` };
