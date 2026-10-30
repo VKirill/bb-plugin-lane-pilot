@@ -147,7 +147,7 @@ describe("a run", () => {
     const report = await runMemoryEval(data(), { sizes: [30, 60], seed: 1, scope: "pile", ...options });
     expect(report.sizes.map((size) => size.size)).toEqual([30, 60]);
     for (const size of report.sizes) {
-      expect(size.scores.map((row) => row.id)).toEqual(["writer", "plain", "pm", "search", "search+floor", "plain-keyword", "reviewer"]);
+      expect(size.scores.map((row) => row.id)).toEqual(["writer", "plain", "pm", "search", "pm-nofloor", "search-nofloor", "search+floor", "plain-keyword", "reviewer"]);
       const writer = size.scores.find((row) => row.id === "writer")!, plain = size.scores.find((row) => row.id === "plain")!;
       expect(writer.hit.mean).toBeGreaterThan(0.7);
       expect(plain.hit.mean).toBeGreaterThan(0.7);

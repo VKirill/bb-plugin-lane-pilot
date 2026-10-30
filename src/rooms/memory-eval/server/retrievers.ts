@@ -1,5 +1,5 @@
 import type Database from "better-sqlite3";
-import { memoryContext, memoryTokens, searchMemoryRecords } from "@lane-pilot/memory-core";
+import { DEFAULT_RELEVANCE_FLOOR, memoryContext, memoryTokens, relevantRecords, searchMemoryRecords, type RelevanceFloor } from "@lane-pilot/memory-core";
 import { mixReviewerMemory, mixWriterMemory } from "../../memory/server";
 import { pathAnchors } from "../../writer";
 import type { CorpusNote } from "./corpus";
@@ -32,7 +32,8 @@ const CONTEXT_BUDGET = 2500;
 const STOP = new Set(["the", "and", "for", "with", "that", "this", "from", "when", "not", "are", "was", "has", "have", "into", "only", "must", "should", "will", "can", "его", "для", "что", "это", "как", "при", "или", "если", "все", "так", "они"]);
 const words = (text: string): string[] => memoryTokens(text).filter((word) => word.length >= 4 && !STOP.has(word));
 
-export function createRetrievers(db: Database.Database, notes: readonly CorpusNote[], now?: number): Retriever[] {
+/** `floor` is the relevance floor of the query paths: the production default, or `null` for the old behaviour (`--no-floor`). */
+export function createRetrievers(db: Database.Database, notes: readonly CorpusNote[], now?: number, floor: RelevanceFloor | null = DEFAULT_RELEVANCE_FLOOR): Retriever[] {
   const byId = new Map(notes.map((note) => [note.id, note]));
   // The index of the plain baseline: the words of each note, and in how many notes each word appears.
   const noteWords = new Map(notes.map((note) => [note.id, new Set(words(`${note.content} ${note.concepts.join(" ")}`))]));
@@ -75,11 +76,17 @@ export function createRetrievers(db: Database.Database, notes: readonly CorpusNo
         }).sort((a, b) => b.score - a.score || b.note.createdAt - a.note.createdAt || a.note.id.localeCompare(b.note.id));
         return { ids: hits.map((hit) => hit.note.id), why };
       } },
-    // Production, the PM tool, the terminal and the council (searchMemoryRecords → memoryContext within the context budget).
+    // What the query paths do with a search: the floor drops the records that do not clear it (`relevantRecords`); `null` keeps them all.
+    // Production, the PM tool and the council (searchMemoryRecords → relevance floor → memoryContext within the context budget).
     { id: "pm", k: 5, group: "query", production: true,
-      run: (question, excluded) => ({ ids: memoryContext(search(question, excluded), question.query, CONTEXT_BUDGET).records.map((record) => record.id) }) },
-    // Production search alone: the FTS word index and the trigram index fused, best first.
+      run: (question, excluded) => ({ ids: memoryContext(relevantRecords(db, question.scope, question.query, search(question, excluded), { floor }), question.query, CONTEXT_BUDGET).records.map((record) => record.id) }) },
+    // Production search alone, the terminal's `lane-memory search`: the FTS word index and the trigram index fused, best first, then the floor.
     { id: "search", k: 5, group: "query", production: true,
+      run: (question, excluded) => ({ ids: relevantRecords(db, question.scope, question.query, search(question, excluded), { floor }).map((record) => record.id) }) },
+    // The same two paths as they were before the floor, kept for comparison (`--no-floor` makes `pm` and `search` behave like these).
+    { id: "pm-nofloor", k: 5, group: "query", production: false,
+      run: (question, excluded) => ({ ids: memoryContext(search(question, excluded), question.query, CONTEXT_BUDGET).records.map((record) => record.id) }) },
+    { id: "search-nofloor", k: 5, group: "query", production: false,
       run: (question, excluded) => ({ ids: search(question, excluded).map((record) => record.id) }) },
     // Diagnostic, not a delivery path: the production search with a floor, a note must share at least three task words (4+ letters) to count.
     { id: "search+floor", k: 5, group: "query", production: false,

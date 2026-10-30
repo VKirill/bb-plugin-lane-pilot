@@ -1,4 +1,4 @@
-import { MEMORY_SETTING_KEYS, REVIEWER_CONCEPTS, estimateTokens, filesDrifted, listMemory, memoryContext, parseMemorySettings, pathsNamed, recordCriticUse, roleContextBudget, searchMemoryRecords, type MemoryRecord, type MemorySearchEngine, type MemorySettings } from "@lane-pilot/memory-core";
+import { DEFAULT_RELEVANCE_FLOOR, MEMORY_SETTING_KEYS, relevantRecords, REVIEWER_CONCEPTS, estimateTokens, filesDrifted, listMemory, memoryContext, parseMemorySettings, pathsNamed, recordCriticUse, roleContextBudget, searchMemoryRecords, type MemoryRecord, type MemorySearchEngine, type MemorySettings, type RelevanceFloor } from "@lane-pilot/memory-core";
 import type { TaskV2 } from "../../contracts";
 import { getRunSettingsScopes, loadProjectSettings, type LanePilotDatabase } from "../../storage";
 import { memoryLine, reviewerMemoryPicks, writerMemory, writerMemoryPicks } from "../../writer";
@@ -93,7 +93,9 @@ export function taskMemoryContext(db: LanePilotDatabase, projectId: string, runI
 }
 
 /** What the PM tool `lane_pilot_memory {action:"context"}` returns for a query: the project's records ranked for it, within the context budget. Also what the memory probe reads. */
-export function pmMemoryContext(db: LanePilotDatabase, projectId: string, memory: MemorySettings, query: string, chain?: readonly string[], role = "pm") {
+export function pmMemoryContext(db: LanePilotDatabase, projectId: string, memory: MemorySettings, query: string, chain?: readonly string[], role = "pm", floor: RelevanceFloor | null = DEFAULT_RELEVANCE_FLOOR) {
   const records = searchMemoryRecords(db, projectId, query, 100, memory.searchEngine, memory.audience, memory.personalBot, { chain: chain ?? [] });
-  return memoryContext(records, query, roleContextBudget(role,memory.contextBudget));
+  // The relevance floor (a query path only): a question the notes cannot answer gets an explicit «nothing». `floor: null` is the old behaviour.
+  const packed = memoryContext(relevantRecords(db, projectId, query, records, { audience: memory.audience, personalBot: memory.personalBot, floor }), query, roleContextBudget(role,memory.contextBudget));
+  return { ...packed, nothingRelevant: packed.records.length === 0 };
 }

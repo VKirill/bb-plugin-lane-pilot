@@ -73,7 +73,9 @@ export const rpcKnowledge = {
   session_memory_search: {
     input: z.object({ projectId: z.string().min(1), query: z.string().min(1).max(2000), limit: z.number().int().min(1).max(50).optional(),
       chain: z.array(z.string()).max(16).optional() }).strict(),
-    output: z.object({ records: z.array(z.object({ id: z.string(), kind: z.enum(["core", "note"]), content: z.string(), concepts: z.array(z.string()) }).strict()) }).strict(),
+    // `nothingRelevant` and `message` are only there when nothing cleared the relevance floor; a client that reads `records` alone is unchanged.
+    output: z.object({ records: z.array(z.object({ id: z.string(), kind: z.enum(["core", "note"]), content: z.string(), concepts: z.array(z.string()) }).strict()),
+      nothingRelevant: z.boolean().optional(), message: z.string().optional() }).strict(),
   },
   session_memory_core: {
     input: z.object({ projectId: z.string().min(1), chain: z.array(z.string()).max(16).optional() }).strict(),

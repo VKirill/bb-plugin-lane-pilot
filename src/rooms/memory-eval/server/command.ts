@@ -1,10 +1,11 @@
 import Database from "better-sqlite3";
 import { SANDBOX_PROJECT_ID, isDrillTask } from "../../stability/server";
+import { formatFloorTuning, tuneFloor } from "./floor-tuning";
 import { formatEvalReport, runMemoryEval } from "./memory-eval";
 import { formatShelf, runShelfReplay } from "./shelf";
 import { exportEvalExtract, loadEvalData } from "./source";
 
-export const MEMORY_EVAL_USAGE = "bb lane-pilot memory-eval [--sizes 30,300,3000] [--seed N] [--scope project|pile] [--shelf] [--source <extract.db>] [--export <extract.db>] [--json]";
+export const MEMORY_EVAL_USAGE = "bb lane-pilot memory-eval [--sizes 30,300,3000] [--seed N] [--scope project|pile] [--shelf] [--floor] [--no-floor] [--source <extract.db>] [--export <extract.db>] [--json]";
 
 type Result = { exitCode: number; stdout?: string; stderr?: string };
 
@@ -18,9 +19,9 @@ export async function runMemoryEvalCommand(live: Pick<Database.Database, "prepar
     for (let index = 0; index < argv.length; index++) {
       const hit = /^--([a-z-]+)(?:=(.*))?$/s.exec(argv[index]!);
       if (!hit) throw new Error(`unexpected argument ${argv[index]}\n${MEMORY_EVAL_USAGE}`);
-      flags[hit[1]!] = hit[2] ?? (hit[1] === "json" || hit[1] === "shelf" ? "1" : argv[++index] ?? "");
+      flags[hit[1]!] = hit[2] ?? (["json", "shelf", "floor", "no-floor"].includes(hit[1]!) ? "1" : argv[++index] ?? "");
     }
-    for (const name of Object.keys(flags)) if (!["sizes", "seed", "scope", "shelf", "source", "export", "json"].includes(name)) throw new Error(`unknown flag --${name}\n${MEMORY_EVAL_USAGE}`);
+    for (const name of Object.keys(flags)) if (!["sizes", "seed", "scope", "shelf", "floor", "no-floor", "source", "export", "json"].includes(name)) throw new Error(`unknown flag --${name}\n${MEMORY_EVAL_USAGE}`);
     if (flags.export) {
       if (!live) throw new Error("--export reads the live database; run it where the plugin runs");
       return { exitCode: 0, stdout: JSON.stringify(exportEvalExtract(live, flags.export)) };
@@ -40,7 +41,11 @@ export async function runMemoryEvalCommand(live: Pick<Database.Database, "prepar
         const results = await runShelfReplay(loadEvalData(source), { projects: new Set([SANDBOX_PROJECT_ID]), task: isDrillTask });
         return { exitCode: 0, stdout: flags.json ? JSON.stringify(results, null, 2) : formatShelf(results) };
       }
-      const report = await runMemoryEval(loadEvalData(source), { sizes, seed, scope, skipProjects: new Set([SANDBOX_PROJECT_ID]), skipTask: isDrillTask });
+      if (flags.floor) {
+        const tuned = await tuneFloor(loadEvalData(source), { sizes, seed, scope, skipProjects: new Set([SANDBOX_PROJECT_ID]), skipTask: isDrillTask });
+        return { exitCode: 0, stdout: formatFloorTuning(tuned) };
+      }
+      const report = await runMemoryEval(loadEvalData(source), { sizes, seed, scope, ...(flags["no-floor"] ? { floor: null } : {}), skipProjects: new Set([SANDBOX_PROJECT_ID]), skipTask: isDrillTask });
       return { exitCode: 0, stdout: flags.json ? JSON.stringify(report, null, 2) : formatEvalReport(report) };
     } finally { opened?.close(); }
   } catch (cause) {

@@ -10,6 +10,7 @@ import { applyScopeMigration } from "../../../../scripts/memory-scope-dry-run";
 import { bbServiceTier, writerExecutionSelection } from "@lane-pilot/models";
 import { sha256 } from "../../tasks";
 import { memoryMaintenancePrompt, memoryRecordId, parseMemoryCandidates, parseMemorySettings } from "../memory";
+import { NOTHING_RELEVANT } from "@lane-pilot/memory-core";
 import { pmMemoryContext, snapshotFileRead } from "./memory-mix";
 import { boundedAgentName } from "../../critique";
 import { MemoryChildSnapshot, childResultObject, memoryChildSnapshot, spawnRefused } from "../../runs/server";
@@ -314,7 +315,7 @@ export function createMemoryStage(ctx: ServerCore, services: Services) {
     }
     try { tiers=enrichMemoryContext(db,{projectId:args.projectId,query:args.query,activeCount:selected.records.length,chain,audience:memorySettings.audience,personalBot:memorySettings.personalBot,role:"pm",budget:memorySettings.contextBudget,activeTokens:selected.estimatedTokens,episodesList}); } catch (cause) { ctx.log(`memory tiers skipped: ${cause instanceof Error ? cause.message : String(cause)}`); }
     return {runId:args.runId,state:"passed",audience:memorySettings.audience,personalBot:memorySettings.personalBot,querySha256:sha256(args.query),
-      recordIds:[...selected.records.map((item)=>item.id),...tiers.promoted],estimatedTokens:selected.estimatedTokens+tiers.addedTokens,context:[selected.text,tiers.text].filter(Boolean).join("\n\n"),
+      recordIds:[...selected.records.map((item)=>item.id),...tiers.promoted],estimatedTokens:selected.estimatedTokens+tiers.addedTokens,context:[selected.nothingRelevant?NOTHING_RELEVANT:selected.text,tiers.text].filter(Boolean).join("\n\n"),nothingRelevant:selected.nothingRelevant&&tiers.promoted.length===0&&tiers.episodes===0,
       ...(tiers.promoted.length?{promotedFromCold:tiers.promoted.length}:{}),...(tiers.episodes?{episodes:tiers.episodes}:{})};
   }
 

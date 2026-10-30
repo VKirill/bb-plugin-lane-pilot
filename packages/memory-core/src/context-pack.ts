@@ -25,11 +25,14 @@ export type ContextPack = {
 export function buildContextPack(input: {
   projectId: string; repoId?: string; sectionChain?: readonly string[]; role: string; audience?: string; bot?: string;
   sourceRevision?: string; budget: number; candidates: readonly PackCandidate[]; rootWhitelist?: ReadonlySet<string>;
+  /** Candidates the relevance floor rejects for this query (the caller computes them; M6). */
+  floorDropIds?: ReadonlySet<string>;
 }): ContextPack {
   const budget = roleContextBudget(input.role, input.budget);
   const chain = [...(input.sectionChain ?? [])];
   const scoped = input.candidates.map((candidate) => {
     if (candidate.stale) return { ...candidate, packed: false, reason: "stale:needs_review" } as PackSource;
+    if (input.floorDropIds?.has(candidate.id)) return { ...candidate, packed: false, reason: "floor:low-relevance" } as PackSource;
     const scope = candidate.scope;
     // No chain: only an explicitly root-whitelisted candidate packs; project-wide is never assumed.
     const allowed = !chain.length ? (input.rootWhitelist?.has(candidate.id) ?? false)
