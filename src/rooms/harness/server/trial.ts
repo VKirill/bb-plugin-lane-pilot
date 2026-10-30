@@ -27,6 +27,25 @@ export type TrialDecision =
   | { action: "wait"; reason: string; arms: { new: ArmMetrics; old: ArmMetrics } }
   | { action: "adopt" | "retire"; reason: string; arms: { new: ArmMetrics; old: ArmMetrics } };
 
+/** The candidate tree's declared prediction (C3): which class it fixes and which measured metrics must not move. */
+export type TrialPrediction = { fixes_class: string | null; must_not_move: string[] };
+
+/** Whether the arms' metrics honor the prediction: fixes_class held when the new arm's blocking findings dropped. */
+export function predictionHeldTrial(prediction: TrialPrediction, arms: { new: ArmMetrics; old: ArmMetrics }): { held: boolean; notes: string[] } {
+  const notes: string[] = [];
+  let held = true;
+  if (prediction.fixes_class && arms.new.blockingPerAttempt >= arms.old.blockingPerAttempt) {
+    held = false; notes.push(`fixes_class ${prediction.fixes_class}: blocking findings did not drop (${arms.new.blockingPerAttempt.toFixed(2)} vs ${arms.old.blockingPerAttempt.toFixed(2)})`);
+  }
+  for (const name of prediction.must_not_move) {
+    const n = name.toLowerCase();
+    if (n === "acceptance" && arms.new.acceptanceRate < arms.old.acceptanceRate) { held = false; notes.push(`must_not_move acceptance moved ${arms.old.acceptanceRate.toFixed(2)}→${arms.new.acceptanceRate.toFixed(2)}`); }
+    if (n === "retries" && arms.new.retriesPerTask > arms.old.retriesPerTask) { held = false; notes.push(`must_not_move retries moved ${arms.old.retriesPerTask.toFixed(2)}→${arms.new.retriesPerTask.toFixed(2)}`); }
+    if ((n === "blocking" || n === "blocking_findings") && arms.new.blockingPerAttempt > arms.old.blockingPerAttempt) { held = false; notes.push(`must_not_move blocking moved ${arms.old.blockingPerAttempt.toFixed(2)}→${arms.new.blockingPerAttempt.toFixed(2)}`); }
+  }
+  return { held, notes };
+}
+
 const FINISHED = new Set(["accepted", "blocked", "validation_failed", "empty_output", "provider_error", "canceled"]);
 
 export function armMetrics(rows: readonly ArmAttempt[]): ArmMetrics {
@@ -52,12 +71,16 @@ export type AdoptBy = "bench" | "live";
 export type BenchVerdictInput = { passed: boolean; summary: string };
 
 /** The live alternation's decision, then the bench's word over it when `adoptBy` is `bench`. Without the third argument it is the live rule only. */
-export function decideTrial(rows: readonly ArmAttempt[], startedAt: number, now: number, config: TrialConfig = TRIAL_DEFAULTS, bench?: { adoptBy: AdoptBy; verdict: BenchVerdictInput | null }): TrialDecision {
+export function decideTrial(rows: readonly ArmAttempt[], startedAt: number, now: number, config: TrialConfig = TRIAL_DEFAULTS, bench?: { adoptBy: AdoptBy; verdict: BenchVerdictInput | null }, prediction?: TrialPrediction | null): TrialDecision {
   const live = decideLive(rows, startedAt, now, config);
-  if (!bench || bench.adoptBy === "live") return live;
+  const predicted = prediction ? predictionHeldTrial(prediction, live.arms) : null;
+  if (predicted && !predicted.held) return { action: "retire", reason: `prediction unmet: ${predicted.notes.join("; ")}`, arms: live.arms };
+  const withPrediction = (decision: TrialDecision): TrialDecision => predicted ? { ...decision, reason: `${decision.reason}; prediction held` } : decision;
+  if (bench === undefined) return withPrediction(live);
+  if (!bench || bench.adoptBy === "live") return withPrediction(live);
   // A bench comparison decides by itself: passed adopts, failed retires, whatever the live arms have collected.
   if (bench.verdict) {
-    return { action: bench.verdict.passed ? "adopt" : "retire", reason: `bench ${bench.verdict.passed ? "passed" : "failed"}: ${bench.verdict.summary}; live observation: ${live.reason}`, arms: live.arms };
+    return withPrediction({ action: bench.verdict.passed ? "adopt" : "retire", reason: `bench ${bench.verdict.passed ? "passed" : "failed"}: ${bench.verdict.summary}; live observation: ${live.reason}`, arms: live.arms });
   }
   const ageDays = (now - startedAt) / 86_400_000;
   // No comparison yet: the live alternation can still retire a tree that is worse or unused, but it cannot adopt.
@@ -68,10 +91,10 @@ export function decideTrial(rows: readonly ArmAttempt[], startedAt: number, now:
   }
   // Past the deadline a missing bench is not a reason to wait: the collected live arms close the trial.
   if (ageDays >= config.maxDays && live.action === "adopt") {
-    return { action: "retire", reason: `insufficient data: the ${config.maxDays}-day deadline passed without a bench comparison, so it is not adopted. Live observation: ${live.reason}`, arms: live.arms };
+    return withPrediction({ action: "retire", reason: `insufficient data: the ${config.maxDays}-day deadline passed without a bench comparison, so it is not adopted. Live observation: ${live.reason}`, arms: live.arms });
   }
-  if (live.action === "adopt") return { action: "wait", reason: `live alternation favours it (${live.reason}) but adoption waits for a passed bench comparison: bb lane-pilot bench run/compare with --harness <tree id>`, arms: live.arms };
-  return live;
+  if (live.action === "adopt") return withPrediction({ action: "wait", reason: `live alternation favours it (${live.reason}) but adoption waits for a passed bench comparison: bb lane-pilot bench run/compare with --harness <tree id>`, arms: live.arms });
+  return withPrediction(live);
 }
 
 function decideLive(rows: readonly ArmAttempt[], startedAt: number, now: number, config: TrialConfig): TrialDecision {

@@ -5,6 +5,8 @@ import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
 import type { BenchApi } from "../service";
 import { renderBaseline } from "../baseline";
 import { nightArm } from "../runner";
+import { MEMORY_INJECTION_ARMS, acceptancePerInjectedToken, injectedTokensOf } from "../memory-injection";
+import { listResults, listRuns } from "../store";
 
 /**
  * The comparison arena on a clock (SMA map: Comparison arena, Baseline metric bench). Every Sunday at 02:00 UTC the newest bench set runs
@@ -97,6 +99,17 @@ export function mountBenchNightly(ctx: ServerCore, bench: () => BenchApi): void 
       const reports = await bench().run({ ...input, repeat, budgetTokens: share });
       const rows = Array.isArray(reports) ? reports : [reports];
       for (const line of bench().armStrata(version, arm)) ctx.log(`bench-nightly ${version}: ${line}`);
+      // arXiv #18: one memory-on repeat of the same set (a bounded probe at a quarter of the set's budget), the acceptance
+      // delta priced per 1k injected tokens in the night's summary lines — the data that decides whether injection earns.
+      const memArm = `${arm}-mem`;
+      const ran = await bench().run({ ...input, arm: memArm, settings: { ...MEMORY_INJECTION_ARMS.on }, repeat: 1, budgetTokens: Math.max(1, Math.floor(share / 4)) }).catch((cause: unknown) => { ctx.log(`bench-nightly ${version}: memory arm failed: ${cause instanceof Error ? cause.message : String(cause)}`); return null; });
+      if (ran) {
+        const off = listRuns(ctx.db, version).filter((row) => row.arm === arm).flatMap((row) => listResults(ctx.db, row.id));
+        const on = listRuns(ctx.db, version).filter((row) => row.arm === memArm).flatMap((row) => listResults(ctx.db, row.id));
+        const tokens = on.reduce((sum, row) => sum + (row.lpRunId ? injectedTokensOf(ctx.db, row.lpRunId) : 0), 0);
+        const ab = acceptancePerInjectedToken(on, off, tokens);
+        ctx.log(`bench-nightly ${version} memory A/B: ${on.length} on / ${off.length} off, accepted-delta ${ab.delta.toFixed(2)}, ${ab.perKiloToken === null ? "no injected tokens priced" : `${ab.perKiloToken.toFixed(3)} per 1k injected`}`);
+      }
       if (rows.some((row) => row && typeof row === "object" && "state" in row && (row.state === "stopped_budget" || row.state === "failed"))) budgetSpent = true;
     }
   }, { timeoutMs: 8 * 3_600_000 });
