@@ -8,7 +8,7 @@ export type { ServerCore } from "./core";
 export { CATALOG_WAIT_MS, createModelCatalog, modelCatalogOf, pmHostOf, within } from "./model-catalog-reader";
 export type { ModelCatalogReader } from "./model-catalog-reader";
 export { bindGraphStepLookup, bindRunChildBudget, fullAccessSpawn, graphStepMetadata, pmHasGuard, pmPrompt, providerSupportsServiceTier } from "./pm-spawn";
-export { registerSpawnUsage, resolveSpawnModel, spawnUsageOf, warmSpawnUsage } from "./spawn-model";
+export { providerBlockedForFolder, registerSpawnUsage, resolveSpawnModel, spawnUsageOf, warmSpawnUsage } from "./spawn-model";
 export { noteZcodeThread, zcodeBusy, zcodeBusyPeek } from "./zcode-slot";
 export type { SpawnUsage, SpawnUsageUse } from "./spawn-model";
 export type { SpawnModelInput } from "./spawn-model";
