@@ -2,7 +2,7 @@
 title: Workflow Engine Data Model
 type: data-model
 created: 2026-10-10
-updated: 2026-10-10
+updated: 2026-10-30
 status: active
 confidence: medium
 tags: [workflow-engine, data-model, sqlite]
@@ -30,7 +30,7 @@ erDiagram
   TRIGGER }o..|| WORKFLOW : schedules
 ```
 
-The journal tables are defined in `workflowMigrations`, draft tables in `draftMigrations`, and test receipt/trigger tables in `workflowOpsMigrations` (`packages/workflow-engine/src/journal.ts:10-105`, `packages/workflow-engine/src/draft-store.ts:9-38`, `packages/workflow-engine/src/ops-store.ts:14-39`). The schema has logical links but does not declare foreign-key constraints in these migrations.
+The journal tables are defined in `workflowMigrations`, draft tables in `draftMigrations`, and test receipt/trigger tables in `workflowOpsMigrations`; a later `workflowNotVerifiedMigrations` array rebuilds the run table to widen its status CHECK with `not_verified` and re-creates its indexes (`packages/workflow-engine/src/journal.ts:10-105`, `packages/workflow-engine/src/draft-store.ts:10-39`, `packages/workflow-engine/src/ops-store.ts:15-41`, `packages/workflow-engine/src/ops-store.ts:43-84`). The schema has logical links but does not declare foreign-key constraints in these migrations.
 
 ## Domain areas
 

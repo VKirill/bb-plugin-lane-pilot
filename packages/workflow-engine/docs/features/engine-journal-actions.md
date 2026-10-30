@@ -2,7 +2,7 @@
 title: Engine, Journal, and Pure Action Details
 type: component
 created: 2026-10-24
-updated: 2026-10-26
+updated: 2026-10-30
 status: active
 confidence: high
 tags: [workflow-engine, execution, journal, actions]
@@ -20,49 +20,49 @@ This page describes engine setup and preflight, the journal factory returned to 
 
 ## How it works
 
-1. Construction keeps the supplied options, selects `options.now` or `Date.now`, creates a journal using the database and event hook, selects the supplied instance ID or a generated `engine-<uuid prefix>`, sets the lease to the supplied value or 90 seconds, then registers built-ins. The compatibility stamp is `compatVersion` when present and otherwise `harnessVersion` (`packages/workflow-engine/src/engine.ts:165-174`).
-2. `register(key, executor)` writes to a map, replacing any executor already under that key; it returns the engine. `hasExecutor` reports whether a key is present (`packages/workflow-engine/src/engine.ts:176-177`).
-3. `compile` removes note nodes, groups outgoing edges with their source-array indexes, parses conditions on non-start edges and each `skip_when`, and maps each join by its parallel node. `compiled` parses the lowered definition saved in the run row and caches the compiled result by run ID (`packages/workflow-engine/src/engine.ts:189-207`).
-4. `preflight` first collects only `error` diagnostics from `validateWorkflow`, lowers the workflow, skips notes, and checks every remaining node for an executor key and registered implementation. Missing keys and registrations are appended to the same problem list; the method returns that list without creating a run (`packages/workflow-engine/src/engine.ts:210-220`).
-5. `createJournal` closes over the database and clock and exposes run/step reads, event insertion, conditional step movement, and conditional run status changes (`packages/workflow-engine/src/journal.ts:150-153`, `packages/workflow-engine/src/journal.ts:189-190`).
+1. Construction keeps the supplied options, selects `options.now` or `Date.now`, creates a journal using the database and event hook, selects the supplied instance ID or a generated `engine-<uuid prefix>`, sets the lease to the supplied value or 90 seconds, then registers built-ins. The compatibility stamp is `compatVersion` when present and otherwise `harnessVersion` (`packages/workflow-engine/src/engine.ts:205-214`).
+2. `register(key, executor)` writes to a map, replacing any executor already under that key; it returns the engine. `hasExecutor` reports whether a key is present (`packages/workflow-engine/src/engine.ts:216-217`).
+3. `compile` removes note nodes, groups outgoing edges with their source-array indexes, parses conditions on non-start edges and each `skip_when`, and maps each join by its parallel node. `compiled` parses the lowered definition saved in the run row and caches the compiled result by run ID (`packages/workflow-engine/src/engine.ts:229-248`).
+4. `preflight` first collects only `error` diagnostics from `validateWorkflow`, lowers the workflow, skips notes, and checks every remaining node for an executor key and registered implementation. Missing keys and registrations are appended to the same problem list; the method returns that list without creating a run (`packages/workflow-engine/src/engine.ts:251-261`).
+5. `createJournal` closes over the database and clock and exposes run/step reads, event insertion, conditional step movement, and conditional run status changes (`packages/workflow-engine/src/journal.ts:151-154`, `packages/workflow-engine/src/journal.ts:190`).
 6. The pure-action wrapper selects its declared reference list, resolves requested refs through `ctx.resolve`, invokes the fixed action implementation with node, defaulted params, reader, and context, then returns output and optional detail (`packages/workflow-engine/src/actions.ts:176-193`).
 
 ## Modes and outcomes
 
 | Operation | Branch or condition | Outcome or failure |
 |---|---|---|
-| Engine configuration | Injected `now`, `instanceId`, and `leaseMs` values are used when present; defaults are wall clock, generated `engine-<uuid prefix>`, and 90 seconds (`packages/workflow-engine/src/engine.ts:168-173`). | Constructor creates the journal and registers built-ins. |
-| Executor registration | Registering an existing key overwrites its map entry (`packages/workflow-engine/src/engine.ts:176-177`). | Future lookup uses the latest executor for that key. |
-| Preflight | Validation errors and executor-resolution/registration problems are accumulated (`packages/workflow-engine/src/engine.ts:210-220`). | Returns `string[]`; it does not start or persist a run. |
-| Preflight call throws | A validation or lowering call throws, including a throwing resolver | `preflight` has no catch around those calls, so the exception propagates rather than becoming a problem string (`packages/workflow-engine/src/engine.ts:210-220`). |
-| Graph compilation | Notes are filtered; non-start edge conditions and `skip_when` expressions are parsed; joins are indexed (`packages/workflow-engine/src/engine.ts:189-200`). | Compiled graph is cached per run. Invalid stored JSON or expression syntax throws at compilation; this method does not catch it (`packages/workflow-engine/src/engine.ts:203-207`). |
-| Event callback | Event row is inserted first; callback exceptions are caught (`packages/workflow-engine/src/journal.ts:155-160`). | Notification failure does not fail the event call; database insert/serialization errors propagate. |
-| `moveStep` transition | Requested target must appear in `STEP_TRANSITIONS` for every supplied source state (`packages/workflow-engine/src/journal.ts:162-166`). | Illegal move throws. Conditional update with no matching row emits `refused` and returns false; success emits `step` and returns true (`packages/workflow-engine/src/journal.ts:174-178`). |
-| `setRunStatus` transition | Update applies only when current status is in the supplied `from` set (`packages/workflow-engine/src/journal.ts:181-183`). | No changed row returns false without an event; success records a `run` event and returns true. |
+| Engine configuration | Injected `now`, `instanceId`, and `leaseMs` values are used when present; defaults are wall clock, generated `engine-<uuid prefix>`, and 90 seconds (`packages/workflow-engine/src/engine.ts:208-213`). | Constructor creates the journal and registers built-ins. |
+| Executor registration | Registering an existing key overwrites its map entry (`packages/workflow-engine/src/engine.ts:216-217`). | Future lookup uses the latest executor for that key. |
+| Preflight | Validation errors and executor-resolution/registration problems are accumulated (`packages/workflow-engine/src/engine.ts:251-261`). | Returns `string[]`; it does not start or persist a run. |
+| Preflight call throws | A validation or lowering call throws, including a throwing resolver | `preflight` has no catch around those calls, so the exception propagates rather than becoming a problem string (`packages/workflow-engine/src/engine.ts:251-261`). |
+| Graph compilation | Notes are filtered; non-start edge conditions and `skip_when` expressions are parsed; joins are indexed (`packages/workflow-engine/src/engine.ts:229-240`). | Compiled graph is cached per run. Invalid stored JSON or expression syntax throws at compilation; this method does not catch it (`packages/workflow-engine/src/engine.ts:243-248`). |
+| Event callback | Event row is inserted first; callback exceptions are caught (`packages/workflow-engine/src/journal.ts:156-161`). | Notification failure does not fail the event call; database insert/serialization errors propagate. |
+| `moveStep` transition | Requested target must appear in `STEP_TRANSITIONS` for every supplied source state (`packages/workflow-engine/src/journal.ts:163-167`). | Illegal move throws. Conditional update with no matching row emits `refused` and returns false; success emits `step` and returns true (`packages/workflow-engine/src/journal.ts:175-179`). |
+| `setRunStatus` transition | Update applies only when current status is in the supplied `from` set (`packages/workflow-engine/src/journal.ts:182-184`). | No changed row returns false without an event; success records a `run` event and returns true. |
 | Pure action key | The map contains `items.dedupe`, `dag.validate`, `digest.check`, `citations.check`, `verdict.aggregate`, and `lp.propose_workflow`; `verdict.aggregate` uses its fixed reference list, all others use `node.reads` or an empty list (`packages/workflow-engine/src/actions.ts:176-181`, `packages/workflow-engine/src/actions.ts:188-190`). | Known key returns an output and optional detail; an unknown key has no guard and fails when `run` dereferences the absent action (`packages/workflow-engine/src/actions.ts:185-192`). |
-| Pure action error | Action execution is not wrapped in a local catch (`packages/workflow-engine/src/actions.ts:187-192`). | Ordinary errors reach the engine attempt loop, which records and retries them through `maxAttempts` before failing the step/run; engine bugs are rethrown without step-failure handling (`packages/workflow-engine/src/engine.ts:816-831`, `packages/workflow-engine/src/engine.ts:120-125`). |
+| Pure action error | Action execution is not wrapped in a local catch (`packages/workflow-engine/src/actions.ts:187-192`). | Ordinary errors reach the engine attempt loop, which records and retries them through `maxAttempts` before failing the step/run; engine bugs are rethrown without step-failure handling (`packages/workflow-engine/src/engine.ts:896-902`, `packages/workflow-engine/src/engine.ts:163-164`). |
 
 ## Business rules
 
-- A step transition is checked against `STEP_TRANSITIONS` before the database update; the update is conditional on the row still having an expected source state (`packages/workflow-engine/src/journal.ts:114-121`, `packages/workflow-engine/src/journal.ts:162-175`).
-- A stale step move is observable as a `refused` event; a stale run status change returns false without adding an event (`packages/workflow-engine/src/journal.ts:174-186`).
+- A step transition is checked against `STEP_TRANSITIONS` before the database update; the update is conditional on the row still having an expected source state (`packages/workflow-engine/src/journal.ts:116-122`, `packages/workflow-engine/src/journal.ts:163-175`).
+- A stale step move is observable as a `refused` event; a stale run status change returns false without adding an event (`packages/workflow-engine/src/journal.ts:177-187`).
 - Only `verdict.aggregate` overrides node-declared reads. Other pure actions resolve the indexed references from `node.reads` in order (`packages/workflow-engine/src/actions.ts:180-190`).
-- Pure actions are marked reentrant, so the engine may rerun them after an interruption under its reentrant recovery path (`packages/workflow-engine/src/actions.ts:185-188`, `packages/workflow-engine/src/engine.ts:68-74`).
+- Pure actions are marked reentrant, so the engine may rerun them after an interruption under its reentrant recovery path (`packages/workflow-engine/src/actions.ts:185-188`, `packages/workflow-engine/src/engine.ts:98-104`).
 
 ## Public API
 
 | Export | Purpose |
 |---|---|
-| `WorkflowEngine` | Configure executor registration, preflight, and run coordination (`packages/workflow-engine/src/engine.ts:151-177`, `packages/workflow-engine/src/engine.ts:210-220`). |
-| `createJournal` | Create the journal's query and conditional write methods (`packages/workflow-engine/src/journal.ts:150-190`). |
+| `WorkflowEngine` | Configure executor registration, preflight, and run coordination (`packages/workflow-engine/src/engine.ts:190-261`). |
+| `createJournal` | Create the journal's query and conditional write methods (`packages/workflow-engine/src/journal.ts:151-191`). |
 | `pureActionExecutor(key)` | Adapt a registered code-only action to `NodeExecutor` (`packages/workflow-engine/src/actions.ts:185-193`). |
 | `PURE_ACTION_KEYS`, `registerPureActions` | List and register the fixed action implementations (`packages/workflow-engine/src/actions.ts:176-197`). |
 
 ## Gotchas
 
-- `preflight` validates and checks executor availability, but returns diagnostics instead of starting work (`packages/workflow-engine/src/engine.ts:210-220`).
-- `compile` trusts the stored definition JSON and parses expressions without a local catch; invalid persisted content can throw when first compiled (`packages/workflow-engine/src/engine.ts:189-207`).
-- Journal update errors are not converted into `false`; the false result is specifically the conditional update changing no rows. Database failures propagate (`packages/workflow-engine/src/journal.ts:174-187`).
+- `preflight` validates and checks executor availability, but returns diagnostics instead of starting work (`packages/workflow-engine/src/engine.ts:251-261`).
+- `compile` trusts the stored definition JSON and parses expressions without a local catch; invalid persisted content can throw when first compiled (`packages/workflow-engine/src/engine.ts:229-248`).
+- Journal update errors are not converted into `false`; the false result is specifically the conditional update changing no rows. Database failures propagate (`packages/workflow-engine/src/journal.ts:175-188`).
 - A pure action key is not checked when `pureActionExecutor` is created. A caller that supplies an unknown key gets a returned wrapper that fails only when run (`packages/workflow-engine/src/actions.ts:185-192`).
 
 <!-- lane-pilot:backlinks -->

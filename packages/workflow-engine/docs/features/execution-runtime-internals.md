@@ -2,7 +2,7 @@
 title: Workflow Execution Runtime Internals
 type: component
 created: 2026-10-27
-updated: 2026-10-27
+updated: 2026-10-30
 status: active
 confidence: high
 tags: [workflow-engine, execution, reducers, journal, actions]
@@ -23,12 +23,12 @@ The engine lifecycle overview is in [Workflow Execution Engine](execution-engine
 
 ### `WorkflowEngine` construction, registration, compilation, and preflight
 
-1. Construction selects the supplied clock or `Date.now`, creates a journal bound to the database and event callback, selects a supplied/generated instance ID, sets the lease duration (default 90,000 ms), and registers built-ins (`packages/workflow-engine/src/engine.ts:170-176`).
-2. `register(key, executor)` stores or replaces the executor under that key and returns the same engine; `hasExecutor` checks the registry (`packages/workflow-engine/src/engine.ts:178-179`).
-3. `compile` builds a map of non-note nodes, groups edges by source while preserving their indexes, parses conditions on non-start edges and each `skip_when`, and maps joins by their parallel node. `compiled` parses `definition_json` and caches that compiled object by run ID on first access (`packages/workflow-engine/src/engine.ts:191-209`).
-4. `preflight` validates the workflow (including an optional workflow resolver and specialist lookup), keeps error-level diagnostics, lowers the graph, skips note nodes, and adds a problem when a runnable node has no executor key or the key is not registered (`packages/workflow-engine/src/engine.ts:212-222`).
+1. Construction selects the supplied clock or `Date.now`, creates a journal bound to the database and event callback, selects a supplied/generated instance ID, sets the lease duration (default 90,000 ms), and registers built-ins (`packages/workflow-engine/src/engine.ts:209-214`).
+2. `register(key, executor)` stores or replaces the executor under that key and returns the same engine; `hasExecutor` checks the registry (`packages/workflow-engine/src/engine.ts:216-217`).
+3. `compile` builds a map of non-note nodes, groups edges by source while preserving their indexes, parses conditions on non-start edges and each `skip_when`, and maps joins by their parallel node. `compiled` parses `definition_json` and caches that compiled object by run ID on first access (`packages/workflow-engine/src/engine.ts:229-248`).
+4. `preflight` validates the workflow — under an optional resolver argument that defaults to the engine's — keeps error-level diagnostics, lowers the graph, skips note nodes, and adds a problem when a runnable node has no executor key or the key is not registered (`packages/workflow-engine/src/engine.ts:251-261`).
 
-Preflight returns all discovered problem messages and does not create a run. A bad persisted JSON definition throws during `compiled`; parsing/validation problems and missing executor registrations are reported by preflight (`packages/workflow-engine/src/engine.ts:205-222`). Compilation itself does not catch malformed expression or JSON errors (`packages/workflow-engine/src/engine.ts:191-209`).
+Preflight returns all discovered problem messages and does not create a run. A bad persisted JSON definition throws during `compiled`; parsing/validation problems and missing executor registrations are reported by preflight (`packages/workflow-engine/src/engine.ts:243-261`). Compilation itself does not catch malformed expression or JSON errors (`packages/workflow-engine/src/engine.ts:229-248`).
 
 ### Reducer input normalization and registration
 
@@ -53,17 +53,17 @@ Shared helpers treat non-array lists as empty, non-string text as empty, non-rec
 | `reduce.web-research.search` | Flattens sources and removes later duplicates with the same nonempty URL. Lost items and successful rows with no sources are reported unavailable (`packages/workflow-engine/src/reducers.ts:99-104`). |
 | `reduce.x-to-telegram-digest.score` | Reads scores only from successful rows. `keep === false` drops a score; otherwise item, post, indexed batch item, or raw score is kept in that priority order. Nonempty topics are unique (`packages/workflow-engine/src/reducers.ts:105-119`). |
 
-These reducers return data even when some branch rows failed; the reducer-specific fields preserve that failure information. A malformed non-array `rows` value can fail when a reducer iterates it. Such exceptions reject the executor call and enter the engine's normal retry/failure path (`packages/workflow-engine/src/reducers.ts:44-55`, `packages/workflow-engine/src/reducers.ts:121-129`, `packages/workflow-engine/src/engine.ts:794-831`).
+These reducers return data even when some branch rows failed; the reducer-specific fields preserve that failure information. A malformed non-array `rows` value can fail when a reducer iterates it. Such exceptions reject the executor call and enter the engine's normal retry/failure path (`packages/workflow-engine/src/reducers.ts:44-55`, `packages/workflow-engine/src/reducers.ts:121-129`, `packages/workflow-engine/src/engine.ts:874-906`).
 
 ### Journal reads and transitions: `createJournal`
 
-1. The factory closes over the database, clock, and optional `onEvent`; it exposes `getRun`, `getStep`, and ordered `steps` reads (`packages/workflow-engine/src/journal.ts:150-153`).
-2. The private event writer inserts a journal event with timestamp and serialized detail, then notifies `onEvent`. A listener exception is swallowed after the database insert (`packages/workflow-engine/src/journal.ts:155-160`).
-3. `moveStep` normalizes one/many source states, throws for any transition absent from `STEP_TRANSITIONS`, builds the update from defined patch fields, and optionally stamps started/ended times. Its SQL update is conditional on run, step, and expected state (`packages/workflow-engine/src/journal.ts:162-175`).
-4. If no step row changed, it appends a `refused` event and returns false. A successful update appends a `step` event and returns true (`packages/workflow-engine/src/journal.ts:176-179`).
-5. `setRunStatus` conditionally updates the run from the expected status set, optionally serializes output, and updates the timestamp. No changed row returns false without an event; a change appends a `run` event and returns true (`packages/workflow-engine/src/journal.ts:181-187`).
+1. The factory closes over the database, clock, and optional `onEvent`; it exposes `getRun`, `getStep`, and ordered `steps` reads (`packages/workflow-engine/src/journal.ts:151-154`).
+2. The private event writer inserts a journal event with timestamp and serialized detail, then notifies `onEvent`. A listener exception is swallowed after the database insert (`packages/workflow-engine/src/journal.ts:156-161`).
+3. `moveStep` normalizes one/many source states, throws for any transition absent from `STEP_TRANSITIONS`, builds the update from defined patch fields, and optionally stamps started/ended times. Its SQL update is conditional on run, step, and expected state (`packages/workflow-engine/src/journal.ts:163-175`).
+4. If no step row changed, it appends a `refused` event and returns false. A successful update appends a `step` event and returns true (`packages/workflow-engine/src/journal.ts:177-179`).
+5. `setRunStatus` conditionally updates the run from the expected status set, optionally serializes output, and updates the timestamp. No changed row returns false without an event; a change appends a `run` event and returns true (`packages/workflow-engine/src/journal.ts:182-188`).
 
-Database errors from SQL or event insertion propagate. Event notification errors do not; step refusal is evented while run-status refusal is not (`packages/workflow-engine/src/journal.ts:155-186`).
+Database errors from SQL or event insertion propagate. Event notification errors do not; step refusal is evented while run-status refusal is not (`packages/workflow-engine/src/journal.ts:156-187`).
 
 ### Deterministic action dispatch: `pureActionExecutor`
 
@@ -80,7 +80,7 @@ Database errors from SQL or event insertion propagate. Event notification errors
 | `verdict.aggregate` | Uses a fixed read order. Removes dropped findings, settles them, then returns `rework` for any critical, more than five high, or unmet criteria; otherwise `block` for unchecked dimensions, else `pass`. A pass with high findings sets `warn` (`packages/workflow-engine/src/actions.ts:143-167`, `packages/workflow-engine/src/actions.ts:180-181`). |
 | `lp.propose_workflow` | Returns empty output and detail containing the proposed workflow and templated inputs; the action itself does not start it (`packages/workflow-engine/src/actions.ts:169-174`). |
 
-Action exceptions propagate to the executor attempt loop. The engine retries the attempt according to node retry settings and fails the step/run after retries are exhausted (`packages/workflow-engine/src/engine.ts:794-831`).
+Action exceptions propagate to the executor attempt loop. The engine retries the attempt according to node retry settings and fails the step/run after retries are exhausted (`packages/workflow-engine/src/engine.ts:874-906`).
 
 <!-- lane-pilot:backlinks -->
 ## Referenced by
