@@ -3,6 +3,7 @@ import { hardProblems } from "@lane-pilot/jev/judgments/invoice-check";
 import { uiShotsJudgment } from "@lane-pilot/jev/judgments/ui-shots";
 import { invoiceScanJudgment, type ScanField } from "@lane-pilot/jev/judgments/invoice-scan";
 import { acceptCompositeJudgment, type AcceptAxis } from "@lane-pilot/jev/judgments/accept-composite";
+import { renderMatchJudgment } from "@lane-pilot/jev/judgments/render-match";
 
 /**
  * Non-code QA (agents-design 3.5): the artifact checker a specialist's deliverable passes instead of a test run.
@@ -150,7 +151,26 @@ async function validate3d(path: string, deps: ValidatorDeps): Promise<Verdict> {
   if (report.ngons) problems.push(`${report.ngons} n-gons`);
   if (report.flipped) problems.push(`${report.flipped} flipped normals`);
   if (budget && report.tris > budget) problems.push(`${report.tris} tris over the ${budget} budget`);
-  return problems.length ? { ok: false, reason: problems.join("; "), details: report } : { ok: true, reason: `geometry clean (${report.tris} tris)`, details: report };
+  if (problems.length) return { ok: false, reason: problems.join("; "), details: report };
+  const clean = { ok: true, reason: `geometry clean (${report.tris} tris)`, details: report };
+  // B5: geometry alone does not prove the model is the brief's object — when the brief names a concept and a preview
+  // render, Jev compares them (shadow until calibrated).
+  const conceptPath = String(deps.brief?.concept_path ?? deps.brief?.conceptPath ?? "");
+  const renderPath = String(deps.brief?.render_path ?? deps.brief?.renderPath ?? deps.brief?.preview ?? "");
+  const judge = jev();
+  if (!judge || !conceptPath || !renderPath) return clean;
+  const read64 = async (p: string) => (await deps.host!.run(deps.hostId!, "/", `base64 < ${shq(p)} 2>/dev/null | tr -d '\n'`, 60).catch(() => null))?.stdout?.trim() ?? null;
+  const [concept, render] = await Promise.all([read64(conceptPath), read64(renderPath)]);
+  if (!concept || !render) return clean;
+  const verdict = await judge.judge(renderMatchJudgment, { brief: String(deps.brief?.objective ?? deps.brief?.prompt ?? ""), concept: { format: "png", data_base64: concept.slice(0, 9_000_000) }, render: { format: "png", data_base64: render.slice(0, 9_000_000) } }, deps.jevCtx ?? {}).catch(() => null);
+  if (!verdict) return clean;
+  if (verdict.by === "jev" && !verdict.decision.matches) {
+    const d = verdict.decision;
+    return { ok: false, reason: `render does not match the concept (match p=${d.matchP}, defects p=${d.defectsP})`, details: { jev: d } };
+  }
+  const shadow = verdict.by === "fallback" && verdict.shadow?.decision ? `; jev shadow: ${renderMatchJudgment.describe(verdict.shadow.decision)}` : "";
+  return { ...clean, reason: clean.reason + shadow };
+}
 }
 
 /* ---- video: ffprobe streams + EBU R128 loudness ---- */

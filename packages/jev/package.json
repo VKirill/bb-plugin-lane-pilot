@@ -22,6 +22,7 @@
     "./judgments/invoice-scan": "./src/judgments/invoice-scan.ts",
     "./judgments/log-find": "./src/judgments/log-find.ts",
     "./judgments/skill-tree-pick": "./src/judgments/skill-tree-pick.ts",
-    "./judgments/accept-composite": "./src/judgments/accept-composite.ts"
+    "./judgments/accept-composite": "./src/judgments/accept-composite.ts",
+    "./judgments/render-match": "./src/judgments/render-match.ts"
   }
 }

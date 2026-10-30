@@ -21,3 +21,4 @@ import "@lane-pilot/jev/judgments/invoice-scan";
 import "@lane-pilot/jev/judgments/log-find";
 import "@lane-pilot/jev/judgments/skill-tree-pick";
 import "@lane-pilot/jev/judgments/accept-composite";
+import "@lane-pilot/jev/judgments/render-match";
