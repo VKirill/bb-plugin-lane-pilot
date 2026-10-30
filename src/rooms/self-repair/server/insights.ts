@@ -97,6 +97,12 @@ function weakestTrialRule(db: LanePilotDatabase, projectId: string, pool: RulePr
 export function adoptRuleProposal(db: LanePilotDatabase, projectId: string, id: string, now = Date.now()): RuleProposal | null {
   const proposal = getRuleProposal(db, projectId, id);
   if (!proposal || proposal.state !== "proposed") return null;
+  // A rule from luck (arXiv #14): an always-on line adopted on a single sighting is given to every writer task for
+  // the price of one mistake. It waits for its first repeat; adoptWaitingRules picks it up once occurrences reach 2.
+  if (proposal.always && proposal.occurrences < 2) {
+    logRuleEvent(db, projectId, id, "needs_second_evidence", "an always-on rule needs a repeat before it goes on trial", now);
+    return null;
+  }
   const which = rulePool(proposal);
   const pool = listRuleProposals(db, projectId, { state: "accepted", limit: 500 }).filter((rule) => rulePool(rule) === which);
   // The pool has a budget in tokens (src/learning/rule-budget.ts), not a count of twelve. A rule that does not fit takes the places of

@@ -15,6 +15,7 @@ afterEach(() => setRuleBudgets({ ...DEFAULT_RULE_TOKENS }));
 /** A proposal that is accepted and on trial since `ageDays`, the way the system adopts one. */
 function adopted(db: ReturnType<typeof database>, rule: string, audience: "pm" | "writer" | "both" = "pm", options: { ageDays?: number; confirm?: boolean; always?: boolean } = {}) {
   const made = upsertLessonProposal(db, "proj_1", { rule, evidence: "e", audience, always: options.always ?? false }, NOW - 40 * DAY);
+  if (options.always) upsertLessonProposal(db, "proj_1", { rule, evidence: "e2", audience, always: true }, NOW - 39 * DAY);
   const row = adoptRuleProposal(db, "proj_1", made.id, NOW - (options.ageDays ?? 10) * DAY);
   if (options.confirm) db.prepare("UPDATE lane_pilot_rule_proposal SET trial_state='confirmed' WHERE id=?").run(made.id);
   return { id: made.id, row };
@@ -220,5 +221,15 @@ describe("the PM's starting prompt carries the rules", () => {
 
   it("adds nothing for a project without PM rules", async () => {
     expect(await startPm(() => undefined)).not.toContain("Rules the owner taught");
+  });
+});
+
+describe("an always-on rule needs a repeat before trial (arXiv #14)", () => {
+  const db = database();
+  it("one sighting waits, the repeat adopts", () => {
+    const made = upsertLessonProposal(db, "proj_1", { rule: "Always run migrations from the repo root only.", evidence: "one failure", always: true });
+    expect(adoptRuleProposal(db, "proj_1", made.id)).toBeNull();
+    upsertLessonProposal(db, "proj_1", { rule: "Always run migrations from the repo root only.", evidence: "second failure", always: true });
+    expect(adoptRuleProposal(db, "proj_1", made.id)).not.toBeNull();
   });
 });

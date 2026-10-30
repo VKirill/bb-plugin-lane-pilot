@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { ruleAudienceMigrations, ruleFormMigrations, ruleMechanismMigrations, ruleMigrations, ruleTrialMigrations, upsertLessonProposal, decideRuleProposal } from "@lane-pilot/run-insights";
 import { promotionDigest, promotionMorningLine, promotionWeeklyLines, proposePromotions, runRulesCli } from "../src/rooms/rule-forms";
 import { acceptPromotion, dismissPromotion } from "../src/rooms/rule-forms";
+import { crossProjectRuleCandidates } from "../src/rooms/rule-forms/promotion-service";
 
 import { migrations } from "../src/rooms/storage/database";
 
@@ -142,5 +143,24 @@ describe("the task's end settles the promotion", () => {
     const settled = settlePromotionTask(db as never, { taskId: created.task.id, outcome: "failed", reason: "writer_blocked" });
     expect(settled!.state).toBe("proposed");
     expect(settlePromotionTask(db as never, { taskId: "no-such", outcome: "accepted" })).toBeNull();
+  });
+});
+
+describe("cross-project rule transfer (arXiv #19)", () => {
+  it("a rule confirmed in two projects is proposed to the others, once", () => {
+    const db = openDb();
+    for (const projectId of ["p1", "p2", "p3"]) db.prepare("INSERT INTO lane_pilot_project_settings(project_id,binding_id,key,value,updated_at) VALUES (?,?,?,?,1)").run(projectId, "", "k", "v");
+    const rule = "Run migrations only through scripts/migrate.sh, never by hand.";
+    for (const projectId of ["p1", "p2"]) {
+      const made = upsertLessonProposal(db, projectId, { rule }, 1);
+      decideRuleProposal(db, projectId, made.id, { from: "proposed", to: "accepted", memoryId: `m_${made.id}` }, 2);
+      db.prepare("UPDATE lane_pilot_rule_proposal SET trial_state='confirmed' WHERE project_id=? AND id=?").run(projectId, made.id);
+    }
+    expect(crossProjectRuleCandidates(db, 10)).toBe(1);
+    const proposed = db.prepare("SELECT * FROM lane_pilot_rule_proposal WHERE project_id='p3'").all() as Array<{ author: string; state: string }>;
+    expect(proposed).toHaveLength(1);
+    expect(proposed[0]!.author).toBe("sweep");
+    expect(proposed[0]!.state).toBe("proposed");
+    expect(crossProjectRuleCandidates(db, 20)).toBe(0);
   });
 });

@@ -151,6 +151,19 @@ it("after a repeated red check, the next attempt goes to the next writer in the 
   await env.harness.lifecycle.dispose();
 });
 
+it("with writer.retry_escalate on, the first red check goes to the next writer in the chain", async () => {
+  const env = setup();
+  env.db.prepare("INSERT INTO lane_pilot_project_settings(project_id,binding_id,key,value,version,updated_at) VALUES('proj1','','writer.retry_escalate','true',1,1)").run();
+  const { all, spawned, emergencies } = services(env.db, [
+    { diff:"one", reason:"verification failed (npm test): first" },
+    { diff:"two", reason:"verification failed (npm test): second" }]);
+  start(env, all);
+  await vi.waitFor(() => expect(writerStage(env.db).state).toBe("failed"));
+  expect(spawned).toHaveLength(2);
+  expect(emergencies).toEqual([{ providerId:"opencode2", model:"zai-coding-plan/glm-5.3-flash" }]);
+  await env.harness.lifecycle.dispose();
+});
+
 it("a changed failure with an unchanged diff does not stop the session", async () => {
   const env = setup();
   const { all } = services(env.db, [{ diff:"same", reason:"verification failed (npm test): first" },
