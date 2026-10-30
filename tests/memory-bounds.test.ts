@@ -1,5 +1,5 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { planScopeMigration } from "../scripts/memory-scope-dry-run";
+import { applyScopeMigration, planScopeMigration } from "../scripts/memory-scope-dry-run";
 import { describe, expect, it } from "vitest";
 import { searchMemoryAllSections, searchMemoryRecords, storeMemoryRecords } from "../packages/memory-core/src";
 import { assertRuleScope, scopeApplies, upsertLessonProposal } from "@lane-pilot/run-insights";
@@ -143,6 +143,16 @@ describe("F04: section chain and path selectors", () => {
     const plan = planScopeMigration(db, "fixture");
     expect(plan.rootCore.find((row) => row.content.includes("Theme build"))?.proposal.action).toBe("assign-section");
     expect(plan.rootCore.find((row) => row.concepts.includes("convention"))?.proposal.action).toBe("keep-root");
+  });
+
+  it("assigns a mapped file core and leaves an unmapped one at the root", () => {
+    const db = dbOf();
+    storeMemoryRecords(db, { projectId: "P", ...limits, entries: [{ kind: "core", content: "Theme build writes themes/pokecut.css and checks it.", concepts: ["theme"] }] });
+    expect(applyScopeMigration(db, {}).applied).toBe(0);
+    expect(applyScopeMigration(db, { "themes/pokecut.css": ["section:pokecut"] }).applied).toBe(1);
+    expect(planScopeMigration(db, "fixture").rootCore.some((row) => row.content.includes("Theme build"))).toBe(false);
+    const scoped = db.prepare("SELECT scope_json FROM lane_pilot_memory WHERE content LIKE '%pokecut.css%'").get() as { scope_json: string };
+    expect(JSON.parse(scoped.scope_json)).toEqual(["section:pokecut"]);
   });
 });
 

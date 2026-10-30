@@ -3,6 +3,7 @@ import { taskV2Schema } from "../../contracts";
 import { enrichMemoryContext } from "../../memory-tiers/server";
 import { claimStageSpawn, getRun, getRunSettingsScopes, getTask, listStageReceipts, searchMemoryRecords } from "../../storage";
 import { coreShelf, pathsNamed, storeMemoryRecordsKeepingOverflow } from "@lane-pilot/memory-core";
+import { applyScopeMigration } from "../../../../scripts/memory-scope-dry-run";
 import { bbServiceTier, writerExecutionSelection } from "@lane-pilot/models";
 import { sha256 } from "../../tasks";
 import { memoryMaintenancePrompt, memoryRecordId, parseMemoryCandidates, parseMemorySettings } from "../memory";
@@ -157,6 +158,11 @@ export function createMemoryStage(ctx: ServerCore, services: Services) {
         return {runId:args.runId,taskId:args.taskId,state:"running",threadId:receipt?.threadId??null,reason:"observing",detail:"memory_spawn_claimed"};
       }
       claimedHere=true;
+      // A scope map stored for the project moves file-named root core onto its section. No map: nothing moves. Not a hand edit of the hub.
+      try {
+        const stored=await bb.storage.kv.get(`memory.scope_map:${args.projectId}`);
+        if(stored&&typeof stored==="object"&&!Array.isArray(stored)) applyScopeMigration(db,stored as Record<string,readonly string[]>);
+      } catch { /* the next accepted task tries again */ }
       const [providers,catalog]=await Promise.all([
         bb.sdk.providers.list({hostId:config.hostId}),
         bb.sdk.providers.models({providerId:memoryProviderId,hostId:config.hostId}),

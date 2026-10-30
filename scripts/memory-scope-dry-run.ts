@@ -57,6 +57,23 @@ export function planScopeMigration(db: ScopeDb, dbPath: string): ScopeDryRun {
   };
 }
 
+type ApplyDb = { prepare(sql: string): { all(...args: unknown[]): unknown[]; run(...args: unknown[]): unknown } };
+
+/** Moves a file-named root core onto the section the map names for that file. Unmapped rows stay. Does not widen a scope to []. */
+export function applyScopeMigration(db: ApplyDb, map: Readonly<Record<string, readonly string[]>>): { applied: number } {
+  const plan = planScopeMigration(db, "apply");
+  let applied = 0;
+  for (const row of plan.rootCore) {
+    if (row.proposal.action !== "assign-section") continue;
+    const full = (db.prepare("SELECT content FROM lane_pilot_memory WHERE project_id=? AND id=?").all(row.projectId, row.id) as Array<{ content: string }>)[0];
+    const scope = pathsNamed(full?.content ?? row.content).map((path) => map[path]).find((item) => item && item.length);
+    if (!scope) continue;
+    db.prepare("UPDATE lane_pilot_memory SET scope_json=? WHERE project_id=? AND id=?").run(JSON.stringify([...scope]), row.projectId, row.id);
+    applied++;
+  }
+  return { applied };
+}
+
 function arg(name: string): string | undefined {
   const index = process.argv.indexOf(name);
   return index >= 0 ? process.argv[index + 1] : undefined;
