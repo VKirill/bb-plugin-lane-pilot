@@ -1,5 +1,6 @@
 import { MAIN_AGENT_PROFILE_IDS, compileEffectiveMainAgent, compileMainAgentProfile, type CustomAgentMeta } from "../agent-profile";
 import { sessionOverrideAgentsJson } from "../native-agent-definition";
+import { employeeRoleLines, withRoleLines } from "../employee-lessons";
 import { prepareNativeSessionRecord } from "../native-dispatch";
 import { nativeAgentCliId, type NativeSelection } from "../native-session";
 import type { ServerCore } from "../../core/server";
@@ -25,7 +26,8 @@ export async function storeNativeSelection(ctx: Pick<ServerCore, "bb" | "ownedAg
     agentsJson: sessionOverrideAgentsJson({
       agentId: shortId,
       edited: true,
-      compiled: compiled ?? stock,
+      // Role lessons ride inside the profile's prompt; swe/empmem's rule filter fills them.
+      compiled: withRoleLines(compiled ?? stock!, await employeeRoleLines(ctx.bb, input.projectId, shortId)),
       // An owner's agent may name its own model and effort.
       ...(stored?.meta?.model || stored?.meta?.effort ? { extraFields: { ...(stored.meta.model ? { model: stored.meta.model } : {}), ...(stored.meta.effort ? { effort: stored.meta.effort } : {}) } } : {}),
     }),
