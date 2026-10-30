@@ -224,6 +224,19 @@ describe("issue-batch", () => {
   });
 });
 
+describe("issue-quick-legacy", () => {
+  it("the old road is triage, plan and the build — the bench arm the short path is measured against", async () => {
+    const one = { ...task("q1"), acceptance: ["npx vitest run tests/button.test.ts"] };
+    const plan = { status: "ok", clear: true, task_count: 1, risk: "low", already_met: false, objective: "Fix the Send button label", tasks: [one], waves: [["q1"]] };
+    const r = await runSim("issue-quick-legacy", {
+      input: { title: "Typo in button label", text: "The Send button says 'Sned'." },
+      stubs: { triage: { clear: true, severity: "low", title: "Typo in button label" }, plan, build: { status: "done", merged_commits: ["q1"] } },
+    });
+    expect(pathOf(r)).toBe("triage plan build closed");
+    expect(r.summary.status).toBe("succeeded");
+  });
+});
+
 describe("issue-quick", () => {
   const input = { title: "Typo in button label", text: "The Send button says 'Sned'." };
   const one = { ...task("q1"), acceptance: ["npx vitest run tests/button.test.ts"] };
