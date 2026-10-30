@@ -1,0 +1,324 @@
+{
+  "id": "billing-batch",
+  "name": {
+    "en": "Batch Invoicing (Kontur.Elba)",
+    "ru": "Пакетное выставление счетов (Контур.Эльба)"
+  },
+  "description": {
+    "en": "Processes a list of clients and services, creates invoices in Kontur.Elba on Mac mini via the invoice-send subworkflow, checks each invoice, compiles a summary registry, and asks for owner approval before any client dispatch.",
+    "ru": "Обрабатывает список клиентов и услуг, выставляет счета в Контур.Эльбе на Mac mini через подграф invoice-send, проверяет каждый счёт, формирует сводный реестр и запрашивает одобрение владельца перед отправкой клиентам."
+  },
+  "examples": {
+    "ru": [
+      "Выстави счета за октябрь клиентам по списку через Контур.Эльбу",
+      "Сделай пакет счетов для трёх клиентов в Эльбе и покажи сводку",
+      "Сформируй счета на оплату по реестру контрагентов на Mac mini",
+      "Пакетное выставление счетов за услуги с проверкой и согласованием"
+    ],
+    "en": [
+      "Generate monthly invoices for clients in the list via Kontur.Elba",
+      "Create a batch of invoices for three clients in Elba and show summary",
+      "Prepare billing invoices according to client registry on Mac mini",
+      "Batch invoice generation for services with verification and approval"
+    ]
+  },
+  "not_for": [
+    "a single invoice (use invoice-send directly)",
+    "filing tax reports or accounting advice"
+  ],
+  "status": "published",
+  "tags": [
+    "finance",
+    "billing",
+    "elba",
+    "invoices"
+  ],
+  "inputs": {
+    "items": {
+      "type": "json",
+      "required": true,
+      "note": "список клиентов: [{ company, inn, amount, service, recipient }]"
+    },
+    "report_chat": {
+      "type": "string",
+      "default": "",
+      "note": "чат для отчёта"
+    }
+  },
+  "outputs": {
+    "status": "done|partial|blocked",
+    "summary_md": "string",
+    "total_amount": "number",
+    "invoices_count": "int",
+    "owner_decision": "string"
+  },
+  "requires": {
+    "plugins": [
+      "lane-pilot",
+      "browser-automation"
+    ],
+    "skills": [
+      "kontur-elba",
+      "browser-automation"
+    ],
+    "machines": [
+      "Mac mini host_7sea4qaad8 with signed-in Elba session"
+    ],
+    "browserSession": true
+  },
+  "budget": {
+    "max_steps": 40,
+    "max_minutes": 180,
+    "max_usd": 15
+  },
+  "entry": "prepare",
+  "nodes": [
+    {
+      "id": "prepare",
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "billing-assistant",
+      "title": {
+        "en": "Prepare client invoice list",
+        "ru": "Подготовка реестра счетов"
+      },
+      "profile": {
+        "skills": [
+          "kontur-elba"
+        ]
+      },
+      "prompt": "Проверь входной список клиентов и услуг ({{$inputs.items}}). Раздел каталога: «Документы и бухгалтерия» (kontur-elba, edo-windows-diadoc). Убедись, что для каждой позиции указаны компания или ИНН, сумма и строка услуги. Установи recipient 'me' для безопасной проверки владельцем. Сформируй нормализованный массив batch_items. Если список пуст или некорректен, верни статус blocked. При успехе верни статус done.",
+      "out": {
+        "ok": "bool",
+        "batch_items": "json",
+        "item_count": "int",
+        "status": "done|blocked"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 20
+      }
+    },
+    {
+      "id": "invoices",
+      "type": "parallel",
+      "for_each": "prepare.batch_items",
+      "concurrency": 1,
+      "child": {
+        "type": "subworkflow",
+        "workflow": "invoice-send",
+        "with": {
+          "company": "{{item.company}}",
+          "inn": "{{item.inn}}",
+          "amount": "{{item.amount}}",
+          "service": "{{item.service}}",
+          "recipient": "me"
+        }
+      },
+      "join": {
+        "policy": "all",
+        "uses": "reduce.billing-batch.invoices",
+        "out": [
+          {
+            "name": "invoices",
+            "type": "array"
+          },
+          {
+            "name": "pdf_paths",
+            "type": "array"
+          }
+        ]
+      }
+    },
+    {
+      "id": "summarize",
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "billing-assistant",
+      "title": {
+        "en": "Generate billing batch summary",
+        "ru": "Сводка реестра счетов"
+      },
+      "profile": {
+        "skills": [
+          "kontur-elba",
+          "xlsx"
+        ]
+      },
+      "prompt": "Составь сводку по выставленным счетам ({{invoices.invoices}}). Раздел каталога: «Документы и бухгалтерия» (kontur-elba, xlsx, pdf). Подсчитай общую сумму total_amount, количество счетов invoices_count, сформируй таблицу в summary_md с номерами счетов, клиентами, суммами и путями к PDF. Верни статус done или blocked.",
+      "out": {
+        "summary_md": "string",
+        "total_amount": "number",
+        "invoices_count": "int",
+        "ok_count": "int",
+        "status": "done|blocked"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 25
+      }
+    },
+    {
+      "id": "preview",
+      "type": "human",
+      "role": "owner",
+      "title": {
+        "en": "Approve invoice batch summary",
+        "ru": "Согласование реестра счетов"
+      },
+      "prompt": "Ознакомьтесь со сводкой выставленных счетов. Счета сформированы в Контур.Эльбе и проверены. Без вашего согласования счета клиентам не отправляются. Варианты: approve (согласовано), abort (отмена).",
+      "out": {
+        "answer": "string",
+        "answer_kind": "approve|abort|timeout"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 240
+      }
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "done",
+        "summary_md": "summarize.summary_md",
+        "total_amount": "summarize.total_amount",
+        "invoices_count": "summarize.invoices_count",
+        "owner_decision": "preview.answer_kind"
+      }
+    },
+    {
+      "id": "blocked",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "blocked"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "prepare",
+      "to": "invoices",
+      "pass": "artifact",
+      "when": "prepare.ok"
+    },
+    {
+      "from": "prepare",
+      "to": "blocked",
+      "pass": "artifact"
+    },
+    {
+      "from": "invoices",
+      "to": "summarize",
+      "pass": "artifact"
+    },
+    {
+      "from": "summarize",
+      "to": "preview",
+      "pass": "artifact",
+      "when": "summarize.status == 'done'"
+    },
+    {
+      "from": "summarize",
+      "to": "blocked",
+      "pass": "artifact"
+    },
+    {
+      "from": "preview",
+      "to": "done",
+      "pass": "artifact",
+      "when": "preview.answer_kind == 'approve'"
+    },
+    {
+      "from": "preview",
+      "to": "blocked",
+      "pass": "artifact"
+    }
+  ],
+  "test": {
+    "id": "bb-1",
+    "sim": {
+      "input": {
+        "items": [
+          {
+            "company": "ООО «Ромашка»",
+            "inn": "7707083893",
+            "amount": 50000,
+            "service": "SEO за октябрь"
+          },
+          {
+            "company": "ИП Иванов",
+            "inn": "500100732259",
+            "amount": 30000,
+            "service": "Контекстная реклама"
+          }
+        ]
+      },
+      "stubs": {
+        "prepare": {
+          "ok": true,
+          "batch_items": [
+            {
+              "company": "ООО «Ромашка»",
+              "inn": "7707083893",
+              "amount": 50000,
+              "service": "SEO за октябрь",
+              "recipient": "me"
+            },
+            {
+              "company": "ИП Иванов",
+              "inn": "500100732259",
+              "amount": 30000,
+              "service": "Контекстная реклама",
+              "recipient": "me"
+            }
+          ],
+          "item_count": 2,
+          "status": "done"
+        },
+        "invoice-send": {
+          "status": "sent",
+          "invoice_number": "101",
+          "pdf_path": ".agents/documents/invoice-101.pdf"
+        },
+        "summarize": {
+          "summary_md": "# Реестр счетов\n\n1. ООО «Ромашка» — 50 000 ₽\n2. ИП Иванов — 30 000 ₽\nИтого: 80 000 ₽",
+          "total_amount": 80000,
+          "invoices_count": 2,
+          "ok_count": 2,
+          "status": "done"
+        }
+      },
+      "human_answers": {
+        "preview": "approve"
+      },
+      "expect_path": [
+        "prepare",
+        "invoices",
+        "summarize",
+        "preview",
+        "done"
+      ],
+      "expect_outputs": [
+        "status == 'done'",
+        "total_amount == 80000",
+        "invoices_count == 2",
+        "owner_decision == 'approve'"
+      ]
+    },
+    "live": "Пакетное выставление счетов в Контур.Эльбе на Mac mini, проверка реквизитов и превью реестра владельцу",
+    "note": "Tested on stubs: Elba and Telegram actions answer from stubs. Live run requires Mac mini host_7sea4qaad8 with Elba session."
+  }
+}

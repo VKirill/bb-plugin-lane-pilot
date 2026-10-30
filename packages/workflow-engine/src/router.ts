@@ -199,8 +199,20 @@ const RULES: Rule[] = [
       ? { note: "audience discussions for a text", boosts: { "insights-post": 0.55 } } : null },
   { id: "video", apply: (s) => p("video|видео|reels?|рилс|рилз|shorts|шортс|клип|clip|подкаст|podcast|ролик|vertical|вертикальн|film|фильм|youtube|ютуб").test(s.text)
     ? { note: "video material", boosts: { reels: 0.5 } } : null },
-  { id: "seo", apply: (s) => p("кокон|cocoon|семантическ|semantic core|семантик|seo|сео").test(s.text)
-    ? { note: "semantic cocoon or SEO", boosts: { "seo-cocoon": p("кокон|cocoon|семантическ|semantic").test(s.text) ? 0.55 : 0.3 } } : null },
+  { id: "seo", apply: (s) => {
+    if (!p("кокон|cocoon|семантическ|semantic core|семантик|seo|сео").test(s.text)) return null;
+    const isSinglePage = p("посадочн|landing").test(s.text) || (p("напиши|создай|сделай|write|create").test(s.text) && p("страниц|стать|page|article").test(s.text) && p("seo|сео").test(s.text) && !p("кокон страниц|семантический кокон|кокон для").test(s.text));
+    const boosts: Record<string, number> = isSinglePage
+      ? { "seo-page": 0.55, "seo-cocoon": 0.2 }
+      : { "seo-cocoon": p("кокон|cocoon|семантическ|semantic").test(s.text) ? 0.55 : 0.3 };
+    return { note: "semantic cocoon or SEO", boosts };
+  } },
+  { id: "research-dossier", apply: (s) => p("досье|dossier|фактчекинг|factcheck|проверенн\\S* источник|первоисточник").test(s.text)
+    ? { note: "research dossier with verified sources", boosts: { "research-dossier": 0.6 } } : null },
+  { id: "billing-batch", apply: (s) => p("счет|счёт|счета|счетов|invoice|инвойс|эльб|elba").test(s.text) && p("пакет|реестр|batch|клиент|списк|нескольк").test(s.text)
+    ? { note: "batch invoicing in Elba", boosts: { "billing-batch": 0.55 } } : null },
+  { id: "macos-routine", apply: (s) => p("mac mini|мак мини|macos|макос").test(s.text) && p("рутин|поручени|файлы|лог|скриншот|приложени|демон").test(s.text)
+    ? { note: "macOS routine on Mac mini", boosts: { "macos-routine": 0.55 } } : null },
   { id: "roadmap", apply: (s) => p("по очереди|поочеред|one after another|разбей\\S* (\\S+ )?на (релиз|этап)|into releases|roadmap|дорожн\\S* карт|набор\\S* требовани|set of requirements|requirements|требовани").test(s.text)
     ? { note: "large requirements to ship in parts", boosts: { "roadmap-driven": 0.45 } } : null },
   { id: "deploy", apply: (s, prior) => !prior.has("roadmap") && p("деплой|deploy|выкат|выкати|вывез\\S* (\\S+ )?на прод|раскат|на прод|в прод|на production|to production|to prod|release to prod|ship to prod").test(s.text)
