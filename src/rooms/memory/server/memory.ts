@@ -5,7 +5,7 @@ import { memoryRerankJudgment } from "@lane-pilot/jev/judgments/memory-rerank";
 import { demoteUnusedPromotions, enrichMemoryContext, episodeCandidates } from "../../memory-tiers/server";
 import { appendAcceptedFact, claimStageSpawn, getRun, getRunSettingsScopes, getTask, listAcceptedFacts, listOpenAttempts, listPendingAcceptedFacts, listStageReceipts, markAcceptedFactsSummarized, searchMemoryRecords } from "../../storage";
 import { shouldTriggerProjectLife } from "../../project-life";
-import { coreShelf, dropMemoryIndexes, memoryEntrySupported, pathsNamed, retireStaleCuratorClaims, storeMemoryRecordsKeepingOverflow } from "@lane-pilot/memory-core";
+import { coreShelf, dropMemoryIndexes, memoryEntrySupported, pathsNamed, retireStaleCuratorClaims, storeMemoryRecordsKeepingOverflow, memoryEntrySalience } from "@lane-pilot/memory-core";
 import { applyScopeMigration } from "../../../../scripts/memory-scope-dry-run";
 import { bbServiceTier, writerExecutionSelection } from "@lane-pilot/models";
 import { sha256 } from "../../tasks";
@@ -156,7 +156,11 @@ export function createMemoryStage(ctx: ServerCore, services: Services) {
       });
       // A full core keeps the batch: a core entry it cannot take is stored as a note, not a refusal of every entry.
       // A rule the model emits is not stored here: the rules pipeline owns that concept, and the raw door rejects it.
-      const entries=parsed.filter((entry)=>!entry.concepts.includes("rule"));
+      const admitted=parsed.filter((entry)=>!entry.concepts.includes("rule"));
+      // SLICE-Mem: score candidates before the write door and keep the slice that clears the floor; a skipped entry
+      // never reaches eviction. The floor is a live project setting (memory.salience_min, soft 40).
+      const entries=admitted.filter((entry)=>memoryEntrySalience(entry)>=(snapshot.settings.salienceMin??40));
+      const salienceDropped=admitted.length-entries.length;
       const records=storeMemoryRecordsKeepingOverflow(db,{projectId:args.projectId,personalBot:snapshot.settings.personalBot,audience:snapshot.settings.audience,sourceSha256:snapshot.acceptanceSha256,
         entries,coreBudget:snapshot.settings.coreBudget,noteBudget:snapshot.settings.noteBudget,indexBudget:snapshot.settings.indexBudget,scope,readFile,originTaskId:args.taskId});
       // Notes that now disagree with an active one are held, both, until a person settles it (memory-conflicts.ts); a failure here never loses the write.
@@ -171,7 +175,7 @@ export function createMemoryStage(ctx: ServerCore, services: Services) {
       }
       // The batch these facts fed is now durable memory: stamp them so the next accepted task's stage does not re-summarize them.
       if(snapshot.factTaskIds?.length) markAcceptedFactsSummarized(db,args.runId,snapshot.factTaskIds);
-      const result={stored:recordIds.length,recordIds,unsupportedDropped,...(records.demoted?{coreDemotedToNotes:records.demoted}:{}),evictedIds:records.evictedIds,supersededIds:records.supersededIds,sourceSha256:snapshot.acceptanceSha256,audience:snapshot.settings.audience,personalBot:snapshot.settings.personalBot,factsSummarized:snapshot.factTaskIds?.length??0,
+      const result={stored:recordIds.length,recordIds,unsupportedDropped,salienceDropped,...(records.demoted?{coreDemotedToNotes:records.demoted}:{}),evictedIds:records.evictedIds,supersededIds:records.supersededIds,sourceSha256:snapshot.acceptanceSha256,audience:snapshot.settings.audience,personalBot:snapshot.settings.personalBot,factsSummarized:snapshot.factTaskIds?.length??0,
         reasoningEffort:memoryEffort,serviceTier:memoryTier,
         budgets:{core:snapshot.settings.coreBudget,note:snapshot.settings.noteBudget,index:snapshot.settings.indexBudget},
         retrievedForWriter:snapshot.settings.inject&&snapshot.settings.audience==="subagent",threadId:childId,snapshot};

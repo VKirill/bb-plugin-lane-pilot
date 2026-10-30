@@ -244,6 +244,7 @@ export const SETTING_CATALOG: SettingSpec[] = [
   { key:"memory.enabled", channel:"OWN", reason:"Native Lane Pilot stage setting: enable isolated project memory maintenance and injection" },
   { key:"memory.provider", channel:"OWN", reason:"Native Lane Pilot stage uses the BB provider/model selection for project memory maintenance" },
     { key:"memory.maintain_every", channel:"OWN", reason:"Native Lane Pilot stage setting: run the memory maintainer on every Nth accepted task" },
+    { key:"memory.salience_min", channel:"OWN", reason:"Native Lane Pilot stage setting: admission floor for maintainer memory notes" },
 { key:"memory.maintain", channel:"OWN", reason:"Native Lane Pilot stage setting: maintain durable project memory after accepted work" },
   { key:"memory.inject", channel:"OWN", reason:"Native Lane Pilot stage setting: retrieve bounded relevant project memory for a writer" },
   { key:"memory.audience", channel:"OWN", reason:"Native Lane Pilot stage setting: control memory audience" },

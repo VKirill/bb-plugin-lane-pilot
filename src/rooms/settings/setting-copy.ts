@@ -11,6 +11,7 @@ export const SETTING_META: Record<string, SettingMeta> = {
   "memory.enabled": { label: "settingMemoryEnabled", help: "settingMemoryEnabledHelp" },
   "memory.maintain": { label: "settingMemoryMaintain", help: "settingMemoryMaintainHelp" },
   "memory.maintain_every": { label: "settingMemoryMaintainEvery", help: "settingMemoryMaintainEveryHelp", unit: "fieldUnitTasks" },
+  "memory.salience_min": { label: "settingMemorySalienceMin", help: "settingMemorySalienceMinHelp", unit: "fieldUnitScore" },
   "memory.maintain_mode": { label: "settingMemoryMaintainMode", help: "settingMemoryMaintainModeHelp" },
   "memory.inject": { label: "settingMemoryInject", help: "settingMemoryInjectHelp" },
   "memory.audience": { label: "settingMemoryAudience", help: "settingMemoryAudienceHelp" },
