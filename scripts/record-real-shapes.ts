@@ -16,11 +16,14 @@ const SANDBOX = "proj_3tb652jpsi";
 
 const threads = first(bb("thread", "list", "--project", SANDBOX, "--json"), "threads");
 const threadId = (threads[0] as { id?: string } | undefined)?.id;
+const environments = bb("env", "list", "--json") as unknown[];
+const environmentId = (environments[0] as { id?: string } | undefined)?.id;
 const records: Record<string, unknown> = {
   "providers.list": bb("provider", "list", "--json"),
   "plugins.list": first(bb("plugin", "list", "--json"), "plugins"),
   // The CLI wraps the thread ({thread, environment, …}); the SDK's threads.get answers the thread itself.
   ...(threadId ? { "threads.get": (bb("thread", "show", threadId, "--json") as { thread?: unknown }).thread } : {}),
+  ...(environmentId ? { "environments.get": bb("env", "show", environmentId, "--json") } : {}),
 };
 const dir = join(import.meta.dirname, "../tests/fixtures/real-shapes");
 mkdirSync(dir, { recursive: true });

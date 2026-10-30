@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { mountNativeWiring } from "../src/rooms/core/server/native-wiring";
 import { prepareClaudeGuardHost } from "../src/rooms/host-worker/host-handlers";
 import { createOwnerPresence } from "../src/rooms/owner-presence/server";
+import { sdkDouble } from "./fixtures/sdk-double";
 
 const roots: string[] = [];
 
@@ -175,17 +176,17 @@ describe("claude threads Lane Pilot starts get the bundled guard", () => {
   it("records owner presence from the dispatch hook and ignores a lane thread", async () => {
     const root = await mkdtemp(join(tmpdir(), "claude-guard-"));
     roots.push(root);
-    const kv = new Map<string, string>();
     const resolvers = new Map<string, unknown>();
     const hooks = new Map<string, (ctx: unknown) => unknown>();
-    const metadata = new Map<string, unknown>([["thr_owner", {}], ["thr_pm", { role: "pm" }]]);
+    // The SDK double (tests/fixtures/sdk-double.ts) stands in for threads and storage.kv on this real room path.
+    const double = sdkDouble({ threads: [{ id: "thr_owner" }, { id: "thr_pm", pluginMetadata: { role: "pm" } }] });
     const bb = {
       log: { debug() {}, warn() {}, info() {} },
       ui: { registerMentionProvider() {} },
       experimental_hooks: { on(name: string, fn: (ctx: unknown) => unknown) { hooks.set(name, fn); } },
       providers: { experimental_contributeEnv(id: string, fn: unknown) { resolvers.set(id, fn); } },
-      storage: { kv: { get: async (key: string) => kv.get(key) ?? null, set: async (key: string, value: string) => { kv.set(key, value); }, delete: async () => undefined } },
-      sdk: { threads: { getPluginMetadata: async ({ threadId }: { threadId: string }) => metadata.get(threadId) ?? {}, get: async () => null, retry: async () => undefined }, environments: { get: async () => null } },
+      storage: double.bb.storage,
+      sdk: { ...double.bb.sdk, threads: { ...double.bb.sdk.threads, retry: async () => undefined } },
       events: { on() {} },
     };
     const api = createOwnerPresence({ bb, log: () => undefined } as never).ownerPresence;

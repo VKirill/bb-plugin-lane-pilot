@@ -1,0 +1,41 @@
+{
+  "name": "environments.get",
+  "recordedAt": "2026-10-30T07:45:44.717Z",
+  "shape": {
+    "baseBranch": "null",
+    "branchName": "null",
+    "createdAt": "number",
+    "defaultBranch": "null",
+    "environmentProviderId": "string",
+    "environmentProviderInstanceKey": "string",
+    "environmentProviderSelection": {
+      "inputs": "null",
+      "machine": {
+        "hostId": "string",
+        "type": "string"
+      }
+    },
+    "hostId": "string",
+    "hostLifecycle": "string",
+    "id": "string",
+    "isGitRepo": "boolean",
+    "isWorktree": "boolean",
+    "lifecycle": {
+      "phase": "string",
+      "retireAt": "null",
+      "teardown": {
+        "attempt": "number",
+        "message": "string",
+        "status": "string"
+      }
+    },
+    "managed": "boolean",
+    "mergeBaseBranch": "null",
+    "name": "null",
+    "path": "string",
+    "projectId": "string",
+    "status": "string",
+    "updatedAt": "number",
+    "workspaceProvisionType": "string"
+  }
+}
