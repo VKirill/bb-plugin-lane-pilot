@@ -1,6 +1,6 @@
 import { loadCandidates } from "./candidates";
 import type { HostPort } from "./ports";
-import { chooseFinal, DEFAULT_STRATA, freshStratum, interleave, warmOrder, type Stratum } from "./stratify";
+import { chooseFinal, DEFAULT_STRATA, freshStratum, interleave, noncodeStratum, smallStratum, warmOrder, type Stratum } from "./stratify";
 import { insertSet, type BenchDb, type BenchSet } from "./store";
 import type { Candidate, ManifestTask, Rejection } from "./types";
 import { MIN_FREE_GB, freeGb, warmUp, type WarmOptions } from "./warmup";
@@ -46,11 +46,19 @@ export type BuildReport = {
   rejectedSample: Rejection[];
 };
 
+/** The strata a build walks. `small` and `noncode` join only when `--only` names them, so a full build stays the frozen mix. */
+export function strataFor(input: { strata?: readonly Stratum[]; only?: readonly string[]; now?: number; freshWindowMs?: number }): Stratum[] {
+  const only = input.only;
+  const extras = !input.strata ? [...(only?.includes("small") ? [smallStratum()] : []), ...(only?.includes("noncode") ? [noncodeStratum()] : [])] : [];
+  const requested = input.strata ?? [...DEFAULT_STRATA, ...extras, freshStratum(input.now ?? Date.now(), input.freshWindowMs)];
+  return requested.filter((stratum) => !only || only.includes(stratum.key));
+}
+
 export async function buildSet(input: BuildInput): Promise<{ report: BuildReport; tasks: ManifestTask[]; rejected: Rejection[] }> {
   const log = input.log ?? (() => undefined);
   const seed = input.seed ?? input.version;
   const now = input.now ?? Date.now();
-  const requested = input.strata ?? [...DEFAULT_STRATA, freshStratum(now, input.freshWindowMs)];
+  const requested = strataFor({ ...(input.strata ? { strata: input.strata } : {}), ...(input.only ? { only: input.only } : {}), now, ...(input.freshWindowMs ? { freshWindowMs: input.freshWindowMs } : {}) });
   const strata = requested.filter((stratum) => !input.only || input.only.includes(stratum.key));
   const fixedStrata = strata.filter((stratum) => stratum.key !== "fresh");
   const fresh = strata.find((stratum) => stratum.key === "fresh");

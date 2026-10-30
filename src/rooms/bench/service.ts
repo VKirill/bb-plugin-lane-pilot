@@ -3,6 +3,7 @@ import { baselineMetrics } from "./baseline";
 import { buildSet, type BuildReport } from "./build";
 import { compareArms, computeNoise, noiseOfRepeats, passReport, renderComparison, summarizeArm, type ArmSummary, type Comparison } from "./compare";
 import { cohortCounts, cohortOf } from "./stratify";
+import { renderStratumMetrics, stratumMetrics, type StratumRow } from "./stratum-metrics";
 import type { HostPort, PipelinePort } from "./ports";
 import { releaseGate, sweepStuckRuns } from "./reliability";
 import { BENCH_REPOS_ROOT_ENV } from "./repos";
@@ -177,7 +178,21 @@ export function createBench(deps: BenchDeps) {
     // Naming a harness tree turns the comparison into the word `harness.adopt_by=bench` waits for.
     // An inconclusive comparison decides nothing: recorded as a pass or as a fail it would adopt or retire a harness tree on too little.
     const verdict = input.harnessId && comparison.verdict !== "inconclusive" ? saveVerdict(deps.db, { setId: set.id, armA: input.armA, armB: input.armB, harnessId: input.harnessId, passed: comparison.verdict === "pass", report: comparison }) : null;
-    return { comparison, text: renderComparison(comparison), verdictId: verdict?.id ?? null };
+    const rowsOf = (arm: string): StratumRow[] => {
+      const runs = listRuns(deps.db, set.id).filter((row) => row.arm === arm);
+      const byTask = new Map<string, StratumRow>();
+      for (const run of runs) for (const result of listResults(deps.db, run.id)) {
+        const task = set.tasks.find((item) => item.taskId === result.taskId);
+        if (!task || result.state === "skipped_budget" || result.state === "error") continue;
+        byTask.set(result.taskId, { taskId: result.taskId, stratum: task.stratum, accepted: result.accepted, seconds: result.seconds, tokens: result.tokens });
+      }
+      return [...byTask.values()];
+    };
+    const armB = listRuns(deps.db, set.id).filter((row) => row.arm === input.armB).at(-1);
+    const settings = (armB?.config as { settings?: Record<string, unknown> } | undefined)?.settings;
+    const strata = renderStratumMetrics(stratumMetrics(rowsOf(input.armB).length ? rowsOf(input.armB) : rowsOf(input.armA)), settings);
+    const text = strata ? `${renderComparison(comparison)}\n${strata}` : renderComparison(comparison);
+    return { comparison, text, verdictId: verdict?.id ?? null };
   }
 
   function status(version?: string) {
@@ -202,7 +217,7 @@ export function createBench(deps: BenchDeps) {
       cohorts: { fixed: set.tasks.filter((task) => cohortOf(task.stratum) === "fixed").length, fresh: set.tasks.filter((task) => cohortOf(task.stratum) === "fresh").length },
       tasks: set.tasks.map((task) => ({
         position: task.position, taskId: task.taskId, project: task.projectName, repo: task.repoPath, stratum: task.stratum, hard: task.hard, risk: task.risk, area: task.area,
-        base: task.initialHeadSha.slice(0, 10), solution: task.solutionCommit.slice(0, 10), discriminating: task.warm.discriminating.length,
+        base: task.initialHeadSha.slice(0, 10), solution: task.solutionCommit.slice(0, 10), discriminating: task.warm.discriminating.length, ...(task.validator ? { validator: task.validator } : {}),
       })),
       rejected: set.rejected.length, build: null as BuildReport | null,
     };

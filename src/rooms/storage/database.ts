@@ -425,6 +425,8 @@ export const migrations = [
   ...workflowNotVerifiedMigrations,
   // Hash of the files a note named when it was written (packages/memory-core/src/fingerprint.ts). Append only.
   `ALTER TABLE lane_pilot_memory ADD COLUMN file_fingerprint TEXT`,
+  // Bench task validator (src/rooms/bench/validator.ts). Null on a code task. `artifact` checks that the result exists and is not empty.
+  `ALTER TABLE lane_pilot_bench_task ADD COLUMN validator TEXT`,
 ];
 
 export function openDatabase(bb: BbPluginApi): LanePilotDatabase {
