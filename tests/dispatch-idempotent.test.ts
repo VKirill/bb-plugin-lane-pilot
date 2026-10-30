@@ -124,6 +124,26 @@ describe("dispatch answers early and is idempotent", () => {
     await harness.lifecycle.dispose();
   });
 
+  it("returns the existing task for the same contract and plan sent under a different id", async () => {
+    const { db, harness, dispatch, releaseBase } = await setup();
+    const first = await dispatch();
+    const again = await dispatch({ id:"suite-green-alias" });
+    expect(again).toMatchObject({ taskId:"suite-green", attemptId:first.attemptId, state:"queued", deduplicated:true });
+    expect(taskCount(db)).toBe(1);
+    expect(listAttemptsForTask(db, runId, "suite-green")).toHaveLength(1);
+    releaseBase();
+    await harness.lifecycle.dispose();
+  });
+
+  it("does not deduplicate a different contract sent under a different id", async () => {
+    const { db, harness, dispatch, releaseBase } = await setup();
+    await dispatch();
+    const other = await dispatch({ id:"suite-other", objective:"create something else entirely" });
+    expect(other.deduplicated).toBeUndefined();
+    releaseBase();
+    await harness.lifecycle.dispose();
+  });
+
   it("does not deduplicate after 30 minutes: an open task then refuses the resend instead", async () => {
     const { db, harness, dispatch, releaseBase } = await setup();
     await dispatch();

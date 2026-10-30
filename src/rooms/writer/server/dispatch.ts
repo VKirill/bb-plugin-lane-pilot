@@ -111,6 +111,27 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
       note:"This task id with the same contract and plan was already dispatched in the last 30 minutes; this is that task, nothing new was created. Poll lane_pilot_wait_writer or end your turn; Lane Pilot sends you the results." };
   }
 
+  /** The same contract content under a different id (hive-audit H-08): a PM that rephrased only the task id would
+   * otherwise start a second writer on identical work. The match needs the same canonical contract (with the stored
+   * task's id substituted) and the same plan hash inside the idempotent window; terminal blocked/canceled tasks are
+   * dispatched again as new work, as in findLiveDuplicate. */
+  function findContentDuplicate(runId:string, requestedId:string, contract:TaskV2, plan:string): Record<string,unknown>|null {
+    const rows = db.prepare("SELECT id, contract_json, created_at FROM lane_pilot_task WHERE run_id=?").all(runId) as
+      Array<{id:string; contract_json:string; created_at:number}>;
+    for (const row of rows) {
+      if (row.id === requestedId || Date.now() - row.created_at > DISPATCH_IDEMPOTENT_WINDOW_MS) continue;
+      if (canonicalJson(JSON.parse(row.contract_json)) !== canonicalJson({ ...contract, id:row.id })) continue;
+      if (sha256(getTaskPlan(db, row.id) ?? "") !== sha256(plan)) continue;
+      const latest = listAttemptsForTask(db, runId, row.id).at(-1);
+      if (latest ? ["blocked", "canceled"].includes(latest.state)
+        : db.prepare("SELECT 1 FROM lane_pilot_stage_receipt WHERE run_id=? AND task_id=? AND state IN ('blocked','failed') LIMIT 1").get(runId, row.id)) continue;
+      return { runId, taskId:row.id, attemptId:latest?.id ?? null, writerThreadId:latest?.thread_id ?? null, state:latest?.state ?? "queued", deduplicated:true,
+        stages:listStageReceipts(db, runId, row.id),
+        note:`The same contract and plan is already task ${row.id}, dispatched in the last 30 minutes under that id; this is that task, nothing new was created. Poll lane_pilot_wait_writer or end your turn; Lane Pilot sends you the results.` };
+    }
+    return null;
+  }
+
   /** A member of the task's family («P1», «P1.2») with an open attempt or parked for a restart, in this project; mainfixes are their own work. */
   async function runningFamilyMember(projectId:string, taskId:string):Promise<{ taskId:string; parked:boolean } | null> {
     const family = taskFamily(taskId);
@@ -190,6 +211,8 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
     // The PM sending the same task again (its call ended «terminated» while the stages went on) gets the task it already has.
     const duplicate = args.task ? findLiveDuplicate(runId, args.task.id, task, canonicalPlan) : null;
     if (duplicate) return duplicate;
+    const contentDuplicate = args.task ? findContentDuplicate(runId, args.task.id, task, canonicalPlan) : null;
+    if (contentDuplicate) return contentDuplicate;
     // The same task sent again after its queued attempt was canceled (a replan) is that task and attempt, not a new one.
     const revived = args.task && !isMainfixTask(args.task.id) ? reviveCanceledTask({ ctx, services, live:liveDispatches,
       sameWork:(storedId, contract) => canonicalJson(contract) === canonicalJson({ ...task, id:storedId }) && sha256(getTaskPlan(db, storedId) ?? "") === sha256(canonicalPlan) },
