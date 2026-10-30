@@ -2986,7 +2986,7 @@
   },
   {
    "id": "s516",
-   "index": 490,
+   "index": 487,
    "area": "Lane Pilot memory maintainer",
    "setting": "memory.salience_min",
    "location": "packages/memory-core/src/settings.ts:61",
@@ -3005,7 +3005,7 @@
    "rationale": "Admission floor for maintainer memory candidates, 0..100; a note below the score is not stored (SLICE-Mem). 0 keeps everything, default 40 is soft.",
    "evidence": "src/rooms/memory/server/memory.ts:162",
    "matrixStatus": "readonly",
-   "storageKey": "memory.maintain_every"
+   "storageKey": "memory.salience_min"
   }
  ],
  "fields": {
