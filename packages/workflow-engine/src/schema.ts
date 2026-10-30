@@ -201,6 +201,13 @@ const decisionNode = z.object({
   /** Takes its output from another node's output (the declared fields must exist there). Without it the executor computes it. */
   reads_node: nodeId.optional(),
 }).strict();
+const jevNode = z.object({
+  id: nodeId, ...nodeBase, type: z.literal("jev"),
+  /** A judgment registered in the Jev layer (`area.name`, e.g. `route.workflow` or `intake.path_class`). */
+  judgment: z.string().regex(/^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$/),
+  /** The state's whitelist: field name -> expression-valued spec. Built field by field, never a spread of run data. */
+  state: z.record(z.string().min(1).max(48), z.unknown()).default({}),
+}).strict();
 const humanNode = z.object({ id: nodeId, ...nodeBase, type: z.literal("human"), ...humanBody }).strict();
 const parallelNode = z.object({
   id: nodeId, ...nodeBase, type: z.literal("parallel"),
@@ -227,7 +234,7 @@ const joinNode = z.object({
 const subworkflowNode = z.object({ id: nodeId, ...nodeBase, type: z.literal("subworkflow"), ...subworkflowBody }).strict();
 const noteNode = z.object({ id: nodeId, type: z.literal("note"), text: z.string().max(2000).default(""), position }).strict();
 
-export const nodeSchema = z.discriminatedUnion("type", [agentNode, lpTaskNode, actionNode, decisionNode, humanNode, parallelNode, joinNode, subworkflowNode, noteNode]);
+export const nodeSchema = z.discriminatedUnion("type", [agentNode, lpTaskNode, actionNode, decisionNode, jevNode, humanNode, parallelNode, joinNode, subworkflowNode, noteNode]);
 export type WorkflowNode = z.infer<typeof nodeSchema>;
 export type NodeType = WorkflowNode["type"];
 /** A node that runs: everything but a note. */

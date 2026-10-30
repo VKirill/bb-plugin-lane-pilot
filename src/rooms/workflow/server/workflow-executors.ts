@@ -13,6 +13,7 @@ import { createTaskLinter } from "../../tasks/server";
 import { agentRequest, createWorkflowAgents, stepPacket, withResolvedModel } from "./workflow-agent";
 import type { WorkflowAgents } from "./workflow-agent";
 import { registerRouterExecutor } from "./workflow-router-model";
+import { getJudgment, jev, type Judgment } from "@lane-pilot/jev";
 import { lpTaskPipelineExecutor, taskUsage } from "../../writer/server";
 import type { DispatchRuntime } from "../../writer/server";
 import { keyedSpawnSupported, projectFolder } from "../../core/server";
@@ -223,6 +224,32 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
 
   // The model step of the router's graph `lp.route`.
   registerRouterExecutor(engine, agents);
+
+  // The native System One node (`type:"jev"`): a registered judgment answers the node's `state` whitelist in one cheap
+  // call — no helper thread. An unsure verdict comes back `escalated`; the graph routes it to a model step with a `when`
+  // edge (`out.escalated == true`). Jev off or unavailable escalates to `model` so the graph's model edge takes it.
+  engine.register<ChainRuntime>("builtin:jev", {
+    reentrant: true,
+    run: async (c) => {
+      const node = c.node as Extract<GraphNode, { type: "jev" }>;
+      const judgment = getJudgment(node.judgment) as Judgment<Record<string, unknown>, unknown> | undefined;
+      if (!judgment) throw new Error(`builtin:jev: unknown judgment "${node.judgment}" (the id is registered in the Jev layer, e.g. route.workflow)`);
+      const rt = c.runtime;
+      const settings = rt ? (((await rt.ctx.effectiveProjectSettings(rt.projectId).catch(() => null))?.values) ?? {}) : {};
+      // The whitelist, field by field; a long text is clipped with a marker (no spread of run data into the state).
+      const state: Record<string, unknown> = {};
+      for (const [name, spec] of Object.entries(node.state)) {
+        const value = c.template(spec);
+        state[name] = typeof value === "string" && value.length > 4_000 ? `${value.slice(0, 3_999)}…` : value;
+      }
+      const instance = jev();
+      if (!instance || !instance.enabled(settings)) return { output: { decision: "jev_unavailable", escalated: true, to: "model" } };
+      const verdict = await instance.judge(judgment, state, { projectId: rt?.projectId ?? null, runId: rt?.runId ?? null, subject: node.id, settings });
+      if (verdict.by === "jev") return { output: { decision: judgment.describe(verdict.decision), value: verdict.decision, escalated: false } };
+      if (verdict.by === "escalate") return { output: { decision: `escalate:${verdict.to}`, escalated: true, to: verdict.to } };
+      return { output: { decision: judgment.describe(verdict.decision), value: verdict.decision, escalated: false, fallback: true, status: verdict.status } };
+    },
+  } as NodeExecutor<ChainRuntime>);
 
   // ---------------------------------------------------------------- agent
   engine.register<ChainRuntime>("agent", {

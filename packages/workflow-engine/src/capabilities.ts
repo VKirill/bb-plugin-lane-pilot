@@ -73,6 +73,7 @@ export const WORKFLOW_REFERENCE = {
     "lp-task": "a code change through Lane Pilot's writer, critics, checks and merge (owns_paths, contract); use it for anything that edits a repository",
     action: "a deterministic step run by code: `action` names it (telegram.send_rich, fs.write, items.dedupe ...), `params` feed it; `action: emit` ends the workflow with `map` (status and the workflow outputs)",
     decision: "branches on fields already produced (reads_node) without a model call",
+    jev: "one cheap typed judgment instead of a model thread: `judgment` names a registered Jev judgment (area.name), `state` is the whitelist of fields it sees (name -> expression, clipped); out is `decision`, `value`, `escalated`, `to` — wire `escalated` to a model step for cases it cannot settle",
     human: "asks the owner as a form in the project's Lane Pilot chat (question, options, timeoutSec; onTimeout `stop`, or `default` with `defaultOption`); out usually answer and answer_kind (an enum the edges branch on). With a timeoutSec add `timeout` to the answer_kind values and give it an edge, else the step fails with human_timeout",
     parallel: "fans out over a list (for_each, batch_size) with a `child` body (agent, lp-task, action or subworkflow) and a `join` {policy all|majority|all_or_low_confidence, out, uses}; `max_fan_out` caps the branches (overflow fails unless onOverflow: truncate), `concurrency` how many run at once",
     join: "collects the branches of a parallel that has no child",

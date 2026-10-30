@@ -31,7 +31,7 @@ function node(raw: Raw): ViewNode | null {
   const id = text(raw.id);
   const type = text(raw.type);
   if (!id) return null;
-  const kind = (type && KINDS.has(type) ? type : "agent") as ViewNode["kind"];
+  const kind = (type === "jev" ? "decision" : type && KINDS.has(type) ? type : "agent") as ViewNode["kind"];
   const base: ViewNode = { id, kind, tone: "agent", title: bilingual(raw.title), label: text(raw.label), role: null, excerpt: null, uses: text(raw.uses), out: outNames(raw),
     maxVisits: typeof raw.maxVisits === "number" ? raw.maxVisits : isRaw(raw.guards) && typeof raw.guards.maxVisits === "number" ? raw.guards.maxVisits : null, stages: [], calls: null,
     modes: Array.isArray(raw.applicable_modes) ? raw.applicable_modes.filter((mode): mode is string => typeof mode === "string") : null };

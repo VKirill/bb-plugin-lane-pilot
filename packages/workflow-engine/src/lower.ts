@@ -40,6 +40,7 @@ export function executorKey(node: GraphNode): string | null {
     case "join": return node.uses ?? "builtin:join";
     case "subworkflow": return "builtin:subworkflow";
     case "decision": return node.uses ?? (node.reads_node ? "builtin:decision" : null);
+    case "jev": return node.uses ?? "builtin:jev";
     case "human": return node.uses ?? "builtin:human";
     case "agent": return node.uses ?? "agent";
     case "lp-task": return node.uses ?? "lp-task";

@@ -13,7 +13,7 @@ const EXCERPT = 160;
 
 function viewNode(node: WorkflowNode): ViewNode {
   const base: ViewNode = {
-    id: node.id, kind: node.type, tone: "agent", title: null, label: null, role: null, excerpt: null, uses: null,
+    id: node.id, kind: node.type === "jev" ? "decision" : node.type, tone: "agent", title: null, label: null, role: null, excerpt: null, uses: null,
     out: [], maxVisits: null, stages: [], calls: null, modes: null,
   };
   if (node.type === "note") return { ...base, tone: "note", excerpt: cut(flat(node.text), 400) || null };
@@ -26,6 +26,7 @@ function viewNode(node: WorkflowNode): ViewNode {
     case "lp-task": return { ...base, ...common, tone: "build", role: "writer", stages: node.stages };
     case "action": return { ...base, ...common, tone: "action", excerpt: node.action ?? null };
     case "decision": return { ...base, ...common, tone: "decision", excerpt: node.reads_node ? `← ${node.reads_node}` : null };
+    case "jev": return { ...base, ...common, tone: "decision", excerpt: `jev: ${node.judgment}` };
     case "human": return { ...base, ...common, tone: "human", role: node.role ?? null, excerpt: cut(flat(node.question)) };
     case "parallel": return { ...base, ...common, tone: "flow", excerpt: typeof node.for_each === "string" ? `for each ${node.for_each}` : node.for_each ? "for each" : null };
     case "join": return { ...base, ...common, tone: "flow", excerpt: `← ${node.parallel}` };
