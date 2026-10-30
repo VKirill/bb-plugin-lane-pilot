@@ -188,6 +188,40 @@ export function storeMemoryRecords(db: MemoryDatabase, input: StoreMemoryInput):
   }).immediate();
 }
 
+/**
+ * The project's core as the store counts it against `coreBudget` (every active core record of the bot), and the
+ * records a maintainer of this audience and section may name in `supersedes` (rules stay with the rules pipeline).
+ */
+export function coreShelf(db: MemoryDatabase, projectId: string, personalBot: string, audience: MemoryAudience, scope: readonly string[] = []): { tokens: number; replaceable: Array<{ id: string; content: string }> } {
+  const rows = db.prepare("SELECT id,audience,content,concepts_json,scope_json FROM lane_pilot_memory WHERE project_id=? AND personal_bot=? AND kind='core' AND status='active' ORDER BY created_at, id")
+    .all(projectId, personalBot) as Array<Pick<Row, "id" | "audience" | "content" | "concepts_json"> & { scope_json: string | null }>;
+  const key = scopeKey(scope);
+  return { tokens: rows.reduce((total, row) => total + estimate(row.content), 0),
+    replaceable: rows.filter((row) => row.audience === audience && scopeKey(parseScopeJson(row.scope_json)) === key && !isRule(row)).map((row) => ({ id: row.id, content: row.content })) };
+}
+
+/**
+ * The maintainer's write door. Core is curated and never evicted, so a full core used to refuse every batch that
+ * contained a core entry and lose its notes too (hub 2026-10-27/28, «memory core budget exceeded: 3135/3072» on a
+ * core of 3070; the same throw was reverted with 2f00913e). A core entry the core cannot take is kept as a note,
+ * the last one first, until the batch fits. `entries` is what was stored, `demoted` how many core entries became notes.
+ * Any other refusal is thrown. The raw door `storeMemoryRecords` still throws, so a rule that does not fit can evict
+ * an unused convention instead of becoming a note.
+ */
+export function storeMemoryRecordsKeepingOverflow(db: MemoryDatabase, input: StoreMemoryInput): StoreMemoryResult & { entries: MemoryCandidate[]; demoted: number } {
+  let entries = input.entries;
+  for (let demoted = 0; ; demoted++) {
+    try {
+      return { ...storeMemoryRecords(db, { ...input, entries }), entries, demoted };
+    } catch (cause) {
+      let last = -1;
+      for (let index = 0; index < entries.length; index++) if (entries[index]!.kind === "core") last = index;
+      if (last < 0 || !/^memory core budget exceeded/.test(cause instanceof Error ? cause.message : String(cause))) throw cause;
+      entries = entries.map((entry, index) => (index === last ? { ...entry, kind: "note" as const } : entry));
+    }
+  }
+}
+
 /** What a file that is no longer true leaves behind: the records it made are hidden, with the status that says why. */
 export function hideRecordsOfFile(db: MemoryDatabase, projectId: string, personalBot: string, fileId: string, status: "superseded" | "expired"): string[] {
   const ids = (db.prepare("SELECT id FROM lane_pilot_memory WHERE project_id=? AND personal_bot=? AND source_file_id=? AND status='active'").all(projectId, personalBot, fileId) as Array<{ id: string }>).map((row) => row.id);
