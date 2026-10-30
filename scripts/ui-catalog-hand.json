@@ -3062,6 +3062,29 @@
    "evidence": "src/rooms/memory/server/memory.ts:85",
    "matrixStatus": "readonly",
    "storageKey": "memory.maintain_mode"
+  },
+  {
+   "id": "s523",
+   "index": 490,
+   "area": "Lane Pilot best-of-3",
+   "setting": "writer.best_of.rounds",
+   "location": "src/rooms/writer/best-of.ts:1",
+   "category": "user",
+   "invType": "int",
+   "values": "1-4",
+   "defaultValue": "1",
+   "scope": "project",
+   "control": "number",
+   "options": [],
+   "min": 1,
+   "max": 4,
+   "section": "stages",
+   "channel": "OWN",
+   "uiStatus": "editable",
+   "rationale": "Best-of refinement rounds: above 1 the candidates of a new round start with the seed — the previous round's surviving attempts, their check remarks and diff stats; 1 is the plain single-round best-of, the task budget counts candidates × rounds. Default 1 (off).",
+   "evidence": "src/rooms/writer/best-of.ts:1",
+   "matrixStatus": "readonly",
+   "storageKey": "writer.best_of.rounds"
   }
  ],
  "fields": {

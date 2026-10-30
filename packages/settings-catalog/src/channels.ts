@@ -154,6 +154,7 @@ export const SETTING_CATALOG: SettingSpec[] = [
   { key:"writer.best_of", channel:"OWN", reason:"Native Lane Pilot best-of-3: parallel writer candidates under quality_mode full, selection by checks then the critic verdict" },
   { key:"writer.best_of.token_budget", channel:"OWN", reason:"Native Lane Pilot best-of-3: shared token ceiling of one task's candidates; 0 leaves the run budget the only bound" },
   { key:"writer.best_of.slot_cap", channel:"OWN", reason:"Native Lane Pilot best-of-3: how many candidates of a task may run at once" },
+  { key:"writer.best_of.rounds", channel:"OWN", reason:"Native Lane Pilot best-of-3: refinement rounds; a new round's candidates start with the previous round's surviving attempts, their check remarks and diff stats" },
   { key:"writer.fallback_on_provider_failure", channel:"OWN", reason:"Native Lane Pilot writer fallback chain: a provider refusal hands the task to the next model at once or after one retry of the same model" },
   { key:"writer.retry_escalate", channel:"OWN", reason:"Native Lane Pilot writer fallback chain: on sends the first red check of a task-class failure to the next writer inside the same attempt budget" },
   { key:"failure.interventions", channel:"OWN", reason:"Native Lane Pilot writer loop: a same-class failure streak gets the class's intervention instead of the same retry; off keeps the uniform retry" },

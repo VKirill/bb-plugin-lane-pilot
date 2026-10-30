@@ -14,7 +14,7 @@ sources:
   - docs/enabled-settings.snapshot.json
 ---
 
-<!-- enabled-settings:structure 6426c09dde9d7327 -->
+<!-- enabled-settings:structure 38b60e0446568f98 -->
 
 # Enabled settings (generated)
 
@@ -220,6 +220,7 @@ switches: `quick` disables both critiques, `full` enables them (`src/rooms/criti
 | `workflow.preset.strong.reasoning_effort` | `high` | — | workflow model: a named model preset of the workflow steps |
 | `workspace.provider` | `auto` | — | writer worktrees: auto gives each attempt a BB environment of its own provider (with automatic fallback), off is the emergency switch to the old worktree path |
 | `writer.agent` | `lane-writer` | — | writer role label |
+| `writer.best_of.rounds` | `1` | — | best-of-3: refinement rounds |
 | `writer.best_of.slot_cap` | `3` | — | best-of-3: how many candidates of a task may run at once |
 | `writer.best_of.token_budget` | `0` | — | best-of-3: shared token ceiling of one task's candidates |
 | `writer.best_of` | `off` | — | best-of-3: parallel writer candidates under quality_mode full, selection by checks then the critic verdict |
