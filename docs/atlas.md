@@ -42,8 +42,8 @@ Each room is one component: `index.ts` is its public API, `server/` its services
 | improvement | HUB_KEYS, HUB_SPECS, HubArea, HubDb, HubKind, HubSpec, PROJECT_DEFAULT_KEYS, QUIET_PATTERN, hubFields, hubSettingProblem, readHubRows, specOf, validTimeZone, writeHubFields, writeHubSettings | 8 | 720 | tests (2) |
 | jev | JEV_USAGE, runJevCli | 3 | 149 | tests (2) |
 | learning | FRUSTRATION_KEY, FrustrationRecord, LEARNING_USAGE, MemoryUnanswered, complexity, frustrationReason, judgeRulesOnDiff, learningFor, memoryUnanswered, mountLearning, ownerMessageJudgment, ownerQuestion, pmResumeInstructions, pmRuleRelevance, pmRulesOf, pmRulesPromptBlock, ruleBudget, ruleViolationRemark, runLearningCli, sameAsJudgment, unkeptPromise | 24 | 2438 | tests (2) |
-| memory | MEMORY_PATHS, MEMORY_PRIMITIVES, MemoryPath, MemoryPrimitive, MemorySettings, ProbeKind, parseMemorySettings, pathById | 11 | 898 | drill: memory_paths |
-| memory-eval | — | 10 | 1047 | tests (2) |
+| memory | MEMORY_PATHS, MEMORY_PRIMITIVES, MemoryPath, MemoryPrimitive, MemorySettings, ProbeKind, parseMemorySettings, pathById | 11 | 903 | drill: memory_paths |
+| memory-eval | — | 10 | 1064 | tests (2) |
 | memory-probe | — | 2 | 225 | drill: memory_paths |
 | memory-tiers | Episode, episodeLines, memoryTierMigrations, minHits, queryWords, wordHits | 5 | 200 | tests (1) |
 | money | DailyRow, MoneyApi, PAID_PROVIDERS, PRICE_LIST, Price, UsageWindow, capOf, createMoney, isPaid, moneyHold, priceOf, rowUsd, spendBook, windowHold | 3 | 117 | tests (2) |
@@ -72,7 +72,7 @@ Each room is one component: `index.ts` is its public API, `server/` its services
 | self-improve | — | 1 | 65 | tests (2) |
 | self-repair | — | 8 | 2664 | tests (4) |
 | session-hooks | buildCapsule, capsuleRestored | 3 | 489 | tests (1) |
-| settings | SettingValidationError, readImportConfig, validateSettingValue, validateSettingsObject, validationErrorText | 20 | 3014 | drill: provider_limit |
+| settings | SettingValidationError, readImportConfig, validateSettingValue, validateSettingsObject, validationErrorText | 20 | 3016 | drill: provider_limit |
 | sma-map | LiveRow, LiveSource, ProofRoots, SMA_CARDS, SMA_CONTRACT_TESTS, SMA_ENTRIES, SMA_LINKS, SMA_LIVE, SMA_MAP_SHA, SMA_MAP_USAGE, SMA_NODES, SMA_REGIONS, SmaCard, SmaCounts, SmaEntry, SmaEvidence, SmaKind, SmaLinkKind, SmaNode, SmaRow, SmaStateCounts, SmaStatus, brokenProof, defaultProofRoots, isChecked, isDone, readSmaLive, renderSmaLive, renderSmaMap, runSmaLiveCli, runSmaMapCli, smaCheckedPercent, smaCounts, smaDonePercent, smaEvidence, smaGroups, smaHoles, smaRows, smaStateCounts, unjudgedProof | 7 | 9207 | tests (1) |
 | stability | ReconcileCursor, ReconcileResult, parseOpenCodeToolTelemetry, reconcile, reconcileCritic, reconcileCursor | 13 | 1483 | drill: reload |
 | stage-return | StageReturnRecord, getReturn, listReturns, renderReturnNotes, stageReturnMigrations | 10 | 490 | tests (4) |
@@ -183,7 +183,7 @@ States: (new), queued, spawn_requested, running, spawn_rejected, spawn_unknown, 
 | file | lines |
 |---|---:|
 | src/rooms/sma-map/graph.ts | 6267 |
-| packages/i18n/src/i18n.ts | 2486 |
+| packages/i18n/src/i18n.ts | 2496 |
 | src/rooms/native-install/native-hook-sources.ts | 2421 |
 | packages/i18n/src/i18n-fields.ts | 2015 |
 | src/rooms/storage/database.ts | 1860 |

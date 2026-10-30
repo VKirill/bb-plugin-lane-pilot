@@ -3,6 +3,7 @@ import { estimateTokens, memoryEntrySalience } from "./candidates";
 import { roleContextBudget } from "./context";
 import { memoryContextLine } from "./context";
 import type { MemoryRecord } from "./settings";
+import { isSharedScope } from "./sections";
 
 /** One thing the pack may carry. `required` is a mandatory rule/policy: it is never silently cut. */
 export type PackCandidate = { id: string; kind: "rule" | "note" | "preference" | "owner-fact"; content: string;
@@ -35,7 +36,8 @@ export function buildContextPack(input: {
     if (input.floorDropIds?.has(candidate.id)) return { ...candidate, packed: false, reason: "floor:low-relevance" } as PackSource;
     const scope = candidate.scope;
     // No chain: only an explicitly root-whitelisted candidate packs; project-wide is never assumed.
-    const allowed = !chain.length ? (input.rootWhitelist?.has(candidate.id) ?? false)
+    const allowed = isSharedScope(scope ?? []) ? true
+      : !chain.length ? (input.rootWhitelist?.has(candidate.id) ?? false)
       : scope === undefined || !scope.length ? true
       : chain.slice(0, scope.length).join("\0") === scope.join("\0");
     return { ...candidate, packed: false, ...(allowed ? {} : { reason: "scope:not-deliverable" }) } as PackSource;

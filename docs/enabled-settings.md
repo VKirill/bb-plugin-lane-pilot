@@ -14,7 +14,7 @@ sources:
   - docs/enabled-settings.snapshot.json
 ---
 
-<!-- enabled-settings:structure fceb231970ebfa96 -->
+<!-- enabled-settings:structure a69790223c3e1c93 -->
 
 # Enabled settings (generated)
 
@@ -120,6 +120,7 @@ switches: `quick` disables both critiques, `full` enables them (`src/rooms/criti
 | `memory.note_budget` | `24000` | — | stage setting: cap note memory tokens |
 | `memory.pack_mode` | `shadow` | — | stage setting: ContextPack stage (shadow by default) |
 | `memory.personal_bot` | — | — | keeps bot-scoped project memory isolated across maintenance and retrieval |
+| `memory.project_kind` | `auto` | — | stage setting: umbrella sections are developments of their own (auto by default) |
 | `memory.provider` | `codex / DEFAULT_ONBOARD_MODEL / DEFAULT_ONBOARD_EFFORT / standard` | — | stage uses the BB provider/model selection for project memory maintenance |
 | `memory.query_floor` | `on` | — | stage setting: relevance floor on the query paths (on by default) |
 | `memory.salience_min` | `40` | — | stage setting: admission floor for maintainer memory notes |

@@ -1,4 +1,4 @@
-import { DEFAULT_RELEVANCE_FLOOR, MEMORY_SETTING_KEYS, relevantRecords, REVIEWER_CONCEPTS, estimateTokens, filesDrifted, listMemory, memoryContext, parseMemorySettings, pathsNamed, recordCriticUse, roleContextBudget, searchMemoryRecords, type MemoryRecord, type MemorySearchEngine, type MemorySettings, type RelevanceFloor } from "@lane-pilot/memory-core";
+import { DEFAULT_RELEVANCE_FLOOR, MEMORY_SETTING_KEYS, projectUsesSections, relevantRecords, resolveProjectKind, REVIEWER_CONCEPTS, estimateTokens, filesDrifted, listMemory, memoryContext, parseMemorySettings, pathsNamed, recordCriticUse, roleContextBudget, searchMemoryRecords, type MemoryRecord, type MemorySearchEngine, type MemorySettings, type RelevanceFloor } from "@lane-pilot/memory-core";
 import type { TaskV2 } from "../../contracts";
 import { getRunSettingsScopes, loadProjectSettings, type LanePilotDatabase } from "../../storage";
 import { memoryLine, reviewerMemoryPicks, writerMemory, writerMemoryPicks } from "../../writer";
@@ -11,14 +11,15 @@ type TaskPaths = Pick<TaskV2, "owns_paths" | "read_first">;
  * useful first. Confirmed rules are left out (the rules block carries them). The caller records the mix once the
  * brief is final (`recordMemoryMixed`), so a mix that never reached a writer is not counted.
  */
-type WriterMixInput = { projectId: string; query: string; task: TaskPaths; searchEngine: MemorySearchEngine; personalBot: string; ruleMemoryIds: ReadonlySet<string>; now?: number;
+type WriterMixInput = { projectId: string; query: string; task: TaskPaths; searchEngine: MemorySearchEngine; personalBot: string; ruleMemoryIds: ReadonlySet<string>; now?: number; kind?: "auto"|"standalone"|"umbrella";
   /** The run's sections: notes of a sibling section of a shared project are not this writer's. */
   chain?: readonly string[];
   /** Current bytes of a repo-relative path. A note whose stored file hash no longer matches is left out of the brief. */
   readFile?: (path: string) => Uint8Array | null };
 
+const umbrellaFor = (db: LanePilotDatabase, input: { projectId: string; kind?: "auto"|"standalone"|"umbrella" }) => resolveProjectKind(input.kind, projectUsesSections(db, input.projectId)) === "umbrella";
 export function writerCandidates(db: LanePilotDatabase, input: WriterMixInput): MemoryRecord[] {
-  return searchMemoryRecords(db, input.projectId, input.query, 100, input.searchEngine, "subagent", input.personalBot, { chain: input.chain ?? [], ...(input.now !== undefined ? { now: input.now } : {}) }).filter((record) => !input.ruleMemoryIds.has(record.id));
+  return searchMemoryRecords(db, input.projectId, input.query, 100, input.searchEngine, "subagent", input.personalBot, { chain: input.chain ?? [], umbrella: umbrellaFor(db, input), ...(input.now !== undefined ? { now: input.now } : {}) }).filter((record) => !input.ruleMemoryIds.has(record.id));
 }
 
 /** Paths the writer's candidate notes name, so a caller can read them before `mixWriterMemory` drops the ones that drifted. */
@@ -46,7 +47,7 @@ type ReviewTask = TaskPaths & Partial<Pick<TaskV2, "title" | "objective" | "acce
  * than for writing (`reviewerMemoryPicks`). Not counted as uses of a brief: the usefulness counters follow writers.
  */
 export function mixReviewerMemory(db: LanePilotDatabase, input: { projectId: string; task: ReviewTask; searchEngine: MemorySearchEngine; personalBot: string; ruleMemoryIds: ReadonlySet<string>; budget: number; chain?: readonly string[]; now?: number; /** When the caller can read the workspace: a note whose file fingerprint drifted is kept but marked needs_review. */ readFile?: (path: string) => Uint8Array | null }): { text: string; ids: string[] } {
-  const scoped = { chain: input.chain ?? [], ...(input.now !== undefined ? { now: input.now } : {}) };
+  const scoped = { chain: input.chain ?? [], umbrella: umbrellaFor(db, input), ...(input.now !== undefined ? { now: input.now } : {}) };
   const query = [input.task.title, input.task.objective, ...(input.task.acceptance ?? []), ...input.task.owns_paths, ...input.task.read_first].filter(Boolean).join("\n");
   const found = searchMemoryRecords(db, input.projectId, query, 100, input.searchEngine, "subagent", input.personalBot, scoped).filter((record) => !input.ruleMemoryIds.has(record.id));
   // Not only what the task's words find: the review-tagged notes and the core conventions a reviewer judges against.

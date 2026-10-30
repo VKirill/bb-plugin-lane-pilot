@@ -29,6 +29,8 @@ export type SizeReport = {
   scores: RetrieverScore[];
   /** Paired difference plain minus production on the same questions (positive: plain better). */
   versus: Array<{ plain: string; production: string; metric: "hit" | "falseHit"; diff: Stat }>;
+  /** M7: share of delivered notes from a foreign (non-ancestor, non-shared) section, per production retriever. */
+  foreign: Record<string, Stat>;
 };
 export type EvalReport = { seed: number; scope: EvalScope; origin: string; at: number; sizes: SizeReport[]; caveats: string[] };
 
@@ -119,12 +121,26 @@ export async function runMemoryEval(data: EvalData, options: RunOptions): Promis
         const diffs = a.flatMap((value, index) => value === null || b[index] === null ? [] : [value - (b[index] as number)]);
         return { plain: plainId, production: productionId, metric, diff: stat(diffs, seed) };
       };
+      // M7: share of delivered notes that live in a section outside the question's chain and are not marked project-wide.
+      const scopeOf = new Map<string, string[]>();
+      for (const row of db.prepare("SELECT id, scope_json FROM lane_pilot_memory").all() as Array<{ id: string; scope_json: string | null }>)
+        scopeOf.set(row.id, row.scope_json ? (JSON.parse(row.scope_json) as string[]) : []);
+      const foreign = Object.fromEntries(retrievers.filter((retriever) => retriever.production).map((retriever) => [retriever.id, stat(rowsBy.get(retriever.id)!.flatMap((row) => {
+        if (!row.ids.length) return [];
+        const chain = row.question.chain ?? [];
+        const foreignCount = row.ids.filter((id) => {
+          const scope = scopeOf.get(id) ?? [];
+          const shared = scope.some((entry) => /^project(:|$)/.test(entry));
+          return !shared && scope.length && !(scope.length <= chain.length && scope.every((entry, index) => chain[index] === entry));
+        }).length;
+        return [foreignCount / row.ids.length];
+      }), seed)]));
       const positives = plan.questions.filter((question) => question.kind === "positive");
       sizes.push({
         size, notes: plan.notes.length, composition: plan.composition,
         questions: { positive: positives.length, negative: plan.questions.filter((question) => question.kind === "negative").length,
           offtopic: plan.questions.filter((question) => question.kind === "offtopic").length, goldPerPositive: mean(positives.map((question) => question.gold.length)) },
-        scores,
+        scores, foreign,
         versus: [paired("plain", "writer", "hit"), paired("plain", "writer", "falseHit"), paired("plain-keyword", "pm", "hit"), paired("plain-keyword", "pm", "falseHit")],
       });
     } finally { db.close(); }
@@ -152,6 +168,7 @@ export function formatEvalReport(report: EvalReport): string {
     for (const row of size.scores) {
       lines.push(`${(row.production ? row.id : row.id.startsWith("plain") ? `${row.id} (plain)` : `${row.id} (diag)`).padEnd(16)} ${row.k}  ${pct(row.hit).padEnd(14)} ${pct(row.precision).padEnd(14)} ${pct(row.recall).padEnd(14)} ${pct(row.nearby).padEnd(8)} ${pct(row.falseHit).padEnd(14)} ${pct(row.falseHitNonCore).padEnd(19)} ${pct(row.offtopicFalseHit).padEnd(11)} ${pct(row.poisonHit).padEnd(9)} ${row.delivered.toFixed(1).padEnd(10)} ${row.latencyMs.p50.toFixed(1)}/${row.latencyMs.p95.toFixed(1)}`);
     }
+    for (const [id, share] of Object.entries(size.foreign)) lines.push(`  ${id} foreign-section share: ${(share.mean * 100).toFixed(0)}% over ${share.n} questions`);
     for (const item of size.versus) lines.push(`  ${item.plain} minus ${item.production}, ${item.metric}: ${item.diff.mean >= 0 ? "+" : ""}${(item.diff.mean * 100).toFixed(0)} points [${(item.diff.lo * 100).toFixed(0)}, ${(item.diff.hi * 100).toFixed(0)}] over ${item.diff.n} questions`);
   }
   lines.push("", ...report.caveats.map((item) => `- ${item}`));

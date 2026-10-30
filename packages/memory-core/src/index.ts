@@ -16,11 +16,12 @@ export {
   type MemorySettings,
 } from "./settings";
 export { estimateTokens, memoryEntrySupported, memoryRecordId, parseMemoryCandidates, memoryEntrySalience } from "./candidates";
+export { isSharedScope, resolveProjectKind, sharedScope, type ProjectKind } from "./sections";
 export { DEFAULT_RELEVANCE_FLOOR, NOTHING_RELEVANT, clearsFloor, floorThreshold, recordRelevance, relevantRecords, wordFrequencies, questionWords, pathAnchorsOf, type RelevanceFloor, type RecordRelevance } from "./floor";
 export { buildContextPack, memoryCandidates, shadowPackCompare, type ContextPack, type PackCandidate, type PackSource } from "./context-pack";
 export { ROLE_CONTEXT_BUDGET, explainMemory, memoryContext, memoryMaintenancePrompt, memoryMaintainerTools, roleContextBudget } from "./context";
 export { fileFingerprint, filesDrifted, pathsNamed } from "./fingerprint";
-export { MEMORY_SCHEMA, addToIndexes, coreShelf, dropMemoryIndexes, trigramReady, listMemory, hideRecordsOfFile, memoryVisibilitySql, scopeValuesFor, searchMemoryAllSections, searchMemoryRecords, storeMemoryRecords, storeMemoryRecordsKeepingOverflow, type MemoryDatabase, type SearchOptions, type StoreMemoryInput, type StoreMemoryResult } from "./store";
+export { MEMORY_SCHEMA, addToIndexes, coreShelf, dropMemoryIndexes, trigramReady, listMemory, hideRecordsOfFile, memoryVisibilitySql, scopeValuesFor, projectUsesSections, searchMemoryAllSections, searchMemoryRecords, storeMemoryRecords, storeMemoryRecordsKeepingOverflow, type MemoryDatabase, type SearchOptions, type StoreMemoryInput, type StoreMemoryResult } from "./store";
 export { memoryStem, memoryTokens } from "./terms";
 export { NOTE_IDLE_MS, OBSERVED_QUARANTINE_MS, hideRecord, memoryUsefulness, noteRefutedByCheck, recordCriticUse, recordMemoryAccepted, recordMemoryMixed, recordMemoryReceipt, retireStaleCuratorClaims, sameSubject, type ExpiredReason } from "./lifecycle";
 export { audienceForSensitivity, exportedFileName, laneMemoryFileToCandidate, parseLaneMemoryFile, renderLaneMemoryFile, sensitivityForAudience, type LaneMemoryFile } from "./files";

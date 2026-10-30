@@ -39,6 +39,7 @@ const BY_KEY: Record<string, Record<string, I18nKey>> = {
   "memory.maintain_mode": { wave: "enumMaintainModeWave", task: "enumMaintainModeTask" },
   "memory.pack_mode": { off: "enumPackModeOff", shadow: "enumPackModeShadow", adapter: "enumPackModeAdapter", canary: "enumPackModeCanary" },
   "memory.query_floor": { on: "enumQueryFloorOn", off: "enumQueryFloorOff" },
+  "memory.project_kind": { auto: "enumProjectKindAuto", standalone: "enumProjectKindStandalone", umbrella: "enumProjectKindUmbrella" },
   "jev.provider": { openlux: "enumJevProviderOpenlux", typesafe: "enumJevProviderTypesafe" },
   "sandbox.backend": {
     auto: "enumSandboxAuto",
