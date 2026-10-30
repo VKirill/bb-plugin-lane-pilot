@@ -1,11 +1,22 @@
 import { createProviderBreaker } from "@lane-pilot/resilience";
 import { describe, expect, it } from "vitest";
-import { FREE_CLASSES, PARKED_CLASSES, failureClass, isEnvironmentCheckFailure, nextStep, repeatedFailureReason, taskFamily } from "../src/rooms/runs/failure-class";
+import { FREE_CLASSES, PARKED_CLASSES, failureClass, isEnvironmentCheckFailure, nextStep, repeatedFailureReason, taskFamily, verificationTimeoutOverBudget } from "../src/rooms/runs/failure-class";
 import { classifyWriterOutput } from "../src/rooms/tasks/validate-output";
 import type { TaskV2 } from "../src/rooms/contracts";
 import { providerLimitNotice, providerStreamError } from "../src/rooms/writer/server/writer-task";
 
 describe("failure classes", () => {
+  it("reads a check that timed out as its own class with its own retry, not as the task's red check", () => {
+    const reason = "verification failed (npm run e2e): verification timed out after 1800s";
+    expect(failureClass("validation_failed", reason)).toBe("verification_timeout");
+    expect(FREE_CLASSES.has(failureClass("validation_failed", reason))).toBe(true);
+    expect(PARKED_CLASSES.has(failureClass("validation_failed", reason))).toBe(false);
+    expect(failureClass("validation_failed", "verification failed (npm test): expected 1 to be 2")).toBe("task");
+    expect(verificationTimeoutOverBudget([reason])).toBe(false);
+    expect(verificationTimeoutOverBudget([reason, reason])).toBe(true);
+    expect(nextStep("validation_failed", "verification_timeout_budget: the check timed out twice")).toMatch(/timeout/);
+  });
+
   it("keeps provider, limit and catalog faults on the provider path for the writer chain", () => {
     expect(failureClass("provider_error", "thread status error")).toBe("provider");
     expect(failureClass("spawn_rejected", "writer_provider_unavailable: catalog down")).toBe("provider");

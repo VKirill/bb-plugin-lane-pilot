@@ -37,7 +37,7 @@ import { mountOutage } from "./src/rooms/outage/server";
 import { createPluginWall } from "./src/rooms/wall/server";
 import { createPluginCheckers } from "./src/rooms/checkers/server";
 import { createStageReturn } from "./src/rooms/stage-return/server";
-import { cleanupFinishedAttemptEnvironments, cleanupStickyLaneWorktrees, closeAbandonedRuns, pluginStopped } from "./src/rooms/runs/server";
+import { cleanupFinishedAttemptEnvironments, cleanupStickyLaneWorktrees, closeAbandonedRuns, closeStaleRuns, pluginStopped } from "./src/rooms/runs/server";
 import { registerRpc } from "./src/rooms/core/server/rpc";
 import { mountAnamnesis } from "./src/rooms/anamnesis";
 import { mountWorldAssets } from "./src/rooms/world-assets/server";
@@ -195,9 +195,12 @@ export default async function plugin(bb: BbPluginApi) {
   // Writer attempts get BB environments of this provider unless workspace.provider is off; a BB without the API
   // registers nothing and every attempt keeps the old worktree path.
   registerLaneWorktreeProvider(ctx);
-  const sweepRuns = (signal?: AbortSignal) => closeAbandonedRuns(bb, db, Date.now(), signal).then((closed) => {
+  const sweepRuns = (signal?: AbortSignal) => Promise.resolve().then(async () => {
+    const closed = await closeAbandonedRuns(bb, db, Date.now(), signal);
     if (closed.length) bb.log.info(`Lane Pilot closed ${closed.length} runs whose PM chat is gone: ${closed.join(", ")}`);
-  }, (cause) => pluginStopped(cause) ? undefined : bb.log.warn(`Lane Pilot run sweep skipped: ${cause instanceof Error ? cause.message : String(cause)}`));
+    const stale = await closeStaleRuns(bb, db, Date.now(), signal);
+    if (stale.length) bb.log.info(`Lane Pilot closed ${stale.length} runs past their lifetime: ${stale.join(", ")}`);
+  }).catch((cause) => pluginStopped(cause) ? undefined : bb.log.warn(`Lane Pilot run sweep skipped: ${cause instanceof Error ? cause.message : String(cause)}`));
   const snapshotWorktree = async (hostId: string, worktreePath: string, name: string) =>
     await ctx.host.call("gitWorktreeSnapshot", { requestedHostId:hostId, worktreePath, name }, { hostId, timeoutMs:300_000 });
   const sweepEnvironments = (signal?: AbortSignal) => cleanupFinishedAttemptEnvironments(bb, db, snapshotWorktree, Date.now(), signal).then((removed) => {

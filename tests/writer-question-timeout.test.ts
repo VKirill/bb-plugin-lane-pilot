@@ -83,11 +83,20 @@ describe("a writer's question nobody answers", () => {
     expect(getAttempt(gone.db, "a1")?.reason).toMatch(/^verdict_block: question_unanswered:/);
   });
 
-  it("does not touch a question of a task whose writer is still finishing", async () => {
+  it("expires after the hour even while the writer task still holds its live key", async () => {
+    // start.ts keeps run:task in activeWriterTasks until the start loop's finally. The question is already
+    // on the attempt by then; holding the key used to freeze the hour forever.
     const busy = sweepWorld();
     busy.services.activeWriterTasks.add("run1:T1");
-    expect(await busy.timeout.sweepWriterQuestions(T0 + 5 * WRITER_QUESTION_WAIT_MS)).toEqual([]);
+    expect(await busy.timeout.sweepWriterQuestions(T0 + WRITER_QUESTION_WAIT_MS - 1)).toEqual([]);
     expect(getAttempt(busy.db, "a1")?.state).toBe("blocked");
+    expect(await busy.timeout.sweepWriterQuestions(T0 + WRITER_QUESTION_WAIT_MS)).toEqual([{ taskId:"T1", action:"ended" }]);
+    const row = getAttempt(busy.db, "a1")!;
+    expect(row.state).toBe("blocked");
+    expect(row.reason).toMatch(/^verdict_block: question_unanswered: the writer task was still marked live/);
+    expect(listUnansweredWriterQuestions(busy.db)).toEqual([]);
+    expect(busy.abandoned).toEqual(["thr_w"]);
+    expect(busy.sends).toEqual([]);
   });
 });
 
