@@ -27,6 +27,7 @@ describe("project memory stage", () => {
     storeMemoryRecords(db,{projectId:"project-a",audience:"export",sourceSha256:"e".repeat(64),entries:[exportEntry],coreBudget:100,noteBudget:100,indexBudget:200});
     storeMemoryRecords(db,{projectId:"project-b",audience:"subagent",sourceSha256:"c".repeat(64),entries:[{kind:"core",content:"Other project routing",concepts:["routing"]}],coreBudget:100,noteBudget:100,indexBudget:200});
     expect(searchMemoryRecords(db,"project-a","workspace routing",10,"fts5").map((row)=>row.content)).toEqual([entry.content]);
+    expect(searchMemoryRecords(db,"project-a","private owner note about routing",10,"fts5").map((row)=>row.content)).not.toContain(ownerEntry.content);
     expect(searchMemoryRecords(db,"project-a","private owner note",10,"fts5","owner").map((row)=>row.content)).toEqual([ownerEntry.content]);
     expect(searchMemoryRecords(db,"project-a","exportable workspace",10,"bm25","export").map((row)=>row.content)).toEqual([exportEntry.content]);
     expect(searchMemoryRecords(db,"project-b","workspace routing",10,"bm25").map((row)=>row.content)).toEqual(["Other project routing"]);
