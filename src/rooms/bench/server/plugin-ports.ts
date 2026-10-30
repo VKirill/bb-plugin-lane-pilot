@@ -35,7 +35,7 @@ export function createPluginBench(ctx: ServerCore, services: Services): BenchApi
 
   // Every attempt of a bench run is the bench's, also the ones its PM queued on its own: they go before the run closes.
   const closeRun = async (projectId: string, runId: string) => {
-    for (const row of listOpenAttempts(db).filter((attempt) => attempt.run_id === runId)) await cancelAttemptById(ctx, row.id, undefined, "canceled: the bench closed the run").catch(() => undefined);
+    for (const row of listOpenAttempts(db).filter((attempt) => attempt.run_id === runId)) await cancelAttemptById(ctx, row.id, undefined, "canceled: the bench closed the run", "run_closed").catch(() => undefined);
     await finishRunSafely(bb, db, projectId, runId, "cli");
   };
 
@@ -110,7 +110,7 @@ export function createPluginBench(ctx: ServerCore, services: Services): BenchApi
 
     async cancel(runId, taskId) {
       const open = db.prepare("SELECT id FROM lane_pilot_attempt WHERE run_id=? AND task_id=? AND state IN ('queued','spawn_requested','spawn_unknown','running')").all(runId, taskId) as Array<{ id: string }>;
-      for (const row of open) await cancelAttemptById(ctx, row.id, undefined, "canceled: the bench canceled the task").catch(() => undefined);
+      for (const row of open) await cancelAttemptById(ctx, row.id, undefined, "canceled: the bench canceled the task", "superseded").catch(() => undefined);
     },
 
     async finishRun(project, runId) {

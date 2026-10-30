@@ -17,6 +17,7 @@ import { buildTaskGraph } from "../task-graph";
 import { buildTaskBoard, readTaskCard, type CardThread } from "../task-board";
 import { readThreadLive } from "../thread-live";
 import { cancelAttemptById } from "../cancel";
+import { queueWaitPercentiles, runQueueWaits } from "../../../usage/server/attempt-metrics";
 import { pauseRun } from "../runs-pause";
 import { folderEnvironment, id, projectSources, stringAt, valueAt } from "../../../core/server";
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
@@ -262,7 +263,9 @@ export function runsRpc(ctx: ServerCore, services: Services) {
           ...(row.state === "accepted" && background.has(row.id) ? { background: background.get(row.id)! } : {}),
         });
       }
-      return { runId: run.id, state: run.state, closed: run.closed_at !== null, tasks: [...tasks.values()] };
+      return { runId: run.id, state: run.state, closed: run.closed_at !== null, tasks: [...tasks.values()],
+        // W31 rank 11: how long this run's attempts sat in the queue (settled waits only).
+        queueWait: queueWaitPercentiles(runQueueWaits(db, run.id)) };
     },
     native_thread: async ({ threadId }) => {
       // An agent the chat was switched to counts from the moment it is chosen; its next message binds it.
@@ -336,7 +339,7 @@ export function runsRpc(ctx: ServerCore, services: Services) {
         requiredSessionPolicy: detectRequiredSessionPolicyCapability((bb as { agents?: { experimental_vkRequiredSessionPolicy?: unknown } }).agents ?? {}) ? "required" : "none",
       };
     },
-    cancel_attempt: async ({ attemptId }) => cancelAttemptById(ctx, attemptId, services.rollback, "canceled by RPC"),
+    cancel_attempt: async ({ attemptId, code }) => cancelAttemptById(ctx, attemptId, services.rollback, "canceled by RPC", code),
     pause_run: async ({ runId }) => await pauseRun(ctx, runId, "pause"),
     resume_run: async ({ runId }) => await pauseRun(ctx, runId, "resume"),
     halt_run: async ({ runId }) => {
@@ -344,7 +347,7 @@ export function runsRpc(ctx: ServerCore, services: Services) {
       const open = db.prepare(`SELECT id FROM lane_pilot_attempt WHERE run_id=? AND state IN ('queued','spawn_requested','spawn_unknown','running','cancel_requested')`).all(runId) as Array<{ id:string }>;
       const canceled:string[] = [], left:string[] = [];
       for (const { id } of open) {
-        const result = await handlers.cancel_attempt({ attemptId:id }).catch(() => ({ ok:false }));
+        const result = await handlers.cancel_attempt({ attemptId:id, code:"run_closed" }).catch(() => ({ ok:false }));
         (result.ok ? canceled : left).push(id);
       }
       const parked = await bb.storage.kv.get(PARKED_KEY).catch(() => null);

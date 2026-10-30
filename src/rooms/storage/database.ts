@@ -453,6 +453,8 @@ export const migrations = [
     summarized_at INTEGER,
     created_at INTEGER NOT NULL
   )`,
+  // W31 rank 6: why an attempt was canceled — a closed code list (cancel.ts CANCEL_CODES), NULL for cancels before 0.1.396. Append only.
+  `ALTER TABLE lane_pilot_attempt ADD COLUMN cancel_code TEXT`,
 ];
 
 export function openDatabase(bb: BbPluginApi): LanePilotDatabase {

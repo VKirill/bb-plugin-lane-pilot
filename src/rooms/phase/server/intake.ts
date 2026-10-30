@@ -184,7 +184,7 @@ export function createPhaseIntake(ctx: Deps, phases: IntakePhases, train?: Intak
       const hits = idHit ? open.filter((row) => row.contract_json.includes(idHit))
         : open.filter((row) => { try { const c = JSON.parse(row.contract_json) as { title?: unknown; display_title?: unknown }; const title = String(c.display_title || c.title || ""); return title && text.toLowerCase().includes(title.toLowerCase()); } catch { return false; } });
       if (hits.length !== 1) return null;
-      const cancelled = await cancelAttemptById({ bb, db, cancelQueuedAttempt: ctx.cancelQueuedAttempt }, hits[0]!.attempt_id, undefined, `canceled: the owner asked to stop it ("${text.slice(0, 80)}")`);
+      const cancelled = await cancelAttemptById({ bb, db, cancelQueuedAttempt: ctx.cancelQueuedAttempt }, hits[0]!.attempt_id, undefined, `canceled: the owner asked to stop it ("${text.slice(0, 80)}")`, "owner_cancel");
       return cancelled.ok ? "Задачу остановил." : `Не смог остановить задачу: ${cancelled.reason ?? cancelled.state}.`;
     }
     return null;

@@ -28,3 +28,14 @@ export function composeWallMorning(db: WallDb, now: number = Date.now(), windowM
     `Охранник цикла: охот ${hunts}, в беклоге ${backlog}, перепрогонов ${dispatched} (в списке ${listed}).`,
   ];
 }
+
+/**
+ * W31 rank 6: the cancel-code Pareto of the window, one line for the morning summary; null when nothing was canceled.
+ * Codes written before 0.1.396 (NULL) count as `unknown`.
+ */
+export function cancelParetoLine(db: WallDb, now: number = Date.now(), windowMs: number = WALL_MORNING_WINDOW_MS): string | null {
+  const rows = db.prepare(`SELECT COALESCE(cancel_code, 'unknown') AS code, COUNT(*) AS n FROM lane_pilot_attempt
+    WHERE state='canceled' AND updated_at>=? GROUP BY code ORDER BY n DESC, code LIMIT 5`).all(now - windowMs) as Array<{ code: string; n: number }>;
+  if (!rows.length) return null;
+  return `Отмены за сутки: ${rows.map((row) => `${row.code} ${row.n}`).join(", ")}.`;
+}

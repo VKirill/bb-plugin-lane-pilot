@@ -1,6 +1,7 @@
 import { prototypeConfigSchema, taskV2Schema } from "../../contracts";
 import { getActivation, getAttempt, getRun, getTask, importSettingsOnce, inspectAttempt, inspectState, listRunsWithAttempts, loadProjectSettings, loadPrototypeConfig, savePrototypeConfig, saveProjectSetting, transitionAttempt } from "../../storage";
 import { cancelRejection, confirmWriterStopped, finishRunSafely, pauseRun } from "../../runs/server";
+import { markCancelCode } from "../../runs/server/cancel";
 import { stringAt, valueAt } from "../../core/server";
 import { outputText } from "../../writer/server";
 import { THREAD_WATCH_EVENT_TYPES, decideThreadCompletion, eventsListQueryLabel, listThreadEventsRaw, waitThreadIdle } from "@lane-pilot/thread-observe";
@@ -483,6 +484,7 @@ export function registerCli(ctx: ServerCore, services: Services) {
           if (!confirmed.stopped) throw new Error(`writer stop was not independently observed (status=${status ?? "unknown"}, waited ${Math.round(confirmed.waitedMs / 1000)}s)`);
           await services.rollback.noteStopped(attempt.id).catch(() => undefined);
           transitionAttempt(db, attempt.id, "canceled", { threadId:attempt.thread_id, reason:"canceled from the CLI" });
+          markCancelCode(db, attempt.id, "owner_cancel");
           return { exitCode:0, stdout:JSON.stringify({
             ok:true, attemptId:attempt.id, threadId:attempt.thread_id, state:"canceled", observedStatus:status,
           }) };

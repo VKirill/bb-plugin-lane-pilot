@@ -1,5 +1,6 @@
 import { getAttempt, getTask, getRunSettingsScopes, listAttemptsForTask, listOpenAttempts, loadPrototypeConfig, loadProjectSettings, transitionAttempt } from "../../storage";
 import { retireAreaWriter } from "./sticky";
+import { markCancelCode } from "../../runs/server/cancel";
 import type { ServerCore } from "../../core/server";
 
 /**
@@ -94,6 +95,7 @@ export function createWriterReassign(ctx: Pick<ServerCore, "bb" | "db">, options
     const note = text(input.reason) ?? "reassigned by the PM";
     await saveReassignRequest(kv, open.id, { reason: note, selection });
     transitionAttempt(db, open.id, "cancel_requested", { threadId: open.thread_id });
+    markCancelCode(db, open.id, "reassign");
     await bb.sdk.threads.stop({ threadId: open.thread_id });
 
     const area = (getTask(db, input.taskId)?.contract as { area?: unknown } | undefined)?.area;
