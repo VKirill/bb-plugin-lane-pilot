@@ -72,7 +72,7 @@ Each room is one component: `index.ts` is its public API, `server/` its services
 | self-improve | — | 1 | 65 | tests (2) |
 | self-repair | — | 8 | 2664 | tests (4) |
 | session-hooks | buildCapsule, capsuleRestored | 3 | 489 | tests (1) |
-| settings | SettingValidationError, readImportConfig, validateSettingValue, validateSettingsObject, validationErrorText | 20 | 3005 | drill: provider_limit |
+| settings | SettingValidationError, readImportConfig, validateSettingValue, validateSettingsObject, validationErrorText | 20 | 3009 | drill: provider_limit |
 | sma-map | LiveRow, LiveSource, ProofRoots, SMA_CARDS, SMA_CONTRACT_TESTS, SMA_ENTRIES, SMA_LINKS, SMA_LIVE, SMA_MAP_SHA, SMA_MAP_USAGE, SMA_NODES, SMA_REGIONS, SmaCard, SmaCounts, SmaEntry, SmaEvidence, SmaKind, SmaLinkKind, SmaNode, SmaRow, SmaStateCounts, SmaStatus, brokenProof, defaultProofRoots, isChecked, isDone, readSmaLive, renderSmaLive, renderSmaMap, runSmaLiveCli, runSmaMapCli, smaCheckedPercent, smaCounts, smaDonePercent, smaEvidence, smaGroups, smaHoles, smaRows, smaStateCounts, unjudgedProof | 7 | 9207 | tests (1) |
 | stability | ReconcileCursor, ReconcileResult, parseOpenCodeToolTelemetry, reconcile, reconcileCritic, reconcileCursor | 13 | 1463 | drill: reload |
 | stage-return | StageReturnRecord, getReturn, listReturns, renderReturnNotes, stageReturnMigrations | 10 | 490 | tests (4) |
@@ -90,7 +90,7 @@ Each room is one component: `index.ts` is its public API, `server/` its services
 | workflow | DOCS_MAINTENANCE, DOCS_NIGHT, DraftCheck, DraftOp, DraftScope, DraftTestResult, GOAL_SCREEN_ID, ISSUE_QUICK_SHORT_PATH, LP_TASK_PIPELINE, NodeExecutor, PLAN_CHECK_ID, ROUTE_WORKFLOW_ID, RawDefinition, Refusal, RunSummary, SELF_REPAIR, SERVICE_JOBS, StepContext, ValidateOptions, WORKFLOW_ARCHITECT_ID, WORKFLOW_ARCHITECT_NAME, WORKFLOW_ARCHITECT_SESSION, WORKFLOW_ARCHITECT_SUMMARY, WORKFLOW_ARCHITECT_TOOLS, Workflow, WorkflowEngine, WorkflowProblem, builtinWorkflow, goalScreenJudgment, issueQuickModelCalls, issueQuickShortPath, issueQuickWorkflowId, planCheckJudgment, routeWorkflow, servicePair, servicePinKey, serviceRole | 61 | 9304 | tests (3) |
 | world | worldMigrations | 7 | 534 | tests (4) |
 | world-assets | — | 2 | 65 | tests (4) |
-| writer | AGENT_TRASH_RELATIVE, BEST_OF_COUNT, BEST_OF_ROUNDS_DEFAULT, BEST_OF_ROUNDS_MAX, BEST_OF_ROUNDS_SETTING, BEST_OF_SETTING, BEST_OF_SLOT_CAP_SETTING, BEST_OF_TOKEN_BUDGET_SETTING, BEST_OF_VALUES, BestOfCandidate, BestOfPlan, DirtSnapshot, FinishScanDecision, FinishScanInput, ROUND_SEED_MAX_CHARS, RoundCandidate, WRITER_FINISH_SCAN_ID, WriterPair, attachStreamRetry, attemptProduced, bestOfBudgetAllows, bestOfPicks, buildCliInvocation, droppedStreamDetail, materializeAgentTrash, memoryLine, ownedAgentTrashPath, parseDirtSnapshots, pathAnchors, pickBestAttempt, reserveAppetite, resolveBestOf, resolveStageWriterSelection, reviewerMemoryPicks, roundSeedBrief, roundSurvivors, runCommandOnHost, writePmSettingsOnHost, writerBriefStats, writerFallbackChain, writerFallbackKeys, writerFallbacks, writerFinishScanJudgment, writerMemory, writerMemoryPicks, writerModelJudgment, writerReuseStats | 55 | 9327 | drill: parallel3 |
+| writer | AGENT_TRASH_RELATIVE, BEST_OF_COUNT, BEST_OF_ROUNDS_DEFAULT, BEST_OF_ROUNDS_MAX, BEST_OF_ROUNDS_SETTING, BEST_OF_SETTING, BEST_OF_SLOT_CAP_SETTING, BEST_OF_TOKEN_BUDGET_SETTING, BEST_OF_VALUES, BestOfCandidate, BestOfPlan, DirtSnapshot, FinishScanDecision, FinishScanInput, ROUND_SEED_MAX_CHARS, RoundCandidate, WRITER_FINISH_SCAN_ID, WriterPair, attachStreamRetry, attemptProduced, bestOfBudgetAllows, bestOfPicks, buildCliInvocation, droppedStreamDetail, materializeAgentTrash, memoryLine, ownedAgentTrashPath, parseDirtSnapshots, pathAnchors, pickBestAttempt, reserveAppetite, resolveBestOf, resolveStageWriterSelection, reviewerMemoryPicks, roundSeedBrief, roundSurvivors, runCommandOnHost, writePmSettingsOnHost, writerBriefStats, writerFallbackChain, writerFallbackKeys, writerFallbacks, writerFinishScanJudgment, writerMemory, writerMemoryPicks, writerModelJudgment, writerReuseStats | 56 | 9476 | drill: parallel3 |
 
 ## Task stages (21)
 
@@ -183,13 +183,13 @@ States: (new), queued, spawn_requested, running, spawn_rejected, spawn_unknown, 
 | file | lines |
 |---|---:|
 | src/rooms/sma-map/graph.ts | 6267 |
-| packages/i18n/src/i18n.ts | 2462 |
+| packages/i18n/src/i18n.ts | 2466 |
 | src/rooms/native-install/native-hook-sources.ts | 2421 |
-| packages/i18n/src/i18n-fields.ts | 1999 |
+| packages/i18n/src/i18n-fields.ts | 2011 |
 | src/rooms/storage/database.ts | 1860 |
 | src/rooms/sma-map/entries.ts | 1810 |
 | packages/workflow-engine/src/engine.ts | 1586 |
-| src/rooms/writer/server/start.ts | 1289 |
+| src/rooms/writer/server/start.ts | 1315 |
 | src/rooms/self-repair/server/self-repair.ts | 1274 |
 | src/rooms/phase/server/driver.ts | 1204 |
 | src/rooms/verification/git-integrate.ts | 1063 |

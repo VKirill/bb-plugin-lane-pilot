@@ -996,6 +996,12 @@ export const fieldEn = {
   reason_s513: "After a same-class failure streak the writer loop acts on the class instead of repeating the same retry (narrow the brief, hand to the next writer, park). off keeps the uniform retry.",
   field_s514: "Red check goes to the next writer",
   reason_s514: "on sends the first red check of a task-class failure to the next writer in the fallback chain inside the same attempt budget; off retries the same writer once first.",
+  field_s536: "Task wall clock",
+  reason_s536: "The most minutes a task may live across all its attempts, sessions, restarts and chain handoffs before it ends with task_wall_clock instead of another retry; the per-session wall cap already exists, this one caps the task. Default 720 (12 h).",
+  field_s537: "Verification pass cap",
+  reason_s537: "The most failed or rejected verification gate evaluations a task may accumulate before it ends with verify_passes_exhausted instead of another writer pass. Default 10.",
+  field_s538: "Retry safety gate",
+  reason_s538: "on blocks an automatic retry when the failed attempt's work area was touched after it ended: foreign commits or file edits, rewritten check evidence, or a catalog secret value still in the worktree diff; off keeps the unconditional retry. Default on.",
 } as const;
 
 export const fieldRu: { [K in keyof typeof fieldEn]: string } = {
@@ -1995,4 +2001,10 @@ export const fieldRu: { [K in keyof typeof fieldEn]: string } = {
   reason_s513: "После серии сбоев одного класса цикл исполнителя действует по классу вместо повторения того же ретрая (сузить бриф, передать следующему исполнителю, припарковать). off оставляет одинаковый ретрай.",
   field_s514: "Красная проверка — следующему исполнителю",
   reason_s514: "on отправляет первую красную проверку сбоя класса task следующему исполнителю цепочки запасных в том же бюджете попыток; off сначала повторяет того же исполнителя.",
+  field_s536: "Часовой потолок задачи",
+  reason_s536: "Сколько минут задача может жить через все попытки, сессии, перезапуски и передачи по цепочке, прежде чем завершится с task_wall_clock вместо очередного ретрая; потолок на сессию уже есть, этот ограничивает задачу. По умолчанию 720 (12 ч).",
+  field_s537: "Потолок проходов верификации",
+  reason_s537: "Сколько упавших или отклонённых оценок гейта верификации может накопить задача, прежде чем завершится с verify_passes_exhausted вместо очередного прохода исполнителя. По умолчанию 10.",
+  field_s538: "Гейт безопасности ретрая",
+  reason_s538: "on блокирует авто-ретрай, если рабочую область упавшей попытки трогали после её конца: чужие коммиты или правки файлов, переписанные квитанции проверок или значение секрета из каталога, оставшееся в диффе worktree; off оставляет безусловный ретрай. По умолчанию on.",
 };
