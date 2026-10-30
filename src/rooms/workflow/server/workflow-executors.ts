@@ -237,9 +237,16 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
       const rt = c.runtime;
       const settings = rt ? (((await rt.ctx.effectiveProjectSettings(rt.projectId).catch(() => null))?.values) ?? {}) : {};
       // The whitelist, field by field; a long text is clipped with a marker (no spread of run data into the state).
+      // `"$task.<path>"` reads the dispatch task's own fields (title, contract) — the spec stays the whitelist.
       const state: Record<string, unknown> = {};
+      const task = (rt as { task?: Record<string, unknown> } | undefined)?.task;
       for (const [name, spec] of Object.entries(node.state)) {
-        const value = c.template(spec);
+        let value: unknown;
+        if (typeof spec === "string" && spec.startsWith("$task.")) {
+          let at: unknown = task;
+          for (const part of spec.slice(6).split(".")) at = (at as Record<string, unknown> | null)?.[part];
+          value = at === undefined || at === null ? "" : typeof at === "object" ? JSON.stringify(at) : at;
+        } else value = c.template(spec);
         state[name] = typeof value === "string" && value.length > 4_000 ? `${value.slice(0, 3_999)}…` : value;
       }
       const instance = jev();

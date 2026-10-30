@@ -26,7 +26,7 @@ describe("built-in workflows", () => {
     const workflow = builtinWorkflow(LP_TASK_PIPELINE)!;
     expect(workflow).toMatchObject({ status: "published", scope: { level: "builtin" } });
     const next = (from: string, matching?: (edge: (typeof workflow.edges)[number]) => boolean) => workflow.edges.filter((edge) => edge.from === from && (!matching || matching(edge))).map((edge) => edge.to);
-    const happy = ["pm-read", "quality-mode", "plan-critique", "specialist-review", "ownership-base", "task-folder", "writer", "qa-gate", "browser-qa"];
+    const happy = ["worth-check", "pm-read", "quality-mode", "plan-critique", "specialist-review", "ownership-base", "task-folder", "writer", "qa-gate", "browser-qa"];
     let at: string = START;
     const walked: string[] = [];
     while (at !== END) {
