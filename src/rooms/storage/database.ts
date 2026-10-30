@@ -425,6 +425,8 @@ export const migrations = [
   ...workflowNotVerifiedMigrations,
   // Hash of the files a note named when it was written (packages/memory-core/src/fingerprint.ts). Append only.
   `ALTER TABLE lane_pilot_memory ADD COLUMN file_fingerprint TEXT`,
+  // Critic mixes (packages/memory-core/src/lifecycle.ts). Not a writer use, so usefulness ignores it. Append only.
+  `ALTER TABLE lane_pilot_memory ADD COLUMN critic_count INTEGER NOT NULL DEFAULT 0`,
 ];
 
 export function openDatabase(bb: BbPluginApi): LanePilotDatabase {

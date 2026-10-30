@@ -86,6 +86,12 @@ export function recordMemoryMixed(db: MemoryDatabase, projectId: string, ids: re
   for (const id of new Set(ids)) update.run(now, projectId, id);
 }
 
+/** A critic or reviewer mix. Separate from use_count so it cannot move usefulness. */
+export function recordCriticUse(db: MemoryDatabase, projectId: string, ids: readonly string[]): void {
+  const update = db.prepare("UPDATE lane_pilot_memory SET critic_count=critic_count+1 WHERE project_id=? AND id=?");
+  for (const id of new Set(ids)) update.run(projectId, id);
+}
+
 /** The attempt a record was mixed into was accepted. */
 export function recordMemoryAccepted(db: MemoryDatabase, projectId: string, ids: readonly string[]): void {
   const update = db.prepare("UPDATE lane_pilot_memory SET accepted_count=accepted_count+1 WHERE project_id=? AND id=?");

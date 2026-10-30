@@ -20,7 +20,7 @@ export { explainMemory, memoryContext, memoryMaintenancePrompt } from "./context
 export { fileFingerprint, filesDrifted, pathsNamed } from "./fingerprint";
 export { MEMORY_SCHEMA, addToIndexes, coreShelf, dropMemoryIndexes, trigramReady, listMemory, hideRecordsOfFile, memoryVisibilitySql, scopeValuesFor, searchMemoryAllSections, searchMemoryRecords, storeMemoryRecords, storeMemoryRecordsKeepingOverflow, type MemoryDatabase, type SearchOptions, type StoreMemoryInput, type StoreMemoryResult } from "./store";
 export { memoryStem, memoryTokens } from "./terms";
-export { NOTE_IDLE_MS, OBSERVED_QUARANTINE_MS, hideRecord, memoryUsefulness, noteRefutedByCheck, recordMemoryAccepted, recordMemoryMixed, sameSubject, type ExpiredReason } from "./lifecycle";
+export { NOTE_IDLE_MS, OBSERVED_QUARANTINE_MS, hideRecord, memoryUsefulness, noteRefutedByCheck, recordCriticUse, recordMemoryAccepted, recordMemoryMixed, sameSubject, type ExpiredReason } from "./lifecycle";
 export { audienceForSensitivity, exportedFileName, laneMemoryFileToCandidate, parseLaneMemoryFile, renderLaneMemoryFile, sensitivityForAudience, type LaneMemoryFile } from "./files";
 export { findConflicts, conflictId, disagreement, type Conflict, type ConflictKind, type ConflictNote } from "./conflicts";
 export { conflictTableReady, getConflict, heldClause, holdConflict, listConflicts, markSettled, memoryConflictMigrations, setDeferral, type ConflictResolution, type ConflictRow } from "./conflict-store";

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { openDatabase, saveProjectSetting } from "../../src/rooms/storage/database";
-import { storeMemoryRecords } from "../../packages/memory-core/src";
+import { memoryUsefulness, storeMemoryRecords } from "../../packages/memory-core/src";
 import type { MemoryCandidate } from "../../packages/memory-core/src";
 import { mixReviewerMemory, reviewerMemoryFor } from "../../src/rooms/memory/server/memory-mix";
 import { writerMemory } from "../../src/rooms/writer/writer-brief";
@@ -54,6 +54,15 @@ describe("K8 reviewer role: reviewers and critics get the notes relevant to revi
     const picked = mix(db).ids;
     expect(picked).toHaveLength(5);
     expect(picked.slice(0, 2)).toEqual([ids[0], ids[1]]);
+  });
+
+  it("counts a critic mix on critic_count and leaves writer usefulness alone", () => {
+    const db = newDb();
+    const [id] = put(db, [note("Review check that holds for every card change", ["review"])]);
+    mix(db);
+    const row = db.prepare("SELECT use_count, accepted_count, critic_count FROM lane_pilot_memory WHERE id=?").get(id!) as { use_count: number; accepted_count: number; critic_count: number };
+    expect(row).toEqual({ use_count: 0, accepted_count: 0, critic_count: 1 });
+    expect(memoryUsefulness({ useCount: row.use_count, acceptedCount: row.accepted_count })).toBe(0.5);
   });
 
   it("leaves out rules, notes in quarantine and expired notes", () => {
