@@ -29,3 +29,9 @@ it("A-015 fixed history retains a bounded useful tail after 100 full outputs", (
   expect(recent.reduce((n, row) => n + row.tail.length, 0)).toBeLessThanOrEqual(12000);
   expect(recent.at(-1)?.cmd).toContain("99");
 });
+
+it("leaves skills and MCP servers open: a browser task may load browser-automation (owner, 2026-10-30)", () => {
+  expect(guardTool("skill", { name: "browser-automation" }, "/fixture")).toBe("");
+  expect(guardTool("mcp__chrome-devtools__navigate_page", { url: "https://example.com" }, "/fixture")).toBe("");
+  expect(guardTool("mcp", { serverIdentifier: "metamcp" }, "/fixture")).toBe("");
+});

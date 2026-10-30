@@ -7,11 +7,8 @@ const GIT_SHIP = new Set(["commit", "push", "merge"])
 const SHELL_WRAPPERS = new Set(["sudo", "command", "time", "nohup", "nice", "env"])
 const SHELLS = new Set(["sh", "bash", "dash", "zsh", "ksh"])
 const GIT_FLAG_WITH_VALUE = new Set(["-C", "-c", "--git-dir", "--work-tree", "--namespace"])
-// Lane Pilot gives every writer writer-practices and karpathy-guidelines (its writer role profile); the guard
-// refused them with «skill blocked» on OpenCode writers (2026-10-03).
-const ALLOWED_SKILLS = new Set(["ui-ux-pro-max", "writer-practices", "karpathy-guidelines"])
-const ALLOWED_MCP = new Set(["gitnexus", "agentmemory"])
-const MCP_NAME = /^mcp__([^_]+?)__/i
+// Skills and MCP servers are open to every Lane Pilot thread (owner, 2026-10-30): the guard keeps writers from git mistakes,
+// it does not decide which tools a task may use (a browser task was refused browser-automation).
 
 function toolPath(args: unknown): string {
   if (!args || typeof args !== "object" || Array.isArray(args)) return ""
@@ -158,16 +155,6 @@ function toolCommand(args: unknown): string {
   return cmd ?? ""
 }
 
-function toolArg(args: unknown, keys: string[]): string {
-  if (!args || typeof args !== "object" || Array.isArray(args)) return ""
-  const a = args as Record<string, unknown>
-  for (const key of keys) {
-    const value = a[key]
-    if (typeof value === "string" && value.trim()) return value.trim()
-  }
-  return ""
-}
-
 export function projectHasSkill(cwd: string, name: string): boolean {
   let cur = cwd
   for (let i = 0; i < 8; i++) {
@@ -180,8 +167,7 @@ export function projectHasSkill(cwd: string, name: string): boolean {
   return false
 }
 
-// skills: false leaves the skill allowlist to the agent file (lane-critic and lane-reviewer name their own skills there).
-export function guardTool(tool: string, args: unknown, cwd = process.cwd(), opts: { skills?: boolean } = {}): string {
+export function guardTool(tool: string, args: unknown, cwd = process.cwd()): string {
   const name = tool.toLowerCase()
   if (name === "write" || name === "write_file" || name === "oc_write") {
     const path = toolPath(args)
@@ -211,43 +197,5 @@ export function guardTool(tool: string, args: unknown, cwd = process.cwd(), opts
       return "[opencode-lane guard] git commit/push/merge blocked: the controller commits and merges. Emit LANE_REPORT instead."
     }
   }
-  if ((name === "skill" || name === "skills") && opts.skills !== false) {
-    const skill = toolArg(args, ["name", "skill", "skillName", "id"]).toLowerCase()
-    const allowed = ALLOWED_SKILLS.has(skill) || projectHasSkill(cwd, skill)
-    if (!allowed) {
-      return (
-        "[opencode-lane guard] skill blocked" +
-        (skill ? `: ${skill}` : "") +
-        ". Writer may load writer-practices, karpathy-guidelines, ui-ux-pro-max on UI tasks, or a skill bound on this session."
-      )
-    }
-  }
-  const mcpServer =
-    name === "mcp" || name === "callmcptool"
-      ? toolArg(args, ["serverIdentifier", "server", "mcpServer"]).toLowerCase()
-      : (name.match(MCP_NAME)?.[1] ?? "").toLowerCase()
-  if (mcpServer && !ALLOWED_MCP.has(mcpServer)) {
-    return (
-      `[opencode-lane guard] MCP blocked: ${mcpServer}. ` +
-      "Only gitnexus and agentmemory."
-    )
-  }
   return ""
-}
-
-// A Lane Pilot thread (agent lane-pilot) also gets metamcp (its writer role profile grants gitnexus + metamcp) and BB's per-session
-// proxy servers `bb_opencode2_<hash>`, which carry the BB tools it needs (lane_pilot_*, env-catalog, relay).
-const PILOT_MCP = new Set([...ALLOWED_MCP, "metamcp"])
-const PILOT_MCP_PREFIX = "bb_opencode2_"
-
-// OpenCode v2 names an MCP tool `<server>_<tool>` (v1: mcp__<server>__<tool>); `servers` are the connected MCP server names.
-export function guardMcpV2(tool: string, servers: readonly string[], agent = ""): string {
-  const name = tool.toLowerCase()
-  const server = [...servers]
-    .map((item) => item.toLowerCase())
-    .sort((a, b) => b.length - a.length)
-    .find((item) => name.startsWith(`${item}_`))
-  if (!server || ALLOWED_MCP.has(server)) return ""
-  if (agent === "lane-pilot" && (PILOT_MCP.has(server) || server.startsWith(PILOT_MCP_PREFIX))) return ""
-  return `[opencode-lane guard] MCP blocked: ${server}. ` + (agent === "lane-pilot" ? "Only gitnexus, agentmemory, metamcp and BB's own tools." : "Only gitnexus and agentmemory.")
 }

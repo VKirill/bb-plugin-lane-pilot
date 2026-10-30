@@ -2,7 +2,7 @@
 // The shared service's env is not the thread's, so hooks never read LANE_TASK_FILE, LANE_PROMPT_FILE or LANE_STACK_ROOT.
 // A plain OpenCode session (any other agent) is left alone.
 import { recordTool, repeatHint } from "./budget.ts"
-import { guardMcpV2, guardTool, projectHasSkill } from "./guard.ts"
+import { guardTool, projectHasSkill } from "./guard.ts"
 import { agentDenies, hubShellDenial, isLaneAgent, type PermissionRule } from "./hub-guard.ts"
 
 const RULES_TTL_MS = 30_000
@@ -25,7 +25,6 @@ function appendResultNote(result: ToolResult, note: string): void {
 export async function laneSetup(ctx: Ctx): Promise<() => void> {
   const sessions = new Map<string, { directory: string }>()
   const rules = new Map<string, { at: number; list: PermissionRule[] }>()
-  let servers: { at: number; names: string[] } = { at: 0, names: [] }
 
   const refreshSession = async (sessionID: string): Promise<{ directory: string }> => {
     const raw = await ctx.session.get({ sessionID })
@@ -45,18 +44,10 @@ export async function laneSetup(ctx: Ctx): Promise<() => void> {
     return list
   }
 
-  const mcpServers = async (): Promise<string[]> => {
-    if (Date.now() - servers.at < RULES_TTL_MS) return servers.names
-    const listed = await ctx.mcp.list()
-    servers = { at: Date.now(), names: (listed?.data ?? []).map((item: { name: string }) => item.name) }
-    return servers.names
-  }
-
   await ctx.tool.hook("execute.before", async (e: { tool: string; sessionID: string; agent: string; input: unknown }) => {
     if (!isLaneAgent(e.agent)) return
     const session = sessions.get(e.sessionID) ?? (await refreshSession(e.sessionID))
-    const ownSkills = e.agent === "lane-critic" || e.agent === "lane-reviewer"
-    const msg = guardTool(e.tool, e.input, session.directory, { skills: !ownSkills }) || guardMcpV2(e.tool, await mcpServers(), e.agent)
+    const msg = guardTool(e.tool, e.input, session.directory)
     if (msg) throw new Error(msg)
   })
 
