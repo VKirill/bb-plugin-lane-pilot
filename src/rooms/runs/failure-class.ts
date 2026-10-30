@@ -293,3 +293,20 @@ export function failureIntervention(cls: FailureClass, sameClassStreak: number):
   if (cls === "harness" || cls === "infra" || cls === "dirty_base" || cls === "contract" || cls === "judgment" || cls === "budget") return "park";
   return "same_retry_remark";
 }
+
+/**
+ * A pause a failure class gets after an attempt ends, before the next attempt starts (hive H-14). `writer.class_cooldowns`
+ * holds a JSON map of class → seconds ({} keeps today's behaviour: classes keep their own waits and nothing else pauses);
+ * `writer.cooldown_max_ms` caps any value (0 = no cap).
+ */
+export function failureClassCooldownMs(cls: string, settings: Record<string, unknown>): number {
+  const raw = settings["writer.class_cooldowns"];
+  let table: Record<string, unknown> = {};
+  if (typeof raw === "string" && raw.trim()) { try { const parsed = JSON.parse(raw); if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) table = parsed as Record<string, unknown>; } catch { return 0; } }
+  else if (raw && typeof raw === "object" && !Array.isArray(raw)) table = raw as Record<string, unknown>;
+  const seconds = Number(table[cls]);
+  if (!Number.isFinite(seconds) || seconds <= 0) return 0;
+  const cap = Number(settings["writer.cooldown_max_ms"]);
+  const ms = Math.floor(seconds * 1000);
+  return cap > 0 ? Math.min(ms, Math.floor(cap)) : ms;
+}
