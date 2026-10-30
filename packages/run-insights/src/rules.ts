@@ -161,7 +161,7 @@ export function parseScope(json: string | null | undefined): string[] {
 
 const SECTION_ID = /^section:[A-Za-z0-9_.:-]{1,80}$/;
 
-/** A file path, or a `path:` marker. A bare label such as a repo name is neither. */
+/** A file path, or a `path:` marker. A bare label such as a repo name is neither, so a new scope cannot be one. */
 export function isPathSelector(entry: string): boolean {
   const path = entry.startsWith("path:") ? entry.slice("path:".length) : entry;
   return path.length > 0 && (/[\\/]/.test(path) || /\.[a-z0-9]{1,8}$/i.test(path));
@@ -175,6 +175,8 @@ export function splitRuleScope(scope: readonly string[]): { sectionChain: string
   for (const entry of scope) {
     if (entry.startsWith("section:")) sectionChain.push(entry);
     else if (entry.startsWith("path:") || isPathSelector(entry)) pathSelectors.push(entry.startsWith("path:") ? entry.slice("path:".length) : entry);
+    // A stored label with no colon is a folder name (`verification`), not a section. New scopes still cannot be one (`assertRuleScope`).
+    else if (!entry.includes(":")) pathSelectors.push(entry);
     else legacy.push(entry);
   }
   return { sectionChain, pathSelectors, legacy };
@@ -191,7 +193,7 @@ export function scopeApplies(ruleScope: readonly string[], runChain: readonly st
   if (!sectionOk) return false;
   if (!split.pathSelectors.length) return true;
   if (!paths?.length) return false;
-  return split.pathSelectors.some((selector) => paths.some((path) => path === selector || path.endsWith(`/${selector}`)));
+  return split.pathSelectors.some((selector) => paths.some((path) => path === selector || path.endsWith(`/${selector}`) || path.includes(`/${selector}/`)));
 }
 
 /** New scopes are section ids or file paths. A label that is neither is rejected here; stored rows are not rewritten. */

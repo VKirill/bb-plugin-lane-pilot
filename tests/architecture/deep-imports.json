@@ -1,7 +1,5 @@
 {
- "bench > validators": 2,
  "critique > tasks": 1,
- "critique > validators": 1,
  "critique > writer": 2,
  "entry > core": 4,
  "entry > native-install": 1,

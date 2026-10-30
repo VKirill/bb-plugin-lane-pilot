@@ -435,6 +435,10 @@ export const migrations = [
   `ALTER TABLE lane_pilot_memory ADD COLUMN verification_json TEXT`,
   // Bench task validator (src/rooms/bench/validator.ts). Null on a code task. `artifact` checks that the result exists and is not empty.
   `ALTER TABLE lane_pilot_bench_task ADD COLUMN validator TEXT`,
+  // Critic mixes (packages/memory-core/src/lifecycle.ts). Not a writer use, so usefulness ignores it. Append only.
+  `ALTER TABLE lane_pilot_memory ADD COLUMN critic_count INTEGER NOT NULL DEFAULT 0`,
+  // One row per retrieval that reached an agent. Ids and token count only; no note text (F07-1). Append only.
+  `CREATE TABLE IF NOT EXISTS lane_pilot_memory_receipt (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, role TEXT NOT NULL, returned_ids TEXT NOT NULL, packed_ids TEXT NOT NULL, tokens INTEGER NOT NULL, created_at INTEGER NOT NULL)`,
 ];
 
 export function openDatabase(bb: BbPluginApi): LanePilotDatabase {

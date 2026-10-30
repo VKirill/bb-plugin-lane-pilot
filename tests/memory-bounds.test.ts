@@ -1,5 +1,5 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { planScopeMigration } from "../scripts/memory-scope-dry-run";
+import { applyScopeMigration, planScopeMigration } from "../scripts/memory-scope-dry-run";
 import { describe, expect, it } from "vitest";
 import { searchMemoryAllSections, searchMemoryRecords, storeMemoryRecords } from "../packages/memory-core/src";
 import { assertRuleScope, scopeApplies, upsertLessonProposal } from "@lane-pilot/run-insights";
@@ -114,7 +114,8 @@ describe("F04: section chain and path selectors", () => {
 
   it("a legacy label matches no run, and a path selector matches only a task that owns the file", () => {
     expect(scopeApplies(["bb-plugin-lane-pilot", "verification"], chain)).toBe(false);
-    expect(scopeApplies(["bb-plugin-lane-pilot", "verification"], chain, ["verification"])).toBe(false);
+    expect(scopeApplies(["bb-plugin-lane-pilot", "verification"], chain, ["src/rooms/verification/check.ts"])).toBe(true);
+    expect(scopeApplies(["bb-plugin-lane-pilot", "verification"], chain, ["src/rooms/memory/store.ts"])).toBe(false);
     expect(scopeApplies(["db/store.ts"], chain)).toBe(false);
     expect(scopeApplies(["db/store.ts"], chain, ["packages/db/store.ts"])).toBe(true);
     expect(scopeApplies(["section:parent"], ["section:parent", "section:child"])).toBe(true);
@@ -131,8 +132,27 @@ describe("F04: section chain and path selectors", () => {
     storeMemoryRecords(db, { projectId: "P", ...limits, entries: [{ kind: "core", content: "Project-wide deployment convention: one port per service.", concepts: ["deployment"] }] });
     const plan = planScopeMigration(db, "fixture");
     expect(plan.applied).toBe(false);
-    expect(plan.rules.map((rule) => rule.proposal.action)).toEqual(["hold"]);
-    expect(plan.rootCore.map((row) => row.proposal.action)).toEqual(["keep-root-pending-owner"]);
+    expect(plan.rules.map((rule) => rule.proposal.action)).toEqual(["split-path"]);
+    expect(plan.rootCore.map((row) => row.proposal.action)).toEqual(["keep-root"]);
+  });
+
+  it("keeps a root convention and marks a file-named root core for a section", () => {
+    const db = dbOf();
+    storeMemoryRecords(db, { projectId: "P", ...limits, entries: [{ kind: "core", content: "Theme build writes themes/pokecut.css and checks it.", concepts: ["theme"] }] });
+    storeMemoryRecords(db, { projectId: "P", ...limits, entries: [{ kind: "core", content: "The shared convention lives in themes/pokecut.css for every section.", concepts: ["convention"] }] });
+    const plan = planScopeMigration(db, "fixture");
+    expect(plan.rootCore.find((row) => row.content.includes("Theme build"))?.proposal.action).toBe("assign-section");
+    expect(plan.rootCore.find((row) => row.concepts.includes("convention"))?.proposal.action).toBe("keep-root");
+  });
+
+  it("assigns a mapped file core and leaves an unmapped one at the root", () => {
+    const db = dbOf();
+    storeMemoryRecords(db, { projectId: "P", ...limits, entries: [{ kind: "core", content: "Theme build writes themes/pokecut.css and checks it.", concepts: ["theme"] }] });
+    expect(applyScopeMigration(db, {}).applied).toBe(0);
+    expect(applyScopeMigration(db, { "themes/pokecut.css": ["section:pokecut"] }).applied).toBe(1);
+    expect(planScopeMigration(db, "fixture").rootCore.some((row) => row.content.includes("Theme build"))).toBe(false);
+    const scoped = db.prepare("SELECT scope_json FROM lane_pilot_memory WHERE content LIKE '%pokecut.css%'").get() as { scope_json: string };
+    expect(JSON.parse(scoped.scope_json)).toEqual(["section:pokecut"]);
   });
 });
 

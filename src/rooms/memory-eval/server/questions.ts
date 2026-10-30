@@ -20,6 +20,8 @@ export type EvalQuestion = {
   text: { title: string; objective: string; acceptance: string[] };
   /** The project id the search is scoped to (the notes it can see). */
   scope: string;
+  /** The reader's section chain. Empty is the project root, not every section. */
+  chain?: readonly string[];
   paths: { owns_paths: string[]; read_first: string[] };
   produced: string[];
   /** Ids of the corpus notes that are the right answer; empty for a negative question. */

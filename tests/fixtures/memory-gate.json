@@ -1,0 +1,95 @@
+{
+  "seed": 1,
+  "notes": [
+    { "key": "home", "scope": ["section:home"], "content": "homeport service listens on 3000 in src/home/port.ts.", "concepts": ["port"] },
+    { "key": "sibling", "scope": ["section:other"], "content": "siblingport service listens on 4000 in src/home/port.ts.", "concepts": ["port"] },
+    { "key": "foreign", "projectId": "Q", "content": "foreignport service listens on 5000.", "concepts": ["port"] },
+    { "key": "owner", "audience": "owner", "content": "ownerpin code is 1111 for the owner only.", "concepts": ["pin"] },
+    { "key": "bot", "personalBot": "codex", "content": "codexport uses 2222 for the codex bot.", "concepts": ["port"] },
+    { "key": "root", "kind": "core", "content": "rootconvention writers keep one port per service.", "concepts": ["convention"] },
+    { "key": "parent", "scope": ["section:home"], "content": "parentfact the home section owns the router.", "concepts": ["router"] },
+    { "key": "leaf", "scope": ["section:home", "section:leaf"], "content": "leaffact the leaf section owns the cache.", "concepts": ["cache"] },
+    { "key": "pitfall", "scope": ["section:home"], "content": "pitfallfact src/home/port.ts must close the socket.", "concepts": ["pitfall", "port"] },
+    { "key": "alias", "scope": ["section:home"], "content": "aliasfact the same repo keeps port 3000.", "concepts": ["port"] }
+  ],
+  "cases": [
+    { "id": "ns-01", "group": "namespace", "chain": ["section:home"], "query": "homeport", "budget": 400, "want": ["home"], "forbid": ["sibling", "foreign", "owner", "bot", "leaf"] },
+    { "id": "ns-02", "group": "namespace", "chain": ["section:other"], "query": "siblingport", "budget": 400, "want": ["sibling"], "forbid": ["home", "foreign", "leaf"] },
+    { "id": "ns-03", "group": "namespace", "projectId": "P", "query": "foreignport", "budget": 400, "forbid": ["foreign", "home"] },
+    { "id": "ns-04", "group": "namespace", "query": "ownerpin", "budget": 400, "forbid": ["owner"] },
+    { "id": "ns-05", "group": "namespace", "audience": "owner", "query": "ownerpin", "budget": 400, "want": ["owner"], "forbid": ["home"] },
+    { "id": "ns-06", "group": "namespace", "query": "codexport", "budget": 400, "forbid": ["bot"] },
+    { "id": "ns-07", "group": "namespace", "personalBot": "codex", "query": "codexport", "budget": 400, "want": ["bot"], "forbid": ["home"] },
+    { "id": "ns-08", "group": "namespace", "chain": ["section:home"], "query": "parentfact leaffact", "budget": 400, "want": ["parent"], "forbid": ["leaf"] },
+    { "id": "ch-01", "group": "change", "query": "alphaport", "budget": 400, "want": ["newv"], "forbid": ["oldv"], "notes": [
+      { "key": "oldv", "content": "alphaport listens on 3000.", "concepts": ["alpha", "port"] },
+      { "key": "newv", "content": "alphaport listens on 9000.", "concepts": ["alpha", "port"], "supersedes": ["oldv"] }
+    ] },
+    { "id": "ch-02", "group": "change", "chain": ["section:home"], "query": "twinfact", "budget": 400, "want": ["copyH"], "forbid": ["copyO"], "notes": [
+      { "key": "copyH", "scope": ["section:home"], "content": "twinfact home copy is 3000.", "concepts": ["twin"] },
+      { "key": "copyO", "scope": ["section:other"], "content": "twinfact other copy is 3000.", "concepts": ["twin"] }
+    ] },
+    { "id": "ch-03", "group": "change", "query": "filefact", "budget": 400, "want": ["filenew"], "forbid": ["fileold"], "notes": [
+      { "key": "fileold", "content": "filefact said 3000.", "concepts": ["file"], "sourceFileId": "file-1" },
+      { "key": "filenew", "content": "filefact said 9000.", "concepts": ["file"], "sourceFileId": "file-1" }
+    ] },
+    { "id": "ch-04", "group": "change", "query": "expiredfact", "budget": 400, "forbid": ["expired"], "notes": [
+      { "key": "expired", "content": "expiredfact the window closed.", "concepts": ["window"], "validUntil": 1 }
+    ] },
+    { "id": "ch-05", "group": "change", "query": "betafact", "budget": 400, "want": ["corenew"], "forbid": ["coreold"], "notes": [
+      { "key": "coreold", "kind": "core", "content": "Convention betafact writers keep one port.", "concepts": ["beta", "convention"] },
+      { "key": "corenew", "kind": "core", "content": "Convention betafact writers keep two checks.", "concepts": ["beta", "convention"], "supersedes": ["coreold"] }
+    ] },
+    { "id": "ch-06", "group": "change", "query": "gammafact", "budget": 400, "want": ["corestay", "notecore"], "notes": [
+      { "key": "corestay", "kind": "core", "content": "gammafact the core convention stays.", "concepts": ["gamma", "stay"] },
+      { "key": "notecore", "content": "gammafact the note copy stays.", "concepts": ["gamma", "stay"] }
+    ] },
+    { "id": "ch-07", "group": "change", "query": "cache", "budget": 400, "want": ["facta", "factb"], "notes": [
+      { "key": "facta", "content": "deltafact the cache is warm.", "concepts": ["delta", "zone"] },
+      { "key": "factb", "content": "epsilonfact the cache is cold.", "concepts": ["delta", "other"] }
+    ] },
+    { "id": "ch-08", "group": "change", "query": "versionfact", "budget": 400, "want": ["v2"], "forbid": ["v1"], "notes": [
+      { "key": "v1", "content": "versionfact said blue.", "concepts": ["version", "color"] },
+      { "key": "v2", "content": "versionfact said green.", "concepts": ["version", "color"], "supersedes": ["v1"] }
+    ] },
+    { "id": "na-01", "group": "no-answer", "query": "zzzzalpha", "budget": 200, "forbid": ["home", "sibling", "owner"] },
+    { "id": "na-02", "group": "no-answer", "query": "zzzzbravo", "budget": 200, "forbid": ["home", "sibling", "owner"] },
+    { "id": "na-03", "group": "no-answer", "query": "zzzzcharlie", "budget": 200, "forbid": ["home", "sibling", "owner"] },
+    { "id": "na-04", "group": "no-answer", "query": "zzzzdelta", "budget": 200, "forbid": ["home", "sibling", "owner"] },
+    { "id": "na-05", "group": "no-answer", "query": "zzzzecho", "budget": 200, "forbid": ["home", "sibling", "owner"] },
+    { "id": "na-06", "group": "no-answer", "query": "zzzzfoxtrot", "budget": 200, "forbid": ["home", "sibling", "owner"] },
+    { "id": "na-07", "group": "no-answer", "query": "calendar widget", "budget": 200, "forbid": ["home", "sibling", "owner"] },
+    { "id": "na-08", "group": "no-answer", "query": "payroll invoice", "budget": 200, "forbid": ["home", "sibling", "owner"] },
+    { "id": "nd-01", "group": "needed", "role": "writer", "chain": ["section:home"], "query": "homeport", "budget": 400, "paths": { "owns_paths": ["src/home/port.ts"], "read_first": [] }, "want": ["home"], "forbid": ["sibling"] },
+    { "id": "nd-02", "group": "needed", "role": "writer", "query": "rootconvention", "budget": 400, "want": ["root"], "forbid": ["home"] },
+    { "id": "nd-03", "group": "needed", "role": "writer", "chain": ["section:home"], "query": "pitfallfact", "budget": 400, "paths": { "owns_paths": ["src/home/port.ts"], "read_first": [] }, "want": ["pitfall"], "forbid": ["sibling"] },
+    { "id": "nd-04", "group": "needed", "chain": ["section:home"], "query": "aliasfact", "budget": 400, "want": ["alias"], "forbid": ["sibling"] },
+    { "id": "nd-05", "group": "needed", "chain": ["section:home", "section:leaf"], "query": "leaffact", "budget": 400, "want": ["leaf"], "forbid": ["sibling"] },
+    { "id": "nd-06", "group": "needed", "chain": ["section:home", "section:leaf"], "query": "parentfact", "budget": 400, "want": ["parent"], "forbid": ["leaf"] },
+    { "id": "nd-07", "group": "needed", "audience": "owner", "query": "ownerpin", "budget": 400, "want": ["owner"], "forbid": ["home"] },
+    { "id": "nd-08", "group": "needed", "chain": ["section:home"], "query": "pitfallfact", "budget": 400, "want": ["pitfall"], "forbid": ["sibling"] },
+    { "id": "bu-01", "group": "budget", "query": "rulepack", "budget": 400, "want": ["rule"], "whole": ["rule"], "notes": [
+      { "key": "rule", "origin": "rule", "content": "rulepack: keep one listener on the home port and never open a second listener for the same service in this repository.", "concepts": ["rule", "ports"] }
+    ] },
+    { "id": "bu-02", "group": "budget", "query": "rulepack", "budget": 4, "forbid": ["rule"], "whole": ["rule"] },
+    { "id": "bu-03", "group": "budget", "query": "tagpack", "budget": 200, "want": ["tags"], "whole": ["tags"], "notes": [
+      { "key": "tags", "content": "tagpack lists every concept.", "concepts": ["c00", "c01", "c02", "c03", "c04", "c05", "c06", "c07", "c08", "c09", "c10", "c11", "c12", "c13", "c14", "c15", "c16", "c17", "c18", "c19", "c20", "c21", "c22", "c23"] }
+    ] },
+    { "id": "bu-04", "group": "budget", "query": "samefact", "budget": 200, "forbid": ["same"], "trustStays": { "key": "same", "trust": "observed" }, "notes": [
+      { "key": "same", "trust": "observed", "sourceSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "content": "samefact stays observed.", "concepts": ["same"] },
+      { "key": "same", "trust": "observed", "sourceSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "content": "samefact stays observed.", "concepts": ["same"] }
+    ] },
+    { "id": "bu-05", "group": "budget", "query": "qqqemptytoken", "budget": 50, "forbid": ["home"] },
+    { "id": "bu-06", "group": "budget", "query": "idemfact", "budget": 200, "want": ["idem"], "activeCount": { "key": "idem", "count": 1 }, "notes": [
+      { "key": "idem", "content": "idemfact stored once.", "concepts": ["idem"] },
+      { "key": "idem", "content": "idemfact stored once.", "concepts": ["idem"] }
+    ] },
+    { "id": "bu-07", "group": "budget", "query": "corrofact", "budget": 200, "want": ["corro"], "notes": [
+      { "key": "corro", "trust": "observed", "sourceSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", "content": "corrofact two sources agree.", "concepts": ["corro"] },
+      { "key": "corro", "trust": "observed", "sourceSha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd", "content": "corrofact two sources agree.", "concepts": ["corro"] }
+    ] },
+    { "id": "bu-08", "group": "budget", "query": "unused", "budget": 10, "expectThrow": "memory rule concept is owned by the rules pipeline", "notes": [
+      { "key": "bad", "origin": "maintainer", "content": "A maintainer must not file this sentence as a rule concept.", "concepts": ["rule"] }
+    ] }
+  ]
+}

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { openDatabase } from "../../src/rooms/storage/database";
-import { coreShelf, memoryMaintenancePrompt, memoryRecordId, parseMemoryCandidates, parseMemorySettings, storeMemoryRecords, storeMemoryRecordsKeepingOverflow } from "../../packages/memory-core/src";
+import { coreShelf, memoryMaintainerTools, memoryMaintenancePrompt, memoryRecordId, parseMemoryCandidates, parseMemorySettings, storeMemoryRecords, storeMemoryRecordsKeepingOverflow } from "../../packages/memory-core/src";
 
 /**
  * Hub 2026-10-27/28: lp.after-accept went red when the project's core was already full.
@@ -77,5 +77,11 @@ describe("a full project core no longer refuses the maintainer batch", () => {
 
   it("tells the maintainer to keep a date and a version verbatim", () => {
     expect(memoryMaintenancePrompt({ task: {}, acceptedResult: {}, settings })).toContain("Keep a date, a version number and a deadline verbatim");
+    const withFile = memoryMaintenancePrompt({ task: {}, acceptedResult: {}, settings, excerpts: "FILE src/theme/base.css:\nbody{color:red}" });
+    expect(withFile).toContain("FILE src/theme/base.css:");
+    expect(withFile).toContain("Call no tools");
+    expect(withFile).toContain("not given the model catalog");
+    expect(memoryMaintainerTools()).toEqual([]);
+    expect(withFile.indexOf("FILE EXCERPTS")).toBeLessThan(withFile.indexOf("TASK:"));
   });
 });

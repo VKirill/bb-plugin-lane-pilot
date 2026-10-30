@@ -16,7 +16,7 @@ const T0 = Date.parse("2026-10-01T00:00:00Z");
 
 // The id is the one the write door gives the content, as on the hub (the shelf replay stores through that door).
 const note = (n: number, content: string, over: Partial<RawNote> = {}): RawNote => ({ id: memoryRecordId("P", "note", content), projectId: "P", kind: "note", content, concepts: ["area"], createdAt: T0 + n * 1000,
-  status: "active", trust: "confirmed", origin: "maintainer", useCount: 0, acceptedCount: 0, ...over });
+  status: "active", trust: "confirmed", origin: "maintainer", useCount: 0, acceptedCount: 0, sections: [], audience: "subagent", personalBot: "", ...over });
 const task = (n: number, produced: string[], title: string, owns = produced): RawQuestion => ({ attemptId: `att${n}`, taskId: `task${n}`, projectId: "P", startedAt: T0 + DAY * 2 + n * 1000, attemptNo: 1,
   produced, picked: [], task: { title, objective: `${title} in the project`, acceptance: [], owns_paths: owns, read_first: [] } });
 
@@ -179,10 +179,10 @@ describe("a run", () => {
 describe("the extract and the command", () => {
   it("round-trips the data through an extract file and runs from it", async () => {
     const live = new Database(":memory:");
-    live.exec(`CREATE TABLE lane_pilot_memory (id TEXT, project_id TEXT, kind TEXT, content TEXT, concepts_json TEXT, created_at INTEGER, status TEXT, trust TEXT, origin TEXT, use_count INTEGER, accepted_count INTEGER)`);
+    live.exec(`CREATE TABLE lane_pilot_memory (id TEXT, project_id TEXT, kind TEXT, content TEXT, concepts_json TEXT, created_at INTEGER, status TEXT, trust TEXT, origin TEXT, use_count INTEGER, accepted_count INTEGER, scope_json TEXT, audience TEXT, personal_bot TEXT)`);
     const source = data();
-    const insert = live.prepare("INSERT INTO lane_pilot_memory VALUES (?,?,?,?,?,?,?,?,?,?,?)");
-    for (const row of source.notes) insert.run(row.id, row.projectId, row.kind, row.content, JSON.stringify(row.concepts), row.createdAt, row.status, row.trust, row.origin, 0, 0);
+    const insert = live.prepare("INSERT INTO lane_pilot_memory VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
+    for (const row of source.notes) insert.run(row.id, row.projectId, row.kind, row.content, JSON.stringify(row.concepts), row.createdAt, row.status, row.trust, row.origin, 0, 0, "[]", "subagent", "");
     // The live questions need the run tables; an empty set is a valid, if useless, read.
     for (const statement of ["lane_pilot_attempt (id, run_id, task_id, created_at, attempt_no, state)", "lane_pilot_run (id, project_id)", "lane_pilot_task (id, contract_json)",
       "lane_pilot_stage_receipt (run_id, task_id, stage_id, state, result_json)", "lane_pilot_attempt_reasoning (attempt_id, trace_json)"]) live.exec(`CREATE TABLE ${statement}`);

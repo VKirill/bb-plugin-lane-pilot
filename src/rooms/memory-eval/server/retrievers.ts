@@ -55,12 +55,12 @@ export function createRetrievers(db: Database.Database, notes: readonly CorpusNo
   const live = (question: EvalQuestion, excluded: ReadonlySet<string>) => notes.filter((note) => note.scope === question.scope && !excluded.has(note.id));
 
   const search = (question: EvalQuestion, excluded: ReadonlySet<string>) =>
-    searchMemoryRecords(db, question.scope, question.query, SEARCH_LIMIT, "auto", "subagent", "").filter((record) => !excluded.has(record.id));
+    searchMemoryRecords(db, question.scope, question.query, SEARCH_LIMIT, "auto", "subagent", "", { chain: question.chain ?? [] }).filter((record) => !excluded.has(record.id));
 
   const retrievers: Retriever[] = [
     // Production, the writer's first brief (writerKnowledge → mixWriterMemory): the search, then the notes that name a folder of the task, then core.
     { id: "writer", k: 3, group: "writer", production: true,
-      run: (question, excluded) => ({ ids: mixWriterMemory(db, { projectId: question.scope, query: question.query, task: question.paths, searchEngine: "auto", personalBot: "", ruleMemoryIds: excluded }).ids }) },
+      run: (question, excluded) => ({ ids: mixWriterMemory(db, { projectId: question.scope, query: question.query, task: question.paths, searchEngine: "auto", personalBot: "", ruleMemoryIds: excluded, chain: question.chain ?? [] }).ids }) },
     // Plain, same job: notes that name a folder of the task (substring), the one with the most uncommon task words first. Nothing else.
     { id: "plain", k: 3, group: "writer", production: false,
       run: (question, excluded) => {
@@ -101,7 +101,7 @@ export function createRetrievers(db: Database.Database, notes: readonly CorpusNo
     // Production, critics and the night review.
     { id: "reviewer", k: 5, group: "reviewer", production: true,
       run: (question, excluded) => ({ ids: mixReviewerMemory(db, { projectId: question.scope, task: { ...question.paths, ...question.text },
-        searchEngine: "auto", personalBot: "", ruleMemoryIds: excluded, budget: CONTEXT_BUDGET }).ids }) },
+        searchEngine: "auto", personalBot: "", ruleMemoryIds: excluded, budget: CONTEXT_BUDGET, chain: question.chain ?? [] }).ids }) },
   ];
   return retrievers.map((retriever) => ({ ...retriever, run: (question: EvalQuestion, excluded: ReadonlySet<string>) => {
     const out = retriever.run(question, excluded);

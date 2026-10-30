@@ -2,7 +2,7 @@
 title: Project memory
 type: component
 created: 2026-10-10
-updated: 2026-10-29
+updated: 2026-10-30
 status: active
 confidence: medium
 tags: [memory, knowledge, maintenance]
@@ -177,3 +177,13 @@ On the hub's 2,191 notes ever stored (the sandbox excluded), 0 pairs of active n
 **Settled at once (since 2026-10-22).** A pair found by a write is settled right away without a person: the newer note is the later observation, it is kept and the older one is retired as `superseded` by it; the register keeps the pair and the evidence (`automatic: the newer note supersedes the older one`). One write that finds more than 5 pairs settles none and logs that the heuristics are misfiring. No deferral is opened. A pair held before (the earlier design, where the owner settled) still settles by hand or as `moot`.
 
 `bb lane-pilot memory-conflicts [--project P] [--state held|settled] [--detect]` lists them (and looks for new ones); `bb lane-pilot memory-conflict-settle <mc_id> --keep a|b|both|none --evidence <why>` settles: `a` (the older) or `b` keeps one and retires the other as superseded by it, `both` says they do not disagree (the pair is never held again), `none` retires both; the evidence is required and closes the deferral. A conflict whose note was replaced, evicted or expired settles itself as `moot`. Tests: `tests/memory-conflicts.test.ts`, `tests/memory-eval.test.ts`.
+
+## Decisions 2026-10-30
+
+The owner gave these calls to the writers on 2026-10-30. Each one is the rule the code follows.
+
+**F01-3.** Root scope `[]` is the whitelist of project-wide conventions. A root core that names no file, or whose concepts include `convention`, stays at the root. A root core that names a file and is not marked `convention` is not a shared convention: it waits for a section from a scope map and is not widened to `[]`. Hub: 48 of 50 BB-service CORE rows sit at the root, including repeated file facts (pokecut theme, i18n order, Content Factory migrations). Those repeats are not merged when the wording disagrees.
+
+**F04-3.** The five stored legacy scopes stay as they are. They are not rewritten to `[]`. `db/store.ts` is already a path selector. A stored label with no colon (`verification`, `bb-plugin-lane-pilot`) is a folder selector: it applies when a task path equals it, ends with it, or contains it as a directory. It does not apply when the task has no paths. A new scope must still be a section id or a file path; `assertRuleScope` rejects a bare label. Hub: five accepted rules used those labels, and a real run chain of `section:<uuid>` never matched them.
+
+**X-2.** One owner per kind of knowledge. Anamnesis owns owner facts. Lane Pilot memory owns project technical facts and rules. BB memory is the preference index. Agentmemory is an observation archive, not an author. Code and docs stay the source of behavior. A fact does not get a second author by being copied into another store.

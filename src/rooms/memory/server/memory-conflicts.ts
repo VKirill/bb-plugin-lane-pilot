@@ -1,5 +1,5 @@
 import {
-  dropMemoryIndexes, findConflicts, getConflict, hideRecord, holdConflict, listConflicts, markSettled,
+  dropMemoryIndexes, filesDrifted, findConflicts, getConflict, hideRecord, holdConflict, listConflicts, markSettled, pathsNamed,
   type ConflictNote, type ConflictResolution, type ConflictRow,
 } from "@lane-pilot/memory-core";
 import type { DeferralApi } from "../../deferral/server";
@@ -11,7 +11,9 @@ import type { LanePilotDatabase } from "../../storage";
  * note is the later observation and supersedes the older one, which leaves every reader and stays in the store as `superseded`. The
  * register keeps the pair and the evidence. A conflict whose note is gone (replaced, evicted, expired) settles itself as `moot`.
  */
-export type ConflictDeps = { db: LanePilotDatabase; deferrals: () => DeferralApi; log?: (line: string) => void; now?: () => number };
+export type ConflictDeps = { db: LanePilotDatabase; deferrals: () => DeferralApi; log?: (line: string) => void; now?: () => number;
+  /** Current bytes of a repo-relative path. When set, the note whose stored file hash still matches the file wins over a newer one that does not. */
+  readFile?: (path: string) => Uint8Array | null };
 /** More pairs than this found by one write means the heuristics are misfiring: none is settled, the log says so. */
 export const MAX_SETTLED_PER_RUN = 5;
 
@@ -39,12 +41,28 @@ export function createMemoryConflicts(deps: ConflictDeps) {
       return [];
     }
     const created = (id: string) => (db.prepare("SELECT created_at FROM lane_pilot_memory WHERE project_id=? AND id=?").get(projectId, id) as { created_at: number } | undefined)?.created_at ?? 0;
+    const matchesCode = (id: string): boolean | null => {
+      if (!deps.readFile) return null;
+      const row = db.prepare("SELECT content, file_fingerprint FROM lane_pilot_memory WHERE project_id=? AND id=?").get(projectId, id) as { content: string; file_fingerprint: string | null } | undefined;
+      if (!row?.file_fingerprint) return null;
+      const paths = pathsNamed(row.content);
+      if (!paths.length) return null;
+      return !filesDrifted(row.file_fingerprint, paths, deps.readFile);
+    };
+    /** The side whose stored hash still matches the file, when the other side does not. */
+    const keepMatchingCode = (a: string, b: string): "a" | "b" | null => {
+      const left = matchesCode(a), right = matchesCode(b);
+      if (left === true && right !== true) return "a";
+      if (right === true && left !== true) return "b";
+      return null;
+    };
     const settled: ConflictRow[] = [];
     for (const { conflict, personalBot } of found) {
       const row = holdConflict(db, { projectId, personalBot, conflict, now: now() });
       if (!row) continue;
-      const keep = created(row.noteB) >= created(row.noteA) ? "b" : "a";
-      settled.push(settle({ id: row.id, keep, evidence: `automatic: the newer note supersedes the older one (${conflict.kind}, ${quote(conflict.subject)})` }));
+      const keep = keepMatchingCode(row.noteA, row.noteB) ?? (created(row.noteB) >= created(row.noteA) ? "b" : "a");
+      const why = keep === "a" && created(row.noteB) >= created(row.noteA) ? "the note that still matches the file" : "the newer note";
+      settled.push(settle({ id: row.id, keep, evidence: `automatic: ${why} supersedes the other (${conflict.kind}, ${quote(conflict.subject)})` }));
     }
     if (settled.length) deps.log?.(`memory conflicts: ${settled.length} settled in ${projectId}, the newer note kept`);
     return settled;

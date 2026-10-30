@@ -36,7 +36,7 @@ export async function collectSources(request: CollectRequest, store: Store, seam
     journal: async () => await scanJournals(roots, 0, request.until),
     registry: async () => await scanRegistry(roots, request.until),
     "claude-memory": async () => await scanClaudeMemory(home),
-    "bb-memory": async () => await scanBbMemory(),
+    "bb-memory": async () => await scanBbMemory(undefined, roots[0] ?? ""),
     // Off until the owner switches them on (the loop below skips a source that is off): the owner's own channels, and the deal files of the Elba skill.
     telegram: async () => await scanTelegram({ channels: request.telegramChannels ?? [], since: request.since, until: request.until, home }),
     elba: async () => await scanElba(roots),

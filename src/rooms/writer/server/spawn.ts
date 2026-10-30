@@ -1,6 +1,6 @@
 import { breakerKey, RunBudgetExceeded } from "@lane-pilot/resilience";
 import { briefMode, briefParts } from "../../hypotheses";
-import { recordMemoryMixed } from "@lane-pilot/memory-core";
+import { estimateTokens, recordMemoryMixed, recordMemoryReceipt } from "@lane-pilot/memory-core";
 import { writerKnowledge } from "./writer-knowledge";
 import { parseDirtSnapshots } from "../cli-outcome";
 import type { DirtSnapshot } from "../cli-outcome";
@@ -481,6 +481,7 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
       if (existingTrace) {
         // The brief is final: each note in it counts one use; the attempt's acceptance later credits the same ids.
         recordMemoryMixed(db, input.projectId, mixed.ids);
+        recordMemoryReceipt(db, { projectId: input.projectId, role: "writer", returnedIds: mixed.ids, packedIds: mixed.ids, tokens: estimateTokens(mixed.text) });
         // Held in a variable: the skill pick is not in the trace type, and code-repair reads it back from the saved trace.
         const dispatchContext = {
           memoryText:relevantMemory.text,

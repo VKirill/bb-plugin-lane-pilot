@@ -8,6 +8,8 @@ import Database from "better-sqlite3";
 export type RawNote = {
   id: string; projectId: string; kind: "core" | "note"; content: string; concepts: string[]; createdAt: number;
   status: string; trust: string; origin: string; useCount: number; acceptedCount: number;
+  /** Section chain stored on the row. Empty is the project root. Named sections so it does not collide with the eval's project scope. */
+  sections: string[]; audience: string; personalBot: string;
 };
 export type RawTask = { title: string; objective: string; acceptance: string[]; owns_paths: string[]; read_first: string[] };
 export type RawQuestion = {
@@ -22,7 +24,8 @@ export type EvalData = { notes: RawNote[]; questions: RawQuestion[]; origin: "li
 
 type Reader = Pick<Database.Database, "prepare">;
 
-const MEMORY_SQL = "SELECT id,project_id,kind,content,concepts_json,created_at,status,trust,origin,use_count,accepted_count FROM lane_pilot_memory";
+const MEMORY_SQL = "SELECT id,project_id,kind,content,concepts_json,created_at,status,trust,origin,use_count,accepted_count,scope_json,audience,personal_bot FROM lane_pilot_memory";
+const EXTRACT_SQL = "SELECT id,project_id,kind,content,concepts_json,created_at,status,trust,origin,use_count,accepted_count FROM memory";
 const QUESTION_SQL = `SELECT a.id AS attempt_id, a.task_id AS task_id, r.project_id AS project_id, a.created_at AS started_at, a.attempt_no AS attempt_no,
     json_extract(rc.result_json,'$.produced') AS produced_json,
     json_extract(rr.trace_json,'$.dispatchContext.memoryPicked') AS picked_json,
@@ -35,7 +38,7 @@ const QUESTION_SQL = `SELECT a.id AS attempt_id, a.task_id AS task_id, r.project
   LEFT JOIN lane_pilot_attempt_reasoning rr ON rr.attempt_id=a.id
   WHERE a.state='accepted' ORDER BY a.created_at`;
 
-type NoteRow = { id: string; project_id: string; kind: "core" | "note"; content: string; concepts_json: string; created_at: number; status: string; trust: string; origin: string; use_count: number; accepted_count: number };
+type NoteRow = { id: string; project_id: string; kind: "core" | "note"; content: string; concepts_json: string; created_at: number; status: string; trust: string; origin: string; use_count: number; accepted_count: number; scope_json?: string | null; audience?: string; personal_bot?: string };
 type QuestionRow = { attempt_id: string; task_id: string; project_id: string; started_at: number; attempt_no: number; produced_json: string | null; picked_json: string | null; contract_json: string };
 
 const list = (text: string | null): unknown[] => {
@@ -53,8 +56,10 @@ function task(contractJson: string): RawTask {
   return { title: text(contract.title), objective: text(contract.objective), acceptance: strings(contract.acceptance), owns_paths: strings(contract.owns_paths), read_first: strings(contract.read_first) };
 }
 
+const scopeOf = (json: string | null | undefined): string[] => { try { const value = JSON.parse(json ?? "[]") as unknown; return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : []; } catch { return []; } };
 const toNote = (row: NoteRow): RawNote => ({ id: row.id, projectId: row.project_id, kind: row.kind, content: row.content, concepts: list(row.concepts_json).filter((item): item is string => typeof item === "string"),
-  createdAt: row.created_at, status: row.status, trust: row.trust, origin: row.origin, useCount: row.use_count ?? 0, acceptedCount: row.accepted_count ?? 0 });
+  createdAt: row.created_at, status: row.status, trust: row.trust, origin: row.origin, useCount: row.use_count ?? 0, acceptedCount: row.accepted_count ?? 0,
+  sections: scopeOf(row.scope_json), audience: row.audience ?? "subagent", personalBot: row.personal_bot ?? "" });
 const toQuestion = (row: QuestionRow): RawQuestion => ({ attemptId: row.attempt_id, taskId: row.task_id, projectId: row.project_id, startedAt: row.started_at, attemptNo: row.attempt_no,
   produced: strings(list(row.produced_json)), picked: strings(list(row.picked_json)), task: task(row.contract_json) });
 
@@ -65,7 +70,7 @@ export function loadEvalData(db: Reader): EvalData {
   if (hasTable(db, "question") && hasTable(db, "memory") && !hasTable(db, "lane_pilot_memory")) {
     return {
       origin: "extract",
-      notes: (db.prepare("SELECT id,project_id,kind,content,concepts_json,created_at,status,trust,origin,use_count,accepted_count FROM memory").all() as NoteRow[]).map(toNote),
+      notes: (db.prepare(EXTRACT_SQL).all() as NoteRow[]).map(toNote),
       questions: (db.prepare("SELECT * FROM question ORDER BY started_at").all() as QuestionRow[]).map(toQuestion),
     };
   }

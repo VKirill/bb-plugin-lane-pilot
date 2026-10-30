@@ -2,7 +2,8 @@ import { resolve } from "node:path";
 import { taskV2Schema } from "../../contracts";
 import { enrichMemoryContext } from "../../memory-tiers/server";
 import { claimStageSpawn, getRun, getRunSettingsScopes, getTask, listStageReceipts, searchMemoryRecords } from "../../storage";
-import { coreShelf, memoryEntrySupported, pathsNamed, storeMemoryRecordsKeepingOverflow } from "@lane-pilot/memory-core";
+import { coreShelf, dropMemoryIndexes, memoryEntrySupported, pathsNamed, retireStaleCuratorClaims, storeMemoryRecordsKeepingOverflow } from "@lane-pilot/memory-core";
+import { applyScopeMigration } from "../../../../scripts/memory-scope-dry-run";
 import { bbServiceTier, writerExecutionSelection } from "@lane-pilot/models";
 import { sha256 } from "../../tasks";
 import { memoryMaintenancePrompt, memoryRecordId, parseMemoryCandidates, parseMemorySettings } from "../memory";
@@ -32,6 +33,7 @@ export function createMemoryStage(ctx: ServerCore, services: Services) {
     const task=workspace.task;
     const accepted=listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="acceptance-receipt");
     if(accepted?.state!=="passed"||!accepted.outputSha256) throw new Error("memory maintenance requires an accepted writer receipt first");
+    retireStaleCuratorClaims(db, args.projectId, (projectId, id) => dropMemoryIndexes(db, projectId, id));
     const settings=await stageHelperSettings(bb,db,args.projectId,args.runId);
     const memoryAgent=boundedAgentName(settings["memory.agent"],"memory-maintainer");
     const memorySettings=parseMemorySettings(Object.fromEntries([
@@ -112,8 +114,10 @@ export function createMemoryStage(ctx: ServerCore, services: Services) {
         return typeof content==="string"?new TextEncoder().encode(content):null;
       });
       // A full core keeps the batch: a core entry it cannot take is stored as a note, not a refusal of every entry.
+      // A rule the model emits is not stored here: the rules pipeline owns that concept, and the raw door rejects it.
+      const entries=parsed.filter((entry)=>!entry.concepts.includes("rule"));
       const records=storeMemoryRecordsKeepingOverflow(db,{projectId:args.projectId,personalBot:snapshot.settings.personalBot,audience:snapshot.settings.audience,sourceSha256:snapshot.acceptanceSha256,
-        entries:parsed,coreBudget:snapshot.settings.coreBudget,noteBudget:snapshot.settings.noteBudget,indexBudget:snapshot.settings.indexBudget,scope,readFile,originTaskId:args.taskId});
+        entries,coreBudget:snapshot.settings.coreBudget,noteBudget:snapshot.settings.noteBudget,indexBudget:snapshot.settings.indexBudget,scope,readFile,originTaskId:args.taskId});
       // Notes that now disagree with an active one are held, both, until a person settles it (memory-conflicts.ts); a failure here never loses the write.
       try { services.memoryConflicts.sweepMoot(args.projectId); services.memoryConflicts.detect(args.projectId,new Set(records.insertedIds)); } catch(cause) { bb.log.warn(`Lane Pilot memory conflicts after ${args.taskId} failed: ${cause instanceof Error?cause.message:String(cause)}`); }
       const byId=new Map(records.records.map((row)=>[row.id,row]));
@@ -160,6 +164,11 @@ export function createMemoryStage(ctx: ServerCore, services: Services) {
         return {runId:args.runId,taskId:args.taskId,state:"running",threadId:receipt?.threadId??null,reason:"observing",detail:"memory_spawn_claimed"};
       }
       claimedHere=true;
+      // A scope map stored for the project moves file-named root core onto its section. No map: nothing moves. Not a hand edit of the hub.
+      try {
+        const stored=await bb.storage.kv.get(`memory.scope_map:${args.projectId}`);
+        if(stored&&typeof stored==="object"&&!Array.isArray(stored)) applyScopeMigration(db,stored as Record<string,readonly string[]>);
+      } catch { /* the next accepted task tries again */ }
       const [providers,catalog]=await Promise.all([
         bb.sdk.providers.list({hostId:config.hostId}),
         bb.sdk.providers.models({providerId:memoryProviderId,hostId:config.hostId}),
@@ -175,11 +184,20 @@ export function createMemoryStage(ctx: ServerCore, services: Services) {
         bb, db, projectId:args.projectId, runId:args.runId, role:"memory-maintainer",
       });
       spawnCalled=true;
+      const existing=searchMemoryRecords(db,args.projectId,`${task.title}\n${task.objective}`,8,snapshot.settings.searchEngine,snapshot.settings.audience,snapshot.settings.personalBot,{chain:getRunSettingsScopes(db,args.runId)})
+        .filter((record)=>record.kind==="note"&&!record.concepts.includes("rule")).map((record)=>({id:record.id,content:record.content}));
+      // A few files the notes name, read through the same file reader the writer uses. The model still gets no tools.
+      const named=pathsNamed(existing.map((item)=>item.content).join("\n")).slice(0,4);
+      const excerptRead=await snapshotFileRead(named,async(relativePath)=>{
+        const file=await bb.sdk.files.read({hostId:config.hostId,rootPath:workspace.path,path:resolve(workspace.path,relativePath)}).catch(()=>null);
+        const content=file&&typeof file==="object"?(file as {content?:unknown}).content:null;
+        return typeof content==="string"?new TextEncoder().encode(content):null;
+      });
+      const excerpts=named.flatMap((path)=>{const bytes=excerptRead(path);return bytes?[`FILE ${path}:\n${new TextDecoder().decode(bytes).slice(0,2000)}`]:[];}).join("\n\n");
       const spawned=await fullAccessSpawn(bb, {...placement,...requiredPolicyField(bb, helperPolicy, memoryProviderId, "memory-maintainer"),
         ...writerExecutionSelection(memoryProviderId,memoryModel,memoryEffort,tier),
         prompt:memoryMaintenancePrompt({task,acceptedResult:compactAcceptedResult(accepted.result),settings:snapshot.settings,agent:snapshot.agent,
-          existing:searchMemoryRecords(db,args.projectId,`${task.title}\n${task.objective}`,8,snapshot.settings.searchEngine,snapshot.settings.audience,snapshot.settings.personalBot,{chain:getRunSettingsScopes(db,args.runId)})
-            .filter((record)=>record.kind==="note"&&!record.concepts.includes("rule")).map((record)=>({id:record.id,content:record.content})),
+          existing,excerpts,
           core:(({tokens,replaceable})=>({tokens,records:replaceable}))(coreShelf(db,args.projectId,snapshot.settings.personalBot,snapshot.settings.audience,getRunSettingsScopes(db,args.runId)))}),
         environment:workspaceExecutionEnvironment(config.hostId,workspace),
         pluginMetadata:{role:"memory-maintainer",lanePilotRunId:args.runId,lanePilotTaskId:args.taskId,

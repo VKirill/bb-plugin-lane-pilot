@@ -126,6 +126,10 @@ export function storeMemoryRecords(db: MemoryDatabase, input: StoreMemoryInput):
     const personalBot = input.personalBot ?? "";
     // The one door every write passes: rules and imports reach the corpus without the maintainer's parser.
     for (const entry of input.entries) { const issue = memoryContentIssue(entry.content); if (issue) throw new Error(issue); }
+    // A rule concept is the rules pipeline (`origin: "rule"`). A maintainer that emits one is refused here, not only in the prompt.
+    if (origin !== "rule") for (const entry of input.entries) if (entry.concepts.includes("rule")) throw new Error("memory rule concept is owned by the rules pipeline");
+    // Agentmemory is an observation archive. It does not author project core or, by the check above, rules.
+    if (origin === "agentmemory") for (const entry of input.entries) if (entry.kind === "core") throw new Error("memory core is not written by agentmemory");
     const expiredIds = expireMemory(db, input.projectId, personalBot, now, (projectId, id) => dropMemoryIndexes(db, projectId, id));
     const rows = db.prepare(`SELECT ${cols()}, scope_json FROM lane_pilot_memory WHERE project_id=? AND personal_bot=?`).all(input.projectId, personalBot) as Array<Row & { scope_json: string | null }>;
     const scope = input.scope ?? [];
@@ -177,8 +181,8 @@ export function storeMemoryRecords(db: MemoryDatabase, input: StoreMemoryInput):
         const named = replaceable.filter((row) => row.id.startsWith(prefix));
         if (named.length === 1) replace(named[0]!.id, id, named[0]);
       }
-      // A restated note replaces the older wording of the same subject.
-      if (entry.kind === "note") for (const row of replaceable) if (row.kind === "note" && !gone.has(row.id) && sameSubject(entry, { content: row.content, concepts: JSON.parse(row.concepts_json) as string[] })) replace(row.id, id, row);
+      // A restated note or core replaces the older wording of the same subject, inside this namespace. A note still in use is held instead of dropped. A different fact that only shares tags stays.
+      if (entry.kind === "note" || entry.kind === "core") for (const row of replaceable) if (row.kind === entry.kind && !gone.has(row.id) && sameSubject(entry, { content: row.content, concepts: JSON.parse(row.concepts_json) as string[] })) replace(row.id, id, row);
     }
     const active = rows.filter((row) => row.status === "active" && !gone.has(row.id));
     const sum = (list: Array<{ content: string }>) => list.reduce((total, row) => total + estimate(row.content), 0);

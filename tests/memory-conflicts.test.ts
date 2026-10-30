@@ -84,6 +84,25 @@ describe("the register", () => {
     expect(deferrals.list({ projectId: "P" }).entries).toEqual([]);
   });
 
+  it("keeps the older note when its file hash still matches and the newer one does not", () => {
+    const file = "apps/admin/src/seo.ts";
+    const bytes = new Map<string, Uint8Array>([[file, new TextEncoder().encode("ttl 24")]]);
+    const read = (path: string) => bytes.get(path) ?? null;
+    const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
+    const db = openDatabase(bb);
+    const deferrals = createDeferrals({ db, port: { getThread: async () => null, listEvents: async () => [] }, now: () => T });
+    const conflicts = createMemoryConflicts({ db, deferrals: () => deferrals, now: () => T, readFile: read });
+    const put = (content: string, concepts: string[], at: number) =>
+      storeMemoryRecords(db, { projectId: "P", ...limits, entries: [{ kind: "note", content, concepts }], now: at, readFile: read }).insertedIds[0]!;
+    const older = put(A, TA, T - 2000);
+    bytes.set(file, new TextEncoder().encode("ttl 48"));
+    const newer = put(B, TB, T - 1000);
+    bytes.set(file, new TextEncoder().encode("ttl 24"));
+    conflicts.detect("P", new Set([newer]));
+    expect(db.prepare("SELECT status FROM lane_pilot_memory WHERE id=?").get(older)).toEqual({ status: "active" });
+    expect(db.prepare("SELECT status FROM lane_pilot_memory WHERE id=?").get(newer)).toEqual({ status: "superseded" });
+  });
+
   it("does not open the same pair twice", () => {
     const { conflicts, put } = setup();
     put(A, TA, T - 2000);

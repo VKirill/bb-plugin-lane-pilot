@@ -38,7 +38,7 @@ export const MEMORY_PRIMITIVES = [
   "writerKnowledge", "writerRules", "stickyTurnPromptWithRules", "mixWriterMemory", "mixReviewerMemory", "reviewerMemoryFor", "writerContextBlocks",
   "pmRulesPromptBlock", "pmRulesBlock", "pmRulesOf", "pmResumeInstructions", "contributeInstructions", "ownerCardBlock",
   "pmMemoryContext", "councilMemoryBlock", "searchMemoryRecords", "listMemory", "memoryContext", "acceptedRules",
-  "session_memory_search", "session_memory_core",
+  "session_memory_search", "session_memory_core", "enrichMemoryContext",
 ] as const;
 export type MemoryPrimitive = (typeof MEMORY_PRIMITIVES)[number];
 
@@ -71,6 +71,9 @@ export const MEMORY_PATHS: readonly MemoryPath[] = [
     ] },
   { id: "pm.rules_tool", consumer: "the PM tool lane_pilot_memory {action:\"learned\", op:\"rules\"}", carries: ["rule"], alwaysOn: ["rule"], status: "probed",
     sites: [{ file: "src/rooms/learning/service.ts", primitive: "pmRulesOf", count: 1 }] },
+  { id: "pm.contract", consumer: "path-scoped rules returned with a queued task contract", carries: ["rule"], alwaysOn: [], status: "exempt",
+    reason: "Handed back on the dispatch reply for the task's paths. Startup and resume do not pass paths, so a path selector stays quiet there.",
+    sites: [{ file: "src/rooms/writer/server/dispatch.ts", primitive: "pmRulesOf", count: 1 }] },
   { id: "pm.memory_tool", consumer: "the PM tool lane_pilot_memory {action:\"context\"}", carries: ["note", "core"], alwaysOn: [], status: "probed",
     sites: [
       { file: "src/rooms/memory/server/memory.ts", primitive: "pmMemoryContext", count: 1 },
@@ -100,6 +103,9 @@ export const MEMORY_PATHS: readonly MemoryPath[] = [
       { file: "src/rooms/memory/server/session-memory.ts", primitive: "session_memory_core", count: 1 },
       { file: "src/rooms/memory/server/session-memory.ts", primitive: "searchMemoryRecords", count: 1 },
     ] },
+  { id: "pm.cold", consumer: "cold notes added when the PM asks for memory and the active set is thin", carries: ["note"], alwaysOn: [], status: "exempt",
+    reason: "It only adds notes the active search missed. The probe's active note is already delivered by pm.memory_tool.",
+    sites: [{ file: "src/rooms/memory/server/memory.ts", primitive: "enrichMemoryContext", count: 1 }] },
   { id: "maintainer.existing", consumer: "the memory maintainer's list of EXISTING NOTES", carries: [], alwaysOn: [], status: "exempt",
     reason: "A dedupe aid for the stage that writes notes, not a delivery to a worker; the notes are data it compares against and acts on only by `supersedes`.",
     sites: [{ file: "src/rooms/memory/server/memory.ts", primitive: "searchMemoryRecords", count: 1 }] },

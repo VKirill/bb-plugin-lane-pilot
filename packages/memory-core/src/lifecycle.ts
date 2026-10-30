@@ -17,6 +17,16 @@ export function noteRefutedByCheck(content: string, failureText: string): boolea
 }
 
 /** Hides a record (it stays in the table, leaves every index) with the status that says why. An expiry records budget eviction, idleness, a passed date, or a check that quoted the note; a replacement clears that reason. */
+/** The memory-profile nightly curator is off. A note that still says it is running is dated, not a fact. */
+const STALE_CURATOR = /memory-profile[\s\S]{0,80}nightly|nightly[\s\S]{0,80}memory-profile/i;
+
+export function retireStaleCuratorClaims(db: MemoryDatabase, projectId: string, unindex: (projectId: string, id: string) => void): string[] {
+  const rows = db.prepare("SELECT id, content FROM lane_pilot_memory WHERE project_id=? AND status='active'").all(projectId) as Array<{ id: string; content: string }>;
+  const gone: string[] = [];
+  for (const row of rows) if (STALE_CURATOR.test(row.content) && hideRecord(db, projectId, row.id, "expired", null, unindex, "dated")) gone.push(row.id);
+  return gone;
+}
+
 export function hideRecord(db: MemoryDatabase, projectId: string, id: string, status: "superseded" | "expired", supersededBy: string | null, unindex: (projectId: string, id: string) => void, expiredReason?: ExpiredReason | null): boolean {
   const changed = db.prepare("UPDATE lane_pilot_memory SET status=?, superseded_by=COALESCE(?,superseded_by), expired_reason=CASE WHEN ?='expired' THEN ? ELSE NULL END WHERE project_id=? AND id=? AND status='active'").run(status, supersededBy, status, status === "expired" ? expiredReason ?? null : null, projectId, id).changes === 1;
   if (changed) unindex(projectId, id);
@@ -84,6 +94,20 @@ export function memoryUsefulness(record: Pick<MemoryRecord, "useCount" | "accept
 export function recordMemoryMixed(db: MemoryDatabase, projectId: string, ids: readonly string[], now = Date.now()): void {
   const update = db.prepare("UPDATE lane_pilot_memory SET use_count=use_count+1, last_used_at=? WHERE project_id=? AND id=?");
   for (const id of new Set(ids)) update.run(now, projectId, id);
+}
+
+/** Ids and token count of one retrieval. No note text. */
+export function recordMemoryReceipt(db: MemoryDatabase, input: { projectId: string; role: string; returnedIds: readonly string[]; packedIds: readonly string[]; tokens: number; now?: number }): void {
+  const now = input.now ?? Date.now();
+  const id = `mr_${now}_${input.role}_${input.packedIds.join(",")}`;
+  db.prepare("INSERT INTO lane_pilot_memory_receipt(id,project_id,role,returned_ids,packed_ids,tokens,created_at) VALUES(?,?,?,?,?,?,?)")
+    .run(id, input.projectId, input.role, JSON.stringify(input.returnedIds), JSON.stringify(input.packedIds), input.tokens, now);
+}
+
+/** A critic or reviewer mix. Separate from use_count so it cannot move usefulness. */
+export function recordCriticUse(db: MemoryDatabase, projectId: string, ids: readonly string[]): void {
+  const update = db.prepare("UPDATE lane_pilot_memory SET critic_count=critic_count+1 WHERE project_id=? AND id=?");
+  for (const id of new Set(ids)) update.run(projectId, id);
 }
 
 /** The attempt a record was mixed into was accepted. */

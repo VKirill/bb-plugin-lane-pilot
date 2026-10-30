@@ -53,7 +53,7 @@ const SCHEMA = `
 CREATE TABLE IF NOT EXISTS records(
   id TEXT PRIMARY KEY, kind TEXT NOT NULL, title TEXT NOT NULL, statement TEXT NOT NULL DEFAULT '', attributes TEXT NOT NULL DEFAULT '{}',
   sensitivity TEXT NOT NULL, confidence REAL NOT NULL, status TEXT NOT NULL, first_seen INTEGER, last_seen INTEGER,
-  manual_at INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
+  manual_at INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, authored_by TEXT);
 CREATE INDEX IF NOT EXISTS records_kind ON records(kind, status);
 CREATE TABLE IF NOT EXISTS evidence(
   record_id TEXT NOT NULL REFERENCES records(id) ON DELETE CASCADE, source TEXT NOT NULL, ref TEXT NOT NULL, at INTEGER NOT NULL, quote TEXT,
@@ -81,6 +81,7 @@ export function openStore(path: string = anamnesisDbPath()) {
   const db = new DatabaseSync(path);
   db.exec("PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON;");
   db.exec(SCHEMA);
+  try { db.exec("ALTER TABLE records ADD COLUMN authored_by TEXT"); } catch { /* the column is already in SCHEMA */ }
   if (path !== ":memory:") for (const suffix of ["", "-wal", "-shm"]) { try { chmodSync(path + suffix, 0o600); } catch { /* not created yet */ } }
 
   const one = (sql: string, ...args: Array<string | number | null>): Row | undefined => db.prepare(sql).get(...args) as Row | undefined;
@@ -100,6 +101,7 @@ export function openStore(path: string = anamnesisDbPath()) {
     sensitivity: row.sensitivity as Sensitivity, confidence: num(row.confidence), status: row.status as Status,
     firstSeen: row.first_seen === null ? null : num(row.first_seen), lastSeen: row.last_seen === null ? null : num(row.last_seen),
     manualAt: num(row.manual_at), createdAt: num(row.created_at), updatedAt: num(row.updated_at), evidenceCount: num(row.evidence_count),
+    authoredBy: row.authored_by === "model" || row.authored_by === "owner" ? row.authored_by : null,
   });
   const SELECT = "SELECT r.*, (SELECT count(*) FROM evidence e WHERE e.record_id=r.id) AS evidence_count FROM records r";
 
@@ -150,9 +152,10 @@ export function openStore(path: string = anamnesisDbPath()) {
     if (!existing) {
       const sensitivity: Sensitivity = owner ? (input.sensitivity ?? floor) : maxSensitivity(input.sensitivity === "public" ? "private" : input.sensitivity, floor);
       const status: Status = owner ? "confirmed" : input.status ?? "draft";
-      run("INSERT INTO records(id,kind,title,statement,attributes,sensitivity,confidence,status,first_seen,last_seen,manual_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+      const authoredBy = input.attributes.authoredBy === "model" || input.attributes.authoredBy === "owner" ? input.attributes.authoredBy : null;
+      run("INSERT INTO records(id,kind,title,statement,attributes,sensitivity,confidence,status,first_seen,last_seen,manual_at,created_at,updated_at,authored_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         id, input.kind, input.title, input.statement, JSON.stringify(input.attributes), sensitivity, input.confidence, status,
-        input.firstSeen ?? oldest, input.lastSeen ?? newest, owner ? now : 0, now, now);
+        input.firstSeen ?? oldest, input.lastSeen ?? newest, owner ? now : 0, now, now, authoredBy);
       for (const item of evidence) run("INSERT OR IGNORE INTO evidence(record_id,source,ref,at,quote) VALUES (?,?,?,?,?)", id, item.source, item.ref, item.at, item.quote ?? null);
       pruneEvidence(id);
       log(id, now, ctx.actor, "create", ctx.reason, { title: input.title, sensitivity, status, evidence: evidence.length });

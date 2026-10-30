@@ -67,20 +67,27 @@ const lines = (value: readonly string[]) => value.join("\n");
 /** What each probed path hands its agent, built by the code the path runs in production. */
 const PROBES: Record<string, (c: Context) => Promise<Probe> | Probe> = {
   "writer.brief": async (c) => {
+    storeMemoryRecords(c.db, {
+      projectId: c.projectId, audience: "subagent", sourceSha256: sha256Hex("probe:sibling"), trust: "confirmed", origin: "probe",
+      entries: [{ kind: "note", content: "Sibling section only: the other port is 4000.", concepts: ["lp-probe"] }],
+      coreBudget: c.settings.coreBudget, noteBudget: c.settings.noteBudget, indexBudget: c.settings.indexBudget, scope: ["section:other"],
+    });
     const build = async (task: TaskV2) => {
-      const known = await writerKnowledge({ db: c.db, host: c.host, chainForRun: async () => [] }, { projectId: c.projectId, runId: "memory-probe", hostId: c.hostId, task, memorySettings: c.settings });
+      const known = await writerKnowledge({ db: c.db, host: c.host, chainForRun: async () => ["section:probe"] }, { projectId: c.projectId, runId: "memory-probe", hostId: c.hostId, task, memorySettings: c.settings });
       return writerBriefSegments(task, known.mixed.text, "", undefined, "Lane Pilot writer", "", known.rulesText).map((segment) => segment.text).join("\n\n");
     };
-    return { delivered: await build(c.positive), negative: await build(c.unrelated) };
+    const delivered = await build(c.positive);
+    if (delivered.includes("other port is 4000")) throw new Error("sibling section leaked into the writer brief");
+    return { delivered, negative: await build(c.unrelated) };
   },
   "writer.turn": async (c) => {
-    const build = async (task: TaskV2) => (await stickyTurnPromptWithRules({ db: c.db, host: c.host, chainForRun: async () => [] },
+    const build = async (task: TaskV2) => (await stickyTurnPromptWithRules({ db: c.db, host: c.host, chainForRun: async () => ["section:probe"] },
       { projectId: c.projectId, runId: "memory-probe", hostId: c.hostId, task, memorySettings: c.settings }, { kind: "next-task", task }))([]);
     return { delivered: await build(c.positive), negative: await build(c.unrelated) };
   },
   "writer.repair": async (c) => {
     const build = async (task: TaskV2) => {
-      const known = await writerKnowledge({ db: c.db, host: c.host, chainForRun: async () => [] }, { projectId: c.projectId, runId: "memory-probe", hostId: c.hostId, task, memorySettings: c.settings });
+      const known = await writerKnowledge({ db: c.db, host: c.host, chainForRun: async () => ["section:probe"] }, { projectId: c.projectId, runId: "memory-probe", hostId: c.hostId, task, memorySettings: c.settings });
       return codeRepairPrompt({ task, findings: [], contextBlocks: writerContextBlocks(task, known.mixed.text, "", "", known.rulesText) });
     };
     return { delivered: await build(c.positive), negative: await build(c.unrelated) };
@@ -151,7 +158,7 @@ export function createMemoryProbe(ctx: ServerCore, services: Services) {
     });
     try { planted.note = plant("note", `Probe note ${tokens.note}: the folder ${PROBE_ANCHOR} holds a memory delivery check. Nothing to do; it deletes itself within a day.`, ["lp-probe", "probe"]).insertedIds.length > 0; }
     catch (cause) { problems.push(`note not written: ${cause instanceof Error ? cause.message : String(cause)}`); }
-    try { planted.core = plant("core", `Probe core ${tokens.core}: lp-probe memory delivery check convention. Nothing to do; it deletes itself within a day.`, ["lp-probe", "probe"]).insertedIds.length > 0; }
+    try { planted.core = plant("core", `Convention ${tokens.core}: writers of this project keep one port per service.`, ["lp-probe", "probe"]).insertedIds.length > 0; }
     catch (cause) { problems.push(`core not written: ${cause instanceof Error ? cause.message : String(cause)}`); }
     try {
       const lesson = upsertLessonProposal(db, projectId, { rule: `Probe rule ${tokens.rule}: lp-probe memory delivery check, nothing to do.`, evidence: "memory probe", audience: "both", always: true });

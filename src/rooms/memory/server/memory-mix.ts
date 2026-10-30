@@ -1,4 +1,4 @@
-import { MEMORY_SETTING_KEYS, roleContextBudget, REVIEWER_CONCEPTS, estimateTokens, filesDrifted, listMemory, memoryContext, parseMemorySettings, pathsNamed, searchMemoryRecords, type MemoryRecord, type MemorySearchEngine, type MemorySettings } from "@lane-pilot/memory-core";
+import { MEMORY_SETTING_KEYS, REVIEWER_CONCEPTS, estimateTokens, filesDrifted, listMemory, memoryContext, parseMemorySettings, pathsNamed, recordCriticUse, roleContextBudget, searchMemoryRecords, type MemoryRecord, type MemorySearchEngine, type MemorySettings } from "@lane-pilot/memory-core";
 import type { TaskV2 } from "../../contracts";
 import { getRunSettingsScopes, loadProjectSettings, type LanePilotDatabase } from "../../storage";
 import { memoryLine, reviewerMemoryPicks, writerMemory, writerMemoryPicks } from "../../writer";
@@ -60,6 +60,7 @@ export function mixReviewerMemory(db: LanePilotDatabase, input: { projectId: str
     if (used + size > input.budget) continue;
     used += size; lines.push(line); ids.push(note.id);
   }
+  recordCriticUse(db, input.projectId, ids);
   return { text: lines.join("\n"), ids };
 }
 
