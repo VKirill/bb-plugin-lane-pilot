@@ -8,6 +8,7 @@
     "./critique/review-screen.ts",
     "./critique/index.ts",
     "./tasks/plan-fact-judgment.ts",
+    "./tasks/index.ts",
     "./wall/index.ts",
     "./wall/wall-filter-judgment.ts",
     "./workflow/goal-screen.ts",

@@ -16,7 +16,7 @@ import "../phase";
 import "../runs";
 import "../workflow";
 import "../writer";
-import "@lane-pilot/jev/judgments/plan-fact";
+import "../tasks";
 import "@lane-pilot/jev/judgments/citation-check";
 import "@lane-pilot/jev/judgments/memory-rerank";
 import "@lane-pilot/jev/judgments/invoice-scan";

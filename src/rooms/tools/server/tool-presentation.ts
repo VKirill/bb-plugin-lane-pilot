@@ -52,6 +52,8 @@ export const TOOL_PRESENTATION: Record<string, Entry> = {
   lane_pilot_workflow_amend: row("Changing the goals of a run", "Changed the goals of a run", "Меняю цели запуска", "Цели запуска изменены"),
   lane_pilot_workflow_status: row("Checking a workflow run", "Checked a workflow run", "Смотрю ход графа", "Ход графа получен", true),
   lane_pilot_specialist: row("Starting a specialist", "Started a specialist", "Запускаю специалиста", "Специалист запущен"),
+  lane_pilot_employee_lesson: row("Recording a lesson for the employee", "Lesson recorded for the employee", "Записываю урок сотруднику", "Урок сотруднику записан"),
+  lane_pilot_employee_remark: row("Checking the remark for the employee", "Remark checked for the employee", "Проверяю замечание для сотрудника", "Замечание для сотрудника проверено"),
   lane_pilot_workflow_draft_create: row("Starting a workflow draft", "Started a workflow draft", "Начинаю черновик графа", "Черновик графа создан"),
   lane_pilot_workflow_draft_patch: row("Changing the workflow draft", "Changed the workflow draft", "Дорабатываю граф", "Граф доработан"),
   lane_pilot_workflow_draft_get: row("Reading the workflow draft", "Read the workflow draft", "Читаю черновик графа", "Черновик графа прочитан", true),
