@@ -15,7 +15,7 @@ import { writerPickOverlay, type WriterLoad } from "../writer-model-pick";
 import { reassignedReason, takeReassignRequest, type ReassignRequest } from "./reassign";
 import { usageHoldReason, usageSkipPercent } from "../../usage/server";
 import { MAIN_ATTEMPT_LIMIT, RETRY_ELIGIBLE } from "../../runs";
-import { FREE_RETRY_LIMIT, PARKED_CLASSES, REPLAY_CHECK_FAILED, SESSION_MAX_MS, isWaitingSecret, isWriterSilent, repeatedFailureReason, taskFamily, turnFailureKey } from "../../runs";
+import { FREE_RETRY_LIMIT, PARKED_CLASSES, REPLAY_CHECK_FAILED, SESSION_MAX_MS, VERIFICATION_TIMEOUT_RETRIES, isWaitingSecret, isWriterSilent, repeatedFailureReason, taskFamily, turnFailureKey, verificationTimeoutOverBudget } from "../../runs";
 import { isTaskSatisfied } from "../../runs/server";
 import { isWriterStreamError, previousAttemptBrief } from "./writer-task";
 import { stickyTurnPromptWithRules } from "./writer-knowledge";
@@ -841,6 +841,17 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         const failedClass = await judgedFailureClass({ jev, settings:async () => runSettings, projectId:input.projectId, runId:input.runId },
           String(last.status), typeof last.reason === "string" ? last.reason : null, input.taskId);
         judged = { status: String(last.status), reason: typeof last.reason === "string" ? last.reason : null, klass: failedClass };
+        // A check the host killed for time is not the task's red code: one retry, then it stops on its own budget.
+        if (failedClass === "verification_timeout") {
+          const reasons = (db.prepare("SELECT reason FROM lane_pilot_attempt WHERE run_id=? AND task_id=?").all(input.runId, input.taskId) as Array<{ reason: string | null }>).map((row) => row.reason);
+          if (verificationTimeoutOverBudget(reasons)) {
+            const reason = `verification_timeout_budget: the check timed out again after its ${VERIFICATION_TIMEOUT_RETRIES} retry; this budget is separate from the task's attempts. Raise timeout_sec or narrow the command, then dispatch again`;
+            const latest = getAttempt(db, attemptId);
+            if (latest && RETRY_ELIGIBLE.includes(latest.state as AttemptState)) transitionAttempt(db, latest.id, "blocked", { reason });
+            last = { ...last, status:"blocked", reason };
+            break;
+          }
+        }
         // A provider that takes no work fails every retry the same way: the writer chain below takes the task now.
         // The attempt ends blocked with its limit reason (uncharged); primaryFailure keeps the state the chain reads.
         // A writer that stayed silent through its nudges is handed on the same way: its session hung, not the task.
@@ -861,7 +872,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         // the same diff twice) does not: the next attempt goes to the next writer in the chain, not this one again.
         if (sessionEnd) {
           const ended = `${sessionEnd}: ${String(last.reason ?? last.status)}`;
-          if (sessionEnd.startsWith("no progress:") && /^verification failed\b/.test(String(last.reason ?? ""))) {
+          if (sessionEnd.startsWith("no progress:") && failedClass !== "verification_timeout" && /^verification failed\b/.test(String(last.reason ?? ""))) {
             checkEscalation = ended;
             break;
           }
@@ -884,7 +895,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         // would only repeat them. A repeated red check is the exception: the next attempt is the next writer in the
         // chain. A turn in the same thread is not stopped here: the session's own early stop is above.
         const repeated = redo ? null : repeatedFailureReason(familyFailure, { state:String(last.status), reason:typeof last.reason === "string" ? last.reason : null });
-        if (repeated && /^verification failed\b/.test(String(last.reason ?? ""))) {
+        if (repeated && failedClass !== "verification_timeout" && /^verification failed\b/.test(String(last.reason ?? ""))) {
           checkEscalation = repeated;
           primaryFailure = { ...last };
           break;
