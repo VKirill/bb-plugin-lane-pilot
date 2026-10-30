@@ -261,10 +261,35 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
             results.push({projectId:project.id,path:place.path,hostId:place.hostId,state:"skipped",reason:"unsupported_workspace_path"});
             continue;
           }
-          const baseKey=`docs-base:${place.hostId}:${sha256(place.path).slice(0,12)}`;
-          const storedBase=await bb.storage.kv.get(baseKey).catch(()=>null) as {head?:string}|null;
+          const storedBase=await bb.storage.kv.get(`docs-base:${place.hostId}:${sha256(place.path).slice(0,12)}`).catch(()=>null) as {head?:string}|null;
           const scope=await host.call("gitDocsScope",{requestedHostId:place.hostId,projectCwd:place.path,sinceEpochMs:docsSinceEpoch(docs.since,new Date()),...(storedBase?.head?{base:storedBase.head}:{})},{hostId:place.hostId,timeoutMs:120_000});
-          if(scope.status!=="ready"||!scope.isRepoRoot) continue;
+          // A non-git place or a nested checkout has no repository to document (DOC1: only repos are walked).
+          if(scope.status!=="ready"||!scope.isRepoRoot){ results.push({projectId:project.id,path:place.path,hostId:place.hostId,state:"skipped",reason:`not_git:${scope.status}`}); continue; }
+          // One repository — one pass (DOC1): copies of the same origin are walked once, in the copy that is not behind.
+          const repoId=scope.origin||scope.rootCommit||place.path;
+          const repoKey=`docs-repo:${sha256(repoId).slice(0,16)}`;
+          const baseKey=`docs-base:repo:${sha256(repoId).slice(0,16)}`;
+          const storedRepoBase=await bb.storage.kv.get(baseKey).catch(()=>null) as {head?:string}|null;
+          const openUnitKeys=(await bb.storage.kv.get(DOCS_UNITS_OPEN_KEY).catch(()=>null) as Record<string,true>|null)??{};
+          // Early exit (DOC1): HEAD is where the last pass ended and no unit has open progress — no status check, no Jev, no copy.
+          if(storedRepoBase?.head===scope.head&&!Object.keys(openUnitKeys).length){
+            results.push({projectId:project.id,path:place.path,hostId:place.hostId,state:"skipped",reason:`no commits since last pass (HEAD ${scope.head?.slice(0,8)})`});
+            continue;
+          }
+          // Behind origin never documents (a stale copy once described 440-commit-old code). Read-only fetch, bounded.
+          if(scope.origin){
+            await host.call("gateRun",{requestedHostId:place.hostId,basePath:place.path,command:"git fetch --quiet",timeoutSec:20},{hostId:place.hostId,timeoutMs:40_000}).catch(()=>null);
+            const behind=await host.call("gateRun",{requestedHostId:place.hostId,basePath:place.path,command:"git rev-list --count HEAD..@{u}",timeoutSec:15},{hostId:place.hostId,timeoutMs:30_000}).catch(()=>null);
+            const behindN=behind?.exitCode===0?Number(behind.stdout.trim())||0:0;
+            if(behindN>0){ results.push({projectId:project.id,path:place.path,hostId:place.hostId,state:"skipped",reason:`behind origin by ${behindN} commits`}); continue; }
+          }
+          const claimed=await bb.storage.kv.get(repoKey).catch(()=>null) as {holder?:string}|null;
+          const holder=`${place.hostId}:${place.path}`;
+          if(claimed?.holder&&claimed.holder!==holder){
+            results.push({projectId:project.id,path:place.path,hostId:place.hostId,state:"skipped",reason:`another copy of this repo is documented: ${claimed.holder}`});
+            continue;
+          }
+          await bb.storage.kv.set(repoKey,{holder}).catch(()=>undefined);
           // A pass that broke off (a reload, a crash) or left units failed is picked up at the next hours of the same
           // night; units already done have no changes left and skip at once.
           const stateKey=`docs-nightly-state:${project.id}:${sha256(place.path).slice(0,12)}`;
@@ -353,7 +378,7 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
           // The place's next pass diffs from where this one ended, not from the last docs-touching commit: a commit
           // carrying both code and a docs line used to hide all of its code changes (bb-plugin-project-folders 0.7.10).
           const headNow=(await host.call("gateRun",{requestedHostId:place.hostId,basePath:place.path,command:"git rev-parse HEAD",timeoutSec:15},{hostId:place.hostId,timeoutMs:30_000}).catch(()=>null));
-          if(headNow?.exitCode===0&&/^[a-f0-9]{40}$/.test(headNow.stdout.trim())) await bb.storage.kv.set(baseKey,{head:headNow.stdout.trim()}).catch(()=>undefined);
+          if(headNow?.exitCode===0&&/^[a-f0-9]{40}$/.test(headNow.stdout.trim())) await bb.storage.kv.set(`docs-base:repo:${sha256(repoId).slice(0,16)}`,{head:headNow.stdout.trim()}).catch(()=>undefined);
           // The pass is done: its worktree goes now, unless a unit left open progress in it (WT2: create → merge → remove).
           if(resolve(work.path)!==resolve(place.path)){
             const openUnits=(await bb.storage.kv.get(DOCS_UNITS_OPEN_KEY).catch(()=>null) as Record<string,true>|null)??{};

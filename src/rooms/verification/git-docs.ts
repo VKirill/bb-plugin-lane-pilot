@@ -22,7 +22,7 @@ export type GitDocsScope = {
   /** Code files changed since `base` or uncommitted now, docs and tooling excluded. */
   changed: string[];
   /** The last commit that touched docs/, else the last one before the window: the docs describe this code. */
-  base: string | null;
+  base: string | null; head?: string; origin?: string; rootCommit?: string;
   /** Every path `git status` reports, to tell afterwards what the docs agent touched. */
   dirty: string[];
   /** The repository's workspaces when it is a monorepo; empty otherwise. */
@@ -92,9 +92,13 @@ export async function gitDocsScope(input: { projectCwd: string; sinceEpochMs: nu
       || EMPTY_TREE;
     const committed = (await git("diff", "--name-only", base, "HEAD")).split("\n");
     const dirty = (await git("status", "--porcelain", "--untracked-files=all")).split("\n").filter(Boolean).flatMap(statusPaths);
-    const changed = [...new Set([...committed, ...dirty].map((path) => path.trim()).filter((path) => path && !NOT_CODE.test(path)))].sort();
+    // Documentation follows the repository's commits only: uncommitted edits in the owner's checkout are not its history (DOC1).
+    const changed = [...new Set(committed.map((path) => path.trim()).filter((path) => path && !NOT_CODE.test(path)))].sort();
+    const head = (await git("rev-parse", "HEAD")).trim();
+    const origin = await git("config", "--get", "remote.origin.url").then((value) => value.trim(), () => "");
+    const rootCommit = await git("rev-list", "--max-parents=0", "HEAD").then((value) => value.split("\n")[0]!.trim(), () => "");
     const workspaces = isRepoRoot ? await listWorkspaces(input.projectCwd, (await git("ls-files")).split("\n").filter(Boolean)) : [];
-    return { status: "ready", isRepoRoot, hasDocs, changed, dirty, base, workspaces, ...local, reason: null };
+    return { status: "ready", isRepoRoot, hasDocs, changed, dirty, base, head, origin, rootCommit, workspaces, ...local, reason: null };
   } catch (cause) {
     return { status: "failed", isRepoRoot: false, hasDocs, changed: [], dirty: [], base: null, workspaces: [], ...local, reason: cause instanceof Error ? cause.message : String(cause) };
   }
