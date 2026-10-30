@@ -34,6 +34,8 @@ export type BenchDeps = {
   jevCtx?: (task: import("./types").ManifestTask) => Promise<import("../validators").ValidatorDeps["jevCtx"]>;
   /** Layer-3 page review through the specialist helper (pageReviewByAgent); absent: layers 1–2 only. */
   pageReview?: (task: import("./types").ManifestTask, request: Parameters<import("../validators").PageReview>[0]) => ReturnType<import("../validators").PageReview>;
+  /** The critic-eval stratum: one real code-critique call on the task's patch (plugin-ports wires runCodeCritique). */
+  criticRun?: (task: import("./types").ManifestTask, runId: string) => Promise<{ ok: boolean; reason: string; model?: string; costUsd?: number | null; tokens?: number | null }>;
 };
 
 export type BenchSettings = { budgetTokens: number; budgetHours: number };
@@ -137,7 +139,7 @@ export function createBench(deps: BenchDeps) {
       for (const row of closed) deps.log(`bench-sweep: ${row.id} ${row.arm} ${row.stopReason}`);
       const reports: SeriesReport[] = [];
       for (let repeat = 1; repeat <= repeats; repeat++) {
-        const report = await runSeries({ db: deps.db, host: deps.host, pipeline: deps.pipeline, log: deps.log, ...(deps.jevals ? { jevals: deps.jevals } : {}), ...(deps.projectNameFor ? { projectNameFor: deps.projectNameFor } : {}), ...(deps.jevCtx ? { jevCtx: deps.jevCtx } : {}), ...(deps.pageReview ? { pageReview: deps.pageReview } : {}) }, { ...input, repeat, ...(hostId ? { hostId } : {}), ...(reposRoot ? { reposRoot } : {}), budgetTokens: input.budgetTokens ?? caps.budgetTokens, budgetHours: input.budgetHours ?? caps.budgetHours });
+        const report = await runSeries({ db: deps.db, host: deps.host, pipeline: deps.pipeline, log: deps.log, ...(deps.jevals ? { jevals: deps.jevals } : {}), ...(deps.projectNameFor ? { projectNameFor: deps.projectNameFor } : {}), ...(deps.jevCtx ? { jevCtx: deps.jevCtx } : {}), ...(deps.pageReview ? { pageReview: deps.pageReview } : {}), ...(deps.criticRun ? { criticRun: deps.criticRun } : {}) }, { ...input, repeat, ...(hostId ? { hostId } : {}), ...(reposRoot ? { reposRoot } : {}), budgetTokens: input.budgetTokens ?? caps.budgetTokens, budgetHours: input.budgetHours ?? caps.budgetHours });
         reports.push(report);
         if (report.state === "stopped_budget" || report.state === "failed" || report.state === "deferred" || report.state === "unavailable") break;
       }

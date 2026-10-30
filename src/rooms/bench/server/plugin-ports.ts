@@ -3,7 +3,7 @@ import { waitThreadIdle } from "@lane-pilot/thread-observe";
 import { taskV2Schema } from "../../contracts";
 import { fullAccessSpawn, stringAt, type ServerCore, type Services } from "../../core/server";
 import { cancelAttemptById, finishRunSafely } from "../../runs/server";
-import { getActivation, getRun, listOpenAttempts, loadProjectSettings, loadPrototypeConfig, saveProjectSetting, savePrototypeConfig } from "../../storage";
+import { createRun, createTask, getActivation, getRun, getTask, listOpenAttempts, loadProjectSettings, loadPrototypeConfig, saveProjectSetting, savePrototypeConfig } from "../../storage";
 import { isSandboxProjectName } from "../../stability/server";
 import { attemptMetrics, syncTokenUsage } from "../../usage/server";
 import { DEFAULT_BENCH_WRITER } from "../runner";
@@ -12,6 +12,7 @@ import type { BenchProjectRef, HostPort, PipelinePort } from "../ports";
 import { createBench, type BenchApi } from "../service";
 import { pageReviewByAgent } from "../../critique/server";
 import { judgeTrace } from "../jevals";
+import { ensureSealedSets } from "../critique-set";
 import { jev } from "@lane-pilot/jev";
 
 /** The bench inside the plugin: the machines through `runCommand`, the pipeline through the plugin's own services. */
@@ -134,6 +135,33 @@ export function createPluginBench(ctx: ServerCore, services: Services): BenchApi
       pmThreadId: "", projectId: task.projectId ?? "", parentRunId: "",
       design: Boolean((task as { brief?: { design?: unknown } }).brief?.design), request: req,
     }),
+    // The critic-eval stratum: one real code-critique call on the task's patch — no writer, no repo. The receipt lands
+    // on a real lane_pilot_run/lane_pilot_task pair of project critic-eval, so criticStats (R9, lp.critic-edit) counts it.
+    criticRun: async (task: import("../types").ManifestTask, runId: string) => {
+      const { runCodeCritique } = await import("../../critique/server");
+      const { buildCandidateEvidence } = await import("../../critique");
+      const { expectedFindings, judgeCriticFindings } = await import("../critique-set");
+      const contract = task.contract as { title?: string; diff?: string; expected_findings?: unknown };
+      const expected = expectedFindings(task.contract);
+      const diff = String(contract.diff ?? "");
+      if (!getRun(db, runId)) createRun(db, runId, "critic-eval", "cli");
+      if (!getTask(db, task.taskId)) createTask(db, { id: task.taskId, runId, kind: "cli", contract: { title: contract.title ?? task.taskId, risk: task.risk } });
+      const evidence = buildCandidateEvidence({
+        produced: ["patch.diff"], hashes: { "patch.diff": null }, verification: [],
+        files: [{ path: "patch.diff", content: diff }], patches: { "patch.diff": diff },
+        output: "", ownsPaths: ["patch.diff"], neverTouch: [], dirtOk: true,
+      });
+      const verdict = await runCodeCritique({
+        bb, db, projectId: "critic-eval", runId, taskId: task.taskId,
+        config: (loadPrototypeConfig(db, "critic-eval") ?? { projectId:"critic-eval", hostId:"", pmWorkspacePath:"", writerWorkspacePath:"", pmProviderId:"", pmModel:"", writerProviderId:"", writerModel:"" }) as never,
+        task: { id: task.taskId, title: contract.title ?? task.taskId, risk: task.risk, kind: "code",
+                objective: `Review this patch for the bug it introduces:\n\n${diff}` } as never,
+        evidence,
+      });
+      const findings = ((verdict.critique ?? verdict.parsed) as { findings?: unknown[] } | undefined)?.findings ?? [];
+      const judge = judgeCriticFindings(findings as never, expected);
+      return { ok: judge.found === judge.total, reason: `critic found ${judge.found}/${judge.total} known bugs` };
+    },
   });
 }
 

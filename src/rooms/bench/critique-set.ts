@@ -87,3 +87,19 @@ export function loadSealedSet(db: BenchDb, input: { version: string; manifest: {
   }));
   return insertSet(db, { version: input.version, tasks, rejected: [], candidateCount: tasks.length, config: { sealed: true, stratum: "critique" }, now: input.now });
 }
+
+import sealedManifest from "../../../bench/known-bugs-v1.json";
+import { getSet } from "./store";
+
+/** Registers the bundled sealed sets once (mount, idempotent by version): the night then picks them up like any set. */
+export function ensureSealedSets(db: BenchDb): string[] {
+  const added: string[] = [];
+  const manifests = [sealedManifest as { version: string; tasks: SealedEntry[] }];
+  for (const manifest of manifests) {
+    if (!getSet(db, manifest.version)) {
+      loadSealedSet(db, { version: manifest.version, manifest });
+      added.push(manifest.version);
+    }
+  }
+  return added;
+}
