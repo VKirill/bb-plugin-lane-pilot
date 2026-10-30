@@ -204,3 +204,20 @@ describe("cold tier demotion", () => {
     expect(db.prepare("SELECT status FROM lane_pilot_memory WHERE id=?").get(b)).toEqual({ status: "active" });
   });
 });
+
+describe("audience boundary (regression)", () => {
+  it("searchMemoryRecords as subagent never returns an owner-audience record", () => {
+    const db = dbOf();
+    storeMemoryRecords(db, { projectId: "P", ...limits, audience: "owner" as const, entries: [
+      { kind: "note", content: "Owner fact about deployment port.", concepts: ["deploy"] },
+    ] });
+    storeMemoryRecords(db, { projectId: "P", ...limits, entries: [
+      { kind: "note", content: "Subagent fact about deployment port.", concepts: ["deploy"] },
+    ] });
+    for (const engine of ["auto", "lex", "sem"] as const) {
+      const found = searchMemoryRecords(db, "P", "deployment port", 10, engine, "subagent", "", {}).map((row) => row.content).join("\n");
+      expect(found).toContain("Subagent fact");
+      expect(found).not.toContain("Owner fact");
+    }
+  });
+});
