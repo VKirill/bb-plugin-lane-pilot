@@ -1,5 +1,7 @@
 import Database from "better-sqlite3";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+afterEach(() => vi.useRealTimers());
 import { memoryRecordId } from "../packages/memory-core/src";
 import { buildEvalDb, planCorpus, poisonCopy, syntheticCopy } from "../src/rooms/memory-eval/server/corpus";
 import { classify, fileKey, folderKey } from "../src/rooms/memory-eval/server/questions";
@@ -141,6 +143,7 @@ describe("scoring", () => {
 
 describe("a run", () => {
   it("reports every retriever at every size, and the plain baseline finds what the production writer path finds on a clean corpus", async () => {
+    vi.setSystemTime(T0 + 200 * DAY);
     const report = await runMemoryEval(data(), { sizes: [30, 60], seed: 1, scope: "pile", ...options });
     expect(report.sizes.map((size) => size.size)).toEqual([30, 60]);
     for (const size of report.sizes) {

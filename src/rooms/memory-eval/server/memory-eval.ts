@@ -89,7 +89,7 @@ export async function runMemoryEval(data: EvalData, options: RunOptions): Promis
     const plan = planCorpus({ data, size, seed, scope: options.scope ?? "project", skipProjects: options.skipProjects, skipTask: options.skipTask, ...(options.now !== undefined ? { now: options.now } : {}) });
     const db = buildEvalDb(plan);
     try {
-      const retrievers = createRetrievers(db, plan.notes);
+      const retrievers = createRetrievers(db, plan.notes, options.now);
       const kinds = new Map(plan.notes.map((note) => [note.id, note.kind]));
       const times = plan.notes.map((note) => [note.id, note.createdAt] as const);
       const rowsBy = new Map<string, Row[]>(retrievers.map((retriever) => [retriever.id, []]));
