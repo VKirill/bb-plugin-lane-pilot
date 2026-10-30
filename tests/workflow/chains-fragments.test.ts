@@ -153,20 +153,20 @@ describe("lp.review", () => {
 describe("lp.close", () => {
   it("goals met: staged knowledge, project life, report, closed", async () => {
     const r = await runSim("lp.close", { input: { goal: "g", goals: [{ id: "g1" }, { id: "g2" }], merged_commits: ["c1"] }, stubs: { goal_audit: { all_met: true, intent_aligned: true }, memory: { staged: 2, candidate_ids: ["m1", "m2"] } } });
-    expect(pathOf(r)).toBe("goal_audit memory life report closed");
+    expect(pathOf(r)).toBe("goal-screen goal_audit memory life report closed");
     expect(out(r)).toMatchObject({ status: "closed", staged: 2, candidate_ids: ["m1", "m2"] });
   });
 
   it("unmet goals end the fragment as unmet with their ids, before anything is staged", async () => {
     const r = await runSim("lp.close", { input: { goals: [{ id: "g1" }, { id: "g2" }] }, stubs: { goal_audit: { all_met: false, unmet_ids: ["g2"] } } });
-    expect(pathOf(r)).toBe("goal_audit unmet");
+    expect(pathOf(r)).toBe("goal-screen goal_audit unmet");
     expect(out(r)).toMatchObject({ status: "unmet", unmet_ids: ["g2"] });
   });
 
   it("intent drift ends the fragment as unmet with the goals and the drift, without asking the owner", async () => {
     const stubs = { goal_audit: { all_met: true, intent_aligned: false, unmet_ids: [], goals: [{ id: "g1", status: "UNMET", missing: "no current screenshots" }], drift_items: ["scope grew"] } };
     const r = await runSim("lp.close", { input: { goals: [{ id: "g1" }, { id: "g2" }] }, stubs });
-    expect(pathOf(r)).toBe("goal_audit unmet");
+    expect(pathOf(r)).toBe("goal-screen goal_audit unmet");
     expect(out(r)).toMatchObject({ status: "unmet", intent_aligned: false, drift_items: ["scope grew"], goals: [{ id: "g1", missing: "no current screenshots" }] });
   });
 

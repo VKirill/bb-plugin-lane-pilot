@@ -355,7 +355,7 @@ describe("the dispatch runs on the workflow engine", () => {
 
   it("records the journal of a finished dispatch: one step per stage, the writer step settled when the task ends", async () => {
     const { engineRuns, engineSteps } = await runScenario({ name: "journal", settings: { "plan_critique.enabled": false }, finish: true });
-    expect(engineSteps.map((step) => step.node_id)).toEqual(["pm-read", "quality-mode", "plan-critique", "specialist-review", "ownership-base", "task-folder", "writer", "qa-gate"]);
+    expect(engineSteps.map((step) => step.node_id)).toEqual(["worth-check", "pm-read", "quality-mode", "plan-critique", "specialist-review", "ownership-base", "task-folder", "writer", "qa-gate"]);
     expect(engineSteps.slice(0, -1).every((step) => step.state === "succeeded")).toBe(true);
     expect(["waiting", "succeeded"]).toContain(engineRuns[0]!.status);
   }, 30_000);

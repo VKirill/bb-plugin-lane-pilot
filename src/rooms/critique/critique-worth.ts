@@ -8,9 +8,10 @@ import { defineJudgment, noul, noulOf } from "@lane-pilot/jev";
  */
 export const CRITIQUE_WORTH_ID = "critique.worth";
 
-export type CritiqueWorthInput = { title: string; contract?: string; size?: string; risk?: string };
+/** The `state` map of a `type:"jev"` node IS the judgment's input — field names must match it one to one. */
+export type CritiqueWorthInput = { task_title: string; contract?: string; size?: string; risk?: string };
 
-export type CritiqueWorthDecision = { skip: { pm_read: boolean; plan_critique: boolean; specialist_review: boolean } };
+export type CritiqueWorthDecision = { skip_pm_read: boolean; skip_plan_critique: boolean; skip_specialist_review: boolean };
 
 const clip = (text: string, max: number) => (text.length > max ? `${text.slice(0, max - 1)}…` : text);
 
@@ -21,7 +22,7 @@ export const critiqueWorthJudgment = defineJudgment<CritiqueWorthInput, Critique
   timeoutMs: 6_000,
   // Whitelist: the task's title, its contract excerpt and the path class — nothing else of the run leaves for the API.
   stateBuilder: (input) => ({
-    task_title: clip(input.title, 300),
+    task_title: clip(input.task_title, 300),
     contract: clip(input.contract ?? "", 2_000),
     size: input.size ?? "unknown",
     risk: input.risk ?? "unknown",
@@ -36,12 +37,14 @@ export const critiqueWorthJudgment = defineJudgment<CritiqueWorthInput, Critique
   },
   decide(answers, t) {
     const skip = (id: string) => (noulOf(answers, id) ?? 0) >= t.min_skip_p!;
-    return { decision: { skip: { pm_read: skip("need_pm_read"), plan_critique: skip("need_plan_critique"), specialist_review: skip("need_specialist") } } };
+    // Skipping the plan critique also skips the specialist: it consumes the plan critique's artifact.
+    const plan = skip("need_plan_critique");
+    return { decision: { skip_pm_read: skip("need_pm_read"), skip_plan_critique: plan, skip_specialist_review: plan || skip("need_specialist") } };
   },
   // Unsure, off, down: every critic runs, exactly as without the judgment.
-  fallback: () => ({ skip: { pm_read: false, plan_critique: false, specialist_review: false } }),
+  fallback: () => ({ skip_pm_read: false, skip_plan_critique: false, skip_specialist_review: false }),
   describe: (decision) => {
-    const skipped = Object.entries(decision.skip).filter(([, value]) => value).map(([name]) => name);
+    const skipped = (["pm_read", "plan_critique", "specialist_review"] as const).filter((name) => decision[`skip_${name}`]);
     return skipped.length ? `skip ${skipped.join(",")}` : "all critics";
   },
 });

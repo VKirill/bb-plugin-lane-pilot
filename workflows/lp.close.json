@@ -44,15 +44,90 @@
     "goals": "GoalResult[]",
     "drift_items": "string[]"
   },
-  "entry": "goal_audit",
+  "entry": "goal-screen",
   "budget": {
     "max_steps": 8,
     "max_minutes": 30
   },
   "nodes": [
     {
+      "id": "goal-screen",
+      "type": "jev",
+      "label": "Goal audit screen",
+      "judgment": "close.goal_screen",
+      "state": {
+        "goals": "{{$inputs.goals}}",
+        "merged_commits": "{{$inputs.merged_commits}}",
+        "summary": "{{$inputs.summary}}",
+        "proof_currency": "{{$inputs.proof_currency}}"
+      },
+      "output": [
+        {
+          "name": "decision",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "value",
+          "type": "json",
+          "required": false
+        },
+        {
+          "name": "settled",
+          "type": "boolean",
+          "required": false
+        },
+        {
+          "name": "escalated",
+          "type": "boolean",
+          "required": false
+        },
+        {
+          "name": "goals",
+          "type": "array",
+          "required": false
+        },
+        {
+          "name": "all_met",
+          "type": "boolean",
+          "required": false
+        },
+        {
+          "name": "unmet_ids",
+          "type": "array",
+          "required": false
+        },
+        {
+          "name": "intent_aligned",
+          "type": "boolean",
+          "required": false
+        },
+        {
+          "name": "drift_items",
+          "type": "array",
+          "required": false
+        },
+        {
+          "name": "handoff",
+          "type": "string",
+          "required": false
+        }
+      ],
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ]
+    },
+    {
       "id": "goal_audit",
-      "produces": [{"kind": "report", "version": 1}],
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
       "type": "agent",
       "role": "auditor",
       "title": {
@@ -83,8 +158,24 @@
     },
     {
       "id": "memory",
-      "consumes": [{"kind": "report", "version": 1, "from": "goal_audit"}],
-      "produces": [{"kind": "report", "version": 1}],
+      "consumes": [
+        {
+          "kind": "report",
+          "version": 1,
+          "from": "goal-screen"
+        },
+        {
+          "kind": "report",
+          "version": 1,
+          "from": "goal_audit"
+        }
+      ],
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
       "type": "agent",
       "role": "memory",
       "title": {
@@ -104,8 +195,19 @@
     },
     {
       "id": "life",
-      "consumes": [{"kind": "report", "version": 1, "from": "memory"}],
-      "produces": [{"kind": "report", "version": 1}],
+      "consumes": [
+        {
+          "kind": "report",
+          "version": 1,
+          "from": "memory"
+        }
+      ],
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
       "type": "agent",
       "role": "project-life",
       "out": {
@@ -147,9 +249,41 @@
         "goals": "goal_audit.goals",
         "drift_items": "goal_audit.drift_items"
       }
+    },
+    {
+      "id": "unmet-jev",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "unmet",
+        "unmet_ids": "goal-screen.unmet_ids",
+        "intent_aligned": "goal-screen.intent_aligned",
+        "goals": "goal-screen.goals",
+        "drift_items": "goal-screen.drift_items"
+      },
+      "output": [
+        {
+          "name": "status",
+          "type": "string"
+        }
+      ]
     }
   ],
   "edges": [
+    {
+      "from": "goal-screen",
+      "to": "unmet-jev",
+      "when": "goal-screen.settled == true && goal-screen.escalated == false && (goal-screen.all_met == false || goal-screen.intent_aligned == false)"
+    },
+    {
+      "from": "goal-screen",
+      "to": "memory",
+      "when": "goal-screen.settled == true && goal-screen.escalated == false"
+    },
+    {
+      "from": "goal-screen",
+      "to": "goal_audit"
+    },
     {
       "from": "goal_audit",
       "to": "unmet",

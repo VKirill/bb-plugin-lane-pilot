@@ -250,11 +250,16 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
         state[name] = typeof value === "string" && value.length > 4_000 ? `${value.slice(0, 3_999)}…` : value;
       }
       const instance = jev();
-      if (!instance || !instance.enabled(settings)) return { output: { decision: "jev_unavailable", escalated: true, to: "model" } };
+      // `value` is always the judgment's fallback when Jev did not answer, so a graph reading `value.*` never fails closed.
+      if (!instance || !instance.enabled(settings)) { const fb = judgment.fallback(state); return { output: { decision: "jev_unavailable", value: fb, ...(fb && typeof fb === "object" ? fb as Record<string, unknown> : {}), escalated: true, to: "model" } }; }
+      // The decision's own fields also sit at the top level of the output, so an artifact consumer or a `when` edge can
+      // read them directly (goal-screen.goals) while `value` keeps the whole object for a nested read.
+      const flat = (decision: unknown) => (decision && typeof decision === "object" && !Array.isArray(decision) ? decision as Record<string, unknown> : {});
       const verdict = await instance.judge(judgment, state, { projectId: rt?.projectId ?? null, runId: rt?.runId ?? null, subject: node.id, settings });
-      if (verdict.by === "jev") return { output: { decision: judgment.describe(verdict.decision), value: verdict.decision, escalated: false } };
-      if (verdict.by === "escalate") return { output: { decision: `escalate:${verdict.to}`, escalated: true, to: verdict.to } };
-      return { output: { decision: judgment.describe(verdict.decision), value: verdict.decision, escalated: false, fallback: true, status: verdict.status } };
+      const handoff = (decision: unknown) => (decision && typeof decision === "object" ? judgment.describe(decision) : "escalated");
+      if (verdict.by === "jev") return { output: { decision: judgment.describe(verdict.decision), handoff: handoff(verdict.decision), value: verdict.decision, ...flat(verdict.decision), escalated: false } };
+      if (verdict.by === "escalate") return { output: { decision: `escalate:${verdict.to}`, handoff: `escalated to ${verdict.to}`, escalated: true, to: verdict.to } };
+      return { output: { decision: judgment.describe(verdict.decision), handoff: handoff(verdict.decision), value: verdict.decision, ...flat(verdict.decision), escalated: false, fallback: true, status: verdict.status } };
     },
   } as NodeExecutor<ChainRuntime>);
 

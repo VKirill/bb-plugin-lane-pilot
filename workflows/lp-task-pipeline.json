@@ -80,15 +80,33 @@
       "output": [
         {
           "name": "decision",
-          "type": "string"
+          "type": "string",
+          "required": false
         },
         {
           "name": "value",
-          "type": "json"
+          "type": "json",
+          "required": false
         },
         {
           "name": "escalated",
-          "type": "boolean"
+          "type": "boolean",
+          "required": false
+        },
+        {
+          "name": "skip_pm_read",
+          "type": "boolean",
+          "required": false
+        },
+        {
+          "name": "skip_plan_critique",
+          "type": "boolean",
+          "required": false
+        },
+        {
+          "name": "skip_specialist_review",
+          "type": "boolean",
+          "required": false
         }
       ],
       "proof": {
@@ -133,7 +151,7 @@
           "required": false
         }
       ],
-      "skip_when": "worth-check.value.skip.pm_read == true",
+      "skip_when": "worth-check.skip_pm_read == true",
       "skip_out": {
         "state": "skipped",
         "summary": "''",
@@ -189,7 +207,7 @@
           "required": false
         }
       ],
-      "skip_when": "worth-check.value.skip.plan_critique == true",
+      "skip_when": "worth-check.skip_plan_critique == true",
       "skip_out": {
         "allowed": true,
         "reason": "'jev plan critique not worth it'"
@@ -223,7 +241,7 @@
           "required": false
         }
       ],
-      "skip_when": "worth-check.value.skip.plan_critique == true",
+      "skip_when": "worth-check.skip_plan_critique == true",
       "skip_out": {
         "allowed": true,
         "reason": "'jev plan critique not worth it'"
@@ -285,7 +303,7 @@
           "required": false
         }
       ],
-      "skip_when": "worth-check.value.skip.plan_critique == true || worth-check.value.skip.specialist_review == true",
+      "skip_when": "worth-check.skip_plan_critique == true || worth-check.skip_specialist_review == true",
       "skip_out": {
         "allowed": true,
         "reason": "'jev specialist review not worth it'"
