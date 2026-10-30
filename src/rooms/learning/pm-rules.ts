@@ -49,8 +49,15 @@ export function pmRulesPromptBlock(db: Db, projectId: string, chain: readonly st
 
 /** The instructions a PM session that starts or resumes gets from `contributeInstructions` (service.ts): the rules block, cut to BB's limit; null when there is none. */
 export function pmResumeInstructions(db: Db, projectId: string, chain: readonly string[]): string | null {
-  const block = pmRulesBlock(pmRulesOf(db, projectId, chain), ruleBudget("pm"));
-  return block.text.trim().slice(0, 4_000) || null;
+  const rules = pmRulesOf(db, projectId, chain);
+  const budget = ruleBudget("pm");
+  const chosen: PmRule[] = [];
+  // A character slice cut a rule in half (F10-5). A rule that does not fit whole is skipped; a later shorter one still can.
+  for (const rule of rules) {
+    const text = pmRulesBlock([...chosen, rule], budget).text.trim();
+    if (text.length <= 4_000) chosen.push(rule);
+  }
+  return pmRulesBlock(chosen, budget).text.trim() || null;
 }
 
 /* ---- picking the rules that apply to a text ---- */
