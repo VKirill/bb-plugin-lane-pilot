@@ -1,10 +1,10 @@
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { brokenProof, isChecked, isDone, smaCheckedPercent, smaCounts, smaDonePercent, smaHoles, smaRows, unjudgedProof, type ProofRoots, type SmaRow } from "./model";
+import { brokenProof, isChecked, isDone, smaCheckedPercent, smaCounts, smaDonePercent, smaHoles, smaRows, smaStateCounts, unjudgedProof, type ProofRoots, type SmaRow } from "./model";
 import { SMA_LINKS, SMA_MAP_SHA, SMA_NODES, SMA_REGIONS } from "./graph";
 
-export const SMA_MAP_USAGE = "bb lane-pilot sma-map [--json] [--region <number|name>] [--status have|partial|missing|skip|upstream|unproven|unchecked] [--check-proofs] [--live [--days N]]   the SMA product map node by node: the card, what Lane Pilot has for it, the proof link and the contract tests; mapped is a link, checked is a test of the card's behaviour; --live says which groups left a trace in the window";
+export const SMA_MAP_USAGE = "bb lane-pilot sma-map [--json] [--region <number|name>] [--status have|partial|missing|skip|upstream|unproven|unchecked] [--check-proofs] [--live [--days N]] [--states]   the SMA product map node by node: the card, what Lane Pilot has for it, the proof link and the contract tests; mapped is a link, checked is a test of the card's behaviour; --live says which groups left a trace in the window; --states splits the evidence (available / reachable / checked / observed / outcome-verified)";
 
 import { readSmaLive, renderSmaLive, smaGroups } from "./live";
 
@@ -47,8 +47,10 @@ export function runSmaMapCli(argv: string[], cwd: string = process.cwd()): Resul
   const checking = argv.includes("--check-proofs");
   const broken = checking ? all.flatMap((row) => (row.proof ? [brokenProof(row.proof, roots)] : [])).filter((x): x is string => !!x) : [];
   const unjudged = checking ? all.filter((row) => row.proof && unjudgedProof(row.proof, roots)).length : 0;
-  if (argv.includes("--json")) return { exitCode: holes.length || broken.length ? 1 : 0, stdout: JSON.stringify({ sha: SMA_MAP_SHA, mapped: smaDonePercent(all), checked: smaCheckedPercent(all), counts: smaCounts(all), rows, holes, broken, unjudged, notMapped: all.filter((row) => !isDone(row)).length }, null, 2) };
+  const states = argv.includes("--states") ? smaStateCounts(all, roots) : null;
+  if (argv.includes("--json")) return { exitCode: holes.length || broken.length ? 1 : 0, stdout: JSON.stringify({ sha: SMA_MAP_SHA, mapped: smaDonePercent(all), checked: smaCheckedPercent(all), counts: smaCounts(all), ...(states ? { states } : {}), rows, holes, broken, unjudged, notMapped: all.filter((row) => !isDone(row)).length }, null, 2) };
   const out = [renderSmaMap(all, region || status ? rows : [])];
+  if (states) out.push("", `States (X-2): available ${states.available}, reachable ${states.reachable} (${states.unreachable} broken, ${states.unjudged} unjudged), checked by a contract test ${states.checked}; observed and outcome-verified need --live.`);
   if (holes.length) out.push("", `Registry holes (${holes.length}):`, ...holes.map((hole) => `  ${hole}`));
   if (broken.length) out.push("", `Broken proofs (${broken.length}):`, ...broken.map((line) => `  ${line}`));
   if (unjudged) out.push("", `Proofs not judged: ${unjudged} point into a sibling repository this machine does not have.`);
@@ -59,6 +61,15 @@ export function runSmaMapCli(argv: string[], cwd: string = process.cwd()): Resul
 export function runSmaLiveCli(db: Parameters<typeof readSmaLive>[0], argv: string[], now = Date.now()): Result {
   const days = Math.max(1, Math.min(365, Number(flag(argv, "--days") ?? 7) || 7));
   const rows = readSmaLive(db, smaGroups(SMA_NODES as never, SMA_REGIONS), now - days * 86_400_000);
-  if (argv.includes("--json")) return { exitCode: 0, stdout: JSON.stringify({ days, rows }, null, 2) };
-  return { exitCode: 0, stdout: renderSmaLive(rows, days, now) };
+  // X-2: the live trace joins the evidence ladder — a node is `observed` when its group worked in the window,
+  // `outcome-verified` when a contract test holds the behaviour AND the group ran.
+  const states = argv.includes("--states")
+    ? (() => {
+        const liveGroups = new Set(rows.filter((row) => (row.n ?? 0) > 0).map((row) => row.key));
+        return smaStateCounts(smaRows(), defaultProofRoots(process.cwd()), (row) => liveGroups.has(`${row.region} | ${row.group}`));
+      })()
+    : null;
+  if (argv.includes("--json")) return { exitCode: 0, stdout: JSON.stringify({ days, rows, ...(states ? { states } : {}) }, null, 2) };
+  const text = renderSmaLive(rows, days, now);
+  return { exitCode: 0, stdout: states ? `${text}\n\nStates (X-2): available ${states.available}, reachable ${states.reachable} (${states.unreachable} broken, ${states.unjudged} unjudged), checked ${states.checked}, observed ${states.observed}, outcome-verified ${states.outcomeVerified}.` : text };
 }

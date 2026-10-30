@@ -49,6 +49,42 @@ export const smaDonePercent = (rows: readonly SmaRow[]) => percent(rows.filter(i
 /** Share of the map a contract test checks: the measure of conformance. */
 export const smaCheckedPercent = (rows: readonly SmaRow[]) => percent(rows.filter(isChecked).length, rows.length);
 
+/**
+ * The split evidence states of one node (roast X-2): `have`/`partial` is one claim, not a ladder.
+ * - `available`: we declare a counterpart (have or partial).
+ * - `reachable`: its proof link resolves on this machine (a proof into an absent sibling repo is unjudged, never reachable).
+ * - `checked`: a contract test holds the code to the card's behaviour.
+ * - `outcome-verified`: checked AND the group left a live trace in the window (`--live`): the thing ran, not just exists.
+ * `observed` is the live trace alone (a group can run without a contract test).
+ */
+export type SmaEvidence = { available: boolean; reachable: boolean | null; checked: boolean; outcome: "verified" | "unverified" | "unknown" };
+
+export function smaEvidence(row: SmaRow, roots: ProofRoots, observed?: boolean): SmaEvidence {
+  const available = row.status === "have" || row.status === "partial";
+  const reachable = !row.proof ? null : unjudgedProof(row.proof, roots) ? null : brokenProof(row.proof, roots) === null;
+  const checked = isChecked(row);
+  const outcome = observed === undefined ? "unknown" : observed && checked ? "verified" : "unverified";
+  return { available, reachable, checked, outcome };
+}
+
+/** The split-state tally over the map (`--states`). `observed`/`outcomeVerified` fill only when live rows were read. */
+export type SmaStateCounts = { total: number; available: number; reachable: number; unreachable: number; unjudged: number; checked: number; observed: number | null; outcomeVerified: number | null };
+
+export function smaStateCounts(rows: readonly SmaRow[], roots: ProofRoots, observedOf?: (row: SmaRow) => boolean | undefined): SmaStateCounts {
+  const out: SmaStateCounts = { total: rows.length, available: 0, reachable: 0, unreachable: 0, unjudged: 0, checked: 0, observed: observedOf ? 0 : null, outcomeVerified: observedOf ? 0 : null };
+  for (const row of rows) {
+    const observed = observedOf?.(row);
+    const evidence = smaEvidence(row, roots, observed);
+    if (evidence.available) out.available++;
+    if (evidence.reachable === true) out.reachable++;
+    else if (evidence.reachable === false) out.unreachable++;
+    if (evidence.checked) out.checked++;
+    if (observed === true) out.observed!++;
+    if (evidence.outcome === "verified") out.outcomeVerified!++;
+  }
+  return out;
+}
+
 /** Registry holes: map nodes without an entry, entries for nodes the map does not have, and any node left out (skip). */
 export function smaHoles(): string[] {
   const ids = new Set(SMA_NODES.map(([id]) => id));

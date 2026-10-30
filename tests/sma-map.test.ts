@@ -52,3 +52,15 @@ describe("the SMA map registry", () => {
     expect(runSmaMapCli(["--region", "18", "--status", "missing"]).stdout).toContain("Claude Code session hooks");
   });
 });
+
+describe("the split evidence states (X-2)", () => {
+  it("--states counts available / reachable / checked; --live adds observed and outcome-verified", () => {
+    const result = runSmaMapCli(["--states"]);
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toMatch(/States \(X-2\): available \d+, reachable \d+ \(\d+ broken, \d+ unjudged\), checked by a contract test \d+; observed and outcome-verified need --live\./);
+    const json = JSON.parse(runSmaMapCli(["--states", "--json"]).stdout!);
+    expect(json.states).toMatchObject({ total: 1798 });
+    expect(json.states.checked).toBeGreaterThan(0);
+    expect(json.states.observed).toBeNull();
+  });
+});
