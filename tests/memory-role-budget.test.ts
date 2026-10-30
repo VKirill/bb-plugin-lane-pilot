@@ -5,7 +5,7 @@ import { pmMemoryContext } from "../src/rooms/memory/server/memory-mix";
 import { openDatabase } from "../src/rooms/storage/database";
 
 const limits = { sourceSha256: "a".repeat(64), audience: "subagent" as const, coreBudget: 99_999, noteBudget: 99_999, indexBudget: 999_999 };
-const settings = { enabled: true, maintain: true, inject: true, audience: "subagent" as const, personalBot: "", searchEngine: "auto" as const, coreBudget: 99, noteBudget: 99, indexBudget: 99, contextBudget: 2500 };
+const settings = { enabled: true, maintain: true, inject: true, audience: "subagent" as const, personalBot: "", searchEngine: "auto" as const, coreBudget: 99, noteBudget: 99, indexBudget: 99, contextBudget: 2500, maintainEvery: 3 };
 
 // X-1: one budget per role caps every memory layer together; the project can only narrow it.
 describe("role context budgets", () => {

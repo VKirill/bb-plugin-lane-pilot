@@ -3,7 +3,7 @@ import { applyScopeMigration, planScopeMigration } from "../scripts/memory-scope
 import { describe, expect, it } from "vitest";
 import { searchMemoryAllSections, searchMemoryRecords, storeMemoryRecords } from "../packages/memory-core/src";
 import { assertRuleScope, scopeApplies, upsertLessonProposal } from "@lane-pilot/run-insights";
-import { enrichMemoryContext } from "../src/rooms/memory-tiers/server";
+import { demoteUnusedPromotions, enrichMemoryContext } from "../src/rooms/memory-tiers/server";
 import { createMemoryConflicts } from "../src/rooms/memory/server/memory-conflicts";
 import { sessionMemoryRpc } from "../src/rooms/memory/server/session-memory";
 import { createAttempt, createRun, createTask, openDatabase, transitionAttempt } from "../src/rooms/storage/database";
@@ -181,5 +181,65 @@ describe("F05: a missing chain is the project root", () => {
     expect((await rpc.session_memory_core({ projectId: "P" })).records).toEqual([]);
     db.prepare("UPDATE lane_pilot_memory SET trust='confirmed' WHERE personal_bot=''").run();
     expect((await rpc.session_memory_core({ projectId: "P" })).records.map((row) => row.content)).toEqual(["Session core fact about deployment ports."]);
+  });
+});
+
+describe("cold tier demotion", () => {
+  it("a promoted note nobody was given goes back to the cold tier; a used one stays", () => {
+    const db = dbOf();
+    const now = Date.now(), old = now - 91 * 86_400_000;
+    const [a, b] = storeMemoryRecords(db, { projectId: "P", ...limits, entries: [
+      { kind: "note", content: "Unused promoted fact", concepts: ["demote"] },
+      { kind: "note", content: "Used promoted fact", concepts: ["demote"] },
+    ] }).insertedIds;
+    db.prepare("UPDATE lane_pilot_memory SET status='expired', expired_reason='idle'").run();
+    // Both were re-activated through promotion; only `a` stayed untouched since.
+    for (const id of [a!, b!]) {
+      db.prepare("UPDATE lane_pilot_memory SET status='active', last_used_at=? WHERE id=?").run(old, id);
+      db.prepare("INSERT INTO lane_pilot_memory_promotion(project_id,memory_id,query,at) VALUES(?,?,?,?)").run("P", id, "q", old);
+    }
+    db.prepare("UPDATE lane_pilot_memory SET last_used_at=? WHERE id=?").run(now - 86_400_000, b); // used after promotion
+    expect(demoteUnusedPromotions(db, now)).toBe(1);
+    expect(db.prepare("SELECT status FROM lane_pilot_memory WHERE id=?").get(a)).toEqual({ status: "expired" });
+    expect(db.prepare("SELECT status FROM lane_pilot_memory WHERE id=?").get(b)).toEqual({ status: "active" });
+  });
+});
+
+describe("audience boundary (regression)", () => {
+  it("searchMemoryRecords as subagent never returns an owner-audience record", () => {
+    const db = dbOf();
+    storeMemoryRecords(db, { projectId: "P", ...limits, audience: "owner" as const, entries: [
+      { kind: "note", content: "Owner fact about deployment port.", concepts: ["deploy"] },
+    ] });
+    storeMemoryRecords(db, { projectId: "P", ...limits, entries: [
+      { kind: "note", content: "Subagent fact about deployment port.", concepts: ["deploy"] },
+    ] });
+    for (const engine of ["auto", "fts5", "bm25"] as const) {
+      const found = searchMemoryRecords(db, "P", "deployment port", 10, engine, "subagent", "", {}).map((row) => row.content).join("\n");
+      expect(found).toContain("Subagent fact");
+      expect(found).not.toContain("Owner fact");
+    }
+  });
+});
+
+describe("maintainer recurrence gate (arXiv #5)", () => {
+  it("is due once every-N accepted receipts piled up since the last real maintenance", async () => {
+    const { memoryRecurrenceDue } = await import("../src/rooms/memory/server/memory");
+    const { createRun, createTask, openDatabase } = await import("../src/rooms/storage/database");
+    const { createFakePluginHost } = await import("@get-bb/plugin-sdk/testing");
+    const db = openDatabase(createFakePluginHost({ pluginId: "lane-pilot" }).bb);
+    const run = (id: string) => { createRun(db, id, "P", "bb", "/w"); createTask(db, { id: `t-${id}`, runId: id, kind: "bb", contract: {} as never }); };
+    const stage = (id: string, stageId: string, state: string, at: number) =>
+      db.prepare("INSERT OR REPLACE INTO lane_pilot_stage_receipt(run_id,task_id,stage_id,contract_version,state,input_sha256,attempt,updated_at) VALUES(?,?,?,1,?,?,0,?)")
+        .run(id, `t-${id}`, stageId, state, `${stageId}-${id}`, at);
+    const accepted = (id: string, at: number) => stage(id, "acceptance-receipt", "passed", at);
+    const maintained = (id: string, at: number) => stage(id, "memory-maintenance", "passed", at);
+    run("r1"); run("r2"); run("r3"); run("r4");
+    accepted("r1", 100); accepted("r2", 200);
+    expect(memoryRecurrenceDue(db, "P", 3)).toEqual({ due: false, acceptedSince: 2 });
+    accepted("r3", 300);
+    expect(memoryRecurrenceDue(db, "P", 3).due).toBe(true);
+    maintained("r3", 400);
+    expect(memoryRecurrenceDue(db, "P", 3)).toEqual({ due: false, acceptedSince: 0 });
   });
 });

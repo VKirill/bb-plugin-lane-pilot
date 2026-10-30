@@ -7,7 +7,7 @@ import { Badge } from "@lane-pilot/ui-kit";
 import { Button } from "@lane-pilot/ui-kit";
 import { Disclosure } from "@lane-pilot/ui-kit";
 
-type MemoryRecord = { id: string; kind: "core" | "note"; audience: string; content: string; concepts: string[]; createdAt: number; rule: boolean; originTaskId: string | null };
+type MemoryRecord = { id: string; kind: "core" | "note"; audience: string; content: string; concepts: string[]; createdAt: number; rule: boolean; originTaskId: string | null; sources: number };
 
 /** What the project memory holds: the facts writers may get and the rules, newest first; a fact can be removed. */
 export function MemoryRecords({ projectId }: { projectId: string }) {
@@ -39,6 +39,7 @@ export function MemoryRecords({ projectId }: { projectId: string }) {
     <div key={record.id} className="space-y-1 rounded-md border border-border/60 p-2 text-xs" data-testid={`memory-record-${record.id.slice(0, 12)}`}>
       <div className="flex flex-wrap items-center gap-2">
         <Badge variant={record.kind === "core" ? "secondary" : "outline"}>{record.kind === "core" ? t("memoryKindCore") : t("memoryKindNote")}</Badge>
+        {record.sources > 1 && <Badge variant="outline">{t("memorySources").replace("{n}", String(record.sources))}</Badge>}
         <span className="text-muted-foreground">{new Date(record.createdAt).toLocaleDateString()}</span>
         {record.originTaskId ? <span className="text-muted-foreground" title={record.originTaskId}>task {record.originTaskId.slice(0, 12)}</span> : null}
         {record.rule ? null : (

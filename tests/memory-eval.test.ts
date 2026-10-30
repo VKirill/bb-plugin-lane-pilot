@@ -1,7 +1,7 @@
 import Database from "better-sqlite3";
 import { describe, expect, it } from "vitest";
 import { memoryRecordId } from "../packages/memory-core/src";
-import { buildEvalDb, planCorpus, syntheticCopy } from "../src/rooms/memory-eval/server/corpus";
+import { buildEvalDb, planCorpus, poisonCopy, syntheticCopy } from "../src/rooms/memory-eval/server/corpus";
 import { classify, fileKey, folderKey } from "../src/rooms/memory-eval/server/questions";
 import { createRetrievers } from "../src/rooms/memory-eval/server/retrievers";
 import { formatEvalReport, runMemoryEval, score, stat } from "../src/rooms/memory-eval/server/memory-eval";
@@ -230,5 +230,21 @@ describe("the shelf replay", () => {
     expect(formatShelf(results)).toContain("legacy order, budget 8000 (before)");
     expect(durabilityScore({ content: "a/b.ts c/d.ts e/f.ts" })).toBeGreaterThan(durabilityScore({ content: "a/b.ts" }));
     expect(pickThree([], [], "legacy")).toEqual([]);
+  });
+});
+
+describe("poison fixtures (audit #27)", () => {
+  it("plants a wrong-number twin per gold note and counts it in the score", () => {
+    const plan = planCorpus({ data: data(), size: 30, seed: 1, scope: "pile", ...options });
+    expect(plan.composition.poison).toBeGreaterThan(0);
+    const poison = plan.notes.find((note) => note.poison)!;
+    const gold = plan.notes.find((note) => !note.poison && note.id !== poison.id && note.content.split(" ")[0] === poison.content.split(" ")[0]);
+    expect(poison.origin).toBe("eval-poison");
+    // Numbers shifted by 7, paths and words intact: it competes for the same question.
+    const copy = poisonCopy(data().notes.find((note) => /\d/.test(note.content))!);
+    expect(copy.content).not.toContain(" 9000 ");
+    const rows = [{ question: { kind: "positive", gold: ["g1"], area: [] }, ids: [poison.id], ms: 1 }];
+    const scored = score({ id: "writer", production: true, group: "writer", k: 3 }, rows as never, () => "note", 1, (id) => id === poison.id);
+    expect(scored.poisonHit.mean).toBe(1);
   });
 });

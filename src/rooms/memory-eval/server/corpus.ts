@@ -9,13 +9,13 @@ export const EVAL_PROJECT = "memory-eval";
 
 export type EvalScope = "project" | "pile";
 /** `scope` is the project id the note is stored under: its own project (as production keeps it) or the one pile of a person's memory. */
-export type CorpusNote = RawNote & { synthetic: boolean; origin: string; scope: string };
+export type CorpusNote = RawNote & { synthetic: boolean; origin: string; scope: string; poison?: boolean };
 export type SizePlan = {
   size: number;
   scope: EvalScope;
   notes: CorpusNote[];
   questions: EvalQuestion[];
-  composition: { gold: number; fill: number; synthetic: number; core: number; /** Notes in the largest scope, the pool a search really sees. */ pool: number };
+  composition: { gold: number; fill: number; synthetic: number; core: number; poison: number; /** Notes in the largest scope, the pool a search really sees. */ pool: number };
 };
 
 /** Deterministic random numbers, so a run can be repeated and compared. */
@@ -51,6 +51,15 @@ export function syntheticCopy(note: RawNote, round: number): CorpusNote {
   return { ...note, id: memoryRecordId(EVAL_PROJECT, note.kind, text), content: text, synthetic: true, origin: "eval-synthetic", scope: note.projectId, useCount: 0, acceptedCount: 0 };
 }
 
+/**
+ * A poisoned copy (audit #27): the paths and concepts stay so it competes for the same question, but every number in it is
+ * wrong — a stale fact on the same subject. A retriever that hands it out delivered a false answer, not just noise.
+ */
+export function poisonCopy(note: RawNote): CorpusNote {
+  const text = `${note.content.replace(/\d+/g, (digits) => String(Number(digits) + 7))}`;
+  return { ...note, id: memoryRecordId(EVAL_PROJECT, note.kind, `poison:${text}`), content: text, synthetic: true, poison: true, origin: "eval-poison", scope: note.projectId, useCount: 0, acceptedCount: 0 };
+}
+
 export type PlanInput = { data: EvalData; size: number; seed: number; scope?: EvalScope; skipProjects: ReadonlySet<string>; skipTask: (taskId: string) => boolean; now?: number };
 
 export function planCorpus(input: PlanInput): SizePlan {
@@ -79,7 +88,14 @@ export function planCorpus(input: PlanInput): SizePlan {
   const picked = new Map<string, CorpusNote>();
   const add = (note: RawNote) => { if (!picked.has(note.id)) picked.set(note.id, { ...note, synthetic: false, origin: "eval", scope: note.projectId, useCount: 0, acceptedCount: 0 }); };
   for (const id of goldIds) add(byId.get(id)!);
-  const goldCount = picked.size;
+  // One poisoned twin per gold note, inside the corpus budget: it outranks only if freshness/trust cannot tell stale apart.
+  const poisons: CorpusNote[] = [];
+  for (const id of goldIds) {
+    if (picked.size >= size) break;
+    const poison = poisonCopy(byId.get(id)!);
+    if (!picked.has(poison.id)) { picked.set(poison.id, poison); poisons.push(poison); }
+  }
+  const goldCount = picked.size - poisons.length;
   for (const note of shuffled(universe, random)) { if (picked.size >= size) break; add(note); }
   const fill = picked.size - goldCount;
   let synthetic = 0;
@@ -123,7 +139,7 @@ export function planCorpus(input: PlanInput): SizePlan {
   OFFTOPIC.forEach((item, index) => questions.push({ id: `offtopic-${index + 1}`, kind: "offtopic", projectId: "none", taskId: `offtopic-${index + 1}`, startedAt: (input.now ?? Date.now()),
     query: `${item.title}\n${item.objective}`, text: { title: item.title, objective: item.objective, acceptance: [] }, scope: largest[0], paths: { owns_paths: item.owns_paths, read_first: [] }, produced: [], gold: [], area: [] }));
 
-  return { size, scope, notes, questions, composition: { gold: goldCount, fill, synthetic, core: notes.filter((note) => note.kind === "core").length, pool: largest[1] } };
+  return { size, scope, notes, questions, composition: { gold: goldCount, fill, synthetic, poison: poisons.length, core: notes.filter((note) => note.kind === "core").length, pool: largest[1] } };
 }
 
 /** A database with the production schema and the corpus in it, written and indexed the way the write door does. */
