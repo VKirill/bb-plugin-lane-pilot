@@ -11,6 +11,8 @@ export { NO_TOOLS_LINE, clipped, extractModelJson } from "@lane-pilot/workflow-e
 export { CODE_CRITIC_DEFAULTS, CODE_CRITIC_DEFAULT_SETTING, QUALITY_MODE_SETTING, applyCodeCriticDefault, applyQualityMode, browserQaRequired, isCodeCriticDefault, resolveCodeCriticDefault, resolveQualityMode, taskQaPlan } from "./quality-mode";
 export type { CodeCriticDefault, QualityMode, TaskQaPlan } from "./quality-mode";
 export { resolveRetryEffort } from "./retry-effort";
+export { CRITIC_TIEBREAK_ROLE, majorityRubric, parseTiebreakVotes, resolveRubricTiebreak, rubricDisagreements, tiebreakPrompt } from "./tiebreak";
+export type { TiebreakVote } from "./tiebreak";
 export { FAILURE_TRIAGE_METHOD, FRONTEND_VERIFY_METHOD, SCIENTIFIC_DEBUG_METHOD, SUBJECTIVE_WORDS, roleMethod } from "./role-method";
 export { boundedAgentName } from "./role";
 export { qaStateToStatus, settleVerdict, verdictSchema, verdictSummary } from "@lane-pilot/workflow-engine";

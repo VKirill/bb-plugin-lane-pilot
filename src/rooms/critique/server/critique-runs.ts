@@ -20,6 +20,7 @@ import { boundedAgentName } from "../role";
 import { candidateCitations, inputCitations } from "../citations";
 import { parseSpecialistResult, shouldRunSpecialist, specialistPrompt } from "../specialist";
 import { reasonForStatus } from "@lane-pilot/workflow-engine";
+import { parseTiebreakVotes } from "../tiebreak";
 import { CODE_CRITIC_DEFAULT_SETTING, QUALITY_MODE_SETTING, applyCodeCriticDefault, applyQualityMode, resolveCodeCriticDefault, resolveQualityMode } from "../quality-mode";
 import type { CodeCriticDefault } from "../quality-mode";
 import type { Verdict, VerdictStatus } from "@lane-pilot/workflow-engine";
@@ -746,4 +747,75 @@ export async function runSpecialistReview(input:{bb:BbPluginApi;db:ReturnType<ty
     recordStage(input.db,{...base,state:"failed",providerId,model:modelId,threadId,reason,result:{error:reason}});
     return {allowed:false,reason:`specialist_review_failed:${reason}`};
   }
+}
+
+/**
+ * The third voice for the contested rubric items of two critics (arXiv #24): one cheap session of the role table's
+ * `critic-tiebreak` row (Gemini 3.8 Flash through 9router by default) answers every contested item at once. The vote is
+ * what resolveRubricTiebreak's `vote` expects; a session that never answers or answers nothing readable yields an empty
+ * map, and the contested items stay a fail — never a quiet pass.
+ */
+export async function criticTiebreakVote(input: {
+  bb: BbPluginApi; db: ReturnType<typeof openDatabase>; projectId: string; runId: string; taskId: string;
+  config: PrototypeConfig; task: TaskV2; workflow?: { runId: string; stepKey: string; nodeId: string };
+}): Promise<(items: readonly string[], prompt: string) => Promise<ReadonlyMap<string, "ok" | "fail">>> {
+  return async (items, prompt) => {
+    const settings = await stageHelperSettings(input.bb, input.db, input.projectId, input.runId);
+    const base = { runId: input.runId, taskId: input.taskId, stageId: "critic-tiebreak" as const, input: prompt };
+    recordStage(input.db, { ...base, state: "pending", replaceOnNewInput: true, restart: true });
+    const fallback = resolveStageWriterSelection({ settings, config: input.config });
+    const picked = await roleSelection({
+      zcodeBusy: zcodeBusyPeek(input.bb), catalog: sdkCriticCatalog(input.bb, input.config.hostId), settings,
+      role: "critic-tiebreak", fallback: { providerId: fallback.providerId, model: fallback.model },
+      spent: await limitProbe(input.bb, input.config.hostId, settings), tier: "fast",
+    });
+    logLimitMove(input.bb, `critic tiebreak for ${input.taskId}`, picked.issues);
+    const providerId = picked.providerId, modelId = picked.model;
+    const effort = picked.effort ?? "medium";
+    let threadId: string | null = null;
+    try {
+      const [providers, catalog] = await Promise.all([
+        input.bb.sdk.providers.list({ hostId: input.config.hostId }),
+        input.bb.sdk.providers.models({ providerId, hostId: input.config.hostId }),
+      ]);
+      const provider = providers.find((row) => row.id === providerId && row.available);
+      const model = catalog.models.find((row) => row.id === modelId || row.model === modelId);
+      if (!provider || !model) throw new Error("tiebreak_provider_or_model_unavailable");
+      if (!model.supportedReasoningEfforts.some((row) => row.reasoningEffort === effort)) throw new Error(`tiebreak_reasoning_effort_unsupported:${effort}`);
+      const serviceTier = provider.capabilities.supportsServiceTier ? bbServiceTier("fast") : null;
+      if (serviceTier && !(provider.serviceTiers ?? []).some((item) => item.id === serviceTier)) throw new Error(`tiebreak_service_tier_unsupported:${serviceTier}`);
+      const helperPolicy = requireHelperSpawn(input);
+      const placement = await helperChildPlacement({
+        bb: input.bb, db: input.db, projectId: input.projectId, runId: input.runId, role: "critic-tiebreak", taskTitle: input.task.title,
+      });
+      const spawned = await fullAccessSpawn(input.bb, {
+        ...placement,
+        ...requiredPolicyField(input.bb, helperPolicy, providerId, "critic-tiebreak"),
+        ...writerExecutionSelection(providerId, modelId, effort, serviceTier),
+        prompt,
+        environment: { type: "host", hostId: input.config.hostId, workspace: { type: "unmanaged", path: input.task.project_cwd } },
+        pluginMetadata: { role: "critic-tiebreak", lanePilotRunId: input.runId, lanePilotTaskId: input.taskId,
+          stageId: "critic-tiebreak", parentPmThreadId: getRun(input.db, input.runId)?.pm_thread_id ?? null,
+          helperMode: helperPolicy.mode, helperRequired: helperPolicy.policy?.required === true, ...graphStepMetadata(input.workflow) },
+      });
+      threadId = stringAt(spawned, "id");
+      if (!threadId) throw new Error("tiebreak_thread_id_missing");
+      recordStage(input.db, { ...base, state: "running", providerId, model: modelId, threadId });
+      await waitThreadIdle(input.bb, threadId, "tiebreak_thread_timeout");
+      const raw = (await input.bb.sdk.threads.output({ threadId })).output;
+      if (typeof raw !== "string" || !raw.trim()) throw new Error("tiebreak_output_empty");
+      const votes = parseTiebreakVotes(raw, items);
+      recordStage(input.db, { ...base, state: "passed", providerId, model: modelId, threadId,
+        result: { votes: Object.fromEntries(votes), unanswered: items.filter((item) => !votes.has(item)), rawOutput: raw.slice(0, 12_000) } });
+      return votes;
+    } catch (cause) {
+      const reason = cause instanceof Error ? cause.message : String(cause);
+      if (threadId) {
+        const thread = await input.bb.sdk.threads.get({ threadId }).catch(() => null);
+        if (["active", "starting"].includes(stringAt(thread, "status") ?? "")) await input.bb.sdk.threads.stop({ threadId }).catch(() => undefined);
+      }
+      recordStage(input.db, { ...base, state: "failed", providerId, model: modelId, threadId, reason, result: { error: reason } });
+      return new Map();
+    }
+  };
 }
