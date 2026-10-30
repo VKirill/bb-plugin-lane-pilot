@@ -32,4 +32,4 @@ TL;DR: `lp.docs-night` rewrites `docs/`, `README.md` and `PROJECT.md` from the c
 
 - A page over 40 000 bytes is never read by the lint; its split waits for a pass of its own.
 - Hand edits under `docs/` are reverted; decisions are recorded as drafts in `.agents/decisions/` and published to `docs/decisions.md`.
-- A `docs-maintenance` receipt left `running` by a reload mid-pass is not swept by the orphan-stage closer — it covers only `writer-agent`, `verification` and `acceptance-receipt` (`src/rooms/runs/server/stage-records.ts:121-123`); the next pass resumes or replaces it.
+- A `docs-maintenance` receipt left `pending` or `running` by a reload mid-pass is swept by the orphan-stage closer: `pending` ends `canceled`, `running` ends `failed`, never a false success — and a receipt whose `lp.docs-maintenance` graph run is still live is left alone for the hourly pass to join (`src/rooms/runs/server/stage-records.ts:121-160`).

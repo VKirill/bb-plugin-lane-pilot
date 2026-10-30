@@ -120,7 +120,7 @@ export async function resetHelperStages(db:ReturnType<typeof openDatabase>, stop
  */
 export function closeOrphanWriterStages(db:ReturnType<typeof openDatabase>, active:ReadonlySet<string>, idleMs = 0, now = Date.now()): number {
   const rows = db.prepare(`SELECT DISTINCT s.run_id, s.task_id FROM lane_pilot_stage_receipt s
-    WHERE s.stage_id IN ('writer-agent','verification','acceptance-receipt') AND s.state IN ('pending','running')`).all() as Array<{ run_id:string; task_id:string }>;
+    WHERE s.stage_id IN ('writer-agent','verification','acceptance-receipt','docs-maintenance') AND s.state IN ('pending','running')`).all() as Array<{ run_id:string; task_id:string }>;
   let closed = 0;
   for (const row of rows) {
     if (active.has(`${row.run_id}:${row.task_id}`)) continue;
@@ -140,6 +140,20 @@ export function closeOrphanWriterStages(db:ReturnType<typeof openDatabase>, acti
     const attempts = (db.prepare("SELECT count(*) AS n FROM lane_pilot_attempt WHERE run_id=? AND task_id=?").get(row.run_id, row.task_id) as { n:number }).n;
     closed += closeWriterStages(db, { runId:row.run_id, taskId:row.task_id, plan:getTaskPlan(db, row.task_id) ?? "", terminal, attempt:attempts,
       reason:latest.reason ?? `attempt ${latest.state}`, threadId:latest.thread_id });
+    // A docs-maintenance receipt left open when its upkeep was lost (a reload mid-run, or a project whose schedule no
+    // longer runs) ends, never as a success: pending -> canceled, running -> failed. A live lp.docs-maintenance graph
+    // for the same run/task is joined by the hourly pass, so it is left alone.
+    const docs = db.prepare(`SELECT state, thread_id, updated_at FROM lane_pilot_stage_receipt WHERE run_id=? AND task_id=? AND stage_id='docs-maintenance'`).get(row.run_id, row.task_id) as { state:string; thread_id:string|null; updated_at:number } | undefined;
+    if (docs && (docs.state === "pending" || docs.state === "running") && now - docs.updated_at >= idleMs) {
+      const live = db.prepare(`SELECT 1 AS live FROM lane_pilot_wf_run WHERE idem_key LIKE ? AND status IN ('running','waiting') LIMIT 1`)
+        .get(`docs-maintenance:${row.run_id}:${row.task_id}:%`);
+      if (!live) {
+        const state = docs.state === "pending" ? "canceled" : "failed";
+        recordStage(db, { runId:row.run_id, taskId:row.task_id, stageId:"docs-maintenance", state, input:state, threadId:docs.thread_id,
+          reason:"the docs upkeep was lost in a plugin reload; the hourly pass resumes it" });
+        closed += 1;
+      }
+    }
   }
   return closed;
 }
