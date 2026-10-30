@@ -66,6 +66,9 @@ describe("acceptance of a night repair", () => {
     expect(decideAcceptance(evidence({ merged: false })).state).toBe("pending");
     expect(decideAcceptance(evidence({ deployedVersion: null })).reason).toMatch(/waits for the release train/);
     // No drill receipt of this version is no evidence: the train's rollback on a red drill is an inference, not a receipt (Astra, 2026-10-27).
+    const held = decideAcceptance(evidence({ sealedGap: true }));
+    expect(held).toMatchObject({ state: "pending", action: "none", reason: expect.stringMatching(/possible overfit/) });
+    expect(held.checks.find((row) => row.name === "sealed set gap")).toMatchObject({ ok: false });
     const noDrill = decideAcceptance(evidence({ drill: null }));
     expect(noDrill).toMatchObject({ state: "pending", action: "none", reason: expect.stringMatching(/no drill receipt/) });
     expect(noDrill.checks.find((row) => row.name === "deploy drill")).toMatchObject({ ok: null });

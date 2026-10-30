@@ -36,6 +36,12 @@ describe("the night runs every active set", () => {
     expect(nightlySets(status, "")).toEqual(["v5", "v4", "v3"]);
   });
 
+  it("nightlySets: the sealed pool never runs in the night arm", () => {
+    const status = [{ version: "v5" }, { version: "sealed-week-2026-44" }, { version: "v4" }];
+    expect(nightlySets(status, undefined)).toEqual(["v5", "v4"]);
+    expect(nightlySets(status, "sealed-week-2026-44")).toEqual([]);
+  });
+
   it("a budget-skipped set gets a marked run row, and armStrata renders one line per stratum", () => {
     const { db } = benchWorld();
     const set = insertSet(db, { version: "v4", tasks: [task("t1"), task("t2", "noncode")], rejected: [], candidateCount: 2, config: {} });

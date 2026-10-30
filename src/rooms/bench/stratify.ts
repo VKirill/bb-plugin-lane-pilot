@@ -43,6 +43,17 @@ export function isSmallCandidate(candidate: Candidate): boolean {
   return klass.size !== "large" && klass.risk !== "high" && (klass.size === "tiny" || klass.size === "small");
 }
 
+/**
+ * The sealed stratum (direction S6, redo): a holdout built only by `--only sealed`, out of the same fresh live-project
+ * candidates the weekly fresh stratum sees. Nothing else references it, so open sets are built exactly as before; the mark
+ * is stored at build time — stratum `sealed` on its bench tasks and the `sealed-` version prefix (store.ts isSealedVersion).
+ */
+export const SEALED_QUOTA = 8;
+export function sealedStratum(now: number, windowMs = FRESH_WINDOW_MS, quota = SEALED_QUOTA): Stratum {
+  const since = now - windowMs;
+  return { key: "sealed", quota, match: (candidate) => (candidate.acceptedAt ?? 0) >= since };
+}
+
 /** Arm A is the short path (the setting stays unset). Arm B turns it off and runs the previous issue-quick graph. */
 export function smallPathSettings(arm: "short" | "legacy"): Record<string, unknown> {
   return arm === "legacy" ? { [ISSUE_QUICK_SHORT_PATH]: "off" } : {};

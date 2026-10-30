@@ -37,7 +37,8 @@ export type AcceptanceEvidence = {
   /** The version the plugin runs now when it is neither `versionBefore` nor `deployedVersion`: a later release came in, and everything measured since is not the candidate's alone. */
   supersededBy?: string | null;
   /** Now, to tell how long the evidence has been awaited (`EVIDENCE_WAIT_MS`). */
-  now?: number;
+  now?: number;  /** The weekly sealed-set probe flagged a pass gap over `bench.sealed_gap_pp`: the night keeps measuring but accepts no new fixes while it holds. */
+  sealedGap?: boolean;
 };
 
 export type AcceptanceCheck = { name: string; ok: boolean | null; detail: string };
@@ -113,6 +114,10 @@ export function decideAcceptance(e: AcceptanceEvidence): Acceptance {
     detail: e.bench === "unavailable" ? "no runnable bench set: not compared" : e.bench === "inconclusive" ? "compared, and too little was measured to call it: no evidence either way" : e.bench });
   if (e.bench === "fail") return out("red", "the bench subset is worse than the previous version: the night reverts the merge", { action: "revert" });
   if (e.bench === "pending") return wait("the bench subset is running");
+  if (e.sealedGap) {
+    checks.push({ name: "sealed set gap", ok: false, detail: "the sealed set trails the open set by more than the threshold: the night may be fit to the open tasks" });
+    return wait("possible overfit: the sealed set lags the open set beyond bench.sealed_gap_pp; new fixes are not accepted while the gap holds");
+  }
   const attempts = e.recurrence?.attempts ?? 0;
   const recurred = Boolean(e.recurrence && attempts >= RECURRENCE_MIN_ATTEMPTS && e.recurrence.failures > 0);
   checks.push({ name: "class recurrence on the new version", ok: e.recurrence ? !recurred : null,
