@@ -144,7 +144,10 @@ export function createBench(deps: BenchDeps) {
         reports.push(report);
         if (report.state === "stopped_budget" || report.state === "failed" || report.state === "deferred" || report.state === "unavailable") break;
       }
-      if (input.noise && reports.length >= 2 && reports.every((row) => row.state === "done")) {
+      // A repeated series calibrates comparisons whether or not it was started as `bench noise` (hive W28-4):
+      // the nightly arm repeats since 07fc5914; bench.noise_auto=off restores the explicit flag.
+      const noiseAuto = String((deps.db.prepare("SELECT value FROM lane_pilot_project_settings WHERE project_id='*' AND binding_id='' AND key='bench.noise_auto'").get() as { value: string } | undefined)?.value ?? '"on"') !== '"off"';
+      if (noiseAuto && reports.length >= 2 && reports.every((row) => row.state === "done")) {
         const set = getSet(deps.db, input.version);
         const rows = set ? listRuns(deps.db, set.id).filter((row) => row.arm === input.arm).sort((a, b) => a.repeat - b.repeat) : [];
         const byRepeat = rows.map((row) => listResults(deps.db, row.id));
