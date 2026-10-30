@@ -73,6 +73,10 @@ describe("priority rules (chains spec, section 1)", () => {
     expect((await route("Сделай 3D-модель сундука с золотой отделкой в Blender")).workflowId).toBe("3d-asset");
     expect((await route("Собери шлем рыцаря как R15 аксессуар для Roblox и проверь коллизии")).workflowId).toBe("roblox-asset");
     expect((await route("Сделай пост с инсайтами аудитории про удалёнку в авторском стиле")).workflowId).toBe("social-post");
+    expect((await route("Собери проверенное досье с источниками по изменениям в законодательстве")).workflowId).toBe("research-dossier");
+    expect((await route("Выстави счета за октябрь клиентам по списку через Контур.Эльбу")).workflowId).toBe("billing-batch");
+    expect((await route("Собери логи приложений на Mac mini и заархивируй в папку")).workflowId).toBe("macos-routine");
+    expect((await route("Сделай посадочную SEO-страницу по установке кондиционеров с коконом и вычиткой")).workflowId).toBe("seo-page");
   });
 
   it("a failure without a request to fix goes to debug; with a fix request it does not", async () => {

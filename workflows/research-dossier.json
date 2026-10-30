@@ -1,0 +1,308 @@
+{
+  "id": "research-dossier",
+  "name": {
+    "en": "Research Dossier (Verified Sources)",
+    "ru": "Исследовательское досье (проверенные источники)"
+  },
+  "description": {
+    "en": "Searches for sources on a question via Tavily and WebSearch, verifies that each link responds and quotes exist on the page, discards unverified sources, and synthesizes a verified research dossier.",
+    "ru": "Поиск источников по вопросу через Tavily и WebSearch, проверка доступности каждой ссылки и наличия цитат на странице, отказ от непроверенного и сбор проверенного исследовательского досье."
+  },
+  "examples": {
+    "ru": [
+      "Собери проверенное досье с источниками по изменениям в налоговом законодательстве",
+      "Исследуй рынок облачных баз данных и подготовь досье с проверкой ссылок",
+      "Сделай фактчекинг темы с отказом от неподтверждённых источников",
+      "Подготовь исследовательское досье с цитатами и ссылками на первоисточники"
+    ],
+    "en": [
+      "Collect a verified dossier with sources on recent tax regulation changes",
+      "Research the cloud database market and prepare a dossier with link checks",
+      "Fact-check the topic and reject all unverified claims and broken links",
+      "Prepare a research dossier with quotes and primary source citations"
+    ]
+  },
+  "not_for": [
+    "x-to-telegram-digest",
+    "insights-post",
+    "seo-cocoon"
+  ],
+  "status": "published",
+  "tags": [
+    "research",
+    "sources",
+    "factcheck",
+    "dossier"
+  ],
+  "inputs": {
+    "question": {
+      "type": "string",
+      "required": true,
+      "note": "исследовательский вопрос или тема"
+    },
+    "depth": {
+      "type": "quick|standard|deep",
+      "default": "standard",
+      "note": "глубина поиска"
+    },
+    "max_sources": {
+      "type": "int",
+      "default": 10,
+      "note": "максимальное число источников"
+    }
+  },
+  "outputs": {
+    "status": "done|partial|blocked",
+    "dossier_path": "string",
+    "verified_count": "int",
+    "rejected_count": "int"
+  },
+  "requires": {
+    "plugins": [
+      "lane-pilot"
+    ],
+    "skills": [
+      "tavily",
+      "text-insights"
+    ],
+    "secrets": [
+      "TAVILY_API_KEY"
+    ],
+    "machines": [
+      "any host with internet"
+    ]
+  },
+  "budget": {
+    "max_steps": 20,
+    "max_minutes": 60,
+    "max_usd": 10
+  },
+  "entry": "search",
+  "nodes": [
+    {
+      "id": "search",
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "tavily",
+      "title": {
+        "en": "Search web sources",
+        "ru": "Поиск источников в сети"
+      },
+      "profile": {
+        "skills": [
+          "tavily"
+        ]
+      },
+      "prompt": "Найди релевантные веб-источники по вопросу: '{{$inputs.question}}'. Раздел каталога: «Поиск и исследования» (tavily, deep-research). Собери URL-адреса, заголовки и ключевые фрагменты. Максимум источников: {{$inputs.max_sources}}. Запиши найденные источники в массив sources. Если поиск не дал результатов, верни статус blocked. При успехе верни статус done.",
+      "out": {
+        "ok": "bool",
+        "sources": "string[]",
+        "source_count": "int",
+        "status": "done|blocked"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 20
+      }
+    },
+    {
+      "id": "verify_sources",
+      "consumes": [
+        {
+          "kind": "report",
+          "version": 1,
+          "from": "search"
+        }
+      ],
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "auditor",
+      "title": {
+        "en": "Verify links and cited quotes",
+        "ru": "Проверка ссылок и цитат"
+      },
+      "profile": {
+        "skills": [
+          "text-insights"
+        ]
+      },
+      "prompt": "Проверь каждый найденный источник из {{search.sources}}: 1) ссылка отвечает по HTTP, 2) цитата или факт действительно присутствуют на целевой странице. Отбрось недоступные ссылки и непроверенные утверждения. Запиши проверенные источники в verified_sources, а отклонённые — в rejected_sources. Если нет ни одного проверенного источника, верни status rework. Если источники подтверждены, верни status pass.",
+      "out": {
+        "status": "pass|rework",
+        "verified_sources": "string[]",
+        "rejected_sources": "string[]",
+        "verified_count": "int",
+        "issues": "string[]"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 25
+      }
+    },
+    {
+      "id": "synthesize",
+      "consumes": [
+        {
+          "kind": "report",
+          "version": 1,
+          "from": "verify_sources"
+        }
+      ],
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "tavily",
+      "title": {
+        "en": "Synthesize research dossier",
+        "ru": "Синтез проверенного досье"
+      },
+      "profile": {
+        "skills": [
+          "tavily",
+          "text-insights"
+        ]
+      },
+      "prompt": "Собери структурированное исследовательское досье по вопросу '{{$inputs.question}}'. Раздел каталога: «Поиск и исследования» (text-insights, copy-research). Структура: резюме, ключевые факты со сносками на проверенные источники ({{verify_sources.verified_sources}}), отдельный блок с отклонёнными источниками и причинами их исключения ({{verify_sources.rejected_sources}}). Сохрани досье в .agents/research/dossier.md. Верни статус done или blocked.",
+      "out": {
+        "dossier_path": "string",
+        "dossier_md": "string",
+        "claim_count": "int",
+        "status": "done|blocked"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 25
+      }
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "done",
+        "dossier_path": "synthesize.dossier_path",
+        "verified_count": "verify_sources.verified_count",
+        "rejected_count": "verify_sources.rejected_sources.length"
+      }
+    },
+    {
+      "id": "blocked",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "blocked"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "search",
+      "to": "verify_sources",
+      "pass": "artifact",
+      "when": "search.ok"
+    },
+    {
+      "from": "search",
+      "to": "blocked",
+      "pass": "artifact"
+    },
+    {
+      "from": "verify_sources",
+      "to": "synthesize",
+      "pass": "artifact",
+      "when": "verify_sources.status == 'pass'"
+    },
+    {
+      "from": "verify_sources",
+      "to": "search",
+      "pass": "same-session",
+      "when": "verify_sources.status == 'rework' && visits('verify_sources') < 2",
+      "label": "re-search sources"
+    },
+    {
+      "from": "verify_sources",
+      "to": "blocked",
+      "pass": "artifact"
+    },
+    {
+      "from": "synthesize",
+      "to": "done",
+      "pass": "artifact",
+      "when": "synthesize.status == 'done'"
+    },
+    {
+      "from": "synthesize",
+      "to": "blocked",
+      "pass": "artifact"
+    }
+  ],
+  "test": {
+    "id": "rd-1",
+    "sim": {
+      "input": {
+        "question": "Какие требования к маркировке рекламы вступили в силу в 2026 году?",
+        "depth": "standard",
+        "max_sources": 5
+      },
+      "stubs": {
+        "search": {
+          "ok": true,
+          "sources": [
+            "https://fas.gov.ru/news/1",
+            "https://e-disclosure.ru/2",
+            "https://broken.example/3"
+          ],
+          "source_count": 3,
+          "status": "done"
+        },
+        "verify_sources": {
+          "status": "pass",
+          "verified_sources": [
+            "https://fas.gov.ru/news/1",
+            "https://e-disclosure.ru/2"
+          ],
+          "rejected_sources": [
+            "https://broken.example/3"
+          ],
+          "verified_count": 2,
+          "issues": [
+            "broken link on broken.example"
+          ]
+        },
+        "synthesize": {
+          "dossier_path": ".agents/research/dossier.md",
+          "dossier_md": "# Досье: Маркировка рекламы\n\n1. Требование токена [1]...",
+          "claim_count": 4,
+          "status": "done"
+        }
+      },
+      "expect_path": [
+        "search",
+        "verify_sources",
+        "synthesize",
+        "done"
+      ],
+      "expect_outputs": [
+        "status == 'done'",
+        "verified_count == 2",
+        "dossier_path != ''"
+      ]
+    },
+    "live": "Поиск источников через Tavily, верификация ссылок и сбор исследовательского досье с отказом от сомнительных источников",
+    "note": "Tested on stubs: search API and HTTP verification answer from stubs."
+  }
+}

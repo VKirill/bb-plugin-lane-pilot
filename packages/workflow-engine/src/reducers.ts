@@ -31,6 +31,13 @@ const lost = (input: JoinInput) => input.rows.filter((row) => !row.ok);
 const findingId = (finding: Row): string => str(finding.id) || `${str(finding.dimension) || "f"}:${str(finding.file)}:${finding.line ?? 0}:${sha256Hex(str(finding.evidence) + str(finding.impact)).slice(0, 6)}`;
 
 export const REDUCERS: Record<string, Reducer> = {
+  "reduce.billing-batch.invoices": (input) => {
+    const ok = done(input);
+    return {
+      invoices: ok.map((row) => str(row.data.invoice_number) || str(row.data.pdf_path)),
+      pdf_paths: ok.map((row) => str(row.data.pdf_path)).filter(Boolean),
+    };
+  },
   "reduce.insights-post.posts": (input) => {
     const ok = done(input).filter((row) => row.data.status === "ok");
     return { ok_folders: ok.map((row) => str(row.data.post_folder)), summary_paths: ok.map((row) => str(row.data.summary_path)), ok_count: ok.length, failed_count: input.rows.length - ok.length };

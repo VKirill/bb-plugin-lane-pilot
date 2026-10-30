@@ -3,6 +3,7 @@ import aboutSite from "../../../workflows/about-site.json";
 import agentRoutine from "../../../workflows/agent-routine.json";
 import analyzeCode from "../../../workflows/analyze-code.json";
 import analyzePlanExecute from "../../../workflows/analyze-plan-execute.json";
+import billingBatch from "../../../workflows/billing-batch.json";
 import blueprintDriven from "../../../workflows/blueprint-driven.json";
 import browserStep from "../../../workflows/browser-step.json";
 import lpBrowserQa from "../../../workflows/lp.browser-qa.json";
@@ -44,10 +45,12 @@ import lpRoute from "../../../workflows/lp.route.json";
 import lpRulesAsk from "../../../workflows/lp.rules-ask.json";
 import lpRulesScan from "../../../workflows/lp.rules-scan.json";
 import lpSelfRepair from "../../../workflows/lp.self-repair.json";
+import macosRoutine from "../../../workflows/macos-routine.json";
 import milestoneClose from "../../../workflows/milestone-close.json";
 import planOnly from "../../../workflows/plan-only.json";
 import qualityLoop from "../../../workflows/quality-loop.json";
 import reels from "../../../workflows/reels.json";
+import researchDossier from "../../../workflows/research-dossier.json";
 import resume from "../../../workflows/resume.json";
 import refactor from "../../../workflows/refactor.json";
 import robloxAsset from "../../../workflows/roblox-asset.json";
@@ -56,6 +59,7 @@ import reviewFix from "../../../workflows/review-fix.json";
 import roadmapDriven from "../../../workflows/roadmap-driven.json";
 import securityAudit from "../../../workflows/security-audit.json";
 import seoCocoon from "../../../workflows/seo-cocoon.json";
+import seoPage from "../../../workflows/seo-page.json";
 import socialPost from "../../../workflows/social-post.json";
 import testGen from "../../../workflows/test-gen.json";
 import uiAudit from "../../../workflows/ui-audit.json";
@@ -90,6 +94,7 @@ export const BUILTIN_SOURCES: ReadonlyArray<{ name: string; value: unknown }> = 
   { name: "agent-routine.json", value: agentRoutine },
   { name: "analyze-code.json", value: analyzeCode },
   { name: "analyze-plan-execute.json", value: analyzePlanExecute },
+  { name: "billing-batch.json", value: billingBatch },
   { name: "blueprint-driven.json", value: blueprintDriven },
   { name: "brainstorm-driven.json", value: brainstormDriven },
   { name: "browser-step.json", value: browserStep },
@@ -131,10 +136,12 @@ export const BUILTIN_SOURCES: ReadonlyArray<{ name: string; value: unknown }> = 
   { name: "lp.rules-ask.json", value: lpRulesAsk },
   { name: "lp.rules-scan.json", value: lpRulesScan },
   { name: "lp.self-repair.json", value: lpSelfRepair },
+  { name: "macos-routine.json", value: macosRoutine },
   { name: "milestone-close.json", value: milestoneClose },
   { name: "plan-only.json", value: planOnly },
   { name: "quality-loop.json", value: qualityLoop },
   { name: "reels.json", value: reels },
+  { name: "research-dossier.json", value: researchDossier },
   { name: "resume.json", value: resume },
   { name: "refactor.json", value: refactor },
   { name: "roblox-asset.json", value: robloxAsset },
@@ -143,6 +150,7 @@ export const BUILTIN_SOURCES: ReadonlyArray<{ name: string; value: unknown }> = 
   { name: "roadmap-driven.json", value: roadmapDriven },
   { name: "security-audit.json", value: securityAudit },
   { name: "seo-cocoon.json", value: seoCocoon },
+  { name: "seo-page.json", value: seoPage },
   { name: "social-post.json", value: socialPost },
   { name: "test-gen.json", value: testGen },
   { name: "ui-audit.json", value: uiAudit },

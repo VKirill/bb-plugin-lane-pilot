@@ -1,0 +1,290 @@
+{
+  "id": "macos-routine",
+  "name": {
+    "en": "macOS Routine (Mac mini)",
+    "ru": "Рутина macOS (Mac mini)"
+  },
+  "description": {
+    "en": "Executes operational routines and system tasks on Mac mini: plans discrete steps, executes via computer-use or native tools, captures screenshot evidence, and produces a verified completion report.",
+    "ru": "Выполнение системных задач и рутины на Mac mini: планирование дискретных шагов, выполнение через computer-use или нативные утилиты, фиксация скриншота-доказательства и итоговый отчёт."
+  },
+  "examples": {
+    "ru": [
+      "Собери логи приложений на Mac mini и заархивируй в папку",
+      "Проверь статус демона Telegram на Mac mini со скриншотом",
+      "Перенеси файлы из папки Downloads в проект и очисти кэш",
+      "Запусти утилиту проверки сертификатов в macOS со скриншотом окна"
+    ],
+    "en": [
+      "Collect application logs on Mac mini and archive them to a folder",
+      "Check Telegram daemon status on Mac mini with a screenshot",
+      "Move files from Downloads into project and clean up cache",
+      "Run the certificate check utility on macOS with a screenshot of the window"
+    ]
+  },
+  "not_for": [
+    "invoice-send",
+    "billing-batch",
+    "analyze-code"
+  ],
+  "status": "published",
+  "tags": [
+    "macos",
+    "routine",
+    "operator",
+    "system",
+    "files"
+  ],
+  "inputs": {
+    "task": {
+      "type": "string",
+      "required": true,
+      "note": "задача или поручение на Mac mini"
+    },
+    "apps": {
+      "type": "string[]",
+      "default": [],
+      "note": "задействованные приложения (Finder, Chrome, Terminal)"
+    },
+    "target_dir": {
+      "type": "string",
+      "default": "",
+      "note": "целевая директория при работе с файлами"
+    }
+  },
+  "outputs": {
+    "status": "done|partial|blocked",
+    "report_md": "string",
+    "screenshot_path": "string",
+    "affected_files": "string[]"
+  },
+  "requires": {
+    "plugins": [
+      "lane-pilot",
+      "browser-automation"
+    ],
+    "skills": [
+      "computer-use",
+      "personal-toolkit"
+    ],
+    "machines": [
+      "Mac mini host_7sea4qaad8 with active macOS desktop session"
+    ]
+  },
+  "budget": {
+    "max_steps": 15,
+    "max_minutes": 60,
+    "max_usd": 8
+  },
+  "entry": "plan",
+  "nodes": [
+    {
+      "id": "plan",
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "macos-operator",
+      "title": {
+        "en": "Plan execution steps",
+        "ru": "План шагов на Mac mini"
+      },
+      "profile": {
+        "skills": [
+          "computer-use"
+        ]
+      },
+      "prompt": "Разбей задачу '{{$inputs.task}}' на последовательность безопасных действий в macOS на Mac mini host_7sea4qaad8. Раздел каталога: «macOS рутина и управление компьютером» (computer-use, personal-toolkit). Определи задействованные приложения ({{$inputs.apps}}), системные команды, целевые файлы. Запрещены разрушительные действия без бэкапа и правки репозитория проекта. Сформируй steps_plan. Верни статус done или blocked.",
+      "out": {
+        "ok": "bool",
+        "steps_plan": "string",
+        "status": "done|blocked"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 20
+      }
+    },
+    {
+      "id": "execute",
+      "consumes": [
+        {
+          "kind": "report",
+          "version": 1,
+          "from": "plan"
+        }
+      ],
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "macos-operator",
+      "title": {
+        "en": "Execute steps with evidence",
+        "ru": "Выполнение шагов со скриншотом"
+      },
+      "profile": {
+        "skills": [
+          "computer-use",
+          "personal-toolkit"
+        ]
+      },
+      "prompt": "Выполни шаги плана ({{plan.steps_plan}}) на Mac mini host_7sea4qaad8. Раздел каталога: «macOS рутина и управление компьютером» (computer-use, personal-toolkit). Используй локальный шелл macOS, AppleScript или браузер. Сохраняй файлы в {{$inputs.target_dir}} или .agents/macos/. Обязательно сделай скриншот подтверждения выполненного действия (окно приложения, терминал, Finder) и сохрани в screenshot_path (.agents/macos/evidence.png). Запиши затронутые файлы в affected_files. Верни статус done или blocked.",
+      "out": {
+        "ok": "bool",
+        "output": "string",
+        "screenshot_path": "string",
+        "affected_files": "string[]",
+        "status": "done|blocked"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 40
+      }
+    },
+    {
+      "id": "report",
+      "consumes": [
+        {
+          "kind": "report",
+          "version": 1,
+          "from": "execute"
+        }
+      ],
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "macos-operator",
+      "title": {
+        "en": "Verify evidence and report",
+        "ru": "Проверка доказательств и отчёт"
+      },
+      "profile": {
+        "skills": [
+          "computer-use"
+        ]
+      },
+      "prompt": "Проверь скриншот-доказательство ({{execute.screenshot_path}}) и результат выполнения ({{execute.output}}). Составь итоговый отчёт report_md с перечнем выполненных действий, ссылкой на скриншот и списком обработанных файлов. Верни статус done или blocked.",
+      "out": {
+        "report_md": "string",
+        "screenshot_ok": "bool",
+        "status": "done|blocked"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 15
+      }
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "done",
+        "report_md": "report.report_md",
+        "screenshot_path": "execute.screenshot_path",
+        "affected_files": "execute.affected_files"
+      }
+    },
+    {
+      "id": "blocked",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "blocked"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "plan",
+      "to": "execute",
+      "pass": "artifact",
+      "when": "plan.ok"
+    },
+    {
+      "from": "plan",
+      "to": "blocked",
+      "pass": "artifact"
+    },
+    {
+      "from": "execute",
+      "to": "report",
+      "pass": "artifact",
+      "when": "execute.ok"
+    },
+    {
+      "from": "execute",
+      "to": "blocked",
+      "pass": "artifact"
+    },
+    {
+      "from": "report",
+      "to": "done",
+      "pass": "artifact",
+      "when": "report.status == 'done'"
+    },
+    {
+      "from": "report",
+      "to": "blocked",
+      "pass": "artifact"
+    }
+  ],
+  "test": {
+    "id": "mr-1",
+    "sim": {
+      "input": {
+        "task": "Собери архив системных логов за день и проверь статус демона",
+        "apps": [
+          "Terminal",
+          "Finder"
+        ],
+        "target_dir": ".agents/macos/logs"
+      },
+      "stubs": {
+        "plan": {
+          "ok": true,
+          "steps_plan": "1. Собрать логи\n2. Упаковать в zip\n3. Снять скриншот",
+          "status": "done"
+        },
+        "execute": {
+          "ok": true,
+          "output": "Логи собраны в logs.zip, статус демона active",
+          "screenshot_path": ".agents/macos/evidence.png",
+          "affected_files": [
+            ".agents/macos/logs.zip"
+          ],
+          "status": "done"
+        },
+        "report": {
+          "report_md": "# Отчёт выполнения на Mac mini\n\nВсе шаги выполнены, скриншот сохранён.",
+          "screenshot_ok": true,
+          "status": "done"
+        }
+      },
+      "expect_path": [
+        "plan",
+        "execute",
+        "report",
+        "done"
+      ],
+      "expect_outputs": [
+        "status == 'done'",
+        "screenshot_path != ''",
+        "report_md != ''"
+      ]
+    },
+    "live": "Выполнение рутины на Mac mini через computer-use, фиксация скриншота экрана и отчёт",
+    "note": "Tested on stubs: macOS local actions and screenshot tools answer from stubs. Live run requires Mac mini host_7sea4qaad8."
+  }
+}

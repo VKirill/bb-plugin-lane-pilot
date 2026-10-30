@@ -1,0 +1,356 @@
+{
+  "id": "seo-page",
+  "name": {
+    "en": "SEO Page (Cocoon to Site)",
+    "ru": "SEO-страница (от кокона до сайта)"
+  },
+  "description": {
+    "en": "Builds a targeted SEO page: runs seo-cocoon subworkflow for topical context and internal linking architecture, writes intent-driven GIST content, proofreads with ru-check, and exports the final page brief into site files.",
+    "ru": "Создание целевой SEO-страницы: запуск кокона seo-cocoon для контекста и перелинковки, написание GIST-текста под интент, вычитка по ru-check и экспорт готового брифа в файлы сайта."
+  },
+  "examples": {
+    "ru": [
+      "Сделай посадочную SEO-страницу по установке кондиционеров с коконом и вычиткой",
+      "Напиши статью для сайта про выбор кофемашины на основе кокона и сохрани в контент",
+      "Подготовь страницу услуг с GIST-структурой и перелинковкой в файлы сайта",
+      "Создай SEO-оптимизированную страницу с вычиткой текста и мета-тегами"
+    ],
+    "en": [
+      "Create an SEO landing page for air conditioner installation with cocoon and proofreading",
+      "Write an article on coffee machine selection based on cocoon and save to site content",
+      "Prepare a service page with GIST structure and internal links in site files",
+      "Create an SEO-optimized page with proofread text and metadata"
+    ]
+  },
+  "not_for": [
+    "a full cluster audit without writing (use seo-cocoon)",
+    "social-post",
+    "analyze-code"
+  ],
+  "status": "published",
+  "tags": [
+    "seo",
+    "content",
+    "page",
+    "drmax",
+    "writing"
+  ],
+  "inputs": {
+    "page_topic": {
+      "type": "string",
+      "required": true,
+      "note": "тема страницы или ключевой интент"
+    },
+    "site_goal": {
+      "type": "string",
+      "default": "услуги",
+      "note": "тип сайта и цель: интернет-магазин / услуги / блог"
+    },
+    "site_dir": {
+      "type": "string",
+      "default": "content/pages",
+      "note": "директория на сайте для сохранения страницы"
+    },
+    "geo": {
+      "type": "string",
+      "default": "RU",
+      "note": "регион продвижения"
+    },
+    "language": {
+      "type": "string",
+      "default": "ru",
+      "note": "язык текста"
+    }
+  },
+  "outputs": {
+    "status": "done|partial|blocked",
+    "site_page_path": "string",
+    "clean_page_path": "string",
+    "cocoon_folder": "string",
+    "ru_score": "int"
+  },
+  "requires": {
+    "plugins": [
+      "lane-pilot"
+    ],
+    "skills": [
+      "drmax-cocoon-engine-x4",
+      "gist-content-logic",
+      "ru-check",
+      "seo-agent"
+    ]
+  },
+  "budget": {
+    "max_steps": 25,
+    "max_minutes": 120,
+    "max_usd": 12
+  },
+  "entry": "cocoon",
+  "nodes": [
+    {
+      "id": "cocoon",
+      "type": "subworkflow",
+      "workflow": "seo-cocoon",
+      "title": {
+        "en": "Generate cocoon context",
+        "ru": "Построение семантического кокона"
+      },
+      "with": {
+        "topic": "$inputs.page_topic",
+        "site_goal": "$inputs.site_goal",
+        "geo": "$inputs.geo",
+        "language": "$inputs.language",
+        "max_pages": 5
+      },
+      "out": {
+        "status": "string",
+        "folder": "string",
+        "handoff_path": "string",
+        "briefs_dir": "string"
+      },
+      "guards": {
+        "timeoutMin": 60
+      }
+    },
+    {
+      "id": "write_content",
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "seo-specialist",
+      "title": {
+        "en": "Write SEO page content",
+        "ru": "Написание текста SEO-страницы"
+      },
+      "profile": {
+        "skills": [
+          "gist-content-logic",
+          "drmax-text-humanization"
+        ]
+      },
+      "prompt": "На основе архитектуры кокона ({{cocoon.handoff_path}}) и GIST-логики напиши полный текст целевой страницы по теме '{{$inputs.page_topic}}'. Раздел каталога: «SEO и семантика» (gist-content-logic, drmax-text-humanization). Структура: заголовок H1, интент-блоки, решение задач пользователя (JTBD), перелинковка на родительские и дочерние узлы кокона, мета-теги (title, description). Сохрани черновик в .agents/seo/page_raw.md. Верни статус done или blocked.",
+      "out": {
+        "ok": "bool",
+        "raw_page_path": "string",
+        "word_count": "int",
+        "status": "done|blocked"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 30
+      }
+    },
+    {
+      "id": "proofread",
+      "consumes": [
+        {
+          "kind": "report",
+          "version": 1,
+          "from": "write_content"
+        }
+      ],
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "auditor",
+      "title": {
+        "en": "Proofread with ru-check",
+        "ru": "Вычитка текста по ru-check"
+      },
+      "profile": {
+        "skills": [
+          "ru-check",
+          "ru-text"
+        ]
+      },
+      "prompt": "Вычитай созданный текст {{write_content.raw_page_path}} по правилам ru-check: типографика, удаление штампов и нейрослопа, проверка естественности. Раздел каталога: «Тексты и редактура» (ru-check, ru-text, ru-score). Запиши очищенный текст в .agents/seo/page_clean.md и оцени качество ru_score (0-10). Если балл ниже 7, верни status rework. При успехе верни status pass.",
+      "out": {
+        "status": "pass|rework",
+        "clean_page_path": "string",
+        "ru_score": "int",
+        "issues": "string[]"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 20
+      }
+    },
+    {
+      "id": "export_to_site",
+      "consumes": [
+        {
+          "kind": "report",
+          "version": 1,
+          "from": "proofread"
+        }
+      ],
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "seo-specialist",
+      "title": {
+        "en": "Export page brief to site files",
+        "ru": "Сохранение страницы в файлы сайта"
+      },
+      "profile": {
+        "skills": [
+          "seo-agent"
+        ]
+      },
+      "prompt": "Сохрани вычитанный текст {{proofread.clean_page_path}} и метаданные страницы в файлы сайта по пути {{$inputs.site_dir}}. Раздел каталога: «SEO и семантика» (seo-agent). Создай файл страницы с URL-слагом, title, description, h1 и телом статьи. Запиши путь в site_page_path. Верни статус done или blocked.",
+      "out": {
+        "ok": "bool",
+        "site_page_path": "string",
+        "status": "done|blocked"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 20
+      }
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "done",
+        "site_page_path": "export_to_site.site_page_path",
+        "cocoon_folder": "cocoon.folder",
+        "ru_score": "proofread.ru_score"
+      }
+    },
+    {
+      "id": "partial",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "partial",
+        "clean_page_path": "proofread.clean_page_path",
+        "cocoon_folder": "cocoon.folder"
+      }
+    },
+    {
+      "id": "blocked",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "blocked"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "cocoon",
+      "to": "write_content",
+      "pass": "artifact",
+      "when": "cocoon.status == 'done'"
+    },
+    {
+      "from": "cocoon",
+      "to": "blocked",
+      "pass": "artifact"
+    },
+    {
+      "from": "write_content",
+      "to": "proofread",
+      "pass": "artifact",
+      "when": "write_content.ok"
+    },
+    {
+      "from": "write_content",
+      "to": "blocked",
+      "pass": "artifact"
+    },
+    {
+      "from": "proofread",
+      "to": "write_content",
+      "pass": "same-session",
+      "when": "proofread.status == 'rework' && visits('proofread') < 2",
+      "label": "rework text"
+    },
+    {
+      "from": "proofread",
+      "to": "export_to_site",
+      "pass": "artifact",
+      "when": "proofread.status == 'pass'"
+    },
+    {
+      "from": "proofread",
+      "to": "partial",
+      "pass": "artifact"
+    },
+    {
+      "from": "export_to_site",
+      "to": "done",
+      "pass": "artifact",
+      "when": "export_to_site.ok"
+    },
+    {
+      "from": "export_to_site",
+      "to": "blocked",
+      "pass": "artifact"
+    }
+  ],
+  "test": {
+    "id": "sp-1",
+    "sim": {
+      "input": {
+        "page_topic": "Установка кондиционеров в квартире",
+        "site_goal": "услуги",
+        "site_dir": "content/services",
+        "geo": "RU"
+      },
+      "stubs": {
+        "seo-cocoon": {
+          "status": "done",
+          "folder": ".agents/seo/conditioners",
+          "handoff_path": ".agents/seo/conditioners/handoff.md",
+          "briefs_dir": ".agents/seo/conditioners/briefs"
+        },
+        "write_content": {
+          "ok": true,
+          "raw_page_path": ".agents/seo/conditioners/page_raw.md",
+          "word_count": 1200,
+          "status": "done"
+        },
+        "proofread": {
+          "status": "pass",
+          "clean_page_path": ".agents/seo/conditioners/page_clean.md",
+          "ru_score": 9,
+          "issues": []
+        },
+        "export_to_site": {
+          "ok": true,
+          "site_page_path": "content/services/ustanovka-kondicionerov.md",
+          "status": "done"
+        }
+      },
+      "expect_path": [
+        "cocoon",
+        "write_content",
+        "proofread",
+        "export_to_site",
+        "done"
+      ],
+      "expect_outputs": [
+        "status == 'done'",
+        "site_page_path != ''",
+        "ru_score >= 8"
+      ]
+    },
+    "live": "Построение семантического кокона X4, написание текста страницы, проверка по ru-check и экспорт в контент сайта",
+    "note": "Tested on stubs: subworkflow and model calls answer from stubs."
+  }
+}
