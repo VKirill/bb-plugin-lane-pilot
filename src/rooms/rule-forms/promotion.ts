@@ -2,7 +2,7 @@ import { classifyRuleForm, listRuleProposals, type MechanismKind, type RulePropo
 import { taskV2Schema, type TaskV2 } from "@lane-pilot/contracts";
 import { explainChange, type Tier } from "../policy";
 import { mechanismFor } from "./mechanisms";
-import { promotionRoute } from "./route-lint";
+import { ruleMechanismPlan } from "./route-lint";
 
 /**
  * The promotion path (SMA block 6, P2-6): a rule of form `check` or `hook` that keeps coming back is a mechanism that does not exist yet.
@@ -133,13 +133,18 @@ export function buildMechanismTask(rule: RuleProposal, input: { repoPath: string
       ...(kind === "contract_lint" ? [{ command: "npx vitest run tests/contract-lint.test.ts tests/contract-lint-empty-check.test.ts tests/contract-lint-exit-status.test.ts", cwd: input.repoPath }] : []),
     ],
   };
-  const route = promotionRoute(rule.rule);
-  if (route === "contract_path") {
+  const plan = ruleMechanismPlan(rule.rule);
+  if (plan.name === "lintPathRule") {
     task.objective += "\n\nRoute: contract lint. Implement lintPathRule so a path that escapes the project is refused and a relative path is allowed.";
-  }
-  if (route === "verification_command") {
+  } else if (plan.name === "lintVerificationRule") {
     task.objective += "\n\nRoute: verification lint. Implement lintVerificationRule so a bare vitest run must name a test file.";
     task.owns_paths = [...task.owns_paths, "src/rooms/tasks/server/lint-verification-rule.ts"];
+  } else if (plan.name === "lintMigrationOrder") {
+    task.objective += "\n\nRoute: migration check. Implement lintMigrationOrder so an added migration name must be the last element and a name inserted in the middle is refused.";
+  } else if (plan.name === "lintBlockedCommand") {
+    task.objective += "\n\nRoute: command gate. Implement lintBlockedCommand so a forbidden command is refused and any other command is allowed.";
+  } else {
+    task.objective += `\n\nNo mechanism: ${plan.reason}`;
   }
   taskV2Schema.parse(task);
   const verdict = explainChange({ kind: "rule_mechanize", files: task.owns_paths });
