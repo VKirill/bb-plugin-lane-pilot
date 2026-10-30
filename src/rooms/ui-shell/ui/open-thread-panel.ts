@@ -19,5 +19,5 @@ export function openThreadPanelTab(panel: PanelController | null | undefined, na
 export function useOpenThreadPanel(): (options: OpenThreadPanelOptions) => boolean {
   const navigate = useBbNavigate();
   const panel = experimental_useAppPanel() as PanelController;
-  return (options) => openThreadPanelTab(panel, navigate, options);
+  return (options) => openThreadPanelTab(panel, navigate as unknown as LegacyNavigate, options);
 }

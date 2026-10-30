@@ -17,7 +17,7 @@ type VkThreadInfoSection = (registration: { id: string; title: string; component
 type ExperimentalTabSlot = (registration: {
   id: string; title: string; icon: string; layout?: "padded" | "flush";
   context: { kind: "thread" }; availability: "action";
-  component: ComponentType<{ threadId: string; params: JsonValue }>;
+  component: ComponentType<{ threadId: string; params?: JsonValue }>;
 }) => void;
 import { OWNER_ASK_RENDERER_ID } from "./src/rooms/relay";
 import { OwnerAsk } from "./src/rooms/relay/ui";
@@ -47,7 +47,7 @@ export default definePluginApp((app) => {
   });
   // A working helper (writer, specialist, browser check…) opens in the thread's side panel from its square.
   const threadTab = (app.slots as unknown as { experimental_tab?: ExperimentalTabSlot }).experimental_tab;
-  const threadActionTab = (registration: { id: string; title: string; layout?: "padded" | "flush"; component: ComponentType<{ threadId: string; params: JsonValue }> }) => {
+  const threadActionTab = (registration: { id: string; title: string; layout?: "padded" | "flush"; component: ComponentType<{ threadId: string; params?: JsonValue }> }) => {
     if (typeof threadTab === "function") {
       threadTab.call(app.slots, { ...registration, icon: "Workflow", context: { kind: "thread" }, availability: "action" });
     } else {

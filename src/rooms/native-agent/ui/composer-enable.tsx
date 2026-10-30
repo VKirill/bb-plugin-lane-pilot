@@ -206,7 +206,7 @@ export function EnableLanePilotAction() {
   const specialists = agents.filter((agent) => agentKind(agent) === "specialist");
   const laneOn = selected?.id === coordinatorId;
   const locked = chat && !chat.eligible ? lockedCopy(chat.reason!) : null;
-  const running = Boolean(threadId) && view.run.isRunning;
+  const running = Boolean(threadId) && view.isRunning;
   const busy = blocked || pending || Boolean(chat && !chat.eligible) || running;
   const triggerLabel = pending ? t("enabling") : error ? t("failed") : !selected ? t("composerAgentMenu") : laneOn ? t("panelTitle") : composerAgentLabel(agents.find((agent) => agent.id === selected.id) ?? selected, t);
 

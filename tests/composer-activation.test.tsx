@@ -15,8 +15,7 @@ vi.mock("@get-bb/plugin-sdk/app", async (original) => {
   const sdk = await original<typeof import("@get-bb/plugin-sdk/app")>();
   return {
     ...sdk,
-    useComposerView: () => { const view = sdk.useComposerView(); return running.value ? { ...view, run: { ...view.run, isRunning: true } } : view; },
-    useComposer: () => ({ ...sdk.useComposer(), experimental_vkSetDispatchData: (data: null | { token: string }) => { hiddenData.value = data; } }),
+    useComposer: () => { const view = sdk.useComposer(); return { ...(running.value ? { ...view, isRunning: true } : view), experimental_vkSetDispatchData: (data: null | { token: string }) => { hiddenData.value = data; } }; },
     experimental_useComposerSelection: () => ({
       status: "ready", scope: { kind: "new-thread", projectId: "p1" }, projectId: "p1", providerId: "claude-code", model: "claude-opus-5-5[1m]", reasoningLevel: "medium",
       environment: { kind: "provisioning", type: "provider", environmentProviderId: "project-checkout", machine: { type: "existing", hostId: "host_a" } },
