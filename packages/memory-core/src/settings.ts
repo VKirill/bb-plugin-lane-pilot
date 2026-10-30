@@ -25,7 +25,9 @@ export type MemoryRecord=MemoryCore & {id:string;projectId:string;personalBot:st
   /** How often the record was mixed into a brief, how many of those attempts were accepted, and when it was last mixed. */
   useCount?:number;acceptedCount?:number;lastUsedAt?:number|null;
   /** Hash of the files the note named when it was written. Absent: the write could not read them, so a later brief does not treat the note as drifted. */
-  fileFingerprint?:string|null};
+  fileFingerprint?:string|null;
+  /** The accepted task this record was distilled from. */
+  originTaskId?:string|null};
 
 export const MAX_BUDGET=1_000_000;
 /** The settings keys `parseMemorySettings` reads. */

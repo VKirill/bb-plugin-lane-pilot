@@ -427,6 +427,8 @@ export const migrations = [
   `ALTER TABLE lane_pilot_memory ADD COLUMN file_fingerprint TEXT`,
   // When the fact itself began to hold (Graphiti-style validity window, arXiv X-3); NULL = since it was written. Append only.
   `ALTER TABLE lane_pilot_memory ADD COLUMN valid_from INTEGER`,
+  // The task that produced the record: an audit trail from a stored note back to its run (arXiv #10). Append only.
+  `ALTER TABLE lane_pilot_memory ADD COLUMN origin_task_id TEXT`,
 ];
 
 export function openDatabase(bb: BbPluginApi): LanePilotDatabase {
