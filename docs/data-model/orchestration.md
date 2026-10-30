@@ -68,12 +68,15 @@ Tables are created or extended in the ordered plugin migration list; the harness
 | `lane_pilot_token_cursor` | Thread id; project/provider; last sequence and event JSON; cumulative JSON; last model/provider/turn; update time. | `thread_id` is the primary key, yielding one cursor row per thread (`src/rooms/storage/database.ts:273-284`). | Usage event ingestion writes; replay/recovery reads. |
 | `lane_pilot_check_duration` | Project id; normalized command key; duration milliseconds; exit code; event time. | `duration_ms` stores elapsed milliseconds for an observed command run (`src/rooms/storage/database.ts:291-294`). | Verification writes; adaptive timeout selection reads. |
 | `lane_pilot_secret_issuance` | Id; time; project/run/task; consumer; thread; check command; secret name; host id; network. | The columns store secret names and routing metadata; there is no secret-value column (`src/rooms/storage/database.ts:318-331`). | Secret resolver writes; audit and security review reads. |
+| `lane_pilot_schedule*` | Schedule rows and their claims; see [the schedule board](../schedule-board.md). | Schedule service writes and claims due rows (`src/rooms/schedule/scheduler.ts`). | The nightly and interval loops read; the schedule board reads. |
+| `lane_pilot_owner_item` | The owner's inbox: key, source, kind, what/why, evidence, actions, wake, state; see [Waiting for the owner](../owner-waiting.md). | `postOwnerItem` inserts, `closeOwnerItem` closes (`src/rooms/owner-waiting/items.ts:104-115`). | Plugin posters write; the screen, daily line and Telegram digest read. |
+| `lane_pilot_phase`, `lane_pilot_phase_part` | A phase and its parts (waves, owner-word turns); see [Phases](../phases.md). | The phase driver writes (`src/rooms/phase/server/driver.ts`). | The Phases view and the auto-stage machine read. |
 
 ## Status transitions
 
 | From | To | Writer and condition |
 |---|---|---|
-| Attempt state | Next attempted state | `transitionAttempt` checks legal moves and records each accepted or refused transition (`src/rooms/storage/database.ts:1153-1181`; `src/rooms/writer/server/dispatch.ts:14`). |
+| Attempt state | Next attempted state | `transitionAttempt` checks legal moves and records each accepted or refused transition (`src/rooms/storage/database.ts:1153-1181`; `src/rooms/writer/server/dispatch.ts:14`). The full state set and legal moves are `TRANSITION_TABLE` (`src/rooms/runs/state-machine.ts`), rendered in [the atlas](../atlas.md). |
 | Terminal attempt outcome | Reported or suppressed | Relay records a handled outcome; see [cross-cutting gotchas](../gotchas.md#stability-and-local-provider-setup) for delivery conditions (`src/rooms/relay/server/relay.ts:380-415`). |
 | Harness state | `insertHarness` creates `base` or `trial`; editor candidates enter `trial`, then evaluation changes them to `adopted` or `retired` (`src/rooms/harness/server/store.ts:74-92`, `src/rooms/harness/server/harness.ts:387-389`, `:405-420`). |
 | Stage receipt state | `pending` → `running` → terminal | Stage runners write a unique `(run, task, stage)` receipt; stage events preserve change history (`src/rooms/storage/database.ts:138-186`). |

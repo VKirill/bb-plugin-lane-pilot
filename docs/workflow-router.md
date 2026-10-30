@@ -1,3 +1,16 @@
+---
+title: Workflow router
+type: component
+created: 2026-10-30
+updated: 2026-10-30
+status: active
+confidence: medium
+tags: [workflow, router]
+sources:
+  - packages/workflow-engine/src/router.ts
+  - src/rooms/workflow/server/workflow-tools.ts
+---
+
 # Workflow router (W4)
 
 The router maps a request to one of the published workflows of the catalog, or asks. Pure code in `packages/workflow-engine/src/router.ts` (no SDK, no database); the PM tools are in `src/rooms/workflow/server/workflow-tools.ts`. Source of the rules and of the evaluation set: `workflow-chains-spec.md`, sections 1 and 6.
