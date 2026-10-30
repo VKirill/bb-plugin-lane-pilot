@@ -5,10 +5,10 @@ import type { TaskV2 } from "../contracts";
  * Checking the checkers (SMA atlas D1-4, rule «which of your key checks have you seen go red on purpose?»): known defects are planted in
  * real accepted candidates, every checker is run on them, and the hit or miss of each checker per defect class goes into a scorecard.
  */
-export const CHECKERS = ["verification", "ownership", "contract_lint", "plan_fact", "code_critic", "plan_critic"] as const;
+export const CHECKERS = ["verification", "ownership", "contract_lint", "plan_fact", "test_fit", "code_critic", "plan_critic"] as const;
 export type CheckerId = (typeof CHECKERS)[number];
 /** The checkers that are code: no model, no cost. The drill runs only these. */
-export const CODE_CHECKERS: readonly CheckerId[] = ["verification", "ownership", "contract_lint", "plan_fact"];
+export const CODE_CHECKERS: readonly CheckerId[] = ["verification", "ownership", "contract_lint", "plan_fact", "test_fit"];
 export const MODEL_CHECKERS: readonly CheckerId[] = ["code_critic", "plan_critic"];
 
 export const DEFECT_CLASSES = [
@@ -21,7 +21,7 @@ export type DefectClass = (typeof DEFECT_CLASSES)[number];
  * leaves every test green); a class with a code catcher turns the drill red when that catcher stops catching it.
  */
 export const EXPECTED_CATCHERS: Readonly<Record<DefectClass, readonly CheckerId[]>> = {
-  test_assertion_deleted: ["code_critic"],
+  test_assertion_deleted: ["test_fit", "code_critic"],
   off_by_one: ["verification"],
   outside_owns: ["ownership"],
   swallowed_error: ["code_critic"],
@@ -39,7 +39,7 @@ export function applies(checker: CheckerId, defectClass: DefectClass): boolean {
   const contract = CONTRACT_CLASSES.includes(defectClass);
   switch (checker) {
     case "verification": return true;
-    case "ownership": case "plan_fact": case "code_critic": return !contract;
+    case "ownership": case "plan_fact": case "code_critic": case "test_fit": return !contract;
     case "contract_lint": case "plan_critic": return contract;
   }
 }
