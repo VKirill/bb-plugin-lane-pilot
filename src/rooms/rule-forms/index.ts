@@ -9,3 +9,5 @@ export { acceptPromotion, buildMechanismTask, dismissPromotion, listPromotions, 
 export { promotionDigest, promotionMorningLine, promotionWeeklyLines, PROMOTION_DIGEST_TOP } from "./digest";
 export { lintBlockedCommand, lintMigrationOrder, lintPathRule, lintVerificationRule, promotionRoute, ruleMechanismPlan } from "./route-lint";
 export type { PromotionRoute, RuleHold, RuleMechanismName, RuleMechanismPlan } from "./route-lint";
+export { createPromotionService, deliverPromotionDigests, dispatchPromotion, settlePromotionTask } from "./promotion-service";
+export type { PromotionServiceApi } from "./promotion-service";

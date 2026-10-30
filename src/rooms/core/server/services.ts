@@ -40,6 +40,7 @@ import type { createWriterVerify } from "../../writer/server";
 import type { createWriterFinish } from "../../writer/server";
 import type { createWriterStart } from "../../writer/server";
 import type { createWriterDispatch } from "../../writer/server";
+import type { PromotionServiceApi } from "../../rule-forms";
 import type { createWorkflowEngine } from "../../workflow/server";
 import type { createWorkflowTriggersService } from "../../workflow/server";
 
@@ -70,6 +71,7 @@ export interface Services {
   world: WorldApi;
   canary: Canary;
   ruleScan: RuleScanApi;
+  promotions: PromotionServiceApi;
   harness: HarnessApi;
   /** The register of deferrals with the owner's terms (src/rooms/deferral). */
   deferrals: DeferralApi;
