@@ -37,7 +37,7 @@ function planGaps(record: PhaseRecord): string[] {
 export function autoDue(phase: Phase): AutoDue | null {
   const r = phase.record;
   if (phase.state !== "active" || r.train === false) return null;
-  const tried = (kind: AutoKind) => (r.autoFailures?.[kind] ?? 0) >= AUTO_TRIES || (r.autoFailuresTotal?.[kind] ?? 0) >= AUTO_LIFETIME_TRIES;
+  const tried = (kind: AutoKind) => (r.autoFailures?.[kind] ?? 0) >= AUTO_TRIES || (r.autoMachineFailures?.[kind] ?? 0) >= AUTO_TRIES || (r.autoFailuresTotal?.[kind] ?? 0) >= AUTO_LIFETIME_TRIES;
   if (phase.stage === "discussion" && !r.context && r.signedBefore?.docs.length) return { kind: "resign" };
   if (phase.stage === "discussion" && !r.context && !tried("analyze")) return { kind: "analyze" };
   // The plan, and the plan again in «gaps» mode while its critic asks for changes (at most three rounds, the plan gate's own limit).
@@ -77,7 +77,7 @@ export function recoverStopped(phase: Phase, version: string = packageJson.versi
   if (!threat || why.length !== 1 || why[0] !== threat) return null;
   const restored = new Set(r.partial?.unproven.map((piece) => piece.id) ?? (r.scope?.revisions ? [] : r.scope?.withdrawn ?? []));
   const { closing: _closing, partial: _partial, lessons: _lessons, ...rest } = r;
-  return { record: { ...rest, scope: { revisions: r.scope?.revisions ?? 0, withdrawn: (r.scope?.withdrawn ?? []).filter((id) => !restored.has(id)) }, auto: undefined, autoFailures: undefined, autoFailuresTotal: undefined, autoFailuresVersion: undefined },
+  return { record: { ...rest, scope: { revisions: r.scope?.revisions ?? 0, withdrawn: (r.scope?.withdrawn ?? []).filter((id) => !restored.has(id)) }, auto: undefined, autoFailures: undefined, autoMachineFailures: undefined, autoFailuresTotal: undefined, autoFailuresVersion: undefined },
     note: `Lane Pilot ${version}: the phase was stopped because its plan lacked a threat model, a gap of Lane Pilot's (stopped under ${r.autoFailuresVersion ?? "an earlier version"}); the machine writes it now, so the phase goes on and its cut pieces return` };
 }
 
@@ -252,11 +252,13 @@ export function createAutoStages(ctx: Pick<ServerCore, "log">, services: Pick<Se
     // of this kind (repo_edited, a missing output field, guard:maxVisits, plugin_stopped, budget_exceeded, provider_error, a binary read),
     // and under 0.1.336 a pair of them would have stopped the owner's phase for good (Fable's recheck, 2026-10-27).
     if (MACHINE_STAGE_FAILURE.test(why)) {
-      const failures = { ...(phase.record.autoFailures ?? {}), [kind]: (phase.record.autoFailures?.[kind] ?? 0) + 1 };
+      // Its own counter: a machine failure must not spend the product's tries (magicseo lp.plan, 2026-10-30: one budget stop and one
+      // real refusal ended the plan loop and cut the scope).
+      const failures = { ...(phase.record.autoMachineFailures ?? {}), [kind]: (phase.record.autoMachineFailures?.[kind] ?? 0) + 1 };
       const waits = failures[kind]! >= AUTO_TRIES;
       deps.book(phase, "decisions", "auto_failed", `${AUTO_WORKFLOWS[kind]} did not finish (${why}): Lane Pilot's own fault, not the work's — ${waits ? "the stage waits for a release that fixes it and runs again then" : "run again on the next pass"}; the phase's scope is not cut`);
       ctx.log(`phase stage failed from Lane Pilot: ${AUTO_WORKFLOWS[kind]}: ${why.slice(0, 300)}`);
-      deps.save(phase.id, { ...phase.record, auto: undefined, autoFailures: failures, autoFailuresVersion: version });
+      deps.save(phase.id, { ...phase.record, auto: undefined, autoMachineFailures: failures, autoFailuresVersion: version });
       return false;
     }
     const failures = { ...(phase.record.autoFailures ?? {}), [kind]: (phase.record.autoFailures?.[kind] ?? 0) + 1 };
@@ -369,9 +371,9 @@ export function createAutoStages(ctx: Pick<ServerCore, "log">, services: Pick<Se
 
   async function step(phase: Phase): Promise<boolean> {
     // Failures counted under another version may be the ones it fixed: after a deploy the machine tries the stage again.
-    if (phase.record.autoFailures && phase.record.autoFailuresVersion !== version) {
+    if ((phase.record.autoFailures || phase.record.autoMachineFailures) && phase.record.autoFailuresVersion !== version) {
       deps.book(phase, "decisions", "auto_retry", `Lane Pilot ${version}: the stages the machine gave up on under ${phase.record.autoFailuresVersion ?? "an earlier version"} are tried again`);
-      deps.save(phase.id, { ...phase.record, autoFailures: undefined, autoFailuresVersion: undefined });
+      deps.save(phase.id, { ...phase.record, autoFailures: undefined, autoMachineFailures: undefined, autoFailuresVersion: undefined });
       phase = deps.get(phase.id);
     }
     const running = phase.record.auto;

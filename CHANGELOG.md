@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **A plan the critic passed on the last step is kept.** magicseo's lp.plan (2026-10-30) spent its 14 steps on two lint rejections and a rework, the critic passed on step 14, and the step budget then refused the `ok` emit: the passed plan was lost and planning ran again. An end `builtin:emit` now runs through a spent step budget; lp.plan's `max_steps` is 16 (its loop guards allow 15). Test: `tests/workflow/engine.test.ts`.
+- **Lane Pilot's own stage failures no longer spend the work's tries.** A machine failure (budget stop, provider error, repo_edited…) counted in the same `autoFailures` as a real refusal, so one of each ended the magicseo plan loop and cut the phase's scope. Machine failures now count in `autoMachineFailures`: at two the stage waits for a release, the scope is never cut. Test: `tests/phase-auto-stages.test.ts`.
+
 - **A blocked writer keeps its worktree, and a writer that leaves it is caught.** The hourly reconcile removed magicseo T3.3's worktree 4 s after the writer blocked on a question (2026-10-30); the reopened writer failed with `spawn /bin/bash ENOENT` and moved its thread to the main checkout. Blocked and retry-eligible attempts now keep their copy for `cleanup.worktree_grace_hours`; a reopen checks the folder exists; a writer thread whose environment moved out of its worktree takes no further turns and its attempt blocks as `writer_left_worktree`. Tests: `tests/writer-worktree-kept.test.ts`.
 - **A fix whose checks are already green blocks instead of closing accepted.** magicseo F1 closed with the paging never written. Only a `check` task closes on an all-green baseline now; a fix asks for a check that is red on the base.
 - **Run state and the run card count task families.** `T3`, `T3.2`, `T3.4` are one piece of work: the run is accepted when each family's latest member is, and the card shows «1 of 2», not «2 of 5». Tests: `tests/run-state-families.test.ts`, `tests/run-card.test.tsx`.

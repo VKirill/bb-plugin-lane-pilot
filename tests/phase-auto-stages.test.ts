@@ -231,7 +231,20 @@ describe("the machine's pass", () => {
     }
     expect(w.calls.filter((call) => call.startsWith("exhausted"))).toEqual([]);
     expect(w.get().record.autoFailuresTotal).toBeUndefined();
-    expect(w.get().record.autoFailures).toEqual({ analyze: AUTO_TRIES });
+    expect(w.get().record.autoMachineFailures).toEqual({ analyze: AUTO_TRIES });
+    expect(w.get().record.autoFailures).toBeUndefined();
+  });
+  it("one machine failure and one failure of the work do not end the loop: the machine's do not spend the work's tries (magicseo lp.plan, 2026-10-30)", async () => {
+    const w = world(null, "failed");
+    await w.auto.step(w.get());
+    w.runs.set("wfrun_1", { status: "failed", output: null, error: "budget_exceeded:steps" } as never);
+    await w.auto.step(w.get());
+    await w.auto.step(w.get());
+    w.runs.set("wfrun_2", { status: "failed", output: null } as never);
+    await w.auto.step(w.get());
+    expect(w.get().record.autoMachineFailures).toEqual({ analyze: 1 });
+    expect(w.get().record.autoFailures).toEqual({ analyze: 1 });
+    expect(w.calls.filter((call) => call.startsWith("exhausted"))).toEqual([]);
   });
   it("spent replans end the loop once: if the machine's outcome throws before it saves, the next passes do not book and call it again (Fable's recheck E5)", async () => {
     const w = world(null, "succeeded", phaseAt("verification", { verification: { verdict: { state: "failed", detail: "b not accepted", inputSha: "x", at: 1, mainSha: null } }, replan: { count: 2 } } as never));

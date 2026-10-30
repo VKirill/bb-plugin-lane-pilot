@@ -844,8 +844,10 @@ export class WorkflowEngine {
     if (step.state !== "pending") return "skip";
     const node = c.nodes.get(step.node_id)!;
     const found = this.checkLimits(run, c);
-    // A money or token budget guards spending; an emit spends nothing, so what was already paid for is handed on, the overrun on record.
-    const paidFor = found !== null && /^budget_exceeded:(cost|tokens)$/.test(found) && executorKey(node) === "builtin:emit";
+    // A budget guards spending; an emit spends nothing, so what was already paid for is handed on, the overrun on record.
+    // A step or time budget too: magicseo lp.plan (2026-10-30) had its critic pass on step 14 of 14, and the run was
+    // blocked on the end emit — 31 minutes of planning thrown away and run again from the start.
+    const paidFor = found !== null && found.startsWith("budget_exceeded:") && executorKey(node) === "builtin:emit";
     if (paidFor && !j.db.prepare("SELECT 1 FROM lane_pilot_wf_event WHERE run_id=? AND kind='budget_overrun' LIMIT 1").get(runId)) j.event(runId, stepKey, "budget_overrun", null, null, `${found}: the end emits what the run already paid for`);
     const limit = paidFor ? null : found;
     if (limit) { if (j.setRunStatus(runId, ["running", "waiting"], "blocked", limit)) { this.cancelOpenSteps(runId); this.aborts.get(runId)?.abort(); } return "skip"; }

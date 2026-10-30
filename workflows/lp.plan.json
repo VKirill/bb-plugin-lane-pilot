@@ -49,7 +49,7 @@
   },
   "entry": "plan",
   "budget": {
-    "max_steps": 14,
+    "max_steps": 16,
     "max_minutes": 45
   },
   "nodes": [

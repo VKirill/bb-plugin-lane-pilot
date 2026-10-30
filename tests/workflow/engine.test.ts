@@ -304,6 +304,17 @@ describe("guards", () => {
     expect(await run(engineOn(journalDb(), { collect: paid }), paidAfter)).toMatchObject({ status: "blocked", reason: "budget_exceeded:cost" });
   });
 
+  it("budget: a step budget spent on the last real step still lets the end emit its result (magicseo lp.plan)", async () => {
+    const paid: NodeExecutor = { reentrant: true, run: async () => ({ output: { n: 7 }, usage: { tokens: 1, costUsd: 0 } }) };
+    const lastStep = wf({
+      budget: { maxSteps: 1 },
+      outputs: [{ name: "n", type: "number", required: false }],
+      nodes: [{ id: "collect", type: "action", action: "collect", output: [{ name: "n", type: "number" }] }, { id: "done", type: "action", action: "emit", map: { n: "collect.n" } }],
+      edges: [{ from: "start", to: "collect" }, { from: "collect", to: "done" }],
+    });
+    expect(await run(engineOn(journalDb(), { collect: paid }), lastStep)).toMatchObject({ status: "succeeded", output: { n: 7 } });
+  });
+
   it("budget: a token or money budget with steps that report no usage holds the run to 40 steps, with a journal note", async () => {
     const workflow = wf({
       budget: { maxCostUsd: 2 },

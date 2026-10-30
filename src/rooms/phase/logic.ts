@@ -93,6 +93,8 @@ export type PhaseRecord = {
   signedBefore?: { docs: string[]; risks?: Partial<Record<RiskKey, string>>; decisions?: string[]; appetite?: string; noGos?: string[] };
   /** Runs of a stage's workflow that did not finish; at two the loop is spent and the machine ends it (scope cut, hunters, backlog). */
   autoFailures?: Partial<Record<"analyze" | "plan" | "check" | "draw" | "review" | "close" | "lessons", number>>;
+  /** Runs of a stage that failed from Lane Pilot's own fault (MACHINE_STAGE_FAILURE): at two the stage waits for a release; never cuts the scope. */
+  autoMachineFailures?: Partial<Record<"analyze" | "plan" | "check" | "draw" | "review" | "close" | "lessons", number>>;
   /** Failed runs of each stage's workflow over the phase's whole life, across versions (a new version forgets autoFailures, not this). */
   autoFailuresTotal?: Partial<Record<"analyze" | "plan" | "check" | "draw" | "review" | "close" | "lessons", number>>;
   /** Set before the machine's outcome for a spent loop runs (exhausted), so a pass that finds the phase still active does not run it again. */

@@ -198,6 +198,7 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
       const drop = (map?: Partial<Record<string, number>>) => { if (!map) return undefined; const { plan: _plan, ...rest } = map; return Object.keys(rest).length ? rest : undefined; };
       record.autoFailures = drop(record.autoFailures);
       record.autoFailuresTotal = drop(record.autoFailuresTotal);
+      record.autoMachineFailures = drop(record.autoMachineFailures);
     }
     const check = discussionGate(record);
     if (!check.ok) { savePhase(db, phase.id, { record, at: now() }); throw new PhaseRefusal("the discussion is not complete", check.why); }
