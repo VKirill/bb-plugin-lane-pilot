@@ -77,7 +77,7 @@ describe("J-11 the guard before output is stored or shown", () => {
     const result = await env.guard("active")({ kind: "browser", text: REPORT, projectId: "proj", runId: "run", subject: "thr_qa" });
     expect(result).toEqual({ blocked: true, reason: "secret", text: withheldText("browser", "secret") });
     expect(result.text).not.toContain("sk-live");
-    expect(env.kv.get(GUARD_BLOCKED_KEY)).toEqual([{ at: 1234, kind: "browser", reason: "secret", projectId: "proj", runId: "run", subject: "thr_qa" }]);
+    expect(env.kv.get(GUARD_BLOCKED_KEY)).toEqual([{ at: 1234, kind: "browser", reason: "secret", projectId: "proj", runId: "run", subject: "thr_qa", receiptId: expect.any(Number) }]);
     expect(env.logs.join("\n")).toContain("output guard blocked a browser output (secret)");
   });
 

@@ -85,3 +85,22 @@ describe("J-4 failure.class", () => {
     expect(asked).toEqual([]);
   });
 });
+
+describe("failure.class outcome labels", () => {
+  it("the run's terminal state labels the receipt: accepted agrees, a dead run confirms only a task reading", async () => {
+    const { createFakePluginHost } = await import("@get-bb/plugin-sdk/testing");
+    const { openDatabase } = await import("../../src/rooms/storage/database");
+    const { insertReceipt, recordOutcome } = await import("@lane-pilot/jev");
+    const { sweepFailureClassOutcomes } = await import("../../src/rooms/runs/failure-class-model");
+    const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
+    const db = openDatabase(bb), now = Date.now();
+    const run = (id: string, state: string) => db.prepare("INSERT INTO lane_pilot_run (id, project_id, pm_thread_id, state, created_at, updated_at) VALUES (?,?,?,?,?,?)").run(id, "p", "pm", state, now, now);
+    const receipt = (runId: string, decision: string) => insertReceipt(db, { judgment: "failure.class", version: 1, mode: "shadow", projectId: "p", runId, subject: "T", inputSha256: `h${runId}${decision}`, inputChars: 1, questions: 1, status: "ok", decision, decidedBy: "fallback", at: now });
+    run("r_ok", "accepted"); run("r_dead_task", "blocked"); run("r_dead_env", "blocked"); run("r_live", "running");
+    const a = receipt("r_ok", "provider"), b = receipt("r_dead_task", "task"), c = receipt("r_dead_env", "infra"), d = receipt("r_live", "provider");
+    expect(sweepFailureClassOutcomes(db)).toBe(3);
+    const outcome = (id: number) => (db.prepare("SELECT outcome FROM lane_pilot_jev_receipt WHERE id=?").get(id) as { outcome: string | null }).outcome;
+    expect([outcome(a), outcome(b), outcome(c), outcome(d)]).toEqual(["agree", "agree", "disagree", null]);
+    expect(sweepFailureClassOutcomes(db)).toBe(0);
+  });
+});

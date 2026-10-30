@@ -1,7 +1,7 @@
+import type Database from "better-sqlite3";
 import { classifyFailure, type FailureClass } from "./failure-class";
-import { failureClassJudgment } from "./failure-class-judgment";
-import type { Jev } from "@lane-pilot/jev";
-import type { JevSettings } from "@lane-pilot/jev";
+import { failureClassJudgment, FAILURE_CLASS_ID } from "./failure-class-judgment";
+import { recordOutcome, type Jev, type JevSettings } from "@lane-pilot/jev";
 
 /**
  * The class of a failure with J-4 behind the rules: the rules first, and only a reason they have no confident match for goes to
@@ -13,7 +13,25 @@ export type JudgedFailureDeps = {
   settings(): Promise<JevSettings>;
   projectId: string;
   runId: string | null;
+  /** Present: the unlabeled receipts of this judgment get their outcome from the run's terminal state (see the sweep below). */
+  db?: Database.Database | null;
 };
+
+/**
+ * The label `calibrate` reads for `failure.class`: the run's terminal state is the stronger judge. Accepted means the class —
+ * whatever it blamed — did not kill the work (agree). A dead run confirms a `task` reading and denies a `provider`/`infra`
+ * parking that cost the task its attempts. Runs still going are left unlabeled. Receipts of shadow calls carry the decision
+ * Jev would have made, so they are labeled the same way.
+ */
+export function sweepFailureClassOutcomes(db: Database.Database): number {
+  const rows = db.prepare(`SELECT r.id, r.decision, run.state AS run_state FROM lane_pilot_jev_receipt r
+    JOIN lane_pilot_run run ON run.id = r.run_id
+    WHERE r.judgment = ? AND r.outcome IS NULL AND r.status = 'ok' AND r.decision IS NOT NULL AND run.state IN ('accepted','blocked','closed')`).all(FAILURE_CLASS_ID) as Array<{ id: number; decision: string; run_state: string }>;
+  for (const row of rows) recordOutcome(db, row.id, row.run_state === "accepted" ? "agree" : row.decision === "task" ? "agree" : "disagree");
+  return rows.length;
+}
+
+let lastSweep = 0;
 
 export async function judgedFailureClass(deps: JudgedFailureDeps, state: string, reason: string | null | undefined, subject?: string): Promise<FailureClass> {
   const rules = classifyFailure(state, reason);
@@ -23,6 +41,8 @@ export async function judgedFailureClass(deps: JudgedFailureDeps, state: string,
   try {
     const settings = await deps.settings().catch(() => ({} as JevSettings));
     if (!instance.enabled(settings)) return rules.cls;
+    // At most once a minute: the labels of earlier judgments ride along, so the calibration set fills itself.
+    if (deps.db && Date.now() - lastSweep > 60_000) { lastSweep = Date.now(); sweepFailureClassOutcomes(deps.db); }
     const verdict = await instance.judge(failureClassJudgment, { state, reason }, { projectId: deps.projectId, runId: deps.runId, subject: subject ?? "attempt", settings });
     return verdict.by === "jev" ? verdict.decision.cls : rules.cls;
   } catch { return rules.cls; }

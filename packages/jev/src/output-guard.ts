@@ -29,7 +29,9 @@ export const GUARD_STATS_KEY = "output-guard:stats";
 const KEEP_DAYS = 14;
 export type GuardStats = Record<string, { asked: number; notSampled: number; sensitive: number }>;
 
-export type GuardBlock = { at: number; kind: OutputKind; reason: string; projectId: string; runId: string | null; subject: string | null };
+export type GuardBlock = { at: number; kind: OutputKind; reason: string; projectId: string; runId: string | null; subject: string | null;
+  /** The Jev receipt of the verdict that withheld the text: the repair's own verdict later labels it (fixed → agree, not-lane-pilot → a false positive). */
+  receiptId?: number | null };
 export type GuardResult = { blocked: false; text: string } | { blocked: true; text: string; reason: "secret" | "injection" };
 export type GuardInput = { kind: OutputKind; text: string; projectId: string; runId?: string | null; subject?: string | null };
 export type OutputGuard = (input: GuardInput) => Promise<GuardResult>;
@@ -105,7 +107,7 @@ export function createOutputGuard(deps: {
       const verdict = await instance.judge(outputGuard, { kind: input.kind, text, ...(shadow ? { limit: SHADOW_CHARS } : {}) }, { projectId: input.projectId, runId: input.runId ?? null, subject: input.subject ?? input.kind, settings });
       if (verdict.by !== "jev" || !verdict.decision.blocked) return { blocked: false, text };
       const reason = verdict.decision.reason;
-      const block: GuardBlock = { at: (deps.now ?? Date.now)(), kind: input.kind, reason, projectId: input.projectId, runId: input.runId ?? null, subject: input.subject ?? null };
+      const block: GuardBlock = { at: (deps.now ?? Date.now)(), kind: input.kind, reason, projectId: input.projectId, runId: input.runId ?? null, subject: input.subject ?? null, receiptId: verdict.receiptId };
       await appendBlock(block);
       deps.log(`Lane Pilot output guard blocked a ${input.kind} output (${reason}) in ${input.projectId}${input.runId ? ` run ${input.runId}` : ""}${input.subject ? ` ${input.subject}` : ""}`);
       return { blocked: true, text: withheldText(input.kind, reason), reason };
