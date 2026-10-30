@@ -18,8 +18,8 @@ export function memoryMaintenancePrompt(input:{task:unknown;acceptedResult:unkno
 
 export function memoryContext(records:MemoryRecord[],taskText:string,budget:number):{text:string;records:MemoryRecord[];estimatedTokens:number;cut:MemoryRecord[]} {
   const terms=new Set(tokens(taskText));
-  // Relevance first; a note that served accepted attempts counts for more than one that did not (neutral 1.0, range 0.5 to 1.5).
-  const ranked=records.map((record)=>({record,score:tokens(`${record.content} ${record.concepts.join(" ")}`).reduce((sum,token)=>sum+(terms.has(token)?1:0),0)*(0.5+memoryUsefulness(record))}))
+  // Relevance first; a note that served accepted attempts counts for more than one that did not, and each extra independent source adds a small bonus (arXiv #21).
+  const ranked=records.map((record)=>({record,score:tokens(`${record.content} ${record.concepts.join(" ")}`).reduce((sum,token)=>sum+(terms.has(token)?1:0),0)*(0.5+memoryUsefulness(record)+Math.min(0.3,0.1*((record.verification?.length??1)-1)))}))
     .filter((item)=>item.score>0).sort((a,b)=>b.score-a.score||b.record.createdAt-a.record.createdAt||a.record.id.localeCompare(b.record.id));
   const selected:MemoryRecord[]=[];const cut:MemoryRecord[]=[];let text="";
   // The header is part of the line the budget pays for: counting content alone let a long concepts list overshoot (F10-4).

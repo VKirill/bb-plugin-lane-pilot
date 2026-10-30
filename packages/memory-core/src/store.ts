@@ -14,20 +14,20 @@ export const MEMORY_SCHEMA = {
   table: "lane_pilot_memory",
   fts: "lane_pilot_memory_fts",
   columns: ["id", "project_id", "personal_bot", "kind", "audience", "content", "concepts_json", "source_sha256", "created_at",
-    "status", "superseded_by", "valid_until", "valid_from", "last_used_at", "use_count", "accepted_count", "trust", "origin", "source_file_id", "scope_json", "file_fingerprint", "origin_task_id"],
+    "status", "superseded_by", "valid_until", "valid_from", "last_used_at", "use_count", "accepted_count", "trust", "origin", "source_file_id", "scope_json", "file_fingerprint", "origin_task_id", "verification_json"],
 } as const;
 
 const COLUMNS = ["id", "project_id", "personal_bot", "kind", "audience", "content", "concepts_json", "source_sha256", "created_at",
-  "status", "trust", "valid_until", "valid_from", "superseded_by", "source_file_id", "use_count", "accepted_count", "last_used_at", "file_fingerprint", "origin_task_id"];
+  "status", "trust", "valid_until", "valid_from", "superseded_by", "source_file_id", "use_count", "accepted_count", "last_used_at", "file_fingerprint", "origin_task_id", "verification_json"];
 const cols = (alias = "") => COLUMNS.map((name) => `${alias}${name}`).join(",");
 
 type Row = { id: string; project_id: string; personal_bot: string; kind: MemoryKind; audience: string; content: string; concepts_json: string; source_sha256: string; created_at: number;
-  status: MemoryStatus; trust: MemoryTrust; valid_until: number | null; valid_from: number | null; superseded_by: string | null; source_file_id: string | null; use_count: number; accepted_count: number; last_used_at: number | null; file_fingerprint: string | null; origin_task_id: string | null };
+  status: MemoryStatus; trust: MemoryTrust; valid_until: number | null; valid_from: number | null; superseded_by: string | null; source_file_id: string | null; use_count: number; accepted_count: number; last_used_at: number | null; file_fingerprint: string | null; origin_task_id: string | null; verification_json: string | null };
 
 const toRecord = (row: Row): MemoryRecord => ({ id: row.id, projectId: row.project_id, personalBot: row.personal_bot, kind: row.kind, content: row.content,
   concepts: JSON.parse(row.concepts_json) as string[], sourceSha256: row.source_sha256, createdAt: row.created_at,
   status: row.status, trust: row.trust, validUntil: row.valid_until, validFrom: row.valid_from, supersededBy: row.superseded_by, sourceFileId: row.source_file_id,
-  useCount: row.use_count, acceptedCount: row.accepted_count, lastUsedAt: row.last_used_at, fileFingerprint: row.file_fingerprint, originTaskId: row.origin_task_id });
+  useCount: row.use_count, acceptedCount: row.accepted_count, lastUsedAt: row.last_used_at, fileFingerprint: row.file_fingerprint, originTaskId: row.origin_task_id, verification: parseVerification(row.verification_json) });
 
 const estimate = (text: string) => Math.ceil(Buffer.byteLength(text, "utf8") / 4);
 function storedFingerprint(content: string, readFile: StoreMemoryInput["readFile"]): string | null {
@@ -35,6 +35,9 @@ function storedFingerprint(content: string, readFile: StoreMemoryInput["readFile
   const paths = pathsNamed(content);
   return paths.length ? fileFingerprint(paths.map((path) => ({ path, bytes: readFile(path) }))) : null;
 }
+const parseVerification = (json: string | null): Array<{ by: string; sha: string; at: number }> => {
+  try { const value = JSON.parse(json ?? "[]") as unknown; return Array.isArray(value) ? value as Array<{ by: string; sha: string; at: number }> : []; } catch { return []; }
+};
 const isRule = (row: Pick<Row, "concepts_json">) => row.concepts_json.includes('"rule"');
 
 function parseScopeJson(json: string | null | undefined): string[] {
@@ -180,13 +183,13 @@ export function storeMemoryRecords(db: MemoryDatabase, input: StoreMemoryInput):
       if (over(left)) throw new Error(left > input.noteBudget ? `memory note budget exceeded: ${left}/${input.noteBudget} tokens` : `memory index budget exceeded: ${core + left}/${input.indexBudget} tokens`);
       evictedIds = picked.filter((row) => hideRecord(db, input.projectId, row.id, "expired", null, unindex, "budget")).map((row) => row.id);
     }
-    const insert = db.prepare(`INSERT INTO lane_pilot_memory(id,project_id,personal_bot,kind,audience,content,concepts_json,source_sha256,created_at,trust,origin,valid_until,valid_from,source_file_id,file_fingerprint,origin_task_id)
-      VALUES(@id,@projectId,@personalBot,@kind,@audience,@content,@conceptsJson,@sourceSha256,@createdAt,@trust,@origin,@validUntil,@validFrom,@sourceFileId,@fileFingerprint,@originTaskId)
+    const insert = db.prepare(`INSERT INTO lane_pilot_memory(id,project_id,personal_bot,kind,audience,content,concepts_json,source_sha256,created_at,trust,origin,valid_until,valid_from,source_file_id,file_fingerprint,origin_task_id,verification_json)
+      VALUES(@id,@projectId,@personalBot,@kind,@audience,@content,@conceptsJson,@sourceSha256,@createdAt,@trust,@origin,@validUntil,@validFrom,@sourceFileId,@fileFingerprint,@originTaskId,@verificationJson)
       ON CONFLICT(project_id,id) DO NOTHING`);
     const insertedIds: string[] = [];
     for (const { entry, id } of pending) {
       insert.run({ id, projectId: input.projectId, personalBot, kind: entry.kind, audience: input.audience, content: entry.content, conceptsJson: JSON.stringify(entry.concepts),
-        sourceSha256: input.sourceSha256, createdAt: now, trust: trustOf(entry), origin, validUntil: entry.validUntil ?? null, validFrom: entry.validFrom ?? now, sourceFileId: entry.sourceFileId ?? null, fileFingerprint: storedFingerprint(entry.content, input.readFile), originTaskId: input.originTaskId ?? null });
+        sourceSha256: input.sourceSha256, createdAt: now, trust: trustOf(entry), origin, validUntil: entry.validUntil ?? null, validFrom: entry.validFrom ?? now, sourceFileId: entry.sourceFileId ?? null, fileFingerprint: storedFingerprint(entry.content, input.readFile), originTaskId: input.originTaskId ?? null, verificationJson: JSON.stringify([{ by: origin, sha: input.sourceSha256, at: now }]) });
       if (input.scope?.length) db.prepare("UPDATE lane_pilot_memory SET scope_json=? WHERE project_id=? AND id=?").run(JSON.stringify(input.scope), input.projectId, id);
       addToIndexes(db, input.projectId, id, entry.content, entry.concepts);
       insertedIds.push(id);
@@ -197,7 +200,9 @@ export function storeMemoryRecords(db: MemoryDatabase, input: StoreMemoryInput):
       addToIndexes(db, input.projectId, id, entry.content, entry.concepts);
       insertedIds.push(id);
     }
-    for (const id of corroborate) db.prepare("UPDATE lane_pilot_memory SET trust='confirmed' WHERE project_id=? AND id=?").run(input.projectId, id);
+    const verify = db.prepare(`UPDATE lane_pilot_memory SET trust='confirmed',
+        verification_json=json_insert(COALESCE(verification_json,'[]'),'$[#]',json_object('by',?,'sha',?,'at',?)) WHERE project_id=? AND id=?`);
+    for (const id of corroborate) verify.run(origin, input.sourceSha256, now, input.projectId, id);
     const mine = new Set(input.entries.map((entry) => memoryRecordId(input.projectId, entry.kind, entry.content, personalBot, input.audience, scope)));
     const records = (db.prepare(`SELECT ${cols()} FROM lane_pilot_memory WHERE project_id=? AND personal_bot=? ORDER BY created_at DESC`).all(input.projectId, personalBot) as Row[])
       .filter((row) => row.status === "active" || mine.has(row.id)).map(toRecord);

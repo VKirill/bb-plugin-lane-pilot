@@ -27,7 +27,9 @@ export type MemoryRecord=MemoryCore & {id:string;projectId:string;personalBot:st
   /** Hash of the files the note named when it was written. Absent: the write could not read them, so a later brief does not treat the note as drifted. */
   fileFingerprint?:string|null;
   /** The accepted task this record was distilled from. */
-  originTaskId?:string|null};
+  originTaskId?:string|null;
+  /** Who vouched for the fact: one entry per independent source (arXiv #21). */
+  verification?:Array<{by:string;sha:string;at:number}>};
 
 export const MAX_BUDGET=1_000_000;
 /** The settings keys `parseMemorySettings` reads. */

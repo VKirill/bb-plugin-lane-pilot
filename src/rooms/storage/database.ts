@@ -429,6 +429,8 @@ export const migrations = [
   `ALTER TABLE lane_pilot_memory ADD COLUMN valid_from INTEGER`,
   // The task that produced the record: an audit trail from a stored note back to its run (arXiv #10). Append only.
   `ALTER TABLE lane_pilot_memory ADD COLUMN origin_task_id TEXT`,
+  // Verifier signals on the row: each source that vouched for the fact (arXiv #21 MemGuard). Append only.
+  `ALTER TABLE lane_pilot_memory ADD COLUMN verification_json TEXT`,
 ];
 
 export function openDatabase(bb: BbPluginApi): LanePilotDatabase {
