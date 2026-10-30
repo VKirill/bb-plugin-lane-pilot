@@ -4,6 +4,7 @@ import { detectLocale, t } from "@lane-pilot/i18n";
 import type { ComponentType } from "react";
 import type { JsonValue } from "@get-bb/plugin-sdk/app";
 import { LanePilotPage } from "./src/rooms/ui-shell/ui/page";
+import { useOwnerWaitingBadge } from "./src/rooms/ui-shell/ui";
 import { CouncilPage } from "./src/rooms/council/ui";
 import { CockpitPage } from "./src/rooms/cockpit/ui";
 import { ComposerAgentBadge } from "./src/rooms/native-agent/ui";
@@ -29,6 +30,8 @@ export default definePluginApp((app) => {
     icon: "Workflow",
     path: "lane-pilot",
     component: ({ subPath }) => <LanePilotPage subPath={subPath} />,
+    // The owner-waiting count on the nav entry (SDK 0.6.53+); older BB simply draws no badge.
+    experimental_useBadge: useOwnerWaitingBadge,
   });
   app.slots.navPanel({
     id: "lane-pilot-council",
