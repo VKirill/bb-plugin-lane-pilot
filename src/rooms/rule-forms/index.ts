@@ -6,3 +6,5 @@ export type { FormAsk } from "./jev-forms";
 export { MECHANISMS, mechanismFor } from "./mechanisms";
 export type { Mechanism } from "./mechanisms";
 export { buildMechanismTask, listPromotions, promotionWhy, proposePromotions } from "./promotion";
+export { lintPathRule, lintVerificationRule, promotionRoute } from "./route-lint";
+export type { PromotionRoute } from "./route-lint";

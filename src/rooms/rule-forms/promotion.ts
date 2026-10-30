@@ -2,6 +2,7 @@ import { classifyRuleForm, listRuleProposals, type MechanismKind, type RulePropo
 import { taskV2Schema, type TaskV2 } from "@lane-pilot/contracts";
 import { explainChange, type Tier } from "../policy";
 import { mechanismFor } from "./mechanisms";
+import { promotionRoute } from "./route-lint";
 
 /**
  * The promotion path (SMA block 6, P2-6): a rule of form `check` or `hook` that keeps coming back is a mechanism that does not exist yet.
@@ -132,8 +133,16 @@ export function buildMechanismTask(rule: RuleProposal, input: { repoPath: string
       ...(kind === "contract_lint" ? [{ command: "npx vitest run tests/contract-lint.test.ts tests/contract-lint-empty-check.test.ts tests/contract-lint-exit-status.test.ts", cwd: input.repoPath }] : []),
     ],
   };
+  const route = promotionRoute(rule.rule);
+  if (route === "contract_path") {
+    task.objective += "\n\nRoute: contract lint. Implement lintPathRule so a path that escapes the project is refused and a relative path is allowed.";
+  }
+  if (route === "verification_command") {
+    task.objective += "\n\nRoute: verification lint. Implement lintVerificationRule so a bare vitest run must name a test file.";
+    task.owns_paths = [...task.owns_paths, "src/rooms/tasks/server/lint-verification-rule.ts"];
+  }
   taskV2Schema.parse(task);
-  const verdict = explainChange({ kind: "rule_mechanize", files: owns });
+  const verdict = explainChange({ kind: "rule_mechanize", files: task.owns_paths });
   return { task, kind, target: template.target, tier: verdict.tier, tierReason: verdict.reason, why: input.why };
 }
 

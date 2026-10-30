@@ -8,7 +8,7 @@ import {
 import { taskV2Schema, type TaskV2 } from "../src/rooms/contracts";
 import { lintContract, type PathKind } from "../src/rooms/tasks/server/contract-lint";
 import { ROLE_PROFILES } from "../src/rooms/native-agent/helper-context";
-import { MECHANISMS, applyJevForms, buildMechanismTask, jevPickForms, listPromotions, mechanismFor, promotionWhy, proposePromotions, runRulesCli } from "../src/rooms/rule-forms";
+import { MECHANISMS, applyJevForms, buildMechanismTask, jevPickForms, lintPathRule, lintVerificationRule, listPromotions, mechanismFor, promotionRoute, promotionWhy, proposePromotions, runRulesCli } from "../src/rooms/rule-forms";
 
 const repo = "/tmp/lane-pilot-repo";
 const hub = JSON.parse(readFileSync(new URL("./fixtures/hub-rules-2026-10-22.json", import.meta.url), "utf8")) as Array<{ id: string; state: string; occurrences: number; rule: string; gold: string }>;
@@ -150,6 +150,33 @@ describe("the promotion path", () => {
     expect(proposePromotions(db, "p", { repoPath: repo, now: 7 }).created).toEqual([]);
     expect(listPromotions(db, "p")[0]!.state).toBe("dismissed");
     expect(listPromotions(db, "q")).toEqual([]);
+  });
+});
+
+describe("a repeating rule becomes a lint", () => {
+  it("turns a file or path rule into a contract-lint check that refuses an escaping path and allows a project path", () => {
+    const rule = "In the task contract, never put paths outside the project.";
+    expect(promotionRoute(rule)).toBe("contract_path");
+    expect(lintPathRule(["../etc/passwd", "src/a.ts"])).toMatch(/escapes the project/);
+    expect(lintPathRule(["src/a.ts", "tests/a.test.ts"])).toBeNull();
+    const db = openDb();
+    const id = accept(db, "p", rule, { occurrences: 4 });
+    const built = buildMechanismTask(getRuleProposal(db, "p", id)!, { repoPath: repo, why: "recurred" });
+    expect(built.kind).toBe("contract_lint");
+    expect(built.task.objective).toContain("lintPathRule");
+    expect(built.task.owns_paths.join(" ")).toMatch(/contract-lint/);
+  });
+
+  it("turns a verification-command rule into a verification lint that refuses a bare suite and allows a named file", () => {
+    const rule = "A verification command must name the test file; do not run a bare vitest run of the whole suite.";
+    expect(promotionRoute(rule)).toBe("verification_command");
+    expect(lintVerificationRule(["npx vitest run"])).toMatch(/name a test file/);
+    expect(lintVerificationRule(["npx vitest run tests/a.test.ts"])).toBeNull();
+    const db = openDb();
+    const id = accept(db, "p", rule, { occurrences: 4 });
+    const built = buildMechanismTask(getRuleProposal(db, "p", id)!, { repoPath: repo, why: "recurred" });
+    expect(built.task.objective).toContain("lintVerificationRule");
+    expect(built.task.owns_paths.join(" ")).toMatch(/lint-verification/);
   });
 });
 
