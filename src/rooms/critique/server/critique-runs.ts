@@ -2,7 +2,8 @@ import { unownedExpectedOutputs } from "../../tasks";
 import { hostContract, taskV2Schema } from "../../contracts";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
 import { claimStageSpawn, countAttempts, getRun, getTask, listLiveTasksForRun, listOpenAttempts, listStageReceipts, openDatabase } from "../../storage";
-import { criticAcrossFamilies, criticOffSpent, criticPairCandidates, effortAfterMove, latestWriterPair, pairApartFromWriter, roleSelection, sdkCriticCatalog } from "../critic-pair";
+import { criticAcrossFamilies, criticOffSpent, criticPairCandidates, effortAfterMove, latestWriterPair, pairApartFromWriter, pickCriticByAccuracy, roleSelection, sdkCriticCatalog, usable } from "../critic-pair";
+import { criticStats } from "../critic-stats";
 import { bbServiceTier, writerExecutionSelection, writerServiceTier, findModelIn, modelFamily, type SpentProbe } from "@lane-pilot/models";
 import { qaSpawnClaimed } from "../../qa";
 import { reconcileCritic } from "../../stability";
@@ -533,8 +534,22 @@ export async function runCodeCritique(input:{
   // The provider's limit comes last: a critic whose provider is nearly spent takes the other family, even the writer's (said, never silent).
   const offSpent = frozen ? null : await criticOffSpent({ critic:apart?.pair ?? across?.pair ?? liveSelection, writer:writerPair, spent:await limitProbe(input.bb, input.config.hostId, settings), effort:configuredEffort, tier:criticTier, catalog:criticCatalog });
   logLimitMove(input.bb, `code critic for ${input.taskId}`, offSpent?.issues);
-  const providerId = frozen?.providerId ?? offSpent?.pair.providerId ?? apart?.pair.providerId ?? liveSelection.providerId;
-  const modelId = frozen?.model ?? offSpent?.pair.model ?? apart?.pair.model ?? liveSelection.model;
+  let providerId = frozen?.providerId ?? offSpent?.pair.providerId ?? apart?.pair.providerId ?? liveSelection.providerId;
+  let modelId = frozen?.model ?? offSpent?.pair.model ?? apart?.pair.model ?? liveSelection.model;
+  if (!frozen) {
+    const byModel = criticStats(input.db, input.projectId, Date.now() - 30 * 86_400_000, ["code-critique"])[0]?.calibration.byModel ?? [];
+    const ranked = pickCriticByAccuracy({ providerId, model: modelId }, criticPairCandidates(settings, input.config), byModel);
+    if (ranked.changed) {
+      try {
+        const nextEffort = effortAfterMove("code-critic", { model: liveSelection.model, effort: configuredEffort }, ranked.pair);
+        if (await usable(criticCatalog, ranked.pair, nextEffort, criticTier)) {
+          input.bb.log.info(`code critic for ${input.taskId}: ${ranked.pair.providerId}/${ranked.pair.model} by accuracy; ${providerId}/${modelId} moves to the fallbacks`);
+          providerId = ranked.pair.providerId;
+          modelId = ranked.pair.model;
+        }
+      } catch { /* the pair the other rules chose still runs */ }
+    }
+  }
   // A Gemini critic that a family rule or a limit moved to GPT or Claude runs on the effort that judge had before the Gemini (high), not on the Gemini's medium.
   if (!frozen) configuredEffort = effortAfterMove("code-critic", { model:liveSelection.model, effort:configuredEffort }, { providerId, model:modelId });
   // The independence the rule promises is checked on the pair that will really run, after every fallback: not met is said, never silent (F4/R4).
