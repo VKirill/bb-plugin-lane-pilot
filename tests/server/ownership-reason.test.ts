@@ -39,7 +39,7 @@ async function validate(changed: string[]) {
 it("names a sibling's file together with the file no task owns", async () => {
   const result = await validate(["apps/api/checkout/routes.ts", "apps/api/__tests__/card-checkout.test.ts", "apps/api/webhooks/__tests__/fulfill.test.ts"]);
   expect(result).toMatchObject({ status: "validation_failed",
-    reason: "writer changed paths outside owns_paths or inside never_touch: apps/api/webhooks/__tests__/fulfill.test.ts; there is no write right to a file outside the contract — answer NEEDS_HUMAN with the list of files the task needs changed" });
+    reason: "writer changed paths outside owns_paths or inside never_touch: apps/api/webhooks/__tests__/fulfill.test.ts; there is no write right to a file outside the contract — undo your edits there; if the task needs those files, ask the PM for them and list them" });
 });
 
 it("names every sibling-owned file the writer changed, not only the first", async () => {

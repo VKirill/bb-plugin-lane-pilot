@@ -464,7 +464,7 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
       recordGateEvaluation(db,{...input,gate:"owns-paths",status:"rejected",input:JSON.stringify(input.task),summary:{unownedCount:unowned.length,satelliteCount:dropped.satellites.length}});
       recordGateEvaluation(db,{...input,gate:"validate",status:"skipped",input:JSON.stringify(input.task),summary:{reason:"ownership_rejected"}});
       const trusted = trustedToolingHint(unowned, input.task);
-      return { status:"validation_failed", reason:`writer changed paths outside owns_paths or inside never_touch: ${unowned.join(", ")}${trusted ? `; ${trusted}` : ""}; there is no write right to a file outside the contract — answer NEEDS_HUMAN with the list of files the task needs changed`,
+      return { status:"validation_failed", reason:`writer changed paths outside owns_paths or inside never_touch: ${unowned.join(", ")}${trusted ? `; ${trusted}` : ""}; there is no write right to a file outside the contract — undo your edits there; if the task needs those files, ask the PM for them and list them`,
         output:outputText(output), produced:checkedPaths, verification:[], diffKey };
     }
     recordGateEvaluation(db,{...input,gate:"owns-paths",status:"passed",input:JSON.stringify(input.task),summary:{changedPathCount:checkedPaths.length,branchChangedPathCount:branchChanges.length,satelliteCount:dropped.satellites.length||undefined,scope:"run",taskCount:ownershipScope.taskIds.length,gitBase:gitBase?{ref:gitBase.base_ref,sha:gitBase.base_sha,branch:gitBase.branch,compareCommitted:!!gitBase.compare_committed,pathsSha256:sha256(branchChanges.join("\0"))}:null}});
