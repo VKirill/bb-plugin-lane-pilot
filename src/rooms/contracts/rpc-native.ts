@@ -140,6 +140,11 @@ export const rpcNative = {
         workspace: z.object({ type: z.literal("unmanaged"), path: z.string() }).strict(),
       }).strict().nullable(),
       placementNote: z.string().nullable(),
+      roleModel: z.object({
+        providerId: z.string(),
+        model: z.string(),
+        effort: z.string().nullable(),
+      }).strict().nullable(),
     }).strict(),
   },
   /** Whether an existing chat can change its agent, and which agent it runs (or will on its next message). */

@@ -36,7 +36,7 @@ describe("employee lessons", () => {
   });
 
   it("employee.remark judgment and judgeEmployeeRemark honour jev.modes", async () => {
-    const d = employeeRemarkJudgment.decide({ remark: { type: "noul", noul: 0.9 } }, { remark_p: 0.6 });
+    const d = employeeRemarkJudgment.decide({ remark: { type: "noul", noul: 0.9 } }, { remark_p: 0.6 }, { text: "use triangulation", role: "3d-artist" });
     expect(d.decision?.remark).toBe(true);
     const client = {
       breaker: () => ({ open: false, failures: 0 }),
