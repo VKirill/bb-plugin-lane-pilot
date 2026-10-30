@@ -62,12 +62,12 @@ export function insightsRpc(ctx: ServerCore, services: Services) {
     },
     /** Each folder of the project on each machine: does it keep docs, why, how often, and when tasks last read them. */
     memory_records_list: async ({ projectId }) => {
-      const rows = db.prepare("SELECT id, kind, audience, content, concepts_json, created_at, use_count, accepted_count, origin_task_id, json_array_length(COALESCE(verification_json,'[]')) AS sources FROM lane_pilot_memory WHERE project_id=? AND status='active' ORDER BY created_at DESC LIMIT 500")
-        .all(projectId) as Array<{ id: string; kind: "core" | "note"; audience: string; content: string; concepts_json: string; created_at: number; use_count: number; accepted_count: number; origin_task_id: string | null; sources: number }>;
+      const rows = db.prepare("SELECT id, kind, audience, content, concepts_json, created_at, use_count, accepted_count, origin_task_id, origin, scope_json, json_array_length(COALESCE(verification_json,'[]')) AS sources FROM lane_pilot_memory WHERE project_id=? AND status='active' ORDER BY created_at DESC LIMIT 500")
+        .all(projectId) as Array<{ id: string; kind: "core" | "note"; audience: string; content: string; concepts_json: string; created_at: number; use_count: number; accepted_count: number; origin_task_id: string | null; origin: string; scope_json: string | null; sources: number }>;
       return { records: rows.map((row) => {
         let concepts: string[] = [];
         try { concepts = JSON.parse(row.concepts_json) as string[]; } catch { concepts = []; }
-        return { id: row.id, kind: row.kind, audience: row.audience, content: row.content, concepts, createdAt: row.created_at, rule: concepts.includes("rule"), useCount: row.use_count, acceptedCount: row.accepted_count, originTaskId: row.origin_task_id, sources: row.sources };
+        return { id: row.id, kind: row.kind, audience: row.audience, content: row.content, concepts, createdAt: row.created_at, rule: concepts.includes("rule"), useCount: row.use_count, acceptedCount: row.accepted_count, originTaskId: row.origin_task_id, origin: row.origin, scope: (() => { try { const v = JSON.parse(row.scope_json ?? "[]") as unknown; return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []; } catch { return []; } })(), sources: row.sources };
       }) };
     },
     // A rule's record is removed with the rule (the Rules tab), so the rule never stays «accepted» without reaching writers.

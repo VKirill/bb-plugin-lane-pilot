@@ -4,7 +4,7 @@ export const MEMORY_PERSONAL_BOTS=["","claude","codex","grok","qwen","kimi","agy
 export type MemoryAudience=(typeof MEMORY_AUDIENCES)[number];
 export type MemorySearchEngine=(typeof MEMORY_SEARCH_ENGINES)[number];
 export type MemoryKind="core"|"note";
-export type MemorySettings={enabled:boolean;maintain:boolean;inject:boolean;audience:MemoryAudience;personalBot:string;searchEngine:MemorySearchEngine;coreBudget:number;noteBudget:number;indexBudget:number;contextBudget:number;maintainEvery:number;salienceMin:number};
+export type MemorySettings={enabled:boolean;maintain:boolean;inject:boolean;audience:MemoryAudience;personalBot:string;searchEngine:MemorySearchEngine;coreBudget:number;noteBudget:number;indexBudget:number;contextBudget:number;maintainEvery:number;salienceMin?:number};
 /** active: mixed into briefs; superseded: a newer record replaced it; expired: past its date, evicted for budget, or its file went stale. A hidden record is kept, never mixed. */
 export type MemoryStatus="active"|"superseded"|"expired";
 /** confirmed: written by the maintainer, a rule, or seen from two sources; observed: one session or import wrote it and nothing corroborated it yet. */
