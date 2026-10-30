@@ -32,6 +32,7 @@ export const ROLE_GROUPS: Array<{ id: RoleGroupId; roles: RoleSpec[] }> = [
   { id: "check", roles: [
     { id: "plan-critic", testId: "plan-critique-settings", model: "planCritique", enabled: { key: "plan_critique.enabled", fallback: true, label: "stagePlanCritique" }, keys: ["plan_critique.enabled", ...picked("planCritique")] },
     { id: "code-critic", testId: "code-critique-settings", model: "codeCritique", enabled: { key: "code_critique.enabled", fallback: false, label: "stageCodeCritique" }, keys: ["code_critique.enabled", ...picked("codeCritique")] },
+    { id: "critic-tiebreak", keys: [] },
     { id: "specialist-reviewer", testId: "specialist-settings", model: "specialist", enabled: { key: "specialist.enabled", fallback: false, label: "specialistReview" }, keys: ["specialist.enabled", ...picked("specialist")] },
     { id: "night-reviewer", testId: "night-review-settings", model: "night", enabled: { key: "night_review.enabled", fallback: false, label: "nightReviewEnabled" }, keys: ["night_review.enabled", ...picked("night")] },
     { id: "gate-triage", keys: [] },

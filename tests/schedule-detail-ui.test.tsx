@@ -62,15 +62,14 @@ type Slot = Awaited<ReturnType<typeof mount>>;
 
 async function mount(handlers: Handlers = {}, props: { projectId?: string | null; schedules?: ScheduleView[]; errandDefault?: ErrandDefaultView; locale?: "en" | "ru" } = {}) {
   installTestPluginRuntime();
-  const host = globalThis as typeof globalThis & { __bbPluginRuntime?: { pluginSdkApp: Record<string, unknown> } };
-  const sdk = host.__bbPluginRuntime!.pluginSdkApp;
-  host.__bbPluginRuntime!.pluginSdkApp = {
-    ...sdk,
+  // installTestPluginRuntime re-assigns pluginSdkApp inside loadPluginApp/renderSlot, so the stub goes on the object itself.
+  const sdk = (globalThis as typeof globalThis & { __bbPluginRuntime?: { pluginSdkApp: Record<string, unknown> } }).__bbPluginRuntime!.pluginSdkApp;
+  Object.assign(sdk, {
     experimental_ProviderModelPicker: (p: { value: PickerValue; onChange: (next: PickerValue) => void }) => React.createElement("div", {
       "data-testid": "bb-provider-model-picker", "data-provider": p.value.providerId, "data-model": p.value.model, "data-effort": p.value.reasoningLevel, "data-tier": p.value.serviceTier ?? "none",
       ref: (node: PickerNode | null) => { if (node) { node.__value = p.value; node.__onChange = p.onChange; } },
     }),
-  };
+  });
   await loadPluginApp(await import("../app"));
   const { ScheduleBoard } = await import("../src/rooms/schedule/ui/schedule-board");
   const projectId = props.projectId === undefined ? "proj_a" : props.projectId;

@@ -1,5 +1,4 @@
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
+import { spawnAsync } from "@lane-pilot/kit";
 
 /** The catalog tree is read at most once an hour. A failed read keeps the old full-catalog pick. */
 export const SKILL_TREE_TTL_MS = 60 * 60_000;
@@ -17,7 +16,6 @@ export type SkillTree = {
   skills: Array<{ name: string; category: { sectionId: string; subsectionId: string } | null }>;
 };
 
-const exec = promisify(execFile);
 let cache: { at: number; tree: SkillTree | null } | null = null;
 let pending: Promise<SkillTree | null> | null = null;
 
@@ -86,7 +84,9 @@ export function skillTreeCached(read: () => Promise<string>): Promise<SkillTree 
   return pending;
 }
 
-export function readSkillTreeText(): Promise<string> {
+export async function readSkillTreeText(): Promise<string> {
   const bin = process.env.BB_CLI || "bb";
-  return exec(bin, ["tools", "skills-tree", "--skills", "--json"], { timeout: 20_000, maxBuffer: 8_000_000 }).then((out) => out.stdout);
+  const out = await spawnAsync(bin, ["tools", "skills-tree", "--skills", "--json"], { timeout: 20_000, maxBuffer: 8_000_000 });
+  if (out.error || out.status !== 0) throw out.error ?? new Error(`skills-tree exit ${out.status}: ${out.stderr.slice(0, 200)}`);
+  return out.stdout;
 }
