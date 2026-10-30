@@ -55,7 +55,7 @@ export function nightlyRun(version: string, pluginVersion: string) {
 /** Night default is two runs (the arm and one repeat) so the interval has a real spread.
  * A stored `noise_repeats` of 2 or more is that many runs. Weekly does not use this: 0 there stays one run. */
 export function nightlyRepeats(noiseRepeats: number): number {
-  return noiseRepeats >= 2 ? noiseRepeats : 2;
+  return noiseRepeats >= 2 ? noiseRepeats : 3;
 }
 
 /**
