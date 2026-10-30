@@ -465,6 +465,9 @@ export const migrations = [
   // Rejected trajectories export (SSD pattern / arXiv 2604.01193): export unverified writer attempts to JSONL without secrets. Append only.
   `CREATE TABLE IF NOT EXISTS lane_pilot_rejected_trajectory (id TEXT PRIMARY KEY, attempt_id TEXT NOT NULL, task_id TEXT NOT NULL, run_id TEXT, project_id TEXT NOT NULL, state TEXT NOT NULL, trajectory_json TEXT NOT NULL, bytes INTEGER NOT NULL, recorded_at INTEGER NOT NULL)`,
   `CREATE INDEX IF NOT EXISTS lane_pilot_rejected_trajectory_recorded ON lane_pilot_rejected_trajectory(recorded_at)`,
+  // PM context.md (CLM pattern / arXiv 2609.37725): nightly compressed context in DB injected verbatim for PM. Append only.
+  `CREATE TABLE IF NOT EXISTS lane_pilot_pm_context (project_id TEXT PRIMARY KEY, context_md TEXT NOT NULL, bytes INTEGER NOT NULL, sections_count INTEGER NOT NULL, updated_at INTEGER NOT NULL)`,
+  `CREATE INDEX IF NOT EXISTS lane_pilot_pm_context_at ON lane_pilot_pm_context(updated_at)`,
 ];
 
 export function openDatabase(bb: BbPluginApi): LanePilotDatabase {

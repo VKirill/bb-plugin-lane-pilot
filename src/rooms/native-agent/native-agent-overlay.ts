@@ -1,5 +1,6 @@
 import { stockEmployee } from "./employee-manifest";
 import { isLanePmAgent } from "./native-agent-id";
+import { formatPmContextSection } from "./pm-context";
 import { SKILL_CATALOG_BLOCK, SKILL_CATALOG_LINE } from "./skill-catalog";
 import bundledAgents from "./bundled-agents.json";
 import { BB_BRIDGE_MCP_SERVER, NATIVE_LP_BRIDGE_ARCHITECT_TOOLS, NATIVE_LP_BRIDGE_PM_TOOLS, NATIVE_LP_BRIDGE_SPECIALIST_TOOLS, unionLpBridgeTools, withoutLpBridgeTools } from "./native-session-hooks";
@@ -514,14 +515,16 @@ export function isCliLaneAgentPrompt(agentId: string, text: string): boolean {
   return false;
 }
 
-export function lanePmOverlayPrompt(agentId: string): string {
+export function lanePmOverlayPrompt(agentId: string, contextText?: string): string {
   const name = nativeAgentName(agentId);
-  return `You are **${name}**, the Lane Pilot PM in this BB chat.\n\n${LANE_PILOT_PM_SESSION}\n`;
+  const formatted = formatPmContextSection(contextText);
+  const contextSection = formatted ? `\n\n## Project Context (context.md)\n${formatted}\n` : "";
+  return `You are **${name}**, the Lane Pilot PM in this BB chat.\n\n${LANE_PILOT_PM_SESSION}${contextSection}\n`;
 }
 
-export function laneSessionOverlayPrompt(agentId: string): string {
+export function laneSessionOverlayPrompt(agentId: string, contextText?: string): string {
   const id = nativeAgentName(agentId);
-  if (isLanePmAgent(id)) return lanePmOverlayPrompt(id);
+  if (isLanePmAgent(id)) return lanePmOverlayPrompt(id, contextText);
   const session = BB_AGENT_SESSIONS[id];
   if (!session) return "";
   const sections = stockEmployee(id)?.skillSections ?? [];

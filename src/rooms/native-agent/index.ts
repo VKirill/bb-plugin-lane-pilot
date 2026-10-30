@@ -27,3 +27,18 @@ export type { ProjectSourceBinding, WriterBindingResolution } from "./project-bi
 export { userVisibleProjects } from "./project-scope";
 export type { ListedProject } from "./project-scope";
 export { sessionInventory } from "./session-inventory";
+export {
+  PM_CONTEXT_MAX_CHARS,
+  buildPmContextContent,
+  compilePmContextFromDb,
+  formatPmContextSection,
+  getPmContextSummary,
+  getStoredPmContext,
+  pmContextMorningLine,
+  savePmContext,
+  type PmContextData,
+  type PmContextTask,
+  type PmContextRule,
+  type PmContextWall,
+  type PmContextSummary,
+} from "./pm-context";

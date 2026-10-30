@@ -16,6 +16,7 @@ import { composeWallMorning } from "./morning";
 import { promotionMorningLine } from "../rule-forms";
 import { diffHiddenMorningLine } from "../checkers";
 import { modelRebenchMorningLine } from "../night-graphs";
+import { pmContextMorningLine, savePmContext } from "../native-agent";
 import { rejectedTrajectoriesMorningLine, skillSwitchMorningLine } from "../writer";
 import { watchMorningLine } from "@lane-pilot/jev";
 import { HUNT_ANGLES, buildClassPack, buildLoopPack, buildTaskPack, judgeHunt, parseFinding, type CheckedFinding, type EvidencePack, type HuntOutcome, type LoopEvidence, type PackFile } from "./pack";
@@ -533,6 +534,17 @@ export function createWall(deps: WallDeps) {
     }
     summary.spendTokens = nightSpend(db, night, { from: Date.parse(`${night}T00:00:00Z`), to: Date.parse(`${night}T00:00:00Z`) + DAY });
     saveNight(db, summary, ports.now(), true);
+    try {
+      const activeProjects = db.prepare("SELECT DISTINCT project_id FROM lane_pilot_run WHERE (state='running' OR created_at >= ?) AND project_id IS NOT NULL AND project_id <> '*'").all(now - 7 * DAY) as Array<{ project_id: string }>;
+      for (const p of activeProjects) {
+        const pSettings = loadProjectSettings(db as never, p.project_id);
+        if (pSettings["pm.context_file"] === "on" || pSettings["pm.context_file"] === true) {
+          savePmContext(db as never, p.project_id, now);
+        }
+      }
+    } catch {
+      // Non-blocking
+    }
     log(`wall: night ${night}: ${summary.classesSeen} classes with a failure today, ${summary.picked.length} repairs queued, ${summary.hunts.length} hunts, ${summary.backlog.length} to the backlog, ~${summary.spendTokens} of ${summary.capTokens} tokens`);
     return summary;
   }
@@ -919,6 +931,7 @@ export function createWall(deps: WallDeps) {
         ...(modelRebenchMorningLine(db as never, ports.now()) ? [modelRebenchMorningLine(db as never, ports.now())!] : []),
         ...(skillSwitchMorningLine(db as never, ports.now()) ? [skillSwitchMorningLine(db as never, ports.now())!] : []),
         ...(rejectedTrajectoriesMorningLine(db as never, ports.now()) ? [rejectedTrajectoriesMorningLine(db as never, ports.now())!] : []),
+        ...(pmContextMorningLine(db as never, ports.now()) ? [pmContextMorningLine(db as never, ports.now())!] : []),
       ],
     };
   }
@@ -948,6 +961,7 @@ export function createWall(deps: WallDeps) {
       ...(modelRebenchMorningLine(db as never, now ?? ports.now()) ? [modelRebenchMorningLine(db as never, now ?? ports.now())!] : []),
       ...(skillSwitchMorningLine(db as never, now ?? ports.now()) ? [skillSwitchMorningLine(db as never, now ?? ports.now())!] : []),
       ...(rejectedTrajectoriesMorningLine(db as never, now ?? ports.now()) ? [rejectedTrajectoriesMorningLine(db as never, now ?? ports.now())!] : []),
+      ...(pmContextMorningLine(db as never, now ?? ports.now()) ? [pmContextMorningLine(db as never, now ?? ports.now())!] : []),
     ], classes: () => listClasses(db), huntClass };
 }
 
