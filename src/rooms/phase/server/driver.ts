@@ -192,6 +192,13 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
     const record: PhaseRecord = { ...phase.record, context: { docs, sha: contextSignature(docs), signedAt: now(), risks,
       ...(input.appetite?.trim() ? { appetite: input.appetite.trim().slice(0, 600) } : {}), ...(noGos.length ? { noGos } : {}),
       ...(input.requirements?.length ? { requirements: [...new Set(input.requirements)] } : {}), ...(input.decisions?.length ? { decisions: [...new Set(input.decisions)] } : {}) } };
+    // A new signature is a new base for the plan: failures spent planning against the old documents are forgotten, so a phase
+    // whose context was re-signed plans again (PH1: the plan tries stayed spent after the owner re-signed CONTEXT.md).
+    if (record.context!.sha !== phase.record.context?.sha) {
+      const drop = (map?: Partial<Record<string, number>>) => { if (!map) return undefined; const { plan: _plan, ...rest } = map; return Object.keys(rest).length ? rest : undefined; };
+      record.autoFailures = drop(record.autoFailures);
+      record.autoFailuresTotal = drop(record.autoFailuresTotal);
+    }
     const check = discussionGate(record);
     if (!check.ok) { savePhase(db, phase.id, { record, at: now() }); throw new PhaseRefusal("the discussion is not complete", check.why); }
     book(phase, "discussion", "signed", `context signed ${record.context!.sha.slice(0, 12)}: ${docs.map((doc) => `${doc.path} (${doc.bytes} B)`).join(", ")}; appetite — ${record.context!.appetite ?? "—"}; no-gos — ${noGos.join("; ") || "—"}; risks — ${[...RISK_KINDS, "security" as const].filter((kind) => risks[kind]).map((kind) => `${kind}: ${risks[kind]}`).join("; ")}`);

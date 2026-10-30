@@ -11,7 +11,7 @@ import packageJson from "../../../../package.json";
  * do a stage's work and to choose which workflow runs; a stage whose workflow failed twice goes back to the PM's hands, so the
  * train never stands without anyone named.
  */
-export type AutoKind = "analyze" | "plan" | "draw" | "review" | "close" | "lessons";
+export type AutoKind = "analyze" | "plan" | "check" | "draw" | "review" | "close" | "lessons";
 /** Not a workflow: the machine signs again the documents a return to discussion left (the PM's or the owner's correction). */
 export type AutoDue = { kind: AutoKind; wave?: number } | { kind: "resign" } | { kind: "replan" };
 /** How many times the machine returns a phase to planning after a failed verdict before the loop is spent. */
@@ -19,7 +19,7 @@ export type AutoDue = { kind: AutoKind; wave?: number } | { kind: "resign" } | {
 export const MACHINE_STAGE_FAILURE = /repo_edited|artifact_invalid|output_invalid|output field "[^"]+" is missing|thread_failed|thread_id_missing|plugin_stopped|interrupted by a reload|budget_exceeded|provider_error|writer_stream_error|read_binary_rejected|guard:|no_pm_environment|internal_error|timed out waiting|(?:CONTEXT|SECURITY)\.md was not written|needs a threat model/i;
 
 export const AUTO_REPLANS = 2;
-export const AUTO_WORKFLOWS: Record<AutoKind, string> = { analyze: "lp.analyze", plan: "lp.plan", draw: "lp.draw", review: "lp.review", close: "lp.close", lessons: "retrospective" };
+export const AUTO_WORKFLOWS: Record<AutoKind, string> = { analyze: "lp.analyze", plan: "lp.plan", check: "lp.plan", draw: "lp.draw", review: "lp.review", close: "lp.close", lessons: "retrospective" };
 /** Failed runs of one stage's workflow before the loop is spent. */
 export const AUTO_TRIES = 2;
 /** Failed runs of one stage's workflow over the phase's whole life: a new version forgets AUTO_TRIES, not this, so frequent releases do not give endless tries. */
@@ -45,6 +45,9 @@ export function autoDue(phase: Phase): AutoDue | null {
   // The owner's word is not such a gap: with owner.words on an approved plan waits for it (the PM is told), the machine does not plan again.
   const gateRefuses = !!r.plan?.critique && r.plan.critique.decision === "approve" && !r.plan.admittedSha && planGaps(r).length > 0;
   if (phase.stage === "planning" && r.context && (!r.plan || gateRefuses || !!r.replan?.gaps || (r.plan.critique?.decision === "changes_requested" && (r.plan.rounds ?? 0) < 3)) && !tried("plan")) return { kind: "plan" };
+  // A plan the PM handed in waits for its independent check: the machine runs lp.plan itself with the plan's sha — the PM cannot
+  // start an internal workflow, and its verdict comes back through the same gates (PH1: the manual-plan dead end).
+  if (phase.stage === "planning" && r.context && r.plan && !r.plan.critique && !r.plan.admittedSha && !tried("check")) return { kind: "check" };
   if (phase.stage === "design" && !r.design?.drawing && !tried("draw")) return { kind: "draw" };
   if (phase.stage === "execution" && r.waveReview) {
     const wave = Object.entries(r.execution?.waves ?? {}).find(([, done]) => done.lines.every((line) => line.ok) && !done.review);
@@ -110,6 +113,12 @@ export function autoInputs(phase: Phase, due: { kind: AutoKind; wave?: number },
             "a goal that lacks only proof of work already accepted (current screenshots, a live run, a smoke on the current build) gets a new check piece whose writer produces that proof on the current main; never change an accepted piece's contract to re-prove it"] : []),
           ...(current && !r.replan?.gaps ? ["the plan gate refused the approved plan: return the whole plan again — every piece of findings.current_pieces with its id and contract — and fix only what the gaps name (a piece's covers, its wave, its checks), adding a piece only for an id no piece can carry"] : [])] };
     }
+    // The check of a plan the PM submitted: lp.plan with the plan's sha, its critic in a session of its own (PH1). The current
+    // pieces go as findings so the critic checks this plan, not a new one.
+    case "check": return { goal: phase.goal, plan_sha: r.plan!.sha,
+      findings: { context: contextText, decisions: r.context?.decisions ?? [], requirements: r.context?.requirements ?? [],
+        current_pieces: (r.plan?.items ?? []).map((item) => ({ id: item.id, wave: item.wave, covers: item.covers ?? [], task: item.task })) },
+      extra_rules: ["the phase's plan is already submitted: return its pieces unchanged (same ids, same contracts) and let the plan critic check them; do not replan"] };
     case "review": {
       const items = (r.plan?.items ?? []).filter((item) => item.wave === due.wave);
       // With a candidate the wave's work is on phase/<id>, not on main: the range and the files to read are the branch's.
@@ -295,6 +304,11 @@ export function createAutoStages(ctx: Pick<ServerCore, "log">, services: Pick<Se
       // The replan's gaps hold until the plan is admitted: a second round still merges into the pieces that were.
       const checked = deps.get(planned.id);
       if (checked.record.replan?.gaps && checked.record.plan?.admittedSha) deps.save(checked.id, { ...checked.record, replan: { count: checked.record.replan.count } });
+    } else if (auto.kind === "check") {
+      // The machine's check of a plan the PM submitted: only the critic's verdict is reported; the plan stays the PM's (PH1).
+      if (phase.stage !== "planning" || !phase.record.plan || phase.record.plan.critique) return;
+      const approved = output.status === "ok" && text(output.plan_verdict, 200) === "pass";
+      await deps.api.planCheck({ phaseId: phase.id, decision: approved ? "approve" : "changes_requested", by: `${by}, plan critic`, summary: text(output.plan_verdict, 2000), wfRunId: auto.wfRunId });
     } else if (auto.kind === "draw") {
       if (phase.stage !== "design" || phase.record.design?.drawing) return;
       if (output.verdict !== "pass") throw new Error(`the drawing's checker asks for rework: ${text(output.notes, 300)}`);
@@ -383,7 +397,15 @@ export function createAutoStages(ctx: Pick<ServerCore, "log">, services: Pick<Se
         // rebuilt from the record (drill ph_5cd09d1c7a: the missing SECURITY.md, Fable 2026-10-27).
         const why = (cause as { why?: unknown })?.why;
         const reasons = Array.isArray(why) && why.length ? `: ${why.map(String).join("; ").slice(0, 600)}` : "";
-        await fail(deps.get(phase.id), running.kind, `${cause instanceof Error ? cause.message : String(cause)}${reasons}`);
+        const message = `${cause instanceof Error ? cause.message : String(cause)}${reasons}`;
+        // A document edited after the signature is no failed work: the phase goes back to discussion and the machine signs it
+        // again (auto "resign"), the try is not counted (PH1: a password cleaned out of CONTEXT.md spent the phase's plan tries).
+        if (/changed after the context was signed/.test(message)) {
+          deps.book(phase, "decisions", "resign_after_edit", message.slice(0, 600));
+          deps.api.returnTo({ phaseId: phase.id, to: "discussion", note: message, by: "Lane Pilot (resign after a context edit)" });
+          return true;
+        }
+        await fail(deps.get(phase.id), running.kind, message);
       }
       return true;
     }

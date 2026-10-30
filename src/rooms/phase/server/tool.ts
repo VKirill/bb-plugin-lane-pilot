@@ -12,15 +12,25 @@ import { WORD_TURNS } from "../logic";
  * the JSON text of its own type.
  */
 function asJson<S extends z.ZodType>(schema: S) {
-  const fromText = z.string().transform((text, ctx) => {
-    try { return JSON.parse(text) as unknown; } catch { ctx.addIssue({ code: "custom", message: "expected JSON of the field's type" }); return z.NEVER; }
-  }).pipe(schema);
-  return z.union([schema, fromText]);
+  // preprocess, not union: a union's failure reports «Invalid input» and hides the field's real reasons; a preprocessed string
+  // reaches the one schema, so the error names the path (items.2.task.project_cwd: required). PH1.
+  return z.preprocess((value) => {
+    if (typeof value !== "string") return value;
+    try { return JSON.parse(value) as unknown; } catch { return value; }
+  }, schema);
 }
 
 const promise = z.object({ given: z.string().trim().min(1).max(600), when: z.string().trim().min(1).max(600), then: z.string().trim().min(1).max(600) }).strict();
-const item = z.object({ id: z.string().trim().min(1).max(80), title: z.string().trim().min(1).max(1000), wave: z.number().int().min(1).max(20), promise, task: taskV2Schema,
-  covers: z.array(z.string().trim().min(1).max(40)).max(40).optional() }).strict();
+// The machine's own plan format keeps `covers` inside the task (plan.json tasks[].covers); lift it to the item before the strict
+// task schema rejects the key. project_cwd the tool fills from the phase's checkout — the phase knows its project (PH1).
+const item = z.preprocess((value) => {
+  if (!value || typeof value !== "object") return value;
+  const row = value as { covers?: unknown; task?: unknown };
+  if (!row.task || typeof row.task !== "object" || !("covers" in row.task)) return value;
+  const { covers: taskCovers, ...task } = row.task as Record<string, unknown>;
+  return { ...row, task, covers: row.covers ?? taskCovers };
+}, z.object({ id: z.string().trim().min(1).max(80), title: z.string().trim().min(1).max(1000), wave: z.number().int().min(1).max(20), promise, task: taskV2Schema.extend({ project_cwd: z.string().startsWith("/").optional() }),
+  covers: z.array(z.string().trim().min(1).max(40)).max(40).optional() }).strict());
 const phaseId = z.string().trim().min(1).max(40);
 
 export const phaseToolParams = z.discriminatedUnion("action", [
@@ -101,7 +111,21 @@ export function registerPhaseTool(ctx: ServerCore, services: Services): void {
             return json({ stage, ...STAGE_RUBRICS[stage as keyof typeof STAGE_RUBRICS] });
           }
           case "context": return json(summary(await api.context({ phaseId: input.phaseId, docs: input.docs, risks: input.risks, appetite: input.appetite, noGos: input.noGos, requirements: input.requirements, decisions: input.decisions, by: context.threadId })));
-          case "plan": return json(summary(api.plan({ phaseId: input.phaseId, items: input.items as never, design: input.design })));
+          case "plan": {
+            // PH1: the machine's own plan format keeps `covers` inside the task (plan.json tasks[].covers); the item carries them
+            // either way — task.covers is lifted to item.covers. project_cwd falls back to the PM chat's checkout: the phase knows
+            // its project, the planner does not have to repeat it on every piece.
+            const phase = api.status(input.phaseId).phase;
+            const pm = await ctx.bb.sdk.threads.get({ threadId: phase.pmThreadId }).catch(() => null) as { environmentId?: string } | null;
+            const env = pm?.environmentId ? await ctx.bb.sdk.environments.get({ environmentId: pm.environmentId }).catch(() => null) as { path?: string } | null : null;
+            const cwd = typeof env?.path === "string" && env.path ? env.path : null;
+            const items = (input.items as Array<{ covers?: string[]; task: { covers?: string[]; project_cwd?: string } & Record<string, unknown> }>).map((row) => {
+              const { covers: taskCovers, ...task } = row.task;
+              const covers = row.covers?.length ? row.covers : Array.isArray(taskCovers) ? taskCovers : undefined;
+              return { ...row, task: { ...task, project_cwd: task.project_cwd || cwd }, ...(covers ? { covers } : {}) };
+            });
+            return json(summary(api.plan({ phaseId: input.phaseId, items: items as never, design: input.design })));
+          }
           case "plan_check": return json(summary(await api.planCheck({ phaseId: input.phaseId, decision: input.decision, by: input.by, summary: input.summary, wfRunId: input.wfRunId })));
           case "drawing": return json(summary(await api.drawing({ phaseId: input.phaseId, paths: input.paths, designer: input.designer, feasible: input.feasible, contradiction: input.contradiction, reviewer: input.reviewer, critique: input.critique as never, lesson: input.lesson })));
           case "goal_audit": return json(summary(api.goalAudit({ phaseId: input.phaseId, state: input.state, by: input.by, summary: input.summary })));

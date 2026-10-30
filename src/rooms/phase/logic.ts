@@ -88,13 +88,13 @@ export type PhaseRecord = {
   /** The machine runs the stages' workflows itself (setting phase.train, on by default); false leaves every stage to the PM. */
   train?: boolean;
   /** The stage workflow the machine runs now (src/rooms/phase/server/auto-stages.ts). */
-  auto?: { kind: "analyze" | "plan" | "draw" | "review" | "close" | "lessons"; wfRunId: string; startedAt: number; wave?: number };
+  auto?: { kind: "analyze" | "plan" | "draw" | "review" | "check" | "close" | "lessons"; wfRunId: string; startedAt: number; wave?: number };
   /** The context signed before a return to discussion: the machine signs these documents again instead of analysing anew. */
   signedBefore?: { docs: string[]; risks?: Partial<Record<RiskKey, string>>; decisions?: string[]; appetite?: string; noGos?: string[] };
   /** Runs of a stage's workflow that did not finish; at two the loop is spent and the machine ends it (scope cut, hunters, backlog). */
-  autoFailures?: Partial<Record<"analyze" | "plan" | "draw" | "review" | "close" | "lessons", number>>;
+  autoFailures?: Partial<Record<"analyze" | "plan" | "check" | "draw" | "review" | "close" | "lessons", number>>;
   /** Failed runs of each stage's workflow over the phase's whole life, across versions (a new version forgets autoFailures, not this). */
-  autoFailuresTotal?: Partial<Record<"analyze" | "plan" | "draw" | "review" | "close" | "lessons", number>>;
+  autoFailuresTotal?: Partial<Record<"analyze" | "plan" | "check" | "draw" | "review" | "close" | "lessons", number>>;
   /** Set before the machine's outcome for a spent loop runs (exhausted), so a pass that finds the phase still active does not run it again. */
   exhausted?: { at: number };
   /** The machine's returns to planning after a failed verdict: what to plan for (cleared once planned) and how many so far. */
@@ -528,7 +528,7 @@ export function nextAction(phase: Phase, facts: ReadonlyMap<string, TaskFact>): 
     case "planning": {
       const check = planGate(r);
       return { key: key(`${r.plan?.sha ?? "none"}:${r.plan?.critique?.decision ?? "-"}`), stage: phase.stage, waitsForPm: true,
-        text: `${head} — stage 2, planning, on context ${r.context?.sha.slice(0, 12) ?? "?"}.\nSubmit the plan with ${tool("plan", `, phaseId:"${id}", items:[{id, title, wave, promise:{given, when, then}, task:<task-v2>}]`)}; then run the independent plan checker (workflow lp.plan, whose plan critic is a session of its own) with the input plan_sha:"${r.plan?.sha ?? "<the plan's sha after you submit it>"}" and report it with ${tool("plan_check", `, phaseId:"${id}", decision:"approve"|"changes_requested", by, summary, wfRunId`)} (round ${(r.plan?.rounds ?? 0) + 1} of ${PLAN_ROUNDS_MAX}; the approval counts only with the wfRunId of the run that was handed this plan_sha, of this project, whose plan critic started after the plan, had the last word and passed it in its own output).\nRead first: ${stageInit(phase).join(", ")}. ${rubricLine("planning")}${check.ok ? "" : `\nOpen: ${check.why.slice(0, 8).join("; ")}`}` };
+        text: `${head} — stage 2, planning, on context ${r.context?.sha.slice(0, 12) ?? "?"}.\n${r.plan && !r.plan.critique ? `The plan is submitted; Lane Pilot runs the independent plan checker itself (workflow lp.plan with plan_sha:"${r.plan.sha.slice(0, 12)}…") and reports the verdict — you do not start it, wait for the result.` : `Submit the plan with ${tool("plan", `, phaseId:"${id}", items:[{id, title, wave, promise:{given, when, then}, task:<task-v2>}]`)}; Lane Pilot then runs the independent plan checker itself (workflow lp.plan, whose plan critic is a session of its own, handed this plan's sha) and reports the verdict`} (round ${(r.plan?.rounds ?? 0) + 1} of ${PLAN_ROUNDS_MAX}).\nRead first: ${stageInit(phase).join(", ")}. ${rubricLine("planning")}${check.ok ? "" : `\nOpen: ${check.why.slice(0, 8).join("; ")}`}` };
     }
     case "design": {
       const check = designGate(r);
