@@ -145,7 +145,7 @@ export function composePrompt(ctx: PromptContext, candidates: number): string {
     WORK,
     `# WHAT YOU HAVE
 
-The recent attempts under the current harness (the shared evidence), ${candidates} candidate harness${candidates === 1 ? "" : "es"} built on it (each with its \`harness.diff\` and the editor's notes in \`context/decisions/\`), and the library. The candidates were drawn from the same evidence and share the same model biases: agreement is support, not independent proof; contradiction is a reason to reopen the trajectories, not to vote.
+The recent attempts under the current harness (the shared evidence), ${candidates} candidate harness${candidates === 1 ? "" : "es"} built on it (each with its \`harness.diff\` and the editor's notes in \`context/decisions/\`), and the library. When \`context/probe.md\` is present, each candidate was replayed on one or two saved attempts of this key before you compose: weigh those contrasts, and remember a contrast is not a verdict. The candidates were drawn from the same evidence and share the same model biases: agreement is support, not independent proof; contradiction is a reason to reopen the trajectories, not to vote.
 
 # HOW TO WEIGH THE EVIDENCE
 

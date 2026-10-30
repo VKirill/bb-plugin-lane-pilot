@@ -2,8 +2,9 @@ import { runOnHost } from "@lane-pilot/host-calls";
 import { writerExecutionSelection } from "@lane-pilot/models";
 import { upsertLessonProposal, type RuleForm } from "@lane-pilot/run-insights";
 import {
-  HarnessValidationError, LANE_PILOT_SURFACE, alwaysOnText, checkNames, composePrompt, experienceIsSupported, experiencePrompt, inventory, isBase, missionPointer,
-  parseEdits, parseExperience, parseNotes, proposePrompt, renderExperienceMarkdown, renderThreadEvents, skillNames, validate, type ThreadEventLike, type Tree,
+  HarnessValidationError, LANE_PILOT_SURFACE, PROBE_DEFAULTS, alwaysOnText, checkNames, composePrompt, experienceIsSupported, experiencePrompt, formatProbeContrasts, inventory, isBase, missionPointer,
+  parseEdits, parseExperience, parseNotes, proposePrompt, renderExperienceMarkdown, renderThreadEvents, replayCandidate, selectProbeAttempts, skillNames, validate,
+  type ProbeBudget, type ProbeSource, type ThreadEventLike, type Tree,
 } from "@lane-pilot/harness-core";
 import { fullAccessSpawn, scheduleIsolated, stringAt, type ServerCore, type Services } from "../../core/server";
 import { SANDBOX_PROJECT_ID, isSandboxProjectName } from "../../stability/server";
@@ -51,6 +52,8 @@ export type HarnessConfig = {
   trial: TrialConfig;
   /** `harness.adopt_by` (SMA plan P0-1): `bench` (default) adopts a tree only after a passed bench comparison; `live` keeps the alternation as the judge. */
   adoptBy: AdoptBy;
+  /** Propose–Probe–Compose: saved attempts replayed before the composer, and the token cap for that round. `tokenBudget` 0 skips it. */
+  probe: ProbeBudget;
   /** An area is taught only when its attempts in the window span at least this many days (≥5 attempts in one afternoon repeat nothing). */
   minSpanDays: number;
 };
@@ -71,6 +74,7 @@ export const HARNESS_DEFAULTS: HarnessConfig = {
   // (`router9/ag/gemini-3.8-flash-high`; the «high» is in the name, the effort stays the catalog default «medium»),
   // not on Opus: three sessions a key a night must stay cheap, and the trial, not the editor, decides what ships.
   editor: { providerId: "opencode2", model: "router9/ag/gemini-3.8-flash-high", reasoningLevel: "medium" }, roles: {}, waitMinutes: 40, trial: TRIAL_DEFAULTS, adoptBy: "bench", minSpanDays: 3,
+  probe: PROBE_DEFAULTS,
 };
 
 const CONFIG_KEY = (projectId: string) => `harness:config:${projectId}`;
@@ -183,7 +187,7 @@ export function createHarness(ctx: ServerCore, services: Services) {
     const raw = await bb.storage.kv.get(CONFIG_KEY(projectId)).catch(() => null) as Partial<HarnessConfig> | null;
     // `harness.adopt_by` of the global level is the default of every project; a project's own record still wins.
     const hub = hubFields(db, "harness") as { adoptBy?: AdoptBy };
-    return { ...HARNESS_DEFAULTS, ...(hub.adoptBy ? { adoptBy: hub.adoptBy } : {}), ...(raw ?? {}), editor: { ...HARNESS_DEFAULTS.editor, ...(raw?.editor ?? {}) }, roles: { ...(raw?.roles ?? {}) }, trial: { ...TRIAL_DEFAULTS, ...(raw?.trial ?? {}) } };
+    return { ...HARNESS_DEFAULTS, ...(hub.adoptBy ? { adoptBy: hub.adoptBy } : {}), ...(raw ?? {}), editor: { ...HARNESS_DEFAULTS.editor, ...(raw?.editor ?? {}) }, roles: { ...(raw?.roles ?? {}) }, trial: { ...TRIAL_DEFAULTS, ...(raw?.trial ?? {}) }, probe: { ...PROBE_DEFAULTS, ...(raw?.probe ?? {}) } };
   }
 
   /** A patch merges a level deep; a role set to null goes back to the editor's model. */
@@ -194,7 +198,7 @@ export function createHarness(ctx: ServerCore, services: Services) {
       if (!HARNESS_ROLES.includes(role as HarnessRole)) continue;
       if (value === null) delete roles[role as HarnessRole]; else roles[role as HarnessRole] = { ...(roles[role as HarnessRole] ?? current.editor), ...value };
     }
-    const next: HarnessConfig = { ...current, ...patch, editor: { ...current.editor, ...(patch.editor ?? {}) }, roles, trial: { ...current.trial, ...(patch.trial ?? {}) } };
+    const next: HarnessConfig = { ...current, ...patch, editor: { ...current.editor, ...(patch.editor ?? {}) }, roles, trial: { ...current.trial, ...(patch.trial ?? {}) }, probe: { ...current.probe, ...(patch.probe ?? {}) } };
     // The resolved default stays out of the project's record unless the project set it, so a later change of the global default reaches it.
     const stored = await bb.storage.kv.get(CONFIG_KEY(projectId)).catch(() => null) as Partial<HarnessConfig> | null;
     const keepAdopt = patch.adoptBy !== undefined || stored?.adoptBy !== undefined;
@@ -499,7 +503,16 @@ export function createHarness(ctx: ServerCore, services: Services) {
     if (inv.error && dom.error) return { status: "failed", detail: `both editors failed: inv ${inv.error}; dom ${dom.error}`, tree: {}, ...common, thread_ids: threadIds };
     if (inv.keptBase && dom.keptBase) return { status: "keep_base", detail: "both editors kept the current harness", tree: {}, ...common, thread_ids: threadIds };
     const pool: PoolCandidate[] = [{ label: "inv", tree: inv.tree, diff: treeDiff(active.tree, inv.tree), notes: inv.notes }, { label: "dom", tree: dom.tree, diff: treeDiff(active.tree, dom.tree), notes: dom.notes }];
-    const composeFiles = evidenceFiles({ area, writerKey, attempts, harness: active.tree, library, pool, decisions: { inv: inv.notes || inv.error || "", dom: dom.notes || dom.error || "" }, repoPath: where.path });
+    const probeSources: ProbeSource[] = attempts.map((attempt) => {
+      const outcome = [attempt.state, attempt.reason].filter(Boolean).join(": ");
+      const brief = attempt.dispatch?.rulesText ?? "";
+      const tokens = Math.max(1, Math.ceil((attempt.dispatch?.promptChars ?? brief.length + outcome.length) / 4));
+      return { attemptId: attempt.attemptId, tokens, brief, outcome };
+    });
+    const probed = selectProbeAttempts(probeSources, cfg.probe);
+    const contrasts = pool.flatMap((candidate) => probed.map((attempt) => replayCandidate({ label: candidate.label, diff: candidate.diff, attempt, tokenBudget: attempt.tokens })));
+    const probe = formatProbeContrasts(contrasts);
+    const composeFiles = evidenceFiles({ area, writerKey, attempts, harness: active.tree, library, pool, decisions: { inv: inv.notes || inv.error || "", dom: dom.notes || dom.error || "" }, repoPath: where.path, ...(probe ? { probe } : {}) });
     await writeFiles(where, `${round}/compose`, composeFiles);
     const composed = await stage({
       projectId, where, folder: `${round}/compose`, cfg, fallback: active.tree, step, label: "compose",

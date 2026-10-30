@@ -38,6 +38,8 @@ export function evidenceFiles(input: {
   pool?: readonly PoolCandidate[]; decisions?: Record<string, string>; baseHarness?: Tree;
   /** The repository the attempts changed, as it is now on this host: where a workspace fact is checked before it is written. */
   repoPath?: string;
+  /** Overnight probe contrasts (`context/probe.md`), already formatted. Absent when the round's budget skipped the probe. */
+  probe?: string;
 }): Record<string, string> {
   const files: Record<string, string> = {};
   const areaName = input.area || "(whole project)";
@@ -113,6 +115,7 @@ export function evidenceFiles(input: {
     for (const [rel, content] of Object.entries(candidate.tree)) files[`context/pool/${candidate.label}/harness/${rel}`] = content;
   }
   for (const [label, notes] of Object.entries(input.decisions ?? {})) files[`context/decisions/${label}.md`] = notes || "No decision notes returned.";
+  if (input.probe?.trim()) files["context/probe.md"] = input.probe;
   return files;
 }
 
@@ -126,6 +129,7 @@ export function evidenceLayout(files: Record<string, string>): string {
   if (has("context/base_harness/")) lines.push("context/base_harness/             the tree before this round");
   if (has("context/pool/")) lines.push("context/pool/<label>/             candidates: harness/, harness.diff, notes.md");
   if (has("context/decisions/")) lines.push("context/decisions/<label>.md      the editors' notes");
+  if (has("context/probe.md")) lines.push("context/probe.md                  overnight replays of the candidates on saved attempts");
   if (has("context/library/")) lines.push("context/library/                  earlier trees of this area; browse INDEX.md first");
   return lines.join("\n");
 }

@@ -12,3 +12,7 @@ export {
   ANSWER_FREE, EVIDENCE_BOUNDARY, HOW_TO_READ, KEEP_BASE_RULE, PROMPTS_VERSION, WORK,
   composePrompt, experiencePrompt, generalize, missionPointer, proposePrompt, surfaceBlock, type PromptContext,
 } from "./prompts";
+export {
+  PROBE_DEFAULTS, formatProbeContrasts, replayCandidate, selectProbeAttempts,
+  type ProbeBudget, type ProbeContrast, type ProbeSource,
+} from "./probe";

@@ -65,7 +65,7 @@ A control is a row of `lane_pilot_project_settings` under project `*` (the globa
 | plugin key-value `wall:config` | `wall.*` | `src/rooms/wall/service.ts:121` | `wall config key=value`, the screen |
 | plugin key-value `bench:config` | `bench.*` | `src/rooms/bench/service.ts:37` | `bench config`, the screen |
 | table `lane_pilot_owner_config` | `owner_push.*` | `src/rooms/owner-waiting/push.ts:38` | `waiting config`, `owner_waiting_config`, the screen |
-| per-project `harness:config:<id>` | `harness.adopt_by` (the default of every project) | `src/rooms/harness/server/harness.ts:185` | `harness configure`, the screen |
+| per-project `harness:config:<id>` | `harness.adopt_by` (the default of every project), `harness.probe.token_budget` | `src/rooms/harness/server/harness.ts:190` | `harness configure`, the screen |
 | project settings, CLI only | `baseline.*`, `checks.require_red_on_base`, `regress.*` in the catalog | `src/rooms/baseline/logic.ts:35` | the screen (default), the project's «Work» tab (own value) |
 
 Rules: a field with a row reads the row; a field without one reads the old store, so nothing set before is lost; a write goes to the row only and leaves the old store alone (`src/rooms/wall/service.ts:126`); the CLI commands keep their syntax and their clamping (a value over the limit is stored as the limit). A write from the CLI moves the setting's version, so a page that read before sees the next save as a conflict and reloads (`src/rooms/improvement/hub.ts:72`). A project record of `harness.adopt_by` that was saved before keeps winning over the default.
@@ -92,7 +92,8 @@ Every row is in the catalog (`scripts/ui-catalog-hand.json`, written by `scripts
 | `wall.rerun_sandbox_only` | `src/rooms/wall/config.ts:25` | `rerunSandboxOnly: boolean` |
 | `bench.budget_tokens` | `src/rooms/bench/runner.ts:53` | `DEFAULT_BUDGET_TOKENS` |
 | `bench.budget_hours` | `src/rooms/bench/runner.ts:54` | `DEFAULT_BUDGET_HOURS` |
-| `harness.adopt_by` | `src/rooms/harness/server/harness.ts:53` | `adoptBy: AdoptBy` |
+| `harness.adopt_by` | `src/rooms/harness/server/harness.ts:54` | `adoptBy: AdoptBy` |
+| `harness.probe.token_budget` | `src/rooms/harness/server/harness.ts:56` | `probe.tokenBudget` |
 | `owner_push.enabled` | `src/rooms/owner-waiting/push.ts:17` | `export type PushConfig` |
 | `owner_push.quiet` | `src/rooms/owner-waiting/push.ts:23` | `const QUIET` |
 | `owner_push.timezone` | `src/rooms/owner-waiting/push.ts:25` | `function validTimezone` |
