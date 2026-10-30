@@ -104,3 +104,21 @@ describe("failure.class outcome labels", () => {
     expect(sweepFailureClassOutcomes(db)).toBe(0);
   });
 });
+
+describe("invoice.check outcome labels", () => {
+  it("the owner's decision labels the receipt: a sent match agrees, a stopped run denies a match", async () => {
+    const { createFakePluginHost } = await import("@get-bb/plugin-sdk/testing");
+    const { openDatabase } = await import("../../src/rooms/storage/database");
+    const { insertReceipt } = await import("@lane-pilot/jev");
+    const { sweepInvoiceCheckOutcomes } = await import("../../src/rooms/runs/failure-class-model");
+    const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
+    const db = openDatabase(bb), now = Date.now();
+    const run = (id: string, state: string) => db.prepare("INSERT INTO lane_pilot_run (id, project_id, pm_thread_id, state, created_at, updated_at) VALUES (?,?,?,?,?,?)").run(id, "p", "pm", state, now, now);
+    const receipt = (runId: string, decision: string) => insertReceipt(db, { judgment: "invoice.check", version: 1, mode: "active", projectId: "p", runId, subject: "invoice", inputSha256: `i${runId}${decision}`, inputChars: 1, questions: 2, status: "ok", decision, decidedBy: "jev", at: now });
+    run("i_sent", "accepted"); run("i_wrong", "accepted"); run("i_held", "blocked"); run("i_live", "running");
+    const a = receipt("i_sent", "match"), b = receipt("i_wrong", "mismatch"), c = receipt("i_held", "unsure"), d = receipt("i_live", "match");
+    expect(sweepInvoiceCheckOutcomes(db)).toBe(3);
+    const outcome = (id: number) => (db.prepare("SELECT outcome FROM lane_pilot_jev_receipt WHERE id=?").get(id) as { outcome: string | null }).outcome;
+    expect([outcome(a), outcome(b), outcome(c), outcome(d)]).toEqual(["agree", "disagree", "agree", null]);
+  });
+});
