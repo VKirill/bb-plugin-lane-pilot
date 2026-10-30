@@ -1,13 +1,14 @@
 import { TASK_KINDS } from "../contracts";
 import { mapVerificationCwd } from "../tasks";
 import type { AttemptMetrics } from "../usage/server";
-import { q, realClock, type BenchProjectRef, type Clock, type HostPort, type PipelinePort } from "./ports";
+import { q, realClock, type BenchProjectRef, type Clock, type HostPort, type PipelinePort, type TaskOutcome } from "./ports";
 import { diskDeferral, isDiskDeferral } from "./reliability";
 import {
   addSpent, deleteRunRow, finishRunRow, getRun, getSet, listResults, listRuns, saveResult, startRunRow, verifySet, type BenchDb, type BenchResult, type BenchRun,
 } from "./store";
 import { resolveRepoPath } from "./repos";
 import { judgeValidator } from "./validator";
+import { jevalsLine, type JevalsResult } from "./jevals";
 import { BENCH_PROJECT_PREFIX, BENCH_PROJECTS, benchProjectName, type ManifestTask, type VerificationItem } from "./types";
 import { MIN_FREE_GB, freeGb, linkDependenciesCommand } from "./warmup";
 
@@ -52,6 +53,8 @@ export type RunnerDeps = {
   log?: (line: string) => void;
   /** The «LP bench …» project name for a manifest task (default: benchProjectName(project, repo)). */
   projectNameFor?: (task: ManifestTask) => string;
+  /** The jevals trace evals (audit top-10): absent, they are skipped. */
+  jevals?: (input: { task: ManifestTask; outcome: TaskOutcome; attempts: readonly AttemptMetrics[]; reason: string | null }) => Promise<JevalsResult | null>;
 };
 
 export const DEFAULT_BUDGET_TOKENS = 120_000_000;
@@ -271,6 +274,12 @@ export async function runSeries(deps: RunnerDeps, input: SeriesInput): Promise<S
           runId: run.id, taskId: task.taskId, position: task.position, state: reason && !sent.ok ? "error" : accepted ? "accepted" : "not_accepted", accepted,
           benchTaskId, lpRunId: lp.runId, ...sums, reason: reason ?? (accepted ? null : `ended ${outcome.latestState ?? "without an attempt"}`), recordedAt: clock.now(),
         }, attempts);
+        const evals = deps.jevals ? await deps.jevals({ task, outcome, attempts, reason: reason ?? (accepted ? null : `ended ${outcome.latestState ?? "without an attempt"}`) }).catch(() => null) : null;
+        if (evals) {
+          const line = jevalsLine(evals);
+          if (line) log(`bench ${input.arm} r${repeat}: ${benchTaskId} ${line}`);
+          deps.db.prepare("UPDATE lane_pilot_bench_result SET metrics_json=? WHERE run_id=? AND task_id=?").run(JSON.stringify([...attempts, { jevals: evals }]), run.id, task.taskId);
+        }
         if (sums.tokens) addSpent(deps.db, run.id, sums.tokens);
         log(`bench ${input.arm} r${repeat}: ${benchTaskId} ${accepted ? "accepted" : "not accepted"}, ${sums.attempts} attempts, stages ${sums.stagesPassed}, cost ${sums.costUsd === null ? "not measured" : `$${sums.costUsd.toFixed(3)}`}, ${sums.seconds ?? "?"}s`);
       }

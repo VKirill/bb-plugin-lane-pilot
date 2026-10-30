@@ -23,6 +23,8 @@ export type BenchDeps = {
   projectNames: () => Promise<ReadonlyMap<string, string>>;
   isSandboxName: (name: string) => boolean;
   log: (line: string) => void;
+  /** The jevals trace evals (audit top-10); absent, the runner skips them. */
+  jevals?: import("./jevals").JevalsResult extends never ? never : (input: { task: import("./types").ManifestTask; outcome: import("./ports").TaskOutcome; attempts: readonly import("../usage/server").AttemptMetrics[]; reason: string | null }) => Promise<import("./jevals").JevalsResult | null>;
   /** The name of the bench project for a task (default «LP bench <project>»). */
   projectNameFor?: (task: import("./types").ManifestTask) => string;
 };
@@ -127,7 +129,7 @@ export function createBench(deps: BenchDeps) {
       for (const row of closed) deps.log(`bench-sweep: ${row.id} ${row.arm} ${row.stopReason}`);
       const reports: SeriesReport[] = [];
       for (let repeat = 1; repeat <= repeats; repeat++) {
-        const report = await runSeries({ db: deps.db, host: deps.host, pipeline: deps.pipeline, log: deps.log, ...(deps.projectNameFor ? { projectNameFor: deps.projectNameFor } : {}) }, { ...input, repeat, ...(hostId ? { hostId } : {}), ...(reposRoot ? { reposRoot } : {}), budgetTokens: input.budgetTokens ?? caps.budgetTokens, budgetHours: input.budgetHours ?? caps.budgetHours });
+        const report = await runSeries({ db: deps.db, host: deps.host, pipeline: deps.pipeline, log: deps.log, ...(deps.jevals ? { jevals: deps.jevals } : {}), ...(deps.projectNameFor ? { projectNameFor: deps.projectNameFor } : {}) }, { ...input, repeat, ...(hostId ? { hostId } : {}), ...(reposRoot ? { reposRoot } : {}), budgetTokens: input.budgetTokens ?? caps.budgetTokens, budgetHours: input.budgetHours ?? caps.budgetHours });
         reports.push(report);
         if (report.state === "stopped_budget" || report.state === "failed" || report.state === "deferred" || report.state === "unavailable") break;
       }
