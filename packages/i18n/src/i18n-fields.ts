@@ -969,6 +969,12 @@ export const fieldEn = {
   reason_s505: "The search is not started over more than 2 to the power of this many commits. Default 9 (512 commits).",
   field_s506: "A check that is red before the work",
   reason_s506: "A task of this risk or more must have a check that fails on the base commit before its writer starts. When every check already passes there, the attempt does not start and the PM is told which checks are vacuous and what to add: a check that names the new file or behaviour. Refactor, docs, research and check tasks are never asked. Default: from medium risk.",
+  field_s507: "Best-of-3 writers",
+  reason_s507: "For quality_mode full only: three writers of the fallback chain run the task in parallel, the task's checks pick the winner, a tie goes to the code critic's verdict; the losing attempts close as superseded and are never merged. Default off.",
+  field_s508: "Best-of-3: token budget",
+  reason_s508: "The most tokens the parallel candidates of one task may spend together; 0 leaves the run's own budget the only bound. Default 0.",
+  field_s509: "Best-of-3: parallel slots",
+  reason_s509: "How many best-of candidates of a task may run at once; 1 runs the three in turn. Default 3.",
 } as const;
 
 export const fieldRu: { [K in keyof typeof fieldEn]: string } = {
@@ -1942,4 +1948,10 @@ export const fieldRu: { [K in keyof typeof fieldEn]: string } = {
   reason_s505: "Поиск не начинается, если коммитов больше, чем 2 в этой степени. По умолчанию 9 (512 коммитов).",
   field_s506: "Проверка, красная до работы",
   reason_s506: "У задачи такого риска и выше должна быть проверка, которая падает на базовом коммите до старта исполнителя. Если все проверки там уже проходят, попытка не запускается, а PM получает список пустых проверок и что добавить: проверку, называющую новый файл или поведение. Рефакторинг, документация, исследование и проверки не затрагиваются. По умолчанию — от среднего риска.",
+  field_s507: "Best-of-3 исполнителей",
+  reason_s507: "Только для режима quality_mode full: три исполнителя из цепочки запасных делают задачу параллельно, проверки задачи выбирают победителя, при ничьей решает вердикт критика кода; проигравшие попытки закрываются как superseded и не мержатся. По умолчанию выключено.",
+  field_s508: "Best-of-3: бюджет токенов",
+  reason_s508: "Сколько токенов суммарно могут потратить параллельные кандидаты одной задачи; 0 оставляет единственной границей бюджет запуска. По умолчанию 0.",
+  field_s509: "Best-of-3: параллельные слоты",
+  reason_s509: "Сколько кандидатов задачи может идти одновременно; 1 гонит три по очереди. По умолчанию 3.",
 };

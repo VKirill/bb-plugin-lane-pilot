@@ -86,7 +86,7 @@ export function coreRequiredSessionAdvertisement(): RequiredSessionAdvertisement
  */
 export type HelperRole =
   | "writer" | "code-repair" | "night-fixer"
-  | "plan-critic" | "code-critic" | "specialist-reviewer" | "night-reviewer" | "gate-triage" | "pm-reader"
+  | "plan-critic" | "code-critic" | "critic-tiebreak" | "specialist-reviewer" | "night-reviewer" | "gate-triage" | "pm-reader"
   | "docs-maintainer" | "onboarder" | "memory-maintainer" | "project-life"
   | "browser-qa" | "errand" | "council-seat" | "rules-analyzer"
   | "analyst" | "planner" | "auditor" | "debugger"
@@ -111,6 +111,7 @@ export const ROLE_PROFILES: Record<HelperRole, RoleProfile> = {
   "night-fixer": CODER,
   "plan-critic": ONE_SHOT,
   "code-critic": READER,
+  "critic-tiebreak": ONE_SHOT,
   "specialist-reviewer": READER,
   "night-reviewer": READER,
   "gate-triage": READER,

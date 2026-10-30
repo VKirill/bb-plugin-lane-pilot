@@ -2,7 +2,7 @@ import { z } from "zod";
 import { sha256Hex } from "@lane-pilot/kit";
 
 export const STAGE_CONTRACT_VERSION = 1 as const;
-export const STAGE_IDS = ["pm-read", "plan-critique", "run-gate", "specialist-review", "writer-agent", "verification", "code-critique", "plan-fact", "acceptance-receipt", "browser-qa", "docs-maintenance", "onboarding-preview", "onboarding-apply", "memory-maintenance", "project-life", "night-review", "night-fix", "workspace-status", "opencode-telemetry", "gate-triage"] as const;
+export const STAGE_IDS = ["pm-read", "plan-critique", "run-gate", "specialist-review", "writer-agent", "verification", "code-critique", "plan-fact", "acceptance-receipt", "browser-qa", "docs-maintenance", "onboarding-preview", "onboarding-apply", "memory-maintenance", "project-life", "night-review", "night-fix", "workspace-status", "opencode-telemetry", "gate-triage", "critic-tiebreak"] as const;
 export type StageId = (typeof STAGE_IDS)[number];
 export const STAGE_STATES = ["pending", "running", "passed", "failed", "blocked", "skipped", "canceled"] as const;
 export type StageState = (typeof STAGE_STATES)[number];
