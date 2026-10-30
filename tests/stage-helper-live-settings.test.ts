@@ -3,7 +3,7 @@ import { LP_DEFAULTS_KEY } from "@lane-pilot/settings-catalog";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { PrototypeConfig, TaskV2 } from "../src/rooms/contracts";
 import { runPmRead } from "../src/rooms/critique/server/critique-runs";
-import { createAttempt, createRun, createTask, openDatabase, saveProjectSetting, setRunThread } from "../src/rooms/storage/database";
+import { createAttempt, createRun, createTask, listStageReceipts, openDatabase, saveProjectSetting, setRunThread } from "../src/rooms/storage/database";
 import { createWriterSticky } from "../src/rooms/writer/server/sticky";
 
 vi.mock("@lane-pilot/thread-observe", async (importOriginal) => ({
@@ -73,6 +73,25 @@ describe("stage helper spawns read the settings in effect at spawn time", () => 
     const result = await w.run();
     expect(result.state).toBe("passed");
     expect(w.spawned[0]).toMatchObject({ providerId: "codex", model: "model-b" });
+  });
+
+  it("does not call a model when both critics are off, including quality_mode quick", async () => {
+    const bothOff = pmReadWorld();
+    saveProjectSetting(bothOff.db, PROJECT, "plan_critique.enabled", false);
+    saveProjectSetting(bothOff.db, PROJECT, "code_critique.enabled", false);
+    const skipped = await bothOff.run();
+    expect(skipped.state).toBe("skipped");
+    expect(bothOff.spawned).toHaveLength(0);
+    expect(listStageReceipts(bothOff.db, "run", "t1").find((row) => row.stageId === "pm-read")?.reason).toBe("critics_disabled");
+
+    const quick = pmReadWorld();
+    const quickResult = await runPmRead({
+      bb: quick.bb, db: quick.db, projectId: PROJECT, runId: "run", taskId: "t1", pmThreadId: "pm-thread", config,
+      task: { ...task, quality_mode: "quick" },
+    });
+    expect(quickResult.state).toBe("skipped");
+    expect(quick.spawned).toHaveLength(0);
+    expect(listStageReceipts(quick.db, "run", "t1").find((row) => row.stageId === "pm-read")?.reason).toBe("quality_mode_quick");
   });
 
   it("pm-read falls back to the run's snapshot when no writer setting exists", async () => {
