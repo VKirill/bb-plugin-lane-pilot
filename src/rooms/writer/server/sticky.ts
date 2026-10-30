@@ -1,7 +1,7 @@
 import type { DirtSnapshot } from "../cli-outcome";
 import { isLiveDecision } from "../live-folder";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
-import { getAttempt, getReasoningTrace, getRun, saveReasoningTrace, setAttemptDirtBefore, setAttemptWorkspace, transitionAttempt, taskBasePath } from "../../storage";
+import { getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, loadProjectSettings, saveReasoningTrace, setAttemptDirtBefore, setAttemptWorkspace, transitionAttempt, taskBasePath } from "../../storage";
 import { SESSION_MAX_TURNS, failureClass } from "../../runs";
 import { stringAt } from "../../core/server";
 import { sleepUntilThreadSignal, threadWatchMark } from "@lane-pilot/thread-observe";
@@ -12,6 +12,9 @@ import { sendServiceMessage } from "../../relay/server";
 import { isWriterStreamError } from "./writer-task";
 import { markAttemptStart } from "./attempt-marker";
 import { buildCapsule, capsuleRestored } from "../../session-hooks";
+import { judgeSessionDigest } from "../session-digest";
+import { jev } from "@lane-pilot/jev";
+import { listThreadEventsRaw } from "@lane-pilot/thread-observe";
 
 /**
  * Sticky writers: an area's writer thread takes the area's next task, and a task-side failure is redone in the thread
@@ -255,6 +258,14 @@ export function createWriterSticky(ctx: ServerCore, services: Services) {
         dirtBefore = dirt.snapshots;
       }
       const compacted = await compactIfFull(writer.threadId);
+      // Compaction without a summary: the pairs the session no longer needs are dropped, the rest stays verbatim.
+      let digest = "";
+      if (compacted) {
+        const events = await listThreadEventsRaw(bb, { threadId:writer.threadId, order:"desc", limit:"300" } as never)
+          .then((listed) => (listed?.ok ? listed.events : []), () => [] as never[]);
+        digest = await judgeSessionDigest(jev(), { goal:input.taskId, events: events as Array<Record<string, unknown>> },
+          { projectId:input.config.projectId, runId:input.runId, subject:input.taskId, settings:loadProjectSettings(db, input.config.projectId, getRunSettingsScopes(db, input.runId)) }).catch(() => null) ?? "";
+      }
       if (!setAttemptWorkspace(db, input.attemptId, { path:writer.workspacePath, environmentId:writer.environmentId, decision:writer.decision })) {
         return { ok:false, reason:"attempt_workspace_cas_conflict", bound:false };
       }
@@ -287,7 +298,7 @@ export function createWriterSticky(ctx: ServerCore, services: Services) {
       try {
         const turn = typeof input.prompt === "function" ? input.prompt(conflicts) : input.prompt;
         const lead = compacted ? capsuleRestored(buildCapsule({ asks: [turn.slice(0, 300)], files: [], claims: [] })) : "";
-        const text = [lead, turn, ...harnessLines].filter(Boolean).join("\n\n");
+        const text = [lead, digest, turn, ...harnessLines].filter(Boolean).join("\n\n");
         await sendServiceMessage(bb, { threadId:writer.threadId, text, senderThreadId:getRun(db, input.runId)?.pm_thread_id });
       } catch (cause) {
         // The task went round on the same thread before (live 2026-10-25: «sticky_send_failed: HTTP 409 … section is archived or moving»).
