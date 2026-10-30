@@ -25,6 +25,7 @@ Built by Lane Pilot from page frontmatter.
 | [Orchestration and execution data](data-model/orchestration.md) | data-model | active | 2026-10-30 |
 | [Architectural decisions](decisions.md) | decisions | active | 2026-10-29 |
 | [Protecting Lane Pilot database access](decisions/2026-10-08-lane-pilot-data-db-access.md) | decisions | active | 2026-10-30 |
+| [SDK audit wave 12: implemented items and rejections](decisions/2026-10-30-sdk-audit-wave12.md) | decisions | active | 2026-10-30 |
 | [Register of deferrals](deferrals.md) | component | active | 2026-10-30 |
 | [Build and deploy Lane Pilot](deployment.md) | deployment | active | 2026-10-30 |
 | [Design evaluation rubric](design-eval.md) | component | active | 2026-10-25 |
