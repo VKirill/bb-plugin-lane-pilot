@@ -1,4 +1,4 @@
-import { scheduleIsolated, type ServerCore } from "../../core/server";
+import { scheduleIsolated, SCHEDULE_TIMEOUT_CAP_MS, type ServerCore } from "../../core/server";
 import { loadProjectSettings, saveProjectSetting } from "../../storage";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
 import { SERVICE_JOBS, servicePair, servicePinKey } from "../../workflow";
@@ -58,5 +58,5 @@ export function mountServiceModelRecheck(ctx: ServerCore, bench: () => BenchApi)
       bench: bench(), writePin: (key, value) => saveProjectSetting(ctx.db, GLOBAL_SETTINGS_PROJECT_ID, key, value),
     });
     for (const row of rows) ctx.log(`bench-service-models: ${row.id} ${row.action}`);
-  }, { timeoutMs: 8 * 3_600_000 });
+  }, { timeoutMs: SCHEDULE_TIMEOUT_CAP_MS });
 }

@@ -53,7 +53,17 @@ function recentOf(providerId: string, now: number): number {
 /** Test hook: forget the recent starts. */
 export function resetRecentStarts(): void { recentStarts.clear(); }
 
+/** A provider that cannot work in this folder on this machine, by a known cause (not by machine name): the reason for the record, or null. */
+export function providerBlockedForFolder(providerId: string, envPath: string | null | undefined): string | null {
+  // opencode2's `serve` on macOS runs without Documents access: /api/mcp 500s (EPERM) for any folder under ~/Documents,
+  // and the session's required MCP policy then refuses the start (vk_required_session_policy_unenforceable_mcp_servers).
+  if (providerId === "opencode2" && envPath && /^\/Users\/[^/]+\/Documents(\/|$)/.test(envPath)) return "opencode2_documents_eperm";
+  return null;
+}
+
 export type SpawnModelInput = Omit<AgentModelInput, "offered" | "providerOf" | "pm" | "load"> & {
+  /** The folder the thread starts in: a provider that cannot work there (`providerBlockedForFolder`) is not offered. */
+  envPath?: string | null;
   pm?: AgentModelInput["pm"];
   /** The catalog as last read (`modelCatalogOf(ctx).peek()`); null when it is cold: then every model counts as offered. */
   catalog?: ModelCatalog | null;
@@ -66,9 +76,10 @@ export type SpawnModelInput = Omit<AgentModelInput, "offered" | "providerOf" | "
 };
 
 export function resolveSpawnModel(input: SpawnModelInput): AgentModel {
-  const { catalog, hostId, avoidProvider, pm, usage, ...rest } = input;
+  const { catalog, hostId, avoidProvider, pm, usage, envPath, ...rest } = input;
   const offeredAt = (avoided: boolean) => (providerId: string, model: string): boolean | null => {
     if (avoided && avoidProvider && providerId === avoidProvider) return false;
+    if (providerBlockedForFolder(providerId, envPath)) return false;
     // ZCode works only where packages/models/src/zcode.ts says: the Mac mini, its free hours (or zcode.window=always), no other ZCode task running.
     // An unknown catalog is a no for it: the role's next candidate (its built-in default) runs instead.
     if (isZcodeProvider(providerId)) return !zcodeBlock({ settings: rest.settings, catalog: catalog ?? null, hostId: hostId ?? null, now: Date.now(), busy: usage?.zcodeBusy?.() ?? false });

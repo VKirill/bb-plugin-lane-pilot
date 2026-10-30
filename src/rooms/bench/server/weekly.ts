@@ -1,5 +1,5 @@
 import packageJson from "../../../../package.json";
-import { scheduleIsolated, type ServerCore } from "../../core/server";
+import { scheduleIsolated, SCHEDULE_TIMEOUT_CAP_MS, type ServerCore } from "../../core/server";
 import { loadProjectSettings } from "../../storage";
 import { isSealedVersion } from "../store";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
@@ -45,7 +45,7 @@ export function mountBenchWeekly(ctx: ServerCore, bench: () => BenchApi): void {
       }
     }
     await sealedWeek(ctx, bench(), newest.version, arm).catch((cause: unknown) => ctx.log(`bench-weekly sealed: ${cause instanceof Error ? cause.message : String(cause)}`));
-  }, { timeoutMs: 8 * 3_600_000 });
+  }, { timeoutMs: SCHEDULE_TIMEOUT_CAP_MS });
 }
 
 export const SEALED_GAP_SETTING = "bench.sealed_gap_pp";
@@ -148,7 +148,7 @@ export function mountBenchNightly(ctx: ServerCore, bench: () => BenchApi): void 
       }
       if (rows.some((row) => row && typeof row === "object" && "state" in row && (row.state === "stopped_budget" || row.state === "failed"))) budgetSpent = true;
     }
-  }, { timeoutMs: 8 * 3_600_000 });
+  }, { timeoutMs: SCHEDULE_TIMEOUT_CAP_MS });
 }
 
 /** Closes a series left `running` past its hour cap. Once at startup, then twice an hour. */
