@@ -15,3 +15,12 @@ export type { RoundCandidate } from "./best-of";
 export type { BestOfCandidate, BestOfPlan, WriterPair } from "./best-of";
 export { writerReuseStats } from "./writer-reuse-stats";
 export { writerModelJudgment } from "./writer-model-pick";
+export {
+  calculateSkillSwitches,
+  extractSkillSequence,
+  getSkillSwitchStats,
+  recordSkillSwitchMetric,
+  skillSwitchMorningLine,
+  type SkillSwitchRecord,
+  type SkillSwitchStats,
+} from "./skill-switch";
