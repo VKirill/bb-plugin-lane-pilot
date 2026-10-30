@@ -249,3 +249,30 @@ describe("worktrees a stopped pass left", () => {
   });
 });
 
+describe("the stale sweep (W32 rank 8)", () => {
+  const put = (w: Awaited<ReturnType<typeof world>>, row: { taskId: string; command: string; kind: string; foundAt: number; greenAt?: string | null }) =>
+    w.db.prepare(`INSERT INTO lane_pilot_regression(found_at,updated_at,project_id,run_id,task_id,command,kind,state,bisect_status,green_at)
+      VALUES(?,?,'projA','run1',?,?,?,'open','skipped',?)`).run(row.foundAt, row.foundAt, row.taskId, row.command, row.kind, row.greenAt ?? null);
+
+  it("closes a week-old unstable, a version-pinned check and a finding whose merge commit left main's history; the rest stay open", async () => {
+    const w = await world();
+    const day = 86_400_000, now = Date.now();
+    const a = await w.acceptedTask("A", async (dir) => { await writeFile(join(dir, "a.txt"), "a\n"); }, ["test -f a.txt"]);
+    put(w, { taskId: "A", command: "npm run test:flaky", kind: "unstable", foundAt: now - 8 * day });
+    put(w, { taskId: "A", command: "npm run test:flaky-now", kind: "unstable", foundAt: now - day });
+    put(w, { taskId: "A", command: `grep -q '"version": "0.8.7"' package.json`, kind: "regression", foundAt: now - day, greenAt: a.merged.commit });
+    put(w, { taskId: "A", command: "npm test", kind: "regression", foundAt: now - day, greenAt: "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef" });
+    put(w, { taskId: "A", command: "npm run lint", kind: "regression", foundAt: now - day, greenAt: a.merged.commit });
+
+    await w.services.regression.run({ projectId: "projA", force: true });
+
+    const rows = w.db.prepare("SELECT command,state,closed_reason FROM lane_pilot_regression ORDER BY rowid").all() as Array<{ command: string; state: string; closed_reason: string | null }>;
+    expect(rows[0]).toMatchObject({ state: "closed", closed_reason: expect.stringContaining("unstable for a week") });
+    expect(rows[1]).toMatchObject({ state: "open" });
+    expect(rows[2]).toMatchObject({ state: "closed", closed_reason: expect.stringContaining("package version") });
+    expect(rows[3]).toMatchObject({ state: "closed", closed_reason: expect.stringContaining("not in the history of main") });
+    expect(rows[4]).toMatchObject({ state: "open" });
+    await w.dispose();
+  });
+});
+

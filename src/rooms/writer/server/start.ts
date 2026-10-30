@@ -10,6 +10,7 @@ import { DEPENDENCY_REDO_WAIT_MS, countAttempts, countChargedAttempts, countThre
 import { taskV2Schema } from "../../contracts";
 import { ownsPathsOverlap, pollPause } from "@lane-pilot/kit";
 import { reconcile, reconcileCursor } from "../../stability";
+import { listRegressions, type RegressionRecord } from "../../baseline";
 import { emergencyFallbackDecision } from "../../night";
 import { rotatedWriterSettings, writerFallbackChain, writerFallbacks } from "../writer-fallbacks";
 import { resolveBestOf, roundSeedBrief, roundSurvivors } from "../best-of";
@@ -346,6 +347,36 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         await new Promise((wake) => setTimeout(wake, secretPollMs()));
       }
     };
+    /** W32 rank 8: a task that would touch the files of an open found regression waits for it to close — writing into
+     * broken ground reruns the red check and blames the wrong task. No attempt is spent; the reason is in the stage receipt. */
+    const waitForRegressionQuarantine = async (shouldStop?:()=>string|null) => {
+      const filesOf = (open: RegressionRecord): string[] => {
+        const changed = (taskId: string | null) => !taskId ? [] : (services.rollback?.status(taskId).attempts ?? [])
+          .filter((a) => a.state === "accepted").flatMap((a) => a.change?.changed.map((f) => f.path) ?? []);
+        const shared = Array.isArray((open.evidence as { sharedFiles?: unknown } | null)?.sharedFiles)
+          ? ((open.evidence as { sharedFiles: unknown[] }).sharedFiles).filter((x): x is string => typeof x === "string") : [];
+        return [...new Set([...shared, ...changed(open.culpritTask), ...changed(open.taskId)])];
+      };
+      let noted = "";
+      for (;;) {
+        if (ctx.isDisposed()) return;
+        const stop = shouldStop?.();
+        if (stop) return stop;
+        const blocker = listRegressions(db, { projectId: input.projectId })
+          .find((row) => row.kind === "regression" && row.bisectStatus === "found" && ownsPathsOverlap(input.task.owns_paths, filesOf(row)));
+        if (!blocker) return;
+        if (noted !== `${blocker.id}`) {
+          noted = `${blocker.id}`;
+          ctx.log(`writer ${input.taskId} waits: open regression ${blocker.taskId} \`${blocker.command}\` (${blocker.culpritTask ?? "no culprit"})`);
+          const stage = listStageReceipts(db,input.runId,input.taskId).find((row) => row.stageId === "writer-agent");
+          if (!stage || stage.state === "pending") {
+            recordStage(db, { runId:input.runId, taskId:input.taskId, stageId:"writer-agent", state:"pending", input:input.plan,
+              reason:`quarantine: open regression ${blocker.taskId} \`${blocker.command}\` blamed on ${blocker.culpritTask ?? "unknown"} shares files` });
+          }
+        }
+        await new Promise((wake) => setTimeout(wake, pollPause(30_000)));
+      }
+    };
     const waitForOverlappingTasks = async (shouldStop?:()=>string|null) => {
       // Tasks queue behind each other in the same checkout only: another repository of the same folder is another checkout.
       const base = taskBasePath(db, input.runId, input.taskId);
@@ -500,6 +531,11 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         const overlapStop = await waitForOverlappingTasks(wallOrTokenStop);
         if (overlapStop) {
           blockBeforeWriter(overlapStop);
+          return false;
+        }
+        const quarantineStop = await waitForRegressionQuarantine(wallOrTokenStop);
+        if (quarantineStop) {
+          blockBeforeWriter(quarantineStop);
           return false;
         }
         const secretStop = await waitForSecrets(wallOrTokenStop);
