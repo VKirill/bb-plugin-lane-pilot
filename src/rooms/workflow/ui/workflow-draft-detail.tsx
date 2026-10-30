@@ -7,7 +7,7 @@ import { draftChanges, draftView } from "@lane-pilot/workflow-engine/ui";
 import type { ViewNode, WorkflowView } from "@lane-pilot/workflow-engine/ui";
 import { HELPER_PANEL_ACTION } from "../../native-agent/ui";
 import { Surface, SurfaceBody, SurfaceHeader } from "@lane-pilot/ui-kit";
-import { useLpRealtime, useOpenThreadPanel } from "../../ui-shell/ui";
+import { useLpPoll, useLpRealtime, useOpenThreadPanel } from "../../ui-shell/ui";
 import { useObservedWidth } from "@lane-pilot/ui-kit";
 import { getDraft, type DraftDoc } from "./workflow-drafts";
 import { NodePanel, WorkflowGraph, type NodePanelContext, type NodePanelRenderer } from "./workflow-detail";
@@ -73,7 +73,7 @@ export function WorkflowDraftDetail({ draftId, projectId, locale, onBack, render
   const readRef = useRef(read);
   readRef.current = read;
   const pollMs = useLpRealtime(projectId ?? LP_ALL_PROJECTS, ["workflow-draft"], (signal) => { if (!signal?.draftId || signal.draftId === draftId) void readRef.current(); });
-  useEffect(() => { const timer = setInterval(() => void readRef.current(), pollMs); return () => clearInterval(timer); }, [pollMs]);
+  useLpPoll(pollMs, () => void readRef.current());
 
   const view = useMemo(() => (draft && draft !== "missing" ? draftView(draft.workflow) : null), [draft]);
   const narrow = width > 0 && width < NARROW;

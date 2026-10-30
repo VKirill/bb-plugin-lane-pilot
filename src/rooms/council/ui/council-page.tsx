@@ -6,7 +6,7 @@ import { Button } from "@lane-pilot/ui-kit";
 import { Input } from "@lane-pilot/ui-kit";
 import { Disclosure } from "@lane-pilot/ui-kit";
 import { useObservedWidth } from "@lane-pilot/ui-kit";
-import { useLpRealtime } from "../../ui-shell/ui";
+import { useLpPoll, useLpRealtime } from "../../ui-shell/ui";
 import { seatColor, stripMarkdown } from "./office-behaviour";
 
 // The office (and three.js with it) loads only on the desktop layout, never below 1024 px.
@@ -126,11 +126,7 @@ export function CouncilPage() {
   // The server signals every message, state change and floor change of the project's councils; the poll only catches a lost signal.
   const pollMs = useLpRealtime(projectId, ["council"], () => { void loadDetail(); void loadCouncils(); });
   const live = detail ? !TERMINAL.has(detail.state) : false;
-  useEffect(() => {
-    if (!live) return;
-    const timer = setInterval(() => { void loadDetail(); void loadCouncils(); }, pollMs);
-    return () => clearInterval(timer);
-  }, [live, loadDetail, loadCouncils, pollMs]);
+  useLpPoll(live ? pollMs : undefined, () => { void loadDetail(); void loadCouncils(); });
 
   // Replay timer
   useEffect(() => {

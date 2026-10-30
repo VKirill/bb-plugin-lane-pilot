@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { ThreadChat, useBbContext, useBbNavigate, useRpc } from "@get-bb/plugin-sdk/app";
-import { useLpRealtime, useOpenThreadPanel } from "../../ui-shell/ui";
+import { useLpRealtime, useLpRpcQuery, useOpenThreadPanel } from "../../ui-shell/ui";
 import type { rpcContract } from "../../contracts";
 import { t, type I18nKey } from "@lane-pilot/i18n";
 import { Icon, type IconName } from "@lane-pilot/ui-kit";
@@ -59,33 +59,14 @@ export function helperHint(row: HelperThread): string {
  * started, finished or failed, a task queued); the slow poll only catches a signal that never arrived.
  */
 export function useHelperThreads(threadId: string | null): HelperThreadsResult {
-  const rpc = useRpc<typeof rpcContract>();
   const projectId = useBbContext().projectId;
-  const [data, setData] = useState<HelperThreadsResult>({ threads: [], queued: [] });
   const readNow = useRef<() => void>(() => undefined);
   // A signal names the PM chat it concerns; another chat's helpers are not this badge's business.
   const pollMs = useLpRealtime(projectId, ["helpers"], (signal) => { if (!signal?.threadId || signal.threadId === threadId) readNow.current(); });
-  useEffect(() => {
-    if (!threadId) { setData({ threads: [], queued: [] }); return; }
-    let alive = true;
-    let inflight = false;
-    let again = false;
-    const read = () => {
-      if (inflight) { again = true; return; }
-      inflight = true;
-      void rpc.call("list_helper_threads", { threadId }).then((result) => {
-        if (alive) setData({ threads: result.threads, queued: result.queued ?? [], ...(result.graph ? { graph: result.graph } : {}) });
-      }).catch(() => undefined).finally(() => {
-        inflight = false;
-        if (alive && again) { again = false; read(); }
-      });
-    };
-    readNow.current = read;
-    read();
-    const timer = setInterval(read, pollMs);
-    return () => { alive = false; clearInterval(timer); readNow.current = () => undefined; };
-  }, [rpc, threadId, pollMs]);
-  return data;
+  const query = useLpRpcQuery("list_helper_threads", threadId ? { threadId } : null, { pollMs, enabled: !!threadId });
+  readNow.current = () => { void query.refetch(); };
+  const result = query.data as { threads?: HelperThread[]; queued?: string[]; graph?: TaskGraphData } | undefined;
+  return { threads: result?.threads ?? [], queued: result?.queued ?? [], ...(result?.graph ? { graph: result.graph } : {}) };
 }
 
 /** Opens a helper in the right-hand thread panel; where the surface has none (a phone), goes to the thread. */
@@ -193,26 +174,13 @@ export function HelperThreadPanel({ threadId, params }: { threadId: string; para
 
 /** threadId → the helper's short role label, for the thread-list row badge (`experimental_threadRowMetadata`'s useData). */
 export function useHelperThreadIndex(threadIds: readonly string[]): Map<string, string> {
-  const rpc = useRpc<typeof rpcContract>();
-  const [index, setIndex] = useState(new Map<string, string>());
-  const key = [...threadIds].sort().join("\0");
-  useEffect(() => {
-    let live = true;
-    const ids = key ? key.split("\0") : [];
-    const read = () => {
-      if (!ids.length) { setIndex(new Map()); return; }
-      void rpc.call("helper_thread_labels", { threadIds: ids }).then((result) => {
-        if (!live) return;
-        const next = new Map<string, string>();
-        for (const [id, role] of Object.entries(result.labels ?? {})) {
-          next.set(id, t((ROLES[role] ?? { label: "helperRole_other" as I18nKey }).label));
-        }
-        setIndex(next);
-      }).catch(() => undefined);
-    };
-    read();
-    const timer = setInterval(read, 30_000);
-    return () => { live = false; clearInterval(timer); };
-  }, [rpc, key]);
-  return index;
+  const ids = useMemo(() => [...threadIds].sort(), [threadIds.join("\0")]);
+  const query = useLpRpcQuery("helper_thread_labels", { threadIds: ids }, { pollMs: 30_000, enabled: ids.length > 0 });
+  return useMemo(() => {
+    const index = new Map<string, string>();
+    for (const [id, role] of Object.entries((query.data as { labels?: Record<string, string> } | undefined)?.labels ?? {})) {
+      index.set(id, t((ROLES[role] ?? { label: "helperRole_other" as I18nKey }).label));
+    }
+    return index;
+  }, [query.data]);
 }

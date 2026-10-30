@@ -5,6 +5,7 @@ import type { rpcContract } from "../../contracts";
 import type { ExecutorRow, StageBlock, TaskGraph } from "../logic";
 import { StageStrip } from "./stage-strip";
 import { duration, fill, money, roleName, shortModel, stageName, stageState } from "./format";
+import { useLpRpcQuery } from "../../ui-shell/ui";
 
 const POLL_MS = 8_000;
 const isOff = (block: StageBlock) => block.cell.state === "skipped" && block.cell.rounds === 0;
@@ -12,17 +13,8 @@ const costText = (row: ExecutorRow) => (row.costState === null ? null : row.cost
 
 /** A task step by step, narrow enough for a side panel: one line per stage, who ran it, how long, what it cost, the thread to open. */
 export function StageSteps({ runId, taskId, locale }: { runId: string; taskId: string; locale: string }) {
-  const rpc = useRpc<typeof rpcContract>();
   const navigate = useBbNavigate();
-  const [graph, setGraph] = useState<TaskGraph | null>(null);
-  const live = graph?.cells.some((cell) => cell.state === "running" || cell.state === "pending") ?? true;
-  useEffect(() => {
-    let alive = true;
-    const read = () => void rpc.call("work_graph_task", { runId, taskId }).then((result) => { if (alive) setGraph(result as TaskGraph); }).catch(() => undefined);
-    read();
-    const timer = live ? setInterval(read, POLL_MS) : undefined;
-    return () => { alive = false; if (timer) clearInterval(timer); };
-  }, [rpc, runId, taskId, live]);
+  const graph = (useLpRpcQuery("work_graph_task", { runId, taskId }, { pollMs: POLL_MS }).data ?? null) as TaskGraph | null;
   if (!graph) return <p className="py-1 text-xs text-muted-foreground">{t("graphLoading")}</p>;
   const off = graph.stages.filter(isOff);
   return (

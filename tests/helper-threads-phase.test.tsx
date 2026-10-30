@@ -115,7 +115,7 @@ describe("Helper chips & panel phase rendering", () => {
     });
 
     await waitFor(() => expect(slot.getByTestId("helper-panel-list")).toBeTruthy());
-    expect(slot.getByText("Writer: Task 1 (приёмка)")).toBeTruthy();
+    await waitFor(() => expect(slot.getByText("Writer: Task 1 (приёмка)")).toBeTruthy());
     expect(slot.getByTestId("helper-panel-queue").textContent).toContain("task-queued-1");
     slot.lifecycle.unmount();
   });

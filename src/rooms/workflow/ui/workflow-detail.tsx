@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { LP_ALL_PROJECTS } from "@lane-pilot/ui-kit/realtime-channel";
 import type { ViewEdge, ViewNode, WorkflowView } from "@lane-pilot/workflow-engine";
 import { HELPER_PANEL_ACTION } from "../../native-agent/ui";
-import { useLpRealtime, useOpenThreadPanel } from "../../ui-shell/ui";
+import { useLpPoll, useLpRealtime, useOpenThreadPanel } from "../../ui-shell/ui";
 import { useObservedWidth } from "@lane-pilot/ui-kit";
 import { Surface, SurfaceBody, SurfaceHeader } from "@lane-pilot/ui-kit";
 import { dataTabs, SidePanel, useLatestRun } from "./workflow-node-data";
@@ -194,11 +194,7 @@ export function WorkflowDetail({ id, projectId, locale, onBack, renderNodePanel,
   scheduleRef.current = schedule;
 
   const pollMs = useLpRealtime(projectId ?? LP_ALL_PROJECTS, ["workflow"], (signal) => scheduleRef.current(signal?.runId ?? null));
-  useEffect(() => {
-    if (!active) return;
-    const timer = setInterval(() => scheduleRef.current(null), pollMs);
-    return () => clearInterval(timer);
-  }, [active, pollMs]);
+  useLpPoll(active ? pollMs : undefined, () => scheduleRef.current(null));
 
   // Only the snapshot of the run on screen counts: the previous run's stays in state for a moment after the owner picks another.
   const current = snapshot && snapshot.run.id === runId ? snapshot : null;
