@@ -8,3 +8,4 @@ export * from "./run";
 export * from "./receipts";
 export * from "./output-guard";
 export * from "./calibrate";
+export * from "./watch";

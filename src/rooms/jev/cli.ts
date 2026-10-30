@@ -1,5 +1,5 @@
 import type Database from "better-sqlite3";
-import { calibrateReceipts, calibrationRecord, judgmentFingerprint, listJudgments, renderCalibration, CALIBRATION_EPOCH_FALLBACK, JEV_CALIBRATED_KEY } from "@lane-pilot/jev";
+import { calibrateReceipts, calibrationRecord, jevWatch, judgmentFingerprint, listJudgments, renderCalibration, renderWatch, CALIBRATION_EPOCH_FALLBACK, JEV_CALIBRATED_KEY } from "@lane-pilot/jev";
 import "./judgments";
 
 /**
@@ -9,12 +9,28 @@ import "./judgments";
  * stats.epoch setting (until that lands, 2026-10-29). With --save the certified thresholds are written to the project's
  * `jev.calibrated_thresholds`, where resolveThresholds picks them up only while the judgment's fingerprint still matches.
  */
-export const JEV_USAGE = "bb lane-pilot jev calibrate [project] [--since <date>] [--min-labeled N] [--json] [--save]   (accuracy by judgment over the receipts, with the gate/sort-only/dead verdict; --save writes the certified thresholds to the project's jev.calibrated_thresholds)";
+export const JEV_USAGE = "bb lane-pilot jev calibrate [project] [--since <date>] [--min-labeled N] [--json] [--save]   (accuracy by judgment over the receipts, with the gate/sort-only/dead verdict; --save writes the certified thresholds to the project's jev.calibrated_thresholds)\n"
+  + "bb lane-pilot jev watch [--since <date>|--hours N] [--days N] [--json]   (jaggedness: per judgment+project slices of the window against the same slices' baseline; drift findings, read-only)";
 
 const DAY = 86_400_000;
 
 export function runJevCli(deps: { db: Database.Database; saveProjectSetting?: (projectId: string, key: string, value: unknown) => void; settings?: (projectId: string) => Promise<Record<string, unknown>> }, args: string[]): { exitCode: number; stdout?: string; stderr?: string } | Promise<{ exitCode: number; stdout?: string; stderr?: string }> {
   const [sub, ...rest] = args;
+  if (sub === "watch") {
+    const flags = new Map<string, string | true>();
+    for (let i = 0; i < rest.length; i++) {
+      const arg = rest[i]!;
+      if (!arg.startsWith("--")) continue;
+      const [name, inline] = arg.slice(2).split("=", 2) as [string, string | undefined];
+      flags.set(name, inline ?? (["since", "hours", "days"].includes(name) ? rest[++i] ?? true : true));
+    }
+    const sinceArg = flags.get("since"), hours = Number(flags.get("hours")) || 24;
+    const sinceMs = typeof sinceArg === "string" && sinceArg !== "true" ? Date.parse(`${sinceArg}T00:00:00Z`) : Date.now() - hours * 3_600_000;
+    if (!Number.isFinite(sinceMs)) return { exitCode: 1, stderr: `--since wants a date (2026-10-29), got "${sinceArg}"` };
+    const report = jevWatch(deps.db, { sinceMs, baselineDays: Number(flags.get("days")) || 30 });
+    if (flags.has("json")) return { exitCode: 0, stdout: JSON.stringify(report, null, 2) };
+    return { exitCode: 0, stdout: renderWatch(report) };
+  }
   if (sub !== "calibrate") return { exitCode: 1, stderr: `usage: ${JEV_USAGE}` };
   const flags = new Map<string, string | true>(), positional: string[] = [];
   for (let i = 0; i < rest.length; i++) {

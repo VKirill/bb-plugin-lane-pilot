@@ -13,6 +13,7 @@ import { WALL_CONFIG_KEY, parseWallConfig, type WallConfig } from "./config";
 import { classVersions, collectEntries, getClass, graphRecurrence, listClasses, nightOf, refreshClasses, writeEntries, type WallDb } from "./journal";
 import { afterFailedMove, ladderStep } from "./ladder";
 import { composeWallMorning } from "./morning";
+import { watchMorningLine } from "@lane-pilot/jev";
 import { HUNT_ANGLES, buildClassPack, buildLoopPack, buildTaskPack, judgeHunt, parseFinding, type CheckedFinding, type EvidencePack, type HuntOutcome, type LoopEvidence, type PackFile } from "./pack";
 import { executable, headPartsOf, planClassRerun, recordRerun, type RerunPlan, type RerunScope } from "./rerun";
 import { cycleScoresOf, selectClasses } from "./select";
@@ -821,7 +822,7 @@ export function createWall(deps: WallDeps) {
       repairs: listRepairs(db, { since: ports.now() - 14 * DAY }),
       walls: listWalls(db, { states: ["stopped", "hunting", "hunted", "backlog"] }).map((row) => ({ key: row.key, kind: row.kind, subject: row.subject, state: row.state, hunt: row.hunt, deferralId: row.deferralId })),
       nights: recentNights(db),
-      morning: [`${statsEpochLine(statsEpoch(db))}.`, ...composeWallMorning(db, ports.now())],
+      morning: [`${statsEpochLine(statsEpoch(db))}.`, ...composeWallMorning(db, ports.now()), watchMorningLine(db, ports.now())],
     };
   }
   function show(key: string) {
@@ -841,7 +842,7 @@ export function createWall(deps: WallDeps) {
   }
 
   return { graph: graphSteps, config, setConfig, runNight, advance, mergeGate, settled, started, startFailed, nextAssignment, noteTaskStop, dispatchGuard, loopExhausted, loopTopics, rerun, status, show, close,
-    morning: (now?: number) => [`${statsEpochLine(statsEpoch(db))}.`, ...composeWallMorning(db, now ?? ports.now())], classes: () => listClasses(db) };
+    morning: (now?: number) => [`${statsEpochLine(statsEpoch(db))}.`, ...composeWallMorning(db, now ?? ports.now()), watchMorningLine(db, now ?? ports.now())], classes: () => listClasses(db) };
 }
 
 export type WallApi = ReturnType<typeof createWall>;
