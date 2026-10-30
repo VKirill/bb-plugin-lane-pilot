@@ -38,7 +38,7 @@ import { DAY_MS, projectsWithCandidates, purgeStaleBodies, startOfDay, type Item
 const EXTRACT_AFTER_MS = 10 * 60_000;
 const EXTRACT_AT_COUNT = 5;
 
-export const OPS = ["status", "review", "label", "items", "accept", "reject", "drop", "digest", "rules", "agreement", "signals", "config", "extract"] as const;
+export const OPS = ["status", "review", "label", "items", "accept", "reject", "drop", "digest", "rules", "promotion", "agreement", "signals", "config", "extract"] as const;
 export type LearningOp = (typeof OPS)[number];
 
 export function createLearning(ctx: ServerCore, services: Services) {
@@ -205,6 +205,13 @@ export function createLearning(ctx: ServerCore, services: Services) {
         const picked = args.text ? await relevantPmRules(jev(), all, args.text) : all;
         return { projectId: args.projectId, rules: picked.map((rule) => ({ id: rule.id, rule: rule.rule })), of: all.length };
       }
+      case "promotion": {
+        // The weekly top-10's one-command accept: id is the candidate's rule id, state accepts or dismisses.
+        if (!args.projectId) throw new Error('op "promotion" needs a project');
+        if (args.state === "accept") return await services.promotions.dispatch({ projectId: args.projectId, ruleId: needId() });
+        if (args.state === "dismiss") return services.promotions.dismiss(args.projectId, needId()) ?? { ok: false, reason: `no candidate ${args.id}` };
+        return { projectId: args.projectId, open: (await import("../rule-forms")).listPromotions(db, args.projectId).filter((row) => row.state === "proposed" || row.state === "owner_only").map((row) => ({ id: row.ruleId, mechanism: row.mechanism, tier: row.tier, title: row.task.title })) };
+      }
       case "agreement": return ops.agreement(args.days ?? 7);
       case "signals": return { counts: ops.signals(args.kind, args.limit ?? 30), complexity: complexityReport(db, Date.now() - 30 * DAY_MS) };
       case "config": return await ops.configure(args.settings ?? []);
@@ -224,7 +231,7 @@ export function mountLearning(ctx: ServerCore, services: Services): Learning | n
   registerObservedTool(bb.agents, {
     name: "lane_pilot_learned",
     description: "What Lane Pilot learned from the owner's own messages: status and evidence, cases to check, learned items, the owner's yes or no, PM rules for a text, settings.",
-    instructions: `op: status (is it ready to act, cost, agreement), review (cases to mark), label {id, correct}, items {state?, kind?, projectId?}, accept/reject/drop {id}, digest {send?}, rules {projectId, text?}, agreement {days?}, signals {kind?}, config {settings:["key=value"]}, extract {projectId}. Learning switches itself on once a model has checked enough of the judges' decisions; do not ask the owner. Items are accepted by themselves; when Lane Pilot sends you a bb memory add command for a global preference, run it.`,
+    instructions: `op: status (is it ready to act, cost, agreement), review (cases to mark), label {id, correct}, items {state?, kind?, projectId?}, accept/reject/drop {id}, digest {send?}, rules {projectId, text?}, promotion {projectId?, id?, state?}, agreement {days?}, signals {kind?}, config {settings:["key=value"]}, extract {projectId}. Learning switches itself on once a model has checked enough of the judges' decisions; do not ask the owner. Items are accepted by themselves; when Lane Pilot sends you a bb memory add command for a global preference, run it.`,
     parameters: z.object({
       op: z.enum(OPS), id: z.string().min(1).optional(), correct: z.boolean().optional(), state: z.string().optional(), kind: z.string().optional(),
       projectId: z.string().min(1).optional(), limit: z.number().int().min(1).max(100).optional(), days: z.number().int().min(1).max(90).optional(),
@@ -232,7 +239,7 @@ export function mountLearning(ctx: ServerCore, services: Services): Learning | n
     }).strict(),
     execute: async (params, context) => {
       if (!learning) throw new Error("learning_unavailable: the learning room did not start; see the plugin log");
-      const projectId = params.projectId ?? (["rules", "extract"].includes(params.op) ? context.projectId : undefined);
+      const projectId = params.projectId ?? (["rules", "extract", "promotion"].includes(params.op) ? context.projectId : undefined);
       const { op, ...rest } = params;
       const result = await learning.run(op, { ...rest, ...(projectId ? { projectId } : {}) });
       ctx.realtime?.notify(context.projectId, "rules");
