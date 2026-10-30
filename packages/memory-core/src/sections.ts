@@ -16,3 +16,5 @@ const SHARED = /^project(:.*)?$/;
 export const isSharedScope = (scope: readonly string[]): boolean => scope.some((entry) => SHARED.test(entry));
 /** The scope a deliberately project-wide record stores; the reason travels inside the marker. */
 export const sharedScope = (reason?: string): string[] => [reason ? `project:${reason.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "shared"}` : "project"];
+/** A post-M7 write with no section in an umbrella: nobody may read it until a person or the rebind places it. */
+export const UNASSIGNED_SCOPE = ["unassigned"];

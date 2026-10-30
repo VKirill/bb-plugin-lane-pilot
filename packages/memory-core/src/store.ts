@@ -287,10 +287,10 @@ export type SearchOptions = { /** M7: umbrella project — bare scopes are not p
   allSections?: boolean };
 
 /** The scope values a reader with this chain sees: the whole project and every prefix of its chain. */
-export function scopeValuesFor(chain: readonly string[], umbrella = false): string[] {
-  const values = Array.from({ length: chain.length + 1 }, (_, length) => JSON.stringify(chain.slice(0, length)));
-  // M7: in an umbrella a bare project scope is unassigned, not project-wide; shared records carry the "project" marker.
-  return umbrella && chain.length ? values.filter((value) => value !== "[]") : values;
+export function scopeValuesFor(chain: readonly string[]): string[] {
+  // Pre-M7 rows keep the old meaning of a bare scope — project-wide in every project (legacyScope marks them).
+  // Records written since M7 carry a section, "project:<reason>" or "unassigned" — none of which matches "[]".
+  return Array.from({ length: chain.length + 1 }, (_, length) => JSON.stringify(chain.slice(0, length)));
 }
 
 /** M7: a project whose runs or records already use section chains is an umbrella; `memory.project_kind` overrides. */
@@ -305,7 +305,7 @@ function visibility(db: MemoryDatabase, alias: string, options: SearchOptions): 
   // A note of a held conflict (two notes that disagree, waiting for a person) is read by nobody: `conflict-store.ts`.
   return `${alias}.status='active' AND (${alias}.valid_from IS NULL OR ${alias}.valid_from<=${now}) AND (${alias}.valid_until IS NULL OR ${alias}.valid_until>${now}) AND NOT (${idleSql(alias, now)})`
     + (options.includeObserved ? "" : ` AND (${alias}.trust='confirmed' OR ${alias}.created_at<=${now - OBSERVED_QUARANTINE_MS})`) + heldClause(db, alias)
-    + (options.allSections ? "" : ` AND (${alias}.scope_json IN (${scopeValuesFor(options.chain ?? [], options.umbrella ?? false).map(sqlString).join(",")}) OR ${alias}.scope_json LIKE '%"project%')`);
+    + (options.allSections ? "" : ` AND (${alias}.scope_json IN (${scopeValuesFor(options.chain ?? []).map(sqlString).join(",")}) OR ${alias}.scope_json LIKE '%"project%')`);
 }
 
 /** The visibility clause working readers share. A missing chain is the project root, not every section. */
@@ -342,7 +342,10 @@ export function searchMemoryRecords(db: MemoryDatabase, projectId: string, query
     const score = (text: string) => tokens.reduce((sum, token) => sum + (text.toLowerCase().split(token).length - 1), 0);
     rows = all.map((row) => ({ ...row, _score: score(`${row.content} ${row.concepts_json}`) })).filter((row) => row._score > 0).sort((a, b) => b._score - a._score || b.created_at - a.created_at).slice(0, limit);
   }
-  return rows.map(toRecord);
+  const records = rows.map(toRecord);
+  // M7 receipt: a pre-M7 root row delivered inside an umbrella reads with the legacy_scope flag.
+  if (options.umbrella) rows.forEach((row, index) => { if (!parseScopeJson((row as Row & { scope_json: string | null }).scope_json).length) (records[index] as MemoryRecord & { legacyScope?: boolean }).legacyScope = true; });
+  return records;
 }
 
 /** Reciprocal rank fusion of ranked lists with equal weight: a record both lists find outranks one only a list finds. */

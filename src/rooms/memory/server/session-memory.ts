@@ -1,7 +1,7 @@
 import { resolve } from "node:path";
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import { getRuleProposal, upsertLessonProposal } from "@lane-pilot/run-insights";
-import { DEFAULT_RELEVANCE_FLOOR, NOTHING_RELEVANT, projectUsesSections, resolveProjectKind, memoryVisibilitySql, parseMemoryCandidates, relevantRecords, searchMemoryRecords, storeMemoryRecordsKeepingOverflow } from "@lane-pilot/memory-core";
+import { DEFAULT_RELEVANCE_FLOOR, NOTHING_RELEVANT, projectUsesSections, resolveProjectKind, sharedScope, UNASSIGNED_SCOPE, memoryVisibilitySql, parseMemoryCandidates, relevantRecords, searchMemoryRecords, storeMemoryRecordsKeepingOverflow } from "@lane-pilot/memory-core";
 import type { rpcContract } from "../../contracts";
 import { adoptRuleProposal, memorySettingsFor } from "../../self-repair/server";
 import type { ServerCore } from "../../core/server";
@@ -36,7 +36,10 @@ export function sessionMemoryRpc(ctx: ServerCore, services: Services) {
       catch (cause) { return { stored: false, id: null, reason: cause instanceof Error ? cause.message : String(cause) }; }
       try {
         const result = storeMemoryRecordsKeepingOverflow(db, { projectId, personalBot: settings.personalBot, audience: "subagent",
-          sourceSha256: sha256Hex(`session:${source ?? ""}`), entries, scope: chain ?? [],
+          sourceSha256: sha256Hex(`session:${source ?? ""}`), entries, scope: chain?.length ? chain
+            : resolveProjectKind(settings.projectKind, projectUsesSections(db, projectId)) === "umbrella"
+              ? concepts?.some((concept) => /^shared/.test(concept)) ? sharedScope(concepts.find((concept) => /^shared:/.test(concept))?.split(":")[1]) : [...UNASSIGNED_SCOPE]
+              : [],
           // One CLI session is one voice: its note reaches writers once a second source states it or a day has passed.
           trust: "observed", origin: "session",
           coreBudget: settings.coreBudget, noteBudget: settings.noteBudget, indexBudget: settings.indexBudget });

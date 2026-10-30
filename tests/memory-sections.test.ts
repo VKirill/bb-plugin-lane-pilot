@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { openDatabase } from "../src/rooms/storage/database";
-import { isSharedScope, resolveProjectKind, scopeValuesFor, searchMemoryRecords, sharedScope, storeMemoryRecords } from "../packages/memory-core/src";
+import { isSharedScope, resolveProjectKind, searchMemoryRecords, sharedScope, storeMemoryRecords } from "../packages/memory-core/src";
 
 const setup = (scope: string[], content: string) => {
   const db = openDatabase(createFakePluginHost({ pluginId: "lane-pilot" }).bb);
@@ -22,12 +22,20 @@ describe("M7 sections are developments of their own", () => {
     expect(sharedScope("hub infra")[0]).toBe("project:hub-infra");
   });
 
-  it("in an umbrella a bare [] scope is not project-wide; in a standalone it is", () => {
+  it("a pre-M7 bare [] scope stays project-wide in an umbrella and reads as legacy_scope", () => {
     const db = setup([], "deploy the invoice service on the hub gateway");
     const sectioned = searchMemoryRecords(db, "P", "invoice service deploy", 10, "bm25", "subagent", "", { chain: ["section:x"], umbrella: true });
-    expect(sectioned.map((row) => row.id)).toEqual([]);
+    expect(sectioned.length).toBeGreaterThan(0);
+    expect(sectioned[0]!.legacyScope).toBe(true);
     const standalone = searchMemoryRecords(db, "P", "invoice service deploy", 10, "bm25", "subagent", "", { chain: ["section:x"], umbrella: false });
     expect(standalone.length).toBeGreaterThan(0);
+    db.close();
+  });
+
+  it("a post-M7 unassigned write reaches no section of an umbrella", () => {
+    const db = setup(["unassigned"], "deploy the invoice service on the hub gateway");
+    const sectioned = searchMemoryRecords(db, "P", "invoice service deploy", 10, "bm25", "subagent", "", { chain: ["section:x"], umbrella: true });
+    expect(sectioned.map((row) => row.id)).toEqual([]);
     db.close();
   });
 

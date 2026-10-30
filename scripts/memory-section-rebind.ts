@@ -26,11 +26,20 @@ export function rebindProposal(db: Db, row: Row, sectionsByProject: Map<string, 
     const chain = run?.settings_scopes_json ? (JSON.parse(run.settings_scopes_json) as string[]) : [];
     if (chain.length) return { id: row.id, projectId: row.project_id, before, after: chain, action: "section", note: `origin task ${row.origin_task_id}` };
   }
-  // A record that names a file goes to the section whose folder holds it (the dry-run map, `folder → chain`).
+  // A record naming a path or repo goes to the section whose folder holds it; longest path, then longest basename wins.
   const map = sectionsByProject.get(row.project_id);
-  if (map) for (const path of pathsNamed(row.content)) {
-    const hit = [...map.entries()].find(([folder]) => path === folder || path.startsWith(`${folder}/`) || path.includes(`/${folder}`) || folder.includes(path));
-    if (hit) return { id: row.id, projectId: row.project_id, before, after: hit[1], action: "section", note: `names ${path}` };
+  if (map) {
+    const paths = [...map.entries()].filter(([key]) => !key.startsWith("__")).sort((a, b) => b[0].length - a[0].length);
+    const named = [...pathsNamed(row.content), ...(row.content.match(/[A-Za-z0-9_.-]+\.(ts|tsx|js|py|go|rs|lua|md|json|toml|yml|yaml|lock)/g) ?? [])];
+    for (const path of named) {
+      const hit = paths.find(([folder]) => path === folder || path.startsWith(`${folder}/`) || folder.endsWith(`/${path}`) || path.includes(folder) || folder.includes(`/${path}`));
+      if (hit) return { id: row.id, projectId: row.project_id, before, after: hit[1], action: "section", note: `path ${path}` };
+    }
+    const basenames = paths.map(([folder, after]) => [folder.toLowerCase().split("/").at(-1) ?? "", after] as const)
+      .filter(([name]) => name.length >= 5 && !["documents", "project", "projects", "library", "desktop"].includes(name))
+      .sort((a, b) => b[0].length - a[0].length);
+    const hit = basenames.find(([name]) => row.content.toLowerCase().includes(name));
+    if (hit) return { id: row.id, projectId: row.project_id, before, after: hit[1], action: "section", note: `name ${hit[0]}` };
   }
   // Deliberately project-wide (hub/infra/owner wording) → explicit shared marker.
   if (SHARED_WORDS.test(`${row.content} ${row.concepts_json}`)) return { id: row.id, projectId: row.project_id, before, after: sharedScope("rebind"), action: "shared", note: "worded project-wide" };
@@ -51,7 +60,7 @@ export function projectKinds(db: Db, kindOf: (projectId: string) => "auto" | "st
 export function runRebind(db: Db, opts: { apply?: boolean; journalPath?: string; map?: Map<string, Map<string, string[]>>; kindOf?: (projectId: string) => "auto" | "standalone" | "umbrella" }) {
   const kinds = projectKinds(db, opts.kindOf ?? (() => "auto"));
   const rows = db.prepare(`SELECT id, project_id, content, concepts_json, scope_json, origin_task_id FROM lane_pilot_memory
-    WHERE status='active' AND (scope_json IS NULL OR scope_json='[]')`).all() as Row[];
+    WHERE status='active' AND (scope_json IS NULL OR scope_json='[]' OR scope_json='["unassigned"]')`).all() as Row[];
   const update = db.prepare("UPDATE lane_pilot_memory SET scope_json=? WHERE id=?");
   const proposals: RebindProposal[] = [];
   const journal: Array<{ id: string; before: string[]; after: string[] }> = [];

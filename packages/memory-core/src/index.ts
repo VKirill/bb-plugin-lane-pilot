@@ -16,7 +16,7 @@ export {
   type MemorySettings,
 } from "./settings";
 export { estimateTokens, memoryEntrySupported, memoryRecordId, parseMemoryCandidates, memoryEntrySalience } from "./candidates";
-export { isSharedScope, resolveProjectKind, sharedScope, type ProjectKind } from "./sections";
+export { isSharedScope, resolveProjectKind, sharedScope, UNASSIGNED_SCOPE, type ProjectKind } from "./sections";
 export { DEFAULT_RELEVANCE_FLOOR, NOTHING_RELEVANT, clearsFloor, floorThreshold, recordRelevance, relevantRecords, wordFrequencies, questionWords, pathAnchorsOf, type RelevanceFloor, type RecordRelevance } from "./floor";
 export { buildContextPack, memoryCandidates, shadowPackCompare, type ContextPack, type PackCandidate, type PackSource } from "./context-pack";
 export { ROLE_CONTEXT_BUDGET, explainMemory, memoryContext, memoryMaintenancePrompt, memoryMaintainerTools, roleContextBudget } from "./context";

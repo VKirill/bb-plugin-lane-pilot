@@ -20,7 +20,7 @@ export type MemoryCandidate=MemoryCore & {
   /** The file record this came from, so a later import can tell the record went stale. */
   sourceFileId?:string;
 };
-export type MemoryRecord=MemoryCore & {id:string;projectId:string;personalBot:string;sourceSha256:string;createdAt:number;
+export type MemoryRecord=MemoryCore & {id:string;projectId:string;personalBot:string;sourceSha256:string;createdAt:number;legacyScope?:boolean;
   status?:MemoryStatus;trust?:MemoryTrust;validUntil?:number|null;validFrom?:number|null;supersededBy?:string|null;sourceFileId?:string|null;
   /** How often the record was mixed into a brief, how many of those attempts were accepted, and when it was last mixed. */
   useCount?:number;acceptedCount?:number;lastUsedAt?:number|null;
