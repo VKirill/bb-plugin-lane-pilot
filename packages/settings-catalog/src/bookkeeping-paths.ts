@@ -46,6 +46,13 @@ export function isBookkeepingPath(path:string, extra:readonly string[] = []):boo
 /** Cache folders tools write at any depth while checks run. */
 export const TOOL_CACHE_DIRS = new Set(["node_modules",".vite",".vitest",".turbo",".cache",".parcel-cache",".eslintcache",".pytest_cache",".mypy_cache",".ruff_cache","__pycache__"]);
 
+/**
+ * Build output folders at any depth, wider than tool caches: a run that builds (`tsc`, `next build`, `cargo`,
+ * `xcodebuild`) regenerates them; they are never the writer's change either (F-02, 275 owns-paths rejections of
+ * 30 days: build debris was one of the three repeating shapes).
+ */
+export const BUILD_OUTPUT_DIRS = new Set(["dist","build","out",".output",".next",".nuxt",".svelte-kit",".vercel",".astro",".expo","target","coverage",".nyc_output","htmlcov",".gradle",".dart_tool","DerivedData",".docusaurus",".output-electron","storybook-static"]);
+
 const NOISE_PREFIXES = [".agents/",".bb/",".repowise/",".worktrees/",".claude/worktrees/","node_modules/",".npm-cache/","npm-cache/",".npm/",".pnpm-store/","pnpm-store/",".yarn/cache/",".yarn/unplugged/",".cache/",".turbo/",".next/cache/","coverage/",".git/"];
 const NOISE_FILES = new Set(["PROGRESS.md","LESSONS.md","AGENTS.md","CLAUDE.md"]);
 
@@ -60,9 +67,9 @@ export function isOwnershipNoise(path:string, extra:readonly string[] = []):bool
   const parts = clean.split("/");
   // Tool caches inside a package of a monorepo (packages/contracts/.vite/vitest/…) are written by the checks
   // themselves, not by the writer (SelfyStudio, 2026-10-02).
-  if (parts.slice(0, -1).some((part) => TOOL_CACHE_DIRS.has(part))) return true;
+  if (parts.slice(0, -1).some((part) => TOOL_CACHE_DIRS.has(part) || BUILD_OUTPUT_DIRS.has(part))) return true;
   return parts.includes("__pycache__") || parts.includes(".pytest_cache") || parts.includes(".mypy_cache") || parts.includes(".ruff_cache")
-    || clean.endsWith(".pyc") || clean.endsWith(".pyo");
+    || clean.endsWith(".pyc") || clean.endsWith(".pyo") || clean.endsWith(".tsbuildinfo");
 }
 
 export function filterOwnershipNoise(paths:string[], extra:readonly string[] = []):string[] {

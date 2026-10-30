@@ -3309,6 +3309,32 @@
    "evidence": "src/rooms/stability/server/stability.ts:240",
    "matrixStatus": "readonly",
    "storageKey": "writer.capacity_wait_max_min"
+  },
+  {
+   "id": "s540",
+   "index": 503,
+   "area": "Lane Pilot writer contract",
+   "setting": "writer.owns_barrier",
+   "invType": "enum",
+   "values": "on, off",
+   "defaultValue": "on",
+   "control": "select",
+   "options": [
+    "on",
+    "off"
+   ],
+   "section": "writer",
+   "rationale": "After an attempt's worktree is bound, tracked files outside owns_paths become read-only for it: a write outside the contract is refused by the OS instead of producing a rejection after the fact; satellites (the test or locale of an owned area) stay writable (F-01).",
+   "location": "src/rooms/verification/git-integrate.ts:962",
+   "category": "user",
+   "scope": "project",
+   "channel": "OWN",
+   "uiStatus": "editable",
+   "matrixStatus": "readonly",
+   "min": null,
+   "max": null,
+   "evidence": "src/rooms/verification/git-integrate.ts:962",
+   "storageKey": "writer.owns_barrier"
   }
  ],
  "fields": {

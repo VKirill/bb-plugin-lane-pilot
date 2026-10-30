@@ -74,7 +74,8 @@ export const gitOwnershipBase: ExperimentalHostRpcHandlers<typeof hostContract>[
 
 export const gitPrepareWorktree: ExperimentalHostRpcHandlers<typeof hostContract>["gitPrepareWorktree"] = async (input) => ({
   hostId:process.env.BB_HOST_ID??input.requestedHostId,
-  ...await prepareWorktree({basePath:input.basePath,worktreePath:input.worktreePath}),
+  ...await prepareWorktree({basePath:input.basePath,worktreePath:input.worktreePath,
+    ...(input.ownsBarrier?{ownsBarrier:true,ownsPaths:input.ownsPaths??[],neverTouch:input.neverTouch??[]}:{})}),
 });
 
 export const gitIntegrate: ExperimentalHostRpcHandlers<typeof hostContract>["gitIntegrate"] = async (input) => ({

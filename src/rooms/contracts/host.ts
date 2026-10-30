@@ -26,8 +26,10 @@ export const hostContract = defineRpcContract({
     output: z.object({ hostId:z.string(), status:z.enum(["ready","not-git","invalid-ref","failed"]), branch:z.string().nullable(), headSha:z.string().nullable(), baseRef:z.string().nullable(), baseSha:z.string().nullable(), compareCommitted:z.boolean(), reason:z.string().nullable() }).strict(),
   },
   gitPrepareWorktree: {
-    input: z.object({ requestedHostId:z.string().min(1), basePath:z.string().startsWith("/"), worktreePath:z.string().startsWith("/") }).strict(),
-    output: z.object({ hostId:z.string(), linked:z.array(z.string()) }).strict(),
+    // ownsBarrier + the task contract: tracked files outside owns_paths become read-only for the attempt (additive; an older host ignores them and locks nothing).
+    input: z.object({ requestedHostId:z.string().min(1), basePath:z.string().startsWith("/"), worktreePath:z.string().startsWith("/"),
+      ownsBarrier:z.boolean().optional(), ownsPaths:z.array(z.string().max(300)).max(200).optional(), neverTouch:z.array(z.string().max(300)).max(200).optional() }).strict(),
+    output: z.object({ hostId:z.string(), linked:z.array(z.string()), locked:z.number().int().optional() }).strict(),
   },
   gitWorktreeSnapshot: {
     input: z.object({ requestedHostId:z.string().min(1), worktreePath:z.string().startsWith("/"), name:z.string().regex(/^[A-Za-z0-9._-]{1,120}$/) }).strict(),

@@ -1004,6 +1004,8 @@ export const fieldEn = {
   reason_s537: "The most failed or rejected verification gate evaluations a task may accumulate before it ends with verify_passes_exhausted instead of another writer pass. Default 10.",
   field_s538: "Retry safety gate",
   reason_s538: "on blocks an automatic retry when the failed attempt's work area was touched after it ended: foreign commits or file edits, rewritten check evidence, or a catalog secret value still in the worktree diff; off keeps the unconditional retry. Default on.",
+  field_s540: "Owns-paths write barrier",
+  reason_s540: "on makes the tracked files outside a task's owns_paths read-only in the attempt's worktree once it is bound: a write outside the contract is refused by the OS instead of being rejected after the fact; the test or locale of an owned area stays writable; off keeps them writable. Default on.",
 } as const;
 
 export const fieldRu: { [K in keyof typeof fieldEn]: string } = {
@@ -2011,4 +2013,6 @@ export const fieldRu: { [K in keyof typeof fieldEn]: string } = {
   reason_s537: "Сколько упавших или отклонённых оценок гейта верификации может накопить задача, прежде чем завершится с verify_passes_exhausted вместо очередного прохода исполнителя. По умолчанию 10.",
   field_s538: "Гейт безопасности ретрая",
   reason_s538: "on блокирует авто-ретрай, если рабочую область упавшей попытки трогали после её конца: чужие коммиты или правки файлов, переписанные квитанции проверок или значение секрета из каталога, оставшееся в диффе worktree; off оставляет безусловный ретрай. По умолчанию on.",
+  field_s540: "Барьер записи вне owns_paths",
+  reason_s540: "on делает отслеживаемые файлы вне owns_paths задачи только для чтения в worktree попытки после её привязки: запись вне контракта отклоняется ОС, а не приёмкой после факта; тест или локаль своей области остаются записываемыми; off оставляет запись свободной. По умолчанию on.",
 };

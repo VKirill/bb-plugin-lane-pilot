@@ -12,7 +12,7 @@ export { darwinAvailableBytes, readMachineFacts } from "./machine-reading";
 export type { HostMachineFacts } from "./machine-reading";
 export { PRESSURE_LIMITS, flakyEvidence, outputTail, pressureOf, readingFrom, readingNote } from "./machine-pressure";
 export type { FlakyEvidence, MachineReading } from "./machine-pressure";
-export { findUnownedChanges, findUnownedRunChanges, resolveRunOwnershipScope, safeRelative, validateOwnershipContract } from "./ownership";
+export { dropSatellites, findUnownedChanges, findUnownedRunChanges, resolveRunOwnershipScope, safeRelative, satelliteOf, validateOwnershipContract } from "./ownership";
 export type { OwnershipTask } from "./ownership";
 export { createProviderGate, providerListed, providerSwitchOn, waitProviderEnvironment } from "./provider-gate";
 export { parseWorkspaceMode, requireManagedWorktreeProvider, resolveAttemptWorkspace, resolveManagedWorkspace, usesManagedWorktree, waitManagedWorktreeReady } from "./routing";

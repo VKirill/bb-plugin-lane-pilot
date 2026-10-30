@@ -14,7 +14,7 @@ sources:
   - docs/enabled-settings.snapshot.json
 ---
 
-<!-- enabled-settings:structure fceb231970ebfa96 -->
+<!-- enabled-settings:structure 2cbcb6b87c0cc7de -->
 
 # Enabled settings (generated)
 
@@ -233,6 +233,7 @@ switches: `quick` disables both critiques, `full` enables them (`src/rooms/criti
 | `writer.cooldown_max_ms` | `0` | — | failure classes: cap for any class cooldown pause in milliseconds |
 | `writer.fallback_on_provider_failure` | `after_retry` | — | writer fallback chain: a provider refusal hands the task to the next model at once or after one retry of the same model |
 | `writer.model` | `PRIMARY_MODELS[provider]` | — | writer stage reads this setting |
+| `writer.owns_barrier` | `on` | — | contract barrier: after an attempt's worktree is bound, tracked files outside owns_paths are read-only for it, so an outside write is refused by the OS instead of failing acceptance after the fact |
 | `writer.pair_pin` | `on` | — | writer pin: the task's provider+model for its whole life |
 | `writer.provider` | `kimi` | — | writer stage reads this setting |
 | `writer.reasoning_effort` | `PRIMARY_EFFORTS[provider]` | — | writer stage reads this setting |

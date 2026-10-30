@@ -1,4 +1,4 @@
-import { matchOwnsPath } from "@lane-pilot/kit";
+import { fileBlockedByNeverTouch, matchOwnsPath } from "@lane-pilot/kit";
 import { posix } from "node:path";
 
 export type OwnershipTask = {
@@ -105,4 +105,68 @@ export function findUnownedRunChanges(changedPaths:string[], tasks:OwnershipTask
   if (!tasks.length) return [...new Set(changedPaths)].sort();
   const unowned = changedPaths.filter((path) => tasks.every((task) => findUnownedChanges([path], task).length > 0));
   return [...new Set(unowned)].sort();
+}
+
+/**
+ * Satellite files (F-02): a change that legitimately sits next to an owned change but outside owns_paths —
+ * the test of the changed file, the locale of the changed area. 42 % of a month of owns-paths rejections were
+ * 54 such repeating paths. A satellite needs an anchor: a changed file of the same attempt that IS owned; with
+ * no owned change an unmatched test or locale is still a violation.
+ * Build debris is not here: it is ownership noise (BUILD_OUTPUT_DIRS), legitimate without any anchor.
+ */
+const SATELLITE_TEST_DIRS = new Set(["test","tests","__tests__","spec","specs","e2e"]);
+const SATELLITE_LOCALE_DIRS = new Set(["locale","locales","i18n","l10n","lang","langs","translations","messages","strings","resources"]);
+const SATELLITE_TEST_NAME = /(?:^|[._-])(?:test|tests|spec|specs)\.[^.]+$/i;
+const SATELLITE_LOCALE_NAME = /^[a-z]{2,3}(?:[-_][a-z0-9]{2,8})*\.(?:json|ya?ml|po|mo|pot|ftl|resx|arb|ts|js)$/i;
+
+function satelliteKind(path:string):"test"|"locale"|null {
+  const parts = path.split("/");
+  const name = parts[parts.length-1] ?? "";
+  if (parts.slice(0,-1).some((part) => SATELLITE_TEST_DIRS.has(part)) || SATELLITE_TEST_NAME.test(name)) return "test";
+  if (parts.slice(0,-1).some((part) => SATELLITE_LOCALE_DIRS.has(part)) || SATELLITE_LOCALE_NAME.test(name)) return "locale";
+  return null;
+}
+
+/** The area a path belongs to: the package for a monorepo (`packages/<name>`), the top folder elsewhere. */
+function areaRoot(path:string):string {
+  const parts = path.split("/");
+  return parts[0] === "packages" && parts[1] ? `${parts[0]}/${parts[1]}` : (parts[0] ?? "");
+}
+
+/** The name a test points at: `start.test.ts` and `test_start.py` both name `start`. */
+function satelliteStem(path:string):string {
+  const name = (path.split("/").pop() ?? "").replace(/\.[^.]+$/, "");
+  return name.replace(/\.(?:tests?|specs?)$|_test$|_spec$|^test[_-]|^spec[_-]/i, "");
+}
+
+/**
+ * True when `path` is a test or a locale file that belongs to the attempt's own work: a locale of the same area
+ * (`game/assets/lang/en.json` beside `game/src/…`), a test of the same area, or a test naming an anchor
+ * (`tests/start.test.ts` beside `src/rooms/…/start.ts`).
+ */
+export function satelliteOf(path:string, anchors:readonly string[]):boolean {
+  const kind = satelliteKind(path);
+  if (!kind) return false;
+  const area = areaRoot(path);
+  const stem = satelliteStem(path);
+  const parts = path.split("/");
+  // A test under its own <tests|__tests__> folder belongs to the code the folder's parent covers
+  // (apps/api/__tests__/x.test.ts ↔ apps/api/checkout/routes.ts); a bare tests/foo.test.ts needs the stem.
+  const testParent = kind === "test" && parts.length > 2 && SATELLITE_TEST_DIRS.has(parts[parts.length-2]!)
+    ? parts.slice(0, -2).join("/") : null;
+  if (kind === "locale") return anchors.some((anchor) => areaRoot(anchor) === area);
+  return anchors.some((anchor) => (stem !== "" && satelliteStem(anchor) === stem)
+    || (testParent !== null && testParent !== "" && anchor.startsWith(`${testParent}/`)));
+}
+
+/**
+ * Split the paths a check rejected into real violations and satellites of the attempt's own owned changes.
+ * `anchors` are the attempt's changed paths that passed the ownership check (this task's or a run sibling's).
+ */
+export function dropSatellites(unowned:string[], anchors:readonly string[], neverTouch:readonly string[]=[]):{unowned:string[];satellites:string[]} {
+  const satellites:string[] = [];
+  const kept:string[] = [];
+  // never_touch wins over a satellite: a test-shaped path the contract forbids stays forbidden.
+  for (const path of unowned) (fileBlockedByNeverTouch(path, [...neverTouch]) || !satelliteOf(path, anchors) ? kept : satellites).push(path);
+  return { unowned: kept.sort(), satellites: satellites.sort() };
 }

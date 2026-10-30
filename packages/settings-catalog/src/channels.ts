@@ -166,6 +166,7 @@ export const SETTING_CATALOG: SettingSpec[] = [
   { key:"writer.task_wall_clock_min", channel:"OWN", reason:"Native Lane Pilot retry caps: the most minutes a task may live across attempts and restarts before it ends with task_wall_clock" },
   { key:"writer.verify_max_passes", channel:"OWN", reason:"Native Lane Pilot retry caps: the most failed verification gate evaluations a task may accumulate before it ends with verify_passes_exhausted" },
   { key:"writer.retry_safety", channel:"OWN", reason:"Native Lane Pilot retry gate: on stops an automatic retry when the failed attempt's work area was touched after it ended (foreign edits, rewritten evidence, secret residue)" },
+  { key:"writer.owns_barrier", channel:"OWN", reason:"Native Lane Pilot contract barrier: after an attempt's worktree is bound, tracked files outside owns_paths are read-only for it, so an outside write is refused by the OS instead of failing acceptance after the fact" },
   { key:"failure.interventions", channel:"OWN", reason:"Native Lane Pilot writer loop: a same-class failure streak gets the class's intervention instead of the same retry; off keeps the uniform retry" },
   { key:"secrets.allow", channel:"OWN", reason:"Native Lane Pilot least privilege: the Env Catalog names a task's checks may receive" },
   { key:"ops.provider_pool", channel:"OWN", reason:"Native Lane Pilot writer pools: a cap on simultaneous writers per provider, as provider=limit pairs" },

@@ -24,7 +24,7 @@ import { createProviderGate, providerListed, providerSwitchOn, waitProviderEnvir
 import { LANE_WORKTREE_PROVIDER_ID } from "../../native-agent/server";
 import { fullAccessSpawn } from "../../core/server";
 import { WriterSelectionError, helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server";
-import { holderSpawnKey, stringAt } from "../../core/server";
+import { configuredSetting, holderSpawnKey, stringAt } from "../../core/server";
 import { planDigest, writerBriefInput, writerBriefSegments, type TaskFolderBrief } from "./writer-task";
 import { areaHistoryText, loadArea } from "./sticky";
 import { taskFolderRel } from "../../verification";
@@ -58,7 +58,7 @@ export function shouldMergeAttemptWorktree(workspacePath:string|null|undefined, 
 }
 
 /** A writer's environment from Lane Pilot's own provider (H9), over a worktree Lane Pilot already made. */
-type ProviderEnvironment = { type:"provider"; environmentProviderId:string; inputs:{basePath:string;name:string;path:string}; machine:{type:"existing";hostId:string} };
+type ProviderEnvironment = { type:"provider"; environmentProviderId:string; inputs:{basePath:string;name:string;path:string;ownsBarrier?:boolean;ownsPaths?:string[];neverTouch?:string[]}; machine:{type:"existing";hostId:string} };
 
 type WriterEnvironment = ProviderEnvironment | {type:"reuse";environmentId:string} | {type:"host";hostId:string;workspace:{type:"unmanaged";path:string}};
 
@@ -138,6 +138,8 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
       // The stored settings with the start's writer choice on top: before this every Jev pick that differed from the project's writer
       // was dropped here (Vampirism Fire 2026-10-25/26: picks gemini-flash, sonnet, sonnet, haiku all ran as composer-2.5).
       const settings = { ...(await effectiveProjectSettings(input.projectId,getRunSettingsScopes(db,input.runId))).values, ...(input.writerSettings ?? {}) };
+      // F-01: files outside the contract become read-only in the attempt's worktree (writer.owns_barrier).
+      const ownsBarrier = configuredSetting(settings,"writer.owns_barrier") !== "off";
       const workspaceMode = parseWorkspaceMode(settings["adoc.040"]);
       // Old saved adoc.041 / adoc.042 still load. They do not choose the worktree (resolveAttemptWorkspace).
       const minScoreValue = settings["adoc.041"];
@@ -309,7 +311,8 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
           workspacePath=onProvider.path;
           if(onProvider.dirtBefore) dirtBefore=onProvider.dirtBefore;
           providerEnvironment={type:"provider",environmentProviderId:LANE_WORKTREE_PROVIDER_ID,machine:{type:"existing",hostId:input.config.hostId},
-            inputs:{basePath:base,name:input.attemptId,path:workspacePath}};
+            inputs:{basePath:base,name:input.attemptId,path:workspacePath,
+              ownsBarrier,ownsPaths:input.task.owns_paths,neverTouch:input.task.never_touch}};
           environment=inPlaceEnvironment(input.config.hostId,workspacePath,null);
         // BB's managed worktree forks the project's root source; a run folder that is not it (a section with its own
         // repo inside a non-git project, live sandbox 2026-10-07: «no usable git branch») needs Lane Pilot's own.
@@ -329,7 +332,8 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
               {hostId:input.config.hostId,timeoutMs:60_000});
             if(created.status==="ready"&&created.path) {
               workspacePath=created.path;
-              await host.call("gitPrepareWorktree",{requestedHostId:input.config.hostId,basePath:base,worktreePath:workspacePath},
+              await host.call("gitPrepareWorktree",{requestedHostId:input.config.hostId,basePath:base,worktreePath:workspacePath,
+                ownsBarrier,ownsPaths:input.task.owns_paths,neverTouch:input.task.never_touch},
                 {hostId:input.config.hostId,timeoutMs:600_000}).catch(()=>undefined);
               const prepared=await workspaceDirt(input.config,workspacePath,input.runId);
               if(!prepared.ok) throw new WriterSelectionError(`attempt_worktree_baseline_failed:${prepared.reason}`);
@@ -404,7 +408,9 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
         const managed=resolveManagedWorkspace(await bb.sdk.environments.get({environmentId}),input.config.hostId);
         workspacePath=managed.path;
         // Linking dependencies helps the writer's checks; a host without it still gets a clean worktree.
-        await host.call("gitPrepareWorktree",{requestedHostId:input.config.hostId,basePath:base,worktreePath:workspacePath},{hostId:input.config.hostId,timeoutMs:600_000}).catch(()=>undefined);
+        await host.call("gitPrepareWorktree",{requestedHostId:input.config.hostId,basePath:base,worktreePath:workspacePath,
+          ownsBarrier,ownsPaths:input.task.owns_paths,neverTouch:input.task.never_touch},
+          {hostId:input.config.hostId,timeoutMs:600_000}).catch(()=>undefined);
         const prepared=await workspaceDirt(input.config,workspacePath,input.runId);
         if(!prepared.ok) throw new WriterSelectionError(`attempt_worktree_baseline_failed:${prepared.reason}`);
         if(prepared.snapshots.length) throw new WriterSelectionError(`attempt_worktree_not_clean:${prepared.snapshots.map(row=>row.path).join(",")}`);
@@ -588,7 +594,7 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
    * the attempt: the owner's switch, a core without the API, a machine whose provider was switched off, a worktree that
    * could not be made (the old path makes it again, or the managed one).
    */
-  async function prepareProviderWorktree(input:{projectId:string;runId:string;taskId:string;attemptId:string;config:PrototypeConfig}, settings:Record<string,unknown>,
+  async function prepareProviderWorktree(input:{projectId:string;runId:string;taskId:string;attemptId:string;config:PrototypeConfig;task:TaskV2}, settings:Record<string,unknown>,
     bound:{workspace_path:string|null}|null|undefined, basePath:string, decision:unknown):Promise<{path:string;dirtBefore:DirtSnapshot[]|null}|null> {
     const hostId=input.config.hostId;
     if (await providerSkipReason(input.projectId,hostId,input.attemptId,settings)) return null;
@@ -598,7 +604,9 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
       bb.log.info(`Lane Pilot writer ${input.attemptId}: no worktree for the provider (${created?.reason ?? "no answer"}); the old worktree path`);
       return null;
     }
-    await host.call("gitPrepareWorktree",{requestedHostId:hostId,basePath,worktreePath:created.path},{hostId,timeoutMs:600_000}).catch(()=>undefined);
+    await host.call("gitPrepareWorktree",{requestedHostId:hostId,basePath,worktreePath:created.path,
+      ownsBarrier:configuredSetting(settings,"writer.owns_barrier")!=="off",ownsPaths:input.task.owns_paths,neverTouch:input.task.never_touch},
+      {hostId,timeoutMs:600_000}).catch(()=>undefined);
     // Until the attempt row holds the path no sweep knows the worktree (about 2 GB each): a refusal below removes it here.
     const dropWorktree=async (reason:string) => {
       if (getAttempt(db,input.attemptId)?.workspace_path===created.path) return;
