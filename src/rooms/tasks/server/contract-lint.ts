@@ -247,12 +247,27 @@ export function namedTestCandidates(task:Pick<TaskV2, "owns_paths">, workspacePa
   return found;
 }
 
-/** Absolute paths whose kind the workspace's machine must report: the read_first files, the bare words of check filters, the tests next to owned files. */
+/** A concrete file path (a basename with an extension, no glob), or null for a folder, a glob or a bare name. */
+function concreteFile(path:string):string | null {
+  const norm = path.replace(/^\.\//, "").replace(/\/$/, "");
+  if (!norm || /[*?[]/.test(norm) || !/(?:^|\/)[^/]*\.[A-Za-z0-9]{1,8}$/.test(norm)) return null;
+  return norm;
+}
+
+/** The task creates the file: it is an expected output, or files[] says create. */
+function taskCreatesFile(task:Pick<TaskV2, "expected_outputs" | "files">, path:string):boolean {
+  if (task.expected_outputs.some((entry) => entry.replace(/^\.\//, "") === path)) return true;
+  return (task.files ?? []).some((file) => file.action === "create" && file.path.replace(/^\.\//, "") === path);
+}
+
+/** Absolute paths whose kind the workspace's machine must report: the read_first files, the bare words of check filters, the tests next to owned files, and the concrete files the contract names. */
 export function lintProbePaths(task:TaskV2, workspacePath:string):string[] {
   let hints:string[] = [];
   try { hints = parseReadFirstHints(task.read_first).map((hint) => resolve(workspacePath, hint.path)); } catch { /* reported by lintContract */ }
   const tests = siblingTestCandidates(task).map((candidate) => resolve(workspacePath, candidate.folder ?? candidate.test));
-  return [...new Set([...hints, ...folderFilters(task).map((filter) => filter.path), ...tests, ...checkNamedPaths(task)])].slice(0, MAX_PROBES);
+  const named = [...task.owns_paths, ...task.expected_outputs, ...(task.files ?? []).map((file) => file.path)]
+    .map(concreteFile).filter((path):path is string => !!path).map((path) => resolve(workspacePath, path));
+  return [...new Set([...hints, ...folderFilters(task).map((filter) => filter.path), ...tests, ...checkNamedPaths(task), ...named])].slice(0, MAX_PROBES);
 }
 
 /** The board shows about 60 characters; a longer title is cut there, never refused below this (owner, 2026-10-27: models must not stumble on title length). */
@@ -333,6 +348,25 @@ export function lintContract(input:LintInput):{ errors:LintFinding[]; warnings:L
     if (/[*?[]/.test(pattern)) continue;
     const barred = task.never_touch.find((never) => matchOwnsPath(pattern, never));
     if (barred) errors.push({ code:"owns_never_touch", message:`owns_paths ${pattern} lies inside never_touch ${barred}, so the writer may not change it; remove one of the two` });
+  }
+  // A concrete file that is not on the base and that the task does not create is a wrong path: the writer cannot edit it and will not produce it.
+  // read_first already reports its own missing files. A folder or a glob is where new files go, so it is not a missing file.
+  if (kinds) {
+    let readFirst = new Set<string>();
+    try { readFirst = new Set(parseReadFirstHints(task.read_first).map((hint) => hint.path)); } catch { /* reported above */ }
+    for (const pattern of task.owns_paths) {
+      const path = concreteFile(pattern);
+      if (!path || readFirst.has(path) || taskCreatesFile(task, path) || kindOf(resolve(input.workspacePath, path)) !== "missing") continue;
+      errors.push({ code:"owns_missing", message:`owns_paths ${path} does not exist and the task does not create it (it is not in expected_outputs and no files[] action is create); fix the path, or add it to expected_outputs if the task creates the file` });
+      if (errors.filter((error) => error.code === "owns_missing").length >= 5) break;
+    }
+    for (const file of task.files ?? []) {
+      if (file.action === "create") continue;
+      const path = concreteFile(file.path);
+      if (!path || taskCreatesFile(task, path) || kindOf(resolve(input.workspacePath, path)) !== "missing") continue;
+      errors.push({ code:"output_missing", message:`files[] ${file.action} ${path} does not exist and the task does not create it; fix the path, or set action create and add the file to expected_outputs if the task creates it` });
+      if (errors.filter((error) => error.code === "output_missing").length >= 5) break;
+    }
   }
 
   // expected_outputs inside owns_paths and outside never_touch.

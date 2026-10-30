@@ -90,7 +90,35 @@ describe("contract lint rules", () => {
       expect(codes(lint({}, {}, null))).toEqual([]);
     });
     it("takes line windows off the path", () => {
-      expect(lintProbePaths({ ...baseTask, read_first:["src/a.ts:10-20"], verification:[] }, root)).toEqual([`${root}/src/a.ts`]);
+      expect(lintProbePaths({ ...baseTask, read_first:["src/a.ts:10-20"], verification:[] }, root)).toEqual([`${root}/src/a.ts`, `${root}/src/b.ts`]);
+    });
+  });
+
+  describe("a file that does not exist and that the task does not create", () => {
+    const kinds = { "src/a.ts":"file" as const, "src/gone.ts":"missing" as const };
+    it("refuses an owned file that is missing, and says to fix the path or list it as created", () => {
+      const { errors } = lint({ owns_paths:["src/", "src/gone.ts"] }, {}, kinds);
+      const missing = errors.filter((error) => error.code === "owns_missing");
+      expect(missing).toHaveLength(1);
+      expect(missing[0]!.message).toContain("src/gone.ts");
+      expect(missing[0]!.message).toContain("expected_outputs");
+    });
+    it("allows a missing file the task creates, and a file that is already there", () => {
+      expect(codes(lint({ owns_paths:["src/", "src/new.ts"], expected_outputs:["src/b.ts", "src/new.ts"] }, {}, { ...kinds, "src/new.ts":"missing" }))).not.toContain("owns_missing");
+      expect(codes(lint({ owns_paths:["src/", "src/new.ts"], files:[{ path:"src/new.ts", action:"create", change:"add it" }] }, {}, { ...kinds, "src/new.ts":"missing" }))).not.toContain("owns_missing");
+      expect(codes(lint({ owns_paths:["src/", "src/a.ts"] }, {}, kinds))).not.toContain("owns_missing");
+    });
+    it("refuses a modify or delete of a file that is not there", () => {
+      const { errors } = lint({ files:[{ path:"src/gone.ts", action:"modify", change:"edit the helper" }] }, {}, kinds);
+      const missing = errors.filter((error) => error.code === "output_missing");
+      expect(missing).toHaveLength(1);
+      expect(missing[0]!.message).toContain("modify");
+      expect(missing[0]!.message).toContain("src/gone.ts");
+      expect(codes(lint({ expected_outputs:["src/b.ts", "src/gone.ts"], files:[{ path:"src/gone.ts", action:"modify", change:"edit" }] }, {}, kinds))).not.toContain("output_missing");
+    });
+    it("asks the machine about those files", () => {
+      expect(lintProbePaths({ ...baseTask, owns_paths:["src/", "src/gone.ts"] }, root)).toContain(`${root}/src/gone.ts`);
+      expect(lintProbePaths({ ...baseTask, verification:[] }, root)).toContain(`${root}/src/b.ts`);
     });
   });
 
@@ -522,7 +550,7 @@ describe("contract lint at dispatch", () => {
 
   it("sends back an owned code file whose longer-named test the host lists (site-en-shoot, 2026-10-24), and takes it once owned", async () => {
     const folders = { "src/__tests__":["shoot-en.test.ts", "shoot-seo-audit.test.ts"], src:["a.ts", "shoot.ts"] };
-    const { db, harness, dispatch } = await setup({ "src/a.ts":"file" }, {}, "", folders);
+    const { db, harness, dispatch } = await setup({ "src/a.ts":"file", "src/shoot.ts":"file", "src/__tests__/shoot-en.test.ts":"file", "src/__tests__/shoot-seo-audit.test.ts":"file" }, {}, "", folders);
     const owns = ["src/shoot.ts", "src/__tests__/shoot-en.test.ts", "src/b.ts"];
     const reply = await dispatch({ owns_paths:owns });
     expect(reply).toMatchObject({ runId, state:"validation_failed" });
