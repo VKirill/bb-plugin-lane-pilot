@@ -314,3 +314,21 @@ it("reads Expo Router paths: a (group) folder and a +api file", () => {
   const cited = page({}, "# Checks\n\n## How it works\n\nA (mobile/src/app/(tabs)/index.tsx:1). B (mobile/src/app/api/ask+api.ts:2). C (src/check.ts:3).\n");
   expect(lintDocsPages([{ path:"mobile/docs/api.md", content:cited }], { "mobile/src/app/(tabs)/index.tsx":8, "mobile/src/app/api/ask+api.ts":18, "src/check.ts":9 })).toEqual([]);
 });
+
+it("fails a citation whose range does not contain the identifier its claim names", async () => {
+  const { lintCitationClaims } = await import("../../src/rooms/docs/docs-lint");
+  const lines = ["export function runPmRead() {", "  return read();", "}", "", "export function other() {}", "  return 1;", "}", "", "export const TASK_LIMIT = 12;"];
+  const read = async (file: string, start: number, end: number) => file === "src/check.ts" ? lines.slice(start - 1, end).join("\n") : null;
+  // The claim names runPmRead but points at the lines of `other`: drift the bounds check cannot see.
+  const drifted = page({}, "# Checks\n\n## How it works\n\n`runPmRead` reads the excerpts (src/check.ts:5-6).\n");
+  expect((await lintCitationClaims([{ path: "docs/features/checks.md", content: drifted }], read)).map((f) => f.detail))
+    .toEqual([expect.stringContaining("none of the identifiers it names")]);
+  const right = page({}, "# Checks\n\n## How it works\n\n`runPmRead` reads the excerpts (src/check.ts:1-2).\n");
+  expect(await lintCitationClaims([{ path: "docs/features/checks.md", content: right }], read)).toEqual([]);
+  // Bare identifiers (call-shaped and CONSTANT-shaped) count too; a claim naming none is skipped.
+  const bare = page({}, "# Checks\n\n## How it works\n\nTASK_LIMIT is enforced (src/check.ts:9). The pass runs nightly (src/check.ts:8-9).\n");
+  expect(await lintCitationClaims([{ path: "docs/features/checks.md", content: bare }], read)).toEqual([]);
+  // A missing file is left to the bounds check.
+  const missing = page({}, "# Checks\n\n## How it works\n\n`runPmRead` reads (src/gone.ts:1).\n");
+  expect(await lintCitationClaims([{ path: "docs/features/checks.md", content: missing }], read)).toEqual([]);
+});
