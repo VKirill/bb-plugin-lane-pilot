@@ -1,5 +1,6 @@
 import { mapVerificationCwd } from "../tasks";
 import { q, type ExecResult, type HostPort } from "./ports";
+import { resolveRepoPath } from "./repos";
 import type { Candidate, VerificationItem, WarmRecord } from "./types";
 
 /**
@@ -21,6 +22,10 @@ export type WarmOptions = {
   keep?: boolean;
   /** Per-check cap in seconds (the contract's own `timeout_sec` when lower). */
   checkTimeoutSec?: number;
+  /** See `resolveRepoPath`: git commands run in the mapped checkout, not the path stored on the task. */
+  reposRoot?: string | null;
+  /** Machine the checkout is on. Absent: the machine the path prefix names. */
+  hostId?: string;
 };
 
 const tail = (result: ExecResult): string => `${result.stdout}\n${result.stderr}`.trim().slice(-300);
@@ -71,12 +76,12 @@ export async function findSolutionCommit(host: HostPort, candidate: Candidate): 
 }
 
 export async function warmUp(host: HostPort, candidate: Candidate, options: WarmOptions): Promise<WarmResult> {
-  const hostId = candidate.hostId, repo = candidate.repoPath;
+  const hostId = options.hostId ?? candidate.hostId, repo = resolveRepoPath(candidate.repoPath, options.reposRoot);
   const git = (command: string, timeout = 120) => host.run(hostId, repo, command, timeout);
   const reachable = await git(`git cat-file -e ${q(`${candidate.initialHeadSha}^{commit}`)}`, 30).catch((cause: unknown) => ({ failed: cause instanceof Error ? cause.message : String(cause) }));
   if ("failed" in reachable) return { ok: false, reason: "host_error", detail: `the host did not answer: ${reachable.failed}` };
   if (reachable.exitCode !== 0) return { ok: false, reason: "base_unreachable", detail: candidate.initialHeadSha };
-  const solution = await findSolutionCommit(host, candidate);
+  const solution = await findSolutionCommit(host, { ...candidate, hostId, repoPath: repo });
   if ("reason" in solution) return { ok: false, reason: solution.reason, detail: solution.detail };
   const work = `${options.scratch}/${slug(candidate.taskId)}-${Date.now().toString(36)}`;
   const dir = `${work}/clone`, patch = `${work}/solution.patch`;

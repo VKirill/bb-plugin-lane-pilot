@@ -29,6 +29,9 @@ export type BuildInput = {
   /** Warm-up on these strata only (a partial build is never written). */
   only?: readonly string[];
   log?: (line: string) => void;
+  /** Remap stored checkout paths and, with hostId, warm up on that machine (OVH) instead of the path's own. */
+  reposRoot?: string | null;
+  hostId?: string;
 };
 
 export type StratumReport = { key: string; quota: number; candidates: number; hardCandidates: number; tried: number; survived: number; kept: number; keptHard: number; rejected: Record<string, number>; stoppedBecause: string };
@@ -91,11 +94,12 @@ export async function buildSet(input: BuildInput): Promise<{ report: BuildReport
         if (enough) { report.stoppedBecause = "quota filled"; break; }
         if (lostHosts.includes(hostId)) { report.stoppedBecause = `host ${hostId} stopped answering`; break; }
         if (report.tried >= maxTries) { report.stoppedBecause = `tried ${maxTries} candidates`; break; }
-        const free = hostId === "none" ? null : await freeGb(input.host, hostId);
-        if (free !== null && free < minFree) { report.stoppedBecause = `host ${hostId} has ${free} GB free, below ${minFree}`; log(`bench build: ${report.stoppedBecause}`); break; }
+        const touch = input.hostId ?? hostId;
+        const free = touch === "none" ? null : await freeGb(input.host, touch);
+        if (free !== null && free < minFree) { report.stoppedBecause = `host ${touch} has ${free} GB free, below ${minFree}`; log(`bench build: ${report.stoppedBecause}`); break; }
         report.tried++;
         const started = Date.now();
-        const result = await warmUp(input.host, candidate, { ...warmOptions, scratch: await scratchOn(hostId) }).catch((cause: unknown) => ({ ok: false as const, reason: "host_error" as const, detail: cause instanceof Error ? cause.message : String(cause) }));
+        const result = await warmUp(input.host, candidate, { ...warmOptions, scratch: await scratchOn(input.hostId ?? hostId), ...(input.reposRoot ? { reposRoot: input.reposRoot } : {}), ...(input.hostId ? { hostId: input.hostId } : {}) }).catch((cause: unknown) => ({ ok: false as const, reason: "host_error" as const, detail: cause instanceof Error ? cause.message : String(cause) }));
         hostErrors = !result.ok && result.reason === "host_error" ? hostErrors + 1 : 0;
         if (result.ok) {
           report.survived++;
