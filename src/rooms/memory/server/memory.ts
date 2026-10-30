@@ -2,7 +2,7 @@ import { resolve } from "node:path";
 import { taskV2Schema } from "../../contracts";
 import { jev } from "@lane-pilot/jev";
 import { memoryRerankJudgment } from "@lane-pilot/jev/judgments/memory-rerank";
-import { enrichMemoryContext, episodeCandidates } from "../../memory-tiers/server";
+import { demoteUnusedPromotions, enrichMemoryContext, episodeCandidates } from "../../memory-tiers/server";
 import { claimStageSpawn, getRun, getRunSettingsScopes, getTask, listStageReceipts, searchMemoryRecords } from "../../storage";
 import { coreShelf, dropMemoryIndexes, memoryEntrySupported, pathsNamed, retireStaleCuratorClaims, storeMemoryRecordsKeepingOverflow } from "@lane-pilot/memory-core";
 import { applyScopeMigration } from "../../../../scripts/memory-scope-dry-run";
@@ -251,6 +251,7 @@ export function createMemoryStage(ctx: ServerCore, services: Services) {
       "memory.core_budget","memory.note_budget","memory.index_budget","memory.context_budget",
     ].map((key)=>[key,configuredSetting(settings,key)])));
     if(!memorySettings.enabled) return {runId:args.runId,state:"skipped",reason:"memory_disabled"};
+    const demoted = demoteUnusedPromotions(db);
     const chain=getRunSettingsScopes(db,args.runId);
     const selected=pmMemoryContext(db,args.projectId,memorySettings,args.query,chain);
     // The cold tier, past tasks like this one and the misses (src/rooms/memory-tiers): never fails the query. Candidates stay expired.

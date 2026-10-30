@@ -1,5 +1,5 @@
 import type Database from "better-sqlite3";
-import { addToIndexes, estimateTokens, heldClause, OBSERVED_QUARANTINE_MS, scopeValuesFor, type MemoryAudience } from "@lane-pilot/memory-core";
+import { addToIndexes, dropMemoryIndexes, estimateTokens, heldClause, OBSERVED_QUARANTINE_MS, scopeValuesFor, type MemoryAudience } from "@lane-pilot/memory-core";
 import { episodeLines, minHits, queryWords, wordHits, type Episode } from "../logic";
 
 /**
@@ -55,6 +55,20 @@ export function promote(db: Db, projectId: string, notes: ReadonlyArray<{ id: st
     promoted += 1;
   }
   return promoted;
+}
+
+/**
+ * Back to cold (taxonomy audit #4): a note the write door re-activated but nobody was given for the same idle window goes
+ * back to the cold tier — promotion was a hypothesis, not a prize. The promotion row stays as its history.
+ */
+export function demoteUnusedPromotions(db: Db, now = Date.now(), idleMs = 90 * 86_400_000): number {
+  const rows = db.prepare(`SELECT m.id FROM lane_pilot_memory m JOIN lane_pilot_memory_promotion p ON p.memory_id=m.id AND p.project_id=m.project_id
+    WHERE m.status='active' AND m.last_used_at=p.at AND p.at<?`).all(now - idleMs) as Array<{ id: string }>;
+  for (const row of rows) {
+    db.prepare("UPDATE lane_pilot_memory SET status='expired', expired_reason='idle' WHERE id=? AND status='active'").run(row.id);
+    dropMemoryIndexes(db, "", row.id);
+  }
+  return rows.length;
 }
 
 export function episodes(db: Db, projectId: string, query: string, limit = 3, read: Omit<TierRead, "projectId"> = {}): Episode[] {

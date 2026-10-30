@@ -3,7 +3,7 @@ import { applyScopeMigration, planScopeMigration } from "../scripts/memory-scope
 import { describe, expect, it } from "vitest";
 import { searchMemoryAllSections, searchMemoryRecords, storeMemoryRecords } from "../packages/memory-core/src";
 import { assertRuleScope, scopeApplies, upsertLessonProposal } from "@lane-pilot/run-insights";
-import { enrichMemoryContext } from "../src/rooms/memory-tiers/server";
+import { demoteUnusedPromotions, enrichMemoryContext } from "../src/rooms/memory-tiers/server";
 import { createMemoryConflicts } from "../src/rooms/memory/server/memory-conflicts";
 import { sessionMemoryRpc } from "../src/rooms/memory/server/session-memory";
 import { createAttempt, createRun, createTask, openDatabase, transitionAttempt } from "../src/rooms/storage/database";
@@ -181,5 +181,26 @@ describe("F05: a missing chain is the project root", () => {
     expect((await rpc.session_memory_core({ projectId: "P" })).records).toEqual([]);
     db.prepare("UPDATE lane_pilot_memory SET trust='confirmed' WHERE personal_bot=''").run();
     expect((await rpc.session_memory_core({ projectId: "P" })).records.map((row) => row.content)).toEqual(["Session core fact about deployment ports."]);
+  });
+});
+
+describe("cold tier demotion", () => {
+  it("a promoted note nobody was given goes back to the cold tier; a used one stays", () => {
+    const db = dbOf();
+    const now = Date.now(), old = now - 91 * 86_400_000;
+    const [a, b] = storeMemoryRecords(db, { projectId: "P", ...limits, entries: [
+      { kind: "note", content: "Unused promoted fact", concepts: ["demote"] },
+      { kind: "note", content: "Used promoted fact", concepts: ["demote"] },
+    ] }).insertedIds;
+    db.prepare("UPDATE lane_pilot_memory SET status='expired', expired_reason='idle'").run();
+    // Both were re-activated through promotion; only `a` stayed untouched since.
+    for (const id of [a!, b!]) {
+      db.prepare("UPDATE lane_pilot_memory SET status='active', last_used_at=? WHERE id=?").run(old, id);
+      db.prepare("INSERT INTO lane_pilot_memory_promotion(project_id,memory_id,query,at) VALUES(?,?,?,?)").run("P", id, "q", old);
+    }
+    db.prepare("UPDATE lane_pilot_memory SET last_used_at=? WHERE id=?").run(now - 86_400_000, b); // used after promotion
+    expect(demoteUnusedPromotions(db, now)).toBe(1);
+    expect(db.prepare("SELECT status FROM lane_pilot_memory WHERE id=?").get(a)).toEqual({ status: "expired" });
+    expect(db.prepare("SELECT status FROM lane_pilot_memory WHERE id=?").get(b)).toEqual({ status: "active" });
   });
 });
