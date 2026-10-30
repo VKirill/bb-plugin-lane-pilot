@@ -864,20 +864,6 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         for (const row of priorRows) { if (failureClass(row.state, row.reason) === failedClass) sameClassStreak++; else break; }
         const intervention = configuredSetting(runSettings, "failure.interventions") === "off" ? "same_retry_remark" : failureIntervention(failedClass, sameClassStreak);
         judged = { status: String(last.status), reason: typeof last.reason === "string" ? last.reason : null, klass: failedClass, mast: MAST_OF_FAILURE[failedClass] ?? "external:unknown", intervention, streak: sameClassStreak };
-        if (intervention === "narrow_brief") {
-          const reason = `narrow_brief: ${failedClass} failed ${sameClassStreak} attempts in a row — an identical retry repeats it; narrow the brief or change the approach, then dispatch again`;
-          const latest = getAttempt(db, attemptId);
-          if (latest && RETRY_ELIGIBLE.includes(latest.state as AttemptState)) transitionAttempt(db, latest.id, "blocked", { reason });
-          last = { ...last, status:"blocked", reason };
-          break;
-        }
-        if (intervention === "next_writer" && failedClass === "provider") {
-          // A provider that takes no work fails every retry the same way: the writer chain below takes the task now.
-          const latest = getAttempt(db, attemptId);
-          if (latest && RETRY_ELIGIBLE.includes(latest.state as AttemptState)) transitionAttempt(db, latest.id, "blocked", { reason:String(last.reason ?? last.status) });
-          last = { ...last, status:"blocked" };
-          break;
-        }
         // A check the host killed for time is not the task's red code: one retry, then it stops on its own budget.
         if (failedClass === "verification_timeout") {
           const reasons = (db.prepare("SELECT reason FROM lane_pilot_attempt WHERE run_id=? AND task_id=?").all(input.runId, input.taskId) as Array<{ reason: string | null }>).map((row) => row.reason);
@@ -894,11 +880,11 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         // A writer that stayed silent through its nudges is handed on the same way: its session hung, not the task.
         // A provider refusal (a limit, an unavailable provider, a 5xx) hands over at once by default — one more attempt
         // of the same model only repeats the refusal (owner_present held writers 20 h, graphs-optimisation G10); the
-        // `writer.fallback_on_provider_failure` setting keeps a single same-model retry for whoever wants it.
+        // `writer.fallback_on_provider_failure` (off by default: the first refusal keeps the classic retry order).
         // A stream cut is not a refusal: the provider cut a turn mid-work, its edits are in the worktree, and the same
         // thread continues them once as before — only a second cut in a row is the provider's (streamHandOff above).
         const providerHandsOff = failedClass === "provider" && !turn.streamError
-          && (runSettings["writer.fallback_on_provider_failure"] ?? "immediate") !== "after_retry";
+          && runSettings["writer.fallback_on_provider_failure"] === "immediate";
         if (failedClass === "limit" || providerHandsOff || isWriterSilent(typeof last.reason === "string" ? last.reason : null) || streamHandOff) {
           const latest = getAttempt(db, attemptId);
           if (latest && RETRY_ELIGIBLE.includes(latest.state as AttemptState)) transitionAttempt(db, latest.id, "blocked", { reason:String(last.reason ?? last.status) });
@@ -961,6 +947,24 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
           services.wall?.noteTaskStop({ projectId:input.projectId, runId:input.runId, taskId:input.taskId, family:taskFamily(input.taskId), state:familyFailure?.state ?? "validation_failed",
             reason:repeated.replace(/^repeated_failure:\s*/, ""), pmThreadId:input.pmThreadId ?? null, task:input.task, plan:input.plan })
             .catch((cause:unknown) => ctx.log(`wall: could not note the stop of ${input.taskId}: ${cause instanceof Error ? cause.message : String(cause)}`));
+          break;
+        }
+        // The session goes on, and how it goes on is already decided: an in-thread continue (redo) is itself the
+        // intervention for a fixable failure, and the classic handoffs above already took the failures they own.
+        // What is left here is only a same-model respawn — the move C6 replaces by class: a task that keeps failing
+        // the same way stops with narrow_brief, and a provider's second refusal in a row (or its first, with
+        // writer.fallback_on_provider_failure=immediate, decided above) moves the task to the next writer now.
+        if (!redo && intervention === "narrow_brief") {
+          const reason = `narrow_brief: ${failedClass} failed ${sameClassStreak} attempts in a row — an identical retry repeats it; narrow the brief or change the approach, then dispatch again`;
+          const latest = getAttempt(db, attemptId);
+          if (latest && RETRY_ELIGIBLE.includes(latest.state as AttemptState)) transitionAttempt(db, latest.id, "blocked", { reason });
+          last = { ...last, status:"blocked", reason };
+          break;
+        }
+        if (!redo && intervention === "next_writer" && failedClass === "provider" && sameClassStreak >= 2) {
+          const latest = getAttempt(db, attemptId);
+          if (latest && RETRY_ELIGIBLE.includes(latest.state as AttemptState)) transitionAttempt(db, latest.id, "blocked", { reason:String(last.reason ?? last.status) });
+          last = { ...last, status:"blocked" };
           break;
         }
         familyFailure = { state:String(last.status), reason:typeof last.reason === "string" ? last.reason : null };

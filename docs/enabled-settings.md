@@ -14,7 +14,7 @@ sources:
   - docs/enabled-settings.snapshot.json
 ---
 
-<!-- enabled-settings:structure 3e7e50f2f73114d7 -->
+<!-- enabled-settings:structure db0910b75a80a7f9 -->
 
 # Enabled settings (generated)
 
@@ -113,8 +113,8 @@ switches: `quick` disables both critiques, `full` enables them (`src/rooms/criti
 | `memory.enabled` | `true` | — | stage setting: enable isolated project memory maintenance and injection |
 | `memory.index_budget` | `65536` | — | stage setting: cap total project index tokens |
 | `memory.inject` | `true` | — | stage setting: retrieve bounded relevant project memory for a writer |
+| `memory.maintain_every` | `3` | — | stage setting: run the memory maintainer on every Nth accepted task |
 | `memory.maintain` | `true` | — | stage setting: maintain durable project memory after accepted work |
-| `memory.maintain_mode` | `wave` | — | stage setting: `wave` appends an accepted-task fact per task and runs one memory maintainer when the wave goes idle; `task` restores a helper per accepted task |
 | `memory.note_budget` | `24000` | — | stage setting: cap note memory tokens |
 | `memory.personal_bot` | — | — | keeps bot-scoped project memory isolated across maintenance and retrieval |
 | `memory.provider` | `codex / DEFAULT_ONBOARD_MODEL / DEFAULT_ONBOARD_EFFORT / standard` | — | stage uses the BB provider/model selection for project memory maintenance |
@@ -221,7 +221,7 @@ switches: `quick` disables both critiques, `full` enables them (`src/rooms/criti
 | `writer.best_of.slot_cap` | `3` | — | best-of-3: how many candidates of a task may run at once |
 | `writer.best_of.token_budget` | `0` | — | best-of-3: shared token ceiling of one task's candidates |
 | `writer.best_of` | `off` | — | best-of-3: parallel writer candidates under quality_mode full, selection by checks then the critic verdict |
-| `writer.fallback_on_provider_failure` | `immediate` | — | writer fallback chain: a provider refusal hands the task to the next model at once or after one retry of the same model |
+| `writer.fallback_on_provider_failure` | `after_retry` | — | writer fallback chain: a provider refusal hands the task to the next model at once or after one retry of the same model |
 | `writer.model` | `PRIMARY_MODELS[provider]` | — | writer stage reads this setting |
 | `writer.provider` | `kimi` | — | writer stage reads this setting |
 | `writer.reasoning_effort` | `PRIMARY_EFFORTS[provider]` | — | writer stage reads this setting |
