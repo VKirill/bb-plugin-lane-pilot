@@ -29,6 +29,8 @@ export const CORE_PROVIDER_GROUPS = {
   // OpenCode v2 runs one shared service per machine: the opencode2 bridge (1.1.0-vk.3) turns skills and MCP servers into the
   // session's permission rules; native plugins and project instructions load for the whole service and cannot be narrowed.
   opencode2: ["bbPlugins", "skills", "mcpServers"],
+  // Devin (bb-plugin-devin) is an ACP provider like acp-cursor: the session narrows the same groups (W35, 2026-10-30).
+  devin: ["bbPlugins", "skills", "mcpServers"],
 } as const;
 /** Cores before 0.44.0-vk.15 could not narrow BB skills for Cursor. */
 const LEGACY_CURSOR_GROUPS = ["bbPlugins", "mcpServers"] as const;
@@ -38,6 +40,7 @@ export const CORE_INSTRUCTION_SWITCHES = {
   "acp-opencode": ["userInstructions", "projectInstructions"],
   "acp-cursor": ["userInstructions"],
   opencode2: ["userInstructions"],
+  devin: ["userInstructions"],
 } as const;
 /** Cores before 0.46.1-vk.2 do not advertise opencode2: their helpers on it run with BB's ordinary context. */
 const { opencode2: _groupsV2, ...PRE_OPENCODE2_GROUPS } = CORE_PROVIDER_GROUPS;

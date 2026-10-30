@@ -125,7 +125,7 @@ describe("which providers get the wrappers", () => {
   it("Codex, OpenCode and Cursor through their own resolver", async () => {
     const { registered } = mounted(mountBbShim);
     expect([...registered.keys()].sort()).toEqual([...BB_SHIM_PROVIDER_IDS].sort());
-    expect(BB_SHIM_PROVIDER_IDS).toEqual(expect.arrayContaining(["codex", "opencode2", "acp-cursor"]));
+    expect(BB_SHIM_PROVIDER_IDS).toEqual(expect.arrayContaining(["codex", "opencode2", "acp-cursor", "devin"]));
     expect(await registered.get("codex")!({ threadId: "thr_1", hostId: "ovh" })).toEqual([expect.objectContaining({ name: "LANE_PILOT_ROLE", value: "writer" }), expect.objectContaining({ name: "PATH", value: SHIM.path })]);
   });
 

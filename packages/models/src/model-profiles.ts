@@ -73,6 +73,11 @@ export const WRITER_PROFILES: readonly WriterProfile[] = [
     sources: ["https://www.developersdigest.tech/blog/claude-opus-5-5-vs-sonnet-5-5-vs-haiku-5-5", "https://www.coderabbit.ai/blog/sonnet-5-5-model-review"],
   },
   {
+    key: "swe2", providerId: "devin", model: "swe-2-high", reasoning: "high", label: "SWE-2 (Devin)", tier: "strong", available: true,
+    summary: "Cognition's SWE-2 through the Devin subscription (the owner's main writer since 2026-10-30): a frontier coding agent built for long-horizon work on a real repository — it plans, edits across many files and iterates on its own errors. Fits hard features, deep debugging, cross-cutting refactors and tasks other writers failed; its harness carries its own tools, so it wants fewer instructions than a raw chat model. Runs at high effort only (no medium exists: reasoning is high or max), slowest and heaviest per task of the free picks: not for mechanical one-file edits.",
+    sources: ["https://devin.ai"],
+  },
+  {
     key: "glm-flash", providerId: "opencode2", model: "zai-coding-plan/glm-5.3-flash", reasoning: "high", label: "GLM-5.3 Flash (Z.AI)", tier: "light", available: true,
     summary: "Z.AI's fast model on the coding plan's quota: DeepSWE 63% (confirmed on the public leaderboard), Terminal-Bench 2.1 84.3 by Z.AI's own count. Fits routine agentic coding, scripts, debugging of small failures and bulk mechanical work when the main writers' limits matter. Most of its strong numbers are the vendor's; less proven on large features.",
     sources: ["https://docs.z.ai/guides/vlm/glm-5.3-flash", "https://www.datacamp.com/blog/glm-5-3-flash", "https://www.edenai.co/post/glm-5-3-flash-benchmark-vs-gemini-deepseek-gpt-5-6"],

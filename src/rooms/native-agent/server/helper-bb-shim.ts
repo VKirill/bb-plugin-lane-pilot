@@ -16,7 +16,7 @@ import type { ServerCore } from "../../core/server";
  * reloads its own plugin, so it is left out. A host that does not know the call yet (older install) is not a reason to stop a
  * helper: it starts without the wrappers and the log says so; any other failure refuses the start.
  */
-export const BB_SHIM_PROVIDER_IDS = ["codex", "opencode2", "acp-cursor"] as const;
+export const BB_SHIM_PROVIDER_IDS = ["codex", "opencode2", "acp-cursor", "devin"] as const;
 const CACHE_MS = 60_000;
 const CALL_MS = 4_000;
 const UNKNOWN_CALL = /unknown|not found|no such|not implemented|unsupported|not a function|unrecognized/i;
