@@ -97,20 +97,25 @@ export function createSecrets(deps:{ bb:BbPluginApi; now?:() => number }) {
     return plugins?.callRpc ? (args) => plugins.callRpc!(args) : undefined;
   };
   let cached:{ at:number; entries:CatalogEntry[] | null } | null = null;
+  let pending:Promise<CatalogEntry[] | null> | null = null;
 
   /** The catalog's names and kinds, or null when Env Catalog cannot be asked (feature test: not installed, disabled, erroring). */
   async function list(options:{ fresh?:boolean } = {}):Promise<CatalogEntry[] | null> {
     if (!options.fresh && cached && now() - cached.at < 5_000) return cached.entries;
+    if (pending) return await pending;
     const call = callRpc();
-    let entries:CatalogEntry[] | null = null;
-    if (call) {
-      try {
-        const reply = listSchema.parse(await call({ pluginId:ENV_CATALOG_PLUGIN, method:"env_list", input:{}, outputSchema:listSchema }));
-        entries = reply.variables.map((row) => ({ name:row.name, kind:row.kind }));
-      } catch { entries = null; }
-    }
-    cached = { at:now(), entries };
-    return entries;
+    pending = (async () => {
+      let entries:CatalogEntry[] | null = null;
+      if (call) {
+        try {
+          const reply = listSchema.parse(await call({ pluginId:ENV_CATALOG_PLUGIN, method:"env_list", input:{}, outputSchema:listSchema }));
+          entries = reply.variables.map((row) => ({ name:row.name, kind:row.kind }));
+        } catch { entries = null; }
+      }
+      cached = { at:now(), entries };
+      return entries;
+    })().finally(() => { pending = null; });
+    return await pending;
   }
 
   async function record(name:string):Promise<CatalogRecord | null> {
