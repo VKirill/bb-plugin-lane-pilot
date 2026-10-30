@@ -157,6 +157,7 @@ export const SETTING_META: Record<string, SettingMeta> = {
   "writer.best_of": { label: "field_s507", help: "reason_s507" },
   "writer.best_of.token_budget": { label: "field_s508", help: "reason_s508", unit: "fieldUnitTokens" },
   "writer.best_of.slot_cap": { label: "field_s509", help: "reason_s509", unit: "fieldUnitTasks" },
+  "writer.best_of.rounds": { label: "field_s523", help: "reason_s523", unit: "fieldUnitRounds" },
   "bench.nightly_sets": { label: "field_s510", help: "reason_s510" },
   "writer.fallback_on_provider_failure": { label: "field_s511", help: "reason_s511" },
   "wall.enabled": { label: "field_s478", help: "reason_s478" },

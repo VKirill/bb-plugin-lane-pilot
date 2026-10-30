@@ -11,6 +11,9 @@ import { ownsPathsOverlap, pollPause } from "@lane-pilot/kit";
 import { reconcile, reconcileCursor } from "../../stability";
 import { emergencyFallbackDecision } from "../../night";
 import { rotatedWriterSettings, writerFallbackChain, writerFallbacks } from "../writer-fallbacks";
+import { resolveBestOf, roundSeedBrief, roundSurvivors } from "../best-of";
+import { QUALITY_MODE_SETTING, resolveQualityMode } from "../../critique";
+import { runOnHost } from "@lane-pilot/host-calls";
 import { writerPickOverlay, type WriterLoad } from "../writer-model-pick";
 import { reassignedReason, takeReassignRequest, type ReassignRequest } from "./reassign";
 import { usageHoldReason, usageSkipPercent } from "../../usage/server";
@@ -732,12 +735,34 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
           } : undefined;
           const requested=reassigned?.request.selection;
           pendingReassign=null;
+          // Recursive best-of (arXiv #20, writer.best_of.rounds > 1): a candidate of round 2+ starts with the
+          // round seed — the previous round's surviving candidates, their check remarks and diff stats.
+          const bestOf = resolveBestOf(runSettings, resolveQualityMode(freshTask, runSettings[QUALITY_MODE_SETTING]));
+          let roundSeed = "";
+          if (bestOf.enabled && bestOf.rounds > 1) {
+            const finished = listAttemptsForTask(db, input.runId, input.taskId)
+              .filter((row) => row.id !== attemptId && !["queued","spawn_requested","spawn_unknown","running","cancel_requested"].includes(row.state));
+            const doneRounds = Math.floor(finished.length / bestOf.count);
+            if (doneRounds >= 1 && doneRounds < bestOf.rounds) {
+              const candidates = await Promise.all(finished.slice(-bestOf.count).map(async (row) => {
+                const attempt = getAttempt(db, row.id);
+                let diffStat: string | null = null;
+                if (attempt?.workspace_path) {
+                  const ran = await runOnHost(host, { hostId: input.config.hostId, cwd: attempt.workspace_path, command: "git diff --stat HEAD", timeoutSec:15, timeoutMs:15_000 }).catch(() => null);
+                  if (ran && ran.exitCode === 0 && ran.stdout.trim()) diffStat = ran.stdout.trim();
+                }
+                return { attemptId: row.id, state: row.state, reason: attempt?.reason ?? null, diffStat };
+              }));
+              roundSeed = roundSeedBrief(doneRounds + 1, bestOf.rounds, roundSurvivors(candidates));
+            }
+          }
+          const prevBrief = previousAttemptBrief(await trimCheckLogsIn(jev(), last.status && isOwnFailure(last) ? last : own.failure ?? (last.status ? last : null), freshTask.title, { projectId:input.projectId, runId:input.runId, subject:input.taskId, settings:runSettings }), freshTask, undefined, liveFolder);
           const spawned = await services.spawnWriterAttempt({
             projectId:input.projectId, runId:input.runId, taskId:input.taskId, attemptId,
             config:freshConfig, task:freshTask, plan:input.plan, pmThreadId:input.pmThreadId, pmReadContext, writerSettings:writerChoice,
             retryIndex:Math.max(0,countAttempts(db,input.runId,input.taskId)-1),
             // A fresh writer starts from main: of the failures before it, the task's own is the one to avoid, not a provider's cut.
-            previousAttempt:previousAttemptBrief(await trimCheckLogsIn(jev(), last.status && isOwnFailure(last) ? last : own.failure ?? (last.status ? last : null), freshTask.title, { projectId:input.projectId, runId:input.runId, subject:input.taskId, settings:runSettings }), freshTask, undefined, liveFolder),
+            previousAttempt:roundSeed ? [prevBrief, roundSeed].filter(Boolean).join("\n\n") : prevBrief,
             ...(requested ? { emergency:{...requested, reason:"reassigned by the PM"} } : {}),
             ...(carried ? { continuation:carried } : {}),
           });
