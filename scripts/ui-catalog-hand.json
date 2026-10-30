@@ -3194,7 +3194,7 @@
    "invType": "text",
    "values": "JSON map of failure class to seconds",
    "defaultValue": "",
-   "control": "text",
+   "control": "input",
    "options": [],
    "section": "stages",
    "rationale": "Pause a failure class gets after an attempt ends, before the next attempt: {\"provider\":30,\"task\":5}. Empty keeps todays behaviour: classes keep their own waits and nothing else pauses (hive H-14).",

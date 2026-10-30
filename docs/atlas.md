@@ -41,7 +41,7 @@ Each room is one component: `index.ts` is its public API, `server/` its services
 | hypotheses | BriefMode, HypothesisState, SEEDED, armsOf, briefMode, briefParts, hypothesisMigrations, settingsPair | 7 | 179 | tests (1) |
 | improvement | HUB_KEYS, HUB_SPECS, HubArea, HubDb, HubKind, HubSpec, PROJECT_DEFAULT_KEYS, QUIET_PATTERN, hubFields, hubSettingProblem, readHubRows, specOf, validTimeZone, writeHubFields, writeHubSettings | 8 | 720 | tests (2) |
 | jev | JEV_USAGE, runJevCli | 3 | 149 | tests (2) |
-| learning | FRUSTRATION_KEY, FrustrationRecord, LEARNING_USAGE, MemoryUnanswered, complexity, frustrationReason, judgeRulesOnDiff, learningFor, memoryUnanswered, mountLearning, ownerMessageJudgment, ownerQuestion, pmResumeInstructions, pmRuleRelevance, pmRulesOf, pmRulesPromptBlock, ruleBudget, ruleViolationRemark, runLearningCli, sameAsJudgment, unkeptPromise | 24 | 2422 | tests (2) |
+| learning | FRUSTRATION_KEY, FrustrationRecord, LEARNING_USAGE, MemoryUnanswered, complexity, frustrationReason, judgeRulesOnDiff, learningFor, memoryUnanswered, mountLearning, ownerMessageJudgment, ownerQuestion, pmResumeInstructions, pmRuleRelevance, pmRulesOf, pmRulesPromptBlock, ruleBudget, ruleViolationRemark, runLearningCli, sameAsJudgment, unkeptPromise | 24 | 2438 | tests (2) |
 | memory | MEMORY_PATHS, MEMORY_PRIMITIVES, MemoryPath, MemoryPrimitive, MemorySettings, ProbeKind, parseMemorySettings, pathById | 11 | 891 | drill: memory_paths |
 | memory-eval | — | 9 | 877 | tests (2) |
 | memory-probe | — | 2 | 225 | drill: memory_paths |
