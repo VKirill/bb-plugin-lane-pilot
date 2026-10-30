@@ -289,6 +289,22 @@ describe("contract lint rules", () => {
       }
       expect(codes(withGate("python3 -I scripts/studio_test.py", { gate:{ command:"cd game && python3 -I scripts/studio_test.py" } }))).toEqual(["whole_suite_with_gate"]);
     });
+    it("rejects a chain that runs the same runner twice, filters and all", () => {
+      for (const command of [
+        "python3 -I scripts/studio_test.py --filter A && python3 -I scripts/studio_test.py --filter B",
+        "cd game && python3 -I scripts/studio_test.py --filter A && python3 -I scripts/studio_test.py --filter B",
+        "npx vitest run tests/a.test.ts && npx vitest run tests/b.test.ts",
+      ]) {
+        const { errors } = withGate(command);
+        expect(codes({ errors, warnings:[] }), command).toEqual(["repeated_runner_chain"]);
+        expect(errors[0]!.message).toContain("one filtered run");
+        expect(errors[0]!.message).toContain(gate.command);
+      }
+    });
+    it("lets one filtered run, two different commands, and a chain with no gate through", () => {
+      expect(codes(withGate("npx vitest run tests/a.test.ts && npx tsc --noEmit -p ."))).toEqual([]);
+      expect(codes(lint({ verification:[{ command:"python3 -I scripts/studio_test.py --filter A && python3 -I scripts/studio_test.py --filter B", cwd:root }] }, {}, folder))).toEqual([]);
+    });
     it("lets a filtered run, another script and a project without a gate through", () => {
       for (const command of ["cd game && python3 -I scripts/studio_test.py --filter Par010", "python3 -I scripts/studio_test.py --self-check", "python3 -I scripts/studio_test_helper.py"]) {
         expect(codes(withGate(command)), command).toEqual([]);

@@ -62,6 +62,37 @@ export function runsGateCommand(command:string, gateCommand:string):boolean {
   return squash(command) === gate || command.split(/&&|;|\n/).map(squash).some((part) => part === gate.replace(/^cd \S+ && /, ""));
 }
 
+const TEST_BIN = /(?:^|\/)(vitest|jest|pytest|py\.test)$/;
+const SCRIPT_RUNNER = /(?:^|\/)([\w.-]+\.(?:py|js|mjs|cjs|ts|sh))$/;
+
+/** Which test runner one `&&` / `;` step starts, or null. A `cd` or a typecheck is not a runner. */
+function runnerOf(segment:string):string | null {
+  const tokens = segment.trim().split(/\s+/).map((token) => token.replace(/^['"]|['"]$/g, ""));
+  const bin = tokens.find((token) => TEST_BIN.test(token));
+  if (bin) return bin.replace(/^.*\//, "");
+  if (/^(?:npm|pnpm|yarn|bun)\s+(?:run(?:-script)?\s+)?(?:test|t)(?:\s|$)/.test(segment.trim())) return "npm-test";
+  for (const token of tokens) {
+    const script = SCRIPT_RUNNER.exec(token);
+    if (script) return script[1]!;
+  }
+  return null;
+}
+
+/**
+ * The runner a check starts more than once, or null. `--filter A && --filter B` is two runs of one suite in a single check
+ * (Vampirism Fire: each filter still takes minutes, and a red first filter has already spent them).
+ */
+export function repeatedRunner(command:string):string | null {
+  const seen = new Map<string, number>();
+  for (const part of command.split(/&&|;|\n/)) {
+    const key = runnerOf(part);
+    if (!key) continue;
+    if ((seen.get(key) ?? 0) >= 1) return key;
+    seen.set(key, 1);
+  }
+  return null;
+}
+
 /** The catalog name closest to a declared one when they differ by case or a typo (at most two edits); null when none is near. */
 export function nearSecretName(name:string, catalog:readonly CatalogEntry[]):string | null {
   const distance = (a:string, b:string):number => {
@@ -389,6 +420,13 @@ export function lintContract(input:LintInput):{ errors:LintFinding[]; warnings:L
   }
   for (const check of task.verification) {
     // With a gate, a task's check is its own files: the whole suite is the gate's, once per batch (so no exclusions to add either).
+    // Two filtered calls of the same runner (`--filter A && --filter B`) are the suite twice; one filter is enough.
+    const again = input.gate ? repeatedRunner(check.command) : null;
+    if (input.gate && again && !runsWholeSuite(check.command) && !runsGateCommand(check.command, input.gate.command)) {
+      errors.push({ code:"repeated_runner_chain", message:`verification command "${check.command}" runs ${again} more than once in one check; one filtered run is enough, the integration gate (${input.gate.command}) runs the whole suite once per batch`,
+        data:{ gateCommand:input.gate.command, runner:again } });
+      continue;
+    }
     if (input.gate && (runsWholeSuite(check.command) || runsGateCommand(check.command, input.gate.command))) {
       errors.push({ code:"whole_suite_with_gate", message:`verification command "${check.command}" runs the whole test suite; the integration gate (${input.gate.command}) runs the whole suite once per batch, so check only this task's files, e.g. npx vitest run <its test files>, plus the typecheck`,
         data:{ gateCommand:input.gate.command } });
