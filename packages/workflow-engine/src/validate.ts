@@ -118,6 +118,37 @@ export function validateWorkflow(workflow: Workflow, options: ValidateOptions = 
     if (node.child?.type === "action" && node.child.action === EMIT) error("parallel_child", `parallel "${node.id}": a child cannot be emit`, { node: node.id });
   }
 
+  // Chain-end audit (swe/chains-end): every executable node must be reachable from the entry and must reach a
+  // terminal emit; a human question needs a deadline; a workflow whose runs can end needs a node that checks the goal.
+  // `note` nodes are graph legends — they never run, so reachability does not apply to them.
+  {
+    const entry = workflow.entry ?? workflow.edges.find((edge) => edge.from === START)?.to;
+    const reachable = new Set<string>();
+    const walk = (id: string | undefined) => {
+      if (!id || reachable.has(id)) return;
+      reachable.add(id);
+      for (const edge of workflow.edges.filter((candidate) => candidate.from === id)) walk(edge.to);
+    };
+    walk(entry);
+    const hasOutgoing = new Set(workflow.edges.map((edge) => edge.from));
+    const GOAL_CHECK = /check|valid|verdict|judge|aggregate|lint|probe|status|qa|audit|repair|deploy|dedupe|citations|invoice|harness|goal|dedupe/i;
+    let goalCheck = false;
+    for (const node of workflow.nodes) {
+      if (node.type === "note") continue;
+      if (entry && !reachable.has(node.id)) error("unreachable_node", `node "${node.id}" is not reachable from the entry`, { node: node.id });
+      if (!hasOutgoing.has(node.id) && !(node.type === "action" && node.action === EMIT)) {
+        warn("dead_end", `node "${node.id}" ends the run without a terminal emit`, { node: node.id });
+      }
+      if (node.type === "human" && !node.timeoutSec) {
+        warn("human_no_deadline", `human "${node.id}" waits without a deadline`, { node: node.id });
+      }
+      if (node.type === "lp-task" || node.type === "subworkflow" || node.type === "decision" || node.proof || GOAL_CHECK.test(("action" in node && node.action) || "")) goalCheck = true;
+    }
+    if (!goalCheck && workflow.nodes.some((node) => node.type === "action" && node.action === EMIT)) {
+      warn("no_goal_check", "the workflow can end without any node that checks the goal (no lp-task, subworkflow, proof or check-like action)");
+    }
+  }
+
   // ---- the lowered form
   const L = lowerWorkflow(workflow, options.resolve);
   const byId = new Map<string, GraphNode>();
