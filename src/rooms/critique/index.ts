@@ -3,8 +3,8 @@
 export { MAX_FILE_EXCERPT_BYTES, actionableFindings, buildCandidateEvidence, codeCritiquePrompt, codeCritiqueSource, parseCodeCritique, codeRepairPrompt, findingsHash, nextRepairAction, parseCodeCritiqueSettings, parseWriterRepairReply, repairLedgerFromResult, sameUnresolvedFindings, sameWriterIdentity, settingsFromFrozenPolicy, shouldRequestRepair } from "./code-critique";
 export type { WriterIdentity } from "./code-critique";
 export { criticStats } from "./critic-stats";
-export { CRITIC_EDIT_TRIAL_KEY, criticEditGate, criticPromptProposal } from "./critic-edit";
-export type { CriticEditRow } from "./critic-edit";
+export { CRITIC_EDIT_TRIAL_KEY, criticEditGate, criticEditTrialSettle, criticEditWasRejected, criticPromptOf, criticPromptProposal, criticPromptRollback } from "./critic-edit";
+export type { CriticEditRow, CriticEditStore, CriticEditTrialOutcome } from "./critic-edit";
 export { critiquePrompt, parseCritique } from "./critique";
 export { findSandboxUnsafeMissingExcludes, parseSandboxUnsafePatterns, runnerFilterArgs, runsWholeSuite, scanCritiqueCoverage } from "./critique-coverage";
 export { NO_TOOLS_LINE, clipped, extractModelJson } from "@lane-pilot/workflow-engine";

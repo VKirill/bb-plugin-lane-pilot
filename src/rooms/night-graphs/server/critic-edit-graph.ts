@@ -1,5 +1,5 @@
 import type { NodeExecutor, StepContext } from "@lane-pilot/workflow-engine";
-import { CRITIC_EDIT_TRIAL_KEY, criticEditGate, criticPromptProposal, criticStats } from "../../critique";
+import { CRITIC_EDIT_TRIAL_KEY, criticEditGate, criticEditTrialSettle, criticPromptProposal, criticStats } from "../../critique";
 import { scheduleIsolated, type ServerCore, type Services } from "../../core/server";
 import { builtinWorkflow } from "../../workflow";
 import type { ChainRuntime } from "../../workflow/server";
@@ -32,6 +32,12 @@ export function mountCriticEditGraph(ctx: ServerCore, services: Services): void 
       const trialOn = stored === "on" || (typeof stored === "object" && stored !== null && (stored as { on?: boolean }).on === true);
       const proposal = text(c.resolve("prepare.proposal")) || null;
       const gate = criticEditGate({ trialOn, benchOn: input(c, "bench") === "on", proposal });
+      // The trial loop (item 4): a bench arm with the proposal against the current critic, then decideTrial's bench
+      // verdict settles it — adopt writes the prompt to the store, retire goes to the rejected buffer.
+      if (gate.status === "trial" && proposal) {
+        const outcome = await criticEditTrial(ctx, services, input(c, "project_id"), proposal);
+        return { output: { status: outcome.action === "adopt" ? "trial" : outcome.action === "retire" ? "held" : gate.status, detail: `${gate.detail}; ${outcome.reason}`, handoff: outcome.action } };
+      }
       return { output: { status: gate.status, detail: gate.detail, handoff: gate.status } };
     },
   } as NodeExecutor<ChainRuntime>);
@@ -55,4 +61,26 @@ export function mountCriticEditGraph(ctx: ServerCore, services: Services): void 
       }).done.catch((cause: unknown) => ctx.log(`critic edit for ${project.id} failed: ${cause instanceof Error ? cause.message : String(cause)}`));
     }
   }, { timeoutMs: 30 * 60_000 });
+}
+
+/**
+ * The bench part of the trial: the newest set runs two arms — the current critic (base) and the candidate prompt
+ * (its proposal as `code_critique.agent`) — then `bench compare` decides, and `criticEditTrialSettle` writes the
+ * adopted prompt (with version and rollback) or files the candidate into the rejected buffer.
+ */
+export async function criticEditTrial(ctx: ServerCore, services: Services, projectId: string, proposal: string): Promise<{ action: "adopt" | "retire" | "wait"; reason: string; version?: number }> {
+  const set = services.bench.status().sort((a, b) => b.createdAt - a.createdAt)[0];
+  if (!set) return { action: "wait", reason: "no bench set to score the candidate" };
+  const armA = `cedit-base-${projectId.slice(-6)}`, armB = `cedit-prop-${projectId.slice(-6)}`;
+  const hasBoth = [armA, armB].every((arm) => set.runs.some((row) => row.arm === arm && row.state === "done"));
+  if (!hasBoth) {
+    if (!set.runs.some((row) => row.arm === armA)) await services.bench.run({ version: set.version, arm: armA, wait: true });
+    await services.bench.run({ version: set.version, arm: armB, wait: true, settings: { "code_critique.agent": proposal } });
+  }
+  const comparison = services.bench.compare({ version: set.version, armA, armB });
+  const outcome = await criticEditTrialSettle({
+    kv: ctx.bb.storage.kv as never, stage: "code-critique", proposal,
+    verdict: comparison.comparison.verdict === "inconclusive" ? null : { passed: comparison.comparison.verdict === "pass", summary: comparison.text.split("\n")[0] ?? "" },
+  });
+  return { action: outcome.action, reason: outcome.reason, ...(outcome.action === "adopt" ? { version: outcome.version } : {}) };
 }
