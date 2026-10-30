@@ -112,7 +112,7 @@ export async function resetHelperStages(db:ReturnType<typeof openDatabase>, stop
     // the other helper stages are deleted so they run again from nothing.
     if (row.stageId === "pm-read") {
       deleteStageReceipt(db, input.runId, input.taskId, row.stageId);
-      recordStage(db, { runId: input.runId, taskId: input.taskId, stageId: "pm-read", state: "skipped", threadId: null, input: row.input ?? "", reason: "helper lost on reload" });
+      recordStage(db, { runId: input.runId, taskId: input.taskId, stageId: "pm-read", state: "skipped", threadId: null, input: getTaskPlan(db, input.taskId) ?? "", reason: "helper lost on reload" });
     } else deleteStageReceipt(db, input.runId, input.taskId, row.stageId);
   }
 }
