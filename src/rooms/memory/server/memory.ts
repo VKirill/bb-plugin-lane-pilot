@@ -7,7 +7,7 @@ import { appendAcceptedFact, claimStageSpawn, getRun, getRunSettingsScopes, getT
 import { shouldTriggerProjectLife } from "../../project-life";
 import { coreShelf, dropMemoryIndexes, memoryEntrySupported, pathsNamed, retireStaleCuratorClaims, storeMemoryRecordsKeepingOverflow, memoryEntrySalience } from "@lane-pilot/memory-core";
 import { applyScopeMigration } from "../../../../scripts/memory-scope-dry-run";
-import { projectUsesSections, resolveProjectKind, sharedScope, UNASSIGNED_SCOPE } from "@lane-pilot/memory-core";
+import { projectUsesSections, resolveProjectKind, sharedScope } from "@lane-pilot/memory-core";
 import { bbServiceTier, writerExecutionSelection } from "@lane-pilot/models";
 import { sha256 } from "../../tasks";
 import { memoryMaintenancePrompt, memoryRecordId, parseMemoryCandidates, parseMemorySettings } from "../memory";
@@ -166,7 +166,7 @@ export function createMemoryStage(ctx: ServerCore, services: Services) {
       // M7: in an umbrella a project-level write is not global; a batch fully marked shared keeps a project scope with the reason inside.
       if(!scope.length&&resolveProjectKind(snapshot.settings.projectKind,projectUsesSections(db,args.projectId))==="umbrella"&&entries.length&&entries.every((entry)=>entry.concepts.some((concept)=>/^shared/.test(concept))))
         scope=sharedScope(entries.flatMap((entry)=>entry.concepts).find((concept)=>/^shared:/.test(concept))?.split(":")[1]);
-      else if(!scope.length&&entries.length&&resolveProjectKind(snapshot.settings.projectKind,projectUsesSections(db,args.projectId))==="umbrella") scope=[...UNASSIGNED_SCOPE];
+      else if(!scope.length&&entries.length&&resolveProjectKind(snapshot.settings.projectKind,projectUsesSections(db,args.projectId))==="umbrella") scope=sharedScope("root");
       const records=storeMemoryRecordsKeepingOverflow(db,{projectId:args.projectId,personalBot:snapshot.settings.personalBot,audience:snapshot.settings.audience,sourceSha256:snapshot.acceptanceSha256,
         entries,coreBudget:snapshot.settings.coreBudget,noteBudget:snapshot.settings.noteBudget,indexBudget:snapshot.settings.indexBudget,scope,readFile,originTaskId:args.taskId});
       // Notes that now disagree with an active one are held, both, until a person settles it (memory-conflicts.ts); a failure here never loses the write.

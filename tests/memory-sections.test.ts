@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { openDatabase } from "../src/rooms/storage/database";
+import { createRun, openDatabase } from "../src/rooms/storage/database";
+import { sessionMemoryRpc } from "../src/rooms/memory/server/session-memory";
+import type { ServerCore } from "../src/rooms/core/server/core";
+import type { Services } from "../src/rooms/core/server/services";
 import { isSharedScope, resolveProjectKind, searchMemoryRecords, sharedScope, storeMemoryRecords } from "../packages/memory-core/src";
 
 const setup = (scope: string[], content: string) => {

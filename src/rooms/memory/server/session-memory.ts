@@ -38,7 +38,9 @@ export function sessionMemoryRpc(ctx: ServerCore, services: Services) {
         const result = storeMemoryRecordsKeepingOverflow(db, { projectId, personalBot: settings.personalBot, audience: "subagent",
           sourceSha256: sha256Hex(`session:${source ?? ""}`), entries, scope: chain?.length ? chain
             : resolveProjectKind(settings.projectKind, projectUsesSections(db, projectId)) === "umbrella"
-              ? concepts?.some((concept) => /^shared/.test(concept)) ? sharedScope(concepts.find((concept) => /^shared:/.test(concept))?.split(":")[1]) : [...UNASSIGNED_SCOPE]
+              // Root work of an umbrella is project work: shared as project:root; only an undefined source is unassigned.
+              ? concepts?.some((concept) => /^shared/.test(concept)) ? sharedScope(concepts.find((concept) => /^shared:/.test(concept))?.split(":")[1])
+                : source ? sharedScope("root") : [...UNASSIGNED_SCOPE]
               : [],
           // One CLI session is one voice: its note reaches writers once a second source states it or a day has passed.
           trust: "observed", origin: "session",
