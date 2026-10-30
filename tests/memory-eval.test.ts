@@ -164,6 +164,16 @@ describe("a run", () => {
     ], { owns_paths: ["apps/web/zone1/panel1.vue"], read_first: [] });
     expect(picks.map((item) => item.id)).toEqual(["best", "used"]);
   });
+
+  it("skips a near-duplicate so a different note can take a slot", () => {
+    const picks = writerMemoryPicks([
+      { id: "a", content: "src/rooms widget layout uses the shared panel grid for the settings window", concepts: ["widget", "layout", "panel"] },
+      { id: "dup", content: "src/rooms widget layout uses the shared panel grid for the settings window again", concepts: ["widget", "layout", "panel"] },
+      { id: "other", content: "src/rooms stores the widget token in settings.ts and nowhere else", concepts: ["token", "settings"] },
+      { id: "core", content: "Writers commit through the worktree only", concepts: ["git"], kind: "core" },
+    ], { owns_paths: ["src/rooms/widget.ts"], read_first: [] });
+    expect(picks.map((item) => item.id)).toEqual(["a", "other", "core"]);
+  });
 });
 
 describe("the extract and the command", () => {
