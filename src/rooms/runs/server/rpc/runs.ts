@@ -45,6 +45,16 @@ export function runsRpc(ctx: ServerCore, services: Services) {
       const label = agentPickerLabel({ id: record.agentId, description }, t);
       return { token: record.token, label, agentId: record.agentId, profileMode: record.profileMode, cliAgentsCollision: null };
     },
+    // threadId → its LP role from the thread's plugin metadata (the sidebar row mark; empty for threads that are not Lane Pilot's).
+    helper_thread_labels: async ({ threadIds }) => {
+      const labels: Record<string, string> = {};
+      await Promise.all((threadIds as string[]).map(async (threadId) => {
+        const meta = await bb.sdk.threads.getPluginMetadata({ threadId }).catch(() => null);
+        const role = meta && typeof meta === "object" ? (meta as Record<string, unknown>).role : null;
+        if (typeof role === "string" && role) labels[threadId] = role;
+      }));
+      return { labels };
+    },
     // The PM chat's helpers that are still working: writers, specialists, the browser check, council seats, critics.
     list_helper_threads: async ({ threadId }) => {
       // A long PM chat has hundreds of finished helpers (SelfyStudio: 335); one page of 50 held old ones only, so a
@@ -347,6 +357,6 @@ export function runsRpc(ctx: ServerCore, services: Services) {
       return { ok: true, state: "queued", attemptId: nextId, reason: null };
     },
     resume_runs: ({ projectId }) => services.resumeOrphans(projectId),
-  } satisfies Pick<PluginRpcHandlers<typeof rpcContract>, "finish_run" | "activate_pm" | "native_install_start" | "native_install_status" | "prepare_native_session" | "list_helper_threads" | "task_board" | "thread_live" | "task_card" | "get_run_card" | "native_thread" | "activation_context" | "cancel_attempt" | "pause_run" | "resume_run" | "halt_run" | "retry_attempt" | "resume_runs">;
+  } satisfies Pick<PluginRpcHandlers<typeof rpcContract>, "finish_run" | "activate_pm" | "native_install_start" | "native_install_status" | "prepare_native_session" | "helper_thread_labels" | "list_helper_threads" | "task_board" | "thread_live" | "task_card" | "get_run_card" | "native_thread" | "activation_context" | "cancel_attempt" | "pause_run" | "resume_run" | "halt_run" | "retry_attempt" | "resume_runs">;
   return handlers;
 }

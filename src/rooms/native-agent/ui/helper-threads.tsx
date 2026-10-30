@@ -190,3 +190,29 @@ export function HelperThreadPanel({ threadId, params }: { threadId: string; para
     </div>
   );
 }
+
+/** threadId → the helper's short role label, for the thread-list row badge (`experimental_threadRowMetadata`'s useData). */
+export function useHelperThreadIndex(threadIds: readonly string[]): Map<string, string> {
+  const rpc = useRpc<typeof rpcContract>();
+  const [index, setIndex] = useState(new Map<string, string>());
+  const key = [...threadIds].sort().join("\0");
+  useEffect(() => {
+    let live = true;
+    const ids = key ? key.split("\0") : [];
+    const read = () => {
+      if (!ids.length) { setIndex(new Map()); return; }
+      void rpc.call("helper_thread_labels", { threadIds: ids }).then((result) => {
+        if (!live) return;
+        const next = new Map<string, string>();
+        for (const [id, role] of Object.entries(result.labels ?? {})) {
+          next.set(id, t((ROLES[role] ?? { label: "helperRole_other" as I18nKey }).label));
+        }
+        setIndex(next);
+      }).catch(() => undefined);
+    };
+    read();
+    const timer = setInterval(read, 30_000);
+    return () => { live = false; clearInterval(timer); };
+  }, [rpc, key]);
+  return index;
+}

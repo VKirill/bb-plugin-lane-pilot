@@ -8,7 +8,7 @@ import { CouncilPage } from "./src/rooms/council/ui";
 import { CockpitPage } from "./src/rooms/cockpit/ui";
 import { ComposerAgentBadge } from "./src/rooms/native-agent/ui";
 import { EnableLanePilotAction } from "./src/rooms/native-agent/ui";
-import { HELPER_PANEL_ACTION, HelperThreadPanel } from "./src/rooms/native-agent/ui";
+import { HELPER_PANEL_ACTION, HelperThreadPanel, useHelperThreadIndex } from "./src/rooms/native-agent/ui";
 import { RUN_CARD_DIRECTIVE, RunCardDirective, ThreadLive } from "./src/rooms/runs/ui";
 
 /** VK core 0.46.1-vk.5: a section of the thread's info panel (feature-tested; older cores get a panel tab instead). */
@@ -66,6 +66,22 @@ export default definePluginApp((app) => {
     infoSection.call(app.slots, { id: "lane-pilot-live", title: t("liveTitle"), component: ({ threadId }) => <ThreadLive threadId={threadId} locale={detectLocale()} /> });
   } else {
     threadActionTab({ id: "lane-pilot-live", title: t("liveTitle"), component: ({ threadId }) => <ThreadLive threadId={threadId} locale={detectLocale()} /> });
+  }
+  // A short role mark on the sidebar rows of helper threads (newer BB only; the slot is feature-tested).
+  const rowMetadata = (app.slots as unknown as { experimental_threadRowMetadata?: (registration: {
+    id: string;
+    useData: (input: { threadIds: readonly string[] }) => Map<string, string>;
+    component: ComponentType<{ thread: { id: string }; data: Map<string, string> | undefined }>;
+  }) => void }).experimental_threadRowMetadata;
+  if (typeof rowMetadata === "function") {
+    rowMetadata.call(app.slots, {
+      id: "lane-pilot-helper-role",
+      useData: ({ threadIds }) => useHelperThreadIndex(threadIds),
+      component: ({ thread, data }) => {
+        const role = data?.get(thread.id);
+        return role ? <span className="rounded bg-muted px-1 text-[10px] leading-4 text-muted-foreground" title={t("helperPanelTitle")}>{role}</span> : null;
+      },
+    });
   }
   // «Lane Pilot helpers» in every thread's actions menu, opening this chat's helper tab (newer BB only; the slot is feature-tested).
   const threadAction = (app.slots as unknown as { experimental_threadAction?: (registration: {

@@ -170,4 +170,9 @@ export const rpcNative = {
       }).strict().optional(),
     }).strict(),
   },
+  /** Role labels for sidebar row marks (`experimental_threadRowMetadata`): threadId → its LP role, only for LP threads. */
+  helper_thread_labels: {
+    input: z.object({ threadIds: z.array(z.string().min(1)).min(1).max(200) }).strict(),
+    output: z.object({ labels: z.record(z.string(), z.string()) }).strict(),
+  },
 };
