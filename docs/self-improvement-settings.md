@@ -90,8 +90,8 @@ Every row is in the catalog (`scripts/ui-catalog-hand.json`, written by `scripts
 | `wall.assumed_repair_tokens` | `src/rooms/wall/config.ts:17` | `assumedRepairTokens: number` |
 | `wall.bench_subset` | `src/rooms/wall/config.ts:23` | `benchSubset: number` |
 | `wall.rerun_sandbox_only` | `src/rooms/wall/config.ts:25` | `rerunSandboxOnly: boolean` |
-| `bench.budget_tokens` | `src/rooms/bench/runner.ts:64` | `DEFAULT_BUDGET_TOKENS` |
-| `bench.budget_hours` | `src/rooms/bench/runner.ts:65` | `DEFAULT_BUDGET_HOURS` |
+| `bench.budget_tokens` | `src/rooms/bench/runner.ts:69` | `DEFAULT_BUDGET_TOKENS` |
+| `bench.budget_hours` | `src/rooms/bench/runner.ts:70` | `DEFAULT_BUDGET_HOURS` |
 | `harness.adopt_by` | `src/rooms/harness/server/harness.ts:57` | `adoptBy: AdoptBy` |
 | `harness.probe.token_budget` | `src/rooms/harness/server/harness.ts:59` | `ProbeBudget` |
 | `harness.graph_edits` | `src/rooms/harness/server/harness.ts:61` | `graphEdits` |
