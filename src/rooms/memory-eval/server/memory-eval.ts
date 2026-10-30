@@ -18,7 +18,7 @@ export type RetrieverScore = {
   /** Delivered notes that are not gold but name a folder of the solution. */
   nearby: Stat;
   /** Questions whose right answer is nothing: how often anything was delivered at all, and how often something other than core. */
-  falseHit: Stat; falseHitNonCore: Stat; offtopicFalseHit: Stat;
+  falseHit: Stat; falseHitNonCore: Stat; offtopicFalseHit: Stat; poisonHit: Stat;
   /** Mean notes delivered for a question. */
   delivered: number;
   latencyMs: { p50: number; p95: number };
@@ -54,7 +54,7 @@ const tick = () => new Promise<void>((resolve) => setImmediate(resolve));
 type Row = { question: EvalQuestion; ids: string[]; ms: number };
 
 /** Scores one retriever on one corpus. Pure over the rows, so the scoring is testable without a database. */
-export function score(retriever: Pick<Retriever, "id" | "production" | "group" | "k">, rows: readonly Row[], kindOf: (id: string) => "core" | "note", seed = 1): RetrieverScore {
+export function score(retriever: Pick<Retriever, "id" | "production" | "group" | "k">, rows: readonly Row[], kindOf: (id: string) => "core" | "note", seed = 1, poisonOf: (id: string) => boolean = () => false): RetrieverScore {
   const positives = rows.filter((row) => row.question.kind === "positive");
   const nothing = rows.filter((row) => row.question.kind !== "positive");
   const cut = (row: Row) => row.ids.slice(0, retriever.k);
@@ -72,6 +72,8 @@ export function score(retriever: Pick<Retriever, "id" | "production" | "group" |
     hit: stat(perPositive.map((item) => item.hit), seed), precision: stat(perPositive.map((item) => item.precision), seed), recall: stat(perPositive.map((item) => item.recall), seed),
     nearby: stat(perPositive.map((item) => item.nearby), seed),
     falseHit: stat(falseOf(nothing, false), seed), falseHitNonCore: stat(falseOf(nothing, true), seed),
+    // A poisoned twin in the top-k is a delivered wrong fact on the question's own subject (audit #27).
+    poisonHit: stat(positives.map((row) => cut(row).some((id) => poisonOf(id)) ? 1 : 0), seed),
     offtopicFalseHit: stat(falseOf(rows.filter((row) => row.question.kind === "offtopic"), false), seed),
     delivered: mean(rows.map((row) => cut(row).length)),
     latencyMs: { p50: quantile(rows.map((row) => row.ms), 0.5), p95: quantile(rows.map((row) => row.ms), 0.95) },
@@ -102,7 +104,8 @@ export async function runMemoryEval(data: EvalData, options: RunOptions): Promis
         await tick();
       }
       const kindOf = (id: string) => kinds.get(id) ?? "note";
-      const scores = retrievers.map((retriever) => score(retriever, rowsBy.get(retriever.id)!, kindOf, seed));
+      const poisonIds = new Set(plan.notes.filter((note) => note.poison).map((note) => note.id));
+      const scores = retrievers.map((retriever) => score(retriever, rowsBy.get(retriever.id)!, kindOf, seed, (id) => poisonIds.has(id)));
       const paired = (plainId: string, productionId: string, metric: "hit" | "falseHit") => {
         const solid = (id: string) => kindOf(id) !== "core";
         const plain = rowsBy.get(plainId)!, production = rowsBy.get(productionId)!;
@@ -144,9 +147,9 @@ export function formatEvalReport(report: EvalReport): string {
   for (const size of report.sizes) {
     const c = size.composition;
     lines.push("", `== ${size.size} notes (${size.notes}: ${c.gold} gold, ${c.fill} real filler, ${c.synthetic} padding, ${c.core} core; the largest ${report.scope === "pile" ? "pile" : "project"} holds ${c.pool}) · ${size.questions.positive} positive, ${size.questions.negative} negative, ${size.questions.offtopic} off-topic questions · ${size.questions.goldPerPositive.toFixed(1)} gold notes per positive ==`);
-    lines.push("retriever        k  hit@k          precision      recall         nearby   false-hit(any) false-hit(non-core) off-topic   delivered  p50/p95 ms");
+    lines.push("retriever        k  hit@k          precision      recall         nearby   false-hit(any) false-hit(non-core) off-topic   poison   delivered  p50/p95 ms");
     for (const row of size.scores) {
-      lines.push(`${(row.production ? row.id : row.id.startsWith("plain") ? `${row.id} (plain)` : `${row.id} (diag)`).padEnd(16)} ${row.k}  ${pct(row.hit).padEnd(14)} ${pct(row.precision).padEnd(14)} ${pct(row.recall).padEnd(14)} ${pct(row.nearby).padEnd(8)} ${pct(row.falseHit).padEnd(14)} ${pct(row.falseHitNonCore).padEnd(19)} ${pct(row.offtopicFalseHit).padEnd(11)} ${row.delivered.toFixed(1).padEnd(10)} ${row.latencyMs.p50.toFixed(1)}/${row.latencyMs.p95.toFixed(1)}`);
+      lines.push(`${(row.production ? row.id : row.id.startsWith("plain") ? `${row.id} (plain)` : `${row.id} (diag)`).padEnd(16)} ${row.k}  ${pct(row.hit).padEnd(14)} ${pct(row.precision).padEnd(14)} ${pct(row.recall).padEnd(14)} ${pct(row.nearby).padEnd(8)} ${pct(row.falseHit).padEnd(14)} ${pct(row.falseHitNonCore).padEnd(19)} ${pct(row.offtopicFalseHit).padEnd(11)} ${pct(row.poisonHit).padEnd(9)} ${row.delivered.toFixed(1).padEnd(10)} ${row.latencyMs.p50.toFixed(1)}/${row.latencyMs.p95.toFixed(1)}`);
     }
     for (const item of size.versus) lines.push(`  ${item.plain} minus ${item.production}, ${item.metric}: ${item.diff.mean >= 0 ? "+" : ""}${(item.diff.mean * 100).toFixed(0)} points [${(item.diff.lo * 100).toFixed(0)}, ${(item.diff.hi * 100).toFixed(0)}] over ${item.diff.n} questions`);
   }
