@@ -14,8 +14,8 @@ describe("bench nightly on OVH", () => {
     expect(input).toEqual({ version: "v3", arm: nightArm("0.1.389"), wait: true, hostId: OVH_BENCH_HOST, noise: true });
     expect(input.arm.startsWith("night-")).toBe(true);
     expect(input).not.toHaveProperty("limit");
-    expect(nightlyRepeats(0)).toBe(2);
-    expect(nightlyRepeats(1)).toBe(2);
+    expect(nightlyRepeats(0)).toBe(3);
+    expect(nightlyRepeats(1)).toBe(3);
     expect(nightlyRepeats(3)).toBe(3);
     const weekly = readFileSync(new URL("../../src/rooms/bench/server/weekly.ts", import.meta.url), "utf8");
     const server = readFileSync(new URL("../../server.ts", import.meta.url), "utf8");
