@@ -257,3 +257,39 @@ export function turnFailureKey(last:{ reason?:unknown; verification?:unknown }):
   const output = failed ? cleanCheckOutput(`${failed.stderr ?? ""}\n${failed.stdout ?? ""}`).slice(-4000) : "";
   return failureFingerprint(typeof last.reason === "string" ? last.reason : "", 400) + "|" + failureFingerprint(output, 4000);
 }
+
+/**
+ * The MAST-14 bucket the class maps to (arXiv agents #21–23): the six classes of `failureClass`/`failure.class` mapped
+ * onto the taxonomy's three groups — specification & system-design, inter-agent misalignment, task verification — plus
+ * `external` for the causes the taxonomy does not cover (the machine and the model provider). Recorded in receipts as
+ * `mast`, so the wall and the weekly report can count LP's failures in the community's vocabulary.
+ */
+export const MAST_OF_FAILURE: Record<string, string> = {
+  task: "verification:incomplete_work",
+  provider: "external:provider",
+  harness: "specification:system_failure",
+  infra: "external:machine",
+  merge: "misalignment:base_moved",
+  contract: "misalignment:contract_gap",
+  dirty_base: "external:dirty_base",
+  judgment: "misalignment:owner_decision",
+  budget: "specification:budget",
+  limit: "external:provider_limit",
+  reassign: "misalignment:reassigned",
+  verification_timeout: "external:check_timeout",
+};
+
+/**
+ * C6: the intervention a failure class gets instead of the same retry again. `sameClassStreak` is how many attempts of
+ * this task in a row ended in this class (the current one included). Classes that already have a dedicated path keep it
+ * (park, free redo); `task` narrows the brief on a streak instead of spending a third identical attempt, and provider
+ * faults move the task to the next writer immediately — the model cannot fix its own outage.
+ */
+export type FailureIntervention = "same_retry_remark" | "next_writer" | "narrow_brief" | "park" | "free_redo";
+export function failureIntervention(cls: FailureClass, sameClassStreak: number): FailureIntervention {
+  if (cls === "merge" || cls === "reassign") return "free_redo";
+  if (cls === "provider" || cls === "limit") return "next_writer";
+  if (cls === "task" && sameClassStreak >= 2) return "narrow_brief";
+  if (cls === "harness" || cls === "infra" || cls === "dirty_base" || cls === "contract" || cls === "judgment" || cls === "budget") return "park";
+  return "same_retry_remark";
+}

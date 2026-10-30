@@ -1,4 +1,5 @@
 import type { FailureClass } from "./failure-class";
+import { MAST_OF_FAILURE } from "./failure-class";
 import { choice, choiceOf, defineJudgment } from "@lane-pilot/jev";
 
 /**
@@ -15,7 +16,7 @@ export const JUDGED_CLASSES = ["task", "provider", "harness", "infra", "merge", 
 export type JudgedClass = (typeof JUDGED_CLASSES)[number];
 
 export type FailureClassInput = { state: string; reason: string };
-export type FailureClassDecision = { cls: FailureClass };
+export type FailureClassDecision = { cls: FailureClass; /** The MAST-14 bucket the class maps to (receipts carry it as part of the decision). */ mast: string };
 
 const clip = (text: string, max: number): string => (text.length > max ? `${text.slice(0, max - 1)}…` : text);
 
@@ -44,10 +45,10 @@ export const failureClassJudgment = defineJudgment<FailureClassInput, FailureCla
   },
   decide(answers, t) {
     const pick = choiceOf(answers, "side");
-    if (!pick || pick.p < t.min_p! || pick.margin < t.min_margin!) return { decision: { cls: "task" } };
+    if (!pick || pick.p < t.min_p! || pick.margin < t.min_margin!) return { decision: { cls: "task", mast: MAST_OF_FAILURE.task } };
     const cls = (JUDGED_CLASSES as readonly string[]).includes(pick.top) ? pick.top as JudgedClass : "task";
-    return { decision: { cls } };
+    return { decision: { cls, mast: MAST_OF_FAILURE[cls] ?? "external:unknown" } };
   },
-  fallback: () => ({ cls: "task" }),
+  fallback: () => ({ cls: "task", mast: MAST_OF_FAILURE.task }),
   describe: (decision) => decision.cls,
 });

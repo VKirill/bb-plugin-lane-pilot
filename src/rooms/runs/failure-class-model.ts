@@ -1,6 +1,6 @@
 import type Database from "better-sqlite3";
 import { classifyFailure, type FailureClass } from "./failure-class";
-import { failureClassJudgment, FAILURE_CLASS_ID } from "./failure-class-judgment";
+import { failureClassJudgment, FAILURE_CLASS_ID, type FailureClassDecision } from "./failure-class-judgment";
 import { logFindJudgment } from "@lane-pilot/jev/judgments/log-find";
 import { recordOutcome, type Jev, type JevSettings } from "@lane-pilot/jev";
 import { INVOICE_CHECK_ID } from "@lane-pilot/jev/judgments/invoice-check";
@@ -125,6 +125,42 @@ export async function judgedFailureClass(deps: JudgedFailureDeps, state: string,
     const judged = pointed ? `${state}
 pointed line: ${pointed}` : state;
     const verdict = await instance.judge(failureClassJudgment, { state: judged, reason }, { projectId: deps.projectId, runId: deps.runId, subject: subject ?? "attempt", settings });
-    return verdict.by === "jev" ? verdict.decision.cls : rules.cls;
+    if (verdict.by === "jev") return verdict.decision.cls;
+    // Shadow receipts that proved themselves go live: the labeled outcomes reached the gate, so the class Jev recorded wins.
+    if (verdict.by === "fallback" && verdict.shadow?.decision && deps.db && failureClassLive(deps.db)) return (verdict.shadow.decision as FailureClassDecision).cls;
+    return rules.cls;
   } catch { return rules.cls; }
+}
+
+let gateCheckedAt = 0, gateLive = false;
+
+/**
+ * The shadow→live gate for `failure.class`: its own receipts vote. With 10+ labeled outcomes (the sweeps above write
+ * agree/disagree from the run's terminal state) and 75%+ agreement the judgment decides like an active one even in shadow
+ * mode; below that the rules' class is used and `failureClassReport` says what is missing. Checked once a minute.
+ */
+export function failureClassLive(db: Database.Database): boolean {
+  if (Date.now() - gateCheckedAt < 60_000) return gateLive;
+  gateCheckedAt = Date.now();
+  const rows = db.prepare(`SELECT outcome FROM lane_pilot_jev_receipt WHERE judgment=? AND status='ok' AND outcome IS NOT NULL AND decision IS NOT NULL`).all(FAILURE_CLASS_ID) as Array<{ outcome: string }>;
+  const agree = rows.filter((row) => row.outcome.startsWith("agree")).length;
+  const disagree = rows.filter((row) => row.outcome.startsWith("disagree")).length;
+  gateLive = agree + disagree >= 10 && agree / (agree + disagree) >= 0.75;
+  return gateLive;
+}
+
+/** Why `failure.class` is or is not live: the labeled sample it would need, as the `jev failure` report prints it. */
+export function failureClassReport(db: Database.Database): { calls: number; labeled: number; agree: number; disagree: number; accuracy: number | null; live: boolean; reason: string } {
+  const calls = (db.prepare(`SELECT COUNT(*) AS n FROM lane_pilot_jev_receipt WHERE judgment=?`).get(FAILURE_CLASS_ID) as { n: number }).n;
+  const rows = db.prepare(`SELECT outcome FROM lane_pilot_jev_receipt WHERE judgment=? AND status='ok' AND outcome IS NOT NULL AND decision IS NOT NULL`).all(FAILURE_CLASS_ID) as Array<{ outcome: string }>;
+  const agree = rows.filter((row) => row.outcome.startsWith("agree")).length;
+  const disagree = rows.filter((row) => row.outcome.startsWith("disagree")).length;
+  const labeled = agree + disagree;
+  const accuracy = labeled ? agree / labeled : null;
+  const live = labeled >= 10 && accuracy !== null && accuracy >= 0.75;
+  const reason = live ? "gate: enough labeled outcomes and 75% agreement"
+    : calls === 0 ? "never called yet — shadow judgments collect labels as attempts fail"
+    : labeled < 10 ? `only ${labeled} labeled outcomes of the 10 needed; the shadow calls keep collecting`
+    : `accuracy ${Math.round((accuracy ?? 0) * 100)}% is under the 75% gate — stays shadow`;
+  return { calls, labeled, agree, disagree, accuracy, live, reason };
 }
