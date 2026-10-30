@@ -100,7 +100,12 @@ export function installThreadSignals(bb: BbPluginApi, fallbackMs = SIGNAL_FALLBA
     });
   };
   try {
-    listen("thread.idle");
+    // On VK cores the idle event names the turn it followed: a nested (sub-agent) turn ending does not end the
+    // parent's wait, so it is filtered out. Upstream events carry no flag and notify as before.
+    listen("thread.idle", (payload) => {
+      const lastTurn = Reflect.get(payload as object, "experimental_vkLastTurn");
+      return !(lastTurn && typeof lastTurn === "object" && Reflect.get(lastTurn, "isSubAgent") === true);
+    });
     listen("thread.failed");
     listen("thread.archived");
     listen("thread.deleted");

@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { ThreadChat, useBbContext, useBbNavigate, useRpc } from "@get-bb/plugin-sdk/app";
-import { useLpRealtime } from "../../ui-shell/ui";
+import { useLpRealtime, useLpRpcQuery, useOpenThreadPanel } from "../../ui-shell/ui";
 import type { rpcContract } from "../../contracts";
 import { t, type I18nKey } from "@lane-pilot/i18n";
 import { Icon, type IconName } from "@lane-pilot/ui-kit";
@@ -59,40 +59,22 @@ export function helperHint(row: HelperThread): string {
  * started, finished or failed, a task queued); the slow poll only catches a signal that never arrived.
  */
 export function useHelperThreads(threadId: string | null): HelperThreadsResult {
-  const rpc = useRpc<typeof rpcContract>();
   const projectId = useBbContext().projectId;
-  const [data, setData] = useState<HelperThreadsResult>({ threads: [], queued: [] });
   const readNow = useRef<() => void>(() => undefined);
   // A signal names the PM chat it concerns; another chat's helpers are not this badge's business.
   const pollMs = useLpRealtime(projectId, ["helpers"], (signal) => { if (!signal?.threadId || signal.threadId === threadId) readNow.current(); });
-  useEffect(() => {
-    if (!threadId) { setData({ threads: [], queued: [] }); return; }
-    let alive = true;
-    let inflight = false;
-    let again = false;
-    const read = () => {
-      if (inflight) { again = true; return; }
-      inflight = true;
-      void rpc.call("list_helper_threads", { threadId }).then((result) => {
-        if (alive) setData({ threads: result.threads, queued: result.queued ?? [], ...(result.graph ? { graph: result.graph } : {}) });
-      }).catch(() => undefined).finally(() => {
-        inflight = false;
-        if (alive && again) { again = false; read(); }
-      });
-    };
-    readNow.current = read;
-    read();
-    const timer = setInterval(read, pollMs);
-    return () => { alive = false; clearInterval(timer); readNow.current = () => undefined; };
-  }, [rpc, threadId, pollMs]);
-  return data;
+  const query = useLpRpcQuery("list_helper_threads", threadId ? { threadId } : null, { pollMs, enabled: !!threadId });
+  readNow.current = () => { void query.refetch(); };
+  const result = query.data as { threads?: HelperThread[]; queued?: string[]; graph?: TaskGraphData } | undefined;
+  return { threads: result?.threads ?? [], queued: result?.queued ?? [], ...(result?.graph ? { graph: result.graph } : {}) };
 }
 
 /** Opens a helper in the right-hand thread panel; where the surface has none (a phone), goes to the thread. */
 export function useOpenHelper() {
   const navigate = useBbNavigate();
+  const openPanel = useOpenThreadPanel();
   return (row: HelperThread) => {
-    const opened = navigate.openThreadPanel({ actionId: HELPER_PANEL_ACTION, title: row.title.slice(0, 40), params: { threadId: row.id } });
+    const opened = openPanel({ actionId: HELPER_PANEL_ACTION, title: row.title.slice(0, 40), params: { threadId: row.id } });
     if (!opened) navigate.toThread(row.id);
   };
 }
@@ -104,7 +86,7 @@ export function useOpenHelper() {
  */
 export function HelperChips({ threads, queued, frame }: { threads: HelperThread[]; queued?: string[]; frame?: CSSProperties }) {
   const open = useOpenHelper();
-  const navigate = useBbNavigate();
+  const openPanel = useOpenThreadPanel();
   const queuedCount = queued?.length ?? 0;
   if (!threads.length && !queuedCount) return null;
   const shown = threads.slice(0, 3);
@@ -138,7 +120,7 @@ export function HelperChips({ threads, queued, frame }: { threads: HelperThread[
       })}
       {rest > 0 ? (
         <button type="button" data-testid="helper-chips-more" aria-label={t("helperMore").replace("{n}", String(rest))}
-          onClick={() => navigate.openThreadPanel({ actionId: HELPER_PANEL_ACTION, title: t("helperPanelTitle"), params: {} })}
+          onClick={() => openPanel({ actionId: HELPER_PANEL_ACTION, title: t("helperPanelTitle"), params: {} })}
           className="inline-flex h-5 cursor-pointer items-center px-1.5 text-xs leading-none text-muted-foreground hover:text-foreground"
           style={{ ...frame, borderRadius: "0.375rem" }}>+{rest}</button>
       ) : null}
@@ -148,7 +130,7 @@ export function HelperChips({ threads, queued, frame }: { threads: HelperThread[
           data-testid="helper-chip-queue"
           title={`Задачи в очереди: ${queued?.join(", ")}`}
           aria-label={`В очереди: ${queuedCount}`}
-          onClick={() => navigate.openThreadPanel({ actionId: HELPER_PANEL_ACTION, title: t("helperPanelTitle"), params: {} })}
+          onClick={() => openPanel({ actionId: HELPER_PANEL_ACTION, title: t("helperPanelTitle"), params: {} })}
           className="inline-flex h-5 cursor-pointer items-center gap-1 px-1.5 text-xs leading-none text-muted-foreground hover:text-foreground"
           style={{ ...frame, borderRadius: "0.375rem" }}
         >
@@ -188,4 +170,17 @@ export function HelperThreadPanel({ threadId, params }: { threadId: string; para
       ))}
     </div>
   );
+}
+
+/** threadId → the helper's short role label, for the thread-list row badge (`experimental_threadRowMetadata`'s useData). */
+export function useHelperThreadIndex(threadIds: readonly string[]): Map<string, string> {
+  const ids = useMemo(() => [...threadIds].sort(), [threadIds.join("\0")]);
+  const query = useLpRpcQuery("helper_thread_labels", { threadIds: ids }, { pollMs: 30_000, enabled: ids.length > 0 });
+  return useMemo(() => {
+    const index = new Map<string, string>();
+    for (const [id, role] of Object.entries((query.data as { labels?: Record<string, string> } | undefined)?.labels ?? {})) {
+      index.set(id, t((ROLES[role] ?? { label: "helperRole_other" as I18nKey }).label));
+    }
+    return index;
+  }, [query.data]);
 }

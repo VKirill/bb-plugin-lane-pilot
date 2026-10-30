@@ -5,6 +5,7 @@ import { t, type I18nKey } from "@lane-pilot/i18n";
 import { Button } from "@lane-pilot/ui-kit";
 import type { RunView, ScheduleView } from "../views";
 import { HELPER_PANEL_ACTION } from "../../native-agent/ui";
+import { useOpenThreadPanel } from "../../ui-shell/ui";
 import { Surface, SurfaceBody, SurfaceHeader } from "@lane-pilot/ui-kit";
 import { RunPill, errorText, fill, fmtTime } from "./schedule-parts";
 import { usdText } from "./schedule-who";
@@ -16,8 +17,9 @@ const LIVE = new Set<RunView["status"]>(["queued", "running", "waiting"]);
 /** Opens an errand's thread beside the page, as every helper thread opens; a page without a side panel navigates to it. */
 export function useOpenRunThread() {
   const navigate = useBbNavigate();
+  const openPanel = useOpenThreadPanel();
   return (threadId: string, title: string) => {
-    if (!navigate.openThreadPanel({ actionId: HELPER_PANEL_ACTION, title: title.slice(0, 40), params: { threadId } })) navigate.toThread(threadId);
+    if (!openPanel({ actionId: HELPER_PANEL_ACTION, title: title.slice(0, 40), params: { threadId } })) navigate.toThread(threadId);
   };
 }
 

@@ -53,4 +53,48 @@ describe("code critic packet", () => {
       { runId:"run1", taskId:"t2", hostId:"h1", cwd:"/other", paths:["a.ts"] });
     expect(none).toEqual({});
   });
+
+  it("reads the diff through the bb--git plugin's files and keyed patches when callRpc is there", async () => {
+    const { bb } = createFakePluginHost({ pluginId:"lane-pilot" });
+    const db = openDatabase(bb);
+    createRun(db, "run1", "projA");
+    createTask(db, { id:"t1", runId:"run1", kind:"bb", contract:{ id:"t1", project_cwd:"/wt/t1" } as never });
+    createAttempt(db, { id:"a1", runId:"run1", taskId:"t1" });
+    db.prepare("UPDATE lane_pilot_attempt SET workspace_path='/wt/t1', environment_id='env_attempt' WHERE id='a1'").run();
+    const calls: Array<{ method:string; input:unknown }> = [];
+    const fake = { sdk:{
+      environments:{ list:async () => [{ id:"env_folder" }] },
+      plugins:{ callRpc:async (args:{ pluginId:string; method:string; input?:unknown }) => {
+        calls.push({ method:args.method, input:args.input });
+        if (args.method === "files") return { outcome:"available", files:[
+          { path:"src/big.ts", revision:"r1" }, { path:"src/huge.ts", revision:"r2" }, { path:"src/gone.ts", revision:"r3" }],
+          initialPatches:[{ path:"src/big.ts", patch, truncated:false }] };
+        if (args.method === "patches") {
+          const keys = (args.input as { keys:string[] }).keys;
+          expect(keys).toEqual([
+            JSON.stringify(["env_attempt", { type:"uncommitted" }, false, "src/huge.ts", "r2"]),
+            JSON.stringify(["env_attempt", { type:"uncommitted" }, false, "src/gone.ts", "r3"]),
+          ]);
+          return Object.fromEntries(keys.map((key, index) => [key, { outcome:"available",
+            patch:{ path:["src/huge.ts", "src/gone.ts"][index], patch:index === 0 ? "cut" : "gone-diff", truncated:index === 0 } }]));
+        }
+        throw new Error(`unexpected ${args.method}`);
+      } },
+    } };
+    const patches = await candidatePatches(fake, db, { runId:"run1", taskId:"t1", hostId:"h1", cwd:"/wt/t1", paths:["src/big.ts", "src/huge.ts", "src/gone.ts", "src/unchanged.ts"] });
+    expect(patches).toEqual({ "src/big.ts": patch, "src/gone.ts": "gone-diff" });
+    expect(calls.map((call) => call.method)).toEqual(["files", "patches"]);
+  });
+
+  it("returns nothing when bb--git reports the environment cannot be diffed", async () => {
+    const { bb } = createFakePluginHost({ pluginId:"lane-pilot" });
+    const db = openDatabase(bb);
+    createRun(db, "run1", "projA");
+    createTask(db, { id:"t1", runId:"run1", kind:"bb", contract:{ id:"t1", project_cwd:"/wt/t1" } as never });
+    const fake = { sdk:{
+      environments:{ list:async () => [{ id:"env_folder" }] },
+      plugins:{ callRpc:async () => ({ outcome:"unavailable", failure:{ code:"not_git_repo", workspacePath:"/wt/t1", message:"no repo" } }) },
+    } };
+    expect(await candidatePatches(fake, db, { runId:"run1", taskId:"t1", hostId:"h1", cwd:"/wt/t1", paths:["src/big.ts"] })).toEqual({});
+  });
 });

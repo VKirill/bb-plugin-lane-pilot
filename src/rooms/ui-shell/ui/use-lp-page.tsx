@@ -31,6 +31,7 @@ import { DOCS_DEFAULT_SELECTION } from "../../docs/docs-defaults";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
 import { writerFallbackKeys, type WriterFallbackSlot } from "../../writer/writer-fallbacks";
 import { BASIC_SETTING_KEYS, CODE_CRITIQUE_EFFORT, CODE_CRITIQUE_MODEL, CODE_CRITIQUE_PROVIDER, CODE_CRITIQUE_SERVICE_TIER, COUNCIL_SEATS, CouncilDetail, CouncilRow, DOCS_EFFORT, DOCS_MODEL, DOCS_PROVIDER, DOCS_SERVICE_TIER, JEV_KEYS, MEMORY_EFFORT, MEMORY_MODEL, MEMORY_PROVIDER, MEMORY_SERVICE_TIER, NIGHT_EFFORT, NIGHT_MODEL, NIGHT_PROVIDER, NIGHT_SERVICE_TIER, ONBOARDING_EFFORT, ONBOARDING_MODEL, ONBOARDING_PROVIDER, ONBOARDING_SERVICE_TIER, PLAN_CRITIQUE_EFFORT, PLAN_CRITIQUE_MODEL, PLAN_CRITIQUE_PROVIDER, PLAN_CRITIQUE_SERVICE_TIER, PM_READ_EFFORT, PM_READ_MODEL, PM_READ_PROVIDER, PM_READ_SERVICE_TIER, PROJECT_LIFE_EFFORT, PROJECT_LIFE_MODEL, PROJECT_LIFE_PROVIDER, PROJECT_LIFE_SERVICE_TIER, RUNS_PAGE, RoutingStats, SPECIALIST_EFFORT, SPECIALIST_MODEL, SPECIALIST_PROVIDER, SPECIALIST_SERVICE_TIER, ScreenPayload, StackDetectResult, WRITER_EFFORT, WRITER_MODEL, WRITER_PROVIDER, WRITER_SERVICE_TIER, diagnosticRows, extraSettingRows } from "./page-model";
+import { useLpPoll } from "./use-lp-rpc-query";
 
 export function useLanePilotPage({ subPath = "", scope = "projects" }: { subPath?: string; scope?: "projects" | "globals" | "agents" | "tokens" | "workflows" | "schedule" | "tasks" | "waiting" | "improvement" }) {
   const [activeScope, setActiveScope] = useState(scope);
@@ -236,11 +237,7 @@ export function useLanePilotPage({ subPath = "", scope = "projects" }: { subPath
   }, [projectId, isGlobal, selectedSectionId, rpc]);
   const runsPollMs = useLpRealtime(isGlobal || !projectScreenActive ? null : projectId, ["helpers"], () => { void refreshRuns(); });
   const runsVisible = projectScreenActive && (tab === "overview" || (tab === "runs" && (segments.runs === "active" || segments.runs === "history")));
-  useEffect(() => {
-    if (!runsVisible || !projectId || isGlobal) return;
-    const timer = setInterval(() => { void refreshRuns(); }, runsPollMs);
-    return () => clearInterval(timer);
-  }, [runsVisible, projectId, isGlobal, refreshRuns, runsPollMs]);
+  useLpPoll(runsVisible && projectId && !isGlobal ? runsPollMs : undefined, () => { void refreshRuns(); });
 
   useEffect(() => {
     setSelectedSectionId(null);
@@ -436,8 +433,8 @@ export function useLanePilotPage({ subPath = "", scope = "projects" }: { subPath
       ...(selectedBinding ? { selectedBinding } : {}),
       providerId: selection.providerId,
       model: selection.model,
-      reasoningLevel: selection.reasoningLevel,
-      serviceTier: selection.serviceTier ?? null,
+      reasoningLevel: selection.reasoningLevel as "none" | "low" | "medium" | "high" | "xhigh" | "ultracode" | "max" | "ultra",
+      serviceTier: (selection.serviceTier ?? null) as "default" | "fast" | null,
       expectedVersions: {
         "writer.provider": snapshot.versions[WRITER_PROVIDER] ?? 0,
         "writer.model": snapshot.versions[WRITER_MODEL] ?? 0,
@@ -560,7 +557,7 @@ export function useLanePilotPage({ subPath = "", scope = "projects" }: { subPath
     if (!projectId || !snapshot) return false;
     const keys = [`council.${seat}.provider`, `council.${seat}.model`, `council.${seat}.reasoning_effort`];
     return settleSelection(await rpc.call("save_council_seat_selection", { ...scoped,
-      projectId, seat, providerId: selection.providerId, model: selection.model, reasoningLevel: selection.reasoningLevel,
+      projectId, seat, providerId: selection.providerId, model: selection.model, reasoningLevel: selection.reasoningLevel as "none" | "low" | "medium" | "high" | "xhigh" | "ultracode" | "max" | "ultra",
       expectedVersions: Object.fromEntries(keys.map((key) => [key, snapshot.versions[key] ?? 0])),
     }));
   });
@@ -569,7 +566,7 @@ export function useLanePilotPage({ subPath = "", scope = "projects" }: { subPath
     if (!projectId || !snapshot) return false;
     const keys = writerFallbackKeys(slot);
     return settleSelection(await rpc.call("save_writer_fallback_selection", { ...scoped, projectId, slot,
-      ...(selection ? { providerId: selection.providerId, model: selection.model, reasoningLevel: selection.reasoningLevel } : { off: true }),
+      ...(selection ? { providerId: selection.providerId, model: selection.model, reasoningLevel: selection.reasoningLevel as "none" | "low" | "medium" | "high" | "xhigh" | "ultracode" | "max" | "ultra" } : { off: true }),
       expectedVersions: Object.fromEntries(Object.values(keys).map((key) => [key, snapshot.versions[key] ?? 0])),
     }));
   });

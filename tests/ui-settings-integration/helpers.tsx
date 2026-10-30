@@ -20,9 +20,9 @@ export function installPickerTestDriver() {
   installTestPluginRuntime();
   const host = globalThis as typeof globalThis & { __bbPluginRuntime?: { pluginSdkApp: Record<string, unknown> } };
   const sdk = host.__bbPluginRuntime!.pluginSdkApp;
-  host.__bbPluginRuntime!.pluginSdkApp = {
-    ...sdk,
-    experimental_ProviderModelPicker: (props: { value: PickerValue; onChange: (next: PickerValue) => void }) => React.createElement(
+  // Mutate the shared testPluginSdkApp: installTestPluginRuntime re-points pluginSdkApp at it
+  // during loadPluginApp/renderSlot, which would drop a replaced object (SDK 0.6.104).
+  sdk.experimental_ProviderModelPicker = (props: { value: PickerValue; onChange: (next: PickerValue) => void }) => React.createElement(
       "div",
       {
         "data-testid": "bb-provider-model-picker",
@@ -36,8 +36,7 @@ export function installPickerTestDriver() {
           node.__pickerOnChange = props.onChange;
         },
       },
-    ),
-  };
+    );
 }
 
 export const providers = ["codex", "qwen", "claude-code", "acp-cursor"].map((id) => ({

@@ -3,6 +3,7 @@ import { useBbNavigate, useRpc, type PluginMessageDirectiveProps } from "@get-bb
 import type { rpcContract } from "../../contracts";
 import { t, type I18nKey } from "@lane-pilot/i18n";
 import { HELPER_PANEL_ACTION } from "../../native-agent/ui";
+import { useOpenThreadPanel } from "../../ui-shell/ui";
 
 /** The directive a PM message uses for its run: `::lane-run{id="lprun_…"}` (the PM's per-run instructions name it). */
 export const RUN_CARD_DIRECTIVE = "lane-run";
@@ -41,6 +42,7 @@ const ROWS_SHOWN = 5;
 export function RunCardDirective({ attributes, source }: PluginMessageDirectiveProps) {
   const rpc = useRpc<typeof rpcContract>();
   const navigate = useBbNavigate();
+  const openPanel = useOpenThreadPanel();
   const runId = attributes.id ?? "";
   const [card, setCardState] = useState<RunCard | "missing" | null>(() => lastCard.get(runId) ?? null);
   const [expanded, setExpanded] = useState(false);
@@ -87,7 +89,7 @@ export function RunCardDirective({ attributes, source }: PluginMessageDirectiveP
             {task.threadId ? (
               <button type="button" className="shrink-0 text-xs underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                 onClick={() => {
-                  if (!navigate.openThreadPanel({ actionId: HELPER_PANEL_ACTION, title: task.title.slice(0, 40), params: { threadId: task.threadId } })) navigate.toThread(task.threadId!);
+                  if (!openPanel({ actionId: HELPER_PANEL_ACTION, title: task.title.slice(0, 40), params: { threadId: task.threadId } })) navigate.toThread(task.threadId!);
                 }}>{t("runCardOpenWriter")}</button>
             ) : null}
             {task.checkLog ? (

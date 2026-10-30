@@ -2,16 +2,24 @@ import { definePluginApp } from "@get-bb/plugin-sdk/app";
 import "./app.css";
 import { detectLocale, t } from "@lane-pilot/i18n";
 import type { ComponentType } from "react";
+import type { JsonValue } from "@get-bb/plugin-sdk/app";
 import { LanePilotPage } from "./src/rooms/ui-shell/ui/page";
+import { useOwnerWaitingBadge } from "./src/rooms/ui-shell/ui";
 import { CouncilPage } from "./src/rooms/council/ui";
 import { CockpitPage } from "./src/rooms/cockpit/ui";
 import { ComposerAgentBadge } from "./src/rooms/native-agent/ui";
 import { EnableLanePilotAction } from "./src/rooms/native-agent/ui";
-import { HELPER_PANEL_ACTION, HelperThreadPanel } from "./src/rooms/native-agent/ui";
+import { HELPER_PANEL_ACTION, HelperThreadPanel, useHelperThreadIndex } from "./src/rooms/native-agent/ui";
 import { RUN_CARD_DIRECTIVE, RunCardDirective, ThreadLive } from "./src/rooms/runs/ui";
 
 /** VK core 0.46.1-vk.5: a section of the thread's info panel (feature-tested; older cores get a panel tab instead). */
 type VkThreadInfoSection = (registration: { id: string; title: string; component: ComponentType<{ threadId: string; projectId: string }> }) => void;
+/** The thread action tab that replaces `threadPanelAction` (feature-tested; an older BB gets the retired slot instead). */
+type ExperimentalTabSlot = (registration: {
+  id: string; title: string; icon: string; layout?: "padded" | "flush";
+  context: { kind: "thread" }; availability: "action";
+  component: ComponentType<{ threadId: string; params?: JsonValue }>;
+}) => void;
 import { OWNER_ASK_RENDERER_ID } from "./src/rooms/relay";
 import { OwnerAsk } from "./src/rooms/relay/ui";
 
@@ -22,6 +30,8 @@ export default definePluginApp((app) => {
     icon: "Workflow",
     path: "lane-pilot",
     component: ({ subPath }) => <LanePilotPage subPath={subPath} />,
+    // The owner-waiting count on the nav entry (SDK 0.6.53+); older BB simply draws no badge.
+    experimental_useBadge: useOwnerWaitingBadge,
   });
   app.slots.navPanel({
     id: "lane-pilot-council",
@@ -39,10 +49,19 @@ export default definePluginApp((app) => {
     component: ({ subPath }) => <CockpitPage subPath={subPath} />,
   });
   // A working helper (writer, specialist, browser check…) opens in the thread's side panel from its square.
-  app.slots.threadPanelAction({
+  const threadTab = (app.slots as unknown as { experimental_tab?: ExperimentalTabSlot }).experimental_tab;
+  const threadActionTab = (registration: { id: string; title: string; layout?: "padded" | "flush"; component: ComponentType<{ threadId: string; params?: JsonValue }> }) => {
+    if (typeof threadTab === "function") {
+      threadTab.call(app.slots, { ...registration, icon: "Workflow", context: { kind: "thread" }, availability: "action" });
+    } else {
+      // The retired slot: absent from new SDK types but still served on an older BB.
+      const legacy = (app.slots as unknown as { threadPanelAction?: (r: { id: string; title: string; icon: string; layout?: "padded" | "flush"; component: ComponentType<{ threadId: string; params?: JsonValue }> }) => void }).threadPanelAction;
+      legacy?.call(app.slots, { ...registration, icon: "Workflow" });
+    }
+  };
+  threadActionTab({
     id: HELPER_PANEL_ACTION,
     title: t("helperPanelTitle"),
-    icon: "Workflow",
     layout: "flush",
     component: ({ threadId, params }) => <HelperThreadPanel threadId={threadId} params={params} />,
   });
@@ -51,7 +70,41 @@ export default definePluginApp((app) => {
   if (typeof infoSection === "function") {
     infoSection.call(app.slots, { id: "lane-pilot-live", title: t("liveTitle"), component: ({ threadId }) => <ThreadLive threadId={threadId} locale={detectLocale()} /> });
   } else {
-    app.slots.threadPanelAction({ id: "lane-pilot-live", title: t("liveTitle"), icon: "Workflow", component: ({ threadId }) => <ThreadLive threadId={threadId} locale={detectLocale()} /> });
+    threadActionTab({ id: "lane-pilot-live", title: t("liveTitle"), component: ({ threadId }) => <ThreadLive threadId={threadId} locale={detectLocale()} /> });
+  }
+  // A short role mark on the sidebar rows of helper threads (newer BB only; the slot is feature-tested).
+  const rowMetadata = (app.slots as unknown as { experimental_threadRowMetadata?: (registration: {
+    id: string;
+    useData: (input: { threadIds: readonly string[] }) => Map<string, string>;
+    component: ComponentType<{ thread: { id: string }; data: Map<string, string> | undefined }>;
+  }) => void }).experimental_threadRowMetadata;
+  if (typeof rowMetadata === "function") {
+    rowMetadata.call(app.slots, {
+      id: "lane-pilot-helper-role",
+      useData: ({ threadIds }) => useHelperThreadIndex(threadIds),
+      component: ({ thread, data }) => {
+        const role = data?.get(thread.id);
+        return role ? <span className="rounded bg-muted px-1 text-[10px] leading-4 text-muted-foreground" title={t("helperPanelTitle")}>{role}</span> : null;
+      },
+    });
+  }
+  // «Lane Pilot helpers» in every thread's actions menu, opening this chat's helper tab (newer BB only; the slot is feature-tested).
+  const threadAction = (app.slots as unknown as { experimental_threadAction?: (registration: {
+    id: string; title: string; icon: string; group: string;
+    item: (input: { experimental_panel?: { openTab?: (options: { tab: { id: string; context: { kind: "thread" }; availability: "action" }; params?: JsonValue; title?: string }) => boolean } }) => { label: string; icon: string; run: () => void } | null;
+  }) => void }).experimental_threadAction;
+  if (typeof threadAction === "function") {
+    threadAction.call(app.slots, {
+      id: "lane-pilot-helpers",
+      title: t("helperPanelTitle"),
+      icon: "Workflow",
+      group: "lane-pilot",
+      item: (input) => ({
+        label: t("helperPanelTitle"),
+        icon: "Workflow",
+        run: () => { input.experimental_panel?.openTab?.({ tab: { id: HELPER_PANEL_ACTION, context: { kind: "thread" }, availability: "action" }, params: {} }); },
+      }),
+    });
   }
   // The PM's `::lane-run{id="…"}` line becomes a live card of the run's tasks.
   app.slots.messageDirective({ id: RUN_CARD_DIRECTIVE, component: RunCardDirective });

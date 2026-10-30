@@ -7,6 +7,7 @@ import { SCREENS, screenFor, type ScreenId } from "./registry";
 import { PhasesScreen, TasksScreen } from "./screens-work";
 import { MoneyScreen, TodayScreen, WorkersScreen } from "./screens-day";
 import { CoordScreen, FirstRunScreen, ForgeScreen, MemoryScreen, ShipScreen, SystemScreen } from "./screens-ops";
+import { useLpRpcQuery } from "../../ui-shell/ui";
 
 const PROJECT_KEY = "lane-pilot:cockpit:project";
 const PING_MS = 15_000;
@@ -35,15 +36,12 @@ export function CockpitPage({ subPath = "" }: { subPath?: string }) {
   const waitingCount = Array.isArray(waiting.data) ? waiting.data.length : (waiting.data as { items?: unknown[] } | null)?.items?.length ?? 0;
   const [silent, setSilent] = useState(false);
   const [signedOut, setSignedOut] = useState(false);
+  const ping = useLpRpcQuery("world_version", {}, { pollMs: PING_MS });
+  useEffect(() => { setSilent(ping.error != null); }, [ping.error]);
   useEffect(() => {
-    // Is the door silent: a light read every 15 s; the screens keep what they saw and say the hub does not answer.
-    const ping = () => void rpc.call("world_version", {}).then(() => setSilent(false), () => setSilent(true));
-    ping();
-    const timer = setInterval(ping, PING_MS);
     // Signed out: with the owner door on (core vk owner-auth), its status says whether this browser holds the owner's session.
     void fetch("/api/v1/vk/owner/status").then((answer) => (answer.ok ? answer.json() : null)).then((status: { enforced?: boolean; owner?: boolean } | null) => setSignedOut(Boolean(status?.enforced && !status.owner))).catch(() => undefined);
-    return () => clearInterval(timer);
-  }, [rpc]);
+  }, []);
   const open = (id: ScreenId) => { setRoute({ id, param: null }); navigate.toPluginPanel("lane-pilot-cockpit", { subPath: id }); };
   const meta = SCREENS.find((row) => row.id === route.id);
   return (

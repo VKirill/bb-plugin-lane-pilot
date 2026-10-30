@@ -27,7 +27,8 @@ import { CODE_CRITIC_DEFAULT_SETTING, QUALITY_MODE_SETTING, applyCodeCriticDefau
 import type { CodeCriticDefault } from "../quality-mode";
 import type { Verdict, VerdictStatus } from "@lane-pilot/workflow-engine";
 import { MAIN_ATTEMPT_LIMIT } from "../../runs";
-import { configuredSetting, spawnUsageOf, stageHelperSettings, warmSpawnUsage, zcodeBusyPeek } from "../../core/server";
+import { GIT_PLUGIN_ID, configuredSetting, gitCallRpc, gitFilesReplySchema, gitPatchKey, gitPatchesReplySchema, spawnUsageOf, stageHelperSettings, warmSpawnUsage, zcodeBusyPeek } from "../../core/server";
+import type { PluginCallRpc } from "../../core/server";
 import { fullAccessSpawn, graphStepMetadata } from "../../core/server";
 import { reviewerMemoryFor } from "../../memory/server";
 import { clearSpawnMarker } from "../../core/server";
@@ -354,19 +355,35 @@ export async function runPlanCritique(input:{bb:BbPluginApi;db:ReturnType<typeof
  * (HTTP 409 «reuse that environment instead»), so a critic of a worktree attempt runs in that environment.
  */
 /**
- * The change of each produced file as BB's own unified diff (environments.diffPatch, uncommitted) in the attempt's environment, else
- * in the BB environment at the task folder. A path BB cut or could not diff is left out: the packet then shows its file.
+ * The change of each produced file as BB's own unified diff (the Git plugin's `files` + keyed `patches`, uncommitted) in the
+ * attempt's environment, else in the BB environment at the task folder. A path BB cut or could not diff is left out: the packet
+ * then shows its file. On an old BB without `plugins.callRpc` the retired `environments.diffPatch` is the fallback.
  */
-export async function candidatePatches(bb:{ sdk:{ environments:{ list:(args:{ hostId:string; path:string }) => Promise<Array<{ id:string }>>; diffPatch:(args:{ environmentId:string; paths:string[]; target:{ type:"uncommitted" } }) => Promise<unknown> } } },
+export async function candidatePatches(bb:{ sdk:{ environments:{ list:(args:{ hostId:string; path:string }) => Promise<Array<{ id:string }>>; diffPatch?:(args:{ environmentId:string; paths:string[]; target:{ type:"uncommitted" } }) => Promise<unknown> }; plugins?:{ callRpc?:PluginCallRpc } } },
   db:ReturnType<typeof openDatabase>, input:{ runId:string; taskId:string; hostId:string; cwd:string; paths:string[] }):Promise<Record<string,string>> {
   if (!input.paths.length) return {};
   try {
     const environmentId = attemptEnvironment(db, input.runId, input.taskId, input.cwd)?.environmentId
       ?? (await bb.sdk.environments.list({ hostId:input.hostId, path:input.cwd }))[0]?.id;
     if (!environmentId) return {};
-    const result = await bb.sdk.environments.diffPatch({ environmentId, paths:input.paths, target:{ type:"uncommitted" } }) as { outcome?:string; patches?:Array<{ path:string; patch:string; truncated:boolean }> };
-    if (result.outcome !== "available") return {};
     const wanted = new Set(input.paths);
+    const callRpc = gitCallRpc(bb);
+    if (callRpc) {
+      const target = { type:"uncommitted" } as const;
+      const listing = gitFilesReplySchema.parse(await callRpc({ pluginId:GIT_PLUGIN_ID, method:"files", input:{ environmentId, target, ignoreWhitespace:false }, outputSchema:gitFilesReplySchema }));
+      if (listing.outcome !== "available") return {};
+      const byPath = new Map(listing.initialPatches.map((row) => [row.path, row]));
+      const revision = new Map(listing.files.map((row) => [row.path, row.revision]));
+      const missing = input.paths.filter((path) => !byPath.has(path) && revision.has(path));
+      for (let index = 0; index < missing.length; index += 50) {
+        const keys = missing.slice(index, index + 50).map((path) => gitPatchKey(environmentId, target, false, path, revision.get(path)!));
+        const reply = gitPatchesReplySchema.parse(await callRpc({ pluginId:GIT_PLUGIN_ID, method:"patches", input:{ keys }, outputSchema:gitPatchesReplySchema }));
+        for (const entry of Object.values(reply)) if (entry.outcome === "available") byPath.set(entry.patch.path, entry.patch);
+      }
+      return Object.fromEntries([...byPath.values()].filter((row) => wanted.has(row.path) && !row.truncated && row.patch).map((row) => [row.path, row.patch]));
+    }
+    const result = await bb.sdk.environments.diffPatch?.({ environmentId, paths:input.paths, target:{ type:"uncommitted" } }) as { outcome?:string; patches?:Array<{ path:string; patch:string; truncated:boolean }> } | undefined;
+    if (result?.outcome !== "available") return {};
     return Object.fromEntries((result.patches ?? []).filter((row) => wanted.has(row.path) && !row.truncated && row.patch).map((row) => [row.path, row.patch]));
   } catch {
     return {};

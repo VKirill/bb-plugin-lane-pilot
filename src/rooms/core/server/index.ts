@@ -14,6 +14,8 @@ export type { SpawnUsage, SpawnUsageUse } from "./spawn-model";
 export type { SpawnModelInput } from "./spawn-model";
 export { abortable, scheduleIsolated } from "./schedules";
 export { folderEnvironment, hiddenPlacement, projectFolder, projectSources } from "./standalone-place";
+export { GIT_PLUGIN_ID, gitCallRpc, gitFilesReplySchema, gitPatchEntrySchema, gitPatchKey, gitPatchesReplySchema } from "./git-reads";
+export type { PluginCallRpc } from "./git-reads";
 export type { ProjectFolder } from "./standalone-place";
 export { stageHelperSettings } from "./stage-settings";
 export type { Services } from "./services";
