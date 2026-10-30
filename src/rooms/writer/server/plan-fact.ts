@@ -5,8 +5,9 @@ import type { TaskV2 } from "../../contracts";
 import type { ServerCore } from "../../core/server";
 import { deleteStageReceipt, getRunSettingsScopes, getStageReceiptResult, getTask, getTaskGitBase, loadProjectSettings } from "../../storage";
 import { recordStage } from "../../runs/server";
-import { NO_CODE_KINDS, PLAN_FACT_RULES, blindPlanFact, diffHunksCommand, existsCommand, existsFromCommandOutput, hunksFromCommandOutput, parsePlanFact, planFactOutcome, sha256, untouchedCitations } from "../../tasks";
+import { NO_CODE_KINDS, PLAN_FACT_RULES, blindPlanFact, clipDiff, planFactJudgment, diffHunksCommand, existsCommand, existsFromCommandOutput, hunksFromCommandOutput, parsePlanFact, planFactOutcome, sha256, untouchedCitations } from "../../tasks";
 import type { ItemVerdict, PlanFactCheck, PlanFactFacts, PlanFactTable } from "../../tasks";
+import { jev } from "@lane-pilot/jev";
 
 export const PLAN_FACT_MODE_SETTING = "plan_fact.mode";
 export type PlanFactMode = "record" | "gate";
@@ -102,7 +103,22 @@ export async function runPlanFactStage(ctx: ServerCore, input: {
     else check.notChecked.push("wires: the search in the worktree could not run, so the declared wires were not checked");
   }
   if (table.status === "ok" && base === null) check.notChecked.push("line ranges: the task has no recorded base commit (a folder without git), so only the files were checked");
-  const mode = planFactMode(loadProjectSettings(db, input.projectId, getRunSettingsScopes(db, input.runId)));
+  const settings = loadProjectSettings(db, input.projectId, getRunSettingsScopes(db, input.runId));
+  const mode = planFactMode(settings);
+  // C4 shadow run: Jev reads the same acceptance items against the real diff and the check results. Its verdict is written
+  // into the receipt next to the code's and changes nothing — the data decides whether the markdown table can go.
+  let jevVerdict: Record<number, string> | null = null;
+  const instance = jev();
+  if (instance?.enabled(settings as never) && input.task.acceptance.length && base && produced.length) {
+    try {
+      const paths = produced.map((path) => `'${path.replace(/'/g, `'\''`)}'`).join(" ");
+      const diff = (await runOnHost(host, { hostId: input.hostId, cwd: input.task.project_cwd, command: `git -c core.quotepath=off diff --no-color --no-ext-diff ${base} -- ${paths}`, timeoutSec: 30 }).catch(() => null))?.stdout ?? "";
+      const verdict = await instance.judge(planFactJudgment, { acceptance: input.task.acceptance, diff: clipDiff(diff), checks: input.verification },
+        { projectId: input.projectId, runId: input.runId, subject: input.taskId, settings: settings as never });
+      const shadowDecision = verdict.by === "fallback" ? verdict.shadow?.decision : undefined;
+      jevVerdict = verdict.by === "jev" ? verdict.decision.items : (shadowDecision?.items ?? null);
+    } catch { /* the code's check stands */ }
+  }
   // In gate mode a code task that promises something must hand in a readable table: «not checked» is not «proved».
   const outcome = planFactOutcome(check, mode === "gate" && input.task.acceptance.length > 0 && !NO_CODE_KINDS.has(input.task.kind ?? ""));
   // A retry of the task reaches this stage again with a new answer: the receipt is the latest one, its earlier events stay.
@@ -110,7 +126,7 @@ export async function runPlanFactStage(ctx: ServerCore, input: {
   recordStage(db, {
     runId: input.runId, taskId: input.taskId, stageId: "plan-fact", state: outcome.state, attempt: input.attempt,
     input: JSON.stringify({ answerSha256: sha256(input.answers[0] ?? ""), acceptance: input.task.acceptance, produced, base }),
-    result: { ...check, mode, base, rules: PLAN_FACT_RULES }, reason: outcome.reason,
+    result: { ...check, mode, base, rules: PLAN_FACT_RULES, ...(jevVerdict ? { jev: jevVerdict } : {}) }, reason: outcome.reason,
   });
   return { refusal: mode === "gate" && outcome.state === "failed" ? outcome.reason : null, check, state: outcome.state };
 }
