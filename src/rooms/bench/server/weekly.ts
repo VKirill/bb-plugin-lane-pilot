@@ -1,8 +1,10 @@
+import packageJson from "../../../../package.json";
 import { scheduleIsolated, type ServerCore } from "../../core/server";
 import { loadProjectSettings } from "../../storage";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
 import type { BenchApi } from "../service";
 import { renderBaseline } from "../baseline";
+import { nightArm } from "../runner";
 
 /**
  * The comparison arena on a clock (SMA map: Comparison arena, Baseline metric bench). Every Sunday at 02:00 UTC the newest bench set runs
@@ -40,6 +42,28 @@ export function mountBenchWeekly(ctx: ServerCore, bench: () => BenchApi): void {
       }
     }
   }, { timeoutMs: 6 * 3_600_000 });
+}
+
+/** The OVH machine. A night run always lands here, even when the set's own paths point at the Mac. */
+export const OVH_BENCH_HOST = "host_rwrxyi39aw";
+
+/** The full set, on OVH, with the configured noise repeats. No task limit. */
+export function nightlyRun(version: string, pluginVersion: string) {
+  return { version, arm: nightArm(pluginVersion), wait: true as const, hostId: OVH_BENCH_HOST, noise: true as const };
+}
+
+/** Every day at 01:30 UTC the newest set runs as the night arm of this plugin version. setting bench.nightly = off stops it.
+ * Sunday also has the weekly compare at 02:00; the two arms are different and this one does not wait for that one. */
+export function mountBenchNightly(ctx: ServerCore, bench: () => BenchApi): void {
+  scheduleIsolated(ctx.bb, "bench-nightly", "30 1 * * *", async (signal) => {
+    if (ctx.isDisposed() || signal?.aborted) return;
+    if (String(loadProjectSettings(ctx.db, GLOBAL_SETTINGS_PROJECT_ID)["bench.nightly"] ?? "on") === "off") return;
+    const newest = bench().status().sort((a, b) => b.createdAt - a.createdAt)[0];
+    if (!newest) return;
+    const input = nightlyRun(newest.version, packageJson.version);
+    ctx.log(`bench-nightly: ${input.version} ${input.arm} on ${input.hostId}`);
+    await bench().run(input);
+  }, { timeoutMs: 8 * 3_600_000 });
 }
 
 /** Closes a series left `running` past its hour cap. Once at startup, then twice an hour. */
