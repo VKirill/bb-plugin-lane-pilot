@@ -1,5 +1,5 @@
 import { relative } from "node:path";
-import { getAttempt, getTask, listCheckDurations, listStageReceipts } from "../../storage";
+import { getAttempt, getTask, listCheckDurations, listStageReceipts, taskBasePath } from "../../storage";
 import type { RollbackApi, RollbackItem, RollbackTarget } from "../../rollback/server";
 import { scheduleIsolated, type ServerCore, type Services } from "../../core/server";
 import { readingFrom, readingNote } from "../../verification";
@@ -43,6 +43,9 @@ export type RegressOptions = {
   signal?: AbortSignal | undefined;
   now?: number | undefined;
 };
+
+/** A check whose green value is the package's own version: every legitimate bump makes it red — never a regression (W32 rank 8). */
+const pinsPackageVersion = (command: string): boolean => /package\.json/.test(command) && /"version"/.test(command);
 
 export type TaskReport = {
   taskId: string; attemptId: string | null; mergeCommit: string | null;
@@ -212,6 +215,8 @@ export function createRegression(ctx: ServerCore, services: Services) {
     if (settled) return finding({ kind: settled.kind, bisect: settled.bisectStatus, culpritCommit: settled.culpritCommit, culpritTask: settled.culpritTask, culpritSubject: settled.culpritSubject, id: settled.id,
       sharedFiles: settled.culpritTask ? sharedFiles(c.target.taskId, settled.culpritTask) : [],
       note: `settled by hand earlier (${settled.closedReason ?? "no reason"}): not opened again while the check stays red` });
+    // A check pinned on the package's own version can only ever be red by a later, meant bump (W32 rank 8).
+    if (pinsPackageVersion(item.command)) return finding({ note: "the check pins the package version: a later bump is meant, not a regression" });
     // Green at the merge commit too? A check that is red there as well never was a regression of later work.
     let kind: RegressFinding["kind"] = "regression";
     let note: string | null = null;
@@ -248,10 +253,14 @@ export function createRegression(ctx: ServerCore, services: Services) {
     const mode = options.mode === "full" ? "full" : "cheap";
     const candidates = (await candidatesOf(projectId, settings, now, report.tasks, options.runId, mode))
       .filter((c) => !options.basePaths || options.basePaths.includes(c.target.basePath));
-    // An open finding for a task that was reverted since is settled by that revert.
+    // An open finding for a task that was reverted since is settled by that revert. Beside it the stale sweep (W32 rank 8):
+    // rows that could never close by re-running — an unstable check flaky for a week, and a check pinned on the package
+    // version — close here instead of rescanning forever.
     if (!dry && !options.plan) {
       for (const open of listRegressions(db, { projectId })) {
         if (services.rollback.status(open.taskId).receipts.some((r) => r.kind === "revert" && r.state === "merged") && closeRegression(db, open.id, "the task was reverted")) report.closed.push(open.id);
+        else if (open.kind === "unstable" && open.foundAt <= now - 7 * DAY && closeRegression(db, open.id, "unstable for a week: flaky or the machine, not later work")) report.closed.push(open.id);
+        else if (pinsPackageVersion(open.command) && closeRegression(db, open.id, "the check pins the package version: a later bump is meant, not a regression")) report.closed.push(open.id);
       }
     }
     if (options.plan) return finish();
@@ -264,6 +273,15 @@ export function createRegression(ctx: ServerCore, services: Services) {
       const headSha = await head(first.hostId, first.basePath);
       if (!headSha) { for (const m of members) m.report.skipped = "the project folder is not a git checkout"; continue; }
       report.head = headSha;
+      // W32 rank 8: a finding whose merge commit left main's history can never be judged again (history was rewritten);
+      // while it stays open it is rescanned on every pass.
+      if (!dry) {
+        for (const open of listRegressions(db, { projectId })) {
+          if (!open.greenAt || taskBasePath(db, open.runId, open.taskId) !== first.basePath) continue;
+          const ancestor = await ask(first, `git merge-base --is-ancestor ${open.greenAt} ${headSha}`).catch(() => null);
+          if (ancestor && ancestor.exitCode !== 0 && closeRegression(db, open.id, `the merge commit is not in the history of main any more (${headSha.slice(0, 10)})`)) report.closed.push(open.id);
+        }
+      }
       const previous = lastPass(db, projectId);
       if (!options.force && !options.runId && !dry && previous?.headSha === headSha && now - previous.at < 20 * 3_600_000) {
         report.skipped = `main has not moved since the last pass (${headSha.slice(0, 10)})`;

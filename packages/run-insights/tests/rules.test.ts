@@ -174,6 +174,11 @@ describe("rule scope and trial", () => {
     expect(decideRuleTrial({ ...rule, revision: RULE_TRIAL.maxRevisions }, stats(6, 2), now)).toEqual({ action: "retire", reason: "kept_recurring" });
     expect(decideRuleTrial({ ...rule, trialState: "confirmed" }, stats(9, 0), now)).toEqual({ action: "keep" });
     expect(decideRuleTrial(rule, stats(0, 0, null), now + RULE_TRIAL.unusedAfterMs)).toEqual({ action: "retire", reason: "unused" });
+    // Rank 13: a rule writers keep rejecting when given stays on trial — under 80% accepted is no confirmation.
+    const rejected = (applied: number, accepted: number) => ({ applied, appliedAccepted: accepted, recurrences: [], lastAppliedAt: now });
+    expect(decideRuleTrial(rule, rejected(5, 3), now)).toEqual({ action: "keep" });
+    expect(decideRuleTrial(rule, rejected(5, 4), now)).toEqual({ action: "confirm" });
+    expect(decideRuleTrial(rule, rejected(10, 7), now)).toEqual({ action: "keep" });
   });
 
   it("counts attempts given a rule and the mistakes they repeated from what is recorded, once each", async () => {

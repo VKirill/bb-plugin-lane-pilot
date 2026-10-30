@@ -1,3 +1,4 @@
+import { darkTableNames } from "../sma-map/live";
 import type { WallDb } from "./journal";
 
 /**
@@ -12,7 +13,7 @@ export const WALL_MORNING_WINDOW_MS = 24 * 3_600_000;
 const count = (db: WallDb, sql: string, ...params: unknown[]): number => (db.prepare(sql).get(...params) as { n: number }).n;
 const millions = (tokens: number): string => (Math.round(tokens / 1e5) / 10).toFixed(1);
 
-export function composeWallMorning(db: WallDb, now: number = Date.now(), windowMs: number = WALL_MORNING_WINDOW_MS): [string, string, string] {
+export function composeWallMorning(db: WallDb, now: number = Date.now(), windowMs: number = WALL_MORNING_WINDOW_MS): [string, string, string, string] {
   const since = now - windowMs;
   const open = count(db, "SELECT count(*) AS n FROM lane_pilot_wall_class WHERE state='open' AND recur7>0");
   const started = count(db, "SELECT count(*) AS n FROM lane_pilot_wall_repair WHERE created_at>=?", since);
@@ -26,6 +27,9 @@ export function composeWallMorning(db: WallDb, now: number = Date.now(), windowM
     `Ночная петля: классов с повтором ${open}, взято в ремонт ${started}; потрачено ${millions(night?.spend_tokens ?? 0)} из ${millions(night?.cap_tokens ?? 0)} млн токенов.`,
     `Ремонты ночи: слито ${repair("merged")}, adopt ${repair("accepted")}, hold ${repair("held") + repair("unproven")}, reject ${repair("rolled_back") + repair("red") + repair("rollback_pending")}.`,
     `Охранник цикла: охот ${hunts}, в беклоге ${backlog}, перепрогонов ${dispatched} (в списке ${listed}).`,
+    // W32 rank 9: a table that wrote nothing for 30 days is a silent instrument; the sentence names it so a dark
+    // sensor is visible, not guessed. `TABLE_CLOCKS` and scripts/lp-wall-morning.sql name every migration table.
+    (() => { const dark = darkTableNames(db, now - 30 * 86_400_000); return dark.length ? `Тёмные таблицы (0 строк за 30 дней): ${dark.join(", ")}.` : "Тёмные таблицы: каждая писала за 30 дней."; })(),
   ];
 }
 
