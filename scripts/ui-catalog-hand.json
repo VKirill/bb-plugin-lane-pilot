@@ -2944,7 +2944,7 @@
    "category": "user",
    "invType": "enum",
    "values": "immediate, after_retry",
-   "defaultValue": "immediate",
+   "defaultValue": "after_retry",
    "scope": "project",
    "control": "select",
    "options": [
@@ -2956,7 +2956,7 @@
    "section": "stages",
    "channel": "OWN",
    "uiStatus": "editable",
-   "rationale": "When the provider refuses the writer (a limit, an unavailable provider, a 5xx), the next model of the fallback chain takes the task at once (immediate, default) or after one retry of the same model (after_retry). A provider failure is never the task's red code either way.",
+   "rationale": "When the provider refuses the writer (a limit, an unavailable provider, a 5xx), the next model of the fallback chain takes the task at once (immediate) or after the classic retry order (after_retry, default). A provider failure is never the task's red code either way.",
    "evidence": "src/rooms/writer/server/start.ts:1",
    "matrixStatus": "readonly",
    "storageKey": "writer.fallback_on_provider_failure"
@@ -2964,9 +2964,9 @@
   {
    "id": "s512",
    "index": 486,
-   "area": "Lane Pilot memory maintenance",
+   "area": "Lane Pilot memory maintainer",
    "setting": "memory.maintain_every",
-   "location": "src/rooms/memory/server/memory.ts:1",
+   "location": "packages/memory-core/src/settings.ts:61",
    "category": "user",
    "invType": "int",
    "values": ">=1",
@@ -2979,8 +2979,8 @@
    "section": "memory",
    "channel": "OWN",
    "uiStatus": "editable",
-   "rationale": "The memory maintainer runs once per N accepted tasks instead of after each one. Default 3.",
-   "evidence": "src/rooms/memory/server/memory.ts:1",
+   "rationale": "The memory maintainer runs once per this many accepted tasks; 1 means every accepted task. Default 3.",
+   "evidence": "src/rooms/memory/server/memory.ts:69",
    "matrixStatus": "readonly",
    "storageKey": "memory.maintain_every"
   }
