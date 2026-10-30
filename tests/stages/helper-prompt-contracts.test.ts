@@ -331,6 +331,7 @@ describe("other helper prompts", () => {
 
   it("rules analyzer states the rule length and slot caps", () => {
     const prompt = analyzerPrompt({ category: "x", locale: "en", group: [], others: [], rules: [] });
+    expect(analyzerPrompt({ category: "x", locale: "en", group: [], others: [], rules: [], checks: [{ command: "npm test", failures: 5, tasks: 3 }] })).toContain("<check_failures>");
     expect(prompt).toContain("at most 600 characters");
     expect(prompt).toContain("at most 12 rules in force");
   });
