@@ -56,7 +56,7 @@ A harness tree contains the optional writer additions described by `LANE_PILOT_S
 
 ## Business rules
 
-- Harness scope is `(project, area, writer key)`; a writer key is `provider/model`, while `*` applies to any writer in the area (`src/rooms/harness/server/store.ts:20-25`, `src/rooms/harness/server/harness.ts:190-206`).
+- Harness scope is `(project, area, writer key)`; a writer key is `provider/model`, while `*` applies to any writer in the area (`src/rooms/harness/server/store.ts:20-25`, `src/rooms/harness/server/harness.ts:195-217`).
 - The defaults are enabled, five attempts over seven days to qualify a key, at most two keys per nightly run, eight evidence attempts, a 40-minute session wait, and an OpenCode Gemini 3.8 Flash editor selection; project KV settings override them. Role-specific selections inherit the editor unless configured (`src/rooms/harness/server/harness.ts:27-58`, `:165-179`).
 - Harness checks are appended to verification for the attempt that owns the tree; a tree with no checks contributes none (`src/rooms/harness/server/harness.ts:239-250`).
 - A reflection lesson is stored only when it has cue, lesson and evidence, and its edit rows do not consist solely of `confounded` verdicts (`packages/harness-core/src/experience.ts:37-54`, `src/rooms/harness/server/harness.ts:517-524`).

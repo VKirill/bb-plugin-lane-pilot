@@ -53,6 +53,9 @@ Do not fix what the attempts already got right, and do not restate what the fixe
 (owns_paths, never_touch, NEEDS_HUMAN, the sandbox rules): duplicated instruction dilutes the rest.`;
 
 export function surfaceBlock(surface: SurfaceSpec = LANE_PILOT_SURFACE): string {
+  const graphRow = surface.graphFiles
+    ? "| `workflows/<name>.json` | a workflow graph (JSON with id, nodes and edges) | the same trial and bench gate as any other harness file |\n"
+    : "";
   return `# WHAT YOU CAN CHANGE
 
 The harness is a tree of components in \`context/harness/\`. Each has a different runtime cost and a different reach:
@@ -64,7 +67,7 @@ The harness is a tree of components in \`context/harness/\`. Each has a differen
 | \`${surface.checksDir}/<name>.sh\` (or .py, .mjs) | a deterministic check | run by Lane Pilot with the task's verification; the writer cannot skip it |
 | \`${surface.hooksFile}\` | Claude Code hook schema (PreToolUse, PostToolUse, SessionStart, UserPromptSubmit, Stop; type "command") | fires INSIDE the tool loop on every matching call of a Claude Code writer (installed as the worktree's .claude/settings.local.json); writers on other runtimes ignore it, so pair it with a check when the area's writers are not Claude Code |
 | \`${surface.memoryFile}\` | at most ${surface.memoryMaxNotes} notes for the area (a path, a decision, a fact of this workspace) | served as project memory to the writer |
-
+${graphRow}
 ALWAYS-ON PROSE IS THE EXPENSIVE OPTION. Prefer, in this order:
   - a SKILL for anything with a recognisable trigger (a document type, a format, a recurring situation);
   - a CHECK for a deterministic condition the attempts got wrong or verified by hand: a check cannot be ignored and

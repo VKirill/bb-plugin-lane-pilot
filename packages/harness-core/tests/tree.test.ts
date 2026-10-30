@@ -2,7 +2,7 @@ import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { HarnessValidationError, LANE_PILOT_SURFACE, diffSummary, fingerprint, inventory, isAllowed, isBase, readTree, validate, writeTree, type Tree } from "../src/index";
+import { HarnessValidationError, LANE_PILOT_SURFACE, diffSummary, fingerprint, inventory, isAllowed, isBase, proposePrompt, readTree, validate, writeTree, type Tree } from "../src/index";
 
 const skill = (name: string, body = "Steps: read the component, run its test.") => `---\nname: ${name}\ndescription: ${name} workflow\n---\n\n${body}\n`;
 
@@ -65,6 +65,19 @@ describe("validate", () => {
 
   it("refuses a check named in always-on text that the tree does not ship", () => {
     expect(() => validate({ "always-on.md": "Run bash checks/missing.sh first." })).toThrow(/names checks\/missing\.sh but that file is not in the harness/);
+  });
+
+  it("allows a workflow graph only when graph edits are on, and then requires id, nodes and edges", () => {
+    const graph = "workflows/lp.example.json";
+    const body = JSON.stringify({ id: "lp.example", nodes: [{ id: "a" }], edges: [] });
+    expect(isAllowed(graph)).toBe(false);
+    expect(() => validate({ ...good, [graph]: body })).toThrow(/off the editable surface/);
+    const on = { ...LANE_PILOT_SURFACE, graphFiles: true };
+    expect(isAllowed(graph, on)).toBe(true);
+    expect(() => validate({ ...good, [graph]: body }, { surface: on })).not.toThrow();
+    expect(() => validate({ ...good, [graph]: "{}" }, { surface: on })).toThrow(/id, nodes and edges/);
+    expect(proposePrompt("INV", { area: "admin" })).not.toContain("workflows/");
+    expect(proposePrompt("INV", { area: "admin", surface: on })).toContain("workflows/<name>.json");
   });
 
   it("treats an empty tree as a valid base", () => {
