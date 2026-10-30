@@ -4,13 +4,13 @@ import { detectLocale, t } from "@lane-pilot/i18n";
 import type { ComponentType } from "react";
 import type { JsonValue } from "@get-bb/plugin-sdk/app";
 import { LanePilotPage } from "./src/rooms/ui-shell/ui/page";
-import { useOwnerWaitingBadge } from "./src/rooms/ui-shell/ui";
+import { useCockpitPageTitle, useOwnerWaitingBadge } from "./src/rooms/ui-shell/ui";
 import { CouncilPage } from "./src/rooms/council/ui";
 import { CockpitPage } from "./src/rooms/cockpit/ui";
 import { ComposerAgentBadge } from "./src/rooms/native-agent/ui";
 import { EnableLanePilotAction } from "./src/rooms/native-agent/ui";
 import { HELPER_PANEL_ACTION, HelperThreadPanel, useHelperThreadIndex } from "./src/rooms/native-agent/ui";
-import { RUN_CARD_DIRECTIVE, RunCardDirective, ThreadLive } from "./src/rooms/runs/ui";
+import { RUN_CARD_DIRECTIVE, RunCardDirective, ThreadLive, LaneContextDetails, LaneContextSummary, useLaneContextVisible } from "./src/rooms/runs/ui";
 
 /** VK core 0.46.1-vk.5: a section of the thread's info panel (feature-tested; older cores get a panel tab instead). */
 type VkThreadInfoSection = (registration: { id: string; title: string; component: ComponentType<{ threadId: string; projectId: string }> }) => void;
@@ -47,6 +47,8 @@ export default definePluginApp((app) => {
     icon: "Workflow",
     path: "lane-pilot-cockpit",
     component: ({ subPath }) => <CockpitPage subPath={subPath} />,
+    // The waiting count in the window title (SDK 0.6.x); older BB keeps the plain title.
+    experimental_usePageTitle: useCockpitPageTitle,
   });
   // A working helper (writer, specialist, browser check…) opens in the thread's side panel from its square.
   const threadTab = (app.slots as unknown as { experimental_tab?: ExperimentalTabSlot }).experimental_tab;
@@ -105,6 +107,23 @@ export default definePluginApp((app) => {
         run: () => { input.experimental_panel?.openTab?.({ tab: { id: HELPER_PANEL_ACTION, context: { kind: "thread" }, availability: "action" }, params: {} }); },
       }),
     });
+  }
+  // The same helpers tab from the command palette (B-x3): the context only opens panel tabs, so there is nothing for a Cockpit jump to call.
+  app.commands.register({
+    id: "lane-pilot-helpers",
+    title: t("helperPanelTitle"),
+    isAvailable: ({ threadId }) => threadId !== null,
+    run: ({ experimental_panel }) => { experimental_panel?.openTab?.({ tab: { id: HELPER_PANEL_ACTION, context: { kind: "thread" }, availability: "action" }, params: {} }); },
+  });
+  // The same live work as a context segment over the composer (A-u3; newer BB only — the slot is feature-tested).
+  const contextSegment = (app.slots as unknown as { experimental_threadContextSegment?: (registration: {
+    id: string; title: string; group: string; order?: number;
+    summary: ComponentType<{ threadId: string }>;
+    details?: ComponentType<{ threadId: string; isExpanded: boolean }>;
+    useVisible?: (input: { threadId: string }) => boolean;
+  }) => void }).experimental_threadContextSegment;
+  if (typeof contextSegment === "function") {
+    contextSegment.call(app.slots, { id: "lane-pilot-live-segment", title: t("liveTitle"), group: "lane-pilot", summary: LaneContextSummary, details: LaneContextDetails, useVisible: useLaneContextVisible });
   }
   // The PM's `::lane-run{id="…"}` line becomes a live card of the run's tasks.
   app.slots.messageDirective({ id: RUN_CARD_DIRECTIVE, component: RunCardDirective });

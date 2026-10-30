@@ -56,7 +56,7 @@ const BB_KINDS: Record<string, Kind> = { preference: "preference" };
 const OTHER_REPOS = ["pokecut", "selfystudio", "content-factory"];
 const namesOtherRepo = (summary: string, cwd: string) => OTHER_REPOS.some((name) => summary.toLowerCase().includes(name) && !cwd.toLowerCase().includes(name));
 
-type CatalogEntry = { id?: string; name?: string; summary?: string; kind?: string; tags?: string[]; importance?: number; version?: number; updatedAt?: number };
+type CatalogEntry = { id?: string; name?: string; summary?: string; kind?: string; scope?: string; tags?: string[]; importance?: number; version?: number; updatedAt?: number };
 
 export function recordsFromBbCatalog(memories: CatalogEntry[], cwd = ""): SourceScan {
   const records: SourceRecord[] = [];
@@ -74,11 +74,11 @@ export function recordsFromBbCatalog(memories: CatalogEntry[], cwd = ""): Source
   return { source: "bb-memory", items: memories.length, records, ...(skipped ? { note: `${skipped} memories (procedures, references) describe the work, not the owner, and were skipped` } : {}) };
 }
 
-/** BB's global memories through the `bb` CLI of the machine; without it the source reports why and adds nothing. */
-export async function scanBbMemory(run?: (args: string[]) => Promise<string>, cwd = ""): Promise<SourceScan> {
+/** BB's global memories: the hub hands them over in `entries` (the memory plugin's `listMemories` RPC); without that the `bb` CLI of the machine is asked, and without it the source reports why and adds nothing. */
+export async function scanBbMemory(run?: (args: string[]) => Promise<string>, cwd = "", entries?: readonly CatalogEntry[]): Promise<SourceScan> {
   try {
-    const parsed = JSON.parse(await (run ?? defaultBb)(["memory", "catalog", "--scope", "global", "--limit", "100", "--json"])) as { memories?: CatalogEntry[] };
-    return recordsFromBbCatalog(Array.isArray(parsed.memories) ? parsed.memories : [], cwd);
+    const memories = entries?.filter((memory) => memory.scope !== "project") ?? (JSON.parse(await (run ?? defaultBb)(["memory", "catalog", "--scope", "global", "--limit", "100", "--json"])) as { memories?: CatalogEntry[] }).memories ?? [];
+    return recordsFromBbCatalog(Array.isArray(memories) ? memories.slice(0, 200) : [], cwd);
   } catch (cause) {
     return { source: "bb-memory", items: 0, records: [], note: `bb memory unavailable here: ${cause instanceof Error ? cause.message.slice(0, 120) : String(cause)}` };
   }

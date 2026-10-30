@@ -7,6 +7,6 @@ export type { LpPage } from "./use-lp-page";
 export { openThreadPanelTab, useOpenThreadPanel } from "./open-thread-panel";
 export type { OpenThreadPanelOptions } from "./open-thread-panel";
 export { useLpRealtime } from "./use-lp-realtime";
-export { useOwnerWaitingBadge } from "./owner-badge";
+export { useCockpitPageTitle, useOwnerWaitingBadge } from "./owner-badge";
 export { useLpPoll, useLpRpcQuery } from "./use-lp-rpc-query";
 export type { LpRpcQueryState } from "./use-lp-rpc-query";

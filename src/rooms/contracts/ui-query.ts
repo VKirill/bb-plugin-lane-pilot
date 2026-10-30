@@ -20,5 +20,5 @@ export const uiQueryContract = defineRpcContract({
   thread_live: method,
   work_graph_strips: method,
   work_graph_task: method,
-  world_version: method,
+  world_version: { ...method, tags: () => ["world_version"] },
 });

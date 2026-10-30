@@ -165,6 +165,16 @@ describe("existing memories", () => {
     expect(ok.records).toHaveLength(1);
   });
 
+  it("uses the hub's catalog entries without spawning the bb CLI", async () => {
+    const rpcEntries = [
+      { id: "mem_r1", name: "prefers-concise", summary: "The owner prefers short answers", kind: "preference", scope: "global", updatedAt: 7 },
+      { id: "mem_r2", name: "project-fact", summary: "A project-scoped note stays out", kind: "preference", scope: "project", updatedAt: 7 },
+      { id: "mem_r3", name: "procedure", summary: "A procedure is skipped like the CLI catalog", kind: "procedure", scope: "global", updatedAt: 7 },
+    ];
+    const scan = await scanBbMemory(async () => { throw new Error("the CLI must not run"); }, "", rpcEntries);
+    expect(scan.records.map((record) => record.key)).toEqual(["bbmem:prefers-concise"]);
+  });
+
   it("drops a preference that names another repo when the cwd is not that repo", () => {
     const theme = { id: "m5", name: "theme", summary: "Lane Pilot theme project themes/pokecut.css", kind: "preference", updatedAt: 1 };
     expect(recordsFromBbCatalog([theme, { id: "m6", name: "tone", summary: "Reports stay short", kind: "preference", updatedAt: 1 }], "/home/ubuntu/BB-service/bb-plugin-lane-pilot").records.map((record) => record.key)).toEqual(["bbmem:tone"]);
