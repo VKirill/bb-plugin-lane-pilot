@@ -24,6 +24,7 @@ import { runBrowserQaOnHost } from "../qa";
 import { cancelHostJob, hostJobStatus, startHostJob } from "./jobs";
 import { scanCritiqueCoverage } from "../critique";
 import { prepareSandboxedCommandLine, releaseSandboxedCommandLine, runSandboxedCommandOnHost } from "../verification";
+import { cachedReplayVerdicts, recordedReplayFailure, recordReplayVerdict, replayKey } from "../verification";
 import { gitOwnershipChangedPaths, resolveGitOwnershipBase, undoCheckWrites } from "../verification";
 import { runCommandOnHost, writePmSettingsOnHost } from "../writer";
 import { runScriptOnHost } from "./script-run";
@@ -96,29 +97,40 @@ async function runReplayChecks(requestedHostId:string,checks:NonNullable<Paramet
   // not a pass, a zero-test green is red, and the first real red stands whatever the re-run says (a re-run that died of the machine
   // does not erase it, as the writer's runWithFlakyRerun keeps the first result too). The machine's own failure skips only that check.
   type Ran={exitCode:number;stdout:string;stderr:string;threw?:true};
+  // A check's verdict belongs to the revision it ran on: a retried integration (the hub restarted mid-merge, a queue retry) finds
+  // the same rebased head and reuses the recorded result instead of running the suite again (graphs-optimisation G8: 50 h of
+  // repeat checks). Only a settled result is kept — an environment failure has to run again.
+  const cached=await cachedReplayVerdicts(checks.workspacePath,checks.commands);
   const notRun:ReplayCheck[]=[];
   for(const check of checks.commands) {
+    const seen=cached?.entries[replayKey(check.command,check.cwd)];
+    // Already settled on this revision: a recorded pass skips the run, a recorded red fails the merge again with its output.
+    if(seen&&seen.exitCode===0) continue;
+    if(seen) return {ok:false,failed:[{command:check.command,exitCode:seen.exitCode||1,stdout:seen.stdout,stderr:`already run on this revision\n${seen.stderr}`}]};
     const attempt=():Promise<Ran>=>runSandboxedCommandOnHost({requestedHostId,workspacePath:checks.workspacePath,cwd:check.cwd,backend:checks.backend,command:check.command,timeoutSec:check.timeoutSec})
       .catch((cause:unknown)=>({exitCode:1,stdout:"",stderr:cause instanceof Error?cause.message:String(cause),threw:true as const}));
     const row=(result:Ran,why?:string):ReplayCheck=>({command:check.command,exitCode:result.exitCode||1,stdout:result.stdout,stderr:why?`${why}\n${result.stderr}`:result.stderr});
     const red=(result:Ran,why?:string):ReplayCheckOutcome=>({ok:false,failed:[row(result,why)]});
+    const passed=async(result:Ran)=>recordReplayVerdict(checks.workspacePath,check.command,check.cwd,{exitCode:0,stdout:result.stdout,stderr:result.stderr});
+    const failed=async(result:Ran,why?:string)=>recordReplayVerdict(checks.workspacePath,check.command,check.cwd,{exitCode:result.exitCode||1,stdout:result.stdout,stderr:why?`${why}\n${result.stderr}`:result.stderr});
     const first=await attempt();
     // No sandbox on this host at all: no check of any task can ever run here, so holding merges would stop every task of the project.
     // The merge goes on as before 0.1.337 and the post-merge check on main runs it; only a check that could run and did not is held.
     if(first.threw&&NO_SANDBOX.test(first.stderr)) { console.warn(`lane-pilot: no sandbox for the replay check, the merge goes on and main's check runs it: ${check.command}`); continue; }
     const readFirst=readCheckRun(first,{command:check.command});
-    if(readFirst.verdict==="pass") continue;
+    if(readFirst.verdict==="pass") { await passed(first); continue; }
     if(readFirst.verdict==="not_run") return red(first,`check failed: ${readFirst.reason}`);
-    if(first.exitCode===124) { if(readFirst.verdict==="product_fail") return red(first); notRun.push(row(first)); continue; }
+    if(first.exitCode===124) { if(readFirst.verdict==="product_fail") { await failed(first); return red(first); } notRun.push(row(first)); continue; }
     const again=await attempt();
     const readAgain=readCheckRun(again,{command:check.command,first});
-    if(readAgain.verdict==="pass") continue;
+    if(readAgain.verdict==="pass") { await passed(again); continue; }
     if(readFirst.verdict==="product_fail") {
       const why=readAgain.verdict==="product_fail"?undefined:`the re-run did not settle it (${readAgain.verdict==="environment_error"?"the check could not run again":readAgain.reason}); the first failure stands`;
+      await failed(first,why);
       return red(first,why);
     }
     // The first run was the machine's: a real red on the re-run is the code's, anything else is not run.
-    if(readAgain.verdict==="product_fail") return red(again);
+    if(readAgain.verdict==="product_fail") { await failed(again); return red(again); }
     notRun.push(row(again));
   }
   if(notRun.length) {

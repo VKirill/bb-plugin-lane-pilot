@@ -872,7 +872,12 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         // A provider that takes no work fails every retry the same way: the writer chain below takes the task now.
         // The attempt ends blocked with its limit reason (uncharged); primaryFailure keeps the state the chain reads.
         // A writer that stayed silent through its nudges is handed on the same way: its session hung, not the task.
-        if (failedClass === "limit" || isWriterSilent(typeof last.reason === "string" ? last.reason : null) || streamHandOff) {
+        // A provider refusal (a limit, an unavailable provider, a 5xx) hands over at once by default — one more attempt
+        // of the same model only repeats the refusal (owner_present held writers 20 h, graphs-optimisation G10); the
+        // `writer.fallback_on_provider_failure` setting keeps a single same-model retry for whoever wants it.
+        const providerHandsOff = failedClass === "provider"
+          && (runSettings["writer.fallback_on_provider_failure"] ?? "immediate") !== "after_retry";
+        if (failedClass === "limit" || providerHandsOff || isWriterSilent(typeof last.reason === "string" ? last.reason : null) || streamHandOff) {
           const latest = getAttempt(db, attemptId);
           if (latest && RETRY_ELIGIBLE.includes(latest.state as AttemptState)) transitionAttempt(db, latest.id, "blocked", { reason:String(last.reason ?? last.status) });
           last = { ...last, status:"blocked" };

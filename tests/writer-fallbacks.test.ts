@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { noOptionalPlugins } from "./optional-plugin-stubs";
 import type { PrototypeConfig, TaskV2 } from "../src/rooms/contracts";
 import { WRITER_FALLBACK_DEFAULTS, writerFallbackChain, writerFallbackSlots, writerFallbacks } from "../src/rooms/writer/writer-fallbacks";
-import { createAttempt, createRun, createTask, getAttempt, latestTaskAttemptState, listStageReceipts, listUnreportedTaskOutcomes, openDatabase, savePrototypeConfig, saveTaskPlan, setAttemptDirtBefore, setAttemptWorkspace, setRunThread, transitionAttempt } from "../src/rooms/storage/database";
+import { createAttempt, createRun, createTask, getAttempt, latestTaskAttemptState, listStageReceipts, listUnreportedTaskOutcomes, openDatabase, saveProjectSetting, savePrototypeConfig, saveTaskPlan, setAttemptDirtBefore, setAttemptWorkspace, setRunThread, transitionAttempt } from "../src/rooms/storage/database";
 import { createCore } from "../src/rooms/core/server/core";
 import type { Services } from "../src/rooms/core/server/services";
 import { recordStage } from "../src/rooms/runs/server/stage-records";
@@ -54,7 +54,7 @@ const contract = (id: string): TaskV2 => ({
   objective: `Make ${id}`, acceptance: ["done"], verify: "tests", verification: [{ command: "npm test", cwd: WORKSPACE }],
 });
 
-type Step = { accept?: true; limit?: true; invalid?: true; conflict?: true };
+type Step = { accept?: true; limit?: true; provider?: true; invalid?: true; conflict?: true };
 type Spawn = { attemptId: string; emergency?: unknown; continuation?: { workspacePath: string; environmentId: string | null; dirtBefore: unknown; fromThreadId: string; brief: string } };
 
 /** A writer in a folder with git: each attempt works in its own worktree; the host calls are recorded. `script` ends each finished attempt. */
@@ -114,6 +114,11 @@ function harness(script: Step[], refuseFallbacks = false) {
       if (step.accept) { transitionAttempt(db, input.attemptId, "accepted"); return { status: "accepted", produced: ["a.txt"], verification: [], attemptId: input.attemptId }; }
       if (step.limit) {
         const reason = "writer_provider_limit: plan spent";
+        transitionAttempt(db, input.attemptId, "provider_error", { reason });
+        return { status: "provider_error", reason, attemptId: input.attemptId, writerThreadId: input.writerThreadId };
+      }
+      if (step.provider) {
+        const reason = "provider_error: HTTP 500 Internal Server Error";
         transitionAttempt(db, input.attemptId, "provider_error", { reason });
         return { status: "provider_error", reason, attemptId: input.attemptId, writerThreadId: input.writerThreadId };
       }
@@ -194,6 +199,29 @@ describe("fallback writer continues the interrupted session", () => {
     expect(lastAttempt.reason).toMatch(/^merge_conflict: main changed since this attempt started/);
     expect(latestTaskAttemptState(env.db, "proj1", "T1")).toBe("blocked");
     expect(listUnreportedTaskOutcomes(env.db, 0).map((row) => [row.taskId, row.state])).toEqual([["T1", "blocked"]]);
+    await env.harness.lifecycle.dispose();
+  });
+
+  it("a provider refusal hands the task to the next model at once, without a same-model attempt (default)", async () => {
+    const env = harness([{ provider: true }, { accept: true }]);
+    start(env);
+    await vi.waitFor(() => expect(writerStage(env.db).state).toBe("passed"));
+    // No second spawn of the refused model: the second spawn is the emergency fallback, with the handoff.
+    expect(env.spawns).toHaveLength(2);
+    expect(env.spawns[1]!.emergency).toMatchObject({ providerId: expect.any(String), model: expect.any(String) });
+    expect(env.spawns[1]!.continuation).toMatchObject({ workspacePath: WORKTREE, fromThreadId: "thr_w" });
+    await env.harness.lifecycle.dispose();
+  });
+
+  it("writer.fallback_on_provider_failure=after_retry keeps one attempt of the same model first", async () => {
+    const env = harness([{ provider: true }, { provider: true }, { accept: true }]);
+    saveProjectSetting(env.db, "proj1", "writer.fallback_on_provider_failure", "after_retry");
+    start(env);
+    await vi.waitFor(() => expect(writerStage(env.db).state).toBe("passed"));
+    // One retry of the refused model ran before the chain moved: three spawns, the third the emergency fallback.
+    expect(env.spawns).toHaveLength(3);
+    expect(env.spawns[1]!.emergency).toBeUndefined();
+    expect(env.spawns[2]!.emergency).toMatchObject({ providerId: expect.any(String) });
     await env.harness.lifecycle.dispose();
   });
 

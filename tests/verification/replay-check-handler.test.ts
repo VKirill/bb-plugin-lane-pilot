@@ -71,6 +71,19 @@ describe("gitIntegrate with replayChecks (the host runs the task's checks in the
     expect(git(base, "rev-parse", "HEAD")).toBe(mainHead);
   });
 
+  it("a check already settled on this revision is not run again: the recorded red still refuses the merge", async () => {
+    sandbox.run.mockResolvedValue(ran(1, "1 failed", "AssertionError: x"));
+    const first = await integrate();
+    expect(first.status).toBe("conflict");
+    expect(sandbox.run).toHaveBeenCalledTimes(2);
+
+    // The retried integration finds the same rebased head: no new run, the recorded red still holds the merge.
+    const second = await integrate();
+    expect(sandbox.run).toHaveBeenCalledTimes(2);
+    expect(second).toMatchObject({ status: "conflict", checks: [{ command: "npm test", exitCode: 1 }] });
+    expect(JSON.stringify(second.checks)).toContain("AssertionError: x");
+  });
+
   it("merges when the red check passes on its second run (a flaky one)", async () => {
     sandbox.run.mockResolvedValueOnce(ran(1, "", "flaky")).mockResolvedValueOnce(ran(0));
     expect(await integrate()).toMatchObject({ status: "merged", rebased: true });

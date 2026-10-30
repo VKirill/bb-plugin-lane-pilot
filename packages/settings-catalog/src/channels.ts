@@ -154,6 +154,7 @@ export const SETTING_CATALOG: SettingSpec[] = [
   { key:"writer.best_of", channel:"OWN", reason:"Native Lane Pilot best-of-3: parallel writer candidates under quality_mode full, selection by checks then the critic verdict" },
   { key:"writer.best_of.token_budget", channel:"OWN", reason:"Native Lane Pilot best-of-3: shared token ceiling of one task's candidates; 0 leaves the run budget the only bound" },
   { key:"writer.best_of.slot_cap", channel:"OWN", reason:"Native Lane Pilot best-of-3: how many candidates of a task may run at once" },
+  { key:"writer.fallback_on_provider_failure", channel:"OWN", reason:"Native Lane Pilot writer fallback chain: a provider refusal hands the task to the next model at once or after one retry of the same model" },
   { key:"secrets.allow", channel:"OWN", reason:"Native Lane Pilot least privilege: the Env Catalog names a task's checks may receive" },
   { key:"ops.provider_pool", channel:"OWN", reason:"Native Lane Pilot writer pools: a cap on simultaneous writers per provider, as provider=limit pairs" },
   { key:"jev.enabled", channel:"OWN", reason:"Native Lane Pilot Jev judgments (src/jev): false turns every judgment off for the project" },
