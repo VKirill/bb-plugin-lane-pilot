@@ -1,6 +1,6 @@
 {
-  "rows": 486,
-  "editable": 240,
+  "rows": 487,
+  "editable": 241,
   "readonly": 113,
   "gap": 0,
   "excluded": 133,
@@ -60,6 +60,7 @@
     "memory.index_budget",
     "memory.inject",
     "memory.maintain",
+    "memory.maintain_every",
     "memory.note_budget",
     "memory.personal_bot",
     "memory.provider",
