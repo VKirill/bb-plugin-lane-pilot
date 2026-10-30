@@ -317,6 +317,8 @@ export const workflowStatsSchema = z.object({
   /** The graph executed and handed the job on (`proposed`). Not completed work and not a failure. */
   escalated: z.number().int(),
   /** Completed work over executed runs plus engine failures; null before any of those exist. */
+  /** Runs (any status) created in the last 30 days; a published graph with 0 is marked "never run" in the catalog. */
+  runs30d: z.number().int(),
   successRate: z.number().nullable(), lastRunAt: z.number().int().nullable(), lastStatus: z.string().nullable(), lastRunId: z.string().nullable(),
 }).strict();
 export const workflowSummarySchema = z.object({

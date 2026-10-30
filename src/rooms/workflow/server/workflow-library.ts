@@ -70,10 +70,11 @@ export function createWorkflowLibrary(ctx: ServerCore, services: Pick<Services, 
     const where = projectId ? "workflow_id=? AND project_id=?" : "workflow_id=?";
     const args = projectId ? [workflowId, projectId] : [workflowId];
     // ponytail: the same full scan as runRecords. Ceiling: a workflow with a very long history. Upgrade: a stored outcome column.
-    const rows = db.prepare(`SELECT status, output_json, definition_json FROM lane_pilot_wf_run WHERE ${where}`).all(...args) as Array<{ status: string; output_json: string | null; definition_json: string | null }>;
+    const rows = db.prepare(`SELECT status, output_json, definition_json, created_at FROM lane_pilot_wf_run WHERE ${where}`).all(...args) as Array<{ status: string; output_json: string | null; definition_json: string | null; created_at: number }>;
+    const since30d = Date.now() - 30 * 86_400_000;
     const tally = tallyOutcomes(rows);
     const last = db.prepare(`SELECT id, status, created_at FROM lane_pilot_wf_run WHERE ${where} ORDER BY created_at DESC, rowid DESC LIMIT 1`).get(...args) as { id: string; status: string; created_at: number } | undefined;
-    return { runs: tally.runs, succeeded: tally.executed, failed: tally.engineBad, active: tally.active, successRate: workDoneRate(tally),
+    return { runs: tally.runs, runs30d: rows.filter((row) => row.created_at >= since30d).length, succeeded: tally.executed, failed: tally.engineBad, active: tally.active, successRate: workDoneRate(tally),
       executed: tally.executed, workDone: tally.workDone, refused: tally.refused, escalated: tally.escalated,
       lastRunAt: last?.created_at ?? null, lastStatus: last?.status ?? null, lastRunId: last?.id ?? null };
   }
