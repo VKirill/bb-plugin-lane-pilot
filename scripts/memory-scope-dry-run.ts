@@ -4,7 +4,7 @@
  *
  *   npx tsx scripts/memory-scope-dry-run.ts --db <sqlite> --out <report.json>
  */
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import Database from "better-sqlite3";
 import { splitRuleScope } from "@lane-pilot/run-insights";
@@ -59,6 +59,46 @@ export function planScopeMigration(db: ScopeDb, dbPath: string): ScopeDryRun {
 
 type ApplyDb = { prepare(sql: string): { all(...args: unknown[]): unknown[]; run(...args: unknown[]): unknown } };
 
+type RuleJournalRow = { id: string; projectId: string; before: string[]; after: string[] };
+
+/**
+ * F04-3 --apply: a stored scope entry that is a bare label (`verification`, `bb-plugin-lane-pilot`) matches nothing
+ * for a PM task, which owns no paths. The label names a section; the map (same shape as `memory.scope_map`) hands it
+ * that section's chain. Every rewrite is journaled so `--revert` restores the stored scope verbatim.
+ */
+export function applyRuleScopeRebind(db: ApplyDb, map: Readonly<Record<string, readonly string[]>>, journalPath?: string): { applied: number; journal: RuleJournalRow[] } {
+  const rules = db.prepare("SELECT id, project_id, scope_json FROM lane_pilot_rule_proposal WHERE state='accepted'").all() as Array<{ id: string; project_id: string; scope_json: string }>;
+  const journal: RuleJournalRow[] = [];
+  const update = db.prepare("UPDATE lane_pilot_rule_proposal SET scope_json=? WHERE project_id=? AND id=?");
+  for (const row of rules) {
+    let scope: string[] = [];
+    try { const value = JSON.parse(row.scope_json) as unknown; scope = Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : []; } catch { scope = []; }
+    const split = splitRuleScope(scope);
+    // Only a whole-scope legacy set of bare labels moves; a scope already carrying a section chain stays.
+    if (split.sectionChain.length || !split.pathSelectors.length || !split.pathSelectors.every((label) => map[label]?.length)) continue;
+    const chains = [...new Set(split.pathSelectors.flatMap((label) => map[label]))];
+    // Sections share one prefix chain; a label set that lands on different chains keeps the shared prefix.
+    let chain: string[] = [];
+    const first = chains[0].startsWith("section:") ? [chains[0]] : [];
+    if (first.length) chain = [first[0]];
+    if (!chain.length || chains.some((entry) => entry !== chain[0])) continue;
+    update.run(JSON.stringify(chain), row.project_id, row.id);
+    journal.push({ id: row.id, projectId: row.project_id, before: scope, after: chain });
+  }
+  if (journalPath && journal.length) writeFileSync(journalPath, `${JSON.stringify({ reverted: false, rows: journal }, null, 2)}\n`);
+  return { applied: journal.length, journal };
+}
+
+/** Restores the scopes a journal recorded. Marks the journal reverted so it is not applied twice. */
+export function revertRuleScopeRebind(db: ApplyDb, journalPath: string): { reverted: number } {
+  const journal = JSON.parse(readFileSync(journalPath, "utf8")) as { reverted: boolean; rows: RuleJournalRow[] };
+  let reverted = 0;
+  const update = db.prepare("UPDATE lane_pilot_rule_proposal SET scope_json=? WHERE project_id=? AND id=?");
+  for (const row of journal.rows) { update.run(JSON.stringify(row.before), row.projectId, row.id); reverted++; }
+  if (reverted) writeFileSync(journalPath, `${JSON.stringify({ ...journal, reverted: true }, null, 2)}\n`);
+  return { reverted };
+}
+
 /** Moves a file-named root core onto the section the map names for that file. Unmapped rows stay. Does not widen a scope to []. */
 export function applyScopeMigration(db: ApplyDb, map: Readonly<Record<string, readonly string[]>>): { applied: number } {
   const plan = planScopeMigration(db, "apply");
@@ -82,14 +122,32 @@ function arg(name: string): string | undefined {
 if (process.argv[1]?.endsWith("memory-scope-dry-run.ts")) {
   const dbPath = arg("--db");
   const out = arg("--out");
-  if (!dbPath || !out) {
-    console.error("usage: npx tsx scripts/memory-scope-dry-run.ts --db <sqlite> --out <report.json>");
+  const apply = process.argv.includes("--apply");
+  const revert = arg("--revert");
+  const mapPath = arg("--map");
+  if (!dbPath || (!apply && !revert && !out)) {
+    console.error("usage: npx tsx scripts/memory-scope-dry-run.ts --db <sqlite> [--out <report.json> | --apply --map <labels.json> [--journal <journal.json>] | --revert <journal.json>]");
     process.exit(1);
   }
-  const db = new Database(dbPath, { readonly: true, fileMustExist: true });
+  const db = new Database(dbPath, { readonly: !apply && !revert, fileMustExist: true });
+  if (revert) {
+    const { reverted } = revertRuleScopeRebind(db, revert);
+    db.close();
+    console.log(`reverted=${reverted}`);
+    process.exit(0);
+  }
   const report = planScopeMigration(db, dbPath);
+  if (apply) {
+    if (!mapPath) { console.error("--apply needs --map <labels.json> ({label: [\"section:<uuid>\"]})"); process.exit(1); }
+    const map = JSON.parse(readFileSync(mapPath, "utf8")) as Record<string, string[]>;
+    const { applied, journal } = applyRuleScopeRebind(db, map, arg("--journal") ?? out);
+    db.close();
+    for (const row of journal) console.log(`${row.id} ${JSON.stringify(row.before)} -> ${JSON.stringify(row.after)}`);
+    console.log(`applied=${applied}`);
+    process.exit(0);
+  }
   db.close();
-  mkdirSync(dirname(out), { recursive: true });
-  writeFileSync(out, `${JSON.stringify(report, null, 2)}\n`);
+  mkdirSync(dirname(out!), { recursive: true });
+  writeFileSync(out!, `${JSON.stringify(report, null, 2)}\n`);
   console.log(`${out} rules=${report.rules.length} rootCore=${report.rootCore.length}`);
 }
