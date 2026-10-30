@@ -165,3 +165,52 @@ describe("the sweep", () => {
     expect((await runRunGoalCli(api, [])).exitCode).toBe(1);
   });
 });
+
+  it("tells the PM once a goal is only partial, and retries a check that crashed", async () => {
+    const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
+    const sent: string[] = [];
+    harness.sdk.stub("threads.send", async (args: { input: Array<{ text: string }> }) => { sent.push(args.input[0]!.text); return undefined; });
+    const db = openDatabase(bb);
+    createRun(db, "runP", "P", "bb", "/repo");
+    setRunThread(db, "runP", "thr_pm");
+    for (const id of ["t1", "t2"]) {
+      createTask(db, { id, runId: "runP", kind: "bb", contract: {} as never });
+      createAttempt(db, { id: `${id}-a1`, runId: "runP", taskId: id });
+      transitionAttempt(db, `${id}-a1`, "spawn_requested");
+      transitionAttempt(db, `${id}-a1`, "running", { threadId: `thr_${id}` });
+      transitionAttempt(db, `${id}-a1`, "accepted");
+    }
+    let calls = 0;
+    const regression = { run: async () => {
+      calls += 1;
+      if (calls === 1) return { projects: [{ head: "f".repeat(40), tasks: [{ taskId: "t1", checks: [{ command: "c1", state: "green" }] }, { taskId: "t2", checks: [{ command: "c2", state: "skipped" }] }], findings: [] }] };
+      if (calls === 2) throw new Error("the machine is gone");
+      return { projects: [{ head: "f".repeat(40), tasks: [{ taskId: "t1", checks: [{ command: "c1", state: "green" }] }, { taskId: "t2", checks: [{ command: "c2", state: "green" }] }], findings: [] }] };
+    } };
+    const ctx = { db, bb, log: () => undefined, isDisposed: () => false };
+    const api = createRunGoal(ctx as never, { regression } as never).runGoal;
+
+    // a partial verdict tells the PM but is not retried
+    expect((await api.sweep()).map((row) => row.state)).toEqual(["partial"]);
+    expect(sent[0]).toContain("is partial");
+    expect((await api.sweep()).map((row) => row.state)).toEqual([]);
+
+    // a check that crashes is retried on the next sweep and then left alone
+    const crash = { run: async () => { throw new Error("the machine is gone"); } };
+    const api2 = createRunGoal(ctx as never, { regression: crash } as never).runGoal;
+    createRun(db, "runC", "P", "bb", "/repo");
+    for (const id of ["c1", "c2"]) {
+      createTask(db, { id, runId: "runC", kind: "bb", contract: {} as never });
+      createAttempt(db, { id: `${id}-a1`, runId: "runC", taskId: id });
+      transitionAttempt(db, `${id}-a1`, "spawn_requested");
+      transitionAttempt(db, `${id}-a1`, "running", { threadId: `thr_${id}` });
+      transitionAttempt(db, `${id}-a1`, "accepted");
+    }
+    expect((await api2.sweep()).map((row) => row.state)).toEqual(["skipped"]);
+    expect((await api2.sweep()).map((row) => row.state)).toEqual(["skipped"]); // retried, still failing
+    const ok = { run: async () => ({ projects: [{ head: "f".repeat(40), tasks: [], findings: [] }] }) };
+    const api3 = createRunGoal(ctx as never, { regression: ok } as never).runGoal;
+    const third = await api3.sweep();
+    expect(third.map((row) => [row.runId, row.state])).toEqual([["runC", "skipped"]]); // retried one last time -> final verdict
+    expect((await api3.sweep()).map((row) => row.state)).toEqual([]); // now settled, no more retries
+  });

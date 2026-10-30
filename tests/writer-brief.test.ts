@@ -295,3 +295,16 @@ describe("the NEEDS_HUMAN marker", () => {
     expect(needsHumanQuestion("`npm test` passed; no NEEDS_HUMAN: needed")).toBeNull();
   });
 });
+
+  it("hides hidden:true verification checks from the writer but keeps the count honest", () => {
+    const withHidden = { ...task, verification: [
+      ...task.verification,
+      { command: "npx vitest run tests/hidden-holdout.test.ts", cwd: task.project_cwd, hidden: true },
+    ] };
+    const contract = compactContract(withHidden, true);
+    expect(JSON.stringify(contract)).not.toContain("hidden-holdout");
+    expect(contract.verification_hidden_count).toBe(1);
+    const allHidden = compactContract({ ...task, verification: [{ command: "x", cwd: task.project_cwd, hidden: true }] }, true);
+    expect(allHidden.verification).toBeUndefined();
+    expect(allHidden.verification_hidden_count).toBe(1);
+  });

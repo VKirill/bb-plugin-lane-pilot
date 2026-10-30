@@ -1,7 +1,7 @@
 // What Lane Pilot (with Lane Stack, the BB core and its vk layer) has for each node of the SMA map. Each entry is
 // [status, what we have or why not, proof]. `have` and `partial` name our counterpart; `skip` names the owner's decision or
 // the device we do not have; `proof` is "path" or "path#symbol" in this repository, or "lane-stack:path#symbol" / "core:path#symbol"
-// in the sibling repositories, and the test checks that it exists. Roadmap: artifacts/sma-graph/roadmap.md (2026-10-24).
+// in the sibling repositories, and the test checks that it exists.
 // `upstream`: the SMA card itself says the node is declared but not wired there (SMA_CARDS unsure); a 1-in-1 copy holds the same
 // state and builds nothing for it. A proof link is navigation, not a check of behaviour: that is a contract test (contracts.ts).
 export type SmaStatus = "have" | "partial" | "missing" | "skip" | "upstream";

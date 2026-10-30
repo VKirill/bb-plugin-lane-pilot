@@ -1,5 +1,5 @@
 /**
- * Stop rule of the night loop (RHI, arXiv 2607.15524, applied in sma-gap-analysis.md section 4.1 item 3): the loop ends when the bench shows
+ * Stop rule of the night loop (RHI, arXiv 2607.15524): the loop ends when the bench shows
  * no improvement two cycles in a row. A cycle improves when its bench score beats the best score before it by more than `epsilon`.
  * `history` is the bench score after each cycle, oldest first, the first entry being the starting point (the incumbent before any cycle);
  * a number is a score, higher is better (share of bench tasks passed, win rate against the predecessor).

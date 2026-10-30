@@ -19,6 +19,22 @@ export const DEFAULT_STRATA: readonly Stratum[] = [
 
 export const MIN_HARD_SHARE = 0.3;
 
+/**
+ * The sealed split (direction S6): about a fifth of every project's candidates are reserved for measurement only and never
+ * enter the default or fresh strata, so an optimizer tuned on the open pool cannot overfit the tasks it is judged on.
+ * The assignment is a stable hash of the task id, independent of the build seed, so the pool does not drift between builds.
+ */
+export const SEALED_MODULUS = 5;
+export const isSealedTaskId = (taskId: string): boolean => parseInt(sha256(`sealed:${taskId}`).slice(0, 8), 16) % SEALED_MODULUS === 0;
+
+/** The sealed stratum enters a build only when `--only sealed` names it; everything else in the build skips sealed tasks. */
+export const SEALED_QUOTA = 8;
+export function sealedStratum(quota = SEALED_QUOTA): Stratum {
+  return { key: "sealed", quota, match: (candidate) => isSealedTaskId(candidate.taskId) };
+}
+/** Wraps a stratum so it skips the sealed pool; the sealed stratum itself is not wrapped. */
+export const unsealed = (stratum: Stratum): Stratum => stratum.key === "sealed" ? stratum : { ...stratum, match: (candidate) => stratum.match(candidate) && !isSealedTaskId(candidate.taskId) };
+
 /** Recently accepted tasks, reported apart from the frozen strata. A fixed set goes stale (SWE-rebench); this one does not replace it. */
 export const FRESH_WINDOW_MS = 14 * 86_400_000;
 export const FRESH_QUOTA = 8;

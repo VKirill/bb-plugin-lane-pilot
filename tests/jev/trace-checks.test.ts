@@ -14,7 +14,7 @@ const task: ManifestTask = {
 const attempt: AttemptMetrics = {
   taskId: "T1", attemptId: "att_1", attemptNo: 1, state: "accepted", createdAt: 0, seconds: 60,
   stages: [{ stageId: "verify", state: "passed", seconds: 10, proof: "checks" }], stagesPassed: 1, stagesFailed: 0,
-  gates: { passed: 1, rejected: 0 }, writer: { threadId: "thr", providerId: "p", model: "m" }, tokens: null, costUsd: null, costState: "not_measured", costNote: null,
+  gates: { passed: 1, rejected: 0 }, writer: { threadId: "thr", providerId: "p", model: "m", tier: null }, tokens: null, costUsd: null, costState: "not_measured", costNote: null,
 };
 
 function scriptedClient(nouls: Record<string, number>, outcomes: string[]) {

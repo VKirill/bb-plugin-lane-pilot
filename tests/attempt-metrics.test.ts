@@ -114,3 +114,23 @@ describe("lp_attempt_metrics", () => {
     expect(Object.keys(rpcContract)).toContain("lp_attempt_metrics");
   });
 });
+
+  it("records the writer tier and reports first attempts by tier", () => {
+    const w = world();
+    const at = NOW - 3_600_000;
+    w.task("t1"); w.task("t2"); w.task("t3");
+    w.attempt("a1", "t1", 1, "accepted", "thr_a", at);
+    w.attempt("a2", "t1", 2, "accepted", "thr_a", at + 1);
+    w.attempt("a3", "t2", 1, "blocked", "thr_b", at);
+    w.attempt("a4", "t3", 1, "accepted", "thr_c", at);
+    w.cursor("thr_a", "codex", "gpt-6-astra", { input:0, output:0, cached:0, total:0, cacheRead:0, cacheWrite:0 });
+    w.cursor("thr_b", "acp-cursor", "composer-2.5", { input:0, output:0, cached:0, total:0, cacheRead:0, cacheWrite:0 });
+    // no cursor for thr_c: model unknown -> tier null
+    const report = attemptMetrics(w.db as never, { projectId:"proj", days:1, now:NOW });
+    const byId = new Map(report.attempts.map((row) => [row.attemptId, row]));
+    expect(byId.get("a1")!.writer.tier).toBe("strong");
+    expect(byId.get("a3")!.writer.tier).toBe("standard");
+    expect(byId.get("a4")!.writer.tier).toBe(null);
+    expect(report.summary.firstByTier).toMatchObject({ strong: { first:1, accepted:1 }, standard: { first:1, accepted:0 }, unknown: { first:1, accepted:1 } });
+    expect(renderAttemptMetrics(report)).toContain("strong 1/1 accepted");
+  });

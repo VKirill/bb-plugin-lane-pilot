@@ -101,6 +101,8 @@ export const taskV2Schema = z.object({
     timeout_sec: z.number().int().min(1).max(7200).optional(),
     /** Env Catalog names this check needs (kind secret or login): the server passes their values to the check as environment variables, by name; the writer never sees them. */
     secrets: z.array(secretNameSchema).max(16).optional(),
+    /** A holdout check: it runs in verification, but the writer's brief does not show it, so it measures what the contract catches, not what the writer was told to pass. */
+    hidden: z.boolean().optional(),
   }).strict()),
   /** What changes for a person, in the language the owner writes in, short (~60 characters read best, at most 1000), no ids or paths: the task board's card title. Optional in the schema so stored contracts parse; the contract lint requires it on a dispatch. */
   display_title: z.string().trim().describe("Card title in the language the owner writes in, short, ~60 characters: what changes for a person, no ids or paths (Russian owner: «Страница заказов в кабинете»).").optional(),
@@ -317,6 +319,8 @@ export const workflowStatsSchema = z.object({
   /** The graph executed and handed the job on (`proposed`). Not completed work and not a failure. */
   escalated: z.number().int(),
   /** Completed work over executed runs plus engine failures; null before any of those exist. */
+  /** Runs (any status) created in the last 30 days; a published graph with 0 is marked "never run" in the catalog. */
+  runs30d: z.number().int(),
   successRate: z.number().nullable(), lastRunAt: z.number().int().nullable(), lastStatus: z.string().nullable(), lastRunId: z.string().nullable(),
 }).strict();
 export const workflowSummarySchema = z.object({

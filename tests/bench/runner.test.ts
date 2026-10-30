@@ -27,7 +27,7 @@ async function builtSet() {
 
 const attempt = (taskId: string, extra: Partial<AttemptMetrics> = {}): AttemptMetrics => ({
   taskId, attemptId: `${taskId}-1`, attemptNo: 1, state: "accepted", createdAt: 1, seconds: 100, stages: [], stagesPassed: 5, stagesFailed: 0, gates: { passed: 3, rejected: 0 },
-  writer: { threadId: "thr", providerId: "codex", model: "gpt-6-luna" }, tokens: { input: 1_000_000, output: 10_000, cached: 500_000, total: 1_010_000 }, costUsd: 0.1, costState: "measured", costNote: null, ...extra,
+  writer: { threadId: "thr", providerId: "codex", model: "gpt-6-luna", tier: null }, tokens: { input: 1_000_000, output: 10_000, cached: 500_000, total: 1_010_000 }, costUsd: 0.1, costState: "measured", costNote: null, ...extra,
 });
 
 /** A pipeline that answers from a table: which tasks the arm gets accepted, what each costs. */
@@ -159,7 +159,7 @@ describe("bench contract and checkout", () => {
     expect(aggregateAttempts([attempt("t"), attempt("t", { attemptId: "2", attemptNo: 2, costUsd: 0.2, tokens: { input: 0, output: 0, cached: 0, total: 5 } })])).toMatchObject({ attempts: 2, costState: "measured", costUsd: expect.closeTo(0.3), tokens: 1_010_005, stagesPassed: 10, seconds: 200 });
     expect(aggregateAttempts([attempt("t", { costState: "not_measured", costUsd: null, tokens: null })])).toMatchObject({ costState: "not_measured", costUsd: null, tokens: null });
     expect(aggregateAttempts([attempt("t"), attempt("t", { costState: "partial", costUsd: null, tokens: null })])).toMatchObject({ costState: "partial", costUsd: null });
-    expect(aggregateAttempts([attempt("t", { writer: { threadId: null, providerId: null, model: null }, costState: "not_measured", costUsd: null, tokens: null })])).toMatchObject({ costState: "not_measured" });
+    expect(aggregateAttempts([attempt("t", { writer: { threadId: null, providerId: null, model: null, tier: null }, costState: "not_measured", costUsd: null, tokens: null })])).toMatchObject({ costState: "not_measured" });
   });
 
   it("keeps what an arm runs under per project, and the bench project names count as sandbox", () => {

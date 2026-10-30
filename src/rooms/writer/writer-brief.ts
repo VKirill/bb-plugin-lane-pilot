@@ -116,7 +116,12 @@ export function compactContract(task:TaskV2, readListShown:boolean):Record<strin
     if (key === "schema_version" || key === "project_cwd" || key === "forecast" || (key === "read_first" && readListShown)) continue;
     if (value == null || value === "" || (Array.isArray(value) && !value.length)) continue;
     if (key === "verification" && Array.isArray(value)) {
-      out[key] = value.map((command) => {
+      // `hidden:true` marks a holdout check: it runs in verification, but the writer never sees it, so it measures
+      // what the contract really catches, not what the writer was told to pass (audit C9).
+      const open = value.filter((command) => (command as { hidden?: boolean }).hidden !== true);
+      if (!open.length) { out["verification_hidden_count"] = value.length; continue; }
+      if (open.length !== value.length) out["verification_hidden_count"] = value.length - open.length;
+      out[key] = open.map((command) => {
         const row = command as { command?:string; cwd?:string; timeout_sec?:number; secrets?:string[] };
         // Names of the secrets a check gets stay visible (never their values); the rest collapses to the command.
         if (row.secrets?.length) return row.cwd && row.cwd !== task.project_cwd ? row : { command:row.command, secrets:row.secrets };

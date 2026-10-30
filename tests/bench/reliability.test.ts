@@ -29,7 +29,7 @@ async function builtSet() {
 
 const attempt = (taskId: string): AttemptMetrics => ({
   taskId, attemptId: `${taskId}-1`, attemptNo: 1, state: "accepted", createdAt: 1, seconds: 10, stages: [], stagesPassed: 1, stagesFailed: 0, gates: { passed: 1, rejected: 0 },
-  writer: { threadId: "thr", providerId: "codex", model: "gpt-6-luna" }, tokens: { input: 1, output: 1, cached: 0, total: 2 }, costUsd: 0.01, costState: "measured", costNote: null,
+  writer: { threadId: "thr", providerId: "codex", model: "gpt-6-luna", tier: null }, tokens: { input: 1, output: 1, cached: 0, total: 2 }, costUsd: 0.01, costState: "measured", costNote: null,
 });
 
 const clock = (): Clock => { let t = 1_000_000; return { now: () => t, sleep: async (ms) => { t += ms; } }; };
