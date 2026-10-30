@@ -3232,6 +3232,34 @@
    "evidence": "src/rooms/runs/failure-class.ts:300",
    "index": 496,
    "storageKey": "writer.cooldown_max_ms"
+  },
+  {
+   "id": "s517",
+   "index": 500,
+   "area": "Lane Pilot memory maintainer",
+   "setting": "memory.pack_mode",
+   "location": "packages/memory-core/src/settings.ts:61",
+   "category": "user",
+   "invType": "enum",
+   "values": "off, shadow, adapter, canary",
+   "defaultValue": "shadow",
+   "scope": "project",
+   "control": "select",
+   "options": [
+    "off",
+    "shadow",
+    "adapter",
+    "canary"
+   ],
+   "min": null,
+   "max": null,
+   "section": "memory",
+   "channel": "OWN",
+   "uiStatus": "editable",
+   "rationale": "ContextPack stage: off disables the compiler, shadow builds and compares without delivering (default), adapter delivers one pack per session, canary enables the 2x2x4 rollout.",
+   "evidence": "packages/memory-core/src/context-pack.ts:20",
+   "matrixStatus": "readonly",
+   "storageKey": "memory.pack_mode"
   }
  ],
  "fields": {

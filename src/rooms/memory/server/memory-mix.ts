@@ -17,7 +17,7 @@ type WriterMixInput = { projectId: string; query: string; task: TaskPaths; searc
   /** Current bytes of a repo-relative path. A note whose stored file hash no longer matches is left out of the brief. */
   readFile?: (path: string) => Uint8Array | null };
 
-function writerCandidates(db: LanePilotDatabase, input: WriterMixInput): MemoryRecord[] {
+export function writerCandidates(db: LanePilotDatabase, input: WriterMixInput): MemoryRecord[] {
   return searchMemoryRecords(db, input.projectId, input.query, 100, input.searchEngine, "subagent", input.personalBot, { chain: input.chain ?? [], ...(input.now !== undefined ? { now: input.now } : {}) }).filter((record) => !input.ruleMemoryIds.has(record.id));
 }
 

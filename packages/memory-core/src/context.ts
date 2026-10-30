@@ -63,6 +63,6 @@ export function explainMemory(records:MemoryRecord[],taskText:string,budget:numb
 /** Stems, so `ошибки` in the task finds `ошибка` in a note. */
 function tokens(text:string):string[] { return memoryTokens(text).map(memoryStem); }
 
-function memoryContextLine(record:MemoryRecord):string {
+export function memoryContextLine(record:MemoryRecord):string {
   return `- [${record.kind}; concepts=${record.concepts.join(", ")}] ${record.content}`;
 }

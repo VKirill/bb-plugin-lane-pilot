@@ -1,7 +1,7 @@
 import { acceptedRules, pickRelevantRules, ruleRelevanceQuestions, ruleRelevanceState } from "@lane-pilot/run-insights";
-import type { MemorySettings } from "@lane-pilot/memory-core";
+import { buildContextPack, filesDrifted, memoryCandidates, pathsNamed, shadowPackCompare, type MemorySettings } from "@lane-pilot/memory-core";
 import type { TaskV2 } from "../../contracts";
-import { mixWriterMemory, snapshotFileRead, writerMemoryPaths } from "../../memory/server";
+import { mixWriterMemory, snapshotFileRead, writerCandidates, writerMemoryPaths } from "../../memory/server";
 import type { LanePilotDatabase } from "../../storage";
 import type { ServerCore } from "../../core/server";
 import { stickyTurnPrompt } from "./writer-task";
@@ -46,7 +46,7 @@ export async function writerRules(deps:KnowledgeDeps, input:KnowledgeInput) {
   return { allRules, rules, rulesText:rules.map((rule)=>`- ${rule.rule}`).join("\n") };
 }
 
-export async function writerKnowledge(deps:KnowledgeDeps, input:KnowledgeInput) {
+export async function writerKnowledge(deps:KnowledgeDeps & { log?: (line:string)=>void }, input:KnowledgeInput) {
   const memoryOn=input.memorySettings.enabled&&input.memorySettings.inject;
   const taskMemoryQuery=`${input.task.title}\n${input.task.objective}\n${input.task.acceptance.join(" ")}`;
   const { allRules, rules, rulesText }=await writerRules(deps,input);
@@ -55,6 +55,18 @@ export async function writerKnowledge(deps:KnowledgeDeps, input:KnowledgeInput) 
   const mixInput={projectId:input.projectId,query:taskMemoryQuery,task:input.task,searchEngine:input.memorySettings.searchEngine,personalBot:input.memorySettings.personalBot,ruleMemoryIds,chain:await deps.chainForRun(input.runId)};
   const readFile=memoryOn&&input.readBytes?await snapshotFileRead(writerMemoryPaths(deps.db,mixInput),input.readBytes):undefined;
   const mixed=memoryOn?mixWriterMemory(deps.db,{...mixInput,readFile}):{text:"",ids:[] as string[]};
+  // M4 shadow: one pack is compiled from the same sources next to the legacy mix and compared; nothing it builds is delivered.
+  if(memoryOn&&input.memorySettings.packMode!=="off"){
+    try {
+      const records=writerCandidates(deps.db,mixInput);
+      // Freshness: a note whose named files drifted is marked stale for re-verification, not delivered silently.
+      const staleIds=readFile?new Set(records.filter((record)=>filesDrifted(record.fileFingerprint,pathsNamed(record.content),readFile)).map((record)=>record.id)):undefined;
+      const pack=buildContextPack({projectId:input.projectId,sectionChain:mixInput.chain,role:"writer",audience:input.memorySettings.audience,bot:input.memorySettings.personalBot,budget:input.memorySettings.contextBudget,
+        candidates:[...rules.map((rule)=>({id:rule.id,kind:"rule" as const,content:`- ${rule.rule}`,required:true,relevance:1})),...memoryCandidates(records,staleIds)]});
+      const diff=shadowPackCompare([...mixed.ids,...rules.map((rule)=>rule.id)],mixed.text.length,pack);
+      deps.log?.(`context-pack shadow ${pack.packId}: kept=${diff.kept.length} added=${diff.added.length} dropped=${diff.dropped.length} bytes ${diff.oldBytes}->${diff.packedBytes}`);
+    } catch(cause) { deps.log?.(`context-pack shadow failed: ${cause instanceof Error?cause.message:String(cause)}`); }
+  }
   return { allRules, rules, rulesText, mixed };
 }
 

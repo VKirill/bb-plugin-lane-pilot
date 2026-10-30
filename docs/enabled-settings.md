@@ -14,7 +14,7 @@ sources:
   - docs/enabled-settings.snapshot.json
 ---
 
-<!-- enabled-settings:structure b19e8a81d0f8e74b -->
+<!-- enabled-settings:structure 87b9c48a11f50ed0 -->
 
 # Enabled settings (generated)
 
@@ -118,6 +118,7 @@ switches: `quick` disables both critiques, `full` enables them (`src/rooms/criti
 | `memory.maintain_mode` | `wave` | — | stage setting: a free fact per accepted task and one maintainer run per idle wave, or a helper per task |
 | `memory.maintain` | `true` | — | stage setting: maintain durable project memory after accepted work |
 | `memory.note_budget` | `24000` | — | stage setting: cap note memory tokens |
+| `memory.pack_mode` | `shadow` | — | stage setting: ContextPack stage (shadow by default) |
 | `memory.personal_bot` | — | — | keeps bot-scoped project memory isolated across maintenance and retrieval |
 | `memory.provider` | `codex / DEFAULT_ONBOARD_MODEL / DEFAULT_ONBOARD_EFFORT / standard` | — | stage uses the BB provider/model selection for project memory maintenance |
 | `memory.salience_min` | `40` | — | stage setting: admission floor for maintainer memory notes |
