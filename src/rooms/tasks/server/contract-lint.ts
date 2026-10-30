@@ -248,6 +248,12 @@ export function lintContract(input:LintInput):{ errors:LintFinding[]; warnings:L
   const kindOf = (path:string) => kinds?.get(path);
 
   errors.push(...taskStandardFindings(task));
+  // Hub plan-fact receipts: 3.5% fail at 1-3 acceptance items, about a third at 4 or more (14 days to 2026-10-30, sandboxes included).
+  // Live projects since 2026-10-27: 0% at 1-2, 4.8% at 3, 15.8% at 4-6, 44% at 7+. Full mode may keep a longer list; a mainfix lists every red check.
+  const acceptanceMode = input.qualityMode ?? task.quality_mode;
+  if (!isMainfixTask(task.id) && (acceptanceMode === "quick" || acceptanceMode === "standard") && task.acceptance.length > 3) {
+    errors.push({ code:"acceptance_too_many", message:`acceptance has ${task.acceptance.length} items; a ${acceptanceMode} task keeps at most 3, because plan-fact fails far more often above that (hub receipts: 3.5% at 1-3, about a third at 4 or more). Split the task so each one has at most 3 acceptance items` });
+  }
   // quality_mode full: a task with qa_cases owes a browser check, and the task's own graph runs it from qa_url.
   if (input.qualityMode && browserQaRequired(input.qualityMode, task) && !task.qa_url) {
     errors.push({ code:"qa_url_missing", message:`quality_mode is full and the task has qa_cases, so its graph runs the browser check itself and needs the page to open: add qa_url (the address the cases run on, e.g. "http://127.0.0.1:5173/orders"), plus qa_env_class (local, staging, preview, production or unknown) and qa_dev_server (the command that starts the dev server, when it is not running); or drop qa_cases` });

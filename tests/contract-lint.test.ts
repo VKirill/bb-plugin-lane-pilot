@@ -334,6 +334,25 @@ describe("contract lint rules", () => {
     });
   });
 
+  describe("acceptance length (plan-fact)", () => {
+    const four = ["one", "two", "three", "four"];
+    const kinds = { "src/a.ts":"file" as const };
+    it("refuses more than 3 acceptance items in quick and standard, and says to split", () => {
+      for (const qualityMode of ["quick", "standard"] as const) {
+        const { errors } = lint({ acceptance:four }, { qualityMode }, kinds);
+        expect(codes({ errors, warnings:[] }), qualityMode).toEqual(["acceptance_too_many"]);
+        expect(errors[0]!.message).toContain("at most 3");
+        expect(errors[0]!.message).toContain("Split the task");
+      }
+    });
+    it("allows 3, full mode, an unresolved mode, and a mainfix", () => {
+      expect(codes(lint({ acceptance:["one", "two", "three"] }, { qualityMode:"standard" }, kinds))).toEqual([]);
+      expect(codes(lint({ acceptance:four }, { qualityMode:"full" }, kinds))).toEqual([]);
+      expect(codes(lint({ acceptance:four }, {}, kinds))).toEqual([]);
+      expect(codes(lint({ id:"x-mainfix", acceptance:four }, { qualityMode:"standard" }, kinds))).toEqual([]);
+    });
+  });
+
   describe("red before green for a fix", () => {
     it("warns a low-risk fix whose checks all name files the base already has, as it does for medium risk", () => {
       const kinds = { "src/a.ts":"file" as const, "src/b.ts":"file" as const };
