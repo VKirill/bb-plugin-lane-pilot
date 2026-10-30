@@ -135,6 +135,7 @@ export function proposePrompt(dim: "INV" | "DOM", ctx: PromptContext, rejected: 
     generalize(ctx.area),
     HOW_TO_READ,
     "Do not hedge toward an average or try to cover every base: commit to the single most defensible version of your dimension. A later stage compares and merges.",
+    "A component listed under Deletion candidates in this area's library had no observed effect after its trial. Remove that deletion candidate unless a trajectory shows it now matters.",
     ANSWER_FREE,
     EVIDENCE_BOUNDARY,
     surfaceBlock(ctx.surface),

@@ -5,7 +5,7 @@ export {
 } from "./tree";
 export { renderThreadEvents, trajectoryStats, type RenderOptions, type ThreadEventLike } from "./trajectory";
 export {
-  EDIT_VERDICTS, KEEP_BASE, NO_ENTRY, experienceIsSupported, parseEdits, parseExperience, parseNotes, renderExperienceMarkdown,
+  EDIT_VERDICTS, KEEP_BASE, NO_ENTRY, deletionCandidates, experienceIsSupported, parseEdits, parseExperience, parseNotes, renderExperienceMarkdown,
   type EditRow, type EditVerdict, type Experience,
 } from "./experience";
 export {
