@@ -69,6 +69,8 @@ const row = (taskId: string, accepted: boolean, repeatState: BenchResult["state"
 describe("S1 bench reliability", () => {
   it("S1 disk: a host below the free-space floor defers the series instead of recording stopped_budget", async () => {
     const w = await builtSet();
+    // The deferral path, not the cleanup pass (tests/bench/disk.test.ts): keep this host untouched.
+    w.db.prepare("INSERT INTO lane_pilot_project_settings(project_id,binding_id,key,value,version,updated_at) VALUES('*','','bench.disk_cleanup','\"off\"',1,1)").run();
     const project: BenchProjectRef = { projectId: "proj_bench", name: "LP bench disk", hostId: "local", path: w.projectPath };
     const { host } = hostReporting(10);
     const { pipeline } = pipelineFor(project, async () => ({ pmThreadId: "pm", runId: "lprun" }));
