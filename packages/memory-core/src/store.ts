@@ -102,10 +102,18 @@ export type StoreMemoryResult = { records: MemoryRecord[]; insertedIds: string[]
   /** Observed records a second independent source confirmed. */
   corroboratedIds: string[] };
 
+const HEDGED = /(?:^|[^\p{L}\p{N}])(?:maybe|perhaps|might|seems|appears|possibly|кажется|возможно|похоже)(?=$|[^\p{L}\p{N}])/iu;
+
+/** A maintainer note that hedges is not a confirmed fact. Writers wait out the observed quarantine. */
+export function claimIsHedged(content: string): boolean {
+  return HEDGED.test(content);
+}
+
 export function storeMemoryRecords(db: MemoryDatabase, input: StoreMemoryInput): StoreMemoryResult {
   const now = input.now ?? Date.now();
   const trust = input.trust ?? "confirmed";
   const origin = input.origin ?? "maintainer";
+  const trustOf = (entry: MemoryCandidate) => trust === "confirmed" && origin === "maintainer" && entry.kind === "note" && claimIsHedged(entry.content) ? "observed" : trust;
   trigramReady(db);
   return db.transaction(() => {
     const personalBot = input.personalBot ?? "";
@@ -176,14 +184,14 @@ export function storeMemoryRecords(db: MemoryDatabase, input: StoreMemoryInput):
     const insertedIds: string[] = [];
     for (const { entry, id } of pending) {
       insert.run({ id, projectId: input.projectId, personalBot, kind: entry.kind, audience: input.audience, content: entry.content, conceptsJson: JSON.stringify(entry.concepts),
-        sourceSha256: input.sourceSha256, createdAt: now, trust, origin, validUntil: entry.validUntil ?? null, sourceFileId: entry.sourceFileId ?? null, fileFingerprint: storedFingerprint(entry.content, input.readFile) });
+        sourceSha256: input.sourceSha256, createdAt: now, trust: trustOf(entry), origin, validUntil: entry.validUntil ?? null, sourceFileId: entry.sourceFileId ?? null, fileFingerprint: storedFingerprint(entry.content, input.readFile) });
       if (input.scope?.length) db.prepare("UPDATE lane_pilot_memory SET scope_json=? WHERE project_id=? AND id=?").run(JSON.stringify(input.scope), input.projectId, id);
       addToIndexes(db, input.projectId, id, entry.content, entry.concepts);
       insertedIds.push(id);
     }
     for (const { entry, id } of revive) {
       db.prepare("UPDATE lane_pilot_memory SET status='active', superseded_by=NULL, valid_until=?, source_sha256=?, trust=?, last_used_at=?, file_fingerprint=COALESCE(?, file_fingerprint) WHERE project_id=? AND id=?")
-        .run(entry.validUntil ?? null, input.sourceSha256, trust, now, storedFingerprint(entry.content, input.readFile), input.projectId, id);
+        .run(entry.validUntil ?? null, input.sourceSha256, trustOf(entry), now, storedFingerprint(entry.content, input.readFile), input.projectId, id);
       addToIndexes(db, input.projectId, id, entry.content, entry.concepts);
       insertedIds.push(id);
     }
