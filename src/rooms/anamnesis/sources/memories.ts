@@ -52,15 +52,18 @@ export async function scanClaudeMemory(home: string): Promise<SourceScan> {
 }
 
 const BB_KINDS: Record<string, Kind> = { preference: "preference" };
+/** A preference summary that names one of these is another repo's fact. BB's catalog has no cwd field; renderCatalog was not in a checkout we can patch. */
+const OTHER_REPOS = ["pokecut", "selfystudio", "content-factory"];
+const namesOtherRepo = (summary: string, cwd: string) => OTHER_REPOS.some((name) => summary.toLowerCase().includes(name) && !cwd.toLowerCase().includes(name));
 
 type CatalogEntry = { id?: string; name?: string; summary?: string; kind?: string; tags?: string[]; importance?: number; version?: number; updatedAt?: number };
 
-export function recordsFromBbCatalog(memories: CatalogEntry[]): SourceScan {
+export function recordsFromBbCatalog(memories: CatalogEntry[], cwd = ""): SourceScan {
   const records: SourceRecord[] = [];
   let skipped = 0;
   for (const memory of memories) {
     const kind = BB_KINDS[memory.kind ?? ""];
-    if (!kind || !memory.id || !memory.name) { skipped += 1; continue; }
+    if (!kind || !memory.id || !memory.name || namesOtherRepo(memory.summary ?? "", cwd)) { skipped += 1; continue; }
     const at = typeof memory.updatedAt === "number" ? memory.updatedAt : 0;
     records.push({
       kind, key: `bbmem:${memory.name}`, title: memory.name.slice(0, 160), statement: (memory.summary ?? "").slice(0, 600),
@@ -72,10 +75,10 @@ export function recordsFromBbCatalog(memories: CatalogEntry[]): SourceScan {
 }
 
 /** BB's global memories through the `bb` CLI of the machine; without it the source reports why and adds nothing. */
-export async function scanBbMemory(run: (args: string[]) => Promise<string> = defaultBb): Promise<SourceScan> {
+export async function scanBbMemory(run?: (args: string[]) => Promise<string>, cwd = ""): Promise<SourceScan> {
   try {
-    const parsed = JSON.parse(await run(["memory", "catalog", "--scope", "global", "--limit", "100", "--json"])) as { memories?: CatalogEntry[] };
-    return recordsFromBbCatalog(Array.isArray(parsed.memories) ? parsed.memories : []);
+    const parsed = JSON.parse(await (run ?? defaultBb)(["memory", "catalog", "--scope", "global", "--limit", "100", "--json"])) as { memories?: CatalogEntry[] };
+    return recordsFromBbCatalog(Array.isArray(parsed.memories) ? parsed.memories : [], cwd);
   } catch (cause) {
     return { source: "bb-memory", items: 0, records: [], note: `bb memory unavailable here: ${cause instanceof Error ? cause.message.slice(0, 120) : String(cause)}` };
   }

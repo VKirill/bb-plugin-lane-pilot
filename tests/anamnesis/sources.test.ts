@@ -164,6 +164,12 @@ describe("existing memories", () => {
     const ok = await scanBbMemory(async () => JSON.stringify({ memories: [{ id: "m", name: "n", summary: "s", kind: "preference", updatedAt: 5 }, { id: "m2", name: "n2", summary: "s", kind: "fact", updatedAt: 5 }] }));
     expect(ok.records).toHaveLength(1);
   });
+
+  it("drops a preference that names another repo when the cwd is not that repo", () => {
+    const theme = { id: "m5", name: "theme", summary: "Lane Pilot theme project themes/pokecut.css", kind: "preference", updatedAt: 1 };
+    expect(recordsFromBbCatalog([theme, { id: "m6", name: "tone", summary: "Reports stay short", kind: "preference", updatedAt: 1 }], "/home/ubuntu/BB-service/bb-plugin-lane-pilot").records.map((record) => record.key)).toEqual(["bbmem:tone"]);
+    expect(recordsFromBbCatalog([theme], "/home/ubuntu/pokecut").records).toHaveLength(1);
+  });
 });
 
 describe("collect: plan against run", () => {
