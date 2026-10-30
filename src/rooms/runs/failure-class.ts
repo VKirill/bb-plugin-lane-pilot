@@ -302,8 +302,9 @@ export function failureIntervention(cls: FailureClass, sameClassStreak: number):
  * holds a JSON map of class → seconds (unset = DEFAULT_CLASS_COOLDOWNS; {} turns every pause off);
  * `writer.cooldown_max_ms` caps any value (0 = no cap).
  */
-/** The default pause per class: 30 s after a merge conflict or a provider fault, 60 s after a machine fault or a dirty base. */
-export const DEFAULT_CLASS_COOLDOWNS = '{"merge":30,"provider":30,"infra":60,"dirty_base":60}';
+/** The default pause per class: 30 s after a merge conflict, 60 s after a machine fault or a dirty base. A provider fault has its own
+ * path (one same-model retry, then the fallback chain, then the capacity wait), so it gets no pause. */
+export const DEFAULT_CLASS_COOLDOWNS = '{"merge":30,"infra":60,"dirty_base":60}';
 
 export function failureClassCooldownMs(cls: string, settings: Record<string, unknown>): number {
   const raw = settings["writer.class_cooldowns"] ?? DEFAULT_CLASS_COOLDOWNS;
