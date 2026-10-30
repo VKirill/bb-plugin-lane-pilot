@@ -208,6 +208,7 @@ export const TABLE_CLOCKS: Record<string, string> = {
   lane_pilot_rule_promotion: "created_at", lane_pilot_rule_proposal: "updated_at",
   lane_pilot_run: "created_at", lane_pilot_run_goal: "at", lane_pilot_schedule: "created_at",
   lane_pilot_schedule_run: "started_at", lane_pilot_secret_issuance: "at",
+  lane_pilot_janitor: "at",
   lane_pilot_setting_generation: "", lane_pilot_skill_metric: "recorded_at", lane_pilot_stage_event: "occurred_at", lane_pilot_stage_receipt: "updated_at",
   lane_pilot_stage_return: "at", lane_pilot_task: "created_at", lane_pilot_task_git_base: "",
   lane_pilot_task_plan: "", lane_pilot_task_receipt: "at",

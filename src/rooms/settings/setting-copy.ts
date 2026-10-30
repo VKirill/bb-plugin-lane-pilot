@@ -171,6 +171,8 @@ export const SETTING_META: Record<string, SettingMeta> = {
   "bench.disk_cleanup": { label: "field_s567", help: "reason_s567" },
   "bench.live_pm": { label: "field_s568", help: "reason_s568" },
   "bench.noise_auto": { label: "field_s569", help: "reason_s569" },
+  "cleanup.worktrees": { label: "field_s600", help: "reason_s600" },
+  "cleanup.worktree_grace_hours": { label: "field_s601", help: "reason_s601", unit: "fieldUnitHours" },
   "writer.fallback_on_provider_failure": { label: "field_s511", help: "reason_s511" },
   "failure.interventions": { label: "field_s513", help: "reason_s513" },
   "writer.retry_escalate": { label: "field_s514", help: "reason_s514" },

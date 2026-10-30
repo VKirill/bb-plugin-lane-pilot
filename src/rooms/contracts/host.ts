@@ -56,6 +56,14 @@ export const hostContract = defineRpcContract({
     output: z.object({ hostId:z.string(), status:z.enum(["reverted","conflict","empty","failed"]), commits:z.array(z.string()), conflicts:z.array(z.string()),
       later:z.array(z.object({ sha:z.string(), subject:z.string(), files:z.array(z.string()) }).strict()), reason:z.string().nullable() }).strict(),
   },
+  worktreeJanitor: {
+    // The hourly sweep over ~/.lane-pilot/worktrees: copies the hub no longer protects (no open attempt or pass), older than
+    // grace, clean and fully merged go; a copy with edits or unique commits stays and is reported. Lane Pilot's own tmp prefixes too.
+    input: z.object({ requestedHostId: z.string().min(1), protectedPaths: z.array(z.string().startsWith("/")).max(20000), graceMs: z.number().int().min(0).optional() }).strict(),
+    output: z.object({ hostId: z.string(), removed: z.array(z.string()), freedBytes: z.number(),
+      kept: z.array(z.object({ path: z.string(), reason: z.string(), ageMs: z.number(), bytes: z.number() }).strict()).max(500),
+      tmpRemoved: z.array(z.string()).max(2000), tmpFreedBytes: z.number(), errors: z.array(z.string()).max(200) }).strict(),
+  },
   gitSyncWorktree: {
     input: z.object({ requestedHostId:z.string().min(1), basePath:z.string().startsWith("/"), worktreePath:z.string().startsWith("/"), keepConflicts:z.boolean().optional() }).strict(),
     output: z.object({ hostId:z.string(), status:z.enum(["synced","up-to-date","dirty","conflict","failed"]), head:z.string().nullable(), reason:z.string().nullable(), conflicts:z.array(z.string()).optional() }).strict(),

@@ -27,10 +27,15 @@ export function composeMorningList(db: Db, now: number = Date.now(), windowMs: n
   const broken = db.prepare("SELECT task_id, culprit_commit, culprit_task FROM lane_pilot_regression WHERE state='open' AND kind='regression' ORDER BY id LIMIT 3").all() as Array<{ task_id: string; culprit_commit: string | null; culprit_task: string | null }>;
   const brokenTotal = count(db, "SELECT count(*) AS n FROM lane_pilot_regression WHERE state='open' AND kind='regression'");
   const regressed = brokenTotal ? ` Сломано после приёмки: ${brokenTotal} (${broken.map((row) => `${row.task_id} ← ${row.culprit_commit ? row.culprit_commit.slice(0, 8) : "?"}${row.culprit_task && row.culprit_task !== row.task_id ? ` (виновник ${row.culprit_task})` : ""}`).join(", ")}).` : "";
+  const janitor = db.prepare("SELECT sum(freed_bytes + tmp_freed_bytes) AS bytes, sum(removed + tmp_removed) AS removed FROM lane_pilot_janitor WHERE at>=?").get(since) as { bytes: number | null; removed: number | null };
+  const kept = db.prepare("SELECT value AS v, (SELECT count(*) FROM lane_pilot_janitor j2, json_each(j2.kept_json) WHERE j2.at>=?) AS total FROM lane_pilot_janitor, json_each(lane_pilot_janitor.kept_json) WHERE at>=? LIMIT 3").all(since, since) as Array<{ v: string; total: number }>;
+  const janitorLine = janitor.bytes || kept.length
+    ? ` Уборка копий: освобождено ${Math.round((janitor.bytes ?? 0) / 1e6)} МБ${kept[0]?.total ? `, держатся ${kept[0].total} (${kept.map((row) => row.v).join(", ")}${kept[0].total > kept.length ? ", …" : ""})` : ""}.`
+    : "";
   return [
     `Правила: на пробу ${adopted}, подтверждено ${confirmed}, ждут места ${waitingRules}.`,
     `Красное за ночь: ${red.length ? `${red.reduce((sum, row) => sum + row.n, 0)} попыток (${red.map((row) => `${row.state} ${row.n}`).join(", ")})` : "ничего"}.${regressed}`,
     `Принято: ${accepted} попыток.`,
-    `Отсрочки: просрочено ${waiting.overdue}, открыто ${waiting.open}. От твоих сообщений — ${waiting.inbox}.`,
+    `Отсрочки: просрочено ${waiting.overdue}, открыто ${waiting.open}. От твоих сообщений — ${waiting.inbox}.${janitorLine}`,
   ];
 }

@@ -4,6 +4,8 @@ export { buildDocsFlows } from "./docs-flows";
 export { buildDocsAnchors, docsDepth, docsStaleness, jevApiKey, jevCallFor, verifyDocsCitations } from "./docs-jev";
 export { gateTriagePrompt, parseGateTriageResult } from "./gate-triage";
 export { commitDocs, docsLineCounts, docsWorthinessFacts, gitDocsScope, revertPaths } from "./git-docs";
+export { sweepLaneWorktrees, JANITOR_TMP_PREFIXES } from "./worktree-janitor";
+export type { JanitorKept, JanitorReceipt } from "./worktree-janitor";
 export { appendExcludeCommand, createWorktree, ensureExcludeLinesCommand, EXCLUDE_NOT_GIT, integrateWorktree, persistTaskFolder, prepareWorktree, removeLaneWorktree, snapshotWorktree, syncWorktree, taskFolderRel } from "./git-integrate";
 export type { ReplayCheck, ReplayCheckOutcome } from "./git-integrate";
 export { gitOwnershipChangedPaths, resolveGitOwnershipBase, undoCheckWrites } from "./git-ownership";

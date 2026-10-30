@@ -3486,6 +3486,55 @@
    "evidence": "src/rooms/writer/server/question-timeout.ts:1",
    "matrixStatus": "readonly",
    "storageKey": "writer.question_wait_min"
+  },
+  {
+   "id": "s600",
+   "index": 519,
+   "area": "Lane Pilot worktree cleanup",
+   "setting": "cleanup.worktrees",
+   "location": "src/rooms/stability/server/worktree-janitor.ts:48",
+   "category": "user",
+   "invType": "enum",
+   "values": "on, off",
+   "defaultValue": "on",
+   "scope": "global",
+   "control": "select",
+   "options": [
+    "on",
+    "off"
+   ],
+   "min": null,
+   "max": null,
+   "section": "improvement",
+   "channel": "OWN",
+   "uiStatus": "editable",
+   "rationale": "on runs the hourly janitor over ~/.lane-pilot/worktrees on every connected machine: copies no open attempt or pass holds, older than the grace, clean and fully merged are removed; off disables the sweep (existing removal paths still run).",
+   "evidence": "src/rooms/stability/server/worktree-janitor.ts:48",
+   "matrixStatus": "readonly",
+   "storageKey": "cleanup.worktrees"
+  },
+  {
+   "id": "s601",
+   "index": 520,
+   "area": "Lane Pilot worktree cleanup",
+   "setting": "cleanup.worktree_grace_hours",
+   "location": "src/rooms/stability/server/worktree-janitor.ts:51",
+   "category": "user",
+   "invType": "int",
+   "values": "hours",
+   "defaultValue": "2",
+   "scope": "global",
+   "control": "number",
+   "options": [],
+   "min": 0,
+   "max": 168,
+   "section": "improvement",
+   "channel": "OWN",
+   "uiStatus": "editable",
+   "rationale": "How many hours a Lane Pilot worktree copy sits untouched before the hourly janitor may remove it (only when it holds no open attempt, no edits and no commits missing from other branches or remotes). Default 2.",
+   "evidence": "src/rooms/stability/server/worktree-janitor.ts:51",
+   "matrixStatus": "readonly",
+   "storageKey": "cleanup.worktree_grace_hours"
   }
  ],
  "fields": {
@@ -4689,6 +4738,22 @@
    "reason_s539": [
     "The most minutes a task waits while every writer provider is spent — rechecked every 15 minutes from the first parking; past it the task stops restarting and the PM is told to send it again once limits free. Default 360.",
     "Сколько минут задача ждёт, пока все провайдеры писателей без запаса — перепроверка каждые 15 минут от первого паркинга; дальше задача не перезапускается и PM получает заметку отправить её снова, когда лимиты освободятся. По умолчанию 360."
+   ],
+   "field_s600": [
+    "Worktree cleanup",
+    "Уборка рабочих копий"
+   ],
+   "reason_s600": [
+    "on: the hourly janitor removes finished Lane Pilot worktree copies on every connected machine (no open attempt, older than the grace, no edits, nothing unmerged). off: the sweep never runs; the copies' own removal paths still work. Default on.",
+    "on: ежечасная уборка удаляет отработанные копии Lane Pilot на каждой подключённой машине (нет открытой попытки, старше льготного срока, без правок и непринятых коммитов). off: уборка не запускается; собственные пути удаления копий работают как раньше. По умолчанию on."
+   ],
+   "field_s601": [
+    "Worktree grace (hours)",
+    "Льготный срок копий (часы)"
+   ],
+   "reason_s601": [
+    "How many hours a worktree copy must sit untouched before the janitor may remove it. A copy with uncommitted edits or commits no other branch or remote has is never removed — it goes into the morning report. Default 2.",
+    "Сколько часов копия должна пролежать без изменений, чтобы уборка могла её удалить. Копия с правками или коммитами, которых нет ни на одной другой ветке и ни на remote, не удаляется никогда — она попадает в утреннюю сводку. По умолчанию 2."
    ]
   }
  }

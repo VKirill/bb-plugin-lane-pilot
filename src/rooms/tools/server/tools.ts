@@ -17,7 +17,7 @@ import { mountRelay, ownerLocale } from "../../relay/server";
 import { ownerAnswerText } from "../owner-answer-text";
 import { mountWorkflowTools } from "../../workflow/server";
 import { mountSelfRepair } from "../../self-repair/server";
-import { mountHookTimeoutWatch, mountServiceProjects } from "../../stability/server";
+import { mountHookTimeoutWatch, mountServiceProjects, mountWorktreeJanitor } from "../../stability/server";
 import { mountWorkflowArchitect } from "../../workflow/server";
 import { mountScheduleTools } from "../../schedule/server";
 import { mountToolFamilies } from "./tool-families";
@@ -324,6 +324,7 @@ export function registerTools(ctx: ServerCore, services: Services) {
   mountSelfRepair(ctx, services);
   mountHookTimeoutWatch(ctx);
   mountServiceProjects(ctx);
+  mountWorktreeJanitor(ctx);
   mountWorkflowArchitect(ctx, services);
   mountScheduleTools(ctx, services);
   mountToolFamilies(ctx);

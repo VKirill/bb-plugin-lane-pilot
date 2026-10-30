@@ -81,6 +81,8 @@ with dark(name) as (
   union all
   select 'lane_pilot_hypothesis' as name where (select count(*) from lane_pilot_hypothesis where created_at >= (select since from lp_morning_30)) = 0
   union all
+  select 'lane_pilot_janitor' as name where (select count(*) from lane_pilot_janitor where at >= (select since from lp_morning_30)) = 0
+  union all
   select 'lane_pilot_jev_receipt' as name where (select count(*) from lane_pilot_jev_receipt where at >= (select since from lp_morning_30)) = 0
   union all
   select 'lane_pilot_learning_item' as name where (select count(*) from lane_pilot_learning_item where created_at >= (select since from lp_morning_30)) = 0
