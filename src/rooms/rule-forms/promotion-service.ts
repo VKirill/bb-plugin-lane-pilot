@@ -1,4 +1,5 @@
-import { markMechanized } from "@lane-pilot/run-insights";
+import { createHash } from "node:crypto";
+import { markMechanized, ruleProposalId, LESSON_SAME_RULE } from "@lane-pilot/run-insights";
 import { getActivation, getRun } from "../storage";
 import { scheduleIsolated, sendPmNotice } from "../core/server";
 import type { ServerCore, Services } from "../core/server";
@@ -9,6 +10,53 @@ import type { LanePilotDatabase } from "../storage";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 
 const WEEKLY_CRON = "0 9 * * 1";
+
+const ruleWords = (rule: string) => new Set(rule.toLowerCase().match(/[\p{L}\p{N}_./-]{4,}/gu) ?? []);
+const sameRule = (a: string, b: string): boolean => {
+  const left = ruleWords(a), right = ruleWords(b);
+  if (!left.size || !right.size) return false;
+  let shared = 0;
+  for (const word of left) if (right.has(word)) shared += 1;
+  return shared / (left.size + right.size - shared) >= LESSON_SAME_RULE;
+};
+
+/**
+ * Cross-project transfer (arXiv memory #19): a rule confirmed in at least two projects is proposed to every other
+ * configured project as an ordinary sweep proposal — the same `proposed` state the rules scan writes, so it goes
+ * through the normal trial instead of being injected. A project that already holds a like of the rule is skipped.
+ * No messages: the weekly log line counts what was proposed.
+ */
+export function crossProjectRuleCandidates(db: LanePilotDatabase, now = Date.now()): number {
+  const proven = db.prepare(`SELECT project_id, rule, audience FROM lane_pilot_rule_proposal
+    WHERE state='accepted' AND (trial_state='confirmed' OR decided_by='owner')`).all() as Array<{ project_id: string; rule: string; audience: string }>;
+  const byRule = new Map<string, { rule: string; audience: string; projects: Set<string> }>();
+  for (const row of proven) {
+    const key = row.rule.toLowerCase().trim();
+    const entry = byRule.get(key) ?? { rule: row.rule, audience: row.audience, projects: new Set<string>() };
+    entry.projects.add(row.project_id);
+    byRule.set(key, entry);
+  }
+  const projects = (db.prepare("SELECT DISTINCT project_id FROM lane_pilot_project_settings WHERE binding_id=''").all() as Array<{ project_id: string }>).map((row) => row.project_id);
+  let created = 0;
+  for (const entry of byRule.values()) {
+    if (entry.projects.size < 2) continue;
+    const signature = `xproject:${createHash("sha256").update(entry.rule.toLowerCase()).digest("hex").slice(0, 12)}`;
+    const id = ruleProposalId(signature);
+    const evidence = `proven in ${entry.projects.size} projects: ${[...entry.projects].slice(0, 5).join(", ")}`;
+    for (const projectId of projects) {
+      if (entry.projects.has(projectId)) continue;
+      const live = db.prepare("SELECT rule FROM lane_pilot_rule_proposal WHERE project_id=? AND state IN ('proposed','accepted')").all(projectId) as Array<{ rule: string }>;
+      if (live.some((row) => sameRule(row.rule, entry.rule))) continue;
+      created += db.prepare(`INSERT INTO lane_pilot_rule_proposal
+        (id,project_id,signature,rule,author,state,occurrences,task_count,examples_json,evidence_json,memory_id,first_seen_at,last_seen_at,updated_at,decided_at,scope_json,audience)
+        VALUES (?,?,?,?,'sweep','proposed',?,?,?, '[]', NULL,?,?,?,NULL,'[]',?)
+        ON CONFLICT(project_id,id) DO NOTHING`)
+        .run(id, projectId, signature, entry.rule.slice(0, 600), entry.projects.size, entry.projects.size,
+          JSON.stringify([evidence]), now, now, now, entry.audience === "pm" || entry.audience === "writer" || entry.audience === "both" ? entry.audience : "both").changes;
+    }
+  }
+  return created;
+}
 
 /** One message per project whose promotions wait: the weekly top-10 to its PM chat, or nothing. */
 export async function deliverPromotionDigests(bb: Pick<BbPluginApi, "sdk" | "log">, db: LanePilotDatabase): Promise<{ sent: number; skipped: number }> {
@@ -100,9 +148,15 @@ export function settlePromotionTask(db: LanePilotDatabase, input: { taskId: stri
 /** The weekly pass: every Monday 09:00 hub time, each project with open candidates gets one PM message. */
 export function createPromotionService(ctx: ServerCore, services: Services) {
   const { bb, db } = ctx;
-  scheduleIsolated(bb, "rule-promotions-weekly", WEEKLY_CRON, async (signal) => { void signal; await deliverPromotionDigests(bb, db); }, { timeoutMs: 10 * 60_000 });
+  scheduleIsolated(bb, "rule-promotions-weekly", WEEKLY_CRON, async (signal) => {
+    void signal;
+    const proposed = crossProjectRuleCandidates(db);
+    if (proposed) ctx.log(`rule-promotions weekly: ${proposed} cross-project rule candidate(s) proposed`);
+    await deliverPromotionDigests(bb, db);
+  }, { timeoutMs: 10 * 60_000 });
   return {
     deliverDigests: () => deliverPromotionDigests(bb, db),
+    crossProjectCandidates: () => crossProjectRuleCandidates(db),
     dispatch: (input: { projectId: string; ruleId: string; threadId?: string | undefined }) => dispatchPromotion(ctx, services, input),
     dismiss: (projectId: string, ruleId: string) => dismissPromotionCandidate(db, projectId, ruleId),
     settleTask: (input: { taskId: string; outcome: "accepted" | "failed"; reason?: string }) => settlePromotionTask(db, input),
