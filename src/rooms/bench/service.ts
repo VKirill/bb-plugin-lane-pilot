@@ -2,6 +2,7 @@ import { hubFields, writeHubFields } from "../improvement";
 import { baselineMetrics } from "./baseline";
 import { buildSet, type BuildReport } from "./build";
 import { compareArms, computeNoise, noiseOfRepeats, passReport, renderComparison, summarizeArm, type ArmSummary, type Comparison } from "./compare";
+import { cohortCounts, cohortOf } from "./stratify";
 import type { HostPort, PipelinePort } from "./ports";
 import { sweepStuckRuns } from "./reliability";
 import { BENCH_REPOS_ROOT_ENV } from "./repos";
@@ -181,20 +182,25 @@ export function createBench(deps: BenchDeps) {
 
   function status(version?: string) {
     const sets = listSets(deps.db).filter((row) => !version || row.version === version);
-    return sets.map((set) => ({
-      version: set.version, manifestSha256: set.manifestSha256, tasks: set.taskCount, candidates: set.candidateCount, createdAt: set.createdAt,
-      runs: listRuns(deps.db, set.id).map((row) => {
-        const results = listResults(deps.db, row.id);
-        return { arm: row.arm, repeat: row.repeat, state: row.state, stopReason: row.stopReason, spentTokens: row.spentTokens, tasks: results.length, accepted: results.filter((r) => r.accepted).length, skipped: results.filter((r) => r.state === "skipped_budget").length };
-      }),
-    }));
+    return sets.map((set) => {
+      const tasks = getSet(deps.db, set.version)?.tasks ?? [];
+      return {
+        version: set.version, manifestSha256: set.manifestSha256, tasks: set.taskCount, candidates: set.candidateCount, createdAt: set.createdAt,
+        runs: listRuns(deps.db, set.id).map((row) => {
+          const results = listResults(deps.db, row.id);
+          return { arm: row.arm, repeat: row.repeat, state: row.state, stopReason: row.stopReason, spentTokens: row.spentTokens, tasks: results.length, accepted: results.filter((r) => r.accepted).length, skipped: results.filter((r) => r.state === "skipped_budget").length, cohorts: cohortCounts(tasks, results) };
+        }),
+      };
+    });
   }
 
   function show(version: string) {
     const set = getSet(deps.db, version);
     if (!set) return null;
     return {
-      version: set.version, manifestSha256: set.manifestSha256, candidates: set.candidateCount, tasks: set.tasks.map((task) => ({
+      version: set.version, manifestSha256: set.manifestSha256, candidates: set.candidateCount,
+      cohorts: { fixed: set.tasks.filter((task) => cohortOf(task.stratum) === "fixed").length, fresh: set.tasks.filter((task) => cohortOf(task.stratum) === "fresh").length },
+      tasks: set.tasks.map((task) => ({
         position: task.position, taskId: task.taskId, project: task.projectName, repo: task.repoPath, stratum: task.stratum, hard: task.hard, risk: task.risk, area: task.area,
         base: task.initialHeadSha.slice(0, 10), solution: task.solutionCommit.slice(0, 10), discriminating: task.warm.discriminating.length,
       })),

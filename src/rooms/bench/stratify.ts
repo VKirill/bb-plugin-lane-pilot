@@ -16,6 +16,37 @@ export const DEFAULT_STRATA: readonly Stratum[] = [
 ];
 
 export const MIN_HARD_SHARE = 0.3;
+
+/** Recently accepted tasks, reported apart from the frozen strata. A fixed set goes stale (SWE-rebench); this one does not replace it. */
+export const FRESH_WINDOW_MS = 14 * 86_400_000;
+export const FRESH_QUOTA = 8;
+
+/** Live projects only: `loadCandidates` has already dropped sandboxes, drills and folders the owner did not allow. */
+export function freshStratum(now: number, windowMs = FRESH_WINDOW_MS, quota = FRESH_QUOTA): Stratum {
+  return { key: "fresh", quota, match: (candidate) => (candidate.acceptedAt ?? 0) >= now - windowMs };
+}
+
+export function cohortOf(stratum: string): "fixed" | "fresh" {
+  return stratum === "fresh" ? "fresh" : "fixed";
+}
+
+export type CohortCounts = { tasks: number; accepted: number };
+
+/** Judged tasks of one run, split by stratum. A task is counted once. */
+export function cohortCounts(tasks: readonly { taskId: string; stratum: string }[], results: readonly { taskId: string; accepted: boolean; state: string }[]): { fixed: CohortCounts; fresh: CohortCounts } {
+  const kind = new Map(tasks.map((task) => [task.taskId, cohortOf(task.stratum)]));
+  const out = { fixed: { tasks: 0, accepted: 0 }, fresh: { tasks: 0, accepted: 0 } };
+  const seen = new Set<string>();
+  for (const row of results) {
+    if (row.state === "skipped_budget" || row.state === "error") continue;
+    if (seen.has(row.taskId)) continue;
+    seen.add(row.taskId);
+    const bucket = out[kind.get(row.taskId) ?? "fixed"];
+    bucket.tasks++;
+    if (row.accepted) bucket.accepted++;
+  }
+  return out;
+}
 const RISKS: readonly Risk[] = ["low", "medium", "high", "critical"];
 
 /** Fixed order for the same seed: a hash, not a random number, so a rebuild picks the same candidates. */

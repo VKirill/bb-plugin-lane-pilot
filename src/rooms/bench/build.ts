@@ -1,6 +1,6 @@
 import { loadCandidates } from "./candidates";
 import type { HostPort } from "./ports";
-import { chooseFinal, DEFAULT_STRATA, interleave, warmOrder, type Stratum } from "./stratify";
+import { chooseFinal, DEFAULT_STRATA, freshStratum, interleave, warmOrder, type Stratum } from "./stratify";
 import { insertSet, type BenchDb, type BenchSet } from "./store";
 import type { Candidate, ManifestTask, Rejection } from "./types";
 import { MIN_FREE_GB, freeGb, warmUp, type WarmOptions } from "./warmup";
@@ -32,6 +32,9 @@ export type BuildInput = {
   /** Remap stored checkout paths and, with hostId, warm up on that machine (OVH) instead of the path's own. */
   reposRoot?: string | null;
   hostId?: string;
+  /** Clock for the fresh window. Absent: the time of the build. */
+  now?: number;
+  freshWindowMs?: number;
 };
 
 export type StratumReport = { key: string; quota: number; candidates: number; hardCandidates: number; tried: number; survived: number; kept: number; keptHard: number; rejected: Record<string, number>; stoppedBecause: string };
@@ -46,7 +49,11 @@ export type BuildReport = {
 export async function buildSet(input: BuildInput): Promise<{ report: BuildReport; tasks: ManifestTask[]; rejected: Rejection[] }> {
   const log = input.log ?? (() => undefined);
   const seed = input.seed ?? input.version;
-  const strata = (input.strata ?? DEFAULT_STRATA).filter((stratum) => !input.only || input.only.includes(stratum.key));
+  const now = input.now ?? Date.now();
+  const requested = input.strata ?? [...DEFAULT_STRATA, freshStratum(now, input.freshWindowMs)];
+  const strata = requested.filter((stratum) => !input.only || input.only.includes(stratum.key));
+  const fixedStrata = strata.filter((stratum) => stratum.key !== "fresh");
+  const fresh = strata.find((stratum) => stratum.key === "fresh");
   const loaded = loadCandidates(input.db, { projectNames: input.projectNames, isSandboxName: input.isSandboxName, ...(input.projects ? { projects: input.projects } : {}), ...(input.hostFor ? { hostFor: input.hostFor } : {}) });
   const rejected: Rejection[] = [...loaded.rejected];
   const scratch = input.scratch ?? "$HOME/lp-bench/warm";
@@ -67,7 +74,7 @@ export async function buildSet(input: BuildInput): Promise<{ report: BuildReport
 
   // One chain per host: two warm-ups never run on one machine at once (the disk and the CPU are the owner's); different machines go side by side.
   const claimed = new Set<string>();
-  const byStratum = strata.map((stratum) => {
+  const byStratum = fixedStrata.map((stratum) => {
     const pool = loaded.candidates.filter((candidate) => stratum.match(candidate) && !claimed.has(candidate.taskId));
     pool.forEach((candidate) => claimed.add(candidate.taskId));
     return { stratum, pool };
@@ -125,6 +132,40 @@ export async function buildSet(input: BuildInput): Promise<{ report: BuildReport
       report.keptHard = keep.filter((s) => s.candidate.hard).length;
     }
   }));
+
+  // Fresh is beside the fixed quotas, not instead of them: a task the fixed strata kept stays fixed. The rest of the recent live tasks fill `fresh`.
+  if (fresh && !lostHosts.length) {
+    const keptIds = new Set([...keptByStratum.values()].flat().map((row) => row.candidate.taskId));
+    const pool = loaded.candidates.filter((candidate) => fresh.match(candidate) && !keptIds.has(candidate.taskId));
+    const report: StratumReport = { key: fresh.key, quota: fresh.quota, candidates: pool.length, hardCandidates: pool.filter((c) => c.hard).length, tried: 0, survived: 0, kept: 0, keptHard: 0, rejected: {}, stoppedBecause: "" };
+    reports.set(fresh.key, report);
+    const survivors: Kept[] = [];
+    const order = warmOrder(pool, seed);
+    const maxTries = Math.max(fresh.quota, Math.round(fresh.quota * factor));
+    for (const candidate of input.planOnly ? [] : order) {
+      if (survivors.length >= fresh.quota) { report.stoppedBecause = "quota filled"; break; }
+      if (report.tried >= maxTries) { report.stoppedBecause = `tried ${maxTries} candidates`; break; }
+      const touch = input.hostId ?? candidate.hostId;
+      const free = touch === "none" ? null : await freeGb(input.host, touch);
+      if (free !== null && free < minFree) { report.stoppedBecause = `host ${touch} has ${free} GB free, below ${minFree}`; break; }
+      report.tried++;
+      const result = await warmUp(input.host, candidate, { ...warmOptions, scratch: await scratchOn(touch), ...(input.reposRoot ? { reposRoot: input.reposRoot } : {}), ...(input.hostId ? { hostId: input.hostId } : {}) }).catch((cause: unknown) => ({ ok: false as const, reason: "host_error" as const, detail: cause instanceof Error ? cause.message : String(cause) }));
+      if (result.ok) {
+        report.survived++;
+        survivors.push({ candidate, stratum: fresh.key, solutionCommit: result.solutionCommit, patchSha256: result.patchSha256, warm: result.record });
+      } else {
+        report.rejected[result.reason] = (report.rejected[result.reason] ?? 0) + 1;
+        rejected.push({ taskId: candidate.taskId, stratum: fresh.key, reason: result.reason, ...(result.detail ? { detail: result.detail.slice(0, 300) } : {}) });
+        if (result.reason === "host_error") { report.stoppedBecause = `host ${candidate.hostId} stopped answering`; break; }
+      }
+    }
+    if (!report.stoppedBecause) report.stoppedBecause = "candidates exhausted";
+    const chosen = chooseFinal(survivors.map((row) => row.candidate), fresh.quota, seed);
+    const keep = survivors.filter((row) => chosen.includes(row.candidate));
+    keptByStratum.set(fresh.key, keep);
+    report.kept = keep.length;
+    report.keptHard = keep.filter((row) => row.candidate.hard).length;
+  }
 
   const kept = strata.flatMap((stratum) => keptByStratum.get(stratum.key) ?? []);
   const ordered = interleave(kept.map((entry) => ({ ...entry, stratum: entry.stratum })), strata.map((stratum) => stratum.key));

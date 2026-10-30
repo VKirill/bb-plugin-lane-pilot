@@ -26,6 +26,8 @@ export type Candidate = {
   /** The first accepted attempt: its id and number (`hard` when it is not the first). */
   attemptId: string; attemptNo: number; hard: boolean;
   risk: Risk; area: string; repoPath: string; hostId: string;
+  /** When the first accepted attempt was recorded. Absent on a hand-built candidate: not fresh. */
+  acceptedAt?: number;
   initialHeadSha: string; baseSha: string | null;
   /** The stored task contract (task-v2), unparsed. */
   contract: Record<string, unknown>;
