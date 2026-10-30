@@ -64,6 +64,20 @@ SMA wall 3 says «stopped» has two conditions; wall 4 says every job rolls back
 | `pause <run-id>` / `resume <run-id>` | Flag in KV, kept across a reload; the older `resume <project-id>` reconcile is unchanged. | None: the answer lists what runs and what waits; a paused run's wall budget keeps counting. |
 | Trusted tooling | A pattern is left out when the task names something inside it in `owns_paths`, `expected_outputs` or `files[]`. | The gate refusal names the hits and the fix (`src/rooms/tasks/trusted-tooling.ts:103-108`). |
 
+## How it works
+
+1. When an attempt takes a worktree, its base commit is written to the record (`src/rooms/writer/server/spawn.ts:315`); a BB environment or a folder in place asks git once, in the background (`src/rooms/rollback/server/rollback.ts:75-84`); a folder without git is skipped.
+2. When the merge lands, the finish stage writes main's HEAD before the merge, the merge commit and the changed files (`src/rooms/writer/server/finish.ts:729`, `src/rooms/rollback/server/rollback.ts:86-100`).
+3. When a stop is confirmed, the worktree state is written first, the uncommitted work is saved as a patch, and only then the worktree is removed (`src/rooms/writer/server/start.ts:419-422`).
+4. On demand, `reverify` re-runs a task's checks on its recorded merge commit (`src/rooms/rollback/server/rollback.ts:224-262`), and `revert` takes the accepted merge commits out in a scratch worktree and merges the result (`src/rooms/verification/git-rollback.ts:109-138`).
+5. A paused run holds new tasks before a slot and running attempts at their stage boundary until resumed (`src/rooms/writer/server/start.ts:454-458`, `:646-647`).
+
+| Mode or state | What differs | Failure |
+|---|---|---|
+| Git worktree | Full record; `reverify` and `revert` available. | A revert conflict aborts, drops the worktree and names the files and tasks to settle first (`src/rooms/rollback/server/rollback.ts:281-312`). |
+| Live folder (no git) | Snapshots and rollback backups; no merge, no revert. | The base ask is skipped; the stop still records the state and saves the patch. |
+| BB environment | The base is asked once, in the background. | A missing answer leaves the record's base empty; the stop path is unchanged. |
+
 ## The record of an attempt
 
 `lane_pilot_attempt_change` has one row per attempt: `base_sha` (the commit the worktree started from, the first one sticks), `merge_parent` (main right before the merge), `merge_commit`, `outcome`, `changed_json` (files with A/M/D/T, deletions included) and `worktree_json` (what the worktree held when the stop was confirmed or it was returned) (`src/rooms/rollback/migrations.ts:12-37`). The migrations are spread at the end of the list (`src/rooms/storage/database.ts:371`). `lane_pilot_task_receipt` is append only (update and delete triggers refuse) and holds the receipts of `reverify` and `revert` (`src/rooms/rollback/migrations.ts:27-44`).
@@ -72,7 +86,7 @@ It is filled where the facts are known:
 
 - A worktree Lane Pilot makes returns the commit it started from, and the spawn writes it down (`src/rooms/verification/git-integrate.ts:357-374`, `src/rooms/writer/server/spawn.ts:315`, `src/rooms/writer/server/spawn.ts:565`). A BB environment, a folder in place or a continued writer asks git once, in the background (`src/rooms/rollback/server/rollback.ts:75-84`, called at `src/rooms/writer/server/spawn.ts:501` and `src/rooms/writer/server/sticky.ts:279`). A folder without git is skipped: nothing is asked of git there.
 - The merge returns main's HEAD before it and what it changed (`src/rooms/verification/git-integrate.ts:288`); the finish stage writes both with the merge commit (`src/rooms/writer/server/finish.ts:729`, `src/rooms/rollback/server/rollback.ts:86-100`).
-- A failed attempt's worktree: its state is written before the worktree is removed (`src/rooms/writer/server/start.ts:340`), then the saved patch (`src/rooms/writer/server/start.ts:343`).
+- A failed attempt's worktree: its state is written before the worktree is removed (`src/rooms/writer/server/start.ts:419`), then the saved patch (`src/rooms/writer/server/start.ts:420-422`).
 - Work accepted before the record existed is found in main by the attempt trailer every merge carries (`Lane-Pilot-Attempt: <id>`, matched line by line) and recorded on first use (`src/rooms/verification/git-rollback.ts:69-99`, `src/rooms/rollback/server/rollback.ts:165-178`).
 
 `bb lane-pilot changes <task|attempt>` (RPC `task_changes`) prints the record and the receipts.
@@ -102,8 +116,8 @@ Existing before: `halt_run` (stop everything now), cancel, parked-task restarts.
 
 `bb lane-pilot pause <run-id>` (RPC `pause_run`) sets a flag in the plugin's key-value store; `bb lane-pilot resume <run-id>` (`resume_run`) clears it (`resume <project-id>` is still the older reconcile: a run id is told by its record) (`src/rooms/runs/server/runs-halt.ts:22-36`, `src/rooms/runs/server/runs-pause.ts:38-53`, `src/rooms/tools/server/cli.ts:123-129`). While paused:
 
-- a task that has not started waits before it takes any slot, with its writer stage `pending` and the reason «the run is paused» (`src/rooms/writer/server/start.ts:370-374`);
-- a running attempt finishes its current stage (the writer's turn and its checks) and waits before its next attempt or turn (`src/rooms/writer/server/start.ts:519`);
+- a task that has not started waits before it takes any slot, with its writer stage `pending` and the reason «the run is paused» (`src/rooms/writer/server/start.ts:454-458`);
+- a running attempt finishes its current stage (the writer's turn and its checks) and waits before its next attempt or turn (`src/rooms/writer/server/start.ts:646-647`);
 - parked tasks are not restarted (`src/rooms/stability/server/stability.ts:214`);
 - nothing is cancelled, and a reload keeps the flag.
 

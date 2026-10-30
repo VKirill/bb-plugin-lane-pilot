@@ -2,7 +2,7 @@
 title: Owner profile and learning data
 type: data-model
 created: 2026-10-10
-updated: 2026-10-28
+updated: 2026-10-29
 status: active
 confidence: medium
 tags: [data-model, anamnesis, learning]
@@ -41,11 +41,11 @@ The Anamnesis store creates its own SQLite tables (`src/rooms/anamnesis/store.ts
 
 | Table | Meaning | Invariants and lifecycle | Writers and readers |
 |---|---|---|---|
-| `records` | `id`; record `kind`; display `title`; `statement`; structured `attributes`; `sensitivity`; confidence score; status; first/last evidence times; manual edit time; created/updated times. | Status and sensitivity are domain values; record id is primary key. Evidence changes also create history (`src/rooms/anamnesis/store.ts:53-57`). | Collectors and owner edits write; profile, annual review and UI read. |
+| `records` | `id`; record `kind`; display `title`; `statement`; structured `attributes`; `sensitivity`; confidence score; status; first/last evidence times; manual edit time; created/updated times. | Status and sensitivity are domain values; record id is primary key. Every mutation writes a history row through `log`; an update adds one only when a field changed, and then notes how much evidence was added (`src/rooms/anamnesis/store.ts:112-113`, `:198-200`). | Collectors and owner edits write; profile, annual review and UI read. |
 | `evidence` | `record_id`; source name; source reference; evidence time; optional quote. | Composite key `(record_id,source,ref)`; deleting record cascades evidence (`src/rooms/anamnesis/store.ts:58-61`). | Source imports write; profile review and evidence display read. |
 | `history` | Event id; record id; time; actor; action; reason; JSON changes. | Append-oriented audit history indexed by record (`src/rooms/anamnesis/store.ts:62-65`). | Mutations write; record history view reads. |
 | `tombstones` | Forgotten record id and cutoff timestamp. | One cutoff per id (`src/rooms/anamnesis/store.ts:66`). | Forget operation writes; source reconciliation avoids resurrecting forgotten records. |
-| `checkpoints` | Source key; cursor time; detail JSON; update time. | One cursor per source (`src/rooms/anamnesis/store.ts:67`). | Collection writes after a run-mode import (`src/rooms/anamnesis/collect.ts:54-57`); next scan reads. |
+| `checkpoints` | Source key; cursor time; detail JSON; update time. | One cursor per source (`src/rooms/anamnesis/store.ts:67`). | The collector writes it in the same transaction as a run-mode import; a preview writes none (`src/rooms/anamnesis/collect.ts:55-57`). The next scan reads it. |
 | `sources` | Source key; enabled flag; change time. | One enabled flag per source (`src/rooms/anamnesis/store.ts:68`). | Owner settings write; collector checks before scanning (`src/rooms/anamnesis/collect.ts:45-48`). |
 | `loads` | Load id; time; mode; JSON report. | Records preview and run import outcomes (`src/rooms/anamnesis/store.ts:69`). | Collector writes; load history view reads. |
 | `notes_files` | File path; content hash; write time. | One hash per notes file (`src/rooms/anamnesis/store.ts:70`). | Notes exporter writes; incremental sync reads. |
@@ -61,7 +61,7 @@ The Anamnesis store creates its own SQLite tables (`src/rooms/anamnesis/store.ts
 
 ## Project memory
 
-Maintainer candidate parsing is an input boundary, not a separate stored entity: supported fields become memory records, recognized boolean review labels become concepts, empty extras are ignored, and other non-empty unknown fields reject the candidate batch (`packages/memory-core/src/candidates.ts:51-66`).
+Maintainer candidate parsing is an input boundary, not a separate stored entity: supported fields become memory records, recognized boolean review labels become concepts, empty extras are ignored, and other non-empty unknown fields reject the candidate batch (`packages/memory-core/src/candidates.ts:37-64`).
 
 | Table | Meaning | Lifecycle and invariants | Writers and readers |
 |---|---|---|---|

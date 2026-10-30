@@ -8,6 +8,7 @@ confidence: high
 tags: [i18n, localization, workspace]
 sources:
   - packages/i18n/src/i18n.ts
+  - packages/i18n/src/i18n-agent-labels.ts
   - packages/i18n/src/i18n-workflows.ts
   - packages/i18n/src/i18n-workflow-editor.ts
   - packages/i18n/src/i18n-workflow-ops.ts

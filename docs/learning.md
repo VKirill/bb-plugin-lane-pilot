@@ -1,3 +1,23 @@
+---
+title: Learning from the owner's messages
+type: component
+created: 2026-10-08
+updated: 2026-10-29
+status: active
+confidence: medium
+tags: [learning, rules, jev, owner-messages, lessons]
+sources:
+  - src/rooms/anamnesis/owner-messages.ts
+  - src/rooms/learning/observe.ts
+  - src/rooms/learning/extract.ts
+  - src/rooms/learning/decide.ts
+  - src/rooms/learning/autonomy.ts
+  - packages/run-insights/src/lessons.ts
+  - src/rooms/self-repair/server/insights.ts
+  - src/rooms/learning/migrations.ts
+  - src/rooms/learning/store.ts
+---
+
 # Learning from the owner's messages
 
 Design of 2026-10-08 (T1-T8), code in `src/learning`. The owner's own messages to his agents are judged where he says them; what
@@ -20,6 +40,20 @@ owner message (a person's request in a visible top-level thread: the one collect
         annoyance                  -> kv record -> self-repair incident of kind `owner`
   every extractor tick (autonomy.ts): what waited for a yes is accepted; daily 18:20: one report per project to the PM chat
 ```
+
+## How it works
+
+1. The collector hands the owner's messages of a visible top-level thread to the observer (`src/rooms/anamnesis/owner-messages.ts`).
+2. The observer applies the skip rules, the sample and the daily Jev cap, masks personal data, and inserts the observation with its state: a policy skip becomes `skipped`, an active learn route becomes `candidate`, the rest stay `observed` (`src/rooms/learning/observe.ts:80-95`, `:113-126`). A sensitive message keeps neither excerpt nor text (`src/rooms/learning/migrations.ts:4-6`).
+3. In `active` mode the extractor proposes the item and `route` compares it with what is in force, choosing the initial state — `rule`, `preference`, `decision`, `deadline` or `fact`, as `adopted`, `proposed`, `pending_owner`, `duplicate`, `dropped` or `noted` (`src/rooms/learning/extract.ts:175-208`, kinds and states at `src/rooms/learning/migrations.ts:49-68`).
+4. Owner decisions settle the waiting items: `accept` stores the reminder or memory or adopts the rule; `reject` and `drop` end them (`src/rooms/learning/decide.ts:45-80`, `:84-91`). The autonomy reviewer does the same without the owner once its accuracy bar holds (`src/rooms/learning/autonomy.ts`).
+5. A read candidate is cleared of body text; an unread candidate turns `ignored` after the retention window (`src/rooms/learning/store.ts:71-80`).
+
+| Mode or state | What happens | Failure |
+|---|---|---|
+| `observe` | Judged and recorded, nothing acts. | A Jev error or timeout records the message within the daily cap; receipts keep hash and size only. |
+| `active` | Learn-routed messages are extracted, compared and routed to a rule on trial, a preference, a decision, a reminder or a recorded fact. | A rule on trial stays on trial until adopted; `same_as` confirms or replaces what is in force. |
+| Lessons from runs | `collectLessonSources` gathers night findings, stage rejections and attempt failures, newest first (`packages/run-insights/src/lessons.ts:30-51`); the sweep counts candidates and advances its cursor (`src/rooms/self-repair/server/insights.ts:229-240`), and repeating lessons become rule proposals (`src/rooms/self-repair/server/insights.ts:39-43`). | Drill tasks and noise reasons are excluded (`packages/run-insights/src/lessons.ts:14`, `:34`, `:38`). |
 
 ## Switching on
 
@@ -59,3 +93,15 @@ agent's reply before it. A message that matches the sensitive words (health, fam
 excerpt and no text, and nothing is extracted from it. The observation keeps a 280-character masked excerpt (for the hand review);
 the masked text waits for the extractor at most a day. The key `OPENAI_API_KEY` is read from the Env Catalog by name, held in memory ten
 minutes, never logged.
+
+## Lessons from runs (`collectLessonSources`)
+
+Beside the owner's messages, a project learns from its own runs. `collectLessonSources(db, { projectId, since, limit })` returns what a project can learn from, newest first, in three forms (`packages/run-insights/src/lessons.ts:30-51`; kinds at `:4-7`):
+
+- `night_finding` — the blocking and warning findings of a `night-review` receipt, each with the file, the finding and the suggested fix (`packages/run-insights/src/lessons.ts:16-27`);
+- `rejection` — a failed or blocked receipt of the lesson stages (`night-review`, `acceptance-receipt`, `verification`, `code-critique`, `plan-critique`) whose reason is not noise (`packages/run-insights/src/lessons.ts:12`, `:41-45`);
+- `attempt_failure` — a failed, blocked, rejected or `validation_failed` attempt that carries a reason (`packages/run-insights/src/lessons.ts:36-39`, `:47-49`).
+
+Bounds: the limit is clamped to 1–2000, default 200 (`packages/run-insights/src/lessons.ts:31`); drill tasks (`drill-*`) are excluded from both queries (`packages/run-insights/src/lessons.ts:34`, `:38`); noise reasons — a retry limit, exhausted attempts, a cancel, a deleted thread, a plugin reload, `needs_human:` — are dropped (`packages/run-insights/src/lessons.ts:14`).
+
+Who reads it: the lessons sweep counts the candidates per project and advances its cursor; failures are counted, not stored as memory, because raw failure logs crowded out knowledge on the hub (`src/rooms/self-repair/server/insights.ts:229-240`). `refreshRuleProposals` turns the lessons that repeat within a 30-day window into rule proposals and keeps the wording and decision of known ones (`src/rooms/self-repair/server/insights.ts:39-43`).

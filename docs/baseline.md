@@ -44,7 +44,7 @@ TL;DR: before a task's first writer starts, its `verification[]` runs once on th
 | `baseline.already_built=notify` | Reports that every check already passes and continues to the writer; this is the default (`src/rooms/baseline/logic.ts:24`, `:35-41`, `src/rooms/baseline/server/baseline.ts:161-168`). |
 | `baseline.already_built=stop` | Blocks the attempt and returns the base evidence to the PM (`src/rooms/baseline/logic.ts:35-41`, `src/rooms/baseline/server/baseline.ts:161-168`). |
 | Red-on-base gate | For configured risk levels, all checks passing on base blocks the task; skipped or unknown checks prevent the all-green conclusion (`src/rooms/baseline/logic.ts:1-100`). |
-| Regression check red on task merge | Records `unstable`; it is not bisected (`src/rooms/baseline/server/regress.ts:183-193`). |
+| Regression check red on task merge | Records `unstable`; it is not bisected (`src/rooms/baseline/server/regress.ts:210-222`). |
 | Worktree, host, or check trouble | Records an unknown result and allows writer start to continue (`src/rooms/baseline/server/baseline.ts:103-129`, `:150-152`). |
 
 ## The baseline (D1-3)
@@ -92,26 +92,26 @@ TL;DR: before a task's first writer starts, its `verification[]` runs once on th
 
 ### How it works
 
-1. Select recent accepted tasks and eligible checks, excluding tasks without a merge commit or usable checks (`src/rooms/baseline/server/regress.ts:95-132`).
-2. Run each check on current main within per-check and overall budgets; when a check is red, rerun it at the task's merge commit to distinguish an unstable check from a regression (`src/rooms/baseline/server/regress.ts:204-260`, `:183-202`).
-3. Bisect a confirmed regression within the configured commit limit, store the finding, and expose it through list/close routes (`src/rooms/baseline/server/regress.ts:138-158`, `:193-202`, `src/rooms/baseline/server/rpc.ts:7-13`).
+1. Select recent accepted tasks and eligible checks, excluding tasks without a merge commit or usable checks (`src/rooms/baseline/server/regress.ts:122-162`).
+2. Run each check on current main within per-check and overall budgets; when a check is red, rerun it at the task's merge commit to distinguish an unstable check from a regression (`src/rooms/baseline/server/regress.ts:273-283`, `:210-221`).
+3. Bisect a confirmed regression within the configured commit limit, store the finding, and expose it through list/close routes (`src/rooms/baseline/server/regress.ts:165-186`, `:226-231`, `src/rooms/baseline/server/rpc.ts:7-13`).
 
-`createRegression` builds a pass that reads settings, chooses candidate accepted tasks, groups them by host/checkout, reads current main, and creates a shared main worktree per checkout. It runs each distinct eligible check once, compares red checks at the task's merge commit, and bisects only checks green at merge. Green checks close open findings; non-dry runs persist the pass summary. Candidate exclusions appear in the skipped list; setup and execution errors are recorded in the pass result, and budget exhaustion stops starting further checks (`src/rooms/baseline/server/regress.ts:95-135`, `:169-202`, `:207-280`).
+`createRegression` builds a pass that reads settings, chooses candidate accepted tasks, groups them by host/checkout, reads current main, and creates a shared main worktree per checkout. It runs each distinct eligible check once, compares red checks at the task's merge commit, and bisects only checks green at merge. Green checks close open findings; non-dry runs persist the pass summary. Candidate exclusions appear in the skipped list; setup and execution errors are recorded in the pass result, and budget exhaustion stops starting further checks (`src/rooms/baseline/server/regress.ts:122-162`, `:196-231`, `:233-283`).
 
 | Option or result | Branch behavior | Outcome or failure |
 |---|---|---|
-| `plan` | Returns after candidate selection, before worktree/check execution (`src/rooms/baseline/server/regress.ts:217-225`). | Report contains selected/skipped candidates and no findings. |
-| `dryRun` | Runs checks but does not close, insert, settle, or persist findings/pass rows (`src/rooms/baseline/server/regress.ts:170-183`, `:257-278`). | Existing rows are observed without mutation. |
-| Red on main, green at task merge | Classifies as regression, then attempts bounded `git bisect` and stores the culprit/evidence (`src/rooms/baseline/server/regress.ts:138-159`, `:184-204`). | Bisect can be skipped, fail, find no commit, or name the first bad commit. |
-| Red on main and red at task merge | Classifies `unstable` and skips bisect (`src/rooms/baseline/server/regress.ts:184-196`). | If the merge-check worktree cannot be made, the pass adds an unconfirmed note and still attempts the bounded bisect (`src/rooms/baseline/server/regress.ts:187-196`). |
-| Green again on main or task reverted | Closes the open finding or settlement (`src/rooms/baseline/server/regress.ts:218-222`, `:257-262`). | Close failures do not create a replacement finding. |
+| `plan` | Returns after candidate selection, before worktree/check execution (`src/rooms/baseline/server/regress.ts:250`). | Report contains selected/skipped candidates and no findings. |
+| `dryRun` | Runs checks but does not close, insert, settle, or persist findings/pass rows (`src/rooms/baseline/server/regress.ts:239-240`, `:199-205`). | Existing rows are observed without mutation. |
+| Red on main, green at task merge | Classifies as regression, then attempts bounded `git bisect` and stores the culprit/evidence (`src/rooms/baseline/server/regress.ts:165-186`, `:210-222`). | Bisect can be skipped, fail, find no commit, or name the first bad commit. |
+| Red on main and red at task merge | Classifies `unstable` and skips bisect (`src/rooms/baseline/server/regress.ts:210-222`). | If the merge-check worktree cannot be made, the pass adds an unconfirmed note and still attempts the bounded bisect (`src/rooms/baseline/server/regress.ts:213-222`). |
+| Green again on main or task reverted | Closes the open finding or settlement (`src/rooms/baseline/server/regress.ts:283-287`, `:245-248`). | Close failures do not create a replacement finding. |
 
 | Mode or failure | Result |
 |---|---|
-| `--plan` | Selects and prints candidates without running checks (`src/rooms/baseline/server/regress.ts:214-222`). |
-| `--dry-run` | Runs checks but writes no findings and does not bisect (`src/rooms/baseline/server/regress.ts:169-199`, `:204-221`). |
-| Red at task merge | Marks the check `unstable`; no regression bisect is run (`src/rooms/baseline/server/regress.ts:183-193`). |
-| Bisect range too large | Records the finding without a culprit commit (`src/rooms/baseline/server/regress.ts:138-152`). |
+| `--plan` | Selects and prints candidates without running checks (`src/rooms/baseline/server/regress.ts:243-250`). |
+| `--dry-run` | Runs checks but writes no findings and does not bisect (`src/rooms/baseline/server/regress.ts:239-240`, `:199-205`). |
+| Red at task merge | Marks the check `unstable`; no regression bisect is run (`src/rooms/baseline/server/regress.ts:210-222`). |
+| Bisect range too large | Records the finding without a culprit commit (`src/rooms/baseline/server/regress.ts:171-172`, `:226-228`). |
 
 `bb lane-pilot regress [project-id] [--dry-run] [--plan] [--force] [--last N] [--days K]`, RPC `regress_run`, and a nightly schedule `regress-nightly` at 03:25 (every project with accepted work in the last 60 days unless its `regress.nightly` is `off`).
 

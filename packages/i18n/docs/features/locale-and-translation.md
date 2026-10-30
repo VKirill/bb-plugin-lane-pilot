@@ -8,6 +8,7 @@ confidence: high
 tags: [i18n, locale, translations]
 sources:
   - packages/i18n/src/i18n.ts
+  - packages/i18n/src/i18n-agent-labels.ts
   - packages/i18n/src/i18n-board.ts
   - packages/i18n/src/i18n-cockpit.ts
   - packages/i18n/src/i18n-fields.ts

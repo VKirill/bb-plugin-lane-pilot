@@ -27,6 +27,32 @@ This page describes engine setup and preflight, the journal factory returned to 
 5. `createJournal` closes over the database and clock and exposes run/step reads, event insertion, conditional step movement, and conditional run status changes (`packages/workflow-engine/src/journal.ts:151-154`, `packages/workflow-engine/src/journal.ts:190`).
 6. The pure-action wrapper selects its declared reference list, resolves requested refs through `ctx.resolve`, invokes the fixed action implementation with node, defaulted params, reader, and context, then returns output and optional detail (`packages/workflow-engine/src/actions.ts:176-193`).
 
+### `WorkflowEngine` state
+
+The engine keeps its coordination state in per-run maps and sets, so runs do not interfere (`packages/workflow-engine/src/engine.ts:185-194`):
+
+| Field | Holds | Read/written by |
+|---|---|---|
+| `executors` | Node executors by registered key. | `register` overwrites an existing key; `hasExecutor` queries it and preflight checks it (`packages/workflow-engine/src/engine.ts:185`, `packages/workflow-engine/src/engine.ts:208-209`). |
+| `drives` | The in-flight drive promise of each run. | `drive` returns the existing promise instead of starting a second loop, and drops the entry when the loop ends (`packages/workflow-engine/src/engine.ts:186`, `packages/workflow-engine/src/engine.ts:314-319`). |
+| `runtimes` | The caller's runtime per run, set at start or built once through `runtimeFor` on first need (`packages/workflow-engine/src/engine.ts:187`, `packages/workflow-engine/src/engine.ts:695-700`). | |
+| `aborts` | The `AbortController` of each active run. | `failRun` and `cancel` abort it to stop sibling branches and waiting steps (`packages/workflow-engine/src/engine.ts:188`, `packages/workflow-engine/src/engine.ts:585-586`). |
+| `compiledRuns`, `retired` | Compiled graph per run; finished runs are kept until `RETAINED_RUNS` (64) newer runs have finished, then their graph and runtime are dropped (`packages/workflow-engine/src/engine.ts:189-192`, `packages/workflow-engine/src/engine.ts:38`, `packages/workflow-engine/src/engine.ts:336-347`). | |
+| `beats` | One lease-renewal timer per claimed run, firing every `leaseMs/3` (`packages/workflow-engine/src/engine.ts:193`, `packages/workflow-engine/src/engine.ts:353-359`). | |
+| `stoppedRuns` | Runs whose driver stopped at a step boundary (drain or dispose); they report `stopped: true` (`packages/workflow-engine/src/engine.ts:194`, `packages/workflow-engine/src/engine.ts:501`). | |
+
+Small helpers: `compat` is the stamp compared on reload (`packages/workflow-engine/src/engine.ts:197`), `stopped` combines the disposed flag with the host's `isDisposed` (`packages/workflow-engine/src/engine.ts:216`), and `fault`/`log` are the test and diagnostics hooks (`packages/workflow-engine/src/engine.ts:210-217`). Outcomes and failures of this setup: `compile` of a stored definition parses JSON and expressions with no local catch, so invalid persisted content throws on first use (`packages/workflow-engine/src/engine.ts:236-240`); `retire` skips a run that is being driven again and keeps the compiled graph of the newest 64 finished runs for cheap re-runs (`packages/workflow-engine/src/engine.ts:338-346`).
+
+### `STEP_TRANSITIONS`
+
+`STEP_TRANSITIONS` is the allow-list the journal checks a step move against: one entry per source state listing its legal targets, and the four terminal states (`succeeded`, `failed`, `skipped`, `canceled`) share an empty list, so no move out of them exists (`packages/workflow-engine/src/journal.ts:115-121`). One transition is deliberately against the flow of work: `running -> pending` is the resume of a reentrant step after a reload (`packages/workflow-engine/src/journal.ts:114-117`).
+
+`moveStep` applies the table in three steps (`packages/workflow-engine/src/journal.ts:162-179`):
+
+1. Every supplied source state is checked against the table first; a target the table does not list for that source throws `illegal workflow step transition <from> -> <to>` before any SQL runs (`packages/workflow-engine/src/journal.ts:165-166`).
+2. The UPDATE is then conditional on the row still being in one of the source states, so a competing writer cannot move a step that has moved on (`packages/workflow-engine/src/journal.ts:174-175`).
+3. Outcomes: no changed row appends a `refused` event and returns `false`; a changed row appends a `step` event carrying the patch's `error` when present and returns `true` (`packages/workflow-engine/src/journal.ts:176-178`). Run status changes use a plain expected-status guard instead of the table, with the same false-without-event outcome on no match (`packages/workflow-engine/src/journal.ts:181-187`).
+
 ## Modes and outcomes
 
 | Operation | Branch or condition | Outcome or failure |

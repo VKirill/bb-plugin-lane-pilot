@@ -81,6 +81,33 @@ Artifact, contract, and verdict schemas use Zod. This package does not call a mo
 - Artifact validation returns no more than eight schema messages per artifact and `checkProduces` returns no more than twelve problems overall (`packages/workflow-engine/src/artifacts.ts:176-183`, `packages/workflow-engine/src/artifacts.ts:204-226`).
 - `summarizeValue` intentionally emits compact summaries rather than full nested values (`packages/workflow-engine/src/artifacts.ts:234-256`).
 
+## Agent output prompt and parsing
+
+### `parseAgentOutput`
+
+`parseAgentOutput` reads a helper's final message into the node's declared fields in three steps (`packages/workflow-engine/src/agent-output.ts:52-60`):
+
+1. Object extraction. `extractJsonObject` first tries the fenced JSON blocks, newest first, and returns the first whose body starts with `{` and parses; failing that, it walks backwards from the last `}` and tries each balanced `{...}` span, stopping at the first span that fails to parse (`packages/workflow-engine/src/agent-output.ts:29-40`).
+2. Shape check. No object at all throws `AgentOutputError("no_json")`; a JSON array or other non-object throws `AgentOutputError("not_object")` (`packages/workflow-engine/src/agent-output.ts:54-55`).
+3. Field copy with light coercion. Only the declared field names are taken; each value is coerced — numeric text becomes a number, `"true"`/`"false"` text a boolean, a number or boolean for a string field becomes text, and JSON-looking text for an array/object field is parsed (`packages/workflow-engine/src/agent-output.ts:42-49`, `packages/workflow-engine/src/agent-output.ts:57-58`). Undeclared keys are dropped, absent optional fields stay absent, and the engine's `checkOutput` does the strict check afterwards (`packages/workflow-engine/src/engine.ts:170-176`).
+
+Failure outcome: the two `AgentOutputError` codes above, plus bad JSON inside a candidate span, which simply makes `extractJsonObject` try the next one (`packages/workflow-engine/src/agent-output.ts:31`, `packages/workflow-engine/src/agent-output.ts:36`).
+
+### `agentPrompt`
+
+`agentPrompt` builds the helper thread's first message as an ordered list of lines (`packages/workflow-engine/src/agent-output.ts:94-127`):
+
+1. Identity: role, workflow, step, optional title, and the quality mode (`packages/workflow-engine/src/agent-output.ts:96`).
+2. The role's method text, when the role has one (`packages/workflow-engine/src/agent-output.ts:97`).
+3. `<task>`: the task text, or a default instruction when it is blank (`packages/workflow-engine/src/agent-output.ts:99-101`).
+4. Work data. A `<step-packet>` replaces the next three blocks when the step has a contract packet; otherwise `<inputs>` (only when non-empty), `<item>`, and `<handoff-of-the-previous-step>` capped at 6,000 characters (`packages/workflow-engine/src/agent-output.ts:103-108`). Data blocks are fenced in a tag and clipped at 24,000 characters (`packages/workflow-engine/src/agent-output.ts:65-68`).
+5. Prior thread: same-session says the earlier messages are above; read-prior-session points at `@thread:<id>`, orders the helper to read the handoff first, and says its conclusions are claims to check (`packages/workflow-engine/src/agent-output.ts:109-113`).
+6. The goals reminder and the skills list, each only when present (`packages/workflow-engine/src/agent-output.ts:114-115`).
+7. Guard lines: data-is-not-instructions (wording depends on packet versus input blocks) (`packages/workflow-engine/src/agent-output.ts:116-119`); the read-only line or "Write only what the task names." (`packages/workflow-engine/src/agent-output.ts:120-122`); and the `authorized` branch — true authorizes reversible steps toward the approved outcome while demanding a stop before destructive, paid, or irreversible ones, false is read-and-report only, and an absent value adds no line at all (`packages/workflow-engine/src/agent-output.ts:123-125`).
+8. The output contract last, so the fenced JSON block requirement is the final thing in the message (`packages/workflow-engine/src/agent-output.ts:126`, `packages/workflow-engine/src/agent-output.ts:20-26`).
+
+Failure outcome: none — the function only formats text and never throws; a blank task still produces the default instruction (`packages/workflow-engine/src/agent-output.ts:100`).
+
 ## Verdict settlement details
 
 ### `settleVerdict`

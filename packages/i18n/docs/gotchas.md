@@ -8,6 +8,7 @@ confidence: medium
 tags: [i18n, pitfalls, localization]
 sources:
   - packages/i18n/src/i18n.ts
+  - packages/i18n/src/i18n-agent-labels.ts
   - packages/i18n/src/i18n-cockpit.ts
   - packages/i18n/src/i18n-board.ts
   - packages/i18n/tests/i18n-duplicate-keys.test.ts

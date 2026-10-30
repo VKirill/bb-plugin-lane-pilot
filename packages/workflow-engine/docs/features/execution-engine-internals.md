@@ -32,6 +32,41 @@ This page records the branch behavior of `WorkflowEngine` preparation, `pureActi
 6. Journal methods read rows, append events, and conditionally change step/run state. `moveStep` enforces its transition table and expected source state before returning success (`packages/workflow-engine/src/journal.ts:150-189`).
 7. The host applies `workflowMigrations` SQL strings in array order. The export itself does not open a database or execute the statements (`packages/workflow-engine/src/journal.ts:10-105`, `packages/workflow-engine/src/db.ts:1-4`).
 
+### `REDUCERS`
+
+`REDUCERS` maps a `reduce.<workflow>.<node>` key to a pure function from the join's input to the join's declared output fields; `registerReducers` installs each entry as a reentrant executor (`packages/workflow-engine/src/reducers.ts:33`, `packages/workflow-engine/src/reducers.ts:121-128`). Every reducer receives the same four collections, each defaulted to an empty array when the join wrapper passes none (`packages/workflow-engine/src/reducers.ts:11-16`, `packages/workflow-engine/src/reducers.ts:124-126`):
+
+- `results`: the outputs of the branches that finished;
+- `failed`: the branches a tolerant join let pass, with their `item`, `error`, and `blocked` flag;
+- `rows`: every branch in branch order as `{ branch, item, ok, data?, error?, blocked? }`;
+- `items`: the fan-out items the branches were started with.
+
+Shared helpers do the common shaping: `rec`/`list`/`str` coerce malformed values to `{}`/`[]`/`""`, `idOf` derives a row's id from `item.id`, a string item, or `#<branch>`, `flat` and `unique` flatten and dedupe, `sev` counts one severity, and `done`/`lost` select the rows that finished or failed (`packages/workflow-engine/src/reducers.ts:19-28`).
+
+The reducers branch only on row data, in a few recurring shapes:
+
+| Branch shape | Condition on a row | Outcome |
+|---|---|---|
+| Status filter (`insights-post.posts`, `reels.render`, `reels.verify`, `seo-cocoon.evidence`) | `data.status === "ok"`, `data.ok === false`, or `data.skipped === true` | the row lands in the success list or in the failed/skipped list with its item or id (`packages/workflow-engine/src/reducers.ts:34-37`, `packages/workflow-engine/src/reducers.ts:74-81`, `packages/workflow-engine/src/reducers.ts:91-97`). |
+| Three-way task split (`lp.build.run_tasks`) | a failed row's `blocked` flag; a succeeded row's `data.state` | accepted ids plus unique merge commits, blocked ids, failed ids, and the verdict findings of unaccepted work (`packages/workflow-engine/src/reducers.ts:44-56`). |
+| Review pairing (`lp.review.dims`, `lp.review.confirm`) | severity rank, then original order; `confirmed === false` on a succeeded row | sorted findings with stable ids and critical/high counts; only that one condition drops a finding, everything else stays confirmed (`packages/workflow-engine/src/reducers.ts:57-73`, `packages/workflow-engine/src/reducers.ts:30-31`). |
+| Aggregation (`web-research.search`, `x-to-telegram-digest.score`) | a source URL seen before; a score with `keep === false` | duplicates dropped, source-less subquestions reported unavailable; kept posts resolved from `score.item`, `score.post`, the batch index, or the raw score (`packages/workflow-engine/src/reducers.ts:99-104`, `packages/workflow-engine/src/reducers.ts:105-118`). |
+
+Outcomes and failures: a reducer returns a plain record that becomes the join step's `output`; nothing validates its shape. A reducer that throws over malformed rows rejects the executor call and enters the engine's retry/failure path (`packages/workflow-engine/src/reducers.ts:44-56`, `packages/workflow-engine/src/reducers.ts:121-128`). The per-key outputs are tabulated in [Workflow Execution Runtime Internals](execution-runtime-internals.md).
+
+### `workflowMigrations`
+
+`workflowMigrations` is an ordered array of SQL strings; it is data — the export opens no database and executes nothing, the host applies the statements in array order (`packages/workflow-engine/src/journal.ts:10-105`, `packages/workflow-engine/src/db.ts:1-4`). The entries, in order (`packages/workflow-engine/src/journal.ts:11-104`):
+
+1. `lane_pilot_wf_run`: run identity, snapshot, linkage, usage, and lease columns, with a CHECK restricting `status` to the seven-value vocabulary and counters defaulting to 0 (`packages/workflow-engine/src/journal.ts:11-39`).
+2. Three run indexes: a partial unique index on `(parent_run_id,parent_step_key)` that applies to child runs only, plus indexes on `status` and the link columns (`packages/workflow-engine/src/journal.ts:40-42`).
+3. `lane_pilot_wf_step`: composite primary key `(run_id,step_key)`, a CHECK restricting `state` to the eight step states, then a unique index on `(run_id,origin)` and an index on `state` (`packages/workflow-engine/src/journal.ts:43-69`).
+4. `lane_pilot_wf_arrival` keyed by `(run_id,group_key,branch)` (`packages/workflow-engine/src/journal.ts:70-78`).
+5. `lane_pilot_wf_effect` with a CHECK on its four-state `state` and `UNIQUE(run_id,step_key,effect_key)` (`packages/workflow-engine/src/journal.ts:79-91`).
+6. `lane_pilot_wf_event` with an autoincrementing `seq`, a `(run_id,seq)` index, and two triggers that `RAISE(ABORT)` on any UPDATE or DELETE, which is what makes the timeline append-only (`packages/workflow-engine/src/journal.ts:92-104`).
+
+Outcomes and failures: the statements are plain `CREATE TABLE`/`INDEX`/`TRIGGER` without `IF NOT EXISTS`, so the list is applied once per database and applying it again fails on the existing table (`packages/workflow-engine/src/journal.ts:11`, `packages/workflow-engine/src/journal.ts:43`). From then on the CHECKs and unique indexes reject invalid status/state values and duplicate keys at write time; a statement that fails midway leaves the earlier ones applied, and recovery is the host's decision.
+
 ## Modes and outcomes
 
 | Operation | Branch | Result or failure |
