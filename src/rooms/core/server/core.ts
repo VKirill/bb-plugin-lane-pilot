@@ -10,7 +10,7 @@ import { aggregateRun } from "../../runs";
 import { TARGET_SHA } from "../../runs";
 import { hostContract } from "../../contracts";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
-import { getAttempt, getRun, getRunSettingsScopes, getRunWriterHost, getTask, getTaskPlan, listAttemptsForTask, listStageReceipts, listTaskTerminalStates, loadProjectSettings, loadPrototypeConfig, sectionBindingId, setIllegalTransitionLog, setRunSettingsScopes, setRunState, transitionAttempt } from "../../storage";
+import { getAttempt, getRun, getRunSettingsScopes, ownerKindOfName, registerWorktree, releaseWorktree, getRunWriterHost, getTask, getTaskPlan, listAttemptsForTask, listStageReceipts, listTaskTerminalStates, loadProjectSettings, loadPrototypeConfig, sectionBindingId, setIllegalTransitionLog, setRunSettingsScopes, setRunState, transitionAttempt } from "../../storage";
 import { GLOBAL_SETTINGS_PROJECT_ID, LP_AGENT_OVERRIDES_KEY, LP_DEFAULTS_KEY, inheritProjectValues, parseLanePilotDefaults } from "@lane-pilot/settings-catalog";
 import { createNativeInstaller } from "../../native-install";
 import type { WriterBindingResolution } from "../../native-agent";
@@ -116,7 +116,9 @@ export function createCore(bb: BbPluginApi, db: LanePilotDatabase) {
       const { job, jobKey, ...hostOptions } = withSignal as typeof withSignal & { jobKey?: string };
       const direct = async () => {
         const endpoint = JEV_METHODS.has(method) ? await jevEndpoint() : undefined;
-        return await rawCall(method, endpoint?.apiKey ? { ...(input as Record<string, unknown>), jevApiKey:endpoint.apiKey, jevProvider:endpoint.provider.id } : input, hostOptions);
+        const result = await rawCall(method, endpoint?.apiKey ? { ...(input as Record<string, unknown>), jevApiKey:endpoint.apiKey, jevProvider:endpoint.provider.id } : input, hostOptions);
+        noteWorktreeRegistry(method, input, result, options);
+        return result;
       };
       // LANE_PILOT_HOST_JOBS=0 runs every call directly, as before jobs: a switch for a host where they misbehave.
       if (process.env.LANE_PILOT_HOST_JOBS !== "0" && isHostJobKind(method) && (method !== "runSandboxedCommand" || job === true)) return await hostJobs.run(method, input, hostOptions, direct, jobKey);
@@ -125,6 +127,25 @@ export function createCore(bb: BbPluginApi, db: LanePilotDatabase) {
     }) as typeof rawHost.call,
   } as typeof rawHost;
 
+
+  // WT2: the worktree registry writes itself on the server side, in this one place every creator's host call passes
+  // through — never in each pass's code. A row at create, released_at when the copy goes by remove or by a merge.
+  const noteWorktreeRegistry = (method: string, input: unknown, result: unknown, options: unknown): void => {
+    try {
+      const opt = (options ?? {}) as { hostId?: string };
+      const inp = (input ?? {}) as { name?: string; taskId?: string; worktreePath?: string; removeWorktree?: boolean };
+      const out = (result ?? {}) as { status?: string; path?: string | null; branch?: string | null; removed?: boolean };
+      if (method === "gitCreateWorktree" && out.status === "ready" && out.path && typeof opt.hostId === "string") {
+        const owner = ownerKindOfName(typeof inp.name === "string" ? inp.name : "", typeof inp.taskId === "string" ? inp.taskId : null);
+        registerWorktree(db, { host: opt.hostId, path: out.path, branch: out.branch ?? null, owner_kind: owner.kind, owner_id: owner.id });
+        return;
+      }
+      if (!opt.hostId || !inp.worktreePath) return;
+      const gone = (method === "gitRemoveWorktree" && out.removed === true)
+        || (method === "gitIntegrate" && inp.removeWorktree === true && (out.status === "merged" || out.status === "up-to-date"));
+      if (gone) releaseWorktree(db, opt.hostId, inp.worktreePath);
+    } catch { /* the registry never breaks a host call */ }
+  };
 
   const nativeInstaller = createNativeInstaller({
     supported: (bb.server as unknown as { experimental_vkPluginLifecycle?: boolean }).experimental_vkPluginLifecycle === true,
