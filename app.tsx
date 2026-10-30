@@ -4,6 +4,7 @@ import { detectLocale, t } from "@lane-pilot/i18n";
 import type { ComponentType } from "react";
 import type { JsonValue } from "@get-bb/plugin-sdk/app";
 import { LanePilotPage } from "./src/rooms/ui-shell/ui/page";
+import { useOwnerWaitingBadge } from "./src/rooms/ui-shell/ui";
 import { CouncilPage } from "./src/rooms/council/ui";
 import { CockpitPage } from "./src/rooms/cockpit/ui";
 import { ComposerAgentBadge } from "./src/rooms/native-agent/ui";
@@ -29,7 +30,9 @@ export default definePluginApp((app) => {
     icon: "Workflow",
     path: "lane-pilot",
     component: ({ subPath }) => <LanePilotPage subPath={subPath} />,
-  });
+    // The badge hook exists on newer BB only; older builds ignore the extra field.
+    experimental_useBadge: useOwnerWaitingBadge,
+  } as Parameters<typeof app.slots.navPanel>[0]);
   app.slots.navPanel({
     id: "lane-pilot-council",
     title: t("councilPageTitle"),

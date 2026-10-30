@@ -5,5 +5,6 @@ export type { ScreenPayload, StageSummary } from "./page-model";
 export { Pill } from "./pill";
 export type { LpPage } from "./use-lp-page";
 export { openThreadPanelTab, useOpenThreadPanel } from "./open-thread-panel";
+export { useOwnerWaitingBadge } from "./owner-badge";
 export type { OpenThreadPanelOptions } from "./open-thread-panel";
 export { useLpRealtime } from "./use-lp-realtime";
