@@ -103,6 +103,7 @@ describe("the turn that continues a writer thread", () => {
   it("carries the rules that apply to the next task, and none for a retry (the first brief holds them)", async () => {
     const { db, host } = setup();
     const lesson = upsertLessonProposal(db, "P", { rule: "Run npm ci in a writer worktree, never npm install, lockfile stays untouched", audience: "writer", always: true });
+    upsertLessonProposal(db, "P", { rule: "Run npm ci in a writer worktree, never npm install, lockfile stays untouched", audience: "writer", always: true });
     adoptRuleProposal(db, "P", lesson.id);
     const deps = { db, host: host as never, chainForRun: async () => [] as string[] };
     const know = { projectId: "P", runId: "r1", hostId: "h", task, memorySettings: parseMemorySettings({}) };
