@@ -247,6 +247,22 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
     return { output: { checked: verdicts.length, kept: out.filter((v) => v.keep).length, verdicts: out } };
   } });
 
+  // `skills.jev`: Jev walks the catalog tree for this step (skills.tree_pick, hierarchical) and returns the picked
+  // skill names — a graph passes {task} instead of listing skills in the prompt.
+  engine.register<ChainRuntime>("skills.jev", { reentrant: true, run: async (c) => {
+    const params = rec(rec(c.node).params);
+    const task = str(params.task ?? (c.input.with as Row | undefined)?.task ?? c.inputs.task);
+    const rt = runtimeOf(c, c.runId);
+    const judge = jev();
+    if (!judge) return { output: { skills: [], picked: [], by: "off" } };
+    const { skillTreeCached, readSkillTreeText, pickSkillTree } = await import("../../writer/server/skill-tree");
+    const tree = await skillTreeCached(readSkillTreeText);
+    if (!tree) return { output: { skills: [], picked: [], by: "off" } };
+    const settings = rt?.projectId ? await ctx.effectiveProjectSettings(rt.projectId).then((r) => r.values as Record<string, unknown>).catch(() => ({})) : {};
+    const got = await pickSkillTree(judge, tree, { title: task, prompt: "" }, { projectId: rt?.projectId ?? null, runId: rt?.runId ?? null, settings });
+    return { output: { skills: got.skills, picked: got.picked, by: got.by } };
+  } });
+
   // ---------------------------------------------------------------- agent
   engine.register<ChainRuntime>("agent", {
     // A re-run after a reload is safe only when the spawn is idempotent (the VK thread keys); else the step is interrupted instead.

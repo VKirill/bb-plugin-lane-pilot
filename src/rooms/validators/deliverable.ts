@@ -82,27 +82,30 @@ async function validatePage(target: string, deps: ValidatorDeps): Promise<Verdic
   if (!deps.host || !deps.hostId) return { ok: false, reason: "no host to render the page on" };
   const status = await deps.host.run(deps.hostId, "/", `curl -s -o /dev/null -w '%{http_code}' -L --max-time 20 ${shq(target)}`, 30).catch(() => null);
   if (!status || !/^2\d\d$/.test(status.stdout.trim())) return { ok: false, reason: `page did not answer 2xx (got ${status?.stdout.trim() || "no response"})` };
-  const shot = await deps.host.run(deps.hostId, "/", `command -v bb >/dev/null && bb browser-automation open ${shq(target)} --width 375 --shot /tmp/v375.png && bb browser-automation open ${shq(target)} --width 1280 --shot /tmp/v1280.png || exit 3`, 90).catch(() => null);
+  // Unique shot paths: parallel checks on one host must not overwrite each other.
+  const stamp = Math.random().toString(36).slice(2, 8);
+  const shots = [`/tmp/lpv-${stamp}-375.png`, `/tmp/lpv-${stamp}-1280.png`];
+  const shot = await deps.host.run(deps.hostId, "/", `command -v bb >/dev/null && bb browser-automation open ${shq(target)} --width 375 --shot ${shots[0]} && bb browser-automation open ${shq(target)} --width 1280 --shot ${shots[1]} || exit 3`, 90).catch(() => null);
   if (shot && shot.exitCode !== 3 && shot.exitCode !== 0) return { ok: false, reason: `browser check failed: ${(shot.stderr || shot.stdout).trim().slice(0, 300)}` };
   const probe = shot && shot.exitCode === 0 ? await deps.host.run(deps.hostId, "/", `bb browser-automation run --script ${shq(DOM_PROBE_JS)} 2>/dev/null | grep -o 'REPORT {.*}' | head -1 || exit 3`, 60).catch(() => null) : null;
   const match = /REPORT (\{.*\})/.exec(probe?.stdout ?? "");
   const dom = match ? JSON.parse(match[1]) as DomReport : null;
   const problems = dom ? domProblems(dom) : [];
   if (problems.length) return { ok: false, reason: `DOM check: ${problems.join("; ")}`, details: { dom } };
-  return judgeScreenshots(target, deps, dom);
+  return judgeScreenshots(target, deps, dom, shots);
 }
 
 /** Layer 2: Jev on the screenshots (cut-off only — the live probe showed it misses semantic breakage). Layer 3: deps.review. */
-async function judgeScreenshots(target: string, deps: ValidatorDeps, dom: DomReport | null): Promise<Verdict> {
+async function judgeScreenshots(target: string, deps: ValidatorDeps, dom: DomReport | null, shotPaths: string[]): Promise<Verdict> {
   const brief = String(deps.brief?.objective ?? deps.brief?.page ?? "");
   const base = { ok: true, reason: "page answers; DOM clean when the probe ran" };
   const judge = jev();
   let jevSeen: { verdict: string; worst: number; worstShot: string | null; box?: unknown } | null = null;
   if (judge && deps.host && deps.hostId) {
-    const shots = await Promise.all(["v375", "v1280"].map(async (name) => {
-      const out = await deps.host!.run(deps.hostId!, "/", `base64 < /tmp/${name}.png 2>/dev/null | tr -d '\n'`, 60).catch(() => null);
+    const shots = await Promise.all(shotPaths.map(async (path, i) => {
+      const out = await deps.host!.run(deps.hostId!, "/", `base64 < ${shq(path)} 2>/dev/null | tr -d '\n'`, 60).catch(() => null);
       const data = out?.stdout?.trim();
-      return data && out!.exitCode === 0 ? { name: `${name}px`, format: "png" as const, data_base64: data.slice(0, 6_000_000) } : null;
+      return data && out!.exitCode === 0 ? { name: `${i === 0 ? 375 : 1280}px`, format: "png" as const, data_base64: data.slice(0, 6_000_000) } : null;
     }));
     const valid = shots.filter((shot) => shot !== null);
     if (valid.length) {
@@ -120,7 +123,7 @@ async function judgeScreenshots(target: string, deps: ValidatorDeps, dom: DomRep
   }
   const wantsReview = deps.review && (jevSeen?.verdict === "uncertain" || Boolean(deps.brief?.design));
   if (wantsReview) {
-    const reviewed = await deps.review!({ url: target, brief, shots: ["/tmp/v375.png", "/tmp/v1280.png"], dom, jev: jevSeen }).catch(() => null);
+    const reviewed = await deps.review!({ url: target, brief, shots: shotPaths, dom, jev: jevSeen }).catch(() => null);
     if (reviewed) return { ...reviewed, details: { dom, jev: jevSeen } };
     return { ...base, reason: `${base.reason}; visual review unavailable${jevSeen ? `, jev: ${jevSeen.verdict} ${jevSeen.worst}` : ""}`, details: { dom, jev: jevSeen } };
   }

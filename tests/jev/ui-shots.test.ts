@@ -123,3 +123,18 @@ describe("page validator layers", () => {
     expect(Object.keys(state).sort()).toEqual(["page", "shots"]);
   });
 });
+
+describe("pageReviewByAgent verdict parsing (real wiring)", () => {
+  it("parses VERDICT/ISSUE lines from the specialist report", async () => {
+    const { pageReviewByAgent } = await import("../../src/rooms/critique/server/specialist-graph");
+    const ctx = { db: { prepare: () => ({ get: () => ({ project_id: "p1" }) }) }, log: () => {}, isDisposed: () => false } as never;
+    const services = { workflowEngine: {
+      start: () => ({ runId: "r1", done: Promise.resolve() }),
+      get: () => ({ status: "succeeded", output: { report: "VERDICT: rework\nISSUE h1.hero: heading hidden under the form\nISSUE img.logo: empty image" } }),
+    } } as never;
+    const got = await pageReviewByAgent(ctx, services, { pmThreadId: "t", projectId: "p1", parentRunId: "r0", design: true, request: { url: "http://x", brief: "b", shots: ["/tmp/a.png"], dom: null, jev: null } });
+    expect(got?.ok).toBe(false);
+    expect(got?.reason).toMatch(/rework/);
+    expect((got?.details?.issues as string[])[0]).toMatch(/h1\.hero/);
+  });
+});
