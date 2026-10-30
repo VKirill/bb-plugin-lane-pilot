@@ -1,4 +1,5 @@
 import { breakerKey } from "@lane-pilot/resilience";
+import { claimDailySchedule } from "../../storage";
 import { scheduleIsolated, type ServerCore, type Services } from "../../core/server";
 import { SANDBOX_PROJECT_ID } from "../../stability/server";
 import { CAPABILITIES, adapterVersions, capabilityTable, dueProbes, probeSetupFailed, providersInUse } from "../logic";
@@ -87,5 +88,20 @@ export function mountCapabilities(ctx: ServerCore, api: CapabilitiesApi): void {
   scheduleIsolated(ctx.bb, "capability-sweep", "7 * * * *", async (signal) => {
     if (ctx.isDisposed() || signal?.aborted) return;
     await api.sweep().catch((cause: unknown) => ctx.log(`capability sweep failed: ${cause instanceof Error ? cause.message : String(cause)}`));
+    // C1: once a month the capability table is reconciled and the drift is recorded in the log — adapters released since
+    // their receipts and unproven cells. Facts only; no chat message (a sweep never wakes a PM thread).
+    const monthKey = new Date().toISOString().slice(0, 7);
+    if (!ctx.isDisposed() && claimDailySchedule(ctx.db, SANDBOX_PROJECT_ID, "capability-reconcile", monthKey)) {
+      try {
+        const table = await api.table();
+        const receipts = listReceipts(ctx.db);
+        for (const row of table) {
+          const receipted = [...new Set(receipts.filter((r) => r.providerId === row.providerId).map((r) => r.version))];
+          const unproven = Object.values(row.capabilities).filter((state) => state === "unproven").length;
+          const drifted = row.version !== null && !receipted.includes(row.version);
+          ctx.log(`capability reconcile ${monthKey}: ${row.providerId} adapter=${row.version ?? "none"}${drifted ? ` (new since receipts: ${receipted.join(", ") || "none"})` : ""} unproven=${unproven}`);
+        }
+      } catch (cause) { ctx.log(`capability reconcile failed: ${cause instanceof Error ? cause.message : String(cause)}`); }
+    }
   }, { timeoutMs: 30 * 60_000 });
 }

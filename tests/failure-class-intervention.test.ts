@@ -6,7 +6,7 @@ import { insertReceipt } from "@lane-pilot/jev";
 import { migrations, openDatabase } from "../src/rooms/storage/database";
 
 const receiptRow = (decision = "task") => ({
-  judgment: "failure.class", version: 1, model: "jev-1", mode: "shadow", projectId: "p", runId: "r",
+  judgment: "failure.class", version: 1, model: "jev-1", mode: "shadow" as const, projectId: "p", runId: "r",
   subject: "attempt", inputSha256: "x", inputChars: 10, questions: 1, batchSize: 1, status: "ok" as const,
   decision, decidedBy: "fallback" as const, latencyMs: 1,
 });
