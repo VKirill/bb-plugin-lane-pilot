@@ -56,9 +56,9 @@ export type RunnerDeps = {
   /** The jevals trace evals (audit top-10): absent, they are skipped. */
   jevals?: (input: { task: ManifestTask; outcome: TaskOutcome; attempts: readonly AttemptMetrics[]; reason: string | null }) => Promise<JevalsResult | null>;
   /** Per-task Jev context for the validators (settings, ids for the receipts). Absent: registry defaults. */
-  jevCtx?: (task: ManifestTask) => import("../validators").ValidatorDeps["jevCtx"];
-  /** Layer-3 page review (the specialist helper); absent: pages keep the DOM+Jev verdict. */
-  pageReview?: import("../validators").PageReview;
+  jevCtx?: (task: ManifestTask) => Promise<import("../validators").ValidatorDeps["jevCtx"]>;
+  /** Layer-3 page review (the specialist helper), bound per task. Absent: pages keep the DOM+Jev verdict. */
+  pageReview?: (task: ManifestTask, request: Parameters<import("../validators").PageReview>[0]) => ReturnType<import("../validators").PageReview>;
 };
 
 export const DEFAULT_BUDGET_TOKENS = 120_000_000;
@@ -228,8 +228,8 @@ export async function runSeries(deps: RunnerDeps, input: SeriesInput): Promise<S
           const verdict = await runValidator(task.validator, probe && probe.exitCode === 0 ? source : null, {
             host: deps.host, hostId: placed.hostId,
             brief: (task as { brief?: Record<string, unknown> }).brief,
-            ...(deps.jevCtx ? { jevCtx: deps.jevCtx(task) } : {}),
-            ...(deps.pageReview ? { review: deps.pageReview } : {}),
+            ...(deps.jevCtx ? { jevCtx: await deps.jevCtx(task) } : {}),
+            ...(deps.pageReview ? { review: (req: Parameters<import("../validators").PageReview>[0]) => deps.pageReview!(task, req) } : {}),
           });
           saveResult(deps.db, { runId: run.id, taskId: task.taskId, position: task.position, state: verdict.ok ? "accepted" : "not_accepted", accepted: verdict.ok, benchTaskId: null, lpRunId: lp?.runId ?? null, attempts: 0, stagesPassed: 0, stagesFailed: 0, tokens: null, costUsd: null, costState: "not_measured", seconds: 0, reason: verdict.reason, recordedAt: clock.now() });
           log(`bench ${input.arm} r${repeat}: ${task.taskId} validator ${task.validator ?? "artifact"} ${verdict.ok ? "accepted" : "not accepted"}`);

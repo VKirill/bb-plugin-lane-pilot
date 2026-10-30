@@ -138,3 +138,21 @@ describe("pageReviewByAgent verdict parsing (real wiring)", () => {
     expect((got?.details?.issues as string[])[0]).toMatch(/h1\.hero/);
   });
 });
+
+describe("bench path: runValidator reaches layer 3", () => {
+  it("noncode page task with uncertain jev calls the bound pageReview", async () => {
+    const { runValidator } = await import("../../src/rooms/bench/validator");
+    const { client } = clientReturning({ s0: 0.4, s1: 0.35 });
+    setJevForTests(createJev({ client, db: null }));
+    let got: unknown = null;
+    const verdict = await runValidator("page", "http://x", {
+      ...hostStub(CLEAN_DOM),
+      brief: { design: true },
+      jevCtx: { settings: { "jev.modes": "ui.page_shots=active" } },
+      review: async (req) => { got = req; return { ok: false, reason: "heading missing" }; },
+    });
+    setJevForTests(null);
+    expect(got).not.toBeNull();
+    expect(verdict.ok).toBe(false);
+  });
+});
