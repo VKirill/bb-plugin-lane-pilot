@@ -87,8 +87,9 @@ export const hostContract = defineRpcContract({
       machine:z.object({ load1:z.number().nonnegative().nullable(), cpuCount:z.number().int().positive().nullable(), memFreeBytes:z.number().nonnegative().nullable(), memTotalBytes:z.number().nonnegative().nullable() }).strict().optional() }).strict(),
   },
   gitCreateWorktree: {
-    // `commit`: start from it instead of HEAD; `baseSha` in the answer: the commit the worktree started from (both additive; an older host ignores the first and omits the second).
-    input: z.object({ requestedHostId:z.string().min(1), basePath:z.string().startsWith("/"), name:z.string().regex(/^[A-Za-z0-9._-]{1,120}$/), commit:z.string().regex(/^[a-f0-9]{7,64}$/).optional() }).strict(),
+    // `commit`: start from it instead of HEAD; `taskId`: the task the branch belongs to; `baseSha` in the answer: the commit the worktree started from (additive; an older host ignores the first two and omits the third).
+    input: z.object({ requestedHostId:z.string().min(1), basePath:z.string().startsWith("/"), name:z.string().regex(/^[A-Za-z0-9._-]{1,120}$/), commit:z.string().regex(/^[a-f0-9]{7,64}$/).optional(),
+      taskId:z.string().regex(/^[A-Za-z0-9._-]{1,128}$/).optional() }).strict(),
     output: z.object({ hostId:z.string(), status:z.enum(["ready","failed"]), path:z.string().nullable(), branch:z.string().nullable(), reason:z.string().nullable(), baseSha:z.string().nullable().optional() }).strict(),
   },
   gitIntegrate: {

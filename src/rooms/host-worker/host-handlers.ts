@@ -220,6 +220,7 @@ export const laneWorktreeRoot = () => join(homedir(), ".lane-pilot", "worktrees"
 export const gitCreateWorktree: ExperimentalHostRpcHandlers<typeof hostContract>["gitCreateWorktree"] = async (input) => ({
   hostId:process.env.BB_HOST_ID??input.requestedHostId,
   ...await createWorktree({basePath:input.basePath,name:input.name,...(input.commit?{commit:input.commit}:{}),
+    ...(input.taskId?{taskId:input.taskId}:{}),
     targetPath:join(laneWorktreeRoot(),input.name,basename(input.basePath))}),
 });
 
