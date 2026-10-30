@@ -20,7 +20,7 @@ import { closeWriterStages, recordStage, resetHelperStages } from "../../runs/se
 import { id, stringAt, valueAt } from "../../core/server";
 import { buildTask } from "./writer-task";
 import { dispatchReply, dispatchRunKey, startDispatchRun, pipelineUnavailable } from "./dispatch-workflow";
-import { TEST_FILE_RE, suggestTests, testHintLine } from "../../verification/test-hint";
+import { suggestTests, testHintLine } from "../../verification";
 import { jev } from "@lane-pilot/jev";
 import { batchAdviceFor, topicLoopGuard } from "./dispatch-guards";
 import { reviveCanceledTask } from "./revive";

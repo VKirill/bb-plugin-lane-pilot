@@ -41,7 +41,7 @@ import { REPLAY_CHECK_FAILED, WRITER_SILENT_REASON, beginChecks, checksMoved, fa
 import { bookkeepingSetting } from "@lane-pilot/settings-catalog";
 import { attemptMergeMessage, clearMergeIntent, recordMergeIntent } from "../../verification/server";
 import { sendServiceMessage } from "../../relay/server";
-import { judgeRulesOnDiff, ruleViolationRemark } from "../../learning/rule-diff";
+import { judgeRulesOnDiff, ruleViolationRemark } from "../../learning";
 import { jev } from "@lane-pilot/jev";
 import { runOnHost } from "@lane-pilot/host-calls";
 import { pollPause } from "@lane-pilot/kit";
