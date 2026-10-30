@@ -90,34 +90,40 @@ describe("contract lint rules", () => {
       expect(codes(lint({}, {}, null))).toEqual([]);
     });
     it("takes line windows off the path", () => {
-      expect(lintProbePaths({ ...baseTask, read_first:["src/a.ts:10-20"], verification:[] }, root)).toEqual([`${root}/src/a.ts`, `${root}/src/b.ts`]);
+      expect(lintProbePaths({ ...baseTask, read_first:["src/a.ts:10-20"], verification:[] }, root)).toEqual([`${root}/src/a.ts`, `${root}/src/b.ts`, `${root}/src`]);
     });
   });
 
   describe("a file that does not exist and that the task does not create", () => {
-    const kinds = { "src/a.ts":"file" as const, "src/gone.ts":"missing" as const };
-    it("refuses an owned file that is missing, and says to fix the path or list it as created", () => {
-      const { errors } = lint({ owns_paths:["src/", "src/gone.ts"] }, {}, kinds);
+    const kinds = { "src":"directory" as const, "src/a.ts":"file" as const, "src/gone.ts":"missing" as const, "nosuchdir":"missing" as const, "nosuchdir/typo.ts":"missing" as const };
+    it("warns on an owned file missing inside an existing folder, and refuses only one whose folder is absent", () => {
+      const first = lint({ owns_paths:["src/", "src/gone.ts"] }, {}, kinds);
+      expect(first.errors.filter((error) => error.code === "owns_missing")).toHaveLength(0);
+      const warned = first.warnings.filter((warning) => warning.code === "owns_unmarked_create");
+      expect(warned).toHaveLength(1);
+      expect(warned[0]!.message).toContain("src/gone.ts");
+      const { errors } = lint({ owns_paths:["src/", "nosuchdir/typo.ts"] }, {}, kinds);
       const missing = errors.filter((error) => error.code === "owns_missing");
       expect(missing).toHaveLength(1);
-      expect(missing[0]!.message).toContain("src/gone.ts");
-      expect(missing[0]!.message).toContain("expected_outputs");
+      expect(missing[0]!.message).toContain("nosuchdir");
     });
     it("allows a missing file the task creates, and a file that is already there", () => {
       expect(codes(lint({ owns_paths:["src/", "src/new.ts"], expected_outputs:["src/b.ts", "src/new.ts"] }, {}, { ...kinds, "src/new.ts":"missing" }))).not.toContain("owns_missing");
       expect(codes(lint({ owns_paths:["src/", "src/new.ts"], files:[{ path:"src/new.ts", action:"create", change:"add it" }] }, {}, { ...kinds, "src/new.ts":"missing" }))).not.toContain("owns_missing");
       expect(codes(lint({ owns_paths:["src/", "src/a.ts"] }, {}, kinds))).not.toContain("owns_missing");
     });
-    it("refuses a modify or delete of a file that is not there", () => {
-      const { errors } = lint({ files:[{ path:"src/gone.ts", action:"modify", change:"edit the helper" }] }, {}, kinds);
-      const missing = errors.filter((error) => error.code === "output_missing");
-      expect(missing).toHaveLength(1);
-      expect(missing[0]!.message).toContain("modify");
-      expect(missing[0]!.message).toContain("src/gone.ts");
+    it("warns on a modify or delete of a file that is not there, and refuses one whose folder is absent", () => {
+      const first = lint({ files:[{ path:"src/gone.ts", action:"modify", change:"edit the helper" }] }, {}, kinds);
+      expect(first.errors.filter((error) => error.code === "output_missing")).toHaveLength(0);
+      expect(first.warnings.filter((warning) => warning.code === "output_unmarked_create")).toHaveLength(1);
+      const { errors } = lint({ files:[{ path:"nosuchdir/typo.ts", action:"modify", change:"edit" }] }, {}, kinds);
+      expect(errors.filter((error) => error.code === "output_missing")).toHaveLength(1);
       expect(codes(lint({ expected_outputs:["src/b.ts", "src/gone.ts"], files:[{ path:"src/gone.ts", action:"modify", change:"edit" }] }, {}, kinds))).not.toContain("output_missing");
     });
-    it("asks the machine about those files", () => {
-      expect(lintProbePaths({ ...baseTask, owns_paths:["src/", "src/gone.ts"] }, root)).toContain(`${root}/src/gone.ts`);
+    it("asks the machine about those files and their folders", () => {
+      const probes = lintProbePaths({ ...baseTask, owns_paths:["src/", "src/gone.ts"] }, root);
+      expect(probes).toContain(`${root}/src/gone.ts`);
+      expect(probes).toContain(`${root}/src`);
       expect(lintProbePaths({ ...baseTask, verification:[] }, root)).toContain(`${root}/src/b.ts`);
     });
   });
@@ -612,5 +618,23 @@ describe("contract lint at dispatch", () => {
     expect(reply).toMatchObject({ taskId:"lint-task", state:"queued" });
     expect(taskCount(db)).toBe(1);
     await harness.lifecycle.dispose();
+  });
+
+  it("sends a task with more than 3 acceptance items back once, then lets the same task id through with a warning", async () => {
+    const four = { acceptance:["one", "two", "three", "four"] };
+    const first = await setup({ "src":"directory", "src/a.ts":"file" });
+    const refused = await first.dispatch(four);
+    expect(refused).toMatchObject({ state:"validation_failed" });
+    expect(String(refused.reason)).toContain("acceptance has 4 items");
+    expect(String(refused.reason)).toContain("second dispatch of this same task id");
+    expect(taskCount(first.db)).toBe(0);
+    const passed = await first.dispatch(four);
+    expect(passed).toMatchObject({ taskId:"lint-task", state:"queued" });
+    expect(taskCount(first.db)).toBe(1);
+    await first.harness.lifecycle.dispose();
+    // Three items need no redo at all.
+    const second = await setup({ "src":"directory", "src/a.ts":"file" });
+    expect(await second.dispatch({ acceptance:["one", "two", "three"] })).toMatchObject({ state:"queued" });
+    await second.harness.lifecycle.dispose();
   });
 });
