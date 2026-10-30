@@ -187,7 +187,7 @@ export function triageSummary(db: TriageDatabase, projectId: string, since: numb
   return { total, byOrigin, errors, lastTriagedAt: last };
 }
 
-export type WriterFailure = { attemptId: string; runId: string; taskId: string; reason: string; threadId: string | null; failedAt: number };
+export type WriterFailure = { attemptId: string; runId: string; taskId: string; reason: string; threadId: string | null; failedAt: number; contractJson?: string | null };
 /** `scope` is the section chain the group's rule belongs to, outermost first; empty for the whole project. */
 export type WriterGroup = { category: string; taskCount: number; failures: WriterFailure[]; scope: string[] };
 
@@ -198,8 +198,9 @@ export type WriterGroup = { category: string; taskCount: number; failures: Write
 export function writerGroups(db: TriageDatabase, projectId: string, since: number, options: { minTasks?: number; minConfidence?: number; chains?: ReadonlyMap<string, readonly string[]> } = {}): WriterGroup[] {
   const minTasks = options.minTasks ?? 3;
   const rows = db.prepare(`SELECT f.attempt_id AS attemptId, f.run_id AS runId, f.task_id AS taskId, f.reason, f.category, f.failed_at AS failedAt, a.thread_id AS threadId,
-      r.settings_scopes_json AS scopesJson
+      r.settings_scopes_json AS scopesJson, t.contract_json AS contractJson
     FROM lane_pilot_failure_triage f LEFT JOIN lane_pilot_attempt a ON a.id=f.attempt_id LEFT JOIN lane_pilot_run r ON r.id=f.run_id
+      LEFT JOIN lane_pilot_task t ON t.id=f.task_id
     WHERE f.project_id=? AND f.failed_at>=? AND f.status='ok' AND f.origin='writer' AND f.origin_confidence>=? AND f.same_rule_id IS NULL
       AND (f.detail IS NULL OR f.detail<>'model:not_writer')
     ORDER BY f.failed_at DESC`).all(projectId, since, options.minConfidence ?? 0.5) as Array<WriterFailure & { category: string | null; scopesJson: string | null }>;
@@ -216,7 +217,7 @@ export function writerGroups(db: TriageDatabase, projectId: string, since: numbe
       const stored = options.chains?.get(row.runId);
       let chain: string[] = stored ? [...stored] : [];
       if (!stored) { try { const parsed = JSON.parse(row.scopesJson ?? "[]") as unknown; if (Array.isArray(parsed)) chain = parsed.filter((item): item is string => typeof item === "string"); } catch { /* project root */ } }
-      byTask.set(row.taskId, { failure: { attemptId: row.attemptId, runId: row.runId, taskId: row.taskId, reason: row.reason, threadId: row.threadId, failedAt: row.failedAt }, chain });
+      byTask.set(row.taskId, { failure: { attemptId: row.attemptId, runId: row.runId, taskId: row.taskId, reason: row.reason, threadId: row.threadId, failedAt: row.failedAt, contractJson: row.contractJson }, chain });
     }
     byCategory.set(category, byTask);
   }

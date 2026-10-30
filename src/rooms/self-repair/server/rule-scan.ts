@@ -217,7 +217,8 @@ export function createRuleScan(ctx: ServerCore, services: Services) {
   }
 
   /** Paths the task owns or reads, so a path-scoped rule is considered only for that task. */
-  function attemptPaths(attempt: FailedAttempt): string[] {
+  function attemptPaths(attempt: { contractJson?: string | null }): string[] {
+    if (!attempt.contractJson) return [];
     try {
       const contract = JSON.parse(attempt.contractJson) as { owns_paths?: unknown; read_first?: unknown };
       const list = (value: unknown) => Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];

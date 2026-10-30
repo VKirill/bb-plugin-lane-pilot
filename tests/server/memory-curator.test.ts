@@ -12,7 +12,7 @@ describe("retired memory-profile curator", () => {
     const kept = storeMemoryRecords(db, { ...limits, entries: [{ kind: "note", content: "Writers keep one port per service in src/home/port.ts.", concepts: ["port"] }] }).insertedIds[0]!;
     expect(retireStaleCuratorClaims(db, "P", (projectId, id) => dropMemoryIndexes(db, projectId, id))).toEqual([stale]);
     expect(db.prepare("SELECT status, expired_reason FROM lane_pilot_memory WHERE id=?").get(stale)).toEqual({ status: "expired", expired_reason: "dated" });
-    const found = searchMemoryRecords(db, "P", "nightly curator port", 10).map((row) => row.id);
+    const found = searchMemoryRecords(db, "P", "nightly curator port", 10, "auto").map((row) => row.id);
     expect(found).toEqual([kept]);
   });
 });

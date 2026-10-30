@@ -19,7 +19,7 @@ describe("eval retrieval chain", () => {
     const siblingText = "The sibling port is 4000 in src/home/port.ts.";
     const home = storeMemoryRecords(db, { ...limits, scope: ["section:home"], entries: [{ kind: "note", content: homeText, concepts: ["port"] }] }).insertedIds[0]!;
     const sibling = storeMemoryRecords(db, { ...limits, scope: ["section:other"], entries: [{ kind: "note", content: siblingText, concepts: ["port"] }] }).insertedIds[0]!;
-    const question = { scope: "P", query: "home port", paths: { owns_paths: ["src/home/port.ts"], read_first: [] }, chain: ["section:home"] } as EvalQuestion;
+    const question = { scope: "P", query: "home port", paths: { owns_paths: ["src/home/port.ts"], read_first: [] }, chain: ["section:home"] } as unknown as EvalQuestion;
     const writer = createRetrievers(db, [corpus(home, homeText, ["section:home"]), corpus(sibling, siblingText, ["section:other"])]).find((item) => item.id === "writer")!;
     expect(writer.run(question, new Set()).ids).toEqual([home]);
   });
