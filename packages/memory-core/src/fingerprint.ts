@@ -4,13 +4,12 @@ import { createHash } from "node:crypto";
 const PATH_RE = /(?:^|[\s`'"(])((?:[\w.@+-]+\/)+[\w.@+-]+\.\w+)/g;
 
 export function pathsNamed(text: string): string[] {
-  return [...new Set([...text.matchAll(PATH_RE)].map((match) => match[1]!))].sort();
+  return [...new Set([...text.matchAll(PATH_RE)].map((match) => match[1]!))].filter((path) => !path.split("/").includes("..")).sort();
 }
 
 /**
  * Short hash of the named files, in path order. A missing file is not the same as an empty one.
- * ponytail: the brief does not call this yet — notes do not store the hash. Upgrade: save `fileFingerprint`
- * on the write (the maintainer has the workspace) and skip a drifted note in `mixWriterMemory`.
+ * Stored as `file_fingerprint` when the write can read the workspace. `mixWriterMemory` skips a note whose hash no longer matches.
  */
 export function fileFingerprint(parts: ReadonlyArray<{ path: string; bytes: Uint8Array | null }>): string {
   const hash = createHash("sha256");

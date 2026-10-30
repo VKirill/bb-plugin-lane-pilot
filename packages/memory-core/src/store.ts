@@ -1,6 +1,6 @@
-import { memoryContentIssue } from "./candidates";
+import { fileFingerprint, pathsNamed } from "./fingerprint";
+import { memoryContentIssue, memoryRecordId } from "./candidates";
 import type Database from "better-sqlite3";
-import { memoryRecordId } from "./candidates";
 import { OBSERVED_QUARANTINE_MS, expireMemory, hideRecord, idleSql, sameSubject } from "./lifecycle";
 import { memoryStem, memoryTokens } from "./terms";
 import { heldClause } from "./conflict-store";
@@ -14,22 +14,27 @@ export const MEMORY_SCHEMA = {
   table: "lane_pilot_memory",
   fts: "lane_pilot_memory_fts",
   columns: ["id", "project_id", "personal_bot", "kind", "audience", "content", "concepts_json", "source_sha256", "created_at",
-    "status", "superseded_by", "valid_until", "last_used_at", "use_count", "accepted_count", "trust", "origin", "source_file_id", "scope_json"],
+    "status", "superseded_by", "valid_until", "last_used_at", "use_count", "accepted_count", "trust", "origin", "source_file_id", "scope_json", "file_fingerprint"],
 } as const;
 
 const COLUMNS = ["id", "project_id", "personal_bot", "kind", "audience", "content", "concepts_json", "source_sha256", "created_at",
-  "status", "trust", "valid_until", "superseded_by", "source_file_id", "use_count", "accepted_count", "last_used_at"];
+  "status", "trust", "valid_until", "superseded_by", "source_file_id", "use_count", "accepted_count", "last_used_at", "file_fingerprint"];
 const cols = (alias = "") => COLUMNS.map((name) => `${alias}${name}`).join(",");
 
 type Row = { id: string; project_id: string; personal_bot: string; kind: MemoryKind; audience: string; content: string; concepts_json: string; source_sha256: string; created_at: number;
-  status: MemoryStatus; trust: MemoryTrust; valid_until: number | null; superseded_by: string | null; source_file_id: string | null; use_count: number; accepted_count: number; last_used_at: number | null };
+  status: MemoryStatus; trust: MemoryTrust; valid_until: number | null; superseded_by: string | null; source_file_id: string | null; use_count: number; accepted_count: number; last_used_at: number | null; file_fingerprint: string | null };
 
 const toRecord = (row: Row): MemoryRecord => ({ id: row.id, projectId: row.project_id, personalBot: row.personal_bot, kind: row.kind, content: row.content,
   concepts: JSON.parse(row.concepts_json) as string[], sourceSha256: row.source_sha256, createdAt: row.created_at,
   status: row.status, trust: row.trust, validUntil: row.valid_until, supersededBy: row.superseded_by, sourceFileId: row.source_file_id,
-  useCount: row.use_count, acceptedCount: row.accepted_count, lastUsedAt: row.last_used_at });
+  useCount: row.use_count, acceptedCount: row.accepted_count, lastUsedAt: row.last_used_at, fileFingerprint: row.file_fingerprint });
 
 const estimate = (text: string) => Math.ceil(Buffer.byteLength(text, "utf8") / 4);
+function storedFingerprint(content: string, readFile: StoreMemoryInput["readFile"]): string | null {
+  if (!readFile) return null;
+  const paths = pathsNamed(content);
+  return paths.length ? fileFingerprint(paths.map((path) => ({ path, bytes: readFile(path) }))) : null;
+}
 const isRule = (row: Pick<Row, "concepts_json">) => row.concepts_json.includes('"rule"');
 
 function parseScopeJson(json: string | null | undefined): string[] {
@@ -84,7 +89,9 @@ export type StoreMemoryInput = { projectId: string; personalBot?: string; audien
    * The sections the records belong to, outermost first (a run's settings scopes, `section:<id>`); empty or absent: the whole project.
    * A search with a chain reads the project's records and those of the chain's sections, never a sibling section's.
    */
-  scope?: readonly string[] };
+  scope?: readonly string[];
+  /** Reads a repo-relative path. When set, a note that names files stores `file_fingerprint` of those bytes. */
+  readFile?: (path: string) => Uint8Array | null };
 export type StoreMemoryResult = { records: MemoryRecord[]; insertedIds: string[];
   /** Notes hidden to make room under a budget, least useful first. */
   evictedIds: string[];
@@ -95,10 +102,18 @@ export type StoreMemoryResult = { records: MemoryRecord[]; insertedIds: string[]
   /** Observed records a second independent source confirmed. */
   corroboratedIds: string[] };
 
+const HEDGED = /(?:^|[^\p{L}\p{N}])(?:maybe|perhaps|might|seems|appears|possibly|кажется|возможно|похоже)(?=$|[^\p{L}\p{N}])/iu;
+
+/** A maintainer note that hedges is not a confirmed fact. Writers wait out the observed quarantine. */
+export function claimIsHedged(content: string): boolean {
+  return HEDGED.test(content);
+}
+
 export function storeMemoryRecords(db: MemoryDatabase, input: StoreMemoryInput): StoreMemoryResult {
   const now = input.now ?? Date.now();
   const trust = input.trust ?? "confirmed";
   const origin = input.origin ?? "maintainer";
+  const trustOf = (entry: MemoryCandidate) => trust === "confirmed" && origin === "maintainer" && entry.kind === "note" && claimIsHedged(entry.content) ? "observed" : trust;
   trigramReady(db);
   return db.transaction(() => {
     const personalBot = input.personalBot ?? "";
@@ -163,20 +178,20 @@ export function storeMemoryRecords(db: MemoryDatabase, input: StoreMemoryInput):
       if (over(left)) throw new Error(left > input.noteBudget ? `memory note budget exceeded: ${left}/${input.noteBudget} tokens` : `memory index budget exceeded: ${core + left}/${input.indexBudget} tokens`);
       evictedIds = picked.filter((row) => hideRecord(db, input.projectId, row.id, "expired", null, unindex, "budget")).map((row) => row.id);
     }
-    const insert = db.prepare(`INSERT INTO lane_pilot_memory(id,project_id,personal_bot,kind,audience,content,concepts_json,source_sha256,created_at,trust,origin,valid_until,source_file_id)
-      VALUES(@id,@projectId,@personalBot,@kind,@audience,@content,@conceptsJson,@sourceSha256,@createdAt,@trust,@origin,@validUntil,@sourceFileId)
+    const insert = db.prepare(`INSERT INTO lane_pilot_memory(id,project_id,personal_bot,kind,audience,content,concepts_json,source_sha256,created_at,trust,origin,valid_until,source_file_id,file_fingerprint)
+      VALUES(@id,@projectId,@personalBot,@kind,@audience,@content,@conceptsJson,@sourceSha256,@createdAt,@trust,@origin,@validUntil,@sourceFileId,@fileFingerprint)
       ON CONFLICT(project_id,id) DO NOTHING`);
     const insertedIds: string[] = [];
     for (const { entry, id } of pending) {
       insert.run({ id, projectId: input.projectId, personalBot, kind: entry.kind, audience: input.audience, content: entry.content, conceptsJson: JSON.stringify(entry.concepts),
-        sourceSha256: input.sourceSha256, createdAt: now, trust, origin, validUntil: entry.validUntil ?? null, sourceFileId: entry.sourceFileId ?? null });
+        sourceSha256: input.sourceSha256, createdAt: now, trust: trustOf(entry), origin, validUntil: entry.validUntil ?? null, sourceFileId: entry.sourceFileId ?? null, fileFingerprint: storedFingerprint(entry.content, input.readFile) });
       if (input.scope?.length) db.prepare("UPDATE lane_pilot_memory SET scope_json=? WHERE project_id=? AND id=?").run(JSON.stringify(input.scope), input.projectId, id);
       addToIndexes(db, input.projectId, id, entry.content, entry.concepts);
       insertedIds.push(id);
     }
     for (const { entry, id } of revive) {
-      db.prepare("UPDATE lane_pilot_memory SET status='active', superseded_by=NULL, valid_until=?, source_sha256=?, trust=?, last_used_at=? WHERE project_id=? AND id=?")
-        .run(entry.validUntil ?? null, input.sourceSha256, trust, now, input.projectId, id);
+      db.prepare("UPDATE lane_pilot_memory SET status='active', superseded_by=NULL, valid_until=?, source_sha256=?, trust=?, last_used_at=?, file_fingerprint=COALESCE(?, file_fingerprint) WHERE project_id=? AND id=?")
+        .run(entry.validUntil ?? null, input.sourceSha256, trustOf(entry), now, storedFingerprint(entry.content, input.readFile), input.projectId, id);
       addToIndexes(db, input.projectId, id, entry.content, entry.concepts);
       insertedIds.push(id);
     }
@@ -186,6 +201,40 @@ export function storeMemoryRecords(db: MemoryDatabase, input: StoreMemoryInput):
       .filter((row) => row.status === "active" || mine.has(row.id)).map(toRecord);
     return { records, insertedIds, evictedIds, supersededIds, expiredIds, corroboratedIds: corroborate };
   }).immediate();
+}
+
+/**
+ * The project's core as the store counts it against `coreBudget` (every active core record of the bot), and the
+ * records a maintainer of this audience and section may name in `supersedes` (rules stay with the rules pipeline).
+ */
+export function coreShelf(db: MemoryDatabase, projectId: string, personalBot: string, audience: MemoryAudience, scope: readonly string[] = []): { tokens: number; replaceable: Array<{ id: string; content: string }> } {
+  const rows = db.prepare("SELECT id,audience,content,concepts_json,scope_json FROM lane_pilot_memory WHERE project_id=? AND personal_bot=? AND kind='core' AND status='active' ORDER BY created_at, id")
+    .all(projectId, personalBot) as Array<Pick<Row, "id" | "audience" | "content" | "concepts_json"> & { scope_json: string | null }>;
+  const key = scopeKey(scope);
+  return { tokens: rows.reduce((total, row) => total + estimate(row.content), 0),
+    replaceable: rows.filter((row) => row.audience === audience && scopeKey(parseScopeJson(row.scope_json)) === key && !isRule(row)).map((row) => ({ id: row.id, content: row.content })) };
+}
+
+/**
+ * The maintainer's write door. Core is curated and never evicted, so a full core used to refuse every batch that
+ * contained a core entry and lose its notes too (hub 2026-10-27/28, «memory core budget exceeded: 3135/3072» on a
+ * core of 3070; the same throw was reverted with 2f00913e). A core entry the core cannot take is kept as a note,
+ * the last one first, until the batch fits. `entries` is what was stored, `demoted` how many core entries became notes.
+ * Any other refusal is thrown. The raw door `storeMemoryRecords` still throws, so a rule that does not fit can evict
+ * an unused convention instead of becoming a note.
+ */
+export function storeMemoryRecordsKeepingOverflow(db: MemoryDatabase, input: StoreMemoryInput): StoreMemoryResult & { entries: MemoryCandidate[]; demoted: number } {
+  let entries = input.entries;
+  for (let demoted = 0; ; demoted++) {
+    try {
+      return { ...storeMemoryRecords(db, { ...input, entries }), entries, demoted };
+    } catch (cause) {
+      let last = -1;
+      for (let index = 0; index < entries.length; index++) if (entries[index]!.kind === "core") last = index;
+      if (last < 0 || !/^memory core budget exceeded/.test(cause instanceof Error ? cause.message : String(cause))) throw cause;
+      entries = entries.map((entry, index) => (index === last ? { ...entry, kind: "note" as const } : entry));
+    }
+  }
 }
 
 /** What a file that is no longer true leaves behind: the records it made are hidden, with the status that says why. */

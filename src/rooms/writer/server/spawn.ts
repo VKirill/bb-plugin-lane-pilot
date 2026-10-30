@@ -156,8 +156,15 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
       let dirtBefore=sourcePreflight.snapshots;
       const memorySettings=parseMemorySettings(settings);
       // The rules that apply and the notes that name this task's paths (writer-knowledge.ts, shared with the turn that continues a thread and the memory probe).
+      const memoryRoot=taskBasePath(db,input.runId,input.taskId)??input.task.project_cwd;
+      const readBytes=async(relativePath:string)=>{
+        if(relativePath.split("/").includes("..")) return null;
+        const file=await bb.sdk.files.read({hostId:input.config.hostId,rootPath:memoryRoot,path:resolve(memoryRoot,relativePath)}).catch(()=>null);
+        const content=file&&typeof file==="object"?(file as {content?:unknown}).content:null;
+        return typeof content==="string"?new TextEncoder().encode(content):null;
+      };
       const { allRules, rules, rulesText, mixed }=await writerKnowledge({db,host,chainForRun:(runId)=>services.ruleScan.chainForRun(runId)},
-        {projectId:input.projectId,runId:input.runId,hostId:input.config.hostId,task:input.task,memorySettings});
+        {projectId:input.projectId,runId:input.runId,hostId:input.config.hostId,task:input.task,memorySettings,readBytes});
       // A fresh writer of an area hears what its earlier tasks decided, in place of the thread that remembered it.
       const areaHistory=input.task.area?areaHistoryText(await loadArea(bb.storage.kv,input.projectId,input.task.area)):"";
       const relevantMemory={text:[areaHistory,mixed.text].filter(Boolean).join("\n\n")};

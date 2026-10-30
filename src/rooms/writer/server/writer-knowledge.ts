@@ -1,7 +1,7 @@
 import { acceptedRules, pickRelevantRules, ruleRelevanceQuestions, ruleRelevanceState } from "@lane-pilot/run-insights";
 import type { MemorySettings } from "@lane-pilot/memory-core";
 import type { TaskV2 } from "../../contracts";
-import { mixWriterMemory } from "../../memory/server";
+import { mixWriterMemory, snapshotFileRead, writerMemoryPaths } from "../../memory/server";
 import type { LanePilotDatabase } from "../../storage";
 import type { ServerCore } from "../../core/server";
 import { stickyTurnPrompt } from "./writer-task";
@@ -33,7 +33,9 @@ export async function relevantWriterRules<T extends { rule:string; audience:stri
  * (`stickyTurnPrompt`) and the memory probe (`memory-probe`) take it from: a path that builds its own copy can stop delivering unseen.
  */
 export type KnowledgeDeps={ db:LanePilotDatabase; host:ServerCore["host"]; chainForRun:(runId:string)=>Promise<readonly string[]> };
-export type KnowledgeInput={ projectId:string; runId:string; hostId:string; task:TaskV2; memorySettings:MemorySettings };
+export type KnowledgeInput={ projectId:string; runId:string; hostId:string; task:TaskV2; memorySettings:MemorySettings;
+  /** Current bytes of a repo-relative path. A note about a file that changed since the note was stored is left out of the brief. */
+  readBytes?:(path:string)=>Promise<Uint8Array|null> };
 
 /** The accepted rules that apply to one task, as the lines a brief or a turn carries; none when the project's memory is off. */
 export async function writerRules(deps:KnowledgeDeps, input:KnowledgeInput) {
@@ -50,7 +52,9 @@ export async function writerKnowledge(deps:KnowledgeDeps, input:KnowledgeInput) 
   const { allRules, rules, rulesText }=await writerRules(deps,input);
   const ruleMemoryIds=new Set(allRules.map((rule)=>rule.memoryId));
   // The writer gets at most three notes that name a path of this task; other helpers keep the budgeted context.
-  const mixed=memoryOn?mixWriterMemory(deps.db,{projectId:input.projectId,query:taskMemoryQuery,task:input.task,searchEngine:input.memorySettings.searchEngine,personalBot:input.memorySettings.personalBot,ruleMemoryIds,chain:await deps.chainForRun(input.runId)}):{text:"",ids:[] as string[]};
+  const mixInput={projectId:input.projectId,query:taskMemoryQuery,task:input.task,searchEngine:input.memorySettings.searchEngine,personalBot:input.memorySettings.personalBot,ruleMemoryIds,chain:await deps.chainForRun(input.runId)};
+  const readFile=memoryOn&&input.readBytes?await snapshotFileRead(writerMemoryPaths(deps.db,mixInput),input.readBytes):undefined;
+  const mixed=memoryOn?mixWriterMemory(deps.db,{...mixInput,readFile}):{text:"",ids:[] as string[]};
   return { allRules, rules, rulesText, mixed };
 }
 
