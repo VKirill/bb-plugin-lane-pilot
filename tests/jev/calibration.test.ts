@@ -43,7 +43,7 @@ describe("calibration report", () => {
     const db = database(), now = Date.now();
     const put = (judgment: string, n: number, outcome: (i: number) => string | null) => {
       for (let i = 0; i < n; i++) {
-        const id = insertReceipt(db, { judgment, version: 1, mode: "active", inputSha256: `h${judgment}${i}`, inputChars: 10, questions: 1, status: "ok", decidedBy: "jev", answers: { q: { kind: "choice", value: "a", top: [["a", 0.9]], confidence: 0.8 } }, at: now - i });
+        const id = insertReceipt(db, { judgment, version: 1, mode: "active", inputSha256: `h${judgment}${i}`, inputChars: 10, questions: 1, status: "ok", decidedBy: judgment.startsWith("e.") ? "escalated" : "jev", answers: { q: { kind: "choice", value: "a", top: [["a", 0.9]], confidence: 0.8 } }, at: now - i });
         const label = outcome(i);
         if (label) db.prepare("UPDATE lane_pilot_jev_receipt SET outcome=? WHERE id=?").run(label, id);
       }
@@ -52,6 +52,9 @@ describe("calibration report", () => {
     put("b.sort", 12, (i) => (i % 3 === 0 ? "disagree" : "agree"));
     put("c.dead", 12, () => "disagree");
     put("d.unlabeled", 5, () => null);
+    // 19 escalated receipts all disagreeing and zero jev-decided labels: the border zone is bad, but it is the cases Jev
+    // refused that land there — no dead verdict without confident labels.
+    put("e.border", 19, () => "disagree");
     const report = calibrateReceipts(db, { sinceMs: now - 1000, judgments: listJudgments(), minLabeled: 10 });
     const at = (id: string) => report.find((row) => row.judgment === id)!;
     expect(at("a.gate").verdict).toBe("gate");
@@ -61,6 +64,11 @@ describe("calibration report", () => {
     expect(at("c.dead").verdict).toBe("dead");
     expect(at("d.unlabeled").insufficient).toBe(true);
     expect(at("d.unlabeled").verdict).toBe("sort-only");
+    const border = at("e.border");
+    expect(border.verdict).not.toBe("dead");
+    expect(border.labeled).toBe(0);
+    expect(border.borderLabeled).toBe(19);
+    expect(border.borderDisagree).toBe(19);
   });
 });
 

@@ -19,7 +19,13 @@ export type JudgmentCalibration = {
   judgment: string; version: number; fingerprint: string;
   /** The model id the receipts of this report were answered by (the dominant one); the certified thresholds bind to it, not to an alias. */
   model: string | null;
-  calls: number; labeled: number; agree: number; disagree: number;
+  calls: number;
+  /** Labels on cases Jev decided itself (decided_by='jev'): the only sample a gate/dead verdict may stand on. */
+  labeled: number; agree: number; disagree: number;
+  /** Labels on escalated cases — the border zone where a stronger judge answered. Its agree/disagree measures how well the
+   * thresholds separate the zone; it is fit for tuning min_p/min_margin and never for a dead verdict (the selection bias:
+   * only the cases Jev was unsure about land here). */
+  borderLabeled: number; borderAgree: number; borderDisagree: number;
   /** agree / (agree + disagree); null when nothing is labeled. */
   accuracy: number | null;
   /** Mean of the confidences recorded in answers_json (Choice/Score answers). */
@@ -64,7 +70,7 @@ export function calibratedThresholds(judgment: Pick<Judgment<unknown, unknown>, 
   return out;
 }
 
-type Row = { judgment: string; version: number; model: string | null; status: string; outcome: string | null; answers_json: string | null };
+type Row = { judgment: string; version: number; model: string | null; status: string; decided_by: string; outcome: string | null; answers_json: string | null };
 
 /**
  * The calibration report over the receipts since `sinceMs`, one row per known judgment that was asked at least once
@@ -72,7 +78,7 @@ type Row = { judgment: string; version: number; model: string | null; status: st
  */
 export function calibrateReceipts(db: Database.Database, input: { sinceMs: number; judgments: ReadonlyArray<Pick<Judgment<unknown, unknown>, "id" | "version" | "questions" | "decide" | "thresholds">>; minLabeled?: number }): JudgmentCalibration[] {
   const minLabeled = input.minLabeled ?? DEFAULT_MIN_LABELED;
-  const rows = db.prepare(`SELECT judgment, version, model, status, outcome, answers_json FROM lane_pilot_jev_receipt WHERE at >= ?`).all(input.sinceMs) as Row[];
+  const rows = db.prepare(`SELECT judgment, version, model, status, decided_by, outcome, answers_json FROM lane_pilot_jev_receipt WHERE at >= ?`).all(input.sinceMs) as Row[];
   const byJudgment = new Map<string, Row[]>();
   for (const row of rows) byJudgment.set(row.judgment, [...(byJudgment.get(row.judgment) ?? []), row]);
   const out: JudgmentCalibration[] = [];
@@ -80,9 +86,14 @@ export function calibrateReceipts(db: Database.Database, input: { sinceMs: numbe
   for (const [id, list] of [...byJudgment.entries()].sort(([a], [b]) => a.localeCompare(b))) {
     const judgment = known.get(id);
     const calls = list.filter((row) => row.status === "ok").length;
-    const agree = list.filter((row) => (row.outcome ?? "").startsWith("agree")).length;
-    const disagree = list.filter((row) => (row.outcome ?? "").startsWith("disagree")).length;
+    const jevRows = list.filter((row) => row.decided_by === "jev");
+    const borderRows = list.filter((row) => row.decided_by === "escalated");
+    const agree = jevRows.filter((row) => (row.outcome ?? "").startsWith("agree")).length;
+    const disagree = jevRows.filter((row) => (row.outcome ?? "").startsWith("disagree")).length;
     const labeled = agree + disagree;
+    const borderAgree = borderRows.filter((row) => (row.outcome ?? "").startsWith("agree")).length;
+    const borderDisagree = borderRows.filter((row) => (row.outcome ?? "").startsWith("disagree")).length;
+    const borderLabeled = borderAgree + borderDisagree;
     let confidences = 0, confN = 0;
     for (const row of list) {
       if (!row.answers_json) continue;
@@ -105,7 +116,7 @@ export function calibrateReceipts(db: Database.Database, input: { sinceMs: numbe
       : "sort-only";
     out.push({
       judgment: id, version: judgment?.version ?? Math.max(...list.map((row) => row.version)), fingerprint: judgment ? judgmentFingerprint(judgment) : "", model,
-      calls, labeled, agree, disagree, accuracy, meanConfidence: confN ? Math.round((confidences / confN) * 1000) / 1000 : null,
+      calls, labeled, agree, disagree, borderLabeled, borderAgree, borderDisagree, accuracy, meanConfidence: confN ? Math.round((confidences / confN) * 1000) / 1000 : null,
       insufficient, verdict,
       thresholds: judgment ? Object.fromEntries(Object.entries(judgment.thresholds).map(([name, spec]) => [name, spec.default])) : {},
     });
