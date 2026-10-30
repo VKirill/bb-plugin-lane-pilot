@@ -209,8 +209,8 @@ export async function runPlanCritique(input:{bb:BbPluginApi;db:ReturnType<typeof
   const legacy=resolveStageWriterSelection({settings,config:input.config,stageProviderKey:"plan_critique.provider",stageModelKey:"plan_critique.model"});
   const selection=await roleSelection({zcodeBusy:zcodeBusyPeek(input.bb),catalog:sdkCriticCatalog(input.bb,input.config.hostId),settings,role:"plan-critic",fallback:{providerId:legacy.providerId,model:legacy.model},spent:await limitProbe(input.bb,input.config.hostId,settings)});
   logLimitMove(input.bb,`plan critic for ${input.taskId}`,selection.issues);
-  const providerId=selection.providerId;
-  const modelId=selection.model;
+  let providerId=selection.providerId;
+  let modelId=selection.model;
   const mode = settings["plan_critique.mode"] === "advisory" ? "advisory" : "gate";
   const runTasks = listLiveTasksForRun(input.db,input.runId).map((row) => ({id:row.id,...row.contract as {lane?:string;owns_paths?:string[];verify?:TaskV2["verify"];verification?:TaskV2["verification"]}}));
   let coverageStatus:"complete"|"truncated"|"unavailable"="unavailable";
@@ -290,52 +290,84 @@ export async function runPlanCritique(input:{bb:BbPluginApi;db:ReturnType<typeof
   recordStage(input.db, { ...base, state:"running", providerId, model:modelId });
   let threadId:string|null = null;
   try {
-    const [providers, catalog] = await Promise.all([
-      input.bb.sdk.providers.list({ hostId:input.config.hostId }),
-      input.bb.sdk.providers.models({ providerId, hostId:input.config.hostId }),
-    ]);
-    const provider = providers.find((row) => row.id === providerId && row.available);
-    const model = findModelIn(catalog.models, modelId);
-    if (!provider || !model) throw new Error("critique_provider_or_model_unavailable");
-    const levels = model.supportedReasoningEfforts.map((item) => item.reasoningEffort);
+    const savedTier = settings["plan_critique.service_tier"];
+    const tier = savedTier === "fast" || savedTier === "standard" ? savedTier : writerServiceTier(settings);
     const configuredEffort = selection.effort ?? (typeof settings["plan_critique.reasoning_effort"] === "string"
       ? settings["plan_critique.reasoning_effort"] as string
       : typeof settings["writer.reasoning_effort"] === "string" ? settings["writer.reasoning_effort"] as string : "medium");
-    if (!new Set<string>(levels).has(configuredEffort)) throw new Error(`critique_reasoning_effort_unsupported:${configuredEffort}`);
-    const savedTier = settings["plan_critique.service_tier"];
-    const tier = savedTier === "fast" || savedTier === "standard" ? savedTier : writerServiceTier(settings);
-    const serviceTier = provider.capabilities.supportsServiceTier ? bbServiceTier(tier) : null;
-    if (serviceTier && !(provider.serviceTiers ?? []).some((item) => item.id === serviceTier)) {
-      throw new Error(`critique_service_tier_unsupported:${serviceTier}`);
+    // A critic that never settles or cannot be read is its failure, not the task's: the role's next usable pair takes
+    // over; a spent pool marks the stage failed_infra and the task goes on (hub 2026-10-30: critique_thread_timeout ×4).
+    const pairs: { providerId:string; model:string }[] = [{ providerId, model: modelId }];
+    const criticCatalog = sdkCriticCatalog(input.bb, input.config.hostId);
+    for (const candidate of criticPairCandidates(settings, input.config)) {
+      if (pairs.length >= 3) break;
+      if (pairs.some((pair) => pair.providerId === candidate.providerId && pair.model === candidate.model)) continue;
+      try { if (await usable(criticCatalog, candidate, configuredEffort, tier)) pairs.push(candidate); } catch { /* unusable pairs are skipped */ }
     }
-    const helperPolicy=requireHelperSpawn(input);
-    const placement = await helperChildPlacement({
-      bb:input.bb, db:input.db, projectId:input.projectId, runId:input.runId, role:"plan-critic", taskTitle:input.task.title,
-    });
-    const spawned = await fullAccessSpawn(input.bb, {
-      ...placement,
-      ...requiredPolicyField(input.bb, helperPolicy, providerId, "plan-critic"),
-      ...writerExecutionSelection(providerId, modelId, configuredEffort, serviceTier),
-      prompt:critiquePrompt({ plan:input.plan, task:input.task, agent, pmReadContext:input.pmReadContext, structuralFindings }),
-      environment:{ type:"host", hostId:input.config.hostId,
-        workspace:{ type:"unmanaged", path:input.task.project_cwd } },
-      pluginMetadata:{ role:"plan-critic", lanePilotRunId:input.runId, lanePilotTaskId:input.taskId,
-        stageId:"plan-critique", parentPmThreadId:getRun(input.db, input.runId)?.pm_thread_id ?? null,
-        helperMode:helperPolicy.mode, helperRequired:helperPolicy.policy?.required===true, ...graphStepMetadata(input.workflow) },
-    });
-    threadId = stringAt(spawned, "id");
-    if (!threadId) throw new Error("critique_thread_id_missing");
-    recordStage(input.db, { ...base, state:"running", providerId, model:modelId, threadId });
-    await waitThreadIdle(input.bb,threadId,"critique_thread_timeout");
-    const raw = (await input.bb.sdk.threads.output({ threadId })).output;
-    if (typeof raw !== "string" || !raw.trim()) throw new Error("critique_output_empty");
-    const critique = parseCritique(raw, inputCitations(JSON.stringify(input.task), input.plan, input.pmReadContext ?? "", JSON.stringify(structuralFindings)));
-    const blocked = critique.decision === "changes_requested" && mode === "gate";
-    const result = { ...critique, mode, ...(qualityMode !== "standard" ? { qualityMode } : {}), structuralCoverage:{status:coverageStatus,pathCount:coveragePathCount}, structuralFindings, rawOutput:raw.slice(0, 12_000) };
-    const why = verdictReasons(critique, "plan-critique");
-    recordStage(input.db, { ...base, state:blocked ? "blocked" : "passed", providerId, model:modelId,
-      threadId, result, reason:blocked ? why.receipt : undefined });
-    return blocked ? { allowed:false, reason:why.returned, critique:result } : { allowed:true, critique:result };
+    let lastError: string | null = null;
+    for (const [round, pair] of pairs.entries()) {
+      providerId = pair.providerId; modelId = pair.model;
+      try {
+        const [providers, catalog] = await Promise.all([
+          input.bb.sdk.providers.list({ hostId:input.config.hostId }),
+          input.bb.sdk.providers.models({ providerId, hostId:input.config.hostId }),
+        ]);
+        const provider = providers.find((row) => row.id === providerId && row.available);
+        const model = findModelIn(catalog.models, modelId);
+        if (!provider || !model) throw new Error("critique_provider_or_model_unavailable");
+        const levels = model.supportedReasoningEfforts.map((item) => item.reasoningEffort);
+        if (!new Set<string>(levels).has(configuredEffort)) throw new Error(`critique_reasoning_effort_unsupported:${configuredEffort}`);
+        const serviceTier = provider.capabilities.supportsServiceTier ? bbServiceTier(tier) : null;
+        if (serviceTier && !(provider.serviceTiers ?? []).some((item) => item.id === serviceTier)) {
+          throw new Error(`critique_service_tier_unsupported:${serviceTier}`);
+        }
+        const helperPolicy=requireHelperSpawn(input);
+        const placement = await helperChildPlacement({
+          bb:input.bb, db:input.db, projectId:input.projectId, runId:input.runId, role:"plan-critic", taskTitle:input.task.title,
+        });
+        const spawned = await fullAccessSpawn(input.bb, {
+          ...placement,
+          ...requiredPolicyField(input.bb, helperPolicy, providerId, "plan-critic"),
+          ...writerExecutionSelection(providerId, modelId, configuredEffort, serviceTier),
+          prompt:critiquePrompt({ plan:input.plan, task:input.task, agent, pmReadContext:input.pmReadContext, structuralFindings }),
+          environment:{ type:"host", hostId:input.config.hostId,
+            workspace:{ type:"unmanaged", path:input.task.project_cwd } },
+          pluginMetadata:{ role:"plan-critic", lanePilotRunId:input.runId, lanePilotTaskId:input.taskId,
+            stageId:"plan-critique", parentPmThreadId:getRun(input.db, input.runId)?.pm_thread_id ?? null,
+            helperMode:helperPolicy.mode, helperRequired:helperPolicy.policy?.required===true, ...graphStepMetadata(input.workflow) },
+        });
+        threadId = stringAt(spawned, "id");
+        if (!threadId) throw new Error("critique_thread_id_missing");
+        recordStage(input.db, { ...base, state:"running", providerId, model:modelId, threadId });
+        await waitThreadIdle(input.bb,threadId,"critique_thread_timeout");
+        const raw = (await input.bb.sdk.threads.output({ threadId })).output;
+        if (typeof raw !== "string" || !raw.trim()) throw new Error("critique_output_empty");
+        const critique = parseCritique(raw, inputCitations(JSON.stringify(input.task), input.plan, input.pmReadContext ?? "", JSON.stringify(structuralFindings)));
+        const blocked = critique.decision === "changes_requested" && mode === "gate";
+        const result = { ...critique, mode, ...(qualityMode !== "standard" ? { qualityMode } : {}), structuralCoverage:{status:coverageStatus,pathCount:coveragePathCount}, structuralFindings, rawOutput:raw.slice(0, 12_000) };
+        const why = verdictReasons(critique, "plan-critique");
+        recordStage(input.db, { ...base, state:blocked ? "blocked" : "passed", providerId, model:modelId,
+          threadId, result, reason:blocked ? why.receipt : undefined });
+        return blocked ? { allowed:false, reason:why.returned, critique:result } : { allowed:true, critique:result };
+      } catch (cause) {
+        const message = cause instanceof Error ? cause.message : String(cause);
+        if (threadId) {
+          const thread = await input.bb.sdk.threads.get({ threadId }).catch(() => null);
+          if (stringAt(thread, "status") === "active" || stringAt(thread, "status") === "starting") {
+            await input.bb.sdk.threads.stop({ threadId }).catch(() => undefined);
+          }
+        }
+        threadId = null;
+        // Only a critic that could not answer retries: a dead or empty thread. A verdict the task disagrees with, a
+        // malformed form the model keeps sending and a host refusal are the caller's problem, not the critic's pool.
+        const retryable = /critique_thread_timeout|critique_output_empty/.test(message);
+        if (!retryable) throw cause;
+        lastError = message;
+      }
+    }
+    const infraReason = `failed_infra:${lastError ?? "critic pool exhausted"}`;
+    recordStage(input.db, { ...base, state:"failed", providerId, model:modelId, reason:infraReason, result:{ error:infraReason, criticPairs:pairs } });
+    return { allowed:true, reason:infraReason };
   } catch (cause) {
     const reason = cause instanceof Error ? cause.message : String(cause);
     if (threadId) {
@@ -452,7 +484,8 @@ export async function runCodeCritique(input:{
     if (existing.state === "passed" || existing.state === "skipped") {
       return { allowed:true, review:existing.state === "skipped" ? "not_required" : "passed", critique:existing.result, settings:parsed, policy:frozen ?? critiquePolicyFromResult(existing.result) };
     }
-    if (existing.state === "blocked" || existing.state === "failed") {
+    // A failed_infra receipt is the critic's outage, not a verdict on the task: the same input runs the critique again.
+    if (existing.state === "blocked" || (existing.state === "failed" && !existing.reason?.startsWith("failed_infra"))) {
       return {
         allowed:false, reason:existing.reason ?? "code_critique_blocked", review:"not_required",
         critique:existing.result, parsed:critiqueFromStageResult(existing.result), settings:parsed,
@@ -651,62 +684,99 @@ export async function runCodeCritique(input:{
       recordStage(input.db, { ...base, state:"blocked", providerId, model:modelId, reason, result:{ ...snapshot, spawnAttempted:true, policy } });
       return { allowed:false, reason, review:"not_required", settings:parsed, policy };
     }
-    const [providers, catalog] = await Promise.all([
-      input.bb.sdk.providers.list({ hostId:input.config.hostId }),
-      input.bb.sdk.providers.models({ providerId, hostId:input.config.hostId }),
-    ]);
-    const provider = providers.find((row) => row.id === providerId && row.available);
-    const model = findModelIn(catalog.models, modelId);
-    if (!provider || !model) throw new Error("critique_provider_or_model_unavailable");
-    const levels = model.supportedReasoningEfforts.map((item) => item.reasoningEffort);
-    if (!new Set<string>(levels).has(configuredEffort)) throw new Error(`critique_reasoning_effort_unsupported:${configuredEffort}`);
-    const tier = savedTier === "fast" || savedTier === "standard" ? savedTier : writerServiceTier(settings);
-    const serviceTier = provider.capabilities.supportsServiceTier ? bbServiceTier(tier) : null;
-    if (serviceTier && !(provider.serviceTiers ?? []).some((item) => item.id === serviceTier)) {
-      throw new Error(`critique_service_tier_unsupported:${serviceTier}`);
+    // The critic's own crash — an unreadable answer after the form retry, a thread that never settles, an unavailable
+    // provider — is the critic's failure, not the task's: the role's next usable pair takes over, and when the pool is
+    // spent the stage is marked failed_infra and the task goes on like with a disabled critic (hub 2026-10-30).
+    const pairs: { providerId:string; model:string }[] = [{ providerId, model: modelId }];
+    if (!frozen) {
+      for (const candidate of criticPairCandidates(settings, input.config)) {
+        if (pairs.length >= 3) break;
+        if (pairs.some((pair) => pair.providerId === candidate.providerId && pair.model === candidate.model)) continue;
+        try { if (await usable(criticCatalog, candidate, configuredEffort, criticTier)) pairs.push(candidate); } catch { /* unusable pairs are skipped */ }
+      }
     }
-    const helperPolicy = requireHelperSpawn(input);
-    const placement = await helperChildPlacement({
-      bb:input.bb, db:input.db, projectId:input.projectId, runId:input.runId, role:"code-critic", taskTitle:input.task.title,
-    });
-    const reviewerSnapshot = {
-      providerId, model:modelId, reasoningEffort:configuredEffort,
-      serviceTier:tier, mode:parsed.mode, maxRounds:parsed.maxRounds, autoFix:parsed.autoFix,
-    };
-    const personas = criticPersonas(input.task.risk);
-    const critiques = [];
-    const raws: string[] = [];
-    for (const persona of personas) {
-      const spawned = await fullAccessSpawn(input.bb, {
-        ...placement,
-        ...requiredPolicyField(input.bb, helperPolicy, providerId, "code-critic"),
-        ...writerExecutionSelection(providerId, modelId, configuredEffort, serviceTier),
-        prompt:codeCritiquePrompt({ evidence:input.evidence, task:input.task, agent:parsed.agent, disputes:input.disputes, memoryText:reviewerMemoryFor(input.db, input.projectId, input.runId, input.task), persona }),
-        environment:attemptEnvironment(input.db, input.runId, input.taskId, input.task.project_cwd)
-          ?? { type:"host", hostId:input.config.hostId, workspace:{ type:"unmanaged", path:input.task.project_cwd } },
-        pluginMetadata:{ role:"code-critic", lanePilotRunId:input.runId, lanePilotTaskId:input.taskId,
-          stageId:"code-critique", parentPmThreadId:getRun(input.db, input.runId)?.pm_thread_id ?? null,
-          revisionSha256:input.evidence.revisionSha256, helperMode:helperPolicy.mode,
-          helperRequired:helperPolicy.policy?.required===true, reviewer:reviewerSnapshot, ...(persona ? { persona } : {}), ...graphStepMetadata(input.workflow) },
-      });
-      threadId = stringAt(spawned, "id");
-      if (!threadId) throw new Error("critique_thread_id_missing");
-      recordStage(input.db, { ...base, state:"running", providerId, model:modelId, threadId, result:{ ...snapshot, threadId, policy } });
-      await waitThreadIdle(input.bb,threadId,"critique_thread_timeout");
-      const raw = (await input.bb.sdk.threads.output({ threadId })).output;
-      if (typeof raw !== "string" || !raw.trim()) throw new Error("critique_output_empty");
-      raws.push(raw);
-      critiques.push(await readCodeCritique(input.bb, threadId, raw, cites));
+    let lastError: string | null = null;
+    for (const [round, pair] of pairs.entries()) {
+      providerId = pair.providerId; modelId = pair.model;
+      if (round) recordStage(input.db, { ...base, state:"running", providerId, model:modelId, result:{ ...snapshot, criticFallback:round, policy } });
+      try {
+        const [providers, catalog] = await Promise.all([
+          input.bb.sdk.providers.list({ hostId:input.config.hostId }),
+          input.bb.sdk.providers.models({ providerId, hostId:input.config.hostId }),
+        ]);
+        const provider = providers.find((row) => row.id === providerId && row.available);
+        const model = findModelIn(catalog.models, modelId);
+        if (!provider || !model) throw new Error("critique_provider_or_model_unavailable");
+        const levels = model.supportedReasoningEfforts.map((item) => item.reasoningEffort);
+        if (!new Set<string>(levels).has(configuredEffort)) throw new Error(`critique_reasoning_effort_unsupported:${configuredEffort}`);
+        const tier = savedTier === "fast" || savedTier === "standard" ? savedTier : writerServiceTier(settings);
+        const serviceTier = provider.capabilities.supportsServiceTier ? bbServiceTier(tier) : null;
+        if (serviceTier && !(provider.serviceTiers ?? []).some((item) => item.id === serviceTier)) {
+          throw new Error(`critique_service_tier_unsupported:${serviceTier}`);
+        }
+        const helperPolicy = requireHelperSpawn(input);
+        const placement = await helperChildPlacement({
+          bb:input.bb, db:input.db, projectId:input.projectId, runId:input.runId, role:"code-critic", taskTitle:input.task.title,
+        });
+        const reviewerSnapshot = {
+          providerId, model:modelId, reasoningEffort:configuredEffort,
+          serviceTier:tier, mode:parsed.mode, maxRounds:parsed.maxRounds, autoFix:parsed.autoFix,
+        };
+        const personas = criticPersonas(input.task.risk);
+        const critiques = [];
+        const raws: string[] = [];
+        for (const persona of personas) {
+          const spawned = await fullAccessSpawn(input.bb, {
+            ...placement,
+            ...requiredPolicyField(input.bb, helperPolicy, providerId, "code-critic"),
+            ...writerExecutionSelection(providerId, modelId, configuredEffort, serviceTier),
+            prompt:codeCritiquePrompt({ evidence:input.evidence, task:input.task, agent:parsed.agent, disputes:input.disputes, memoryText:reviewerMemoryFor(input.db, input.projectId, input.runId, input.task), persona }),
+            environment:attemptEnvironment(input.db, input.runId, input.taskId, input.task.project_cwd)
+              ?? { type:"host", hostId:input.config.hostId, workspace:{ type:"unmanaged", path:input.task.project_cwd } },
+            pluginMetadata:{ role:"code-critic", lanePilotRunId:input.runId, lanePilotTaskId:input.taskId,
+              stageId:"code-critique", parentPmThreadId:getRun(input.db, input.runId)?.pm_thread_id ?? null,
+              revisionSha256:input.evidence.revisionSha256, helperMode:helperPolicy.mode,
+              helperRequired:helperPolicy.policy?.required===true, reviewer:reviewerSnapshot, ...(persona ? { persona } : {}), ...graphStepMetadata(input.workflow) },
+          });
+          threadId = stringAt(spawned, "id");
+          if (!threadId) throw new Error("critique_thread_id_missing");
+          recordStage(input.db, { ...base, state:"running", providerId, model:modelId, threadId, result:{ ...snapshot, threadId, policy } });
+          await waitThreadIdle(input.bb,threadId,"critique_thread_timeout");
+          const raw = (await input.bb.sdk.threads.output({ threadId })).output;
+          if (typeof raw !== "string" || !raw.trim()) throw new Error("critique_output_empty");
+          raws.push(raw);
+          critiques.push(await readCodeCritique(input.bb, threadId, raw, cites));
+        }
+        const critique = unionCriticFails(critiques);
+        const raw = raws.join("\n");
+        const blocked = codeCritiqueStops(parsed.mode, critique);
+        const result = { ...snapshot, ...critique, policy, reviewer:{ providerId, model:modelId, reasoningEffort:configuredEffort, serviceTier:tier, mode:parsed.mode, maxRounds:parsed.maxRounds, autoFix:parsed.autoFix }, rawOutput:raw.slice(0, 12_000) };
+        recordStage(input.db, { ...base, state:blocked ? "blocked" : "passed", providerId, model:modelId,
+          threadId, result, reason:blocked ? verdictReasons(critique,"code-critique").receipt : undefined });
+        return blocked
+          ? { allowed:false, reason:verdictReasons(critique,"code-critique").returned, critique:result, parsed:critique, settings:parsed, review:"not_required", policy }
+          : { allowed:true, critique:result, parsed:critique, settings:parsed, review:"passed", policy };
+      } catch (cause) {
+        const message = cause instanceof Error ? cause.message : String(cause);
+        if (threadId) {
+          const thread = await input.bb.sdk.threads.get({ threadId }).catch(() => null);
+          if (stringAt(thread, "status") === "active" || stringAt(thread, "status") === "starting") {
+            await input.bb.sdk.threads.stop({ threadId }).catch(() => undefined);
+          }
+        }
+        threadId = null;
+        // The critic's own crash retries on the role's next pair: an answer that still does not read, a dead or empty
+        // thread, the provider's own start error or an unusable pair. A host refusal or a bookkeeping error does not.
+        const retryable = (cause instanceof Error && cause.name === "ZodError")
+          || /critique_output_empty|critique_thread_timeout|critique_thread_id_missing|critique_provider_or_model_unavailable|critique_reasoning_effort_unsupported|critique_service_tier_unsupported|thread\.start failed|thread_failed/i.test(message);
+        if (!retryable) throw cause;
+        lastError = message;
+      }
     }
-    const critique = unionCriticFails(critiques);
-    const raw = raws.join("\n");
-    const blocked = codeCritiqueStops(parsed.mode, critique);
-    const result = { ...snapshot, ...critique, policy, reviewer:{ providerId, model:modelId, reasoningEffort:configuredEffort, serviceTier:tier, mode:parsed.mode, maxRounds:parsed.maxRounds, autoFix:parsed.autoFix }, rawOutput:raw.slice(0, 12_000) };
-    recordStage(input.db, { ...base, state:blocked ? "blocked" : "passed", providerId, model:modelId,
-      threadId, result, reason:blocked ? verdictReasons(critique,"code-critique").receipt : undefined });
-    return blocked
-      ? { allowed:false, reason:verdictReasons(critique,"code-critique").returned, critique:result, parsed:critique, settings:parsed, review:"not_required", policy }
-      : { allowed:true, critique:result, parsed:critique, settings:parsed, review:"passed", policy };
+    const infraReason = `failed_infra:${lastError ?? "critic pool exhausted"}`;
+    recordStage(input.db, { ...base, state:"failed", providerId, model:modelId, reason:infraReason,
+      result:{ ...ledgerCarry, ...hashFields, error:infraReason, criticPairs:pairs, policy } });
+    return { allowed:true, reason:infraReason, review:"not_required", settings:parsed, policy };
   } catch (cause) {
     const reason = cause instanceof Error ? cause.message : String(cause);
     if (threadId) {

@@ -4,7 +4,7 @@ import { clipped, extractModelJson, NO_TOOLS_LINE } from "@lane-pilot/workflow-e
 import { PLAN_CRITIC_METHOD } from "./role-method";
 import { demoteUncited } from "./citations";
 import type { Citation } from "./citations";
-import { applyRubric, isVerdictShape, legacyDecisionToStatus, legacyOutputToVerdict, rubricPromptLine, settleVerdict, statusToLegacyDecision, verdictSchema, verdictSummary, verdictSeverityToLegacy, withoutDecision } from "@lane-pilot/workflow-engine";
+import { applyRubric, isVerdictShape, legacyDecisionToStatus, legacyOutputToVerdict, normalizeVerdictInput, rubricPromptLine, settleVerdict, statusToLegacyDecision, verdictSchema, verdictSummary, verdictSeverityToLegacy, withoutDecision } from "@lane-pilot/workflow-engine";
 import type { Verdict, VerdictStatus } from "@lane-pilot/workflow-engine";
 
 export const critiqueResultSchema = z.object({
@@ -14,8 +14,8 @@ export const critiqueResultSchema = z.object({
     severity: z.enum(["info", "warning", "blocking"]),
     finding: clipped(1000),
     criterion: clipped(500),
-  }).strict()).max(30),
-}).strict();
+  })).max(30),
+}); // not .strict(): a key the schema does not know is dropped, not refused (hub 2026-10-30)
 
 /**
  * What the stage keeps of a plan critique: the old shape (`decision`, `summary`, findings by weight; stats and replays read it)
@@ -92,7 +92,7 @@ export function critiquePrompt(input: { plan:string; task:unknown; agent?:string
 
 /** `cites` is the code check on the findings' files (inputCitations): a serious finding that names a file the critic never saw counts as medium. */
 export function parseCritique(output: string, cites?: Citation): CritiqueResult {
-  const raw = extractModelJson(output);
+  const raw = normalizeVerdictInput(extractModelJson(output));
   if (isVerdictShape(raw)) {
     const cited = demoteUncited(verdictSchema.parse(withoutDecision(raw)), cites);
     const settled = settleVerdict(applyRubric(cited.verdict, "plan"), "plan");

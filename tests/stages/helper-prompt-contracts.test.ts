@@ -47,7 +47,8 @@ describe("strict stage parsers tolerate a fence or a preamble and clip overlong 
     const parsed = parseCritique(fenced(critique));
     expect(parsed.decision).toBe("approve");
     expect(parsed.summary).toHaveLength(2000);
-    expect(() => parseCritique(fenced('{"decision":"approve","summary":"s","findings":[],"extra":1}'))).toThrow();
+    // An unknown key is dropped, not refused (hub 2026-10-30: status_note).
+    expect(() => parseCritique(fenced('{"decision":"approve","summary":"s","findings":[],"extra":1}'))).not.toThrow();
     expect(() => parseCritique(fenced('{"decision":"maybe","summary":"s","findings":[]}'))).toThrow();
   });
   it("code critique", () => {

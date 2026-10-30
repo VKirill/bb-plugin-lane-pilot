@@ -53,11 +53,44 @@ function recentOf(providerId: string, now: number): number {
 /** Test hook: forget the recent starts. */
 export function resetRecentStarts(): void { recentStarts.clear(); }
 
-/** A provider that cannot work in this folder on this machine, by a known cause (not by machine name): the reason for the record, or null. */
-export function providerBlockedForFolder(providerId: string, envPath: string | null | undefined): string | null {
-  // opencode2's `serve` on macOS runs without Documents access: /api/mcp 500s (EPERM) for any folder under ~/Documents,
-  // and the session's required MCP policy then refuses the start (vk_required_session_policy_unenforceable_mcp_servers).
-  if (providerId === "opencode2" && envPath && /^\/Users\/[^/]+\/Documents(\/|$)/.test(envPath)) return "opencode2_documents_eperm";
+/** A folder under a macOS user's Documents — the one place an observed opencode2 EPERM can be about. */
+const DOCUMENTS_FOLDER = /^\/Users\/[^/]+\/Documents(\/|$)/;
+
+/** The observed start failure of a provider in a ~/Documents folder on one machine, with when it was seen. */
+export type ProviderFolderBlock = { reason: string; at: number };
+
+/** How long an observed refusal holds (`provider.folder_block_ttl_ms` setting; 6 h default) — then the provider is offered again. */
+export const PROVIDER_FOLDER_BLOCK_TTL_MS = 6 * 60 * 60_000;
+
+const providerFolderBlockKey = (hostId: string | null, providerId: string) => `provider-folder-block:${hostId ?? "?"}:${providerId}`;
+
+/** The live block for this machine+provider, or null when none was recorded or it expired. */
+export async function readProviderFolderBlock(kv: { get(key: string): Promise<unknown> }, hostId: string | null, providerId: string, ttlMs = PROVIDER_FOLDER_BLOCK_TTL_MS): Promise<ProviderFolderBlock | null> {
+  const block = await kv.get(providerFolderBlockKey(hostId, providerId)).catch(() => null) as ProviderFolderBlock | null;
+  return block && Date.now() - block.at < ttlMs ? block : null;
+}
+
+/**
+ * A start that failed with a signature the folder could cause (EPERM on the provider's API, the session's required MCP
+ * policy refused) in a ~/Documents folder: remembered on this machine, so the resolver stops offering it there until a
+ * success or the TTL (Mac mini 2026-10-30: opencode2 serve without Documents access; lifted after the owner re-granted it).
+ */
+export async function noteProviderStartFailure(kv: { set(key: string, value: never): Promise<unknown> }, hostId: string | null, providerId: string, envPath: string | null | undefined, reason: string): Promise<void> {
+  if (providerId !== "opencode2" || !envPath || !DOCUMENTS_FOLDER.test(envPath)) return;
+  if (!/EPERM|unenforceable|\b500\b.*mcp|mcp.*\b500\b/i.test(reason)) return;
+  await kv.set(providerFolderBlockKey(hostId, providerId), { reason, at: Date.now() } as never).catch(() => undefined);
+}
+
+/** A start that went through in the folder: clears the observed block for this machine+provider. */
+export async function noteProviderStartSuccess(kv: { set(key: string, value: never): Promise<unknown> }, hostId: string | null, providerId: string, envPath: string | null | undefined): Promise<void> {
+  if (providerId !== "opencode2" || !envPath || !DOCUMENTS_FOLDER.test(envPath)) return;
+  await kv.set(providerFolderBlockKey(hostId, providerId), null as never).catch(() => undefined);
+}
+
+/** A provider that cannot work in this folder on this machine, by an observed cause (not a guessed one): the reason for the record, or null. */
+export function providerBlockedForFolder(providerId: string, envPath: string | null | undefined, block?: ProviderFolderBlock | null): string | null {
+  // Only an observed refusal holds opencode2 out of ~/Documents: its start EPERM'd there before (vk_required_session_policy_unenforceable_mcp_servers).
+  if (providerId === "opencode2" && envPath && DOCUMENTS_FOLDER.test(envPath) && block) return block.reason;
   return null;
 }
 
@@ -73,13 +106,15 @@ export type SpawnModelInput = Omit<AgentModelInput, "offered" | "providerOf" | "
   avoidProvider?: string | null;
   /** Provider limits (spawnUsageOf): a nearly spent provider's pick moves to the other family. The Models view and the executor pass the same. */
   usage?: SpawnUsageUse | undefined;
+  /** An observed start failure of the pick's provider in this folder on this machine (`readProviderFolderBlock`), else none. */
+  folderBlock?: ProviderFolderBlock | null;
 };
 
 export function resolveSpawnModel(input: SpawnModelInput): AgentModel {
-  const { catalog, hostId, avoidProvider, pm, usage, envPath, ...rest } = input;
+  const { catalog, hostId, avoidProvider, pm, usage, envPath, folderBlock, ...rest } = input;
   const offeredAt = (avoided: boolean) => (providerId: string, model: string): boolean | null => {
     if (avoided && avoidProvider && providerId === avoidProvider) return false;
-    if (providerBlockedForFolder(providerId, envPath)) return false;
+    if (providerBlockedForFolder(providerId, envPath, folderBlock)) return false;
     // ZCode works only where packages/models/src/zcode.ts says: the Mac mini, its free hours (or zcode.window=always), no other ZCode task running.
     // An unknown catalog is a no for it: the role's next candidate (its built-in default) runs instead.
     if (isZcodeProvider(providerId)) return !zcodeBlock({ settings: rest.settings, catalog: catalog ?? null, hostId: hostId ?? null, now: Date.now(), busy: usage?.zcodeBusy?.() ?? false });
