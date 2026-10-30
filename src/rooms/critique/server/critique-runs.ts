@@ -8,7 +8,7 @@ import { qaSpawnClaimed } from "../../qa";
 import { reconcileCritic } from "../../stability";
 import { resolveStageWriterSelection } from "../../writer";
 import { MAX_FILE_EXCERPT_BYTES } from "../code-critique";
-import { codeCritiquePrompt, codeCritiqueSource, codeCritiqueStops, critiqueFromStageResult, critiquePolicyFromResult, freezeCritiquePolicy, parseCodeCritique, parseCodeCritiqueSettings, persistLedgerFields, settingsFromFrozenPolicy } from "../code-critique";
+import { codeCritiquePrompt, codeCritiqueSource, codeCritiqueStops, criticPersonas, critiqueFromStageResult, critiquePolicyFromResult, freezeCritiquePolicy, parseCodeCritique, parseCodeCritiqueSettings, persistLedgerFields, settingsFromFrozenPolicy, unionCriticFails } from "../code-critique";
 import { critiqueFromScreen, screenCodeCritique } from "../critic-screen";
 import type { CandidateEvidence, FrozenCritiquePolicy } from "../code-critique";
 import { sha256 } from "../../tasks";
@@ -640,25 +640,33 @@ export async function runCodeCritique(input:{
       providerId, model:modelId, reasoningEffort:configuredEffort,
       serviceTier:tier, mode:parsed.mode, maxRounds:parsed.maxRounds, autoFix:parsed.autoFix,
     };
-    const spawned = await fullAccessSpawn(input.bb, {
-      ...placement,
-      ...requiredPolicyField(input.bb, helperPolicy, providerId, "code-critic"),
-      ...writerExecutionSelection(providerId, modelId, configuredEffort, serviceTier),
-      prompt:codeCritiquePrompt({ evidence:input.evidence, task:input.task, agent:parsed.agent, disputes:input.disputes, memoryText:reviewerMemoryFor(input.db, input.projectId, input.runId, input.task) }),
-      environment:attemptEnvironment(input.db, input.runId, input.taskId, input.task.project_cwd)
-        ?? { type:"host", hostId:input.config.hostId, workspace:{ type:"unmanaged", path:input.task.project_cwd } },
-      pluginMetadata:{ role:"code-critic", lanePilotRunId:input.runId, lanePilotTaskId:input.taskId,
-        stageId:"code-critique", parentPmThreadId:getRun(input.db, input.runId)?.pm_thread_id ?? null,
-        revisionSha256:input.evidence.revisionSha256, helperMode:helperPolicy.mode,
-        helperRequired:helperPolicy.policy?.required===true, reviewer:reviewerSnapshot, ...graphStepMetadata(input.workflow) },
-    });
-    threadId = stringAt(spawned, "id");
-    if (!threadId) throw new Error("critique_thread_id_missing");
-    recordStage(input.db, { ...base, state:"running", providerId, model:modelId, threadId, result:{ ...snapshot, threadId, policy } });
-    await waitThreadIdle(input.bb,threadId,"critique_thread_timeout");
-    const raw = (await input.bb.sdk.threads.output({ threadId })).output;
-    if (typeof raw !== "string" || !raw.trim()) throw new Error("critique_output_empty");
-    const critique = await readCodeCritique(input.bb, threadId, raw, cites);
+    const personas = criticPersonas(input.task.risk);
+    const critiques = [];
+    const raws: string[] = [];
+    for (const persona of personas) {
+      const spawned = await fullAccessSpawn(input.bb, {
+        ...placement,
+        ...requiredPolicyField(input.bb, helperPolicy, providerId, "code-critic"),
+        ...writerExecutionSelection(providerId, modelId, configuredEffort, serviceTier),
+        prompt:codeCritiquePrompt({ evidence:input.evidence, task:input.task, agent:parsed.agent, disputes:input.disputes, memoryText:reviewerMemoryFor(input.db, input.projectId, input.runId, input.task), persona }),
+        environment:attemptEnvironment(input.db, input.runId, input.taskId, input.task.project_cwd)
+          ?? { type:"host", hostId:input.config.hostId, workspace:{ type:"unmanaged", path:input.task.project_cwd } },
+        pluginMetadata:{ role:"code-critic", lanePilotRunId:input.runId, lanePilotTaskId:input.taskId,
+          stageId:"code-critique", parentPmThreadId:getRun(input.db, input.runId)?.pm_thread_id ?? null,
+          revisionSha256:input.evidence.revisionSha256, helperMode:helperPolicy.mode,
+          helperRequired:helperPolicy.policy?.required===true, reviewer:reviewerSnapshot, ...(persona ? { persona } : {}), ...graphStepMetadata(input.workflow) },
+      });
+      threadId = stringAt(spawned, "id");
+      if (!threadId) throw new Error("critique_thread_id_missing");
+      recordStage(input.db, { ...base, state:"running", providerId, model:modelId, threadId, result:{ ...snapshot, threadId, policy } });
+      await waitThreadIdle(input.bb,threadId,"critique_thread_timeout");
+      const raw = (await input.bb.sdk.threads.output({ threadId })).output;
+      if (typeof raw !== "string" || !raw.trim()) throw new Error("critique_output_empty");
+      raws.push(raw);
+      critiques.push(await readCodeCritique(input.bb, threadId, raw, cites));
+    }
+    const critique = unionCriticFails(critiques);
+    const raw = raws.join("\n");
     const blocked = codeCritiqueStops(parsed.mode, critique);
     const result = { ...snapshot, ...critique, policy, reviewer:{ providerId, model:modelId, reasoningEffort:configuredEffort, serviceTier:tier, mode:parsed.mode, maxRounds:parsed.maxRounds, autoFix:parsed.autoFix }, rawOutput:raw.slice(0, 12_000) };
     recordStage(input.db, { ...base, state:blocked ? "blocked" : "passed", providerId, model:modelId,
