@@ -917,6 +917,14 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
           primaryFailure = { ...last };
           break;
         }
+        // Cascade retry (arXiv #25/26, writer.retry_escalate): with the setting on, the first red check already goes to
+        // the next writer in the fallback chain — a cheaper writer failing the task's check is reason enough to try
+        // the next one, inside the same attempt budget. Off by default: a single failure retries the same writer.
+        if (!repeated && failedClass === "task" && /^verification failed\b/.test(String(last.reason ?? "")) && runSettings["writer.retry_escalate"] === true) {
+          checkEscalation = `retry_escalate: ${String(last.reason ?? "")}`;
+          primaryFailure = { ...last };
+          break;
+        }
         if (repeated) {
           const latest = getAttempt(db, attemptId);
           if (latest && RETRY_ELIGIBLE.includes(latest.state as AttemptState)) transitionAttempt(db, latest.id, "blocked", { reason:repeated });
