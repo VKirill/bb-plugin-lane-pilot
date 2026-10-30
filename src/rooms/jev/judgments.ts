@@ -17,3 +17,4 @@ import "../workflow";
 import "../writer";
 import "@lane-pilot/jev/judgments/citation-check";
 import "@lane-pilot/jev/judgments/memory-rerank";
+import "@lane-pilot/jev/judgments/invoice-scan";

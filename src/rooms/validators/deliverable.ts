@@ -1,6 +1,7 @@
 import { jev, type JevSettings } from "@lane-pilot/jev";
 import { hardProblems } from "@lane-pilot/jev/judgments/invoice-check";
 import { uiShotsJudgment } from "@lane-pilot/jev/judgments/ui-shots";
+import { invoiceScanJudgment, type ScanField } from "@lane-pilot/jev/judgments/invoice-scan";
 
 /**
  * Non-code QA (agents-design 3.5): the artifact checker a specialist's deliverable passes instead of a test run.
@@ -181,7 +182,7 @@ async function validateInvoice(path: string, deps: ValidatorDeps): Promise<Verdi
     const out = await deps.host.run(deps.hostId, "/", `(pdftotext ${shq(path)} - 2>/dev/null || strings ${shq(path)}) | head -200`, 60).catch(() => null);
     text = out?.stdout ?? null;
   }
-  if (!text?.trim()) return { ok: false, reason: "no text in the PDF" };
+  if (!text?.trim()) return judgeInvoiceScan(path, deps);
   const brief = deps.brief ?? {};
   const inn = /\b\d{10}(?:\d{2})?\b/.exec(text)?.[0] ?? "";
   const bik = /\b04\d{7}\b/.exec(text)?.[0] ?? "";
@@ -194,6 +195,28 @@ async function validateInvoice(path: string, deps: ValidatorDeps): Promise<Verdi
   if (brief.inn && digits(String(brief.inn)) !== digits(inn)) problems.push(`the INN in the PDF is ${inn || "absent"}, the request says ${brief.inn}`);
   if (brief.bik && digits(String(brief.bik)) !== digits(bik)) problems.push(`the BIK in the PDF is ${bik || "absent"}, the request says ${brief.bik}`);
   return problems.length ? { ok: false, reason: problems.join("; ") } : { ok: true, reason: "invoice matches the request" };
+}
+
+/** B4: a scan without a text layer goes to Jev — expected field values are checked on the page image, not OCR'd free-hand. */
+async function judgeInvoiceScan(path: string, deps: ValidatorDeps): Promise<Verdict> {
+  const judge = jev();
+  if (!judge || !deps.host || !deps.hostId) return { ok: false, reason: "no text in the PDF" };
+  const brief = deps.brief ?? {};
+  const expected = Object.fromEntries((["inn", "bik", "amount", "number"] as ScanField[]).filter((f) => brief[f] != null && String(brief[f]).trim() !== "").map((f) => [f, String(brief[f])]));
+  if (!Object.keys(expected).length) return { ok: false, reason: "no text in the PDF and no expected fields in the brief" };
+  const shot = await deps.host.run(deps.hostId, "/", `(pdftoppm -f 1 -singlefile -png -r 150 ${shq(path)} /tmp/invoice-scan 2>/dev/null || magick -density 150 ${shq(`${path}[0]`)} /tmp/invoice-scan.png 2>/dev/null) && base64 < /tmp/invoice-scan.png | tr -d '\n'`, 120).catch(() => null);
+  const data = shot?.stdout?.trim();
+  if (!data || shot!.exitCode !== 0) return { ok: false, reason: "no text in the PDF and the page could not be rendered" };
+  const verdict = await judge.judge(invoiceScanJudgment, { expected, page: { format: "png", data_base64: data.slice(0, 9_000_000) } }, deps.jevCtx ?? {}).catch(() => null);
+  if (!verdict) return { ok: false, reason: "no text in the PDF" };
+  if (verdict.by === "jev") {
+    const d = verdict.decision;
+    return d.ok
+      ? { ok: true, reason: `scan fields match the request (${Object.entries(d.fields).map(([f, p]) => `${f} p=${p}`).join(", ")})`, details: { jev: d } }
+      : { ok: false, reason: `scan fields off: ${d.failed.join(", ")}`, details: { jev: d } };
+  }
+  const shadow = verdict.by === "fallback" && verdict.shadow?.decision ? `; jev shadow: ${invoiceScanJudgment.describe(verdict.shadow.decision)}` : "";
+  return { ok: false, reason: `no text in the PDF${shadow}`, details: { jevAsked: true } };
 }
 
 /* ---- registry ---- */
