@@ -570,6 +570,26 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
     return { archived: Boolean(getRun(db, runId)) };
   });
 
+  // chains-end: the goal check of a deliverable graph — validateDeliverable (validators room) on the artifact the
+  // run produced, not "file exists": DOM → Jev → vision review for pages, kind validators for the rest.
+  // Node fields: validator (text|design|page|3d|video|invoice|composite|artifact), path (artifact path or url), brief.
+  action("deliverable.validate", async (c, rt) => {
+    const node = c.node as { validator?: string; path?: string; brief?: unknown; host?: string };
+    const { validateDeliverable } = await import("../../validators");
+    const inputs = (c.input.with ?? {}) as Record<string, unknown>;
+    const path = String(node.path ?? inputs.path ?? c.resolve("$inputs.deliverable") ?? c.resolve("$inputs.path") ?? "");
+    const validator = String(node.validator ?? inputs.validator ?? c.resolve("$inputs.validator") ?? "artifact");
+    const hostId = String(node.host ?? inputs.hostId ?? c.resolve("$inputs.hostId") ?? "");
+    const brief = (node.brief ?? inputs.brief ?? c.resolve("$inputs.brief")) as Record<string, unknown> | undefined;
+    const settings = await rt.ctx.effectiveProjectSettings?.(rt.projectId).then((r) => r.values as Record<string, unknown>).catch(() => ({})) ?? {};
+    const verdict = await validateDeliverable(validator, path, {
+      host: { run: (id, cwd, command, timeoutSec) => runOnHost(rt.ctx.host, { hostId: id, cwd, command, timeoutSec }) as never },
+      ...(hostId ? { hostId } : {}), ...(brief ? { brief } : {}),
+      jevCtx: { projectId: rt.projectId, runId: rt.runId ?? null, settings },
+    });
+    return { ok: verdict.ok, verdict: verdict.ok ? "pass" : "rework", reason: verdict.reason, details: verdict.details ?? {} };
+  });
+
   action("lp.lint_contract", async (c, lane) => {
     const rt = needLanePilot(lane, "lp.lint_contract");
     const tasks = list(c.resolve("plan.tasks"));

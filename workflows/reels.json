@@ -527,6 +527,22 @@
       "map": {
         "status": "blocked"
       }
+    },
+    {
+      "id": "goal_check",
+      "type": "action",
+      "action": "deliverable.validate",
+      "title": {
+        "en": "Check the goal was met",
+        "ru": "Проверить, что цель достигнута"
+      },
+      "rule": "validateDeliverable on the artifact the run produced: the deliverable/validator/brief inputs name what to check; a fail means the goal is not met",
+      "out": {
+        "ok": "bool",
+        "verdict": "pass|rework|fail",
+        "reason": "string",
+        "details": "object"
+      }
     }
   ],
   "edges": [
@@ -689,8 +705,17 @@
     },
     {
       "from": "deliver",
-      "to": "done",
+      "to": "goal_check",
       "pass": "artifact"
+    },
+    {
+      "from": "goal_check",
+      "to": "done",
+      "when": "goal_check.ok != false"
+    },
+    {
+      "from": "goal_check",
+      "to": "partial"
     }
   ],
   "test": {
@@ -739,6 +764,7 @@
         "verify",
         "publish_text",
         "deliver",
+        "goal_check",
         "done"
       ],
       "expect_outputs": [
@@ -750,5 +776,5 @@
     "live": "реальная 3-минутная запись; 1 клип 30-45 с, 1080x1920, субтитры на кириллице, проверка verify по семплам кадров; для фильма - стиль chalk, тема из трёх предложений",
     "note": "Tested on stubs: every outside action answers from a stub. Not live yet: ffmpeg, Whisper and yt-dlp (or the film pipeline) on a machine that has them. See `live` for the acceptance run."
   },
-  "goal_check": "artifact"
+  "goal_check": "validate"
 }

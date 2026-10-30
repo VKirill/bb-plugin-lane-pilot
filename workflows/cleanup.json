@@ -33,7 +33,7 @@
     }
   },
   "outputs": {
-    "status": "planned|done",
+    "status": "planned|done|blocked",
     "moved": "string[]"
   },
   "quality_mode": {
@@ -91,12 +91,36 @@
         "status": "planned",
         "moved": "plan.moved"
       }
+    },
+    {
+      "id": "goal_check",
+      "type": "action",
+      "action": "deliverable.validate",
+      "title": {
+        "en": "Check the goal was met",
+        "ru": "Проверить, что цель достигнута"
+      },
+      "rule": "validateDeliverable on the artifact the run produced: the deliverable/validator/brief inputs name what to check; a fail means the goal is not met",
+      "out": {
+        "ok": "bool",
+        "verdict": "pass|rework|fail",
+        "reason": "string",
+        "details": "object"
+      }
+    },
+    {
+      "id": "blocked",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "blocked"
+      }
     }
   ],
   "edges": [
     {
       "from": "plan",
-      "to": "done",
+      "to": "goal_check",
       "pass": "artifact",
       "when": "plan.applied"
     },
@@ -104,6 +128,15 @@
       "from": "plan",
       "to": "planned",
       "pass": "artifact"
+    },
+    {
+      "from": "goal_check",
+      "to": "done",
+      "when": "goal_check.ok != false"
+    },
+    {
+      "from": "goal_check",
+      "to": "blocked"
     }
   ],
   "test": {
@@ -129,5 +162,5 @@
       ]
     }
   },
-  "goal_check": "artifact"
+  "goal_check": "validate"
 }

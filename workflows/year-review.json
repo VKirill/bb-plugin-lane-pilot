@@ -105,7 +105,12 @@
     },
     {
       "id": "write",
-      "produces": [{"kind": "report", "version": 1}],
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
       "type": "agent",
       "role": "analyst",
       "profile": {
@@ -193,6 +198,22 @@
         "records": "facts.records",
         "reason": "'the text did not pass the check against the public facts twice (a link, address or mark that is not in the facts)'"
       }
+    },
+    {
+      "id": "goal_check",
+      "type": "action",
+      "action": "deliverable.validate",
+      "title": {
+        "en": "Check the goal was met",
+        "ru": "Проверить, что цель достигнута"
+      },
+      "rule": "validateDeliverable on the artifact the run produced: the deliverable/validator/brief inputs name what to check; a fail means the goal is not met",
+      "out": {
+        "ok": "bool",
+        "verdict": "pass|rework|fail",
+        "reason": "string",
+        "details": "object"
+      }
     }
   ],
   "edges": [
@@ -241,7 +262,16 @@
     },
     {
       "from": "deliver",
-      "to": "done"
+      "to": "goal_check"
+    },
+    {
+      "from": "goal_check",
+      "to": "done",
+      "when": "goal_check.ok != false"
+    },
+    {
+      "from": "goal_check",
+      "to": "blocked"
     }
   ],
   "test": {
@@ -269,6 +299,7 @@
         "write",
         "check",
         "deliver",
+        "goal_check",
         "done"
       ],
       "expect_output": {
@@ -277,5 +308,6 @@
     },
     "live": "on the owner's real records: run it for the current year; compare every skill change, count and date in the text with `bb lane-pilot anamnesis whoami --year <year> --public-only`.",
     "note": "Tested on stubs: the facts, the writing agent and the file save answer from stubs; the check and the routing are real. Not live yet: the first run on the owner's real public records in the Mac mini store. See `live` for the acceptance run."
-  }
+  },
+  "goal_check": "validate"
 }

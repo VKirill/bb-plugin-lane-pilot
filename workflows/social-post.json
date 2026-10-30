@@ -229,6 +229,22 @@
       "map": {
         "status": "blocked"
       }
+    },
+    {
+      "id": "goal_check",
+      "type": "action",
+      "action": "deliverable.validate",
+      "title": {
+        "en": "Check the goal was met",
+        "ru": "Проверить, что цель достигнута"
+      },
+      "rule": "validateDeliverable on the artifact the run produced: the deliverable/validator/brief inputs name what to check; a fail means the goal is not met",
+      "out": {
+        "ok": "bool",
+        "verdict": "pass|rework|fail",
+        "reason": "string",
+        "details": "object"
+      }
     }
   ],
   "edges": [
@@ -274,7 +290,7 @@
     },
     {
       "from": "preview",
-      "to": "done",
+      "to": "goal_check",
       "pass": "artifact",
       "when": "preview.answer_kind == 'approve'"
     },
@@ -288,6 +304,15 @@
       "from": "preview",
       "to": "blocked",
       "pass": "artifact"
+    },
+    {
+      "from": "goal_check",
+      "to": "done",
+      "when": "goal_check.ok != false"
+    },
+    {
+      "from": "goal_check",
+      "to": "partial"
     }
   ],
   "test": {
@@ -329,6 +354,7 @@
         "write_post",
         "format_telegram",
         "preview",
+        "goal_check",
         "done"
       ],
       "expect_outputs": [
@@ -339,5 +365,6 @@
     },
     "live": "Сбор инсайтов по теме, написание поста в авторском стиле, оформление Telegram Rich Message и превью владельцу",
     "note": "Tested on stubs: subworkflow and model calls answer from stubs. No auto-publishing."
-  }
+  },
+  "goal_check": "validate"
 }

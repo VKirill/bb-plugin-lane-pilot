@@ -248,6 +248,22 @@
       "map": {
         "status": "blocked"
       }
+    },
+    {
+      "id": "goal_check",
+      "type": "action",
+      "action": "deliverable.validate",
+      "title": {
+        "en": "Check the goal was met",
+        "ru": "Проверить, что цель достигнута"
+      },
+      "rule": "validateDeliverable on the artifact the run produced: the deliverable/validator/brief inputs name what to check; a fail means the goal is not met",
+      "out": {
+        "ok": "bool",
+        "verdict": "pass|rework|fail",
+        "reason": "string",
+        "details": "object"
+      }
     }
   ],
   "edges": [
@@ -293,7 +309,7 @@
     },
     {
       "from": "export_to_site",
-      "to": "done",
+      "to": "goal_check",
       "pass": "artifact",
       "when": "export_to_site.ok"
     },
@@ -301,6 +317,15 @@
       "from": "export_to_site",
       "to": "blocked",
       "pass": "artifact"
+    },
+    {
+      "from": "goal_check",
+      "to": "done",
+      "when": "goal_check.ok != false"
+    },
+    {
+      "from": "goal_check",
+      "to": "partial"
     }
   ],
   "test": {
@@ -342,6 +367,7 @@
         "write_content",
         "proofread",
         "export_to_site",
+        "goal_check",
         "done"
       ],
       "expect_outputs": [
@@ -352,5 +378,6 @@
     },
     "live": "Построение семантического кокона X4, написание текста страницы, проверка по ru-check и экспорт в контент сайта",
     "note": "Tested on stubs: subworkflow and model calls answer from stubs."
-  }
+  },
+  "goal_check": "validate"
 }

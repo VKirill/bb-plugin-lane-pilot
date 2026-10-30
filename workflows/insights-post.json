@@ -349,6 +349,22 @@
       "map": {
         "status": "blocked"
       }
+    },
+    {
+      "id": "goal_check",
+      "type": "action",
+      "action": "deliverable.validate",
+      "title": {
+        "en": "Check the goal was met",
+        "ru": "Проверить, что цель достигнута"
+      },
+      "rule": "validateDeliverable on the artifact the run produced: the deliverable/validator/brief inputs name what to check; a fail means the goal is not met",
+      "out": {
+        "ok": "bool",
+        "verdict": "pass|rework|fail",
+        "reason": "string",
+        "details": "object"
+      }
     }
   ],
   "edges": [
@@ -426,8 +442,17 @@
     },
     {
       "from": "draft_post",
-      "to": "done",
+      "to": "goal_check",
       "pass": "artifact"
+    },
+    {
+      "from": "goal_check",
+      "to": "done",
+      "when": "goal_check.ok != false"
+    },
+    {
+      "from": "goal_check",
+      "to": "partial"
     }
   ],
   "test": {
@@ -465,6 +490,7 @@
         "enrich",
         "ready_check",
         "draft_post",
+        "goal_check",
         "done"
       ],
       "expect_outputs": [
@@ -477,5 +503,5 @@
     "live": "один живой пост в Threads (post_urls), 40-80 комментариев; validate_artifacts.py проходит; в summary.md цитаты с id и ни одной выдуманной (проверка: цитата - подстрока comments.jsonl)",
     "note": "Tested on stubs: every outside action answers from a stub. Not live yet: social-browser on Threads/Instagram/VK and the social-insights and text-insights scripts on the machine that has them. See `live` for the acceptance run."
   },
-  "goal_check": "artifact"
+  "goal_check": "validate"
 }

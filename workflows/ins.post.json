@@ -226,6 +226,22 @@
       "map": {
         "status": "blocked"
       }
+    },
+    {
+      "id": "goal_check",
+      "type": "action",
+      "action": "deliverable.validate",
+      "title": {
+        "en": "Check the goal was met",
+        "ru": "Проверить, что цель достигнута"
+      },
+      "rule": "validateDeliverable on the artifact the run produced: the deliverable/validator/brief inputs name what to check; a fail means the goal is not met",
+      "out": {
+        "ok": "bool",
+        "verdict": "pass|rework|fail",
+        "reason": "string",
+        "details": "object"
+      }
     }
   ],
   "edges": [
@@ -291,10 +307,19 @@
     },
     {
       "from": "digest",
-      "to": "ok",
+      "to": "goal_check",
       "pass": "artifact"
+    },
+    {
+      "from": "goal_check",
+      "to": "ok",
+      "when": "goal_check.ok != false"
+    },
+    {
+      "from": "goal_check",
+      "to": "blocked"
     }
   ],
   "status": "published",
-  "goal_check": "artifact"
+  "goal_check": "validate"
 }

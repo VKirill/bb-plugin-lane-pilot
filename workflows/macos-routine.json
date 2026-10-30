@@ -203,6 +203,22 @@
       "map": {
         "status": "blocked"
       }
+    },
+    {
+      "id": "goal_check",
+      "type": "action",
+      "action": "deliverable.validate",
+      "title": {
+        "en": "Check the goal was met",
+        "ru": "Проверить, что цель достигнута"
+      },
+      "rule": "validateDeliverable on the artifact the run produced: the deliverable/validator/brief inputs name what to check; a fail means the goal is not met",
+      "out": {
+        "ok": "bool",
+        "verdict": "pass|rework|fail",
+        "reason": "string",
+        "details": "object"
+      }
     }
   ],
   "edges": [
@@ -230,7 +246,7 @@
     },
     {
       "from": "report",
-      "to": "done",
+      "to": "goal_check",
       "pass": "artifact",
       "when": "report.status == 'done'"
     },
@@ -238,6 +254,15 @@
       "from": "report",
       "to": "blocked",
       "pass": "artifact"
+    },
+    {
+      "from": "goal_check",
+      "to": "done",
+      "when": "goal_check.ok != false"
+    },
+    {
+      "from": "goal_check",
+      "to": "blocked"
     }
   ],
   "test": {
@@ -276,6 +301,7 @@
         "plan",
         "execute",
         "report",
+        "goal_check",
         "done"
       ],
       "expect_outputs": [
@@ -287,5 +313,5 @@
     "live": "Выполнение рутины на Mac mini через computer-use, фиксация скриншота экрана и отчёт",
     "note": "Tested on stubs: macOS local actions and screenshot tools answer from stubs. Live run requires Mac mini host_7sea4qaad8."
   },
-  "goal_check": "artifact"
+  "goal_check": "validate"
 }

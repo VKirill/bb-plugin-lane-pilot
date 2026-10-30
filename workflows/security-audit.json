@@ -202,6 +202,22 @@
       "map": {
         "status": "blocked"
       }
+    },
+    {
+      "id": "goal_check",
+      "type": "action",
+      "action": "deliverable.validate",
+      "title": {
+        "en": "Check the goal was met",
+        "ru": "Проверить, что цель достигнута"
+      },
+      "rule": "validateDeliverable on the artifact the run produced: the deliverable/validator/brief inputs name what to check; a fail means the goal is not met",
+      "out": {
+        "ok": "bool",
+        "verdict": "pass|rework|fail",
+        "reason": "string",
+        "details": "object"
+      }
     }
   ],
   "edges": [
@@ -229,13 +245,22 @@
     },
     {
       "from": "report",
-      "to": "done",
+      "to": "goal_check",
       "pass": "artifact"
     },
     {
       "from": "offer",
       "to": "done_offer",
       "pass": "artifact"
+    },
+    {
+      "from": "goal_check",
+      "to": "done",
+      "when": "goal_check.ok != false"
+    },
+    {
+      "from": "goal_check",
+      "to": "blocked"
     }
   ],
   "test": {
@@ -277,5 +302,5 @@
     },
     "live": "песочница с подложенным фальшивым ключом в .env.example: находка указывает место, значения в отчёте нет"
   },
-  "goal_check": "artifact"
+  "goal_check": "validate"
 }

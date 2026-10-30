@@ -129,6 +129,22 @@
         "pr_url": "''",
         "held_by": "preflight.held_by"
       }
+    },
+    {
+      "id": "goal_check",
+      "type": "action",
+      "action": "deliverable.validate",
+      "title": {
+        "en": "Check the goal was met",
+        "ru": "Проверить, что цель достигнута"
+      },
+      "rule": "validateDeliverable on the artifact the run produced: the deliverable/validator/brief inputs name what to check; a fail means the goal is not met",
+      "out": {
+        "ok": "bool",
+        "verdict": "pass|rework|fail",
+        "reason": "string",
+        "details": "object"
+      }
     }
   ],
   "edges": [
@@ -145,8 +161,17 @@
     },
     {
       "from": "open_pr",
-      "to": "shipped",
+      "to": "goal_check",
       "pass": "artifact"
+    },
+    {
+      "from": "goal_check",
+      "to": "shipped",
+      "when": "goal_check.ok != false"
+    },
+    {
+      "from": "goal_check",
+      "to": "held"
     }
   ],
   "test": {
@@ -167,6 +192,7 @@
       "expect_path": [
         "preflight",
         "open_pr",
+        "goal_check",
         "shipped"
       ],
       "expect_outputs": [
@@ -174,5 +200,5 @@
       ]
     }
   },
-  "goal_check": "artifact"
+  "goal_check": "validate"
 }

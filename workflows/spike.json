@@ -107,12 +107,28 @@
         "spike_path": "experiment.spike_path",
         "skill_draft": "''"
       }
+    },
+    {
+      "id": "goal_check",
+      "type": "action",
+      "action": "deliverable.validate",
+      "title": {
+        "en": "Check the goal was met",
+        "ru": "Проверить, что цель достигнута"
+      },
+      "rule": "validateDeliverable on the artifact the run produced: the deliverable/validator/brief inputs name what to check; a fail means the goal is not met",
+      "out": {
+        "ok": "bool",
+        "verdict": "pass|rework|fail",
+        "reason": "string",
+        "details": "object"
+      }
     }
   ],
   "edges": [
     {
       "from": "experiment",
-      "to": "answered",
+      "to": "goal_check",
       "pass": "artifact",
       "when": "experiment.answered"
     },
@@ -120,6 +136,15 @@
       "from": "experiment",
       "to": "inconclusive",
       "pass": "artifact"
+    },
+    {
+      "from": "goal_check",
+      "to": "answered",
+      "when": "goal_check.ok != false"
+    },
+    {
+      "from": "goal_check",
+      "to": "inconclusive"
     }
   ],
   "test": {
@@ -138,6 +163,7 @@
       },
       "expect_path": [
         "experiment",
+        "goal_check",
         "answered"
       ],
       "expect_outputs": [
@@ -145,5 +171,5 @@
       ]
     }
   },
-  "goal_check": "artifact"
+  "goal_check": "validate"
 }
