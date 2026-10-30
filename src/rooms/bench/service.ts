@@ -10,7 +10,7 @@ import { releaseGate, sweepStuckRuns } from "./reliability";
 import { BENCH_REPOS_ROOT_ENV } from "./repos";
 import { DEFAULT_BUDGET_HOURS, DEFAULT_BUDGET_TOKENS, defaultProjectName, runSeries, type BenchWriter, type SeriesInput, type SeriesReport } from "./runner";
 import {
-  getSet, latestNoise, listResults, listRuns, listSets, saveNoise, saveVerdict, type BenchDb, type BenchRun, type NoiseRecord,
+  getSet, latestNoise, listResults, listRuns, listSets, markSkippedRun, saveNoise, saveVerdict, type BenchDb, type BenchRun, type NoiseRecord,
 } from "./store";
 
 type Kv = { get(key: string): Promise<unknown>; set(key: string, value: never): Promise<unknown> };
@@ -247,7 +247,29 @@ export function createBench(deps: BenchDeps) {
     return releaseGate(listRuns(deps.db), now, maxAgeHours);
   }
 
-  return { settings, placement, configure, build, lastBuild, run, noise, compare, status, show, prepare, armSummary, baseline, sweep, gate };
+  /** A set the night planned but the shared budget never reached: a closed row the gate marks instead of failing. */
+  function markSkipped(version: string, arm: string, reason: string): BenchRun | { error: string } {
+    const set = getSet(deps.db, version);
+    if (!set) return { error: `no bench set ${version}` };
+    return markSkippedRun(deps.db, { setId: set.id, arm, repeat: 1, reason });
+  }
+
+  /** One line per stratum of this arm (time to accept, model calls before the writer, tokens, validator share): the night's report. */
+  function armStrata(version: string, arm: string): string[] {
+    const set = getSet(deps.db, version);
+    if (!set) return [];
+    const runs = listRuns(deps.db, set.id).filter((row) => row.arm === arm);
+    const byTask = new Map<string, StratumRow>();
+    for (const run of runs) for (const result of listResults(deps.db, run.id)) {
+      const task = set.tasks.find((item) => item.taskId === result.taskId);
+      if (!task || result.state === "skipped_budget" || result.state === "error") continue;
+      byTask.set(result.taskId, { taskId: result.taskId, stratum: task.stratum, accepted: result.accepted, seconds: result.seconds, tokens: result.tokens });
+    }
+    const rendered = renderStratumMetrics(stratumMetrics([...byTask.values()]), (runs.at(-1)?.config as { settings?: Record<string, unknown> } | undefined)?.settings);
+    return rendered ? rendered.split("\n") : [];
+  }
+
+  return { settings, placement, configure, build, lastBuild, run, noise, compare, status, show, prepare, armSummary, baseline, sweep, gate, markSkipped, armStrata };
 }
 
 export type BenchApi = ReturnType<typeof createBench>;

@@ -1,5 +1,5 @@
 import type { NodeExecutor, StepContext } from "@lane-pilot/workflow-engine";
-import { CRITIC_EDIT_TRIAL_KEY, criticEditGate, criticEditTrialOn, criticPromptProposal, criticStats } from "../../critique";
+import { CRITIC_EDIT_TRIAL_KEY, criticEditGate, criticEditTrialOn, criticEditTrialSettle, criticPromptProposal, criticStats } from "../../critique";
 import { judgeSharedTrial, TRIAL_DEFAULTS } from "../../harness/server";
 import { scheduleIsolated, type ServerCore, type Services } from "../../core/server";
 import { builtinWorkflow } from "../../workflow";
@@ -33,10 +33,19 @@ export function mountCriticEditGraph(ctx: ServerCore, services: Services): void 
       const stored = await ctx.bb.storage.kv.get(CRITIC_EDIT_TRIAL_KEY).catch(() => null);
       const bag = await ctx.bb.storage.kv.get(PROPOSAL_KEY(projectId)).catch(() => null);
       const startedAt = bag && typeof bag === "object" && typeof (bag as { at?: unknown }).at === "number" ? (bag as { at: number }).at : Date.now();
-      // No nightly comparison row yet: null keeps the harness gate on wait, then retire at its deadline. The prompt is not written.
-      const decision = judgeSharedTrial([], startedAt, Date.now(), TRIAL_DEFAULTS, { adoptBy: "bench", verdict: null });
       const proposal = text(c.resolve("prepare.proposal")) || null;
+      // The two bench arms (base critic vs the proposal) produce the comparison row judgeSharedTrial decides on.
+      let verdict: { passed: boolean; summary: string } | null = null;
+      if (criticEditTrialOn(stored) && input(c, "bench") === "on" && proposal) {
+        verdict = await criticEditTrial(ctx, services, projectId, proposal);
+      }
+      const decision = judgeSharedTrial([], startedAt, Date.now(), TRIAL_DEFAULTS, { adoptBy: "bench", verdict });
       const gate = criticEditGate({ trialOn: criticEditTrialOn(stored), proposal, decision });
+      // Adopt writes the prompt to the store (version + rollback); retire files the candidate into the rejected buffer.
+      if (decision.action !== "wait" && proposal) {
+        const outcome = await criticEditTrialSettle({ kv: ctx.bb.storage.kv as never, stage: "code-critique", proposal, verdict });
+        return { output: { status: outcome.action === "retire" ? "retired" : gate.status, detail: `${gate.detail}; ${outcome.reason}`, handoff: outcome.action === "adopt" ? "trial" : gate.status } };
+      }
       return { output: { status: gate.status, detail: gate.detail, handoff: gate.status } };
     },
   } as NodeExecutor<ChainRuntime>);
@@ -60,4 +69,22 @@ export function mountCriticEditGraph(ctx: ServerCore, services: Services): void 
       }).done.catch((cause: unknown) => ctx.log(`critic edit for ${project.id} failed: ${cause instanceof Error ? cause.message : String(cause)}`));
     }
   }, { timeoutMs: 30 * 60_000 });
+}
+
+/**
+ * The bench part of the trial: the newest set runs two arms — the current critic (base) and the candidate prompt
+ * (its proposal as `code_critique.agent`) — then `bench compare` decides, and `criticEditTrialSettle` writes the
+ * adopted prompt (with version and rollback) or files the candidate into the rejected buffer.
+ */
+export async function criticEditTrial(ctx: ServerCore, services: Services, projectId: string, proposal: string): Promise<{ passed: boolean; summary: string } | null> {
+  const set = services.bench.status().sort((a, b) => b.createdAt - a.createdAt)[0];
+  if (!set) return null;
+  const armA = `cedit-base-${projectId.slice(-6)}`, armB = `cedit-prop-${projectId.slice(-6)}`;
+  const hasBoth = [armA, armB].every((arm) => set.runs.some((row) => row.arm === arm && row.state === "done"));
+  if (!hasBoth) {
+    if (!set.runs.some((row) => row.arm === armA)) await services.bench.run({ version: set.version, arm: armA, wait: true });
+    await services.bench.run({ version: set.version, arm: armB, wait: true, settings: { "code_critique.agent": proposal } });
+  }
+  const comparison = services.bench.compare({ version: set.version, armA, armB });
+  return comparison.comparison.verdict === "inconclusive" ? null : { passed: comparison.comparison.verdict === "pass", summary: comparison.text.split("\n")[0] ?? "" };
 }

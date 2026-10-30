@@ -94,6 +94,24 @@ export function startRunRow(db: BenchDb, input: { setId: string; arm: string; re
   return { id, setId: input.setId, arm: input.arm, repeat: input.repeat, state: "running", stopReason: null, config: input.config, budgetTokens: input.budgetTokens, budgetHours: input.budgetHours, spentTokens: 0, startedAt: now, finishedAt: null };
 }
 
+/**
+ * A set the night planned but never ran because the shared budget went to earlier sets: a closed row the gate can
+ * tell apart from a real run by its `skipped:` reason. It counts no task and spends nothing.
+ */
+export function markSkippedRun(db: BenchDb, input: { setId: string; arm: string; repeat: number; reason: string; now?: number }): BenchRun {
+  const existing = getRun(db, input.setId, input.arm, input.repeat);
+  if (existing) return existing;
+  const id = `benchrun_${randomUUID().replaceAll("-", "").slice(0, 12)}`;
+  const now = input.now ?? Date.now();
+  db.prepare("INSERT INTO lane_pilot_bench_run(id,set_id,arm,repeat_no,state,stop_reason,config_json,budget_tokens,budget_hours,started_at,finished_at) VALUES(?,?,?,?,'stopped_budget',?,?,?,?,?,?)")
+    .run(id, input.setId, input.arm, input.repeat, input.reason, "{}", null, null, now, now);
+  return { id, setId: input.setId, arm: input.arm, repeat: input.repeat, state: "stopped_budget", stopReason: input.reason, config: {}, budgetTokens: null, budgetHours: null, spentTokens: 0, startedAt: now, finishedAt: now };
+}
+
+/** Whether this run is a night's budget mark, not a real stopped series. */
+export const isSkippedByBudget = (run: { state: string; stopReason: string | null }): boolean =>
+  run.state === "stopped_budget" && (run.stopReason ?? "").startsWith("skipped:");
+
 export function finishRunRow(db: BenchDb, runId: string, state: BenchRun["state"], stopReason: string | null, now = Date.now()): void {
   db.prepare("UPDATE lane_pilot_bench_run SET state=?, stop_reason=?, finished_at=? WHERE id=?").run(state, stopReason, now, runId);
 }
