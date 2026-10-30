@@ -20,7 +20,7 @@ describe("repair prediction (C3)", () => {
 });
 
 describe("trial prediction", () => {
-  const row = (arm: ArmAttempt["arm"], state: string, attemptNo = 1, blocking = 0): ArmAttempt => ({ arm, taskId: `${arm}${attemptNo}`, attemptNo, state, blockingFindings: blocking });
+  const row = (arm: ArmAttempt["arm"], state: string, attemptNo = 1, blocking = 0): ArmAttempt => ({ arm, taskId: `${arm}${attemptNo}`, attemptId: `${arm}-${attemptNo}`, createdAt: attemptNo, attemptNo, state, blockingFindings: blocking });
   const rows: ArmAttempt[] = [
     ...[1, 2, 3, 4, 5, 6].flatMap((n) => [row("new", "accepted", n), row("old", "accepted", n)]),
   ];
