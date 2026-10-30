@@ -875,7 +875,9 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         // A provider refusal (a limit, an unavailable provider, a 5xx) hands over at once by default — one more attempt
         // of the same model only repeats the refusal (owner_present held writers 20 h, graphs-optimisation G10); the
         // `writer.fallback_on_provider_failure` setting keeps a single same-model retry for whoever wants it.
-        const providerHandsOff = failedClass === "provider"
+        // A stream cut is not a refusal: the provider cut a turn mid-work, its edits are in the worktree, and the same
+        // thread continues them once as before — only a second cut in a row is the provider's (streamHandOff above).
+        const providerHandsOff = failedClass === "provider" && !turn.streamError
           && (runSettings["writer.fallback_on_provider_failure"] ?? "immediate") !== "after_retry";
         if (failedClass === "limit" || providerHandsOff || isWriterSilent(typeof last.reason === "string" ? last.reason : null) || streamHandOff) {
           const latest = getAttempt(db, attemptId);

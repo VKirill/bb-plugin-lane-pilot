@@ -54,7 +54,7 @@ const contract = (id: string): TaskV2 => ({
   objective: `Make ${id}`, acceptance: ["done"], verify: "tests", verification: [{ command: "npm test", cwd: WORKSPACE }],
 });
 
-type Step = { accept?: true; limit?: true; provider?: true; invalid?: true; conflict?: true };
+type Step = { accept?: true; limit?: true; provider?: true; stream?: true; invalid?: true; conflict?: true };
 type Spawn = { attemptId: string; emergency?: unknown; continuation?: { workspacePath: string; environmentId: string | null; dirtBefore: unknown; fromThreadId: string; brief: string } };
 
 /** A writer in a folder with git: each attempt works in its own worktree; the host calls are recorded. `script` ends each finished attempt. */
@@ -119,6 +119,11 @@ function harness(script: Step[], refuseFallbacks = false) {
       }
       if (step.provider) {
         const reason = "provider_error: HTTP 500 Internal Server Error";
+        transitionAttempt(db, input.attemptId, "provider_error", { reason });
+        return { status: "provider_error", reason, attemptId: input.attemptId, writerThreadId: input.writerThreadId };
+      }
+      if (step.stream) {
+        const reason = "writer_stream_error: Error: RetriableError: [unavailable] Error";
         transitionAttempt(db, input.attemptId, "provider_error", { reason });
         return { status: "provider_error", reason, attemptId: input.attemptId, writerThreadId: input.writerThreadId };
       }
@@ -222,6 +227,16 @@ describe("fallback writer continues the interrupted session", () => {
     expect(env.spawns).toHaveLength(3);
     expect(env.spawns[1]!.emergency).toBeUndefined();
     expect(env.spawns[2]!.emergency).toMatchObject({ providerId: expect.any(String) });
+    await env.harness.lifecycle.dispose();
+  });
+
+  it("a stream cut mid-work is not a refusal: the same thread continues once, no same-model respawn, no chain", async () => {
+    const env = harness([{ stream: true }, { accept: true }]);
+    start(env);
+    await vi.waitFor(() => expect(writerStage(env.db).state).toBe("passed"));
+    // The cut turn continues in its own thread with its edits: one spawn total, and it was not an emergency one.
+    expect(env.spawns).toHaveLength(1);
+    expect(env.spawns[0]!.emergency).toBeUndefined();
     await env.harness.lifecycle.dispose();
   });
 
