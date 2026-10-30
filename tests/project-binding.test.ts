@@ -1,7 +1,35 @@
 import { describe, expect, it } from "vitest";
 import { resolveWriterBinding } from "../src/rooms/native-agent/project-binding";
+import incident from "./fixtures/learning-stale-binding-2026-10-30.json";
 
 describe("resolveWriterBinding", () => {
+  it("replays the learning failures: an obsolete prototype path cannot override current project folders", () => {
+    expect(resolveWriterBinding(incident)).toMatchObject({
+      status: "resolved", hostId: incident.sources[0]!.hostId, path: incident.sources[0]!.path,
+      source: "unique_source", bindingId: incident.sources[0]!.id,
+    });
+  });
+
+  it("keeps a legacy explicit workspace when the project has no sources", () => {
+    expect(resolveWriterBinding({ ...incident, sources: [] })).toMatchObject({
+      status: "resolved", ...incident.explicit, source: "explicit_override",
+    });
+  });
+
+  it("keeps an explicit binding that matches a current non-default project folder", () => {
+    const source = incident.sources[1]!;
+    expect(resolveWriterBinding({ ...incident, explicit: source })).toMatchObject({
+      status: "resolved", hostId: source.hostId, path: source.path, source: "explicit_override", bindingId: source.id,
+    });
+  });
+
+  it("uses a selected folder when the prototype override is obsolete", () => {
+    const source = incident.sources[1]!;
+    expect(resolveWriterBinding({ ...incident, selected: source })).toMatchObject({
+      status: "resolved", hostId: source.hostId, path: source.path, bindingId: source.id,
+    });
+  });
+
   it("rejects a same-host foreign-project environment with a different path", () => {
     const resolved = resolveWriterBinding({
       projectId: "proj_a",

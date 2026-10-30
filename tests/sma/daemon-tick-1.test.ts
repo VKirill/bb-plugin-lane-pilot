@@ -61,7 +61,7 @@ describe("daemon tick", () => {
       expect(aging.map((part) => part.text)).toEqual(["no movement for 4 day(s) at discussion"]);
       await phases.tick();
       expect(listParts(db, phase.id).filter((part) => part.kind === "aging")).toHaveLength(1);
-    } finally { vi.useFakeTimers(); }
+    } finally { vi.useRealTimers(); }
   });
 
   it.todo("[sma:dt_aging] agingSaidAt is stored, so the signal is not derived and kept nowhere"); // deferral:dfr_seed_skip_sma_gaps
