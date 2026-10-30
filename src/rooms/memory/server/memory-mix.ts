@@ -1,4 +1,4 @@
-import { MEMORY_SETTING_KEYS, REVIEWER_CONCEPTS, estimateTokens, filesDrifted, listMemory, memoryContext, parseMemorySettings, pathsNamed, searchMemoryRecords, type MemoryRecord, type MemorySearchEngine, type MemorySettings } from "@lane-pilot/memory-core";
+import { MEMORY_SETTING_KEYS, roleContextBudget, REVIEWER_CONCEPTS, estimateTokens, filesDrifted, listMemory, memoryContext, parseMemorySettings, pathsNamed, searchMemoryRecords, type MemoryRecord, type MemorySearchEngine, type MemorySettings } from "@lane-pilot/memory-core";
 import type { TaskV2 } from "../../contracts";
 import { getRunSettingsScopes, loadProjectSettings, type LanePilotDatabase } from "../../storage";
 import { memoryLine, reviewerMemoryPicks, writerMemory, writerMemoryPicks } from "../../writer";
@@ -69,7 +69,7 @@ export function reviewerMemoryFor(db: LanePilotDatabase, projectId: string, runI
     const settings = loadProjectSettings(db, projectId, runId ? getRunSettingsScopes(db, runId) : undefined);
     const memory = parseMemorySettings(Object.fromEntries(MEMORY_SETTING_KEYS.map((key) => [key, configuredSetting(settings, key)])));
     if (!memory.enabled || !memory.inject) return "";
-    return mixReviewerMemory(db, { projectId, task, searchEngine: memory.searchEngine, personalBot: memory.personalBot, ruleMemoryIds: new Set(), budget: memory.contextBudget,
+    return mixReviewerMemory(db, { projectId, task, searchEngine: memory.searchEngine, personalBot: memory.personalBot, ruleMemoryIds: new Set(), budget: roleContextBudget("critic",memory.contextBudget),
       ...(runId ? { chain: getRunSettingsScopes(db, runId) } : {}) }).text;
   } catch {
     return "";
@@ -82,14 +82,15 @@ export function taskMemoryContext(db: LanePilotDatabase, projectId: string, runI
     const chain = runId ? getRunSettingsScopes(db, runId) : undefined;
     const settings = loadProjectSettings(db, projectId, chain);
     const memory = parseMemorySettings(Object.fromEntries(MEMORY_SETTING_KEYS.map((key) => [key, configuredSetting(settings, key)])));
-    return memory.enabled ? pmMemoryContext(db, projectId, memory, query, chain).text : "";
+    // A scheduled agent is a helper: its share of the context budget is the helper's, not the PM's.
+    return memory.enabled ? pmMemoryContext(db, projectId, memory, query, chain, "helper").text : "";
   } catch {
     return "";
   }
 }
 
 /** What the PM tool `lane_pilot_memory {action:"context"}` returns for a query: the project's records ranked for it, within the context budget. Also what the memory probe reads. */
-export function pmMemoryContext(db: LanePilotDatabase, projectId: string, memory: MemorySettings, query: string, chain?: readonly string[]) {
+export function pmMemoryContext(db: LanePilotDatabase, projectId: string, memory: MemorySettings, query: string, chain?: readonly string[], role = "pm") {
   const records = searchMemoryRecords(db, projectId, query, 100, memory.searchEngine, memory.audience, memory.personalBot, { chain: chain ?? [] });
-  return memoryContext(records, query, memory.contextBudget);
+  return memoryContext(records, query, roleContextBudget(role,memory.contextBudget));
 }

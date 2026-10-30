@@ -1,0 +1,327 @@
+{
+  "id": "roblox-asset",
+  "name": {
+    "en": "Roblox Asset",
+    "ru": "Roblox-ассет"
+  },
+  "description": {
+    "en": "Author or prepare a Roblox model or accessory, verify scale, dimensions and collision fidelity (UCX/UHX, CanCollide), and deploy to the project via Rojo or Studio.",
+    "ru": "Сборка или подготовка модели или аксессуара для Roblox, проверка размеров, масштаба и коллизий (UCX/UHX, CanCollide) и загрузка в проект через Rojo или Studio."
+  },
+  "examples": {
+    "ru": [
+      "Собери шлем рыцаря как R15 аксессуар для Roblox и проверь коллизии",
+      "Подготовь модель лавового камня и загрузи в проект Roblox",
+      "Проверь размеры и коллизии модели меча для плейса в Roblox",
+      "Создай проп сундука с коллизиями и задеплой в структуру Rojo"
+    ],
+    "en": [
+      "Assemble a knight helmet as an R15 accessory for Roblox and verify collisions",
+      "Prepare a lava rock model and deploy it to the Roblox project",
+      "Verify dimensions and collisions for a sword model in Roblox",
+      "Create a chest prop with collisions and deploy to Rojo structure"
+    ]
+  },
+  "not_for": [
+    "3d-asset",
+    "reels",
+    "social-post"
+  ],
+  "status": "published",
+  "tags": [
+    "roblox",
+    "game",
+    "asset",
+    "luau",
+    "rojo"
+  ],
+  "inputs": {
+    "asset_name": {
+      "type": "string",
+      "required": true,
+      "note": "название ассета (e.g. KnightHelmet, LavaRock)"
+    },
+    "asset_type": {
+      "type": "model|accessory|prop",
+      "default": "model",
+      "note": "тип ассета: model|accessory|prop"
+    },
+    "source_file": {
+      "type": "string",
+      "default": "",
+      "note": "путь к исходной 3D-модели (fbx, obj, blend, rbxm), если есть"
+    },
+    "project_path": {
+      "type": "string",
+      "default": "src",
+      "note": "путь в проекте Rojo / плейсе"
+    },
+    "attachment_point": {
+      "type": "string",
+      "default": "HatAttachment",
+      "note": "точка крепления для аксессуара (HatAttachment, HairAttachment, FaceFrontAttachment)"
+    }
+  },
+  "outputs": {
+    "status": "done|partial|blocked",
+    "deployed_path": "string",
+    "model_path": "string",
+    "scale_studs": "string",
+    "report_path": "string"
+  },
+  "requires": {
+    "plugins": [
+      "lane-pilot",
+      "image-studio"
+    ],
+    "skills": [
+      "roblox-toolkit",
+      "roblox-build"
+    ],
+    "machines": [
+      "Mac mini or Windows with Roblox Studio and Rojo"
+    ],
+    "tools": [
+      "rojo",
+      "studio-mcp"
+    ]
+  },
+  "budget": {
+    "max_steps": 15,
+    "max_minutes": 90,
+    "max_usd": 8
+  },
+  "entry": "assemble",
+  "nodes": [
+    {
+      "id": "assemble",
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "game-dev",
+      "title": {
+        "en": "Assemble model or accessory",
+        "ru": "Сборка модели или аксессуара"
+      },
+      "profile": {
+        "skills": [
+          "roblox-toolkit",
+          "roblox-build"
+        ]
+      },
+      "prompt": "Собери или подготовь Roblox-ассет '{{$inputs.asset_name}}' (тип: {{$inputs.asset_type}}). Раздел навыков каталога: «Roblox-игры» (roblox-toolkit, roblox-build). Если указан source_file ({{$inputs.source_file}}), адаптируй его под требования Roblox. Для аксессуаров настрой Handle, Attachment ({{$inputs.attachment_point}}), текстуры и Avatar Setup правила. Сохрани собранный ассет в .agents/roblox/model.rbxm. Верни статус done или blocked.",
+      "out": {
+        "ok": "bool",
+        "model_path": "string",
+        "part_count": "int",
+        "status": "done|blocked"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 45
+      }
+    },
+    {
+      "id": "verify_asset",
+      "consumes": [
+        {
+          "kind": "report",
+          "version": 1,
+          "from": "assemble"
+        }
+      ],
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "auditor",
+      "title": {
+        "en": "Verify scale, dimensions and collisions",
+        "ru": "Проверка размеров и коллизий"
+      },
+      "profile": {
+        "skills": [
+          "asset-optimization",
+          "collision-proxy"
+        ]
+      },
+      "prompt": "Проверь размеры, масштаб и коллизии ассета {{assemble.model_path}} для Roblox. Разделы навыков каталога: «Roblox-игры» (roblox-toolkit) и «3D и Blender/Пайплайн и экспорт» (collision-proxy, asset-optimization). Проверь: 1) соответствие размерам аватара R15 (1 стад ~ 28 см, габариты scale_studs), 2) корректность коллизий (CanCollide, CanTouch, выпуклые оболочки UCX/UHX, отсутствие невидимых преград). Сформируй collision_report.json. Если размеры некорректны или есть ошибки коллизий, верни status rework со списком замечаний в issues. Если всё верно, верни status pass.",
+      "out": {
+        "status": "pass|rework",
+        "bounds_ok": "bool",
+        "collisions_ok": "bool",
+        "scale_studs": "string",
+        "report_path": "string",
+        "issues": "string[]"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 25
+      }
+    },
+    {
+      "id": "deploy_asset",
+      "consumes": [
+        {
+          "kind": "report",
+          "version": 1,
+          "from": "verify_asset"
+        }
+      ],
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "game-dev",
+      "title": {
+        "en": "Deploy asset to project",
+        "ru": "Загрузка ассета в проект"
+      },
+      "profile": {
+        "skills": [
+          "roblox-build"
+        ]
+      },
+      "prompt": "Загрузи проверенный ассет {{assemble.model_path}} в дерево проекта Roblox по пути {{$inputs.project_path}}. Раздел навыков каталога: «Roblox-игры» (roblox-build, roblox-toolkit). Размести файлы в структуре Rojo (или загрузи через Studio MCP/Open Cloud), обнови проектные файлы при необходимости. Верни статус done или blocked.",
+      "out": {
+        "ok": "bool",
+        "deployed_path": "string",
+        "asset_id": "string",
+        "status": "done|blocked"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 20
+      }
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "done",
+        "deployed_path": "deploy_asset.deployed_path",
+        "model_path": "assemble.model_path",
+        "scale_studs": "verify_asset.scale_studs",
+        "report_path": "verify_asset.report_path"
+      }
+    },
+    {
+      "id": "partial",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "partial",
+        "model_path": "assemble.model_path",
+        "scale_studs": "verify_asset.scale_studs",
+        "report_path": "verify_asset.report_path"
+      }
+    },
+    {
+      "id": "blocked",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "blocked"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "assemble",
+      "to": "verify_asset",
+      "pass": "artifact",
+      "when": "assemble.ok"
+    },
+    {
+      "from": "assemble",
+      "to": "blocked",
+      "pass": "artifact"
+    },
+    {
+      "from": "verify_asset",
+      "to": "assemble",
+      "pass": "same-session",
+      "when": "verify_asset.status == 'rework' && visits('verify_asset') < 2",
+      "label": "rework bounds/collisions"
+    },
+    {
+      "from": "verify_asset",
+      "to": "deploy_asset",
+      "pass": "artifact",
+      "when": "verify_asset.status == 'pass'"
+    },
+    {
+      "from": "verify_asset",
+      "to": "partial",
+      "pass": "artifact"
+    },
+    {
+      "from": "deploy_asset",
+      "to": "done",
+      "pass": "artifact",
+      "when": "deploy_asset.ok"
+    },
+    {
+      "from": "deploy_asset",
+      "to": "blocked",
+      "pass": "artifact"
+    }
+  ],
+  "test": {
+    "id": "roblox-1",
+    "sim": {
+      "input": {
+        "asset_name": "KnightHelmet",
+        "asset_type": "accessory",
+        "project_path": "src/accessories",
+        "attachment_point": "HatAttachment"
+      },
+      "stubs": {
+        "assemble": {
+          "ok": true,
+          "model_path": ".agents/roblox/KnightHelmet/model.rbxm",
+          "part_count": 3,
+          "status": "done"
+        },
+        "verify_asset": {
+          "status": "pass",
+          "bounds_ok": true,
+          "collisions_ok": true,
+          "scale_studs": "1.2x1.4x1.1",
+          "report_path": ".agents/roblox/KnightHelmet/collision_report.json",
+          "issues": []
+        },
+        "deploy_asset": {
+          "ok": true,
+          "deployed_path": "src/accessories/KnightHelmet.rbxm",
+          "asset_id": "rbxassetid://12345678",
+          "status": "done"
+        }
+      },
+      "expect_path": [
+        "assemble",
+        "verify_asset",
+        "deploy_asset",
+        "done"
+      ],
+      "expect_outputs": [
+        "status == 'done'",
+        "deployed_path != ''",
+        "model_path != ''"
+      ]
+    },
+    "live": "Сборка аксессуара KnightHelmet, проверка размеров и коллизий в масштабе аватара, интеграция в проект Rojo",
+    "note": "Tested on stubs: outside actions (Roblox Studio, Rojo CLI) answer from stubs. Live run requires Roblox development environment."
+  }
+}

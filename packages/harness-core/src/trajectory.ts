@@ -109,6 +109,51 @@ export function renderThreadEvents(events: readonly ThreadEventLike[], options: 
   return `${out.slice(0, head)}\n[HARNESS] …renderer cut ${out.length - head - tail} chars from the middle of this trajectory; the cut is ours, not the writer's…\n${out.slice(out.length - tail)}`;
 }
 
+/** A feedback digest stays inside this. A longer one is cut at the end; the raw observation is never copied. */
+export const ATTEMPT_DIGEST_MAX = 2_000;
+
+/**
+ * What a later attempt needs of a thread: what was done, what failed, which check, which files.
+ * Observations are not copied, so a long log cannot land in the next prompt.
+ */
+export function summarizeThreadEvents(events: readonly ThreadEventLike[], options: { maxChars?: number } = {}): string {
+  const did: string[] = [];
+  const failed: string[] = [];
+  const files = new Set<string>();
+  let check = "";
+  const ordered = [...events].sort((a, b) => Number(a.seq ?? 0) - Number(b.seq ?? 0));
+  for (const event of ordered) {
+    const data = (event.data && typeof event.data === "object" ? event.data : {}) as Record<string, unknown>;
+    if (String(event.type ?? "") !== "item/completed" || !data.item || typeof data.item !== "object") continue;
+    const item = data.item as Record<string, unknown>;
+    const type = String(item.type ?? "");
+    if (type === "fileChange") {
+      const paths = (Array.isArray(item.changes) ? item.changes as Array<Record<string, unknown>> : []).map((change) => String(change.path ?? "")).filter(Boolean);
+      for (const path of paths) files.add(path);
+      if (paths.length) did.push(`edit ${paths.join(", ")}`);
+    } else if (type === "fileRead" && typeof item.path === "string" && item.path) {
+      did.push(`read ${item.path}`);
+    } else if (type === "commandExecution") {
+      const command = String(item.command ?? "").trim();
+      const exit = typeof item.exitCode === "number" ? item.exitCode : null;
+      const bad = item.status === "failed" || (exit !== null && exit !== 0);
+      if (command) did.push(`shell ${command}`);
+      if (bad && command) {
+        failed.push(exit !== null ? `${command} (exit ${exit})` : command);
+        if (!check) check = command;
+      }
+    }
+  }
+  const text = [
+    `Did: ${did.slice(0, 8).join("; ") || "(nothing recorded)"}`,
+    `Failed: ${failed.slice(0, 4).join("; ") || "(nothing recorded)"}`,
+    `Check: ${check || "(none)"}`,
+    `Files: ${[...files].slice(0, 12).join(", ") || "(none)"}`,
+  ].join("\n");
+  const max = options.maxChars ?? ATTEMPT_DIGEST_MAX;
+  return text.length <= max ? text : `${text.slice(0, Math.max(0, max - 1))}…`;
+}
+
 /** The counts an editor's notes cite: actions, failed observations, errors, turns. */
 export function trajectoryStats(rendered: string): { actions: number; failedObservations: number; errors: number; userTurns: number } {
   const lines = rendered.split("\n");

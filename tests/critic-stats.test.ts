@@ -6,6 +6,8 @@ import { createRun, openDatabase } from "../src/rooms/storage/database";
 it("counts blocks, what became of them, misses and first-try acceptance from recorded tasks", () => {
   const { bb } = createFakePluginHost({ pluginId:"lane-pilot" });
   const db = openDatabase(bb);
+  // Fixture rows sit at 1970 timestamps: count them from the start, not from the default stats.epoch.
+  db.prepare("INSERT INTO lane_pilot_project_settings(project_id,key,value,updated_at) VALUES('*','stats.epoch','1970-01-01T00:00:00Z',0)").run();
   createRun(db, "run", "proj", "cli", "/repo");
   let at = 1000;
   const task = (id:string) => db.prepare("INSERT INTO lane_pilot_task(id,run_id,kind,contract_json,created_at) VALUES(?,'run','bb','{}',?)").run(id, at++);
@@ -30,6 +32,8 @@ it("counts blocks, what became of them, misses and first-try acceptance from rec
 it("scores whether the verdict predicted accept, redo or rollback, by role and by model", () => {
   const { bb } = createFakePluginHost({ pluginId:"lane-pilot" });
   const db = openDatabase(bb);
+  // Fixture rows sit at 1970 timestamps: count them from the start, not from the default stats.epoch.
+  db.prepare("INSERT INTO lane_pilot_project_settings(project_id,key,value,updated_at) VALUES('*','stats.epoch','1970-01-01T00:00:00Z',0)").run();
   createRun(db, "run", "proj", "cli", "/repo");
   let at = 1000;
   const task = (id:string) => db.prepare("INSERT INTO lane_pilot_task(id,run_id,kind,contract_json,created_at) VALUES(?,'run','bb','{}',?)").run(id, at++);

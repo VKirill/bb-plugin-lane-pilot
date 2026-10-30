@@ -95,7 +95,7 @@ export const rpcKnowledge = {
       id: z.string(), kind: z.enum(["core", "note"]), audience: z.string(), content: z.string(), concepts: z.array(z.string()),
       createdAt: z.number().int(), rule: z.boolean(),
       /** Times the note went into a brief, and how many of those attempts were accepted. */
-      useCount: z.number().int(), acceptedCount: z.number().int(),
+      useCount: z.number().int(), acceptedCount: z.number().int(), originTaskId: z.string().nullable(),
     }).strict()) }).strict(),
   },
   memory_record_delete: {

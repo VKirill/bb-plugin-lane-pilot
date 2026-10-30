@@ -133,7 +133,7 @@ export function applyDraftOps(definition: RawDefinition, ops: readonly DraftOp[]
       case "set_meta": {
         const bad = Object.keys(op.set).filter((key) => !META_SET.has(key));
         if (bad.length) return refuse(`${bad.join(", ")}: not a meta field (allowed: ${META_KEYS.join(", ")}; nodes and edges have their own operations; status and version are set by test and publish)`);
-        if ("id" in op.set && (typeof op.set.id !== "string" || !/^[a-z][a-z0-9.-]{0,47}$/.test(op.set.id))) return refuse("id: lowercase letters, digits, . and -; starts with a letter; at most 48 characters");
+        if ("id" in op.set && (typeof op.set.id !== "string" || !/^[a-z0-9][a-z0-9.-]{0,47}$/.test(op.set.id))) return refuse("id: lowercase letters, digits, . and -; at most 48 characters");
         for (const [key, value] of Object.entries(op.set)) { if (value === null) delete next[key]; else next[key] = clone(value); }
         changes.push(`set ${Object.keys(op.set).join(", ")}`);
         return;

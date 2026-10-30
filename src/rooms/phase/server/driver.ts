@@ -24,7 +24,7 @@ import { intakeRunGoals } from "../intake";
 import { createPhaseIntake } from "./intake";
 import { createAutoStages, recoverStopped } from "./auto-stages";
 import { checkProofs, hostGit, phaseProofRecords, renderProofCurrency } from "./proof-currency";
-import { builtinWorkflow } from "../../workflow";
+import { builtinWorkflow, issueQuickWorkflowId } from "../../workflow";
 import { architectStarter } from "../../workflow/server";
 import { recheckPlanFact } from "../../writer/server";
 import { critiqueProblems, roleLine, type DesignJournalLine, type DrawingCritique } from "../../design-eval";
@@ -1172,7 +1172,8 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
   const train = {
     start: (input: { projectId: string; pmThreadId: string; runId: string; requestId: string; text: string; kind: "small" | "batch"; path?: { size: string; risk: string } }) => {
       // A batch of independent fixes is one task per fix (issue-batch); a small job is one task (issue-quick).
-      const workflow = builtinWorkflow(input.kind === "batch" ? "issue-batch" : "issue-quick");
+      const settings = loadProjectSettings(db, input.projectId);
+      const workflow = builtinWorkflow(input.kind === "batch" ? "issue-batch" : issueQuickWorkflowId(settings));
       if (!workflow) return null;
       const title = input.text.trim().split("\n").find((line) => line.trim())?.trim().slice(0, 120) ?? "Owner's request";
       try {

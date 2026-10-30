@@ -17,7 +17,8 @@ import { usageHoldReason, usageSkipPercent } from "../../usage/server";
 import { MAIN_ATTEMPT_LIMIT, RETRY_ELIGIBLE } from "../../runs";
 import { FREE_RETRY_LIMIT, PARKED_CLASSES, REPLAY_CHECK_FAILED, SESSION_MAX_MS, VERIFICATION_TIMEOUT_RETRIES, isWaitingSecret, isWriterSilent, repeatedFailureReason, taskFamily, turnFailureKey, verificationTimeoutOverBudget } from "../../runs";
 import { isTaskSatisfied } from "../../runs/server";
-import { isWriterStreamError, previousAttemptBrief } from "./writer-task";
+import { listThreadEventsRaw } from "@lane-pilot/thread-observe";
+import { attemptFeedback, isWriterStreamError, previousAttemptBrief } from "./writer-task";
 import { trimCheckLogsIn } from "../log-trim";
 import { stickyTurnPromptWithRules } from "./writer-knowledge";
 import { parseMemorySettings } from "../../memory";
@@ -609,11 +610,17 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
       /** Takes over an existing writer thread for this attempt; false leaves the attempt to a fresh spawn. */
       const continueWith = async (writer:NonNullable<Awaited<ReturnType<typeof sticky.hotWriter>>>, kind:"next-task"|"retry"|"merge", previousAttempt:string, keepDirt?:DirtSnapshot[]):Promise<boolean> => {
         const bound = retargetTask(freshTask,writer.workspacePath);
+        // The third turn of this thread gets the digest of what it already did, not the raw trajectory.
+        let feedback = previousAttempt;
+        if (kind === "retry" && writer.turns >= 2) {
+          const listed = await listThreadEventsRaw(bb, { threadId: writer.threadId, order: "desc", limit: "50" }).catch(() => null);
+          feedback = attemptFeedback(writer.turns + 1, listed?.ok ? listed.events as Parameters<typeof attemptFeedback>[1] : [], previousAttempt);
+        }
         // The next task of an area is a different contract: its rules come with it (writer-knowledge.ts); a retry or a merge keeps the brief's.
         const memorySettings = parseMemorySettings((await effectiveProjectSettings(input.projectId, getRunSettingsScopes(db, input.runId)).catch(() => ({ values:{} }))).values);
         const turnPrompt = await stickyTurnPromptWithRules({ db, host, chainForRun:(runId) => services.ruleScan.chainForRun(runId) },
           { projectId:input.projectId, runId:input.runId, hostId:freshConfig.hostId, task:bound, memorySettings },
-          { kind, task:bound, previousAttempt:kind === "merge" && !previousAttempt.includes(REPLAY_CHECK_FAILED) ? "" : previousAttempt, liveFolder });
+          { kind, task:bound, previousAttempt:kind === "merge" && !previousAttempt.includes(REPLAY_CHECK_FAILED) ? "" : feedback, liveFolder });
         // A task a person sent back to an earlier stage with a note (src/rooms/stage-return) takes the note into the area writer's next-task turn.
         const returnNotes = kind === "next-task" ? renderReturnNotes(listReturns(db, input.runId, input.taskId)) : "";
         const turn = await sticky.continueInThread({ runId:input.runId, taskId:input.taskId, attemptId, config:freshConfig, writer, kind, dirtBefore:keepDirt,

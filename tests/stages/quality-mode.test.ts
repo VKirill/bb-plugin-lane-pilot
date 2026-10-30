@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { taskV2Schema } from "../../src/rooms/contracts";
 import { shouldRunPlanCritique } from "../../src/rooms/critique/critique";
-import { parseCodeCritiqueSettings } from "../../src/rooms/critique/code-critique";
+import { advisoryFeedback, codeCritiqueStops, parseCodeCritiqueSettings } from "../../src/rooms/critique/code-critique";
 import { applyQualityMode, browserQaRequired, resolveQualityMode, taskQaPlan } from "../../src/rooms/critique/quality-mode";
 import { validateTaskV2 } from "../../src/rooms/tasks/task-v2";
 
@@ -53,6 +53,18 @@ describe("which stages each mode runs", () => {
     expect(browserQaRequired("full", { qa_cases: [] })).toBe(false);
     expect(browserQaRequired("standard", { qa_cases: ["x"] })).toBe(false);
     expect(browserQaRequired("quick", { qa_cases: ["x"] })).toBe(false);
+  });
+});
+
+describe("advisory code critique", () => {
+  const finding = (severity: "info" | "warning" | "blocking", criterion: string) => ({ severity, criterion, finding: `${criterion} note` });
+  it("blocks only a high or critical rubric fail, and sends the rest back as feedback", () => {
+    expect(codeCritiqueStops("advisory", { decision: "changes_requested", status: "rework", findings: [finding("warning", "style")] })).toBe(false);
+    expect(codeCritiqueStops("advisory", { decision: "changes_requested", status: "rework", findings: [finding("blocking", "acceptance")] })).toBe(true);
+    expect(codeCritiqueStops("advisory", { decision: "approve", status: "block", findings: [] })).toBe(true);
+    expect(codeCritiqueStops("gate", { decision: "changes_requested", status: "rework", findings: [finding("warning", "style")] })).toBe(true);
+    expect(advisoryFeedback({ findings: [finding("warning", "style")] })).toContain("style: style note");
+    expect(advisoryFeedback({ findings: [finding("blocking", "acceptance")] })).toBe("");
   });
 });
 

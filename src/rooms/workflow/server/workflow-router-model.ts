@@ -5,6 +5,7 @@ import type { WorkflowAgents } from "./workflow-agent";
 import type { ChainRuntime } from "./workflow-runtime";
 import { sha256Hex } from "@lane-pilot/kit";
 import { ROUTE_WORKFLOW, builtinWorkflow } from "../builtin";
+import { serviceRole } from "../service-models";
 
 /**
  * The escalation of `lane_pilot_route` (Jev decides the clear cases first, src/jev/route-model.ts): a read-only helper thread of the PM chat that sees the owner's request and the cards of
@@ -23,6 +24,14 @@ const FIELDS: Field[] = [
   { name: "handoff", type: "string", required: true, description: "one line: what you decided and why" },
 ];
 
+/** The project's settings, or none when they cannot be read: the cheap pin then stands. */
+async function projectSettings(rt: ChainRuntime): Promise<Record<string, unknown>> {
+  try {
+    const loaded = await rt.ctx.effectiveProjectSettings(rt.projectId);
+    return loaded?.values ?? {};
+  } catch { return {}; }
+}
+
 /** The model step of `lp.route`: the helper thread of the PM chat, spawned under the run and step the engine made for it. */
 export function registerRouterExecutor(engine: WorkflowEngine, agents: WorkflowAgents): void {
   engine.register<ChainRuntime>("lp.route", {
@@ -37,8 +46,9 @@ export function registerRouterExecutor(engine: WorkflowEngine, agents: WorkflowA
         "A candidate whose `not_for` describes the request is a bad match. If two fit equally well, or the request is too broad to tell, choose none and write up to 3 questions that would settle it. If none fits, choose none and ask nothing.",
         "Do not look at files; decide from the request and the cards.",
       ].join("\n");
+      const settings = await projectSettings(c.runtime);
       const result = await agents.run({
-        rt: c.runtime, workflowRunId: c.runId, workflowId: c.workflow.id, stepKey: c.stepKey, nodeId: c.nodeId, spawnKey: c.spawnKey, role: "pm-reader", title: "route a request", fields: FIELDS, signal: c.signal,
+        rt: c.runtime, workflowRunId: c.runId, workflowId: c.workflow.id, stepKey: c.stepKey, nodeId: c.nodeId, spawnKey: c.spawnKey, role: serviceRole("classify", settings) ?? "triager", title: "route a request", fields: FIELDS, signal: c.signal,
         prompt: agentPrompt({ workflow: "router", node: "route", title: "route a request", role: "router", mode: "standard", task,
           inputs: { request: intent, ...(context ? { context } : {}), candidates: c.resolve("$inputs.candidates") }, contract: outputContract(FIELDS), readOnly: true }),
       });

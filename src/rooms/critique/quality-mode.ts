@@ -42,7 +42,7 @@ export function taskQaPlan(task: { qa_cases?: readonly string[]; qa_url?: string
 /**
  * The code critic by the task's risk (SMA plan P1-3). `critic.code.default_for_risk` is `off` (the critic runs only when
  * `code_critique.enabled` or quality_mode full says so), `medium` (it also runs for risk medium, high and critical) or `high` (high and
- * critical). The default stays `off` until the bench has measured the critic on and off. The bench passes its arm's value with the dispatch
+ * critical). Unset is `medium`, and the critic then runs as advisory: notes go back to the writer, a high or critical rubric fail still blocks. The bench passes its arm's value with the dispatch
  * (`criticCodeDefault`), which wins over the project setting. A project that set `code_critique.enabled` itself, either way, keeps its choice,
  * and quality_mode quick or full decide before this does.
  */
@@ -53,10 +53,10 @@ const RISK_RANK: Record<string, number> = { low: 0, medium: 1, high: 2, critical
 
 export const isCodeCriticDefault = (value: unknown): value is CodeCriticDefault => (CODE_CRITIC_DEFAULTS as readonly unknown[]).includes(value);
 
-/** The dispatch's override, else the project's value, else off; an unknown value reads as off. */
+/** The dispatch's override, else the project's value, else medium. An unknown value reads as medium. The model is the code-critic role row. */
 export function resolveCodeCriticDefault(projectValue: unknown, override?: unknown): CodeCriticDefault {
   if (isCodeCriticDefault(override)) return override;
-  return isCodeCriticDefault(projectValue) ? projectValue : "off";
+  return isCodeCriticDefault(projectValue) ? projectValue : "medium";
 }
 
 /** The settings the code critic must read for a task of this risk: standard mode plus a risk default turns `code_critique.enabled` on. */
@@ -64,5 +64,7 @@ export function applyCodeCriticDefault(settings: Record<string, unknown>, mode: 
   const unset = settings["code_critique.enabled"] === undefined || settings["code_critique.enabled"] === null || settings["code_critique.enabled"] === "";
   if (mode !== "standard" || level === "off" || !unset) return settings;
   const needed = level === "medium" ? RISK_RANK.medium! : RISK_RANK.high!;
-  return (RISK_RANK[risk ?? ""] ?? 0) >= needed ? { ...settings, "code_critique.enabled": true } : settings;
+  if ((RISK_RANK[risk ?? ""] ?? 0) < needed) return settings;
+  const modeUnset = settings["code_critique.mode"] == null || settings["code_critique.mode"] === "";
+  return { ...settings, "code_critique.enabled": true, ...(modeUnset ? { "code_critique.mode": "advisory" } : {}) };
 }

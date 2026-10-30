@@ -224,6 +224,19 @@ describe("issue-batch", () => {
   });
 });
 
+describe("issue-quick-legacy", () => {
+  it("the old road is triage, plan and the build — the bench arm the short path is measured against", async () => {
+    const one = { ...task("q1"), acceptance: ["npx vitest run tests/button.test.ts"] };
+    const plan = { status: "ok", clear: true, task_count: 1, risk: "low", already_met: false, objective: "Fix the Send button label", tasks: [one], waves: [["q1"]] };
+    const r = await runSim("issue-quick-legacy", {
+      input: { title: "Typo in button label", text: "The Send button says 'Sned'." },
+      stubs: { triage: { clear: true, severity: "low", title: "Typo in button label" }, plan, build: { status: "done", merged_commits: ["q1"] } },
+    });
+    expect(pathOf(r)).toBe("triage plan build closed");
+    expect(r.summary.status).toBe("succeeded");
+  });
+});
+
 describe("issue-quick", () => {
   const input = { title: "Typo in button label", text: "The Send button says 'Sned'." };
   const one = { ...task("q1"), acceptance: ["npx vitest run tests/button.test.ts"] };
@@ -244,6 +257,15 @@ describe("issue-quick", () => {
     expect(planNode).toMatchObject({ type: "agent", role: "triager" });
     expect(resolveRoleModel("triager", {}).model).not.toMatch(/opus/i);
     expect(r.summary.status).toBe("succeeded");
+  });
+
+  it("«покрась кнопку в синий» is class, plan, lint, write, then closed by the checks, in two model steps", async () => {
+    const r = await runSim("issue-quick", { input: { title: "покрась кнопку в синий", text: "Кнопка отправки серая, должна быть синей." }, stubs: stubs() });
+    expect(pathOf(r)).toBe("class plan lint write closed");
+    expect(modelSteps(pathOf(r), r.workflow)).toEqual(["plan", "write"]);
+    expect(r.summary.status).toBe("succeeded");
+    const audit = r.db.prepare("SELECT detail FROM lane_pilot_wf_event WHERE run_id=? AND kind='goal_audit'").get(r.summary.runId) as { detail: string };
+    expect(JSON.parse(audit.detail)).toMatchObject({ by: "code", verdict: "pass" });
   });
 
   it("a goal the plan finds already met closes without a writer", async () => {
