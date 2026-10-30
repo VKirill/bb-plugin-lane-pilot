@@ -68,6 +68,11 @@ export function parseExperience(text: string): Experience | null {
   return { cue: out.cue, lesson: out.lesson, evidence: out.evidence, confidence: level ?? "", ...(edits ? { edits } : {}) };
 }
 
+/** Components a trial kept but never saw change an outcome. The next editor is told to remove them. */
+export function deletionCandidates(rows: readonly EditRow[]): string[] {
+  return rows.filter((row) => row.verdict === "no observed effect").map((row) => row.component);
+}
+
 /** A lesson resting only on confounded rows is a guess: the reflection was told to narrow it or decline. */
 export function experienceIsSupported(experience: Experience | null, rows: readonly EditRow[]): boolean {
   if (!experience) return false;
@@ -83,6 +88,12 @@ export function renderExperienceMarkdown(input: { title: string; adopted: string
     lines.push("## What each edit did", "", "| component | candidates | change | observed | verdict |", "|---|---|---|---|---|");
     for (const row of input.rows) lines.push(`| ${cell(row.component)} | ${cell(row.candidates)} | ${cell(row.change)} | ${cell(row.observed)} | ${row.verdict} |`);
     lines.push("");
+    const drop = deletionCandidates(input.rows);
+    if (drop.length) {
+      lines.push("## Deletion candidates", "", "These components had no observed effect. The next editor removes them unless a trajectory shows they now matter.", "");
+      for (const name of drop) lines.push(`- \`${name}\``);
+      lines.push("");
+    }
   }
   if (input.experience) {
     lines.push("## Transferable lesson");

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { experienceIsSupported, parseEdits, parseExperience, parseNotes, renderExperienceMarkdown } from "../src/index";
+import { deletionCandidates, experienceIsSupported, parseEdits, parseExperience, parseNotes, proposePrompt, renderExperienceMarkdown } from "../src/index";
 
 const reply = `Some preamble the model wrote.
 
@@ -78,5 +78,16 @@ describe("experience", () => {
     expect(md).toContain("| checks/colocated-tests.sh | inv1, agg1 |");
     expect(md).toContain("- **cue**: when a change to a composable");
     expect(renderExperienceMarkdown({ title: "t", adopted: "base", inventory: "x", rows: [], experience: null })).toContain("NO_ENTRY");
+  });
+
+  it("marks an edit with no observed effect as a deletion candidate for the next editor", () => {
+    const idle = { component: "skills/unused/SKILL.md", candidates: "inv1", change: "added a trigger", observed: "the same outcome", verdict: "no observed effect" as const };
+    const helped = { ...idle, component: "checks/real.sh", verdict: "helped" as const };
+    expect(deletionCandidates([idle, helped])).toEqual(["skills/unused/SKILL.md"]);
+    const md = renderExperienceMarkdown({ title: "t", adopted: "base", inventory: "x", rows: [idle, helped], experience: null });
+    const section = md.split("## Deletion candidates")[1] ?? "";
+    expect(section).toContain("skills/unused/SKILL.md");
+    expect(section).not.toContain("checks/real.sh");
+    expect(proposePrompt("INV", { area: "admin" })).toMatch(/deletion candidate/i);
   });
 });

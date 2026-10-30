@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import type { HeadPart } from "@lane-pilot/contracts";
 import { extractModelJson } from "../critique";
 import type { ChangeDescriptor } from "../policy";
-import { EVIDENCE_WAIT_MS, decideAcceptance, gateRepair, laterReleaseTouches, repairChange, type Acceptance, type AcceptanceEvidence, type GateDecision, type RepairFile } from "./acceptance";
+import { EVIDENCE_WAIT_MS, closeExpiredRepair, decideAcceptance, gateRepair, laterReleaseTouches, repairChange, type Acceptance, type AcceptanceEvidence, type GateDecision, type RepairFile } from "./acceptance";
 import { analysisPrompt, hunterPrompt, parseNightReport, repairBrief, taskWallMessage } from "./brief";
 import { nightArm } from "../bench/server";
 import { hubFields, writeHubFields } from "../improvement";
@@ -551,6 +551,14 @@ export function createWall(deps: WallDeps) {
     notes.push(...resumeStuckRollbacks(now));
     notes.push(...await rejudgeSuperseded(now));
     for (const row of listRepairs(db, { states: OPEN_REPAIR_STATES })) {
+      if (row.state === "running" || row.state === "fixed" || row.state === "held" || row.state === "merged") {
+        const expired = closeExpiredRepair({ state: row.state, createdAt: row.createdAt, now });
+        if (expired.close) {
+          updateRepair(db, row.id, { state: expired.state, outcome: expired.reason.slice(0, 400) }, now);
+          notes.push(`${row.id}: ${expired.reason}`);
+          continue;
+        }
+      }
       if (row.state === "queued" && now - row.createdAt > QUEUED_STALE_MS) {
         updateRepair(db, row.id, { state: "failed", outcome: "never started within 12 hours" }, now);
         notes.push(`${row.id}: never started`);
