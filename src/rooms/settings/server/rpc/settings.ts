@@ -154,7 +154,7 @@ export function settingsRpc(ctx: ServerCore, services: Services) {
       values["plan_critique.enabled"] ??= true;
       values["plan_critique.mode"] ??= "gate";
       values["code_critique.enabled"] ??= false;
-      values["code_critique.mode"] ??= "gate";
+      values["code_critique.mode"] ??= "advisory";
       values["code_critique.auto_fix"] ??= true;
       values["code_critique.max_rounds"] ??= 1;
       if (config) {
