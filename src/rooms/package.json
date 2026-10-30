@@ -13,6 +13,13 @@
     "./anamnesis/judgment.ts",
     "./workflow/ui/workflow-graph-parts.tsx",
     "./writer/writer-model-pick.ts",
-    "./session-hooks/cli.ts"
+    "./session-hooks/cli.ts",
+    "./jev/judgments.ts",
+    "./anamnesis/index.ts",
+    "./learning/index.ts",
+    "./phase/index.ts",
+    "./runs/index.ts",
+    "./workflow/index.ts",
+    "./writer/index.ts"
   ]
 }

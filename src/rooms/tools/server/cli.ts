@@ -45,7 +45,7 @@ import { EXCAVATE_LOG_ARGS, approvalSuggestions, costPerVerified, excavate, html
 import { smaCheckedPercent, smaCounts, smaDonePercent, smaRows } from "../../sma-map";
 import { loadLiveExam } from "../../policy";
 import { RULES_USAGE, runRulesCli } from "../../rule-forms";
-import { JEV_USAGE, runJevCli } from "../../jev/cli";
+import { JEV_USAGE, runJevCli } from "../../jev";
 import { retireAdoptedRule } from "../../self-repair/server";
 import { ROLLBACK_USAGE, runRollbackCli } from "../../rollback/server";
 import { CODE_CRITIC_DEFAULTS, isCodeCriticDefault } from "../../critique";

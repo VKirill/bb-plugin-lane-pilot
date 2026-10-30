@@ -2,6 +2,7 @@ import type { NodeExecutor, StepContext } from "@lane-pilot/workflow-engine";
 import { CRITIC_EDIT_TRIAL_KEY, criticEditGate, criticEditTrialOn, criticPromptProposal, criticStats } from "../../critique";
 import { judgeSharedTrial, TRIAL_DEFAULTS } from "../../harness/server";
 import { scheduleIsolated, type ServerCore, type Services } from "../../core/server";
+import { verdictForHarness } from "../../bench";
 import { builtinWorkflow } from "../../workflow";
 import type { ChainRuntime } from "../../workflow/server";
 
@@ -33,8 +34,11 @@ export function mountCriticEditGraph(ctx: ServerCore, services: Services): void 
       const stored = await ctx.bb.storage.kv.get(CRITIC_EDIT_TRIAL_KEY).catch(() => null);
       const bag = await ctx.bb.storage.kv.get(PROPOSAL_KEY(projectId)).catch(() => null);
       const startedAt = bag && typeof bag === "object" && typeof (bag as { at?: unknown }).at === "number" ? (bag as { at: number }).at : Date.now();
-      // No nightly comparison row yet: null keeps the harness gate on wait, then retire at its deadline. The prompt is not written.
-      const decision = judgeSharedTrial([], startedAt, Date.now(), TRIAL_DEFAULTS, { adoptBy: "bench", verdict: null });
+      // The newest bench comparison of the critic-edit arms decides: absent, the harness gate waits, then retires at its deadline. The prompt is not written.
+      const verdict = verdictForHarness(ctx.db as never, "critic-edit");
+      const report = verdict?.report as { armA?: string; armB?: string } | null | undefined;
+      const decision = judgeSharedTrial([], startedAt, Date.now(), TRIAL_DEFAULTS, { adoptBy: "bench",
+        verdict: verdict ? { passed: verdict.passed, summary: `${report?.armB ?? verdict.armB} vs ${report?.armA ?? verdict.armA} on set ${verdict.setId.replace("benchset_", "")}` } : null });
       const proposal = text(c.resolve("prepare.proposal")) || null;
       const gate = criticEditGate({ trialOn: criticEditTrialOn(stored), proposal, decision });
       return { output: { status: gate.status, detail: gate.detail, handoff: gate.status } };
