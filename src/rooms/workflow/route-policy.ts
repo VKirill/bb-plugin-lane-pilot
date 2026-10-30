@@ -32,16 +32,18 @@ const secretName = (raw: string): string | null => {
 };
 
 export function manifestOf(card: RouterCard): CandidateManifest {
-  const { requires } = card;
+  const requires = card.requires;
+  const secrets = requires.secrets ?? [], machines = requires.machines ?? [], tools = requires.tools ?? [],
+    mcp = requires.mcp ?? [], platforms = requires.platforms ?? [];
   const permissions = [
-    ...requires.plugins.map((name) => `plugin:${name}`), ...requires.skills.map((name) => `skill:${name}`),
-    ...requires.secrets.map((raw) => `secret:${secretName(raw) ?? raw}`), ...requires.machines.map((name) => `machine:${name}`),
-    ...requires.mcp.map((name) => `mcp:${name}`), ...requires.tools.map((name) => `tool:${name}`),
-    ...requires.platforms.map((name) => `platform:${name}`), ...(requires.browserSession ? ["browser:session"] : []),
+    ...(requires.plugins ?? []).map((name) => `plugin:${name}`), ...(requires.skills ?? []).map((name) => `skill:${name}`),
+    ...secrets.map((raw) => `secret:${secretName(raw) ?? raw}`), ...machines.map((name) => `machine:${name}`),
+    ...mcp.map((name) => `mcp:${name}`), ...tools.map((name) => `tool:${name}`),
+    ...platforms.map((name) => `platform:${name}`), ...(requires.browserSession ? ["browser:session"] : []),
   ];
   const risk: RouteRisk =
-    requires.secrets.some((raw) => secretName(raw) !== null) || requires.platforms.length > 0 || requires.browserSession ? "high"
-    : requires.machines.length > 0 || requires.tools.length > 0 || requires.mcp.length > 0 ? "medium" : "low";
+    secrets.some((raw) => secretName(raw) !== null) || platforms.length > 0 || requires.browserSession ? "high"
+    : machines.length > 0 || tools.length > 0 || mcp.length > 0 ? "medium" : "low";
   return { permissions, risk };
 }
 
@@ -51,7 +53,7 @@ export function policyProblem(card: RouterCard, policy: RoutePolicy): string | n
   if (policy.maxRisk && RISK_ORDER[manifest.risk] > RISK_ORDER[policy.maxRisk]) return `risk ${manifest.risk} is above the allowed ${policy.maxRisk}`;
   const allow = policy.secretsAllow;
   if (allow && allow.length && !allow.includes("*")) {
-    for (const raw of card.requires.secrets) {
+    for (const raw of card.requires.secrets ?? []) {
       const name = secretName(raw);
       if (name && !allow.includes(name)) return `secret ${name} is left out of the project's secrets.allow`;
     }

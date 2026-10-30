@@ -44,7 +44,7 @@ describe("route policy manifest", () => {
 describe("route policy in the router model", () => {
   const jevOf = (seen: { candidates?: string[] }): Jev => ({
     enabled: () => true,
-    async judge(_j, i) { seen.candidates = (i as RouterModelInput).candidates.map((c) => c.id); return { by: "jev", decision: { choice: "ok", confidence: 90, pattern: "p", rejected: [], questions: [] }, receiptId: null, answers: {} }; },
+    async judge(_j: unknown, i: unknown) { seen.candidates = (i as RouterModelInput).candidates.map((c) => c.id); return { by: "jev", decision: { choice: "ok", confidence: 90, pattern: "p", rejected: [], questions: [] }, receiptId: null, answers: {} }; },
     async judgeMany() { return []; },
     async judgeBundle() { return []; },
     outcome() {},
