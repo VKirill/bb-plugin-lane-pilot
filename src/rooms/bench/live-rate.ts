@@ -2,7 +2,8 @@ import { statsEpochLine } from "../storage";
 /** Task-level stability of live projects. One source for the daily summary and the wall.
  * Drill sandboxes are the two known project ids (stability/canary.ts `DRILL_SANDBOX_PROJECT_IDS`); named here so this file stays free of that room. */
 
-const DRILL_PROJECT_IDS = new Set(["proj_3tb652jpsi", "proj_ibu6v9g64j"]);
+// critic-eval: the bench known-bugs set files its code-critique receipts under this project (bench/server/plugin-ports.ts).
+const DRILL_PROJECT_IDS = new Set(["proj_3tb652jpsi", "proj_ibu6v9g64j", "critic-eval"]);
 
 const IN_FLIGHT = new Set(["queued", "spawn_requested", "spawn_unknown", "running", "cancel_requested", "canceled"]);
 
