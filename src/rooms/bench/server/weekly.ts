@@ -58,18 +58,47 @@ export function nightlyRepeats(noiseRepeats: number): number {
   return noiseRepeats >= 2 ? noiseRepeats : 2;
 }
 
-/** Every day at 01:30 UTC the newest set runs as the night arm of this plugin version. setting bench.nightly = off stops it.
- * Sunday also has the weekly compare at 02:00; the two arms are different and this one does not wait for that one. */
+/**
+ * Which sets the night runs: every set the status lists (the frozen baseline and every newer one), or the versions
+ * `bench.nightly_sets` names as a comma list ("all" and empty mean every set). A version it names that does not
+ * exist is logged and skipped.
+ */
+export function nightlySets(status: ReadonlyArray<{ version: string }>, setting: unknown): string[] {
+  const all = status.map((set) => set.version);
+  const raw = String(setting ?? "all").trim();
+  if (!raw || raw === "all") return all;
+  const wanted = new Set(raw.split(",").map((word) => word.trim()).filter(Boolean));
+  return all.filter((version) => wanted.has(version));
+}
+
+/** Every day at 01:30 UTC every active set runs as the night arm of this plugin version; the night's token budget is
+ * shared evenly between the sets, and a set the budget never reaches is marked `skipped:` so the gate can tell.
+ * Per set the strata metrics go to the log and the morning list, one line per stratum.
+ * setting bench.nightly = off stops it; bench.nightly_sets = v3,v5 names the sets. Sunday also has the weekly compare. */
 export function mountBenchNightly(ctx: ServerCore, bench: () => BenchApi): void {
   scheduleIsolated(ctx.bb, "bench-nightly", "30 1 * * *", async (signal) => {
     if (ctx.isDisposed() || signal?.aborted) return;
-    if (String(loadProjectSettings(ctx.db, GLOBAL_SETTINGS_PROJECT_ID)["bench.nightly"] ?? "on") === "off") return;
-    const newest = bench().status().sort((a, b) => b.createdAt - a.createdAt)[0];
-    if (!newest) return;
-    const input = nightlyRun(newest.version, packageJson.version);
+    const globalSettings = loadProjectSettings(ctx.db, GLOBAL_SETTINGS_PROJECT_ID);
+    if (String(globalSettings["bench.nightly"] ?? "on") === "off") return;
+    const sets = nightlySets(bench().status().sort((a, b) => b.createdAt - a.createdAt), globalSettings["bench.nightly_sets"]);
+    if (!sets.length) return;
     const repeat = nightlyRepeats((await bench().placement()).noiseRepeats);
-    ctx.log(`bench-nightly: ${input.version} ${input.arm} on ${input.hostId}, ${repeat} runs`);
-    await bench().run({ ...input, repeat });
+    const caps = await bench().settings();
+    const share = Math.floor(caps.budgetTokens / sets.length);
+    const arm = nightArm(packageJson.version);
+    ctx.log(`bench-nightly: ${arm} on ${OVH_BENCH_HOST}, ${sets.length} set(s) ${sets.join(", ")}, ${repeat} runs each, ${share} tokens a set`);
+    let budgetSpent = false;
+    for (const version of sets) {
+      const input = nightlyRun(version, packageJson.version);
+      if (budgetSpent) {
+        bench().markSkipped(version, arm, `skipped: the night's shared token budget ended on an earlier set`);
+        continue;
+      }
+      const reports = await bench().run({ ...input, repeat, budgetTokens: share });
+      const rows = Array.isArray(reports) ? reports : [reports];
+      for (const line of bench().armStrata(version, arm)) ctx.log(`bench-nightly ${version}: ${line}`);
+      if (rows.some((row) => row && typeof row === "object" && "state" in row && (row.state === "stopped_budget" || row.state === "failed"))) budgetSpent = true;
+    }
   }, { timeoutMs: 8 * 3_600_000 });
 }
 

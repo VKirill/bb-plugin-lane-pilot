@@ -149,6 +149,7 @@ export const SETTING_CATALOG: SettingSpec[] = [
   { key:"verification.sandbox_unsafe", channel:"OWN", reason:"Native Lane Pilot contract lint: tests the verification sandbox cannot run, which a whole-suite check must exclude" },
   { key:"workspace.provider", channel:"OWN", reason:"Native Lane Pilot writer worktrees: auto gives each attempt a BB environment of its own provider (with automatic fallback), off is the emergency switch to the old worktree path" },
   { key:"usage.skip_percent", channel:"OWN", reason:"Native Lane Pilot provider usage: share of a usage window from which a writer provider/model is skipped until its reset" },
+  { key:"bench.nightly_sets", channel:"OWN", reason:"Native Lane Pilot nightly bench: which sets the night runs (all, or a comma list of versions)" },
   { key:"quality_mode", channel:"OWN", reason:"Native Lane Pilot review depth: quick skips the plan critique and the code critic, standard is the default behaviour, full runs both on every task and requires a browser check for tasks with qa_cases" },
   { key:"writer.best_of", channel:"OWN", reason:"Native Lane Pilot best-of-3: parallel writer candidates under quality_mode full, selection by checks then the critic verdict" },
   { key:"writer.best_of.token_budget", channel:"OWN", reason:"Native Lane Pilot best-of-3: shared token ceiling of one task's candidates; 0 leaves the run budget the only bound" },
