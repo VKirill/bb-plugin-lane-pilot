@@ -4,7 +4,7 @@ import { detectLocale, t } from "@lane-pilot/i18n";
 import type { ComponentType } from "react";
 import type { JsonValue } from "@get-bb/plugin-sdk/app";
 import { LanePilotPage } from "./src/rooms/ui-shell/ui/page";
-import { useOwnerWaitingBadge } from "./src/rooms/ui-shell/ui";
+import { useCockpitPageTitle, useOwnerWaitingBadge } from "./src/rooms/ui-shell/ui";
 import { CouncilPage } from "./src/rooms/council/ui";
 import { CockpitPage } from "./src/rooms/cockpit/ui";
 import { ComposerAgentBadge } from "./src/rooms/native-agent/ui";
@@ -47,6 +47,8 @@ export default definePluginApp((app) => {
     icon: "Workflow",
     path: "lane-pilot-cockpit",
     component: ({ subPath }) => <CockpitPage subPath={subPath} />,
+    // The waiting count in the window title (SDK 0.6.x); older BB keeps the plain title.
+    experimental_usePageTitle: useCockpitPageTitle,
   });
   // A working helper (writer, specialist, browser check…) opens in the thread's side panel from its square.
   const threadTab = (app.slots as unknown as { experimental_tab?: ExperimentalTabSlot }).experimental_tab;
