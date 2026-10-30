@@ -12,3 +12,4 @@ export { WORKFLOW_ARCHITECT_ID, WORKFLOW_ARCHITECT_NAME, WORKFLOW_ARCHITECT_SESS
 export { SERVICE_JOBS, servicePair, servicePinKey, serviceRole } from "./service-models";
 export { routeWorkflow } from "./route-workflow";
 export { GOAL_SCREEN_ID, goalScreenJudgment } from "./goal-screen";
+export { PLAN_CHECK_ID, planCheckJudgment } from "./plan-check";

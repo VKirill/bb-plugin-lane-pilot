@@ -46,7 +46,7 @@ describe("lp.plan", () => {
 
   it("standard with 3 tasks: the whole plan is critiqued, a rework goes back to the planner in the same session", async () => {
     const r = await runSim("lp.plan", { input: { goal: "g" }, stubs: { plan: { tasks: [task("a"), task("b"), task("c")], task_count: 3 }, plan_critic: [{ status: "rework" }, { status: "pass" }] } });
-    expect(pathOf(r)).toBe("plan lint plan_critic plan lint plan_critic ok");
+    expect(pathOf(r)).toBe("plan lint check plan_critic plan lint check plan_critic ok");
     expect(out(r)).toMatchObject({ status: "ok", plan_verdict: "pass" });
     const second = r.db.prepare("SELECT input_json FROM lane_pilot_wf_step WHERE run_id=? AND step_key='plan#2'").get(r.summary.runId) as { input_json: string };
     expect(JSON.parse(second.input_json).via.mode).toBe("same-session");
@@ -67,13 +67,13 @@ describe("lp.plan", () => {
   it("lint rounds and critique rounds share the plan's four visits: a rework past them goes on as low confidence, not a guard failure (live 2026-10-25)", async () => {
     const lint = [{ ok: false, errors: ["e"] }, { ok: false, errors: ["e"] }, { ok: true, errors: [] }, { ok: true, errors: [] }];
     const r = await runSim("lp.plan", { input: { goal: "g" }, mode: "full", stubs: { plan: { tasks: [task("a")], task_count: 1 }, lint, plan_critic: { status: "rework" } } });
-    expect(pathOf(r)).toBe("plan lint plan lint plan lint plan_critic plan lint plan_critic low");
+    expect(pathOf(r)).toBe("plan lint plan lint plan lint check plan_critic plan lint check plan_critic low");
     expect(out(r)).toMatchObject({ status: "low_confidence" });
   });
 
   it("the critique that keeps asking for rework goes on as a low-confidence plan after 3 rounds, without the owner", async () => {
     const r = await runSim("lp.plan", { input: { goal: "g" }, mode: "full", stubs: { plan: { tasks: [task("a")], task_count: 1 }, plan_critic: { status: "rework" } } });
-    expect(pathOf(r)).toBe("plan lint plan_critic plan lint plan_critic plan lint plan_critic low");
+    expect(pathOf(r)).toBe("plan lint check plan_critic plan lint check plan_critic plan lint check plan_critic low");
     expect(out(r)).toMatchObject({ status: "low_confidence" });
   });
 });

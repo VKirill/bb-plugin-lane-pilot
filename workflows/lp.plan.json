@@ -113,6 +113,51 @@
       }
     },
     {
+      "id": "check",
+      "type": "jev",
+      "label": "Plan battery",
+      "judgment": "plan.check",
+      "state": {
+        "goal": "{{$inputs.goal}}",
+        "objective": "{{plan.objective}}",
+        "tasks": "{{plan.tasks}}",
+        "task_count": "{{plan.task_count}}",
+        "has_ui": "{{plan.has_ui}}"
+      },
+      "output": [
+        {
+          "name": "decision",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "value",
+          "type": "json",
+          "required": false
+        },
+        {
+          "name": "battery_ok",
+          "type": "boolean",
+          "required": false
+        },
+        {
+          "name": "failed",
+          "type": "array",
+          "required": false
+        },
+        {
+          "name": "escalated",
+          "type": "boolean",
+          "required": false
+        },
+        {
+          "name": "handoff",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
       "id": "plan_critic",
       "produces": [
         {
@@ -211,8 +256,7 @@
     },
     {
       "from": "lint",
-      "to": "plan_critic",
-      "pass": "read-prior-session",
+      "to": "check",
       "when": "$mode != 'quick' && (plan.task_count >= 3 || $mode == 'full')"
     },
     {
@@ -240,6 +284,16 @@
       "from": "plan_critic",
       "to": "low",
       "pass": "artifact"
+    },
+    {
+      "from": "check",
+      "to": "ok",
+      "when": "check.battery_ok == true && check.escalated == false"
+    },
+    {
+      "from": "check",
+      "to": "plan_critic",
+      "when": "check.battery_ok != true || check.escalated == true"
     }
   ],
   "status": "published"
