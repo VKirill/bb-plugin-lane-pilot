@@ -14,7 +14,7 @@ sources:
   - docs/enabled-settings.snapshot.json
 ---
 
-<!-- enabled-settings:structure 1e880846a96ea348 -->
+<!-- enabled-settings:structure 1515cc6709c14e09 -->
 
 # Enabled settings (generated)
 
@@ -230,9 +230,12 @@ switches: `quick` disables both critiques, `full` enables them (`src/rooms/criti
 | `writer.provider` | `kimi` | — | writer stage reads this setting |
 | `writer.reasoning_effort` | `PRIMARY_EFFORTS[provider]` | — | writer stage reads this setting |
 | `writer.retry_escalate` | `false` | — | writer fallback chain: on sends the first red check of a task-class failure to the next writer inside the same attempt budget |
+| `writer.retry_safety` | `on` | — | retry gate: on stops an automatic retry when the failed attempt's work area was touched after it ended (foreign edits, rewritten evidence, secret residue) |
 | `writer.service_tier` | `standard (or fast if --fast-mode)` | — | writer stage reads this setting |
 | `writer.silence_nudge_min` | `20` | — | writer watchdog: minutes of silence before a running writer is nudged |
 | `writer.skill_pick` | `on` | — | writer skill picking: Jev picks task skills before each attempt |
+| `writer.task_wall_clock_min` | `720` | — | retry caps: the most minutes a task may live across attempts and restarts before it ends with task_wall_clock |
+| `writer.verify_max_passes` | `10` | — | retry caps: the most failed verification gate evaluations a task may accumulate before it ends with verify_passes_exhausted |
 
 ## Fixed defaults in code
 

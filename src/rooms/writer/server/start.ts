@@ -1,4 +1,5 @@
 import { retryBudgetReason, spendRetryBudget } from "../retry-budget";
+import { retrySafetyStop, taskLimitStop, TASK_WALL_CLOCK_MIN, VERIFY_MAX_PASSES } from "./retry-safety";
 import { pilotOf, pilotUnderWall, runTasks } from "../../pilot";
 import { breakerKey, budgetStopReason, classifyFailure, runningWriterBudgetStop, tokenUsageFromEvent, type RunBudget } from "@lane-pilot/resilience";
 import type { DirtSnapshot } from "../cli-outcome";
@@ -922,6 +923,31 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
           if (latest && RETRY_ELIGIBLE.includes(latest.state as AttemptState)) transitionAttempt(db, latest.id, "blocked", { reason:String(last.reason ?? last.status) });
           last = { ...last, status:"blocked" };
           break;
+        }
+        // The retry-safety gate (writer.retry_safety): an automatic retry stops when the failed attempt's work area was
+        // touched after it ended (owner edits, rewritten check evidence, a catalog secret in the diff).
+        if (configuredSetting(runSettings, "writer.retry_safety") !== "off") {
+          const safety = await retrySafetyStop({ db, host, hostId:input.config.hostId, task:freshTask, attemptId, liveFolder });
+          if (safety) {
+            const latest = getAttempt(db, attemptId);
+            if (latest && RETRY_ELIGIBLE.includes(latest.state as AttemptState)) transitionAttempt(db, latest.id, "blocked", { reason:safety });
+            last = { ...last, status:"blocked", reason:safety };
+            break;
+          }
+        }
+        // The task-level caps (writer.task_wall_clock_min, writer.verify_max_passes): the session caps above bound one
+        // session; these bound the task across sessions, restarts and chain handoffs.
+        {
+          const wallClockMin = Number(runSettings["writer.task_wall_clock_min"]) || 0;
+          const verifyMaxPasses = Number(runSettings["writer.verify_max_passes"]) || 0;
+          const limitStop = taskLimitStop({ db, runId:input.runId, taskId:input.taskId,
+            wallClockMin:wallClockMin > 0 ? wallClockMin : TASK_WALL_CLOCK_MIN, verifyMaxPasses:verifyMaxPasses > 0 ? verifyMaxPasses : VERIFY_MAX_PASSES });
+          if (limitStop) {
+            const latest = getAttempt(db, attemptId);
+            if (latest && RETRY_ELIGIBLE.includes(latest.state as AttemptState)) transitionAttempt(db, latest.id, "blocked", { reason:limitStop });
+            last = { ...last, status:"blocked", reason:limitStop };
+            break;
+          }
         }
         // The session ended: the turn cap or the wall cap blocks the task. A repeated red check (the same failure and
         // the same diff twice) does not: the next attempt goes to the next writer in the chain, not this one again.

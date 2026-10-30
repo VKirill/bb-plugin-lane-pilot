@@ -61,7 +61,7 @@ describe("adoc applicability catalog", () => {
       gap: summary.gap,
       excluded: summary.excluded,
     });
-    expect(counts.editable + counts.readonly + counts.gap + counts.excluded).toBe(492);
+    expect(counts.editable + counts.readonly + counts.gap + counts.excluded).toBe(495);
     expect(summary.blank).toBe(0);
     expect(summary.tuple_equal).toBe(true);
   });
@@ -188,7 +188,7 @@ describe("adoc applicability catalog", () => {
   });
 
   it("keeps all former UI-visible fields on screen", () => {
-    expect(VISIBLE_CATALOG).toHaveLength(359); // +1 memory.maintain_every (wave10), +3 wave17 rows (failure.interventions, writer.retry_escalate, memory.maintain_mode)
+    expect(VISIBLE_CATALOG).toHaveLength(362); // +3 wave26 rows (writer.task_wall_clock_min, writer.verify_max_passes, writer.retry_safety); +1 memory.maintain_every (wave10), +3 wave17 rows (failure.interventions, writer.retry_escalate, memory.maintain_mode)
     expect(VISIBLE_CATALOG.every((row) => row.uiStatus !== "excluded")).toBe(true);
     expect(UI_CATALOG.filter((row) => row.id >= "s355" && row.setting.startsWith("docs.")).every((row) => row.uiStatus === "editable" && row.channel === "OWN")).toBe(true);
     expect(UI_CATALOG.filter((row)=>["night_review.enabled","night_review.provider","night_review.model","night_review.agent"].includes(row.storageKey)&&row.id!=="s290").every((row)=>row.uiStatus==="editable"&&row.channel==="OWN")).toBe(true);
