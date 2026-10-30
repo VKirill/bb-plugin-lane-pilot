@@ -11,6 +11,7 @@ import type { QualityMode } from "../../critique";
 import { isMainfixTask, isOutputPath, unownedExpectedOutputs } from "../validate-output";
 import { mapVerificationCwd } from "../verification-cwd";
 import { SANDBOX_OWN_ENV } from "../../verification";
+import { gluedCheckCommand } from "../../verification/server";
 import type { CatalogEntry, SecretCheck } from "../../secrets/server";
 import { safeRelative, validateOwnershipContract } from "../../verification";
 import { CHECK_HISTORY_MIN_RUNS, p95 } from "../check-history";
@@ -477,7 +478,7 @@ export function lintContract(input:LintInput):{ errors:LintFinding[]; warnings:L
   for (const check of task.verification) {
     // With a gate, a task's check is its own files: the whole suite is the gate's, once per batch (so no exclusions to add either).
     // Two filtered calls of the same runner (`--filter A && --filter B`) are the suite twice; one filter is enough.
-    const again = input.gate ? repeatedRunner(check.command) : null;
+    const again = repeatedRunner(check.command);
     if (input.gate && again && !runsWholeSuite(check.command) && !runsGateCommand(check.command, input.gate.command)) {
       errors.push({ code:"repeated_runner_chain", message:`verification command "${check.command}" runs ${again} more than once in one check; one filtered run is enough, the integration gate (${input.gate.command}) runs the whole suite once per batch`,
         data:{ gateCommand:input.gate.command, runner:again } });
@@ -487,6 +488,12 @@ export function lintContract(input:LintInput):{ errors:LintFinding[]; warnings:L
       errors.push({ code:"whole_suite_with_gate", message:`verification command "${check.command}" runs the whole test suite; the integration gate (${input.gate.command}) runs the whole suite once per batch, so check only this task's files, e.g. npx vitest run <its test files>, plus the typecheck`,
         data:{ gateCommand:input.gate.command } });
       continue;
+    }
+    // A chain of one runner spends a suite startup per link whether or not a gate exists: warn and offer the one command (G2).
+    if (again) {
+      const glued = gluedCheckCommand(check.command);
+      warnings.push({ code:"runner_chain", message:`verification command "${check.command}" runs ${again} more than once in one check; one run covers the same tests${glued ? ` — write it as "${glued}"` : " — name this task's test files together in one command (npx vitest run a.test.ts b.test.ts)"}`,
+        data:{ runner:again, ...(glued ? { suggestedCommand:glued } : {}) } });
     }
     const missing = findSandboxUnsafeMissingExcludes(check.command, input.sandboxUnsafe);
     if (!missing.length) continue;

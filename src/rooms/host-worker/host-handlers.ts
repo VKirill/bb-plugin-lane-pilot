@@ -25,6 +25,7 @@ import { cancelHostJob, hostJobStatus, startHostJob } from "./jobs";
 import { scanCritiqueCoverage } from "../critique";
 import { prepareSandboxedCommandLine, releaseSandboxedCommandLine, runSandboxedCommandOnHost } from "../verification";
 import { cachedReplayVerdicts, recordedReplayFailure, recordReplayVerdict, replayKey } from "../verification";
+import { glueReplayCommands } from "../verification/server";
 import { gitOwnershipChangedPaths, resolveGitOwnershipBase, undoCheckWrites } from "../verification";
 import { runCommandOnHost, writePmSettingsOnHost } from "../writer";
 import { runScriptOnHost } from "./script-run";
@@ -100,9 +101,11 @@ async function runReplayChecks(requestedHostId:string,checks:NonNullable<Paramet
   // A check's verdict belongs to the revision it ran on: a retried integration (the hub restarted mid-merge, a queue retry) finds
   // the same rebased head and reuses the recorded result instead of running the suite again (graphs-optimisation G8: 50 h of
   // repeat checks). Only a settled result is kept — an environment failure has to run again.
-  const cached=await cachedReplayVerdicts(checks.workspacePath,checks.commands);
+  // A chain of one runner (A && B) is glued into a single run; exact repeats of a command run once (graphs G2/G8).
+  const commands=glueReplayCommands(checks.commands);
+  const cached=await cachedReplayVerdicts(checks.workspacePath,commands);
   const notRun:ReplayCheck[]=[];
-  for(const check of checks.commands) {
+  for(const check of commands) {
     const seen=cached?.entries[replayKey(check.command,check.cwd)];
     // Already settled on this revision: a recorded pass skips the run, a recorded red fails the merge again with its output.
     if(seen&&seen.exitCode===0) continue;

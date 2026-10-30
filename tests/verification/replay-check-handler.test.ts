@@ -181,4 +181,14 @@ describe("gitIntegrate with replayChecks (the host runs the task's checks in the
     expect(res).toMatchObject({ status: "conflict" });
     expect(JSON.stringify(res)).toContain("1 of its 2 runs ran no test");
   });
+
+  it("a chain of one runner is glued into a single sandbox run (G2/G8)", async () => {
+    sandbox.run.mockResolvedValue(ran(0, "19 checks, 0 failed"));
+    const res = await gitIntegrate({ requestedHostId: "h", basePath: base, worktreePath: two, message: "two",
+      replayChecks: { workspacePath: two, backend: "auto", commands: [{ command: "npx vitest run a.test.ts && npx vitest run b.test.ts", cwd: two, timeoutSec: 90 }, { command: "npx tsc --noEmit", cwd: two, timeoutSec: 90 }] } } as never, undefined as never);
+    expect(res).toMatchObject({ status: "merged" });
+    expect(sandbox.run).toHaveBeenCalledTimes(2);
+    expect(sandbox.run.mock.calls[0]![0].command).toBe("npx vitest run a.test.ts b.test.ts");
+    expect(sandbox.run.mock.calls[1]![0].command).toBe("npx tsc --noEmit");
+  });
 });
