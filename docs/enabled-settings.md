@@ -14,7 +14,7 @@ sources:
   - docs/enabled-settings.snapshot.json
 ---
 
-<!-- enabled-settings:structure d5d3370d6323f80f -->
+<!-- enabled-settings:structure aab74c6fa7ed23bd -->
 
 # Enabled settings (generated)
 
@@ -234,6 +234,7 @@ switches: `quick` disables both critiques, `full` enables them (`src/rooms/criti
 | `writer.fallback_on_provider_failure` | `after_retry` | — | writer fallback chain: a provider refusal hands the task to the next model at once or after one retry of the same model |
 | `writer.model` | `PRIMARY_MODELS[provider]` | — | writer stage reads this setting |
 | `writer.pair_pin` | `on` | — | writer pin: the task's provider+model for its whole life |
+| `writer.pick_refusal_penalty` | `on` | — | writer pick: on charges a model pair for this project's provider-refusal share over 30 days (from 10 attempts) when Jev spreads the pick |
 | `writer.provider` | `kimi` | — | writer stage reads this setting |
 | `writer.reasoning_effort` | `PRIMARY_EFFORTS[provider]` | — | writer stage reads this setting |
 | `writer.retry_escalate` | `false` | — | writer fallback chain: on sends the first red check of a task-class failure to the next writer inside the same attempt budget |

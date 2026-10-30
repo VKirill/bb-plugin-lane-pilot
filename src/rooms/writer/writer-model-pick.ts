@@ -14,8 +14,8 @@ export type WriterPickTask = {
   title: string; objective: string; kind?: string | null; area?: string | null; risk?: string | null;
   owns_paths: readonly string[]; expected_outputs: readonly string[]; acceptance: readonly string[];
 };
-/** How busy a candidate's provider is now: the spent share of its usage window (null — not measured) and the writer tasks running on it. */
-export type WriterLoad = { percent: number | null; running: number };
+/** How busy a candidate's provider is now: the spent share of its usage window (null — not measured), the writer tasks running on it, and the share of this project's attempts on the pair that providers refused over 30 days (null — fewer than 10 attempts measured). */
+export type WriterLoad = { percent: number | null; running: number; refuseShare?: number | null };
 export type WriterPickInput = { task: WriterPickTask; candidates: readonly WriterProfile[]; load?: Readonly<Record<string, WriterLoad>> };
 
 const clip = (text: string, max: number): string => (text.length > max ? `${text.slice(0, max - 1)}…` : text);
@@ -32,8 +32,10 @@ const levelShare = (answers: Answers, id: string, levels: readonly string[]): nu
   return names.reduce((total, name) => total + (Math.max(0, levels.findIndex((level) => level.startsWith(name.split(":")[0]!))) / (levels.length - 1)) * (answer.probabilities[name] ?? 0), 0);
 };
 
-/** How much a candidate's provider busyness costs, in probability points (the balancing the question's text used to do). */
-const loadPenalty = (load: WriterLoad | undefined): number => (load ? (load.percent ?? 0) / 100 * 0.06 + load.running * 0.01 : 0);
+/** How much a candidate's provider busyness costs, in probability points (the balancing the question's text used to do), plus
+ * W31 rank 3b: the share this project's attempts on the pair ended in a provider refusal over 30 days costs up to 0.10 more —
+ * a pair that keeps refusing this project's tasks loses the pick to a peer even when its window looks free. */
+const loadPenalty = (load: WriterLoad | undefined): number => (load ? (load.percent ?? 0) / 100 * 0.06 + load.running * 0.01 + (load.refuseShare ?? 0) * 0.10 : 0);
 const TIER_RANK = { light: 0, standard: 1, strong: 2 } as const;
 
 export const writerModelJudgment = defineJudgment<WriterPickInput, { key: string | null }>({
@@ -116,6 +118,9 @@ export type WriterRouteDecision = {
   picked: string;
   /** How the pick was made. `capacity_saturated` means every offered provider was spent. */
   by: "jev" | "kept" | "pick_off" | "no_room";
+  /** The task's verdict on the pick, written by the outcome sweep once the task settles (W31 rank 3a). */
+  outcome?: "agree" | "disagree";
+  outcomeAt?: number;
 };
 
 export const writerRouteKey = (runId: string, taskId: string) => `writer-route:${runId}:${taskId}`;

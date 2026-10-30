@@ -8,6 +8,8 @@ import { INVOICE_CHECK_ID } from "@lane-pilot/jev/judgments/invoice-check";
 const ROUTE_WORKFLOW_ID = "route.workflow";
 // The plan.fact judgment id, spelled out so runs never pulls the tasks room (import cycle through validate-output).
 const PLAN_FACT_JEV_ID = "plan.fact";
+// The writer pick judgment id, spelled out so runs never pulls the writer room (writer-model-pick imports storage, not runs).
+const WRITER_MODEL_JEV_ID = "writer.model";
 
 /**
  * The class of a failure with J-4 behind the rules: the rules first, and only a reason they have no confident match for goes to
@@ -21,6 +23,8 @@ export type JudgedFailureDeps = {
   runId: string | null;
   /** Present: the unlabeled receipts of this judgment get their outcome from the run's terminal state (see the sweep below). */
   db?: Database.Database | null;
+  /** Present: a labeled `writer.model` outcome is also written into the task's `writer-route` record (W31). */
+  kv?: { get(key: string): Promise<unknown>; set(key: string, value: unknown): Promise<void> } | null;
 };
 
 /**
@@ -102,6 +106,36 @@ export function sweepPlanFactOutcomes(db: Database.Database): number {
   return labeled;
 }
 
+export type LabeledOutcome = { receiptId: number; runId: string; taskId: string; outcome: "agree" | "disagree" };
+
+/**
+ * The task's result is the stronger judge of `writer.model` (W31 rank 3a): an accepted task confirms the pick — whether Jev
+ * chose a profile or decided to keep the project's writer — a task that ended without acceptance (every attempt terminal and
+ * none accepted, or the run closed over it) denies it. Attempts still going stay unlabeled. The returned rows let the caller
+ * write the same outcome into the task's `writer-route` KV record.
+ */
+export function sweepWriterModelOutcomes(db: Database.Database): LabeledOutcome[] {
+  const receipts = db.prepare(`SELECT id, run_id, subject FROM lane_pilot_jev_receipt
+    WHERE judgment = ? AND outcome IS NULL AND status = 'ok' AND decided_by = 'jev' AND decision IS NOT NULL
+      AND run_id IS NOT NULL AND subject IS NOT NULL`).all(WRITER_MODEL_JEV_ID) as Array<{ id: number; run_id: string; subject: string }>;
+  const labeled: LabeledOutcome[] = [];
+  for (const receipt of receipts) {
+    let outcome: "agree" | "disagree" | null = null;
+    if (db.prepare("SELECT 1 FROM lane_pilot_attempt WHERE run_id=? AND task_id=? AND state='accepted' LIMIT 1").get(receipt.run_id, receipt.subject)) {
+      outcome = "agree";
+    } else {
+      const open = db.prepare(`SELECT 1 FROM lane_pilot_attempt WHERE run_id=? AND task_id=?
+        AND state IN ('queued','spawn_requested','spawn_unknown','running','cancel_requested') LIMIT 1`).get(receipt.run_id, receipt.subject);
+      const run = db.prepare("SELECT state, closed_at FROM lane_pilot_run WHERE id=?").get(receipt.run_id) as { state: string; closed_at: number | null } | undefined;
+      if (!open && (!run || run.closed_at !== null || run.state !== "running")) outcome = "disagree";
+    }
+    if (!outcome) continue;
+    recordOutcome(db, receipt.id, outcome);
+    labeled.push({ receiptId: receipt.id, runId: receipt.run_id, taskId: receipt.subject, outcome });
+  }
+  return labeled;
+}
+
 let lastSweep = 0;
 
 export async function judgedFailureClass(deps: JudgedFailureDeps, state: string, reason: string | null | undefined, subject?: string): Promise<FailureClass> {
@@ -113,7 +147,16 @@ export async function judgedFailureClass(deps: JudgedFailureDeps, state: string,
     const settings = await deps.settings().catch(() => ({} as JevSettings));
     if (!instance.enabled(settings)) return rules.cls;
     // At most once a minute: the labels of earlier judgments ride along, so the calibration set fills itself.
-    if (deps.db && Date.now() - lastSweep > 60_000) { lastSweep = Date.now(); sweepFailureClassOutcomes(deps.db); sweepInvoiceCheckOutcomes(deps.db); sweepRouteWorkflowOutcomes(deps.db); sweepPlanFactOutcomes(deps.db); }
+    if (deps.db && Date.now() - lastSweep > 60_000) {
+      lastSweep = Date.now();
+      sweepFailureClassOutcomes(deps.db); sweepInvoiceCheckOutcomes(deps.db); sweepRouteWorkflowOutcomes(deps.db); sweepPlanFactOutcomes(deps.db);
+      const labeled = sweepWriterModelOutcomes(deps.db);
+      if (deps.kv) for (const row of labeled) {
+        const key = `writer-route:${row.runId}:${row.taskId}`;
+        const route = await deps.kv.get(key).catch(() => null);
+        if (route && typeof route === "object") await deps.kv.set(key, { ...(route as Record<string, unknown>), outcome: row.outcome, outcomeAt: Date.now() }).catch(() => undefined);
+      }
+    }
     // B8: a pointed failure line found in the log sharpens the class question (shadow records it either way).
     const lines = reason.split("\n").map((line) => line.trim()).filter(Boolean);
     let pointed: string | null = null;

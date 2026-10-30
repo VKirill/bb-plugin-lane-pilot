@@ -1004,6 +1004,8 @@ export const fieldEn = {
   reason_s537: "The most failed or rejected verification gate evaluations a task may accumulate before it ends with verify_passes_exhausted instead of another writer pass. Default 10.",
   field_s538: "Retry safety gate",
   reason_s538: "on blocks an automatic retry when the failed attempt's work area was touched after it ended: foreign commits or file edits, rewritten check evidence, or a catalog secret value still in the worktree diff; off keeps the unconditional retry. Default on.",
+  field_s550: "Refusal penalty in the writer pick",
+  reason_s550: "on charges a provider+model pair for the share of this project's attempts on it that ended in a provider refusal over 30 days (counted from 10 attempts) when Jev picks the writer; off keeps the pre-penalty spread. Default on.",
 } as const;
 
 export const fieldRu: { [K in keyof typeof fieldEn]: string } = {
@@ -2011,4 +2013,6 @@ export const fieldRu: { [K in keyof typeof fieldEn]: string } = {
   reason_s537: "Сколько упавших или отклонённых оценок гейта верификации может накопить задача, прежде чем завершится с verify_passes_exhausted вместо очередного прохода исполнителя. По умолчанию 10.",
   field_s538: "Гейт безопасности ретрая",
   reason_s538: "on блокирует авто-ретрай, если рабочую область упавшей попытки трогали после её конца: чужие коммиты или правки файлов, переписанные квитанции проверок или значение секрета из каталога, оставшееся в диффе worktree; off оставляет безусловный ретрай. По умолчанию on.",
+  field_s550: "Штраф за отказы при выборе писателя",
+  reason_s550: "on наказывает пару провайдер+модель за долю отказов провайдера на попытках этого проекта за 30 дней (считается от 10 попыток) при выборе писателя Jev; off оставляет прежний разброс. По умолчанию on.",
 };

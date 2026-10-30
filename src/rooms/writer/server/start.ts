@@ -144,14 +144,35 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
       // provider on the task's machine, outside its free hours, or busy).
       held:async (profile) => Boolean(await services.providerUsage.hold({ providerId:profile.providerId, model:profile.model, hostId:input.config.hostId,
         threshold:isZcodeProvider(profile.providerId) ? 0 : usageSkipPercent(settings), settings })),
-      load:(profiles) => writerLoad(profiles, input.config.hostId, settings) },
+      load:(profiles) => writerLoad(profiles, input.config.hostId, settings, input.projectId) },
       settings, input);
 
   /**
    * How busy each offered writer's provider is, for Jev to spread the tasks: the spent share of its usage window (from the cached
    * readings; null when nothing is measured) and the writer tasks running on that provider now (the picks kept for running tasks).
    */
-  async function writerLoad(profiles:readonly WriterProfile[], hostId:string, settings:Record<string, unknown>):Promise<Record<string, WriterLoad>> {
+  /** Refusals count as a share only from 10 attempts of the pair in this project: below that a single spawn_rejected would skew the pick. */
+  const REFUSAL_WINDOW_MS = 30 * 86_400_000;
+  const REFUSAL_MIN_ATTEMPTS = 10;
+  const refusalShares = (projectId:string):Map<string, { attempts:number; refused:number }> => {
+    const rows = db.prepare(`SELECT t.trace_json, a.state FROM lane_pilot_attempt a
+      JOIN lane_pilot_run r ON r.id=a.run_id JOIN lane_pilot_attempt_reasoning t ON t.attempt_id=a.id
+      WHERE r.project_id=? AND a.created_at>=?`).all(projectId, Date.now() - REFUSAL_WINDOW_MS) as Array<{ trace_json:string; state:string }>;
+    const out = new Map<string, { attempts:number; refused:number }>();
+    for (const row of rows) {
+      let trace:{ providerId?:string; model?:string } | null = null;
+      try { trace = JSON.parse(row.trace_json) as { providerId?:string; model?:string }; } catch { /* unreadable */ }
+      if (!trace?.providerId || !trace.model) continue;
+      const pair = `${trace.providerId}/${trace.model}`;
+      const cell = out.get(pair) ?? { attempts:0, refused:0 };
+      cell.attempts += 1;
+      if (row.state === "provider_error" || row.state === "spawn_rejected") cell.refused += 1;
+      out.set(pair, cell);
+    }
+    return out;
+  };
+
+  async function writerLoad(profiles:readonly WriterProfile[], hostId:string, settings:Record<string, unknown>, projectId:string):Promise<Record<string, WriterLoad>> {
     // ponytail: counts only tasks whose writer Jev picked (a task on the project's own writer has no kept pick); count attempts by writer pair if that skews the spread.
     const running = new Map<string, number>();
     const picks = await Promise.all([...services.activeWriterTasks].map((key) => bb.storage.kv.get(`writer-pick:${key}`).catch(() => null)));
@@ -159,11 +180,15 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
       const provider = typeof picked === "string" && picked ? WRITER_PROFILES.find((row) => row.key === picked)?.providerId : undefined;
       if (provider) running.set(provider, (running.get(provider) ?? 0) + 1);
     }
+    // W31 rank 3b: a pair whose attempts this project's providers keep refusing pays for it in the pick; writer.pick_refusal_penalty=off keeps the old behaviour.
+    const refusals = settings["writer.pick_refusal_penalty"] === false || settings["writer.pick_refusal_penalty"] === "off" ? new Map<string, { attempts:number; refused:number }>() : refusalShares(projectId);
     const out:Record<string, WriterLoad> = {};
     await Promise.all(profiles.map(async (profile) => {
       const spent = isZcodeProvider(profile.providerId) ? null
         : await services.providerUsage.hold({ providerId:profile.providerId, model:profile.model, hostId, threshold:1, settings }).catch(() => null);
-      out[profile.key] = { percent:spent?.percent ?? null, running:running.get(profile.providerId) ?? 0 };
+      const pair = refusals.get(`${profile.providerId}/${profile.model}`);
+      out[profile.key] = { percent:spent?.percent ?? null, running:running.get(profile.providerId) ?? 0,
+        refuseShare: pair && pair.attempts >= REFUSAL_MIN_ATTEMPTS ? pair.refused / pair.attempts : null };
     }));
     return out;
   }
@@ -892,7 +917,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         // A fault of Lane Pilot or the machine is not redone here: another writer meets the same fault. The task is
         // parked and restarts once a fix ships or the machine recovers.
         // A reason the rules have no confident match for goes to Jev (J-4, shadow by default: recorded, the rules' class used).
-        const failedClass = await judgedFailureClass({ jev, settings:async () => runSettings, projectId:input.projectId, runId:input.runId, db },
+        const failedClass = await judgedFailureClass({ jev, settings:async () => runSettings, projectId:input.projectId, runId:input.runId, db, kv:bb.storage.kv as never },
           String(last.status), typeof last.reason === "string" ? last.reason : null, input.taskId);
         // C6: a class's own intervention instead of the same retry — the streak of consecutive same-class failures of
         // this task decides. `failure.interventions=off` keeps the old uniform retry (live setting).
