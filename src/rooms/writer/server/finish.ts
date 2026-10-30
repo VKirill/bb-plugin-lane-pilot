@@ -42,7 +42,8 @@ import { bookkeepingSetting } from "@lane-pilot/settings-catalog";
 import { attemptMergeMessage, clearMergeIntent, recordMergeIntent } from "../../verification/server";
 import { sendServiceMessage } from "../../relay/server";
 import { judgeRulesOnDiff, ruleViolationRemark } from "../../learning";
-import { jev } from "@lane-pilot/jev";
+import { jev, type JevSettings } from "@lane-pilot/jev";
+import { writerFinishScanJudgment } from "../finish-scan";
 import { runOnHost } from "@lane-pilot/host-calls";
 import { pollPause } from "@lane-pilot/kit";
 
@@ -774,6 +775,17 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
         transitionAttempt(db, input.attemptId, "blocked", { reason:wordGap });
         return { status:"blocked", reason:wordGap, attemptId:input.attemptId, writerThreadId };
       }
+      // The parallel finish scan (Gemini 7): three cheap nouls on the landing attempt — diff risk, UI, docs — for
+      // receipts and the task's profile; it never changes the finish path.
+      try {
+        const scan = await jev()?.judge(writerFinishScanJudgment, {
+          title: input.task.title, contract: JSON.stringify({ invariants: input.task.invariants, out_of_scope: input.task.out_of_scope }),
+          produced: (candidate.produced ?? []).slice(0, 40).join("\n"),
+          verification: (candidate.verification ?? []).slice(0, 10).map((row) => `${row.command}:${row.exitCode}`).join("\n"),
+          summary: typeof candidate.output === "string" ? candidate.output : "",
+        }, { projectId: input.projectId, runId: input.runId, subject: "writer-finish", settings: loadProjectSettings(db, input.projectId, getRunSettingsScopes(db, input.runId)) as JevSettings });
+        if (scan?.by === "jev") bb.log.info(`Lane Pilot finish-scan ${input.taskId}: ${writerFinishScanJudgment.describe(scan.decision)}`);
+      } catch { /* a scan is never a gate */ }
       const receipt = await services.persistWriterAcceptance({
         config:input.config, task:input.task, runId:input.runId, taskId:input.taskId,
         attempt:countAttempts(db, input.runId, input.taskId), attemptId:input.attemptId,

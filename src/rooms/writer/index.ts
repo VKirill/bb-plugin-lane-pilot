@@ -8,6 +8,7 @@ export { materializeAgentTrash, ownedAgentTrashPath, AGENT_TRASH_RELATIVE } from
 export { resolveStageWriterSelection } from "./stage-writer-selection";
 export { attachStreamRetry, droppedStreamDetail } from "./stream-retry";
 export { memoryLine, pathAnchors, reviewerMemoryPicks, writerBriefStats, writerMemory, writerMemoryPicks } from "./writer-brief";
+export { WRITER_FINISH_SCAN_ID, writerFinishScanJudgment, type FinishScanDecision, type FinishScanInput } from "./finish-scan";
 export { writerFallbackChain, writerFallbackKeys, writerFallbacks } from "./writer-fallbacks";
 export { BEST_OF_COUNT, BEST_OF_SETTING, BEST_OF_SLOT_CAP_SETTING, BEST_OF_TOKEN_BUDGET_SETTING, BEST_OF_VALUES, bestOfBudgetAllows, bestOfPicks, pickBestAttempt, reserveAppetite, resolveBestOf } from "./best-of";
 export type { BestOfCandidate, BestOfPlan, WriterPair } from "./best-of";
