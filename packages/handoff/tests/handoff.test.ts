@@ -131,3 +131,20 @@ describe("handoff messages", () => {
     expect(extractHandoffReceiptBlock("no block", "h9")).toBeNull();
   });
 });
+
+describe("W33 default deadline", () => {
+  it("gives a card without deadlineAt a 48 h deadline and expires legacy NULL-deadline cards by created_at", () => {
+    const db = openDb();
+    const now = Date.now();
+    const stored = createHandoff(db, { id: "hnd_w33a", projectId: "p", draft: { ...draft, deadlineAt: null }, now });
+    expect(stored.card.deadlineAt).toBe(now + 48 * 3_600_000);
+    // A legacy card written before the default existed (deadline_at NULL).
+    db.prepare("INSERT INTO lane_pilot_handoff(id,project_id,run_id,from_agent,to_agent,owner_thread_id,recipient_thread_id,state,card_json,deadline_at,created_at,updated_at) VALUES(?,?,?,?,?,?,NULL,'queued',?,NULL,?,?)")
+      .run("hnd_w33old", "p", null, "council", "writer", "thr_pm", JSON.stringify(draft), now - 30 * 86_400_000, now - 30 * 86_400_000);
+    const expired = expireOverdueHandoffs(db, now);
+    expect(expired).toContain("hnd_w33old");
+    expect(getHandoff(db, "hnd_w33old")?.card.state).toBe("expired");
+    // A fresh card with the default deadline does not expire yet.
+    expect(expired).not.toContain("hnd_w33a");
+  });
+});

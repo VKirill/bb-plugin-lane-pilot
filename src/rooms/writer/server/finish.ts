@@ -354,6 +354,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
           neverTouch:input.task.never_touch,
           dirtOk:dirt.ok,
           dirtReason:dirt.ok ? undefined : dirt.reason,
+          workspace:input.task.project_cwd,
         });
       };
       let criticNotes = "";

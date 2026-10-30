@@ -613,7 +613,8 @@ export async function runCodeCritique(input:{
     recordStage(input.db, { ...base, state:"skipped", reason:qualityMode === "quick" ? "quality_mode_quick" : "disabled_by_project_setting", result:{ ...ledgerCarry, ...hashFields, policy } });
     return { allowed:true, review:"not_required", settings:parsed, policy };
   }
-  if (input.evidence.truncated) {
+  // packet_truncated alone no longer blocks: the critic reads the listed paths itself (W33).
+  if (input.evidence.truncated && !(input.evidence.unreadPaths?.length && input.evidence.truncateReason === "packet_truncated")) {
     const reason = `code_critique_evidence_unknown:${input.evidence.truncateReason ?? "truncated"}`;
     recordStage(input.db, { ...base, state:"skipped", reason, result:{ ...ledgerCarry, ...hashFields, truncated:true, policy } });
     return { allowed:true, reason, review:"not_required", settings:parsed, policy };
