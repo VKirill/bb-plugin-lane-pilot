@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useRpc } from "@get-bb/plugin-sdk/app";
 import type { rpcContract } from "../../contracts";
 import { t, type I18nKey } from "@lane-pilot/i18n";
@@ -23,8 +23,13 @@ export type LatestRun = { runId: string; at: number; states: ReadonlyMap<string,
 export function useLatestRun(workflowId: string | null, projectId: string | null, signature: string): LatestRun | null {
   const rpc = useRpc<typeof rpcContract>() as unknown as { call: Call };
   const [latest, setLatest] = useState<LatestRun | null>(null);
+  const seen = useRef<string | null>(null);
   useEffect(() => {
     if (!workflowId) { setLatest(null); return; }
+    // The same workflow at the same runs signature is already resolved: a signal about another run must not reread it.
+    const key = `${workflowId}${projectId ?? ""}${signature}`;
+    if (seen.current === key) return;
+    seen.current = key;
     let live = true;
     void (async () => {
       try {
