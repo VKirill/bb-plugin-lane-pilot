@@ -980,6 +980,10 @@ export const fieldEn = {
   reason_s510: "Which bench sets the 01:30 UTC night runs: every set (all, default) or the named versions (v3,v5). The night's token budget is shared evenly between the sets.",
   field_s511: "Writer fallback on provider failure",
   reason_s511: "When the provider refuses the writer (a limit, an unavailable provider, a 5xx), the next model of the fallback chain takes the task at once (immediate) or after the classic retry order (after_retry, default).",
+  field_s513: "Failure-class interventions",
+  reason_s513: "After a same-class failure streak the writer loop acts on the class instead of repeating the same retry (narrow the brief, hand to the next writer, park). off keeps the uniform retry.",
+  field_s514: "Red check goes to the next writer",
+  reason_s514: "on sends the first red check of a task-class failure to the next writer in the fallback chain inside the same attempt budget; off retries the same writer once first.",
 } as const;
 
 export const fieldRu: { [K in keyof typeof fieldEn]: string } = {
@@ -1963,4 +1967,8 @@ export const fieldRu: { [K in keyof typeof fieldEn]: string } = {
   reason_s510: "Какие наборы бенча гоняет ночь 01:30 UTC: все (all, по умолчанию) или названные версии (v3,v5). Токен-бюджет ночи делится между наборами поровну.",
   field_s511: "Запасная модель при отказе провайдера",
   reason_s511: "Когда провайдер отказывает исполнителю (лимит, недоступный провайдер, 5xx), следующая модель цепочки запасных берёт задачу сразу (immediate) или после классического порядка повторов (after_retry, по умолчанию).",
+  field_s513: "Вмешательства по классу сбоя",
+  reason_s513: "После серии сбоев одного класса цикл исполнителя действует по классу вместо повторения того же ретрая (сузить бриф, передать следующему исполнителю, припарковать). off оставляет одинаковый ретрай.",
+  field_s514: "Красная проверка — следующему исполнителю",
+  reason_s514: "on отправляет первую красную проверку сбоя класса task следующему исполнителю цепочки запасных в том же бюджете попыток; off сначала повторяет того же исполнителя.",
 };

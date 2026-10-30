@@ -31,6 +31,8 @@ const BY_KEY: Record<string, Record<string, I18nKey>> = {
   },
   "checks.require_red_on_base": { off: "enumRequireRedOff", medium: "enumRequireRedMedium", high: "enumRequireRedHigh" },
   "writer.fallback_on_provider_failure": { immediate: "enumFallbackImmediate", after_retry: "enumFallbackAfterRetry" },
+  "failure.interventions": { on: "enumInterventionsOn", off: "enumInterventionsOff" },
+  "memory.maintain_mode": { wave: "enumMaintainModeWave", task: "enumMaintainModeTask" },
   "jev.provider": { openlux: "enumJevProviderOpenlux", typesafe: "enumJevProviderTypesafe" },
   "sandbox.backend": {
     auto: "enumSandboxAuto",

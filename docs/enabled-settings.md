@@ -14,7 +14,7 @@ sources:
   - docs/enabled-settings.snapshot.json
 ---
 
-<!-- enabled-settings:structure db0910b75a80a7f9 -->
+<!-- enabled-settings:structure 6426c09dde9d7327 -->
 
 # Enabled settings (generated)
 
@@ -90,6 +90,7 @@ switches: `quick` disables both critiques, `full` enables them (`src/rooms/criti
 | `docs.reasoning_effort` | `inherit writer selection` | — | docs stage uses model-supported reasoning selection |
 | `docs.service_tier` | `inherit writer selection` | — | docs stage uses provider-supported service tier selection |
 | `docs.since` | `yesterday` | — | stage setting: age window for docs candidates |
+| `failure.interventions` | `on` | — | writer loop: a same-class failure streak gets the class's intervention instead of the same retry |
 | `harness.adopt_by` | `bench` | — | harness: who adopts a taught tree, the bench comparison or the live alternation |
 | `helper.bb_plugins` | — | — | helper BB-plugin allowlist when helper.context_mode is selected |
 | `helper.context_mode` | `roles` | — | helper session filter: inherit, selected allowlists, or empty optional lists |
@@ -114,6 +115,7 @@ switches: `quick` disables both critiques, `full` enables them (`src/rooms/criti
 | `memory.index_budget` | `65536` | — | stage setting: cap total project index tokens |
 | `memory.inject` | `true` | — | stage setting: retrieve bounded relevant project memory for a writer |
 | `memory.maintain_every` | `3` | — | stage setting: run the memory maintainer on every Nth accepted task |
+| `memory.maintain_mode` | `wave` | — | stage setting: a free fact per accepted task and one maintainer run per idle wave, or a helper per task |
 | `memory.maintain` | `true` | — | stage setting: maintain durable project memory after accepted work |
 | `memory.note_budget` | `24000` | — | stage setting: cap note memory tokens |
 | `memory.personal_bot` | — | — | keeps bot-scoped project memory isolated across maintenance and retrieval |
@@ -225,6 +227,7 @@ switches: `quick` disables both critiques, `full` enables them (`src/rooms/criti
 | `writer.model` | `PRIMARY_MODELS[provider]` | — | writer stage reads this setting |
 | `writer.provider` | `kimi` | — | writer stage reads this setting |
 | `writer.reasoning_effort` | `PRIMARY_EFFORTS[provider]` | — | writer stage reads this setting |
+| `writer.retry_escalate` | `false` | — | writer fallback chain: on sends the first red check of a task-class failure to the next writer inside the same attempt budget |
 | `writer.service_tier` | `standard (or fast if --fast-mode)` | — | writer stage reads this setting |
 | `writer.silence_nudge_min` | `20` | — | writer watchdog: minutes of silence before a running writer is nudged |
 | `writer.skill_pick` | `on` | — | writer skill picking: Jev picks task skills before each attempt |

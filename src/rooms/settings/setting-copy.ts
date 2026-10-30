@@ -159,6 +159,8 @@ export const SETTING_META: Record<string, SettingMeta> = {
   "writer.best_of.slot_cap": { label: "field_s509", help: "reason_s509", unit: "fieldUnitTasks" },
   "bench.nightly_sets": { label: "field_s510", help: "reason_s510" },
   "writer.fallback_on_provider_failure": { label: "field_s511", help: "reason_s511" },
+  "failure.interventions": { label: "field_s513", help: "reason_s513" },
+  "writer.retry_escalate": { label: "field_s514", help: "reason_s514" },
   "wall.enabled": { label: "field_s478", help: "reason_s478" },
   "wall.max_classes_per_night": { label: "field_s479", help: "reason_s479", unit: "fieldUnitClasses" },
   "wall.rounds_per_night": { label: "field_s480", help: "reason_s480", unit: "fieldUnitRounds" },

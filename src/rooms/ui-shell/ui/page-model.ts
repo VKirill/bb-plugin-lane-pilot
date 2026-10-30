@@ -259,7 +259,7 @@ export const DEDICATED_KEYS = new Set([
 
 export const SECTIONED_SETTING_KEYS = new Set([
   "memory.enabled", "memory.maintain", "memory.inject", "memory.audience", "memory.search_engine",
-  "memory.personal_bot", "memory.maintain_every", "memory.core_budget", "memory.note_budget", "memory.index_budget", "memory.context_budget",
+  "memory.personal_bot", "memory.maintain_every", "memory.maintain_mode", "memory.core_budget", "memory.note_budget", "memory.index_budget", "memory.context_budget",
   "specialist.enabled", "specialist.when",
   "onboarding.depth", "adoc.040", "workspace.provider", "sandbox.backend", "verification.sandbox_unsafe", "secrets.allow", "quality_mode", "critic.code.default_for_risk", "plan_fact.mode",
   "browser_qa.enabled", "browser_qa.provider", "browser_qa.model", "browser_qa.backend",
