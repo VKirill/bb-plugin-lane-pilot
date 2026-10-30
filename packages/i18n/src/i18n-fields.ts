@@ -1017,6 +1017,8 @@ export const fieldEn = {
   reason_s527: "Whether the 1st of the month schedule runs the model routing rebench (lp.model-rebench) comparing Jev model choices with task outcomes. Default on.",
   field_s550: "Refusal penalty in the writer pick",
   reason_s550: "on charges a provider+model pair for the share of this project's attempts on it that ended in a provider refusal over 30 days (counted from 10 attempts) when Jev picks the writer; off keeps the pre-penalty spread. Default on.",
+  field_s540: "Owns-paths write barrier",
+  reason_s540: "on makes the tracked files outside a task's owns_paths read-only in the attempt's worktree once it is bound: a write outside the contract is refused by the OS instead of being rejected after the fact; the test or locale of an owned area stays writable; off keeps them writable. Default on.",
 } as const;
 
 export const fieldRu: { [K in keyof typeof fieldEn]: string } = {
@@ -2037,4 +2039,6 @@ export const fieldRu: { [K in keyof typeof fieldEn]: string } = {
   reason_s527: "Запускать ли 1-го числа месяца граф ре-бенча маршрутизации моделей (lp.model-rebench) со сравнением выбора Jev с исходами задач. По умолчанию on.",
   field_s550: "Штраф за отказы при выборе писателя",
   reason_s550: "on наказывает пару провайдер+модель за долю отказов провайдера на попытках этого проекта за 30 дней (считается от 10 попыток) при выборе писателя Jev; off оставляет прежний разброс. По умолчанию on.",
+  field_s540: "Барьер записи вне owns_paths",
+  reason_s540: "on делает отслеживаемые файлы вне owns_paths задачи только для чтения в worktree попытки после её привязки: запись вне контракта отклоняется ОС, а не приёмкой после факта; тест или локаль своей области остаются записываемыми; off оставляет запись свободной. По умолчанию on.",
 };

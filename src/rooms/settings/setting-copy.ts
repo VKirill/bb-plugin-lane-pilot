@@ -180,6 +180,7 @@ export const SETTING_META: Record<string, SettingMeta> = {
   "writer.task_wall_clock_min": { label: "field_s536", help: "reason_s536", unit: "fieldUnitMinutes" },
   "writer.verify_max_passes": { label: "field_s537", help: "reason_s537", unit: "fieldUnitTimes" },
   "writer.retry_safety": { label: "field_s538", help: "reason_s538" },
+  "writer.owns_barrier": { label: "field_s540", help: "reason_s540" },
   "wall.enabled": { label: "field_s478", help: "reason_s478" },
   "wall.max_classes_per_night": { label: "field_s479", help: "reason_s479", unit: "fieldUnitClasses" },
   "wall.rounds_per_night": { label: "field_s480", help: "reason_s480", unit: "fieldUnitRounds" },

@@ -17,7 +17,7 @@ import { fileAllowedByOwns, fileBlockedByNeverTouch } from "@lane-pilot/kit";
 import { isLiveDecision, LIVE_FOLDER_RECEIPT } from "../live-folder";
 import { beginChecks, checksMoved, taskFamily } from "../../runs";
 import { bookkeepingSetting, filterOwnershipNoise } from "@lane-pilot/settings-catalog";
-import { findUnownedChanges, findUnownedRunChanges, flakyEvidence as machineEvidence, outputTail, readingFrom, resolveRunOwnershipScope } from "../../verification";
+import { dropSatellites, findUnownedChanges, findUnownedRunChanges, flakyEvidence as machineEvidence, outputTail, readingFrom, resolveRunOwnershipScope } from "../../verification";
 import type { FlakyEvidence, MachineReading } from "../../verification";
 import { hollowRerun, noTestRanReason, testSummaries } from "../../tasks/server";
 import { recordGateEvaluation } from "../../runs/server";
@@ -453,15 +453,21 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
     // A path no task of the run owns fails here; name this task's other stray files (a sibling's) with it, or the
     // retry fixes only the named one and the per-task check below spends the last attempt on the rest.
     const runUnowned = findUnownedRunChanges(checkedPaths, ownershipScope.tasks);
-    const unowned = runUnowned.length ? [...new Set([...runUnowned,...findUnownedChanges(checkedPaths,input.task)])].sort() : [];
+    const flagged = runUnowned.length ? [...new Set([...runUnowned,...findUnownedChanges(checkedPaths,input.task)])].sort() : [];
+    // Satellites (F-02): a test or a locale file that belongs to an owned change of this same attempt is
+    // legitimate — 42 % of a month's rejections were such repeating pairs; the rest still rejects the attempt.
+    const anchors = checkedPaths.filter((path) => !flagged.includes(path));
+    const dropped = dropSatellites(flagged, anchors, input.task.never_touch);
+    const unowned = dropped.unowned;
+    if (dropped.satellites.length) ctx.log?.(`Lane Pilot: ${dropped.satellites.join(", ")} sit next to owned changes of ${input.taskId} (test/locale satellites); not violations`);
     if (unowned.length) {
-      recordGateEvaluation(db,{...input,gate:"owns-paths",status:"rejected",input:JSON.stringify(input.task),summary:{unownedCount:unowned.length}});
+      recordGateEvaluation(db,{...input,gate:"owns-paths",status:"rejected",input:JSON.stringify(input.task),summary:{unownedCount:unowned.length,satelliteCount:dropped.satellites.length}});
       recordGateEvaluation(db,{...input,gate:"validate",status:"skipped",input:JSON.stringify(input.task),summary:{reason:"ownership_rejected"}});
       const trusted = trustedToolingHint(unowned, input.task);
-      return { status:"validation_failed", reason:`writer changed paths outside owns_paths or inside never_touch: ${unowned.join(", ")}${trusted ? `; ${trusted}` : ""}`,
+      return { status:"validation_failed", reason:`writer changed paths outside owns_paths or inside never_touch: ${unowned.join(", ")}${trusted ? `; ${trusted}` : ""}; there is no write right to a file outside the contract — answer NEEDS_HUMAN with the list of files the task needs changed`,
         output:outputText(output), produced:checkedPaths, verification:[], diffKey };
     }
-    recordGateEvaluation(db,{...input,gate:"owns-paths",status:"passed",input:JSON.stringify(input.task),summary:{changedPathCount:checkedPaths.length,branchChangedPathCount:branchChanges.length,scope:"run",taskCount:ownershipScope.taskIds.length,gitBase:gitBase?{ref:gitBase.base_ref,sha:gitBase.base_sha,branch:gitBase.branch,compareCommitted:!!gitBase.compare_committed,pathsSha256:sha256(branchChanges.join("\0"))}:null}});
+    recordGateEvaluation(db,{...input,gate:"owns-paths",status:"passed",input:JSON.stringify(input.task),summary:{changedPathCount:checkedPaths.length,branchChangedPathCount:branchChanges.length,satelliteCount:dropped.satellites.length||undefined,scope:"run",taskCount:ownershipScope.taskIds.length,gitBase:gitBase?{ref:gitBase.base_ref,sha:gitBase.base_sha,branch:gitBase.branch,compareCommitted:!!gitBase.compare_committed,pathsSha256:sha256(branchChanges.join("\0"))}:null}});
     const contents: Record<string, string | null> = {};
     for (const rel of new Set([...input.task.expected_outputs.filter(isOutputPath), ...produced])) {
       const absolute = rel.startsWith("/") ? rel : `${input.task.project_cwd}/${rel}`;

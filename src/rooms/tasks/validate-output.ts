@@ -3,6 +3,7 @@ import { ENVIRONMENT_REASON, NO_ANSWER_REASON, isEnvironmentCheckFailure } from 
 import { cleanCheckOutput } from "@lane-pilot/kit";
 import type { TaskV2 } from "../contracts";
 import type { FlakyEvidence } from "../verification";
+import { dropSatellites } from "../verification/ownership";
 import { trustedToolingHint } from "./trusted-tooling";
 
 export function isTaskFolderFile(path:string):boolean {
@@ -64,7 +65,12 @@ export function classifyWriterOutput(input: {
   // Every stray file at once: the same-thread retry fixes what the reason names, and naming one of two cost
   // SelfyStudio cards-retention-1day.4 and cards-checkout-cabinet-chips.2 their last retry (2026-10-05).
   const blocked = produced.filter((file) => fileBlockedByNeverTouch(file, input.task.never_touch));
-  const rejected = produced.filter((file) => !blocked.includes(file) && !fileAllowedByOwns(file, input.task.owns_paths));
+  const owned = produced.filter((file) => !blocked.includes(file) && fileAllowedByOwns(file, input.task.owns_paths));
+  const rejected = dropSatellites(
+    produced.filter((file) => !blocked.includes(file) && !fileAllowedByOwns(file, input.task.owns_paths)),
+    owned,
+    input.task.never_touch,
+  ).unowned;
   if (blocked.length || rejected.length) {
     const trusted = trustedToolingHint(blocked, input.task);
     const reason = [blocked.length ? `never_touch matched ${blocked.join(", ")}` : "",

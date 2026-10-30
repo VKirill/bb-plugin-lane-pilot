@@ -21,6 +21,10 @@ export const laneWorktreeInputs = z.object({
   basePath: z.string().startsWith("/"),
   name: z.string().regex(/^[A-Za-z0-9._-]{1,120}$/),
   path: z.string().startsWith("/").optional(),
+  // F-01 owns-paths barrier: the task contract the worktree is bound for (its files outside owns_paths go read-only).
+  ownsBarrier: z.boolean().optional(),
+  ownsPaths: z.array(z.string().max(300)).max(200).optional(),
+  neverTouch: z.array(z.string().max(300)).max(200).optional(),
 }).strict();
 export type LaneWorktreeInputs = z.infer<typeof laneWorktreeInputs>;
 
@@ -68,7 +72,8 @@ export function registerLaneWorktreeProvider(ctx: ServerCore): boolean {
             path = created.path;
             context.report.step("Linking dependencies");
             // Linking dependencies helps the writer's checks; a host without it still gets a clean worktree.
-            await host.call("gitPrepareWorktree", { requestedHostId: hostId, basePath: inputs.basePath, worktreePath: path },
+            await host.call("gitPrepareWorktree", { requestedHostId: hostId, basePath: inputs.basePath, worktreePath: path,
+              ownsBarrier: inputs.ownsBarrier, ownsPaths: inputs.ownsPaths, neverTouch: inputs.neverTouch },
               { hostId, timeoutMs: 600_000, signal: context.signal }).catch(() => undefined);
           }
           return { status: "created", path, ownsPath: true, resource: { basePath: inputs.basePath, name: inputs.name, path } };

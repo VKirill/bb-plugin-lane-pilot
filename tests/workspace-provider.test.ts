@@ -331,7 +331,8 @@ function world(options: World = {}) {
 }
 
 const providerEnvironment = (path: string, basePath: string, name = "a1") => ({
-  type: "provider", environmentProviderId: LANE_WORKTREE_PROVIDER_ID, machine: { type: "existing", hostId: "h" }, inputs: { basePath, name, path },
+  type: "provider", environmentProviderId: LANE_WORKTREE_PROVIDER_ID, machine: { type: "existing", hostId: "h" },
+  inputs: { basePath, name, path, ownsBarrier: true, ownsPaths: ["index.ts"], neverTouch: [] },
 });
 const unmanaged = (path: string) => ({ type: "host", hostId: "h", workspace: { type: "unmanaged", path } });
 const holders = (spawned: Array<Record<string, unknown>>) => spawned.filter((args) => (args.pluginMetadata as { role?: string } | undefined)?.role === "workspace-provisioner");

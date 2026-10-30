@@ -1,11 +1,12 @@
 import { createHash } from "node:crypto";
 import { existsSync, unlinkSync } from "node:fs";
-import { appendFile, cp, lstat, mkdir, readdir, readFile, realpath, rename, rm, rmdir, stat, symlink, utimes, writeFile } from "node:fs/promises";
+import { appendFile, chmod, cp, lstat, mkdir, readdir, readFile, realpath, rename, rm, rmdir, stat, symlink, unlink, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, dirname, isAbsolute, join, relative } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { spawnAsync } from "@lane-pilot/kit";
-import { isBookkeepingPath } from "@lane-pilot/settings-catalog";
-import { matchOwnsPath } from "@lane-pilot/kit";
+import { isBookkeepingPath, isOwnershipNoise } from "@lane-pilot/settings-catalog";
+import { fileAllowedByOwns, fileBlockedByNeverTouch, matchOwnsPath } from "@lane-pilot/kit";
+import { satelliteOf } from "./ownership";
 import { ENVIRONMENT_REASON, REPLAY_CHECK_FAILED } from "../runs";
 import { recordedReplayFailure } from "./replay-cache";
 import { isAllowedProjectLifePath } from "../project-life";
@@ -317,6 +318,8 @@ export async function integrateWorktree(input:{basePath:string;worktreePath:stri
   /** How long machine-written files staged in the base's index (a stage between `git add` and `git commit`) get to be committed by their stager; then they are committed here. */
   stagedWaitMs?:number}):Promise<GitIntegration> {
   const fail=(reason:string):GitIntegration=>({status:"failed",commit:null,conflicts:[],reason});
+  // The owns-paths barrier comes down before the merge: the integration writes where the writer could not (F-01).
+  await liftOwnsBarrier(input.worktreePath).catch(()=>({restored:0}));
   await recoverStaleGitLock(input.worktreePath);
   if(!input.committedOnly&&input.ownsPaths?.length) await stageOwnedBookkeeping(input.worktreePath,input.ownsPaths,input.bookkeeping??[]);
   const dirty=input.committedOnly?{ok:true as const,stdout:"",reason:""}:await git(input.worktreePath,["status","--porcelain","--untracked-files=all"]);
@@ -945,7 +948,73 @@ async function copyTaskItems(basePath:string, worktreePath:string):Promise<void>
     filter:(_from,to)=>!tracked.has(relative(worktreePath,to).replace(/\\/g,"/"))});
 }
 
-export async function prepareWorktree(input:{basePath:string;worktreePath:string}):Promise<{linked:string[]}> {
+/**
+ * The owns-paths barrier state (F-01): the tracked files an attempt's worktree made read-only, kept in the
+ * worktree's git admin dir so it is never a change of the writer's and goes away with the worktree.
+ */
+const OWNS_BARRIER_STATE = "lane-pilot-owns-barrier.json";
+
+/**
+ * After a worktree is bound: tracked files outside the contract lose their write bits, so a writer that reaches
+ * for one is refused by the OS instead of producing a rejection after the fact. Satellites (the test or locale
+ * of an owned area) and ownership noise (bookkeeping, caches, build output) stay writable.
+ */
+export async function applyOwnsBarrier(input:{worktreePath:string;ownsPaths:string[];neverTouch:string[]}):Promise<{locked:number}> {
+  if (!input.ownsPaths.length) return { locked: 0 };
+  const [listed,stateFile]=await Promise.all([
+    git(input.worktreePath,["ls-files","-z","--cached"]),
+    git(input.worktreePath,["rev-parse","--git-path",OWNS_BARRIER_STATE]),
+  ]);
+  const raw=stateFile.ok?stateFile.stdout.trim():"";
+  const statePath=raw?resolve(input.worktreePath,raw):"";
+  if (!listed.ok||!statePath) return { locked: 0 };
+  const files=listed.stdout.split("\0").filter(Boolean);
+  const owned=new Set(files.filter((path)=>fileAllowedByOwns(path,input.ownsPaths)&&!fileBlockedByNeverTouch(path,input.neverTouch)));
+  const anchors=[...owned];
+  const locked:{path:string;mode:number}[]=[];
+  for (const path of files) {
+    if (!fileBlockedByNeverTouch(path,input.neverTouch)&&(owned.has(path)||satelliteOf(path,anchors)||isOwnershipNoise(path))) continue;
+    const st=await lstat(join(input.worktreePath,path)).catch(()=>null);
+    if (!st?.isFile()||!(st.mode&0o222)) continue;
+    locked.push({path,mode:st.mode&0o777});
+  }
+  if (!locked.length) return { locked: 0 };
+  for (const row of locked) await chmod(join(input.worktreePath,row.path),row.mode&~0o222).catch(()=>undefined);
+  await mkdir(dirname(statePath),{recursive:true}).catch(()=>undefined);
+  await writeFile(statePath,JSON.stringify(locked)).catch(()=>undefined);
+  return { locked: locked.length };
+}
+
+/** Give the files the barrier locked their write bits back; integration calls it before touching the worktree. */
+export async function liftOwnsBarrier(worktreePath:string):Promise<{restored:number}> {
+  const stateFile=await git(worktreePath,["rev-parse","--git-path",OWNS_BARRIER_STATE]);
+  if (!stateFile.ok) return { restored: 0 };
+  const statePath=resolve(worktreePath,stateFile.stdout.trim());
+  const raw=await readFile(statePath,"utf8").catch(()=>null);
+  if (!raw) return { restored: 0 };
+  let rows:{path:string;mode:number}[]=[];
+  try { rows=JSON.parse(raw) as typeof rows; } catch { rows=[]; }
+  let restored=0;
+  for (const row of rows) {
+    if (typeof row?.path!=="string"||typeof row?.mode!=="number") continue;
+    const ok=await chmod(join(worktreePath,row.path),row.mode).then(()=>true).catch(()=>false);
+    if (ok) restored+=1;
+  }
+  await unlink(statePath).catch(()=>undefined);
+  return { restored };
+}
+
+export async function prepareWorktree(input:{basePath:string;worktreePath:string;
+  /** F-01: with the contract, make tracked files outside owns_paths read-only for the attempt. */
+  ownsBarrier?:boolean;ownsPaths?:string[];neverTouch?:string[]}):Promise<{linked:string[];locked?:number}> {
+  const out=await linkWorktreeDependencies(input);
+  const locked=input.ownsBarrier&&input.ownsPaths?.length
+    ?(await applyOwnsBarrier({worktreePath:input.worktreePath,ownsPaths:input.ownsPaths,neverTouch:input.neverTouch??[]})).locked
+    :undefined;
+  return locked===undefined?out:{...out,locked};
+}
+
+async function linkWorktreeDependencies(input:{basePath:string;worktreePath:string}):Promise<{linked:string[]}> {
   await ensureInfoExclude(input.worktreePath, [TASK_FOLDER_EXCLUDE]);
   await copyTaskItems(input.basePath, input.worktreePath);
   await installBaseDependencies(input.basePath);

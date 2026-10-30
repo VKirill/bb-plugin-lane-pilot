@@ -39,6 +39,7 @@ const BY_KEY: Record<string, Record<string, I18nKey>> = {
   "checks.fail_fast": { on: "enumFailFastOn", off: "enumFailFastOff" },
   "writer.retry_safety": { on: "enumRetrySafetyOn", off: "enumRetrySafetyOff" },
   "writer.pick_refusal_penalty": { on: "enumRefusalPenaltyOn", off: "enumRefusalPenaltyOff" },
+  "writer.owns_barrier": { on: "enumOwnsBarrierOn", off: "enumOwnsBarrierOff" },
   "memory.maintain_mode": { wave: "enumMaintainModeWave", task: "enumMaintainModeTask" },
   "memory.pack_mode": { off: "enumPackModeOff", shadow: "enumPackModeShadow", adapter: "enumPackModeAdapter", canary: "enumPackModeCanary" },
   "memory.query_floor": { on: "enumQueryFloorOn", off: "enumQueryFloorOff" },

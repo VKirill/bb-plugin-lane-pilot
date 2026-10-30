@@ -45,7 +45,7 @@ it("never rejects bookkeeping files a hook wrote beside the writer's own change"
 
 it("still rejects a real file outside owns_paths, naming only it", async () => {
   const result = await validate(["src/a.ts", "lib/other.ts", ...bookkeeping]);
-  expect(result).toMatchObject({ status: "validation_failed", reason: "writer changed paths outside owns_paths or inside never_touch: lib/other.ts" });
+  expect(result).toMatchObject({ status: "validation_failed", reason: "writer changed paths outside owns_paths or inside never_touch: lib/other.ts; there is no write right to a file outside the contract — answer NEEDS_HUMAN with the list of files the task needs changed" });
 });
 
 it("treats the paths of the project's bookkeeping.paths setting as bookkeeping too", async () => {

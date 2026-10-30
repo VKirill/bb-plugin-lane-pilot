@@ -1,6 +1,6 @@
 {
-  "rows": 508,
-  "editable": 265,
+  "rows": 509,
+  "editable": 266,
   "readonly": 113,
   "gap": 0,
   "excluded": 133,
@@ -125,6 +125,7 @@
     "writer.agent",
     "writer.fast_mode",
     "writer.model",
+    "writer.owns_barrier",
     "writer.provider",
     "writer.reasoning_effort",
     "writer.retry_escalate",
