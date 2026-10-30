@@ -114,7 +114,8 @@ describe("F04: section chain and path selectors", () => {
 
   it("a legacy label matches no run, and a path selector matches only a task that owns the file", () => {
     expect(scopeApplies(["bb-plugin-lane-pilot", "verification"], chain)).toBe(false);
-    expect(scopeApplies(["bb-plugin-lane-pilot", "verification"], chain, ["verification"])).toBe(false);
+    expect(scopeApplies(["bb-plugin-lane-pilot", "verification"], chain, ["src/rooms/verification/check.ts"])).toBe(true);
+    expect(scopeApplies(["bb-plugin-lane-pilot", "verification"], chain, ["src/rooms/memory/store.ts"])).toBe(false);
     expect(scopeApplies(["db/store.ts"], chain)).toBe(false);
     expect(scopeApplies(["db/store.ts"], chain, ["packages/db/store.ts"])).toBe(true);
     expect(scopeApplies(["section:parent"], ["section:parent", "section:child"])).toBe(true);
@@ -131,7 +132,7 @@ describe("F04: section chain and path selectors", () => {
     storeMemoryRecords(db, { projectId: "P", ...limits, entries: [{ kind: "core", content: "Project-wide deployment convention: one port per service.", concepts: ["deployment"] }] });
     const plan = planScopeMigration(db, "fixture");
     expect(plan.applied).toBe(false);
-    expect(plan.rules.map((rule) => rule.proposal.action)).toEqual(["hold"]);
+    expect(plan.rules.map((rule) => rule.proposal.action)).toEqual(["split-path"]);
     expect(plan.rootCore.map((row) => row.proposal.action)).toEqual(["keep-root-pending-owner"]);
   });
 });
