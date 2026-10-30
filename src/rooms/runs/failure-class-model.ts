@@ -3,6 +3,7 @@ import { classifyFailure, type FailureClass } from "./failure-class";
 import { failureClassJudgment, FAILURE_CLASS_ID } from "./failure-class-judgment";
 import { recordOutcome, type Jev, type JevSettings } from "@lane-pilot/jev";
 import { INVOICE_CHECK_ID } from "@lane-pilot/jev/judgments/invoice-check";
+import { ROUTE_WORKFLOW_ID } from "../workflow/route-workflow";
 
 /**
  * The class of a failure with J-4 behind the rules: the rules first, and only a reason they have no confident match for goes to
@@ -45,6 +46,32 @@ export function sweepInvoiceCheckOutcomes(db: Database.Database): number {
   return rows.length;
 }
 
+/** How long after the route a graph run started under the same PM run counts as this route's result. */
+const ROUTE_OUTCOME_WINDOW_MS = 30 * 60_000;
+
+/**
+ * The label `calibrate` reads for a confident `route.workflow` pick (decided_by='jev'): the graph the pick started is the
+ * stronger judge. It reached its terminal → agree; it failed or was canceled, or a different graph went instead (the owner
+ * or the PM rerouted) → disagree. Routes still running and receipts with no linked run stay unlabeled.
+ */
+export function sweepRouteWorkflowOutcomes(db: Database.Database): number {
+  const receipts = db.prepare(`SELECT id, run_id, decision, at FROM lane_pilot_jev_receipt
+    WHERE judgment = ? AND outcome IS NULL AND status = 'ok' AND decided_by = 'jev' AND decision IS NOT NULL`).all(ROUTE_WORKFLOW_ID) as Array<{ id: number; run_id: string | null; decision: string; at: number }>;
+  let labeled = 0;
+  for (const receipt of receipts) {
+    if (!receipt.run_id) continue;
+    const run = db.prepare(`SELECT workflow_id, status FROM lane_pilot_wf_run
+      WHERE link_run_id = ? AND created_at >= ? AND created_at <= ? ORDER BY created_at LIMIT 1`)
+      .get(receipt.run_id, receipt.at, receipt.at + ROUTE_OUTCOME_WINDOW_MS) as { workflow_id: string; status: string } | undefined;
+    if (!run || run.status === "running" || run.status === "waiting") continue;
+    const choice = receipt.decision.replace(/\s*\(\d+\)\s*$/, "");
+    const agree = run.status === "succeeded" && run.workflow_id === choice;
+    recordOutcome(db, receipt.id, agree ? "agree" : "disagree");
+    labeled += 1;
+  }
+  return labeled;
+}
+
 let lastSweep = 0;
 
 export async function judgedFailureClass(deps: JudgedFailureDeps, state: string, reason: string | null | undefined, subject?: string): Promise<FailureClass> {
@@ -56,7 +83,7 @@ export async function judgedFailureClass(deps: JudgedFailureDeps, state: string,
     const settings = await deps.settings().catch(() => ({} as JevSettings));
     if (!instance.enabled(settings)) return rules.cls;
     // At most once a minute: the labels of earlier judgments ride along, so the calibration set fills itself.
-    if (deps.db && Date.now() - lastSweep > 60_000) { lastSweep = Date.now(); sweepFailureClassOutcomes(deps.db); sweepInvoiceCheckOutcomes(deps.db); }
+    if (deps.db && Date.now() - lastSweep > 60_000) { lastSweep = Date.now(); sweepFailureClassOutcomes(deps.db); sweepInvoiceCheckOutcomes(deps.db); sweepRouteWorkflowOutcomes(deps.db); }
     const verdict = await instance.judge(failureClassJudgment, { state, reason }, { projectId: deps.projectId, runId: deps.runId, subject: subject ?? "attempt", settings });
     return verdict.by === "jev" ? verdict.decision.cls : rules.cls;
   } catch { return rules.cls; }
