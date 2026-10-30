@@ -187,6 +187,10 @@ export const SETTING_META: Record<string, SettingMeta> = {
   "regress.check_cap_sec": { label: "field_s503", help: "reason_s503", unit: "fieldUnitSeconds" },
   "regress.budget_sec": { label: "field_s504", help: "reason_s504", unit: "fieldUnitSeconds" },
   "regress.bisect_steps": { label: "field_s505", help: "reason_s505", unit: "fieldUnitSteps" },
+  "checkers.diff_hidden_limit": { label: "field_s526", help: "reason_s526", unit: "fieldUnitTasks" },
+  "bench.model_rebench": { label: "field_s527", help: "reason_s527" },
+  "writer.trajectory_export": { label: "field_s528", help: "reason_s528" },
+  "pm.context_file": { label: "field_s529", help: "reason_s529" },
 };
 
 export function settingMeta(storageKey: string): SettingMeta | undefined {

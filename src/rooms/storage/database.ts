@@ -453,6 +453,9 @@ export const migrations = [
     summarized_at INTEGER,
     created_at INTEGER NOT NULL
   )`,
+  // Diff-hidden audit (Mirage / ToCS pattern): check sensitivity and blind passes when diff is hidden. Append only.
+  `CREATE TABLE IF NOT EXISTS lane_pilot_diff_hidden_audit (id TEXT PRIMARY KEY, run_id TEXT NOT NULL, task_id TEXT NOT NULL, checker TEXT NOT NULL, with_diff_json TEXT NOT NULL, diff_hidden_json TEXT NOT NULL, phantom INTEGER NOT NULL, blind_pass INTEGER NOT NULL, diff_sensitive INTEGER NOT NULL, recorded_at INTEGER NOT NULL)`,
+  `CREATE INDEX IF NOT EXISTS lane_pilot_diff_hidden_audit_recorded ON lane_pilot_diff_hidden_audit(recorded_at)`,
 ];
 
 export function openDatabase(bb: BbPluginApi): LanePilotDatabase {

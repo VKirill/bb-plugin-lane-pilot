@@ -176,39 +176,44 @@ function ownedEmployee(id: string, displayName: string): BundledAgent {
   };
 }
 
-/** Lane Pilot's own profiles: they are not in the Claude Lane Stack catalog the JSON is generated from. */
-const OWNED_PROFILES: Record<string, BundledAgent> = {
-  "video-lead": {
-    displayName: "Video",
-    prompt: laneSessionOverlayPrompt("video-lead"),
-    tools: ["Read", "Write", "Edit", "Glob", "Grep", "Bash", "WebFetch", "WebSearch"],
-    skills: [...EMPLOYEES["video-lead"]!.coreSkills],
-    mcpServers: [],
-    omittedNativeFields: ["model", "effort", "permissionMode"],
-    provenance: { package: "bb-plugin-lane-pilot", version: "bb-session-1", file: "src/rooms/native-agent/native-agent-overlay.ts", sha256: "", bytes: 0 },
-  },
-  "3d-artist": ownedEmployee("3d-artist", "3D artist"),
-  "game-dev": ownedEmployee("game-dev", "Game developer"),
-  "social-manager": ownedEmployee("social-manager", "Social manager"),
-  "billing-assistant": ownedEmployee("billing-assistant", "Billing assistant"),
-  "visual-artist": ownedEmployee("visual-artist", "Visual artist"),
-  "macos-operator": ownedEmployee("macos-operator", "macOS operator"),
-  [WORKFLOW_ARCHITECT_ID]: {
-    displayName: WORKFLOW_ARCHITECT_NAME.en,
-    prompt: laneSessionOverlayPrompt(WORKFLOW_ARCHITECT_ID),
-    tools: [...WORKFLOW_ARCHITECT_TOOLS],
-    skills: [],
-    mcpServers: [],
-    omittedNativeFields: ["model", "effort", "permissionMode"],
-    provenance: { package: "bb-plugin-lane-pilot", version: "bb-session-1", file: "src/workflow-architect.ts", sha256: "", bytes: 0 },
-  },
-};
-
-const BUNDLED = { ...(bundledAgents as Record<string, BundledAgent>), ...OWNED_PROFILES };
+let bundledCache: Record<string, BundledAgent> | null = null;
+function getBundled(): Record<string, BundledAgent> {
+  if (!bundledCache) {
+    const owned: Record<string, BundledAgent> = {
+      "video-lead": {
+        displayName: "Video",
+        prompt: laneSessionOverlayPrompt("video-lead"),
+        tools: ["Read", "Write", "Edit", "Glob", "Grep", "Bash", "WebFetch", "WebSearch"],
+        skills: [...EMPLOYEES["video-lead"]!.coreSkills],
+        mcpServers: [],
+        omittedNativeFields: ["model", "effort", "permissionMode"],
+        provenance: { package: "bb-plugin-lane-pilot", version: "bb-session-1", file: "src/rooms/native-agent/native-agent-overlay.ts", sha256: "", bytes: 0 },
+      },
+      "3d-artist": ownedEmployee("3d-artist", "3D artist"),
+      "game-dev": ownedEmployee("game-dev", "Game developer"),
+      "social-manager": ownedEmployee("social-manager", "Social manager"),
+      "billing-assistant": ownedEmployee("billing-assistant", "Billing assistant"),
+      "visual-artist": ownedEmployee("visual-artist", "Visual artist"),
+      "macos-operator": ownedEmployee("macos-operator", "macOS operator"),
+      [WORKFLOW_ARCHITECT_ID]: {
+        displayName: WORKFLOW_ARCHITECT_NAME.en,
+        prompt: laneSessionOverlayPrompt(WORKFLOW_ARCHITECT_ID),
+        tools: [...WORKFLOW_ARCHITECT_TOOLS],
+        skills: [],
+        mcpServers: [],
+        omittedNativeFields: ["model", "effort", "permissionMode"],
+        provenance: { package: "bb-plugin-lane-pilot", version: "bb-session-1", file: "src/workflow-architect.ts", sha256: "", bytes: 0 },
+      },
+    };
+    bundledCache = { ...(bundledAgents as Record<string, BundledAgent>), ...owned };
+  }
+  return bundledCache;
+}
 
 function bundledTemplate(id: string): { description: string; prompt: string } & ProfileResources | undefined {
-  if (!Object.hasOwn(BUNDLED, id)) return undefined;
-  const row = BUNDLED[id];
+  const bundled = getBundled();
+  if (!Object.hasOwn(bundled, id)) return undefined;
+  const row = bundled[id];
   if (!row) return undefined;
   if (row.displayName.length > 400) throw new Error(`bundled_agent_description_too_long:${id}`);
   if (row.prompt.length > 32_000) throw new Error(`bundled_agent_prompt_too_long:${id}`);
@@ -237,7 +242,7 @@ export function isUnchangedStockStub(id: string, stored?: StoredAgentRow): boole
   if (!isStockProfileId(id)) return false;
   if (!stored) return true;
   const legacy = LEGACY_STOCK_TEMPLATES[id];
-  const bundled = BUNDLED[id];
+  const bundled = getBundled()[id];
   const description = (stored.description ?? stored.compiled?.description ?? "").trim();
   const prompt = (stored.prompt ?? stored.compiled?.prompt ?? "").trim();
   const descriptionStock = !description

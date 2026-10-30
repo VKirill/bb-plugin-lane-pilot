@@ -4,6 +4,11 @@ export const CLI_AGENTS_PLUGIN_ID = "cli-agents";
 export const DEFAULT_NATIVE_AGENT = "dev-orchestrator";
 export const GUARD_PM_AGENTS = ["dev-orchestrator", "frontend-orchestrator", "marketing-orchestrator"] as const;
 
+export function isLanePmAgent(agentId: string): boolean {
+  const short = agentId.includes(":") ? agentId.slice(agentId.lastIndexOf(":") + 1) : agentId;
+  return (GUARD_PM_AGENTS as readonly string[]).includes(short);
+}
+
 /** Claude `--agent` flag: short id. Runtime agentSetting is `plugin:short` (see live transcript). */
 export function nativeAgentCliId(agentId: string): string {
   const trimmed = agentId.trim();

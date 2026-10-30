@@ -265,6 +265,10 @@ export const SETTING_CATALOG: SettingSpec[] = [
     channel:"NONE",
     reason: UNAPPLIED_REASON.nightReviewModel,
   },
+  { key:"checkers.diff_hidden_limit", channel:"OWN", reason:"Native Lane Pilot checkers: task limit for nightly diff-hidden audit, default 0" },
+  { key:"bench.model_rebench", channel:"OWN", reason:"Native Lane Pilot monthly model routing rebench switch" },
+  { key:"writer.trajectory_export", channel:"OWN", reason:"Native Lane Pilot rejected trajectories export switch" },
+  { key:"pm.context_file", channel:"OWN", reason:"Native Lane Pilot PM context.md generation switch" },
 ];
 
 export const CONSUMER_KEYS = new Set(

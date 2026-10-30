@@ -980,6 +980,16 @@ export const fieldEn = {
   reason_s510: "Which bench sets the 01:30 UTC night runs: every set (all, default) or the named versions (v3,v5). The night's token budget is shared evenly between the sets.",
   field_s511: "Writer fallback on provider failure",
   reason_s511: "When the provider refuses the writer (a limit, an unavailable provider, a 5xx), the next model of the fallback chain takes the task at once (immediate) or after the classic retry order (after_retry, default).",
+  field_s512: "Memory maintain every N tasks",
+  reason_s512: "The memory maintainer runs once per this many accepted tasks; 1 means every accepted task. Default 3.",
+  field_s526: "Diff-hidden audit limit",
+  reason_s526: "How many accepted tasks one night loop runs the diff-hidden audit on to detect blind passes and phantom findings; 0 turns the audit off. Default 0.",
+  field_s527: "Monthly model routing rebench",
+  reason_s527: "Whether the 1st of the month schedule runs the model routing rebench (lp.model-rebench) comparing Jev model choices with task outcomes. Default off.",
+  field_s528: "Rejected trajectory export",
+  reason_s528: "Whether rejected and failed writer attempts are recorded into the trajectory corpus table for analysis with all secrets redacted. Default off.",
+  field_s529: "PM context.md generation",
+  reason_s529: "Whether the night loop compiles a compressed project context.md and injects it verbatim into the PM prompt. Default off.",
 } as const;
 
 export const fieldRu: { [K in keyof typeof fieldEn]: string } = {
@@ -1963,4 +1973,14 @@ export const fieldRu: { [K in keyof typeof fieldEn]: string } = {
   reason_s510: "Какие наборы бенча гоняет ночь 01:30 UTC: все (all, по умолчанию) или названные версии (v3,v5). Токен-бюджет ночи делится между наборами поровну.",
   field_s511: "Запасная модель при отказе провайдера",
   reason_s511: "Когда провайдер отказывает исполнителю (лимит, недоступный провайдер, 5xx), следующая модель цепочки запасных берёт задачу сразу (immediate) или после классического порядка повторов (after_retry, по умолчанию).",
+  field_s512: "Обслуживание памяти каждые N задач",
+  reason_s512: "Мейнтейнер памяти запускается раз на это количество принятых задач; 1 означает каждую принятую задачу. По умолчанию 3.",
+  field_s526: "Лимит аудита со скрытым диффом",
+  reason_s526: "Сколько принятых задач за одну ночную петлю проверяются аудитом со скрытым диффом для выявления слепых пропусков и фантомных замечаний; 0 выключает аудит. По умолчанию 0.",
+  field_s527: "Месячный ре-бенч выбора моделей",
+  reason_s527: "Запускать ли 1-го числа месяца граф ре-бенча маршрутизации моделей (lp.model-rebench) со сравнением выбора Jev с исходами задач. По умолчанию off.",
+  field_s528: "Экспорт отклонённых траекторий",
+  reason_s528: "Сохранять ли отклонённые и проваленные попытки писателей в таблицу корпуса траекторий без секретов. По умолчанию off.",
+  field_s529: "Генерация PM context.md",
+  reason_s529: "Собирать ли ночью сжатую выжимку context.md и вставлять ли её дословно в промпт PM. По умолчанию off.",
 };

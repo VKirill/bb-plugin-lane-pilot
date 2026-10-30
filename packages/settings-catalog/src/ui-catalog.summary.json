@@ -1,9 +1,9 @@
 {
-  "rows": 487,
-  "editable": 241,
+  "rows": 504,
+  "editable": 245,
   "readonly": 113,
   "gap": 0,
-  "excluded": 133,
+  "excluded": 146,
   "from88": {
     "b": 50,
     "c": 33
@@ -25,12 +25,14 @@
     "adoc.279",
     "adoc.281",
     "adoc.282",
+    "bench.model_rebench",
     "browser_qa.approve",
     "browser_qa.backend",
     "browser_qa.enabled",
     "browser_qa.model",
     "browser_qa.provider",
     "browser_qa.reasoning_effort",
+    "checkers.diff_hidden_limit",
     "docs.agent",
     "docs.enabled",
     "docs.hour",
@@ -104,6 +106,7 @@
     "plan_critique.provider",
     "plan_critique.reasoning_effort",
     "plan_critique.service_tier",
+    "pm.context_file",
     "pm_read.enabled",
     "pm_read.min_lines",
     "pm_read.model",
@@ -123,6 +126,7 @@
     "writer.model",
     "writer.provider",
     "writer.reasoning_effort",
-    "writer.service_tier"
+    "writer.service_tier",
+    "writer.trajectory_export"
   ]
 }

@@ -1,8 +1,9 @@
 import { stockEmployee } from "./employee-manifest";
+import { isLanePmAgent } from "./native-agent-id";
 import { SKILL_CATALOG_BLOCK, SKILL_CATALOG_LINE } from "./skill-catalog";
 import bundledAgents from "./bundled-agents.json";
 import { BB_BRIDGE_MCP_SERVER, NATIVE_LP_BRIDGE_ARCHITECT_TOOLS, NATIVE_LP_BRIDGE_PM_TOOLS, NATIVE_LP_BRIDGE_SPECIALIST_TOOLS, unionLpBridgeTools, withoutLpBridgeTools } from "./native-session-hooks";
-import { WORKFLOW_ARCHITECT_ID, WORKFLOW_ARCHITECT_SESSION, WORKFLOW_ARCHITECT_SUMMARY } from "../workflow";
+import { WORKFLOW_ARCHITECT_ID, WORKFLOW_ARCHITECT_SESSION, WORKFLOW_ARCHITECT_SUMMARY } from "../workflow/workflow-architect";
 import { rewriteFoldedToolNames } from "../tools";
 
 /** Official `--agents` JSON fields from https://code.claude.com/docs/en/sub-agents */
@@ -180,9 +181,7 @@ function nativeAgentName(agentId: string): string {
   return agentId.split(":").pop() ?? agentId;
 }
 
-export function isLanePmAgent(agentId: string): boolean {
-  return PM_AGENT_IDS.has(nativeAgentName(agentId));
-}
+export { isLanePmAgent } from "./native-agent-id";
 
 /** Sessions Lane Pilot runs itself for its own work: the owner does not pick them and they never schedule anything. */
 const INTERNAL_AGENT_IDS = new Set(["project-onboarder", "browser-qa"]);

@@ -262,6 +262,7 @@ export const SECTIONED_SETTING_KEYS = new Set([
   "memory.personal_bot", "memory.maintain_every", "memory.core_budget", "memory.note_budget", "memory.index_budget", "memory.context_budget",
   "specialist.enabled", "specialist.when",
   "onboarding.depth", "adoc.040", "workspace.provider", "sandbox.backend", "verification.sandbox_unsafe", "secrets.allow", "quality_mode", "critic.code.default_for_risk", "plan_fact.mode",
+  "checkers.diff_hidden_limit", "bench.model_rebench", "writer.trajectory_export", "pm.context_file",
   "browser_qa.enabled", "browser_qa.provider", "browser_qa.model", "browser_qa.backend",
   "browser_qa.approve", "browser_qa.reasoning_effort",
   // The self-improvement controls have their own page (src/rooms/improvement/ui); the project-level checks also sit in «Work».
