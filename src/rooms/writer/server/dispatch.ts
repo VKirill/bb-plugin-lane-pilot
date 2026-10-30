@@ -20,6 +20,8 @@ import { closeWriterStages, recordStage, resetHelperStages } from "../../runs/se
 import { id, stringAt, valueAt } from "../../core/server";
 import { buildTask } from "./writer-task";
 import { dispatchReply, dispatchRunKey, startDispatchRun, pipelineUnavailable } from "./dispatch-workflow";
+import { suggestTests, testHintLine } from "../../verification";
+import { jev } from "@lane-pilot/jev";
 import { batchAdviceFor, topicLoopGuard } from "./dispatch-guards";
 import { reviveCanceledTask } from "./revive";
 import { countRunNudges } from "./writer-silence";
@@ -255,6 +257,19 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
     for (const stageId of ["writer-agent", "verification", "acceptance-receipt"] as const) {
       recordStage(db, { runId, taskId, stageId, state:"pending", input:canonicalPlan });
     }
+    // jgrep-style hint: the test files that cover this task's owns_paths — name and import links in code, Jev on the
+    // rest. A hint in the reply only; the contract's verification commands never change on their own.
+    const testHintPromise = (async (): Promise<string> => {
+      try {
+        const ls = await runOnHost(host, { hostId:config.hostId, cwd:task.project_cwd, command:"git ls-files", timeoutSec:20, timeoutMs:25_000 }).catch(() => null);
+        if (!ls || ls.exitCode !== 0 || typeof ls.stdout !== "string") return "";
+        const readFile = async (path:string): Promise<string | null> => {
+          const file = await host.call("readBoundedFile", { requestedHostId:config.hostId, projectCwd:task.project_cwd, relativePath:path, offset:0, maxLines:80 }, { hostId:config.hostId, timeoutMs:10_000 }).catch(() => null);
+          return typeof file?.content === "string" ? file.content : null;
+        };
+        return testHintLine(await suggestTests(jev(), { changedFiles:task.owns_paths, repoFiles:ls.stdout.split("\n").filter(Boolean), readFile }, { projectId:args.projectId, runId, subject:taskId }));
+      } catch { return ""; }
+    })();
     const pendingReply = (): Record<string,unknown> => ({ runId, taskId, attemptId, writerThreadId:null, state:"queued", stagesPending:true, stages:listStageReceipts(db, runId, taskId),
       note:"pm-read and plan critique are still running; the writer starts by itself once they pass. Poll lane_pilot_wait_writer or end your turn; Lane Pilot sends you the results. Do not send the task again: the same id and contract returns this task." });
     // The pipeline is a workflow run (workflows/lp-task-pipeline.json, executors in dispatch-workflow.ts); there is no other path.
@@ -277,8 +292,10 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const early = await Promise.race([work, new Promise<null>((done) => { timer = setTimeout(() => done(null), dispatchAnswerMs()); })]);
     clearTimeout(timer);
-    if (early) return withAdvice(early);
-    return withAdvice(pendingReply());
+    const testHint = await testHintPromise.catch(() => "");
+    const replyWithHint = (reply:Record<string,unknown>): Record<string,unknown> => testHint ? { ...reply, testHint } : reply;
+    if (early) return replyWithHint(withAdvice(early));
+    return replyWithHint(withAdvice(pendingReply()));
   }
 
   /**

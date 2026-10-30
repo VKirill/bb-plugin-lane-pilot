@@ -19,6 +19,7 @@ import { FREE_RETRY_LIMIT, PARKED_CLASSES, REPLAY_CHECK_FAILED, SESSION_MAX_MS, 
 import { isTaskSatisfied } from "../../runs/server";
 import { listThreadEventsRaw } from "@lane-pilot/thread-observe";
 import { attemptFeedback, isWriterStreamError, previousAttemptBrief } from "./writer-task";
+import { trimCheckLogsIn } from "../log-trim";
 import { stickyTurnPromptWithRules } from "./writer-knowledge";
 import { parseMemorySettings } from "../../memory";
 import { isMainfixTask, ownsFromOuterBase, retargetTask , priorityRank, HOLD_FOREVER, laneCap, laneQueueOf } from "../../tasks";
@@ -736,7 +737,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
             config:freshConfig, task:freshTask, plan:input.plan, pmThreadId:input.pmThreadId, pmReadContext, writerSettings:writerChoice,
             retryIndex:Math.max(0,countAttempts(db,input.runId,input.taskId)-1),
             // A fresh writer starts from main: of the failures before it, the task's own is the one to avoid, not a provider's cut.
-            previousAttempt:previousAttemptBrief(last.status && isOwnFailure(last) ? last : own.failure ?? (last.status ? last : null), freshTask, undefined, liveFolder),
+            previousAttempt:previousAttemptBrief(await trimCheckLogsIn(jev(), last.status && isOwnFailure(last) ? last : own.failure ?? (last.status ? last : null), freshTask.title, { projectId:input.projectId, runId:input.runId, subject:input.taskId, settings:runSettings }), freshTask, undefined, liveFolder),
             ...(requested ? { emergency:{...requested, reason:"reassigned by the PM"} } : {}),
             ...(carried ? { continuation:carried } : {}),
           });
@@ -939,7 +940,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         activeTask = freshTask;
         dirtBefore = [];
         executionPacketSha256 = null;
-        if (redo && !await continueWith(redo, redo.kind, previousAttemptBrief({ ...failedLast, produced:[] }, freshTask, failedBinding?.dirt_before ?? [], liveFolder), failedBinding?.dirt_before)) {
+        if (redo && !await continueWith(redo, redo.kind, previousAttemptBrief(await trimCheckLogsIn(jev(), { ...failedLast, produced:[] }, freshTask.title, { projectId:input.projectId, runId:input.runId, subject:input.taskId, settings:runSettings }), freshTask, failedBinding?.dirt_before ?? [], liveFolder), failedBinding?.dirt_before)) {
           await removeFailedWorktree();
           await rollbackLive();
         }
@@ -1025,7 +1026,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
               continuation,
               // The handoff names only the provider's stop; a stray file or a red check of an earlier turn would be redone
               // (vf-s4-items 2026-10-24: the fallback rewrote Buffs.luau, which the first turn had been rejected for).
-              ...(own.failure ? { previousAttempt:previousAttemptBrief({ ...own.failure, produced:[] }, freshTask, undefined, liveFolder) } : {}),
+              ...(own.failure ? { previousAttempt:previousAttemptBrief(await trimCheckLogsIn(jev(), { ...own.failure, produced:[] }, freshTask.title, { projectId:input.projectId, runId:input.runId, subject:input.taskId, settings:runSettings }), freshTask, undefined, liveFolder) } : {}),
             });
             if (!spawned.ok) {
               const fallbackFailureReason=`emergency_fallback_failed:${spawned.reason}`;
