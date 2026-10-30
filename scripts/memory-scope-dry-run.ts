@@ -8,6 +8,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import Database from "better-sqlite3";
 import { splitRuleScope } from "@lane-pilot/run-insights";
+import { pathsNamed } from "@lane-pilot/memory-core";
 
 type ScopeDb = { prepare(sql: string): { all(...args: unknown[]): unknown[] } };
 
@@ -19,10 +20,16 @@ export type ScopeDryRun = {
   db: string;
   applied: false;
   rules: Array<{ id: string; projectId: string; audience: string; scope: string[]; proposal: { sectionChain: string[]; pathSelectors: string[]; legacy: string[]; action: "split-path" | "hold"; note: string } }>;
-  rootCore: Array<{ id: string; projectId: string; content: string; concepts: string[]; proposal: { action: "keep-root-pending-owner"; note: string } }>;
+  rootCore: Array<{ id: string; projectId: string; content: string; concepts: string[]; proposal: { action: "keep-root" | "assign-section"; note: string } }>;
 };
 
 const clip = (text: string) => text.replace(/\s+/g, " ").trim().slice(0, 160);
+
+/** Root `[]` is only a project-wide convention. A core that names a file and is not marked `convention` waits for a section. */
+export function rootCoreProposal(content: string, concepts: readonly string[]): { action: "keep-root" | "assign-section"; note: string } {
+  if (!pathsNamed(content).length || concepts.includes("convention")) return { action: "keep-root", note: "Root scope is the whitelist of project-wide conventions. This row names no file, or it is marked convention, so it stays." };
+  return { action: "assign-section", note: "Names a file and is not a convention. Assign a section from the scope map. Do not widen it to every section and do not leave it as shared core." };
+}
 
 export function planScopeMigration(db: ScopeDb, dbPath: string): ScopeDryRun {
   const rules = db.prepare("SELECT id, project_id, audience, scope_json, rule FROM lane_pilot_rule_proposal WHERE state='accepted'").all() as RuleRow[];
@@ -43,13 +50,10 @@ export function planScopeMigration(db: ScopeDb, dbPath: string): ScopeDryRun {
     db: dbPath,
     applied: false,
     rules: incompatible,
-    rootCore: cores.map((row) => ({
-      id: row.id,
-      projectId: row.project_id,
-      content: clip(row.content),
-      concepts: (() => { try { const value = JSON.parse(row.concepts_json) as unknown; return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string").slice(0, 8) : []; } catch { return []; } })(),
-      proposal: { action: "keep-root-pending-owner" as const, note: "Active core at the project root. The owner confirms it is a project-wide convention or assigns a section. This dry-run does not move it." },
-    })),
+    rootCore: cores.map((row) => {
+      const concepts = (() => { try { const value = JSON.parse(row.concepts_json) as unknown; return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : []; } catch { return []; } })();
+      return { id: row.id, projectId: row.project_id, content: clip(row.content), concepts: concepts.slice(0, 8), proposal: rootCoreProposal(row.content, concepts) };
+    }),
   };
 }
 

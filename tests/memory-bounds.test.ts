@@ -133,7 +133,16 @@ describe("F04: section chain and path selectors", () => {
     const plan = planScopeMigration(db, "fixture");
     expect(plan.applied).toBe(false);
     expect(plan.rules.map((rule) => rule.proposal.action)).toEqual(["split-path"]);
-    expect(plan.rootCore.map((row) => row.proposal.action)).toEqual(["keep-root-pending-owner"]);
+    expect(plan.rootCore.map((row) => row.proposal.action)).toEqual(["keep-root"]);
+  });
+
+  it("keeps a root convention and marks a file-named root core for a section", () => {
+    const db = dbOf();
+    storeMemoryRecords(db, { projectId: "P", ...limits, entries: [{ kind: "core", content: "Theme build writes themes/pokecut.css and checks it.", concepts: ["theme"] }] });
+    storeMemoryRecords(db, { projectId: "P", ...limits, entries: [{ kind: "core", content: "The shared convention lives in themes/pokecut.css for every section.", concepts: ["convention"] }] });
+    const plan = planScopeMigration(db, "fixture");
+    expect(plan.rootCore.find((row) => row.content.includes("Theme build"))?.proposal.action).toBe("assign-section");
+    expect(plan.rootCore.find((row) => row.concepts.includes("convention"))?.proposal.action).toBe("keep-root");
   });
 });
 
