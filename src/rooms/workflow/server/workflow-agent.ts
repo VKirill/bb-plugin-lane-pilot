@@ -467,7 +467,7 @@ export function agentRequest(ctx: StepContext<ChainRuntime>, node: Extract<Graph
     rt, workflowRunId: ctx.runId, workflowId: ctx.workflow.id, stepKey: ctx.stepKey, nodeId: node.id, spawnKey: ctx.spawnKey, role, title, prompt: body, fields,
     ...(routine ? routineModel(ctx.inputs ?? {}) : {}),
     skills: [...new Set([...(node.skills ?? []), ...(node.profile?.skills ?? [])])], plugins: [...new Set(node.plugins ?? [])], mcp: [...new Set(node.mcp ?? [])], intoThread, signal: ctx.signal,
-    ...(typeof ctx.inputs.risk === "string" ? { risk: ctx.inputs.risk } : {}),
+    ...(typeof ctx.inputs?.risk === "string" ? { risk: ctx.inputs.risk } : {}),
     ...(node.produces?.length || node.gates?.length ? { contract: { id: node.id, produces: node.produces, gates: node.gates } } : {}),
   };
 }
