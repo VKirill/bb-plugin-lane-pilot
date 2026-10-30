@@ -27,12 +27,6 @@
       "min_p": 0.55
     }
   },
-  "intake.weight": {
-    "fingerprint": "941459700f966130",
-    "thresholds": {
-      "min_p": 0.55
-    }
-  },
   "invoice.check": {
     "fingerprint": "6e076601f6748e5b",
     "thresholds": {
