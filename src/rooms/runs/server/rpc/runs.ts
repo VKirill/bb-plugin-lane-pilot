@@ -1,7 +1,7 @@
 import { t } from "@lane-pilot/i18n";
 import { setRunHalted } from "../runs-halt";
 import { PARKED_KEY } from "../../../stability/server";
-import { agentPickerLabel, pickableAgent } from "../../../native-agent";
+import { agentPickerLabel, employeeView, pickableAgent, placeEmployeeOn } from "../../../native-agent";
 import { compileEffectiveMainAgent, detectCompiledMainAgentCapability } from "../../../native-agent";
 import { countAttempts, createAttempt, getActivation, getAttempt, transitionAttempt } from "../../../storage";
 import { detectRequiredSessionPolicyCapability } from "../../../native-agent";
@@ -17,7 +17,7 @@ import { buildTaskBoard, readTaskCard, type CardThread } from "../task-board";
 import { readThreadLive } from "../thread-live";
 import { cancelAttemptById } from "../cancel";
 import { pauseRun } from "../runs-pause";
-import { id, stringAt, valueAt } from "../../../core/server";
+import { folderEnvironment, id, projectSources, stringAt, valueAt } from "../../../core/server";
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import { rpcContract } from "../../../contracts";
 import type { ServerCore } from "../../../core/server";
@@ -43,7 +43,11 @@ export function runsRpc(ctx: ServerCore, services: Services) {
     prepare_native_session: async ({ projectId, agentId }) => {
       const { selection: record, description } = await storeNativeSelection(ctx, { projectId, agentId: agentId || DEFAULT_NATIVE_AGENT });
       const label = agentPickerLabel({ id: record.agentId, description }, t);
-      return { token: record.token, label, agentId: record.agentId, profileMode: record.profileMode, cliAgentsCollision: null };
+      const pinned = employeeView(record.agentId).machineAffinity !== "any";
+      const place = pinned ? await placeEmployeeOn(bb, record.agentId, await projectSources(bb, projectId)) : { mode: "inherit" as const };
+      const environment = place.mode === "folder" ? folderEnvironment({ hostId: place.hostId, path: place.path }) : null;
+      const placementNote = place.mode === "fallback" ? place.reason : null;
+      return { token: record.token, label, agentId: record.agentId, profileMode: record.profileMode, cliAgentsCollision: null, environment, placementNote };
     },
     // The PM chat's helpers that are still working: writers, specialists, the browser check, council seats, critics.
     list_helper_threads: async ({ threadId }) => {

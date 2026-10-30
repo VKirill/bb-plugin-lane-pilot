@@ -3,7 +3,8 @@ import { findOpenNativeRun, recordSecretIssuance, getRun, getRunSettingsScopes, 
 import { writerExecutionSelection } from "@lane-pilot/models";
 import { QA_HOST_KEY } from "../qa-host";
 import { configuredSetting, modelCatalogOf, resolveSpawnModel, spawnUsageOf, warmSpawnUsage } from "../../core/server";
-import { fullAccessSpawn, folderEnvironment, hiddenPlacement, projectFolder } from "../../core/server";
+import { fullAccessSpawn, folderEnvironment, hiddenPlacement, projectFolder, projectSources } from "../../core/server";
+import { SKILL_CATALOG_BLOCK, placeEmployeeOn } from "../../native-agent";
 import { spawnTextId } from "../../core/server";
 import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server";
 import { stringAt } from "../../core/server";
@@ -73,6 +74,8 @@ export function errandPrompt(input: { task: string; browserHostId: string | null
     "- Never change, commit or push this repository's files — no edits, no `git add`/`git commit`/`git push`, no redirects or `tee` into the checkout; reading the repository stays allowed. If the task asks for a repository change, stop right there with `ERRAND: blocked: repository edits go through the PM's writer task` and change nothing.",
     "",
     "Finish with what you did, what you saw (exact values, URLs, quotes), and proof (screenshot paths or the final URL). The very last line is exactly one of `ERRAND: done` or `ERRAND: blocked: <why>`. Without it the PM treats your work as unfinished.",
+    "",
+    SKILL_CATALOG_BLOCK,
   ].join("\n");
 }
 
@@ -99,6 +102,8 @@ export type ErrandStart = {
   providerId?: string | undefined; model?: string | undefined; reasoning?: string | undefined; serviceTier?: "default" | "fast" | undefined;
   /** Names this one spawn: the same id repeated returns the same thread. Default: derived from the task. */
   spawnId?: string | undefined;
+  /** An employee errand starts on that employee's machine. Absent: the errand stays where it does today. */
+  agentId?: string | undefined;
   /**
    * No parent chat: the thread is the project's own, hidden, filed where the PM chat is. A scheduled errand runs this way:
    * as a child of «the project's open PM chat» its end woke whichever chat that happened to be (the owner saw the weekly
@@ -174,7 +179,16 @@ function mountErrandCore(ctx: ServerCore) {
    * Where the helper of an errand works and which checkout it must not change: the PM chat's environment, or, with no PM chat (a scheduled
    * errand, a project that does not use Lane Pilot), the project's own first folder on a machine.
    */
-  async function errandPlace(input: { projectId: string; pmThreadId: string | null }) {
+  async function errandPlace(input: { projectId: string; pmThreadId: string | null; agentId?: string | undefined }) {
+    const base = await errandPlaceBase(input);
+    if (!input.agentId) return base;
+    const place = await placeEmployeeOn(bb, input.agentId, await projectSources(bb, input.projectId));
+    if (place.mode === "folder") return { environment: folderEnvironment({ hostId: place.hostId, path: place.path }), section: base.section, cwd: place.path, hostId: place.hostId };
+    if (place.mode === "fallback") bb.log.warn(`Lane Pilot employee ${input.agentId} stays in the current environment: ${place.reason}`);
+    return base;
+  }
+
+  async function errandPlaceBase(input: { projectId: string; pmThreadId: string | null }) {
     if (input.pmThreadId) {
       const pm = await bb.sdk.threads.get({ threadId: input.pmThreadId });
       const environmentId = stringAt(pm, "environmentId");
@@ -188,7 +202,7 @@ function mountErrandCore(ctx: ServerCore) {
   }
 
   /** The files the checkout has changed before the helper starts: what differs after it ends is the helper's edit. The graph step keeps it in its journal. */
-  async function errandSnapshot(input: { projectId: string; pmThreadId: string | null }): Promise<ErrandSnapshot | null> {
+  async function errandSnapshot(input: { projectId: string; pmThreadId: string | null; agentId?: string | undefined }): Promise<ErrandSnapshot | null> {
     const place = await errandPlace(input);
     if (!place.cwd || !place.hostId) return null;
     const before = await gitRepoStatus(host, place.hostId, place.cwd);

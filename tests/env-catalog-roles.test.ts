@@ -7,7 +7,7 @@ import { specialistPrompt } from "../src/rooms/critique/server/specialists";
 describe("Env Catalog access by role (J1)", () => {
   it("only errands and specialists carry its tools", () => {
     const withCatalog = HELPER_ROLES.filter((role) => ROLE_PROFILES[role].bbPlugins.includes("env-catalog"));
-    expect(withCatalog.sort()).toEqual(["errand", "specialist:copy-lead", "specialist:design-lead", "specialist:seo-specialist", "specialist:tavily", "specialist:video-lead"]);
+    expect(withCatalog.sort()).toEqual(["errand", "specialist:billing-assistant", "specialist:copy-lead", "specialist:design-lead", "specialist:macos-operator", "specialist:seo-specialist", "specialist:social-manager", "specialist:tavily", "specialist:video-lead"]);
     for (const role of withCatalog) expect(ROLE_PROFILES[role].skills, role).toContain("env-catalog");
   });
 

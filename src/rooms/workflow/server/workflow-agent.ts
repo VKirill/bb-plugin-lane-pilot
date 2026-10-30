@@ -2,7 +2,7 @@ import { THREAD_WATCH_EVENT_TYPES, listThreadEventsRaw, waitThreadIdle } from "@
 import { getRunSettingsScopes } from "../../storage";
 import { writerExecutionSelection, findModelIn, isZcodeProvider, zcodeEnvironmentError } from "@lane-pilot/models";
 import { providerLimitNotice } from "../../writer/server";
-import { MAIN_AGENT_ID, ROLE_PROFILES, compileEffectiveMainAgent, isCustomAgentId, mentionContext } from "../../native-agent";
+import { MAIN_AGENT_ID, ROLE_PROFILES, compileEffectiveMainAgent, employeeView, isCustomAgentId, isEmployeeSpecialist, mentionContext, placeEmployeeOn } from "../../native-agent";
 import type { ExtraAccess, HelperRole } from "../../native-agent";
 import { storeNativeSelection } from "../../native-agent/server";
 import { redactKnown } from "@lane-pilot/kit";
@@ -19,7 +19,7 @@ import type { Field, GraphNode } from "@lane-pilot/workflow-engine";
 import { roleMethod } from "../../critique";
 import { phaseFolder } from "../../phase";
 import type { LanePilotDatabase } from "../../storage";
-import { folderEnvironment, fullAccessSpawn, hiddenPlacement, projectFolder } from "../../core/server";
+import { folderEnvironment, fullAccessSpawn, hiddenPlacement, projectFolder, projectSources } from "../../core/server";
 import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server";
 import { detectRepoEdits, gitRepoStatus } from "../../verification/server";
 import { SPECIALIST_GRAPH, SPECIALIST_ROLES, rememberSpecialistThread } from "../../critique/server";
@@ -49,7 +49,7 @@ const ROLE_MAP: Record<string, HelperRole> = {
 };
 
 /** A bundled specialist; any other `specialist:<id>` names an agent the owner created, which must exist when the step runs (`ownSpecialist`). */
-export const isBundledSpecialist = (id: string): boolean => (SPECIALIST_ROLES as readonly string[]).includes(id);
+export const isBundledSpecialist = (id: string): boolean => (SPECIALIST_ROLES as readonly string[]).includes(id) || isEmployeeSpecialist(id);
 
 /** The graph a schedule of kind agent runs (workflows/agent-routine.json). */
 export const AGENT_ROUTINE = "agent-routine";
@@ -67,7 +67,9 @@ function routineModel(inputs: Record<string, unknown>): Pick<HelperRequest, "mod
 
 /** What a node's `role` means here: the profile of the helper, the role in its metadata, and which repository files it may touch (none, except the notes of its own chat). */
 export function roleSpec(role: string): RoleSpec {
-  const specialist = role.startsWith("specialist:") ? role.slice("specialist:".length) : null;
+  // Graphs name an employee either as `specialist:game-dev` or as the bare id (`game-dev` in roblox-asset).
+  const named = role.startsWith("specialist:") ? role.slice("specialist:".length) : role;
+  const specialist = role.startsWith("specialist:") || isEmployeeSpecialist(role) ? named : null;
   if (specialist && (isBundledSpecialist(specialist) || (MAIN_AGENT_ID.test(specialist) && isCustomAgentId(specialist)))) {
     // design-lead keeps the design canon: DESIGN.md at the root and in an app's docs (the specialist's own prompt says the same).
     const designCanon = (file: string) => specialist === "design-lead" && (file === "DESIGN.md" || file.endsWith("/DESIGN.md"));
@@ -256,6 +258,16 @@ export function createWorkflowAgents() {
       checkoutPath = folder.path;
       checkoutHostId = folder.hostId;
       environment = folderEnvironment(folder);
+    }
+    if (spec.specialist && employeeView(spec.specialist).machineAffinity !== "any") {
+      const place = await placeEmployeeOn(bb, spec.specialist, await projectSources(bb, rt.projectId));
+      if (place.mode === "folder") {
+        environment = folderEnvironment({ hostId: place.hostId, path: place.path });
+        checkoutPath = place.path;
+        checkoutHostId = place.hostId;
+      } else if (place.mode === "fallback") {
+        bb.log?.warn(`Lane Pilot employee ${spec.specialist} stays in the current environment: ${place.reason}`);
+      }
     }
     const before = checkoutPath && checkoutHostId ? await gitRepoStatus(host, checkoutHostId, checkoutPath) : null;
 

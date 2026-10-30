@@ -104,7 +104,7 @@ export const WORKFLOW_REFERENCE = {
     errand: "work outside the code: the owner's browser (browser-automation, computer-use), Env Catalog accounts by name (env_get), mail, consoles",
     "browser-qa": "a browser check of a URL with cases; browser-automation only",
     "project-life": "may write .agents/ and CHANGELOG.md",
-    "specialist:design-lead, specialist:copy-lead, specialist:seo-specialist, specialist:tavily, specialist:video-lead, specialist:<id of an agent the owner created>": "the specialists with their skills (an owner's agent runs with its own prompt, skills, MCP servers and model; the ids are in the specialists section of the capabilities); may write .agents/",
+    "specialist:design-lead, specialist:copy-lead, specialist:seo-specialist, specialist:tavily, specialist:video-lead, specialist:3d-artist, specialist:game-dev, specialist:social-manager, specialist:billing-assistant, specialist:visual-artist, specialist:macos-operator, specialist:<id of an agent the owner created>": "the specialists. A known employee can also be named by its bare id (game-dev, 3d-artist, social-manager). Each keeps a few core skills and looks up the rest in the skill catalog; an owner's agent runs with its own prompt, skills, MCP servers and model. They may write .agents/",
     note: "every role but project-life and the specialists is read-only for the repository: a changed file fails the step (repo_edited). A file the chain must leave in the project goes through an `fs.write` action or an lp-task node; notes go under .bb/chats/",
   },
   models: {

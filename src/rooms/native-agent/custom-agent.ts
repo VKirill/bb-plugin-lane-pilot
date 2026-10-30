@@ -9,6 +9,7 @@ import {
   type CustomAgentMeta,
   type StoredAgentRow,
 } from "./agent-profile";
+import { employeeView, machineAffinitySchema } from "./employee-manifest";
 import { isLanePmAgent, parseAgentMarkdown, splitClaudeToolList } from "./native-agent-overlay";
 
 /**
@@ -28,6 +29,12 @@ export const createAgentInputSchema = z.object({
   tools: names.optional(),
   disallowedTools: names.optional(),
   skills: names.optional(),
+  coreSkills: names.max(3).optional(),
+  skillSections: names.max(24).optional(),
+  domain: z.string().trim().min(1).max(40).optional(),
+  machineAffinity: machineAffinitySchema.optional(),
+  deliverables: names.max(16).optional(),
+  validator: z.string().trim().min(1).max(40).optional(),
   mcpServers: names.optional(),
   model: z.string().trim().min(1).max(100).optional(),
   effort: effort.optional(),
@@ -43,6 +50,12 @@ export const updateAgentInputSchema = z.object({
   tools: names.optional(),
   disallowedTools: names.optional(),
   skills: names.optional(),
+  coreSkills: names.max(3).optional(),
+  skillSections: names.max(24).optional(),
+  domain: z.string().trim().min(1).max(40).optional(),
+  machineAffinity: machineAffinitySchema.optional(),
+  deliverables: names.max(16).optional(),
+  validator: z.string().trim().min(1).max(40).optional(),
   mcpServers: names.optional(),
   model: z.string().trim().min(1).max(100).nullable().optional(),
   effort: effort.nullable().optional(),
@@ -68,11 +81,17 @@ export type AgentListItem = {
   mcpServers?: string[];
   model?: string;
   effort?: string;
+  domain?: string;
+  machineAffinity?: "mac-mini" | "ovh" | "windows" | "any";
+  coreSkills?: string[];
+  skillSections?: string[];
+  deliverables?: string[];
+  validator?: string;
 };
 
 /** The part of a list item a picker needs (the composer popover, the PM's team tab): no prompt, no resources. */
-export function pickableAgent(row: AgentListItem): Pick<AgentListItem, "id" | "description" | "displayName" | "summary" | "kind" | "custom"> {
-  return { id: row.id, description: row.description, displayName: row.displayName, ...(row.summary ? { summary: row.summary } : {}), kind: row.kind, custom: row.custom };
+export function pickableAgent(row: AgentListItem): Pick<AgentListItem, "id" | "description" | "displayName" | "summary" | "kind" | "custom" | "domain"> {
+  return { id: row.id, description: row.description, displayName: row.displayName, ...(row.summary ? { summary: row.summary } : {}), kind: row.kind, custom: row.custom, ...(row.domain ? { domain: row.domain } : {}) };
 }
 
 export type AgentFailure =
@@ -100,6 +119,7 @@ export function agentListItem(id: string, stored?: StoredAgentRow): AgentListIte
   const custom = !isStockProfileId(id);
   const stock = custom ? null : compileMainAgentProfile(id);
   const meta = stored?.meta;
+  const employee = employeeView(id, meta, compiled.skills);
   return {
     id,
     description: compiled.description,
@@ -117,6 +137,12 @@ export function agentListItem(id: string, stored?: StoredAgentRow): AgentListIte
     ...(compiled.mcpServers ? { mcpServers: compiled.mcpServers } : {}),
     ...(meta?.model ? { model: meta.model } : {}),
     ...(meta?.effort ? { effort: meta.effort } : {}),
+    domain: employee.domain,
+    machineAffinity: employee.machineAffinity,
+    coreSkills: employee.coreSkills,
+    skillSections: employee.skillSections,
+    ...(employee.deliverables.length ? { deliverables: employee.deliverables } : {}),
+    validator: employee.validator,
   };
 }
 
@@ -132,7 +158,7 @@ export function newCustomAgentRow(input: CreateAgentInput, now: number): StoredA
   const resources = {
     ...(input.tools ? { tools: input.tools } : {}),
     ...(input.disallowedTools ? { disallowedTools: input.disallowedTools } : {}),
-    ...(input.skills ? { skills: input.skills } : {}),
+    ...(input.skills ?? input.coreSkills ? { skills: input.skills ?? input.coreSkills } : {}),
     ...(input.mcpServers ? { mcpServers: input.mcpServers } : {}),
   };
   return rowOf(input.id, input.prompt, input.displayName, {
@@ -140,6 +166,7 @@ export function newCustomAgentRow(input: CreateAgentInput, now: number): StoredA
     ...(input.description ? { summary: input.description } : {}),
     ...(input.model ? { model: input.model } : {}),
     ...(input.effort ? { effort: input.effort } : {}),
+    ...employeeMeta(input),
     createdAt: now,
     updatedAt: now,
   }, resources);
@@ -166,8 +193,32 @@ export function updatedCustomAgentRow(id: string, row: StoredAgentRow, patch: Up
     ...(model ? { model } : {}),
     ...(nextEffort ? { effort: nextEffort } : {}),
     ...(meta.createdAt ? { createdAt: meta.createdAt } : {}),
+    ...employeeMeta({
+      coreSkills: patch.coreSkills ?? (patch.skills ? undefined : meta.coreSkills),
+      skills: patch.skills,
+      skillSections: patch.skillSections ?? meta.skillSections,
+      domain: patch.domain ?? meta.domain,
+      machineAffinity: patch.machineAffinity === undefined ? meta.machineAffinity : patch.machineAffinity ?? undefined,
+      deliverables: patch.deliverables ?? meta.deliverables,
+      validator: patch.validator ?? meta.validator,
+    }),
     updatedAt: now,
   }, resources);
+}
+
+function employeeMeta(input: {
+  skills?: string[] | undefined; coreSkills?: string[] | undefined; skillSections?: string[] | undefined;
+  domain?: string | undefined; machineAffinity?: CustomAgentMeta["machineAffinity"]; deliverables?: string[] | undefined; validator?: string | undefined;
+}): Partial<CustomAgentMeta> {
+  const coreSkills = input.coreSkills ?? (input.skills ? input.skills.slice(0, 3) : undefined);
+  return {
+    ...(coreSkills?.length ? { coreSkills } : {}),
+    ...(input.skillSections?.length ? { skillSections: input.skillSections } : {}),
+    ...(input.domain ? { domain: input.domain } : {}),
+    ...(input.machineAffinity ? { machineAffinity: input.machineAffinity } : {}),
+    ...(input.deliverables?.length ? { deliverables: input.deliverables } : {}),
+    ...(input.validator ? { validator: input.validator } : {}),
+  };
 }
 
 function nameList(value: unknown): string[] | undefined {
@@ -187,20 +238,26 @@ export function parseAgentFile(text: string): Record<string, unknown> {
   if (trimmed.startsWith("{")) {
     const parsed = JSON.parse(trimmed) as unknown;
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("agent_file_not_an_object");
-    return parsed as Record<string, unknown>;
+    return withLegacySkills(parsed as Record<string, unknown>);
   }
   const { frontmatter, prompt } = parseAgentMarkdown(trimmed);
   const out: Record<string, unknown> = {};
   const id = frontmatter.id ?? frontmatter.name;
   if (typeof id === "string" && id) out.id = id;
-  for (const key of ["displayName", "description", "model", "effort"] as const) {
+  for (const key of ["displayName", "description", "model", "effort", "domain", "machineAffinity", "validator"] as const) {
     const value = frontmatter[key];
     if (typeof value === "string" && value.trim()) out[key] = value.trim();
   }
-  for (const key of ["tools", "disallowedTools", "skills", "mcpServers"] as const) {
+  for (const key of ["tools", "disallowedTools", "skills", "coreSkills", "skillSections", "deliverables", "mcpServers"] as const) {
     const list = nameList(frontmatter[key]);
     if (list) out[key] = list;
   }
   if (prompt.trim()) out.prompt = prompt.trim();
+  return withLegacySkills(out);
+}
+
+/** An old file's `skills` list is the always-on list. More than three stays on the compiled profile; the first three are the core. */
+function withLegacySkills(out: Record<string, unknown>): Record<string, unknown> {
+  if (!out.coreSkills && Array.isArray(out.skills)) out.coreSkills = out.skills.slice(0, 3);
   return out;
 }

@@ -31,7 +31,7 @@ export const errandTaskSchema = z.object({
   preset: z.string().min(1).max(120).optional(),
 }).strict();
 
-export const AGENT_ID = /^[a-z][a-z0-9-]{0,63}$/;
+export const AGENT_ID = /^[a-z0-9][a-z0-9-]{0,63}$/;
 export const MAX_HISTORY_RUNS = 20;
 
 /** A named agent (SEO specialist, copywriter, an owner-defined one) run on a schedule as itself: its own prompt, skills and MCP servers, plus the last runs' outcomes in the first message. */

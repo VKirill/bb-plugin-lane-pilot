@@ -11,7 +11,8 @@ import { mountHandoff } from "../../relay/server";
 import { mountInsights } from "../../self-repair/server";
 import { mountHealth } from "../../stability/server";
 import { mountCouncilTools } from "../../council/server";
-import { mountSpecialists } from "../../critique/server";
+import { mountSpecialists, SPECIALIST_ROLES } from "../../critique/server";
+import { installEmployeeSpecialists } from "../../native-agent";
 import { mountRelay, ownerLocale } from "../../relay/server";
 import { ownerAnswerText } from "../owner-answer-text";
 import { mountWorkflowTools } from "../../workflow/server";
@@ -310,6 +311,8 @@ export function registerTools(ctx: ServerCore, services: Services) {
   mountInsights(ctx);
   mountHealth(ctx, services);
   mountCouncilTools(ctx, services.council, (threadId) => services.phaseIntake.launchRefusal(threadId));
+  // ponytail: specialists.ts is owned by the critics branch. Push until that file lists the new ids.
+  installEmployeeSpecialists(SPECIALIST_ROLES as unknown as string[]);
   mountSpecialists(ctx, services);
   services.errands = mountErrands(ctx, services);
   // The browser step and the browser check of an accepted task (graphs browser-step and lp.browser-qa), next to the errand graph:

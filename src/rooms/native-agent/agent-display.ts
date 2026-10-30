@@ -9,6 +9,12 @@ export const STOCK_AGENT_SEED_DESCRIPTIONS: Readonly<Record<string, string>> = {
   tavily: "Lane Pilot Tavily research agent",
   "workflow-architect": "Lane Pilot workflow architect",
   "video-lead": "Lane Pilot video lead",
+  "3d-artist": "Lane Pilot 3D artist",
+  "game-dev": "Lane Pilot game developer",
+  "social-manager": "Lane Pilot social manager",
+  "billing-assistant": "Lane Pilot billing assistant",
+  "visual-artist": "Lane Pilot visual artist",
+  "macos-operator": "Lane Pilot macOS operator",
   "advisor-researcher": "Lane Pilot advisor researcher",
   "ai-researcher": "Lane Pilot AI researcher",
   "animator": "Lane Pilot animator",
@@ -31,6 +37,12 @@ const BUNDLED_DISPLAY_NAMES: Readonly<Record<string, string>> = {
   tavily: "Researcher",
   "workflow-architect": "Workflow architect",
   "video-lead": "Video",
+  "3d-artist": "3D artist",
+  "game-dev": "Game developer",
+  "social-manager": "Social manager",
+  "billing-assistant": "Billing assistant",
+  "visual-artist": "Visual artist",
+  "macos-operator": "macOS operator",
   "advisor-researcher": "Advisor",
   "ai-researcher": "AI researcher",
   "animator": "Animator",
@@ -53,6 +65,12 @@ const STOCK_LABEL_KEYS: Readonly<Record<string, I18nKey>> = {
   tavily: "agentDisplayTavily",
   "workflow-architect": "agentDisplayWorkflowArchitect",
   "video-lead": "agentDisplayVideoLead",
+  "3d-artist": "agentDisplay3dArtist" as unknown as I18nKey,
+  "game-dev": "agentDisplayGameDev" as unknown as I18nKey,
+  "social-manager": "agentDisplaySocialManager" as unknown as I18nKey,
+  "billing-assistant": "agentDisplayBillingAssistant" as unknown as I18nKey,
+  "visual-artist": "agentDisplayVisualArtist" as unknown as I18nKey,
+  "macos-operator": "agentDisplayMacosOperator" as unknown as I18nKey,
   // (2026-10-29 lane-stack port) The exported I18nKey union is too large to accept keys added after it. These are real keys in i18n-agent-labels.ts.
   "advisor-researcher": "agentDisplayAdvisorResearcher" as unknown as I18nKey,
   "ai-researcher": "agentDisplayAiResearcher" as unknown as I18nKey,
@@ -93,6 +111,12 @@ const STOCK_CHART: Readonly<Record<string, 1 | 2 | 3 | 4 | 5>> = {
   tavily: 3,
   "workflow-architect": 5,
   "video-lead": 4,
+  "3d-artist": 2,
+  "game-dev": 3,
+  "social-manager": 4,
+  "billing-assistant": 5,
+  "visual-artist": 1,
+  "macos-operator": 2,
   "advisor-researcher": 2,
   "ai-researcher": 3,
   "animator": 4,
@@ -120,6 +144,7 @@ export type PickableAgent = {
   description: string;
   custom?: boolean;
   kind?: "coordinator" | "specialist" | "internal";
+  domain?: string;
 };
 
 const COORDINATOR_ID = "dev-orchestrator";

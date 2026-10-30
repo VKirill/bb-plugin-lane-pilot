@@ -19,8 +19,11 @@ const row = (model: string, reasoning_effort?: string) => ({ model, ...(reasonin
 
 describe("which model a workflow agent step runs on: the role's row of one table", () => {
   it("authors run on Claude Opus 5.5 high, the reviews on Gemini 3.8 Flash (9router), the auditor, debugger and chair on GPT-6.1 Sol high, cheap jobs on the small models, whatever the PM chat runs", () => {
-    for (const role of ["analyst", "planner", "workflow-architect", "specialist:design-lead", "specialist:seo-specialist", "specialist:my-own-agent"]) {
+    for (const role of ["analyst", "planner", "workflow-architect", "specialist:my-own-agent"]) {
       expect(pick(role, {}, pm), role).toMatchObject({ providerId: "claude-code", model: "claude-opus-5-5", reasoningEffort: "high", source: "role-default", sourceKey: null, issues: [] });
+    }
+    for (const role of ["specialist:design-lead", "specialist:seo-specialist", "game-dev"]) {
+      expect(pick(role, {}, pm), role).toMatchObject({ providerId: "claude-code", model: "claude-sonnet-5-5", reasoningEffort: "high", source: "role-default", sourceKey: null, issues: [] });
     }
     for (const role of ["plan-critic", "specialist-reviewer", "code-critic", "triager"]) {
       expect(pick(role, {}, strongPm), role).toMatchObject({ providerId: "opencode2", model: "router9/ag/gemini-3.8-flash-high", reasoningEffort: "medium", source: "role-default" });
@@ -65,9 +68,9 @@ describe("which model a workflow agent step runs on: the role's row of one table
     // No effort in the row: the role's own default effort (the code critic's default is a Gemini at medium, so Opus gets the effort of the GPT judge it replaced: high).
     expect(pick("code-critic", settings)).toMatchObject({ model: "claude-opus-5-5", reasoningEffort: "high", source: "table" });
     expect(pick("auditor", { [roleModelKey("auditor")]: row("claude-opus-5-5") })).toMatchObject({ model: "claude-opus-5-5", reasoningEffort: "high", source: "table" });
-    // One row serves every specialist, in every graph.
-    expect(pick("specialist:copy-lead", { [roleModelKey("specialist")]: row("gpt-6.1-terra", "low") })).toMatchObject({ providerId: "codex", model: "gpt-6.1-terra", reasoningEffort: "low", source: "table" });
-    expect(pick("specialist:tavily", { [roleModelKey("specialist")]: row("gpt-6.1-terra", "low") }).model).toBe("gpt-6.1-terra");
+    // A known employee uses its own row. An agent the owner made still uses the specialist row.
+    expect(pick("specialist:copy-lead", { [roleModelKey("copy-lead")]: row("claude-haiku-5-5", "low") })).toMatchObject({ providerId: "claude-code", model: "claude-haiku-5-5", reasoningEffort: "low", source: "table" });
+    expect(pick("specialist:made-up", { [roleModelKey("specialist")]: row("gpt-6.1-terra", "low") })).toMatchObject({ providerId: "codex", model: "gpt-6.1-terra", reasoningEffort: "low", source: "table" });
   });
 
   it("ignores a row that is not a pick of the table: a model outside the six, a half-set value", () => {
@@ -156,7 +159,7 @@ describe("a model a run pins for itself (a scheduled agent, an agent the owner c
     const routine = await withResolvedModel({ ...base, role: "specialist:seo-specialist", model: "gpt-6-luna", reasoning: "low", serviceTier: "fast" } as unknown as HelperRequest);
     expect(routine).toMatchObject({ provider: "codex", model: "gpt-6-luna", reasoning: "low", serviceTier: "fast" });
     const plain = await withResolvedModel({ ...base, role: "specialist:seo-specialist" } as unknown as HelperRequest);
-    expect(plain).toMatchObject({ provider: "claude-code", model: "claude-opus-5-5", reasoning: "high" });
+    expect(plain).toMatchObject({ provider: "claude-code", model: "claude-sonnet-5-5", reasoning: "high" });
   });
 });
 

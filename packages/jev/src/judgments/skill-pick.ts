@@ -61,6 +61,8 @@ export type PickTaskInput = {
 export type SkillPickInput = {
   enabled: boolean; catalog: CatalogEntry[]; hints: string[]; task: PickTaskInput; plan: string; projectCwd: string;
   ask: SkillAsk; kindCache: KindCache; threshold?: number; top?: number;
+  /** Names from the sections that match this task. Empty or absent: the whole catalog, the old table. */
+  candidates?: readonly string[] | null;
 };
 /** `skills` is what the writer gets on top of its role: the project-folder skills, the picks, the craft picks and the hints, each once. */
 export type SkillPick = {
@@ -237,7 +239,10 @@ export async function pickWriterSkills(input: SkillPickInput): Promise<SkillPick
   const hints = hintedSkills(input.catalog, input.hints);
   const base = { catalog: input.catalog.length, picked: [], craft: [], projectFolder: [], hints, unanswered: 0 };
   if (!input.enabled) return { ...base, skills: hints, kept: 0, craftKept: 0 };
-  const { kept, unanswered: kindMissed } = await keptByKind(input.catalog, input.ask, input.kindCache);
+  // A section match narrows the catalog. No overlap with this catalog (or no match at all) keeps the old full table.
+  const pool = input.candidates?.length ? input.catalog.filter((entry) => input.candidates!.includes(entry.name)) : [];
+  const judged = pool.length ? pool : input.catalog;
+  const { kept, unanswered: kindMissed } = await keptByKind(judged, input.ask, input.kindCache);
   const { kept: craftKept, unanswered: craftKindMissed } = await keptByKind(kept, input.ask, input.kindCache, CRAFT_KIND);
   const state = skillPickState(input.task, input.plan, input.projectCwd);
   const [technology, craftwork] = await Promise.all([

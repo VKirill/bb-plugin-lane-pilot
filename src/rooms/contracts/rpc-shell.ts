@@ -13,6 +13,8 @@ export const pickableAgentSchema = z.object({
   summary: z.string().optional(),
   kind: z.enum(["coordinator", "specialist", "internal"]).optional(),
   custom: z.boolean().optional(),
+  domain: z.string().optional(),
+  machineAffinity: z.enum(["mac-mini", "ovh", "windows", "any"]).optional(),
 }).strict();
 
 /** The settings view of an agent: the pickable fields plus the whole profile. */
@@ -25,6 +27,10 @@ export const agentListItemSchema = pickableAgentSchema.extend({
   disallowedTools: z.array(z.string()).optional(),
   skills: z.array(z.string()).optional(),
   mcpServers: z.array(z.string()).optional(),
+  coreSkills: z.array(z.string()).optional(),
+  skillSections: z.array(z.string()).optional(),
+  deliverables: z.array(z.string()).optional(),
+  validator: z.string().optional(),
   model: z.string().optional(),
   effort: z.string().optional(),
 }).strict();
@@ -109,7 +115,7 @@ export const rpcShell = {
   },
   save_agent_profile: {
     input: z.object({
-      id: z.string().regex(/^[a-z][a-z0-9-]{0,63}$/),
+      id: z.string().regex(/^[a-z0-9][a-z0-9-]{0,63}$/),
       prompt: z.string().min(1).max(32_000),
       description: z.string().min(1).max(400).optional(),
       expectedSourceHash: z.union([z.literal(""), z.string().regex(/^[a-f0-9]{64}$/)]),
@@ -132,13 +138,19 @@ export const rpcShell = {
   },
   create_agent: {
     input: z.object({
-      id: z.string().regex(/^[a-z][a-z0-9-]{0,63}$/),
+      id: z.string().regex(/^[a-z0-9][a-z0-9-]{0,63}$/),
       displayName: z.string().min(1).max(120),
       description: z.string().max(400).optional(),
       prompt: z.string().min(1).max(32_000),
       tools: agentNames.optional(),
       disallowedTools: agentNames.optional(),
       skills: agentNames.optional(),
+      coreSkills: agentNames.max(3).optional(),
+      skillSections: agentNames.max(24).optional(),
+      domain: z.string().min(1).max(40).optional(),
+      machineAffinity: z.enum(["mac-mini", "ovh", "windows", "any"]).optional(),
+      deliverables: agentNames.max(16).optional(),
+      validator: z.string().min(1).max(40).optional(),
       mcpServers: agentNames.optional(),
       model: z.string().min(1).max(100).optional(),
       effort: z.enum(["low", "medium", "high", "xhigh", "max"]).optional(),
@@ -147,13 +159,19 @@ export const rpcShell = {
   },
   update_agent: {
     input: z.object({
-      id: z.string().regex(/^[a-z][a-z0-9-]{0,63}$/),
+      id: z.string().regex(/^[a-z0-9][a-z0-9-]{0,63}$/),
       displayName: z.string().min(1).max(120).optional(),
       description: z.string().max(400).optional(),
       prompt: z.string().min(1).max(32_000).optional(),
       tools: agentNames.optional(),
       disallowedTools: agentNames.optional(),
       skills: agentNames.optional(),
+      coreSkills: agentNames.max(3).optional(),
+      skillSections: agentNames.max(24).optional(),
+      domain: z.string().min(1).max(40).optional(),
+      machineAffinity: z.enum(["mac-mini", "ovh", "windows", "any"]).optional(),
+      deliverables: agentNames.max(16).optional(),
+      validator: z.string().min(1).max(40).optional(),
       mcpServers: agentNames.optional(),
       model: z.string().min(1).max(100).nullable().optional(),
       effort: z.enum(["low", "medium", "high", "xhigh", "max"]).nullable().optional(),
@@ -161,7 +179,7 @@ export const rpcShell = {
     output: agentOutcome,
   },
   delete_agent: {
-    input: z.object({ id: z.string().regex(/^[a-z][a-z0-9-]{0,63}$/) }).strict(),
+    input: z.object({ id: z.string().regex(/^[a-z0-9][a-z0-9-]{0,63}$/) }).strict(),
     output: agentOutcome,
   },
 };

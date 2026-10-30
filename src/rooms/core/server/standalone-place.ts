@@ -6,9 +6,17 @@ import type { ServerCore } from "./core";
  */
 export type ProjectFolder = { hostId: string; path: string };
 
+export async function projectSources(bb: ServerCore["bb"], projectId: string): Promise<Array<{ hostId?: string; path?: string }>> {
+  try {
+    const project = await bb.sdk.projects.get({ projectId }) as { sources?: Array<{ hostId?: string; path?: string }> } | null;
+    return project?.sources ?? [];
+  } catch {
+    return [];
+  }
+}
+
 export async function projectFolder(bb: ServerCore["bb"], projectId: string): Promise<ProjectFolder | null> {
-  const project = await bb.sdk.projects.get({ projectId }).catch(() => null) as { sources?: Array<{ hostId?: string; path?: string }> } | null;
-  const source = project?.sources?.find((row) => row.hostId && row.path);
+  const source = (await projectSources(bb, projectId)).find((row) => row.hostId && row.path);
   return source?.hostId && source.path ? { hostId: source.hostId, path: source.path } : null;
 }
 

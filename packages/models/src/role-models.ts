@@ -100,7 +100,18 @@ export const ROLE_TABLE: readonly RoleRow[] = [
   { id: "analyst", default: { model: "claude-opus-5-5", effort: "high", why: "Reads the goal and the project and writes the analysis the plan stands on; an author, so Claude." } },
   { id: "planner", default: { model: "claude-opus-5-5", effort: "high", why: "Writes the phase plans every task is cut from; the strongest author." }, least: "strong" },
   { id: "workflow-architect", default: { model: "claude-opus-5-5", effort: "high", why: "Designs a graph from a conversation with the owner; an author." } },
-  { id: "specialist", default: { model: "claude-opus-5-5", effort: "high", why: "Design, copy, SEO, video, research and the owner's own agents (unless an agent names its own model); they write text and design." }, legacy: ["specialist"] },
+  { id: "specialist", default: { model: "claude-opus-5-5", effort: "high", why: "An agent the owner created that has no row of its own. It writes, so Claude Opus. Known employees have their own rows." }, legacy: ["specialist"] },
+  { id: "copy-lead", default: { model: "claude-sonnet-5-5", effort: "high", why: "Writes the words people read. Sonnet is enough; Opus stays for planning. The profile runs only on Claude." } },
+  { id: "seo-specialist", default: { model: "claude-sonnet-5-5", effort: "high", why: "Builds a search plan from the SEO section of the catalog. A strong writer, not a routine click." } },
+  { id: "design-lead", default: { model: "claude-sonnet-5-5", effort: "high", why: "Owns DESIGN.md and the screens. Judgment, so Sonnet high, and the profile runs only on Claude." } },
+  { id: "video-lead", default: { model: "claude-sonnet-5-5", effort: "high", why: "Produces the film and checks the rendered file. Tool use plus judgment." } },
+  { id: "tavily", default: { model: "claude-sonnet-5-5", effort: "high", why: "Reads sources and writes a cited note. Not a one-click search." } },
+  { id: "3d-artist", default: { model: "claude-sonnet-5-5", effort: "high", why: "Drives Blender on the Mac mini. The skill for the asset comes from the catalog." } },
+  { id: "game-dev", default: { model: "claude-sonnet-5-5", effort: "high", why: "Builds the game the task names. The engine and the genre come from the catalog, on the Mac mini." } },
+  { id: "social-manager", default: { model: "claude-sonnet-5-5", effort: "medium", why: "Posts and replies. A routine with tools, so Sonnet medium, like an errand." } },
+  { id: "billing-assistant", default: { model: "claude-sonnet-5-5", effort: "medium", why: "Invoices and documents. Forms and a checklist, so Sonnet medium." } },
+  { id: "visual-artist", default: { model: "claude-sonnet-5-5", effort: "high", why: "Makes the picture the task asks for. Taste, so Sonnet high." } },
+  { id: "macos-operator", default: { model: "claude-sonnet-5-5", effort: "medium", why: "Clicks the Mac the way an errand does. Sonnet medium, no deep planning." } },
   { id: "plan-critic", default: { model: GEMINI_FLASH, effort: "medium", why: "Judges the planner's plan; another family than its Claude author, on the near-free Gemini subscription so Claude and GPT limits go to the authors. Without it: GPT-6.1 Sol." }, fallback: { model: "gpt-6.1-sol", effort: "high" }, legacy: ["plan_critique"] },
   { id: "specialist-reviewer", default: { model: GEMINI_FLASH, effort: "medium", why: "A second, domain-minded look at the plan before the work starts: a judge, another family than the planner, on the near-free Gemini subscription. Without it: GPT-6.1 Sol." }, fallback: { model: "gpt-6.1-sol", effort: "high" }, legacy: ["specialist"] },
   { id: "code-critic", default: { model: GEMINI_FLASH, effort: "medium", why: "Judges the writer's diff and every dimension of a wave review (lp.review), on the near-free Gemini subscription; when the writer is a Gemini model it runs on GPT-6.1 Sol instead (cross-family rule), and so it does when Gemini is not offered or is spent." }, fallback: { model: "gpt-6.1-sol", effort: "high" }, least: "standard", legacy: ["code_critique"] },
@@ -130,7 +141,11 @@ const ALIASES: Record<string, string> = {
 
 /** The row of the table a role belongs to. */
 export function roleRowOf(role: string): string {
-  if (role.startsWith("specialist:")) return "specialist";
+  if (role.startsWith("specialist:")) {
+    const id = role.slice("specialist:".length);
+    if (ROLE_IDS.includes(id)) return id;
+    return "specialist";
+  }
   if (ROLE_IDS.includes(role)) return role;
   return ALIASES[role] ?? "analyst";
 }

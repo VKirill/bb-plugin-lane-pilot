@@ -3,7 +3,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import plugin from "../server";
 import { agentListItem, parseAgentFile } from "../src/rooms/native-agent/custom-agent";
 import { MAIN_AGENT_PROFILE_IDS, parseOwnedAgents } from "../src/rooms/native-agent/agent-profile";
-import { BB_AGENT_SESSIONS, unionLpBridgeToolsOnAgentsJson } from "../src/rooms/native-agent/native-agent-overlay";
+import { BB_AGENT_SESSIONS, laneSessionOverlayPrompt, unionLpBridgeToolsOnAgentsJson } from "../src/rooms/native-agent/native-agent-overlay";
 import { NATIVE_LP_BRIDGE_SPECIALIST_TOOLS } from "../src/rooms/native-agent/native-session-hooks";
 import { roleProfilePolicy, type HelperRole } from "../src/rooms/native-agent/helper-context";
 import { LP_AGENT_OVERRIDES_KEY } from "@lane-pilot/settings-catalog";
@@ -41,7 +41,8 @@ describe("the agent registry: an agent is data", () => {
     expect(byId["dev-orchestrator"]).toMatchObject({ kind: "coordinator", custom: false, displayName: "Development coordinator" });
     expect(byId["project-onboarder"]).toMatchObject({ kind: "internal", custom: false });
     for (const id of ["copy-lead", "seo-specialist", "design-lead", "tavily", "video-lead"]) expect(byId[id], id).toMatchObject({ kind: "specialist", custom: false });
-    expect(byId["video-lead"]!.skills).toEqual(expect.arrayContaining(["hyperframes", "media-use", "remotion:remotion-render"]));
+    expect(byId["video-lead"]!.skills).toEqual(["video-lead-playbook"]);
+    expect(byId["game-dev"]!.skillSections).toContain("Разработка/Игры");
     expect(byId["video-lead"]!.tools).toContain("mcp__bb-bridge__lane_pilot_schedule");
     for (const row of agents) expect(row.description).toBe(row.displayName);
   });
@@ -125,8 +126,9 @@ describe("the agent registry: an agent is data", () => {
     // The bundled video agent starts the same way.
     const bundled = await rpc<{ token: string }>("prepare_native_session", { projectId: "proj_custom", agentId: "video-lead" });
     const bundledDefinition = (JSON.parse((await bb.storage.kv.get<{ agentsJson: string }>(`native-selection:${bundled.token}`))!.agentsJson) as Record<string, Record<string, unknown>>)["video-lead"]!;
-    expect(bundledDefinition.skills).toContain("procedural-film");
-    expect(bundledDefinition.prompt).toBe(BB_AGENT_SESSIONS["video-lead"] ? `You are **video-lead** in a Lane Pilot BB session.\n\n${BB_AGENT_SESSIONS["video-lead"]}\n` : "");
+    expect(bundledDefinition.skills).toEqual(["video-lead-playbook"]);
+    expect(bundledDefinition.prompt).toBe(laneSessionOverlayPrompt("video-lead"));
+    expect(bundledDefinition.prompt).toContain("## Skill catalog");
   });
 
   it("gives an agent of the owner a specialist helper role: Env Catalog plus its own skills and MCP servers", () => {
@@ -171,7 +173,7 @@ describe("agents from a file and from the CLI", () => {
     expect(parseAgentFile('{"id":"a-b","displayName":"A","prompt":"P"}')).toEqual({ id: "a-b", displayName: "A", prompt: "P" });
     const md = ["---", "name: context-lead", "displayName: Context", "description: Keeps context.", "skills:", "  - lane-memory", "  - ru-text", "mcpServers: gitnexus, metamcp", "model: claude-opus-5-5", "effort: high", "---", "", "You are the context specialist.", ""].join("\n");
     expect(parseAgentFile(md)).toEqual({
-      id: "context-lead", displayName: "Context", description: "Keeps context.", skills: ["lane-memory", "ru-text"], mcpServers: ["gitnexus", "metamcp"],
+      id: "context-lead", displayName: "Context", description: "Keeps context.", skills: ["lane-memory", "ru-text"], coreSkills: ["lane-memory", "ru-text"], mcpServers: ["gitnexus", "metamcp"],
       model: "claude-opus-5-5", effort: "high", prompt: "You are the context specialist.",
     });
     expect(() => parseAgentFile("   ")).toThrow(/agent_file_empty/);
@@ -189,7 +191,7 @@ describe("agents from a file and from the CLI", () => {
     const json = JSON.parse((await run("list", "--custom", "--json")).stdout) as { agents: Item[] };
     expect(json.agents.map((row) => row.id)).toEqual(["video-helper"]);
     expect((await run("list")).stdout).toMatch(/copy-lead\s+specialist\s+bundled/);
-    expect((await run("list")).stdout).toMatch(/video-helper\s+specialist\s+custom\s+Video helper/);
+    expect((await run("list")).stdout).toMatch(/video-helper\s+specialist\s+custom\s+\S+\s+\S+\s+Video helper/);
     expect(JSON.parse((await run("show", "video-helper")).stdout)).toMatchObject({ id: "video-helper", prompt: "You help with video. Chat in Russian.", skills: ["hyperframes"] });
 
     const updated = await run("update", "video-helper", JSON.stringify({ displayName: "Video desk", effort: "max" }));
