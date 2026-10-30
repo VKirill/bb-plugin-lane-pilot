@@ -14,6 +14,9 @@ import { classVersions, collectEntries, getClass, graphRecurrence, listClasses, 
 import { afterFailedMove, ladderStep } from "./ladder";
 import { composeWallMorning } from "./morning";
 import { promotionMorningLine } from "../rule-forms";
+import { diffHiddenMorningLine } from "../checkers/server";
+import { modelRebenchMorningLine } from "../night-graphs";
+import { skillSwitchMorningLine } from "../writer";
 import { watchMorningLine } from "@lane-pilot/jev";
 import { HUNT_ANGLES, buildClassPack, buildLoopPack, buildTaskPack, judgeHunt, parseFinding, type CheckedFinding, type EvidencePack, type HuntOutcome, type LoopEvidence, type PackFile } from "./pack";
 import { executable, headPartsOf, planClassRerun, recordRerun, type RerunPlan, type RerunScope } from "./rerun";
@@ -99,6 +102,7 @@ export type WallDeps = {
   hubDb?: string;
   jev?: () => Jev | null;
   settings?: () => Promise<JevSettings>;
+  diffHiddenAudit?: (limit: number) => Promise<unknown>;
 };
 
 const sha = (text: string) => createHash("sha256").update(text).digest("hex");
@@ -531,6 +535,16 @@ export function createWall(deps: WallDeps) {
     summary.spendTokens = nightSpend(db, night, { from: Date.parse(`${night}T00:00:00Z`), to: Date.parse(`${night}T00:00:00Z`) + DAY });
     saveNight(db, summary, ports.now(), true);
     log(`wall: night ${night}: ${summary.classesSeen} classes with a failure today, ${summary.picked.length} repairs queued, ${summary.hunts.length} hunts, ${summary.backlog.length} to the backlog, ~${summary.spendTokens} of ${summary.capTokens} tokens`);
+    if (!options.dryRun && deps.diffHiddenAudit) {
+      const projectSettings = loadProjectSettings(db as never, "*");
+      const rawLimit = projectSettings["checkers.diff_hidden_limit"] ?? (deps.settings ? (await deps.settings().catch(() => ({} as Record<string, unknown>)))["checkers.diff_hidden_limit"] : undefined);
+      const diffHiddenLimit = typeof rawLimit === "number" ? rawLimit : (rawLimit !== undefined && rawLimit !== null && rawLimit !== "" && !isNaN(Number(rawLimit)) ? Number(rawLimit) : 3);
+      if (diffHiddenLimit > 0) {
+        await deps.diffHiddenAudit(diffHiddenLimit).catch((cause: unknown) => {
+          log(`wall: diff-hidden audit failed: ${cause instanceof Error ? cause.message : String(cause)}`);
+        });
+      }
+    }
     return summary;
   }
 
@@ -907,7 +921,15 @@ export function createWall(deps: WallDeps) {
       repairs: listRepairs(db, { since: ports.now() - 14 * DAY }),
       walls: listWalls(db, { states: ["stopped", "hunting", "hunted", "backlog"] }).map((row) => ({ key: row.key, kind: row.kind, subject: row.subject, state: row.state, hunt: row.hunt, deferralId: row.deferralId })),
       nights: recentNights(db),
-      morning: [`${statsEpochLine(statsEpoch(db))}.`, ...composeWallMorning(db, ports.now()), watchMorningLine(db, ports.now()), ...(promotionMorningLine(db) ? [promotionMorningLine(db)!] : [])],
+      morning: [
+        `${statsEpochLine(statsEpoch(db))}.`,
+        ...composeWallMorning(db, ports.now()),
+        watchMorningLine(db, ports.now()),
+        ...(promotionMorningLine(db) ? [promotionMorningLine(db)!] : []),
+        ...(diffHiddenMorningLine(db as never, ports.now()) ? [diffHiddenMorningLine(db as never, ports.now())!] : []),
+        ...(modelRebenchMorningLine(db as never, ports.now()) ? [modelRebenchMorningLine(db as never, ports.now())!] : []),
+        ...(skillSwitchMorningLine(db as never, ports.now()) ? [skillSwitchMorningLine(db as never, ports.now())!] : []),
+      ],
     };
   }
   function show(key: string) {
@@ -927,7 +949,15 @@ export function createWall(deps: WallDeps) {
   }
 
   return { graph: graphSteps, config, setConfig, runNight, advance, mergeGate, settled, started, startFailed, nextAssignment, noteTaskStop, dispatchGuard, loopExhausted, loopTopics, rerun, status, show, close,
-    morning: (now?: number) => [`${statsEpochLine(statsEpoch(db))}.`, ...composeWallMorning(db, now ?? ports.now()), watchMorningLine(db, now ?? ports.now()), ...(promotionMorningLine(db) ? [promotionMorningLine(db)!] : [])], classes: () => listClasses(db), huntClass };
+    morning: (now?: number) => [
+      `${statsEpochLine(statsEpoch(db))}.`,
+      ...composeWallMorning(db, now ?? ports.now()),
+      watchMorningLine(db, now ?? ports.now()),
+      ...(promotionMorningLine(db) ? [promotionMorningLine(db)!] : []),
+      ...(diffHiddenMorningLine(db as never, now ?? ports.now()) ? [diffHiddenMorningLine(db as never, now ?? ports.now())!] : []),
+      ...(modelRebenchMorningLine(db as never, now ?? ports.now()) ? [modelRebenchMorningLine(db as never, now ?? ports.now())!] : []),
+      ...(skillSwitchMorningLine(db as never, now ?? ports.now()) ? [skillSwitchMorningLine(db as never, now ?? ports.now())!] : []),
+    ], classes: () => listClasses(db), huntClass };
 }
 
 export type WallApi = ReturnType<typeof createWall>;

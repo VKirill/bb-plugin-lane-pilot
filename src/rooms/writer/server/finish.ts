@@ -37,6 +37,7 @@ import { shouldMergeAttemptWorktree } from "./spawn";
 import { loadWriterNudge } from "./writer-silence";
 import { recordedWriterSkills } from "./skill-pick";
 import { createSkillMaterializer, recordedMaterializedSkills } from "./skill-materialize";
+import { recordSkillSwitchMetric } from "../skill-switch";
 import { REPLAY_CHECK_FAILED, WRITER_SILENT_REASON, beginChecks, checksMoved, failureFingerprint, isEnvironmentCheckFailure, taskFamily } from "../../runs";
 import { bookkeepingSetting } from "@lane-pilot/settings-catalog";
 import { attemptMergeMessage, clearMergeIntent, recordMergeIntent } from "../../verification/server";
@@ -125,8 +126,27 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
 
   /** The attempt's end, whatever its outcome: the skill links and the compaction config an OpenCode writer got leave its worktree. */
   async function finishWriterAttempt(input: FinishInput): Promise<Record<string,unknown>> {
-    try { return await finishWriterAttemptBody(input); }
-    finally {
+    let result: Record<string, unknown> | null = null;
+    try {
+      result = await finishWriterAttemptBody(input);
+      return result;
+    } finally {
+      try {
+        const skills = recordedWriterSkills(getReasoningTrace(db, input.attemptId)?.dispatchContext);
+        const events = await bb.sdk.threads.events.list({ threadId: input.writerThreadId, limit: "100" } as never).then((r: any) => r?.events ?? [], () => []);
+        const outcome = result?.status === "accepted" || result?.state === "accepted" ? "accepted" : "failed";
+        recordSkillSwitchMetric(db, {
+          attemptId: input.attemptId,
+          taskId: input.taskId,
+          runId: input.runId,
+          projectId: input.projectId,
+          events,
+          skills,
+          outcome,
+        });
+      } catch (cause) {
+        ctx.log(`writer skill switch metric failed: ${cause instanceof Error ? cause.message : String(cause)}`);
+      }
       await skillMaterial.remove({ attemptId:input.attemptId, hostId:input.config.hostId,
         workspacePath:getAttempt(db, input.attemptId)?.workspace_path ?? null,
         names:recordedMaterializedSkills(getReasoningTrace(db, input.attemptId)?.dispatchContext),

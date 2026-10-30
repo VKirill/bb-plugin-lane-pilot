@@ -1,5 +1,7 @@
 import { renderDrill, runDrill, type DrillReport } from "./drill";
-import type { ModelPort, VerificationSession, Where } from "./checkers";
+import type { ModelPort, Subject, VerificationSession, Where } from "./checkers";
+import { runDiffHiddenAudit, type DiffHiddenAuditReport } from "./diff-hidden";
+import { honestClaim } from "./mutators";
 import { runScore, type ScoreReport } from "./service";
 import { buildScorecard, renderScorecard, type Scorecard } from "./score";
 import { getRun, latestRun, listRows, listRuns, type CheckerDb, type CheckerRun } from "./store";
@@ -55,7 +57,26 @@ export function createCheckers(deps: CheckersDeps) {
     return { run, card, text: renderScorecard(card) };
   }
 
-  return { score, scorecard, runs: (limit = 10) => listRuns(deps.db, limit), drill: (options: Parameters<typeof runDrill>[0] = {}): Promise<DrillReport> => runDrill(options) };
+  async function diffHidden(options: { limit?: number; only?: readonly string[]; checkers?: CheckerId[] } = {}): Promise<DiffHiddenAuditReport> {
+    const loaded = await deps.load({ limit: options.limit ?? 6, ...(options.only ? { only: options.only } : {}) });
+    const subjects: Subject[] = loaded.map((row) => ({
+      contract: row.input.contract,
+      changes: row.input.changes,
+      claim: honestClaim({ contract: row.input.contract, changes: row.input.changes }),
+    }));
+    return await runDiffHiddenAudit(subjects, {
+      checkers: options.checkers,
+      db: deps.db,
+    });
+  }
+
+  return {
+    score,
+    scorecard,
+    runs: (limit = 10) => listRuns(deps.db, limit),
+    drill: (options: Parameters<typeof runDrill>[0] = {}): Promise<DrillReport> => runDrill(options),
+    diffHidden,
+  };
 }
 
 export type CheckersApi = ReturnType<typeof createCheckers>;
@@ -65,6 +86,8 @@ export const CHECKERS_USAGE = [
   "                             (plant known defects in accepted candidates, run the checkers on them, print the checker scorecard; the critics run only with --critic, from scripts/lp-checkers.ts, not inside the plugin)",
   "bb lane-pilot checkers scorecard [run-id] [--json]   (the stored scorecard of a run, newest by default)",
   "bb lane-pilot checkers drill [--blind a,b] [--json]  (the quick drill: code checkers on a fixture; exit 1 when a checker misses its class)",
+  "bb lane-pilot checkers diff-hidden [--tasks 6] [--only id,id] [--checkers a,b] [--json]",
+  "                                                     (audit checkers with diff hidden: measures blind passes and phantom findings)",
   "bb lane-pilot checkers defects                       (the defect classes and who must catch each)",
 ].join("\n");
 
@@ -133,6 +156,21 @@ export async function runCheckersCli(api: CheckersApi, argv: string[]): Promise<
       const blind = list(flags.blind, CHECKERS, "checker");
       const drill = await api.drill({ ...(blind ? { blind } : {}) });
       return { exitCode: drill.ok ? 0 : 1, stdout: flags.json === "true" ? JSON.stringify({ ok: drill.ok, problems: drill.problems, checked: drill.checked }, null, 2) : renderDrill(drill) };
+    }
+    if (sub === "diff-hidden") {
+      const { flags } = flagsOf(rest, ["tasks", "only", "checkers", "json"]);
+      const checkers = list(flags.checkers, CHECKERS, "checker");
+      const report = await api.diffHidden({
+        limit: positive("tasks", flags.tasks) ?? 6,
+        ...(flags.only ? { only: flags.only.split(",") } : {}),
+        ...(checkers ? { checkers } : {}),
+      });
+      const pct = Math.round(report.sensitivityRate * 100);
+      const text = `DIFF-HIDDEN AUDIT (${report.runId}): ${report.candidatesCount} candidates, ${report.totalChecks} checks\n` +
+        `  Blind passes: ${report.blindPassCount} (${report.blindPassCount === 0 ? "clean" : "warning: checks passed with empty diff"})\n` +
+        `  Phantom findings: ${report.phantomCount} (${report.phantomCount === 0 ? "clean" : "warning: findings reproduced without diff"})\n` +
+        `  Diff sensitivity: ${report.diffSensitiveCount}/${report.totalChecks} (${pct}%)\n`;
+      return flags.json === "true" ? json(report) : { exitCode: report.blindPassCount > 0 ? 1 : 0, stdout: text };
     }
     if (sub === "defects") {
       return json(DEFECT_CLASSES.map((defectClass) => ({ defectClass, designedCatchers: EXPECTED_CATCHERS[defectClass] })));
