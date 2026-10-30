@@ -409,7 +409,7 @@ export function lintContract(input:LintInput):{ errors:LintFinding[]; warnings:L
   }
   if ((task.risk !== "low" || task.kind === "fix") && task.verification.length > 0 && kinds && !isMainfixTask(task.id) && !errors.some((error) => error.code === "verification_empty_check")
     && !checkNamedPaths(task).some((path) => kindOf(path) === "missing")) {
-    warnings.push({ code:"no_red_before_green", message:`risk ${task.risk}: no verification command names a file that is missing on the base commit, so every check may already pass before the work; add one that fails until the task is done (a test for the new behaviour in a file the task creates, grep -q for the expected string, test -f on a new output). This is a warning: the task goes on` });
+    warnings.push({ code:"no_red_before_green", message:`risk ${task.risk}${task.kind === "fix" ? ", kind fix" : ""}: no verification command names a file that is missing on the base commit, so every check may already pass before the work. If they do, the task closes accepted without a writer (already done). Add a check that is red now only when the work is still missing (a test for the new behaviour, grep -q for the expected string, test -f on a new output). This is a warning: the task goes on` });
   }
 
   // Checks: a folder filter ends in «/», and a whole-suite vitest run excludes what the sandbox cannot run.

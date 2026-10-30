@@ -630,7 +630,12 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
       // mode stop ends the task here with the evidence. A mainfix has its own preflight below; a folder without git has no base to run on.
       if (!writerThreadId && !input.turnSent && !liveFolder && !isMainfixTask(input.task.id)) {
         const baseline = await services.baseline?.preflight({ projectId:input.projectId, runId:input.runId, taskId:input.taskId, attemptId, pmThreadId:input.pmThreadId, config:freshConfig, task:freshTask });
-        if (baseline?.stop) { blockBeforeWriter(baseline.stop); return; }
+        if (baseline?.alreadyDone) {
+          ctx.log(`baseline ${input.taskId}: checks already pass on the base; closing accepted without a writer`);
+          transitionAttempt(db, attemptId, "accepted");
+          last = { status:"accepted", attemptId, produced:[], verification:[], alreadyDone:baseline.alreadyDone };
+          acceptedAttemptId = attemptId;
+        } else if (baseline?.stop) { blockBeforeWriter(baseline.stop); return; }
       }
       // The area's writer from an earlier task of this run takes this one in its own thread, unless the writer setting now names
       // another provider or model: then this task gets a fresh writer on the current one (the spawn's own selection, below).
@@ -643,6 +648,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         if (hot) await continueWith(hot, "next-task", "");
       }
       while (attemptsLeft()) {
+        if (last.status === "accepted") break;
         // The stage that just ended is the safe boundary of a pause: the next attempt or turn waits for the resume.
         if (!await waitWhileRunPaused(bb.storage.kv as never, input.runId, { isDisposed: ctx.isDisposed, onFirstWait: () => ctx.log(`writer ${input.taskId} waits at a stage boundary: run ${input.runId} is paused`) })) return;
         if (!inSession) { attemptsHere += 1; sessionStartedAt = Date.now(); previousTurn = null; }
