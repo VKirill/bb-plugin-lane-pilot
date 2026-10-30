@@ -4,7 +4,7 @@ import { buildSet, type BuildReport } from "./build";
 import { compareArms, computeNoise, noiseOfRepeats, passReport, renderComparison, summarizeArm, type ArmSummary, type Comparison } from "./compare";
 import { cohortCounts, cohortOf } from "./stratify";
 import type { HostPort, PipelinePort } from "./ports";
-import { sweepStuckRuns } from "./reliability";
+import { releaseGate, sweepStuckRuns } from "./reliability";
 import { BENCH_REPOS_ROOT_ENV } from "./repos";
 import { DEFAULT_BUDGET_HOURS, DEFAULT_BUDGET_TOKENS, defaultProjectName, runSeries, type BenchWriter, type SeriesInput, type SeriesReport } from "./runner";
 import {
@@ -224,7 +224,12 @@ export function createBench(deps: BenchDeps) {
   /** The three model-free numbers of the baseline metric bench (SMA k_lib_bench), over the accepted attempts of the last `days`. */
   const baseline = (opts: { days?: number; projectId?: string } = {}) => baselineMetrics(deps.db, deps.host, opts);
 
-  return { settings, placement, configure, build, lastBuild, run, noise, compare, status, show, prepare, armSummary, baseline, sweep };
+  /** The deploy script asks this. A night that stopped on budget, failed, or never ran is not a pass. */
+  function gate(maxAgeHours?: number, now = Date.now()) {
+    return releaseGate(listRuns(deps.db), now, maxAgeHours);
+  }
+
+  return { settings, placement, configure, build, lastBuild, run, noise, compare, status, show, prepare, armSummary, baseline, sweep, gate };
 }
 
 export type BenchApi = ReturnType<typeof createBench>;

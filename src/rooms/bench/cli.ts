@@ -16,6 +16,7 @@ export const BENCH_USAGE = [
   "bb lane-pilot bench config [budget_tokens=N] [budget_hours=H] [host=MACHINE] [noise_repeats=N] [repos_root=DIR]",
   "                       (host empty: each project's own machine. noise_repeats 0: the weekly run is once. repos_root remaps stored checkout paths; empty clears it. A refused provider is not retried on another model.)",
   "bb lane-pilot bench baseline [--days 14] [--project ID] [--json]   (no model: false-done rate, phantom writes, git loss recoverability of the accepted attempts)",
+  "bb lane-pilot bench gate [--hours N]                       (exit 0 only when the newest night- arm finished done within N hours; default 30)",
 ].join("\n");
 
 type Result = { exitCode: number; stdout?: string; stderr?: string };
@@ -134,6 +135,11 @@ export async function runBenchCli(bench: BenchApi, argv: string[]): Promise<Resu
     if (sub === "sweep") {
       parseBenchArgs(rest, []);
       return out(bench.sweep());
+    }
+    if (sub === "gate") {
+      const { flags } = parseBenchArgs(rest, ["hours"]);
+      const result = bench.gate(positive("hours", flags.hours));
+      return { exitCode: result.ok ? 0 : 1, stdout: `${result.reason}\n` };
     }
     if (sub === "config") {
       const patch: { budgetTokens?: number; budgetHours?: number; hostId?: string | null; noiseRepeats?: number; reposRoot?: string | null } = {};

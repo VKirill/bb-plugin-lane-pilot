@@ -1,4 +1,4 @@
-import { finishRunRow, listRuns, type BenchDb } from "./store";
+import { finishRunRow, listRuns, type BenchDb, type BenchRun } from "./store";
 
 /** Why a series must wait: the host is under the free-space floor. The `deferred:` prefix is what the night retries; the rest matches the old stop text. */
 export function diskDeferral(freeGb: number | null, minFreeGb: number, hostId: string): string | null {
@@ -43,4 +43,28 @@ export function sweepStuckRuns(db: BenchDb, now = Date.now(), opts: { defaultHou
     closed.push({ id: run.id, arm: run.arm, stopReason: reason });
   }
   return closed;
+}
+
+/** Hours a 02:00 nightly run is still fresh the next day. */
+export const RELEASE_GATE_HOURS = 30;
+
+export type ReleaseGate = { ok: boolean; reason: string; arm: string | null; at: number | null };
+
+type GateRun = Pick<BenchRun, "arm" | "state" | "startedAt" | "finishedAt">;
+
+/** Can a release go out: the newest night arm finished `done`, and not longer ago than `maxAgeHours`.
+ * `stopped_budget` is not a pass here. `benchArmStatus` treats it as done for the wall; a release must not. */
+export function releaseGate(runs: readonly GateRun[], now: number, maxAgeHours = RELEASE_GATE_HOURS): ReleaseGate {
+  let last: GateRun | null = null;
+  let lastAt = -1;
+  for (const run of runs) {
+    if (!run.arm.startsWith("night-")) continue;
+    const at = run.finishedAt ?? run.startedAt;
+    if (at >= lastAt) { last = run; lastAt = at; }
+  }
+  if (!last) return { ok: false, reason: "no nightly bench run", arm: null, at: null };
+  const ageHours = (now - lastAt) / 3_600_000;
+  if (last.state !== "done") return { ok: false, reason: `nightly bench ${last.arm} is ${last.state}, not done`, arm: last.arm, at: lastAt };
+  if (ageHours > maxAgeHours) return { ok: false, reason: `nightly bench ${last.arm} is ${ageHours.toFixed(1)}h old, past ${maxAgeHours}h`, arm: last.arm, at: lastAt };
+  return { ok: true, reason: `nightly bench ${last.arm} passed ${ageHours.toFixed(1)}h ago`, arm: last.arm, at: lastAt };
 }
