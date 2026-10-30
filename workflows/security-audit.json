@@ -60,7 +60,6 @@
     }
   },
   "budget": {
-    "max_steps": 16,
     "max_minutes": 90
   },
   "entry": "recon",

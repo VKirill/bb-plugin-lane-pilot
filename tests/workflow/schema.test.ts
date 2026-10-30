@@ -12,7 +12,7 @@ describe("workflow schema", () => {
     const parsed = parseWorkflow(workflow());
     expect(parsed.status).toBe("draft");
     expect(parsed.version).toBe(1);
-    expect(parsed.guards).toEqual({ maxSteps: 60, maxFanOut: 12, maxSubworkflowDepth: 3 });
+    expect(parsed.guards).toEqual({ maxSteps: 500, maxFanOut: 12, maxSubworkflowDepth: 3 });
     expect(parsed.nodes[0]).toMatchObject({ id: "search", maxAttempts: 1 });
   });
 

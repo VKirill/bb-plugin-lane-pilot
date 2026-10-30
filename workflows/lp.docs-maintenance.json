@@ -24,7 +24,6 @@
     "state": "string"
   },
   "budget": {
-    "max_steps": 5,
     "max_minutes": 120
   },
   "nodes": [

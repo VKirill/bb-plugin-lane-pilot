@@ -46,7 +46,6 @@
     "thread_ids": "string[]"
   },
   "budget": {
-    "max_steps": 6,
     "max_minutes": 240
   },
   "nodes": [

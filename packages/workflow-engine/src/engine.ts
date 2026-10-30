@@ -30,7 +30,6 @@ export type StepInput = {
   rerun?: number;
 };
 /** Without usage events a run under a token or money budget stops at this many steps / seconds, unless the budget names its own. */
-const UNKNOWN_USAGE_MAX_STEPS = 40;
 const UNKNOWN_USAGE_MAX_WALL_SECONDS = 2 * 3600;
 /** What a step spent. `unknown`: the provider reports no usage, so the numbers are a floor, not zero; the run records it per step and holds a token or money budget to a time and step limit. */
 export type Usage = { tokens?: number; costUsd?: number; unknown?: boolean };
@@ -655,17 +654,17 @@ export class WorkflowEngine {
     if (!usage.unknown) return;
     const j = this.journal;
     if (j.db.prepare("SELECT 1 FROM lane_pilot_wf_event WHERE run_id=? AND kind='usage_unknown' LIMIT 1").get(runId)) return;
-    j.event(runId, stepKey, "usage_unknown", null, null, `the provider reported no usage for this step: a token or money budget cannot count it; the run is held to ${UNKNOWN_USAGE_MAX_STEPS} steps and ${UNKNOWN_USAGE_MAX_WALL_SECONDS / 60} minutes unless the budget sets its own`);
+    j.event(runId, stepKey, "usage_unknown", null, null, `the provider reported no usage for this step: a token or money budget cannot count it; the run is held to ${UNKNOWN_USAGE_MAX_WALL_SECONDS / 60} minutes unless the budget sets its own`);
   }
 
   private checkLimits(run: RunRow, c: Compiled): string | null {
     const budget = c.wf.budget;
     // A token or money budget is blind to a step without usage events; the run then gets a time and step limit of its own.
     if ((budget.maxTokens !== undefined || budget.maxCostUsd !== undefined) && this.journal.db.prepare("SELECT 1 FROM lane_pilot_wf_event WHERE run_id=? AND kind='usage_unknown' LIMIT 1").get(run.id)) {
-      if (budget.maxSteps === undefined && run.steps_used >= UNKNOWN_USAGE_MAX_STEPS) return "budget_exceeded:usage_unknown_steps";
       if (budget.maxWallSeconds === undefined && this.now() - run.created_at - run.wait_ms >= UNKNOWN_USAGE_MAX_WALL_SECONDS * 1000) return "budget_exceeded:usage_unknown_wall_time";
     }
-    if (budget.maxSteps !== undefined && run.steps_used >= budget.maxSteps) return "budget_exceeded:steps";
+    // No step budget: every loop is bounded by maxVisits, money and time by their own budgets. The one step stop in 277 hub runs
+    // was false (magicseo lp.plan, 2026-10-30: the critic passed on step 14 of 14). guards.maxSteps still catches an engine fault.
     if (budget.maxTokens !== undefined && run.tokens_used >= budget.maxTokens) return "budget_exceeded:tokens";
     if (budget.maxCostUsd !== undefined && run.cost_micro_usd >= Math.round(budget.maxCostUsd * 1_000_000)) return "budget_exceeded:cost";
     if (budget.maxWallSeconds !== undefined && this.now() - run.created_at - run.wait_ms >= budget.maxWallSeconds * 1000) return "budget_exceeded:wall_time";

@@ -46,7 +46,6 @@
   },
   "entry": "goal-screen",
   "budget": {
-    "max_steps": 8,
     "max_minutes": 30
   },
   "nodes": [

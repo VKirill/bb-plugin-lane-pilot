@@ -31,7 +31,7 @@ describe("chains of the spec in JSON", () => {
     const get = (id: string) => store.get(id)!.workflow;
     expect(get("lp.build").internal).toBe(true);
     expect(get("review-fix").not_for).toContain("code-review");
-    expect(get("x-to-telegram-digest")).toMatchObject({ triggers: [{ type: "chat" }, { type: "schedule" }, { type: "manual" }], budget: { maxCostUsd: 3, maxWallSeconds: 3600, maxSteps: 30 }, guards: { maxFanOut: 4 } });
+    expect(get("x-to-telegram-digest")).toMatchObject({ triggers: [{ type: "chat" }, { type: "schedule" }, { type: "manual" }], budget: { maxCostUsd: 3, maxWallSeconds: 3600 }, guards: { maxFanOut: 4 } });
     // Skipping by quality mode and by condition, with a typed output for the skipped node.
     const analyze = get("analyze-plan-execute").nodes.find((node) => node.id === "qa")!;
     expect(analyze).toMatchObject({ applicable_modes: ["full"], skip_when: "!plan.has_ui", skip_out: { status: "pass" } });

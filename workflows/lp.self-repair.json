@@ -29,7 +29,6 @@
     "thread_id": "string"
   },
   "budget": {
-    "max_steps": 6,
     "max_minutes": 1500
   },
   "nodes": [

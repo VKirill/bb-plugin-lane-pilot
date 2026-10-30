@@ -89,7 +89,6 @@
     }
   },
   "budget": {
-    "max_steps": 120,
     "max_minutes": 1440
   },
   "entry": "probe",

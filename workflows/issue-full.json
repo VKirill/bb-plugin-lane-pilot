@@ -89,7 +89,6 @@
     }
   },
   "budget": {
-    "max_steps": 70,
     "max_minutes": 360,
     "max_fan_out": 5
   },

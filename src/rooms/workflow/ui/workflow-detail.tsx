@@ -445,7 +445,6 @@ export function WorkflowDetail({ id, projectId, locale, onBack, renderNodePanel,
 }
 
 const budgetText = (budget: Detail["budget"]) => [
-  budget.maxSteps !== null ? t("wfBudgetSteps").replace("{n}", String(budget.maxSteps)) : null,
   budget.maxTokens !== null ? t("wfBudgetTokens").replace("{n}", budget.maxTokens.toLocaleString()) : null,
   budget.maxCostUsd !== null ? t("wfBudgetCost").replace("{n}", String(budget.maxCostUsd)) : null,
   budget.maxWallSeconds !== null ? t("wfBudgetSeconds").replace("{n}", String(budget.maxWallSeconds)) : null,

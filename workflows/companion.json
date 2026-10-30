@@ -69,7 +69,6 @@
     }
   },
   "budget": {
-    "max_steps": 6,
     "max_minutes": 30
   },
   "entry": "self_check",

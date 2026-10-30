@@ -40,7 +40,6 @@
     "questions": "any"
   },
   "budget": {
-    "max_steps": 3,
     "max_minutes": 15
   },
   "nodes": [

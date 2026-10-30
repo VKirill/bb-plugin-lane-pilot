@@ -39,7 +39,6 @@
   },
   "entry": "gather",
   "budget": {
-    "max_steps": 12,
     "max_minutes": 40
   },
   "nodes": [

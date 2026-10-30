@@ -47,7 +47,6 @@
     ]
   },
   "budget": {
-    "max_steps": 8,
     "max_minutes": 60
   },
   "entry": "critic_a",

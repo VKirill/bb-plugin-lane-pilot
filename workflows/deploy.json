@@ -95,7 +95,6 @@
     ]
   },
   "budget": {
-    "max_steps": 14,
     "max_minutes": 60
   },
   "entry": "preflight",

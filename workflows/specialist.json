@@ -40,7 +40,6 @@
     "report": "string"
   },
   "budget": {
-    "max_steps": 6,
     "max_minutes": 120,
     "max_usd": 25
   },

@@ -83,7 +83,6 @@
     }
   },
   "budget": {
-    "max_steps": 25,
     "max_minutes": 90
   },
   "entry": "ask_symptoms",

@@ -29,7 +29,6 @@
   },
   "entry": "run_tasks",
   "budget": {
-    "max_steps": 40,
     "max_minutes": 240
   },
   "nodes": [

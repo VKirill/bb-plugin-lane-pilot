@@ -67,7 +67,6 @@
     "browserSession": true
   },
   "budget": {
-    "max_steps": 40,
     "max_minutes": 180,
     "max_usd": 15
   },

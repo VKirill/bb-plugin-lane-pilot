@@ -48,7 +48,6 @@
     "analysis_tokens": "int"
   },
   "budget": {
-    "max_steps": 12,
     "max_minutes": 90
   },
   "nodes": [

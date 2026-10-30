@@ -304,50 +304,29 @@ describe("guards", () => {
     expect(await run(engineOn(journalDb(), { collect: paid }), paidAfter)).toMatchObject({ status: "blocked", reason: "budget_exceeded:cost" });
   });
 
-  it("budget: a step budget spent on the last real step still lets the end emit its result (magicseo lp.plan)", async () => {
+  it("budget: there is no step budget; a max_steps a graph still names stops nothing (magicseo lp.plan, 2026-10-30)", async () => {
     const paid: NodeExecutor = { reentrant: true, run: async () => ({ output: { n: 7 }, usage: { tokens: 1, costUsd: 0 } }) };
-    const lastStep = wf({
+    const named = wf({
       budget: { maxSteps: 1 },
       outputs: [{ name: "n", type: "number", required: false }],
-      nodes: [{ id: "collect", type: "action", action: "collect", output: [{ name: "n", type: "number" }] }, { id: "done", type: "action", action: "emit", map: { n: "collect.n" } }],
-      edges: [{ from: "start", to: "collect" }, { from: "collect", to: "done" }],
+      nodes: [{ id: "collect", type: "action", action: "collect", output: [{ name: "n", type: "number" }] }, { id: "again", type: "action", action: "collect", output: [{ name: "n", type: "number" }] }, { id: "done", type: "action", action: "emit", map: { n: "again.n" } }],
+      edges: [{ from: "start", to: "collect" }, { from: "collect", to: "again" }, { from: "again", to: "done" }],
     });
-    expect(await run(engineOn(journalDb(), { collect: paid }), lastStep)).toMatchObject({ status: "succeeded", output: { n: 7 } });
+    expect(await run(engineOn(journalDb(), { collect: paid }), named)).toMatchObject({ status: "succeeded", output: { n: 7 } });
   });
 
-  it("budget: a token or money budget with steps that report no usage holds the run to 40 steps, with a journal note", async () => {
+  it("budget: steps that report no usage under a money budget are not held to a step count, only noted once (the wall still bounds them)", async () => {
     const workflow = wf({
       budget: { maxCostUsd: 2 },
-      guards: { maxSteps: 200, maxFanOut: 12, maxSubworkflowDepth: 3 },
       nodes: [{ id: "search", type: "action", action: "search", maxVisits: 50, output: [{ name: "n", type: "number" }] }],
-      edges: [{ from: "start", to: "search" }, { from: "search", to: "search", when: { field: "n", op: "lt", value: 1000 } }, { from: "search", to: "end", with: { result: "input.query" } }],
+      edges: [{ from: "start", to: "search" }, { from: "search", to: "search", when: { field: "n", op: "lt", value: 45 } }, { from: "search", to: "end", with: { result: "input.query" } }],
     });
     let n = 0;
     const blind: NodeExecutor = { reentrant: true, run: async () => ({ output: { n: ++n }, usage: { tokens: 0, costUsd: 0, unknown: true } }) };
     const db = journalDb();
-    const summary = await run(engineOn(db, { search: blind }), workflow);
-    expect(summary).toMatchObject({ status: "blocked", reason: "budget_exceeded:usage_unknown_steps" });
-    expect(n).toBe(40);
+    expect((await run(engineOn(db, { search: blind }), workflow)).status).toBe("succeeded");
+    expect(n).toBe(45);
     expect(rows<{ kind: string }>(db, "SELECT kind FROM lane_pilot_wf_event WHERE kind='usage_unknown'")).toHaveLength(1);
-    // The same steps with usage reported are not held back by the extra limit.
-    n = 0;
-    const seen: NodeExecutor = { reentrant: true, run: async () => ({ output: { n: ++n }, usage: { tokens: 1, costUsd: 0.001 } }) };
-    const free = await run(engineOn(journalDb(), { search: seen }), wf({ ...workflow, id: "seen" }));
-    expect(free.status).toBe("succeeded");
-  });
-
-  it("budget: a token budget that also names maxSteps keeps its own limit when usage is unknown", async () => {
-    const workflow = wf({
-      budget: { maxTokens: 100000, maxSteps: 5 },
-      guards: { maxSteps: 200, maxFanOut: 12, maxSubworkflowDepth: 3 },
-      nodes: [{ id: "search", type: "action", action: "search", maxVisits: 50, output: [{ name: "n", type: "number" }] }],
-      edges: [{ from: "start", to: "search" }, { from: "search", to: "search", when: { field: "n", op: "lt", value: 1000 } }, { from: "search", to: "end", with: { result: "input.query" } }],
-    });
-    let n = 0;
-    const blind: NodeExecutor = { reentrant: true, run: async () => ({ output: { n: ++n }, usage: { unknown: true } }) };
-    const summary = await run(engineOn(journalDb(), { search: blind }), workflow);
-    expect(summary).toMatchObject({ status: "blocked", reason: "budget_exceeded:steps" });
-    expect(n).toBe(5);
   });
 
   it("timeoutSec: a step that hangs fails", async () => {

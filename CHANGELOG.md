@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **No step budget.** In 277 hub runs the step budget stopped one, falsely: magicseo's lp.plan after its critic passed on step 14 of 14. Every loop is bounded by `maxVisits`, money and time by their own budgets, so `budget.max_steps` is gone from the engine and from all 77 shipped graphs; a graph that still names it parses, with the warning `budget_max_steps_ignored`. A token or money budget whose steps report no usage is held to 2 hours, no longer to 40 steps. The engine-fault guard `guards.maxSteps` defaults to 500 instead of 60: graphs with a step budget of 110–120 were cut at 60 by it.
+
 - **The drill probes a helper once more when only the host's thread start broke.** The 0.1.406 deploy went red because the hub's opencode2 process got one SIGTERM during its probe (`thread_command_failed`); a provider that fails the second probe too still fails the drill. Test: `tests/lp-drill-helper-providers.test.ts`.
 
 - **A plan the critic passed on the last step is kept.** magicseo's lp.plan (2026-10-30) spent its 14 steps on two lint rejections and a rework, the critic passed on step 14, and the step budget then refused the `ok` emit: the passed plan was lost and planning ran again. An end `builtin:emit` now runs through a spent step budget; lp.plan's `max_steps` is 16 (its loop guards allow 15). Test: `tests/workflow/engine.test.ts`.

@@ -56,7 +56,6 @@
     ]
   },
   "budget": {
-    "max_steps": 6,
     "max_minutes": 40
   },
   "entry": "retro",

@@ -35,7 +35,6 @@
     "reply": "any"
   },
   "budget": {
-    "max_steps": 5,
     "max_minutes": 45
   },
   "nodes": [

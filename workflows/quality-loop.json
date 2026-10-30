@@ -80,7 +80,6 @@
     "schedule"
   ],
   "budget": {
-    "max_steps": 100,
     "max_minutes": 480,
     "max_fan_out": 5
   },

@@ -93,7 +93,6 @@
     }
   },
   "budget": {
-    "max_steps": 20,
     "max_minutes": 90
   },
   "entry": "class",

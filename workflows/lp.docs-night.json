@@ -32,7 +32,6 @@
     "row": "any"
   },
   "budget": {
-    "max_steps": 8,
     "max_minutes": 420
   },
   "nodes": [

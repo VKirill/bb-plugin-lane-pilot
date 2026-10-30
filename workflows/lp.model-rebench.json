@@ -30,7 +30,6 @@
     "summary": "string"
   },
   "budget": {
-    "max_steps": 4,
     "max_minutes": 10
   },
   "nodes": [

@@ -72,7 +72,6 @@
     "maxSteps": 120
   },
   "budget": {
-    "max_steps": 120,
     "max_minutes": 480
   },
   "nodes": [

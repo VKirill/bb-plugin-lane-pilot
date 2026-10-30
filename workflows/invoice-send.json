@@ -64,7 +64,7 @@
     "tools": ["~/toolkit/telegram/tg", "~/.local/bin/browser-cookies"],
     "browserSession": true
   },
-  "budget": { "max_steps": 24, "max_minutes": 90, "max_usd": 4 },
+  "budget": { "max_minutes": 90, "max_usd": 4 },
   "nodes": [
     {
       "id": "create",

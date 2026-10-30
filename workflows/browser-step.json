@@ -38,7 +38,6 @@
     "reason": "string?"
   },
   "budget": {
-    "max_steps": 4,
     "max_minutes": 15
   },
   "nodes": [

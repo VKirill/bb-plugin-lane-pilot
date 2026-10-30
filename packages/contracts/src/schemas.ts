@@ -336,7 +336,7 @@ export const workflowDetailSchema = workflowSummarySchema.extend({
   examples: z.object({ en: z.array(z.string()), ru: z.array(z.string()) }).strict(),
   inputs: z.array(viewFieldSchema), outputs: z.array(viewFieldSchema),
   triggers: z.array(z.string()), requires: z.array(z.string()),
-  budget: z.object({ maxSteps: z.number().nullable(), maxTokens: z.number().nullable(), maxCostUsd: z.number().nullable(), maxWallSeconds: z.number().nullable() }).strict(),
+  budget: z.object({ maxTokens: z.number().nullable(), maxCostUsd: z.number().nullable(), maxWallSeconds: z.number().nullable() }).strict(),
   qualityMode: z.string().nullable(), source: z.string(), sha256: z.string(),
   /** The tool or event that starts this graph (a starter graph: Lane Pilot itself runs it, never the owner's button); null for any other. */
   startedBy: z.string().nullable(),

@@ -300,16 +300,17 @@ export const workflowSchema = z.object({
    */
   live_success: z.object({ output: z.string().min(1).max(60).default("status"), in: z.array(z.string().min(1).max(80)).min(1).max(20) }).strict().optional(),
   budget: z.object({
+    /** Ignored since 0.1.408 (no step budget; see engine checkLimits); still read so older drafts parse. */
     maxSteps: z.number().int().min(1).max(5000).optional(),
     maxTokens: z.number().int().min(1).optional(),
     maxCostUsd: z.number().positive().optional(),
     maxWallSeconds: z.number().int().min(1).optional(),
   }).strict().default({}),
   guards: z.object({
-    maxSteps: z.number().int().min(1).max(500).default(60),
+    maxSteps: z.number().int().min(1).max(500).default(500),
     maxFanOut: z.number().int().min(1).max(50).default(12),
     maxSubworkflowDepth: z.number().int().min(1).max(MAX_SUBWORKFLOW_DEPTH).default(MAX_SUBWORKFLOW_DEPTH),
-  }).strict().default({ maxSteps: 60, maxFanOut: 12, maxSubworkflowDepth: MAX_SUBWORKFLOW_DEPTH }),
+  }).strict().default({ maxSteps: 500, maxFanOut: 12, maxSubworkflowDepth: MAX_SUBWORKFLOW_DEPTH }),
   /**
    * `default` is `$mode` when the run is started without one; `effect` says in words what the mode changes here; `min` raises a lower
    * request to this mode (a refactor is never run `quick`); `fixed` is the mode of an inherited `$mode`. A task contract or an

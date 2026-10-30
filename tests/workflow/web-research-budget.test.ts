@@ -60,10 +60,8 @@ describe("the budget of web-research", () => {
     expect(graph.budget.maxCostUsd!).toBeLessThanOrEqual(worst * 2);
   });
 
-  it("allows every step of the dearest path, and the hour the searches take", () => {
-    // frame (twice with the clarification), the fan-out and its children, claims, report, check and deliver (twice on a citation repair), the exits.
-    const steps = visits("frame") + 1 + DEEP_SUBQUESTIONS + visits("claims") + visits("report") * 2 + visits("report") * 2 + 1 + 1;
-    expect(graph.budget.maxSteps).toBeGreaterThanOrEqual(Math.ceil(steps * HEADROOM));
+  it("has no step budget (0.1.408), and allows the hour the searches take", () => {
+    expect(graph.budget.maxSteps).toBeUndefined();
     expect(graph.budget.maxWallSeconds).toBeGreaterThanOrEqual(60 * 60);
   });
 });

@@ -121,7 +121,7 @@ export function createWorkflowLibrary(ctx: ServerCore, services: Pick<Services, 
           examples: workflow.examples, inputs: workflow.inputs.map(field), outputs: workflow.outputs.map(field),
           triggers: workflow.triggers.map((trigger) => trigger.cron ? `${trigger.type} ${trigger.cron}` : trigger.type),
           requires: [...requires.plugins, ...requires.skills, ...requires.mcp, ...requires.tools, ...requires.platforms, ...requires.machines, ...requires.env, ...requires.secrets, ...(requires.browserSession ? ["browser session"] : [])],
-          budget: { maxSteps: workflow.budget.maxSteps ?? null, maxTokens: workflow.budget.maxTokens ?? null, maxCostUsd: workflow.budget.maxCostUsd ?? null, maxWallSeconds: workflow.budget.maxWallSeconds ?? null },
+          budget: { maxTokens: workflow.budget.maxTokens ?? null, maxCostUsd: workflow.budget.maxCostUsd ?? null, maxWallSeconds: workflow.budget.maxWallSeconds ?? null },
           qualityMode: workflow.quality_mode?.default ?? null, source: item.source, sha256: item.sha256,
           startedBy: workflow.startedBy ?? null,
           schedules: (db.prepare("SELECT project_id, slot, automation_id FROM lane_pilot_wf_trigger WHERE workflow_id=? ORDER BY project_id, slot").all(workflow.id) as Array<{ project_id: string; slot: number; automation_id: string }>)

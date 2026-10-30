@@ -76,7 +76,6 @@
     ]
   },
   "budget": {
-    "max_steps": 10,
     "max_minutes": 30,
     "max_usd": 1
   },
