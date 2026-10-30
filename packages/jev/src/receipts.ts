@@ -45,6 +45,8 @@ export type JevReceipt = {
   status: "ok" | "disabled" | "timeout" | "error" | "breaker_open" | "budget" | "invalid";
   answers?: unknown; decision?: string | null; decidedBy: "jev" | "fallback" | "escalated"; escalatedTo?: string | null; thresholds?: unknown;
   latencyMs?: number | null; tokensIn?: number | null; tokensOut?: number | null; at?: number;
+  /** Top-level state field names and their serialized sizes — never the content (audit requirement: the watch sees what left). */
+  fields?: Record<string, number>;
 };
 
 const KEEP_ROWS = 50_000;
@@ -52,12 +54,13 @@ const KEEP_MS = 30 * 24 * 3600_000;
 
 export function insertReceipt(db: Database.Database, receipt: JevReceipt): number {
   const at = receipt.at ?? Date.now();
-  const row = db.prepare(`INSERT INTO lane_pilot_jev_receipt (judgment,version,model,mode,project_id,run_id,subject,input_sha256,input_chars,questions,batch_size,status,answers_json,decision,decided_by,escalated_to,thresholds_json,latency_ms,tokens_in,tokens_out,at)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+  const row = db.prepare(`INSERT INTO lane_pilot_jev_receipt (judgment,version,model,mode,project_id,run_id,subject,input_sha256,input_chars,questions,batch_size,status,answers_json,decision,decided_by,escalated_to,thresholds_json,latency_ms,tokens_in,tokens_out,fields_json,at)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
     receipt.judgment, receipt.version, receipt.model ?? null, receipt.mode, receipt.projectId ?? null, receipt.runId ?? null, receipt.subject ?? null,
     receipt.inputSha256, receipt.inputChars, receipt.questions, receipt.batchSize ?? 1, receipt.status,
     receipt.answers === undefined ? null : JSON.stringify(receipt.answers), receipt.decision ?? null, receipt.decidedBy, receipt.escalatedTo ?? null,
-    receipt.thresholds === undefined ? null : JSON.stringify(receipt.thresholds), receipt.latencyMs ?? null, receipt.tokensIn ?? null, receipt.tokensOut ?? null, at);
+    receipt.thresholds === undefined ? null : JSON.stringify(receipt.thresholds), receipt.latencyMs ?? null, receipt.tokensIn ?? null, receipt.tokensOut ?? null,
+    receipt.fields === undefined ? null : JSON.stringify(receipt.fields), at);
   // Roughly one receipt in a hundred also prunes: a row count and an age bound, like the check-duration table.
   if (Number(row.lastInsertRowid) % 100 === 0) pruneReceipts(db, at);
   return Number(row.lastInsertRowid);

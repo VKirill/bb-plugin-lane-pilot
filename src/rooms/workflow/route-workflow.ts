@@ -139,3 +139,64 @@ export const routeWorkflow = defineJudgment<RouteWorkflowInput, RouteWorkflowDec
   fallback: (input) => scorerOutput(input.candidates),
   describe: (decision) => (decision.choice ? `${decision.choice} (${decision.confidence})` : "none"),
 });
+
+/**
+ * route.recheck (audit C4): the second, cheaper System One pass before a route case goes to the helper thread. The first
+ * call (`route.workflow`) found no clear winner; this one asks the narrower question — pick between the top two candidates
+ * (or «none»), plus «is the request clear enough at all». A confident recheck decides without a thread; an unsure one
+ * escalates to the thread as before. Starts in shadow: the thread decides, the recheck is only recorded.
+ */
+export const ROUTE_RECHECK_ID = "route.recheck";
+
+export type RouteRecheckInput = {
+  request: string;
+  context?: string | null;
+  /** First pass's top pick and its probability (never NONE here). */
+  top: { id: string; name: string; p: number };
+  second: { id: string; name: string; p: number } | null;
+};
+
+export const routeRecheck = defineJudgment<RouteRecheckInput, RouteWorkflowDecision>({
+  id: ROUTE_RECHECK_ID,
+  version: 1,
+  defaultMode: "shadow",
+  timeoutMs: 4_000,
+  // Whitelist: only the request, the context, and the two candidate names — no spread of the router's input or answers.
+  stateBuilder: (input) => ({
+    request: clip(input.request, 3_000),
+    ...(input.context ? { context: clip(input.context, 2_000) } : {}),
+    first_choice: `${input.top.id} (${input.top.name}, p ${round2(input.top.p)})`,
+    runner_up: input.second ? `${input.second.id} (${input.second.name}, p ${round2(input.second.p)})` : "(none)",
+  }),
+  questions: (input) => ({
+    pick: choice(
+      "A workflow router could not decide between the candidates for the owner's request in `request`. Re-judge it as a fresh reader: which candidate should handle the request? Choose none_of_these when neither does the job.",
+      {
+        [input.top.id]: input.top.name,
+        ...(input.second ? { [input.second.id]: input.second.name } : {}),
+        [NONE]: "Neither candidate does the job.",
+      },
+    ),
+    clear: noul(
+      "Is the request in `request` specific enough to route at all — it names a concrete piece of work or result, not a vague wish?",
+      { true: "a concrete task or result is named", false: "vague — several different kinds of work would fit" },
+    ),
+  }),
+  thresholds: {
+    min_p: { default: 0.7, min: 0.55, max: 0.99, about: "least probability of the re-judged pick" },
+    min_margin: { default: 0.3, min: 0.1, max: 0.9, about: "least lead over the alternative" },
+    min_clear: { default: 0.6, min: 0.4, max: 0.95, about: "least probability the request is routable at all" },
+  },
+  decide(answers, t) {
+    const pick = choiceOf(answers, "pick"), clear = noulOf(answers, "clear");
+    if (!pick || clear === undefined) return { escalate: "model-thread" };
+    if (clear < t.min_clear!) return { escalate: "model-thread" };
+    if (pick.p >= t.min_p! && pick.margin >= t.min_margin!) {
+      const choice = pick.top === NONE ? null : pick.top;
+      return { decision: { choice, confidence: Math.round(100 * pick.p), pattern: `jev-recheck: ${pick.top} (p ${round2(pick.p)}, lead ${round2(pick.margin)})`, rejected: [], questions: [] } };
+    }
+    return { escalate: "model-thread" };
+  },
+  fallback: () => scorerOutput([]),
+  describe: (decision) => (decision.choice ? `${decision.choice} (${decision.confidence})` : "none"),
+});
