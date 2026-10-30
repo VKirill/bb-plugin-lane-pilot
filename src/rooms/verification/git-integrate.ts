@@ -7,6 +7,7 @@ import { spawnAsync } from "@lane-pilot/kit";
 import { isBookkeepingPath } from "@lane-pilot/settings-catalog";
 import { matchOwnsPath } from "@lane-pilot/kit";
 import { ENVIRONMENT_REASON, REPLAY_CHECK_FAILED } from "../runs";
+import { recordedReplayFailure } from "./replay-cache";
 import { isAllowedProjectLifePath } from "../project-life";
 
 /** The reason a baseInHead merge refused: main moved after the candidate took it in. */
@@ -349,6 +350,12 @@ export async function integrateWorktree(input:{basePath:string;worktreePath:stri
       // another writer turn; a real conflict is left as it was and the merge below reports it for the free redo.
       // The attempt's own branch only: Lane Pilot's lane/<attempt> and the BB-managed bb/<attempt> worktree (one per attempt too).
       const rebased=(branch.startsWith("lane/")||branch.startsWith("bb/"))&&before?await rebaseOntoBase(input.worktreePath,before):null;
+      // A worktree that was already replayed onto this base needs no second run: its recorded verdicts stand (G8). A
+      // recorded red still refuses the merge — otherwise a retried integration would merge code whose checks failed.
+      if(!rebased&&input.replayCheck) {
+        const settled=await recordedReplayFailure(input.worktreePath);
+        if(settled) return {status:"conflict",commit:null,conflicts:[],reason:`${REPLAY_CHECK_FAILED}: verification failed (${settled.command})`,checks:[{command:settled.command,exitCode:settled.exitCode||1,stdout:settled.stdout,stderr:settled.stderr}]};
+      }
       // main moved and the attempt was replayed on it: the replayed result has not been run anywhere yet, and two tasks
       // that merge cleanly can still break each other. Red, nothing merges: the writer gets the output as a free redo.
       if(rebased&&input.replayCheck) {

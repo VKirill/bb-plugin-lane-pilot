@@ -22,3 +22,5 @@ export { WORKSPACE_DIRT_COMMAND } from "./workspace-dirt";
 export { mergeInfo, revertCommitsInWorktree, worktreeState } from "./git-rollback";
 export type { MergeInfo, RevertResult, WorktreeState } from "./git-rollback";
 export { TEST_FILE_RE, suggestTests, testHintLine } from "./test-hint";
+export { cachedReplayVerdicts, recordedReplayFailure, recordReplayVerdict, replayCacheLocation, replayKey } from "./replay-cache";
+export type { ReplayCacheEntry } from "./replay-cache";
