@@ -20,6 +20,7 @@
     "./judgments/citation-check": "./src/judgments/citation-check.ts",
     "./judgments/memory-rerank": "./src/judgments/memory-rerank.ts",
     "./judgments/invoice-scan": "./src/judgments/invoice-scan.ts",
-    "./judgments/log-find": "./src/judgments/log-find.ts"
+    "./judgments/log-find": "./src/judgments/log-find.ts",
+    "./judgments/skill-tree-pick": "./src/judgments/skill-tree-pick.ts"
   }
 }
