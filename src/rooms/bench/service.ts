@@ -56,7 +56,8 @@ export function createBench(deps: BenchDeps) {
     const noise = stored?.noiseRepeats;
     const noiseRepeats = Number.isInteger(noise) && (noise as number) >= 0 && (noise as number) <= 10 ? noise as number : 0;
     const fromEnv = process.env[BENCH_REPOS_ROOT_ENV]?.trim() || null;
-    const reposRoot = typeof stored?.reposRoot === "string" && stored.reposRoot.trim() ? stored.reposRoot.trim() : fromEnv;
+    // A stored key wins over the env, so `bench config repos_root=` (empty) clears the root even on a deploy that exports one.
+    const reposRoot = stored && "reposRoot" in stored ? (typeof stored.reposRoot === "string" && stored.reposRoot.trim() ? stored.reposRoot.trim() : null) : fromEnv;
     return { hostId, noiseRepeats, reposRoot };
   }
   async function writePlacement(patch: Partial<BenchPlacement>): Promise<void> {
