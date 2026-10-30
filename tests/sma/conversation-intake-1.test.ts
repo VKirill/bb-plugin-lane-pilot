@@ -24,6 +24,10 @@ describe("conversation gates", () => {
     expect(isWholeConsent("yes")).toBe(true);
     expect(isWholeConsent("да, но поменяй кнопку")).toBe(false);
     expect(isWholeConsent("yes please")).toBe(false);
+    // The answer form's own button is a whole consent (thr_tus6ykzucc, 2026-10-30: «Да, запускай» was refused four times).
+    expect(isWholeConsent("Да, запускай")).toBe(true);
+    expect(isWholeConsent("да запускай")).toBe(true);
+    expect(isWholeConsent("Да, запускай, но без пробного режима")).toBe(false);
     const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
     harness.sdk.stub("threads.send", async () => ({}));
     harness.sdk.stub("threads.get", async () => ({ status: "idle" }));

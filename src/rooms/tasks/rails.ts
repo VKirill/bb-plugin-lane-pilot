@@ -174,9 +174,11 @@ export function questionKind(question: string): QuestionKind {
 const SECRET_SHAPES = [/\bsk-[A-Za-z0-9_-]{16,}/, /\bgh[pousr]_[A-Za-z0-9]{20,}/, /\bxox[abpr]-[A-Za-z0-9-]{10,}/, /\bAKIA[0-9A-Z]{16}\b/, /-----BEGIN [A-Z ]*PRIVATE KEY-----/, /\b[A-Za-z0-9+/]{40,}={0,2}\b/, /\b\d{8,10}:[A-Za-z0-9_-]{30,}\b/];
 export const secretShaped = (text: string) => SECRET_SHAPES.some((pattern) => pattern.test(text));
 
-/** Consent is the whole message (SMA): «да», «ок», «go» alone is consent to the last proposal; a «да, но …» is a new word, not consent. */
+/** Consent is the whole message (SMA): only yes-words, like «да», «ок» or a form button «Да, запускай», are consent to the last proposal; a «да, но …» is a new word, not consent. */
+const CONSENT_WORDS = new Set(["да", "ок", "окей", "ok", "okay", "yes", "go", "давай", "согласен", "согласна", "принято", "подтверждаю", "выдавай", "делай", "запускай", "начинай", "поехали", "погнали", "вперёд", "вперед", "конечно"]);
 export function isWholeConsent(message: string): boolean {
-  return /^\s*(да|ок|окей|ok|okay|yes|go|давай|согласен|принято|подтверждаю|выдавай|делай)[.!\s]*$/i.test(message);
+  const words = message.toLowerCase().split(/[\s,.!]+/).filter(Boolean);
+  return words.length > 0 && words.every((word) => CONSENT_WORDS.has(word));
 }
 
 /** What kind of question the owner asked (SMA: What kind of question): the ones code answers from facts, and the rest for the model. */
