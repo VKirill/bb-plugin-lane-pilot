@@ -7,6 +7,7 @@ import { createRun, createTask, getActivation, getRun, getTask, listOpenAttempts
 import { isSandboxProjectName } from "../../stability/server";
 import { attemptMetrics, syncTokenUsage } from "../../usage/server";
 import { DEFAULT_BENCH_WRITER } from "../runner";
+import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
 import { setBenchProject } from "../store";
 import type { BenchProjectRef, HostPort, PipelinePort } from "../ports";
 import { createBench, type BenchApi } from "../service";
@@ -78,9 +79,18 @@ export function benchPipeline(ctx: Pick<ServerCore, "bb" | "db" | "host" | "canc
       // A run an earlier series could not close holds the project's activation and would refuse this one.
       const left = getActivation(db, project.projectId);
       const leftRun = left ? getRun(db, left.run_id) : undefined;
-      if (left && (leftRun?.state === "pending" || leftRun?.state === "running")) await closeRun(project.projectId, left.run_id);
+      if (left && (leftRun?.state === "pending" || leftRun?.state === "running")) {
+        const meta = await bb.sdk.threads.getPluginMetadata({ threadId: left.pm_thread_id }).catch(() => null) as Record<string, unknown> | null;
+        const ours = stringAt(meta, "role") === "bench-pm" || left.pm_thread_id.startsWith("pending:");
+        // A live non-bench PM keeps the project: the series defers instead of crashing on the activation
+        // lock (hive W28-3). bench.live_pm=close restores the old takeover.
+        const livePolicy = String(loadProjectSettings(db, GLOBAL_SETTINGS_PROJECT_ID)["bench.live_pm"] ?? "defer");
+        if (!ours && livePolicy !== "close") throw new Error(`deferred: the bench project holds a live Lane Pilot PM (thread ${left.pm_thread_id}, run ${left.run_id})`);
+        await closeRun(project.projectId, left.run_id);
+      }
       const activated = await services.activate(project.projectId, sourceId, "bb");
       // The PM prompt tells the PM to delegate a fixture task of its own; a bench run takes its tasks only from the bench, so the PM is stopped at once.
+      await bb.sdk.threads.updatePluginMetadata({ threadId: activated.threadId, set: { role: "bench-pm" } } as never).catch(() => undefined);
       await bb.sdk.threads.stop({ threadId: activated.threadId }).catch(() => undefined);
       return { pmThreadId: activated.threadId, runId: activated.runId };
     },

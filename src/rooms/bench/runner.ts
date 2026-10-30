@@ -333,7 +333,12 @@ export async function runSeries(deps: RunnerDeps, input: SeriesInput): Promise<S
 
   // Repositories on different machines go side by side; one repository's tasks run one after the other (one clone, one base at a time).
   const failures: string[] = [];
-  await Promise.all([...groups.entries()].map(([repo, list]) => runGroup(repo, list).catch((cause: unknown) => { const text = cause instanceof Error ? cause.message : String(cause); failures.push(text); log(`bench ${input.arm} r${repeat}: ${repo.split("/").pop()} stopped: ${text.slice(0, 400)}`); })));
+  await Promise.all([...groups.entries()].map(([repo, list]) => runGroup(repo, list).catch((cause: unknown) => {
+    const text = cause instanceof Error ? cause.message : String(cause);
+    // A `deferred:` throw is the group asking the night to retry later (full disk, live PM), not a failure.
+    if (text.startsWith("deferred:")) { stopReason = stopReason ?? text; log(`bench ${input.arm} r${repeat}: ${repo.split("/").pop()} ${text.slice(0, 400)}`); }
+    else { failures.push(text); log(`bench ${input.arm} r${repeat}: ${repo.split("/").pop()} stopped: ${text.slice(0, 400)}`); }
+  })));
 
   const results = listResults(deps.db, run.id);
   const have = new Set(results.map((row) => row.taskId));
