@@ -76,7 +76,7 @@ function selectFinished(db: LanePilotDatabase, where: string, args: unknown[], s
   return (db.prepare(`SELECT a.id, a.run_id, a.task_id, a.state, substr(a.reason, 1, ${REASON_SCAN_CHARS}) AS reason, r.project_id, r.pm_thread_id FROM lane_pilot_attempt a
     JOIN lane_pilot_run r ON r.id=a.run_id WHERE a.state IN ('accepted',${FAILED_STATES.map(() => "?").join(",")}) AND ${where} ORDER BY a.created_at`)
     .all(...FAILED_STATES, ...args) as Row[])
-    .filter((row) => row.project_id !== SANDBOX_PROJECT_ID && !sandboxProjects.has(row.project_id) && !isDrillTask(row.task_id));
+    .filter((row) => !DRILL_SANDBOX_PROJECT_IDS.includes(row.project_id) && !sandboxProjects.has(row.project_id) && !isDrillTask(row.task_id));
 }
 
 /** The canary of `version` since it first ran, and the 7-day budget over every version. */
@@ -148,7 +148,7 @@ export function createCanary(ctx: ServerCore, breaker?: () => { snapshot(now?: n
       }
     } catch { /* keep the last answer: a project list that fails must not put the sandbox back into the budget */ }
     sandboxCache = { at: now, ids };
-    setSandboxProjects([SANDBOX_PROJECT_ID, ...ids]);
+    setSandboxProjects([...DRILL_SANDBOX_PROJECT_IDS, ...ids]);
     return ids;
   }
 
