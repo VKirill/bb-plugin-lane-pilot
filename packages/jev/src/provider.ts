@@ -14,7 +14,7 @@ export const JEV_PROVIDERS: Record<JevProviderId, JevProvider> = {
   typesafe: { id: "typesafe", url: "https://api.typesafe.ai/v1/systemone", model: "jev-latest", keyName: "TYPESAFE_API_KEY", timeoutPadMs: 0 },
   openlux: { id: "openlux", url: "https://api.openlux.ai/v1/systemone", model: "jev-1.14.0:stable", keyName: "OPENLUX_API_KEY", timeoutPadMs: 1_500 },
 };
-export const DEFAULT_JEV_PROVIDER: JevProviderId = "openlux";
+export const DEFAULT_JEV_PROVIDER: JevProviderId = "typesafe";
 export const JEV_PROVIDER_IDS = Object.keys(JEV_PROVIDERS) as JevProviderId[];
 
 /** The provider a setting value names; the default when it is absent or unknown. */
