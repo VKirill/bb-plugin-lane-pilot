@@ -258,6 +258,7 @@ export const SETTING_CATALOG: SettingSpec[] = [
   { key:"memory.maintain_mode", channel:"OWN", reason:"Native Lane Pilot stage setting: a free fact per accepted task and one maintainer run per idle wave, or a helper per task" },
   { key:"memory.salience_min", channel:"OWN", reason:"Native Lane Pilot stage setting: admission floor for maintainer memory notes" },
     { key:"memory.pack_mode", channel:"OWN", reason:"Native Lane Pilot stage setting: ContextPack stage (shadow by default)" },
+    { key:"memory.query_floor", channel:"OWN", reason:"Native Lane Pilot stage setting: relevance floor on the query paths (on by default)" },
 { key:"memory.maintain", channel:"OWN", reason:"Native Lane Pilot stage setting: maintain durable project memory after accepted work" },
   { key:"memory.inject", channel:"OWN", reason:"Native Lane Pilot stage setting: retrieve bounded relevant project memory for a writer" },
   { key:"memory.audience", channel:"OWN", reason:"Native Lane Pilot stage setting: control memory audience" },

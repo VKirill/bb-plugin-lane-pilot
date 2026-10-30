@@ -38,6 +38,7 @@ const BY_KEY: Record<string, Record<string, I18nKey>> = {
   "writer.retry_safety": { on: "enumRetrySafetyOn", off: "enumRetrySafetyOff" },
   "memory.maintain_mode": { wave: "enumMaintainModeWave", task: "enumMaintainModeTask" },
   "memory.pack_mode": { off: "enumPackModeOff", shadow: "enumPackModeShadow", adapter: "enumPackModeAdapter", canary: "enumPackModeCanary" },
+  "memory.query_floor": { on: "enumQueryFloorOn", off: "enumQueryFloorOff" },
   "jev.provider": { openlux: "enumJevProviderOpenlux", typesafe: "enumJevProviderTypesafe" },
   "sandbox.backend": {
     auto: "enumSandboxAuto",

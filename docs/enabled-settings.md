@@ -14,7 +14,7 @@ sources:
   - docs/enabled-settings.snapshot.json
 ---
 
-<!-- enabled-settings:structure 87b9c48a11f50ed0 -->
+<!-- enabled-settings:structure 2f7274c30f24f2fb -->
 
 # Enabled settings (generated)
 
@@ -121,6 +121,7 @@ switches: `quick` disables both critiques, `full` enables them (`src/rooms/criti
 | `memory.pack_mode` | `shadow` | — | stage setting: ContextPack stage (shadow by default) |
 | `memory.personal_bot` | — | — | keeps bot-scoped project memory isolated across maintenance and retrieval |
 | `memory.provider` | `codex / DEFAULT_ONBOARD_MODEL / DEFAULT_ONBOARD_EFFORT / standard` | — | stage uses the BB provider/model selection for project memory maintenance |
+| `memory.query_floor` | `on` | — | stage setting: relevance floor on the query paths (on by default) |
 | `memory.salience_min` | `40` | — | stage setting: admission floor for maintainer memory notes |
 | `memory.search_engine` | `auto` | — | stage setting: choose FTS5 or BM25 retrieval |
 | `night_review.agent` | `lane-reviewer` | — | stage consumes this reviewer role label in its prompt |

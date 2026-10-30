@@ -23,7 +23,7 @@ Each room is one component: `index.ts` is its public API, `server/` its services
 | capability | CAPABILITIES, Capability, CapabilityReceipt, CapabilityState, adapterVersions, capabilityMigrations, capabilityTable, dueProbes, listReceipts, probeSetupFailed, providersInUse | 8 | 241 | drill: helper_providers |
 | checkers | checkerMigrations | 16 | 1529 | drill: checkers |
 | cockpit | cockpitRpc | 9 | 901 | tests (1) |
-| contracts | AcceptanceCard, HOST_JOB_KINDS, HostJobKind, PrototypeConfig, TASK_KINDS, TASK_V2_OPTIONAL, TaskV2, WORKFLOW_NODE_TONES, hostContract, installReceiptSchema, modelCatalogSchema, prototypeConfigSchema, secretNameSchema, settingValidationSchema, stepExecutorSchema, taskV2Schema, workflowDraftCheckSchema, workflowDraftPatchResultSchema, workflowDraftPublishResultSchema, workflowDraftSummarySchema, workflowDraftTestResultSchema, workflowStatsSchema, workflowTrialCaseSchema, workflowViewEdgeSchema, workflowViewNodeSchema, workflowViewSchema | 11 | 2260 | drill: parallel3 |
+| contracts | AcceptanceCard, HOST_JOB_KINDS, HostJobKind, PrototypeConfig, TASK_KINDS, TASK_V2_OPTIONAL, TaskV2, WORKFLOW_NODE_TONES, hostContract, installReceiptSchema, modelCatalogSchema, prototypeConfigSchema, secretNameSchema, settingValidationSchema, stepExecutorSchema, taskV2Schema, workflowDraftCheckSchema, workflowDraftPatchResultSchema, workflowDraftPublishResultSchema, workflowDraftSummarySchema, workflowDraftTestResultSchema, workflowStatsSchema, workflowTrialCaseSchema, workflowViewEdgeSchema, workflowViewNodeSchema, workflowViewSchema | 11 | 2262 | drill: parallel3 |
 | conveyor | CONVEYOR_KEY, ConveyorState, conveyorState, setConveyor | 2 | 25 | tests (2) |
 | core | — | 25 | 2353 | drill: parallel3 |
 | council | — | 17 | 6877 | tests (4) |
@@ -42,8 +42,8 @@ Each room is one component: `index.ts` is its public API, `server/` its services
 | improvement | HUB_KEYS, HUB_SPECS, HubArea, HubDb, HubKind, HubSpec, PROJECT_DEFAULT_KEYS, QUIET_PATTERN, hubFields, hubSettingProblem, readHubRows, specOf, validTimeZone, writeHubFields, writeHubSettings | 8 | 720 | tests (2) |
 | jev | JEV_USAGE, runJevCli | 3 | 149 | tests (2) |
 | learning | FRUSTRATION_KEY, FrustrationRecord, LEARNING_USAGE, MemoryUnanswered, complexity, frustrationReason, judgeRulesOnDiff, learningFor, memoryUnanswered, mountLearning, ownerMessageJudgment, ownerQuestion, pmResumeInstructions, pmRuleRelevance, pmRulesOf, pmRulesPromptBlock, ruleBudget, ruleViolationRemark, runLearningCli, sameAsJudgment, unkeptPromise | 24 | 2438 | tests (2) |
-| memory | MEMORY_PATHS, MEMORY_PRIMITIVES, MemoryPath, MemoryPrimitive, MemorySettings, ProbeKind, parseMemorySettings, pathById | 11 | 891 | drill: memory_paths |
-| memory-eval | — | 9 | 877 | tests (2) |
+| memory | MEMORY_PATHS, MEMORY_PRIMITIVES, MemoryPath, MemoryPrimitive, MemorySettings, ProbeKind, parseMemorySettings, pathById | 11 | 898 | drill: memory_paths |
+| memory-eval | — | 10 | 1047 | tests (2) |
 | memory-probe | — | 2 | 225 | drill: memory_paths |
 | memory-tiers | Episode, episodeLines, memoryTierMigrations, minHits, queryWords, wordHits | 5 | 200 | tests (1) |
 | money | DailyRow, MoneyApi, PAID_PROVIDERS, PRICE_LIST, Price, UsageWindow, capOf, createMoney, isPaid, moneyHold, priceOf, rowUsd, spendBook, windowHold | 3 | 117 | tests (2) |
@@ -72,7 +72,7 @@ Each room is one component: `index.ts` is its public API, `server/` its services
 | self-improve | — | 1 | 65 | tests (2) |
 | self-repair | — | 8 | 2664 | tests (4) |
 | session-hooks | buildCapsule, capsuleRestored | 3 | 489 | tests (1) |
-| settings | SettingValidationError, readImportConfig, validateSettingValue, validateSettingsObject, validationErrorText | 20 | 3010 | drill: provider_limit |
+| settings | SettingValidationError, readImportConfig, validateSettingValue, validateSettingsObject, validationErrorText | 20 | 3011 | drill: provider_limit |
 | sma-map | LiveRow, LiveSource, ProofRoots, SMA_CARDS, SMA_CONTRACT_TESTS, SMA_ENTRIES, SMA_LINKS, SMA_LIVE, SMA_MAP_SHA, SMA_MAP_USAGE, SMA_NODES, SMA_REGIONS, SmaCard, SmaCounts, SmaEntry, SmaEvidence, SmaKind, SmaLinkKind, SmaNode, SmaRow, SmaStateCounts, SmaStatus, brokenProof, defaultProofRoots, isChecked, isDone, readSmaLive, renderSmaLive, renderSmaMap, runSmaLiveCli, runSmaMapCli, smaCheckedPercent, smaCounts, smaDonePercent, smaEvidence, smaGroups, smaHoles, smaRows, smaStateCounts, unjudgedProof | 7 | 9207 | tests (1) |
 | stability | ReconcileCursor, ReconcileResult, parseOpenCodeToolTelemetry, reconcile, reconcileCritic, reconcileCursor | 13 | 1463 | drill: reload |
 | stage-return | StageReturnRecord, getReturn, listReturns, renderReturnNotes, stageReturnMigrations | 10 | 490 | tests (4) |
@@ -90,7 +90,7 @@ Each room is one component: `index.ts` is its public API, `server/` its services
 | workflow | DOCS_MAINTENANCE, DOCS_NIGHT, DraftCheck, DraftOp, DraftScope, DraftTestResult, GOAL_SCREEN_ID, ISSUE_QUICK_SHORT_PATH, LP_TASK_PIPELINE, NodeExecutor, PLAN_CHECK_ID, ROUTE_WORKFLOW_ID, RawDefinition, Refusal, RunSummary, SELF_REPAIR, SERVICE_JOBS, StepContext, ValidateOptions, WORKFLOW_ARCHITECT_ID, WORKFLOW_ARCHITECT_NAME, WORKFLOW_ARCHITECT_SESSION, WORKFLOW_ARCHITECT_SUMMARY, WORKFLOW_ARCHITECT_TOOLS, Workflow, WorkflowEngine, WorkflowProblem, builtinWorkflow, goalScreenJudgment, issueQuickModelCalls, issueQuickShortPath, issueQuickWorkflowId, planCheckJudgment, routeWorkflow, servicePair, servicePinKey, serviceRole | 61 | 9304 | tests (3) |
 | world | worldMigrations | 7 | 534 | tests (4) |
 | world-assets | — | 2 | 65 | tests (4) |
-| writer | AGENT_TRASH_RELATIVE, BEST_OF_COUNT, BEST_OF_ROUNDS_DEFAULT, BEST_OF_ROUNDS_MAX, BEST_OF_ROUNDS_SETTING, BEST_OF_SETTING, BEST_OF_SLOT_CAP_SETTING, BEST_OF_TOKEN_BUDGET_SETTING, BEST_OF_VALUES, BestOfCandidate, BestOfPlan, DirtSnapshot, FinishScanDecision, FinishScanInput, ROUND_SEED_MAX_CHARS, RoundCandidate, WRITER_FINISH_SCAN_ID, WriterPair, attachStreamRetry, attemptProduced, bestOfBudgetAllows, bestOfPicks, buildCliInvocation, droppedStreamDetail, materializeAgentTrash, memoryLine, ownedAgentTrashPath, parseDirtSnapshots, pathAnchors, pickBestAttempt, reserveAppetite, resolveBestOf, resolveStageWriterSelection, reviewerMemoryPicks, roundSeedBrief, roundSurvivors, runCommandOnHost, writePmSettingsOnHost, writerBriefStats, writerFallbackChain, writerFallbackKeys, writerFallbacks, writerFinishScanJudgment, writerMemory, writerMemoryPicks, writerModelJudgment, writerReuseStats | 56 | 9488 | drill: parallel3 |
+| writer | AGENT_TRASH_RELATIVE, BEST_OF_COUNT, BEST_OF_ROUNDS_DEFAULT, BEST_OF_ROUNDS_MAX, BEST_OF_ROUNDS_SETTING, BEST_OF_SETTING, BEST_OF_SLOT_CAP_SETTING, BEST_OF_TOKEN_BUDGET_SETTING, BEST_OF_VALUES, BestOfCandidate, BestOfPlan, DirtSnapshot, FinishScanDecision, FinishScanInput, ROUND_SEED_MAX_CHARS, RoundCandidate, WRITER_FINISH_SCAN_ID, WriterPair, attachStreamRetry, attemptProduced, bestOfBudgetAllows, bestOfPicks, buildCliInvocation, droppedStreamDetail, materializeAgentTrash, memoryLine, ownedAgentTrashPath, parseDirtSnapshots, pathAnchors, pickBestAttempt, reserveAppetite, resolveBestOf, resolveStageWriterSelection, reviewerMemoryPicks, roundSeedBrief, roundSurvivors, runCommandOnHost, writePmSettingsOnHost, writerBriefStats, writerFallbackChain, writerFallbackKeys, writerFallbacks, writerFinishScanJudgment, writerMemory, writerMemoryPicks, writerModelJudgment, writerReuseStats | 56 | 9492 | drill: parallel3 |
 
 ## Task stages (21)
 
@@ -183,7 +183,7 @@ States: (new), queued, spawn_requested, running, spawn_rejected, spawn_unknown, 
 | file | lines |
 |---|---:|
 | src/rooms/sma-map/graph.ts | 6267 |
-| packages/i18n/src/i18n.ts | 2470 |
+| packages/i18n/src/i18n.ts | 2478 |
 | src/rooms/native-install/native-hook-sources.ts | 2421 |
 | packages/i18n/src/i18n-fields.ts | 2011 |
 | src/rooms/storage/database.ts | 1860 |

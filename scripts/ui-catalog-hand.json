@@ -3260,6 +3260,32 @@
    "evidence": "packages/memory-core/src/context-pack.ts:20",
    "matrixStatus": "readonly",
    "storageKey": "memory.pack_mode"
+  },
+  {
+   "id": "s530",
+   "index": 501,
+   "area": "Lane Pilot memory maintainer",
+   "setting": "memory.query_floor",
+   "location": "packages/memory-core/src/settings.ts:61",
+   "category": "user",
+   "invType": "enum",
+   "values": "on, off",
+   "defaultValue": "on",
+   "scope": "project",
+   "control": "select",
+   "options": [
+    "on",
+    "off"
+   ],
+   "min": null,
+   "max": null,
+   "section": "memory",
+   "channel": "OWN",
+   "uiStatus": "editable",
+   "rationale": "Relevance floor on the memory query paths: on (default) drops records that share no weight with the question and says nothing relevant; off is the pre-floor behaviour.",
+   "evidence": "packages/memory-core/src/floor.ts:31",
+   "matrixStatus": "readonly",
+   "storageKey": "memory.query_floor"
   }
  ],
  "fields": {
