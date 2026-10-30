@@ -45,6 +45,8 @@ export const hostOps = {
     roots: z.array(z.string().startsWith("/")).max(20).optional(), authors: z.array(z.string().min(1).max(200)).max(20).optional(),
     /** The owner's own channels for the Telegram source (A10). */
     telegramChannels: z.array(z.string().min(2).max(200)).max(10).optional(),
+    /** The hub's memory catalog for the bb-memory source, so the host does not shell out to `bb` (A-b2). Absent: the host asks its own CLI. */
+    bbMemories: z.array(z.object({ id: z.string().optional(), name: z.string().optional(), summary: z.string().optional(), kind: z.string().optional(), scope: z.string().optional(), tags: z.array(z.string()).optional(), importance: z.number().optional(), version: z.number().optional(), updatedAt: z.number().optional() }).strict()).max(200).optional(),
     since: z.number().int().nonnegative(), until: z.number().int().positive(),
   }).strict(),
   /** «Who am I in your eyes», composed on the owner's machine from the records; only the text travels. Read-only. */

@@ -14,7 +14,10 @@ import { scanTelegram } from "./sources/telegram";
  * Host-side collection (A3): the sources that live on the owner's machine are read here and written straight into the store,
  * so their content never travels to the hub. `plan` counts what a run would store, by the same rules, and changes nothing.
  */
-export type CollectRequest = { mode: "plan" | "run"; sources: readonly HostSource[]; roots?: readonly string[] | undefined; authors?: readonly string[] | undefined; telegramChannels?: readonly string[] | undefined; since: number; until: number };
+export type CollectRequest = { mode: "plan" | "run"; sources: readonly HostSource[]; roots?: readonly string[] | undefined; authors?: readonly string[] | undefined; telegramChannels?: readonly string[] | undefined;
+  /** The hub's memory catalog for the bb-memory source; when absent the host asks its own `bb` CLI. */
+  bbMemories?: readonly { id?: string; name?: string; summary?: string; kind?: string; scope?: string; tags?: string[]; importance?: number; version?: number; updatedAt?: number }[] | undefined;
+  since: number; until: number };
 
 async function defaultAuthors(): Promise<string[]> {
   const found: string[] = [];
@@ -36,7 +39,7 @@ export async function collectSources(request: CollectRequest, store: Store, seam
     journal: async () => await scanJournals(roots, 0, request.until),
     registry: async () => await scanRegistry(roots, request.until),
     "claude-memory": async () => await scanClaudeMemory(home),
-    "bb-memory": async () => await scanBbMemory(undefined, roots[0] ?? ""),
+    "bb-memory": async () => await scanBbMemory(undefined, roots[0] ?? "", request.bbMemories),
     // Off until the owner switches them on (the loop below skips a source that is off): the owner's own channels, and the deal files of the Elba skill.
     telegram: async () => await scanTelegram({ channels: request.telegramChannels ?? [], since: request.since, until: request.until, home }),
     elba: async () => await scanElba(roots),

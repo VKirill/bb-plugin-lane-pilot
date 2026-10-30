@@ -1,4 +1,5 @@
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
+import { z } from "zod";
 import type { rpcContract } from "../contracts";
 import { mapListedQaHosts } from "../qa";
 import type { ServerCore } from "../core/server";
@@ -17,11 +18,29 @@ const cache = new WeakMap<object, ReturnType<typeof build>>();
 
 function build(ctx: ServerCore) {
   const { bb, db, host } = ctx;
-  const hub: Hub = createHub({
+  const innerHub: Hub = createHub({
     hostCall: async (hostId, request, timeoutMs) => (await host.call("anamnesis", { requestedHostId: hostId, request }, { hostId, timeoutMs })).response,
     listHosts: async () => mapListedQaHosts(await (bb.sdk as unknown as { hosts: { list: () => Promise<unknown> } }).hosts.list().catch(() => [])),
     kv: bb.storage.kv as never,
   });
+  /** The hub-side memory catalog for a collect request (A-b2): the memory plugin's RPC answers it; absent, the host's `bb` CLI is the fallback. */
+  const callRpc = (bb.sdk as unknown as { plugins?: { callRpc?: (args: { pluginId: string; method: string; input: unknown; outputSchema: { parse(input: unknown): unknown } }) => Promise<unknown> } }).plugins?.callRpc;
+  const bbMemories = async () => {
+    if (!callRpc) return undefined;
+    try {
+      const output = z.object({ memories: z.array(z.object({ id: z.string().optional(), name: z.string().optional(), summary: z.string().optional(), kind: z.string().optional(), scope: z.string().optional(), tags: z.array(z.string()).optional(), importance: z.number().optional(), version: z.number().optional(), updatedAt: z.number().optional() }).strict()) });
+      const reply = output.parse(await callRpc({ pluginId: "memory", method: "listMemories", input: null, outputSchema: output }));
+      return reply.memories.filter((memory) => memory.scope !== "project").slice(0, 200);
+    } catch { return undefined; }
+  };
+  const hub: Hub = {
+    ...innerHub,
+    ask: async (request, timeoutMs) => {
+      const collect = "sources" in request ? request : undefined;
+      return innerHub.ask(collect && collect.sources.includes("bb-memory") && collect.bbMemories === undefined
+        ? { ...request, bbMemories: await bbMemories() } : request, timeoutMs);
+    },
+  };
 
   const ownerMessages = createOwnerMessageHub(), threads = sdkThreadsPort(bb as never);
   /** Jev's two judgments over masked texts; null for a text it could not judge. */
