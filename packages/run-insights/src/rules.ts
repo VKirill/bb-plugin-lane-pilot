@@ -596,6 +596,8 @@ export function ruleTrialStatsMany(db: RulesDatabase, projectId: string, rules: 
 export const RULE_TRIAL = {
   /** Attempts given the rule without a recurrence before it is confirmed. */
   confirmAfterApplied: 5,
+  /** Least share of accepted attempts among the ones the rule was given to before it is confirmed (rank 13). */
+  confirmMinAcceptedRate: 0.8,
   /** Recurrences among attempts given the rule before it is rewritten or retired. */
   reviseAfterRecurrences: 2,
   /** Wordings a rule may have before a further recurrence retires it. */
@@ -615,6 +617,6 @@ export function decideRuleTrial(rule: Pick<RuleProposal, "trialState" | "revisio
   }
   const since = stats.lastAppliedAt ?? rule.revisionStartedAt ?? rule.decidedAt ?? now;
   if (now - since >= RULE_TRIAL.unusedAfterMs) return { action: "retire", reason: "unused" };
-  if (rule.trialState === "trial" && stats.applied >= RULE_TRIAL.confirmAfterApplied && stats.recurrences.length === 0) return { action: "confirm" };
+  if (rule.trialState === "trial" && stats.applied >= RULE_TRIAL.confirmAfterApplied && stats.recurrences.length === 0 && stats.appliedAccepted / stats.applied >= RULE_TRIAL.confirmMinAcceptedRate) return { action: "confirm" };
   return { action: "keep" };
 }
