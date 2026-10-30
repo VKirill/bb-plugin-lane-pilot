@@ -298,13 +298,12 @@ export function lintContract(input:LintInput):{ errors:LintFinding[]; warnings:L
   const kindOf = (path:string) => kinds?.get(path);
 
   errors.push(...taskStandardFindings(task));
-  // Hub plan-fact receipts since 2026-10-29, live projects only: failed 15.8% at 3 acceptance items, 28.9% at 4, 32.7% at 5+
-  // (n 76/83/156); not-accepted is flat ~31-33% at any length, so the threshold is a plan-fact one, not an acceptance one.
-  // The refusal is a redo, not a verdict: lintTask lets the same task id through once, then keeps it as a warning.
-  // Full mode may keep a longer list; a mainfix lists every red check.
+  // Owner 2026-10-31: Lane Pilot as it is now counts from stats.epoch (default 2026-10-31), so this is only a warning in the
+  // receipt and the PM answer — no refusal, no redo. Revisit once ~20 tasks with 4+ items land after the epoch: if plan-fact
+  // still fails about twice as often above 3, the refusal comes back. Full mode may keep a longer list; a mainfix lists every red check.
   const acceptanceMode = input.qualityMode ?? task.quality_mode;
   if (!isMainfixTask(task.id) && (acceptanceMode === "quick" || acceptanceMode === "standard") && task.acceptance.length > 3) {
-    errors.push({ code:"acceptance_too_many", message:`acceptance has ${task.acceptance.length} items; a ${acceptanceMode} task keeps at most 3, because plan-fact fails about twice as often above that (hub receipts since 2026-10-29: 15.8% at 3, 28.9% at 4, 32.7% at 5+). Split the task or compress acceptance to 3 items; a second dispatch of this same task id goes through with a warning` });
+    warnings.push({ code:"acceptance_too_many", message:`acceptance has ${task.acceptance.length} items; a ${acceptanceMode} task keeps at most 3 (plan-fact receipts since 2026-10-29 failed 28.9-32.7% at 4+ vs 15.8% at 3). Split the task or compress acceptance to 3 items` });
   }
   // quality_mode full: a task with qa_cases owes a browser check, and the task's own graph runs it from qa_url.
   if (input.qualityMode && browserQaRequired(input.qualityMode, task) && !task.qa_url) {

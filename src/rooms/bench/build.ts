@@ -35,6 +35,8 @@ export type BuildInput = {
   /** Clock for the fresh window. Absent: the time of the build. */
   now?: number;
   freshWindowMs?: number;
+  /** stats.epoch floor: tasks accepted before it are not counted as fresh (owner 2026-10-30). */
+  statsEpochMs?: number;
 };
 
 export type StratumReport = { key: string; quota: number; candidates: number; hardCandidates: number; tried: number; survived: number; kept: number; keptHard: number; rejected: Record<string, number>; stoppedBecause: string };
@@ -50,7 +52,7 @@ export async function buildSet(input: BuildInput): Promise<{ report: BuildReport
   const log = input.log ?? (() => undefined);
   const seed = input.seed ?? input.version;
   const now = input.now ?? Date.now();
-  const requested = input.strata ?? [...DEFAULT_STRATA, freshStratum(now, input.freshWindowMs)];
+  const requested = input.strata ?? [...DEFAULT_STRATA, freshStratum(now, input.freshWindowMs, undefined, input.statsEpochMs ?? 0)];
   const strata = requested.filter((stratum) => !input.only || input.only.includes(stratum.key));
   const fixedStrata = strata.filter((stratum) => stratum.key !== "fresh");
   const fresh = strata.find((stratum) => stratum.key === "fresh");

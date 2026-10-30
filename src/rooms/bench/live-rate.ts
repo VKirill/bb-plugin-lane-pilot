@@ -1,7 +1,9 @@
+import { statsEpochLine } from "../storage";
 /** Task-level stability of live projects. One source for the daily summary and the wall.
  * Drill sandboxes are the two known project ids (stability/canary.ts `DRILL_SANDBOX_PROJECT_IDS`); named here so this file stays free of that room. */
 
 const DRILL_PROJECT_IDS = new Set(["proj_3tb652jpsi", "proj_ibu6v9g64j"]);
+
 const IN_FLIGHT = new Set(["queued", "spawn_requested", "spawn_unknown", "running", "cancel_requested", "canceled"]);
 
 export type LiveAttempt = {
@@ -59,8 +61,9 @@ function bucket(reason: string | null): "task" | "lp" | "other" {
   return "other";
 }
 
-export function liveStability(rows: readonly LiveAttempt[], input: { floorVersion: string }): LiveStability {
+export function liveStability(rows: readonly LiveAttempt[], input: { floorVersion: string; epochMs?: number }): LiveStability {
   const byTask = new Map<string, LiveAttempt[]>();
+  if (input.epochMs) rows = rows.filter((row) => row.updatedAt >= input.epochMs!);
   for (const row of rows) byTask.set(row.taskId, [...(byTask.get(row.taskId) ?? []), row]);
   const report: LiveStability = { tasks: 0, accepted: 0, lpErrors: 0, taskFailures: 0, other: 0, excluded: { sandboxTasks: 0, oldVersionTasks: 0 } };
   for (const attempts of byTask.values()) {
@@ -86,7 +89,7 @@ export function liveStability(rows: readonly LiveAttempt[], input: { floorVersio
   return report;
 }
 
-export function renderLiveStability(report: LiveStability): string {
+export function renderLiveStability(report: LiveStability, epochMs?: number): string {
   const pct = report.tasks ? (100 * report.accepted / report.tasks).toFixed(1) : "0.0";
-  return `Живые проекты, по задачам: ${report.tasks} задач, принято ${report.accepted} (${pct}%). Ошибка LP: ${report.lpErrors}. Провал задачи: ${report.taskFailures}. Прочее: ${report.other}. Вне счёта: песочницы ${report.excluded.sandboxTasks}, старые версии ${report.excluded.oldVersionTasks}.`;
+  return `${epochMs ? `${statsEpochLine(epochMs)}. ` : ""}Живые проекты, по задачам: ${report.tasks} задач, принято ${report.accepted} (${pct}%). Ошибка LP: ${report.lpErrors}. Провал задачи: ${report.taskFailures}. Прочее: ${report.other}. Вне счёта: песочницы ${report.excluded.sandboxTasks}, старые версии ${report.excluded.oldVersionTasks}.`;
 }

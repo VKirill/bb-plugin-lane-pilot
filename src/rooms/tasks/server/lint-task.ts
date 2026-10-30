@@ -76,18 +76,6 @@ export function createTaskLinter(ctx: ServerCore, services: Services) {
     // What the project recorded of each check: its green durations (the store checkTimeoutSec reads) and the limits it timed out at.
     const checkHistory = (check:{ command:string; cwd:string }) => { const ref = { command:check.command, cwd:check.cwd, root:task.project_cwd }; return { greenMs:listCheckDurations(db, projectId, ref), timedOutSec:listCheckTimeouts(db, projectId, ref) }; };
     const qualityMode = resolveQualityMode(task, settings[QUALITY_MODE_SETTING]);
-    const lint = lintContract({ task, workspacePath, hostId, kinds, listings, sandboxUnsafe, gate, openTasks, deadDependencies, programs, ownerWords, qualityMode, checkHistory,...(secrets ? { secrets } : {}) });
-    // acceptance_too_many is a redo, not a verdict (contract-lint.ts): refused once per task id per run, then let through as a
-    // warning that lands in the task's lint warnings and the PM answer. Only a contract whose sole refusal it is spends the redo.
-    if (lint.errors.length && lint.errors.every((error) => error.code === "acceptance_too_many")) {
-      const key = `lint:acceptance-redo:${runId}:${task.id}`;
-      const told = await bb.storage.kv.get(key).catch(() => null);
-      if (told) {
-        return { errors: [], warnings: [...lint.warnings,
-          { code: "acceptance_too_many", message: `acceptance still has ${task.acceptance.length} items after the send-back; the task goes on with this warning (plan-fact fails about twice as often above 3)` }] };
-      }
-      await bb.storage.kv.set(key, true as never).catch(() => undefined);
-    }
-    return lint;
+    return lintContract({ task, workspacePath, hostId, kinds, listings, sandboxUnsafe, gate, openTasks, deadDependencies, programs, ownerWords, qualityMode, checkHistory,...(secrets ? { secrets } : {}) });
   };
 }

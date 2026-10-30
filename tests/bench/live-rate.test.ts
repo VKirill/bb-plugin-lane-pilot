@@ -50,3 +50,15 @@ describe("live stability", () => {
     expect(daily).not.toMatch(/Вина Lane Pilot \(harness\)/);
   });
 });
+
+describe("stats.epoch", () => {
+  it("a record older than the epoch stays in the table but is not counted", () => {
+    const epoch = Date.parse("2026-10-31T00:00:00Z");
+    const row = (taskId: string, state: string, at: number): LiveAttempt =>
+      ({ taskId, projectId: "proj_live", projectName: "Live", state, reason: null, harnessVersion: "9.9.9", updatedAt: at });
+    const rows = [row("old-task", "blocked", epoch - 86_400_000), row("new-task", "accepted", epoch + 1)];
+    expect(liveStability(rows, { floorVersion: "0.0.0", epochMs: epoch })).toMatchObject({ tasks: 1, accepted: 1 });
+    expect(liveStability(rows, { floorVersion: "0.0.0" })).toMatchObject({ tasks: 2, accepted: 1 });
+    expect(renderLiveStability(liveStability(rows, { floorVersion: "0.0.0", epochMs: epoch }), epoch)).toContain("счёт с 2026-10-31");
+  });
+});

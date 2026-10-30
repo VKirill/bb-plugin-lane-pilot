@@ -387,12 +387,14 @@ describe("contract lint rules", () => {
   describe("acceptance length (plan-fact)", () => {
     const four = ["one", "two", "three", "four"];
     const kinds = { "src/a.ts":"file" as const };
-    it("refuses more than 3 acceptance items in quick and standard, and says to split", () => {
+    it("warns on more than 3 acceptance items in quick and standard (a warning until the stats epoch fills, never a refusal)", () => {
       for (const qualityMode of ["quick", "standard"] as const) {
-        const { errors } = lint({ acceptance:four }, { qualityMode }, kinds);
-        expect(codes({ errors, warnings:[] }), qualityMode).toEqual(["acceptance_too_many"]);
-        expect(errors[0]!.message).toContain("at most 3");
-        expect(errors[0]!.message).toContain("Split the task");
+        const { errors, warnings } = lint({ acceptance:four }, { qualityMode }, kinds);
+        expect(errors.filter((error) => error.code === "acceptance_too_many")).toEqual([]);
+        const over = warnings.filter((warning) => warning.code === "acceptance_too_many");
+        expect(over).toHaveLength(1);
+        expect(over[0]!.message).toContain("at most 3");
+        expect(over[0]!.message).toContain("Split the task");
       }
     });
     it("allows 3, full mode, an unresolved mode, and a mainfix", () => {
@@ -620,21 +622,12 @@ describe("contract lint at dispatch", () => {
     await harness.lifecycle.dispose();
   });
 
-  it("sends a task with more than 3 acceptance items back once, then lets the same task id through with a warning", async () => {
+  it("lets a task with more than 3 acceptance items through at once, carrying the warning (stats.epoch counts from 31.10)", async () => {
     const four = { acceptance:["one", "two", "three", "four"] };
     const first = await setup({ "src":"directory", "src/a.ts":"file" });
-    const refused = await first.dispatch(four);
-    expect(refused).toMatchObject({ state:"validation_failed" });
-    expect(String(refused.reason)).toContain("acceptance has 4 items");
-    expect(String(refused.reason)).toContain("second dispatch of this same task id");
-    expect(taskCount(first.db)).toBe(0);
-    const passed = await first.dispatch(four);
-    expect(passed).toMatchObject({ taskId:"lint-task", state:"queued" });
+    const reply = await first.dispatch(four);
+    expect(reply).toMatchObject({ taskId:"lint-task", state:"queued" });
     expect(taskCount(first.db)).toBe(1);
     await first.harness.lifecycle.dispose();
-    // Three items need no redo at all.
-    const second = await setup({ "src":"directory", "src/a.ts":"file" });
-    expect(await second.dispatch({ acceptance:["one", "two", "three"] })).toMatchObject({ state:"queued" });
-    await second.harness.lifecycle.dispose();
   });
 });

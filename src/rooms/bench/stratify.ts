@@ -22,8 +22,9 @@ export const FRESH_WINDOW_MS = 14 * 86_400_000;
 export const FRESH_QUOTA = 8;
 
 /** Live projects only: `loadCandidates` has already dropped sandboxes, drills and folders the owner did not allow. */
-export function freshStratum(now: number, windowMs = FRESH_WINDOW_MS, quota = FRESH_QUOTA): Stratum {
-  return { key: "fresh", quota, match: (candidate) => (candidate.acceptedAt ?? 0) >= now - windowMs };
+export function freshStratum(now: number, windowMs = FRESH_WINDOW_MS, quota = FRESH_QUOTA, floor = 0): Stratum {
+  const since = Math.max(now - windowMs, floor);
+  return { key: "fresh", quota, match: (candidate) => (candidate.acceptedAt ?? 0) >= since };
 }
 
 export function cohortOf(stratum: string): "fixed" | "fresh" {

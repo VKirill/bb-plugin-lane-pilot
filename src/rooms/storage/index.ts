@@ -12,3 +12,4 @@ export { createStatusResolver } from "@lane-pilot/workflow-engine";
 export { definitionSha256, globalWorkflowDir, loadWorkflowStore, nodeFileSource, projectWorkflowDir } from "@lane-pilot/workflow-engine";
 export type { StoredWorkflow, WorkflowFileSource, WorkflowStore } from "@lane-pilot/workflow-engine";
 export { migrations } from "./database";
+export { STATS_EPOCH_DEFAULT, STATS_EPOCH_SETTING, statsEpochLine, statsEpochMs } from "./epoch";
