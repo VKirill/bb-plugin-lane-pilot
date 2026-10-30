@@ -15,6 +15,7 @@
     "./judgments/repair-group": "./src/judgments/repair-group.ts",
     "./judgments/skill-pick": "./src/judgments/skill-pick.ts",
     "./judgments/trace-checks": "./src/judgments/trace-checks.ts",
-    "./judgments/ui-shots": "./src/judgments/ui-shots.ts"
+    "./judgments/ui-shots": "./src/judgments/ui-shots.ts",
+    "./judgments/host-command": "./src/judgments/host-command.ts"
   }
 }
