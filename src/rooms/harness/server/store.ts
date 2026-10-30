@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import type Database from "better-sqlite3";
-import { fingerprint as treeFingerprint, type Tree } from "@lane-pilot/harness-core";
+import { fingerprint as treeFingerprint, inventory as treeInventory, type Tree } from "@lane-pilot/harness-core";
 
 export type HarnessDb = Pick<Database.Database, "prepare">;
 
@@ -82,8 +82,10 @@ export function insertHarness(db: HarnessDb, input: {
   const id = harnessId(input.projectId, input.area, input.writerKey, `${fp}:${version}`);
   db.prepare(`INSERT INTO lane_pilot_harness (id,project_id,area,writer_key,version,parent_id,tree_json,fingerprint,state,created_by,notes,reason,created_at,trial_started_at,decided_at)
     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,NULL)`)
+    // C4: the mechanism mix is part of the record — a tree that adds a skill, a check, hooks or memory is an
+    // intervention, not another rule text, and the trial row must say so (AHE: the win lives in tools, hooks, memory).
     .run(id, input.projectId, input.area, input.writerKey, version, input.parentId, JSON.stringify(input.tree), fp, input.state, input.createdBy,
-      input.notes ?? null, input.reason ?? null, now, input.state === "trial" ? now : null);
+      [`mechanisms: ${treeInventory(input.tree)}`, input.notes ?? ""].filter(Boolean).join("\n") || null, input.reason ?? null, now, input.state === "trial" ? now : null);
   return getHarness(db, id)!;
 }
 
