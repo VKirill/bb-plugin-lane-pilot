@@ -43,6 +43,41 @@ export async function usable(catalog: CriticCatalog, pair: Pair, effort: string,
   return !serviceTier || provider.serviceTiers.includes(serviceTier);
 }
 
+/** A model needs this many labeled verdicts before accuracy may promote it or demote it. */
+export const CRITIC_PAIR_MIN_LABELED = 8;
+/** Below this, with enough labels, the model leaves the primary seat for the fallbacks. */
+export const CRITIC_ACCURACY_FLOOR = 50;
+/** A challenger replaces the primary only when it leads by this many points, so a one-point swing does not flap. */
+export const CRITIC_ACCURACY_HYSTERESIS = 10;
+
+type AccuracyRow = { model: string; labeled: number; accuracy: number | null };
+
+const accuracyOf = (byModel: readonly AccuracyRow[], model: string): number | null => {
+  const row = byModel.find((item) => item.model === model);
+  if (!row || row.labeled < CRITIC_PAIR_MIN_LABELED || row.accuracy == null) return null;
+  return row.accuracy;
+};
+
+/**
+ * The code critic's pair from calibration. A model under the floor, with at least {@link CRITIC_PAIR_MIN_LABELED} labels, leaves the primary
+ * seat. The best accuracy at or above the floor takes it. A lead smaller than {@link CRITIC_ACCURACY_HYSTERESIS} keeps the current primary.
+ * Fewer than the minimum labels changes nothing.
+ */
+export function pickCriticByAccuracy(current: Pair, candidates: readonly Pair[], byModel: readonly AccuracyRow[]): { pair: Pair; changed: boolean } {
+  const currentScore = accuracyOf(byModel, current.model);
+  const demoted = currentScore != null && currentScore < CRITIC_ACCURACY_FLOOR;
+  let best: { pair: Pair; accuracy: number } | null = null;
+  for (const pair of candidates) {
+    if (same(pair, current)) continue;
+    const accuracy = accuracyOf(byModel, pair.model);
+    if (accuracy == null || accuracy < CRITIC_ACCURACY_FLOOR) continue;
+    if (!best || accuracy > best.accuracy) best = { pair, accuracy };
+  }
+  if (!best) return { pair: current, changed: false };
+  if (demoted || (currentScore != null && best.accuracy >= currentScore + CRITIC_ACCURACY_HYSTERESIS)) return { pair: best.pair, changed: true };
+  return { pair: current, changed: false };
+}
+
 export async function pairApartFromWriter(input: {
   current: Pair; writer: Pair | null; candidates: readonly Pair[]; effort: string; tier: "fast" | "standard"; catalog: CriticCatalog;
 }): Promise<{ pair: Pair; changed: boolean }> {

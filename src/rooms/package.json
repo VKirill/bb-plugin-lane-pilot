@@ -5,6 +5,7 @@
   "sideEffects": [
     "./runs/failure-class-judgment.ts",
     "./phase/intake.ts",
+    "./critique/critic-screen.ts",
     "./workflow/route-workflow.ts",
     "./learning/pm-rules.ts",
     "./learning/signals.ts",

@@ -1,4 +1,5 @@
 import { failureClass } from "../runs";
+import { statsEpochMs, STATS_EPOCH_SETTING } from "../storage";
 import { taskStem } from "../tasks";
 
 type Db = { prepare(sql:string):{ all(...args:unknown[]):unknown[] } };
@@ -43,6 +44,9 @@ const criticCatches = (state:string, reason:string | null) => failureClass(state
  * vetoes and how often a veto leads to a fix). Runs since `since` in one project.
  */
 export function criticStats(db:Db, projectId:string, since:number, stages:readonly string[] = ["plan-critique", "code-critique", "specialist-review"]):CriticStats[] {
+  // stats.epoch: runs and receipts before it stay in the tables but are not counted (owner 2026-10-30, default 2026-10-31).
+  const epochRow = db.prepare("SELECT value FROM lane_pilot_project_settings WHERE project_id=? AND key=?").all("*", STATS_EPOCH_SETTING) as Array<{ value:string }>;
+  since = Math.max(since, statsEpochMs(epochRow[0]?.value));
   const tasks = db.prepare(`SELECT t.id, t.created_at FROM lane_pilot_task t JOIN lane_pilot_run r ON r.id=t.run_id WHERE r.project_id=?`)
     .all(projectId) as Array<{ id:string; created_at:number }>;
   const attempts = db.prepare(`SELECT a.task_id, a.state, a.reason, a.created_at FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id

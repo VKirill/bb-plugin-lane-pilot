@@ -2,6 +2,7 @@
  *   npx tsx scripts/print-live-stability.ts --db <lane-pilot data.db> --core <bb.db> --days 1 --floor 0.1.389
  */
 import Database from "better-sqlite3";
+import { statsEpochMs, STATS_EPOCH_SETTING } from "../src/rooms/storage";
 import { liveStability, renderLiveStability, type LiveAttempt } from "../src/rooms/bench/live-rate";
 
 const flag = (name: string): string => {
@@ -15,10 +16,11 @@ const days = Number(flag("days"));
 if (!Number.isInteger(days) || days < 1) throw new Error("--days must be a positive integer");
 const db = new Database(flag("db"), { readonly: true, fileMustExist: true });
 db.exec(`attach database '${flag("core").replaceAll("'", "''")}' as core`);
-const since = Date.now() - days * 86_400_000;
+const epoch = statsEpochMs((db.prepare("SELECT value FROM lane_pilot_project_settings WHERE project_id=? AND key=?").get("*", STATS_EPOCH_SETTING) as { value:string } | undefined)?.value);
+const since = Math.max(Date.now() - days * 86_400_000, epoch);
 const rows = db.prepare(`select a.task_id as taskId, r.project_id as projectId, p.name as projectName, a.state as state, a.reason as reason, a.harness_version as harnessVersion, a.updated_at as updatedAt
   from lane_pilot_attempt a
   join lane_pilot_run r on r.id = a.run_id
   left join core.projects p on p.id = r.project_id
   where a.created_at > ?`).all(since) as LiveAttempt[];
-process.stdout.write(`${renderLiveStability(liveStability(rows, { floorVersion: flag("floor") }))}\n`);
+process.stdout.write(`${renderLiveStability(liveStability(rows, { floorVersion: flag("floor"), epochMs: epoch }), epoch)}\n`);

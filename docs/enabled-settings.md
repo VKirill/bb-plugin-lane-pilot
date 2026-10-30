@@ -14,7 +14,7 @@ sources:
   - docs/enabled-settings.snapshot.json
 ---
 
-<!-- enabled-settings:structure 4bb6c9db61319a44 -->
+<!-- enabled-settings:structure f176c1d22d0f13fa -->
 
 # Enabled settings (generated)
 
@@ -78,7 +78,7 @@ switches: `quick` disables both critiques, `full` enables them (`src/rooms/criti
 | `council.ux.model` | — | — | council seat setting |
 | `council.ux.provider` | — | — | council seat setting |
 | `council.ux.reasoning_effort` | `high` | — | council seat setting |
-| `critic.code.default_for_risk` | `off` | — | code critic by task risk: off, medium or high |
+| `critic.code.default_for_risk` | `medium` | — | code critic by task risk: off, medium or high |
 | `docs.agent` | `docs-maintainer` | — | docs role label included in its prompt |
 | `docs.enabled` | `auto` | — | stage setting: execute bounded docs maintenance |
 | `docs.hour` | `5` | — | stage setting: local hour for the daily docs schedule |

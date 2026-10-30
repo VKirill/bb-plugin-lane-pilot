@@ -19,14 +19,30 @@ export function criticPromptProposal(stats: readonly CriticEditRow[]): string | 
   }).join("\n");
 }
 
-/** Trial stays closed unless the flag is on and the caller passed a bench. The proposal is not applied either way. */
-export function criticEditGate(input: { trialOn: boolean; benchOn: boolean; proposal: string | null }): { status: "held" | "trial" | "skipped"; detail: string } {
-  if (!input.proposal) return { status: "skipped", detail: "no critic is below the calibration bar" };
-  if (!input.trialOn || !input.benchOn) return { status: "held", detail: "the proposal is stored; the trial stays off until critic.edit.trial is on and a bench is passed in" };
-  return { status: "trial", detail: input.proposal };
+/** KV flag. Absent means on. `"off"` or `{ on: false }` holds the proposal. */
+export function criticEditTrialOn(stored: unknown): boolean {
+  if (stored == null || stored === "") return true;
+  if (stored === "off" || stored === false || stored === 0) return false;
+  if (typeof stored === "object" && (stored as { on?: unknown }).on === false) return false;
+  return true;
 }
 
-/** KV flag. Absent means off. Set `{ on: true }` to let a run with `bench=on` leave the gate. */
+/**
+ * Holds the proposal until the harness bench gate (`judgeSharedTrial`, nightly set, 14-day deadline) adopts.
+ * Wait and retire do not change a prompt. Adopt lifts the hold; this function still does not write the prompt.
+ */
+export function criticEditGate(input: {
+  trialOn: boolean;
+  proposal: string | null;
+  decision: { action: "wait" | "adopt" | "retire"; reason: string };
+}): { status: "held" | "trial" | "skipped" | "retired"; detail: string; applyPrompt: boolean } {
+  if (!input.proposal) return { status: "skipped", detail: "no critic is below the calibration bar", applyPrompt: false };
+  if (!input.trialOn) return { status: "held", detail: "the proposal is stored; critic.edit.trial is off", applyPrompt: false };
+  if (input.decision.action === "wait") return { status: "held", detail: input.decision.reason, applyPrompt: false };
+  if (input.decision.action === "retire") return { status: "retired", detail: input.decision.reason, applyPrompt: false };
+  return { status: "trial", detail: input.proposal, applyPrompt: true };
+}
+
 export const CRITIC_EDIT_TRIAL_KEY = "lp.critic.edit.trial";
 
 // ---------------------------------------------------------------- the trial loop (item 4): bench arms, decide, store or reject
