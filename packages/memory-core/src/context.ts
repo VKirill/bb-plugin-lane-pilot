@@ -21,9 +21,9 @@ export function memoryContext(records:MemoryRecord[],taskText:string,budget:numb
   // Relevance first; a note that served accepted attempts counts for more than one that did not (neutral 1.0, range 0.5 to 1.5).
   const ranked=records.map((record)=>({record,score:tokens(`${record.content} ${record.concepts.join(" ")}`).reduce((sum,token)=>sum+(terms.has(token)?1:0),0)*(0.5+memoryUsefulness(record))}))
     .filter((item)=>item.score>0).sort((a,b)=>b.score-a.score||b.record.createdAt-a.record.createdAt||a.record.id.localeCompare(b.record.id));
-  const selected:MemoryRecord[]=[];const cut:MemoryRecord[]=[];let used=0;
-  for(const item of ranked){const size=estimateTokens(item.record.content);if(used+size>budget){cut.push(item.record);continue;}selected.push(item.record);used+=size;}
-  const text=selected.map((item)=>`- [${item.kind}; concepts=${item.concepts.join(", ")}] ${item.content}`).join("\n");
+  const selected:MemoryRecord[]=[];const cut:MemoryRecord[]=[];let text="";
+  // The header is part of the line the budget pays for: counting content alone let a long concepts list overshoot (F10-4).
+  for(const item of ranked){const line=memoryContextLine(item.record);const next=text?`${text}\n${line}`:line;if(estimateTokens(next)>budget){cut.push(item.record);continue;}text=next;selected.push(item.record);}
   return {text,records:selected,estimatedTokens:estimateTokens(text),cut};
 }
 
@@ -44,3 +44,7 @@ export function explainMemory(records:MemoryRecord[],taskText:string,budget:numb
 
 /** Stems, so `ошибки` in the task finds `ошибка` in a note. */
 function tokens(text:string):string[] { return memoryTokens(text).map(memoryStem); }
+
+function memoryContextLine(record:MemoryRecord):string {
+  return `- [${record.kind}; concepts=${record.concepts.join(", ")}] ${record.content}`;
+}
