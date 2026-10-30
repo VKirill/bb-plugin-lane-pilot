@@ -74,6 +74,8 @@ export async function buildSet(input: BuildInput): Promise<{ report: BuildReport
 
   // One chain per host: two warm-ups never run on one machine at once (the disk and the CPU are the owner's); different machines go side by side.
   const claimed = new Set<string>();
+  /** Candidates a fixed stratum already warmed; a fresh retry of the same warm-up fails the same way and burns the quota. */
+  const warmed = new Set<string>();
   const byStratum = fixedStrata.map((stratum) => {
     const pool = loaded.candidates.filter((candidate) => stratum.match(candidate) && !claimed.has(candidate.taskId));
     pool.forEach((candidate) => claimed.add(candidate.taskId));
@@ -105,6 +107,7 @@ export async function buildSet(input: BuildInput): Promise<{ report: BuildReport
         const free = touch === "none" ? null : await freeGb(input.host, touch);
         if (free !== null && free < minFree) { report.stoppedBecause = `host ${touch} has ${free} GB free, below ${minFree}`; log(`bench build: ${report.stoppedBecause}`); break; }
         report.tried++;
+        warmed.add(candidate.taskId);
         const started = Date.now();
         const result = await warmUp(input.host, candidate, { ...warmOptions, scratch: await scratchOn(input.hostId ?? hostId), ...(input.reposRoot ? { reposRoot: input.reposRoot } : {}), ...(input.hostId ? { hostId: input.hostId } : {}) }).catch((cause: unknown) => ({ ok: false as const, reason: "host_error" as const, detail: cause instanceof Error ? cause.message : String(cause) }));
         hostErrors = !result.ok && result.reason === "host_error" ? hostErrors + 1 : 0;
@@ -136,7 +139,8 @@ export async function buildSet(input: BuildInput): Promise<{ report: BuildReport
   // Fresh is beside the fixed quotas, not instead of them: a task the fixed strata kept stays fixed. The rest of the recent live tasks fill `fresh`.
   if (fresh && !lostHosts.length) {
     const keptIds = new Set([...keptByStratum.values()].flat().map((row) => row.candidate.taskId));
-    const pool = loaded.candidates.filter((candidate) => fresh.match(candidate) && !keptIds.has(candidate.taskId));
+    // Out: what a fixed stratum kept, and what it already tried — the same warm-up would fail again. In: what matched but was never warmed.
+    const pool = loaded.candidates.filter((candidate) => fresh.match(candidate) && !keptIds.has(candidate.taskId) && !warmed.has(candidate.taskId));
     const report: StratumReport = { key: fresh.key, quota: fresh.quota, candidates: pool.length, hardCandidates: pool.filter((c) => c.hard).length, tried: 0, survived: 0, kept: 0, keptHard: 0, rejected: {}, stoppedBecause: "" };
     reports.set(fresh.key, report);
     const survivors: Kept[] = [];
