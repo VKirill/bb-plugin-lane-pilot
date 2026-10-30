@@ -50,7 +50,7 @@ describe("employee delegation: real path per registry employee", () => {
   it("startSpecialistRun forwards validator/deliverable extras into run inputs", async () => {
     const engine = { captured: null as { inputs?: Record<string, unknown> } | null,
       start(args: { inputs: Record<string, unknown> }) { engine.captured = { inputs: args.inputs }; return { runId: "wr9", created: true, done: Promise.resolve() }; },
-      get: () => null } as never;
+      get: () => null };
     const db = dbOf();
     const kv = new Map<string, unknown>();
     const ctx = { db, bb: { storage: { kv: { get: async (k: string) => kv.get(k) ?? null, set: async (k: string, v: never) => { kv.set(k, v); } } } }, log: () => {}, isDisposed: () => false } as never;
