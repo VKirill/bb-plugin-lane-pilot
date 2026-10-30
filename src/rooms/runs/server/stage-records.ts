@@ -125,10 +125,7 @@ export function closeOrphanWriterStages(db:ReturnType<typeof openDatabase>, acti
       WHERE state IN ('spawn_rejected','provider_error','timeout','empty_output','validation_failed')
         AND updated_at < ?`).all(now - idleMs) as Array<{ id:string; run_id:string; task_id:string; state:string; reason:string|null; updated_at:number }>) {
     if (active.has(`${stray.run_id}:${stray.task_id}`)) continue;
-    // A cursor matters only to a state the same attempt resumes through (spawn_requested/spawn_unknown); a finished
-    // failure retries on a NEW attempt, so a leftover page of its old scan must not hold it open forever.
-    const scanning = ["spawn_requested", "spawn_unknown"].includes(stray.state)
-      && db.prepare("SELECT 1 AS n FROM lane_pilot_reconcile_cursor WHERE attempt_id=? LIMIT 1").get(stray.id) as { n:number } | undefined;
+    const scanning = db.prepare("SELECT 1 AS n FROM lane_pilot_reconcile_cursor WHERE attempt_id=? LIMIT 1").get(stray.id) as { n:number } | undefined;
     if (scanning) continue;
     const newer = db.prepare(`SELECT state FROM lane_pilot_attempt WHERE run_id=? AND task_id=? ORDER BY rowid DESC LIMIT 1`).get(stray.run_id, stray.task_id) as { state:string } | undefined;
     if (newer && ["accepted","blocked","canceled","queued","spawn_requested","spawn_unknown","running","cancel_requested"].includes(newer.state)) continue;
