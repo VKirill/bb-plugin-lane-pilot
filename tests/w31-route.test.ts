@@ -142,7 +142,7 @@ describe("W31 rank 11: queue waits", () => {
     createAttempt(db, { id: "q1", runId: "run", taskId: "t1" });
     transitionAttempt(db, "q1", "spawn_requested"); transitionAttempt(db, "q1", "running", { threadId: "thr_q1" });
     transitionAttempt(db, "q1", "accepted");
-    const wait = (db.prepare("SELECT at FROM lane_pilot_attempt_transition WHERE attempt_id='q1' AND to_state='running'").get() as { at: number }).at
+    const wait = (db.prepare("SELECT at FROM lane_pilot_attempt_transition WHERE attempt_id='q1' AND from_state='queued'").get() as { at: number }).at
       - (db.prepare("SELECT created_at FROM lane_pilot_attempt WHERE id='q1'").get() as { created_at: number }).created_at;
 
     const report = attemptMetrics(db as never, { projectId: "proj", days: 7 });

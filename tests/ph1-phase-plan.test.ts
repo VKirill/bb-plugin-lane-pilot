@@ -29,7 +29,7 @@ describe("the plan tool's input", () => {
     const parsed = phaseToolParams.safeParse({ action: "plan", phaseId: "ph_x", items: [{ ...planItem, task: { ...taskNoCwd, covers: ["R1", "D2"] } }] });
     expect(parsed.success).toBe(true);
     if (parsed.success) {
-      const item = parsed.data.items[0] as { covers?: string[]; task: { covers?: unknown } };
+      const item = (parsed.data as { items: unknown[] }).items[0] as { covers?: string[]; task: { covers?: unknown } };
       expect(item.covers).toEqual(["R1", "D2"]);
       expect(item.task.covers).toBeUndefined();
     }
@@ -52,8 +52,8 @@ describe("a plan the PM submitted", () => {
     let phase = withPlan({ auto: { kind: "check", wfRunId: "wfrun_1", startedAt: 1 } });
     const calls: string[] = [];
     const auto = createAutoStages({ log: () => undefined }, { workflowEngine: { get: () => ({ runId: "wfrun_1", status: "succeeded", output: { status: "ok", plan_verdict: "pass" } }) } as never }, {
-      api: { planCheck: async (input) => { calls.push(`planCheck ${input.decision} ${input.wfRunId}`); return phase; } },
-      get: () => phase, save: (_id, record) => { phase = { ...phase, record }; }, book: () => undefined,
+      api: { planCheck: async (input: { decision: string; wfRunId?: string }) => { calls.push(`planCheck ${input.decision} ${input.wfRunId}`); return phase; } },
+      get: () => phase, save: (_id: string, record: typeof phase.record) => { phase = { ...phase, record }; }, book: () => undefined,
       now: () => 1, runStopped: async () => false,
     } as never);
     expect(await auto.step(phase)).toBe(true);
@@ -70,7 +70,7 @@ describe("a plan the PM submitted", () => {
         planCheck: async () => phase,
         returnTo: (input: { to: string }) => { calls.push(`return ${input.to}`); phase = { ...phase, stage: "discussion", record: { ...phase.record, signedBefore: { docs: ["docs/CONTEXT.md"] }, context: undefined } }; return phase; },
       },
-      get: () => phase, save: (_id, record) => { phase = { ...phase, record }; }, book: () => undefined,
+      get: () => phase, save: (_id: string, record: typeof phase.record) => { phase = { ...phase, record }; }, book: () => undefined,
       now: () => 1, runStopped: async () => false,
     } as never);
     expect(await auto.step(phase)).toBe(true);
