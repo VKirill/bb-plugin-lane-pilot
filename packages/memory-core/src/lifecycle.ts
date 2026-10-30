@@ -86,6 +86,14 @@ export function recordMemoryMixed(db: MemoryDatabase, projectId: string, ids: re
   for (const id of new Set(ids)) update.run(now, projectId, id);
 }
 
+/** Ids and token count of one retrieval. No note text. */
+export function recordMemoryReceipt(db: MemoryDatabase, input: { projectId: string; role: string; returnedIds: readonly string[]; packedIds: readonly string[]; tokens: number; now?: number }): void {
+  const now = input.now ?? Date.now();
+  const id = `mr_${now}_${input.role}_${input.packedIds.join(",")}`;
+  db.prepare("INSERT INTO lane_pilot_memory_receipt(id,project_id,role,returned_ids,packed_ids,tokens,created_at) VALUES(?,?,?,?,?,?,?)")
+    .run(id, input.projectId, input.role, JSON.stringify(input.returnedIds), JSON.stringify(input.packedIds), input.tokens, now);
+}
+
 /** A critic or reviewer mix. Separate from use_count so it cannot move usefulness. */
 export function recordCriticUse(db: MemoryDatabase, projectId: string, ids: readonly string[]): void {
   const update = db.prepare("UPDATE lane_pilot_memory SET critic_count=critic_count+1 WHERE project_id=? AND id=?");
