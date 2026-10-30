@@ -195,6 +195,8 @@ with dark(name) as (
   union all
   select 'lane_pilot_wf_trigger' as name where (select count(*) from lane_pilot_wf_trigger where created_at >= (select since from lp_morning_30)) = 0
   union all
+  select 'lane_pilot_worktree' as name where (select count(*) from lane_pilot_worktree where released_at is null and created_at >= (select since from lp_morning_30)) = 0
+  union all
   select 'lane_pilot_world' as name where (select count(*) from lane_pilot_world) = 0
 )
 select case when (select count(*) from dark) = 0 then 'Тёмные таблицы: каждая писала за 30 дней.'

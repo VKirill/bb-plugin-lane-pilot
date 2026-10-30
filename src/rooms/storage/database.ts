@@ -467,6 +467,9 @@ export const migrations = [
   // WT1: what the hourly worktree janitor did per host — freed bytes and the copies it kept for the morning line. Append only.
   `CREATE TABLE IF NOT EXISTS lane_pilot_janitor (id INTEGER PRIMARY KEY, at INTEGER NOT NULL, host TEXT NOT NULL, removed INTEGER NOT NULL, freed_bytes INTEGER NOT NULL, tmp_removed INTEGER NOT NULL, tmp_freed_bytes INTEGER NOT NULL, kept_json TEXT NOT NULL DEFAULT '[]')`,
   `CREATE INDEX IF NOT EXISTS lane_pilot_janitor_at ON lane_pilot_janitor(at)`,
+  // WT2: every Lane Pilot worktree copy, one row at create (server-side, in the host.call wrapper) and released_at at remove/merge.
+  `CREATE TABLE IF NOT EXISTS lane_pilot_worktree (id INTEGER PRIMARY KEY, host TEXT NOT NULL, path TEXT NOT NULL, branch TEXT, owner_kind TEXT NOT NULL, owner_id TEXT, created_at INTEGER NOT NULL, released_at INTEGER)`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS lane_pilot_worktree_open ON lane_pilot_worktree(host, path) WHERE released_at IS NULL`,
 ];
 
 export function openDatabase(bb: BbPluginApi): LanePilotDatabase {
@@ -1881,4 +1884,32 @@ export function markAcceptedFactsSummarized(db: LanePilotDatabase, runId: string
   if (!taskIds.length) return;
   const stamp = db.prepare("UPDATE lane_pilot_accepted_fact SET summarized_at=? WHERE run_id=? AND task_id=? AND summarized_at IS NULL");
   db.transaction(() => { for (const taskId of taskIds) stamp.run(at, runId, taskId); })();
+}
+
+/** WT2 registry: one row per Lane Pilot worktree copy, written by the host.call wrapper (server side, one place). */
+export type WorktreeOwnerKind = "attempt" | "docs" | "baseline" | "regress" | "self-repair" | "rollback" | "phase" | "unknown";
+export type WorktreeRow = { id: number; host: string; path: string; branch: string | null; owner_kind: WorktreeOwnerKind; owner_id: string | null; created_at: number; released_at: number | null };
+
+export function ownerKindOfName(name: string, taskId?: string | null): { kind: WorktreeOwnerKind; id: string | null } {
+  if (taskId) return { kind: "attempt", id: name };
+  if (name.startsWith("docs-")) return { kind: "docs", id: name };
+  if (name.startsWith("self-repair-")) return { kind: "self-repair", id: name };
+  if (name.startsWith("regress-") || name.startsWith("bisect-")) return { kind: "regress", id: name };
+  if (name.startsWith("baseline-") || name.startsWith("reverify-") || name.startsWith("revert-") || name.startsWith("revert-base-")) return { kind: "rollback", id: name };
+  if (name.startsWith("phase-")) return { kind: "phase", id: name };
+  if (/^lpattempt_/.test(name)) return { kind: "attempt", id: name };
+  return { kind: "attempt", id: name };
+}
+
+export function registerWorktree(db: LanePilotDatabase, row: { host: string; path: string; branch: string | null; owner_kind: string; owner_id: string | null }, at = Date.now()): void {
+  db.prepare("INSERT INTO lane_pilot_worktree(host,path,branch,owner_kind,owner_id,created_at,released_at) VALUES (?,?,?,?,?,?,NULL) ON CONFLICT(host,path) WHERE released_at IS NULL DO NOTHING")
+    .run(row.host, row.path, row.branch, row.owner_kind, row.owner_id, at);
+}
+
+export function releaseWorktree(db: LanePilotDatabase, host: string, path: string, at = Date.now()): void {
+  db.prepare("UPDATE lane_pilot_worktree SET released_at=? WHERE host=? AND path=? AND released_at IS NULL").run(at, host, path);
+}
+
+export function listOpenWorktrees(db: LanePilotDatabase): WorktreeRow[] {
+  return db.prepare("SELECT id,host,path,branch,owner_kind,owner_id,created_at,released_at FROM lane_pilot_worktree WHERE released_at IS NULL").all() as WorktreeRow[];
 }

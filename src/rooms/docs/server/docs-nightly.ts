@@ -261,7 +261,9 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
             results.push({projectId:project.id,path:place.path,hostId:place.hostId,state:"skipped",reason:"unsupported_workspace_path"});
             continue;
           }
-          const scope=await host.call("gitDocsScope",{requestedHostId:place.hostId,projectCwd:place.path,sinceEpochMs:docsSinceEpoch(docs.since,new Date())},{hostId:place.hostId,timeoutMs:120_000});
+          const baseKey=`docs-base:${place.hostId}:${sha256(place.path).slice(0,12)}`;
+          const storedBase=await bb.storage.kv.get(baseKey).catch(()=>null) as {head?:string}|null;
+          const scope=await host.call("gitDocsScope",{requestedHostId:place.hostId,projectCwd:place.path,sinceEpochMs:docsSinceEpoch(docs.since,new Date()),...(storedBase?.head?{base:storedBase.head}:{})},{hostId:place.hostId,timeoutMs:120_000});
           if(scope.status!=="ready"||!scope.isRepoRoot) continue;
           // A pass that broke off (a reload, a crash) or left units failed is picked up at the next hours of the same
           // night; units already done have no changes left and skip at once.
@@ -348,6 +350,23 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
           // A unit whose merge found main busy is in the worktree's history; this merges what is still missing.
           await mergeDocs(place.path,work,`docs: nightly refresh ${scope.localDate}`);
           await bb.storage.kv.set(stateKey,{date:scope.localDate,attempts,finished:true,failed:results.slice(firstResult).filter((row)=>row.state==="failed").length});
+          // The place's next pass diffs from where this one ended, not from the last docs-touching commit: a commit
+          // carrying both code and a docs line used to hide all of its code changes (bb-plugin-project-folders 0.7.10).
+          const headNow=(await host.call("gateRun",{requestedHostId:place.hostId,basePath:place.path,command:"git rev-parse HEAD",timeoutSec:15},{hostId:place.hostId,timeoutMs:30_000}).catch(()=>null));
+          if(headNow?.exitCode===0&&/^[a-f0-9]{40}$/.test(headNow.stdout.trim())) await bb.storage.kv.set(baseKey,{head:headNow.stdout.trim()}).catch(()=>undefined);
+          // The pass is done: its worktree goes now, unless a unit left open progress in it (WT2: create → merge → remove).
+          if(resolve(work.path)!==resolve(place.path)){
+            const openUnits=(await bb.storage.kv.get(DOCS_UNITS_OPEN_KEY).catch(()=>null) as Record<string,true>|null)??{};
+            let progress=false;
+            for(const unitKey of Object.keys(openUnits)){
+              const record=await bb.storage.kv.get(unitKey).catch(()=>null) as DocsUnitRecord|null;
+              if(record?.place.path===work.path){ progress=true; break; }
+            }
+            if(!progress){
+              await host.call("gitRemoveWorktree",{requestedHostId:place.hostId,basePath:place.path,worktreePath:work.path},{hostId:place.hostId,timeoutMs:120_000}).catch(()=>null);
+              await bb.storage.kv.delete(`docs-worktree:${place.hostId}:${`docs-${sha256(place.path).slice(0,12)}`}`).catch(()=>undefined);
+            }
+          }
           } finally { docsPassesRunning.delete(place.path); }
           });
           if(opts.signal) await abortable(opts.signal,inQueue()).finally(()=>docsPassesRunning.delete(place.path)); else await inQueue();

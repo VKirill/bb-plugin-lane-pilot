@@ -36,6 +36,8 @@ export async function protectedWorktreePaths(ctx: Pick<ServerCore, "bb" | "db">)
     const entry = await bb.storage.kv.get(key).catch(() => null) as { at?: number } | null;
     if (Date.now() - (entry?.at ?? 0) < 6 * 3_600_000) paths.add(key.slice("regress-worktree:".length));
   }
+  // The registry is the primary source: every open row is a copy its process still owns.
+  for (const row of db.prepare("SELECT path FROM lane_pilot_worktree WHERE released_at IS NULL").all() as Array<{ path: string }>) paths.add(row.path);
   const repair = await bb.storage.kv.get("self-repair:state").catch(() => null) as { signatures?: Record<string, { worktree?: { path?: string } | null; pending?: { worktree?: { path?: string } } | null }> } | null;
   for (const record of Object.values(repair?.signatures ?? {})) {
     if (record?.worktree?.path) paths.add(record.worktree.path);
@@ -82,10 +84,50 @@ export async function runWorktreeJanitor(ctx: Pick<ServerCore, "bb" | "db" | "lo
   return { removed: removed + swept.length + envSwept.length, freedBytes, kept };
 }
 
+/** Whether a registry row's owning process is still alive: the attempt runs, or the pass's KV marker stands. */
+async function ownerAlive(ctx: Pick<ServerCore, "bb" | "db">, row: { owner_kind: string; owner_id: string | null; created_at: number }): Promise<boolean> {
+  const { bb, db } = ctx;
+  if (row.owner_kind === "attempt") {
+    const attempt = db.prepare("SELECT state FROM lane_pilot_attempt WHERE id=?").get(row.owner_id) as { state?: string } | undefined;
+    return attempt !== undefined && JANITOR_OPEN_STATES.includes(attempt.state ?? "");
+  }
+  if (row.owner_kind === "docs" && row.owner_id) return (await bb.storage.kv.list("docs-worktree:").catch(() => [] as string[])).some((key) => key.endsWith(`:${row.owner_id}`));
+  if (row.owner_kind === "regress" && row.owner_id) return (await bb.storage.kv.list("regress-worktree:").catch(() => [] as string[])).some((key) => key.slice("regress-worktree:".length) === row.owner_id);
+  if (row.owner_kind === "self-repair") {
+    const repair = await bb.storage.kv.get("self-repair:state").catch(() => null) as { signatures?: Record<string, { worktree?: { path?: string } | null }> } | null;
+    return Object.values(repair?.signatures ?? {}).some((record) => record?.worktree);
+  }
+  // rollback/baseline/phase/unknown: no liveness marker exists — a pass is bounded, so age is the only doubt;
+  // anything this old is dead, and gitRemoveWorktree release:true snapshots the work before the copy goes regardless.
+  return false;
+}
+
+/** At plugin start (after a reload that killed every pass's finally): copies whose owner is dead go now, not hourly. */
+export async function reconcileWorktreeRegistry(ctx: Pick<ServerCore, "bb" | "db" | "log" | "isDisposed" | "host">, now = Date.now()): Promise<number> {
+  const { db } = ctx;
+  const dead = (db.prepare("SELECT id,host,path,branch,owner_kind,owner_id,created_at FROM lane_pilot_worktree WHERE released_at IS NULL").all() as Array<{ id: number; host: string; path: string; branch: string | null; owner_kind: string; owner_id: string | null; created_at: number }>);
+  let removed = 0;
+  for (const row of dead) {
+    if (ctx.isDisposed()) break;
+    if (await ownerAlive(ctx, row)) continue;
+    // The host call needs the base checkout the copy came from; the attempt's run knows it, others take it from the worktree itself.
+    const known = db.prepare("SELECT writer_workspace_path AS p FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id WHERE a.workspace_path=? LIMIT 1").get(row.path) as { p?: string } | undefined;
+    const basePath = known?.p ?? row.path;
+    const out = await ctx.host.call("gitRemoveWorktree", { requestedHostId: row.host, basePath, worktreePath: row.path, release: true }, { hostId: row.host, timeoutMs: 120_000 }).catch(() => null) as { removed?: boolean } | null;
+    if (out?.removed === true) { db.prepare("UPDATE lane_pilot_worktree SET released_at=? WHERE id=?").run(now, row.id); removed++; }
+  }
+  if (removed) ctx.log(`Lane Pilot reconcile: removed ${removed} worktree copies whose owner is gone`);
+  return removed;
+}
+
 export function mountWorktreeJanitor(ctx: ServerCore, sweeps: AttemptSweeps): void {
   const { bb } = ctx;
+  // After a reload: the copies a dead pass left go at once, with the same rules the hourly pass has (grace 0 for dead owners).
+  const boot = setTimeout(() => { void reconcileWorktreeRegistry(ctx).catch((cause: unknown) => bb.log.info(`Lane Pilot reconcile failed: ${cause instanceof Error ? cause.message : String(cause)}`)); }, 45_000);
+  bb.onDispose(() => clearTimeout(boot));
   scheduleIsolated(bb, "worktree-janitor", "14 * * * *", async (signal) => {
     if (ctx.isDisposed() || signal?.aborted) return;
+    await reconcileWorktreeRegistry(ctx).catch(() => 0);
     const outcome = await runWorktreeJanitor(ctx, sweeps, Date.now(), signal);
     if (outcome.removed || outcome.kept) bb.log.info(`Lane Pilot janitor: removed ${outcome.removed} worktree(s), freed ${Math.round(outcome.freedBytes / 1e6)} MB, kept ${outcome.kept}`);
   }, { timeoutMs: 10 * 60_000 });
