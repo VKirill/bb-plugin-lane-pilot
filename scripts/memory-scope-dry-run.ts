@@ -76,14 +76,12 @@ export function applyRuleScopeRebind(db: ApplyDb, map: Readonly<Record<string, r
     const split = splitRuleScope(scope);
     // Only a whole-scope legacy set of bare labels moves; a scope already carrying a section chain stays.
     if (split.sectionChain.length || !split.pathSelectors.length || !split.pathSelectors.every((label) => map[label]?.length)) continue;
-    const chains = [...new Set(split.pathSelectors.flatMap((label) => map[label]))];
-    // Sections share one prefix chain; a label set that lands on different chains keeps the shared prefix.
-    let chain: string[] = [];
-    const first = chains[0].startsWith("section:") ? [chains[0]] : [];
-    if (first.length) chain = [first[0]];
-    if (!chain.length || chains.some((entry) => entry !== chain[0])) continue;
+    // Every label must land on the same section chain; mixed chains stay for a person.
+    const chains = split.pathSelectors.map((label) => map[label]);
+    const chain = chains[0];
+    if (!chain.every((entry) => entry.startsWith("section:")) || !chains.every((other) => other.length === chain.length && other.every((entry, index) => entry === chain[index]))) continue;
     update.run(JSON.stringify(chain), row.project_id, row.id);
-    journal.push({ id: row.id, projectId: row.project_id, before: scope, after: chain });
+    journal.push({ id: row.id, projectId: row.project_id, before: scope, after: [...chain] });
   }
   if (journalPath && journal.length) writeFileSync(journalPath, `${JSON.stringify({ reverted: false, rows: journal }, null, 2)}\n`);
   return { applied: journal.length, journal };
