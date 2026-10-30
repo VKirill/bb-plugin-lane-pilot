@@ -1,7 +1,7 @@
 import type { RouterModel, RouterModelOutput } from "@lane-pilot/workflow-engine";
 import { filterByPolicy, routePolicyOf } from "./route-policy";
 import { NONE, routeRecheck, routeWorkflow } from "./route-workflow";
-import { isMachineMessage } from "../phase/intake";
+import { isMachineMessage } from "../phase";
 import { redactKnown } from "@lane-pilot/kit";
 import { looksSensitive } from "@lane-pilot/jev";
 import { choiceOf } from "@lane-pilot/jev";

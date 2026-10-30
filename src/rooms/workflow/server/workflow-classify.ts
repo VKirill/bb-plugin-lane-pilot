@@ -3,7 +3,7 @@ import { agentRequest, withResolvedModel, type WorkflowAgents } from "./workflow
 import type { ChainRuntime } from "./workflow-runtime";
 import type { ServerCore } from "../../core/server";
 import { jev, type JevSettings, type Verdict, choiceOf } from "@lane-pilot/jev";
-import { failureClassJudgment, type FailureClassDecision, type FailureClassInput } from "../../runs/failure-class-judgment";
+import { failureClassJudgment, type FailureClassDecision, type FailureClassInput } from "../../runs";
 import { redactKnown } from "@lane-pilot/kit";
 
 const clip = (text: string, max: number): string => (text.length > max ? `${text.slice(0, max - 1)}…` : text);

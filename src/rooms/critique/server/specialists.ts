@@ -1,5 +1,5 @@
 import { MAIN_AGENT_ID, isCustomAgentId } from "../../native-agent";
-import { EMPLOYEES } from "../../native-agent/employee-manifest";
+import { EMPLOYEES } from "../../native-agent";
 import { jev } from "@lane-pilot/jev";
 import { judgeEmployeeRemark, recordEmployeeLesson } from "./employee-lessons";
 import { observeStageChild } from "@lane-pilot/thread-observe";

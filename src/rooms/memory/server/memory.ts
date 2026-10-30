@@ -256,7 +256,7 @@ export function createMemoryStage(ctx: ServerCore, services: Services) {
     // The cold tier, past tasks like this one and the misses (src/rooms/memory-tiers): never fails the query. Candidates stay expired.
     let tiers:{text:string;promoted:string[];episodes:number;miss:boolean;addedTokens:number}={text:"",promoted:[],episodes:0,miss:false,addedTokens:0};
     // B6: Jev re-ranks the lexical episode shortlist (shadow first; active delivers only the ones it keeps).
-    let episodesList: import("../../memory-tiers/logic").Episode[] | undefined;
+    let episodesList: import("../../memory-tiers").Episode[] | undefined;
     const judge=jev();
     if(judge){
       const candidates=episodeCandidates(db,args.projectId,args.query,8,{chain});

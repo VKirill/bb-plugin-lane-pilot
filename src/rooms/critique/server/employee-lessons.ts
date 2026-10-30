@@ -9,17 +9,9 @@ import { employeeRemarkJudgment } from "@lane-pilot/jev/judgments/employee-remar
  * proposals with `audience: "specialist:<role>"` (the existing `lane_pilot_memory` lesson path), and the same dated
  * line is appended to `lp.role.lines:<projectId>:<role>` — the section every specialist brief already renders.
  */
-export const roleLinesKey = (projectId: string, role: string) => `lp.role.lines:${projectId}:${role}`;
+import { recordRoleLine } from "../../native-agent";
+export { recordRoleLine, roleLinesKey } from "../../native-agent";
 const ROLE_LINES_CAP = 30;
-
-/** A dated rule line on `lp.role.lines:<projectId>:<role>` — what the specialist's brief prepends. */
-export async function recordRoleLine(kv: BbPluginApi["storage"]["kv"], projectId: string, role: string, line: string): Promise<string> {
-  const dated = /^\d{4}-\d{2}-\d{2}:/.test(line) ? line.trim().slice(0, 500) : `${new Date().toISOString().slice(0, 10)}: ${line.trim().slice(0, 500)}`;
-  const key = roleLinesKey(projectId, role);
-  const lines = ((await kv.get(key).catch(() => null)) as string[] | null) ?? [];
-  if (!lines.includes(dated)) await kv.set(key, [...lines, dated].slice(-ROLE_LINES_CAP) as never);
-  return dated;
-}
 
 export async function recordEmployeeLesson(kv: BbPluginApi["storage"]["kv"], db: LanePilotDatabase, input: { projectId: string; role: string; line: string; evidence?: string }): Promise<{ line: string; proposalId: string }> {
   const dated = await recordRoleLine(kv, input.projectId, input.role, input.line);

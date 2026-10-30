@@ -4,7 +4,7 @@ export { EMPLOYEES, EMPLOYEE_IDS, RESULT_EXISTS, coreSkillsOf, employeeView, ins
 export type { EmployeeManifest, MachineAffinity } from "./employee-manifest";
 export { SKILL_CATALOG_BLOCK, SKILL_CATALOG_LINE, SKILL_CATALOG_LIMIT } from "./skill-catalog";
 export { AFFINITY_HOSTS, chooseEmployeePlace, placeEmployeeOn } from "./employee-place";
-export { employeeRoleLines, withRoleLines } from "./employee-lessons";
+export { employeeRoleLines, recordRoleLine, roleLinesKey, withRoleLines } from "./employee-lessons";
 export type { EmployeePlace } from "./employee-place";
 export { agentPickerLabel } from "./agent-display";
 export { applyResourceMode, collectAgentInventory } from "./agent-inventory";

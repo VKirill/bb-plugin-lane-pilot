@@ -4,8 +4,10 @@ import { failureClassJudgment, FAILURE_CLASS_ID } from "./failure-class-judgment
 import { logFindJudgment } from "@lane-pilot/jev/judgments/log-find";
 import { recordOutcome, type Jev, type JevSettings } from "@lane-pilot/jev";
 import { INVOICE_CHECK_ID } from "@lane-pilot/jev/judgments/invoice-check";
-import { ROUTE_WORKFLOW_ID } from "../workflow/route-workflow";
-import { PLAN_FACT_JEV_ID } from "../tasks/plan-fact-judgment";
+// The route workflow's id, duplicated here so runs never imports the workflow room (import cycle).
+const ROUTE_WORKFLOW_ID = "route.workflow";
+// The plan.fact judgment id, spelled out so runs never pulls the tasks room (import cycle through validate-output).
+const PLAN_FACT_JEV_ID = "plan.fact";
 
 /**
  * The class of a failure with J-4 behind the rules: the rules first, and only a reason they have no confident match for goes to

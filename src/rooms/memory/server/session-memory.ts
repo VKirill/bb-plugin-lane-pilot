@@ -67,7 +67,7 @@ export function sessionMemoryRpc(ctx: ServerCore, services: Services) {
       // audience `specialist:<id>` also appends a dated line to `lp.role.lines` — the section the specialist's brief renders.
       const employee = /^specialist:([\w-]{1,60})$/.exec(audience ?? "")?.[1];
       if (employee) {
-        const { recordRoleLine } = await import("../../critique/server/employee-lessons");
+        const { recordRoleLine } = await import("../../native-agent");
         await recordRoleLine(ctx.bb.storage.kv, projectId, employee, rule).catch(() => undefined);
       }
       const adopted = result.created ? Boolean(adoptRuleProposal(db, projectId, result.id)) : false;

@@ -1,6 +1,17 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
-import { roleLinesKey } from "../critique/server";
 import type { CompiledMainAgent } from "./agent-profile";
+
+/** The KV key of the role's lesson lines, shared by every reader (specialist brief, employee chat, PM tools). */
+export const roleLinesKey = (projectId: string, role: string) => `lp.role.lines:${projectId}:${role}`;
+
+/** A dated rule line on `lp.role.lines:<projectId>:<role>` — what the specialist's brief prepends. */
+export async function recordRoleLine(kv: BbPluginApi["storage"]["kv"], projectId: string, role: string, line: string): Promise<string> {
+  const dated = /^\d{4}-\d{2}-\d{2}:/.test(line) ? line.trim().slice(0, 500) : `${new Date().toISOString().slice(0, 10)}: ${line.trim().slice(0, 500)}`;
+  const key = roleLinesKey(projectId, role);
+  const lines = ((await kv.get(key).catch(() => null)) as string[] | null) ?? [];
+  if (!lines.includes(dated)) await kv.set(key, [...lines, dated].slice(-30) as never);
+  return dated;
+}
 
 /**
  * The role's lessons for a directly called employee: the same `lp.role.lines:<project>:<role>` list the

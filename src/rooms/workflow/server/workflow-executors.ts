@@ -322,7 +322,7 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
     const rt = runtimeOf(c, c.runId);
     const judge = jev();
     if (!judge) return { output: { skills: [], picked: [], by: "off" } };
-    const { skillTreeCached, readSkillTreeText, pickSkillTree } = await import("../../writer/server/skill-tree");
+    const { skillTreeCached, readSkillTreeText, pickSkillTree } = await import("../../writer/server");
     const tree = await skillTreeCached(readSkillTreeText);
     if (!tree) return { output: { skills: [], picked: [], by: "off" } };
     const settings = rt?.projectId ? await ctx.effectiveProjectSettings(rt.projectId).then((r) => r.values as Record<string, unknown>).catch(() => ({})) : {};

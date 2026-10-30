@@ -4,6 +4,16 @@
   "description": "The rooms are free of import-time effects, so a barrel (index.ts) that re-exports a file nobody uses does not pull that file into a bundle. These files do something when they are imported and are always kept: judgments register themselves, the render counter hooks into globalThis. A new file with a top-level effect must be listed here (tests/architecture/boundaries.test.ts checks it).",
   "sideEffects": [
     "./runs/failure-class-judgment.ts",
+    "./critique/critique-worth.ts",
+    "./critique/review-screen.ts",
+    "./critique/index.ts",
+    "./tasks/plan-fact-judgment.ts",
+    "./wall/index.ts",
+    "./wall/wall-filter-judgment.ts",
+    "./workflow/goal-screen.ts",
+    "./workflow/plan-check.ts",
+    "./writer/finish-scan.ts",
+
     "./phase/intake.ts",
     "./critique/critic-screen.ts",
     "./workflow/route-workflow.ts",

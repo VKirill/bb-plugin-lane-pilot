@@ -13,3 +13,4 @@ export { SERVICE_JOBS, servicePair, servicePinKey, serviceRole } from "./service
 export { routeWorkflow } from "./route-workflow";
 export { GOAL_SCREEN_ID, goalScreenJudgment } from "./goal-screen";
 export { PLAN_CHECK_ID, planCheckJudgment } from "./plan-check";
+export { ROUTE_WORKFLOW_ID } from "./route-workflow";
