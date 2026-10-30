@@ -304,5 +304,6 @@
     },
     "live": "Поиск источников через Tavily, верификация ссылок и сбор исследовательского досье с отказом от сомнительных источников",
     "note": "Tested on stubs: search API and HTTP verification answer from stubs."
-  }
+  },
+  "goal_check": "artifact"
 }

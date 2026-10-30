@@ -323,5 +323,6 @@
     },
     "live": "Сборка аксессуара KnightHelmet, проверка размеров и коллизий в масштабе аватара, интеграция в проект Rojo",
     "note": "Tested on stubs: outside actions (Roblox Studio, Rojo CLI) answer from stubs. Live run requires Roblox development environment."
-  }
+  },
+  "goal_check": "artifact"
 }

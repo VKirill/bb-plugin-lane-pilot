@@ -15,7 +15,9 @@ describe("chain-end audit: no graph has a hole to its goal", () => {
     for (const file of files) {
       const problems = audit(JSON.parse(readFileSync(`workflows/${file}`, "utf8")));
       for (const problem of problems) {
-        if (["unreachable_node", "dead_end", "human_no_deadline"].includes(problem.code)) {
+        // The sweep is honest: every finding fails, at any level; a graph exempts itself only by its own field
+        // (goal_audit in the file), never by a list in this test.
+        if (["unreachable_node", "dead_end", "human_no_deadline", "no_goal_check"].includes(problem.code)) {
           report.push(`${file}: ${problem.code} ${problem.node ?? ""}`);
         }
       }

@@ -380,7 +380,10 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
       const reply = await services.dispatchWriter({ threadId: rt.pmThreadId, projectId: rt.projectId, task: valid.task, plan: valid.task.objective, birth: "workflow", criticCodeDefault: shortPathCriticDefault(c.workflow.id, picked.mode) });
       if (reply.state === "rejected" || reply.ok === false) return { output: failedTask("blocked", String(reply.reason ?? reply.hint ?? "the dispatch was rejected")) };
       const taskId = str(reply.taskId) || valid.task.id;
-      return { wait: { kind: "attempt", detail: { runId: str(reply.runId) || rt.runId, taskId, files: valid.task.owns_paths } }, ...(planned ? { usage: planned } : {}) };
+      // chains-end: an attempt whose row is lost (task deleted, base wiped) would wait forever; the wait gets a
+      // deadline — the node's own timeout or 48 h — and the engine turns it into an explicit await_timeout.
+      const deadline = Date.now() + ((node.timeoutSec ?? 48 * 3_600)) * 1000;
+      return { wait: { kind: "attempt", detail: { runId: str(reply.runId) || rt.runId, taskId, files: valid.task.owns_paths }, deadline }, ...(planned ? { usage: planned } : {}) };
     },
     poll: async (step): Promise<PollResult> => {
       const detail = step.await.detail as { runId: string; taskId: string } | undefined;

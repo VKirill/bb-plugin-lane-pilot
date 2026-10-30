@@ -70,12 +70,21 @@
   "nodes": [
     {
       "id": "pm-read",
-      "produces": [{"kind": "summary", "version": 1}],
+      "produces": [
+        {
+          "kind": "summary",
+          "version": 1
+        }
+      ],
       "type": "agent",
       "label": "PM read",
       "role": "pm-reader",
       "uses": "lp.pm-read",
-      "proof": {"kind": "advisory", "reason": "a model's summary of the read_first excerpts; it only hands context to the critics and decides nothing", "form": "parsePmReadResult: one JSON object with a non-blank summary (a blank or unreadable answer fails the stage)"},
+      "proof": {
+        "kind": "advisory",
+        "reason": "a model's summary of the read_first excerpts; it only hands context to the critics and decides nothing",
+        "form": "parsePmReadResult: one JSON object with a non-blank summary (a blank or unreadable answer fails the stage)"
+      },
       "output": [
         {
           "name": "state",
@@ -102,7 +111,10 @@
       "type": "decision",
       "label": "Quality mode",
       "uses": "lp.quality-mode",
-      "proof": {"kind": "gate", "check": "resolveQualityMode reads the task, then the project setting: a closed enum quick, standard or full"},
+      "proof": {
+        "kind": "gate",
+        "check": "resolveQualityMode reads the task, then the project setting: a closed enum quick, standard or full"
+      },
       "output": [
         {
           "name": "mode",
@@ -117,12 +129,21 @@
     },
     {
       "id": "plan-critique",
-      "produces": [{"kind": "gate-decision", "version": 1}],
+      "produces": [
+        {
+          "kind": "gate-decision",
+          "version": 1
+        }
+      ],
       "type": "agent",
       "label": "Plan critique",
       "role": "plan-critic",
       "uses": "lp.plan-critique",
-      "proof": {"kind": "advisory", "reason": "a model's verdict on the plan: it never accepts a task, and in plan_critique.mode gate (the default, SMA p2_checker) its refusal stops the attempt before the writer", "form": "parseCritique: verdict schema; a critical or high finding counts only with a file, a line and quoted evidence, and a file the critic's input names"},
+      "proof": {
+        "kind": "advisory",
+        "reason": "a model's verdict on the plan: it never accepts a task, and in plan_critique.mode gate (the default, SMA p2_checker) its refusal stops the attempt before the writer",
+        "form": "parseCritique: verdict schema; a critical or high finding counts only with a file, a line and quoted evidence, and a file the critic's input names"
+      },
       "output": [
         {
           "name": "allowed",
@@ -137,12 +158,21 @@
     },
     {
       "id": "plan-critique-quick",
-      "produces": [{"kind": "gate-decision", "version": 1}],
+      "produces": [
+        {
+          "kind": "gate-decision",
+          "version": 1
+        }
+      ],
       "type": "agent",
       "label": "Plan critique (quick: skipped by its own receipt)",
       "role": "plan-critic",
       "uses": "lp.plan-critique",
-      "proof": {"kind": "advisory", "reason": "a model's verdict on the plan: it never accepts a task, and in plan_critique.mode gate (the default, SMA p2_checker) its refusal stops the attempt before the writer", "form": "parseCritique: verdict schema; a critical or high finding counts only with a file, a line and quoted evidence, and a file the critic's input names"},
+      "proof": {
+        "kind": "advisory",
+        "reason": "a model's verdict on the plan: it never accepts a task, and in plan_critique.mode gate (the default, SMA p2_checker) its refusal stops the attempt before the writer",
+        "form": "parseCritique: verdict schema; a critical or high finding counts only with a file, a line and quoted evidence, and a file the critic's input names"
+      },
       "output": [
         {
           "name": "allowed",
@@ -160,7 +190,10 @@
       "type": "action",
       "label": "Block: plan critique",
       "uses": "lp.block-plan-critique",
-      "proof": {"kind": "receipt", "check": "the blocked plan-critique receipt is stored with its reason and the reply to the PM is built from it"},
+      "proof": {
+        "kind": "receipt",
+        "check": "the blocked plan-critique receipt is stored with its reason and the reply to the PM is built from it"
+      },
       "output": [
         {
           "name": "reply",
@@ -170,13 +203,33 @@
     },
     {
       "id": "specialist-review",
-      "consumes": [{"kind": "gate-decision", "version": 1, "from": "plan-critique-quick"}, {"kind": "gate-decision", "version": 1, "from": "plan-critique"}],
-      "produces": [{"kind": "gate-decision", "version": 1}],
+      "consumes": [
+        {
+          "kind": "gate-decision",
+          "version": 1,
+          "from": "plan-critique-quick"
+        },
+        {
+          "kind": "gate-decision",
+          "version": 1,
+          "from": "plan-critique"
+        }
+      ],
+      "produces": [
+        {
+          "kind": "gate-decision",
+          "version": 1
+        }
+      ],
       "type": "agent",
       "label": "Specialist review",
       "role": "specialist-reviewer",
       "uses": "lp.specialist-review",
-      "proof": {"kind": "advisory", "reason": "a model's risk opinion on the plan", "form": "parseSpecialistResult: verdict schema; a high or critical risk counts only with a file, a line and quoted evidence, and a file the reviewer's input names"},
+      "proof": {
+        "kind": "advisory",
+        "reason": "a model's risk opinion on the plan",
+        "form": "parseSpecialistResult: verdict schema; a high or critical risk counts only with a file, a line and quoted evidence, and a file the reviewer's input names"
+      },
       "output": [
         {
           "name": "allowed",
@@ -194,7 +247,10 @@
       "type": "action",
       "label": "Block: specialist review",
       "uses": "lp.block-specialist",
-      "proof": {"kind": "receipt", "check": "the blocked specialist-review receipt is stored with its reason and the reply to the PM is built from it"},
+      "proof": {
+        "kind": "receipt",
+        "check": "the blocked specialist-review receipt is stored with its reason and the reply to the PM is built from it"
+      },
       "output": [
         {
           "name": "reply",
@@ -207,7 +263,10 @@
       "type": "action",
       "label": "Ownership base",
       "uses": "lp.ownership-base",
-      "proof": {"kind": "receipt", "check": "the run gate decision and the ownership base preflight are stored in the run-gate receipt; the repository must report a readable base commit"},
+      "proof": {
+        "kind": "receipt",
+        "check": "the run gate decision and the ownership base preflight are stored in the run-gate receipt; the repository must report a readable base commit"
+      },
       "output": [
         {
           "name": "ok",
@@ -238,7 +297,10 @@
       "type": "action",
       "label": "Block: ownership base",
       "uses": "lp.block-ownership",
-      "proof": {"kind": "receipt", "check": "the blocked run-gate receipt is stored with its reason and the reply to the PM is built from it"},
+      "proof": {
+        "kind": "receipt",
+        "check": "the blocked run-gate receipt is stored with its reason and the reply to the PM is built from it"
+      },
       "output": [
         {
           "name": "reply",
@@ -251,7 +313,10 @@
       "type": "action",
       "label": "Task folder",
       "uses": "lp.task-folder",
-      "proof": {"kind": "file", "check": "the task folder exists on the writer's machine before the writer starts"},
+      "proof": {
+        "kind": "file",
+        "check": "the task folder exists on the writer's machine before the writer starts"
+      },
       "output": [
         {
           "name": "ok",
@@ -261,11 +326,38 @@
     },
     {
       "id": "writer",
-      "produces": [{"kind": "dispatch-reply", "version": 1}],
+      "produces": [
+        {
+          "kind": "dispatch-reply",
+          "version": 1
+        }
+      ],
       "type": "lp-task",
       "label": "Code task",
       "uses": "lp-task",
-      "stage_proof": {"writer-agent": {"kind": "gate", "check": "gates owns-paths and validate: the changed files are inside owns_paths and expected_outputs exist with content"}, "verification": {"kind": "command", "check": "every verification[].command exits 0 in the sandbox (gate verification passed)"}, "code-critique": {"kind": "advisory", "reason": "a model's review of the candidate", "form": "parseCodeCritique: verdict schema; a critical or high finding counts only when its file is among the candidate's files and its line exists in it"}, "plan-fact": {"kind": "file", "check": "blindPlanFact checks each acceptance row of the writer's plan-fact table against the candidate: the cited file is among the changed files, the cited lines overlap a changed hunk, the cited command is a verification[] command that exited 0; the writer's prose is never read"}, "acceptance-receipt": {"kind": "schema", "check": "the acceptance-v2 receipt validates against lane-stack/schemas/acceptance-v2.schema.json (validateAcceptanceV2)"}},
+      "stage_proof": {
+        "writer-agent": {
+          "kind": "gate",
+          "check": "gates owns-paths and validate: the changed files are inside owns_paths and expected_outputs exist with content"
+        },
+        "verification": {
+          "kind": "command",
+          "check": "every verification[].command exits 0 in the sandbox (gate verification passed)"
+        },
+        "code-critique": {
+          "kind": "advisory",
+          "reason": "a model's review of the candidate",
+          "form": "parseCodeCritique: verdict schema; a critical or high finding counts only when its file is among the candidate's files and its line exists in it"
+        },
+        "plan-fact": {
+          "kind": "file",
+          "check": "blindPlanFact checks each acceptance row of the writer's plan-fact table against the candidate: the cited file is among the changed files, the cited lines overlap a changed hunk, the cited command is a verification[] command that exited 0; the writer's prose is never read"
+        },
+        "acceptance-receipt": {
+          "kind": "schema",
+          "check": "the acceptance-v2 receipt validates against lane-stack/schemas/acceptance-v2.schema.json (validateAcceptanceV2)"
+        }
+      },
       "stages": [
         "writer-agent",
         "verification",
@@ -281,24 +373,49 @@
       ]
     },
     {
-      "id": "inside-writer",
-      "type": "note",
-      "text": "Inside the code task (locked): workspace and worktree, the writer session and its turns, owns-paths and verification checks, repair rounds, code critique, merge intent and merge, integration gate, acceptance receipt, retries and fallbacks, memory and project-life after acceptance."
-    },
-    {
       "id": "qa-gate",
       "type": "decision",
       "label": "Browser check due",
       "uses": "lp.qa-gate",
-      "proof": {"kind": "gate", "check": "the task is accepted with a passed acceptance receipt and its contract carries qa_cases and qa_url; a task without them, or one that did not end accepted, goes on without a check"},
+      "proof": {
+        "kind": "gate",
+        "check": "the task is accepted with a passed acceptance receipt and its contract carries qa_cases and qa_url; a task without them, or one that did not end accepted, goes on without a check"
+      },
       "output": [
-        {"name": "run", "type": "boolean"},
-        {"name": "run_id", "type": "string", "required": false},
-        {"name": "task_id", "type": "string", "required": false},
-        {"name": "url", "type": "string", "required": false},
-        {"name": "cases", "type": "array", "required": false},
-        {"name": "env_class", "type": "string", "required": false},
-        {"name": "dev_server", "type": "string", "required": false}
+        {
+          "name": "run",
+          "type": "boolean"
+        },
+        {
+          "name": "run_id",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "task_id",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "url",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "cases",
+          "type": "array",
+          "required": false
+        },
+        {
+          "name": "env_class",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "dev_server",
+          "type": "string",
+          "required": false
+        }
       ]
     },
     {
@@ -314,10 +431,19 @@
         "env_class": "qa-gate.env_class",
         "dev_server": "qa-gate.dev_server"
       },
-      "proof": {"kind": "receipt", "check": "the browser-qa stage receipt of the task holds the verdict of the check thread; a failed one leaves the task not done"},
+      "proof": {
+        "kind": "receipt",
+        "check": "the browser-qa stage receipt of the task holds the verdict of the check thread; a failed one leaves the task not done"
+      },
       "output": [
-        {"name": "state", "type": "string"},
-        {"name": "reply", "type": "json"}
+        {
+          "name": "state",
+          "type": "string"
+        },
+        {
+          "name": "reply",
+          "type": "json"
+        }
       ]
     }
   ],

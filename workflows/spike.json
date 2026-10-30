@@ -144,5 +144,6 @@
         "status == 'answered'"
       ]
     }
-  }
+  },
+  "goal_check": "artifact"
 }

@@ -67,7 +67,12 @@
   "nodes": [
     {
       "id": "recon",
-      "produces": [{"kind": "report", "version": 1}],
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
       "type": "agent",
       "role": "analyst",
       "src": "maestro-flow:odyssey-security.md",
@@ -108,7 +113,12 @@
         ]
       },
       "child": {
-        "produces": [{"kind": "findings", "version": 1}],
+        "produces": [
+          {
+            "kind": "findings",
+            "version": 1
+          }
+        ],
         "type": "agent",
         "role": "code-critic",
         "session": "new",
@@ -134,7 +144,12 @@
     },
     {
       "id": "report",
-      "produces": [{"kind": "report", "version": 1}],
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
       "type": "agent",
       "role": "analyst",
       "prompt": "Severity matrix CRITICAL/HIGH/MEDIUM/LOW with file:line, impact and remediation per finding; group by root cause; list scan phases that could not run.",
@@ -261,5 +276,6 @@
       ]
     },
     "live": "песочница с подложенным фальшивым ключом в .env.example: находка указывает место, значения в отчёте нет"
-  }
+  },
+  "goal_check": "artifact"
 }

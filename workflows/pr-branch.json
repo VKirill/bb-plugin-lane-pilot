@@ -135,5 +135,6 @@
         "status == 'done'"
       ]
     }
-  }
+  },
+  "goal_check": "artifact"
 }

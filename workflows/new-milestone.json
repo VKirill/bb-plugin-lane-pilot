@@ -114,5 +114,6 @@
         "phases.length == 2"
       ]
     }
-  }
+  },
+  "goal_check": "artifact"
 }

@@ -32,7 +32,12 @@
     "seo-cocoon"
   ],
   "status": "tested",
-  "live_success": { "output": "status", "in": ["done"] },
+  "live_success": {
+    "output": "status",
+    "in": [
+      "done"
+    ]
+  },
   "tags": [
     "social",
     "research",
@@ -113,7 +118,12 @@
   "nodes": [
     {
       "id": "discover",
-      "produces": [{"kind": "report", "version": 1}],
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
       "type": "agent",
       "role": "errand",
       "title": {
@@ -140,8 +150,19 @@
     },
     {
       "id": "pick",
-      "consumes": [{"kind": "report", "version": 1, "from": "discover"}],
-      "produces": [{"kind": "report", "version": 1}],
+      "consumes": [
+        {
+          "kind": "report",
+          "version": 1,
+          "from": "discover"
+        }
+      ],
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
       "type": "agent",
       "role": "analyst",
       "prompt": "Pick up to posts_count posts with the liveliest discussion and distinct angles; drop ads and posts with fewer than 20 comments unless nothing better exists. Each item of picked is the post URL as a plain string (\"https://vk.com/wall-1_2\"), not an object: the next step opens it by that address.",
@@ -220,7 +241,12 @@
     },
     {
       "id": "enrich",
-      "produces": [{"kind": "report", "version": 1}],
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
       "type": "agent",
       "role": "analyst",
       "profile": {
@@ -259,7 +285,12 @@
     },
     {
       "id": "draft_post",
-      "produces": [{"kind": "post-draft", "version": 1}],
+      "produces": [
+        {
+          "kind": "post-draft",
+          "version": 1
+        }
+      ],
       "type": "agent",
       "role": "specialist:copy-lead",
       "profile": {
@@ -445,5 +476,6 @@
     },
     "live": "один живой пост в Threads (post_urls), 40-80 комментариев; validate_artifacts.py проходит; в summary.md цитаты с id и ни одной выдуманной (проверка: цитата - подстрока comments.jsonl)",
     "note": "Tested on stubs: every outside action answers from a stub. Not live yet: social-browser on Threads/Instagram/VK and the social-insights and text-insights scripts on the machine that has them. See `live` for the acceptance run."
-  }
+  },
+  "goal_check": "artifact"
 }

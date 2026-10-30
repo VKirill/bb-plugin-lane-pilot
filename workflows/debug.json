@@ -114,9 +114,22 @@
     },
     {
       "id": "investigate",
-      "consumes": [{"kind": "report", "version": 1, "from": "verify_cause"}],
-      "produces": [{"kind": "diagnosis", "version": 1}],
-      "gates": ["investigate.confidence >= 0 && investigate.confidence <= 100"],
+      "consumes": [
+        {
+          "kind": "report",
+          "version": 1,
+          "from": "verify_cause"
+        }
+      ],
+      "produces": [
+        {
+          "kind": "diagnosis",
+          "version": 1
+        }
+      ],
+      "gates": [
+        "investigate.confidence >= 0 && investigate.confidence <= 100"
+      ],
       "type": "agent",
       "role": "debugger",
       "title": {
@@ -147,8 +160,19 @@
     },
     {
       "id": "verify_cause",
-      "consumes": [{"kind": "diagnosis", "version": 1, "from": "investigate"}],
-      "produces": [{"kind": "report", "version": 1}],
+      "consumes": [
+        {
+          "kind": "diagnosis",
+          "version": 1,
+          "from": "investigate"
+        }
+      ],
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
       "type": "agent",
       "role": "debugger",
       "session": "new",
@@ -373,5 +397,6 @@
       "expect_no_repo_edits": true
     },
     "live": "песочница: заведомый баг (пустая последняя строка); ответ содержит file:line и механизм, evidence.ndjson есть, изменений в репозитории нет (repo_edited = 0)"
-  }
+  },
+  "goal_check": "artifact"
 }

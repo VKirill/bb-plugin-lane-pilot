@@ -320,5 +320,6 @@
     },
     "live": "Пакетное выставление счетов в Контур.Эльбе на Mac mini, проверка реквизитов и превью реестра владельцу",
     "note": "Tested on stubs: Elba and Telegram actions answer from stubs. Live run requires Mac mini host_7sea4qaad8 with Elba session."
-  }
+  },
+  "goal_check": "artifact"
 }

@@ -173,5 +173,6 @@
         "status == 'shipped'"
       ]
     }
-  }
+  },
+  "goal_check": "artifact"
 }

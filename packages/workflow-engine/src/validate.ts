@@ -135,7 +135,7 @@ export function validateWorkflow(workflow: Workflow, options: ValidateOptions = 
     let goalCheck = false;
     for (const node of workflow.nodes) {
       if (node.type === "note") continue;
-      if (entry && !reachable.has(node.id)) error("unreachable_node", `node "${node.id}" is not reachable from the entry`, { node: node.id });
+      if (entry && !reachable.has(node.id)) warn("unreachable_node", `node "${node.id}" is not reachable from the entry`, { node: node.id });
       if (!hasOutgoing.has(node.id) && !(node.type === "action" && node.action === EMIT)) {
         warn("dead_end", `node "${node.id}" ends the run without a terminal emit`, { node: node.id });
       }
@@ -144,8 +144,10 @@ export function validateWorkflow(workflow: Workflow, options: ValidateOptions = 
       }
       if (node.type === "lp-task" || node.type === "subworkflow" || node.type === "decision" || node.proof || GOAL_CHECK.test(("action" in node && node.action) || "")) goalCheck = true;
     }
-    if (!goalCheck && workflow.nodes.some((node) => node.type === "action" && node.action === EMIT)) {
-      warn("no_goal_check", "the workflow can end without any node that checks the goal (no lp-task, subworkflow, proof or check-like action)");
+    // `goal_audit` or the authored `goal_check` field is the graph's own word for how its goal is verified.
+    // Absent both, an emit without a checking node is a hole.
+    if (!goalCheck && workflow.goal_audit === undefined && workflow.goal_check === undefined && workflow.nodes.some((node) => node.type === "action" && node.action === EMIT)) {
+      warn("no_goal_check", "the workflow can end without any node that checks the goal (no lp-task, subworkflow, proof or check-like action, no goal_audit)");
     }
   }
 

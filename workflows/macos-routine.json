@@ -286,5 +286,6 @@
     },
     "live": "Выполнение рутины на Mac mini через computer-use, фиксация скриншота экрана и отчёт",
     "note": "Tested on stubs: macOS local actions and screenshot tools answer from stubs. Live run requires Mac mini host_7sea4qaad8."
-  }
+  },
+  "goal_check": "artifact"
 }

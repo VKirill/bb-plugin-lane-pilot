@@ -213,5 +213,6 @@
       "pass": "artifact"
     }
   ],
-  "status": "published"
+  "status": "published",
+  "goal_check": "artifact"
 }

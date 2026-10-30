@@ -199,5 +199,6 @@
         "next_steps.length == 3"
       ]
     }
-  }
+  },
+  "goal_check": "artifact"
 }

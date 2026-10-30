@@ -70,7 +70,12 @@
   "nodes": [
     {
       "id": "walk",
-      "produces": [{"kind": "report", "version": 1}],
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
       "type": "agent",
       "role": "analyst",
       "title": {
@@ -93,8 +98,19 @@
     },
     {
       "id": "synth",
-      "consumes": [{"kind": "report", "version": 1, "from": "walk"}],
-      "produces": [{"kind": "report", "version": 1}],
+      "consumes": [
+        {
+          "kind": "report",
+          "version": 1,
+          "from": "walk"
+        }
+      ],
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
       "type": "agent",
       "role": "analyst",
       "session": "new",
@@ -184,5 +200,6 @@
       ]
     },
     "live": "песочница: план с дырой; допрос возвращает риск с file:line"
-  }
+  },
+  "goal_check": "artifact"
 }

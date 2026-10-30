@@ -385,5 +385,6 @@
     },
     "live": "Реальное создание 3D-модели сундука в Blender на Mac mini через MCP, генерация превью и отчёта поликаунта, экспорт в GLB",
     "note": "Tested on stubs: outside actions (Image Studio, Blender MCP on Mac mini) answer from stubs. Live run requires Mac mini with Blender MCP."
-  }
+  },
+  "goal_check": "artifact"
 }

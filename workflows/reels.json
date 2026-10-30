@@ -37,7 +37,12 @@
     "insights-post"
   ],
   "status": "tested",
-  "live_success": { "output": "status", "in": ["done"] },
+  "live_success": {
+    "output": "status",
+    "in": [
+      "done"
+    ]
+  },
   "tags": [
     "video",
     "social"
@@ -119,7 +124,12 @@
   "nodes": [
     {
       "id": "ingest",
-      "produces": [{"kind": "report", "version": 1}],
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
       "type": "agent",
       "role": "errand",
       "title": {
@@ -148,8 +158,19 @@
     },
     {
       "id": "transcribe",
-      "consumes": [{"kind": "report", "version": 1, "from": "ingest"}],
-      "produces": [{"kind": "report", "version": 1}],
+      "consumes": [
+        {
+          "kind": "report",
+          "version": 1,
+          "from": "ingest"
+        }
+      ],
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
       "type": "agent",
       "role": "errand",
       "src": "video-to-reels step 2",
@@ -166,8 +187,19 @@
     },
     {
       "id": "select",
-      "consumes": [{"kind": "report", "version": 1, "from": "transcribe"}],
-      "produces": [{"kind": "report", "version": 1}],
+      "consumes": [
+        {
+          "kind": "report",
+          "version": 1,
+          "from": "transcribe"
+        }
+      ],
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
       "type": "agent",
       "role": "analyst",
       "profile": {
@@ -213,7 +245,12 @@
     },
     {
       "id": "edit_plan",
-      "produces": [{"kind": "report", "version": 1}],
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
       "type": "agent",
       "role": "analyst",
       "src": "video-to-reels step 4",
@@ -243,7 +280,12 @@
       "type": "parallel",
       "for_each": "select.clips",
       "child": {
-        "produces": [{"kind": "report", "version": 1}],
+        "produces": [
+          {
+            "kind": "report",
+            "version": 1
+          }
+        ],
         "type": "agent",
         "role": "errand",
         "prompt": "Render clip {{item.id}} with FFmpeg (or a working Remotion composition for motion captions): first a short preview to check crop, Cyrillic fonts, caption positions and audio, then the full render. Output into the job folder; do not replace shared tooling.",
@@ -270,7 +312,12 @@
       "type": "parallel",
       "for_each": "render.files",
       "child": {
-        "produces": [{"kind": "report", "version": 1}],
+        "produces": [
+          {
+            "kind": "report",
+            "version": 1
+          }
+        ],
         "type": "agent",
         "role": "auditor",
         "prompt": "Verify the rendered clip: duration matches the timeline within tolerance, audio and video present, the file decodes; beginning and ending complete, cuts remove no words or reverse meaning; captions match the audible words and stay in sync across cuts (check names and numbers against source audio); faces/slides and captions stay visible; no black or frozen frames, stretched pictures or clipped text; dialogue intelligible, inserts end on time. Inspect sampled frames including cut and insert boundaries; if listening is unavailable say so - signal statistics do not prove perceptual quality.",
@@ -293,7 +340,12 @@
     },
     {
       "id": "publish_text",
-      "produces": [{"kind": "report", "version": 1}],
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
       "type": "agent",
       "role": "specialist:copy-lead",
       "profile": {
@@ -341,7 +393,12 @@
     },
     {
       "id": "script",
-      "produces": [{"kind": "report", "version": 1}],
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
       "type": "agent",
       "role": "analyst",
       "profile": {
@@ -361,8 +418,24 @@
     },
     {
       "id": "build_film",
-      "consumes": [{"kind": "report", "version": 1, "from": "script"}, {"kind": "report", "version": 1, "from": "verify_film"}],
-      "produces": [{"kind": "report", "version": 1}],
+      "consumes": [
+        {
+          "kind": "report",
+          "version": 1,
+          "from": "script"
+        },
+        {
+          "kind": "report",
+          "version": 1,
+          "from": "verify_film"
+        }
+      ],
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
       "type": "agent",
       "role": "errand",
       "profile": {
@@ -383,8 +456,19 @@
     },
     {
       "id": "verify_film",
-      "consumes": [{"kind": "report", "version": 1, "from": "build_film"}],
-      "produces": [{"kind": "report", "version": 1}],
+      "consumes": [
+        {
+          "kind": "report",
+          "version": 1,
+          "from": "build_film"
+        }
+      ],
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
       "type": "agent",
       "role": "auditor",
       "prompt": "Check duration, vertical format, audio present, subtitles in sync with the voice, no clipped text; report what you could not check.",
@@ -665,5 +749,6 @@
     },
     "live": "реальная 3-минутная запись; 1 клип 30-45 с, 1080x1920, субтитры на кириллице, проверка verify по семплам кадров; для фильма - стиль chalk, тема из трёх предложений",
     "note": "Tested on stubs: every outside action answers from a stub. Not live yet: ffmpeg, Whisper and yt-dlp (or the film pipeline) on a machine that has them. See `live` for the acceptance run."
-  }
+  },
+  "goal_check": "artifact"
 }
