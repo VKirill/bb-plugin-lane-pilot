@@ -14,7 +14,7 @@ sources:
   - docs/enabled-settings.snapshot.json
 ---
 
-<!-- enabled-settings:structure b0946fe00ec9d271 -->
+<!-- enabled-settings:structure 7f60587b082996f5 -->
 
 # Enabled settings (generated)
 
@@ -113,6 +113,7 @@ switches: `quick` disables both critiques, `full` enables them (`src/rooms/criti
 | `memory.enabled` | `true` | — | stage setting: enable isolated project memory maintenance and injection |
 | `memory.index_budget` | `65536` | — | stage setting: cap total project index tokens |
 | `memory.inject` | `true` | — | stage setting: retrieve bounded relevant project memory for a writer |
+| `memory.maintain_every` | `3` | — | stage setting: run the memory maintainer on every Nth accepted task |
 | `memory.maintain` | `true` | — | stage setting: maintain durable project memory after accepted work |
 | `memory.note_budget` | `24000` | — | stage setting: cap note memory tokens |
 | `memory.personal_bot` | — | — | keeps bot-scoped project memory isolated across maintenance and retrieval |
