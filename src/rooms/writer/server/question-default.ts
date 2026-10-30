@@ -1,13 +1,15 @@
 import { questionKind } from "../../tasks";
 
 /**
- * A writer's question nobody answers must not hold the task (and its folder) forever. After WRITER_QUESTION_WAIT_MS the machine answers
- * once with the safest default (question-timeout.ts); a writer that asks again after it is ended, not waited for (finish.ts).
+ * A writer's question nobody answers must not hold the task (and its folder) forever. After `writer.question_wait_min` (catalog s586; this
+ * constant is its default) the machine acts on it once: the second pilot answers, narrows or hands over (second-pilot.ts), or, with
+ * `writer.auto_return` off, the safest default answers (question-timeout.ts); a writer that asks again after it is ended, not waited for (finish.ts).
  */
-export const WRITER_QUESTION_WAIT_MS = 60 * 60_000;
+export const DEFAULT_QUESTION_WAIT_MIN = 120;
+export const WRITER_QUESTION_WAIT_MS = DEFAULT_QUESTION_WAIT_MIN * 60_000;
 
 /** Said in the PM's note to the writer's question, so the PM knows what happens when it does not answer. */
-export const WRITER_QUESTION_WAIT_TEXT = "If nobody answers within an hour the machine answers a contract or sandbox question with the safest default (stay inside owns_paths and the checks as written, report what cannot be met) and the writer continues. A product decision (what the product should do, wording, which behaviour is live) is never defaulted: the attempt ends with the question in its reason and it goes to the owner's list.";
+export const WRITER_QUESTION_WAIT_TEXT = "If nobody answers within writer.question_wait_min (default two hours) the machine acts once: the second pilot, a read-only helper with the contract, plan, read_first excerpts and project memory, answers the question itself when they settle it and the writer continues; or narrows the task into a new one that needs no human; or leaves it to the owner. A product decision (what the product should do, wording, which behaviour is live) is never answered by the machine: the attempt ends with the question in its reason and it goes to the owner.";
 
 /** A question about the contract or the sandbox (paths, checks, tooling): the narrower default answers it. */
 const CONTRACT_OR_SANDBOX = /owns_paths|never_touch|expected_outputs|verification|sandbox|seatbelt|bubblewrap|\bchecks?\b|vitest|jest|typecheck|\btsc\b|\bnpm\b|\bnpx\b|exit code|lane pilot|checkout|worktree|no-git|\bcontract\b|контракт|песочниц|проверк/i;

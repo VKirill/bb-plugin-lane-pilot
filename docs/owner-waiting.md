@@ -43,7 +43,7 @@ SMA D0-3 («Waiting for you» card, «one wait, one message»). The night policy
 | Source | Rows | Wakes the phone | The action |
 |---|---|---|---|
 | `learning` | `lane_pilot_learning_item` in state `pending_owner` — learned items from his own messages (`items.ts:66-75`) | no | `bb lane-pilot learning accept\|reject <id>` |
-| `writer` | a writer's product question that went unanswered for an hour (`src/rooms/writer/server/question-timeout.ts:33-40`) | yes | answer in the task's objective and send the task again |
+| `writer` | a writer's question to a human that went unanswered for `writer.question_wait_min` (default two hours): with `writer.auto_return` on, the second pilot could not answer or narrow it and the PM chat was cold (`src/rooms/writer/server/second-pilot.ts`, no wake); with it off, a product question (`src/rooms/writer/server/question-timeout.ts`, wake) | by the row's `wake` | answer in the task's objective and send the task again |
 | `phase` | owner-word turns of a running phase (`src/rooms/phase/server/driver.ts:378`, `:1032`) | by the row's `wake` | the row's own `actions` |
 | `workflow` | the end of a run that has no PM chat to tell (`src/rooms/workflow/server/pm-notice.ts:106-124`) | on failure | the row's own `actions` |
 | `wall` | a wall class that ran out of moves (`src/rooms/wall/service.ts:232`) | no | the row's own `actions` |

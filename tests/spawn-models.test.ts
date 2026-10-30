@@ -28,6 +28,7 @@ const WRAPPERS: Record<string, Wrapper> = {
   "src/rooms/self-repair/server/self-repair.ts": { via: "resolver", roles: ["repairer"], note: "the night plan's or the watcher's pick (which holds the repairer row) goes through as a pin" },
   "src/rooms/self-repair/server/rule-scan.ts": { via: "resolver", roles: ["rules-analyzer"], note: "the owner's stored analyzer is a pin; otherwise the row" },
   "src/rooms/critique/server/critique-runs.ts": { via: "table", roles: ["pm-reader", "plan-critic", "code-critic", "specialist-reviewer"], note: "roleSelection(): resolveRoleModel + the host catalog's `usable`, then criticAcrossFamilies; a critic left in the writer's family is warned about (same table, the stage's own effort/tier checks)" },
+  "src/rooms/writer/server/second-pilot.ts": { via: "table", roles: ["plan-critic"], note: "roleSelection() on the plan critic's row: the second pilot reads a writer's unanswered question with the contract and docs (W34), one shot, no tools" },
   "src/rooms/writer/server/spawn.ts": { via: "exception", note: "the writer is Jev's pick from the writers' anamnesis, not a row of the table" },
   "src/rooms/writer/server/finish.ts": { via: "exception", note: "a code-repair turn goes back to the writer's own recorded provider/model" },
   "src/rooms/native-agent/server/activation.ts": { via: "exception", note: "the PM chat runs on the owner's chosen model" },
