@@ -75,12 +75,13 @@ export const intakeJudgment = defineJudgment<{ text: string; previous?: string |
 export const PATH_CLASS_JUDGMENT_ID = "intake.path_class";
 
 /** Size and risk of one request. Unsure on either question keeps the rules' reading of that question. */
-export const pathClassJudgment = defineJudgment<{ text: string }, { size: PathSize; risk: PathRisk }>({
+export const pathClassJudgment = defineJudgment<{ text: string; previous?: string | null }, { size: PathSize; risk: PathRisk }>({
   id: PATH_CLASS_JUDGMENT_ID,
-  version: 1,
+  // v2: the state is the intake judgment's (owner_message + pm_last_message), so both judgments ride one bundled request.
+  version: 2,
   defaultMode: "active",
   timeoutMs: 8_000,
-  stateBuilder: (input) => ({ owner_message: clip(input.text, 4_000) }),
+  stateBuilder: (input) => ({ owner_message: clip(input.text, 4_000), ...(input.previous ? { pm_last_message: clip(input.previous, 1_500) } : {}) }),
   questions: () => ({
     size: choice(
       "How big is the change `owner_message` asks for? Judge the work, not the length or the tone.",

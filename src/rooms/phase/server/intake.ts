@@ -47,31 +47,31 @@ export function createPhaseIntake(ctx: Deps, phases: IntakePhases, train?: Intak
   const { bb, db } = ctx;
   const pending = new Map<string, Promise<IntakeRecord | null>>();
 
-  async function classify(text: string, projectId: string, runId: string | null, settings: Record<string, unknown>, previous: string | null = null): Promise<{ kind: IntakeKind; by: "rules" | "jev" }> {
-    const rules = intakeByRules(text);
-    if (rules.confident) return { kind: rules.kind, by: "rules" };
+  /**
+   * One bundled intake call (C1): kind, size and risk ride a single Jev request — the two judgments share one state, so
+   * the bundle is one API call (speculative fan-out: the path questions are asked even when the kind ends up not small;
+   * their answers are only read then). Confident rules skip the call for their side; an unsure verdict keeps the rules'
+   * reading, and Jev down or off keeps the rules' reading of both.
+   */
+  async function classifyBundle(text: string, previous: string | null, projectId: string, runId: string | null, settings: Record<string, unknown>): Promise<{ kind: IntakeKind; path: { size: PathSize; risk: PathRisk }; by: "rules" | "jev" }> {
+    const kindRules = intakeByRules(text);
+    const pathRules = pathClassByRules(text);
+    const path = { size: pathRules.size, risk: pathRules.risk };
+    if (kindRules.confident && (kindRules.kind !== "small" || pathRules.confident)) return { kind: kindRules.kind, path, by: "rules" };
     const instance = jev();
     try {
       if (instance?.enabled(settings as JevSettings)) {
-        const verdict = await instance.judge(intakeJudgment, { text, previous }, { projectId, runId, subject: "intake", settings: settings as JevSettings });
-        if (verdict.by === "jev") return { kind: verdict.decision.kind, by: "jev" };
+        const ctx = { projectId, runId, subject: "intake", settings: settings as JevSettings };
+        // The bundle is one API call; a Jev without judgeBundle (a test fake, an older runtime) asks the two one by one.
+        const [weight, cls] = typeof instance.judgeBundle === "function"
+          ? await instance.judgeBundle([{ judgment: intakeJudgment, input: { text, previous } }, { judgment: pathClassJudgment, input: { text, previous } }], ctx)
+          : await Promise.all([instance.judge(intakeJudgment, { text, previous }, ctx), instance.judge(pathClassJudgment, { text, previous }, ctx)]);
+        const kind = kindRules.confident ? kindRules.kind : weight.by === "jev" ? weight.decision.kind : kindRules.kind;
+        if (!pathRules.confident && cls.by === "jev") { path.size = cls.decision.size; path.risk = cls.decision.risk; }
+        return { kind, path, by: weight.by === "jev" || cls.by === "jev" ? "jev" : "rules" };
       }
     } catch { /* the rules' reading stands */ }
-    return { kind: rules.kind, by: "rules" };
-  }
-
-  /** Size and risk for the short path. Confident rules skip Jev; an unsure judgment keeps the rules' reading. */
-  async function classifyPath(text: string, projectId: string, runId: string | null, settings: Record<string, unknown>): Promise<{ size: PathSize; risk: PathRisk }> {
-    const rules = pathClassByRules(text);
-    if (rules.confident) return { size: rules.size, risk: rules.risk };
-    const instance = jev();
-    try {
-      if (instance?.enabled(settings as JevSettings)) {
-        const verdict = await instance.judge(pathClassJudgment, { text }, { projectId, runId, subject: "intake", settings: settings as JevSettings });
-        if (verdict.by === "jev") return { size: verdict.decision.size, risk: verdict.decision.risk };
-      }
-    } catch { /* the rules' reading stands */ }
-    return { size: rules.size, risk: rules.risk };
+    return { kind: kindRules.kind, path, by: "rules" };
   }
 
   /** The PM's last message in the chat, or null: the judgment reads the owner's message against it. */
@@ -100,7 +100,7 @@ export function createPhaseIntake(ctx: Deps, phases: IntakePhases, train?: Intak
     if (!requestId || !text || data.initiator === "agent" || isMachineMessage(text)) return null;
     const known = await bb.storage.kv.get(KEY(threadId)).catch(() => null) as IntakeRecord | null;
     if (known?.requestId === requestId) return known;
-    const { kind, by } = await classify(text, run.project_id, run.id, settings, await lastPmMessage(threadId));
+    const { kind, by, path } = await classifyBundle(text, await lastPmMessage(threadId), run.project_id, run.id, settings);
     // A run the owner stopped or paused starts nothing on the machine's own (no phase, graph or architect): the PM reads the
     // message instead (live 2026-10-26, Vampirism Fire: work was stopped and issue-quick still built and merged wcebffdb8-T1).
     const stopped = await isRunHalted(bb.storage.kv as never, run.id) || await isRunPaused(bb.storage.kv as never, run.id);
@@ -124,8 +124,7 @@ export function createPhaseIntake(ctx: Deps, phases: IntakePhases, train?: Intak
     let wfRunId: string | undefined;
     // Only on the judgment's word: the length rule calls any short line «small», and a remark must not start a build.
     if ((kind === "small" || kind === "batch") && by === "jev" && train && !stopped && String(settings["phase.train"] ?? "on") !== "off") {
-      const path = kind === "small" ? await classifyPath(text, run.project_id, run.id, settings) : undefined;
-      wfRunId = train.start({ projectId: run.project_id, pmThreadId: threadId, runId: run.id, requestId, text, kind, ...(path ? { path } : {}) }) ?? undefined;
+      wfRunId = train.start({ projectId: run.project_id, pmThreadId: threadId, runId: run.id, requestId, text, kind, ...(kind === "small" ? { path } : {}) }) ?? undefined;
       if (wfRunId) ctx.log(`phase intake: ${threadId} — the owner's request is ${kind} (${by}); ${kind === "batch" ? "issue-batch" : "issue-quick"} ${wfRunId} started`);
     }
     // A new process becomes a small graph: the workflow architect builds, tests and publishes it on the owner's words (Matvey #31916).
@@ -173,7 +172,7 @@ export function createPhaseIntake(ctx: Deps, phases: IntakePhases, train?: Intak
     if (!run) return { started: false, kind: null, reason: "the PM run is gone" };
     const settings = await ctx.effectiveProjectSettings(run.project_id, getRunSettingsScopes(db, run.id)).then((result) => result.values as Record<string, unknown>, () => ({} as Record<string, unknown>));
     if (await isRunHalted(bb.storage.kv as never, run.id) || await isRunPaused(bb.storage.kv as never, run.id)) return { started: false, kind: null, reason: "the owner stopped or paused the run" };
-    const { kind, by } = await classify(input.text, run.project_id, run.id, settings);
+    const { kind, by, path } = await classifyBundle(input.text, null, run.project_id, run.id, settings);
     const text = `${input.origin}\n\n${input.text}`;
     if (kind === "heavy") {
       if (String(settings["phase.rails"] ?? "on") === "off") return { started: false, kind, reason: "phase rails are off" };
@@ -185,8 +184,7 @@ export function createPhaseIntake(ctx: Deps, phases: IntakePhases, train?: Intak
       return { started: true, via: "phase", id: phase.id };
     }
     if ((kind === "small" || kind === "batch") && train && String(settings["phase.train"] ?? "on") !== "off") {
-      const path = kind === "small" ? await classifyPath(input.text, run.project_id, run.id, settings) : undefined;
-      const id = train.start({ projectId: run.project_id, pmThreadId: input.pmThreadId, runId: run.id, requestId: input.key, text, kind, ...(path ? { path } : {}) });
+      const id = train.start({ projectId: run.project_id, pmThreadId: input.pmThreadId, runId: run.id, requestId: input.key, text, kind, ...(kind === "small" ? { path } : {}) });
       if (id) { ctx.log(`phase intake: hand-over (${input.origin.slice(0, 80)}) is ${kind} (${by}); ${kind === "batch" ? "issue-batch" : "issue-quick"} ${id} started`); return { started: true, via: kind === "batch" ? "issue-batch" : "issue-quick", id }; }
       return { started: false, kind, reason: "the small-task graph did not start" };
     }
@@ -231,7 +229,8 @@ export function createPhaseIntake(ctx: Deps, phases: IntakePhases, train?: Intak
     return railsRefusal(phase, phases.status(phase.id).next.text);
   }
 
-  return { take, dispatchRefusal, launchRefusal, classify, handOver };
+  return { take, dispatchRefusal, launchRefusal, classify: (text: string, projectId: string, runId: string | null, settings: Record<string, unknown>, previous: string | null = null) =>
+    classifyBundle(text, previous, projectId, runId, settings).then(({ kind, by }) => ({ kind, by })), handOver };
 }
 export type PhaseIntake = ReturnType<typeof createPhaseIntake>;
 
