@@ -115,3 +115,16 @@ describe("a new core convention reaches the reviewers", () => {
     expect(reviewerMemoryPicks([], [...proven, older], task, 5, now).map((note) => note.id)).not.toContain("new");
   });
 });
+
+describe("stale fingerprints in the brief", () => {
+  it("a note whose named file drifted is kept but marked needs_review; a fresh one is not", () => {
+    const db = newDb();
+    const [staleId] = put(db, [note("Migrations in src/rooms/storage/database.ts must be idempotent", ["review", "migrations"])]);
+    db.prepare("UPDATE lane_pilot_memory SET file_fingerprint=? WHERE id=?").run("stalehash12345678", staleId);
+    const marked = mixReviewerMemory(db, { projectId: "P", task, searchEngine: "fts5", personalBot: "", ruleMemoryIds: new Set(), budget: 2500,
+      readFile: (path) => path === "src/rooms/storage/database.ts" ? Buffer.from("new content") : null });
+    expect(marked.text).toContain("[needs_review]");
+    const fresh = mixReviewerMemory(db, { projectId: "P", task, searchEngine: "fts5", personalBot: "", ruleMemoryIds: new Set(), budget: 2500 });
+    expect(fresh.text).not.toContain("[needs_review]"); // no readFile → nothing can be proven stale
+  });
+});

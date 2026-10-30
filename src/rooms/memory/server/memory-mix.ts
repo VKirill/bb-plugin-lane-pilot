@@ -45,7 +45,7 @@ type ReviewTask = TaskPaths & Partial<Pick<TaskV2, "title" | "objective" | "acce
  * The notes a reviewer or critic gets (role `reviewer`): up to five, within the token budget, chosen for review rather
  * than for writing (`reviewerMemoryPicks`). Not counted as uses of a brief: the usefulness counters follow writers.
  */
-export function mixReviewerMemory(db: LanePilotDatabase, input: { projectId: string; task: ReviewTask; searchEngine: MemorySearchEngine; personalBot: string; ruleMemoryIds: ReadonlySet<string>; budget: number; chain?: readonly string[] }): { text: string; ids: string[] } {
+export function mixReviewerMemory(db: LanePilotDatabase, input: { projectId: string; task: ReviewTask; searchEngine: MemorySearchEngine; personalBot: string; ruleMemoryIds: ReadonlySet<string>; budget: number; chain?: readonly string[]; /** When the caller can read the workspace: a note whose file fingerprint drifted is kept but marked needs_review. */ readFile?: (path: string) => Uint8Array | null }): { text: string; ids: string[] } {
   const scoped = { chain: input.chain ?? [] };
   const query = [input.task.title, input.task.objective, ...(input.task.acceptance ?? []), ...input.task.owns_paths, ...input.task.read_first].filter(Boolean).join("\n");
   const found = searchMemoryRecords(db, input.projectId, query, 100, input.searchEngine, "subagent", input.personalBot, scoped).filter((record) => !input.ruleMemoryIds.has(record.id));
@@ -55,7 +55,9 @@ export function mixReviewerMemory(db: LanePilotDatabase, input: { projectId: str
   const lines: string[] = [], ids: string[] = [];
   let used = 0;
   for (const note of reviewerMemoryPicks(found, always, input.task)) {
-    const line = memoryLine(note);
+    // A reviewer may still need the note — it is marked, not skipped (a writer's mix drops these instead).
+    const stale = input.readFile && filesDrifted(note.fileFingerprint, pathsNamed(note.content), input.readFile);
+    const line = `${stale ? "[needs_review] " : ""}${memoryLine(note)}`;
     const size = estimateTokens(line);
     if (used + size > input.budget) continue;
     used += size; lines.push(line); ids.push(note.id);
