@@ -48,6 +48,15 @@ import { writerFinishScanJudgment } from "../finish-scan";
 import { runOnHost } from "@lane-pilot/host-calls";
 import { pollPause } from "@lane-pilot/kit";
 
+/** The area's copy stays while it holds queued or running work; with none, the merge removes it now, not at the sweep (WT2 A2). */
+function areaHasLiveWork(db: { prepare(sql: string): { get(...args: unknown[]): { n: number } | undefined } }, input: { projectId: string; taskId: string }): boolean {
+  const row = db.prepare(`SELECT count(*) AS n FROM lane_pilot_attempt a JOIN lane_pilot_task t ON t.id=a.task_id
+    WHERE a.state IN ('queued','spawn_requested','spawn_unknown','running','cancel_requested')
+      AND a.task_id<>? AND json_extract(t.contract_json,'$.area')=(SELECT json_extract(contract_json,'$.area') FROM lane_pilot_task WHERE id=?)`)
+    .get(input.taskId, input.taskId) as { n: number };
+  return row.n > 0;
+}
+
 const FOLLOW_UP_DELETED = "the owner deleted the queued instruction for this writer";
 
 /** How long an accepted attempt waits for another task's merge into the same checkout before it reports the block. */
@@ -842,7 +851,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
           message:attemptMergeMessage(input.task, input.attemptId),
           // Only Lane Pilot's own worktree (no BB environment) is removed; a BB managed one belongs to BB. An area task
           // keeps it for the area's next task (the attempt-worktree sweep removes it after the sticky window).
-          removeWorktree:bound.environment_id === null && !input.task.area,
+          removeWorktree:bound.environment_id === null && !(input.task.area && areaHasLiveWork(db, input)),
           bookkeeping:bookkeepingSetting(loadProjectSettings(db, input.projectId, getRunSettingsScopes(db, input.runId))),
           ownsPaths:input.task.owns_paths.slice(0, 200),
           // When main moved and the attempt is replayed on it, the host runs these checks in the worktree before the merge.

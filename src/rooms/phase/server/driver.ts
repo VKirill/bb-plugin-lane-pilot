@@ -1142,6 +1142,8 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
     const scope = { revisions: phase.record.scope?.revisions ?? 0, withdrawn: [...(phase.record.scope?.withdrawn ?? []), ...unproven.map(({ item }) => item.id)] };
     const partial = { at: now(), kept: proven.map((item) => item.id), unproven: unproven.map(({ item, why }) => ({ id: item.id, why: why.slice(0, 300) })), unmet };
     book(phase, "decisions", proven.length ? "exhausted_partial" : "exhausted_stop", outcome);
+    // A stopped unlanded phase keeps nothing: the candidate's trees go now, not at the next janitor pass (WT2 A2).
+    if(candidateOn(phase.record)&&!phase.record.candidate!.landedAt){ const kit=candidates(phase); if(kit) for(const [base,tree] of Object.entries(phase.record.candidate!.trees)) await kit.drop(base,tree).catch(()=>undefined); }
     savePhase(db, phase.id, { state: "stopped", at: now(), record: { ...phase.record, scope, auto: undefined, partial, closing: { by: "Lane Pilot (loop exhausted)", words: done.slice(0, 1000), at: now() },
       lessons: { needed: true, why: "the loop ran out of tries; the phase stopped without its goal met, the analysis of the cut is in the backlog" } } });
     await services.wall?.loopExhausted({

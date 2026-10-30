@@ -216,7 +216,7 @@ export const TABLE_CLOCKS: Record<string, string> = {
   lane_pilot_wall_repair: "created_at", lane_pilot_wall_rerun: "created_at", lane_pilot_wf_arrival: "at",
   lane_pilot_wf_draft: "created_at", lane_pilot_wf_draft_version: "at", lane_pilot_wf_effect: "created_at",
   lane_pilot_wf_event: "at", lane_pilot_wf_run: "created_at",
-  lane_pilot_wf_step: "updated_at", lane_pilot_wf_test: "at", lane_pilot_wf_trigger: "created_at", lane_pilot_world: "",
+  lane_pilot_wf_step: "updated_at", lane_pilot_wf_test: "at", lane_pilot_wf_trigger: "created_at", lane_pilot_worktree: "created_at", lane_pilot_world: "",
 };
 
 export type DarkTableRow = { table: string; clock: string | null; n: number; last: number | null };

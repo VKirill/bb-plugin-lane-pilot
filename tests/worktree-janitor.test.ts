@@ -126,3 +126,29 @@ describe("the worktree janitor", () => {
     expect(calls).toBe(0);
   });
 });
+
+import { gitDocsScope } from "../src/rooms/verification/git-docs";
+
+describe("the docs base (WT2 B)", () => {
+  it("a commit carrying code AND a docs line still shows its code to the next pass", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "lp-docs-base-"));
+    const repo = join(dir, "repo");
+    await mkdir(join(repo, "docs"), { recursive: true });
+    git(repo, ["init", "-q", "-b", "main"]);
+    git(repo, ["config", "user.email", "t@t"]);
+    git(repo, ["config", "user.name", "t"]);
+    writeFileSync(join(repo, "docs", "api.md"), "# api\n");
+    git(repo, ["add", "."]);
+    git(repo, ["commit", "-qm", "init"]);
+    const passHead = git(repo, ["rev-parse", "HEAD"]).trim();
+    // The release commit: 77 lines of code AND two lines in docs/api.md — the old base (last docs touch) hid the code.
+    writeFileSync(join(repo, "server.ts"), Array.from({ length: 77 }, (_, i) => `export const s${i} = ${i};`).join("\n"));
+    writeFileSync(join(repo, "docs", "api.md"), "# api\nshort note\n");
+    git(repo, ["add", "."]);
+    git(repo, ["commit", "-qm", "release"]);
+    const next = await gitDocsScope({ projectCwd: repo, sinceEpochMs: Date.now() - 86_400_000, base: passHead });
+    expect(next.status).toBe("ready");
+    if (next.status !== "ready") return;
+    expect(next.changed).toContain("server.ts");
+  });
+});
