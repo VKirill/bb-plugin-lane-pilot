@@ -246,6 +246,15 @@ describe("issue-quick", () => {
     expect(r.summary.status).toBe("succeeded");
   });
 
+  it("«покрась кнопку в синий» is class, plan, lint, write, then closed by the checks, in two model steps", async () => {
+    const r = await runSim("issue-quick", { input: { title: "покрась кнопку в синий", text: "Кнопка отправки серая, должна быть синей." }, stubs: stubs() });
+    expect(pathOf(r)).toBe("class plan lint write closed");
+    expect(modelSteps(pathOf(r), r.workflow)).toEqual(["plan", "write"]);
+    expect(r.summary.status).toBe("succeeded");
+    const audit = r.db.prepare("SELECT detail FROM lane_pilot_wf_event WHERE run_id=? AND kind='goal_audit'").get(r.summary.runId) as { detail: string };
+    expect(JSON.parse(audit.detail)).toMatchObject({ by: "code", verdict: "pass" });
+  });
+
   it("a goal the plan finds already met closes without a writer", async () => {
     const r = await runSim("issue-quick", { input, stubs: { plan: { ...plan, task_count: 0, tasks: [], already_met: true } } });
     expect(pathOf(r)).toBe("class plan already");
