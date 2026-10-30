@@ -1004,6 +1004,10 @@ export const fieldEn = {
   reason_s537: "The most failed or rejected verification gate evaluations a task may accumulate before it ends with verify_passes_exhausted instead of another writer pass. Default 10.",
   field_s538: "Retry safety gate",
   reason_s538: "on blocks an automatic retry when the failed attempt's work area was touched after it ended: foreign commits or file edits, rewritten check evidence, or a catalog secret value still in the worktree diff; off keeps the unconditional retry. Default on.",
+  field_s585: "Writer: second pilot on unanswered questions",
+  reason_s585: "on: a writer question to a human that stands unanswered for the wait goes to the second pilot (a read-only helper with the contract, plan, read_first excerpts and project memory). It answers from them and the same writer goes on; or narrows the task into a new one that needs no human, the original closed as superseded; or leaves the question to the owner: one PM note while the chat is warm, else the morning list. One auto-return per task, each decision a stage_return row. off: the safe default answer alone. Default on.",
+  field_s586: "Writer: question wait (min)",
+  reason_s586: "Minutes a writer question to a human may stand unanswered before the machine acts on it: the second pilot when auto-return is on, else the safe default; a product decision goes to the owner either way. Default 120.",
 } as const;
 
 export const fieldRu: { [K in keyof typeof fieldEn]: string } = {
@@ -2011,4 +2015,8 @@ export const fieldRu: { [K in keyof typeof fieldEn]: string } = {
   reason_s537: "Сколько упавших или отклонённых оценок гейта верификации может накопить задача, прежде чем завершится с verify_passes_exhausted вместо очередного прохода исполнителя. По умолчанию 10.",
   field_s538: "Гейт безопасности ретрая",
   reason_s538: "on блокирует авто-ретрай, если рабочую область упавшей попытки трогали после её конца: чужие коммиты или правки файлов, переписанные квитанции проверок или значение секрета из каталога, оставшееся в диффе worktree; off оставляет безусловный ретрай. По умолчанию on.",
+  field_s585: "Писатель: второй пилот на неотвеченных вопросах",
+  reason_s585: "on: вопрос писателя человеку, простоявший без ответа дольше ожидания, уходит второму пилоту (помощник только на чтение с контрактом, планом, выдержками read_first и памятью проекта). Он отвечает сам по ним, и тот же писатель продолжает; или сужает задачу до новой, где человек не нужен, а исходная закрывается как superseded; или оставляет вопрос владельцу: одна заметка в чат PM, пока он тёплый, иначе утренний список. Один автовозврат на задачу, каждое решение — строка stage_return. off: только безопасный ответ по умолчанию. По умолчанию on.",
+  field_s586: "Писатель: ожидание ответа на вопрос (мин)",
+  reason_s586: "Сколько минут вопрос писателя человеку может стоять без ответа, прежде чем машина возьмётся за него: второй пилот при включённом автовозврате, иначе безопасный ответ по умолчанию; продуктовое решение в любом случае уходит владельцу. По умолчанию 120.",
 };

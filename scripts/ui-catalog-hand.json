@@ -3309,6 +3309,55 @@
    "evidence": "src/rooms/stability/server/stability.ts:240",
    "matrixStatus": "readonly",
    "storageKey": "writer.capacity_wait_max_min"
+  },
+  {
+   "id": "s585",
+   "index": 503,
+   "area": "Lane Pilot writer question",
+   "setting": "writer.auto_return",
+   "location": "src/rooms/writer/server/second-pilot.ts:1",
+   "category": "user",
+   "invType": "enum",
+   "values": "on, off",
+   "defaultValue": "on",
+   "scope": "project",
+   "control": "select",
+   "options": [
+    "on",
+    "off"
+   ],
+   "min": null,
+   "max": null,
+   "section": "writer",
+   "channel": "OWN",
+   "uiStatus": "editable",
+   "rationale": "A writer question to a human that stands unanswered for writer.question_wait_min goes to the second pilot (a read-only helper with the contract, plan, read_first excerpts and project memory): it answers from them and the same writer goes on, or narrows the task into a new one it can do without the human, or leaves the question to the owner (one PM note while the chat is warm, else the morning list). One auto-return per task, each decision a lane_pilot_stage_return row. off keeps the safe-default answer alone (W34).",
+   "evidence": "src/rooms/writer/server/second-pilot.ts:1",
+   "matrixStatus": "readonly",
+   "storageKey": "writer.auto_return"
+  },
+  {
+   "id": "s586",
+   "index": 504,
+   "area": "Lane Pilot writer question",
+   "setting": "writer.question_wait_min",
+   "location": "src/rooms/writer/server/question-timeout.ts:1",
+   "category": "user",
+   "invType": "int",
+   "values": "minutes",
+   "defaultValue": "120",
+   "scope": "project",
+   "control": "number",
+   "options": [],
+   "min": 1,
+   "max": null,
+   "section": "writer",
+   "channel": "OWN",
+   "uiStatus": "editable",
+   "rationale": "Minutes a writer question to a human may stand unanswered before the machine acts on it (the second pilot when writer.auto_return is on, else the safe default); a product decision goes to the owner either way. Default 120.",
+   "evidence": "src/rooms/writer/server/question-timeout.ts:1",
+   "matrixStatus": "readonly",
+   "storageKey": "writer.question_wait_min"
   }
  ],
  "fields": {
@@ -4512,6 +4561,22 @@
    "reason_s539": [
     "The most minutes a task waits while every writer provider is spent — rechecked every 15 minutes from the first parking; past it the task stops restarting and the PM is told to send it again once limits free. Default 360.",
     "Сколько минут задача ждёт, пока все провайдеры писателей без запаса — перепроверка каждые 15 минут от первого паркинга; дальше задача не перезапускается и PM получает заметку отправить её снова, когда лимиты освободятся. По умолчанию 360."
+   ],
+   "field_s585": [
+    "Writer: second pilot on unanswered questions",
+    "Писатель: второй пилот на неотвеченных вопросах"
+   ],
+   "reason_s585": [
+    "on: a writer question to a human that stands unanswered for the wait goes to the second pilot (a read-only helper with the contract, plan, read_first excerpts and project memory). It answers from them and the same writer goes on; or narrows the task into a new one that needs no human, the original closed as superseded; or leaves the question to the owner: one PM note while the chat is warm, else the morning list. One auto-return per task, each decision a stage_return row. off: the safe default answer alone. Default on.",
+    "on: вопрос писателя человеку, простоявший без ответа дольше ожидания, уходит второму пилоту (помощник только на чтение с контрактом, планом, выдержками read_first и памятью проекта). Он отвечает сам по ним, и тот же писатель продолжает; или сужает задачу до новой, где человек не нужен, а исходная закрывается как superseded; или оставляет вопрос владельцу: одна заметка в чат PM, пока он тёплый, иначе утренний список. Один автовозврат на задачу, каждое решение — строка stage_return. off: только безопасный ответ по умолчанию. По умолчанию on."
+   ],
+   "field_s586": [
+    "Writer: question wait (min)",
+    "Писатель: ожидание ответа на вопрос (мин)"
+   ],
+   "reason_s586": [
+    "Minutes a writer question to a human may stand unanswered before the machine acts on it: the second pilot when auto-return is on, else the safe default; a product decision goes to the owner either way. Default 120.",
+    "Сколько минут вопрос писателя человеку может стоять без ответа, прежде чем машина возьмётся за него: второй пилот при включённом автовозврате, иначе безопасный ответ по умолчанию; продуктовое решение в любом случае уходит владельцу. По умолчанию 120."
    ]
   }
  }
