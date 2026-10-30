@@ -10,7 +10,7 @@ import { DEFAULT_BENCH_WRITER } from "../runner";
 import { setBenchProject } from "../store";
 import type { BenchProjectRef, HostPort, PipelinePort } from "../ports";
 import { createBench, type BenchApi } from "../service";
-import { pageReviewByAgent } from "../../critique/server/specialist-graph";
+import { pageReviewByAgent } from "../../critique/server";
 import { judgeTrace } from "../jevals";
 import { jev } from "@lane-pilot/jev";
 

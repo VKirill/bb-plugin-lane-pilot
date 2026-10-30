@@ -2,4 +2,4 @@
 // Add a name here to make it public; scripts/refactor/barrels.ts wrote the first version from the existing imports.
 export { candidatePatches, runCodeCritique, runPlanCritique, runPmRead, runSpecialistReview } from "./critique-runs";
 export { SPECIALIST_ROLES, mountSpecialists, registerSpecialistActions } from "./specialists";
-export { SPECIALIST_GRAPH, rememberSpecialistThread } from "./specialist-graph";
+export { SPECIALIST_GRAPH, pageReviewByAgent, rememberSpecialistThread } from "./specialist-graph";

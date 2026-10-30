@@ -24,7 +24,7 @@ import type { ServerCore } from "../../core/server";
 import type { Services } from "../../core/server";
 import { ownerLocale, workflowHumanDetail } from "../../relay/server";
 import { runOnHost } from "@lane-pilot/host-calls";
-import { pageReviewByAgent } from "../../critique/server/specialist-graph";
+import { pageReviewByAgent } from "../../critique/server";
 
 /**
  * The executors that run a chain on the host: the generic agent step, the owner's question, the code task of a chain, the actions
