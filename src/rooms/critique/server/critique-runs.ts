@@ -8,7 +8,7 @@ import { qaSpawnClaimed } from "../../qa";
 import { reconcileCritic } from "../../stability";
 import { resolveStageWriterSelection } from "../../writer";
 import { MAX_FILE_EXCERPT_BYTES } from "../code-critique";
-import { codeCritiquePrompt, codeCritiqueSource, critiqueFromStageResult, critiquePolicyFromResult, freezeCritiquePolicy, parseCodeCritique, parseCodeCritiqueSettings, persistLedgerFields, settingsFromFrozenPolicy } from "../code-critique";
+import { codeCritiquePrompt, codeCritiqueSource, codeCritiqueStops, critiqueFromStageResult, critiquePolicyFromResult, freezeCritiquePolicy, parseCodeCritique, parseCodeCritiqueSettings, persistLedgerFields, settingsFromFrozenPolicy } from "../code-critique";
 import type { CandidateEvidence, FrozenCritiquePolicy } from "../code-critique";
 import { sha256 } from "../../tasks";
 import { critiquePrompt, parseCritique, shouldRunPlanCritique } from "../critique";
@@ -445,7 +445,7 @@ export async function runCodeCritique(input:{
         const raw = (await input.bb.sdk.threads.output({ threadId:existing.threadId })).output;
         if (typeof raw !== "string" || !raw.trim()) throw new Error("critique_output_empty");
         const critique = await readCodeCritique(input.bb, existing.threadId, raw, cites);
-        const blocked = critique.decision === "changes_requested" && parsed.mode === "gate";
+        const blocked = codeCritiqueStops(parsed.mode, critique);
         const result = { ...ledgerCarry, ...critique, ...hashFields, mode:parsed.mode, rawOutput:raw.slice(0, 12_000), policy:frozen ?? critiquePolicyFromResult(existing.result) };
         recordStage(input.db, { ...base, state:blocked ? "blocked" : "passed", providerId:existing.providerId, model:existing.model,
           threadId:existing.threadId, result, reason:blocked ? verdictReasons(critique,"code-critique").receipt : undefined });
@@ -471,7 +471,7 @@ export async function runCodeCritique(input:{
           const raw = (await input.bb.sdk.threads.output({ threadId:recovered.threadId })).output;
           if (typeof raw !== "string" || !raw.trim()) throw new Error("critique_output_empty");
           const critique = await readCodeCritique(input.bb, recovered.threadId, raw, cites);
-          const blocked = critique.decision === "changes_requested" && parsed.mode === "gate";
+          const blocked = codeCritiqueStops(parsed.mode, critique);
           const result = { ...ledgerCarry, ...critique, ...hashFields, mode:parsed.mode, rawOutput:raw.slice(0, 12_000), policy:frozen ?? critiquePolicyFromResult(existing.result) };
           recordStage(input.db, { ...base, state:blocked ? "blocked" : "passed", providerId:existing.providerId, model:existing.model,
             threadId:recovered.threadId, result, reason:blocked ? verdictReasons(critique,"code-critique").receipt : undefined });
@@ -572,7 +572,7 @@ export async function runCodeCritique(input:{
         const raw = (await input.bb.sdk.threads.output({ threadId })).output;
         if (typeof raw !== "string" || !raw.trim()) throw new Error("critique_output_empty");
         const critique = await readCodeCritique(input.bb, threadId, raw, cites);
-        const blocked = critique.decision === "changes_requested" && parsed.mode === "gate";
+        const blocked = codeCritiqueStops(parsed.mode, critique);
         const result = { ...snapshot, ...critique, policy, reviewer:{ providerId, model:modelId, reasoningEffort:configuredEffort, serviceTier: writerServiceTier(settings) === "fast" ? "fast" : "standard", mode:parsed.mode, maxRounds:parsed.maxRounds, autoFix:parsed.autoFix }, rawOutput:raw.slice(0, 12_000) };
         recordStage(input.db, { ...base, state:blocked ? "blocked" : "passed", providerId, model:modelId,
           threadId, result, reason:blocked ? verdictReasons(critique,"code-critique").receipt : undefined });
@@ -591,7 +591,7 @@ export async function runCodeCritique(input:{
         const raw = (await input.bb.sdk.threads.output({ threadId })).output;
         if (typeof raw !== "string" || !raw.trim()) throw new Error("critique_output_empty");
         const critique = await readCodeCritique(input.bb, threadId, raw, cites);
-        const blocked = critique.decision === "changes_requested" && parsed.mode === "gate";
+        const blocked = codeCritiqueStops(parsed.mode, critique);
         const result = { ...snapshot, ...critique, policy, rawOutput:raw.slice(0, 12_000) };
         recordStage(input.db, { ...base, state:blocked ? "blocked" : "passed", providerId, model:modelId,
           threadId, result, reason:blocked ? verdictReasons(critique,"code-critique").receipt : undefined });
@@ -648,7 +648,7 @@ export async function runCodeCritique(input:{
     const raw = (await input.bb.sdk.threads.output({ threadId })).output;
     if (typeof raw !== "string" || !raw.trim()) throw new Error("critique_output_empty");
     const critique = await readCodeCritique(input.bb, threadId, raw, cites);
-    const blocked = critique.decision === "changes_requested" && parsed.mode === "gate";
+    const blocked = codeCritiqueStops(parsed.mode, critique);
     const result = { ...snapshot, ...critique, policy, reviewer:{ providerId, model:modelId, reasoningEffort:configuredEffort, serviceTier:tier, mode:parsed.mode, maxRounds:parsed.maxRounds, autoFix:parsed.autoFix }, rawOutput:raw.slice(0, 12_000) };
     recordStage(input.db, { ...base, state:blocked ? "blocked" : "passed", providerId, model:modelId,
       threadId, result, reason:blocked ? verdictReasons(critique,"code-critique").receipt : undefined });

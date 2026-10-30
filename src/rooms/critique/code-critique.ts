@@ -3,7 +3,7 @@ import { clipped, extractModelJson, NO_TOOLS_LINE } from "@lane-pilot/workflow-e
 import { CODE_CRITIC_METHOD } from "./role-method";
 import { demoteUncited } from "./citations";
 import type { Citation } from "./citations";
-import { VERDICT_STATUSES, applyRubric, isVerdictShape, legacyOutputToVerdict, rubricPromptLine, settleVerdict, verdictSchema, verdictSeverityToLegacy, verdictSummary, withoutDecision } from "@lane-pilot/workflow-engine";
+import { CRITIC_RUBRIC, VERDICT_STATUSES, applyRubric, isVerdictShape, legacyOutputToVerdict, rubricPromptLine, settleVerdict, verdictSchema, verdictSeverityToLegacy, verdictSummary, withoutDecision } from "@lane-pilot/workflow-engine";
 import type { Verdict, VerdictFinding, VerdictStatus } from "@lane-pilot/workflow-engine";
 import { sha256Hex } from "@lane-pilot/kit";
 
@@ -410,6 +410,25 @@ export function actionableFindings(result: CodeCritiqueResult): CodeCritiqueFind
 
 export function findingFingerprint(findings: readonly CodeCritiqueFinding[]): string {
   return sha256Text(JSON.stringify(findings.map((row) => row.id).sort()));
+}
+
+const CODE_RUBRIC = new Set<string>(CRITIC_RUBRIC.code);
+
+/**
+ * Gate mode stops on any change request. Advisory stops only on a block, or on a high/critical finding whose criterion is a rubric id.
+ * Other advisory notes go back to the writer and the task is not held.
+ */
+export function codeCritiqueStops(mode: "advisory" | "gate", result: { status?: string; decision: string; findings: readonly { severity: string; criterion: string }[] }): boolean {
+  if (result.status === "block") return true;
+  if (result.decision !== "changes_requested") return false;
+  if (mode === "gate") return true;
+  return result.findings.some((row) => row.severity === "blocking" && CODE_RUBRIC.has(row.criterion));
+}
+
+/** Advisory notes that do not stop the task, one line the writer and the PM can read. */
+export function advisoryFeedback(result: { findings: readonly { severity: string; criterion: string; finding: string }[] }): string {
+  const notes = result.findings.filter((row) => row.severity !== "blocking").map((row) => `${row.criterion}: ${row.finding}`);
+  return notes.length ? `code critic (advisory): ${notes.join("; ")}`.slice(0, 600) : "";
 }
 
 export function shouldRequestRepair(input: {

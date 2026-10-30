@@ -94,7 +94,7 @@ A retry of the task replaces the receipt (its earlier events stay in `lane_pilot
 
 ## The code critic by risk
 
-`critic.code.default_for_risk` is `off` (default), `medium` or `high`: with `code_critique.enabled` not set, the critic runs for tasks of that risk or higher. `applyCodeCriticDefault` (`src/rooms/critique/quality-mode.ts:53`) turns the switch on only in `standard` quality mode and only when the project did not set the switch itself. The default stays `off` until the bench has measured the critic on and off.
+`critic.code.default_for_risk` is `medium` (default), `off` or `high`: with `code_critique.enabled` not set, the critic runs for tasks of that risk or higher. `applyCodeCriticDefault` (`src/rooms/critique/quality-mode.ts:63`) turns the switch on only in `standard` quality mode and only when the project did not set the switch itself, and leaves the mode `advisory` unless the project set one. A high or critical rubric fail still blocks; other notes go back to the writer.
 
 The bench's arm hook is `dispatchWriter({ ..., criticCodeDefault })` (`src/rooms/writer/server/dispatch.ts:149`), also `bb lane-pilot dispatch-bb <project> <pm-thread> <task-json> <base-ref> <off|medium|high>` (`src/rooms/tools/server/cli.ts:388`). It is stored per task (`src/rooms/writer/server/critic-override.ts:12-18`) and read when the attempt finishes (`src/rooms/writer/server/finish.ts:313`), where it wins over the project setting for that task only. Both the finish step and the critic run read the same value (`src/rooms/critique/server/critique-runs.ts`).
 
