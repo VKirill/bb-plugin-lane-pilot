@@ -1,4 +1,7 @@
 import { MAIN_AGENT_ID, isCustomAgentId } from "../../native-agent";
+import { EMPLOYEES } from "../../native-agent/employee-manifest";
+import { jev } from "@lane-pilot/jev";
+import { judgeEmployeeRemark, recordEmployeeLesson } from "./employee-lessons";
 import { observeStageChild } from "@lane-pilot/thread-observe";
 import { z } from "zod";
 import { findOpenNativeRun, getRun } from "../../storage";
@@ -11,6 +14,12 @@ import { specialistRunOfThread, startSpecialistRun, waitSpecialistRun } from "./
 
 /** The specialists a PM may hand work to; Explore and Plan stay Claude Code subagents inside the PM session. */
 export const SPECIALIST_ROLES = ["design-lead", "copy-lead", "seo-specialist", "tavily", "video-lead"] as const;
+
+/** Employee domain → the validator kind `validateDeliverable` knows (deliverable.validate's `validator` param). */
+export const EMPLOYEE_VALIDATORS: Record<string, string> = {
+  "3d": "3d", design: "design", video: "video", billing: "invoice", invoice: "invoice",
+  seo: "composite", social: "composite", text: "text", copy: "composite", visual: "composite", games: "artifact", macos: "artifact",
+};
 const WAIT_STEP_MS = 5_000;
 
 export function specialistPrompt(marker: string, role: string, task: string, roleLines: readonly string[] = [], tag = "task"): string {
@@ -52,11 +61,14 @@ export function mountSpecialists(ctx: ServerCore, services: Services): void {
     const runId = findOpenNativeRun(db, input.projectId, input.pmThreadId);
     const run = runId ? getRun(db, runId) : undefined;
     if (!runId || !run) throw new Error("specialist_needs_open_pm_run: call this from a Lane Pilot PM chat with an open run");
-    // A bundled specialist, or an agent the owner defined (agents create): the same graph runs both.
+    // A bundled specialist, a registry employee, or an agent the owner defined (agents create): the same graph runs all three.
     const owned = await ctx.ownedAgents();
-    const custom = !(SPECIALIST_ROLES as readonly string[]).includes(input.role);
+    const employee = EMPLOYEES[input.role];
+    const custom = !(SPECIALIST_ROLES as readonly string[]).includes(input.role) && !employee;
     if (custom && !(isCustomAgentId(input.role) && owned[input.role] && !owned[input.role]?.compiledCorrupt)) throw new Error(`unknown_specialist:${input.role} — use one of ${SPECIALIST_ROLES.join(", ")} or an agent the owner created (bb lane-pilot agents list --custom)`);
-    const started = await startSpecialistRun(ctx, services, { projectId: input.projectId, pmThreadId: input.pmThreadId, runId, role: input.role, task: input.task, title: input.title ?? `${input.role}: ${input.task.slice(0, 60)}` });
+    // An employee's deliverable goes through its domain validator in waitSpecialistRun (deliverable.validate shape).
+    const extra = employee ? { validator: EMPLOYEE_VALIDATORS[employee.domain] ?? "artifact", deliverable: `${employee.deliverables[0] ?? ".agents/"}`, brief: { kind: employee.domain, design: employee.domain === "design" } } : {};
+    const started = await startSpecialistRun(ctx, services, { projectId: input.projectId, pmThreadId: input.pmThreadId, runId, role: input.role, task: input.task, title: input.title ?? `${input.role}: ${input.task.slice(0, 60)}`, extra });
     return { threadId: started.threadId, role: input.role, state: "running" as const, link: `@thread:${started.threadId}`, workflowRunId: started.workflowRunId };
   }
 
@@ -89,6 +101,36 @@ export function mountSpecialists(ctx: ServerCore, services: Services): void {
     execute: async (params, context) => {
       if (!context.threadId || !context.projectId) throw new Error("specialist_needs_pm_thread");
       return JSON.stringify(await start({ projectId: context.projectId, pmThreadId: context.threadId, role: params.role, task: params.task, title: params.title }), null, 2);
+    },
+  });
+
+  // Пачка 4: explicit PM command — record an employee lesson (audience specialist:<role>), it lands on lp.role.lines.
+  registerObservedTool(bb.agents, {
+    name: "lane_pilot_employee_lesson",
+    description: "Record a lesson for an employee (the owner's remark about how they should work): a dated rule line added to every future brief of that role in this project, plus a rule proposal with audience specialist:<role>.",
+    instructions: "Call when the owner corrects an employee and the correction should persist: lane_pilot_employee_lesson { role: '3d-artist', line: 'always triangulate on export' }. For deciding whether an owner remark is a lesson, use lane_pilot_employee_remark first.",
+    parameters: z.object({ role: z.string().regex(MAIN_AGENT_ID), line: z.string().min(1).max(500), evidence: z.string().max(1000).optional() }).strict(),
+    execute: async (params, context) => {
+      if (!context.projectId) throw new Error("employee_lesson_needs_pm_thread");
+      const out = await recordEmployeeLesson(bb.storage.kv, db as never, { projectId: context.projectId, role: params.role, line: params.line, evidence: params.evidence });
+      return JSON.stringify({ role: params.role, ...out, adopted: true }, null, 2);
+    },
+  });
+
+  // «Это замечание к сотруднику?» — Jev employee.remark, shadow by default (receipt only); active writes the lesson itself.
+  registerObservedTool(bb.agents, {
+    name: "lane_pilot_employee_remark",
+    description: "Judge whether an owner text is a remark for an employee (Jev employee.remark); in active mode a 'remark' verdict also records the lesson.",
+    parameters: z.object({ role: z.string().regex(MAIN_AGENT_ID), text: z.string().min(1).max(4000) }).strict(),
+    execute: async (params, context) => {
+      if (!context.projectId) throw new Error("employee_remark_needs_pm_thread");
+      const settings = await ctx.effectiveProjectSettings(context.projectId).then((r) => r.values as Record<string, unknown>).catch(() => ({} as Record<string, unknown>));
+      const verdict = await judgeEmployeeRemark({ settings }, { projectId: context.projectId, role: params.role, text: params.text });
+      let recorded: { line: string; proposalId: string } | null = null;
+      if (verdict.by === "jev" && verdict.remark) {
+        recorded = await recordEmployeeLesson(bb.storage.kv, db as never, { projectId: context.projectId, role: params.role, line: params.text });
+      }
+      return JSON.stringify({ role: params.role, remark: verdict.remark, by: verdict.by, ...(recorded ? { line: recorded.line } : {}) }, null, 2);
     },
   });
 

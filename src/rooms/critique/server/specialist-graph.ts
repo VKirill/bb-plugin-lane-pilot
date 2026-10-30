@@ -32,13 +32,13 @@ export async function specialistRunOfThread(bb: BbPluginApi, threadId: string): 
   return typeof runId === "string" && runId ? runId : null;
 }
 
-export async function startSpecialistRun(ctx: ServerCore, services: Services, input: { projectId: string; pmThreadId: string; runId: string; role: string; task: string; title: string }): Promise<{ workflowRunId: string; threadId: string }> {
+export async function startSpecialistRun(ctx: ServerCore, services: Services, input: { projectId: string; pmThreadId: string; runId: string; role: string; task: string; title: string; extra?: Record<string, unknown> }): Promise<{ workflowRunId: string; threadId: string }> {
   const workflow = builtinWorkflow(SPECIALIST_GRAPH);
   if (!workflow) throw new Error(`built-in workflow ${SPECIALIST_GRAPH} is not loaded`);
   const engine = services.workflowEngine;
   const key = `specialist:${input.runId}:${input.role}:${spawnTextId(input.task)}`;
   const begin = (idem: string) => engine.start({
-    workflow, inputs: { role: input.role, task: input.task, title: input.title }, key: idem,
+    workflow, inputs: { role: input.role, task: input.task, title: input.title, ...(input.extra ?? {}) }, key: idem,
     runtime: { ctx, services, pmThreadId: input.pmThreadId, projectId: input.projectId, runId: input.runId },
     link: { projectId: input.projectId, runId: input.runId },
   });
