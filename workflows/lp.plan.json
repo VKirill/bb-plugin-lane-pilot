@@ -293,7 +293,7 @@
     {
       "from": "check",
       "to": "plan_critic",
-      "when": "check.battery_ok != true || check.escalated == true"
+      "label": "battery failed or unsure"
     }
   ],
   "status": "published"
