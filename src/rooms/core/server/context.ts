@@ -20,6 +20,19 @@ export function configuredSetting(settings: Record<string, unknown>, setting: st
   return row ? settings[row.storageKey] : undefined;
 }
 
+/**
+ * The calling thread's plugin metadata: `context.experimental_vkPluginMetadata` carries the same row on VK cores
+ * (core fba7d8b0a), saving the loopback call; the SDK read stays the fallback on stock BB.
+ */
+export async function callerPluginMetadata(
+  bb: BbPluginApi,
+  context: { threadId: string | null; experimental_vkPluginMetadata?: unknown },
+): Promise<Record<string, unknown> | null> {
+  if (context.experimental_vkPluginMetadata !== undefined) return context.experimental_vkPluginMetadata as Record<string, unknown> | null;
+  if (!context.threadId) return null;
+  return (await bb.sdk.threads.getPluginMetadata({ threadId: context.threadId })) as Record<string, unknown> | null;
+}
+
 /** The PM thread of an open run of this project; anything else is refused before any work starts. */
 export function requirePmRun(db: LanePilotDatabase, input: { runId: string; threadId: string; projectId: string }): { id: string; project_id: string } {
   const run = db.prepare("SELECT id, project_id, pm_thread_id, closed_at FROM lane_pilot_run WHERE id=?").get(input.runId) as

@@ -96,7 +96,7 @@ export function createCore(bb: BbPluginApi, db: LanePilotDatabase) {
   // The Jev layer (src/jev): one client with this key reader, receipts in the plugin database; dropped on reload.
   bb.onDispose(installJev({ endpoint: jevEndpoint, db, log: (message) => bb.log.warn(message) }));
   const deployDrain = createDeployDrain(() => state.disposed);
-  bb.onDispose(bindDrainTarget({ drain: deployDrain, log: (line) => bb.log.info(line) }, (bb as unknown as { vk?: { instanceId?: string } }).vk?.instanceId));
+  bb.onDispose(bindDrainTarget({ drain: deployDrain, log: (line) => bb.log.info(line) }, bb.vk?.instanceId));
   const rawCall = rawHost.call as (method: string, input: unknown, options: unknown) => Promise<unknown>;
   // Long host calls run as background jobs (B4): the host daemon cancels a call at its deadline and kills the worker.
   const hostJobs = createHostJobs({

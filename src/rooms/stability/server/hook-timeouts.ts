@@ -13,10 +13,9 @@ const QUIET_AFTER_START_MS = 120_000;
 
 export type HookTimeoutRecord = { hook: string; timeoutMs: number; threadId: string | null; projectId: string | null; required: boolean; at: number; quiet: boolean };
 type TimeoutEvent = { hook?: unknown; timeoutMs?: unknown; threadId?: unknown; projectId?: unknown; required?: unknown };
-type VkNamespace = { experimental_vkOnHookTimeout?: (callback: (event: TimeoutEvent) => void | Promise<void>) => { dispose(): void } };
 
 export function mountHookTimeoutWatch(ctx: ServerCore, now = () => Date.now()): boolean {
-  const vk = (ctx.bb as unknown as { vk?: VkNamespace }).vk;
+  const vk = ctx.bb.vk;
   if (typeof vk?.experimental_vkOnHookTimeout !== "function") return false;
   const startedAt = now();
   vk.experimental_vkOnHookTimeout(async (event) => {

@@ -49,7 +49,7 @@ export function createWorkflowEngine(ctx: ServerCore, services: Services) {
   const workflowAgents = createWorkflowAgents();
   const engine = new WorkflowEngine({
     db, harnessVersion: HARNESS_VERSION, compatVersion: ENGINE_COMPAT_VERSION,
-    instanceId: (bb as unknown as { vk?: { instanceId?: string } }).vk?.instanceId,
+    instanceId: bb.vk?.instanceId,
     log: (message) => bb.log.info(`Lane Pilot ${message}`),
     resolveWorkflow: (id, version) => workflowCatalog.peek()?.resolve(id, version) ?? builtinWorkflow(id, version),
     // A node that runs as an agent the owner deleted is refused at the start with a message, not after the earlier steps ran.

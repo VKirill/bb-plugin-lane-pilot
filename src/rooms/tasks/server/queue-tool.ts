@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ToolError, registerObservedTool, type ServerCore } from "../../core/server";
+import { callerPluginMetadata, ToolError, registerObservedTool, type ServerCore } from "../../core/server";
 import { deadLetters, HOLD_FOREVER } from "../rails";
 import { recordTaskWord } from "../words";
 import { taskFamily } from "../../runs";
@@ -12,8 +12,8 @@ import { getRun, getRunWriterHost, latestTaskAttemptState } from "../../storage"
  */
 export function registerQueueTool(ctx: ServerCore): void {
   const { db, bb } = ctx;
-  const runOf = async (threadId: string) => {
-    const metadata = await bb.sdk.threads.getPluginMetadata({ threadId }) as Record<string, unknown> | null;
+  const runOf = async (context: { threadId: string | null; experimental_vkPluginMetadata?: unknown }) => {
+    const metadata = await callerPluginMetadata(bb, context);
     const runId = typeof metadata?.lanePilotRunId === "string" ? metadata.lanePilotRunId : null;
     if (metadata?.role !== "pm" || !runId) throw new ToolError("caller is not a Lane Pilot PM thread", { code: "not_pm_thread", retryable: false, sideEffects: "none" });
     return runId;
@@ -35,7 +35,7 @@ export function registerQueueTool(ctx: ServerCore): void {
           WHERE r.project_id=? AND a.created_at=(SELECT MAX(b.created_at) FROM lane_pilot_attempt b WHERE b.task_id=a.task_id) ORDER BY a.updated_at DESC LIMIT 500`).all(context.projectId) as Array<{ taskId: string; state: string; reason: string | null; updatedAt: number }>;
         return JSON.stringify({ deadLetters: deadLetters(rows, Date.now()).slice(0, 50) });
       }
-      const runId = await runOf(context.threadId);
+      const runId = await runOf(context);
       if (input.action === "word") {
         await recordTaskWord(bb.storage.kv as never, runId, taskFamily(input.taskId), input.decision, input.text);
         return JSON.stringify({ runId, taskId: input.taskId, word: input.decision, next: input.decision === "yes" ? "send the task again: it lands without a new writer pass" : "cancel the task with the owner's words, or change it and send again" });

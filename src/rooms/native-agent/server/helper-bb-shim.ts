@@ -38,7 +38,7 @@ type Shim = { dir: string; path: string } | null;
  * provider's resolver with threadId null to fingerprint the catalog launch: no thread starts there, so a resolver contributes nothing
  * (night repair 2026-10-27, class log:ebdc80fdb6ec: 194 "thread null ... HTTP 404" warnings a day).
  */
-export type ProviderEnvContext = { threadId: string | null; hostId: string };
+export type ProviderEnvContext = { threadId: string | null; hostId: string; experimental_vkPluginMetadata?: unknown };
 
 export function createBbShimEnv(ctx: Pick<ServerCore, "bb" | "host"> & { db?: ServerCore["db"] }, now: () => number = Date.now) {
   const { bb, host } = ctx;
@@ -71,7 +71,7 @@ export function createBbShimEnv(ctx: Pick<ServerCore, "bb" | "host"> & { db?: Se
   return async (context: ProviderEnvContext, providerId?: string): Promise<ExperimentalPluginProviderEnvEntry[]> => {
     if (!context.threadId) return [];
     let metadata: unknown = null;
-    try { metadata = await within(CALL_MS, "getPluginMetadata", Promise.resolve(bb.sdk.threads.getPluginMetadata({ threadId: context.threadId }))); } catch (cause) {
+    try { metadata = context.experimental_vkPluginMetadata !== undefined ? context.experimental_vkPluginMetadata : await within(CALL_MS, "getPluginMetadata", Promise.resolve(bb.sdk.threads.getPluginMetadata({ threadId: context.threadId }))); } catch (cause) {
       bb.log.warn(`Lane Pilot: could not tell whether thread ${context.threadId} is a helper (${reasonOf(cause)}); it starts without the bb guard wrappers`);
       return [];
     }
@@ -109,7 +109,7 @@ export function createRoleMarkerEnv(ctx: Pick<ServerCore, "bb">) {
   return async (context: ProviderEnvContext): Promise<ExperimentalPluginProviderEnvEntry[]> => {
     if (!context.threadId) return [];
     let metadata: unknown = null;
-    try { metadata = await within(CALL_MS, "getPluginMetadata", Promise.resolve(bb.sdk.threads.getPluginMetadata({ threadId: context.threadId }))); } catch { return []; }
+    try { metadata = context.experimental_vkPluginMetadata !== undefined ? context.experimental_vkPluginMetadata : await within(CALL_MS, "getPluginMetadata", Promise.resolve(bb.sdk.threads.getPluginMetadata({ threadId: context.threadId }))); } catch { return []; }
     const role = stringAt(metadata, "role");
     if (!role || role === "pm") return [];
     return [{ name: "LANE_PILOT_ROLE", value: role, reason: `Lane Pilot: ${role} thread; lane plugins and hooks on the machine act only where this is set`.slice(0, 500) }];
