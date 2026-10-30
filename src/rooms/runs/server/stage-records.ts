@@ -108,7 +108,12 @@ export async function resetHelperStages(db:ReturnType<typeof openDatabase>, stop
     if (row.threadId && (row.state === "pending" || row.state === "running")) {
       try { await stop(row.threadId); } catch { /* an idle or missing helper thread: nothing to stop */ }
     }
-    deleteStageReceipt(db, input.runId, input.taskId, row.stageId);
+    // An interrupted pm-read leaves a skipped receipt (its rerun under the threshold writes nothing of its own);
+    // the other helper stages are deleted so they run again from nothing.
+    if (row.stageId === "pm-read") {
+      deleteStageReceipt(db, input.runId, input.taskId, row.stageId);
+      recordStage(db, { runId: input.runId, taskId: input.taskId, stageId: "pm-read", state: "skipped", threadId: null, input: row.input ?? "", reason: "helper lost on reload" });
+    } else deleteStageReceipt(db, input.runId, input.taskId, row.stageId);
   }
 }
 
