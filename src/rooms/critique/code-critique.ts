@@ -3,25 +3,28 @@ import { clipped, extractModelJson, NO_TOOLS_LINE } from "@lane-pilot/workflow-e
 import { CODE_CRITIC_METHOD } from "./role-method";
 import { demoteUncited } from "./citations";
 import type { Citation } from "./citations";
-import { CRITIC_RUBRIC, VERDICT_STATUSES, applyRubric, isVerdictShape, legacyOutputToVerdict, rubricPromptLine, settleVerdict, verdictSchema, verdictSeverityToLegacy, verdictSummary, withoutDecision } from "@lane-pilot/workflow-engine";
+import { CRITIC_RUBRIC, VERDICT_STATUSES, applyRubric, isVerdictShape, legacyOutputToVerdict, normalizeVerdictInput, rubricPromptLine, settleVerdict, verdictSchema, verdictSeverityToLegacy, verdictSummary, withoutDecision } from "@lane-pilot/workflow-engine";
 import type { Verdict, VerdictFinding, VerdictStatus } from "@lane-pilot/workflow-engine";
 import { sha256Hex } from "@lane-pilot/kit";
 
 export const CODE_CRITIQUE_STAGE = "code-critique" as const;
 export const CODE_CRITIQUE_MAX_ROUNDS = 3;
 
+/** An optional note a model writes as "" counts as absent, not as a parse error (hub 2026-10-30: findings[5].verificationExpectation). */
+const optionalNote = (max: number) => z.preprocess((value) => value === "" || value == null ? undefined : value, clipped(max).optional());
+
 export const codeCritiqueFindingSchema = z.object({
   id: clipped(80),
   severity: z.enum(["info", "warning", "blocking"]),
   finding: clipped(1000),
   criterion: clipped(500),
-  path: z.string().min(1).max(500).optional(),
+  path: optionalNote(500),
   line: z.number().int().positive().optional(),
-  evidence: clipped(2000).optional(),
-  impact: clipped(500).optional(),
-  trigger: clipped(500).optional(),
-  verificationExpectation: clipped(500).optional(),
-}).strict();
+  evidence: optionalNote(2000),
+  impact: optionalNote(500),
+  trigger: optionalNote(500),
+  verificationExpectation: optionalNote(500),
+}); // not .strict(): a key the schema does not know (status_note, summary_note) is dropped, not refused (hub 2026-10-30)
 
 /**
  * Only a blocking finding can be repaired, so a changes_requested with none has no way forward: it is read as an
@@ -31,7 +34,7 @@ export const codeCritiqueResultSchema = z.object({
   decision: z.enum(["approve", "changes_requested"]),
   summary: clipped(2000),
   findings: z.array(codeCritiqueFindingSchema).max(30),
-}).strict().transform((value) => value.decision === "changes_requested" && !value.findings.some((row) => row.severity === "blocking")
+}).transform((value) => value.decision === "changes_requested" && !value.findings.some((row) => row.severity === "blocking")
   ? { ...value, decision: "approve" as const }
   : value);
 
@@ -425,7 +428,8 @@ const fromVerdictFinding = (row: VerdictFinding): CodeCritiqueFinding => ({
 
 /** The new answer (`status`) or the old one (`decision`): both give a result with a status; the old one maps approve to pass and changes_requested to rework. */
 export function parseCodeCritique(output: string, cites?: Citation): CodeCritiqueResult {
-  const raw = extractModelJson(output);
+  const raw = normalizeVerdictInput(extractModelJson(output));
+
   if (isVerdictShape(raw)) {
     const cited = demoteUncited(verdictSchema.parse(withoutDecision(raw)), cites);
     const settled = settleVerdict(applyRubric(cited.verdict, "code"), "code");

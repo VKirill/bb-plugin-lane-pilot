@@ -261,3 +261,28 @@ export const verdictSummary = (verdict: Verdict): string => verdict.summary ?? v
 /** The reason a stage returns for a status that stops the task: the block text for `block`, the stage's own for `rework`. */
 export const reasonForStatus = (status: VerdictStatus | undefined, stage: string, result: { summary?: string; verdict?: Verdict }, reworkReason: string): string =>
   status === "block" ? blockReason(stage, { summary: result.summary, findings: result.verdict?.findings ?? [] }) : reworkReason;
+
+/** The verdict words critics actually write outside our vocabularies, folded to the nearest one ours has (hub 2026-10-30). */
+const PASS_WORDS = new Set(["approve", "approved", "accept", "accepted", "pass", "passed", "lgtm", "ok"]);
+const REWORK_WORDS = new Set(["changes_requested", "request_changes", "needs_changes", "rework", "revise"]);
+const BLOCK_WORDS = new Set(["block", "blocked", "reject", "rejected", "fail", "failed"]);
+
+/** A known foreign form folds into ours: an alien `status` maps to the nearest verdict, and so does an alien `decision`. */
+export function normalizeVerdictInput(raw: unknown): unknown {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return raw;
+  const row = { ...(raw as Record<string, unknown>) };
+  const word = (value: unknown) => typeof value === "string" ? value.trim().toLowerCase() : "";
+  if (typeof row.status === "string" && !(VERDICT_STATUSES as readonly string[]).includes(word(row.status))) {
+    const w = word(row.status);
+    if (PASS_WORDS.has(w)) row.status = "pass";
+    else if (REWORK_WORDS.has(w)) row.status = "rework";
+    else if (BLOCK_WORDS.has(w)) row.status = "block";
+    else if ("decision" in row) delete row.status;
+  }
+  if (typeof row.decision === "string" && row.decision !== "approve" && row.decision !== "changes_requested") {
+    const w = word(row.decision);
+    if (PASS_WORDS.has(w)) row.decision = "approve";
+    else if (REWORK_WORDS.has(w) || BLOCK_WORDS.has(w)) row.decision = "changes_requested";
+  }
+  return row;
+}

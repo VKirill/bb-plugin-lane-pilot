@@ -26,7 +26,7 @@ import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from ".
 import { detectRepoEdits, gitRepoStatus } from "../../verification/server";
 import { SPECIALIST_GRAPH, SPECIALIST_ROLES, rememberSpecialistThread } from "../../critique/server";
 import { findThreadsByMetadata, keyedSpawnSupported } from "../../core/server";
-import { modelCatalogOf, pmHostOf, providerBlockedForFolder, resolveSpawnModel, spawnUsageOf, warmSpawnUsage } from "../../core/server";
+import { modelCatalogOf, noteProviderStartFailure, noteProviderStartSuccess, pmHostOf, providerBlockedForFolder, readProviderFolderBlock, resolveSpawnModel, spawnUsageOf, warmSpawnUsage, PROVIDER_FOLDER_BLOCK_TTL_MS } from "../../core/server";
 import { modelTier, ROLE_IDS, ROLE_MODEL_OPTIONS, roleRowOf } from "@lane-pilot/models";
 import { threadUsage } from "../../usage/server";
 import { stringAt } from "../../core/server";
@@ -334,18 +334,26 @@ export function createWorkflowAgents() {
         await bb.sdk.threads.send({ threadId, mode: "queue-if-active", input: [{ type: "text", text: request.prompt, mentions: [] }] } as never);
       }
     } else {
+      const startFolder = await projectFolder(rt.ctx.bb, rt.projectId).catch(() => null);
+      const blockStore = bb.storage?.kv ?? { set: async () => undefined };
       try {
         threadId = await lookup(rt, request) ?? await spawn(request);
+        // A start that went through clears this machine's observed folder block for the provider.
+        await noteProviderStartSuccess(blockStore, startFolder?.hostId ?? null, request.provider ?? "", startFolder?.path ?? null);
       } catch (cause) {
         // The provider cannot start in this environment (its own session policy unenforceable, or its server 500s the
         // MCP listing — opencode2 under ~/Documents on macOS): one retry on the role's next provider, no PM involved.
         if (!/vk_required_session_policy_unenforceable|OpenCode[^\n]*\b500\b|\b500\b[^\n]*mcp/i.test(cause instanceof Error ? cause.message : String(cause))) throw cause;
         const failed = request.provider ?? DEFAULT_PROVIDER;
+        // An observed refusal in a ~/Documents folder on this machine is remembered: the pick stops offering it there
+        // until a success or the block's TTL (provider.folder_block_ttl_ms, 6 h).
+        await noteProviderStartFailure(blockStore, startFolder?.hostId ?? null, failed, startFolder?.path ?? null, cause instanceof Error ? cause.message : String(cause));
         const again = await withResolvedModel({ ...request, provider: undefined as never, model: undefined as never, reasoning: undefined as never, resolved: undefined as never }, { avoidProvider: failed }).catch(() => null);
         if (!again || again.provider === failed) throw cause;
         bb.log.warn(`workflow step ${request.stepKey}: ${failed} could not start (${cause instanceof Error ? cause.message.slice(0, 160) : String(cause)}); rerunning on ${again.provider}/${again.model}`);
         const fallback = { ...request, provider: again.provider, model: again.model, reasoning: again.reasoning, serviceTier: undefined, spawnKey: `${request.spawnKey}:start` };
         threadId = await lookup(rt, fallback) ?? await spawn(fallback);
+        await noteProviderStartSuccess(blockStore, startFolder?.hostId ?? null, fallback.provider ?? "", startFolder?.path ?? null);
         request = { ...request, provider: fallback.provider, model: fallback.model };
       }
     }
@@ -566,8 +574,12 @@ export async function withResolvedModel(request: HelperRequest, options: { avoid
   // Provider limits: the usage of both table providers is read first (bounded, never blocks), then the resolver moves a pick off a nearly spent one.
   const usage = spawnUsageOf({ bb: rt.ctx.bb, log: rt.ctx.log });
   await warmSpawnUsage(usage, hostId);
-  const chosen = resolveSpawnModel({ role: request.role, pinned, settings, pm, author, catalog: read, hostId, envPath, avoidProvider: avoid, usage });
-  if (request.provider && providerBlockedForFolder(request.provider, envPath)) rt.ctx.log?.(`Lane Pilot: ${request.role} cannot run on ${request.provider} in ${envPath}: ${providerBlockedForFolder(request.provider, envPath)}; the role's next provider takes the step`);
+  // Only an observed refusal holds a provider out of the folder: the block this machine recorded on a real failed start.
+  const folderBlockTtl = Number(settings["provider.folder_block_ttl_ms"]) || PROVIDER_FOLDER_BLOCK_TTL_MS;
+  const blockStore = rt.ctx.bb.storage?.kv ?? { get: async () => null };
+  const folderBlock = await readProviderFolderBlock(blockStore, hostId, "opencode2", folderBlockTtl);
+  const chosen = resolveSpawnModel({ role: request.role, pinned, settings, pm, author, catalog: read, hostId, envPath, avoidProvider: avoid, usage, folderBlock });
+  if (request.provider && providerBlockedForFolder(request.provider, envPath, folderBlock)) rt.ctx.log?.(`Lane Pilot: ${request.role} cannot run on ${request.provider} in ${envPath}: ${providerBlockedForFolder(request.provider, envPath, folderBlock)}; the role's next provider takes the step`);
   // №9: a trivial step may run one model tier cheaper — only unpinned picks of a downgradable table role (a code
   // writer is not in the table at all, judges stay their own family, high/critical risk never cheapens).
   if (!pinned.model) {
