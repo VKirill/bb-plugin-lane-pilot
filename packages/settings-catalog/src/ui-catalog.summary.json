@@ -1,6 +1,6 @@
 {
-  "rows": 487,
-  "editable": 241,
+  "rows": 490,
+  "editable": 244,
   "readonly": 113,
   "gap": 0,
   "excluded": 133,
@@ -41,6 +41,7 @@
     "docs.reasoning_effort",
     "docs.service_tier",
     "docs.since",
+    "failure.interventions",
     "helper.bb_plugins",
     "helper.context_mode",
     "helper.mcp_servers",
@@ -61,6 +62,7 @@
     "memory.inject",
     "memory.maintain",
     "memory.maintain_every",
+    "memory.maintain_mode",
     "memory.note_budget",
     "memory.personal_bot",
     "memory.provider",
@@ -123,6 +125,7 @@
     "writer.model",
     "writer.provider",
     "writer.reasoning_effort",
+    "writer.retry_escalate",
     "writer.service_tier"
   ]
 }
