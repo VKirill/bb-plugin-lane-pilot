@@ -1,6 +1,6 @@
 {
-  "rows": 490,
-  "editable": 256,
+  "rows": 491,
+  "editable": 257,
   "readonly": 113,
   "gap": 0,
   "excluded": 133,
@@ -25,6 +25,7 @@
     "adoc.279",
     "adoc.281",
     "adoc.282",
+    "bench.model_rebench",
     "browser_qa.approve",
     "browser_qa.backend",
     "browser_qa.enabled",

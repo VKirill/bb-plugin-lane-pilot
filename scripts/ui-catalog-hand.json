@@ -3283,6 +3283,32 @@
    "evidence": "src/rooms/checkers/diff-hidden.ts:1",
    "matrixStatus": "readonly",
    "storageKey": "checkers.diff_hidden_limit"
+  },
+  {
+   "id": "s527",
+   "index": 502,
+   "area": "Lane Pilot monthly rebench",
+   "setting": "bench.model_rebench",
+   "location": "src/rooms/night-graphs/server/model-rebench-graph.ts:1",
+   "category": "user",
+   "invType": "enum",
+   "values": "off, on",
+   "defaultValue": "off",
+   "scope": "global",
+   "control": "select",
+   "options": [
+    "off",
+    "on"
+   ],
+   "min": null,
+   "max": null,
+   "section": "improvement",
+   "channel": "OWN",
+   "uiStatus": "editable",
+   "rationale": "Whether the 1st of the month schedule runs the model routing rebench (lp.model-rebench) comparing Jev model choices with task outcomes. Default off.",
+   "evidence": "src/rooms/night-graphs/server/model-rebench-graph.ts:1",
+   "matrixStatus": "readonly",
+   "storageKey": "bench.model_rebench"
   }
  ],
  "fields": {

@@ -31,6 +31,7 @@ const BY_KEY: Record<string, Record<string, I18nKey>> = {
   },
   "checks.require_red_on_base": { off: "enumRequireRedOff", medium: "enumRequireRedMedium", high: "enumRequireRedHigh" },
   "writer.fallback_on_provider_failure": { immediate: "enumFallbackImmediate", after_retry: "enumFallbackAfterRetry" },
+  "bench.model_rebench": { on: "enumModelRebenchOn", off: "enumModelRebenchOff" },
   "failure.interventions": { on: "enumInterventionsOn", off: "enumInterventionsOff" },
   "writer.pair_pin": { on: "enumPairPinOn", off: "enumPairPinOff" },
   "writer.route_record": { on: "enumRouteRecordOn", off: "enumRouteRecordOff" },

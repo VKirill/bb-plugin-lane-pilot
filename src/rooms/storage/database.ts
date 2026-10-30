@@ -456,6 +456,9 @@ export const migrations = [
   // Diff-hidden audit (Mirage / ToCS pattern): check sensitivity and blind passes when diff is hidden. Append only.
   `CREATE TABLE IF NOT EXISTS lane_pilot_diff_hidden_audit (id TEXT PRIMARY KEY, run_id TEXT NOT NULL, task_id TEXT NOT NULL, checker TEXT NOT NULL, with_diff_json TEXT NOT NULL, diff_hidden_json TEXT NOT NULL, phantom INTEGER NOT NULL, blind_pass INTEGER NOT NULL, diff_sensitive INTEGER NOT NULL, recorded_at INTEGER NOT NULL)`,
   `CREATE INDEX IF NOT EXISTS lane_pilot_diff_hidden_audit_recorded ON lane_pilot_diff_hidden_audit(recorded_at)`,
+  // Monthly model routing rebench (Epoch / TokenRouter pattern): evaluate Jev model choices vs outcomes. Append only.
+  `CREATE TABLE IF NOT EXISTS lane_pilot_model_rebench (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, month TEXT NOT NULL, evaluated_count INTEGER NOT NULL, accuracy REAL NOT NULL, win_rate REAL NOT NULL, report_json TEXT NOT NULL, recorded_at INTEGER NOT NULL)`,
+  `CREATE INDEX IF NOT EXISTS lane_pilot_model_rebench_recorded ON lane_pilot_model_rebench(recorded_at)`,
 ];
 
 export function openDatabase(bb: BbPluginApi): LanePilotDatabase {
