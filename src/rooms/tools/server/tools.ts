@@ -103,7 +103,8 @@ export function registerTools(ctx: ServerCore, services: Services) {
       for (const taskId of params.taskIds) {
         const attempts = open.filter((row) => row.task_id === taskId);
         if (!attempts.length) { results.push({ taskId, ok:false, state:"not_open", reason:"no open attempt of this task in this run" }); continue; }
-        for (const attempt of attempts) results.push({ taskId, attemptId:attempt.id, ...await cancelAttemptById(ctx, attempt.id, services.rollback) });
+        const why = params.words?.trim() ? `PM canceled: ${params.words.trim()}` : "PM canceled the task";
+        for (const attempt of attempts) results.push({ taskId, attemptId:attempt.id, ...await cancelAttemptById(ctx, attempt.id, services.rollback, why) });
         // The PM canceled it: its «canceled» is no news for the batched results.
         noteToldPmDirectly(context.threadId, taskId, Date.now() + 5 * 60_000);
         if (params.words) db.prepare("UPDATE lane_pilot_task SET closed_words=? WHERE id=?").run(params.words, taskId);
