@@ -27,6 +27,8 @@ export function mountOutbound(ctx: Pick<ServerCore, "db" | "bb" | "log" | "isDis
   const sent = new Set<string>();
   const stop = onAttemptChanged((attemptId) => {
     version += 1;
+    // Watched `world_version` reads (SDK useRpcQuery) refetch at once; an older BB has no invalidate and keeps its interval (B-9).
+    (ctx.bb.rpc as { experimental_invalidate?: (tags: readonly string[]) => void }).experimental_invalidate?.(["world_version"]);
     const attempt = getAttempt(ctx.db, attemptId);
     if (!attempt || !isOutboundState(attempt.state) || sent.has(`${attemptId}:${attempt.state}`)) return;
     const run = getRun(ctx.db, attempt.run_id);
