@@ -24,9 +24,9 @@ export function composeMorningList(db: Db, now: number = Date.now(), windowMs: n
   const adopted = count(db, "SELECT count(*) AS n FROM lane_pilot_rule_event WHERE action='adopted' AND at>=?", since);
   const confirmed = count(db, "SELECT count(*) AS n FROM lane_pilot_rule_event WHERE action='confirmed' AND at>=?", since);
   const waiting = ownerWaitingCounts(db, now);
-  const broken = db.prepare("SELECT task_id, culprit_commit FROM lane_pilot_regression WHERE state='open' AND kind='regression' ORDER BY id LIMIT 3").all() as Array<{ task_id: string; culprit_commit: string | null }>;
+  const broken = db.prepare("SELECT task_id, culprit_commit, culprit_task FROM lane_pilot_regression WHERE state='open' AND kind='regression' ORDER BY id LIMIT 3").all() as Array<{ task_id: string; culprit_commit: string | null; culprit_task: string | null }>;
   const brokenTotal = count(db, "SELECT count(*) AS n FROM lane_pilot_regression WHERE state='open' AND kind='regression'");
-  const regressed = brokenTotal ? ` Сломано после приёмки: ${brokenTotal} (${broken.map((row) => `${row.task_id} ← ${row.culprit_commit ? row.culprit_commit.slice(0, 8) : "?"}`).join(", ")}).` : "";
+  const regressed = brokenTotal ? ` Сломано после приёмки: ${brokenTotal} (${broken.map((row) => `${row.task_id} ← ${row.culprit_commit ? row.culprit_commit.slice(0, 8) : "?"}${row.culprit_task && row.culprit_task !== row.task_id ? ` (виновник ${row.culprit_task})` : ""}`).join(", ")}).` : "";
   return [
     `Правила: на пробу ${adopted}, подтверждено ${confirmed}, ждут места ${waitingRules}.`,
     `Красное за ночь: ${red.length ? `${red.reduce((sum, row) => sum + row.n, 0)} попыток (${red.map((row) => `${row.state} ${row.n}`).join(", ")})` : "ничего"}.${regressed}`,

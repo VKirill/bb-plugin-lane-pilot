@@ -23,6 +23,8 @@ export { TASK_WORDS_KEY, landingWordGap, ownerWordsOn, recordTaskWord, taskWordK
 export type { TaskWord } from "./words";
 export { SHARED_PATH_TASKS, batchShapeAdvice } from "./batch-shape";
 export type { OpenShape } from "./batch-shape";
+export { TASK_SIZE_MIN_SAMPLE, medianTaskSize, taskSizeOf, taskSizeText } from "./task-size";
+export type { TaskSize, TaskSizeMedian } from "./task-size";
 export { TOPIC_LOOP, testNames, topicHold, topicLoop, topicLoopMessage } from "./topic-loop";
 export type { LoopTask, TopicLoop, TopicWall } from "./topic-loop";
 export { CHECK_HISTORY_MIN_RUNS, p95 } from "./check-history";

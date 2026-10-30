@@ -10,8 +10,8 @@ select 'Красное за ночь: ' || coalesce((select sum(n) || ' попы
     and (state like '%failed%' or state in ('blocked', 'provider_error')) group by state order by state)), 'ничего') || '.'
   || case when (select count(*) from lane_pilot_regression where state = 'open' and kind = 'regression') > 0
     then ' Сломано после приёмки: ' || (select count(*) from lane_pilot_regression where state = 'open' and kind = 'regression') || ' ('
-      || (select group_concat(task_id || ' ← ' || coalesce(substr(culprit_commit, 1, 8), '?'), ', ') from
-        (select task_id, culprit_commit from lane_pilot_regression where state = 'open' and kind = 'regression' order by id limit 3)) || ').'
+      || (select group_concat(task_id || ' ← ' || coalesce(substr(culprit_commit, 1, 8), '?') || case when culprit_task is not null and culprit_task != task_id then ' (виновник ' || culprit_task || ')' else '' end, ', ') from
+        (select task_id, culprit_commit, culprit_task from lane_pilot_regression where state = 'open' and kind = 'regression' order by id limit 3)) || ').'
     else '' end;
 select 'Принято: ' || (select count(*) from lane_pilot_attempt where state = 'accepted' and updated_at >= (select since from lp_morning)) || ' попыток.';
 select 'Отсрочки: просрочено ' || (select count(*) from lane_pilot_deferral where state in ('open', 'overdue') and due_at < (select now from lp_morning) and owner_ref is not null and due_source in ('explicit', 'relative', 'weekday'))

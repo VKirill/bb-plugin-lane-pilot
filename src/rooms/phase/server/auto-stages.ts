@@ -85,7 +85,7 @@ export function replansSpent(phase: Phase): boolean {
 }
 
 /** The inputs of a stage's workflow, from the phase record. */
-export function autoInputs(phase: Phase, due: { kind: AutoKind; wave?: number }): Record<string, unknown> {
+export function autoInputs(phase: Phase, due: { kind: AutoKind; wave?: number }, medianTask?: string): Record<string, unknown> {
   const r = phase.record;
   const contextText = (r.context?.docs ?? []).map((doc) => doc.path).join(", ");
   switch (due.kind) {
@@ -101,7 +101,7 @@ export function autoInputs(phase: Phase, due: { kind: AutoKind; wave?: number })
       // After a failed verdict, or when the plan gate (code) refused an approved plan, the planner sees the pieces as they are, with covers.
       const gateRound = gateGaps.length > 0 && r.plan?.critique?.decision === "approve";
       const current = (r.replan?.gaps || gateRound) && r.plan ? (r.plan.items ?? []).map((item) => ({ id: item.id, wave: item.wave, covers: item.covers ?? [], task: item.task })) : null;
-      return { goal: phase.goal, findings: { context: contextText, decisions: r.context?.decisions ?? [], requirements: r.context?.requirements ?? [], ...(current ? { current_pieces: current } : {}) },
+      return { goal: phase.goal, median_task: medianTask ?? "", findings: { context: contextText, decisions: r.context?.decisions ?? [], requirements: r.context?.requirements ?? [], ...(current ? { current_pieces: current } : {}) },
         ...(gaps.length ? { mode: "gaps", gaps } : {}),
         extra_rules: ["every command an acceptance line names is one of the task's verification commands", "each task's id is the piece id; depends_on only on tasks of earlier waves",
           "each task lists in a top-level field `covers` the ids of the requirements and locked decisions (findings.requirements, findings.decisions) it carries out; together the tasks cover every id",
@@ -232,6 +232,8 @@ export function createAutoStages(ctx: Pick<ServerCore, "log">, services: Pick<Se
   version?: string;
   /** Git's verdicts on whether the run's recorded proofs still cover the code (proof-currency), as text for the goal audit; null when none. */
   proofCurrency?(phase: Phase): Promise<string | null>;
+  /** The project's median accepted-task size as one line (tasks/task-size.ts); the plan grain check reads it as `median_task`. */
+  medianTask?(phase: Phase): string | null;
 }) {
   const version = deps.version ?? packageJson.version;
   /** Counts a failed run of a stage's workflow. True when that spent the stage's tries: the loop is ended by the machine (scope cut, hunters, backlog), not handed to the PM. */
@@ -436,7 +438,7 @@ export function createAutoStages(ctx: Pick<ServerCore, "log">, services: Pick<Se
       // The goal audit is told from git which recorded proofs are stale, so it does not work currency out by hand; a failed lookup only leaves the facts out.
       const currency = due.kind === "close" && deps.proofCurrency ? await deps.proofCurrency(phase).catch(() => null) : null;
       // The plan runs in full mode: lp.plan's critic otherwise skips a plan below three tasks, and SMA checks every plan (p2_checker).
-      const started = services.workflowEngine.start({ workflow, inputs: { ...autoInputs(phase, due), ...(currency ? { proof_currency: currency } : {}) }, key: `phase:${phase.id}:${due.kind}:${phase.edition}:${deps.now()}`, runtime,
+      const started = services.workflowEngine.start({ workflow, inputs: { ...autoInputs(phase, due, deps.medianTask?.(phase) ?? undefined), ...(currency ? { proof_currency: currency } : {}) }, key: `phase:${phase.id}:${due.kind}:${phase.edition}:${deps.now()}`, runtime,
         ...(due.kind === "plan" ? { mode: "full" as const } : {}),
         link: { projectId: phase.projectId, ...(phase.runId ? { runId: phase.runId } : {}) } });
       started.done.catch((cause: unknown) => ctx.log(`phase ${phase.id}: ${AUTO_WORKFLOWS[due.kind]} stopped: ${cause instanceof Error ? cause.message : String(cause)}`));
