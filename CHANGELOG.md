@@ -5,6 +5,42 @@
 - **Learning uses the project's current folders.** An obsolete prototype workspace (`/tmp/ag194-v4-cli`) still overrode the BB-service project's current sources, so three learning analyzer threads on 2026-10-30 failed before the model started. A legacy override now has to match a current project source when sources exist; projects without sources retain their explicit binding. The shared resolver also serves the rules scan, nightly docs, harness fallback and settings. Regression: `tests/project-binding.test.ts` and the analyzer spawn replay in `tests/night-graphs/rules-scan.test.ts`, using captured bindings and errors in `tests/fixtures/learning-stale-binding-2026-10-30.json`.
 - **Test clock cleanup.** The daemon aging test restores real timers in its `finally` block. It previously installed fake timers there, causing the pause/stop tests that shared its worker to time out; their assertions and time limits are unchanged.
 
+## 0.1.395
+
+- Memory ContextPack compiler in shadow mode; the pack mode setting on the settings screen.
+
+## 0.1.394
+
+- Critic failures no longer count as task failures; writer route record and pinned pair; retry safety gate; task size and memory scope fixes; eval clock.
+
+## 0.1.393
+
+- Waves 17–20: failure and memory settings on the settings screen, memory salience gate and scope badges, runner-chain glue, real-PR critic bench, recursive best-of.
+
+## 0.1.392
+
+- Batch4, waves 7–16: failure-class interventions, memory every Nth task, sealed bench set, writer fallbacks, live checks.
+
+## 0.1.391
+
+- An informational notice no longer wakes a cold PM chat.
+
+## 0.1.390
+
+- Audit wave: Jev on the official API with places/precision/architecture; chains reach their goal; employees learn and start directly; waves 1–6; live settings.
+
+## 0.1.389
+
+- The not_verified wf_run rebuild is appended at the end, and a lock keeps every migration at its index.
+
+## 0.1.388
+
+- A PM activates without a Claude Lane engine.
+
+## 0.1.387
+
+- The SMA test reads the moved guard from the backup and the shim at the old path.
+
 ## 0.1.386
 
 - **Code critic answer, unreadable.** An answer that cannot be read (an unescaped quote broke the JSON of a «pass») is sent back once to the same critic with the parse error; only a second unreadable answer fails the stage. It blocked a finished selfystudio task on 2026-10-30.

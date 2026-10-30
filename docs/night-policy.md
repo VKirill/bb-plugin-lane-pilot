@@ -183,6 +183,6 @@ daily Telegram report (the hub copy of `daily.sh` is installed by hand, so `lp-m
 
 ## Not wired yet
 
-No night loop exists, so nothing calls `authorize`, `collectAndAppend` or `shouldStopCycle` yet. The P1-1 loop must: tag each change with the
+The wall's night loop already calls them: `wall/acceptance.ts` calls `authorize(change)` before acting, and `wall/select.ts` calls `shouldStopCycle` after each cycle; `collectAndAppend` still waits for the P1-1 loop. The P1-1 loop must: tag each change with the
 descriptor vocabulary, call `authorize(change)` before acting (the exam is not an argument and does not block the tier), put `night_proposes` into the morning list, run
 `collectAndAppend` once a night, and call `shouldStopCycle` after each cycle.

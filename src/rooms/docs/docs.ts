@@ -192,7 +192,7 @@ const METHODOLOGY = [
   "- Keep each page under 30000 bytes: split a large subject into linked pages (a data model with many tables into data-model/<area>.md, one page per area, with data-model.md as the overview).",
   "- DESIGN.md files are the design canon the design lead keeps: read and link them, never edit them.",
   "- Link pages with relative paths. Never write an index.md in a docs folder or a 'Referenced by' section: Lane Pilot builds them.",
-  "- Everything in English. Root README.md is the short front page for people: what it is, what it does, quick start, and links into docs/ - no detail that docs/ already holds. Root PROJECT.md is for agents: dense facts (Identity, Entry points, Critical invariants, Conventions, Common gotchas, Useful commands), each linking to the page that owns it.",
+  "- Everything in English. Root README.md is the full reference for people: what it is, what it does, quick start, its features and settings, and links into docs/. On a refresh pass update the facts in it - numbers, lists of graphs and settings, changed behavior - but keep every section: never shorten it, drop sections or rewrite them as a summary. Root PROJECT.md is for agents: dense facts (Identity, Entry points, Critical invariants, Conventions, Common gotchas, Useful commands), each linking to the page that owns it.",
   "- One owner per fact: a value, limit, rule or command is stated on the one page that owns it (a table in data-model, a limit in its feature page) and other pages link there instead of repeating it. Lane Pilot checks claims that cite the same code across pages for contradictions.",
 ];
 
@@ -282,7 +282,7 @@ export function nightlyDocsPrompt(input:{since:DocsSince; hasDocs:boolean; chang
         "- docs/data-model.md (data-model) when the code stores data: every table or collection with its fields, keys and who writes it.",
         ...(input.deploy ? ["- docs/deployment.md (deployment): how to install dependencies, build, test, install and configure it, as runnable steps taken from the scripts."] : []),
         "- docs/gotchas.md (gotchas) with the traps you find in the code; docs/decisions.md (decisions, ADR: Context, Decision, Status, Consequences) only for decisions the code or history shows.",
-        "- README.md (the short front page for people) and PROJECT.md (for agents) at the project root; keep facts already in README.md, but move detail into docs/ and link to it.",
+        "- README.md (the full reference for people) and PROJECT.md (for agents) at the project root; keep the facts and sections already in README.md, update what changed and add what a new capability needs - never shorten it or rewrite its sections.",
       ].join("\n"),
     "",
     `Read the code before writing about it. Write only ${flow ? `${page} and docs/flows/${flow.slug}/**` : ws ? `${d}/**` : "docs/**, README.md and PROJECT.md"}; do not edit code, tests, settings or other docs folders, and do not commit. Lane Pilot reverts changes anywhere else, checks the pages, builds ${d}/index.md and commits.`,

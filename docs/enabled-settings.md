@@ -14,7 +14,7 @@ sources:
   - docs/enabled-settings.snapshot.json
 ---
 
-<!-- enabled-settings:structure d5d3370d6323f80f -->
+<!-- enabled-settings:structure 99abcebd2b236719 -->
 
 # Enabled settings (generated)
 
@@ -39,6 +39,9 @@ switches: `quick` disables both critiques, `full` enables them (`src/rooms/criti
 | `bench.budget_hours` | `6` | — | bench: hour cap of a series |
 | `bench.budget_tokens` | `120000000` | — | bench: token cap of a series |
 | `bench.nightly_sets` | `all` | — | nightly bench: which sets the night runs (all, or a comma list of versions) |
+| `bench.nightly` | `on` | — | nightly bench switch (weekly.ts:120) |
+| `bench.sealed_gap_pp` | `5` | — | sealed-set overfit gap, percentage points (weekly.ts:51, wall/acceptance.ts:119) |
+| `bench.weekly` | `on` | — | weekly bench switch (weekly.ts:27) |
 | `bookkeeping.paths` | — | — | project bookkeeping patterns that ownership gates and merges treat as not the writer's work |
 | `browser_qa.approve` | `auto` | — | stage Browser QA approval setting |
 | `browser_qa.backend` | `bb-browser` | — | stage Browser QA backend setting |
@@ -105,7 +108,7 @@ switches: `quick` disables both critiques, `full` enables them (`src/rooms/criti
 | `jev.LANE_OPENCODE_JEV` | `1 (on)` | — | effort routing reads this setting |
 | `jev.enabled` | `true` | — | Jev judgments (src/jev): false turns every judgment off for the project |
 | `jev.modes` | — | — | Jev judgments: off, shadow or active per judgment |
-| `jev.provider` | `openlux` | — | Jev provider: openlux or typesafe serves every Jev request |
+| `jev.provider` | `typesafe` | — | Jev provider: openlux or typesafe serves every Jev request |
 | `jev.thresholds` | — | — | Jev judgments: thresholds as judgment.name=number pairs |
 | `memory.agent` | `memory-maintainer` | — | memory role label included in its prompt |
 | `memory.audience` | `subagent` | — | stage setting: control memory audience |
