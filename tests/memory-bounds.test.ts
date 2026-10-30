@@ -1,8 +1,9 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { applyScopeMigration, planScopeMigration } from "../scripts/memory-scope-dry-run";
+import { tmpdir } from "node:os";
+import { applyRuleScopeRebind, applyScopeMigration, planScopeMigration, revertRuleScopeRebind } from "../scripts/memory-scope-dry-run";
 import { describe, expect, it } from "vitest";
 import { searchMemoryAllSections, searchMemoryRecords, storeMemoryRecords } from "../packages/memory-core/src";
-import { assertRuleScope, scopeApplies, upsertLessonProposal } from "@lane-pilot/run-insights";
+import { acceptedRules, assertRuleScope, scopeApplies, upsertLessonProposal } from "@lane-pilot/run-insights";
 import { demoteUnusedPromotions, enrichMemoryContext } from "../src/rooms/memory-tiers/server";
 import { createMemoryConflicts } from "../src/rooms/memory/server/memory-conflicts";
 import { sessionMemoryRpc } from "../src/rooms/memory/server/session-memory";
@@ -241,5 +242,35 @@ describe("maintainer recurrence gate (arXiv #5)", () => {
     expect(memoryRecurrenceDue(db, "P", 3).due).toBe(true);
     maintained("r3", 400);
     expect(memoryRecurrenceDue(db, "P", 3)).toEqual({ due: false, acceptedSince: 0 });
+  });
+});
+
+describe("F04-3 --apply: a bare-label scope is rebound to the section it names", () => {
+  it("a PM rule stored under a folder label reaches the PM after the rebind", () => {
+    const db = openDatabase(createFakePluginHost({ pluginId: "lane-pilot" }).bb);
+    // A legacy label is stored as a bare word; before the rebind a PM run (no owned paths) never gets it.
+    storeMemoryRecords(db, { projectId: "P", sourceSha256: "a".repeat(64), audience: "subagent" as const, coreBudget: 999, noteBudget: 999, indexBudget: 999, entries: [{ kind: "note", content: "verify note", concepts: ["verify"] }] });
+    const m1 = (db.prepare("SELECT id FROM lane_pilot_memory LIMIT 1").get() as { id: string }).id;
+    db.prepare(`INSERT INTO lane_pilot_rule_proposal (id,project_id,signature,rule,author,state,occurrences,task_count,examples_json,memory_id,first_seen_at,last_seen_at,updated_at,decided_at,scope_json,audience)
+      VALUES ('r-pm','P','s','verify before merge','model','accepted',3,3,'[]','${m1}',1,1,1,1,'["verification"]','pm')`).run();
+    expect(acceptedRules(db, "P", ["section:lane-pilot"]).map((row) => row.id)).toEqual([]);
+    const { applied, journal } = applyRuleScopeRebind(db, { verification: ["section:lane-pilot"] });
+    expect(applied).toBe(1);
+    expect(acceptedRules(db, "P", ["section:lane-pilot"]).map((row) => row.id)).toEqual(["r-pm"]);
+    expect(journal[0]).toMatchObject({ id: "r-pm", before: ["verification"], after: ["section:lane-pilot"] });
+  });
+
+  it("--revert restores the stored scope", () => {
+    const db = openDatabase(createFakePluginHost({ pluginId: "lane-pilot" }).bb);
+    storeMemoryRecords(db, { projectId: "P", sourceSha256: "a".repeat(64), audience: "subagent" as const, coreBudget: 999, noteBudget: 999, indexBudget: 999, entries: [{ kind: "note", content: "verify note", concepts: ["verify"] }] });
+    const m1 = (db.prepare("SELECT id FROM lane_pilot_memory LIMIT 1").get() as { id: string }).id;
+    db.prepare(`INSERT INTO lane_pilot_rule_proposal (id,project_id,signature,rule,author,state,occurrences,task_count,examples_json,memory_id,first_seen_at,last_seen_at,updated_at,decided_at,scope_json,audience)
+      VALUES ('r-pm','P','s','verify before merge','model','accepted',3,3,'[]','${m1}',1,1,1,1,'["verification"]','pm')`).run();
+    const journalPath = `${tmpdir()}/scope-journal-${Date.now()}.json`;
+    applyRuleScopeRebind(db, { verification: ["section:lane-pilot"] }, journalPath);
+    expect(acceptedRules(db, "P", ["section:lane-pilot"])).toHaveLength(1);
+    expect(revertRuleScopeRebind(db, journalPath).reverted).toBe(1);
+    expect(acceptedRules(db, "P", ["section:lane-pilot"])).toEqual([]);
+    expect(db.prepare("SELECT scope_json FROM lane_pilot_rule_proposal WHERE id='r-pm'").get()).toEqual({ scope_json: '["verification"]' });
   });
 });

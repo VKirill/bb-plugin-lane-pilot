@@ -70,9 +70,9 @@ describe("from a correction to a rule the next PM follows", () => {
     expect(sent[0]).toContain("Never ask the owner about technical defects");
     expect(sent[0]).toContain("for all his work: Write reports in Russian, short.");
     const waiting = listItems(db, { states: ["pending_owner"] })[0]!;
-    const decisions = createDecisions({ db, rules, notes, remind: async () => "rem", now: () => NOW });
+    const decisions = createDecisions({ db, rules, notes, remind: async () => "rem", runBb: async () => '{"id":"mem_1"}', now: () => NOW });
     const yes = await decisions.accept(waiting.id);
-    expect(yes.run).toContain("bb memory add --scope 'global' --kind 'preference'");
+    expect(yes.item.target).toBe("bb-memory:mem_1");
     expect(yes.item.state).toBe("accepted");
     // every row names its message
     expect(listItems(db).every((item) => item.evidence.includes(item.obsId))).toBe(true);

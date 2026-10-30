@@ -6,8 +6,8 @@ import { sha256Hex } from "@lane-pilot/kit";
  * What is decided about a learned item (T3, T5): `accept` the ones that wait for a yes (autonomy.ts accepts them by itself: the owner
  * said them), `reject` them, `drop` one already in force (an agent or the owner, in the chat, with a reason).
  *
- *  - a global preference becomes a BB memory, but BB offers an agent only `bb memory add`, so the accepted item returns the exact
- *    command and the PM runs it;
+ *  - a global preference becomes a BB memory: the server runs `bb memory add` itself, the saved id or the error lands
+ *    on the item (X-2: BB memory is the preference index — technical project facts are not duplicated there);
  *  - a date becomes a reminder in the thread it was said in;
  *  - a statement that contradicts one in force retires the old rule and puts the new one on trial.
  */
@@ -16,6 +16,8 @@ export type DecideDeps = {
   rules: RulesPort;
   notes: NotesPort;
   remind(item: Item): Promise<string>;
+  /** Runs the `bb` CLI on the plugin host (anamnesis uses the same for `bb memory catalog`). */
+  runBb(args: string[]): Promise<string>;
   now?(): number;
 };
 
@@ -51,8 +53,19 @@ export function createDecisions(deps: DecideDeps) {
       return { item: getItem(deps.db, id)!, reminder };
     }
     if (item.target === "bb-memory") {
-      setItemState(deps.db, id, { state: "accepted" }, at);
-      return { item: getItem(deps.db, id)!, run: bbMemoryAddLine(item), note: "Run this command to save it as a global preference." };
+      // A-b4: the server writes the preference itself — a PM step "run this" was never verified. The argv drops
+      // the leading "bb"; the saved id or the CLI error lands on the item, which is the receipt for the write.
+      const argv = bbMemoryAddArgs(item).slice(1);
+      try {
+        const out = await deps.runBb(argv);
+        const memoryId = (out.match(/"id"\s*:\s*"([^"]+)"/) ?? out.match(/mem_[\w-]+/))?.[1] ?? out.match(/mem_[\w-]+/)?.[0] ?? "saved";
+        setItemState(deps.db, id, { state: "accepted", target: `bb-memory:${memoryId}` }, at);
+        return { item: getItem(deps.db, id)!, note: `Saved as a global preference (${memoryId}).` };
+      } catch (cause) {
+        const reason = cause instanceof Error ? cause.message.slice(0, 200) : String(cause);
+        setItemState(deps.db, id, { state: "accepted", target: `bb-memory:error`, note: `bb memory add failed: ${reason}` }, at);
+        return { item: getItem(deps.db, id)!, note: `bb memory add failed: ${reason}` };
+      }
     }
     if (item.target === "replace") {
       const old = refOf(item.duplicateOf);

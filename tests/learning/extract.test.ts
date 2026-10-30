@@ -159,7 +159,7 @@ describe("routing what was learned (T3)", () => {
     expect(held!.note).toContain("contradicts");
     expect(s.rules.list("proj_1").map((rule) => rule.id)).toEqual([old.id]);
 
-    const decisions = createDecisions({ db: s.db, rules: s.rules, notes: s.notes, remind: async () => "rem" , now: () => NOW });
+    const decisions = createDecisions({ db: s.db, rules: s.rules, notes: s.notes, remind: async () => "rem", runBb: async () => '{"id":"mem_x"}', now: () => NOW });
     const accepted = await decisions.accept(held!.id);
     expect(accepted.item).toMatchObject({ state: "adopted" });
     const rules = s.rules.list("proj_1");
@@ -199,18 +199,20 @@ describe("the owner's decisions on items", () => {
     candidate(s.db, kind === "preference" ? "Всегда пиши отчёты по-русски" : "Напомни отправить счёт в понедельник");
     await run(s);
     const reminders: string[] = [];
-    const decisions = createDecisions({ db: s.db, rules: s.rules, notes: s.notes, remind: async (item) => { reminders.push(item.text); return "rem_1"; }, now: () => NOW });
+    const decisions = createDecisions({ db: s.db, rules: s.rules, notes: s.notes, remind: async (item) => { reminders.push(item.text); return "rem_1"; }, runBb: async () => '{"id":"mem_pref_1"}', now: () => NOW });
     return { s, decisions, reminders, item: listItems(s.db)[0]! };
   }
 
-  it("a yes to a global preference returns the exact command that saves it", async () => {
+  it("a yes to a global preference is written by the server itself", async () => {
     const { decisions, item } = await waiting("preference");
     const accepted = await decisions.accept(item.id);
     expect(accepted.item.state).toBe("accepted");
-    expect(accepted.run).toMatch(/^bb memory add --scope 'global' --kind 'preference' --name 'owner-write-reports-in-russian-short-and-without-fille?-[0-9a-f]{6}'/);
-    expect(accepted.run).toContain("--tag 'learned'");
+    // A-b4: the server wrote the preference itself; the saved id lands on the item.
+    expect(accepted.item.target).toBe("bb-memory:mem_pref_1");
+    expect(accepted.note).toContain("mem_pref_1");
     const args = bbMemoryAddArgs(item);
     expect(args.slice(0, 3)).toEqual(["bb", "memory", "add"]);
+    expect(args.join(" ")).toContain("--tag learned");
     expect(args[args.indexOf("--details") + 1]).toContain(item.evidence);
     expect(bbMemoryAddLine({ id: "x", text: "it's \"quoted\"", evidence: "e" })).toContain(`'it'\\''s "quoted"'`);
   });
@@ -228,7 +230,7 @@ describe("the owner's decisions on items", () => {
     const s = setup(() => answer([{ message: "m1", kind: "rule", text: "Run the tests before you report a task as done.", audience: "writer", reach: "project" }]));
     candidate(s.db, "Ты опять не запустил тесты перед отчётом");
     await run(s);
-    const decisions = createDecisions({ db: s.db, rules: s.rules, notes: s.notes, remind: async () => "r", now: () => NOW });
+    const decisions = createDecisions({ db: s.db, rules: s.rules, notes: s.notes, remind: async () => "r", runBb: async () => '{"id":"mem_x"}', now: () => NOW });
     const item = listItems(s.db)[0]!;
     expect(item.state).toBe("adopted");
     const dropped = await decisions.drop(item.id);

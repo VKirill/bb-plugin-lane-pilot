@@ -12,6 +12,7 @@ import type { ServerCore } from "../core/server";
 import type { Services } from "../core/server";
 import { createAutonomy } from "./autonomy";
 import { DEFAULT_CONFIG, loadConfig, type LearningConfig } from "./config";
+import { execFile } from "node:child_process";
 import { createDecisions } from "./decide";
 import { createDigest } from "./digest";
 import { createExtractor, type ExtractResult } from "./extract";
@@ -119,6 +120,11 @@ export function createLearning(ctx: ServerCore, services: Services) {
 
   const decisions = createDecisions({
     db, rules, notes,
+    // A-b4: the server writes the preference itself; the saved id or the CLI error lands on the item (its receipt).
+    runBb: (args) => new Promise<string>((resolve, reject) => {
+      execFile(process.env.LANE_PILOT_BB_BIN || "bb", args, { timeout: 30_000, maxBuffer: 4 * 1024 * 1024, env: { ...process.env, PATH: [process.env.PATH, "/opt/homebrew/bin", "/usr/local/bin"].filter(Boolean).join(":") } },
+        (error, stdout) => (error ? reject(error) : resolve(stdout)));
+    }),
     remind: async (item) => {
       const minutes = Math.max(1, Math.round(((item.dueAt ?? Date.now()) - Date.now()) / 60_000));
       const reminder = await relayFor(ctx).remind({ projectId: item.projectId, threadId: item.threadId, note: `The owner asked to be reminded: ${item.text} (${item.evidence})`, inMinutes: minutes, ownerDate: true }) as { id?: string };
@@ -231,7 +237,7 @@ export function mountLearning(ctx: ServerCore, services: Services): Learning | n
   registerObservedTool(bb.agents, {
     name: "lane_pilot_learned",
     description: "What Lane Pilot learned from the owner's own messages: status and evidence, cases to check, learned items, the owner's yes or no, PM rules for a text, settings.",
-    instructions: `op: status (is it ready to act, cost, agreement), review (cases to mark), label {id, correct}, items {state?, kind?, projectId?}, accept/reject/drop {id}, digest {send?}, rules {projectId, text?}, promotion {projectId?, id?, state?}, agreement {days?}, signals {kind?}, config {settings:["key=value"]}, extract {projectId}. Learning switches itself on once a model has checked enough of the judges' decisions; do not ask the owner. Items are accepted by themselves; when Lane Pilot sends you a bb memory add command for a global preference, run it.`,
+    instructions: `op: status (is it ready to act, cost, agreement), review (cases to mark), label {id, correct}, items {state?, kind?, projectId?}, accept/reject/drop {id}, digest {send?}, rules {projectId, text?}, promotion {projectId?, id?, state?}, agreement {days?}, signals {kind?}, config {settings:["key=value"]}, extract {projectId}. Learning switches itself on once a model has checked enough of the judges' decisions; do not ask the owner. Items are accepted by themselves; items are saved by the server itself.`,
     parameters: z.object({
       op: z.enum(OPS), id: z.string().min(1).optional(), correct: z.boolean().optional(), state: z.string().optional(), kind: z.string().optional(),
       projectId: z.string().min(1).optional(), limit: z.number().int().min(1).max(100).optional(), days: z.number().int().min(1).max(90).optional(),

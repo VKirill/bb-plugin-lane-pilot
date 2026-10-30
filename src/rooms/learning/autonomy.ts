@@ -13,7 +13,7 @@ import { labelObservation, listItems, reviewSample, startOfDay, type Db, type Ob
  *    switches itself to `active`. Below the accuracy it keeps observing: the judges need fixing, not a person;
  *  - the «yes» to an item (a date, a global preference, a statement that contradicts one in force): the owner said it himself, so it
  *    is accepted. A reminder is set, a contradicting rule goes on trial (and is retired by the trial if it does not help), and a
- *    global preference goes to the project's PM as the `bb memory add` command to run (BB lets a plugin only list global memories).
+ *    global preference is written by the server itself (`bb memory add` argv from decide.ts); the outcome lands on the item.
  */
 export const MODEL_REVIEW_BATCH = 25;
 export const MODEL_REVIEW_RUNS_PER_DAY = 4;
@@ -113,17 +113,14 @@ export function createAutonomy(deps: AutonomyDeps) {
 
   /** Accepts what waited for the owner's «yes»; a global preference goes to the project's PM to save. */
   async function settleWaiting() {
-    const settled: Array<{ id: string; state: string; run?: string }> = [];
+    const settled: Array<{ id: string; state: string }> = [];
     for (const item of listItems(deps.db, { states: ["pending_owner"], limit: 50 })) {
       // Approval path (SMA): with owner.words on, an item that waits for the owner is applied only by his word, not settled here.
       if (deps.ownerWords?.(item.projectId)) continue;
       try {
         const decided = await deps.decisions.accept(item.id);
-        settled.push({ id: item.id, state: decided.item.state, ...(decided.run ? { run: decided.run } : {}) });
-        if (!decided.run) continue;
-        const pm = deps.pmThread(item.projectId);
-        if (pm) await deps.sendToPm(pm, `Lane Pilot: the owner said this about all his work (${item.evidence}). Save it as a global preference: run\n${decided.run}`);
-        else deps.log(`learning: global preference ${item.id} accepted, no PM chat in ${item.projectId} to save it: ${decided.run}`);
+        settled.push({ id: item.id, state: decided.item.state });
+        if (decided.note) deps.log(`learning: ${item.id}: ${decided.note}`);
       } catch (cause) {
         deps.log(`learning: could not settle ${item.id}: ${cause instanceof Error ? cause.message : String(cause)}`);
       }
