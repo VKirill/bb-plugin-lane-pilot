@@ -24,6 +24,7 @@ import type { ServerCore } from "../../core/server";
 import type { Services } from "../../core/server";
 import { ownerLocale, workflowHumanDetail } from "../../relay/server";
 import { runOnHost } from "@lane-pilot/host-calls";
+import { pageReviewByAgent } from "../../critique/server/specialist-graph";
 
 /**
  * The executors that run a chain on the host: the generic agent step, the owner's question, the code task of a chain, the actions
@@ -245,6 +246,33 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
       return { index: i, verdict: decision.verdict, keep: decision.keep, by: v.by === "jev" ? "jev" : "fallback" };
     });
     return { output: { checked: verdicts.length, kept: out.filter((v) => v.keep).length, verdicts: out } };
+  } });
+
+  // `deliverable.validate` — the three-layer acceptance of a non-code artifact (see docs/workflow-executors.md):
+  // in:  { validator: "page"|"design"|"text"|"3d"|"video"|"invoice"|"composite"|"artifact", target, brief?, hostId? }
+  // out: { verdict: "pass"|"rework"|"fail", reason, issues? } — the step's own rules turn rework into a revision.
+  engine.register<ChainRuntime>("deliverable.validate", { reentrant: true, run: async (c) => {
+    const params = rec(rec(c.node).params);
+    const w = (c.input.with ?? {}) as Row;
+    const pick = (key: string) => params[key] ?? w[key] ?? c.inputs[key];
+    const validator = str(pick("validator") ?? "artifact"), target = str(pick("target") ?? pick("deliverable") ?? pick("path"));
+    const rt = runtimeOf(c, c.runId);
+    if (!target) throw new Error("deliverable.validate: no target");
+    const hostId = str(pick("hostId") ?? "");
+    const settings = rt?.projectId ? await ctx.effectiveProjectSettings(rt.projectId).then((r) => r.values as Record<string, unknown>).catch(() => ({})) : {};
+    const { validateDeliverable } = await import("../../validators");
+    const verdict = await validateDeliverable(validator, target, {
+      host: { run: (id, cwd, command, timeoutSec) => runOnHost(host, { hostId: id, cwd, command, timeoutSec }) as never },
+      hostId,
+      brief: rec(pick("brief")),
+      jevCtx: { projectId: rt?.projectId ?? null, runId: rt?.runId ?? c.runId ?? null, settings },
+      review: rt?.projectId ? async (req) => pageReviewByAgent(ctx, services, {
+        pmThreadId: rt.pmThreadId ?? "", projectId: rt.projectId!, parentRunId: rt.runId ?? c.runId ?? "",
+        design: validator === "design" || Boolean(rec(pick("brief")).design), request: req,
+      }) : undefined,
+    });
+    const out = verdict.ok ? "pass" : "rework";
+    return { output: { verdict: out, reason: verdict.reason, ...(verdict.details ? { issues: verdict.details } : {}) } };
   } });
 
   // `skills.jev`: Jev walks the catalog tree for this step (skills.tree_pick, hierarchical) and returns the picked
