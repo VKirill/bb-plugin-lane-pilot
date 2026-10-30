@@ -6,8 +6,8 @@
     "ru": "Правка критика"
   },
   "description": {
-    "en": "Once a month, for a project: read how often each critic's verdict matched the outcome, and when accuracy is under half on four or more verdicts write a prompt proposal. The proposal is stored. It goes to a trial only when the KV flag lp.critic.edit.trial is on and the run is started with bench=on. Both are off by default, so a monthly run holds the proposal and does not change a prompt. No model is called.",
-    "ru": "Раз в месяц по проекту: смотрит, как часто вердикт каждого критика совпал с исходом, и если точность ниже половины на четырёх и более вердиктах, пишет предложение правки промпта. Предложение сохраняется. На испытание оно идёт, только если флаг KV lp.critic.edit.trial включён и запуск передан с bench=on. По умолчанию оба выключены, поэтому месячный запуск держит предложение и не меняет промпт. Модель не вызывается."
+    "en": "Once a month, for a project: read how often each critic's verdict matched the outcome, and when accuracy is under half on four or more verdicts write a prompt proposal. The proposal is stored. The trial flag lp.critic.edit.trial is on unless set off. The gate is the harness bench gate on the nightly set: it holds until that verdict, and the same 14-day deadline retires it when no verdict lands. A prompt is not changed without a passed verdict. No model is called.",
+    "ru": "Раз в месяц по проекту: смотрит, как часто вердикт каждого критика совпал с исходом, и если точность ниже половины на четырёх и более вердиктах, пишет предложение правки промпта. Предложение сохраняется. Флаг испытания lp.critic.edit.trial включён, пока его не выключат. Гейт — тот же бенч харнесса на ночном наборе: держит, пока нет вердикта, и тот же срок в 14 дней снимает испытание, если вердикта нет. Промпт без прошедшего вердикта не меняется. Модель не вызывается."
   },
   "not_for": [
     "changing a critic prompt without a bench",
@@ -21,7 +21,7 @@
     "bench": { "type": "string", "default": "", "note": "on only when a bench will score the proposal; anything else holds the trial" }
   },
   "outputs": {
-    "status": "held|trial|skipped",
+    "status": "held|trial|skipped|retired",
     "detail": "string"
   },
   "budget": { "max_steps": 4, "max_minutes": 10 },
@@ -39,8 +39,8 @@
       "id": "gate",
       "type": "action",
       "action": "lp.critic_edit_gate",
-      "title": { "en": "Hold the trial unless the flag and a bench are on", "ru": "Держать испытание, пока флаг и бенч не включены" },
-      "rule": "code: held unless lp.critic.edit.trial is on and the input bench is on. A trial status still does not edit the prompt",
+      "title": { "en": "Hold until the nightly bench verdict", "ru": "Держать до вердикта ночного бенча" },
+      "rule": "code: judgeSharedTrial on the nightly bench. Wait and retire do not edit a prompt. Adopt lifts the hold and still does not write the prompt in this node",
       "out": { "status": "held|trial|skipped", "detail": "string" },
       "guards": { "timeoutMin": 5 }
     },

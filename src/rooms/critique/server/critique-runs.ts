@@ -2,13 +2,15 @@ import { unownedExpectedOutputs } from "../../tasks";
 import { hostContract, taskV2Schema } from "../../contracts";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
 import { claimStageSpawn, countAttempts, getRun, getTask, listLiveTasksForRun, listOpenAttempts, listStageReceipts, openDatabase } from "../../storage";
-import { criticAcrossFamilies, criticOffSpent, criticPairCandidates, effortAfterMove, latestWriterPair, pairApartFromWriter, roleSelection, sdkCriticCatalog } from "../critic-pair";
+import { criticAcrossFamilies, criticOffSpent, criticPairCandidates, effortAfterMove, latestWriterPair, pairApartFromWriter, pickCriticByAccuracy, roleSelection, sdkCriticCatalog, usable } from "../critic-pair";
+import { criticStats } from "../critic-stats";
 import { bbServiceTier, writerExecutionSelection, writerServiceTier, findModelIn, modelFamily, type SpentProbe } from "@lane-pilot/models";
 import { qaSpawnClaimed } from "../../qa";
 import { reconcileCritic } from "../../stability";
 import { resolveStageWriterSelection } from "../../writer";
 import { MAX_FILE_EXCERPT_BYTES } from "../code-critique";
-import { codeCritiquePrompt, codeCritiqueSource, critiqueFromStageResult, critiquePolicyFromResult, freezeCritiquePolicy, parseCodeCritique, parseCodeCritiqueSettings, persistLedgerFields, settingsFromFrozenPolicy } from "../code-critique";
+import { codeCritiquePrompt, codeCritiqueSource, codeCritiqueStops, criticPersonas, critiqueFromStageResult, critiquePolicyFromResult, freezeCritiquePolicy, parseCodeCritique, parseCodeCritiqueSettings, persistLedgerFields, settingsFromFrozenPolicy, unionCriticFails } from "../code-critique";
+import { critiqueFromScreen, screenCodeCritique } from "../critic-screen";
 import type { CandidateEvidence, FrozenCritiquePolicy } from "../code-critique";
 import { sha256 } from "../../tasks";
 import { critiquePrompt, parseCritique, shouldRunPlanCritique } from "../critique";
@@ -446,7 +448,7 @@ export async function runCodeCritique(input:{
         const raw = (await input.bb.sdk.threads.output({ threadId:existing.threadId })).output;
         if (typeof raw !== "string" || !raw.trim()) throw new Error("critique_output_empty");
         const critique = await readCodeCritique(input.bb, existing.threadId, raw, cites);
-        const blocked = critique.decision === "changes_requested" && parsed.mode === "gate";
+        const blocked = codeCritiqueStops(parsed.mode, critique);
         const result = { ...ledgerCarry, ...critique, ...hashFields, mode:parsed.mode, rawOutput:raw.slice(0, 12_000), policy:frozen ?? critiquePolicyFromResult(existing.result) };
         recordStage(input.db, { ...base, state:blocked ? "blocked" : "passed", providerId:existing.providerId, model:existing.model,
           threadId:existing.threadId, result, reason:blocked ? verdictReasons(critique,"code-critique").receipt : undefined });
@@ -472,7 +474,7 @@ export async function runCodeCritique(input:{
           const raw = (await input.bb.sdk.threads.output({ threadId:recovered.threadId })).output;
           if (typeof raw !== "string" || !raw.trim()) throw new Error("critique_output_empty");
           const critique = await readCodeCritique(input.bb, recovered.threadId, raw, cites);
-          const blocked = critique.decision === "changes_requested" && parsed.mode === "gate";
+          const blocked = codeCritiqueStops(parsed.mode, critique);
           const result = { ...ledgerCarry, ...critique, ...hashFields, mode:parsed.mode, rawOutput:raw.slice(0, 12_000), policy:frozen ?? critiquePolicyFromResult(existing.result) };
           recordStage(input.db, { ...base, state:blocked ? "blocked" : "passed", providerId:existing.providerId, model:existing.model,
             threadId:recovered.threadId, result, reason:blocked ? verdictReasons(critique,"code-critique").receipt : undefined });
@@ -533,8 +535,22 @@ export async function runCodeCritique(input:{
   // The provider's limit comes last: a critic whose provider is nearly spent takes the other family, even the writer's (said, never silent).
   const offSpent = frozen ? null : await criticOffSpent({ critic:apart?.pair ?? across?.pair ?? liveSelection, writer:writerPair, spent:await limitProbe(input.bb, input.config.hostId, settings), effort:configuredEffort, tier:criticTier, catalog:criticCatalog });
   logLimitMove(input.bb, `code critic for ${input.taskId}`, offSpent?.issues);
-  const providerId = frozen?.providerId ?? offSpent?.pair.providerId ?? apart?.pair.providerId ?? liveSelection.providerId;
-  const modelId = frozen?.model ?? offSpent?.pair.model ?? apart?.pair.model ?? liveSelection.model;
+  let providerId = frozen?.providerId ?? offSpent?.pair.providerId ?? apart?.pair.providerId ?? liveSelection.providerId;
+  let modelId = frozen?.model ?? offSpent?.pair.model ?? apart?.pair.model ?? liveSelection.model;
+  if (!frozen) {
+    const byModel = criticStats(input.db, input.projectId, Date.now() - 30 * 86_400_000, ["code-critique"])[0]?.calibration.byModel ?? [];
+    const ranked = pickCriticByAccuracy({ providerId, model: modelId }, criticPairCandidates(settings, input.config), byModel);
+    if (ranked.changed) {
+      try {
+        const nextEffort = effortAfterMove("code-critic", { model: liveSelection.model, effort: configuredEffort }, ranked.pair);
+        if (await usable(criticCatalog, ranked.pair, nextEffort, criticTier)) {
+          input.bb.log.info(`code critic for ${input.taskId}: ${ranked.pair.providerId}/${ranked.pair.model} by accuracy; ${providerId}/${modelId} moves to the fallbacks`);
+          providerId = ranked.pair.providerId;
+          modelId = ranked.pair.model;
+        }
+      } catch { /* the pair the other rules chose still runs */ }
+    }
+  }
   // A Gemini critic that a family rule or a limit moved to GPT or Claude runs on the effort that judge had before the Gemini (high), not on the Gemini's medium.
   if (!frozen) configuredEffort = effortAfterMove("code-critic", { model:liveSelection.model, effort:configuredEffort }, { providerId, model:modelId });
   // The independence the rule promises is checked on the pair that will really run, after every fallback: not met is said, never silent (F4/R4).
@@ -551,6 +567,16 @@ export async function runCodeCritique(input:{
     const reason = `code_critique_evidence_unknown:${input.evidence.truncateReason ?? "truncated"}`;
     recordStage(input.db, { ...base, state:"skipped", reason, result:{ ...ledgerCarry, ...hashFields, truncated:true, policy } });
     return { allowed:true, reason, review:"not_required", settings:parsed, policy };
+  }
+  const screened = await screenCodeCritique(settings, { projectId: input.projectId, runId: input.runId, taskId: input.taskId, task: input.task, evidence: input.evidence });
+  if (screened) {
+    const critique = critiqueFromScreen(screened);
+    const blocked = codeCritiqueStops(parsed.mode, critique);
+    const result = { ...ledgerCarry, ...hashFields, ...critique, mode: parsed.mode, by: "jev", policy };
+    recordStage(input.db, { ...base, state: blocked ? "blocked" : "passed", result, reason: blocked ? verdictReasons(critique, "code-critique").receipt : undefined });
+    return blocked
+      ? { allowed: false, reason: verdictReasons(critique, "code-critique").returned, critique: result, parsed: critique, settings: parsed, review: "not_required", policy }
+      : { allowed: true, critique: result, parsed: critique, settings: parsed, review: "passed", policy };
   }
   const snapshot = {
     ...ledgerCarry,
@@ -573,7 +599,7 @@ export async function runCodeCritique(input:{
         const raw = (await input.bb.sdk.threads.output({ threadId })).output;
         if (typeof raw !== "string" || !raw.trim()) throw new Error("critique_output_empty");
         const critique = await readCodeCritique(input.bb, threadId, raw, cites);
-        const blocked = critique.decision === "changes_requested" && parsed.mode === "gate";
+        const blocked = codeCritiqueStops(parsed.mode, critique);
         const result = { ...snapshot, ...critique, policy, reviewer:{ providerId, model:modelId, reasoningEffort:configuredEffort, serviceTier: writerServiceTier(settings) === "fast" ? "fast" : "standard", mode:parsed.mode, maxRounds:parsed.maxRounds, autoFix:parsed.autoFix }, rawOutput:raw.slice(0, 12_000) };
         recordStage(input.db, { ...base, state:blocked ? "blocked" : "passed", providerId, model:modelId,
           threadId, result, reason:blocked ? verdictReasons(critique,"code-critique").receipt : undefined });
@@ -592,7 +618,7 @@ export async function runCodeCritique(input:{
         const raw = (await input.bb.sdk.threads.output({ threadId })).output;
         if (typeof raw !== "string" || !raw.trim()) throw new Error("critique_output_empty");
         const critique = await readCodeCritique(input.bb, threadId, raw, cites);
-        const blocked = critique.decision === "changes_requested" && parsed.mode === "gate";
+        const blocked = codeCritiqueStops(parsed.mode, critique);
         const result = { ...snapshot, ...critique, policy, rawOutput:raw.slice(0, 12_000) };
         recordStage(input.db, { ...base, state:blocked ? "blocked" : "passed", providerId, model:modelId,
           threadId, result, reason:blocked ? verdictReasons(critique,"code-critique").receipt : undefined });
@@ -630,26 +656,34 @@ export async function runCodeCritique(input:{
       providerId, model:modelId, reasoningEffort:configuredEffort,
       serviceTier:tier, mode:parsed.mode, maxRounds:parsed.maxRounds, autoFix:parsed.autoFix,
     };
-    const spawned = await fullAccessSpawn(input.bb, {
-      ...placement,
-      ...requiredPolicyField(input.bb, helperPolicy, providerId, "code-critic"),
-      ...writerExecutionSelection(providerId, modelId, configuredEffort, serviceTier),
-      prompt:codeCritiquePrompt({ evidence:input.evidence, task:input.task, agent:parsed.agent, disputes:input.disputes, memoryText:reviewerMemoryFor(input.db, input.projectId, input.runId, input.task) }),
-      environment:attemptEnvironment(input.db, input.runId, input.taskId, input.task.project_cwd)
-        ?? { type:"host", hostId:input.config.hostId, workspace:{ type:"unmanaged", path:input.task.project_cwd } },
-      pluginMetadata:{ role:"code-critic", lanePilotRunId:input.runId, lanePilotTaskId:input.taskId,
-        stageId:"code-critique", parentPmThreadId:getRun(input.db, input.runId)?.pm_thread_id ?? null,
-        revisionSha256:input.evidence.revisionSha256, helperMode:helperPolicy.mode,
-        helperRequired:helperPolicy.policy?.required===true, reviewer:reviewerSnapshot, ...graphStepMetadata(input.workflow) },
-    });
-    threadId = stringAt(spawned, "id");
-    if (!threadId) throw new Error("critique_thread_id_missing");
-    recordStage(input.db, { ...base, state:"running", providerId, model:modelId, threadId, result:{ ...snapshot, threadId, policy } });
-    await waitThreadIdle(input.bb,threadId,"critique_thread_timeout");
-    const raw = (await input.bb.sdk.threads.output({ threadId })).output;
-    if (typeof raw !== "string" || !raw.trim()) throw new Error("critique_output_empty");
-    const critique = await readCodeCritique(input.bb, threadId, raw, cites);
-    const blocked = critique.decision === "changes_requested" && parsed.mode === "gate";
+    const personas = criticPersonas(input.task.risk);
+    const critiques = [];
+    const raws: string[] = [];
+    for (const persona of personas) {
+      const spawned = await fullAccessSpawn(input.bb, {
+        ...placement,
+        ...requiredPolicyField(input.bb, helperPolicy, providerId, "code-critic"),
+        ...writerExecutionSelection(providerId, modelId, configuredEffort, serviceTier),
+        prompt:codeCritiquePrompt({ evidence:input.evidence, task:input.task, agent:parsed.agent, disputes:input.disputes, memoryText:reviewerMemoryFor(input.db, input.projectId, input.runId, input.task), persona }),
+        environment:attemptEnvironment(input.db, input.runId, input.taskId, input.task.project_cwd)
+          ?? { type:"host", hostId:input.config.hostId, workspace:{ type:"unmanaged", path:input.task.project_cwd } },
+        pluginMetadata:{ role:"code-critic", lanePilotRunId:input.runId, lanePilotTaskId:input.taskId,
+          stageId:"code-critique", parentPmThreadId:getRun(input.db, input.runId)?.pm_thread_id ?? null,
+          revisionSha256:input.evidence.revisionSha256, helperMode:helperPolicy.mode,
+          helperRequired:helperPolicy.policy?.required===true, reviewer:reviewerSnapshot, ...(persona ? { persona } : {}), ...graphStepMetadata(input.workflow) },
+      });
+      threadId = stringAt(spawned, "id");
+      if (!threadId) throw new Error("critique_thread_id_missing");
+      recordStage(input.db, { ...base, state:"running", providerId, model:modelId, threadId, result:{ ...snapshot, threadId, policy } });
+      await waitThreadIdle(input.bb,threadId,"critique_thread_timeout");
+      const raw = (await input.bb.sdk.threads.output({ threadId })).output;
+      if (typeof raw !== "string" || !raw.trim()) throw new Error("critique_output_empty");
+      raws.push(raw);
+      critiques.push(await readCodeCritique(input.bb, threadId, raw, cites));
+    }
+    const critique = unionCriticFails(critiques);
+    const raw = raws.join("\n");
+    const blocked = codeCritiqueStops(parsed.mode, critique);
     const result = { ...snapshot, ...critique, policy, reviewer:{ providerId, model:modelId, reasoningEffort:configuredEffort, serviceTier:tier, mode:parsed.mode, maxRounds:parsed.maxRounds, autoFix:parsed.autoFix }, rawOutput:raw.slice(0, 12_000) };
     recordStage(input.db, { ...base, state:blocked ? "blocked" : "passed", providerId, model:modelId,
       threadId, result, reason:blocked ? verdictReasons(critique,"code-critique").receipt : undefined });

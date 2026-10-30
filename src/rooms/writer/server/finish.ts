@@ -7,7 +7,7 @@ import { saveBlockedBy, type BlockedBy } from "../../runs/server";
 import { relayFor } from "../../relay/server";
 import type { HelperPolicySnapshot } from "../../native-agent";
 import { writerExecutionSelection } from "@lane-pilot/models";
-import { actionableFindings, buildCandidateEvidence, codeCritiqueSource, codeRepairPrompt, findingsHash, nextRepairAction, parseCodeCritiqueSettings, parseWriterRepairReply, repairLedgerFromResult, sameUnresolvedFindings, sameWriterIdentity, settingsFromFrozenPolicy, shouldRequestRepair } from "../../critique";
+import { actionableFindings, advisoryFeedback, buildCandidateEvidence, codeCritiqueSource, codeRepairPrompt, findingsHash, nextRepairAction, parseCodeCritiqueSettings, parseWriterRepairReply, repairLedgerFromResult, sameUnresolvedFindings, sameWriterIdentity, settingsFromFrozenPolicy, shouldRequestRepair } from "../../critique";
 import type { WriterIdentity } from "../../critique";
 import { CODE_CRITIC_DEFAULT_SETTING, QUALITY_MODE_SETTING, applyCodeCriticDefault, applyQualityMode, resolveCodeCriticDefault, resolveQualityMode } from "../../critique";
 import { loadCriticCodeDefault } from "./critic-override";
@@ -350,6 +350,12 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
           dirtReason:dirt.ok ? undefined : dirt.reason,
         });
       };
+      let criticNotes = "";
+      const keepAdvisory = (row: { settings?: { mode?: string }; parsed?: Parameters<typeof advisoryFeedback>[0] } | undefined) => {
+        if (row?.settings?.mode !== "advisory" || !row.parsed) return;
+        const text = advisoryFeedback(row.parsed);
+        if (text) criticNotes = text;
+      };
       if (liveCritiquePolicy.enabled) {
       for (;;) {
         const evidence = await captureEvidence();
@@ -364,7 +370,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
             workflow:pipelineWriterStep(db, input.runId, input.taskId) ?? undefined,
           });
           if (recritique.policy) frozenPolicy = recritique.policy;
-          if (recritique.allowed) { review = recritique.review; approvedArtifact = evidence.artifactRevisionSha256; break; }
+          if (recritique.allowed) { keepAdvisory(recritique); review = recritique.review; approvedArtifact = evidence.artifactRevisionSha256; break; }
           recordGateEvaluation(db,{projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"rejected",
             attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{writerStatus:"code_critique_blocked",reason:recritique.reason}});
           transitionAttempt(db, input.attemptId, "blocked", { reason:recritique.reason });
@@ -422,7 +428,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
           workflow:pipelineWriterStep(db, input.runId, input.taskId) ?? undefined,
         });
         if (critique.policy) frozenPolicy = critique.policy;
-        if (critique.allowed) { review = critique.review; approvedArtifact = evidence.artifactRevisionSha256; break; }
+        if (critique.allowed) { keepAdvisory(critique); review = critique.review; approvedArtifact = evidence.artifactRevisionSha256; break; }
         const parsed = critique.parsed;
         const critiqueSettings = frozenPolicy ? settingsFromFrozenPolicy(frozenPolicy) : critique.settings;
         if (!parsed || !critiqueSettings || !shouldRequestRepair({ settings:critiqueSettings, result:parsed, round:repairRound })) {
@@ -689,6 +695,10 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
         ...(!markers.lesson && !markers.noLessonReason ? ["the report has no LESSON line (a lesson, or none with the reason)"] : []),
         ...(testEdits.length ? [`the writer changed tests that existed before the attempt (reference tests): ${testEdits.join(", ")} — the critic checks they were not weakened`] : []),
       ];
+      if (criticNotes) {
+        markerWarnings.push(criticNotes);
+        void sendServiceMessage(bb, { threadId: writerThreadId, senderThreadId: input.pmThreadId, text: criticNotes }).catch(() => undefined);
+      }
       if (markerWarnings.length) candidate.warnings = [...(candidate.warnings ?? []), ...markerWarnings];
       // The approach note the window's task screen shows (the gate keeps only the hash of its summary).
       await bb.storage.kv.set(`lp.task.approach:${input.runId}:${input.taskId}`, { approach:markers.approach, lesson:markers.lesson, noLessonReason:markers.noLessonReason, referenceTestEdits:testEdits, at:Date.now() } as never).catch(() => undefined);
