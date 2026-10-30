@@ -24,7 +24,8 @@ describe("the native jev node", () => {
     expect(validateWorkflow(flow).filter((problem) => problem.level === "error")).toEqual([]);
     const node = flow.nodes.find((item) => item.type === "jev")!;
     expect(executorKey(node)).toBe("builtin:jev");
-    expect(engineOn(journalDb()).preflight(flow)).toContain('node "check": executor "builtin:jev" is not registered');
+    // The engine registers a default builtin:jev that always escalates; a runtime with real Jev replaces it.
+    expect(engineOn(journalDb()).preflight(flow)).toEqual([]);
   });
 
   it("a sure verdict takes the cheap edge, an unsure one the model edge", async () => {

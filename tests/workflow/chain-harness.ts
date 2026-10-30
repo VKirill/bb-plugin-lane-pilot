@@ -9,6 +9,8 @@ import type { Field, QualityMode, Workflow } from "@lane-pilot/workflow-engine";
 import { loadWorkflowStore } from "@lane-pilot/workflow-engine";
 import type { WorkflowStore } from "@lane-pilot/workflow-engine";
 import { engineOn, journalDb, rows } from "./engine-helpers";
+import { getJudgment, type Judgment } from "@lane-pilot/jev";
+import "../../src/rooms/jev/judgments";
 
 /**
  * The test case of a built-in chain: the whole graph runs on the real engine with the real reducers, and every node that
@@ -85,6 +87,17 @@ export async function runSim(workflowId: string, sim: Sim) {
   for (const key of every) executors.set(key, model);
   for (const [key, executor] of executors) engine.register(key, executor);
   registerReducers(engine);
+  // A jev node a sim does not stub answers as the judgment's fallback — the sim cannot call a model, and the fallback is
+  // the "everything is unsure" verdict the graph was designed around (swarm sees every finding, the audit goes to the auditor).
+  engine.register("builtin:jev", { reentrant: true, run: async (ctx) => {
+    const node = ctx.node as Extract<StepContext["node"], { type: "jev" }>;
+    const judgment = (getJudgment(node.judgment) as Judgment<Record<string, unknown>, unknown> | undefined);
+    const state: Record<string, unknown> = {};
+    for (const [name, spec] of Object.entries(node.state)) state[name] = ctx.template(spec);
+    const fallback = judgment ? judgment.fallback(state) : {};
+    const flat = fallback && typeof fallback === "object" ? fallback as Record<string, unknown> : {};
+    return { output: { decision: "sim fallback", handoff: "jev fallback", value: fallback, ...flat, escalated: true, to: "model" } };
+  } });
   // The actions that are code run for real, unless the sim stubs that node.
   for (const key of PURE_ACTION_KEYS) {
     const real = pureActionExecutor(key);

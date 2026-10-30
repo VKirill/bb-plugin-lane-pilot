@@ -40,7 +40,7 @@ describe("chains of the spec in JSON", () => {
     expect((call as { with: Record<string, unknown> }).with.depth).toEqual({ by_mode: { quick: "quick", standard: "standard", full: "deep" } });
     // for_each: a list by input, a filter with where, a table by mode.
     const review = get("lp.review").nodes;
-    expect(review.find((node) => node.id === "confirm")).toMatchObject({ for_each: "dims.findings where severity in [critical, high]", join: { policy: "majority" }, child: { votes: 3 } });
+    expect(review.find((node) => node.id === "confirm")).toMatchObject({ for_each: "screen.unsure_findings where severity in [critical, high]", join: { policy: "majority" }, child: { votes: 3 } });
     expect(get("x-to-telegram-digest").nodes.find((node) => node.id === "score")).toMatchObject({ for_each: "dedupe.items", batch_size: 10, max_fan_out: 4 });
     // visits() and $inputs and $mode in conditions.
     const whens = get("analyze-plan-execute").edges.map((edge) => edge.when).filter((when): when is string => typeof when === "string");

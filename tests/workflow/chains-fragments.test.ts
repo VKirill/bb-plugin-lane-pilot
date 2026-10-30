@@ -118,7 +118,7 @@ describe("lp.review", () => {
 
   it("quick: two dimensions, no spec check, no majority check, a clean pass", async () => {
     const r = await runSim("lp.review", { input: { range: "HEAD~1..HEAD", dimensions: ["correctness", "security"] }, mode: "quick" });
-    expect(pathOf(r)).toBe("scope dims confirm aggregate result");
+    expect(pathOf(r)).toBe("scope dims screen confirm aggregate result");
     expect(r.skipped).toContain("confirm");
     expect(out(r)).toMatchObject({ status: "pass", warn: false, critical_count: 0 });
     expect(r.called("dims:child")).toHaveLength(2);
@@ -126,7 +126,7 @@ describe("lp.review", () => {
 
   it("standard: a critical finding is confirmed by 3 critics, 2 of 3 decide, and the work goes back", async () => {
     const r = await runSim("lp.review", { input: { dimensions: ["correctness", "maintainability"] }, stubs: { "dims:child": dims({ correctness: [finding("critical", "correctness")] }), confirm: { finding_id: "x", confirmed: true } } });
-    expect(pathOf(r)).toBe("scope spec_check dims confirm aggregate result");
+    expect(pathOf(r)).toBe("scope spec_check dims screen confirm aggregate result");
     expect(out(r)).toMatchObject({ status: "rework", critical_count: 1 });
     expect(r.called("confirm:child")).toHaveLength(3);
     const step = r.db.prepare("SELECT receipt_json FROM lane_pilot_wf_step WHERE run_id=? AND node_id='confirm:child'").get(r.summary.runId) as { receipt_json: string };

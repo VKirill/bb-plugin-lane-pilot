@@ -4,6 +4,7 @@ export { MAX_FILE_EXCERPT_BYTES, actionableFindings, advisoryFeedback, buildCand
 export type { WriterIdentity } from "./code-critique";
 export { criticStats } from "./critic-stats";
 export { CRITIQUE_WORTH_ID, critiqueWorthJudgment, type CritiqueWorthDecision, type CritiqueWorthInput } from "./critique-worth";
+export { REVIEW_CONFIRM_SCREEN_ID, reviewConfirmScreenJudgment, type ConfirmScreenInput } from "./review-screen";
 export { CRITIC_EDIT_TRIAL_KEY, criticEditGate, criticEditTrialOn, criticEditTrialSettle, criticEditWasRejected, criticPromptOf, criticPromptProposal, criticPromptRollback } from "./critic-edit";
 export type { CriticEditRow, CriticEditStore, CriticEditTrialOutcome } from "./critic-edit";
 export { critiquePrompt, parseCritique } from "./critique";

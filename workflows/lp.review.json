@@ -57,7 +57,12 @@
     },
     {
       "id": "spec_check",
-      "produces": [{"kind": "report", "version": 1}],
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
       "type": "agent",
       "role": "code-critic",
       "applicable_modes": [
@@ -89,7 +94,12 @@
         "ru": "Ревью по измерению"
       },
       "child": {
-        "produces": [{"kind": "findings", "version": 1}],
+        "produces": [
+          {
+            "kind": "findings",
+            "version": 1
+          }
+        ],
         "type": "agent",
         "role": "code-critic",
         "session": "new",
@@ -113,9 +123,45 @@
       "concurrency": 6
     },
     {
+      "id": "screen",
+      "type": "jev",
+      "label": "Confirm screen",
+      "judgment": "review.confirm_screen",
+      "state": {
+        "findings": "{{dims.findings}}"
+      },
+      "output": [
+        {
+          "name": "decision",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "value",
+          "type": "json",
+          "required": false
+        },
+        {
+          "name": "unsure_findings",
+          "type": "array",
+          "required": false
+        },
+        {
+          "name": "settled",
+          "type": "number",
+          "required": false
+        },
+        {
+          "name": "escalated",
+          "type": "boolean",
+          "required": false
+        }
+      ]
+    },
+    {
       "id": "confirm",
       "type": "parallel",
-      "for_each": "dims.findings where severity in [critical, high]",
+      "for_each": "screen.unsure_findings where severity in [critical, high]",
       "applicable_modes": [
         "standard",
         "full"
@@ -126,7 +172,12 @@
       },
       "src": "maestro-flow:workflows/swarm/wf-review (2 of 3)",
       "child": {
-        "produces": [{"kind": "report", "version": 1}],
+        "produces": [
+          {
+            "kind": "report",
+            "version": 1
+          }
+        ],
         "type": "agent",
         "role": "code-critic",
         "session": "new",
@@ -145,7 +196,7 @@
         },
         "uses": "reduce.lp.review.confirm"
       },
-      "skip_when": "dims.critical_count + dims.high_count == 0",
+      "skip_when": "dims.critical_count + dims.high_count == 0 || screen.unsure_findings.length == 0",
       "skip_out": {
         "confirmed_ids": "[]",
         "dropped_ids": "[]"
@@ -198,6 +249,14 @@
   ],
   "edges": [
     {
+      "from": "dims",
+      "to": "screen"
+    },
+    {
+      "from": "screen",
+      "to": "confirm"
+    },
+    {
       "from": "scope",
       "to": "nothing",
       "pass": "artifact",
@@ -217,11 +276,6 @@
     {
       "from": "spec_check",
       "to": "dims",
-      "pass": "artifact"
-    },
-    {
-      "from": "dims",
-      "to": "confirm",
       "pass": "artifact"
     },
     {
