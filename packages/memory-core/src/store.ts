@@ -158,8 +158,8 @@ export function storeMemoryRecords(db: MemoryDatabase, input: StoreMemoryInput):
         const named = replaceable.filter((row) => row.id.startsWith(prefix));
         if (named.length === 1) replace(named[0]!.id, id);
       }
-      // A restated note replaces the older wording of the same subject.
-      if (entry.kind === "note") for (const row of replaceable) if (row.kind === "note" && !gone.has(row.id) && sameSubject(entry, { content: row.content, concepts: JSON.parse(row.concepts_json) as string[] })) replace(row.id, id);
+      // A restated note or core replaces the older wording of the same subject, inside this namespace. A different fact that only shares tags stays.
+      if (entry.kind === "note" || entry.kind === "core") for (const row of replaceable) if (row.kind === entry.kind && !gone.has(row.id) && sameSubject(entry, { content: row.content, concepts: JSON.parse(row.concepts_json) as string[] })) replace(row.id, id);
     }
     const active = rows.filter((row) => row.status === "active" && !gone.has(row.id));
     const sum = (list: Array<{ content: string }>) => list.reduce((total, row) => total + estimate(row.content), 0);

@@ -43,6 +43,17 @@ describe("K8 supersession: a newer note on the same subject replaces the older, 
     expect(statusOf(db, second)).toBe("active");
   });
 
+  it("replaces a restated core and keeps a different fact that only shares tags", () => {
+    const db = newDb();
+    const concepts = ["theme", "css", "build"];
+    const first = put(db, [{ kind: "core", content: "The theme build writes themes/pokecut.css and runs the theme check", concepts }]).insertedIds[0]!;
+    const restated = put(db, [{ kind: "core", content: "The theme build writes themes/pokecut.css and runs the theme check now", concepts }]);
+    expect(restated.supersededIds).toEqual([first]);
+    const other = put(db, [{ kind: "core", content: "English strings come before Russian strings in the catalog file", concepts }]);
+    expect(other.supersededIds).toEqual([]);
+    expect(statusOf(db, restated.insertedIds[0]!)).toBe("active");
+  });
+
   it("never replaces a rule", () => {
     const db = newDb();
     const rule = put(db, [{ kind: "core", content: "Run npm ci, never npm install", concepts: ["rule", "npm"] }], { origin: "rule" }).insertedIds[0]!;
