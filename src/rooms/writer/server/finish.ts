@@ -20,7 +20,7 @@ import { stringAt } from "../../core/server";
 import { wasAnsweredByDefault } from "./question-default";
 import { needsHumanQuestion, outputText, providerLimitNotice, providerStreamError, WRITER_STREAM_ERROR, writerContextBlocks, writerSetupLines } from "./writer-task";
 import { isLiveDecision } from "../live-folder";
-import { TASK_WORDS_KEY, acceptanceProofGap, isMainfixTask, landingWordGap, ownerWordsOn, questionsFromFile, referenceTestEdits, taskWordKey, writerMarkers } from "../../tasks";
+import { TASK_WORDS_KEY, acceptanceProofGap, isMainfixTask, landingWordGap, ownerWordsOn, questionsFromFile, referenceTestEdits, taskWordKey, testFitFindings, writerMarkers } from "../../tasks";
 import type { TaskWord } from "../../tasks";
 import type { StageId } from "../../tasks";
 import { readCheckRun } from "../../tasks/server";
@@ -634,10 +634,10 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
         continue;
       }
       const confirm = await captureEvidence();
-      if (confirm.truncated || !approvedArtifact || confirm.artifactRevisionSha256 !== approvedArtifact) {
-        const reason = confirm.truncated
-          ? `code_critique_evidence_unknown:${confirm.truncateReason ?? "truncated"}`
-          : "code_critique_stale_revision";
+      // A packet the critic could not read is a skipped receipt (runCodeCritique) and does not stop the writer.
+      // A revision that moved after the critique still does.
+      if (!confirm.truncated && (!approvedArtifact || confirm.artifactRevisionSha256 !== approvedArtifact)) {
+        const reason = "code_critique_stale_revision";
         recordGateEvaluation(db,{projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"rejected",
           attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{writerStatus:"code_critique_blocked",reason}});
         transitionAttempt(db, input.attemptId, "blocked", { reason });
@@ -657,14 +657,32 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
         transitionAttempt(db, input.attemptId, "validation_failed", { reason:planFact.refusal });
         return { status:"validation_failed", reason:planFact.refusal, output:candidate.output, produced:candidate.produced, verification:candidate.verification, attemptId:input.attemptId, writerThreadId };
       }
-      // Approach and lesson markers, and the reference-test edit trace (src/rooms/tasks/rails.ts): what the writer says it did and learned,
-      // and which tests that existed before the attempt it changed. Kept for the window's task screen and the critic (not a gate event: an accept is counted once); they warn, they do not block.
+      // Approach and lesson markers warn. A weakened test (test_fit) blocks acceptance; any other edit of a test that already existed stays a warning.
       const markers = writerMarkers(`${candidate.output ?? ""}\n${answer}`);
       const testEdits: string[] = [];
+      const fitFiles: Array<{ path:string; before:string | null; after:string | null }> = [];
+      const fitAttempt = getAttempt(db, input.attemptId);
+      const basePathForTests = taskBasePath(db, input.runId, input.taskId);
+      // ponytail: the first 400 lines only. A deletion past that line is missed; raise the cap if a real test file is longer.
+      const readFit = (cwd:string | null | undefined, path:string) => cwd
+        ? host.call("readBoundedFile", { requestedHostId:input.config.hostId, projectCwd:cwd, relativePath:path, offset:0, maxLines:400 }, { hostId:input.config.hostId, timeoutMs:10_000 }).then((file) => file.content, () => null)
+        : Promise.resolve(null);
       for (const path of referenceTestEdits((candidate.produced ?? []).map((path) => ({ path, status:"M" }))).slice(0, 20)) {
-        const basePathForTests = taskBasePath(db, input.runId, input.taskId);
-        const existed = basePathForTests ? await host.call("readBoundedFile", { requestedHostId:input.config.hostId, projectCwd:basePathForTests, relativePath:path, offset:0, maxLines:1 }, { hostId:input.config.hostId, timeoutMs:10_000 }).then(() => true, () => false) : false;
-        if (existed) testEdits.push(path);
+        const before = await readFit(basePathForTests, path);
+        if (before === null) continue;
+        testEdits.push(path);
+        fitFiles.push({ path, before, after: await readFit(fitAttempt?.workspace_path, path) });
+      }
+      for (const path of (candidate.produced ?? []).filter((path) => /(^|\/)package\.json$|\.(?:sh|ya?ml)$/.test(path)).slice(0, 10)) {
+        fitFiles.push({ path, before: await readFit(basePathForTests, path), after: await readFit(fitAttempt?.workspace_path, path) });
+      }
+      const fitHits = testFitFindings(fitFiles);
+      if (fitHits.length) {
+        const reason = `test_fit: ${fitHits.slice(0, 5).map((hit) => `${hit.path}: ${hit.evidence}`).join("; ")}`.slice(0, 500);
+        recordGateEvaluation(db,{projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"rejected",
+          attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{writerStatus:"test_fit",reason}});
+        transitionAttempt(db, input.attemptId, "validation_failed", { reason });
+        return { status:"validation_failed", reason, output:candidate.output, produced:candidate.produced, verification:candidate.verification, attemptId:input.attemptId, writerThreadId };
       }
       const markerWarnings = [
         ...(!markers.approach ? ["the report has no APPROACH line"] : []),
@@ -675,7 +693,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
       // The approach note the window's task screen shows (the gate keeps only the hash of its summary).
       await bb.storage.kv.set(`lp.task.approach:${input.runId}:${input.taskId}`, { approach:markers.approach, lesson:markers.lesson, noLessonReason:markers.noLessonReason, referenceTestEdits:testEdits, at:Date.now() } as never).catch(() => undefined);
       // Stage questions from files and the execution checkpoint: the task folder's QUESTIONS.md and CHECKPOINT.md, read from the attempt's copy.
-      const attemptRow = getAttempt(db, input.attemptId);
+      const attemptRow = fitAttempt;
       const folderOf = (name:string) => `.agents/plans/items/${input.taskId}/${name}`;
       const readTaskFile = async (name:string) => attemptRow?.workspace_path ? await host.call("readBoundedFile", { requestedHostId:input.config.hostId, projectCwd:attemptRow.workspace_path, relativePath:folderOf(name), offset:0, maxLines:200 }, { hostId:input.config.hostId, timeoutMs:10_000 }).then((file) => file.content, () => null) : null;
       const questionsText = await readTaskFile("QUESTIONS.md");

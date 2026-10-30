@@ -93,7 +93,7 @@ export const isWriterSilent = (reason:string | null | undefined):boolean => SILE
 const PROVIDER_STATES = new Set(["provider_error", "timeout"]);
 
 // Reasons Lane Pilot writes itself for work that is the task's: ownership, empty answers, the critic, the session caps.
-const TASK_REASON = /owns_paths|outside|ownership|changed no files|no files|code_critique|critique|acceptance|repeated_failure|no progress|wall limit|turn cap|follow_up|fixture|writer_output_not_accepted|stopped by/i;
+const TASK_REASON = /owns_paths|outside|ownership|changed no files|no files|code_critique|critique|acceptance|repeated_failure|no progress|wall limit|turn cap|follow_up|fixture|writer_output_not_accepted|stopped by|test_fit:/i;
 
 /**
  * The class and whether a rule decided it. `confident: false` is the default `task` that nothing matched: the reasons Lane
@@ -129,6 +129,13 @@ export function classifyFailure(state:string, reason:string | null | undefined):
 
 export function failureClass(state:string, reason:string | null | undefined):FailureClass {
   return classifyFailure(state, reason).cls;
+}
+
+/** Which side owns the failure. The class itself stays as it was; this is only the side. */
+export type FailureSide = "agent" | "environment";
+const ENVIRONMENT_SIDE = new Set<FailureClass>(["infra", "provider", "limit", "harness", "merge", "dirty_base", "budget"]);
+export function failureSide(cls:FailureClass):FailureSide {
+  return ENVIRONMENT_SIDE.has(cls) ? "environment" : "agent";
 }
 
 /**

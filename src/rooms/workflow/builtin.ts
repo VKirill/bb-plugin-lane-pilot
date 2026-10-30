@@ -35,6 +35,7 @@ import lpDraw from "../../../workflows/lp.draw.json";
 import lpPlan from "../../../workflows/lp.plan.json";
 import lpReview from "../../../workflows/lp.review.json";
 import lpHarnessEdit from "../../../workflows/lp.harness-edit.json";
+import lpCriticEdit from "../../../workflows/lp.critic-edit.json";
 import lpHarnessReflect from "../../../workflows/lp.harness-reflect.json";
 import lpWallHunt from "../../../workflows/lp.wall-hunt.json";
 import lpRoute from "../../../workflows/lp.route.json";
@@ -117,6 +118,7 @@ export const BUILTIN_SOURCES: ReadonlyArray<{ name: string; value: unknown }> = 
   { name: "lp.plan.json", value: withGateVocabulary(lpPlan as never) },
   { name: "lp.review.json", value: lpReview },
   { name: "lp.harness-edit.json", value: lpHarnessEdit },
+  { name: "lp.critic-edit.json", value: lpCriticEdit },
   { name: "lp.harness-reflect.json", value: lpHarnessReflect },
   { name: "lp.wall-hunt.json", value: lpWallHunt },
   { name: "lp.route.json", value: lpRoute },

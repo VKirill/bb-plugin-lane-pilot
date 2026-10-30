@@ -10,6 +10,7 @@ type Stats = { days:number; stats:Array<{
   afterBlock:{ fixedAndAccepted:number; sentAgainNotAccepted:number; dropped:number };
   missed:{ count:number; examples:Array<{ taskId:string; reason:string }> };
   firstTryAccepted:{ reviewed:{ tasks:number; share:number | null }; notReviewed:{ tasks:number; share:number | null } };
+  calibration:{ labeled:number; hits:number; accuracy:number | null; low:boolean; byModel:Array<{ model:string; labeled:number; hits:number; accuracy:number | null; low:boolean }> };
 }> };
 
 const STAGE_LABEL = { "plan-critique":"stagePlanCritique", "code-critique":"stageCodeCritique", "specialist-review":"criticSpecialist" } as const;
@@ -43,6 +44,12 @@ export function CriticValue({ projectId }: { projectId: string }) {
             {row.blocked ? <p>{t("criticValueAfterBlock").replace("{fixed}", String(row.afterBlock.fixedAndAccepted)).replace("{again}", String(row.afterBlock.sentAgainNotAccepted)).replace("{dropped}", String(row.afterBlock.dropped))}</p> : null}
             <p>{t("criticValueFirstTry").replace("{reviewed}", pct(row.firstTryAccepted.reviewed.share)).replace("{rn}", String(row.firstTryAccepted.reviewed.tasks))
               .replace("{skipped}", pct(row.firstTryAccepted.notReviewed.share)).replace("{sn}", String(row.firstTryAccepted.notReviewed.tasks))}</p>
+            {row.calibration.labeled
+              ? <p>{t("criticValueCalibration").replace("{hits}", String(row.calibration.hits)).replace("{labeled}", String(row.calibration.labeled)).replace("{accuracy}", pct(row.calibration.accuracy))}
+                {row.calibration.low ? ` ${t("criticValueCalibrationLow")}` : ""}
+                {row.calibration.byModel.map((item) => <span key={item.model}> {t("criticValueCalibrationModel").replace("{model}", item.model).replace("{hits}", String(item.hits)).replace("{labeled}", String(item.labeled)).replace("{accuracy}", pct(item.accuracy))}</span>)}
+              </p>
+              : <p className="text-muted-foreground">{t("criticValueCalibrationNone")}</p>}
             {row.missed.count ? <Disclosure compact summary={t("criticValueMissed").replace("{n}", String(row.missed.count))}>
               <ul className="space-y-1 pt-1">{row.missed.examples.map((miss) => <li key={miss.taskId} style={{ overflowWrap:"anywhere" }}><b>{miss.taskId}</b>: {miss.reason}</li>)}</ul>
             </Disclosure> : <p className="text-muted-foreground">{t("criticValueNoMisses")}</p>}

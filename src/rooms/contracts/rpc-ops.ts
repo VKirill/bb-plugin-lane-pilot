@@ -45,6 +45,10 @@ export const rpcOps = {
       afterBlock:z.object({ fixedAndAccepted:z.number(), sentAgainNotAccepted:z.number(), dropped:z.number() }),
       missed:z.object({ count:z.number(), examples:z.array(z.object({ taskId:z.string(), reason:z.string() })) }),
       firstTryAccepted:z.object({ reviewed:z.object({ tasks:z.number(), share:z.number().nullable() }), notReviewed:z.object({ tasks:z.number(), share:z.number().nullable() }) }),
+      calibration:z.object({
+        labeled:z.number(), hits:z.number(), accuracy:z.number().nullable(), low:z.boolean(),
+        byModel:z.array(z.object({ model:z.string(), labeled:z.number(), hits:z.number(), accuracy:z.number().nullable(), low:z.boolean() })),
+      }),
     })) }),
   },
   /** Whether writers carry their context: cold writer threads per accepted task, continued turns, time to acceptance. */

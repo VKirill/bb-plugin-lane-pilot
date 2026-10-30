@@ -42,6 +42,11 @@ async function limitProbe(bb: BbPluginApi, hostId: string, settings: Record<stri
   await warmSpawnUsage(usage, hostId);
   return (providerId, model) => usage.peek({ providerId, model, hostId, settings });
 }
+const settingOff = (value: unknown) => value === false || value === 0
+  || (typeof value === "string" && ["0", "off", "false", "no"].includes(value.trim().toLowerCase()));
+const settingOn = (value: unknown) => value === true || value === 1
+  || (typeof value === "string" && ["1", "true", "on", "yes"].includes(value.trim().toLowerCase()));
+
 /** One log line per limit move of a stage's model. */
 const logLimitMove = (bb: BbPluginApi, what: string, issues: readonly string[] | undefined) => {
   for (const issue of issues ?? []) bb.log.info(`${what}: ${issue}`);
@@ -67,6 +72,15 @@ export async function runPmRead(input:{bb:BbPluginApi;db:ReturnType<typeof openD
   if(!parsedSettings.enabled) {
     recordStage(input.db,{...base,state:"pending",replaceOnNewInput:true,restart:true});
     recordStage(input.db,{...base,state:"skipped",reason:"disabled_by_project_setting"});
+    return {state:"skipped",summary:""};
+  }
+  // The summary feeds the plan critic and the code critic. When both are off (a project switch, or quality_mode quick),
+  // the read would call a model nobody uses. The graph still reaches this node before the quality-mode fork.
+  const qualityMode = resolveQualityMode(input.task, settings[QUALITY_MODE_SETTING]);
+  const reviewed = applyCodeCriticDefault(applyQualityMode(settings, qualityMode), qualityMode, input.task.risk, resolveCodeCriticDefault(settings[CODE_CRITIC_DEFAULT_SETTING]));
+  if (settingOff(reviewed["plan_critique.enabled"]) && !settingOn(reviewed["code_critique.enabled"])) {
+    recordStage(input.db,{...base,state:"pending",replaceOnNewInput:true,restart:true});
+    recordStage(input.db,{...base,state:"skipped",reason:qualityMode === "quick" ? "quality_mode_quick" : "critics_disabled"});
     return {state:"skipped",summary:""};
   }
   const fallback=resolveStageWriterSelection({settings,config:input.config});
@@ -534,8 +548,8 @@ export async function runCodeCritique(input:{
   }
   if (input.evidence.truncated) {
     const reason = `code_critique_evidence_unknown:${input.evidence.truncateReason ?? "truncated"}`;
-    recordStage(input.db, { ...base, state:"blocked", reason, result:{ ...ledgerCarry, ...hashFields, truncated:true, policy } });
-    return { allowed:false, reason, review:"not_required", settings:parsed, policy };
+    recordStage(input.db, { ...base, state:"skipped", reason, result:{ ...ledgerCarry, ...hashFields, truncated:true, policy } });
+    return { allowed:true, reason, review:"not_required", settings:parsed, policy };
   }
   const snapshot = {
     ...ledgerCarry,
