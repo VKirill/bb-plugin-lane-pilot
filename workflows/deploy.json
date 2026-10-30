@@ -229,11 +229,13 @@
       "id": "post_check",
       "type": "action",
       "action": "deploy.post_check",
-      "rule": "lane-pilot-plugin: canary_status and scripts/lp-canary.sh exit 0; otherwise health_url answers 200 and (full) a browser-qa pass on the main page",
+      "rule": "the change is really live, not just a 200: fetch the target page or endpoint named by the task's expected content (the deploy rule, health_url or the page the change touched) and verify the expected content is present — the selector, string or version the task names; for lane-pilot-plugin: canary_status and scripts/lp-canary.sh exit 0 AND the canary reports the new plugin version; otherwise health_url must return the version or hash of the deploy just made (not a stale build) plus (full) a browser-qa pass on the main page; a 200 with old content is NOT ok — report details: what you fetched, what you looked for, what you saw",
       "test_mode": "fixture response",
       "out": {
         "ok": "bool",
-        "details": "string"
+        "details": "string",
+        "expected": "string",
+        "seen": "string"
       }
     },
     {
