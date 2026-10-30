@@ -37,6 +37,9 @@ export async function abortable<T>(signal: AbortSignal, work: Promise<T>): Promi
   finally { signal.removeEventListener("abort", onAbort); void work.catch(() => undefined); }
 }
 
+/** The largest timeoutMs the core accepts for an isolated schedule (6 h): over it the run is clamped and a warn is logged. */
+export const SCHEDULE_TIMEOUT_CAP_MS = 21_600_000;
+
 export const isolatedSchedulesSupported = (bb: BbPluginApi) =>
   typeof (bb.background as unknown as { experimental_vkSchedule?: unknown }).experimental_vkSchedule === "function";
 

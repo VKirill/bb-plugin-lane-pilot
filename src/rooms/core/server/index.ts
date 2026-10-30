@@ -12,7 +12,7 @@ export { registerSpawnUsage, resolveSpawnModel, spawnUsageOf, warmSpawnUsage } f
 export { noteZcodeThread, zcodeBusy, zcodeBusyPeek } from "./zcode-slot";
 export type { SpawnUsage, SpawnUsageUse } from "./spawn-model";
 export type { SpawnModelInput } from "./spawn-model";
-export { abortable, scheduleIsolated } from "./schedules";
+export { abortable, scheduleIsolated, SCHEDULE_TIMEOUT_CAP_MS } from "./schedules";
 export { PM_NOTICE_FRESH_MS, sendPmNotice } from "./pm-notice";
 export { folderEnvironment, hiddenPlacement, projectFolder, projectSources } from "./standalone-place";
 export { GIT_PLUGIN_ID, gitCallRpc, gitFilesReplySchema, gitPatchEntrySchema, gitPatchKey, gitPatchesReplySchema } from "./git-reads";
