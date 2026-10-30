@@ -3,6 +3,7 @@
 import type { ServerCore, Services } from "../../core/server";
 import { mountCriticEditGraph } from "./critic-edit-graph";
 import { mountHarnessGraph } from "./harness-graph";
+import { mountModelRebenchGraph } from "./model-rebench-graph";
 import { mountRulesScanGraph } from "./rules-scan-graph";
 import { mountWallHuntGraph } from "./wall-hunt-graph";
 
@@ -11,4 +12,15 @@ export function mountNightGraphs(ctx: ServerCore, services: Services): void {
   mountWallHuntGraph(ctx, services);
   mountHarnessGraph(ctx, services);
   mountCriticEditGraph(ctx, services);
+  mountModelRebenchGraph(ctx, services);
 }
+export {
+  evaluateModelRouting,
+  modelRebenchMorningLine,
+  latestModelRebenchSummary,
+  saveModelRebenchResult,
+  mountModelRebenchGraph,
+  MODEL_REBENCH_WORKFLOW,
+  MODEL_REBENCH_SCHEDULE,
+  type ModelRebenchMetrics,
+} from "./model-rebench-graph";

@@ -1,0 +1,96 @@
+{
+  "id": "lp.model-rebench",
+  "startedBy": "model-rebench-monthly",
+  "name": {
+    "en": "Monthly model routing re-bench",
+    "ru": "Месячный ре-бенч маршрутизации моделей"
+  },
+  "description": {
+    "en": "Runs monthly to evaluate Jev model routing choices against actual task and workflow outcomes, measuring routing accuracy, win rate per model, and deriving adjustments.",
+    "ru": "Запускается раз в месяц для оценки решений Jev по маршрутизации моделей против фактических исходов задач и графов, замеряя точность выбора, винрейт моделей и формируя рекомендации."
+  },
+  "status": "published",
+  "tags": [
+    "bench",
+    "night",
+    "routing"
+  ],
+  "triggers": [
+    "manual",
+    "schedule"
+  ],
+  "inputs": {
+    "project_id": {
+      "type": "string",
+      "default": "*"
+    }
+  },
+  "outputs": {
+    "status": "string",
+    "summary": "string"
+  },
+  "budget": {
+    "max_steps": 4,
+    "max_minutes": 10
+  },
+  "nodes": [
+    {
+      "id": "eval",
+      "type": "action",
+      "action": "lp.model_rebench_eval",
+      "title": {
+        "en": "Evaluate Jev model choices vs outcomes",
+        "ru": "Оценить выбор моделей Jev против исходов"
+      },
+      "out": {
+        "status": "string",
+        "evaluated_count": "int",
+        "accuracy": "number",
+        "win_rate": "number",
+        "report": "string"
+      },
+      "guards": {
+        "timeoutMin": 5
+      }
+    },
+    {
+      "id": "report",
+      "type": "action",
+      "action": "lp.model_rebench_report",
+      "title": {
+        "en": "Record rebench findings and recommendations",
+        "ru": "Записать выводы ре-бенча и рекомендации"
+      },
+      "out": {
+        "status": "string",
+        "summary": "string"
+      },
+      "guards": {
+        "timeoutMin": 5
+      }
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "report.status",
+        "summary": "report.summary"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "start",
+      "to": "eval"
+    },
+    {
+      "from": "eval",
+      "to": "report"
+    },
+    {
+      "from": "report",
+      "to": "done"
+    }
+  ]
+}
