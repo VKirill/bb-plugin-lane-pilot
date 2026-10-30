@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **Learning uses the project's current folders.** An obsolete prototype workspace (`/tmp/ag194-v4-cli`) still overrode the BB-service project's current sources, so three learning analyzer threads on 2026-10-30 failed before the model started. A legacy override now has to match a current project source when sources exist; projects without sources retain their explicit binding. The shared resolver also serves the rules scan, nightly docs, harness fallback and settings. Regression: `tests/project-binding.test.ts` and the analyzer spawn replay in `tests/night-graphs/rules-scan.test.ts`, using captured bindings and errors in `tests/fixtures/learning-stale-binding-2026-10-30.json`.
+- **Test clock cleanup.** The daemon aging test restores real timers in its `finally` block. It previously installed fake timers there, causing the pause/stop tests that shared its worker to time out; their assertions and time limits are unchanged.
+
 ## 0.1.386
 
 - **Code critic answer, unreadable.** An answer that cannot be read (an unescaped quote broke the JSON of a «pass») is sent back once to the same critic with the parse error; only a second unreadable answer fails the stage. It blocked a finished selfystudio task on 2026-10-30.

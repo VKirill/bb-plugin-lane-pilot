@@ -1,0 +1,122 @@
+{
+  "classKey": "log:65492d5b9a54",
+  "capturedAt": "2026-10-30",
+  "projectId": "proj_ejbam66722",
+  "sources": [
+    {
+      "id": "src_4t6228vjs8",
+      "projectId": "proj_ejbam66722",
+      "type": "local_path",
+      "hostId": "host_7sea4qaad8",
+      "path": "/Users/vechkasov/Documents/BB-сервис",
+      "isDefault": true,
+      "createdAt": 1789171805148,
+      "updatedAt": 1789235745579
+    },
+    {
+      "id": "src_jkqkd3rtnu",
+      "projectId": "proj_ejbam66722",
+      "type": "local_path",
+      "hostId": "host_p7jhrgsapq",
+      "path": "/Users/vechkasov/Documents/BB-сервис",
+      "isDefault": false,
+      "createdAt": 1789172014157,
+      "updatedAt": 1789235747135
+    },
+    {
+      "id": "src_g3v4t8e4nh",
+      "projectId": "proj_ejbam66722",
+      "type": "local_path",
+      "hostId": "host_rwrxyi39aw",
+      "path": "/home/ubuntu/BB-service",
+      "isDefault": false,
+      "createdAt": 1789254673859,
+      "updatedAt": 1789254673859
+    },
+    {
+      "id": "src_aunbbp7mqc",
+      "projectId": "proj_ejbam66722",
+      "type": "local_path",
+      "hostId": "host_z8sapas8an",
+      "path": "C:\\Users\\vechkasov\\bb-perf",
+      "isDefault": false,
+      "createdAt": 1793025142210,
+      "updatedAt": 1793025142210
+    }
+  ],
+  "explicit": {
+    "hostId": "host_7sea4qaad8",
+    "path": "/tmp/ag194-v4-cli"
+  },
+  "observedBinding": {
+    "status": "resolved",
+    "hostId": "host_7sea4qaad8",
+    "path": "/tmp/ag194-v4-cli",
+    "source": "explicit_override",
+    "bindings": []
+  },
+  "logs": [
+    {
+      "ts": 1793319069968,
+      "level": "warn",
+      "message": "learning: extraction for proj_ejbam66722: {\"state\":\"no_model\",\"read\":0,\"items\":0,\"adopted\":0,\"waiting\":0,\"duplicates\":0,\"dropped\":0,\"noted\":0,\"reason\":\"rules_analyzer:error:thread_status_error:system_error:thread_command_failed:Command thread.start failed\"}"
+    },
+    {
+      "ts": 1793322668924,
+      "level": "warn",
+      "message": "learning: extraction for proj_ejbam66722: {\"state\":\"no_model\",\"read\":0,\"items\":0,\"adopted\":0,\"waiting\":0,\"duplicates\":0,\"dropped\":0,\"noted\":0,\"reason\":\"rules_analyzer:error:thread_status_error:system_error:thread_command_failed:Command thread.start failed\"}"
+    },
+    {
+      "ts": 1793324472232,
+      "level": "warn",
+      "message": "learning: extraction for proj_ejbam66722: {\"state\":\"no_model\",\"read\":0,\"items\":0,\"adopted\":0,\"waiting\":0,\"duplicates\":0,\"dropped\":0,\"noted\":0,\"reason\":\"rules_analyzer:error:thread_status_error:system_error:thread_command_failed:Command thread.start failed\"}"
+    }
+  ],
+  "errors": [
+    {
+      "id": "evt_3uckxv5qgr",
+      "scope": {
+        "kind": "thread"
+      },
+      "threadId": "thr_w595pwpq4x",
+      "seq": 3,
+      "createdAt": 1793319069805,
+      "type": "system/error",
+      "data": {
+        "code": "thread_command_failed",
+        "message": "Command thread.start failed",
+        "detail": "Unmanaged workspace path does not exist: /tmp/ag194-v4-cli"
+      }
+    },
+    {
+      "id": "evt_3ztb757pp2",
+      "scope": {
+        "kind": "thread"
+      },
+      "threadId": "thr_fqyx2w86hr",
+      "seq": 3,
+      "createdAt": 1793322668765,
+      "type": "system/error",
+      "data": {
+        "code": "thread_command_failed",
+        "message": "Command thread.start failed",
+        "detail": "Unmanaged workspace path does not exist: /tmp/ag194-v4-cli"
+      }
+    },
+    {
+      "id": "evt_77pks9yv3q",
+      "scope": {
+        "kind": "thread"
+      },
+      "threadId": "thr_tki9hscz4z",
+      "seq": 3,
+      "createdAt": 1793324472043,
+      "type": "system/error",
+      "data": {
+        "code": "thread_command_failed",
+        "message": "Command thread.start failed",
+        "detail": "Unmanaged workspace path does not exist: /tmp/ag194-v4-cli"
+      }
+    }
+  ]
+}
