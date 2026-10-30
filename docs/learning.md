@@ -20,7 +20,7 @@ sources:
 
 # Learning from the owner's messages
 
-Design of 2026-10-08 (T1-T8), code in `src/learning`. The owner's own messages to his agents are judged where he says them; what
+Design of 2026-10-08 (T1-T8), code in `src/rooms/learning`. The owner's own messages to his agents are judged where he says them; what
 teaches something becomes a rule, a decision, a preference or a reminder, with the message it came from.
 
 ```

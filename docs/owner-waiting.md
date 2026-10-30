@@ -25,12 +25,13 @@ sources:
   - tests/policy/morning.test.ts
 ---
 
-> [!important] Since 2026-10-22 the owner takes no part in the loop
+> [!important] Since 2026-10-29 the owner does take part in one wait
+> With `owner.words` on (default), a task that names the owner's promise waits up to six hours for his «yes» before its merge; his answer comes through this same inbox. Everything below stays as said: only what his own words started and the inbox items are listed; the morning list reports the rest.
 > The screen holds only what the owner's own words started (learned items from his messages, e.g. a reminder) and whatever a caller posts to the inbox. Waiting rules, deferrals, held memory conflicts and night repairs are the system's and are not listed; the morning list is a report (`src/rooms/policy/morning.ts`). The history block at the foot describes the earlier design.
 
 # Waiting for the owner
 
-TL;DR: one screen («Ждут владельца», in the System group of the Lane Pilot page), one command (`bb lane-pilot waiting`), one line in the daily report and one short Telegram message hold what the owner's own words started and what callers post to his inbox. Each item says what it is, why it is his, where the evidence is and the exact action. Nothing waits for an answer: the work goes on.
+TL;DR: one screen («Ждут владельца», in the System group of the Lane Pilot page), one command (`bb lane-pilot waiting`), one line in the daily report and one short Telegram message hold what the owner's own words started and what callers post to his inbox. Each item says what it is, why it is his, where the evidence is and the exact action. One thing does wait for an answer: a task gated by `owner.words` holds its merge up to six hours for the owner's yes (owner decision 2026-10-29); after that it blocks instead of asking again. Everything else goes on without him.
 
 ## Purpose
 

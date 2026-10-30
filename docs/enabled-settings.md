@@ -14,7 +14,7 @@ sources:
   - docs/enabled-settings.snapshot.json
 ---
 
-<!-- enabled-settings:structure fceb231970ebfa96 -->
+<!-- enabled-settings:structure a6d9f10d59b56c14 -->
 
 # Enabled settings (generated)
 
@@ -105,7 +105,7 @@ switches: `quick` disables both critiques, `full` enables them (`src/rooms/criti
 | `jev.LANE_OPENCODE_JEV` | `1 (on)` | — | effort routing reads this setting |
 | `jev.enabled` | `true` | — | Jev judgments (src/jev): false turns every judgment off for the project |
 | `jev.modes` | — | — | Jev judgments: off, shadow or active per judgment |
-| `jev.provider` | `openlux` | — | Jev provider: openlux or typesafe serves every Jev request |
+| `jev.provider` | `typesafe` | — | Jev provider: openlux or typesafe serves every Jev request |
 | `jev.thresholds` | — | — | Jev judgments: thresholds as judgment.name=number pairs |
 | `memory.agent` | `memory-maintainer` | — | memory role label included in its prompt |
 | `memory.audience` | `subagent` | — | stage setting: control memory audience |

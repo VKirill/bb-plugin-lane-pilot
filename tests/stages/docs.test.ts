@@ -153,3 +153,11 @@ it("names every failing page and rule in the repair round, however many findings
   expect(prompt).toMatch(/docs\/api\.md \[evidence\] ×\d+/);
   expect(prompt.split("\n").filter((line) => line.startsWith("- ")).length).toBeLessThanOrEqual(81);
 });
+
+// D1: README is a full reference; a refresh updates facts, never shrinks or rewrites sections.
+it("tells the agent README.md is a full reference that refresh passes only update, never shorten", () => {
+  const rule = /full reference for people[\s\S]*never shorten it/;
+  expect(nightlyDocsPrompt({ since:"yesterday", hasDocs:true, changed:["src/x.ts"] })).toMatch(rule);
+  expect(nightlyDocsPrompt({ since:"yesterday", hasDocs:false, changed:[] })).toMatch(rule);
+  expect(nightlyDocsPrompt({ since:"yesterday", hasDocs:true, changed:["src/x.ts"] })).not.toMatch(/short front page/);
+});

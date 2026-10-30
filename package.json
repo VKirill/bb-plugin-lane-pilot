@@ -9,7 +9,7 @@
   },
   "bb": {
     "name": "Lane Pilot",
-    "description": "Isolated Lane Stack PM in BB and native writer dispatch.",
+    "description": "Lane Pilot: the BB plugin that runs AI-agent work from a PM task to merge — writer lanes in their own worktrees, checks and critics as gates, retries, model fallbacks, memory and nightly self-improvement.",
     "branding": {
       "icon": "Workflow"
     },

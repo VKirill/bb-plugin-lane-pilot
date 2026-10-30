@@ -1,6 +1,6 @@
 # Jev judgments in shadow: J-4, J-10, J-11
 
-Three judgments of the Jev layer (`src/jev`) start in **`shadow`**: each asks Jev, writes a receipt into `lane_pilot_jev_receipt`
+Three judgments of the Jev layer (`packages/jev`) start in **`shadow`**: each asks Jev, writes a receipt into `lane_pilot_jev_receipt`
 and acts exactly as the code did before. They change behaviour only after the owner switches one to `active`. `route.workflow`
 (J-1) is the older judgment and is `active` by default (see `workflow-router.md`).
 
