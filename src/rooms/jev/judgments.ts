@@ -7,6 +7,7 @@ import "@lane-pilot/jev/judgments/output-guard";
 import "@lane-pilot/jev/judgments/repair-group";
 import "@lane-pilot/jev/judgments/skill-pick";
 import "@lane-pilot/jev/judgments/trace-checks";
+import "@lane-pilot/jev/judgments/ui-shots";
 import "../anamnesis";
 import "../learning";
 import "../phase";

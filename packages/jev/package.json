@@ -14,6 +14,7 @@
     "./judgments/invoice-check": "./src/judgments/invoice-check.ts",
     "./judgments/repair-group": "./src/judgments/repair-group.ts",
     "./judgments/skill-pick": "./src/judgments/skill-pick.ts",
-    "./judgments/trace-checks": "./src/judgments/trace-checks.ts"
+    "./judgments/trace-checks": "./src/judgments/trace-checks.ts",
+    "./judgments/ui-shots": "./src/judgments/ui-shots.ts"
   }
 }

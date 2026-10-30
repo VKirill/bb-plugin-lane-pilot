@@ -1,4 +1,4 @@
-import type { JevAnswer, JevQuestion } from "./types";
+import type { JevAnswer, JevAsset, JevQuestion } from "./types";
 
 /**
  * A named judgment: what is sent (state and questions), how the answers become a decision (`decide`, pure and unit-tested), the
@@ -30,6 +30,8 @@ export type Judgment<I, D> = {
   timeoutMs: number;
   /** Only what the questions need, already redacted. The receipt keeps its hash and size, never the text. */
   stateBuilder(input: I): unknown;
+  /** Images the request carries, keyed by the reference the state or questions embed. Omit for text-only judgments. */
+  assets?(input: I): Record<string, JevAsset> | undefined;
   questions(input: I): Record<string, JevQuestion>;
   thresholds: Record<string, ThresholdSpec>;
   decide(answers: Answers, thresholds: Thresholds, input: I): Decided<D>;
@@ -53,6 +55,7 @@ export const listJudgments = (): Array<Judgment<any, any>> => [...judgments.valu
 export const choice = (instructions: unknown, criteria: Record<string, unknown>): JevQuestion => ({ type: "choice", instructions, criteria });
 export const noul = (instructions: unknown, criteria?: { true?: unknown; false?: unknown }): JevQuestion => ({ type: "noul", instructions, ...(criteria ? { criteria } : {}) });
 export const score = (instructions: unknown, criteria: unknown[]): JevQuestion => ({ type: "score", instructions, criteria });
+export const box = (instructions: unknown): JevQuestion => ({ type: "box", instructions });
 
 /** The probability of a Noul, or `undefined` when the answer is not one. */
 export const noulOf = (answers: Answers, id: string): number | undefined => {
