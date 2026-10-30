@@ -15,7 +15,7 @@ import { writerPickOverlay, type WriterLoad } from "../writer-model-pick";
 import { reassignedReason, takeReassignRequest, type ReassignRequest } from "./reassign";
 import { usageHoldReason, usageSkipPercent } from "../../usage/server";
 import { MAIN_ATTEMPT_LIMIT, RETRY_ELIGIBLE } from "../../runs";
-import { FREE_RETRY_LIMIT, PARKED_CLASSES, REPLAY_CHECK_FAILED, SESSION_MAX_MS, isWaitingSecret, isWriterSilent, repeatedFailureReason, taskFamily, turnFailureKey } from "../../runs";
+import { FREE_RETRY_LIMIT, PARKED_CLASSES, REPLAY_CHECK_FAILED, SESSION_MAX_MS, VERIFICATION_TIMEOUT_RETRIES, isWaitingSecret, isWriterSilent, repeatedFailureReason, taskFamily, turnFailureKey, verificationTimeoutOverBudget } from "../../runs";
 import { isTaskSatisfied } from "../../runs/server";
 import { isWriterStreamError, previousAttemptBrief } from "./writer-task";
 import { stickyTurnPromptWithRules } from "./writer-knowledge";
@@ -196,6 +196,8 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
     // The class Jev (J-4, active) or the rules gave the last failure: parking reads the same one, not its own recount.
     let judged: { status: string; reason: string | null; klass: FailureClass } | null = null;
     let primaryFailure:Record<string,unknown>|null=null;
+    /** A red check the same writer already failed the same way: the next attempt is the next writer, not this one again. */
+    let checkEscalation:string|null=null;
     /** The last failure that was the task's own (a stray file, a red check), not its provider's: a fallback writer avoids it too. */
     const own:{ failure:Record<string,unknown>|null } = { failure:lastOwnFailure(db, input.runId, input.taskId, input.firstAttemptId) };
     const noteOwnFailure = (outcome:Record<string,unknown>) => { if (isOwnFailure(outcome)) own.failure = outcome; };
@@ -208,6 +210,16 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
     let acceptedAttemptId:string|null=null;
     const pmReadContext=input.pmReadContext ?? stringAt(listStageReceipts(db,input.runId,input.taskId).find((row)=>row.stageId==="pm-read")?.result,"summary") ?? "";
     let releaseWriterSlot:(()=>void)|undefined;
+    // This start owns the live-writer key until it drops it. A question drops the key before the cleanup
+    // awaits (a worktree remove can hang); the finally still frees the pool slot, and must not delete a key
+    // a later answer's start has taken.
+    let holdsLiveWriter = true;
+    const dropLiveWriterKey = () => {
+      if (!holdsLiveWriter) return;
+      holdsLiveWriter = false;
+      admitted.delete(key);
+      services.activeWriterTasks.delete(key);
+    };
     // A folder without git: one writer at a time edits its live files, and a failed attempt is rolled back from the
     // backup its first spawn made (feedback turns in the same thread keep working on the live files, so they keep it).
     let liveFolder = false;
@@ -749,6 +761,10 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
           if(workspaceBinding?.workspace_path) last={...last,workspace:{path:workspaceBinding.workspace_path,
             environmentId:workspaceBinding.environment_id,decision:workspaceBinding.workspace_decision,
             ...(isLiveDecision(workspaceBinding.workspace_decision)?{mode:LIVE_FOLDER_RECEIPT}:{})}};
+          // The question is already on the attempt. Drop the live-writer key before the awaits below (token
+          // events, retry lookup, worktree remove): while it stayed until finally, the question sweep skipped
+          // this task for the whole wait.
+          if (failureClass(String(last.status), typeof last.reason === "string" ? last.reason : null) === "judgment") dropLiveWriterKey();
           await noteAttemptOutcome({ budget, writerThreadId, writerSelection, status:String(last.status), reason:typeof last.reason === "string" ? last.reason : null });
           noteOwnFailure(last);
         }
@@ -831,6 +847,17 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         const failedClass = await judgedFailureClass({ jev, settings:async () => runSettings, projectId:input.projectId, runId:input.runId },
           String(last.status), typeof last.reason === "string" ? last.reason : null, input.taskId);
         judged = { status: String(last.status), reason: typeof last.reason === "string" ? last.reason : null, klass: failedClass };
+        // A check the host killed for time is not the task's red code: one retry, then it stops on its own budget.
+        if (failedClass === "verification_timeout") {
+          const reasons = (db.prepare("SELECT reason FROM lane_pilot_attempt WHERE run_id=? AND task_id=?").all(input.runId, input.taskId) as Array<{ reason: string | null }>).map((row) => row.reason);
+          if (verificationTimeoutOverBudget(reasons)) {
+            const reason = `verification_timeout_budget: the check timed out again after its ${VERIFICATION_TIMEOUT_RETRIES} retry; this budget is separate from the task's attempts. Raise timeout_sec or narrow the command, then dispatch again`;
+            const latest = getAttempt(db, attemptId);
+            if (latest && RETRY_ELIGIBLE.includes(latest.state as AttemptState)) transitionAttempt(db, latest.id, "blocked", { reason });
+            last = { ...last, status:"blocked", reason };
+            break;
+          }
+        }
         // A provider that takes no work fails every retry the same way: the writer chain below takes the task now.
         // The attempt ends blocked with its limit reason (uncharged); primaryFailure keeps the state the chain reads.
         // A writer that stayed silent through its nudges is handed on the same way: its session hung, not the task.
@@ -847,11 +874,15 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
           last = { ...last, status:"blocked" };
           break;
         }
-        // The session ended: the turn cap, the wall cap or no progress. The task is blocked with its last reason; another
-        // writer meets the same task, so none is started.
+        // The session ended: the turn cap or the wall cap blocks the task. A repeated red check (the same failure and
+        // the same diff twice) does not: the next attempt goes to the next writer in the chain, not this one again.
         if (sessionEnd) {
-          const latest = getAttempt(db, attemptId);
           const ended = `${sessionEnd}: ${String(last.reason ?? last.status)}`;
+          if (sessionEnd.startsWith("no progress:") && failedClass !== "verification_timeout" && /^verification failed\b/.test(String(last.reason ?? ""))) {
+            checkEscalation = ended;
+            break;
+          }
+          const latest = getAttempt(db, attemptId);
           if (latest && RETRY_ELIGIBLE.includes(latest.state as AttemptState)) transitionAttempt(db, latest.id, "blocked", { reason:ended });
           last = { ...last, status:"blocked", reason:ended };
           break;
@@ -866,10 +897,15 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
           }
           break;
         }
-        // Two attempts of the task family failing the same way stop the task: a third attempt and a fallback writer
-        // would only repeat them. The blocked reason names it for the PM.
-        // A turn in the same thread is not stopped by it: the session's own early stop (same failure, same diff) is above.
+        // Two attempts of the task family failing the same way stop the task: a third attempt of the same writer
+        // would only repeat them. A repeated red check is the exception: the next attempt is the next writer in the
+        // chain. A turn in the same thread is not stopped here: the session's own early stop is above.
         const repeated = redo ? null : repeatedFailureReason(familyFailure, { state:String(last.status), reason:typeof last.reason === "string" ? last.reason : null });
+        if (repeated && failedClass !== "verification_timeout" && /^verification failed\b/.test(String(last.reason ?? ""))) {
+          checkEscalation = repeated;
+          primaryFailure = { ...last };
+          break;
+        }
         if (repeated) {
           const latest = getAttempt(db, attemptId);
           if (latest && RETRY_ELIGIBLE.includes(latest.state as AttemptState)) transitionAttempt(db, latest.id, "blocked", { reason:repeated });
@@ -913,26 +949,36 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         const primaryModel=typeof settings["writer.model"] === "string" && settings["writer.model"] ? settings["writer.model"] as string : input.config.writerModel;
         const pmSelection={providerId:input.config.pmProviderId,model:input.config.pmModel};
         // The writer's fallbacks in turn, then the PM's model; each takes over only while the failure is the model's, not the task's.
-        // Only a provider, limit or catalog fault moves down the writer chain: a task's own failure (an answered
-        // empty_output, a repeated failure) gets no fallback writer — another model meets the same task.
+        // A provider, limit or catalog fault walks the chain. A repeated red check takes only the next writer (the same
+        // pair is already excluded): another pass of this writer would only repeat the check.
         const primaryClass = failureClass(String(primaryFailure.status), typeof primaryFailure.reason === "string" ? primaryFailure.reason : null);
-        const chain = primaryClass === "provider" || primaryClass === "limit"
+        const escalate = checkEscalation !== null && primaryClass === "task";
+        const fullChain = primaryClass === "provider" || primaryClass === "limit" || escalate
           ? (await chainWithRoom(writerFallbackChain({providerId:primaryProvider,model:primaryModel},writerFallbacks(settings),pmSelection),input.config.hostId,settings,input.taskId)).chain
           : [];
-        let failure:Record<string, unknown>=primaryFailure;
+        const chain = escalate ? fullChain.slice(0, 1) : fullChain;
+        let failure:Record<string, unknown>=escalate ? { ...primaryFailure, checkEscalation:true } : primaryFailure;
         const primaryAttemptId=typeof primaryFailure.attemptId === "string" ? primaryFailure.attemptId : attemptId;
         // The writer the next fallback continues: the failed attempt that kept its worktree (worktree mode only), then each
         // fallback that started. Its thread and workspace are read when a fallback starts.
         let continueFrom:ReturnType<typeof getAttempt>=!liveFolder&&unremovedWorktree?.id===primaryAttemptId ? unremovedWorktree : undefined;
         /** The last fallback writer that ran: its failure is the task's result once the chain has ended. */
         let lastFallbackAttemptId:string|null=null;
-        if (!chain.length) last={...last,emergencyFallback:{state:"skipped",
-          reason:primaryClass === "provider" || primaryClass === "limit" ? "configured_pm_selection_matches_primary" : `failure is not a provider fault (${primaryClass})`}};
+        if (!chain.length) {
+          if (escalate && checkEscalation) {
+            const stuck = getAttempt(db, typeof primaryFailure.attemptId === "string" ? primaryFailure.attemptId : attemptId);
+            if (stuck && RETRY_ELIGIBLE.includes(stuck.state as AttemptState)) transitionAttempt(db, stuck.id, "blocked", { reason:checkEscalation });
+            last = { ...last, status:"blocked", reason:checkEscalation };
+          }
+          last={...last,emergencyFallback:{state:"skipped",
+            reason:primaryClass === "provider" || primaryClass === "limit" ? "configured_pm_selection_matches_primary" : escalate ? "no next writer" : `failure is not a provider fault (${primaryClass})`}};
+        }
         for (const fallback of chain) {
           const decision=emergencyFallbackDecision({
             state:String(failure.status ?? "unknown"),
             reason:typeof failure.reason === "string" ? failure.reason : null,
             stopConfirmed:failure.stopConfirmed === true,
+            checkEscalation:failure.checkEscalation === true,
           });
           if (!decision.run) break;
           // A cancel stops the writer's thread, which reads as a provider failure; the chain must not take it as one
@@ -1003,6 +1049,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
                 attemptId:emergencyAttemptId,pmThreadId:input.pmThreadId,writerThreadId,dirtBefore,
                 emergencyFallback,
               }),emergencyFallback:{state:"completed",...emergencyFallback,attemptId:emergencyAttemptId}};
+              if (failureClass(String(last.status), typeof last.reason === "string" ? last.reason : null) === "judgment") dropLiveWriterKey();
               const workspaceBinding=getAttempt(db,emergencyAttemptId);
               if(workspaceBinding?.workspace_path) last={...last,workspace:{path:workspaceBinding.workspace_path,
                 environmentId:workspaceBinding.environment_id,decision:workspaceBinding.workspace_decision,
@@ -1025,7 +1072,11 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         }
       }
       // A worktree kept for a fallback that did not continue in it (no chain, a guard stopped it) is removed as any failed one.
-      if (unremovedWorktree) await removeWorktreeOf(unremovedWorktree);
+      // A writer's question keeps its worktree: the answer continues there. Removing it here also hung the live-writer
+      // key (the sweep then skipped the question) when the host call did not return.
+      const asked = failureClass(String(last.status), typeof last.reason === "string" ? last.reason : null) === "judgment";
+      const questionWorktree = asked && unremovedWorktree?.id === (typeof last.attemptId === "string" ? last.attemptId : attemptId);
+      if (unremovedWorktree && !questionWorktree) await removeWorktreeOf(unremovedWorktree);
       // Whatever the writers left in a folder without git is taken back when no attempt was accepted.
       if (last.status !== "accepted") await rollbackLive();
       // The task is over for these writers (a writer's question keeps its thread: its answer goes on there).
@@ -1117,8 +1168,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
       }
     }).finally(() => {
       releaseWriterSlot?.();
-      admitted.delete(key);
-      services.activeWriterTasks.delete(key);
+      dropLiveWriterKey();
     });
   }
 

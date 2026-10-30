@@ -569,7 +569,7 @@ export function setRunState(db: LanePilotDatabase, runId: string, state: string)
   db.prepare("UPDATE lane_pilot_run SET state=?, updated_at=? WHERE id=?").run(state, Date.now(), runId);
 }
 
-export function closeRun(db: LanePilotDatabase, runId: string, closedBy: "rpc" | "cli" | "sweep"): boolean {
+export function closeRun(db: LanePilotDatabase, runId: string, closedBy: "rpc" | "cli" | "sweep" | "ttl"): boolean {
   return db.transaction(() => {
     const run = db.prepare("SELECT state,closed_at FROM lane_pilot_run WHERE id=?").get(runId) as
       {state:string;closed_at:number|null}|undefined;

@@ -16,7 +16,7 @@
  * - reassign: the PM moved the task to a fresh writer thread (lane_pilot_reassign_task); its old writer's stop is not a
  *   failure: uncharged, the new writer continues the worktree.
  */
-export type FailureClass = "task" | "provider" | "merge" | "dirty_base" | "harness" | "infra" | "contract" | "judgment" | "budget" | "limit" | "reassign";
+export type FailureClass = "task" | "provider" | "merge" | "dirty_base" | "harness" | "infra" | "contract" | "judgment" | "budget" | "limit" | "reassign" | "verification_timeout";
 
 import { cleanCheckOutput } from "@lane-pilot/kit";
 import { zcodeEnvironmentError } from "@lane-pilot/models";
@@ -36,6 +36,16 @@ const MERGE = /(^|: )merge_conflict/i;
 const RETRY_LIMIT_WRAPPER = /^retry limit \d+ exhausted:\s*/i;
 /** A red check: the task's, unless the reason carries the environment marker. Its output is a log, not a statement about Lane Pilot. */
 const CHECK_FAILED = /^verification failed\b/;
+/** A check the host killed for time (`verification timed out after Ns`). Not the task's red code: it has its own retry. */
+const VERIFICATION_TIMED_OUT = /verification failed \([^)]*\): verification timed out after \d+s/;
+const VERIFICATION_TIMEOUT_BUDGET = /^verification_timeout_budget:/;
+/** How many times a timed-out check may be run again before the task stops. Separate from the task's two attempts. */
+export const VERIFICATION_TIMEOUT_RETRIES = 1;
+/** True once this task has timed out more times than `VERIFICATION_TIMEOUT_RETRIES` allows. */
+export function verificationTimeoutOverBudget(reasons: ReadonlyArray<string | null | undefined>): boolean {
+  const timedOut = reasons.filter((reason) => VERIFICATION_TIMED_OUT.test(reason ?? "")).length;
+  return timedOut > VERIFICATION_TIMEOUT_RETRIES;
+}
 /** The attempt replayed on a moved main failed the task's own checks there; part of the merge-conflict reason, so the redo is free. */
 export const REPLAY_CHECK_FAILED = "checks red after the replay on main";
 // Linux git 2.43 names no lock in «Unable to write index» (OVH 2026-10-06); the wording is added beside index.lock.
@@ -106,6 +116,7 @@ export function classifyFailure(state:string, reason:string | null | undefined):
   if (MERGE.test(text)) return sure("merge");
   if (DIRTY_BASE.test(text) && !/^merge_blocked:/.test(text)) return sure("dirty_base");
   if (UNSAFE_CONTRACT.test(text)) return sure("contract");
+  if (VERIFICATION_TIMEOUT_BUDGET.test(text) || VERIFICATION_TIMED_OUT.test(text)) return sure("verification_timeout");
   if (INFRA.test(text) || isEnvironmentReason(text)) return sure("infra");
   // The words of HARNESS (EROFS, spawn failed, …) in a check's output belong to the check (hub: a red vitest printing EROFS counted as a fault).
   if (!CHECK_FAILED.test(text) && HARNESS.test(text)) return sure("harness");
@@ -182,7 +193,7 @@ export const isEnvironmentCheckFailure = (check:{ stdout?:string; stderr?:string
 };
 
 /** Failures that do not spend one of the task's attempts. */
-export const FREE_CLASSES:ReadonlySet<FailureClass> = new Set(["merge", "dirty_base", "harness", "infra", "budget", "limit", "reassign"]);
+export const FREE_CLASSES:ReadonlySet<FailureClass> = new Set(["merge", "dirty_base", "harness", "infra", "budget", "limit", "reassign", "verification_timeout"]);
 /** What the PM does next about a task that did not end accepted, by its failure class; shown in wait receipts. */
 export function nextStep(state:string, reason:string | null | undefined):string {
   if (["queued", "running", "spawn_requested", "validating"].includes(state)) return "wait: the writer is still on it";
@@ -199,6 +210,7 @@ export function nextStep(state:string, reason:string | null | undefined):string 
     case "dirty_base": return "the main checkout has uncommitted changes in files this task changes (see the reason): commit or discard them there; the task is parked and restarts by itself after a backoff (three tries), then redispatch it";
     case "contract": return "fix the contract: lane_pilot_update_task if it has not started, else dispatch it again with the changed contract";
     case "budget": return "the run hit its budget: raise run.max_* or finish the run";
+    case "verification_timeout": return "the check timed out: its retry budget is separate from the task's attempts; raise timeout_sec or narrow the command, then dispatch again";
     default: return "its writer session ended without green checks: read the reason, fix the plan or contract and dispatch it again";
   }
 }

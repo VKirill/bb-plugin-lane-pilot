@@ -595,7 +595,7 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
     const canceled: string[] = [];
     const unconfirmed: string[] = [];
     for (const attempt of listOpenAttempts(db).filter((row) => row.run_id === phase.runId && families.has(taskFamily(row.task_id)))) {
-      const result = await cancelAttemptById(ctx, attempt.id, services.rollback)
+      const result = await cancelAttemptById(ctx, attempt.id, services.rollback, `canceled: phase ${phase.id} stopped by ${input.by ?? "pm"}${input.words ? `: ${input.words}` : ""}`)
         .catch((cause: unknown) => ({ ok: false, state: "error", reason: cause instanceof Error ? cause.message : String(cause) }));
       if (result.ok) canceled.push(attempt.task_id);
       else unconfirmed.push(`${attempt.task_id} (${result.reason ?? result.state})`);
@@ -629,7 +629,7 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
     const issued = new Set(Object.values(phase.record.execution?.issued ?? {}).map(taskFamily));
     const canceled: string[] = [];
     for (const attempt of listOpenAttempts(db).filter((row) => row.run_id === phase.runId && issued.has(taskFamily(row.task_id)) && row.state === "queued")) {
-      const result = await cancelAttemptById(ctx, attempt.id, services.rollback);
+      const result = await cancelAttemptById(ctx, attempt.id, services.rollback, `canceled: phase ${phase.id} stopped the queued wave`);
       if (result.ok) canceled.push(attempt.task_id);
     }
     book(phase, "execution", "wave_stopped", canceled.length ? `queued pieces canceled: ${canceled.join(", ")}` : "nothing queued to cancel");
@@ -1124,7 +1124,7 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
       const family = issued[item.id] ? taskFamily(issued[item.id]!) : null;
       if (!family) continue;
       for (const attempt of listOpenAttempts(db).filter((row) => row.run_id === phase.runId && taskFamily(row.task_id) === family)) {
-        if ((await cancelAttemptById(ctx, attempt.id, services.rollback)).ok) canceled.push(attempt.task_id);
+        if ((await cancelAttemptById(ctx, attempt.id, services.rollback, `canceled: phase ${phase.id} stopped, its try loop was spent (${input.why})`)).ok) canceled.push(attempt.task_id);
       }
     }
     const verdict = phase.record.verification?.model?.state === "unmet" ? `the goal audit: ${phase.record.verification.model.summary}` : phase.record.verification?.verdict?.state === "failed" ? `the verification: ${phase.record.verification.verdict.detail}` : "";
