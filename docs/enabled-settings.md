@@ -14,7 +14,7 @@ sources:
   - docs/enabled-settings.snapshot.json
 ---
 
-<!-- enabled-settings:structure c19fbc1fd8a6ce66 -->
+<!-- enabled-settings:structure db0910b75a80a7f9 -->
 
 # Enabled settings (generated)
 
@@ -221,7 +221,7 @@ switches: `quick` disables both critiques, `full` enables them (`src/rooms/criti
 | `writer.best_of.slot_cap` | `3` | — | best-of-3: how many candidates of a task may run at once |
 | `writer.best_of.token_budget` | `0` | — | best-of-3: shared token ceiling of one task's candidates |
 | `writer.best_of` | `off` | — | best-of-3: parallel writer candidates under quality_mode full, selection by checks then the critic verdict |
-| `writer.fallback_on_provider_failure` | `immediate` | — | writer fallback chain: a provider refusal hands the task to the next model at once or after one retry of the same model |
+| `writer.fallback_on_provider_failure` | `after_retry` | — | writer fallback chain: a provider refusal hands the task to the next model at once or after one retry of the same model |
 | `writer.model` | `PRIMARY_MODELS[provider]` | — | writer stage reads this setting |
 | `writer.provider` | `kimi` | — | writer stage reads this setting |
 | `writer.reasoning_effort` | `PRIMARY_EFFORTS[provider]` | — | writer stage reads this setting |

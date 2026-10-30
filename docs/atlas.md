@@ -87,10 +87,10 @@ Each room is one component: `index.ts` is its public API, `server/` its services
 | wall | WALL_FILTER_ID, WallFilterAction, WallFilterCategory, WallFilterDecision, WallFilterInput, buildWallFilterState, wallDeferralKindMigrations, wallFilterJudgment, wallMigrations | 22 | 3135 | tests (4) |
 | wires | WIRE_MARK, Wire, WireHop, WireResult, brokenWireReason, readWires, wiresCommand | 2 | 52 | tests (2) |
 | work-graph | AttemptIn, CellState, CostState, ExecutorRow, GRAPH_STAGES, GraphStats, ModelStageStat, ReceiptIn, Role, StageBlock, StageCell, StageEventIn, StageStat, TaskGraph, TaskSummary, Tokens, UsageIn, graphStats, median, roleOf, stageCells, taskGraph | 11 | 616 | tests (2) |
-| workflow | DOCS_MAINTENANCE, DOCS_NIGHT, DraftCheck, DraftOp, DraftScope, DraftTestResult, GOAL_SCREEN_ID, ISSUE_QUICK_SHORT_PATH, LP_TASK_PIPELINE, NodeExecutor, PLAN_CHECK_ID, ROUTE_WORKFLOW_ID, RawDefinition, Refusal, RunSummary, SELF_REPAIR, SERVICE_JOBS, StepContext, ValidateOptions, WORKFLOW_ARCHITECT_ID, WORKFLOW_ARCHITECT_NAME, WORKFLOW_ARCHITECT_SESSION, WORKFLOW_ARCHITECT_SUMMARY, WORKFLOW_ARCHITECT_TOOLS, Workflow, WorkflowEngine, WorkflowProblem, builtinWorkflow, goalScreenJudgment, issueQuickModelCalls, issueQuickShortPath, issueQuickWorkflowId, planCheckJudgment, routeWorkflow, servicePair, servicePinKey, serviceRole | 61 | 9278 | tests (3) |
+| workflow | DOCS_MAINTENANCE, DOCS_NIGHT, DraftCheck, DraftOp, DraftScope, DraftTestResult, GOAL_SCREEN_ID, ISSUE_QUICK_SHORT_PATH, LP_TASK_PIPELINE, NodeExecutor, PLAN_CHECK_ID, ROUTE_WORKFLOW_ID, RawDefinition, Refusal, RunSummary, SELF_REPAIR, SERVICE_JOBS, StepContext, ValidateOptions, WORKFLOW_ARCHITECT_ID, WORKFLOW_ARCHITECT_NAME, WORKFLOW_ARCHITECT_SESSION, WORKFLOW_ARCHITECT_SUMMARY, WORKFLOW_ARCHITECT_TOOLS, Workflow, WorkflowEngine, WorkflowProblem, builtinWorkflow, goalScreenJudgment, issueQuickModelCalls, issueQuickShortPath, issueQuickWorkflowId, planCheckJudgment, routeWorkflow, servicePair, servicePinKey, serviceRole | 61 | 9285 | tests (3) |
 | world | worldMigrations | 7 | 534 | tests (4) |
 | world-assets | — | 2 | 65 | tests (4) |
-| writer | AGENT_TRASH_RELATIVE, BEST_OF_COUNT, BEST_OF_SETTING, BEST_OF_SLOT_CAP_SETTING, BEST_OF_TOKEN_BUDGET_SETTING, BEST_OF_VALUES, BestOfCandidate, BestOfPlan, DirtSnapshot, FinishScanDecision, FinishScanInput, WRITER_FINISH_SCAN_ID, WriterPair, attachStreamRetry, attemptProduced, bestOfBudgetAllows, bestOfPicks, buildCliInvocation, droppedStreamDetail, materializeAgentTrash, memoryLine, ownedAgentTrashPath, parseDirtSnapshots, pathAnchors, pickBestAttempt, reserveAppetite, resolveBestOf, resolveStageWriterSelection, reviewerMemoryPicks, runCommandOnHost, writePmSettingsOnHost, writerBriefStats, writerFallbackChain, writerFallbackKeys, writerFallbacks, writerFinishScanJudgment, writerMemory, writerMemoryPicks, writerModelJudgment, writerReuseStats | 54 | 9151 | drill: parallel3 |
+| writer | AGENT_TRASH_RELATIVE, BEST_OF_COUNT, BEST_OF_SETTING, BEST_OF_SLOT_CAP_SETTING, BEST_OF_TOKEN_BUDGET_SETTING, BEST_OF_VALUES, BestOfCandidate, BestOfPlan, DirtSnapshot, FinishScanDecision, FinishScanInput, WRITER_FINISH_SCAN_ID, WriterPair, attachStreamRetry, attemptProduced, bestOfBudgetAllows, bestOfPicks, buildCliInvocation, droppedStreamDetail, materializeAgentTrash, memoryLine, ownedAgentTrashPath, parseDirtSnapshots, pathAnchors, pickBestAttempt, reserveAppetite, resolveBestOf, resolveStageWriterSelection, reviewerMemoryPicks, runCommandOnHost, writePmSettingsOnHost, writerBriefStats, writerFallbackChain, writerFallbackKeys, writerFallbacks, writerFinishScanJudgment, writerMemory, writerMemoryPicks, writerModelJudgment, writerReuseStats | 54 | 9157 | drill: parallel3 |
 
 ## Task stages (21)
 
@@ -190,7 +190,7 @@ States: (new), queued, spawn_requested, running, spawn_rejected, spawn_unknown, 
 | src/rooms/sma-map/entries.ts | 1810 |
 | packages/workflow-engine/src/engine.ts | 1586 |
 | src/rooms/self-repair/server/self-repair.ts | 1274 |
-| src/rooms/writer/server/start.ts | 1237 |
+| src/rooms/writer/server/start.ts | 1243 |
 | src/rooms/phase/server/driver.ts | 1202 |
 | src/rooms/verification/git-integrate.ts | 1063 |
 | src/rooms/writer/server/finish.ts | 1019 |

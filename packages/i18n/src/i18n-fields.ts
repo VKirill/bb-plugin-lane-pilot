@@ -979,7 +979,7 @@ export const fieldEn = {
   field_s510: "Nightly bench sets",
   reason_s510: "Which bench sets the 01:30 UTC night runs: every set (all, default) or the named versions (v3,v5). The night's token budget is shared evenly between the sets.",
   field_s511: "Writer fallback on provider failure",
-  reason_s511: "When the provider refuses the writer (a limit, an unavailable provider, a 5xx), the next model of the fallback chain takes the task at once (immediate, default) or after one retry of the same model (after_retry).",
+  reason_s511: "When the provider refuses the writer (a limit, an unavailable provider, a 5xx), the next model of the fallback chain takes the task at once (immediate) or after the classic retry order (after_retry, default).",
 } as const;
 
 export const fieldRu: { [K in keyof typeof fieldEn]: string } = {
@@ -1962,5 +1962,5 @@ export const fieldRu: { [K in keyof typeof fieldEn]: string } = {
   field_s510: "Наборы ночного бенча",
   reason_s510: "Какие наборы бенча гоняет ночь 01:30 UTC: все (all, по умолчанию) или названные версии (v3,v5). Токен-бюджет ночи делится между наборами поровну.",
   field_s511: "Запасная модель при отказе провайдера",
-  reason_s511: "Когда провайдер отказывает исполнителю (лимит, недоступный провайдер, 5xx), следующая модель цепочки запасных берёт задачу сразу (immediate, по умолчанию) или после одного повтора той же модели (after_retry).",
+  reason_s511: "Когда провайдер отказывает исполнителю (лимит, недоступный провайдер, 5xx), следующая модель цепочки запасных берёт задачу сразу (immediate) или после классического порядка повторов (after_retry, по умолчанию).",
 };

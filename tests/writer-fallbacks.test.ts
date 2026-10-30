@@ -207,8 +207,9 @@ describe("fallback writer continues the interrupted session", () => {
     await env.harness.lifecycle.dispose();
   });
 
-  it("a provider refusal hands the task to the next model at once, without a same-model attempt (default)", async () => {
+  it("writer.fallback_on_provider_failure=immediate hands the task to the next model at once, without a same-model attempt", async () => {
     const env = harness([{ provider: true }, { accept: true }]);
+    saveProjectSetting(env.db, "proj1", "writer.fallback_on_provider_failure", "immediate");
     start(env);
     await vi.waitFor(() => expect(writerStage(env.db).state).toBe("passed"));
     // No second spawn of the refused model: the second spawn is the emergency fallback, with the handoff.
@@ -218,9 +219,8 @@ describe("fallback writer continues the interrupted session", () => {
     await env.harness.lifecycle.dispose();
   });
 
-  it("writer.fallback_on_provider_failure=after_retry keeps one attempt of the same model first", async () => {
+  it("by default (after_retry) a provider refusal keeps one attempt of the same model first", async () => {
     const env = harness([{ provider: true }, { provider: true }, { accept: true }]);
-    saveProjectSetting(env.db, "proj1", "writer.fallback_on_provider_failure", "after_retry");
     start(env);
     await vi.waitFor(() => expect(writerStage(env.db).state).toBe("passed"));
     // One retry of the refused model ran before the chain moved: three spawns, the third the emergency fallback.
