@@ -2,7 +2,7 @@ import { DISPATCH_STAGES_PENDING } from "../../runs";
 import { taskV2Schema } from "../../contracts";
 import { countAttempts, endSpawnFailure, getAttempt, getRun, getTask, getTaskPlan, listOpenAttempts, setAttemptHolderThread, transitionAttempt } from "../../storage";
 import { closeHelperStages, closeWriterStages } from "../../runs/server/stage-records";
-import { reconcile, reconcileHolder } from "../reconcile";
+import { reconcile, reconcileCursor, reconcileHolder } from "../reconcile";
 import type { IdempotencyTriple } from "../reconcile";
 import { shouldReconcileAttemptThread, shouldResumeWorktreeHolder, shouldScanLostWorktreeHolder } from "../../tasks";
 import { WriterSelectionError } from "../../runs/server/run-routing";
@@ -38,11 +38,12 @@ export function createReconcile(ctx: ServerCore, services: Services) {
     // metadata of every thread of the project: a minute per dispatch on SelfyStudio (1000+ threads), then
     // attempt_worktree_holder_ambiguous:page_cap for every task once the project passed 1000 (live 2026-10-04).
     if (!await bb.storage.kv.get(holderSpawnKey(attempt.id)).catch(() => null)) return null;
+    const cursor = reconcileCursor(db, attempt.id, "holder");
     const result = await reconcileHolder(threadReconcilePort(projectId), {
       lanePilotRunId:attempt.run_id,
       lanePilotTaskId:attempt.task_id,
       workspaceAttemptId:attempt.id,
-    });
+    }, { cursor });
     if (result.kind === "not_found") return null;
     if (result.kind === "found") {
       if (!setAttemptHolderThread(db, attempt.id, result.threadId)) {
@@ -52,9 +53,11 @@ export function createReconcile(ctx: ServerCore, services: Services) {
       return result.threadId;
     }
     if (result.kind === "blocked") {
+      if (result.reason === "page_cap") throw new WriterSelectionError("reconcile paused at the saved page; it continues after a reload");
       transitionAttempt(db, attempt.id, "blocked", { reason:`holder_reconcile_${result.reason}` });
       throw new WriterSelectionError(`attempt_worktree_holder_ambiguous:${result.reason}`);
     }
+    if (cursor.read() !== null) throw new WriterSelectionError(`reconcile interrupted: ${result.kind === "error" ? result.message : "scan"}`);
     transitionAttempt(db, attempt.id, "spawn_unknown", { reason:`holder_reconcile_error:${result.message}` });
     throw new WriterSelectionError(`attempt_worktree_holder_reconcile_error:${result.message}`);
   }
@@ -88,7 +91,8 @@ export function createReconcile(ctx: ServerCore, services: Services) {
       lanePilotTaskId:attempt.task_id,
       attemptId:attempt.id,
     };
-    const result = await reconcile(threadReconcilePort(projectId), key);
+    const cursor = reconcileCursor(db, attempt.id, "writer");
+    const result = await reconcile(threadReconcilePort(projectId), key, { cursor });
     if (result.kind === "found") {
       // A stop requested before the reload stays requested: the attempt goes on to «canceled», not back to «running».
       if (attempt.state !== "cancel_requested") transitionAttempt(db, attempt.id, "running", { threadId:result.threadId });
@@ -101,9 +105,11 @@ export function createReconcile(ctx: ServerCore, services: Services) {
       throw new Error("writer spawn was not created after a complete reconcile scan");
     }
     if (result.kind === "blocked") {
+      if (result.reason === "page_cap") throw new Error("reconcile paused at the saved page; it continues after a reload");
       transitionAttempt(db, attempt.id, "blocked", { reason:`reconcile_${result.reason}` });
       throw new Error(`writer reconcile blocked: ${result.reason}`);
     }
+    if (cursor.read() !== null) throw new Error(`reconcile interrupted: ${result.message}`);
     transitionAttempt(db, attempt.id, "spawn_unknown", { reason:`reconcile_error: ${result.message}` });
     throw new Error(`writer reconcile failed: ${result.message}`);
   }

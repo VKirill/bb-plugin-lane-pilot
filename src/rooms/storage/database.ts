@@ -423,6 +423,8 @@ export const migrations = [
   `ALTER TABLE lane_pilot_memory ADD COLUMN expired_reason TEXT`,
   // A user workflow run not verified against its goals is `not_verified` (the wf_run CHECK is rebuilt; packages/workflow-engine/src/ops-store.ts). Append only.
   ...workflowNotVerifiedMigrations,
+  // The page a thread reconcile had reached. A reload continues from it instead of scanning from the first page again.
+  `CREATE TABLE lane_pilot_reconcile_cursor (scan_key TEXT PRIMARY KEY, attempt_id TEXT NOT NULL, page INTEGER NOT NULL, updated_at INTEGER NOT NULL)`,
 ];
 
 export function openDatabase(bb: BbPluginApi): LanePilotDatabase {
