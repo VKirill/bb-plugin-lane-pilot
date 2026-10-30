@@ -257,7 +257,7 @@ export function mountModelRebenchGraph(ctx: ServerCore, services: Services): voi
   scheduleIsolated(ctx.bb, MODEL_REBENCH_SCHEDULE, "30 5 1 * *", async (signal) => {
     if (ctx.isDisposed() || signal?.aborted) return;
     const settings = (await Promise.resolve().then(() => ctx.effectiveProjectSettings("*")).catch(() => null))?.values ?? {};
-    if (String(settings["bench.model_rebench"] ?? "off") !== "on") return;
+    if (String(settings["bench.model_rebench"] ?? "on") !== "on") return;
     const workflow = builtinWorkflow(MODEL_REBENCH_WORKFLOW);
     if (!workflow) return;
     const month = monthOf(Date.now());

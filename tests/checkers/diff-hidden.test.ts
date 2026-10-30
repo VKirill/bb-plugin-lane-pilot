@@ -181,4 +181,66 @@ describe("diff-hidden audit", () => {
     expect(textRes.exitCode).toBe(0);
     expect(textRes.stdout).toContain("DIFF-HIDDEN AUDIT");
   });
+
+  it("night loop connects diffHiddenAudit with default limit 3 or configured setting", async () => {
+    const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
+    const db = openDatabase(bb);
+    const { createWall } = await import("../../src/rooms/wall/service");
+
+    const auditCalls: number[] = [];
+    const ports = {
+      now: () => Date.now(),
+      version: "0.1.392",
+      loadScope: async () => ({ isReal: () => true, scopeOf: () => ({ isReal: () => true }) }),
+      logLines: () => [],
+      codeFiles: async () => [],
+      tellPm: async () => true,
+      repair: {
+        view: async () => null,
+        report: async () => "",
+        tokens: async () => null,
+        busy: async () => false,
+        changedFiles: async () => null,
+        revert: async () => ({ ok: true, detail: "" }),
+      },
+      release: {
+        drill: async () => null,
+        canary: async () => null,
+      },
+      bench: {
+        available: async () => false,
+        armSet: async () => null,
+        ensureArm: async () => "ready",
+        compare: async () => ({ delta: 0, pValue: 1 }),
+        score: async () => null,
+      },
+    };
+
+    const wall = createWall({
+      db: db as never,
+      kv: { get: async () => null, set: async () => {} } as never,
+      ports: ports as never,
+      log: () => {},
+      diffHiddenAudit: async (limit: number) => {
+        auditCalls.push(limit);
+        return null;
+      },
+    });
+
+    // 1. By default, with no setting, diffHiddenAudit is called with 3
+    await wall.runNight();
+    expect(auditCalls).toEqual([3]);
+
+    // 2. When configured to 5, called with 5
+    auditCalls.length = 0;
+    db.prepare("INSERT OR REPLACE INTO lane_pilot_project_settings (project_id, key, value, updated_at) VALUES ('*', 'checkers.diff_hidden_limit', '5', ?)").run(Date.now());
+    await wall.runNight();
+    expect(auditCalls).toEqual([5]);
+
+    // 3. When configured to 0, audit is turned off (not called)
+    auditCalls.length = 0;
+    db.prepare("INSERT OR REPLACE INTO lane_pilot_project_settings (project_id, key, value, updated_at) VALUES ('*', 'checkers.diff_hidden_limit', '0', ?)").run(Date.now());
+    await wall.runNight();
+    expect(auditCalls).toEqual([]);
+  });
 });

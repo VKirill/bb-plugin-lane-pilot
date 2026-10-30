@@ -18,6 +18,7 @@ import { wallLogLines } from "../logs";
 import { revertMerge, type RevertHost } from "../revert";
 import { builtinWorkflow } from "../../workflow";
 import type { ChainRuntime } from "../../workflow/server";
+import { createPluginCheckers } from "../../checkers/server";
 import type { HuntOutcome } from "../pack";
 import { WALL_HUNT_WORKFLOW, createWall, type RepairView, type Scope, type ThreadRun, type WallApi, type WallPorts } from "../service";
 import { jev } from "@lane-pilot/jev";
@@ -246,6 +247,7 @@ export function createPluginWall(ctx: ServerCore, services: Services): WallApi {
   };
 
   const wallRef = { current: null as unknown as WallApi };
+  const checkers = createPluginCheckers(ctx);
   const wall = createWall({
     db,
     kv: bb.storage.kv as never,
@@ -254,6 +256,11 @@ export function createPluginWall(ctx: ServerCore, services: Services): WallApi {
     hubDb: SELF_REPAIR_DEFAULTS.hubDb,
     jev: () => jev(),
     settings: () => ctx.effectiveProjectSettings("*").then((r) => r.values),
+    diffHiddenAudit: async (limit: number) => {
+      const res = await checkers.diffHidden({ limit });
+      ctx.log(`diff-hidden audit: ${res.candidatesCount} candidate(s), ${res.totalChecks} check(s), ${res.blindPassCount} blind pass(es), ${res.phantomCount} phantom(s)`);
+      return res;
+    },
   });
   wallRef.current = wall;
   setRepairHooks(ctx, {

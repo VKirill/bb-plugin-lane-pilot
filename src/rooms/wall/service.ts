@@ -102,6 +102,7 @@ export type WallDeps = {
   hubDb?: string;
   jev?: () => Jev | null;
   settings?: () => Promise<JevSettings>;
+  diffHiddenAudit?: (limit: number) => Promise<unknown>;
 };
 
 const sha = (text: string) => createHash("sha256").update(text).digest("hex");
@@ -534,6 +535,16 @@ export function createWall(deps: WallDeps) {
     summary.spendTokens = nightSpend(db, night, { from: Date.parse(`${night}T00:00:00Z`), to: Date.parse(`${night}T00:00:00Z`) + DAY });
     saveNight(db, summary, ports.now(), true);
     log(`wall: night ${night}: ${summary.classesSeen} classes with a failure today, ${summary.picked.length} repairs queued, ${summary.hunts.length} hunts, ${summary.backlog.length} to the backlog, ~${summary.spendTokens} of ${summary.capTokens} tokens`);
+    if (!options.dryRun && deps.diffHiddenAudit) {
+      const projectSettings = loadProjectSettings(db as never, "*");
+      const rawLimit = projectSettings["checkers.diff_hidden_limit"] ?? (deps.settings ? (await deps.settings().catch(() => ({} as Record<string, unknown>)))["checkers.diff_hidden_limit"] : undefined);
+      const diffHiddenLimit = typeof rawLimit === "number" ? rawLimit : (rawLimit !== undefined && rawLimit !== null && rawLimit !== "" && !isNaN(Number(rawLimit)) ? Number(rawLimit) : 3);
+      if (diffHiddenLimit > 0) {
+        await deps.diffHiddenAudit(diffHiddenLimit).catch((cause: unknown) => {
+          log(`wall: diff-hidden audit failed: ${cause instanceof Error ? cause.message : String(cause)}`);
+        });
+      }
+    }
     return summary;
   }
 

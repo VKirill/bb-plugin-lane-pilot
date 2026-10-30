@@ -14,7 +14,7 @@ sources:
   - docs/enabled-settings.snapshot.json
 ---
 
-<!-- enabled-settings:structure 001faf088d0058e9 -->
+<!-- enabled-settings:structure 0ea752466b3579cc -->
 
 # Enabled settings (generated)
 
@@ -38,7 +38,7 @@ switches: `quick` disables both critiques, `full` enables them (`src/rooms/criti
 | `baseline.time_cap_sec` | `300` | — | baseline: seconds the baseline may spend on a start, 0 turns it off |
 | `bench.budget_hours` | `6` | — | bench: hour cap of a series |
 | `bench.budget_tokens` | `120000000` | — | bench: token cap of a series |
-| `bench.model_rebench` | `off` | — | monthly model routing rebench switch |
+| `bench.model_rebench` | `on` | — | monthly model routing rebench switch |
 | `bench.nightly_sets` | `all` | — | nightly bench: which sets the night runs (all, or a comma list of versions) |
 | `bookkeeping.paths` | — | — | project bookkeeping patterns that ownership gates and merges treat as not the writer's work |
 | `browser_qa.approve` | `auto` | — | stage Browser QA approval setting |
@@ -47,7 +47,7 @@ switches: `quick` disables both critiques, `full` enables them (`src/rooms/criti
 | `browser_qa.model` | — | — | stage Browser QA model setting |
 | `browser_qa.provider` | `jev` | — | stage Browser QA provider setting |
 | `browser_qa.reasoning_effort` | `medium` | — | stage Browser QA effort setting |
-| `checkers.diff_hidden_limit` | `0` | — | checkers: task limit for nightly diff-hidden audit, default 0 |
+| `checkers.diff_hidden_limit` | `3` | — | checkers: task limit for nightly diff-hidden audit, default 0 |
 | `checks.require_red_on_base` | `medium` | — | baseline gate: a task of medium risk or more whose every check is green on the base does not start |
 | `code_critique.agent` | `code-critic` | — | code-critique role label included in its prompt |
 | `code_critique.auto_fix` | `true` | — | returns actionable findings to the original writer for a bounded repair round |

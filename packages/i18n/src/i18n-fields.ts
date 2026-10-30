@@ -1003,9 +1003,9 @@ export const fieldEn = {
   field_s538: "Retry safety gate",
   reason_s538: "on blocks an automatic retry when the failed attempt's work area was touched after it ended: foreign commits or file edits, rewritten check evidence, or a catalog secret value still in the worktree diff; off keeps the unconditional retry. Default on.",
   field_s526: "Diff-hidden audit limit",
-  reason_s526: "How many accepted tasks one night loop runs the diff-hidden audit on to detect blind passes and phantom findings; 0 turns the audit off. Default 0.",
+  reason_s526: "How many accepted tasks one night loop runs the diff-hidden audit on to detect blind passes and phantom findings; 0 turns the audit off. Default 3.",
   field_s527: "Monthly model routing rebench",
-  reason_s527: "Whether the 1st of the month schedule runs the model routing rebench (lp.model-rebench) comparing Jev model choices with task outcomes. Default off.",
+  reason_s527: "Whether the 1st of the month schedule runs the model routing rebench (lp.model-rebench) comparing Jev model choices with task outcomes. Default on.",
 } as const;
 
 export const fieldRu: { [K in keyof typeof fieldEn]: string } = {
@@ -2012,7 +2012,7 @@ export const fieldRu: { [K in keyof typeof fieldEn]: string } = {
   field_s538: "Гейт безопасности ретрая",
   reason_s538: "on блокирует авто-ретрай, если рабочую область упавшей попытки трогали после её конца: чужие коммиты или правки файлов, переписанные квитанции проверок или значение секрета из каталога, оставшееся в диффе worktree; off оставляет безусловный ретрай. По умолчанию on.",
   field_s526: "Лимит аудита со скрытым диффом",
-  reason_s526: "Сколько принятых задач за одну ночную петлю проверяются аудитом со скрытым диффом для выявления слепых пропусков и фантомных замечаний; 0 выключает аудит. По умолчанию 0.",
+  reason_s526: "Сколько принятых задач за одну ночную петлю проверяются аудитом со скрытым диффом для выявления слепых пропусков и фантомных замечаний; 0 выключает аудит. По умолчанию 3.",
   field_s527: "Месячный ре-бенч выбора моделей",
-  reason_s527: "Запускать ли 1-го числа месяца граф ре-бенча маршрутизации моделей (lp.model-rebench) со сравнением выбора Jev с исходами задач. По умолчанию off.",
+  reason_s527: "Запускать ли 1-го числа месяца граф ре-бенча маршрутизации моделей (lp.model-rebench) со сравнением выбора Jev с исходами задач. По умолчанию on.",
 };
