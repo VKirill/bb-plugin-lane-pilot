@@ -215,7 +215,7 @@ describe("dispatch answers early and is idempotent", () => {
     expect(stopped).toEqual(["thr-pm-read"]);
     expect(getAttempt(db, "attempt-orphan")).toMatchObject({ state:"queued", reason:DISPATCH_STAGES_PENDING });
     expect(pipelineKeys(db)).toEqual(["lp-task:attempt-orphan", "lp-task:attempt-orphan:resume-1"]);
-    for (let i = 0; i < 200 && listStageReceipts(db, runId, "orphan").find((row) => row.stageId === "pm-read")?.threadId === "thr-pm-read"; i++) await new Promise((resolve) => setTimeout(resolve, 10));
+    for (let i = 0; i < 200 && ((row) => !row || row.threadId === "thr-pm-read")(listStageReceipts(db, runId, "orphan").find((row) => row.stageId === "pm-read")); i++) await new Promise((resolve) => setTimeout(resolve, 10));
     // pm-read ran again from nothing (one line of read_first is below the threshold here), not from the dead helper.
     expect(listStageReceipts(db, runId, "orphan").find((row) => row.stageId === "pm-read")).toMatchObject({ state:"skipped", threadId:null });
     releaseBase();
