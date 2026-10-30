@@ -16,7 +16,7 @@ export {
   type MemorySettings,
 } from "./settings";
 export { estimateTokens, memoryRecordId, parseMemoryCandidates } from "./candidates";
-export { explainMemory, memoryContext, memoryMaintenancePrompt } from "./context";
+export { explainMemory, memoryContext, memoryMaintenancePrompt, memoryMaintainerTools } from "./context";
 export { fileFingerprint, filesDrifted, pathsNamed } from "./fingerprint";
 export { MEMORY_SCHEMA, addToIndexes, coreShelf, dropMemoryIndexes, trigramReady, listMemory, hideRecordsOfFile, memoryVisibilitySql, scopeValuesFor, searchMemoryAllSections, searchMemoryRecords, storeMemoryRecords, storeMemoryRecordsKeepingOverflow, type MemoryDatabase, type SearchOptions, type StoreMemoryInput, type StoreMemoryResult } from "./store";
 export { memoryStem, memoryTokens } from "./terms";

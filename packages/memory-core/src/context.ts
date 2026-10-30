@@ -3,10 +3,15 @@ import { memoryUsefulness } from "./lifecycle";
 import { memoryStem, memoryTokens } from "./terms";
 import type { MemoryRecord, MemorySettings } from "./settings";
 
+/** The maintainer answers from this prompt. It is not given a tool or the model catalog. */
+export function memoryMaintainerTools(): readonly string[] {
+  return [];
+}
+
 export function memoryMaintenancePrompt(input:{task:unknown;acceptedResult:unknown;settings:MemorySettings;agent?:string;/** Active notes close to this task, so a changed fact replaces its old note instead of piling up next to it. */existing?:Array<{id:string;content:string}>;
   /** The project's core as the store counts it (coreShelf): its fill and the core records this maintainer may replace. */core?:{tokens:number;records:Array<{id:string;content:string}>};
   /** Short reads of files the existing notes name. The model still calls no tools. */excerpts?:string}):string {
-  return [`${input.agent?.trim() || "Memory maintainer"}: maintain the Lane Pilot project memory from this accepted task only. Files a note names are excerpted below when this message has them. Call no tools and run no commands.`,
+  return [`${input.agent?.trim() || "Memory maintainer"}: maintain the Lane Pilot project memory from this accepted task only. Files a note names are excerpted below when this message has them. Call no tools and run no commands. You are not given the model catalog.`,
     "Answer with one JSON array and nothing else, no code fence: [{\"kind\":\"core\"|\"note\",\"content\":string,\"concepts\":string[],\"supersedes\"?:string[],\"valid_until\"?:\"YYYY-MM-DD\"}], at most 100 entries, at most 24 short concepts each (up to 100 characters), no other keys. supersedes lists the ids (from EXISTING NOTES or EXISTING CORE) of records this entry replaces because the fact changed, at most 5; valid_until only for a fact you know ends (a temporary workaround, a migration window). core is a convention or fact every writer of this project needs on every task; a writer reads at most three records per task, so keep core few and short. note is a fact about specific files or areas, found by the paths it names. Give a note the concept `review`, `pitfall` or `invariant` (or `security`, `regression`) when a code reviewer should check it: reviewers and critics read the notes carrying those concepts.",
     "Store durable project decisions and stable technical facts. A rule that comes from a mistake is not memory: do not store lessons or \"do not X\" rules, the rules pipeline owns them. Leave out transient status, personal data, speculation and anything the accepted result does not support. Keep a date, a version number and a deadline verbatim; do not round or paraphrase them.",
     "Never write a credential, a token, a line like `password: ...` or `secret=...`, or a phrase that addresses the reader as an assistant: the checker rejects the whole array and every entry is lost.",

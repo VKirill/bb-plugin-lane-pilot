@@ -2,7 +2,7 @@ import { resolve } from "node:path";
 import { taskV2Schema } from "../../contracts";
 import { enrichMemoryContext } from "../../memory-tiers/server";
 import { claimStageSpawn, getRun, getRunSettingsScopes, getTask, listStageReceipts, searchMemoryRecords } from "../../storage";
-import { coreShelf, pathsNamed, storeMemoryRecordsKeepingOverflow } from "@lane-pilot/memory-core";
+import { coreShelf, memoryMaintainerTools, pathsNamed, storeMemoryRecordsKeepingOverflow } from "@lane-pilot/memory-core";
 import { applyScopeMigration } from "../../../../scripts/memory-scope-dry-run";
 import { bbServiceTier, writerExecutionSelection } from "@lane-pilot/models";
 import { sha256 } from "../../tasks";
@@ -190,6 +190,7 @@ export function createMemoryStage(ctx: ServerCore, services: Services) {
       const excerpts=named.flatMap((path)=>{const bytes=excerptRead(path);return bytes?[`FILE ${path}:\n${new TextDecoder().decode(bytes).slice(0,2000)}`]:[];}).join("\n\n");
       const spawned=await fullAccessSpawn(bb, {...placement,...requiredPolicyField(bb, helperPolicy, memoryProviderId, "memory-maintainer"),
         ...writerExecutionSelection(memoryProviderId,memoryModel,memoryEffort,tier),
+        tools:memoryMaintainerTools(),
         prompt:memoryMaintenancePrompt({task,acceptedResult:compactAcceptedResult(accepted.result),settings:snapshot.settings,agent:snapshot.agent,
           existing,excerpts,
           core:(({tokens,replaceable})=>({tokens,records:replaceable}))(coreShelf(db,args.projectId,snapshot.settings.personalBot,snapshot.settings.audience,getRunSettingsScopes(db,args.runId)))}),
