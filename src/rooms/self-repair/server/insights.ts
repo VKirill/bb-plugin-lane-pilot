@@ -51,7 +51,7 @@ export function acceptRuleProposal(db: LanePilotDatabase, projectId: string, id:
   if (!proposal || proposal.state !== "proposed") throw new Error("rule proposal is not waiting for a decision");
   const settings = memorySettingsFor(db, projectId);
   const content = rule.trim();
-  const memoryId = memoryRecordId(projectId, "core", content, settings.personalBot);
+  const memoryId = memoryRecordId(projectId, "core", content, settings.personalBot, "subagent", proposal.scope ?? []);
   storeMemoryRecords(db, {
     projectId, personalBot: settings.personalBot, audience: "subagent",
     sourceSha256: sha256Hex(`rule:${id}`),
@@ -172,7 +172,7 @@ export function rewordAdoptedRule(db: LanePilotDatabase, projectId: string, id: 
   if (!proposal || proposal.state !== "accepted") return false;
   const settings = memorySettingsFor(db, projectId);
   const content = rule.replace(/\s+/g, " ").trim().slice(0, 600);
-  const memoryId = memoryRecordId(projectId, "core", content, settings.personalBot);
+  const memoryId = memoryRecordId(projectId, "core", content, settings.personalBot, "subagent", proposal.scope ?? []);
   storeMemoryRecords(db, {
     projectId, personalBot: settings.personalBot, audience: "subagent",
     sourceSha256: sha256Hex(`rule:${id}:${proposal.revision + 1}`),

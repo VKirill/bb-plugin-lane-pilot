@@ -33,7 +33,7 @@ export function lpNotesPort(db: LanePilotDatabase): NotesPort {
         coreBudget: settings.coreBudget, noteBudget: settings.noteBudget, indexBudget: settings.indexBudget, origin: "learning", now: at,
         ...(scope?.length ? { scope } : {}),
       });
-      return result.insertedIds[0] ?? memoryRecordId(projectId, "note", content, settings.personalBot);
+      return result.insertedIds[0] ?? memoryRecordId(projectId, "note", content, settings.personalBot, "subagent", scope ?? []);
     },
     forget: (projectId, memoryId) => deleteMemoryRecord(db, projectId, memoryId),
   };

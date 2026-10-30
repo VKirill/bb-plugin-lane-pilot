@@ -159,9 +159,57 @@ export function parseScope(json: string | null | undefined): string[] {
   catch { return []; }
 }
 
-/** A rule applies where its section chain is a prefix of the run's: its own section and everything below it. */
-export function scopeApplies(ruleScope: readonly string[], runChain: readonly string[]): boolean {
-  return ruleScope.length <= runChain.length && ruleScope.every((section, index) => runChain[index] === section);
+const SECTION_ID = /^section:[A-Za-z0-9_.:-]{1,80}$/;
+
+/** A file path, or a `path:` marker. A bare label such as a repo name is neither. */
+export function isPathSelector(entry: string): boolean {
+  const path = entry.startsWith("path:") ? entry.slice("path:".length) : entry;
+  return path.length > 0 && (/[\\/]/.test(path) || /\.[a-z0-9]{1,8}$/i.test(path));
+}
+
+/** Section ids, file paths, and leftover labels that match no run chain. A leftover label is not turned into "the whole project". */
+export function splitRuleScope(scope: readonly string[]): { sectionChain: string[]; pathSelectors: string[]; legacy: string[] } {
+  const sectionChain: string[] = [];
+  const pathSelectors: string[] = [];
+  const legacy: string[] = [];
+  for (const entry of scope) {
+    if (entry.startsWith("section:")) sectionChain.push(entry);
+    else if (entry.startsWith("path:") || isPathSelector(entry)) pathSelectors.push(entry.startsWith("path:") ? entry.slice("path:".length) : entry);
+    else legacy.push(entry);
+  }
+  return { sectionChain, pathSelectors, legacy };
+}
+
+/**
+ * The section chain must be a prefix of the run's (its own section and everything below it; empty chain: the whole project).
+ * Path selectors apply only when the task owns that file. A legacy label matches nothing: it is not widened to every section.
+ */
+export function scopeApplies(ruleScope: readonly string[], runChain: readonly string[], paths?: readonly string[]): boolean {
+  const split = splitRuleScope(ruleScope);
+  if (split.legacy.length) return false;
+  const sectionOk = split.sectionChain.length <= runChain.length && split.sectionChain.every((section, index) => runChain[index] === section);
+  if (!sectionOk) return false;
+  if (!split.pathSelectors.length) return true;
+  if (!paths?.length) return false;
+  return split.pathSelectors.some((selector) => paths.some((path) => path === selector || path.endsWith(`/${selector}`)));
+}
+
+/** New scopes are section ids or file paths. A label that is neither is rejected here; stored rows are not rewritten. */
+export function assertRuleScope(scope: readonly string[]): string[] {
+  const stored: string[] = [];
+  for (const raw of scope) {
+    const entry = raw.trim();
+    if (!entry) continue;
+    if (SECTION_ID.test(entry)) { stored.push(entry); continue; }
+    if (isPathSelector(entry)) {
+      const path = entry.startsWith("path:") ? entry.slice("path:".length) : entry;
+      if (!path) throw new Error("rule scope path is empty");
+      stored.push(`path:${path}`);
+      continue;
+    }
+    throw new Error(`rule scope entry is neither a section id nor a path: ${entry}`);
+  }
+  return stored;
 }
 
 const clip = (text: string, max: number) => text.replace(/\s+/g, " ").trim().slice(0, max);
@@ -297,7 +345,7 @@ export function upsertModelProposal(db: RulesDatabase, projectId: string, input:
   category: string; rule: string; evidence: RuleEvidence[]; firstSeenAt: number; lastSeenAt: number; scope?: readonly string[];
 }, now = Date.now()): { id: string; created: boolean } {
   const rule = input.rule.replace(/\s+/g, " ").trim().slice(0, 600);
-  const scope = [...(input.scope ?? [])];
+  const scope = assertRuleScope(input.scope ?? []);
   const signature = `model:${scope.join("/")}:${input.category}:${createHash("sha256").update(rule.toLowerCase()).digest("hex").slice(0, 12)}`;
   const id = ruleProposalId(signature);
   const created = !getRuleProposal(db, projectId, id);
@@ -346,7 +394,7 @@ export function upsertLessonProposal(db: RulesDatabase, projectId: string, input
     db.prepare("UPDATE lane_pilot_rule_proposal SET occurrences=occurrences+1, last_seen_at=?, updated_at=? WHERE project_id=? AND id=?").run(now, now, projectId, twin.row.id);
     return { id: twin.row.id, created: false, repeatOf: twin.row.id };
   }
-  const scope = [...(input.scope ?? [])];
+  const scope = assertRuleScope(input.scope ?? []);
   const signature = `lesson:${scope.join("/")}:${createHash("sha256").update(rule.toLowerCase()).digest("hex").slice(0, 12)}`;
   const id = ruleProposalId(signature);
   const examples = input.evidence ? [clip(input.evidence, 300)] : [];
@@ -400,13 +448,13 @@ export function decideRuleProposal(db: RulesDatabase, projectId: string, id: str
 }
 
 /** Accepted rules whose memory record still exists: what every writer of the project must read. */
-export function acceptedRules(db: RulesDatabase, projectId: string, runChain?: readonly string[]): Array<{ id: string; rule: string; memoryId: string; scope: string[]; audience: RuleAudience; always: boolean }> {
+export function acceptedRules(db: RulesDatabase, projectId: string, runChain?: readonly string[], paths?: readonly string[]): Array<{ id: string; rule: string; memoryId: string; scope: string[]; audience: RuleAudience; always: boolean }> {
   const rows = (db.prepare(`SELECT p.id, p.rule, p.memory_id AS memoryId, p.scope_json AS scopeJson, p.audience, p.always_on AS alwaysOn FROM lane_pilot_rule_proposal p
     JOIN lane_pilot_memory m ON m.project_id=p.project_id AND m.id=p.memory_id
     WHERE p.project_id=? AND p.state='accepted' ORDER BY p.decided_at`).all(projectId) as Array<{ id: string; rule: string; memoryId: string; scopeJson: string; audience: RuleAudience; alwaysOn: number }>)
     .map(({ scopeJson, alwaysOn, ...row }) => ({ ...row, scope: parseScope(scopeJson), always: alwaysOn === 1 }));
   // Without a chain every rule of the project is listed; a run's chain keeps only the rules of its sections.
-  return runChain ? rows.filter((row) => scopeApplies(row.scope, runChain)) : rows;
+  return runChain ? rows.filter((row) => scopeApplies(row.scope, runChain, paths)) : rows;
 }
 
 /**

@@ -11,6 +11,7 @@
     "./learning/judgment.ts",
     "./anamnesis/judgment.ts",
     "./workflow/ui/workflow-graph-parts.tsx",
-    "./writer/writer-model-pick.ts"
+    "./writer/writer-model-pick.ts",
+    "./session-hooks/cli.ts"
   ]
 }

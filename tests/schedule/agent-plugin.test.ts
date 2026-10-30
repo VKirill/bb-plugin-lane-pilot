@@ -174,7 +174,7 @@ describe("the migration on a populated hub database", () => {
     const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
     const db = bb.storage.database();
     db.pragma("foreign_keys = ON");
-    bb.storage.migrate(db, migrations.slice(0, migrations.length - scheduleAgentMigrations.length));
+    bb.storage.migrate(db, migrations.slice(0, migrations.indexOf(scheduleAgentMigrations[0]!)));
     db.prepare(`INSERT INTO lane_pilot_schedule(id,project_id,name,description,kind,task_json,trigger_type,cron,timezone,timeout_sec,state,cursor_at,created_by,created_at,updated_at)
       VALUES ('sch_old','p','Old errand','','errand','{"kind":"errand","task":"read the mailbox every day"}','cron','0 9 * * *','UTC',3600,'active',5,'owner',1,1)`).run();
     db.prepare("INSERT INTO lane_pilot_schedule_run(id,schedule_id,run_key,scheduled_at,trigger,status,queued_at,output) VALUES ('srun_old','sch_old','sch_old:1',1,'tick','succeeded',1,'report')").run();

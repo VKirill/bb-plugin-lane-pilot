@@ -66,15 +66,17 @@ export const rpcKnowledge = {
   },
   session_memory_write: {
     input: z.object({ projectId: z.string().min(1), kind: z.enum(["core", "note"]), content: z.string().min(1).max(8000),
-      concepts: z.array(z.string().min(1).max(100)).max(24), source: z.string().max(300).optional() }).strict(),
+      concepts: z.array(z.string().min(1).max(100)).max(24), source: z.string().max(300).optional(),
+      chain: z.array(z.string()).max(16).optional() }).strict(),
     output: z.object({ stored: z.boolean(), id: z.string().nullable(), reason: z.string().nullable() }).strict(),
   },
   session_memory_search: {
-    input: z.object({ projectId: z.string().min(1), query: z.string().min(1).max(2000), limit: z.number().int().min(1).max(50).optional() }).strict(),
+    input: z.object({ projectId: z.string().min(1), query: z.string().min(1).max(2000), limit: z.number().int().min(1).max(50).optional(),
+      chain: z.array(z.string()).max(16).optional() }).strict(),
     output: z.object({ records: z.array(z.object({ id: z.string(), kind: z.enum(["core", "note"]), content: z.string(), concepts: z.array(z.string()) }).strict()) }).strict(),
   },
   session_memory_core: {
-    input: z.object({ projectId: z.string().min(1) }).strict(),
+    input: z.object({ projectId: z.string().min(1), chain: z.array(z.string()).max(16).optional() }).strict(),
     output: z.object({ records: z.array(z.object({ id: z.string(), content: z.string() }).strict()) }).strict(),
   },
   session_lesson: {

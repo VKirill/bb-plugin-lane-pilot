@@ -2,8 +2,7 @@ import { randomUUID } from "node:crypto";
 import { cp, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { basename, isAbsolute, join, relative, resolve } from "node:path";
 import { parse } from "jsonc-parser/lib/esm/main.js";
-import { NATIVE_HOOK_SOURCES } from "../native-install";
-import { SESSION_HOOK_SOURCE } from "../native-install/session-hook-source";
+import { NATIVE_HOOK_SOURCES, SESSION_HOOK_SOURCE } from "../native-install";
 import { hookCommandIdentity } from "@lane-pilot/kit";
 
 function shellQuote(s: string) {

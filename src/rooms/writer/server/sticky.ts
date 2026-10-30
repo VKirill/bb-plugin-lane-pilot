@@ -11,7 +11,7 @@ import type { Services } from "../../core/server";
 import { sendServiceMessage } from "../../relay/server";
 import { isWriterStreamError } from "./writer-task";
 import { markAttemptStart } from "./attempt-marker";
-import { buildCapsule, capsuleRestored } from "../../session-hooks/logic";
+import { buildCapsule, capsuleRestored } from "../../session-hooks";
 
 /**
  * Sticky writers: an area's writer thread takes the area's next task, and a task-side failure is redone in the thread

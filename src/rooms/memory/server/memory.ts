@@ -97,16 +97,16 @@ export function createMemoryStage(ctx: ServerCore, services: Services) {
       const output=(await bb.sdk.threads.output({threadId:childId})).output;
       if(typeof output!=="string"||!output.trim()) throw new Error("memory_maintainer_output_empty");
       const entries=parseMemoryCandidates(output,snapshot.settings);
+      // What a task taught belongs to its section of a shared project (Мои проекты: several games and FeedGen in one project).
+      const scope=getRunSettingsScopes(db,args.runId);
       const records=storeMemoryRecords(db,{projectId:args.projectId,personalBot:snapshot.settings.personalBot,audience:snapshot.settings.audience,sourceSha256:snapshot.acceptanceSha256,
-        entries,coreBudget:snapshot.settings.coreBudget,noteBudget:snapshot.settings.noteBudget,indexBudget:snapshot.settings.indexBudget,
-        // What a task taught belongs to its section of a shared project (Мои проекты: several games and FeedGen in one project).
-        scope:getRunSettingsScopes(db,args.runId)});
+        entries,coreBudget:snapshot.settings.coreBudget,noteBudget:snapshot.settings.noteBudget,indexBudget:snapshot.settings.indexBudget,scope});
       // Notes that now disagree with an active one are held, both, until a person settles it (memory-conflicts.ts); a failure here never loses the write.
       try { services.memoryConflicts.sweepMoot(args.projectId); services.memoryConflicts.detect(args.projectId,new Set(records.insertedIds)); } catch(cause) { bb.log.warn(`Lane Pilot memory conflicts after ${args.taskId} failed: ${cause instanceof Error?cause.message:String(cause)}`); }
       const byId=new Map(records.records.map((row)=>[row.id,row]));
       const recordIds:string[]=[];
       for(const entry of entries){
-        const id=memoryRecordId(args.projectId,entry.kind,entry.content,snapshot.settings.personalBot);
+        const id=memoryRecordId(args.projectId,entry.kind,entry.content,snapshot.settings.personalBot,snapshot.settings.audience,scope);
         const row=byId.get(id);
         if(!row) throw new Error("memory_record_ids_missing_after_store");
         if(row.sourceSha256===snapshot.acceptanceSha256) recordIds.push(id);
@@ -165,7 +165,7 @@ export function createMemoryStage(ctx: ServerCore, services: Services) {
       const spawned=await fullAccessSpawn(bb, {...placement,...requiredPolicyField(bb, helperPolicy, memoryProviderId, "memory-maintainer"),
         ...writerExecutionSelection(memoryProviderId,memoryModel,memoryEffort,tier),
         prompt:memoryMaintenancePrompt({task,acceptedResult:compactAcceptedResult(accepted.result),settings:snapshot.settings,agent:snapshot.agent,
-          existing:searchMemoryRecords(db,args.projectId,`${task.title}\n${task.objective}`,8,snapshot.settings.searchEngine,snapshot.settings.audience,snapshot.settings.personalBot)
+          existing:searchMemoryRecords(db,args.projectId,`${task.title}\n${task.objective}`,8,snapshot.settings.searchEngine,snapshot.settings.audience,snapshot.settings.personalBot,{chain:getRunSettingsScopes(db,args.runId)})
             .filter((record)=>record.kind==="note"&&!record.concepts.includes("rule")).map((record)=>({id:record.id,content:record.content}))}),
         environment:workspaceExecutionEnvironment(config.hostId,workspace),
         pluginMetadata:{role:"memory-maintainer",lanePilotRunId:args.runId,lanePilotTaskId:args.taskId,
@@ -217,12 +217,13 @@ export function createMemoryStage(ctx: ServerCore, services: Services) {
       "memory.core_budget","memory.note_budget","memory.index_budget","memory.context_budget",
     ].map((key)=>[key,configuredSetting(settings,key)])));
     if(!memorySettings.enabled) return {runId:args.runId,state:"skipped",reason:"memory_disabled"};
-    const selected=pmMemoryContext(db,args.projectId,memorySettings,args.query,getRunSettingsScopes(db,args.runId));
-    // The cold tier, past tasks like this one and the misses (src/rooms/memory-tiers): never fails the query.
-    let tiers:{text:string;promoted:string[];episodes:number;miss:boolean}={text:"",promoted:[],episodes:0,miss:false};
-    try { tiers=enrichMemoryContext(db,{projectId:args.projectId,query:args.query,activeCount:selected.records.length}); } catch (cause) { ctx.log(`memory tiers skipped: ${cause instanceof Error ? cause.message : String(cause)}`); }
+    const chain=getRunSettingsScopes(db,args.runId);
+    const selected=pmMemoryContext(db,args.projectId,memorySettings,args.query,chain);
+    // The cold tier, past tasks like this one and the misses (src/rooms/memory-tiers): never fails the query. Candidates stay expired.
+    let tiers:{text:string;promoted:string[];episodes:number;miss:boolean;addedTokens:number}={text:"",promoted:[],episodes:0,miss:false,addedTokens:0};
+    try { tiers=enrichMemoryContext(db,{projectId:args.projectId,query:args.query,activeCount:selected.records.length,chain,audience:memorySettings.audience,personalBot:memorySettings.personalBot,role:"pm",budget:memorySettings.contextBudget,activeTokens:selected.estimatedTokens}); } catch (cause) { ctx.log(`memory tiers skipped: ${cause instanceof Error ? cause.message : String(cause)}`); }
     return {runId:args.runId,state:"passed",audience:memorySettings.audience,personalBot:memorySettings.personalBot,querySha256:sha256(args.query),
-      recordIds:[...selected.records.map((item)=>item.id),...tiers.promoted],estimatedTokens:selected.estimatedTokens,context:[selected.text,tiers.text].filter(Boolean).join("\n\n"),
+      recordIds:[...selected.records.map((item)=>item.id),...tiers.promoted],estimatedTokens:selected.estimatedTokens+tiers.addedTokens,context:[selected.text,tiers.text].filter(Boolean).join("\n\n"),
       ...(tiers.promoted.length?{promotedFromCold:tiers.promoted.length}:{}),...(tiers.episodes?{episodes:tiers.episodes}:{})};
   }
 

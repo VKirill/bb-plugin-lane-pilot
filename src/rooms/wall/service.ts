@@ -4,7 +4,7 @@ import { extractModelJson } from "../critique";
 import type { ChangeDescriptor } from "../policy";
 import { EVIDENCE_WAIT_MS, decideAcceptance, gateRepair, laterReleaseTouches, repairChange, type Acceptance, type AcceptanceEvidence, type GateDecision, type RepairFile } from "./acceptance";
 import { analysisPrompt, hunterPrompt, parseNightReport, repairBrief, taskWallMessage } from "./brief";
-import { nightArm } from "../bench/runner";
+import { nightArm } from "../bench/server";
 import { hubFields, writeHubFields } from "../improvement";
 import { postOwnerItem } from "../owner-waiting";
 import { WALL_CONFIG_KEY, parseWallConfig, type WallConfig } from "./config";

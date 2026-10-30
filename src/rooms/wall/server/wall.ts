@@ -13,7 +13,7 @@ import type { DrillOutcome } from "../../stability/server";
 import { threadUsage } from "../../usage/server";
 import { id as newId } from "../../core/server";
 import { saveVerdict } from "../../bench";
-import { benchArmStatus } from "../../bench/reliability";
+import { benchArmStatus } from "../../bench/server";
 import { wallLogLines } from "../logs";
 import { revertMerge, type RevertHost } from "../revert";
 import { builtinWorkflow } from "../../workflow";

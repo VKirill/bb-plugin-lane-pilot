@@ -14,7 +14,7 @@ type TaskPaths = Pick<TaskV2, "owns_paths" | "read_first">;
 export function mixWriterMemory(db: LanePilotDatabase, input: { projectId: string; query: string; task: TaskPaths; searchEngine: MemorySearchEngine; personalBot: string; ruleMemoryIds: ReadonlySet<string>;
   /** The run's sections: notes of a sibling section of a shared project are not this writer's. */
   chain?: readonly string[] }): { text: string; ids: string[] } {
-  const found = searchMemoryRecords(db, input.projectId, input.query, 100, input.searchEngine, "subagent", input.personalBot, input.chain ? { chain: input.chain } : {}).filter((record) => !input.ruleMemoryIds.has(record.id));
+  const found = searchMemoryRecords(db, input.projectId, input.query, 100, input.searchEngine, "subagent", input.personalBot, { chain: input.chain ?? [] }).filter((record) => !input.ruleMemoryIds.has(record.id));
   return { text: writerMemory(found, input.task), ids: writerMemoryPicks(found, input.task).map((record) => record.id) };
 }
 
@@ -25,7 +25,7 @@ type ReviewTask = TaskPaths & Partial<Pick<TaskV2, "title" | "objective" | "acce
  * than for writing (`reviewerMemoryPicks`). Not counted as uses of a brief: the usefulness counters follow writers.
  */
 export function mixReviewerMemory(db: LanePilotDatabase, input: { projectId: string; task: ReviewTask; searchEngine: MemorySearchEngine; personalBot: string; ruleMemoryIds: ReadonlySet<string>; budget: number; chain?: readonly string[] }): { text: string; ids: string[] } {
-  const scoped = input.chain ? { chain: input.chain } : {};
+  const scoped = { chain: input.chain ?? [] };
   const query = [input.task.title, input.task.objective, ...(input.task.acceptance ?? []), ...input.task.owns_paths, ...input.task.read_first].filter(Boolean).join("\n");
   const found = searchMemoryRecords(db, input.projectId, query, 100, input.searchEngine, "subagent", input.personalBot, scoped).filter((record) => !input.ruleMemoryIds.has(record.id));
   // Not only what the task's words find: the review-tagged notes and the core conventions a reviewer judges against.
@@ -69,6 +69,6 @@ export function taskMemoryContext(db: LanePilotDatabase, projectId: string, runI
 
 /** What the PM tool `lane_pilot_memory {action:"context"}` returns for a query: the project's records ranked for it, within the context budget. Also what the memory probe reads. */
 export function pmMemoryContext(db: LanePilotDatabase, projectId: string, memory: MemorySettings, query: string, chain?: readonly string[]) {
-  const records = searchMemoryRecords(db, projectId, query, 100, memory.searchEngine, memory.audience, memory.personalBot, chain ? { chain } : {});
+  const records = searchMemoryRecords(db, projectId, query, 100, memory.searchEngine, memory.audience, memory.personalBot, { chain: chain ?? [] });
   return memoryContext(records, query, memory.contextBudget);
 }

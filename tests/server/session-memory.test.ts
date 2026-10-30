@@ -24,12 +24,14 @@ describe("session memory on the hub", () => {
   });
 
   it("writes through the hub's door, finds the record from any machine, and refuses secrets", async () => {
-    const { rpc } = setup();
+    const { db, rpc } = setup();
     expect(await rpc.session_memory_write({ projectId:"P", kind:"note", content:"Greeting-card pages live in components/greeting-cards.", concepts:["greeting-cards"], source:"cli mini" }))
       .toMatchObject({ stored:true });
     expect((await rpc.session_memory_search({ projectId:"P", query:"greeting-cards pages" })).records).toHaveLength(1);
     expect(await rpc.session_memory_write({ projectId:"P", kind:"core", content:"token ghp_" + "a".repeat(30), concepts:["x"] })).toMatchObject({ stored:false, reason:expect.stringMatching(/credential/) });
     await rpc.session_memory_write({ projectId:"P", kind:"core", content:"Ship only from the PM chat.", concepts:["ship"] });
+    expect((await rpc.session_memory_core({ projectId:"P" })).records).toEqual([]);
+    db.prepare("UPDATE lane_pilot_memory SET trust='confirmed' WHERE content='Ship only from the PM chat.'").run();
     expect((await rpc.session_memory_core({ projectId:"P" })).records.map((row) => row.content)).toEqual(["Ship only from the PM chat."]);
   });
 
@@ -37,7 +39,8 @@ describe("session memory on the hub", () => {
     const { rpc, db } = setup();
     await rpc.session_memory_write({ projectId:"P", kind:"core", content:"Old fact nobody uses.", concepts:["old"] });
     await rpc.session_memory_write({ projectId:"P", kind:"core", content:"Proven fact writers accept.", concepts:["proven"] });
-    db.prepare("UPDATE lane_pilot_memory SET accepted_count=5, use_count=9 WHERE content='Proven fact writers accept.'").run();
+    db.prepare("UPDATE lane_pilot_memory SET trust='confirmed', accepted_count=5, use_count=9 WHERE content='Proven fact writers accept.'").run();
+    db.prepare("UPDATE lane_pilot_memory SET trust='confirmed' WHERE content='Old fact nobody uses.'").run();
     expect((await rpc.session_memory_core({ projectId:"P" })).records.map((row) => row.content)).toEqual(["Proven fact writers accept.", "Old fact nobody uses."]);
   });
 

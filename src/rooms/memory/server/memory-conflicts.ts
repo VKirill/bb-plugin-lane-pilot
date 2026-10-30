@@ -25,12 +25,12 @@ export function createMemoryConflicts(deps: ConflictDeps) {
   const unindex = (projectId: string, id: string) => dropMemoryIndexes(db, projectId, id);
 
   function detect(projectId: string, only?: ReadonlySet<string>): ConflictRow[] {
-    const rows = db.prepare("SELECT id,audience,personal_bot,content,concepts_json,created_at FROM lane_pilot_memory WHERE project_id=? AND status='active'").all(projectId) as NoteRow[];
+    const rows = db.prepare("SELECT id,audience,personal_bot,content,concepts_json,created_at,scope_json FROM lane_pilot_memory WHERE project_id=? AND status='active'").all(projectId) as Array<NoteRow & { scope_json: string | null }>;
     const groups = new Map<string, Array<ConflictNote & { personalBot: string }>>();
     for (const row of rows) {
       const concepts = JSON.parse(row.concepts_json) as string[];
       if (concepts.includes("rule")) continue;
-      const key = `${row.audience}|${row.personal_bot}`;
+      const key = `${row.audience}|${row.personal_bot}|${row.scope_json ?? "[]"}`;
       (groups.get(key) ?? groups.set(key, []).get(key)!).push({ id: row.id, content: row.content, concepts, createdAt: row.created_at, personalBot: row.personal_bot });
     }
     const found = [...groups.values()].flatMap((notes) => findConflicts(notes, only).map((conflict) => ({ conflict, personalBot: notes[0]!.personalBot })));

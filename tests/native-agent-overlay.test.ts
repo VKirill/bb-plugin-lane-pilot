@@ -223,9 +223,9 @@ it("F-003: standard with the critic unset is not a mandatory code critic; full s
   expect(LANE_PILOT_PM_SESSION).not.toContain("runs plan critique, code critique and acceptance");
   expect(LANE_PILOT_PM_SESSION).not.toContain("Every task is critiqued before it lands");
   expect(LANE_PILOT_PM_SESSION).toContain("unset is standard");
-  expect(LANE_PILOT_PM_SESSION).toContain("quick runs no plan critique and no code critique");
-  expect(LANE_PILOT_PM_SESSION).toContain("there is no code critic unless code_critique.enabled is on");
-  expect(LANE_PILOT_PM_SESSION).toContain("full runs plan critique and code critique on every task");
+  expect(LANE_PILOT_PM_SESSION).toContain("quick has none");
+  expect(LANE_PILOT_PM_SESSION).toContain("the code only if code_critique.enabled");
+  expect(LANE_PILOT_PM_SESSION).toContain("full critiques both");
 });
 
 it("stock plugin compile is a BB session, not a CLI dump", () => {
