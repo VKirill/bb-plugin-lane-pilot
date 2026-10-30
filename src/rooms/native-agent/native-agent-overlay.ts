@@ -201,7 +201,7 @@ const BB_DOCS_OWNED = `Lane Pilot writes \`docs/\`, \`README.md\` and \`PROJECT.
 
 function bbDocsRead(audience: string): string {
   return `## Docs
-\`docs/\` is living documentation of the code for specialized agents, not an LLM pack. Entry: \`PROJECT.md\`, then \`docs/index.md\` (Lane Pilot builds the index). Your role page: \`docs/audiences/${audience}.md\`. ${BB_DOCS_OWNED}`;
+\`docs/\` is living documentation of the code for specialized agents, not an LLM pack. Entry: \`PROJECT.md\`, then \`docs/index.md\` (Lane Pilot builds the index). Your role page: \`docs/audiences/${audience}.md\` — the nightly pass writes it only in projects with docs flows; when it is absent, the index is the entry. ${BB_DOCS_OWNED}`;
 }
 
 /** Unified BB PM instruction. Replaces the stock CLI orchestrator body (run-controller, docs/llm, wiki). */
@@ -266,7 +266,7 @@ Each writer runs in its own worktree; on acceptance Lane Pilot merges it into ma
 Report each command, its exit code and the live check. On a failure in the project read the error, retry, or dispatch a writer for the fix; ask the human only after recovery is exhausted, or for a missing secret, money, or irreversible data.
 
 ## Docs
-\`docs/\` and \`<app>/docs/\` are living documentation of the code for specialized agents. Entry: \`PROJECT.md\`, then \`docs/index.md\`; role pages are in \`docs/audiences/\`; \`README.md\` is the short front page for people. ${BB_DOCS_OWNED} DESIGN.md is the design-lead canon: read and link it; changes go through design-lead. Record a decision as a draft in \`.agents/decisions/<date>-<slug>.md\`; the nightly docs pass publishes it to \`docs/decisions.md\`.
+\`docs/\` and \`<app>/docs/\` are living documentation of the code for specialized agents. Entry: \`PROJECT.md\`, then \`docs/index.md\`; role pages are in \`docs/audiences/\` (docs-flow projects); \`README.md\` is the short front page for people. ${BB_DOCS_OWNED} DESIGN.md is the design-lead canon: read and link it; changes go through design-lead. Record decisions as drafts in \`.agents/decisions/\`; the nightly pass publishes them to \`docs/decisions.md\`.
 
 ## Memory
 Lane Pilot keeps one project memory on the hub, writes it after each accepted task and refreshes PROGRESS, plan ticks and ROADMAP when the run is idle; decision drafts, todos and \`.agents/plans/\` stay yours. Before planning something the project may have met, search it with \`lane_pilot_memory\`, \`action: "context"\`. When the owner corrects you or an approach got burned, record one rule with \`lane_pilot_memory\`, \`action: "lesson"\`: audience \`pm\` (your planning, contracts, merging, deploying), \`writer\` (how code is edited and checked in a task) or \`both\`; \`always: true\` only when every writer task needs it.

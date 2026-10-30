@@ -2,7 +2,7 @@
 title: Waiting for the owner
 type: component
 created: 2026-10-22
-updated: 2026-10-22
+updated: 2026-10-30
 status: active
 confidence: medium
 tags: [sma, owner, telegram, ui, morning-list]
@@ -14,6 +14,8 @@ sources:
   - src/rooms/owner-waiting/server/rpc.ts
   - src/rooms/owner-waiting/ui/owner-waiting-board.tsx
   - src/rooms/policy/morning.ts
+  - src/rooms/writer/server/question-timeout.ts
+  - src/rooms/workflow/server/pm-notice.ts
   - scripts/lp-morning.sql
   - scripts/lp-metrics-daily.sh
   - scripts/lp-owner-push.sh
@@ -24,42 +26,42 @@ sources:
 ---
 
 > [!important] Since 2026-10-22 the owner takes no part in the loop
-> The screen holds only what the owner's own words started (learned items from his messages, e.g. a reminder) and whatever a caller posts to the inbox (nothing in the plugin does now). Waiting rules, deferrals, held memory conflicts and night repairs are the system's and are not listed; the morning list is a report (`src/rooms/policy/morning.ts`). The sections below describe the earlier design where they differ.
+> The screen holds only what the owner's own words started (learned items from his messages, e.g. a reminder) and whatever a caller posts to the inbox. Waiting rules, deferrals, held memory conflicts and night repairs are the system's and are not listed; the morning list is a report (`src/rooms/policy/morning.ts`). The history block at the foot describes the earlier design.
 
 # Waiting for the owner
 
-TL;DR: one screen («Ждут владельца», in the System group of the Lane Pilot page), one command (`bb lane-pilot waiting`), one line in the daily report and one short Telegram message hold everything only the owner can decide. Each item says what it is, why it is his, where the evidence is and the exact action. Nothing waits for an answer: the work goes on.
+TL;DR: one screen («Ждут владельца», in the System group of the Lane Pilot page), one command (`bb lane-pilot waiting`), one line in the daily report and one short Telegram message hold what the owner's own words started and what callers post to his inbox. Each item says what it is, why it is his, where the evidence is and the exact action. Nothing waits for an answer: the work goes on.
 
 ## Purpose
 
-SMA D0-3 («Waiting for you» card, «one wait, one message»). The night policy (`docs/night-policy.md`) sends proposals and owner-only decisions to the morning list, but the list was a CLI command and three lines in the daily report; deferrals without a term (21 on the hub), held memory conflicts and the night loop's output had no screen, so they were invisible.
+SMA D0-3 («Waiting for you» card, «one wait, one message»). The night policy (`docs/night-policy.md`) sends proposals and owner-only decisions to the morning list; the screen keeps the two sources that remain — the learned items his own messages produced, and the `lane_pilot_owner_item` inbox.
 
 ## What is read
 
-`collectOwnerWaiting` (`src/rooms/owner-waiting/items.ts`) reads existing tables; it decides nothing.
+`collectOwnerWaiting` (`src/rooms/owner-waiting/items.ts:135`) reads existing tables; it decides nothing. Rows of sandbox projects are filtered out (`items.ts:90-98`).
 
 | Source | Rows | Wakes the phone | The action |
 |---|---|---|---|
-| `deferral_overdue` | an open deferral whose term passed (the deploy drill is red) | yes | a new term needs the owner's own message (`bb lane-pilot defer <id> --owner-msg <threadId>#<seq>`), or close it with evidence |
-| `memory_conflict` | held conflicts of `lane_pilot_memory_conflict` (their `memory_conflict` deferral entry is not shown twice) | yes | `bb lane-pilot memory-conflict-settle <id> --keep a\|b\|both\|none --evidence …` |
-| `rule_proposal` | rule proposals in state `proposed`, every project | no | buttons accept / reject: the RPC `decide_rule_proposal` of the Rules tab |
-| `learning` | learned items `pending_owner` | no | `bb lane-pilot learning accept\|reject <id>` |
-| `deferral_term` | deferrals `needs_owner_term` (the seeded skipped tests and plan decisions) | no | the same term command; folded on the screen |
-| anything the night loop posts | `lane_pilot_owner_item`, open rows | by the row's `wake` | the row's own `actions` |
+| `learning` | `lane_pilot_learning_item` in state `pending_owner` — learned items from his own messages (`items.ts:66-75`) | no | `bb lane-pilot learning accept\|reject <id>` |
+| `writer` | a writer's product question that went unanswered for an hour (`src/rooms/writer/server/question-timeout.ts:33-40`) | yes | answer in the task's objective and send the task again |
+| `phase` | owner-word turns of a running phase (`src/rooms/phase/server/driver.ts:378`, `:1032`) | by the row's `wake` | the row's own `actions` |
+| `workflow` | the end of a run that has no PM chat to tell (`src/rooms/workflow/server/pm-notice.ts:106-124`) | on failure | the row's own `actions` |
+| `wall` | a wall class that ran out of moves (`src/rooms/wall/service.ts:232`) | no | the row's own `actions` |
+| `outage` | an outage window (`src/rooms/outage/server/outage.ts:23`) | no | the row's own `actions` |
+| `schedule` | a scheduled agent's outcome or block (`src/rooms/schedule/server/schedule-agent-actions.ts:79`) | on `urgent` | the row's own `actions` |
+| anything posted | `postOwnerItem` or `bb lane-pilot waiting post '<json>'` (`items.ts:104-113`) | by the row's `wake` | the row's own `actions` |
 
-A deferral's term is never a button: the code reads the owner's message and takes the date from its text, so an agent cannot set it (`docs/deferrals.md`). The screen shows the command with a hint on how to find the thread id and the event number (`bb lane-pilot events-list <thread-id>`).
+Beside the list the screen shows **what went red overnight** (attempt states of the last 24 hours with the attempt ids as evidence) and **what was accepted** (attempts, rules put on trial, rules confirmed) — `overnight` (`items.ts:117-133`).
 
-Beside the list the screen shows **what went red overnight** (attempt states of the last 24 hours with the attempt ids as evidence) and **what was accepted** (attempts, rules put on trial, rules confirmed).
+## The item shape (the contract with the posters)
 
-## The item shape (the contract with the night loop)
-
-`OwnerItem` is the stable shape: `key` (stable, a repeat is the same waiting), `source`, `kind`, `projectId`, `what`, `why` it is the owner's, `since`, `wake`, `evidence[]` (`{kind: attempt|task|run|file|note|message|command|text, ref, label?}`) and `actions[]` (`{id, label, cli, rpc?, needsOwnerMessage?, hint?}`; with `rpc` the screen draws a button, without it the command is shown to copy). The night loop writes rows with `postOwnerItem` (or `bb lane-pilot waiting post '<json>'`) and closes them with `closeOwnerItem` (`waiting close <key> --by …`); the screen, the daily line and the Telegram digest pick them up with no further code. The text of built-in items is Russian (the owner's language); the screen chrome has EN and RU.
+`OwnerItem` is the stable shape: `key` (stable, a repeat is the same waiting), `source`, `kind`, `projectId`, `what`, `why` it is the owner's, `since`, `wake`, `evidence[]` (`{kind: attempt|task|run|file|note|message|command|text, ref, label?}`) and `actions[]` (`{id, label, cli, rpc?, needsOwnerMessage?, hint?}`; with `rpc` the screen draws a button, without it the command is shown to copy). The night loop writes rows with `postOwnerItem` (or `bb lane-pilot waiting post '<json>'`) and closes them with `closeOwnerItem` (`waiting close <key> --by …`); the screen, the daily line and the Telegram digest pick them up with no further code (`items.ts:104-113`, `:115`). The text of built-in items is Russian (the owner's language); the screen chrome has EN and RU.
 
 ## Telegram
 
 Lane Pilot has no Telegram sender of its own. The hub's script `scripts/lp-owner-push.sh` (a BB automation every 30 minutes, installed next to the daily report's `tg.env`) asks the RPC `owner_waiting_digest`, sends the text with the daily report's bot and then calls `owner_waiting_ack` with the keys. The rules are in code (`src/rooms/owner-waiting/push.ts`) and tested:
 
-- only items with `wake` push (an overdue deferral, a memory conflict, night rows); rule proposals, learned items and deferrals without a term wait on the screen and in the daily report;
+- only items with `wake` push; the rest wait on the screen and in the daily report;
 - one waiting, one message: an acknowledged key never pushes again; a send that failed is not acknowledged, so the next run tries again;
 - quiet hours, default 23:00-08:00 in Europe/Madrid: nothing is sent, nothing is lost, the items go out together in the first digest after;
 - at most six items are named, the rest are counted.
@@ -68,11 +70,11 @@ Settings (rows `owner_push.enabled|quiet|timezone` of the global level, edited o
 
 ## Daily report
 
-`scripts/lp-morning.sql` gained a fourth line, «Ещё ждут владельца: отсрочек без срока — N, просроченных — N, конфликтов памяти — N, от ночного цикла — N», next to the three lines that were there (rules and learned items waiting, red overnight, accepted). `composeMorningList` (`bb lane-pilot policy morning`) computes the same four lines; `tests/policy/morning.test.ts` keeps the two equal. The script now creates `lp_morning(since, now)`; a hub database without the new tables loses only the fourth line.
+`scripts/lp-morning.sql:19` adds the line «От твоих сообщений — N» — open inbox rows plus learned items `pending_owner`. `composeMorningList` (`bb lane-pilot policy morning`) computes the same lines; `tests/policy/morning.test.ts` keeps the two equal. The script creates `lp_morning(since, now)`; a hub database without the new tables loses only this line.
 
 ## Data
 
-Three tables, appended at the end of `migrations` (`src/rooms/owner-waiting/migrations.ts`): `lane_pilot_owner_item` (the night loop's inbox), `lane_pilot_owner_push` (keys already sent), `lane_pilot_owner_config`.
+Three tables, appended at the end of `migrations` (`src/rooms/owner-waiting/migrations.ts`): `lane_pilot_owner_item` (the inbox), `lane_pilot_owner_push` (keys already sent), `lane_pilot_owner_config`.
 
 ## RPC and commands
 
@@ -81,5 +83,7 @@ Three tables, appended at the end of `migrations` (`src/rooms/owner-waiting/migr
 ## Limits
 
 - Evidence links are references (attempt id, note id, command); the screen does not open an attempt or a note on click.
-- A memory conflict is settled by command, not by button: it needs the owner's line of evidence.
-- The 21 seeded deferrals are listed under a folded heading; they stay there until the owner gives each a term.
+
+## History: the pre-2026-10-22 design
+
+Before the owner left the loop the screen also held `deferral_overdue` (an open deferral whose term passed, settled by a new term from the owner's own message), `deferral_term` (deferrals `needs_owner_term`), `memory_conflict` (held conflicts of `lane_pilot_memory_conflict`, settled with `--keep a|b|both|none`) and `rule_proposal` (proposals in state `proposed` with accept/reject buttons). None of these is a source any longer: deferrals without a term count as unproven in their project's phases, a held memory conflict is settled by the newer note, and rule proposals go on trial by themselves.

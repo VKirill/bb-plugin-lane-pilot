@@ -90,10 +90,12 @@ It ends with `NIGHT-REPORT: test=… sites=… class=…`. A night repair is not
 ## Merge, acceptance, rollback
 
 When the thread ends with the verdict `fixed`, the watcher asks the loop before it merges (`mergeGate`): the branch's changed files become a
-change descriptor `{kind: lp_fault_repair, files, attrs: {bench_subset_passed, auto_revertible}}` and `authorize` (the night policy with its exam)
-answers. `night_decides` merges; `night_proposes` and `owner_only` hold the branch (state `held`, the evidence in the morning list, released as a
-patch after a week). Today the exam has no unseen owner decisions, so `authorize` degrades `night_decides` to `night_proposes`: the night merges
-nothing alone yet. The bench proof is claimed only when a runnable bench set exists, and it is enforced after the deploy, not before it (see below).
+change descriptor `{kind: lp_fault_repair, files, attrs: {bench_subset_passed, auto_revertible}}` and `authorize` (the night policy) answers
+(`src/rooms/wall/acceptance.ts:153-165`). `night_decides` merges; a change of the judge or the graph merges only provisionally when its proofs hold
+(bench subset runnable, revert in working order, no existing test changed); anything else is rejected and the branch is released as a patch
+(`src/rooms/wall/service.ts:489-513`) — no repair waits for the owner. The exam (`runLiveExam`) is a measurement of the policy, not a gate: it does
+not degrade `night_decides` (`src/rooms/policy/exam.ts:170-177`, `docs/night-policy.md`). The bench proof is claimed only when a runnable bench set
+exists, and it is enforced after the deploy, not before it (see below).
 
 After a merge the loop watches the release train (`acceptance.ts`, `decideAcceptance`): the train ran the whole suite and shipped a version; the
 drill of that version is green (a red one rolls the deploy back: the plugin runs the old version again, state `rolled_back`; a version with no drill receipt of its own is not accepted, the repair waits for one and settles as `unproven` after 72 hours); the canary is quiet; the

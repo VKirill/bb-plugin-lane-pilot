@@ -65,3 +65,18 @@ describe("attempt invariants (fleet audit 2026-10-03)", () => {
       .toEqual(["failed", "failed", "failed"]);
   });
 });
+
+  it("closes a docs-maintenance receipt lost in a reload, but not while its upkeep run is live", () => {
+    const db = setup();
+    transitionAttempt(db, "a1", "spawn_requested");
+    transitionAttempt(db, "a1", "running");
+    transitionAttempt(db, "a1", "accepted");
+    recordStage(db, { runId:"run", taskId:"t", stageId:"docs-maintenance", state:"pending", input:"docs" });
+    recordStage(db, { runId:"run", taskId:"t", stageId:"docs-maintenance", state:"running", input:"docs" });
+    // A live lp.docs-maintenance graph for the same run/task is still joined by the hourly pass.
+    db.prepare("INSERT INTO lane_pilot_wf_run (id, workflow_id, workflow_version, workflow_sha256, definition_json, idem_key, status, created_at, updated_at) VALUES ('w1','lp.docs-maintenance',1,'s','{}','docs-maintenance:run:t:0','running',1,1)").run();
+    expect(closeOrphanWriterStages(db, new Set())).toBe(0);
+    db.prepare("DELETE FROM lane_pilot_wf_run").run();
+    expect(closeOrphanWriterStages(db, new Set())).toBe(1);
+    expect(listStageReceipts(db, "run", "t").find((row) => row.stageId === "docs-maintenance")).toMatchObject({ state:"failed", reason:"the docs upkeep was lost in a plugin reload; the hourly pass resumes it" });
+  });

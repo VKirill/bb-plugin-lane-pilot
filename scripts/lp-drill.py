@@ -90,7 +90,7 @@ OPEN_STATES = ("queued", "spawn_requested", "spawn_unknown", "running")
 TERMINAL = ("accepted", "blocked", "canceled")
 STAMP = time.strftime("%Y%m%d-%H%M%S")
 DATE = time.strftime("%Y-%m-%d")
-ALL = ["guard_hash", "deferrals", "checkers", "watchdog", "memory_paths", "helper_providers", "parallel3", "conflict", "main_moved", "provider", "provider_limit", "live_word", "no_code_exit", "skills", "phase", "phase_route", "reload", "nogit", "nogit_repo"]
+ALL = ["guard_hash", "deferrals", "checkers", "watchdog", "memory_paths", "helper_providers", "parallel3", "conflict", "main_moved", "provider", "provider_limit", "live_word", "no_code_exit", "skills", "phase", "phase_route", "reload", "nogit", "nogit_repo", "flow_contract"]
 QUICK = ["guard_hash", "deferrals", "checkers", "memory_paths", "helper_providers", "parallel3"]
 # What a provider runs when no setting of the sandbox project names a model for it.
 PROVIDER_FALLBACK_MODEL = {"claude-code": "claude-sonnet-5-5", "codex": "gpt-6-luna", "opencode2": "zai-coding-plan/glm-5.3-flash"}
@@ -703,6 +703,42 @@ def scenario_memory_paths(ctx: Context) -> dict:
 
 def task_provider(cwd: str) -> dict:
     return note_task(f"drill-{STAMP}-provider", f"notes/drill/{STAMP}-provider.md", f"Drill {STAMP} provider", cwd)
+
+
+def flow_contract_stages() -> set[str]:
+    """Stage ids a receipt of the task pipeline may carry: the graph's agent/subworkflow nodes plus the writer node's own stages."""
+    pipeline = json.loads((Path(__file__).parent.parent / "workflows" / "lp-task-pipeline.json").read_text())
+    allowed: set[str] = set()
+    for node in pipeline.get("nodes", []):
+        if node.get("stages"):
+            allowed.update(node["stages"])
+        elif node.get("type") in ("agent", "subworkflow", "lp-task"):
+            allowed.add(node["id"])
+    return allowed
+
+
+def flow_contract_problems(receipts: list[dict], allowed: set[str]) -> list[str]:
+    """Receipt rows must name only stages the graph declares, and the code-decided writer stages must have passed."""
+    problems = [f"receipt of a stage lp-task-pipeline.json does not declare: {row['stage_id']}={row['state']}"
+                for row in receipts if row["stage_id"] not in allowed]
+    states = {row["stage_id"]: row["state"] for row in receipts}
+    for required in ("writer-agent", "verification", "acceptance-receipt"):
+        if states.get(required) != "passed":
+            problems.append(f"{required} was not passed: {states.get(required)!r}")
+    return problems
+
+
+def scenario_flow_contract(ctx: Context) -> dict:
+    """One probe task in the sandbox; its stage receipts must match the nodes of lp-task-pipeline.json (audit 2026-10-30 F19)."""
+    spec = note_task(f"drill-{STAMP}-flow", f"notes/drill/{STAMP}-flow.md", f"Drill {STAMP} flow", ctx.cwd)
+    problems = [] if ctx.dispatch(spec) else ["dispatch-bb exited with an error"]
+    rows = ctx.wait_ended([spec["id"]])
+    row = summarize(rows, spec["id"], ctx.cwd, spec["expected_outputs"][0])
+    if row["state"] != "accepted":
+        problems.append(f"the probe task did not end accepted: {row['states']} {row['reason']}")
+    receipts = hubsql(f"select stage_id, state from lane_pilot_stage_receipt where run_id='{ctx.run_id}' and task_id='{spec['id']}';")
+    problems += flow_contract_problems(receipts, flow_contract_stages())
+    return verdict("flow_contract", problems, stages={r["stage_id"]: r["state"] for r in receipts}, task=row)
 
 
 def scenario_provider(ctx: Context) -> dict:

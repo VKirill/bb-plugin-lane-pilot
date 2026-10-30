@@ -89,6 +89,9 @@ A retry of the task replaces the receipt (its earlier events stay in `lane_pilot
 
 `plan_fact.mode` (`src/rooms/writer/server/plan-fact.ts:12`): `record` (default) only records and shows; `gate` also sends the task back to the writer (attempt `validation_failed`, reason `plan_fact_unproven`) when the stage failed. A missing table never refuses, in either mode. The retry brief tells the writer what to cite (`src/rooms/writer/server/writer-task.ts:247`).
 
+> [!note] The docs describe the pipeline's capabilities, not a project's live configuration
+> Every opinion and review stage obeys its `*.enabled` project setting and `quality_mode`: `quick` disables both critiques, `full` enables them, `standard` (the default) reads the settings (`src/rooms/critique/quality-mode.ts:16-24`). A stage with no setting is recorded `skipped` with reason `disabled_by_project_setting` — on the hub most projects keep the critiques off, so a `skipped` receipt is the common case, not a fault. The generated [enabled settings](enabled-settings.md) page lists the defaults and the global `*` values.
+
 ## The code critic by risk
 
 `critic.code.default_for_risk` is `off` (default), `medium` or `high`: with `code_critique.enabled` not set, the critic runs for tasks of that risk or higher. `applyCodeCriticDefault` (`src/rooms/critique/quality-mode.ts:53`) turns the switch on only in `standard` quality mode and only when the project did not set the switch itself. The default stays `off` until the bench has measured the critic on and off.
