@@ -2,7 +2,7 @@ import { resolve } from "node:path";
 import { taskV2Schema } from "../../contracts";
 import { enrichMemoryContext } from "../../memory-tiers/server";
 import { claimStageSpawn, getRun, getRunSettingsScopes, getTask, listStageReceipts, searchMemoryRecords } from "../../storage";
-import { coreShelf, memoryMaintainerTools, pathsNamed, storeMemoryRecordsKeepingOverflow } from "@lane-pilot/memory-core";
+import { coreShelf, dropMemoryIndexes, memoryMaintainerTools, pathsNamed, retireStaleCuratorClaims, storeMemoryRecordsKeepingOverflow } from "@lane-pilot/memory-core";
 import { applyScopeMigration } from "../../../../scripts/memory-scope-dry-run";
 import { bbServiceTier, writerExecutionSelection } from "@lane-pilot/models";
 import { sha256 } from "../../tasks";
@@ -33,6 +33,7 @@ export function createMemoryStage(ctx: ServerCore, services: Services) {
     const task=workspace.task;
     const accepted=listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="acceptance-receipt");
     if(accepted?.state!=="passed"||!accepted.outputSha256) throw new Error("memory maintenance requires an accepted writer receipt first");
+    retireStaleCuratorClaims(db, args.projectId, (projectId, id) => dropMemoryIndexes(db, projectId, id));
     const settings=await stageHelperSettings(bb,db,args.projectId,args.runId);
     const memoryAgent=boundedAgentName(settings["memory.agent"],"memory-maintainer");
     const memorySettings=parseMemorySettings(Object.fromEntries([
