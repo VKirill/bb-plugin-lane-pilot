@@ -1,12 +1,13 @@
 import type { NodeExecutor, StepContext } from "@lane-pilot/workflow-engine";
-import { CRITIC_EDIT_TRIAL_KEY, criticEditGate, criticPromptProposal, criticStats } from "../../critique";
+import { CRITIC_EDIT_TRIAL_KEY, criticEditGate, criticEditTrialOn, criticPromptProposal, criticStats } from "../../critique";
+import { judgeSharedTrial, TRIAL_DEFAULTS } from "../../harness/server";
 import { scheduleIsolated, type ServerCore, type Services } from "../../core/server";
 import { builtinWorkflow } from "../../workflow";
 import type { ChainRuntime } from "../../workflow/server";
 
 /**
- * `lp.critic-edit` (workflows/lp.critic-edit.json): once a month, a proposal from critic calibration. The trial gate stays
- * held until the KV flag `lp.critic.edit.trial` is on and the run is given `bench=on`. Neither rewrites a prompt.
+ * `lp.critic-edit` (workflows/lp.critic-edit.json): once a month, a proposal from critic calibration. The trial flag
+ * defaults on. The gate is `judgeSharedTrial` on the nightly bench: it holds until that verdict, and a prompt is not written here.
  */
 const text = (value: unknown): string => (typeof value === "string" ? value : "");
 const PROPOSAL_KEY = (projectId: string) => `lp.critic.edit.proposal:${projectId}`;
@@ -28,10 +29,14 @@ export function mountCriticEditGraph(ctx: ServerCore, services: Services): void 
   engine.register<ChainRuntime>("lp.critic_edit_gate", {
     reentrant: true,
     run: async (c) => {
+      const projectId = input(c, "project_id");
       const stored = await ctx.bb.storage.kv.get(CRITIC_EDIT_TRIAL_KEY).catch(() => null);
-      const trialOn = stored === "on" || (typeof stored === "object" && stored !== null && (stored as { on?: boolean }).on === true);
+      const bag = await ctx.bb.storage.kv.get(PROPOSAL_KEY(projectId)).catch(() => null);
+      const startedAt = bag && typeof bag === "object" && typeof (bag as { at?: unknown }).at === "number" ? (bag as { at: number }).at : Date.now();
+      // No nightly comparison row yet: null keeps the harness gate on wait, then retire at its deadline. The prompt is not written.
+      const decision = judgeSharedTrial([], startedAt, Date.now(), TRIAL_DEFAULTS, { adoptBy: "bench", verdict: null });
       const proposal = text(c.resolve("prepare.proposal")) || null;
-      const gate = criticEditGate({ trialOn, benchOn: input(c, "bench") === "on", proposal });
+      const gate = criticEditGate({ trialOn: criticEditTrialOn(stored), proposal, decision });
       return { output: { status: gate.status, detail: gate.detail, handoff: gate.status } };
     },
   } as NodeExecutor<ChainRuntime>);
