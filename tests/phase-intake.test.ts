@@ -321,12 +321,12 @@ describe("a hand-over from a scheduled agent is one start per key (RECHECK-341 F
   });
 
   it("the small and batch roads start their graph once per key", async () => {
-    const started: Array<{ requestId: string; kind: string }> = [];
-    const train: IntakeTrain = { start: (input) => { started.push({ requestId: input.requestId, kind: input.kind }); return `wfrun_${started.length}`; }, status: () => "succeeded" };
+    const started: Array<{ requestId: string; kind: string; path?: { size: string; risk: string } }> = [];
+    const train: IntakeTrain = { start: (input) => { started.push({ requestId: input.requestId, kind: input.kind, path: input.path }); return `wfrun_${started.length}`; }, status: () => "succeeded" };
     const { intake, reloaded } = world({ train });
     expect(await hand(intake, "поправь опечатку в футере", "schedule:run-a")).toMatchObject({ started: true, via: "issue-quick", id: "wfrun_1" });
     expect(await hand(reloaded(), "поправь опечатку в футере", "schedule:run-a")).toMatchObject({ started: true, via: "issue-quick", id: "wfrun_1" });
-    expect(started).toHaveLength(1);
+    expect(started).toEqual([expect.objectContaining({ kind: "small", path: { size: "tiny", risk: "low" } })]);
     expect(await hand(intake, "поправь опечатку в хедере", "schedule:run-b")).toMatchObject({ started: true, id: "wfrun_2" });
   });
 });

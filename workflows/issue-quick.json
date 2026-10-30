@@ -57,6 +57,14 @@
     "task_ref": {
       "type": "string",
       "note": "an id from an outside tracker, only a label for the report"
+    },
+    "size": {
+      "type": "tiny|small|large",
+      "note": "the intake's class of the request; the class step keeps it when risk is set too"
+    },
+    "risk": {
+      "type": "low|medium|high",
+      "note": "the intake's class of the request"
     }
   },
   "outputs": {
