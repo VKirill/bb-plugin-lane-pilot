@@ -970,11 +970,14 @@ export const fieldEn = {
   field_s506: "A check that is red before the work",
   reason_s506: "A task of this risk or more must have a check that fails on the base commit before its writer starts. When every check already passes there, the attempt does not start and the PM is told which checks are vacuous and what to add: a check that names the new file or behaviour. Refactor, docs, research and check tasks are never asked. Default: from medium risk.",
   field_s507: "Best-of-3 writers",
+
   reason_s507: "For quality_mode full only: three writers of the fallback chain run the task in parallel, the task's checks pick the winner, a tie goes to the code critic's verdict; the losing attempts close as superseded and are never merged. Default off.",
   field_s508: "Best-of-3: token budget",
   reason_s508: "The most tokens the parallel candidates of one task may spend together; 0 leaves the run's own budget the only bound. Default 0.",
   field_s509: "Best-of-3: parallel slots",
   reason_s509: "How many best-of candidates of a task may run at once; 1 runs the three in turn. Default 3.",
+  field_s510: "Nightly bench sets",
+  reason_s510: "Which bench sets the 01:30 UTC night runs: every set (all, default) or the named versions (v3,v5). The night's token budget is shared evenly between the sets.",
 } as const;
 
 export const fieldRu: { [K in keyof typeof fieldEn]: string } = {
@@ -1954,4 +1957,6 @@ export const fieldRu: { [K in keyof typeof fieldEn]: string } = {
   reason_s508: "Сколько токенов суммарно могут потратить параллельные кандидаты одной задачи; 0 оставляет единственной границей бюджет запуска. По умолчанию 0.",
   field_s509: "Best-of-3: параллельные слоты",
   reason_s509: "Сколько кандидатов задачи может идти одновременно; 1 гонит три по очереди. По умолчанию 3.",
+  field_s510: "Наборы ночного бенча",
+  reason_s510: "Какие наборы бенча гоняет ночь 01:30 UTC: все (all, по умолчанию) или названные версии (v3,v5). Токен-бюджет ночи делится между наборами поровну.",
 };

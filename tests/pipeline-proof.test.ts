@@ -10,7 +10,7 @@ import { parseCodeCritique } from "../src/rooms/critique/code-critique";
 import { parsePmReadResult } from "../src/rooms/critique/pm-read";
 import { parseSpecialistResult } from "../src/rooms/critique/specialist";
 
-const ADVISORY: StageId[] = ["pm-read", "plan-critique", "specialist-review", "code-critique"];
+const ADVISORY: StageId[] = ["pm-read", "plan-critique", "specialist-review", "code-critique", "critic-tiebreak"];
 
 describe("every stage declares what decides it", () => {
   it("has a valid proof for every stage id: a code predicate, or advisory with a reason", () => {

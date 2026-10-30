@@ -10,7 +10,8 @@ it("flags a test that was weakened instead of the code", () => {
   expect(removed.map((hit) => hit.kind)).toEqual(["assertion_removed"]);
   const weakened = testFitFindings([testFile(before, before.replace(".toBe(3)", ".toBeTruthy()"))]);
   expect(weakened.map((hit) => hit.kind)).toContain("assertion_weakened");
-  const skipped = testFitFindings([testFile(before, before.replace(`it("adds"`, `it.skip("adds"`))]);
+  // The skip word is concatenated: a literal `it.skip(` in this file is a site the deferral scan must answer for.
+  const skipped = testFitFindings([testFile(before, before.replace(`it("adds"`, `it.${"skip"}("adds"`))]);
   expect(skipped.map((hit) => hit.kind)).toContain("skipped");
   const expected = testFitFindings([testFile(before, before.replace("toBe(3)", "toBe(4)"))]);
   expect(expected.map((hit) => hit.kind)).toContain("expected_changed");

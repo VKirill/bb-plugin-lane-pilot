@@ -88,7 +88,7 @@
   "budget": {
     "max_steps": 30,
     "max_minutes": 60,
-    "max_usd": 15
+    "max_usd": 10
   },
   "entry": "frame",
   "nodes": [

@@ -39,18 +39,18 @@ function worstCaseUsd(): number {
 }
 
 describe("the budget of web-research", () => {
-  it("reads its roles from the graph: the analyst and the tavily specialist, both authors on the table's Claude Opus 5.5", () => {
+  it("reads its roles from the graph: the analyst on Opus 5.5, the tavily employee on Sonnet 5.5", () => {
     expect(node("frame").role).toBe("analyst");
     expect(node("search").child.role).toBe("specialist:tavily");
     expect(resolveRoleModel("analyst", {}).model).toBe("claude-opus-5-5");
-    expect(resolveRoleModel("specialist:tavily", {}).model).toBe("claude-opus-5-5");
+    // Employees run on Sonnet high by the role table (employees batch): the search child is no longer an Opus author.
+    expect(resolveRoleModel("specialist:tavily", {}).model).toBe("claude-sonnet-5-5");
   });
 
-  it("the old $2 could not cover the frame and three search children, which is where the live runs stopped", () => {
+  it("the frame and three search children cost what the role table prices them, and stay under the budget", () => {
     const firstHalf = priceOf("analyst", PROFILE.frame) + 3 * priceOf("specialist:tavily", PROFILE.search);
-    expect(firstHalf).toBeGreaterThan(2);
-    expect(firstHalf).toBeGreaterThan(2.6);
-    expect(firstHalf).toBeLessThan(3.6);
+    expect(firstHalf).toBeGreaterThan(1.2);
+    expect(firstHalf).toBeLessThan(graph.budget.maxCostUsd!);
   });
 
   it("covers the dearest path of the graph at the role models' prices, with headroom", () => {
