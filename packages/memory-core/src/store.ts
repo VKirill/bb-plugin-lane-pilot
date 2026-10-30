@@ -288,7 +288,7 @@ const sqlString = (value: string) => `'${value.replace(/'/g, "''")}'`;
 function visibility(db: MemoryDatabase, alias: string, options: SearchOptions): string {
   const now = Math.floor(options.now ?? Date.now());
   // A note of a held conflict (two notes that disagree, waiting for a person) is read by nobody: `conflict-store.ts`.
-  return `${alias}.status='active' AND (${alias}.valid_until IS NULL OR ${alias}.valid_until>${now}) AND NOT (${idleSql(alias, now)})`
+  return `${alias}.status='active' AND (${alias}.valid_from IS NULL OR ${alias}.valid_from<=${now}) AND (${alias}.valid_until IS NULL OR ${alias}.valid_until>${now}) AND NOT (${idleSql(alias, now)})`
     + (options.includeObserved ? "" : ` AND (${alias}.trust='confirmed' OR ${alias}.created_at<=${now - OBSERVED_QUARANTINE_MS})`) + heldClause(db, alias)
     + (options.allSections ? "" : ` AND ${alias}.scope_json IN (${scopeValuesFor(options.chain ?? []).map(sqlString).join(",")})`);
 }
