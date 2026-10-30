@@ -148,6 +148,22 @@ describe("remove Claude Lane leftovers", () => {
     expect(execFileSync("ls", [join(home, ".agents/hooks")], { encoding: "utf8" })).toContain("sma_hooks.py");
   });
 
+  it("moves the conveyor's OpenCode agents aside and keeps lane-pilot.md", async () => {
+    const home = await homeWithMixedLeftovers();
+    const agents = join(home, ".config/opencode/agents");
+    await mkdir(agents, { recursive: true });
+    for (const name of ["lane-writer.md", "lane-critic.md", "lane-reviewer.md"]) await writeFile(join(agents, name), "task_file\n");
+    await writeFile(join(agents, "lane-pilot.md"), "lp\n");
+    const report = await removeClaudeLaneLeftovers({ home, apply: true });
+    for (const name of ["lane-writer.md", "lane-critic.md", "lane-reviewer.md"]) {
+      expect(report.moved).toContain(join(agents, name));
+      await expect(readFile(join(agents, name))).rejects.toMatchObject({ code: "ENOENT" });
+    }
+    expect(await readFile(join(agents, "lane-pilot.md"), "utf8")).toBe("lp\n");
+    const stamp = (await readdir(join(home, ".lane-pilot/claude-lane-leftovers")))[0]!;
+    expect(await readFile(join(home, ".lane-pilot/claude-lane-leftovers", stamp, ".config__opencode__agents__lane-writer.md"), "utf8")).toBe("task_file\n");
+  });
+
   it("keeps a comment that belongs to the table after codex-lane's", () => {
     const text = ["[hooks.state.\"codex-lane@claude-lane-stack:pre\"]", "trusted_hash = \"abc\"", "", "# note on skills", "[skills]", "max_context_tokens = 10000", ""].join("\n");
     const out = stripCodexLaneConfig(text);

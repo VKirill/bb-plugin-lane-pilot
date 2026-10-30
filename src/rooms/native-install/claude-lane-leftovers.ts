@@ -152,6 +152,13 @@ async function plannedMoves(home: string): Promise<string[]> {
   for (const name of entries) if (isLaneBin(name)) paths.push(join(bin, name));
   const checkout = join(home, ".local/share/claude-lane-stack-installed");
   if (await present(checkout)) paths.push(checkout);
+  // The Claude Lane conveyor's OpenCode agents (TASK_FILE, LANE_REPORT): the plugin is gone since 2026-10-29 and
+  // nothing in Lane Pilot or BB starts them; Lane Pilot's own OpenCode agent is agents/lane-pilot.md. (A1, 2026-10-30)
+  const opencodeAgents = join(home, ".config/opencode/agents");
+  for (const name of ["lane-writer.md", "lane-critic.md", "lane-reviewer.md"]) {
+    const file = join(opencodeAgents, name);
+    if (await present(file)) paths.push(file);
+  }
   for (const path of paths) assertUntouched(home, path);
   return paths;
 }
