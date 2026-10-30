@@ -187,7 +187,12 @@ export function listStabilityMarks(db: BenchDb, setId: string): Map<string, Benc
 
 export type BenchVerdict = { id: string; setId: string; armA: string; armB: string; harnessId: string | null; passed: boolean; report: unknown; createdAt: number };
 export function saveVerdict(db: BenchDb, input: Omit<BenchVerdict, "id" | "createdAt"> & { now?: number }): BenchVerdict {
-  const id = `benchverdict_${randomUUID().replaceAll("-", "").slice(0, 12)}`, now = input.now ?? Date.now();
+  const now = input.now ?? Date.now();
+  // The same comparison asked twice inside an hour is one verdict, not three (10-25 wrote triplets).
+  const same = db.prepare("SELECT * FROM lane_pilot_bench_verdict WHERE set_id=? AND arm_a=? AND arm_b=? AND harness_id IS ? AND passed=? AND created_at>? ORDER BY created_at DESC LIMIT 1")
+    .get(input.setId, input.armA, input.armB, input.harnessId, input.passed ? 1 : 0, now - 3_600_000) as { id: string; created_at: number } | undefined;
+  if (same) return { id: same.id, setId: input.setId, armA: input.armA, armB: input.armB, harnessId: input.harnessId, passed: input.passed, report: input.report, createdAt: same.created_at };
+  const id = `benchverdict_${randomUUID().replaceAll("-", "").slice(0, 12)}`;
   db.prepare("INSERT INTO lane_pilot_bench_verdict(id,set_id,arm_a,arm_b,harness_id,passed,report_json,created_at) VALUES(?,?,?,?,?,?,?,?)")
     .run(id, input.setId, input.armA, input.armB, input.harnessId, input.passed ? 1 : 0, JSON.stringify(input.report), now);
   return { id, setId: input.setId, armA: input.armA, armB: input.armB, harnessId: input.harnessId, passed: input.passed, report: input.report, createdAt: now };

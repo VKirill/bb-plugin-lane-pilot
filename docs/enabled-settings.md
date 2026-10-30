@@ -14,7 +14,7 @@ sources:
   - docs/enabled-settings.snapshot.json
 ---
 
-<!-- enabled-settings:structure bee64bb10308522f -->
+<!-- enabled-settings:structure 5ea63488b7887006 -->
 
 # Enabled settings (generated)
 
@@ -38,9 +38,14 @@ switches: `quick` disables both critiques, `full` enables them (`src/rooms/criti
 | `baseline.time_cap_sec` | `300` | — | baseline: seconds the baseline may spend on a start, 0 turns it off |
 | `bench.budget_hours` | `6` | — | bench: hour cap of a series |
 | `bench.budget_tokens` | `120000000` | — | bench: token cap of a series |
+| `bench.disk_cleanup` | `on` | — | bench disk: clean the bench's leftovers before a disk deferral is declared |
+| `bench.disk_start_gb` | `25` | — | bench disk: free GB a host needs before a series starts |
+| `bench.disk_stop_gb` | `12` | — | bench disk: free-GB floor for a running series |
+| `bench.live_pm` | `defer` | — | bench activation: defer or close when the bench project holds a live PM |
 | `bench.model_rebench` | `on` | — | monthly model routing rebench switch |
 | `bench.nightly_sets` | `all` | — | nightly bench: which sets the night runs (all, or a comma list of versions) |
 | `bench.nightly` | `on` | — | nightly bench switch (weekly.ts:120) |
+| `bench.noise_auto` | `on` | — | bench noise: a noise row is written whenever a series finishes two or more repeats |
 | `bench.sealed_gap_pp` | `5` | — | sealed-set overfit gap, percentage points (weekly.ts:51, wall/acceptance.ts:119) |
 | `bench.weekly` | `on` | — | weekly bench switch (weekly.ts:27) |
 | `bookkeeping.paths` | — | — | project bookkeeping patterns that ownership gates and merges treat as not the writer's work |

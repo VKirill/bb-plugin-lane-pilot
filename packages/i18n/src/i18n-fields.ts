@@ -1023,6 +1023,16 @@ export const fieldEn = {
   reason_s585: "on: a writer question to a human that stands unanswered for the wait goes to the second pilot (a read-only helper with the contract, plan, read_first excerpts and project memory). It answers from them and the same writer goes on; or narrows the task into a new one that needs no human, the original closed as superseded; or leaves the question to the owner: one PM note while the chat is warm, else the morning list. One auto-return per task, each decision a stage_return row. off: the safe default answer alone. Default on.",
   field_s586: "Writer: question wait (min)",
   reason_s586: "Minutes a writer question to a human may stand unanswered before the machine acts on it: the second pilot when auto-return is on, else the safe default; a product decision goes to the owner either way. Default 120.",
+  field_s565: "Bench: start free space (GB)",
+  reason_s565: "Free space a host needs before a bench series starts on it; below this it defers after a cleanup pass. Default 25.",
+  field_s566: "Bench: stop free space (GB)",
+  reason_s566: "Free-space floor for a running bench series: it keeps going until this many GB are left. Default 12.",
+  field_s567: "Bench: disk cleanup before deferral",
+  reason_s567: "Before a disk deferral is declared, remove the bench's own leftovers (old warm-up scratch, the clone's node_modules) and measure again. Default on.",
+  field_s568: "Bench: live PM in its project",
+  reason_s568: "defer retries the series later when the bench project already holds a live Lane Pilot PM (default); close finishes that run and takes the project.",
+  field_s569: "Bench: noise rows on repeats",
+  reason_s569: "Write a noise row whenever a series finished two or more repeats, not only for explicit noise runs. Default on.",
 } as const;
 
 export const fieldRu: { [K in keyof typeof fieldEn]: string } = {
@@ -2049,4 +2059,14 @@ export const fieldRu: { [K in keyof typeof fieldEn]: string } = {
   reason_s585: "on: вопрос писателя человеку, простоявший без ответа дольше ожидания, уходит второму пилоту (помощник только на чтение с контрактом, планом, выдержками read_first и памятью проекта). Он отвечает сам по ним, и тот же писатель продолжает; или сужает задачу до новой, где человек не нужен, а исходная закрывается как superseded; или оставляет вопрос владельцу: одна заметка в чат PM, пока он тёплый, иначе утренний список. Один автовозврат на задачу, каждое решение — строка stage_return. off: только безопасный ответ по умолчанию. По умолчанию on.",
   field_s586: "Писатель: ожидание ответа на вопрос (мин)",
   reason_s586: "Сколько минут вопрос писателя человеку может стоять без ответа, прежде чем машина возьмётся за него: второй пилот при включённом автовозврате, иначе безопасный ответ по умолчанию; продуктовое решение в любом случае уходит владельцу. По умолчанию 120.",
+  field_s565: "Бенч: стартовое место (ГБ)",
+  reason_s565: "Свободное место на хосте для старта серии бенча; ниже — отложить после очистки. По умолчанию 25.",
+  field_s566: "Бенч: стоповое место (ГБ)",
+  reason_s566: "Нижний порог места для идущей серии бенча: работает, пока не останется столько ГБ. По умолчанию 12.",
+  field_s567: "Бенч: очистка диска перед откладыванием",
+  reason_s567: "Перед откладыванием по диску убрать собственные остатки бенча (старые warm-каталоги, node_modules клона) и измерить снова. По умолчанию вкл.",
+  field_s568: "Бенч: живой PM в его проекте",
+  reason_s568: "defer повторяет серию позже, когда в проекте бенча уже есть живой PM Lane Pilot (по умолчанию); close завершает тот ран и занимает проект.",
+  field_s569: "Бенч: строки шума по повторам",
+  reason_s569: "Писать строку шума при двух и более завершённых повторах серии, не только для явных noise-прогонов. По умолчанию вкл.",
 };

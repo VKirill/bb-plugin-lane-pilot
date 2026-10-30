@@ -67,7 +67,7 @@ export function benchWorld() {
         .run(n === no ? input.attemptId : `${input.attemptId}_f${n}`, runId, input.taskId, null, n === no ? "accepted" : "validation_failed", n, 1000 + n, 2000 + n);
     }
   };
-  return { db, accepted };
+  return { bb, db, accepted };
 }
 
 export const tmp = (prefix: string): string => { const dir = mkdtempSync(join(tmpdir(), prefix)); mkdirSync(dir, { recursive: true }); return dir; };

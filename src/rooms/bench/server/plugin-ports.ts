@@ -7,6 +7,7 @@ import { createRun, createTask, getActivation, getRun, getTask, listOpenAttempts
 import { isSandboxProjectName } from "../../stability/server";
 import { attemptMetrics, syncTokenUsage } from "../../usage/server";
 import { DEFAULT_BENCH_WRITER } from "../runner";
+import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
 import { setBenchProject } from "../store";
 import type { BenchProjectRef, HostPort, PipelinePort } from "../ports";
 import { createBench, type BenchApi } from "../service";
@@ -16,20 +17,14 @@ import { ensureSealedSets } from "../critique-set";
 import { jev } from "@lane-pilot/jev";
 
 /** The bench inside the plugin: the machines through `runCommand`, the pipeline through the plugin's own services. */
-export function createPluginBench(ctx: ServerCore, services: Services): BenchApi {
-  const { bb, db, host } = ctx;
+const listProjects = async (bb: ServerCore["bb"]): Promise<Array<{ id: string; name: string }>> => {
+  const rows = await bb.sdk.projects.list({ includePersonal: true } as never).catch(() => []) as Array<{ id?: unknown; name?: unknown }>;
+  return rows.flatMap((row) => typeof row.id === "string" && typeof row.name === "string" ? [{ id: row.id, name: row.name }] : []);
+};
 
-  const hostPort: HostPort = {
-    run: async (hostId, cwd, command, timeoutSec = 120) => {
-      const result = await runOnHost(host, { hostId, cwd, command, timeoutSec });
-      return { exitCode: result.exitCode, stdout: result.stdout, stderr: result.stderr };
-    },
-  };
-
-  const listProjects = async (): Promise<Array<{ id: string; name: string }>> => {
-    const rows = await bb.sdk.projects.list({ includePersonal: true } as never).catch(() => []) as Array<{ id?: unknown; name?: unknown }>;
-    return rows.flatMap((row) => typeof row.id === "string" && typeof row.name === "string" ? [{ id: row.id, name: row.name }] : []);
-  };
+/** The pipeline the bench drives: projects through the SDK, run lifecycle through the plugin's own services. */
+export function benchPipeline(ctx: Pick<ServerCore, "bb" | "db" | "host" | "cancelQueuedAttempt">, services: Services): PipelinePort {
+  const { bb, db } = ctx;
 
   const keysKey = (projectId: string) => `bench:keys:${projectId}`;
 
@@ -41,7 +36,7 @@ export function createPluginBench(ctx: ServerCore, services: Services): BenchApi
 
   const pipeline: PipelinePort = {
     async findProject(name) {
-      const found = (await listProjects()).find((row) => row.name === name);
+      const found = (await listProjects(bb)).find((row) => row.name === name);
       if (!found) return null;
       const project = await bb.sdk.projects.get({ projectId: found.id }).catch(() => null) as { sources?: Array<{ hostId?: string; path?: string }> } | null;
       const source = project?.sources?.[0];
@@ -49,11 +44,17 @@ export function createPluginBench(ctx: ServerCore, services: Services): BenchApi
     },
 
     async configure(project, input) {
-      if (!loadPrototypeConfig(db, project.projectId)) {
-        // The PM of a bench series only has to start; the writer is the arm's setting.
-        savePrototypeConfig(db, { projectId: project.projectId, hostId: project.hostId, pmWorkspacePath: project.path, writerWorkspacePath: project.path,
-          pmProviderId: DEFAULT_BENCH_WRITER.providerId, pmModel: DEFAULT_BENCH_WRITER.model, writerProviderId: DEFAULT_BENCH_WRITER.providerId, writerModel: DEFAULT_BENCH_WRITER.model });
-      }
+      // The PM pair is rewritten on every arm: a stored config from before the compiled main agent's
+      // claude-code-only rule kept spawning the PM on codex and the night died on
+      // vk_compiled_main_agent_unsupported_provider (2026-10-29/30). The PM of a bench series only has to start;
+      // the arm's writer pair is the safe one.
+      const writerProviderId = typeof input.settings["writer.provider"] === "string" && input.settings["writer.provider"] ? input.settings["writer.provider"] : DEFAULT_BENCH_WRITER.providerId;
+      const writerModel = typeof input.settings["writer.model"] === "string" && input.settings["writer.model"] ? input.settings["writer.model"] : DEFAULT_BENCH_WRITER.model;
+      const stored = loadPrototypeConfig(db, project.projectId);
+      savePrototypeConfig(db, {
+        projectId: project.projectId, hostId: stored?.hostId ?? project.hostId,
+        pmWorkspacePath: stored?.pmWorkspacePath ?? project.path, writerWorkspacePath: stored?.writerWorkspacePath ?? project.path,
+        pmProviderId: writerProviderId, pmModel: writerModel, writerProviderId: stored?.writerProviderId ?? writerProviderId, writerModel: stored?.writerModel ?? writerModel });
       // A key an earlier arm set and this one does not is dropped: an arm is what it names, not what the last arm left behind.
       const before = await bb.storage.kv.get(keysKey(project.projectId)).catch(() => null) as string[] | null;
       for (const key of before ?? []) if (!(key in input.settings)) db.prepare("DELETE FROM lane_pilot_project_settings WHERE project_id=? AND binding_id='' AND key=?").run(project.projectId, key);
@@ -78,9 +79,18 @@ export function createPluginBench(ctx: ServerCore, services: Services): BenchApi
       // A run an earlier series could not close holds the project's activation and would refuse this one.
       const left = getActivation(db, project.projectId);
       const leftRun = left ? getRun(db, left.run_id) : undefined;
-      if (left && (leftRun?.state === "pending" || leftRun?.state === "running")) await closeRun(project.projectId, left.run_id);
+      if (left && (leftRun?.state === "pending" || leftRun?.state === "running")) {
+        const meta = await bb.sdk.threads.getPluginMetadata({ threadId: left.pm_thread_id }).catch(() => null) as Record<string, unknown> | null;
+        const ours = stringAt(meta, "role") === "bench-pm" || left.pm_thread_id.startsWith("pending:");
+        // A live non-bench PM keeps the project: the series defers instead of crashing on the activation
+        // lock (hive W28-3). bench.live_pm=close restores the old takeover.
+        const livePolicy = String(loadProjectSettings(db, GLOBAL_SETTINGS_PROJECT_ID)["bench.live_pm"] ?? "defer");
+        if (!ours && livePolicy !== "close") throw new Error(`deferred: the bench project holds a live Lane Pilot PM (thread ${left.pm_thread_id}, run ${left.run_id})`);
+        await closeRun(project.projectId, left.run_id);
+      }
       const activated = await services.activate(project.projectId, sourceId, "bb");
       // The PM prompt tells the PM to delegate a fixture task of its own; a bench run takes its tasks only from the bench, so the PM is stopped at once.
+      await bb.sdk.threads.updatePluginMetadata({ threadId: activated.threadId, set: { role: "bench-pm" } } as never).catch(() => undefined);
       await bb.sdk.threads.stop({ threadId: activated.threadId }).catch(() => undefined);
       return { pmThreadId: activated.threadId, runId: activated.runId };
     },
@@ -117,10 +127,20 @@ export function createPluginBench(ctx: ServerCore, services: Services): BenchApi
       await closeRun(project.projectId, runId);
     },
   };
+  return pipeline;
+}
 
+export function createPluginBench(ctx: ServerCore, services: Services): BenchApi {
+  const { bb, db, host } = ctx;
+  const hostPort: HostPort = {
+    run: async (hostId, cwd, command, timeoutSec = 120) => {
+      const result = await runOnHost(host, { hostId, cwd, command, timeoutSec });
+      return { exitCode: result.exitCode, stdout: result.stdout, stderr: result.stderr };
+    },
+  };
   return createBench({
-    db: db as never, kv: bb.storage.kv as never, host: hostPort, pipeline,
-    projectNames: async () => new Map((await listProjects()).map((row) => [row.id, row.name])),
+    db: db as never, kv: bb.storage.kv as never, host: hostPort, pipeline: benchPipeline(ctx, services),
+    projectNames: async () => new Map((await listProjects(bb)).map((row) => [row.id, row.name])),
     isSandboxName: isSandboxProjectName, log: ctx.log,
     jevals: async (input) => {
       const settings = input.task.projectId ? await ctx.effectiveProjectSettings(input.task.projectId).then((r) => r.values as Record<string, unknown>).catch(() => ({})) : {};

@@ -19,7 +19,7 @@ Each room is one component: `index.ts` is its public API, `server/` its services
 | atlas | AtlasInput, AtlasRoom, atlasHash, atlasStructure, renderAtlas | 2 | 66 | tests (1) |
 | backlog | BacklogBoard, MAX_ESTIMATE, TodoMeta, backlogBoard, backlogMigrations, backlogReadCommand, issueMessage, parseBacklogOutput, parseTodoMeta | 5 | 164 | tests (1) |
 | baseline | BaselineRecord, EXISTENCE_ONLY_WORDS, NO_RED_KINDS, RegressionRecord, baselineMigrations, getBaseline, isExistenceOnly, listBaselines, listRegressions | 9 | 1336 | tests (4) |
-| bench | BenchProjectControl, benchMigrations, getBenchProject, saveVerdict, verdictForHarness | 28 | 3190 | tests (2) |
+| bench | BenchProjectControl, benchMigrations, getBenchProject, saveVerdict, verdictForHarness | 28 | 3257 | tests (2) |
 | capability | CAPABILITIES, Capability, CapabilityReceipt, CapabilityState, adapterVersions, capabilityMigrations, capabilityTable, dueProbes, listReceipts, probeSetupFailed, providersInUse | 8 | 241 | drill: helper_providers |
 | checkers | CandidateDiffHiddenAudit, DIFF_INSPECTING_CHECKERS, DiffHiddenAuditReport, DiffHiddenCheckResult, DiffHiddenRow, DiffHiddenSummary, checkerMigrations | 17 | 1974 | drill: checkers |
 | cockpit | cockpitRpc | 9 | 901 | tests (1) |
@@ -72,7 +72,7 @@ Each room is one component: `index.ts` is its public API, `server/` its services
 | self-improve | — | 1 | 65 | tests (2) |
 | self-repair | — | 8 | 2664 | tests (4) |
 | session-hooks | buildCapsule, capsuleRestored | 3 | 489 | tests (1) |
-| settings | SettingValidationError, readImportConfig, validateSettingValue, validateSettingsObject, validationErrorText | 20 | 3033 | drill: provider_limit |
+| settings | SettingValidationError, readImportConfig, validateSettingValue, validateSettingsObject, validationErrorText | 20 | 3041 | drill: provider_limit |
 | sma-map | LiveRow, LiveSource, ProofRoots, SMA_CARDS, SMA_CONTRACT_TESTS, SMA_ENTRIES, SMA_LINKS, SMA_LIVE, SMA_MAP_SHA, SMA_MAP_USAGE, SMA_NODES, SMA_REGIONS, SmaCard, SmaCounts, SmaEntry, SmaEvidence, SmaKind, SmaLinkKind, SmaNode, SmaRow, SmaStateCounts, SmaStatus, brokenProof, defaultProofRoots, isChecked, isDone, readSmaLive, renderSmaLive, renderSmaMap, runSmaLiveCli, runSmaMapCli, smaCheckedPercent, smaCounts, smaDonePercent, smaEvidence, smaGroups, smaHoles, smaRows, smaStateCounts, unjudgedProof | 7 | 9279 | tests (1) |
 | stability | ReconcileCursor, ReconcileResult, parseOpenCodeToolTelemetry, reconcile, reconcileCritic, reconcileCursor | 13 | 1486 | drill: reload |
 | stage-return | StageReturnRecord, finishReturn, getReturn, insertReturn, listReturns, renderReturnNotes, stageReturnMigrations | 10 | 490 | tests (4) |
@@ -183,9 +183,9 @@ States: (new), queued, spawn_requested, running, spawn_rejected, spawn_unknown, 
 | file | lines |
 |---|---:|
 | src/rooms/sma-map/graph.ts | 6267 |
-| packages/i18n/src/i18n.ts | 2516 |
+| packages/i18n/src/i18n.ts | 2530 |
 | src/rooms/native-install/native-hook-sources.ts | 2421 |
-| packages/i18n/src/i18n-fields.ts | 2053 |
+| packages/i18n/src/i18n-fields.ts | 2073 |
 | src/rooms/storage/database.ts | 1882 |
 | src/rooms/sma-map/entries.ts | 1810 |
 | packages/workflow-engine/src/engine.ts | 1586 |
