@@ -14,13 +14,13 @@ describe("3d-asset", () => {
   it("happy path: concept -> model in Blender -> verify geometry -> export -> done", async () => {
     const r = await runSim("3d-asset", { input, stubs: base() });
     expect(r.summary.status).toBe("succeeded");
-    expect(pathOf(r)).toBe("concept model verify export done");
+    expect(pathOf(r)).toBe("concept model verify export goal_check done");
     expect(out(r)).toMatchObject({ status: "done", asset_path: ".agents/3d/chest/export/chest.glb", poly_count: 2400 });
   });
 
   it("skips concept generation when concept_image is provided in inputs", async () => {
     const r = await runSim("3d-asset", { input: { ...input, concept_image: "fixtures/concept.png" }, stubs: base() });
-    expect(pathOf(r)).toBe("concept model verify export done");
+    expect(pathOf(r)).toBe("concept model verify export goal_check done");
     expect(r.skipped).toEqual(["concept"]);
     expect(out(r)).toMatchObject({ status: "done" });
   });
@@ -36,7 +36,7 @@ describe("3d-asset", () => {
         ],
       },
     });
-    expect(pathOf(r)).toBe("concept model verify model verify export done");
+    expect(pathOf(r)).toBe("concept model verify model verify export goal_check done");
     expect(out(r)).toMatchObject({ status: "done" });
   });
 
@@ -58,7 +58,7 @@ describe("roblox-asset", () => {
   it("happy path: assemble -> verify scale and collisions -> deploy to project -> done", async () => {
     const r = await runSim("roblox-asset", { input, stubs: base() });
     expect(r.summary.status).toBe("succeeded");
-    expect(pathOf(r)).toBe("assemble verify_asset deploy_asset done");
+    expect(pathOf(r)).toBe("assemble verify_asset deploy_asset goal_check done");
     expect(out(r)).toMatchObject({ status: "done", deployed_path: "src/accessories/KnightHelmet.rbxm", scale_studs: "1.2x1.4x1.1" });
   });
 
@@ -73,7 +73,7 @@ describe("roblox-asset", () => {
         ],
       },
     });
-    expect(pathOf(r)).toBe("assemble verify_asset assemble verify_asset deploy_asset done");
+    expect(pathOf(r)).toBe("assemble verify_asset assemble verify_asset deploy_asset goal_check done");
     expect(out(r)).toMatchObject({ status: "done" });
   });
 
@@ -95,7 +95,7 @@ describe("social-post", () => {
   it("happy path: insights -> write in author voice -> Telegram formatting -> owner preview -> done", async () => {
     const r = await runSim("social-post", { input, stubs: base(), humans: { preview: { answer_kind: "approve", answer: "looks great" } } });
     expect(r.summary.status).toBe("succeeded");
-    expect(pathOf(r)).toBe("insights write_post format_telegram preview done");
+    expect(pathOf(r)).toBe("insights write_post format_telegram preview goal_check done");
     expect(out(r)).toMatchObject({ status: "done", owner_decision: "approve" });
     expect(out(r)!.post_text).toContain("Удаленка и границы");
   });
@@ -111,7 +111,7 @@ describe("social-post", () => {
         ],
       },
     });
-    expect(pathOf(r)).toBe("insights write_post format_telegram preview write_post format_telegram preview done");
+    expect(pathOf(r)).toBe("insights write_post format_telegram preview write_post format_telegram preview goal_check done");
     expect(out(r)).toMatchObject({ status: "done", owner_decision: "approve" });
   });
 
@@ -133,7 +133,7 @@ describe("research-dossier", () => {
   it("happy path: search -> verify sources -> synthesize verified dossier -> done", async () => {
     const r = await runSim("research-dossier", { input, stubs: base() });
     expect(r.summary.status).toBe("succeeded");
-    expect(pathOf(r)).toBe("search verify_sources synthesize done");
+    expect(pathOf(r)).toBe("search verify_sources synthesize goal_check done");
     expect(out(r)).toMatchObject({ status: "done", verified_count: 2, dossier_path: ".agents/research/dossier.md" });
   });
 
@@ -148,7 +148,7 @@ describe("research-dossier", () => {
         ],
       },
     });
-    expect(pathOf(r)).toBe("search verify_sources search verify_sources synthesize done");
+    expect(pathOf(r)).toBe("search verify_sources search verify_sources synthesize goal_check done");
     expect(out(r)).toMatchObject({ status: "done" });
   });
 
@@ -183,7 +183,7 @@ describe("billing-batch", () => {
   it("happy path: prepare -> invoices -> summarize -> owner preview approve -> done", async () => {
     const r = await runSim("billing-batch", { input, stubs: base(), humans: { preview: { answer_kind: "approve", answer: "согласовано" } } });
     expect(r.summary.status).toBe("succeeded");
-    expect(pathOf(r)).toBe("prepare invoices summarize preview done");
+    expect(pathOf(r)).toBe("prepare invoices summarize preview goal_check done");
     expect(out(r)).toMatchObject({ status: "done", total_amount: 80000, invoices_count: 2, owner_decision: "approve" });
   });
 
@@ -211,7 +211,7 @@ describe("macos-routine", () => {
   it("happy path: plan -> execute with screenshot evidence -> report -> done", async () => {
     const r = await runSim("macos-routine", { input, stubs: base() });
     expect(r.summary.status).toBe("succeeded");
-    expect(pathOf(r)).toBe("plan execute report done");
+    expect(pathOf(r)).toBe("plan execute report goal_check done");
     expect(out(r)).toMatchObject({ status: "done", screenshot_path: ".agents/macos/evidence.png" });
   });
 
@@ -234,7 +234,7 @@ describe("seo-page", () => {
   it("happy path: cocoon -> write content -> ru-check proofread -> export to site -> done", async () => {
     const r = await runSim("seo-page", { input, stubs: base() });
     expect(r.summary.status).toBe("succeeded");
-    expect(pathOf(r)).toBe("cocoon write_content proofread export_to_site done");
+    expect(pathOf(r)).toBe("cocoon write_content proofread export_to_site goal_check done");
     expect(out(r)).toMatchObject({ status: "done", site_page_path: "content/services/ustanovka-kondicionerov.md", ru_score: 9 });
   });
 
@@ -249,7 +249,7 @@ describe("seo-page", () => {
         ],
       },
     });
-    expect(pathOf(r)).toBe("cocoon write_content proofread write_content proofread export_to_site done");
+    expect(pathOf(r)).toBe("cocoon write_content proofread write_content proofread export_to_site goal_check done");
     expect(out(r)).toMatchObject({ status: "done" });
   });
 

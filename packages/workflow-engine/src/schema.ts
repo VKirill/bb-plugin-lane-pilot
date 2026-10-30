@@ -314,6 +314,10 @@ export const workflowSchema = z.object({
    * `not_verified`, which is not a verified success. `exempt` or absent: a service graph, which closes without an auditor call when it has no goals.
    */
   goal_audit: z.enum(["required", "exempt"]).optional(),
+  // chains-end: the graph's own word for how its goal is verified — "artifact" (the deliverable is the goal),
+  // "gate" (an internal verdict node decides, e.g. lp.critic-edit), "audit" (the engine's goal audit). Declared,
+  // the lint's no_goal_check does not fire; undeclared and un-checked, it does.
+  goal_check: z.enum(["artifact", "gate", "audit", "validate"]).optional(),
   triggers: z.array(trigger).max(10).default([]),
   scope: z.object({
     level: z.enum(["builtin", "global", "project", "section"]).default("global"),

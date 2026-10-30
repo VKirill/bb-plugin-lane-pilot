@@ -6,14 +6,14 @@ import { runSim } from "./chain-harness";
 describe("SMA command workflows", () => {
   it("validate-phase: no gaps is done, a gap is reported", async () => {
     const clean = await runSim("validate-phase", { input: { phase_id: "ph_a1b2c3" }, stubs: { audit: { gaps: [], validation_path: "v.md", sampled: 3 } } });
-    expect(pathOf(clean)).toBe("audit done");
+    expect(pathOf(clean)).toBe("audit goal_check done");
     const gap = await runSim("validate-phase", { input: { phase_id: "ph_a1b2c3" }, stubs: { audit: { gaps: ["p1: existence only"], validation_path: "v.md", sampled: 1 } } });
     expect(pathOf(gap)).toBe("audit gaps");
     expect(out(gap)).toMatchObject({ status: "gaps", gaps: ["p1: existence only"] });
   });
 
   it("eval-review: sound or flawed", async () => {
-    expect(pathOf(await runSim("eval-review", { input: { phase_id: "ph_a" }, stubs: { review: { findings: [], review_path: "e.md", flawed: false } } }))).toBe("review sound");
+    expect(pathOf(await runSim("eval-review", { input: { phase_id: "ph_a" }, stubs: { review: { findings: [], review_path: "e.md", flawed: false } } }))).toBe("review goal_check sound");
     expect(out(await runSim("eval-review", { input: { phase_id: "ph_a" }, stubs: { review: { findings: [], review_path: "e.md", flawed: true } } }))).toMatchObject({ status: "flawed" });
   });
 
@@ -24,13 +24,13 @@ describe("SMA command workflows", () => {
   });
 
   it("spike: answered or inconclusive", async () => {
-    expect(pathOf(await runSim("spike", { input: { question: "can fts hold 1M rows" }, stubs: { experiment: { answered: true, decision: "yes", spike_path: "s.md", skill_draft: "" } } }))).toBe("experiment answered");
+    expect(pathOf(await runSim("spike", { input: { question: "can fts hold 1M rows" }, stubs: { experiment: { answered: true, decision: "yes", spike_path: "s.md", skill_draft: "" } } }))).toBe("experiment goal_check answered");
     expect(pathOf(await runSim("spike", { input: { question: "can fts hold 1M rows" }, stubs: { experiment: { answered: false, decision: "", spike_path: "s.md", skill_draft: "" } } }))).toBe("experiment inconclusive");
   });
 
   it("ship: a ready phase is shipped, a held one says what holds it", async () => {
     const shipped = await runSim("ship", { input: { phase_id: "ph_a" }, stubs: { preflight: { ready: true, held_by: [] }, open_pr: { pr_url: "https://x/pr/1" } } });
-    expect(pathOf(shipped)).toBe("preflight open_pr shipped");
+    expect(pathOf(shipped)).toBe("preflight open_pr goal_check shipped");
     const held = await runSim("ship", { input: { phase_id: "ph_a" }, stubs: { preflight: { ready: false, held_by: ["no full gate marker"] } } });
     expect(pathOf(held)).toBe("preflight held");
     expect(out(held)).toMatchObject({ status: "held", held_by: ["no full gate marker"] });
@@ -43,7 +43,7 @@ describe("SMA command workflows", () => {
 
   it("cleanup: a dry run plans, an applied one is done", async () => {
     expect(pathOf(await runSim("cleanup", { input: { dry_run: true }, stubs: { plan: { moved: ["ph_a"], applied: false } } }))).toBe("plan planned");
-    expect(pathOf(await runSim("cleanup", { input: { dry_run: false }, stubs: { plan: { moved: ["ph_a"], applied: true } } }))).toBe("plan done");
+    expect(pathOf(await runSim("cleanup", { input: { dry_run: false }, stubs: { plan: { moved: ["ph_a"], applied: true } } }))).toBe("plan goal_check done");
   });
 
   it("new-milestone: the frame and its phases", async () => {

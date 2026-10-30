@@ -125,5 +125,6 @@
       "to": "done",
       "pass": "artifact"
     }
-  ]
+  ],
+  "goal_check": "artifact"
 }

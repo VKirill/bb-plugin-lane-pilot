@@ -97,6 +97,22 @@
         "findings": "review.findings",
         "review_path": "review.review_path"
       }
+    },
+    {
+      "id": "goal_check",
+      "type": "action",
+      "action": "deliverable.validate",
+      "title": {
+        "en": "Check the goal was met",
+        "ru": "Проверить, что цель достигнута"
+      },
+      "rule": "validateDeliverable on the artifact the run produced: the deliverable/validator/brief inputs name what to check; a fail means the goal is not met",
+      "out": {
+        "ok": "bool",
+        "verdict": "pass|rework|fail",
+        "reason": "string",
+        "details": "object"
+      }
     }
   ],
   "edges": [
@@ -108,8 +124,17 @@
     },
     {
       "from": "review",
-      "to": "sound",
+      "to": "goal_check",
       "pass": "artifact"
+    },
+    {
+      "from": "goal_check",
+      "to": "sound",
+      "when": "goal_check.ok != false"
+    },
+    {
+      "from": "goal_check",
+      "to": "flawed"
     }
   ],
   "test": {
@@ -127,11 +152,13 @@
       },
       "expect_path": [
         "review",
+        "goal_check",
         "sound"
       ],
       "expect_outputs": [
         "status == 'sound'"
       ]
     }
-  }
+  },
+  "goal_check": "validate"
 }

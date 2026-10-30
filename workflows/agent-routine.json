@@ -232,5 +232,6 @@
       }
     },
     "live": "create a schedule of kind agent for a bundled specialist, run it now, and read the run's report and the line on the owner's list"
-  }
+  },
+  "goal_check": "artifact"
 }

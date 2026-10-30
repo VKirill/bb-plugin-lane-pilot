@@ -447,7 +447,10 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
       const reply = await services.dispatchWriter({ threadId: rt.pmThreadId, projectId: rt.projectId, task: valid.task, plan: valid.task.objective, birth: "workflow", criticCodeDefault: shortPathCriticDefault(c.workflow.id, picked.mode) });
       if (reply.state === "rejected" || reply.ok === false) return { output: failedTask("blocked", String(reply.reason ?? reply.hint ?? "the dispatch was rejected")) };
       const taskId = str(reply.taskId) || valid.task.id;
-      return { wait: { kind: "attempt", detail: { runId: str(reply.runId) || rt.runId, taskId, files: valid.task.owns_paths } }, ...(planned ? { usage: planned } : {}) };
+      // chains-end: an attempt whose row is lost (task deleted, base wiped) would wait forever; the wait gets a
+      // deadline — the node's own timeout or 48 h — and the engine turns it into an explicit await_timeout.
+      const deadline = Date.now() + ((node.timeoutSec ?? 48 * 3_600)) * 1000;
+      return { wait: { kind: "attempt", detail: { runId: str(reply.runId) || rt.runId, taskId, files: valid.task.owns_paths }, deadline }, ...(planned ? { usage: planned } : {}) };
     },
     poll: async (step): Promise<PollResult> => {
       const detail = step.await.detail as { runId: string; taskId: string } | undefined;
@@ -593,6 +596,26 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
     const runId = str(c.resolve("$inputs.run_id")) || rt.runId;
     // The PM's run is closed by the PM chat's own lifecycle (closeAbandonedRuns); this marks the workflow's end and leaves the run to it.
     return { archived: Boolean(getRun(db, runId)) };
+  });
+
+  // chains-end: the goal check of a deliverable graph — validateDeliverable (validators room) on the artifact the
+  // run produced, not "file exists": DOM → Jev → vision review for pages, kind validators for the rest.
+  // Node fields: validator (text|design|page|3d|video|invoice|composite|artifact), path (artifact path or url), brief.
+  action("deliverable.validate", async (c, rt) => {
+    const node = c.node as { validator?: string; path?: string; brief?: unknown; host?: string };
+    const { validateDeliverable } = await import("../../validators");
+    const inputs = (c.input.with ?? {}) as Record<string, unknown>;
+    const path = String(node.path ?? inputs.path ?? c.resolve("$inputs.deliverable") ?? c.resolve("$inputs.path") ?? "");
+    const validator = String(node.validator ?? inputs.validator ?? c.resolve("$inputs.validator") ?? "artifact");
+    const hostId = String(node.host ?? inputs.hostId ?? c.resolve("$inputs.hostId") ?? "");
+    const brief = (node.brief ?? inputs.brief ?? c.resolve("$inputs.brief")) as Record<string, unknown> | undefined;
+    const settings = await rt.ctx.effectiveProjectSettings?.(rt.projectId).then((r) => r.values as Record<string, unknown>).catch(() => ({})) ?? {};
+    const verdict = await validateDeliverable(validator, path, {
+      host: { run: (id, cwd, command, timeoutSec) => runOnHost(rt.ctx.host, { hostId: id, cwd, command, timeoutSec }) as never },
+      ...(hostId ? { hostId } : {}), ...(brief ? { brief } : {}),
+      jevCtx: { projectId: rt.projectId, runId: rt.runId ?? null, settings },
+    });
+    return { ok: verdict.ok, verdict: verdict.ok ? "pass" : "rework", reason: verdict.reason, details: verdict.details ?? {} };
   });
 
   action("lp.lint_contract", async (c, lane) => {

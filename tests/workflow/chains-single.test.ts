@@ -99,7 +99,7 @@ describe("security-audit", () => {
   it("the tier decides the phases: standard 4, deep 6; no findings means no offer", async () => {
     const standard = await runSim("security-audit", { input: { tier: "standard" }, stubs: { recon: { found_entry_points: true } } });
     expect(standard.called("scan:child")).toHaveLength(4);
-    expect(pathOf(standard)).toBe("recon scan report done");
+    expect(pathOf(standard)).toBe("recon scan report goal_check done");
     const deep = await runSim("security-audit", { input: { tier: "deep" }, stubs: { recon: { found_entry_points: true } } });
     expect(deep.called("scan:child")).toHaveLength(6);
   });
@@ -140,7 +140,7 @@ describe("ui-audit", () => {
   const audit = { score_40: 30, score_20: 14, findings: [finding("medium", { file: "src/pricing.tsx", line: 55, evidence: "focus ring missing" })], report_path: "reports/ui.md" };
   it("the spec's case: the browser captures the states, the designer scores them", async () => {
     const r = await runSim("ui-audit", { input: { url: "http://localhost:4173/pricing" }, stubs: { capture: { status: "pass", screenshots: ["s375.png", "s1280.png"] }, audit } });
-    expect(pathOf(r)).toBe("capture audit done");
+    expect(pathOf(r)).toBe("capture audit goal_check done");
     expect(out(r)).toMatchObject({ status: "done", score_40: 30, score_20: 14, screenshots: ["s375.png", "s1280.png"], report_path: "reports/ui.md" });
   });
 

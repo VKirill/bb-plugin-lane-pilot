@@ -234,6 +234,22 @@
       "map": {
         "status": "blocked"
       }
+    },
+    {
+      "id": "goal_check",
+      "type": "action",
+      "action": "deliverable.validate",
+      "title": {
+        "en": "Check the goal was met",
+        "ru": "Проверить, что цель достигнута"
+      },
+      "rule": "validateDeliverable on the artifact the run produced: the deliverable/validator/brief inputs name what to check; a fail means the goal is not met",
+      "out": {
+        "ok": "bool",
+        "verdict": "pass|rework|fail",
+        "reason": "string",
+        "details": "object"
+      }
     }
   ],
   "edges": [
@@ -268,7 +284,7 @@
     },
     {
       "from": "deploy_asset",
-      "to": "done",
+      "to": "goal_check",
       "pass": "artifact",
       "when": "deploy_asset.ok"
     },
@@ -276,6 +292,15 @@
       "from": "deploy_asset",
       "to": "blocked",
       "pass": "artifact"
+    },
+    {
+      "from": "goal_check",
+      "to": "done",
+      "when": "goal_check.ok != false"
+    },
+    {
+      "from": "goal_check",
+      "to": "partial"
     }
   ],
   "test": {
@@ -313,6 +338,7 @@
         "assemble",
         "verify_asset",
         "deploy_asset",
+        "goal_check",
         "done"
       ],
       "expect_outputs": [
@@ -323,5 +349,6 @@
     },
     "live": "Сборка аксессуара KnightHelmet, проверка размеров и коллизий в масштабе аватара, интеграция в проект Rojo",
     "note": "Tested on stubs: outside actions (Roblox Studio, Rojo CLI) answer from stubs. Live run requires Roblox development environment."
-  }
+  },
+  "goal_check": "validate"
 }
