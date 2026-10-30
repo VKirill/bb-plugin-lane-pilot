@@ -6,4 +6,5 @@ export { RunStages } from "./run-parts";
 export { ServiceSegment } from "./runs-service";
 export { readRunsWindow } from "./runs-window";
 export { TaskBoard } from "./task-board";
+export { LaneContextDetails, LaneContextSummary, useLaneContextVisible } from "./context-segment";
 export { ThreadLive } from "./thread-live";
