@@ -3,7 +3,7 @@ import { memoryContentIssue, memoryRecordId } from "./candidates";
 import type Database from "better-sqlite3";
 import { OBSERVED_QUARANTINE_MS, expireMemory, hideRecord, idleSql, sameSubject } from "./lifecycle";
 import { memoryStem, memoryTokens } from "./terms";
-import { heldClause } from "./conflict-store";
+import { conflictTableReady, heldClause, holdConflict } from "./conflict-store";
 import type { MemoryAudience, MemoryCandidate, MemoryKind, MemoryRecord, MemorySearchEngine, MemoryStatus, MemoryTrust } from "./settings";
 
 /** The better-sqlite3 surface this package needs; BB's `bb.storage.database()` satisfies it. */
@@ -105,7 +105,9 @@ export type StoreMemoryResult = { records: MemoryRecord[]; insertedIds: string[]
   /** Records whose date passed or that nobody was given for 90 days; hidden before this write. */
   expiredIds: string[];
   /** Observed records a second independent source confirmed. */
-  corroboratedIds: string[] };
+  corroboratedIds: string[];
+  /** Recently used notes whose replacement is held as a conflict for a person (arXiv #15). */
+  heldIds: string[] };
 
 const HEDGED = /(?:^|[^\p{L}\p{N}])(?:maybe|perhaps|might|seems|appears|possibly|кажется|возможно|похоже)(?=$|[^\p{L}\p{N}])/iu;
 
@@ -147,22 +149,36 @@ export function storeMemoryRecords(db: MemoryDatabase, input: StoreMemoryInput):
     const adds = [...pending, ...revive];
     const gone = new Set<string>();
     const supersededIds: string[] = [];
+    // A note a brief used in the last month is still load-bearing: its replacement is registered as a conflict for a
+    // person to settle instead of being hidden silently (arXiv #15 stability check). The register also hides the new
+    // wording until settled, so no version of a disputed fact is served meanwhile.
+    const heldIds: string[] = [];
+    const STABLE_MS = 30 * 86_400_000;
+    const stillUsed = (row: Row) => (row.accepted_count > 0 || row.use_count > 0) && (row.last_used_at ?? row.created_at) >= now - STABLE_MS;
+    const hold = (oldId: string, by: string) => {
+      if (!conflictTableReady(db)) return false;
+      return Boolean(holdConflict(db, { projectId: input.projectId, personalBot, now,
+        conflict: { a: oldId, b: by, kind: "value", subject: "same-subject replacement of a recently used note", evidenceA: "", evidenceB: "" } }));
+    };
     const unindex = (projectId: string, id: string) => dropMemoryIndexes(db, projectId, id);
-    const replace = (oldId: string, by: string) => { if (hideRecord(db, input.projectId, oldId, "superseded", by, unindex)) { gone.add(oldId); supersededIds.push(oldId); } };
+    const replace = (oldId: string, by: string, row?: Row) => {
+      if (row && stillUsed(row) && hold(oldId, by)) { gone.add(oldId); heldIds.push(oldId); return; }
+      if (hideRecord(db, input.projectId, oldId, "superseded", by, unindex)) { gone.add(oldId); supersededIds.push(oldId); }
+    };
     for (const { entry, id } of adds) {
       // An edited file record: what the file said before is replaced by what it says now.
       const sameNamespace = (row: { audience: string; scope_json?: string | null }) => row.audience === input.audience && scopeKey(parseScopeJson(row.scope_json)) === scopeKey(scope);
-      if (entry.sourceFileId) for (const row of rows) if (row.status === "active" && row.source_file_id === entry.sourceFileId && row.id !== id && sameNamespace(row)) replace(row.id, id);
+      if (entry.sourceFileId) for (const row of rows) if (row.status === "active" && row.source_file_id === entry.sourceFileId && row.id !== id && sameNamespace(row)) replace(row.id, id, row);
       // One session's word does not retire what the maintainer or a file established.
       if (trust !== "confirmed") continue;
       // Replacement stays inside project + section + audience + bot. A fact already stored is not given a wider scope.
       const replaceable = rows.filter((row) => row.status === "active" && !gone.has(row.id) && row.id !== id && sameNamespace(row) && !isRule(row));
       for (const prefix of entry.supersedes ?? []) {
         const named = replaceable.filter((row) => row.id.startsWith(prefix));
-        if (named.length === 1) replace(named[0]!.id, id);
+        if (named.length === 1) replace(named[0]!.id, id, named[0]);
       }
       // A restated note replaces the older wording of the same subject.
-      if (entry.kind === "note") for (const row of replaceable) if (row.kind === "note" && !gone.has(row.id) && sameSubject(entry, { content: row.content, concepts: JSON.parse(row.concepts_json) as string[] })) replace(row.id, id);
+      if (entry.kind === "note") for (const row of replaceable) if (row.kind === "note" && !gone.has(row.id) && sameSubject(entry, { content: row.content, concepts: JSON.parse(row.concepts_json) as string[] })) replace(row.id, id, row);
     }
     const active = rows.filter((row) => row.status === "active" && !gone.has(row.id));
     const sum = (list: Array<{ content: string }>) => list.reduce((total, row) => total + estimate(row.content), 0);
@@ -206,7 +222,7 @@ export function storeMemoryRecords(db: MemoryDatabase, input: StoreMemoryInput):
     const mine = new Set(input.entries.map((entry) => memoryRecordId(input.projectId, entry.kind, entry.content, personalBot, input.audience, scope)));
     const records = (db.prepare(`SELECT ${cols()} FROM lane_pilot_memory WHERE project_id=? AND personal_bot=? ORDER BY created_at DESC`).all(input.projectId, personalBot) as Row[])
       .filter((row) => row.status === "active" || mine.has(row.id)).map(toRecord);
-    return { records, insertedIds, evictedIds, supersededIds, expiredIds, corroboratedIds: corroborate };
+    return { records, insertedIds, evictedIds, supersededIds, expiredIds, corroboratedIds: corroborate, heldIds };
   }).immediate();
 }
 
