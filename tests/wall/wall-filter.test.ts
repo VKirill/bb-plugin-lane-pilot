@@ -191,6 +191,7 @@ describe("Wall service hunt with Jev filter", () => {
       release: { drill: async () => null, canary: async () => null },
       bench: {
         available: async () => true,
+        armSet: async () => null,
         ensureArm: async () => "done",
         compare: async () => "pass",
         score: async () => 1.0,
@@ -269,6 +270,7 @@ describe("Wall service hunt with Jev filter", () => {
       release: { drill: async () => null, canary: async () => null },
       bench: {
         available: async () => true,
+        armSet: async () => null,
         ensureArm: async () => "done",
         compare: async () => "pass",
         score: async () => 1.0,

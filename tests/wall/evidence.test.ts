@@ -37,6 +37,7 @@ function world(patch: { changed?: unknown; seed?: boolean; releaseFiles?: string
       ...(patch.releaseFiles !== undefined ? { changedBetween: async (from: string, to: string) => { state.asked.push([from, to]); return state.releaseFiles ?? null; } } : {}) },
     bench: {
       available: async () => state.benchAvailable,
+      armSet: async () => null,
       ensureArm: async (arm) => { state.ensured.push(arm); return "done"; },
       compare: async (base, arm) => { state.compared.push([base, arm]); return state.compare; },
       score: async (arm) => (arm.includes("0.1.268") ? 0.5 : 0.67),

@@ -80,8 +80,10 @@ export type WallPorts = {
   };
   bench: {
     available(): Promise<boolean>;
-    ensureArm(arm: string): Promise<"done" | "running" | "unavailable">;
-    compare(base: string, arm: string): Promise<"pass" | "fail" | "inconclusive" | "pending" | "unavailable">;
+    /** The newest set version that has a `done` run of this arm; null when the arm was never measured. */
+    armSet(arm: string): Promise<string | null>;
+    ensureArm(arm: string, setVersion?: string): Promise<"done" | "running" | "unavailable">;
+    compare(base: string, arm: string, setVersion?: string): Promise<"pass" | "fail" | "inconclusive" | "pending" | "unavailable">;
     score(arm: string): Promise<number | null>;
   };
   restart(plan: RerunPlan): Promise<{ ok: boolean; note: string }>;
@@ -731,8 +733,11 @@ export function createWall(deps: WallDeps) {
     let benchCompare: { base: string; arm: string } | undefined;
     if (benchOk && canary && canary.version === evidence && !canary.windowOpen) {
       const base = nightArm(mergedAt), arm = nightArm(evidence);
-      const state = await ports.bench.ensureArm(arm).catch(() => "unavailable" as const);
-      bench = state === "done" ? await ports.bench.compare(base, arm).catch(() => "unavailable" as const) : state === "running" ? "pending" : "unavailable";
+      // S5: the repair is judged against the release on one base — the same set revision the baseline arm was measured on.
+      // When that set is found the shipped arm runs it too; without a measured baseline the newest set is used (the compare is inconclusive).
+      const setVersion = await ports.bench.armSet(base).catch(() => null);
+      const state = await ports.bench.ensureArm(arm, setVersion ?? undefined).catch(() => "unavailable" as const);
+      bench = state === "done" ? await ports.bench.compare(base, arm, setVersion ?? undefined).catch(() => "unavailable" as const) : state === "running" ? "pending" : "unavailable";
       if (bench === "pass" || bench === "fail") {
         benchScore = (await ports.bench.score(arm).catch(() => null)) ?? undefined;
         baselineScore = (await ports.bench.score(base).catch(() => null)) ?? undefined;

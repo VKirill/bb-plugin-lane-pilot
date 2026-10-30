@@ -20,6 +20,9 @@ function fakePorts(h: ReturnType<typeof freshDb>, patch: { version?: { v: string
     canary: null as { version: string; tripped: boolean; windowOpen: boolean } | null,
     benchAvailable: true,
     benchArms: new Map<string, "done" | "running">(),
+    armSetCalls: [] as string[],
+    ensuredSets: [] as Array<[string, string | undefined]>,
+    comparedSets: [] as Array<[string, string, string | undefined]>,
     benchCompare: "pass" as "pass" | "fail" | "pending" | "unavailable",
     scores: new Map<string, number>(),
     hunterReplies: [] as Array<string | null>,
@@ -54,8 +57,9 @@ function fakePorts(h: ReturnType<typeof freshDb>, patch: { version?: { v: string
     release: { drill: async () => state.drill, canary: async () => state.canary },
     bench: {
       available: async () => state.benchAvailable,
-      ensureArm: async (arm) => { const known = state.benchArms.get(arm); if (!known) { state.benchArms.set(arm, "running"); return "running"; } return known; },
-      compare: async () => state.benchCompare,
+      armSet: async (arm) => { state.armSetCalls.push(arm); return state.benchArms.get(arm) === "done" ? "vset-base" : null; },
+      ensureArm: async (arm, setVersion) => { state.ensuredSets.push([arm, setVersion]); const known = state.benchArms.get(arm); if (!known) { state.benchArms.set(arm, "running"); return "running"; } return known; },
+      compare: async (base, arm, setVersion) => { state.comparedSets.push([base, arm, setVersion]); return state.benchCompare; },
       score: async (arm) => state.scores.get(arm) ?? null,
     },
     restart: async (plan) => { state.restarted.push(plan.taskId); return { ok: true, note: "restarted" }; },
@@ -163,6 +167,10 @@ describe("the real night and the life of one repair", () => {
     for (let i = 0; i < 12; i++) h.attempt("accepted", null, NOW + 5 * HOUR + i, { version: "0.1.269" });
     const notes = await wall.advance(NOW + 6 * HOUR);
     expect(notes.join("|")).toMatch(/accepted \(all checks green\); 6 re-run\(s\) planned/);
+    // S5: the shipped arm was run and compared on the same set the baseline arm was measured on.
+    expect(state.armSetCalls).toContain(nightArm("0.1.268"));
+    expect(state.ensuredSets.find(([arm]) => arm === nightArm("0.1.269"))?.[1]).toBe("vset-base");
+    expect(state.comparedSets[0]).toEqual([nightArm("0.1.268"), nightArm("0.1.269"), "vset-base"]);
     const accepted = listRepairs(h.db)[0]!;
     expect(accepted.state).toBe("accepted");
     expect(accepted.acceptance).toMatchObject({ benchScore: 0.67, baselineScore: 0.5, recurred: false });
