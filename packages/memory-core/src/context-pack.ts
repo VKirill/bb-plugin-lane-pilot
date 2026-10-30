@@ -1,7 +1,7 @@
+import { createHash } from "node:crypto";
 import { estimateTokens, memoryEntrySalience } from "./candidates";
 import { roleContextBudget } from "./context";
 import { memoryContextLine } from "./context";
-import { sha256Hex } from "@lane-pilot/kit";
 import type { MemoryRecord } from "./settings";
 
 /** One thing the pack may carry. `required` is a mandatory rule/policy: it is never silently cut. */
@@ -57,7 +57,7 @@ export function buildContextPack(input: {
     projectId: input.projectId, repoId: input.repoId ?? "", sectionChain: chain, role: input.role,
     audience: input.audience ?? "subagent", bot: input.bot ?? "", sourceRevision: input.sourceRevision ?? "",
     sources, packedBytes: Buffer.byteLength(text), estimatedTokens: estimateTokens(text),
-    packId: sha256Hex(`${input.projectId}:${input.role}:${packedIds.join(",")}`).slice(0, 24), text,
+    packId: createHash("sha256").update(`${input.projectId}:${input.role}:${packedIds.join(",")}`).digest("hex").slice(0, 24), text,
   };
 }
 

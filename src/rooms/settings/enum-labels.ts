@@ -37,6 +37,7 @@ const BY_KEY: Record<string, Record<string, I18nKey>> = {
   "writer.capacity_wait": { on: "enumCapacityWaitOn", off: "enumCapacityWaitOff" },
   "writer.retry_safety": { on: "enumRetrySafetyOn", off: "enumRetrySafetyOff" },
   "memory.maintain_mode": { wave: "enumMaintainModeWave", task: "enumMaintainModeTask" },
+  "memory.pack_mode": { off: "enumPackModeOff", shadow: "enumPackModeShadow", adapter: "enumPackModeAdapter", canary: "enumPackModeCanary" },
   "jev.provider": { openlux: "enumJevProviderOpenlux", typesafe: "enumJevProviderTypesafe" },
   "sandbox.backend": {
     auto: "enumSandboxAuto",
