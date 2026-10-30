@@ -2,14 +2,14 @@ import { runOnHost } from "@lane-pilot/host-calls";
 import { writerExecutionSelection } from "@lane-pilot/models";
 import { upsertLessonProposal, type RuleForm } from "@lane-pilot/run-insights";
 import {
-  HarnessValidationError, LANE_PILOT_SURFACE, PROBE_DEFAULTS, alwaysOnText, checkNames, composePrompt, experienceIsSupported, experiencePrompt, fingerprint, formatProbeContrasts, inventory, isBase, missionPointer,
-  parseEdits, parseExperience, parseNotes, proposePrompt, renderExperienceMarkdown, renderThreadEvents, replayCandidate, screenRejected, selectProbeAttempts, skillNames, validate,
-  type ProbeBudget, type ProbeSource, type RejectedEdit, type ThreadEventLike, type Tree,
+  HarnessValidationError, LANE_PILOT_SURFACE, PROBE_DEFAULTS, alwaysOnText, checkNames, composePrompt, experienceIsSupported, experiencePrompt, fingerprint, inventory, isBase, missionPointer,
+  parseEdits, parseExperience, parseNotes, proposePrompt, renderExperienceMarkdown, renderThreadEvents, screenRejected, skillNames, validate,
+  type ProbeBudget, type RejectedEdit, type ThreadEventLike, type Tree,
 } from "@lane-pilot/harness-core";
 import { fullAccessSpawn, scheduleIsolated, stringAt, type ServerCore, type Services } from "../../core/server";
 import { SANDBOX_PROJECT_ID, isSandboxProjectName } from "../../stability/server";
 import { ensureExcludeLinesCommand, EXCLUDE_NOT_GIT } from "../../verification";
-import { getAttempt } from "../../storage";
+import { getAttempt, getTaskGitBase } from "../../storage";
 import { hubFields } from "../../improvement";
 import { evidenceFiles, evidenceLayout, harvestCommand, parseHarvest, shellQuote, sliceAttemptEvents, treeDiff, writeFileCommands, type AttemptEvidence, type LibraryEntry, type PoolCandidate } from "./evidence";
 import {
@@ -18,6 +18,8 @@ import {
 } from "./store";
 import { TRIAL_DEFAULTS, decideTrial, type AdoptBy, type TrialConfig, type TrialDecision } from "./trial";
 import { getBenchProject, verdictForHarness } from "../../bench";
+import type { HostPort } from "../../bench/server";
+import { formatProbeReplays, runHarnessProbe } from "./probe-run";
 import { builtinWorkflow } from "../../workflow";
 import type { StepContext } from "../../workflow";
 import type { ChainRuntime, GraphHelperRun } from "../../workflow/server";
@@ -515,15 +517,30 @@ export function createHarness(ctx: ServerCore, services: Services) {
     if (inv.error && dom.error) return { status: "failed", detail: `both editors failed: inv ${inv.error}; dom ${dom.error}`, tree: {}, ...common, thread_ids: threadIds };
     if (inv.keptBase && dom.keptBase) return { status: "keep_base", detail: "both editors kept the current harness", tree: {}, ...common, thread_ids: threadIds };
     const pool: PoolCandidate[] = [{ label: "inv", tree: inv.tree, diff: treeDiff(active.tree, inv.tree), notes: inv.notes }, { label: "dom", tree: dom.tree, diff: treeDiff(active.tree, dom.tree), notes: dom.notes }];
-    const probeSources: ProbeSource[] = attempts.map((attempt) => {
-      const outcome = [attempt.state, attempt.reason].filter(Boolean).join(": ");
-      const brief = attempt.dispatch?.rulesText ?? "";
-      const tokens = Math.max(1, Math.ceil((attempt.dispatch?.promptChars ?? brief.length + outcome.length) / 4));
-      return { attemptId: attempt.attemptId, tokens, brief, outcome };
+    const probeHost: HostPort = { run: async (hostId, cwd, command, timeoutSec = 60) => runOnHost(host, { hostId, cwd, command, timeoutSec }) };
+    const probeTasks = attempts.map((attempt) => {
+      const git = getTaskGitBase(db, attempt.taskId);
+      const raw = attempt.contract.verification;
+      const verification = Array.isArray(raw) ? raw.flatMap((item) => {
+        if (!item || typeof item !== "object") return [];
+        const command = (item as { command?: unknown }).command;
+        if (typeof command !== "string" || !command.trim()) return [];
+        const cwd = (item as { cwd?: unknown }).cwd;
+        return [{ command, ...(typeof cwd === "string" ? { cwd } : {}) }];
+      }) : [];
+      const tokens = Math.max(1, Math.ceil((attempt.dispatch?.promptChars ?? 0) / 4));
+      return { attemptId: attempt.attemptId, sha: git?.base_sha || git?.initial_head_sha || "", tokens, verification };
     });
-    const probed = selectProbeAttempts(probeSources, cfg.probe);
-    const contrasts = pool.flatMap((candidate) => probed.map((attempt) => replayCandidate({ label: candidate.label, diff: candidate.diff, attempt, tokenBudget: attempt.tokens })));
-    const probe = formatProbeContrasts(contrasts);
+    let probe = "";
+    try {
+      const replays = await runHarnessProbe({
+        host: probeHost, hostId: where.hostId, checkout: `/tmp/lp-harness-probe-${slug(area || "project")}`, repo: where.path,
+        candidates: pool.map((candidate) => ({ label: candidate.label, tree: candidate.tree })), tasks: probeTasks, budget: cfg.probe,
+      });
+      probe = formatProbeReplays(replays);
+    } catch (cause) {
+      probe = `# Overnight probe\n\nThe replay did not run: ${cause instanceof Error ? cause.message : String(cause)}`;
+    }
     const composeFiles = evidenceFiles({ area, writerKey, attempts, harness: active.tree, library, pool, decisions: { inv: inv.notes || inv.error || "", dom: dom.notes || dom.error || "" }, repoPath: where.path, ...(probe ? { probe } : {}) });
     await writeFiles(where, `${round}/compose`, composeFiles);
     const composed = await stage({
