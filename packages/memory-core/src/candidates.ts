@@ -18,6 +18,21 @@ export function memoryContentIssue(content:string):string|null {
   return null;
 }
 
+/** Concrete claims a note can make: file paths, versions, numbers, quoted identifiers. */
+const SPECIFIC=/[\w.-]+\/[\w./-]+|v?\d+\.\d+(?:\.\d+)?|\b\d{2,}\b/g;
+
+/**
+ * The cheap verifier pass over a maintainer candidate (arXiv #7 TRUSTMEM): every concrete claim the entry makes —
+ * a path, a version, a number — must appear in the accepted result it claims to summarize. An entry with no concrete
+ * claims is a paraphrase and passes; one that invents a port or a file name is dropped before it reaches the store.
+ */
+export function memoryEntrySupported(content:string, sourceText:string):boolean {
+  const claims=content.match(SPECIFIC)??[];
+  if(!claims.length)return true;
+  const source=sourceText.toLowerCase();
+  return claims.every((claim)=>source.includes(claim.toLowerCase()));
+}
+
 export function estimateTokens(text:string):number { return Math.ceil(Buffer.byteLength(text,"utf8")/4); }
 
 /**

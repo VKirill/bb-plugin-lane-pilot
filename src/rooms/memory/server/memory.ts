@@ -2,7 +2,7 @@ import { resolve } from "node:path";
 import { taskV2Schema } from "../../contracts";
 import { enrichMemoryContext } from "../../memory-tiers/server";
 import { claimStageSpawn, getRun, getRunSettingsScopes, getTask, listStageReceipts, searchMemoryRecords } from "../../storage";
-import { coreShelf, pathsNamed, storeMemoryRecordsKeepingOverflow } from "@lane-pilot/memory-core";
+import { coreShelf, memoryEntrySupported, pathsNamed, storeMemoryRecordsKeepingOverflow } from "@lane-pilot/memory-core";
 import { bbServiceTier, writerExecutionSelection } from "@lane-pilot/models";
 import { sha256 } from "../../tasks";
 import { memoryMaintenancePrompt, memoryRecordId, parseMemoryCandidates, parseMemorySettings } from "../memory";
@@ -98,7 +98,12 @@ export function createMemoryStage(ctx: ServerCore, services: Services) {
       }
       const output=(await bb.sdk.threads.output({threadId:childId})).output;
       if(typeof output!=="string"||!output.trim()) throw new Error("memory_maintainer_output_empty");
-      const parsed=parseMemoryCandidates(output,snapshot.settings);
+      const all=parseMemoryCandidates(output,snapshot.settings);
+      const acceptedText=JSON.stringify(compactAcceptedResult(accepted.result));
+      // One cheap verifier pass per batch (arXiv #7): a note claiming a path, version or number the accepted
+      // result never mentions is dropped before it reaches the write door.
+      const parsed=all.filter((entry)=>memoryEntrySupported(entry.content,acceptedText));
+      const unsupportedDropped=all.length-parsed.length;
       // What a task taught belongs to its section of a shared project (Мои проекты: several games and FeedGen in one project).
       const scope=getRunSettingsScopes(db,args.runId);
       const readFile=await snapshotFileRead(parsed.flatMap((entry)=>pathsNamed(entry.content)),async(relativePath)=>{
@@ -119,7 +124,7 @@ export function createMemoryStage(ctx: ServerCore, services: Services) {
         if(!row) throw new Error("memory_record_ids_missing_after_store");
         if(row.sourceSha256===snapshot.acceptanceSha256) recordIds.push(id);
       }
-      const result={stored:recordIds.length,recordIds,...(records.demoted?{coreDemotedToNotes:records.demoted}:{}),evictedIds:records.evictedIds,supersededIds:records.supersededIds,sourceSha256:snapshot.acceptanceSha256,audience:snapshot.settings.audience,personalBot:snapshot.settings.personalBot,
+      const result={stored:recordIds.length,recordIds,unsupportedDropped,...(records.demoted?{coreDemotedToNotes:records.demoted}:{}),evictedIds:records.evictedIds,supersededIds:records.supersededIds,sourceSha256:snapshot.acceptanceSha256,audience:snapshot.settings.audience,personalBot:snapshot.settings.personalBot,
         reasoningEffort:memoryEffort,serviceTier:memoryTier,
         budgets:{core:snapshot.settings.coreBudget,note:snapshot.settings.noteBudget,index:snapshot.settings.indexBudget},
         retrievedForWriter:snapshot.settings.inject&&snapshot.settings.audience==="subagent",threadId:childId,snapshot};
