@@ -16,3 +16,4 @@ export {
   PROBE_DEFAULTS, formatProbeContrasts, replayCandidate, selectProbeAttempts,
   type ProbeBudget, type ProbeContrast, type ProbeSource,
 } from "./probe";
+export { rejectedPrompt, screenRejected, type RejectedEdit } from "./rejected";

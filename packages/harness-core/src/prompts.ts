@@ -1,3 +1,4 @@
+import { rejectedPrompt, type RejectedEdit } from "./rejected";
 import type { SurfaceSpec } from "./tree";
 import { LANE_PILOT_SURFACE } from "./tree";
 
@@ -124,8 +125,9 @@ host: before you write "in this repo X is Y", a file name, a setting or a value 
 there and confirm it. A trajectory proves what a writer saw then; the repository proves what the next writer will see.`;
 }
 
-export function proposePrompt(dim: "INV" | "DOM", ctx: PromptContext): string {
+export function proposePrompt(dim: "INV" | "DOM", ctx: PromptContext, rejected: readonly RejectedEdit[] = []): string {
   const writer = ctx.writerKey && ctx.writerKey !== "*" ? ` for writers on ${ctx.writerKey}` : "";
+  const refused = rejectedPrompt(rejected);
   return [
     `You are the ${dim === "INV" ? "INVARIANT" : "DOMAIN"} harness editor for the area «${ctx.area}»${writer}. You have the recent attempts of this area under the current harness (their briefs, full trajectories, diffs and check output), the current harness files, and this area's library of what was adopted before.`,
     WORK,
@@ -136,6 +138,7 @@ export function proposePrompt(dim: "INV" | "DOM", ctx: PromptContext): string {
     ANSWER_FREE,
     EVIDENCE_BOUNDARY,
     surfaceBlock(ctx.surface),
+    ...(refused ? [refused] : []),
   ].join("\n\n");
 }
 
