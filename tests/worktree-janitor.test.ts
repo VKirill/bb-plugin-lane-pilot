@@ -9,6 +9,7 @@ import { openDatabase } from "../src/rooms/storage/database";
 import { sweepLaneWorktrees } from "../src/rooms/verification/worktree-janitor";
 import { worktreeJanitor } from "../src/rooms/host-worker/host-handlers";
 import { runWorktreeJanitor } from "../src/rooms/stability/server/worktree-janitor";
+import { cleanupFinishedAttemptEnvironments, cleanupStickyLaneWorktrees } from "../src/rooms/runs/server";
 
 const git = (cwd: string, args: string[]) => execFileSync("git", args, { cwd, stdio: ["ignore", "pipe", "pipe"] }).toString();
 
@@ -120,7 +121,7 @@ describe("the worktree janitor", () => {
       bb, db, log: () => undefined, isDisposed: () => false,
       host: { call: async () => { calls++; return {}; } },
     } as never;
-    const out = await runWorktreeJanitor(ctx);
+    const out = await runWorktreeJanitor(ctx, { cleanupStickyLaneWorktrees, cleanupFinishedAttemptEnvironments });
     expect(out).toEqual({ removed: 0, freedBytes: 0, kept: 0 });
     expect(calls).toBe(0);
   });

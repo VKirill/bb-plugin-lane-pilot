@@ -3,7 +3,6 @@ import { mapListedQaHosts } from "../../qa";
 import { scheduleIsolated, configuredSetting } from "../../core/server";
 import type { ServerCore } from "../../core/server";
 import { loadProjectSettings } from "../../storage";
-import { cleanupFinishedAttemptEnvironments, cleanupStickyLaneWorktrees } from "../../runs/server";
 
 /**
  * The hourly safety net over ~/.lane-pilot/worktrees on every connected machine (WT1, 2026-10-30): copies of docs,
@@ -46,7 +45,9 @@ export async function protectedWorktreePaths(ctx: Pick<ServerCore, "bb" | "db">)
 }
 
 /** One hourly pass: ask every connected machine to sweep, keep one receipt row per host for the morning list. */
-export async function runWorktreeJanitor(ctx: Pick<ServerCore, "bb" | "db" | "log" | "isDisposed" | "host">, now = Date.now(), signal?: AbortSignal): Promise<{ removed: number; freedBytes: number; kept: number }> {
+/** The finished-attempt sweeps live in runs/server; the caller passes them in, since stability importing runs/server closes a module cycle. */
+export type AttemptSweeps = { cleanupStickyLaneWorktrees: typeof import("../../runs/server").cleanupStickyLaneWorktrees; cleanupFinishedAttemptEnvironments: typeof import("../../runs/server").cleanupFinishedAttemptEnvironments };
+export async function runWorktreeJanitor(ctx: Pick<ServerCore, "bb" | "db" | "log" | "isDisposed" | "host">, sweeps: AttemptSweeps, now = Date.now(), signal?: AbortSignal): Promise<{ removed: number; freedBytes: number; kept: number }> {
   const { bb, db } = ctx;
   const settings = loadProjectSettings(db, GLOBAL_SETTINGS_PROJECT_ID);
   if (configuredSetting(settings, "cleanup.worktrees") === "off") return { removed: 0, freedBytes: 0, kept: 0 };
@@ -56,6 +57,7 @@ export async function runWorktreeJanitor(ctx: Pick<ServerCore, "bb" | "db" | "lo
   // The finished-attempt sweeps were never wired anywhere (found 2026-10-30: both exported, zero callers), which is why
   // lpattempt_* copies piled up; they run here, inside the janitor. `release` snapshots the work before the copy goes.
   const released = new Set<string>();
+  const { cleanupFinishedAttemptEnvironments, cleanupStickyLaneWorktrees } = sweeps;
   const swept = await cleanupStickyLaneWorktrees(db, async (hostId, basePath, worktreePath) => {
     const out = await ctx.host.call("gitRemoveWorktree", { requestedHostId: hostId, basePath, worktreePath, release: true }, { hostId, timeoutMs: 120_000 }).catch(() => null) as { removed?: boolean } | null;
     return out?.removed === true;
@@ -80,11 +82,11 @@ export async function runWorktreeJanitor(ctx: Pick<ServerCore, "bb" | "db" | "lo
   return { removed: removed + swept.length + envSwept.length, freedBytes, kept };
 }
 
-export function mountWorktreeJanitor(ctx: ServerCore): void {
+export function mountWorktreeJanitor(ctx: ServerCore, sweeps: AttemptSweeps): void {
   const { bb } = ctx;
   scheduleIsolated(bb, "worktree-janitor", "14 * * * *", async (signal) => {
     if (ctx.isDisposed() || signal?.aborted) return;
-    const outcome = await runWorktreeJanitor(ctx, Date.now(), signal);
+    const outcome = await runWorktreeJanitor(ctx, sweeps, Date.now(), signal);
     if (outcome.removed || outcome.kept) bb.log.info(`Lane Pilot janitor: removed ${outcome.removed} worktree(s), freed ${Math.round(outcome.freedBytes / 1e6)} MB, kept ${outcome.kept}`);
   }, { timeoutMs: 10 * 60_000 });
 }
