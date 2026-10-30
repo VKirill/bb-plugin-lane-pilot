@@ -21,6 +21,8 @@ import {
   getWall, insertRepair, insertWall, listRepairs, listWalls, nightSpend, openRepairs, recentNights, refreshNightSpend, saveNight, updateClassLadder, updateRepair, updateWall, type RepairRow, type WallRow,
 } from "./store";
 import { OPEN_REPAIR_STATES, type NightSummary, type WallClass } from "./types";
+import { jev, type Jev, type JevSettings } from "@lane-pilot/jev";
+import { wallFilterJudgment, type WallFilterDecision, type WallFilterInput } from "./wall-filter-judgment";
 
 /** The graph that runs the hunters and the analysis of a wall. */
 export const WALL_HUNT_WORKFLOW = "lp.wall-hunt";
@@ -85,7 +87,15 @@ export type WallPorts = {
 };
 
 type Kv = { get(key: string): Promise<unknown>; set(key: string, value: never): Promise<unknown> };
-export type WallDeps = { db: WallDb; kv: Kv; ports: WallPorts; log(line: string): void; hubDb?: string };
+export type WallDeps = {
+  db: WallDb;
+  kv: Kv;
+  ports: WallPorts;
+  log(line: string): void;
+  hubDb?: string;
+  jev?: () => Jev | null;
+  settings?: () => Promise<JevSettings>;
+};
 
 const sha = (text: string) => createHash("sha256").update(text).digest("hex");
 /** The hash of what a task asks, without its id (a redispatch under «P1.2» is the same ask) and of its plan. */
@@ -151,10 +161,61 @@ export function createWall(deps: WallDeps) {
   }
 
   /**
+   * Evaluates the wall failure signature with Jev before spending tokens on 3 hunters.
+   * If Jev in active mode is confident that the failure is purely infrastructure noise
+   * (rate limit, provider outage, network reset, full disk) or duplicate fingerprint,
+   * the expensive hunt is skipped. In shadow mode (the default), the decision is logged
+   * to receipts while hunters run normally.
+   */
+  async function checkHuntFilter(pack: EvidencePack, wallKey: string): Promise<WallFilterDecision> {
+    const getJev = deps.jev ?? jev;
+    const instance = getJev();
+    const fallback = wallFilterJudgment.fallback({ wallKey, subject: pack.subject, kind: pack.kind, facts: [], reasons: [] });
+    if (!instance) return fallback;
+    try {
+      const settings = deps.settings ? await deps.settings().catch(() => ({} as JevSettings)) : ((await config().catch(() => ({}))) as JevSettings);
+      if (!instance.enabled(settings)) return fallback;
+      const reasons = [
+        ...pack.attempts.map((a) => a.reason),
+        ...pack.receipts.map((r) => r.reason),
+      ].filter((r): r is string => Boolean(r));
+      const input: WallFilterInput = {
+        wallKey,
+        subject: pack.subject,
+        kind: pack.kind,
+        facts: pack.facts,
+        reasons,
+        checkOutputs: pack.checkOutputs,
+      };
+      const verdict = await instance.judge(wallFilterJudgment, input, {
+        projectId: pack.meta?.projectId ?? "",
+        runId: pack.meta?.runId ?? null,
+        subject: wallKey,
+        settings,
+      });
+      return verdict.by === "jev" ? verdict.decision : fallback;
+    } catch (cause) {
+      log(`wall: hunt filter failed (${cause instanceof Error ? cause.message : String(cause)}); falling back to hunt`);
+      return fallback;
+    }
+  }
+
+  /**
    * Three read-only hunters from other sides over one pack; their citations are held against it by code. The tokens are the wall's spend.
    * In the plugin this is a run of the graph `lp.wall-hunt` (named by the wall's key); a run that fails reads as hunters that found nothing.
    */
   async function hunt(pack: EvidencePack, cfg: WallConfig, wallKey: string): Promise<{ outcome: HuntOutcome; tokens: number }> {
+    const filterDecision = await checkHuntFilter(pack, wallKey);
+    if (filterDecision.action === "skip") {
+      log(`wall: hunt of ${wallKey} skipped by Jev filter (${filterDecision.category}): ${filterDecision.reason}`);
+      const skippedOutcome: HuntOutcome = {
+        state: "unknown",
+        findings: [],
+        usable: [],
+        demoted: 0,
+      };
+      return { outcome: skippedOutcome, tokens: 0 };
+    }
     const angles = HUNT_ANGLES.slice(0, cfg.hunters);
     if (ports.graph) {
       const ran = await ports.graph.hunt({ wallKey, pack, angles }).catch((cause: unknown) => { log(`wall: the hunt graph of ${wallKey} failed: ${cause instanceof Error ? cause.message : String(cause)}`); return null; });
@@ -841,7 +902,7 @@ export function createWall(deps: WallDeps) {
   }
 
   return { graph: graphSteps, config, setConfig, runNight, advance, mergeGate, settled, started, startFailed, nextAssignment, noteTaskStop, dispatchGuard, loopExhausted, loopTopics, rerun, status, show, close,
-    morning: (now?: number) => [`${statsEpochLine(statsEpoch(db))}.`, ...composeWallMorning(db, now ?? ports.now())], classes: () => listClasses(db) };
+    morning: (now?: number) => [`${statsEpochLine(statsEpoch(db))}.`, ...composeWallMorning(db, now ?? ports.now())], classes: () => listClasses(db), huntClass };
 }
 
 export type WallApi = ReturnType<typeof createWall>;

@@ -15,6 +15,7 @@ import { createTaskLinter } from "../../tasks/server";
 import { agentRequest, createWorkflowAgents, stepPacket, withResolvedModel } from "./workflow-agent";
 import type { WorkflowAgents } from "./workflow-agent";
 import { registerRouterExecutor } from "./workflow-router-model";
+import { registerQualityLoopClassifyExecutor } from "./workflow-classify";
 import { lpTaskPipelineExecutor, taskUsage } from "../../writer/server";
 import type { DispatchRuntime } from "../../writer/server";
 import { keyedSpawnSupported, projectFolder } from "../../core/server";
@@ -290,6 +291,8 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
     const got = await pickSkillTree(judge, tree, { title: task, prompt: "" }, { projectId: rt?.projectId ?? null, runId: rt?.runId ?? null, settings });
     return { output: { skills: got.skills, picked: got.picked, by: got.by } };
   } });
+  // The failure classification step of `quality-loop`.
+  registerQualityLoopClassifyExecutor(engine, ctx, agents);
 
   // ---------------------------------------------------------------- agent
   engine.register<ChainRuntime>("agent", {

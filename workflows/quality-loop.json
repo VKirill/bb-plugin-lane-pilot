@@ -166,6 +166,7 @@
       "produces": [{"kind": "report", "version": 1}],
       "type": "agent",
       "role": "triager",
+      "uses": "quality-loop.classify",
       "title": {
         "en": "Classify failures",
         "ru": "Классифицировать провалы"

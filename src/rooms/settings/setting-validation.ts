@@ -5,6 +5,7 @@ import "../workflow/route-workflow";
 import "@lane-pilot/jev/judgments/repair-group";
 import "../runs/failure-class-judgment";
 import "@lane-pilot/jev/judgments/output-guard";
+import "../wall/wall-filter-judgment";
 import { listJudgments } from "@lane-pilot/jev";
 import { jevSettingProblem } from "@lane-pilot/jev";
 import { HUB_KEYS, PROJECT_DEFAULT_KEYS, hubSettingProblem } from "../improvement";
