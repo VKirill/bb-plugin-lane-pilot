@@ -38,6 +38,7 @@ import { loadWriterNudge } from "./writer-silence";
 import { recordedWriterSkills } from "./skill-pick";
 import { createSkillMaterializer, recordedMaterializedSkills } from "./skill-materialize";
 import { recordSkillSwitchMetric } from "../skill-switch";
+import { recordRejectedTrajectory } from "../rejected-export";
 import { REPLAY_CHECK_FAILED, WRITER_SILENT_REASON, beginChecks, checksMoved, failureFingerprint, isEnvironmentCheckFailure, taskFamily } from "../../runs";
 import { bookkeepingSetting } from "@lane-pilot/settings-catalog";
 import { attemptMergeMessage, clearMergeIntent, recordMergeIntent } from "../../verification/server";
@@ -144,8 +145,22 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
           skills,
           outcome,
         });
+        const settings = loadProjectSettings(db, input.projectId);
+        if ((settings["writer.trajectory_export"] === "on" || settings["writer.trajectory_export"] === true) && outcome !== "accepted") {
+          recordRejectedTrajectory(db, {
+            attemptId: input.attemptId,
+            taskId: input.taskId,
+            runId: input.runId,
+            projectId: input.projectId,
+            state: String(result?.status ?? result?.state ?? "failed"),
+            reason: typeof result?.reason === "string" ? result.reason : null,
+            task: input.task,
+            events,
+            output: result,
+          });
+        }
       } catch (cause) {
-        ctx.log(`writer skill switch metric failed: ${cause instanceof Error ? cause.message : String(cause)}`);
+        ctx.log(`writer post-attempt metric/export failed: ${cause instanceof Error ? cause.message : String(cause)}`);
       }
       await skillMaterial.remove({ attemptId:input.attemptId, hostId:input.config.hostId,
         workspacePath:getAttempt(db, input.attemptId)?.workspace_path ?? null,

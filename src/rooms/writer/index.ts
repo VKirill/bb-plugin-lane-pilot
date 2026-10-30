@@ -23,3 +23,14 @@ export {
   type SkillSwitchRecord,
   type SkillSwitchStats,
 } from "./skill-switch";
+export {
+  exportRejectedTrajectories,
+  getRejectedTrajectoriesSummary,
+  recordRejectedTrajectory,
+  rejectedTrajectoriesMorningLine,
+  runWriterCli,
+  WRITER_USAGE,
+  type RejectedTrajectoryEntry,
+  type RecordRejectedInput,
+  type RejectedTrajectoriesSummary,
+} from "./rejected-export";

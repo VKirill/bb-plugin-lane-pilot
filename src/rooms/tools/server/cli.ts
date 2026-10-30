@@ -3,6 +3,7 @@ import { getActivation, getAttempt, getRun, getTask, importSettingsOnce, inspect
 import { cancelRejection, confirmWriterStopped, finishRunSafely, pauseRun } from "../../runs/server";
 import { stringAt, valueAt } from "../../core/server";
 import { outputText } from "../../writer/server";
+import { runWriterCli, WRITER_USAGE } from "../../writer";
 import { THREAD_WATCH_EVENT_TYPES, decideThreadCompletion, eventsListQueryLabel, listThreadEventsRaw, waitThreadIdle } from "@lane-pilot/thread-observe";
 import type { ServerCore } from "../../core/server";
 import { RUN_BUDGET_SETTINGS, runHealth } from "../../stability/server";
@@ -199,6 +200,7 @@ export function registerCli(ctx: ServerCore, services: Services) {
       { name:"checkers", summary:"Checking the checkers: plant known defects in accepted candidates, run every checker on them and print the checker scorecard (score, scorecard, drill, defects)", usage:CHECKERS_USAGE },
       { name:"schedule", summary:"The schedule board: scheduled workflows, errands and scripts (list, show, history, preview, create, update, pause, resume, run-now, delete)", usage:SCHEDULE_USAGE },
       { name:"agents", summary:"The agents the owner can pick: list and show the bundled ones, create, update and delete his own (a JSON or a markdown file with frontmatter)", usage:AGENTS_USAGE },
+      { name:"writer", summary:"Writer utilities: export rejected and failed task trajectories to JSONL", usage:WRITER_USAGE },
     ],
     async run(argv, invocation) {
       try {
@@ -349,6 +351,9 @@ export function registerCli(ctx: ServerCore, services: Services) {
         }
         if (command === "checkers") {
           return await runCheckersCli(services.checkers, args);
+        }
+        if (command === "writer") {
+          return await runWriterCli(db as never, args);
         }
         if (command === "schedule") {
           return await runScheduleCli(services, args);

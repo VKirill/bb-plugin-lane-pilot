@@ -462,6 +462,9 @@ export const migrations = [
   // Skill switch metric (Skill Entropy / arXiv 2608.05139): track skill switching in tasks vs failure. Append only.
   `CREATE TABLE IF NOT EXISTS lane_pilot_skill_metric (id TEXT PRIMARY KEY, attempt_id TEXT NOT NULL, task_id TEXT NOT NULL, run_id TEXT, project_id TEXT NOT NULL, skill_count INTEGER NOT NULL, switch_count INTEGER NOT NULL, skills_json TEXT NOT NULL, outcome TEXT NOT NULL, recorded_at INTEGER NOT NULL)`,
   `CREATE INDEX IF NOT EXISTS lane_pilot_skill_metric_recorded ON lane_pilot_skill_metric(recorded_at)`,
+  // Rejected trajectories export (SSD pattern / arXiv 2604.01193): export unverified writer attempts to JSONL without secrets. Append only.
+  `CREATE TABLE IF NOT EXISTS lane_pilot_rejected_trajectory (id TEXT PRIMARY KEY, attempt_id TEXT NOT NULL, task_id TEXT NOT NULL, run_id TEXT, project_id TEXT NOT NULL, state TEXT NOT NULL, trajectory_json TEXT NOT NULL, bytes INTEGER NOT NULL, recorded_at INTEGER NOT NULL)`,
+  `CREATE INDEX IF NOT EXISTS lane_pilot_rejected_trajectory_recorded ON lane_pilot_rejected_trajectory(recorded_at)`,
 ];
 
 export function openDatabase(bb: BbPluginApi): LanePilotDatabase {
