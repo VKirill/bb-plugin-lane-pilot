@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { createHandoff } from "@lane-pilot/handoff";
+import { createHandoff, transitionHandoff } from "@lane-pilot/handoff";
 import { waitThreadIdle } from "@lane-pilot/thread-observe";
 import type { NodeExecutor, StepContext } from "@lane-pilot/workflow-engine";
 import { modelFamily, writerExecutionSelection, findModelIn } from "@lane-pilot/models";
@@ -499,10 +499,12 @@ export function mountCouncilGraph(ctx: ServerCore, services: Services, council: 
         let made = 0;
         for (const [index, task] of decision.nextTasks.entries()) {
           try {
-            createHandoff(db, {
+            const stored = createHandoff(db, {
               id: `hnd_${createHash("sha256").update(`${councilId}:${index}`).digest("hex").slice(0, 20)}`, projectId: session.projectId, runId: session.runId, ownerThreadId: rt.pmThreadId,
               draft: { fromAgent: "council", toAgent: task.toAgent ?? "lane-pilot-pm", title: task.title, objective: task.objective, acceptance: task.acceptance, inputs: [{ kind: "path", ref: path, note: "council decision" }], budget: {}, deadlineAt: null },
             });
+            // A card for the writer is delivered as a draft into the PM's queue; cards left queued sat 28-30 days unseen (W33).
+            if (task.toAgent === "writer" && rt.pmThreadId) transitionHandoff(db, { id: stored.card.id, to: "delivered", actor: "lane-pilot", recipientThreadId: rt.pmThreadId });
             made += 1;
           } catch (cause) {
             ctx.log(`Lane Pilot council ${councilId}: handoff for "${task.title}" not created: ${cause instanceof Error ? cause.message : String(cause)}`);

@@ -89,6 +89,9 @@ function appendEvent(db: HandoffDatabase, input: { handoffId: string; from: Hand
     .run(input.handoffId, input.from, input.to, input.actor, input.note ?? null, input.now);
 }
 
+/** A card whose caller set no deadline gets this one: council cards sat 28-30 days in queued without a term (W33). */
+export const HANDOFF_DEFAULT_DEADLINE_MS = 48 * 3_600_000;
+
 export function createHandoff(db: HandoffDatabase, input: {
   id: string;
   projectId: string;
@@ -98,10 +101,11 @@ export function createHandoff(db: HandoffDatabase, input: {
   now?: number;
 }): StoredHandoff {
   const now = input.now ?? Date.now();
+  const deadlineAt = input.draft.deadlineAt ?? now + HANDOFF_DEFAULT_DEADLINE_MS;
   return db.transaction(() => {
     db.prepare(`INSERT INTO lane_pilot_handoff(id,project_id,run_id,from_agent,to_agent,owner_thread_id,recipient_thread_id,state,card_json,deadline_at,created_at,updated_at)
       VALUES(?,?,?,?,?,?,NULL,'queued',?,?,?,?)`)
-      .run(input.id, input.projectId, input.runId ?? null, input.draft.fromAgent, input.draft.toAgent, input.ownerThreadId ?? null, JSON.stringify(input.draft), input.draft.deadlineAt, now, now);
+      .run(input.id, input.projectId, input.runId ?? null, input.draft.fromAgent, input.draft.toAgent, input.ownerThreadId ?? null, JSON.stringify({ ...input.draft, deadlineAt }), deadlineAt, now, now);
     appendEvent(db, { handoffId: input.id, from: null, to: "queued", actor: input.draft.fromAgent, now });
     return getHandoff(db, input.id)!;
   }).immediate();
@@ -205,7 +209,8 @@ export function releaseHandoffLease(db: HandoffDatabase, input: { id: string; ho
 /** Cards past their deadline that nobody finished become `expired`; returns their ids. */
 export function expireOverdueHandoffs(db: HandoffDatabase, now = Date.now(), actor = "scheduler"): string[] {
   return db.transaction(() => {
-    const rows = db.prepare("SELECT id, state FROM lane_pilot_handoff WHERE deadline_at IS NOT NULL AND deadline_at < ? AND state IN ('queued','delivered','accepted','in_progress')").all(now) as Array<{ id: string; state: HandoffState }>;
+    // Cards written before the default deadline existed carry deadline_at NULL: they expire by created_at + the default.
+    const rows = db.prepare("SELECT id, state FROM lane_pilot_handoff WHERE COALESCE(deadline_at, created_at + ?) < ? AND state IN ('queued','delivered','accepted','in_progress')").all(HANDOFF_DEFAULT_DEADLINE_MS, now) as Array<{ id: string; state: HandoffState }>;
     const expired: string[] = [];
     for (const row of rows) {
       const result = transitionHandoff(db, { id: row.id, to: "expired", actor, note: "deadline passed", now });
