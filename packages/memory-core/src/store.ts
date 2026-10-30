@@ -14,19 +14,19 @@ export const MEMORY_SCHEMA = {
   table: "lane_pilot_memory",
   fts: "lane_pilot_memory_fts",
   columns: ["id", "project_id", "personal_bot", "kind", "audience", "content", "concepts_json", "source_sha256", "created_at",
-    "status", "superseded_by", "valid_until", "last_used_at", "use_count", "accepted_count", "trust", "origin", "source_file_id", "scope_json", "file_fingerprint"],
+    "status", "superseded_by", "valid_until", "valid_from", "last_used_at", "use_count", "accepted_count", "trust", "origin", "source_file_id", "scope_json", "file_fingerprint"],
 } as const;
 
 const COLUMNS = ["id", "project_id", "personal_bot", "kind", "audience", "content", "concepts_json", "source_sha256", "created_at",
-  "status", "trust", "valid_until", "superseded_by", "source_file_id", "use_count", "accepted_count", "last_used_at", "file_fingerprint"];
+  "status", "trust", "valid_until", "valid_from", "superseded_by", "source_file_id", "use_count", "accepted_count", "last_used_at", "file_fingerprint"];
 const cols = (alias = "") => COLUMNS.map((name) => `${alias}${name}`).join(",");
 
 type Row = { id: string; project_id: string; personal_bot: string; kind: MemoryKind; audience: string; content: string; concepts_json: string; source_sha256: string; created_at: number;
-  status: MemoryStatus; trust: MemoryTrust; valid_until: number | null; superseded_by: string | null; source_file_id: string | null; use_count: number; accepted_count: number; last_used_at: number | null; file_fingerprint: string | null };
+  status: MemoryStatus; trust: MemoryTrust; valid_until: number | null; valid_from: number | null; superseded_by: string | null; source_file_id: string | null; use_count: number; accepted_count: number; last_used_at: number | null; file_fingerprint: string | null };
 
 const toRecord = (row: Row): MemoryRecord => ({ id: row.id, projectId: row.project_id, personalBot: row.personal_bot, kind: row.kind, content: row.content,
   concepts: JSON.parse(row.concepts_json) as string[], sourceSha256: row.source_sha256, createdAt: row.created_at,
-  status: row.status, trust: row.trust, validUntil: row.valid_until, supersededBy: row.superseded_by, sourceFileId: row.source_file_id,
+  status: row.status, trust: row.trust, validUntil: row.valid_until, validFrom: row.valid_from, supersededBy: row.superseded_by, sourceFileId: row.source_file_id,
   useCount: row.use_count, acceptedCount: row.accepted_count, lastUsedAt: row.last_used_at, fileFingerprint: row.file_fingerprint });
 
 const estimate = (text: string) => Math.ceil(Buffer.byteLength(text, "utf8") / 4);
@@ -178,13 +178,13 @@ export function storeMemoryRecords(db: MemoryDatabase, input: StoreMemoryInput):
       if (over(left)) throw new Error(left > input.noteBudget ? `memory note budget exceeded: ${left}/${input.noteBudget} tokens` : `memory index budget exceeded: ${core + left}/${input.indexBudget} tokens`);
       evictedIds = picked.filter((row) => hideRecord(db, input.projectId, row.id, "expired", null, unindex, "budget")).map((row) => row.id);
     }
-    const insert = db.prepare(`INSERT INTO lane_pilot_memory(id,project_id,personal_bot,kind,audience,content,concepts_json,source_sha256,created_at,trust,origin,valid_until,source_file_id,file_fingerprint)
-      VALUES(@id,@projectId,@personalBot,@kind,@audience,@content,@conceptsJson,@sourceSha256,@createdAt,@trust,@origin,@validUntil,@sourceFileId,@fileFingerprint)
+    const insert = db.prepare(`INSERT INTO lane_pilot_memory(id,project_id,personal_bot,kind,audience,content,concepts_json,source_sha256,created_at,trust,origin,valid_until,valid_from,source_file_id,file_fingerprint)
+      VALUES(@id,@projectId,@personalBot,@kind,@audience,@content,@conceptsJson,@sourceSha256,@createdAt,@trust,@origin,@validUntil,@validFrom,@sourceFileId,@fileFingerprint)
       ON CONFLICT(project_id,id) DO NOTHING`);
     const insertedIds: string[] = [];
     for (const { entry, id } of pending) {
       insert.run({ id, projectId: input.projectId, personalBot, kind: entry.kind, audience: input.audience, content: entry.content, conceptsJson: JSON.stringify(entry.concepts),
-        sourceSha256: input.sourceSha256, createdAt: now, trust: trustOf(entry), origin, validUntil: entry.validUntil ?? null, sourceFileId: entry.sourceFileId ?? null, fileFingerprint: storedFingerprint(entry.content, input.readFile) });
+        sourceSha256: input.sourceSha256, createdAt: now, trust: trustOf(entry), origin, validUntil: entry.validUntil ?? null, validFrom: entry.validFrom ?? now, sourceFileId: entry.sourceFileId ?? null, fileFingerprint: storedFingerprint(entry.content, input.readFile) });
       if (input.scope?.length) db.prepare("UPDATE lane_pilot_memory SET scope_json=? WHERE project_id=? AND id=?").run(JSON.stringify(input.scope), input.projectId, id);
       addToIndexes(db, input.projectId, id, entry.content, entry.concepts);
       insertedIds.push(id);
