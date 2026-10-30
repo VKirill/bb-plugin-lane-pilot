@@ -19,6 +19,7 @@ import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from ".
 import { recordStage } from "../../runs/server";
 import { stringAt, valueAt } from "../../core/server";
 import { observeStageChild } from "@lane-pilot/thread-observe";
+import type Database from "better-sqlite3";
 import type { ServerCore } from "../../core/server";
 import type { Services } from "../../core/server";
 
@@ -40,7 +41,7 @@ export function createMemoryStage(ctx: ServerCore, services: Services) {
     const memoryAgent=boundedAgentName(settings["memory.agent"],"memory-maintainer");
     const memorySettings=parseMemorySettings(Object.fromEntries([
       "memory.enabled","memory.maintain","memory.inject","memory.audience","memory.personal_bot","memory.search_engine",
-      "memory.core_budget","memory.note_budget","memory.index_budget","memory.context_budget",
+      "memory.core_budget","memory.note_budget","memory.index_budget","memory.context_budget","memory.maintain_every",
     ].map((key)=>[key,configuredSetting(settings,key)])));
     // The memory row of the role table (the project's own memory.* settings still win), through the one resolver: never the project writer.
     const spawnUsage=spawnUsageOf(ctx);
@@ -59,6 +60,15 @@ export function createMemoryStage(ctx: ServerCore, services: Services) {
     }
     if(!existing) recordStage(db,{...base,state:"pending"});
     const liveChild=Boolean(existing?.threadId || memoryChildSnapshot(existing?.result));
+    // Recurrence gate (RecMem, arXiv #5): the maintainer runs on every Nth accepted task, not on each one.
+    if(!liveChild && memorySettings.maintainEvery > 1) {
+      const { due, acceptedSince } = memoryRecurrenceDue(db, args.projectId, memorySettings.maintainEvery);
+      if (!due) {
+        const reason = `below_recurrence:${acceptedSince}/${memorySettings.maintainEvery}`;
+        recordStage(db,{...base,state:"skipped",reason,result:{stored:0,audience:memorySettings.audience}});
+        return {runId:args.runId,taskId:args.taskId,state:"skipped",reason};
+      }
+    }
     if((!memorySettings.enabled||!memorySettings.maintain) && !liveChild) {
       const reason=!memorySettings.enabled?"disabled_by_project_setting":"memory_maintain_disabled";
       recordStage(db,{...base,state:"skipped",reason,result:{stored:0,audience:memorySettings.audience}});
@@ -248,7 +258,7 @@ export function createMemoryStage(ctx: ServerCore, services: Services) {
     const settings=await stageHelperSettings(bb,db,args.projectId,args.runId);
     const memorySettings=parseMemorySettings(Object.fromEntries([
       "memory.enabled","memory.maintain","memory.inject","memory.audience","memory.personal_bot","memory.search_engine",
-      "memory.core_budget","memory.note_budget","memory.index_budget","memory.context_budget",
+      "memory.core_budget","memory.note_budget","memory.index_budget","memory.context_budget","memory.maintain_every",
     ].map((key)=>[key,configuredSetting(settings,key)])));
     if(!memorySettings.enabled) return {runId:args.runId,state:"skipped",reason:"memory_disabled"};
     const demoted = demoteUnusedPromotions(db);
@@ -273,4 +283,13 @@ export function createMemoryStage(ctx: ServerCore, services: Services) {
   }
 
   return { runMemoryMaintenance, runMemoryContext };
+}
+
+/** True once `every` accepted tasks have piled up since the last real (non-skipped) memory maintenance for the project. */
+export function memoryRecurrenceDue(db: Database.Database, projectId: string, every: number): { due: boolean; acceptedSince: number } {
+  const lastRun = (db.prepare(`SELECT MAX(s.updated_at) AS at FROM lane_pilot_stage_receipt s JOIN lane_pilot_run r ON r.id=s.run_id
+    WHERE r.project_id=? AND s.stage_id='memory-maintenance' AND s.state<>'skipped'`).get(projectId) as { at: number | null }).at ?? 0;
+  const acceptedSince = (db.prepare(`SELECT count(*) AS n FROM lane_pilot_stage_receipt s JOIN lane_pilot_run r ON r.id=s.run_id
+    WHERE r.project_id=? AND s.stage_id='acceptance-receipt' AND s.state='passed' AND s.updated_at>?`).get(projectId, lastRun) as { n: number }).n;
+  return { due: acceptedSince >= every, acceptedSince };
 }
