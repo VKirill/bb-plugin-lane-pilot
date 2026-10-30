@@ -94,6 +94,8 @@ export const rpcRuns = {
         /** The after-acceptance stages (memory, project log, docs) whose current receipt is failed or blocked: the code is in, these are not. */
         background: z.array(z.string()).optional(),
       }).strict()),
+      /** W31 rank 11: how long this run's attempts sat in the queue (settled waits only). */
+      queueWait: z.object({ samples: z.number(), p50Ms: z.number().nullable(), p99Ms: z.number().nullable() }).strict().optional(),
     }).strict().nullable(),
   },
   native_thread: {

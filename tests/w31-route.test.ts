@@ -8,6 +8,7 @@ import { cancelParetoLine } from "../src/rooms/wall/morning";
 import { insertReceipt } from "@lane-pilot/jev";
 import { writerModelJudgment } from "../src/rooms/writer/writer-model-pick";
 import { writerCandidates } from "@lane-pilot/models";
+import { rpcRuns } from "../src/rooms/contracts/rpc-runs";
 
 const NOW = 20 * 86_400_000;
 
@@ -149,5 +150,12 @@ describe("W31 rank 11: queue waits", () => {
     expect(row.queueWaitMs).toBe(wait);
     expect(report.summary.queueWait).toEqual({ samples: 1, p50Ms: wait, p99Ms: wait });
     expect(runQueueWaits(db as never, "run")).toEqual([wait]);
+  });
+});
+
+describe("W31 run card contract", () => {
+  // 0.1.396–0.1.398: the handler returned queueWait, the contract did not know it, and every run card failed validation on the hub.
+  it("the run card output contract accepts the queue waits the handler returns", () => {
+    expect(rpcRuns.get_run_card.output.safeParse({ runId: "r", state: "running", closed: false, tasks: [], queueWait: { samples: 2, p50Ms: 5_000, p99Ms: null } }).success).toBe(true);
   });
 });
