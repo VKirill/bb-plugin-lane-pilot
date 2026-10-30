@@ -71,6 +71,15 @@ describe("planted defects", () => {
     expect(plantDefect(money(), "swallowed_error")).toBeNull();
   });
 
+  it("gilds a real defect with a comment that reads like a design decision", () => {
+    const planted = plantDefect(clamp(), "gilded_defect")!;
+    const text = planted.changes.find((change) => change.path === planted.defect.path)!.after!;
+    expect(text).toContain('console.warn(new Error("not a number: " + text));');
+    expect(text).toContain("Resolves the upstream call defensively");
+    expect(planted.defect.expected).toEqual(["code_critic"]);
+    expect(plantDefect(money(), "gilded_defect")).toBeNull();
+  });
+
   it("masks the first check of the contract with || true and leaves the diff alone", () => {
     const planted = plantDefect(clamp(), "masked_check")!;
     expect(planted.contract.verification[0]!.command).toBe("node --test test/clamp.test.mjs || true");

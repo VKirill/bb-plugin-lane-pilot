@@ -13,6 +13,7 @@ export const MODEL_CHECKERS: readonly CheckerId[] = ["code_critic", "plan_critic
 
 export const DEFECT_CLASSES = [
   "test_assertion_deleted", "off_by_one", "outside_owns", "swallowed_error", "masked_check", "acceptance_missing", "hardcoded_value", "broken_import",
+  "gilded_defect",
 ] as const;
 export type DefectClass = (typeof DEFECT_CLASSES)[number];
 
@@ -29,6 +30,9 @@ export const EXPECTED_CATCHERS: Readonly<Record<DefectClass, readonly CheckerId[
   acceptance_missing: ["plan_fact"],
   hardcoded_value: ["code_critic"],
   broken_import: ["verification"],
+  // A real defect under cosmetic polish (TRACE / Bias-in-the-Loop, arXiv #13): only the critic is asked to see through it;
+  // whether it still does is the bias measure the scorecard reports.
+  gilded_defect: ["code_critic"],
 };
 
 /** Contract-level classes damage the task's contract, not the diff; the other classes damage the diff. */

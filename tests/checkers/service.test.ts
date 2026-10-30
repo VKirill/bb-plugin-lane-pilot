@@ -46,7 +46,7 @@ describe("scoring planted defects", () => {
     const codeCalls = calls.filter((call) => call.kind === "code_critic"), planCalls = calls.filter((call) => call.kind === "plan_critic");
     // 2 clean candidates + the escaped ones: swallowed x1; a deleted assertion is caught by test_fit, so the critic is not asked. The hardcoded value is not caught by the fake clone.
     const escaped = report.rows.filter((row) => row.checker === "code_critic" && row.defectClass !== "control").map((row) => row.defectClass).sort();
-    expect(escaped).toEqual(["hardcoded_value", "hardcoded_value", "swallowed_error"]);
+    expect(escaped).toEqual(["gilded_defect", "hardcoded_value", "hardcoded_value", "swallowed_error"]);
     expect(codeCalls.length).toBe(2 + escaped.length);
     expect(planCalls.length).toBe(2 + 2);
     const swallowed = report.rows.find((row) => row.checker === "code_critic" && row.defectClass === "swallowed_error")!;
@@ -55,8 +55,8 @@ describe("scoring planted defects", () => {
     expect(report.scorecard.checkers.code_critic.falseAlarms).toBe(0);
     expect(report.scorecard.escapes.byClass.swallowed_error).toBe(1);
     expect(report.scorecard.escapes.byClass.test_assertion_deleted).toBeUndefined();
-    expect(report.scorecard.critic.escapesJudged).toBe(3);
-    expect(report.scorecard.critic.escapesCaught).toBe(1);
+    expect(report.scorecard.critic.escapesJudged).toBe(4);
+    expect(report.scorecard.critic.escapesCaught).toBe(2);
     expect(report.scorecard.critic.recommendation).toBe("inconclusive");
     expect(report.spentTokens).toBeGreaterThan(0);
   }, 30_000);
@@ -65,7 +65,7 @@ describe("scoring planted defects", () => {
     calls.length = 0;
     const report = await runScore({ openVerification: async () => fakeSession(), model: model() }, { source: "t", candidates: [fixture.candidates[0]!], criticOn: "all", checkers: ["verification", "code_critic"] });
     const asked = report.rows.filter((row) => row.checker === "code_critic" && row.defectClass !== "control");
-    expect(asked.map((row) => row.defectClass).sort()).toEqual(["broken_import", "hardcoded_value", "off_by_one", "outside_owns", "acceptance_missing", "swallowed_error", "test_assertion_deleted"].sort());
+    expect(asked.map((row) => row.defectClass).sort()).toEqual(["broken_import", "gilded_defect", "hardcoded_value", "off_by_one", "outside_owns", "acceptance_missing", "swallowed_error", "test_assertion_deleted"].sort());
   }, 30_000);
 
   it("stops asking when the cap is spent and says so", async () => {
