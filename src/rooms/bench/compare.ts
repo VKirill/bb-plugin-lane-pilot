@@ -22,6 +22,32 @@ export const MIN_PAIRED_TASKS = 3;
 export const MIN_PAIRED_SHARE = 0.8;
 export const MIN_MEASURED_PAIRS = 2;
 
+/** Wilson score interval for `passed` successes in `n` trials. z = 1.96 is about 95%. */
+export function wilsonInterval(passed: number, n: number, z = 1.96): { low: number; high: number } {
+  if (n <= 0) return { low: 0, high: 1 };
+  const p = passed / n, z2 = z * z, den = 1 + z2 / n;
+  const center = (p + z2 / (2 * n)) / den;
+  const margin = (z * Math.sqrt((p * (1 - p) + z2 / (4 * n)) / n)) / den;
+  return { low: Math.max(0, center - margin), high: Math.min(1, center + margin) };
+}
+
+/**
+ * Paired Wald interval on (pass rate B − pass rate A), same task order.
+ * A discordant pair is the only evidence; when every task agrees the interval collapses on the difference.
+ */
+export function pairedDiffInterval(aPass: readonly boolean[], bPass: readonly boolean[], z = 1.96): { low: number; high: number } {
+  const n = aPass.length;
+  if (!n || bPass.length !== n) return { low: -1, high: 1 };
+  let up = 0, down = 0;
+  for (let i = 0; i < n; i++) {
+    if (!aPass[i] && bPass[i]) up++;
+    else if (aPass[i] && !bPass[i]) down++;
+  }
+  const diff = (up - down) / n;
+  const se = Math.sqrt(Math.max(0, up + down - ((up - down) ** 2) / n)) / n;
+  return { low: diff - z * se, high: diff + z * se };
+}
+
 export type TaskStat = {
   taskId: string; repeats: number; accepted: number; passed: boolean;
   /** Mean per repeat. */
@@ -88,6 +114,8 @@ export type Comparison = {
   verdict: "pass" | "fail" | "inconclusive";
   /** Tasks that failed on A and pass on B (not counting unstable ones). A `pass` with none of them is «not worse», never «better». */
   improvements: string[];
+  /** 95% intervals. `diff` is B − A on the paired tasks; if it contains 0, the pass-rate change is inside the noise of this sample. */
+  passCi: { level: 0.95; a: { rate: number; low: number; high: number }; b: { rate: number; low: number; high: number }; diff: { low: number; high: number } };
 };
 
 /** Noise from two identical arms: which tasks flipped between them, and how far apart their cost, time and stage counts were. */
@@ -162,13 +190,22 @@ export function compareArms(a: ArmSummary, b: ArmSummary, noise?: NoiseRecord | 
   // Without the coverage nothing below it is evidence, even a regression: it stands on a few tasks. A real regression with enough coverage fails
   // whatever else is unmeasured; a check that could not be made keeps the rest from passing. Different writers are never a pass or a fail of the change.
   const verdict: Comparison["verdict"] = writerMismatch || !enough ? "inconclusive" : checks.some((check) => check.ok === false) ? "fail" : checks.some((check) => check.ok === null) ? "inconclusive" : "pass";
+  const aFlags = paired.map((id) => a.tasks.get(id)!.passed), bFlags = paired.map((id) => b.tasks.get(id)!.passed);
+  const aPassed = aFlags.filter(Boolean).length, bPassed = bFlags.filter(Boolean).length;
+  const aWilson = wilsonInterval(aPassed, paired.length), bWilson = wilsonInterval(bPassed, paired.length);
+  const passCi: Comparison["passCi"] = {
+    level: 0.95,
+    a: { rate: paired.length ? aPassed / paired.length : 0, ...aWilson },
+    b: { rate: paired.length ? bPassed / paired.length : 0, ...bWilson },
+    diff: pairedDiffInterval(aFlags, bFlags),
+  };
   return {
     armA: a.arm, armB: b.arm, pairedTasks: paired.length, onlyA: idsA.filter((id) => !b.tasks.has(id)), onlyB: idsB.filter((id) => !a.tasks.has(id)),
     passed: { a: paired.filter((id) => a.tasks.get(id)!.passed).length, b: paired.filter((id) => b.tasks.get(id)!.passed).length },
     stages: { a: stagesA, b: stagesB }, cost: { a: costA, b: costB, pairedTasks: bothCost.length, notMeasured },
     seconds: { a: secondsA, b: secondsB }, flips,
     tolerance: { cost: costTol, time: timeTol, stages: stagesTol, calibratedOn: noise ? `${noise.armA} vs ${noise.armB}` : null },
-    checks, verdict, improvements,
+    checks, verdict, improvements, passCi,
   };
 }
 
@@ -203,6 +240,7 @@ export function renderComparison(c: Comparison): string {
     `Bench comparison ${c.armA} (A, baseline) vs ${c.armB} (B): ${c.pairedTasks} paired tasks${c.onlyA.length || c.onlyB.length ? `, ${c.onlyA.length} only on A, ${c.onlyB.length} only on B (not compared)` : ""}.`,
     `Tolerance: cost ${pct(c.tolerance.cost)}, time ${pct(c.tolerance.time)}, stages slack ${c.tolerance.stages.toFixed(1)}; ${c.tolerance.calibratedOn ? `calibrated on the noise of ${c.tolerance.calibratedOn}` : "NOT calibrated on a noise baseline (run `bench noise` on two identical arms)"}.`,
     `Tasks passed: A ${c.passed.a}, B ${c.passed.b}. Stages passed: A ${c.stages.a.toFixed(1)}, B ${c.stages.b.toFixed(1)}. Cost: A ${usd(c.cost.a)}, B ${usd(c.cost.b)} (${c.cost.pairedTasks} tasks measured on both). Median time: A ${c.seconds.a === null ? "-" : `${Math.round(c.seconds.a)}s`}, B ${c.seconds.b === null ? "-" : `${Math.round(c.seconds.b)}s`}.`,
+    `Pass rate 95% CI: A ${pct(c.passCi.a.rate)} [${pct(c.passCi.a.low)}, ${pct(c.passCi.a.high)}], B ${pct(c.passCi.b.rate)} [${pct(c.passCi.b.low)}, ${pct(c.passCi.b.high)}]; B−A [${pct(c.passCi.diff.low)}, ${pct(c.passCi.diff.high)}]${c.passCi.diff.low <= 0 && c.passCi.diff.high >= 0 ? " (the difference sits inside the noise)" : ""}.`,
     c.cost.notMeasured.length ? `Cost not measured on at least one arm for: ${c.cost.notMeasured.join(", ")}.` : "",
     `Flips: ${c.flips.length ? c.flips.map((flip) => `${flip.taskId} ${flip.from}->${flip.to} (${flip.a} vs ${flip.b})${flip.unstable ? " [unstable in noise]" : ""}`).join("; ") : "none"}.`,
     ...c.checks.map((check) => `${check.ok === null ? "n/a " : check.ok ? "ok  " : "FAIL"} ${check.name}: ${check.detail}`),

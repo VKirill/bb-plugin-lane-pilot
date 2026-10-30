@@ -33,7 +33,8 @@ export function mountBenchWeekly(ctx: ServerCore, bench: () => BenchApi): void {
     if (newest.runs.some((row) => row.arm === previous)) {
       try {
         const result = bench().compare({ version: newest.version, armA: previous, armB: arm });
-        ctx.log(`bench-weekly: ${newest.version} ${previous} → ${arm}: ${result.comparison.verdict}; ${result.text.split("\n")[0]}`);
+        const ci = result.text.split("\n").find((line) => line.startsWith("Pass rate")) ?? "";
+        ctx.log(`bench-weekly: ${newest.version} ${previous} → ${arm}: ${result.comparison.verdict}; ${result.text.split("\n")[0]}${ci ? `; ${ci}` : ""}`);
       } catch (cause) {
         ctx.log(`bench-weekly: compare skipped: ${cause instanceof Error ? cause.message : String(cause)}`);
       }
