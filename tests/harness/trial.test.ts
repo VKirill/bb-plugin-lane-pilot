@@ -115,4 +115,16 @@ describe("decideTrial", () => {
     const rows = [...many("new", minPerArm, "canceled"), ...many("old", minPerArm, "accepted")];
     expect(decideTrial(rows, START, fresh).action).toBe("wait");
   });
+
+  it("closes a favoured trial as insufficient data when the deadline passed without a bench comparison", () => {
+    const rows = [
+      ...many("new", minPerArm, "accepted"),
+      ...many("old", minPerArm - 2, "accepted"), ...many("old", 2, "blocked"),
+    ];
+    const open = decideTrial(rows, START, fresh, TRIAL_DEFAULTS, { adoptBy: "bench", verdict: null });
+    expect(open.action).toBe("wait");
+    const closed = decideTrial(rows, START, START + maxDays * DAY, TRIAL_DEFAULTS, { adoptBy: "bench", verdict: null });
+    expect(closed.action).toBe("retire");
+    expect(closed.reason).toMatch(/insufficient data/i);
+  });
 });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { EVIDENCE_WAIT_MS, decideAcceptance, gateRepair, repairChange, type AcceptanceEvidence } from "../../src/rooms/wall/acceptance";
+import { EVIDENCE_WAIT_MS, REPAIR_DEADLINE_MS, closeExpiredRepair, decideAcceptance, gateRepair, repairChange, type AcceptanceEvidence } from "../../src/rooms/wall/acceptance";
 import { parseNightReport, repairBrief, recurrenceSql } from "../../src/rooms/wall/brief";
 import { checkFinding, judgeHunt, parseFinding, type EvidencePack, type Finding } from "../../src/rooms/wall/pack";
 import type { WallClass } from "../../src/rooms/wall/types";
@@ -144,6 +144,22 @@ describe("acceptance asks for evidence, absence is not proof (review of 2026-10-
     const later = decideAcceptance(evidence({ deployedVersion: "0.1.307", canary: { version: "0.1.328", tripped: false, windowOpen: false }, supersededBy: "0.1.328", now: 11 }));
     expect(later).toMatchObject({ state: "inconclusive", action: "none" });
     expect(later.reason).toMatch(/0\.1\.328 was released after 0\.1\.307/);
+  });
+});
+
+describe("closeExpiredRepair", () => {
+  const day = 86_400_000;
+  it("keeps a repair that is still inside the deadline", () => {
+    expect(closeExpiredRepair({ state: "merged", createdAt: 0, now: REPAIR_DEADLINE_MS - day }).close).toBe(false);
+  });
+
+  it("accepts, rejects, or closes as insufficient data from what was collected", () => {
+    expect(closeExpiredRepair({ state: "deployed", createdAt: 0, now: REPAIR_DEADLINE_MS, collected: "accepted" })).toMatchObject({ close: true, state: "accepted" });
+    expect(closeExpiredRepair({ state: "deployed", createdAt: 0, now: REPAIR_DEADLINE_MS, collected: "red" })).toMatchObject({ close: true, state: "red" });
+    const none = closeExpiredRepair({ state: "running", createdAt: 0, now: REPAIR_DEADLINE_MS });
+    expect(none).toMatchObject({ close: true, state: "unproven" });
+    if (!none.close) throw new Error("expected the deadline to close the repair");
+    expect(none.reason).toMatch(/insufficient data/i);
   });
 });
 
