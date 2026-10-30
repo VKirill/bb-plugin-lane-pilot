@@ -70,6 +70,24 @@ export default definePluginApp((app) => {
   } else {
     threadActionTab({ id: "lane-pilot-live", title: t("liveTitle"), component: ({ threadId }) => <ThreadLive threadId={threadId} locale={detectLocale()} /> });
   }
+  // «Lane Pilot helpers» in every thread's actions menu, opening this chat's helper tab (newer BB only; the slot is feature-tested).
+  const threadAction = (app.slots as unknown as { experimental_threadAction?: (registration: {
+    id: string; title: string; icon: string; group: string;
+    item: (input: { experimental_panel?: { openTab?: (options: { tab: { id: string; context: { kind: "thread" }; availability: "action" }; params?: JsonValue; title?: string }) => boolean } }) => { label: string; icon: string; run: () => void } | null;
+  }) => void }).experimental_threadAction;
+  if (typeof threadAction === "function") {
+    threadAction.call(app.slots, {
+      id: "lane-pilot-helpers",
+      title: t("helperPanelTitle"),
+      icon: "Workflow",
+      group: "lane-pilot",
+      item: (input) => ({
+        label: t("helperPanelTitle"),
+        icon: "Workflow",
+        run: () => { input.experimental_panel?.openTab?.({ tab: { id: HELPER_PANEL_ACTION, context: { kind: "thread" }, availability: "action" }, params: {} }); },
+      }),
+    });
+  }
   // The PM's `::lane-run{id="…"}` line becomes a live card of the run's tasks.
   app.slots.messageDirective({ id: RUN_CARD_DIRECTIVE, component: RunCardDirective });
   // A question to the owner (PM, integration gate, repair thread, council) as BB's pending interaction; BB's
