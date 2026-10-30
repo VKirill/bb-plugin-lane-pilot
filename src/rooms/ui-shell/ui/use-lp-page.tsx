@@ -436,8 +436,8 @@ export function useLanePilotPage({ subPath = "", scope = "projects" }: { subPath
       ...(selectedBinding ? { selectedBinding } : {}),
       providerId: selection.providerId,
       model: selection.model,
-      reasoningLevel: selection.reasoningLevel,
-      serviceTier: selection.serviceTier ?? null,
+      reasoningLevel: selection.reasoningLevel as "none" | "low" | "medium" | "high" | "xhigh" | "ultracode" | "max" | "ultra",
+      serviceTier: (selection.serviceTier ?? null) as "default" | "fast" | null,
       expectedVersions: {
         "writer.provider": snapshot.versions[WRITER_PROVIDER] ?? 0,
         "writer.model": snapshot.versions[WRITER_MODEL] ?? 0,
@@ -560,7 +560,7 @@ export function useLanePilotPage({ subPath = "", scope = "projects" }: { subPath
     if (!projectId || !snapshot) return false;
     const keys = [`council.${seat}.provider`, `council.${seat}.model`, `council.${seat}.reasoning_effort`];
     return settleSelection(await rpc.call("save_council_seat_selection", { ...scoped,
-      projectId, seat, providerId: selection.providerId, model: selection.model, reasoningLevel: selection.reasoningLevel,
+      projectId, seat, providerId: selection.providerId, model: selection.model, reasoningLevel: selection.reasoningLevel as "none" | "low" | "medium" | "high" | "xhigh" | "ultracode" | "max" | "ultra",
       expectedVersions: Object.fromEntries(keys.map((key) => [key, snapshot.versions[key] ?? 0])),
     }));
   });
@@ -569,7 +569,7 @@ export function useLanePilotPage({ subPath = "", scope = "projects" }: { subPath
     if (!projectId || !snapshot) return false;
     const keys = writerFallbackKeys(slot);
     return settleSelection(await rpc.call("save_writer_fallback_selection", { ...scoped, projectId, slot,
-      ...(selection ? { providerId: selection.providerId, model: selection.model, reasoningLevel: selection.reasoningLevel } : { off: true }),
+      ...(selection ? { providerId: selection.providerId, model: selection.model, reasoningLevel: selection.reasoningLevel as "none" | "low" | "medium" | "high" | "xhigh" | "ultracode" | "max" | "ultra" } : { off: true }),
       expectedVersions: Object.fromEntries(Object.values(keys).map((key) => [key, snapshot.versions[key] ?? 0])),
     }));
   });

@@ -102,7 +102,7 @@ describe("Helper chips & panel phase rendering", () => {
     const panelAction = app.threadPanelActions.find((a) => a.id === "lane-helper-thread");
     if (!panelAction) throw new Error("missing panel action");
 
-    const slot = renderSlot(panelAction, { threadId: "thr_pm", params: {} }, {
+    const slot = renderSlot(panelAction, { threadId: "thr_pm", params: {}, environment: null }, {
       context: { projectId: "proj_1", threadId: "thr_pm" },
       rpc: {
         list_helper_threads: () => ({
@@ -124,7 +124,7 @@ describe("Helper chips & panel phase rendering", () => {
     const app = await loadPluginApp(() => import("../app"));
     const panelAction = app.threadPanelActions.find((a) => a.id === "lane-helper-thread");
     if (!panelAction) throw new Error("missing panel action");
-    const slot = renderSlot(panelAction, { threadId: "thr_pm", params: {} }, {
+    const slot = renderSlot(panelAction, { threadId: "thr_pm", params: {}, environment: null }, {
       context: { projectId: "proj_1", threadId: "thr_pm" },
       rpc: {
         list_helper_threads: () => ({

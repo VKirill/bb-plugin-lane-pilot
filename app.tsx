@@ -51,7 +51,9 @@ export default definePluginApp((app) => {
     if (typeof threadTab === "function") {
       threadTab.call(app.slots, { ...registration, icon: "Workflow", context: { kind: "thread" }, availability: "action" });
     } else {
-      app.slots.threadPanelAction({ ...registration, icon: "Workflow" });
+      // The retired slot: absent from new SDK types but still served on an older BB.
+      const legacy = (app.slots as unknown as { threadPanelAction?: (r: { id: string; title: string; icon: string; layout?: "padded" | "flush"; component: ComponentType<{ threadId: string; params?: JsonValue }> }) => void }).threadPanelAction;
+      legacy?.call(app.slots, { ...registration, icon: "Workflow" });
     }
   };
   threadActionTab({

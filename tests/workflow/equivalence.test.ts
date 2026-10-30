@@ -88,7 +88,13 @@ async function runScenario(scenario: Scenario) {
       },
       plugins: {
         experimental_discoverRpc: async ({ method }: { method: string }) => { throw new Error(`no plugin publishes ${method}`); },
-        callRpc: async ({ pluginId }: { pluginId: string }) => { throw new Error(`plugin ${pluginId} is not enabled`); },
+        callRpc: async ({ pluginId, method }: { pluginId: string; method: string }) => {
+          if (pluginId === "bb--git") {
+            if (method === "workspaceStatus") return { outcome: "available", workspace: { branch: { currentBranch: "eq", defaultBranch: "main" } } };
+            if (method === "diff") return { outcome: "available", diff: { diff: "diff --git a/note.txt b/note.txt", files: "note.txt", shortstat: "1 file changed", truncated: false } };
+          }
+          throw new Error(`plugin ${pluginId} is not enabled`);
+        },
       } as never,
       providers: {
         list: async () => ["codex", "critic"].map((id) => ({ id, available: true, capabilities: { supportsServiceTier: true }, serviceTiers: [{ id: "default", label: "Default" }] })) as never,
@@ -102,8 +108,7 @@ async function runScenario(scenario: Scenario) {
         listProviders: async () => [{ id: "git-worktree", pluginId: "environment-git-worktree", displayName: "Worktree", acceptsEmptyInputs: true, availability: null, description: null, icon: null, logoUrl: null, machineProviderId: null,
           requires: { gitCheckout: true, gitRemote: false, projectCheckout: true, projectless: false } }] as never,
         get: async ({ environmentId }) => ({ id: environmentId, hostId: config.hostId, path: config.writerWorkspacePath, status: "ready", managed: true, workspaceProvisionType: "managed-worktree" }) as never,
-        status: async () => ({ outcome: "available", workspace: { branch: { currentBranch: "eq", defaultBranch: "main" } } }) as never,
-        diff: async () => ({ outcome: "available", diff: { diff: "diff --git a/note.txt b/note.txt", files: "note.txt", shortstat: "1 file changed", truncated: false } }) as never,
+
       },
       files: {
         listPaths: async () => ({ truncated: false, paths: [{ kind: "file", name: "README.md", path: "README.md", positions: [], score: 1 }] }) as never,

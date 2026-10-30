@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useComposer, useComposerView, useRpc } from "@get-bb/plugin-sdk/app";
+import { useComposer, useRpc } from "@get-bb/plugin-sdk/app";
 import type { rpcContract } from "../../contracts";
 import { t, detectLocale, setLocaleOverride } from "@lane-pilot/i18n";
 import { agentKind, composerAgentLabel, type PickableAgent } from "../agent-display";
@@ -57,8 +57,8 @@ function lockedCopy(reason: NonNullable<ChatState["reason"]>): string | null {
 
 export function EnableLanePilotAction() {
   const rpc = useRpc<typeof rpcContract>();
-  const composer = useComposer();
-  const view = useComposerView();
+  const view = useComposer();
+  const composer = view;
   // In an existing chat the same popover changes the agent from the chat's next message (switch_chat_agent).
   const threadId = view.scope.kind === "thread" ? view.scope.threadId : null;
   const [chat, setChat] = useState<ChatState | null>(null);
@@ -135,7 +135,7 @@ export function EnableLanePilotAction() {
       // Opus 5.5 with the 1M context when the machine offers it, the standard context otherwise.
       let selected = false;
       for (const model of ["claude-opus-5-5[1m]", "claude-opus-5-5"]) {
-        const selection = await composer.experimental_setSelection({ providerId: "claude-code", model, permissionMode: "full" });
+        const selection = await composer.setSelection({ providerId: "claude-code", model, permissionMode: "full" });
         if (selection.providerId === "claude-code" && selection.model === model) { selected = true; break; }
       }
       if (!selected) throw new Error(t("nativeComposerModelUnavailable"));
@@ -160,11 +160,11 @@ export function EnableLanePilotAction() {
     }
   };
 
-  useEffect(() => composer.experimental_onSubmitted(() => {
+  useEffect(() => composer.onSubmitted(() => {
     if (threadId) { noteChatAgentChanged(); return; }
     setSelected(null);
     setPendingNativeAgent(null);
-  }), [composer.experimental_onSubmitted, threadId]);
+  }), [composer.onSubmitted, threadId]);
 
   // A project with a main agent starts every new chat with Lane Pilot on and that agent picked, once per composer;
   // turning it off by hand stays off.

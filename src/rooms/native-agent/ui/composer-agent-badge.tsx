@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
-import { useComposerView, useRpc } from "@get-bb/plugin-sdk/app";
+import { useComposer, useRpc } from "@get-bb/plugin-sdk/app";
 import type { rpcContract } from "../../contracts";
 import { detectLocale, setLocaleOverride, t } from "@lane-pilot/i18n";
 import { composerAgentLabel } from "../agent-display";
@@ -94,7 +94,7 @@ function AgentNameBadge(agent: { agentId: string; description: string; helpers?:
 
 export function ComposerAgentBadge() {
   const rpc = useRpc<typeof rpcContract>();
-  const view = useComposerView();
+  const view = useComposer();
   const threadId = view.scope.kind === "thread" ? view.scope.threadId : null;
   const pending = useSyncExternalStore(subscribePendingNativeAgent, getPendingNativeAgent, getPendingNativeAgent);
   const switched = useSyncExternalStore(subscribePendingNativeAgent, getChatAgentVersion, getChatAgentVersion);

@@ -274,6 +274,10 @@ async function setup(critiqueOutput:string, browserQaResult?:Record<string,unkno
           return [{pluginId:"provider-codex"}];
         },
         callRpc:async ({pluginId,method,input}:{pluginId:string;method:string;input?:unknown})=>{
+          if(pluginId==="bb--git"){
+            if(method==="workspaceStatus") return {outcome:"available",workspace:{branch:{currentBranch:"lane-pilot-run",defaultBranch:"main"}}};
+            if(method==="diff") {expect(input).toMatchObject({target:{type:"uncommitted"}});return {outcome:"available",diff:{diff:"diff --git a/note.txt b/note.txt",files:"note.txt",shortstat:"1 file changed",truncated:false}};}
+          }
           if(pluginId==="concurrency-limit"){
             if(!concurrencyPlugin) throw new Error("plugin concurrency-limit is not enabled");
             concurrencyCalls.push(method);
@@ -314,8 +318,6 @@ async function setup(critiqueOutput:string, browserQaResult?:Record<string,unkno
           }
           return {id:environmentId,hostId:config.hostId,path:config.writerWorkspacePath,status:"ready",managed:true,workspaceProvisionType:"managed-worktree"} as never;
         },
-        status:async ()=>({outcome:"available",workspace:{branch:{currentBranch:"lane-pilot-run",defaultBranch:"main"}}}) as never,
-        diff:async (args)=>{expect(args).toMatchObject({target:"uncommitted"});return {outcome:"available",diff:{diff:"diff --git a/note.txt b/note.txt",files:"note.txt",shortstat:"1 file changed",truncated:false}} as never;},
       },
       projects:{
         get:async ({ projectId:id }) => ({ id, name:id, sources:[] }),
