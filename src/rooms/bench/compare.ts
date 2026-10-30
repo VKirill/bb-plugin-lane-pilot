@@ -229,6 +229,27 @@ export function passReport(byRepeat: readonly (readonly BenchResult[])[]): PassR
   return { tasks: counted, repeats: byRepeat.length, passAt1: counted ? once / counted : 0, passPow: counted ? every / counted : 0 };
 }
 
+/**
+ * Per-task stability over N repeats (C5). A task judged on every repeat that was accepted each time is `regression`
+ * (it graduated to the set's regression part); accepted on some repeats but not all is `flaky` — flagged and left out of
+ * verdicts. A task that failed every repeat carries no mark: a consistent failure is signal, not noise.
+ */
+export function stabilityMarks(byRepeat: readonly (readonly BenchResult[])[]): { marks: Map<string, "regression" | "flaky">; failedIds: string[] } {
+  const judged = (row: BenchResult) => row.state === "accepted" || row.state === "not_accepted";
+  const ids = [...new Set(byRepeat.flatMap((rows) => rows.map((row) => row.taskId)))];
+  const marks = new Map<string, "regression" | "flaky">();
+  const failedIds: string[] = [];
+  for (const id of ids) {
+    const rows = byRepeat.map((results) => results.find((row) => row.taskId === id)).filter((row): row is BenchResult => !!row && judged(row));
+    if (rows.length !== byRepeat.length) continue;
+    const accepted = rows.filter((row) => row.accepted).length;
+    if (accepted === rows.length) marks.set(id, "regression");
+    else if (accepted > 0) marks.set(id, "flaky");
+    else failedIds.push(id);
+  }
+  return { marks, failedIds };
+}
+
 /** Noise of one arm against itself: the first repeat and the last. Null when there is only one. */
 export function noiseOfRepeats(arm: string, byRepeat: readonly (readonly BenchResult[])[]): NoiseRecord["noise"] | null {
   if (byRepeat.length < 2) return null;

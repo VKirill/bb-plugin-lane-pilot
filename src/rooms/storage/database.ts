@@ -441,6 +441,8 @@ export const migrations = [
   `CREATE TABLE IF NOT EXISTS lane_pilot_memory_receipt (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, role TEXT NOT NULL, returned_ids TEXT NOT NULL, packed_ids TEXT NOT NULL, tokens INTEGER NOT NULL, created_at INTEGER NOT NULL)`,
   // Jev receipt: the state's field names and serialized sizes (names+sizes, never content; audit C-requirement). Append only.
   `ALTER TABLE lane_pilot_jev_receipt ADD COLUMN fields_json TEXT`,
+  // Bench task stability mark (C5): regression = accepted on every repeat, flaky = mixed. Flaky tasks stay out of verdicts. Append only.
+  `CREATE TABLE lane_pilot_bench_mark (set_id TEXT NOT NULL, task_id TEXT NOT NULL, mark TEXT NOT NULL, detail_json TEXT NOT NULL DEFAULT '{}', marked_at INTEGER NOT NULL, PRIMARY KEY(set_id, task_id))`,
 ];
 
 export function openDatabase(bb: BbPluginApi): LanePilotDatabase {
