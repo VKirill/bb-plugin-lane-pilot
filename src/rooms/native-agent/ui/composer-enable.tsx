@@ -178,7 +178,7 @@ export function EnableLanePilotAction() {
       const result = await rpc.call("prepare_native_session", { projectId, agentId: agent });
       attach!({ token: result.token });
       // New thread only. An existing chat cannot change host: this branch already returned when threadId is set.
-      if (result.environment) await composer.experimental_setSelection({ environment: result.environment });
+      if (result.environment) await (composer as typeof composer & { experimental_setSelection?: (selection: { environment: NonNullable<typeof result.environment> }) => Promise<unknown> }).experimental_setSelection?.({ environment: result.environment });
       // Claude Lane may still need installing on that machine; start now so the first send does not wait.
       if (hostId) void rpc.call("native_install_start", { hostId }).catch(() => undefined);
       setPendingNativeAgent({ agentId: result.agentId, description: result.label });
