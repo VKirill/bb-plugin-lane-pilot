@@ -3309,6 +3309,33 @@
    "evidence": "src/rooms/stability/server/stability.ts:240",
    "matrixStatus": "readonly",
    "storageKey": "writer.capacity_wait_max_min"
+  },
+  {
+   "id": "s570",
+   "index": 506,
+   "area": "Lane Pilot memory maintainer",
+   "setting": "memory.project_kind",
+   "location": "packages/memory-core/src/sections.ts:9",
+   "category": "user",
+   "invType": "enum",
+   "values": "auto, standalone, umbrella",
+   "defaultValue": "auto",
+   "scope": "project",
+   "control": "select",
+   "options": [
+    "auto",
+    "standalone",
+    "umbrella"
+   ],
+   "min": null,
+   "max": null,
+   "section": "memory",
+   "channel": "OWN",
+   "uiStatus": "editable",
+   "rationale": "Project kind for memory scoping: auto detects an umbrella from section chains in use, standalone keeps one development per project, umbrella treats each section as its own development (M7).",
+   "evidence": "packages/memory-core/src/sections.ts:9",
+   "matrixStatus": "readonly",
+   "storageKey": "memory.project_kind"
   }
  ],
  "fields": {

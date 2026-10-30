@@ -41,6 +41,7 @@ const BY_KEY: Record<string, Record<string, I18nKey>> = {
   "memory.query_floor": { on: "enumQueryFloorOn", off: "enumQueryFloorOff" },
   "bench.weekly": { on: "enumBenchWeeklyOn", off: "enumBenchWeeklyOff" },
   "bench.nightly": { on: "enumBenchNightlyOn", off: "enumBenchNightlyOff" },
+  "memory.project_kind": { auto: "enumProjectKindAuto", standalone: "enumProjectKindStandalone", umbrella: "enumProjectKindUmbrella" },
   "jev.provider": { openlux: "enumJevProviderOpenlux", typesafe: "enumJevProviderTypesafe" },
   "sandbox.backend": {
     auto: "enumSandboxAuto",

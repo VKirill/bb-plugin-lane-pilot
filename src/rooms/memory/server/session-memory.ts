@@ -1,7 +1,7 @@
 import { resolve } from "node:path";
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import { getRuleProposal, upsertLessonProposal } from "@lane-pilot/run-insights";
-import { DEFAULT_RELEVANCE_FLOOR, NOTHING_RELEVANT, memoryVisibilitySql, parseMemoryCandidates, relevantRecords, searchMemoryRecords, storeMemoryRecordsKeepingOverflow } from "@lane-pilot/memory-core";
+import { DEFAULT_RELEVANCE_FLOOR, NOTHING_RELEVANT, projectUsesSections, resolveProjectKind, sharedScope, UNASSIGNED_SCOPE, memoryVisibilitySql, parseMemoryCandidates, relevantRecords, searchMemoryRecords, storeMemoryRecordsKeepingOverflow } from "@lane-pilot/memory-core";
 import type { rpcContract } from "../../contracts";
 import { adoptRuleProposal, memorySettingsFor } from "../../self-repair/server";
 import type { ServerCore } from "../../core/server";
@@ -36,7 +36,12 @@ export function sessionMemoryRpc(ctx: ServerCore, services: Services) {
       catch (cause) { return { stored: false, id: null, reason: cause instanceof Error ? cause.message : String(cause) }; }
       try {
         const result = storeMemoryRecordsKeepingOverflow(db, { projectId, personalBot: settings.personalBot, audience: "subagent",
-          sourceSha256: sha256Hex(`session:${source ?? ""}`), entries, scope: chain ?? [],
+          sourceSha256: sha256Hex(`session:${source ?? ""}`), entries, scope: chain?.length ? chain
+            : resolveProjectKind(settings.projectKind, projectUsesSections(db, projectId)) === "umbrella"
+              // Root work of an umbrella is project work: shared as project:root; only an undefined source is unassigned.
+              ? concepts?.some((concept) => /^shared/.test(concept)) ? sharedScope(concepts.find((concept) => /^shared:/.test(concept))?.split(":")[1])
+                : source ? sharedScope("root") : [...UNASSIGNED_SCOPE]
+              : [],
           // One CLI session is one voice: its note reaches writers once a second source states it or a day has passed.
           trust: "observed", origin: "session",
           coreBudget: settings.coreBudget, noteBudget: settings.noteBudget, indexBudget: settings.indexBudget });
@@ -52,7 +57,7 @@ export function sessionMemoryRpc(ctx: ServerCore, services: Services) {
       // The session sees its own fresh notes. A missing chain is the project root, not every section.
       const wanted = limit ?? 8;
       // The floor drops records, so the search looks further than the limit to fill it; a query nothing clears gets the explicit «nothing» next to the empty list.
-      const found = searchMemoryRecords(db, projectId, query, Math.min(100, Math.max(40, wanted * 4)), settings.searchEngine, "subagent", settings.personalBot, { includeObserved: true, chain: chain ?? [] });
+      const found = searchMemoryRecords(db, projectId, query, Math.min(100, Math.max(40, wanted * 4)), settings.searchEngine, "subagent", settings.personalBot, { includeObserved: true, chain: chain ?? [], umbrella: resolveProjectKind(settings.projectKind, projectUsesSections(db, projectId)) === "umbrella" });
       const records = relevantRecords(db, projectId, query, found, { audience: "subagent", personalBot: settings.personalBot, floor: settings.queryFloor === false ? null : DEFAULT_RELEVANCE_FLOOR }).slice(0, wanted)
         .map((record) => ({ id: record.id, kind: record.kind, content: record.content, concepts: record.concepts }));
       return records.length ? { records } : { records, nothingRelevant: true, message: NOTHING_RELEVANT };
