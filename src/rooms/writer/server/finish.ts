@@ -20,7 +20,7 @@ import { stringAt } from "../../core/server";
 import { wasAnsweredByDefault } from "./question-default";
 import { needsHumanQuestion, outputText, providerLimitNotice, providerStreamError, WRITER_STREAM_ERROR, writerContextBlocks, writerSetupLines } from "./writer-task";
 import { isLiveDecision } from "../live-folder";
-import { TASK_WORDS_KEY, acceptanceProofGap, isMainfixTask, landingWordGap, ownerWordsOn, questionsFromFile, referenceTestEdits, taskWordKey, testFitFindings, writerMarkers } from "../../tasks";
+import { TASK_WORDS_KEY, acceptanceProofGap, taskSizeOf, isMainfixTask, landingWordGap, ownerWordsOn, questionsFromFile, referenceTestEdits, taskWordKey, testFitFindings, writerMarkers } from "../../tasks";
 import type { TaskWord } from "../../tasks";
 import type { StageId } from "../../tasks";
 import { readCheckRun } from "../../tasks/server";
@@ -915,8 +915,17 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
         // A folder with no repository has no merge: the accepted task is in place, and the gate runs there once the queue drains.
         if (await gateFor(input.projectId, input.runId, input.config.hostId, basePath)) void noteMergedForGate(input, basePath, "", candidate.produced, true);
       }
+      // #29 task-size metric: what this accepted task cost (files, diff lines, minutes, attempts) rides the receipt;
+      // the project's median over these rows is what plan warnings measure new slices against.
+      let sizeLines = 0;
+      if (integration?.commit) {
+        const stat = await runOnHost(host, { hostId:input.config.hostId, cwd:basePath!, command:`git diff --shortstat ${integration.commit}^ ${integration.commit}`, timeoutSec:15, timeoutMs:15_000 }).catch(() => null);
+        if (stat && stat.exitCode === 0) for (const m of stat.stdout.matchAll(/(\d+) insertions?|(\d+) deletions?/g)) sizeLines += Number(m[1] ?? m[2] ?? 0);
+      }
+      const firstAttempt = (db.prepare("SELECT MIN(created_at) AS c FROM lane_pilot_attempt WHERE task_id=?").get(input.taskId) as { c?: number } | undefined)?.c ?? null;
+      const size = taskSizeOf({ files:(candidate.produced ?? []).length, lines:sizeLines, createdAt:firstAttempt, finishedAt:Date.now(), attempts:countAttempts(db,input.runId,input.taskId) });
       recordGateEvaluation(db,{projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"passed",
-        attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{acceptanceReceiptPersisted:true,integration}});
+        attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{acceptanceReceiptPersisted:true,integration,size}});
       transitionAttempt(db, input.attemptId, "accepted");
       if (integration) await clearMergeIntent(bb.storage.kv as never, input.attemptId);
       return { ...receipt, verification:candidate.verification, produced:candidate.produced };

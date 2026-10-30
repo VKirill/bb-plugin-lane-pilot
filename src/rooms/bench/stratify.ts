@@ -63,6 +63,22 @@ export function smallStratum(quota = SMALL_QUOTA): Stratum {
   return { key: "small", quota, match: isSmallCandidate };
 }
 
+/**
+ * The long multi-contract stratum (#29): tasks the size classifier reads as large, or carrying three or more
+ * expected outputs — the long multi-piece work SWE-bench-Pro-style sets measure against the small stratum.
+ */
+export const LONG_QUOTA = 4;
+export function isLongCandidate(candidate: Candidate): boolean {
+  const text = smallTaskText(candidate.contract);
+  if (text.length <= 220) return false;
+  if (pathClassByRules(text).size === "large") return true;
+  const outputs = candidate.contract.expected_outputs;
+  return Array.isArray(outputs) && outputs.length >= 3;
+}
+export function longStratum(quota = LONG_QUOTA): Stratum {
+  return { key: "long", quota, match: isLongCandidate };
+}
+
 /** Errand, research, docs and a social post. Not a code change. Quota is the set v5 takes. */
 export const NONCODE_QUOTA = 6;
 const NONCODE_KIND = new Set(["docs", "research"]);

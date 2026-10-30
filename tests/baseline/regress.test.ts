@@ -49,7 +49,8 @@ describe("the regression pass over accepted tasks (D1-2)", () => {
     expect((open[0]!.evidence as { output: string }).output).toBeDefined();
     // the morning list names it with the commit
     const line = composeMorningList(w.db)[1];
-    expect(line).toContain(`Сломано после приёмки: 1 (A ← ${open[0]!.culpritCommit!.slice(0, 8)})`);
+    // S2c: a culprit other than the broken task is named in the morning line.
+    expect(line).toContain(`Сломано после приёмки: 1 (A ← ${open[0]!.culpritCommit!.slice(0, 8)} (виновник B))`);
     await w.dispose();
   });
 

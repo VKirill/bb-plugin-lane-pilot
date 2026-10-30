@@ -13,8 +13,8 @@ Which external (arXiv and audit) ideas Lane Pilot adopted, and which it declined
 | Code-as-harness survey direction | arXiv-agents #6 | framing, no mechanism; LP already treats harness as code (workflow JSON + harness trees) |
 | Self-evolving agents surveys | arXiv-agents #11 | taxonomy only; the SMA map already plays the checklist role |
 | Trained verifier (SWE-Gym) | arXiv-agents #16 | LP trains nothing; candidate selection exists via best-of + code critic (#18/#24) |
-| SWE-fficiency task class | arXiv-agents #27 | LP runs no performance-optimization tasks today; task mix is the owner's call, not a mechanism |
-| SWE-bench-Pro-like long tasks | arXiv-agents #29 | task granularity is the PM/owner's scoping decision; nothing to wire in code |
+| SWE-fficiency task class | arXiv-agents #27 | LP runs no performance-optimization tasks today; task mix is the owner's call, not a mechanism. Checkable: rerun a bench stratum of perf-tag tasks and compare acceptance/seconds-per-accept — possible once the long stratum exists (stratify.ts) |
+| SWE-bench-Pro-like long tasks | arXiv-agents #29 | done instead (wave24): accepted-task size metric on the gate receipt, median per project, grain warnings in plan-check + batch-shape, long bench stratum |
 
 ## Adopted (wave 16 verification pass)
 

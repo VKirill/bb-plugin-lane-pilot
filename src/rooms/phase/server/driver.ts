@@ -23,6 +23,7 @@ import { runOnHost } from "@lane-pilot/host-calls";
 import { intakeRunGoals } from "../intake";
 import { createPhaseIntake } from "./intake";
 import { createAutoStages, recoverStopped } from "./auto-stages";
+import { medianTaskSize, taskSizeText } from "../../tasks";
 import { checkProofs, hostGit, phaseProofRecords, renderProofCurrency } from "./proof-currency";
 import { builtinWorkflow, issueQuickWorkflowId } from "../../workflow";
 import { architectStarter } from "../../workflow/server";
@@ -1162,6 +1163,7 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
     runtime: (phase) => (phase.runId ? { ctx, services, pmThreadId: phase.pmThreadId, projectId: phase.projectId, runId: phase.runId } : null),
     pmIdle: async (phase) => ((await bb.sdk.threads.get({ threadId: phase.pmThreadId }).catch(() => null)) as { status?: unknown } | null)?.status === "idle",
     now,
+    medianTask: (phase) => { const m = medianTaskSize(db, phase.projectId); return m ? taskSizeText(m) : null; },
     runStopped: async (phase) => !!phase.runId && (await isRunHalted(bb.storage.kv as never, phase.runId) || await isRunPaused(bb.storage.kv as never, phase.runId)),
     proofCurrency,
   });

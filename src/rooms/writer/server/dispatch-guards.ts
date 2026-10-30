@@ -1,6 +1,6 @@
 import { taskV2Schema } from "../../contracts";
 import type { TaskV2 } from "../../contracts";
-import { batchShapeAdvice, topicHold, topicLoop, topicLoopMessage } from "../../tasks";
+import { batchShapeAdvice, medianTaskSize, topicHold, topicLoop, topicLoopMessage } from "../../tasks";
 import type { LoopTask, OpenShape } from "../../tasks";
 import { taskFamily } from "../../runs";
 import { getTask, listOpenAttempts } from "../../storage";
@@ -75,5 +75,5 @@ export function batchAdviceFor(db: LanePilotDatabase, projectId: string, task: T
     const parsed = taskV2Schema.safeParse(getTask(db, row.task_id)?.contract);
     if (parsed.success) open.push({ id: row.task_id, ownsPaths: parsed.data.owns_paths, dependsOn: parsed.data.depends_on });
   }
-  return batchShapeAdvice({ id: task.id, ownsPaths: task.owns_paths, dependsOn: task.depends_on }, open);
+  return batchShapeAdvice({ id: task.id, ownsPaths: task.owns_paths, dependsOn: task.depends_on }, open, medianTaskSize(db, projectId));
 }

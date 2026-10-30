@@ -8,7 +8,7 @@ import { defineJudgment, noul, noulOf } from "@lane-pilot/jev";
  */
 export const PLAN_CHECK_ID = "plan.check";
 
-export type PlanCheckInput = { goal: string; objective?: string; tasks?: string; task_count?: number | string; has_ui?: boolean | string };
+export type PlanCheckInput = { goal: string; objective?: string; tasks?: string; task_count?: number | string; has_ui?: boolean | string; median_task?: string };
 export type PlanCheckDecision = { battery_ok: boolean; failed: string[] };
 
 const clip = (text: string, max: number) => (text.length > max ? `${text.slice(0, max - 1)}…` : text);
@@ -19,6 +19,7 @@ const CHECKS = [
   ["covers_goal", "Taken together, do the tasks cover everything `goal` asks for — no requirement left without a task?"],
   ["boundaries", "Do the tasks stay inside the run's boundary (no unrelated refactors, no scope creep)?"],
   ["consistent", "Is the plan free of contradictions — no two tasks doing the same work, no task contradicting the objective?"],
+  ["grain", "Given `median_task` (the project's median accepted task size: files, minutes, attempts), are the tasks cut at a comparable grain — not slices far below it? If `median_task` is empty, answer yes."],
 ] as const;
 
 export const planCheckJudgment = defineJudgment<PlanCheckInput, PlanCheckDecision>({
@@ -32,10 +33,11 @@ export const planCheckJudgment = defineJudgment<PlanCheckInput, PlanCheckDecisio
     tasks: clip(input.tasks ?? "", 4_000),
     task_count: String(input.task_count ?? ""),
     has_ui: String(input.has_ui ?? ""),
+    median_task: clip(input.median_task ?? "", 300),
   }),
   questions: () => Object.fromEntries(CHECKS.map(([id, question]) => [
     id,
-    noul(`${question} Answer from \`goal\`, \`objective\`, \`tasks\`.`, { true: "yes", false: "no" }),
+    noul(`${question} Answer from \`goal\`, \`objective\`, \`tasks\`, \`median_task\`.`, { true: "yes", false: "no" }),
   ])),
   thresholds: {
     min_p: { default: 0.75, min: 0.55, max: 0.95, about: "least probability of a check passing before the plan critic is skipped" },

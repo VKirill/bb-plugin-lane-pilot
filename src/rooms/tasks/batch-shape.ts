@@ -1,4 +1,5 @@
 import { ownsPathsOverlap } from "@lane-pilot/kit";
+import { taskSizeText, type TaskSizeMedian } from "./task-size";
 
 /**
  * Advice at dispatch on the shape of a batch (not a refusal). Tasks whose owns_paths overlap run one at a time, so a batch whose
@@ -35,10 +36,16 @@ function sharedPaths(mine: readonly string[], theirs: readonly string[]): string
 const list = (items: readonly string[]) => `${items.slice(0, LISTED).join(", ")}${items.length > LISTED ? `, +${items.length - LISTED}` : ""}`;
 
 /** Short lines for the PM: which open tasks hold the new one and on what, and the fix when three or more own one path. */
-export function batchShapeAdvice(task: { id: string; ownsPaths: string[]; dependsOn: string[] }, open: readonly OpenShape[]): string[] {
+export function batchShapeAdvice(task: { id: string; ownsPaths: string[]; dependsOn: string[] }, open: readonly OpenShape[], median?: TaskSizeMedian | null): string[] {
+  // #29: a slice far below the project's median accepted task is the over-decomposition the owner calls a defect.
+  // The task owns at most two paths while the median task touches many more — a grain warning, not a refusal.
+  const grain: string[] = [];
+  if (median && median.files >= 4 && task.ownsPaths.length <= 2) {
+    grain.push(`grain: ${task.id} owns ${task.ownsPaths.length || "no"} path${task.ownsPaths.length === 1 ? "" : "s"}, but the median accepted task of this project is ${taskSizeText(median)} — consider folding it into a sibling task instead of paying a full writer start, critique, checks and merge for a slice.`);
+  }
   // A task that depends on the other (either way) is ordered on purpose; it is no surprise queue.
   const holders = open.filter((other) => other.id !== task.id && !task.dependsOn.includes(other.id) && !other.dependsOn.includes(task.id) && ownsPathsOverlap(task.ownsPaths, other.ownsPaths));
-  if (!holders.length) return [];
+  if (!holders.length) return grain;
   const held = holders.map((other) => ({ id: other.id, paths: sharedPaths(task.ownsPaths, other.ownsPaths) }));
   const advice = [`queue: ${task.id} waits for ${held.length} open task${held.length === 1 ? "" : "s"} ahead because their owns_paths overlap (${list(held.map((row) => `${row.id}: ${list(row.paths)}`))}); it starts after them, not beside them.`];
   const crowd = new Map<string, string[]>();
@@ -47,5 +54,5 @@ export function batchShapeAdvice(task: { id: string; ownsPaths: string[]; depend
   if (ids.length + 1 >= SHARED_PATH_TASKS) {
     advice.push(`shape: ${ids.length + 1} open tasks (${list([...ids, task.id])}) own ${path}, so they run one by one. Narrow owns_paths to the files each really changes, or move the shared change in ${path} into one task the others depend on, or merge tiny tasks of one area into one (a task is 30-120 minutes of work).`);
   }
-  return advice;
+  return [...grain, ...advice];
 }
