@@ -95,7 +95,6 @@ export function createCore(bb: BbPluginApi, db: LanePilotDatabase) {
   }
   // The Jev layer (src/jev): one client with this key reader, receipts in the plugin database; dropped on reload.
   bb.onDispose(installJev({ endpoint: jevEndpoint, db, log: (message) => bb.log.warn(message) }));
-  void flagMissingJevKey(bb, jevEndpoint);
   const deployDrain = createDeployDrain(() => state.disposed);
   bb.onDispose(bindDrainTarget({ drain: deployDrain, log: (line) => bb.log.info(line) }, (bb as unknown as { vk?: { instanceId?: string } }).vk?.instanceId));
   const rawCall = rawHost.call as (method: string, input: unknown, options: unknown) => Promise<unknown>;
@@ -376,6 +375,13 @@ export function createCore(bb: BbPluginApi, db: LanePilotDatabase) {
   const writerBindingKey = (projectId: string) => `writer-binding:${projectId}`;
 
   const secrets = createSecrets({ bb });
+  // No Jev key at all is the one silent degradation `bb plugin list` can show; names only — no key value is read for the mark (B-4).
+  void flagMissingJevKey(bb, async () => {
+    const entries = await secrets.list();
+    if (entries === null) return null;
+    const jevKeys = new Set(Object.values(JEV_PROVIDERS).map((provider) => provider.keyName));
+    return entries.some((entry) => jevKeys.has(entry.name));
+  });
   // J-11: a second look (Jev, shadow by default) at what a helper or writer produced, before it is stored or shown.
   const outputGuard = createOutputGuard({ jev, settings: async (projectId) => (await effectiveProjectSettings(projectId)).values, kv: bb.storage.kv, log: (message) => bb.log.warn(message) });
 
@@ -385,10 +391,10 @@ export function createCore(bb: BbPluginApi, db: LanePilotDatabase) {
 export type ServerCore = ReturnType<typeof createCore>;
 
 /** No Jev key at all is the one silent degradation `bb plugin list` can show (B-4): the needs-configuration mark resets on the next load. */
-export async function flagMissingJevKey(bb: { status?: { needsConfiguration?: (message: string) => void } }, endpoint: () => Promise<Pick<JevEndpoint, "apiKey">>): Promise<void> {
+export async function flagMissingJevKey(bb: { status?: { needsConfiguration?: (message: string) => void } }, hasJevKey: () => Promise<boolean | null>): Promise<void> {
   const mark = bb.status?.needsConfiguration;
   if (typeof mark !== "function") return;
   try {
-    if (!(await endpoint()).apiKey) mark.call(bb.status, "Lane Pilot: no Jev key in Env Catalog (TYPESAFE_API_KEY or OPENLUX_API_KEY); judgments run degraded");
+    if ((await hasJevKey()) === false) mark.call(bb.status, "Lane Pilot: no Jev key in Env Catalog (TYPESAFE_API_KEY or OPENLUX_API_KEY); judgments run degraded");
   } catch { /* the marker is informational only */ }
 }
