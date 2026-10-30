@@ -191,7 +191,7 @@ export function parseCodeCritiqueSettings(settings: Record<string, unknown>): Co
   };
 }
 
-// The packet carries each file's change as a unified diff from BB (environments.diffPatch) and the whole file only when it is small:
+// The packet carries each file's change as a unified diff from BB (bb--git keyed patches) and the whole file only when it is small:
 // a 30-line edit in a 40 KB file used to cut the file to its first 8 KB and block every gated task (selfystudio, 2026-10-29: 13 of
 // 14 code critiques that week ended code_critique_evidence_unknown:packet_truncated).
 const MAX_CRITIQUE_PACKET_BYTES = 96 * 1024;
@@ -206,7 +206,7 @@ export function buildCandidateEvidence(input: {
   baselineHashes?: Record<string, string | null>;
   verification: Array<{ command: string; exitCode: number; stdout?: string; stderr?: string }>;
   files?: Array<{ path: string; content: string | null }>;
-  /** Unified diff per produced path (BB environments.diffPatch, uncommitted); a path without one is shown as its whole file. */
+  /** Unified diff per produced path (BB bb--git patches, uncommitted); a path without one is shown as its whole file. */
   patches?: Record<string, string>;
   output: string;
   ownsPaths: string[];

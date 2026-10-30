@@ -13,6 +13,8 @@ export { noteZcodeThread, zcodeBusy, zcodeBusyPeek } from "./zcode-slot";
 export type { SpawnUsage, SpawnUsageUse } from "./spawn-model";
 export type { SpawnModelInput } from "./spawn-model";
 export { abortable, scheduleIsolated } from "./schedules";
+export { GIT_PLUGIN_ID, gitCallRpc, gitFilesReplySchema, gitPatchEntrySchema, gitPatchKey, gitPatchesReplySchema } from "./git-reads";
+export type { PluginCallRpc } from "./git-reads";
 export { folderEnvironment, hiddenPlacement, projectFolder } from "./standalone-place";
 export type { ProjectFolder } from "./standalone-place";
 export { stageHelperSettings } from "./stage-settings";
