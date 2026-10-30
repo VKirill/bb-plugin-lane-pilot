@@ -58,6 +58,16 @@ export function requiresRedOnBase(setting: RequireRed, task: { risk: string; kin
   return (RISK_RANK[task.risk] ?? 0) >= (setting === "high" ? 2 : 1);
 }
 
+/** Kinds where every check already green means the reported failure is gone, so the attempt closes accepted and no writer starts. A feature, refactor, docs, chore or research with the same result has checks that prove nothing, and stays blocked. */
+const ALREADY_DONE_KINDS: readonly string[] = ["fix", "check"];
+
+/** Whether an all-green baseline closes this task without a writer. Same risk bar as a fix: at `medium` any risk, at `high` only high and critical, never when the gate is off. */
+export function closesWhenAlreadyGreen(setting: RequireRed, task: { risk: string; kind?: string | undefined }): boolean {
+  if (setting === "off" || !task.kind || !ALREADY_DONE_KINDS.includes(task.kind)) return false;
+  if (setting === "medium") return true;
+  return (RISK_RANK[task.risk] ?? 0) >= 2;
+}
+
 /** A check that only says a file or a word exists (`test -f`, `grep -q`, `ls`): red before a new file, it proves no behaviour. */
 const EXISTENCE_ONLY = /^\s*(?:cd [^&;|]+&&\s*)?(?:(?:test|\[) -[efsd] \S+\s*\]?|grep -[qcFE]+[qcFE]* .+|ls \S+)\s*$/;
 /** The forms EXISTENCE_ONLY reads, one example of each, for the briefs (tasks/gate-vocabulary.ts); a test holds each one against the pattern. */
