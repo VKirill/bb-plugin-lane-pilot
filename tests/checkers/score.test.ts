@@ -47,7 +47,7 @@ describe("scorecard", () => {
       ...defect("broken_import", "b", { verification: "hit", ownership: "miss", plan_fact: "miss" }),
     ]);
     expect(card.escapes).toEqual({ total: 1, byClass: { test_assertion_deleted: 1 } });
-    expect(card.gaps).toEqual(["swallowed_error", "hardcoded_value"]);
+    expect(card.gaps).toEqual(["swallowed_error", "hardcoded_value", "gilded_defect"]);
   });
 
   it("measures false alarms on the clean candidates", () => {
