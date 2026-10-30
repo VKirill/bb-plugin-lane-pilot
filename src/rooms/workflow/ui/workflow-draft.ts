@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRpc } from "@get-bb/plugin-sdk/app";
 import type { z } from "zod";
 import type { rpcContract, workflowDraftCheckSchema, workflowDraftSummarySchema } from "../../contracts";
-import { useLpPoll } from "../../ui-shell/ui/use-lp-rpc-query";
+import { useLpPoll } from "../../ui-shell/ui";
 import { useLpRealtime } from "../../ui-shell/ui/use-lp-realtime";
 
 /**

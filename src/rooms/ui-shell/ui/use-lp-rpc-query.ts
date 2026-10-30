@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { experimental_useRpcQuery, useRpc } from "@get-bb/plugin-sdk/app";
-import { rpcContract } from "../../contracts";
+import { uiQueryContract } from "../../contracts/ui-query";
+import type { rpcContract } from "../../contracts";
 
-type Method = keyof typeof rpcContract & string;
+type Method = keyof typeof uiQueryContract & string;
 
 export type LpRpcQueryState<T = unknown> = { data: T | undefined; error: unknown; isLoading: boolean; isFetching: boolean; refetch(): Promise<void> };
 
@@ -30,7 +31,7 @@ function useModernRpcQuery<T>(method: Method | null, input: unknown, options?: {
   if (!options?.fetcher && !method) throw new Error("useLpRpcQuery: method or fetcher required");
   if (options?.fetcher) return useLegacyRpcPoll<T>(null, input, options);
   // eslint-disable-next-line react-hooks/rules-of-hooks -- presence of the host hook is fixed for the session
-  const query = experimental_useRpcQuery({ contract: rpcContract, method: method as never, input: (input ?? null) as never, enabled });
+  const query = experimental_useRpcQuery({ contract: uiQueryContract, method: method as never, input: (input ?? null) as never, enabled });
   const refetch = useRef(query.refetch);
   refetch.current = query.refetch;
   useInterval(options?.pollMs, enabled, () => { void refetch.current(); });

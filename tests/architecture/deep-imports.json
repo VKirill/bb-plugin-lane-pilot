@@ -1,5 +1,7 @@
 {
+ "bench > validators": 2,
  "critique > tasks": 1,
+ "critique > validators": 1,
  "critique > writer": 2,
  "entry > core": 4,
  "entry > native-install": 1,
@@ -27,6 +29,7 @@
  "stability > runs": 4,
  "storage > learning": 1,
  "tools > tasks": 1,
+ "ui-shell > contracts": 1,
  "ui-shell > docs": 1,
  "ui-shell > native-agent": 2,
  "ui-shell > runs": 2,
