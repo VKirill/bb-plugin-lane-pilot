@@ -11,7 +11,7 @@ describe("chain-end waits: nothing waits forever", () => {
     ], edges: [{ from: "start", to: "ask" }, { from: "ask", to: "end", with: { result: "ask.answer" } }] });
     const before = Date.now();
     const summary = await engine.start({ workflow: flow, inputs: { query: "x" } }).done;
-    const wait = JSON.parse(db.prepare("SELECT await_json FROM lane_pilot_wf_step WHERE run_id=?").get(summary.runId)!.await_json) as { kind: string; deadline?: number };
+    const wait = JSON.parse((db.prepare("SELECT await_json FROM lane_pilot_wf_step WHERE run_id=?").get(summary.runId) as { await_json: string }).await_json) as { kind: string; deadline?: number };
     expect(wait.kind).toBe("human");
     expect(wait.deadline).toBeGreaterThan(before + 71 * 3_600_000);
     expect(wait.deadline).toBeLessThanOrEqual(before + 73 * 3_600_000);
