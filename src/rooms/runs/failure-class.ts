@@ -299,11 +299,14 @@ export function failureIntervention(cls: FailureClass, sameClassStreak: number):
 
 /**
  * A pause a failure class gets after an attempt ends, before the next attempt starts (hive H-14). `writer.class_cooldowns`
- * holds a JSON map of class → seconds ({} keeps today's behaviour: classes keep their own waits and nothing else pauses);
+ * holds a JSON map of class → seconds (unset = DEFAULT_CLASS_COOLDOWNS; {} turns every pause off);
  * `writer.cooldown_max_ms` caps any value (0 = no cap).
  */
+/** The default pause per class: 30 s after a merge conflict or a provider fault, 60 s after a machine fault or a dirty base. */
+export const DEFAULT_CLASS_COOLDOWNS = '{"merge":30,"provider":30,"infra":60,"dirty_base":60}';
+
 export function failureClassCooldownMs(cls: string, settings: Record<string, unknown>): number {
-  const raw = settings["writer.class_cooldowns"];
+  const raw = settings["writer.class_cooldowns"] ?? DEFAULT_CLASS_COOLDOWNS;
   let table: Record<string, unknown> = {};
   if (typeof raw === "string" && raw.trim()) { try { const parsed = JSON.parse(raw); if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) table = parsed as Record<string, unknown>; } catch { return 0; } }
   else if (raw && typeof raw === "object" && !Array.isArray(raw)) table = raw as Record<string, unknown>;

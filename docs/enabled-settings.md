@@ -14,7 +14,7 @@ sources:
   - docs/enabled-settings.snapshot.json
 ---
 
-<!-- enabled-settings:structure 3b831110059b1b4f -->
+<!-- enabled-settings:structure fceb231970ebfa96 -->
 
 # Enabled settings (generated)
 
@@ -229,7 +229,7 @@ switches: `quick` disables both critiques, `full` enables them (`src/rooms/criti
 | `writer.best_of` | `off` | — | best-of-3: parallel writer candidates under quality_mode full, selection by checks then the critic verdict |
 | `writer.capacity_wait_max_min` | `360` | — | capacity: the most minutes a task waits on every writer provider being spent (recheck every 15 min) before the PM is told to resend it |
 | `writer.capacity_wait` | `on` | — | capacity: all writer providers spent, the task waits for the nearest window reset as capacity_saturated instead of ending blocked |
-| `writer.class_cooldowns` | — | — | failure classes: JSON map of class to seconds of pause after an attempt ends, before the next attempt |
+| `writer.class_cooldowns` | `{"merge":30,"provider":30,"infra":60,"dirty_base":60}` | — | failure classes: JSON map of class to seconds of pause after an attempt ends, before the next attempt |
 | `writer.cooldown_max_ms` | `0` | — | failure classes: cap for any class cooldown pause in milliseconds |
 | `writer.fallback_on_provider_failure` | `after_retry` | — | writer fallback chain: a provider refusal hands the task to the next model at once or after one retry of the same model |
 | `writer.model` | `PRIMARY_MODELS[provider]` | — | writer stage reads this setting |

@@ -34,8 +34,12 @@ describe("the task's writer pair, pinned for its life (H-01)", () => {
 });
 
 describe("per-class cooldown after an attempt (H-14)", () => {
-  it("empty or missing table keeps today's behaviour (no pause)", () => {
+  it("an unset table pauses merge and provider 30 s, infra and dirty base 60 s; {} turns pauses off", () => {
+    expect(failureClassCooldownMs("merge", {})).toBe(30_000);
+    expect(failureClassCooldownMs("provider", {})).toBe(30_000);
+    expect(failureClassCooldownMs("infra", {})).toBe(60_000);
     expect(failureClassCooldownMs("task", {})).toBe(0);
+    expect(failureClassCooldownMs("merge", { "writer.class_cooldowns": "{}" })).toBe(0);
     expect(failureClassCooldownMs("task", { "writer.class_cooldowns": "{}" })).toBe(0);
     expect(failureClassCooldownMs("task", { "writer.class_cooldowns": "not json" })).toBe(0);
   });
