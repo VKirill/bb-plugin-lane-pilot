@@ -3385,6 +3385,32 @@
    "evidence": "src/rooms/night-graphs/server/model-rebench-graph.ts:1",
    "matrixStatus": "readonly",
    "storageKey": "bench.model_rebench"
+  },
+  {
+   "id": "s545",
+   "index": 510,
+   "area": "Lane Pilot verification",
+   "setting": "checks.fail_fast",
+   "location": "src/rooms/writer/server/verify.ts:152",
+   "category": "user",
+   "invType": "enum",
+   "values": "on, off",
+   "defaultValue": "on",
+   "scope": "project",
+   "control": "select",
+   "options": [
+    "on",
+    "off"
+   ],
+   "min": null,
+   "max": null,
+   "section": "stages",
+   "channel": "OWN",
+   "uiStatus": "editable",
+   "rationale": "on orders a task's checks by (p_fail+eps)/(mean_green_sec+delta) from check history and stops starting new checks after the first non-zero exit (running checks finish); off keeps contract order and runs every check (synthesis rank 4).",
+   "evidence": "src/rooms/writer/server/verify.ts:152",
+   "matrixStatus": "readonly",
+   "storageKey": "checks.fail_fast"
   }
  ],
  "fields": {

@@ -2,7 +2,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import { sha256Buffer } from "@lane-pilot/kit";
 import { checkHistoryKey, createAttempt, createRun, createTask, listCheckDurations, listCheckTimeouts, openDatabase, recordCheckDuration, transitionAttempt } from "../src/rooms/storage/database";
-import { CHECK_TIMEOUT_CAP_SEC, checkTimeoutSec, historyTimeoutSec, p95 } from "../src/rooms/writer/check-timing";
+import { CHECK_TIMEOUT_CAP_SEC, checkTimeoutSec, historyTimeoutSec, orderChecksForFailFast, p95 } from "../src/rooms/writer/check-timing";
 
 const ROOT = "/work/proj";
 const STUDIO = "python3 -I scripts/studio_test.py";
@@ -168,5 +168,33 @@ describe("the identity of a check is (logical folder, command)", () => {
     expect(key(`cd "my app" && npm test`)).toBe(key("npm test", "my app"));
     // a cd the key cannot resolve statically stays part of the command
     expect(key("cd $APP && npm test")).not.toBe(key("npm test"));
+  });
+});
+
+describe("fail-fast ordering and timeout escalation (W30)", () => {
+  const at = (command:string, cwd = ROOT) => ({ command, cwd, root:ROOT });
+  it("orders by (p_fail+eps)/(mean green sec+delta): flaky-fast first, stable ties keep contract order", async () => {
+    const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
+    const db = openDatabase(bb);
+    for (const [command, ms, code] of [["slow-green", 100_000, 0], ["flaky-fast", 5_000, 1], ["flaky-fast", 4_000, 0], ["mid", 20_000, 1]] as const)
+      recordCheckDuration(db, { projectId: "A", ...at(command), durationMs: ms, exitCode: code });
+    const ordered = orderChecksForFailFast(db, "A", [at("slow-green"), at("flaky-fast"), at("mid"), at("new")], ROOT);
+    expect(ordered.map((row) => row.check.command)).toEqual(["new", "flaky-fast", "mid", "slow-green"]);
+    await harness.lifecycle.dispose();
+  });
+  it("escalates timeout x1.5 per consecutive 124 up to the cap; a green run resets it", async () => {
+    const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
+    const db = openDatabase(bb);
+    const ref = at("npm test");
+    expect(checkTimeoutSec(db, "A", ref, 120)).toBe(120);
+    recordCheckDuration(db, { projectId: "A", ...ref, durationMs: 120_000, exitCode: 124, now: 1 });
+    expect(checkTimeoutSec(db, "A", ref, 120)).toBe(180);
+    recordCheckDuration(db, { projectId: "A", ...ref, durationMs: 180_000, exitCode: 124, now: 2 });
+    expect(checkTimeoutSec(db, "A", ref, 120)).toBe(270);
+    recordCheckDuration(db, { projectId: "A", ...ref, durationMs: 10_000, exitCode: 0, now: 3 });
+    expect(checkTimeoutSec(db, "A", ref, 120)).toBe(120);
+    for (let n = 4; n < 12; n += 1) recordCheckDuration(db, { projectId: "A", ...ref, durationMs: 120_000, exitCode: 124, now: n });
+    expect(checkTimeoutSec(db, "A", ref, 120)).toBe(CHECK_TIMEOUT_CAP_SEC);
+    await harness.lifecycle.dispose();
   });
 });

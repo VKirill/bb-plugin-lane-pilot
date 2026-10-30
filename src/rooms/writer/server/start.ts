@@ -792,12 +792,19 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
             }
           }
           const prevBrief = previousAttemptBrief(await trimCheckLogsIn(jev(), last.status && isOwnFailure(last) ? last : own.failure ?? (last.status ? last : null), freshTask.title, { projectId:input.projectId, runId:input.runId, subject:input.taskId, settings:runSettings }), freshTask, undefined, liveFolder);
+          // A fresh thread has none of the failed attempt's context: from the second attempt on it gets the
+          // digest of that attempt's thread (what it did, what failed), not only the failure line (rank 5).
+          const failedThreadId=(typeof last.attemptId==="string" ? getAttempt(db,last.attemptId)?.thread_id : null) ?? null;
+          const listedPrev=failedThreadId&&countAttempts(db,input.runId,input.taskId)>=2&&typeof (bb.sdk.threads as {events?:{list?:unknown}}|undefined)?.events?.list==="function"
+            ? await listThreadEventsRaw(bb,{threadId:failedThreadId,order:"desc",limit:"50"}).catch(()=>null) : null;
+          const prevEvents=listedPrev?.ok ? listedPrev.events as Parameters<typeof attemptFeedback>[1] : [];
+          const prevFeedback=attemptFeedback(countAttempts(db,input.runId,input.taskId),prevEvents,prevBrief,true);
           const spawned = await services.spawnWriterAttempt({
             projectId:input.projectId, runId:input.runId, taskId:input.taskId, attemptId,
             config:freshConfig, task:freshTask, plan:input.plan, pmThreadId:input.pmThreadId, pmReadContext, writerSettings:writerChoice,
             retryIndex:Math.max(0,countAttempts(db,input.runId,input.taskId)-1),
             // A fresh writer starts from main: of the failures before it, the task's own is the one to avoid, not a provider's cut.
-            previousAttempt:roundSeed ? [prevBrief, roundSeed].filter(Boolean).join("\n\n") : prevBrief,
+            previousAttempt:roundSeed ? [prevFeedback, roundSeed].filter(Boolean).join("\n\n") : prevFeedback,
             ...(requested ? { emergency:{...requested, reason:"reassigned by the PM"} } : {}),
             ...(carried ? { continuation:carried } : {}),
           });

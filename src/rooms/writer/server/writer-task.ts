@@ -269,10 +269,12 @@ export function previousAttemptBrief(last:Record<string, unknown> | null | undef
 
 /**
  * Feedback for attempt `attemptNo`. From the third attempt on, the previous thread is the digest
- * (what was done, what failed, which check, which files), not the raw trajectory.
+ * (what was done, what failed, which check, which files), not the raw trajectory. A retry that
+ * starts a FRESH thread gets the digest already from the second attempt: the new thread has none
+ * of the old one's context, so the raw trajectory is the thing it most needs compressed (rank 5).
  */
-export function attemptFeedback(attemptNo: number, events: readonly ThreadEventLike[] | undefined, brief: string): string {
-  if (attemptNo < 3 || !events?.length) return brief;
+export function attemptFeedback(attemptNo: number, events: readonly ThreadEventLike[] | undefined, brief: string, fresh = false): string {
+  if ((fresh ? attemptNo < 2 : attemptNo < 3) || !events?.length) return brief;
   const head = brief.startsWith("Result:") ? `${brief.split("\n")[0]}\n` : "";
   return `${head}${summarizeThreadEvents(events)}`;
 }

@@ -4,7 +4,7 @@ import { attemptProduced } from "../cli-outcome";
 import { taskV2Schema } from "../../contracts";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
 import { recordCheckDuration, recordSecretIssuance, getAttempt, getReasoningTrace, getRunSettingsScopes, getTaskGitBase, listTasksForRun, loadProjectSettings, saveProjectSetting, taskBasePath } from "../../storage";
-import { checkTimeoutSec } from "../check-timing";
+import { checkTimeoutSec, orderChecksForFailFast } from "../check-timing";
 import { sha256 } from "../../tasks";
 import { parseReadFirstHints } from "../../tasks/read-first";
 import { buildRunExecutionProfile, buildRunPolicy, mapBounded } from "../../tasks";
@@ -149,8 +149,15 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
     const pool=`verification:${runId??config.projectId}`;
     // The watcher reads this: the attempt stays «running» with its writer idle while its checks wait or run (self-repair.ts).
     const endChecks=writerThreadId?beginChecks(writerThreadId,pool):()=>undefined;
+    // checks.fail_fast (default on): highest expected fail-cost first; after the first non-zero exit nothing new
+    // starts (running checks finish). Results go back out in contract order; a check that never started is simply absent.
+    const failFast=String(loadProjectSettings(db,config.projectId,verificationScopes)["checks.fail_fast"] ?? "on")!=="off";
+    const entries=failFast?orderChecksForFailFast(db,config.projectId,commands,task.project_cwd):commands.map((check,index)=>({check,index}));
+    let halt=false;
     try {
-    return await mapBounded(commands,policy.pools.verification,async(command)=>{
+    const rawResults=await mapBounded(entries,policy.pools.verification,async(entry)=>{
+      if(failFast&&halt)return undefined;
+      const command=entry.check;
       const release=await services.runWriterPool.acquire(pool,policy.pools.verification);
       checksMoved(pool);
       try {
@@ -159,7 +166,7 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
         try { return readingFrom(await host.call("diskFree",{requestedHostId:config.hostId,path:task.project_cwd,machine:true},{hostId:config.hostId,timeoutMs:5_000})); }
         catch { return null; }
       };
-      return failIfNoTestRan(await runWithFlakyRerun(command.command,async()=>{
+      const outcome=failIfNoTestRan(await runWithFlakyRerun(command.command,async()=>{
       const backend=(loadProjectSettings(db,config.projectId,verificationScopes)["sandbox.backend"] as "auto"|"macos-seatbelt"|"linux-bubblewrap"|undefined) ?? "auto";
       // The sandbox gives a command 120 s when the task names no limit; waiting only 30 s cut longer checks short.
       // History widens it for a check that is slow in this project: max(that, p95 of its last 20 green runs x 2), capped.
@@ -167,7 +174,9 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
       const startedAt=Date.now();
       // A timeout (124) and a host that failed say nothing about how long the check takes: not kept.
       const recorded=<T extends {exitCode:number;hostError?:true}>(result:T):T=>{
-        if(result.exitCode!==124&&!result.hostError) try { recordCheckDuration(db,{projectId:config.projectId,command:command.command,cwd:command.cwd,root:task.project_cwd,durationMs:Date.now()-startedAt,exitCode:result.exitCode}); } catch { /* history is a hint only */ }
+        // A timeout is kept as a censored row (duration_ms = the limit it died at): fail-fast ordering counts it as a
+        // failure and the rank-12 escalator raises this check's next timeout; green-only history ignores it.
+        if(!result.hostError) try { recordCheckDuration(db,{projectId:config.projectId,command:command.command,cwd:command.cwd,root:task.project_cwd,durationMs:Date.now()-startedAt,exitCode:result.exitCode}); } catch { /* history is a hint only */ }
         return result;
       };
       // A check with secrets runs through the host call, not a BB terminal: a terminal's command line and screen would carry the values.
@@ -220,8 +229,19 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
       return recorded({command:command.command,exitCode:ran.exitCode,stdout:typeof ran.stdout==="string"?mask(ran.stdout):"",stderr:typeof ran.stderr==="string"?mask(ran.stderr):"",
         sandboxBackend:ran.backend,policySha256:ran.policySha256,workspacePath:ran.workspacePath,...("hostError" in ran?{hostError:true as const}:{})});
       },(line)=>bb.log.info(line),sampleMachine));
+      if(failFast&&outcome.exitCode!==0)halt=true;
+      return outcome;
       } finally { checksMoved(pool); release(); }
     });
+    const skipped=rawResults.filter((result)=>result===undefined).length;
+    const orderedResults=rawResults
+      .map((result,pos)=>({result,index:entries[pos]!.index}))
+      .filter((row):row is {result:NonNullable<typeof row.result>;index:number}=>row.result!==undefined)
+      .sort((a,b)=>a.index-b.index)
+      .map((row)=>row.result);
+    if(skipped){const first=orderedResults.find((row)=>row.exitCode!==0);
+      if(first)first.stderr=`${first.stderr??""}\nchecks.fail_fast: ${skipped} check(s) not started after the first non-zero exit`.trim();}
+    return orderedResults;
     } finally { endChecks(); }
   }
 

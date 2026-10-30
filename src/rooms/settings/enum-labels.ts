@@ -36,6 +36,7 @@ const BY_KEY: Record<string, Record<string, I18nKey>> = {
   "writer.pair_pin": { on: "enumPairPinOn", off: "enumPairPinOff" },
   "writer.route_record": { on: "enumRouteRecordOn", off: "enumRouteRecordOff" },
   "writer.capacity_wait": { on: "enumCapacityWaitOn", off: "enumCapacityWaitOff" },
+  "checks.fail_fast": { on: "enumFailFastOn", off: "enumFailFastOff" },
   "writer.retry_safety": { on: "enumRetrySafetyOn", off: "enumRetrySafetyOff" },
   "writer.pick_refusal_penalty": { on: "enumRefusalPenaltyOn", off: "enumRefusalPenaltyOff" },
   "memory.maintain_mode": { wave: "enumMaintainModeWave", task: "enumMaintainModeTask" },
