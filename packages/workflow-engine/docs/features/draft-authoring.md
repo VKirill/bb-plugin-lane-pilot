@@ -2,7 +2,7 @@
 title: Workflow Draft Authoring
 type: component
 created: 2026-10-10
-updated: 2026-10-10
+updated: 2026-10-30
 status: active
 confidence: high
 tags: [workflow-engine, drafts, authoring]
@@ -45,6 +45,7 @@ The authoring API stores editable definitions and version history, applies struc
 ## Business rules
 
 - Draft scope is `global` or `project`; project scope attaches the given project ID to the definition (`packages/workflow-engine/src/draft-store.ts:15-16`, `packages/workflow-engine/src/draft-store.ts:94-103`).
+- A `set_meta` operation may change every workflow field except the graph, its version, and its status; the allowed keys include `quality_mode` and `goal_audit`, and any other key is refused (`packages/workflow-engine/src/draft.ts:36-37`, `packages/workflow-engine/src/draft.ts:135`).
 - A draft patch is all-or-nothing if any operation is refused (`packages/workflow-engine/src/draft-store.ts:120-128`).
 - Canvas placement changes do not create a new content version; all other edits invalidate prior test and publication state by setting status to `draft` (`packages/workflow-engine/src/draft-store.ts:130-145`).
 - A test receipt is tied to the exact version number; stale test results are not written when the requested version no longer matches (`packages/workflow-engine/src/draft-store.ts:165-173`).
