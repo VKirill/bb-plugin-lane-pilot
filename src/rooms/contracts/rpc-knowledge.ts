@@ -96,6 +96,8 @@ export const rpcKnowledge = {
       createdAt: z.number().int(), rule: z.boolean(),
       /** Times the note went into a brief, and how many of those attempts were accepted. */
       useCount: z.number().int(), acceptedCount: z.number().int(), originTaskId: z.string().nullable(),
+      /** Independent confirmations the record carries (one per accepted write that corroborated it). */
+      sources: z.number().int(),
     }).strict()) }).strict(),
   },
   memory_record_delete: {
