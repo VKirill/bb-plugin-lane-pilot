@@ -196,6 +196,8 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
     // The class Jev (J-4, active) or the rules gave the last failure: parking reads the same one, not its own recount.
     let judged: { status: string; reason: string | null; klass: FailureClass } | null = null;
     let primaryFailure:Record<string,unknown>|null=null;
+    /** A red check the same writer already failed the same way: the next attempt is the next writer, not this one again. */
+    let checkEscalation:string|null=null;
     /** The last failure that was the task's own (a stray file, a red check), not its provider's: a fallback writer avoids it too. */
     const own:{ failure:Record<string,unknown>|null } = { failure:lastOwnFailure(db, input.runId, input.taskId, input.firstAttemptId) };
     const noteOwnFailure = (outcome:Record<string,unknown>) => { if (isOwnFailure(outcome)) own.failure = outcome; };
@@ -855,11 +857,15 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
           last = { ...last, status:"blocked" };
           break;
         }
-        // The session ended: the turn cap, the wall cap or no progress. The task is blocked with its last reason; another
-        // writer meets the same task, so none is started.
+        // The session ended: the turn cap or the wall cap blocks the task. A repeated red check (the same failure and
+        // the same diff twice) does not: the next attempt goes to the next writer in the chain, not this one again.
         if (sessionEnd) {
-          const latest = getAttempt(db, attemptId);
           const ended = `${sessionEnd}: ${String(last.reason ?? last.status)}`;
+          if (sessionEnd.startsWith("no progress:") && /^verification failed\b/.test(String(last.reason ?? ""))) {
+            checkEscalation = ended;
+            break;
+          }
+          const latest = getAttempt(db, attemptId);
           if (latest && RETRY_ELIGIBLE.includes(latest.state as AttemptState)) transitionAttempt(db, latest.id, "blocked", { reason:ended });
           last = { ...last, status:"blocked", reason:ended };
           break;
@@ -874,10 +880,15 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
           }
           break;
         }
-        // Two attempts of the task family failing the same way stop the task: a third attempt and a fallback writer
-        // would only repeat them. The blocked reason names it for the PM.
-        // A turn in the same thread is not stopped by it: the session's own early stop (same failure, same diff) is above.
+        // Two attempts of the task family failing the same way stop the task: a third attempt of the same writer
+        // would only repeat them. A repeated red check is the exception: the next attempt is the next writer in the
+        // chain. A turn in the same thread is not stopped here: the session's own early stop is above.
         const repeated = redo ? null : repeatedFailureReason(familyFailure, { state:String(last.status), reason:typeof last.reason === "string" ? last.reason : null });
+        if (repeated && /^verification failed\b/.test(String(last.reason ?? ""))) {
+          checkEscalation = repeated;
+          primaryFailure = { ...last };
+          break;
+        }
         if (repeated) {
           const latest = getAttempt(db, attemptId);
           if (latest && RETRY_ELIGIBLE.includes(latest.state as AttemptState)) transitionAttempt(db, latest.id, "blocked", { reason:repeated });
@@ -921,26 +932,36 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         const primaryModel=typeof settings["writer.model"] === "string" && settings["writer.model"] ? settings["writer.model"] as string : input.config.writerModel;
         const pmSelection={providerId:input.config.pmProviderId,model:input.config.pmModel};
         // The writer's fallbacks in turn, then the PM's model; each takes over only while the failure is the model's, not the task's.
-        // Only a provider, limit or catalog fault moves down the writer chain: a task's own failure (an answered
-        // empty_output, a repeated failure) gets no fallback writer — another model meets the same task.
+        // A provider, limit or catalog fault walks the chain. A repeated red check takes only the next writer (the same
+        // pair is already excluded): another pass of this writer would only repeat the check.
         const primaryClass = failureClass(String(primaryFailure.status), typeof primaryFailure.reason === "string" ? primaryFailure.reason : null);
-        const chain = primaryClass === "provider" || primaryClass === "limit"
+        const escalate = checkEscalation !== null && primaryClass === "task";
+        const fullChain = primaryClass === "provider" || primaryClass === "limit" || escalate
           ? (await chainWithRoom(writerFallbackChain({providerId:primaryProvider,model:primaryModel},writerFallbacks(settings),pmSelection),input.config.hostId,settings,input.taskId)).chain
           : [];
-        let failure:Record<string, unknown>=primaryFailure;
+        const chain = escalate ? fullChain.slice(0, 1) : fullChain;
+        let failure:Record<string, unknown>=escalate ? { ...primaryFailure, checkEscalation:true } : primaryFailure;
         const primaryAttemptId=typeof primaryFailure.attemptId === "string" ? primaryFailure.attemptId : attemptId;
         // The writer the next fallback continues: the failed attempt that kept its worktree (worktree mode only), then each
         // fallback that started. Its thread and workspace are read when a fallback starts.
         let continueFrom:ReturnType<typeof getAttempt>=!liveFolder&&unremovedWorktree?.id===primaryAttemptId ? unremovedWorktree : undefined;
         /** The last fallback writer that ran: its failure is the task's result once the chain has ended. */
         let lastFallbackAttemptId:string|null=null;
-        if (!chain.length) last={...last,emergencyFallback:{state:"skipped",
-          reason:primaryClass === "provider" || primaryClass === "limit" ? "configured_pm_selection_matches_primary" : `failure is not a provider fault (${primaryClass})`}};
+        if (!chain.length) {
+          if (escalate && checkEscalation) {
+            const stuck = getAttempt(db, typeof primaryFailure.attemptId === "string" ? primaryFailure.attemptId : attemptId);
+            if (stuck && RETRY_ELIGIBLE.includes(stuck.state as AttemptState)) transitionAttempt(db, stuck.id, "blocked", { reason:checkEscalation });
+            last = { ...last, status:"blocked", reason:checkEscalation };
+          }
+          last={...last,emergencyFallback:{state:"skipped",
+            reason:primaryClass === "provider" || primaryClass === "limit" ? "configured_pm_selection_matches_primary" : escalate ? "no next writer" : `failure is not a provider fault (${primaryClass})`}};
+        }
         for (const fallback of chain) {
           const decision=emergencyFallbackDecision({
             state:String(failure.status ?? "unknown"),
             reason:typeof failure.reason === "string" ? failure.reason : null,
             stopConfirmed:failure.stopConfirmed === true,
+            checkEscalation:failure.checkEscalation === true,
           });
           if (!decision.run) break;
           // A cancel stops the writer's thread, which reads as a provider failure; the chain must not take it as one
