@@ -65,19 +65,19 @@ export function createMemoryStage(ctx: ServerCore, services: Services) {
     }
     if(!existing) recordStage(db,{...base,state:"pending"});
     const liveChild=Boolean(existing?.threadId || memoryChildSnapshot(existing?.result));
-    // Recurrence gate (RecMem, arXiv #5): the maintainer runs on every Nth accepted task, not on each one.
-    if(!liveChild && memorySettings.maintainEvery > 1) {
-      const { due, acceptedSince } = memoryRecurrenceDue(db, args.projectId, memorySettings.maintainEvery);
-      if (!due) {
-        const reason = `below_recurrence:${acceptedSince}/${memorySettings.maintainEvery}`;
-        recordStage(db,{...base,state:"skipped",reason,result:{stored:0,audience:memorySettings.audience}});
-        return {runId:args.runId,taskId:args.taskId,state:"skipped",reason};
-      }
-    }
     if((!memorySettings.enabled||!memorySettings.maintain) && !liveChild) {
       const reason=!memorySettings.enabled?"disabled_by_project_setting":"memory_maintain_disabled";
       recordStage(db,{...base,state:"skipped",reason,result:{stored:0,audience:memorySettings.audience}});
       return {runId:args.runId,taskId:args.taskId,state:"skipped",reason};
+    }
+    // Recurrence gate (RecMem, arXiv #5): the maintainer runs on every Nth accepted task, not on each one.
+    if(!liveChild && memorySettings.maintainEvery > 1) {
+      const { due, acceptedSince } = memoryRecurrenceDue(db, args.projectId, memorySettings.maintainEvery);
+      if (!due) {
+        const reason = `every ${memorySettings.maintainEvery}th (${acceptedSince} of ${memorySettings.maintainEvery})`;
+        recordStage(db,{...base,state:"skipped",reason,result:{stored:0,audience:memorySettings.audience}});
+        return {runId:args.runId,taskId:args.taskId,state:"skipped",reason};
+      }
     }
     // J-002 wave mode (memory.maintain_mode; "task" restores one helper per task): the fact is already stored, so while
     // the wave is still busy the stage is done. Once the wave goes idle the last task's stage runs one maintainer for

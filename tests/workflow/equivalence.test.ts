@@ -299,7 +299,7 @@ describe("the dispatch runs on the workflow engine", () => {
   });
 
   it("keeps the task accepted when the memory stage fails; project life is independent of it", async () => {
-    const run = await runScenario({ name: "memory fails", finish: true, settings: { "plan_critique.enabled": false, "memory.enabled": true, "memory.maintain": true, "memory.provider": "codex", "memory.model": "gpt-6-luna" } });
+    const run = await runScenario({ name: "memory fails", finish: true, settings: { "plan_critique.enabled": false, "memory.enabled": true, "memory.maintain": true, "memory.maintain_every": 1, "memory.provider": "codex", "memory.model": "gpt-6-luna" } });
     expect((run.waited as { state: string }).state).toBe("accepted");
     expect(run.attempt?.state).toBe("accepted");
     // The fixture's memory helper answers prose, not memory records: the stage fails by its own receipt.
