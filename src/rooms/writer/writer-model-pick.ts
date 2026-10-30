@@ -1,4 +1,4 @@
-import { choice, choiceOf, defineJudgment, type Jev } from "@lane-pilot/jev";
+import { choice, choiceOf, defineJudgment, score, type Answers, type Jev } from "@lane-pilot/jev";
 import { writerCandidates, type WriterProfile } from "@lane-pilot/models";
 import { writerFallbackKeys, writerFallbackSlots, WRITER_FALLBACK_SLOTS } from "./writer-fallbacks";
 
@@ -18,15 +18,29 @@ export type WriterPickTask = {
 export type WriterLoad = { percent: number | null; running: number };
 export type WriterPickInput = { task: WriterPickTask; candidates: readonly WriterProfile[]; load?: Readonly<Record<string, WriterLoad>> };
 
-const loadNote = (load: WriterLoad | undefined): string => (load
-  ? ` [provider now: ${load.percent === null ? "no spent usage measured" : `${load.percent}% of its usage window spent`}, ${load.running} writer task${load.running === 1 ? "" : "s"} running]`
-  : "");
-
 const clip = (text: string, max: number): string => (text.length > max ? `${text.slice(0, max - 1)}…` : text);
+
+const COMPLEXITY_LEVELS = ["trivial: a rename, a config value, a one-line fix", "routine: a clear fix or a small change in a known place", "demanding: a feature, a refactor or a fix that needs exploring several paths", "frontier: open-ended design, architecture, deep debugging nobody has a recipe for"];
+const RISK_LEVELS = ["cosmetic: a label, a colour, copy — nothing relies on it", "ordinary: behaviour people use, but no money, access or stored data", "serious: stored data, migrations, security, money or access"];
+
+/** The level a Score answer settles on, as a share of its scale (0..1), from the probabilities it carries. */
+const levelShare = (answers: Answers, id: string, levels: readonly string[]): number => {
+  const answer = answers[id];
+  if (answer?.type !== "score") return 0.5;
+  const names = Object.keys(answer.probabilities);
+  if (!names.length) return 0.5;
+  return names.reduce((total, name) => total + (Math.max(0, levels.findIndex((level) => level.startsWith(name.split(":")[0]!))) / (levels.length - 1)) * (answer.probabilities[name] ?? 0), 0);
+};
+
+/** How much a candidate's provider busyness costs, in probability points (the balancing the question's text used to do). */
+const loadPenalty = (load: WriterLoad | undefined): number => (load ? (load.percent ?? 0) / 100 * 0.06 + load.running * 0.01 : 0);
+const TIER_RANK = { light: 0, standard: 1, strong: 2 } as const;
 
 export const writerModelJudgment = defineJudgment<WriterPickInput, { key: string | null }>({
   id: WRITER_MODEL_JUDGMENT_ID,
-  version: 2,
+  // v3: composite scoring — the Choice no longer hides «how hard is the task» and «what breaks» inside its criteria, and the
+  // provider load moved out of the question into the decision code (weights we control).
+  version: 3,
   defaultMode: "active",
   timeoutMs: 8_000,
   stateBuilder: (input) => ({
@@ -37,18 +51,28 @@ export const writerModelJudgment = defineJudgment<WriterPickInput, { key: string
     },
   }),
   questions: (input) => ({
+    complexity: score("`task` is one coding task a writer agent will carry out: what it changes (`files`, `outputs`), why (`objective`), how it is checked (`acceptance`). How hard and open-ended is it?", COMPLEXITY_LEVELS),
+    risk: score("What breaks if `task` is done wrong?", RISK_LEVELS),
     writer: choice(
-      "`task` is one coding task a writer agent will carry out in a project's repository: what it changes (`files`, `outputs`), why (`objective`), how it is checked (`acceptance`), its kind and risk. Which coding model should write it? Judge by the work: the languages and stack the files show, how hard and open-ended the change is, how much it risks, and what each model is known to do well and badly. Prefer the cheaper model when it fits the task as well. Each model ends with how busy its provider is now; the work must be spread across providers: between models that fit the task about equally, choose the one whose provider has more of its usage window left and fewer writer tasks running.",
-      Object.fromEntries(input.candidates.map((profile) => [profile.key, `${profile.label}: ${profile.summary}${loadNote(input.load?.[profile.key])}`])),
+      "`task` is one coding task a writer agent will carry out in a project's repository: what it changes (`files`, `outputs`), why (`objective`), how it is checked (`acceptance`), its kind and risk. Which coding model should write it? Judge by the work: the languages and stack the files show, how hard and open-ended the change is, how much it risks, and what each model is known to do well and badly. Prefer the cheaper model when it fits the task as well.",
+      Object.fromEntries(input.candidates.map((profile) => [profile.key, `${profile.label}: ${profile.summary}`])),
     ),
   }),
   thresholds: {
     min_p: { default: 0.45, min: 0.3, max: 0.9, about: "least probability of the picked writer; below it the project's own writer writes" },
+    near: { default: 0.12, min: 0.03, max: 0.4, about: "candidates within this of the top probability count as fitting about equally" },
+    hard_at: { default: 0.66, min: 0.3, max: 1, about: "complexity or risk at this share of its scale allows a strong-tier model" },
   },
   decide(answers, t, input) {
     const pick = choiceOf(answers, "writer");
     if (!pick || pick.p < t.min_p!) return { decision: { key: null } };
-    return { decision: { key: input.candidates.some((profile) => profile.key === pick.top) ? pick.top : null } };
+    // The near band fits the task about equally: the choice between them is the weights — a strong-tier model only when the
+    // task is hard (the «дороже при равном» ban), then the freest provider (load read in code, not in the question).
+    const band = pick.ranked.filter(([id, p]) => pick.p - p <= t.near! && input.candidates.some((profile) => profile.key === id));
+    const hard = levelShare(answers, "complexity", COMPLEXITY_LEVELS) >= t.hard_at! || levelShare(answers, "risk", RISK_LEVELS) >= t.hard_at!;
+    const pool = hard ? band : band.filter(([id]) => TIER_RANK[input.candidates.find((profile) => profile.key === id)!.tier] < TIER_RANK.strong);
+    const best = (pool.length ? pool : band).map(([id, p]) => [id, p - loadPenalty(input.load?.[id])] as [string, number]).sort((a, b) => b[1] - a[1])[0];
+    return { decision: { key: best ? best[0] : null } };
   },
   fallback: () => ({ key: null }),
   describe: (decision) => decision.key ?? "configured",
