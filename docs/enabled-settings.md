@@ -14,7 +14,7 @@ sources:
   - docs/enabled-settings.snapshot.json
 ---
 
-<!-- enabled-settings:structure c4a1ac2a75db6010 -->
+<!-- enabled-settings:structure bee64bb10308522f -->
 
 # Enabled settings (generated)
 
@@ -230,6 +230,7 @@ switches: `quick` disables both critiques, `full` enables them (`src/rooms/criti
 | `workflow.preset.strong.reasoning_effort` | `high` | — | workflow model: a named model preset of the workflow steps |
 | `workspace.provider` | `auto` | — | writer worktrees: auto gives each attempt a BB environment of its own provider (with automatic fallback), off is the emergency switch to the old worktree path |
 | `writer.agent` | `lane-writer` | — | writer role label |
+| `writer.auto_return` | `on` | — | second pilot: an unanswered writer question is answered from the contract and docs, narrowed into a new task, or left to the owner |
 | `writer.best_of.rounds` | `1` | — | best-of-3: refinement rounds |
 | `writer.best_of.slot_cap` | `3` | — | best-of-3: how many candidates of a task may run at once |
 | `writer.best_of.token_budget` | `0` | — | best-of-3: shared token ceiling of one task's candidates |
@@ -244,6 +245,7 @@ switches: `quick` disables both critiques, `full` enables them (`src/rooms/criti
 | `writer.pair_pin` | `on` | — | writer pin: the task's provider+model for its whole life |
 | `writer.pick_refusal_penalty` | `on` | — | writer pick: on charges a model pair for this project's provider-refusal share over 30 days (from 10 attempts) when Jev spreads the pick |
 | `writer.provider` | `kimi` | — | writer stage reads this setting |
+| `writer.question_wait_min` | `120` | — | writer question: minutes a question to a human may stand unanswered before the machine acts on it |
 | `writer.reasoning_effort` | `PRIMARY_EFFORTS[provider]` | — | writer stage reads this setting |
 | `writer.retry_escalate` | `false` | — | writer fallback chain: on sends the first red check of a task-class failure to the next writer inside the same attempt budget |
 | `writer.retry_safety` | `on` | — | retry gate: on stops an automatic retry when the failed attempt's work area was touched after it ended (foreign edits, rewritten evidence, secret residue) |

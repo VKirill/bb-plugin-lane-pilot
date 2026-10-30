@@ -5,7 +5,7 @@ import { createCore } from "../src/rooms/core/server/core";
 import type { Services } from "../src/rooms/core/server/services";
 import { classifyFailure } from "../src/rooms/runs/failure-class";
 import { recordStage } from "../src/rooms/runs/server/stage-records";
-import { countChargedAttempts, createAttempt, createRun, createTask, getAttempt, listUnansweredWriterQuestions, openDatabase, savePrototypeConfig, saveTaskPlan, setRunThread, transitionAttempt } from "../src/rooms/storage/database";
+import { countChargedAttempts, createAttempt, createRun, createTask, getAttempt, listUnansweredWriterQuestions, openDatabase, savePrototypeConfig, saveProjectSetting, saveTaskPlan, setRunThread, transitionAttempt } from "../src/rooms/storage/database";
 import { createWriterFinish } from "../src/rooms/writer/server/finish";
 import { collectOwnerWaiting } from "../src/rooms/owner-waiting";
 import { isProductDecision, markAnsweredByDefault, SAFE_DEFAULT_ANSWER, WRITER_QUESTION_WAIT_MS } from "../src/rooms/writer/server/question-default";
@@ -34,6 +34,8 @@ function sweepWorld(options: { threadStatus?: string; reason?: string } = {}) {
   createRun(db, "run1", "proj1", "bb", WORKSPACE);
   setRunThread(db, "run1", "thr_pm");
   savePrototypeConfig(db, { projectId:"proj1", hostId:"h1", pmWorkspacePath:WORKSPACE, writerWorkspacePath:WORKSPACE, pmProviderId:"p", pmModel:"pm", writerProviderId:"p", writerModel:"wm" });
+  // The second pilot (writer.auto_return, W34) has its own test; this one is about the safe default under it.
+  saveProjectSetting(db, "proj1", "writer.auto_return", "off");
   createTask(db, { id:"T1", runId:"run1", kind:"bb", contract:task });
   saveTaskPlan(db, "T1", "Plan for T1");
   createAttempt(db, { id:"a1", runId:"run1", taskId:"T1" });
@@ -46,14 +48,14 @@ function sweepWorld(options: { threadStatus?: string; reason?: string } = {}) {
 }
 
 describe("a writer's question nobody answers", () => {
-  it("is left alone for the first hour", async () => {
+  it("is left alone for the wait (writer.question_wait_min, default two hours)", async () => {
     const w = sweepWorld();
     expect(await w.timeout.sweepWriterQuestions(T0 + WRITER_QUESTION_WAIT_MS - 1)).toEqual([]);
     expect(getAttempt(w.db, "a1")?.state).toBe("blocked");
     expect(w.sends).toEqual([]);
   });
 
-  it("is answered by the machine with the safest default after an hour: the same writer goes on, no attempt is spent", async () => {
+  it("is answered by the machine with the safest default after the wait: the same writer goes on, no attempt is spent", async () => {
     const w = sweepWorld();
     expect(await w.timeout.sweepWriterQuestions(T0 + WRITER_QUESTION_WAIT_MS)).toEqual([{ taskId:"T1", action:"answered_by_default" }]);
     expect(getAttempt(w.db, "a1")?.state).toBe("running");
@@ -83,7 +85,7 @@ describe("a writer's question nobody answers", () => {
     expect(getAttempt(gone.db, "a1")?.reason).toMatch(/^verdict_block: question_unanswered:/);
   });
 
-  it("expires after the hour even while the writer task still holds its live key", async () => {
+  it("expires after the wait even while the writer task still holds its live key", async () => {
     // start.ts keeps run:task in activeWriterTasks until the start loop's finally. The question is already
     // on the attempt by then; holding the key used to freeze the hour forever.
     const busy = sweepWorld();
@@ -103,7 +105,7 @@ describe("a writer's question nobody answers", () => {
 describe("a writer's question that is a product decision", () => {
   const DECISION = "needs_human: Should a pending payment be cancelled when the customer switches the payment method?";
 
-  it("is never answered by default: after the hour the attempt ends with the question in its reason, uncharged, and the owner gets one line", async () => {
+  it("is never answered by default: after the wait the attempt ends with the question in its reason, uncharged, and the owner gets one line", async () => {
     const w = sweepWorld({ reason:DECISION });
     expect(await w.timeout.sweepWriterQuestions(T0 + WRITER_QUESTION_WAIT_MS)).toEqual([{ taskId:"T1", action:"left_to_owner" }]);
     expect(w.sends).toEqual([]);

@@ -1019,6 +1019,10 @@ export const fieldEn = {
   reason_s550: "on charges a provider+model pair for the share of this project's attempts on it that ended in a provider refusal over 30 days (counted from 10 attempts) when Jev picks the writer; off keeps the pre-penalty spread. Default on.",
   field_s540: "Owns-paths write barrier",
   reason_s540: "on makes the tracked files outside a task's owns_paths read-only in the attempt's worktree once it is bound: a write outside the contract is refused by the OS instead of being rejected after the fact; the test or locale of an owned area stays writable; off keeps them writable. Default on.",
+  field_s585: "Writer: second pilot on unanswered questions",
+  reason_s585: "on: a writer question to a human that stands unanswered for the wait goes to the second pilot (a read-only helper with the contract, plan, read_first excerpts and project memory). It answers from them and the same writer goes on; or narrows the task into a new one that needs no human, the original closed as superseded; or leaves the question to the owner: one PM note while the chat is warm, else the morning list. One auto-return per task, each decision a stage_return row. off: the safe default answer alone. Default on.",
+  field_s586: "Writer: question wait (min)",
+  reason_s586: "Minutes a writer question to a human may stand unanswered before the machine acts on it: the second pilot when auto-return is on, else the safe default; a product decision goes to the owner either way. Default 120.",
 } as const;
 
 export const fieldRu: { [K in keyof typeof fieldEn]: string } = {
@@ -2041,4 +2045,8 @@ export const fieldRu: { [K in keyof typeof fieldEn]: string } = {
   reason_s550: "on наказывает пару провайдер+модель за долю отказов провайдера на попытках этого проекта за 30 дней (считается от 10 попыток) при выборе писателя Jev; off оставляет прежний разброс. По умолчанию on.",
   field_s540: "Барьер записи вне owns_paths",
   reason_s540: "on делает отслеживаемые файлы вне owns_paths задачи только для чтения в worktree попытки после её привязки: запись вне контракта отклоняется ОС, а не приёмкой после факта; тест или локаль своей области остаются записываемыми; off оставляет запись свободной. По умолчанию on.",
+  field_s585: "Писатель: второй пилот на неотвеченных вопросах",
+  reason_s585: "on: вопрос писателя человеку, простоявший без ответа дольше ожидания, уходит второму пилоту (помощник только на чтение с контрактом, планом, выдержками read_first и памятью проекта). Он отвечает сам по ним, и тот же писатель продолжает; или сужает задачу до новой, где человек не нужен, а исходная закрывается как superseded; или оставляет вопрос владельцу: одна заметка в чат PM, пока он тёплый, иначе утренний список. Один автовозврат на задачу, каждое решение — строка stage_return. off: только безопасный ответ по умолчанию. По умолчанию on.",
+  field_s586: "Писатель: ожидание ответа на вопрос (мин)",
+  reason_s586: "Сколько минут вопрос писателя человеку может стоять без ответа, прежде чем машина возьмётся за него: второй пилот при включённом автовозврате, иначе безопасный ответ по умолчанию; продуктовое решение в любом случае уходит владельцу. По умолчанию 120.",
 };

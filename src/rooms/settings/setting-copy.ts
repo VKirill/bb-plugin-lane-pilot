@@ -170,6 +170,8 @@ export const SETTING_META: Record<string, SettingMeta> = {
   "failure.interventions": { label: "field_s513", help: "reason_s513" },
   "writer.retry_escalate": { label: "field_s514", help: "reason_s514" },
   "writer.pair_pin": { label: "field_s531", help: "reason_s531" },
+  "writer.auto_return": { label: "field_s585", help: "reason_s585" },
+  "writer.question_wait_min": { label: "field_s586", help: "reason_s586", unit: "fieldUnitMinutes" },
   "writer.route_record": { label: "field_s532", help: "reason_s532" },
   "writer.capacity_wait": { label: "field_s533", help: "reason_s533" },
   "writer.capacity_wait_max_min": { label: "field_s539", help: "reason_s539", unit: "fieldUnitMinutes" },

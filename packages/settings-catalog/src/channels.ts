@@ -166,6 +166,8 @@ export const SETTING_CATALOG: SettingSpec[] = [
   { key:"writer.capacity_wait_max_min", channel:"OWN", reason:"Native Lane Pilot capacity: the most minutes a task waits on every writer provider being spent (recheck every 15 min) before the PM is told to resend it; counted from the first parking" },
   { key:"writer.pick_refusal_penalty", channel:"OWN", reason:"Native Lane Pilot writer pick: on charges a model pair for this project's provider-refusal share over 30 days (from 10 attempts) when Jev spreads the pick" },
   { key:"checks.fail_fast", channel:"OWN", reason:"Native Lane Pilot verification: order checks by expected fail cost and stop starting new checks after the first non-zero exit" },
+  { key:"writer.auto_return", channel:"OWN", reason:"Native Lane Pilot second pilot: an unanswered writer question is answered from the contract and docs, narrowed into a new task, or left to the owner; one auto-return per task, each a stage_return row" },
+  { key:"writer.question_wait_min", channel:"OWN", reason:"Native Lane Pilot writer question: minutes a question to a human may stand unanswered before the machine acts on it" },
   { key:"writer.class_cooldowns", channel:"OWN", reason:"Native Lane Pilot failure classes: JSON map of class to seconds of pause after an attempt ends, before the next attempt" },
   { key:"writer.cooldown_max_ms", channel:"OWN", reason:"Native Lane Pilot failure classes: cap for any class cooldown pause in milliseconds; 0 uncapped" },
   { key:"writer.task_wall_clock_min", channel:"OWN", reason:"Native Lane Pilot retry caps: the most minutes a task may live across attempts and restarts before it ends with task_wall_clock" },

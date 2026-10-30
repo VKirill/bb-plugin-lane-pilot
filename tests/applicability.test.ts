@@ -44,7 +44,7 @@ function parseApplicabilityTable(): Array<{
 describe("adoc applicability catalog", () => {
   // deferral:dfr_seed_skip_applicability
   it.skipIf(NO_AGENCY_SETTINGS)("matches settings.json 1:1 on area+setting+location+category", () => {
-    expect(UI_CATALOG).toHaveLength(491);
+    expect(UI_CATALOG).toHaveLength(493);
     expect(SETTINGS!.settings).toHaveLength(356);
     const catalogKeys = UI_CATALOG.slice(0,355).map((row) => `${row.area}\0${row.setting}\0${row.location}\0${row.category}`);
     const settingKeys = SETTINGS!.settings.map((row) => `${row.area}\0${row.setting}\0${row.location}\0${row.category}`);
@@ -61,7 +61,7 @@ describe("adoc applicability catalog", () => {
       gap: summary.gap,
       excluded: summary.excluded,
     });
-    expect(counts.editable + counts.readonly + counts.gap + counts.excluded).toBe(512);
+    expect(counts.editable + counts.readonly + counts.gap + counts.excluded).toBe(514);
     expect(summary.blank).toBe(0);
     expect(summary.tuple_equal).toBe(true);
   });
@@ -98,7 +98,7 @@ describe("adoc applicability catalog", () => {
   // deferral:dfr_seed_skip_applicability
   it.skipIf(NO_AGENCY_SETTINGS)("documents the 355 source rows and native docs/onboarding additions with location and path:line", () => {
     const rows = parseApplicabilityTable();
-    expect(rows).toHaveLength(491);
+    expect(rows).toHaveLength(493);
     expect(rows.filter((row) => !PATH_LINE.test(row.evidence))).toEqual([]);
     for (const [index, row] of rows.slice(0,355).entries()) {
       expect(row.area).toBe(SETTINGS!.settings[index]!.area);
@@ -188,7 +188,7 @@ describe("adoc applicability catalog", () => {
   });
 
   it("keeps all former UI-visible fields on screen", () => {
-    expect(VISIBLE_CATALOG).toHaveLength(379); // +1 memory.maintain_every (wave10), +3 wave17 rows (failure.interventions, writer.retry_escalate, memory.maintain_mode)
+    expect(VISIBLE_CATALOG).toHaveLength(381); // +1 memory.maintain_every (wave10), +3 wave17 rows (failure.interventions, writer.retry_escalate, memory.maintain_mode)
     expect(VISIBLE_CATALOG.every((row) => row.uiStatus !== "excluded")).toBe(true);
     expect(UI_CATALOG.filter((row) => row.id >= "s355" && row.setting.startsWith("docs.")).every((row) => row.uiStatus === "editable" && row.channel === "OWN")).toBe(true);
     expect(UI_CATALOG.filter((row)=>["night_review.enabled","night_review.provider","night_review.model","night_review.agent"].includes(row.storageKey)&&row.id!=="s290").every((row)=>row.uiStatus==="editable"&&row.channel==="OWN")).toBe(true);

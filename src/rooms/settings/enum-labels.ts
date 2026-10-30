@@ -34,6 +34,7 @@ const BY_KEY: Record<string, Record<string, I18nKey>> = {
   "bench.model_rebench": { on: "enumModelRebenchOn", off: "enumModelRebenchOff" },
   "failure.interventions": { on: "enumInterventionsOn", off: "enumInterventionsOff" },
   "writer.pair_pin": { on: "enumPairPinOn", off: "enumPairPinOff" },
+  "writer.auto_return": { on: "enumAutoReturnOn", off: "enumAutoReturnOff" },
   "writer.route_record": { on: "enumRouteRecordOn", off: "enumRouteRecordOff" },
   "writer.capacity_wait": { on: "enumCapacityWaitOn", off: "enumCapacityWaitOff" },
   "checks.fail_fast": { on: "enumFailFastOn", off: "enumFailFastOff" },
