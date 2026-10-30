@@ -107,8 +107,10 @@ export function createMemoryStage(ctx: ServerCore, services: Services) {
         return typeof content==="string"?new TextEncoder().encode(content):null;
       });
       // A full core keeps the batch: a core entry it cannot take is stored as a note, not a refusal of every entry.
+      // A rule the model emits is not stored here: the rules pipeline owns that concept, and the raw door rejects it.
+      const entries=parsed.filter((entry)=>!entry.concepts.includes("rule"));
       const records=storeMemoryRecordsKeepingOverflow(db,{projectId:args.projectId,personalBot:snapshot.settings.personalBot,audience:snapshot.settings.audience,sourceSha256:snapshot.acceptanceSha256,
-        entries:parsed,coreBudget:snapshot.settings.coreBudget,noteBudget:snapshot.settings.noteBudget,indexBudget:snapshot.settings.indexBudget,scope,readFile});
+        entries,coreBudget:snapshot.settings.coreBudget,noteBudget:snapshot.settings.noteBudget,indexBudget:snapshot.settings.indexBudget,scope,readFile});
       // Notes that now disagree with an active one are held, both, until a person settles it (memory-conflicts.ts); a failure here never loses the write.
       try { services.memoryConflicts.sweepMoot(args.projectId); services.memoryConflicts.detect(args.projectId,new Set(records.insertedIds)); } catch(cause) { bb.log.warn(`Lane Pilot memory conflicts after ${args.taskId} failed: ${cause instanceof Error?cause.message:String(cause)}`); }
       const byId=new Map(records.records.map((row)=>[row.id,row]));

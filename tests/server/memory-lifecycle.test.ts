@@ -45,7 +45,7 @@ describe("K8 supersession: a newer note on the same subject replaces the older, 
 
   it("never replaces a rule", () => {
     const db = newDb();
-    const rule = put(db, [{ kind: "core", content: "Run npm ci, never npm install", concepts: ["rule", "npm"] }]).insertedIds[0]!;
+    const rule = put(db, [{ kind: "core", content: "Run npm ci, never npm install", concepts: ["rule", "npm"] }], { origin: "rule" }).insertedIds[0]!;
     put(db, [{ ...note("Run npm ci in the worktree", ["npm"]), supersedes: [rule.slice(0, 12)] }]);
     expect(statusOf(db, rule)).toBe("active");
   });

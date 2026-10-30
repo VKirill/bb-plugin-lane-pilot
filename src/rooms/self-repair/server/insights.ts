@@ -54,7 +54,7 @@ export function acceptRuleProposal(db: LanePilotDatabase, projectId: string, id:
   const memoryId = memoryRecordId(projectId, "core", content, settings.personalBot, "subagent", proposal.scope ?? []);
   storeMemoryRecords(db, {
     projectId, personalBot: settings.personalBot, audience: "subagent",
-    sourceSha256: sha256Hex(`rule:${id}`),
+    sourceSha256: sha256Hex(`rule:${id}`), origin: "rule",
     entries: [{ kind: "core", content, concepts: ["rule", "owner-confirmed"] }],
     coreBudget: settings.coreBudget, noteBudget: settings.noteBudget, indexBudget: settings.indexBudget,
     // A rule of one section is that section's memory too: a sibling section's writers never read it.
@@ -175,7 +175,7 @@ export function rewordAdoptedRule(db: LanePilotDatabase, projectId: string, id: 
   const memoryId = memoryRecordId(projectId, "core", content, settings.personalBot, "subagent", proposal.scope ?? []);
   storeMemoryRecords(db, {
     projectId, personalBot: settings.personalBot, audience: "subagent",
-    sourceSha256: sha256Hex(`rule:${id}:${proposal.revision + 1}`),
+    sourceSha256: sha256Hex(`rule:${id}:${proposal.revision + 1}`), origin: "rule",
     entries: [{ kind: "core", content, concepts: ["rule", "auto-adopted"] }],
     coreBudget: settings.coreBudget, noteBudget: settings.noteBudget, indexBudget: settings.indexBudget,
     scope: proposal.scope,

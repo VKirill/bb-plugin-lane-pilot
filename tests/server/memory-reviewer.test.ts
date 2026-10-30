@@ -58,7 +58,7 @@ describe("K8 reviewer role: reviewers and critics get the notes relevant to revi
 
   it("leaves out rules, notes in quarantine and expired notes", () => {
     const db = newDb();
-    const [rule] = put(db, [note("Always run the review checklist", ["rule", "review"], "core")]);
+    const [rule] = put(db, [note("Always run the review checklist", ["rule", "review"], "core")], { origin: "rule" });
     put(db, [note("Observed review check from a CLI session", ["review"])], { trust: "observed", origin: "session" });
     put(db, [{ ...note("Review check that ended", ["review"]), validUntil: Date.now() - 1000 }], { now: Date.now() - 5_000 });
     const real = put(db, [note("Review check that holds", ["review"])]);
