@@ -62,7 +62,14 @@ export function sessionMemoryRpc(ctx: ServerCore, services: Services) {
     },
     // A lesson is a rule proposal: a repeat of a live rule counts towards it, a new one goes on trial within the cap.
     session_lesson: async ({ projectId, rule, evidence, scope, audience, always }) => {
-      const result = upsertLessonProposal(db, projectId, { rule, evidence, scope, audience, always });
+      // audience may be `specialist:<id>` (wider than RuleAudience — the column is TEXT); the employee's slice reads it back.
+      const result = upsertLessonProposal(db, projectId, { rule, evidence, scope, audience: audience as never, always });
+      // audience `specialist:<id>` also appends a dated line to `lp.role.lines` — the section the specialist's brief renders.
+      const employee = /^specialist:([\w-]{1,60})$/.exec(audience ?? "")?.[1];
+      if (employee) {
+        const { recordRoleLine } = await import("../../critique/server/employee-lessons");
+        await recordRoleLine(ctx.bb.storage.kv, projectId, employee, rule).catch(() => undefined);
+      }
       const adopted = result.created ? Boolean(adoptRuleProposal(db, projectId, result.id)) : false;
       const proposal = getRuleProposal(db, projectId, result.id);
       return { proposalId: result.id, repeatOf: result.repeatOf, state: proposal?.state ?? "proposed", adopted };
