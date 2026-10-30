@@ -1,15 +1,14 @@
+import type { BbPluginApi } from "@get-bb/plugin-sdk";
+import { roleLinesKey } from "../critique/server";
 import type { CompiledMainAgent } from "./agent-profile";
 
 /**
- * The role's lessons for a directly called employee. swe/empmem (batch: role memory) owns the real
- * retrieval — project rules filtered to `specialist:<id>`; until it lands this resolves to none.
- * The one seam: anything a specialist chat should carry is appended by `withRoleLines`.
+ * The role's lessons for a directly called employee: the same `lp.role.lines:<project>:<role>` list the
+ * `lp.specialist_brief` step renders (written by employee.remark / recordEmployeeLesson), so a chat the owner
+ * opens with an employee carries the same rules a PM-delegated run does.
  */
-export async function employeeRoleLines(deps: unknown, projectId: string, agentId: string): Promise<string[]> {
-  void deps;
-  void projectId;
-  void agentId;
-  return [];
+export async function employeeRoleLines(bb: Pick<BbPluginApi, "storage">, projectId: string, agentId: string): Promise<string[]> {
+  return ((await bb.storage.kv.get(roleLinesKey(projectId, agentId)).catch(() => null)) as string[] | null) ?? [];
 }
 
 /** The compiled profile with its role lessons appended, in the same dated-lines block a PM-spawned specialist gets. */
