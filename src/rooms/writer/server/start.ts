@@ -864,8 +864,10 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         for (const row of priorRows) { if (failureClass(row.state, row.reason) === failedClass) sameClassStreak++; else break; }
         const intervention = configuredSetting(runSettings, "failure.interventions") === "off" ? "same_retry_remark" : failureIntervention(failedClass, sameClassStreak);
         judged = { status: String(last.status), reason: typeof last.reason === "string" ? last.reason : null, klass: failedClass, mast: MAST_OF_FAILURE[failedClass] ?? "external:unknown", intervention, streak: sameClassStreak };
-        if (intervention === "narrow_brief") {
-          const reason = `narrow_brief: ${failedClass} failed ${sameClassStreak} attempts in a row — an identical retry repeats it; narrow the brief or change the approach, then dispatch again`;
+        if (intervention === "narrow_brief" && !liveFolder) {
+          // The original reason stays in the blocked reason: the class and the advice are a prefix, not a replacement —
+          // a receipt reader (and the live-folder rollback test) still sees what actually failed.
+          const reason = `narrow_brief: ${String(last.reason ?? last.status)} — ${failedClass} failed ${sameClassStreak} attempts in a row; narrow the brief or change the approach, then dispatch again`;
           const latest = getAttempt(db, attemptId);
           if (latest && RETRY_ELIGIBLE.includes(latest.state as AttemptState)) transitionAttempt(db, latest.id, "blocked", { reason });
           last = { ...last, status:"blocked", reason };

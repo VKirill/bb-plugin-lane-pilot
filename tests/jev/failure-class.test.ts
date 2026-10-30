@@ -43,9 +43,9 @@ describe("J-4 failure.class", () => {
   it("takes a clear class and falls back to task otherwise", () => {
     const answers = (top: string, p: number) => ({ side: { type: "choice" as const, choice: top, confidence: 0.9, probabilities: { [top]: p, task: 1 - p } } });
     const t = { min_p: 0.7, min_margin: 0.3 };
-    expect(failureClassJudgment.decide(answers("infra", 0.9), t, { state: "x", reason: "y" })).toEqual({ decision: { cls: "infra" } });
-    expect(failureClassJudgment.decide(answers("infra", 0.6), t, { state: "x", reason: "y" })).toEqual({ decision: { cls: "task" } });
-    expect(failureClassJudgment.fallback({ state: "x", reason: "y" })).toEqual({ cls: "task" });
+    expect(failureClassJudgment.decide(answers("infra", 0.9), t, { state: "x", reason: "y" })).toEqual({ decision: { cls: "infra", mast: "external:machine" } });
+    expect(failureClassJudgment.decide(answers("infra", 0.6), t, { state: "x", reason: "y" })).toEqual({ decision: { cls: "task", mast: "verification:incomplete_work" } });
+    expect(failureClassJudgment.fallback({ state: "x", reason: "y" })).toEqual({ cls: "task", mast: "verification:incomplete_work" });
   });
 
   it("never asks about a reason the rules are sure of", async () => {
