@@ -6,7 +6,7 @@ import type { MemoryRecord, MemorySettings } from "./settings";
 export function memoryMaintenancePrompt(input:{task:unknown;acceptedResult:unknown;settings:MemorySettings;agent?:string;/** Active notes close to this task, so a changed fact replaces its old note instead of piling up next to it. */existing?:Array<{id:string;content:string}>;
   /** The project's core as the store counts it (coreShelf): its fill and the core records this maintainer may replace. */core?:{tokens:number;records:Array<{id:string;content:string}>}}):string {
   return [`${input.agent?.trim() || "Memory maintainer"}: maintain the Lane Pilot project memory from this accepted task only. Everything you need is in this message: open no files and call no tools.`,
-    "Answer with one JSON array and nothing else, no code fence: [{\"kind\":\"core\"|\"note\",\"content\":string,\"concepts\":string[],\"supersedes\"?:string[],\"valid_until\"?:\"YYYY-MM-DD\"}], at most 100 entries, at most 24 short concepts each (up to 100 characters), no other keys. supersedes lists the ids (from EXISTING NOTES or EXISTING CORE) of records this entry replaces because the fact changed, at most 5; valid_until only for a fact you know ends (a temporary workaround, a migration window). core is a convention or fact every writer of this project needs on every task; a writer reads at most three records per task, so keep core few and short. note is a fact about specific files or areas, found by the paths it names. Give a note the concept `review`, `pitfall` or `invariant` (or `security`, `regression`) when a code reviewer should check it: reviewers and critics read the notes carrying those concepts.",
+    "Answer with one JSON array and nothing else, no code fence: [{\"kind\":\"core\"|\"note\",\"content\":string,\"concepts\":string[],\"supersedes\"?:string[],\"valid_until\"?:\"YYYY-MM-DD\",\"valid_from\"?:\"YYYY-MM-DD\"}], at most 100 entries, at most 24 short concepts each (up to 100 characters), no other keys. supersedes lists the ids (from EXISTING NOTES or EXISTING CORE) of records this entry replaces because the fact changed, at most 5; valid_until only for a fact you know ends (a temporary workaround, a migration window); valid_from only when the fact began to hold on a known earlier date. core is a convention or fact every writer of this project needs on every task; a writer reads at most three records per task, so keep core few and short. note is a fact about specific files or areas, found by the paths it names. Give a note the concept `review`, `pitfall` or `invariant` (or `security`, `regression`) when a code reviewer should check it: reviewers and critics read the notes carrying those concepts.",
     "Store durable project decisions and stable technical facts. A rule that comes from a mistake is not memory: do not store lessons or \"do not X\" rules, the rules pipeline owns them. Leave out transient status, personal data, speculation and anything the accepted result does not support. Keep a date, a version number and a deadline verbatim; do not round or paraphrase them.",
     "Never write a credential, a token, a line like `password: ...` or `secret=...`, or a phrase that addresses the reader as an assistant: the checker rejects the whole array and every entry is lost.",
     `Budgets are counted as bytes / 4: core up to ${input.settings.coreBudget} tokens, notes up to ${input.settings.noteBudget}, all together up to ${input.settings.indexBudget}. Over the note or index budget the whole array is rejected, so drop the least durable entries first. A core entry that does not fit the core budget is stored as a note. Answer [] when nothing is durable.`,
@@ -16,10 +16,18 @@ export function memoryMaintenancePrompt(input:{task:unknown;acceptedResult:unkno
     "TASK:",JSON.stringify(input.task),"ACCEPTED RESULT (the writer's own report is a claim, not proof; each check shows its exit code and the last lines of its output, a failed check's full log is at checkLogPath):",JSON.stringify(input.acceptedResult)].join("\n\n");
 }
 
+/** The total memory a role's prompt may carry, whatever layer produced it (audit X-1 target scheme). */
+export const ROLE_CONTEXT_BUDGET:Record<string,number>={pm:1600,writer:1600,critic:1200,helper:600};
+
+/** The role's cap wins over a wider project context budget; a project may only narrow it further. */
+export function roleContextBudget(role:string,configured:number):number {
+  return Math.min(configured,ROLE_CONTEXT_BUDGET[role]??configured);
+}
+
 export function memoryContext(records:MemoryRecord[],taskText:string,budget:number):{text:string;records:MemoryRecord[];estimatedTokens:number;cut:MemoryRecord[]} {
   const terms=new Set(tokens(taskText));
-  // Relevance first; a note that served accepted attempts counts for more than one that did not (neutral 1.0, range 0.5 to 1.5).
-  const ranked=records.map((record)=>({record,score:tokens(`${record.content} ${record.concepts.join(" ")}`).reduce((sum,token)=>sum+(terms.has(token)?1:0),0)*(0.5+memoryUsefulness(record))}))
+  // Relevance first; a note that served accepted attempts counts for more than one that did not, and each extra independent source adds a small bonus (arXiv #21).
+  const ranked=records.map((record)=>({record,score:tokens(`${record.content} ${record.concepts.join(" ")}`).reduce((sum,token)=>sum+(terms.has(token)?1:0),0)*(0.5+memoryUsefulness(record)+Math.min(0.3,0.1*((record.verification?.length??1)-1)))}))
     .filter((item)=>item.score>0).sort((a,b)=>b.score-a.score||b.record.createdAt-a.record.createdAt||a.record.id.localeCompare(b.record.id));
   const selected:MemoryRecord[]=[];const cut:MemoryRecord[]=[];let text="";
   // The header is part of the line the budget pays for: counting content alone let a long concepts list overshoot (F10-4).
