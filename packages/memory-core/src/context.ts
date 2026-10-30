@@ -16,6 +16,14 @@ export function memoryMaintenancePrompt(input:{task:unknown;acceptedResult:unkno
     "TASK:",JSON.stringify(input.task),"ACCEPTED RESULT (the writer's own report is a claim, not proof; each check shows its exit code and the last lines of its output, a failed check's full log is at checkLogPath):",JSON.stringify(input.acceptedResult)].join("\n\n");
 }
 
+/** The total memory a role's prompt may carry, whatever layer produced it (audit X-1 target scheme). */
+export const ROLE_CONTEXT_BUDGET:Record<string,number>={pm:1600,writer:1600,critic:1200,helper:600};
+
+/** The role's cap wins over a wider project context budget; a project may only narrow it further. */
+export function roleContextBudget(role:string,configured:number):number {
+  return Math.min(configured,ROLE_CONTEXT_BUDGET[role]??configured);
+}
+
 export function memoryContext(records:MemoryRecord[],taskText:string,budget:number):{text:string;records:MemoryRecord[];estimatedTokens:number;cut:MemoryRecord[]} {
   const terms=new Set(tokens(taskText));
   // Relevance first; a note that served accepted attempts counts for more than one that did not, and each extra independent source adds a small bonus (arXiv #21).
