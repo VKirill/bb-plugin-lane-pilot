@@ -20,13 +20,28 @@ type JanitorOutcome = {
 };
 
 export const JANITOR_OPEN_STATES = ["queued", "spawn_requested", "spawn_unknown", "running", "cancel_requested"];
+/**
+ * Ended attempts that can still go on in their own worktree: a writer question answered or a contract fixed in place
+ * reopens a blocked one, a retry continues a failed one. Their copy waits out the grace: magicseo T3.3 (2026-10-30)
+ * blocked on a question at 18:13:58, the hourly reconcile removed its worktree at 18:14:02, and the reopened writer
+ * found no folder (spawn /bin/bash ENOENT) and moved itself to the main checkout.
+ */
+export const JANITOR_REOPENABLE_STATES = ["blocked", "spawn_rejected", "provider_error", "timeout", "empty_output", "validation_failed"];
+
+/** cleanup.worktree_grace_hours in milliseconds (default 2 h). */
+function worktreeGraceMs(db: ServerCore["db"]): number {
+  const raw = configuredSetting(loadProjectSettings(db, GLOBAL_SETTINGS_PROJECT_ID), "cleanup.worktree_grace_hours");
+  return Math.max(0, (typeof raw === "number" ? raw : Number(raw) || 2) * 3_600_000);
+}
 
 /** The worktree paths live work still holds: open attempts, the docs pass's KV record, regress's, self-repair's. */
-export async function protectedWorktreePaths(ctx: Pick<ServerCore, "bb" | "db">): Promise<Set<string>> {
+export async function protectedWorktreePaths(ctx: Pick<ServerCore, "bb" | "db">, now = Date.now()): Promise<Set<string>> {
   const { bb, db } = ctx;
   const paths = new Set<string>();
   const placeholders = JANITOR_OPEN_STATES.map(() => "?").join(",");
   for (const row of db.prepare(`SELECT workspace_path AS p FROM lane_pilot_attempt WHERE workspace_path IS NOT NULL AND state IN (${placeholders})`).all(...JANITOR_OPEN_STATES) as Array<{ p: string }>) paths.add(row.p);
+  const reopenable = JANITOR_REOPENABLE_STATES.map(() => "?").join(",");
+  for (const row of db.prepare(`SELECT workspace_path AS p FROM lane_pilot_attempt WHERE workspace_path IS NOT NULL AND state IN (${reopenable}) AND updated_at>=?`).all(...JANITOR_REOPENABLE_STATES, now - worktreeGraceMs(db)) as Array<{ p: string }>) paths.add(row.p);
   for (const key of await bb.storage.kv.list("docs-worktree:").catch(() => [] as string[])) {
     const record = await bb.storage.kv.get(key).catch(() => null) as { path?: string } | null;
     if (record?.path) paths.add(record.path);
@@ -55,7 +70,7 @@ export async function runWorktreeJanitor(ctx: Pick<ServerCore, "bb" | "db" | "lo
   if (configuredSetting(settings, "cleanup.worktrees") === "off") return { removed: 0, freedBytes: 0, kept: 0 };
   const graceRaw = configuredSetting(settings, "cleanup.worktree_grace_hours");
   const graceMs = Math.max(0, (typeof graceRaw === "number" ? graceRaw : Number(graceRaw) || 2) * 3_600_000);
-  const protectedPaths = await protectedWorktreePaths(ctx);
+  const protectedPaths = await protectedWorktreePaths(ctx, now);
   // The finished-attempt sweeps were never wired anywhere (found 2026-10-30: both exported, zero callers), which is why
   // lpattempt_* copies piled up; they run here, inside the janitor. `release` snapshots the work before the copy goes.
   const released = new Set<string>();
@@ -85,11 +100,13 @@ export async function runWorktreeJanitor(ctx: Pick<ServerCore, "bb" | "db" | "lo
 }
 
 /** Whether a registry row's owning process is still alive: the attempt runs, or the pass's KV marker stands. */
-async function ownerAlive(ctx: Pick<ServerCore, "bb" | "db">, row: { owner_kind: string; owner_id: string | null; created_at: number }): Promise<boolean> {
+async function ownerAlive(ctx: Pick<ServerCore, "bb" | "db">, row: { owner_kind: string; owner_id: string | null; created_at: number }, now = Date.now()): Promise<boolean> {
   const { bb, db } = ctx;
   if (row.owner_kind === "attempt") {
-    const attempt = db.prepare("SELECT state FROM lane_pilot_attempt WHERE id=?").get(row.owner_id) as { state?: string } | undefined;
-    return attempt !== undefined && JANITOR_OPEN_STATES.includes(attempt.state ?? "");
+    const attempt = db.prepare("SELECT state, updated_at FROM lane_pilot_attempt WHERE id=?").get(row.owner_id) as { state?: string; updated_at?: number } | undefined;
+    if (!attempt) return false;
+    if (JANITOR_OPEN_STATES.includes(attempt.state ?? "")) return true;
+    return JANITOR_REOPENABLE_STATES.includes(attempt.state ?? "") && now - Number(attempt.updated_at ?? 0) < worktreeGraceMs(db);
   }
   if (row.owner_kind === "docs" && row.owner_id) return (await bb.storage.kv.list("docs-worktree:").catch(() => [] as string[])).some((key) => key.endsWith(`:${row.owner_id}`));
   if (row.owner_kind === "regress" && row.owner_id) return (await bb.storage.kv.list("regress-worktree:").catch(() => [] as string[])).some((key) => key.slice("regress-worktree:".length) === row.owner_id);
@@ -109,7 +126,7 @@ export async function reconcileWorktreeRegistry(ctx: Pick<ServerCore, "bb" | "db
   let removed = 0;
   for (const row of dead) {
     if (ctx.isDisposed()) break;
-    if (await ownerAlive(ctx, row)) continue;
+    if (await ownerAlive(ctx, row, now)) continue;
     // The host call needs the base checkout the copy came from; the attempt's run knows it, others take it from the worktree itself.
     const known = db.prepare("SELECT writer_workspace_path AS p FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id WHERE a.workspace_path=? LIMIT 1").get(row.path) as { p?: string } | undefined;
     const basePath = known?.p ?? row.path;

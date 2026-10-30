@@ -15,6 +15,10 @@ function skeleton(line: string): string {
   const raw = line.trim();
   const expect = raw.match(/^((?:await\s+)?expect\((?:[^()]|\([^()]*\))*\)\.)to(?:Be|Equal|StrictEqual|BeTruthy|BeFalsy|BeDefined)\(/);
   if (expect) return `${expect[1]}MATCH()`;
+  // assert.rejects / throws / match… often span several lines and get reflowed: only the method names the check
+  // (magicseo F1.2, 2026-10-30: «removed await assert.rejects(» on a reflowed call failed a good attempt).
+  const other = raw.match(/^(?:await\s+)?assert\.(\w+)\(/);
+  if (other && !["equal", "strictEqual", "deepEqual", "ok"].includes(other[1]!)) return `assert.${other[1]}`;
   const node = raw.match(/^assert\.(?:equal|strictEqual|deepEqual|ok)\(/);
   if (!node) return raw;
   const args = raw.slice(node[0].length).replace(/\)\s*;?$/, "");

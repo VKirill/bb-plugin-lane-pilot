@@ -71,13 +71,17 @@ export function RunCardDirective({ attributes, source }: PluginMessageDirectiveP
       : <div role="status" aria-busy="true" className="my-2 h-12 animate-pulse rounded-md border border-border bg-muted/40" />;
   }
   if (card === "missing") return <div className="my-2 rounded-md border border-border px-3 py-2 text-sm text-muted-foreground" title={source}>{t("runCardGone")}</div>;
-  const done = card.tasks.filter((task) => task.state === "accepted").length;
+  // The counter counts work, not rows: «T3», «T3.2», «T3.4» are one task sent again, done when its latest member is accepted
+  // (magicseo 2026-10-30 showed «9 of 17» with all nine pieces of work accepted). The rows keep every attempt's history.
+  const family = (id: string) => id.replace(/(\.\d+)+$/, "").replace(/-mainfix$/, "");
+  const latest = new Map(card.tasks.map((task) => [family(task.id), task.state] as const));
+  const done = [...latest.values()].filter((state) => state === "accepted").length;
   const shown = expanded ? card.tasks : card.tasks.slice(0, ROWS_SHOWN);
   return (
     <div className="my-2 min-w-0 rounded-md border border-border text-sm" data-testid="run-card">
       <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
         <span className="font-medium">{t("runCardTitle")}</span>
-        <span className="text-xs text-muted-foreground">{card.closed ? t("runCardClosed") : t("runCardProgress").replace("{done}", String(done)).replace("{total}", String(card.tasks.length))}</span>
+        <span className="text-xs text-muted-foreground">{card.closed ? t("runCardClosed") : t("runCardProgress").replace("{done}", String(done)).replace("{total}", String(latest.size))}</span>
       </div>
       {offline ? <div role="status" data-testid="run-card-stale" className="border-b border-border px-3 py-1.5 text-xs text-muted-foreground">{t("runCardStale")}</div> : null}
       <ul className="divide-y divide-border">

@@ -8,6 +8,8 @@ import { NEEDS_HUMAN_MARKER } from "./writer-task";
 import type { ServerCore } from "../../core/server";
 import type { Services } from "../../core/server";
 import { saveFollowUp } from "./sticky";
+import { writerLeftWorktree } from "./left-worktree";
+import { runOnHost } from "@lane-pilot/host-calls";
 import { sendServiceMessage } from "../../relay/server";
 
 /** A blocked attempt whose reason is the writer's own question, not a fault. */
@@ -52,7 +54,7 @@ export function contractFixRecord(changes: FieldChange[]): string {
  * in its own writer thread and worktree, the turn goes in, the stages run again, and the Q&A is kept. No attempt is charged.
  */
 export function createAttemptReopen(ctx: ServerCore, services: Services) {
-  const { acceptedTaskWorkspace, bb, db, getThreadBounded, log } = ctx;
+  const { acceptedTaskWorkspace, bb, db, getThreadBounded, host, log } = ctx;
 
   /** Whether the blocked attempt can take a turn now: no writer still finishing, its thread idle, the run has a workspace. */
   async function checkReopenable(input: {
@@ -71,6 +73,8 @@ export function createAttemptReopen(ctx: ServerCore, services: Services) {
       return { ok: false, hint: "the writer thread is gone or busy; redispatch the task instead" };
     }
     if (!run.writer_workspace_path) return { ok: false, hint: "the run has no writer workspace; redispatch the task instead" };
+    const left = await writerLeftWorktree(bb.sdk as never, attempt.thread_id, attempt.workspace_path);
+    if (left) return { ok: false, hint: `the writer thread left its worktree for ${left}; check that folder for stray edits and redispatch the task instead` };
     return { ok: true, threadId: attempt.thread_id, workspacePath: run.writer_workspace_path };
   }
 
@@ -85,6 +89,13 @@ export function createAttemptReopen(ctx: ServerCore, services: Services) {
     reason: string; turn: string; qaAnswer: string;
   }): Promise<{ ok: true } | { ok: false; hint: string }> {
     const { attempt, config, runId, taskId, threadId } = input;
+    // The worktree may be gone (a sweep, a reboot): a turn sent there fails on its first command and the writer looks elsewhere.
+    if (attempt.workspace_path) {
+      // Only a definite «no such folder» refuses; a host that does not answer is no proof, and the turn goes as before.
+      const there = await runOnHost(host, { hostId: config.hostId, cwd: attempt.workspace_path, command: "true", timeoutSec: 15 })
+        .then((ran) => (ran.exitCode === 0 ? "" : `${ran.stderr ?? ""}`), (cause: unknown) => (cause instanceof Error ? cause.message : String(cause)));
+      if (/ENOENT|no such file|not a directory/i.test(there)) return { ok: false, hint: "the writer's worktree is gone; redispatch the task instead (its work is in ~/.lane-pilot/released/ if it was saved)" };
+    }
     if (!transitionAttempt(db, attempt.id, "running", { threadId })) {
       return { ok: false, hint: "the attempt can no longer be reopened; redispatch the task instead" };
     }

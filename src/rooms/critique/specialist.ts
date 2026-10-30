@@ -31,6 +31,10 @@ export function specialistPrompt(input:{task:unknown; plan:string; agent?:string
   ].join("\n\n");
 }
 
+/** An answer parseSpecialistResult could not read (wrong keys, no JSON): the reviewer gets one more try, not a block of the task. */
+export const unreadableAnswer = (cause: unknown): boolean => (cause instanceof Error && (cause.name === "ZodError" || cause.name === "SyntaxError"))
+  || /model_output_not_json/.test(cause instanceof Error ? cause.message : String(cause));
+
 export function parseSpecialistResult(output:string, cites?:Citation):SpecialistResult {
   const raw = extractModelJson(output);
   if (isVerdictShape(raw)) {

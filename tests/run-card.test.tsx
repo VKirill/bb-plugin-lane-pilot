@@ -47,6 +47,18 @@ describe("lane-run message directive", () => {
     }));
   });
 
+  it("counts a task sent again once: «9 of 17» on magicseo was nine pieces of work, all accepted", async () => {
+    const families = { ...card, runId: "run_fam", tasks: [
+      { id: "T3", title: "Server", state: "blocked", threadId: null, checkLog: null },
+      { id: "T3.2", title: "Server", state: "canceled", threadId: null, checkLog: null },
+      { id: "T3.3", title: "Server", state: "accepted", threadId: null, checkLog: null },
+      { id: "F1", title: "Paging", state: "accepted", threadId: null, checkLog: null },
+      { id: "F1.2", title: "Paging", state: "running", threadId: null, checkLog: null },
+    ] };
+    const slot = await mount({ get_run_card: () => families }, { id: "run_fam" });
+    expect((await slot.findByTestId("run-card")).textContent).toContain("1 of 2 tasks accepted");
+  });
+
   it("mounts again at full height without a placeholder, and folds a long task list (the chat jumped while scrolling)", async () => {
     const many = { ...card, runId: "run_long", tasks: Array.from({ length: 12 }, (_, i) => ({ id: `t${i}`, title: `Task ${i}`, state: "accepted", threadId: null, checkLog: null })) };
     let calls = 0;

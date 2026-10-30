@@ -11,6 +11,7 @@ import type { Services } from "../../core/server";
 import { sendServiceMessage } from "../../relay/server";
 import { isWriterStreamError } from "./writer-task";
 import { markAttemptStart } from "./attempt-marker";
+import { writerLeftWorktree } from "./left-worktree";
 import { buildCapsule, capsuleRestored } from "../../session-hooks";
 import { judgeSessionDigest } from "../session-digest";
 import { jev } from "@lane-pilot/jev";
@@ -142,6 +143,9 @@ export function createWriterSticky(ctx: ServerCore, services: Services) {
       const environment = await bb.sdk.environments.get({ environmentId:attempt.environment_id }).catch(() => null);
       if (!environment || (environment as { archivedAt?: unknown }).archivedAt) return false;
     }
+    // A writer that moved its thread out of the worktree takes no more turns there: the next one would write in that folder.
+    const left = await writerLeftWorktree(bb.sdk as never, attempt.thread_id, attempt.workspace_path);
+    if (left) { ctx.log(`writer thread ${attempt.thread_id} left its worktree for ${left}; a fresh writer takes the task`); return false; }
     return true;
   }
 

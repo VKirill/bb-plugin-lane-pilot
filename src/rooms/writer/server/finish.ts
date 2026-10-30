@@ -2,6 +2,7 @@ import { appetiteStop, breakerKey, runningWriterBudgetStop, tokenUsageFromEvent 
 import { checkTimeoutSec } from "../check-timing";
 import { pipelineWriterStep, pipelineWriterTag } from "./pipeline-tag";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
+import { writerLeftWorktree } from "./left-worktree";
 import { countAttempts, countThreadTurns, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getTaskPlan, listOpenAttempts, listStageReceipts, loadProjectSettings, transitionAttempt, taskBasePath } from "../../storage";
 import { saveBlockedBy, type BlockedBy } from "../../runs/server";
 import { relayFor } from "../../relay/server";
@@ -300,6 +301,15 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
       if (currentAttempt?.state === "cancel_requested" || currentAttempt?.state === "canceled") {
         if (currentAttempt.state === "cancel_requested") transitionAttempt(db, input.attemptId, "canceled", { threadId:input.writerThreadId, reason:"writer stop observed before validation" });
         return { status:"canceled", attemptId:input.attemptId, writerThreadId:input.writerThreadId };
+      }
+      // A writer that moved its thread out of its worktree did its work elsewhere (maybe the main checkout): nothing to
+      // validate here and no retry in place; the PM learns where the edits went.
+      const left = await writerLeftWorktree(bb.sdk as never, input.writerThreadId, currentAttempt?.workspace_path ?? input.config.writerWorkspacePath);
+      if (left) {
+        const reason = `writer_left_worktree: the writer thread moved to ${left}; its edits there are not this task's — check that folder and redispatch`;
+        bb.log.warn(`Lane Pilot ${input.taskId}: ${reason}`);
+        transitionAttempt(db, input.attemptId, "blocked", { reason });
+        return { status:"blocked", reason, attemptId:input.attemptId, writerThreadId:input.writerThreadId };
       }
       // A writer that stopped to ask the owner is not a failed attempt: no retry, no fallback, the question goes to the PM.
       const answer = outputText(await bb.sdk.threads.output({ threadId:input.writerThreadId }).catch(() => ""));

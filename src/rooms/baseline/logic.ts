@@ -58,8 +58,14 @@ export function requiresRedOnBase(setting: RequireRed, task: { risk: string; kin
   return (RISK_RANK[task.risk] ?? 0) >= (setting === "high" ? 2 : 1);
 }
 
-/** Kinds where every check already green means the reported failure is gone, so the attempt closes accepted and no writer starts. A feature, refactor, docs, chore or research with the same result has checks that prove nothing, and stays blocked. */
-const ALREADY_DONE_KINDS: readonly string[] = ["fix", "check"];
+/**
+ * Kinds where every check already green means the work is done, so the attempt closes accepted and no writer starts: only
+ * a check task, whose whole job is that its checks pass. A fix is not one of them: green checks are as likely to miss the
+ * bug as to show it gone — magicseo F1 (2026-10-30, «catalogItems pages through offset/limit») closed accepted on a green
+ * client test and tsc with the paging never written, and the PM found it only on the live check. A green fix blocks and
+ * asks for a check that is red now, like a feature.
+ */
+const ALREADY_DONE_KINDS: readonly string[] = ["check"];
 
 /** Whether an all-green baseline closes this task without a writer. Same risk bar as a fix: at `medium` any risk, at `high` only high and critical, never when the gate is off. */
 export function closesWhenAlreadyGreen(setting: RequireRed, task: { risk: string; kind?: string | undefined }): boolean {

@@ -106,6 +106,9 @@ function lastOwnFailure(db:ReturnType<typeof openDatabase>, runId:string, taskId
 /** The tasks whose writer passed admission, per plugin instance: the files they own are theirs until their last attempt ends. */
 const admittedByCore = new WeakMap<object, Map<string, { runId:string; taskId:string; projectId:string }>>();
 
+/** How long a task waits for a canceled depends_on to be sent again (`<id>.2`) before it gives up. */
+export const CANCELED_REDO_WAIT_MS = 20 * 60_000;
+
 export function createWriterStart(ctx: ServerCore, services: Services) {
   const { bb, db, effectiveProjectSettings, host, markCanceledWriterStages, refreshRun, runPolicyFor } = ctx;
   const sticky = createWriterSticky(ctx, services);
@@ -320,16 +323,18 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
           // A batch may dispatch the dependent before its dependency: give the name two minutes to appear.
           if (state === null && Date.now() - since > 120_000) return `depends_on ${dep}: no such task was dispatched in this project`;
           if (state === "canceled" && dep === pilot && !(input.task.depends_on ?? []).includes(dep)) continue;
-          if (state === "canceled") return `depends_on ${dep}: that task ended canceled`;
-          if (state === "blocked") {
-            // The PM verified this blocked task by hand (lane_pilot_update_task satisfied:true): its dependents go on.
+          if (state === "blocked" || state === "canceled") {
+            // The PM verified this task by hand (lane_pilot_update_task satisfied:true): its dependents go on.
             if (await isTaskSatisfied(bb.storage.kv as never, input.projectId, dep)) continue;
-            if (dep === pilot && !(input.task.depends_on ?? []).includes(dep) && pilotGivenUp(dep)) {
+            if (state === "blocked" && dep === pilot && !(input.task.depends_on ?? []).includes(dep) && pilotGivenUp(dep)) {
               if (!released.has(dep)) { released.add(dep); ctx.log(`writer ${input.taskId} goes on: its pilot ${dep} ended blocked and nothing will redo it soon`); }
               continue;
             }
+            // A PM cancels mostly to send the task again with a fixed contract: magicseo T6 (2026-10-30) blocked 32 s after
+            // T3.3 was canceled, while T3.4 went out within minutes. A canceled dependency waits CANCELED_REDO_WAIT_MS for it.
             blockedSince.set(dep, blockedSince.get(dep) ?? Date.now());
-            if (Date.now() - blockedSince.get(dep)! > DEPENDENCY_REDO_WAIT_MS) return `depends_on ${dep}: that task ended blocked and was not sent again within 6 hours`;
+            if (state === "canceled" && Date.now() - blockedSince.get(dep)! > CANCELED_REDO_WAIT_MS) return `depends_on ${dep}: that task ended canceled and was not sent again within ${CANCELED_REDO_WAIT_MS / 60_000} minutes`;
+            if (state === "blocked" && Date.now() - blockedSince.get(dep)! > DEPENDENCY_REDO_WAIT_MS) return `depends_on ${dep}: that task ended blocked and was not sent again within 6 hours`;
           } else blockedSince.delete(dep);
           pending.push(dep);
         }
@@ -343,7 +348,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
           if (!stage || stage.state === "pending") {
             const redo = pending.filter((dep) => blockedSince.has(dep));
             recordStage(db, { runId:input.runId, taskId:input.taskId, stageId:"writer-agent", state:"pending", input:input.plan,
-              reason:`${redo.length ? `waiting for depends_on: ${pending.join(",")} (${redo.join(", ")} ended blocked; starts once it is sent again and accepted)` : `waiting for depends_on: ${pending.join(",")}`}${pilot && pending.includes(pilot) ? ` (${pilot} is the pilot of its area: the siblings start once it is accepted)` : ""}` });
+              reason:`${redo.length ? `waiting for depends_on: ${pending.join(",")} (${redo.join(", ")} ended blocked or canceled; starts once it is sent again and accepted)` : `waiting for depends_on: ${pending.join(",")}`}${pilot && pending.includes(pilot) ? ` (${pilot} is the pilot of its area: the siblings start once it is accepted)` : ""}` });
           }
         }
         await new Promise((wake) => setTimeout(wake, pollPause(10_000)));

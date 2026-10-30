@@ -153,7 +153,7 @@ export function createBaseline(ctx: ServerCore, services: Services) {
         }
         return { stop: `verdict_block: ${code}: ${detail.slice(0, 600)}. ${unrunnable.length ? "Fix the command or cwd, or drop the check" : "Narrow the check to the task's files or widen owns_paths"}; nothing was started and no attempt was spent`, record: getBaseline(db, input.runId, input.taskId) ?? null };
       }
-      // Red before green. An all-green fix or check is the failure no longer reproducing: close accepted. Any other kind
+      // Red before green. An all-green check task is done: close accepted. Any other kind (a fix too: magicseo F1)
       // whose checks are all green still blocks: those checks do not tell done from not done. A fix whose only red checks
       // are existence tests (`test -f` of a file that is not there yet) still blocks: that work is not done.
       const allGreen = checks.length > 0 && checks.every((check) => check.status === "green");

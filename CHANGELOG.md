@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **A blocked writer keeps its worktree, and a writer that leaves it is caught.** The hourly reconcile removed magicseo T3.3's worktree 4 s after the writer blocked on a question (2026-10-30); the reopened writer failed with `spawn /bin/bash ENOENT` and moved its thread to the main checkout. Blocked and retry-eligible attempts now keep their copy for `cleanup.worktree_grace_hours`; a reopen checks the folder exists; a writer thread whose environment moved out of its worktree takes no further turns and its attempt blocks as `writer_left_worktree`. Tests: `tests/writer-worktree-kept.test.ts`.
+- **A fix whose checks are already green blocks instead of closing accepted.** magicseo F1 closed with the paging never written. Only a `check` task closes on an all-green baseline now; a fix asks for a check that is red on the base.
+- **Run state and the run card count task families.** `T3`, `T3.2`, `T3.4` are one piece of work: the run is accepted when each family's latest member is, and the card shows «1 of 2», not «2 of 5». Tests: `tests/run-state-families.test.ts`, `tests/run-card.test.tsx`.
+- **An unreadable specialist answer gets one more session.** A second unreadable answer passes the task as `failed_infra`, like the code critic, instead of blocking it on the form (magicseo T3.2).
+- **A canceled dependency waits 20 minutes for its redispatch** instead of blocking its dependents at once (magicseo T6 after T3.3).
+- **test_fit reads a reflowed `assert.rejects` / `assert.throws` as the same check** (magicseo F1.2 attempt 1).
 - **Learning uses the project's current folders.** An obsolete prototype workspace (`/tmp/ag194-v4-cli`) still overrode the BB-service project's current sources, so three learning analyzer threads on 2026-10-30 failed before the model started. A legacy override now has to match a current project source when sources exist; projects without sources retain their explicit binding. The shared resolver also serves the rules scan, nightly docs, harness fallback and settings. Regression: `tests/project-binding.test.ts` and the analyzer spawn replay in `tests/night-graphs/rules-scan.test.ts`, using captured bindings and errors in `tests/fixtures/learning-stale-binding-2026-10-30.json`.
 - **Test clock cleanup.** The daemon aging test restores real timers in its `finally` block. It previously installed fake timers there, causing the pause/stop tests that shared its worker to time out; their assertions and time limits are unchanged.
 

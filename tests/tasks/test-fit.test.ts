@@ -34,3 +34,10 @@ it("a deleted test file is every assertion removed, not an edit out of scope", (
   const hits = testFitFindings([{ path: "tests/money.test.ts", before, after: null }]);
   expect(hits.map((hit) => hit.kind)).toEqual(["assertion_removed"]);
 });
+
+it("a reflowed assert.rejects is the same check; dropping it is still a removal (magicseo F1.2)", () => {
+  const before = `it("pages", async () => {\n  await assert.rejects(\n    client.catalogItems(-1),\n    /bad offset/,\n  );\n});\n`;
+  const reflowed = `it("pages", async () => {\n  await assert.rejects(client.catalogItems(-1), /bad offset/);\n});\n`;
+  expect(testFitFindings([testFile(before, reflowed)])).toEqual([]);
+  expect(testFitFindings([testFile(before, `it("pages", async () => {\n  await client.catalogItems(0);\n});\n`)]).map((hit) => hit.kind)).toContain("assertion_removed");
+});

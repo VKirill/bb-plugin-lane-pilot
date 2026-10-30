@@ -149,7 +149,7 @@ describe("red before green (checks.require_red_on_base)", () => {
     await w.dispose();
   });
 
-  it("closes a check whose every check is already green, the same as a fix", async () => {
+  it("closes a check whose every check is already green", async () => {
     const w = await world();
     const done = await w.services.baseline.preflight(at(w.pendingTask("chk", ["test -f keep.txt"]), { risk: "low", kind: "check" }));
     expect(done.stop).toBeNull();
@@ -181,15 +181,15 @@ describe("red before green (checks.require_red_on_base)", () => {
     await off.dispose();
   });
 
-  it("asks a fix of low risk for a red check too: check.sh green on the base is no proof of a fix (Vampirism Fire vf-fix-b1-*)", async () => {
+  it("asks a fix of low risk for a red check too: check.sh green on the base is no proof of a fix (Vampirism Fire vf-fix-b1-*, magicseo F1)", async () => {
     const w = await world();
     const done = await w.services.baseline.preflight(at(w.pendingTask("fix1", ["test -f keep.txt"]), { risk: "low", kind: "fix" }));
-    expect(done.stop).toBeNull();
-    expect(done.alreadyDone).toMatch(/^already done: /);
-    expect(getBaseline(w.db, "run1", "fix1")).toMatchObject({ action: "notified" });
+    expect(done.alreadyDone).toBeUndefined();
+    expect(done.stop).toMatch(/no_red_on_base/);
+    expect(getBaseline(w.db, "run1", "fix1")).toMatchObject({ action: "stopped" });
     const told = (w.send.mock.calls[0] as unknown as [{ input: Array<{ text: string }> }])[0].input[0]!.text;
     expect(told).toContain("- test -f keep.txt");
-    expect(told).toContain("Если баг на самом деле не исправлен, переоткрой задачу с проверкой, которая его воспроизводит.");
+    expect(told).toContain("добавь проверку, которая сейчас красная");
     // A red check that only looks for the new file proves no behaviour of a fix; one that runs something does.
     expect((await w.services.baseline.preflight(at(w.pendingTask("fix2", ["test -f keep.txt", "test -f feature.txt"]), { risk: "low", kind: "fix" }))).stop).toMatch(/no_red_on_base/);
     expect((await w.services.baseline.preflight(at(w.pendingTask("fix2b", ["test -f keep.txt", "cat feature.txt"]), { risk: "low", kind: "fix" }))).stop).toBeNull();

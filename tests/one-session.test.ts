@@ -323,6 +323,27 @@ it("a dependent of a blocked dependency waits, and goes on once the family's nex
   await env.harness.lifecycle.dispose();
 });
 
+it("a dependent of a canceled dependency waits for its redispatch instead of blocking at once (magicseo T6 after T3.3)", async () => {
+  vi.useFakeTimers({ toFake:["setTimeout"] });
+  const env = setup();
+  createTask(env.db, { id:"D1", runId:"run1", kind:"bb", contract:contract("D1") });
+  createAttempt(env.db, { id:"D1-a", runId:"run1", taskId:"D1" });
+  transitionAttempt(env.db, "D1-a", "cancel_requested");
+  transitionAttempt(env.db, "D1-a", "canceled", { reason:"canceled from the CLI" });
+  const { all, spawned } = services(env.db, [{ accept:true }]);
+  start(env, all, "T2", ["D1"]);
+  await vi.advanceTimersByTimeAsync(50);
+  expect(spawned).toEqual([]);
+  expect(writerStage(env.db, "T2")).toMatchObject({ state:"pending", reason:expect.stringContaining("D1 ended blocked or canceled") });
+  createTask(env.db, { id:"D1.2", runId:"run1", kind:"bb", contract:contract("D1.2") });
+  createAttempt(env.db, { id:"d12-a", runId:"run1", taskId:"D1.2" });
+  transitionAttempt(env.db, "d12-a", "accepted");
+  await vi.advanceTimersByTimeAsync(10_000);
+  vi.useRealTimers();
+  await vi.waitFor(() => expect(spawned).toEqual(["T2-a1"]));
+  await env.harness.lifecycle.dispose();
+});
+
 it("naming a redispatched member follows the family's later members", () => {
   const env = setup();
   for (const [index, [task, state]] of [["D1.2", "blocked"], ["D1.3", "running"], ["D1.2.2", "accepted"], ["D10", "blocked"]].entries()) {

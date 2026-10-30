@@ -20,7 +20,7 @@ import { buildExecutionPacket, renderPacketExcerpts } from "../../tasks/executio
 import { parsePmReadResult, parsePmReadSettings, pmReadPrompt } from "../pm-read";
 import { boundedAgentName } from "../role";
 import { candidateCitations, inputCitations } from "../citations";
-import { parseSpecialistResult, shouldRunSpecialist, specialistPrompt } from "../specialist";
+import { parseSpecialistResult, shouldRunSpecialist, specialistPrompt, unreadableAnswer } from "../specialist";
 import { reasonForStatus } from "@lane-pilot/workflow-engine";
 import { parseTiebreakVotes } from "../tiebreak";
 import { CODE_CRITIC_DEFAULT_SETTING, QUALITY_MODE_SETTING, applyCodeCriticDefault, applyQualityMode, resolveCodeCriticDefault, resolveQualityMode } from "../quality-mode";
@@ -833,31 +833,50 @@ export async function runSpecialistReview(input:{bb:BbPluginApi;db:ReturnType<ty
     const tier = provider.capabilities.supportsServiceTier ? bbServiceTier(serviceTier) : null;
     if (tier && !(provider.serviceTiers ?? []).some((item) => item.id === tier)) throw new Error(`specialist_service_tier_unsupported:${tier}`);
     const helperPolicy=requireHelperSpawn(input);
-    const placement = await helperChildPlacement({
-      bb:input.bb, db:input.db, projectId:input.projectId, runId:input.runId, role:"specialist-reviewer", taskTitle:input.task.title,
-    });
-    const spawned = await fullAccessSpawn(input.bb, {
-      ...placement,
-      ...requiredPolicyField(input.bb, helperPolicy, providerId, "specialist-reviewer"),
-      ...writerExecutionSelection(providerId,modelId,effort,tier),
-      prompt:specialistPrompt({task:input.task,plan:input.plan,agent}),
-      environment:{type:"host",hostId:input.config.hostId,workspace:{type:"unmanaged",path:input.task.project_cwd}},
-      pluginMetadata:{role:"specialist-reviewer",lanePilotRunId:input.runId,lanePilotTaskId:input.taskId,
-        stageId:"specialist-review",parentPmThreadId:getRun(input.db,input.runId)?.pm_thread_id ?? null,
-        helperMode:helperPolicy.mode,helperRequired:helperPolicy.policy?.required===true,...graphStepMetadata(input.workflow)},
-    });
-    threadId = stringAt(spawned,"id");
-    if (!threadId) throw new Error("specialist_thread_id_missing");
-    recordStage(input.db,{...base,state:"running",providerId,model:modelId,threadId});
-    await waitThreadIdle(input.bb,threadId,"specialist_thread_timeout");
-    const raw = (await input.bb.sdk.threads.output({threadId})).output;
-    if (typeof raw !== "string" || !raw.trim()) throw new Error("specialist_output_empty");
-    const review = parseSpecialistResult(raw, inputCitations(JSON.stringify(input.task), input.plan));
-    const blocked = review.decision === "block";
-    const why = verdictReasons(review, "specialist-review");
-    recordStage(input.db,{...base,state:blocked ? "blocked" : "passed",providerId,model:modelId,threadId,
-      result:{...review,rawOutput:raw.slice(0,12_000)},reason:blocked ? why.receipt : undefined});
-    return blocked ? {allowed:false,reason:why.returned,review} : {allowed:true,review};
+    // An answer that does not read (magicseo T3.2, 2026-10-30: Gemini answered the rubric items {id,result,evidence} and no
+    // status) gets one more session told what was wrong; a second unreadable answer passes the task as the code critic's
+    // failed_infra does, rather than blocking it on the reviewer's form.
+    let formatNote = "";
+    for (let attempt = 1; ; attempt++) {
+      try {
+        const placement = await helperChildPlacement({
+          bb:input.bb, db:input.db, projectId:input.projectId, runId:input.runId, role:"specialist-reviewer", taskTitle:input.task.title,
+        });
+        const spawned = await fullAccessSpawn(input.bb, {
+          ...placement,
+          ...requiredPolicyField(input.bb, helperPolicy, providerId, "specialist-reviewer"),
+          ...writerExecutionSelection(providerId,modelId,effort,tier),
+          prompt:specialistPrompt({task:input.task,plan:input.plan,agent}) + formatNote,
+          environment:{type:"host",hostId:input.config.hostId,workspace:{type:"unmanaged",path:input.task.project_cwd}},
+          pluginMetadata:{role:"specialist-reviewer",lanePilotRunId:input.runId,lanePilotTaskId:input.taskId,
+            stageId:"specialist-review",parentPmThreadId:getRun(input.db,input.runId)?.pm_thread_id ?? null,
+            helperMode:helperPolicy.mode,helperRequired:helperPolicy.policy?.required===true,...graphStepMetadata(input.workflow)},
+        });
+        threadId = stringAt(spawned,"id");
+        if (!threadId) throw new Error("specialist_thread_id_missing");
+        recordStage(input.db,{...base,state:"running",providerId,model:modelId,threadId});
+        await waitThreadIdle(input.bb,threadId,"specialist_thread_timeout");
+        const raw = (await input.bb.sdk.threads.output({threadId})).output;
+        if (typeof raw !== "string" || !raw.trim()) throw new Error("specialist_output_empty");
+        const review = parseSpecialistResult(raw, inputCitations(JSON.stringify(input.task), input.plan));
+        const blocked = review.decision === "block";
+        const why = verdictReasons(review, "specialist-review");
+        recordStage(input.db,{...base,state:blocked ? "blocked" : "passed",providerId,model:modelId,threadId,
+          result:{...review,rawOutput:raw.slice(0,12_000)},reason:blocked ? why.receipt : undefined});
+        return blocked ? {allowed:false,reason:why.returned,review} : {allowed:true,review};
+      } catch (cause) {
+        if (!unreadableAnswer(cause)) throw cause;
+        if (threadId) await input.bb.sdk.threads.stop({threadId}).catch(() => undefined);
+        const issue = (cause instanceof Error ? cause.message : String(cause)).slice(0, 600);
+        if (attempt >= 2) {
+          const reason = `failed_infra:specialist answer unreadable twice: ${issue}`;
+          recordStage(input.db,{...base,state:"failed",providerId,model:modelId,threadId,reason,result:{error:reason}});
+          return {allowed:true,reason};
+        }
+        formatNote = `\n\nYOUR PREVIOUS ANSWER DID NOT MATCH THE FORMAT (${issue.replace(/\s+/g, " ").slice(0, 300)}). Answer with the one JSON object described above: status, summary, findings, evidence.`;
+        threadId = null;
+      }
+    }
   } catch (cause) {
     const reason = cause instanceof Error ? cause.message : String(cause);
     if (threadId) {

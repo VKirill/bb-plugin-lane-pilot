@@ -983,8 +983,16 @@ export function listAttemptsForTask(db: LanePilotDatabase, runId: string, taskId
     .all(runId, taskId) as Array<{id:string; state:string; attempt_no:number; thread_id:string|null}>;
 }
 
+/**
+ * The state of each piece of work in a run: one per task family («T3», «T3.2», «T3.4» are one task sent again), the
+ * latest-sent member's latest attempt. Counting every row ended magicseo's run (2026-10-30) «blocked» with all nine
+ * families accepted: the replaced T1.3, T3.2, T5.2… stayed blocked or canceled for good.
+ */
 export function listTaskTerminalStates(db: LanePilotDatabase, runId: string): string[] {
-  const tasks = db.prepare("SELECT id FROM lane_pilot_task WHERE run_id=?").all(runId) as Array<{id:string}>;
+  const latest = new Map<string, string>();
+  const family = (id:string) => { for (let next = id;;) { const up = next.replace(/(\.\d+)+$/, "").replace(/-mainfix$/, ""); if (up === next) return next; next = up; } };
+  for (const row of db.prepare("SELECT id FROM lane_pilot_task WHERE run_id=? ORDER BY created_at, rowid").all(runId) as Array<{id:string}>) latest.set(family(row.id), row.id);
+  const tasks = [...latest.values()].map((id) => ({ id }));
   return tasks.map((task) => {
     const latest = db.prepare("SELECT state FROM lane_pilot_attempt WHERE run_id=? AND task_id=? ORDER BY attempt_no DESC LIMIT 1")
       .get(runId, task.id) as {state:string}|undefined;
