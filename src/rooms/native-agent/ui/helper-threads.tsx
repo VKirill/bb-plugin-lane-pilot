@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { ThreadChat, useBbContext, useBbNavigate, useRpc } from "@get-bb/plugin-sdk/app";
-import { useLpRealtime } from "../../ui-shell/ui";
+import { useLpRealtime, useOpenThreadPanel } from "../../ui-shell/ui";
 import type { rpcContract } from "../../contracts";
 import { t, type I18nKey } from "@lane-pilot/i18n";
 import { Icon, type IconName } from "@lane-pilot/ui-kit";
@@ -91,8 +91,9 @@ export function useHelperThreads(threadId: string | null): HelperThreadsResult {
 /** Opens a helper in the right-hand thread panel; where the surface has none (a phone), goes to the thread. */
 export function useOpenHelper() {
   const navigate = useBbNavigate();
+  const openPanel = useOpenThreadPanel();
   return (row: HelperThread) => {
-    const opened = navigate.openThreadPanel({ actionId: HELPER_PANEL_ACTION, title: row.title.slice(0, 40), params: { threadId: row.id } });
+    const opened = openPanel({ actionId: HELPER_PANEL_ACTION, title: row.title.slice(0, 40), params: { threadId: row.id } });
     if (!opened) navigate.toThread(row.id);
   };
 }
@@ -104,7 +105,7 @@ export function useOpenHelper() {
  */
 export function HelperChips({ threads, queued, frame }: { threads: HelperThread[]; queued?: string[]; frame?: CSSProperties }) {
   const open = useOpenHelper();
-  const navigate = useBbNavigate();
+  const openPanel = useOpenThreadPanel();
   const queuedCount = queued?.length ?? 0;
   if (!threads.length && !queuedCount) return null;
   const shown = threads.slice(0, 3);
@@ -138,7 +139,7 @@ export function HelperChips({ threads, queued, frame }: { threads: HelperThread[
       })}
       {rest > 0 ? (
         <button type="button" data-testid="helper-chips-more" aria-label={t("helperMore").replace("{n}", String(rest))}
-          onClick={() => navigate.openThreadPanel({ actionId: HELPER_PANEL_ACTION, title: t("helperPanelTitle"), params: {} })}
+          onClick={() => openPanel({ actionId: HELPER_PANEL_ACTION, title: t("helperPanelTitle"), params: {} })}
           className="inline-flex h-5 cursor-pointer items-center px-1.5 text-xs leading-none text-muted-foreground hover:text-foreground"
           style={{ ...frame, borderRadius: "0.375rem" }}>+{rest}</button>
       ) : null}
@@ -148,7 +149,7 @@ export function HelperChips({ threads, queued, frame }: { threads: HelperThread[
           data-testid="helper-chip-queue"
           title={`Задачи в очереди: ${queued?.join(", ")}`}
           aria-label={`В очереди: ${queuedCount}`}
-          onClick={() => navigate.openThreadPanel({ actionId: HELPER_PANEL_ACTION, title: t("helperPanelTitle"), params: {} })}
+          onClick={() => openPanel({ actionId: HELPER_PANEL_ACTION, title: t("helperPanelTitle"), params: {} })}
           className="inline-flex h-5 cursor-pointer items-center gap-1 px-1.5 text-xs leading-none text-muted-foreground hover:text-foreground"
           style={{ ...frame, borderRadius: "0.375rem" }}
         >

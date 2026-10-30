@@ -7,7 +7,7 @@ import { draftChanges, draftView } from "@lane-pilot/workflow-engine/ui";
 import type { ViewNode, WorkflowView } from "@lane-pilot/workflow-engine/ui";
 import { HELPER_PANEL_ACTION } from "../../native-agent/ui";
 import { Surface, SurfaceBody, SurfaceHeader } from "@lane-pilot/ui-kit";
-import { useLpRealtime } from "../../ui-shell/ui";
+import { useLpRealtime, useOpenThreadPanel } from "../../ui-shell/ui";
 import { useObservedWidth } from "@lane-pilot/ui-kit";
 import { getDraft, type DraftDoc } from "./workflow-drafts";
 import { NodePanel, WorkflowGraph, type NodePanelContext, type NodePanelRenderer } from "./workflow-detail";
@@ -45,6 +45,7 @@ export function WorkflowDraftDetail({ draftId, projectId, locale, onBack, render
 }) {
   const rpc = useRpc();
   const navigate = useBbNavigate();
+  const openPanel = useOpenThreadPanel();
   const rootRef = useRef<HTMLDivElement>(null);
   const width = useObservedWidth(rootRef);
   const [draft, setDraft] = useState<DraftDoc | null | "missing">(null);
@@ -78,7 +79,7 @@ export function WorkflowDraftDetail({ draftId, projectId, locale, onBack, render
   const narrow = width > 0 && width < NARROW;
   const direction = narrow ? "DOWN" : "RIGHT";
   const openChat = (threadId: string) => {
-    if (!navigate.openThreadPanel({ actionId: HELPER_PANEL_ACTION, title: t("wfArchitectPanelTitle"), params: { threadId } })) navigate.toThread(threadId);
+    if (!openPanel({ actionId: HELPER_PANEL_ACTION, title: t("wfArchitectPanelTitle"), params: { threadId } })) navigate.toThread(threadId);
   };
 
   if (draft === "missing") return <div ref={rootRef} className="space-y-3"><Button type="button" size="sm" variant="ghost" className="-ml-2 h-7 px-2 text-xs" onClick={onBack} data-testid="wf-back">‹ {t("wfBack")}</Button><p className="text-sm text-muted-foreground" data-testid="wf-draft-missing">{t("wfDraftGone")}</p></div>;
