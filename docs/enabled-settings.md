@@ -14,7 +14,7 @@ sources:
   - docs/enabled-settings.snapshot.json
 ---
 
-<!-- enabled-settings:structure f176c1d22d0f13fa -->
+<!-- enabled-settings:structure 978967adc7eae2f0 -->
 
 # Enabled settings (generated)
 
@@ -38,6 +38,7 @@ switches: `quick` disables both critiques, `full` enables them (`src/rooms/criti
 | `baseline.time_cap_sec` | `300` | — | baseline: seconds the baseline may spend on a start, 0 turns it off |
 | `bench.budget_hours` | `6` | — | bench: hour cap of a series |
 | `bench.budget_tokens` | `120000000` | — | bench: token cap of a series |
+| `bench.nightly_sets` | `all` | — | nightly bench: which sets the night runs (all, or a comma list of versions) |
 | `bookkeeping.paths` | — | — | project bookkeeping patterns that ownership gates and merges treat as not the writer's work |
 | `browser_qa.approve` | `auto` | — | stage Browser QA approval setting |
 | `browser_qa.backend` | `bb-browser` | — | stage Browser QA backend setting |
