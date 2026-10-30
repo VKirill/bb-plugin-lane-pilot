@@ -7,7 +7,7 @@ import {
   addSpent, deleteRunRow, finishRunRow, getRun, getSet, listResults, listRuns, saveResult, startRunRow, verifySet, type BenchDb, type BenchResult, type BenchRun,
 } from "./store";
 import { resolveRepoPath } from "./repos";
-import { judgeValidator } from "./validator";
+import { judgeValidator, runValidator } from "./validator";
 import { jevalsLine, type JevalsResult } from "./jevals";
 import { BENCH_PROJECT_PREFIX, BENCH_PROJECTS, benchProjectName, type ManifestTask, type VerificationItem } from "./types";
 import { MIN_FREE_GB, freeGb, linkDependenciesCommand } from "./warmup";
@@ -221,7 +221,7 @@ export async function runSeries(deps: RunnerDeps, input: SeriesInput): Promise<S
         if (task.stratum === "noncode") {
           const source = resolveRepoPath(task.repoPath, input.reposRoot);
           const probe = await deps.host.run(placed.hostId, "/", `[ -e ${q(source)} ] && { [ -s ${q(source)} ] || [ -n "$(find ${q(source)} -mindepth 1 -print -quit)" ]; }`, 30).catch(() => null);
-          const verdict = judgeValidator(task.validator, probe && probe.exitCode === 0 ? source : null);
+          const verdict = await runValidator(task.validator, probe && probe.exitCode === 0 ? source : null, { host: deps.host, hostId: placed.hostId });
           saveResult(deps.db, { runId: run.id, taskId: task.taskId, position: task.position, state: verdict.ok ? "accepted" : "not_accepted", accepted: verdict.ok, benchTaskId: null, lpRunId: lp?.runId ?? null, attempts: 0, stagesPassed: 0, stagesFailed: 0, tokens: null, costUsd: null, costState: "not_measured", seconds: 0, reason: verdict.reason, recordedAt: clock.now() });
           log(`bench ${input.arm} r${repeat}: ${task.taskId} validator ${task.validator ?? "artifact"} ${verdict.ok ? "accepted" : "not accepted"}`);
           continue;

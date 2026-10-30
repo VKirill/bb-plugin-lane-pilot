@@ -8,3 +8,12 @@ export function judgeValidator(validator: string | null | undefined, artifact: s
   if (!artifact || !artifact.trim()) return { ok: false, reason: "artifact missing or empty" };
   return { ok: true, reason: "artifact exists and is not empty" };
 }
+
+/** The async registry call: named validators run through validateDeliverable on the artifact's machine. */
+export async function runValidator(validator: string | null | undefined, artifact: string | null | undefined, deps: import("../validators").ValidatorDeps): Promise<{ ok: boolean; reason: string }> {
+  const name = validator?.trim() || DEFAULT_VALIDATOR;
+  if (name === DEFAULT_VALIDATOR) return judgeValidator(validator, artifact);
+  if (!artifact || !artifact.trim()) return { ok: false, reason: "artifact missing or empty" };
+  const { validateDeliverable } = await import("../validators");
+  return validateDeliverable(name, artifact, deps);
+}

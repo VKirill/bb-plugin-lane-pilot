@@ -4,6 +4,7 @@ import { buildSet, type BuildReport } from "./build";
 import { compareArms, computeNoise, noiseOfRepeats, passReport, renderComparison, summarizeArm, type ArmSummary, type Comparison } from "./compare";
 import { cohortCounts, cohortOf } from "./stratify";
 import { renderStratumMetrics, stratumMetrics, type StratumRow } from "./stratum-metrics";
+import { statsEpochMs, STATS_EPOCH_SETTING } from "../storage";
 import type { HostPort, PipelinePort } from "./ports";
 import { releaseGate, sweepStuckRuns } from "./reliability";
 import { BENCH_REPOS_ROOT_ENV } from "./repos";
@@ -99,11 +100,12 @@ export function createBench(deps: BenchDeps) {
   async function build(input: { version: string; seed?: string; only?: string[]; triesFactor?: number; dryRun?: boolean; planOnly?: boolean; wait?: boolean; minFreeGb?: number; checkTimeoutSec?: number }) {
     return await job(`build:${input.version}`, input.wait ?? false, async () => {
       const place = await placement();
+      const epoch = statsEpochMs((deps.db.prepare("SELECT value FROM lane_pilot_project_settings WHERE project_id=? AND key=?").get("*", STATS_EPOCH_SETTING) as { value:string } | undefined)?.value);
       const { report } = await buildSet({
         db: deps.db, host: deps.host, version: input.version, projectNames: await deps.projectNames(), isSandboxName: deps.isSandboxName, log: deps.log,
         ...(input.seed ? { seed: input.seed } : {}), ...(input.only ? { only: input.only } : {}), ...(input.triesFactor ? { triesFactor: input.triesFactor } : {}),
         ...(input.dryRun ? { dryRun: true } : {}), ...(input.planOnly ? { planOnly: true } : {}), ...(input.minFreeGb ? { minFreeGb: input.minFreeGb } : {}), ...(input.checkTimeoutSec ? { checkTimeoutSec: input.checkTimeoutSec } : {}),
-        ...(place.reposRoot ? { reposRoot: place.reposRoot } : {}), ...(place.hostId ? { hostId: place.hostId } : {}),
+        ...(place.reposRoot ? { reposRoot: place.reposRoot } : {}), ...(place.hostId ? { hostId: place.hostId } : {}), statsEpochMs: epoch,
       });
       await deps.kv.set(BUILD_KEY(input.version), report as never).catch(() => undefined);
       return report;

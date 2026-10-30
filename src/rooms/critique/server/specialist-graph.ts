@@ -1,4 +1,5 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
+import { runOnHost } from "@lane-pilot/host-calls";
 import { builtinWorkflow } from "../../workflow";
 import { fenceOutside, spawnTextId } from "../../core/server";
 import type { ServerCore, Services } from "../../core/server";
@@ -64,7 +65,30 @@ export async function waitSpecialistRun(ctx: ServerCore, services: Services, inp
     const summary = services.workflowEngine.get(input.runId);
     const threadId = await ctx.bb.storage.kv.get<string>(threadOfRun(input.runId)).catch(() => null) ?? "";
     const base = { threadId, workflowRunId: input.runId };
-    if (summary?.status === "succeeded") return { ...base, state: "done", output: fenceOutside("specialist", String(summary.output?.report ?? "")) };
+    if (summary?.status === "succeeded") {
+      // Artifact guard (agents-design 3.5): a deliverable that fails its validator goes back to the same thread
+      // as a revision remark instead of being accepted. The validator/deliverable fields arrive with the employee
+      // manifest (grok/employees); a run that names none is accepted as before.
+      let inputs: Record<string, unknown> = {};
+      try { inputs = JSON.parse((ctx.db.prepare("SELECT inputs_json FROM lane_pilot_wf_run WHERE id=?").get(input.runId) as { inputs_json?: string } | undefined)?.inputs_json ?? "{}") as Record<string, unknown>; } catch { inputs = {}; }
+      const validator = typeof inputs.validator === "string" ? inputs.validator : null;
+      const deliverable = typeof inputs.deliverable === "string" ? inputs.deliverable : null;
+      if (validator && deliverable && threadId) {
+        try {
+          const { validateDeliverable } = await import("../../validators");
+          const hostId = typeof inputs.hostId === "string" ? inputs.hostId : "";
+          const verdict = await validateDeliverable(validator, deliverable, { host: { run: (id, cwd, command, timeoutSec) => runOnHost(ctx.host, { hostId: id, cwd, command, timeoutSec }) as never }, hostId, brief: inputs.brief as Record<string, unknown> | undefined });
+          if (!verdict.ok) {
+            const remark = `Revision needed: ${validator} validator rejected ${deliverable} — ${verdict.reason}`;
+            await ctx.bb.sdk.threads.send({ threadId, mode: "queue-if-active", input: [{ type: "text", text: remark, mentions: [] }] } as never).catch(() => undefined);
+            return { ...base, state: "revision", reason: verdict.reason, output: fenceOutside("specialist", remark) };
+          }
+        } catch (cause) {
+          ctx.log(`Lane Pilot deliverable validation failed for ${input.runId}: ${cause instanceof Error ? cause.message : String(cause)}`);
+        }
+      }
+      return { ...base, state: "done", output: fenceOutside("specialist", String(summary.output?.report ?? "")) };
+    }
     if (summary && ENDED_BADLY.includes(summary.status)) {
       const error = summary.error ?? summary.reason ?? summary.status;
       const edited = /^repo_edited: .*may not touch: (.+)$/.exec(error);
