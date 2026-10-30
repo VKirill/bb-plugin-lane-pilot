@@ -61,7 +61,7 @@ describe("adoc applicability catalog", () => {
       gap: summary.gap,
       excluded: summary.excluded,
     });
-    expect(counts.editable + counts.readonly + counts.gap + counts.excluded).toBe(486);
+    expect(counts.editable + counts.readonly + counts.gap + counts.excluded).toBe(487);
     expect(summary.blank).toBe(0);
     expect(summary.tuple_equal).toBe(true);
   });
