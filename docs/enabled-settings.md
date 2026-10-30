@@ -14,7 +14,7 @@ sources:
   - docs/enabled-settings.snapshot.json
 ---
 
-<!-- enabled-settings:structure 2f7274c30f24f2fb -->
+<!-- enabled-settings:structure 3b831110059b1b4f -->
 
 # Enabled settings (generated)
 
@@ -227,6 +227,7 @@ switches: `quick` disables both critiques, `full` enables them (`src/rooms/criti
 | `writer.best_of.slot_cap` | `3` | — | best-of-3: how many candidates of a task may run at once |
 | `writer.best_of.token_budget` | `0` | — | best-of-3: shared token ceiling of one task's candidates |
 | `writer.best_of` | `off` | — | best-of-3: parallel writer candidates under quality_mode full, selection by checks then the critic verdict |
+| `writer.capacity_wait_max_min` | `360` | — | capacity: the most minutes a task waits on every writer provider being spent (recheck every 15 min) before the PM is told to resend it |
 | `writer.capacity_wait` | `on` | — | capacity: all writer providers spent, the task waits for the nearest window reset as capacity_saturated instead of ending blocked |
 | `writer.class_cooldowns` | — | — | failure classes: JSON map of class to seconds of pause after an attempt ends, before the next attempt |
 | `writer.cooldown_max_ms` | `0` | — | failure classes: cap for any class cooldown pause in milliseconds |

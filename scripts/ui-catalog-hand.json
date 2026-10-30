@@ -3286,6 +3286,29 @@
    "evidence": "packages/memory-core/src/floor.ts:31",
    "matrixStatus": "readonly",
    "storageKey": "memory.query_floor"
+  },
+  {
+   "id": "s539",
+   "index": 502,
+   "area": "Lane Pilot writer route",
+   "setting": "writer.capacity_wait_max_min",
+   "location": "src/rooms/stability/server/stability.ts:240",
+   "category": "user",
+   "invType": "int",
+   "values": "minutes",
+   "defaultValue": "360",
+   "scope": "project",
+   "control": "number",
+   "options": [],
+   "min": 1,
+   "max": null,
+   "section": "stages",
+   "channel": "OWN",
+   "uiStatus": "editable",
+   "rationale": "The most minutes a task waits while every writer provider is in a spent usage window — parked as capacity_saturated, rechecked every 15 minutes — before it stops restarting and the PM is told to send it again once limits free; counted from the first parking (hive H-02).",
+   "evidence": "src/rooms/stability/server/stability.ts:240",
+   "matrixStatus": "readonly",
+   "storageKey": "writer.capacity_wait_max_min"
   }
  ],
  "fields": {
@@ -4481,6 +4504,14 @@
    "reason_s419": [
     "auto: a writer's working copy is a BB environment of Lane Pilot's own provider, and when that fails the attempt takes the old way. off: always the old way (the emergency switch)",
     "auto: рабочая копия писателя создаётся окружением BB (провайдер Lane Pilot); если не вышло, попытка берёт прежний способ. off: всегда прежний способ (аварийный выключатель)"
+   ],
+   "field_s539": [
+    "Writer: capacity wait ceiling (min)",
+    "Писатель: потолок ожидания ёмкости (мин)"
+   ],
+   "reason_s539": [
+    "The most minutes a task waits while every writer provider is spent — rechecked every 15 minutes from the first parking; past it the task stops restarting and the PM is told to send it again once limits free. Default 360.",
+    "Сколько минут задача ждёт, пока все провайдеры писателей без запаса — перепроверка каждые 15 минут от первого паркинга; дальше задача не перезапускается и PM получает заметку отправить её снова, когда лимиты освободятся. По умолчанию 360."
    ]
   }
  }

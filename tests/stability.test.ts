@@ -337,3 +337,46 @@ describe("disk hold", () => {
     expect(await holds(2, 40)).toMatch(/GB free/);
   });
 });
+
+describe("a spent writer window (writer.capacity_wait)", () => {
+  const saturated = "capacity_saturated:2026-10-30T14:00:00Z: every writer provider is over its usage window; the task waits for the nearest reset";
+
+  it("classes capacity_saturated as a provider limit, not the task's fault", () => {
+    expect(failureClass("blocked", saturated)).toBe("limit");
+  });
+
+  it("parks the task and rechecks capacity every 15 minutes without spending the machine-fault redrive limit", async () => {
+    const { stability, resumed } = setup();
+    // Real-epoch times: the restart's createAttempt stamps Date.now(), and superseded() compares against row.at.
+    const t0 = Date.now();
+    expect(await stability.onTaskFailed({ projectId:"proj", runId:"run", taskId:"T1", pmThreadId:"pm", state:"blocked", reason:saturated }, t0)).toBe(true);
+    const [row] = await stability.loadParked();
+    expect(row).toMatchObject({ taskId:"T1", klass:"limit" });
+    expect(await stability.sweep(t0 + 10 * 60_000)).toEqual([]);
+    expect(await stability.sweep(t0 + 16 * 60_000)).toEqual(["T1"]);
+    // Still spent after the restart: the attempt blocks with the same reason and parks again, the wait counting from the first parking.
+    for (let n = 1; n <= 5; n++) {
+      const at = t0 + (16 + 15 * n) * 60_000;
+      expect(await stability.onTaskFailed({ projectId:"proj", runId:"run", taskId:"T1", pmThreadId:"pm", state:"blocked", reason:saturated }, at)).toBe(true);
+      expect(await stability.sweep(at + 16 * 60_000)).toEqual(["T1"]);
+    }
+    expect(resumed.length).toBeGreaterThanOrEqual(6); // INFRA_REDRIVE_LIMIT=3 does not bound a capacity wait
+  });
+
+  it("stops restarting past writer.capacity_wait_max_min from the first parking and tells the PM to resend", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout"] });
+    try {
+      const { db, stability, sent } = setup();
+      const t0 = Date.now();
+      db.prepare("INSERT INTO lane_pilot_project_settings(project_id,binding_id,key,value,version,updated_at) VALUES('proj','','writer.capacity_wait_max_min','30',1,0)").run();
+      await stability.onTaskFailed({ projectId:"proj", runId:"run", taskId:"T2", pmThreadId:"pm", state:"blocked", reason:saturated }, t0);
+      expect(await stability.sweep(t0 + 16 * 60_000)).toEqual(["T2"]);
+      await stability.onTaskFailed({ projectId:"proj", runId:"run", taskId:"T2", pmThreadId:"pm", state:"blocked", reason:saturated }, t0 + 16 * 60_000);
+      // 32 minutes from the first parking: past the 30-minute ceiling, the task is dropped and the PM is told.
+      expect(await stability.sweep(t0 + 48 * 60_000)).toEqual([]);
+      expect(await stability.loadParked()).toEqual([]);
+      vi.advanceTimersByTime(61_000);
+      expect(sent).toEqual(["pm"]);
+    } finally { vi.useRealTimers(); }
+  });
+});

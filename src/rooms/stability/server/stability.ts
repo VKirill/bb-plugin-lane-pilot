@@ -1,5 +1,5 @@
 import packageJson from "../../../../package.json";
-import { PARKED_CLASSES, failureClass, failureFingerprint, isWaitingSecret, type FailureClass } from "../../runs";
+import { PARKED_CLASSES, failureClass, failureFingerprint, isCapacitySaturated, isWaitingSecret, type FailureClass } from "../../runs";
 import { allowedSecretNames, secretProblem, waitingSecretNote, WAITING_SECRET_PREFIX } from "../../secrets/server";
 import { createAttempt, getAttempt, getRun, getRunSettingsScopes, listOpenAttempts, loadProjectSettings, transitionAttempt } from "../../storage";
 import { id } from "../../core/server";
@@ -30,6 +30,11 @@ const REDRIVES_KEY = "stability:redrives";
 const REDRIVE_MEMO_MS = 24 * 3600_000;
 /** A task parked for a secret is dropped from the sweep after this long; the PM sends it again. */
 const SECRET_PARK_MS = 24 * 3600_000;
+/** A task parked because every writer provider is spent is retried this often: the restart walks the whole fallback
+ * chain again (chainWithRoom), so the first provider whose window freed takes it; still spent means it parks again. */
+const CAPACITY_RECHECK_MS = 15 * 60_000;
+/** Default of writer.capacity_wait_max_min: six hours of a spent window, counted from the first parking (`since`). */
+const CAPACITY_WAIT_DEFAULT_MIN = 360;
 // Writers wait while a machine has less than 5 GB or 5 % of its disk free, whichever is SMALLER: a large disk needs no 5 % (23 GB
 // of a 460 GB Mac mini held every writer at 16 GB free, 2026-10-08), and 15 GB held the drills on the Mac mini at 10 GB free; the
 // owner's word 2026-10-27: work down to 5 GB. Never below 3 GB.
@@ -150,7 +155,8 @@ export function createStability(ctx:ServerCore, services:Services) {
     if (input.reason.startsWith("run_budget_exceeded:")) return false;
     const klass = input.klass ?? failureClass(input.state, input.reason);
     const waitingSecret = isWaitingSecret(input.reason);
-    if (!(PARKED_CLASSES.has(klass) || waitingSecret) || await isRunHalted(bb.storage.kv as never, input.runId)) return false;
+    // A spent usage window parks too: the class is limit, the wait is Lane Pilot's, not the task's (writer.capacity_wait).
+    if (!(PARKED_CLASSES.has(klass) || waitingSecret || isCapacitySaturated(input.reason)) || await isRunHalted(bb.storage.kv as never, input.runId)) return false;
     const fingerprint = failureFingerprint(input.reason);
     // A fault of a run that is no longer going (blocked or closed) — leftover attempts the reload reconciles — says nothing about
     // this version: counting it opened the sandbox breaker on 0.1.340's own drill (live 2026-10-27).
@@ -214,7 +220,16 @@ export function createStability(ctx:ServerCore, services:Services) {
 
   function dueForRedrive(row:ParkedTask, now:number):boolean {
     if (row.klass === "harness") return row.version !== VERSION;
+    // A capacity wait is not a fault: no backoff, no redrive limit — just a recheck every 15 minutes until the wait ceiling.
+    if (row.klass === "limit") return now - row.at >= CAPACITY_RECHECK_MS;
     return row.redrives < INFRA_REDRIVE_LIMIT && now - row.at >= INFRA_BACKOFF_MS * 2 ** row.redrives;
+  }
+
+  /** The most a task may wait on a spent writer window, from its first parking: writer.capacity_wait_max_min or the default. */
+  function capacityWaitMaxMs(row:ParkedTask):number {
+    const settings = loadProjectSettings(db, row.projectId, getRunSettingsScopes(db, row.runId));
+    const maxMin = Number(settings["writer.capacity_wait_max_min"]);
+    return (Number.isFinite(maxMin) && maxMin > 0 ? maxMin : CAPACITY_WAIT_DEFAULT_MIN) * 60_000;
   }
 
   /** Restarts parked tasks whose fault is fixed (harness) or whose backoff is over (infra), a few per project per pass. */
@@ -240,6 +255,11 @@ export function createStability(ctx:ServerCore, services:Services) {
         notePm(row.pmThreadId, `${row.taskId} waited ${SECRET_PARK_MS / 3600_000} hours for ${row.reason.slice(0, 120)} and is no longer restarted by itself; send it again once the access is in place.`);
         continue;
       }
+      // The capacity-wait ceiling, counted from the first parking: past it the task stops restarting and the PM resends it.
+      if (isCapacitySaturated(row.reason) && now - (row.since ?? row.at) > capacityWaitMaxMs(row)) {
+        notePm(row.pmThreadId, `${row.taskId} waited ${Math.round((now - (row.since ?? row.at)) / 3600_000)} hours with every writer provider over its usage window and is no longer restarted by itself; send it again once the limits free up.`);
+        continue;
+      }
       if (waiting ? !await secretsReady(row) : (!dueForRedrive(row, now) || count >= REDRIVE_PER_SWEEP || breakerHolds(row.projectId, now))) {
         if ((row.klass === "infra" || row.klass === "dirty_base") && row.redrives >= INFRA_REDRIVE_LIMIT) {
           notePm(row.pmThreadId, `${row.taskId} still fails on ${row.klass === "dirty_base" ? "a dirty base checkout" : "a machine fault"} after ${INFRA_REDRIVE_LIMIT} retries (${row.reason.slice(0, 160)}); redispatch it once ${row.klass === "dirty_base" ? "the changes in the main checkout are committed or discarded" : "the machine is fixed"}.`);
@@ -254,9 +274,9 @@ export function createStability(ctx:ServerCore, services:Services) {
       createAttempt(db, { id:attemptId, runId:row.runId, taskId:row.taskId });
       const attempt = getAttempt(db, attemptId);
       const ok = attempt ? await services.enqueueResumedWriter(row.projectId, attempt).catch(() => false) : false;
-      if (!ok) { keep.push({ ...row, redrives:row.redrives + 1, at:now }); continue; }
-      // A task waiting for a secret is not counted against the redrive limit.
-      await rememberRedrive(row, waiting ? row.redrives : row.redrives + 1, now);
+      if (!ok) { keep.push({ ...row, redrives:row.klass === "limit" ? row.redrives : row.redrives + 1, at:now }); continue; }
+      // A task waiting for a secret or a freed usage window is not counted against the redrive limit.
+      await rememberRedrive(row, (waiting || row.klass === "limit") ? row.redrives : row.redrives + 1, now);
       perProject.set(row.projectId, count + 1);
       started.push(row.taskId);
     }
@@ -293,7 +313,7 @@ export function createStability(ctx:ServerCore, services:Services) {
     const adopted:string[] = [];
     for (const row of rows) {
       const klass = failureClass(row.state, row.reason);
-      if (!PARKED_CLASSES.has(klass) || !row.pm_thread_id || list.some((entry) => entry.runId === row.run_id && entry.taskId === row.task_id)) continue;
+      if (!(PARKED_CLASSES.has(klass) || isCapacitySaturated(row.reason)) || !row.pm_thread_id || list.some((entry) => entry.runId === row.run_id && entry.taskId === row.task_id)) continue;
       if (await isRunHalted(bb.storage.kv as never, row.run_id)) continue;
       // The build the attempt ran under (harness_version) is the build whose fault it is: the task restarts when another build
       // runs, not at once under the same one. A retry lost in a reload is no fault of the build, and an attempt from before the

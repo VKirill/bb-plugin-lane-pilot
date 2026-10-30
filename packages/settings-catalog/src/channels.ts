@@ -160,6 +160,7 @@ export const SETTING_CATALOG: SettingSpec[] = [
   { key:"writer.pair_pin", channel:"OWN", reason:"Native Lane Pilot writer pin: the task's provider+model for its whole life; moves only on provider failure or failure-class intervention, the reason recorded" },
   { key:"writer.route_record", channel:"OWN", reason:"Native Lane Pilot writer route record: the route decision — candidates, exclusions with reasons, the pick — kept in the task KV for the attempt receipt and the task screen" },
   { key:"writer.capacity_wait", channel:"OWN", reason:"Native Lane Pilot capacity: all writer providers spent, the task waits for the nearest window reset as capacity_saturated instead of ending blocked" },
+  { key:"writer.capacity_wait_max_min", channel:"OWN", reason:"Native Lane Pilot capacity: the most minutes a task waits on every writer provider being spent (recheck every 15 min) before the PM is told to resend it; counted from the first parking" },
   { key:"writer.class_cooldowns", channel:"OWN", reason:"Native Lane Pilot failure classes: JSON map of class to seconds of pause after an attempt ends, before the next attempt" },
   { key:"writer.cooldown_max_ms", channel:"OWN", reason:"Native Lane Pilot failure classes: cap for any class cooldown pause in milliseconds; 0 uncapped" },
   { key:"writer.task_wall_clock_min", channel:"OWN", reason:"Native Lane Pilot retry caps: the most minutes a task may live across attempts and restarts before it ends with task_wall_clock" },
