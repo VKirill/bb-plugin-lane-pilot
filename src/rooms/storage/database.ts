@@ -464,6 +464,9 @@ export const migrations = [
   `CREATE INDEX IF NOT EXISTS lane_pilot_skill_metric_recorded ON lane_pilot_skill_metric(recorded_at)`,
   // W31 rank 6: why an attempt was canceled — a closed code list (cancel.ts CANCEL_CODES), NULL for cancels before 0.1.396. Append only.
   `ALTER TABLE lane_pilot_attempt ADD COLUMN cancel_code TEXT`,
+  // WT1: what the hourly worktree janitor did per host — freed bytes and the copies it kept for the morning line. Append only.
+  `CREATE TABLE IF NOT EXISTS lane_pilot_janitor (id INTEGER PRIMARY KEY, at INTEGER NOT NULL, host TEXT NOT NULL, removed INTEGER NOT NULL, freed_bytes INTEGER NOT NULL, tmp_removed INTEGER NOT NULL, tmp_freed_bytes INTEGER NOT NULL, kept_json TEXT NOT NULL DEFAULT '[]')`,
+  `CREATE INDEX IF NOT EXISTS lane_pilot_janitor_at ON lane_pilot_janitor(at)`,
 ];
 
 export function openDatabase(bb: BbPluginApi): LanePilotDatabase {

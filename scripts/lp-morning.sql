@@ -16,4 +16,12 @@ select 'Красное за ночь: ' || coalesce((select sum(n) || ' попы
 select 'Принято: ' || (select count(*) from lane_pilot_attempt where state = 'accepted' and updated_at >= (select since from lp_morning)) || ' попыток.';
 select 'Отсрочки: просрочено ' || (select count(*) from lane_pilot_deferral where state in ('open', 'overdue') and due_at < (select now from lp_morning) and owner_ref is not null and due_source in ('explicit', 'relative', 'weekday'))
   || ', открыто ' || (select count(*) from lane_pilot_deferral where state = 'open' and due_at >= (select now from lp_morning) and owner_ref is not null and due_source in ('explicit', 'relative', 'weekday'))
-  || '. От твоих сообщений — ' || ((select count(*) from lane_pilot_owner_item where state = 'open') + (select count(*) from lane_pilot_learning_item where state = 'pending_owner')) || '.';
+  || '. От твоих сообщений — ' || ((select count(*) from lane_pilot_owner_item where state = 'open') + (select count(*) from lane_pilot_learning_item where state = 'pending_owner')) || '.'
+  || coalesce((select ' Уборка копий: освобождено ' || cast(round(coalesce(sum(freed_bytes + tmp_freed_bytes), 0) / 1000000) as integer) || ' МБ'
+      || case when (select count(*) from lane_pilot_janitor j2, json_each(j2.kept_json) where j2.at >= (select since from lp_morning)) > 0
+        then ', держатся ' || (select count(*) from lane_pilot_janitor j2, json_each(j2.kept_json) where j2.at >= (select since from lp_morning)) || ' ('
+          || (select group_concat(value, ', ') || case when (select count(*) from lane_pilot_janitor j2, json_each(j2.kept_json) where j2.at >= (select since from lp_morning)) > 3 then ', …' else '' end
+              from (select value from lane_pilot_janitor, json_each(lane_pilot_janitor.kept_json) where at >= (select since from lp_morning) limit 3)) || ')'
+        else '' end || '.'
+    from lane_pilot_janitor where at >= (select since from lp_morning)
+    having coalesce(sum(freed_bytes + tmp_freed_bytes), 0) > 0 or exists(select 1 from lane_pilot_janitor j3, json_each(j3.kept_json) where j3.at >= (select since from lp_morning))), '');

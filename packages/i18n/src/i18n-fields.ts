@@ -1033,6 +1033,10 @@ export const fieldEn = {
   reason_s568: "defer retries the series later when the bench project already holds a live Lane Pilot PM (default); close finishes that run and takes the project.",
   field_s569: "Bench: noise rows on repeats",
   reason_s569: "Write a noise row whenever a series finished two or more repeats, not only for explicit noise runs. Default on.",
+  field_s600: "Cleanup: worktrees",
+  reason_s600: "on: the hourly janitor removes finished Lane Pilot worktree copies on every connected machine (no open attempt, older than the grace, no edits, nothing unmerged). off: the sweep never runs. Default on.",
+  field_s601: "Cleanup: worktree grace (hours)",
+  reason_s601: "How many hours a worktree copy must sit untouched before the janitor may remove it; a copy with edits or commits no other branch or remote has stays and goes into the morning report. Default 2.",
 } as const;
 
 export const fieldRu: { [K in keyof typeof fieldEn]: string } = {
@@ -2069,4 +2073,8 @@ export const fieldRu: { [K in keyof typeof fieldEn]: string } = {
   reason_s568: "defer повторяет серию позже, когда в проекте бенча уже есть живой PM Lane Pilot (по умолчанию); close завершает тот ран и занимает проект.",
   field_s569: "Бенч: строки шума по повторам",
   reason_s569: "Писать строку шума при двух и более завершённых повторах серии, не только для явных noise-прогонов. По умолчанию вкл.",
+  field_s600: "Уборка: рабочие копии",
+  reason_s600: "on: ежечасная уборка удаляет отработанные копии Lane Pilot на каждой подключённой машине (нет открытой попытки, старше льготного срока, без правок и непринятых коммитов). off: уборка не запускается. По умолчанию on.",
+  field_s601: "Уборка: льготный срок копий (часы)",
+  reason_s601: "Сколько часов копия должна пролежать без изменений, чтобы уборка могла её удалить; копия с правками или коммитами, которых нет на других ветках и remote, остаётся и попадает в утреннюю сводку. По умолчанию 2.",
 };

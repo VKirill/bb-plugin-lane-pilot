@@ -75,6 +75,7 @@ import {
   prepareNativeClaudeHost,
   prepareClaudeGuardHost,
   prepareBbShimHost,
+  worktreeJanitor,
 } from "./src/rooms/host-worker";
 import { sessionInventory } from "./src/rooms/native-agent";
 import { nativeInstallHost, removeClaudeLaneLeftoversHost } from "./src/rooms/native-install/native-install-host";
@@ -86,7 +87,7 @@ export default experimental_defineHostEntry({
     nativeInstall: nativeInstallHost,
     removeClaudeLaneLeftovers: removeClaudeLaneLeftoversHost,
     anamnesis: anamnesisHandler,
-    detect, coexistenceInventory, coexistenceOperation, gitOwnershipBase, gitOwnershipChanges, gitDocsScope, docsWorthinessFacts, docsLineCounts, gitCommitDocs, gitRevertPaths, gitUndoCheckWrites, docsAnchors, docsFlows, docsDepth, docsVerifyCitations, docsStaleness:docsStalenessHandler, gitIntegrate, gateRun, gateBisect, gateAttribute, jobStart, jobStatus, jobCancel, gitPrepareWorktree, gitCreateWorktree, gitRemoveWorktree, gitSyncWorktree, diskFree, stabilityDrill, gitWorktreeSnapshot, gitWorktreeState, gitMergeInfo, gitRevertCommits, openCodeLimitProbe, readOpenCodeTelemetry, readBoundedFile, listDocsPages, listWorkflowFiles, applyOnboardingPages, writeDocsPages, writePhaseBook, writeForgeEnabled, writeForgeDraft, prepareWorkerHome, whichPrograms, listFolders, closeBacklogItem, readUsageWindows, listPermitTickets, answerPermit, writeWorkflowFile, snapshotDryRun, snapshot, install, rollback, importConfig, connectOpencode, classifyPlan, inspectCritiqueCoverage,
+    detect, coexistenceInventory, coexistenceOperation, gitOwnershipBase, gitOwnershipChanges, gitDocsScope, docsWorthinessFacts, docsLineCounts, gitCommitDocs, gitRevertPaths, gitUndoCheckWrites, docsAnchors, docsFlows, docsDepth, docsVerifyCitations, docsStaleness:docsStalenessHandler, gitIntegrate, gateRun, gateBisect, gateAttribute, jobStart, jobStatus, jobCancel, gitPrepareWorktree, gitCreateWorktree, gitRemoveWorktree, gitSyncWorktree, diskFree, stabilityDrill, gitWorktreeSnapshot, gitWorktreeState, gitMergeInfo, gitRevertCommits, worktreeJanitor, openCodeLimitProbe, readOpenCodeTelemetry, readBoundedFile, listDocsPages, listWorkflowFiles, applyOnboardingPages, writeDocsPages, writePhaseBook, writeForgeEnabled, writeForgeDraft, prepareWorkerHome, whichPrograms, listFolders, closeBacklogItem, readUsageWindows, listPermitTickets, answerPermit, writeWorkflowFile, snapshotDryRun, snapshot, install, rollback, importConfig, connectOpencode, classifyPlan, inspectCritiqueCoverage,
     councilJudge, browserGoal, runCommand, runScript, runSandboxedCommand, sandboxCommandLine, sandboxRelease, vpnAddress, runBrowserQa, probeBrowserQaTarget, writePmSettings, session_inventory: sessionInventory,
     discoverClaudeAgents: discoverClaudeAgentsHost, prepareNativeClaude: prepareNativeClaudeHost,
     prepareClaudeGuard: prepareClaudeGuardHost,

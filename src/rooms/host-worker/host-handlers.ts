@@ -1,4 +1,5 @@
 import { networkInterfaces } from "node:os";
+import { sweepLaneWorktrees } from "../verification";
 import { createWorktree, integrateWorktree, mergeInfo, prepareWorktree, removeLaneWorktree, revertCommitsInWorktree, syncWorktree, snapshotWorktree, worktreeState, type ReplayCheck, type ReplayCheckOutcome } from "../verification";
 import { attributeGateOnHost, bisectGateOnHost, runGateOnHost } from "../verification";
 import { buildDocsAnchors, docsDepth as readDocsDepth, docsStaleness, jevCallFor, verifyDocsCitations } from "../verification";
@@ -238,6 +239,11 @@ export const gitCreateWorktree: ExperimentalHostRpcHandlers<typeof hostContract>
   ...await createWorktree({basePath:input.basePath,name:input.name,...(input.commit?{commit:input.commit}:{}),
     ...(input.taskId?{taskId:input.taskId}:{}),
     targetPath:join(laneWorktreeRoot(),input.name,basename(input.basePath))}),
+});
+
+export const worktreeJanitor: ExperimentalHostRpcHandlers<typeof hostContract>["worktreeJanitor"] = async (input) => ({
+  hostId:process.env.BB_HOST_ID??input.requestedHostId,
+  ...await sweepLaneWorktrees({root:laneWorktreeRoot(),protectedPaths:new Set(input.protectedPaths),graceMs:input.graceMs??2*3_600_000}),
 });
 
 export const gitDocsScope: ExperimentalHostRpcHandlers<typeof hostContract>["gitDocsScope"] = async (input) => ({
