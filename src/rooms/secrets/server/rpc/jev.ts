@@ -22,7 +22,7 @@ export function jevProviderRpc(ctx: ServerCore) {
     const providers = JEV_PROVIDER_IDS.map((id) => ({ id, keyName: JEV_PROVIDERS[id].keyName, model: JEV_PROVIDERS[id].model, hasKey: Boolean(names?.some((entry) => entry.name === JEV_PROVIDERS[id].keyName)) }));
     const has = (id: string) => providers.find((item) => item.id === id)!.hasKey;
     // The same rule as jevEndpoint in core.ts: the chosen provider when it has a key, else TypeSafe, else nobody.
-    const effective = has(wanted.id) ? wanted.id : has("typesafe") ? "typesafe" as const : null;
+    const effective = has(wanted.id) ? wanted.id : (["typesafe", "openlux"] as const).find((id) => has(id)) ?? null;
     return { chosen: wanted.id, effective, catalog: names ? "ok" as const : "unavailable" as const, providers };
   }
 

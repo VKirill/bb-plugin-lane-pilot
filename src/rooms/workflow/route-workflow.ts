@@ -93,8 +93,9 @@ function statedInputs(answers: Answers, input: RouteWorkflowInput, index: number
 
 export const routeWorkflow = defineJudgment<RouteWorkflowInput, RouteWorkflowDecision>({
   id: ROUTE_WORKFLOW_ID,
-  // v2: the candidate options are English-only (the owner's request stays an untranslated quote field).
-  version: 2,
+  // v3: the top-to-second ratio is an alternative acceptance to the absolute margin — a close pair where one option
+  // dominates the other reads cleaner as p1/p2 than as a percentage point lead (TypeSafe confidence docs).
+  version: 3,
   // Active from the start: the live run (66 phrases) is in RESULTS.md, and the PM shows the owner the chosen workflow before anything starts.
   defaultMode: "active",
   timeoutMs: 4_000,
@@ -104,6 +105,7 @@ export const routeWorkflow = defineJudgment<RouteWorkflowInput, RouteWorkflowDec
     // Never below 0.6: the router treats a confidence under 60 as «ask the owner», and the confidence reported is 100 * p(top).
     min_p: { default: 0.6, min: 0.6, max: 0.95, about: "least probability of the chosen workflow" },
     min_margin: { default: 0.25, min: 0.05, max: 0.9, about: "least lead of the chosen workflow over the runner-up" },
+    min_ratio: { default: 2.0, min: 1.2, max: 8, about: "top-to-second probability ratio that accepts instead of the absolute margin" },
     max_none: { default: 0.3, min: 0.05, max: 0.6, about: "most probability of «none of these» that still allows a workflow" },
     // Measured on 66 phrases: «too broad» wanders between 0.3 and 0.9 for specific requests, and sits at 0.97 or more for «do something with the site».
     max_broad: { default: 0.9, min: 0.5, max: 0.99, about: "most probability of «too broad» that still allows a workflow" },
@@ -115,17 +117,19 @@ export const routeWorkflow = defineJudgment<RouteWorkflowInput, RouteWorkflowDec
     const pick = choiceOf(answers, "pick"), broad = noulOf(answers, "too_broad");
     if (!pick || broad === undefined) return { escalate: "model-thread" };
     const none = answers.pick?.type === "choice" ? answers.pick.probabilities[NONE] ?? 0 : 0;
+    const second = pick.ranked[1]?.[1] ?? 0;
+    const leadOk = pick.margin >= t.min_margin! || (second > 0 ? pick.p / second : Infinity) >= t.min_ratio!;
     const rejected = (except: string | null) => pick.ranked.filter(([id]) => id !== except && id !== NONE).map(([id, p]) => ({ id, reason: `Jev probability ${round2(p)}` }));
     if (broad >= t.broad_clarify!) {
       return { decision: { choice: null, confidence: 0, pattern: `jev: the request is too broad (p ${round2(broad)})`, rejected: rejected(null), questions: [] } };
     }
     if (pick.top === NONE) {
-      if (pick.p >= t.min_p! && pick.margin >= t.min_margin! && broad < t.max_broad!) {
+      if (pick.p >= t.min_p! && leadOk && broad < t.max_broad!) {
         return { decision: { choice: null, confidence: Math.round(100 * pick.p), pattern: `jev: no candidate fits (p ${round2(pick.p)})`, rejected: rejected(null), questions: [] } };
       }
       return { escalate: "model-thread" };
     }
-    if (pick.p >= t.min_p! && pick.margin >= t.min_margin! && none < t.max_none! && broad < t.max_broad!) {
+    if (pick.p >= t.min_p! && leadOk && none < t.max_none! && broad < t.max_broad!) {
       const index = input.candidates.findIndex((card) => card.id === pick.top);
       const inputs = statedInputs(answers, input, index, t.min_stated!, t.min_input_p!);
       return { decision: {

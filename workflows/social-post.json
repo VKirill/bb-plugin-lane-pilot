@@ -6,7 +6,7 @@
   },
   "description": {
     "en": "Turns a topic into an audience-validated social post: extracts pains and insights via insights-post, writes text in Kirill Vechkasov's author voice, formats as a Telegram Rich Message, and delivers a preview for the owner to publish.",
-    "ru": "Превращает тему в проверенный пост для соцсетей: собирает боли и инсайты аудитории через insights-post, пишет текст в голосе автора (vechkasov-voice), оформляет в Telegram Rich Message и отдаёт превью владельцу (без автопубликации)."
+    "ru": "Превращает тему в проверенный пост для соцсетей: собирает боли и инсайты аудитории через insights-post, пишет текст в голосе автора, оформляет в Telegram Rich Message и отдаёт превью владельцу (без автопубликации)."
   },
   "examples": {
     "ru": [
@@ -131,7 +131,7 @@
           "ru-text"
         ]
       },
-      "prompt": "Изучи собранный пакет инсайтов ({{insights.writing_pack_path}}) и досье ({{insights.dossier_path}}). Напиши пост по теме '{{$inputs.topic}}' в голосе автора Кирилла Вечкасова. Разделы навыков каталога: «Тексты и редактура» (vechkasov-voice, ru-text, ru-check, copywriter). Стиль: плотный, честный, с реальными болями и языком аудитории, без корпоративных штампов и нейрослопа. Проверь текст по ru-check. Сохрани черновик в .agents/social/post.md. Верни статус done или blocked.",
+      "prompt": "Изучи собранный пакет инсайтов ({{insights.writing_pack_path}}) и досье ({{insights.dossier_path}}). Напиши пост по теме '{{$inputs.topic}}' в голосе автора Кирилла Вечкасова. Разделы навыков каталога: «Тексты и редактура». Стиль: плотный, честный, с реальными болями и языком аудитории, без корпоративных штампов и нейрослопа. Проверь текст по ru-check. Сохрани черновик в .agents/social/post.md. Верни статус done или blocked.",
       "out": {
         "status": "done|blocked",
         "post_text": "string",
@@ -169,7 +169,7 @@
           "telegram-rich-messages"
         ]
       },
-      "prompt": "Оформи текст {{write_post.post_text}} в формат Telegram Rich Message. Разделы навыков каталога: «Соцсети и Telegram» (telegram-rich-messages) и «Тексты и редактура» (ru-text). Сформируй заголовок, акценты жирным/курсивом, цитату или скрытый блок, призыв к обсуждению. Проверь валидность разметки и лимит символов (< 4096). Сохрани карточку сообщения в .agents/social/telegram-card.md. Верни статус done или blocked.",
+      "prompt": "Оформи текст {{write_post.post_text}} в формат Telegram Rich Message. Разделы навыков каталога: «Соцсети и Telegram» и «Тексты и редактура». Сформируй заголовок, акценты жирным/курсивом, цитату или скрытый блок, призыв к обсуждению. Проверь валидность разметки и лимит символов (< 4096). Сохрани карточку сообщения в .agents/social/telegram-card.md. Верни статус done или blocked.",
       "out": {
         "status": "done|blocked",
         "formatted_text": "string",
@@ -229,6 +229,22 @@
       "map": {
         "status": "blocked"
       }
+    },
+    {
+      "id": "goal_check",
+      "type": "action",
+      "action": "deliverable.validate",
+      "title": {
+        "en": "Check the goal was met",
+        "ru": "Проверить, что цель достигнута"
+      },
+      "rule": "validateDeliverable on the artifact the run produced: the deliverable/validator/brief inputs name what to check; a fail means the goal is not met",
+      "out": {
+        "ok": "bool",
+        "verdict": "pass|rework|fail",
+        "reason": "string",
+        "details": "object"
+      }
     }
   ],
   "edges": [
@@ -274,7 +290,7 @@
     },
     {
       "from": "preview",
-      "to": "done",
+      "to": "goal_check",
       "pass": "artifact",
       "when": "preview.answer_kind == 'approve'"
     },
@@ -288,6 +304,15 @@
       "from": "preview",
       "to": "blocked",
       "pass": "artifact"
+    },
+    {
+      "from": "goal_check",
+      "to": "done",
+      "when": "goal_check.ok != false"
+    },
+    {
+      "from": "goal_check",
+      "to": "partial"
     }
   ],
   "test": {
@@ -329,6 +354,7 @@
         "write_post",
         "format_telegram",
         "preview",
+        "goal_check",
         "done"
       ],
       "expect_outputs": [
@@ -339,5 +365,6 @@
     },
     "live": "Сбор инсайтов по теме, написание поста в авторском стиле, оформление Telegram Rich Message и превью владельцу",
     "note": "Tested on stubs: subworkflow and model calls answer from stubs. No auto-publishing."
-  }
+  },
+  "goal_check": "validate"
 }

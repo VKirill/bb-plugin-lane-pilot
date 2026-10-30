@@ -29,7 +29,7 @@ describe("jev client", () => {
     const { client, calls } = clientWith([{ status: 200, body: OK_BODY }]);
     const result = await client.call({ state: "payouts failing", questions: QUESTIONS });
     expect(result).toMatchObject({ ok: true, model: "jev-1.13.0", usage: { input_tokens: 100, output_tokens: 10 }, attempts: 1 });
-    expect(calls[0]).toMatchObject({ url: "https://api.typesafe.ai/v1/systemone", auth: "Bearer k-secret", body: { state: "payouts failing", model: "jev-latest", questions: QUESTIONS } });
+    expect(calls[0]).toMatchObject({ url: "https://api.typesafe.ai/v1/systemone", auth: "Bearer k-secret", body: { state: "payouts failing", model: "jev-1.14.0", questions: QUESTIONS } });
   });
 
   it("is disabled without a key and sends nothing", async () => {
@@ -97,9 +97,9 @@ describe("jev client", () => {
 
 describe("jev providers", () => {
   it("defaults to OpenLux and falls back to it for an unknown value", () => {
-    expect(resolveJevProvider(undefined).id).toBe("openlux");
-    expect(resolveJevProvider("nope").id).toBe("openlux");
-    expect(resolveJevProvider("toString").id).toBe("openlux");
+    expect(resolveJevProvider(undefined).id).toBe("typesafe");
+    expect(resolveJevProvider("nope").id).toBe("typesafe");
+    expect(resolveJevProvider("toString").id).toBe("typesafe");
     expect(resolveJevProvider("typesafe").id).toBe("typesafe");
   });
 
@@ -136,5 +136,34 @@ describe("jev providers", () => {
     const { client, calls } = clientWith([{ status: 500, body: { error: { code: "internal" } } }, { status: 200, body: OK_BODY }], { provider: JEV_PROVIDERS.openlux });
     expect(await client.call({ state: "x", questions: QUESTIONS })).toMatchObject({ ok: true, attempts: 2 });
     expect(calls).toHaveLength(2);
+  });
+});
+
+describe("jev standby provider", () => {
+  const withFallback = (replies: Reply[]) => {
+    const f = fakeFetch(replies);
+    const client = createJevClient({ endpoint: async () => ({ provider: JEV_PROVIDERS.typesafe, apiKey: "k-secret",
+      fallback: { provider: JEV_PROVIDERS.openlux, apiKey: "k-spare" } }), fetch: f.fn, sleep: async () => {} });
+    return { client, calls: f.calls };
+  };
+
+  it("retries once on the standby when the chosen provider 5xxs, and names the answerer in the model", async () => {
+    const { client, calls } = withFallback([{ status: 502 }, { status: 502 }, { status: 200, body: { ...OK_BODY, model: "jev-1.14.0:stable" } }]);
+    const result = await client.call({ state: "x", questions: QUESTIONS });
+    expect(result).toMatchObject({ ok: true, model: "openlux/jev-1.14.0:stable", attempts: 3 });
+    expect(calls.map((c) => c.url)).toEqual([
+      "https://api.typesafe.ai/v1/systemone", "https://api.typesafe.ai/v1/systemone", "https://api.openlux.ai/v1/systemone"]);
+    expect(calls[2]!.auth).toBe("Bearer k-spare");
+  });
+
+  it("does not try the standby for a bad request (our key or request is wrong)", async () => {
+    const { client, calls } = withFallback([{ status: 401 }, { status: 200, body: OK_BODY }]);
+    expect(await client.call({ state: "x", questions: QUESTIONS })).toMatchObject({ ok: false });
+    expect(calls).toHaveLength(1);
+  });
+
+  it("no standby configured: the old error stands", async () => {
+    const { client } = clientWith([{ status: 500 }, { status: 500 }]);
+    expect(await client.call({ state: "x", questions: QUESTIONS })).toMatchObject({ ok: false, status: "error", attempts: 2 });
   });
 });

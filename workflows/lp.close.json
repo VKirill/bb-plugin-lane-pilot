@@ -183,7 +183,7 @@
         "ru": "Кандидаты знаний"
       },
       "src": "maestro-flow:ref/finish-work.md, ref/knowledge-closeout.md",
-      "prompt": "Stage candidates only, never publish. Keep decisions, locked constraints and lessons; drop process narration and what the code already says.\nconfidence = +0.3 locked or explicit decision, +0.2 three or more keywords, +0.2 rationale, +0.2 length 50-2000, +0.1 reference; threshold 0.5.\nPublication needs the owner's explicit approval; no answer means deferred. An auto mode is not approval.\n",
+      "prompt": "Stage candidates only, never publish. Keep decisions, locked constraints and lessons; drop process narration and what the code already says.\nconfidence = +0.3 locked or explicit decision, +0.2 three or more keywords, +0.2 rationale, +0.2 length 50-2000, +0.1 reference; threshold 0.5.\nA fact enters memory only with a confirming source: the task's own verification passed (its stage receipt says passed), or the owner named it explicitly this run. Anything else is stored as a candidate with its source noted — never as a fact. Silence is not approval; an auto mode is not approval. The owner's explicit approval publishes a candidate to a fact; no answer leaves it staged.\n",
       "out": {
         "staged": "int",
         "candidate_ids": "string[]",
@@ -311,5 +311,6 @@
       "pass": "artifact"
     }
   ],
-  "status": "published"
+  "status": "published",
+  "goal_check": "artifact"
 }

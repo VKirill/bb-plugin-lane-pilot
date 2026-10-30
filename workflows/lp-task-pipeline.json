@@ -440,11 +440,6 @@
       ]
     },
     {
-      "id": "inside-writer",
-      "type": "note",
-      "text": "Inside the code task (locked): workspace and worktree, the writer session and its turns, owns-paths and verification checks, repair rounds, code critique, merge intent and merge, integration gate, acceptance receipt, retries and fallbacks, memory and project-life after acceptance."
-    },
-    {
       "id": "qa-gate",
       "type": "decision",
       "label": "Browser check due",

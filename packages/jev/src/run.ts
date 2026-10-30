@@ -4,7 +4,7 @@ import { MAX_STATE_CHARS, type JevClient } from "./client";
 import { MAX_QUESTIONS_PER_JUDGMENT, type Answers, type Decided, type Judgment, type JudgmentMode, type Thresholds } from "./registry";
 import { insertReceipt, recordOutcome } from "./receipts";
 import { jevEnabled, resolveMode, resolveThresholds, type JevSettings } from "./thresholds";
-import type { AnswerSummary, JevBudget, JevCallResult, JevFailure, JevQuestion } from "./types";
+import type { AnswerSummary, JevAsset, JevBudget, JevCallResult, JevFailure, JevQuestion } from "./types";
 
 /**
  * Runs judgments. `judge` asks one; `judgeMany` asks the same judgment about many inputs in one request (question ids
@@ -50,7 +50,7 @@ export type JevCacheOptions = { ttlMs: number; maxEntries: number };
 export const JEV_CACHE_TTL_MS = 5 * 60_000;
 export const JEV_CACHE_MAX_ENTRIES = 500;
 
-type Entry = { judgment: Judgment<any, any>; input: unknown; mode: JudgmentMode; thresholds: Thresholds; state: unknown; stateText: string; fields: Record<string, number>; questions: Record<string, JevQuestion> };
+type Entry = { judgment: Judgment<any, any>; input: unknown; mode: JudgmentMode; settings: JudgeContext["settings"]; state: unknown; stateText: string; fields: Record<string, number>; questions: Record<string, JevQuestion>; assets: Record<string, JevAsset> };
 
 /** The top-level state's field names and serialized sizes — the receipt's view of what left for the API, never the content. */
 function fieldSizes(state: unknown): Record<string, number> {
@@ -70,6 +70,7 @@ const sha256 = (text: string): string => sha256Hex(text);
 function summarize(answers: Answers): Record<string, AnswerSummary> {
   return Object.fromEntries(Object.entries(answers).map(([id, answer]) => {
     if (answer.type === "noul") return [id, { kind: "noul", value: Math.round(answer.noul * 1000) / 1000, top: [] } satisfies AnswerSummary];
+    if (answer.type === "box") return [id, { kind: "box", value: JSON.stringify(answer.box), top: [], confidence: Math.round(answer.confidence * 1000) / 1000 } satisfies AnswerSummary];
     const top = Object.entries(answer.probabilities).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([name, p]) => [name, Math.round(p * 1000) / 1000] as [string, number]);
     return [id, { kind: answer.type, value: answer.type === "choice" ? answer.choice : Math.round(answer.score * 1000) / 1000, top, confidence: Math.round(answer.confidence * 1000) / 1000 } satisfies AnswerSummary];
   }));
@@ -102,7 +103,7 @@ export function createJev(deps: { client: JevClient; db?: Database.Database | nu
     const state = redactKnownDeep(judgment.stateBuilder(input));
     const questions = judgment.questions(input);
     if (Object.keys(questions).length > MAX_QUESTIONS_PER_JUDGMENT) throw new Error(`judgment ${judgment.id} asks more than ${MAX_QUESTIONS_PER_JUDGMENT} questions`);
-    return { judgment, input, mode: resolveMode(judgment, ctx.settings), thresholds: resolveThresholds(judgment, ctx.settings), state, stateText: JSON.stringify(state) ?? "null", fields: fieldSizes(state), questions };
+    return { judgment, input, mode: resolveMode(judgment, ctx.settings), settings: ctx.settings, state, stateText: JSON.stringify(state) ?? "null", fields: fieldSizes(state), questions, assets: judgment.assets?.(input) ?? {} };
   };
 
   function receipt(entry: Entry, ctx: JudgeContext, call: JevCallResult, batchSize: number, decidedBy: "jev" | "fallback" | "escalated", decision: string | null, escalatedTo: string | null, answers?: Answers, cached = false): number | null {
@@ -113,7 +114,7 @@ export function createJev(deps: { client: JevClient; db?: Database.Database | nu
         judgment: entry.judgment.id, version: entry.judgment.version, model: call.ok ? call.model : entry.judgment.model ?? null, mode: entry.mode,
         projectId: ctx.projectId ?? null, runId: ctx.runId ?? null, subject: ctx.subject ?? null,
         inputSha256: sha256(entry.stateText), inputChars: entry.stateText.length, questions: Object.keys(entry.questions).length, batchSize,
-        status: call.ok ? "ok" : call.status, ...(answers ? { answers: summarize(answers) } : {}), decision, decidedBy, escalatedTo, thresholds: entry.thresholds,
+        status: call.ok ? "ok" : call.status, ...(answers ? { answers: summarize(answers) } : {}), decision, decidedBy, escalatedTo, thresholds: resolveThresholds(entry.judgment, entry.settings, call.ok ? call.model : entry.judgment.model ?? null),
         latencyMs: call.latencyMs, tokensIn: call.ok ? Math.round(call.usage.input_tokens / batchSize) : null, tokensOut: call.ok ? Math.round(call.usage.output_tokens / batchSize) : null,
         fields: entry.fields,
       });
@@ -125,12 +126,16 @@ export function createJev(deps: { client: JevClient; db?: Database.Database | nu
 
   function verdictFor(entry: Entry, ctx: JudgeContext, call: JevCallResult, batchSize: number, answers: Answers | null, cached = false): Verdict<any> {
     const fallbackDecision = () => entry.judgment.fallback(entry.input);
+    // Calibrated thresholds bind to the model version that answered (calibrate.ts): an alias silently moving to a new
+    // version drops them back to the registry defaults instead of drifting. The judgment's own pin is the best guess
+    // when nothing answered.
+    const thresholds = resolveThresholds(entry.judgment, entry.settings, call.ok ? call.model : entry.judgment.model ?? null);
     if (!call.ok || !answers) {
       const status = call.ok ? "invalid" as const : call.status;
       return { by: "fallback", decision: fallbackDecision(), status, receiptId: receipt(entry, ctx, call, batchSize, "fallback", null, null, undefined, cached) };
     }
     let decided: Decided<unknown>;
-    try { decided = entry.judgment.decide(answers, entry.thresholds, entry.input); } catch (cause) {
+    try { decided = entry.judgment.decide(answers, thresholds, entry.input); } catch (cause) {
       deps.log?.(`jev ${entry.judgment.id}: decide failed: ${cause instanceof Error ? cause.message : String(cause)}`);
       return { by: "fallback", decision: fallbackDecision(), status: "invalid", receiptId: receipt(entry, ctx, { ok: false, status: "invalid", error: "decide failed", latencyMs: call.latencyMs, attempts: call.attempts }, batchSize, "fallback", null, null, answers, cached) };
     }
@@ -167,7 +172,8 @@ export function createJev(deps: { client: JevClient; db?: Database.Database | nu
       let call: JevCallResult | undefined = key ? cacheGet(key) : undefined;
       const cached = call !== undefined;
       if (!call) {
-        call = await client.call({ state: first.state, questions, ...(first.judgment.model ? { model: first.judgment.model } : {}) },
+        const assets = Object.assign({}, ...members.map((index) => entries[index]!.assets));
+        call = await client.call({ state: first.state, questions, assets, ...(first.judgment.model ? { model: first.judgment.model } : {}) },
           { timeoutMs: Math.max(...members.map((index) => entries[index]!.judgment.timeoutMs)), budget: ctx.budget, signal: ctx.signal });
         if (key) cachePut(key, call);
       }

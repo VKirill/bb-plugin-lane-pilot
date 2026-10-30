@@ -11,10 +11,15 @@ export type JevProviderId = "openlux" | "typesafe";
 export type JevProvider = { id: JevProviderId; url: string; model: string; keyName: string; timeoutPadMs: number };
 
 export const JEV_PROVIDERS: Record<JevProviderId, JevProvider> = {
-  typesafe: { id: "typesafe", url: "https://api.typesafe.ai/v1/systemone", model: "jev-latest", keyName: "TYPESAFE_API_KEY", timeoutPadMs: 0 },
+  // The docs warn that an alias moves to a new version silently and every threshold calibrated under the old one drifts with
+  // it; api.typesafe.ai accepts the concrete id (live probe 2026-11: `jev-1.14.0` answers `model: "jev-1.14.0"`).
+  typesafe: { id: "typesafe", url: "https://api.typesafe.ai/v1/systemone", model: "jev-1.14.0", keyName: "TYPESAFE_API_KEY", timeoutPadMs: 0 },
   openlux: { id: "openlux", url: "https://api.openlux.ai/v1/systemone", model: "jev-1.14.0:stable", keyName: "OPENLUX_API_KEY", timeoutPadMs: 1_500 },
 };
-export const DEFAULT_JEV_PROVIDER: JevProviderId = "openlux";
+/** The model id a threshold set binds to: the version without a route suffix (`jev-1.14.0:stable` → `jev-1.14.0`). */
+export const jevModelBase = (model: string): string => model.split(":")[0]!;
+
+export const DEFAULT_JEV_PROVIDER: JevProviderId = "typesafe";
 export const JEV_PROVIDER_IDS = Object.keys(JEV_PROVIDERS) as JevProviderId[];
 
 /** The provider a setting value names; the default when it is absent or unknown. */

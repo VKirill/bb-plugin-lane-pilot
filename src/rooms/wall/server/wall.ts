@@ -20,6 +20,7 @@ import { builtinWorkflow } from "../../workflow";
 import type { ChainRuntime } from "../../workflow/server";
 import type { HuntOutcome } from "../pack";
 import { WALL_HUNT_WORKFLOW, createWall, type RepairView, type Scope, type ThreadRun, type WallApi, type WallPorts } from "../service";
+import { jev } from "@lane-pilot/jev";
 
 const LOG_TAIL_BYTES = 1_000_000;
 
@@ -238,7 +239,15 @@ export function createPluginWall(ctx: ServerCore, services: Services): WallApi {
   };
 
   const wallRef = { current: null as unknown as WallApi };
-  const wall = createWall({ db, kv: bb.storage.kv as never, ports, log: (line) => ctx.log(line), hubDb: SELF_REPAIR_DEFAULTS.hubDb });
+  const wall = createWall({
+    db,
+    kv: bb.storage.kv as never,
+    ports,
+    log: (line) => ctx.log(line),
+    hubDb: SELF_REPAIR_DEFAULTS.hubDb,
+    jev: () => jev(),
+    settings: () => ctx.effectiveProjectSettings("*").then((r) => r.values),
+  });
   wallRef.current = wall;
   setRepairHooks(ctx, {
     nextAssignment: () => wall.nextAssignment(),

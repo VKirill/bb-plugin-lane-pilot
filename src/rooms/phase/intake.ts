@@ -37,27 +37,33 @@ export function intakeByRules(text: string): { kind: IntakeKind; confident: bool
 export const INTAKE_JUDGMENT_ID = "intake.weight";
 const clip = (text: string, max: number) => (text.length > max ? `${text.slice(0, max - 1)}…` : text);
 
-export const intakeJudgment = defineJudgment<{ text: string; previous?: string | null }, { kind: IntakeKind }>({
+export const intakeJudgment = defineJudgment<{ text: string; previous?: string | null; /** Ask the same question with the options in the reverse order (self-consistency on the border zone). */ reverse?: boolean }, { kind: IntakeKind }>({
   id: INTAKE_JUDGMENT_ID,
   version: 1,
   defaultMode: "active",
   timeoutMs: 8_000,
   // The PM's last words in the chat: «sign in yourself» is a reply to the PM's question about a sign-in, not a new task (live 2026-10-25).
   stateBuilder: (input) => ({ owner_message: clip(input.text, 4_000), ...(input.previous ? { pm_last_message: clip(input.previous, 1_500) } : {}) }),
-  questions: () => ({
-    weight: choice(
-      "The owner wrote `owner_message` to the project manager of a software project. What kind of request is it? Judge by the work it asks for, not by its length or tone.",
-      {
-        heavy: "A goal that needs several tasks that depend on each other, a design or architecture decision, a new feature or section, a redesign, a migration, or work whose result has to be planned and accepted as a whole.",
-        small: "One concrete change a single task can make: a fix, a tweak, a copy or style edit, one page or one endpoint.",
-        batch: "A list of several independent small fixes or edits, each one task, none needing a plan.",
-        process: "A new recurring routine or way of working the system itself should run again and again: a pipeline, a regular job, a checklist to repeat for every new item, «each time X do Y», «every week …».",
-        question: "A question or a request for information, a report or a status; it asks for no change to the project.",
-        consent: "Agreement, a yes, an approval of what was proposed, or a short go-ahead.",
-        reply: "A reply about work already under way in this chat (`pm_last_message` shows what): an answer to the PM's question, a permission or an instruction for a helper or task that is running, a correction of how it does it, or a remark, complaint or feedback on how the work goes («why do you ask me?», «it takes too long»). It asks for no new piece of work.",
-      },
-    ),
-  }),
+  questions: (input) => {
+    // Option order biases the answer toward the first option (TypeSafe jaggedness #8): a border-zone pick is re-asked
+    // with the criteria reversed before it counts.
+    const criteria = {
+      heavy: "A goal that needs several tasks that depend on each other, a design or architecture decision, a new feature or section, a redesign, a migration, or work whose result has to be planned and accepted as a whole.",
+      small: "One concrete change a single task can make: a fix, a tweak, a copy or style edit, one page or one endpoint.",
+      batch: "A list of several independent small fixes or edits, each one task, none needing a plan.",
+      process: "A new recurring routine or way of working the system itself should run again and again: a pipeline, a regular job, a checklist to repeat for every new item, «each time X do Y», «every week …».",
+      question: "A question or a request for information, a report or a status; it asks for no change to the project.",
+      consent: "Agreement, a yes, an approval of what was proposed, or a short go-ahead.",
+      reply: "A reply about work already under way in this chat (`pm_last_message` shows what): an answer to the PM's question, a permission or an instruction for a helper or task that is running, a correction of how it does it, or a remark, complaint or feedback on how the work goes («why do you ask me?», «it takes too long»). It asks for no new piece of work.",
+    };
+    const entries = Object.entries(criteria);
+    return {
+      weight: choice(
+        "The owner wrote `owner_message` to the project manager of a software project. What kind of request is it? Judge by the work it asks for, not by its length or tone.",
+        Object.fromEntries(input?.reverse ? entries.reverse() : entries),
+      ),
+    };
+  },
   thresholds: {
     min_p: { default: 0.55, min: 0.4, max: 0.95, about: "least probability of the chosen kind" },
   },

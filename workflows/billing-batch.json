@@ -92,7 +92,7 @@
           "kontur-elba"
         ]
       },
-      "prompt": "Проверь входной список клиентов и услуг ({{$inputs.items}}). Раздел каталога: «Документы и бухгалтерия» (kontur-elba, edo-windows-diadoc). Убедись, что для каждой позиции указаны компания или ИНН, сумма и строка услуги. Установи recipient 'me' для безопасной проверки владельцем. Сформируй нормализованный массив batch_items. Если список пуст или некорректен, верни статус blocked. При успехе верни статус done.",
+      "prompt": "Проверь входной список клиентов и услуг ({{$inputs.items}}). Раздел каталога: «Документы и бухгалтерия». Убедись, что для каждой позиции указаны компания или ИНН, сумма и строка услуги. Установи recipient 'me' для безопасной проверки владельцем. Сформируй нормализованный массив batch_items. Если список пуст или некорректен, верни статус blocked. При успехе верни статус done.",
       "out": {
         "ok": "bool",
         "batch_items": "json",
@@ -155,7 +155,7 @@
           "xlsx"
         ]
       },
-      "prompt": "Составь сводку по выставленным счетам ({{invoices.invoices}}). Раздел каталога: «Документы и бухгалтерия» (kontur-elba, xlsx, pdf). Подсчитай общую сумму total_amount, количество счетов invoices_count, сформируй таблицу в summary_md с номерами счетов, клиентами, суммами и путями к PDF. Верни статус done или blocked.",
+      "prompt": "Составь сводку по выставленным счетам ({{invoices.invoices}}). Раздел каталога: «Документы и бухгалтерия». Подсчитай общую сумму total_amount, количество счетов invoices_count, сформируй таблицу в summary_md с номерами счетов, клиентами, суммами и путями к PDF. Верни статус done или blocked.",
       "out": {
         "summary_md": "string",
         "total_amount": "number",
@@ -205,6 +205,22 @@
       "map": {
         "status": "blocked"
       }
+    },
+    {
+      "id": "goal_check",
+      "type": "action",
+      "action": "deliverable.validate",
+      "title": {
+        "en": "Check the goal was met",
+        "ru": "Проверить, что цель достигнута"
+      },
+      "rule": "validateDeliverable on the artifact the run produced: the deliverable/validator/brief inputs name what to check; a fail means the goal is not met",
+      "out": {
+        "ok": "bool",
+        "verdict": "pass|rework|fail",
+        "reason": "string",
+        "details": "object"
+      }
     }
   ],
   "edges": [
@@ -237,7 +253,7 @@
     },
     {
       "from": "preview",
-      "to": "done",
+      "to": "goal_check",
       "pass": "artifact",
       "when": "preview.answer_kind == 'approve'"
     },
@@ -245,6 +261,15 @@
       "from": "preview",
       "to": "blocked",
       "pass": "artifact"
+    },
+    {
+      "from": "goal_check",
+      "to": "done",
+      "when": "goal_check.ok != false"
+    },
+    {
+      "from": "goal_check",
+      "to": "blocked"
     }
   ],
   "test": {
@@ -309,6 +334,7 @@
         "invoices",
         "summarize",
         "preview",
+        "goal_check",
         "done"
       ],
       "expect_outputs": [
@@ -320,5 +346,6 @@
     },
     "live": "Пакетное выставление счетов в Контур.Эльбе на Mac mini, проверка реквизитов и превью реестра владельцу",
     "note": "Tested on stubs: Elba and Telegram actions answer from stubs. Live run requires Mac mini host_7sea4qaad8 with Elba session."
-  }
+  },
+  "goal_check": "validate"
 }

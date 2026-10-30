@@ -128,5 +128,6 @@
       }
     },
     "live": "from a PM chat: lane_pilot_helpers action specialist with role design-lead and a small task, then wait_specialist; the thread is a child of the PM chat and carries the run id"
-  }
+  },
+  "goal_check": "artifact"
 }

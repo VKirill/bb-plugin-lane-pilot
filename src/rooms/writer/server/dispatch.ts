@@ -267,6 +267,8 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
     // rest. A hint in the reply only; the contract's verification commands never change on their own.
     const testHintPromise = (async (): Promise<string> => {
       try {
+        // No repo, no ls-files: a live folder gets no git call at all (the probe's answer is cached).
+        if (await services.isLiveFolder(runId, config.hostId, taskBase).catch(() => false)) return "";
         const ls = await runOnHost(host, { hostId:config.hostId, cwd:task.project_cwd, command:"git ls-files", timeoutSec:20, timeoutMs:25_000 }).catch(() => null);
         if (!ls || ls.exitCode !== 0 || typeof ls.stdout !== "string") return "";
         const readFile = async (path:string): Promise<string | null> => {

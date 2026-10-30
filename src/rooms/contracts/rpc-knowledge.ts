@@ -82,7 +82,7 @@ export const rpcKnowledge = {
   session_lesson: {
     // audience defaults to both for older lane-memory clients that do not send it.
     input: z.object({ projectId: z.string().min(1), rule: z.string().min(8).max(600), evidence: z.string().max(1000).optional(), scope: z.array(z.string()).max(8).optional(),
-      audience: z.enum(["writer", "pm", "both"]).optional(), always: z.boolean().optional() }).strict(),
+      audience: z.union([z.enum(["writer", "pm", "both"]), z.string().regex(/^specialist:[\w-]{1,60}$/)]).optional(), always: z.boolean().optional() }).strict(),
     output: z.object({ proposalId: z.string(), repeatOf: z.string().nullable(), state: z.string(), adopted: z.boolean() }).strict(),
   },
   rule_set_audience: {

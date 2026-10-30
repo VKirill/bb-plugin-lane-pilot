@@ -5,13 +5,20 @@
 export type JevChoiceQuestion = { type: "choice"; instructions: unknown; criteria: Record<string, unknown> };
 export type JevNoulQuestion = { type: "noul"; instructions: unknown; criteria?: { true?: unknown; false?: unknown } };
 export type JevScoreQuestion = { type: "score"; instructions: unknown; criteria: unknown[] };
-export type JevQuestion = JevChoiceQuestion | JevNoulQuestion | JevScoreQuestion;
+/** Where something is in an image; needs an image in the request (`assets`) and the danger-zone header (the client adds both). */
+export type JevBoxQuestion = { type: "box"; instructions: unknown };
+export type JevQuestion = JevChoiceQuestion | JevNoulQuestion | JevScoreQuestion | JevBoxQuestion;
+
+/** One image of a request, keyed by the reference string a state value, an instruction or a criterion embeds (docs.typesafe.ai/images). */
+export type JevAsset = { type?: "image"; format: "png" | "jpg" | "jpeg"; data_base64: string };
 
 export type JevChoiceAnswer = { type: "choice"; choice: string; probabilities: Record<string, number>; confidence: number };
 /** A Noul is one probability of yes; it has no confidence (the docs: the probability already carries the uncertainty). */
 export type JevNoulAnswer = { type: "noul"; noul: number };
 export type JevScoreAnswer = { type: "score"; score: number; legend: Record<string, string>; probabilities: Record<string, number>; confidence: number };
-export type JevAnswer = JevChoiceAnswer | JevNoulAnswer | JevScoreAnswer;
+export type JevBox = { top: number; bottom: number; left: number; right: number };
+export type JevBoxAnswer = { type: "box"; box: JevBox; confidence: number };
+export type JevAnswer = JevChoiceAnswer | JevNoulAnswer | JevScoreAnswer | JevBoxAnswer;
 
 export type JevUsage = { input_tokens: number; output_tokens: number };
 
@@ -26,4 +33,4 @@ export type JevCallResult =
 export type JevBudget = { remaining: number };
 
 /** Per-question summary stored in a receipt: the pick, the top of the distribution and the confidence, never the state. */
-export type AnswerSummary = { kind: "choice" | "noul" | "score"; value: string | number; top: Array<[string, number]>; confidence?: number };
+export type AnswerSummary = { kind: "choice" | "noul" | "score" | "box"; value: string | number; top: Array<[string, number]>; confidence?: number };

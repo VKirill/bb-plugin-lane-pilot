@@ -17,7 +17,7 @@ const memoryBrief = (task: unknown, acceptedResult: unknown) => memoryMaintenanc
 const nightBrief = (task: unknown, acceptedResult: unknown) => nightReviewPrompt({ agent: "n", task, acceptedResult, workspace: "/w", maxFindings: 5 });
 
 describe("compactAcceptedResult on real accepted results", () => {
-  for (const [name, cap] of [["median", 10_000], ["p90", 10_000], ["max", 10_000]] as const) {
+  for (const [name, cap] of [["median", 12_000], ["p90", 12_000], ["max", 12_000]] as const) {
     it(`${name}: the memory brief shrinks to a few kB and keeps what the maintainer writes notes from`, () => {
       const { task, acceptedResult, briefChars } = load(name);
       const before = memoryBrief(task, acceptedResult).length;

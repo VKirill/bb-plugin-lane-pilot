@@ -29,31 +29,32 @@ function coreWith(catalog: Record<string, string>, provider?: string) {
 }
 
 describe("Jev key from Env Catalog", () => {
-  it("attaches OpenLux's key and the provider id to Jev host calls only, by default, reading the catalog once", async () => {
+  it("attaches TypeSafe's key and the provider id to Jev host calls only, by default, reading the catalog once", async () => {
     const { core, harness, sent, reads } = coreWith({ OPENLUX_API_KEY:"openlux-key", TYPESAFE_API_KEY:"catalog-key" });
     await core.host.call("classifyPlan", { requestedHostId:"h", plan:"p" }, { hostId:"h" });
     await core.host.call("classifyPlan", { requestedHostId:"h", plan:"q" }, { hostId:"h" });
     await core.host.call("docsLineCounts", { requestedHostId:"h", projectCwd:"/p", files:[] }, { hostId:"h" });
-    expect(sent.map((call) => call.input.jevApiKey)).toEqual(["openlux-key", "openlux-key", undefined]);
-    expect(sent.map((call) => call.input.jevProvider)).toEqual(["openlux", "openlux", undefined]);
-    expect(reads).toEqual(["OPENLUX_API_KEY"]);
+    expect(sent.map((call) => call.input.jevApiKey)).toEqual(["catalog-key", "catalog-key", undefined]);
+    expect(sent.map((call) => call.input.jevProvider)).toEqual(["typesafe", "typesafe", undefined]);
+    // The chosen provider's key, then OpenLux's for the one-retry standby; cached between the calls.
+    expect(reads).toEqual(["TYPESAFE_API_KEY", "OPENLUX_API_KEY"]);
     await harness.lifecycle.dispose();
   });
 
-  it("sends TypeSafe's key when the global setting jev.provider says typesafe", async () => {
-    const { core, harness, sent, reads } = coreWith({ OPENLUX_API_KEY:"openlux-key", TYPESAFE_API_KEY:"catalog-key" }, "typesafe");
+  it("sends OpenLux's key when the global setting jev.provider says openlux", async () => {
+    const { core, harness, sent, reads } = coreWith({ OPENLUX_API_KEY:"openlux-key", TYPESAFE_API_KEY:"catalog-key" }, "openlux");
     await core.host.call("classifyPlan", { requestedHostId:"h", plan:"p" }, { hostId:"h" });
-    expect(sent[0]!.input).toMatchObject({ jevApiKey:"catalog-key", jevProvider:"typesafe" });
-    expect(reads).toEqual(["TYPESAFE_API_KEY"]);
+    expect(sent[0]!.input).toMatchObject({ jevApiKey:"openlux-key", jevProvider:"openlux" });
+    expect(reads).toEqual(["OPENLUX_API_KEY", "TYPESAFE_API_KEY"]);
     await harness.lifecycle.dispose();
   });
 
   it("follows a changed setting on the next call", async () => {
     const { core, db, harness, sent } = coreWith({ OPENLUX_API_KEY:"openlux-key", TYPESAFE_API_KEY:"catalog-key" });
     await core.host.call("classifyPlan", { requestedHostId:"h", plan:"p" }, { hostId:"h" });
-    saveProjectSetting(db, GLOBAL_SETTINGS_PROJECT_ID, "jev.provider", "typesafe");
+    saveProjectSetting(db, GLOBAL_SETTINGS_PROJECT_ID, "jev.provider", "openlux");
     await core.host.call("classifyPlan", { requestedHostId:"h", plan:"q" }, { hostId:"h" });
-    expect(sent.map((call) => call.input.jevProvider)).toEqual(["openlux", "typesafe"]);
+    expect(sent.map((call) => call.input.jevProvider)).toEqual(["typesafe", "openlux"]);
     await harness.lifecycle.dispose();
   });
 

@@ -161,6 +161,7 @@ export function EnableLanePilotAction() {
       }).experimental_vkSetDispatchData;
       if (!attach && !threadId) throw new Error(t("nativeComposerUpgrade"));
       // Opus 5.5 with the 1M context when the machine offers it, the standard context otherwise.
+      // A new thread swaps this for the role's model after prepare_native_session answers.
       let selected = false;
       for (const model of ["claude-opus-5-5[1m]", "claude-opus-5-5"]) {
         const selection = await composer.setSelection({ providerId: "claude-code", model, permissionMode: "full" });
@@ -177,6 +178,11 @@ export function EnableLanePilotAction() {
       }
       const result = await rpc.call("prepare_native_session", { projectId, agentId: agent });
       attach!({ token: result.token });
+      // A specialist runs on the model of its role (the coordinator keeps the Opus picked above).
+      if (result.roleModel) {
+        const pick = await composer.setSelection({ providerId: result.roleModel.providerId, model: result.roleModel.model, permissionMode: "full" });
+        if (pick.providerId !== result.roleModel.providerId || pick.model !== result.roleModel.model) throw new Error(t("nativeComposerModelUnavailable"));
+      }
       // New thread only. An existing chat cannot change host: this branch already returned when threadId is set.
       if (result.environment) await composer.setSelection({ environment: result.environment });
       // Claude Lane may still need installing on that machine; start now so the first send does not wait.

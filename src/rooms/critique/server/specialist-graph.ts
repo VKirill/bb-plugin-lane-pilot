@@ -2,6 +2,7 @@ import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { runOnHost } from "@lane-pilot/host-calls";
 import { builtinWorkflow } from "../../workflow";
 import { fenceOutside, spawnTextId } from "../../core/server";
+import { getRun } from "../../storage";
 import type { ServerCore, Services } from "../../core/server";
 
 /**
@@ -31,13 +32,13 @@ export async function specialistRunOfThread(bb: BbPluginApi, threadId: string): 
   return typeof runId === "string" && runId ? runId : null;
 }
 
-export async function startSpecialistRun(ctx: ServerCore, services: Services, input: { projectId: string; pmThreadId: string; runId: string; role: string; task: string; title: string }): Promise<{ workflowRunId: string; threadId: string }> {
+export async function startSpecialistRun(ctx: ServerCore, services: Services, input: { projectId: string; pmThreadId: string; runId: string; role: string; task: string; title: string; extra?: Record<string, unknown> }): Promise<{ workflowRunId: string; threadId: string }> {
   const workflow = builtinWorkflow(SPECIALIST_GRAPH);
   if (!workflow) throw new Error(`built-in workflow ${SPECIALIST_GRAPH} is not loaded`);
   const engine = services.workflowEngine;
   const key = `specialist:${input.runId}:${input.role}:${spawnTextId(input.task)}`;
   const begin = (idem: string) => engine.start({
-    workflow, inputs: { role: input.role, task: input.task, title: input.title }, key: idem,
+    workflow, inputs: { role: input.role, task: input.task, title: input.title, ...(input.extra ?? {}) }, key: idem,
     runtime: { ctx, services, pmThreadId: input.pmThreadId, projectId: input.projectId, runId: input.runId },
     link: { projectId: input.projectId, runId: input.runId },
   });
@@ -77,7 +78,16 @@ export async function waitSpecialistRun(ctx: ServerCore, services: Services, inp
         try {
           const { validateDeliverable } = await import("../../validators");
           const hostId = typeof inputs.hostId === "string" ? inputs.hostId : "";
-          const verdict = await validateDeliverable(validator, deliverable, { host: { run: (id, cwd, command, timeoutSec) => runOnHost(ctx.host, { hostId: id, cwd, command, timeoutSec }) as never }, hostId, brief: inputs.brief as Record<string, unknown> | undefined });
+          const brief = inputs.brief as Record<string, unknown> | undefined;
+          const settings = await ctx.effectiveProjectSettings(owner.project_id).then((r) => r.values as Record<string, unknown>).catch(() => ({}));
+          const run = getRun(ctx.db, input.runId);
+          const verdict = await validateDeliverable(validator, deliverable, {
+            host: { run: (id, cwd, command, timeoutSec) => runOnHost(ctx.host, { hostId: id, cwd, command, timeoutSec }) as never },
+            hostId,
+            brief,
+            jevCtx: { projectId: owner.project_id, runId: input.runId, settings },
+            review: async (req) => pageReviewByAgent(ctx, services, { pmThreadId: run?.pm_thread_id ?? threadId, projectId: owner.project_id!, parentRunId: input.runId, design: Boolean(brief?.design), request: req }),
+          });
           if (!verdict.ok) {
             const remark = `Revision needed: ${validator} validator rejected ${deliverable} — ${verdict.reason}`;
             await ctx.bb.sdk.threads.send({ threadId, mode: "queue-if-active", input: [{ type: "text", text: remark, mentions: [] }] } as never).catch(() => undefined);
@@ -98,4 +108,55 @@ export async function waitSpecialistRun(ctx: ServerCore, services: Services, inp
     if (!summary || Date.now() >= deadline || ctx.isDisposed()) return { ...base, state: "running", output: fenceOutside("specialist", summary ? `the run is ${summary.status}` : "the run is not known to the engine") };
     await sleep(Math.min(POLL_MS, Math.max(1, deadline - Date.now())));
   }
+}
+
+/**
+ * Layer 3 of the page validator: a vision-capable helper reviews what the DOM probe and Jev could not settle. A
+ * `specialist` run (role `design-lead` for design tasks, `browser-qa` otherwise) gets the brief, the screenshot paths on
+ * the employee's machine and the layers' findings, and answers with one typed line `VERDICT: pass|rework|fail` plus
+ * per-issue `ISSUE <selector>: <what>` lines. The answer window is bounded; a timeout yields no verdict and the page
+ * keeps the layers' accept.
+ */
+export const PAGE_REVIEW_TIMEOUT_MS = 240_000;
+export async function pageReviewByAgent(
+  ctx: ServerCore,
+  services: Services,
+  input: { pmThreadId: string; projectId: string; parentRunId: string; design: boolean; request: { url: string; brief: string; shots: string[]; dom: unknown; jev: { verdict: string; worst: number; worstShot: string | null } | null } },
+): Promise<{ ok: boolean; reason: string; details?: Record<string, unknown> } | null> {
+  const role = input.design ? "design-lead" : "browser-qa";
+  const task = [
+    `Visual review of a page deliverable. URL: ${input.request.url}`,
+    `Brief: ${input.request.brief || "(none given)"}`,
+    `Screenshots on your machine: ${input.request.shots.join(", ")} — open them and look.`,
+    `DOM probe findings: ${JSON.stringify(input.request.dom) ?? "not run"}`,
+    `Jev cut-off check: ${input.request.jev ? `${input.request.jev.verdict} (worst p=${input.request.jev.worst}${input.request.jev.worstShot ? ` on ${input.request.jev.worstShot}` : ""})` : "not run"}`,
+    `Decide whether the page delivers what the brief asks (right content present, nothing hidden or missing, layout usable). Judge semantics: Jev and the DOM probe only checked geometry.`,
+    `Answer exactly: first line "VERDICT: pass" or "VERDICT: rework"; then one line per issue "ISSUE <css-selector-or-area>: <what is wrong>".`,
+  ].join("\n");
+  try {
+    const started = services.workflowEngine.start({
+      workflow: builtinWorkflow(SPECIALIST_GRAPH)!,
+      inputs: { role, task, title: `page review ${input.request.url.slice(0, 60)}` },
+      key: `page-review:${input.parentRunId}:${Date.now()}`,
+      runtime: { ctx, services, pmThreadId: input.pmThreadId, projectId: input.projectId, runId: input.parentRunId },
+      link: { projectId: input.projectId, runId: input.parentRunId },
+    });
+    started.done.catch(() => undefined);
+    const deadline = Date.now() + PAGE_REVIEW_TIMEOUT_MS;
+    while (Date.now() < deadline) {
+      const summary = services.workflowEngine.get(started.runId);
+      if (summary?.status === "succeeded") {
+        const report = String(summary.output?.report ?? "");
+        const verdict = /^VERDICT:\s*(pass|rework|fail)/im.exec(report)?.[1]?.toLowerCase();
+        const issues = [...report.matchAll(/^ISSUE\s+([^:]+):\s*(.+)$/gim)].map((m) => `${m[1]!.trim()}: ${m[2]!.trim()}`.slice(0, 200));
+        if (!verdict) return { ok: true, reason: "review ran but gave no verdict line", details: { report: report.slice(0, 500) } };
+        return verdict === "pass"
+          ? { ok: true, reason: `visual review pass${issues.length ? ` (${issues.length} notes)` : ""}`, details: { issues } }
+          : { ok: false, reason: `visual review ${verdict}: ${issues.slice(0, 3).join("; ") || "see report"}`, details: { issues } };
+      }
+      if (summary && ENDED_BADLY.includes(summary.status)) return null;
+      await sleep(POLL_MS);
+    }
+    return null;
+  } catch { return null; }
 }

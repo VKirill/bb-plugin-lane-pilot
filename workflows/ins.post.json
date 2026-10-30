@@ -33,7 +33,12 @@
   "nodes": [
     {
       "id": "collect",
-      "produces": [{"kind": "report", "version": 1}],
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
       "type": "agent",
       "role": "errand",
       "title": {
@@ -67,7 +72,12 @@
     },
     {
       "id": "lenses",
-      "produces": [{"kind": "report", "version": 1}],
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
       "type": "agent",
       "role": "analyst",
       "profile": {
@@ -88,8 +98,19 @@
     },
     {
       "id": "psychology",
-      "consumes": [{"kind": "report", "version": 1, "from": "lenses"}],
-      "produces": [{"kind": "report", "version": 1}],
+      "consumes": [
+        {
+          "kind": "report",
+          "version": 1,
+          "from": "lenses"
+        }
+      ],
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
       "type": "agent",
       "role": "analyst",
       "profile": {
@@ -108,8 +129,19 @@
     },
     {
       "id": "critic",
-      "consumes": [{"kind": "report", "version": 1, "from": "psychology"}],
-      "produces": [{"kind": "report", "version": 1}],
+      "consumes": [
+        {
+          "kind": "report",
+          "version": 1,
+          "from": "psychology"
+        }
+      ],
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
       "type": "agent",
       "role": "auditor",
       "prompt": "Stage 5: review.yaml - verdict per item against the original comments; reject unsupported quotes, inflated shares, 'unique' claims without a comparison corpus.",
@@ -147,7 +179,12 @@
     },
     {
       "id": "digest",
-      "produces": [{"kind": "report", "version": 1}],
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
       "type": "agent",
       "role": "analyst",
       "prompt": "Stage 6: summary.md for the author - supported pains, angles and quotes with ids (up to 5/5/10; never pad to a quota).",
@@ -188,6 +225,22 @@
       "action": "emit",
       "map": {
         "status": "blocked"
+      }
+    },
+    {
+      "id": "goal_check",
+      "type": "action",
+      "action": "deliverable.validate",
+      "title": {
+        "en": "Check the goal was met",
+        "ru": "Проверить, что цель достигнута"
+      },
+      "rule": "validateDeliverable on the artifact the run produced: the deliverable/validator/brief inputs name what to check; a fail means the goal is not met",
+      "out": {
+        "ok": "bool",
+        "verdict": "pass|rework|fail",
+        "reason": "string",
+        "details": "object"
       }
     }
   ],
@@ -254,9 +307,19 @@
     },
     {
       "from": "digest",
-      "to": "ok",
+      "to": "goal_check",
       "pass": "artifact"
+    },
+    {
+      "from": "goal_check",
+      "to": "ok",
+      "when": "goal_check.ok != false"
+    },
+    {
+      "from": "goal_check",
+      "to": "blocked"
     }
   ],
-  "status": "published"
+  "status": "published",
+  "goal_check": "validate"
 }

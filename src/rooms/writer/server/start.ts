@@ -855,7 +855,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         // A fault of Lane Pilot or the machine is not redone here: another writer meets the same fault. The task is
         // parked and restarts once a fix ships or the machine recovers.
         // A reason the rules have no confident match for goes to Jev (J-4, shadow by default: recorded, the rules' class used).
-        const failedClass = await judgedFailureClass({ jev, settings:async () => runSettings, projectId:input.projectId, runId:input.runId },
+        const failedClass = await judgedFailureClass({ jev, settings:async () => runSettings, projectId:input.projectId, runId:input.runId, db },
           String(last.status), typeof last.reason === "string" ? last.reason : null, input.taskId);
         judged = { status: String(last.status), reason: typeof last.reason === "string" ? last.reason : null, klass: failedClass };
         // A check the host killed for time is not the task's red code: one retry, then it stops on its own budget.

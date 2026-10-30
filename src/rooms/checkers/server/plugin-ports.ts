@@ -3,6 +3,7 @@ import { loadCandidates, findSolutionCommit, type Candidate, type HostPort } fro
 import type { ServerCore } from "../../core/server";
 import { isSandboxProjectName } from "../../stability/server";
 import { createCheckers, type CheckersApi } from "../api";
+import { guardShellPort } from "../workspace";
 import { loadHistory } from "../history";
 
 /** The checker scorecard inside the plugin: candidates from the hub's history, checks on the machines through `runCommand`, no critics (see `model`). */
@@ -27,8 +28,12 @@ export function createPluginCheckers(ctx: ServerCore): CheckersApi {
       const names = await projectNames();
       const all: Candidate[] = loadCandidates(db as never, { projectNames: names, isSandboxName: isSandboxProjectName }).candidates;
       const byTask = new Map(all.map((candidate) => [candidate.taskId, candidate]));
+      const guarded: HostPort = {
+        run: (hostId, cwd, command, timeoutSec = 120) =>
+          guardShellPort({ run: (_dir, cmd, t) => hostPort.run(hostId, cwd, cmd, t) }, () => ({})).run(cwd, command, timeoutSec),
+      };
       return await loadHistory({
-        candidates: () => all, host: hostPort, log: ctx.log,
+        candidates: () => all, host: guarded, log: ctx.log,
         solutionCommit: (candidate) => findSolutionCommit(hostPort, byTask.get(candidate.taskId)!),
         scratch: () => "/tmp/lp-checkers/clones",
       }, options);

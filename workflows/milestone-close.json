@@ -106,7 +106,12 @@
     },
     {
       "id": "retro",
-      "produces": [{"kind": "report", "version": 1}],
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
       "type": "agent",
       "role": "memory",
       "title": {
@@ -213,6 +218,16 @@
     }
   ],
   "edges": [
+    {
+      "from": "approve_knowledge",
+      "to": "archive",
+      "when": "approve_knowledge.answer_kind == 'timeout'"
+    },
+    {
+      "from": "ask_finish",
+      "to": "not_ready",
+      "when": "ask_finish.answer_kind == 'timeout'"
+    },
     {
       "from": "status",
       "to": "ask_finish",

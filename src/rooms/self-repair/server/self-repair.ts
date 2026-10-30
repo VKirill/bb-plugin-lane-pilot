@@ -128,6 +128,9 @@ type SelfRepairState = {
   cursor: number; lastTickAt: number | null; signatures: Record<string, SignatureRecord>; spawned: Array<{ at: number; threadId: string; signature: string }>;
   /** A signature Jev filed under a known group (J-10): the next sighting goes there without asking again. */
   aliases: Record<string, string>;
+  /** A merge Jev proposed (active: applied, shadow: only recorded) whose receipt waits for a label: the target group's
+   * verdict says whether the shared cause was real (agree), and the signature's own repair says it was not (disagree). */
+  mergeSuggestions: Record<string, { group: string; receiptId: number; at: number }>;
 };
 
 export const CONFIG_KEY = "self-repair:config";
@@ -462,7 +465,7 @@ export function createSelfRepair(ctx: ServerCore, engineOf?: () => WorkflowEngin
     const raw = await bb.storage.kv.get(STATE_KEY).catch(() => null);
     const row = raw && typeof raw === "object" ? raw as Partial<SelfRepairState> : {};
     const signatures = Object.fromEntries(Object.entries(row.signatures ?? {}).map(([key, record]) => [key, { ...record, samples: (record.samples ?? []).map((sample) => ({ ...sample, reason: String(sample.reason ?? "").slice(0, SAMPLE_REASON_CHARS) })) }]));
-    return { cursor: row.cursor ?? Date.now() - 3_600_000, lastTickAt: row.lastTickAt ?? null, signatures, spawned: row.spawned ?? [], aliases: row.aliases ?? {} };
+    return { cursor: row.cursor ?? Date.now() - 3_600_000, lastTickAt: row.lastTickAt ?? null, signatures, spawned: row.spawned ?? [], aliases: row.aliases ?? {}, mergeSuggestions: row.mergeSuggestions ?? {} };
   }
 
   /** Drops the kinds seen longest ago until the state fits STATE_BUDGET_BYTES: first those never repaired, then the rest. */
@@ -768,13 +771,39 @@ export function createSelfRepair(ctx: ServerCore, engineOf?: () => WorkflowEngin
     if (opened) ctx.log(`self-repair: asked the owner about @thread:${threadId} (needs-owner)`);
   }
 
+  /**
+   * The repair verdict is the stronger judge the Jev receipts waited for: a `guard:` incident confirms or denies the output
+   * guard's block (fixed/already-fixed → agree, not-lane-pilot → a false positive), a merge suggestion's target says the
+   * shared cause was real (agree), and a signature that needed its own repair proves its merge suggestion wrong (disagree).
+   */
+  async function labelJevReceipts(signature: string, verdict: Verdict, current: SelfRepairState): Promise<void> {
+    const instance = jev();
+    if (!instance) return;
+    const positive = verdict === "fixed" || verdict === "already-fixed";
+    const own = current.mergeSuggestions[signature];
+    if (own) { instance.outcome(own.receiptId, "disagree"); delete current.mergeSuggestions[signature]; }
+    for (const [sig, s] of Object.entries(current.mergeSuggestions)) {
+      if (s.group !== signature) continue;
+      if (positive) instance.outcome(s.receiptId, "agree");
+      delete current.mergeSuggestions[sig];
+    }
+    if (!signature.startsWith("guard:")) return;
+    const blocks = await ctx.bb.storage.kv.get(GUARD_BLOCKED_KEY).catch(() => null);
+    for (const row of (Array.isArray(blocks) ? blocks : []) as GuardBlock[]) {
+      if (row.receiptId == null || reasonSignature("guard", `${row.kind} output withheld by the output guard: ${row.reason}`) !== signature) continue;
+      const label = positive ? "agree" : verdict === "not-lane-pilot" ? "disagree" : null;
+      if (label) instance.outcome(row.receiptId, label);
+    }
+  }
+
   /** Reads the repair thread's closing line into the record's verdict; a needs-owner report becomes a question on the owner's list. */
-  async function readVerdict(signature: string, record: SignatureRecord, dryRun: boolean): Promise<void> {
+  async function readVerdict(signature: string, record: SignatureRecord, dryRun: boolean, current?: SelfRepairState): Promise<void> {
     const threadId = record.threadId!;
     const report = await Promise.resolve().then(() => bb.sdk.threads.output({ threadId }))
       .then((result) => { const value = (result as { output?: unknown; text?: unknown }).output ?? (result as { text?: unknown }).text; return typeof value === "string" ? value.slice(-4000) : ""; })
       .catch(() => "");
     record.verdict = parseVerdict(report);
+    if (record.verdict && !dryRun && current) await labelJevReceipts(signature, record.verdict, current).catch(() => undefined);
     if (record.verdict === "needs-owner" && !dryRun) {
       // A graph step stores the verdict first: a step run again after a reload must not ask the owner twice.
       if (record.runId) await patchRecord(signature, (stored) => { stored.verdict = record.verdict; });
@@ -850,8 +879,9 @@ export function createSelfRepair(ctx: ServerCore, engineOf?: () => WorkflowEngin
     let filed = 0;
     jobs.forEach((job, index) => {
       const verdict = verdicts[index];
-      const target = verdict?.by === "jev" ? verdict.decision.signature : null;
-      if (!target || !current.signatures[target]) return;
+      const target = verdict?.by === "jev" ? verdict.decision.signature : verdict?.by === "fallback" ? (verdict.shadow?.decision?.signature ?? null) : null;
+      if (target && verdict?.receiptId != null) current.mergeSuggestions[job.signature] = { group: target, receiptId: verdict.receiptId, at: Date.now() };
+      if (verdict?.by !== "jev" || !target || !current.signatures[target]) return;
       current.aliases[job.signature] = target;
       for (const row of incidents) if (row.signature === job.signature) row.signature = target;
       ctx.log(`self-repair: «${job.signature.split(":").slice(2).join(":").slice(0, 80)}» filed under the known problem «${target.split(":").slice(2).join(":").slice(0, 80)}» (Jev)`);
@@ -859,6 +889,8 @@ export function createSelfRepair(ctx: ServerCore, engineOf?: () => WorkflowEngin
     });
     const entries = Object.entries(current.aliases);
     if (entries.length > MAX_ALIASES) current.aliases = Object.fromEntries(entries.slice(-MAX_ALIASES));
+    const SUGGESTION_MS = 60 * 86_400_000;
+    for (const [sig, s] of Object.entries(current.mergeSuggestions)) if (Date.now() - s.at > SUGGESTION_MS) delete current.mergeSuggestions[sig];
     return filed;
   }
 
@@ -896,7 +928,7 @@ export function createSelfRepair(ctx: ServerCore, engineOf?: () => WorkflowEngin
       signal?.throwIfAborted();
       // A repair whose graph run is going reads its own verdict (the `verdict` step of the run).
       if (!record.threadId || record.verdict || runIsLive(record.runId) || await threadBusy(record.threadId)) continue;
-      await readVerdict(signature, record, options.dryRun === true);
+      await readVerdict(signature, record, options.dryRun === true, current);
     }
     if (!options.dryRun) {
       for (const [signature, record] of Object.entries(current.signatures)) {
@@ -1157,7 +1189,12 @@ export function createSelfRepair(ctx: ServerCore, engineOf?: () => WorkflowEngin
       const record = await recordOf(signature);
       if (!record.threadId || record.runId !== c.runId) return { output: { verdict: "none", outcome: "the repair has no thread" } };
       const work: SignatureRecord = { ...record };
-      if (!work.verdict) await readVerdict(signature, work, false);
+      if (!work.verdict) {
+        // The verdict also labels the merge suggestions pointing at this signature: the labels ride the same state write.
+        const current = await state();
+        await readVerdict(signature, work, false, current);
+        await writeState(current);
+      }
       // A branch that cannot be merged yet (a busy base, a conflict) stays: the watcher's next passes retry it, then release it.
       if (work.worktree && !(await threadBusy(record.threadId))) await settleRecord(signature, work, Date.now());
       await patchRecord(signature, (stored) => { stored.verdict = work.verdict; stored.worktree = work.worktree; stored.outcome = work.outcome; stored.mergedCommit = work.mergedCommit; });

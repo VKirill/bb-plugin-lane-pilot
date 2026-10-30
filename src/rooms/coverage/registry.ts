@@ -46,6 +46,7 @@ export const COVERAGE: readonly CoverageEntry[] = [
   { kind: "stage", ids: ["night-review", "night-fix", "workspace-status"], tests: ["tests/stages/night.test.ts", "tests/stages/night-fix.test.ts", ...STAGE_SUITE], reason: "the night stages run after the day's accepted tasks and are off in the sandbox" },
   { kind: "stage", ids: ["opencode-telemetry"], tests: ["tests/stages/opencode-telemetry.test.ts"], reason: "runs only for an OpenCode writer; the drill's writers are claude-code and codex" },
   { kind: "stage", ids: ["gate-triage"], tests: ["tests/stages/gate-triage.test.ts"], reason: "a helper triages a gate failure; no drill task fails a gate on purpose" },
+  { kind: "stage", ids: ["critic-tiebreak"], tests: ["tests/critic-tiebreak.test.ts"], reason: "runs only when two critics disagree on the same pass; no drill scenario provokes that" },
 
   // ── attempt transitions (TRANSITION_TABLE) ───────────────────────────────────────────────────────────────────────────────────────
   { kind: "transition", ids: ["∅+form_task", "queued+spawn_called", "spawn_requested+spawn_ok", "running+checks_passed"], live: ["parallel3"], via: "the happy path of every drill task", tests: ["tests/state-machine-enforce.test.ts", "tests/pipeline.test.ts"] },
@@ -64,6 +65,7 @@ export const COVERAGE: readonly CoverageEntry[] = [
   { kind: "failure_class", ids: ["provider"], live: ["provider_limit"], via: "a writer model that does not exist ends the attempt as writer_model_unavailable, a provider failure; the next writer takes the task (hub: 9 of 9 provider_limit tasks)", tests: ["tests/failure-class.test.ts", "tests/writer-fallbacks.test.ts"] },
   { kind: "failure_class", ids: ["limit"], tests: ["tests/failure-class.test.ts", "tests/writer-fallbacks.test.ts"], reason: "a provider's plan or usage-window notice; provider_limit uses a model that does not exist, which is the provider class, and the drill cannot make a real provider run out of quota" },
   { kind: "failure_class", ids: ["task", "judgment", "contract"], tests: ["tests/failure-class.test.ts", "tests/jev/failure-class.test.ts"], reason: "classes of a failing task: the drill's tasks do not fail their own checks, the PM never needs a human answer, and a bad contract is refused before an attempt exists" },
+  { kind: "failure_class", ids: ["verification_timeout"], tests: ["tests/failure-class.test.ts", "tests/check-timing.test.ts"], reason: "a timed-out check has its own retry budget and ends in this class; the drill's tasks carry no check to time out" },
   { kind: "failure_class", ids: ["dirty_base", "harness", "infra", "budget", "reassign"], tests: ["tests/failure-class.test.ts", "tests/reassign-task.test.ts"], reason: "each needs a fault the drill must not cause on the owner's machines (a dirty base checkout, a full disk, an internal error, an exhausted run budget, a PM reassignment)" },
 
   // ── gates (GATE_CATEGORIES) ──────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -78,6 +80,8 @@ export const COVERAGE: readonly CoverageEntry[] = [
   { kind: "room", ids: ["night-graphs"], reason: "the night jobs (rules scan, wall hunters, harness editor, critic edit) run as graphs on their own night crons, which are off in the sandbox", tests: ["tests/night-graphs/rules-scan.test.ts", "tests/night-graphs/wall-hunt.test.ts", "tests/night-graphs/harness.test.ts", "tests/night-graphs/critic-edit.test.ts"] },
   { kind: "room", ids: ["stability"], live: ["reload"], via: "a plugin reload while a writer works: the task still ends accepted", tests: ["tests/reconcile.test.ts"] },
   { kind: "room", ids: ["settings"], live: ["provider_limit"], via: "the scenario sets writer.model through the settings RPC and puts it back", tests: ["tests/owned-settings.test.ts"] },
+  { kind: "room", ids: ["jev"], tests: ["tests/jev/calibration.test.ts", "tests/jev/failure-class.test.ts"], reason: "the judgment evaluator's files sit under tests/jev; no drill drives it" },
+  { kind: "room", ids: ["validators"], tests: ["tests/validators.test.ts"], reason: "shared validators are exercised through the rooms that call them; no drill step calls them alone" },
   { kind: "room", ids: ["project-life"], live: ["parallel3"], via: "the project-life stage runs after each accepted drill task", tests: ["tests/stages/project-life.test.ts"] },
   { kind: "room", ids: ["acceptance"], tests: ["tests/plan-fact.test.ts", "tests/acceptance-card-ui.test.tsx"], reason: "the acceptance card is a screen read; no drill opens a screen" },
   { kind: "room", ids: ["anamnesis", "learning"], tests: ["tests/anamnesis/card.test.ts", "tests/learning/digest.test.ts"], reason: "they read the owner's own messages and run on their own schedules; the sandbox has none" },

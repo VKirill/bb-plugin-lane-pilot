@@ -10,6 +10,7 @@ import { DEFAULT_BENCH_WRITER } from "../runner";
 import { setBenchProject } from "../store";
 import type { BenchProjectRef, HostPort, PipelinePort } from "../ports";
 import { createBench, type BenchApi } from "../service";
+import { pageReviewByAgent } from "../../critique/server";
 import { judgeTrace } from "../jevals";
 import { jev } from "@lane-pilot/jev";
 
@@ -124,6 +125,15 @@ export function createPluginBench(ctx: ServerCore, services: Services): BenchApi
       const settings = input.task.projectId ? await ctx.effectiveProjectSettings(input.task.projectId).then((r) => r.values as Record<string, unknown>).catch(() => ({})) : {};
       return await judgeTrace({ jev, settings, projectId: input.task.projectId, runId: null }, input);
     },
+    jevCtx: async (task) => ({
+      projectId: task.projectId ?? null,
+      runId: null,
+      settings: task.projectId ? await ctx.effectiveProjectSettings(task.projectId).then((r) => r.values as Record<string, unknown>).catch(() => ({} as Record<string, unknown>)) : {},
+    }),
+    pageReview: async (task, req) => pageReviewByAgent(ctx, services, {
+      pmThreadId: "", projectId: task.projectId ?? "", parentRunId: "",
+      design: Boolean((task as { brief?: { design?: unknown } }).brief?.design), request: req,
+    }),
   });
 }
 

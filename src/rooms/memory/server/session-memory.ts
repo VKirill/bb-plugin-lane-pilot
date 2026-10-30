@@ -1,7 +1,7 @@
 import { resolve } from "node:path";
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import { getRuleProposal, upsertLessonProposal } from "@lane-pilot/run-insights";
-import { memoryVisibilitySql, parseMemoryCandidates, searchMemoryRecords, storeMemoryRecords } from "@lane-pilot/memory-core";
+import { memoryVisibilitySql, parseMemoryCandidates, searchMemoryRecords, storeMemoryRecordsKeepingOverflow } from "@lane-pilot/memory-core";
 import type { rpcContract } from "../../contracts";
 import { adoptRuleProposal, memorySettingsFor } from "../../self-repair/server";
 import type { ServerCore } from "../../core/server";
@@ -35,7 +35,7 @@ export function sessionMemoryRpc(ctx: ServerCore, services: Services) {
       try { entries = parseMemoryCandidates([{ kind, content, concepts }], { ...settings, coreBudget: Number.MAX_SAFE_INTEGER, noteBudget: Number.MAX_SAFE_INTEGER, indexBudget: Number.MAX_SAFE_INTEGER }); }
       catch (cause) { return { stored: false, id: null, reason: cause instanceof Error ? cause.message : String(cause) }; }
       try {
-        const result = storeMemoryRecords(db, { projectId, personalBot: settings.personalBot, audience: "subagent",
+        const result = storeMemoryRecordsKeepingOverflow(db, { projectId, personalBot: settings.personalBot, audience: "subagent",
           sourceSha256: sha256Hex(`session:${source ?? ""}`), entries, scope: chain ?? [],
           // One CLI session is one voice: its note reaches writers once a second source states it or a day has passed.
           trust: "observed", origin: "session",
@@ -62,7 +62,14 @@ export function sessionMemoryRpc(ctx: ServerCore, services: Services) {
     },
     // A lesson is a rule proposal: a repeat of a live rule counts towards it, a new one goes on trial within the cap.
     session_lesson: async ({ projectId, rule, evidence, scope, audience, always }) => {
-      const result = upsertLessonProposal(db, projectId, { rule, evidence, scope, audience, always });
+      // audience may be `specialist:<id>` (wider than RuleAudience — the column is TEXT); the employee's slice reads it back.
+      const result = upsertLessonProposal(db, projectId, { rule, evidence, scope, audience: audience as never, always });
+      // audience `specialist:<id>` also appends a dated line to `lp.role.lines` — the section the specialist's brief renders.
+      const employee = /^specialist:([\w-]{1,60})$/.exec(audience ?? "")?.[1];
+      if (employee) {
+        const { recordRoleLine } = await import("../../critique/server/employee-lessons");
+        await recordRoleLine(ctx.bb.storage.kv, projectId, employee, rule).catch(() => undefined);
+      }
       const adopted = result.created ? Boolean(adoptRuleProposal(db, projectId, result.id)) : false;
       const proposal = getRuleProposal(db, projectId, result.id);
       return { proposalId: result.id, repeatOf: result.repeatOf, state: proposal?.state ?? "proposed", adopted };

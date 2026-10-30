@@ -5,6 +5,8 @@ import { validateTaskV2 } from "../../tasks/task-v2";
 import { agentPrompt, outputContract, parseAgentOutput, resolveTaskQualityMode } from "@lane-pilot/workflow-engine";
 import type { NodeExecutor, PollResult, StepContext, WorkflowEngine } from "@lane-pilot/workflow-engine";
 import type { RunRow } from "../../storage";
+import { getJudgment, jev } from "@lane-pilot/jev";
+import { citationCheckJudgment } from "@lane-pilot/jev/judgments/citation-check";
 import { postOwnerItem } from "../../owner-waiting";
 import { outputFields } from "@lane-pilot/workflow-engine";
 import { BUILTIN_PRESETS } from "@lane-pilot/models";
@@ -13,7 +15,8 @@ import { createTaskLinter } from "../../tasks/server";
 import { agentRequest, createWorkflowAgents, stepPacket, withResolvedModel } from "./workflow-agent";
 import type { WorkflowAgents } from "./workflow-agent";
 import { registerRouterExecutor } from "./workflow-router-model";
-import { getJudgment, jev, type Judgment } from "@lane-pilot/jev";
+import type { Judgment } from "@lane-pilot/jev";
+import { registerQualityLoopClassifyExecutor } from "./workflow-classify";
 import { lpTaskPipelineExecutor, taskUsage } from "../../writer/server";
 import type { DispatchRuntime } from "../../writer/server";
 import { keyedSpawnSupported, projectFolder } from "../../core/server";
@@ -23,6 +26,7 @@ import type { ServerCore } from "../../core/server";
 import type { Services } from "../../core/server";
 import { ownerLocale, workflowHumanDetail } from "../../relay/server";
 import { runOnHost } from "@lane-pilot/host-calls";
+import { pageReviewByAgent } from "../../critique/server";
 
 /**
  * The executors that run a chain on the host: the generic agent step, the owner's question, the code task of a chain, the actions
@@ -262,6 +266,71 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
       return { output: { decision: judgment.describe(verdict.decision), handoff: handoff(verdict.decision), value: verdict.decision, ...flat(verdict.decision), escalated: false, fallback: true, status: verdict.status } };
     },
   } as NodeExecutor<ChainRuntime>);
+  // `citations.jev`: for each {claim, source, excerpt} triple Jev decides whether the source supports the claim
+  // (research.citation, shadow by default — verdicts go to receipts and to `citation_check` in the output).
+  engine.register<ChainRuntime>("citations.jev", { reentrant: true, run: async (c) => {
+    const params = rec(rec(c.node).params);
+    const items = list((c.input.with as Row | undefined)?.[str(params.items ?? "citations")] ?? c.inputs[str(params.items ?? "citations")]);
+    const rt = runtimeOf(c, c.runId);
+    const judge = jev();
+    if (!judge || !items.length) return { output: { checked: 0, kept: items.length, verdicts: [] } };
+    const inputs = items.map((item) => {
+      const row = rec(item);
+      return { claim: str(row.claim), quote: str(row.quote), sourceTitle: str(row.title ?? row.source_title), sourceUrl: str(row.url ?? row.source_url), excerpt: str(row.excerpt ?? row.text), question: str(row.question) };
+    });
+    const settings = rt?.projectId ? await ctx.effectiveProjectSettings(rt.projectId).then((r) => r.values as Record<string, unknown>).catch(() => ({})) : {};
+    const verdicts = await judge.judgeMany(citationCheckJudgment, inputs, { projectId: rt?.projectId ?? null, runId: rt?.runId ?? null, settings });
+    const out = verdicts.map((v, i) => {
+      const decision = v.by === "jev" ? v.decision : v.by === "fallback" && v.shadow?.decision ? v.shadow.decision : citationCheckJudgment.fallback(inputs[i]!);
+      return { index: i, verdict: decision.verdict, keep: decision.keep, by: v.by === "jev" ? "jev" : "fallback" };
+    });
+    return { output: { checked: verdicts.length, kept: out.filter((v) => v.keep).length, verdicts: out } };
+  } });
+
+  // `deliverable.validate` — the three-layer acceptance of a non-code artifact (see docs/workflow-executors.md):
+  // in:  { validator: "page"|"design"|"text"|"3d"|"video"|"invoice"|"composite"|"artifact", target, brief?, hostId? }
+  // out: { verdict: "pass"|"rework"|"fail", reason, issues? } — the step's own rules turn rework into a revision.
+  engine.register<ChainRuntime>("deliverable.validate", { reentrant: true, run: async (c) => {
+    const params = rec(rec(c.node).params);
+    const w = (c.input.with ?? {}) as Row;
+    const pick = (key: string) => params[key] ?? w[key] ?? c.inputs[key];
+    const validator = str(pick("validator") ?? "artifact"), target = str(pick("target") ?? pick("deliverable") ?? pick("path"));
+    const rt = runtimeOf(c, c.runId);
+    if (!target) throw new Error("deliverable.validate: no target");
+    const hostId = str(pick("hostId") ?? "");
+    const settings = rt?.projectId ? await ctx.effectiveProjectSettings(rt.projectId).then((r) => r.values as Record<string, unknown>).catch(() => ({})) : {};
+    const { validateDeliverable } = await import("../../validators");
+    const verdict = await validateDeliverable(validator, target, {
+      host: { run: (id, cwd, command, timeoutSec) => runOnHost(host, { hostId: id, cwd, command, timeoutSec }) as never },
+      hostId,
+      brief: rec(pick("brief")),
+      jevCtx: { projectId: rt?.projectId ?? null, runId: rt?.runId ?? c.runId ?? null, settings },
+      review: rt?.projectId ? async (req) => pageReviewByAgent(ctx, services, {
+        pmThreadId: rt.pmThreadId ?? "", projectId: rt.projectId!, parentRunId: rt.runId ?? c.runId ?? "",
+        design: validator === "design" || Boolean(rec(pick("brief")).design), request: req,
+      }) : undefined,
+    });
+    const out = verdict.ok ? "pass" : "rework";
+    return { output: { verdict: out, reason: verdict.reason, ...(verdict.details ? { issues: verdict.details } : {}) } };
+  } });
+
+  // `skills.jev`: Jev walks the catalog tree for this step (skills.tree_pick, hierarchical) and returns the picked
+  // skill names — a graph passes {task} instead of listing skills in the prompt.
+  engine.register<ChainRuntime>("skills.jev", { reentrant: true, run: async (c) => {
+    const params = rec(rec(c.node).params);
+    const task = str(params.task ?? (c.input.with as Row | undefined)?.task ?? c.inputs.task);
+    const rt = runtimeOf(c, c.runId);
+    const judge = jev();
+    if (!judge) return { output: { skills: [], picked: [], by: "off" } };
+    const { skillTreeCached, readSkillTreeText, pickSkillTree } = await import("../../writer/server/skill-tree");
+    const tree = await skillTreeCached(readSkillTreeText);
+    if (!tree) return { output: { skills: [], picked: [], by: "off" } };
+    const settings = rt?.projectId ? await ctx.effectiveProjectSettings(rt.projectId).then((r) => r.values as Record<string, unknown>).catch(() => ({})) : {};
+    const got = await pickSkillTree(judge, tree, { title: task, prompt: "" }, { projectId: rt?.projectId ?? null, runId: rt?.runId ?? null, settings });
+    return { output: { skills: got.skills, picked: got.picked, by: got.by } };
+  } });
+  // The failure classification step of `quality-loop`.
+  registerQualityLoopClassifyExecutor(engine, ctx, agents);
 
   // ---------------------------------------------------------------- agent
   engine.register<ChainRuntime>("agent", {
@@ -419,7 +488,10 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
       const reply = await services.dispatchWriter({ threadId: rt.pmThreadId, projectId: rt.projectId, task: valid.task, plan: valid.task.objective, birth: "workflow", criticCodeDefault: shortPathCriticDefault(c.workflow.id, picked.mode) });
       if (reply.state === "rejected" || reply.ok === false) return { output: failedTask("blocked", String(reply.reason ?? reply.hint ?? "the dispatch was rejected")) };
       const taskId = str(reply.taskId) || valid.task.id;
-      return { wait: { kind: "attempt", detail: { runId: str(reply.runId) || rt.runId, taskId, files: valid.task.owns_paths } }, ...(planned ? { usage: planned } : {}) };
+      // chains-end: an attempt whose row is lost (task deleted, base wiped) would wait forever; the wait gets a
+      // deadline — the node's own timeout or 48 h — and the engine turns it into an explicit await_timeout.
+      const deadline = Date.now() + ((node.timeoutSec ?? 48 * 3_600)) * 1000;
+      return { wait: { kind: "attempt", detail: { runId: str(reply.runId) || rt.runId, taskId, files: valid.task.owns_paths }, deadline }, ...(planned ? { usage: planned } : {}) };
     },
     poll: async (step): Promise<PollResult> => {
       const detail = step.await.detail as { runId: string; taskId: string } | undefined;
@@ -565,6 +637,26 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
     const runId = str(c.resolve("$inputs.run_id")) || rt.runId;
     // The PM's run is closed by the PM chat's own lifecycle (closeAbandonedRuns); this marks the workflow's end and leaves the run to it.
     return { archived: Boolean(getRun(db, runId)) };
+  });
+
+  // chains-end: the goal check of a deliverable graph — validateDeliverable (validators room) on the artifact the
+  // run produced, not "file exists": DOM → Jev → vision review for pages, kind validators for the rest.
+  // Node fields: validator (text|design|page|3d|video|invoice|composite|artifact), path (artifact path or url), brief.
+  action("deliverable.validate", async (c, rt) => {
+    const node = c.node as { validator?: string; path?: string; brief?: unknown; host?: string };
+    const { validateDeliverable } = await import("../../validators");
+    const inputs = (c.input.with ?? {}) as Record<string, unknown>;
+    const path = String(node.path ?? inputs.path ?? c.resolve("$inputs.deliverable") ?? c.resolve("$inputs.path") ?? "");
+    const validator = String(node.validator ?? inputs.validator ?? c.resolve("$inputs.validator") ?? "artifact");
+    const hostId = String(node.host ?? inputs.hostId ?? c.resolve("$inputs.hostId") ?? "");
+    const brief = (node.brief ?? inputs.brief ?? c.resolve("$inputs.brief")) as Record<string, unknown> | undefined;
+    const settings = await rt.ctx.effectiveProjectSettings?.(rt.projectId).then((r) => r.values as Record<string, unknown>).catch(() => ({})) ?? {};
+    const verdict = await validateDeliverable(validator, path, {
+      host: { run: (id, cwd, command, timeoutSec) => runOnHost(rt.ctx.host, { hostId: id, cwd, command, timeoutSec }) as never },
+      ...(hostId ? { hostId } : {}), ...(brief ? { brief } : {}),
+      jevCtx: { projectId: rt.projectId, runId: rt.runId ?? null, settings },
+    });
+    return { ok: verdict.ok, verdict: verdict.ok ? "pass" : "rework", reason: verdict.reason, details: verdict.details ?? {} };
   });
 
   action("lp.lint_contract", async (c, lane) => {

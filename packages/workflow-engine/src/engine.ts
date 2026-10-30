@@ -63,6 +63,9 @@ function addSpend(a: Usage | undefined, b: Usage | undefined): Usage | undefined
   return { tokens: (a.tokens ?? 0) + (b.tokens ?? 0), costUsd: (a.costUsd ?? 0) + (b.costUsd ?? 0), ...(a.unknown || b.unknown ? { unknown: true } : {}) };
 }
 export type StepDone = { output: Record<string, unknown>; usage?: Usage; threadId?: string | null; detail?: unknown };
+/** A human wait without a node timeout still ends: this is its deadline in seconds (72 h). */
+const HUMAN_WAIT_DEFAULT_SEC = 72 * 3_600;
+
 export type StepWait = { wait: { kind: string; detail?: unknown; deadline?: number }; partial?: Record<string, unknown>; usage?: Usage; threadId?: string | null };
 export type StepOutcome = StepDone | StepWait;
 export type PollResult = null | { output: Record<string, unknown>; usage?: Usage; threadId?: string | null } | { error: string };
@@ -1272,8 +1275,10 @@ export class WorkflowEngine {
     this.register("builtin:human", {
       run: async (ctx) => {
         const node = ctx.node as Extract<WorkflowNode, { type: "human" }>;
-        const deadline = node.timeoutSec ? this.now() + node.timeoutSec * 1000 : undefined;
-        return { wait: { kind: "human", detail: { question: ctx.render(node.question), options: node.options }, ...(deadline ? { deadline } : {}) } };
+        // chains-end: no human question waits forever — a node without its own timeout gets the 72 h default;
+        // the poll below turns an expired deadline into a timeout answer, a default option or a human_timeout error.
+        const deadline = this.now() + (node.timeoutSec ?? HUMAN_WAIT_DEFAULT_SEC) * 1000;
+        return { wait: { kind: "human", detail: { question: ctx.render(node.question), options: node.options }, deadline } };
       },
       poll: async (step, { node }) => {
         const human = node as Extract<WorkflowNode, { type: "human" }>;
@@ -1340,10 +1345,36 @@ export class WorkflowEngine {
   // ---------------------------------------------------------------- outside the loop
 
   /** Takes up the runs a reload left: re-runs reentrant steps, interrupts the rest, routes finished steps, goes on. */
+  /**
+   * Runs left running or waiting by a dead engine (another instance id, lease expired): their open steps move to
+   * pending when the executor is reentrant, else to interrupted, and the ids are returned for the caller to drive.
+   * A run with no owner or a live lease is not stale — it is either driven or waiting to be polled.
+   */
+  private rescueStale(): string[] {
+    const rows = this.journal.db.prepare("SELECT * FROM lane_pilot_wf_run WHERE status IN ('running','waiting') AND owner_id IS NOT NULL AND owner_id<>? AND lease_until<?").all(this.instanceId, this.now()) as RunRow[];
+    const rescued: string[] = [];
+    for (const row of rows) {
+      if (this.drives.has(row.id) || !this.claim(row.id)) continue;
+      const c = this.compiled(row);
+      for (const step of this.journal.steps(row.id).filter((item) => item.state === "running")) {
+        const node = c.nodes.get(step.node_id);
+        const executor = node ? this.executors.get(executorKey(node) ?? "") : undefined;
+        const compatible = step.harness_version === this.compat;
+        if (executor?.reentrant && compatible) { this.journal.moveStep(row.id, step.step_key, "running", "pending"); continue; }
+        this.journal.moveStep(row.id, step.step_key, "running", "interrupted", { error: "interrupted: the driving engine is gone (stale lease)", ended: true });
+        this.journal.setRunStatus(row.id, ["running"], "interrupted", `step_interrupted:${step.node_id}:stale_lease`);
+        this.cancelOpenSteps(row.id);
+      }
+      this.release(row.id);
+      rescued.push(row.id);
+    }
+    return rescued;
+  }
+
   async resume(options: { takeOver?: boolean; runtimeFor?: (run: RunRow) => unknown } = {}): Promise<string[]> {
     const j = this.journal;
     const taken: string[] = [];
-    const rows = j.db.prepare("SELECT * FROM lane_pilot_wf_run WHERE status='running'").all() as RunRow[];
+    const rows = j.db.prepare("SELECT * FROM lane_pilot_wf_run WHERE status IN ('running','waiting')").all() as RunRow[];
     for (const row of rows) {
       if (this.drives.has(row.id)) continue;
       if (options.takeOver) j.db.prepare("UPDATE lane_pilot_wf_run SET owner_id=NULL, lease_until=0 WHERE id=?").run(row.id);
@@ -1377,6 +1408,9 @@ export class WorkflowEngine {
 
   /** Asks every waiting step whether what it waits for is over; settles and continues the runs it can. */
   async poll(): Promise<number> {
+    // chains-end: a run whose driver died keeps "running"/"waiting" until somebody reclaims it; the tick rescues
+    // only runs owned by ANOTHER instance whose lease expired — a live or unowned run is never touched.
+    for (const id of this.rescueStale()) await this.drive(id).catch((cause: unknown) => this.log(`run ${id} stopped: ${cause instanceof Error ? cause.message : String(cause)}`));
     const j = this.journal;
     const rows = j.db.prepare(`SELECT s.run_id AS runId, s.step_key AS stepKey FROM lane_pilot_wf_step s JOIN lane_pilot_wf_run r ON r.id=s.run_id
       WHERE s.state='waiting' AND r.status IN ('waiting','running') ORDER BY s.rowid`).all() as Array<{ runId: string; stepKey: string }>;
@@ -1392,6 +1426,9 @@ export class WorkflowEngine {
       let result: PollResult;
       try { result = await executor.poll({ runId: row.runId, stepKey: row.stepKey, nodeId: node.id, await: wait }, { runtime: this.runtimes.get(row.runId) ?? this.options.runtimeFor?.(run), node }); }
       catch (cause) { this.log(`poll of ${row.runId}/${row.stepKey} failed: ${cause instanceof Error ? cause.message : String(cause)}`); continue; }
+      // Any wait whose deadline passed and whose poll has nothing newer ends with an explicit timeout error —
+      // never an eternal wait (chains-end: the attempt waits and the human defaults set this deadline).
+      if (!result && typeof wait.deadline === "number" && this.now() >= wait.deadline) result = { error: `await_timeout:${wait.kind}` };
       if (!result) continue;
       if (this.settle(row.runId, row.stepKey, result)) { settled += 1; touched.add(row.runId); }
     }

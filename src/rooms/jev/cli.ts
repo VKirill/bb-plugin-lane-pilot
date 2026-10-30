@@ -1,5 +1,5 @@
 import type Database from "better-sqlite3";
-import { calibrateReceipts, calibrationRecord, jevWatch, judgmentFingerprint, listJudgments, renderCalibration, renderWatch, CALIBRATION_EPOCH_FALLBACK, JEV_CALIBRATED_KEY } from "@lane-pilot/jev";
+import { autoresearchThresholds, calibrateReceipts, calibrationRecord, jevWatch, judgmentFingerprint, listJudgments, renderCalibration, renderWatch, AUTORESEARCH_MIN_LABELED, CALIBRATION_EPOCH_FALLBACK, JEV_CALIBRATED_KEY } from "@lane-pilot/jev";
 import "./judgments";
 
 /**
@@ -30,6 +30,21 @@ export function runJevCli(deps: { db: Database.Database; saveProjectSetting?: (p
     const report = jevWatch(deps.db, { sinceMs, baselineDays: Number(flags.get("days")) || 30 });
     if (flags.has("json")) return { exitCode: 0, stdout: JSON.stringify(report, null, 2) };
     return { exitCode: 0, stdout: renderWatch(report) };
+  }
+  if (sub === "autoresearch") {
+    const flags = new Map<string, string | true>(), pos: string[] = [];
+    for (let i = 1; i < rest.length; i++) {
+      const arg = rest[i]!;
+      if (!arg.startsWith("--")) { pos.push(arg); continue; }
+      const [name, inline] = arg.slice(2).split("=", 2) as [string, string | undefined];
+      flags.set(name, inline ?? (["since", "min-labeled"].includes(name) ? rest[++i] ?? true : true));
+    }
+    const sinceArg = flags.get("since");
+    const sinceMs = typeof sinceArg === "string" ? Date.parse(`${sinceArg}T00:00:00Z`) : Date.now() - 30 * 86_400_000;
+    const report = autoresearchThresholds(deps.db, { sinceMs, minLabeled: Number(flags.get("min-labeled")) || AUTORESEARCH_MIN_LABELED });
+    if (flags.has("json")) return { exitCode: 0, stdout: JSON.stringify(report, null, 2) };
+    const lines = report.map((r) => `${r.judgment}: ${r.labeled} labeled, ${r.ready ? `suggested p>=${r.suggested_p} (acc ${r.accuracy} vs ${r.baseline})` : "not enough data"}`);
+    return { exitCode: 0, stdout: lines.join("\n") || "no labeled receipts yet" };
   }
   if (sub !== "calibrate") return { exitCode: 1, stderr: `usage: ${JEV_USAGE}` };
   const flags = new Map<string, string | true>(), positional: string[] = [];

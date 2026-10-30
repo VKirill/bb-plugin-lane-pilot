@@ -23,7 +23,7 @@ it("A-032 two concurrent blocked outputs both reach the self-repair block ledger
     log: () => {},
   });
   const results = await Promise.all(["run-a", "run-b"].map((runId) => guard({
-    kind: "writer", projectId: "fixture", runId,
+    kind: "browser", projectId: "fixture", runId,
     text: "A harmless fixture output repeated to exceed the guard minimum length.",
   })));
   expect(results.every((result) => result.blocked)).toBe(true);

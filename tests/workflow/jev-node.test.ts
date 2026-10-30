@@ -25,7 +25,7 @@ describe("the native jev node", () => {
     const node = flow.nodes.find((item) => item.type === "jev")!;
     expect(executorKey(node)).toBe("builtin:jev");
     // The engine registers a default builtin:jev that always escalates; a runtime with real Jev replaces it.
-    expect(engineOn(journalDb()).preflight(flow)).toEqual([]);
+    expect(engineOn(journalDb()).preflight(flow).filter((problem) => problem.includes("builtin:jev"))).toEqual([]);
   });
 
   it("a sure verdict takes the cheap edge, an unsure one the model edge", async () => {

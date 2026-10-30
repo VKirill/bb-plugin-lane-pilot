@@ -25,10 +25,22 @@ describe("the writer pick", () => {
     const candidates = writerCandidates({});
     const questions = writerModelJudgment.questions({ task, candidates }) as Record<string, { options?: Record<string, string> } & Record<string, unknown>>;
     expect(JSON.stringify(questions)).toContain("Composer 2.5");
-    const decide = (top: string, p: number) => writerModelJudgment.decide({ writer: { type: "choice", probabilities: { [top]: p, composer: 1 - p } } } as never, { min_p: 0.45 }, { task, candidates });
+    const score = (name: string, level: string) => ({ [name]: { type: "score", score: 0, legend: {}, probabilities: { [level]: 1 } } });
+    const thresholds = { min_p: 0.45, near: 0.12, hard_at: 0.66 };
+    const decide = (top: string, p: number, scores: Record<string, unknown> = {}) => writerModelJudgment.decide({ writer: { type: "choice", probabilities: { [top]: p, composer: 1 - p } }, ...scores } as never, thresholds, { task, candidates });
     expect(decide("gemini-flash", 0.7).decision).toEqual({ key: "gemini-flash" });
-    const unsure = writerModelJudgment.decide({ writer: { type: "choice", probabilities: { "gemini-flash": 0.35, composer: 0.33, sonnet: 0.32 } } } as never, { min_p: 0.45 }, { task, candidates });
+    const unsure = writerModelJudgment.decide({ writer: { type: "choice", probabilities: { "gemini-flash": 0.35, composer: 0.33, sonnet: 0.32 } } } as never, thresholds, { task, candidates });
     expect(unsure.decision).toEqual({ key: null });
+    // Composite scoring: a strong-tier model loses the near band to a cheaper fit unless the task scores hard or risky.
+    const answers = (probs: Record<string, number>, scores: Record<string, unknown>) => ({ writer: { type: "choice", probabilities: probs }, ...scores } as never);
+    const easy = { ...score("complexity", "routine"), ...score("risk", "ordinary") };
+    const band = { "gpt-sol": 0.5, composer: 0.44, "gemini-flash": 0.06 };
+    expect(writerModelJudgment.decide(answers(band, easy), thresholds, { task, candidates }).decision).toEqual({ key: "composer" });
+    const hard = { ...score("complexity", "frontier"), ...score("risk", "ordinary") };
+    expect(writerModelJudgment.decide(answers(band, hard), thresholds, { task, candidates }).decision).toEqual({ key: "gpt-sol" });
+    // Provider load is weighed in code: a busier provider inside the band yields to the freer one.
+    const loaded = { load: { "gpt-sol": { percent: 95, running: 5 }, "gpt-astra": { percent: 0, running: 0 } } };
+    expect(writerModelJudgment.decide(answers({ "gpt-sol": 0.5, "gpt-astra": 0.44, composer: 0.06 }, hard), thresholds, { task, candidates, ...loaded }).decision).toEqual({ key: "gpt-astra" });
   });
   it("puts the picked model first and the project's writer and fallbacks behind it", () => {
     const overlay = pickedWriterOverlay(settings, profile("gpt-sol"))!;
@@ -63,9 +75,11 @@ describe("asking for the pick", () => {
     expect(offered).toContain("sonnet");
     expect(offered.some((key) => key.startsWith("gpt-"))).toBe(false);
     expect(seen!.load).toMatchObject({ sonnet: { percent: 40, running: 3 } });
-    const questions = JSON.stringify(writerModelJudgment.questions(seen as never));
-    expect(questions).toContain("40% of its usage window spent, 3 writer tasks running");
-    expect(questions).toContain("spread across providers");
+    // The load is a decision weight in code now, not text inside the question (composite scoring).
+    const questions = JSON.stringify(writerModelJudgment.questions({ task, candidates: seen!.candidates, load: seen!.load } as never));
+    expect(questions).not.toContain("usage window spent");
+    expect(questions).not.toContain("spread across providers");
+    expect(questions).toContain("complexity");
   });
   it("keeps the project's writer when Jev is unsure, off, or the pick is off", async () => {
     const unsure = { enabled: () => true, judge: async () => ({ by: "jev", decision: { key: null } }) } as never;

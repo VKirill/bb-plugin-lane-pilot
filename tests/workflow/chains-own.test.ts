@@ -29,7 +29,7 @@ describe("insights-post", () => {
 
   it("the spec's case: given links skip the search; every post runs ins.post; the dossier is validated; no draft unless asked", async () => {
     const r = await runSim("insights-post", { input, stubs: base() });
-    expect(pathOf(r)).toBe("discover pick posts aggregate enrich ready_check draft_post done");
+    expect(pathOf(r)).toBe("discover pick posts aggregate enrich ready_check draft_post goal_check done");
     expect(r.skipped).toEqual(["discover", "draft_post"]);
     expect(out(r)).toMatchObject({ status: "done", posts: ["p", "p"], summary_paths: ["fixtures/summary.md", "fixtures/summary.md"], writing_pack_path: "pack.md" });
     expect(out(r)!.draft_path ?? "").toBe("");
@@ -40,7 +40,7 @@ describe("insights-post", () => {
     const stubs = () => ({ ...base(), discover: { candidates: [], count: 0, status: "done" } });
     const noLinks = { ...input, post_urls: [] };
     const retry = await runSim("insights-post", { input: noLinks, stubs: stubs(), humans: { ask_none: { answer_kind: "retry" } } });
-    expect(pathOf(retry)).toBe("discover ask_none pick posts aggregate enrich ready_check draft_post done");
+    expect(pathOf(retry)).toBe("discover ask_none pick posts aggregate enrich ready_check draft_post goal_check done");
     expect(pathOf(await runSim("insights-post", { input: noLinks, stubs: stubs(), humans: { ask_none: { answer_kind: "abort" } } }))).toBe("discover ask_none blocked");
   });
 
@@ -80,14 +80,14 @@ describe("reels", () => {
 
   it("the spec's case: a video becomes 2 clips: transcript, selection, edit plan, render, verification, captions, delivery", async () => {
     const r = await runSim("reels", { input: video, stubs: base() });
-    expect(pathOf(r)).toBe("ingest transcribe select approve_clips edit_plan prepare render verify publish_text deliver done");
+    expect(pathOf(r)).toBe("ingest transcribe select approve_clips edit_plan prepare render verify publish_text deliver goal_check done");
     expect(r.skipped).toEqual(["approve_clips"]);
     expect(out(r)).toMatchObject({ status: "done", clips: ["c1.mp4", "c2.mp4"], folder: "reels/x/delivery", captions_ok: true });
   });
 
   it("full mode asks the owner to approve the clip list; a change goes back to the selection in the same session", async () => {
     const r = await runSim("reels", { input: { ...video, quality_mode: "full" }, stubs: base(), humans: { approve_clips: [{ answer_kind: "change", answer: "shorter" }, { answer_kind: "ok" }] } });
-    expect(pathOf(r)).toBe("ingest transcribe select approve_clips select approve_clips edit_plan prepare render verify publish_text deliver done");
+    expect(pathOf(r)).toBe("ingest transcribe select approve_clips select approve_clips edit_plan prepare render verify publish_text deliver goal_check done");
   });
 
   it("missing tools or a failed transcript block before anything is made", async () => {
@@ -98,7 +98,7 @@ describe("reels", () => {
 
   it("a failed timeline preparation goes back to the edit plan up to 3 times", async () => {
     const r = await runSim("reels", { input: video, stubs: { ...base(), prepare: [{ ok: false }, { ok: true }] } });
-    expect(pathOf(r)).toBe("ingest transcribe select approve_clips edit_plan prepare edit_plan prepare render verify publish_text deliver done");
+    expect(pathOf(r)).toBe("ingest transcribe select approve_clips edit_plan prepare edit_plan prepare render verify publish_text deliver goal_check done");
     const dead = await runSim("reels", { input: video, stubs: { ...base(), prepare: { ok: false } } });
     expect(pathOf(dead)).toBe("ingest transcribe select approve_clips edit_plan prepare edit_plan prepare edit_plan prepare blocked");
   });
@@ -182,7 +182,7 @@ describe("web-research", () => {
 
   it("the spec's case: frame, parallel search, claims, report, the citation check is code, delivery", async () => {
     const r = await runSim("web-research", { input, stubs: { ...base(), report: { report_md: "A [1]. B [2]. C [3].", cited_ids: ["1", "2", "3"] } } });
-    expect(pathOf(r)).toBe("frame search claims report check deliver done");
+    expect(pathOf(r)).toBe("frame search claims report check deliver goal_check done");
     expect(out(r)).toMatchObject({ status: "done", citation_ok: true, unverified: ["benchmark numbers"], report_path: "reports/research-1.md" });
     expect((out(r)!.sources as unknown[]).length).toBe(3);
     expect(firstInput(r, "claims")).toBeDefined();
@@ -191,7 +191,7 @@ describe("web-research", () => {
   it("a report that cites a source that does not exist goes back to the writer once; still wrong, the run is partial", async () => {
     const bad = { report_md: "A [1]. B [9]." };
     const fixed = await runSim("web-research", { input, stubs: { ...base(), report: [bad, { report_md: "A [1]. B [2]. C [3]." }] } });
-    expect(pathOf(fixed)).toBe("frame search claims report check report check deliver done");
+    expect(pathOf(fixed)).toBe("frame search claims report check report check deliver goal_check done");
     const still = await runSim("web-research", { input, stubs: { ...base(), report: bad } });
     expect(pathOf(still)).toBe("frame search claims report check report check deliver partial");
     expect(out(still)).toMatchObject({ status: "partial", citation_ok: false });
@@ -199,7 +199,7 @@ describe("web-research", () => {
 
   it("an unclear question is asked back; no sources at all is blocked", async () => {
     const asked = await runSim("web-research", { input, stubs: { ...base(), frame: [{ needs_clarification: true, clarification: "which compiler?", subquestions: [] }, { needs_clarification: false, subquestions: ["q1"] }], report: { report_md: "A [1]. B [2]. C [3]." } }, humans: { ask: { answer_kind: "answered", answer: "the React one" } } });
-    expect(pathOf(asked)).toBe("frame ask frame search claims report check deliver done");
+    expect(pathOf(asked)).toBe("frame ask frame search claims report check deliver goal_check done");
     const none = await runSim("web-research", { input, stubs: { ...base(), "search:child": ((ctx: { input: { item?: unknown } }) => ({ subquestion: String(ctx.input.item), sources: [] })) as never } });
     expect(pathOf(none)).toBe("frame search blocked");
   });

@@ -90,8 +90,8 @@ Every row is in the catalog (`scripts/ui-catalog-hand.json`, written by `scripts
 | `wall.assumed_repair_tokens` | `src/rooms/wall/config.ts:17` | `assumedRepairTokens: number` |
 | `wall.bench_subset` | `src/rooms/wall/config.ts:23` | `benchSubset: number` |
 | `wall.rerun_sandbox_only` | `src/rooms/wall/config.ts:25` | `rerunSandboxOnly: boolean` |
-| `bench.budget_tokens` | `src/rooms/bench/runner.ts:53` | `DEFAULT_BUDGET_TOKENS` |
-| `bench.budget_hours` | `src/rooms/bench/runner.ts:54` | `DEFAULT_BUDGET_HOURS` |
+| `bench.budget_tokens` | `src/rooms/bench/runner.ts:60` | `DEFAULT_BUDGET_TOKENS` |
+| `bench.budget_hours` | `src/rooms/bench/runner.ts:61` | `DEFAULT_BUDGET_HOURS` |
 | `harness.adopt_by` | `src/rooms/harness/server/harness.ts:57` | `adoptBy: AdoptBy` |
 | `harness.probe.token_budget` | `src/rooms/harness/server/harness.ts:59` | `ProbeBudget` |
 | `harness.graph_edits` | `src/rooms/harness/server/harness.ts:61` | `graphEdits` |
@@ -101,12 +101,12 @@ Every row is in the catalog (`scripts/ui-catalog-hand.json`, written by `scripts
 | `checks.require_red_on_base` | `src/rooms/baseline/logic.ts:20` | `requireRed` |
 | `baseline.already_built` | `src/rooms/baseline/logic.ts:14` | `BaselineSettings` |
 | `baseline.time_cap_sec` | `src/rooms/baseline/logic.ts:18` | `timeCapSec: number` |
-| `regress.nightly` | `src/rooms/baseline/logic.ts:213` | `nightly: boolean` |
-| `regress.last_n` | `src/rooms/baseline/logic.ts:215` | `lastN: number` |
-| `regress.last_days` | `src/rooms/baseline/logic.ts:216` | `days: number` |
-| `regress.check_cap_sec` | `src/rooms/baseline/logic.ts:218` | `checkCapSec: number` |
-| `regress.budget_sec` | `src/rooms/baseline/logic.ts:220` | `budgetSec: number` |
-| `regress.bisect_steps` | `src/rooms/baseline/logic.ts:222` | `bisectSteps: number` |
+| `regress.nightly` | `src/rooms/baseline/logic.ts:223` | `nightly: boolean` |
+| `regress.last_n` | `src/rooms/baseline/logic.ts:224` | `lastN: number` |
+| `regress.last_days` | `src/rooms/baseline/logic.ts:225` | `days: number` |
+| `regress.check_cap_sec` | `src/rooms/baseline/logic.ts:228` | `checkCapSec: number` |
+| `regress.budget_sec` | `src/rooms/baseline/logic.ts:230` | `budgetSec: number` |
+| `regress.bisect_steps` | `src/rooms/baseline/logic.ts:232` | `bisectSteps: number` |
 | `plan_fact.mode` | `src/rooms/writer/server/plan-fact.ts:11` | `PLAN_FACT_MODE_SETTING` |
 | `critic.code.default_for_risk` | `src/rooms/critique/quality-mode.ts:49` | `CODE_CRITIC_DEFAULT_SETTING` |
 | `memory.note_budget` | `packages/memory-core/src/settings.ts:7` | `noteBudget` |

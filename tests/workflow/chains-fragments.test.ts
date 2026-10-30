@@ -214,7 +214,7 @@ describe("ins.post", () => {
   const input = { post_url: "https://example.com/p/1", topic: "design systems" };
   it("collect, init, three analysis passes, validate, digest", async () => {
     const r = await runSim("ins.post", { input, stubs: { collect: { comments: 40, status: "done" }, init: { ok: true, post_folder: "insights/p1" }, validate: { ok: true }, critic: { rejects_open: 0 }, digest: { summary_path: "insights/p1/summary.md" } } });
-    expect(pathOf(r)).toBe("collect init lenses psychology critic renorm validate digest ok");
+    expect(pathOf(r)).toBe("collect init lenses psychology critic renorm validate digest goal_check ok");
     expect(out(r)).toMatchObject({ status: "ok", post_folder: "insights/p1", summary_path: "insights/p1/summary.md" });
   });
 

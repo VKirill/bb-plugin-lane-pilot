@@ -119,6 +119,18 @@ export async function resetHelperStages(db:ReturnType<typeof openDatabase>, stop
  * an attempt that moved more recently than that alone: the periodic pass must not meet a loop between two attempts.
  */
 export function closeOrphanWriterStages(db:ReturnType<typeof openDatabase>, active:ReadonlySet<string>, idleMs = 0, now = Date.now()): number {
+  // A retry-eligible attempt whose loop died before its stage receipts exist (a failed spawn, a reload in the gap)
+  // is visible to no receipt row: close it or nothing ever will (seed 14, fault-injection).
+  for (const stray of db.prepare(`SELECT id, run_id, task_id, state, reason, updated_at FROM lane_pilot_attempt
+      WHERE state IN ('spawn_rejected','provider_error','timeout','empty_output','validation_failed')
+        AND updated_at < ?`).all(now - idleMs) as Array<{ id:string; run_id:string; task_id:string; state:string; reason:string|null; updated_at:number }>) {
+    if (active.has(`${stray.run_id}:${stray.task_id}`)) continue;
+    const scanning = db.prepare("SELECT 1 AS n FROM lane_pilot_reconcile_cursor WHERE attempt_id=? LIMIT 1").get(stray.id) as { n:number } | undefined;
+    if (scanning) continue;
+    const newer = db.prepare(`SELECT state FROM lane_pilot_attempt WHERE run_id=? AND task_id=? ORDER BY rowid DESC LIMIT 1`).get(stray.run_id, stray.task_id) as { state:string } | undefined;
+    if (newer && ["accepted","blocked","canceled","queued","spawn_requested","spawn_unknown","running","cancel_requested"].includes(newer.state)) continue;
+    transitionAttempt(db, stray.id, "blocked", { reason:`${stray.reason ?? stray.state}; its retry was lost in a plugin reload` });
+  }
   const rows = db.prepare(`SELECT DISTINCT s.run_id, s.task_id FROM lane_pilot_stage_receipt s
     WHERE s.stage_id IN ('writer-agent','verification','acceptance-receipt','docs-maintenance') AND s.state IN ('pending','running')`).all() as Array<{ run_id:string; task_id:string }>;
   let closed = 0;

@@ -20,7 +20,7 @@ describe.each(CHAINS)("$id", ({ id, input, field }) => {
     // The literal ids are what tests/workflow/chains-status.test.ts looks for: every built-in chain has a test case.
     const r = id === "about-site" ? await runSim("about-site", { input, stubs }) : id === "resume" ? await runSim("resume", { input, stubs }) : await runSim("year-review", { input, stubs });
     expect(r.summary.status).toBe("succeeded");
-    expect(pathOf(r)).toBe("facts write check deliver done");
+    expect(pathOf(r)).toBe("facts write check deliver goal_check done");
     expect(out(r)).toMatchObject({ status: "done", [field]: `.lane-pilot/anamnesis/${id}-2026-10-08/`, records: 3 });
     expect(r.called("deliver")).toHaveLength(1);
     // The writer gets the facts and the owner's wishes, not the store.
@@ -42,7 +42,7 @@ describe.each(CHAINS)("$id", ({ id, input, field }) => {
       check: [{ ok: false, violations: ["url_unknown:https://invented.example"] }, { ok: true, violations: [] }],
       deliver: { [field]: "p" },
     } });
-    expect(pathOf(r)).toBe("facts write check write check deliver done");
+    expect(pathOf(r)).toBe("facts write check write check deliver goal_check done");
     expect(r.called("write")[1]!.input).toMatchObject({ fix: ["url_unknown:https://invented.example"] });
     expect(out(r)).toMatchObject({ status: "done" });
   });

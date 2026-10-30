@@ -1,5 +1,5 @@
 import { JEV_PROVIDERS, type JevProvider } from "./provider";
-import type { JevAnswer, JevBudget, JevCallResult, JevQuestion, JevUsage } from "./types";
+import type { JevAnswer, JevAsset, JevBudget, JevCallResult, JevQuestion, JevUsage } from "./types";
 
 /**
  * The one place that talks to `POST <provider url>/v1/systemone` (TypeSafe or OpenLux, `./provider`). The key comes from the endpoint
@@ -21,11 +21,15 @@ const RETRY_PAUSE_MAX_MS = 2_000;
 /** TypeSafe: 64k tokens a request, 32k of them for the state and the longest question. About 3 characters a token for Russian text. */
 export const MAX_STATE_CHARS = 80_000;
 
-export type JevRequest = { state: unknown; questions: Record<string, JevQuestion>; model?: string };
+export type JevRequest = { state: unknown; questions: Record<string, JevQuestion>; model?: string;
+  /** Images of the request, keyed by the reference strings embedded in the state or questions. Presence also turns on the danger-zone header. */
+  assets?: Record<string, JevAsset> };
 export type JevCallOptions = { timeoutMs?: number; budget?: JevBudget | undefined; signal?: AbortSignal | undefined };
 
 /** Where the next call goes: the provider (url, model, headroom) and its key, read together so a key never meets another provider's url. */
-export type JevEndpoint = { provider: JevProvider; apiKey: string | undefined };
+export type JevEndpoint = { provider: JevProvider; apiKey: string | undefined;
+  /** One retry on the cheaper provider when the chosen one answers 5xx, a timeout or nothing at all (OpenLux is the standby). */
+  fallback?: { provider: JevProvider; apiKey: string } };
 
 export type JevClientDeps = {
   endpoint(): Promise<JevEndpoint>;
@@ -56,10 +60,10 @@ export function createJevClient(deps: JevClientDeps): JevClient {
     if (failures.length >= BREAKER_FAILURES) { openUntil = at + BREAKER_OPEN_MS; failures = []; }
   };
 
-  async function once(url: string, body: string, key: string, timeoutMs: number, signal?: AbortSignal): Promise<{ status: number; json?: unknown; retryAfterMs?: number; error?: string; timedOut?: boolean; badRequest?: boolean }> {
+  async function once(url: string, body: string, key: string, timeoutMs: number, signal?: AbortSignal, images = false): Promise<{ status: number; json?: unknown; retryAfterMs?: number; error?: string; timedOut?: boolean; badRequest?: boolean }> {
     try {
       const response = await doFetch(url, {
-        method: "POST", headers: { authorization: `Bearer ${key}`, "content-type": "application/json" }, body,
+        method: "POST", headers: { authorization: `Bearer ${key}`, "content-type": "application/json", ...(images ? { "TypeSafe-Danger-Zone-Images": "true" } : {}) }, body,
         signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs),
       });
       const retryAfter = Number(response.headers?.get?.("retry-after"));
@@ -86,7 +90,8 @@ export function createJevClient(deps: JevClientDeps): JevClient {
       const { provider } = endpoint, key = endpoint.apiKey?.trim();
       if (!key) return fail("disabled", `no ${provider.keyName}`);
       if (now() < openUntil) return fail("breaker_open", "too many recent failures");
-      const body = JSON.stringify({ state: request.state, model: request.model ?? provider.model, questions: request.questions });
+      const images = Boolean(request.assets && Object.keys(request.assets).length) || Object.values(request.questions).some((q) => q.type === "box");
+      const body = JSON.stringify({ state: request.state, model: request.model ?? provider.model, questions: request.questions, ...(images ? { assets: request.assets ?? {} } : {}) });
       if (body.length > MAX_STATE_CHARS + 200_000) return fail("invalid", `request is ${body.length} characters`);
       if (options.budget) {
         if (options.budget.remaining <= 0) return fail("budget", "the run's Jev request budget is spent");
@@ -99,7 +104,7 @@ export function createJevClient(deps: JevClientDeps): JevClient {
         let attempts = 0, last: Awaited<ReturnType<typeof once>> = { status: 0, error: "not sent" };
         for (; attempts < 2; ) {
           attempts += 1;
-          last = await once(provider.url, body, key, timeoutMs, options.signal);
+          last = await once(provider.url, body, key, timeoutMs, options.signal, images);
           if (last.status === 200) break;
           if (options.signal?.aborted || last.badRequest || !(last.status === 0 || RETRYABLE.has(last.status))) break;
           if (attempts < 2) await sleep(Math.min(RETRY_PAUSE_MAX_MS, last.retryAfterMs ?? RETRY_PAUSE_MS));
@@ -107,6 +112,18 @@ export function createJevClient(deps: JevClientDeps): JevClient {
         if (last.status !== 200) {
           // 401, 422 and a 500 invalid_request say our key or request is wrong: they must not trip the breaker for a healthy service, but do not retry either.
           if (!last.badRequest && (last.status === 0 || last.status >= 429 || last.status === 408)) recordFailure();
+          // A dead provider (5xx, timeout, no answer) is retried once on the standby one when its key exists; the receipt's
+          // model is prefixed with the answering provider id so it shows who actually served the call.
+          const spare = endpoint.fallback;
+          if (spare && !last.badRequest && (last.timedOut || last.status === 0 || last.status >= 500) && !options.signal?.aborted) {
+            attempts += 1;
+            const spareBody = JSON.stringify({ state: request.state, model: request.model ?? spare.provider.model, questions: request.questions });
+            const r = await once(spare.provider.url, spareBody, spare.apiKey, (options.timeoutMs ?? DEFAULT_TIMEOUT_MS) + spare.provider.timeoutPadMs, options.signal);
+            if (r.status === 200) {
+              const parsed = parseResponse(r.json, request.questions, spare.provider.model);
+              if (parsed.ok) return { ok: true, answers: parsed.answers, model: `${spare.provider.id}/${parsed.model}`, usage: parsed.usage, latencyMs: now() - started, attempts };
+            }
+          }
           return fail(last.timedOut ? "timeout" : "error", last.error ?? `http ${last.status}`, attempts);
         }
         const parsed = parseResponse(last.json, request.questions, provider.model);
@@ -129,7 +146,8 @@ function parseResponse(json: unknown, questions: Record<string, JevQuestion>, de
     const answer = body.answers[id] as Record<string, unknown> | undefined;
     if (!answer || answer.type !== question.type) return { ok: false, error: `answer ${id} is missing or not a ${question.type}` };
     if (question.type === "noul" && typeof answer.noul !== "number") return { ok: false, error: `answer ${id} has no number` };
-    if (question.type !== "noul" && (typeof answer.probabilities !== "object" || !answer.probabilities)) return { ok: false, error: `answer ${id} has no probabilities` };
+    if (question.type === "box" && (typeof answer.box !== "object" || !answer.box)) return { ok: false, error: `answer ${id} has no box` };
+    if (question.type !== "noul" && question.type !== "box" && (typeof answer.probabilities !== "object" || !answer.probabilities)) return { ok: false, error: `answer ${id} has no probabilities` };
     answers[id] = answer as unknown as JevAnswer;
   }
   return { ok: true, answers, model: typeof body.model === "string" ? body.model : defaultModel, usage: { input_tokens: Number(body.usage?.input_tokens) || 0, output_tokens: Number(body.usage?.output_tokens) || 0 } };

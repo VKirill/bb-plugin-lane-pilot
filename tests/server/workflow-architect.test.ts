@@ -217,7 +217,7 @@ describe("workflow architect tools", () => {
     expect(JSON.stringify(all.secrets.items)).not.toMatch(/value/);
     expect(all.hosts.items.map((row: { id: string }) => row.id)).toEqual(["host_arch", "mini"]);
     expect(all.browser).toMatchObject({ browserAutomationPlugin: true, skills: { "browser-automation": true, "computer-use": false }, browserMachine: null });
-    expect(all.specialists.roles).toEqual(["design-lead", "copy-lead", "seo-specialist", "tavily", "video-lead"]);
+    expect(all.specialists.roles).toEqual(["design-lead", "copy-lead", "seo-specialist", "tavily", "video-lead", "3d-artist", "game-dev", "social-manager", "billing-assistant", "visual-artist", "macos-operator"]);
     const filtered = await call("lane_pilot_workflow_capabilities", { sections: ["skills"], query: "telegram" });
     expect(filtered.skills.items.map((row: { name: string }) => row.name)).toEqual(["telegram-user"]);
     expect(filtered.plugins).toBeUndefined();
@@ -240,7 +240,7 @@ describe("workflow architect tools", () => {
     expect(result.models.roles["code-critic"]).toMatchObject({ provider: "opencode2", model: "router9/ag/gemini-3.8-flash-high", reasoning: "medium", offered: false });
     expect(result.models.note).toContain("a step names a `role`, never a model");
     const narrowed = await call("lane_pilot_workflow_capabilities", { sections: ["models"], query: "critic" });
-    expect(Object.keys(narrowed.models.roles)).toEqual(["plan-critic", "code-critic"]);
+    expect(Object.keys(narrowed.models.roles)).toEqual(["plan-critic", "code-critic", "critic-tiebreak"]);
 
     // A node that names a model is a warning (never an error): the field is ignored when the step runs.
     const created = await call("lane_pilot_workflow_draft_create", { name: "Model check", description: "pair check", scope: "global" });

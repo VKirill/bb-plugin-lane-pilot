@@ -162,7 +162,7 @@ describe("impeccable-build", () => {
 
   it("the spec's case: a browser check that fails sends the page back once, then review, DESIGN.md and close", async () => {
     const r = await runSim("impeccable-build", { input, stubs: { ...base(), qa: [{ status: "rework", findings: [finding("high", { file: "src/pricing.tsx", line: 55 })] }, { status: "pass" }] } });
-    expect(pathOf(r)).toBe("brief ask_direction pack plan build qa fix_plan fix_build qa finish_review document close done");
+    expect(pathOf(r)).toBe("brief ask_direction pack plan build qa fix_plan fix_build qa finish_review document close goal_check done");
     expect(out(r)).toMatchObject({ status: "done", disposition: "ship", design_score: 33, design_md: "docs/DESIGN.md" });
     expect(String((firstInput(r, "plan").extra_rules as string[]).join(" "))).toContain("vertical slices");
   });
@@ -175,14 +175,14 @@ describe("impeccable-build", () => {
   it("the browser check runs in every mode; quick has no finishing review", async () => {
     const r = await runSim("impeccable-build", { input: { ...input, quality_mode: "quick" }, stubs: { ...base(), qa: { status: "pass" } } });
     expect(modeOf(r)).toBe("quick");
-    expect(pathOf(r)).toBe("brief ask_direction pack plan build qa finish_review document close done");
+    expect(pathOf(r)).toBe("brief ask_direction pack plan build qa finish_review document close goal_check done");
     expect(r.skipped).toEqual(expect.arrayContaining(["finish_review"]));
     expect(r.called("qa")).toHaveLength(1);
   });
 
   it("a review that wants a fix sends the page back once; rebuild or recapture ends partial", async () => {
     const fix = await runSim("impeccable-build", { input, stubs: { ...base(), qa: { status: "pass" }, finish_review: [{ disposition: "fix", score: 20, findings: [finding("high")] }, { disposition: "ship", score: 31 }] } });
-    expect(pathOf(fix)).toBe("brief ask_direction pack plan build qa finish_review fix_plan fix_build qa finish_review document close done");
+    expect(pathOf(fix)).toBe("brief ask_direction pack plan build qa finish_review fix_plan fix_build qa finish_review document close goal_check done");
     const rebuild = await runSim("impeccable-build", { input, stubs: { ...base(), qa: { status: "pass" }, finish_review: { disposition: "rebuild", score: 10 } } });
     expect(pathOf(rebuild)).toBe("brief ask_direction pack plan build qa finish_review partial");
     expect(out(rebuild)).toMatchObject({ status: "partial", disposition: "rebuild", design_score: 10 });

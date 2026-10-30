@@ -1,5 +1,4 @@
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
+import { spawnAsync } from "@lane-pilot/kit";
 
 /** The catalog tree is read at most once an hour. A failed read keeps the old full-catalog pick. */
 export const SKILL_TREE_TTL_MS = 60 * 60_000;
@@ -17,7 +16,6 @@ export type SkillTree = {
   skills: Array<{ name: string; category: { sectionId: string; subsectionId: string } | null }>;
 };
 
-const exec = promisify(execFile);
 let cache: { at: number; tree: SkillTree | null } | null = null;
 let pending: Promise<SkillTree | null> | null = null;
 
@@ -86,7 +84,51 @@ export function skillTreeCached(read: () => Promise<string>): Promise<SkillTree 
   return pending;
 }
 
-export function readSkillTreeText(): Promise<string> {
+export async function readSkillTreeText(): Promise<string> {
   const bin = process.env.BB_CLI || "bb";
-  return exec(bin, ["tools", "skills-tree", "--skills", "--json"], { timeout: 20_000, maxBuffer: 8_000_000 }).then((out) => out.stdout);
+  const out = await spawnAsync(bin, ["tools", "skills-tree", "--skills", "--json"], { timeout: 20_000, maxBuffer: 8_000_000 });
+  if (out.error || out.status !== 0) throw out.error ?? new Error(`skills-tree exit ${out.status}: ${out.stderr.slice(0, 200)}`);
+  return out.stdout;
+}
+
+/**
+ * B7: Jev walks the catalog tree for a specialist or a graph step (hierarchical: section → subsection → skill).
+ * `judge` is the shared Jev or null; shadow mode records receipts while the caller's own pick stands.
+ */
+export async function pickSkillTree(
+  judge: import("@lane-pilot/jev").Jev | null,
+  tree: SkillTree,
+  task: { title: string; prompt: string },
+  ctx: import("@lane-pilot/jev").JudgeContext = {},
+): Promise<{ skills: string[]; picked: string[]; by: "jev" | "shadow" | "off" }> {
+  const { skillTreePickJudgment } = await import("@lane-pilot/jev/judgments/skill-tree-pick");
+  if (!judge || !tree.sections.length) return { skills: [], picked: [], by: "off" };
+  const text = `${task.title}\n${task.prompt}`;
+  const ask = async (level: "section" | "subsection" | "skill", path: string, options: Record<string, string>) => {
+    const verdict = await judge.judge(skillTreePickJudgment, { task: text, level, path, options }, ctx);
+    const picked = verdict.by === "jev" ? verdict.decision.picked : verdict.by === "fallback" && verdict.shadow?.decision ? verdict.shadow.decision.picked : [];
+    return { picked, active: verdict.by === "jev" };
+  };
+  const sections = await ask("section", "/", Object.fromEntries(tree.sections.map((s) => [s.id, s.titleEn ?? s.title])));
+  const skills: string[] = [], picked: string[] = [...sections.picked];
+  let active = sections.active;
+  for (const sectionId of sections.picked) {
+    const section = tree.sections.find((s) => s.id === sectionId);
+    const subs = section?.subsections ?? [];
+    let subIds: string[] = [];
+    if (subs.length) {
+      const sub = await ask("subsection", `/${sectionId}`, Object.fromEntries(subs.map((s) => [s.id, s.titleEn ?? s.title])));
+      active = active || sub.active;
+      subIds = sub.picked;
+      picked.push(...sub.picked.map((id) => `${sectionId}/${id}`));
+    }
+    const pool = tree.skills.filter((sk) => sk.category?.sectionId === sectionId && (!subIds.length || (sk.category.subsectionId && subIds.includes(sk.category.subsectionId))));
+    if (pool.length && pool.length <= 24) {
+      const hit = await ask("skill", `/${sectionId}/${subIds.join(",")}`, Object.fromEntries(pool.map((sk) => [sk.name, sk.name])));
+      active = active || hit.active;
+      skills.push(...hit.picked);
+      picked.push(...hit.picked);
+    } else skills.push(...pool.map((sk) => sk.name));
+  }
+  return { skills: [...new Set(skills)], picked, by: active ? "jev" : "shadow" };
 }

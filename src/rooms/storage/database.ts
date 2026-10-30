@@ -1065,9 +1065,14 @@ export function markTaskOutcomesReported(db: LanePilotDatabase, rows: Array<Pick
 export function listOpenAttempts(db: LanePilotDatabase): Array<{
   id:string; run_id:string; task_id:string; thread_id:string|null; state:string; project_id:string;
 }> {
+  // A retry-eligible attempt with a saved reconcile page is still in flight: its scan died mid-page and the next
+  // process continues it, so it is listed with the live states (fault-injection: a spawn rejected while its scan
+  // was interrupted would otherwise sit open forever).
   return db.prepare(`SELECT a.id,a.run_id,a.task_id,a.thread_id,a.state,r.project_id
     FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
     WHERE a.state IN ('queued','spawn_requested','spawn_unknown','running','cancel_requested')
+       OR (a.state IN ('spawn_rejected','provider_error','timeout','empty_output','validation_failed')
+           AND EXISTS (SELECT 1 FROM lane_pilot_reconcile_cursor c WHERE c.attempt_id=a.id))
     ORDER BY a.created_at`).all() as Array<{
     id:string; run_id:string; task_id:string; thread_id:string|null; state:string; project_id:string;
   }>;

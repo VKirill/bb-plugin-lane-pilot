@@ -1,7 +1,7 @@
 import packageJson from "../../../../package.json";
 import { PARKED_CLASSES, failureClass, failureFingerprint, isWaitingSecret, type FailureClass } from "../../runs";
 import { allowedSecretNames, secretProblem, waitingSecretNote, WAITING_SECRET_PREFIX } from "../../secrets/server";
-import { createAttempt, getAttempt, getRun, getRunSettingsScopes, loadProjectSettings } from "../../storage";
+import { createAttempt, getAttempt, getRun, getRunSettingsScopes, listOpenAttempts, loadProjectSettings, transitionAttempt } from "../../storage";
 import { id } from "../../core/server";
 import { reopenWriterStages } from "../../runs/server/stage-records";
 import { isRunHalted, isRunPaused } from "../../runs/server/runs-halt";
@@ -164,6 +164,15 @@ export function createStability(ctx:ServerCore, services:Services) {
       reason:input.reason.slice(0, 400), fingerprint, version:VERSION, at:now, since:previous?.since ?? memo?.since, redrives:previous?.redrives ?? memo?.redrives ?? 0 };
     await saveParked([...list.filter((row) => row !== previous), entry]);
     bb.log.info(`Lane Pilot parked ${input.taskId} (${klass}: ${fingerprint})`);
+    // The parked row is the restart ticket; the attempt that failed is over, so it does not sit in a non-terminal state.
+    for (const open of listOpenAttempts(db).filter((row) => row.task_id === input.taskId)) {
+      try { transitionAttempt(db, open.id, "blocked", { reason:`parked (${klass}): ${input.reason.slice(0, 200)}` }); } catch { /* already closed */ }
+    }
+    const latest = db.prepare("SELECT id, state FROM lane_pilot_attempt WHERE run_id=? AND task_id=? ORDER BY rowid DESC LIMIT 1")
+      .get(input.runId, input.taskId) as { id:string; state:string } | undefined;
+    if (latest && !["accepted","blocked","canceled","superseded"].includes(latest.state)) {
+      try { transitionAttempt(db, latest.id, "blocked", { reason:`parked (${klass}): ${input.reason.slice(0, 200)}` }); } catch { /* not a legal end; the row is already closed */ }
+    }
     if (waitingSecret) notePm(input.pmThreadId, `${input.taskId} waits for a secret its checks need (${input.reason.slice(0, 160)}); call env_request for it, or ask the owner to allow it in secrets.allow. It restarts by itself once the access is in place, no attempt is spent.`);
     else if (klass === "dirty_base") notePm(input.pmThreadId, `${input.taskId} hit a dirty base checkout (uncommitted changes there that its merge would overwrite: commit or discard them) (${input.reason.slice(0, 160)}); it is parked and restarts by itself after a short wait.`);
     return true;

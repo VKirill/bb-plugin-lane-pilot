@@ -32,7 +32,12 @@
     "analyze-code"
   ],
   "status": "tested",
-  "live_success": { "output": "status", "in": ["done"] },
+  "live_success": {
+    "output": "status",
+    "in": [
+      "done"
+    ]
+  },
   "tags": [
     "research",
     "web"
@@ -88,13 +93,18 @@
   "budget": {
     "max_steps": 30,
     "max_minutes": 60,
-    "max_usd": 15
+    "max_usd": 10
   },
   "entry": "frame",
   "nodes": [
     {
       "id": "frame",
-      "produces": [{"kind": "report", "version": 1}],
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
       "type": "agent",
       "role": "analyst",
       "title": {
@@ -136,7 +146,12 @@
       "type": "parallel",
       "for_each": "frame.subquestions",
       "child": {
-        "produces": [{"kind": "search-results", "version": 1}],
+        "produces": [
+          {
+            "kind": "search-results",
+            "version": 1
+          }
+        ],
         "type": "agent",
         "role": "specialist:tavily",
         "prompt": "Tavily search then extract for the sub-question {{item}}: candidates with URL, title, date, snippet; extract full text of the best 2-4. Mark each source as full_text, snippet, metadata_only or unavailable. A search result is a candidate, not a fact.",
@@ -158,7 +173,12 @@
     },
     {
       "id": "claims",
-      "produces": [{"kind": "report", "version": 1}],
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
       "type": "agent",
       "role": "analyst",
       "title": {
@@ -179,8 +199,19 @@
     },
     {
       "id": "report",
-      "consumes": [{"kind": "report", "version": 1, "from": "claims"}],
-      "produces": [{"kind": "report", "version": 1}],
+      "consumes": [
+        {
+          "kind": "report",
+          "version": 1,
+          "from": "claims"
+        }
+      ],
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
       "type": "agent",
       "role": "analyst",
       "profile": {
@@ -259,6 +290,22 @@
       "map": {
         "status": "blocked"
       }
+    },
+    {
+      "id": "goal_check",
+      "type": "action",
+      "action": "deliverable.validate",
+      "title": {
+        "en": "Check the goal was met",
+        "ru": "Проверить, что цель достигнута"
+      },
+      "rule": "validateDeliverable on the artifact the run produced: the deliverable/validator/brief inputs name what to check; a fail means the goal is not met",
+      "out": {
+        "ok": "bool",
+        "verdict": "pass|rework|fail",
+        "reason": "string",
+        "details": "object"
+      }
     }
   ],
   "edges": [
@@ -319,7 +366,7 @@
     },
     {
       "from": "deliver",
-      "to": "done",
+      "to": "goal_check",
       "pass": "artifact",
       "when": "check.citation_ok"
     },
@@ -327,6 +374,15 @@
       "from": "deliver",
       "to": "partial",
       "pass": "artifact"
+    },
+    {
+      "from": "goal_check",
+      "to": "done",
+      "when": "goal_check.ok != false"
+    },
+    {
+      "from": "goal_check",
+      "to": "partial"
     }
   ],
   "test": {
@@ -390,6 +446,7 @@
         "report",
         "check",
         "deliver",
+        "goal_check",
         "done"
       ],
       "expect_outputs": [
@@ -401,5 +458,6 @@
     },
     "live": "реальный запрос с ключом из Env Catalog; в отчёте ни одной ссылки, которой нет в списке; ключ не появляется ни в выводе, ни в логах",
     "note": "Tested on stubs: every outside action answers from a stub. Not live yet: Tavily search with a key from Env Catalog and live links for the citation check. See `live` for the acceptance run."
-  }
+  },
+  "goal_check": "validate"
 }

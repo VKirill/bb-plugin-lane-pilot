@@ -25,11 +25,18 @@ const SENSITIVE = /\.env\b|env[_ -]?catalog|\benv_(?:get|set|list|request)|print
 export const looksSensitive = (raw: string, redacted: string): boolean => raw !== redacted || SENSITIVE.test(redacted);
 /** The share of the unit interval a text falls on, the same every time, so a text is either always sampled or never. */
 const unitOf = (text: string): number => parseInt(sha256Hex(text).slice(0, 8), 16) / 0x1_0000_0000;
+/** The setting naming which output kinds an `active` mode really blocks (`output-guard.kinds`, comma list). The rest keep
+ * the shadow sampling even in active: foreign content (a page a browser check read, an errand's report) is guarded first,
+ * a writer's own code — last, because a false block there costs the most. */
+export const GUARD_KINDS_KEY = "output-guard.kinds";
+export const GUARD_ACTIVE_KINDS: readonly OutputKind[] = ["browser", "errand"];
 export const GUARD_STATS_KEY = "output-guard:stats";
 const KEEP_DAYS = 14;
 export type GuardStats = Record<string, { asked: number; notSampled: number; sensitive: number }>;
 
-export type GuardBlock = { at: number; kind: OutputKind; reason: string; projectId: string; runId: string | null; subject: string | null };
+export type GuardBlock = { at: number; kind: OutputKind; reason: string; projectId: string; runId: string | null; subject: string | null;
+  /** The Jev receipt of the verdict that withheld the text: the repair's own verdict later labels it (fixed → agree, not-lane-pilot → a false positive). */
+  receiptId?: number | null };
 export type GuardResult = { blocked: false; text: string } | { blocked: true; text: string; reason: "secret" | "injection" };
 export type GuardInput = { kind: OutputKind; text: string; projectId: string; runId?: string | null; subject?: string | null };
 export type OutputGuard = (input: GuardInput) => Promise<GuardResult>;
@@ -96,7 +103,9 @@ export function createOutputGuard(deps: {
     try {
       const settings = await deps.settings(input.projectId).catch(() => ({} as JevSettings));
       if (!instance.enabled(settings)) return { blocked: false, text };
-      const shadow = resolveMode(outputGuard, settings) !== "active";
+      const kindsRaw = settings[GUARD_KINDS_KEY];
+      const activeKinds = (typeof kindsRaw === "string" && kindsRaw.trim() ? kindsRaw.split(/[\s,;]+/) : GUARD_ACTIVE_KINDS) as readonly string[];
+      const shadow = resolveMode(outputGuard, settings) !== "active" || !activeKinds.includes(input.kind);
       if (shadow) {
         if (looksSensitive(input.text, text)) { await count("sensitive"); return { blocked: false, text }; }
         if ((deps.random ?? (() => unitOf(text)))() >= SHADOW_SAMPLE) { await count("notSampled"); return { blocked: false, text }; }
@@ -105,7 +114,7 @@ export function createOutputGuard(deps: {
       const verdict = await instance.judge(outputGuard, { kind: input.kind, text, ...(shadow ? { limit: SHADOW_CHARS } : {}) }, { projectId: input.projectId, runId: input.runId ?? null, subject: input.subject ?? input.kind, settings });
       if (verdict.by !== "jev" || !verdict.decision.blocked) return { blocked: false, text };
       const reason = verdict.decision.reason;
-      const block: GuardBlock = { at: (deps.now ?? Date.now)(), kind: input.kind, reason, projectId: input.projectId, runId: input.runId ?? null, subject: input.subject ?? null };
+      const block: GuardBlock = { at: (deps.now ?? Date.now)(), kind: input.kind, reason, projectId: input.projectId, runId: input.runId ?? null, subject: input.subject ?? null, receiptId: verdict.receiptId };
       await appendBlock(block);
       deps.log(`Lane Pilot output guard blocked a ${input.kind} output (${reason}) in ${input.projectId}${input.runId ? ` run ${input.runId}` : ""}${input.subject ? ` ${input.subject}` : ""}`);
       return { blocked: true, text: withheldText(input.kind, reason), reason };

@@ -1,4 +1,5 @@
 import { t } from "@lane-pilot/i18n";
+import { resolveRoleModel } from "@lane-pilot/models";
 import { setRunHalted } from "../runs-halt";
 import { PARKED_KEY } from "../../../stability/server";
 import { agentPickerLabel, employeeView, pickableAgent, placeEmployeeOn } from "../../../native-agent";
@@ -41,13 +42,19 @@ export function runsRpc(ctx: ServerCore, services: Services) {
     },
     native_install_status: ({ hostId }) => nativeInstaller.status(hostId),
     prepare_native_session: async ({ projectId, agentId }) => {
+      const settings = (await effectiveProjectSettings(projectId)).values;
       const { selection: record, description } = await storeNativeSelection(ctx, { projectId, agentId: agentId || DEFAULT_NATIVE_AGENT });
       const label = agentPickerLabel({ id: record.agentId, description }, t);
       const pinned = employeeView(record.agentId).machineAffinity !== "any";
       const place = pinned ? await placeEmployeeOn(bb, record.agentId, await projectSources(bb, projectId)) : { mode: "inherit" as const };
       const environment = place.mode === "folder" ? folderEnvironment({ hostId: place.hostId, path: place.path }) : null;
       const placementNote = place.mode === "fallback" ? place.reason : null;
-      return { token: record.token, label, agentId: record.agentId, profileMode: record.profileMode, cliAgentsCollision: null, environment, placementNote };
+      // A specialist runs its role's model (the owner's table or the row default); the coordinator stays on Opus.
+      const isSpecialist = record.agentId !== DEFAULT_NATIVE_AGENT;
+      const roleModel = isSpecialist
+        ? (() => { const resolved = resolveRoleModel(`specialist:${record.agentId}`, settings); return { providerId: resolved.providerId, model: resolved.model, effort: resolved.effort ?? null }; })()
+        : null;
+      return { token: record.token, label, agentId: record.agentId, profileMode: record.profileMode, cliAgentsCollision: null, environment, placementNote, roleModel };
     },
     // threadId → its LP role from the thread's plugin metadata (the sidebar row mark; empty for threads that are not Lane Pilot's).
     helper_thread_labels: async ({ threadIds }) => {

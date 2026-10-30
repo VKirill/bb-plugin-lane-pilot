@@ -69,7 +69,7 @@ describe("Lane Pilot Jev complete-plan adapter", () => {
     const b = await classifyPlan({ requestedHostId:"host-a", plan:planB }, {} as never);
     const requestA = JSON.parse(bodies[0]!);
     const requestB = JSON.parse(bodies[1]!);
-    expect(requestA).toMatchObject({ model:"jev-latest", state:{ task:planA }, questions:{ effort:{ type:"choice" } } });
+    expect(requestA).toMatchObject({ model:"jev-1.14.0", state:{ task:planA }, questions:{ effort:{ type:"choice" } } });
     expect(requestB.state.task).toBe(planB);
     expect(requestA.state.task).not.toContain("writer prompt");
     expect(requestA.state.task).not.toContain("AGENTS.md");

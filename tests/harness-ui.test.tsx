@@ -33,16 +33,15 @@ type PickerNode = HTMLElement & { __onChange?: (next: PickerValue) => void };
 /** BB's own picker stands in as a node that shows its value and lets the test answer as the owner would. */
 function installPickerStandIn() {
   installTestPluginRuntime();
-  const host = globalThis as typeof globalThis & { __bbPluginRuntime?: { pluginSdkApp: Record<string, unknown> } };
-  const sdk = host.__bbPluginRuntime!.pluginSdkApp;
-  host.__bbPluginRuntime!.pluginSdkApp = {
-    ...sdk,
+  // installTestPluginRuntime re-assigns pluginSdkApp inside loadPluginApp/renderSlot, so the stubs go on the object itself.
+  const sdk = (globalThis as typeof globalThis & { __bbPluginRuntime?: { pluginSdkApp: Record<string, unknown> } }).__bbPluginRuntime!.pluginSdkApp;
+  Object.assign(sdk, {
     experimental_useProviders: () => ({ status: "ready", providers: [{ id: "claude-code" }, { id: "codex" }] }),
     experimental_ProviderModelPicker: (props: { value: PickerValue; onChange: (next: PickerValue) => void; routing?: { hostId?: string } }) => React.createElement("div", {
       "data-testid": "bb-provider-model-picker", "data-model": props.value.model, "data-host": props.routing?.hostId ?? "",
       ref: (node: PickerNode | null) => { if (node) node.__onChange = props.onChange; },
     }),
-  };
+  });
 }
 
 async function mount(rpc: Record<string, (args: unknown) => unknown>, hostId: string | null = "h1") {
