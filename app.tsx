@@ -106,6 +106,13 @@ export default definePluginApp((app) => {
       }),
     });
   }
+  // The same helpers tab from the command palette (B-x3): the context only opens panel tabs, so there is nothing for a Cockpit jump to call.
+  app.commands.register({
+    id: "lane-pilot-helpers",
+    title: t("helperPanelTitle"),
+    isAvailable: ({ threadId }) => threadId !== null,
+    run: ({ experimental_panel }) => { experimental_panel?.openTab?.({ tab: { id: HELPER_PANEL_ACTION, context: { kind: "thread" }, availability: "action" }, params: {} }); },
+  });
   // The PM's `::lane-run{id="…"}` line becomes a live card of the run's tasks.
   app.slots.messageDirective({ id: RUN_CARD_DIRECTIVE, component: RunCardDirective });
   // A question to the owner (PM, integration gate, repair thread, council) as BB's pending interaction; BB's
