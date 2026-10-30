@@ -49,3 +49,18 @@ describe("a replaced or not-yet-valid fact stays out of the brief (F07)", () => 
     expect(found).not.toContain("opens in March");
   });
 });
+
+describe("a hedged session note stays observed even when a repeat confirms it", () => {
+  it("corroboration adds the source but keeps trust observed for a hedged claim", () => {
+    const db = openDatabase(createFakePluginHost({ pluginId: "lane-pilot" }).bb);
+    storeMemoryRecords(db, { projectId: "P", ...limits, origin: "session" as const, trust: "observed" as const, sourceSha256: "a".repeat(64), entries: [
+      { kind: "note", content: "The deploy port seems to be 9000.", concepts: ["deploy"] },
+    ] });
+    storeMemoryRecords(db, { projectId: "P", ...limits, sourceSha256: "b".repeat(64), entries: [
+      { kind: "note", content: "The deploy port seems to be 9000.", concepts: ["deploy"] },
+    ] });
+    const row = db.prepare("SELECT trust, verification_json FROM lane_pilot_memory WHERE content=?").get("The deploy port seems to be 9000.") as { trust: string; verification_json: string };
+    expect(JSON.parse(row.verification_json)).toHaveLength(2);
+    expect(row.trust).toBe("observed");
+  });
+});
