@@ -10,7 +10,8 @@ import { resolveRepoPath } from "./repos";
 import { judgeValidator, runValidator } from "./validator";
 import { jevalsLine, type JevalsResult } from "./jevals";
 import { BENCH_PROJECT_PREFIX, BENCH_PROJECTS, benchProjectName, type ManifestTask, type VerificationItem } from "./types";
-import { MIN_FREE_GB, freeGb, linkDependenciesCommand } from "./warmup";
+import { MIN_FREE_GB, STOP_FREE_GB, cleanBenchCaches, freeGb, linkDependenciesCommand } from "./warmup";
+import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
 
 /**
  * A series on the bench (SMA plan P0-1): the SAME contracts of a set, through the normal pipeline, on one arm. Memory and rules are
@@ -39,6 +40,8 @@ export type SeriesInput = {
   taskTimeoutMin?: number;
   pollMs?: number;
   minFreeGb?: number;
+  /** Mid-run floor: a running series stops only below this many GB (default `STOP_FREE_GB`). */
+  stopFreeGb?: number;
   /** Machine the series runs on. Absent: each bench project's own machine. */
   hostId?: string;
   /** Checkout root on that machine. A stored Mac path is cloned from `<root>/<folder>` (scripts/bench-sync-repos.sh). */
@@ -171,7 +174,27 @@ export async function runSeries(deps: RunnerDeps, input: SeriesInput): Promise<S
   const budgetTokens = input.budgetTokens ?? DEFAULT_BUDGET_TOKENS, budgetHours = input.budgetHours ?? DEFAULT_BUDGET_HOURS;
   const writer = input.writer ?? DEFAULT_BENCH_WRITER;
   const config = { writer, harness: input.harness ?? "none", settings: input.settings ?? {}, fault: input.fault ?? null };
-  const free = async (hostId: string): Promise<number | null> => freeGb(deps.host, hostId);
+  const setting = (key: string): unknown => {
+    const row = (deps.db as { prepare: (s: string) => { get: (...a: unknown[]) => { value: string } | undefined } }).prepare("SELECT value FROM lane_pilot_project_settings WHERE project_id=? AND binding_id='' AND key=?").get(GLOBAL_SETTINGS_PROJECT_ID, key);
+    return row ? JSON.parse(row.value) : undefined;
+  };
+  const gbSetting = (key: string, fallback: number): number => {
+    const value = Number(setting(key));
+    return Number.isFinite(value) && value > 0 ? value : fallback;
+  };
+  const startGb = input.minFreeGb ?? gbSetting("bench.disk_start_gb", MIN_FREE_GB);
+  const stopGb = input.stopFreeGb ?? gbSetting("bench.disk_stop_gb", STOP_FREE_GB);
+  const cleanupOn = String(setting("bench.disk_cleanup") ?? "on") !== "off";
+  // Two thresholds, not one point: a series starts only with MIN_FREE_GB free, but once running it keeps going
+  // until STOP_FREE_GB — the 13–20 GB nights of 2026-10-27/28 were deferred work, not disk emergencies.
+  const checkDisk = async (hostId: string, limitGb: number, projectPath?: string): Promise<string | null> => {
+    let free = await freeGb(deps.host, hostId);
+    if (free !== null && free < limitGb && cleanupOn) {
+      await cleanBenchCaches(deps.host, hostId, projectPath);
+      free = await freeGb(deps.host, hostId);
+    }
+    return diskDeferral(free, limitGb, hostId);
+  };
   const groups = new Map<string, ManifestTask[]>();
   for (const task of tasks) groups.set(task.repoPath, [...(groups.get(task.repoPath) ?? []), task]);
   const nameOf = deps.projectNameFor ?? defaultProjectName;
@@ -183,7 +206,7 @@ export async function runSeries(deps: RunnerDeps, input: SeriesInput): Promise<S
     if (!project) continue;
     projects++;
     const hostId = input.hostId ?? project.hostId;
-    const reason = diskDeferral(await free(hostId), input.minFreeGb ?? MIN_FREE_GB, hostId);
+    const reason = await checkDisk(hostId, startGb);
     if (reason) lows.push(reason);
   }
   if (projects > 0 && lows.length === projects) {
@@ -253,7 +276,7 @@ export async function runSeries(deps: RunnerDeps, input: SeriesInput): Promise<S
         const avgSeconds = finished.filter((row) => row.seconds !== null).length ? spentSeconds / finished.filter((row) => row.seconds !== null).length : 0;
         if (spentTokens + avgTokens > budgetTokens) { stopReason = `token budget: ${Math.round(spentTokens)} used of ${budgetTokens}, the next task is expected to take ${Math.round(avgTokens)}`; break; }
         if ((spentSeconds + avgSeconds) / 3600 > budgetHours) { stopReason = `time budget: ${(spentSeconds / 3600).toFixed(2)} h used of ${budgetHours}, the next task is expected to take ${(avgSeconds / 3600).toFixed(2)} h`; break; }
-        const low = diskDeferral(await free(placed.hostId), input.minFreeGb ?? MIN_FREE_GB, placed.hostId);
+        const low = await checkDisk(placed.hostId, stopGb, placed.path);
         if (low) { stopReason = low; break; }
 
         const source = resolveRepoPath(task.repoPath, input.reposRoot);

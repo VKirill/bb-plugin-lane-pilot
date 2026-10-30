@@ -122,6 +122,17 @@ export async function warmUp(host: HostPort, candidate: Candidate, options: Warm
  */
 export const MIN_FREE_GB = 25;
 
+/** The floor a running series is allowed to reach: below this the night stops mid-set. */
+export const STOP_FREE_GB = 12;
+
+/** Removes what earlier bench work left behind: warm-up scratch older than a day, and the clone's node_modules
+ * (the next task relinks it). Run before a disk deferral is declared, not before every measurement. */
+export async function cleanBenchCaches(host: HostPort, hostId: string, projectPath?: string): Promise<void> {
+  const parts = [`{ [ -d "$HOME/lp-bench" ] && find "$HOME/lp-bench" -mindepth 1 -mtime +1 -exec rm -rf {} + ; }`];
+  if (projectPath) parts.push(`rm -rf ${q(`${projectPath}/node_modules`)}`);
+  await host.run(hostId, "/", `${parts.join("; ")}; true`, 300).catch(() => undefined);
+}
+
 /** Free space in GB on the host's home volume. */
 export async function freeGb(host: HostPort, hostId: string): Promise<number | null> {
   const result = await host.run(hostId, "/", `df -Pk "$HOME" | awk 'NR==2{print int($4/1048576)}'`, 30).catch(() => null);

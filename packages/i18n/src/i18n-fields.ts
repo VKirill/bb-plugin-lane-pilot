@@ -1004,6 +1004,16 @@ export const fieldEn = {
   reason_s537: "The most failed or rejected verification gate evaluations a task may accumulate before it ends with verify_passes_exhausted instead of another writer pass. Default 10.",
   field_s538: "Retry safety gate",
   reason_s538: "on blocks an automatic retry when the failed attempt's work area was touched after it ended: foreign commits or file edits, rewritten check evidence, or a catalog secret value still in the worktree diff; off keeps the unconditional retry. Default on.",
+  field_s565: "Bench: start free space (GB)",
+  reason_s565: "Free space a host needs before a bench series starts on it; below this it defers after a cleanup pass. Default 25.",
+  field_s566: "Bench: stop free space (GB)",
+  reason_s566: "Free-space floor for a running bench series: it keeps going until this many GB are left. Default 12.",
+  field_s567: "Bench: disk cleanup before deferral",
+  reason_s567: "Before a disk deferral is declared, remove the bench's own leftovers (old warm-up scratch, the clone's node_modules) and measure again. Default on.",
+  field_s568: "Bench: live PM in its project",
+  reason_s568: "defer retries the series later when the bench project already holds a live Lane Pilot PM (default); close finishes that run and takes the project.",
+  field_s569: "Bench: noise rows on repeats",
+  reason_s569: "Write a noise row whenever a series finished two or more repeats, not only for explicit noise runs. Default on.",
 } as const;
 
 export const fieldRu: { [K in keyof typeof fieldEn]: string } = {
@@ -2011,4 +2021,14 @@ export const fieldRu: { [K in keyof typeof fieldEn]: string } = {
   reason_s537: "Сколько упавших или отклонённых оценок гейта верификации может накопить задача, прежде чем завершится с verify_passes_exhausted вместо очередного прохода исполнителя. По умолчанию 10.",
   field_s538: "Гейт безопасности ретрая",
   reason_s538: "on блокирует авто-ретрай, если рабочую область упавшей попытки трогали после её конца: чужие коммиты или правки файлов, переписанные квитанции проверок или значение секрета из каталога, оставшееся в диффе worktree; off оставляет безусловный ретрай. По умолчанию on.",
+  field_s565: "Бенч: стартовое место (ГБ)",
+  reason_s565: "Свободное место на хосте для старта серии бенча; ниже — отложить после очистки. По умолчанию 25.",
+  field_s566: "Бенч: стоповое место (ГБ)",
+  reason_s566: "Нижний порог места для идущей серии бенча: работает, пока не останется столько ГБ. По умолчанию 12.",
+  field_s567: "Бенч: очистка диска перед откладыванием",
+  reason_s567: "Перед откладыванием по диску убрать собственные остатки бенча (старые warm-каталоги, node_modules клона) и измерить снова. По умолчанию вкл.",
+  field_s568: "Бенч: живой PM в его проекте",
+  reason_s568: "defer повторяет серию позже, когда в проекте бенча уже есть живой PM Lane Pilot (по умолчанию); close завершает тот ран и занимает проект.",
+  field_s569: "Бенч: строки шума по повторам",
+  reason_s569: "Писать строку шума при двух и более завершённых повторах серии, не только для явных noise-прогонов. По умолчанию вкл.",
 };
