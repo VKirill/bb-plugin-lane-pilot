@@ -2,7 +2,7 @@ import { z } from "zod";
 import { clipped, extractModelJson, NO_TOOLS_LINE } from "@lane-pilot/workflow-engine";
 import { demoteUncited } from "./citations";
 import type { Citation } from "./citations";
-import { isSerious,isVerdictShape, legacyDecisionToStatus, legacyOutputToVerdict, settleVerdict, verdictSchema, verdictSummary, withoutDecision } from "@lane-pilot/workflow-engine";
+import { applyRubric, isSerious, isVerdictShape, legacyDecisionToStatus, legacyOutputToVerdict, rubricPromptLine, settleVerdict, verdictSchema, verdictSummary, withoutDecision } from "@lane-pilot/workflow-engine";
 import type { Verdict, VerdictStatus } from "@lane-pilot/workflow-engine";
 
 export const specialistResultSchema = z.object({
@@ -23,7 +23,8 @@ export function specialistPrompt(input:{task:unknown; plan:string; agent?:string
   return [
     `You are ${input.agent?.trim() || "the specialist risk-review stage"} for a bounded software task.`,
     `Review the task and plan for concrete security, data-loss, compatibility, and recovery risks. ${NO_TOOLS_LINE}`,
-    "Answer with one JSON object and nothing else: no text before or after it. Keys: status (\"pass\", \"rework\" or \"block\"), summary (string, at most 2000 characters), findings (at most 30 objects, each with file, severity \"critical\" or \"high\" (a lower risk is not reported), evidence (at most 2000 characters: what in the task or the plan shows the risk), finding (at most 1000: the concern), criterion (at most 500: the mitigation the plan lacks), and line when you can name it), evidence (string, what you examined and how, at most 4000 characters). Any other key makes the answer unreadable and the task is blocked. Use pass with an empty findings array when there is no high or critical risk.",
+    "Answer with one JSON object and nothing else: no text before or after it. Keys: status (\"pass\", \"rework\" or \"block\"), summary (string, at most 2000 characters), findings (at most 30 objects, each with file, severity \"critical\" or \"high\" (a lower risk is not reported), evidence (at most 2000 characters: what in the task or the plan shows the risk), finding (at most 1000: the concern), criterion (at most 500: the mitigation the plan lacks), and line when you can name it), evidence (string, what you examined and how, at most 4000 characters). Other keys are ignored. Use pass with an empty findings array when there is no high or critical risk.",
+    rubricPromptLine("specialist"),
     "rework: a high or critical risk that the PM settles by changing the plan or the contract. block: a risk no edit of the plan removes (data loss, security, a compatibility break the owner must decide); the task stops. Block only when a concrete high or critical risk has no adequate mitigation in the supplied plan. Do not invent repository facts.",
     "TASK CONTRACT:", JSON.stringify(input.task),
     "CANONICAL PLAN:", input.plan,
@@ -34,7 +35,7 @@ export function parseSpecialistResult(output:string, cites?:Citation):Specialist
   const raw = extractModelJson(output);
   if (isVerdictShape(raw)) {
     const cited = demoteUncited(verdictSchema.parse(withoutDecision(raw)), cites);
-    const settled = settleVerdict(cited.verdict, "specialist");
+    const settled = settleVerdict(applyRubric(cited.verdict, "specialist"), "specialist");
     const { verdict } = settled, demoted = settled.demoted + cited.demoted;
     const risks = verdict.findings.filter(isSerious).map((row) => ({
       severity: row.severity as "high" | "critical",

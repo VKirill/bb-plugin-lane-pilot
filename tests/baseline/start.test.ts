@@ -85,6 +85,18 @@ it("in stop mode the attempt ends blocked with the baseline's reason and no writ
   await env.harness.lifecycle.dispose();
 });
 
+it("closes the attempt accepted when every check is already green, and spawns no writer", async () => {
+  const env = setup();
+  const preflight = vi.fn(async () => ({ stop: null as string | null, alreadyDone: "already done: all 1 check(s) already pass on base abc", record: null }));
+  const { all, spawned } = services(env, preflight);
+  start(env, all);
+  await vi.waitFor(() => expect(getAttempt(env.db, "T1-a1")?.state).toBe("accepted"));
+  expect(spawned).toEqual([]);
+  expect(writerStage(env.db).state).toBe("passed");
+  expect(preflight).toHaveBeenCalledTimes(1);
+  await env.harness.lifecycle.dispose();
+});
+
 it("in notify mode the baseline says nothing to the start: the writer is spawned as before", async () => {
   const env = setup();
   const preflight = vi.fn(async () => ({ stop: null, record: null }));

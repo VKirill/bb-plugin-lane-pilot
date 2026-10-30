@@ -68,7 +68,11 @@ describe("priority rules (chains spec, section 1)", () => {
     expect((await route("Collect tweets about Rust and post the digest to Telegram")).workflowId).toBe("x-to-telegram-digest");
     expect((await route("Build a semantic cocoon for a tea shop")).workflowId).toBe("seo-cocoon");
     expect((await route("Cut this video into reels")).workflowId).toBe("reels");
+    expect((await route("Сделай презентационный ролик для продукта")).workflowId).toBe("reels");
     expect((await route("Deploy the site to production")).workflowId).toBe("deploy");
+    expect((await route("Сделай 3D-модель сундука с золотой отделкой в Blender")).workflowId).toBe("3d-asset");
+    expect((await route("Собери шлем рыцаря как R15 аксессуар для Roblox и проверь коллизии")).workflowId).toBe("roblox-asset");
+    expect((await route("Сделай пост с инсайтами аудитории про удалёнку в авторском стиле")).workflowId).toBe("social-post");
   });
 
   it("a failure without a request to fix goes to debug; with a fix request it does not", async () => {

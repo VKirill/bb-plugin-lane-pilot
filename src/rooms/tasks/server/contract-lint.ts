@@ -1,5 +1,5 @@
 import { birthFindings, blockingClass, checkProgram, ownerWordFindings } from "../rails";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import { TASK_KINDS, type TaskV2 } from "../../contracts";
 import { fileAllowedByOwns, fileBlockedByNeverTouch, matchOwnsPath, ownsPathsOverlap } from "@lane-pilot/kit";
 import { findSandboxUnsafeMissingExcludes, runnerFilterArgs, runsWholeSuite } from "../../critique";
@@ -60,6 +60,39 @@ export function runsGateCommand(command:string, gateCommand:string):boolean {
   const squash = (text:string) => text.trim().replace(/\s+/g, " ");
   const gate = squash(gateCommand);
   return squash(command) === gate || command.split(/&&|;|\n/).map(squash).some((part) => part === gate.replace(/^cd \S+ && /, ""));
+}
+
+const TEST_BIN = /(?:^|\/)(vitest|jest|pytest|py\.test)$/;
+const SCRIPT_RUNNER = /(?:^|\/)([\w.-]+\.(?:py|js|mjs|cjs|ts|sh))$/;
+
+/** Which test runner one `&&` / `;` step starts, or null. A `cd`, a typecheck or a syntax check (`bash -n`, `node --check`, `php -l`) is not a runner. */
+function runnerOf(segment:string):string | null {
+  // A step that only checks syntax is not a run of the suite; without this `bash -n x.sh && bash x.sh` read as two runs.
+  if (/^\s*(?:cd\s+\S+\s*&&\s*)?(?:sudo\s+-n\s+)?(?:bash|sh|node|python3?|php|ruby)\s+(?:-[a-zA-Z]*n|--check|--syntax-check|-l|-m\s+py_compile)\s+['"]?\S+['"]?\s*$/.test(segment)) return null;
+  const tokens = segment.trim().split(/\s+/).map((token) => token.replace(/^['"]|['"]$/g, ""));
+  const bin = tokens.find((token) => TEST_BIN.test(token));
+  if (bin) return bin.replace(/^.*\//, "");
+  if (/^(?:npm|pnpm|yarn|bun)\s+(?:run(?:-script)?\s+)?(?:test|t)(?:\s|$)/.test(segment.trim())) return "npm-test";
+  for (const token of tokens) {
+    const script = SCRIPT_RUNNER.exec(token);
+    if (script) return script[1]!;
+  }
+  return null;
+}
+
+/**
+ * The runner a check starts more than once, or null. `--filter A && --filter B` is two runs of one suite in a single check
+ * (Vampirism Fire: each filter still takes minutes, and a red first filter has already spent them).
+ */
+export function repeatedRunner(command:string):string | null {
+  const seen = new Map<string, number>();
+  for (const part of command.split(/&&|;|\n/)) {
+    const key = runnerOf(part);
+    if (!key) continue;
+    if ((seen.get(key) ?? 0) >= 1) return key;
+    seen.set(key, 1);
+  }
+  return null;
 }
 
 /** The catalog name closest to a declared one when they differ by case or a typo (at most two edits); null when none is near. */
@@ -216,12 +249,31 @@ export function namedTestCandidates(task:Pick<TaskV2, "owns_paths">, workspacePa
   return found;
 }
 
-/** Absolute paths whose kind the workspace's machine must report: the read_first files, the bare words of check filters, the tests next to owned files. */
+/** A concrete file path (a basename with an extension, no glob), or null for a folder, a glob or a bare name. */
+function concreteFile(path:string):string | null {
+  const norm = path.replace(/^\.\//, "").replace(/\/$/, "");
+  if (!norm || /[*?[]/.test(norm) || !/(?:^|\/)[^/]*\.[A-Za-z0-9]{1,8}$/.test(norm)) return null;
+  return norm;
+}
+
+/** The task creates the file: it is an expected output, or files[] says create. */
+function taskCreatesFile(task:Pick<TaskV2, "expected_outputs" | "files">, path:string):boolean {
+  if (task.expected_outputs.some((entry) => entry.replace(/^\.\//, "") === path)) return true;
+  return (task.files ?? []).some((file) => file.action === "create" && file.path.replace(/^\.\//, "") === path);
+}
+
+/** Absolute paths whose kind the workspace's machine must report: the read_first files, the bare words of check filters, the tests next to owned files, and the concrete files the contract names. */
 export function lintProbePaths(task:TaskV2, workspacePath:string):string[] {
   let hints:string[] = [];
   try { hints = parseReadFirstHints(task.read_first).map((hint) => resolve(workspacePath, hint.path)); } catch { /* reported by lintContract */ }
   const tests = siblingTestCandidates(task).map((candidate) => resolve(workspacePath, candidate.folder ?? candidate.test));
-  return [...new Set([...hints, ...folderFilters(task).map((filter) => filter.path), ...tests, ...checkNamedPaths(task)])].slice(0, MAX_PROBES);
+  const named = [...task.owns_paths, ...task.expected_outputs, ...(task.files ?? []).map((file) => file.path)]
+    .map(concreteFile).filter((path):path is string => !!path)
+    .flatMap((path) => {
+      const dir = dirname(path);
+      return dir === "." ? [resolve(workspacePath, path)] : [resolve(workspacePath, path), resolve(workspacePath, dir)];
+    });
+  return [...new Set([...hints, ...folderFilters(task).map((filter) => filter.path), ...tests, ...checkNamedPaths(task), ...named])].slice(0, MAX_PROBES);
 }
 
 /** The board shows about 60 characters; a longer title is cut there, never refused below this (owner, 2026-10-27: models must not stumble on title length). */
@@ -248,6 +300,13 @@ export function lintContract(input:LintInput):{ errors:LintFinding[]; warnings:L
   const kindOf = (path:string) => kinds?.get(path);
 
   errors.push(...taskStandardFindings(task));
+  // Owner 2026-10-31: Lane Pilot as it is now counts from stats.epoch (default 2026-10-31), so this is only a warning in the
+  // receipt and the PM answer — no refusal, no redo. Revisit once ~20 tasks with 4+ items land after the epoch: if plan-fact
+  // still fails about twice as often above 3, the refusal comes back. Full mode may keep a longer list; a mainfix lists every red check.
+  const acceptanceMode = input.qualityMode ?? task.quality_mode;
+  if (!isMainfixTask(task.id) && (acceptanceMode === "quick" || acceptanceMode === "standard") && task.acceptance.length > 3) {
+    warnings.push({ code:"acceptance_too_many", message:`acceptance has ${task.acceptance.length} items; a ${acceptanceMode} task keeps at most 3 (plan-fact receipts since 2026-10-29 failed 28.9-32.7% at 4+ vs 15.8% at 3). Split the task or compress acceptance to 3 items` });
+  }
   // quality_mode full: a task with qa_cases owes a browser check, and the task's own graph runs it from qa_url.
   if (input.qualityMode && browserQaRequired(input.qualityMode, task) && !task.qa_url) {
     errors.push({ code:"qa_url_missing", message:`quality_mode is full and the task has qa_cases, so its graph runs the browser check itself and needs the page to open: add qa_url (the address the cases run on, e.g. "http://127.0.0.1:5173/orders"), plus qa_env_class (local, staging, preview, production or unknown) and qa_dev_server (the command that starts the dev server, when it is not running); or drop qa_cases` });
@@ -296,6 +355,39 @@ export function lintContract(input:LintInput):{ errors:LintFinding[]; warnings:L
     if (/[*?[]/.test(pattern)) continue;
     const barred = task.never_touch.find((never) => matchOwnsPath(pattern, never));
     if (barred) errors.push({ code:"owns_never_touch", message:`owns_paths ${pattern} lies inside never_touch ${barred}, so the writer may not change it; remove one of the two` });
+  }
+  // A concrete file that is not on the base and that the task does not create is a wrong path: the writer cannot edit it and will not produce it.
+  // read_first already reports its own missing files. A folder or a glob is where new files go, so it is not a missing file.
+  if (kinds) {
+    let readFirst = new Set<string>();
+    try { readFirst = new Set(parseReadFirstHints(task.read_first).map((hint) => hint.path)); } catch { /* reported above */ }
+    // A missing file in an existing folder reads as a create the author did not mark (owner 2026-10-30): a warning, never a
+    // refusal. The refusal holds only when the folder itself is not there — the path is a typo, not a create.
+    for (const pattern of task.owns_paths) {
+      const path = concreteFile(pattern);
+      if (!path || readFirst.has(path) || taskCreatesFile(task, path) || kindOf(resolve(input.workspacePath, path)) !== "missing") continue;
+      const dirKind = dirname(path) === "." ? "directory" : kindOf(resolve(input.workspacePath, dirname(path)));
+      if (dirKind === "missing") {
+        errors.push({ code:"owns_missing", message:`owns_paths ${path} does not exist and neither does its folder ${dirname(path)}: the path is a wrong name, not a file the task will create; fix the path` });
+        if (errors.filter((error) => error.code === "owns_missing").length >= 5) break;
+      } else {
+        warnings.push({ code:"owns_unmarked_create", message:`owns_paths ${path} does not exist but its folder does; the lint reads it as a file the task creates — declare it in expected_outputs or a files[] create if so` });
+        if (warnings.filter((warning) => warning.code === "owns_unmarked_create").length >= 5) break;
+      }
+    }
+    for (const file of task.files ?? []) {
+      if (file.action === "create") continue;
+      const path = concreteFile(file.path);
+      if (!path || taskCreatesFile(task, path) || kindOf(resolve(input.workspacePath, path)) !== "missing") continue;
+      const dirKind = dirname(path) === "." ? "directory" : kindOf(resolve(input.workspacePath, dirname(path)));
+      if (dirKind === "missing") {
+        errors.push({ code:"output_missing", message:`files[] ${file.action} ${path} does not exist and neither does its folder ${dirname(path)}: fix the path, or set action create and add the file to expected_outputs if the task creates it` });
+        if (errors.filter((error) => error.code === "output_missing").length >= 5) break;
+      } else {
+        warnings.push({ code:"output_unmarked_create", message:`files[] ${file.action} ${path} does not exist but its folder does; the lint reads it as a create — set action create and add it to expected_outputs if so` });
+        if (warnings.filter((warning) => warning.code === "output_unmarked_create").length >= 5) break;
+      }
+    }
   }
 
   // expected_outputs inside owns_paths and outside never_touch.
@@ -372,7 +464,8 @@ export function lintContract(input:LintInput):{ errors:LintFinding[]; warnings:L
   }
   if ((task.risk !== "low" || task.kind === "fix") && task.verification.length > 0 && kinds && !isMainfixTask(task.id) && !errors.some((error) => error.code === "verification_empty_check")
     && !checkNamedPaths(task).some((path) => kindOf(path) === "missing")) {
-    warnings.push({ code:"no_red_before_green", message:`risk ${task.risk}: no verification command names a file that is missing on the base commit, so every check may already pass before the work; add one that fails until the task is done (a test for the new behaviour in a file the task creates, grep -q for the expected string, test -f on a new output). This is a warning: the task goes on` });
+    const closes = task.kind === "fix" || task.kind === "check";
+    warnings.push({ code:"no_red_before_green", message:`risk ${task.risk}${task.kind ? `, kind ${task.kind}` : ""}: no verification command names a file that is missing on the base commit, so every check may already pass before the work. ${closes ? `If they do, a ${task.kind} closes accepted without a writer. If the bug is still there, add a check that reproduces it.` : "If they do, the attempt does not start: green checks do not tell done from not done. Add a check that is red now."} This is a warning: the task goes on` });
   }
 
   // Checks: a folder filter ends in «/», and a whole-suite vitest run excludes what the sandbox cannot run.
@@ -383,6 +476,13 @@ export function lintContract(input:LintInput):{ errors:LintFinding[]; warnings:L
   }
   for (const check of task.verification) {
     // With a gate, a task's check is its own files: the whole suite is the gate's, once per batch (so no exclusions to add either).
+    // Two filtered calls of the same runner (`--filter A && --filter B`) are the suite twice; one filter is enough.
+    const again = input.gate ? repeatedRunner(check.command) : null;
+    if (input.gate && again && !runsWholeSuite(check.command) && !runsGateCommand(check.command, input.gate.command)) {
+      errors.push({ code:"repeated_runner_chain", message:`verification command "${check.command}" runs ${again} more than once in one check; one filtered run is enough, the integration gate (${input.gate.command}) runs the whole suite once per batch`,
+        data:{ gateCommand:input.gate.command, runner:again } });
+      continue;
+    }
     if (input.gate && (runsWholeSuite(check.command) || runsGateCommand(check.command, input.gate.command))) {
       errors.push({ code:"whole_suite_with_gate", message:`verification command "${check.command}" runs the whole test suite; the integration gate (${input.gate.command}) runs the whole suite once per batch, so check only this task's files, e.g. npx vitest run <its test files>, plus the typecheck`,
         data:{ gateCommand:input.gate.command } });

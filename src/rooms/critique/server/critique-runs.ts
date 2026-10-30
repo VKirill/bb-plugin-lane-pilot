@@ -2,13 +2,15 @@ import { unownedExpectedOutputs } from "../../tasks";
 import { hostContract, taskV2Schema } from "../../contracts";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
 import { claimStageSpawn, countAttempts, getRun, getTask, listLiveTasksForRun, listOpenAttempts, listStageReceipts, openDatabase } from "../../storage";
-import { criticAcrossFamilies, criticOffSpent, criticPairCandidates, effortAfterMove, latestWriterPair, pairApartFromWriter, roleSelection, sdkCriticCatalog } from "../critic-pair";
+import { criticAcrossFamilies, criticOffSpent, criticPairCandidates, effortAfterMove, latestWriterPair, pairApartFromWriter, pickCriticByAccuracy, roleSelection, sdkCriticCatalog, usable } from "../critic-pair";
+import { criticStats } from "../critic-stats";
 import { bbServiceTier, writerExecutionSelection, writerServiceTier, findModelIn, modelFamily, type SpentProbe } from "@lane-pilot/models";
 import { qaSpawnClaimed } from "../../qa";
 import { reconcileCritic } from "../../stability";
 import { resolveStageWriterSelection } from "../../writer";
 import { MAX_FILE_EXCERPT_BYTES } from "../code-critique";
-import { codeCritiquePrompt, codeCritiqueSource, critiqueFromStageResult, critiquePolicyFromResult, freezeCritiquePolicy, parseCodeCritique, parseCodeCritiqueSettings, persistLedgerFields, settingsFromFrozenPolicy } from "../code-critique";
+import { codeCritiquePrompt, codeCritiqueSource, codeCritiqueStops, criticPersonas, critiqueFromStageResult, critiquePolicyFromResult, freezeCritiquePolicy, parseCodeCritique, parseCodeCritiqueSettings, persistLedgerFields, settingsFromFrozenPolicy, unionCriticFails } from "../code-critique";
+import { critiqueFromScreen, screenCodeCritique } from "../critic-screen";
 import type { CandidateEvidence, FrozenCritiquePolicy } from "../code-critique";
 import { sha256 } from "../../tasks";
 import { critiquePrompt, parseCritique, shouldRunPlanCritique } from "../critique";
@@ -20,6 +22,7 @@ import { boundedAgentName } from "../role";
 import { candidateCitations, inputCitations } from "../citations";
 import { parseSpecialistResult, shouldRunSpecialist, specialistPrompt } from "../specialist";
 import { reasonForStatus } from "@lane-pilot/workflow-engine";
+import { parseTiebreakVotes } from "../tiebreak";
 import { CODE_CRITIC_DEFAULT_SETTING, QUALITY_MODE_SETTING, applyCodeCriticDefault, applyQualityMode, resolveCodeCriticDefault, resolveQualityMode } from "../quality-mode";
 import type { CodeCriticDefault } from "../quality-mode";
 import type { Verdict, VerdictStatus } from "@lane-pilot/workflow-engine";
@@ -43,6 +46,11 @@ async function limitProbe(bb: BbPluginApi, hostId: string, settings: Record<stri
   await warmSpawnUsage(usage, hostId);
   return (providerId, model) => usage.peek({ providerId, model, hostId, settings });
 }
+const settingOff = (value: unknown) => value === false || value === 0
+  || (typeof value === "string" && ["0", "off", "false", "no"].includes(value.trim().toLowerCase()));
+const settingOn = (value: unknown) => value === true || value === 1
+  || (typeof value === "string" && ["1", "true", "on", "yes"].includes(value.trim().toLowerCase()));
+
 /** One log line per limit move of a stage's model. */
 const logLimitMove = (bb: BbPluginApi, what: string, issues: readonly string[] | undefined) => {
   for (const issue of issues ?? []) bb.log.info(`${what}: ${issue}`);
@@ -68,6 +76,15 @@ export async function runPmRead(input:{bb:BbPluginApi;db:ReturnType<typeof openD
   if(!parsedSettings.enabled) {
     recordStage(input.db,{...base,state:"pending",replaceOnNewInput:true,restart:true});
     recordStage(input.db,{...base,state:"skipped",reason:"disabled_by_project_setting"});
+    return {state:"skipped",summary:""};
+  }
+  // The summary feeds the plan critic and the code critic. When both are off (a project switch, or quality_mode quick),
+  // the read would call a model nobody uses. The graph still reaches this node before the quality-mode fork.
+  const qualityMode = resolveQualityMode(input.task, settings[QUALITY_MODE_SETTING]);
+  const reviewed = applyCodeCriticDefault(applyQualityMode(settings, qualityMode), qualityMode, input.task.risk, resolveCodeCriticDefault(settings[CODE_CRITIC_DEFAULT_SETTING]));
+  if (settingOff(reviewed["plan_critique.enabled"]) && !settingOn(reviewed["code_critique.enabled"])) {
+    recordStage(input.db,{...base,state:"pending",replaceOnNewInput:true,restart:true});
+    recordStage(input.db,{...base,state:"skipped",reason:qualityMode === "quick" ? "quality_mode_quick" : "critics_disabled"});
     return {state:"skipped",summary:""};
   }
   const fallback=resolveStageWriterSelection({settings,config:input.config});
@@ -448,7 +465,7 @@ export async function runCodeCritique(input:{
         const raw = (await input.bb.sdk.threads.output({ threadId:existing.threadId })).output;
         if (typeof raw !== "string" || !raw.trim()) throw new Error("critique_output_empty");
         const critique = await readCodeCritique(input.bb, existing.threadId, raw, cites);
-        const blocked = critique.decision === "changes_requested" && parsed.mode === "gate";
+        const blocked = codeCritiqueStops(parsed.mode, critique);
         const result = { ...ledgerCarry, ...critique, ...hashFields, mode:parsed.mode, rawOutput:raw.slice(0, 12_000), policy:frozen ?? critiquePolicyFromResult(existing.result) };
         recordStage(input.db, { ...base, state:blocked ? "blocked" : "passed", providerId:existing.providerId, model:existing.model,
           threadId:existing.threadId, result, reason:blocked ? verdictReasons(critique,"code-critique").receipt : undefined });
@@ -474,7 +491,7 @@ export async function runCodeCritique(input:{
           const raw = (await input.bb.sdk.threads.output({ threadId:recovered.threadId })).output;
           if (typeof raw !== "string" || !raw.trim()) throw new Error("critique_output_empty");
           const critique = await readCodeCritique(input.bb, recovered.threadId, raw, cites);
-          const blocked = critique.decision === "changes_requested" && parsed.mode === "gate";
+          const blocked = codeCritiqueStops(parsed.mode, critique);
           const result = { ...ledgerCarry, ...critique, ...hashFields, mode:parsed.mode, rawOutput:raw.slice(0, 12_000), policy:frozen ?? critiquePolicyFromResult(existing.result) };
           recordStage(input.db, { ...base, state:blocked ? "blocked" : "passed", providerId:existing.providerId, model:existing.model,
             threadId:recovered.threadId, result, reason:blocked ? verdictReasons(critique,"code-critique").receipt : undefined });
@@ -535,8 +552,22 @@ export async function runCodeCritique(input:{
   // The provider's limit comes last: a critic whose provider is nearly spent takes the other family, even the writer's (said, never silent).
   const offSpent = frozen ? null : await criticOffSpent({ critic:apart?.pair ?? across?.pair ?? liveSelection, writer:writerPair, spent:await limitProbe(input.bb, input.config.hostId, settings), effort:configuredEffort, tier:criticTier, catalog:criticCatalog });
   logLimitMove(input.bb, `code critic for ${input.taskId}`, offSpent?.issues);
-  const providerId = frozen?.providerId ?? offSpent?.pair.providerId ?? apart?.pair.providerId ?? liveSelection.providerId;
-  const modelId = frozen?.model ?? offSpent?.pair.model ?? apart?.pair.model ?? liveSelection.model;
+  let providerId = frozen?.providerId ?? offSpent?.pair.providerId ?? apart?.pair.providerId ?? liveSelection.providerId;
+  let modelId = frozen?.model ?? offSpent?.pair.model ?? apart?.pair.model ?? liveSelection.model;
+  if (!frozen) {
+    const byModel = criticStats(input.db, input.projectId, Date.now() - 30 * 86_400_000, ["code-critique"])[0]?.calibration.byModel ?? [];
+    const ranked = pickCriticByAccuracy({ providerId, model: modelId }, criticPairCandidates(settings, input.config), byModel);
+    if (ranked.changed) {
+      try {
+        const nextEffort = effortAfterMove("code-critic", { model: liveSelection.model, effort: configuredEffort }, ranked.pair);
+        if (await usable(criticCatalog, ranked.pair, nextEffort, criticTier)) {
+          input.bb.log.info(`code critic for ${input.taskId}: ${ranked.pair.providerId}/${ranked.pair.model} by accuracy; ${providerId}/${modelId} moves to the fallbacks`);
+          providerId = ranked.pair.providerId;
+          modelId = ranked.pair.model;
+        }
+      } catch { /* the pair the other rules chose still runs */ }
+    }
+  }
   // A Gemini critic that a family rule or a limit moved to GPT or Claude runs on the effort that judge had before the Gemini (high), not on the Gemini's medium.
   if (!frozen) configuredEffort = effortAfterMove("code-critic", { model:liveSelection.model, effort:configuredEffort }, { providerId, model:modelId });
   // The independence the rule promises is checked on the pair that will really run, after every fallback: not met is said, never silent (F4/R4).
@@ -551,8 +582,18 @@ export async function runCodeCritique(input:{
   }
   if (input.evidence.truncated) {
     const reason = `code_critique_evidence_unknown:${input.evidence.truncateReason ?? "truncated"}`;
-    recordStage(input.db, { ...base, state:"blocked", reason, result:{ ...ledgerCarry, ...hashFields, truncated:true, policy } });
-    return { allowed:false, reason, review:"not_required", settings:parsed, policy };
+    recordStage(input.db, { ...base, state:"skipped", reason, result:{ ...ledgerCarry, ...hashFields, truncated:true, policy } });
+    return { allowed:true, reason, review:"not_required", settings:parsed, policy };
+  }
+  const screened = await screenCodeCritique(settings, { projectId: input.projectId, runId: input.runId, taskId: input.taskId, task: input.task, evidence: input.evidence });
+  if (screened) {
+    const critique = critiqueFromScreen(screened);
+    const blocked = codeCritiqueStops(parsed.mode, critique);
+    const result = { ...ledgerCarry, ...hashFields, ...critique, mode: parsed.mode, by: "jev", policy };
+    recordStage(input.db, { ...base, state: blocked ? "blocked" : "passed", result, reason: blocked ? verdictReasons(critique, "code-critique").receipt : undefined });
+    return blocked
+      ? { allowed: false, reason: verdictReasons(critique, "code-critique").returned, critique: result, parsed: critique, settings: parsed, review: "not_required", policy }
+      : { allowed: true, critique: result, parsed: critique, settings: parsed, review: "passed", policy };
   }
   const snapshot = {
     ...ledgerCarry,
@@ -575,7 +616,7 @@ export async function runCodeCritique(input:{
         const raw = (await input.bb.sdk.threads.output({ threadId })).output;
         if (typeof raw !== "string" || !raw.trim()) throw new Error("critique_output_empty");
         const critique = await readCodeCritique(input.bb, threadId, raw, cites);
-        const blocked = critique.decision === "changes_requested" && parsed.mode === "gate";
+        const blocked = codeCritiqueStops(parsed.mode, critique);
         const result = { ...snapshot, ...critique, policy, reviewer:{ providerId, model:modelId, reasoningEffort:configuredEffort, serviceTier: writerServiceTier(settings) === "fast" ? "fast" : "standard", mode:parsed.mode, maxRounds:parsed.maxRounds, autoFix:parsed.autoFix }, rawOutput:raw.slice(0, 12_000) };
         recordStage(input.db, { ...base, state:blocked ? "blocked" : "passed", providerId, model:modelId,
           threadId, result, reason:blocked ? verdictReasons(critique,"code-critique").receipt : undefined });
@@ -594,7 +635,7 @@ export async function runCodeCritique(input:{
         const raw = (await input.bb.sdk.threads.output({ threadId })).output;
         if (typeof raw !== "string" || !raw.trim()) throw new Error("critique_output_empty");
         const critique = await readCodeCritique(input.bb, threadId, raw, cites);
-        const blocked = critique.decision === "changes_requested" && parsed.mode === "gate";
+        const blocked = codeCritiqueStops(parsed.mode, critique);
         const result = { ...snapshot, ...critique, policy, rawOutput:raw.slice(0, 12_000) };
         recordStage(input.db, { ...base, state:blocked ? "blocked" : "passed", providerId, model:modelId,
           threadId, result, reason:blocked ? verdictReasons(critique,"code-critique").receipt : undefined });
@@ -632,26 +673,34 @@ export async function runCodeCritique(input:{
       providerId, model:modelId, reasoningEffort:configuredEffort,
       serviceTier:tier, mode:parsed.mode, maxRounds:parsed.maxRounds, autoFix:parsed.autoFix,
     };
-    const spawned = await fullAccessSpawn(input.bb, {
-      ...placement,
-      ...requiredPolicyField(input.bb, helperPolicy, providerId, "code-critic"),
-      ...writerExecutionSelection(providerId, modelId, configuredEffort, serviceTier),
-      prompt:codeCritiquePrompt({ evidence:input.evidence, task:input.task, agent:parsed.agent, disputes:input.disputes, memoryText:reviewerMemoryFor(input.db, input.projectId, input.runId, input.task) }),
-      environment:attemptEnvironment(input.db, input.runId, input.taskId, input.task.project_cwd)
-        ?? { type:"host", hostId:input.config.hostId, workspace:{ type:"unmanaged", path:input.task.project_cwd } },
-      pluginMetadata:{ role:"code-critic", lanePilotRunId:input.runId, lanePilotTaskId:input.taskId,
-        stageId:"code-critique", parentPmThreadId:getRun(input.db, input.runId)?.pm_thread_id ?? null,
-        revisionSha256:input.evidence.revisionSha256, helperMode:helperPolicy.mode,
-        helperRequired:helperPolicy.policy?.required===true, reviewer:reviewerSnapshot, ...graphStepMetadata(input.workflow) },
-    });
-    threadId = stringAt(spawned, "id");
-    if (!threadId) throw new Error("critique_thread_id_missing");
-    recordStage(input.db, { ...base, state:"running", providerId, model:modelId, threadId, result:{ ...snapshot, threadId, policy } });
-    await waitThreadIdle(input.bb,threadId,"critique_thread_timeout");
-    const raw = (await input.bb.sdk.threads.output({ threadId })).output;
-    if (typeof raw !== "string" || !raw.trim()) throw new Error("critique_output_empty");
-    const critique = await readCodeCritique(input.bb, threadId, raw, cites);
-    const blocked = critique.decision === "changes_requested" && parsed.mode === "gate";
+    const personas = criticPersonas(input.task.risk);
+    const critiques = [];
+    const raws: string[] = [];
+    for (const persona of personas) {
+      const spawned = await fullAccessSpawn(input.bb, {
+        ...placement,
+        ...requiredPolicyField(input.bb, helperPolicy, providerId, "code-critic"),
+        ...writerExecutionSelection(providerId, modelId, configuredEffort, serviceTier),
+        prompt:codeCritiquePrompt({ evidence:input.evidence, task:input.task, agent:parsed.agent, disputes:input.disputes, memoryText:reviewerMemoryFor(input.db, input.projectId, input.runId, input.task), persona }),
+        environment:attemptEnvironment(input.db, input.runId, input.taskId, input.task.project_cwd)
+          ?? { type:"host", hostId:input.config.hostId, workspace:{ type:"unmanaged", path:input.task.project_cwd } },
+        pluginMetadata:{ role:"code-critic", lanePilotRunId:input.runId, lanePilotTaskId:input.taskId,
+          stageId:"code-critique", parentPmThreadId:getRun(input.db, input.runId)?.pm_thread_id ?? null,
+          revisionSha256:input.evidence.revisionSha256, helperMode:helperPolicy.mode,
+          helperRequired:helperPolicy.policy?.required===true, reviewer:reviewerSnapshot, ...(persona ? { persona } : {}), ...graphStepMetadata(input.workflow) },
+      });
+      threadId = stringAt(spawned, "id");
+      if (!threadId) throw new Error("critique_thread_id_missing");
+      recordStage(input.db, { ...base, state:"running", providerId, model:modelId, threadId, result:{ ...snapshot, threadId, policy } });
+      await waitThreadIdle(input.bb,threadId,"critique_thread_timeout");
+      const raw = (await input.bb.sdk.threads.output({ threadId })).output;
+      if (typeof raw !== "string" || !raw.trim()) throw new Error("critique_output_empty");
+      raws.push(raw);
+      critiques.push(await readCodeCritique(input.bb, threadId, raw, cites));
+    }
+    const critique = unionCriticFails(critiques);
+    const raw = raws.join("\n");
+    const blocked = codeCritiqueStops(parsed.mode, critique);
     const result = { ...snapshot, ...critique, policy, reviewer:{ providerId, model:modelId, reasoningEffort:configuredEffort, serviceTier:tier, mode:parsed.mode, maxRounds:parsed.maxRounds, autoFix:parsed.autoFix }, rawOutput:raw.slice(0, 12_000) };
     recordStage(input.db, { ...base, state:blocked ? "blocked" : "passed", providerId, model:modelId,
       threadId, result, reason:blocked ? verdictReasons(critique,"code-critique").receipt : undefined });
@@ -749,4 +798,75 @@ export async function runSpecialistReview(input:{bb:BbPluginApi;db:ReturnType<ty
     recordStage(input.db,{...base,state:"failed",providerId,model:modelId,threadId,reason,result:{error:reason}});
     return {allowed:false,reason:`specialist_review_failed:${reason}`};
   }
+}
+
+/**
+ * The third voice for the contested rubric items of two critics (arXiv #24): one cheap session of the role table's
+ * `critic-tiebreak` row (Gemini 3.8 Flash through 9router by default) answers every contested item at once. The vote is
+ * what resolveRubricTiebreak's `vote` expects; a session that never answers or answers nothing readable yields an empty
+ * map, and the contested items stay a fail — never a quiet pass.
+ */
+export async function criticTiebreakVote(input: {
+  bb: BbPluginApi; db: ReturnType<typeof openDatabase>; projectId: string; runId: string; taskId: string;
+  config: PrototypeConfig; task: TaskV2; workflow?: { runId: string; stepKey: string; nodeId: string };
+}): Promise<(items: readonly string[], prompt: string) => Promise<ReadonlyMap<string, "ok" | "fail">>> {
+  return async (items, prompt) => {
+    const settings = await stageHelperSettings(input.bb, input.db, input.projectId, input.runId);
+    const base = { runId: input.runId, taskId: input.taskId, stageId: "critic-tiebreak" as const, input: prompt };
+    recordStage(input.db, { ...base, state: "pending", replaceOnNewInput: true, restart: true });
+    const fallback = resolveStageWriterSelection({ settings, config: input.config });
+    const picked = await roleSelection({
+      zcodeBusy: zcodeBusyPeek(input.bb), catalog: sdkCriticCatalog(input.bb, input.config.hostId), settings,
+      role: "critic-tiebreak", fallback: { providerId: fallback.providerId, model: fallback.model },
+      spent: await limitProbe(input.bb, input.config.hostId, settings), tier: "fast",
+    });
+    logLimitMove(input.bb, `critic tiebreak for ${input.taskId}`, picked.issues);
+    const providerId = picked.providerId, modelId = picked.model;
+    const effort = picked.effort ?? "medium";
+    let threadId: string | null = null;
+    try {
+      const [providers, catalog] = await Promise.all([
+        input.bb.sdk.providers.list({ hostId: input.config.hostId }),
+        input.bb.sdk.providers.models({ providerId, hostId: input.config.hostId }),
+      ]);
+      const provider = providers.find((row) => row.id === providerId && row.available);
+      const model = catalog.models.find((row) => row.id === modelId || row.model === modelId);
+      if (!provider || !model) throw new Error("tiebreak_provider_or_model_unavailable");
+      if (!model.supportedReasoningEfforts.some((row) => row.reasoningEffort === effort)) throw new Error(`tiebreak_reasoning_effort_unsupported:${effort}`);
+      const serviceTier = provider.capabilities.supportsServiceTier ? bbServiceTier("fast") : null;
+      if (serviceTier && !(provider.serviceTiers ?? []).some((item) => item.id === serviceTier)) throw new Error(`tiebreak_service_tier_unsupported:${serviceTier}`);
+      const helperPolicy = requireHelperSpawn(input);
+      const placement = await helperChildPlacement({
+        bb: input.bb, db: input.db, projectId: input.projectId, runId: input.runId, role: "critic-tiebreak", taskTitle: input.task.title,
+      });
+      const spawned = await fullAccessSpawn(input.bb, {
+        ...placement,
+        ...requiredPolicyField(input.bb, helperPolicy, providerId, "critic-tiebreak"),
+        ...writerExecutionSelection(providerId, modelId, effort, serviceTier),
+        prompt,
+        environment: { type: "host", hostId: input.config.hostId, workspace: { type: "unmanaged", path: input.task.project_cwd } },
+        pluginMetadata: { role: "critic-tiebreak", lanePilotRunId: input.runId, lanePilotTaskId: input.taskId,
+          stageId: "critic-tiebreak", parentPmThreadId: getRun(input.db, input.runId)?.pm_thread_id ?? null,
+          helperMode: helperPolicy.mode, helperRequired: helperPolicy.policy?.required === true, ...graphStepMetadata(input.workflow) },
+      });
+      threadId = stringAt(spawned, "id");
+      if (!threadId) throw new Error("tiebreak_thread_id_missing");
+      recordStage(input.db, { ...base, state: "running", providerId, model: modelId, threadId });
+      await waitThreadIdle(input.bb, threadId, "tiebreak_thread_timeout");
+      const raw = (await input.bb.sdk.threads.output({ threadId })).output;
+      if (typeof raw !== "string" || !raw.trim()) throw new Error("tiebreak_output_empty");
+      const votes = parseTiebreakVotes(raw, items);
+      recordStage(input.db, { ...base, state: "passed", providerId, model: modelId, threadId,
+        result: { votes: Object.fromEntries(votes), unanswered: items.filter((item) => !votes.has(item)), rawOutput: raw.slice(0, 12_000) } });
+      return votes;
+    } catch (cause) {
+      const reason = cause instanceof Error ? cause.message : String(cause);
+      if (threadId) {
+        const thread = await input.bb.sdk.threads.get({ threadId }).catch(() => null);
+        if (["active", "starting"].includes(stringAt(thread, "status") ?? "")) await input.bb.sdk.threads.stop({ threadId }).catch(() => undefined);
+      }
+      recordStage(input.db, { ...base, state: "failed", providerId, model: modelId, threadId, reason, result: { error: reason } });
+      return new Map();
+    }
+  };
 }

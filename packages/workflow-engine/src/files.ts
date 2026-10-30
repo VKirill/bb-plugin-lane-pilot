@@ -3,7 +3,7 @@ import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { sha256Hex } from "@lane-pilot/kit";
 
-export const WORKFLOW_FILE_ID = /^[a-z][a-z0-9.-]{0,47}$/;
+export const WORKFLOW_FILE_ID = /^[a-z0-9][a-z0-9.-]{0,47}$/;
 export const sha256Text = (text: string): string => sha256Hex(text);
 
 export type WorkflowWrite = {

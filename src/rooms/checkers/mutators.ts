@@ -74,7 +74,10 @@ const deletedAssertion: Mutator = ({ changes }) => {
   const found = middle(addedLines(changes, (change) => isTestPath(change.path))
     .filter((row) => (ASSERTION.test(row.text) || PY_ASSERT.test(row.text)) && balanced(row.text) && !/[,(\\]\s*$/.test(row.text) && !/^\s*assert\s*$/.test(row.text)));
   if (!found) return null;
-  return { changes: replaced(changes, found.at, withLine(found.change.after!, found.line, null)), path: found.change.path, line: found.line, summary: `deleted the assertion «${found.text.trim().slice(0, 80)}»` };
+  const after = withLine(found.change.after!, found.line, null);
+  // A new test file has no base text. Keep the candidate's test as `before` so the fit check can see the line go.
+  const before = found.change.before ?? found.change.after;
+  return { changes: changes.map((change, index) => (index === found.at ? { ...change, before, after } : change)), path: found.change.path, line: found.line, summary: `deleted the assertion «${found.text.trim().slice(0, 80)}»` };
 };
 
 const COMPARISONS: Array<[RegExp, string]> = [

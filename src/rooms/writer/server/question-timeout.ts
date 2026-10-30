@@ -44,7 +44,16 @@ export function createWriterQuestionTimeout(ctx: ServerCore, services: Services)
     for (const row of listUnansweredWriterQuestions(db)) {
       if (signal?.aborted || ctx.isDisposed()) break;
       if (now - row.updated_at < WRITER_QUESTION_WAIT_MS) continue;
-      if (services.activeWriterTasks.has(`${row.run_id}:${row.task_id}`)) continue;
+      // startWriterTask holds run:task until its finally (start.ts). The question is already on the attempt
+      // by then; skipping here left it unanswered for as long as that loop stayed up (a hung worktree remove).
+      // Do not deliver the default answer while the key is held: that starts a second loop, and the first
+      // finally would delete its key. End the question instead. The loop drops the key itself once it sees
+      // the question, so a loop that got that far is answered by default on a later sweep.
+      if (services.activeWriterTasks.has(`${row.run_id}:${row.task_id}`)) {
+        await end(row, "the writer task was still marked live an hour after it asked");
+        done.push({ taskId: row.task_id, action: "ended" });
+        continue;
+      }
       // A stopped or paused run holds its questions until it is resumed.
       if (await isRunHalted(bb.storage.kv as never, row.run_id) || await isRunPaused(bb.storage.kv as never, row.run_id)) continue;
       if (isProductDecision(writerQuestion(row.reason))) {

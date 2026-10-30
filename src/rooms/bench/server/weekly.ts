@@ -1,8 +1,10 @@
+import packageJson from "../../../../package.json";
 import { scheduleIsolated, type ServerCore } from "../../core/server";
 import { loadProjectSettings } from "../../storage";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
 import type { BenchApi } from "../service";
 import { renderBaseline } from "../baseline";
+import { nightArm } from "../runner";
 
 /**
  * The comparison arena on a clock (SMA map: Comparison arena, Baseline metric bench). Every Sunday at 02:00 UTC the newest bench set runs
@@ -33,12 +35,42 @@ export function mountBenchWeekly(ctx: ServerCore, bench: () => BenchApi): void {
     if (newest.runs.some((row) => row.arm === previous)) {
       try {
         const result = bench().compare({ version: newest.version, armA: previous, armB: arm });
-        ctx.log(`bench-weekly: ${newest.version} ${previous} → ${arm}: ${result.comparison.verdict}; ${result.text.split("\n")[0]}`);
+        const ci = result.text.split("\n").find((line) => line.startsWith("Pass rate")) ?? "";
+        ctx.log(`bench-weekly: ${newest.version} ${previous} → ${arm}: ${result.comparison.verdict}; ${result.text.split("\n")[0]}${ci ? `; ${ci}` : ""}`);
       } catch (cause) {
         ctx.log(`bench-weekly: compare skipped: ${cause instanceof Error ? cause.message : String(cause)}`);
       }
     }
   }, { timeoutMs: 6 * 3_600_000 });
+}
+
+/** The OVH machine. A night run always lands here, even when the set's own paths point at the Mac. */
+export const OVH_BENCH_HOST = "host_rwrxyi39aw";
+
+/** The full set, on OVH. No task limit. Repeats are chosen by `nightlyRepeats`, not by this object. */
+export function nightlyRun(version: string, pluginVersion: string) {
+  return { version, arm: nightArm(pluginVersion), wait: true as const, hostId: OVH_BENCH_HOST, noise: true as const };
+}
+
+/** Night default is two runs (the arm and one repeat) so the interval has a real spread.
+ * A stored `noise_repeats` of 2 or more is that many runs. Weekly does not use this: 0 there stays one run. */
+export function nightlyRepeats(noiseRepeats: number): number {
+  return noiseRepeats >= 2 ? noiseRepeats : 2;
+}
+
+/** Every day at 01:30 UTC the newest set runs as the night arm of this plugin version. setting bench.nightly = off stops it.
+ * Sunday also has the weekly compare at 02:00; the two arms are different and this one does not wait for that one. */
+export function mountBenchNightly(ctx: ServerCore, bench: () => BenchApi): void {
+  scheduleIsolated(ctx.bb, "bench-nightly", "30 1 * * *", async (signal) => {
+    if (ctx.isDisposed() || signal?.aborted) return;
+    if (String(loadProjectSettings(ctx.db, GLOBAL_SETTINGS_PROJECT_ID)["bench.nightly"] ?? "on") === "off") return;
+    const newest = bench().status().sort((a, b) => b.createdAt - a.createdAt)[0];
+    if (!newest) return;
+    const input = nightlyRun(newest.version, packageJson.version);
+    const repeat = nightlyRepeats((await bench().placement()).noiseRepeats);
+    ctx.log(`bench-nightly: ${input.version} ${input.arm} on ${input.hostId}, ${repeat} runs`);
+    await bench().run({ ...input, repeat });
+  }, { timeoutMs: 8 * 3_600_000 });
 }
 
 /** Closes a series left `running` past its hour cap. Once at startup, then twice an hour. */

@@ -135,7 +135,7 @@ These distinctions are declared by the schemas; they do not themselves authorize
 | Skipped | Memory or maintenance disabled and there is no live child. | `src/rooms/memory/server/memory.ts:61-70` |
 | Running/observing | Child is live, spawn ownership is held elsewhere, a snapshot is unavailable, or a transient host/event error needs reconciliation. | `src/rooms/memory/server/memory.ts:95-106`, `:151-155`, `:183-209` |
 | Failed | Product failure, invalid provider/model settings, empty child output, or a non-transient spawn/processing error. | `src/rooms/memory/server/memory.ts:100-109`, `:157-166`, `:183-212` |
-| Passed | Child output parses to candidates, records are stored, and the receipt records stored ids plus any `coreDemotedToNotes`, evicted/superseded ids, and audience. A core candidate that exceeds the core budget is retried as a note; other budget errors fail the stage. | `src/rooms/memory/server/memory.ts:100-120`, `packages/memory-core/src/store.ts:190-206` |
+| Passed | Child output parses to candidates, records are stored, and the receipt records stored ids plus any `coreDemotedToNotes`, evicted/superseded ids, and audience. A core candidate that exceeds the core budget is retried as a note; other budget errors fail the stage. | `src/rooms/memory/server/memory.ts:100-120`, `packages/memory-core/src/store.ts:211-223` |
 
 The spawn claim and terminal receipt make maintenance idempotent; a second call returns the saved terminal receipt instead of spawning another child (`src/rooms/memory/server/memory.ts:22-25`, `:61-64`, `:151-155`).
 

@@ -441,13 +441,43 @@ export function worktreeOfBranch(porcelain:string, branch:string):string|null {
   return null;
 }
 
+/** The task recorded on `lane/<name>` when it was created; empty when this branch predates the mark. */
+async function laneBranchTask(repoRoot:string, branch:string):Promise<string> {
+  const read=await git(repoRoot,["config","--local","--get",`branch.${branch}.laneTask`]);
+  return read.ok?read.stdout.trim():"";
+}
+
+/**
+ * Reuse the branch when it still has commits main does not, and it is this task's (or unmarked). A branch main has
+ * moved past, or one marked for another task, is dropped so the retry does not inherit it.
+ */
+async function reuseLaneBranch(repoRoot:string, branch:string, taskId?:string):Promise<boolean> {
+  const stored=await laneBranchTask(repoRoot,branch);
+  if(taskId&&stored&&stored!==taskId) return false;
+  const tip=(await git(repoRoot,["rev-parse",branch])).stdout.trim();
+  const head=(await git(repoRoot,["rev-parse","HEAD"])).stdout.trim();
+  const contained=(await git(repoRoot,["merge-base","--is-ancestor",branch,"HEAD"])).ok;
+  return !contained||tip===head;
+}
+
+/** Removes the worktree that holds the branch, then the branch, so `worktree add -b` can create it again. */
+async function dropLaneBranch(repoRoot:string, branch:string):Promise<void> {
+  const holder=worktreeOfBranch((await git(repoRoot,["worktree","list","--porcelain"])).stdout,branch);
+  if(holder) await git(repoRoot,["worktree","remove","--force",holder]);
+  await git(repoRoot,["worktree","prune"]);
+  await git(repoRoot,["branch","-D",branch]);
+  await git(repoRoot,["config","--local","--unset",`branch.${branch}.laneTask`]);
+}
+
 /**
  * Creates Lane Pilot's own worktree of a section repository on a fresh lane/<name> branch from its HEAD. A chat folder
  * nested in a larger repo gets a worktree of that repo; `path` is then the same subfolder inside it, where the writer works.
  */
 export async function createWorktree(input:{basePath:string;targetPath:string;name:string;
   /** Start from this commit instead of the base checkout's HEAD (a reverify checks out the merged change, a revert compares with its base). */
-  commit?:string}):Promise<{status:"ready"|"failed";path:string|null;branch:string|null;reason:string|null;
+  commit?:string;
+  /** The task this branch belongs to. A retry reuses the branch only while it is unmerged and still that task's. */
+  taskId?:string;}):Promise<{status:"ready"|"failed";path:string|null;branch:string|null;reason:string|null;
   /** The commit the worktree starts from: the attempt's base, recorded so a rollback can name it. */
   baseSha:string|null}> {
   const layout=await workspaceGitLayout(input.basePath);
@@ -460,7 +490,9 @@ export async function createWorktree(input:{basePath:string;targetPath:string;na
   // timed out on a machine deep in swap). Taking it again is safe, the name is the attempt's own; `-b` failed with «a branch named
   // lane/<attempt> already exists» and parked the task (2026-10-28, Vampirism Fire: two tasks blocked with their worktrees on disk).
   let root=input.targetPath;
-  if((await git(repoRoot,["rev-parse","--verify","-q",`refs/heads/${branch}`])).ok) {
+  const branchExists=(await git(repoRoot,["rev-parse","--verify","-q",`refs/heads/${branch}`])).ok;
+  const reuse=branchExists && await reuseLaneBranch(repoRoot,branch,input.taskId);
+  if(reuse) {
     const holder=worktreeOfBranch((await git(repoRoot,["worktree","list","--porcelain"])).stdout,branch);
     if(holder&&existsSync(holder)) root=holder;
     else {
@@ -470,11 +502,21 @@ export async function createWorktree(input:{basePath:string;targetPath:string;na
       await retireCollidingWorktrees(input.targetPath);
     }
   } else {
-    const added=await git(repoRoot,["worktree","add","-q","-b",branch,input.targetPath,input.commit??"HEAD"]);
+    if(branchExists) await dropLaneBranch(repoRoot,branch);
+    let added=await git(repoRoot,["worktree","add","-q","-b",branch,input.targetPath,input.commit??"HEAD"]);
+    if(!added.ok && /already exists/.test(added.reason)) {
+      if(await reuseLaneBranch(repoRoot,branch,input.taskId)) {
+        added=await git(repoRoot,["worktree","add","-q",input.targetPath,branch]);
+      } else {
+        await dropLaneBranch(repoRoot,branch);
+        added=await git(repoRoot,["worktree","add","-q","-b",branch,input.targetPath,input.commit??"HEAD"]);
+      }
+    }
     if(!added.ok) return {status:"failed",path:null,branch:null,baseSha:null,reason:added.reason};
     // git may have given this worktree the admin name a half-removed old folder still points at.
     await retireCollidingWorktrees(input.targetPath);
   }
+  if(input.taskId) await git(repoRoot,["config","--local",`branch.${branch}.laneTask`,input.taskId]);
   const head=await git(root,["rev-parse","HEAD"]);
   const path=layout.nested?join(root,layout.prefix):root;
   // A subfolder with no tracked file yet is not in the checkout.

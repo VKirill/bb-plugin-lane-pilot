@@ -83,6 +83,8 @@ Every stage declares what decides that it is done: a code predicate (a command's
 
 Acceptance refuses an opinion as its only reason. Before the acceptance receipt is written, the writer finish collects the stages that passed for the candidate, and a set with no code-decided stage blocks the attempt (`src/rooms/writer/server/finish.ts:628-640`, `packages/contracts/src/stage-proof.ts:55-61`).
 
+These are the pipeline's capabilities, not a project's live configuration: every opinion and review stage obeys its `*.enabled` project setting and `quality_mode` (`quick` disables both critiques, `standard` reads the settings, `full` enables them), so a stage with no setting is recorded `skipped` with reason `disabled_by_project_setting` (`src/rooms/critique/quality-mode.ts:16-24`). The generated [enabled settings](enabled-settings.md) page lists the defaults and the global `*` values.
+
 The contract lint refuses a verification command that cannot fail (`true`, `:`, `exit 0`, a bare `echo`, or a failure hidden by `|| true`), and for risk medium or higher it warns, without refusing, when no check names a file that is missing on the base commit (`src/rooms/tasks/server/contract-lint.ts:76-96`, `:225-233`).
 
 `bb lane-pilot metrics <project-id> [--days N]` and the `lp_attempt_metrics` RPC list each attempt with its stages passed or failed, seconds per stage, writer tokens and a list-price cost. A provider that reports no usage, such as acp-cursor, shows `not_measured` with no tokens and no cost, never zero; a model with no price or a thread shared by several attempts shows `partial` (`src/rooms/usage/server/attempt-metrics.ts:65-126`, `src/rooms/tools/server/cli.ts:190-197`).

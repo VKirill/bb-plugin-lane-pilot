@@ -175,7 +175,7 @@ export function createStageReturn(ctx: ServerCore, services: Services) {
       // Planning and discussion are the PM's stages: stop what runs, reset what is stale, hand the PM the note.
       let paused: string | null = null;
       for (const attempt of open) {
-        const stopped = await cancelAttemptById(ctx, attempt.id, services.rollback);
+        const stopped = await cancelAttemptById(ctx, attempt.id, services.rollback, `canceled: returned to the PM by ${by}`);
         if (!stopped.ok) return fail(`attempt ${attempt.id} could not be stopped: ${stopped.reason ?? stopped.state}`, `attempt ${attempt.id} ${stopped.state}`);
         paused = `${paused ? `${paused}; ` : ""}attempt ${attempt.id} stopped (exit confirmed, its work is on record)`;
       }

@@ -98,6 +98,67 @@ export function pageCitations(body:string): Array<{ file:string; start:number; e
   return found;
 }
 
+/** A token a doc claim names that can be found in code: `backticked`, camelCase, snake_case, `call()` or CONSTANT-shaped. */
+export function claimIdentifiers(text:string):string[] {
+  const ids = new Set<string>();
+  const keep = (raw:string) => {
+    const token = raw.replace(/\(\)$/, "");
+    if (token.length < 3 || /\//.test(token) || /\.(md|ts|tsx|json|sql|py|sh|css|html)$/i.test(token)) return;
+    ids.add(token);
+  };
+  for (const match of text.matchAll(/`([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*(?:\(\))?)`/g)) keep(match[1]!);
+  for (const match of text.matchAll(/\b([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*(?:\(\))?)\b/g)) {
+    const token = match[1]!;
+    if (/\(\)$|_|\.|[a-z][A-Z]|^[A-Z][A-Z0-9_]{3,}$/.test(token)) keep(token);
+  }
+  return [...ids];
+}
+
+/** A citation and the identifiers the sentence that carries it names (the line the citation sits on). */
+export function citationClaims(body:string): Array<{ file:string; start:number; end:number; identifiers:string[] }> {
+  const expanded = expandCitationLists(body);
+  const claims:Array<{ file:string; start:number; end:number; identifiers:string[] }> = [];
+  for (const match of expanded.matchAll(CITATION)) {
+    const lineStart = expanded.lastIndexOf("\n", match.index) + 1;
+    const lineEnd = expanded.indexOf("\n", match.index);
+    const line = expanded.slice(lineStart, lineEnd === -1 ? expanded.length : lineEnd);
+    const file = match[1]!.replace(/^\.\//, "");
+    const identifiers = claimIdentifiers(line).filter((id) => !file.includes(id) && !id.includes(file.split("/").pop()!.replace(/\.[^.]+$/, "")));
+    claims.push({ file, start:Number(match[2]), end:match[3] ? Number(match[3]) : Number(match[2]), identifiers });
+  }
+  return claims;
+}
+
+/**
+ * Semantic citation check: for each `file:NN-MM` citation on a writable page, at least one identifier its claim names
+ * must appear inside the cited range — a citation that drifted hundreds of lines from its symbol still passes the
+ * line-count check. `readRange` returns the cited lines, or null when the file cannot be read (the bounds check already
+ * reports a missing file; a claim naming no identifier is skipped). Checked range is capped at `maxSpan` lines.
+ */
+export async function lintCitationClaims(pages:DocPage[], readRange:(file:string, start:number, end:number) => Promise<string | null>, options:{ maxSpan?:number } = {}):Promise<DocsFinding[]> {
+  const findings:DocsFinding[] = [];
+  const maxSpan = options.maxSpan ?? 2000;
+  const cache = new Map<string, Promise<string | null>>();
+  const read = (file:string, start:number, end:number) => {
+    const key = `${file}:${start}:${end}`;
+    if (!cache.has(key)) cache.set(key, readRange(file, start, end).catch(() => null));
+    return cache.get(key)!;
+  };
+  for (const page of pages) {
+    if (!isDocsContent(page.path)) continue;
+    for (const claim of citationClaims(withoutBacklinks(page.content))) {
+      if (!claim.identifiers.length || claim.end - claim.start >= maxSpan) continue;
+      const text = await read(claim.file, claim.start, claim.end);
+      if (text === null) continue;
+      if (!claim.identifiers.some((id) => text.includes(id) || text.includes(id.split(".").pop()!))) {
+        findings.push({ path:page.path, rule:"evidence",
+          detail:`cites ${claim.file}:${claim.start}${claim.end !== claim.start ? `-${claim.end}` : ""}, but none of the identifiers it names (${claim.identifiers.slice(0, 5).join(", ")}) appears in that range` });
+      }
+    }
+  }
+  return findings;
+}
+
 /**
  * Checks every page but the builder-owned index. `lineCounts` maps each cited file to its number of
  * lines, or null when the file does not exist. `present` names pages that exist but are not in `pages`

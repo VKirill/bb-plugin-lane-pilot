@@ -1,3 +1,4 @@
+import asset3d from "../../../workflows/3d-asset.json";
 import aboutSite from "../../../workflows/about-site.json";
 import agentRoutine from "../../../workflows/agent-routine.json";
 import analyzeCode from "../../../workflows/analyze-code.json";
@@ -22,6 +23,7 @@ import invoiceSend from "../../../workflows/invoice-send.json";
 import issueDiscover from "../../../workflows/issue-discover.json";
 import issueFull from "../../../workflows/issue-full.json";
 import issueQuick from "../../../workflows/issue-quick.json";
+import issueQuickLegacy from "../../../workflows/issue-quick-legacy.json";
 import issueBatch from "../../../workflows/issue-batch.json";
 import lpTaskPipeline from "../../../workflows/lp-task-pipeline.json";
 import lpAfterAccept from "../../../workflows/lp.after-accept.json";
@@ -35,6 +37,7 @@ import lpDraw from "../../../workflows/lp.draw.json";
 import lpPlan from "../../../workflows/lp.plan.json";
 import lpReview from "../../../workflows/lp.review.json";
 import lpHarnessEdit from "../../../workflows/lp.harness-edit.json";
+import lpCriticEdit from "../../../workflows/lp.critic-edit.json";
 import lpHarnessReflect from "../../../workflows/lp.harness-reflect.json";
 import lpWallHunt from "../../../workflows/lp.wall-hunt.json";
 import lpRoute from "../../../workflows/lp.route.json";
@@ -47,11 +50,13 @@ import qualityLoop from "../../../workflows/quality-loop.json";
 import reels from "../../../workflows/reels.json";
 import resume from "../../../workflows/resume.json";
 import refactor from "../../../workflows/refactor.json";
+import robloxAsset from "../../../workflows/roblox-asset.json";
 import retrospective from "../../../workflows/retrospective.json";
 import reviewFix from "../../../workflows/review-fix.json";
 import roadmapDriven from "../../../workflows/roadmap-driven.json";
 import securityAudit from "../../../workflows/security-audit.json";
 import seoCocoon from "../../../workflows/seo-cocoon.json";
+import socialPost from "../../../workflows/social-post.json";
 import testGen from "../../../workflows/test-gen.json";
 import uiAudit from "../../../workflows/ui-audit.json";
 import webResearch from "../../../workflows/web-research.json";
@@ -80,6 +85,7 @@ const withGateVocabulary = (workflow: { nodes: Array<{ id: string; prompt?: stri
 
 /** The workflows that ship with Lane Pilot (`workflows/*.json`, inlined by the bundler). Add a file here to add one (a test checks that every file is listed). */
 export const BUILTIN_SOURCES: ReadonlyArray<{ name: string; value: unknown }> = [
+  { name: "3d-asset.json", value: asset3d },
   { name: "about-site.json", value: aboutSite },
   { name: "agent-routine.json", value: agentRoutine },
   { name: "analyze-code.json", value: analyzeCode },
@@ -104,6 +110,7 @@ export const BUILTIN_SOURCES: ReadonlyArray<{ name: string; value: unknown }> = 
   { name: "issue-discover.json", value: issueDiscover },
   { name: "issue-full.json", value: issueFull },
   { name: "issue-quick.json", value: issueQuick },
+  { name: "issue-quick-legacy.json", value: issueQuickLegacy },
   { name: "issue-batch.json", value: issueBatch },
   { name: "lp-task-pipeline.json", value: lpTaskPipeline },
   { name: "lp.after-accept.json", value: lpAfterAccept },
@@ -117,6 +124,7 @@ export const BUILTIN_SOURCES: ReadonlyArray<{ name: string; value: unknown }> = 
   { name: "lp.plan.json", value: withGateVocabulary(lpPlan as never) },
   { name: "lp.review.json", value: lpReview },
   { name: "lp.harness-edit.json", value: lpHarnessEdit },
+  { name: "lp.critic-edit.json", value: lpCriticEdit },
   { name: "lp.harness-reflect.json", value: lpHarnessReflect },
   { name: "lp.wall-hunt.json", value: lpWallHunt },
   { name: "lp.route.json", value: lpRoute },
@@ -129,11 +137,13 @@ export const BUILTIN_SOURCES: ReadonlyArray<{ name: string; value: unknown }> = 
   { name: "reels.json", value: reels },
   { name: "resume.json", value: resume },
   { name: "refactor.json", value: refactor },
+  { name: "roblox-asset.json", value: robloxAsset },
   { name: "retrospective.json", value: retrospective },
   { name: "review-fix.json", value: reviewFix },
   { name: "roadmap-driven.json", value: roadmapDriven },
   { name: "security-audit.json", value: securityAudit },
   { name: "seo-cocoon.json", value: seoCocoon },
+  { name: "social-post.json", value: socialPost },
   { name: "test-gen.json", value: testGen },
   { name: "ui-audit.json", value: uiAudit },
   { name: "web-research.json", value: webResearch },

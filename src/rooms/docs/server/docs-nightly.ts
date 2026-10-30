@@ -6,7 +6,7 @@ import { docsRepairPrompt, docsSelection, docsScheduleDue, docsSinceEpoch, flowD
 import type { DocsUnit } from "../docs";
 import { cadenceAllowsToday, codeDocsVerdict, docsCadence, docsFactsKey, docsWorthinessState, DOCS_WORTHINESS_QUESTION, fallbackDocsVerdict } from "../docs-worthiness";
 import type { DocsCadence, DocsVerdict, DocsWorthinessFacts } from "../docs-worthiness";
-import { blockingDocsFindings, buildBacklinks, buildDocsIndex, citedFiles, docsCompletenessGaps, isDesignCanon, isDocsIndex, lintDocsPages, oversizedPageFindings, pagesToRefresh, uncataloguedPages, withCitedSources, withVerifiedConfidence } from "../docs-lint";
+import { blockingDocsFindings, buildBacklinks, buildDocsIndex, citedFiles, docsCompletenessGaps, isDesignCanon, isDocsIndex, lintCitationClaims, lintDocsPages, oversizedPageFindings, pagesToRefresh, uncataloguedPages, withCitedSources, withVerifiedConfidence } from "../docs-lint";
 import { configuredSetting, graphStepMetadata, modelCatalogOf, resolveSpawnModel, spawnUsageOf } from "../../core/server";
 import { fullAccessSpawn } from "../../core/server";
 import { withUsage } from "../../usage/server";
@@ -655,8 +655,13 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
         // Only what this pass wrote, or a link to a page it removed, blocks it: untouched pages are on main as they are.
         // A page already oversized when the agent started is reported, not split now: its unread content would block.
         const sized=oversizedPageFindings(oversized.filter(writable),record.oversizedAtStart??[]);
+        // Semantic citation check: the identifier a claim names must sit inside its cited range, not only within the
+        // file's bounds. Bounded reads of the cited lines; a file that cannot be read is left to the bounds check.
+        const semantic=await lintCitationClaims(mine(pages).filter((page)=>writable(page.path)),(file,start,end)=>host.call("readBoundedFile",
+          {requestedHostId:place.hostId,projectCwd:place.path,relativePath:file,offset:Math.max(0,start-1),maxLines:Math.min(end-start+1,2000)},
+          {hostId:place.hostId,timeoutMs:60_000}).then((out)=>out.content,()=>null));
         const findings:DocsFinding[]=blockingDocsFindings([...sized.blocking,
-          ...lintDocsPages(pages,counts,oversized).filter((finding)=>writable(finding.path))],docsDirty);
+          ...lintDocsPages(pages,counts,oversized).filter((finding)=>writable(finding.path)),...semantic],docsDirty);
         // The capabilities catalogue covers every capability the apps document, not only the ones inside a flow.
         const catalogue=unit.flows?.length?pages.find((page)=>page.path===`${d}/capabilities.md`):undefined;
         if(catalogue){

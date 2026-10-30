@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { buildFixture, type Fixture } from "../../src/rooms/checkers/fixture";
 import { addedLineNumbers, changedRanges } from "../../src/rooms/checkers/linediff";
 import { honestClaim, plantAll, plantDefect } from "../../src/rooms/checkers/mutators";
+import { testFitFindings } from "../../src/rooms/tasks";
 import { DEFECT_CLASSES, EXPECTED_CATCHERS, type PlantInput } from "../../src/rooms/checkers/types";
 
 describe("line diff", () => {
@@ -47,6 +48,8 @@ describe("planted defects", () => {
     const before = after(clamp(), "test/clamp.test.mjs")!, now = planted.changes.find((change) => change.path === "test/clamp.test.mjs")!.after!;
     expect((before.match(/assert\./g) ?? []).length - (now.match(/assert\./g) ?? []).length).toBe(1);
     expect(planted.defect.path).toBe("test/clamp.test.mjs");
+    const changed = planted.changes.find((change) => change.path === "test/clamp.test.mjs")!;
+    expect(testFitFindings([changed]).map((hit) => hit.kind)).toContain("assertion_removed");
   });
 
   it("shifts a comparison in code the candidate added", () => {

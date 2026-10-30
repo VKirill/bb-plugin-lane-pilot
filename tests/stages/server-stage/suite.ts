@@ -2309,15 +2309,16 @@ describe("stage → native writer → receipt", () => {
     await harness.lifecycle.dispose();
   },20_000);
 
-  it("blocks when candidate evidence hashes are missing",async()=>{
+  it("a missing evidence hash skips the code critic and does not block the writer",async()=>{
     const {db,harness}=await setupCode([
       [],[],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt"}],[{path:"note.txt"}],
     ]);
     await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,objective:"Проверка диспетча",plan:"Write a verified fixture",task},{threadId:pmThreadId,projectId});
     const waited=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:5},{threadId:pmThreadId,projectId})));
-    expect(waited.state).toBe("blocked");
-    expect(String(waited.reason)).toContain("code_critique_evidence_unknown");
-    expect(listStageReceipts(db,"stage-run",task.id).find((row)=>row.stageId==="code-critique")?.state).toBe("blocked");
+    expect(waited.state).toBe("accepted");
+    const receipt=listStageReceipts(db,"stage-run",task.id).find((row)=>row.stageId==="code-critique");
+    expect(receipt?.state).toBe("skipped");
+    expect(receipt?.reason).toContain("code_critique_evidence_unknown");
     await harness.lifecycle.dispose();
   },20_000);
 
@@ -2461,15 +2462,16 @@ describe("stage → native writer → receipt", () => {
     await harness.lifecycle.dispose();
   },20_000);
 
-  it("blocks when host-read bytes do not match the captured dirt hash",async()=>{
-    const {harness}=await setupCode([
+  it("a host-read hash mismatch skips the code critic and does not block the writer",async()=>{
+    const {db,harness}=await setupCode([
       [],[],[{path:"note.txt",sha256:"0".repeat(64)}],[{path:"note.txt",sha256:"0".repeat(64)}],[{path:"note.txt",sha256:"0".repeat(64)}],
     ]);
     await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,objective:"Проверка диспетча",plan:"Write a verified fixture",task},{threadId:pmThreadId,projectId});
     const waited=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:5},{threadId:pmThreadId,projectId})));
-    expect(waited.state).toBe("blocked");
-    expect(String(waited.reason)).toContain("code_critique_evidence_unknown");
-    expect(String(waited.reason)).toContain("content_hash_mismatch");
+    expect(waited.state).toBe("accepted");
+    const receipt=listStageReceipts(db,"stage-run",task.id).find((row)=>row.stageId==="code-critique");
+    expect(receipt?.state).toBe("skipped");
+    expect(receipt?.reason).toContain("content_hash_mismatch");
     await harness.lifecycle.dispose();
   },20_000);
 

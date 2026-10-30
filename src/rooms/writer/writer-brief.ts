@@ -1,4 +1,4 @@
-import { REVIEWER_CONCEPTS, memoryUsefulness } from "@lane-pilot/memory-core";
+import { REVIEWER_CONCEPTS, memoryUsefulness, sameSubject } from "@lane-pilot/memory-core";
 import type { TaskV2 } from "../contracts";
 
 /**
@@ -87,7 +87,14 @@ export function writerMemoryPicks<T extends MemoryNote>(notes:readonly T[], task
   const usable = notes.filter((note) => !note.concepts.includes("lesson"));
   const aboutPaths = usable.filter((note) => anchors.some((anchor) => note.content.includes(anchor)));
   const core = usable.filter((note) => note.kind === "core" && !aboutPaths.includes(note));
-  return [...aboutPaths, ...core].slice(0, MEMORY_LIMIT);
+  const picked: T[] = [];
+  // A near-duplicate would spend one of the three slots on the same fact (arxiv slate). Search order stays; usefulness does not reorder.
+  for (const note of [...aboutPaths, ...core]) {
+    if (picked.some((kept) => sameSubject(kept, note))) continue;
+    picked.push(note);
+    if (picked.length === MEMORY_LIMIT) break;
+  }
+  return picked;
 }
 
 /** The PM read stage's key facts for the writer; its overview repeats the task and its open questions are the PM's. */

@@ -14,18 +14,18 @@ async function cancelStageHelpers(ctx: Pick<ServerCore, "bb" | "db">, attempt: N
 }
 
 /** Cancels one attempt: a queued one at once, a running one once its writer's stop is observed. */
-export async function cancelAttemptById(ctx: Pick<ServerCore, "bb" | "db" | "cancelQueuedAttempt">, attemptId: string, rollback?: { noteStopped(attemptId: string): Promise<{ recorded: boolean; error?: string } | void> }): Promise<{ ok:boolean; state:string; reason:string | null }> {
+export async function cancelAttemptById(ctx: Pick<ServerCore, "bb" | "db" | "cancelQueuedAttempt">, attemptId: string, rollback?: { noteStopped(attemptId: string): Promise<{ recorded: boolean; error?: string } | void> }, why?: string): Promise<{ ok:boolean; state:string; reason:string | null }> {
   const { bb, db } = ctx;
   const attempt = getAttempt(db, attemptId);
   if (!attempt) return { ok: false, state: "missing", reason: "attempt does not exist" };
   if (!attempt.thread_id) {
-    const canceled = ctx.cancelQueuedAttempt(attempt);
+    const canceled = ctx.cancelQueuedAttempt(attempt, why);
     if (canceled.ok) await cancelStageHelpers(ctx, attempt);
     return canceled;
   }
   const rejection = cancelRejection(db, attempt);
   if (rejection) return { ok:false, state:attempt.state, reason:rejection };
-  transitionAttempt(db, attempt.id, "cancel_requested", { threadId: attempt.thread_id });
+  transitionAttempt(db, attempt.id, "cancel_requested", { threadId: attempt.thread_id, reason: why?.trim() || "cancel requested: writer stop" });
   await bb.sdk.threads.stop({ threadId: attempt.thread_id });
   // Condition one of a stop: the writer is confirmed gone, waiting a bounded time for it (writer-stop.ts).
   const confirmed = await confirmWriterStopped(bb, attempt.thread_id);
@@ -35,14 +35,15 @@ export async function cancelAttemptById(ctx: Pick<ServerCore, "bb" | "db" | "can
   const record = async () => ((await rollback?.noteStopped(attempt.id).catch((cause: unknown) => ({ recorded: false, error: cause instanceof Error ? cause.message : String(cause) }))) as { recorded: boolean; error?: string } | undefined) ?? { recorded: true };
   let noted = await record();
   if (!noted.recorded) noted = await record();
-  transitionAttempt(db, attempt.id, "canceled", { threadId: attempt.thread_id });
+  const reason = why?.trim() || "canceled: writer stop observed";
+  transitionAttempt(db, attempt.id, "canceled", { threadId: attempt.thread_id, reason });
   const task = getTask(db, attempt.task_id);
   const plan = getTaskPlan(db, attempt.task_id) ?? (task?.kind === "bb" ? valueAt(task.contract, "objective") : "") as string;
   for (const stageId of ["writer-agent", "verification", "acceptance-receipt"] as const) {
     const current = listStageReceipts(db, attempt.run_id, attempt.task_id).find((row) => row.stageId === stageId);
     if (current && (current.state === "pending" || current.state === "running")) {
       recordStage(db, { runId:attempt.run_id, taskId:attempt.task_id, stageId, state:"canceled", input:plan,
-        attempt:attempt.attempt_no, threadId:attempt.thread_id, reason:"writer stop observed" });
+        attempt:attempt.attempt_no, threadId:attempt.thread_id, reason });
     }
   }
   await cancelStageHelpers(ctx, attempt);

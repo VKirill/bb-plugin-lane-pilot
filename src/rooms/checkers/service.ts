@@ -5,6 +5,7 @@ import {
 import { plantAll, honestClaim } from "./mutators";
 import { buildScorecard, renderScorecard, type ResultRow, type Scorecard } from "./score";
 import { finishRun, saveRow, startRun, type CheckerDb, type StoredRow } from "./store";
+import { testFitFindings } from "../tasks";
 import { CHECKERS, CODE_CHECKERS, applies, controlId, type CheckerId, type CheckerResult, type DefectClass, type PlantInput, type Planted } from "./types";
 
 export type ScoreDeps = {
@@ -93,6 +94,7 @@ export async function runScore(deps: ScoreDeps, options: ScoreOptions): Promise<
     contract_lint: blind.has("contract_lint") ? [] : lintFindings(subject),
     plan_fact: blind.has("plan_fact") ? [] : planFactFindings(subject),
     verification: verification === null ? null : blind.has("verification") ? [] : verificationFindings(verification),
+    test_fit: blind.has("test_fit") ? [] : testFitFindings(subject.changes).map((hit) => `${hit.path}: ${hit.kind}: ${hit.evidence}`),
   });
 
   for (const candidate of options.candidates) {

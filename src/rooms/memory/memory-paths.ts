@@ -61,7 +61,7 @@ export const MEMORY_PATHS: readonly MemoryPath[] = [
   { id: "pm.start", consumer: "a PM's first prompt (activation)", carries: ["rule"], alwaysOn: ["rule"], status: "probed", live: "pm-prompt",
     sites: [
       { file: "src/rooms/native-agent/server/activation.ts", primitive: "pmRulesPromptBlock", count: 1 },
-      { file: "src/rooms/learning/pm-rules.ts", primitive: "pmRulesBlock", count: 2 },
+      { file: "src/rooms/learning/pm-rules.ts", primitive: "pmRulesBlock", count: 3 },
       { file: "src/rooms/learning/pm-rules.ts", primitive: "pmRulesOf", count: 2 },
     ] },
   { id: "pm.resume", consumer: "a PM session that starts or resumes (contributeInstructions)", carries: ["rule"], alwaysOn: ["rule"], status: "probed",

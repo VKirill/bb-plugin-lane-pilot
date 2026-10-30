@@ -8,7 +8,7 @@ import {
 import { taskV2Schema, type TaskV2 } from "../src/rooms/contracts";
 import { lintContract, type PathKind } from "../src/rooms/tasks/server/contract-lint";
 import { ROLE_PROFILES } from "../src/rooms/native-agent/helper-context";
-import { MECHANISMS, applyJevForms, buildMechanismTask, jevPickForms, listPromotions, mechanismFor, promotionWhy, proposePromotions, runRulesCli } from "../src/rooms/rule-forms";
+import { MECHANISMS, applyJevForms, buildMechanismTask, jevPickForms, lintBlockedCommand, lintMigrationOrder, lintPathRule, lintVerificationRule, listPromotions, mechanismFor, promotionRoute, promotionWhy, proposePromotions, ruleMechanismPlan, runRulesCli } from "../src/rooms/rule-forms";
 
 const repo = "/tmp/lane-pilot-repo";
 const hub = JSON.parse(readFileSync(new URL("./fixtures/hub-rules-2026-10-22.json", import.meta.url), "utf8")) as Array<{ id: string; state: string; occurrences: number; rule: string; gold: string }>;
@@ -150,6 +150,55 @@ describe("the promotion path", () => {
     expect(proposePromotions(db, "p", { repoPath: repo, now: 7 }).created).toEqual([]);
     expect(listPromotions(db, "p")[0]!.state).toBe("dismissed");
     expect(listPromotions(db, "q")).toEqual([]);
+  });
+});
+
+describe("a repeating rule becomes a lint", () => {
+  it("turns a file or path rule into a contract-lint check that refuses an escaping path and allows a project path", () => {
+    const rule = "In the task contract, never put paths outside the project.";
+    expect(promotionRoute(rule)).toBe("contract_path");
+    expect(lintPathRule(["../etc/passwd", "src/a.ts"])).toMatch(/escapes the project/);
+    expect(lintPathRule(["src/a.ts", "tests/a.test.ts"])).toBeNull();
+    const db = openDb();
+    const id = accept(db, "p", rule, { occurrences: 4 });
+    const built = buildMechanismTask(getRuleProposal(db, "p", id)!, { repoPath: repo, why: "recurred" });
+    expect(built.kind).toBe("contract_lint");
+    expect(built.task.objective).toContain("lintPathRule");
+    expect(built.task.owns_paths.join(" ")).toMatch(/contract-lint/);
+  });
+
+  it("turns a verification-command rule into a verification lint that refuses a bare suite and allows a named file", () => {
+    const rule = "A verification command must name the test file; do not run a bare vitest run of the whole suite.";
+    expect(promotionRoute(rule)).toBe("verification_command");
+    expect(lintVerificationRule(["npx vitest run"])).toMatch(/name a test file/);
+    expect(lintVerificationRule(["npx vitest run tests/a.test.ts"])).toBeNull();
+    const db = openDb();
+    const id = accept(db, "p", rule, { occurrences: 4 });
+    const built = buildMechanismTask(getRuleProposal(db, "p", id)!, { repoPath: repo, why: "recurred" });
+    expect(built.task.objective).toContain("lintVerificationRule");
+    expect(built.task.owns_paths.join(" ")).toMatch(/lint-verification/);
+  });
+
+  it("gives every hub form a hold, and marks a form no lint can refuse", () => {
+    expect(lintMigrationOrder(["0001", "0002"], "0002")).toBeNull();
+    expect(lintMigrationOrder(["0001", "0002", "0003"], "0002")).toMatch(/last migration/);
+    expect(lintBlockedCommand("git push --force origin", ["git push --force"])).toMatch(/blocked/);
+    expect(lintBlockedCommand("git status", ["git push --force"])).toBeNull();
+    expect(ruleMechanismPlan("New migrations are appended ONLY as the last element of MIGRATIONS; never insert one in the middle.")).toMatchObject({ form: "check", hold: "check", name: "lintMigrationOrder" });
+    expect(ruleMechanismPlan("Never run git push --force from a writer.")).toMatchObject({ form: "hook", hold: "gate", name: "lintBlockedCommand" });
+    expect(ruleMechanismPlan("To ship a release, first build the app, then deploy.").reason).toMatch(/procedure/);
+    expect(ruleMechanismPlan("The owner does not take part in editorial decisions of the factory.")).toMatchObject({ form: "memory", hold: "none" });
+    expect(ruleMechanismPlan("Never end a turn without a next action.")).toMatchObject({ form: "always", hold: "none" });
+    const unmatched = "Every task must carry a display title in the contract.";
+    expect(ruleMechanismPlan(unmatched)).toMatchObject({ form: "check", hold: "none" });
+    const db = openDb();
+    const migration = accept(db, "p", "New migrations are appended ONLY as the last element of MIGRATIONS; never insert one in the middle.", { occurrences: 4 });
+    const hook = accept(db, "p", "Never run git push --force from a writer.", { occurrences: 4, form: "hook" });
+    const plain = accept(db, "p", unmatched, { occurrences: 4 });
+    expect(buildMechanismTask(getRuleProposal(db, "p", migration)!, { repoPath: repo, why: "recurred" }).task.objective).toContain("lintMigrationOrder");
+    expect(buildMechanismTask(getRuleProposal(db, "p", hook)!, { repoPath: repo, why: "recurred" }).task.objective).toContain("lintBlockedCommand");
+    expect(buildMechanismTask(getRuleProposal(db, "p", plain)!, { repoPath: repo, why: "recurred" }).task.objective).toContain("No mechanism:");
+    expect(buildMechanismTask(getRuleProposal(db, "p", plain)!, { repoPath: repo, why: "recurred" }).kind).toBe("contract_lint");
   });
 });
 

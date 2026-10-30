@@ -26,6 +26,8 @@ export type SurfaceSpec = {
   memoryFile: string;
   memoryMaxNotes: number;
   hookEvents: readonly string[];
+  /** Workflow JSON under workflows/. Off unless the project turns graph edits on. */
+  graphFiles?: boolean;
 };
 
 export const LANE_PILOT_SURFACE: SurfaceSpec = {
@@ -41,6 +43,7 @@ export const LANE_PILOT_SURFACE: SurfaceSpec = {
 };
 
 const NAME = "[a-z0-9][a-z0-9_-]*";
+const GRAPH_RX = /^workflows\/[a-z0-9][a-z0-9._-]*\.json$/;
 const SKILL_RX = (s: SurfaceSpec) => new RegExp(`^${esc(s.skillDir)}/(${NAME})/SKILL\\.md$`);
 const SKILL_SCRIPT_RX = (s: SurfaceSpec) => new RegExp(`^${esc(s.skillDir)}/(${NAME})/scripts/[A-Za-z0-9_.-]+$`);
 const CHECK_RX = (s: SurfaceSpec) => new RegExp(`^${esc(s.checksDir)}/(${NAME})\\.(sh|py|mjs)$`);
@@ -78,6 +81,7 @@ export function isAllowed(rel: string, surface: SurfaceSpec = LANE_PILOT_SURFACE
   let r: string;
   try { r = normalizeRel(rel); } catch { return false; }
   if (surface.alwaysOn.includes(r) || r === surface.hooksFile || r === surface.memoryFile) return true;
+  if (surface.graphFiles && GRAPH_RX.test(r)) return true;
   return SKILL_RX(surface).test(r) || SKILL_SCRIPT_RX(surface).test(r) || CHECK_RX(surface).test(r);
 }
 
@@ -195,6 +199,12 @@ export function validate(tree: Tree, options: { surface?: SurfaceSpec; alwaysOnM
     for (const marker of VERDICT_MARKERS) {
       if (rel.includes(marker)) errs.push(`${rel} carries the verdict marker ${JSON.stringify(marker)} in its name; a harness never stores what the critic or the acceptance said`);
       else if ((tree[rel] ?? "").includes(marker)) errs.push(`${rel} contains the verdict marker ${JSON.stringify(marker)}; a harness never stores what the critic or the acceptance said`);
+    }
+    if (surface.graphFiles && GRAPH_RX.test(rel)) {
+      let parsed: unknown;
+      try { parsed = JSON.parse(tree[rel] ?? ""); } catch { parsed = null; }
+      const doc = parsed && typeof parsed === "object" ? parsed as { id?: unknown; nodes?: unknown; edges?: unknown } : null;
+      if (!doc || typeof doc.id !== "string" || !Array.isArray(doc.nodes) || !Array.isArray(doc.edges)) errs.push(`${rel} must be JSON with id, nodes and edges`);
     }
   }
   const body = alwaysOnText(tree, surface);

@@ -33,6 +33,8 @@ export const STAGE_PROOF: Record<StageId, StageProof> = {
   "verification": { kind: "command", check: "every verification[].command exits 0 in the sandbox (gate verification passed)" },
   "code-critique": { kind: "advisory", reason: "a model's review of the candidate",
     form: "parseCodeCritique: verdict schema; a critical or high finding counts only when its file is among the candidate's files and its line exists in it" },
+  "critic-tiebreak": { kind: "advisory", reason: "a third cheap voice that settles the rubric items two critics answered differently; it decides nothing alone",
+    form: "parseTiebreakVotes: votes only for the contested item ids, each ok or fail; an unanswered item stays a fail" },
   "plan-fact": { kind: "file", check: "blindPlanFact checks each acceptance row of the writer's plan-fact table against the candidate: the cited file is among the changed files, the cited lines overlap a changed hunk, the cited command is a verification[] command that exited 0; the writer's prose is never read" },
   "acceptance-receipt": { kind: "schema", check: "the acceptance-v2 receipt validates against lane-stack/schemas/acceptance-v2.schema.json (validateAcceptanceV2)" },
   "browser-qa": { kind: "command", check: "the browser cases run on the host and each case's recorded result is passed" },

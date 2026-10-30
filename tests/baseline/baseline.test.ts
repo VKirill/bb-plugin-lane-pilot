@@ -134,18 +134,26 @@ describe("the baseline before a writer (D1-3)", () => {
 describe("red before green (checks.require_red_on_base)", () => {
   const at = (input: ReturnType<Awaited<ReturnType<typeof world>>["pendingTask"]>, patch: Record<string, unknown>) => ({ ...input, task: { ...(input.task as object), ...patch } as never });
 
-  it("does not start an attempt of medium risk whose every check is green on the base: the PM is told which checks and what to add", async () => {
+  it("blocks a feature whose every check is already green, and tells the PM the checks prove nothing", async () => {
     const w = await world();
-    const input = at(w.pendingTask("t1", ["test -f keep.txt", "grep -q line2 server.ts"]), { risk: "medium" });
+    const input = at(w.pendingTask("t1", ["test -f keep.txt", "grep -q line2 server.ts"]), { risk: "medium", kind: "feature" });
     const result = await w.services.baseline.preflight(input);
-    expect(result.stop).toMatch(/^verdict_block: no_red_on_base: /);
-    expect(classifyFailure("blocked", result.stop).cls).toBe("contract");
+    expect(result.alreadyDone).toBeUndefined();
+    expect(result.stop).toMatch(/no_red_on_base/);
+    expect(result.stop).toContain("проверки уже зелёные — они не отличают сделанное от несделанного; добавь проверку, которая сейчас красная");
     expect(getBaseline(w.db, "run1", "t1")).toMatchObject({ verdict: "already_built", action: "stopped" });
     const text = (w.send.mock.calls[0] as unknown as [{ input: Array<{ text: string }> }])[0].input[0]!.text;
-    expect(text).toContain("задача t1 не запущена");
+    expect(text).toContain("проверки уже зелёные — они не отличают сделанное от несделанного; добавь проверку, которая сейчас красная");
     expect(text).toContain("- test -f keep.txt");
     expect(text).toContain("- grep -q line2 server.ts");
-    expect(text).toContain("test -f <новый файл>");
+    await w.dispose();
+  });
+
+  it("closes a check whose every check is already green, the same as a fix", async () => {
+    const w = await world();
+    const done = await w.services.baseline.preflight(at(w.pendingTask("chk", ["test -f keep.txt"]), { risk: "low", kind: "check" }));
+    expect(done.stop).toBeNull();
+    expect(done.alreadyDone).toMatch(/^already done: /);
     await w.dispose();
   });
 
@@ -175,9 +183,13 @@ describe("red before green (checks.require_red_on_base)", () => {
 
   it("asks a fix of low risk for a red check too: check.sh green on the base is no proof of a fix (Vampirism Fire vf-fix-b1-*)", async () => {
     const w = await world();
-    const stopped = await w.services.baseline.preflight(at(w.pendingTask("fix1", ["test -f keep.txt"]), { risk: "low", kind: "fix" }));
-    expect(stopped.stop).toMatch(/no_red_on_base: .*risk low/);
-    expect(getBaseline(w.db, "run1", "fix1")).toMatchObject({ action: "stopped" });
+    const done = await w.services.baseline.preflight(at(w.pendingTask("fix1", ["test -f keep.txt"]), { risk: "low", kind: "fix" }));
+    expect(done.stop).toBeNull();
+    expect(done.alreadyDone).toMatch(/^already done: /);
+    expect(getBaseline(w.db, "run1", "fix1")).toMatchObject({ action: "notified" });
+    const told = (w.send.mock.calls[0] as unknown as [{ input: Array<{ text: string }> }])[0].input[0]!.text;
+    expect(told).toContain("- test -f keep.txt");
+    expect(told).toContain("Если баг на самом деле не исправлен, переоткрой задачу с проверкой, которая его воспроизводит.");
     // A red check that only looks for the new file proves no behaviour of a fix; one that runs something does.
     expect((await w.services.baseline.preflight(at(w.pendingTask("fix2", ["test -f keep.txt", "test -f feature.txt"]), { risk: "low", kind: "fix" }))).stop).toMatch(/no_red_on_base/);
     expect((await w.services.baseline.preflight(at(w.pendingTask("fix2b", ["test -f keep.txt", "cat feature.txt"]), { risk: "low", kind: "fix" }))).stop).toBeNull();
@@ -192,7 +204,7 @@ describe("red before green (checks.require_red_on_base)", () => {
 
   it("asks again when the PM sends the task back with a red check, and does not claim «all green» for checks it could not run", async () => {
     const w = await world();
-    const first = at(w.pendingTask("t1", ["test -f keep.txt"]), { risk: "medium" });
+    const first = at(w.pendingTask("t1", ["test -f keep.txt"]), { risk: "medium", kind: "feature" });
     expect((await w.services.baseline.preflight(first)).stop).toMatch(/no_red_on_base/);
     // the same task, strengthened
     const stronger = { ...first, task: { ...(first.task as object), verification: [{ command: "test -f keep.txt", cwd: w.base }, { command: "test -f feature.txt", cwd: w.base }] } as never };

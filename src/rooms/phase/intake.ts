@@ -1,4 +1,5 @@
 import { choice, choiceOf, defineJudgment } from "@lane-pilot/jev";
+import { pathClassByRules, type PathRisk, type PathSize } from "@lane-pilot/workflow-engine";
 import { isWholeConsent } from "../tasks";
 
 /**
@@ -69,6 +70,48 @@ export const intakeJudgment = defineJudgment<{ text: string; previous?: string |
   },
   fallback: () => ({ kind: "small" }),
   describe: (decision) => decision.kind,
+});
+
+export const PATH_CLASS_JUDGMENT_ID = "intake.path_class";
+
+/** Size and risk of one request. Unsure on either question keeps the rules' reading of that question. */
+export const pathClassJudgment = defineJudgment<{ text: string }, { size: PathSize; risk: PathRisk }>({
+  id: PATH_CLASS_JUDGMENT_ID,
+  version: 1,
+  defaultMode: "active",
+  timeoutMs: 8_000,
+  stateBuilder: (input) => ({ owner_message: clip(input.text, 4_000) }),
+  questions: () => ({
+    size: choice(
+      "How big is the change `owner_message` asks for? Judge the work, not the length or the tone.",
+      {
+        tiny: "One obvious tweak in one place: a typo, a color, a label, a rename, a hint. No design and no second task.",
+        small: "One concrete task a single writer can finish: a fix or a small change, not a list of them.",
+        large: "Several tasks, a new feature, a redesign, a migration, or work that has to be planned and accepted as a whole.",
+      },
+    ),
+    risk: choice(
+      "What breaks if this change is wrong?",
+      {
+        low: "A label, a color, copy or a layout tweak. No money, access or stored data.",
+        medium: "Behavior people rely on, but not money, access, secrets or stored data.",
+        high: "Sign-in, payments, secrets, a migration, deleting data, or security.",
+      },
+    ),
+  }),
+  thresholds: {
+    min_p: { default: 0.55, min: 0.4, max: 0.95, about: "least probability of the chosen size and of the chosen risk" },
+  },
+  decide(answers, t, input) {
+    const rules = pathClassByRules(input?.text ?? "");
+    const size = choiceOf(answers, "size");
+    const risk = choiceOf(answers, "risk");
+    const sizeOk = size && size.p >= t.min_p! && (["tiny", "small", "large"] as readonly string[]).includes(size.top);
+    const riskOk = risk && risk.p >= t.min_p! && (["low", "medium", "high"] as readonly string[]).includes(risk.top);
+    return { decision: { size: (sizeOk ? size.top : rules.size) as PathSize, risk: (riskOk ? risk.top : rules.risk) as PathRisk } };
+  },
+  fallback: (input) => { const rules = pathClassByRules(input.text); return { size: rules.size, risk: rules.risk }; },
+  describe: (decision) => `${decision.size}/${decision.risk}`,
 });
 
 /** The one goal a user intake run is for: the owner's request, guessed from the message. A user workflow will not close verified without it. */

@@ -1,9 +1,9 @@
-import { memoryContentIssue } from "./candidates";
+import { fileFingerprint, pathsNamed } from "./fingerprint";
+import { memoryContentIssue, memoryRecordId } from "./candidates";
 import type Database from "better-sqlite3";
-import { memoryRecordId } from "./candidates";
 import { OBSERVED_QUARANTINE_MS, expireMemory, hideRecord, idleSql, sameSubject } from "./lifecycle";
 import { memoryStem, memoryTokens } from "./terms";
-import { heldClause } from "./conflict-store";
+import { conflictTableReady, heldClause, holdConflict } from "./conflict-store";
 import type { MemoryAudience, MemoryCandidate, MemoryKind, MemoryRecord, MemorySearchEngine, MemoryStatus, MemoryTrust } from "./settings";
 
 /** The better-sqlite3 surface this package needs; BB's `bb.storage.database()` satisfies it. */
@@ -14,22 +14,30 @@ export const MEMORY_SCHEMA = {
   table: "lane_pilot_memory",
   fts: "lane_pilot_memory_fts",
   columns: ["id", "project_id", "personal_bot", "kind", "audience", "content", "concepts_json", "source_sha256", "created_at",
-    "status", "superseded_by", "valid_until", "last_used_at", "use_count", "accepted_count", "trust", "origin", "source_file_id", "scope_json"],
+    "status", "superseded_by", "valid_until", "valid_from", "last_used_at", "use_count", "accepted_count", "trust", "origin", "source_file_id", "scope_json", "file_fingerprint", "origin_task_id", "verification_json"],
 } as const;
 
 const COLUMNS = ["id", "project_id", "personal_bot", "kind", "audience", "content", "concepts_json", "source_sha256", "created_at",
-  "status", "trust", "valid_until", "superseded_by", "source_file_id", "use_count", "accepted_count", "last_used_at"];
+  "status", "trust", "valid_until", "valid_from", "superseded_by", "source_file_id", "use_count", "accepted_count", "last_used_at", "file_fingerprint", "origin_task_id", "verification_json"];
 const cols = (alias = "") => COLUMNS.map((name) => `${alias}${name}`).join(",");
 
 type Row = { id: string; project_id: string; personal_bot: string; kind: MemoryKind; audience: string; content: string; concepts_json: string; source_sha256: string; created_at: number;
-  status: MemoryStatus; trust: MemoryTrust; valid_until: number | null; superseded_by: string | null; source_file_id: string | null; use_count: number; accepted_count: number; last_used_at: number | null };
+  status: MemoryStatus; trust: MemoryTrust; valid_until: number | null; valid_from: number | null; superseded_by: string | null; source_file_id: string | null; use_count: number; accepted_count: number; last_used_at: number | null; file_fingerprint: string | null; origin_task_id: string | null; verification_json: string | null };
 
 const toRecord = (row: Row): MemoryRecord => ({ id: row.id, projectId: row.project_id, personalBot: row.personal_bot, kind: row.kind, content: row.content,
   concepts: JSON.parse(row.concepts_json) as string[], sourceSha256: row.source_sha256, createdAt: row.created_at,
-  status: row.status, trust: row.trust, validUntil: row.valid_until, supersededBy: row.superseded_by, sourceFileId: row.source_file_id,
-  useCount: row.use_count, acceptedCount: row.accepted_count, lastUsedAt: row.last_used_at });
+  status: row.status, trust: row.trust, validUntil: row.valid_until, validFrom: row.valid_from, supersededBy: row.superseded_by, sourceFileId: row.source_file_id,
+  useCount: row.use_count, acceptedCount: row.accepted_count, lastUsedAt: row.last_used_at, fileFingerprint: row.file_fingerprint, originTaskId: row.origin_task_id, verification: parseVerification(row.verification_json) });
 
 const estimate = (text: string) => Math.ceil(Buffer.byteLength(text, "utf8") / 4);
+function storedFingerprint(content: string, readFile: StoreMemoryInput["readFile"]): string | null {
+  if (!readFile) return null;
+  const paths = pathsNamed(content);
+  return paths.length ? fileFingerprint(paths.map((path) => ({ path, bytes: readFile(path) }))) : null;
+}
+const parseVerification = (json: string | null): Array<{ by: string; sha: string; at: number }> => {
+  try { const value = JSON.parse(json ?? "[]") as unknown; return Array.isArray(value) ? value as Array<{ by: string; sha: string; at: number }> : []; } catch { return []; }
+};
 const isRule = (row: Pick<Row, "concepts_json">) => row.concepts_json.includes('"rule"');
 
 function parseScopeJson(json: string | null | undefined): string[] {
@@ -84,7 +92,11 @@ export type StoreMemoryInput = { projectId: string; personalBot?: string; audien
    * The sections the records belong to, outermost first (a run's settings scopes, `section:<id>`); empty or absent: the whole project.
    * A search with a chain reads the project's records and those of the chain's sections, never a sibling section's.
    */
-  scope?: readonly string[] };
+  scope?: readonly string[];
+  /** The task these records came from: every stored row keeps it for the audit trail. */
+  originTaskId?: string;
+  /** Reads a repo-relative path. When set, a note that names files stores `file_fingerprint` of those bytes. */
+  readFile?: (path: string) => Uint8Array | null };
 export type StoreMemoryResult = { records: MemoryRecord[]; insertedIds: string[];
   /** Notes hidden to make room under a budget, least useful first. */
   evictedIds: string[];
@@ -93,12 +105,22 @@ export type StoreMemoryResult = { records: MemoryRecord[]; insertedIds: string[]
   /** Records whose date passed or that nobody was given for 90 days; hidden before this write. */
   expiredIds: string[];
   /** Observed records a second independent source confirmed. */
-  corroboratedIds: string[] };
+  corroboratedIds: string[];
+  /** Recently used notes whose replacement is held as a conflict for a person (arXiv #15). */
+  heldIds: string[] };
+
+const HEDGED = /(?:^|[^\p{L}\p{N}])(?:maybe|perhaps|might|seems|appears|possibly|кажется|возможно|похоже)(?=$|[^\p{L}\p{N}])/iu;
+
+/** A maintainer note that hedges is not a confirmed fact. Writers wait out the observed quarantine. */
+export function claimIsHedged(content: string): boolean {
+  return HEDGED.test(content);
+}
 
 export function storeMemoryRecords(db: MemoryDatabase, input: StoreMemoryInput): StoreMemoryResult {
   const now = input.now ?? Date.now();
   const trust = input.trust ?? "confirmed";
   const origin = input.origin ?? "maintainer";
+  const trustOf = (entry: MemoryCandidate) => trust === "confirmed" && origin === "maintainer" && entry.kind === "note" && claimIsHedged(entry.content) ? "observed" : trust;
   trigramReady(db);
   return db.transaction(() => {
     const personalBot = input.personalBot ?? "";
@@ -127,22 +149,36 @@ export function storeMemoryRecords(db: MemoryDatabase, input: StoreMemoryInput):
     const adds = [...pending, ...revive];
     const gone = new Set<string>();
     const supersededIds: string[] = [];
+    // A note a brief used in the last month is still load-bearing: its replacement is registered as a conflict for a
+    // person to settle instead of being hidden silently (arXiv #15 stability check). The register also hides the new
+    // wording until settled, so no version of a disputed fact is served meanwhile.
+    const heldIds: string[] = [];
+    const STABLE_MS = 30 * 86_400_000;
+    const stillUsed = (row: Row) => (row.accepted_count > 0 || row.use_count > 0) && (row.last_used_at ?? row.created_at) >= now - STABLE_MS;
+    const hold = (oldId: string, by: string) => {
+      if (!conflictTableReady(db)) return false;
+      return Boolean(holdConflict(db, { projectId: input.projectId, personalBot, now,
+        conflict: { a: oldId, b: by, kind: "value", subject: "same-subject replacement of a recently used note", evidenceA: "", evidenceB: "" } }));
+    };
     const unindex = (projectId: string, id: string) => dropMemoryIndexes(db, projectId, id);
-    const replace = (oldId: string, by: string) => { if (hideRecord(db, input.projectId, oldId, "superseded", by, unindex)) { gone.add(oldId); supersededIds.push(oldId); } };
+    const replace = (oldId: string, by: string, row?: Row) => {
+      if (row && stillUsed(row) && hold(oldId, by)) { gone.add(oldId); heldIds.push(oldId); return; }
+      if (hideRecord(db, input.projectId, oldId, "superseded", by, unindex)) { gone.add(oldId); supersededIds.push(oldId); }
+    };
     for (const { entry, id } of adds) {
       // An edited file record: what the file said before is replaced by what it says now.
       const sameNamespace = (row: { audience: string; scope_json?: string | null }) => row.audience === input.audience && scopeKey(parseScopeJson(row.scope_json)) === scopeKey(scope);
-      if (entry.sourceFileId) for (const row of rows) if (row.status === "active" && row.source_file_id === entry.sourceFileId && row.id !== id && sameNamespace(row)) replace(row.id, id);
+      if (entry.sourceFileId) for (const row of rows) if (row.status === "active" && row.source_file_id === entry.sourceFileId && row.id !== id && sameNamespace(row)) replace(row.id, id, row);
       // One session's word does not retire what the maintainer or a file established.
       if (trust !== "confirmed") continue;
       // Replacement stays inside project + section + audience + bot. A fact already stored is not given a wider scope.
       const replaceable = rows.filter((row) => row.status === "active" && !gone.has(row.id) && row.id !== id && sameNamespace(row) && !isRule(row));
       for (const prefix of entry.supersedes ?? []) {
         const named = replaceable.filter((row) => row.id.startsWith(prefix));
-        if (named.length === 1) replace(named[0]!.id, id);
+        if (named.length === 1) replace(named[0]!.id, id, named[0]);
       }
       // A restated note replaces the older wording of the same subject.
-      if (entry.kind === "note") for (const row of replaceable) if (row.kind === "note" && !gone.has(row.id) && sameSubject(entry, { content: row.content, concepts: JSON.parse(row.concepts_json) as string[] })) replace(row.id, id);
+      if (entry.kind === "note") for (const row of replaceable) if (row.kind === "note" && !gone.has(row.id) && sameSubject(entry, { content: row.content, concepts: JSON.parse(row.concepts_json) as string[] })) replace(row.id, id, row);
     }
     const active = rows.filter((row) => row.status === "active" && !gone.has(row.id));
     const sum = (list: Array<{ content: string }>) => list.reduce((total, row) => total + estimate(row.content), 0);
@@ -163,29 +199,65 @@ export function storeMemoryRecords(db: MemoryDatabase, input: StoreMemoryInput):
       if (over(left)) throw new Error(left > input.noteBudget ? `memory note budget exceeded: ${left}/${input.noteBudget} tokens` : `memory index budget exceeded: ${core + left}/${input.indexBudget} tokens`);
       evictedIds = picked.filter((row) => hideRecord(db, input.projectId, row.id, "expired", null, unindex, "budget")).map((row) => row.id);
     }
-    const insert = db.prepare(`INSERT INTO lane_pilot_memory(id,project_id,personal_bot,kind,audience,content,concepts_json,source_sha256,created_at,trust,origin,valid_until,source_file_id)
-      VALUES(@id,@projectId,@personalBot,@kind,@audience,@content,@conceptsJson,@sourceSha256,@createdAt,@trust,@origin,@validUntil,@sourceFileId)
+    const insert = db.prepare(`INSERT INTO lane_pilot_memory(id,project_id,personal_bot,kind,audience,content,concepts_json,source_sha256,created_at,trust,origin,valid_until,valid_from,source_file_id,file_fingerprint,origin_task_id,verification_json)
+      VALUES(@id,@projectId,@personalBot,@kind,@audience,@content,@conceptsJson,@sourceSha256,@createdAt,@trust,@origin,@validUntil,@validFrom,@sourceFileId,@fileFingerprint,@originTaskId,@verificationJson)
       ON CONFLICT(project_id,id) DO NOTHING`);
     const insertedIds: string[] = [];
     for (const { entry, id } of pending) {
       insert.run({ id, projectId: input.projectId, personalBot, kind: entry.kind, audience: input.audience, content: entry.content, conceptsJson: JSON.stringify(entry.concepts),
-        sourceSha256: input.sourceSha256, createdAt: now, trust, origin, validUntil: entry.validUntil ?? null, sourceFileId: entry.sourceFileId ?? null });
+        sourceSha256: input.sourceSha256, createdAt: now, trust: trustOf(entry), origin, validUntil: entry.validUntil ?? null, validFrom: entry.validFrom ?? now, sourceFileId: entry.sourceFileId ?? null, fileFingerprint: storedFingerprint(entry.content, input.readFile), originTaskId: input.originTaskId ?? null, verificationJson: JSON.stringify([{ by: origin, sha: input.sourceSha256, at: now }]) });
       if (input.scope?.length) db.prepare("UPDATE lane_pilot_memory SET scope_json=? WHERE project_id=? AND id=?").run(JSON.stringify(input.scope), input.projectId, id);
       addToIndexes(db, input.projectId, id, entry.content, entry.concepts);
       insertedIds.push(id);
     }
     for (const { entry, id } of revive) {
-      db.prepare("UPDATE lane_pilot_memory SET status='active', superseded_by=NULL, valid_until=?, source_sha256=?, trust=?, last_used_at=? WHERE project_id=? AND id=?")
-        .run(entry.validUntil ?? null, input.sourceSha256, trust, now, input.projectId, id);
+      db.prepare("UPDATE lane_pilot_memory SET status='active', superseded_by=NULL, valid_until=?, source_sha256=?, trust=?, last_used_at=?, file_fingerprint=COALESCE(?, file_fingerprint) WHERE project_id=? AND id=?")
+        .run(entry.validUntil ?? null, input.sourceSha256, trustOf(entry), now, storedFingerprint(entry.content, input.readFile), input.projectId, id);
       addToIndexes(db, input.projectId, id, entry.content, entry.concepts);
       insertedIds.push(id);
     }
-    for (const id of corroborate) db.prepare("UPDATE lane_pilot_memory SET trust='confirmed' WHERE project_id=? AND id=?").run(input.projectId, id);
+    const verify = db.prepare(`UPDATE lane_pilot_memory SET trust='confirmed',
+        verification_json=json_insert(COALESCE(verification_json,'[]'),'$[#]',json_object('by',?,'sha',?,'at',?)) WHERE project_id=? AND id=?`);
+    for (const id of corroborate) verify.run(origin, input.sourceSha256, now, input.projectId, id);
     const mine = new Set(input.entries.map((entry) => memoryRecordId(input.projectId, entry.kind, entry.content, personalBot, input.audience, scope)));
     const records = (db.prepare(`SELECT ${cols()} FROM lane_pilot_memory WHERE project_id=? AND personal_bot=? ORDER BY created_at DESC`).all(input.projectId, personalBot) as Row[])
       .filter((row) => row.status === "active" || mine.has(row.id)).map(toRecord);
-    return { records, insertedIds, evictedIds, supersededIds, expiredIds, corroboratedIds: corroborate };
+    return { records, insertedIds, evictedIds, supersededIds, expiredIds, corroboratedIds: corroborate, heldIds };
   }).immediate();
+}
+
+/**
+ * The project's core as the store counts it against `coreBudget` (every active core record of the bot), and the
+ * records a maintainer of this audience and section may name in `supersedes` (rules stay with the rules pipeline).
+ */
+export function coreShelf(db: MemoryDatabase, projectId: string, personalBot: string, audience: MemoryAudience, scope: readonly string[] = []): { tokens: number; replaceable: Array<{ id: string; content: string }> } {
+  const rows = db.prepare("SELECT id,audience,content,concepts_json,scope_json FROM lane_pilot_memory WHERE project_id=? AND personal_bot=? AND kind='core' AND status='active' ORDER BY created_at, id")
+    .all(projectId, personalBot) as Array<Pick<Row, "id" | "audience" | "content" | "concepts_json"> & { scope_json: string | null }>;
+  const key = scopeKey(scope);
+  return { tokens: rows.reduce((total, row) => total + estimate(row.content), 0),
+    replaceable: rows.filter((row) => row.audience === audience && scopeKey(parseScopeJson(row.scope_json)) === key && !isRule(row)).map((row) => ({ id: row.id, content: row.content })) };
+}
+
+/**
+ * The maintainer's write door. Core is curated and never evicted, so a full core used to refuse every batch that
+ * contained a core entry and lose its notes too (hub 2026-10-27/28, «memory core budget exceeded: 3135/3072» on a
+ * core of 3070; the same throw was reverted with 2f00913e). A core entry the core cannot take is kept as a note,
+ * the last one first, until the batch fits. `entries` is what was stored, `demoted` how many core entries became notes.
+ * Any other refusal is thrown. The raw door `storeMemoryRecords` still throws, so a rule that does not fit can evict
+ * an unused convention instead of becoming a note.
+ */
+export function storeMemoryRecordsKeepingOverflow(db: MemoryDatabase, input: StoreMemoryInput): StoreMemoryResult & { entries: MemoryCandidate[]; demoted: number } {
+  let entries = input.entries;
+  for (let demoted = 0; ; demoted++) {
+    try {
+      return { ...storeMemoryRecords(db, { ...input, entries }), entries, demoted };
+    } catch (cause) {
+      let last = -1;
+      for (let index = 0; index < entries.length; index++) if (entries[index]!.kind === "core") last = index;
+      if (last < 0 || !/^memory core budget exceeded/.test(cause instanceof Error ? cause.message : String(cause))) throw cause;
+      entries = entries.map((entry, index) => (index === last ? { ...entry, kind: "note" as const } : entry));
+    }
+  }
 }
 
 /** What a file that is no longer true leaves behind: the records it made are hidden, with the status that says why. */

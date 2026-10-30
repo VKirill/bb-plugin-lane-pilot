@@ -68,3 +68,17 @@ it("states the writer limits the code enforces", () => {
   expect(LANE_PILOT_PM_SESSION).toContain(`for ${STICKY_WINDOW_MS / 3_600_000 === 3 ? "three" : "?"} hours after its last accepted task`);
   expect(LANE_PILOT_PM_SESSION).toContain(`over ${String(LIVE_FOLDER_FILE_CAP).replace(/(\d)(?=(\d{3})$)/, "$1 ")} files`);
 });
+
+// flow-docs F21: a `docs/...` path the prompts name must exist here or be the docs-flow-only audiences folder.
+it("names no docs path that does not exist", async () => {
+  const { existsSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const root = join(import.meta.dirname, "..");
+  for (const [id, text] of [["pm", LANE_PILOT_PM_SESSION], ...Object.entries(BB_AGENT_SESSIONS)] as Array<[string, string]>) {
+    for (const match of text.matchAll(/docs\/[A-Za-z0-9_\/$.{}-]+\.md/g)) {
+      const path = match[0].replace(/\$\{[^}]+\}|<[^>]+>|\{[^}]+\}/g, "x");
+      if (path.startsWith("docs/audiences/") || path === "docs/capabilities.md" || path === "docs/DESIGN.md") continue; // written only where a project has docs flows
+      expect(existsSync(join(root, path)), `${id}: ${match[0]}`).toBe(true);
+    }
+  }
+});

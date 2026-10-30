@@ -45,6 +45,7 @@ describe("K8 usefulness: how often a note was mixed into a brief, and how often 
     expect(counts(db, id!)).toMatchObject({ u: 1, a: 0 });
     expect(memoryUsefulness({ useCount: 1, acceptedCount: 0 })).toBeLessThan(memoryUsefulness({}));
     expect(memoryUsefulness({ useCount: 4, acceptedCount: 4 })).toBeGreaterThan(memoryUsefulness({}));
+    expect(memoryUsefulness({ useCount: 0, acceptedCount: 8 })).toBe(1.5);
   });
 
   const rec = (id: string, content: string, over: Partial<MemoryRecord> = {}): MemoryRecord => ({ id, projectId: "P", personalBot: "", kind: "note", content, concepts: [], sourceSha256: "s", createdAt: 1, ...over });
