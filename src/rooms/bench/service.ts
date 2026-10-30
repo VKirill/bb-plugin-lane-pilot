@@ -4,7 +4,9 @@ import { buildSet, type BuildReport } from "./build";
 import { compareArms, computeNoise, noiseOfRepeats, passReport, renderComparison, summarizeArm, type ArmSummary, type Comparison } from "./compare";
 import { cohortCounts, cohortOf } from "./stratify";
 import { renderStratumMetrics, stratumMetrics, type StratumRow } from "./stratum-metrics";
-import { statsEpochMs, STATS_EPOCH_SETTING } from "../storage";
+import { statsEpochMs, STATS_EPOCH_SETTING, listStageReceipts } from "../storage";
+import { critiqueFromStageResult } from "../critique";
+import { critiqueRecallLine } from "./critique-set";
 import type { HostPort, PipelinePort } from "./ports";
 import { releaseGate, sweepStuckRuns } from "./reliability";
 import { BENCH_REPOS_ROOT_ENV } from "./repos";
@@ -261,7 +263,7 @@ export function createBench(deps: BenchDeps) {
   }
 
   /** One line per stratum of this arm (time to accept, model calls before the writer, tokens, validator share): the night's report. */
-  function armStrata(version: string, arm: string): string[] {
+  async function armStrata(version: string, arm: string): Promise<string[]> {
     const set = getSet(deps.db, version);
     if (!set) return [];
     const runs = listRuns(deps.db, set.id).filter((row) => row.arm === arm);
@@ -272,7 +274,20 @@ export function createBench(deps: BenchDeps) {
       byTask.set(result.taskId, { taskId: result.taskId, stratum: task.stratum, accepted: result.accepted, seconds: result.seconds, tokens: result.tokens });
     }
     const rendered = renderStratumMetrics(stratumMetrics([...byTask.values()]), (runs.at(-1)?.config as { settings?: Record<string, unknown> } | undefined)?.settings);
-    return rendered ? rendered.split("\n") : [];
+    const lines = rendered ? rendered.split("\n") : [];
+    // The critic-eval stratum reports recall against the reference bugs, not the generic metrics.
+    const critiqueTasks = set.tasks.filter((task) => task.stratum === "critique" && byTask.has(task.taskId));
+    if (critiqueTasks.length) {
+      const receipt = (taskId: string) => {
+        const row = listResults(deps.db, runs.at(-1)?.id ?? "").find((item) => item.taskId === taskId) ?? byTask.get(taskId);
+        const runId = (row as { lpRunId?: string } | undefined)?.lpRunId ?? runs.at(-1)?.id;
+        const stage = listStageReceipts(deps.db as never, runId ?? "", taskId).find((item) => item.stageId === "code-critique");
+        return stage ? (critiqueFromStageResult(stage.result) ?? stage.result) : null;
+      };
+      const recall = critiqueRecallLine(set.tasks, receipt);
+      if (recall.line) lines.push(recall.line);
+    }
+    return lines;
   }
 
   return { settings, placement, configure, build, lastBuild, run, noise, compare, status, show, prepare, armSummary, baseline, sweep, gate, markSkipped, armStrata };

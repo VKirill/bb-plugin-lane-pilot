@@ -228,6 +228,7 @@ export async function runSeries(deps: RunnerDeps, input: SeriesInput): Promise<S
           const verdict = await runValidator(task.validator, probe && probe.exitCode === 0 ? source : null, {
             host: deps.host, hostId: placed.hostId,
             brief: (task as { brief?: Record<string, unknown> }).brief,
+            expectedFindings: (task.contract as { expected_findings?: import("./critique-set").ExpectedFinding[] }).expected_findings,
             ...(deps.jevCtx ? { jevCtx: await deps.jevCtx(task) } : {}),
             ...(deps.pageReview ? { review: (req: Parameters<import("../validators").PageReview>[0]) => deps.pageReview!(task, req) } : {}),
           });

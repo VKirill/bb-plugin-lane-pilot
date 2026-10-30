@@ -96,7 +96,7 @@ export function mountBenchNightly(ctx: ServerCore, bench: () => BenchApi): void 
       }
       const reports = await bench().run({ ...input, repeat, budgetTokens: share });
       const rows = Array.isArray(reports) ? reports : [reports];
-      for (const line of bench().armStrata(version, arm)) ctx.log(`bench-nightly ${version}: ${line}`);
+      for (const line of await bench().armStrata(version, arm)) ctx.log(`bench-nightly ${version}: ${line}`);
       if (rows.some((row) => row && typeof row === "object" && "state" in row && (row.state === "stopped_budget" || row.state === "failed"))) budgetSpent = true;
     }
   }, { timeoutMs: 8 * 3_600_000 });
