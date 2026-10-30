@@ -8,7 +8,9 @@ import { isWholeConsent } from "../tasks";
  * and a heavy goal is driven by the daemon through the phase, the orchestrator only switched on at its turns. Here the code
  * settles what it can (a consent, a short message) and Jev the rest; without Jev a long message is heavy.
  */
-export const INTAKE_KINDS = ["heavy", "small", "batch", "process", "question", "consent", "reply"] as const;
+export const INTAKE_KINDS = ["heavy", "small", "batch", "process", "question", "consent", "reply", "service"] as const;
+export const SERVICE_KINDS = ["status", "current", "cancel", "results"] as const;
+export type ServiceKind = (typeof SERVICE_KINDS)[number];
 export type IntakeKind = (typeof INTAKE_KINDS)[number];
 
 /** Lane Pilot's own notices, other threads' messages and system frames are not the owner's request. */
@@ -37,7 +39,7 @@ export function intakeByRules(text: string): { kind: IntakeKind; confident: bool
 export const INTAKE_JUDGMENT_ID = "intake.weight";
 const clip = (text: string, max: number) => (text.length > max ? `${text.slice(0, max - 1)}…` : text);
 
-export const intakeJudgment = defineJudgment<{ text: string; previous?: string | null; /** Ask the same question with the options in the reverse order (self-consistency on the border zone). */ reverse?: boolean }, { kind: IntakeKind }>({
+export const intakeJudgment = defineJudgment<{ text: string; previous?: string | null; /** Ask the same question with the options in the reverse order (self-consistency on the border zone). */ reverse?: boolean }, { kind: IntakeKind; service?: ServiceKind; service_p?: number }>({
   id: INTAKE_JUDGMENT_ID,
   version: 1,
   defaultMode: "active",
@@ -55,12 +57,17 @@ export const intakeJudgment = defineJudgment<{ text: string; previous?: string |
       question: "A question or a request for information, a report or a status; it asks for no change to the project.",
       consent: "Agreement, a yes, an approval of what was proposed, or a short go-ahead.",
       reply: "A reply about work already under way in this chat (`pm_last_message` shows what): an answer to the PM's question, a permission or an instruction for a helper or task that is running, a correction of how it does it, or a remark, complaint or feedback on how the work goes («why do you ask me?», «it takes too long»). It asks for no new piece of work.",
+      service: "A one-line service request the LP database alone can answer, needing no judgment: 'what is the status', 'what is running now', 'cancel task X' (X named plainly), 'show the last results'.",
     };
     const entries = Object.entries(criteria);
     return {
       weight: choice(
         "The owner wrote `owner_message` to the project manager of a software project. What kind of request is it? Judge by the work it asks for, not by its length or tone.",
         Object.fromEntries(input?.reverse ? entries.reverse() : entries),
+      ),
+      service: choice(
+        "If `owner_message` is a service request, which? Answer \'none\' when it is not one.",
+        { none: "not a service request", status: "overall status of the run or phase", current: "what is running right now", cancel: "cancel a task", results: "the latest results or report" },
       ),
     };
   },
@@ -72,7 +79,11 @@ export const intakeJudgment = defineJudgment<{ text: string; previous?: string |
     // Unsure is not a job: «small» here started a build on remarks the judgment could not place (live 2026-10-26: 8 of 13 issue-quick
     // runs of one chat ended «too vague»). A reply starts nothing; the PM reads the message in its turn.
     if (!pick || pick.p < t.min_p!) return { decision: { kind: "reply" } };
-    return { decision: { kind: (INTAKE_KINDS as readonly string[]).includes(pick.top) ? (pick.top as IntakeKind) : "small" } };
+    const kind: IntakeKind = (INTAKE_KINDS as readonly string[]).includes(pick.top) ? (pick.top as IntakeKind) : "small";
+    // The service sub-question names which service; `cancel` needs an unambiguous task, judged in serviceAnswer.
+    const svc = choiceOf(answers, "service");
+    const service = kind === "service" && svc && svc.top !== "none" ? (svc.top as ServiceKind) : undefined;
+    return { decision: { kind: kind === "service" && !service ? "question" : kind, ...(service ? { service, service_p: svc?.p ?? 0 } : {}) } };
   },
   fallback: () => ({ kind: "small" }),
   describe: (decision) => decision.kind,

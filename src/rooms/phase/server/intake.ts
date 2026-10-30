@@ -4,7 +4,8 @@ import { stringAt, type ServerCore } from "../../core/server";
 import { isRunHalted, isRunPaused } from "../../runs/server";
 import { pathClassByRules } from "@lane-pilot/workflow-engine";
 import type { PathRisk, PathSize } from "@lane-pilot/workflow-engine";
-import { intakeByRules, intakeJudgment, intakeTitle, isMachineMessage, pathClassJudgment, processHint, railsRefusal, type IntakeKind } from "../intake";
+import { intakeByRules, intakeJudgment, intakeTitle, isMachineMessage, pathClassJudgment, processHint, railsRefusal, type IntakeKind, type ServiceKind } from "../intake";
+import { cancelAttemptById } from "../../runs/server";
 import type { Phase } from "../logic";
 
 /** What the intake needs of the phase driver (its own type, so the driver can build the intake without a type cycle). */
@@ -35,7 +36,7 @@ const HANDOVER_KEY = (projectId: string, key: string) => `phase-handover:${proje
 type HandOverStarted = { started: true; via: "phase" | "issue-quick" | "issue-batch"; id: string };
 type HandOverResult = HandOverStarted | { started: false; kind: IntakeKind | null; reason: string };
 
-type Deps = Pick<ServerCore, "bb" | "db" | "effectiveProjectSettings" | "log">;
+type Deps = Pick<ServerCore, "bb" | "db" | "effectiveProjectSettings" | "log" | "cancelQueuedAttempt">;
 
 /**
  * Rails by default: when a turn starts in a PM chat, the owner's newest message is read before the PM acts on it. A heavy goal
@@ -79,7 +80,7 @@ export function createPhaseIntake(ctx: Deps, phases: IntakePhases, train?: Intak
             if (second && second.top !== pick.top) return { kind: "reply", path, by: "jev" };
           }
         }
-        return { kind, path, by: weight.by === "jev" || cls.by === "jev" ? "jev" : "rules" };
+        return { kind, path, by: weight.by === "jev" || cls.by === "jev" ? "jev" : "rules", ...(weight.by === "jev" && weight.decision.service ? { service: weight.decision.service, serviceP: weight.decision.service_p ?? 0 } : {}) };
       }
     } catch { /* the rules' reading stands */ }
     return { kind: kindRules.kind, path, by: "rules" };
@@ -111,11 +112,23 @@ export function createPhaseIntake(ctx: Deps, phases: IntakePhases, train?: Intak
     if (!requestId || !text || data.initiator === "agent" || isMachineMessage(text)) return null;
     const known = await bb.storage.kv.get(KEY(threadId)).catch(() => null) as IntakeRecord | null;
     if (known?.requestId === requestId) return known;
-    const { kind, by, path } = await classifyBundle(text, await lastPmMessage(threadId), run.project_id, run.id, settings);
+    const classified = await classifyBundle(text, await lastPmMessage(threadId), run.project_id, run.id, settings);
+    const { kind, by, path } = classified;
     // A run the owner stopped or paused starts nothing on the machine's own (no phase, graph or architect): the PM reads the
     // message instead (live 2026-10-26, Vampirism Fire: work was stopped and issue-quick still built and merged wcebffdb8-T1).
     const stopped = await isRunHalted(bb.storage.kv as never, run.id) || await isRunPaused(bb.storage.kv as never, run.id);
     let phaseId: string | null = null;
+    // №6: a service request is answered from the LP store, the heavy PM stays asleep. Anything ambiguous falls
+    // back to `question` — the PM reads the message as before.
+    if (kind === "service" && by === "jev" && !stopped) {
+      const answered = await serviceAnswer({ run, threadId, text, service: (classified as { service?: ServiceKind }).service ?? null });
+      if (answered !== null) {
+        await bb.sdk.threads.send({ threadId, mode: "queue-if-active", input: [{ type: "text", text: answered, mentions: [] }] } as never).catch(() => undefined);
+        const rec: IntakeRecord = { requestId, kind: "service", by, phaseId: null, at: Date.now() };
+        await bb.storage.kv.set(KEY(threadId), rec);
+        return rec;
+      }
+    }
     if (kind === "heavy") {
       const live = phases.list({ pmThreadId: threadId, live: true })[0];
       if (live) {
@@ -147,6 +160,34 @@ export function createPhaseIntake(ctx: Deps, phases: IntakePhases, train?: Intak
     const record: IntakeRecord = { requestId, kind, by, phaseId, at: Date.now(), ...(wfRunId ? { wfRunId } : {}), ...(architectThreadId ? { architectThreadId } : {}) };
     await bb.storage.kv.set(KEY(threadId), record);
     return record;
+  }
+
+  /** №6: the one-line answer the LP store itself gives a service request, in Russian, with @thread links where they help. */
+  async function serviceAnswer(input: { run: { id: string; project_id: string }; threadId: string; text: string; service: ServiceKind | null }): Promise<string | null> {
+    const { run, text, service } = input;
+    if (!service) return null;
+    if (service === "status" || service === "current") {
+      const rows = db.prepare(`SELECT t.id AS task_id, t.contract_json, a.state FROM lane_pilot_task t JOIN lane_pilot_attempt a ON a.task_id=t.id AND a.run_id=t.run_id WHERE t.run_id=? AND a.state IN ('running','queued','spawn_requested','spawn_unknown') ORDER BY a.attempt_no DESC LIMIT 10`).all(run.id) as Array<{ task_id: string; contract_json: string; state: string }>;
+      if (!rows.length) return service === "current" ? "Сейчас ничего не идёт: открытых задач нет." : `Ран ${run.id}: открытых задач нет.`;
+      const titles = rows.map((row) => { try { const c = JSON.parse(row.contract_json) as { title?: unknown; display_title?: unknown }; return String(c.display_title || c.title || row.task_id); } catch { return row.task_id; } });
+      return service === "current" ? `Сейчас идёт: ${titles.slice(0, 3).join("; ")}${titles.length > 3 ? ` и ещё ${titles.length - 3}` : ""}.` : `Ран ${run.id}: ${titles.length} задач(и) в работе — ${titles.slice(0, 3).join("; ")}.`;
+    }
+    if (service === "results") {
+      const rows = db.prepare(`SELECT t.contract_json, a.state, a.reason, a.thread_id FROM lane_pilot_task t JOIN lane_pilot_attempt a ON a.task_id=t.id AND a.run_id=t.run_id WHERE t.run_id=? AND a.state NOT IN ('running','queued','spawn_requested','spawn_unknown') ORDER BY a.updated_at DESC LIMIT 3`).all(run.id) as Array<{ contract_json: string; state: string; reason: string | null; thread_id: string | null }>;
+      if (!rows.length) return "Завершённых задач пока нет.";
+      return `Последние результаты: ${rows.map((row) => { let t = "?"; try { const c = JSON.parse(row.contract_json) as { title?: unknown; display_title?: unknown }; t = String(c.display_title || c.title || "?"); } catch { /* keep */ } const link = row.thread_id ? ` @thread:${row.thread_id}` : ""; return `${t} — ${row.state}${link}`; }).join("; ")}`;
+    }
+    if (service === "cancel") {
+      // Only an unambiguous object: the task's id or title must match exactly one open task; else the PM reads the message.
+      const open = db.prepare(`SELECT a.id AS attempt_id, t.contract_json FROM lane_pilot_task t JOIN lane_pilot_attempt a ON a.task_id=t.id AND a.run_id=t.run_id WHERE t.run_id=? AND a.state IN ('running','queued','spawn_requested','spawn_unknown')`).all(run.id) as Array<{ attempt_id: string; contract_json: string }>;
+      const idHit = /\b(\w+-T\d+)\b/.exec(text)?.[1];
+      const hits = idHit ? open.filter((row) => row.contract_json.includes(idHit))
+        : open.filter((row) => { try { const c = JSON.parse(row.contract_json) as { title?: unknown; display_title?: unknown }; const title = String(c.display_title || c.title || ""); return title && text.toLowerCase().includes(title.toLowerCase()); } catch { return false; } });
+      if (hits.length !== 1) return null;
+      const cancelled = await cancelAttemptById({ bb, db, cancelQueuedAttempt: ctx.cancelQueuedAttempt }, hits[0]!.attempt_id, undefined, `canceled: the owner asked to stop it ("${text.slice(0, 80)}")`);
+      return cancelled.ok ? "Задачу остановил." : `Не смог остановить задачу: ${cancelled.reason ?? cancelled.state}.`;
+    }
+    return null;
   }
 
   /**

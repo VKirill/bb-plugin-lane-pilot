@@ -24,6 +24,7 @@
     "./judgments/skill-tree-pick": "./src/judgments/skill-tree-pick.ts",
     "./judgments/accept-composite": "./src/judgments/accept-composite.ts",
     "./judgments/render-match": "./src/judgments/render-match.ts",
-    "./judgments/employee-remark": "./src/judgments/employee-remark.ts"
+    "./judgments/employee-remark": "./src/judgments/employee-remark.ts",
+    "./judgments/step-trivial": "./src/judgments/step-trivial.ts"
   }
 }
