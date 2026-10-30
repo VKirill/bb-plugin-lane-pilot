@@ -47,9 +47,15 @@ export function mountBenchWeekly(ctx: ServerCore, bench: () => BenchApi): void {
 /** The OVH machine. A night run always lands here, even when the set's own paths point at the Mac. */
 export const OVH_BENCH_HOST = "host_rwrxyi39aw";
 
-/** The full set, on OVH, with the configured noise repeats. No task limit. */
+/** The full set, on OVH. No task limit. Repeats are chosen by `nightlyRepeats`, not by this object. */
 export function nightlyRun(version: string, pluginVersion: string) {
   return { version, arm: nightArm(pluginVersion), wait: true as const, hostId: OVH_BENCH_HOST, noise: true as const };
+}
+
+/** Night default is two runs (the arm and one repeat) so the interval has a real spread.
+ * A stored `noise_repeats` of 2 or more is that many runs. Weekly does not use this: 0 there stays one run. */
+export function nightlyRepeats(noiseRepeats: number): number {
+  return noiseRepeats >= 2 ? noiseRepeats : 2;
 }
 
 /** Every day at 01:30 UTC the newest set runs as the night arm of this plugin version. setting bench.nightly = off stops it.
@@ -61,8 +67,9 @@ export function mountBenchNightly(ctx: ServerCore, bench: () => BenchApi): void 
     const newest = bench().status().sort((a, b) => b.createdAt - a.createdAt)[0];
     if (!newest) return;
     const input = nightlyRun(newest.version, packageJson.version);
-    ctx.log(`bench-nightly: ${input.version} ${input.arm} on ${input.hostId}`);
-    await bench().run(input);
+    const repeat = nightlyRepeats((await bench().placement()).noiseRepeats);
+    ctx.log(`bench-nightly: ${input.version} ${input.arm} on ${input.hostId}, ${repeat} runs`);
+    await bench().run({ ...input, repeat });
   }, { timeoutMs: 8 * 3_600_000 });
 }
 
