@@ -3,7 +3,7 @@ import type { HeadPart } from "@lane-pilot/contracts";
 import { extractModelJson } from "../critique";
 import type { ChangeDescriptor } from "../policy";
 import { EVIDENCE_WAIT_MS, closeExpiredRepair, decideAcceptance, gateRepair, laterReleaseTouches, repairChange, type Acceptance, type AcceptanceEvidence, type GateDecision, type RepairFile } from "./acceptance";
-import { analysisPrompt, hunterPrompt, parseNightReport, parsePrediction, predictionHeld, repairBrief, taskWallMessage } from "./brief";
+import { analysisPrompt, hunterPrompt, parseNightReport, parsePrediction, predictionHeld, repairBrief, taskWallMessage, PREDICTION_METRICS } from "./brief";
 import { nightArm } from "../bench/server";
 import { statsEpochMs, statsEpochLine, STATS_EPOCH_SETTING } from "../storage";
 import { loadProjectSettings } from "../storage";
@@ -642,8 +642,16 @@ export function createWall(deps: WallDeps) {
           const report = await ports.repair.report(row.threadId).catch(() => "");
           const night = parseNightReport(report);
           const prediction = parsePrediction(report);
+          const prior = row.acceptance as Record<string, unknown> | null;
+          // One retry when the prediction names nothing checkable: the metric must come from the list.
+          if (prediction && !prediction.fixes_class && !prediction.must_not_move.length && prediction.unknown.length && !prior?.predictionRetried && row.threadId) {
+            const names = PREDICTION_METRICS.join(", ");
+            await ports.tellPm(row.threadId, `Your prediction names no checkable metric (${prediction.unknown.join(", ") ?? "none"}); name a metric from the list: ${names} — one retry.`).catch(() => false);
+            updateRepair(db, row.id, { acceptance: { ...(prior ?? {}), prediction, predictionRetried: true, predictionUnknown: prediction.unknown } }, now);
+            continue;
+          }
           updateRepair(db, row.id, { verdict: view.verdict, outcome: `${view.verdict}; ${night.sites} sites listed${night.sitesOpen ? `, ${night.sitesOpen} left open` : ""}${night.test ? `; test ${night.test}` : "; no regression test named"}`,
-            ...(prediction ? { acceptance: { ...(row.acceptance as Record<string, unknown> | null ?? {}), prediction } } : {}) }, now);
+            ...(prediction ? { acceptance: { ...(prior ?? {}), prediction, ...(prediction.unknown.length ? { predictionUnknown: prediction.unknown } : {}) } } : {}) }, now);
           if (view.verdict !== "fixed") {
             // The watcher releases the worktree and calls `settled`; a verdict that is not «fixed» is a failed move for the ladder.
             notes.push(`${row.id}: verdict ${view.verdict}`);

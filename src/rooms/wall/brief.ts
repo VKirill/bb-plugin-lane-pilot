@@ -49,21 +49,26 @@ export function repairBrief(input: BriefInput): string {
     "- Do not deploy, bump the version, push or merge: the night merges your branch if the policy lets it, then the release train deploys it with the drill and the canary, and rolls back by itself when they are red.",
     "E. YOUR REPORT ends, before the verdict line, with these lines:",
     "NIGHT-REPORT: test=<path of the regression test> sites=<number of SITE lines> class=" + cls.classKey,
-    "and a fenced ```prediction block holding one JSON object (checked after merge, before the round counts): {\"fixes_class\": \"<the class key you close>\", \"must_not_move\": [<metric or path names that must not change, e.g. acceptance or a file>]}. The night compares it with the deployed evidence and records whether the prediction held.",
+    "and a fenced ```prediction block holding one JSON object (checked after merge, before the round counts): {\"fixes_class\": \"<the class key you close>\", \"must_not_move\": [<metrics that must not change — only: acceptance, blocking, retries, bench_score>]}. The night compares it with the deployed evidence and records whether the prediction held.",
   ].join("\n");
 }
 
 /** The numbers the night reads out of a repair's report (the sweep it asked for). */
+/** The metrics a prediction may name: the ones the wall or the trial measures. Others are dropped and marked, never checked. */
+export const PREDICTION_METRICS = ["acceptance", "blocking", "retries", "bench_score"] as const;
 /** The repair's declared prediction (C3): what it claims to fix and what must not move. */
-export type RepairPrediction = { fixes_class: string | null; must_not_move: string[] };
+export type RepairPrediction = { fixes_class: string | null; must_not_move: string[]; unknown: string[] };
 export function parsePrediction(report: string): RepairPrediction | null {
   const block = [...report.matchAll(/```[ \t]*prediction[^\n]*\n([\s\S]*?)```/gi)].at(-1)?.[1];
   if (!block) return null;
   try {
     const parsed = JSON.parse(block) as { fixes_class?: unknown; must_not_move?: unknown };
+    const names = Array.isArray(parsed.must_not_move) ? parsed.must_not_move.filter((item): item is string => typeof item === "string").slice(0, 10) : [];
+    const known = new Set<string>(PREDICTION_METRICS);
     return {
       fixes_class: typeof parsed.fixes_class === "string" ? parsed.fixes_class : null,
-      must_not_move: Array.isArray(parsed.must_not_move) ? parsed.must_not_move.filter((item): item is string => typeof item === "string").slice(0, 10) : [],
+      must_not_move: names.filter((name) => known.has(name.toLowerCase())),
+      unknown: names.filter((name) => !known.has(name.toLowerCase())),
     };
   } catch { return null; }
 }
@@ -73,7 +78,7 @@ export function parsePrediction(report: string): RepairPrediction | null {
  * `must_not_move` names are checked against the metrics the wall measured (acceptance/blocking/retries via the bench
  * score comparison) and the files the repair itself did not touch are not tracked here.
  */
-export function predictionHeld(prediction: RepairPrediction, input: { recurred: boolean | null; benchScore?: number; baselineScore?: number }): { held: boolean; notes: string[] } {
+export function predictionHeld(prediction: Pick<RepairPrediction, "fixes_class" | "must_not_move">, input: { recurred: boolean | null; benchScore?: number; baselineScore?: number }): { held: boolean; notes: string[] } {
   const notes: string[] = [];
   let held = true;
   if (prediction.fixes_class && input.recurred !== null) {

@@ -1,12 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { parsePrediction, predictionHeld } from "../src/rooms/wall/brief";
-import { decideTrial, type ArmAttempt } from "../src/rooms/harness/server/trial";
+import { decideTrial } from "../src/rooms/harness/server/trial";
+import type { ArmAttempt } from "../src/rooms/harness/server/store";
 
 const report = `... sites done\n\`\`\`prediction\n{"fixes_class":"harness:timeout","must_not_move":["acceptance","src/rooms/wall/service.ts"]}\n\`\`\``;
 
 describe("repair prediction (C3)", () => {
   it("the report's prediction block parses; the check reads the deployed evidence", () => {
-    expect(parsePrediction(report)).toEqual({ fixes_class: "harness:timeout", must_not_move: ["acceptance", "src/rooms/wall/service.ts"] });
+    expect(parsePrediction(report)).toEqual({ fixes_class: "harness:timeout", must_not_move: ["acceptance"], unknown: ["src/rooms/wall/service.ts"] });
+    // A name outside the metric list is dropped and marked, so a prediction of only made-up names checks nothing silently.
+    const junk = parsePrediction("```prediction\n{\"must_not_move\":[\"src/x.ts\",\"coverage\"]}\n```");
+    expect(junk).toEqual({ fixes_class: null, must_not_move: [], unknown: ["src/x.ts", "coverage"] });
     expect(parsePrediction("no block here")).toBeNull();
     const ok = predictionHeld({ fixes_class: "c", must_not_move: ["acceptance"] }, { recurred: false, benchScore: 0.7, baselineScore: 0.6 });
     expect(ok.held).toBe(true);
