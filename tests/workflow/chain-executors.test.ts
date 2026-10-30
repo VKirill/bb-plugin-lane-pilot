@@ -32,7 +32,7 @@ const reply = (body: Row, lead = "Done.") => `${lead}\n\n\`\`\`json\n${JSON.stri
 
 /** What a helper thread of a node spent, as BB reports it: one token-usage event of one turn, on this model. */
 type Spent = { input: number; output: number; model?: string };
-async function setup(script: Script, options: { dirty?: boolean; spent?: Record<string, Spent>; failWrites?: boolean; noPm?: boolean; offers?: Array<{ providerId: string; model: string; host?: string }> } = {}) {
+async function setup(script: Script, options: { dirty?: boolean; spent?: Record<string, Spent>; failWrites?: boolean; noPm?: boolean; invalidParent?: boolean; offers?: Array<{ providerId: string; model: string; host?: string }> } = {}) {
   const checkout = mkdtempSync(join(tmpdir(), "lp-chain-"));
   execFileSync("git", ["init", "-q"], { cwd: checkout });
   writeFileSync(join(checkout, "README.md"), "hello\n");
@@ -51,6 +51,7 @@ async function setup(script: Script, options: { dirty?: boolean; spent?: Record<
         spawn: async (args) => {
           const request = args as unknown as Row;
           spawned.push(request);
+          if (options.invalidParent && (request.pluginMetadata as Row)?.parentPmThreadId) throw new Error("HTTP 400: Parent thread is invalid");
           const id = `helper-${next += 1}`;
           nodeOf.set(id, String((request.pluginMetadata as Row).lanePilotWorkflowNode ?? (request.pluginMetadata as Row).role));
           return { id };
@@ -450,6 +451,24 @@ describe("the agent step", () => {
     expect(t.sent).toHaveLength(1);
     expect(t.sent[0]).toMatchObject({ threadId: "helper-1" });
     expect(t.sent[0]!.text).toContain("Continue the workflow step \"plan\"");
+  });
+
+  it("a dead parent chat does not kill the spawn: the helper goes hidden instead (lp.analyze's 400)", async () => {
+    const t = await setup({ plan: [reply({ plan: "v1", handoff: "done" })] }, { invalidParent: true });
+    dispose = t.dispose;
+    const workflow = chain({
+      inputs: [], outputs: [{ name: "plan", type: "string", required: false }],
+      nodes: [
+        { id: "plan", type: "agent", role: "planner", prompt: "Plan.", output: [{ name: "plan", type: "string" }] },
+        { id: "done", type: "action", action: "emit", map: { plan: "plan.plan" } },
+      ],
+      edges: [{ from: "start", to: "plan" }, { from: "plan", to: "done" }],
+    });
+    const summary = await t.start(workflow).done;
+    expect(summary).toMatchObject({ status: "succeeded" });
+    expect(t.spawned).toHaveLength(2);
+    expect((t.spawned[0]!.pluginMetadata as Row).parentPmThreadId).toBe("chain-pm");
+    expect((t.spawned[1]!.pluginMetadata as Row).parentPmThreadId).toBeUndefined();
   });
 
   it("a same-session step re-run after a reload does not send its task into the thread a second time", async () => {
