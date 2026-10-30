@@ -75,7 +75,7 @@ export async function waitSpecialistRun(ctx: ServerCore, services: Services, inp
       const deliverable = typeof inputs.deliverable === "string" ? inputs.deliverable : null;
       if (validator && deliverable && threadId) {
         try {
-          const { validateDeliverable } = await import("../../validators/deliverable");
+          const { validateDeliverable } = await import("../../validators");
           const hostId = typeof inputs.hostId === "string" ? inputs.hostId : "";
           const verdict = await validateDeliverable(validator, deliverable, { host: { run: (id, cwd, command, timeoutSec) => runOnHost(ctx.host, { hostId: id, cwd, command, timeoutSec }) as never }, hostId, brief: inputs.brief as Record<string, unknown> | undefined });
           if (!verdict.ok) {
