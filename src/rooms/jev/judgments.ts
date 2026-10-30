@@ -15,3 +15,4 @@ import "../phase";
 import "../runs";
 import "../workflow";
 import "../writer";
+import "@lane-pilot/jev/judgments/citation-check";

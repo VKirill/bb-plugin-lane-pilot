@@ -111,7 +111,7 @@ async function judgeScreenshots(target: string, deps: ValidatorDeps, dom: DomRep
           return { ok: false, reason: `content cut off on ${verdict.decision.worstShot} (jev p=${verdict.decision.worst})${hint}`, details: { dom, jev: verdict.decision } };
         }
       } else if (verdict?.by === "fallback" && verdict.shadow?.decision) {
-        jevSeen = verdict.shadow.decision as typeof jevSeen;
+        jevSeen = verdict.shadow.decision as unknown as typeof jevSeen;
       }
     }
   }

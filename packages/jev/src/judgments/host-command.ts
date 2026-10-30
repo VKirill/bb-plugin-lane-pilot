@@ -44,7 +44,7 @@ export const hostCommandJudgment = defineJudgment<HostCommandInput, HostCommandD
   },
   decide(answers, t, input) {
     const kind = choiceOf(answers, "kind"), harm = noulOf(answers, "harm") ?? 0;
-    const destructive = kind?.probabilities ? (kind.ranked.find(([name]) => name === "destructive")?.[1] ?? 0) : 0;
+    const destructive = kind?.ranked.find(([name]) => name === "destructive")?.[1] ?? 0;
     if (destructive >= t.stop_p! || harm >= t.stop_p!) {
       return { decision: { action: "stop", reason: `command can lose data, money or leave the workspace (destructive p=${Math.round(destructive * 100) / 100}, harm p=${Math.round(harm * 100) / 100}); narrow it to ${input.workspaceRoots[0] ?? "the workspace"} or run it by hand` } };
     }
