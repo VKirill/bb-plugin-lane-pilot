@@ -19,6 +19,7 @@ import {
 import { TRIAL_DEFAULTS, decideTrial, type AdoptBy, type TrialConfig, type TrialDecision } from "./trial";
 import { getBenchProject, verdictForHarness } from "../../bench";
 import type { HostPort } from "../../bench/server";
+import { graphEditProblems } from "./graph-edit";
 import { formatProbeReplays, runHarnessProbe } from "./probe-run";
 import { builtinWorkflow } from "../../workflow";
 import type { StepContext } from "../../workflow";
@@ -172,6 +173,10 @@ export async function runStage(input: { mission: string; fallback: Tree; title: 
     const tree = result.tree;
     try {
       validate(tree, input.surface ? { surface: input.surface } : {});
+      if (input.surface?.graphFiles) {
+        const graphProblems = graphEditProblems(tree);
+        if (graphProblems.length) throw new HarnessValidationError(graphProblems);
+      }
     } catch (cause) {
       lastError = cause instanceof HarnessValidationError ? cause.message : String(cause);
       if (++rejected >= 2) break;
@@ -574,7 +579,13 @@ export function createHarness(ctx: ServerCore, services: Services) {
     if (status !== "edited") throw new Error(detail || "the harness round failed");
     const tree = edit.tree as Tree;
     const surface = (await config(projectId)).graphEdits ? { ...LANE_PILOT_SURFACE, graphFiles: true } : LANE_PILOT_SURFACE;
-    try { validate(tree, { surface }); } catch (cause) { throw new Error(`the composed tree is not valid: ${cause instanceof Error ? cause.message : String(cause)}`); }
+    try {
+      validate(tree, { surface });
+      if (surface.graphFiles) {
+        const graphProblems = graphEditProblems(tree);
+        if (graphProblems.length) throw new HarnessValidationError(graphProblems);
+      }
+    } catch (cause) { throw new Error(`the composed tree is not valid: ${cause instanceof Error ? cause.message : String(cause)}`); }
     const refused = screenRejected(fingerprint(tree), rejectedFor(projectId, area, writerKey));
     if (refused.blocked) {
       await bb.storage.kv.set(LAST_EDIT_KEY(projectId, area, writerKey), { at: Date.now(), result: "keep_base", reason: refused.reason } as never);

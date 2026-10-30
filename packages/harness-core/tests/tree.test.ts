@@ -77,7 +77,10 @@ describe("validate", () => {
     expect(() => validate({ ...good, [graph]: body }, { surface: on })).not.toThrow();
     expect(() => validate({ ...good, [graph]: "{}" }, { surface: on })).toThrow(/id, nodes and edges/);
     expect(proposePrompt("INV", { area: "admin" })).not.toContain("workflows/");
-    expect(proposePrompt("INV", { area: "admin", surface: on })).toContain("workflows/<name>.json");
+    const flagged = proposePrompt("INV", { area: "admin", surface: on });
+    expect(flagged).toContain("workflows/<name>.json");
+    expect(flagged).toContain("test.sim.expect_path");
+    expect(flagged.length).toBeLessThan(9000);
   });
 
   it("treats an empty tree as a valid base", () => {

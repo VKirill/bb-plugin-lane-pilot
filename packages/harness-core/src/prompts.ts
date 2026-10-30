@@ -54,7 +54,7 @@ Do not fix what the attempts already got right, and do not restate what the fixe
 
 export function surfaceBlock(surface: SurfaceSpec = LANE_PILOT_SURFACE): string {
   const graphRow = surface.graphFiles
-    ? "| `workflows/<name>.json` | a workflow graph (JSON with id, nodes and edges) | the same trial and bench gate as any other harness file |\n"
+    ? "| `workflows/<name>.json` | a workflow graph the engine accepts (JSON with id, nodes and edges, plus test.sim.expect_path) | the same trial and bench gate as any other harness file |\n"
     : "";
   return `# WHAT YOU CAN CHANGE
 
