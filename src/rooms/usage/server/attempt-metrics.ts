@@ -1,5 +1,6 @@
 import type Database from "better-sqlite3";
-import { costUsd, priceFor } from "@lane-pilot/models";
+import { costUsd, priceFor, modelTier, WRITER_PROFILES } from "@lane-pilot/models";
+import type { ModelTier } from "@lane-pilot/models";
 import { STAGE_PROOF } from "../../tasks";
 import { billedFrom, parseBreakdown } from "../token-math";
 
@@ -21,7 +22,7 @@ export type AttemptMetrics = {
   seconds: number | null;
   stages: AttemptStage[]; stagesPassed: number; stagesFailed: number;
   gates: { passed: number; rejected: number };
-  writer: { threadId: string | null; providerId: string | null; model: string | null };
+  writer: { threadId: string | null; providerId: string | null; model: string | null; tier: ModelTier | null };
   tokens: { input: number; output: number; cached: number; total: number } | null;
   costUsd: number | null;
   costState: CostState;
@@ -35,6 +36,8 @@ export type AttemptMetricsReport = {
     measuredCostUsd: number | null; measuredTokens: number | null;
     notMeasuredByProvider: Record<string, number>;
     stagesPassed: number; stagesFailed: number;
+    /** First attempts (attempt_no = 1) grouped by writer tier: how many ran and how many were accepted. */
+    firstByTier: Record<ModelTier | "unknown", { first: number; accepted: number }>;
   };
   attempts: AttemptMetrics[];
 };
@@ -125,7 +128,7 @@ export function attemptMetrics(db: Database.Database, input: { projectId: string
         stages, stagesPassed: stages.filter((row) => row.state === "passed").length,
         stagesFailed: stages.filter((row) => row.state === "failed" || row.state === "blocked").length,
         gates: { passed: gates.filter((row) => row.status === "passed").length, rejected: gates.filter((row) => row.status === "rejected" || row.status === "failed").length },
-        writer: { threadId: attempt.thread_id, providerId, model },
+        writer: { threadId: attempt.thread_id, providerId, model, tier: writerTier(providerId, model) },
         tokens, costUsd: cost, costState, costNote,
       });
     });
@@ -146,9 +149,27 @@ export function attemptMetrics(db: Database.Database, input: { projectId: string
       measuredTokens: measured.length ? measured.reduce((sum, row) => sum + (row.tokens?.total ?? 0), 0) : null,
       notMeasuredByProvider,
       stagesPassed: rows.reduce((sum, row) => sum + row.stagesPassed, 0), stagesFailed: rows.reduce((sum, row) => sum + row.stagesFailed, 0),
+      firstByTier: firstByTier(rows),
     },
     attempts: rows,
   };
+}
+
+/** Tier from the writer profile that picked this provider+model; a model outside the catalog falls back to name matching. */
+export function writerTier(providerId: string | null, model: string | null): ModelTier | null {
+  const profile = WRITER_PROFILES.find((row) => row.providerId === providerId && row.model === model);
+  return profile ? profile.tier : model ? modelTier(model) : null;
+}
+
+function firstByTier(rows: AttemptMetrics[]): AttemptMetricsReport["summary"]["firstByTier"] {
+  const out = {} as Record<ModelTier | "unknown", { first: number; accepted: number }>;
+  for (const row of rows) if (row.attemptNo === 1) {
+    const key = row.writer.tier ?? "unknown";
+    const bucket = (out[key] ??= { first: 0, accepted: 0 });
+    bucket.first += 1;
+    if (row.state === "accepted") bucket.accepted += 1;
+  }
+  return out;
 }
 
 const TERMINAL_ATTEMPT = new Set(["accepted", "blocked", "canceled", "validation_failed", "empty_output", "provider_error", "spawn_rejected"]);
@@ -162,11 +183,12 @@ export function renderAttemptMetrics(report: AttemptMetricsReport): string {
     `Measured cost (list price, measured attempts only): ${usd(s.measuredCostUsd)}${s.measuredTokens === null ? "" : `, ${s.measuredTokens} tokens`}.`,
     ...(Object.keys(s.notMeasuredByProvider).length ? [`Not measured by provider: ${Object.entries(s.notMeasuredByProvider).map(([key, n]) => `${key} ${n}`).join(", ")} (these report no token usage; their cost is unknown, not zero).`] : []),
     `Stages: ${s.stagesPassed} passed, ${s.stagesFailed} failed or blocked.`,
+    `First attempts by tier: ${Object.entries(s.firstByTier).map(([tier, n]) => `${tier} ${n.accepted}/${n.first} accepted`).join(", ") || "none"}.`,
     "",
   ];
   for (const row of report.attempts) {
     const stages = row.stages.map((stage) => `${stage.stageId}:${stage.state}${stage.seconds === null ? "" : `/${stage.seconds}s`}`).join(" ") || "no stage events";
-    lines.push(`${new Date(row.createdAt).toISOString().slice(0, 16)}Z ${row.taskId} #${row.attemptNo} ${row.state} ${row.seconds === null ? "" : `${row.seconds}s `}| ${row.writer.providerId ?? "-"}/${row.writer.model ?? "-"} | tokens ${row.tokens ? row.tokens.total : "not measured"} | cost ${usd(row.costUsd)} [${row.costState}] | ${stages}${row.costNote ? ` | ${row.costNote}` : ""}`);
+    lines.push(`${new Date(row.createdAt).toISOString().slice(0, 16)}Z ${row.taskId} #${row.attemptNo} ${row.state} ${row.seconds === null ? "" : `${row.seconds}s `}| ${row.writer.providerId ?? "-"}/${row.writer.model ?? "-"} [${row.writer.tier ?? "?"}] | tokens ${row.tokens ? row.tokens.total : "not measured"} | cost ${usd(row.costUsd)} [${row.costState}] | ${stages}${row.costNote ? ` | ${row.costNote}` : ""}`);
   }
   return lines.join("\n");
 }
