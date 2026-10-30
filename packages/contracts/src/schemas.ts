@@ -101,6 +101,8 @@ export const taskV2Schema = z.object({
     timeout_sec: z.number().int().min(1).max(7200).optional(),
     /** Env Catalog names this check needs (kind secret or login): the server passes their values to the check as environment variables, by name; the writer never sees them. */
     secrets: z.array(secretNameSchema).max(16).optional(),
+    /** A holdout check: it runs in verification, but the writer's brief does not show it, so it measures what the contract catches, not what the writer was told to pass. */
+    hidden: z.boolean().optional(),
   }).strict()),
   /** What changes for a person, in the language the owner writes in, short (~60 characters read best, at most 1000), no ids or paths: the task board's card title. Optional in the schema so stored contracts parse; the contract lint requires it on a dispatch. */
   display_title: z.string().trim().describe("Card title in the language the owner writes in, short, ~60 characters: what changes for a person, no ids or paths (Russian owner: «Страница заказов в кабинете»).").optional(),
