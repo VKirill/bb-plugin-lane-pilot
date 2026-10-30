@@ -16,7 +16,7 @@ const T0 = Date.parse("2026-10-01T00:00:00Z");
 
 // The id is the one the write door gives the content, as on the hub (the shelf replay stores through that door).
 const note = (n: number, content: string, over: Partial<RawNote> = {}): RawNote => ({ id: memoryRecordId("P", "note", content), projectId: "P", kind: "note", content, concepts: ["area"], createdAt: T0 + n * 1000,
-  status: "active", trust: "confirmed", origin: "maintainer", useCount: 0, acceptedCount: 0, ...over });
+  status: "active", trust: "confirmed", origin: "maintainer", useCount: 0, acceptedCount: 0, sections: [], audience: "subagent", personalBot: "", ...over });
 const task = (n: number, produced: string[], title: string, owns = produced): RawQuestion => ({ attemptId: `att${n}`, taskId: `task${n}`, projectId: "P", startedAt: T0 + DAY * 2 + n * 1000, attemptNo: 1,
   produced, picked: [], task: { title, objective: `${title} in the project`, acceptance: [], owns_paths: owns, read_first: [] } });
 
