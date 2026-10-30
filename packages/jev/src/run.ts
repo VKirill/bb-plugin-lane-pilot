@@ -4,7 +4,7 @@ import { MAX_STATE_CHARS, type JevClient } from "./client";
 import { MAX_QUESTIONS_PER_JUDGMENT, type Answers, type Decided, type Judgment, type JudgmentMode, type Thresholds } from "./registry";
 import { insertReceipt, recordOutcome } from "./receipts";
 import { jevEnabled, resolveMode, resolveThresholds, type JevSettings } from "./thresholds";
-import type { AnswerSummary, JevBudget, JevCallResult, JevFailure, JevQuestion } from "./types";
+import type { AnswerSummary, JevAsset, JevBudget, JevCallResult, JevFailure, JevQuestion } from "./types";
 
 /**
  * Runs judgments. `judge` asks one; `judgeMany` asks the same judgment about many inputs in one request (question ids
@@ -50,13 +50,14 @@ export type JevCacheOptions = { ttlMs: number; maxEntries: number };
 export const JEV_CACHE_TTL_MS = 5 * 60_000;
 export const JEV_CACHE_MAX_ENTRIES = 500;
 
-type Entry = { judgment: Judgment<any, any>; input: unknown; mode: JudgmentMode; settings: JudgeContext["settings"]; state: unknown; stateText: string; questions: Record<string, JevQuestion> };
+type Entry = { judgment: Judgment<any, any>; input: unknown; mode: JudgmentMode; settings: JudgeContext["settings"]; state: unknown; stateText: string; questions: Record<string, JevQuestion>; assets: Record<string, JevAsset> };
 
 const sha256 = (text: string): string => sha256Hex(text);
 
 function summarize(answers: Answers): Record<string, AnswerSummary> {
   return Object.fromEntries(Object.entries(answers).map(([id, answer]) => {
     if (answer.type === "noul") return [id, { kind: "noul", value: Math.round(answer.noul * 1000) / 1000, top: [] } satisfies AnswerSummary];
+    if (answer.type === "box") return [id, { kind: "box", value: JSON.stringify(answer.box), top: [], confidence: Math.round(answer.confidence * 1000) / 1000 } satisfies AnswerSummary];
     const top = Object.entries(answer.probabilities).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([name, p]) => [name, Math.round(p * 1000) / 1000] as [string, number]);
     return [id, { kind: answer.type, value: answer.type === "choice" ? answer.choice : Math.round(answer.score * 1000) / 1000, top, confidence: Math.round(answer.confidence * 1000) / 1000 } satisfies AnswerSummary];
   }));
@@ -89,7 +90,7 @@ export function createJev(deps: { client: JevClient; db?: Database.Database | nu
     const state = redactKnownDeep(judgment.stateBuilder(input));
     const questions = judgment.questions(input);
     if (Object.keys(questions).length > MAX_QUESTIONS_PER_JUDGMENT) throw new Error(`judgment ${judgment.id} asks more than ${MAX_QUESTIONS_PER_JUDGMENT} questions`);
-    return { judgment, input, mode: resolveMode(judgment, ctx.settings), settings: ctx.settings, state, stateText: JSON.stringify(state) ?? "null", questions };
+    return { judgment, input, mode: resolveMode(judgment, ctx.settings), settings: ctx.settings, state, stateText: JSON.stringify(state) ?? "null", questions, assets: judgment.assets?.(input) ?? {} };
   };
 
   function receipt(entry: Entry, ctx: JudgeContext, call: JevCallResult, batchSize: number, decidedBy: "jev" | "fallback" | "escalated", decision: string | null, escalatedTo: string | null, answers?: Answers, cached = false): number | null {
@@ -157,7 +158,8 @@ export function createJev(deps: { client: JevClient; db?: Database.Database | nu
       let call: JevCallResult | undefined = key ? cacheGet(key) : undefined;
       const cached = call !== undefined;
       if (!call) {
-        call = await client.call({ state: first.state, questions, ...(first.judgment.model ? { model: first.judgment.model } : {}) },
+        const assets = Object.assign({}, ...members.map((index) => entries[index]!.assets));
+        call = await client.call({ state: first.state, questions, assets, ...(first.judgment.model ? { model: first.judgment.model } : {}) },
           { timeoutMs: Math.max(...members.map((index) => entries[index]!.judgment.timeoutMs)), budget: ctx.budget, signal: ctx.signal });
         if (key) cachePut(key, call);
       }

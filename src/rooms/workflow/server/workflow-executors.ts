@@ -5,6 +5,8 @@ import { validateTaskV2 } from "../../tasks/task-v2";
 import { agentPrompt, outputContract, parseAgentOutput, resolveTaskQualityMode } from "@lane-pilot/workflow-engine";
 import type { NodeExecutor, PollResult, StepContext, WorkflowEngine } from "@lane-pilot/workflow-engine";
 import type { RunRow } from "../../storage";
+import { jev } from "@lane-pilot/jev";
+import { citationCheckJudgment } from "@lane-pilot/jev/judgments/citation-check";
 import { postOwnerItem } from "../../owner-waiting";
 import { outputFields } from "@lane-pilot/workflow-engine";
 import { BUILTIN_PRESETS } from "@lane-pilot/models";
@@ -22,6 +24,7 @@ import type { ServerCore } from "../../core/server";
 import type { Services } from "../../core/server";
 import { ownerLocale, workflowHumanDetail } from "../../relay/server";
 import { runOnHost } from "@lane-pilot/host-calls";
+import { pageReviewByAgent } from "../../critique/server";
 
 /**
  * The executors that run a chain on the host: the generic agent step, the owner's question, the code task of a chain, the actions
@@ -223,6 +226,70 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
 
   // The model step of the router's graph `lp.route`.
   registerRouterExecutor(engine, agents);
+
+  // `citations.jev`: for each {claim, source, excerpt} triple Jev decides whether the source supports the claim
+  // (research.citation, shadow by default — verdicts go to receipts and to `citation_check` in the output).
+  engine.register<ChainRuntime>("citations.jev", { reentrant: true, run: async (c) => {
+    const params = rec(rec(c.node).params);
+    const items = list((c.input.with as Row | undefined)?.[str(params.items ?? "citations")] ?? c.inputs[str(params.items ?? "citations")]);
+    const rt = runtimeOf(c, c.runId);
+    const judge = jev();
+    if (!judge || !items.length) return { output: { checked: 0, kept: items.length, verdicts: [] } };
+    const inputs = items.map((item) => {
+      const row = rec(item);
+      return { claim: str(row.claim), quote: str(row.quote), sourceTitle: str(row.title ?? row.source_title), sourceUrl: str(row.url ?? row.source_url), excerpt: str(row.excerpt ?? row.text), question: str(row.question) };
+    });
+    const settings = rt?.projectId ? await ctx.effectiveProjectSettings(rt.projectId).then((r) => r.values as Record<string, unknown>).catch(() => ({})) : {};
+    const verdicts = await judge.judgeMany(citationCheckJudgment, inputs, { projectId: rt?.projectId ?? null, runId: rt?.runId ?? null, settings });
+    const out = verdicts.map((v, i) => {
+      const decision = v.by === "jev" ? v.decision : v.by === "fallback" && v.shadow?.decision ? v.shadow.decision : citationCheckJudgment.fallback(inputs[i]!);
+      return { index: i, verdict: decision.verdict, keep: decision.keep, by: v.by === "jev" ? "jev" : "fallback" };
+    });
+    return { output: { checked: verdicts.length, kept: out.filter((v) => v.keep).length, verdicts: out } };
+  } });
+
+  // `deliverable.validate` — the three-layer acceptance of a non-code artifact (see docs/workflow-executors.md):
+  // in:  { validator: "page"|"design"|"text"|"3d"|"video"|"invoice"|"composite"|"artifact", target, brief?, hostId? }
+  // out: { verdict: "pass"|"rework"|"fail", reason, issues? } — the step's own rules turn rework into a revision.
+  engine.register<ChainRuntime>("deliverable.validate", { reentrant: true, run: async (c) => {
+    const params = rec(rec(c.node).params);
+    const w = (c.input.with ?? {}) as Row;
+    const pick = (key: string) => params[key] ?? w[key] ?? c.inputs[key];
+    const validator = str(pick("validator") ?? "artifact"), target = str(pick("target") ?? pick("deliverable") ?? pick("path"));
+    const rt = runtimeOf(c, c.runId);
+    if (!target) throw new Error("deliverable.validate: no target");
+    const hostId = str(pick("hostId") ?? "");
+    const settings = rt?.projectId ? await ctx.effectiveProjectSettings(rt.projectId).then((r) => r.values as Record<string, unknown>).catch(() => ({})) : {};
+    const { validateDeliverable } = await import("../../validators");
+    const verdict = await validateDeliverable(validator, target, {
+      host: { run: (id, cwd, command, timeoutSec) => runOnHost(host, { hostId: id, cwd, command, timeoutSec }) as never },
+      hostId,
+      brief: rec(pick("brief")),
+      jevCtx: { projectId: rt?.projectId ?? null, runId: rt?.runId ?? c.runId ?? null, settings },
+      review: rt?.projectId ? async (req) => pageReviewByAgent(ctx, services, {
+        pmThreadId: rt.pmThreadId ?? "", projectId: rt.projectId!, parentRunId: rt.runId ?? c.runId ?? "",
+        design: validator === "design" || Boolean(rec(pick("brief")).design), request: req,
+      }) : undefined,
+    });
+    const out = verdict.ok ? "pass" : "rework";
+    return { output: { verdict: out, reason: verdict.reason, ...(verdict.details ? { issues: verdict.details } : {}) } };
+  } });
+
+  // `skills.jev`: Jev walks the catalog tree for this step (skills.tree_pick, hierarchical) and returns the picked
+  // skill names — a graph passes {task} instead of listing skills in the prompt.
+  engine.register<ChainRuntime>("skills.jev", { reentrant: true, run: async (c) => {
+    const params = rec(rec(c.node).params);
+    const task = str(params.task ?? (c.input.with as Row | undefined)?.task ?? c.inputs.task);
+    const rt = runtimeOf(c, c.runId);
+    const judge = jev();
+    if (!judge) return { output: { skills: [], picked: [], by: "off" } };
+    const { skillTreeCached, readSkillTreeText, pickSkillTree } = await import("../../writer/server/skill-tree");
+    const tree = await skillTreeCached(readSkillTreeText);
+    if (!tree) return { output: { skills: [], picked: [], by: "off" } };
+    const settings = rt?.projectId ? await ctx.effectiveProjectSettings(rt.projectId).then((r) => r.values as Record<string, unknown>).catch(() => ({})) : {};
+    const got = await pickSkillTree(judge, tree, { title: task, prompt: "" }, { projectId: rt?.projectId ?? null, runId: rt?.runId ?? null, settings });
+    return { output: { skills: got.skills, picked: got.picked, by: got.by } };
+  } });
 
   // ---------------------------------------------------------------- agent
   engine.register<ChainRuntime>("agent", {
