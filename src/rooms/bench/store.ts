@@ -165,6 +165,26 @@ export function latestNoise(db: BenchDb, setId: string, arms?: [string, string])
   return row ? { id: row.id, setId: row.set_id, armA: row.arm_a, armB: row.arm_b, noise: json(row.noise_json, {} as NoiseRecord["noise"]), createdAt: row.created_at } : null;
 }
 
+export type BenchMark = { setId: string; taskId: string; mark: "regression" | "flaky"; markedAt: number };
+
+/**
+ * Stability marks of a set's tasks (C5), written after a repeated noise run. `marks` upserts what the latest repeats say;
+ * `dropIds` are tasks that failed every repeat — a consistent failure is signal, so an old mark is removed.
+ */
+export function saveStabilityMarks(db: BenchDb, input: { setId: string; marks: ReadonlyMap<string, BenchMark["mark"]>; dropIds: readonly string[]; detail?: Record<string, unknown>; now?: number }): void {
+  const now = input.now ?? Date.now();
+  const detail = JSON.stringify(input.detail ?? {});
+  const upsert = db.prepare("INSERT INTO lane_pilot_bench_mark(set_id,task_id,mark,detail_json,marked_at) VALUES(?,?,?,?,?) ON CONFLICT(set_id,task_id) DO UPDATE SET mark=excluded.mark, detail_json=excluded.detail_json, marked_at=excluded.marked_at");
+  for (const [taskId, mark] of input.marks) upsert.run(input.setId, taskId, mark, detail, now);
+  const drop = db.prepare("DELETE FROM lane_pilot_bench_mark WHERE set_id=? AND task_id=?");
+  for (const taskId of input.dropIds) drop.run(input.setId, taskId);
+}
+
+export function listStabilityMarks(db: BenchDb, setId: string): Map<string, BenchMark["mark"]> {
+  const rows = db.prepare("SELECT task_id, mark FROM lane_pilot_bench_mark WHERE set_id=?").all(setId) as Array<{ task_id: string; mark: BenchMark["mark"] }>;
+  return new Map(rows.map((row) => [row.task_id, row.mark]));
+}
+
 export type BenchVerdict = { id: string; setId: string; armA: string; armB: string; harnessId: string | null; passed: boolean; report: unknown; createdAt: number };
 export function saveVerdict(db: BenchDb, input: Omit<BenchVerdict, "id" | "createdAt"> & { now?: number }): BenchVerdict {
   const id = `benchverdict_${randomUUID().replaceAll("-", "").slice(0, 12)}`, now = input.now ?? Date.now();

@@ -1,7 +1,7 @@
 import { hubFields, writeHubFields } from "../improvement";
 import { baselineMetrics } from "./baseline";
 import { buildSet, type BuildReport } from "./build";
-import { compareArms, computeNoise, noiseOfRepeats, passReport, renderComparison, summarizeArm, type ArmSummary, type Comparison } from "./compare";
+import { compareArms, computeNoise, noiseOfRepeats, passReport, renderComparison, stabilityMarks, summarizeArm, type ArmSummary, type Comparison } from "./compare";
 import { cohortCounts, cohortOf } from "./stratify";
 import { renderStratumMetrics, stratumMetrics, type StratumRow } from "./stratum-metrics";
 import { statsEpochMs, STATS_EPOCH_SETTING, listStageReceipts } from "../storage";
@@ -13,7 +13,7 @@ import { isSealedVersion } from "./store";
 import { BENCH_REPOS_ROOT_ENV } from "./repos";
 import { DEFAULT_BUDGET_HOURS, DEFAULT_BUDGET_TOKENS, defaultProjectName, runSeries, type BenchWriter, type SeriesInput, type SeriesReport } from "./runner";
 import {
-  getSet, latestNoise, listResults, listRuns, listSets, markSkippedRun, saveNoise, saveVerdict, type BenchDb, type BenchRun, type NoiseRecord,
+  getSet, latestNoise, listResults, listRuns, listSets, listStabilityMarks, markSkippedRun, saveNoise, saveStabilityMarks, saveVerdict, type BenchDb, type BenchRun, type NoiseRecord,
 } from "./store";
 
 type Kv = { get(key: string): Promise<unknown>; set(key: string, value: never): Promise<unknown> };
@@ -151,6 +151,13 @@ export function createBench(deps: BenchDeps) {
         const pass = passReport(byRepeat);
         const noise = set ? noiseOfRepeats(input.arm, byRepeat) : null;
         if (set && noise) saveNoise(deps.db, { setId: set.id, armA: `${input.arm}#1`, armB: `${input.arm}#${rows.length}`, noise });
+        // C5: stable tasks graduate to the regression part of the set; flaky ones are flagged and stay out of verdicts.
+        if (set) {
+          const stability = stabilityMarks(byRepeat);
+          saveStabilityMarks(deps.db, { setId: set.id, marks: stability.marks, dropIds: stability.failedIds, detail: { arm: input.arm, repeats: rows.length } });
+          const regression = [...stability.marks.values()].filter((mark) => mark === "regression").length;
+          deps.log(`bench marks ${input.arm}: ${regression} regression, ${stability.marks.size - regression} flaky of ${pass.tasks} tasks`);
+        }
         deps.log(`bench noise ${input.arm}: pass@1 ${(pass.passAt1 * 100).toFixed(0)}% pass^${pass.repeats} ${(pass.passPow * 100).toFixed(0)}% over ${pass.tasks} tasks`);
         for (const report of reports) { report.passAt1 = pass.passAt1; report.passPow = pass.passPow; }
       }
@@ -188,7 +195,13 @@ export function createBench(deps: BenchDeps) {
     const set = getSet(deps.db, input.version);
     if (!set) throw new Error(`no bench set ${input.version}`);
     const noiseRecord = latestNoise(deps.db, set.id, input.noiseArms);
-    const comparison = compareArms(armSummary(input.version, input.armA), armSummary(input.version, input.armB), noiseRecord);
+    // C5: a task flagged flaky by repeated runs is unstable for every later verdict too, noise record or not.
+    const flagged = [...listStabilityMarks(deps.db, set.id).entries()].filter(([, mark]) => mark === "flaky").map(([taskId]) => taskId);
+    const mergedNoise: NoiseRecord | null = noiseRecord || flagged.length
+      ? { id: noiseRecord?.id ?? "", setId: set.id, armA: noiseRecord?.armA ?? "", armB: noiseRecord?.armB ?? "", createdAt: noiseRecord?.createdAt ?? 0,
+          noise: { unstableTasks: [...new Set([...(noiseRecord?.noise.unstableTasks ?? []), ...flagged])], flipShare: noiseRecord?.noise.flipShare ?? 0, costRel: noiseRecord?.noise.costRel ?? null, secondsRel: noiseRecord?.noise.secondsRel ?? null, stagesSlack: noiseRecord?.noise.stagesSlack ?? 0, tasks: noiseRecord?.noise.tasks ?? 0 } }
+      : null;
+    const comparison = compareArms(armSummary(input.version, input.armA), armSummary(input.version, input.armB), mergedNoise);
     // Naming a harness tree turns the comparison into the word `harness.adopt_by=bench` waits for.
     // An inconclusive comparison decides nothing: recorded as a pass or as a fail it would adopt or retire a harness tree on too little.
     const verdict = input.harnessId && comparison.verdict !== "inconclusive" ? saveVerdict(deps.db, { setId: set.id, armA: input.armA, armB: input.armB, harnessId: input.harnessId, passed: comparison.verdict === "pass", report: comparison }) : null;
@@ -213,8 +226,10 @@ export function createBench(deps: BenchDeps) {
     const sets = listSets(deps.db).filter((row) => !version || row.version === version);
     return sets.map((set) => {
       const tasks = getSet(deps.db, set.version)?.tasks ?? [];
+      const marks = [...listStabilityMarks(deps.db, set.id).values()];
       return {
         version: set.version, sealed: isSealedVersion(set.version), manifestSha256: set.manifestSha256, tasks: set.taskCount, candidates: set.candidateCount, createdAt: set.createdAt,
+        marks: { regression: marks.filter((mark) => mark === "regression").length, flaky: marks.filter((mark) => mark === "flaky").length },
         runs: listRuns(deps.db, set.id).map((row) => {
           const results = listResults(deps.db, row.id);
           return { arm: row.arm, repeat: row.repeat, state: row.state, stopReason: row.stopReason, spentTokens: row.spentTokens, tasks: results.length, accepted: results.filter((r) => r.accepted).length, skipped: results.filter((r) => r.state === "skipped_budget").length, cohorts: cohortCounts(tasks, results) };
@@ -226,9 +241,11 @@ export function createBench(deps: BenchDeps) {
   function show(version: string) {
     const set = getSet(deps.db, version);
     if (!set) return null;
+    const marks = [...listStabilityMarks(deps.db, set.id).values()];
     return {
       version: set.version, manifestSha256: set.manifestSha256, candidates: set.candidateCount,
       cohorts: { fixed: set.tasks.filter((task) => cohortOf(task.stratum) === "fixed").length, fresh: set.tasks.filter((task) => cohortOf(task.stratum) === "fresh").length },
+      marks: { regression: marks.filter((mark) => mark === "regression").length, flaky: marks.filter((mark) => mark === "flaky").length },
       tasks: set.tasks.map((task) => ({
         position: task.position, taskId: task.taskId, project: task.projectName, repo: task.repoPath, stratum: task.stratum, hard: task.hard, risk: task.risk, area: task.area,
         base: task.initialHeadSha.slice(0, 10), solution: task.solutionCommit.slice(0, 10), discriminating: task.warm.discriminating.length, ...(task.validator ? { validator: task.validator } : {}),

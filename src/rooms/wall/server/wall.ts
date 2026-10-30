@@ -192,8 +192,15 @@ export function createPluginWall(ctx: ServerCore, services: Services): WallApi {
         const needed = await services.bench.prepare(version).catch(() => []);
         return needed.length > 0 && needed.every((row) => row.exists);
       },
-      ensureArm: async (arm) => {
-        const version = benchSetVersion();
+      armSet: async (arm) => {
+        for (const set of services.bench.status()) {
+          if (set.sealed) continue;
+          if (set.runs.some((row) => row.arm === arm && row.state === "done")) return set.version;
+        }
+        return null;
+      },
+      ensureArm: async (arm, setVersion) => {
+        const version = setVersion ?? benchSetVersion();
         if (!version) return "unavailable";
         const set = services.bench.status(version)[0];
         const runs = set?.runs.filter((row) => row.arm === arm) ?? [];
@@ -203,8 +210,8 @@ export function createPluginWall(ctx: ServerCore, services: Services): WallApi {
         await services.bench.run({ version, arm, limit: cfg.benchSubset, wait: false });
         return "running";
       },
-      compare: async (base, arm) => {
-        const version = benchSetVersion();
+      compare: async (base, arm, setVersion) => {
+        const version = setVersion ?? benchSetVersion();
         if (!version) return "unavailable";
         try {
           const result = services.bench.compare({ version, armA: base, armB: arm });

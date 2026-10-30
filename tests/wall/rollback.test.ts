@@ -94,7 +94,7 @@ function mergedWall(reverts: Array<{ ok: boolean; detail: string }>, commit = FU
       revert: async (sha) => { state.reverted.push(sha); return reverts.shift() ?? { ok: false, detail: "no more answers" }; },
     },
     release: { drill: async () => ({ version: "0.1.269", at: NOW + HOUR + 5, ok: true }), canary: async () => ({ version: "0.1.269", tripped: true, windowOpen: false }) },
-    bench: { available: async () => true, ensureArm: async () => "running", compare: async () => "pass", score: async () => 0.5 },
+    bench: { available: async () => true, armSet: async () => null, ensureArm: async () => "running", compare: async () => "pass", score: async () => 0.5 },
     restart: async () => ({ ok: true, note: "" }),
     deferrals: { open: (input) => { state.deferrals.set(input.id, input.what); }, close: () => undefined },
   };
