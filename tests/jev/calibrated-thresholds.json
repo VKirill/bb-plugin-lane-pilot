@@ -15,7 +15,7 @@
     }
   },
   "failure.class": {
-    "fingerprint": "797647fdcc714323",
+    "fingerprint": "e0b23e2bfc7e8e6a",
     "thresholds": {
       "min_p": 0.7,
       "min_margin": 0.3
