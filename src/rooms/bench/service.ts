@@ -9,6 +9,7 @@ import { critiqueFromStageResult } from "../critique";
 import { critiqueRecallLine } from "./critique-set";
 import type { HostPort, PipelinePort } from "./ports";
 import { releaseGate, sweepStuckRuns } from "./reliability";
+import { isSealedVersion } from "./store";
 import { BENCH_REPOS_ROOT_ENV } from "./repos";
 import { DEFAULT_BUDGET_HOURS, DEFAULT_BUDGET_TOKENS, defaultProjectName, runSeries, type BenchWriter, type SeriesInput, type SeriesReport } from "./runner";
 import {
@@ -213,7 +214,7 @@ export function createBench(deps: BenchDeps) {
     return sets.map((set) => {
       const tasks = getSet(deps.db, set.version)?.tasks ?? [];
       return {
-        version: set.version, manifestSha256: set.manifestSha256, tasks: set.taskCount, candidates: set.candidateCount, createdAt: set.createdAt,
+        version: set.version, sealed: isSealedVersion(set.version), manifestSha256: set.manifestSha256, tasks: set.taskCount, candidates: set.candidateCount, createdAt: set.createdAt,
         runs: listRuns(deps.db, set.id).map((row) => {
           const results = listResults(deps.db, row.id);
           return { arm: row.arm, repeat: row.repeat, state: row.state, stopReason: row.stopReason, spentTokens: row.spentTokens, tasks: results.length, accepted: results.filter((r) => r.accepted).length, skipped: results.filter((r) => r.state === "skipped_budget").length, cohorts: cohortCounts(tasks, results) };
@@ -254,7 +255,7 @@ export function createBench(deps: BenchDeps) {
 
   /** The deploy script asks this. A night that stopped on budget, failed, or never ran is not a pass. */
   function gate(maxAgeHours?: number, now = Date.now()) {
-    return releaseGate(listRuns(deps.db), now, maxAgeHours);
+    return releaseGate(listRuns(deps.db).filter((run) => !isSealedVersion(run.setId.replace(/^benchset_/, ""))), now, maxAgeHours);
   }
 
   /** A set the night planned but the shared budget never reached: a closed row the gate marks instead of failing. */

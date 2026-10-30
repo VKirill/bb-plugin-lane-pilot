@@ -1,6 +1,7 @@
 import packageJson from "../../../../package.json";
 import { scheduleIsolated, type ServerCore } from "../../core/server";
 import { loadProjectSettings } from "../../storage";
+import { isSealedVersion } from "../store";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
 import type { BenchApi } from "../service";
 import { renderBaseline } from "../baseline";
@@ -28,7 +29,7 @@ export function mountBenchWeekly(ctx: ServerCore, bench: () => BenchApi): void {
     const base = await bench().baseline({ days: 7 }).catch((cause: unknown) => { ctx.log(`bench-weekly: baseline failed: ${cause instanceof Error ? cause.message : String(cause)}`); return null; });
     if (base) ctx.log(`bench-weekly: ${renderBaseline(base).replace(/\n/g, "; ")}`);
     const sets = bench().status();
-    const newest = sets.sort((a, b) => b.createdAt - a.createdAt)[0];
+    const newest = sets.filter((set) => !(set as { sealed?: boolean }).sealed).sort((a, b) => b.createdAt - a.createdAt)[0];
     if (!newest) return;
     const now = Date.now();
     const arm = weekArm(now), previous = weekArm(now - 7 * 86_400_000);
@@ -43,7 +44,41 @@ export function mountBenchWeekly(ctx: ServerCore, bench: () => BenchApi): void {
         ctx.log(`bench-weekly: compare skipped: ${cause instanceof Error ? cause.message : String(cause)}`);
       }
     }
-  }, { timeoutMs: 6 * 3_600_000 });
+    await sealedWeek(ctx, bench(), newest.version, arm).catch((cause: unknown) => ctx.log(`bench-weekly sealed: ${cause instanceof Error ? cause.message : String(cause)}`));
+  }, { timeoutMs: 8 * 3_600_000 });
+}
+
+export const SEALED_GAP_SETTING = "bench.sealed_gap_pp";
+export const SEALED_GAP_DEFAULT_PP = 15;
+const SEALED_GAP_KEY = "bench:sealed_gap";
+
+/**
+ * The weekly holdout probe (direction S6): a sealed set is built from the candidates the open strata skipped and run with the
+ * week's own arm on the same runner. Its pass share is set against the open set's; a gap wider than `bench.sealed_gap_pp`
+ * (default 15 pp) flags a possible fit of the night fixes to the open tasks, and the acceptance gate holds new fixes while it lasts.
+ */
+async function sealedWeek(ctx: ServerCore, bench: BenchApi, openVersion: string, arm: string): Promise<void> {
+  const version = `sealed-${arm}`;
+  const existing = bench.status().find((set) => set.version === version);
+  if (!existing) {
+    const report = await bench.build({ version, only: ["sealed"], wait: true });
+    if (report && typeof report === "object" && !Array.isArray(report) && "set" in report && !report.set) { ctx.log(`bench-weekly sealed: nothing qualified for the sealed pool this week`); return; }
+  }
+  await bench.run({ version, arm, wait: true, hostId: OVH_BENCH_HOST });
+  const passOf = (v: string): { ran: number; accepted: number } => {
+    const runs = bench.status().find((set) => set.version === v)?.runs.filter((row) => row.arm === arm && row.state === "done") ?? [];
+    const ran = runs.reduce((sum, row) => sum + row.tasks - row.skipped, 0);
+    const accepted = runs.reduce((sum, row) => sum + row.accepted, 0);
+    return { ran, accepted };
+  };
+  const open = passOf(openVersion), sealed = passOf(version);
+  if (!open.ran || !sealed.ran) { ctx.log(`bench-weekly sealed: not enough runs to compare (open ${open.ran}, sealed ${sealed.ran})`); return; }
+  const openRate = open.accepted / open.ran, sealedRate = sealed.accepted / sealed.ran;
+  const gapPp = Math.round((openRate - sealedRate) * 100);
+  const threshold = Number(loadProjectSettings(ctx.db, GLOBAL_SETTINGS_PROJECT_ID)[SEALED_GAP_SETTING] ?? SEALED_GAP_DEFAULT_PP) || SEALED_GAP_DEFAULT_PP;
+  const flagged = gapPp > threshold;
+  await (ctx.bb.storage.kv as { set?: (key: string, value: unknown) => Promise<void> }).set?.(SEALED_GAP_KEY, { gapPp, thresholdPp: threshold, openRate, sealedRate, openVersion, sealedVersion: version, arm, at: Date.now() }).catch(() => undefined);
+  ctx.log(`bench-weekly sealed: ${version} pass ${(sealedRate * 100).toFixed(0)}% vs ${openVersion} ${(openRate * 100).toFixed(0)}% — gap ${gapPp} pp${flagged ? ` > ${threshold}: possible overfit to the open set, new fixes held` : ""}`);
 }
 
 /** The OVH machine. A night run always lands here, even when the set's own paths point at the Mac. */
@@ -66,7 +101,8 @@ export function nightlyRepeats(noiseRepeats: number): number {
  * exist is logged and skipped.
  */
 export function nightlySets(status: ReadonlyArray<{ version: string }>, setting: unknown): string[] {
-  const all = status.map((set) => set.version);
+  // The sealed pool has its own weekly schedule; the night arm never runs it, so the optimizer cannot read its results.
+  const all = status.map((set) => set.version).filter((version) => !isSealedVersion(version));
   const raw = String(setting ?? "all").trim();
   if (!raw || raw === "all") return all;
   const wanted = new Set(raw.split(",").map((word) => word.trim()).filter(Boolean));

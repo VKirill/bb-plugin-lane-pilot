@@ -45,6 +45,11 @@ export function insertSet(db: BenchDb, input: { version: string; tasks: Manifest
   return { id, version: input.version, manifestSha256: hash, taskCount: input.tasks.length, candidateCount: input.candidateCount, rejected: input.rejected, config: input.config, createdAt: now };
 }
 
+/** A set whose version carries the sealed prefix holds the holdout pool (bench/stratify.ts): it is built and run on its own
+ * weekly schedule, never in the nightly arm or by an optimizer. `status()` marks it; every reader that picks "the newest set"
+ * or "every set" must skip it. */
+export const isSealedVersion = (version: string): boolean => version.startsWith("sealed-");
+
 export function getSet(db: BenchDb, version: string): StoredSet | null {
   const row = db.prepare("SELECT * FROM lane_pilot_bench_set WHERE version=?").get(version) as SetRow | undefined;
   if (!row) return null;

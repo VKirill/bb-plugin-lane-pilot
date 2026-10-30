@@ -26,7 +26,7 @@ export async function recheckServiceModels(input: {
   writePin: (key: string, value: "previous") => void;
 }): Promise<ServiceRecheckRow[]> {
   const now = input.now ?? Date.now();
-  const newest = input.bench.status().slice().sort((a, b) => b.createdAt - a.createdAt)[0];
+  const newest = input.bench.status().slice().filter((set) => !(set as { sealed?: boolean }).sealed).sort((a, b) => b.createdAt - a.createdAt)[0];
   const rows: ServiceRecheckRow[] = [];
   for (const job of SERVICE_JOBS) {
     if (!job.role || !job.previousRole) { rows.push({ id: job.id, action: "code" }); continue; }

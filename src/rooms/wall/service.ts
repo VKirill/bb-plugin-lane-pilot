@@ -741,7 +741,11 @@ export function createWall(deps: WallDeps) {
     }
     const recurrence = recurrenceOn(row.classKey, evidence, deployedAt);
     const requireBench = (row.policy as { requireBench?: boolean } | null)?.requireBench === true;
-    const result = decideAcceptance({ merged: true, versionBefore: mergedAt, deployedVersion: evidence, drill, deployedAt, canary, bench, recurrence, trainRolledBack: false, requireBench, supersededBy: superseded, now });
+    const sealedFlag = await kv.get("bench:sealed_gap").catch(() => null) as { gapPp?: number; thresholdPp?: number; at?: number } | null;
+    const sealedGap = Boolean(sealedFlag && typeof sealedFlag.gapPp === "number" && typeof sealedFlag.thresholdPp === "number" && sealedFlag.gapPp > sealedFlag.thresholdPp
+      // The flag speaks for the week it was measured in; a stale flag (older than 9 days) no longer holds new fixes.
+      && sealedFlag.at !== undefined && now - sealedFlag.at < 9 * 86_400_000);
+    const result = decideAcceptance({ merged: true, versionBefore: mergedAt, deployedVersion: evidence, drill, deployedAt, canary, bench, recurrence, trainRolledBack: false, requireBench, supersededBy: superseded, sealedGap, now });
     // C3: the declared prediction is checked against the evidence the same acceptance weighed — a broken one is recorded, never a pass.
     const prediction = (acceptance as { prediction?: { fixes_class: string | null; must_not_move: string[] } }).prediction;
     const predicted = prediction && result.state !== "pending" ? predictionHeld(prediction, { recurred: recurrence ? recurrence.failures > 0 : null, benchScore, baselineScore }) : null;
