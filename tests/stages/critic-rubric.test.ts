@@ -3,6 +3,7 @@ import { actionableFindings, codeCritiquePrompt, parseCodeCritique, parseCodeCri
 import { critiquePrompt, parseCritique } from "../../src/rooms/critique/critique";
 import { parseSpecialistResult, specialistPrompt } from "../../src/rooms/critique/specialist";
 import { buildCandidateEvidence } from "../../src/rooms/critique/code-critique";
+import { failureSide } from "../../src/rooms/runs/failure-class";
 
 const evidence = "the host-read diff and the check output were read";
 const codeRubric = (acceptance: "ok" | "fail", proof = "acceptance line 1 is not present in src/a.ts") => [
@@ -56,6 +57,24 @@ describe("a critic verdict comes from the rubric", () => {
       ],
     }));
     expect(specialistOk.status).toBe("pass");
+  });
+
+  it("splits whether the work is done from how it was done, and a failure class into agent or environment", () => {
+    const processFail = parseCodeCritique(JSON.stringify({
+      status: "pass", summary: "fine", findings: [], evidence,
+      rubric: codeRubric("ok").map((item) => item.id === "tests" ? { ...item, result: "fail", evidence: "an assertion was deleted from tests/money.test.ts" } : item),
+    }));
+    expect(processFail.verdict?.sides).toEqual({ outcome: "ok", process: "fail" });
+    const outcomeFail = parseCodeCritique(JSON.stringify({ status: "pass", summary: "fine", findings: [], evidence, rubric: codeRubric("fail") }));
+    expect(outcomeFail.verdict?.sides).toEqual({ outcome: "fail", process: "ok" });
+    const clean = parseCodeCritique(JSON.stringify({ status: "pass", summary: "fine", findings: [], evidence }));
+    expect(clean.verdict?.sides).toEqual({ outcome: "ok", process: "ok" });
+    expect(failureSide("infra")).toBe("environment");
+    expect(failureSide("provider")).toBe("environment");
+    expect(failureSide("budget")).toBe("environment");
+    expect(failureSide("task")).toBe("agent");
+    expect(failureSide("contract")).toBe("agent");
+    expect(failureSide("reassign")).toBe("agent");
   });
 
   it("the prompts name the rubric ids and the ok and fail results", () => {

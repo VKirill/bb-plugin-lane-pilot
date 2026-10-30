@@ -67,8 +67,31 @@ export const verdictSchema = z.object({
 });
 
 export type VerdictFinding = z.infer<typeof verdictFindingSchema>;
-export type Verdict = z.infer<typeof verdictSchema>;
+/** Whether the work is done (`outcome`) and whether it was done the right way (`process`). The host sets both. */
+export type VerdictSides = { outcome: "ok" | "fail"; process: "ok" | "fail" };
+export type Verdict = z.infer<typeof verdictSchema> & { sides?: VerdictSides };
 export type VerdictKind = "plan" | "code" | "specialist";
+
+/** Which rubric id is the result and which is the way the work was done. */
+export const RUBRIC_AXIS: Record<VerdictKind, Readonly<Record<string, "outcome" | "process">>> = {
+  plan: { acceptance: "outcome", dependencies: "outcome", scope: "process", read_first: "process" },
+  code: { acceptance: "outcome", checks: "outcome", tests: "process", substance: "process" },
+  specialist: { risk: "outcome", mitigation: "process" },
+};
+
+/** Fails on the rubric, or on a serious finding that names a rubric id. A bare non-pass with neither is an outcome fail. */
+export function verdictSides(verdict: Verdict, kind: VerdictKind): VerdictSides {
+  const axis = RUBRIC_AXIS[kind];
+  let outcome = false, process = false;
+  const mark = (side: "outcome" | "process" | undefined) => { if (side === "outcome") outcome = true; else if (side === "process") process = true; };
+  for (const item of verdict.rubric ?? []) {
+    if (item.result !== "fail" || item.evidence.trim().length < MIN_RUBRIC_EVIDENCE) continue;
+    mark(axis[item.id]);
+  }
+  for (const finding of verdict.findings) if (isSerious(finding)) mark(finding.criterion ? axis[finding.criterion] : undefined);
+  if (!outcome && !process && verdict.status !== "pass") outcome = true;
+  return { outcome: outcome ? "fail" : "ok", process: process ? "fail" : "ok" };
+}
 
 /** The reading the host gives a finding at or above this severity: it can stop or send back work. */
 export const isSerious = (finding: Pick<VerdictFinding, "severity">): boolean => finding.severity === "critical" || finding.severity === "high";
@@ -159,7 +182,8 @@ export function settleVerdict(verdict: Verdict, kind: VerdictKind): SettledVerdi
     if (status === "rework" && high + critical === 0) status = "pass";
   }
   if (status === "pass" && critical + high > 0) status = "rework";
-  return { verdict: { ...verdict, status, findings }, demoted };
+  const next = { ...verdict, status, findings };
+  return { verdict: { ...next, sides: verdictSides(next, kind) }, demoted };
 }
 
 /**

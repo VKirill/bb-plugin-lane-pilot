@@ -120,6 +120,13 @@ export function failureClass(state:string, reason:string | null | undefined):Fai
   return classifyFailure(state, reason).cls;
 }
 
+/** Which side owns the failure. The class itself stays as it was; this is only the side. */
+export type FailureSide = "agent" | "environment";
+const ENVIRONMENT_SIDE = new Set<FailureClass>(["infra", "provider", "limit", "harness", "merge", "dirty_base", "budget"]);
+export function failureSide(cls:FailureClass):FailureSide {
+  return ENVIRONMENT_SIDE.has(cls) ? "environment" : "agent";
+}
+
 /**
  * Two consecutive attempts of a task family failing the same way will not get better on a third: the task is blocked
  * for the PM instead of spending another writer (and no fallback writer is started). Only the task's and the
