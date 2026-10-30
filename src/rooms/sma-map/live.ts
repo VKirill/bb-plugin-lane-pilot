@@ -178,3 +178,75 @@ export function renderSmaLive(rows: readonly LiveRow[], days: number, now = Date
   if (failed.length) lines.push("", "queries that failed:", ...failed.map((row) => `  ${row.key}: ${row.error}`));
   return lines.join("\n");
 }
+
+// ---- dark tables (W32 rank 9) ----
+
+/** A table nobody counts is a silent instrument: 7 tables wrote nothing for 30 days without a single report naming them
+ * (stage_return, checker_run, checker_result, harness_experience, memory_miss, outage, bench_noise on 2026-10-31). Every
+ * `lane_pilot_*` table a migration creates is named here with the column its recency is read on (`""`: no clock, counted in
+ * full — a dimension/cursor store). tests/sma-live.test.ts fails on a new migration table missing from this map, and on one
+ * missing from scripts/lp-wall-morning.sql, so no table goes silently dark again. */
+export const TABLE_CLOCKS: Record<string, string> = {
+  lane_pilot_accepted_fact: "created_at", lane_pilot_activation: "claimed_at", lane_pilot_attempt: "created_at",
+  lane_pilot_attempt_change: "updated_at", lane_pilot_attempt_reasoning: "",
+  lane_pilot_attempt_transition: "at", lane_pilot_backlog_issue: "issued_at", lane_pilot_baseline: "at",
+  lane_pilot_bench_mark: "", lane_pilot_bench_noise: "created_at", lane_pilot_bench_project: "updated_at",
+  lane_pilot_bench_result: "recorded_at", lane_pilot_bench_run: "started_at", lane_pilot_bench_set: "created_at",
+  lane_pilot_bench_task: "", lane_pilot_bench_verdict: "created_at", lane_pilot_capability: "at",
+  lane_pilot_check_duration: "at", lane_pilot_checker_result: "recorded_at", lane_pilot_checker_run: "started_at",
+  lane_pilot_council: "created_at", lane_pilot_council_message: "at", lane_pilot_deferral: "created_at",
+  lane_pilot_failure_triage: "triaged_at", lane_pilot_gate_event: "occurred_at",
+  lane_pilot_handoff: "created_at", lane_pilot_handoff_event: "occurred_at", lane_pilot_harness: "created_at",
+  lane_pilot_harness_experience: "created_at", lane_pilot_hypothesis: "created_at", lane_pilot_jev_receipt: "at",
+  lane_pilot_learning_item: "created_at", lane_pilot_learning_obs: "at", lane_pilot_learning_signal: "at",
+  lane_pilot_memory: "created_at", lane_pilot_memory_conflict: "", lane_pilot_memory_miss: "at",
+  lane_pilot_memory_probe: "at", lane_pilot_memory_promotion: "at", lane_pilot_memory_receipt: "created_at",
+  lane_pilot_outage: "noticed_at", lane_pilot_owner_config: "updated_at", lane_pilot_owner_item: "created_at",
+  lane_pilot_owner_push: "", lane_pilot_phase: "created_at", lane_pilot_phase_part: "at",
+  lane_pilot_pm_notice: "sent_at", lane_pilot_project_settings: "updated_at", lane_pilot_reconcile_cursor: "updated_at",
+  lane_pilot_regress_pass: "at", lane_pilot_regression: "found_at", lane_pilot_rule_event: "at",
+  lane_pilot_rule_promotion: "created_at", lane_pilot_rule_proposal: "updated_at",
+  lane_pilot_run: "created_at", lane_pilot_run_goal: "at", lane_pilot_schedule: "created_at",
+  lane_pilot_schedule_run: "started_at", lane_pilot_secret_issuance: "at",
+  lane_pilot_setting_generation: "", lane_pilot_stage_event: "occurred_at", lane_pilot_stage_receipt: "updated_at",
+  lane_pilot_stage_return: "at", lane_pilot_task: "created_at", lane_pilot_task_git_base: "",
+  lane_pilot_task_plan: "", lane_pilot_task_receipt: "at",
+  lane_pilot_token_cursor: "updated_at", lane_pilot_token_daily: "day", lane_pilot_wall: "created_at",
+  lane_pilot_wall_class: "updated_at", lane_pilot_wall_entry: "recorded_at", lane_pilot_wall_night: "started_at",
+  lane_pilot_wall_repair: "created_at", lane_pilot_wall_rerun: "created_at", lane_pilot_wf_arrival: "at",
+  lane_pilot_wf_draft: "created_at", lane_pilot_wf_draft_version: "at", lane_pilot_wf_effect: "created_at",
+  lane_pilot_wf_event: "at", lane_pilot_wf_run: "created_at",
+  lane_pilot_wf_step: "updated_at", lane_pilot_wf_test: "at", lane_pilot_wf_trigger: "created_at", lane_pilot_world: "",
+};
+
+export type DarkTableRow = { table: string; clock: string | null; n: number; last: number | null };
+
+type DarkDb = { prepare(sql: string): { all(...args: unknown[]): unknown[]; get(...args: unknown[]): unknown } };
+
+/** The SQL a table's recency is counted on: a column name, or the day-as-ms expression `lane_pilot_token_daily` uses. */
+export const darkClockExpr = (table: string): string | null => {
+  const clock = TABLE_CLOCKS[table];
+  return clock === undefined ? null : clock === "day" ? "CAST(strftime('%s', day) AS INTEGER) * 1000" : clock || null;
+};
+
+/** Tables skipped on purpose: `*_next`/`_nv`/`_v` are rename-squash intermediates, `lane_pilot_memory_fts*` are FTS5
+ * plumbing behind lane_pilot_memory — neither is an instrument. */
+export const TABLE_SKIP_RE = /lane_pilot_(memory_fts|.*_next|.*_nv|.*_v)$/;
+
+/** Every named table with the rows it took in the window — all rows when it has no clock. Absent tables are skipped. */
+export function darkTables(db: DarkDb, since: number): DarkTableRow[] {
+  const present = new Set((db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'lane_pilot_%' AND name NOT LIKE 'lane_pilot_memory_fts%'").all() as Array<{ name: string }>).map((row) => row.name));
+  return Object.keys(TABLE_CLOCKS).filter((table) => present.has(table)).map((table) => {
+    const clock = darkClockExpr(table);
+    const row = (clock
+      ? db.prepare(`SELECT COUNT(*) AS n, MAX(${clock}) AS last FROM ${table} WHERE ${clock} >= ?`).get(since)
+      : db.prepare(`SELECT COUNT(*) AS n, NULL AS last FROM ${table}`).get()) as { n: number; last: number | null };
+    return { table, clock, n: row.n, last: row.last };
+  });
+}
+
+/** The names of the tables that wrote nothing in the window — the «0 rows in 30 days» paragraph of the night summary. */
+export function darkTableNames(db: DarkDb, since: number): string[] {
+  return darkTables(db, since).filter((row) => row.n === 0).map((row) => row.table);
+}
+

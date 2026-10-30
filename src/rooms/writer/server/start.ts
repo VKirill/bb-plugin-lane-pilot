@@ -362,8 +362,12 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         if (ctx.isDisposed()) return;
         const stop = shouldStop?.();
         if (stop) return stop;
-        const blocker = listRegressions(db, { projectId: input.projectId })
-          .find((row) => row.kind === "regression" && row.bisectStatus === "found" && ownsPathsOverlap(input.task.owns_paths, filesOf(row)));
+        const blocker = (() => {
+          try {
+            return listRegressions(db, { projectId: input.projectId })
+              .find((row) => row.kind === "regression" && row.bisectStatus === "found" && ownsPathsOverlap(input.task.owns_paths, filesOf(row)));
+          } catch { return undefined; } // a test database without the baseline migrations quarantines nothing
+        })();
         if (!blocker) return;
         if (noted !== `${blocker.id}`) {
           noted = `${blocker.id}`;

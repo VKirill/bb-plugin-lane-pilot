@@ -10,22 +10,27 @@ const SQL = readFileSync(join(__dirname, "..", "..", "scripts", "lp-wall-morning
 /** The SQL file the hub's daily script runs, executed here against the same database: its three lines. */
 function sqlLines(db: ReturnType<typeof freshDb>["db"], since: number): string[] {
   db.exec("CREATE TEMP TABLE lp_morning(since integer)");
+  db.exec("CREATE TEMP TABLE lp_morning_30(since integer)");
   db.prepare("INSERT INTO lp_morning VALUES (?)").run(since);
+  db.prepare("INSERT INTO lp_morning_30 VALUES (?)").run(since - 29 * 86_400_000);
   const code = SQL.split("\n").filter((line) => !line.startsWith("--")).join("\n");
   const out = code.split(/;\s*\n/).map((statement) => statement.trim()).filter(Boolean)
     .map((statement) => Object.values(db.prepare(statement).get() as Record<string, string>)[0]!);
   db.exec("DROP TABLE lp_morning");
+  db.exec("DROP TABLE lp_morning_30");
   return out;
 }
 
 describe("the night loop's three morning lines", () => {
   it("a quiet database says zeros", () => {
     const { db } = freshDb();
-    expect(composeWallMorning(db, NOW)).toEqual([
+    const quiet = composeWallMorning(db, NOW);
+    expect(quiet.slice(0, 3)).toEqual([
       "Ночная петля: классов с повтором 0, взято в ремонт 0; потрачено 0.0 из 0.0 млн токенов.",
       "Ремонты ночи: слито 0, adopt 0, hold 0, reject 0.",
       "Охранник цикла: охот 0, в беклоге 0, перепрогонов 0 (в списке 0).",
     ]);
+    expect(quiet[3]).toMatch(/^Тёмные таблицы/);
   });
 
   it("counts what the night did, and the SQL of the daily report says the same", () => {
@@ -47,11 +52,12 @@ describe("the night loop's three morning lines", () => {
     db.prepare("INSERT INTO lane_pilot_wall_rerun (id,class_key,project_id,run_id,task_id,attempt_id,scope,from_stage,state,created_at) VALUES ('c','k1','p','r','t','a3','real','writer-agent','listed',?)").run(NOW - HOUR);
 
     const lines = composeWallMorning(db, NOW);
-    expect(lines).toEqual([
+    expect(lines.slice(0, 3)).toEqual([
       "Ночная петля: классов с повтором 1, взято в ремонт 6; потрачено 7.3 из 20.0 млн токенов.",
       "Ремонты ночи: слито 1, adopt 1, hold 2, reject 2.",
       "Охранник цикла: охот 1, в беклоге 2, перепрогонов 1 (в списке 2).",
     ]);
+    expect(lines[3]).toMatch(/^Тёмные таблицы/);
     expect(sqlLines(db, since)).toEqual(lines);
   });
 });
