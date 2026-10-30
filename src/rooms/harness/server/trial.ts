@@ -55,7 +55,12 @@ export function decideTrial(rows: readonly ArmAttempt[], startedAt: number, now:
   if (bench.verdict) {
     return { action: bench.verdict.passed ? "adopt" : "retire", reason: `bench ${bench.verdict.passed ? "passed" : "failed"}: ${bench.verdict.summary}; live observation: ${live.reason}`, arms: live.arms };
   }
+  const ageDays = (now - startedAt) / 86_400_000;
   // No comparison yet: the live alternation can still retire a tree that is worse or unused, but it cannot adopt.
+  // Past the deadline a missing bench is not a reason to wait: the collected live arms close the trial.
+  if (ageDays >= config.maxDays && live.action === "adopt") {
+    return { action: "retire", reason: `insufficient data: the ${config.maxDays}-day deadline passed without a bench comparison, so it is not adopted. Live observation: ${live.reason}`, arms: live.arms };
+  }
   if (live.action === "adopt") return { action: "wait", reason: `live alternation favours it (${live.reason}) but adoption waits for a passed bench comparison: bb lane-pilot bench run/compare with --harness <tree id>`, arms: live.arms };
   return live;
 }

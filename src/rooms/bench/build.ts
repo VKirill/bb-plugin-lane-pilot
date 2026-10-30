@@ -1,6 +1,6 @@
 import { loadCandidates } from "./candidates";
 import type { HostPort } from "./ports";
-import { chooseFinal, DEFAULT_STRATA, freshStratum, interleave, warmOrder, type Stratum } from "./stratify";
+import { chooseFinal, DEFAULT_STRATA, freshStratum, interleave, noncodeStratum, smallStratum, warmOrder, type Stratum } from "./stratify";
 import { insertSet, type BenchDb, type BenchSet } from "./store";
 import type { Candidate, ManifestTask, Rejection } from "./types";
 import { MIN_FREE_GB, freeGb, warmUp, type WarmOptions } from "./warmup";
@@ -35,6 +35,8 @@ export type BuildInput = {
   /** Clock for the fresh window. Absent: the time of the build. */
   now?: number;
   freshWindowMs?: number;
+  /** stats.epoch floor: tasks accepted before it are not counted as fresh (owner 2026-10-30). */
+  statsEpochMs?: number;
 };
 
 export type StratumReport = { key: string; quota: number; candidates: number; hardCandidates: number; tried: number; survived: number; kept: number; keptHard: number; rejected: Record<string, number>; stoppedBecause: string };
@@ -46,11 +48,19 @@ export type BuildReport = {
   rejectedSample: Rejection[];
 };
 
+/** The strata a build walks. `small` and `noncode` join only when `--only` names them, so a full build stays the frozen mix. */
+export function strataFor(input: { strata?: readonly Stratum[]; only?: readonly string[]; now?: number; freshWindowMs?: number; statsEpochMs?: number }): Stratum[] {
+  const only = input.only;
+  const extras = !input.strata ? [...(only?.includes("small") ? [smallStratum()] : []), ...(only?.includes("noncode") ? [noncodeStratum()] : [])] : [];
+  const requested = input.strata ?? [...DEFAULT_STRATA, ...extras, freshStratum(input.now ?? Date.now(), input.freshWindowMs, undefined, input.statsEpochMs ?? 0)];
+  return requested.filter((stratum) => !only || only.includes(stratum.key));
+}
+
 export async function buildSet(input: BuildInput): Promise<{ report: BuildReport; tasks: ManifestTask[]; rejected: Rejection[] }> {
   const log = input.log ?? (() => undefined);
   const seed = input.seed ?? input.version;
   const now = input.now ?? Date.now();
-  const requested = input.strata ?? [...DEFAULT_STRATA, freshStratum(now, input.freshWindowMs)];
+  const requested = strataFor({ ...(input.strata ? { strata: input.strata } : {}), ...(input.only ? { only: input.only } : {}), now, ...(input.freshWindowMs ? { freshWindowMs: input.freshWindowMs } : {}), ...(input.statsEpochMs ? { statsEpochMs: input.statsEpochMs } : {}) });
   const strata = requested.filter((stratum) => !input.only || input.only.includes(stratum.key));
   const fixedStrata = strata.filter((stratum) => stratum.key !== "fresh");
   const fresh = strata.find((stratum) => stratum.key === "fresh");
@@ -74,6 +84,8 @@ export async function buildSet(input: BuildInput): Promise<{ report: BuildReport
 
   // One chain per host: two warm-ups never run on one machine at once (the disk and the CPU are the owner's); different machines go side by side.
   const claimed = new Set<string>();
+  /** Candidates a fixed stratum already warmed; a fresh retry of the same warm-up fails the same way and burns the quota. */
+  const warmed = new Set<string>();
   const byStratum = fixedStrata.map((stratum) => {
     const pool = loaded.candidates.filter((candidate) => stratum.match(candidate) && !claimed.has(candidate.taskId));
     pool.forEach((candidate) => claimed.add(candidate.taskId));
@@ -105,6 +117,7 @@ export async function buildSet(input: BuildInput): Promise<{ report: BuildReport
         const free = touch === "none" ? null : await freeGb(input.host, touch);
         if (free !== null && free < minFree) { report.stoppedBecause = `host ${touch} has ${free} GB free, below ${minFree}`; log(`bench build: ${report.stoppedBecause}`); break; }
         report.tried++;
+        warmed.add(candidate.taskId);
         const started = Date.now();
         const result = await warmUp(input.host, candidate, { ...warmOptions, scratch: await scratchOn(input.hostId ?? hostId), ...(input.reposRoot ? { reposRoot: input.reposRoot } : {}), ...(input.hostId ? { hostId: input.hostId } : {}) }).catch((cause: unknown) => ({ ok: false as const, reason: "host_error" as const, detail: cause instanceof Error ? cause.message : String(cause) }));
         hostErrors = !result.ok && result.reason === "host_error" ? hostErrors + 1 : 0;
@@ -136,7 +149,8 @@ export async function buildSet(input: BuildInput): Promise<{ report: BuildReport
   // Fresh is beside the fixed quotas, not instead of them: a task the fixed strata kept stays fixed. The rest of the recent live tasks fill `fresh`.
   if (fresh && !lostHosts.length) {
     const keptIds = new Set([...keptByStratum.values()].flat().map((row) => row.candidate.taskId));
-    const pool = loaded.candidates.filter((candidate) => fresh.match(candidate) && !keptIds.has(candidate.taskId));
+    // Out: what a fixed stratum kept, and what it already tried — the same warm-up would fail again. In: what matched but was never warmed.
+    const pool = loaded.candidates.filter((candidate) => fresh.match(candidate) && !keptIds.has(candidate.taskId) && !warmed.has(candidate.taskId));
     const report: StratumReport = { key: fresh.key, quota: fresh.quota, candidates: pool.length, hardCandidates: pool.filter((c) => c.hard).length, tried: 0, survived: 0, kept: 0, keptHard: 0, rejected: {}, stoppedBecause: "" };
     reports.set(fresh.key, report);
     const survivors: Kept[] = [];

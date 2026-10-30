@@ -1,12 +1,12 @@
 {
   "id": "reels",
   "name": {
-    "en": "Reels / Shorts",
-    "ru": "Рилсы / Shorts"
+    "en": "Reels / Video Presentation",
+    "ru": "Рилсы / Видео-презентация"
   },
   "description": {
-    "en": "Turns a supplied long video or link into finished vertical clips (transcribe, select coherent excerpts, edit plan, reframe, captions, render, verify), or makes a short code-rendered animated film from a subject in a chosen style.",
-    "ru": "Превращает присланное длинное видео или ссылку в готовые вертикальные клипы (расшифровка, отбор законченных фрагментов, план монтажа, кадрирование, субтитры, рендер, проверка) или делает короткий мультфильм, нарисованный кодом, по теме в выбранном стиле."
+    "en": "Turns a supplied long video or link into finished vertical clips (transcribe, select coherent excerpts, edit plan, reframe, captions, render, verify), or makes a short code-rendered animated film, video presentation, or business motion film from a subject in a chosen style.",
+    "ru": "Превращает присланное длинное видео или ссылку в готовые вертикальные клипы (расшифровка, отбор законченных фрагментов, план монтажа, кадрирование, субтитры, рендер, проверка) или создаёт короткий анимационный ролик, видео-презентацию или бизнес-моушн фильм по теме в выбранном стиле."
   },
   "examples": {
     "ru": [
@@ -15,6 +15,9 @@
       "Найди хайлайты в записи вебинара и смонтируй вертикальные клипы с субтитрами",
       "Сделай короткий нарисованный мультфильм про то, как работает кэш",
       "Озвученный ролик с мелом на доске про налоговый вычет, вертикальный",
+      "Сделай презентационный ролик для продукта",
+      "Сделай промо-видео для бизнеса в стиле business motion",
+      "Подготовь видео-презентацию сервиса со слайдами и озвучкой",
       "Из подкаста вытащи самые сильные моменты в формате Reels"
     ],
     "en": [
@@ -23,6 +26,9 @@
       "Find highlights in the webinar recording and edit vertical clips with captions",
       "Make a short hand-drawn animated film about how a cache works",
       "A narrated chalkboard-style explainer reel about the tax deduction, vertical",
+      "Make a business motion presentation video for our product",
+      "Create a short SaaS launch film or explainer video",
+      "Produce a video presentation with voice-over and kinetic visuals",
       "Pull the strongest moments out of the podcast as Reels"
     ]
   },
@@ -65,7 +71,7 @@
     "style": {
       "type": "string",
       "default": "",
-      "note": "house|chalk|threejs|watercolor|paper-cutout; only for a film; empty - ask"
+      "note": "house|chalk|threejs|watercolor|paper-cutout|business-motion; only for a film or presentation; empty - ask"
     },
     "publish_text": {
       "type": "bool",
@@ -90,6 +96,7 @@
     "skills": [
       "video-to-reels",
       "procedural-film",
+      "business-motion-film",
       "copywriter",
       "vechkasov-voice"
     ],
@@ -322,7 +329,7 @@
         "answer": "$inputs.style",
         "answer_kind": "given"
       },
-      "prompt": "Show the style gallery - house (inked paper plates on a beat grid), chalk (white sheet with word-by-word subtitles for a narrated voice-over), threejs (3D/WebGL scenes), watercolor (p5.brush painterly), paper-cutout (torn-paper collage). Ask which look to use.",
+      "prompt": "Show the style gallery - house (inked paper plates on a beat grid), chalk (white sheet with word-by-word subtitles for a narrated voice-over), threejs (3D/WebGL scenes), watercolor (p5.brush painterly), paper-cutout (torn-paper collage), business-motion (commercial launch film, HTML/GSAP/Three.js presentation). Ask which look to use.",
       "out": {
         "answer": "string",
         "answer_kind": "given|chosen|timeout"
@@ -360,10 +367,11 @@
       "role": "errand",
       "profile": {
         "skills": [
-          "procedural-film"
+          "procedural-film",
+          "business-motion-film"
         ]
       },
-      "prompt": "Follow the chosen style's pipeline (styles/<style>/...) from the skill: setup, scenes, voice-over and word subtitles where the style has them, render with code only. Deliver film.mp4 into films/<slug>/.",
+      "prompt": "Follow the chosen style's pipeline (styles/<style>/...) from the procedural-film or business-motion-film skill: setup, scenes, motion graphics, voice-over and word subtitles where the style has them, render with code only. Deliver film.mp4 into films/<slug>/.",
       "out": {
         "film_path": "string",
         "ok": "bool"

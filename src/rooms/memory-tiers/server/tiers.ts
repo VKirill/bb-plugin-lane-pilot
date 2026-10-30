@@ -11,7 +11,8 @@ import { episodeLines, minHits, queryWords, wordHits, type Episode } from "../lo
  * - cold notes and episodes share the context budget with the active pack. A query that found nothing is a miss on record.
  */
 type Db = Database.Database;
-const COLD = "status='expired' AND kind='note' AND valid_until IS NULL AND superseded_by IS NULL";
+// Idle only. A budget eviction, a passed date, or a refuted note is not a candidate to bring back (F02-5). NULL is a row expired before the reason column.
+const COLD = "status='expired' AND kind='note' AND valid_until IS NULL AND superseded_by IS NULL AND (expired_reason='idle' OR expired_reason IS NULL)";
 const sqlString = (value: string) => `'${value.replace(/'/g, "''")}'`;
 
 export type TierRead = {

@@ -14,7 +14,7 @@ import { definitionSha256 } from "./store";
 import { WorkflowError, validateWorkflow } from "./validate";
 import { checkOutput, slugOf, valueAtPath } from "./values";
 import { contractProblems, describeProblems, hasContractProblems } from "./contract";
-import { goalsSchema, goalsSha, parseGoals, regroundDue } from "./goals";
+import { goalsSchema, goalsSha, parseGoals, regroundDue, tinyGoalByCode } from "./goals";
 import type { GoalAudit, RunGoal } from "./goals";
 
 /** What a step receives: only the mapped fields (mode artifact), and where they came from. */
@@ -414,6 +414,28 @@ export class WorkflowEngine {
     return this.summary(runId);
   }
 
+  /** Size from the `class` step, and whether a writer was accepted or the plan already met the goal. */
+  private shortPathFacts(run: RunRow): { size: unknown; accepted: boolean; acceptance: unknown; alreadyMet: boolean } {
+    let size: unknown = asObject(run.inputs_json).size;
+    let accepted = false;
+    let acceptance: unknown;
+    let alreadyMet = false;
+    for (const step of this.journal.steps(run.id)) {
+      if (step.state !== "succeeded" || !step.output_json) continue;
+      let body: Record<string, unknown>;
+      try { body = asObject(step.output_json); } catch { continue; }
+      if (step.node_id === "class" && typeof body.size === "string") size = body.size;
+      if (body.state === "accepted") accepted = true;
+      if (body.already_met === true && body.task_count === 0) alreadyMet = true;
+      const tasks = body.tasks;
+      if (!Array.isArray(tasks)) continue;
+      const first = tasks.find((item) => item !== null && typeof item === "object");
+      const named = first && typeof first === "object" ? (first as { acceptance?: unknown }).acceptance : undefined;
+      if (Array.isArray(named)) acceptance = named;
+    }
+    return { size, accepted, acceptance, alreadyMet };
+  }
+
   /**
    * K7: a run that has goals is judged against them before it closes. All met: it closes. Some not: it is `blocked` with the
    * unmet goal ids as the reason, the verdict is in the journal, and the PM either fixes the work (re-run a node: the run reaches
@@ -435,6 +457,20 @@ export class WorkflowEngine {
     let required = false;
     try { required = (JSON.parse(run.definition_json) as { goal_audit?: string }).goal_audit === "required"; } catch { required = false; }
     if (!goals.length) return required ? unverified("not_verified: a user workflow closed with no goals", { error: "no goals" }) : close(null);
+    const output = asObject(run.output_json);
+    const code = tinyGoalByCode({ ...this.shortPathFacts(run), status: output.status });
+    if (code !== "skip") {
+      const sha = goalsSha(goals);
+      const outputSha = sha256(run.output_json ?? "");
+      if (code === "met") {
+        j.event(run.id, null, "goal_audit", null, "pass", JSON.stringify({ sha, outputSha, verdict: "pass", by: "code", met: goals.map((goal) => goal.id), unmet: [] }));
+        return close(null);
+      }
+      const unmet = goals.map((goal) => ({ id: goal.id, why: "a tiny run closes only when the checks are green and the task names its acceptance" }));
+      j.event(run.id, null, "goal_audit", null, "gaps", JSON.stringify({ sha, outputSha, verdict: "gaps", by: "code", met: [], unmet }));
+      j.setRunStatus(run.id, ["running", "waiting"], "blocked", `goal_audit: not met: ${unmet.map((entry) => entry.id).join(", ")}`);
+      return "blocked";
+    }
     if (!audit) return close(null);
     const sha = goalsSha(goals);
     // A pass is a verdict on this output: a re-run node that changed the result is audited again (2026-10-29 audit A-001).
@@ -444,7 +480,7 @@ export class WorkflowEngine {
     const abort = this.aborts.get(run.id) ?? new AbortController();
     this.aborts.set(run.id, abort);
     let result: GoalAudit;
-    try { result = await audit({ run, goals, output: asObject(run.output_json), steps: j.steps(run.id), signal: abort.signal }); }
+    try { result = await audit({ run, goals, output, steps: j.steps(run.id), signal: abort.signal }); }
     catch (cause) {
       if (isEngineBug(cause)) throw cause;
       if (this.stopped()) return "stop";

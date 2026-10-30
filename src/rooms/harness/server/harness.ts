@@ -2,13 +2,14 @@ import { runOnHost } from "@lane-pilot/host-calls";
 import { writerExecutionSelection } from "@lane-pilot/models";
 import { upsertLessonProposal, type RuleForm } from "@lane-pilot/run-insights";
 import {
-  HarnessValidationError, LANE_PILOT_SURFACE, alwaysOnText, checkNames, composePrompt, experienceIsSupported, experiencePrompt, inventory, isBase, missionPointer,
-  parseEdits, parseExperience, parseNotes, proposePrompt, renderExperienceMarkdown, renderThreadEvents, skillNames, validate, type ThreadEventLike, type Tree,
+  HarnessValidationError, LANE_PILOT_SURFACE, PROBE_DEFAULTS, alwaysOnText, checkNames, composePrompt, experienceIsSupported, experiencePrompt, fingerprint, inventory, isBase, missionPointer,
+  parseEdits, parseExperience, parseNotes, proposePrompt, renderExperienceMarkdown, renderThreadEvents, screenRejected, skillNames, validate,
+  type ProbeBudget, type RejectedEdit, type ThreadEventLike, type Tree,
 } from "@lane-pilot/harness-core";
 import { fullAccessSpawn, scheduleIsolated, stringAt, type ServerCore, type Services } from "../../core/server";
 import { SANDBOX_PROJECT_ID, isSandboxProjectName } from "../../stability/server";
 import { ensureExcludeLinesCommand, EXCLUDE_NOT_GIT } from "../../verification";
-import { getAttempt } from "../../storage";
+import { getAttempt, getTaskGitBase } from "../../storage";
 import { hubFields } from "../../improvement";
 import { evidenceFiles, evidenceLayout, harvestCommand, parseHarvest, shellQuote, sliceAttemptEvents, treeDiff, writeFileCommands, type AttemptEvidence, type LibraryEntry, type PoolCandidate } from "./evidence";
 import {
@@ -17,6 +18,9 @@ import {
 } from "./store";
 import { TRIAL_DEFAULTS, decideTrial, type AdoptBy, type TrialConfig, type TrialDecision } from "./trial";
 import { getBenchProject, verdictForHarness } from "../../bench";
+import type { HostPort } from "../../bench/server";
+import { graphEditProblems } from "./graph-edit";
+import { formatProbeReplays, runHarnessProbe } from "./probe-run";
 import { builtinWorkflow } from "../../workflow";
 import type { StepContext } from "../../workflow";
 import type { ChainRuntime, GraphHelperRun } from "../../workflow/server";
@@ -51,6 +55,10 @@ export type HarnessConfig = {
   trial: TrialConfig;
   /** `harness.adopt_by` (SMA plan P0-1): `bench` (default) adopts a tree only after a passed bench comparison; `live` keeps the alternation as the judge. */
   adoptBy: AdoptBy;
+  /** Propose–Probe–Compose: saved attempts replayed before the composer, and the token cap for that round. `tokenBudget` 0 skips it. */
+  probe: ProbeBudget;
+  /** When true, an editor may change workflows/<name>.json. The file still goes through the same trial and bench gate. Off by default. */
+  graphEdits: boolean;
   /** An area is taught only when its attempts in the window span at least this many days (≥5 attempts in one afternoon repeat nothing). */
   minSpanDays: number;
 };
@@ -71,6 +79,7 @@ export const HARNESS_DEFAULTS: HarnessConfig = {
   // (`router9/ag/gemini-3.8-flash-high`; the «high» is in the name, the effort stays the catalog default «medium»),
   // not on Opus: three sessions a key a night must stay cheap, and the trial, not the editor, decides what ships.
   editor: { providerId: "opencode2", model: "router9/ag/gemini-3.8-flash-high", reasoningLevel: "medium" }, roles: {}, waitMinutes: 40, trial: TRIAL_DEFAULTS, adoptBy: "bench", minSpanDays: 3,
+  probe: PROBE_DEFAULTS, graphEdits: false,
 };
 
 const CONFIG_KEY = (projectId: string) => `harness:config:${projectId}`;
@@ -142,7 +151,7 @@ export function sessionEndedEarly(error: string | null): boolean {
  * The stage loop, the way Harness² does it: a rejected tree goes back with the error verbatim (one retry); a session that
  * ended early gets one more session in the same folder; everything else keeps the fallback with the error.
  */
-export async function runStage(input: { mission: string; fallback: Tree; title: string }, run: (mission: string) => Promise<StageSession>,
+export async function runStage(input: { mission: string; fallback: Tree; title: string; surface?: typeof LANE_PILOT_SURFACE }, run: (mission: string) => Promise<StageSession>,
   log: (line: string) => void, retryDelayMs = SESSION_RETRY_DELAY_MS): Promise<StageResult> {
   const threadIds: string[] = [];
   let mission = input.mission;
@@ -163,7 +172,11 @@ export async function runStage(input: { mission: string; fallback: Tree; title: 
     const { notes, keepBase } = parseNotes(result.text);
     const tree = result.tree;
     try {
-      validate(tree);
+      validate(tree, input.surface ? { surface: input.surface } : {});
+      if (input.surface?.graphFiles) {
+        const graphProblems = graphEditProblems(tree);
+        if (graphProblems.length) throw new HarnessValidationError(graphProblems);
+      }
     } catch (cause) {
       lastError = cause instanceof HarnessValidationError ? cause.message : String(cause);
       if (++rejected >= 2) break;
@@ -179,11 +192,18 @@ export function createHarness(ctx: ServerCore, services: Services) {
   const { bb, db, host } = ctx;
   const running = new Set<string>();
 
+  /** Retired trees of this key, with the reason they were refused. The editor reads them; an identical fingerprint is not trialled again. */
+  function rejectedFor(projectId: string, area: string, writerKey: string): RejectedEdit[] {
+    return listHarnesses(db, projectId, { area, writerKey, states: ["retired"] })
+      .filter((row) => row.reason?.trim())
+      .map((row) => ({ fingerprint: row.fingerprint, reason: row.reason!.trim(), summary: inventory(row.tree) }));
+  }
+
   async function config(projectId: string): Promise<HarnessConfig> {
     const raw = await bb.storage.kv.get(CONFIG_KEY(projectId)).catch(() => null) as Partial<HarnessConfig> | null;
     // `harness.adopt_by` of the global level is the default of every project; a project's own record still wins.
     const hub = hubFields(db, "harness") as { adoptBy?: AdoptBy };
-    return { ...HARNESS_DEFAULTS, ...(hub.adoptBy ? { adoptBy: hub.adoptBy } : {}), ...(raw ?? {}), editor: { ...HARNESS_DEFAULTS.editor, ...(raw?.editor ?? {}) }, roles: { ...(raw?.roles ?? {}) }, trial: { ...TRIAL_DEFAULTS, ...(raw?.trial ?? {}) } };
+    return { ...HARNESS_DEFAULTS, ...(hub.adoptBy ? { adoptBy: hub.adoptBy } : {}), ...(raw ?? {}), editor: { ...HARNESS_DEFAULTS.editor, ...(raw?.editor ?? {}) }, roles: { ...(raw?.roles ?? {}) }, trial: { ...TRIAL_DEFAULTS, ...(raw?.trial ?? {}) }, probe: { ...PROBE_DEFAULTS, ...(raw?.probe ?? {}) } };
   }
 
   /** A patch merges a level deep; a role set to null goes back to the editor's model. */
@@ -194,7 +214,7 @@ export function createHarness(ctx: ServerCore, services: Services) {
       if (!HARNESS_ROLES.includes(role as HarnessRole)) continue;
       if (value === null) delete roles[role as HarnessRole]; else roles[role as HarnessRole] = { ...(roles[role as HarnessRole] ?? current.editor), ...value };
     }
-    const next: HarnessConfig = { ...current, ...patch, editor: { ...current.editor, ...(patch.editor ?? {}) }, roles, trial: { ...current.trial, ...(patch.trial ?? {}) } };
+    const next: HarnessConfig = { ...current, ...patch, editor: { ...current.editor, ...(patch.editor ?? {}) }, roles, trial: { ...current.trial, ...(patch.trial ?? {}) }, probe: { ...current.probe, ...(patch.probe ?? {}) } };
     // The resolved default stays out of the project's record unless the project set it, so a later change of the global default reaches it.
     const stored = await bb.storage.kv.get(CONFIG_KEY(projectId)).catch(() => null) as Partial<HarnessConfig> | null;
     const keepAdopt = patch.adoptBy !== undefined || stored?.adoptBy !== undefined;
@@ -444,10 +464,11 @@ export function createHarness(ctx: ServerCore, services: Services) {
   }
 
   /** A stage with its one retry on a rejected tree and one on a session that ended early (`runStage`); each session of it is a helper named `<label>:<n>`. */
-  async function stage(input: Omit<Parameters<typeof session>[0], "harvest" | "key"> & { fallback: Tree; label: string }): Promise<StageResult> {
+  async function stage(input: Omit<Parameters<typeof session>[0], "harvest" | "key"> & { fallback: Tree; label: string; surface?: typeof LANE_PILOT_SURFACE }): Promise<StageResult> {
     let sessions = 0;
-    return runStage({ mission: input.mission, fallback: input.fallback, title: input.title },
-      (mission) => session({ ...input, mission, harvest: true, key: `${input.label}:${++sessions}` }), (line) => ctx.log(line), HARNESS_TUNING.retryDelayMs);
+    const { surface, fallback, label, ...rest } = input;
+    return runStage({ mission: input.mission, fallback, title: input.title, surface },
+      (mission) => session({ ...rest, mission, harvest: true, key: `${label}:${++sessions}` }), (line) => ctx.log(line), HARNESS_TUNING.retryDelayMs);
   }
 
   /**
@@ -480,7 +501,9 @@ export function createHarness(ctx: ServerCore, services: Services) {
     const round = `${HARNESS_DIR}-edit/${slug(area || "project")}__${slug(writerKey)}/${input.stamp}`;
     await runOnHost(host, { hostId: where.hostId, cwd: where.path, command: ensureExcludeLinesCommand([".lane-pilot/"]), timeoutSec: 30 }).catch(() => undefined);
     const base = evidenceFiles({ area, writerKey, attempts, harness: active.tree, library, repoPath: where.path });
-    const promptCtx = { area: area || "(whole project)", writerKey };
+    const surface = cfg.graphEdits ? { ...LANE_PILOT_SURFACE, graphFiles: true } : LANE_PILOT_SURFACE;
+    const promptCtx = { area: area || "(whole project)", writerKey, surface };
+    const rejected = rejectedFor(projectId, area, writerKey);
     await Promise.all(["inv", "dom"].map((label) => writeFiles(where, `${round}/${label}`, base)));
     const layout = evidenceLayout(base);
     // The two editors run side by side, the second one started a little later: two OpenCode processes starting on the
@@ -489,7 +512,7 @@ export function createHarness(ctx: ServerCore, services: Services) {
     const [inv, dom] = await Promise.all((["INV", "DOM"] as const).map(async (dim, index) => { if (index > 0) await new Promise((resolve) => setTimeout(resolve, HARNESS_TUNING.editorStaggerMs)); return stage({
       projectId, where, folder: `${round}/${dim.toLowerCase()}`, cfg, fallback: active.tree, step, label: dim.toLowerCase(),
       title: `Lane Pilot harness editor (${dim}): ${area || "project"} / ${writerKey}`, role: "harness-editor", model: dim === "INV" ? "inv" : "dom",
-      mission: missionPointer(proposePrompt(dim, promptCtx), layout),
+      mission: missionPointer(proposePrompt(dim, promptCtx, rejected), layout), surface,
     }); }));
     const threadIds = [...inv.threadIds, ...dom.threadIds];
     const common = { inv_notes: inv.notes, dom_notes: dom.notes, compose_notes: "" };
@@ -499,12 +522,36 @@ export function createHarness(ctx: ServerCore, services: Services) {
     if (inv.error && dom.error) return { status: "failed", detail: `both editors failed: inv ${inv.error}; dom ${dom.error}`, tree: {}, ...common, thread_ids: threadIds };
     if (inv.keptBase && dom.keptBase) return { status: "keep_base", detail: "both editors kept the current harness", tree: {}, ...common, thread_ids: threadIds };
     const pool: PoolCandidate[] = [{ label: "inv", tree: inv.tree, diff: treeDiff(active.tree, inv.tree), notes: inv.notes }, { label: "dom", tree: dom.tree, diff: treeDiff(active.tree, dom.tree), notes: dom.notes }];
-    const composeFiles = evidenceFiles({ area, writerKey, attempts, harness: active.tree, library, pool, decisions: { inv: inv.notes || inv.error || "", dom: dom.notes || dom.error || "" }, repoPath: where.path });
+    const probeHost: HostPort = { run: async (hostId, cwd, command, timeoutSec = 60) => runOnHost(host, { hostId, cwd, command, timeoutSec }) };
+    const probeTasks = attempts.map((attempt) => {
+      const git = getTaskGitBase(db, attempt.taskId);
+      const raw = attempt.contract.verification;
+      const verification = Array.isArray(raw) ? raw.flatMap((item) => {
+        if (!item || typeof item !== "object") return [];
+        const command = (item as { command?: unknown }).command;
+        if (typeof command !== "string" || !command.trim()) return [];
+        const cwd = (item as { cwd?: unknown }).cwd;
+        return [{ command, ...(typeof cwd === "string" ? { cwd } : {}) }];
+      }) : [];
+      const tokens = Math.max(1, Math.ceil((attempt.dispatch?.promptChars ?? 0) / 4));
+      return { attemptId: attempt.attemptId, sha: git?.base_sha || git?.initial_head_sha || "", tokens, verification };
+    });
+    let probe = "";
+    try {
+      const replays = await runHarnessProbe({
+        host: probeHost, hostId: where.hostId, checkout: `/tmp/lp-harness-probe-${slug(area || "project")}`, repo: where.path,
+        candidates: pool.map((candidate) => ({ label: candidate.label, tree: candidate.tree })), tasks: probeTasks, budget: cfg.probe,
+      });
+      probe = formatProbeReplays(replays);
+    } catch (cause) {
+      probe = `# Overnight probe\n\nThe replay did not run: ${cause instanceof Error ? cause.message : String(cause)}`;
+    }
+    const composeFiles = evidenceFiles({ area, writerKey, attempts, harness: active.tree, library, pool, decisions: { inv: inv.notes || inv.error || "", dom: dom.notes || dom.error || "" }, repoPath: where.path, ...(probe ? { probe } : {}) });
     await writeFiles(where, `${round}/compose`, composeFiles);
     const composed = await stage({
       projectId, where, folder: `${round}/compose`, cfg, fallback: active.tree, step, label: "compose",
       title: `Lane Pilot harness composer: ${area || "project"} / ${writerKey}`, role: "harness-composer", model: "compose",
-      mission: missionPointer(composePrompt(promptCtx, 2), evidenceLayout(composeFiles)),
+      mission: missionPointer(composePrompt(promptCtx, 2), evidenceLayout(composeFiles)), surface,
     });
     threadIds.push(...composed.threadIds);
     if (composed.error) ctx.log(`harness ${key}: composer failed: ${composed.error}`);
@@ -531,7 +578,19 @@ export function createHarness(ctx: ServerCore, services: Services) {
     }
     if (status !== "edited") throw new Error(detail || "the harness round failed");
     const tree = edit.tree as Tree;
-    try { validate(tree); } catch (cause) { throw new Error(`the composed tree is not valid: ${cause instanceof Error ? cause.message : String(cause)}`); }
+    const surface = (await config(projectId)).graphEdits ? { ...LANE_PILOT_SURFACE, graphFiles: true } : LANE_PILOT_SURFACE;
+    try {
+      validate(tree, { surface });
+      if (surface.graphFiles) {
+        const graphProblems = graphEditProblems(tree);
+        if (graphProblems.length) throw new HarnessValidationError(graphProblems);
+      }
+    } catch (cause) { throw new Error(`the composed tree is not valid: ${cause instanceof Error ? cause.message : String(cause)}`); }
+    const refused = screenRejected(fingerprint(tree), rejectedFor(projectId, area, writerKey));
+    if (refused.blocked) {
+      await bb.storage.kv.set(LAST_EDIT_KEY(projectId, area, writerKey), { at: Date.now(), result: "keep_base", reason: refused.reason } as never);
+      return { status: "keep_base", detail: `already rejected (${fingerprint(tree)}): ${refused.reason}`, candidateId: "" };
+    }
     const open = trialHarness(db, projectId, area, writerKey);
     if (open) return { status: "trial", detail: inventory(open.tree), candidateId: open.id };
     const active = activeHarness(db, projectId, area, writerKey);

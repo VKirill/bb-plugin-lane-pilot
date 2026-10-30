@@ -1,10 +1,12 @@
+import { resolve } from "node:path";
 import { taskV2Schema } from "../../contracts";
 import { enrichMemoryContext } from "../../memory-tiers/server";
-import { claimStageSpawn, getRun, getRunSettingsScopes, getTask, listStageReceipts, searchMemoryRecords, storeMemoryRecords } from "../../storage";
+import { claimStageSpawn, getRun, getRunSettingsScopes, getTask, listStageReceipts, searchMemoryRecords } from "../../storage";
+import { coreShelf, memoryEntrySupported, pathsNamed, storeMemoryRecordsKeepingOverflow } from "@lane-pilot/memory-core";
 import { bbServiceTier, writerExecutionSelection } from "@lane-pilot/models";
 import { sha256 } from "../../tasks";
 import { memoryMaintenancePrompt, memoryRecordId, parseMemoryCandidates, parseMemorySettings } from "../memory";
-import { pmMemoryContext } from "./memory-mix";
+import { pmMemoryContext, snapshotFileRead } from "./memory-mix";
 import { boundedAgentName } from "../../critique";
 import { MemoryChildSnapshot, childResultObject, memoryChildSnapshot, spawnRefused } from "../../runs/server";
 import { compactAcceptedResult } from "../../tasks/server";
@@ -96,22 +98,33 @@ export function createMemoryStage(ctx: ServerCore, services: Services) {
       }
       const output=(await bb.sdk.threads.output({threadId:childId})).output;
       if(typeof output!=="string"||!output.trim()) throw new Error("memory_maintainer_output_empty");
-      const entries=parseMemoryCandidates(output,snapshot.settings);
+      const all=parseMemoryCandidates(output,snapshot.settings);
+      const acceptedText=JSON.stringify(compactAcceptedResult(accepted.result));
+      // One cheap verifier pass per batch (arXiv #7): a note claiming a path, version or number the accepted
+      // result never mentions is dropped before it reaches the write door.
+      const parsed=all.filter((entry)=>memoryEntrySupported(entry.content,acceptedText));
+      const unsupportedDropped=all.length-parsed.length;
       // What a task taught belongs to its section of a shared project (Мои проекты: several games and FeedGen in one project).
       const scope=getRunSettingsScopes(db,args.runId);
-      const records=storeMemoryRecords(db,{projectId:args.projectId,personalBot:snapshot.settings.personalBot,audience:snapshot.settings.audience,sourceSha256:snapshot.acceptanceSha256,
-        entries,coreBudget:snapshot.settings.coreBudget,noteBudget:snapshot.settings.noteBudget,indexBudget:snapshot.settings.indexBudget,scope});
+      const readFile=await snapshotFileRead(parsed.flatMap((entry)=>pathsNamed(entry.content)),async(relativePath)=>{
+        const file=await bb.sdk.files.read({hostId:config.hostId,rootPath:workspace.path,path:resolve(workspace.path,relativePath)}).catch(()=>null);
+        const content=file&&typeof file==="object"?(file as {content?:unknown}).content:null;
+        return typeof content==="string"?new TextEncoder().encode(content):null;
+      });
+      // A full core keeps the batch: a core entry it cannot take is stored as a note, not a refusal of every entry.
+      const records=storeMemoryRecordsKeepingOverflow(db,{projectId:args.projectId,personalBot:snapshot.settings.personalBot,audience:snapshot.settings.audience,sourceSha256:snapshot.acceptanceSha256,
+        entries:parsed,coreBudget:snapshot.settings.coreBudget,noteBudget:snapshot.settings.noteBudget,indexBudget:snapshot.settings.indexBudget,scope,readFile,originTaskId:args.taskId});
       // Notes that now disagree with an active one are held, both, until a person settles it (memory-conflicts.ts); a failure here never loses the write.
       try { services.memoryConflicts.sweepMoot(args.projectId); services.memoryConflicts.detect(args.projectId,new Set(records.insertedIds)); } catch(cause) { bb.log.warn(`Lane Pilot memory conflicts after ${args.taskId} failed: ${cause instanceof Error?cause.message:String(cause)}`); }
       const byId=new Map(records.records.map((row)=>[row.id,row]));
       const recordIds:string[]=[];
-      for(const entry of entries){
+      for(const entry of records.entries){
         const id=memoryRecordId(args.projectId,entry.kind,entry.content,snapshot.settings.personalBot,snapshot.settings.audience,scope);
         const row=byId.get(id);
         if(!row) throw new Error("memory_record_ids_missing_after_store");
         if(row.sourceSha256===snapshot.acceptanceSha256) recordIds.push(id);
       }
-      const result={stored:recordIds.length,recordIds,evictedIds:records.evictedIds,supersededIds:records.supersededIds,sourceSha256:snapshot.acceptanceSha256,audience:snapshot.settings.audience,personalBot:snapshot.settings.personalBot,
+      const result={stored:recordIds.length,recordIds,unsupportedDropped,...(records.demoted?{coreDemotedToNotes:records.demoted}:{}),evictedIds:records.evictedIds,supersededIds:records.supersededIds,sourceSha256:snapshot.acceptanceSha256,audience:snapshot.settings.audience,personalBot:snapshot.settings.personalBot,
         reasoningEffort:memoryEffort,serviceTier:memoryTier,
         budgets:{core:snapshot.settings.coreBudget,note:snapshot.settings.noteBudget,index:snapshot.settings.indexBudget},
         retrievedForWriter:snapshot.settings.inject&&snapshot.settings.audience==="subagent",threadId:childId,snapshot};
@@ -166,7 +179,8 @@ export function createMemoryStage(ctx: ServerCore, services: Services) {
         ...writerExecutionSelection(memoryProviderId,memoryModel,memoryEffort,tier),
         prompt:memoryMaintenancePrompt({task,acceptedResult:compactAcceptedResult(accepted.result),settings:snapshot.settings,agent:snapshot.agent,
           existing:searchMemoryRecords(db,args.projectId,`${task.title}\n${task.objective}`,8,snapshot.settings.searchEngine,snapshot.settings.audience,snapshot.settings.personalBot,{chain:getRunSettingsScopes(db,args.runId)})
-            .filter((record)=>record.kind==="note"&&!record.concepts.includes("rule")).map((record)=>({id:record.id,content:record.content}))}),
+            .filter((record)=>record.kind==="note"&&!record.concepts.includes("rule")).map((record)=>({id:record.id,content:record.content})),
+          core:(({tokens,replaceable})=>({tokens,records:replaceable}))(coreShelf(db,args.projectId,snapshot.settings.personalBot,snapshot.settings.audience,getRunSettingsScopes(db,args.runId)))}),
         environment:workspaceExecutionEnvironment(config.hostId,workspace),
         pluginMetadata:{role:"memory-maintainer",lanePilotRunId:args.runId,lanePilotTaskId:args.taskId,
           stageId:"memory-maintenance",parentPmThreadId:args.threadId,helperMode:helperPolicy.mode,helperRequired:helperPolicy.policy?.required===true,...graphStepMetadata(args.workflow)}});

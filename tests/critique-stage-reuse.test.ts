@@ -1,6 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, describe, expect, it } from "vitest";
-import { runPlanCritique, runPmRead } from "../src/rooms/critique/server/critique-runs";
+import { runCodeCritique, runPlanCritique, runPmRead } from "../src/rooms/critique/server/critique-runs";
 import { recordStage, resetHelperStages } from "../src/rooms/runs/server/stage-records";
 import { createAttempt, createRun, createTask, listStageReceipts, openDatabase, saveProjectSetting } from "../src/rooms/storage";
 
@@ -84,6 +84,22 @@ describe("helper stages decide before they prepare, and reuse only a receipt of 
     saveProjectSetting(w.db, "P", "plan_critique.mode", "gate");
     const cached = await runPlanCritique({ ...w, projectId:"P", runId:"r", taskId:"t1", config, task:bad, plan:"write note" });
     expect(cached).toMatchObject({ allowed:false, reason:"structural_plan_critique_blocked" });
+  });
+
+  it("a truncated critique packet is a skipped receipt and does not block the writer", async () => {
+    const w = world();
+    saveProjectSetting(w.db, "P", "code_critique.enabled", true);
+    const hash = "a".repeat(64);
+    const evidence = {
+      truncated: true, truncateReason: "packet_truncated",
+      artifactRevisionSha256: hash, evidenceSha256: hash, revisionSha256: hash,
+      produced: ["note.txt"], hashes: {}, baselineHashes: {}, verification: [], files: [],
+      packetSha256: hash, outputSha256: hash, ownsPaths: ["note.txt"], neverTouch: [],
+    };
+    const result = await runCodeCritique({ ...w, projectId: "P", runId: "r", taskId: "t1", config, task, evidence });
+    expect(result.allowed).toBe(true);
+    expect(result.reason).toContain("code_critique_evidence_unknown:packet_truncated");
+    expect(listStageReceipts(w.db, "r", "t1").find((row) => row.stageId === "code-critique")?.state).toBe("skipped");
   });
 
   it("resetHelperStages keeps a passed plan critique and specialist review and drops the rest", async () => {

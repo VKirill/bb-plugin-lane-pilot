@@ -44,17 +44,18 @@ describe("scoring planted defects", () => {
     calls.length = 0;
     const report = await runScore({ openVerification: async () => fakeSession(), model: model() }, { source: "t", candidates: fixture.candidates });
     const codeCalls = calls.filter((call) => call.kind === "code_critic"), planCalls = calls.filter((call) => call.kind === "plan_critic");
-    // 2 clean candidates + the escaped ones: deleted assertion x2, swallowed x1; the hardcoded value is not caught by the fake clone.
+    // 2 clean candidates + the escaped ones: swallowed x1; a deleted assertion is caught by test_fit, so the critic is not asked. The hardcoded value is not caught by the fake clone.
     const escaped = report.rows.filter((row) => row.checker === "code_critic" && row.defectClass !== "control").map((row) => row.defectClass).sort();
-    expect(escaped).toEqual(["hardcoded_value", "hardcoded_value", "swallowed_error", "test_assertion_deleted", "test_assertion_deleted"]);
+    expect(escaped).toEqual(["hardcoded_value", "hardcoded_value", "swallowed_error"]);
     expect(codeCalls.length).toBe(2 + escaped.length);
     expect(planCalls.length).toBe(2 + 2);
     const swallowed = report.rows.find((row) => row.checker === "code_critic" && row.defectClass === "swallowed_error")!;
     expect(swallowed.outcome).toBe("hit");
-    expect(report.rows.find((row) => row.checker === "code_critic" && row.defectClass === "test_assertion_deleted")!.outcome).toBe("miss");
+    expect(report.rows.find((row) => row.checker === "test_fit" && row.defectClass === "test_assertion_deleted")!.outcome).toBe("hit");
     expect(report.scorecard.checkers.code_critic.falseAlarms).toBe(0);
     expect(report.scorecard.escapes.byClass.swallowed_error).toBe(1);
-    expect(report.scorecard.critic.escapesJudged).toBe(5);
+    expect(report.scorecard.escapes.byClass.test_assertion_deleted).toBeUndefined();
+    expect(report.scorecard.critic.escapesJudged).toBe(3);
     expect(report.scorecard.critic.escapesCaught).toBe(1);
     expect(report.scorecard.critic.recommendation).toBe("inconclusive");
     expect(report.spentTokens).toBeGreaterThan(0);

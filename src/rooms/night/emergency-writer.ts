@@ -2,6 +2,8 @@ export type EmergencyTrigger = {
   state:string;
   reason?:string|null;
   stopConfirmed?:boolean;
+  /** The same writer already failed this check the same way: one next writer may take the task. */
+  checkEscalation?:boolean;
 };
 
 export type EmergencyFallbackDecision =
@@ -19,6 +21,9 @@ export function emergencyFallbackDecision(trigger:EmergencyTrigger):EmergencyFal
   if (trigger.state === "spawn_rejected" && typeof trigger.reason === "string"
     && /^(writer_provider_unavailable:|writer_model_unavailable:|writer_service_tier_unavailable:|writer_live_catalog_unavailable$)/.test(trigger.reason)) {
     return {run:true,reason:trigger.reason};
+  }
+  if (trigger.checkEscalation && trigger.state === "validation_failed" && /^verification failed\b/.test(trigger.reason ?? "")) {
+    return {run:true,reason:"repeated_check"};
   }
   return {run:false,reason:`not_safe_for_emergency_fallback:${trigger.state}`};
 }

@@ -2,6 +2,7 @@ import { taskV2Schema } from "../../contracts";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
 import { valueAt } from "../../core/server";
 import { compactContract, pmReadBrief } from "../writer-brief";
+import { summarizeThreadEvents, type ThreadEventLike } from "@lane-pilot/harness-core";
 import { cleanCheckOutput, failureExcerpt, sha256Hex } from "@lane-pilot/kit";
 import { fileAllowedByOwns, matchOwnsPath } from "@lane-pilot/kit";
 import { SKILL_CATALOG_BLOCK } from "../../native-agent";
@@ -264,6 +265,16 @@ export function previousAttemptBrief(last:Record<string, unknown> | null | undef
     tail ? `Output tail of \`${failed!.command}\`:\n${tail}` : "",
     produced.length ? `Files it changed (${liveFolder ? "Lane Pilot put the owned ones back as they were before that attempt" : "not in this worktree; you start fresh from main"}): ${produced.join(", ")}` : "",
   ].filter(Boolean).join("\n");
+}
+
+/**
+ * Feedback for attempt `attemptNo`. From the third attempt on, the previous thread is the digest
+ * (what was done, what failed, which check, which files), not the raw trajectory.
+ */
+export function attemptFeedback(attemptNo: number, events: readonly ThreadEventLike[] | undefined, brief: string): string {
+  if (attemptNo < 3 || !events?.length) return brief;
+  const head = brief.startsWith("Result:") ? `${brief.split("\n")[0]}\n` : "";
+  return `${head}${summarizeThreadEvents(events)}`;
 }
 
 export function writerBriefSegments(task: TaskV2, memoryText="", executionPacket="", emergencyContext?:string, agent="Lane Pilot writer", pmReadContext="", rulesText="", previousAttempt="", taskFolder?:TaskFolderBrief|null, liveFolder=false): BriefSegment[] {

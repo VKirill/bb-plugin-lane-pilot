@@ -3,6 +3,8 @@ import { baselineMetrics } from "./baseline";
 import { buildSet, type BuildReport } from "./build";
 import { compareArms, computeNoise, noiseOfRepeats, passReport, renderComparison, summarizeArm, type ArmSummary, type Comparison } from "./compare";
 import { cohortCounts, cohortOf } from "./stratify";
+import { renderStratumMetrics, stratumMetrics, type StratumRow } from "./stratum-metrics";
+import { statsEpochMs, STATS_EPOCH_SETTING } from "../storage";
 import type { HostPort, PipelinePort } from "./ports";
 import { releaseGate, sweepStuckRuns } from "./reliability";
 import { BENCH_REPOS_ROOT_ENV } from "./repos";
@@ -56,7 +58,8 @@ export function createBench(deps: BenchDeps) {
     const noise = stored?.noiseRepeats;
     const noiseRepeats = Number.isInteger(noise) && (noise as number) >= 0 && (noise as number) <= 10 ? noise as number : 0;
     const fromEnv = process.env[BENCH_REPOS_ROOT_ENV]?.trim() || null;
-    const reposRoot = typeof stored?.reposRoot === "string" && stored.reposRoot.trim() ? stored.reposRoot.trim() : fromEnv;
+    // A stored key wins over the env, so `bench config repos_root=` (empty) clears the root even on a deploy that exports one.
+    const reposRoot = stored && "reposRoot" in stored ? (typeof stored.reposRoot === "string" && stored.reposRoot.trim() ? stored.reposRoot.trim() : null) : fromEnv;
     return { hostId, noiseRepeats, reposRoot };
   }
   async function writePlacement(patch: Partial<BenchPlacement>): Promise<void> {
@@ -95,11 +98,12 @@ export function createBench(deps: BenchDeps) {
   async function build(input: { version: string; seed?: string; only?: string[]; triesFactor?: number; dryRun?: boolean; planOnly?: boolean; wait?: boolean; minFreeGb?: number; checkTimeoutSec?: number }) {
     return await job(`build:${input.version}`, input.wait ?? false, async () => {
       const place = await placement();
+      const epoch = statsEpochMs((deps.db.prepare("SELECT value FROM lane_pilot_project_settings WHERE project_id=? AND key=?").get("*", STATS_EPOCH_SETTING) as { value:string } | undefined)?.value);
       const { report } = await buildSet({
         db: deps.db, host: deps.host, version: input.version, projectNames: await deps.projectNames(), isSandboxName: deps.isSandboxName, log: deps.log,
         ...(input.seed ? { seed: input.seed } : {}), ...(input.only ? { only: input.only } : {}), ...(input.triesFactor ? { triesFactor: input.triesFactor } : {}),
         ...(input.dryRun ? { dryRun: true } : {}), ...(input.planOnly ? { planOnly: true } : {}), ...(input.minFreeGb ? { minFreeGb: input.minFreeGb } : {}), ...(input.checkTimeoutSec ? { checkTimeoutSec: input.checkTimeoutSec } : {}),
-        ...(place.reposRoot ? { reposRoot: place.reposRoot } : {}), ...(place.hostId ? { hostId: place.hostId } : {}),
+        ...(place.reposRoot ? { reposRoot: place.reposRoot } : {}), ...(place.hostId ? { hostId: place.hostId } : {}), statsEpochMs: epoch,
       });
       await deps.kv.set(BUILD_KEY(input.version), report as never).catch(() => undefined);
       return report;
@@ -177,7 +181,21 @@ export function createBench(deps: BenchDeps) {
     // Naming a harness tree turns the comparison into the word `harness.adopt_by=bench` waits for.
     // An inconclusive comparison decides nothing: recorded as a pass or as a fail it would adopt or retire a harness tree on too little.
     const verdict = input.harnessId && comparison.verdict !== "inconclusive" ? saveVerdict(deps.db, { setId: set.id, armA: input.armA, armB: input.armB, harnessId: input.harnessId, passed: comparison.verdict === "pass", report: comparison }) : null;
-    return { comparison, text: renderComparison(comparison), verdictId: verdict?.id ?? null };
+    const rowsOf = (arm: string): StratumRow[] => {
+      const runs = listRuns(deps.db, set.id).filter((row) => row.arm === arm);
+      const byTask = new Map<string, StratumRow>();
+      for (const run of runs) for (const result of listResults(deps.db, run.id)) {
+        const task = set.tasks.find((item) => item.taskId === result.taskId);
+        if (!task || result.state === "skipped_budget" || result.state === "error") continue;
+        byTask.set(result.taskId, { taskId: result.taskId, stratum: task.stratum, accepted: result.accepted, seconds: result.seconds, tokens: result.tokens });
+      }
+      return [...byTask.values()];
+    };
+    const armB = listRuns(deps.db, set.id).filter((row) => row.arm === input.armB).at(-1);
+    const settings = (armB?.config as { settings?: Record<string, unknown> } | undefined)?.settings;
+    const strata = renderStratumMetrics(stratumMetrics(rowsOf(input.armB).length ? rowsOf(input.armB) : rowsOf(input.armA)), settings);
+    const text = strata ? `${renderComparison(comparison)}\n${strata}` : renderComparison(comparison);
+    return { comparison, text, verdictId: verdict?.id ?? null };
   }
 
   function status(version?: string) {
@@ -202,7 +220,7 @@ export function createBench(deps: BenchDeps) {
       cohorts: { fixed: set.tasks.filter((task) => cohortOf(task.stratum) === "fixed").length, fresh: set.tasks.filter((task) => cohortOf(task.stratum) === "fresh").length },
       tasks: set.tasks.map((task) => ({
         position: task.position, taskId: task.taskId, project: task.projectName, repo: task.repoPath, stratum: task.stratum, hard: task.hard, risk: task.risk, area: task.area,
-        base: task.initialHeadSha.slice(0, 10), solution: task.solutionCommit.slice(0, 10), discriminating: task.warm.discriminating.length,
+        base: task.initialHeadSha.slice(0, 10), solution: task.solutionCommit.slice(0, 10), discriminating: task.warm.discriminating.length, ...(task.validator ? { validator: task.validator } : {}),
       })),
       rejected: set.rejected.length, build: null as BuildReport | null,
     };

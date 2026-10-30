@@ -154,6 +154,11 @@ const TERMINAL_ATTEMPT = ["accepted", "blocked", "canceled"];
 const safeId = (text: string) => text.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "task";
 
 /** The task standard (the Tasks board): a workflow's own task fills what its contract leaves out, so the contract lint never refuses it. */
+/** The short path's code critic: only the medium writer of issue-quick. quick stays off; a full contract still conflicts with fixed quick. */
+export function shortPathCriticDefault(workflowId: string, mode: string): "medium" | undefined {
+  return workflowId === "issue-quick" && mode === "standard" ? "medium" : undefined;
+}
+
 const withTaskStandard = (contract: Row, key: string): Row => ({ ...withContractDefaults(contract),
   display_title: str(contract.display_title).trim() || str(contract.title).slice(0, 60), kind: str(contract.kind) || "feature", area: str(contract.area).trim() || `workflow:${safeId(key)}` });
 
@@ -372,7 +377,7 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
       const hostId = getRunWriterHost(db, rt.runId) ?? "";
       const lint = await lintTask(rt.projectId, rt.runId, valid.task, run.writer_workspace_path, hostId).catch(() => null);
       if (lint?.errors.length) return { output: failedTask("failed", `contract lint: ${lint.errors.map((error) => error.message).join("; ").slice(0, 600)}`) };
-      const reply = await services.dispatchWriter({ threadId: rt.pmThreadId, projectId: rt.projectId, task: valid.task, plan: valid.task.objective, birth: "workflow" });
+      const reply = await services.dispatchWriter({ threadId: rt.pmThreadId, projectId: rt.projectId, task: valid.task, plan: valid.task.objective, birth: "workflow", criticCodeDefault: shortPathCriticDefault(c.workflow.id, picked.mode) });
       if (reply.state === "rejected" || reply.ok === false) return { output: failedTask("blocked", String(reply.reason ?? reply.hint ?? "the dispatch was rejected")) };
       const taskId = str(reply.taskId) || valid.task.id;
       return { wait: { kind: "attempt", detail: { runId: str(reply.runId) || rt.runId, taskId, files: valid.task.owns_paths } }, ...(planned ? { usage: planned } : {}) };

@@ -49,6 +49,8 @@ export type ManifestTask = {
   stratum: string; hard: boolean; risk: Risk; area: string;
   initialHeadSha: string; solutionCommit: string; solutionPatchSha256: string;
   contract: Record<string, unknown>; warm: WarmRecord;
+  /** Non-code check. Absent on a code task. `artifact` means the result exists and is not empty. */
+  validator?: string | null;
 };
 
 export type Rejection = { taskId: string; stratum: string; reason: string; detail?: string };

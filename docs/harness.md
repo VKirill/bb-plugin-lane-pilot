@@ -56,14 +56,14 @@ A harness tree contains the optional writer additions described by `LANE_PILOT_S
 
 ## Business rules
 
-- Harness scope is `(project, area, writer key)`; a writer key is `provider/model`, while `*` applies to any writer in the area (`src/rooms/harness/server/store.ts:20-25`, `src/rooms/harness/server/harness.ts:190-206`).
+- Harness scope is `(project, area, writer key)`; a writer key is `provider/model`, while `*` applies to any writer in the area (`src/rooms/harness/server/store.ts:20-25`, `src/rooms/harness/server/harness.ts:195-217`).
 - The defaults are enabled, five attempts over seven days to qualify a key, at most two keys per nightly run, eight evidence attempts, a 40-minute session wait, and an OpenCode Gemini 3.8 Flash editor selection; project KV settings override them. Role-specific selections inherit the editor unless configured (`src/rooms/harness/server/harness.ts:27-58`, `:165-179`).
 - Harness checks are appended to verification for the attempt that owns the tree; a tree with no checks contributes none (`src/rooms/harness/server/harness.ts:239-250`).
 - A reflection lesson is stored only when it has cue, lesson and evidence, and its edit rows do not consist solely of `confounded` verdicts (`packages/harness-core/src/experience.ts:37-54`, `src/rooms/harness/server/harness.ts:517-524`).
 
 ## Public API or commands
 
-The harness room exports `createHarness`, `harnessRpc`, tree helpers and trial helpers to other rooms (`src/rooms/harness/server/index.ts:1-7`, `src/rooms/harness/index.ts:1`). App RPC methods are `harness_status`, `harness_configure`, `harness_edit`, `harness_tick` and `harness_reflect` (`src/rooms/contracts/rpc-ops.ts:110-129`, `src/rooms/harness/server/rpc.ts:7-17`). The `harness`, `harness-edit`, `harness-tick` and `harness-trajectory` CLI commands expose status, editing, trial evaluation and trajectory output (`src/rooms/tools/server/cli.ts:67-70`, `:170-186`).
+The harness room exports `createHarness`, `harnessRpc`, tree helpers and trial helpers to other rooms (`src/rooms/harness/server/index.ts:1-7`, `src/rooms/harness/index.ts:1`). `judgeSharedTrial` is `decideTrial` (`src/rooms/harness/server/index.ts:6`): the critics writer calls it from lp.critic-edit, so a critic candidate uses the same 14-day deadline and the same bench gate. App RPC methods are `harness_status`, `harness_configure`, `harness_edit`, `harness_tick` and `harness_reflect` (`src/rooms/contracts/rpc-ops.ts:110-129`, `src/rooms/harness/server/rpc.ts:7-17`). The `harness`, `harness-edit`, `harness-tick` and `harness-trajectory` CLI commands expose status, editing, trial evaluation and trajectory output (`src/rooms/tools/server/cli.ts:67-70`, `:170-186`).
 
 ### `HarnessCard`
 

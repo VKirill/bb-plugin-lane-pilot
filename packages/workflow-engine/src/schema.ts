@@ -165,7 +165,7 @@ const humanBody = {
   defaultOption: z.string().max(120).optional(),
 };
 const subworkflowBody = {
-  workflow: z.string().regex(/^[a-z][a-z0-9.-]{0,47}$/),
+  workflow: z.string().regex(/^[a-z0-9][a-z0-9.-]{0,47}$/),
   version: z.number().int().min(1).optional(),
   /** Input name of the child to `node.field`: the first spelling; `with` is the second. */
   inputs: z.record(z.string(), z.string()).default({}),
@@ -260,7 +260,7 @@ const trigger = z.object({
 
 export const workflowSchema = z.object({
   schemaVersion: z.literal(WORKFLOW_SCHEMA_VERSION).default(WORKFLOW_SCHEMA_VERSION),
-  id: z.string().regex(/^[a-z][a-z0-9.-]{0,47}$/, "workflow id: lowercase letters, digits, . and -"),
+  id: z.string().regex(/^[a-z0-9][a-z0-9.-]{0,47}$/, "workflow id: lowercase letters, digits, . and -"),
   name: bilingual,
   description: bilingual,
   examples: z.object({ en: z.array(z.string().min(3).max(300)).max(20).default([]), ru: z.array(z.string().min(3).max(300)).max(20).default([]) }).strict().default({ en: [], ru: [] }),

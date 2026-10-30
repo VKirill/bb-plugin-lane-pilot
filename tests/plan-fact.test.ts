@@ -143,12 +143,14 @@ describe("what the writer is told and what a retry is told", () => {
 });
 
 describe("the code critic by risk", () => {
-  it("stays off by default, and turns on by the task's risk only when nothing else decided", () => {
-    expect(resolveCodeCriticDefault(undefined)).toBe("off");
+  it("defaults to advisory from medium risk, and turns on only when nothing else decided", () => {
+    expect(resolveCodeCriticDefault(undefined)).toBe("medium");
     expect(resolveCodeCriticDefault("medium")).toBe("medium");
     expect(resolveCodeCriticDefault("medium", "off")).toBe("off");
     expect(resolveCodeCriticDefault("off", "high")).toBe("high");
-    expect(resolveCodeCriticDefault("sometimes", "maybe")).toBe("off");
+    expect(resolveCodeCriticDefault("sometimes", "maybe")).toBe("medium");
+    expect(applyCodeCriticDefault({}, "standard", "medium", "medium")["code_critique.mode"]).toBe("advisory");
+    expect(applyCodeCriticDefault({ "code_critique.mode": "gate" }, "standard", "high", "medium")["code_critique.mode"]).toBe("gate");
     const on = (level: "off" | "medium" | "high", risk: string, settings: Record<string, unknown> = {}, mode: "quick" | "standard" | "full" = "standard") =>
       applyCodeCriticDefault(settings, mode, risk, level)["code_critique.enabled"] === true;
     expect(["low", "medium", "high", "critical"].map((risk) => on("off", risk))).toEqual([false, false, false, false]);

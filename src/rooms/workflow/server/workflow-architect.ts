@@ -358,7 +358,7 @@ export function mountWorkflowArchitect(ctx: ServerCore, services: Services, arch
     name: "lane_pilot_workflow_draft_create",
     description: "Start a draft of a workflow (a chain of agent, action, human and code steps) that you build and test before it is published.",
     instructions: "Use from the Workflow architect chat (or a PM chat when the owner asks for a repeatable chain) after you know the goal. `name` and `description` are one string or {en, ru}; `scope` is project (stored in the project's own .lane-pilot/workflows) or global (the owner's ~/.lane-pilot/workflows, usable in every project). Returns the draftId: pass it to every other lane_pilot_workflow_draft_* tool. The open Workflows tab shows the graph and redraws after each patch.",
-    parameters: z.object({ name: bilingual, description: bilingual, scope: z.enum(["global", "project"]).default("global"), workflowId: z.string().regex(/^[a-z][a-z0-9.-]{0,47}$/).optional() }).strict(),
+    parameters: z.object({ name: bilingual, description: bilingual, scope: z.enum(["global", "project"]).default("global"), workflowId: z.string().regex(/^[a-z0-9][a-z0-9.-]{0,47}$/).optional() }).strict(),
     execute: async (params, context) => { const c = needChat(context); return json(architect.create({ projectId: c.projectId, threadId: c.threadId, ...params })); },
   });
 

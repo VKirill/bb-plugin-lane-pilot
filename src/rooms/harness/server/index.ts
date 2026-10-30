@@ -4,7 +4,7 @@ export type { BriefParts, HarnessApi, HarnessConfig, HarnessRole, ModelSelection
 export { HARNESS_ROLES, roleSelection } from "./harness";
 export { harnessRpc } from "./rpc";
 export { ANY_WRITER, writerKeyOf } from "./store";
-export { TRIAL_DEFAULTS, armMetrics, decideTrial } from "./trial";
+export { TRIAL_DEFAULTS, armMetrics, decideTrial, decideTrial as judgeSharedTrial } from "./trial";
 export type { AdoptBy, BenchVerdictInput, TrialConfig, TrialDecision } from "./trial";
 export type { GraphHelperFn, HarnessStep } from "./harness";
 export { HARNESS_EDIT_WORKFLOW, HARNESS_REFLECT_WORKFLOW } from "./harness";

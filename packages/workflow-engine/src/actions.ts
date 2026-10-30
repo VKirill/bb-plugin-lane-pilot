@@ -1,3 +1,4 @@
+import { pathClassFrom } from "./path-class";
 import { settleVerdict } from "./verdict";
 import type { Verdict, VerdictFinding } from "./verdict";
 import type { NodeExecutor, StepContext } from "./engine";
@@ -166,6 +167,14 @@ const aggregate: PureAction = ({ read }) => {
   return { output: { status, warn, critical_count: critical, high_count: high, remaining_actionable: remaining, findings, verdict } };
 };
 
+/** lp.path_class: size and risk of the owner's text. No model. A size and risk already on the inputs are kept. */
+const pathClass: PureAction = ({ ctx }) => {
+  const title = str(ctx.resolve("$inputs.title"));
+  const text = str(ctx.resolve("$inputs.text"));
+  const result = pathClassFrom(`${title}\n${text}`, { size: ctx.resolve("$inputs.size"), risk: ctx.resolve("$inputs.risk"), severity: ctx.resolve("$inputs.severity") });
+  return { output: { size: result.size, risk: result.risk, severity: result.severity } };
+};
+
 /** lp.propose_workflow: the terminal «offer to start workflow X with inputs Y». The decision to run it is the policy's and the owner's; the offer is in the receipt and the run output. */
 const propose: PureAction = ({ node, ctx }) => {
   const params = (node as { params?: Row }).params ?? {};
@@ -175,7 +184,7 @@ const propose: PureAction = ({ node, ctx }) => {
 
 const ACTIONS: Record<string, { run: PureAction }> = {
   "items.dedupe": { run: dedupe }, "dag.validate": { run: dagValidate }, "digest.check": { run: digestCheck }, "citations.check": { run: citationsCheck },
-  "verdict.aggregate": { run: aggregate }, "lp.propose_workflow": { run: propose },
+  "verdict.aggregate": { run: aggregate }, "lp.path_class": { run: pathClass }, "lp.propose_workflow": { run: propose },
 };
 /** The inputs verdict.aggregate reads, whatever the node lists. */
 const AGGREGATE_READS = ["dims.findings", "confirm.dropped_ids", "dims.unchecked", "spec_check.unmet_count"];

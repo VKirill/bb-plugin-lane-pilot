@@ -3,7 +3,7 @@ import { clipped, extractModelJson, NO_TOOLS_LINE } from "@lane-pilot/workflow-e
 import { CODE_CRITIC_METHOD } from "./role-method";
 import { demoteUncited } from "./citations";
 import type { Citation } from "./citations";
-import { VERDICT_STATUSES, isVerdictShape, legacyOutputToVerdict, settleVerdict, verdictSchema, verdictSeverityToLegacy, verdictSummary, withoutDecision } from "@lane-pilot/workflow-engine";
+import { CRITIC_RUBRIC, VERDICT_STATUSES, applyRubric, isVerdictShape, legacyOutputToVerdict, rubricPromptLine, settleVerdict, verdictSchema, verdictSeverityToLegacy, verdictSummary, withoutDecision } from "@lane-pilot/workflow-engine";
 import type { Verdict, VerdictFinding, VerdictStatus } from "@lane-pilot/workflow-engine";
 import { sha256Hex } from "@lane-pilot/kit";
 
@@ -333,6 +333,40 @@ export function codeCritiqueSource(input: {
   });
 }
 
+/** High and critical risk: the critic reads once as the author and once as a hostile reviewer. Anything lower stays one pass. */
+export function criticPersonas(risk: string | undefined): Array<"author" | "hostile" | undefined> {
+  return risk === "high" || risk === "critical" ? ["author", "hostile"] : [undefined];
+}
+
+const STATUS_RANK: Record<VerdictStatus, number> = { pass: 0, rework: 1, block: 2 };
+
+/** The verdict fails when either pass fails. Findings are the union of the failing passes; a single pass is returned as it is. */
+export function unionCriticFails(rows: readonly CodeCritiqueResult[]): CodeCritiqueResult {
+  const first = rows[0];
+  if (!first) return { decision: "approve", summary: "", findings: [], status: "pass" };
+  if (rows.length === 1) return first;
+  let status: VerdictStatus = "pass";
+  const findings: CodeCritiqueFinding[] = [];
+  const seen = new Set<string>();
+  for (const row of rows) {
+    const rowStatus: VerdictStatus = row.status ?? (row.decision === "approve" ? "pass" : "rework");
+    if (STATUS_RANK[rowStatus] > STATUS_RANK[status]) status = rowStatus;
+    if (rowStatus === "pass") continue;
+    for (const finding of row.findings) {
+      if (seen.has(finding.id)) continue;
+      seen.add(finding.id);
+      findings.push(finding);
+    }
+  }
+  if (status === "pass") return first;
+  return {
+    decision: "changes_requested",
+    summary: rows.map((row) => row.summary).filter(Boolean).join(" | ").slice(0, 2000),
+    findings: findings.slice(0, 30),
+    status,
+  };
+}
+
 export function codeCritiquePrompt(input: {
   evidence: CandidateEvidence;
   task: unknown;
@@ -340,14 +374,19 @@ export function codeCritiquePrompt(input: {
   disputes?: unknown;
   /** Project notes relevant to review (role `reviewer`), one bullet per line; data for the critic, not instructions. */
   memoryText?: string;
+  /** Set on a high or critical task: one call as the author, one as a hostile reviewer. */
+  persona?: "author" | "hostile";
 }): string {
   return [
     `You are ${input.agent?.trim() || "the independent code-critique stage"} for a bounded software task.`,
+    ...(input.persona === "author" ? ["You wrote this change. Review it as its author: say what you would still not ship."] : []),
+    ...(input.persona === "hostile" ? ["You are a hostile reviewer of this change. Look for the failure its author would miss."] : []),
     `Review the completed writer candidate, not the writer's self-report. ${NO_TOOLS_LINE}`,
     "If you have the gitnexus tools and the project has a `.gitnexus/` index, use `query`/`context`/`impact` to check claims about callers and blast radius; grep for literals.",
     "Judge only in-scope owns_paths against the task contract, host-read file bytes/diff, writer reply hash, and verification stdout/stderr. Exit codes alone are not sufficient.",
     ...CODE_CRITIC_METHOD,
     "Answer with one JSON object and nothing else: no text before or after it. Keys: status (\"pass\", \"rework\" or \"block\"), summary (string, at most 2000 characters), findings (at most 30 objects), evidence (string, what you examined and how, at most 4000 characters). Finding keys: file, line (positive integer), severity (\"critical\", \"high\", \"medium\", \"low\" or \"info\"), evidence (at most 2000 characters: the quoted code or output line); optional id (at most 80 characters), finding (at most 1000: what is wrong), criterion (at most 500: the acceptance line or rule), dimension (at most 80), impact, trigger, verificationExpectation (each at most 500). Other keys are ignored.",
+    rubricPromptLine("code"),
     "status follows the thresholds above. block: the task stops, with no repair round and no redo (a critical finding that is a security hole, data loss or a break of a rule the task forbids, or more than 5 high). rework: the writer fixes the findings in its own thread (a critical unmet or stubbed requirement, or 1 to 5 high). pass: no critical and no high; medium, low and info findings go with pass. The host reads a critical or high finding without a file, a line and quoted evidence as medium, a rework with no critical or high finding as a pass, and a block below the threshold as a rework. For a security hole or data loss put \"security\" in the finding's dimension. Build each id from the file and the criterion in kebab case (for example src/a.ts:rate-limit-missing) so the same problem gets the same id when the code is reviewed again.",
     "Cosmetic preferences are severity info and must not be high. Ambiguous issues stay uncertain; do not invent rewrites.",
     "TASK CONTRACT:", JSON.stringify(input.task),
@@ -389,7 +428,7 @@ export function parseCodeCritique(output: string, cites?: Citation): CodeCritiqu
   const raw = extractModelJson(output);
   if (isVerdictShape(raw)) {
     const cited = demoteUncited(verdictSchema.parse(withoutDecision(raw)), cites);
-    const settled = settleVerdict(cited.verdict, "code");
+    const settled = settleVerdict(applyRubric(cited.verdict, "code"), "code");
     const { verdict } = settled, demoted = settled.demoted + cited.demoted;
     return {
       decision: verdict.status === "pass" ? "approve" : "changes_requested",
@@ -409,6 +448,25 @@ export function actionableFindings(result: CodeCritiqueResult): CodeCritiqueFind
 
 export function findingFingerprint(findings: readonly CodeCritiqueFinding[]): string {
   return sha256Text(JSON.stringify(findings.map((row) => row.id).sort()));
+}
+
+const CODE_RUBRIC = new Set<string>(CRITIC_RUBRIC.code);
+
+/**
+ * Gate mode stops on any change request. Advisory stops only on a block, or on a high/critical finding whose criterion is a rubric id.
+ * Other advisory notes go back to the writer and the task is not held.
+ */
+export function codeCritiqueStops(mode: "advisory" | "gate", result: { status?: string; decision: string; findings: readonly { severity: string; criterion: string }[] }): boolean {
+  if (result.status === "block") return true;
+  if (result.decision !== "changes_requested") return false;
+  if (mode === "gate") return true;
+  return result.findings.some((row) => row.severity === "blocking" && CODE_RUBRIC.has(row.criterion));
+}
+
+/** Advisory notes that do not stop the task, one line the writer and the PM can read. */
+export function advisoryFeedback(result: { findings: readonly { severity: string; criterion: string; finding: string }[] }): string {
+  const notes = result.findings.filter((row) => row.severity !== "blocking").map((row) => `${row.criterion}: ${row.finding}`);
+  return notes.length ? `code critic (advisory): ${notes.join("; ")}`.slice(0, 600) : "";
 }
 
 export function shouldRequestRepair(input: {

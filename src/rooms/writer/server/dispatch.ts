@@ -5,6 +5,7 @@ import { DISPATCH_IDEMPOTENT_WINDOW_MS, DISPATCH_STAGES_PENDING } from "../../ru
 import { taskV2Schema } from "../../contracts";
 import type { TaskV2 } from "../../contracts";
 import { QUALITY_MODE_SETTING, browserQaRequired, resolveQualityMode, taskQaPlan } from "../../critique";
+import { reserveAppetite, resolveBestOf } from "../best-of";
 import type { CodeCriticDefault } from "../../critique";
 import { saveCriticCodeDefault } from "./critic-override";
 import { getRunObjective, setRunObjective, createAttempt, createTask, freeTaskId, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getRunWriterHost, getTask, getTaskGitBase, getTaskPlan, latestTaskAttemptState, listAttemptsForTask, listOpenAttempts, listRunsWithAttempts, listStageReceipts, listTaskKinds, listTaskTerminalStates, loadProjectSettings, saveTaskPlan, setRunState, transitionAttempt } from "../../storage";
@@ -220,7 +221,10 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
     const budgetNow = services.runBudgets.get(runId)?.snapshot();
     if (budgetNow?.limits.maxTokens && task.appetite?.tokens) {
       const openAppetites = listOpenAttempts(db).filter((row) => row.run_id === runId).map((row) => Number((getTask(db, row.task_id)?.contract as { appetite?: { tokens?: number } } | undefined)?.appetite?.tokens ?? 0));
-      const reserve = spendReserve({ budgetTokens:budgetNow.limits.maxTokens, spentTokens:budgetNow.tokens, openAppetites, appetite:task.appetite.tokens });
+      // Best-of-3 (quality_mode full + writer.best_of) runs three candidates: the reserve holds all of them.
+      const dispatchSettings = loadProjectSettings(db, args.projectId, getRunSettingsScopes(db, runId));
+      const bestOf = resolveBestOf(dispatchSettings, resolveQualityMode(task, dispatchSettings[QUALITY_MODE_SETTING]));
+      const reserve = spendReserve({ budgetTokens:budgetNow.limits.maxTokens, spentTokens:budgetNow.tokens, openAppetites, appetite:reserveAppetite(task.appetite.tokens, bestOf) });
       if (!reserve.ok) return lintReply(runId, [{ code:"spend_reserve", message:`spend reserve: ${reserve.why}; lower the appetite, wait for an open task, or raise the run's budget` }]);
     }
     // The pipeline runs only on the workflow engine: when the engine cannot take it, nothing is created and the PM is told so. The warning is a wall entry (the journal reads the plugin log).

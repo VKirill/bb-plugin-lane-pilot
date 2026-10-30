@@ -2,7 +2,9 @@ import { jev, type JevSettings } from "@lane-pilot/jev";
 import { getRun, getRunSettingsScopes } from "../../storage";
 import { stringAt, type ServerCore } from "../../core/server";
 import { isRunHalted, isRunPaused } from "../../runs/server";
-import { intakeByRules, intakeJudgment, intakeTitle, isMachineMessage, processHint, railsRefusal, type IntakeKind } from "../intake";
+import { pathClassByRules } from "@lane-pilot/workflow-engine";
+import type { PathRisk, PathSize } from "@lane-pilot/workflow-engine";
+import { intakeByRules, intakeJudgment, intakeTitle, isMachineMessage, pathClassJudgment, processHint, railsRefusal, type IntakeKind } from "../intake";
 import type { Phase } from "../logic";
 
 /** What the intake needs of the phase driver (its own type, so the driver can build the intake without a type cycle). */
@@ -22,7 +24,7 @@ export type IntakeRecord = { requestId: string; kind: IntakeKind; by: "rules" | 
 
 /** The machine's start of the small-task graph for a request, and the state of a run it started (src/rooms/phase/server/driver.ts wires them). */
 export type IntakeTrain = {
-  start(input: { projectId: string; pmThreadId: string; runId: string; requestId: string; text: string; kind: "small" | "batch" }): string | null;
+  start(input: { projectId: string; pmThreadId: string; runId: string; requestId: string; text: string; kind: "small" | "batch"; path?: { size: PathSize; risk: PathRisk } }): string | null;
   status(wfRunId: string): string | null;
   /** The workflow architect, started with the owner's process as its order; resolves to its chat. */
   startProcess?(input: { projectId: string; pmThreadId: string; text: string }): Promise<string | null>;
@@ -56,6 +58,20 @@ export function createPhaseIntake(ctx: Deps, phases: IntakePhases, train?: Intak
       }
     } catch { /* the rules' reading stands */ }
     return { kind: rules.kind, by: "rules" };
+  }
+
+  /** Size and risk for the short path. Confident rules skip Jev; an unsure judgment keeps the rules' reading. */
+  async function classifyPath(text: string, projectId: string, runId: string | null, settings: Record<string, unknown>): Promise<{ size: PathSize; risk: PathRisk }> {
+    const rules = pathClassByRules(text);
+    if (rules.confident) return { size: rules.size, risk: rules.risk };
+    const instance = jev();
+    try {
+      if (instance?.enabled(settings as JevSettings)) {
+        const verdict = await instance.judge(pathClassJudgment, { text }, { projectId, runId, subject: "intake", settings: settings as JevSettings });
+        if (verdict.by === "jev") return { size: verdict.decision.size, risk: verdict.decision.risk };
+      }
+    } catch { /* the rules' reading stands */ }
+    return { size: rules.size, risk: rules.risk };
   }
 
   /** The PM's last message in the chat, or null: the judgment reads the owner's message against it. */
@@ -108,7 +124,8 @@ export function createPhaseIntake(ctx: Deps, phases: IntakePhases, train?: Intak
     let wfRunId: string | undefined;
     // Only on the judgment's word: the length rule calls any short line «small», and a remark must not start a build.
     if ((kind === "small" || kind === "batch") && by === "jev" && train && !stopped && String(settings["phase.train"] ?? "on") !== "off") {
-      wfRunId = train.start({ projectId: run.project_id, pmThreadId: threadId, runId: run.id, requestId, text, kind }) ?? undefined;
+      const path = kind === "small" ? await classifyPath(text, run.project_id, run.id, settings) : undefined;
+      wfRunId = train.start({ projectId: run.project_id, pmThreadId: threadId, runId: run.id, requestId, text, kind, ...(path ? { path } : {}) }) ?? undefined;
       if (wfRunId) ctx.log(`phase intake: ${threadId} — the owner's request is ${kind} (${by}); ${kind === "batch" ? "issue-batch" : "issue-quick"} ${wfRunId} started`);
     }
     // A new process becomes a small graph: the workflow architect builds, tests and publishes it on the owner's words (Matvey #31916).
@@ -168,7 +185,8 @@ export function createPhaseIntake(ctx: Deps, phases: IntakePhases, train?: Intak
       return { started: true, via: "phase", id: phase.id };
     }
     if ((kind === "small" || kind === "batch") && train && String(settings["phase.train"] ?? "on") !== "off") {
-      const id = train.start({ projectId: run.project_id, pmThreadId: input.pmThreadId, runId: run.id, requestId: input.key, text, kind });
+      const path = kind === "small" ? await classifyPath(input.text, run.project_id, run.id, settings) : undefined;
+      const id = train.start({ projectId: run.project_id, pmThreadId: input.pmThreadId, runId: run.id, requestId: input.key, text, kind, ...(path ? { path } : {}) });
       if (id) { ctx.log(`phase intake: hand-over (${input.origin.slice(0, 80)}) is ${kind} (${by}); ${kind === "batch" ? "issue-batch" : "issue-quick"} ${id} started`); return { started: true, via: kind === "batch" ? "issue-batch" : "issue-quick", id }; }
       return { started: false, kind, reason: "the small-task graph did not start" };
     }

@@ -467,7 +467,7 @@ export function registerCli(ctx: ServerCore, services: Services) {
           const attempt = getAttempt(db, args[0]!);
           if (!attempt) return { exitCode:1, stdout:JSON.stringify({ok:false,attemptId:args[0],state:"missing",reason:"attempt does not exist"}) };
           if (!attempt.thread_id) {
-            const canceled=cancelQueuedAttempt(attempt);
+            const canceled=cancelQueuedAttempt(attempt, "canceled from the CLI");
             return {exitCode:canceled.ok?0:1,stdout:JSON.stringify({attemptId:attempt.id,...canceled})};
           }
           const rejection = cancelRejection(db, attempt);
@@ -479,7 +479,7 @@ export function registerCli(ctx: ServerCore, services: Services) {
           const status = confirmed.status;
           if (!confirmed.stopped) throw new Error(`writer stop was not independently observed (status=${status ?? "unknown"}, waited ${Math.round(confirmed.waitedMs / 1000)}s)`);
           await services.rollback.noteStopped(attempt.id).catch(() => undefined);
-          transitionAttempt(db, attempt.id, "canceled", { threadId:attempt.thread_id });
+          transitionAttempt(db, attempt.id, "canceled", { threadId:attempt.thread_id, reason:"canceled from the CLI" });
           return { exitCode:0, stdout:JSON.stringify({
             ok:true, attemptId:attempt.id, threadId:attempt.thread_id, state:"canceled", observedStatus:status,
           }) };

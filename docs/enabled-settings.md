@@ -14,7 +14,7 @@ sources:
   - docs/enabled-settings.snapshot.json
 ---
 
-<!-- enabled-settings:structure 9894f000941433ec -->
+<!-- enabled-settings:structure f176c1d22d0f13fa -->
 
 # Enabled settings (generated)
 
@@ -78,7 +78,7 @@ switches: `quick` disables both critiques, `full` enables them (`src/rooms/criti
 | `council.ux.model` | — | — | council seat setting |
 | `council.ux.provider` | — | — | council seat setting |
 | `council.ux.reasoning_effort` | `high` | — | council seat setting |
-| `critic.code.default_for_risk` | `off` | — | code critic by task risk: off, medium or high |
+| `critic.code.default_for_risk` | `medium` | — | code critic by task risk: off, medium or high |
 | `docs.agent` | `docs-maintainer` | — | docs role label included in its prompt |
 | `docs.enabled` | `auto` | — | stage setting: execute bounded docs maintenance |
 | `docs.hour` | `5` | — | stage setting: local hour for the daily docs schedule |
@@ -216,6 +216,9 @@ switches: `quick` disables both critiques, `full` enables them (`src/rooms/criti
 | `workflow.preset.strong.reasoning_effort` | `high` | — | workflow model: a named model preset of the workflow steps |
 | `workspace.provider` | `auto` | — | writer worktrees: auto gives each attempt a BB environment of its own provider (with automatic fallback), off is the emergency switch to the old worktree path |
 | `writer.agent` | `lane-writer` | — | writer role label |
+| `writer.best_of.slot_cap` | `3` | — | best-of-3: how many candidates of a task may run at once |
+| `writer.best_of.token_budget` | `0` | — | best-of-3: shared token ceiling of one task's candidates |
+| `writer.best_of` | `off` | — | best-of-3: parallel writer candidates under quality_mode full, selection by checks then the critic verdict |
 | `writer.model` | `PRIMARY_MODELS[provider]` | — | writer stage reads this setting |
 | `writer.provider` | `kimi` | — | writer stage reads this setting |
 | `writer.reasoning_effort` | `PRIMARY_EFFORTS[provider]` | — | writer stage reads this setting |

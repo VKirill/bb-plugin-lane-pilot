@@ -19,7 +19,7 @@ import { mountNightGraphs } from "./src/rooms/night-graphs/server";
 import { createHarness } from "./src/rooms/harness/server";
 import { createDeferrals, sdkOwnerMessagePort } from "./src/rooms/deferral/server";
 import { createRollback } from "./src/rooms/rollback/server";
-import { createPluginBench, mountBenchNightly, mountBenchSweep, mountBenchWeekly } from "./src/rooms/bench/server";
+import { createPluginBench, mountBenchNightly, mountBenchSweep, mountBenchWeekly, mountServiceModelRecheck } from "./src/rooms/bench/server";
 import { createBaselineRoom, mountRegress } from "./src/rooms/baseline/server";
 import { createRunGoal, mountRunGoal } from "./src/rooms/run-goal/server";
 import { createPhaseDriver, mountPhaseDriver, mountPhaseIntake, registerPhaseTool } from "./src/rooms/phase/server";
@@ -37,7 +37,7 @@ import { mountOutage } from "./src/rooms/outage/server";
 import { createPluginWall } from "./src/rooms/wall/server";
 import { createPluginCheckers } from "./src/rooms/checkers/server";
 import { createStageReturn } from "./src/rooms/stage-return/server";
-import { cleanupFinishedAttemptEnvironments, cleanupStickyLaneWorktrees, closeAbandonedRuns, pluginStopped } from "./src/rooms/runs/server";
+import { cleanupFinishedAttemptEnvironments, cleanupStickyLaneWorktrees, closeAbandonedRuns, closeStaleRuns, pluginStopped } from "./src/rooms/runs/server";
 import { registerRpc } from "./src/rooms/core/server/rpc";
 import { mountAnamnesis } from "./src/rooms/anamnesis";
 import { mountWorldAssets } from "./src/rooms/world-assets/server";
@@ -186,6 +186,8 @@ export default async function plugin(bb: BbPluginApi) {
   mountBenchNightly(ctx, () => services.bench);
   // A series left running past its hour cap is closed on startup and twice an hour.
   mountBenchSweep(ctx, () => services.bench);
+  // First of the month, 04:00 UTC: the cheap pin of a service job is benched against its previous model (bench.service_models).
+  mountServiceModelRecheck(ctx, () => services.bench);
   registerTools(ctx, services);
   registerCli(ctx, services);
   // The pixel world's GLB files (council office people and cars) over HTTP, not inside app.js.
@@ -195,9 +197,12 @@ export default async function plugin(bb: BbPluginApi) {
   // Writer attempts get BB environments of this provider unless workspace.provider is off; a BB without the API
   // registers nothing and every attempt keeps the old worktree path.
   registerLaneWorktreeProvider(ctx);
-  const sweepRuns = (signal?: AbortSignal) => closeAbandonedRuns(bb, db, Date.now(), signal).then((closed) => {
+  const sweepRuns = (signal?: AbortSignal) => Promise.resolve().then(async () => {
+    const closed = await closeAbandonedRuns(bb, db, Date.now(), signal);
     if (closed.length) bb.log.info(`Lane Pilot closed ${closed.length} runs whose PM chat is gone: ${closed.join(", ")}`);
-  }, (cause) => pluginStopped(cause) ? undefined : bb.log.warn(`Lane Pilot run sweep skipped: ${cause instanceof Error ? cause.message : String(cause)}`));
+    const stale = await closeStaleRuns(bb, db, Date.now(), signal);
+    if (stale.length) bb.log.info(`Lane Pilot closed ${stale.length} runs past their lifetime: ${stale.join(", ")}`);
+  }).catch((cause) => pluginStopped(cause) ? undefined : bb.log.warn(`Lane Pilot run sweep skipped: ${cause instanceof Error ? cause.message : String(cause)}`));
   const snapshotWorktree = async (hostId: string, worktreePath: string, name: string) =>
     await ctx.host.call("gitWorktreeSnapshot", { requestedHostId:hostId, worktreePath, name }, { hostId, timeoutMs:300_000 });
   const sweepEnvironments = (signal?: AbortSignal) => cleanupFinishedAttemptEnvironments(bb, db, snapshotWorktree, Date.now(), signal).then((removed) => {

@@ -113,7 +113,7 @@ export const WORKFLOW_REFERENCE = {
   },
   requires: "`skills` (a hint on a step; only the ones listed here are checked before a run), `plugins` and `mcp` (those named on agent steps are added by themselves), `secrets` (Env Catalog names, `NAME?` when optional), `tools` (commands: `ffmpeg`, `a|b`), `platforms` (threads, instagram, facebook, vk are checked, x is not), `machines` (shown to the owner, not passed to a step), `browserSession`. A step that needs an account or a key runs as role `errand`: it reads the value by name with env_get and never prints it",
   actions: {
-    code: "items.dedupe, dag.validate, digest.check, citations.check, verdict.aggregate, lp.propose_workflow; `emit` ends the chain",
+    code: "items.dedupe, dag.validate, digest.check, citations.check, verdict.aggregate, lp.path_class, lp.propose_workflow; `emit` ends the chain",
     "plugin state and checkout": "lp.state_probe, lp.run_status, lp.run_close, lp.lint_contract, lp.integration_gate_status (answers skipped today), fs.write, git.diff_files",
     "run in an errand helper with its skills and accounts": "telegram.send_rich, shell.skill_script, shell.repo_script, deploy.post_check, lp.preflight, lp.project_checks; the node takes `model_preset` and `params.skill`",
     note: "an action name outside these lists has no executor: it runs on stubs in the test and a live run stops there",

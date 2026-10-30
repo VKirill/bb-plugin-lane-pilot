@@ -5,7 +5,7 @@ import plugin from "../../server";
 import { TARGET_SHA } from "../../src/rooms/runs/constants";
 import { openDatabase, savePrototypeConfig } from "../../src/rooms/storage/database";
 import { DEFAULT_RULE_TOKENS, RULE_COUNT_CEILING, poolHasRoom, poolTokens, ruleBudget, ruleTokens, setRuleBudgets } from "../../src/rooms/learning/rule-budget";
-import { pmRulesBlock, pmRulesOf, pmRulesPromptBlock, relevantPmRules } from "../../src/rooms/learning/pm-rules";
+import { pmResumeInstructions, pmRulesBlock, pmRulesOf, pmRulesPromptBlock, relevantPmRules } from "../../src/rooms/learning/pm-rules";
 import { adoptRuleProposal } from "../../src/rooms/self-repair/server/insights";
 import { NOW, database, jevWith } from "./helpers";
 
@@ -113,6 +113,17 @@ describe("the PM's rules block (T4)", () => {
     expect(block.text).toContain('op:"rules"');
     expect(pmRulesBlock(rules, 5)).toMatchObject({ text: "", shown: 0 });
     expect(pmRulesBlock([], 1600).text).toBe("");
+  });
+
+  it("cuts the resume block on a rule boundary, never through a rule", () => {
+    const db = database();
+    for (let i = 0; i < 9; i++) adopted(db, `${"q".repeat(500)} endrule${i}.`);
+    const text = pmResumeInstructions(db, "proj_1", []) ?? "";
+    const lines = text.split("\n").filter((line) => line.startsWith("- "));
+    expect(text.length).toBeLessThanOrEqual(4000);
+    expect(lines.length).toBeGreaterThan(0);
+    expect(lines.length).toBeLessThan(9);
+    for (const line of lines) expect(line).toMatch(/endrule\d+\.$/);
   });
 
   it("is empty for a project with no PM rule, and honours the sections of a run", () => {

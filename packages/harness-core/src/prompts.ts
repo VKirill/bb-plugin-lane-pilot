@@ -1,3 +1,4 @@
+import { rejectedPrompt, type RejectedEdit } from "./rejected";
 import type { SurfaceSpec } from "./tree";
 import { LANE_PILOT_SURFACE } from "./tree";
 
@@ -52,6 +53,9 @@ Do not fix what the attempts already got right, and do not restate what the fixe
 (owns_paths, never_touch, NEEDS_HUMAN, the sandbox rules): duplicated instruction dilutes the rest.`;
 
 export function surfaceBlock(surface: SurfaceSpec = LANE_PILOT_SURFACE): string {
+  const graphRow = surface.graphFiles
+    ? "| `workflows/<name>.json` | a workflow graph the engine accepts (JSON with id, nodes and edges, plus test.sim.expect_path) | the same trial and bench gate as any other harness file |\n"
+    : "";
   return `# WHAT YOU CAN CHANGE
 
 The harness is a tree of components in \`context/harness/\`. Each has a different runtime cost and a different reach:
@@ -63,7 +67,7 @@ The harness is a tree of components in \`context/harness/\`. Each has a differen
 | \`${surface.checksDir}/<name>.sh\` (or .py, .mjs) | a deterministic check | run by Lane Pilot with the task's verification; the writer cannot skip it |
 | \`${surface.hooksFile}\` | Claude Code hook schema (PreToolUse, PostToolUse, SessionStart, UserPromptSubmit, Stop; type "command") | fires INSIDE the tool loop on every matching call of a Claude Code writer (installed as the worktree's .claude/settings.local.json); writers on other runtimes ignore it, so pair it with a check when the area's writers are not Claude Code |
 | \`${surface.memoryFile}\` | at most ${surface.memoryMaxNotes} notes for the area (a path, a decision, a fact of this workspace) | served as project memory to the writer |
-
+${graphRow}
 ALWAYS-ON PROSE IS THE EXPENSIVE OPTION. Prefer, in this order:
   - a SKILL for anything with a recognisable trigger (a document type, a format, a recurring situation);
   - a CHECK for a deterministic condition the attempts got wrong or verified by hand: a check cannot be ignored and
@@ -124,8 +128,9 @@ host: before you write "in this repo X is Y", a file name, a setting or a value 
 there and confirm it. A trajectory proves what a writer saw then; the repository proves what the next writer will see.`;
 }
 
-export function proposePrompt(dim: "INV" | "DOM", ctx: PromptContext): string {
+export function proposePrompt(dim: "INV" | "DOM", ctx: PromptContext, rejected: readonly RejectedEdit[] = []): string {
   const writer = ctx.writerKey && ctx.writerKey !== "*" ? ` for writers on ${ctx.writerKey}` : "";
+  const refused = rejectedPrompt(rejected);
   return [
     `You are the ${dim === "INV" ? "INVARIANT" : "DOMAIN"} harness editor for the area «${ctx.area}»${writer}. You have the recent attempts of this area under the current harness (their briefs, full trajectories, diffs and check output), the current harness files, and this area's library of what was adopted before.`,
     WORK,
@@ -133,9 +138,11 @@ export function proposePrompt(dim: "INV" | "DOM", ctx: PromptContext): string {
     generalize(ctx.area),
     HOW_TO_READ,
     "Do not hedge toward an average or try to cover every base: commit to the single most defensible version of your dimension. A later stage compares and merges.",
+    "A component listed under Deletion candidates in this area's library had no observed effect after its trial. Remove that deletion candidate unless a trajectory shows it now matters.",
     ANSWER_FREE,
     EVIDENCE_BOUNDARY,
     surfaceBlock(ctx.surface),
+    ...(refused ? [refused] : []),
   ].join("\n\n");
 }
 
@@ -145,7 +152,7 @@ export function composePrompt(ctx: PromptContext, candidates: number): string {
     WORK,
     `# WHAT YOU HAVE
 
-The recent attempts under the current harness (the shared evidence), ${candidates} candidate harness${candidates === 1 ? "" : "es"} built on it (each with its \`harness.diff\` and the editor's notes in \`context/decisions/\`), and the library. The candidates were drawn from the same evidence and share the same model biases: agreement is support, not independent proof; contradiction is a reason to reopen the trajectories, not to vote.
+The recent attempts under the current harness (the shared evidence), ${candidates} candidate harness${candidates === 1 ? "" : "es"} built on it (each with its \`harness.diff\` and the editor's notes in \`context/decisions/\`), and the library. When \`context/probe.md\` is present, each candidate was installed in a bench checkout of one or two saved tasks and that task's verification was run: weigh whether the checks passed and how many tokens they cost, and remember a replay is not a verdict. The candidates were drawn from the same evidence and share the same model biases: agreement is support, not independent proof; contradiction is a reason to reopen the trajectories, not to vote.
 
 # HOW TO WEIGH THE EVIDENCE
 
