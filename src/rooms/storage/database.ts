@@ -425,6 +425,8 @@ export const migrations = [
   ...workflowNotVerifiedMigrations,
   // Hash of the files a note named when it was written (packages/memory-core/src/fingerprint.ts). Append only.
   `ALTER TABLE lane_pilot_memory ADD COLUMN file_fingerprint TEXT`,
+  // The page a thread reconcile had reached. A reload continues from it instead of scanning from the first page again.
+  `CREATE TABLE lane_pilot_reconcile_cursor (scan_key TEXT PRIMARY KEY, attempt_id TEXT NOT NULL, page INTEGER NOT NULL, updated_at INTEGER NOT NULL)`,
 ];
 
 export function openDatabase(bb: BbPluginApi): LanePilotDatabase {

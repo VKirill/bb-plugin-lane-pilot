@@ -129,7 +129,9 @@ export function closeOrphanWriterStages(db:ReturnType<typeof openDatabase>, acti
     if (!latest || now - latest.updated_at < idleMs) continue;
     // A failed attempt waiting for its retry: the loop that would retry it died with a reload, and start-up recovery
     // resumes only attempts in flight. Nobody retries it, so it ends here and the PM decides.
-    if (RETRY_ELIGIBLE.includes(latest.state as AttemptState)) {
+    // A scan that died mid-page left its cursor. The next process continues it; ending the attempt here drops that retry.
+    const scanning = db.prepare("SELECT 1 AS n FROM lane_pilot_reconcile_cursor WHERE attempt_id=? LIMIT 1").get(latest.id) as { n:number } | undefined;
+    if (RETRY_ELIGIBLE.includes(latest.state as AttemptState) && !scanning) {
       const reason = `${latest.reason ?? latest.state}; its retry was lost in a plugin reload`;
       transitionAttempt(db, latest.id, "blocked", { reason });
       latest.state = "blocked";

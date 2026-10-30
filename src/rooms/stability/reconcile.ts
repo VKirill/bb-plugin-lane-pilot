@@ -10,7 +10,29 @@ export type ReconcilePort = {
    */
   find?(match:Record<string,string>): Promise<ThreadSummary[]|null>;
 };
-type ScanOptions = { limit?:number; maxPages?:number };
+/** The page already scanned for one attempt. Null when this scan has not started. Kept in the database, so a new process continues. */
+export type ReconcileCursor = { read(): number | null; save(page: number): void; clear(): void };
+type CursorDb = { prepare(sql: string): { get(...args: unknown[]): unknown; run(...args: unknown[]): unknown } };
+
+/** One row per attempt and scan kind (`writer` or `holder`). `read` is null until the first page is saved. */
+export function reconcileCursor(db: CursorDb, attemptId: string, kind: "writer" | "holder"): ReconcileCursor {
+  const scanKey = `${kind}:${attemptId}`;
+  return {
+    read() {
+      const row = db.prepare("SELECT page FROM lane_pilot_reconcile_cursor WHERE scan_key=?").get(scanKey) as { page: number } | undefined;
+      return row ? row.page : null;
+    },
+    save(page: number) {
+      db.prepare(`INSERT INTO lane_pilot_reconcile_cursor(scan_key, attempt_id, page, updated_at) VALUES (?, ?, ?, ?)
+        ON CONFLICT(scan_key) DO UPDATE SET page=excluded.page, updated_at=excluded.updated_at`).run(scanKey, attemptId, page, Date.now());
+    },
+    clear() {
+      db.prepare("DELETE FROM lane_pilot_reconcile_cursor WHERE scan_key=?").run(scanKey);
+    },
+  };
+}
+
+type ScanOptions = { limit?:number; maxPages?:number; cursor?:ReconcileCursor };
 
 export type ReconcileResult =
   | { kind:"found"; threadId:string }
@@ -46,18 +68,26 @@ async function scan(
   const limit = options.limit ?? 50;
   const maxPages = options.maxPages ?? 20;
   const matchesFound: string[] = [];
+  const start = options.cursor?.read() ?? 0;
+  const finish = (result: ReconcileResult): ReconcileResult => {
+    if (result.kind !== "error" && !(result.kind === "blocked" && result.reason === "page_cap")) options.cursor?.clear();
+    return result;
+  };
   try {
-    for (let page = 0; page < maxPages; page += 1) {
+    for (let page = start; page < start + maxPages; page += 1) {
+      // Saved before the page is read: a process that dies on this page is continued from it, not from zero.
+      options.cursor?.save(page);
       const items = await port.list({ limit, offset: page * limit });
       for (const item of items) {
         if (predicate(await port.metadata(item.id))) matchesFound.push(item.id);
       }
-      if (matchesFound.length > 1) return { kind:"blocked", reason:"ambiguous" };
+      if (matchesFound.length > 1) return finish({ kind:"blocked", reason:"ambiguous" });
       if (items.length < limit) {
-        return matchesFound.length === 1
+        return finish(matchesFound.length === 1
           ? { kind:"found", threadId:matchesFound[0]! }
-          : { kind:"not_found" };
+          : { kind:"not_found" });
       }
+      options.cursor?.save(page + 1);
     }
     return { kind:"blocked", reason:"page_cap" };
   } catch (cause) {

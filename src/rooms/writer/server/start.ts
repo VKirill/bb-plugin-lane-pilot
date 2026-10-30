@@ -8,7 +8,7 @@ import { isZcodeProvider, WRITER_PROFILES, type WriterProfile } from "@lane-pilo
 import { DEPENDENCY_REDO_WAIT_MS, countAttempts, countChargedAttempts, countThreadTurns, createAttempt, endSpawnFailure, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getTask, getTaskPlan, latestTaskAttemptState, listAttemptsForTask, listOpenAttempts, listStageReceipts, listUnansweredWriterQuestions, loadProjectSettings, noteToldPmDirectly, transitionAttempt, taskBasePath } from "../../storage";
 import { taskV2Schema } from "../../contracts";
 import { ownsPathsOverlap, pollPause } from "@lane-pilot/kit";
-import { reconcile } from "../../stability";
+import { reconcile, reconcileCursor } from "../../stability";
 import { emergencyFallbackDecision } from "../../night";
 import { rotatedWriterSettings, writerFallbackChain, writerFallbacks } from "../writer-fallbacks";
 import { writerPickOverlay, type WriterLoad } from "../writer-model-pick";
@@ -826,13 +826,16 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         } else if (attempt && !attempt.thread_id) {
           // An attempt whose writer thread is stored needs no scan; scanning every thread of the project here blocked
           // retries with reconcile_page_cap once SelfyStudio passed 1000 threads (live 2026-10-04).
+          const cursor = reconcileCursor(db, attempt.id, "writer");
           const scanned = await reconcile({
             list: async ({ limit, offset }) => (await bb.sdk.threads.list({
               projectId:input.projectId, originPluginId:"lane-pilot", includeHidden:true, archived:false, limit, offset,
             })).map((thread) => ({ id:thread.id })),
             metadata: async (threadId) => bb.sdk.threads.getPluginMetadata({ threadId }),
             find: (match) => findThreadsByMetadata(bb, match, input.projectId),
-          }, { lanePilotRunId:attempt.run_id, lanePilotTaskId:attempt.task_id, attemptId:attempt.id });
+          }, { lanePilotRunId:attempt.run_id, lanePilotTaskId:attempt.task_id, attemptId:attempt.id }, { cursor });
+          // page_cap and a death mid-page leave the cursor. The attempt stays, and the next process reads the same page.
+          if ((scanned.kind === "blocked" && scanned.reason === "page_cap") || (scanned.kind === "error" && cursor.read() !== null)) break;
           if (scanned.kind === "blocked" || scanned.kind === "error") {
             // Both end the attempt: an error left it «spawn_rejected» with its stages closed, and nothing retried it (found by the
             // fault-injection simulation, tests/simulation). A reconcile_ reason is Lane Pilot's fault: the task is parked.

@@ -325,7 +325,7 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
             workspacePath=bound.workspace_path;
             environment=inPlaceEnvironment(input.config.hostId,workspacePath,bound.environment_id);
           } else {
-            const created=await host.call("gitCreateWorktree",{requestedHostId:input.config.hostId,basePath:base,name:input.attemptId},
+            const created=await host.call("gitCreateWorktree",{requestedHostId:input.config.hostId,basePath:base,name:input.attemptId,taskId:input.taskId},
               {hostId:input.config.hostId,timeoutMs:60_000});
             if(created.status==="ready"&&created.path) {
               workspacePath=created.path;
@@ -587,12 +587,12 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
    * the attempt: the owner's switch, a core without the API, a machine whose provider was switched off, a worktree that
    * could not be made (the old path makes it again, or the managed one).
    */
-  async function prepareProviderWorktree(input:{projectId:string;runId:string;attemptId:string;config:PrototypeConfig}, settings:Record<string,unknown>,
+  async function prepareProviderWorktree(input:{projectId:string;runId:string;taskId:string;attemptId:string;config:PrototypeConfig}, settings:Record<string,unknown>,
     bound:{workspace_path:string|null}|null|undefined, basePath:string, decision:unknown):Promise<{path:string;dirtBefore:DirtSnapshot[]|null}|null> {
     const hostId=input.config.hostId;
     if (await providerSkipReason(input.projectId,hostId,input.attemptId,settings)) return null;
     if (bound?.workspace_path) return {path:bound.workspace_path,dirtBefore:null};
-    const created=await host.call("gitCreateWorktree",{requestedHostId:hostId,basePath,name:input.attemptId},{hostId,timeoutMs:60_000}).catch(()=>null);
+    const created=await host.call("gitCreateWorktree",{requestedHostId:hostId,basePath,name:input.attemptId,taskId:input.taskId},{hostId,timeoutMs:60_000}).catch(()=>null);
     if(!created||created.status!=="ready"||!created.path) {
       bb.log.info(`Lane Pilot writer ${input.attemptId}: no worktree for the provider (${created?.reason ?? "no answer"}); the old worktree path`);
       return null;
