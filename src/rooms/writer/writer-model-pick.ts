@@ -1,5 +1,5 @@
 import { choice, choiceOf, defineJudgment, score, type Answers, type Jev } from "@lane-pilot/jev";
-import { writerCandidates, type WriterProfile } from "@lane-pilot/models";
+import { isZcodeProvider, writerCandidates, type WriterProfile } from "@lane-pilot/models";
 import { writerFallbackKeys, writerFallbackSlots, WRITER_FALLBACK_SLOTS } from "./writer-fallbacks";
 
 /**
@@ -105,6 +105,21 @@ type PickTaskContract = { title: string; display_title?: string; objective?: str
  * The settings a task's writer changes, from Jev's pick; asked once per task and kept in the KV, so every attempt of the task runs on
  * the same writer. Null keeps the project's writer: the pick is off, Jev is off or unsure, or it picked the project's writer.
  */
+/** What a writer route decision records for the attempt receipt: every candidate, those excluded (with why) and the choice. */
+export type WriterRouteDecision = {
+  at: number;
+  /** Every profile the task could write on, in catalog order. */
+  considered: string[];
+  /** Candidates taken out before the judge: key → why (a held provider window, a ZCode that cannot work here). */
+  excluded: { key: string; reason: string }[];
+  /** The pick: a profile key, "" for the project's own writer. */
+  picked: string;
+  /** How the pick was made. `capacity_saturated` means every offered provider was spent. */
+  by: "jev" | "kept" | "pick_off" | "no_room";
+};
+
+export const writerRouteKey = (runId: string, taskId: string) => `writer-route:${runId}:${taskId}`;
+
 export async function writerPickOverlay(deps: { kv: { get(key: string): Promise<unknown>; set(key: string, value: unknown): Promise<void> }; jev: Pick<Jev, "judge" | "enabled"> | null; log(line: string): void;
   /** Whether a writer cannot work where this task runs now (ZCode: other machine, outside its free hours, busy); such a writer is not offered to Jev. A pick already kept for the task stands. */
   held?(profile: WriterProfile): Promise<boolean>;
@@ -114,9 +129,15 @@ export async function writerPickOverlay(deps: { kv: { get(key: string): Promise<
   if (settings["writer.pick"] === false || settings["writer.pick"] === "off") return null;
   const key = `writer-pick:${input.runId}:${input.taskId}`;
   const candidates = writerCandidates(settings);
-  const offered = deps.held ? (await Promise.all(candidates.map(async (profile) => ((await deps.held!(profile).catch(() => true)) ? null : profile)))).flatMap((profile) => (profile ? [profile] : [])) : candidates;
+  const heldReasons = new Map<string, string>();
+  const offered = deps.held ? (await Promise.all(candidates.map(async (profile) => {
+    const held = await deps.held!(profile).catch(() => true);
+    if (held) heldReasons.set(profile.key, isZcodeProvider(profile.providerId) ? "zcode_held" : "provider_window_spent");
+    return held ? null : profile;
+  }))).flatMap((profile) => (profile ? [profile] : [])) : candidates;
   // A key never written reads back undefined, not null: with a null check only, the pick was never asked (live 2026-10-25).
   let picked = ((await deps.kv.get(key).catch(() => null)) ?? null) as string | null;
+  let by: WriterRouteDecision["by"] = picked === null ? "pick_off" : "kept";
   if (picked === null && offered.length > 1 && deps.jev?.enabled(settings as never)) {
     const task = input.task;
     const load = deps.load ? await deps.load(offered).catch(() => undefined) : undefined;
@@ -125,8 +146,19 @@ export async function writerPickOverlay(deps: { kv: { get(key: string): Promise<
       { projectId: input.projectId, runId: input.runId, subject: input.taskId, settings: settings as never }).catch(() => null);
     // Only a writer that was offered can be the answer (a held ZCode was not).
     picked = verdict?.by === "jev" && verdict.decision.key && offered.some((row) => row.key === verdict.decision.key) ? verdict.decision.key : "";
+    by = "jev";
     await deps.kv.set(key, picked).catch(() => undefined);
     deps.log(`Lane Pilot writer pick: ${input.taskId} → ${picked || "the project's writer"}`);
+  }
+  const route: WriterRouteDecision = {
+    at: Date.now(),
+    considered: candidates.map((row) => row.key),
+    excluded: [...heldReasons.entries()].map(([key, reason]) => ({ key, reason })),
+    picked: picked ?? "",
+    by: heldReasons.size === candidates.length ? "no_room" : by,
+  };
+  if (settings["writer.route_record"] !== false && settings["writer.route_record"] !== "off") {
+    await deps.kv.set(writerRouteKey(input.runId, input.taskId), route).catch(() => undefined);
   }
   const profile = picked ? candidates.find((row) => row.key === picked) : undefined;
   return profile ? pickedWriterOverlay(settings, profile) : null;

@@ -15,10 +15,11 @@ import { resolveBestOf, roundSeedBrief, roundSurvivors } from "../best-of";
 import { QUALITY_MODE_SETTING, resolveQualityMode } from "../../critique";
 import { runOnHost } from "@lane-pilot/host-calls";
 import { writerPickOverlay, type WriterLoad } from "../writer-model-pick";
+import { loadWriterPin, noteWriterPair } from "../writer-model-pin";
 import { reassignedReason, takeReassignRequest, type ReassignRequest } from "./reassign";
 import { usageHoldReason, usageSkipPercent } from "../../usage/server";
 import { MAIN_ATTEMPT_LIMIT, RETRY_ELIGIBLE } from "../../runs";
-import { FREE_RETRY_LIMIT, PARKED_CLASSES, REPLAY_CHECK_FAILED, SESSION_MAX_MS, VERIFICATION_TIMEOUT_RETRIES, isWaitingSecret, isWriterSilent, repeatedFailureReason, taskFamily, turnFailureKey, verificationTimeoutOverBudget } from "../../runs";
+import { FREE_RETRY_LIMIT, PARKED_CLASSES, REPLAY_CHECK_FAILED, SESSION_MAX_MS, VERIFICATION_TIMEOUT_RETRIES, failureClassCooldownMs, isWaitingSecret, isWriterSilent, repeatedFailureReason, taskFamily, turnFailureKey, verificationTimeoutOverBudget } from "../../runs";
 import { isTaskSatisfied } from "../../runs/server";
 import { listThreadEventsRaw } from "@lane-pilot/thread-observe";
 import { attemptFeedback, isWriterStreamError, previousAttemptBrief } from "./writer-task";
@@ -124,14 +125,15 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
    * entry is spent the whole chain stays: the reading may be stale, and a spent window still fails in the provider's own
    * words, as before.
    */
-  async function chainWithRoom<T extends { providerId:string; model:string }>(chain:T[], hostId:string, settings:Record<string, unknown>, taskId:string):Promise<{ chain:T[]; room:boolean }> {
+  async function chainWithRoom<T extends { providerId:string; model:string }>(chain:T[], hostId:string, settings:Record<string, unknown>, taskId:string):Promise<{ chain:T[]; room:boolean; nextReset:string|null }> {
     const threshold = usageSkipPercent(settings);
     // The usage threshold can be 0 (the windows off); ZCode's own limits (host, free hours, one slot) still hold.
-    if (!chain.length || (threshold <= 0 && !chain.some((entry) => isZcodeProvider(entry.providerId)))) return { chain, room:chain.length > 0 };
+    if (!chain.length || (threshold <= 0 && !chain.some((entry) => isZcodeProvider(entry.providerId)))) return { chain, room:chain.length > 0, nextReset:null };
     const holds = await Promise.all(chain.map((entry) => services.providerUsage.hold({ providerId:entry.providerId, model:entry.model, hostId, threshold, settings })));
     const usable = chain.filter((_, index) => !holds[index]);
     if (usable.length) chain.forEach((entry, index) => { if (holds[index]) ctx.log(`writer ${taskId}: ${entry.providerId}/${entry.model} skipped, ${usageHoldReason(entry.providerId, entry.model, holds[index]!)}`); });
-    return usable.length ? { chain:usable, room:true } : { chain, room:false };
+    const resets = holds.flatMap((hold) => (hold?.resetsAt ? [hold.resetsAt] : [])).sort();
+    return usable.length ? { chain:usable, room:true, nextReset:resets[0] ?? null } : { chain, room:false, nextReset:resets[0] ?? null };
   }
 
   /** Jev's writer for a task, once per task (kept in the KV), as the settings it changes; null keeps the project's writer. */
@@ -445,7 +447,11 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
       // attempt of the task sees the same pair (the pick is kept per task).
       const baseSettings=(await effectiveProjectSettings(input.projectId,getRunSettingsScopes(db,input.runId))).values;
       const writerOverlay=await pickWriter(baseSettings, input);
-      const runSettings=writerOverlay ? { ...baseSettings, ...writerOverlay } : rotatedWriterSettings(baseSettings, input.taskId);
+      let runSettings=writerOverlay ? { ...baseSettings, ...writerOverlay } : rotatedWriterSettings(baseSettings, input.taskId);
+      // The task's writer pair, pinned across restarts and re-dispatches (hive H-01): a kept pin wins over a fresh
+      // rotation; the pair moves only on a provider failure or a failure-class intervention, and the move's reason is kept.
+      const pairPin = configuredSetting(runSettings, "writer.pair_pin") === "off" ? null : await loadWriterPin(bb.storage.kv as never, input.runId, input.taskId);
+      if (pairPin) runSettings = { ...runSettings, "writer.provider": pairPin.providerId, "writer.model": pairPin.model };
       // Only the writer keys travel to the spawn: the spawn reads the stored settings again, and must see this choice, not the project's.
       const writerChoice=Object.fromEntries(Object.entries(runSettings).filter(([key, value]) => key.startsWith("writer.") && value !== baseSettings[key]));
       const budget=services.runBudgetFor(input.runId,runSettings);
@@ -710,6 +716,9 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
             primaryFailure = { status:"spawn_rejected", reason, attemptId };
             break;
           }
+          // A pause the last failure's class asks for before the next attempt (writer.class_cooldowns, hive H-14).
+          const classCooldown = failureClassCooldownMs(failureClass(String(last.status), typeof last.reason === "string" ? last.reason : null), runSettings);
+          if (classCooldown > 0) await new Promise((resolve) => setTimeout(resolve, classCooldown));
           // The task's overall budget of writers, kept across reloads and restarts (retry-budget.ts).
           // A reassigned task's new writer spends no attempt of the task's budget (the PM asked for it).
           const spent = reassigned ? null : await spendRetryBudget(bb.storage.kv as never, input.runId, input.taskId, "attempt");
@@ -775,6 +784,8 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
               providerId:spawned.providerId,model:spawned.model,
               reasoningLevel:spawned.reasoningLevel,serviceTier:spawned.serviceTier,selectionSource:spawned.selectionSource,
             }:undefined;
+            if (writerSelection) await noteWriterPair(bb.storage.kv as never, input.runId, input.taskId,
+              { providerId:writerSelection.providerId, model:writerSelection.model }, "initial");
             activeConfig = freshConfig;
             activeTask = retargetTask(freshTask,spawned.workspacePath);
             // In a folder without git every attempt of the task starts from the same state (the owned files are rolled
@@ -1030,9 +1041,11 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         // pair is already excluded): another pass of this writer would only repeat the check.
         const primaryClass = failureClass(String(primaryFailure.status), typeof primaryFailure.reason === "string" ? primaryFailure.reason : null);
         const escalate = checkEscalation !== null && primaryClass === "task";
-        const fullChain = primaryClass === "provider" || primaryClass === "limit" || escalate
-          ? (await chainWithRoom(writerFallbackChain({providerId:primaryProvider,model:primaryModel},writerFallbacks(settings),pmSelection),input.config.hostId,settings,input.taskId)).chain
-          : [];
+        const fallbackList = writerFallbackChain({providerId:primaryProvider,model:primaryModel},writerFallbacks(settings),pmSelection);
+        const routed = primaryClass === "provider" || primaryClass === "limit" || escalate
+          ? await chainWithRoom(fallbackList,input.config.hostId,settings,input.taskId)
+          : { chain:[] as typeof fallbackList, room:false, nextReset:null };
+        const fullChain = routed.chain;
         const chain = escalate ? fullChain.slice(0, 1) : fullChain;
         let failure:Record<string, unknown>=escalate ? { ...primaryFailure, checkEscalation:true } : primaryFailure;
         const primaryAttemptId=typeof primaryFailure.attemptId === "string" ? primaryFailure.attemptId : attemptId;
@@ -1041,7 +1054,13 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         let continueFrom:ReturnType<typeof getAttempt>=!liveFolder&&unremovedWorktree?.id===primaryAttemptId ? unremovedWorktree : undefined;
         /** The last fallback writer that ran: its failure is the task's result once the chain has ended. */
         let lastFallbackAttemptId:string|null=null;
-        if (!chain.length) {
+        // Every writer provider is in a spent window: the task waits for the nearest reset, it is not a task failure.
+        if (!chain.length && primaryClass === "limit" && configuredSetting(settings, "writer.capacity_wait") !== "off") {
+          const reason = `capacity_saturated:${routed.nextReset ?? "unknown"}: every writer provider is over its usage window; the task waits for the nearest reset`;
+          const latest = getAttempt(db, primaryAttemptId);
+          if (latest && RETRY_ELIGIBLE.includes(latest.state as AttemptState)) transitionAttempt(db, latest.id, "blocked", { reason });
+          last = { ...last, status:"blocked", reason, emergencyFallback:{ state:"skipped", reason:"capacity_saturated" } };
+        } else if (!chain.length) {
           if (escalate && checkEscalation) {
             const stuck = getAttempt(db, typeof primaryFailure.attemptId === "string" ? primaryFailure.attemptId : attemptId);
             if (stuck && RETRY_ELIGIBLE.includes(stuck.state as AttemptState)) transitionAttempt(db, stuck.id, "blocked", { reason:checkEscalation });
@@ -1114,6 +1133,8 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
               providerId:spawned.providerId,model:spawned.model,
               reasoningLevel:spawned.reasoningLevel,serviceTier:spawned.serviceTier,selectionSource:spawned.selectionSource,
             }:undefined;
+              if (writerSelection) await noteWriterPair(bb.storage.kv as never, input.runId, input.taskId,
+                { providerId:writerSelection.providerId, model:writerSelection.model }, `failure_class:${primaryClass}`);
               activeConfig=freshConfig;
               activeTask=retargetTask(freshTask,spawned.workspacePath);
               executionPacketSha256=spawned.executionPacketSha256 ?? null;
