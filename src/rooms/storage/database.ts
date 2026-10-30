@@ -462,6 +462,8 @@ export const migrations = [
   // Skill switch metric (Skill Entropy / arXiv 2608.05139): track skill switching in tasks vs failure. Append only.
   `CREATE TABLE IF NOT EXISTS lane_pilot_skill_metric (id TEXT PRIMARY KEY, attempt_id TEXT NOT NULL, task_id TEXT NOT NULL, run_id TEXT, project_id TEXT NOT NULL, skill_count INTEGER NOT NULL, switch_count INTEGER NOT NULL, skills_json TEXT NOT NULL, outcome TEXT NOT NULL, recorded_at INTEGER NOT NULL)`,
   `CREATE INDEX IF NOT EXISTS lane_pilot_skill_metric_recorded ON lane_pilot_skill_metric(recorded_at)`,
+  // W31 rank 6: why an attempt was canceled — a closed code list (cancel.ts CANCEL_CODES), NULL for cancels before 0.1.396. Append only.
+  `ALTER TABLE lane_pilot_attempt ADD COLUMN cancel_code TEXT`,
 ];
 
 export function openDatabase(bb: BbPluginApi): LanePilotDatabase {

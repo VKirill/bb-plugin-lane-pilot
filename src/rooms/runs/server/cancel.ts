@@ -5,6 +5,17 @@ import { valueAt } from "../../core/server";
 import { confirmWriterStopped } from "./writer-stop";
 import type { ServerCore } from "../../core/server";
 
+/** The closed list of cancel codes (W31 rank 6): every cancel names one, a caller that names none records `unknown`. The morning
+ * summary's cancel Pareto reads `lane_pilot_attempt.cancel_code`. */
+export const CANCEL_CODES = ["owner_cancel", "superseded", "run_closed", "wrong_contract", "stuck", "duplicate", "reassign", "unknown"] as const;
+export type CancelCode = (typeof CANCEL_CODES)[number];
+
+/** Stamps the cancel code on the attempt row; the first stamp wins (a request-time `reassign`/`owner_cancel` outranks the
+ * generic `stuck` a recovery writes when it settles the request). NULL stays for cancels written before the codes existed. */
+export function markCancelCode(db: Pick<ServerCore["db"], "prepare">, attemptId: string, code: CancelCode): void {
+  db.prepare("UPDATE lane_pilot_attempt SET cancel_code=COALESCE(cancel_code, ?) WHERE id=?").run(code, attemptId);
+}
+
 /** Stops the task's helper threads still running and closes their receipts canceled, so a canceled task leaves no helper running. */
 async function cancelStageHelpers(ctx: Pick<ServerCore, "bb" | "db">, attempt: NonNullable<ReturnType<typeof getAttempt>>): Promise<void> {
   const task = getTask(ctx.db, attempt.task_id);
@@ -14,12 +25,12 @@ async function cancelStageHelpers(ctx: Pick<ServerCore, "bb" | "db">, attempt: N
 }
 
 /** Cancels one attempt: a queued one at once, a running one once its writer's stop is observed. */
-export async function cancelAttemptById(ctx: Pick<ServerCore, "bb" | "db" | "cancelQueuedAttempt">, attemptId: string, rollback?: { noteStopped(attemptId: string): Promise<{ recorded: boolean; error?: string } | void> }, why?: string): Promise<{ ok:boolean; state:string; reason:string | null }> {
+export async function cancelAttemptById(ctx: Pick<ServerCore, "bb" | "db" | "cancelQueuedAttempt">, attemptId: string, rollback?: { noteStopped(attemptId: string): Promise<{ recorded: boolean; error?: string } | void> }, why?: string, code: CancelCode = "unknown"): Promise<{ ok:boolean; state:string; reason:string | null }> {
   const { bb, db } = ctx;
   const attempt = getAttempt(db, attemptId);
   if (!attempt) return { ok: false, state: "missing", reason: "attempt does not exist" };
   if (!attempt.thread_id) {
-    const canceled = ctx.cancelQueuedAttempt(attempt, why);
+    const canceled = ctx.cancelQueuedAttempt(attempt, why, code);
     if (canceled.ok) await cancelStageHelpers(ctx, attempt);
     return canceled;
   }
@@ -37,6 +48,7 @@ export async function cancelAttemptById(ctx: Pick<ServerCore, "bb" | "db" | "can
   if (!noted.recorded) noted = await record();
   const reason = why?.trim() || "canceled: writer stop observed";
   transitionAttempt(db, attempt.id, "canceled", { threadId: attempt.thread_id, reason });
+  markCancelCode(db, attempt.id, code);
   const task = getTask(db, attempt.task_id);
   const plan = getTaskPlan(db, attempt.task_id) ?? (task?.kind === "bb" ? valueAt(task.contract, "objective") : "") as string;
   for (const stageId of ["writer-agent", "verification", "acceptance-receipt"] as const) {

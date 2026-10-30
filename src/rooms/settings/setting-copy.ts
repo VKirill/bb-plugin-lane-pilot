@@ -173,6 +173,7 @@ export const SETTING_META: Record<string, SettingMeta> = {
   "writer.route_record": { label: "field_s532", help: "reason_s532" },
   "writer.capacity_wait": { label: "field_s533", help: "reason_s533" },
   "writer.capacity_wait_max_min": { label: "field_s539", help: "reason_s539", unit: "fieldUnitMinutes" },
+  "writer.pick_refusal_penalty": { label: "field_s550", help: "reason_s550" },
   "writer.class_cooldowns": { label: "field_s534", help: "reason_s534" },
   "writer.cooldown_max_ms": { label: "field_s535", help: "reason_s535", unit: "fieldUnitSeconds" },
   "writer.task_wall_clock_min": { label: "field_s536", help: "reason_s536", unit: "fieldUnitMinutes" },

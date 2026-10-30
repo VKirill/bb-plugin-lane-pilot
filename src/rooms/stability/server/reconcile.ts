@@ -1,4 +1,5 @@
 import { DISPATCH_STAGES_PENDING } from "../../runs";
+import { markCancelCode } from "../../runs/server/cancel";
 import { taskV2Schema } from "../../contracts";
 import { countAttempts, endSpawnFailure, getAttempt, getRun, getTask, getTaskPlan, listOpenAttempts, setAttemptHolderThread, transitionAttempt } from "../../storage";
 import { closeHelperStages, closeWriterStages } from "../../runs/server/stage-records";
@@ -124,6 +125,7 @@ export function createReconcile(ctx: ServerCore, services: Services) {
     if (input.attempt.state === "cancel_requested") {
       await services.rollback?.noteStopped(input.attempt.id).catch(() => undefined);
       transitionAttempt(db, input.attempt.id, "canceled", { threadId:input.writerThreadId, reason:"writer stop observed during recovery" });
+      markCancelCode(db, input.attempt.id, "stuck");
       refreshRun(input.attempt.run_id);
       return true;
     }
@@ -163,6 +165,7 @@ export function createReconcile(ctx: ServerCore, services: Services) {
       await services.rollback?.noteStopped(attemptId).catch(() => undefined);
       if (getAttempt(db, attemptId)?.state !== "cancel_requested") return;
       transitionAttempt(db, attemptId, "canceled", { threadId, reason:"writer stop observed during recovery" });
+      markCancelCode(db, attemptId, "stuck");
       refreshRun(runId);
     } catch (cause) {
       ctx.log(`recovery could not finish the cancel of ${attemptId}: ${cause instanceof Error ? cause.message : String(cause)}`);

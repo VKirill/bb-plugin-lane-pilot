@@ -20,6 +20,8 @@ export type AttemptStage = { stageId: string; state: string; seconds: number | n
 export type AttemptMetrics = {
   taskId: string; attemptId: string; attemptNo: number; state: string; createdAt: number;
   seconds: number | null;
+  /** W31 rank 11: how long the attempt sat in `queued` (summed over re-queues); null while it is still queued. */
+  queueWaitMs?: number | null;
   stages: AttemptStage[]; stagesPassed: number; stagesFailed: number;
   gates: { passed: number; rejected: number };
   writer: { threadId: string | null; providerId: string | null; model: string | null; tier: ModelTier | null };
@@ -36,6 +38,8 @@ export type AttemptMetricsReport = {
     measuredCostUsd: number | null; measuredTokens: number | null;
     notMeasuredByProvider: Record<string, number>;
     stagesPassed: number; stagesFailed: number;
+    /** Queue-wait percentiles over the attempts whose queue time is settled. */
+    queueWait: { samples: number; p50Ms: number | null; p99Ms: number | null };
     /** First attempts (attempt_no = 1) grouped by writer tier: how many ran and how many were accepted. */
     firstByTier: Record<ModelTier | "unknown", { first: number; accepted: number }>;
   };
@@ -44,6 +48,7 @@ export type AttemptMetricsReport = {
 
 type AttemptRow = { id: string; run_id: string; task_id: string; attempt_no: number; state: string; thread_id: string | null; created_at: number; updated_at: number };
 type StageEventRow = { run_id: string; task_id: string; stage_id: string; state: string; occurred_at: number };
+type TransitionRow = { attempt_id: string; from_state: string; to_state: string; at: number };
 type GateEventRow = { run_id: string; task_id: string; status: string; occurred_at: number };
 type CursorRow = { thread_id: string; provider_id: string; last_provider: string; last_model: string; total_json: string };
 
@@ -65,6 +70,34 @@ function stageRecords(events: readonly StageEventRow[]): AttemptStage[] {
   return out;
 }
 
+/** Total ms an attempt waited in `queued`: the closed segments of its transition journal, from `created_at` to leaving the
+ * queue (a re-queue starts a new segment). -1 while the attempt is still queued — the wait is not settled. */
+export function queueWaitMs(transitions: readonly TransitionRow[], attempt: { id: string; state: string; created_at: number }): number {
+  if (attempt.state === "queued") return -1;
+  let enter: number | null = attempt.created_at, wait = 0;
+  for (const row of transitions) {
+    if (row.to_state === "queued") { enter = row.at; continue; }
+    if (row.from_state === "queued" && enter !== null) { wait += Math.max(0, row.at - enter); enter = null; }
+  }
+  return wait;
+}
+
+const percentile = (sorted: readonly number[], p: number): number | null =>
+  sorted.length ? sorted[Math.min(sorted.length - 1, Math.max(0, Math.ceil(sorted.length * p) - 1))]! : null;
+
+/** Queue waits of one run's attempts, settled only — the run card's p50/p99. */
+export function runQueueWaits(db: Database.Database, runId: string): number[] {
+  const attempts = db.prepare("SELECT id, state, created_at FROM lane_pilot_attempt WHERE run_id=?").all(runId) as Array<{ id: string; state: string; created_at: number }>;
+  const transitions = db.prepare(`SELECT t.attempt_id, t.from_state, t.to_state, t.at FROM lane_pilot_attempt_transition t
+    JOIN lane_pilot_attempt a ON a.id=t.attempt_id WHERE a.run_id=? AND t.refused=0 ORDER BY t.attempt_id, t.at, t.rowid`).all(runId) as TransitionRow[];
+  const byAttempt = new Map<string, TransitionRow[]>();
+  for (const row of transitions) byAttempt.set(row.attempt_id, [...(byAttempt.get(row.attempt_id) ?? []), row]);
+  return attempts.map((attempt) => queueWaitMs(byAttempt.get(attempt.id) ?? [], attempt)).filter((ms) => ms >= 0).sort((a, b) => a - b);
+}
+
+export const queueWaitPercentiles = (waits: readonly number[]): { samples: number; p50Ms: number | null; p99Ms: number | null } =>
+  ({ samples: waits.length, p50Ms: percentile(waits, 0.5), p99Ms: percentile(waits, 0.99) });
+
 /** `taskId` narrows the report to one task (the acceptance card); the window and the numbers are the same as for the project. */
 export function attemptMetrics(db: Database.Database, input: { projectId: string; days: number; now?: number; taskId?: string }): AttemptMetricsReport {
   const now = input.now ?? Date.now();
@@ -77,6 +110,12 @@ export function attemptMetrics(db: Database.Database, input: { projectId: string
     WHERE project_id = ? AND occurred_at >= ? ${input.taskId ? "AND task_id = ?" : ""} ORDER BY id`).all(input.projectId, since - DAY_MS, ...(input.taskId ? [input.taskId] : [])) as StageEventRow[];
   const gateEvents = db.prepare(`SELECT run_id, task_id, status, occurred_at FROM lane_pilot_gate_event
     WHERE project_id = ? AND occurred_at >= ? ${input.taskId ? "AND task_id = ?" : ""} ORDER BY id`).all(input.projectId, since - DAY_MS, ...(input.taskId ? [input.taskId] : [])) as GateEventRow[];
+  const transitions = db.prepare(`SELECT t.attempt_id, t.from_state, t.to_state, t.at FROM lane_pilot_attempt_transition t
+    JOIN lane_pilot_attempt a ON a.id = t.attempt_id JOIN lane_pilot_run r ON r.id = a.run_id
+    WHERE r.project_id = ? AND a.created_at >= ? AND t.refused = 0 ${input.taskId ? "AND a.task_id = ?" : ""} ORDER BY t.attempt_id, t.at, t.rowid`)
+    .all(input.projectId, since, ...(input.taskId ? [input.taskId] : [])) as TransitionRow[];
+  const transitionsByAttempt = new Map<string, TransitionRow[]>();
+  for (const row of transitions) transitionsByAttempt.set(row.attempt_id, [...(transitionsByAttempt.get(row.attempt_id) ?? []), row]);
   const threadIds = [...new Set(attempts.flatMap((row) => row.thread_id ? [row.thread_id] : []))];
   const cursors = new Map<string, CursorRow>();
   const cursorQuery = db.prepare("SELECT thread_id, provider_id, last_provider, last_model, total_json FROM lane_pilot_token_cursor WHERE thread_id = ?");
@@ -125,6 +164,7 @@ export function attemptMetrics(db: Database.Database, input: { projectId: string
       rows.push({
         taskId: attempt.task_id, attemptId: attempt.id, attemptNo: attempt.attempt_no, state: attempt.state, createdAt: attempt.created_at,
         seconds: TERMINAL_ATTEMPT.has(attempt.state) ? Math.max(0, Math.round((attempt.updated_at - attempt.created_at) / 1000)) : null,
+        queueWaitMs: (() => { const ms = queueWaitMs(transitionsByAttempt.get(attempt.id) ?? [], attempt); return ms >= 0 ? ms : null; })(),
         stages, stagesPassed: stages.filter((row) => row.state === "passed").length,
         stagesFailed: stages.filter((row) => row.state === "failed" || row.state === "blocked").length,
         gates: { passed: gates.filter((row) => row.status === "passed").length, rejected: gates.filter((row) => row.status === "rejected" || row.status === "failed").length },
@@ -149,6 +189,7 @@ export function attemptMetrics(db: Database.Database, input: { projectId: string
       measuredTokens: measured.length ? measured.reduce((sum, row) => sum + (row.tokens?.total ?? 0), 0) : null,
       notMeasuredByProvider,
       stagesPassed: rows.reduce((sum, row) => sum + row.stagesPassed, 0), stagesFailed: rows.reduce((sum, row) => sum + row.stagesFailed, 0),
+      queueWait: queueWaitPercentiles(rows.flatMap((row) => row.queueWaitMs == null ? [] : [row.queueWaitMs]).sort((a, b) => a - b)),
       firstByTier: firstByTier(rows),
     },
     attempts: rows,

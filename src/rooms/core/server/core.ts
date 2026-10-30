@@ -264,7 +264,7 @@ export function createCore(bb: BbPluginApi, db: LanePilotDatabase) {
     }
   }
 
-  function cancelQueuedAttempt(attempt: NonNullable<ReturnType<typeof getAttempt>>, why?: string): {ok:boolean;state:string;reason:string|null} {
+  function cancelQueuedAttempt(attempt: NonNullable<ReturnType<typeof getAttempt>>, why?: string, code?: string): {ok:boolean;state:string;reason:string|null} {
     const rejection=cancelRejection(db,attempt);
     if(rejection)return {ok:false,state:attempt.state,reason:rejection};
     // Its writer is being started: mark it, and the spawn stops the thread it gets (an owner's stop must hold).
@@ -275,6 +275,7 @@ export function createCore(bb: BbPluginApi, db: LanePilotDatabase) {
     if(attempt.state!=="queued"||attempt.thread_id)return {ok:false,state:attempt.state,reason:"attempt has no writer thread"};
     const reason = why?.trim() || "canceled while waiting for a writer";
     transitionAttempt(db,attempt.id,"canceled",{reason});
+    db.prepare("UPDATE lane_pilot_attempt SET cancel_code=? WHERE id=?").run(code ?? "unknown", attempt.id);
     markCanceledWriterStages(attempt,reason);
     refreshRun(attempt.run_id);
     return {ok:true,state:"canceled",reason:null};

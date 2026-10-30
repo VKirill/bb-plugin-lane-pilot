@@ -1013,6 +1013,8 @@ export const fieldEn = {
   reason_s526: "How many accepted tasks one night loop runs the diff-hidden audit on to detect blind passes and phantom findings; 0 turns the audit off. Default 3.",
   field_s527: "Monthly model routing rebench",
   reason_s527: "Whether the 1st of the month schedule runs the model routing rebench (lp.model-rebench) comparing Jev model choices with task outcomes. Default on.",
+  field_s550: "Refusal penalty in the writer pick",
+  reason_s550: "on charges a provider+model pair for the share of this project's attempts on it that ended in a provider refusal over 30 days (counted from 10 attempts) when Jev picks the writer; off keeps the pre-penalty spread. Default on.",
 } as const;
 
 export const fieldRu: { [K in keyof typeof fieldEn]: string } = {
@@ -2029,4 +2031,6 @@ export const fieldRu: { [K in keyof typeof fieldEn]: string } = {
   reason_s526: "Сколько принятых задач за одну ночную петлю проверяются аудитом со скрытым диффом для выявления слепых пропусков и фантомных замечаний; 0 выключает аудит. По умолчанию 3.",
   field_s527: "Месячный ре-бенч выбора моделей",
   reason_s527: "Запускать ли 1-го числа месяца граф ре-бенча маршрутизации моделей (lp.model-rebench) со сравнением выбора Jev с исходами задач. По умолчанию on.",
+  field_s550: "Штраф за отказы при выборе писателя",
+  reason_s550: "on наказывает пару провайдер+модель за долю отказов провайдера на попытках этого проекта за 30 дней (считается от 10 попыток) при выборе писателя Jev; off оставляет прежний разброс. По умолчанию on.",
 };

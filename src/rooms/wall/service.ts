@@ -12,7 +12,7 @@ import { postOwnerItem } from "../owner-waiting";
 import { WALL_CONFIG_KEY, parseWallConfig, type WallConfig } from "./config";
 import { classVersions, collectEntries, getClass, graphRecurrence, listClasses, nightOf, refreshClasses, writeEntries, type WallDb } from "./journal";
 import { afterFailedMove, ladderStep } from "./ladder";
-import { composeWallMorning } from "./morning";
+import { cancelParetoLine, composeWallMorning } from "./morning";
 import { promotionMorningLine } from "../rule-forms";
 import { diffHiddenMorningLine } from "../checkers/server";
 import { modelRebenchMorningLine } from "../night-graphs";
@@ -925,6 +925,7 @@ export function createWall(deps: WallDeps) {
         `${statsEpochLine(statsEpoch(db))}.`,
         ...composeWallMorning(db, ports.now()),
         watchMorningLine(db, ports.now()),
+        ...(cancelParetoLine(db, ports.now()) ? [cancelParetoLine(db, ports.now())!] : []),
         ...(promotionMorningLine(db) ? [promotionMorningLine(db)!] : []),
         ...(diffHiddenMorningLine(db as never, ports.now()) ? [diffHiddenMorningLine(db as never, ports.now())!] : []),
         ...(modelRebenchMorningLine(db as never, ports.now()) ? [modelRebenchMorningLine(db as never, ports.now())!] : []),
@@ -953,6 +954,7 @@ export function createWall(deps: WallDeps) {
       `${statsEpochLine(statsEpoch(db))}.`,
       ...composeWallMorning(db, now ?? ports.now()),
       watchMorningLine(db, now ?? ports.now()),
+      ...(cancelParetoLine(db, now ?? ports.now()) ? [cancelParetoLine(db, now ?? ports.now())!] : []),
       ...(promotionMorningLine(db) ? [promotionMorningLine(db)!] : []),
       ...(diffHiddenMorningLine(db as never, now ?? ports.now()) ? [diffHiddenMorningLine(db as never, now ?? ports.now())!] : []),
       ...(modelRebenchMorningLine(db as never, now ?? ports.now()) ? [modelRebenchMorningLine(db as never, now ?? ports.now())!] : []),

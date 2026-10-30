@@ -18,7 +18,9 @@ export const rpcOps = {
     output: z.unknown(),
   },
   cancel_attempt: {
-    input: z.object({ attemptId: z.string().min(1) }).strict(),
+    input: z.object({ attemptId: z.string().min(1),
+      /** W31 rank 6: the closed cancel-code list; a call without it (or with a value outside it) lands as `unknown`. */
+      code: z.enum(["owner_cancel", "superseded", "run_closed", "wrong_contract", "stuck", "duplicate", "reassign", "unknown"]).catch("unknown").default("unknown") }).strict(),
     output: z.object({ ok: z.boolean(), state: z.string(), reason: z.string().nullable() }).strict(),
   },
   retry_attempt: {
