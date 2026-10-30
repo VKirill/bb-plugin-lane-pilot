@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   ROLE_IDS, ROLE_MODEL_OPTIONS, ROLE_TABLE, WRITER_PROFILES, consistentProvider, crossFamilyPeer, crossFamilyPeers, judgeAgainstAuthor, modelFamily, modelTier, offeredForRole, peerOffSpent,
-  resolveRoleModel, roleFallbackModel, roleModelKey, roleModelProblem, roleModelOption, roleRowOf, type ModelCatalog,
+  resolveRoleModel, roleFallbackModel, roleModelKey, roleModelProblem, roleModelOption, roleRow, roleRowOf, type ModelCatalog,
 } from "@lane-pilot/models";
 
 describe("the table «role -> model»", () => {
@@ -42,8 +42,11 @@ describe("the table «role -> model»", () => {
   });
 
   it("reads a role name the way a graph writes it", () => {
-    expect(roleRowOf("specialist:design-lead")).toBe("specialist");
+    expect(roleRowOf("specialist:design-lead")).toBe("design-lead");
+    expect(roleRowOf("game-dev")).toBe("game-dev");
     expect(roleRowOf("specialist:anything-the-owner-made")).toBe("specialist");
+    expect(roleRow("copy-lead").default.model).toBe("claude-sonnet-5-5");
+    expect(roleRow("macos-operator").default.effort).toBe("medium");
     expect(roleRowOf("code-critic")).toBe("code-critic");
     expect(roleRowOf("gate-triage")).toBe("triager");
     expect(roleRowOf("night-reviewer")).toBe("auditor");

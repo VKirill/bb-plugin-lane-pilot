@@ -134,6 +134,12 @@ export const rpcNative = {
       agentId: z.string().min(1),
       profileMode: z.enum(["installed", "session-override"]),
       cliAgentsCollision: z.enum(["pending", "thread", "mention"]).nullable(),
+      environment: z.object({
+        type: z.literal("host"),
+        hostId: z.string(),
+        workspace: z.object({ type: z.literal("unmanaged"), path: z.string() }).strict(),
+      }).strict().nullable(),
+      placementNote: z.string().nullable(),
     }).strict(),
   },
   /** Whether an existing chat can change its agent, and which agent it runs (or will on its next message). */

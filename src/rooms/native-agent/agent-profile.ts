@@ -1,10 +1,11 @@
 import { z } from "zod";
 import bundledAgents from "./bundled-agents.json";
+import { EMPLOYEES, machineAffinitySchema, stockEmployee } from "./employee-manifest";
 import { isCliLaneAgentPrompt, isInternalAgent, isLanePmAgent, laneSessionOverlayPrompt, overlayDisallowedTools, overlaySessionTools } from "./native-agent-overlay";
 import { WORKFLOW_ARCHITECT_ID, WORKFLOW_ARCHITECT_NAME, WORKFLOW_ARCHITECT_TOOLS } from "../workflow";
 import { sha256Hex } from "@lane-pilot/kit";
 
-export const MAIN_AGENT_ID = /^[a-z][a-z0-9-]{0,63}$/;
+export const MAIN_AGENT_ID = /^[a-z0-9][a-z0-9-]{0,63}$/;
 export const MAIN_AGENT_PROFILE_IDS = [
   "dev-orchestrator",
   "copy-lead",
@@ -13,6 +14,12 @@ export const MAIN_AGENT_PROFILE_IDS = [
   "project-onboarder",
   "tavily",
   "video-lead",
+  "3d-artist",
+  "game-dev",
+  "social-manager",
+  "billing-assistant",
+  "visual-artist",
+  "macos-operator",
   WORKFLOW_ARCHITECT_ID,
   // (2026-10-29 lane-stack port) standalone roles. browser-qa stays reserved for the lp.browser-qa graph.
   "advisor-researcher",
@@ -52,6 +59,12 @@ export const customAgentMetaSchema = z.object({
   effort: z.enum(["low", "medium", "high", "xhigh", "max"]).optional(),
   createdAt: z.number().int().optional(),
   updatedAt: z.number().int().optional(),
+  domain: z.string().min(1).max(40).optional(),
+  machineAffinity: machineAffinitySchema.optional(),
+  deliverables: z.array(z.string().min(1)).max(16).optional(),
+  validator: z.string().min(1).max(40).optional(),
+  coreSkills: z.array(z.string().min(1)).max(64).optional(),
+  skillSections: z.array(z.string().min(1)).max(24).optional(),
 }).strict();
 export type CustomAgentMeta = z.infer<typeof customAgentMetaSchema>;
 
@@ -149,21 +162,37 @@ type BundledAgent = {
   provenance: { package: string; version: string; file: string; sha256: string; bytes: number };
 };
 
+const EMPLOYEE_TOOLS = ["Read", "Write", "Edit", "Glob", "Grep", "Bash", "WebFetch", "WebSearch"];
+
+function ownedEmployee(id: string, displayName: string): BundledAgent {
+  return {
+    displayName,
+    prompt: laneSessionOverlayPrompt(id),
+    tools: EMPLOYEE_TOOLS,
+    skills: [...(EMPLOYEES[id]?.coreSkills ?? [])],
+    mcpServers: [],
+    omittedNativeFields: ["model", "effort", "permissionMode"],
+    provenance: { package: "bb-plugin-lane-pilot", version: "bb-session-1", file: "src/rooms/native-agent/employee-manifest.ts", sha256: "", bytes: 0 },
+  };
+}
+
 /** Lane Pilot's own profiles: they are not in the Claude Lane Stack catalog the JSON is generated from. */
 const OWNED_PROFILES: Record<string, BundledAgent> = {
   "video-lead": {
     displayName: "Video",
     prompt: laneSessionOverlayPrompt("video-lead"),
     tools: ["Read", "Write", "Edit", "Glob", "Grep", "Bash", "WebFetch", "WebSearch"],
-    skills: [
-      "video-lead-playbook", "hyperframes", "hyperframes-cli", "hyperframes-registry", "media-use", "procedural-film", "video-to-reels", "business-motion-film",
-      "video-transcribe", "video-sound", "manimgx", "anatomy", "claude-video",
-      "remotion:remotion-best-practices", "remotion:remotion-render", "remotion:remotion-create",
-    ],
+    skills: [...EMPLOYEES["video-lead"]!.coreSkills],
     mcpServers: [],
     omittedNativeFields: ["model", "effort", "permissionMode"],
     provenance: { package: "bb-plugin-lane-pilot", version: "bb-session-1", file: "src/rooms/native-agent/native-agent-overlay.ts", sha256: "", bytes: 0 },
   },
+  "3d-artist": ownedEmployee("3d-artist", "3D artist"),
+  "game-dev": ownedEmployee("game-dev", "Game developer"),
+  "social-manager": ownedEmployee("social-manager", "Social manager"),
+  "billing-assistant": ownedEmployee("billing-assistant", "Billing assistant"),
+  "visual-artist": ownedEmployee("visual-artist", "Visual artist"),
+  "macos-operator": ownedEmployee("macos-operator", "macOS operator"),
   [WORKFLOW_ARCHITECT_ID]: {
     displayName: WORKFLOW_ARCHITECT_NAME.en,
     prompt: laneSessionOverlayPrompt(WORKFLOW_ARCHITECT_ID),
@@ -248,7 +277,9 @@ export function compileMainAgentProfile(
   const stockTools = template?.tools?.length ? overlaySessionTools(id, template.tools) : undefined;
   const tools = pickResource(overrides?.tools, stockTools);
   const disallowedTools = pickResource(overrides?.disallowedTools, stockTools ? overlayDisallowedTools(id, template?.disallowedTools) : template?.disallowedTools);
-  const skills = pickResource(overrides?.skills, template?.skills);
+  const employee = stockEmployee(id);
+  const bundledSkills = employee ? (employee.coreSkills.length ? [...employee.coreSkills] : undefined) : template?.skills;
+  const skills = pickResource(overrides?.skills, bundledSkills);
   const mcpServers = pickResource(overrides?.mcpServers, template?.mcpServers);
   const unsigned = {
     id,

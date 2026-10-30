@@ -5,6 +5,7 @@ import { compactContract, pmReadBrief } from "../writer-brief";
 import { summarizeThreadEvents, type ThreadEventLike } from "@lane-pilot/harness-core";
 import { cleanCheckOutput, failureExcerpt, sha256Hex } from "@lane-pilot/kit";
 import { fileAllowedByOwns, matchOwnsPath } from "@lane-pilot/kit";
+import { SKILL_CATALOG_BLOCK } from "../../native-agent";
 import { PLAN_FACT_BRIEF_LINE , MARKER_BRIEF_LINE, gateVocabularyLines } from "../../tasks";
 export function outputText(value: unknown): string {
   for (const key of ["text", "output", "lastAssistantText", "content"]) {
@@ -281,6 +282,7 @@ export function writerBriefSegments(task: TaskV2, memoryText="", executionPacket
   const hidden = (text: string): BriefSegment => ({ text, hidden:true });
   return [
     hidden(`You are ${agent}, the Lane Pilot writer for one bounded task.`),
+    hidden(SKILL_CATALOG_BLOCK),
     ...writerSetupLines(liveFolder).map(hidden),
     hidden(`If the task cannot be done as written (the contract contradicts itself or the code, or something it needs is missing), change no files and answer with the first line \`${NEEDS_HUMAN_MARKER} <one question>\`. A stop costs the owner a round trip; use it only when a wrong guess would put wrong work into main (a missing secret, access or package, named; a product decision; a contract the code contradicts). Settle anything the code or docs answer yourself and name the decision in your answer.`),
     hidden("Done when your change is complete and each verification command would exit 0; Lane Pilot runs them in a sandbox and returns a failure to you in this thread. Answer with the changed paths. If a check cannot run here or an expected output is not needed, stop with NEEDS_HUMAN as above."),

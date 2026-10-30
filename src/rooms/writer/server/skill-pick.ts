@@ -1,5 +1,6 @@
 import { basename, dirname, join } from "node:path";
 import { pickWriterSkills, skillCatalog, type CatalogEntry, type KindCache, type ListedSkill, type SkillAsk, type SkillPick, type PickTaskInput } from "@lane-pilot/jev/judgments/skill-pick";
+import { candidateNames, readSkillTreeText, skillTreeCached } from "./skill-tree";
 import type { TaskV2 } from "../../contracts";
 import type { ServerCore } from "../../core/server";
 
@@ -122,6 +123,9 @@ export function createWriterSkillPick(ctx: Pick<ServerCore, "bb" | "host">, opti
     const enabled = skillPickOn(input.settings["writer.skill_pick"]);
     const run = async (): Promise<{ result: SkillPick; folders: Map<string, string> }> => {
       const listing = await listingOf(input.projectId, input.hostId);
+      const tree = await skillTreeCached(readSkillTreeText);
+      const text = [input.task.title, input.task.objective, input.task.area ?? "", ...input.task.owns_paths].join("\n");
+      const names = tree ? candidateNames(tree, text) : null;
       const result = await pickWriterSkills({
         enabled,
         catalog: listing.catalog,
@@ -131,6 +135,7 @@ export function createWriterSkillPick(ctx: Pick<ServerCore, "bb" | "host">, opti
         projectCwd: input.projectCwd,
         ask: askJev(input.hostId),
         kindCache,
+        candidates: names?.length ? names : null,
       });
       return { result, folders: listing.folders };
     };

@@ -13,7 +13,7 @@ export { noteZcodeThread, zcodeBusy, zcodeBusyPeek } from "./zcode-slot";
 export type { SpawnUsage, SpawnUsageUse } from "./spawn-model";
 export type { SpawnModelInput } from "./spawn-model";
 export { abortable, scheduleIsolated } from "./schedules";
-export { folderEnvironment, hiddenPlacement, projectFolder } from "./standalone-place";
+export { folderEnvironment, hiddenPlacement, projectFolder, projectSources } from "./standalone-place";
 export type { ProjectFolder } from "./standalone-place";
 export { stageHelperSettings } from "./stage-settings";
 export type { Services } from "./services";

@@ -20,7 +20,7 @@ import { definitionSha256, globalWorkflowDir } from "../../storage";
 import { loadWorkflow } from "@lane-pilot/workflow-engine";
 import { configuredSetting } from "../../core/server";
 import { SPECIALIST_ROLES } from "../../critique/server";
-import { isCustomAgentId } from "../../native-agent";
+import { EMPLOYEE_IDS, isCustomAgentId, isEmployeeSpecialist } from "../../native-agent";
 import { modelCatalogOf } from "../../core/server";
 import { registerObservedTool, ToolError } from "../../core/server";
 import { stringAt } from "../../core/server";
@@ -61,7 +61,7 @@ export function realDeps(ctx: ServerCore, services: Services): ArchitectDeps {
   return {
     globalDir: () => globalWorkflowDir(),
     specialistKnown: (id) => {
-      if (SPECIALIST_ROLES.includes(id as never)) return true;
+      if (SPECIALIST_ROLES.includes(id as never) || isEmployeeSpecialist(id)) return true;
       const own = ctx.knownCustomAgentIds();
       return own ? own.has(id) : null;
     },
@@ -98,7 +98,7 @@ export function realDeps(ctx: ServerCore, services: Services): ArchitectDeps {
         const value = configuredSetting(loadProjectSettings(db, projectId, runId ? getRunSettingsScopes(db, runId) : []), QA_HOST_KEY);
         return typeof value === "string" && value.trim() ? value.trim() : null;
       },
-      specialists: async () => [...SPECIALIST_ROLES, ...Object.entries(await ctx.ownedAgents()).filter(([id, row]) => isCustomAgentId(id) && !row.compiledCorrupt).map(([id]) => id)],
+      specialists: async () => [...new Set([...SPECIALIST_ROLES, ...EMPLOYEE_IDS, ...Object.entries(await ctx.ownedAgents()).filter(([id, row]) => isCustomAgentId(id) && !row.compiledCorrupt).map(([id]) => id)])],
       models: async () => {
         const read = await Promise.race([catalog.get(), new Promise<null>((resolveTimeout) => setTimeout(() => resolveTimeout(null), 6_000))]);
         if (!read) return null;

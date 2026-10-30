@@ -1,5 +1,10 @@
 // Public API of native-agent: what other rooms import. Everything else in this room is private.
 // Add a name here to make it public; scripts/refactor/barrels.ts wrote the first version from the existing imports.
+export { EMPLOYEES, EMPLOYEE_IDS, RESULT_EXISTS, coreSkillsOf, employeeView, installEmployeeSpecialists, isEmployeeSpecialist, resultExists, stockEmployee } from "./employee-manifest";
+export type { EmployeeManifest, MachineAffinity } from "./employee-manifest";
+export { SKILL_CATALOG_BLOCK, SKILL_CATALOG_LINE, SKILL_CATALOG_LIMIT } from "./skill-catalog";
+export { AFFINITY_HOSTS, chooseEmployeePlace, placeEmployeeOn } from "./employee-place";
+export type { EmployeePlace } from "./employee-place";
 export { agentPickerLabel } from "./agent-display";
 export { applyResourceMode, collectAgentInventory } from "./agent-inventory";
 export { MAIN_AGENT_ID, MAIN_AGENT_PROFILE_IDS, agentKind, isStockProfileId, compileEffectiveMainAgent, compileMainAgentProfile, detectCompiledMainAgentCapability, parseOwnedAgents } from "./agent-profile";
