@@ -23,6 +23,9 @@ export function createLiveFolder(ctx: ServerCore) {
    * Whether the folder has no git, asked on its own host. A run's answer for its folder is kept, so a `git init` in the
    * middle of a run cannot change the baseline kind under it. Another path of a run (a worktree) is git by construction.
    */
+  // Concurrent askers (the dispatch test-hint, the spawn probe) share one probe; a second rev-parse would break the
+  // "one git command on a plain folder" contract of live-folder.
+  const probing = new Map<string, Promise<"git" | "no-git" | "unknown">>();
   async function isLiveFolder(runId: string | undefined, hostId: string, folder: string): Promise<boolean> {
     const bound = runId ? getRun(db, runId)?.writer_workspace_path : null;
     if (bound && resolve(bound) !== resolve(folder)) return false;
@@ -33,8 +36,16 @@ export function createLiveFolder(ctx: ServerCore) {
       if (saved === "no-git") return true;
       if (saved === "git") return false;
     }
-    const ran = await runOnHost(host, { hostId, cwd: folder, command: LIVE_FOLDER_PROBE_COMMAND, timeoutSec: 15 }).catch(() => null);
-    const kind = classifyFolderProbe(ran);
+    const probeKey = `${hostId}:${folder}:${key ?? ""}`;
+    let pending = probing.get(probeKey);
+    if (!pending) {
+      pending = runOnHost(host, { hostId, cwd: folder, command: LIVE_FOLDER_PROBE_COMMAND, timeoutSec: 15 })
+        .then(classifyFolderProbe)
+        .catch(() => "unknown" as const)
+        .finally(() => { probing.delete(probeKey); });
+      probing.set(probeKey, pending);
+    }
+    const kind = await pending;
     if (key && kv && kind !== "unknown") await kv.set(key, kind as never).catch(() => undefined);
     return kind === "no-git";
   }
