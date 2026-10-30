@@ -208,6 +208,16 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
     let acceptedAttemptId:string|null=null;
     const pmReadContext=input.pmReadContext ?? stringAt(listStageReceipts(db,input.runId,input.taskId).find((row)=>row.stageId==="pm-read")?.result,"summary") ?? "";
     let releaseWriterSlot:(()=>void)|undefined;
+    // This start owns the live-writer key until it drops it. A question drops the key before the cleanup
+    // awaits (a worktree remove can hang); the finally still frees the pool slot, and must not delete a key
+    // a later answer's start has taken.
+    let holdsLiveWriter = true;
+    const dropLiveWriterKey = () => {
+      if (!holdsLiveWriter) return;
+      holdsLiveWriter = false;
+      admitted.delete(key);
+      services.activeWriterTasks.delete(key);
+    };
     // A folder without git: one writer at a time edits its live files, and a failed attempt is rolled back from the
     // backup its first spawn made (feedback turns in the same thread keep working on the live files, so they keep it).
     let liveFolder = false;
@@ -743,6 +753,10 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
           if(workspaceBinding?.workspace_path) last={...last,workspace:{path:workspaceBinding.workspace_path,
             environmentId:workspaceBinding.environment_id,decision:workspaceBinding.workspace_decision,
             ...(isLiveDecision(workspaceBinding.workspace_decision)?{mode:LIVE_FOLDER_RECEIPT}:{})}};
+          // The question is already on the attempt. Drop the live-writer key before the awaits below (token
+          // events, retry lookup, worktree remove): while it stayed until finally, the question sweep skipped
+          // this task for the whole wait.
+          if (failureClass(String(last.status), typeof last.reason === "string" ? last.reason : null) === "judgment") dropLiveWriterKey();
           await noteAttemptOutcome({ budget, writerThreadId, writerSelection, status:String(last.status), reason:typeof last.reason === "string" ? last.reason : null });
           noteOwnFailure(last);
         }
@@ -997,6 +1011,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
                 attemptId:emergencyAttemptId,pmThreadId:input.pmThreadId,writerThreadId,dirtBefore,
                 emergencyFallback,
               }),emergencyFallback:{state:"completed",...emergencyFallback,attemptId:emergencyAttemptId}};
+              if (failureClass(String(last.status), typeof last.reason === "string" ? last.reason : null) === "judgment") dropLiveWriterKey();
               const workspaceBinding=getAttempt(db,emergencyAttemptId);
               if(workspaceBinding?.workspace_path) last={...last,workspace:{path:workspaceBinding.workspace_path,
                 environmentId:workspaceBinding.environment_id,decision:workspaceBinding.workspace_decision,
@@ -1019,7 +1034,11 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         }
       }
       // A worktree kept for a fallback that did not continue in it (no chain, a guard stopped it) is removed as any failed one.
-      if (unremovedWorktree) await removeWorktreeOf(unremovedWorktree);
+      // A writer's question keeps its worktree: the answer continues there. Removing it here also hung the live-writer
+      // key (the sweep then skipped the question) when the host call did not return.
+      const asked = failureClass(String(last.status), typeof last.reason === "string" ? last.reason : null) === "judgment";
+      const questionWorktree = asked && unremovedWorktree?.id === (typeof last.attemptId === "string" ? last.attemptId : attemptId);
+      if (unremovedWorktree && !questionWorktree) await removeWorktreeOf(unremovedWorktree);
       // Whatever the writers left in a folder without git is taken back when no attempt was accepted.
       if (last.status !== "accepted") await rollbackLive();
       // The task is over for these writers (a writer's question keeps its thread: its answer goes on there).
@@ -1111,8 +1130,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
       }
     }).finally(() => {
       releaseWriterSlot?.();
-      admitted.delete(key);
-      services.activeWriterTasks.delete(key);
+      dropLiveWriterKey();
     });
   }
 
