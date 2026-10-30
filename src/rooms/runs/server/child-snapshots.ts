@@ -46,7 +46,9 @@ export function spawnRefused(reason:string): boolean {
   return /^HTTP 4\d\d\b/.test(reason);
 }
 
-export type MemoryChildSnapshot = { acceptanceSha256:string; settings:MemorySettings; agent:string; dispatchInput?:unknown };
+export type MemoryChildSnapshot = { acceptanceSha256:string; settings:MemorySettings; agent:string; dispatchInput?:unknown;
+  /** J-002 wave batch: the pending accepted-fact rows this run summarizes and the task ids to stamp on success. */
+  facts?:Array<{taskId:string;title:string;acceptedResult:unknown}>; factTaskIds?:string[] };
 
 export function memoryChildSnapshot(result:unknown): MemoryChildSnapshot|null {
   const snapshot = childResultObject(result).snapshot;
@@ -58,6 +60,8 @@ export function memoryChildSnapshot(result:unknown): MemoryChildSnapshot|null {
   return {
     acceptanceSha256:row.acceptanceSha256, settings, agent:row.agent,
     ...(row.dispatchInput !== undefined ? { dispatchInput:row.dispatchInput } : {}),
+    ...(Array.isArray(row.facts) ? { facts:row.facts as MemoryChildSnapshot["facts"] } : {}),
+    ...(Array.isArray(row.factTaskIds) ? { factTaskIds:row.factTaskIds as string[] } : {}),
   };
 }
 

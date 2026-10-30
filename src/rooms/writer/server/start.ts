@@ -26,7 +26,7 @@ import { isMainfixTask, ownsFromOuterBase, retargetTask , priorityRank, HOLD_FOR
 import { openDatabase } from "../../storage";
 import { createWriterSticky } from "./sticky";
 import { WRITER_QUESTION_WAIT_TEXT } from "./question-default";
-import { failureClass, type FailureClass } from "../../runs";
+import { failureClass, failureIntervention, MAST_OF_FAILURE, type FailureClass } from "../../runs";
 import { jev } from "@lane-pilot/jev";
 import { judgedFailureClass } from "../../runs";
 import { isRunHalted, waitWhileRunPaused } from "../../runs/server";
@@ -38,7 +38,7 @@ const SECRET_WAIT_MS = 12 * 3600_000;
 const secretPollMs = () => Number(process.env.LANE_PILOT_SECRET_POLL_MS) || 20_000;
 import type { AttemptState } from "../../runs";
 import { closeWriterStages, recordStage } from "../../runs/server";
-import { id, stringAt } from "../../core/server";
+import { configuredSetting, id, stringAt } from "../../core/server";
 import { shouldMergeAttemptWorktree } from "./spawn";
 import { collectHandoffBrief } from "./writer-handoff";
 import { listReturns, renderReturnNotes } from "../../stage-return";
@@ -196,7 +196,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
     let executionPacketSha256:string|null = null;
     let last: Record<string, unknown> = {};
     // The class Jev (J-4, active) or the rules gave the last failure: parking reads the same one, not its own recount.
-    let judged: { status: string; reason: string | null; klass: FailureClass } | null = null;
+    let judged: { status: string; reason: string | null; klass: FailureClass; mast?: string; intervention?: string; streak?: number } | null = null;
     let primaryFailure:Record<string,unknown>|null=null;
     /** A red check the same writer already failed the same way: the next attempt is the next writer, not this one again. */
     let checkEscalation:string|null=null;
@@ -857,7 +857,27 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         // A reason the rules have no confident match for goes to Jev (J-4, shadow by default: recorded, the rules' class used).
         const failedClass = await judgedFailureClass({ jev, settings:async () => runSettings, projectId:input.projectId, runId:input.runId, db },
           String(last.status), typeof last.reason === "string" ? last.reason : null, input.taskId);
-        judged = { status: String(last.status), reason: typeof last.reason === "string" ? last.reason : null, klass: failedClass };
+        // C6: a class's own intervention instead of the same retry — the streak of consecutive same-class failures of
+        // this task decides. `failure.interventions=off` keeps the old uniform retry (live setting).
+        const priorRows = db.prepare("SELECT state,reason FROM lane_pilot_attempt WHERE run_id=? AND task_id=? AND id!=? ORDER BY updated_at DESC").all(input.runId, input.taskId, attemptId) as Array<{ state: string; reason: string | null }>;
+        let sameClassStreak = 1;
+        for (const row of priorRows) { if (failureClass(row.state, row.reason) === failedClass) sameClassStreak++; else break; }
+        const intervention = configuredSetting(runSettings, "failure.interventions") === "off" ? "same_retry_remark" : failureIntervention(failedClass, sameClassStreak);
+        judged = { status: String(last.status), reason: typeof last.reason === "string" ? last.reason : null, klass: failedClass, mast: MAST_OF_FAILURE[failedClass] ?? "external:unknown", intervention, streak: sameClassStreak };
+        if (intervention === "narrow_brief") {
+          const reason = `narrow_brief: ${failedClass} failed ${sameClassStreak} attempts in a row — an identical retry repeats it; narrow the brief or change the approach, then dispatch again`;
+          const latest = getAttempt(db, attemptId);
+          if (latest && RETRY_ELIGIBLE.includes(latest.state as AttemptState)) transitionAttempt(db, latest.id, "blocked", { reason });
+          last = { ...last, status:"blocked", reason };
+          break;
+        }
+        if (intervention === "next_writer" && failedClass === "provider") {
+          // A provider that takes no work fails every retry the same way: the writer chain below takes the task now.
+          const latest = getAttempt(db, attemptId);
+          if (latest && RETRY_ELIGIBLE.includes(latest.state as AttemptState)) transitionAttempt(db, latest.id, "blocked", { reason:String(last.reason ?? last.status) });
+          last = { ...last, status:"blocked" };
+          break;
+        }
         // A check the host killed for time is not the task's red code: one retry, then it stops on its own budget.
         if (failedClass === "verification_timeout") {
           const reasons = (db.prepare("SELECT reason FROM lane_pilot_attempt WHERE run_id=? AND task_id=?").all(input.runId, input.taskId) as Array<{ reason: string | null }>).map((row) => row.reason);
@@ -1119,7 +1139,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
       if (!accepted && last.status !== "canceled") {
         void services.stability.onTaskFailed({ projectId:input.projectId, runId:input.runId, taskId:input.taskId,
           pmThreadId:input.pmThreadId, state:String(last.status), reason:reason ?? "",
-          ...(judged && judged.status === String(last.status) && judged.reason === (typeof last.reason === "string" ? last.reason : null) ? { klass:judged.klass } : {}) }).catch(() => false);
+          ...(judged && judged.status === String(last.status) && judged.reason === (typeof last.reason === "string" ? last.reason : null) ? { klass:judged.klass, mast:judged.mast, intervention:judged.intervention } : {}) }).catch(() => false);
       }
       for (const stageId of ["writer-agent", "verification", "acceptance-receipt"] as const) {
         const current = listStageReceipts(db, input.runId, input.taskId).find((row) => row.stageId === stageId);
@@ -1133,6 +1153,9 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
           model:stageId==="writer-agent"?writerSelection?.model:undefined,threadId:writerThreadId,
           result:stageId === "writer-agent" ? {
             ...last,
+            // #33: the decision this stage made, next to the outcome — failure class, its MAST-14 bucket and the
+            // intervention the class's streak got, so receipts read why the retry went this way.
+            ...(judged ? { decision: { failureClass: judged.klass, mast: judged.mast ?? null, intervention: judged.intervention ?? null, streak: judged.streak ?? null } } : {}),
             execution: writerSelection ? {
               providerId:writerSelection.providerId,
               model:writerSelection.model,

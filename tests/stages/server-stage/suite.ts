@@ -5,7 +5,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, describe, expect, it as vitestIt } from "vitest";
 import plugin from "../../../server";
 import { runBrowserQaOnHost, type BrowserQaInput } from "../../../src/rooms/qa/browser-qa";
-import { claimActivation, countChargedAttempts, createAttempt, createRun, createTask, getAttempt, getRun, listGateEvents, listStageReceipts, loadProjectSettings, openDatabase, saveProjectSetting, savePrototypeConfig, saveStageReceipt, saveTaskPlan, setAttemptHolderThread, setRunThread, setRunWorkspace, storeMemoryRecords, transitionAttempt } from "../../../src/rooms/storage/database";
+import { appendAcceptedFact, claimActivation, countChargedAttempts, createAttempt, createRun, createTask, getAttempt, getRun, listAcceptedFacts, listGateEvents, listPendingAcceptedFacts, listStageReceipts, loadProjectSettings, openDatabase, saveProjectSetting, savePrototypeConfig, saveStageReceipt, saveTaskPlan, setAttemptHolderThread, setRunThread, setRunWorkspace, storeMemoryRecords, transitionAttempt } from "../../../src/rooms/storage/database";
 import { memoryRecordId } from "../../../src/rooms/memory/memory";
 import type { TaskV2 } from "../../../src/rooms/contracts";
 import { buildRunPolicy } from "../../../src/rooms/tasks/run-policy";
@@ -1100,6 +1100,56 @@ describe("stage → native writer → receipt", () => {
     expect(db.prepare("SELECT COUNT(*) AS n FROM lane_pilot_memory WHERE project_id=? AND id=?").get(projectId,expectedId)).toEqual({n:1});
     expect(db.prepare("SELECT source_sha256 AS sha FROM lane_pilot_memory WHERE project_id=? AND id=?").get(projectId,expectedId)).toEqual({sha:otherSource});
     expect(db.prepare("SELECT COUNT(*) AS n FROM lane_pilot_memory_fts WHERE project_id=? AND id=?").get(projectId,expectedId)).toEqual({n:1});
+    await harness.lifecycle.dispose();
+  });
+  it("in wave mode appends the accepted fact and skips the memory helper while the wave is busy",async()=>{
+    const {db,harness,spawned}=await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,{
+      "memory.enabled":true,"memory.maintain":true,"memory.inject":true,"memory.audience":"subagent",
+      "memory.provider":"critic","memory.model":"critic-model",
+    });
+    await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,objective:"Проверка диспетча",plan:"Write a verified fixture",task},{threadId:pmThreadId,projectId});
+    // The wave is still busy: an open attempt of the same run exists when the accepted task's maintenance fires.
+    createAttempt(db,{id:"stage-attempt-open",runId:"stage-run",taskId:"stage-task-other"});
+    await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:3},{threadId:pmThreadId,projectId});
+    const skipped=await until("memory receipt skipped on a busy wave",()=>stageReceipt(db,task.id,"memory-maintenance")?.state==="skipped" && stageReceipt(db,task.id,"memory-maintenance"));
+    expect(skipped.reason).toBe("wave_not_idle");
+    expect(spawned.filter((row)=>((row.pluginMetadata as Record<string,unknown>).stageId)==="memory-maintenance")).toHaveLength(0);
+    // The append-only fact is already durable: no helper wrote it, and the next idle maintainer will summarize it.
+    expect(listPendingAcceptedFacts(db,"stage-run").map((row)=>row.taskId)).toContain(task.id);
+    await harness.lifecycle.dispose();
+  });
+  it("in wave mode one idle maintainer summarizes the run's pending facts in a batch",async()=>{
+    const {db,harness,spawned}=await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,{
+      "memory.enabled":true,"memory.maintain":true,"memory.inject":true,"memory.audience":"subagent",
+      "memory.provider":"critic","memory.model":"critic-model","memory.reasoning_effort":"high",
+    });
+    // A fact an earlier busy-wave task left pending: this run's next idle maintainer takes it into the same batch.
+    appendAcceptedFact(db,{projectId,runId:"stage-run",taskId:"stage-task-earlier",
+      fact:{taskId:"stage-task-earlier",title:"Earlier accepted task",acceptedResult:{summary:"earlier work"}}});
+    await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,objective:"Проверка диспетча",plan:"Write a verified fixture",task},{threadId:pmThreadId,projectId});
+    await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:3},{threadId:pmThreadId,projectId});
+    const passed=await until("memory receipt",()=>stageReceipt(db,task.id,"memory-maintenance")?.state==="passed" && stageReceipt(db,task.id,"memory-maintenance"));
+    expect(passed.result).toMatchObject({factsSummarized:2});
+    const brief=String(spawned.find((row)=>((row.pluginMetadata as Record<string,unknown>).stageId)==="memory-maintenance")?.prompt);
+    expect(brief).toContain("WAVE FACTS");
+    expect(brief).toContain("stage-task-earlier");
+    expect(listPendingAcceptedFacts(db,"stage-run")).toEqual([]);
+    expect(listAcceptedFacts(db,"stage-run").map((row)=>row.taskId).sort()).toEqual(["stage-task-earlier",task.id].sort());
+    await harness.lifecycle.dispose();
+  });
+  it("in wave mode skips a task whose fact an earlier batch already summarized",async()=>{
+    const {db,harness,spawned}=await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,{
+      "memory.enabled":true,"memory.maintain":true,"memory.inject":true,"memory.audience":"subagent",
+      "memory.provider":"critic","memory.model":"critic-model",
+    });
+    appendAcceptedFact(db,{projectId,runId:"stage-run",taskId:task.id,
+      fact:{taskId:task.id,title:"Done task",acceptedResult:{}}});
+    db.prepare("UPDATE lane_pilot_accepted_fact SET summarized_at=? WHERE task_id=?").run(Date.now(),task.id);
+    await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,objective:"Проверка диспетча",plan:"Write a verified fixture",task},{threadId:pmThreadId,projectId});
+    await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:3},{threadId:pmThreadId,projectId});
+    const skipped=await until("memory receipt skipped for a covered fact",()=>stageReceipt(db,task.id,"memory-maintenance")?.state==="skipped" && stageReceipt(db,task.id,"memory-maintenance"));
+    expect(skipped.reason).toBe("fact_already_summarized");
+    expect(spawned.filter((row)=>((row.pluginMetadata as Record<string,unknown>).stageId)==="memory-maintenance")).toHaveLength(0);
     await harness.lifecycle.dispose();
   });
   it("pre-provisions and CAS-binds a clean risk-routed worktree before the writer",async()=>{

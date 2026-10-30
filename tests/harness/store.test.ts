@@ -52,7 +52,7 @@ describe("harness store: trees", () => {
     const read = getHarness(db, v2.id)!;
     expect(read.tree).toEqual({ "always-on.md": "one" });
     expect(read.parentId).toBe(base.id);
-    expect(read.notes).toBe("n");
+    expect(read.notes).toBe("mechanisms: always-on edits only; 1 always-on tokens\nn");
     expect(read.fingerprint).toBeTruthy();
     expect(getHarness(db, "missing")).toBeNull();
   });

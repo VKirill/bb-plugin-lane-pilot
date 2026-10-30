@@ -1,6 +1,7 @@
 import type Database from "better-sqlite3";
 import { autoresearchThresholds, calibrateReceipts, calibrationRecord, jevWatch, judgmentFingerprint, listJudgments, renderCalibration, renderWatch, AUTORESEARCH_MIN_LABELED, CALIBRATION_EPOCH_FALLBACK, JEV_CALIBRATED_KEY } from "@lane-pilot/jev";
 import "./judgments";
+import { failureClassReport } from "../runs";
 
 /**
  * `bb lane-pilot jev calibrate [project] [--since <iso-date>] [--save] [--json]`: the calibration report over the receipts
@@ -11,7 +12,8 @@ import "./judgments";
  */
 export const JEV_USAGE = "bb lane-pilot jev calibrate [project] [--since <date>] [--min-labeled N] [--json] [--save]   (accuracy by judgment over the receipts, with the gate/sort-only/dead verdict; --save writes the certified thresholds to the project's jev.calibrated_thresholds)\n"
   + "bb lane-pilot jev planfact [--json]   (where the shadow Jev read of the acceptance items disagrees with the code's plan-fact check; decided_by=jev only)\n"
-  + "bb lane-pilot jev watch [--since <date>|--hours N] [--days N] [--json]   (jaggedness: per judgment+project slices of the window against the same slices' baseline; drift findings, read-only)";
+  + "bb lane-pilot jev watch [--since <date>|--hours N] [--days N] [--json]   (jaggedness: per judgment+project slices of the window against the same slices' baseline; drift findings, read-only)\n"
+  + "bb lane-pilot jev failure [--json]   (failure.class: labeled outcomes, the shadow\u2192live gate, and why it is or is not live)";
 
 const DAY = 86_400_000;
 
@@ -65,6 +67,13 @@ export function runJevCli(deps: { db: Database.Database; saveProjectSetting?: (p
       if (Object.keys(diffs).length) items.push({ runId: row.run_id, taskId: row.subject, jev: diffs, code: codeDiffs, state: row.state });
     }
     return { exitCode: 0, stdout: JSON.stringify(items, null, args.includes("--json") ? 2 : 2) };
+  }
+  if (sub === "failure") {
+    // failure.class: the shadow->live gate and what it still needs (wave-8 batch 2). Read-only.
+    const report = failureClassReport(deps.db);
+    if (rest.includes("--json")) return { exitCode: 0, stdout: JSON.stringify(report, null, 2) };
+    const acc = report.accuracy === null ? "n/a" : `${Math.round(report.accuracy * 100)}%`;
+    return { exitCode: 0, stdout: `failure.class: ${report.calls} calls, ${report.labeled} labeled (${report.agree} agree / ${report.disagree} disagree), accuracy ${acc}\n${report.live ? "LIVE" : "shadow"}: ${report.reason}` };
   }
   if (sub !== "calibrate") return { exitCode: 1, stderr: `usage: ${JEV_USAGE}` };
   const flags = new Map<string, string | true>(), positional: string[] = [];
