@@ -14,3 +14,12 @@ export { BEST_OF_COUNT, BEST_OF_SETTING, BEST_OF_SLOT_CAP_SETTING, BEST_OF_TOKEN
 export type { BestOfCandidate, BestOfPlan, WriterPair } from "./best-of";
 export { writerReuseStats } from "./writer-reuse-stats";
 export { writerModelJudgment } from "./writer-model-pick";
+export {
+  calculateSkillSwitches,
+  extractSkillSequence,
+  getSkillSwitchStats,
+  recordSkillSwitchMetric,
+  skillSwitchMorningLine,
+  type SkillSwitchRecord,
+  type SkillSwitchStats,
+} from "./skill-switch";
