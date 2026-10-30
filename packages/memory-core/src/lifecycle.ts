@@ -6,9 +6,17 @@ export const OBSERVED_QUARANTINE_MS = 24 * 3_600_000;
 /** A note nobody was given for this long stops being mixed; a note is not eternal just because nobody deleted it. Core, rules and file imports (their file decides) are exempt. */
 export const NOTE_IDLE_MS = 90 * 24 * 3_600_000;
 
-export type ExpiredReason = "budget" | "idle" | "dated";
+export type ExpiredReason = "budget" | "idle" | "dated" | "refuted";
 
-/** Hides a record (it stays in the table, leaves every index) with the status that says why. An expiry records budget eviction, idleness, or a passed date; a replacement clears that reason. */
+/** A failed check refutes a note only when the failure quotes a long stretch of that note. A generic red check does not. */
+export function noteRefutedByCheck(content: string, failureText: string): boolean {
+  const flat = content.replace(/\s+/g, " ").trim();
+  if (flat.length < 40 || failureText.length < 40) return false;
+  for (let start = 0; start + 40 <= flat.length; start += 8) if (failureText.includes(flat.slice(start, start + 40))) return true;
+  return false;
+}
+
+/** Hides a record (it stays in the table, leaves every index) with the status that says why. An expiry records budget eviction, idleness, a passed date, or a check that quoted the note; a replacement clears that reason. */
 export function hideRecord(db: MemoryDatabase, projectId: string, id: string, status: "superseded" | "expired", supersededBy: string | null, unindex: (projectId: string, id: string) => void, expiredReason?: ExpiredReason | null): boolean {
   const changed = db.prepare("UPDATE lane_pilot_memory SET status=?, superseded_by=COALESCE(?,superseded_by), expired_reason=CASE WHEN ?='expired' THEN ? ELSE NULL END WHERE project_id=? AND id=? AND status='active'").run(status, supersededBy, status, status === "expired" ? expiredReason ?? null : null, projectId, id).changes === 1;
   if (changed) unindex(projectId, id);

@@ -13,7 +13,7 @@ import { sha256Buffer } from "@lane-pilot/kit";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
 import packageJson from "../../../package.json";
 import { IllegalTransitionError, isLegalMove } from "../runs";
-import { memoryConflictMigrations, recordMemoryAccepted } from "@lane-pilot/memory-core";
+import { dropMemoryIndexes, hideRecord, memoryConflictMigrations, noteRefutedByCheck, recordMemoryAccepted } from "@lane-pilot/memory-core";
 import { workflowMigrations } from "@lane-pilot/workflow-engine";
 import { workflowNotVerifiedMigrations, workflowOpsMigrations } from "@lane-pilot/workflow-engine";
 import { draftMigrations } from "@lane-pilot/workflow-engine";
@@ -1205,6 +1205,7 @@ export function transitionAttempt(
     .run(attemptId, before.state, state, fields.reason ?? null, changed ? 0 : 1, now);
   if (changed && before.state !== state) attemptChanged(attemptId);
   if (changed && state === "accepted" && before.state !== state) creditMemoryOfAttempt(db, attemptId);
+  if (changed && state === "validation_failed" && before.state !== state && fields.reason) refuteMemoryOfAttempt(db, attemptId, fields.reason);
   return changed;
 }
 
@@ -1218,6 +1219,21 @@ export function endSpawnFailure(db: LanePilotDatabase, attemptId: string, reason
   const state = stopped ? "canceled" : "spawn_rejected";
   transitionAttempt(db, attemptId, state, { reason: stopped ? `writer stop observed after: ${reason}`.slice(0, 500) : reason, ...(threadId ? { threadId } : {}) });
   return state;
+}
+
+/** A check that quotes a note from this attempt's brief expires that note. A note the brief did not carry, and a failure that does not quote the note, stay. Never fails the transition. */
+function refuteMemoryOfAttempt(db: LanePilotDatabase, attemptId: string, failureText: string): void {
+  try {
+    const row = db.prepare(`SELECT r.project_id AS projectId, t.trace_json AS trace FROM lane_pilot_attempt a
+      JOIN lane_pilot_run r ON r.id=a.run_id JOIN lane_pilot_attempt_reasoning t ON t.attempt_id=a.id WHERE a.id=?`).get(attemptId) as { projectId: string; trace: string } | undefined;
+    const picked = row ? (JSON.parse(row.trace) as ReasoningTrace).dispatchContext?.memoryPicked : undefined;
+    if (!row || !Array.isArray(picked)) return;
+    for (const id of picked) {
+      if (typeof id !== "string") continue;
+      const note = db.prepare("SELECT content FROM lane_pilot_memory WHERE project_id=? AND id=? AND status='active'").get(row.projectId, id) as { content: string } | undefined;
+      if (note && noteRefutedByCheck(note.content, failureText)) hideRecord(db, row.projectId, id, "expired", null, (projectId, memoryId) => dropMemoryIndexes(db, projectId, memoryId), "refuted");
+    }
+  } catch { /* a refutation never fails the transition */ }
 }
 
 /** An accepted attempt credits the memory notes its brief carried, so the notes that serve briefs well rank higher. Never fails the transition. */
