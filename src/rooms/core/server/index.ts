@@ -2,7 +2,7 @@
 // Add a name here to make it public; scripts/refactor/barrels.ts wrote the first version from the existing imports.
 export { checkArguments, flatParameters, memberOf, signature, unionMembers } from "./action-schema";
 export type { ActionMember } from "./action-schema";
-export { configuredSetting, requirePmRun } from "./context";
+export { callerPluginMetadata, configuredSetting, requirePmRun } from "./context";
 export type { ServerContext } from "./context";
 export type { ServerCore } from "./core";
 export { CATALOG_WAIT_MS, createModelCatalog, modelCatalogOf, pmHostOf, within } from "./model-catalog-reader";

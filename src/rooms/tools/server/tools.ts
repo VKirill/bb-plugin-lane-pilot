@@ -21,7 +21,7 @@ import { mountHookTimeoutWatch, mountServiceProjects } from "../../stability/ser
 import { mountWorkflowArchitect } from "../../workflow/server";
 import { mountScheduleTools } from "../../schedule/server";
 import { mountToolFamilies } from "./tool-families";
-import { registerObservedTool, ToolError } from "../../core/server";
+import { callerPluginMetadata, registerObservedTool, ToolError } from "../../core/server";
 import { compactDispatchReply, compactReceipt, stageDetail } from "../../runs/server";
 import { createWriterAnswer } from "../../writer/server";
 import { createWriterReassign, createWriterUpdateTask } from "../../writer/server";
@@ -94,7 +94,7 @@ export function registerTools(ctx: ServerCore, services: Services) {
     instructions:"Use only from a Lane Pilot PM thread, for tasks a newer task supersedes or the owner dropped. Name the task ids you sent; tasks that depend on a canceled one stop waiting for it. Cancel does not undo work already merged into main. To replan queued tasks do not cancel and resend them: hold them (lane_pilot_queue hold), correct with lane_pilot_update_task, then release; a canceled queued task sent again unchanged gets its task and attempt back.",
     parameters:z.object({ taskIds:z.array(z.string().min(1)).min(1).max(50), words:z.string().trim().min(1).max(1000).describe("Closed in words: why these tasks end here; kept on the task.").optional() }).strict(),
     execute: async (params, context) => {
-      const metadata = await bb.sdk.threads.getPluginMetadata({ threadId:context.threadId });
+      const metadata = await callerPluginMetadata(bb, context);
       const runId = typeof (metadata as Record<string, unknown> | null)?.lanePilotRunId === "string" ? String((metadata as Record<string, unknown>).lanePilotRunId) : null;
       if ((metadata as Record<string, unknown> | null)?.role !== "pm" || !runId) {
         throw new ToolError("caller is not a Lane Pilot PM thread", { code: "not_pm_thread", retryable: false, sideEffects: "none" });
@@ -126,7 +126,7 @@ export function registerTools(ctx: ServerCore, services: Services) {
       satisfied:z.boolean().optional(),
     }).strict(),
     execute: async (params, context) => {
-      const metadata = await bb.sdk.threads.getPluginMetadata({ threadId:context.threadId });
+      const metadata = await callerPluginMetadata(bb, context);
       const runId = typeof (metadata as Record<string, unknown> | null)?.lanePilotRunId === "string" ? String((metadata as Record<string, unknown>).lanePilotRunId) : null;
       if ((metadata as Record<string, unknown> | null)?.role !== "pm" || !runId) {
         throw new ToolError("caller is not a Lane Pilot PM thread", { code: "not_pm_thread", retryable: false, sideEffects: "none" });
@@ -160,7 +160,7 @@ export function registerTools(ctx: ServerCore, services: Services) {
       reason:z.string().min(1).max(300).optional(),
     }).strict(),
     execute: async (params, context) => {
-      const metadata = await bb.sdk.threads.getPluginMetadata({ threadId:context.threadId });
+      const metadata = await callerPluginMetadata(bb, context);
       const runId = typeof (metadata as Record<string, unknown> | null)?.lanePilotRunId === "string" ? String((metadata as Record<string, unknown>).lanePilotRunId) : null;
       if ((metadata as Record<string, unknown> | null)?.role !== "pm" || !runId) {
         throw new ToolError("caller is not a Lane Pilot PM thread", { code: "not_pm_thread", retryable: false, sideEffects: "none" });
@@ -202,7 +202,7 @@ export function registerTools(ctx: ServerCore, services: Services) {
     instructions:"Use only from the matching Lane Pilot PM thread, and only when the task's latest attempt is blocked with needs_human. The answer is delivered into the writer's own thread and its normal wait → validate → accept cycle follows: poll lane_pilot_wait_writer with the same runId. Any other case returns not_answerable — redispatch the task instead. It never changes the contract: a question about the checks, acceptance or paths is fixed with lane_pilot_update_task under the same id (the same attempt reopens in the same thread), and any other contract change needs a redispatch.",
     parameters:z.object({ taskId:z.string().min(1), answer:z.string().min(1).max(8000) }).strict(),
     execute: async (params, context) => {
-      const metadata = await bb.sdk.threads.getPluginMetadata({ threadId:context.threadId });
+      const metadata = await callerPluginMetadata(bb, context);
       const runId = typeof (metadata as Record<string, unknown> | null)?.lanePilotRunId === "string" ? String((metadata as Record<string, unknown>).lanePilotRunId) : null;
       if ((metadata as Record<string, unknown> | null)?.role !== "pm" || !runId) {
         throw new ToolError("caller is not a Lane Pilot PM thread", { code: "not_pm_thread", retryable: false, sideEffects: "none" });
@@ -236,7 +236,7 @@ export function registerTools(ctx: ServerCore, services: Services) {
       timeoutMin:z.number().int().min(1).max(60).default(30),
     }).strict(),
     execute: async (params, context) => {
-      const metadata = await bb.sdk.threads.getPluginMetadata({ threadId:context.threadId });
+      const metadata = await callerPluginMetadata(bb, context);
       if ((metadata as Record<string, unknown> | null)?.role !== "pm") {
         throw new ToolError("caller is not a Lane Pilot PM thread", { code: "not_pm_thread", retryable: false, sideEffects: "none" });
       }

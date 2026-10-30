@@ -11,6 +11,7 @@ import { ComposerAgentBadge } from "./src/rooms/native-agent/ui";
 import { EnableLanePilotAction } from "./src/rooms/native-agent/ui";
 import { HELPER_PANEL_ACTION, HelperThreadPanel, useHelperThreadIndex } from "./src/rooms/native-agent/ui";
 import { RUN_CARD_DIRECTIVE, RunCardDirective, ThreadLive, LaneContextDetails, LaneContextSummary, useLaneContextVisible } from "./src/rooms/runs/ui";
+import { bindThreadRowStatus } from "./src/rooms/runs/ui/thread-row-status";
 
 /** VK core 0.46.1-vk.5: a section of the thread's info panel (feature-tested; older cores get a panel tab instead). */
 type VkThreadInfoSection = (registration: { id: string; title: string; component: ComponentType<{ threadId: string; projectId: string }> }) => void;
@@ -24,6 +25,14 @@ import { OWNER_ASK_RENDERER_ID } from "./src/rooms/relay";
 import { OwnerAsk } from "./src/rooms/relay/ui";
 
 export default definePluginApp((app) => {
+  // Live work icon on the sidebar thread row (vk core's experimental_setThreadRowStatus; stock BB keeps its own row look).
+  app.contentScripts.register({
+    id: "lane-pilot-row-status",
+    mount: (context) => {
+      bindThreadRowStatus(context.experimental_setThreadRowStatus ?? null);
+      return () => bindThreadRowStatus(null);
+    },
+  });
   app.slots.navPanel({
     id: "lane-pilot",
     title: t("panelTitle"),

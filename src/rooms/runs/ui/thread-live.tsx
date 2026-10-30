@@ -5,6 +5,7 @@ import type { rpcContract } from "../../contracts";
 import { StageSteps, StageStrip, type Strip } from "../../work-graph/ui";
 import { StatusIcon, shortTaskId } from "./task-board";
 import { useLpRpcQuery } from "../../ui-shell/ui";
+import { useThreadRowStatus } from "./thread-row-status";
 
 type Item = {
   key: string; runId: string; taskId: string | null; title: string; column: "queued" | "running" | "checking" | "blocked" | "done"; phase: string;
@@ -53,6 +54,7 @@ function Row({ item, strip, locale, open, onToggle }: { item: Item; strip: Strip
 export function ThreadLive({ threadId, locale }: { threadId: string; locale: string }) {
   const [open, setOpen] = useState<Record<string, boolean>>({});
   const live = (useLpRpcQuery("thread_live", { threadId }, { pollMs: POLL_MS }).data ?? null) as Live;
+  useThreadRowStatus(threadId, live?.items ?? null);
   if (!live || !live.items.length) return null;
   const active = live.items.filter((item) => item.column !== "done");
   const done = live.items.filter((item) => item.column === "done");

@@ -27,20 +27,20 @@ Every open row of the two SDK audits was checked against `main` (0.1.391). Dispo
 | B-x3 | `app.commands.register lane-pilot-helpers` opens the helpers tab; `PluginCommandContext` offers no navigation call, so a Cockpit jump cannot exist. |
 | B-x4 | `experimental_usePageTitle` on the cockpit nav panel prefixes the window title with the owner-waiting count. |
 | A-u3 | `experimental_threadContextSegment` `lane-pilot-live-segment`: visible only with live work, expands into `ThreadLive`. |
+| A-u4 | `experimental_setThreadRowStatus` marks the sidebar row running/error from `thread_live` (`src/rooms/runs/ui/thread-row-status.ts` + content-script `lane-pilot-row-status` in `app.tsx`); stock BB keeps its own row. `tests/thread-row-status.test.ts`. |
+| A-c1 | `callerPluginMetadata` (`src/rooms/core/server/context.ts`) takes `context.experimental_vkPluginMetadata` on vk cores, `getPluginMetadata` otherwise — the five PM tool call sites in `tools.ts` plus the conversation/queue `runOf` and the env resolvers of `helper-bb-shim.ts`. |
+| A-c2 | `experimental_vkLastTurn` in the vk core supplies `lastTurnId`/`isSubAgent` on `thread.idle`; `thread-observe/src/signals.ts` already consumes it. |
+| B-13 | `src/bb-vk.d.ts` augments `BbPluginApi` with the vk namespace once; the `(bb as …).vk` casts are gone (`hook-timeouts.ts`, `core.ts`, `workflow.ts`). |
 
 ## Rejected, with the reason
 
 | Row | Reason |
 |---|---|
-| A-u4 `setThreadRowStatus` | Duplicates A-u1: same `thread_live`/`list_helper_threads` data on the same sidebar row; a second status channel adds no information. |
 | A-u5 / B-2 `settings.define` | LP settings are per-project with CAS versions (`rpc-settings` `expectedVersion`); the descriptor model carries none of that. Jev keys in Env Catalog are shared across hosts and plugins — moving them breaks the rotation model. |
 | A-u6 `composer sendMenu` | Cosmetic: activation already rides `experimental_vkSetDispatchData` and a real action button exists in `composer-enable.tsx`. |
-| A-c1 `pluginMetadata` in tool context | Benefit is one loopback `getPluginMetadata` per PM tool call (5 call sites, not 15+); a VK core patch plus stock fallback does not pay for that. |
-| A-c2 `lastTurnId`/`isSubAgent` on `thread.idle` | Would not remove the event read in `completion.ts`: the decision still needs the queue and error events. Core patch for a partial payload. |
 | B-3 `threads.wait` | `threads.wait` polls internally at 250 ms and never checks `listRunning`; no win over the current 1 s poll in `writer-stop`. |
 | B-5 `experimental_onSignal` jobs | Jobs run as detached processes outside the worker; signals are ephemeral and `emitSignal` exists only in the worker RPC context — polling survives anyway. |
-| B-8 drop `deploy_drain` RPC | `bb-plugin-push` invokes it on every deploy as the closing step; removing it requires editing the infra script outside this repository. |
-| B-13 `(bb as …).vk` casts | Required to compile against a stock SDK where the vk methods are not in the types. |
-| B-x2 `defineCli` | ~40 subcommands parse fine today; a spec-kit rewrite is cosmetic. |
+| B-8 drop `deploy_drain` RPC | `bb-plugin-push` invokes it on every deploy as the closing step (`bb-plugin-push:578,588,696,706,740`). The real hold is the drain-before-rsync step that can still refuse the deploy ("not deploying"); a post-copy lifecycle drain cannot cancel what already shipped. |
+| B-x2 `defineCli` | `tools/server/cli.ts` is ~40 subcommands plus nested parsers (~688 lines) that work today; the cost is rewriting every one for help text and types alone. |
 | B-x5 `settingsSection` | Bound to B-2: without descriptor-backed settings the section is empty. |
 | B-x6 `uiPreferences` | Locale and agent profiles are LP domain; a second source of truth for a slice of preferences is a net loss. |

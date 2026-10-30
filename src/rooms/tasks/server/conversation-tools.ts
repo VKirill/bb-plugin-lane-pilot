@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ToolError, registerObservedTool, type ServerCore } from "../../core/server";
+import { callerPluginMetadata, ToolError, registerObservedTool, type ServerCore } from "../../core/server";
 import { hostContract } from "../../contracts";
 import { failureClass } from "../../runs";
 import { getRun, getRunWriterHost } from "../../storage";
@@ -15,8 +15,8 @@ export function registerConversationTools(ctx: ServerCore): void {
   const { db, bb } = ctx;
   const running = new Map<string, AbortController>();
 
-  const runOf = async (threadId: string) => {
-    const metadata = await bb.sdk.threads.getPluginMetadata({ threadId }) as Record<string, unknown> | null;
+  const runOf = async (context: { threadId: string | null; experimental_vkPluginMetadata?: unknown }) => {
+    const metadata = await callerPluginMetadata(bb, context);
     return typeof metadata?.lanePilotRunId === "string" ? metadata.lanePilotRunId : null;
   };
 
@@ -27,7 +27,7 @@ export function registerConversationTools(ctx: ServerCore): void {
     parameters: z.object({ question: z.string().trim().min(1).max(2000) }).strict(),
     execute: async (input, context) => {
       const kind = factKind(input.question);
-      const runId = await runOf(context.threadId);
+      const runId = await runOf(context);
       if (kind === "board") {
         const rows = db.prepare(`SELECT t.id AS taskId, COALESCE(json_extract(t.contract_json,'$.display_title'), json_extract(t.contract_json,'$.title')) AS title,
           (SELECT a.state FROM lane_pilot_attempt a WHERE a.task_id=t.id ORDER BY a.created_at DESC LIMIT 1) AS state
@@ -73,7 +73,7 @@ export function registerConversationTools(ctx: ServerCore): void {
       const recipe = checkRecipe(input.request);
       if (recipe !== "quick") return JSON.stringify({ recipe, next: recipe === "full" ? "run the run-goal check of this run: every accepted task's checks together on main" : "use lane_pilot_helpers {action:\"browser_qa\"} with the page and the cases" });
       if (!input.commands.length) throw new ToolError("a quick check needs the commands to run", { code: "no_commands", retryable: false, sideEffects: "none" });
-      const runId = await runOf(context.threadId);
+      const runId = await runOf(context);
       const run = runId ? getRun(db, runId) : undefined;
       const hostId = runId ? getRunWriterHost(db, runId) : null;
       if (!run?.writer_workspace_path || !hostId) throw new ToolError("this chat has no run with a checkout to check", { code: "no_checkout", retryable: false, sideEffects: "none" });
