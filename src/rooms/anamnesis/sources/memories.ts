@@ -85,7 +85,7 @@ export async function scanBbMemory(run?: (args: string[]) => Promise<string>, cw
 }
 
 function defaultBb(args: string[]): Promise<string> {
-  const bin = process.env.LANE_PILOT_BB_BIN || "bb";
+  const bin = process.env.LANE_PILOT_BB_BIN || process.env.BB_CLI || "bb";
   return new Promise((resolve, reject) => {
     execFile(bin, args, { timeout: 30_000, maxBuffer: 16 * 1024 * 1024, env: { ...process.env, PATH: [process.env.PATH, "/opt/homebrew/bin", "/usr/local/bin"].filter(Boolean).join(":") } },
       (error, stdout) => (error ? reject(error) : resolve(stdout)));
