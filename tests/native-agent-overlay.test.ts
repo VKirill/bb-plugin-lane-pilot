@@ -224,7 +224,7 @@ it("F-003: standard with the critic unset is not a mandatory code critic; full s
   expect(LANE_PILOT_PM_SESSION).not.toContain("Every task is critiqued before it lands");
   expect(LANE_PILOT_PM_SESSION).toContain("unset is standard");
   expect(LANE_PILOT_PM_SESSION).toContain("quick has none");
-  expect(LANE_PILOT_PM_SESSION).toContain("the code only if code_critique.enabled");
+  expect(LANE_PILOT_PM_SESSION).toContain("the code at risk medium+ or with code_critique.enabled");
   expect(LANE_PILOT_PM_SESSION).toContain("full critiques both");
 });
 
