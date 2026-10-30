@@ -28,7 +28,7 @@
     }
   },
   "intake.weight": {
-    "fingerprint": "046ef93b32ab157f",
+    "fingerprint": "941459700f966130",
     "thresholds": {
       "min_p": 0.55
     }
@@ -83,7 +83,7 @@
     }
   },
   "route.workflow": {
-    "fingerprint": "3085640c6e374fb8",
+    "fingerprint": "24e1c139eeb9ab61",
     "thresholds": {
       "min_p": 0.6,
       "min_margin": 0.25,
@@ -102,7 +102,7 @@
     }
   },
   "writer.model": {
-    "fingerprint": "a0366313f071476f",
+    "fingerprint": "d9575d2eb5c9e78a",
     "thresholds": {
       "min_p": 0.45
     }

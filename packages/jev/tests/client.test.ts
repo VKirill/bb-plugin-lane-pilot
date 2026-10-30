@@ -29,7 +29,7 @@ describe("jev client", () => {
     const { client, calls } = clientWith([{ status: 200, body: OK_BODY }]);
     const result = await client.call({ state: "payouts failing", questions: QUESTIONS });
     expect(result).toMatchObject({ ok: true, model: "jev-1.13.0", usage: { input_tokens: 100, output_tokens: 10 }, attempts: 1 });
-    expect(calls[0]).toMatchObject({ url: "https://api.typesafe.ai/v1/systemone", auth: "Bearer k-secret", body: { state: "payouts failing", model: "jev-latest", questions: QUESTIONS } });
+    expect(calls[0]).toMatchObject({ url: "https://api.typesafe.ai/v1/systemone", auth: "Bearer k-secret", body: { state: "payouts failing", model: "jev-1.14.0", questions: QUESTIONS } });
   });
 
   it("is disabled without a key and sends nothing", async () => {

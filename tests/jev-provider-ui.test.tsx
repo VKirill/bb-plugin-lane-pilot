@@ -19,7 +19,7 @@ function jevRpc(state: { chosen: Id; keys: Record<Id, boolean> }) {
     effective: state.keys[state.chosen] ? state.chosen : state.keys.typesafe ? "typesafe" : null,
     catalog: "ok",
     providers: [
-      { id: "typesafe", keyName: "TYPESAFE_API_KEY", model: "jev-latest", hasKey: state.keys.typesafe },
+      { id: "typesafe", keyName: "TYPESAFE_API_KEY", model: "jev-1.14.0", hasKey: state.keys.typesafe },
       { id: "openlux", keyName: "OPENLUX_API_KEY", model: "jev-1.14.0:stable", hasKey: state.keys.openlux },
     ],
   });

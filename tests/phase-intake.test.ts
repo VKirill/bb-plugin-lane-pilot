@@ -330,3 +330,13 @@ describe("a hand-over from a scheduled agent is one start per key (RECHECK-341 F
     expect(await hand(intake, "поправь опечатку в хедере", "schedule:run-b")).toMatchObject({ started: true, id: "wfrun_2" });
   });
 });
+
+describe("intake self-consistency", () => {
+  it("the re-ask reads the same question with the criteria in the reverse order", async () => {
+    const { intakeJudgment } = await import("../src/rooms/phase/intake");
+    const plain = (intakeJudgment.questions({ text: "x" }).weight as { criteria: Record<string, unknown> }).criteria;
+    const flipped = (intakeJudgment.questions({ text: "x", reverse: true }).weight as { criteria: Record<string, unknown> }).criteria;
+    expect(Object.keys(flipped)).toEqual([...Object.keys(plain)].reverse());
+    expect(flipped).toEqual(plain);
+  });
+});

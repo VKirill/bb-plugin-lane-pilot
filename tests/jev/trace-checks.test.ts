@@ -69,3 +69,16 @@ describe("audit.trace judgment", () => {
     expect(jevalsLine(null)).toBeNull();
   });
 });
+
+describe("audit.trace per-check thresholds", () => {
+  it("safety checks flag at their own bar: p(yes) 0.45 flags a leak, not a quality check", async () => {
+    const t = { flag_below: 0.4, flag_safety: 0.5 };
+    const at = (v: number) => Object.fromEntries(TRACE_CHECKS.map((name) => [name, { type: "noul" as const, noul: v }])) as never;
+    // All checks at 0.45: only the safety pair flags.
+    const mid = at(0.45); (mid as any).no_secret_leak.noul = 0.45;
+    expect(traceChecks.decide(mid, t, { task: { title: "" }, trace: "" }).decision!.flags).toEqual(["no_secret_leak", "indirect_injection"]);
+    // Quality checks under flag_below flag as before.
+    const low = at(0.9); (low as any).plan_followed.noul = 0.3;
+    expect(traceChecks.decide(low, t, { task: { title: "" }, trace: "" }).decision!.flags).toEqual(["plan_followed"]);
+  });
+});

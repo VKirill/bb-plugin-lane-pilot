@@ -1,4 +1,4 @@
-import { jev, type JevSettings } from "@lane-pilot/jev";
+import { choiceOf, jev, resolveThresholds, type JevSettings } from "@lane-pilot/jev";
 import { getRun, getRunSettingsScopes } from "../../storage";
 import { stringAt, type ServerCore } from "../../core/server";
 import { isRunHalted, isRunPaused } from "../../runs/server";
@@ -54,7 +54,18 @@ export function createPhaseIntake(ctx: Deps, phases: IntakePhases, train?: Intak
     try {
       if (instance?.enabled(settings as JevSettings)) {
         const verdict = await instance.judge(intakeJudgment, { text, previous }, { projectId, runId, subject: "intake", settings: settings as JevSettings });
-        if (verdict.by === "jev") return { kind: verdict.decision.kind, by: "jev" };
+        if (verdict.by === "jev") {
+          // Self-consistency on the border zone: a pick that just cleared the bar is re-asked with the options reversed;
+          // a flip means the order carried it, and an unsure message starts nothing.
+          const pick = choiceOf(verdict.answers ?? {}, "weight");
+          const minP = resolveThresholds(intakeJudgment, settings as JevSettings, null).min_p!;
+          if (pick && verdict.decision.kind !== "reply" && (pick.p < minP + 0.15 || pick.margin < 0.1)) {
+            const again = await instance.judge(intakeJudgment, { text, previous, reverse: true }, { projectId, runId, subject: "intake", settings: settings as JevSettings }).catch(() => null);
+            const second = again?.by === "jev" ? choiceOf(again.answers, "weight") : undefined;
+            if (second && second.top !== pick.top) return { kind: "reply", by: "jev" };
+          }
+          return { kind: verdict.decision.kind, by: "jev" };
+        }
       }
     } catch { /* the rules' reading stands */ }
     return { kind: rules.kind, by: "rules" };

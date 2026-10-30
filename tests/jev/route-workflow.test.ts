@@ -41,6 +41,11 @@ describe("route.workflow decision", () => {
 
   it("escalates a clear top with a thin lead, or with «none» not small enough, or a vague request", () => {
     expect(routeWorkflow.decide(answers({ a: 0.62, b: 0.5 - 0.12, c: 0.01, [NONE]: 0.01 }), t, input)).toEqual({ escalate: "model-thread" });
+    // p1/p2 >= 2 accepts what the absolute margin would not: 0.62/0.29 dominates though the lead is under 0.25's... wait 0.33 ≥0.25; use a true sub-margin pair.
+    expect(routeWorkflow.decide(answers({ a: 0.7, b: 0.24, c: 0.04, [NONE]: 0.02 }), t, input).decision).toMatchObject({ choice: "a" });
+    const thin = { ...t, min_margin: 0.4 };
+    expect(routeWorkflow.decide(answers({ a: 0.7, b: 0.24, c: 0.04, [NONE]: 0.02 }), thin, input).decision).toMatchObject({ choice: "a" });
+    expect(routeWorkflow.decide(answers({ a: 0.62, b: 0.34, c: 0.03, [NONE]: 0.01 }), { ...thin, min_ratio: 2.5 }, input)).toEqual({ escalate: "model-thread" });
     expect(routeWorkflow.decide(answers({ a: 0.65, b: 0.0, c: 0.0, [NONE]: 0.35 }), t, input)).toEqual({ escalate: "model-thread" });
     expect(routeWorkflow.decide(answers({ a: 0.85, b: 0.1, c: 0.03, [NONE]: 0.02 }, 0.92), t, input)).toEqual({ escalate: "model-thread" });
   });
