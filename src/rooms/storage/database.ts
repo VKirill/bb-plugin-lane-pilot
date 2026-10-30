@@ -1821,6 +1821,17 @@ export function listCheckTimeouts(db: LanePilotDatabase, projectId: string, chec
   }).slice(0, limit);
 }
 
+/**
+ * The last runs of one check in one project, newest first, every exit code kept. Exit 124 rows are censored durations:
+ * the check was killed at its limit, so duration_ms is the timeout, not its cost — ordering and the timeout escalator
+ * read them separately (checks.fail_fast, rank-12 timeout escalation).
+ */
+export function listCheckRuns(db: LanePilotDatabase, projectId: string, check: CheckRef, limit = 20): Array<{ durationMs: number; exitCode: number }> {
+  return (db.prepare("SELECT duration_ms, exit_code FROM lane_pilot_check_duration WHERE project_id=? AND command_key IN (?,?) ORDER BY at DESC, rowid DESC LIMIT ?")
+    .all(projectId, sha256Buffer(checkHistoryKey(check)), legacyCheckKey(check.command), limit) as Array<{ duration_ms: number; exit_code: number }>)
+    .map((row) => ({ durationMs: row.duration_ms, exitCode: row.exit_code }));
+}
+
 /** Durations (ms) of the last green runs of one check in one project, newest first (rows of the old command-only key included). */
 export function listCheckDurations(db: LanePilotDatabase, projectId: string, check: CheckRef, limit = 20): number[] {
   return (db.prepare("SELECT duration_ms FROM lane_pilot_check_duration WHERE project_id=? AND command_key IN (?,?) AND exit_code=0 ORDER BY at DESC, rowid DESC LIMIT ?")
