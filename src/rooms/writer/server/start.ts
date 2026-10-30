@@ -65,6 +65,14 @@ export function freshAttemptStart(task:TaskV2, config:PrototypeConfig, runWorksp
 }
 
 /** The latest charged failure of a task's family (its redispatches and mainfixes), to seed the repeated-failure stop. */
+/** The open found regression a task waits for: same checkout, shared files. Another repository of the project only shares
+ * names like package.json (BB-сервис keeps dozens of plugin repos: office-viewer's release checks held magicseo, 2026-10-30). */
+export function quarantiningRegression(db:ReturnType<typeof openDatabase>, task:{projectId:string;runId:string;taskId:string;ownsPaths:string[]}, filesOf:(row:RegressionRecord)=>string[]):RegressionRecord|undefined {
+  const base = taskBasePath(db, task.runId, task.taskId);
+  return listRegressions(db, { projectId:task.projectId }).find((row) => row.kind === "regression" && row.bisectStatus === "found"
+    && (!base || taskBasePath(db, row.runId, row.taskId) === base) && ownsPathsOverlap(task.ownsPaths, filesOf(row)));
+}
+
 export function familyFailureRecord(db:ReturnType<typeof openDatabase>, runId:string, taskId:string):{ state:string; reason:string|null } | null {
   const family = taskFamily(taskId);
   const rows = db.prepare(`SELECT task_id, state, reason FROM lane_pilot_attempt
@@ -389,8 +397,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         if (stop) return stop;
         const blocker = (() => {
           try {
-            return listRegressions(db, { projectId: input.projectId })
-              .find((row) => row.kind === "regression" && row.bisectStatus === "found" && ownsPathsOverlap(input.task.owns_paths, filesOf(row)));
+            return quarantiningRegression(db, { projectId:input.projectId, runId:input.runId, taskId:input.taskId, ownsPaths:input.task.owns_paths }, filesOf);
           } catch { return undefined; } // a test database without the baseline migrations quarantines nothing
         })();
         if (!blocker) return;

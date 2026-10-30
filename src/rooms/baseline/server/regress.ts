@@ -45,7 +45,7 @@ export type RegressOptions = {
 };
 
 /** A check whose green value is the package's own version: every legitimate bump makes it red — never a regression (W32 rank 8). */
-const pinsPackageVersion = (command: string): boolean => /package\.json/.test(command) && /"version"/.test(command);
+export const pinsPackageVersion = (command: string): boolean => /package\.json/.test(command) && /"version"|\.version\b/.test(command);
 
 export type TaskReport = {
   taskId: string; attemptId: string | null; mergeCommit: string | null;
