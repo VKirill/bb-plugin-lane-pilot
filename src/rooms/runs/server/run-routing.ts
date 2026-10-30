@@ -146,6 +146,18 @@ export function requiredPolicyField(bb: BbPluginApi, snapshot: HelperPolicySnaps
   });
 }
 
+/**
+ * False when the core advertises required session policies and does not list this provider: a child of a PM thread inherits the
+ * PM's ceiling and the core refuses the thread (HTTP 500, vk_required_session_policy_unsupported_provider; devin, 2026-10-30).
+ * Read from the raw advertisement, so a table mismatch on Lane Pilot's side cannot hide the refusal.
+ */
+export function coreHostsRequiredProvider(bb: BbPluginApi, providerId: string): boolean {
+  const advertise = (bb as { agents?: { experimental_vkRequiredSessionPolicy?: unknown } }).agents?.experimental_vkRequiredSessionPolicy;
+  if (typeof advertise !== "function") return true;
+  const groups = (advertise as () => { providerGroups?: unknown } | null)()?.providerGroups;
+  return !groups || typeof groups !== "object" || Object.hasOwn(groups, providerId);
+}
+
 export async function helperChildPlacement(input:{
   bb:BbPluginApi;db:ReturnType<typeof openDatabase>;projectId:string;runId:string;role:string;taskTitle?:string;
 }): Promise<ReturnType<typeof helperSpawnFields>> {

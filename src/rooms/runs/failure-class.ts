@@ -87,7 +87,7 @@ const OWNER_DECISION = /^verdict_block: question_unanswered: (?:product decision
 export const isOwnerDecision = (reason:string | null | undefined):boolean => OWNER_DECISION.test(reason ?? "");
 /** The task spent its overall writer-attempt budget (retry-budget.ts): ends for the PM, never parked or redriven. */
 const RETRY_BUDGET = /^retry_budget_exhausted:/;
-const LIMIT = /capacity_saturated:|writer_provider_limit:|^writer_provider_unavailable:(breaker_open|usage_window|owner_present)/;
+const LIMIT = /capacity_saturated:|writer_provider_limit:|^writer_provider_unavailable:(breaker_open|usage_window|owner_present|core_unsupported)/;
 /** Every writer provider is in a spent usage window (writer.capacity_wait): the task parks and is rechecked, it is not a failure. */
 export const CAPACITY_SATURATED = /^capacity_saturated:/;
 export const isCapacitySaturated = (reason:string | null | undefined):boolean => CAPACITY_SATURATED.test(reason ?? "");

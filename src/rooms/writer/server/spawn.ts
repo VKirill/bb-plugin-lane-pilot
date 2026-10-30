@@ -23,7 +23,7 @@ import { parseWorkspaceMode, requireManagedWorktreeProvider, resolveAttemptWorks
 import { createProviderGate, providerListed, providerSwitchOn, waitProviderEnvironment } from "../../verification";
 import { LANE_WORKTREE_PROVIDER_ID } from "../../native-agent/server";
 import { fullAccessSpawn } from "../../core/server";
-import { WriterSelectionError, helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server";
+import { WriterSelectionError, coreHostsRequiredProvider, helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server";
 import { configuredSetting, holderSpawnKey, stringAt } from "../../core/server";
 import { planDigest, writerBriefInput, writerBriefSegments, type TaskFolderBrief } from "./writer-task";
 import { areaHistoryText, loadArea } from "./sticky";
@@ -190,6 +190,11 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
           const reason = `writer_provider_unavailable:${present}`;
           return { ok:false, status:endSpawnFailure(db, input.attemptId, reason), reason, attemptId:input.attemptId };
         }
+      }
+      // The core cannot host this provider under the PM's session policy: the chain takes the next writer instead of a 500.
+      if (!coreHostsRequiredProvider(bb, writerProviderId)) {
+        const reason = `writer_provider_unavailable:core_unsupported:${writerProviderId}`;
+        return { ok:false, status:endSpawnFailure(db, input.attemptId, reason), reason, attemptId:input.attemptId };
       }
       const requestedServiceTier = input.emergency ? "default" as const : bbServiceTier(writerServiceTier(settings));
       let providers:Awaited<ReturnType<typeof bb.sdk.providers.list>>;
