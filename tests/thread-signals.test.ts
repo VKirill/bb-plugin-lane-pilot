@@ -87,6 +87,17 @@ describe("installThreadSignals", () => {
     expect(hub.stats.signals).toBe(1);
   });
 
+  it("a sub-agent turn's idle does not signal the watcher, a root turn's does", () => {
+    const { bb, emit } = fakeBb({ withEvents: true });
+    const hub = installThreadSignals(bb)!;
+    emit("thread.idle", { thread: { id: "w1", status: "idle" }, experimental_vkLastTurn: { turnId: "turn-sub", isSubAgent: true } });
+    expect(hub.stats.signals).toBe(0);
+    emit("thread.idle", { thread: { id: "w1", status: "idle" }, experimental_vkLastTurn: { turnId: "turn-root", isSubAgent: false } });
+    expect(hub.stats.signals).toBe(1);
+    emit("thread.idle", { thread: { id: "w1", status: "idle" }, lastAssistantText: "ok" });
+    expect(hub.stats.signals).toBe(2);
+  });
+
   it("a reload wakes the sleeping watchers", async () => {
     const { bb, dispose } = fakeBb({ withEvents: true });
     const hub = installThreadSignals(bb)!;

@@ -17,8 +17,9 @@ export function mountForge(ctx: ServerCore, services: Services): void {
   const host = () => bb.hosts.experimental_client({ contract: hostContract });
   const receipts = async () => ((await bb.storage.kv.get(RECEIPTS).catch(() => null)) as Record<string, ForgeReceipt> | null) ?? {};
   const keyOf = (projectId: string, kind: ForgeKind, name: string) => `${projectId}:${kind}:${name}`;
-  const runOf = async (threadId: string) => {
-    const metadata = await bb.sdk.threads.getPluginMetadata({ threadId }) as Record<string, unknown> | null;
+  const runOf = async (threadId: string, ctxMetadata?: unknown) => {
+    // ctx.experimental_vkPluginMetadata carries the same row on VK cores; the SDK read is the upstream fallback.
+    const metadata = (ctxMetadata !== undefined ? ctxMetadata : await bb.sdk.threads.getPluginMetadata({ threadId })) as Record<string, unknown> | null;
     const runId = typeof metadata?.lanePilotRunId === "string" ? metadata.lanePilotRunId : null;
     if (metadata?.role !== "pm" || !runId) throw new ToolError("caller is not a Lane Pilot PM thread", { code: "not_pm_thread", retryable: false, sideEffects: "none" });
     const run = getRun(db, runId);
@@ -44,7 +45,7 @@ export function mountForge(ctx: ServerCore, services: Services): void {
     ]),
     execute: async (input, context) => {
       if (input.action === "list") return JSON.stringify(Object.entries(await receipts()).filter(([key]) => key.startsWith(`${context.projectId}:`)).map(([, row]) => row));
-      const run = await runOf(context.threadId);
+      const run = await runOf(context.threadId, (context as { experimental_vkPluginMetadata?: unknown }).experimental_vkPluginMetadata);
       const all = await receipts();
       const key = keyOf(context.projectId, input.kind, input.name);
       if (input.action === "draft") {
