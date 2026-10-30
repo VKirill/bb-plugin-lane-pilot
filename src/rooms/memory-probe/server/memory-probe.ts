@@ -162,6 +162,8 @@ export function createMemoryProbe(ctx: ServerCore, services: Services) {
     catch (cause) { problems.push(`core not written: ${cause instanceof Error ? cause.message : String(cause)}`); }
     try {
       const lesson = upsertLessonProposal(db, projectId, { rule: `Probe rule ${tokens.rule}: lp-probe memory delivery check, nothing to do.`, evidence: "memory probe", audience: "both", always: true });
+      // An always-on rule needs a repeat before trial (arXiv #14): the probe's second sighting is the repeat.
+      upsertLessonProposal(db, projectId, { rule: `Probe rule ${tokens.rule}: lp-probe memory delivery check, nothing to do.`, evidence: "memory probe, second sighting", audience: "both", always: true });
       adoptRuleProposal(db, projectId, lesson.id);
       planted.rule = getRuleProposal(db, projectId, lesson.id)?.state === "accepted";
       if (!planted.rule) problems.push("rule not adopted (its pool has no room); see the rule journal");
