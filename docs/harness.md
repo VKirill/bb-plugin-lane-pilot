@@ -63,7 +63,7 @@ A harness tree contains the optional writer additions described by `LANE_PILOT_S
 
 ## Public API or commands
 
-The harness room exports `createHarness`, `harnessRpc`, tree helpers and trial helpers to other rooms (`src/rooms/harness/server/index.ts:1-7`, `src/rooms/harness/index.ts:1`). App RPC methods are `harness_status`, `harness_configure`, `harness_edit`, `harness_tick` and `harness_reflect` (`src/rooms/contracts/rpc-ops.ts:110-129`, `src/rooms/harness/server/rpc.ts:7-17`). The `harness`, `harness-edit`, `harness-tick` and `harness-trajectory` CLI commands expose status, editing, trial evaluation and trajectory output (`src/rooms/tools/server/cli.ts:67-70`, `:170-186`).
+The harness room exports `createHarness`, `harnessRpc`, tree helpers and trial helpers to other rooms (`src/rooms/harness/server/index.ts:1-7`, `src/rooms/harness/index.ts:1`). `judgeSharedTrial` is `decideTrial` (`src/rooms/harness/server/index.ts:6`): the critics writer calls it from lp.critic-edit, so a critic candidate uses the same 14-day deadline and the same bench gate. App RPC methods are `harness_status`, `harness_configure`, `harness_edit`, `harness_tick` and `harness_reflect` (`src/rooms/contracts/rpc-ops.ts:110-129`, `src/rooms/harness/server/rpc.ts:7-17`). The `harness`, `harness-edit`, `harness-tick` and `harness-trajectory` CLI commands expose status, editing, trial evaluation and trajectory output (`src/rooms/tools/server/cli.ts:67-70`, `:170-186`).
 
 ### `HarnessCard`
 
