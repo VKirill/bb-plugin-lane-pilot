@@ -74,4 +74,8 @@ describe("a full project core no longer refuses the maintainer batch", () => {
     expect(prompt).toContain(replaceable[0]!.id.slice(0, 12));
     expect(memoryMaintenancePrompt({ task: {}, acceptedResult: {}, settings })).not.toContain("CORE holds");
   });
+
+  it("tells the maintainer to keep a date and a version verbatim", () => {
+    expect(memoryMaintenancePrompt({ task: {}, acceptedResult: {}, settings })).toContain("Keep a date, a version number and a deadline verbatim");
+  });
 });
