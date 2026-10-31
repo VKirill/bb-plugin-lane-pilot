@@ -316,6 +316,20 @@ export function createRelay(deps:RelayDeps) {
     return live;
   }
 
+  /**
+   * Sends, or says the thread is archived: nobody reads an archived chat and BB answers 409 to every try. The wait that sends there
+   * closes; before, it threw out of the whole update and was tried again on every event (hub, 2026-10-31: «relay event failed: HTTP
+   * 409: Thread is archived», a self-repair opened for it).
+   */
+  async function deliver(threadId:string, text:string, from?:string):Promise<boolean> {
+    try { await deps.send(threadId, text, from); return true; }
+    catch (cause) {
+      if (!/archived/i.test(cause instanceof Error ? cause.message : String(cause))) throw cause;
+      deps.log(`relay: ${threadId} is archived; its wait is closed undelivered`);
+      return false;
+    }
+  }
+
   async function fire(item:RelayReminder, by:"time"|"watch"|"tasks", states?:Record<string, string|null>):Promise<boolean> {
     if (by === "tasks") {
       const live = await liveTaskStates(item, states);
@@ -329,9 +343,9 @@ export function createRelay(deps:RelayDeps) {
       item.firedBy = "time";
       return true;
     }
-    await deps.send(item.threadId, reminderText(item, by, states), by === "watch" ? item.watchThreadId ?? undefined : undefined);
+    const sent = await deliver(item.threadId, reminderText(item, by, states), by === "watch" ? item.watchThreadId ?? undefined : undefined);
     item.firedAt = deps.now();
-    item.firedBy = by;
+    item.firedBy = sent ? by : "canceled";
     return true;
   }
 
@@ -357,7 +371,7 @@ export function createRelay(deps:RelayDeps) {
       for (const item of items) {
         if (item.kind === "ask" && !item.answeredAt && item.toThreadId === threadId) {
           const text = (await deps.output(threadId).catch(() => "")).trim().slice(-4000);
-          await deps.send(item.fromThreadId, `Lane Pilot: @thread:${threadId} finished its turn without answering ${item.id}. Its last message:\n\n${text || "(empty)"}`, threadId);
+          await deliver(item.fromThreadId, `Lane Pilot: @thread:${threadId} finished its turn without answering ${item.id}. Its last message:\n\n${text || "(empty)"}`, threadId);
           item.answeredAt = deps.now();
           await closeAnsweredWaits(items, item.fromThreadId, threadId);
           woken++;

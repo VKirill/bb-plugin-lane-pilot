@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.1.435
+
+- **A wait whose chat was archived closes instead of failing every thread event.** When a helper settled and the PM that asked it (or set a reminder on it) was archived, the send got 409 «Thread is archived», threw out of the whole relay update, and the wait stayed open: the same warning came on every event of that helper and a self-repair was opened for it (thr_etefy6tutd). Answers and reminders to an archived chat are now closed undelivered with one log line, as task results already were.
+
 ## 0.1.434
 
 - **A self-repair no longer asks the owner about tests that were red before it.** Its brief allowed a commit only on a green full suite; with reds it had not caused, the repair of «relay event failed: Thread is archived» stopped and asked the owner how to go on (thr_etefy6tutd). A red that also fails on the base without the change is now named in the summary and does not hold the commit; one the change caused is the repair's to fix.
