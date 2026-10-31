@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.1.436
+
+- **SWE-2 can be picked for a role again.** Where no PM chat names the machine (the global role table), the model window asked the first connected machine that has the provider. That was the MacBook, where Devin is not signed in and lists one placeholder, «Agent default»; SWE-2 and the rest, listed by the Mac mini and OVH, never showed. The window now asks the machine where the provider lists the most models.
+
 ## 0.1.435
 
 - **A wait whose chat was archived closes instead of failing every thread event.** When a helper settled and the PM that asked it (or set a reminder on it) was archived, the send got 409 «Thread is archived», threw out of the whole relay update, and the wait stayed open: the same warning came on every event of that helper and a self-repair was opened for it (thr_etefy6tutd). Answers and reminders to an archived chat are now closed undelivered with one log line, as task results already were.

@@ -27,13 +27,21 @@ export function pickerValue(catalog: ModelCatalog, seed: PickerSeed): Experiment
   return { providerId, model, reasoningLevel: wanted as Level, ...(serviceTier ? { serviceTier } : {}) };
 }
 
-/** The machine the window asks for the live list: one that has the provider, else any connected one, else the first; none leaves it to BB's primary machine. */
-export function pickerRouting(catalog: ModelCatalog, providerId: string): ExperimentalProviderModelPickerProps["routing"] {
+/**
+ * The machine the window asks for the live list: the one where the provider lists the most models (of those, one that has the step's
+ * model), else any connected one, else the first; none leaves it to BB's primary machine. «Most models», not «first that has it»: Devin
+ * on a machine it is not signed in on lists one placeholder («Agent default»), and the owner, whose role had that placeholder saved,
+ * could not pick SWE-2 that the Mac mini has (2026-10-31).
+ */
+export function pickerRouting(catalog: ModelCatalog, providerId: string, model?: string | null): ExperimentalProviderModelPickerProps["routing"] {
   // The helpers of the project's workflows run on one machine: the window lists that machine's models, so the owner cannot pick one it lacks.
   if (catalog.runHostId && catalog.hosts.some((host) => host.id === catalog.runHostId && host.connected)) return { kind: "host", hostId: catalog.runHostId };
   const provider = findProvider(catalog, providerId);
   const connected = catalog.hosts.filter((host) => host.connected);
-  const host = connected.find((item) => provider?.hostIds.includes(item.id)) ?? connected[0] ?? catalog.hosts[0];
+  const offered = (hostId: string) => provider?.models.filter((row) => row.hostIds.includes(hostId)).length ?? 0;
+  const hasModel = (hostId: string) => Boolean(model && findModel(provider, model)?.hostIds.includes(hostId));
+  const withProvider = connected.filter((item) => provider?.hostIds.includes(item.id)).sort((a, b) => offered(b.id) - offered(a.id) || Number(hasModel(b.id)) - Number(hasModel(a.id)));
+  const host = withProvider[0] ?? connected[0] ?? catalog.hosts[0];
   return host ? { kind: "host", hostId: host.id } : undefined;
 }
 
@@ -50,7 +58,7 @@ export function NativeModelPicker({ catalog, seed, disabled = false, onChoose, t
 }) {
   const value = pickerValue(catalog, seed);
   if (!value) return null;
-  const routing = pickerRouting(catalog, value.providerId);
+  const routing = pickerRouting(catalog, value.providerId, value.model);
   return (
     // The window sits on a card that selects on click and a canvas that pans on drag: neither may take the gesture.
     <div className={`lp-native-picker nodrag nopan ${className ?? ""}`} data-testid={testId} data-provider={value.providerId} data-model={value.model} aria-label={label}
