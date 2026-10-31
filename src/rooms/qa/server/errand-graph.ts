@@ -1,5 +1,5 @@
 import { observeStageChild, waitThreadIdle } from "@lane-pilot/thread-observe";
-import { MIN_CONFIDENCE, routeIntent, type NodeExecutor, type StepContext } from "@lane-pilot/workflow-engine";
+import { routeIntent, type NodeExecutor, type StepContext } from "@lane-pilot/workflow-engine";
 import { redactKnown } from "@lane-pilot/kit";
 import { z } from "zod";
 import { builtinWorkflow, builtinWorkflows } from "../../workflow";
@@ -41,6 +41,9 @@ export type ErrandRunStart = {
 };
 
 const API_RECON_WORKFLOW = "api-recon";
+// An errand goes to api-recon by itself only on a sure route: the real recon briefs score 100, and a read-only check of
+// our own plugin's screens in BB scored 61 (hub errands, 2026-10-30), above the router's own MIN_CONFIDENCE of 60.
+const API_RECON_CONFIDENCE = 85;
 
 export function mountErrandGraph(ctx: ServerCore, services: Services, core: ErrandCore) {
   const { bb, db } = ctx;
@@ -134,7 +137,7 @@ export function mountErrandGraph(ctx: ServerCore, services: Services, core: Erra
     const url = /https?:\/\/[^\s)"'»<>]+/.exec(task)?.[0];
     if (!url || !builtinWorkflow(API_RECON_WORKFLOW)) return null;
     const routed = await routeIntent({ intent: task, workflows: builtinWorkflows() }).catch(() => null);
-    if (routed?.decision !== "route" || routed.workflowId !== API_RECON_WORKFLOW || routed.confidence < MIN_CONFIDENCE) return null;
+    if (routed?.decision !== "route" || routed.workflowId !== API_RECON_WORKFLOW || routed.confidence < API_RECON_CONFIDENCE) return null;
     return { url, goal: task, account: accounts[0] ?? "" };
   }
 

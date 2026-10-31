@@ -1,0 +1,12 @@
+Owner request served: an own MagicSEO plugin for BB that shows site → city projects, runs concert-driven automation (dry-run by default) and position reports. Version 0.1.0 is installed on the hub (`bb plugin list` shows magicseo@0.1.0 running). Check that it works with live data. This is a read-only check.
+
+Steps, in the BB web app in the owner's signed-in Chrome (https://vechkasov.getbb.app or the BB app the owner uses):
+1. Open the plugin app «MagicSEO» (the plugins / apps area of BB). Take a screenshot.
+2. Tab «Projects» / «Проекты»: report the balance shown in ₽, the list of site nodes with the number of projects under each (expected: proart-show.ru about 7, museshow.ru about 16, atmosphere-show.ru 0), and expand one project to report whether keywords with positions appear. Screenshot.
+3. Tab «Automation» / «Автоматизация»: choose site atmosphere-show.ru; report the mode shown (expected Dry-run), the keyword templates shown (expected «оркестр при свечах %город%» and «3000 свечей %город%»), press Preview (it is a dry run and changes nothing) and report how many rows the preview table has and 5 example rows (city, nearest concert, action, reason). Screenshot.
+4. Tab «Reports» / «Отчёты»: report what it shows for site proart-show.ru. You may press «Harvest now» (it only reads positions). Screenshot.
+5. Any error message on any tab: quote it exactly.
+
+Never press Start, Stop, Check positions, Live, Save or anything that creates, starts or stops a MagicSEO project or changes settings. Do not open lk.magicseo.ru.
+
+Save screenshots under /Users/vechkasov/Documents/BB-сервис/plugins/magicseo/.bb/chats/thr_tus6ykzucc/artifacts/live-check/ and report their paths with the findings.

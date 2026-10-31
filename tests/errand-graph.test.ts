@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { WorkflowEngine, registerPureActions } from "@lane-pilot/workflow-engine";
 import { createRun, openDatabase, setRunThread } from "../src/rooms/storage/database";
@@ -79,7 +80,9 @@ describe("the errand graph", () => {
     const inputs = JSON.parse((w.db.prepare("SELECT inputs_json FROM lane_pilot_wf_run").get() as { inputs_json: string }).inputs_json);
     expect(inputs).toMatchObject({ url: "https://lk.magicseo.ru/", account: "MAGICSEO_LOGIN" });
 
-    for (const [task, authorized] of [[recon, true], [recon.replace("https://lk.magicseo.ru/", "the MagicSEO cabinet"), false], [TASK, false]] as const) {
+    // A read-only check of our own MagicSEO plugin's screens in BB (a hub errand of 2026-10-30): the router gives it api-recon at 61.
+    const pluginCheck = readFileSync(new URL("./fixtures/errand-plugin-check.txt", import.meta.url), "utf8");
+    for (const [task, authorized] of [[recon, true], [recon.replace("https://lk.magicseo.ru/", "the MagicSEO cabinet"), false], [TASK, false], [pluginCheck, false]] as const) {
       const other = world();
       expect(await other.call("lane_pilot_errand", { task, authorized })).not.toHaveProperty("workflow");
       expect(other.runs()).toEqual([expect.objectContaining({ workflow_id: "errand" })]);
