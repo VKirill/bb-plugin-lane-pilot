@@ -93,6 +93,7 @@ export function registerCli(ctx: ServerCore, services: Services) {
     "bb lane-pilot wait-thread <thread-id>",
     "bb lane-pilot workflow-trigger <project-id> <workflow-id> [inputs-json] [key]",
     "bb lane-pilot workflow-answer <run-id> <step-key> <option or words>",
+    "bb lane-pilot workflow-cancel <run-id> [reason]",
     SCHEDULE_USAGE,
     AGENTS_USAGE,
     ANAMNESIS_USAGE,
@@ -177,6 +178,7 @@ export function registerCli(ctx: ServerCore, services: Services) {
       { name:"rules", summary:"The rules by form (always | skill | check | hook | memory) and the mechanism that enforces each; classify them, generate mechanism tasks for the recurring check rules, retire the text a mechanism now holds", usage:RULES_USAGE },
       { name:"workflow-trigger", summary:"Start a workflow in a project as its schedule trigger does (the automation of a schedule calls this); exit 1 with the reason when it cannot start", usage:"bb lane-pilot workflow-trigger <project-id> <workflow-id> [inputs-json] [key]" },
       { name:"workflow-answer", summary:"Answer the question a workflow run in a project without a PM chat put on the owner's list (the option, or words that name one, or a free answer)", usage:"bb lane-pilot workflow-answer <run-id> <step-key> <option or words>" },
+      { name:"workflow-cancel", summary:"Stop a running or waiting workflow run and its child runs: open steps end canceled, helper threads are stopped; exit 1 when the run is not found or already over. A writer attempt it started goes on: stop it with `cancel <attempt-id>`", usage:"bb lane-pilot workflow-cancel <run-id> [reason]" },
       { name:"defer", summary:"Put a mandatory check off: write it in the register with the reason. It is born with no term (only a date in a message of the owner sets one, --owner-msg) and counts as unproven in its project's phase acceptance until closed with evidence", usage:"bb lane-pilot defer <what> --kind drill_scenario|skipped_test|gate|plan_decision --reason \"…\" [--area A] [--project P]" },
       { name:"defer-close", summary:"Close a deferral with the evidence that settles it", usage:"bb lane-pilot defer-close <dfr_id> --evidence <text>" },
       { name:"deferrals", summary:"The register of deferrals: overdue and open, with their terms", usage:"bb lane-pilot deferrals [--project P] [--state open|overdue|closed]" },
@@ -313,6 +315,12 @@ export function registerCli(ctx: ServerCore, services: Services) {
           const words = args.slice(2).join(" ");
           const result = await answerWorkflowQuestion(ctx, services, { runId:args[0]!, stepKey:args[1]!, choice:words });
           return { exitCode:result.ok ? 0 : 1, stdout:JSON.stringify(result, null, 2) };
+        }
+        // Before 0.1.430 nothing outside the engine could stop a workflow run: the magicseo replays were stopped by hand in the database.
+        if (command === "workflow-cancel" && args.length >= 1) {
+          const reason = args.slice(1).join(" ") || "canceled_by_owner";
+          const ok = services.workflowEngine?.cancel(args[0]!, reason) ?? false;
+          return { exitCode:ok ? 0 : 1, stdout:JSON.stringify(ok ? { ok, runId:args[0], reason } : { ok, runId:args[0], why:"no running or waiting run with this id" }, null, 2) };
         }
         if (command === "defer" || command === "defer-close" || command === "deferrals") {
           return await runDeferralCli(services.deferrals, command, args);
