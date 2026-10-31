@@ -239,7 +239,7 @@ describe("PhaseIntake.handOver", () => {
     const kv = new Map<string, unknown>();
     const ctx = {
       bb: { storage: { kv: { get: async (key: string) => kv.get(key) ?? null, set: async (key: string, value: unknown) => { kv.set(key, value); } } }, sdk: { threads: { events: { list: async () => [] } } } },
-      db, effectiveProjectSettings: async () => ({ values: options.settings ?? {} }), log: () => undefined,
+      db, effectiveProjectSettings: async () => ({ values: { "phase.rails": "on", ...options.settings } }), log: () => undefined,
     } as never;
     return { handOver: createPhaseIntake(ctx, phases as never, train as never).handOver, opened, started };
   }

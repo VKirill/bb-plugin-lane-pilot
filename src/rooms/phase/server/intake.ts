@@ -43,6 +43,7 @@ const KEY = (threadId: string) => `phase-intake:${threadId}`;
  * 2026-10-01 the hub's five phases finished none of their goals, all at the seams between its stages, while the task graph accepted 120
  * tasks (owner, 2026-10-31: «work goes by graphs, stable»).
  */
+const railsOn = (settings: Record<string, unknown>) => String(settings["phase.rails"] ?? "off") === "on";
 const graphRoad = (settings: Record<string, unknown>) => String(settings["phase.road"] ?? "graph") !== "phase";
 /** What a hand-over key started, kept for good: the key maps to the phase or graph run whether it is alive or finished. */
 const HANDOVER_KEY = (projectId: string, key: string) => `phase-handover:${projectId}:${key}`;
@@ -115,7 +116,9 @@ export function createPhaseIntake(ctx: Deps, phases: IntakePhases, train?: Intak
     const run = getRun(db, metadata.lanePilotRunId);
     if (!run) return null;
     const settings = await ctx.effectiveProjectSettings(run.project_id, getRunSettingsScopes(db, run.id)).then((result) => result.values as Record<string, unknown>, () => ({} as Record<string, unknown>));
-    if (String(settings["phase.rails"] ?? "on") === "off") return null;
+    // Off by default: the PM reads the owner's message itself and starts the graph it needs (owner, 2026-10-31: «I ask the agent a
+    // question; the agent must understand what text it gets»). A machine reading in front of it opened a ten-hour phase for a question.
+    if (!railsOn(settings)) return null;
     const listed = await bb.sdk.threads.events.list({ threadId, types: ["client/turn/requested"], order: "desc", limit: "1" }).catch(() => []);
     const event = (Array.isArray(listed) ? listed[0] : null) as { data?: Record<string, unknown> } & Record<string, unknown> | null;
     const data = (event?.data ?? event ?? {}) as Record<string, unknown>;
@@ -256,7 +259,7 @@ export function createPhaseIntake(ctx: Deps, phases: IntakePhases, train?: Intak
     const { kind, by, path } = await classifyBundle(withoutCredentials(input.text), null, run.project_id, run.id, settings);
     const text = `${input.origin}\n\n${input.text}`;
     if (kind === "heavy") {
-      if (String(settings["phase.rails"] ?? "on") === "off") return { started: false, kind, reason: "phase rails are off" };
+      if (!railsOn(settings)) return { started: false, kind, reason: "phase rails are off" };
       const live = phases.list({ pmThreadId: input.pmThreadId, live: true })[0];
       if (live) return { started: false, kind, reason: `phase ${live.id} is already live in the PM chat` };
       if (graphRoad(settings) && train) {

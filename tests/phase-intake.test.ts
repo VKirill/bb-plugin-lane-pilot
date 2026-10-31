@@ -33,7 +33,7 @@ function world(options: { settings?: Record<string, unknown>; role?: string; tra
     status: () => ({ next: { text: "write the discussion files and report them with context" } }),
   };
   // The phase road: these tests are about the phase machine; the graph road has its own test below.
-  const deps = { bb, db, log: () => undefined, effectiveProjectSettings: async () => ({ values: { "phase.road": "phase", ...options.settings } }) } as never;
+  const deps = { bb, db, log: () => undefined, effectiveProjectSettings: async () => ({ values: { "phase.rails": "on", "phase.road": "phase", ...options.settings } }) } as never;
   const intake = createPhaseIntake(deps, phases, options.train);
   /** The plugin after a reload: a new intake over the same store and the same phases. */
   const reloaded = () => createPhaseIntake(deps, phases, options.train);
@@ -63,6 +63,18 @@ describe("phase intake rules", () => {
     // A workflow run's end notice started the next issue-quick, whose notice started the next (live 2026-10-26, Vampirism Fire).
     expect(isMachineMessage("Workflow run wfrun_a018031b894f42758ee7767e61b7debc of issue-quick is succeeded.\nNext: call lane_pilot_workflow_status")).toBe(true);
     expect(isMachineMessage("Workflow run in the docs is broken, fix it")).toBe(false);
+  });
+});
+
+describe("rails off by default: the PM reads the owner's message itself", () => {
+  it("starts nothing and refuses no dispatch when the project did not turn phase.rails on", async () => {
+    const started: string[] = [];
+    const train: IntakeTrain = { start: (input) => { started.push(input.text); return "wfrun_x"; }, status: () => "running" };
+    const { intake, opened } = world({ settings: { "phase.rails": undefined }, train });
+    expect(await intake.take(PM)).toBeNull();
+    expect(started).toEqual([]);
+    expect(opened).toEqual([]);
+    expect(await intake.dispatchRefusal(PM)).toBeNull();
   });
 });
 
@@ -164,7 +176,7 @@ describe("a new process", () => {
     const db = openDatabase(bb);
     createRun(db, "run1", "projA");
     const phases = { open: async () => { throw new Error("no phase for a process"); }, tick: async () => 0, list: () => [], status: () => ({ next: { text: "" } }) };
-    const intake = create({ bb, db, log: () => undefined, effectiveProjectSettings: async () => ({ values: {} }) } as never, phases as never);
+    const intake = create({ bb, db, log: () => undefined, effectiveProjectSettings: async () => ({ values: { "phase.rails": "on" } }) } as never, phases as never);
     // The newest request was read earlier as a process (the record the reader keeps).
     await bb.storage.kv.set("phase-intake:thr_pm", { requestId: "creq_p", kind: "process", by: "jev", phaseId: null, at: 1 });
     expect(await intake.dispatchRefusal("thr_pm")).toMatch(/lane_pilot_forge/);
@@ -183,7 +195,7 @@ describe("the small-task graph", () => {
     createRun(db, "run1", "projA");
     const started: string[] = [];
     const phases = { open: async () => { throw new Error("no phase"); }, tick: async () => 0, list: () => [], status: () => ({ next: { text: "" } }) };
-    const intake = create({ bb, db, log: () => undefined, effectiveProjectSettings: async () => ({ values: {} }) } as never, phases as never,
+    const intake = create({ bb, db, log: () => undefined, effectiveProjectSettings: async () => ({ values: { "phase.rails": "on" } }) } as never, phases as never,
       { start: (input) => { started.push(input.text); return "wfrun_1"; }, status: () => "running" });
     (intake as { classify: unknown }).classify = undefined;
     // No Jev here: the length rule alone does not start a build.
@@ -214,7 +226,7 @@ describe("a stopped or paused run", () => {
     const phases = { open: async () => { throw new Error("no phase"); }, tick: async () => 0, list: () => [], status: () => ({ next: { text: "" } }) };
     setJevForTests({ enabled: () => true, judge: async () => ({ by: "jev", decision: { kind: "small" } }) } as never);
     try {
-      const intake = create({ bb, db, log: () => undefined, effectiveProjectSettings: async () => ({ values: {} }) } as never, phases as never,
+      const intake = create({ bb, db, log: () => undefined, effectiveProjectSettings: async () => ({ values: { "phase.rails": "on" } }) } as never, phases as never,
         { start: (input) => { started.push(input.text); return "wfrun_1"; }, status: () => "running" });
       await setRunPaused(bb.storage.kv as never, "run1", true);
       expect(await intake.take("thr_pm")).toMatchObject({ kind: "small", by: "jev" });
@@ -239,7 +251,7 @@ describe("one stop check guards every machine start in the intake", () => {
     const starts: string[] = [];
     const phases = { open: async () => { starts.push("phase"); return { id: "ph_1" }; }, tick: async () => { starts.push("tick"); return 0; }, list: () => [], status: () => ({ next: { text: "" } }) };
     setJevForTests({ enabled: () => true, judge: async () => ({ by: "jev", decision: { kind } }) } as never);
-    const intake = create({ bb, db, log: () => undefined, effectiveProjectSettings: async () => ({ values: {} }) } as never, phases as never,
+    const intake = create({ bb, db, log: () => undefined, effectiveProjectSettings: async () => ({ values: { "phase.rails": "on" } }) } as never, phases as never,
       { start: (input) => { starts.push(input.kind); return "wfrun_1"; }, status: () => "running", startProcess: async () => { starts.push("architect"); return "thr_arch"; } });
     if (mode === "paused") await setRunPaused(bb.storage.kv as never, "run1", true);
     if (mode === "halted") await setRunHalted(bb.storage.kv as never, "run1", true);
@@ -279,14 +291,14 @@ describe("a process the catalog already has", () => {
       const architects: string[] = [];
       const train = (found: { graphId: string; name: string; confidence: number } | null) => ({ start: () => null, status: () => null,
         startProcess: async () => { architects.push("architect"); return "thr_arch"; }, findPublished: async () => found });
-      const known = create({ bb, db, log: () => undefined, effectiveProjectSettings: async () => ({ values: {} }) } as never, phases as never,
+      const known = create({ bb, db, log: () => undefined, effectiveProjectSettings: async () => ({ values: { "phase.rails": "on" } }) } as never, phases as never,
         train({ graphId: "weekly-changed-files", name: "Weekly changed files", confidence: 92 }));
       expect(await known.take("thr_pm")).toMatchObject({ kind: "process", hint: { graphId: "weekly-changed-files", confidence: 92 } });
       expect(architects).toEqual([]);
       expect(sent.join("\n")).toMatch(/published graph weekly-changed-files[\s\S]*lane_pilot_run_workflow/);
 
       await bb.storage.kv.delete("phase-intake:thr_pm");
-      const unknown = create({ bb, db, log: () => undefined, effectiveProjectSettings: async () => ({ values: {} }) } as never, phases as never, train(null));
+      const unknown = create({ bb, db, log: () => undefined, effectiveProjectSettings: async () => ({ values: { "phase.rails": "on" } }) } as never, phases as never, train(null));
       expect(await unknown.take("thr_pm")).toMatchObject({ kind: "process", architectThreadId: "thr_arch" });
       expect(architects).toEqual(["architect"]);
     } finally { setJevForTests(null); }
@@ -305,7 +317,7 @@ describe("the PM is the door: no other system for a request the machine took", (
     const db = openDatabase(bb);
     createRun(db, "run1", "projA");
     const phases = { open: async () => { throw new Error("no phase"); }, tick: async () => 0, list: () => [], status: () => ({ next: { text: "" } }) };
-    const intake = create({ bb, db, log: () => undefined, effectiveProjectSettings: async () => ({ values: {} }) } as never, phases as never,
+    const intake = create({ bb, db, log: () => undefined, effectiveProjectSettings: async () => ({ values: { "phase.rails": "on" } }) } as never, phases as never,
       { start: () => "wfrun_1", status: () => "running" });
     await bb.storage.kv.set("phase-intake:thr_pm", { requestId: "creq_p", kind: "small", by: "jev", phaseId: null, at: 1, wfRunId: "wfrun_1" });
     expect(await intake.launchRefusal("thr_pm")).toMatch(/went down a graph/);
