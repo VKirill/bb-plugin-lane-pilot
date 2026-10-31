@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.1.433
+
+- **The PM can fix a graph run's work, not only its goals.** Its prompt said «fix the work and re-run» for a run blocked by its goal audit, but re-running a node was a button in the Workflows tab only; the PM had no way to do it (MagicSEO replay, api-recon blocked twice). `lane_pilot_workflow_amend` now takes `rerun` {nodeId, with}: once the run has ended, that node runs again on the same branch with corrected inputs (only the keys given change), the steps before it keep their results, and the run is audited against its goals again. The journal names the corrected keys. The owner's re-run (`workflow_rerun_node`) takes the same `with`. Maslov's assess Q16, live correction, for a finished run; a task's own pipeline is still corrected through the task.
+
 ## 0.1.432
 
 - **A plan the PM changed after its review no longer fails the task graph when its new critique blocks.** The block step skipped the specialist review even when it had already passed on the old plan; the stage rules refuse passed → skipped, and the run ended `step_failed:block-plan-critique` instead of blocking the task (MagicSEO replay, concert-scheduler, 2026-10-31). Block steps now skip only stages that have not run; a verdict a stage already has stays.

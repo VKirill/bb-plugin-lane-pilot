@@ -43,11 +43,11 @@ export function createWorkflowOps(ctx: ServerCore, services: Pick<Services, "wor
       };
     },
 
-    async rerunNode(input: { runId: string; nodeId: string }): Promise<Output<"workflow_rerun_node">> {
+    async rerunNode(input: { runId: string; nodeId: string; with?: Record<string, unknown> | undefined }): Promise<Output<"workflow_rerun_node">> {
       const run = services.workflowEngine.journal.getRun(input.runId);
       // The per-task pipeline keeps its runtime in memory and is never re-run by hand.
       if (run?.workflow_id === "lp-task-pipeline" || run?.idem_key?.startsWith("lp-task:")) return { ok: false, reason: "pipeline_run" };
-      const result = await services.workflowEngine.rerunNode(input.runId, input.nodeId);
+      const result = await services.workflowEngine.rerunNode(input.runId, input.nodeId, undefined, input.with);
       return result.ok ? { ok: true, stepKey: result.stepKey, removed: result.removed } : { ok: false, reason: result.reason };
     },
 

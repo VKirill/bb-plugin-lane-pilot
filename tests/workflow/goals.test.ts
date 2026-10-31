@@ -262,4 +262,19 @@ describe("the PM's tools", () => {
     expect(status).toMatchObject({ status: "succeeded", goalAudit: { verdict: "pass" }, goalChanges: [{ by: "pm", reason: "the owner dropped the sources goal" }] });
     expect(round).toBe(2);
   });
+
+  // The PM was told «fix the work and re-run» with no tool to re-run: a run blocked by its goal audit stayed blocked (MagicSEO replay api-recon, 2026-10-31).
+  it("lane_pilot_workflow_amend re-runs one node with corrected inputs, and the run is audited again", async () => {
+    let round = 0;
+    const { deps, engine } = tools(async () => { round += 1; return round === 1 ? { met: ["g1"], unmet: [{ id: "g2", why: "no" }] } : all(["g1", "g2"]); });
+    const started = JSON.parse(await runWorkflowTool(deps, { workflowId: "demo", inputs: INPUTS, goals: GOALS }, ctx)) as { workflowRunId: string };
+    await engine.idle();
+    expect(engine.get(started.workflowRunId)).toMatchObject({ status: "blocked" });
+    const again = JSON.parse(await amendGoalsTool(deps, { runId: started.workflowRunId, reason: "three sources this time", rerun: { nodeId: "write", with: { items: ["a", "b", "c"] } } }, ctx));
+    expect(again).toMatchObject({ rerun: "write", stepKey: "write#1", corrected: ["items"] });
+    await engine.idle();
+    expect(engine.get(started.workflowRunId)).toMatchObject({ status: "succeeded" });
+    expect(round).toBe(2);
+    expect(JSON.parse(await amendGoalsTool(deps, { runId: started.workflowRunId, reason: "nothing to do" }, ctx))).toMatchObject({ status: "refused", reason: "amend_refused: give goals, rerun, or both" });
+  });
 });

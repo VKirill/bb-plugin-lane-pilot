@@ -24,6 +24,25 @@ describe("re-running one node of a finished run", () => {
     expect(rows(db, "SELECT kind FROM lane_pilot_wf_event WHERE run_id=? AND kind='rerun'", runId)).toHaveLength(1);
   });
 
+  // Maslov's live correction (assess Q16): a step that ran on a wrong input is fixed and goes on on the same branch, the steps before it kept.
+  it("re-runs a node with corrected inputs: only the given keys change, the steps before it are kept, the journal names the keys", async () => {
+    const db = journalDb();
+    const inputs: unknown[] = [];
+    let searches = 0;
+    const engine = engineOn(db, {
+      search: ok(() => { searches += 1; return { items: ["wrong"], count: 1, kind: "fresh" }; }),
+      write: ok((ctx: StepContext) => { inputs.push(ctx.input.with); return { text: `wrote ${(ctx.input.with.items as string[]).join(",")}` }; }),
+    });
+    const { runId, done } = engine.start({ workflow: wf(), inputs: { query: "q" } });
+    expect(await done).toMatchObject({ status: "succeeded", output: { result: "wrote wrong" } });
+    expect(await engine.rerunNode(runId, "write", undefined, { items: ["right"] })).toMatchObject({ ok: true, stepKey: "write#1" });
+    await engine.idle();
+    expect(engine.get(runId)).toMatchObject({ status: "succeeded", output: { result: "wrote right" } });
+    expect(searches).toBe(1);
+    expect(inputs[1]).toEqual({ ...(inputs[0] as Record<string, unknown>), items: ["right"] });
+    expect(rows<{ detail: string }>(db, "SELECT detail FROM lane_pilot_wf_event WHERE run_id=? AND kind='rerun'", runId)[0]!.detail).toContain("inputs corrected: items");
+  });
+
   it("re-running an earlier node removes everything after it and gives the step a new spawn key", async () => {
     const db = journalDb();
     const keys: string[] = [];

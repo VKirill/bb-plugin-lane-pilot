@@ -1509,8 +1509,10 @@ export class WorkflowEngine {
    * from there. A canceled step that was waiting for its turn when the run ended is revived. Refused while the run is active, for a
    * child run (re-run from its parent) and for a node that never ran. The new try has its own spawn key, so an agent step opens a new thread.
    * `runtime`: the caller's own state for the steps that go again (the dispatch pipeline keeps the task there); it replaces the one the run had.
+   * `patch`: corrected inputs of the node, merged over the ones its step had (Maslov's live correction: fix the step's input and go on
+   * on the same branch, keeping every step before it). The journal names the keys changed.
    */
-  async rerunNode(runId: string, nodeId: string, runtime?: unknown): Promise<{ ok: true; stepKey: string; removed: number } | { ok: false; reason: string }> {
+  async rerunNode(runId: string, nodeId: string, runtime?: unknown, patch?: Record<string, unknown>): Promise<{ ok: true; stepKey: string; removed: number } | { ok: false; reason: string }> {
     const j = this.journal;
     const run = j.getRun(runId);
     if (!run) return { ok: false, reason: "not_found" };
@@ -1544,7 +1546,8 @@ export class WorkflowEngine {
       .filter((row) => doomed.has(row.parent_step_key)).flatMap((row) => [row.id, ...childRuns(row.id)]);
     const started = [...doomed].filter((key) => steps.find((step) => step.step_key === key)?.state !== "pending").length;
     const input = asObject(target.input_json) as unknown as StepInput;
-    const nextInput = JSON.stringify({ ...input, rerun: (input.rerun ?? 0) + 1 });
+    const patched = Object.keys(patch ?? {});
+    const nextInput = JSON.stringify({ ...input, ...(patched.length ? { with: { ...input.with, ...patch } } : {}), rerun: (input.rerun ?? 0) + 1 });
 
     j.db.transaction(() => {
       const marks = (list: string[]) => list.map(() => "?").join(",");
@@ -1563,7 +1566,7 @@ export class WorkflowEngine {
         j.db.prepare("UPDATE lane_pilot_wf_step SET state='pending', ended_at=NULL, updated_at=? WHERE run_id=? AND step_key=?").run(this.now(), runId, step.step_key);
       }
       j.db.prepare("UPDATE lane_pilot_wf_run SET status='running', reason=NULL, output_json=NULL, steps_used=MAX(0, steps_used-?), owner_id=NULL, lease_until=0, updated_at=? WHERE id=?").run(started, this.now(), runId);
-      j.event(runId, target.step_key, "rerun", target.state, "pending", `node ${nodeId}: ${doomed.size} step(s) reset or removed`);
+      j.event(runId, target.step_key, "rerun", target.state, "pending", `node ${nodeId}: ${doomed.size} step(s) reset or removed${patched.length ? `; inputs corrected: ${patched.join(", ")}` : ""}`);
     })();
     this.compiledRuns.delete(runId);
     if (runtime !== undefined) this.runtimes.set(runId, runtime);

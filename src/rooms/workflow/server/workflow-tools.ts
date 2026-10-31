@@ -32,7 +32,7 @@ export type WorkflowToolDeps = {
   db: LanePilotDatabase;
   /** The library the PM sees: the built-in and global workflows, and with `projectId` the project's own files (`.lane-pilot/workflows`) too. */
   store(projectId?: string): Promise<WorkflowStore>;
-  engine(): Pick<WorkflowEngine, "start" | "get" | "snapshot"> & Partial<Pick<WorkflowEngine, "lastAudit" | "goalJournal" | "amendGoals">>;
+  engine(): Pick<WorkflowEngine, "start" | "get" | "snapshot"> & Partial<Pick<WorkflowEngine, "lastAudit" | "goalJournal" | "amendGoals" | "rerunNode">>;
   runtime(input: { pmThreadId: string; projectId: string; runId: string }): ChainRuntime;
   /** What the router may know about the environment; undefined facts count as available. */
   state?(input: { projectId: string; runId: string | null }): RouterState;
@@ -184,15 +184,29 @@ function goalsView(engine: ReturnType<WorkflowToolDeps["engine"]>, runId: string
 }
 
 /** K7: the PM changes what a run is for, with a reason that stays in the run's journal; a run held by its goal audit is audited again. */
-export async function amendGoalsTool(deps: WorkflowToolDeps, params: { runId: string; goals: RunGoal[]; reason: string }, context: ToolContext): Promise<string> {
+export async function amendGoalsTool(deps: WorkflowToolDeps, params: { runId: string; goals?: RunGoal[] | undefined; reason: string; rerun?: { nodeId: string; with?: Record<string, unknown> | undefined } | undefined }, context: ToolContext): Promise<string> {
   if (!context.threadId || !context.projectId) throw new Error("workflow_needs_pm_thread: call this from a Lane Pilot PM chat");
   const engine = deps.engine();
   const snapshot = engine.snapshot(params.runId);
   if (!snapshot || snapshot.run.project_id !== context.projectId) return refused(`not_found: no workflow run "${params.runId}" in this project`, { workflowRunId: params.runId });
+  if (!params.goals && !params.rerun) return refused("amend_refused: give goals, rerun, or both", { workflowRunId: params.runId });
+  // The per-task pipeline keeps its runtime in memory: it is corrected through the task (lane_pilot_update_task), never re-run by hand.
+  if (params.rerun && (snapshot.run.workflow_id === "lp-task-pipeline" || snapshot.run.idem_key?.startsWith("lp-task:"))) return refused("rerun_refused: pipeline_run: correct the task with lane_pilot_update_task", { workflowRunId: params.runId });
+  if (!params.goals) {
+    if (!engine.rerunNode) return refused("not_available: this engine cannot re-run a node", { workflowRunId: params.runId });
+    const again = await engine.rerunNode(params.runId, params.rerun!.nodeId, undefined, params.rerun!.with);
+    if (!again.ok) return refused(`rerun_refused: ${again.reason}`, { workflowRunId: params.runId });
+    return JSON.stringify({ workflowRunId: params.runId, rerun: params.rerun!.nodeId, stepKey: again.stepKey, removed: again.removed,
+      corrected: Object.keys(params.rerun!.with ?? {}), status: engine.get(params.runId)?.status ?? "running",
+      note: "The node runs again on the same branch; the steps before it keep their results. The run reports its end to this chat." }, null, 2);
+  }
   if (!engine.amendGoals) return refused("not_available: this engine cannot amend goals", { workflowRunId: params.runId });
   const result = engine.amendGoals(params.runId, params.goals, params.reason, "pm");
   if (!result.ok) return refused(`amend_refused: ${result.reason}`, { workflowRunId: params.runId });
-  return JSON.stringify({
+  // New goals and a corrected node at once: the run is re-run from that node and audited against the new goals when it ends.
+  const again = params.rerun && engine.rerunNode ? await engine.rerunNode(params.runId, params.rerun.nodeId, undefined, params.rerun.with) : null;
+  if (again && !again.ok) return refused(`rerun_refused: ${again.reason} (the goals were amended, version ${result.version})`, { workflowRunId: params.runId });
+  return JSON.stringify({ ...(again?.ok ? { rerun: params.rerun!.nodeId, stepKey: again.stepKey } : {}),
     workflowRunId: params.runId, amended: true, version: result.version, goals: params.goals.length,
     status: engine.get(params.runId)?.status ?? "running",
     note: result.reopened ? "The run was held by its goal audit: it is audited again against the new goals; poll lane_pilot_workflow_status." : "Recorded in the run's journal with your reason. A run that is still going is audited against these goals before it closes.",
@@ -272,9 +286,10 @@ export function mountWorkflowTools(ctx: ServerCore, services: Services): void {
 
   registerObservedTool(bb.agents, {
     name: "lane_pilot_workflow_amend",
-    description: "Change the goals of a running or blocked workflow run, with a reason that stays in the run's journal.",
-    instructions: "Use when the owner changes what a run is for, drops a goal, or a goal turns out to be wrong or unreachable (the status shows `goalAudit.unmet` when the run is blocked by its goal audit). `goals` is the WHOLE new list (`id`, `done_when`, `evidence`; up to 8): goals you leave out are dropped. `reason` says why, in a sentence: it is kept with the old goals so the change can be read later. Do not use it to make an unmet goal disappear without the owner's word; fix the work (re-run a node from the Workflows tab) or ask them. A run held by its goal audit is audited again against the new goals.",
-    parameters: z.object({ runId: z.string().min(1).max(80), goals: goalsSchema, reason: z.string().trim().min(3).max(600) }).strict(),
+    description: "Correct a workflow run: change its goals, or re-run one node of a finished run with corrected inputs, with a reason that stays in the run's journal.",
+    instructions: "Use when the owner changes what a run is for, drops a goal, or a goal turns out to be wrong or unreachable (the status shows `goalAudit.unmet` when the run is blocked by its goal audit). `goals` is the WHOLE new list (`id`, `done_when`, `evidence`; up to 8): goals you leave out are dropped. `reason` says why, in a sentence: it is kept with the old goals so the change can be read later. Do not use it to make an unmet goal disappear without the owner's word; fix the work or ask them. A run held by its goal audit is audited again against the new goals. To fix the work, pass `rerun` {nodeId, with}: once the run has ended (blocked, failed, succeeded) that node runs again on the same branch, the steps before it keep their results and everything after it goes again; `with` holds the node's corrected inputs by name (only the keys you give change; the status shows a step's inputs). Refused for a task's own pipeline (correct the task with lane_pilot_update_task) and while the run is still going (cancel it first or wait).",
+    parameters: z.object({ runId: z.string().min(1).max(80), goals: goalsSchema.optional(), reason: z.string().trim().min(3).max(600),
+      rerun: z.object({ nodeId: z.string().min(1).max(80), with: z.record(z.string(), z.unknown()).optional() }).strict().optional() }).strict(),
     execute: async (params, context) => amendGoalsTool(deps, params, context),
   });
 }

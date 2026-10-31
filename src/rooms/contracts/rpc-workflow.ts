@@ -28,7 +28,7 @@ export const rpcWorkflow = {
   },
   /** Re-runs one node of a finished run: its steps and everything after it start again. `reason` says why not (run_active, child_run, node_not_run, ...). */
   workflow_rerun_node: {
-    input: z.object({ runId: z.string().min(1), nodeId: z.string().min(1).max(80) }).strict(),
+    input: z.object({ runId: z.string().min(1), nodeId: z.string().min(1).max(80), with: z.record(z.string(), z.unknown()).optional() }).strict(),
     output: z.object({ ok: z.boolean(), reason: z.string().optional(), stepKey: z.string().optional(), removed: z.number().int().optional() }).strict(),
   },
   /**
