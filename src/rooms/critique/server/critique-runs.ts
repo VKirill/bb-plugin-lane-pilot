@@ -23,7 +23,7 @@ import { candidateCitations, inputCitations } from "../citations";
 import { parseSpecialistResult, shouldRunSpecialist, specialistPrompt, unreadableAnswer } from "../specialist";
 import { reasonForStatus } from "@lane-pilot/workflow-engine";
 import { parseTiebreakVotes } from "../tiebreak";
-import { CODE_CRITIC_DEFAULT_SETTING, QUALITY_MODE_SETTING, applyCodeCriticDefault, applyQualityMode, resolveCodeCriticDefault, resolveQualityMode } from "../quality-mode";
+import { CODE_CRITIC_DEFAULT_SETTING, QUALITY_MODE_SETTING, applyCodeCriticDefault, applyQualityMode, resolveCodeCriticDefault, resolveQualityMode, withReferenceTestCritic } from "../quality-mode";
 import type { CodeCriticDefault } from "../quality-mode";
 import type { Verdict, VerdictStatus } from "@lane-pilot/workflow-engine";
 import { MAIN_ATTEMPT_LIMIT } from "../../runs";
@@ -463,7 +463,7 @@ export async function runCodeCritique(input:{
   const cites = candidateCitations(input.evidence.files, MAX_FILE_EXCERPT_BYTES);
   const projectSettings = await stageHelperSettings(input.bb,input.db,input.projectId,input.runId);
   const qualityMode = resolveQualityMode(input.task,projectSettings[QUALITY_MODE_SETTING]);
-  const settings = applyCodeCriticDefault(applyQualityMode(projectSettings,qualityMode),qualityMode,input.task.risk,resolveCodeCriticDefault(projectSettings[CODE_CRITIC_DEFAULT_SETTING],input.criticDefault));
+  const settings = withReferenceTestCritic(applyCodeCriticDefault(applyQualityMode(projectSettings,qualityMode),qualityMode,input.task.risk,resolveCodeCriticDefault(projectSettings[CODE_CRITIC_DEFAULT_SETTING],input.criticDefault)), input.evidence.referenceTestEdits);
   const existing = listStageReceipts(input.db, input.runId, input.taskId).find((row) => row.stageId === "code-critique");
   const frozen = input.frozenPolicy ?? critiquePolicyFromResult(existing?.result);
   let parsed:ReturnType<typeof parseCodeCritiqueSettings>;

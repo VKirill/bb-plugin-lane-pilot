@@ -68,3 +68,11 @@ export function applyCodeCriticDefault(settings: Record<string, unknown>, mode: 
   const modeUnset = settings["code_critique.mode"] == null || settings["code_critique.mode"] === "";
   return { ...settings, "code_critique.enabled": true, ...(modeUnset ? { "code_critique.mode": "advisory" } : {}) };
 }
+
+/**
+ * A writer that changed a test which existed before the task changed the yardstick: the code critic reviews it whatever the risk or
+ * quality mode, and its rework stops acceptance (gate). On the hub 134 of 756 tasks did so, and the critic saw none of them (2026-10-31).
+ */
+export function withReferenceTestCritic(settings: Record<string, unknown>, referenceTestEdits: readonly string[] | undefined): Record<string, unknown> {
+  return referenceTestEdits?.length ? { ...settings, "code_critique.enabled": true, "code_critique.mode": "gate" } : settings;
+}

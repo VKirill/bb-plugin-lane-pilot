@@ -107,6 +107,21 @@ export function referenceTestEdits(changes: ReadonlyArray<{ path: string; status
   return changes.filter((change) => TEST_PATH.test(change.path) && /^(M|D|R)/.test(change.status)).map((change) => change.path);
 }
 
+/**
+ * Check scripts the attempt changed: a produced file named in one of the task's verification commands, or a package.json when a command
+ * runs through a package manager (its scripts are the check). A writer that narrows `scripts/check.sh` to its new output, tests untouched,
+ * changed the yardstick as much as one that edits a test.
+ */
+export function checkScriptEdits(produced: readonly string[], commands: readonly string[]): string[] {
+  const viaPackage = commands.some((command) => /(^|[\s;&|(])(npm|pnpm|yarn|bun|npx)\s/.test(command));
+  return produced.filter((path) => {
+    const bare = path.replace(/^\.\//, "");
+    if (TEST_PATH.test(bare)) return false;
+    if (viaPackage && /(^|\/)package\.json$/.test(bare)) return true;
+    return commands.some((command) => command.includes(bare));
+  });
+}
+
 /** Spend reserve (SMA: Spend reserve): a task may start only when the run's budget still holds its appetite after the open tasks' appetites. */
 export function spendReserve(input: { budgetTokens: number | null; spentTokens: number; openAppetites: readonly number[]; appetite: number | null }): { ok: boolean; free: number | null; why?: string } {
   if (input.budgetTokens === null) return { ok: true, free: null };

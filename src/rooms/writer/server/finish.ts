@@ -10,7 +10,7 @@ import type { HelperPolicySnapshot } from "../../native-agent";
 import { writerExecutionSelection } from "@lane-pilot/models";
 import { actionableFindings, advisoryFeedback, buildCandidateEvidence, codeCritiqueSource, codeRepairPrompt, findingsHash, nextRepairAction, parseCodeCritiqueSettings, parseWriterRepairReply, repairLedgerFromResult, sameUnresolvedFindings, sameWriterIdentity, settingsFromFrozenPolicy, shouldRequestRepair } from "../../critique";
 import type { WriterIdentity } from "../../critique";
-import { CODE_CRITIC_DEFAULT_SETTING, QUALITY_MODE_SETTING, applyCodeCriticDefault, applyQualityMode, resolveCodeCriticDefault, resolveQualityMode } from "../../critique";
+import { CODE_CRITIC_DEFAULT_SETTING, QUALITY_MODE_SETTING, applyCodeCriticDefault, applyQualityMode, resolveCodeCriticDefault, resolveQualityMode, withReferenceTestCritic } from "../../critique";
 import { loadCriticCodeDefault } from "./critic-override";
 import { runPlanFactStage } from "./plan-fact";
 import { candidatePatches, runCodeCritique } from "../../critique/server";
@@ -21,7 +21,7 @@ import { stringAt } from "../../core/server";
 import { wasAnsweredByDefault } from "./question-default";
 import { needsHumanQuestion, outputText, providerLimitNotice, providerStreamError, WRITER_STREAM_ERROR, writerContextBlocks, writerSetupLines } from "./writer-task";
 import { isLiveDecision } from "../live-folder";
-import { TASK_WORDS_KEY, acceptanceProofGap, taskSizeOf, isMainfixTask, landingWordGap, ownerWordsOn, questionsFromFile, referenceTestEdits, taskWordKey, testFitFindings, writerMarkers } from "../../tasks";
+import { TASK_WORDS_KEY, acceptanceProofGap, taskSizeOf, isMainfixTask, landingWordGap, ownerWordsOn, questionsFromFile, checkScriptEdits, referenceTestEdits, taskWordKey, testFitFindings, writerMarkers } from "../../tasks";
 import type { TaskWord } from "../../tasks";
 import type { StageId } from "../../tasks";
 import { readCheckRun } from "../../tasks/server";
@@ -363,7 +363,25 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
       const qualityMode = resolveQualityMode(input.task,projectSettings[QUALITY_MODE_SETTING]);
       const taskCriticDefault = await loadCriticCodeDefault(bb.storage.kv as never, input.taskId);
       const criticDefault = resolveCodeCriticDefault(projectSettings[CODE_CRITIC_DEFAULT_SETTING], taskCriticDefault);
-      const liveCritiquePolicy = frozenPolicy ?? parseCodeCritiqueSettings(applyCodeCriticDefault(applyQualityMode(projectSettings,qualityMode),qualityMode,input.task.risk,criticDefault));
+      // Tests that existed on the base and that the writer changed: read once here, so the critic is switched on for them, and below for test_fit.
+      const fitAttempt = getAttempt(db, input.attemptId);
+      const basePathForTests = taskBasePath(db, input.runId, input.taskId);
+      // ponytail: the first 400 lines only. A deletion past that line is missed; raise the cap if a real test file is longer.
+      const readFit = (cwd:string | null | undefined, path:string) => cwd
+        ? host.call("readBoundedFile", { requestedHostId:input.config.hostId, projectCwd:cwd, relativePath:path, offset:0, maxLines:400 }, { hostId:input.config.hostId, timeoutMs:10_000 }).then((file) => file.content, () => null)
+        : Promise.resolve(null);
+      const referenceBefore = new Map<string, string>();
+      for (const path of referenceTestEdits((candidate.produced ?? []).map((path) => ({ path, status:"M" }))).slice(0, 20)) {
+        const before = await readFit(basePathForTests, path);
+        if (before !== null) referenceBefore.set(path, before);
+      }
+      const referenceTests = [...referenceBefore.keys()];
+      const checkScripts: string[] = [];
+      for (const path of checkScriptEdits(candidate.produced ?? [], input.task.verification.map((row) => row.command)).slice(0, 10)) {
+        if (await readFit(basePathForTests, path) !== null) checkScripts.push(path);
+      }
+      const yardstick = [...referenceTests, ...checkScripts];
+      const liveCritiquePolicy = frozenPolicy ?? parseCodeCritiqueSettings(withReferenceTestCritic(applyCodeCriticDefault(applyQualityMode(projectSettings,qualityMode),qualityMode,input.task.risk,criticDefault), yardstick));
       const baselineHashes = Object.fromEntries(input.dirtBefore.map((row) => [row.path, row.sha256 || null]));
       let lastPatches: Record<string, string> | undefined;
       const captureEvidence = async () => {
@@ -394,6 +412,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
           dirtOk:dirt.ok,
           dirtReason:dirt.ok ? undefined : dirt.reason,
           workspace:input.task.project_cwd,
+          referenceTestEdits:yardstick,
         });
       };
       let criticNotes = "";
@@ -716,20 +735,9 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
       }
       // Approach and lesson markers warn. A weakened test (test_fit) blocks acceptance; any other edit of a test that already existed stays a warning.
       const markers = writerMarkers(`${candidate.output ?? ""}\n${answer}`);
-      const testEdits: string[] = [];
+      const testEdits = referenceTests;
       const fitFiles: Array<{ path:string; before:string | null; after:string | null }> = [];
-      const fitAttempt = getAttempt(db, input.attemptId);
-      const basePathForTests = taskBasePath(db, input.runId, input.taskId);
-      // ponytail: the first 400 lines only. A deletion past that line is missed; raise the cap if a real test file is longer.
-      const readFit = (cwd:string | null | undefined, path:string) => cwd
-        ? host.call("readBoundedFile", { requestedHostId:input.config.hostId, projectCwd:cwd, relativePath:path, offset:0, maxLines:400 }, { hostId:input.config.hostId, timeoutMs:10_000 }).then((file) => file.content, () => null)
-        : Promise.resolve(null);
-      for (const path of referenceTestEdits((candidate.produced ?? []).map((path) => ({ path, status:"M" }))).slice(0, 20)) {
-        const before = await readFit(basePathForTests, path);
-        if (before === null) continue;
-        testEdits.push(path);
-        fitFiles.push({ path, before, after: await readFit(fitAttempt?.workspace_path, path) });
-      }
+      for (const [path, before] of referenceBefore) fitFiles.push({ path, before, after: await readFit(fitAttempt?.workspace_path, path) });
       for (const path of (candidate.produced ?? []).filter((path) => /(^|\/)package\.json$|\.(?:sh|ya?ml)$/.test(path)).slice(0, 10)) {
         fitFiles.push({ path, before: await readFit(basePathForTests, path), after: await readFit(fitAttempt?.workspace_path, path) });
       }
@@ -744,7 +752,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
       const markerWarnings = [
         ...(!markers.approach ? ["the report has no APPROACH line"] : []),
         ...(!markers.lesson && !markers.noLessonReason ? ["the report has no LESSON line (a lesson, or none with the reason)"] : []),
-        ...(testEdits.length ? [`the writer changed tests that existed before the attempt (reference tests): ${testEdits.join(", ")} — the critic checks they were not weakened`] : []),
+        ...(testEdits.length ? [`the writer changed tests that existed before the attempt (reference tests): ${testEdits.join(", ")} — the code critic reviews them in gate mode`] : []),
       ];
       if (criticNotes) {
         markerWarnings.push(criticNotes);
