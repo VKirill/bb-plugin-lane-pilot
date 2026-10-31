@@ -30,18 +30,21 @@ export const HEAVY_WITHOUT_JEV = 700;
 export function intakeByRules(text: string): { kind: IntakeKind; confident: boolean } {
   const clean = text.trim();
   if (isWholeConsent(clean) || CONSENT.test(clean)) return { kind: "consent", confident: true };
-  // A short line is settled only as a question; a short request goes to the judgment (it may be a remark, not a job).
-  if (clean.length <= 80 && !clean.includes("\n") && clean.endsWith("?")) return { kind: "question", confident: true };
+  // One line that ends with «?» is a question at any length (ph_82dfc9db78, 2026-10-31: «Есть предложения как улучшить дизайн… на
+  // телефонах?», 135 characters, went to the judgment, was read as heavy and opened a phase for ten hours); a short request goes to the judgment.
+  if (!clean.includes("\n") && clean.endsWith("?")) return { kind: "question", confident: true };
   if (clean.length <= 80 && !clean.includes("\n")) return { kind: "small", confident: false };
   return { kind: clean.length > HEAVY_WITHOUT_JEV ? "heavy" : "small", confident: false };
 }
 
 export const INTAKE_JUDGMENT_ID = "intake.weight";
+/** A heavy reading with «question» this likely or more is taken as a question. */
+export const QUESTION_RUNNER_UP = 0.2;
 const clip = (text: string, max: number) => (text.length > max ? `${text.slice(0, max - 1)}…` : text);
 
 export const intakeJudgment = defineJudgment<{ text: string; previous?: string | null; /** Ask the same question with the options in the reverse order (self-consistency on the border zone). */ reverse?: boolean }, { kind: IntakeKind; service?: ServiceKind; service_p?: number }>({
   id: INTAKE_JUDGMENT_ID,
-  version: 1,
+  version: 2,
   defaultMode: "active",
   timeoutMs: 8_000,
   // The PM's last words in the chat: «sign in yourself» is a reply to the PM's question about a sign-in, not a new task (live 2026-10-25).
@@ -50,11 +53,11 @@ export const intakeJudgment = defineJudgment<{ text: string; previous?: string |
     // Option order biases the answer toward the first option (TypeSafe jaggedness #8): a border-zone pick is re-asked
     // with the criteria reversed before it counts.
     const criteria = {
-      heavy: "A goal that needs several tasks that depend on each other, a design or architecture decision, a new feature or section, a redesign, a migration, or work whose result has to be planned and accepted as a whole.",
+      heavy: "An order to do a goal that needs several tasks that depend on each other, a design or architecture decision, a new feature or section, a redesign, a migration, or work whose result has to be planned and accepted as a whole. It orders the work done; asking for ideas about such work is a question.",
       small: "One concrete change a single task can make: a fix, a tweak, a copy or style edit, one page or one endpoint.",
       batch: "A list of several independent small fixes or edits, each one task, none needing a plan.",
       process: "A new recurring routine or way of working the system itself should run again and again: a pipeline, a regular job, a checklist to repeat for every new item, «each time X do Y», «every week …».",
-      question: "A question or a request for information, a report or a status; it asks for no change to the project.",
+      question: "A question or a request for information, a report or a status, or a request for suggestions, ideas, options or an assessment («есть предложения?», «как можно улучшить?», «что думаешь?»): it consults the PM and orders no change to the project.",
       consent: "Agreement, a yes, an approval of what was proposed, or a short go-ahead.",
       reply: "A reply about work already under way in this chat (`pm_last_message` shows what): an answer to the PM's question, a permission or an instruction for a helper or task that is running, a correction of how it does it, or a remark, complaint or feedback on how the work goes («why do you ask me?», «it takes too long»). It asks for no new piece of work.",
       service: "A one-line service request the LP database alone can answer, needing no judgment: 'what is the status', 'what is running now', 'cancel task X' (X named plainly), 'show the last results'.",
@@ -79,6 +82,9 @@ export const intakeJudgment = defineJudgment<{ text: string; previous?: string |
     // Unsure is not a job: «small» here started a build on remarks the judgment could not place (live 2026-10-26: 8 of 13 issue-quick
     // runs of one chat ended «too vague»). A reply starts nothing; the PM reads the message in its turn.
     if (!pick || pick.p < t.min_p!) return { decision: { kind: "reply" } };
+    // A build is not started on a message that reads as a question too: heavy 0.74 with question 0.25 was a request for suggestions
+    // (ph_82dfc9db78). The PM reads it and talks first.
+    if (pick.top === "heavy" && (pick.ranked.find(([option]) => option === "question")?.[1] ?? 0) >= QUESTION_RUNNER_UP) return { decision: { kind: "question" } };
     const kind: IntakeKind = (INTAKE_KINDS as readonly string[]).includes(pick.top) ? (pick.top as IntakeKind) : "small";
     // The service sub-question names which service; `cancel` needs an unambiguous task, judged in serviceAnswer.
     const svc = choiceOf(answers, "service");

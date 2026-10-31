@@ -336,6 +336,16 @@ describe("a reply about work under way", () => {
     expect(unsure.decision).toEqual({ kind: "reply" });
     expect(JSON.stringify(intakeJudgment.questions({ text: "x" }))).toMatch(/complaint or feedback on how the work goes/);
   });
+  it("a request for suggestions is a question, not a build (ph_82dfc9db78: ten hours of a phase for one)", async () => {
+    const { intakeJudgment } = await import("../src/rooms/phase/intake");
+    const asked = "Есть предложения как можно улучшить дизайн архитектуру нашего плагина на телефонах? А то как-то не очень компактно UI смотрится чтоли?";
+    expect(intakeByRules(asked)).toEqual({ kind: "question", confident: true });
+    const live = intakeJudgment.decide({ weight: { type: "choice", probabilities: { heavy: 0.74, question: 0.25, small: 0.01 } } } as never, { min_p: 0.55 }, { text: asked });
+    expect(live.decision).toEqual({ kind: "question" });
+    const order = intakeJudgment.decide({ weight: { type: "choice", probabilities: { heavy: 0.9, question: 0.05, small: 0.05 } } } as never, { min_p: 0.55 }, { text: "сделай раздел блога" });
+    expect(order.decision).toEqual({ kind: "heavy" });
+    expect(JSON.stringify(intakeJudgment.questions({ text: "x" }))).toMatch(/request for suggestions/);
+  });
 });
 
 describe("a hand-over from a scheduled agent is one start per key (RECHECK-341 F7)", () => {
