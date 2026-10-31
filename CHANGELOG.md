@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **A context signed again calls the PM again.** The reminder for the owner's word had one key per turn (`discussion:word:context`), and a reminder goes once per key. In the magicseo replay the context was signed again at 08:08, after its file changed; the PM had been told at 07:34, so it was not told again. It waited for the plan's verdict while Lane Pilot waited for the owner's word. The key of the context and plan words now carries the sha of what is signed. Test: `tests/phase-person-steps.test.ts`.
+
 - **The planner reads the owner's answers.** Lane Pilot writes CONTEXT.md from the analysis, before the owner answers its open questions, and the planner got only that file. In the magicseo replay the owner answered «an independent rebuild from scratch; plugins/magicseo is not forked or copied», but the context kept «reuse or fork» as a free decision, and the plan's first piece was «move the client over from the reference». The answered questions now go to lp.plan and to the plan check as `findings.owner_answers`, with the rule that they override the context. Test: `tests/phase-auto-stages.test.ts`.
 
 - **A password from the owner's message stays out of the phase.** The magicseo ТЗ carries a site login (email and password); the intake put it into the phase's title and goal, and from there into the phase files that the PM committed to the replay checkout. The intake now hides a value after a password/token/secret word, or a password-like word right after an email, with «[password hidden: it is in the owner's message; the PM keeps it in Env Catalog]»; the store does the same on insert and on read, so an old phase loses it too. Ordinary prose is left as it is. Test: `tests/phase-credentials.test.ts`.

@@ -518,7 +518,10 @@ export function nextAction(phase: Phase, facts: ReadonlyMap<string, TaskFact>): 
       && (wordOf(r, "acceptance")?.decision !== "yes" || wordOf(r, "acceptance")?.key !== acceptanceKey(r)) ? "acceptance" : null;
   if (turn === "acceptance") return { key: key(`word:acceptance:${acceptanceKey(r)}`), stage: phase.stage, waitsForPm: true,
     text: `${head} is prepared and awaits the owner's keyed decision on package ${acceptanceKey(r)} (owner.words is on): two decisions — is the result clear and useful, and are the remaining limits and the recovery acknowledged. He decides in the phase card, or ask him with lane_pilot_ask_owner and record it with ${tool("word", `, phaseId:"${id}", turn:"acceptance", decision:"yes"|"no", useful:true|false, limits:true|false, text`)}.` };
-  if (turn) return { key: key(`word:${turn}`), stage: phase.stage, waitsForPm: true,
+  // The key names what the word is for: a context signed again (or a plan submitted again) after a word is a new step for the PM. With
+  // one key per turn the PM was never told (magicseo replay 2026-10-31: re-signed at 08:08, both sides waited on each other).
+  const version = turn === "context" ? r.context?.sha : turn === "planning" ? r.plan?.sha : undefined;
+  if (turn) return { key: key(`word:${turn}${version ? `:v${version.slice(0, 12)}` : ""}`), stage: phase.stage, waitsForPm: true,
     text: `${head} awaits the owner's word at ${turn} (owner.words is on). He gives it in the phase card, or ask him with lane_pilot_ask_owner and record it with ${tool("word", `, phaseId:"${id}", turn:"${turn}", decision:"yes"|"no", text`)}.` };
   if (phase.state === "paused" || phase.state === "pause_requested") return { key: key("paused"), stage: phase.stage, text: `${head} is paused; ${tool("resume", `, phaseId:"${id}"`)} moves it on.`, waitsForPm: false };
   switch (phase.stage) {

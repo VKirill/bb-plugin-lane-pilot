@@ -1041,7 +1041,7 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
   async function poke(phase: Phase & { pokedKey?: string | null }): Promise<void> {
     const action = nextAction(phase, facts(phase));
     // Call about a waiting decision: a turn that needs the owner's word is also a row on «Ждут владельца» (and its Telegram digest).
-    const wordTurn = action.key.match(/:word:([a-z]+)(?::(\d+))?(?::[0-9a-f]+)?$/);
+    const wordTurn = action.key.match(/:word:([a-z]+)(?::(\d+))?(?::(?:v[\w-]+|[0-9a-f]+))?$/);
     if (wordTurn) postOwnerItem(db as never, { key: `phase-word:${phase.id}:${wordTurn[1]}${wordTurn[2] ? `:${wordTurn[2]}` : ""}`, source: "phase", kind: "word", projectId: phase.projectId,
       what: `Phase «${phase.title}»: your word at ${wordTurn[1]}${wordTurn[2] ? ` (wave ${wordTurn[2]})` : ""}`, why: action.text.slice(0, 600) });
     // Aging said once a day; a stalled phase named in the book only: no part for three days (or twelve hours at execution with pieces at work). The PM is not

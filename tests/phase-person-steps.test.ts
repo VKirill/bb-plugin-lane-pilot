@@ -33,7 +33,10 @@ describe("the context signature", () => {
     const { phases, id } = await fixture(true);
     const signed = await phases.context({ phaseId: id, ...card });
     expect(signed.stage).toBe("discussion");
-    expect(nextAction(signed, new Map()).key).toBe("discussion:word:context");
+    expect(nextAction(signed, new Map()).key).toBe(`discussion:word:context:v${signed.record.context!.sha.slice(0, 12)}`);
+    // Signed again (its files changed): a new step for the PM, so it is told again.
+    const again = { ...signed, record: { ...signed.record, context: { ...signed.record.context!, sha: "f".repeat(64) } } };
+    expect(nextAction(again, new Map()).key).not.toBe(nextAction(signed, new Map()).key);
     const yes = await phases.word({ phaseId: id, turn: "context", decision: "yes", text: "да", by: "owner via screen" });
     expect(yes.stage).toBe("planning");
   });
