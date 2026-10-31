@@ -938,9 +938,12 @@ export class WorkflowEngine {
         lastError = cause; outcome = null;
         spentBefore = addSpend(spentBefore, (cause as { usage?: Usage } | null)?.usage);
         j.event(runId, stepKey, "attempt_failed", null, null, `${attempt}/${node.maxAttempts}: ${cause instanceof Error ? cause.message : String(cause)}`);
-        if (abort.signal.aborted) break;
+        if (abort.signal.aborted || this.stopped()) break;
       }
     }
+    // A step whose helper gave up because the plugin is stopping did not fail: it stays running for the reload, which runs a
+    // reentrant one again (its spawn found by key) and interrupts any other. magicseo replay recon (2026-10-31) was failed by a deploy.
+    if (!outcome && this.stopped()) return "stop";
     this.fault("after-run");
     const current = j.getRun(runId)!;
     if (TERMINAL_RUN.includes(current.status)) { j.moveStep(runId, stepKey, "running", "canceled", { ended: true }); return "skip"; }

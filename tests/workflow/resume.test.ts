@@ -30,6 +30,25 @@ describe("a reload in the middle of a node", () => {
     expect(log).toEqual(["null>pending", "pending>running", "running>pending", "pending>running", "running>succeeded"]);
   });
 
+  it("keeps a step whose helper gave up because the plugin was stopping, and the reload runs it again (a deploy failed the magicseo recon, 2026-10-31)", async () => {
+    const db = journalDb();
+    let stop = () => undefined as void;
+    const quits: NodeExecutor = { reentrant: true, run: () => new Promise((_, reject) => { stop = () => reject(new Error("errand:plugin_stopped")); }) };
+    const first = engineOn(db, { search: quits, write });
+    const { runId } = first.start({ workflow: wf(), inputs: { query: "q" } });
+    await until("search running", () => stepStates(db, runId)["search#1"] === "running");
+    first.dispose();
+    stop();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(stepStates(db, runId)["search#1"]).toBe("running");
+    expect(first.get(runId)?.status).toBe("running");
+
+    const second = engineOn(db, { search, write });
+    expect(await second.resume()).toEqual([runId]);
+    await second.idle();
+    expect(second.get(runId)).toMatchObject({ status: "succeeded", output: { result: "written" } });
+  });
+
   it("interrupts a step that is not reentrant, and the run with it, instead of running it twice", async () => {
     const db = journalDb();
     let runs = 0;
