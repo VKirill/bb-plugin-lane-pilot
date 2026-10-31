@@ -398,11 +398,13 @@ describe("lane_pilot_update_task", () => {
             write: async (args: { path: string; content: string }) => { writes.push(args); },
           },
           threads: {
+            get: async () => ({ id: "thr-w", environmentId: "env-writer" }),
             send: async (args: { threadId: string; input: Array<{ text: string }> }) => {
               if (options.failSend) throw new Error("thread gone");
               sent.push(args);
             },
           },
+          environments: { get: async () => ({ path: "/ws/worktrees/att-1" }) },
         },
       };
       const ctx = {
