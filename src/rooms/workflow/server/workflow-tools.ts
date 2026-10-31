@@ -18,6 +18,7 @@ import type { Services } from "../../core/server";
 import { jev } from "@lane-pilot/jev";
 import { createJevRouterModel } from "../route-model";
 import { createRouterModel } from "./workflow-router-model";
+import { builtinWorkflows } from "../builtin";
 import { realDeps } from "./workflow-architect";
 import { createWorkflowLibrary } from "./workflow-library";
 import { createWorkflowPreflight } from "./workflow-preflight";
@@ -236,7 +237,9 @@ export function mountWorkflowTools(ctx: ServerCore, services: Services): void {
   registerObservedTool(bb.agents, {
     name: "lane_pilot_route",
     description: "Match a request to a ready Lane Pilot workflow: the workflow, how sure the match is, a boundary contract and goals, or up to three questions.",
-    instructions: "Use from a Lane Pilot PM chat when the owner asks for multi-step work (a feature end to end, a review and fix, a release, research, a post) before you plan it yourself. Pass `intent` (the owner's request, in their words) and `context` (what you know that the request does not say: the project, files, the state of the run). Returns `decision`: `route` with `workflowId`, `confidence` (0-100), `evidence` (pattern, rejected workflows and why, rules that fired), `boundary_contract` (in scope, out of scope, constraints; `guesses` lists what is inferred), `goals`, `inputs` and `missingInputs`; or `clarify` with at most three `questions` and no workflow. Published workflows are offered, and so are tested ones (they passed their stub tests but never ran for real: `notYetRunLive`; ask the owner before a first real run, which needs `liveTrial: true`); of candidates that match alike the one that has run well and lately comes first (`runRecord` 0 to 1 shows it). Nothing is started by this call. Show the owner the choice and the contract before lane_pilot_run_workflow. When no workflow fits, start the fallback graph with its tool (the answer's `next` names them).",
+    // The visible registry (Matvey: «the model picks graphs from a list it sees»): the shipped graphs the router offers, by id.
+    instructions: `Ready graphs shipped with Lane Pilot: ${builtinWorkflows().filter(isOffered).map((w) => w.id).join(", ")}; the project's own published graphs are found by this call too. ` +
+      "Use from a Lane Pilot PM chat when the owner asks for multi-step work (a feature end to end, a review and fix, a release, research, a post) before you plan it yourself. Pass `intent` (the owner's request, in their words) and `context` (what you know that the request does not say: the project, files, the state of the run). Returns `decision`: `route` with `workflowId`, `confidence` (0-100), `evidence` (pattern, rejected workflows and why, rules that fired), `boundary_contract` (in scope, out of scope, constraints; `guesses` lists what is inferred), `goals`, `inputs` and `missingInputs`; or `clarify` with at most three `questions` and no workflow. Published workflows are offered, and so are tested ones (they passed their stub tests but never ran for real: `notYetRunLive`; ask the owner before a first real run, which needs `liveTrial: true`); of candidates that match alike the one that has run well and lately comes first (`runRecord` 0 to 1 shows it). Nothing is started by this call. Show the owner the choice and the contract before lane_pilot_run_workflow. When no workflow fits, start the fallback graph with its tool (the answer's `next` names them).",
     parameters: z.object({ intent: z.string().min(3).max(4000), context: z.string().max(8000).optional() }).strict(),
     execute: async (params, context) => {
       // The train: a request the machine took (a phase, the small-task graph, the architect) is not routed to another system by the PM.

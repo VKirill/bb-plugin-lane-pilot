@@ -290,6 +290,10 @@ describe("the tools in the plugin", () => {
     setRunThread(db, RUN, PM);
     const names = harness.registrations.agentTools.map((tool) => tool.name);
     expect(names).toEqual(expect.arrayContaining(["lane_pilot_route", "lane_pilot_run_workflow", "lane_pilot_workflow_status"]));
+    // The PM sees the shipped graphs by id before it calls (the visible registry); Lane Pilot's own pipelines are not among them.
+    const route = harness.registrations.agentTools.find((tool) => tool.name === "lane_pilot_route") as unknown as { instructions: string };
+    expect(route.instructions).toMatch(/Ready graphs shipped with Lane Pilot: .*insights-post/);
+    expect(route.instructions).not.toMatch(/\blp\.plan\b|lp-task-pipeline/);
     const call = async (name: string, params: Record<string, unknown>) => parse(String(await harness.behavior.callAgentTool(name, params, { threadId: PM, projectId: PROJECT })));
     const refusal = await call("lane_pilot_run_workflow", { workflowId: "lp.build", inputs: {} });
     expect(refusal).toMatchObject({ status: "refused" });
