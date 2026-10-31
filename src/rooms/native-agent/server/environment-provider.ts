@@ -54,8 +54,12 @@ export function registerLaneWorktreeProvider(ctx: ServerCore): boolean {
     bb.experimental_environments.register({
       id: LANE_WORKTREE_PROVIDER_ID,
       displayName: "Lane Pilot worktree",
-      description: "A git worktree of the run's folder for one Lane Pilot writer attempt.",
+      description: "A git worktree of the run's folder for one Lane Pilot writer attempt. For a chat, pick the project folder.",
       icon: "FolderGit",
+      // BB lists a provider without requirements on every machine: a project with a folder on the Mac mini alone showed
+      // «MacBook · Lane Pilot worktree» as the MacBook's only choice (owner, 2026-10-31), a chat that could never start.
+      // A worktree forks the project's folder, so it is offered only where that folder is.
+      requires: { projectCheckout: true },
       inputs: laneWorktreeInputs,
       policy: { pathKeys: "per-attempt", retireGraceMs: LANE_WORKTREE_RETIRE_GRACE_MS },
       async create(context) {

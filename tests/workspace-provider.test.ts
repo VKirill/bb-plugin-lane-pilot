@@ -52,6 +52,9 @@ describe("the lane-pilot-worktree environment provider", () => {
     expect(provider.policy.pathKeys).toBe("per-attempt");
     expect(provider.policy.retireGraceMs).toBe(LANE_WORKTREE_RETIRE_GRACE_MS);
     expect(LANE_WORKTREE_RETIRE_GRACE_MS).toBe(5 * 60_000);
+    // Offered only on a machine where the project has a folder: BB lists a provider without requirements everywhere,
+    // and the composer showed it as a machine's only choice where the project has no folder (2026-10-31).
+    expect(provider.requires?.projectCheckout).toBe(true);
     expect(laneWorktreeInputs.safeParse({ basePath: "repo", name: "a1" }).success).toBe(false);
     expect(laneWorktreeInputs.safeParse({ basePath: base, name: "a/1" }).success).toBe(false);
     expect(laneWorktreeInputs.safeParse({ basePath: base, name: "a1", path: worktree }).success).toBe(true);

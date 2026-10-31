@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.1.439
+
+- **The writer worktree provider is offered only where the project has a folder.** BB lists an environment provider without requirements on every machine, so the composer showed «MacBook · Lane Pilot worktree» as the only choice for a project whose folder is on the Mac mini alone: a chat on it could never start (no inputs, host outside the project). The provider now requires the project checkout, as BB's own worktree does, and its description says a chat picks the project folder. Writers are unaffected: a worktree always forks a project folder on its own machine.
+
 ## 0.1.438
 
 - **The global role table shows every provider.** Its model windows asked the first connected machine, the MacBook. There OpenCode is missing and Devin listed only «Agent default», so SWE-2 and the OpenCode models could not be picked. The table now asks the machine that offers the most providers and models; a machine named by the caller still wins.
