@@ -1384,11 +1384,14 @@ export class WorkflowEngine {
       if (options.takeOver) j.db.prepare("UPDATE lane_pilot_wf_run SET owner_id=NULL, lease_until=0 WHERE id=?").run(row.id);
       if (!this.claim(row.id)) continue;
       taken.push(row.id);
-      if (options.runtimeFor && !this.runtimes.has(row.id)) this.runtimes.set(row.id, options.runtimeFor(row));
+      // A run whose runtime this engine still holds was not lost to a reload: the periodic tick only finds it waiting. Interrupting it
+      // canceled the writer step of a live task, and the run failed `dead_end` (60 lp-task-pipeline runs on the hub, 2026-10-30/31).
+      const held = this.runtimes.has(row.id);
+      if (options.runtimeFor && !held) this.runtimes.set(row.id, options.runtimeFor(row));
       const c = this.compiled(row);
-      if (this.options.resumePolicy?.(row) === "interrupt") {
+      if (!held && this.options.resumePolicy?.(row) === "interrupt") {
         for (const step of j.steps(row.id).filter((item) => item.state === "running")) j.moveStep(row.id, step.step_key, "running", "interrupted", { error: "interrupted by a reload", ended: true });
-        j.setRunStatus(row.id, ["running"], "interrupted", "interrupted_by_reload");
+        j.setRunStatus(row.id, ["running", "waiting"], "interrupted", "interrupted_by_reload");
         this.cancelOpenSteps(row.id);
         this.release(row.id);
         continue;

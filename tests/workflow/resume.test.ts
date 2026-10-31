@@ -65,6 +65,31 @@ describe("a reload in the middle of a node", () => {
     expect(stepStates(db, runId)["search#1"]).toBe("interrupted");
   });
 
+  it("leaves a waiting run of its own alone on the periodic resume, and interrupts one a reload lost (60 lp-task-pipeline runs failed dead_end, 2026-10-30/31)", async () => {
+    const db = journalDb();
+    let done = false;
+    const waits: NodeExecutor = { run: async () => ({ wait: { kind: "attempt" } }), poll: async () => (done ? { output: { items: ["a"], count: 1, kind: "fresh" } } : null) };
+    const policy = { resumePolicy: () => "interrupt" as const };
+    const live = engineOn(db, { search: waits, write }, policy);
+    const { runId } = live.start({ workflow: wf(), inputs: { query: "q" }, runtime: { task: "T1" } });
+    await until("search waiting", () => stepStates(db, runId)["search#1"] === "waiting");
+    await live.resume();
+    expect(stepStates(db, runId)["search#1"]).toBe("waiting");
+    done = true;
+    await live.poll();
+    await live.idle();
+    expect(live.get(runId)).toMatchObject({ status: "succeeded" });
+
+    done = false;
+    const lost = live.start({ workflow: wf(), inputs: { query: "r" }, runtime: { task: "T2" } });
+    await until("search waiting", () => stepStates(db, lost.runId)["search#1"] === "waiting");
+    live.dispose();
+    const reloaded = engineOn(db, { search: waits, write }, policy);
+    await reloaded.resume();
+    await reloaded.idle();
+    expect(reloaded.get(lost.runId)).toMatchObject({ status: "interrupted", reason: "interrupted_by_reload" });
+  });
+
   it("does not re-run a step that began under another build", async () => {
     const db = journalDb();
     const hang: NodeExecutor = { reentrant: true, run: () => new Promise(() => undefined) };
