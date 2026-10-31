@@ -108,18 +108,41 @@ export function referenceTestEdits(changes: ReadonlyArray<{ path: string; status
 }
 
 /**
- * Check scripts the attempt changed: a produced file named in one of the task's verification commands, or a package.json when a command
- * runs through a package manager (its scripts are the check). A writer that narrows `scripts/check.sh` to its new output, tests untouched,
- * changed the yardstick as much as one that edits a test.
+ * Check scripts the attempt changed: a produced file a verification command runs (as the program, or as the script of an interpreter), or a
+ * package.json when a command runs through a package manager (its scripts are the check). A writer that narrows `scripts/check.sh` to its new
+ * output, tests untouched, changed the yardstick as much as one that edits a test. A file the command only reads (`grep -q hello src/hello.ts`)
+ * is the work under check, not the check: 0.1.414 counted it and sent every such task to the gate critic (tests/nested-repo-flow.test.ts).
  */
 export function checkScriptEdits(produced: readonly string[], commands: readonly string[]): string[] {
   const viaPackage = commands.some((command) => /(^|[\s;&|(])(npm|pnpm|yarn|bun|npx)\s/.test(command));
+  const run = new Set(commands.flatMap(scriptsRun));
   return produced.filter((path) => {
     const bare = path.replace(/^\.\//, "");
     if (TEST_PATH.test(bare)) return false;
     if (viaPackage && /(^|\/)package\.json$/.test(bare)) return true;
-    return commands.some((command) => command.includes(bare));
+    return [...run].some((script) => script === bare || script.endsWith(`/${bare}`));
   });
+}
+
+const INTERPRETER = /^(?:ba|z|da)?sh$|^node$|^python\d?(?:\.\d+)?$|^tsx$|^ts-node$|^deno$|^bun$|^ruby$|^perl$|^php$/;
+/** The files a shell command runs: each segment's program when it is a path, or the first operand of an interpreter. */
+function scriptsRun(command: string): string[] {
+  const out: string[] = [];
+  let dir = "";
+  const at = (file: string) => { const bare = file.replace(/^\.\//, "").replace(/^["']|["']$/g, ""); return dir && !bare.startsWith("/") ? `${dir}/${bare}` : bare; };
+  for (const segment of command.split(/&&|\|\||[;|()\n]/)) {
+    const words = segment.trim().split(/\s+/).filter(Boolean).filter((word, at, all) => !(/^[A-Za-z_]\w*=/.test(word) && all.slice(0, at).every((w) => /^[A-Za-z_]\w*=/.test(w) || w === "env")));
+    const args = words[0] === "env" ? words.slice(1) : words;
+    const program = args[0];
+    if (!program) continue;
+    // A relative cd moves the later paths, as the shell does; an absolute one leaves them as written.
+    if (program === "cd") { const to = args[1]?.replace(/^\.\//, "").replace(/\/$/, ""); if (to && !to.startsWith("/") && to !== ".") dir = dir ? `${dir}/${to}` : to; continue; }
+    if (INTERPRETER.test(program.split("/").pop()!)) {
+      const operands = args.slice(1).filter((word) => !word.startsWith("-") && word !== "run");
+      if (operands[0]) out.push(at(operands[0]));
+    } else if (program.includes("/")) out.push(at(program));
+  }
+  return out;
 }
 
 /** Spend reserve (SMA: Spend reserve): a task may start only when the run's budget still holds its appetite after the open tasks' appetites. */

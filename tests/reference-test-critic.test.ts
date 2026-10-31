@@ -33,5 +33,9 @@ describe("a writer that changed a test which existed before the task", () => {
     expect(checkScriptEdits(produced, ["bash scripts/check.sh", "npm test"])).toEqual(["scripts/check.sh", "./package.json"]);
     expect(checkScriptEdits(produced, ["bash scripts/check.sh"])).toEqual(["scripts/check.sh"]);
     expect(checkScriptEdits(produced, ["python3 -m pytest -q"])).toEqual([]);
+    // Run as the program, through env and after a cd; a file a command only reads is the work under check, not the check.
+    expect(checkScriptEdits(["scripts/verify.sh", "game/scripts/studio_check.py"], ["cd game && env CI=1 python3 -I scripts/studio_check.py", "./scripts/verify.sh --all"]))
+      .toEqual(["scripts/verify.sh", "game/scripts/studio_check.py"]);
+    expect(checkScriptEdits(["src/hello.ts", "src/a.ts"], ["grep -q hello src/hello.ts", "test -s src/a.ts"])).toEqual([]);
   });
 });
