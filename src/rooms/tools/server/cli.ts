@@ -2,6 +2,7 @@ import { prototypeConfigSchema, taskV2Schema } from "../../contracts";
 import { getActivation, getAttempt, getRun, getTask, importSettingsOnce, inspectAttempt, inspectState, listRunsWithAttempts, loadProjectSettings, loadPrototypeConfig, savePrototypeConfig, saveProjectSetting, transitionAttempt } from "../../storage";
 import { cancelRejection, confirmWriterStopped, finishRunSafely, pauseRun } from "../../runs/server";
 import { markCancelCode } from "../../storage";
+import { renderTimeline, taskTimeline } from "../../runs";
 import { stringAt, valueAt } from "../../core/server";
 import { outputText } from "../../writer/server";
 import { THREAD_WATCH_EVENT_TYPES, decideThreadCompletion, eventsListQueryLabel, listThreadEventsRaw, waitThreadIdle } from "@lane-pilot/thread-observe";
@@ -195,6 +196,7 @@ export function registerCli(ctx: ServerCore, services: Services) {
       { name:"regressions", summary:"The regression findings still open (--all for settled ones too)", usage:"bb lane-pilot regressions [project-id] [--all]" },
       { name:"regress-close", summary:"Settle a regression finding by hand", usage:"bb lane-pilot regress-close <id> <reason...>" },
       { name:"baseline", summary:"The checks already green or red on the base a task started from, and what turned red after its merge", usage:"bb lane-pilot baseline <task-id>" },
+      { name:"timeline", summary:"One task's record in time order, as written while it ran: attempts, every state move with its reason, stage and gate events, the baseline; the post-mortem view", usage:"bb lane-pilot timeline <task-id> [--run <run-id>] [--json]" },
       { name:"return", summary:"Send a task back to discussion, planning or the writer with a note: recorded, the stale receipts reset, the running attempt stopped with the exit confirmed, the work restarted from that stage with the note in its input", usage:"bb lane-pilot return <task-id> --to discussion|planning|writer --note \"…\"" },
       { name:"returns", summary:"The returns on record for a task: the note, the stale and kept stages, how far each got", usage:"bb lane-pilot returns <task-id>" },
       { name:"bench", summary:"LP-Bench: a fixed set of real past tasks replayed on an arm (writer, harness tree, setting) and compared in pairs: stages passed, cost, time", usage:BENCH_USAGE },
@@ -337,6 +339,14 @@ export function registerCli(ctx: ServerCore, services: Services) {
         if (command === "owner-presence") {
           const now = Date.now(), presence = await services.ownerPresence.sweep();
           return { exitCode:0, stdout:JSON.stringify(presence.map((row) => ({ ...row, minutesAgo:Math.round((now - row.at) / 60_000), holdsWriters:services.ownerPresence.holds(row.providerId, now) !== null })), null, 2) };
+        }
+        if (command === "timeline") {
+          const runAt = args.indexOf("--run");
+          const taskId = args.find((arg, index) => !arg.startsWith("--") && index !== runAt + 1);
+          if (!taskId) return { exitCode:1, stderr:"usage: bb lane-pilot timeline <task-id> [--run <run-id>] [--json]" };
+          const timeline = taskTimeline(db, taskId, runAt >= 0 ? args[runAt + 1] : undefined);
+          if (!timeline.runId) return { exitCode:1, stderr:renderTimeline(timeline) };
+          return { exitCode:0, stdout:args.includes("--json") ? JSON.stringify(timeline, null, 2) : renderTimeline(timeline) };
         }
         if (command === "memory-tiers") {
           if (args.length && !(args.length === 2 && args[0] === "--project")) return { exitCode:1, stderr:"usage: bb lane-pilot memory-tiers [--project P]" };

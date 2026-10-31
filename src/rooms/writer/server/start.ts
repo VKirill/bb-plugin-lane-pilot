@@ -1224,6 +1224,13 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
               ...(own.failure ? { previousAttempt:previousAttemptBrief(await trimCheckLogsIn(jev(), { ...own.failure, produced:[] }, freshTask.title, { projectId:input.projectId, runId:input.runId, subject:input.taskId, settings:runSettings }), freshTask, undefined, liveFolder) } : {}),
             });
             if (!spawned.ok) {
+              // The owner's stop landed while this fallback was being made: its spawn ends canceled (endSpawnFailure), and the task
+              // is canceled — not «emergency_fallback_failed», no next fallback, no park (cab-unslop-kit.3, 2026-10-31).
+              if (spawned.status === "canceled" || getAttempt(db,emergencyAttemptId)?.state === "canceled") {
+                last={status:"canceled",reason:spawned.reason,attemptId:emergencyAttemptId};
+                writerThreadId=undefined;
+                break;
+              }
               const fallbackFailureReason=`emergency_fallback_failed:${spawned.reason}`;
               transitionAttempt(db,emergencyAttemptId,"blocked",{reason:fallbackFailureReason});
               last={status:"blocked",reason:fallbackFailureReason,attemptId:emergencyAttemptId,

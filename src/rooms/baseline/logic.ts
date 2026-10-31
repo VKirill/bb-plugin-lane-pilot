@@ -141,6 +141,16 @@ export function unrunnableReason(check: BaselineCheck, task: TaskFiles): string 
     if (name?.includes("/") && taskOwns(inRepo(check, task, name), task)) return null;
     return `exit ${check.exitCode ?? "127"}: ${name ? `\`${name}\` is not found on the machine that runs the checks` : "the shell did not find the command"}`;
   }
+  // The check sandbox mounts the workspace writable except `.git/`, `.agents/` and `.cls/` (verification/sandbox.ts): a check that writes
+  // there dies with EROFS on the base as after the writer (cab-unslop-library.2, 2026-10-31: build.py made image variants under
+  // .agents/prototypes/…/img/_240; the writer's run failed the same way and three sibling tasks were canceled mid-work over it).
+  if (/read-only file system/i.test(note)) {
+    const where = /Read-only file system: '([^']+)'|read-only file system, \w+ '([^']+)'|[‘'"]([^’'"]+)[’'"]: Read-only file system/i.exec(note);
+    const path = where?.[1] ?? where?.[2] ?? where?.[3] ?? null;
+    const guard = path ? /\/(\.agents|\.git|\.cls)\//.exec(`/${path}`)?.[1] : null;
+    return `it writes ${path ?? "a file"} and the check sandbox refuses (Read-only file system${guard ? `: ${guard}/ is read-only for every check` : ""}); `
+      + "a build or generation that writes there is a plan step the writer runs in its session, not a verification command";
+  }
   const spawned = /spawn (\S+) ENOENT/.exec(note);
   if (spawned && !LOCAL_TOOLS.has(spawned[1]!) && mentions(check.command, spawned[1]!)) return `\`${spawned[1]}\` cannot be started (spawn ENOENT)`;
   if (/npm (?:error|ERR!) (?:code )?ENOENT/i.test(note) && /package\.json/.test(note)) {

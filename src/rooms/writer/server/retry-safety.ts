@@ -33,7 +33,10 @@ export async function retrySafetyStop(input: {
     // `git log --oneline` rows are abbreviated sha plus subject; `find` rows are ./-relative. Anything else is ignored,
     // so a host answering a different probe's stub output cannot look like foreign work.
     const commits = lines.filter((line) => /^[0-9a-f]{6,40}\s/.test(line));
-    const touched = lines.filter((line) => line.startsWith("./"));
+    // Lane Pilot's own check logs (`.agents/plans/items/<task>/logs/`, written by the verify pass an instant before the attempt's end,
+    // verify.ts) are neither foreign work nor a rewritten receipt: read as evidence modified after the end, they refused the automatic
+    // retry of a failed check (cab-unslop-library.2, 2026-10-31).
+    const touched = lines.filter((line) => line.startsWith("./") && !/^\.\/\.agents\/plans\/items\/[^/]+\/logs\//.test(line));
     if (commits.length) {
       return `retry_safety: ${workspace} has ${commits.length} commit(s) made after attempt ${attemptId} ended (${commits[0]}); ` +
         "the owner or another process worked there — inspect the worktree and dispatch again manually instead of an automatic retry";

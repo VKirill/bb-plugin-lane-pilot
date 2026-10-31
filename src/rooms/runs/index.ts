@@ -10,5 +10,7 @@ export type { FailureClass, FailureIntervention, FailureSide } from "./failure-c
 export { IllegalTransitionError, MAIN_ATTEMPT_LIMIT, RETRY_ELIGIBLE, TRANSITION_TABLE, isLegalMove } from "./state-machine";
 export type { AttemptState } from "./state-machine";
 export { isKnownReason, unknownReasons } from "./unknown-codes";
+export { renderTimeline, taskTimeline } from "./timeline";
+export type { TaskTimeline, TimelineEntry } from "./timeline";
 export { failureClassJudgment } from "./failure-class-judgment";
 export type { FailureClassDecision, FailureClassInput } from "./failure-class-judgment";

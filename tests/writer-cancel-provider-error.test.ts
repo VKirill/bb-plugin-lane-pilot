@@ -105,6 +105,31 @@ describe("a stop requested while the writer's thread errors", () => {
   });
 });
 
+// cab-unslop-kit.2 (2026-10-31): the PM's cancel landed 8 s after the validate gate passed; the finish went on to the critics, the
+// owner's word and the landing of a canceled attempt, holding the task's files for 32 min. It now ends at the next stage boundary.
+describe("a stop that lands once validation has passed", () => {
+  it("ends canceled before the critics and the landing when the stop is still requested", async () => {
+    const w = world({ threadStatus:"idle", cancel:false, validate:async (stop) => { stop(); return { status:"accepted", output:"done", produced:["note.txt"], verification:[] }; } });
+    const result = await w.run();
+    expect(result).toMatchObject({ status:"canceled", attemptId:"a1", writerThreadId:"writer-1" });
+    expect(getAttempt(w.db, "a1")).toMatchObject({ state:"canceled" });
+    expect(w.refused()).toEqual([]);
+    expect(w.db.prepare("SELECT COUNT(*) AS n FROM lane_pilot_gate_event WHERE task_id='t1' AND gate='accept'").get()).toMatchObject({ n:0 });
+  });
+
+  it("ends canceled, with no further move, when cancel.ts already closed the row", async () => {
+    const w = world({ threadStatus:"idle", cancel:false, validate:async () => {
+      transitionAttempt(w.db, "a1", "cancel_requested", { threadId:"writer-1" });
+      transitionAttempt(w.db, "a1", "canceled", { threadId:"writer-1", reason:"PM canceled" });
+      return { status:"accepted", output:"done", produced:["note.txt"], verification:[] };
+    } });
+    const result = await w.run();
+    expect(result).toMatchObject({ status:"canceled", attemptId:"a1" });
+    expect(getAttempt(w.db, "a1")).toMatchObject({ state:"canceled", reason:"PM canceled" });
+    expect(w.refused()).toEqual([]);
+  });
+});
+
 // Audit 2026-10-08 r2, item 4: the same race for every move the finish makes after the writer's report is read.
 describe("a stop requested while the writer's result is checked or merged", () => {
   for (const status of ["validation_failed", "empty_output", "timeout"] as const) {

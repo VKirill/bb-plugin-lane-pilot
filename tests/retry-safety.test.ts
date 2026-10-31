@@ -74,6 +74,9 @@ describe("retrySafetyStop (H-04)", () => {
     out = "./.agents/runs/x/artifacts/1/owns-check.json\n";
     const forged = await retrySafetyStop({ db: d, host: hostOf(() => ({ exitCode: 0, stdout: out })), hostId: "h", task, attemptId: "A1", liveFolder: false });
     expect(forged).toMatch(/check evidence .* modified/);
+    // Lane Pilot's own check log, written by the verify pass in the attempt's last second (cab-unslop-library.2, 2026-10-31): not a stop.
+    out = "./.agents/plans/items/T1/logs/npm-test.log\n";
+    expect(await retrySafetyStop({ db: d, host: hostOf(() => ({ exitCode: 0, stdout: out })), hostId: "h", task, attemptId: "A1", liveFolder: false })).toBeNull();
   });
 
   it("blocks when a catalog secret value sits in the worktree diff of a secret-using task", async () => {

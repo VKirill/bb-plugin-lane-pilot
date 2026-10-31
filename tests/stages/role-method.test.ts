@@ -20,6 +20,9 @@ describe("K1: role texts adapted from Maestro-Flow", () => {
     expect(prompt).toMatch(/without a file:line does not count/);
     expect(prompt).toContain("15 to 60 minutes");
     expect(prompt).toContain("PM read context");
+    // A build that writes under .agents/ is a plan step, not a check (cab-unslop 2026-10-31: the critic demanded one, the sandbox refused it).
+    expect(prompt).toMatch(/read-only for every check/);
+    expect(prompt).toMatch(/not a missing expected output/);
     expect(prompt).not.toMatch(MAESTRO_ONLY);
   });
 

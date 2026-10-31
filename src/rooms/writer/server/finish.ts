@@ -172,6 +172,15 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
       transitionAttempt(db, input.attemptId, "canceled", { threadId, reason:`writer stop observed after: ${reason}`.slice(0, 500) });
       return { status:"canceled", attemptId:input.attemptId, writerThreadId:threadId };
     };
+    // The PM's stop can land after validation passed (cab-unslop-kit.2, 2026-10-31: canceled 8 s after its validate gate). The row was
+    // canceled by cancel.ts while this finish went on: it ran the critics, told the PM «passed its checks, waits for the owner's word»,
+    // held the task's files for 32 min (start.ts `admitted`, so the sibling task queued behind it), and after the word died on the
+    // removed worktree and parked a canceled task. Every stage boundary after validation reads the row first.
+    const stoppedMeanwhile = (where:string, threadId = input.writerThreadId):Record<string,unknown>|null => {
+      const state = getAttempt(db, input.attemptId)?.state;
+      if (state === "cancel_requested") return endedByStop(where, threadId);
+      return state === "canceled" ? { status:"canceled", attemptId:input.attemptId, writerThreadId:threadId } : null;
+    };
     const providerFailed = (reason:string) => {
       const stopped = endedByStop(reason);
       if (stopped) return stopped;
@@ -345,6 +354,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
         transitionAttempt(db, input.attemptId, checked.status, { reason:checked.reason });
         return { ...checked, attemptId:input.attemptId, writerThreadId:input.writerThreadId };
       }
+      { const stopped = stoppedMeanwhile("validation"); if (stopped) return stopped; }
       let candidate = checked;
       let writerThreadId = input.writerThreadId;
       let review:"passed"|"not_required" = "not_required";
@@ -720,6 +730,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
         return { status:"blocked", reason, attemptId:input.attemptId, writerThreadId };
       }
       }
+      { const stopped = stoppedMeanwhile("the code critique", writerThreadId); if (stopped) return stopped; }
       // The plan against the fact: code checks the writer's evidence per acceptance item against the diff, never its prose. It records
       // its stage whatever the outcome; only plan_fact.mode=gate sends an item with no evidence that holds back to the writer.
       const planFact = await runPlanFactStage(ctx, { projectId:input.projectId, runId:input.runId, taskId:input.taskId, attempt:countAttempts(db,input.runId,input.taskId),
@@ -808,6 +819,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
       // in place and with its worktree, for the owner's yes the PM records (lane_pilot_queue word); a no or six silent hours block it.
       const ownerWords = ownerWordsOn(loadProjectSettings(db, input.projectId, getRunSettingsScopes(db, input.runId)));
       const wordsOf = async () => ((await bb.storage.kv.get(TASK_WORDS_KEY).catch(() => null)) as Record<string, TaskWord[]> | null)?.[taskWordKey(input.runId, taskFamily(input.taskId))];
+      { const stopped = stoppedMeanwhile("the plan-fact check", writerThreadId); if (stopped) return stopped; }
       let wordGap = landingWordGap(ownerWords, await wordsOf());
       if (wordGap && !wordGap.includes("said no")) {
         void sendServiceMessage(bb, { threadId:input.pmThreadId, senderThreadId:writerThreadId,
@@ -815,6 +827,8 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
         const since = Date.now();
         while (wordGap && !wordGap.includes("said no") && Date.now() - since < OWNER_WORD_WAIT_MS && !ctx.isDisposed()) {
           await new Promise((wake) => setTimeout(wake, 60_000));
+          const stopped = stoppedMeanwhile("the owner's word", writerThreadId);
+          if (stopped) return stopped;
           wordGap = landingWordGap(ownerWords, await wordsOf());
         }
       }
@@ -835,6 +849,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
         }, { projectId: input.projectId, runId: input.runId, subject: "writer-finish", settings: loadProjectSettings(db, input.projectId, getRunSettingsScopes(db, input.runId)) as JevSettings });
         if (scan?.by === "jev") bb.log.info(`Lane Pilot finish-scan ${input.taskId}: ${writerFinishScanJudgment.describe(scan.decision)}`);
       } catch { /* a scan is never a gate */ }
+      { const stopped = stoppedMeanwhile("the finish scan", writerThreadId); if (stopped) return stopped; }
       const receipt = await services.persistWriterAcceptance({
         config:input.config, task:input.task, runId:input.runId, taskId:input.taskId,
         attempt:countAttempts(db, input.runId, input.taskId), attemptId:input.attemptId,

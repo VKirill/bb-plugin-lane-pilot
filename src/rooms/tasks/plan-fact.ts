@@ -15,10 +15,14 @@ import { brokenWireReason, type WireResult } from "../wires";
  */
 export const PLAN_FACT_FENCE = "plan-fact";
 
+/** Pieces of evidence read per item; more are cut, not refused (a writer that cited 15 rebuilt pages lost its whole table to «<=8 items», cab-unslop 2026-10-31). */
+export const PLAN_FACT_EVIDENCE_MAX = 24;
+
 export const planFactRowSchema = z.object({
   item: z.number().int().min(1).max(200),
   status: z.enum(["done", "not_done"]),
-  evidence: z.array(z.string().min(1).max(300)).max(8).optional(),
+  evidence: z.preprocess((value) => Array.isArray(value) ? value.slice(0, PLAN_FACT_EVIDENCE_MAX) : value,
+    z.array(z.string().min(1).max(300)).max(PLAN_FACT_EVIDENCE_MAX)).optional(),
   why: z.string().max(400).optional(),
 }).strict();
 export type PlanFactRow = z.infer<typeof planFactRowSchema>;
@@ -28,7 +32,7 @@ export const PLAN_FACT_BRIEF_LINE = [
   "End your answer with the plan→fact table: a fenced block opened with ```plan-fact that holds a JSON array, one row per acceptance item in the contract's order (item 1 is the first):",
   '{"item":1,"status":"done","evidence":["src/a.ts:10-24","cmd:npm test"]}, or for an item you did not finish {"item":2,"status":"not_done","why":"<reason>"}.',
   "Evidence is a file you changed with the lines that do the work (path:first-last, or the path alone) or a verification command of the contract (cmd:<command>); for an item that says something stays unchanged, cite the lines that do that work and that you left as they were.",
-  "Lane Pilot checks each entry against the diff and the check results, never your prose; a done row without evidence that holds counts as not done.",
+  "Lane Pilot checks each entry against the diff and the check results, never your prose; a done row without evidence that holds counts as not done. A few pieces per item are enough: the strongest first.",
 ].join(" ");
 
 export type PlanFactTable =

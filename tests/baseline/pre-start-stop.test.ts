@@ -19,6 +19,10 @@ describe("a check that cannot run on the base (texts of the writers' needs_human
     expect(unrunnableReason(red("cd missing-dir && npm test", "bash: line 1: cd: missing-dir: No such file or directory"), task)).toMatch(/missing-dir/);
     // Docker without its compose plugin in the check sandbox (T8 of a bot project, 2026-10-28)
     expect(unrunnableReason(red("docker compose config -q", "docker: unknown command: docker compose\n\nRun 'docker --help' for more information", { exitCode: 125 }), task)).toMatch(/`docker compose` is not available/);
+    // A build that writes under .agents/, read-only in the check sandbox (cab-unslop-library.2, 2026-10-31)
+    const erofs = "  File \"build.py\", line 218, in variants\n    os.makedirs(os.path.dirname(vabs), exist_ok=True)\nOSError: [Errno 30] Read-only file system: '/w/.agents/prototypes/site/visual/img/_240'";
+    expect(unrunnableReason(red("bash -c 'python3 build.py --page history'", erofs), task)).toMatch(/writes \/w\/\.agents\/prototypes\/site\/visual\/img\/_240 .*\.agents\/ is read-only for every check/);
+    expect(unrunnableReason(red("npm run build", "EROFS: read-only file system, mkdir '/w/.git/x'"), task)).toMatch(/\.git\/ is read-only/);
     expect(unrunnableReason(red("docker buildx build .", "docker: 'buildx' is not a docker command.\nSee 'docker --help'", { exitCode: 1 }), task)).toMatch(/`docker buildx` is not available/);
   });
 

@@ -1,6 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { blindPlanFact, diffHunksCommand, hunksFromCommandOutput, parseDiffHunks, parsePlanFact, planFactOutcome, PLAN_FACT_BRIEF_LINE } from "../src/rooms/tasks/plan-fact";
+import { blindPlanFact, diffHunksCommand, hunksFromCommandOutput, parseDiffHunks, parsePlanFact, planFactOutcome, PLAN_FACT_BRIEF_LINE, PLAN_FACT_EVIDENCE_MAX } from "../src/rooms/tasks/plan-fact";
 import type { PlanFactFacts } from "../src/rooms/tasks/plan-fact";
 import { writerBriefSegments, stickyTurnPrompt, previousAttemptBrief } from "../src/rooms/writer/server/writer-task";
 import { recheckPlanFact, runPlanFactStage, planFactMode, tableFromAnswers } from "../src/rooms/writer/server/plan-fact";
@@ -24,6 +24,14 @@ describe("the plan-fact table in the writer's answer", () => {
     const rows = [{ item: 1, status: "done", evidence: ["src/a.ts:10-12", "cmd:npm test"] }, { item: 2, status: "not_done", why: "needs a decision" }];
     const table = parsePlanFact(`I did everything, trust me.\n${fence([{ item: 1, status: "done" }])}\nAfter review:\n${fence(rows)}`);
     expect(table).toEqual({ status: "ok", rows });
+  });
+
+  it("keeps the first pieces of evidence of a long row instead of refusing the table (15 rebuilt pages, cab-unslop 2026-10-31)", () => {
+    const evidence = Array.from({ length: PLAN_FACT_EVIDENCE_MAX + 6 }, (_, i) => `visual/page-${i}.html`);
+    const table = parsePlanFact(fence([{ item: 1, status: "done", evidence }]));
+    expect(table.status).toBe("ok");
+    expect(table.status === "ok" && table.rows[0]!.evidence).toEqual(evidence.slice(0, PLAN_FACT_EVIDENCE_MAX));
+    expect(PLAN_FACT_BRIEF_LINE).toContain("the strongest first");
   });
 
   it("is missing without a block, and invalid with a reason for broken JSON, a wrong shape or a repeated item", () => {
