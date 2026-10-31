@@ -292,6 +292,16 @@ describe("a question lost to a reload (H8, audit B3)", () => {
     expect(await next.recoverLost()).toEqual([]);
   });
 
+  it("keeps a PM's question whose tool signal the reload aborted (request-aborted), not one Lane Pilot withdrew itself (magicseo replay, 2026-10-31)", async () => {
+    const pm = reloadHost("request-aborted");
+    await pm.ownerAsk.ask("thr_pm", { source: "pm", question: "Start and stop the promotion once?" });
+    expect(await createOwnerAsk(pm.bb, () => undefined).recoverLost()).toEqual(["thr_pm"]);
+    expect(pm.sent[0]!.text).toContain("«Start and stop the promotion once?»");
+    const council = reloadHost("request-aborted");
+    await council.ownerAsk.ask("thr_c", { source: "council", question: "q" });
+    expect(await council.ownerAsk.recoverLost()).toEqual([]);
+  });
+
   it("forgets a question the owner dismissed, and one the chat itself ended", async () => {
     for (const reason of ["user", "timeout", "thread-stopped", "thread-deleted"]) {
       const { ownerAsk, sent } = reloadHost(reason);

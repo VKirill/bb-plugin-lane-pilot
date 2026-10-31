@@ -64,7 +64,10 @@ export function createOwnerAsk(bb: BbPluginApi, log: (message: string) => void) 
         },
       }, options.signal ? { signal: options.signal } : undefined);
       if (result.outcome === "cancelled") {
-        lostToReload = LOST_TO_RELOAD.has(result.reason);
+        // A PM's form is held by its tool call's signal, and a reload aborts that signal: BB says «request-aborted», not «plugin-disposed».
+        // The magicseo replay's start/stop question went that way at a deploy (2026-10-31): forgotten, so its PM waited with nobody to answer.
+        // A question Lane Pilot asks in the background is withdrawn by its own caller through the same signal, and stays forgotten.
+        lostToReload = LOST_TO_RELOAD.has(result.reason) || (result.reason === "request-aborted" && request.source === "pm");
         return { outcome: "cancelled", reason: result.reason };
       }
       const parsed = ownerAskResponseSchema.safeParse(result.value);
