@@ -33,10 +33,11 @@ describe("phase gates", () => {
     if (!waiting.ok) expect(waiting.why.join(" ")).toContain("no feasibility answer");
   });
 
-  it("[sma:p3_start] [sma:p3_task] tells the control work to have design-lead draw, and does not issue", () => {
+  it("[sma:p3_start] [sma:p3_task] tells the control work that Lane Pilot draws with design-lead, not to start a designer, and does not issue", () => {
     const action = nextAction(phase("design", { design: { decision: "needed", why: "screens" } }), new Map());
     expect(action.text).toContain("stage 3, design");
-    expect(action.text).toContain("Have design-lead draw the screens");
+    expect(action.text).toContain("Lane Pilot draws the screens itself");
+    expect(action.text).toContain("Do not start a designer");
     expect(action.waitsForPm).toBe(true);
   });
 

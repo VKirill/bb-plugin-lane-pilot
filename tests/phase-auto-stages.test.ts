@@ -305,6 +305,15 @@ describe("a plan the gate refused", () => {
   });
 });
 
+describe("a plan from before the context was signed again", () => {
+  it("is planned anew, not checked as the PM's plan", () => {
+    const piece = { id: "a", title: "a", wave: 1, promise: { given: "g", when: "w", then: "t" }, task: { id: "a" } };
+    const context = { docs: [], sha: "new", signedAt: 2, decisions: [] };
+    expect(autoDue(phaseAt("planning", { context, plan: { items: [piece], sha: "s", contextSha: "old", fromRun: "wfrun_old" } } as never))).toEqual({ kind: "plan" });
+    expect(autoDue(phaseAt("planning", { context, plan: { items: [piece], sha: "s", contextSha: "new" } } as never))).toEqual({ kind: "check" });
+  });
+});
+
 describe("the owner's answers to the context's questions", () => {
   it("reach the planner and the plan check, and an unanswered question does not", async () => {
     const { autoInputs } = await import("../src/rooms/phase/server/auto-stages");

@@ -44,10 +44,13 @@ export function autoDue(phase: Phase): AutoDue | null {
   // Also when the critic approved but the plan gate (code) still refuses: the gate's reasons are the gaps of the next round.
   // The owner's word is not such a gap: with owner.words on an approved plan waits for it (the PM is told), the machine does not plan again.
   const gateRefuses = !!r.plan?.critique && r.plan.critique.decision === "approve" && !r.plan.admittedSha && planGaps(r).length > 0;
-  if (phase.stage === "planning" && r.context && (!r.plan || gateRefuses || !!r.replan?.gaps || (r.plan.critique?.decision === "changes_requested" && (r.plan.rounds ?? 0) < 3)) && !tried("plan")) return { kind: "plan" };
+  // A plan from before the context was signed again (its files changed, magicseo replay 2026-10-31) is planned anew: checked as the
+  // PM's plan it could never pass (built on another context, by another run) and the check spent 35 minutes on it.
+  const stale = !!r.plan && !!r.context && !r.plan.admittedSha && r.plan.contextSha !== r.context.sha;
+  if (phase.stage === "planning" && r.context && (!r.plan || stale || gateRefuses || !!r.replan?.gaps || (r.plan.critique?.decision === "changes_requested" && (r.plan.rounds ?? 0) < 3)) && !tried("plan")) return { kind: "plan" };
   // A plan the PM handed in waits for its independent check: the machine runs lp.plan itself with the plan's sha — the PM cannot
   // start an internal workflow, and its verdict comes back through the same gates (PH1: the manual-plan dead end).
-  if (phase.stage === "planning" && r.context && r.plan && !r.plan.critique && !r.plan.admittedSha && !tried("check")) return { kind: "check" };
+  if (phase.stage === "planning" && r.context && r.plan && !stale && !r.plan.critique && !r.plan.admittedSha && !tried("check")) return { kind: "check" };
   if (phase.stage === "design" && !r.design?.drawing && !tried("draw")) return { kind: "draw" };
   if (phase.stage === "execution" && r.waveReview) {
     const wave = Object.entries(r.execution?.waves ?? {}).find(([, done]) => done.lines.every((line) => line.ok) && !done.review);
