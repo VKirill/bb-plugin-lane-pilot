@@ -40,7 +40,9 @@ function compactCheck(check: unknown): Record<string, unknown> {
   const tail = exitCode === 0 ? passTail(raw) : failureExcerpt(scrub(`${text(row.stderr)}\n${text(row.stdout)}`), TAIL_CAP);
   // A check that failed once and passed on the re-run: the audit needs to tell the machine from a race (the verdict, not the log).
   const flaky = row.flaky === true ? text(record(row.flakyEvidence).classification) || true : undefined;
-  return { command: clip(text(row.command), COMMAND_CAP), exitCode, ...(tail ? { tail } : {}), ...(flaky ? { flaky } : {}),
+  // The commit the check ran on and the loose files then (writer/server/verify.ts): the audit names the base without the workspace.
+  const revision = row.revision && typeof row.revision === "object" ? row.revision : undefined;
+  return { command: clip(text(row.command), COMMAND_CAP), exitCode, ...(tail ? { tail } : {}), ...(flaky ? { flaky } : {}), ...(revision ? { revision } : {}),
     outputChars: text(row.stdout).length + text(row.stderr).length };
 }
 

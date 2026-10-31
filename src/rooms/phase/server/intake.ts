@@ -5,8 +5,9 @@ import { stringAt, type ServerCore } from "../../core/server";
 import { isRunHalted, isRunPaused } from "../../runs/server";
 import { pathClassByRules } from "@lane-pilot/workflow-engine";
 import type { PathRisk, PathSize } from "@lane-pilot/workflow-engine";
-import { intakeByRules, intakeJudgment, intakeTitle, isMachineMessage, pathClassJudgment, processHint, railsRefusal, type IntakeKind, type ServiceKind } from "../intake";
+import { intakeByRules, intakeJudgment, intakeTitle, isMachineMessage, pathClassJudgment, processHint, publishedHint, railsRefusal, type IntakeKind, type ServiceKind } from "../intake";
 import { cancelAttemptById } from "../../runs/server";
+import { sendServiceMessage } from "../../relay/server";
 import type { Phase } from "../logic";
 
 /** What the intake needs of the phase driver (its own type, so the driver can build the intake without a type cycle). */
@@ -22,7 +23,9 @@ export type IntakeRecord = { requestId: string; kind: IntakeKind; by: "rules" | 
   /** The small-task graph the machine started for the request (issue-quick): the PM does not dispatch it by hand. */
   wfRunId?: string;
   /** The workflow architect's chat the machine started to build a process the request described. */
-  architectThreadId?: string };
+  architectThreadId?: string;
+  /** A published graph the request matched: the PM is told to run it, and no architect builds a second one. */
+  hint?: { graphId: string; confidence: number } };
 
 /** The machine's start of the small-task graph for a request, and the state of a run it started (src/rooms/phase/server/driver.ts wires them). */
 export type IntakeTrain = {
@@ -30,6 +33,8 @@ export type IntakeTrain = {
   status(wfRunId: string): string | null;
   /** The workflow architect, started with the owner's process as its order; resolves to its chat. */
   startProcess?(input: { projectId: string; pmThreadId: string; text: string }): Promise<string | null>;
+  /** The published graph (the project's, global or built-in) the router sends this text to, on a sure route; null when none. */
+  findPublished?(input: { projectId: string; text: string }): Promise<{ graphId: string; name: string; confidence: number } | null>;
 };
 const KEY = (threadId: string) => `phase-intake:${threadId}`;
 /** What a hand-over key started, kept for good: the key maps to the phase or graph run whether it is alive or finished. */
@@ -154,11 +159,22 @@ export function createPhaseIntake(ctx: Deps, phases: IntakePhases, train?: Intak
     }
     // A new process becomes a small graph: the workflow architect builds, tests and publishes it on the owner's words (Matvey #31916).
     let architectThreadId: string | undefined;
-    if (kind === "process" && by === "jev" && train?.startProcess && !stopped && String(settings["phase.train"] ?? "on") !== "off") {
+    // A process the catalog already has is run, not built again: 62 owner requests read as a process and 21 architects started
+    // (hub, 2026-10-24..28) without a look at the published graphs. The PM decides; the hint is a signal (Matvey: the model picks from the registry).
+    let hint: IntakeRecord["hint"];
+    if (kind === "process" && by === "jev" && train?.findPublished && !stopped) {
+      const found = await train.findPublished({ projectId: run.project_id, text }).catch(() => null);
+      if (found) {
+        hint = { graphId: found.graphId, confidence: found.confidence };
+        ctx.log(`phase intake: ${threadId} — the owner's process matches the published graph ${found.graphId} (${found.confidence}); no architect`);
+        await sendServiceMessage(bb as never, { threadId, mode: "steer-if-active", text: publishedHint(found) }).catch(() => undefined);
+      }
+    }
+    if (kind === "process" && !hint && by === "jev" && train?.startProcess && !stopped && String(settings["phase.train"] ?? "on") !== "off") {
       architectThreadId = await train.startProcess({ projectId: run.project_id, pmThreadId: threadId, text }).catch(() => null) ?? undefined;
       if (architectThreadId) ctx.log(`phase intake: ${threadId} — the owner's request is a process; the workflow architect builds it in ${architectThreadId}`);
     }
-    const record: IntakeRecord = { requestId, kind, by, phaseId, at: Date.now(), ...(wfRunId ? { wfRunId } : {}), ...(architectThreadId ? { architectThreadId } : {}) };
+    const record: IntakeRecord = { requestId, kind, by, phaseId, at: Date.now(), ...(wfRunId ? { wfRunId } : {}), ...(architectThreadId ? { architectThreadId } : {}), ...(hint ? { hint, hinted: true } : {}) };
     await bb.storage.kv.set(KEY(threadId), record);
     return record;
   }

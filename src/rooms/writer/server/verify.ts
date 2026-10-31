@@ -1,3 +1,4 @@
+import { runOnHost } from "@lane-pilot/host-calls";
 import { isAbsolute, relative, resolve } from "node:path";
 import { acceptanceArtifactDir, bbWriterReportMarkdown, buildAcceptanceV2, validateAcceptanceV2 } from "../../tasks";
 import { attemptProduced } from "../cli-outcome";
@@ -58,6 +59,14 @@ export async function runWithFlakyRerun<T extends {exitCode:number;stdout?:strin
   const flakyEvidence=machineEvidence({exitCode:first.exitCode,outputTail:outputTail(first)},beforeFirst??null,beforeRerun??null);
   log(`verification command passed on re-run (flaky): ${command} — first exit ${first.exitCode}, ${flakyEvidence.classification}: ${flakyEvidence.basis}`);
   return {...again,flaky:true,flakyEvidence};
+}
+
+export type CheckRevision = { head:string|null; dirty:number|null };
+export const REVISION_PROBE = "git rev-parse HEAD 2>/dev/null || echo -; git status --porcelain 2>/dev/null | wc -l";
+/** The probe's two lines: the HEAD sha (or `-`) and the count of `git status --porcelain` lines. */
+export function parseRevisionProbe(stdout:string):CheckRevision {
+  const [head, dirty] = stdout.trim().split(/\s+/);
+  return { head:head && /^[0-9a-f]{40}$/.test(head) ? head : null, dirty:dirty && /^\d+$/.test(dirty) ? Number(dirty) : null };
 }
 
 /**
@@ -135,6 +144,8 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
     sandboxBackend:string|null; policySha256:string|null; workspacePath:string; flaky?:true; flakyEvidence?:FlakyEvidence; reran?:true;
     /** The host call itself failed (worker killed, host offline): the command's own verdict is unknown. */
     hostError?:true;
+    /** The commit the checks ran on and how many files were not committed then; null when git could not say. */
+    revision?:CheckRevision;
   }>> {
     const policy=runId?runPolicyFor(runId):buildRunPolicy(loadProjectSettings(db,config.projectId));
     const verificationScopes=runId?getRunSettingsScopes(db,runId):[];
@@ -146,6 +157,10 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
     // live attempt (its writer thread known) runs them; the post-merge check on main has no such files.
     const harnessChecks=runId&&writerThreadId ? services.harness?.checksForWriterThread(runId, task.id, writerThreadId) ?? [] : [];
     const commands:TaskV2["verification"]=harnessChecks.length ? [...task.verification, ...harnessChecks.map((check)=>({ command:check.command, cwd:task.project_cwd, timeout_sec:check.timeout_sec }))] : task.verification;
+    // Which revision was checked, and how dirty the copy was (Matvey: «can you name its base without opening the workspace»):
+    // on the hub this says how many checks ran in a copy with loose files, so whether a clean copy is needed is read from data.
+    const revision=await Promise.resolve().then(()=>runOnHost(host,{hostId:config.hostId,cwd:task.project_cwd,command:REVISION_PROBE,timeoutSec:15}))
+      .then((row)=>parseRevisionProbe(row?.stdout??"")).catch(()=>({head:null,dirty:null}));
     const pool=`verification:${runId??config.projectId}`;
     // The watcher reads this: the attempt stays «running» with its writer idle while its checks wait or run (self-repair.ts).
     const endChecks=writerThreadId?beginChecks(writerThreadId,pool):()=>undefined;
@@ -238,7 +253,7 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
       .map((result,pos)=>({result,index:entries[pos]!.index}))
       .filter((row):row is {result:NonNullable<typeof row.result>;index:number}=>row.result!==undefined)
       .sort((a,b)=>a.index-b.index)
-      .map((row)=>row.result);
+      .map((row)=>({...row.result,revision}));
     if(skipped){const first=orderedResults.find((row)=>row.exitCode!==0);
       if(first)first.stderr=`${first.stderr??""}\nchecks.fail_fast: ${skipped} check(s) not started after the first non-zero exit`.trim();}
     return orderedResults;

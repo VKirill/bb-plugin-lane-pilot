@@ -248,6 +248,38 @@ describe("one stop check guards every machine start in the intake", () => {
   }
 });
 
+describe("a process the catalog already has", () => {
+  it("is not built again: the PM is told the published graph and no architect starts; an unknown process still gets one (hub: 62 processes, 21 architects, no catalog look)", async () => {
+    const { createPhaseIntake: create } = await import("../src/rooms/phase/server/intake");
+    const { createFakePluginHost: host } = await import("@get-bb/plugin-sdk/testing");
+    const { setJevForTests } = await import("@lane-pilot/jev");
+    const { bb, harness } = host({ pluginId: "lane-pilot" });
+    harness.sdk.stub("threads.getPluginMetadata", async () => ({ role: "pm", lanePilotRunId: "run1" }));
+    harness.sdk.stub("threads.events.list", async () => [{ type: "client/turn/requested", data: { requestId: "creq_1", initiator: "user", input: [{ type: "text", text: "каждую неделю собирай список изменённых файлов и присылай" }] } }]);
+    const sent: string[] = [];
+    harness.sdk.stub("threads.send", async (input: { input: Array<{ text: string }> }) => { sent.push(input.input[0]!.text); return {}; });
+    const db = openDatabase(bb);
+    createRun(db, "run1", "projA");
+    setJevForTests({ enabled: () => true, judge: async () => ({ by: "jev", decision: { kind: "process" } }) } as never);
+    const phases = { open: async () => ({ id: "ph_1" }), tick: async () => 0, list: () => [], status: () => ({ next: { text: "" } }) };
+    try {
+      const architects: string[] = [];
+      const train = (found: { graphId: string; name: string; confidence: number } | null) => ({ start: () => null, status: () => null,
+        startProcess: async () => { architects.push("architect"); return "thr_arch"; }, findPublished: async () => found });
+      const known = create({ bb, db, log: () => undefined, effectiveProjectSettings: async () => ({ values: {} }) } as never, phases as never,
+        train({ graphId: "weekly-changed-files", name: "Weekly changed files", confidence: 92 }));
+      expect(await known.take("thr_pm")).toMatchObject({ kind: "process", hint: { graphId: "weekly-changed-files", confidence: 92 } });
+      expect(architects).toEqual([]);
+      expect(sent.join("\n")).toMatch(/published graph weekly-changed-files[\s\S]*lane_pilot_run_workflow/);
+
+      await bb.storage.kv.delete("phase-intake:thr_pm");
+      const unknown = create({ bb, db, log: () => undefined, effectiveProjectSettings: async () => ({ values: {} }) } as never, phases as never, train(null));
+      expect(await unknown.take("thr_pm")).toMatchObject({ kind: "process", architectThreadId: "thr_arch" });
+      expect(architects).toEqual(["architect"]);
+    } finally { setJevForTests(null); }
+  });
+});
+
 describe("the PM is the door: no other system for a request the machine took", () => {
   it("refuses a route or a run while the graph or the architect works, and lets the architect's chain be routed once it is built", async () => {
     const { createPhaseIntake: create } = await import("../src/rooms/phase/server/intake");

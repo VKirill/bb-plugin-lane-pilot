@@ -26,7 +26,11 @@ import { createAutoStages, recoverStopped } from "./auto-stages";
 import { medianTaskSize, taskSizeText } from "../../tasks";
 import { checkProofs, hostGit, phaseProofRecords, renderProofCurrency } from "./proof-currency";
 import { builtinWorkflow, issueQuickWorkflowId } from "../../workflow";
-import { architectStarter } from "../../workflow/server";
+import { architectStarter, createWorkflowLibrary } from "../../workflow/server";
+import { routeIntent } from "@lane-pilot/workflow-engine";
+
+/** A sure route only: the hint takes a request away from the architect (the errand's api-recon bar, 0.1.412). */
+const PUBLISHED_HINT_CONFIDENCE = 85;
 import { recheckPlanFact } from "../../writer/server";
 import { critiqueProblems, roleLine, type DesignJournalLine, type DrawingCritique } from "../../design-eval";
 
@@ -1180,6 +1184,7 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
   const phases = { open, context, plan, planCheck, drawing, goalAudit, lessons, question, answer, word, waveReview, withdraw, revise, correct, returnTo, setState, stop, stopWave, compensate, tick, drive, status, facts, planUnchanged, writeBook,
     list: (filter: Parameters<typeof listPhases>[1]) => listPhases(db, filter) };
   const architect = architectStarter(ctx, services);
+  const library = createWorkflowLibrary(ctx, services);
   // The small-task graph for a small job or a batch of fixes: started by the machine, not chosen by the PM.
   const train = {
     start: (input: { projectId: string; pmThreadId: string; runId: string; requestId: string; text: string; kind: "small" | "batch"; path?: { size: string; risk: string } }) => {
@@ -1200,6 +1205,14 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
     },
     status: (wfRunId: string) => services.workflowEngine.get(wfRunId)?.status ?? null,
     startProcess: async (input: { projectId: string; pmThreadId: string; text: string }) => (await architect.startOrder(input)).threadId,
+    // The router without a model (cheap, deterministic) over what lane_pilot_route reads: the project's graphs, else the built-in and global ones.
+    findPublished: async (input: { projectId: string; text: string }) => {
+      const store = await library.loadStore(input.projectId).then((loaded) => loaded.store, () => services.workflowCatalog.store());
+      const routed = await routeIntent({ intent: input.text, workflows: store.list().map((item) => item.workflow), model: null });
+      if (routed.decision !== "route" || !routed.workflowId || routed.confidence < PUBLISHED_HINT_CONFIDENCE) return null;
+      const name = routed.candidates.find((card) => card.id === routed.workflowId)?.name ?? routed.workflowId;
+      return { graphId: routed.workflowId, name, confidence: routed.confidence };
+    },
   };
   return { phases, phaseIntake: createPhaseIntake(ctx, phases, train) };
 }

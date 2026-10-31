@@ -157,3 +157,8 @@ export function processHint(): string {
     "have the forge write it as a workflow (lane_pilot_forge {action:\"draft\", kind:\"workflow\", name, brief}), lint it when the Creator's task is accepted, and enable it; then run it with lane_pilot_route. " +
     "If the request is in fact one-off work, dispatch it again: this hint is given once per request.";
 }
+
+/** The PM's note when the owner's process is a graph the catalog already has: run that one, no new graph is built. */
+export function publishedHint(found: { graphId: string; name: string; confidence: number }): string {
+  return `[Lane Pilot intake] The owner's request matches the published graph ${found.graphId} («${found.name}», router confidence ${found.confidence}). No workflow architect was started for it. If it fits, start it (lane_pilot_route with the owner's words, then lane_pilot_run_workflow {workflowId: \"${found.graphId}\"}); if it does not, say why and build a new one (lane_pilot_forge).`;
+}
