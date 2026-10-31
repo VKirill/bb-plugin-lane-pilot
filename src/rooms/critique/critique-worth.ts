@@ -48,3 +48,15 @@ export const critiqueWorthJudgment = defineJudgment<CritiqueWorthInput, Critique
     return skipped.length ? `skip ${skipped.join(",")}` : "all critics";
   },
 });
+
+/**
+ * The label the plan critique's real verdict puts on a `critique.worth` receipt (`jev().outcome`), so the calibration report
+ * can read the judgment: «agree» when the critic behaved as Jev predicted (Jev would skip it and it allowed the plan, or
+ * Jev kept it and it blocked), «disagree» otherwise. The suffix keeps the facts, so the precision of the skip verdicts alone
+ * can be read back: `disagree:skip_plan_critique:blocked` is the harmful miss (shadow 2026-10-31: 2 of 6 skips).
+ */
+export function worthOutcome(would: unknown, allowed: boolean): string {
+  const skip = typeof would === "string" && would.includes("plan_critique");
+  const agree = skip === allowed;
+  return `${agree ? "agree" : "disagree"}:${skip ? "skip" : "run"}_plan_critique:${allowed ? "allowed" : "blocked"}`;
+}

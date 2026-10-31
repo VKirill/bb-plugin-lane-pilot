@@ -107,6 +107,16 @@
           "name": "skip_specialist_review",
           "type": "boolean",
           "required": false
+        },
+        {
+          "name": "receiptId",
+          "type": "number",
+          "required": false
+        },
+        {
+          "name": "would",
+          "type": "string",
+          "required": false
         }
       ],
       "proof": {

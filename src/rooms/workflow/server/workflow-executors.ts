@@ -261,9 +261,14 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
       const flat = (decision: unknown) => (decision && typeof decision === "object" && !Array.isArray(decision) ? decision as Record<string, unknown> : {});
       const verdict = await instance.judge(judgment, state, { projectId: rt?.projectId ?? null, runId: rt?.runId ?? null, subject: node.id, settings });
       const handoff = (decision: unknown) => (decision && typeof decision === "object" ? judgment.describe(decision) : "escalated");
-      if (verdict.by === "jev") return { output: { decision: judgment.describe(verdict.decision), handoff: handoff(verdict.decision), value: verdict.decision, ...flat(verdict.decision), escalated: false } };
-      if (verdict.by === "escalate") return { output: { decision: `escalate:${verdict.to}`, handoff: `escalated to ${verdict.to}`, escalated: true, to: verdict.to } };
-      return { output: { decision: judgment.describe(verdict.decision), handoff: handoff(verdict.decision), value: verdict.decision, ...flat(verdict.decision), escalated: false, fallback: true, status: verdict.status } };
+      // `receiptId` and `would` let a later step label the receipt with what really happened (`jev().outcome`): `would` is the
+      // decision Jev gave or, in shadow, would have given — the fallback that actually applied is in `decision`. A graph that
+      // does not declare them in the node's output does not see them.
+      const receipt = verdict.receiptId === null ? {} : { receiptId: verdict.receiptId };
+      if (verdict.by === "jev") return { output: { decision: judgment.describe(verdict.decision), handoff: handoff(verdict.decision), value: verdict.decision, ...flat(verdict.decision), escalated: false, ...receipt, would: judgment.describe(verdict.decision) } };
+      if (verdict.by === "escalate") return { output: { decision: `escalate:${verdict.to}`, handoff: `escalated to ${verdict.to}`, escalated: true, to: verdict.to, ...receipt } };
+      const would = verdict.shadow?.decision ?? verdict.decision;
+      return { output: { decision: judgment.describe(verdict.decision), handoff: handoff(verdict.decision), value: verdict.decision, ...flat(verdict.decision), escalated: false, fallback: true, status: verdict.status, ...receipt, would: judgment.describe(would) } };
     },
   } as NodeExecutor<ChainRuntime>);
   // `citations.jev`: for each {claim, source, excerpt} triple Jev decides whether the source supports the claim

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.1.440
+
+- **The plan critic labels the «worth» judgment's receipts.** `critique.worth` (which advisory critics a task is worth paying for) has run in shadow since 2026-10-30 with its outcome column empty, so nothing could show whether its «skip the plan critic» verdicts were safe; read by hand, 2 of its 6 skips fell on tasks the critic then blocked. A `type:"jev"` node now also outputs `receiptId` and `would` (Jev's verdict, or in shadow the one it would have given); the `plan-critique` stage of `lp-task-pipeline` writes `agree`/`disagree` with the facts (`skip|run_plan_critique:allowed|blocked`) onto that receipt when the critic actually ran. The calibration report and a week of labels decide whether the judgment leaves shadow.
+
 ## 0.1.439
 
 - **The writer worktree provider is offered only where the project has a folder.** BB lists an environment provider without requirements on every machine, so the composer showed «MacBook · Lane Pilot worktree» as the only choice for a project whose folder is on the Mac mini alone: a chat on it could never start (no inputs, host outside the project). The provider now requires the project checkout, as BB's own worktree does, and its description says a chat picks the project folder. Writers are unaffected: a worktree always forks a project folder on its own machine.
