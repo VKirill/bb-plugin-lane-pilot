@@ -1,0 +1,9 @@
+Owner request: ship the MagicSEO BB plugin release 0.1.1 and prove it works live (the owner asked for a running plugin; this updates his own BB hub, reversible).
+
+Step 1 — update. On the BB hub the plugin `magicseo` is installed from git `https://github.com/VKirill/magicseo.git@^0.1.0` and shows 0.1.0. Tag v0.1.1 is pushed. Run `bb plugin update magicseo` (if that command is unavailable, reinstall the same way it was installed: `bb plugin install https://github.com/VKirill/magicseo.git@^0.1.0`). Confirm `bb plugin list` shows `magicseo` 0.1.1 running.
+
+Step 2 — live check in BB (same as the earlier check in thread thr_2en3tyt8gj, screenshots to /Users/vechkasov/Documents/BB-сервис/plugins/magicseo/.bb/chats/thr_tus6ykzucc/artifacts/live-check-0.1.1/). Open the MagicSEO plugin screen and verify:
+1. Projects tab: count the projects; the account has 61 projects — museshow.ru (16 projects) and ПРО АРТ must both appear, and atmosphere-show.ru must appear as a configured site (it may have 0 projects).
+2. Automation tab: press Preview (dry-run, changes nothing) — the preview table must load with no «rpc … is not a JSON value» error. Report a few rows (city, action, reason). Mode must still be dry-run; do NOT switch to Live.
+3. Reports tab: open it with no filters, then pick one city — the report must load with no RPC error; try the CSV export button.
+Do not press Start, Stop, Create, Delete or the Live switch on anything. Report: plugin version, each check passed/failed with the exact error text if any, project counts per site, and the screenshot paths.

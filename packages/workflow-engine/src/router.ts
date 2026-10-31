@@ -13,6 +13,12 @@ import type { Workflow } from "./schema";
 
 export const TOP_N = 5;
 export const MIN_CONFIDENCE = 60;
+/**
+ * A request longer than this is a brief, not an ask: a rule fires on some word in it, so a route needs a rule of the chosen card and its own text fit.
+ * The 2026-10-30 hub errands (120–250-word PM briefs) went to debug, plan-only and full-lifecycle at 88–99 on one rule with a text fit under 0.09.
+ */
+export const LONG_WORDS = 80;
+const LONG_MIN_BASE = 0.12;
 export const MAX_QUESTIONS = 3;
 
 // ------------------------------------------------------------------ ports
@@ -600,7 +606,10 @@ export async function routeIntent(input: RouteInput): Promise<RouteDecision> {
 
   // Too weak, too broad, or no choice: questions, no workflow.
   const strongRule = hits.some((hit) => Object.values(hit.boosts).some((value) => value >= 0.3));
-  if (!chosen || output.confidence < MIN_CONFIDENCE || (broad && !strongRule) || (top[0]?.score ?? 0) < 0.12 || missedBest) {
+  const picked = chosen ? top.find((item) => item.workflow === chosen) : undefined;
+  const unbacked = Boolean(picked && s.wordCount > LONG_WORDS && (!picked.rules.length || picked.base < LONG_MIN_BASE));
+  if (unbacked) warnings.push(`a ${s.wordCount}-word brief: ${chosen!.id} is not backed by both its own rule and its text, so it is a suggestion, not a route`);
+  if (!chosen || output.confidence < MIN_CONFIDENCE || (broad && !strongRule) || (top[0]?.score ?? 0) < 0.12 || missedBest || unbacked) {
     const modelQuestions = output.questions.filter((question) => question.trim());
     const filled = chosen ? fillInputs(chosen, s, intent) : null;
     const questions = modelQuestions.length ? modelQuestions.slice(0, MAX_QUESTIONS)

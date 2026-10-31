@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it } from "vitest";
 import { builtinWorkflows } from "../../src/rooms/workflow/builtin";
 import { MAX_QUESTIONS, MIN_CONFIDENCE, TOP_N, isOffered, normalizeText, routeIntent, setRouterModel, stateProblem, stems } from "@lane-pilot/workflow-engine";
@@ -200,6 +201,16 @@ describe("api-recon in the catalog", () => {
     const brief = "Owner request (this chat): scan the MagicSEO personal cabinet https://lk.magicseo.ru/ — every request it makes, its features and mechanics — so we can later build our own API/automation service on top of it. THIS ERRAND IS READ-ONLY RECON. Map the auth mechanics: cookie session vs bearer token, CSRF header, token refresh, session lifetime. Report any blocker (captcha, 2FA, anti-bot).";
     expect((await route(brief)).workflowId).toBe("api-recon");
     expect((await route("Audit the login form for CSRF and XSS")).workflowId).not.toBe("api-recon");
+  });
+});
+
+describe("a long brief", () => {
+  it("routes only on a rule of the chosen card backed by its own text: PM briefs of 2026-10-30 went to debug and api-recon on a stray word", async () => {
+    const brief = (name: string) => readFileSync(new URL(`../fixtures/${name}`, import.meta.url), "utf8");
+    const release = await route(brief("errand-release-check.txt"));
+    expect(release).toMatchObject({ decision: "clarify", workflowId: null, suggested: "debug" });
+    expect(release.warnings.join(" ")).toMatch(/word brief: debug is not backed/);
+    expect(await route(brief("errand-plugin-check.txt"))).toMatchObject({ decision: "clarify", workflowId: null });
   });
 });
 
