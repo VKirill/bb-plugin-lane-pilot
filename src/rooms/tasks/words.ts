@@ -8,13 +8,25 @@ export type TaskWord = { turn: "land"; decision: "yes" | "no"; text: string; at:
 export const TASK_WORDS_KEY = "lp.task.words";
 
 /**
- * Is the owner's word asked (setting owner.words): on unless the project turns it off. SMA waits for a person at these turns (map
- * 481d75c2: Authorized by a person, Two human decisions, Issue gate, Person accepts the wave, Plan row awaits a word, Draft awaits a
- * person); the owner asked for Lane Pilot one in one with it, its person steps included (2026-10-29). Before, it was off by default.
+ * The setting owner.words: `on` (every verified task waits for the word), `risky` (only a task of risk high; the default) or `off`.
+ * SMA waits for a person at these turns (map 481d75c2: Authorized by a person, Two human decisions, Issue gate, Person accepts the wave,
+ * Plan row awaits a word, Draft awaits a person); the owner asked for Lane Pilot one in one with it, its person steps included (2026-10-29),
+ * then found a two-test fix waiting hours for his «да» while it held its area (SelfyStudio, 2026-10-31) and chose: the word for risky
+ * tasks only. The other person steps (a phase's turns, a forge draft, a permit) keep asking on `risky` as on `on`.
  * LANE_PILOT_OWNER_WORDS_DEFAULT changes the default where no setting says (the test suite runs the machine path with it off).
  */
-export const ownerWordsOn = (settings: Readonly<Record<string, unknown>>) =>
-  String(settings["owner.words"] ?? process.env.LANE_PILOT_OWNER_WORDS_DEFAULT ?? "on") !== "off";
+export type OwnerWordsMode = "on" | "risky" | "off";
+export const ownerWordsMode = (settings: Readonly<Record<string, unknown>>): OwnerWordsMode => {
+  const raw = String(settings["owner.words"] ?? process.env.LANE_PILOT_OWNER_WORDS_DEFAULT ?? "risky");
+  return raw === "off" ? "off" : raw === "on" ? "on" : "risky";
+};
+/** Is the owner's word asked anywhere (the person steps): everything but `off`. */
+export const ownerWordsOn = (settings: Readonly<Record<string, unknown>>) => ownerWordsMode(settings) !== "off";
+/** Does this task's landing wait for the word: every task on `on`, a task of risk high on `risky`, none on `off`. */
+export const landingWordAsked = (settings: Readonly<Record<string, unknown>>, risk: string | undefined): boolean => {
+  const mode = ownerWordsMode(settings);
+  return mode === "on" || (mode === "risky" && risk === "high");
+};
 export const taskWordKey = (runId: string, family: string) => `${runId}:${family}`;
 
 /** Why the landing waits, or null: the owner's latest word on the task family decides. */

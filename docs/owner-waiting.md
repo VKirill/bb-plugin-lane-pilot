@@ -26,7 +26,7 @@ sources:
 ---
 
 > [!important] Since 2026-10-29 the owner does take part in one wait
-> With `owner.words` on (default), a task that names the owner's promise waits up to six hours for his «yes» before its merge; his answer comes through this same inbox. Everything below stays as said: only what his own words started and the inbox items are listed; the morning list reports the rest.
+> With `owner.words` on, every verified task waits up to six hours for his «yes» before its merge; on `risky` (the default since 0.1.442) only a task of risk high waits, the rest land by themselves; his answer comes through this same inbox. Everything below stays as said: only what his own words started and the inbox items are listed; the morning list reports the rest.
 > The screen holds only what the owner's own words started (learned items from his messages, e.g. a reminder) and whatever a caller posts to the inbox. Waiting rules, deferrals, held memory conflicts and night repairs are the system's and are not listed; the morning list is a report (`src/rooms/policy/morning.ts`). The history block at the foot describes the earlier design.
 
 # Waiting for the owner
