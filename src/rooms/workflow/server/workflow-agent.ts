@@ -44,7 +44,9 @@ import type { ChainRuntime } from "./workflow-runtime";
 
 export type RoleSpec = { helper: HelperRole; metadata: string; specialist?: string; readOnly: boolean; editable: (file: string) => boolean };
 
-const BASE_ALLOWED = (file: string) => file.startsWith(".bb/chats/");
+// Lane Pilot's own harness folders (harness.ts) are written by its night editor in the same checkout, not by a helper: magicseo replay
+// 2026-10-31, the designer failed repo_edited on `.lane-pilot/harness-edit/…`. `.lane-pilot/workflows/` stays a helper's edit (a graph is published there).
+const BASE_ALLOWED = (file: string) => file.startsWith(".bb/chats/") || file.startsWith(".lane-pilot/harness/") || file.startsWith(".lane-pilot/harness-edit/");
 const ROLE_MAP: Record<string, HelperRole> = {
   analyst: "analyst", planner: "planner", auditor: "auditor", debugger: "debugger", "plan-critic": "plan-critic", "code-critic": "code-critic",
   triager: "gate-triage", memory: "memory-maintainer", "browser-qa": "browser-qa", errand: "errand", "api-recon": "api-recon", council: "council-seat", "project-life": "project-life", "pm-reader": "pm-reader",

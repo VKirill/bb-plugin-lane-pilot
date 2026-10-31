@@ -395,6 +395,17 @@ describe("the agent step", () => {
     expect(ok.spawned[0]!.pluginMetadata).toMatchObject({ specialist: "copy-lead" });
   });
 
+  it("Lane Pilot's own harness folders are not a helper's edit; its workflows folder still is", async () => {
+    const harness = await setup({ look: [(checkout) => { mkdirSync(join(checkout, ".lane-pilot/harness-edit/project__w/1/inv"), { recursive: true }); writeFileSync(join(checkout, ".lane-pilot/harness-edit/project__w/1/inv/evidence.md"), "e"); return reply({ count: 1, summary: "s", handoff: "h" }); }] });
+    const ok = await harness.start(oneAgent()).done;
+    await harness.dispose();
+    expect(ok.status).toBe("succeeded");
+    const graph = await setup({ look: [(checkout) => { mkdirSync(join(checkout, ".lane-pilot/workflows"), { recursive: true }); writeFileSync(join(checkout, ".lane-pilot/workflows/x.json"), "{}"); return reply({ count: 1, summary: "s", handoff: "h" }); }] });
+    const refused = await graph.start(oneAgent()).done;
+    await graph.dispose();
+    expect(refused.error).toContain(".lane-pilot/workflows/x.json");
+  });
+
   // magicseo replay 2026-10-31: the PM put recon samples into .agents/recon/ while the planner ran, and the planner failed repo_edited (18 minutes).
   it("a file the PM's chat named while the helper ran is the PM's edit, not the helper's; one named before, or not at all, still fails the step", async () => {
     const sample = ".agents/recon/magicseo/samples/keywords.json";

@@ -6,7 +6,7 @@ import { observeStageChild } from "@lane-pilot/thread-observe";
 import { z } from "zod";
 import { findOpenNativeRun, getRun } from "../../storage";
 import { outputText } from "../../writer/server/writer-task";
-import { fenceOutside, registerObservedTool } from "../../core/server";
+import { ToolError, fenceOutside, registerObservedTool } from "../../core/server";
 import type { ServerCore, Services } from "../../core/server";
 import type { ChainRuntime } from "../../workflow/server";
 import type { StepContext, WorkflowEngine } from "../../workflow";
@@ -100,6 +100,13 @@ export function mountSpecialists(ctx: ServerCore, services: Services): void {
     }).strict(),
     execute: async (params, context) => {
       if (!context.threadId || !context.projectId) throw new Error("specialist_needs_pm_thread");
+      // The phase draws its screens itself (auto stage lp.draw, design-lead): a second designer from the PM drew the same screens beside it
+      // (magicseo replay 2026-10-31, both started 03:51–03:52) and the phase's own stage was then counted against it.
+      if (params.role === "design-lead") {
+        const drawing = services.phases.list({ pmThreadId: context.threadId, live: true })
+          .find((phase) => phase.stage === "design" && phase.state === "active" && !phase.record.design?.drawing);
+        if (drawing) throw new ToolError(`Phase ${drawing.id} draws its screens itself: its design stage runs the design-lead (lp.draw), and the drawing comes to this chat with a review. Do not start a second designer; wait for it. A correction for the drawing goes to the phase (lane_pilot_phase {action:"correct", phaseId:"${drawing.id}", note}).`, { code: "phase_rails", retryable: false, sideEffects: "none" });
+      }
       return JSON.stringify(await start({ projectId: context.projectId, pmThreadId: context.threadId, role: params.role, task: params.task, title: params.title }), null, 2);
     },
   });

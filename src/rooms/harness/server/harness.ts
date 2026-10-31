@@ -395,8 +395,9 @@ export function createHarness(ctx: ServerCore, services: Services) {
       db.prepare(`SELECT r.writer_host_id AS hostId, r.writer_workspace_path AS path FROM lane_pilot_run r JOIN lane_pilot_task t ON t.run_id=r.id
         WHERE r.project_id=? AND r.writer_workspace_path IS NOT NULL AND r.writer_host_id IS NOT NULL AND COALESCE(json_extract(t.contract_json,'$.area'),'')=?
         ORDER BY r.updated_at DESC LIMIT 1`).get(projectId, area) as { hostId: string | null; path: string | null } | undefined ?? { hostId: null, path: null },
-      db.prepare("SELECT writer_host_id AS hostId, writer_workspace_path AS path FROM lane_pilot_run WHERE project_id=? AND writer_workspace_path IS NOT NULL AND writer_host_id IS NOT NULL ORDER BY updated_at DESC LIMIT 1")
-        .get(projectId) as { hostId: string | null; path: string | null } | undefined ?? { hostId: null, path: null },
+      // No «the project's newest run of any area»: it put the night editor of office-studio-prototype into the magicseo replay's live
+      // checkout (2026-10-31: `.lane-pilot/harness-edit/feature_office-studio-prototype__project/…` failed the replay's designer). Work of
+      // one key stays in that key's folder; the project binding is the only fallback.
     ];
     const resolved = await services.resolveProjectWriterHost({ projectId }).catch(() => null);
     if (resolved && resolved.status === "resolved" && resolved.hostId && resolved.path) candidates.push({ hostId: resolved.hostId, path: resolved.path });

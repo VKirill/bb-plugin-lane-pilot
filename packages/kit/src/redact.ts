@@ -94,3 +94,22 @@ export function redactKnownDeep<T>(value:T):T {
   }
   return value;
 }
+
+/** What a hidden credential reads as: the helpers see that there is one and where it lives, never the value. */
+export const CREDENTIAL_MASK = "[password hidden: it is in the owner's message; the PM keeps it in Env Catalog]";
+// A value: no spaces, 4+ characters, at least one Latin letter or digit (so «пароль такой же» is left alone), not a link.
+const VALUE = String.raw`(?!https?:\/\/)(?=[^\s]*[A-Za-z0-9])[^\s]{4,}`;
+const KEYED = new RegExp(String.raw`((?:парол[ьяюе]|password|passwd|pwd|pass|токен|token|api[ _-]?key|secret|секрет)\s*(?:[:=—–-]\s*|\s+))(` + VALUE + ")", "giu");
+const AFTER_EMAIL = new RegExp(String.raw`([\w.+-]+@[\w-]+(?:\.[\w-]+)+)(\s*[:/|,;]?\s*)(?=[^\s]*[A-Za-z])(?=[^\s]*[\d\W_])(` + VALUE.replace("{4,}", "{6,}") + ")", "gu");
+
+/**
+ * The owner's request without the credentials typed into it: a value after a keyword («пароль: …», «token …») and the word right after
+ * an email address («Авторизация у меня там такая name@site.ru S3cr3t!»). A phase stored the magicseo ТЗ verbatim, so its password went
+ * into BOOK.md, CONTEXT.md and SECURITY.md in the repository and into the first commit (replay 2026-10-31), and to every helper's prompt.
+ * The email stays: it names the login.
+ */
+export function withoutCredentials(text:string):string {
+  // Idempotent: a mask already in the text is kept as it is (a phase is cleaned when stored and again when read).
+  return text.split(CREDENTIAL_MASK).map((part) => part.replace(KEYED, (_match, lead:string) => `${lead}${CREDENTIAL_MASK}`)
+    .replace(AFTER_EMAIL, (_match, email:string, gap:string) => `${email}${gap || " "}${CREDENTIAL_MASK}`)).join(CREDENTIAL_MASK);
+}

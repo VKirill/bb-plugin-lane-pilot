@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import plugin from "../../server";
 import { createRun, openDatabase, setRunThread } from "../../src/rooms/storage/database";
 import { tokensFrom } from "../../src/rooms/native-agent/native-session";
+import { insertPhase, savePhase } from "../../src/rooms/phase/store";
 
 const projectId = "spec-project";
 const pmThreadId = "spec-pm";
@@ -100,5 +101,35 @@ describe("specialist threads", () => {
     const refused = JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_specialist", { role: "copy-lead", task: "H1" }, { threadId: "stranger", projectId }))) as Record<string, any>;
     expect(refused).toMatchObject({ ok: false, error: { code: "specialist_needs_open_pm_run", retryable: false, sideEffects: "none" } });
     expect(refused.error.message).toMatch(/specialist_needs_open_pm_run/);
+  });
+
+  it("refuses a second designer while the chat's phase draws its own screens, other specialists still start", async () => {
+    const spawned: unknown[] = [];
+    const { bb, harness } = createFakePluginHost({
+      pluginId: "lane-pilot",
+      sdk: {
+        threads: {
+          getPluginMetadata: async ({ threadId }) => threadId === pmThreadId ? { role: "pm", lanePilotRunId: runId } : {},
+          spawn: async (args) => { spawned.push(args); return { id: "spec-thread" }; },
+          get: async ({ threadId }) => ({ id: threadId, status: "idle", projectId, environmentId: "env-pm", sourceThreadId: pmThreadId, lifecycleOwnerThreadId: pmThreadId }),
+        },
+        environments: { get: async () => ({ id: "env-pm", hostId: "local-host", path: process.cwd(), status: "ready" }) },
+      },
+    });
+    await plugin(bb);
+    dispose = () => harness.lifecycle.dispose();
+    const db = openDatabase(bb);
+    createRun(db, runId, projectId, "cli");
+    setRunThread(db, runId, pmThreadId);
+    insertPhase(db as never, { id: "ph_d", projectId, pmThreadId, title: "Studio", goal: "screens", runId, at: 1 });
+    savePhase(db as never, "ph_d", { stage: "design", at: 2 });
+    const call = async (name: string, params: Record<string, unknown>) =>
+      JSON.parse(String(await harness.behavior.callAgentTool(name, params, { threadId: pmThreadId, projectId }))) as Record<string, any>;
+
+    const refused = await call("lane_pilot_specialist", { role: "design-lead", task: "Draw the studio screens." });
+    expect(refused).toMatchObject({ ok: false, error: { code: "phase_rails", sideEffects: "none" } });
+    expect(refused.error.message).toMatch(/ph_d draws its screens itself/);
+    expect(await call("lane_pilot_specialist", { role: "copy-lead", task: "H1" })).toMatchObject({ state: "running" });
+    expect(spawned).toHaveLength(1);
   });
 });

@@ -90,6 +90,19 @@ describe("the harness graphs", () => {
     expect(w.engine.get(w.runs("lp.harness-edit")[0]!.id)).toMatchObject({ status: "failed", failedNode: "validate" });
   });
 
+  // 2026-10-31: the night editor of office-studio-prototype worked in the magicseo replay's live checkout, the project's newest run of
+  // another area, and failed that replay's designer with repo_edited on `.lane-pilot/harness-edit/…`.
+  it("works in the key's own folder or the project's, never in the newest run of another area", async () => {
+    const { w, harness } = setup();
+    createRun(w.db, "run-other", PROJECT);
+    w.db.prepare("UPDATE lane_pilot_run SET writer_host_id='host-x', writer_workspace_path='/other-section', updated_at=? WHERE id='run-other'").run(Date.now() + 60_000);
+    createTask(w.db, { id: "task-other", runId: "run-other", kind: "bb", contract: { area: "backend" } });
+    await harness.runEditor({ projectId: PROJECT, area: "ui", writerKey: "*", night: "2026-10-27" });
+    const paths = w.state.spawned.map((args) => JSON.stringify(args.environment ?? {}));
+    expect(paths.length).toBeGreaterThan(0);
+    expect(paths.join("\n")).not.toContain("/other-section");
+  });
+
   it("a key with no finished attempts, or with a candidate already on trial, starts nothing or ends skipped", async () => {
     const { w, harness } = setup();
     expect(await harness.runEditor({ projectId: PROJECT, area: "backend", writerKey: "*", night: "2026-10-27" })).toMatchObject({ status: "skipped", detail: "no finished attempts of this key in the window" });
