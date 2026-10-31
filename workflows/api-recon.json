@@ -14,14 +14,18 @@
       "Разбери, какие запросы шлёт личный кабинет поставщика, чтобы автоматизировать заказы",
       "Сними карту API интернет-магазина по его сайту, официального API у них нет",
       "Проанализируй кабинет сервиса и повтори его API у нас",
-      "Собери все POST и GET запросы личного кабинета, чтобы управлять им скриптом"
+      "Собери все POST и GET запросы личного кабинета, чтобы управлять им скриптом",
+      "Разведка личного кабинета только на чтение: все его запросы, функции и механика, чтобы сделать на нём свой API или автоматизацию",
+      "Разбери закрытый API кабинета сервиса: вход, эндпоинты, форматы запросов, чтобы наш сервис мог им управлять"
     ],
     "en": [
       "Scan the service at lk.example.com, collect all its requests and build our own API on them",
       "Find out which requests the supplier's dashboard sends so we can automate orders",
       "Map the API of an online shop from its website, they have no official API",
       "Analyse the service's personal account and recreate its API on our side",
-      "Collect every POST and GET request of the dashboard so a script can drive it"
+      "Collect every POST and GET request of the dashboard so a script can drive it",
+      "Read-only recon of the personal cabinet: every request it makes, its features and mechanics, so we can build our own API or automation service on top of it",
+      "Scan the web app's dashboard and record its network calls (fetch/XHR) and the calls in its JS bundle; do not submit anything"
     ]
   },
   "not_for": [
@@ -30,10 +34,13 @@
   ],
   "status": "published",
   "tags": [
-    "errand",
-    "browser",
     "api",
-    "recon"
+    "browser",
+    "cabinet",
+    "dashboard",
+    "errand",
+    "recon",
+    "reverse-engineering"
   ],
   "triggers": [
     "chat",
@@ -53,7 +60,7 @@
     "account": {
       "type": "string",
       "default": "",
-      "note": "the Env Catalog name of the login; empty when the service needs none"
+      "note": "the Env Catalog name of the account; empty when the service needs none"
     }
   },
   "outputs": {

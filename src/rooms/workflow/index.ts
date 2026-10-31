@@ -1,6 +1,6 @@
 // Public API of workflow: what other rooms import. Everything else in this room is private.
 // Add a name here to make it public; scripts/refactor/barrels.ts wrote the first version from the existing imports.
-export { DOCS_MAINTENANCE, DOCS_NIGHT, LP_TASK_PIPELINE, SELF_REPAIR, builtinWorkflow } from "./builtin";
+export { DOCS_MAINTENANCE, DOCS_NIGHT, LP_TASK_PIPELINE, SELF_REPAIR, builtinWorkflow, builtinWorkflows } from "./builtin";
 export { ISSUE_QUICK_SHORT_PATH, issueQuickModelCalls, issueQuickShortPath, issueQuickWorkflowId } from "./short-path";
 export type { DraftTestResult } from "@lane-pilot/workflow-engine";
 export type { DraftCheck, DraftOp, DraftScope, RawDefinition, Refusal } from "@lane-pilot/workflow-engine";

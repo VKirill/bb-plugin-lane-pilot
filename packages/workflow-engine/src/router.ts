@@ -220,7 +220,11 @@ const RULES: Rule[] = [
   { id: "web-research", apply: (s, prior) => !["x-digest", "insights", "video", "seo", "deploy"].some((id) => prior.has(id))
     && p("поиск в интернет|поищи в интернет|найди в интернет|в интернете|search the web|web search|internet search|с источниками|with sources|источник|sources|cited|обзор|overview|survey").test(s.text)
     && !p("код|code|репозитори|repo").test(s.text) ? { note: "a question for a sourced web overview", boosts: { "web-research": 0.5 } } : null },
-  { id: "security", apply: (s) => p("безопасност|уязвим|security|vulnerab|дыр\\S* в|pentest|injection|xss|csrf").test(s.text) ? { note: "security", boosts: { "security-audit": 0.5 } } : null },
+  // Someone else's service whose API we map from its pages to build ours on (magicseo, 2026-10-31): its brief names auth, tokens and CSRF,
+  // which made the security rule send it to security-audit at 100.
+  { id: "api-recon", apply: (s) => p("свой (api|апи)|собственн\\S* (api|апи)|our own (api|automation)|(api|апи) (map|карт)|карт\\S* (api|апи)|reverse engineer|private api|закрыт\\S* (api|апи)|все (его )?(post |get )?запрос|every request|all (its )?requests|network calls|fetch/xhr").test(s.text)
+    && p("кабинет|cabinet|dashboard|сервис|service|сайт|website|site|personal account|лк").test(s.text) ? { note: "map a web service's API from its pages", boosts: { "api-recon": 0.6 } } : null },
+  { id: "security", apply: (s, prior) => !prior.has("api-recon") && p("безопасност|уязвим|security|vulnerab|дыр\\S* в|pentest|injection|xss|csrf").test(s.text) ? { note: "security", boosts: { "security-audit": 0.5 } } : null },
   { id: "pr-review", apply: (s) => s.pr || p("pull request|merge request|diff|code review|ревью кода|review (the |this |my )?(pr|diff|changes|commit)").test(s.text)
     ? { note: s.pr ? `pull request ${s.pr}` : "review of a change", boosts: { "code-review": 0.4 } } : null },
   { id: "findings-fix", apply: (s) => p("нашел|нашла|нашли|находк|замечани|finding|critic found|reviewer (found|said)|review (found|comments)|after the review|после ревью|по ревью").test(s.text) && FIX.test(s.text)

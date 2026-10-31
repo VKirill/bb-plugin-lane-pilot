@@ -1,8 +1,8 @@
 import { observeStageChild, waitThreadIdle } from "@lane-pilot/thread-observe";
-import type { NodeExecutor, StepContext } from "@lane-pilot/workflow-engine";
+import { MIN_CONFIDENCE, routeIntent, type NodeExecutor, type StepContext } from "@lane-pilot/workflow-engine";
 import { redactKnown } from "@lane-pilot/kit";
 import { z } from "zod";
-import { builtinWorkflow } from "../../workflow";
+import { builtinWorkflow, builtinWorkflows } from "../../workflow";
 import { SCHEDULE_RUN_KEY_PREFIX } from "../../workflow/server";
 import type { ChainRuntime } from "../../workflow/server";
 import { withUsage } from "../../usage/server";
@@ -39,6 +39,8 @@ export type ErrandRunStart = {
   /** A schedule started it: the helper cannot create schedules, and the thread says which schedule run it is for. */
   schedule?: { id: string; runKey: string } | undefined;
 };
+
+const API_RECON_WORKFLOW = "api-recon";
 
 export function mountErrandGraph(ctx: ServerCore, services: Services, core: ErrandCore) {
   const { bb, db } = ctx;
@@ -122,6 +124,20 @@ export function mountErrandGraph(ctx: ServerCore, services: Services, core: Erra
     },
   } as NodeExecutor<ChainRuntime>);
 
+  /**
+   * A read-only errand that maps a web service's API from its pages: the api-recon graph's inputs, else null. That graph runs on its own role
+   * (GPT-6.1 Terra, the computer-use model) with the recon method built in. The PM wrote both magicseo recons as errands, and both fell to a GLM
+   * member of the errand pool (2026-10-30 and the replay of 2026-10-31); the router reads the brief, so the PM need not know the graph.
+   */
+  async function apiRecon(task: string, authorized: boolean, accounts: readonly string[]): Promise<{ url: string; goal: string; account: string } | null> {
+    if (authorized) return null;
+    const url = /https?:\/\/[^\s)"'»<>]+/.exec(task)?.[0];
+    if (!url || !builtinWorkflow(API_RECON_WORKFLOW)) return null;
+    const routed = await routeIntent({ intent: task, workflows: builtinWorkflows() }).catch(() => null);
+    if (routed?.decision !== "route" || routed.workflowId !== API_RECON_WORKFLOW || routed.confidence < MIN_CONFIDENCE) return null;
+    return { url, goal: task, account: accounts[0] ?? "" };
+  }
+
   /** Starts the errand graph, or returns the run that already has the key. */
   function startRun(input: ErrandRunStart): { runId: string; created: boolean } {
     const workflow = builtinWorkflow(ERRAND_WORKFLOW);
@@ -173,6 +189,16 @@ export function mountErrandGraph(ctx: ServerCore, services: Services, core: Erra
       // Before any run exists: an account that is missing or left out of the project list starts nothing.
       const resolved = await core.resolveAccounts({ projectId: context.projectId, runId, pmThreadId: context.threadId, names: params.accounts ?? [], record: false });
       if (!resolved.ok) return JSON.stringify(resolved.blocked, null, 2);
+      const recon = await apiRecon(params.task, params.authorized, params.accounts ?? []);
+      if (recon) {
+        const workflow = builtinWorkflow(API_RECON_WORKFLOW)!;
+        const run = engine.start({
+          workflow, key: `${API_RECON_WORKFLOW}:${runId}:${spawnTextId(params.task)}`, link: { projectId: context.projectId, runId },
+          runtime: { ctx, services, pmThreadId: context.threadId, projectId: context.projectId, runId } satisfies ChainRuntime, inputs: recon,
+        });
+        run.done.catch((cause: unknown) => ctx.log(`Lane Pilot api-recon run ${run.runId} stopped with an error: ${cause instanceof Error ? cause.message : String(cause)}`));
+        return JSON.stringify({ workflowRunId: run.runId, state: "running", workflow: API_RECON_WORKFLOW, note: "this errand maps a web service's API, so it runs as the api-recon graph (role api-recon, GPT-6.1 Terra): wait on it with lane_pilot_wait_errand as usual" }, null, 2);
+      }
       const started = startRun({
         projectId: context.projectId, pmThreadId: context.threadId, runId, key: `errand:${runId}:${spawnTextId(params.task)}`,
         task: params.task, title: params.title, authorized: params.authorized, accounts: params.accounts ?? [],
@@ -210,6 +236,15 @@ export function mountErrandGraph(ctx: ServerCore, services: Services, core: Erra
         const threadId = spawnedOf(runId)?.threadId ?? params.threadId;
         if (summary.status === "succeeded") {
           const out = (summary.output ?? {}) as Record<string, unknown>;
+          // The api-recon graph's map (see apiRecon): its status, the summary and the paths of the map.
+          if (typeof out.status === "string" && out.state === undefined) {
+            const files = [text(out.api_map), text(out.endpoints)].filter(Boolean);
+            return JSON.stringify({
+              workflowRunId: runId, workflow: API_RECON_WORKFLOW, state: out.status === "done" ? "done" : "blocked", ...(text(out.reason) ? { reason: text(out.reason) } : {}),
+              ...(files.length ? { files } : {}), observed: out.observed ?? null, bundleOnly: out.bundle_only ?? null, officialApi: out.official_api ?? null,
+              output: fenceOutside("errand", text(out.report)),
+            }, null, 2);
+          }
           return JSON.stringify({
             workflowRunId: runId, threadId: text(out.thread_id) || threadId, state: out.state === "done" ? "done" : "blocked",
             ...(text(out.reason) ? { reason: text(out.reason) } : {}), ...(Array.isArray(out.files) && out.files.length ? { files: out.files } : {}),

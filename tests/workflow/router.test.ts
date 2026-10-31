@@ -195,6 +195,12 @@ describe("api-recon in the catalog", () => {
     expect((await route("сделай API продуктового магазина по их сайту")).workflowId).toBe("api-recon");
     expect((await route("Add a rate limiter to the login endpoint")).workflowId).not.toBe("api-recon");
   });
+
+  it("takes the replay PM's own recon brief, though it names CSRF and a captcha (it went to security-audit, 2026-10-31)", async () => {
+    const brief = "Owner request (this chat): scan the MagicSEO personal cabinet https://lk.magicseo.ru/ — every request it makes, its features and mechanics — so we can later build our own API/automation service on top of it. THIS ERRAND IS READ-ONLY RECON. Map the auth mechanics: cookie session vs bearer token, CSRF header, token refresh, session lifetime. Report any blocker (captcha, 2FA, anti-bot).";
+    expect((await route(brief)).workflowId).toBe("api-recon");
+    expect((await route("Audit the login form for CSRF and XSS")).workflowId).not.toBe("api-recon");
+  });
 });
 
 describe("the model port", () => {

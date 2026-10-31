@@ -50,6 +50,8 @@ function world(options: { pm?: boolean; output?: string; gate?: (names: string[]
   function instance(instanceBb = bb, instanceHarness = harness) {
     const engine = new WorkflowEngine({ db, harnessVersion: "test", resolveWorkflow: (id) => builtinWorkflow(id) });
     registerPureActions(engine);
+    // The api-recon graph's helper step (an agent node): started, never answering; the tests only read where the errand went.
+    engine.register("agent", { reentrant: true, run: () => new Promise(() => undefined) } as never);
     const ctx = ctxFor(instanceBb);
     const services = { workflowEngine: engine } as never;
     const errands = mountErrands(ctx, services);
@@ -66,6 +68,24 @@ function world(options: { pm?: boolean; output?: string; gate?: (names: string[]
 }
 
 describe("the errand graph", () => {
+  it("an errand that maps a web service's API from its pages runs as the api-recon graph; one that changes things, has no address or is another job stays an errand (magicseo replay, 2026-10-31)", async () => {
+    // The PM's own brief of the replay, cut: the router sent it to security-audit at 100 before the api-recon rule (it names auth and CSRF).
+    const recon = "Owner request (this chat): scan the MagicSEO personal cabinet https://lk.magicseo.ru/ — every request it makes, its features and mechanics — so we can later build our own API/automation service on top of it. THIS ERRAND IS READ-ONLY RECON. Map the auth: token, cookies, CSRF.";
+    const w = world();
+    const started = await w.call("lane_pilot_errand", { task: recon, accounts: ["MAGICSEO_LOGIN"] });
+    expect(started).toMatchObject({ workflowRunId: expect.stringMatching(/^wfrun_/), state: "running", workflow: "api-recon" });
+    expect(w.runs()).toEqual([expect.objectContaining({ workflow_id: "api-recon", idem_key: expect.stringMatching(/^api-recon:lprun-1:/) })]);
+    expect(w.state.spawned).toEqual([]);
+    const inputs = JSON.parse((w.db.prepare("SELECT inputs_json FROM lane_pilot_wf_run").get() as { inputs_json: string }).inputs_json);
+    expect(inputs).toMatchObject({ url: "https://lk.magicseo.ru/", account: "MAGICSEO_LOGIN" });
+
+    for (const [task, authorized] of [[recon, true], [recon.replace("https://lk.magicseo.ru/", "the MagicSEO cabinet"), false], [TASK, false]] as const) {
+      const other = world();
+      expect(await other.call("lane_pilot_errand", { task, authorized })).not.toHaveProperty("workflow");
+      expect(other.runs()).toEqual([expect.objectContaining({ workflow_id: "errand" })]);
+    }
+  });
+
   it("is a built-in starter graph (offered to no one) that passes the validator and runs accounts, work, emit", () => {
     const errand = builtinWorkflow("errand")!;
     expect(errand).toMatchObject({ id: "errand", startedBy: "lane_pilot_errand", status: "published" });
