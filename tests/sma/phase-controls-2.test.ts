@@ -4,7 +4,7 @@ import { createCore } from "../../src/rooms/core/server/core";
 import { createPhaseDriver } from "../../src/rooms/phase/server/driver";
 import { contextSignature, planSignature, sha256, type PlanItem } from "../../src/rooms/phase/logic";
 import { listParts, savePhase } from "../../src/rooms/phase/store";
-import { piecePlan } from "../../src/rooms/phase/stages";
+import { issuedContract, piecePlan } from "../../src/rooms/phase/stages";
 import { createAttempt, createRun, createTask, openDatabase } from "../../src/rooms/storage";
 
 const item = (id = "piece"): PlanItem => ({
@@ -188,5 +188,16 @@ describe("phase controls", () => {
     expect(plan).toContain("with the interfaces: Client.login()");
     expect(plan).toContain("keeping the invariants: JWT in memory only");
     expect(plan).not.toContain("UI-SPEC.md");
+  });
+
+  it("sets the fields the issue lint asks for itself, and drops browser cases with no address to run them on", () => {
+    const bare = { ...item("T1"), title: "Вход в кабинет", task: { ...item("T1").task, qa_cases: ["opens"], qa_env_class: "local" } };
+    const { task, dropped } = issuedContract({ id: "ph" }, bare);
+    expect(task).toMatchObject({ display_title: "Вход в кабинет", kind: "feature", area: "phase:ph/T1" });
+    expect(task).not.toHaveProperty("qa_cases");
+    expect(dropped).toMatch(/T1: 1 browser case/);
+    const kept = issuedContract({ id: "ph" }, { ...bare, task: { ...bare.task, display_title: "Мой", kind: "fix", area: "feature:x", qa_url: "http://127.0.0.1:5173" } });
+    expect(kept.task).toMatchObject({ display_title: "Мой", kind: "fix", area: "feature:x", qa_cases: ["opens"] });
+    expect(kept.dropped).toBeNull();
   });
 });

@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { TASK_KINDS } from "../contracts";
 import type { BookPart, Drawing, Phase, PhaseRecord, PhaseStage, PlanItem, TaskFact } from "./logic";
 
 /**
@@ -155,6 +156,25 @@ export function piecePlan(phase: Pick<Phase, "id" | "title" | "record">, item: P
   ].filter(Boolean);
   return [`Phase ${phase.id} «${phase.title}», wave ${item.wave}, piece ${item.id}. Promise — given ${item.promise.given}; when ${item.promise.when}; then ${item.promise.then}.`,
     "The phase's plan critic approved this contract; the steps follow it.", ...steps].join("\n").slice(0, 12000);
+}
+
+/**
+ * The fields the issue lint refuses that the phase can set itself. A refusal at issue is an issue error, not a plan revision: ph_82dfc9db78
+ * (2026-10-31) spent two of its three plan rounds going back through lp.plan for a missing display_title/kind/area and for qa_cases with
+ * no qa_url. The phase issues every piece in quality mode full, which owes a browser check to qa_cases; with no qa_url to run it on,
+ * the cases are dropped and the drop is named.
+ */
+export function issuedContract(phase: Pick<Phase, "id">, item: PlanItem): { task: Record<string, unknown>; dropped: string | null } {
+  const task: Record<string, unknown> = { ...item.task };
+  if (typeof task.display_title !== "string" || !task.display_title.trim()) task.display_title = item.title.replace(/\s+/g, " ").trim().slice(0, 120);
+  if (!(TASK_KINDS as readonly unknown[]).includes(task.kind)) task.kind = "feature";
+  if (typeof task.area !== "string" || !task.area.trim()) task.area = `phase:${phase.id}/${item.id}`;
+  const cases = Array.isArray(task.qa_cases) ? task.qa_cases : [];
+  if (cases.length && !(typeof task.qa_url === "string" && task.qa_url.trim())) {
+    for (const key of ["qa_cases", "qa_env_class", "qa_dev_server"]) delete task[key];
+    return { task, dropped: `${item.id}: ${cases.length} browser case(s) dropped at issue: no qa_url to run them on; the piece's verification stays its proof` };
+  }
+  return { task, dropped: null };
 }
 
 export function waveTable(wave: number, pieces: readonly PlanItem[], issued: Readonly<Record<string, string>>): string {

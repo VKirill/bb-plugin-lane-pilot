@@ -18,7 +18,7 @@ import { candidateBranch, createCandidates } from "./candidate";
 import { goalVerdict } from "../../run-goal";
 import { bookkeepingSetting } from "@lane-pilot/settings-catalog";
 import { appendPart, getPhase, insertPhase, listParts, listPhases, notePoked, savePhase } from "../store";
-import { archiveDrawing, binaryFileCommand, buildsScreens, piecePlan, binaryFileFingerprint, conclusionText, markRoadmap, nextRoadmapRow, stateText, uatState, uatText, waveTable } from "../stages";
+import { archiveDrawing, binaryFileCommand, buildsScreens, issuedContract, piecePlan, binaryFileFingerprint, conclusionText, markRoadmap, nextRoadmapRow, stateText, uatState, uatText, waveTable } from "../stages";
 import { runOnHost } from "@lane-pilot/host-calls";
 import { intakeRunGoals } from "../intake";
 import { createPhaseIntake } from "./intake";
@@ -811,11 +811,12 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
         typeof check.cwd === "string" && (check.cwd === base || check.cwd.startsWith(`${base}/`)) ? { ...check, cwd: `${tree.path}${check.cwd.slice(base!.length)}` } : check) : undefined;
       // A piece issued before with another contract goes again as a redo of its family (id.N), so its facts follow the new work.
       const redoOf = execution.issued[item.id];
+      const issuedTask = issuedContract(phase, item);
       const taskIdForIssue = redoOf ? redoId(item.id, runId) : item.id;
       const reply: Record<string, unknown> = await services.dispatchWriter({ threadId: phase.pmThreadId, projectId: phase.projectId, birth: "phase",
         // Stage above ordinary work: a phase's pieces start before the run's ordinary tasks when writers are scarce.
         // quality_mode full: the piece goes through every review stage, so its acceptance lines read verdicts, not their absence (SMA p6_l_verdict).
-        task: { ...item.task, id: taskIdForIssue, quality_mode: "full", priority: (item.task.priority as string | undefined) ?? "high", ...(phase.record.design?.drawing && buildsScreens(item) ? { drawing: phase.record.design.drawing.paths } : {}),
+        task: { ...issuedTask.task, id: taskIdForIssue, quality_mode: "full", priority: (item.task.priority as string | undefined) ?? "high", ...(phase.record.design?.drawing && buildsScreens(item) ? { drawing: phase.record.design.drawing.paths } : {}),
           ...(tree ? { project_cwd: tree.path, ...(verification ? { verification } : {}) } : typeof item.task.project_cwd === "string" && item.task.project_cwd ? {} : { project_cwd: base ?? undefined }),
           ...(typeof item.task.objective === "string" && item.task.objective.trim() ? {} : { objective: `${item.title}: given ${item.promise.given}, when ${item.promise.when}, then ${item.promise.then}` }) } as never,
         plan: piecePlan(phase, item),
@@ -823,6 +824,7 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
       const taskId = typeof reply.taskId === "string" ? reply.taskId : null;
       if (taskId) {
         execution.issued[item.id] = taskId;
+        if (issuedTask.dropped) book(phase, "execution", "qa_dropped", issuedTask.dropped);
         execution.issuedSha[item.id] = pieceSha(item);
         if (redoOf) book(phase, "execution", "reissued", `${item.id}: its contract changed since ${redoOf} — issued again as ${taskId}`);
         if (typeof reply.runId === "string") runId = reply.runId;
