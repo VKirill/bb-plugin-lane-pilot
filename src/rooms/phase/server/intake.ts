@@ -1,3 +1,4 @@
+import { withoutSelectionMarkers } from "../../native-agent/native-session";
 import { choiceOf, jev, resolveThresholds, type JevSettings } from "@lane-pilot/jev";
 import { getRun, getRunSettingsScopes } from "../../storage";
 import { stringAt, type ServerCore } from "../../core/server";
@@ -108,7 +109,7 @@ export function createPhaseIntake(ctx: Deps, phases: IntakePhases, train?: Intak
     const data = (event?.data ?? event ?? {}) as Record<string, unknown>;
     const requestId = typeof data.requestId === "string" ? data.requestId : null;
     const input = Array.isArray(data.input) ? data.input as Array<{ type?: string; text?: string }> : typeof data.input === "string" ? [{ type: "text", text: data.input }] : [];
-    const text = input.filter((part) => part.type === "text" && typeof part.text === "string").map((part) => part.text).join("\n").trim();
+    const text = withoutSelectionMarkers(input.filter((part) => part.type === "text" && typeof part.text === "string").map((part) => part.text).join("\n"));
     if (!requestId || !text || data.initiator === "agent" || isMachineMessage(text)) return null;
     const known = await bb.storage.kv.get(KEY(threadId)).catch(() => null) as IntakeRecord | null;
     if (known?.requestId === requestId) return known;

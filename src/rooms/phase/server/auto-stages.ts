@@ -16,7 +16,7 @@ export type AutoKind = "analyze" | "plan" | "check" | "draw" | "review" | "close
 export type AutoDue = { kind: AutoKind; wave?: number } | { kind: "resign" } | { kind: "replan" };
 /** How many times the machine returns a phase to planning after a failed verdict before the loop is spent. */
 /** A stage run that failed for Lane Pilot's own reasons (its guard, its output contract, its runtime, a provider), not because of the work. */
-export const MACHINE_STAGE_FAILURE = /repo_edited|artifact_invalid|output_invalid|output field "[^"]+" is missing|thread_failed|thread_id_missing|plugin_stopped|interrupted by a reload|budget_exceeded|provider_error|writer_stream_error|read_binary_rejected|guard:|no_pm_environment|internal_error|timed out waiting|(?:CONTEXT|SECURITY)\.md was not written|needs a threat model/i;
+export const MACHINE_STAGE_FAILURE = /repo_edited|artifact_invalid|output_invalid|output field "[^"]+" is missing|thread_failed|thread_id_missing|plugin_stopped|interrupted by a reload|budget_exceeded|provider_error|writer_stream_error|read_binary_rejected|guard:|no_pm_environment|internal_error|timed out waiting|(?:CONTEXT|SECURITY)\.md was not written|needs a threat model|native profile needs Claude Code/i;
 
 export const AUTO_REPLANS = 2;
 export const AUTO_WORKFLOWS: Record<AutoKind, string> = { analyze: "lp.analyze", plan: "lp.plan", check: "lp.plan", draw: "lp.draw", review: "lp.review", close: "lp.close", lessons: "retrospective" };
@@ -67,9 +67,20 @@ const LOOP_STOP = "Lane Pilot (loop exhausted)";
  * Only a stop by the machine itself, at planning, after a release other than the one that counted the failures, while the approved plan's one
  * refusal is the threat model (the machine writes that now, see `repairThreatModel`). A stop by a person, or a plan refused for the work, stays stopped.
  */
-export function recoverStopped(phase: Phase, version: string = packageJson.version): { record: PhaseRecord; note: string } | null {
+export function recoverStopped(phase: Phase, version: string = packageJson.version, at: number = Date.now()): { record: PhaseRecord; note: string } | null {
   const r = phase.record;
-  if (phase.state !== "stopped" || phase.stage !== "planning" || r.closing?.by !== LOOP_STOP || !r.plan || r.plan.critique?.decision !== "approve" || r.autoFailuresVersion === version) return null;
+  if (phase.state !== "stopped" || r.closing?.by !== LOOP_STOP || r.autoFailuresVersion === version) return null;
+  // A loop this release would not have ended: its last failure was Lane Pilot's own (MACHINE_STAGE_FAILURE as it reads now), which never
+  // spends the work's tries. Only a stop of the last day: an older stopped phase is the owner's past, not the machine's to wake (magicseo
+  // replay, 2026-10-31: lp.analyze was refused twice for a selection marker in the goal and the empty phase stopped).
+  const last = /the last: ([\s\S]*?)\)\. Scope cut/.exec(r.closing.words ?? "")?.[1];
+  if (last && MACHINE_STAGE_FAILURE.test(last) && at - (r.closing.at ?? 0) < 86_400_000) {
+    const restored = new Set(r.partial?.unproven.map((piece) => piece.id) ?? (r.scope?.revisions ? [] : r.scope?.withdrawn ?? []));
+    const { closing: _closing, partial: _partial, lessons: _lessons, ...rest } = r;
+    return { record: { ...rest, scope: { revisions: r.scope?.revisions ?? 0, withdrawn: (r.scope?.withdrawn ?? []).filter((id) => !restored.has(id)) }, auto: undefined, autoFailures: undefined, autoMachineFailures: undefined, autoFailuresTotal: undefined, autoFailuresVersion: undefined },
+      note: `Lane Pilot ${version}: the phase was stopped by a loop whose last failure was Lane Pilot's own (${last.slice(0, 200)}); this release does not count such a failure against the work, so the phase goes on and its cut pieces return` };
+  }
+  if (phase.stage !== "planning" || !r.plan || r.plan.critique?.decision !== "approve") return null;
   const threat = threatGap(r);
   // An approval from before the independence proof (0.1.375) is no gap here: the phase plans anew once its context is signed with the threat model.
   const gate = planGate(r);

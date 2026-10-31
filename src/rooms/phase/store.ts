@@ -1,3 +1,4 @@
+import { withoutSelectionMarkers } from "../native-agent/native-session";
 import type Database from "better-sqlite3";
 import { GENESIS, partHash, type BookPart, type BookSection, type Phase, type PhaseRecord, type PhaseStage, type PhaseState } from "./logic";
 
@@ -11,7 +12,7 @@ type Raw = {
 const parse = <T>(text: string, fallback: T): T => { try { return JSON.parse(text) as T; } catch { return fallback; } };
 
 const phaseOf = (row: Raw): Phase & { pokedKey: string | null } => ({
-  id: row.id, projectId: row.project_id, pmThreadId: row.pm_thread_id, runId: row.run_id, title: row.title, goal: row.goal, stage: row.stage, state: row.state,
+  id: row.id, projectId: row.project_id, pmThreadId: row.pm_thread_id, runId: row.run_id, title: withoutSelectionMarkers(row.title), goal: withoutSelectionMarkers(row.goal), stage: row.stage, state: row.state,
   record: parse<PhaseRecord>(row.record_json, {}), edition: row.edition, createdAt: row.created_at, updatedAt: row.updated_at, pokedKey: row.poked_key,
 });
 
