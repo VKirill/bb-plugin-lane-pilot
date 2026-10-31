@@ -28,6 +28,8 @@ Limits: at most 6 asks per thread pair per hour, 20 open reminders per thread, 1
 
 A run with no PM chat to tell reports its end to the owner's list instead, one line with a push when it failed (`src/rooms/workflow/server/pm-notice.ts:106-124`), which is why a relay failure looks like an owner-waiting item.
 
+**What a PM chat is never sent (since 0.1.443).** The plugin writes into a PM chat only what that PM's own run needs to go on: the results of its tasks, its writers' questions, permits, the owner's orders from the window, the end of a workflow or council it started. A fact that needs nothing from the PM goes to the log, the run records and the owner's list instead: a red integration gate with no culprit (`src/rooms/verification/server/integration-gate.ts:661`), a failed run goal (`src/rooms/run-goal/server/run-goal.ts:34`), a merge recovered after a reload, the weekly rule digest. The gate runs after the batch's last merge, when the run is often accepted and its PM done: on 2026-10-31 its note woke a finished PM two hours later, and the owner asked for no event of the plugin's own in that chat.
+
 ## Tools and RPC
 
 `lane_pilot_relay` (`ask` / `reply` / `list` — there is no agent action that creates a reminder; reminders are set by the plugin server). `lane_pilot_pm_notice` is not a tool but the notices table the sweep reads. `threadSettled` is called by the run lifecycle after each thread's turn ends.

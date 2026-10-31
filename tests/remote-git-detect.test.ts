@@ -131,10 +131,11 @@ describe("the integration gate runs on the project's host", () => {
 
     expect(res).toMatchObject({ ran: true, passed: false, culpritTaskId: null });
     expect(hostCalls.map((call) => call.method).filter((method) => method !== "diskFree")).toEqual(["gateRun"]);
-    expect(sent.map((message) => message.threadId)).toEqual(["pm-1"]);
-    expect(sent[0]!.text).toContain("because of the machine");
-    expect(sent[0]!.text).toContain("EACCES");
-    expect(sent[0]!.text).not.toContain("Traced to");
+    expect(sent).toEqual([]);
+    const row = core.db.prepare("SELECT kind, what FROM lane_pilot_owner_item WHERE key LIKE 'gate-red:run-1:%'").get() as { kind: string; what: string };
+    expect(row.kind).toBe("gate_machine");
+    expect(row.what).toContain("because of the machine");
+    expect(row.what).toContain("EACCES");
     // The merges are still counted: the gate has judged no code yet.
     expect(runner.getPendingMergeCount()).toBe(2);
   });

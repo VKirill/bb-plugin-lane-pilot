@@ -1,7 +1,7 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import { blindVerdict } from "../../src/rooms/phase/logic";
-import { goalVerdict, pmGoalMessage, runReady } from "../../src/rooms/run-goal";
+import { goalFailedText, goalVerdict, runReady } from "../../src/rooms/run-goal";
 import { createRunGoal } from "../../src/rooms/run-goal/server";
 import { createAttempt, createRun, createTask, openDatabase, setRunThread, transitionAttempt } from "../../src/rooms/storage/database";
 import { runRunGoalCli } from "../../src/rooms/run-goal/server";
@@ -21,7 +21,7 @@ describe("when a run is done and what its checks together mean", () => {
       .toEqual({ state: "failed", red: [{ taskId: "b", command: "npm test -- b", culpritCommit: "abcdef1234567", culpritTask: "a" }], detail: null, coverage: { planned: 2, ran: 2, skipped: 0 } });
     expect(goalVerdict({ skipped: "the project folder is not a git checkout", tasks, findings: [] })).toMatchObject({ state: "skipped", detail: "the project folder is not a git checkout" });
     expect(goalVerdict({ tasks: [{ taskId: "a", checks: [], skipped: "the contract names no verification[]" }], findings: [] })).toMatchObject({ state: "skipped" });
-    expect(pmGoalMessage("run1", [{ taskId: "b", command: "npm test -- b", culpritCommit: "abcdef1234567", culpritTask: "a" }])).toContain("- b: npm test -- b (сломал abcdef1234, задача a)");
+    expect(goalFailedText("run1", [{ taskId: "b", command: "npm test -- b", culpritCommit: "abcdef1234567", culpritTask: "a" }])).toContain("- b: npm test -- b (сломал abcdef1234, задача a)");
   });
 
   it("F-001: a green fast check and a skipped long check are not a passed run", () => {
@@ -143,15 +143,18 @@ describe("the sweep", () => {
     } };
     const ctx = { db, bb, log: () => undefined, isDisposed: () => false };
     const api = createRunGoal(ctx as never, { regression } as never).runGoal;
-    return { api, sent, calls };
+    return { api, sent, calls, db };
   }
 
-  it("checks each finished run once, keeps the verdict and tells the PM about a broken composition", async () => {
-    const { api, sent, calls } = world(true);
+  it("checks each finished run once, keeps the verdict and puts a broken composition on the owner's list, not into the PM chat", async () => {
+    const { api, sent, calls, db } = world(true);
     const first = await api.sweep();
     expect(first.map((row) => [row.runId, row.state, row.tasks])).toEqual([["run1", "failed", 2]]);
     expect(calls).toEqual([expect.objectContaining({ projectId: "P", runId: "run1", force: true, mode: "full" })]);
-    expect(sent[0]).toContain("задачи запуска run1 приняты каждая по отдельности");
+    expect(sent).toEqual([]);
+    const row = db.prepare("SELECT kind, why FROM lane_pilot_owner_item WHERE key='run-goal:run1'").get() as { kind: string; why: string };
+    expect(row.kind).toBe("goal_failed");
+    expect(row.why).toContain("задачи запуска run1 приняты каждая по отдельности");
     expect(await api.sweep()).toEqual([]);
     expect(api.status("run1")).toMatchObject({ state: "failed", red: [{ taskId: "t2", culpritTask: "t1" }] });
     expect(api.status("run2")).toBeNull();
@@ -167,7 +170,7 @@ describe("the sweep", () => {
   });
 });
 
-  it("tells the PM once a goal is only partial, and retries a check that crashed", async () => {
+  it("a partial goal is no message either, and a check that crashed is retried", async () => {
     const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
     const sent: string[] = [];
     harness.sdk.stub("threads.get", async () => ({ updatedAt: Date.now() }));
@@ -194,7 +197,7 @@ describe("the sweep", () => {
 
     // a partial verdict tells the PM but is not retried
     expect((await api.sweep()).map((row) => row.state)).toEqual(["partial"]);
-    expect(sent[0]).toContain("is partial");
+    expect(sent).toEqual([]);
     expect((await api.sweep()).map((row) => row.state)).toEqual([]);
 
     // a check that crashes is retried on the next sweep and then left alone

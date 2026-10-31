@@ -1,13 +1,11 @@
 import { createHash } from "node:crypto";
 import { markMechanized, ruleProposalId, LESSON_SAME_RULE } from "@lane-pilot/run-insights";
-import { getActivation, getRun } from "../storage";
-import { scheduleIsolated, sendPmNotice } from "../core/server";
+import { getActivation } from "../storage";
+import { scheduleIsolated } from "../core/server";
 import type { ServerCore, Services } from "../core/server";
 export type PromotionServiceApi = ReturnType<typeof createPromotionService>;
 import { acceptPromotion, dismissPromotion, listPromotions, type PromotionRow } from "./promotion";
-import { promotionWeeklyLines } from "./digest";
 import type { LanePilotDatabase } from "../storage";
-import type { BbPluginApi } from "@get-bb/plugin-sdk";
 
 const WEEKLY_CRON = "0 9 * * 1";
 
@@ -56,28 +54,6 @@ export function crossProjectRuleCandidates(db: LanePilotDatabase, now = Date.now
     }
   }
   return created;
-}
-
-/** One message per project whose promotions wait: the weekly top-10 to its PM chat, or nothing. */
-export async function deliverPromotionDigests(bb: Pick<BbPluginApi, "sdk" | "log">, db: LanePilotDatabase): Promise<{ sent: number; skipped: number }> {
-  let sent = 0, skipped = 0;
-  const projects = (db.prepare("SELECT DISTINCT project_id FROM lane_pilot_rule_promotion").all() as Array<{ project_id: string }>).map((row) => row.project_id);
-  for (const projectId of projects) {
-    const lines = promotionWeeklyLines(db, projectId);
-    if (!lines) { skipped++; continue; }
-    const activation = getActivation(db, projectId);
-    if (!activation || activation.pm_thread_id.startsWith("pending:")) { skipped++; continue; }
-    const run = getRun(db, activation.run_id);
-    if (!run || run.closed_at || run.pm_thread_id !== activation.pm_thread_id) { skipped++; continue; }
-    try {
-      // A cold PM chat is not woken for the digest; the open candidates stay in lane_pilot_learned op:promotion.
-      if (await sendPmNotice(bb, activation.pm_thread_id, lines.join("\n"))) sent++; else skipped++;
-    } catch (cause) {
-      bb.log.warn(`Lane Pilot promotion digest for ${projectId} not sent: ${cause instanceof Error ? cause.message : String(cause)}`);
-      skipped++;
-    }
-  }
-  return { sent, skipped };
 }
 
 /**
@@ -145,17 +121,19 @@ export function settlePromotionTask(db: LanePilotDatabase, input: { taskId: stri
   return { ...promotion, state: "proposed" };
 }
 
-/** The weekly pass: every Monday 09:00 hub time, each project with open candidates gets one PM message. */
+/**
+ * The weekly pass: every Monday 09:00 hub time the cross-project candidates are proposed. No message to any PM chat (the weekly top-10
+ * went there until 2026-10-31; the owner wants no event of the plugin's own in a PM chat): the open candidates are the morning line's
+ * count and `bb lane-pilot rules promote`.
+ */
 export function createPromotionService(ctx: ServerCore, services: Services) {
   const { bb, db } = ctx;
   scheduleIsolated(bb, "rule-promotions-weekly", WEEKLY_CRON, async (signal) => {
     void signal;
     const proposed = crossProjectRuleCandidates(db);
     if (proposed) ctx.log(`rule-promotions weekly: ${proposed} cross-project rule candidate(s) proposed`);
-    await deliverPromotionDigests(bb, db);
   }, { timeoutMs: 10 * 60_000 });
   return {
-    deliverDigests: () => deliverPromotionDigests(bb, db),
     crossProjectCandidates: () => crossProjectRuleCandidates(db),
     dispatch: (input: { projectId: string; ruleId: string; threadId?: string | undefined }) => dispatchPromotion(ctx, services, input),
     dismiss: (projectId: string, ruleId: string) => dismissPromotionCandidate(db, projectId, ruleId),

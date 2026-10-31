@@ -3,7 +3,6 @@ import { createFakePluginHost, makeThreadResponse } from "@get-bb/plugin-sdk/tes
 import plugin from "../server";
 import { createOwnerAsk, OWNER_ASK_OPEN_GRACE_MS } from "../src/rooms/relay/server/owner-ask";
 import { buildOwnerAskPayload, ownerAnswerText, ownerAskPayloadSchema, ownerAskTitle, resolveOwnerResponse } from "../src/rooms/relay/owner-ask";
-import { IntegrationGateRunner } from "../src/rooms/verification/server/integration-gate";
 import { askOwnerToJoin } from "../src/rooms/council/server/council";
 import { councilOwnerForm } from "../src/rooms/relay/server/owner-locale";
 import { repairAnswerForThread } from "../src/rooms/self-repair/server/self-repair";
@@ -159,26 +158,6 @@ describe("lane_pilot_ask_owner (H8)", () => {
     expect(second.error.code).toBe("owner_question_unavailable");
     harness.behavior.cancelInteraction(harness.pendingInteractions[0]!.id);
     await first;
-  });
-});
-
-describe("the integration gate tells the PM and never asks the owner (H8)", () => {
-  function gate() {
-    const sent: Array<{ threadId: string; text: string }> = [];
-    const send = async (input: { threadId: string; input: Array<{ text: string }> }) => { sent.push({ threadId: input.threadId, text: input.input[0]!.text }); };
-    const made = createFakePluginHost({ pluginId: "lane-pilot", sdk: { threads: { send } } as never });
-    const ownerAsk = createOwnerAsk(made.bb, () => undefined);
-    const ctx = { bb: { sdk: { threads: { send } } }, ownerAsk, log: () => undefined };
-    const runner = new IntegrationGateRunner(ctx as never, {} as never);
-    const tell = (runner as unknown as { tellPm: (thread: string, text: string) => Promise<void> }).tellPm.bind(runner);
-    return { made, tell, sent };
-  }
-
-  it("sends exactly one PM message with ANSI codes stripped and opens no pending interaction", async () => {
-    const { made, tell, sent } = gate();
-    await tell("thr_pm", "\u001b[31mLane Pilot: integration gate failed.\u001b[39m");
-    expect(made.harness.pendingInteractions).toHaveLength(0);
-    expect(sent).toEqual([{ threadId: "thr_pm", text: "Lane Pilot: integration gate failed." }]);
   });
 });
 

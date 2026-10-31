@@ -56,7 +56,7 @@ it("a merge while another task is still open only counts; the last one to land r
   expect(runs()).toBe(1);
 });
 
-it("a red gate after the batch goes to the writer whose task owns the failing test, with the PM told the detected command", async () => {
+it("a red gate after the batch goes to the writer whose task owns the failing test; the PM is not messaged", async () => {
   writePackage("t2/b.test.ts");
   const { db, sent, landed } = setup();
   await landed("t1", ["t1/a.ts"]);
@@ -66,7 +66,7 @@ it("a red gate after the batch goes to the writer whose task owns the failing te
 
   expect(runs()).toBe(1);
   expect(sent.find((message) => message.threadId === "thr-t2")?.text).toContain("integration gate failed after merging your task t2");
-  expect(sent.find((message) => message.threadId === "pm-1")?.text).toContain("`npm test` (detected: package.json script «test»)");
+  expect(sent.find((message) => message.threadId === "pm-1")).toBeUndefined();
 });
 
 it("with the gate off nothing runs", async () => {

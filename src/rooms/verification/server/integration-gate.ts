@@ -10,7 +10,8 @@ import { sendServiceMessage } from "../../relay/server";
 import { isEnvironmentCheckFailure } from "../../runs";
 import { readCheckRun } from "../../tasks";
 import { gateLabel, gateResolverFor, type ResolvedGate } from "./gate-detect";
-import { continuesEpisode, fixesInFlight, type GateEpisode } from "./gate-episode";
+import { continuesEpisode, type GateEpisode } from "./gate-episode";
+import { postOwnerItem } from "../../owner-waiting";
 import { attributeFailures, testLabel } from "./gate-attribution";
 import { cacheHitsNote, extractCacheHits, extractFailingFiles, extractFailingTests, unhandledErrorBlock, type FailingTest } from "../gate-output";
 import { flakyEvidence, outputTail, readingFrom } from "../machine-pressure";
@@ -433,12 +434,9 @@ export class IntegrationGateRunner {
     // Exit 0 with no test run: nothing is red, so no culprit; but nothing is proven either, and the merges stay counted for the next run.
     if (exitCode === 0) {
       this.ctx.log(`integration-gate: \`${gateCommand}\` exited 0 but proved nothing, no culprit searched: ${reading.reason}`);
-      const { episode, repeat } = this.enterEpisode(runId, gateCommand, ["(no test ran)"]);
-      if (repeat) {
-        await this.repeatRed(runId, pmThreadId, episode, [], `Lane Pilot: integration gate ${label} is still not proving anything: it exits 0 but runs no test. Fix the gate command or its tests, then the gate runs again.`);
-        return { ran: true, passed: false, culpritTaskId: null };
-      }
-      await this.tellPm(pmThreadId, `Lane Pilot: integration gate ${label} exited 0 but ran no test (${reading.reason}). That is not a green gate, and no commit is to blame, so no culprit was searched. Fix the gate command or its tests; it runs again on the next merge.`, episode);
+      this.noteRed({ runId, projectId }, this.enterEpisode(runId, gateCommand, ["(no test ran)"]), "gate_no_test",
+        `Integration gate ${label} exited 0 but ran no test (${reading.reason}).`,
+        "That is not a green gate, and no commit is to blame, so no culprit was searched. Fix the gate command or its tests; it runs again on the next merge.");
       return { ran: true, passed: false, culpritTaskId: null };
     }
 
@@ -447,12 +445,9 @@ export class IntegrationGateRunner {
     if (isEnvironmentCheckFailure({ stdout, stderr })) {
       const evidence = `${stderr}\n${stdout}`.split("\n").find((line) => isEnvironmentCheckFailure({ stderr: line }))?.trim().slice(0, 300) ?? "";
       this.ctx.log(`infra: integration gate \`${gateCommand}\` is red from the environment, no culprit searched: ${evidence}`);
-      const { episode, repeat } = this.enterEpisode(runId, gateCommand, ["(environment)"]);
-      if (repeat) {
-        await this.repeatRed(runId, pmThreadId, episode, [], `Lane Pilot: integration gate ${label} is still red because of the machine (${evidence}). Fix it in ${basePath}, then the gate runs again.`);
-        return { ran: true, passed: false, culpritTaskId: null };
-      }
-      await this.tellPm(pmThreadId, `Lane Pilot: integration gate ${label} is red because of the machine, not the code: ${evidence}. No culprit was searched and no fix turn was sent to a writer. Fix the machine yourself (an errand on that host, e.g. file owners or permissions in ${basePath}), then the gate runs again on the next merge.`, episode);
+      this.noteRed({ runId, projectId }, this.enterEpisode(runId, gateCommand, ["(environment)"]), "gate_machine",
+        `Integration gate ${label} is red because of the machine, not the code: ${evidence}.`,
+        `No culprit was searched and no fix turn was sent to a writer. The machine needs fixing (file owners or permissions in ${basePath}); the gate runs again on the next merge.`);
       return { ran: true, passed: false, culpritTaskId: null };
     }
 
@@ -630,17 +625,13 @@ export class IntegrationGateRunner {
       }
 
       await sendServiceMessage(bb, { threadId: culprit.threadId, text: prompt, senderThreadId: pmThreadId }).catch(() => undefined);
-
-      await sendServiceMessage(bb, {
-        threadId: pmThreadId,
-        text: `Lane Pilot: integration gate ${label} failed. Traced to ${culprit.taskId} (its diff touches the failing tests or their workspace); sent fix turn to @thread:${culprit.threadId}.${preexistingNote}${cacheNote ? ` ${cacheNote}` : ""} Full log: ${logRelativePath}`,
-        senderThreadId: culprit.threadId,
-      }).catch(() => undefined);
+      // The PM is not told: the writer's fix comes back to it as that task's result, like any other turn.
+      this.ctx.log(`integration-gate: ${label} failed, traced to ${culprit.taskId}; fix turn sent to ${culprit.threadId}.${preexistingNote} Full log: ${logRelativePath}`);
 
       return { ran: true, passed: false, culpritTaskId: culprit.taskId };
     }
 
-    // Tell PM with log; the owner is asked what to do (a form in the PM chat and a push on the phone), once per red-gate episode.
+    // No culprit: a fact for the log and the owner's list, once per red-gate episode; nobody is asked anything.
     const tasks = tasksToCheck.map((task) => task.taskId).join(", ");
     const allPreexisting = attribution.strict && failingTests.length > 0 && attribution.remaining.length === 0;
     const why = !failingTests.length && unhandled
@@ -655,51 +646,37 @@ export class IntegrationGateRunner {
     const timeoutNote = repeatedTimeouts ? " (timed out twice, also on recheck)" : "";
     const failingList = failingTests.length ? ` Failing tests${timeoutNote}: ${failingTests.map(testLabel).join(", ")}.` : "";
     const cacheSuffix = cacheNote ? ` ${cacheNote}` : "";
-    const { episode, repeat } = this.enterEpisode(runId, gateCommand, failingFiles);
-    if (repeat) {
-      await this.repeatRed(runId, pmThreadId, episode, failingFiles, `Lane Pilot: integration gate ${label} is still red (exit ${activeExitCode}), the same failing tests as before.${failingList} You were already told about this red gate; keep fixing it. Full log: ${logRelativePath}`, tasksToCheck.map((task) => task.taskId));
-      return { ran: true, passed: false, culpritTaskId: null };
-    }
-    await this.tellPm(pmThreadId, `Lane Pilot: integration gate ${label} failed (exit ${activeExitCode}). ${why}${failingList}${cacheSuffix} Full log: ${logRelativePath}. Decide and act yourself, do not ask the owner: read the log, then dispatch fix tasks for these tests (one per workspace is fine); pre-existing failures are fixed the same way.`, episode);
+    this.noteRed({ runId, projectId }, this.enterEpisode(runId, gateCommand, failingFiles), "gate_red",
+      `Integration gate ${label} failed (exit ${activeExitCode}).${failingList}`, `${why}${cacheSuffix} Full log: ${logRelativePath}`, logRelativePath);
 
     return { ran: true, passed: false, culpritTaskId: null };
   }
 
   /**
-   * The PM gets the failure as a message and decides what to do itself. The gate used to open an owner form «What should
-   * the PM do?» whose answer was always «investigate and fix it»; the owner asked never to be asked that (2026-10-09).
+   * A red gate with no writer to fix it is a fact for the log and the owner's list, never a message into the PM chat: the gate runs
+   * after the batch's last merge, when the run is often accepted and its PM done (2026-10-31: a gate note woke a finished PM two
+   * hours later; the owner wants no event of the plugin's own in that chat, and since 2026-10-09 no question «what should the PM
+   * do?» either). One row per red-gate episode: the same red again changes nothing.
    */
-  private async tellPm(pmThreadId: string, text: string, _episode?: GateEpisode): Promise<void> {
-    await this.ctx.bb.sdk.threads.send({
-      threadId: pmThreadId,
-      mode: "queue-if-active",
-      input: [{ type: "text", text: stripAnsi(text), mentions: [] }],
-    } as never).catch(() => undefined);
+  private noteRed(input: { runId: string; projectId: string }, episode: GateEpisode, kind: string, what: string, why: string, logPath?: string): void {
+    this.ctx.log(`integration-gate: ${stripAnsi(what)} ${stripAnsi(why)}`);
+    postOwnerItem(this.ctx.db as never, {
+      key: `gate-red:${input.runId}:${episode.startedAt}`, source: "integration-gate", kind, projectId: input.projectId, wake: false,
+      what: stripAnsi(what), why: stripAnsi(why),
+      evidence: [{ kind: "run", ref: input.runId }, ...(logPath ? [{ kind: "file" as const, ref: logPath }] : [])],
+    });
   }
 
-  /**
-   * A red run belongs to the run's current episode, or starts a new one. `repeat` is true when the episode is already known
-   * (the owner was asked for it).
-   */
-  private enterEpisode(runId: string, command: string, files: string[]): { episode: GateEpisode; repeat: boolean } {
+  /** A red run belongs to the run's current episode, or starts a new one (the owner's list has one row per episode). */
+  private enterEpisode(runId: string, command: string, files: string[]): GateEpisode {
     const known = this.episodes.get(runId);
     if (known && continuesEpisode(known, command, files)) {
       known.files = [...new Set([...known.files, ...files])];
-      return { episode: known, repeat: true };
+      return known;
     }
-    const episode: GateEpisode = { command, files: [...files], startedAt: Date.now(), answered: false };
+    const episode: GateEpisode = { command, files: [...files], startedAt: Date.now() };
     this.episodes.set(runId, episode);
-    return { episode, repeat: false };
-  }
-
-  /** The same red gate again: no owner question; the PM hears it only when no fix task for these tests is in flight. */
-  private async repeatRed(runId: string, pmThreadId: string, episode: GateEpisode, files: string[], text: string, mergedTaskIds: string[] = []): Promise<void> {
-    const fixing = fixesInFlight(this.ctx.db, runId, files.length ? files : episode.files, episode.startedAt, mergedTaskIds);
-    if (fixing.length) {
-      this.ctx.log(`integration-gate: still red, same episode; PM fix in flight (${fixing.join(", ")}), nobody told`);
-      return;
-    }
-    await this.ctx.bb.sdk.threads.send({ threadId: pmThreadId, mode: "queue-if-active", input: [{ type: "text", text: stripAnsi(text), mentions: [] }] } as never).catch(() => undefined);
+    return episode;
   }
 }
 

@@ -47,6 +47,8 @@ SMA D0-3 («Waiting for you» card, «one wait, one message»). The night policy
 | `writer` | a writer's question to a human that went unanswered for `writer.question_wait_min` (default two hours): with `writer.auto_return` on, the second pilot could not answer or narrow it and the PM chat was cold (`src/rooms/writer/server/second-pilot.ts`, no wake); with it off, a product question (`src/rooms/writer/server/question-timeout.ts`, wake) | by the row's `wake` | answer in the task's objective and send the task again |
 | `phase` | owner-word turns of a running phase (`src/rooms/phase/server/driver.ts:378`, `:1032`) | by the row's `wake` | the row's own `actions` |
 | `workflow` | the end of a run that has no PM chat to tell (`src/rooms/workflow/server/pm-notice.ts:106-124`) | on failure | the row's own `actions` |
+| `integration-gate` | a red integration gate no merged task is to blame for (pre-existing failures, the machine, a gate that ran no test), one row per red episode (`src/rooms/verification/server/integration-gate.ts:661`) | no | read the log the row names; fix the tests or the gate command |
+| `run-goal` | a done run whose accepted tasks are red together on main (`src/rooms/run-goal/server/run-goal.ts:34`) | no | a fix task, or `bb lane-pilot return` |
 | `wall` | a wall class that ran out of moves (`src/rooms/wall/service.ts:232`) | no | the row's own `actions` |
 | `outage` | an outage window (`src/rooms/outage/server/outage.ts:23`) | no | the row's own `actions` |
 | `schedule` | a scheduled agent's outcome or block (`src/rooms/schedule/server/schedule-agent-actions.ts:79`) | on `urgent` | the row's own `actions` |

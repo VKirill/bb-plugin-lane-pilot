@@ -190,6 +190,9 @@ describe("IntegrationGateRunner with mock core & services", () => {
     mockServices = {} as unknown as Services;
   });
 
+  /** The one row a red gate with no culprit leaves on the owner's list (the PM chat gets nothing). */
+  const ownerRow = () => db.prepare("SELECT kind, what, why FROM lane_pilot_owner_item WHERE key LIKE 'gate-red:run-1:%' ORDER BY created_at DESC").get() as { kind: string; what: string; why: string };
+
   it("does nothing when the gate is off", async () => {
     // process.cwd() holds a package.json with a test script: only «off» keeps the gate from being detected there.
     saveProjectSetting(db, "proj-1", "integration.gate_command", "off");
@@ -339,11 +342,8 @@ describe("IntegrationGateRunner with mock core & services", () => {
     expect(culpritMsg).toBeDefined();
     expect(culpritMsg?.text).toContain("Result: integration gate failed after merging your task culprit-task");
 
-    // Check PM notification
-    const pmMsg = sentMessages.find((m) => m.threadId === "pm-thread-999");
-    expect(pmMsg).toBeDefined();
-    expect(pmMsg?.text).toContain("Traced to culprit-task");
-    expect(pmMsg?.text).toContain("@thread:culprit-thread-123");
+    // The PM is not told: the fix comes back to it as the task's result.
+    expect(sentMessages.find((m) => m.threadId === "pm-thread-999")).toBeUndefined();
 
     // Check no new task ids created in db
     const tasksAfter = db.prepare(`SELECT * FROM lane_pilot_task WHERE run_id='run-1'`).all().length;
@@ -392,9 +392,7 @@ describe("IntegrationGateRunner with mock core & services", () => {
       expect(res).toMatchObject({ ran: true, passed: false, culpritTaskId: "t2" });
       expect(runs()).toBe(1);
       expect(sentMessages.find((m) => m.threadId === "thr-t2")?.text).toContain("integration gate failed after merging your task t2");
-      const pm = sentMessages.find((m) => m.threadId === "pm-thread-999")?.text ?? "";
-      expect(pm).toContain("`npm test` (detected: package.json script «test»)");
-      expect(pm).toContain("Traced to t2");
+      expect(sentMessages.find((m) => m.threadId === "pm-thread-999")).toBeUndefined();
       expect(sentMessages.find((m) => m.threadId === "thr-t1")).toBeUndefined();
     });
 
@@ -435,9 +433,12 @@ describe("IntegrationGateRunner with mock core & services", () => {
       expect(res).toMatchObject({ ran: true, passed: false, culpritTaskId: null });
       expect(hostCalls).not.toContain("gateBisect");
       expect(sentMessages.some((m) => m.threadId.startsWith("thr-"))).toBe(false);
-      const pm = sentMessages.find((m) => m.threadId === "pm-thread-999")?.text ?? "";
-      expect(pm).toContain("no git");
-      expect(pm).toContain("t1, t2");
+      // No message to the PM chat: the red gate is a row on the owner's list.
+      expect(sentMessages.find((m) => m.threadId === "pm-thread-999")).toBeUndefined();
+      const row = ownerRow();
+      expect(row.kind).toBe("gate_red");
+      expect(row.why).toContain("no git");
+      expect(row.why).toContain("t1, t2");
     });
   });
 
@@ -578,11 +579,12 @@ AssertionError: expected 1 to be 2
 
       await runner.maybeRunGate({ runId: "run-1", projectId: "proj-1", pmThreadId: "pm-thread-999", basePath: "/tmp/project", configHostId: "host-1", trigger: "drain" });
 
-      const pm = sentMessages.find((m) => m.threadId === "pm-thread-999")?.text ?? "";
-      expect(pm).toContain("no failing test listed");
-      expect(pm).toContain("unhandled error outside any test");
-      expect(pm).toContain("Error: db pool closed twice | ❯ Pool.close src/db/pool.ts:41:11");
-      expect(pm).not.toContain("Could not unambiguously identify culprit.");
+      expect(sentMessages.find((m) => m.threadId === "pm-thread-999")).toBeUndefined();
+      const why = ownerRow().why;
+      expect(why).toContain("no failing test listed");
+      expect(why).toContain("unhandled error outside any test");
+      expect(why).toContain("Error: db pool closed twice | ❯ Pool.close src/db/pool.ts:41:11");
+      expect(why).not.toContain("Could not unambiguously identify culprit.");
     });
 
     it("a recheck that fails with an assertion error leads to normal culprit flow", async () => {
@@ -736,8 +738,8 @@ AssertionError: expected 1 to be 2
         "npx vitest run",
         "npx vitest run tests/timeout.test.ts",
       ]);
-      const pmMsg = sentMessages.find((m) => m.threadId === "pm-thread-999");
-      expect(pmMsg?.text).toContain("timed out twice, also on recheck");
+      expect(sentMessages.find((m) => m.threadId === "pm-thread-999")).toBeUndefined();
+      expect(ownerRow().what).toContain("timed out twice, also on recheck");
     });
 
     // Astra's recheck of 0.1.336 (P1): exit 0 alone is not a pass for the gate or for its recheck.
@@ -765,11 +767,12 @@ AssertionError: expected 1 to be 2
       return { gateRuns, run };
     };
 
-    it("a gate that exits 0 but ran no test is not green: no culprit, the PM is told, the merges stay counted", async () => {
+    it("a gate that exits 0 but ran no test is not green: no culprit, a row on the owner's list, the merges stay counted", async () => {
       const { gateRuns, run } = gateWith([{ exitCode: 0, stdout: " No test files found, exiting with code 0\n" }]);
       expect(await run()).toMatchObject({ ran: true, passed: false, culpritTaskId: null });
       expect(gateRuns).toEqual(["npx vitest run"]);
-      expect(sentMessages.find((m) => m.threadId === "pm-thread-999")?.text).toContain("ran no test");
+      expect(sentMessages.find((m) => m.threadId === "pm-thread-999")).toBeUndefined();
+      expect(ownerRow().what).toContain("ran no test");
       const events = db.prepare(`SELECT status FROM lane_pilot_gate_event WHERE run_id='run-1' AND gate='verification'`).all() as { status: string }[];
       expect(events.map((e) => e.status)).toEqual(["failed"]);
     });
@@ -784,7 +787,8 @@ AssertionError: expected 1 to be 2
       const { gateRuns, run } = gateWith([first, { exitCode: 0, stdout: "", stderr: "" }]);
       expect(await run()).toMatchObject({ ran: true, passed: false, culpritTaskId: null });
       expect(gateRuns).toEqual(["npx vitest run", "npx vitest run tests/timeout.test.ts"]);
-      expect(sentMessages.find((m) => m.threadId === "pm-thread-999")?.text).toContain("timed out twice, also on recheck");
+      expect(sentMessages.find((m) => m.threadId === "pm-thread-999")).toBeUndefined();
+      expect(ownerRow().what).toContain("timed out twice, also on recheck");
     });
 
     it("a recheck that exits 0 with every test skipped is not a green either", async () => {

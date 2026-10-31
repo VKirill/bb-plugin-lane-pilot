@@ -1,13 +1,14 @@
 import { getRun } from "../../storage";
-import { scheduleIsolated, sendPmNotice, type ServerCore, type Services } from "../../core/server";
-import { goalVerdict, pmGoalMessage, runReady, type TaskState } from "../logic";
+import { scheduleIsolated, type ServerCore, type Services } from "../../core/server";
+import { postOwnerItem } from "../../owner-waiting";
+import { goalFailedText, goalVerdict, runReady, type TaskState } from "../logic";
 import { getRunGoal, saveRunGoal, type RunGoalRecord } from "../store";
 
 /**
  * The run-goal service (SMA atlas D2-3). A sweep every 20 minutes finds the runs of the last week that are done (every task accepted or
  * canceled, two accepted at least) and have no verdict yet, and checks each once: the regression pass runs every accepted task's checks
- * together on the project's current main (mode full: a slow check is not dropped). A failed goal is a message to the PM with
- * the red checks and the commit bisect named; a red check broken by work outside the run, or rewritten on purpose by a later task of the
+ * together on the project's current main (mode full: a slow check is not dropped). A failed goal is a row on the owner's list with
+ * the red checks and the commit bisect named (the run is done: its PM chat is not woken for a fact, 2026-10-31); a red check broken by work outside the run, or rewritten on purpose by a later task of the
  * run, is set aside (logic.ts goalVerdict) and stays in the regression list; the verdict is kept per run.
  */
 const WEEK = 7 * 86_400_000;
@@ -29,15 +30,11 @@ export function createRunGoal(ctx: ServerCore, services: Services) {
     const verdict = goalVerdict(pass, tasks.map((task) => task.taskId));
     const record: RunGoalRecord = { runId, projectId: run.project_id, state: verdict.state, tasks: tasks.filter((task) => task.state === "accepted").length, headSha: pass.head ?? null, red: verdict.red, detail: verdict.detail, at: Date.now(), coverage: verdict.coverage };
     saveRunGoal(db, record);
-    if (verdict.state === "failed" && run.pm_thread_id) {
-      await sendPmNotice(bb, run.pm_thread_id, pmGoalMessage(runId, verdict.red));
+    if (verdict.state === "failed") {
+      postOwnerItem(db as never, { key: `run-goal:${runId}`, source: "run-goal", kind: "goal_failed", projectId: run.project_id, wake: false,
+        what: `Run ${runId}: ${verdict.red.length} check(s) red together on main`, why: goalFailedText(runId, verdict.red), evidence: [{ kind: "run", ref: runId }] });
     }
-    // A partial or inconclusive verdict is not a pass either: the PM sees it once, with what did not run.
-    if ((verdict.state === "partial" || verdict.state === "inconclusive") && run.pm_thread_id) {
-      const detail = verdict.detail ?? `planned ${verdict.coverage.planned}, ran ${verdict.coverage.ran}, skipped ${verdict.coverage.skipped}`;
-      const text = `Lane Pilot: goal check of run ${runId} is ${verdict.state} — ${detail}. The run is not proven end-to-end; re-check with bb lane-pilot run-goal ${runId} once the missing checks can run.`;
-      await sendPmNotice(bb, run.pm_thread_id, text);
-    }
+    // A partial or inconclusive verdict is not a pass either; the log and the verdict say what did not run.
     ctx.log(`run-goal: ${runId} ${verdict.state}${verdict.red.length ? ` (${verdict.red.length} red)` : ""}${verdict.detail ? `: ${verdict.detail}` : ""}`);
     return record;
   }

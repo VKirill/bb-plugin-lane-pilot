@@ -62,7 +62,7 @@ describe("the gate report names the workspaces turbo answered from its cache", (
   });
   afterEach(() => { rmSync(dir, { recursive: true, force: true }); });
 
-  it("puts the cache hits in the PM's message, and keeps the explicit command as typed", async () => {
+  it("puts the cache hits in the owner's row, and keeps the explicit command as typed", async () => {
     db.prepare(`INSERT INTO lane_pilot_task (id, run_id, kind, contract_json, created_at) VALUES ('t2', 'run-1', 'bb', '{}', 0)`).run();
     const runner = new IntegrationGateRunner(core, {} as Services);
     runner.noteMergedTask({ taskId: "t1", commitSha: "sha-1", threadId: "thr-t1", attemptId: "att-1", produced: ["src/one.ts"] });
@@ -70,7 +70,9 @@ describe("the gate report names the workspaces turbo answered from its cache", (
 
     await runner.maybeRunGate({ runId: "run-1", projectId: "proj-1", pmThreadId: "pm-1", basePath: dir, configHostId: "host-1", trigger: "drain" });
 
-    const pm = sent.find((m) => m.threadId === "pm-1")!.text;
+    expect(sent.find((m) => m.threadId === "pm-1")).toBeUndefined();
+    const row = db.prepare("SELECT what, why FROM lane_pilot_owner_item WHERE key LIKE 'gate-red:run-1:%'").get() as { what: string; why: string };
+    const pm = `${row.what} ${row.why}`;
     expect(pm).toContain("`node gate.js`");
     expect(pm).not.toContain("--force");
     expect(pm).toContain("Cache hits");

@@ -1,7 +1,7 @@
 import Database from "better-sqlite3";
 import { describe, expect, it } from "vitest";
 import { ruleAudienceMigrations, ruleFormMigrations, ruleMechanismMigrations, ruleMigrations, ruleTrialMigrations, upsertLessonProposal, decideRuleProposal } from "@lane-pilot/run-insights";
-import { promotionDigest, promotionMorningLine, promotionWeeklyLines, proposePromotions, runRulesCli } from "../src/rooms/rule-forms";
+import { promotionDigest, promotionMorningLine, proposePromotions, runRulesCli } from "../src/rooms/rule-forms";
 import { acceptPromotion, dismissPromotion } from "../src/rooms/rule-forms";
 import { crossProjectRuleCandidates } from "../src/rooms/rule-forms/promotion-service";
 
@@ -32,7 +32,6 @@ describe("promotion digest (weekly top-10 + text/mechanism counter)", () => {
     expect(digest.textRules).toBe(1);
     expect(digest.openPromotions).toBe(1);
     expect(digest.top[0]!.ruleId).toBeTruthy();
-    expect(promotionWeeklyLines(db, "p")!.join("\n")).toContain("текстом 1, механизмом 1");
     expect(promotionMorningLine(db)).toContain("кандидатов на механизацию 1");
   });
 
@@ -58,36 +57,13 @@ describe("promotion digest (weekly top-10 + text/mechanism counter)", () => {
 });
 
 import { claimActivation, createRun, getRun, setRunThread } from "../src/rooms/storage";
-import { deliverPromotionDigests, dispatchPromotion, settlePromotionTask } from "../src/rooms/rule-forms";
+import { dispatchPromotion, settlePromotionTask } from "../src/rooms/rule-forms";
 
 const pmSetup = (db: Database.Database, projectId: string) => {
   createRun(db, `run_${projectId}`, projectId);
   setRunThread(db, `run_${projectId}`, "thr_pm");
   claimActivation(db, { projectId, pmThreadId: "thr_pm", runId: `run_${projectId}` });
 };
-
-describe("the weekly digest reaches the PM", () => {
-  it("sends the top-10 block to the PM chat of each project with open candidates; quiet when none", async () => {
-    const db = openDb();
-    accept(db, "p", LINT, 4);
-    proposePromotions(db, "p", { repoPath: "/tmp/repo" });
-    pmSetup(db, "p");
-    const sent: Array<{ threadId: string; text: string }> = [];
-    let updatedAt = Date.now();
-    const bb = { sdk: { threads: { get: async () => ({ updatedAt }), send: async (args: { threadId: string; input: Array<{ text: string }> }) => { sent.push({ threadId: args.threadId, text: args.input[0]!.text }); return {}; } } }, log: { warn: () => {} } };
-    // A PM chat idle for days is not woken for the digest.
-    updatedAt = Date.now() - 3 * 24 * 3_600_000;
-    expect(await deliverPromotionDigests(bb as never, db as never)).toEqual({ sent: 0, skipped: 1 });
-    expect(sent).toEqual([]);
-    updatedAt = Date.now();
-    const result = await deliverPromotionDigests(bb as never, db as never);
-    expect(result).toEqual({ sent: 1, skipped: 0 });
-    expect(sent[0]!.threadId).toBe("thr_pm");
-    expect(sent[0]!.text).toContain("кандидатов на механизацию 1");
-    // A project with nothing open sends nothing.
-    expect(promotionWeeklyLines(db, "empty-project")).toBeNull();
-  });
-});
 
 describe("accept creates a real task through the dispatch path", () => {
   it("dispatchWriter gets the promotion contract; the row leaves proposed", async () => {

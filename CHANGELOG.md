@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.1.443
+
+- **No event of the plugin's own is sent into a PM chat.** A PM chat gets only what its run needs to go on: task results, writers' questions, permits, the owner's orders, the end of a workflow or council it started. The integration gate no longer messages the PM: a red gate with no culprit (pre-existing failures, the machine, a gate that ran no test, a repeat of the same red) is one row on the owner's list per episode plus a log line, and the culprit's fix turn goes to the writer alone, its fix coming back as the task's result (SelfyStudio 2026-10-31: the gate ran five minutes after the run was accepted and woke the finished PM two hours after its last turn; the PM re-ran the whole suite). A failed run goal is a row on the owner's list, not a warm-chat notice; a merge recovered after a reload is logged only; the weekly rule-promotion digest to PM chats is gone (the morning line and `bb lane-pilot rules promote` keep the candidates).
+
 ## 0.1.442
 
 - **A parked task no longer locks its family until the next release.** A task parked after a Lane Pilot fault (a restart ticket in the stability room, its attempt closed) made the dispatch refuse every member of its family «until it restarts by itself», and a harness park restarts only under a newer build; the hint said to cancel it first, and the cancel answered «no open attempt». cab-unslop-kit.3 (SelfyStudio, 2026-10-31) sat between the two for 17 minutes until the PM happened to resend the identical plan. Now the PM's own dispatch takes the ticket over (dropped, logged, the dispatch proceeds), and `lane_pilot_cancel_task` on a parked task drops the ticket and answers `unparked`.

@@ -44,12 +44,3 @@ export function promotionMorningLine(db: RulesDatabase): string | null {
   return `Правила: текстом ${counter.textRules}, механизмом ${counter.mechanismRules}; кандидатов на механизацию ${open} — bb lane-pilot rules promote <project> --list.`;
 }
 
-/** The weekly top-10 for one project, for the PM's digest (called on the digest's day, not every day). */
-export function promotionWeeklyLines(db: RulesDatabase, projectId: string): string[] | null {
-  const digest = promotionDigest(db, projectId);
-  if (!digest.openPromotions) return null;
-  const lines = [`Правила: текстом ${digest.textRules}, механизмом ${digest.mechanismRules}; кандидатов на механизацию ${digest.openPromotions}, топ-${Math.min(digest.openPromotions, PROMOTION_DIGEST_TOP)}:`];
-  for (const row of digest.top) lines.push(`  ${row.ruleId.slice(0, 13)}  ${row.state.padEnd(10)} ${row.mechanism.padEnd(16)} ${row.task.title.slice(0, 80)}`);
-  lines.push(`принять: bb lane-pilot rules promote accept ${projectId} <rule-id>; отклонить: ... dismiss ...`);
-  return lines;
-}

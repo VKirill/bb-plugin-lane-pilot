@@ -117,8 +117,8 @@ export function goalVerdict(pass: { skipped?: string | undefined; tasks: Readonl
   return { state: "passed", red, detail: asideDetail().slice(0, 500), aside, coverage };
 }
 
-/** The PM's message for a failed run goal: which checks went red together and which commit bisect named. */
-export function pmGoalMessage(runId: string, red: readonly RedCheck[]): string {
+/** The owner's row for a failed run goal: which checks went red together and which commit bisect named. */
+export function goalFailedText(runId: string, red: readonly RedCheck[]): string {
   const lines = red.slice(0, 8).map((row) => `- ${row.taskId}: ${row.command}${row.culpritCommit ? ` (сломал ${row.culpritCommit.slice(0, 10)}${row.culpritTask ? `, задача ${row.culpritTask}` : ""})` : ""}`);
   return [`Lane Pilot: задачи запуска ${runId} приняты каждая по отдельности, но вместе на итоговом main ${red.length} проверок красные:`, ...lines,
     "Поставьте задачу на починку стыка (owns_paths — файлы виновного коммита) или верните задачу на стадию (bb lane-pilot return)."].join("\n");

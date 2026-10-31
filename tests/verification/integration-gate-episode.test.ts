@@ -10,11 +10,11 @@ import type { ServerCore } from "../../src/rooms/core/server/core";
 import type { Services } from "../../src/rooms/core/server/services";
 
 /**
- * Owner rule: a red gate is one question to the owner per episode (the same gate command, the same failing test files, until a
- * gate run is green). Live 2026-10-09 (SelfyStudio PM): the same «no single task is to blame» form reached the owner 3 times and
- * his answer reached the PM twice.
+ * Owner rule: a red gate with no culprit is one row on the owner's list per episode (the same gate command, the same failing test
+ * files, until a gate run is green), never a question to the owner (2026-10-09: the same form reached him 3 times) and never a
+ * message into the PM chat (2026-10-31: a gate note woke a PM that had finished two hours earlier).
  */
-describe("a red gate never asks the owner; the PM hears it once per episode", () => {
+describe("a red gate never asks the owner and never messages the PM; one owner row per episode", () => {
   let dir: string;
   let db: ReturnType<typeof openDatabase>;
   let sent: Array<{ threadId: string; text: string }>;
@@ -66,55 +66,25 @@ describe("a red gate never asks the owner; the PM hears it once per episode", ()
   };
   const tick = () => new Promise((resolve) => setTimeout(resolve, 5));
 
-  const fresh = () => toPm().filter((m) => !m.text.includes("still red"));
+  const rows = () => db.prepare("SELECT what, why FROM lane_pilot_owner_item WHERE key LIKE 'gate-red:run-1:%' ORDER BY created_at").all() as Array<{ what: string; why: string }>;
 
-  it("never asks the owner: the PM gets the failing tests and is told to act itself; the same red gate again says «still red»", async () => {
+  it("one row with the failing tests; the same red gate again adds nothing and tells nobody", async () => {
     expect(await redGate()).toMatchObject({ ran: true, passed: false, culpritTaskId: null });
     expect(asks).toHaveLength(0);
-    expect(toPm()[0]!.text).toContain("tests/a.test.ts");
-    expect(toPm()[0]!.text).toContain("do not ask the owner");
+    expect(toPm()).toEqual([]);
+    expect(rows()).toHaveLength(1);
+    expect(rows()[0]!.what).toContain("tests/a.test.ts");
+    expect(rows()[0]!.why).toContain("Full log:");
 
     await redGate();
     await redGate();
 
     expect(asks).toHaveLength(0);
-    expect(toPm()).toHaveLength(3);
-    expect(toPm()[1]!.text).toContain("still red");
-    expect(toPm()[1]!.text).toContain("tests/a.test.ts");
+    expect(sent).toEqual([]);
+    expect(rows()).toHaveLength(1);
   });
 
-  it("stays quiet while a PM fix task that owns the failing test is in flight", async () => {
-    await redGate();
-    const before = sent.length;
-    taskInFlight("fix-a", { owns_paths: ["tests/"], expected_outputs: ["tests/a.test.ts"] });
-
-    await redGate();
-
-    expect(sent.length).toBe(before);
-    expect(asks).toHaveLength(0);
-  });
-
-  it("a task dispatched after the episode began is a fix in flight even if its paths are unrelated", async () => {
-    await redGate();
-    const before = sent.length;
-    await tick();
-    taskInFlight("fix-b", { owns_paths: ["src/other/"], expected_outputs: ["src/other/x.ts"] });
-
-    await redGate();
-
-    expect(sent.length).toBe(before);
-  });
-
-  it("a task in flight from before the episode and unrelated to the failing test does not silence the PM", async () => {
-    taskInFlight("older", { owns_paths: ["docs/"], expected_outputs: ["docs/x.md"] });
-    await tick();
-    await redGate();
-    await redGate();
-    expect(toPm()).toHaveLength(2);
-    expect(toPm()[1]!.text).toContain("still red");
-  });
-
-  it("a green run ends the episode: the next red gate is a fresh report", async () => {
+  it("a green run ends the episode: the next red gate is a fresh row", async () => {
     await redGate();
     failing = [];
     writePackage();
@@ -122,8 +92,9 @@ describe("a red gate never asks the owner; the PM hears it once per episode", ()
     expect(await runner.maybeRunGate({ runId: "run-1", projectId: "proj-1", pmThreadId: "pm-1", basePath: dir, configHostId: "host-1", trigger: "drain" })).toMatchObject({ passed: true });
     failing = ["tests/a.test.ts"];
     await redGate();
-    expect(fresh()).toHaveLength(2);
+    expect(rows()).toHaveLength(2);
     expect(asks).toHaveLength(0);
+    expect(sent).toEqual([]);
   });
 
   it("other failing test files are another episode; fewer of the same files stay in this one", async () => {
@@ -131,16 +102,16 @@ describe("a red gate never asks the owner; the PM hears it once per episode", ()
     await redGate();
     failing = ["tests/a.test.ts"];
     await redGate();
-    expect(fresh()).toHaveLength(1);
+    expect(rows()).toHaveLength(1);
     failing = ["tests/c.test.ts"];
     await redGate();
-    expect(fresh()).toHaveLength(2);
+    expect(rows()).toHaveLength(2);
     expect(asks).toHaveLength(0);
   });
 
-  it("strips terminal colour codes from what the PM reads", async () => {
+  it("strips terminal colour codes from what the owner reads", async () => {
     failing = ["tests/a.test.ts"];
     await redGate();
-    expect(toPm()[0]!.text).not.toMatch(/\u001b\[|\[3\dm|\[22m/);
+    expect(`${rows()[0]!.what} ${rows()[0]!.why}`).not.toMatch(/\u001b\[|\[3\dm|\[22m/);
   });
 });

@@ -2,7 +2,6 @@ import { countAttempts, getAttempt, getRun, getTask, getTaskPlan, transitionAtte
 import { closeWriterStages, recordGateEvaluation } from "../../runs/server/stage-records";
 import type { ServerCore } from "../../core/server";
 import type { Services } from "../../core/server";
-import { sendServiceMessage } from "../../relay/server";
 import { runOnHost } from "@lane-pilot/host-calls";
 
 /**
@@ -137,12 +136,8 @@ export function createMergeIntentRecovery(ctx:ServerCore, services:Services) {
         services.startAfterAcceptance(intent.projectId, intent.runId, intent.taskId, pmThreadId);
         await clearMergeIntent(kv, intent.attemptId);
         accepted.push(intent.taskId);
+        // The PM is not told (a note that needs no action wakes a chat for nothing): the task's row is accepted, which is what it sees.
         bb.log.info(`Lane Pilot accepted ${intent.taskId} from its merge intent: ${verdict.how}`);
-        if (pmThreadId) {
-          void sendServiceMessage(bb, { threadId:pmThreadId, senderThreadId:attempt.thread_id,
-            text:`Lane Pilot (no action needed): ${intent.taskId} was merged into main but its result was lost in a plugin reload (${verdict.how}); it is accepted, do not redispatch it.` })
-            .catch(() => undefined);
-        }
       } catch (cause) {
         bb.log.warn(`Lane Pilot merge intent ${intent.attemptId} not settled: ${cause instanceof Error ? cause.message : String(cause)}`);
       }

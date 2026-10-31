@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { blindVerdict, designDecision, designGate, issuable, nextAction, pieceSha, waveCleared, waveLines, wavePackage, waveProblems, type Phase, type PhaseRecord, type PlanItem, type TaskFact, type WaveRecord } from "../../src/rooms/phase/logic";
 import { pilotOf, type RunTask } from "../../src/rooms/pilot/logic";
-import { goalVerdict, pmGoalMessage } from "../../src/rooms/run-goal/logic";
+import { goalFailedText, goalVerdict } from "../../src/rooms/run-goal/logic";
 import { spendReserve } from "../../src/rooms/tasks/rails";
 
 const piece = (id: string, wave: number, extra: Record<string, unknown> = {}): PlanItem => ({
@@ -37,7 +37,7 @@ describe("batch gates", () => {
     });
     expect(failed.state).toBe("failed");
     expect(failed.red).toEqual([{ taskId: "piece-a", command: "npm test -- piece-a", culpritCommit: "abc1234567ff", culpritTask: "piece-a" }]);
-    expect(pmGoalMessage("run-1", failed.red)).toContain("piece-a: npm test -- piece-a");
+    expect(goalFailedText("run-1", failed.red)).toContain("piece-a: npm test -- piece-a");
     const passed = goalVerdict({
       tasks: [{ taskId: "piece-a", checks: [{ command: "npm test -- piece-a", state: "green" }] }],
       findings: [],

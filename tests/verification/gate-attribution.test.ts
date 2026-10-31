@@ -107,8 +107,10 @@ describe("which merged task a red gate is pinned on", () => {
 
     expect(res).toMatchObject({ ran: true, passed: false, culpritTaskId: null });
     expect(toWriters()).toEqual([]);
-    expect(toPm()[0]!.text).toContain("pre-existing");
-    expect(toPm()[0]!.text).toContain("@acme/admin: tests/admin.test.ts");
+    expect(toPm()).toEqual([]);
+    const row = db.prepare("SELECT what, why FROM lane_pilot_owner_item WHERE key LIKE 'gate-red:run-1:%'").get() as { what: string; why: string };
+    expect(row.why).toContain("pre-existing");
+    expect(row.what).toContain("@acme/admin: tests/admin.test.ts");
   });
 
   it("pins the failure the batch broke on the task that touched that workspace, and calls the old failure pre-existing", async () => {
@@ -124,8 +126,9 @@ describe("which merged task a red gate is pinned on", () => {
     expect(toWriters().map((m) => m.threadId)).toEqual(["thr-web"]);
     expect(toWriters()[0]!.text).toContain("@acme/web: tests/web.test.ts");
     expect(toWriters()[0]!.text).toContain("fail without your change too (not yours, leave them): @acme/admin: tests/admin.test.ts");
-    expect(toPm()[0]!.text).toContain("Pre-existing");
-    expect(toPm()[0]!.text).toContain("@acme/admin: tests/admin.test.ts");
+    // A culprit found: nothing for the PM and nothing on the owner's list; the fix comes back as the task's result.
+    expect(toPm()).toEqual([]);
+    expect(db.prepare("SELECT count(*) AS n FROM lane_pilot_owner_item WHERE key LIKE 'gate-red:%'").get()).toEqual({ n: 0 });
   });
 
   it("does not bisect to a task whose diff misses the failing workspace", async () => {
