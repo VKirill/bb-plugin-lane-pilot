@@ -48,6 +48,7 @@ sources:
   - src/rooms/tasks/server/contract-lint.ts
   - src/rooms/usage/server/attempt-metrics.ts
   - src/rooms/tools/server/cli.ts
+  - src/rooms/critique/quality-mode.ts
 ---
 
 # Lane Pilot overview

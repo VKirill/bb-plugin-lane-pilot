@@ -23,6 +23,10 @@ sources:
   - src/rooms/writer/server/plan-fact.ts
   - packages/contracts/src/stage-proof.ts
   - workflows/lp-task-pipeline.json
+  - src/rooms/tasks/server/contract-lint.ts
+  - failure-class.ts
+  - stability.ts
+  - src/rooms/tools/server/cli.ts
 ---
 
 # The task pipeline

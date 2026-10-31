@@ -2,7 +2,7 @@
 title: Plan against fact and the acceptance card
 type: component
 created: 2026-10-22
-updated: 2026-10-29
+updated: 2026-10-31
 status: active
 confidence: low
 tags: [sma, acceptance, critic, ui]
@@ -24,6 +24,7 @@ sources:
   - src/rooms/contracts/rpc-runs.ts
   - src/rooms/usage/server/attempt-metrics.ts
   - src/rooms/runs/ui/task-board.tsx
+  - packages/contracts/src/schemas.ts
 ---
 
 # Plan against fact and the acceptance card
@@ -51,7 +52,7 @@ SMA plan P1-3 and P1-4 (Maslov #30971, «never read the executor's story»): an 
 
 ## The table
 
-The writer is told the format by `PLAN_FACT_BRIEF_LINE` (`src/rooms/tasks/plan-fact.ts:26-32`), added to its first brief and to every continuing turn of a task with acceptance items (`src/rooms/writer/server/writer-task.ts:268-276`, `:343-345`). It asks for a fenced block opened with ```plan-fact that holds a JSON array, one row per acceptance item in the contract's order:
+The writer is told the format by `PLAN_FACT_BRIEF_LINE` (`src/rooms/tasks/plan-fact.ts:26-32`), added to its first brief and to every continuing turn of a task with acceptance items (`src/rooms/writer/server/writer-task.ts:9`, `:343-345`). It asks for a fenced block opened with ```plan-fact that holds a JSON array, one row per acceptance item in the contract's order:
 
 - `{"item":1,"status":"done","evidence":["<path>:10-24","cmd:npm test"]}`: evidence is a path, `path:first-last` or `cmd:<command>` (`src/rooms/tasks/plan-fact.ts:27-32`);
 - `{"item":2,"status":"not_done","why":"..."}`.
@@ -60,7 +61,7 @@ The writer is told the format by `PLAN_FACT_BRIEF_LINE` (`src/rooms/tasks/plan-f
 
 ## The blind check
 
-`blindPlanFact` (`src/rooms/tasks/plan-fact.ts:134`) takes the contract's acceptance lines, the table and `PlanFactFacts` (`src/rooms/tasks/plan-fact.ts:53`): the changed paths, their changed line ranges, the contract's commands and the checks that ran. Nothing in the facts comes from the writer. Each piece of evidence (`src/rooms/tasks/plan-fact.ts:99`) is one of:
+`blindPlanFact` (`src/rooms/tasks/plan-fact.ts:175`) takes the contract's acceptance lines, the table and `PlanFactFacts` (`src/rooms/tasks/plan-fact.ts:175`): the changed paths, their changed line ranges, the contract's commands and the checks that ran. Nothing in the facts comes from the writer. Each piece of evidence (`src/rooms/tasks/plan-fact.ts:175`) is one of:
 
 | Code | Holds | Meaning |
 |---|---|---|
@@ -75,11 +76,11 @@ The writer is told the format by `PLAN_FACT_BRIEF_LINE` (`src/rooms/tasks/plan-f
 
 An item «stays as it was» when the contract's line matches `INVARIANT_ITEM` (unchanged, untouched, still works, no changes, не меняется, без изменений, по-прежнему, …); its proof is the code the candidate did not change, and the writer is told to cite those lines (FeedGen run 2026-10-23: «Legacy and error responses unchanged» was called unproven though the writer cited exactly the untouched handler lines). An item is `proven` when one piece of evidence holds. It is blocking when it is `unproven` (claimed done, nothing holds, or no evidence at all), `declared_not_done` (the writer says so) or `no_row` (the table skipped it). Rows for items the contract does not have are listed, not blocking.
 
-The changed hunks come from one shell command run in the task's workspace (`diffHunksCommand`, `src/rooms/tasks/plan-fact.ts:195`): `git diff -U0` against the task's recorded base commit (`lane_pilot_task_git_base`) plus the untracked files; `hunksFromCommandOutput` (`src/rooms/tasks/plan-fact.ts:203`) reads it. A task without a recorded base (a folder without git) or an unreadable diff checks the files only, and the stage says so in `notChecked`.
+The changed hunks come from one shell command run in the task's workspace (`diffHunksCommand`, `src/rooms/tasks/plan-fact.ts:242`): `git diff -U0` against the task's recorded base commit (`lane_pilot_task_git_base`) plus the untracked files; `hunksFromCommandOutput` (`src/rooms/tasks/plan-fact.ts:242`) reads it. A task without a recorded base (a folder without git) or an unreadable diff checks the files only, and the stage says so in `notChecked`.
 
 ## The stage
 
-`plan-fact` is a stage (`packages/contracts/src/stage-contract.ts:5`) with a code proof of kind `file` (`packages/contracts/src/stage-proof.ts:36`); it is listed in the writer node of `workflows/lp-task-pipeline.json`. `runPlanFactStage` (`src/rooms/writer/server/plan-fact.ts:44-49`) runs after code critique and before the proof-gap check (`src/rooms/writer/server/finish.ts:635-646`). `planFactOutcome` decides the receipt, with the result (items, evidence checks, `notChecked`, mode) stored in it (`src/rooms/writer/server/plan-fact.ts:44-49`, `src/rooms/tasks/plan-fact.ts:161`):
+`plan-fact` is a stage (`packages/contracts/src/schemas.ts:403`) with a code proof of kind `file` (`packages/contracts/src/stage-proof.ts:5`); it is listed in the writer node of `workflows/lp-task-pipeline.json`. `runPlanFactStage` (`src/rooms/writer/server/plan-fact.ts:44-49`) runs after code critique and before the proof-gap check (`src/rooms/writer/server/finish.ts:63`). `planFactOutcome` decides the receipt, with the result (items, evidence checks, `notChecked`, mode) stored in it (`src/rooms/writer/server/plan-fact.ts:44-49`, `src/rooms/tasks/plan-fact.ts:161`):
 
 - no table, or an unreadable one: `skipped`, reason `plan_fact_table_missing` or `plan_fact_table_invalid`. It is recorded and shown as not run; it never refuses the task;
 - a blocking item: `failed`, reason `plan_fact_unproven: acceptance item N ...`;
@@ -87,7 +88,7 @@ The changed hunks come from one shell command run in the task's workspace (`diff
 
 A retry of the task replaces the receipt (its earlier events stay in `lane_pilot_stage_event`). The stage never counts as the code proof that accepts a task: the writer's gates and the checks already are.
 
-`plan_fact.mode` (`src/rooms/writer/server/plan-fact.ts:12`): `record` (default) only records and shows; `gate` also sends the task back to the writer (attempt `validation_failed`, reason `plan_fact_unproven`) when the stage failed. A missing table never refuses, in either mode. The retry brief tells the writer what to cite (`src/rooms/writer/server/writer-task.ts:247`).
+`plan_fact.mode` (`src/rooms/writer/server/plan-fact.ts:12`): `record` (default) only records and shows; `gate` also sends the task back to the writer (attempt `validation_failed`, reason `plan_fact_unproven`) when the stage failed. A missing table never refuses, in either mode. The retry brief tells the writer what to cite (`src/rooms/writer/server/writer-task.ts:283`).
 
 > [!note] The docs describe the pipeline's capabilities, not a project's live configuration
 > Every opinion and review stage obeys its `*.enabled` project setting and `quality_mode`: `quick` disables both critiques, `full` enables them, `standard` (the default) reads the settings (`src/rooms/critique/quality-mode.ts:16-24`). A stage with no setting is recorded `skipped` with reason `disabled_by_project_setting` — on the hub most projects keep the critiques off, so a `skipped` receipt is the common case, not a fault. The generated [enabled settings](enabled-settings.md) page lists the defaults and the global `*` values.
@@ -96,11 +97,11 @@ A retry of the task replaces the receipt (its earlier events stay in `lane_pilot
 
 `critic.code.default_for_risk` is `medium` (default), `off` or `high`: with `code_critique.enabled` not set, the critic runs for tasks of that risk or higher. `applyCodeCriticDefault` (`src/rooms/critique/quality-mode.ts:63`) turns the switch on only in `standard` quality mode and only when the project did not set the switch itself, and leaves the mode `advisory` unless the project set one. A high or critical rubric fail still blocks; other notes go back to the writer.
 
-The bench's arm hook is `dispatchWriter({ ..., criticCodeDefault })` (`src/rooms/writer/server/dispatch.ts:149`), also `bb lane-pilot dispatch-bb <project> <pm-thread> <task-json> <base-ref> <off|medium|high>` (`src/rooms/tools/server/cli.ts:388`). It is stored per task (`src/rooms/writer/server/critic-override.ts:12-18`) and read when the attempt finishes (`src/rooms/writer/server/finish.ts:313`), where it wins over the project setting for that task only. Both the finish step and the critic run read the same value (`src/rooms/critique/server/critique-runs.ts`).
+The bench's arm hook is `dispatchWriter({ ..., criticCodeDefault })` (`src/rooms/writer/server/dispatch.ts:175`), also `bb lane-pilot dispatch-bb <project> <pm-thread> <task-json> <base-ref> <off|medium|high>` (`src/rooms/tools/server/cli.ts:607`). It is stored per task (`src/rooms/writer/server/critic-override.ts:5`) and read when the attempt finishes (`src/rooms/writer/server/finish.ts:1043`), where it wins over the project setting for that task only. Both the finish step and the critic run read the same value (`src/rooms/critique/server/critique-runs.ts`).
 
 ## The acceptance card
 
-RPC `task_acceptance_card` (`src/rooms/contracts/rpc-runs.ts:60`) returns `buildAcceptanceCard` (`src/rooms/acceptance/card.ts:26-85`), read from the records that already exist:
+RPC `task_acceptance_card` (`src/rooms/contracts/rpc-runs.ts:76`) returns `buildAcceptanceCard` (`src/rooms/acceptance/card.ts:26-85`), read from the records that already exist:
 
 - the contract: objective, acceptance lines, owned paths; the risk; the base commit and branch (`lane_pilot_task_git_base`);
 - the stage receipts in pipeline order, each with its proof: `code` (and which kind: gate, command, file, receipt, schema) or `advisory`, a model's opinion (`STAGE_PROOF`);
@@ -109,7 +110,7 @@ RPC `task_acceptance_card` (`src/rooms/contracts/rpc-runs.ts:60`) returns `build
 - `notRun`: stages with no receipt or a skipped one, and what the plan→fact check could not look at;
 - the cost of the task's attempts from `attemptMetrics` (`src/rooms/usage/server/attempt-metrics.ts:66-126`, filtered by `taskId`): measured, partial («1 of 2 attempts measured») or `not measured`, never 0.
 
-The component is `AcceptanceCard` (`src/rooms/acceptance/ui/acceptance-card.tsx`), shown in the task page of the board (`src/rooms/runs/ui/task-board.tsx:383`) in place of the plain objective and acceptance list; when the RPC fails it falls back to that list. Verified at 375 and 1280 px on the real component and the built CSS (`.bb/tmp/p13-live`), without horizontal overflow.
+The component is `AcceptanceCard` (`src/rooms/acceptance/ui/acceptance-card.tsx`), shown in the task page of the board (`src/rooms/runs/ui/task-board.tsx:7`) in place of the plain objective and acceptance list; when the RPC fails it falls back to that list. Verified at 375 and 1280 px on the real component and the built CSS (`.bb/tmp/p13-live`), without horizontal overflow.
 
 ## Tests
 
@@ -120,4 +121,5 @@ The component is `AcceptanceCard` (`src/rooms/acceptance/ui/acceptance-card.tsx`
 <!-- lane-pilot:backlinks -->
 ## Referenced by
 
+- [The task pipeline](flows/task-pipeline.md)
 - [Tasks board and work graph](task-board.md)

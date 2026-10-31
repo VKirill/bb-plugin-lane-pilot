@@ -23,6 +23,11 @@ sources:
   - tests/owner-waiting-ui.test.tsx
   - tests/owner-push-script.test.ts
   - tests/policy/morning.test.ts
+  - items.ts
+  - src/rooms/phase/server/driver.ts
+  - src/rooms/wall/service.ts
+  - src/rooms/outage/server/outage.ts
+  - src/rooms/schedule/server/schedule-agent-actions.ts
 ---
 
 > [!important] Since 2026-10-29 the owner does take part in one wait
@@ -88,3 +93,9 @@ Three tables, appended at the end of `migrations` (`src/rooms/owner-waiting/migr
 ## History: the pre-2026-10-22 design
 
 Before the owner left the loop the screen also held `deferral_overdue` (an open deferral whose term passed, settled by a new term from the owner's own message), `deferral_term` (deferrals `needs_owner_term`), `memory_conflict` (held conflicts of `lane_pilot_memory_conflict`, settled with `--keep a|b|both|none`) and `rule_proposal` (proposals in state `proposed` with accept/reject buttons). None of these is a source any longer: deferrals without a term count as unproven in their project's phases, a held memory conflict is settled by the newer note, and rule proposals go on trial by themselves.
+
+<!-- lane-pilot:backlinks -->
+## Referenced by
+
+- [Orchestration and execution data](data-model/orchestration.md)
+- [Phases](phases.md)

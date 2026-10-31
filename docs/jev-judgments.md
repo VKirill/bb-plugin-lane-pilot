@@ -76,3 +76,9 @@ Seven more, all `active` from the start because the room has its own switch (`le
 force: same, opposite, different), `learning.pm_rule_relevance` (which PM rules apply to a text), `learning.unkept_promise`,
 `learning.owner_question`, `learning.complexity` (observations, T8). Their receipts are in `lane_pilot_jev_receipt` like the others;
 `subject` is the owner message id, never its text.
+
+<!-- lane-pilot:backlinks -->
+## Referenced by
+
+- [Jev judgments — the registry and the built-in catalog](../packages/jev/docs/features/judgments.md)
+- [Jev — typed judgments over System One](../packages/jev/docs/overview.md)

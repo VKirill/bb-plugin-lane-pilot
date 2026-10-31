@@ -2,7 +2,7 @@
 title: Project memory
 type: component
 created: 2026-10-10
-updated: 2026-10-30
+updated: 2026-10-31
 status: active
 confidence: medium
 tags: [memory, knowledge, maintenance]
@@ -13,6 +13,7 @@ sources:
   - packages/memory-core/src/store.ts
   - packages/memory-core/src/lifecycle.ts
   - packages/memory-core/src/context.ts
+  - packages/memory-core/src/context-pack.ts
   - src/rooms/storage/database.ts
   - src/rooms/contracts/rpc-knowledge.ts
   - src/rooms/memory-eval/server/memory-eval.ts
@@ -34,8 +35,11 @@ sources:
   - src/rooms/memory-probe/server/memory-probe.ts
   - src/rooms/learning/unanswered.ts
   - scripts/lp-drill.py
+  - scripts/memory-section-rebind.ts
   - src/rooms/learning/housekeeping.ts
   - src/rooms/stability/server/canary.ts
+  - src/rooms/council/server/index.ts
+  - server.ts
 ---
 
 # Project memory
@@ -43,6 +47,8 @@ sources:
 TL;DR: Project memory stores scoped records in plugin SQLite, exposes search and maintenance through RPC and PM tools, and records maintenance as a writer-stage receipt.
 
 ## Purpose
+
+The context-pack compiler builds one pack for a project, repository, section chain and role. It excludes stale or out-of-scope candidates, puts required sources first, fails with `context_pack_oversized` if required content exceeds the role budget, and adds optional candidates by descending relevance until the budget is full (`packages/memory-core/src/context-pack.ts:49`, `:26-66`).
 
 Keep project facts and rules available to PM, writer, and terminal sessions through a shared hub-side memory store (`src/rooms/memory/server/session-memory.ts:11-15`, `src/rooms/storage/database.ts:174-184`).
 
@@ -52,7 +58,7 @@ Keep project facts and rules available to PM, writer, and terminal sessions thro
 2. `session_memory_write` validates a candidate, stores it for the `subagent` audience as `observed`, and returns an inserted, corroborated, duplicate, disabled, or validation result (`src/rooms/memory/server/session-memory.ts:32-48`).
 3. `session_memory_search` retrieves subagent-visible records; `session_memory_core` returns active core records whose expiry is unset or in the future (`src/rooms/memory/server/session-memory.ts:50-59`).
 4. `createMemoryStage` runs after acceptance and validates PM/run/task ownership and requires a passed acceptance receipt before starting maintenance (`src/rooms/memory/server/memory.ts:22-47`).
-5. The maintenance stage creates or resumes one `memory-maintenance` stage receipt and skips work when memory is disabled or maintenance is off (`src/rooms/memory/server/memory.ts:58-83`). It runs inside `lp.after-accept` next to project-life; a `gather` step that fails marks the run `step_failed:gather` and leaves the accepted task untouched — failures are recorded, never retried, and visible in the run's receipts (`workflows/lp.after-accept.json`).
+5. The maintenance stage creates or resumes one `memory-maintenance` stage receipt and skips work when memory is disabled or maintenance is off (`packages/memory-core/src/candidates.ts:108`). It runs inside `lp.after-accept` next to project-life; a `gather` step that fails marks the run `step_failed:gather` and leaves the accepted task untouched — failures are recorded, never retried, and visible in the run's receipts (`workflows/lp.after-accept.json`).
 6. `MemoryRecords` loads the project's rows on mount and when `projectId` changes; a list RPC failure becomes an empty list (`src/rooms/memory/ui/memory-records.tsx:18-23`).
 7. It partitions rows by `rule`, then renders separate fact and rule disclosures. Each row shows its kind, creation date, content, and at most eight concepts; only fact rows render a remove button (`src/rooms/memory/ui/memory-records.tsx:36-50`, `:53-62`).
 8. Removing a fact marks that row busy and calls `memory_record_delete`. A refusal shows the rule-specific or missing-record toast; success reloads the list; a thrown error is shown as a toast, and `finally` clears the busy row (`src/rooms/memory/ui/memory-records.tsx:25-34`).
@@ -61,16 +67,16 @@ Keep project facts and rules available to PM, writer, and terminal sessions thro
 
 | Mode or state | Behavior | Evidence |
 |---|---|---|
-| Memory disabled | A session write returns `memory_disabled`; maintenance records a skipped stage (`src/rooms/memory/server/session-memory.ts:32-35`, `src/rooms/memory/server/memory.ts:65-70`). |
+| Memory disabled | A session write returns `memory_disabled`; maintenance records a skipped stage (`src/rooms/memory/server/session-memory.ts:32-35`, `src/rooms/memory/server/session-memory.ts:33`). |
 | Observed session record | Stored for `subagent`, with `trust: observed` and `origin: session` (`src/rooms/memory/server/session-memory.ts:38-45`). |
 | Accepted task | Memory maintenance can run only after the writer acceptance receipt passed (`src/rooms/memory/server/memory.ts:43-47`). |
 | Existing terminal maintenance receipt | Reuse the prior result; another maintenance pass requires a new task (`src/rooms/memory/server/memory.ts:61-64`). |
 | Rule record | Displayed separately and cannot be deleted through the facts action (`src/rooms/memory/ui/memory-records.tsx:36-46`). |
 | List request failed | The UI stores an empty list; its disclosures render their empty state rather than an RPC error (`src/rooms/memory/ui/memory-records.tsx:18-21`, `:56-61`). |
 | Delete refused or throws | A refusal displays the rule or gone message and reloads; a thrown error displays its message; both clear the busy state (`src/rooms/memory/ui/memory-records.tsx:25-34`). |
-| Core budget full | During accepted-task maintenance, a core candidate that does not fit is stored as a note; `coreDemotedToNotes` reports the number demoted. Other budget failures still reject storage (`src/rooms/memory/server/memory.ts:100-120`, `packages/memory-core/src/store.ts:211-223`). |
+| Core budget full | During accepted-task maintenance, a core candidate that does not fit is stored as a note; `coreDemotedToNotes` reports the number demoted. A candidate core that exceeds the core budget is rejected, as is a batch that cannot fit after note eviction because it exceeds the note or total index budget (`src/rooms/memory/server/memory.ts:184`). |
 
-Maintainer output accepts a JSON array directly, inside a JSON fence, or within surrounding text. Empty extra fields are discarded; `review`, `pitfall`, `invariant`, `security`, or `regression` set to `true` becomes a concept when `concepts` is an array. Other non-empty unknown fields reject the candidate batch. Credential-like content and instruction-override text are also rejected (`packages/memory-core/src/candidates.ts:15-18`, `:58-66`).
+Maintainer output accepts a JSON array directly, inside a JSON fence, or within surrounding text. Empty extra fields are discarded; `review`, `pitfall`, `invariant`, `security`, or `regression` set to `true` becomes a concept when `concepts` is an array. Other non-empty unknown fields reject the candidate batch. Credential-like content and instruction-override text are also rejected (`packages/memory-core/src/candidates.ts:5`, `:58-66`).
 
 The maintenance prompt includes current core fill and replaceable core records. If core entries exceed the remaining core budget, the storage helper retries by changing the last core candidate to a note until the batch fits; it reports the number changed. The retry does not waive note or total-index budgets (`packages/memory-core/src/context.ts:6-16`, `packages/memory-core/src/store.ts:211-223`, `src/rooms/memory/server/memory.ts:100-120`).
 
@@ -80,7 +86,7 @@ Memory writes are scoped by project, personal bot, audience, source hash, and pa
 
 ## Public API or commands
 
-`sessionMemoryRpc` implements the session RPC methods: `session_memory_project`, `session_memory_write`, `session_memory_search`, `session_memory_core`, and `session_lesson` (`src/rooms/memory/server/session-memory.ts:15-18`, `:60-67`). The knowledge RPC contract defines the UI-facing memory record list and delete endpoints (`src/rooms/contracts/rpc-knowledge.ts:90-102`).
+`sessionMemoryRpc` implements the session RPC methods: `session_memory_project`, `session_memory_write`, `session_memory_search`, `session_memory_core`, and `session_lesson` (`src/rooms/memory/server/session-memory.ts:15-18`, `:60-67`). The knowledge RPC contract defines the UI-facing memory record list and delete endpoints (`src/rooms/contracts/rpc-knowledge.ts:63`).
 
 ## Gotchas
 
@@ -94,13 +100,13 @@ Matvey Maslov's system carried zero lessons through one delivery path for three 
 
 `MEMORY_PATHS` (`src/rooms/memory/memory-paths.ts:45`) lists every way project memory, rules and owner facts reach an agent: `writer.brief`, `writer.turn`, `writer.repair`, `pm.start`, `pm.resume`, `pm.rules_tool`, `pm.memory_tool`, `critic.code`, `night.review`, `council.evidence` and `maintainer.existing`, `memory.golden_eval`, `pm.owner_card` (exempt, each with its reason). Each entry names what the path `carries` (note, core, rule), what it hands to every task by design (`alwaysOn`) and its injection sites: a file, a primitive from `MEMORY_PRIMITIVES` (`:37`) and how many calls. `tests/memory-paths.test.ts` scans `src/` for those primitives and fails when a call appears or disappears without a registry change, so a new reader of memory cannot ship unregistered. The helpers that read no memory (pm-read, reflection, the harness editor, which sees past briefs only as trace evidence) have no primitive to register; a new call to one of the primitives in them fails the test.
 
-The sites share one function where they used to build their own copy: `writerKnowledge` / `writerRules` / `stickyTurnPromptWithRules` (`src/rooms/writer/server/writer-knowledge.ts:47`, `:39`, `:61`) for the first brief (`src/rooms/writer/server/spawn.ts:148`) and the continuing turn (`src/rooms/writer/server/start.ts:601`), `pmResumeInstructions` (`src/rooms/learning/pm-rules.ts:51`, called at `src/rooms/learning/service.ts:234`), `pmMemoryContext` (`src/rooms/memory/server/memory-mix.ts:55`) and `councilMemoryBlock` (`src/rooms/council/server/council.ts:108`, used at `:221`). The probe calls the same functions production calls.
+The sites share one function where they used to build their own copy: `writerKnowledge` / `writerRules` / `stickyTurnPromptWithRules` (`src/rooms/writer/server/writer-knowledge.ts:49`, `:39`, `:61`) for the first brief (`src/rooms/writer/server/spawn.ts:4`) and the continuing turn (`src/rooms/writer/server/start.ts:29`), `pmResumeInstructions` (`src/rooms/learning/pm-rules.ts:51`, called at `src/rooms/learning/service.ts:49`), `pmMemoryContext` (`src/rooms/memory/server/memory-mix.ts:90`) and `councilMemoryBlock` (`src/rooms/council/server/index.ts:3`, used at `:221`). The probe calls the same functions production calls.
 
 A defect found by writing the registry: `stickyTurnPrompt` had a `rulesText` parameter that its only caller never passed, so a writer thread continued with the next task of its area got no rules. The next-task turn now carries the rules that apply to its contract (a retry or merge keeps the first brief's rules).
 
 ### The probe
 
-`bb lane-pilot memory-probe <project-id> [--paths a,b] [--keep] [--clean] [--report] [--force]` (CLI `src/rooms/tools/server/cli.ts:286`; RPC `memory_probe`, `src/rooms/contracts/rpc-ops.ts:91`, `src/rooms/core/server/rpc-memory-probe.ts`) runs `createMemoryProbe().run` (`src/rooms/memory-probe/server/memory-probe.ts:136`):
+`bb lane-pilot memory-probe <project-id> [--paths a,b] [--keep] [--clean] [--report] [--force]` (CLI `server.ts:12`; RPC `memory_probe`, `src/rooms/contracts/rpc-ops.ts:106`, `src/rooms/core/server/rpc-memory-probe.ts`) runs `createMemoryProbe().run` (`src/rooms/memory-probe/server/memory-probe.ts:191`):
 
 1. Refuses a project that is not a drill sandbox (`DRILL_SANDBOX_PROJECT_IDS`: the Mac mini's `proj_3tb652jpsi` and OVH's `proj_ibu6v9g64j`, `src/rooms/stability/server/canary.ts:40-41`, plus `LP_MEMORY_PROBE_PROJECTS`, `:36`) unless `--force`.
 2. Removes what an earlier run left, then plants through the write door (`storeMemoryRecords`, the function the maintainer and the session RPC use; `:153`) a note that names the folder `lp-probe/memory`, a core convention, and through the lesson door (`upsertLessonProposal` + `adoptRuleProposal`) an always-on rule for both audiences. Every record carries a unique token (`lpprobe<8 hex><n|c|r>`), `trust: confirmed`, `origin: probe` and `valid_until` one day ahead (`:33`).
@@ -112,7 +118,7 @@ Observed (single-session) records wait a day for writers (`OBSERVED_QUARANTINE_M
 
 ### The drill
 
-`scenario_memory_paths` (`scripts/lp-drill.py:509`, listed in `QUICK` at `:72`) plants with `--keep` before the drill's PM starts, then fails when: a probe row is red or its negative case pulled our records; the drill PM's first prompt lacks the probe rule (read from `bb thread log`); a real writer spawned for a probe task (`task_memory`, cancelled once its thread exists) lacks the probe note, core or rule in its first prompt; `lane-memory search` / `core` in the sandbox folder do not return the records (skipped when the host has no `lane-memory`). Records are removed at the end and in the final `finally`. A red drill already blocks the deploy (the push script rolls back on it). Tests: `tests/lp-drill-memory-paths.test.ts` (fake `bb`, `ssh`, `lane-memory`), `tests/server/memory-probe.test.ts`, `tests/memory-paths.test.ts`.
+`scenario_memory_paths` (`scripts/lp-drill.py:668`, listed in `QUICK` at `:72`) plants with `--keep` before the drill's PM starts, then fails when: a probe row is red or its negative case pulled our records; the drill PM's first prompt lacks the probe rule (read from `bb thread log`); a real writer spawned for a probe task (`task_memory`, cancelled once its thread exists) lacks the probe note, core or rule in its first prompt; `lane-memory search` / `core` in the sandbox folder do not return the records (skipped when the host has no `lane-memory`). Records are removed at the end and in the final `finally`. A red drill already blocks the deploy (the push script rolls back on it). Tests: `tests/lp-drill-memory-paths.test.ts` (fake `bb`, `ssh`, `lane-memory`), `tests/server/memory-probe.test.ts`, `tests/memory-paths.test.ts`.
 
 ### The metric: a question memory did not answer
 
@@ -120,7 +126,7 @@ Observed (single-session) records wait a day for writers (`OBSERVED_QUARANTINE_M
 
 ### Why 1532 expired notes were almost never used
 
-Measured on the hub on 2026-10-22: 1532 expired notes, 1515 of them hidden by the budget eviction (`packages/memory-core/src/store.ts:139`), 17 by `valid_until`; none by the 90-day idle rule. One project (`proj_acpiaqf4wq`) holds 1374 of them: 664 accepted attempts produced 1648 notes (about 2.5 per task) in 17 days, while the note shelf (`memory.note_budget` 8000 tokens, about 130 notes) is full, so each batch evicts the oldest never-used notes: the shelf is a one-to-two-day window on busy days (10-12: 247 notes created, 38 still active a week later; 10-13: 159 created, 1 used). A writer reads at most three notes and only those naming a folder of its task (`writerMemoryPicks`), so a note about one finished task is read only if the same folder is touched again within that window. `src/rooms/learning/housekeeping.ts:5` records the same mechanism. The cause is the supply (the maintainer stores task-specific facts; 357 of 1192 passed stages stored nothing, the rest 1 to 15) against a fixed budget, not a bug. The options (a cap per task, a prompt for facts that outlive the task, a larger budget) were then measured: see «Supply against the budget, measured» below.
+Measured on the hub on 2026-10-22: 1532 expired notes, 1515 of them hidden by the budget eviction (`packages/memory-core/src/store.ts:17`), 17 by `valid_until`; none by the 90-day idle rule. One project (`proj_acpiaqf4wq`) holds 1374 of them: 664 accepted attempts produced 1648 notes (about 2.5 per task) in 17 days, while the note shelf (`memory.note_budget` 8000 tokens, about 130 notes) is full, so each batch evicts the oldest never-used notes: the shelf is a one-to-two-day window on busy days (10-12: 247 notes created, 38 still active a week later; 10-13: 159 created, 1 used). A writer reads at most three notes and only those naming a folder of its task (`writerMemoryPicks`), so a note about one finished task is read only if the same folder is touched again within that window. `src/rooms/learning/housekeeping.ts:12` records the same mechanism. The cause is the supply (the maintainer stores task-specific facts; 357 of 1192 passed stages stored nothing, the rest 1 to 15) against a fixed budget, not a bug. The options (a cap per task, a prompt for facts that outlive the task, a larger budget) were then measured: see «Supply against the budget, measured» below.
 
 ## Evaluation: 30, 300 and 3,000 notes, and questions whose answer is nothing (SMA block 4 «Next», P2-7)
 
@@ -184,6 +190,6 @@ The owner gave these calls to the writers on 2026-10-30. Each one is the rule th
 
 **F01-3.** Root scope `[]` is the whitelist of project-wide conventions. A root core that names no file, or whose concepts include `convention`, stays at the root. A root core that names a file and is not marked `convention` is not a shared convention: it waits for a section from a scope map and is not widened to `[]`. Hub: 48 of 50 BB-service CORE rows sit at the root, including repeated file facts (pokecut theme, i18n order, Content Factory migrations). Those repeats are not merged when the wording disagrees.
 
-**F04-3.** A stored label with no colon (`verification`, `bb-plugin-lane-pilot`) is a folder selector: it applies when a task path equals it, ends with it, or contains it as a directory. It does not apply when the task has no paths — so PM rules stored under one never reached the PM. `scripts/memory-scope-dry-run.ts --apply` rebinds such stored scopes to the `section:<uuid>` of the section the label names (map argument, same shape as `memory.scope_map`), journals every "was → is" rewrite, and `--revert <journal>` restores the stored scope. New scopes are still a section id or a file path; `assertRuleScope` rejects a bare label.
+**F04-3.** `rebindProposal` classifies an active root-scoped record as already shared, a section inferred from its source task, a section inferred from named paths or basenames, project-wide from shared wording, or review when evidence is absent. `runRebind` only processes umbrella projects and only writes `section` or `shared` proposals with `--apply`; it records before/after scopes in the journal (`scripts/memory-section-rebind.ts:19-46`, `:60-80`). A stored label with no colon (`verification`, `bb-plugin-lane-pilot`) is a folder selector: it applies when a task path equals it, ends with it, or contains it as a directory. It does not apply when the task has no paths — so PM rules stored under one never reached the PM. `scripts/memory-scope-dry-run.ts --apply` rebinds such stored scopes to the `section:<uuid>` of the section the label names (map argument, same shape as `memory.scope_map`), journals every "was → is" rewrite, and `--revert <journal>` restores the stored scope. New scopes are still a section id or a file path; `assertRuleScope` rejects a bare label.
 
 **X-2.** One owner per kind of knowledge. Anamnesis owns owner facts. Lane Pilot memory owns project technical facts and rules. BB memory is the preference index. Agentmemory is an observation archive, not an author. Code and docs stay the source of behavior. A fact does not get a second author by being copied into another store.
