@@ -32,7 +32,7 @@ const reply = (body: Row, lead = "Done.") => `${lead}\n\n\`\`\`json\n${JSON.stri
 
 /** What a helper thread of a node spent, as BB reports it: one token-usage event of one turn, on this model. */
 type Spent = { input: number; output: number; model?: string };
-async function setup(script: Script, options: { dirty?: boolean; spent?: Record<string, Spent>; failWrites?: boolean; noPm?: boolean; invalidParent?: boolean; offers?: Array<{ providerId: string; model: string; host?: string }> } = {}) {
+async function setup(script: Script, options: { pmEvents?: () => Row[]; dirty?: boolean; spent?: Record<string, Spent>; failWrites?: boolean; noPm?: boolean; invalidParent?: boolean; offers?: Array<{ providerId: string; model: string; host?: string }> } = {}) {
   const checkout = mkdtempSync(join(tmpdir(), "lp-chain-"));
   execFileSync("git", ["init", "-q"], { cwd: checkout });
   writeFileSync(join(checkout, "README.md"), "hello\n");
@@ -58,7 +58,7 @@ async function setup(script: Script, options: { dirty?: boolean; spent?: Record<
         },
         get: async ({ threadId }) => ({ id: threadId, status: "idle", projectId: PROJECT, environmentId: "env-pm", sourceThreadId: PM, lifecycleOwnerThreadId: PM }),
         // A follow-up sent to a thread shows up as a new requested turn that starts and completes.
-        events: { list: async ({ threadId }) => [{ type: "turn/started", threadId, seq: 1 }, { type: "turn/completed", threadId, seq: 2, data: { status: "completed" } },
+        events: { list: async ({ threadId }) => [...(threadId === PM ? options.pmEvents?.() ?? [] : []), { type: "turn/started", threadId, seq: 1 }, { type: "turn/completed", threadId, seq: 2, data: { status: "completed" } },
           ...(options.spent?.[nodeOf.get(threadId) ?? ""] ? [
             { type: "client/thread/start", threadId, seq: 3, createdAt: 1, data: { request: { params: { execution: { model: options.spent[nodeOf.get(threadId)!]!.model ?? "claude-opus-5-5" } } } } },
             { type: "thread/tokenUsage/updated", threadId, seq: 4, createdAt: 2, data: { turnId: "t1", tokenUsage: { last: { inputTokens: options.spent[nodeOf.get(threadId)!]!.input, outputTokens: options.spent[nodeOf.get(threadId)!]!.output, totalTokens: options.spent[nodeOf.get(threadId)!]!.input + options.spent[nodeOf.get(threadId)!]!.output }, total: { inputTokens: options.spent[nodeOf.get(threadId)!]!.input, outputTokens: options.spent[nodeOf.get(threadId)!]!.output, totalTokens: options.spent[nodeOf.get(threadId)!]!.input + options.spent[nodeOf.get(threadId)!]!.output } } } }] : []),
@@ -393,6 +393,25 @@ describe("the agent step", () => {
     expect(allowed.status).toBe("succeeded");
     expect(JSON.stringify(ok.spawned[0]!.pluginMetadata)).toContain("\"role\":\"specialist\"");
     expect(ok.spawned[0]!.pluginMetadata).toMatchObject({ specialist: "copy-lead" });
+  });
+
+  // magicseo replay 2026-10-31: the PM put recon samples into .agents/recon/ while the planner ran, and the planner failed repo_edited (18 minutes).
+  it("a file the PM's chat named while the helper ran is the PM's edit, not the helper's; one named before, or not at all, still fails the step", async () => {
+    const sample = ".agents/recon/magicseo/samples/keywords.json";
+    const write = (checkout: string) => { mkdirSync(join(checkout, ".agents/recon/magicseo/samples"), { recursive: true }); writeFileSync(join(checkout, sample), "{}"); return reply({ count: 1, summary: "s", handoff: "h" }); };
+    const named = (createdAt: () => number) => () => [{ type: "item/completed", threadId: PM, seq: 90, createdAt: createdAt(), data: { item: { type: "commandExecution", command: "cp /tmp/samples/*.json .agents/recon/magicseo/samples/" } } }];
+    const pm = await setup({ look: [write] }, { pmEvents: named(() => Date.now()) });
+    const own = await pm.start(oneAgent()).done;
+    await pm.dispose();
+    expect(own.status).toBe("succeeded");
+    const earlier = await setup({ look: [write] }, { pmEvents: named(() => 1) });
+    const before = await earlier.start(oneAgent()).done;
+    await earlier.dispose();
+    expect(before.error).toContain("repo_edited");
+    const nobody = await setup({ look: [write] });
+    const helper = await nobody.start(oneAgent()).done;
+    await nobody.dispose();
+    expect(helper.error).toContain(sample);
   });
 
   // Live ph_26f65b142d: the stages failed with repo_edited on their own files (CONTEXT.md, plan-items.json, the drawing's fonts).

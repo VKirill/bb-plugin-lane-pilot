@@ -62,7 +62,8 @@ export async function runWithFlakyRerun<T extends {exitCode:number;stdout?:strin
 }
 
 export type CheckRevision = { head:string|null; dirty:number|null };
-export const REVISION_PROBE = "git rev-parse HEAD 2>/dev/null || echo -; git status --porcelain 2>/dev/null | wc -l";
+// git runs only under a `.git` found up the tree, as git finds it: a live folder (no git) is never touched by git (live-folder-flow.test.ts).
+export const REVISION_PROBE = 'd=$PWD; while [ "$d" != / ] && [ ! -e "$d/.git" ]; do d=$(dirname "$d"); done; if [ -e "$d/.git" ]; then git rev-parse HEAD 2>/dev/null || echo -; git status --porcelain 2>/dev/null | wc -l; else echo -; fi';
 /** The probe's two lines: the HEAD sha (or `-`) and the count of `git status --porcelain` lines. */
 export function parseRevisionProbe(stdout:string):CheckRevision {
   const [head, dirty] = stdout.trim().split(/\s+/);

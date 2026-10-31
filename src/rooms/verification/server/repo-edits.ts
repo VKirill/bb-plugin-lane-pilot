@@ -29,3 +29,17 @@ export function detectRepoEdits(before: Set<string>, after: Set<string>, allowed
   }
   return changed.sort();
 }
+
+/**
+ * The edited files the PM's own chat named while a helper ran: the PM works in the same checkout, so what it wrote then is its own,
+ * not the helper's (magicseo replay 2026-10-31: the planner failed `repo_edited` on recon samples the PM had put in `.agents/recon/`
+ * during the plan, 18 minutes lost). A file counts as named when the chat's text has its path or its folder (deeper than the root).
+ */
+export function namedByChat(texts: readonly string[], files: readonly string[]): Set<string> {
+  const all = texts.join("\n");
+  return new Set(files.filter((file) => {
+    if (all.includes(file)) return true;
+    const folder = file.includes("/") ? file.slice(0, file.lastIndexOf("/")) : "";
+    return folder.includes("/") && all.includes(folder);
+  }));
+}

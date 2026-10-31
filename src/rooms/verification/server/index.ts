@@ -4,5 +4,5 @@ export { excludeBookkeeping } from "./bookkeeping-exclude";
 export { gateResolverFor } from "./gate-detect";
 export { IntegrationGateRunner, parseIntegrationGateSettings } from "./integration-gate";
 export { attemptMergeMessage, clearMergeIntent, createMergeIntentRecovery, recordMergeIntent } from "./merge-intent";
-export { detectRepoEdits, gitRepoStatus } from "./repo-edits";
+export { detectRepoEdits, gitRepoStatus, namedByChat } from "./repo-edits";
 export { gluedCheckCommand, glueReplayCommands } from "./replay-checks";

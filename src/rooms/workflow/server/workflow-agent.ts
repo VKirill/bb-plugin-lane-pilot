@@ -23,7 +23,7 @@ import { phaseFolder } from "../../phase";
 import type { LanePilotDatabase } from "../../storage";
 import { folderEnvironment, fullAccessSpawn, hiddenPlacement, projectFolder, projectSources } from "../../core/server";
 import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server";
-import { detectRepoEdits, gitRepoStatus } from "../../verification/server";
+import { detectRepoEdits, gitRepoStatus, namedByChat } from "../../verification/server";
 import { SPECIALIST_GRAPH, SPECIALIST_ROLES, rememberSpecialistThread } from "../../critique/server";
 import { findThreadsByMetadata, keyedSpawnSupported } from "../../core/server";
 import { modelCatalogOf, noteProviderStartFailure, noteProviderStartSuccess, pmHostOf, providerBlockedForFolder, readProviderFolderBlock, resolveSpawnModel, spawnUsageOf, warmSpawnUsage, PROVIDER_FOLDER_BLOCK_TTL_MS } from "../../core/server";
@@ -281,6 +281,7 @@ export function createWorkflowAgents() {
         bb.log?.warn(`Lane Pilot employee ${spec.specialist} stays in the current environment: ${place.reason}`);
       }
     }
+    const watchedFrom = Date.now();
     const before = checkoutPath && checkoutHostId ? await gitRepoStatus(host, checkoutHostId, checkoutPath) : null;
 
     async function spawn(req: HelperRequest): Promise<string> {
@@ -425,7 +426,11 @@ export function createWorkflowAgents() {
     if (checkoutPath && checkoutHostId && before) {
       const after = await gitRepoStatus(host, checkoutHostId, checkoutPath);
       const editable = phaseId ? (file: string) => spec.editable(file) || phaseWritable(phaseId, spec.helper)(file) : spec.editable;
-      const edited = after ? detectRepoEdits(before, after, editable) : [];
+      const changed = after ? detectRepoEdits(before, after, editable) : [];
+      // What the PM's chat named while the helper ran is the PM's own edit in the shared checkout, not the helper's.
+      const pmOwn = changed.length && rt.pmThreadId ? namedByChat(await chatTextSince(bb, rt.pmThreadId, watchedFrom), changed) : new Set<string>();
+      if (pmOwn.size) bb.log.warn(`workflow step ${request.stepKey}: ${[...pmOwn].join(", ")} changed during the ${request.role} helper's run, named by the PM chat: its own edit, not the helper's`);
+      const edited = changed.filter((file) => !pmOwn.has(file));
       if (edited.length) throw new HelperFailure("repo_edited", `the ${request.role} helper edited repository files it may not touch: ${edited.slice(0, 8).join(", ")}`);
     }
     if (!output) throw new HelperFailure(broken ? "artifact_invalid" : "output_invalid", broken ? `the ${request.role} helper's answer breaks the step's contract: ${problem}` : `the ${request.role} helper's final message could not be read: ${problem}`);
@@ -610,3 +615,13 @@ export async function withResolvedModel(request: HelperRequest, options: { avoid
 
 export const agentUsesKeyedSpawn = (rt: ChainRuntime | undefined) => Boolean(rt && keyedSpawnSupported(rt.ctx.bb));
 export { ROLE_PROFILES };
+
+/** The PM chat's events since `since`, as text (the newest 200; none when they cannot be read or carry no time, so nothing is excused). */
+async function chatTextSince(bb: ChainRuntime["ctx"]["bb"], threadId: string, since: number): Promise<string[]> {
+  const listed = await bb.sdk.threads.events.list({ threadId, order: "desc", limit: "200" } as never).catch(() => []) as unknown[];
+  const at = (event: unknown): number => {
+    const raw = (event as { createdAt?: unknown })?.createdAt;
+    return typeof raw === "number" ? raw : typeof raw === "string" ? Date.parse(raw) : NaN;
+  };
+  return (Array.isArray(listed) ? listed : []).filter((event) => at(event) >= since).map((event) => JSON.stringify(event));
+}
