@@ -1,16 +1,14 @@
-import { chmod, cp, lstat, mkdir, rename } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
+import { chmod, lstat, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { hashPath, lanePilotRoot, pluginRootFromModule } from "@lane-pilot/kit";
+import { hashPath, lanePilotRoot } from "@lane-pilot/kit";
+import { AGENT_TRASH_SOURCE } from "./agent-trash-source";
 
 /** Writers, the live-folder restore and the shell guard name this path. (2026-10-29) not ~/.agents/bin from Claude Lane. */
 export const AGENT_TRASH_RELATIVE = ".agents/lane-pilot/bin/agent-trash";
 
 export function ownedAgentTrashPath(homeDir: string): string {
   return join(lanePilotRoot(homeDir), "bin", "agent-trash");
-}
-
-export function defaultAgentTrashSource(moduleUrl: string): string {
-  return join(pluginRootFromModule(moduleUrl), "lane-stack/bin/agent-trash");
 }
 
 async function hashOrNull(path: string): Promise<string | null> {
@@ -22,16 +20,19 @@ async function hashOrNull(path: string): Promise<string | null> {
 }
 
 /**
- * Copy the bundled agent-trash into the Lane Pilot-owned bin (same rule as the guard: a diverged file is kept).
+ * Write the bundled agent-trash into the Lane Pilot-owned bin; newer bundled versions replace older copies.
  * The installer must call this next to applyInstalledGuard, including when the guard is already active.
  */
 export async function materializeAgentTrash(input: { homeDir: string; moduleUrl: string; sourcePath?: string }): Promise<{ path: string; changed: boolean }> {
-  const source = input.sourcePath ?? defaultAgentTrashSource(input.moduleUrl);
   const destination = ownedAgentTrashPath(input.homeDir);
-  const sourceInfo = await lstat(source);
-  if (!sourceInfo.isFile() || sourceInfo.isSymbolicLink()) throw new Error(`agent-trash source is not a regular file: ${source}`);
-  const sourceHash = (await hashPath(source)).sha256;
-  if (!sourceHash) throw new Error(`agent-trash source could not be hashed: ${source}`);
+  // BB delivers only host.mjs to a machine, without the lane-stack source tree.
+  let content = Buffer.from(AGENT_TRASH_SOURCE, "utf8");
+  if (input.sourcePath !== undefined) {
+    const sourceInfo = await lstat(input.sourcePath);
+    if (!sourceInfo.isFile() || sourceInfo.isSymbolicLink()) throw new Error(`agent-trash source is not a regular file: ${input.sourcePath}`);
+    content = await readFile(input.sourcePath);
+  }
+  const sourceHash = createHash("sha256").update(content).digest("hex");
   const existing = await hashOrNull(destination);
   if (existing !== null) {
     const destinationInfo = await lstat(destination);
@@ -43,14 +44,14 @@ export async function materializeAgentTrash(input: { homeDir: string; moduleUrl:
       return { path: destination, changed: false };
     }
     // Lane Pilot owns this file: a newer bundled version replaces it, else an upgrade would fail every install (2026-10-30).
-    const next = `${destination}.next`;
-    await cp(source, next, { force: true });
+    const next = `${destination}.${randomUUID()}.next`;
+    await writeFile(next, content, { flag: "wx", mode: 0o755 });
     await chmod(next, 0o755);
     await rename(next, destination);
     return { path: destination, changed: true };
   }
   await mkdir(dirname(destination), { recursive: true });
-  await cp(source, destination, { errorOnExist: true, force: false });
+  await writeFile(destination, content, { flag: "wx", mode: 0o755 });
   await chmod(destination, 0o755);
   return { path: destination, changed: true };
 }

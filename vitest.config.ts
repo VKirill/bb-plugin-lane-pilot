@@ -4,8 +4,10 @@ import LongestFirstSequencer from "./tests/sequencer";
 
 // Test files that call vi.mock/vi.doMock: a mock replaces a module for every file that shares its module cache, so they run isolated.
 const mocking = [
-  // Not mocks, but module-level state that must start empty: the bound drain; the Jev key a server test provided.
+  // Not mocks, but module-level state that must start empty: the drain, outbound subscriptions and skill-pick slots; the Jev key a server test provided.
   "tests/deploy-drain.test.ts",
+  "tests/world-version-invalidate.test.ts",
+  "tests/jev/skill-pick.test.ts",
   "tests/stages/critic-answer-retry.test.ts",
   "tests/install-metadata.test.ts",
   "tests/install-cas.test.ts",
