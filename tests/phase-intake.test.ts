@@ -32,7 +32,8 @@ function world(options: { settings?: Record<string, unknown>; role?: string; tra
     list: (filter) => opened.filter((phase) => (!filter.pmThreadId || phase.pmThreadId === filter.pmThreadId) && (!filter.live || !["closed", "stopped"].includes(phase.state))),
     status: () => ({ next: { text: "write the discussion files and report them with context" } }),
   };
-  const deps = { bb, db, log: () => undefined, effectiveProjectSettings: async () => ({ values: options.settings ?? {} }) } as never;
+  // The phase road: these tests are about the phase machine; the graph road has its own test below.
+  const deps = { bb, db, log: () => undefined, effectiveProjectSettings: async () => ({ values: { "phase.road": "phase", ...options.settings } }) } as never;
   const intake = createPhaseIntake(deps, phases, options.train);
   /** The plugin after a reload: a new intake over the same store and the same phases. */
   const reloaded = () => createPhaseIntake(deps, phases, options.train);
@@ -62,6 +63,18 @@ describe("phase intake rules", () => {
     // A workflow run's end notice started the next issue-quick, whose notice started the next (live 2026-10-26, Vampirism Fire).
     expect(isMachineMessage("Workflow run wfrun_a018031b894f42758ee7767e61b7debc of issue-quick is succeeded.\nNext: call lane_pilot_workflow_status")).toBe(true);
     expect(isMachineMessage("Workflow run in the docs is broken, fix it")).toBe(false);
+  });
+});
+
+describe("the graph road (phase.road graph, the default)", () => {
+  it("runs a heavy owner goal as the full-lifecycle graph, opens no phase, and the PM does not dispatch it by hand", async () => {
+    const started: Array<{ kind: string; text: string }> = [];
+    const train: IntakeTrain = { start: (input) => { started.push(input); return "wfrun_life"; }, status: () => "running" };
+    const { intake, opened } = world({ settings: { "phase.road": "graph" }, train });
+    expect(await intake.take(PM)).toMatchObject({ kind: "heavy", phaseId: null, wfRunId: "wfrun_life" });
+    expect(started).toEqual([expect.objectContaining({ kind: "heavy" })]);
+    expect(opened).toEqual([]);
+    expect(await intake.dispatchRefusal(PM)).toMatch(/went down a graph[\s\S]*wfrun_life[\s\S]*owner's acceptance/);
   });
 });
 
@@ -179,10 +192,10 @@ describe("the small-task graph", () => {
     expect(await intake.dispatchRefusal("thr_pm")).toBeNull();
     // Read with the judgment's word, the request is the graph's: dispatching it by hand is refused while the run works.
     await bb.storage.kv.set("phase-intake:thr_pm", { requestId: "creq_s", kind: "small", by: "jev", phaseId: null, at: 1, wfRunId: "wfrun_1" });
-    expect(await intake.dispatchRefusal("thr_pm")).toMatch(/small-task graph[\s\S]*wfrun_1/);
+    expect(await intake.dispatchRefusal("thr_pm")).toMatch(/went down a graph[\s\S]*wfrun_1/);
     // Read with the judgment's word, the request is the graph's: dispatching it by hand is refused while the run works.
     await bb.storage.kv.set("phase-intake:thr_pm", { requestId: "creq_s", kind: "small", by: "jev", phaseId: null, at: 1, wfRunId: "wfrun_1" });
-    expect(await intake.dispatchRefusal("thr_pm")).toMatch(/small-task graph[\s\S]*wfrun_1/);
+    expect(await intake.dispatchRefusal("thr_pm")).toMatch(/went down a graph[\s\S]*wfrun_1/);
   });
 });
 
@@ -295,7 +308,7 @@ describe("the PM is the door: no other system for a request the machine took", (
     const intake = create({ bb, db, log: () => undefined, effectiveProjectSettings: async () => ({ values: {} }) } as never, phases as never,
       { start: () => "wfrun_1", status: () => "running" });
     await bb.storage.kv.set("phase-intake:thr_pm", { requestId: "creq_p", kind: "small", by: "jev", phaseId: null, at: 1, wfRunId: "wfrun_1" });
-    expect(await intake.launchRefusal("thr_pm")).toMatch(/small-task graph/);
+    expect(await intake.launchRefusal("thr_pm")).toMatch(/went down a graph/);
     await bb.storage.kv.set("phase-intake:thr_pm", { requestId: "creq_p", kind: "process", by: "jev", phaseId: null, at: 1, architectThreadId: "thr_arch" });
     expect(await intake.launchRefusal("thr_pm")).toMatch(/workflow architect/);
     architect = "idle";

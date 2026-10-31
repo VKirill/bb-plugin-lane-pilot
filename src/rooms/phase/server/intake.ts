@@ -30,7 +30,7 @@ export type IntakeRecord = { requestId: string; kind: IntakeKind; by: "rules" | 
 
 /** The machine's start of the small-task graph for a request, and the state of a run it started (src/rooms/phase/server/driver.ts wires them). */
 export type IntakeTrain = {
-  start(input: { projectId: string; pmThreadId: string; runId: string; requestId: string; text: string; kind: "small" | "batch"; path?: { size: PathSize; risk: PathRisk } }): string | null;
+  start(input: { projectId: string; pmThreadId: string; runId: string; requestId: string; text: string; kind: "small" | "batch" | "heavy"; path?: { size: PathSize; risk: PathRisk } }): string | null;
   status(wfRunId: string): string | null;
   /** The workflow architect, started with the owner's process as its order; resolves to its chat. */
   startProcess?(input: { projectId: string; pmThreadId: string; text: string }): Promise<string | null>;
@@ -38,9 +38,15 @@ export type IntakeTrain = {
   findPublished?(input: { projectId: string; text: string }): Promise<{ graphId: string; name: string; confidence: number } | null>;
 };
 const KEY = (threadId: string) => `phase-intake:${threadId}`;
+/**
+ * A heavy goal runs as the full-lifecycle graph (setting phase.road, «graph» by default); «phase» keeps the older phase machine. Since
+ * 2026-10-01 the hub's five phases finished none of their goals, all at the seams between its stages, while the task graph accepted 120
+ * tasks (owner, 2026-10-31: «work goes by graphs, stable»).
+ */
+const graphRoad = (settings: Record<string, unknown>) => String(settings["phase.road"] ?? "graph") !== "phase";
 /** What a hand-over key started, kept for good: the key maps to the phase or graph run whether it is alive or finished. */
 const HANDOVER_KEY = (projectId: string, key: string) => `phase-handover:${projectId}:${key}`;
-type HandOverStarted = { started: true; via: "phase" | "issue-quick" | "issue-batch"; id: string };
+type HandOverStarted = { started: true; via: "phase" | "issue-quick" | "issue-batch" | "full-lifecycle"; id: string };
 type HandOverResult = HandOverStarted | { started: false; kind: IntakeKind | null; reason: string };
 
 type Deps = Pick<ServerCore, "bb" | "db" | "effectiveProjectSettings" | "log" | "cancelQueuedAttempt">;
@@ -126,6 +132,7 @@ export function createPhaseIntake(ctx: Deps, phases: IntakePhases, train?: Intak
     // message instead (live 2026-10-26, Vampirism Fire: work was stopped and issue-quick still built and merged wcebffdb8-T1).
     const stopped = await isRunHalted(bb.storage.kv as never, run.id) || await isRunPaused(bb.storage.kv as never, run.id);
     let phaseId: string | null = null;
+    let heavyRunId: string | undefined;
     // №6: a service request is answered from the LP store, the heavy PM stays asleep. Anything ambiguous falls
     // back to `question` — the PM reads the message as before.
     if (kind === "service" && by === "jev" && !stopped) {
@@ -143,6 +150,9 @@ export function createPhaseIntake(ctx: Deps, phases: IntakePhases, train?: Intak
         // A new heavy message while a phase runs is the owner's correction of it (SMA: the owner may return 4 → 1); the PM reads it
         // in this very turn, and the dispatch refusal names the phase if it tries to hand the work out.
         phaseId = live.id;
+      } else if (!stopped && graphRoad(settings) && train) {
+        heavyRunId = train.start({ projectId: run.project_id, pmThreadId: threadId, runId: run.id, requestId, text, kind: "heavy" }) ?? undefined;
+        if (heavyRunId) ctx.log(`phase intake: ${threadId} — the owner's request is heavy (${by}); full-lifecycle ${heavyRunId} started`);
       } else if (!stopped) {
         const phase = await phases.open({ projectId: run.project_id, pmThreadId: threadId, title: intakeTitle(text), goal: text, rails: true });
         phaseId = phase.id;
@@ -176,7 +186,7 @@ export function createPhaseIntake(ctx: Deps, phases: IntakePhases, train?: Intak
       architectThreadId = await train.startProcess({ projectId: run.project_id, pmThreadId: threadId, text }).catch(() => null) ?? undefined;
       if (architectThreadId) ctx.log(`phase intake: ${threadId} — the owner's request is a process; the workflow architect builds it in ${architectThreadId}`);
     }
-    const record: IntakeRecord = { requestId, kind, by, phaseId, at: Date.now(), ...(wfRunId ? { wfRunId } : {}), ...(architectThreadId ? { architectThreadId } : {}), ...(hint ? { hint, hinted: true } : {}) };
+    const record: IntakeRecord = { requestId, kind, by, phaseId, at: Date.now(), ...((wfRunId ?? heavyRunId) ? { wfRunId: wfRunId ?? heavyRunId } : {}), ...(architectThreadId ? { architectThreadId } : {}), ...(hint ? { hint, hinted: true } : {}) };
     await bb.storage.kv.set(KEY(threadId), record);
     return record;
   }
@@ -229,7 +239,7 @@ export function createPhaseIntake(ctx: Deps, phases: IntakePhases, train?: Intak
     if (running) return running;
     const job = (async (): Promise<HandOverResult> => {
       const known = await bb.storage.kv.get(slot).catch(() => null) as Partial<HandOverStarted> | null;
-      if (known && typeof known.id === "string" && (known.via === "phase" || known.via === "issue-quick" || known.via === "issue-batch")) return { started: true, via: known.via, id: known.id };
+      if (known && typeof known.id === "string" && (known.via === "phase" || known.via === "issue-quick" || known.via === "issue-batch" || known.via === "full-lifecycle")) return { started: true, via: known.via, id: known.id };
       const result = await startHandOver(input);
       if (result.started) await bb.storage.kv.set(slot, { via: result.via, id: result.id, at: Date.now() });
       return result;
@@ -249,6 +259,11 @@ export function createPhaseIntake(ctx: Deps, phases: IntakePhases, train?: Intak
       if (String(settings["phase.rails"] ?? "on") === "off") return { started: false, kind, reason: "phase rails are off" };
       const live = phases.list({ pmThreadId: input.pmThreadId, live: true })[0];
       if (live) return { started: false, kind, reason: `phase ${live.id} is already live in the PM chat` };
+      if (graphRoad(settings) && train) {
+        const id = train.start({ projectId: run.project_id, pmThreadId: input.pmThreadId, runId: run.id, requestId: input.key, text, kind: "heavy" });
+        if (id) { ctx.log(`phase intake: hand-over (${input.origin.slice(0, 80)}) is heavy (${by}); full-lifecycle ${id} started`); return { started: true, via: "full-lifecycle", id }; }
+        return { started: false, kind, reason: "the full-lifecycle graph did not start" };
+      }
       const phase = await phases.open({ projectId: run.project_id, pmThreadId: input.pmThreadId, title: intakeTitle(input.text), goal: text, rails: true });
       ctx.log(`phase intake: hand-over (${input.origin.slice(0, 80)}) is heavy (${by}); phase ${phase.id} opened`);
       await phases.tick().catch(() => 0);
@@ -291,7 +306,7 @@ export function createPhaseIntake(ctx: Deps, phases: IntakePhases, train?: Intak
       return processHint();
     }
     if (record?.wfRunId && ["running", "waiting"].includes(train?.status(record.wfRunId) ?? "")) {
-      return `This request of the owner went down the small-task graph: Lane Pilot runs it itself (run ${record.wfRunId}: plan, build, report), and the result comes to this chat. Do not dispatch it or start a workflow for it by hand; tell the owner it is under way. If the owner asks for something else, that is a new request.`;
+      return `This request of the owner went down a graph: Lane Pilot runs it itself (run ${record.wfRunId}: ${record.kind === "heavy" ? "analysis, plan, build in waves, review, the owner's acceptance" : "plan, build, report"}), and the result comes to this chat. Do not dispatch it or start a workflow for it by hand; tell the owner it is under way. If the owner asks for something else, that is a new request.`;
     }
     if (record?.kind !== "heavy" || !record.phaseId) return null;
     const phase = phases.list({ pmThreadId: threadId, live: true }).find((row) => row.id === record.phaseId);

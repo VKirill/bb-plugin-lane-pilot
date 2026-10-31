@@ -253,9 +253,17 @@ describe("PhaseIntake.handOver", () => {
     expect(world1.started[0]!.text).toMatch(/^Work found by the scheduled agent x; source: schedule\.\n\nAdd the canonical tag/);
   });
 
-  it("opens a phase for a heavy goal, unless one is already live, and refuses what is no work", async () => {
+  it("starts the full-lifecycle graph for a heavy goal by default", async () => {
     const heavy = "Redesign the whole pricing section with a new plan comparison, a calculator and a migration of the old plans. ".repeat(12);
-    const open = intake();
+    const world1 = intake();
+    expect(await world1.handOver({ ...base, text: heavy })).toEqual({ started: true, via: "full-lifecycle", id: "wfrun_1" });
+    expect(world1.started[0]).toMatchObject({ kind: "heavy", requestId: "schedule:k1" });
+    expect(world1.opened).toEqual([]);
+  });
+
+  it("on the phase road opens a phase for a heavy goal, unless one is already live, and refuses what is no work", async () => {
+    const heavy = "Redesign the whole pricing section with a new plan comparison, a calculator and a migration of the old plans. ".repeat(12);
+    const open = intake({ settings: { "phase.road": "phase" } });
     expect(await open.handOver({ ...base, text: heavy })).toEqual({ started: true, via: "phase", id: "ph_1" });
     expect(open.opened[0]).toMatchObject({ projectId: "p1", pmThreadId: "thr_pm", rails: true });
     expect(open.opened[0]!.goal).toContain("source: schedule");
