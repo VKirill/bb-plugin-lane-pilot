@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **A scenario for mapping a web service's API: `api-recon`.** For requests like «scan the service, collect all its requests and build our own API on them» — any service, not only magicseo. The new role `api-recon` defaults to GPT-6.1 Terra (high), the computer-use model. In the original run the recon fell to a GLM pool member of the errand role: 50 min, $9.43. It signs in with an Env Catalog login and records fetch/XHR while it opens every section. Then it scans the JS bundles and writes api-map.md, endpoints.json, masked samples and screenshots. It is read-only. The router sends the magicseo request to it at 90% confidence; changes to our own code stay out of it. Tests: `tests/api-recon-role.test.ts`, `tests/workflow/chains-browser.test.ts`, `tests/workflow/router.test.ts`.
+
 - **No step budget.** In 277 hub runs the step budget stopped one, falsely: magicseo's lp.plan after its critic passed on step 14 of 14. Every loop is bounded by `maxVisits`, money and time by their own budgets, so `budget.max_steps` is gone from the engine and from all 77 shipped graphs; a graph that still names it parses, with the warning `budget_max_steps_ignored`. A token or money budget whose steps report no usage is held to 2 hours, no longer to 40 steps. The engine-fault guard `guards.maxSteps` defaults to 500 instead of 60: graphs with a step budget of 110–120 were cut at 60 by it.
 
 - **The drill probes a helper once more when only the host's thread start broke.** The 0.1.406 deploy went red because the hub's opencode2 process got one SIGTERM during its probe (`thread_command_failed`); a provider that fails the second probe too still fails the drill. Test: `tests/lp-drill-helper-providers.test.ts`.

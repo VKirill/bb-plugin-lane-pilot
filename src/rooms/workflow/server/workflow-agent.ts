@@ -47,7 +47,7 @@ export type RoleSpec = { helper: HelperRole; metadata: string; specialist?: stri
 const BASE_ALLOWED = (file: string) => file.startsWith(".bb/chats/");
 const ROLE_MAP: Record<string, HelperRole> = {
   analyst: "analyst", planner: "planner", auditor: "auditor", debugger: "debugger", "plan-critic": "plan-critic", "code-critic": "code-critic",
-  triager: "gate-triage", memory: "memory-maintainer", "browser-qa": "browser-qa", errand: "errand", council: "council-seat", "project-life": "project-life", "pm-reader": "pm-reader",
+  triager: "gate-triage", memory: "memory-maintainer", "browser-qa": "browser-qa", errand: "errand", "api-recon": "api-recon", council: "council-seat", "project-life": "project-life", "pm-reader": "pm-reader",
 };
 
 /** A bundled specialist; any other `specialist:<id>` names an agent the owner created, which must exist when the step runs (`ownSpecialist`). */

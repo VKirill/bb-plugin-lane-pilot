@@ -103,6 +103,7 @@ export const WORKFLOW_REFERENCE = {
     "plan-critic, pm-reader, council, memory": "answer from the message alone: no tools, no code graph",
     "code-critic, triager": "read-only, code graph",
     errand: "work outside the code: the owner's browser (browser-automation, computer-use), Env Catalog accounts by name (env_get), mail, consoles",
+    "api-recon": "maps a web service's API through its pages (GPT-6.1 Terra by default): browser-automation and Env Catalog, read-only",
     "browser-qa": "a browser check of a URL with cases; browser-automation only",
     "project-life": "may write .agents/ and CHANGELOG.md",
     "specialist:design-lead, specialist:copy-lead, specialist:seo-specialist, specialist:tavily, specialist:video-lead, specialist:3d-artist, specialist:game-dev, specialist:social-manager, specialist:billing-assistant, specialist:visual-artist, specialist:macos-operator, specialist:<id of an agent the owner created>": "the specialists. A known employee can also be named by its bare id (game-dev, 3d-artist, social-manager). Each keeps a few core skills and looks up the rest in the skill catalog; an owner's agent runs with its own prompt, skills, MCP servers and model. They may write .agents/",

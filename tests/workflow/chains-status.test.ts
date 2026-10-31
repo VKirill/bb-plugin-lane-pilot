@@ -47,7 +47,7 @@ describe("status of the built-in chains", () => {
     expect(ids.filter((id) => store.get(id)!.workflow.internal).sort()).toEqual(["ins.post", "lp.analyze", "lp.brainstorm", "lp.build", "lp.close", "lp.draw", "lp.plan", "lp.review"]);
     expect(ids).toEqual(expect.arrayContaining(["validate-phase", "eval-review", "ai-integration-phase", "spike", "ship", "pr-branch", "cleanup", "new-milestone", "plan-review-convergence", "project-start"]));
     expect(ids).toEqual(expect.arrayContaining(["3d-asset", "roblox-asset", "social-post"]));
-    expect(ids).toEqual(expect.arrayContaining(["research-dossier", "billing-batch", "macos-routine", "seo-page"]));
-    expect(ids).toHaveLength(80);
+    expect(ids).toEqual(expect.arrayContaining(["research-dossier", "billing-batch", "macos-routine", "seo-page", "api-recon"]));
+    expect(ids).toHaveLength(81);
   });
 });

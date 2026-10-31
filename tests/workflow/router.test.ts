@@ -189,6 +189,14 @@ describe("state checks", () => {
   });
 });
 
+describe("api-recon in the catalog", () => {
+  it("takes a request to rebuild a service's API from its site, and leaves a change to our own login code alone", async () => {
+    expect((await route("https://lk.magicseo.ru/ - надо просканировать сервис, все его запросы и собрать на его основе собственный АПИ сервис")).workflowId).toBe("api-recon");
+    expect((await route("сделай API продуктового магазина по их сайту")).workflowId).toBe("api-recon");
+    expect((await route("Add a rate limiter to the login endpoint")).workflowId).not.toBe("api-recon");
+  });
+});
+
 describe("the model port", () => {
   const phrase = "Add a rate limiter to the login endpoint";
 

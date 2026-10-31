@@ -41,7 +41,7 @@ const SECTIONS: Array<{ id: "code" | "check" | "project" | "browser" | "speciali
   { id: "code", roles: ["writer", "code-repair", "night-fixer"] },
   { id: "check", roles: ["plan-critic", "code-critic", "specialist-reviewer", "night-reviewer", "gate-triage", "pm-reader", "council-seat", "rules-analyzer"] },
   { id: "project", roles: ["docs-maintainer", "onboarder", "memory-maintainer", "project-life"] },
-  { id: "browser", roles: ["browser-qa", "errand"] },
+  { id: "browser", roles: ["browser-qa", "errand", "api-recon"] },
   { id: "specialists", roles: ["specialist:design-lead", "specialist:copy-lead", "specialist:seo-specialist", "specialist:tavily", "specialist:video-lead", "specialist:3d-artist", "specialist:game-dev", "specialist:social-manager", "specialist:billing-assistant", "specialist:visual-artist", "specialist:macos-operator"] },
   { id: "workflow", roles: ["analyst", "planner", "auditor", "debugger"] },
 ];

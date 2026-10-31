@@ -20,3 +20,12 @@ describe("lp.browser-qa", () => {
     expect(out(r)).toEqual({ state: "failed", reply });
   });
 });
+
+describe("api-recon", () => {
+  it("the crawl's map comes out as it is: paths, counts, whether there is an official API", async () => {
+    const map = { status: "done", reason: "", report: "auth: JWT in localStorage", api_map: "artifacts/api-recon/api-map.md", endpoints: "artifacts/api-recon/endpoints.json", observed: 35, bundle_only: 83, official_api: false };
+    const r = await runSim("api-recon", { input: { url: "https://shop.example.ru/", goal: "place orders from our system", account: "SHOP_LOGIN" }, stubs: { crawl: map } });
+    expect(pathOf(r)).toBe("crawl done");
+    expect(out(r)).toMatchObject({ status: "done", observed: 35, bundle_only: 83, official_api: false, api_map: map.api_map });
+  });
+});
