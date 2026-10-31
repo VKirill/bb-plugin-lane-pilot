@@ -29,6 +29,7 @@ sources:
   - scripts/lp-wall-morning.sql
   - scripts/wall-retro.ts
   - tests/wall/service.test.ts
+  - src/rooms/policy/exam.ts
 ---
 
 > [!important] Since 2026-10-22 the owner takes no part in the loop
@@ -166,3 +167,8 @@ rolled back); the guard (hunts, backlog, re-runs).
 2026-10-19 found: the relay 409 storm (19 542 lines under 0.1.253-0.1.256; the audit counted 10 925 in one night), 13 red checks in 8 tasks, stray
 `<paths:locale>` (8 attempts in 7 tasks) and `<paths:test>` files, «Host is not connected» for the nightly docs, the disk waits. After the 0.1.257 fix the
 storm was not picked again (seen only under older versions). The dry-run night on the newest data picks one class and keeps nothing.
+
+<!-- lane-pilot:backlinks -->
+## Referenced by
+
+- [The task pipeline](flows/task-pipeline.md)

@@ -782,7 +782,7 @@ The screen "Waiting for you" (`bb lane-pilot waiting`) holds only what needs a p
 
 ### Tasks board and work graph
 
-System, Tasks shows tasks and top-level workflow runs as a board (queued, running, checking, blocked, done) or a list grouped by goal, chat, area or project, refreshed every 8 seconds, with a 24 h or 7 d completion window (`task_board`, `task_card`). A task row shows one square per stage that ran (green, red, running, skipped, round count). The task page shows how the work went: per stage rounds, role, model, turns, time, tokens and cost. "Stages and models" gives per stage green share, median rounds, cost and time over 7, 30 or 90 days (newest 400 tasks). The graph of tasks waiting on each other is shown for an open run. Drills and service projects are hidden unless "Show drills" is on.
+System, Tasks shows tasks and top-level workflow runs as a board (queued, running, checking, blocked, done) or a list grouped by goal, chat, area or project, refreshed every 8 seconds, with a 24 h or 7 d completion window (`task_board`, `task_card`). A task row shows one square per stage that ran (green, red, running, skipped, round count). The task page shows how the work went: per stage rounds, role, model, turns, time, tokens and cost. The run card also reports settled queue-wait samples and p50/p99 wait in milliseconds (`get_run_card`). "Stages and models" gives per stage green share, median rounds, cost and time over 7, 30 or 90 days (newest 400 tasks). The graph of tasks waiting on each other is shown for an open run. Drills and service projects are hidden unless "Show drills" is on.
 
 ### In a chat
 
@@ -1054,7 +1054,7 @@ BB hooks: `message.dispatch` runs `handleNativeDispatch` (resolves the selected 
 |---|---|
 | `npm install` | Installs dependencies and links the workspaces. |
 | `npx vitest run` (`npm test`) | The full suite. Vitest runs four projects: `node` (shared module graph), `node-isolated` (files that use `vi.mock`), `ui` and `ui-isolated` (jsdom; pages that cannot share a document), longest file first. |
-| `npm run test:changed` | Only tests that changed, tests whose imports match changed sources, and tests of a changed package. `-- --graph` uses Vitest's changed dependency graph. Writes no deploy receipt. |
+| `npm run test:changed` | Changed tests, tests importing or named after changed TypeScript sources, and tests inside a changed package. If direct mode selects none it exits successfully and suggests graph mode; `-- --graph` uses Vitest's dependency graph. Writes no deploy receipt (`scripts/test-changed.mjs:53-110`). |
 | `scripts/test-full.sh` | The full suite once per code state: on green and a clean tree it writes the receipt the deploy script checks, keyed by the tree of `HEAD` and the Node version. |
 | `npm run typecheck` | `tsc --noEmit`. |
 | `npm run build` | `bb plugin build` (server, host and app bundles). |

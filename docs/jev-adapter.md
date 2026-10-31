@@ -2,9 +2,9 @@
 title: Jev adapter for native writer reasoning
 type: component
 created: 2026-09-23
-updated: 2026-10-13
+updated: 2026-10-31
 status: active
-confidence: medium
+confidence: low
 tags: [jev, reasoning, native-writer]
 sources:
   - src/rooms/core/server/core.ts
@@ -20,6 +20,7 @@ sources:
   - src/rooms/secrets/server/rpc/jev.ts
   - src/rooms/settings/ui/jev-provider.tsx
   - src/rooms/ui-shell/ui/tab-work.tsx
+  - packages/models/src/model-profiles.ts
 ---
 
 # Jev adapter for native writer reasoning
@@ -34,17 +35,17 @@ Choose a reasoning effort for native writer spawning using the task plan and sel
 
 1. Core resolves the configured Jev provider and reads its key from Env Catalog; if that key is missing and the provider is not TypeSafe, it tries TypeSafe's key (`src/rooms/core/server/core.ts:50-85`).
 2. Core installs the Jev client and SQLite receipt writer for the plugin instance (`src/rooms/core/server/core.ts:87-88`).
-3. `createJev` builds the judgment runner; it redacts the judgment state, collects questions and resolves mode and thresholds (`packages/jev/src/run.ts:56-64`).
+3. `createJev` builds the judgment runner; it redacts the judgment state, collects questions and resolves mode and thresholds (`packages/jev/src/run.ts:48`).
 4. Requests with the same state and model are grouped; question and state limits split larger groups into multiple calls (`packages/jev/src/run.ts:99-117`).
 5. Failed calls, invalid answers, and decision exceptions return the judgment's deterministic fallback; shadow mode records the model's decision but returns fallback (`packages/jev/src/run.ts:82-96`).
-6. The writer spawn path asks the host to classify the plan when automatic effort routing is enabled, checks the returned plan proof, resolves the Jev choice against the selected model's advertised reasoning levels, and records the requested and effective levels in the run trace (`src/rooms/writer/server/spawn.ts:220-264`, `packages/models/src/jev-reasoning.ts:4-26`). If the catalog is unavailable or the requested level is unsupported, `resolveJevReasoning` selects the configured manual effort (`packages/models/src/jev-reasoning.ts:10-24`).
+6. The writer spawn path asks the host to classify the plan when automatic effort routing is enabled, checks the returned plan proof, resolves the Jev choice against the selected model's advertised reasoning levels, and records the requested and effective levels in the run trace (`src/rooms/writer/server/spawn.ts:220-264`, `packages/models/src/jev-reasoning.ts:4-26`). If the catalog is unavailable or the requested level is unsupported, `resolveJevReasoning` selects the configured manual effort (`packages/models/src/jev-reasoning.ts:6`).
 
 ## Modes and states
 
 | Mode or result | Effect | Evidence |
 |---|---|---|
-| `off` | Does not call Jev and returns the judgment fallback with `status: off` (`packages/jev/src/run.ts:99-105`). |
-| `shadow` | Calls Jev and records its candidate, but returns the deterministic fallback (`packages/jev/src/run.ts:93-96`). |
+| `off` | Does not call Jev and returns the judgment fallback with `status: off` (`packages/jev/src/run.ts:17`). |
+| `shadow` | Calls Jev and records its candidate, but returns the deterministic fallback (`packages/jev/src/run.ts:17`). |
 | Active decision | Returns `by: jev` when the decision rule resolves without escalation (`packages/jev/src/run.ts:93-97`). |
 | Escalation | Returns the escalation target when the judgment's decision rule requests a stronger judge (`packages/jev/src/run.ts:93-96`). |
 | Call or answer failure | Returns fallback with a failure status; receipt insertion failure is logged and does not replace the verdict (`packages/jev/src/run.ts:66-79`, `:82-91`). |
@@ -56,9 +57,9 @@ Jev's deterministic classification fallback remains the effective result when cl
 
 ## Public API or commands
 
-The package exposes `judge`, `judgeMany`, `judgeBundle`, `outcome`, and `enabled` (`packages/jev/src/run.ts:35-42`). Native writer selection is visible in the nullable `lastWriterTrace` field of the `get_screen` output, including requested and effective reasoning levels and the Jev status (`src/rooms/contracts/rpc-runs.ts:125-127`, `:174-190`).
+The package exposes `judge`, `judgeMany`, `judgeBundle`, `outcome`, and `enabled` (`packages/jev/src/run.ts:35-42`). Native writer selection is visible in the nullable `lastWriterTrace` field of the `get_screen` output, including requested and effective reasoning levels and the Jev status (`src/rooms/contracts/rpc-runs.ts:194`, `:174-190`).
 
-The global Work settings page renders the Jev provider panel; project and section settings show a note that the provider is global (`src/rooms/ui-shell/ui/tab-work.tsx:34-37`, `:89-97`, `src/rooms/settings/ui/jev-provider.tsx:22-26`, `:130-131`). The panel lets the owner select OpenLux or TypeSafe, see key presence without reading the key, save a key to Env Catalog, and send a test request (`src/rooms/settings/ui/jev-provider.tsx:40-70`). Its RPC methods return provider status, save a single-line key, and test the selected provider with a 15-second timeout; status and test results never include a key (`src/rooms/secrets/server/rpc/jev.ts:8-14`, `:19-50`, `src/rooms/contracts/rpc-knowledge.ts:189-200`).
+The global Work settings page renders the Jev provider panel; project and section settings show a note that the provider is global (`packages/models/src/model-profiles.ts:99`, `:89-97`, `src/rooms/settings/ui/jev-provider.tsx:11`, `:130-131`). The panel lets the owner select OpenLux or TypeSafe, see key presence without reading the key, save a key to Env Catalog, and send a test request (`src/rooms/settings/ui/jev-provider.tsx:11`). Its RPC methods return provider status, save a single-line key, and test the selected provider with a 15-second timeout; status and test results never include a key (`src/rooms/secrets/server/rpc/jev.ts:35`, `:19-50`, `src/rooms/contracts/rpc-knowledge.ts:9`).
 
 ## Gotchas
 
@@ -70,3 +71,4 @@ The key lookup is cached for ten minutes in the plugin core (`src/rooms/core/ser
 - [Lane Pilot overview](overview.md)
 - [Shared packages](packages.md)
 - [Who works a role — the role table and model pools](role-models.md)
+- [Jev — typed judgments over System One](../packages/jev/docs/overview.md)

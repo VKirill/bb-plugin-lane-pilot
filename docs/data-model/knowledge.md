@@ -2,7 +2,7 @@
 title: Owner profile and learning data
 type: data-model
 created: 2026-10-10
-updated: 2026-10-29
+updated: 2026-10-31
 status: active
 confidence: medium
 tags: [data-model, anamnesis, learning]
@@ -41,13 +41,13 @@ The Anamnesis store creates its own SQLite tables (`src/rooms/anamnesis/store.ts
 
 | Table | Meaning | Invariants and lifecycle | Writers and readers |
 |---|---|---|---|
-| `records` | `id`; record `kind`; display `title`; `statement`; structured `attributes`; `sensitivity`; confidence score; status; first/last evidence times; manual edit time; created/updated times. | Status and sensitivity are domain values; record id is primary key. Every mutation writes a history row through `log`; an update adds one only when a field changed, and then notes how much evidence was added (`src/rooms/anamnesis/store.ts:112-113`, `:198-200`). | Collectors and owner edits write; profile, annual review and UI read. |
+| `records` | `id`; record `kind`; display `title`; `statement`; structured `attributes`; `sensitivity`; confidence score; status; first/last evidence times; manual edit time; created/updated times. | Status and sensitivity are domain values; record id is primary key. Every mutation writes a history row through `log`; an update adds one only when a field changed, and then notes how much evidence was added (`src/rooms/anamnesis/store.ts:34`, `:198-200`). | Collectors and owner edits write; profile, annual review and UI read. |
 | `evidence` | `record_id`; source name; source reference; evidence time; optional quote. | Composite key `(record_id,source,ref)`; deleting record cascades evidence (`src/rooms/anamnesis/store.ts:58-61`). | Source imports write; profile review and evidence display read. |
 | `history` | Event id; record id; time; actor; action; reason; JSON changes. | Append-oriented audit history indexed by record (`src/rooms/anamnesis/store.ts:62-65`). | Mutations write; record history view reads. |
 | `tombstones` | Forgotten record id and cutoff timestamp. | One cutoff per id (`src/rooms/anamnesis/store.ts:66`). | Forget operation writes; source reconciliation avoids resurrecting forgotten records. |
-| `checkpoints` | Source key; cursor time; detail JSON; update time. | One cursor per source (`src/rooms/anamnesis/store.ts:67`). | The collector writes it in the same transaction as a run-mode import; a preview writes none (`src/rooms/anamnesis/collect.ts:55-57`). The next scan reads it. |
+| `checkpoints` | Source key; cursor time; detail JSON; update time. | The source name is the primary key for a checkpoint row (`src/rooms/anamnesis/store.ts:66-68`). | The collector writes it in the same transaction as a run-mode import; a preview writes none (`src/rooms/anamnesis/store.ts:67`). The next scan reads it. |
 | `sources` | Source key; enabled flag; change time. | One enabled flag per source (`src/rooms/anamnesis/store.ts:68`). | Owner settings write; collector checks before scanning (`src/rooms/anamnesis/collect.ts:45-48`). |
-| `loads` | Load id; time; mode; JSON report. | Records preview and run import outcomes (`src/rooms/anamnesis/store.ts:69`). | Collector writes; load history view reads. |
+| `loads` | Load id; time; mode; JSON report. | Each load row stores an id, timestamp, mode, and report (`src/rooms/anamnesis/store.ts:69`). | Collector writes; load history view reads. |
 | `notes_files` | File path; content hash; write time. | One hash per notes file (`src/rooms/anamnesis/store.ts:70`). | Notes exporter writes; incremental sync reads. |
 | `notes_lines` | Record id; target file; rendered line. | One line mapping per record (`src/rooms/anamnesis/store.ts:71`). | Notes exporter writes; update/remove reconciliation reads. |
 
@@ -65,15 +65,15 @@ Maintainer candidate parsing is an input boundary, not a separate stored entity:
 
 | Table | Meaning | Lifecycle and invariants | Writers and readers |
 |---|---|---|---|
-| `lane_pilot_memory` | `id` stable record key; `project_id` and `personal_bot` scope; `kind` (`core`/`note`); `audience` (`owner`/`subagent`/`export`); `content`; `concepts_json`; source SHA-256; creation time; `status`; replacement id; optional validity deadline; last-used time; use and accepted counts; `trust` (`confirmed`/`observed`); `origin`; optional source file id. | Status values are `active`, `superseded`, and `expired` (`src/rooms/storage/database.ts:282-290`). Active records become superseded when replaced or expired by validity/idle/budget; an expired matching record can be revived when restated (`packages/memory-core/src/store.ts:103-109`, `:113-126`, `:157-161`; `packages/memory-core/src/lifecycle.ts:16-20`). | Session, maintainer, rule, and file import writers store records; retrieval, maintenance, and accepted-attempt accounting read/update them (`packages/memory-core/src/store.ts:83-93`, `:147-168`; `packages/memory-core/src/lifecycle.ts:71-80`). |
-| `lane_pilot_memory_fts` | `id` and `project_id` scope FTS rows; `content` and `concepts` are indexed text. | FTS5 index is updated with record inserts and removals; trigram search index is created on first use when the SQLite tokenizer exists (`src/rooms/storage/database.ts:168`, `packages/memory-core/src/store.ts:36-66`). | Memory store maintains the index; project memory search reads it and falls back to a code scan when trigram support is unavailable (`packages/memory-core/src/store.ts:36-55`, `:58-66`). |
+| `lane_pilot_memory` | `id` stable record key; `project_id` and `personal_bot` scope; `kind` (`core`/`note`); `audience` (`owner`/`subagent`/`export`); `content`; `concepts_json`; source SHA-256; creation time; `status`; replacement id; optional validity deadline; last-used time; use and accepted counts; `trust` (`confirmed`/`observed`); `origin`; optional source file id. | The table status defaults to `active`; lifecycle code moves records to `superseded` or `expired` (`src/rooms/storage/database.ts:174`, `packages/memory-core/src/store.ts:103-126`, `packages/memory-core/src/lifecycle.ts:16-20`). Active records become superseded when replaced or expired by validity/idle/budget; an expired matching record can be revived when restated (`packages/memory-core/src/store.ts:103-109`, `:113-126`, `:157-161`; `packages/memory-core/src/lifecycle.ts:16-20`). | Session, maintainer, rule, and file import writers store records; retrieval, maintenance, and accepted-attempt accounting read/update them (`packages/memory-core/src/store.ts:83-93`, `:147-168`; `packages/memory-core/src/lifecycle.ts:71-80`). |
+| `lane_pilot_memory_fts` | `id` and `project_id` scope FTS rows; `content` and `concepts` are indexed text. | FTS5 index is updated with record inserts and removals; trigram search index is created on first use when the SQLite tokenizer exists (`src/rooms/storage/database.ts:185`, `packages/memory-core/src/store.ts:36-66`). | Memory store maintains the index; project memory search reads it and falls back to a code scan when trigram support is unavailable (`packages/memory-core/src/store.ts:36-55`, `:58-66`). |
 
 | Status or trust transition | Function and condition |
 |---|---|
-| `active` → `superseded` | `storeMemoryRecords` replaces a same-file or explicitly superseded record, or an older same-subject note (`packages/memory-core/src/store.ts:113-126`). |
-| `active` → `expired` | `expireMemory` hides expired validity and idle notes; note-budget eviction uses the same status (`packages/memory-core/src/lifecycle.ts:16-20`, `packages/memory-core/src/store.ts:134-145`). |
+| `active` → `superseded` | `storeMemoryRecords` replaces a same-file or explicitly superseded record, or an older same-subject note (`packages/memory-core/src/store.ts:56`). |
+| `active` → `expired` | `expireMemory` hides expired validity and idle notes; note-budget eviction uses the same status (`packages/memory-core/src/lifecycle.ts:24`, `packages/memory-core/src/store.ts:56`). |
 | `expired` → `active` | A matching record is revived when its fact is stated again or its source file provides it again (`packages/memory-core/src/store.ts:103-109`, `:157-161`). |
-| `observed` → `confirmed` | A second independent source corroborates the same observed record (`packages/memory-core/src/store.ts:103-105`, `:163`). |
+| `observed` → `confirmed` | A second independent source corroborates the same observed record (`packages/memory-core/src/store.ts:89`, `:163`). |
 
 ## Status transitions
 

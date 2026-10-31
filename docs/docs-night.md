@@ -13,6 +13,9 @@ sources:
   - workflows/lp.docs-night.json
   - scripts/generate-atlas.ts
   - scripts/generate-enabled-settings.ts
+  - docs-lint.ts
+  - docs-nightly.ts
+  - src/rooms/runs/server/stage-records.ts
 ---
 
 # The nightly docs pass

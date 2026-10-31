@@ -12,6 +12,7 @@ sources:
   - src/rooms/phase/server/candidate.ts
   - src/rooms/phase/server/rpc.ts
   - src/rooms/phase/server/cli.ts
+  - auto-stages.ts
 ---
 
 # Phases
@@ -33,3 +34,8 @@ TL;DR: a phase is a heavy goal Lane Pilot runs as its own stage machine — inta
 ## Limits
 
 - Auto stages cover the machine path; a goal that needs judgement between stages relies on owner-word turns or a PM steering it.
+
+<!-- lane-pilot:backlinks -->
+## Referenced by
+
+- [Orchestration and execution data](data-model/orchestration.md)

@@ -12,6 +12,10 @@ sources:
   - src/rooms/critique/quality-mode.ts
   - src/rooms/writer/retry-budget.ts
   - docs/enabled-settings.snapshot.json
+  - weekly.ts
+  - wall/acceptance.ts
+  - src/rooms/runs/state-machine.ts
+  - packages/memory-core/src/settings.ts
 ---
 
 <!-- enabled-settings:structure 5ea63488b7887006 -->
@@ -269,3 +273,10 @@ switches: `quick` disables both critiques, `full` enables them (`src/rooms/criti
 | `TASK_ATTEMPT_BUDGET` | `12` | src/rooms/writer/retry-budget.ts:8 |
 | `MAIN_ATTEMPT_LIMIT` | `2` | src/rooms/runs/state-machine.ts:77 |
 | `memory.note_budget` | `24000` | packages/memory-core/src/settings.ts:53 |
+
+<!-- lane-pilot:backlinks -->
+## Referenced by
+
+- [The task pipeline](flows/task-pipeline.md)
+- [Lane Pilot overview](overview.md)
+- [Plan against fact and the acceptance card](plan-fact.md)

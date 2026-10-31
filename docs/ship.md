@@ -27,3 +27,8 @@ The PM reports each command, its exit code and the live check. On failure: read 
 
 - Shipping is a PM duty, not a graph stage: nothing in `workflows/` runs a deploy; acceptance ends at merge, ship starts after.
 - A project with no runnable deploy path gets a push plus an explicit "no way to run it" — never a fabricated check.
+
+<!-- lane-pilot:backlinks -->
+## Referenced by
+
+- [The task pipeline](flows/task-pipeline.md)
