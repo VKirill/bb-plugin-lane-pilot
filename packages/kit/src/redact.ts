@@ -113,3 +113,6 @@ export function withoutCredentials(text:string):string {
   return text.split(CREDENTIAL_MASK).map((part) => part.replace(KEYED, (_match, lead:string) => `${lead}${CREDENTIAL_MASK}`)
     .replace(AFTER_EMAIL, (_match, email:string, gap:string) => `${email}${gap || " "}${CREDENTIAL_MASK}`)).join(CREDENTIAL_MASK);
 }
+
+/** Text without Lane Pilot's `[lane-pilot-selection:<uuid>]` markers: the token a session start carries is never part of a goal or a phase. */
+export const withoutSelectionMarkers = (text: string): string => text.replace(/\[lane-pilot-selection:[0-9a-f-]{36}\]\s*/g, "").trim();

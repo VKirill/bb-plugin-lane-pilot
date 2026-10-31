@@ -1,5 +1,4 @@
-import { withoutCredentials } from "@lane-pilot/kit";
-import { withoutSelectionMarkers } from "../../native-agent/native-session";
+import { withoutCredentials, withoutSelectionMarkers } from "@lane-pilot/kit";
 import { choiceOf, jev, resolveThresholds, type JevSettings } from "@lane-pilot/jev";
 import { getRun, getRunSettingsScopes } from "../../storage";
 import { stringAt, type ServerCore } from "../../core/server";

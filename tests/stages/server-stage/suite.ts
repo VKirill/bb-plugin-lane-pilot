@@ -1,3 +1,4 @@
+import { REVISION_PROBE } from "../../../src/rooms/writer/server/verify";
 import { createHash } from "node:crypto";
 import { resolve } from "node:path";
 import { THREAD_WATCH_EVENT_TYPES } from "@lane-pilot/thread-observe";
@@ -422,6 +423,9 @@ async function setup(critiqueOutput:string, browserQaResult?:Record<string,unkno
       }
       if (call.method !== "runCommand") throw new Error(`unexpected host method ${call.method}`);
       const command = String((call.input as { command?:string }).command ?? "");
+      // The revision probe (0.1.416) runs `git status --porcelain` too, but it is not a dirt snapshot: counted as one, it shifted every
+      // scripted sequence by one and 11 stage tests went red unnoticed (the deploy runs only the tests of changed files).
+      if (command === REVISION_PROBE) return { hostId:config.hostId, exitCode:0, stdout:"", stderr:"" };
       if (command.includes("porcelain")) {
         snapshots += 1;
         // Without an explicit sequence the dirt follows where the call runs. Every attempt works in its own worktree (the

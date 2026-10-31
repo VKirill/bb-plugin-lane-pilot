@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 0.1.434
+
+- **A self-repair no longer asks the owner about tests that were red before it.** Its brief allowed a commit only on a green full suite; with reds it had not caused, the repair of «relay event failed: Thread is archived» stopped and asked the owner how to go on (thr_etefy6tutd). A red that also fails on the base without the change is now named in the summary and does not hold the commit; one the change caused is the repair's to fix.
+- **The full suite is green again (16 reds → 0).** The revision probe of 0.1.416 runs `git status --porcelain`, and the stage harness counted it as a dirt snapshot: every scripted sequence shifted and 11 stage tests went red unnoticed, the deploy running only the tests of changed files. The probe is no snapshot now, and a probe that read nothing adds no empty `revision` to a check row. Also: `phase` took `TASK_KINDS` through the contracts index and closed an import cycle (0.1.424), and imported a helper from `native-agent`'s private files (0.1.410); both come from `@lane-pilot/*` packages now. The SMA contracts map is regenerated.
+
 ## 0.1.433
 
 - **The PM can fix a graph run's work, not only its goals.** Its prompt said «fix the work and re-run» for a run blocked by its goal audit, but re-running a node was a button in the Workflows tab only; the PM had no way to do it (MagicSEO replay, api-recon blocked twice). `lane_pilot_workflow_amend` now takes `rerun` {nodeId, with}: once the run has ended, that node runs again on the same branch with corrected inputs (only the keys given change), the steps before it keep their results, and the run is audited against its goals again. The journal names the corrected keys. The owner's re-run (`workflow_rerun_node`) takes the same `with`. Maslov's assess Q16, live correction, for a finished run; a task's own pipeline is still corrected through the task.

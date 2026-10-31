@@ -37,7 +37,7 @@ export const cliAgentsSelectionNullableSchema = cliAgentsSelectionSchema.nullabl
  * phase's goal, the analysis helper got it in its prompt, and the dispatch read it as a profile for a Gemini thread (magicseo replay,
  * 2026-10-31: lp.analyze failed on «native profile needs Claude Code»).
  */
-export const withoutSelectionMarkers = (text: string): string => text.replace(/\[lane-pilot-selection:[0-9a-f-]{36}\]\s*/g, "").trim();
+export { withoutSelectionMarkers } from "@lane-pilot/kit";
 
 export function tokensFrom(value: unknown): string[] {
   return [...new Set([...JSON.stringify(value).matchAll(/\[lane-pilot-selection:([0-9a-f-]{36})\]/g)].map((m) => m[1]!))];

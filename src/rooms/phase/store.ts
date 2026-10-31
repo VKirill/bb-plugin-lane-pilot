@@ -1,5 +1,4 @@
-import { withoutCredentials } from "@lane-pilot/kit";
-import { withoutSelectionMarkers } from "../native-agent/native-session";
+import { withoutCredentials, withoutSelectionMarkers } from "@lane-pilot/kit";
 import type Database from "better-sqlite3";
 import { GENESIS, partHash, type BookPart, type BookSection, type Phase, type PhaseRecord, type PhaseStage, type PhaseState } from "./logic";
 

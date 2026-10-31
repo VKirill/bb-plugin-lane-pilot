@@ -535,6 +535,9 @@ describe("self-repair", () => {
     expect(text).toMatch(/Do NOT deploy, bump the version, push, merge or create a release/);
     expect(text).not.toMatch(/gh release create|bash \/Users|origin main/);
     expect(text).toMatch(/continue only when it is green/);
+    // A red the base has too is not the repair's: thr_etefy6tutd (2026-10-31) asked the owner about 15 such reds instead of committing.
+    expect(text).toMatch(/also fails on your base without your change/);
+    expect(text).toMatch(/never goes to the owner as a question/);
     expect(text).toMatch(/<incidents>[\s\S]*1970-01-01T00:00:00.000Z[\s\S]*<\/incidents>/);
     expect(text).toMatch(/never git add -A/);
     expect(text).toMatch(/already fixed/);

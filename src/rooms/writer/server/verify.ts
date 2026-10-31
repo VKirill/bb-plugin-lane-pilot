@@ -160,6 +160,7 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
     const commands:TaskV2["verification"]=harnessChecks.length ? [...task.verification, ...harnessChecks.map((check)=>({ command:check.command, cwd:task.project_cwd, timeout_sec:check.timeout_sec }))] : task.verification;
     // Which revision was checked, and how dirty the copy was (Matvey: «can you name its base without opening the workspace»):
     // on the hub this says how many checks ran in a copy with loose files, so whether a clean copy is needed is read from data.
+    // A probe that read nothing (no git, the host did not answer) names no revision: the row goes without one.
     const revision=await Promise.resolve().then(()=>runOnHost(host,{hostId:config.hostId,cwd:task.project_cwd,command:REVISION_PROBE,timeoutSec:15}))
       .then((row)=>parseRevisionProbe(row?.stdout??"")).catch(()=>({head:null,dirty:null}));
     const pool=`verification:${runId??config.projectId}`;
@@ -254,7 +255,7 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
       .map((result,pos)=>({result,index:entries[pos]!.index}))
       .filter((row):row is {result:NonNullable<typeof row.result>;index:number}=>row.result!==undefined)
       .sort((a,b)=>a.index-b.index)
-      .map((row)=>({...row.result,revision}));
+      .map((row)=>({...row.result,...(revision.head!==null||revision.dirty!==null?{revision}:{})}));
     if(skipped){const first=orderedResults.find((row)=>row.exitCode!==0);
       if(first)first.stderr=`${first.stderr??""}\nchecks.fail_fast: ${skipped} check(s) not started after the first non-zero exit`.trim();}
     return orderedResults;

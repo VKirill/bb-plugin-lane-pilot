@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { TASK_KINDS } from "../contracts";
+import { TASK_KINDS } from "@lane-pilot/contracts";
 import type { BookPart, Drawing, Phase, PhaseRecord, PhaseStage, PlanItem, TaskFact } from "./logic";
 
 /**
