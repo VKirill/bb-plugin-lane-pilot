@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.1.432
+
+- **A plan the PM changed after its review no longer fails the task graph when its new critique blocks.** The block step skipped the specialist review even when it had already passed on the old plan; the stage rules refuse passed → skipped, and the run ended `step_failed:block-plan-critique` instead of blocking the task (MagicSEO replay, concert-scheduler, 2026-10-31). Block steps now skip only stages that have not run; a verdict a stage already has stays.
+
 - **A PM's question lost to a deploy is reported, not forgotten.** A PM's form to the owner is held by its tool call's signal, and a plugin reload aborts it with the reason `request-aborted`. Lane Pilot counted only `plugin-disposed` and `server-restarted` as lost to a reload, so it dropped the record, and the next instance did not tell the PM that no answer would come. In the magicseo replay the question «start and stop the promotion once?» went that way at the 12:43 deploy, and the PM waited with nobody to answer. A PM's form aborted that way is now kept and reported after the reload («ask it again»). A question Lane Pilot itself withdraws in the background stays forgotten. Test: `tests/owner-ask.test.ts`.
 
 - **A workflow run can be stopped from the CLI.** `bb lane-pilot workflow-cancel <run-id> [reason]` ends a running or waiting run and its child runs (open steps canceled, helper threads stopped) through the engine's own `cancel`. Until now nothing outside the engine could stop one: the magicseo replays' runs were stopped by an UPDATE in the hub's database. A writer attempt the run started goes on (`cancel <attempt-id>` stops it). Part of Maslov's self-check Q16 (pause, stop and correction on every level).

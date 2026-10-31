@@ -48,8 +48,19 @@ const need = (ctx: StepContext<DispatchRuntime>): DispatchRuntime => {
 };
 const text = (value: unknown): string | undefined => (typeof value === "string" ? value : undefined);
 
+/**
+ * Marks skipped a stage that has not run; a verdict it already has stays. MagicSEO replay concert-scheduler (2026-10-31): the plan
+ * critique passed, so did the specialist review; the PM changed the plan, its new critique blocked, and skipping the passed review
+ * threw «illegal stage transition specialist-review: passed -> skipped» — the run failed instead of blocking.
+ */
+function skipOpenStage(r: DispatchRuntime, stageId: Parameters<typeof recordStage>[1]["stageId"], reason: string): void {
+  const current = listStageReceipts(r.ctx.db, r.runId, r.taskId).find((row) => row.stageId === stageId);
+  if (current && current.state !== "pending") return;
+  recordStage(r.ctx.db, { runId: r.runId, taskId: r.taskId, stageId, state: "skipped", input: r.plan, reason });
+}
+
 function skipWriterStages(r: DispatchRuntime, reason: string): void {
-  for (const stageId of WRITER_STAGES) recordStage(r.ctx.db, { runId: r.runId, taskId: r.taskId, stageId, state: "skipped", input: r.plan, reason });
+  for (const stageId of WRITER_STAGES) skipOpenStage(r, stageId, reason);
 }
 
 /**
@@ -112,7 +123,7 @@ export function registerDispatchExecutors(engine: WorkflowEngine, bb?: BbPluginA
     if (ended) return { reply: ended };
     const reason = text(ctx.input.with.reason);
     const { db } = r.ctx;
-    recordStage(db, { runId: r.runId, taskId: r.taskId, stageId: "specialist-review", state: "skipped", input: r.plan, reason: "plan-critique did not allow dispatch" });
+    skipOpenStage(r, "specialist-review", "plan-critique did not allow dispatch");
     skipWriterStages(r, "upstream plan-critique stage did not pass");
     transitionAttempt(db, r.attemptId, "blocked", { reason: reason ?? "plan-critique did not allow dispatch" });
     setRunState(db, r.runId, "blocked");
