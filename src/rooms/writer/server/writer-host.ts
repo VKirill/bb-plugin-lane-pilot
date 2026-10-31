@@ -5,7 +5,7 @@ import { GLOBAL_SETTINGS_PROJECT_ID, LP_DEFAULTS_KEY, parseLanePilotDefaults } f
 import { resolveWriterBinding } from "../../native-agent";
 import type { ProjectSourceBinding } from "../../native-agent";
 import { mapListedQaHosts } from "../../qa";
-import { stringAt } from "../../core/server";
+import { CATALOG_WAIT_MS, modelCatalogOf, stringAt, within } from "../../core/server";
 import type { ServerCore } from "../../core/server";
 
 export function createWriterHost(ctx: ServerCore) {
@@ -17,12 +17,16 @@ export function createWriterHost(ctx: ServerCore) {
     selected?: { hostId: string; path: string } | null;
   }) {
     if (args.projectId === GLOBAL_SETTINGS_PROJECT_ID) {
-      // Global settings are not tied to a folder; any connected machine lists the model catalog. A machine named by the
-      // caller wins: the first connected one may be a laptop whose provider lists one model (devin on the MacBook, 2026-10-30).
+      // Global settings are not tied to a folder; the pickers show one machine's catalog. A machine named by the caller wins,
+      // then the one offering the most providers and models: the first connected one was the MacBook, without OpenCode and with
+      // Devin listing only «Agent default» (2026-10-30/31).
       const hosts = mapListedQaHosts(await (bb.sdk as { hosts?: { list?: () => Promise<unknown> } }).hosts?.list?.().catch(() => []) ?? []);
       const preferred = parseLanePilotDefaults(await bb.storage.kv.get(LP_DEFAULTS_KEY)).qaHostId;
-      const host = hosts.find((row) => row.connected && row.id === args.selected?.hostId)
-        ?? hosts.find((row) => row.connected && row.id === preferred) ?? hosts.find((row) => row.connected);
+      const catalog = await within(modelCatalogOf(ctx).get(), CATALOG_WAIT_MS).catch(() => null);
+      const offered = (hostId: string) => (catalog?.providers ?? []).reduce((sum, provider) => sum
+        + (provider.hostIds.includes(hostId) ? 1000 : 0) + provider.models.filter((model) => model.hostIds.includes(hostId)).length, 0);
+      const richest = hosts.filter((row) => row.connected).sort((a, b) => offered(b.id) - offered(a.id) || Number(b.id === preferred) - Number(a.id === preferred))[0];
+      const host = hosts.find((row) => row.connected && row.id === args.selected?.hostId) ?? richest;
       return host
         ? { status: "resolved" as const, hostId: host.id, path: "", source: "explicit_override" as const }
         : { status: "catalog_unavailable" as const, reason: "no connected machine" };

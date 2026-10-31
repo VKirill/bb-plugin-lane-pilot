@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.1.438
+
+- **The global role table shows every provider.** Its model windows asked the first connected machine, the MacBook. There OpenCode is missing and Devin listed only «Agent default», so SWE-2 and the OpenCode models could not be picked. The table now asks the machine that offers the most providers and models; a machine named by the caller still wins.
+
 ## 0.1.437
 
 - **No «Сейчас · N» line over the composer.** Lane Pilot showed the number of the chat's open tasks above the prompt box while the chat had any Lane Pilot work from the past week, even when nothing was running. It repeated the helper chips and the «в очереди» chip and only took room. It is gone; the chat's live work stays in the thread panel (Lane Pilot tab).
