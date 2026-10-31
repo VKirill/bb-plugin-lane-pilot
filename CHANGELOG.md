@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.1.437
+
+- **No «Сейчас · N» line over the composer.** Lane Pilot showed the number of the chat's open tasks above the prompt box while the chat had any Lane Pilot work from the past week, even when nothing was running. It repeated the helper chips and the «в очереди» chip and only took room. It is gone; the chat's live work stays in the thread panel (Lane Pilot tab).
+
 ## 0.1.436
 
 - **SWE-2 can be picked for a role again.** Where no PM chat names the machine (the global role table), the model window asked the first connected machine that has the provider. That was the MacBook, where Devin is not signed in and lists one placeholder, «Agent default»; SWE-2 and the rest, listed by the Mac mini and OVH, never showed. The window now asks the machine where the provider lists the most models.

@@ -26,7 +26,7 @@ Every open row of the two SDK audits was checked against `main` (0.1.391). Dispo
 | B-9 | `experimental_invalidate(["world_version"])` on every attempt bump in `outbound.ts`; the read's tag is declared in `ui-query.ts`. The interval remains the old-BB fallback. |
 | B-x3 | `app.commands.register lane-pilot-helpers` opens the helpers tab; `PluginCommandContext` offers no navigation call, so a Cockpit jump cannot exist. |
 | B-x4 | `experimental_usePageTitle` on the cockpit nav panel prefixes the window title with the owner-waiting count. |
-| A-u3 | `experimental_threadContextSegment` `lane-pilot-live-segment`: visible only with live work, expands into `ThreadLive`. |
+| A-u3 | Removed 2026-10-31 (0.1.437): the «Сейчас · N» segment over the composer repeated the helper chips and the queue chip; the owner found it in the way. The same live work stays in the thread panel (`lane-pilot-live`). |
 | A-u4 | `experimental_setThreadRowStatus` marks the sidebar row running/error from `thread_live` (`src/rooms/runs/ui/thread-row-status.ts` + content-script `lane-pilot-row-status` in `app.tsx`); stock BB keeps its own row. `tests/thread-row-status.test.ts`. |
 | A-c1 | `callerPluginMetadata` (`src/rooms/core/server/context.ts`) takes `context.experimental_vkPluginMetadata` on vk cores, `getPluginMetadata` otherwise — the five PM tool call sites in `tools.ts` plus the conversation/queue `runOf` and the env resolvers of `helper-bb-shim.ts`. |
 | A-c2 | `experimental_vkLastTurn` in the vk core supplies `lastTurnId`/`isSubAgent` on `thread.idle`; `thread-observe/src/signals.ts` already consumes it. |
