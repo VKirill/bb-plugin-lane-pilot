@@ -118,12 +118,16 @@ export function checkScriptEdits(produced: readonly string[], commands: readonly
   const run = new Set(commands.flatMap(scriptsRun));
   return produced.filter((path) => {
     const bare = path.replace(/^\.\//, "");
+    if (RUNNER_CONFIG.test(bare)) return true;
     if (TEST_PATH.test(bare)) return false;
     if (viaPackage && /(^|\/)package\.json$/.test(bare)) return true;
     return [...run].some((script) => script === bare || script.endsWith(`/${bare}`));
   });
 }
 
+// A runner reads its config before any test: an `exclude` in vitest.config.ts or a narrowed `testpaths` in pytest.ini shrinks the run as surely
+// as a weakened test, and the merge check on main inherits it (SWE-2 audit against Maslov's assess, Q9, 2026-10-31).
+const RUNNER_CONFIG = /(^|\/)((vitest|vite|jest|playwright|cypress|karma|ava)\.config\.[cm]?[jt]s|\.mocharc(\.[a-z]+)?|pytest\.ini|tox\.ini|conftest\.py|tsconfig[^/]*\.json|Makefile|justfile)$/;
 const INTERPRETER = /^(?:ba|z|da)?sh$|^node$|^python\d?(?:\.\d+)?$|^tsx$|^ts-node$|^deno$|^bun$|^ruby$|^perl$|^php$/;
 /** The files a shell command runs: each segment's program when it is a path, or the first operand of an interpreter. */
 function scriptsRun(command: string): string[] {

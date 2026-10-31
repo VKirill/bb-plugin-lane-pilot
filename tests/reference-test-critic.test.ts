@@ -38,4 +38,9 @@ describe("a writer that changed a test which existed before the task", () => {
       .toEqual(["scripts/verify.sh", "game/scripts/studio_check.py"]);
     expect(checkScriptEdits(["src/hello.ts", "src/a.ts"], ["grep -q hello src/hello.ts", "test -s src/a.ts"])).toEqual([]);
   });
+
+  it("counts a test runner's config as the yardstick whatever the commands are: an exclude in vitest.config.ts narrows the run (assess Q9)", () => {
+    const produced = ["vitest.config.ts", "apps/web/playwright.config.mjs", "tests/conftest.py", "pytest.ini", "tsconfig.build.json", "Makefile", "src/config.ts", "pyproject.toml"];
+    expect(checkScriptEdits(produced, ["python3 -m pytest -q"])).toEqual(["vitest.config.ts", "apps/web/playwright.config.mjs", "tests/conftest.py", "pytest.ini", "tsconfig.build.json", "Makefile"]);
+  });
 });
