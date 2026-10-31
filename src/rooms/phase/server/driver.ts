@@ -18,7 +18,7 @@ import { candidateBranch, createCandidates } from "./candidate";
 import { goalVerdict } from "../../run-goal";
 import { bookkeepingSetting } from "@lane-pilot/settings-catalog";
 import { appendPart, getPhase, insertPhase, listParts, listPhases, notePoked, savePhase } from "../store";
-import { archiveDrawing, binaryFileCommand, binaryFileFingerprint, conclusionText, markRoadmap, nextRoadmapRow, stateText, uatState, uatText, waveTable } from "../stages";
+import { archiveDrawing, binaryFileCommand, buildsScreens, piecePlan, binaryFileFingerprint, conclusionText, markRoadmap, nextRoadmapRow, stateText, uatState, uatText, waveTable } from "../stages";
 import { runOnHost } from "@lane-pilot/host-calls";
 import { intakeRunGoals } from "../intake";
 import { createPhaseIntake } from "./intake";
@@ -815,10 +815,10 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
       const reply: Record<string, unknown> = await services.dispatchWriter({ threadId: phase.pmThreadId, projectId: phase.projectId, birth: "phase",
         // Stage above ordinary work: a phase's pieces start before the run's ordinary tasks when writers are scarce.
         // quality_mode full: the piece goes through every review stage, so its acceptance lines read verdicts, not their absence (SMA p6_l_verdict).
-        task: { ...item.task, id: taskIdForIssue, quality_mode: "full", priority: (item.task.priority as string | undefined) ?? "high", ...(phase.record.design?.drawing ? { drawing: phase.record.design.drawing.paths } : {}),
+        task: { ...item.task, id: taskIdForIssue, quality_mode: "full", priority: (item.task.priority as string | undefined) ?? "high", ...(phase.record.design?.drawing && buildsScreens(item) ? { drawing: phase.record.design.drawing.paths } : {}),
           ...(tree ? { project_cwd: tree.path, ...(verification ? { verification } : {}) } : typeof item.task.project_cwd === "string" && item.task.project_cwd ? {} : { project_cwd: base ?? undefined }),
           ...(typeof item.task.objective === "string" && item.task.objective.trim() ? {} : { objective: `${item.title}: given ${item.promise.given}, when ${item.promise.when}, then ${item.promise.then}` }) } as never,
-        plan: `Phase ${phase.id} «${phase.title}», wave ${item.wave}, piece ${item.id}. Promise — given ${item.promise.given}; when ${item.promise.when}; then ${item.promise.then}.${phase.record.design?.drawing ? ` The phase drawing: ${phase.record.design.drawing.paths.join(", ")} — the screens follow it.` : ""}`,
+        plan: piecePlan(phase, item),
         objective: phase.goal }).catch((cause: unknown) => ({ ok: false, reason: cause instanceof Error ? cause.message : String(cause) }));
       const taskId = typeof reply.taskId === "string" ? reply.taskId : null;
       if (taskId) {

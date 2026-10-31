@@ -4,6 +4,7 @@ import { createCore } from "../../src/rooms/core/server/core";
 import { createPhaseDriver } from "../../src/rooms/phase/server/driver";
 import { contextSignature, planSignature, sha256, type PlanItem } from "../../src/rooms/phase/logic";
 import { listParts, savePhase } from "../../src/rooms/phase/store";
+import { piecePlan } from "../../src/rooms/phase/stages";
 import { createAttempt, createRun, createTask, openDatabase } from "../../src/rooms/storage";
 
 const item = (id = "piece"): PlanItem => ({
@@ -122,14 +123,16 @@ describe("phase controls", () => {
     process.env.LANE_PILOT_OWNER_WORDS_DEFAULT = "off";
     try {
       const f = await host();
-      const one = item();
+      const one = { ...item(), task: { ...item().task, owns_paths: ["ui/app.tsx"] } };
       const sha = planSignature([one], "ctx");
       const drawing = { paths: [".agents/phases/ph/design/UI-SPEC.md"], sha256: "d".repeat(64), designer: "design-lead", reviewer: "ui-review", feasible: true };
       savePhase(f.db, f.id, { stage: "execution", runId: "run1", record: { ...f.phases.status(f.id).phase.record, ownerWords: false, plan: { items: [one], sha, admittedSha: sha, contextSha: "ctx" }, design: { decision: "needed", why: "screens", drawing }, execution: { issued: {}, startedAt: 1 } } as never, at: 2 });
       const issued = await f.phases.drive(f.phases.status(f.id).phase);
       expect(issued.record.execution?.issued).toEqual({ piece: "task-piece" });
-      expect(f.plans[0]).toContain("the screens follow it");
+      expect(f.plans[0]).toContain("the screens follow the phase drawing");
       expect(f.plans[0]).toContain(drawing.paths[0]);
+      expect(f.plans[0]).toContain("3. Write the files this piece owns: ui/app.tsx");
+      expect(f.plans[0]).toContain("4. Done when: works");
     } finally {
       if (previous === undefined) delete process.env.LANE_PILOT_OWNER_WORDS_DEFAULT;
       else process.env.LANE_PILOT_OWNER_WORDS_DEFAULT = previous;
@@ -175,5 +178,15 @@ describe("phase controls", () => {
       if (previous === undefined) delete process.env.LANE_PILOT_OWNER_WORDS_DEFAULT;
       else process.env.LANE_PILOT_OWNER_WORDS_DEFAULT = previous;
     }
+  });
+
+  it("issues a backend piece with its contract as the steps and without the phase drawing", () => {
+    const drawing = { paths: [".agents/phases/ph/design/UI-SPEC.md"], sha256: "d", designer: "design-lead" };
+    const backend = { ...item("T1"), task: { ...item("T1").task, owns_paths: ["lib/client.ts"], interfaces: ["Client.login()"], invariants: ["JWT in memory only"] } };
+    const plan = piecePlan({ id: "ph", title: "Svc", record: { design: { decision: "needed", why: "screens", drawing } } } as never, backend);
+    expect(plan).toContain("2. Run the checks, red before the work: npm test");
+    expect(plan).toContain("with the interfaces: Client.login()");
+    expect(plan).toContain("keeping the invariants: JWT in memory only");
+    expect(plan).not.toContain("UI-SPEC.md");
   });
 });

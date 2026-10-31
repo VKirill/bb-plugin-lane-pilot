@@ -124,6 +124,39 @@ export function archiveDrawing(record: PhaseRecord, next: Drawing): Drawing[] {
 }
 
 /** The wave table into the journal: one row per piece of the wave as it is issued. */
+const UI_FILE = /\.(html|css|scss|tsx|jsx|vue|svelte)$|(^|\/)(ui|components|pages|views)\//i;
+
+/** Does the piece build screens: it owns a UI file. Only such a piece goes with the phase drawing. */
+export function buildsScreens(item: PlanItem): boolean {
+  const owns = Array.isArray(item.task.owns_paths) ? item.task.owns_paths as unknown[] : [];
+  return owns.some((path) => typeof path === "string" && UI_FILE.test(path));
+}
+
+/**
+ * The plan a piece goes to its writer with: the promise, then its contract as the steps. A piece used to go with the promise alone
+ * (and the drawing, backend or not); with quality mode full the task's plan critic, in gate mode, blocked both pieces of the magicseo
+ * replay's first wave (2026-10-31) for a plan with no steps, though the phase's own critic had approved the same contracts.
+ */
+export function piecePlan(phase: Pick<Phase, "id" | "title" | "record">, item: PlanItem): string {
+  const task = item.task as Record<string, unknown>;
+  const list = (key: string) => (Array.isArray(task[key]) ? task[key] as unknown[] : []).map((value) =>
+    typeof value === "string" ? value : value && typeof value === "object" && "command" in value ? String((value as { command: unknown }).command) : JSON.stringify(value)).filter(Boolean);
+  const drawing = phase.record.design?.drawing && buildsScreens(item) ? phase.record.design.drawing.paths : [];
+  const line = (label: string, values: string[]) => values.length ? `${label}: ${values.join("; ")}` : "";
+  const steps = [
+    line("1. Read first", list("read_first")),
+    line("2. Run the checks, red before the work", list("verification")),
+    line("3. Write the files this piece owns", list("owns_paths")),
+    line("   with the interfaces", list("interfaces")),
+    line("   keeping the invariants", list("invariants")),
+    drawing.length ? `   the screens follow the phase drawing: ${drawing.join(", ")}` : "",
+    line("4. Done when", list("acceptance")),
+    line("Out of scope", list("out_of_scope")),
+  ].filter(Boolean);
+  return [`Phase ${phase.id} «${phase.title}», wave ${item.wave}, piece ${item.id}. Promise — given ${item.promise.given}; when ${item.promise.when}; then ${item.promise.then}.`,
+    "The phase's plan critic approved this contract; the steps follow it.", ...steps].join("\n").slice(0, 12000);
+}
+
 export function waveTable(wave: number, pieces: readonly PlanItem[], issued: Readonly<Record<string, string>>): string {
   return [`wave ${wave}:`, "| piece | task | promise |", "|---|---|---|", ...pieces.map((item) => `| ${item.id} | ${issued[item.id] ?? "—"} | ${item.promise.then.replace(/\|/g, "/")} |`)].join("\n");
 }
