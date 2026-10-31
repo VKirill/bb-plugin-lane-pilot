@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **A return to discussion starts the plan rounds over.** The plan check's round limit refuses with «return the phase to discussion with what the checker keeps finding, or close it». The return kept `plan.rounds`, though, so the next plan was refused at once. ph_82dfc9db78 stayed wedged after 4–5 rounds of changes requested; its PM noted «returned it, the counter did not reset». Found by the Maslov-audit thread. A return to planning keeps the count. Test: `tests/phase-logic.test.ts`.
+
 - **A phase piece goes to its writer with a plan, not a header.** The phase issued each piece with a one-line `plan`: its promise, plus «the phase drawing: … — the screens follow it» for every piece, backend or not. The full contract stayed beside it. With quality mode full the task's plan critic, in gate mode, blocked both pieces of the magicseo replay's first wave for a plan with no steps. The PM then returned the whole phase to planning. The plan is now built from the contract as steps: read first, run the checks red, the owned files with their interfaces and invariants, done when, out of scope. The drawing goes only with a piece that owns a UI file. Tests: `tests/sma/phase-controls-2.test.ts`.
 
 - **The machine's drawing carries its contract.** The design gate admits a drawing only with UI-SPEC.md (screens, states, breakpoints), and lp.draw's designer was never asked for one. Every drawing the machine made was refused, and the phase stood at design. Both magicseo replays stopped there. lp.draw's designer now writes `design/UI-SPEC.md` and lists it in `paths`; its checker reads it. Test: `tests/workflow` (graph), `tests/sma/phase-gates-3.test.ts`.

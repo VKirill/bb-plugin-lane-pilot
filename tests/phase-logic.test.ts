@@ -194,6 +194,13 @@ describe("returns, lessons and the book", () => {
     expect(back.context).toBeDefined();
   });
 
+  it("a return to discussion starts the plan rounds over; a return to planning keeps them", () => {
+    const record = planned([piece("a", 1)]);
+    record.plan!.rounds = 5;
+    expect(staleAfterReturn("planning", record).plan?.rounds).toBe(5);
+    expect(staleAfterReturn("discussion", record).plan?.rounds).toBe(0);
+  });
+
   it("needs a lessons analysis only when something went wrong", () => {
     expect(lessonsNeeded({ returns: 0, failedAttempts: 0, verdictFailures: 0 }).needed).toBe(false);
     expect(lessonsNeeded({ returns: 1, failedAttempts: 0, verdictFailures: 0 }).needed).toBe(true);

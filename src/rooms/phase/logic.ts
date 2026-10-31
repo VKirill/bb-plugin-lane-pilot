@@ -604,6 +604,9 @@ export function staleAfterReturn(to: PhaseStage, record: PhaseRecord): PhaseReco
   // The signed documents are kept aside: back at discussion they are the PM's or the owner's correction to sign again, not a reason to analyse anew.
   if (order <= PHASE_STAGES.indexOf("discussion")) { if (next.context) next.signedBefore = { docs: next.context.docs.map((doc) => doc.path), risks: next.context.risks, decisions: next.context.decisions, appetite: next.context.appetite, noGos: next.context.noGos }; delete next.context; }
   if (order <= PHASE_STAGES.indexOf("planning") && next.plan) next.plan = { ...next.plan, critique: undefined, admittedSha: undefined, admittedAt: undefined };
+  // Back at discussion the plan rounds start over: the round limit's own refusal sends the phase there, and with the count kept the
+  // phase stayed wedged for good (ph_82dfc9db78, 2026-10-31: «returned it, the counter did not reset»).
+  if (order <= PHASE_STAGES.indexOf("discussion") && next.plan) next.plan = { ...next.plan, rounds: 0 };
   if (order <= PHASE_STAGES.indexOf("design")) delete next.design;
   if (order <= PHASE_STAGES.indexOf("execution")) { delete next.verification; delete next.acceptance; }
   delete next.lessons;
