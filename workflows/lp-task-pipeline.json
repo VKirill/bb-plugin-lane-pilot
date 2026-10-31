@@ -392,6 +392,54 @@
       ]
     },
     {
+      "id": "baseline",
+      "type": "action",
+      "label": "Red on the base",
+      "uses": "lp.baseline",
+      "proof": {
+        "kind": "receipt",
+        "check": "the baseline receipt stores each verification command's result on the base before any writer; a stop names its verdict"
+      },
+      "output": [
+        {
+          "name": "state",
+          "type": "enum",
+          "values": [
+            "red",
+            "already_built",
+            "stopped",
+            "skipped"
+          ]
+        },
+        {
+          "name": "reason",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "reply",
+          "type": "json",
+          "required": false
+        }
+      ]
+    },
+    {
+      "id": "block-baseline",
+      "type": "action",
+      "label": "Block: baseline",
+      "uses": "lp.block-baseline",
+      "proof": {
+        "kind": "receipt",
+        "check": "the attempt is blocked with the baseline verdict and its writer stages are closed; no writer started"
+      },
+      "output": [
+        {
+          "name": "reply",
+          "type": "json"
+        }
+      ]
+    },
+    {
       "id": "writer",
       "produces": [
         {
@@ -627,7 +675,28 @@
     },
     {
       "from": "task-folder",
+      "to": "baseline",
+      "with": {
+        "live": "ownership-base.live"
+      }
+    },
+    {
+      "from": "baseline",
+      "to": "block-baseline",
+      "label": "stopped",
+      "when": {
+        "field": "state",
+        "op": "eq",
+        "value": "stopped"
+      },
+      "with": {
+        "reason": "baseline.reason"
+      }
+    },
+    {
+      "from": "baseline",
       "to": "writer",
+      "label": "red, skipped or already built (closed accepted with no writer)",
       "with": {
         "live": "ownership-base.live",
         "pmReadContext": "pm-read.summary"
@@ -682,6 +751,13 @@
       "to": "end",
       "with": {
         "reply": "block-ownership.reply"
+      }
+    },
+    {
+      "from": "block-baseline",
+      "to": "end",
+      "with": {
+        "reply": "block-baseline.reply"
       }
     }
   ]

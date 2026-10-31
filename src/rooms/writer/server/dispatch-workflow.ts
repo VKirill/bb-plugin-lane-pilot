@@ -1,4 +1,4 @@
-import { getAttempt, getRunSettingsScopes, getTaskGitBase, listAttemptsForTask, listStageReceipts, loadProjectSettings, saveTaskGitBase, setRunState, transitionAttempt } from "../../storage";
+import { countAttempts, getAttempt, getRunSettingsScopes, getTaskGitBase, listAttemptsForTask, listStageReceipts, loadProjectSettings, saveTaskGitBase, setRunState, transitionAttempt } from "../../storage";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
 import { QUALITY_MODE_SETTING, resolveQualityMode } from "../../critique";
 import { appendExcludeCommand, persistTaskFolder } from "../../verification";
@@ -6,7 +6,8 @@ import { pmReadBrief } from "../writer-brief";
 import { LP_TASK_PIPELINE, builtinWorkflow } from "../../workflow";
 import type { NodeExecutor, RunSummary, StepContext, WorkflowEngine } from "../../workflow";
 import { runPlanCritique, runPmRead, runSpecialistReview } from "../../critique/server";
-import { recordStage } from "../../runs/server";
+import { closeWriterStages, recordStage } from "../../runs/server";
+import { isMainfixTask } from "../../tasks";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type { ServerCore } from "../../core/server";
 import type { Services } from "../../core/server";
@@ -194,6 +195,31 @@ export function registerDispatchExecutors(engine: WorkflowEngine, bb?: BbPluginA
       bb.log.warn(`Lane Pilot could not persist task folder for ${r.taskId}: ${cause instanceof Error ? cause.message : String(cause)}`);
     }
     return { ok: true };
+  });
+
+  // Step [1] of Matvey's task path as a node of its own: the task's checks on the base before any writer (src/rooms/baseline).
+  // The writer loop asks the same preflight again and gets this answer from its record: «already built» closes the attempt accepted
+  // without a writer there. A stop never reaches the writer: a stopped record is asked again, so it ends here as start.ts ended it.
+  exec("lp.baseline", async (r, ctx) => {
+    const ended = endedReply(r);
+    if (ended) return { state: "skipped", reply: ended };
+    if (ctx.input.with.live === true || isMainfixTask(r.taskId)) return { state: "skipped" };
+    const baseline = await r.services.baseline?.preflight({ projectId: r.projectId, runId: r.runId, taskId: r.taskId, attemptId: r.attemptId,
+      pmThreadId: r.threadId, config: r.runConfig, task: r.task });
+    if (baseline?.stop) return { state: "stopped", reason: baseline.stop };
+    if (baseline?.alreadyDone) return { state: "already_built", reason: baseline.alreadyDone };
+    return { state: baseline?.record ? "red" : "skipped" };
+  });
+
+  exec("lp.block-baseline", async (r, ctx) => {
+    const ended = endedReply(r);
+    if (ended) return { reply: ended };
+    const reason = text(ctx.input.with.reason) ?? "verdict_block: baseline";
+    const { db } = r.ctx;
+    transitionAttempt(db, r.attemptId, "blocked", { reason });
+    closeWriterStages(db, { runId: r.runId, taskId: r.taskId, plan: r.plan, terminal: "failed", attempt: countAttempts(db, r.runId, r.taskId), reason });
+    r.ctx.refreshRun(r.runId);
+    return { reply: blockedReply(r, reason) };
   });
 
   engine.register<DispatchRuntime>("lp-task", lpTaskPipelineExecutor(engine, bb));
