@@ -132,14 +132,18 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
     return null;
   }
 
-  /** A member of the task's family («P1», «P1.2») with an open attempt or parked for a restart, in this project; mainfixes are their own work. */
-  async function runningFamilyMember(projectId:string, taskId:string):Promise<{ taskId:string; parked:boolean } | null> {
+  /** A member of the task's family («P1», «P1.2») with an open attempt in this project; mainfixes are their own work. */
+  async function runningFamilyMember(projectId:string, taskId:string):Promise<{ taskId:string } | null> {
     const family = taskFamily(taskId);
     const same = (other:string) => !isMainfixTask(other) && taskFamily(other) === family;
     const open = listOpenAttempts(db).find((row) => row.project_id === projectId && same(row.task_id));
-    if (open) return { taskId:open.task_id, parked:false };
-    const parked = (await services.stability.loadParked()).find((row) => row.projectId === projectId && same(row.taskId) && getRun(db, row.runId)?.closed_at == null);
-    return parked ? { taskId:parked.taskId, parked:true } : null;
+    if (open) return { taskId:open.task_id };
+    // A parked member is a restart ticket, not a writer at work: the PM's own dispatch takes the task over (as a sibling attempt
+    // supersedes the ticket in the sweep), so the ticket goes and the dispatch proceeds. Refused, the PM was told to cancel a task
+    // that had no open attempt, and a harness park restarts only under a newer build: cab-unslop-kit.3 (2026-10-31) sat between the two.
+    const dropped = await services.stability.dropParked((row) => row.projectId === projectId && same(row.taskId) && getRun(db, row.runId)?.closed_at == null);
+    if (dropped.length) ctx.log(`Lane Pilot: the dispatch of ${taskId} drops the restart ticket of parked ${dropped.map((row) => row.taskId).join(", ")}`);
+    return null;
   }
 
   const lintTask = createTaskLinter(ctx, services);
@@ -218,11 +222,11 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
       sameWork:(storedId, contract) => canonicalJson(contract) === canonicalJson({ ...task, id:storedId }) && sha256(getTaskPlan(db, storedId) ?? "") === sha256(canonicalPlan) },
     { projectId:args.projectId, runId, requestedId:args.task.id, pmThreadId:args.threadId, config:taskConfig, task, plan:canonicalPlan }) : null;
     if (revived) return revived;
-    // A task is one writer session that restarts itself after a machinery fault: sending another member of its family
-    // (`<id>.N`) while one runs or is parked would start a second writer on the same work.
+    // A task is one writer session: sending another member of its family (`<id>.N`) while one runs would start a second
+    // writer on the same work.
     const inProgress = args.task && !isMainfixTask(args.task.id) ? await runningFamilyMember(args.projectId, args.task.id) : null;
     if (inProgress) {
-      const hint = `${inProgress.taskId} of the same task is ${inProgress.parked ? "parked and restarts by itself" : "running"}: use lane_pilot_update_task / lane_pilot_answer_writer; redispatch only to change the contract, and cancel it first with lane_pilot_cancel_task`;
+      const hint = `${inProgress.taskId} of the same task is running: use lane_pilot_update_task / lane_pilot_answer_writer; redispatch only to change the contract, and cancel it first with lane_pilot_cancel_task`;
       return { ok:false, error:{ code:"task_in_progress", retryable:false, sideEffects:"none", hint }, runningTaskId:inProgress.taskId, hint };
     }
     // A family the wall ladder ended in the backlog is not sent again; one whose hunters found the ask itself wrong is not sent again unchanged.

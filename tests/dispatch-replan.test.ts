@@ -70,7 +70,7 @@ async function setup(options:{ failBase?:boolean } = {}) {
     "lane_pilot_dispatch_writer", { confirm: true, objective: "Проверка диспетча", plan, task:{ ...task, ...next } }, { threadId:pmThreadId, projectId },
   ))) as Record<string, unknown>;
   const tool = async (name:string, input:Record<string, unknown>) => JSON.parse(String(await harness.behavior.callAgentTool(name, input, { threadId:pmThreadId, projectId }))) as Record<string, unknown>;
-  return { db, harness, dispatch, tool, releaseBase, baseCalls: () => baseCalls, stopped };
+  return { bb, db, harness, dispatch, tool, releaseBase, baseCalls: () => baseCalls, stopped };
 }
 
 const taskCount = (db:ReturnType<typeof openDatabase>) => (db.prepare("SELECT COUNT(*) count FROM lane_pilot_task WHERE run_id=?").get(runId) as { count:number }).count;
@@ -129,6 +129,33 @@ describe("a replan keeps the task and its attempt", () => {
     releaseBase();
     db.prepare("UPDATE lane_pilot_attempt SET state='running', thread_id='writer-revive' WHERE id=?").run(String(first.attemptId));
     expect(await tool("lane_pilot_queue", { action:"hold", taskIds:["replan-me"] })).toMatchObject({ tasks:["replan-me"], notHeld:["replan-me"] });
+    await harness.lifecycle.dispose();
+  });
+
+  // A parked task (a restart ticket in the stability room, no open attempt) refused every dispatch of its family «until it restarts by
+  // itself», told the PM to cancel it first, and the cancel found nothing open; a harness park restarts only under a newer build
+  // (cab-unslop-kit.3, 2026-10-31: 17 minutes between the two until the PM happened to resend the identical plan).
+  const parkedRow = { projectId, runId, taskId:"replan-me", pmThreadId, klass:"harness", reason:"internal_error: boom", fingerprint:"internal_error", version:"0.0.0", at:Date.now(), redrives:0 };
+
+  it("takes a parked family member over: the dispatch drops its restart ticket and goes on", async () => {
+    const { bb, db, harness, dispatch, releaseBase } = await setup();
+    await bb.storage.kv.set("stability:parked", [parkedRow]);
+    const sent = await dispatch();
+    expect(sent).toMatchObject({ taskId:"replan-me" });
+    expect(sent.error).toBeUndefined();
+    expect(await bb.storage.kv.get("stability:parked")).toEqual([]);
+    expect(taskCount(db)).toBe(1);
+    releaseBase();
+    await harness.lifecycle.dispose();
+  });
+
+  it("cancels a parked task by dropping its restart ticket, instead of «no open attempt»", async () => {
+    const { bb, harness, tool, releaseBase } = await setup();
+    await bb.storage.kv.set("stability:parked", [parkedRow, { ...parkedRow, taskId:"other", runId:"run-other" }]);
+    expect(await tool("lane_pilot_cancel_task", { taskIds:["replan-me"] })).toMatchObject({ results:[{ taskId:"replan-me", ok:true, state:"unparked" }] });
+    expect(await bb.storage.kv.get("stability:parked")).toMatchObject([{ taskId:"other" }]);
+    expect(await tool("lane_pilot_cancel_task", { taskIds:["replan-me"] })).toMatchObject({ results:[{ taskId:"replan-me", ok:false, state:"not_open" }] });
+    releaseBase();
     await harness.lifecycle.dispose();
   });
 

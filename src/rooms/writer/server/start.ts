@@ -35,7 +35,7 @@ import { WRITER_QUESTION_WAIT_TEXT } from "./question-default";
 import { failureClass, failureIntervention, MAST_OF_FAILURE, type FailureClass } from "../../runs";
 import { jev } from "@lane-pilot/jev";
 import { judgedFailureClass } from "../../runs";
-import { isRunHalted, waitWhileRunPaused } from "../../runs/server";
+import { isRunHalted, isRunPaused, waitWhileRunPaused } from "../../runs/server";
 import { allowedSecretNames, secretProblem, waitingSecretNote, waitingSecretReason } from "../../secrets/server";
 
 /** How long a task waits for a blocked dependency to be sent again and accepted. */
@@ -455,8 +455,16 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         for (const row of open.slice(mine + 1)) {
           if (row.state === "running" && row.thread_id && row.task_id !== input.taskId && !ahead.some((held) => held.run_id === row.run_id && held.task_id === row.task_id)) ahead.push(row);
         }
+        // A queued task that cannot start by itself holds no one: held until a date (lane_pilot_queue hold) or in a paused run, it
+        // only kept its place in the row order, and every later task of its files or area waited for a writer that was not coming.
+        const idle = new Set<string>();
+        for (const row of ahead) {
+          if (row.state !== "queued") continue;
+          const heldUntil = (db.prepare("SELECT held_until FROM lane_pilot_task WHERE id=?").get(row.task_id) as { held_until:number|null } | undefined)?.held_until ?? null;
+          if ((heldUntil !== null && heldUntil > Date.now()) || await isRunPaused(bb.storage.kv as never, row.run_id)) idle.add(row.id);
+        }
         const blocker = ahead.find((row) => {
-          if (row.task_id === input.taskId || row.project_id !== input.projectId) return false;
+          if (row.task_id === input.taskId || row.project_id !== input.projectId || idle.has(row.id)) return false;
           const rowBase = taskBasePath(db, row.run_id, row.task_id);
           const parsed = taskV2Schema.safeParse(getTask(db,row.task_id)?.contract);
           // A task that depends on this one waits for it anyway; waiting for it back is a deadlock

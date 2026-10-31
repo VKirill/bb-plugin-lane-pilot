@@ -103,7 +103,13 @@ export function registerTools(ctx: ServerCore, services: Services) {
       const results = [];
       for (const taskId of params.taskIds) {
         const attempts = open.filter((row) => row.task_id === taskId);
-        if (!attempts.length) { results.push({ taskId, ok:false, state:"not_open", reason:"no open attempt of this task in this run" }); continue; }
+        if (!attempts.length) {
+          // Parked for a restart (no open attempt, a ticket in the stability room): the cancel drops the ticket, so the task does not come back.
+          const unparked = await services.stability.dropParked((row) => row.runId === runId && row.taskId === taskId);
+          results.push(unparked.length ? { taskId, ok:true, state:"unparked", reason:"it was parked for a restart; the restart ticket is dropped and it does not restart" }
+            : { taskId, ok:false, state:"not_open", reason:"no open attempt of this task in this run" });
+          continue;
+        }
         const why = params.words?.trim() ? `PM canceled: ${params.words.trim()}` : "PM canceled the task";
         for (const attempt of attempts) results.push({ taskId, attemptId:attempt.id, ...await cancelAttemptById(ctx, attempt.id, services.rollback, why, "owner_cancel") });
         // The PM canceled it: its «canceled» is no news for the batched results.

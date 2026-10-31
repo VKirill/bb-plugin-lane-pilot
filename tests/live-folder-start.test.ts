@@ -9,6 +9,8 @@ import { recordStage, reopenWriterStages } from "../src/rooms/runs/server/stage-
 import { createWriterStart } from "../src/rooms/writer/server/start";
 import { LIVE_FOLDER_REASON } from "../src/rooms/writer/live-folder";
 import { RunWriterPool } from "../src/rooms/tasks/run-policy";
+import { HOLD_FOREVER } from "../src/rooms/tasks";
+import { setRunPaused } from "../src/rooms/runs/server/runs-halt";
 
 const WORKSPACE = "/ws";
 
@@ -392,3 +394,39 @@ it("keeps a task with overlapping owns_paths queued while the running task is re
   await vi.waitFor(() => expect(t2.spawned).toEqual(["T2-a1"]));
   await env.harness.lifecycle.dispose();
 }, 30_000);
+
+// A queued task that cannot start by itself (held, or in a paused run) kept its place in the row order and held every later
+// task of its files or area behind a writer that was not coming.
+const seedQueued = (env: ReturnType<typeof setup>, runId: string, task: TaskV2) => {
+  createTask(env.db, { id: task.id, runId, kind: "bb", contract: task });
+  saveTaskPlan(env.db, task.id, `Plan for ${task.id}`);
+  for (const stageId of ["writer-agent", "verification", "acceptance-receipt"] as const) recordStage(env.db, { runId, taskId: task.id, stageId, state: "pending", input: `Plan for ${task.id}` });
+  createAttempt(env.db, { id: `${task.id}-a1`, runId, taskId: task.id });
+};
+const sharedPage = (id: string): TaskV2 => ({ ...contract(id), area: "page:pricing", owns_paths: ["apps/site/pages/pricing/"], expected_outputs: [`apps/site/pages/pricing/${id}.vue`] });
+
+it("starts beside a held task queued ahead of it on the same files: a hold takes no slot and holds no files", async () => {
+  const env = setup();
+  seedQueued(env, "run1", sharedPage("T1"));
+  env.db.prepare("UPDATE lane_pilot_task SET held_until=? WHERE id=?").run(HOLD_FOREVER, "T1");
+  const t2 = services(env, [{ accept: true }], false);
+  seedQueued(env, "run1", sharedPage("T2"));
+  Object.assign(t2.all, createWriterStart(env.ctx, t2.all));
+  t2.all.startWriterTask({ projectId: "proj1", runId: "run1", taskId: "T2", firstAttemptId: "T2-a1", pmThreadId: "thr_pm", config, task: sharedPage("T2"), plan: "Plan for T2" });
+  await vi.waitFor(() => expect(t2.spawned).toEqual(["T2-a1"]));
+  await env.harness.lifecycle.dispose();
+});
+
+it("starts beside a task queued ahead of it in a paused run of the same checkout", async () => {
+  const env = setup();
+  createRun(env.db, "run2", "proj1", "bb", WORKSPACE);
+  setRunThread(env.db, "run2", "thr_pm2");
+  await setRunPaused(env.bb.storage.kv as never, "run2", true);
+  seedQueued(env, "run2", sharedPage("T1"));
+  const t2 = services(env, [{ accept: true }], false);
+  seedQueued(env, "run1", sharedPage("T2"));
+  Object.assign(t2.all, createWriterStart(env.ctx, t2.all));
+  t2.all.startWriterTask({ projectId: "proj1", runId: "run1", taskId: "T2", firstAttemptId: "T2-a1", pmThreadId: "thr_pm", config, task: sharedPage("T2"), plan: "Plan for T2" });
+  await vi.waitFor(() => expect(t2.spawned).toEqual(["T2-a1"]));
+  await env.harness.lifecycle.dispose();
+});

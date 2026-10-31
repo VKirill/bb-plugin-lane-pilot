@@ -261,10 +261,10 @@ it("still rejects a missing expected output when a check fails, nothing was prod
     .toMatchObject({ ok:false, reason:expect.stringContaining("owns_paths rejected src/x.ts") });
 });
 
-// 4. Redispatching a family member while one runs or is parked.
+// 4. Redispatching a family member while one runs (a parked member is a ticket the dispatch takes over: tests/dispatch-replan.test.ts).
 
-function dispatcher(env:ReturnType<typeof setup>, parked:Array<Record<string, unknown>> = []) {
-  const svc = { stability:{ loadParked:async () => parked } } as unknown as Services;
+function dispatcher(env:ReturnType<typeof setup>) {
+  const svc = { stability:{ loadParked:async () => [], dropParked:async () => [] } } as unknown as Services;
   return createWriterDispatch(env.ctx, svc).dispatchWriter;
 }
 
@@ -280,18 +280,6 @@ it("refuses a redispatch of a family member while one runs, naming it and the to
   // The same id as the running task is refused too, instead of becoming «P1.2».
   expect(await dispatcher(env)({ threadId:"thr_pm", projectId:"proj1", task:contract("P1"), plan:"again" }))
     .toMatchObject({ error:{ code:"task_in_progress" }, runningTaskId:"P1" });
-  await env.harness.lifecycle.dispose();
-});
-
-it("refuses a redispatch while a member of the family is parked for a restart", async () => {
-  const env = setup();
-  createTask(env.db, { id:"P1", runId:"run1", kind:"bb", contract:contract("P1") });
-  createAttempt(env.db, { id:"p1-a", runId:"run1", taskId:"P1" });
-  transitionAttempt(env.db, "p1-a", "blocked", { reason:"internal_error: boom" });
-  const parked = [{ projectId:"proj1", runId:"run1", taskId:"P1", klass:"harness" }];
-  const result = await dispatcher(env, parked)({ threadId:"thr_pm", projectId:"proj1", task:contract("P1.2"), plan:"again" });
-  expect(result).toMatchObject({ ok:false, error:{ code:"task_in_progress" }, runningTaskId:"P1" });
-  expect(String(result.hint)).toContain("parked and restarts by itself");
   await env.harness.lifecycle.dispose();
 });
 

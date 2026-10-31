@@ -94,6 +94,13 @@ export function createStability(ctx:ServerCore, services:Services) {
     return Array.isArray(stored) ? stored as ParkedTask[] : [];
   }
   async function saveParked(list:ParkedTask[]) { await bb.storage.kv.set(PARKED_KEY, list); }
+  /** Drops the restart tickets `match` names (the PM sent or canceled the task itself); the dropped rows come back. */
+  async function dropParked(match:(row:ParkedTask)=>boolean):Promise<ParkedTask[]> {
+    const list = await loadParked();
+    const dropped = list.filter(match);
+    if (dropped.length) await saveParked(list.filter((row) => !match(row)));
+    return dropped;
+  }
 
   /**
    * What a restarted task had used up. A restart leaves the parked list (the task runs again), so the count of its
@@ -352,5 +359,5 @@ export function createStability(ctx:ServerCore, services:Services) {
     return outcome;
   }
 
-  return { stability:{ drill, onTaskFailed, breakerHolds, diskHolds, sweep, loadParked, adoptBlockedByFaults, restoreBreakers } };
+  return { stability:{ drill, onTaskFailed, breakerHolds, diskHolds, sweep, loadParked, dropParked, adoptBlockedByFaults, restoreBreakers } };
 }

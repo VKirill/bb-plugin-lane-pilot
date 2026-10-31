@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.1.442
+
+- **A parked task no longer locks its family until the next release.** A task parked after a Lane Pilot fault (a restart ticket in the stability room, its attempt closed) made the dispatch refuse every member of its family «until it restarts by itself», and a harness park restarts only under a newer build; the hint said to cancel it first, and the cancel answered «no open attempt». cab-unslop-kit.3 (SelfyStudio, 2026-10-31) sat between the two for 17 minutes until the PM happened to resend the identical plan. Now the PM's own dispatch takes the ticket over (dropped, logged, the dispatch proceeds), and `lane_pilot_cancel_task` on a parked task drops the ticket and answers `unparked`.
+- **A queued task that cannot start by itself holds no files.** The owns_paths and area wait took every earlier open attempt in row order as a holder, including a queued task held until a date (`lane_pilot_queue hold`) or in a paused run: later tasks of the same page waited for a writer that was not coming. Such rows are skipped; the held task itself waits for them when it is released, as it did.
+- Audit of every holder (2026-10-31): the live-writer key, the owns barrier, the install lock, the cancel path, the worktree janitor, the reload recovery and the question timeout release what they take on every path checked; the two above were the exceptions.
+
 ## 0.1.441
 
 - **A stop that lands after validation ends the attempt there.** The PM canceled cab-unslop-kit.2 eight seconds after its validate gate passed (SelfyStudio, 2026-10-31). The row was canceled, but the finish went on: it ran the code critic and the plan-fact check, told the PM «passed its checks, waits for the owner's word» for a canceled task, held the task's files for 32 minutes (the replacement kit.3 queued behind it), and after the word died on the removed worktree and parked the canceled task, which the dispatch then reported as «parked and restarts by itself». The finish now reads the attempt row at every stage boundary after validation (before the critic, before plan-fact, before and during the owner's word, before the landing) and ends canceled. An emergency fallback whose spawn ends canceled by the owner's stop ends the task canceled too, not «emergency_fallback_failed», and is not parked.
