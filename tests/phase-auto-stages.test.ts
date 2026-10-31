@@ -305,6 +305,24 @@ describe("a plan the gate refused", () => {
   });
 });
 
+describe("the owner's answers to the context's questions", () => {
+  it("reach the planner and the plan check, and an unanswered question does not", async () => {
+    const { autoInputs } = await import("../src/rooms/phase/server/auto-stages");
+    const questions = [
+      { id: "q3", stage: "discussion", text: "Fork plugins/magicseo or rebuild?", blocking: false, askedAt: 1, answer: "Rebuild from scratch; do not fork plugins/magicseo." },
+      { id: "q4", stage: "discussion", text: "Plugin or HTTP API?", blocking: false, askedAt: 1 },
+    ];
+    const context = { docs: [{ path: "CONTEXT.md", sha256: "x", bytes: 1 }], sha: "c", signedAt: 1, decisions: ["F1"] };
+    const plan = autoInputs(phaseAt("planning", { questions, context } as never), { kind: "plan" }) as { findings: { owner_answers: unknown }; extra_rules: string[] };
+    expect(plan.findings.owner_answers).toEqual([{ question: "Fork plugins/magicseo or rebuild?", answer: "Rebuild from scratch; do not fork plugins/magicseo." }]);
+    expect(plan.extra_rules[0]).toMatch(/override the context/);
+    const piece = { id: "a", title: "a", wave: 1, promise: { given: "g", when: "w", then: "t" }, task: { id: "a" } };
+    const check = autoInputs(phaseAt("planning", { questions, context, plan: { items: [piece], sha: "s", contextSha: "c" } } as never), { kind: "check" }) as { findings: { owner_answers: unknown[] } };
+    expect(check.findings.owner_answers).toHaveLength(1);
+    expect(autoInputs(phaseAt("planning", { context } as never), { kind: "plan" })).not.toHaveProperty("findings.owner_answers");
+  });
+});
+
 describe("a replan merges into the pieces that were", () => {
   it("keeps the pieces the planner did not return, replaces the returned ones, puts them after the old waves, and carries covers", async () => {
     const piece = (id: string, wave: number, covers?: string[]) => ({ id, title: id, wave, promise: { given: "g", when: "w", then: "t" }, task: { id }, ...(covers ? { covers } : {}) });

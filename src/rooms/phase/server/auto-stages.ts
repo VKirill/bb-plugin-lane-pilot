@@ -102,6 +102,11 @@ export function replansSpent(phase: Phase): boolean {
 export function autoInputs(phase: Phase, due: { kind: AutoKind; wave?: number }, medianTask?: string): Record<string, unknown> {
   const r = phase.record;
   const contextText = (r.context?.docs ?? []).map((doc) => doc.path).join(", ");
+  // CONTEXT.md is written from the analysis before the owner answers its open questions; the answers live only in the record. The magicseo
+  // replay (2026-10-31) answered «rebuild from scratch, do not fork plugins/magicseo», and the planner, given the context alone, planned to copy it.
+  const answers = (r.questions ?? []).filter((q) => q.answer).map((q) => ({ question: q.text, answer: q.answer! }));
+  const answered = answers.length ? { owner_answers: answers } : {};
+  const answerRule = answers.length ? ["findings.owner_answers are the owner's answers to the context's open questions, given after CONTEXT.md was written: they override the context, and a free or deferred decision they settle is settled as answered"] : [];
   switch (due.kind) {
     // The owner's «no» to a context he was asked to sign rides the next analysis as part of the goal it reads.
     case "analyze": {
@@ -115,9 +120,9 @@ export function autoInputs(phase: Phase, due: { kind: AutoKind; wave?: number },
       // After a failed verdict, or when the plan gate (code) refused an approved plan, the planner sees the pieces as they are, with covers.
       const gateRound = gateGaps.length > 0 && r.plan?.critique?.decision === "approve";
       const current = (r.replan?.gaps || gateRound) && r.plan ? (r.plan.items ?? []).map((item) => ({ id: item.id, wave: item.wave, covers: item.covers ?? [], task: item.task })) : null;
-      return { goal: phase.goal, median_task: medianTask ?? "", findings: { context: contextText, decisions: r.context?.decisions ?? [], requirements: r.context?.requirements ?? [], ...(current ? { current_pieces: current } : {}) },
+      return { goal: phase.goal, median_task: medianTask ?? "", findings: { context: contextText, decisions: r.context?.decisions ?? [], requirements: r.context?.requirements ?? [], ...answered, ...(current ? { current_pieces: current } : {}) },
         ...(gaps.length ? { mode: "gaps", gaps } : {}),
-        extra_rules: ["every command an acceptance line names is one of the task's verification commands", "each task's id is the piece id; depends_on only on tasks of earlier waves",
+        extra_rules: [...answerRule, "every command an acceptance line names is one of the task's verification commands", "each task's id is the piece id; depends_on only on tasks of earlier waves",
           "each task lists in a top-level field `covers` the ids of the requirements and locked decisions (findings.requirements, findings.decisions) it carries out; together the tasks cover every id",
           ...(current && r.replan?.gaps ? ["the plan after a failed verification: return every piece of findings.current_pieces the gaps do not name exactly as it is (same id, same contract); change only the failing pieces' contracts or add new pieces for what is missing",
             // A changed contract issues the piece again: its writer redid accepted work and the proof check failed on what it no longer touched (live ph_26f65b142d).
@@ -128,8 +133,8 @@ export function autoInputs(phase: Phase, due: { kind: AutoKind; wave?: number },
     // pieces go as findings so the critic checks this plan, not a new one.
     case "check": return { goal: phase.goal, plan_sha: r.plan!.sha,
       findings: { context: contextText, decisions: r.context?.decisions ?? [], requirements: r.context?.requirements ?? [],
-        current_pieces: (r.plan?.items ?? []).map((item) => ({ id: item.id, wave: item.wave, covers: item.covers ?? [], task: item.task })) },
-      extra_rules: ["the phase's plan is already submitted: return its pieces unchanged (same ids, same contracts) and let the plan critic check them; do not replan"] };
+        current_pieces: (r.plan?.items ?? []).map((item) => ({ id: item.id, wave: item.wave, covers: item.covers ?? [], task: item.task })), ...answered },
+      extra_rules: [...answerRule, "the phase's plan is already submitted: return its pieces unchanged (same ids, same contracts) and let the plan critic check them; do not replan"] };
     case "review": {
       const items = (r.plan?.items ?? []).filter((item) => item.wave === due.wave);
       // With a candidate the wave's work is on phase/<id>, not on main: the range and the files to read are the branch's.
