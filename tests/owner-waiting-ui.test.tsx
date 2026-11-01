@@ -74,6 +74,26 @@ describe("the «Waiting for you» screen", () => {
     expect(slot.getByTestId("owner-item-rule:proj_1:r1").textContent).toContain("Shop");
   });
 
+  it("[Astra U-001] a notice with nothing to do gets «Прочитано», a button that closes it as the screen's; an evidence chip is a button named by the ref", async () => {
+    const close = vi.fn().mockResolvedValue({ closed: true });
+    const key = "night:acted:1";
+    const row = {
+      key, source: "night", kind: "acted", projectId: null, what: "The night loop did the rename", why: "Done, only for you to know.", since: NOW, wake: false,
+      evidence: [{ kind: "file", ref: "src/rooms/owner-waiting/items.ts" }],
+      // The read the server sends for a row posted without actions (collectOwnerWaiting/withReadButton).
+      actions: [{ id: "read", label: "Прочитано", cli: "bb plugin rpc call lane-pilot owner_waiting_close", rpc: { method: "owner_waiting_close", input: { key } } }],
+    };
+    const slot = await mount({ owner_waiting: () => waiting({ items: [row] }), owner_waiting_close: close, owner_waiting_config: () => ({ enabled: false, quiet: "23:00-08:00", timezone: "Europe/Madrid" }) });
+    const button = await slot.findByTestId(`owner-run-${key}-read`);
+    expect(button.textContent).toBe("Прочитано");
+    fireEvent.click(button);
+    await waitFor(() => expect(close).toHaveBeenCalledWith({ key }));
+    // The evidence ref is the chip's tooltip; the click only copies, which jsdom may no-op — assert the element.
+    const chip = slot.container.querySelector<HTMLButtonElement>(`button[title*='src/rooms/owner-waiting/items.ts']`);
+    expect(chip).not.toBeNull();
+    expect(chip!.textContent).toContain("file: src/rooms/owner-waiting/items.ts");
+  });
+
   it("says nothing waits when the list is empty, and keeps the overnight lines", async () => {
     const slot = await mount({ owner_waiting: () => waiting({ items: [], counts: {}, overnight: { windowMs: 1, red: [], accepted: 0, rulesAdopted: 0, rulesConfirmed: 0 } }), owner_waiting_config: () => ({ enabled: false, quiet: "23:00-08:00", timezone: "Europe/Madrid" }) });
     await slot.findByTestId("owner-empty");
