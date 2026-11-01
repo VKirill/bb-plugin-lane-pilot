@@ -387,6 +387,8 @@ export const rpcOps = {
   lead_road: { input: z.object({ projectId: z.string().min(1).max(200).nullable().optional(), history: z.boolean().optional() }).strict(), output: z.unknown() },
   /** The owner's answer to a proposal of the lead (да / потом / нет on his list): the branch, the journal row and the list line move together. */
   lead_decide: { input: z.object({ roadId: z.string().min(1).max(60), decision: z.enum(["yes", "later", "no"]), text: z.string().max(600).optional() }).strict(), output: z.unknown() },
+  /** The owner's answer to a learned item that waits for him («Вы сказали это в чате…», src/rooms/learning): accept, reject or take back one in force. */
+  learning_decide: { input: z.object({ id: z.string().min(1).max(200), action: z.enum(["accept", "reject", "drop"]) }).strict(), output: z.unknown() },
   /** «Тик сейчас»: one tick of the lead outside its cron (the graph lead-tick); refused while one is running. */
   /** The owner's own label on a judged row of the journal (the «Разметка» block): the judge's kappa is measured against these. */
   lead_label: { input: z.object({ id: z.string().min(1).max(200), label: z.enum(["exact", "partial", "miss"]) }).strict(), output: z.unknown() },
