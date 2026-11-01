@@ -14,7 +14,7 @@ sources:
   - docs/enabled-settings.snapshot.json
 ---
 
-<!-- enabled-settings:structure 902ab36aa017b032 -->
+<!-- enabled-settings:structure e39a76070668eb8d -->
 
 # Enabled settings (generated)
 
@@ -114,7 +114,7 @@ switches: `quick` disables both critiques, `full` enables them (`src/rooms/criti
 | `integration.gate_command` | — | — | integration gate: the whole-suite command run after a batch of tasks merged |
 | `integration.gate_every` | `5` | — | integration gate: merged tasks between two runs when the gate is every_n |
 | `integration.gate_when` | `queue_drained` | — | integration gate: run when the queue is drained or after every N merged tasks |
-| `jev.LANE_JEV_EFFORT` | `unset (retry escalates effort one notch, capped high)` | — | effort routing reads this setting |
+| `jev.LANE_JEV_EFFORT` | `1 (on)` | — | effort routing reads this setting |
 | `jev.LANE_OPENCODE_JEV` | `1 (on)` | — | effort routing reads this setting |
 | `jev.enabled` | `true` | — | Jev judgments (src/jev): false turns every judgment off for the project |
 | `jev.modes` | — | — | Jev judgments: off, shadow or active per judgment |
@@ -146,7 +146,7 @@ switches: `quick` disables both critiques, `full` enables them (`src/rooms/criti
 | `memory.salience_min` | `40` | — | stage setting: admission floor for maintainer memory notes |
 | `memory.search_engine` | `auto` | — | stage setting: choose FTS5 or BM25 retrieval |
 | `night_review.agent` | `lane-reviewer` | — | stage setting, reserved with night_review.enabled: no stage reads the role label today |
-| `night_review.auto_merge` | `off` | — | stage setting, reserved with night_review.enabled: nothing merges on it today |
+| `night_review.auto_merge` | `false` | — | stage setting, reserved with night_review.enabled: nothing merges on it today |
 | `night_review.enabled` | `false` | — | stage setting, reserved: no stage reads it yet — the after-accept graph (workflows/lp.after-accept.json) has no night reviewer |
 | `night_review.max_fix_tasks` | `5` | — | stage setting, reserved with night_review.enabled: no night-review fix tasks are created today |
 | `night_review.model` | `provider defaults` | — | stage uses the BB ProviderModelPicker for night review |
@@ -157,9 +157,9 @@ switches: `quick` disables both critiques, `full` enables them (`src/rooms/criti
 | `onboarding.provider` | `inherit writer selection` | — | onboarding preview uses validated BB provider selection |
 | `onboarding.reasoning_effort` | `inherit writer selection` | — | onboarding preview uses model-supported reasoning selection |
 | `onboarding.service_tier` | `inherit writer selection` | — | onboarding preview uses provider-supported service tier selection |
-| `ops.pool_size` | `required, no default` | — | run policy reads this: writers at once |
+| `ops.pool_size` | `configured_default(LANE_SESSION_POOL_SIZE,5,max=10)` | — | run policy reads this: writers at once |
 | `ops.provider_pool` | — | — | writer pools: a cap on simultaneous writers per provider, as provider=limit pairs |
-| `ops.verify_pool_size` | `required, no default` | — | run policy reads this: verification pool |
+| `ops.verify_pool_size` | `configured_default(LANE_VERIFY_POOL_SIZE,2,max=10)` | — | run policy reads this: verification pool |
 | `owner.words` | `risky` | — | landing: whose word a verified task waits for (on every task, risky = risk high or critical, off none) |
 | `owner_push.enabled` | `true` | — | owner push: the Telegram message about what waits for the owner |
 | `owner_push.quiet` | `23:00-08:00` | — | owner push: quiet hours window, HH:MM-HH:MM |
@@ -256,17 +256,17 @@ switches: `quick` disables both critiques, `full` enables them (`src/rooms/criti
 | `writer.class_cooldowns` | `{"merge":30,"infra":60,"dirty_base":60}` | — | failure classes: JSON map of class to seconds of pause after an attempt ends, before the next attempt |
 | `writer.cooldown_max_ms` | `0` | — | failure classes: cap for any class cooldown pause in milliseconds |
 | `writer.fallback_on_provider_failure` | `after_retry` | — | writer fallback chain: a provider refusal hands the task to the next model at once or after one retry of the same model |
-| `writer.model` | `PRIMARY_MODELS[provider]` | — | writer stage reads this setting |
+| `writer.model` | `per-provider default` | — | writer stage reads this setting |
 | `writer.owns_barrier` | `on` | — | contract barrier: after an attempt's worktree is bound, tracked files outside owns_paths are read-only for it, so an outside write is refused by the OS instead of failing acceptance after the fact |
 | `writer.pair_pin` | `on` | — | writer pin: the task's provider+model for its whole life |
 | `writer.pick_refusal_penalty` | `on` | — | writer pick: on charges a model pair for this project's provider-refusal share over 30 days (from 10 attempts) when Jev spreads the pick |
-| `writer.provider` | `kimi` | — | writer stage reads this setting |
+| `writer.provider` | `codex (lp-defaults.ts inheritProjectValues; kimi was the adoc CLI default)` | — | writer stage reads this setting |
 | `writer.question_wait_min` | `120` | — | writer question: minutes a question to a human may stand unanswered before the machine acts on it |
-| `writer.reasoning_effort` | `PRIMARY_EFFORTS[provider]` | — | writer stage reads this setting |
+| `writer.reasoning_effort` | `high (lp-defaults.ts; low was the adoc CLI default)` | — | writer stage reads this setting |
 | `writer.retry_escalate` | `false` | — | writer fallback chain: on sends the first red check of a task-class failure to the next writer inside the same attempt budget |
 | `writer.retry_safety` | `on` | — | retry gate: on stops an automatic retry when the failed attempt's work area was touched after it ended (foreign edits, rewritten evidence, secret residue) |
 | `writer.route_record` | `on` | — | writer route record: the route decision — candidates, exclusions with reasons, the pick — kept in the task KV for the attempt receipt and the task screen |
-| `writer.service_tier` | `standard (or fast if --fast-mode)` | — | writer stage reads this setting |
+| `writer.service_tier` | `fast (lp-defaults.ts; standard unless the provider forces was the adoc CLI default)` | — | writer stage reads this setting |
 | `writer.silence_nudge_min` | `20` | — | writer watchdog: minutes of silence before a running writer is nudged |
 | `writer.skill_pick` | `on` | — | writer skill picking: Jev picks task skills before each attempt |
 | `writer.task_wall_clock_min` | `720` | — | retry caps: the most minutes a task may live across attempts and restarts before it ends with task_wall_clock |

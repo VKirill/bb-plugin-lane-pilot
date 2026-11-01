@@ -160,7 +160,8 @@ export function sweepOwnerItems(db: Db, now: number = Date.now()): number {
       const run = db.prepare("SELECT closed_at FROM lane_pilot_run WHERE id=?").get(row.key.slice("run-goal:".length)) as { closed_at: number | null } | undefined;
       if (!run || run.closed_at !== null) { close(row.key, "janitor:run closed"); continue; }
     }
-    if (row.key.startsWith("phase-word:") && phaseTable) {
+    // The lesson draft is asked as the phase closes (phase/server/driver.ts lessons), so a closed phase is its normal state: it leaves by the owner's word (Gemini F-006.1 remainder).
+    if (row.key.startsWith("phase-word:") && !row.key.endsWith(":lesson") && phaseTable) {
       const phase = db.prepare("SELECT state FROM lane_pilot_phase WHERE id=?").get(row.key.split(":")[1]) as { state: string } | undefined;
       if (!phase || phase.state === "closed" || phase.state === "stopped") { close(row.key, "janitor:phase closed"); continue; }
     }

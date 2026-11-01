@@ -264,13 +264,14 @@ export function allFailuresAreTimeouts(output: string, failingTests: readonly Fa
   return false;
 }
 
-export function buildRecheckGateCommand(gateCommand: string, failingFiles: readonly string[]): string {
+export function buildRecheckGateCommand(gateCommand: string, failingFiles: readonly string[]): string | null {
   // A detected `npm test` / `pytest -q` used to re-run the whole suite after an all-timeouts red (grill 2026-10-29 F-007): the files go
-  // after `--` to a package script (vitest, jest, mocha and node --test all take them) and straight to pytest.
+  // after `--` to a package script (vitest, jest, mocha and node --test all take them) and straight to pytest. A runner this cannot
+  // narrow (`make check`, `python3 -I scripts/studio_test.py`) gets no encore at all: null, and the timeouts stand as the verdict.
   const isVitestOrJest = /(?:^|[;&|]\s*)(?:npx\s+)?(?:vitest|jest)(?:\s+run)?(?:\s+|$)/i.test(gateCommand);
   const isPytest = /(?:^|[;&|]\s*)(?:python3?\s+-m\s+)?pytest(?:\s|$)/i.test(gateCommand);
   const isPackageScript = /^(?:npm|pnpm|yarn)\s+(?:run\s+)?test\s*$/i.test(gateCommand.trim());
-  if (!failingFiles.length || !(isVitestOrJest || isPytest || isPackageScript)) return gateCommand;
+  if (!failingFiles.length || !(isVitestOrJest || isPytest || isPackageScript)) return null;
   const uniqueFiles = [...new Set(failingFiles)];
   return isPackageScript ? `${gateCommand.trim()} -- ${uniqueFiles.join(" ")}` : `${gateCommand} ${uniqueFiles.join(" ")}`;
 }
@@ -492,9 +493,10 @@ export class IntegrationGateRunner {
     let activeHead = ran.head;
     let repeatedTimeouts = false;
 
-    if (allFailuresAreTimeouts(`${stderr}\n${stdout}`, failingTests)) {
-      const initialFailingFiles = [...new Set(failingTests.map((t) => t.file))];
-      const recheckCmd = buildRecheckGateCommand(gateCommand, initialFailingFiles);
+    const timeoutsOnly = allFailuresAreTimeouts(`${stderr}\n${stdout}`, failingTests);
+    const recheckCmd = timeoutsOnly ? buildRecheckGateCommand(gateCommand, [...new Set(failingTests.map((t) => t.file))]) : null;
+    if (timeoutsOnly && !recheckCmd) this.ctx.log(`integration-gate: all failures are timeouts, but \`${gateCommand}\` cannot re-run only the failing files: no encore, the timeouts stand (grill 2026-10-29 F-007)`);
+    if (recheckCmd) {
       this.ctx.log(`integration-gate: all failures are timeouts; rechecking with \`${recheckCmd}\``);
       const beforeRecheck = await sampleMachine();
 

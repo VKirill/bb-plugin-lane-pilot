@@ -11,6 +11,7 @@ import { registerObservedTool } from "../../core/server";
 import { scheduleIsolated } from "../../core/server";
 import { poolHasRoom, poolTokens, ruleBudget } from "../../learning/rule-budget";
 import { sha256Hex } from "@lane-pilot/kit";
+import { authorize } from "../../policy";
 
 export const INSIGHTS_TOOLS = ["lane_pilot_routing_stats", "lane_pilot_lessons_sweep", "lane_pilot_rule_propose", "lane_pilot_lesson", "lane_pilot_memory_golden"] as const;
 
@@ -153,8 +154,12 @@ function unusedConvention(db: LanePilotDatabase, projectId: string): string | nu
   return row?.id ?? null;
 }
 
-/** Every waiting rule of every project tries to go on trial again. */
-export function adoptWaitingRules(db: LanePilotDatabase, now = Date.now()): number {
+/** The night policy (policy/night-policy.json, `rule_trial_apply`) says whether a rule may go on trial without the owner; today it proposes, so the rule waits on the Rules tab. */
+export const nightMayAdopt = (): boolean => authorize({ kind: "rule_adopt" }).tier === "night_decides";
+
+/** Every waiting rule of every project tries to go on trial again, under the same night policy as the scan (Astra F-008 remainder: the start-up pass used to skip it). */
+export function adoptWaitingRules(db: LanePilotDatabase, now = Date.now(), mayAdopt: () => boolean = nightMayAdopt): number {
+  if (!mayAdopt()) return 0;
   const projects = db.prepare("SELECT DISTINCT project_id FROM lane_pilot_rule_proposal WHERE state='proposed'").all() as Array<{ project_id: string }>;
   let adopted = 0;
   for (const { project_id } of projects) {

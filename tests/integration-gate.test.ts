@@ -655,7 +655,10 @@ AssertionError: expected 1 to be 2
       );
       expect(buildRecheckGateCommand("npm test", ["tests/a.test.ts"])).toBe("npm test -- tests/a.test.ts");
       expect(buildRecheckGateCommand("pytest -q", ["tests/test_a.py"])).toBe("pytest -q tests/test_a.py");
-      expect(buildRecheckGateCommand("make check", ["tests/a.test.ts"])).toBe("make check");
+      // A runner the gate cannot narrow gets no encore (grill 2026-10-29 F-007 remainder, 0.1.462).
+      expect(buildRecheckGateCommand("make check", ["tests/a.test.ts"])).toBeNull();
+      expect(buildRecheckGateCommand("python3 -I scripts/studio_test.py", ["tests/a.spec.lua"])).toBeNull();
+      expect(buildRecheckGateCommand("npx vitest run", [])).toBeNull();
     });
 
     it("reruns load timeouts once and goes green if recheck exits 0", async () => {

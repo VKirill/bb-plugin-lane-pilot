@@ -281,7 +281,7 @@ export function createLeadService(ctx: ServerCore, services: Services) {
     const { created } = postOwnerItem(db, {
       key: `lead-labels:${week}`, source: "lead", kind: "labels", projectId: null, wake: false,
       what: `Оцените ${rows.length} решений Штурмана: угадал ли он ваш ответ`,
-      why: `Ваша оценка (совпал / отчасти / нет) проверяет автоматического судью: пока оценок мало, Штурман не получит права решать сам. Блок «Разметка» на экране «Самоулучшение». Например: ${rows.slice(0, 3).map(line).join("; ")}.`,
+      why: `Ваша оценка (совпал / отчасти / мимо) проверяет автоматического судью: пока оценок мало, Штурман не получит права решать сам. Блок «Разметка» на экране «Самоулучшение». Например: ${rows.slice(0, 3).map(line).join("; ")}.`,
       evidence: [{ kind: "command", ref: "bb lane-pilot lead label <id> exact|partial|miss" }],
     }, now);
     return { posted: created, pending: rows.length };

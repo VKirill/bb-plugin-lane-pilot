@@ -48,7 +48,11 @@ it("does not displace a young rule; the waiting one goes on trial later by itsel
   const waiting = lesson(db, 13, "writer", now);
   expect(adoptRuleProposal(db, "proj", waiting, now)).toBeNull();
   expect(getRuleProposal(db, "proj", waiting)?.state).toBe("proposed");
-  expect(adoptWaitingRules(db, now + 4 * DAY)).toBe(1);
+  // The night policy proposes rule trials (rule_trial_apply is night_proposes), so the start-up pass leaves the rule waiting for the owner (Astra F-008 remainder, 0.1.462).
+  expect(adoptWaitingRules(db, now + 4 * DAY)).toBe(0);
+  expect(getRuleProposal(db, "proj", waiting)?.state).toBe("proposed");
+  // With the gate open (a policy of night_decides) the slot logic itself still works.
+  expect(adoptWaitingRules(db, now + 4 * DAY, () => true)).toBe(1);
   expect(getRuleProposal(db, "proj", waiting)?.state).toBe("accepted");
 });
 

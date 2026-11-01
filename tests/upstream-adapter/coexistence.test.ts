@@ -75,7 +75,7 @@ describe("typed coexistence operations", () => {
     const marker = result.managers.find((row) => row.manager === "agents-marker");
     expect(marker?.compatible).toBe(false);
     expect(marker?.missingCapabilities).toEqual(["opencode.hook.tool_execute_after"]);
-    expect(marker?.evidence.some((item) => item.kind === "capability" && item.detail.includes("OpenCode tool evidence, budget, and winnow result handling"))).toBe(true);
+    expect(marker?.evidence.some((item) => item.kind === "capability" && item.detail.includes("OpenCode tool evidence and budget handling"))).toBe(true);
     expect(await treeHash(custom)).toBe(before);
   });
 

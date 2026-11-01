@@ -212,6 +212,40 @@ describe("the sweep", () => {
     expect(row.state).toBe("closed");
     expect(row.closed_by).toMatch(/^run-goal:/);
   });
+
+  it("[Gemini verification, 0.1.462] a closed run gets no red row and is never re-checked", async () => {
+    const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
+    harness.sdk.stub("threads.get", async () => ({ updatedAt: Date.now() }));
+    harness.sdk.stub("threads.send", async () => undefined);
+    const db = openDatabase(bb);
+    createRun(db, "run1", "P", "bb", "/repo");
+    for (const id of ["t1", "t2"]) {
+      createTask(db, { id, runId: "run1", kind: "bb", contract: {} as never });
+      createAttempt(db, { id: `${id}-a1`, runId: "run1", taskId: id });
+      transitionAttempt(db, `${id}-a1`, "spawn_requested");
+      transitionAttempt(db, `${id}-a1`, "running", { threadId: `thr_${id}` });
+      transitionAttempt(db, `${id}-a1`, "accepted");
+    }
+    createRun(db, "run2", "P", "bb", "/repo");
+    createTask(db, { id: "t3", runId: "run2", kind: "bb", contract: {} as never });
+    const calls: Array<{ runId?: string }> = [];
+    const regression = { run: async (options: { runId?: string }) => {
+      calls.push(options);
+      return { projects: [{ head: "f".repeat(40), tasks: [{ taskId: "t1", checks: [{ command: "check t1", state: "green" }] }, { taskId: "t2", checks: [{ command: "check t2", state: "red" }] }],
+        findings: [{ taskId: "t2", command: "check t2", culpritCommit: "c".repeat(40), culpritTask: "t1" }] }] };
+    } };
+    const ctx = { db, bb, log: () => undefined, isDisposed: () => false };
+    const api = createRunGoal(ctx as never, { regression } as never).runGoal;
+
+    // The run is already closed when its goal is checked: the verdict is kept, the owner's list gets no row (the janitor would close it on the next read anyway).
+    db.prepare("UPDATE lane_pilot_run SET closed_at=? WHERE id='run1'").run(Date.now());
+    expect((await api.sweep()).map((row) => [row.runId, row.state])).toEqual([["run1", "failed"]]);
+    expect(db.prepare("SELECT state FROM lane_pilot_owner_item WHERE key='run-goal:run1'").get()).toBeUndefined();
+    // A later run of the project closes: a closed run is not re-checked (no flicker between a re-posted row and the janitor).
+    db.prepare("UPDATE lane_pilot_run SET closed_at=? WHERE id='run2'").run(api.status("run1")!.at + 1);
+    expect(await api.sweep()).toEqual([]);
+    expect(calls).toHaveLength(1);
+  });
 });
 
   it("a partial goal is no message either, and a check that crashed is retried", async () => {

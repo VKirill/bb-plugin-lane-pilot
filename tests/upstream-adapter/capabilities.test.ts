@@ -60,8 +60,8 @@ describe("upstream capability compatibility", () => {
     expect(assessment.compatible).toBe(false);
     expect(assessment.diagnostics).toContainEqual({
       capability: "opencode.hook.tool_execute_after",
-      impactedFunction: "OpenCode tool evidence, budget, and winnow result handling",
-      message: "Missing required interface opencode.hook.tool_execute_after; impacted function: OpenCode tool evidence, budget, and winnow result handling.",
+      impactedFunction: "OpenCode tool evidence and budget handling",
+      message: "Missing required interface opencode.hook.tool_execute_after; impacted function: OpenCode tool evidence and budget handling.",
     });
     expect(decideEngine(assessment, { installed: true, owner: "user", modified: true }).writes).toEqual([]);
   });

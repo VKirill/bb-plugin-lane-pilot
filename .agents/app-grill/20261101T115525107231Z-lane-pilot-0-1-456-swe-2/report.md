@@ -168,3 +168,19 @@ Append meaningful checks and decisions, including rejected concerns and evidence
 - Next concrete action: review findings F-001..F-003 first (exam integrity and critical-risk holes).
 - Unresolved questions / blockers: H-001 (exam cron trail); GitNexus не обновлялся по указанию (индекс занят) — поиск по исходникам.
 - Audit completion and fix verification: audit only; no fixes authorized.
+
+## 10. Verification notes (2026-11-01, against 0.1.461 dd22dfdd)
+
+Re-read finding by finding by an independent reader after the fixes; what the code shows, not what the CHANGELOG says.
+
+| id | verdict | evidence |
+|---|---|---|
+| F-001 | CLOSED, one PRODUCT-CHOICE left | `src/rooms/lead/logic.ts` `OWNER_ANSWERERS` = owner, screen, «owner via screen»; `pm`, `lead-chat`, `agent`, `lead`, `backtest` are proxies (0.1.458, 0.1.461). `lead decide --by screen` is refused (`cli.ts`). Left as a choice: the CLI default `--by owner` stays until the host passes the caller's identity (CHANGELOG 0.1.461). |
+| F-002 | CLOSED | `journal.ts` `historyOf`: owner answers only, exam/backtest splits, bounded by the row's `created_at` (0.1.458 + 0.1.461). |
+| F-003 | CLOSED | `tasks/words.ts` `landingWordAsked` waits on high and critical; `lead/server/tick.ts` keeps `critical`; `mayAct` refuses high, critical and unknown (0.1.458, 0.1.461). |
+| F-004 | CLOSED | `owner-waiting/items.ts` `sweepOwnerItems`: facts after 3 days, rows without buttons after 7; counts after the sweep; «Прочитано» on every row without buttons (0.1.458, 0.1.461). |
+| F-005 | CLOSED | `writer-question:*` closes on a newer attempt or when the attempt left `blocked`; the key reopens for a new question (0.1.458, 0.1.461 N-002). |
+| F-006 | CLOSED | `run-goal.ts` `sweep` re-checks a `failed` record once a later run of the project closed; green closes the row (0.1.461). |
+| H-001 | INVALID | The 04:40 exam cron arrived with 0.1.447, deployed 10:18 MSK 2026-11-01: no run could have left a key before the audit. |
+| N-001 (found at verification) | CLOSED | `owner via screen` counted as a proxy after 0.1.458; it is the owner's own word since 0.1.461. |
+| N-002 (found at verification) | CLOSED | `postOwnerItem` reopens a key closed by `janitor:*` or `run-goal:*`; owner/screen/agent closes stand (0.1.461). |

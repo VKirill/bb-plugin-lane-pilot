@@ -30,7 +30,10 @@ if (dbArg !== -1) {
 
 const snapshot = JSON.parse(readFileSync(snapshotPath, "utf8")) as { level: string; fetchedAt: string | null; settings: Array<{ key: string; value: string }> };
 const hub = new Map(snapshot.settings.map((row) => [row.key, row.value]));
-const defaults = new Map(UI_CATALOG.map((row) => [row.storageKey, row.defaultValue]));
+// One key has several catalog rows (the upstream CLI, its setup, the stage); the editable row is the live one, and the first of them wins — the last row used to (Gemini F-015.1).
+const liveRow = new Map<string, (typeof UI_CATALOG)[number]>();
+for (const row of UI_CATALOG) { const cur = liveRow.get(row.storageKey); if (!cur || (cur.uiStatus !== "editable" && row.uiStatus === "editable")) liveRow.set(row.storageKey, row); }
+const defaults = new Map([...liveRow.values()].map((row) => [row.storageKey, row.defaultValue]));
 
 // ponytail: catalog reasons run long; the table keeps the key, the code default and the hub `*` value, plus a flag for the switches.
 const SWITCH = /enabled|\.mode$|nightly|default_for_risk/;

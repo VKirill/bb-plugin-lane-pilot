@@ -454,3 +454,19 @@ Quick честно выключает эту критику и критику к
 - Next concrete action: в живом конфиге хаба посмотреть, включена ли самопочинка и задан ли `integration.gate_command`.
 - Unresolved questions / blockers: нет.
 - Audit completion and fix verification: правки не заказывались. `complete` не ставлю: живой диспатч и сессия Claude не смотрелись.
+
+## 10. Verification notes (2026-11-01, against 0.1.461 dd22dfdd)
+
+The audit ran at 9fc31e88 (0.1.378). Re-read finding by finding by an independent reader; verdicts by code.
+
+| id | verdict | evidence |
+|---|---|---|
+| F-001 | INVALID | The replay runs only when main moved (`git-integrate.ts` `rebaseOntoBase` → null when already an ancestor; test «runs no check when main did not move»); 0.1.392 added «no second run on the same revision». |
+| F-002 | PRODUCT-CHOICE | Plan critique stays a gate by default; the registry and `docs/overview.md` say so since 0.1.379 (`stage-proof.ts`). |
+| F-003 | CLOSED | `block-pm-read` is gone; the PM-read summary decides nothing (`workflows/lp-task-pipeline.json`, 0.1.379). |
+| F-004 | CLOSED (this repo) | SMA map pins only Lane Pilot roots (0.1.379); install/reconcile clone nothing and run no `install.sh` (0.1.381, 0.1.384). Choices kept: the guard on matcher `*` (it also enforces the PM's Edit/Write denial), skill pick on by default with a 45 s deadline (`skill-pick.ts`, README). |
+| F-005 | PRODUCT-CHOICE | The office/world/anamnesis code is isolated and off by default (`world/server/service.ts`); the office is the owner's own request (`.agents/plans/items/council-office-live/PLAN.md`). |
+| F-006 | CLOSED | The catalog row `s074` cites `critique-runs.ts` as evidence (0.1.461); the `location` column of the whole catalog means the upstream origin in claude-lane-stack, said in the header of `docs/adoc-applicability.md` since 0.1.462. |
+| F-007 | CLOSED in 0.1.462 | Whole-suite detection is documented (0.1.179, README); an all-timeouts red re-runs only the failing files for vitest/jest/pytest/package scripts (0.1.461); for a runner the gate cannot narrow (e.g. `python3 -I scripts/studio_test.py`, `make check`) 0.1.462 runs no encore: the timeouts stand and go to the owner's list. |
+| F-008 | CLOSED (this repo) | Lane Pilot no longer depends on the Claude Lane plugin (0.1.381, 0.1.384); its `hooks.json` with winnow/skillranker lives in the neighbouring repo and is out of scope. The OpenCode hook label no longer names winnow (0.1.462). |
+| F-009 | PRODUCT-CHOICE (default on) / CLOSED (copy) | Self-repair stays on, at most 4 repairs a day (README); the guard has one source in `lane-stack/hooks/`, the bundle is generated and byte-tested, Claude sessions get the bundled guard (0.1.384). |

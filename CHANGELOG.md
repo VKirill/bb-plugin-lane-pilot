@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+## 0.1.462
+
+The leftovers of the 0.1.461 re-verification: three readers went through every item of the four grill reports again, against the code of 0.1.461, and wrote their verdicts into each report (section «Verification notes» / «Заметки сверки»), which the 0.1.461 entry had promised and the reports did not have. What was still open is closed here; what is a product choice is named there.
+
+- **A rule the night leaves waiting stays waiting across a restart.** The start-up pass `adoptWaitingRules` (server.ts) put every `proposed` rule of every project on trial with no policy check, while the night scan asked `nightMayAdopt` since 0.1.458 (Astra F-008, Gemini F-009.1). The same gate (policy `rule_trial_apply`, today `night_proposes`) now guards both; the gate lives in `insights.ts`.
+- **A gate that cannot narrow runs no encore.** After an all-timeouts red, `buildRecheckGateCommand` returned the whole command for a runner it does not know (`make check`, Roblox's `python3 -I scripts/studio_test.py`), so the whole suite ran twice (grill 2026-10-29 F-007 remainder). It returns null now, the recheck is skipped and the timeouts stand as the verdict on the owner's list.
+- **The lesson draft outlives its closed phase; a phase that goes back takes its question with it.** The janitor closed `phase-word:<phase>:lesson` on the next read because the lesson is asked as the phase closes (Gemini F-006.1 regression of 0.1.458); it leaves that key alone. `returnTo` closes the pending word rows of the turn being left (`janitor:phase returned`, so the key can come back with the turn).
+- **A closed run gets no red goal row and no re-check.** `run-goal` posted a row for a run that was already closed (the janitor closed it on the next read) and the 0.1.461 re-check could re-post it in a loop; a closed run keeps its verdict in the record only.
+- **The generated settings page prints the live default of a key.** `docs/enabled-settings.md` took the last catalog row of a key, so `writer.*` showed the adoc CLI defaults (`kimi`, `PRIMARY_MODELS[provider]`) that 0.1.459 had corrected in the editable rows (Gemini F-015.1); the first editable row of a key wins.
+- **Words.** The label toast and the Monday labels row say «совпал / отчасти / мимо» like the buttons (Gemini U-002); `docs/lead.md` drops `deferred` from `lead label` and says that the backtest and the memory exam count `exact` only, by choice (Gemini F-005.2: the judge is not paid for rows that grant no rights); `docs/adoc-applicability.md` says the `location` column is the upstream origin, not Lane Pilot (grill 2026-10-29 F-006); the OpenCode hook label no longer names winnow (F-008).
+
 ## 0.1.461
 
 One release for everything the four grills still had open. Each report (SWE-2, Gemini 4 Argon and GPT-6 Astra of 0.1.456 under `.agents/app-grill/20261101T1155*`, and the 2026-10-29 grill under `.agents/app-grill/20261029T164547262529Z-*`) was re-verified finding by finding against the code of 0.1.460 by an independent reader; what was still true is closed here, what was a product choice is named in the reports' verification notes, and the tests were written by SWE-2 programmers in five parallel streams on their own worktrees and merged after review.

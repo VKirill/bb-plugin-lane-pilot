@@ -48,7 +48,7 @@ export function LeadSection({ locale, fields }: { locale: Locale; fields: ReactN
   const toggle = () => act("enable", async () => { await rpc.call("lead_set_enabled", { on: !state!.settings.enabled }); return state!.settings.enabled ? t("lead_turned_off") : t("lead_turned_on"); });
   const tickNow = () => act("tick", async () => { const r = await rpc.call("lead_tick_now", {}) as { ok: boolean; tickId?: string; reason?: string }; return r.ok ? `${t("lead_tick_started")} ${r.tickId}` : `${t("lead_tick_refused")}: ${r.reason}`; });
   const openChat = () => act("chat", async () => { const r = await rpc.call("lead_chat_start", {}); return `${r.reused ? t("lead_chat_reused") : t("lead_chat_opened")} @thread:${r.threadId}`; });
-  const label = (id: string, verdict: "exact" | "partial" | "miss") => act(`label:${id}`, async () => { await rpc.call("lead_label", { id, label: verdict }); return `${t("lead_labelled")}: ${id} ${verdict}`; });
+  const label = (id: string, verdict: "exact" | "partial" | "miss") => act(`label:${id}`, async () => { await rpc.call("lead_label", { id, label: verdict }); return `${t("lead_labelled")}: ${id} ${t(`lead_verdict_${verdict}`)}`; });
 
   if (error && !state) return <Alert variant="destructive"><AlertTitle>{t("lead_load_failed")}</AlertTitle><AlertDescription className="break-words">{error}</AlertDescription></Alert>;
   if (!state) return <div aria-busy="true" className="space-y-2" data-testid="lead-loading"><Skeleton className="h-20 w-full" /></div>;

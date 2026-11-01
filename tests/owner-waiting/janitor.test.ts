@@ -75,7 +75,9 @@ describe("the owner-list janitor", () => {
     insertPhase(database, { id: "ph3", projectId: "proj_1", pmThreadId: "thr_pm", title: "Phase three", goal: "ship it", at: T + 3_000 });
     savePhase(database, "ph3", { state: "closed", at: T + 3_500 });
     postOwnerItem(database, item("phase-word:ph3:1", { source: "phase" }), T + 4_000);
-    expect(openKeys(database, T + 5_000)).toEqual([]);
+    // [Gemini F-006.1 remainder, 0.1.462] the lesson draft is asked as the phase closes: a closed phase is its normal state, the janitor leaves it.
+    postOwnerItem(database, item("phase-word:ph3:lesson", { source: "phase" }), T + 4_000);
+    expect(openKeys(database, T + 5_000)).toEqual(["phase-word:ph3:lesson"]);
   });
 
   it("[SWE-2 F-004, Gemini F-006.4] a row without actions dies after its term, a row with actions never does", () => {

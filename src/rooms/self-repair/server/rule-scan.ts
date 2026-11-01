@@ -7,8 +7,7 @@ import { getRun, getRunSettingsScopes } from "../../storage";
 import { fileAllowedByOwns, fileBlockedByNeverTouch } from "@lane-pilot/kit";
 import { bbServiceTier, writerExecutionSelection } from "@lane-pilot/models";
 import { outputText } from "../../writer/server/writer-task";
-import { adoptRuleProposal, refreshRuleProposals, retireAdoptedRule, rewordAdoptedRule } from "./insights";
-import { authorize } from "../../policy";
+import { adoptRuleProposal, nightMayAdopt, refreshRuleProposals, retireAdoptedRule, rewordAdoptedRule } from "./insights";
 import { postOwnerItem } from "../../owner-waiting";
 
 /**
@@ -17,7 +16,6 @@ import { postOwnerItem } from "../../owner-waiting";
  * version 1 until 0.1.458 (Astra F-008: the classifier and the executor described two different rules of admission). Read at use, so a
  * policy that moves `rule_trial_apply` back to `night_decides` turns the trials on again without a code change.
  */
-const nightMayAdopt = (): boolean => authorize({ kind: "rule_adopt" }).tier === "night_decides";
 import { fullAccessSpawn, modelCatalogOf, readProviderFolderBlock, resolveSpawnModel, spawnUsageOf, warmSpawnUsage } from "../../core/server";
 import { spawnTextId } from "../../core/server";
 import { builtinWorkflow } from "../../workflow";

@@ -5,6 +5,7 @@ import { createPhaseDriver } from "../../src/rooms/phase/server/driver";
 import { nextAction, phaseFolder, planSignature, sha256, type PlanItem } from "../../src/rooms/phase/logic";
 import { listParts, savePhase } from "../../src/rooms/phase/store";
 import { createAttempt, createRun, createTask, openDatabase } from "../../src/rooms/storage";
+import { postOwnerItem } from "../../src/rooms/owner-waiting";
 
 const piece = (id: string): PlanItem => ({
   id, title: id, wave: 1, promise: { given: "g", when: "w", then: `then ${id}` },
@@ -58,7 +59,10 @@ describe("phase controls", () => {
       savePhase(f.db, phase.id, { stage: "acceptance", record: { ...phase.record, verification: { verdict: { state: "passed", detail: "ok", mainSha: null, at: 1, inputSha: "a".repeat(64) } }, acceptance: { lines: [], at: 1, accepted: false } }, at: 2 });
       expect(() => f.phases.returnTo({ phaseId: phase.id, to: "closed", note: "no" })).toThrow(/returns to/);
       expect(() => f.phases.returnTo({ phaseId: phase.id, to: "execution", note: "  " })).toThrow(/carries a note/);
+      // [Gemini F-006.1 remainder, 0.1.462] the pending word of the turn being left goes with the return; a janitor close lets the key come back with the turn.
+      postOwnerItem(f.db as never, { key: `phase-word:${phase.id}:design`, source: "phase", kind: "word", projectId: "projA", what: "word?", why: "test" });
       const back = f.phases.returnTo({ phaseId: phase.id, to: "execution", note: "the empty cell still fails" });
+      expect(f.db.prepare("SELECT state, closed_by FROM lane_pilot_owner_item WHERE key=?").get(`phase-word:${phase.id}:design`)).toEqual({ state: "closed", closed_by: "janitor:phase returned" });
       expect(back.stage).toBe("execution");
       expect(back.record.verification).toBeUndefined();
       expect(back.record.acceptance).toBeUndefined();

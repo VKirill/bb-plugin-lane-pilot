@@ -30,7 +30,8 @@ export function createRunGoal(ctx: ServerCore, services: Services) {
     const verdict = goalVerdict(pass, tasks.map((task) => task.taskId));
     const record: RunGoalRecord = { runId, projectId: run.project_id, state: verdict.state, tasks: tasks.filter((task) => task.state === "accepted").length, headSha: pass.head ?? null, red: verdict.red, detail: verdict.detail, at: Date.now(), coverage: verdict.coverage };
     saveRunGoal(db, record);
-    if (verdict.state === "failed") {
+    if (verdict.state === "failed" && run.closed_at !== null) ctx.log(`run-goal: ${runId} is closed: the red stays in the record, no row for the owner`);
+    else if (verdict.state === "failed") {
       postOwnerItem(db as never, { key: `run-goal:${runId}`, source: "run-goal", kind: "goal_failed", projectId: run.project_id, wake: false,
         what: `После слияния всех задач в main упало проверок: ${verdict.red.length}`, why: goalFailedText(runId, verdict.red), evidence: [{ kind: "run", ref: runId }] });
     } else closeOwnerItem(db as never, `run-goal:${runId}`, `run-goal:${verdict.state}`); // the fix landed, or the run has nothing red: the row leaves the list (SWE-2 F-006)
@@ -48,7 +49,7 @@ export function createRunGoal(ctx: ServerCore, services: Services) {
     // ("nothing to check") is final and is not retried.
     const runs = db.prepare(`SELECT r.id FROM lane_pilot_run r WHERE r.updated_at >= ?
       AND NOT EXISTS (SELECT 1 FROM lane_pilot_run_goal g WHERE g.run_id = r.id AND NOT (g.state = 'skipped' AND g.detail LIKE 'the check failed:%')
-        AND NOT (g.state = 'failed' AND EXISTS (SELECT 1 FROM lane_pilot_run r2 WHERE r2.project_id = r.project_id AND r2.id <> r.id AND r2.closed_at IS NOT NULL AND r2.closed_at > g.at)))
+        AND NOT (g.state = 'failed' AND r.closed_at IS NULL AND EXISTS (SELECT 1 FROM lane_pilot_run r2 WHERE r2.project_id = r.project_id AND r2.id <> r.id AND r2.closed_at IS NOT NULL AND r2.closed_at > g.at)))
       ORDER BY r.updated_at`)
       .all(now - WEEK) as Array<{ id: string }>;
     const out: RunGoalRecord[] = [];

@@ -4,7 +4,7 @@ import { taskFamily } from "../../runs";
 import { noTermDeferralsOf } from "../../deferral/server";
 import { getRunGoal } from "../../run-goal";
 import { getRun, getRunSettingsScopes, getRunWriterHost, getTask, listOpenAttempts, loadProjectSettings, storeMemoryRecords } from "../../storage";
-import { postOwnerItem, closeOwnerItem } from "../../owner-waiting";
+import { closeOwnerItem, closeOwnerItemsByPrefix, postOwnerItem } from "../../owner-waiting";
 import { answerPhaseWord, askPhaseWord } from "../../lead";
 import { isWholeConsent, ownerWordsOn, spendReserve } from "../../tasks";
 import { hostContract } from "../../contracts";
@@ -571,6 +571,8 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
   // ------------------------------------------------------------ controls
 
   function returnTo(input: Reported & { to: PhaseStage; note: string }): Phase {
+    // The question of the turn being left is obsolete: its row goes (the new turn posts its own; Gemini F-006.1 remainder).
+    closeOwnerItemsByPrefix(db as never, `phase-word:${input.phaseId}:`, "janitor:phase returned");
     const phase = mustGet(input.phaseId);
     if (!RETURN_STAGES.includes(input.to)) throw new PhaseRefusal(`a phase returns to ${RETURN_STAGES.join(", ")}`);
     if (PHASE_STAGES.indexOf(input.to) >= PHASE_STAGES.indexOf(phase.stage)) throw new PhaseRefusal(`a return goes to an earlier stage: the phase is at ${phase.stage}`);

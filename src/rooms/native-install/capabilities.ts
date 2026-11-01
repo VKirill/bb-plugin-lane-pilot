@@ -35,7 +35,7 @@ export const IMPACTED_FUNCTIONS: Record<RequiredCapability, string> = {
   "opencode.hook.session_prompt": "OpenCode prompt state and sticky task contract",
   "opencode.hook.session_context": "OpenCode sticky task/evidence message recovery",
   "opencode.hook.tool_execute_before": "OpenCode lane writer guard",
-  "opencode.hook.tool_execute_after": "OpenCode tool evidence, budget, and winnow result handling",
+  "opencode.hook.tool_execute_after": "OpenCode tool evidence and budget handling",
   "opencode.hook.permission_evaluate": "OpenCode lane agent rules and hub command guard",
   "opencode.telemetry.session_compacted": "OpenCode compacted-session telemetry and recovery",
   "opencode.sticky.contract_recovery": "OpenCode lane contract recovery after compaction",
