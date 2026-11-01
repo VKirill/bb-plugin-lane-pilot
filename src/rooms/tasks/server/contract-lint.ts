@@ -308,6 +308,13 @@ export function lintContract(input:LintInput):{ errors:LintFinding[]; warnings:L
   if (!isMainfixTask(task.id) && (acceptanceMode === "quick" || acceptanceMode === "standard") && task.acceptance.length > 3) {
     warnings.push({ code:"acceptance_too_many", message:`acceptance has ${task.acceptance.length} items; a ${acceptanceMode} task keeps at most 3 (plan-fact receipts since 2026-10-29 failed 28.9-32.7% at 4+ vs 15.8% at 3). Split the task or compress acceptance to 3 items` });
   }
+  // Prompt audit 2026-11-02 (this thread + thr_j329nem3ba): the PM wrote acceptance as a design spec («left: the example
+  // frame…, right: one sticky panel…») and the plan said the same thing again — two sources of truth, up to 3,000 of the
+  // contract's characters. Over the week before: 996 items, average 178 characters, 57 over 400, 9 over 600. An item is one
+  // claim a judge can check; the look of the thing lives in the plan, once. A warning in the dispatch answer, never a refusal.
+  task.acceptance.forEach((item, index) => {
+    if (item.length > 400) warnings.push({ code:"acceptance_spec_text", message:`acceptance[${index}] is ${item.length} characters: that reads as design text, not a check. Keep the one claim a judge can verify (a string on the page, a number, a command's result; about 400 characters at most) and move the layout and the details into the plan, which the writer reads anyway` });
+  });
   // quality_mode full: a task with qa_cases owes a browser check, and the task's own graph runs it from qa_url.
   if (input.qualityMode && browserQaRequired(input.qualityMode, task) && !task.qa_url) {
     errors.push({ code:"qa_url_missing", message:`quality_mode is full and the task has qa_cases, so its graph runs the browser check itself and needs the page to open: add qa_url (the address the cases run on, e.g. "http://127.0.0.1:5173/orders"), plus qa_env_class (local, staging, preview, production or unknown) and qa_dev_server (the command that starts the dev server, when it is not running); or drop qa_cases` });

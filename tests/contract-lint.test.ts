@@ -387,6 +387,15 @@ describe("contract lint rules", () => {
   describe("acceptance length (plan-fact)", () => {
     const four = ["one", "two", "three", "four"];
     const kinds = { "src/a.ts":"file" as const };
+    it("warns on an acceptance item over 400 characters: design text that belongs in the plan, never a refusal", () => {
+      const { errors, warnings } = lint({ acceptance:["Layout: ".padEnd(401, "x")] }, { qualityMode:"full" }, kinds);
+      expect(errors.filter((error) => error.code === "acceptance_spec_text")).toEqual([]);
+      const spec = warnings.filter((warning) => warning.code === "acceptance_spec_text");
+      expect(spec).toHaveLength(1);
+      expect(spec[0]!.message).toContain("acceptance[0] is 401 characters");
+      expect(spec[0]!.message).toContain("into the plan");
+      expect(lint({ acceptance:["ok".padEnd(400, "x")] }, { qualityMode:"full" }, kinds).warnings.filter((warning) => warning.code === "acceptance_spec_text")).toEqual([]);
+    });
     it("warns on more than 3 acceptance items in quick and standard (a warning until the stats epoch fills, never a refusal)", () => {
       for (const qualityMode of ["quick", "standard"] as const) {
         const { errors, warnings } = lint({ acceptance:four }, { qualityMode }, kinds);
