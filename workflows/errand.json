@@ -93,6 +93,16 @@
       "type": "string",
       "default": "",
       "note": "who named the kind: pm, hint (skills or the brief), jev, schedule"
+    },
+    "routeTop": {
+      "type": "string",
+      "default": "",
+      "note": "the router's top match for the brief as <workflowId>:<confidence>, empty when there was none"
+    },
+    "routeWhy": {
+      "type": "string",
+      "default": "",
+      "note": "why the brief did not self-route: below_confidence, missing_inputs:<names>, not_offered, tested_needs_unauthorized, none"
     }
   },
   "outputs": {

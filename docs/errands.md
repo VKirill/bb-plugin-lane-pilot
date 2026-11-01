@@ -37,6 +37,21 @@ name. So the project's «Tasks» tab is the rail's board locked to the project (
 the rail's «Schedule» and «Workflows» are what the project's «Automation» tab shows for one project, and «Agent profiles» (who the agents are)
 is kept apart from a project's «Team» (who works there).
 
+**The errand routes its brief.** Before `lane_pilot_errand` starts a plain errand it routes the brief with the same router the PM's
+`lane_pilot_route` uses, over the project's offered catalog (`routedGraph` in `errand-graph.ts`). A match with `decision: "route"` and
+confidence ≥ 90 (`ERRAND_ROUTE_CONFIDENCE`) is started as that graph's run when the graph is offered (not `internal`, no `startedBy`),
+is not `errand`, `specialist`, `browser-step`, `web-research` or any `lp.*` graph, and is `published` — or `tested`, which is a first
+real run (`liveTrial`, as `lane_pilot_run_workflow` does since 0.1.476) that a brief with `authorized: true` never starts: authorized
+routes only to `published`. Inputs come from the router's boundary contract, guesses included; a required input still missing means no
+self-route and a plain errand instead. The PM's answer names the graph and the confidence: it waits on the run with
+`lane_pilot_workflow_status` and does only what the brief asks beyond the graph's result. The api-recon graph went through this path
+first (0.1.466): the magicseo recons routed at 100 as errands because the PM did not know the graph existed, and the two invoices of
+2026-11-02 did the same with `invoice-send` at 95 and 70.
+
+Every plain errand run records what the router said in its `inputs_json` (the errands page and the lead read it): `routeTop` is
+`<workflowId>:<confidence>` of the top match or empty, and `routeWhy` is empty, `below_confidence`, `missing_inputs:<names>`,
+`not_offered`, `tested_needs_unauthorized` or `none`.
+
 **The read model** (`src/rooms/errands/logic.ts`; RPC `errands_overview` in `src/rooms/errands/server/rpc.ts`, contract `rpc-ops.ts`) reads the
 workflow journal only, no table of its own: the kind, model and source from `inputs_json` (`kind`, `kindBy`, `providerId`, `model`, `scheduleId`),
 the verdict from `output_json`, the helper thread from the `errand.spawn` effect, the PM chat from the linked run's `pm_thread_id`, the schedule's

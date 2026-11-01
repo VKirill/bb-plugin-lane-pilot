@@ -1,9 +1,9 @@
 import { observeStageChild, waitThreadIdle } from "@lane-pilot/thread-observe";
-import { routeIntent, type NodeExecutor, type StepContext } from "@lane-pilot/workflow-engine";
+import { isOffered, routeIntent, type NodeExecutor, type StepContext, type Workflow } from "@lane-pilot/workflow-engine";
 import { redactKnown } from "@lane-pilot/kit";
 import { z } from "zod";
 import { builtinWorkflow, builtinWorkflows } from "../../workflow";
-import { SCHEDULE_RUN_KEY_PREFIX } from "../../workflow/server";
+import { createWorkflowLibrary, SCHEDULE_RUN_KEY_PREFIX } from "../../workflow/server";
 import type { ChainRuntime } from "../../workflow/server";
 import { withUsage } from "../../usage/server";
 import { fenceOutside, findThreadsByMetadata, keyedSpawnSupported, registerObservedTool, spawnTextId } from "../../core/server";
@@ -42,12 +42,16 @@ export type ErrandRunStart = {
   detached?: boolean | undefined;
   /** A schedule started it: the helper cannot create schedules, and the thread says which schedule run it is for. */
   schedule?: { id: string; runKey: string } | undefined;
+  /** What the router said about the brief (the ledger on the run's inputs; startRun of a schedule leaves both empty). */
+  routeTop?: string | undefined; routeWhy?: string | undefined;
 };
 
 const API_RECON_WORKFLOW = "api-recon";
-// An errand goes to api-recon by itself only on a sure route: the real recon briefs score 100, and a read-only check of
-// our own plugin's screens in BB scored 61 (hub errands, 2026-10-30), above the router's own MIN_CONFIDENCE of 60.
-const API_RECON_CONFIDENCE = 85;
+// An errand hands its brief to a graph only on a sure route: a read-only check of our own plugin's screens in BB scored 61
+// (hub errands, 2026-10-30), and the week's two invoices ran as plain errands although invoice-send routed at 95 and 70 (hub, 2026-11-02).
+const ERRAND_ROUTE_CONFIDENCE = 90;
+// A starter's own graph or an internal one is never a self-route target even when it lands on the offered list.
+const ERRAND_ROUTE_NEVER = new Set(["errand", "specialist", "browser-step", "web-research"]);
 
 export function mountErrandGraph(ctx: ServerCore, services: Services, core: ErrandCore) {
   const { bb, db } = ctx;
@@ -131,18 +135,35 @@ export function mountErrandGraph(ctx: ServerCore, services: Services, core: Erra
     },
   } as NodeExecutor<ChainRuntime>);
 
+  /** The offered catalog the PM's router sees (the project's own graphs included), else the shipped ones when the store cannot be read here. */
+  const library = createWorkflowLibrary(ctx, services);
+  async function offeredCatalog(projectId: string): Promise<Workflow[]> {
+    try { return (await library.loadStore(projectId)).store.list().map((item) => item.workflow); }
+    catch { return services.workflowCatalog?.store ? await services.workflowCatalog.store().then((store) => store.list().map((item) => item.workflow)).catch(() => builtinWorkflows()) : builtinWorkflows(); }
+  }
+
   /**
-   * A read-only errand that maps a web service's API from its pages: the api-recon graph's inputs, else null. That graph runs on its own role
-   * (GPT-6.1 Terra, the computer-use model) with the recon method built in. The PM wrote both magicseo recons as errands, and both fell to a GLM
-   * member of the errand pool (2026-10-30 and the replay of 2026-10-31); the router reads the brief, so the PM need not know the graph.
+   * A sure route of the brief to an offered graph: the run of that graph, else the ledger entry (routeTop/routeWhy) a plain errand
+   * run carries so the errands page and the lead can read what the router said. The PM wrote both magicseo recons as errands, and both
+   * fell to a GLM member of the errand pool (2026-10-30 and the replay of 2026-10-31); the router reads the brief, so neither the owner
+   * nor the PM needs to know the graph.
    */
-  async function apiRecon(task: string, authorized: boolean, accounts: readonly string[]): Promise<{ url: string; goal: string; account: string } | null> {
-    if (authorized) return null;
-    const url = /https?:\/\/[^\s)"'»<>]+/.exec(task)?.[0];
-    if (!url || !builtinWorkflow(API_RECON_WORKFLOW)) return null;
-    const routed = await routeIntent({ intent: task, workflows: builtinWorkflows() }).catch(() => null);
-    if (routed?.decision !== "route" || routed.workflowId !== API_RECON_WORKFLOW || routed.confidence < API_RECON_CONFIDENCE) return null;
-    return { url, goal: task, account: accounts[0] ?? "" };
+  async function routedGraph(input: { task: string; authorized: boolean; accounts: readonly string[]; projectId: string }): Promise<{ match: { workflow: Workflow; inputs: Record<string, unknown>; confidence: number } } | { top: string; why: string }> {
+    const catalog = await offeredCatalog(input.projectId);
+    const routed = await routeIntent({ intent: input.task, workflows: catalog }).catch(() => null);
+    if (!routed) return { top: "", why: "none" };
+    if (routed.decision !== "route" || !routed.workflowId) return { top: routed.suggested ? `${routed.suggested}:${routed.confidence}` : "", why: routed.suggested ? "below_confidence" : "none" };
+    const top = `${routed.workflowId}:${routed.confidence}`;
+    if (routed.confidence < ERRAND_ROUTE_CONFIDENCE) return { top, why: "below_confidence" };
+    const workflow = catalog.find((item) => item.id === routed.workflowId);
+    if (!workflow || !isOffered(workflow) || ERRAND_ROUTE_NEVER.has(workflow.id) || workflow.id.startsWith("lp.")) return { top, why: "not_offered" };
+    // A brief with authorized: true routes only to a published graph: a tested one's first real run is decided by the owner, never under an authorized blanket.
+    if (workflow.status === "tested" && input.authorized) return { top, why: "tested_needs_unauthorized" };
+    // A required input the brief (and the router's guesses) cannot fill stays the PM's question, not a half-started graph.
+    if (routed.missingInputs.length) return { top, why: `missing_inputs:${routed.missingInputs.join(",")}` };
+    // api-recon's account is not in the brief's text: the errand's first Env Catalog name fills it, as apiRecon did.
+    const inputs = workflow.id === API_RECON_WORKFLOW ? { ...routed.inputs, account: routed.inputs.account ?? input.accounts[0] ?? "" } : routed.inputs;
+    return { match: { workflow, inputs, confidence: routed.confidence } };
   }
 
   /** Starts the errand graph, or returns the run that already has the key. */
@@ -160,6 +181,7 @@ export function mountErrandGraph(ctx: ServerCore, services: Services, core: Erra
         providerId: input.providerId ?? "", model: input.model ?? "", reasoning: input.reasoning ?? "", serviceTier: input.serviceTier ?? "default",
         detached: input.detached === true, scheduleId: input.schedule?.id ?? "", scheduleRunKey: input.schedule?.runKey ?? "",
         kind: input.kind ?? "", kindBy: input.kindBy ?? "",
+        routeTop: input.routeTop ?? "", routeWhy: input.routeWhy ?? "",
       },
     });
     started.done.catch((cause: unknown) => ctx.log(`Lane Pilot errand run ${started.runId} stopped with an error: ${cause instanceof Error ? cause.message : String(cause)}`));
@@ -205,15 +227,16 @@ export function mountErrandGraph(ctx: ServerCore, services: Services, core: Erra
       // Before any run exists: an account that is missing or left out of the project list starts nothing.
       const resolved = await core.resolveAccounts({ projectId: context.projectId, runId, pmThreadId: context.threadId, names: params.accounts ?? [], record: false });
       if (!resolved.ok) return JSON.stringify(resolved.blocked, null, 2);
-      const recon = await apiRecon(params.task, params.authorized, params.accounts ?? []);
-      if (recon) {
-        const workflow = builtinWorkflow(API_RECON_WORKFLOW)!;
+      const routed = await routedGraph({ task: params.task, authorized: params.authorized, accounts: params.accounts ?? [], projectId: context.projectId });
+      if ("match" in routed) {
+        const { workflow, inputs, confidence } = routed.match;
         const run = engine.start({
-          workflow, key: `${API_RECON_WORKFLOW}:${runId}:${spawnTextId(params.task)}`, link: { projectId: context.projectId, runId },
-          runtime: { ctx, services, pmThreadId: context.threadId, projectId: context.projectId, runId } satisfies ChainRuntime, inputs: recon,
+          workflow, inputs, key: `${workflow.id}:${runId}:${spawnTextId(params.task)}`, link: { projectId: context.projectId, runId },
+          runtime: { ctx, services, pmThreadId: context.threadId, projectId: context.projectId, runId } satisfies ChainRuntime,
         });
-        run.done.catch((cause: unknown) => ctx.log(`Lane Pilot api-recon run ${run.runId} stopped with an error: ${cause instanceof Error ? cause.message : String(cause)}`));
-        return JSON.stringify({ workflowRunId: run.runId, state: "running", workflow: API_RECON_WORKFLOW, note: "this errand maps a web service's API, so it runs as the api-recon graph (role api-recon, GPT-6.1 Terra): wait on it with lane_pilot_wait_errand as usual" }, null, 2);
+        run.done.catch((cause: unknown) => ctx.log(`Lane Pilot ${workflow.id} run ${run.runId} stopped with an error: ${cause instanceof Error ? cause.message : String(cause)}`));
+        return JSON.stringify({ workflowRunId: run.runId, state: "running", workflow: workflow.id, confidence,
+          note: `this errand matched the graph ${workflow.id} (confidence ${confidence}): it runs as that graph; wait on it with lane_pilot_workflow_status; what the brief asks beyond the graph's result you do after it, nothing twice` }, null, 2);
       }
       // The kind decides the row of the role table (a pinned model still wins): the PM's word, the skills and the brief, or Jev (shadow until switched on).
       const picked = await classifyErrand({ task: params.task, skills: params.skills, plugins: params.plugins, mcp: params.mcp, kind: params.kind },
@@ -224,6 +247,7 @@ export function mountErrandGraph(ctx: ServerCore, services: Services, core: Erra
         plugins: params.plugins, skills: params.skills, mcp: params.mcp,
         providerId: params.providerId, model: params.model, reasoning: params.reasoning, serviceTier: params.serviceTier,
         ...(picked.kind !== "errand" ? { kind: picked.kind, kindBy: picked.by } : {}),
+        routeTop: routed.top, routeWhy: routed.why,
       });
       const deadline = Date.now() + SPAWN_WAIT_MS;
       for (;;) {
