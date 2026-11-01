@@ -45,8 +45,11 @@ describe("project list, header and overview", () => {
     expect(folded.hasAttribute("open")).toBe(false);
     expect(rail.querySelector("[data-testid='project-item-proj_ui']")?.closest("[data-testid='service-projects']")).toBeNull();
     expect(rail.querySelector("[data-testid='project-item-proj_work']")?.closest("[data-testid='service-projects']")).toBeNull();
-    // The system pages sit under their own heading, apart from the projects.
-    expect(rail.textContent).toContain(en.navGroupSystem);
+    // The system pages sit in two groups apart from the projects: what needs the owner today, and the setup.
+    expect(rail.textContent).toContain(en.navGroupToday);
+    expect(rail.textContent).toContain(en.navGroupSetup);
+    expect(slot.getByTestId("scope-nav-group-today").querySelector("[data-testid='scope-nav-waiting']")).not.toBeNull();
+    expect(slot.getByTestId("scope-nav-group-setup").querySelector("[data-testid='scope-nav-workflows']")).not.toBeNull();
 
     fireEvent.click(slot.getByTestId("project-item-proj_work"));
     await slot.findByTestId("project-header");

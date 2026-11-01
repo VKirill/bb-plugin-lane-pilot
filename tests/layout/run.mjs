@@ -93,7 +93,7 @@ function pageHtml(locale, theme) {
     <nav class="hidden w-[13.5rem] shrink-0 flex-col border-r ${dark ? "border-neutral-800" : ""}" data-testid="scope-rail"><button class="h-8 w-full">${l.agents}</button></nav>
     <div class="flex min-h-0 min-w-0 flex-1 flex-col">
       <div class="min-h-0 min-w-0 flex-1 overflow-y-auto">
-        <div class="mx-auto w-full min-w-0 max-w-5xl space-y-6 px-4 py-5" id="content-column">
+        <div class="w-full min-w-0 space-y-6 px-6 py-5" id="content-column">
           <section class="fix min-w-0 max-w-full space-y-6" style="min-inline-size:0" data-testid="owned-settings">
             <div class="min-w-0 space-y-1">
               <h1 class="text-xl font-medium">${l.agents}</h1>

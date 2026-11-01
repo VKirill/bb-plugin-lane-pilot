@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.469
+
+- **BB's model window on the «Errands» page.** Each kind's model is picked right on its row with BB's own picker, seeded with the role table's row at the global level and saved there as `role_model.<role>` with the row's version and pool kept, the same save the Team tab does; «Back to default» drops the row (the owner, 2026-11-01: «the native BB picker here»). Two kinds on one row get one window. Models show by display name; a kind with no runs shows dashes.
+- **The pages in groups a person reads.** The rail's system pages split into «Today» (Waiting for you, Tasks, Errands, Automation) and «Setup» (General settings, Agents, Workflows, Tokens, Self-improvement), the projects between them; the phone select has the same groups (the owner: «systematise the pages so I am not lost»).
+- **Full-width work area.** The content column no longer stops at 1024 px; it fills the plugin's pane (`px-6`).
+- **Plain words on the Errands page.** The helper's reason comes out as «you stopped the helper», «the helper did not finish the job», «the system failed at the step …», «no connected machine»; a schedule named after its errand is just «schedule»; «Open the chat» is a quiet button.
+- **Chrome polish by the unslop pass.** Tabs transition colors only, card titles drop the tight tracking, the two tracked-uppercase group labels (Team access groups, the task graph) become sentence case, the agent-access listbox shadow softens. The pixel office of the council keeps its look on purpose.
+
 ## 0.1.468
 
 - **An «Errands» page in the scope rail.** The owner asked for one place that shows which errands the system has, so the kinds can grow over time (2026-11-01). The page (`src/rooms/errands`) has two blocks: the registry of kinds (`computer`, `devops`, `browser`, `research`, `message`, no kind) with the model in force at the global level and its role row, and the period's runs, done, stopped, failed, cost and Jev's shadow picks; and the errands of the last 7, 30 or 90 days with title, kind and who named it, model, outcome in five plain words, who asked (PM chat or schedule), cost and «Open the chat». One RPC `errands_overview` reads the workflow journal only, no table of its own: a new kind in `src/rooms/schedule/errand-kinds.ts` appears by itself. Docs: docs/errands.md. Tests: tests/errands/, tests/ui-project-nav.test.tsx.

@@ -7,17 +7,27 @@ import { OwnerWaitingBadge } from "../../owner-waiting/ui";
 import type { LpPage } from "./use-lp-page";
 
 type Scope = "projects" | "globals" | "agents" | "tokens" | "workflows" | "schedule" | "tasks" | "waiting" | "improvement" | "errands";
-const SYSTEM_PAGES: Array<{ scope: Exclude<Scope, "projects">; label: "navGlobals" | "navAgents" | "tabTokens" | "navWorkflows" | "navSchedule" | "navTasks" | "navOwnerWaiting" | "navImprovement" | "navErrands"; testId?: string }> = [
-  { scope: "globals", label: "navGlobals" },
-  { scope: "agents", label: "navAgents" },
-  { scope: "tokens", label: "tabTokens", testId: "scope-nav-tokens" },
-  { scope: "workflows", label: "navWorkflows", testId: "scope-nav-workflows" },
-  { scope: "schedule", label: "navSchedule", testId: "scope-nav-schedule" },
-  { scope: "errands", label: "navErrands", testId: "scope-nav-errands" },
-  { scope: "tasks", label: "navTasks", testId: "scope-nav-tasks" },
-  { scope: "improvement", label: "navImprovement", testId: "scope-nav-improvement" },
-  { scope: "waiting", label: "navOwnerWaiting", testId: "scope-nav-waiting" },
+type SystemPage = { scope: Exclude<Scope, "projects">; label: "navGlobals" | "navAgents" | "tabTokens" | "navWorkflows" | "navSchedule" | "navTasks" | "navOwnerWaiting" | "navImprovement" | "navErrands"; testId?: string };
+/**
+ * The system pages in two groups a person reads top-down (owner, 2026-11-01: «systematise the pages so I am not lost»): «Today» is what the
+ * machines are doing and what waits for the owner's word; «Setup» is how the system is configured. The projects sit between them.
+ */
+const NAV_GROUPS: Array<{ id: "today" | "setup"; label: "navGroupToday" | "navGroupSetup"; pages: SystemPage[] }> = [
+  { id: "today", label: "navGroupToday", pages: [
+    { scope: "waiting", label: "navOwnerWaiting", testId: "scope-nav-waiting" },
+    { scope: "tasks", label: "navTasks", testId: "scope-nav-tasks" },
+    { scope: "errands", label: "navErrands", testId: "scope-nav-errands" },
+    { scope: "schedule", label: "navSchedule", testId: "scope-nav-schedule" },
+  ] },
+  { id: "setup", label: "navGroupSetup", pages: [
+    { scope: "globals", label: "navGlobals" },
+    { scope: "agents", label: "navAgents" },
+    { scope: "workflows", label: "navWorkflows", testId: "scope-nav-workflows" },
+    { scope: "tokens", label: "tabTokens", testId: "scope-nav-tokens" },
+    { scope: "improvement", label: "navImprovement", testId: "scope-nav-improvement" },
+  ] },
 ];
+const SYSTEM_PAGES: SystemPage[] = NAV_GROUPS.flatMap((group) => group.pages);
 
 /** Phones: one select with the system pages, the projects (the open one with its sections) and the service projects. */
 export function MobileScopeSelect({ page }: { page: LpPage }) {
@@ -42,12 +52,16 @@ export function MobileScopeSelect({ page }: { page: LpPage }) {
       </SelectTrigger>
       <SelectContent>
         <SelectGroup>
-          <SelectLabel>{t("navGroupSystem")}</SelectLabel>
-          {SYSTEM_PAGES.map((item) => <SelectItem key={item.scope} value={item.scope}>{t(item.label)}</SelectItem>)}
+          <SelectLabel>{t("navGroupToday")}</SelectLabel>
+          {NAV_GROUPS[0]!.pages.map((item) => <SelectItem key={item.scope} value={item.scope}>{t(item.label)}</SelectItem>)}
         </SelectGroup>
         <SelectGroup>
           <SelectLabel>{t("projects")}</SelectLabel>
           {projectGroups.main.flatMap(projectItem)}
+        </SelectGroup>
+        <SelectGroup>
+          <SelectLabel>{t("navGroupSetup")}</SelectLabel>
+          {NAV_GROUPS[1]!.pages.map((item) => <SelectItem key={item.scope} value={item.scope}>{t(item.label)}</SelectItem>)}
         </SelectGroup>
         {projectGroups.service.length ? (
           <SelectGroup>
@@ -102,13 +116,17 @@ export function ScopeRail({ page }: { page: LpPage }) {
   const serviceOpen = projectGroups.service.some((project) => project.id === projectId && activeScope === "projects");
   return (
     <nav className={compactChrome ? "hidden" : "flex w-[14.5rem] shrink-0 flex-col pt-5 pb-2 pl-6 pr-2"} aria-label={t("scopeNav")} data-testid="scope-rail">
-      <div className="px-3 pb-1"><span className="text-xs font-medium text-muted-foreground">{t("navGroupSystem")}</span></div>
-      <div className="flex flex-col gap-1 pb-2" data-testid="scope-nav">
-        {SYSTEM_PAGES.map((item) => (
-          <Button key={item.scope} type="button" role="tab" size="sm" aria-selected={activeScope === item.scope} variant="ghost" className="lp-nav-item h-9 w-full justify-start px-3 text-sm hover:bg-state-hover"
-            data-testid={item.testId} onClick={() => setActiveScope(item.scope)}>{t(item.label)}{item.scope === "waiting" ? <OwnerWaitingBadge /> : null}</Button>
-        ))}
-      </div>
+      {NAV_GROUPS.map((group, index) => (
+        <div key={group.id} data-testid={`scope-nav-group-${group.id}`} className={index ? "border-t border-[var(--lp-hairline)] pt-3" : ""}>
+          <div className="px-3 pb-1"><span className="text-xs font-medium text-muted-foreground">{t(group.label)}</span></div>
+          <div className="flex flex-col gap-0.5 pb-2" data-testid={index ? undefined : "scope-nav"}>
+            {group.pages.map((item) => (
+              <Button key={item.scope} type="button" role="tab" size="sm" aria-selected={activeScope === item.scope} variant="ghost" className="lp-nav-item h-8 w-full justify-start px-3 text-sm hover:bg-state-hover"
+                data-testid={item.testId} onClick={() => setActiveScope(item.scope)}>{t(item.label)}{item.scope === "waiting" ? <OwnerWaitingBadge /> : null}</Button>
+            ))}
+          </div>
+        </div>
+      ))}
       <div className="border-t border-[var(--lp-hairline)] px-3 pb-1 pt-3"><span className="text-xs font-medium text-muted-foreground">{t("projects")}</span></div>
       <div className="min-h-0 flex-1 overflow-y-auto pb-2">
         {projectListError ? <p role="alert" className="px-2 text-xs text-destructive">{t("projectListError")}</p> : null}

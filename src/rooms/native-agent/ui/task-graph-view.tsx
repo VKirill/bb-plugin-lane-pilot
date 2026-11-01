@@ -91,7 +91,7 @@ export function TaskGraphView({ graph, onOpen }: { graph: TaskGraphData; onOpen?
         <div className="relative space-y-5">
           {rows.map((row, index) => (
             <div key={index} data-testid={`task-step-${index}`}>
-              <div className="mb-1 text-[10px] uppercase tracking-wide text-muted-foreground">
+              <div className="mb-1 text-[11px] text-muted-foreground">
                 {index === 0 ? "Сейчас" : `Шаг ${index + 1}`}{row.length > 1 ? " · параллельно" : ""}
               </div>
               <div className="flex flex-wrap gap-2">

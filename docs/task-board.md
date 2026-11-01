@@ -26,7 +26,7 @@ TL;DR: The Tasks screen presents Lane Pilot tasks and top-level workflow runs as
 
 ## Purpose
 
-The app's Tasks navigation scope renders `TaskBoard`; it reads the board and task card through the runs RPC methods (`src/rooms/ui-shell/ui/page.tsx:45-56`, `src/rooms/ui-shell/ui/project-nav.tsx:9-16`, `src/rooms/runs/ui/task-board.tsx:121-153`). The helper-thread panel can show the open run's task dependency graph (`src/rooms/native-agent/ui/helper-threads.tsx:70-84`, `src/rooms/contracts/rpc-native.ts:127-144`).
+The app's Tasks navigation scope renders `TaskBoard`; it reads the board and task card through the runs RPC methods (`src/rooms/ui-shell/ui/page.tsx:45-56`, `src/rooms/ui-shell/ui/project-nav.tsx:9-30`, `src/rooms/runs/ui/task-board.tsx:121-153`). The helper-thread panel can show the open run's task dependency graph (`src/rooms/native-agent/ui/helper-threads.tsx:70-84`, `src/rooms/contracts/rpc-native.ts:127-144`).
 
 ## How it works
 

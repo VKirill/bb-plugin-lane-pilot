@@ -283,7 +283,7 @@ export function TeamTab({ page }: { page: LpPage }) {
               ) : null}
               {ROLE_GROUPS.map((group) => (
                 <section key={group.id} data-testid={`access-section-${group.id}`}>
-                  <h3 className="border-t border-[var(--lp-hairline)] bg-[var(--lp-well)] px-3 py-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground first:border-t-0">{t(`accessGroup_${group.id}` as I18nKey)}</h3>
+                  <h3 className="border-t border-[var(--lp-hairline)] bg-[var(--lp-well)] px-3 py-1.5 text-xs font-medium text-muted-foreground first:border-t-0">{t(`accessGroup_${group.id}` as I18nKey)}</h3>
                   {group.roles.map((spec) => (
                     <RoleRow key={spec.id} spec={spec} page={page} access={access} rules={rules} open={open.has(spec.id)} onToggle={() => toggle(spec.id)} fallbackNames={fallbackNames} tableRoles={tableRoles} saveTableRole={saveTableRole} />
                   ))}

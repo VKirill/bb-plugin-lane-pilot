@@ -191,7 +191,7 @@ function NameEditor({ chosen, locked, catalog, searchLabel, disabled, testId, on
           onChange={(event) => setQuery(event.target.value)} onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
           onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); submit(); } if (event.key === "Escape") setQuery(""); }} />
         {focused && (shown.length || custom) ? (
-          <div role="listbox" aria-label={searchLabel} className="absolute left-0 right-0 top-full z-30 mt-1 max-h-56 min-w-0 overflow-y-auto rounded-lg border border-[var(--lp-outline)] bg-[var(--lp-card)] p-1 shadow-lg">
+          <div role="listbox" aria-label={searchLabel} className="absolute left-0 right-0 top-full z-30 mt-1 max-h-56 min-w-0 overflow-y-auto rounded-lg border border-[var(--lp-outline)] bg-[var(--lp-card)] p-1 shadow-md">
             {shown.map((item) => (
               <button key={item.name} type="button" role="option" aria-selected={false} title={item.detail || item.label} className="block w-full min-w-0 rounded-md px-2 py-1.5 text-left text-sm hover:bg-[var(--lp-well)]"
                 onMouseDown={(event) => event.preventDefault()} onClick={() => add(item.name)}>

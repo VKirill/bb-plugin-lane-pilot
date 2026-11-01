@@ -41,7 +41,7 @@ TL;DR: every control of the loop that learns from failures (the night loop, the 
 
 ## Where it is
 
-The screen is a system page next to «Waiting for you» (`src/rooms/ui-shell/ui/project-nav.tsx:17`), mounted by the page shell (`src/rooms/ui-shell/ui/page.tsx:59`). It reads once with `improvement_view` (`src/rooms/improvement/server/rpc.ts:43`) and saves each field with `save_setting` on project id `*` (`src/rooms/improvement/ui/use-improvement.ts:78`).
+The screen is a system page of the rail's «Setup» group (`src/rooms/ui-shell/ui/project-nav.tsx:27`), mounted by the page shell (`src/rooms/ui-shell/ui/page.tsx:59`). It reads once with `improvement_view` (`src/rooms/improvement/server/rpc.ts:43`) and saves each field with `save_setting` on project id `*` (`src/rooms/improvement/ui/use-improvement.ts:78`).
 
 Above the sections a status strip shows four numbers from the same read: the last and the next night (`03:00`, `src/rooms/improvement/server/rpc.ts:19`), the size of the newest bench set, the policy exam progress (`N of 20` unseen owner decisions), and the count of what waits for the owner.
 

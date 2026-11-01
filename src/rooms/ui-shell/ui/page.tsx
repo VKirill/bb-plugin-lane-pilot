@@ -50,7 +50,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
         <ScopeRail page={page} />
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           <div className="min-h-0 min-w-0 flex-1 overflow-y-auto">
-            <div ref={contentRef} className="mx-auto w-full min-w-0 max-w-5xl space-y-6 px-4 py-5">
+            <div ref={contentRef} className="w-full min-w-0 space-y-6 px-6 py-5">
               <OwnedSettings scope={activeScope === "agents" ? "agents" : "projects"} locale={locale} />
               {activeScope === "tokens" ? <TokenUsage projects={projects} /> : null}
               {activeScope === "workflows" ? <WorkflowsScreen locale={locale} projectId={null} architectProjectId={selectedProjectId ?? routeProjectId ?? (subPath || null)} /> : null}
