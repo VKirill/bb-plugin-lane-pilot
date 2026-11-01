@@ -10,12 +10,13 @@ export { FAILED_FINAL_STATUSES, finalRuleOf, workflowFinish } from "@lane-pilot/
 export type { FinalRule, WorkflowFinish } from "@lane-pilot/workflow-engine";
 
 /** The one message to the PM chat after a failed scheduled run; it says the schedule is paused when this failure paused it. */
-export function scheduleFailureNotice(schedule: Pick<ScheduleRow, "name" | "consecutive_failures">, run: Pick<RunRow, "status" | "error" | "reason">, paused: boolean): string {
+export function scheduleFailureNotice(schedule: Pick<ScheduleRow, "name" | "consecutive_failures"> & Partial<Pick<ScheduleRow, "trigger_type">>, run: Pick<RunRow, "status" | "error" | "reason">, paused: boolean): string {
   const what = `Расписание «${schedule.name}» ${run.status === "timed_out" ? "не уложилось во время" : "не сработало"}: ${(run.error ?? run.reason ?? "без подробностей").slice(0, 300)}`;
   const times = schedule.consecutive_failures;
-  return paused
-    ? `${what}\nНе сработало ${times} раз подряд и поставлено на паузу. Откройте доску расписаний, чтобы посмотреть историю и возобновить его.`
-    : `${what}\nНе сработало ${times} раз подряд; оно продолжит запускаться, а после слишком многих неудач подряд поставится на паузу само. История на доске расписаний.`;
+  if (paused) return `${what}\nНе сработало ${times} раз подряд и поставлено на паузу. Откройте доску расписаний, чтобы посмотреть историю и возобновить его.`;
+  // A one-off (a PM's errand on a chosen model, a reminder) does not fire again by itself: «it keeps running» would be false (owner, 2026-11-01).
+  if (schedule.trigger_type === "once") return `${what}\nЭто разовый запуск: сам он не повторится. Если задача ещё нужна, нажмите «Запустить снова» или попросите PM в чате.`;
+  return `${what}\nНе сработало ${times} раз подряд; оно продолжит запускаться, а после слишком многих неудач подряд поставится на паузу само. История на доске расписаний.`;
 }
 
 /**

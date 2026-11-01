@@ -12,7 +12,7 @@ import type { ServerCore } from "../../core/server";
 import { allowedSecretNames } from "../../secrets/server";
 import { agentPickerLabel } from "../../native-agent";
 import { t } from "@lane-pilot/i18n";
-import { loadPushConfig, postOwnerItem } from "../../owner-waiting";
+import { loadPushConfig, postOwnerItem, rpcLine } from "../../owner-waiting";
 import { errandModelView, readErrandDefault } from "./schedule-default";
 import { createThreadHosts, projectPlaces, whereOf, type ProjectPlace } from "./schedule-place";
 import { NO_USAGE, errandRunThread, scheduleCost, threadUsage } from "./schedule-usage";
@@ -45,10 +45,21 @@ export function createScheduleService(ctx: ServerCore, services: Services) {
       // Every failed run is one row on the owner's list (a monthly invoice that failed once used to be visible in the log only); the
       // pause-after-N rule stays as it was and is named in the row that triggers it. Never the PM chat: a schedule's failure is the
       // plugin's own event (0.1.443), and waking a chat for it was the leak the grills of 0.1.456 found. The phone rings only for a pause.
+      // The owner stopped the run himself (the errand's thread, the board's cancel): nothing to tell him.
+      if (/cancel/iu.test(`${run.error ?? ""} ${run.reason ?? ""}`)) return;
       const notice = scheduleFailureNotice(schedule, run, paused);
       bb.log.warn(notice.split("\n", 1)[0]!);
+      // What the row offers (owner, 2026-11-01: a row that only says «read» is not an action): a one-off can run again (the same key,
+      // so a second press is the same run), a live cron can be paused; the pause row asks only to be read. The janitor closes the row
+      // once a later run ended, the schedule is paused or gone (owner-waiting/items.ts).
+      const key = `schedule-failure:${run.id}`;
+      const read = { id: "read", label: "Прочитано", cli: rpcLine("owner_waiting_close", { key }), rpc: { method: "owner_waiting_close", input: { key } } };
+      const again = { id: schedule.id, key: run.id }, pause = { id: schedule.id, reason: "остановлено владельцем со списка «Ждут владельца»" };
+      const actions = paused ? [] : schedule.trigger_type === "once"
+        ? [{ id: "run_again", label: "Запустить снова", cli: rpcLine("schedule_run_now", again), rpc: { method: "schedule_run_now", input: again } }, read]
+        : [{ id: "pause", label: "Поставить на паузу", cli: rpcLine("schedule_pause", pause), rpc: { method: "schedule_pause", input: pause } }, read];
       try {
-        postOwnerItem(db, { key: `schedule-failure:${run.id}`, source: "schedule", kind: "schedule_failed", projectId: schedule.project_id, wake: paused,
+        postOwnerItem(db, { key, source: "schedule", kind: paused ? "schedule_paused" : "schedule_failed", projectId: schedule.project_id, wake: paused, actions,
           what: `Расписание «${schedule.name}» ${paused ? "остановлено после повторных сбоев" : "не сработало"}`, why: notice.slice(0, 560), evidence: [{ kind: "text", ref: run.id, label: "запуск расписания" }] });
       } catch { /* the log has it */ }
     },

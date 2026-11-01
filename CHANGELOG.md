@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.467
+
+- **A failed schedule's row says what to do, and leaves by itself.** The owner saw three rows «Расписание … не сработало … оно продолжит запускаться» with nothing but «Прочитано» (2026-11-01): all three were one-off errand schedules a PM had created to pick Opus (the detour 0.1.464 closed), one had already succeeded on a rerun, one the owner had cancelled himself. Now a one-off's row says it will not fire again and offers «Запустить снова» (`schedule_run_now`, keyed by the failed run so a second press is the same run); a live cron's row offers «Поставить на паузу»; a run the owner cancelled posts no row; the row that paused a schedule is kind `schedule_paused`. The janitor closes a failure row once a later run of the schedule ended, the schedule is paused or gone, and after three days in any case (`src/rooms/schedule/server/schedule-service.ts`, `src/rooms/schedule/outcome.ts`, `src/rooms/owner-waiting/items.ts`). Tests: tests/schedule/board.test.ts, tests/schedule/workflow-outcome.test.ts.
+
 ## 0.1.466
 
 - **The plugin's own page opens on «General settings».** Clicking Lane Pilot in BB's sidebar landed on the last project the owner had looked at (`preferences:lastProjectId`, on the hub «Мои проекты»), so the global table «Models by role» took a detour through the rail (owner, 2026-11-01). The page now opens on «General settings» when the route names no project and no project link (`subPath`) was followed; a project in the route or a project link still opens that project, and the rail still remembers the last one (src/rooms/ui-shell/ui/use-lp-page.tsx:38). Test: tests/ui-project-nav.test.tsx (the landing describe).

@@ -66,3 +66,14 @@ describe("the notice of a failed scheduled run", () => {
     expect(last).toContain("3 раз подряд и поставлено на паузу");
   });
 });
+
+describe("the failure notice of a one-off schedule (0.1.467)", () => {
+  it("says it will not fire again instead of «it keeps running»", () => {
+    const run = { status: "failed" as const, error: "Provider error", reason: null };
+    const once = scheduleFailureNotice({ name: "Багет (Opus)", consecutive_failures: 1, trigger_type: "once" }, run, false);
+    expect(once).toContain("«Багет (Opus)» не сработало");
+    expect(once).toContain("разовый запуск");
+    expect(once).not.toContain("продолжит запускаться");
+    expect(scheduleFailureNotice({ name: "Багет (Opus)", consecutive_failures: 1, trigger_type: "cron" }, run, false)).toContain("продолжит запускаться");
+  });
+});

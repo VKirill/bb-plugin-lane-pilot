@@ -134,7 +134,7 @@ export function closeOwnerItemsByPrefix(db: Db, prefix: string, by: string, now:
 export const OWNER_FACT_TTL_MS = 3 * 24 * 60 * 60_000;
 /** How long a row without buttons that still describes something to do (a writer's question, a red gate) stays. */
 export const OWNER_NOTE_TTL_MS = 7 * 24 * 60 * 60_000;
-const FACT_KINDS = new Set(["handed", "acted", "tick_error", "tick_no_receipt", "labels", "right_changed", "schedule_failed", "digest", "outage", "gate_machine", "gate_no_test", "rule_proposed", "backlog_ready"]);
+const FACT_KINDS = new Set(["handed", "acted", "tick_error", "tick_no_receipt", "labels", "right_changed", "schedule_failed", "schedule_paused", "digest", "outage", "gate_machine", "gate_no_test", "rule_proposed", "backlog_ready"]);
 
 /**
  * The list shows what still waits; a row whose question went away is closed here, on every read (SWE-2 F-004..F-006, Gemini F-006:
@@ -165,7 +165,16 @@ export function sweepOwnerItems(db: Db, now: number = Date.now()): number {
       const phase = db.prepare("SELECT state FROM lane_pilot_phase WHERE id=?").get(row.key.split(":")[1]) as { state: string } | undefined;
       if (!phase || phase.state === "closed" || phase.state === "stopped") { close(row.key, "janitor:phase closed"); continue; }
     }
-    if (parse<OwnerAction[]>(row.actions_json, []).length === 0 && now - row.created_at > (FACT_KINDS.has(row.kind) ? OWNER_FACT_TTL_MS : OWNER_NOTE_TTL_MS)) close(row.key, "janitor:term");
+    // A failed schedule run (`schedule-failure:<run>`) once the schedule moved on: a later run ended (a failed one has its own row), the schedule is paused or gone (0.1.467).
+    if (row.key.startsWith("schedule-failure:") && row.kind === "schedule_failed" && tableExists(db, "lane_pilot_schedule_run")) {
+      const run = db.prepare("SELECT schedule_id, finished_at FROM lane_pilot_schedule_run WHERE id=?").get(row.key.slice("schedule-failure:".length)) as { schedule_id: string; finished_at: number | null } | undefined;
+      const schedule = run ? db.prepare("SELECT state FROM lane_pilot_schedule WHERE id=?").get(run.schedule_id) as { state: string } | undefined : undefined;
+      if (!run || !schedule) { close(row.key, "janitor:schedule gone"); continue; }
+      if (schedule.state === "paused") { close(row.key, "janitor:schedule paused"); continue; }
+      if (db.prepare("SELECT 1 FROM lane_pilot_schedule_run WHERE schedule_id=? AND finished_at>? LIMIT 1").get(run.schedule_id, run.finished_at ?? 0)) { close(row.key, "janitor:a later run ended"); continue; }
+    }
+    // A failure row keeps its buttons, but a fact three days old is no longer news: it leaves with the other facts.
+    if ((row.kind === "schedule_failed" || parse<OwnerAction[]>(row.actions_json, []).length === 0) && now - row.created_at > (FACT_KINDS.has(row.kind) ? OWNER_FACT_TTL_MS : OWNER_NOTE_TTL_MS)) close(row.key, "janitor:term");
   }
   return closed;
 }

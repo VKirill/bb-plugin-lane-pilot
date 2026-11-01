@@ -2,6 +2,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, describe, expect, it } from "vitest";
 import plugin from "../../server";
 import { createRun, openDatabase, saveProjectSetting, setRunThread } from "../../src/rooms/storage/database";
+import { sweepOwnerItems } from "../../src/rooms/owner-waiting/items";
 
 /**
  * The schedule board through the whole plugin: the RPCs the board uses, the tick of the isolated schedule, a script that runs as a
@@ -284,5 +285,35 @@ describe("bb lane-pilot schedule", () => {
     expect(JSON.parse(String(refused.stdout)).problems.join(" ")).toMatch(/cron/);
     expect(JSON.parse(String((await cli("delete", id)).stdout))).toEqual({ ok: true });
     expect((await cli("show", id)).exitCode).toBe(1);
+  });
+});
+
+describe("the failure row of a schedule (0.1.467)", () => {
+  it("offers a pause to a cron and «run again» to a one-off, which says it will not repeat; the row leaves when the schedule is paused or a later run ended", async () => {
+    const { rpc, tick, db } = await setup({ failJob: true });
+    type Row = { key: string; kind: string; why: string; actions_json: string; state: string };
+    const rows = () => db.prepare("SELECT key, kind, why, actions_json, state FROM lane_pilot_owner_item WHERE key LIKE 'schedule-failure:%' ORDER BY rowid").all() as Row[];
+    const ids = (row: Row) => (JSON.parse(row.actions_json) as Array<{ id: string }>).map((action) => action.id);
+    const cron = (await rpc("schedule_upsert", { definition: script({ maxFailures: 0 }) })).schedule;
+    await rpc("schedule_run_now", { id: cron.id, key: "one" }); await tick(); await tick();
+    expect(rows()).toHaveLength(1);
+    expect(rows()[0]).toMatchObject({ kind: "schedule_failed", state: "open" });
+    expect(ids(rows()[0]!)).toEqual(["pause", "read"]);
+    expect(rows()[0]!.why).toContain("продолжит запускаться");
+    await rpc("schedule_pause", { id: cron.id, reason: "enough" });
+    sweepOwnerItems(db);
+    expect(rows()[0]!.state).toBe("closed");
+
+    const once = (await rpc("schedule_upsert", { definition: script({ name: "Once", when: { type: "once", runAt: Date.now() + 3_600_000 } }) })).schedule;
+    await rpc("schedule_run_now", { id: once.id, key: "first" }); await tick(); await tick();
+    const first = rows().find((row) => row.state === "open")!;
+    expect(first.why).toContain("разовый запуск");
+    expect(first.why).not.toContain("продолжит запускаться");
+    expect(ids(first)).toEqual(["run_again", "read"]);
+    await rpc("schedule_run_now", { id: once.id, key: "second" }); await tick(); await tick();
+    sweepOwnerItems(db);
+    const open = rows().filter((row) => row.state === "open");
+    expect(open).toHaveLength(1);
+    expect(open[0]!.key).not.toBe(first.key);
   });
 });
