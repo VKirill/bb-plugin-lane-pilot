@@ -105,3 +105,14 @@ describe("project list, header and overview", () => {
     slot.lifecycle.unmount();
   });
 });
+
+describe("the plugin's own page lands on General settings", () => {
+  it("opens «General settings» when the route has no project, and the last project only when the route names one", async () => {
+    const own = await mountPage(projectsRpc, { projectId: null, threadId: null });
+    await waitFor(() => expect(own.getByTestId("project-settings").querySelector("h1")?.textContent).toBe(en.navGlobals));
+    own.lifecycle.unmount();
+    const inProject = await mountPage(projectsRpc);
+    await waitFor(() => expect(inProject.getByTestId("project-settings").querySelector("h1")?.textContent).not.toBe(en.navGlobals));
+    inProject.lifecycle.unmount();
+  });
+});

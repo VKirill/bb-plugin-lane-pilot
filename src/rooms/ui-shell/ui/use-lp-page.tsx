@@ -34,9 +34,10 @@ import { BASIC_SETTING_KEYS, CODE_CRITIQUE_EFFORT, CODE_CRITIQUE_MODEL, CODE_CRI
 import { useLpPoll } from "./use-lp-rpc-query";
 
 export function useLanePilotPage({ subPath = "", scope = "projects" }: { subPath?: string; scope?: "projects" | "globals" | "agents" | "tokens" | "workflows" | "schedule" | "tasks" | "waiting" | "improvement" }) {
-  const [activeScope, setActiveScope] = useState(scope);
   const rpc = useRpc<typeof rpcContract>();
   const { projectId: routeProjectId, threadId: routeThreadId } = useBbContext();
+  // The plugin's own page (no project in the route, no project link) opens on «General settings», not on the last project (owner's word 2026-11-01).
+  const [activeScope, setActiveScope] = useState(scope === "projects" && !subPath && !routeProjectId ? "globals" : scope);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   // «Общие настройки» edit the global level every project inherits, with the same panel as a project.
   const projectId = activeScope === "globals" ? GLOBAL_SETTINGS_PROJECT_ID : selectedProjectId ?? routeProjectId ?? (subPath || null);
