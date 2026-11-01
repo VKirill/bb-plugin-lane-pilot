@@ -63,8 +63,8 @@ describe("native writer settings against the registered SQLite backend", () => {
     fireEvent.click(slot.getByTestId("role-open-writer"));
     expect(slot.getByTestId("jev-settings").querySelectorAll("[role='switch']")).toHaveLength(1);
     expect(slot.getByTestId("writer-effort-mode")).toBeTruthy();
-    expect(slot.getByTestId("night-review-settings")).toBeTruthy();
-    expect(slot.getByLabelText(en.nightReviewEnabled)).toBeTruthy();
+    expect(slot.getByTestId("specialist-settings")).toBeTruthy();
+    expect(slot.getByLabelText(en.specialistReview)).toBeTruthy();
     for (const id of ["team", "work"]) expect(slot.getByTestId(`${id}-panel`).textContent).not.toContain("--writer-provider");
     // Diagnostics sit folded inside Maintenance, away from the settings tabs.
     expect(slot.queryByTestId("service-panel")).toBeNull();
@@ -75,14 +75,14 @@ describe("native writer settings against the registered SQLite backend", () => {
     await finish(harness, slot);
   });
 
-  it("saves night-review model selection as one provider-catalog-validated CAS tuple",async()=>{
-    const {harness,slot,nightSaveCalls}=await mountWithBackend();
-    await waitFor(()=>expect(slot.getByTestId("night-review-settings").querySelector("[data-testid='bb-provider-model-picker']")).not.toBeNull());
-    const picker=slot.getByTestId("night-review-settings").querySelector("[data-testid='bb-provider-model-picker']")!;
+  it("saves specialist model selection as one provider-catalog-validated CAS tuple",async()=>{
+    const {harness,slot,specialistSaveCalls}=await mountWithBackend();
+    await waitFor(()=>expect(slot.getByTestId("specialist-settings").querySelector("[data-testid='bb-provider-model-picker']")).not.toBeNull());
+    const picker=slot.getByTestId("specialist-settings").querySelector("[data-testid='bb-provider-model-picker']")!;
     expect(picker.getAttribute("data-provider")).toBe("codex");
     await choosePickerValue({providerId:"qwen",model:"qwen-test",reasoningLevel:"medium",serviceTier:"default"}, picker as PickerNode);
-    await waitFor(()=>expect(nightSaveCalls).toHaveLength(1));
-    expect(nightSaveCalls[0]).toMatchObject({providerId:"qwen",model:"qwen-test",reasoningLevel:"medium",expectedVersions:{"night_review.provider":0,"night_review.model":0,"night_review.reasoning_effort":0,"night_review.service_tier":0}});
+    await waitFor(()=>expect(specialistSaveCalls).toHaveLength(1));
+    expect(specialistSaveCalls[0]).toMatchObject({providerId:"qwen",model:"qwen-test",reasoningLevel:"medium",expectedVersions:{"specialist.provider":0,"specialist.model":0,"specialist.reasoning_effort":0,"specialist.service_tier":0}});
     await finish(harness,slot);
   });
 

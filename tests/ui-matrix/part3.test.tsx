@@ -12,15 +12,15 @@ vi.mock("sonner", () => ({ toast: { info: vi.fn(), success: vi.fn(), error: vi.f
 describe("Lane Pilot UI", () => {
   useMatrixHooks();
 
-  it("does not emit React duplicate-key warnings for medium or night_review.model", async () => {
+  it("does not emit React duplicate-key warnings for medium or specialist.model", async () => {
     const errors: unknown[] = [];
     const spy = vi.spyOn(console, "error").mockImplementation((...args) => { errors.push(args); });
     const slot = await mountPage();
-    await waitFor(() => expect(slot.getByTestId("night-review-settings").querySelector("[data-testid='bb-provider-model-picker']")).toBeTruthy());
+    await waitFor(() => expect(slot.getByTestId("specialist-settings").querySelector("[data-testid='bb-provider-model-picker']")).toBeTruthy());
     openTab(slot, "service");
     const joined = errors.map((item) => String(item)).join("\n");
     expect(joined).not.toMatch(/same key/i);
-    expect(joined).not.toContain("night_review.model");
+    expect(joined).not.toContain("specialist.model");
     expect(joined).not.toMatch(/key=["']medium["']/i);
     spy.mockRestore();
     slot.lifecycle.unmount();

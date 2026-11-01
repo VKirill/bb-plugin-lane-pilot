@@ -21,12 +21,12 @@ describe("a second choice made while the first save of a role picker is in fligh
 
   it("keeps the last choice of a role picker, saves it on the versions the first left, and does not reload the screen", async () => {
     let releaseFirst: (() => void) | undefined;
-    const { harness, slot, nightSaveCalls, screenCalls } = await mountWithBackend({
+    const { harness, slot, specialistSaveCalls, screenCalls } = await mountWithBackend({
       delayRpc: async (method, input) => {
-        if (method === "save_night_review_selection" && (input as { providerId: string }).providerId === "qwen") await new Promise<void>((resolve) => { releaseFirst = resolve; });
+        if (method === "save_specialist_selection" && (input as { providerId: string }).providerId === "qwen") await new Promise<void>((resolve) => { releaseFirst = resolve; });
       },
     });
-    const picker = () => slot.getByTestId("night-review-settings").querySelector("[data-testid='bb-provider-model-picker']") as PickerNode;
+    const picker = () => slot.getByTestId("specialist-settings").querySelector("[data-testid='bb-provider-model-picker']") as PickerNode;
     await waitFor(() => expect(picker().getAttribute("data-provider")).toBe("codex"));
     const screensBefore = screenCalls.length;
     await choosePickerValue({ providerId: "qwen", model: "qwen-test", reasoningLevel: "medium", serviceTier: "default" }, picker());
@@ -35,24 +35,24 @@ describe("a second choice made while the first save of a role picker is in fligh
     releaseFirst!();
     await waitFor(async () => {
       const current = await harness.behavior.callRpc("get_screen", { projectId }) as { values: Record<string, unknown> };
-      expect(current.values).toMatchObject({ "night_review.provider": "claude-code", "night_review.model": "claude-opus-5" });
+      expect(current.values).toMatchObject({ "specialist.provider": "claude-code", "specialist.model": "claude-opus-5" });
     });
-    expect(nightSaveCalls).toHaveLength(2);
-    expect(nightSaveCalls[1]!.expectedVersions).toEqual({ "night_review.provider": 1, "night_review.model": 1, "night_review.reasoning_effort": 1, "night_review.service_tier": 1 });
+    expect(specialistSaveCalls).toHaveLength(2);
+    expect(specialistSaveCalls[1]!.expectedVersions).toEqual({ "specialist.provider": 1, "specialist.model": 1, "specialist.reasoning_effort": 1, "specialist.service_tier": 1 });
     expect(slot.queryByTestId("cas-conflict")).toBeNull();
     expect(screenCalls).toHaveLength(screensBefore);
     expect(picker().getAttribute("data-provider")).toBe("claude-code");
     // The role now has its own pair: the row says so and «Вернуть унаследованное» is live without a reload.
-    expect(slot.getByTestId("role-origin-night_reviewer").textContent).toBe(en.accessOrigin_project);
+    expect(slot.getByTestId("role-origin-specialist_reviewer").textContent).toBe(en.accessOrigin_project);
     await finish(harness, slot);
   });
 
   it("shows the latest choice of a role picker at once, before any save has answered", async () => {
     let releaseFirst: (() => void) | undefined;
     const { harness, slot } = await mountWithBackend({
-      delayRpc: async (method) => { if (method === "save_night_review_selection") await new Promise<void>((resolve) => { releaseFirst = resolve; }); },
+      delayRpc: async (method) => { if (method === "save_specialist_selection") await new Promise<void>((resolve) => { releaseFirst = resolve; }); },
     });
-    const picker = () => slot.getByTestId("night-review-settings").querySelector("[data-testid='bb-provider-model-picker']") as PickerNode;
+    const picker = () => slot.getByTestId("specialist-settings").querySelector("[data-testid='bb-provider-model-picker']") as PickerNode;
     await waitFor(() => expect(picker().getAttribute("data-provider")).toBe("codex"));
     await choosePickerValue({ providerId: "qwen", model: "qwen-test", reasoningLevel: "medium", serviceTier: "default" }, picker());
     await waitFor(() => expect(releaseFirst).toBeTypeOf("function"));

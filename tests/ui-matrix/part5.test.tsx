@@ -99,16 +99,16 @@ describe("Lane Pilot UI", () => {
   it("renders numeric limits instead of sliders and keeps a failed draft", async () => {
     const slot = await mountPage({
       save_setting: () => ({ ok: false, conflict: false, version: 1, value: 5, validation: {
-        code: "invalid_choice", key: "night_review.max_fix_tasks", params: ["night_review.max_fix_tasks", "1-10"],
+        code: "invalid_choice", key: "code_critique.max_rounds", params: ["code_critique.max_rounds", "1-3"],
       } }),
     });
     await waitFor(() => expect(slot.container.querySelector("[data-testid='bb-provider-model-picker']")).not.toBeNull());
-    const field = await slot.findByTestId("night-review-policy").then((panel) => panel.querySelector("[data-testid='field-s006']") as HTMLElement);
+    const field = await slot.findByTestId("code-critique-policy").then((panel) => panel.querySelector("[data-testid='field-s380']") as HTMLElement);
     expect(field).toBeTruthy();
     expect(field.querySelector("[role='slider']")).toBeNull();
     const input = field.querySelector("input[type='number']") as HTMLInputElement;
     expect(input.min).toBe("1");
-    expect(input.max).toBe("10");
+    expect(input.max).toBe("3");
     expect(field.textContent).toContain(en.fieldLimits);
     fireEvent.change(input, { target: { value: "8" } });
     fireEvent.blur(input);
@@ -124,12 +124,12 @@ describe("Lane Pilot UI", () => {
     expect(slot.getByTestId("settings-execution")).toBeTruthy();
     expect(slot.getByTestId("team-panel").querySelector("[data-testid='browser-qa-host']")).toBeTruthy();
     expect(slot.queryByTestId("settings-search")).toBeNull();
-    expect(slot.getByTestId("work-night").hidden).toBe(true);
+    expect(slot.getByTestId("work-code").hidden).toBe(true);
     openTab(slot, "knowledge", "memory");
     expect(slot.getByTestId("memory-advanced").hidden).toBe(true);
     fireEvent.click(slot.getByRole("button", { name: en.settingsAdvanced }));
     expect(slot.getByTestId("settings-group-workspace")).toBeTruthy();
-    expect(slot.getByTestId("work-night").hidden).toBe(false);
+    expect(slot.getByTestId("work-code").hidden).toBe(false);
     expect(slot.getByTestId("memory-advanced").hidden).toBe(false);
     expect(slot.getByTestId("memory-advanced").textContent).toContain(en.settingMemoryMaintain);
     expect(slot.getByTestId("memory-advanced").textContent).toContain(en.fieldUnitTokens);
