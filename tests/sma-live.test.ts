@@ -42,16 +42,19 @@ describe("dark tables (W32 rank 9)", () => {
       }
     };
     walk(path.join(root, "src")); walk(path.join(root, "packages"));
-    const missing: string[] = [], seen = new Set<string>();
+    const missing: string[] = [], seen = new Set<string>(), dropped = new Set<string>();
     for (const file of files) {
       for (const line of fs.readFileSync(file, "utf8").split("\n")) {
+        const d = /DROP TABLE(?: IF EXISTS)? `?(lane_pilot_[a-z_]+)`?/i.exec(line);
+        if (d) dropped.add(d[1]!);
         const m = /CREATE TABLE(?: IF NOT EXISTS)? `?(lane_pilot_[a-z_]+)`?/i.exec(line);
         if (!m || seen.has(m[1]!) || /_next$|_nv$|_v$|_fts/.test(m[1]!)) continue;
         seen.add(m[1]!);
         if (!(m[1]! in TABLE_CLOCKS)) missing.push(m[1]!);
       }
     }
-    expect(missing).toEqual([]);
+    // A table a later migration drops (lane_pilot_lead_label, 0.1.458) is not live and needs no clock.
+    expect(missing.filter((table) => !dropped.has(table))).toEqual([]);
     // The clock a map row names must be a real column ("" counts the table in full); the live schema is the referee —
     // a CREATE ..._next rename or a later ALTER would fool any text scan.
     const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
@@ -63,7 +66,7 @@ describe("dark tables (W32 rank 9)", () => {
     }).map(([table]) => table);
     expect(wrongClock).toEqual([]);
     const sql = fs.readFileSync(path.join(root, "scripts/lp-wall-morning.sql"), "utf8");
-    expect([...seen].filter((name) => !sql.includes(`'${name}'`))).toEqual([]);
+    expect([...seen].filter((name) => !dropped.has(name) && !sql.includes(`'${name}'`))).toEqual([]);
   });
   it("counts every named table on the real schema, dark or lit", () => {
     const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });

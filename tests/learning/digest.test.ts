@@ -41,31 +41,31 @@ describe("the daily «what I learned» report (T5)", () => {
     expect(many.text).toContain("4 more are listed by");
   });
 
-  it("sends one message per project to its open PM chat, once, and keeps the rest for the day a chat is open", async () => {
+  // 0.1.458: the report is announced to the owner's list per project, never sent into a PM chat (0.1.443), so no project waits for an open chat.
+  it("announces one report per project, once, with what is in force and what waits counted", async () => {
     const db = database();
     insertItem(db, item({ projectId: "proj_1" }));
     insertItem(db, item({ projectId: "proj_2", text: "Second project rule" }));
     insertItem(db, item({ projectId: "proj_1", state: "pending_owner", target: "bb-memory", reach: "owner", text: "Global preference" }));
-    const sent: Array<[string, string]> = [];
-    const digest = createDigest({ db, now: () => NOW, pmThread: (projectId) => (projectId === "proj_1" ? "thr_pm_1" : null), send: async (thread, text) => { sent.push([thread, text]); } });
+    const announced: Array<[string, string, number, number]> = [];
+    const digest = createDigest({ db, now: () => NOW, announce: async (projectId, report) => { announced.push([projectId, report.text, report.inForce, report.waiting]); } });
     const dry = await digest.run({ dryRun: true });
     expect(dry.map((row) => [row.projectId, row.sent])).toEqual([["proj_1", false], ["proj_2", false]]);
-    expect(sent).toEqual([]);
+    expect(announced).toEqual([]);
     const first = await digest.run();
     expect(first.find((row) => row.projectId === "proj_1")).toMatchObject({ sent: true, items: 2 });
-    expect(first.find((row) => row.projectId === "proj_2")).toMatchObject({ sent: false });
-    expect(sent).toHaveLength(1);
-    expect(sent[0]![0]).toBe("thr_pm_1");
-    expect(sent[0]![1]).toContain("Global preference");
-    expect(await digest.run()).toHaveLength(1);
-    expect(sent).toHaveLength(1);
-    expect(listItems(db, { projectId: "proj_2", unannounced: true })).toHaveLength(1);
+    expect(first.find((row) => row.projectId === "proj_2")).toMatchObject({ sent: true, items: 1 });
+    expect(announced).toHaveLength(2);
+    expect(announced.find(([projectId]) => projectId === "proj_1")).toEqual(["proj_1", expect.stringContaining("Global preference"), 1, 1]);
+    expect(await digest.run()).toHaveLength(0);
+    expect(announced).toHaveLength(2);
+    expect(listItems(db, { unannounced: true })).toHaveLength(0);
   });
 
-  it("leaves the items unannounced when the send fails", async () => {
+  it("leaves the items unannounced when the announcement fails", async () => {
     const db = database();
     insertItem(db, item());
-    const digest = createDigest({ db, now: () => NOW, pmThread: () => "thr_pm", send: async () => { throw new Error("thread busy"); } });
+    const digest = createDigest({ db, now: () => NOW, announce: async () => { throw new Error("list closed"); } });
     expect(await digest.run()).toMatchObject([{ sent: false }]);
     expect(listItems(db, { unannounced: true })).toHaveLength(1);
   });

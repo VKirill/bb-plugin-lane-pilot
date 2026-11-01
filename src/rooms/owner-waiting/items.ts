@@ -61,7 +61,7 @@ const SOURCE_ORDER = ["night", "wall", "backlog", "learning"];
 const clip = (text: string, max: number) => (text.length > max ? `${text.slice(0, max - 1)}…` : text);
 const tableExists = (db: Db, name: string): boolean => Boolean(db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(name));
 const parse = <T>(text: string | null | undefined, fallback: T): T => { try { return text ? JSON.parse(text) as T : fallback; } catch { return fallback; } };
-const rpcLine = (method: string, input: Record<string, unknown>) => `echo '${JSON.stringify(input)}' > /tmp/owner-action.json && bb plugin rpc call lane-pilot ${method} --input-file /tmp/owner-action.json --json`;
+export const rpcLine = (method: string, input: Record<string, unknown>) => `echo '${JSON.stringify(input)}' > /tmp/owner-action.json && bb plugin rpc call lane-pilot ${method} --input-file /tmp/owner-action.json --json`;
 
 function learningItems(db: Db): OwnerItem[] {
   if (!tableExists(db, "lane_pilot_learning_item")) return [];
@@ -113,6 +113,45 @@ export function closeOwnerItem(db: Db, key: string, by: string, now: number = Da
   return db.prepare("UPDATE lane_pilot_owner_item SET state='closed', closed_at=?, closed_by=? WHERE key=? AND state='open'").run(now, clip(by, 500), key).changes > 0;
 }
 
+/** Every open row under a key prefix (a question asked once per attempt: `task-word:<run>:<family>:`); returns how many closed. */
+export function closeOwnerItemsByPrefix(db: Db, prefix: string, by: string, now: number = Date.now()): number {
+  return db.prepare("UPDATE lane_pilot_owner_item SET state='closed', closed_at=?, closed_by=? WHERE state='open' AND substr(key, 1, ?)=?").run(now, clip(by, 500), prefix.length, prefix).changes;
+}
+
+/** How long a row that asks nothing (no actions: a fact, a notice) stays on the list before the janitor takes it. */
+export const OWNER_FACT_TTL_MS = 3 * 24 * 60 * 60_000;
+/** How long a row without buttons that still describes something to do (a writer's question, a red gate) stays. */
+export const OWNER_NOTE_TTL_MS = 7 * 24 * 60 * 60_000;
+const FACT_KINDS = new Set(["handed", "acted", "tick_error", "tick_no_receipt", "labels", "right_changed", "schedule_failed", "digest", "outage", "gate_machine", "gate_no_test", "rule_proposed", "backlog_ready"]);
+
+/**
+ * The list shows what still waits; a row whose question went away is closed here, on every read (SWE-2 F-004..F-006, Gemini F-006:
+ * «an inbox where rows are born and never die»). Three cases the posters cannot see themselves:
+ *  - a writer's question (`writer-question:<run>:<task>`) once the task moved on: a newer attempt, or the blocked one left `blocked`;
+ *  - a red run goal (`run-goal:<run>`) once its run is closed (a later green verdict closes it in run-goal.ts);
+ *  - a row with no action after its term: a fact after three days, anything else without buttons after seven.
+ */
+export function sweepOwnerItems(db: Db, now: number = Date.now()): number {
+  if (!tableExists(db, "lane_pilot_owner_item")) return 0;
+  let closed = 0;
+  const rows = db.prepare("SELECT key, kind, actions_json, created_at FROM lane_pilot_owner_item WHERE state='open'").all() as Array<{ key: string; kind: string; actions_json: string; created_at: number }>;
+  const close = (key: string, by: string) => { closed += closeOwnerItem(db, key, by, now) ? 1 : 0; };
+  const attemptTable = tableExists(db, "lane_pilot_attempt"), runTable = tableExists(db, "lane_pilot_run");
+  for (const row of rows) {
+    if (row.key.startsWith("writer-question:") && attemptTable) {
+      const [, runId, ...task] = row.key.split(":");
+      const latest = db.prepare("SELECT state, created_at FROM lane_pilot_attempt WHERE run_id=? AND task_id=? ORDER BY created_at DESC, attempt_no DESC LIMIT 1").get(runId, task.join(":")) as { state: string; created_at: number } | undefined;
+      if (latest && (latest.created_at > row.created_at || latest.state !== "blocked")) { close(row.key, "janitor:task moved on"); continue; }
+    }
+    if (row.key.startsWith("run-goal:") && runTable) {
+      const run = db.prepare("SELECT closed_at FROM lane_pilot_run WHERE id=?").get(row.key.slice("run-goal:".length)) as { closed_at: number | null } | undefined;
+      if (!run || run.closed_at !== null) { close(row.key, "janitor:run closed"); continue; }
+    }
+    if (parse<OwnerAction[]>(row.actions_json, []).length === 0 && now - row.created_at > (FACT_KINDS.has(row.kind) ? OWNER_FACT_TTL_MS : OWNER_NOTE_TTL_MS)) close(row.key, "janitor:term");
+  }
+  return closed;
+}
+
 export function overnight(db: Db, now: number = Date.now(), windowMs: number = OVERNIGHT_WINDOW_MS): Overnight {
   const since = now - windowMs;
   const count = (sql: string, ...params: unknown[]) => (db.prepare(sql).get(...params) as { n: number }).n;
@@ -132,6 +171,7 @@ export function overnight(db: Db, now: number = Date.now(), windowMs: number = O
 }
 
 export function collectOwnerWaiting(db: Db, now: number = Date.now(), windowMs: number = OVERNIGHT_WINDOW_MS): OwnerWaiting {
+  sweepOwnerItems(db, now);
   const items = [...learningItems(db), ...inbox(db)];
   const rank = (item: OwnerItem) => { const at = SOURCE_ORDER.indexOf(item.source); return at < 0 ? SOURCE_ORDER.indexOf("night") : at; };
   items.sort((a, b) => rank(a) - rank(b) || a.since - b.since || a.key.localeCompare(b.key));

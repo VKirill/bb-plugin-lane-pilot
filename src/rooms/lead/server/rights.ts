@@ -66,8 +66,9 @@ export function applyExam(db: Db, exams: readonly ClassExam[], now: number = Dat
     for (const exam of exams) {
       if (policyTier(exam.class) === "owner_only") continue;
       const from = tierOf(db, exam.class);
-      const to: Tier = from === "decides" ? (exam.revert || exam.tier !== "decides" ? "proposes" : "decides") : exam.tier;
-      const reasons = to === "decides" ? [] : [...exam.reasons, ...(exam.revert ? [`window LB ${exam.windowLb === null ? "—" : exam.windowLb.toFixed(2)} or a high-risk miss in the last ${20}`] : [])];
+      // `exam.tier` already says `proposes` on a degraded window (logic.ts), so a class never flips open and shut on the same rows.
+      const to: Tier = exam.tier;
+      const reasons = to === "decides" ? [] : [...exam.reasons];
       upsert.run(exam.class, to, exam.n, exam.k, exam.m, exam.wilsonLb, exam.coverage, exam.kappa, now, LEAD_POLICY.version, now, JSON.stringify(reasons));
       if (from !== to) changes.push({ class: exam.class, from, to, reasons });
     }

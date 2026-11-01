@@ -23,8 +23,8 @@ describe("the decision journal: open, predict before the answer, answer, judge",
     await askDecision(db, question("d1"), undefined, 1_000);
     const open = getDecision(db, "d1")!;
     expect(open).toMatchObject({ prediction_json: JSON.stringify({ option: "yes", p: 0.9 }), predicted_at: 1_000, predictor: "jev-shadow:lead.predict@1", answered_at: null, split: "exam" });
-    const done = answerDecision(db, "d1", { option: "yes", text: "да" }, "pm", 2_000)!;
-    expect(done).toMatchObject({ judge_verdict: "exact", judge_model: "rule", answered_by: "pm", answered_at: 2_000 });
+    const done = answerDecision(db, "d1", { option: "yes", text: "да" }, "owner", 2_000)!;
+    expect(done).toMatchObject({ judge_verdict: "exact", judge_model: "rule", answered_by: "owner", answered_at: 2_000 });
     expect(JSON.parse(done.answer_json!)).toEqual({ option: "yes", text: "да" });
   });
 
@@ -52,9 +52,9 @@ describe("the decision journal: open, predict before the answer, answer, judge",
     shadowJev("yes");
     expect(await predictDecision(db, "once", undefined, 8)).toBeNull();
     expect(labelDecision(db, "once", "exact", 9)).toBe(false);
-    answerDecision(db, "once", { option: "no" }, "pm", 10);
+    answerDecision(db, "once", { option: "no" }, "owner", 10);
     answerDecision(db, "once", { option: "yes" }, "screen", 11);
-    expect(getDecision(db, "once")).toMatchObject({ risk: "low", answered_by: "pm", judge_verdict: "exact", predicted_at: 7 });
+    expect(getDecision(db, "once")).toMatchObject({ risk: "low", answered_by: "owner", judge_verdict: "exact", predicted_at: 7 });
     expect(labelDecision(db, "once", "partial", 12)).toBe(true);
     expect(getDecision(db, "once")).toMatchObject({ owner_label: "partial", labeled_at: 12 });
     expect(() => openDecision(db, question("one-option", { options: ["yes"] }))).toThrow(/two options/);
@@ -63,7 +63,7 @@ describe("the decision journal: open, predict before the answer, answer, judge",
   it("feeds the exam only rows predicted before the answer in split exam", async () => {
     const { db } = world();
     shadowJev("yes");
-    for (let i = 0; i < 3; i += 1) { await askDecision(db, question(`live${i}`), undefined, 100 + i); answerDecision(db, `live${i}`, { option: "yes" }, "pm", 200 + i); }
+    for (let i = 0; i < 3; i += 1) { await askDecision(db, question(`live${i}`), undefined, 100 + i); answerDecision(db, `live${i}`, { option: "yes" }, "owner", 200 + i); }
     openDecision(db, question("late"), 300); answerDecision(db, "late", { option: "yes" }, "pm", 301); // answered before any prediction
     openDecision(db, question("replayed", { split: "backtest" }), 400); await predictDecision(db, "replayed", undefined, 500); answerDecision(db, "replayed", { option: "yes" }, "backtest", 450);
     const rows = examRows(db);
@@ -149,10 +149,10 @@ describe("bb lane-pilot lead", () => {
     expect((await runLeadCli(ctx, ["exam"])).stdout).toMatch(/No class has an exam yet/);
     shadowJev("yes");
     await askDecision(db, question("d1"), undefined, 1_000);
-    answerDecision(db, "d1", { option: "yes" }, "pm", 2_000);
+    answerDecision(db, "d1", { option: "yes" }, "owner", 2_000);
     const journal = (await runLeadCli(ctx, ["journal", "--class", "landing"])).stdout!;
     expect(journal).toContain("exam     landing  d1");
-    expect(journal).toContain("predicted yes (p 0.90), answered yes by pm → exact");
+    expect(journal).toContain("predicted yes (p 0.90), answered yes by owner → exact");
     expect((await runLeadCli(ctx, ["exam"])).stdout).toContain("landing: N 1, decided 1, matches 1");
     expect((await runLeadCli(ctx, ["label", "d1", "partial"])).stdout).toBe("d1: owner label partial");
     expect((await runLeadCli(ctx, ["label", "d1", "great"])).exitCode).toBe(2);
@@ -200,7 +200,7 @@ describe("the model judge and the rows waiting for a label", () => {
     answerDecision(db, "p2", { option: "no" }, "lead", 2);
     answerDecision(db, "p3", { option: "yes" }, "screen", 2);
     labelDecision(db, "p3", "exact", 3);
-    answerDecision(db, "p4", { option: "yes" }, "pm", 2);
+    answerDecision(db, "p4", { option: "yes" }, "screen", 2);
     setJevForTests(null);
     await askDecision(db, question("cold"), undefined, 1);
     answerDecision(db, "cold", { option: "yes" }, "owner", 2);

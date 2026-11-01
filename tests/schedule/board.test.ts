@@ -136,21 +136,26 @@ describe("the RPCs of the board", () => {
 });
 
 describe("a failed scheduled run", () => {
-  it("tells the PM chat once per failed run, before the schedule is paused, and the pause message names the pause (audit r4 item 16)", async () => {
-    const { rpc, tick, sent } = await setup({ failJob: true });
+  // 0.1.458: a failed run is the plugin's own event — one row on the owner's list per run, never a message into the PM chat (0.1.443).
+  it("puts every failed run on the owner's list, never into the PM chat; the row that pauses the schedule says so (audit r4 item 16)", async () => {
+    const { rpc, tick, sent, db } = await setup({ failJob: true });
+    const rows = () => db.prepare("SELECT what, why FROM lane_pilot_owner_item WHERE key LIKE 'schedule-failure:%' ORDER BY rowid").all() as Array<{ what: string; why: string }>;
     const made = (await rpc("schedule_upsert", { definition: script({ maxFailures: 2 }) })).schedule;
     await rpc("schedule_run_now", { id: made.id, key: "one" });
     await tick();
     await tick();
-    expect(sent.filter((row) => row.threadId === "thr_pm")).toHaveLength(1);
-    expect(sent[0]!.text).toContain("«Sync keys» не сработало");
-    expect(sent[0]!.text).toContain("1 раз подряд");
-    expect(sent[0]!.text).not.toContain("is paused");
+    expect(sent.filter((row) => row.threadId === "thr_pm")).toHaveLength(0);
+    expect(rows()).toHaveLength(1);
+    expect(rows()[0]!.what).toBe("Расписание «Sync keys» не сработало");
+    expect(rows()[0]!.why).toContain("1 раз подряд");
+    expect(rows()[0]!.why).not.toContain("is paused");
     await rpc("schedule_run_now", { id: made.id, key: "two" });
     await tick();
     await tick();
-    expect(sent).toHaveLength(2);
-    expect(sent[1]!.text).toContain("2 раз подряд и поставлено на паузу");
+    expect(sent.filter((row) => row.threadId === "thr_pm")).toHaveLength(0);
+    expect(rows()).toHaveLength(2);
+    expect(rows()[1]!.what).toBe("Расписание «Sync keys» остановлено после повторных сбоев");
+    expect(rows()[1]!.why).toContain("2 раз подряд и поставлено на паузу");
   });
 });
 

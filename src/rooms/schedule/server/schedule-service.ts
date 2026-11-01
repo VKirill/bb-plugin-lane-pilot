@@ -42,18 +42,15 @@ export function createScheduleService(ctx: ServerCore, services: Services) {
     log: (message) => bb.log.warn(`Lane Pilot schedule: ${message}`),
     onChange: (projectId) => ctx.realtime.notify(projectId, "schedule"),
     onFailure: ({ schedule, run, paused }) => {
-      // One message to the PM chat for every failed run, not only the one that pauses the schedule (a monthly invoice that failed once
-      // used to be visible in the log only); the pause-after-N rule stays as it was and is named in the message that triggers it.
+      // Every failed run is one row on the owner's list (a monthly invoice that failed once used to be visible in the log only); the
+      // pause-after-N rule stays as it was and is named in the row that triggers it. Never the PM chat: a schedule's failure is the
+      // plugin's own event (0.1.443), and waking a chat for it was the leak the grills of 0.1.456 found. The phone rings only for a pause.
       const notice = scheduleFailureNotice(schedule, run, paused);
       bb.log.warn(notice.split("\n", 1)[0]!);
-      void services.workflowTriggers.pmOf(schedule.project_id).then((pm) => {
-        if (pm) void ctx.ownerAsk?.sendToThread(pm.pmThreadId, notice).catch(() => undefined);
-        else {
-          // No Lane Pilot in the project: the failure is a line of the owner's list, with a push.
-          bb.log.warn(`Lane Pilot schedule «${schedule.name}»: no open PM chat in the project; the failure goes to the owner's list`);
-          try { postOwnerItem(db, { key: `schedule-failure:${run.id}`, source: "schedule", kind: "schedule_failed", projectId: schedule.project_id, wake: true, what: `Расписание «${schedule.name}» не сработало`, why: notice.slice(0, 560) }); } catch { /* the log has it */ }
-        }
-      }, () => undefined);
+      try {
+        postOwnerItem(db, { key: `schedule-failure:${run.id}`, source: "schedule", kind: "schedule_failed", projectId: schedule.project_id, wake: paused,
+          what: `Расписание «${schedule.name}» ${paused ? "остановлено после повторных сбоев" : "не сработало"}`, why: notice.slice(0, 560), evidence: [{ kind: "text", ref: run.id, label: "запуск расписания" }] });
+      } catch { /* the log has it */ }
     },
   });
   const { store } = scheduler;

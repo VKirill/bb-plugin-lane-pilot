@@ -148,14 +148,15 @@ describe("insights tools", () => {
     expect(spawned[0]!.prompt).not.toContain(".agents/PROGRESS.md");
     expect(first.proposals.map((row: { id: string }) => row.id)).not.toContain("rule_old");
     expect(first.proposals.map((row: { id: string }) => row.id)).toContain("rule_kept");
-    // The system adopts the analyzer's rule on its own: in force on trial, stored where writers read it.
+    // The night proposes, it does not adopt (policy/night-policy.json: rule_trial_apply is night_proposes; followed by the scanner since 0.1.458):
+    // the analyzer's rule waits on the Rules tab, and one row on the owner's list says how many wait.
     const proposal = first.proposals.find((row: { author: string }) => row.author === "model");
-    expect(first.scan).toMatchObject({ adopted: 1 });
-    expect(proposal).toMatchObject({ author: "model", state: "accepted", decidedBy: "auto", trialState: "trial", revision: 1, rule: "Создай каждый файл из expected_outputs до ответа и проверь его ls.", taskCount: 3, scope: [], scopeLabel: "" });
-    expect(proposal.trial).toEqual({ applied: 0, appliedAccepted: 0, recurrences: 0 });
+    expect(first.scan).toMatchObject({ adopted: 0 });
+    expect(proposal).toMatchObject({ author: "model", state: "proposed", rule: "Создай каждый файл из expected_outputs до ответа и проверь его ls.", taskCount: 3, scope: [], scopeLabel: "" });
     expect(proposal.evidence.map((row: { taskId: string }) => row.taskId).sort()).toEqual(["w1", "w2", "w3"]);
-    expect(acceptedRules(db, projectId).map((row) => row.id)).toEqual([proposal.id]);
-    expect(first.events).toEqual([expect.objectContaining({ ruleId: proposal.id, action: "adopted" })]);
+    expect(acceptedRules(db, projectId)).toEqual([]);
+    expect(first.events.map((row: { action: string; ruleId: string }) => `${row.ruleId}:${row.action}`)).toEqual([]);
+    expect(db.prepare("SELECT what, state FROM lane_pilot_owner_item WHERE key LIKE 'rules-proposed:%'").all()).toEqual([{ what: "Ночной разбор предложил правила для исполнителей: 1", state: "open" }]);
 
     await harness.behavior.callRpc("start_rule_scan", { projectId, locale: "ru" });
     const second = await scanDone();
@@ -170,18 +171,22 @@ describe("insights tools", () => {
       VALUES ('rule_manual','${projectId}','manual','A draft waiting for the owner','sweep','proposed',3,3,'[]',1,1,1)`).run();
     saveProjectSetting(db, projectId, "memory.enabled", "true");
     const swept = await call("lane_pilot_lessons_sweep", { runId });
-    expect(swept.ruleProposals).toEqual([expect.objectContaining({ id: "rule_manual" })]);
+    // The night's own proposal still waits beside the PM's draft (0.1.458: the night proposes, the owner accepts).
+    expect(swept.ruleProposals.map((row: { id: string }) => row.id).sort()).toEqual([proposal.id, "rule_manual"].sort());
     expect(await call("lane_pilot_rule_propose", { runId, proposalId: "rule_manual", rule: "Before answering, create every expected output file." })).toMatchObject({ revised: true, proposal: { author: "pm" } });
     const accepted = await harness.behavior.callRpc("decide_rule_proposal", { projectId, id: "rule_manual", action: "accept", rule: "Создавай все файлы из expected_outputs до ответа." }) as { proposal: Record<string, any> };
     expect(accepted.proposal).toMatchObject({ state: "accepted", author: "owner", decidedBy: "owner", trialState: null });
     await expect(harness.behavior.callRpc("decide_rule_proposal", { projectId, id: "rule_manual", action: "reject" })).rejects.toThrow(/not waiting/);
 
-    // The owner can take back what the system adopted; its memory record goes with it.
+    // The owner accepts the night's proposal, then takes it back; its memory record goes with it.
+    const adopted = await harness.behavior.callRpc("decide_rule_proposal", { projectId, id: proposal.id, action: "accept" }) as { proposal: Record<string, any> };
+    expect(adopted.proposal).toMatchObject({ state: "accepted", decidedBy: "owner" });
+    expect(acceptedRules(db, projectId).map((row) => row.id).sort()).toEqual([proposal.id, "rule_manual"].sort());
     const revoked = await harness.behavior.callRpc("decide_rule_proposal", { projectId, id: proposal.id, action: "revoke" }) as { proposal: Record<string, any> };
     expect(revoked.proposal).toMatchObject({ state: "revoked", decidedBy: "owner", retiredReason: "owner" });
     expect(acceptedRules(db, projectId).map((row) => row.id)).toEqual(["rule_manual"]);
     const journal = ((await list()).events as Array<{ ruleId: string; action: string }>).map((row) => `${row.ruleId}:${row.action}`);
-    expect(journal).toEqual([`${proposal.id}:owner_revoked`, "rule_manual:owner_accepted", `${proposal.id}:adopted`]);
+    expect(journal).toEqual([`${proposal.id}:owner_revoked`, `${proposal.id}:owner_accepted`, "rule_manual:owner_accepted"]);
 
     await harness.behavior.callRpc("save_rules_analyzer", { projectId, analyzer: { providerId: "claude-code", model: "opus", reasoningLevel: "max", serviceTier: null } });
     expect((await list()).analyzer).toMatchObject({ providerId: "claude-code", model: "opus" });

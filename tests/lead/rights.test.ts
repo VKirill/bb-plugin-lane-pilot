@@ -8,7 +8,7 @@ import { openDatabase } from "../../src/rooms/storage/database";
 const world = () => { const { bb } = createFakePluginHost({ pluginId: "lane-pilot" }); return openDatabase(bb); };
 /** Eligible rows of one class: predicted before answered, split exam, judged. */
 const rows = (cls: string, n: number, verdict: "exact" | "miss" | "deferred", risk = "low"): ExamRow[] =>
-  Array.from({ length: n }, (_, i) => ({ class: cls, risk, judge_verdict: verdict, owner_label: verdict, predicted_at: 1_000 + i, answered_at: 2_000 + i, split: "exam" }));
+  Array.from({ length: n }, (_, i) => ({ class: cls, risk, judge_verdict: verdict, owner_label: verdict, predicted_at: 1_000 + i, answered_at: 2_000 + i, answered_by: "owner", split: "exam" }));
 
 describe("the lead's policy file", () => {
   it("lists seven classes; money and external are owner_only and the rest propose", () => {

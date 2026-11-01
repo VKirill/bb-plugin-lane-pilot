@@ -65,7 +65,7 @@ describe("from a correction to a rule the next PM follows", () => {
 
     // the day's report and the owner's answers
     const sent: string[] = [];
-    await createDigest({ db, now: () => NOW, pmThread: () => "thr_pm", send: async (_, text) => { sent.push(text); } }).run();
+    await createDigest({ db, now: () => NOW, announce: async (_, report) => { sent.push(report.text); } }).run();
     expect(sent).toHaveLength(1);
     expect(sent[0]).toContain("Never ask the owner about technical defects");
     expect(sent[0]).toContain("for all his work: Write reports in Russian, short.");

@@ -1,11 +1,11 @@
 import { listItems, markAnnounced, type Db, type Item } from "./store";
 
 /**
- * «What I learned today» (T5). Once a day, for each project with something new, the PM's chat gets one message listing what the
- * extractor drew out of the owner's messages: rules now on trial, decisions noted, and what waits for a yes (a global preference, a
- * reminder, a statement that contradicts a rule in force). The PM tells the owner in its own words and asks the waiting questions in
- * the chat like any other question; there is no form. Nothing global is written before the owner's «yes» (`op:"accept"`), and any rule
- * can be taken back (`op:"drop"`). An item is announced once. Without an open PM chat the items wait for the next day.
+ * «What I learned today» (T5). Once a day, for each project with something new, one report lists what the extractor drew out of the
+ * owner's messages: rules now on trial, decisions noted, and what waits for a yes (a global preference, a reminder, a statement that
+ * contradicts a rule in force). Since 0.1.458 the report is one row on the owner's list (`announce`), never a message into a PM chat
+ * (0.1.443; the Gemini grill of 0.1.456 found the evening send still waking cold chats). Nothing global is written before the owner's
+ * «yes» (`op:"accept"`), and any rule can be taken back (`op:"drop"`). An item is announced once.
  */
 export const MAX_LISTED = 10;
 const WAITING_STATES: Item["state"][] = ["pending_owner", "proposed"];
@@ -24,7 +24,7 @@ function line(item: Item): string {
 }
 
 /** The message for one project, or null when there is nothing to say. */
-export function composeDigest(items: readonly Item[], now: number): { text: string; ids: string[] } | null {
+export function composeDigest(items: readonly Item[], now: number): { text: string; ids: string[]; inForce: number; waiting: number } | null {
   const shown = items.filter((item) => SHOWN_STATES.includes(item.state));
   if (!shown.length) return null;
   const listed = shown.slice(0, MAX_LISTED);
@@ -38,42 +38,33 @@ export function composeDigest(items: readonly Item[], now: number): { text: stri
     ...(shown.length > listed.length ? ["", `${shown.length - listed.length} more are listed by ${tool("items").replace(", id", "")}.`] : []),
     ...(confirmed ? ["", `${confirmed} statement${confirmed === 1 ? " repeated" : "s repeated"} something already in force and confirmed it.`] : []),
   ].join("\n");
-  return { text, ids: items.filter((item) => item.state !== "dropped" && item.state !== "rejected").slice(0, 200).map((item) => item.id) };
+  return { text, ids: items.filter((item) => item.state !== "dropped" && item.state !== "rejected").slice(0, 200).map((item) => item.id), inForce: inForce.length, waiting: waiting.length };
 }
+export type DigestReport = NonNullable<ReturnType<typeof composeDigest>>;
 
 export type DigestDeps = {
   db: Db;
-  /** The open PM chat of a project, or null. */
-  pmThread(projectId: string): string | null;
-  /**
-   * The PM chat an item is told in: the chat it was said in when that is a PM's, else an open PM of the same section; null when the
-   * section has none, and then no PM is woken (a decision about one game of «Мои проекты» went to another game's PM, 2026-10-23).
-   */
-  pmThreadFor?(item: Item): Promise<string | null>;
-  send(threadId: string, text: string): Promise<void>;
+  /** Where a project's report goes: the learning room posts it as one row on the owner's list (`learning-digest:<project>:<day>`). */
+  announce(projectId: string, report: DigestReport): Promise<void>;
   now?(): number;
   log?(line: string): void;
 };
 
 export function createDigest(deps: DigestDeps) {
   const now = deps.now ?? Date.now;
-  /** Sends the day's message to every project that has one; `dryRun` only composes. */
+  /** Announces the day's report of every project that has one; `dryRun` only composes. */
   async function run(options: { dryRun?: boolean; projectId?: string } = {}): Promise<Array<{ projectId: string; sent: boolean; items: number; text: string }>> {
     const unannounced = listItems(deps.db, { unannounced: true, limit: 500, ...(options.projectId ? { projectId: options.projectId } : {}) });
-    const byPm = new Map<string, { projectId: string; thread: string | null; items: Item[] }>();
-    for (const item of unannounced) {
-      const thread = deps.pmThreadFor ? await deps.pmThreadFor(item).catch(() => null) : deps.pmThread(item.projectId);
-      const key = `${item.projectId}\u0000${thread ?? ""}`;
-      byPm.set(key, { projectId: item.projectId, thread, items: [...(byPm.get(key)?.items ?? []), item] });
-    }
+    const byProject = new Map<string, Item[]>();
+    for (const item of unannounced) byProject.set(item.projectId, [...(byProject.get(item.projectId) ?? []), item]);
     const out: Array<{ projectId: string; sent: boolean; items: number; text: string }> = [];
-    for (const { projectId, thread, items } of byPm.values()) {
+    for (const [projectId, items] of byProject) {
       const digest = composeDigest(items.reverse(), now());
       if (!digest) { if (!options.dryRun) markAnnounced(deps.db, items.map((item) => item.id), now()); continue; }
       let sent = false;
-      if (thread && !options.dryRun) {
-        try { await deps.send(thread, digest.text); markAnnounced(deps.db, digest.ids, now()); sent = true; }
-        catch (cause) { deps.log?.(`learning: digest for ${projectId} not sent: ${cause instanceof Error ? cause.message : String(cause)}`); }
+      if (!options.dryRun) {
+        try { await deps.announce(projectId, digest); markAnnounced(deps.db, digest.ids, now()); sent = true; }
+        catch (cause) { deps.log?.(`learning: digest for ${projectId} not announced: ${cause instanceof Error ? cause.message : String(cause)}`); }
       }
       out.push({ projectId, sent, items: digest.ids.length, text: digest.text });
     }

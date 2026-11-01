@@ -275,12 +275,19 @@ export function buildRecheckGateCommand(gateCommand: string, failingFiles: reado
   return `${gateCommand} ${uniqueFiles.join(" ")}`;
 }
 
+/** Which checkout a merge or a gate run belongs to: the gate's queue and green commit are per scope (F-007). */
+type GateScope = { projectId?: string; hostId?: string; basePath?: string };
+
+type GateInput = Parameters<IntegrationGateRunner["maybeRunGate"]>[0];
+
 export class IntegrationGateRunner {
   private inFlight = false;
-  private mergesSinceLastGate = 0;
-  private lastGreenCommit: string | null = null;
-  private mergedTasksSinceLastGate: MergedTaskInfo[] = [];
-  private drainWaiting: Parameters<IntegrationGateRunner["maybeRunGate"]>[0] | null = null;
+  /** Merges waiting for their gate. `key === ""` is a legacy/unscoped merge: it joins every scope's batch (tests, one-project setups). */
+  private pending: { key: string; task: MergedTaskInfo }[] = [];
+  /** The commit the gate last proved green, per scope. */
+  private readonly lastGreenCommits = new Map<string, string>();
+  /** Drains that arrived while a gate ran, per scope: several drains of different projects no longer overwrite one slot. */
+  private readonly drainWaiting = new Map<string, GateInput>();
   /** The red-gate episode of each run: the owner is asked once per episode, see `./gate-episode`. */
   private readonly episodes = new Map<string, GateEpisode>();
 
@@ -289,13 +296,30 @@ export class IntegrationGateRunner {
     private readonly services: Services
   ) {}
 
-  noteMergedTask(task: MergedTaskInfo) {
-    this.mergesSinceLastGate += 1;
-    this.mergedTasksSinceLastGate.push(task);
+  private keyOf(scope: GateScope): string {
+    return `${scope.projectId ?? ""}${scope.hostId ?? ""}${scope.basePath ?? ""}`;
+  }
+
+  /** The merges a scope's gate still has to check, oldest first. Unscoped merges belong to every scope's batch. */
+  private pendingFor(key: string): MergedTaskInfo[] {
+    return this.pending.filter((p) => !p.key || p.key === key).map((p) => p.task);
+  }
+
+  /** Drops the first `count` merges of the scope's batch, leaving merges that landed during the run and other scopes'. */
+  private consumePending(key: string, count: number): void {
+    let left = count;
+    this.pending = this.pending.filter((p) => {
+      if (left > 0 && (!p.key || p.key === key)) { left -= 1; return false; }
+      return true;
+    });
+  }
+
+  noteMergedTask(task: MergedTaskInfo, scope?: GateScope) {
+    this.pending.push({ key: scope ? this.keyOf(scope) : "", task });
   }
 
   getPendingMergeCount(): number {
-    return this.mergesSinceLastGate;
+    return this.pending.length;
   }
 
   async maybeRunGate(input: {
@@ -308,6 +332,7 @@ export class IntegrationGateRunner {
     /** The folder has no git: the gate runs in place, and a red result is reported, never bisected. */
     live?: boolean;
   }): Promise<{ ran: boolean; passed?: boolean; culpritTaskId?: string | null }> {
+    const key = this.keyOf({ projectId: input.projectId, hostId: input.configHostId, basePath: input.basePath });
     const settings = loadProjectSettings(this.ctx.db, input.projectId, getRunSettingsScopes(this.ctx.db, input.runId));
     const gateSettings = parseIntegrationGateSettings(settings);
     const gate = await gateResolverFor(this.ctx)({ runId: input.runId, hostId: input.configHostId, basePath: input.basePath, gate: gateSettings });
@@ -317,7 +342,7 @@ export class IntegrationGateRunner {
     }
 
     if (input.trigger === "merge" && gateSettings.gateWhen === "every_n") {
-      if (this.mergesSinceLastGate < gateSettings.gateEvery) {
+      if (this.pendingFor(key).length < gateSettings.gateEvery) {
         return { ran: false };
       }
     } else if (input.trigger === "merge" && gateSettings.gateWhen === "queue_drained") {
@@ -326,20 +351,21 @@ export class IntegrationGateRunner {
 
     // Don't run concurrently; a drain that came while one runs is the batch's gate, so it goes once this one is done.
     if (this.inFlight) {
-      if (input.trigger === "drain") this.drainWaiting = input;
+      if (input.trigger === "drain") this.drainWaiting.set(key, input);
       return { ran: false };
     }
 
     this.inFlight = true;
     let result: { ran: boolean; passed?: boolean; culpritTaskId?: string | null } = { ran: false };
     try {
-      result = await this.executeGate({ ...input, gate });
+      result = await this.executeGate({ ...input, gate }, key);
       return result;
     } finally {
       this.inFlight = false;
-      const waiting = this.drainWaiting;
-      this.drainWaiting = null;
-      if (waiting && result.ran && this.mergesSinceLastGate > 0) void this.maybeRunGate(waiting).catch((cause: unknown) => this.ctx.log(`integration-gate: queued run failed: ${cause instanceof Error ? cause.message : String(cause)}`));
+      // Drains of other scopes wait for their own next merge/drain call: only this scope's queued drain re-runs now.
+      const waiting = this.drainWaiting.get(key);
+      this.drainWaiting.delete(key);
+      if (waiting && result.ran && this.pendingFor(key).length > 0) void this.maybeRunGate(waiting).catch((cause: unknown) => this.ctx.log(`integration-gate: queued run failed: ${cause instanceof Error ? cause.message : String(cause)}`));
     }
   }
 
@@ -351,7 +377,7 @@ export class IntegrationGateRunner {
     configHostId: string;
     gate: ResolvedGate;
     live?: boolean;
-  }): Promise<{ ran: boolean; passed?: boolean; culpritTaskId?: string | null }> {
+  }, key: string): Promise<{ ran: boolean; passed?: boolean; culpritTaskId?: string | null }> {
     const { runId, projectId, pmThreadId, basePath, configHostId, gate } = input;
     const gateCommand = gate.command;
     const label = gateLabel(gate);
@@ -366,8 +392,11 @@ export class IntegrationGateRunner {
       return read ? read.content : null;
     };
 
+    // Snapshot this scope's batch before the run: merges that land while the gate runs belong to the next batch.
+    const batch = this.pendingFor(key);
+    const lastGreenCommit = this.lastGreenCommits.get(key) ?? null;
     // Record stage on the merged task if one exists in the database
-    const lastMerged = this.mergedTasksSinceLastGate[this.mergedTasksSinceLastGate.length - 1];
+    const lastMerged = batch[batch.length - 1];
     let runTaskId = lastMerged?.taskId;
     if (!runTaskId) {
       const existingTask = db.prepare("SELECT id FROM lane_pilot_task WHERE run_id=? LIMIT 1").get(runId) as { id: string } | undefined;
@@ -407,7 +436,7 @@ export class IntegrationGateRunner {
       detail: gate.detail,
       exitCode,
       passed,
-      mergesChecked: this.mergesSinceLastGate,
+      mergesChecked: batch.length,
     };
 
     // The gate's verdict is a gate evaluation of the batch. It used to be written over the last merged task's own
@@ -424,10 +453,9 @@ export class IntegrationGateRunner {
 
     if (passed) {
       this.episodes.delete(runId);
-      this.mergesSinceLastGate = 0;
-      this.mergedTasksSinceLastGate = [];
+      this.consumePending(key, batch.length);
       // Save the commit the gate ran on as the last green one
-      if (ran.head) this.lastGreenCommit = ran.head;
+      if (ran.head) this.lastGreenCommits.set(key, ran.head);
       return { ran: true, passed: true };
     }
 
@@ -485,7 +513,7 @@ export class IntegrationGateRunner {
             detail: gate.detail,
             exitCode: 0,
             passed: true,
-            mergesChecked: this.mergesSinceLastGate,
+            mergesChecked: batch.length,
             note: `rechecked: timeouts passed on the second run (${evidence.classification})`,
             flakyEvidence: evidence,
             recheckedTests: failingTests.map(testLabel),
@@ -507,9 +535,8 @@ export class IntegrationGateRunner {
         }
 
         this.episodes.delete(runId);
-        this.mergesSinceLastGate = 0;
-        this.mergedTasksSinceLastGate = [];
-        if (rechecked.head) this.lastGreenCommit = rechecked.head;
+        this.consumePending(key, batch.length);
+        if (rechecked.head) this.lastGreenCommits.set(key, rechecked.head);
         return { ran: true, passed: true };
       }
 
@@ -535,13 +562,13 @@ export class IntegrationGateRunner {
 
     // Gate failed. Find culprit.
     const failingFiles = [...new Set(failingTests.map((test) => test.file))];
-    const tasksToCheck = [...this.mergedTasksSinceLastGate];
+    const tasksToCheck = batch;
 
     // The host knows what each merged commit changed and which failing tests also fail on the base the batch started from.
     let info: GateAttributeResult | null = null;
     if (!input.live && failingTests.length) {
       const commits = tasksToCheck.map((task) => task.commitSha).filter((sha) => /^[a-f0-9]{7,64}$/.test(sha));
-      const baseSha = this.lastGreenCommit ?? (commits[0] ? `${commits[0]}^1` : null);
+      const baseSha = lastGreenCommit ?? (commits[0] ? `${commits[0]}^1` : null);
       const ATTRIBUTE_TIMEOUT_SEC = 20 * 60;
       info = await host.call("gateAttribute", { requestedHostId: configHostId, basePath, baseSha, commits, failing: failingTests.slice(0, 300), timeoutSec: ATTRIBUTE_TIMEOUT_SEC },
         { hostId: configHostId, timeoutMs: (ATTRIBUTE_TIMEOUT_SEC + 60) * 1000 }).catch((cause: unknown) => {
@@ -560,8 +587,8 @@ export class IntegrationGateRunner {
       if (candidates.length === 1) culprit = candidates[0]!;
       else if (candidates.length > 1) {
         culprit = await findCulpritByFiles(remaining.map((test) => test.file), candidates, readProjectFile);
-        if (!culprit && this.lastGreenCommit && ran.head && ran.head !== this.lastGreenCommit) {
-          const found = await bisectCulprit(host, configHostId, gateCommand, this.lastGreenCommit, ran.head, basePath, tasksToCheck);
+        if (!culprit && lastGreenCommit && ran.head && ran.head !== lastGreenCommit) {
+          const found = await bisectCulprit(host, configHostId, gateCommand, lastGreenCommit, ran.head, basePath, tasksToCheck);
           culprit = found && candidates.includes(found) ? found : null;
         }
       }
@@ -569,25 +596,23 @@ export class IntegrationGateRunner {
       culprit = await findCulpritByFiles(failingFiles, tasksToCheck, readProjectFile);
     }
 
-    // Fallback (the host could not attribute): git bisect if ambiguous and we have a lastGreenCommit and merged tasks
+    // Fallback (the host could not attribute): git bisect with a proven green base works even for one task — the only
+    // evidence a lone merge broke the gate. F-009: headcount alone is no proof, so no «only task → culprit» shortcut.
     if (input.live || attribution.strict) {
       // reported below
-    } else if (!culprit && this.lastGreenCommit && tasksToCheck.length > 1) {
+    } else if (!culprit && lastGreenCommit && tasksToCheck.length >= 1) {
       const currentHead = ran.head;
-      if (currentHead && currentHead !== this.lastGreenCommit) {
-        culprit = await bisectCulprit(host, configHostId, gateCommand, this.lastGreenCommit, currentHead, basePath, tasksToCheck);
+      if (currentHead && currentHead !== lastGreenCommit) {
+        culprit = await bisectCulprit(host, configHostId, gateCommand, lastGreenCommit, currentHead, basePath, tasksToCheck);
       }
-    } else if (!culprit && tasksToCheck.length === 1) {
-      culprit = tasksToCheck[0]!;
     }
 
     const preexistingNote = attribution.preexisting.length
       ? ` Были сломаны и раньше, не этой партией (падают и на базовом коммите): ${attribution.preexisting.map(testLabel).join(", ")}.`
       : "";
 
-    // Reset counts for the next cycle
-    this.mergesSinceLastGate = 0;
-    this.mergedTasksSinceLastGate = [];
+    // Reset this scope's counts for the next cycle; merges that landed during the run stay queued.
+    this.consumePending(key, batch.length);
 
     // An unhandled error outside any test fails the run with every test green; its block sits above the summary the log tail ends with.
     const unhandled = unhandledErrorBlock(`${activeStderr}\n${activeStdout}`);

@@ -22,10 +22,10 @@ export const ownerWordsMode = (settings: Readonly<Record<string, unknown>>): Own
 };
 /** Is the owner's word asked anywhere (the person steps): everything but `off`. */
 export const ownerWordsOn = (settings: Readonly<Record<string, unknown>>) => ownerWordsMode(settings) !== "off";
-/** Does this task's landing wait for the word: every task on `on`, a task of risk high on `risky`, none on `off`. */
+/** Does this task's landing wait for the word: every task on `on`, a task of risk high or critical on `risky`, none on `off`. */
 export const landingWordAsked = (settings: Readonly<Record<string, unknown>>, risk: string | undefined): boolean => {
   const mode = ownerWordsMode(settings);
-  return mode === "on" || (mode === "risky" && risk === "high");
+  return mode === "on" || (mode === "risky" && (risk === "high" || risk === "critical"));
 };
 export const taskWordKey = (runId: string, family: string) => `${runId}:${family}`;
 

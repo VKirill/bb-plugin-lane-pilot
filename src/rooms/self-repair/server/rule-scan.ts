@@ -8,6 +8,16 @@ import { fileAllowedByOwns, fileBlockedByNeverTouch } from "@lane-pilot/kit";
 import { bbServiceTier, writerExecutionSelection } from "@lane-pilot/models";
 import { outputText } from "../../writer/server/writer-task";
 import { adoptRuleProposal, refreshRuleProposals, retireAdoptedRule, rewordAdoptedRule } from "./insights";
+import { authorize } from "../../policy";
+import { postOwnerItem } from "../../owner-waiting";
+
+/**
+ * May the night put a rule on trial by itself? `policy/night-policy.json` says since version 2: no, a rule going into force is
+ * `night_proposes` (d7: the owner took the first five trial rules back himself; d11: «правила не должны копиться»). The scanner followed
+ * version 1 until 0.1.458 (Astra F-008: the classifier and the executor described two different rules of admission). Read at use, so a
+ * policy that moves `rule_trial_apply` back to `night_decides` turns the trials on again without a code change.
+ */
+const nightMayAdopt = (): boolean => authorize({ kind: "rule_adopt" }).tier === "night_decides";
 import { fullAccessSpawn, modelCatalogOf, readProviderFolderBlock, resolveSpawnModel, spawnUsageOf, warmSpawnUsage } from "../../core/server";
 import { spawnTextId } from "../../core/server";
 import { builtinWorkflow } from "../../workflow";
@@ -483,16 +493,24 @@ export function createRuleScan(ctx: ServerCore, services: Services) {
         written.push(upsertModelProposal(db, projectId, { category: job.category, rule: rule.rule, evidence: cited, firstSeenAt: Math.min(...times), lastSeenAt: Math.max(...times), scope: job.scope }).id);
       }
       proposals += written.length;
-      for (const id of written) if (getRuleProposal(db, projectId, id)?.state === "proposed" && adoptRuleProposal(db, projectId, id)) adopted++;
+      if (nightMayAdopt()) for (const id of written) if (getRuleProposal(db, projectId, id)?.state === "proposed" && adoptRuleProposal(db, projectId, id)) adopted++;
       await setScan(projectId, { proposals, adopted });
     }
     // Proposals written earlier (by the analyzer or the PM) that waited for a slot join the trial too. Shortest
     // first, and the first one that finds no room ends the pass: a longer one cannot fit where a shorter one did
     // not, and trying all of them wrote 939 «cap_reached» events in a month for three projects (hub, 2026-10-18).
     const waiting = listRuleProposals(db, projectId, { state: "proposed", limit: 100 }).sort((a, b) => a.rule.length - b.rule.length);
-    for (const row of waiting) {
+    if (nightMayAdopt()) for (const row of waiting) {
       if (!adoptRuleProposal(db, projectId, row.id)) break;
       adopted++;
+    } else if (waiting.length) {
+      // The proposals wait for the owner on the project's Rules tab; one row a night on his list says how many (never a PM chat).
+      try {
+        postOwnerItem(db as never, { key: `rules-proposed:${projectId}:${new Date().toISOString().slice(0, 10)}`, source: "rule_proposal", kind: "rule_proposed", projectId, wake: false,
+          what: `Ночной разбор предложил правила для исполнителей: ${waiting.length}`,
+          why: "По ночной политике правило вступает в силу только с вашего «да». Откройте вкладку Rules проекта и примите или отклоните каждое; принятое попадёт в память всех исполнителей проекта.",
+          evidence: [{ kind: "text", ref: waiting.slice(0, 3).map((row) => row.rule.slice(0, 80)).join(" · "), label: "первые правила" }] });
+      } catch { /* the Rules tab has them */ }
     }
     const trial = evaluateRules(projectId, rewrites);
     const reason = errors.length ? `analyzer_failed: ${errors.join("; ")}`.slice(0, 500) : null;

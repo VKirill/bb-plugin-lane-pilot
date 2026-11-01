@@ -442,6 +442,64 @@ describe("IntegrationGateRunner with mock core & services", () => {
     });
   });
 
+  describe("F-007: the gate's queue, green commit and drains are per project+host+checkout", () => {
+    let dirA: string, dirB: string;
+    beforeEach(() => {
+      dirA = mkdtempSync(join(tmpdir(), "lp-gate-a-"));
+      dirB = mkdtempSync(join(tmpdir(), "lp-gate-b-"));
+      db.prepare(`INSERT INTO lane_pilot_run (id, project_id, pm_thread_id, state, created_at, updated_at) VALUES ('run-2', 'proj-2', 'pm-2', 'running', 0, 0)`).run();
+      writeFileSync(join(dirA, "package.json"), JSON.stringify({ scripts: { test: `node -e "console.error('FAIL tests/a.test.ts');process.exit(1)"` } }));
+      writeFileSync(join(dirB, "package.json"), JSON.stringify({ scripts: { test: `node -e "process.exit(0)"` } }));
+    });
+    afterEach(() => { rmSync(dirA, { recursive: true, force: true }); rmSync(dirB, { recursive: true, force: true }); });
+    const scopeA = () => ({ projectId: "proj-1", hostId: "host-1", basePath: dirA });
+    const scopeB = () => ({ projectId: "proj-2", hostId: "host-1", basePath: dirB });
+    const merged = (taskId: string, produced: string[]) => ({ taskId, commitSha: `sha-${taskId}`, threadId: `thr-${taskId}`, attemptId: `att-${taskId}`, produced });
+
+    it("a green gate of project B does not clear project A's pending merges", async () => {
+      const runner = new IntegrationGateRunner(mockCore, mockServices);
+      runner.noteMergedTask(merged("a1", ["tests/a.test.ts"]), scopeA());
+      runner.noteMergedTask(merged("b1", ["src/b.ts"]), scopeB());
+
+      const resB = await runner.maybeRunGate({ runId: "run-2", projectId: "proj-2", pmThreadId: "pm-2", basePath: dirB, configHostId: "host-1", trigger: "drain" });
+      expect(resB).toMatchObject({ ran: true, passed: true });
+      // A's merge is still queued for A's own gate.
+      expect(runner.getPendingMergeCount()).toBe(1);
+
+      const resA = await runner.maybeRunGate({ runId: "run-1", projectId: "proj-1", pmThreadId: "pm-1", basePath: dirA, configHostId: "host-1", trigger: "drain" });
+      expect(resA).toMatchObject({ ran: true, passed: false, culpritTaskId: "a1" });
+      expect(sentMessages.find((m) => m.threadId === "thr-a1")?.text).toContain("integration gate failed after merging your task a1");
+    });
+
+    it("every_n counts each scope's merges, not all merges together", async () => {
+      saveProjectSetting(db, "proj-2", "integration.gate_when", "every_n");
+      saveProjectSetting(db, "proj-2", "integration.gate_every", 2);
+      const runner = new IntegrationGateRunner(mockCore, mockServices);
+      // A's merge must not count toward B's threshold.
+      runner.noteMergedTask(merged("a1", ["src/a.ts"]), scopeA());
+      const res = await runner.maybeRunGate({ runId: "run-2", projectId: "proj-2", pmThreadId: "pm-2", basePath: dirB, configHostId: "host-1", trigger: "merge" });
+      expect(res.ran).toBe(false);
+      runner.noteMergedTask(merged("b1", ["src/b.ts"]), scopeB());
+      expect((await runner.maybeRunGate({ runId: "run-2", projectId: "proj-2", pmThreadId: "pm-2", basePath: dirB, configHostId: "host-1", trigger: "merge" })).ran).toBe(false);
+      runner.noteMergedTask(merged("b2", ["src/c.ts"]), scopeB());
+      expect((await runner.maybeRunGate({ runId: "run-2", projectId: "proj-2", pmThreadId: "pm-2", basePath: dirB, configHostId: "host-1", trigger: "merge" })).ran).toBe(true);
+    });
+  });
+
+  describe("F-009: a lone task is no culprit without proof of causality", () => {
+    it("one merge, red gate, no failing tests and no green base: owner row, no fix turn", async () => {
+      saveProjectSetting(db, "proj-1", "integration.gate_command", 'node -e "console.error(\'boom outside tests\');process.exit(1)"');
+      const runner = new IntegrationGateRunner(mockCore, mockServices);
+      runner.noteMergedTask({ taskId: "innocent", commitSha: "sha-1", threadId: "thr-innocent", attemptId: "att-1", produced: ["src/foo.ts"] });
+
+      const res = await runner.maybeRunGate({ runId: "run-1", projectId: "proj-1", pmThreadId: "pm-1", basePath: process.cwd(), configHostId: "host-1", trigger: "drain" });
+
+      expect(res).toMatchObject({ ran: true, passed: false, culpritTaskId: null });
+      expect(sentMessages.find((m) => m.threadId === "thr-innocent")).toBeUndefined();
+      expect(ownerRow().kind).toBe("gate_red");
+    });
+  });
+
   describe("timeout recheck under machine load", () => {
     it("allFailuresAreTimeouts identifies timeout-only failures", () => {
       const timeoutOutput = `

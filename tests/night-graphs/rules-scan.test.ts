@@ -55,7 +55,7 @@ describe("the rules scan graph", () => {
     expect(w.runs("lp.rules-scan")).toHaveLength(2);
   });
 
-  it("the analyzer is one hidden parentless thread of the graph step; its answer becomes a proposal on trial", async () => {
+  it("the analyzer is one hidden parentless thread of the graph step; its answer becomes a proposal that waits for the owner (the night policy says night_proposes)", async () => {
     const { w, scan, plan, settle } = setup([RULE]);
     plan([job("analyze:a")]);
     await scan.startScan(PROJECT, "ru", { night: "2026-10-27" });
@@ -71,8 +71,11 @@ describe("the rules scan graph", () => {
     expect(spawned).toMatchObject({ model: "gpt-6-luna", providerId: "codex" });
     const proposals = listRuleProposals(w.db, PROJECT);
     expect(proposals).toHaveLength(1);
-    expect(proposals[0]).toMatchObject({ rule: "Run the spec next to the file before you answer.", state: "accepted", decidedBy: "auto" });
-    expect(await scan.scanState(PROJECT)).toMatchObject({ state: "done", proposals: 1, adopted: 1 });
+    // 0.1.458: `rule_trial_apply` is night_proposes in policy/night-policy.json v2+, so the scanner no longer starts the trial itself (Astra F-008).
+    expect(proposals[0]).toMatchObject({ rule: "Run the spec next to the file before you answer.", state: "proposed" });
+    expect(await scan.scanState(PROJECT)).toMatchObject({ state: "done", proposals: 1, adopted: 0 });
+    const row = w.db.prepare("SELECT what, state FROM lane_pilot_owner_item WHERE key LIKE ?").get(`rules-proposed:${PROJECT}:%`) as { what: string; state: string } | undefined;
+    expect(row).toMatchObject({ state: "open", what: "Ночной разбор предложил правила для исполнителей: 1" });
   });
 
   it("an analyzer call that fails does not corrupt the scan: the other answers are applied, the scan and the run end failed", async () => {

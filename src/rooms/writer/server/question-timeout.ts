@@ -44,11 +44,11 @@ export function createWriterQuestionTimeout(ctx: ServerCore, services: Services,
   }
 
   /** A product decision after the wait: the attempt ends (uncharged, see isOwnerDecision) and the owner's list gets the question. */
-  async function leaveToOwner(row: ReturnType<typeof listUnansweredWriterQuestions>[number]): Promise<void> {
+  async function leaveToOwner(row: ReturnType<typeof listUnansweredWriterQuestions>[number], now: number): Promise<void> {
     const question = writerQuestion(row.reason).slice(0, 400);
     postOwnerItem(db as never, { key: `writer-question:${row.run_id}:${row.task_id}`, source: "writer", kind: "product_decision", projectId: row.project_id, wake: true,
       what: `Исполнитель задачи спрашивает: ${question}`, why: "Это решение о продукте: машина его сама не принимает, а за отведённое время никто не ответил. Ответьте в описании задачи и отправьте её снова.",
-      evidence: [{ kind: "attempt", ref: row.id }, { kind: "task", ref: row.task_id }] });
+      evidence: [{ kind: "attempt", ref: row.id }, { kind: "task", ref: row.task_id }] }, now);
     await end(row, "product decision, left to the owner", question);
   }
 
@@ -83,7 +83,7 @@ export function createWriterQuestionTimeout(ctx: ServerCore, services: Services,
         // null: this task had its one auto-return already; the question is handled as before.
       }
       if (isProductDecision(writerQuestion(row.reason))) {
-        await leaveToOwner(row);
+        await leaveToOwner(row, now);
         done.push({ taskId: row.task_id, action: "left_to_owner" });
         continue;
       }

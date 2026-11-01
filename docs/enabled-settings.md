@@ -14,7 +14,7 @@ sources:
   - docs/enabled-settings.snapshot.json
 ---
 
-<!-- enabled-settings:structure 7dc06eaf6abaae32 -->
+<!-- enabled-settings:structure 902b6b78bf275c16 -->
 
 # Enabled settings (generated)
 
@@ -146,9 +146,9 @@ switches: `quick` disables both critiques, `full` enables them (`src/rooms/criti
 | `memory.salience_min` | `40` | — | stage setting: admission floor for maintainer memory notes |
 | `memory.search_engine` | `auto` | — | stage setting: choose FTS5 or BM25 retrieval |
 | `night_review.agent` | `lane-reviewer` | — | stage consumes this reviewer role label in its prompt |
-| `night_review.auto_merge` | `off` | — | stage setting: merge only a verified, approved PR in a managed worktree |
-| `night_review.enabled` | `false` | — | stage setting: enable the bounded post-acceptance night reviewer |
-| `night_review.max_fix_tasks` | `5` | — | stage setting: cap actionable night-review fixes to 1-10 |
+| `night_review.auto_merge` | `off` | — | stage setting, reserved with night_review.enabled: nothing merges on it today |
+| `night_review.enabled` | `false` | — | stage setting, reserved: no stage reads it yet — the after-accept graph (workflows/lp.after-accept.json) has no night reviewer |
+| `night_review.max_fix_tasks` | `5` | — | stage setting, reserved with night_review.enabled: no night-review fix tasks are created today |
 | `night_review.model` | `provider defaults` | — | stage uses the BB ProviderModelPicker for night review |
 | `night_review.provider` | — | — | stage uses the BB ProviderModelPicker for night review |
 | `onboarding.agent` | `project-onboarder` | — | onboarding role label included in the preview prompt |

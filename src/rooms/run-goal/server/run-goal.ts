@@ -1,6 +1,6 @@
 import { getRun } from "../../storage";
 import { scheduleIsolated, type ServerCore, type Services } from "../../core/server";
-import { postOwnerItem } from "../../owner-waiting";
+import { closeOwnerItem, postOwnerItem } from "../../owner-waiting";
 import { goalFailedText, goalVerdict, runReady, type TaskState } from "../logic";
 import { getRunGoal, saveRunGoal, type RunGoalRecord } from "../store";
 
@@ -33,7 +33,7 @@ export function createRunGoal(ctx: ServerCore, services: Services) {
     if (verdict.state === "failed") {
       postOwnerItem(db as never, { key: `run-goal:${runId}`, source: "run-goal", kind: "goal_failed", projectId: run.project_id, wake: false,
         what: `После слияния всех задач в main упало проверок: ${verdict.red.length}`, why: goalFailedText(runId, verdict.red), evidence: [{ kind: "run", ref: runId }] });
-    }
+    } else closeOwnerItem(db as never, `run-goal:${runId}`, `run-goal:${verdict.state}`); // the fix landed, or the run has nothing red: the row leaves the list (SWE-2 F-006)
     // A partial or inconclusive verdict is not a pass either; the log and the verdict say what did not run.
     ctx.log(`run-goal: ${runId} ${verdict.state}${verdict.red.length ? ` (${verdict.red.length} red)` : ""}${verdict.detail ? `: ${verdict.detail}` : ""}`);
     return record;

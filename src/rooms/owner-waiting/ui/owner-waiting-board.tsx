@@ -134,8 +134,10 @@ export function OwnerWaitingBoard({ projects }: { projects: Array<{ id: string; 
     if (!action.rpc) return;
     setBusy(item.key);
     try {
-      await (rpc.call as (method: string, input: unknown) => Promise<unknown>)(action.rpc.method, action.rpc.input);
-      toast.success(t("ow_done"));
+      const result = await (rpc.call as (method: string, input: unknown) => Promise<unknown>)(action.rpc.method, action.rpc.input) as { ok?: unknown; reason?: unknown } | null;
+      // Transport success is not business success: `lead_decide` answers {ok:false, reason} for a branch already settled elsewhere (Astra F-006).
+      if (result && typeof result === "object" && result.ok === false) toast.error(t("ow_action_refused"), { description: typeof result.reason === "string" ? result.reason : undefined });
+      else toast.success(t("ow_done"));
       await load();
     } catch (cause) {
       toast.error(t("ow_action_failed"), { description: cause instanceof Error ? cause.message : String(cause) });

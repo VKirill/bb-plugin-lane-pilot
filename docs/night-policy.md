@@ -101,6 +101,8 @@ still misses, because their descriptors use other words.
 - d7: the owner took back the first five trial rules himself in the first week of trials (2026-10-01/03).
 - d11: «память единая, на хабе; правила не должны копиться» (owner, 2026-10-03).
 
+Until 0.1.458 the executor did not follow: `rule-scan.ts` put every model-written rule on trial without asking the policy (Astra F-008, grill of 0.1.456). Now `nightMayAdopt()` asks `authorize({kind:"rule_adopt"})` at use: with `night_proposes` the proposals wait on the project's Rules tab and one row a night on the owner's list says how many (`rule_proposed`); a policy that moves `rule_trial_apply` back to `night_decides` turns the trials on again without a code change. A rule the night did adopt is tagged `trial`, not `owner-confirmed`, in core memory.
+
 Against it: d9 (the SMA analysis, an agent's proposal, listed rules on trial as night-decided), d8 and the fact that a trial can be revoked.
 The weighing: revocability makes the change reversible, not unreviewed, and the owner has used the revoke himself. The number of rejections
 since 2026-10-15 (13) was not used as a reason; it is what the v1 exam showed, and the v1 exam is seen.

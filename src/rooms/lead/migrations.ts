@@ -9,7 +9,7 @@
  * `lane_pilot_lead_road`: the road tree (WP0): directions and options with a reason and evidence; a rejected branch keeps its reason.
  * `lane_pilot_lead_tick`: one receipt per tick of the lead (WP3): what it read, proposed, acted on, deferred, and what it cost.
  * `lane_pilot_lead_right`: the tier a class holds (WP4), changed only by the nightly exam; `owner_only` is never changed by it.
- * `lane_pilot_lead_label`: the owner's labels on a decision (kind judge: his verdict; kind novelty: new|known), the kappa's ground truth.
+ * (`lane_pilot_lead_label` was created in 0.1.447 and dropped in 0.1.458: the owner's label lives on the decision row, `owner_label`.)
  */
 export const leadMigrations: readonly string[] = [
   `CREATE TABLE lane_pilot_decision (
@@ -93,4 +93,6 @@ export const leadMigrations: readonly string[] = [
   `CREATE INDEX lane_pilot_lead_label_decision ON lane_pilot_lead_label(decision_id, kind)`,
   // 0.1.455: a proposal of class schedule carries the schedule itself; the branch keeps it until the owner's «да» or the act step creates it.
   `ALTER TABLE lane_pilot_lead_road ADD COLUMN payload_json TEXT`,
+  // 0.1.458: the owner's labels live on the decision row (`owner_label`, `labeled_at`); nothing ever read or wrote this table (Gemini F-004).
+  `DROP TABLE IF EXISTS lane_pilot_lead_label`,
 ];

@@ -1,6 +1,7 @@
 import { jev, type JevSettings } from "@lane-pilot/jev";
 import { SANDBOX_PROJECT_ID, isDrillTask } from "../../stability/server";
 import { loadEvalData, runMemoryEval } from "../../memory-eval/server";
+import { OWNER_ANSWERERS } from "../logic";
 import { leadPredictJudgment, type PredictDecision, type PredictHistory } from "../predict";
 import type { Db } from "./journal";
 
@@ -32,9 +33,12 @@ export type MemoryExam = {
 type Row = { id: string; surface: string; class: string; risk: string | null; project_id: string | null; run_id: string | null; situation_json: string; options_json: string; answer_json: string; answered_at: number };
 
 /** The memory arm's history: the owner's earlier answers to the same kind of question, answered before this one (no peeking forward). */
+/** Whose rows the exam measures and remembers: the owner's own channels and the backtest's replay of his recorded words — never the lead's or an agent's answer (Astra F-011). */
+const HUMAN = [...OWNER_ANSWERERS, "backtest"];
+const HUMAN_IN = `answered_by IN (${HUMAN.map(() => "?").join(",")})`;
 function historyBefore(db: Db, row: Row): PredictHistory[] {
-  return (db.prepare("SELECT situation_json, answer_json FROM lane_pilot_decision WHERE surface=? AND class=? AND id<>? AND answer_json IS NOT NULL AND answered_at<? ORDER BY answered_at DESC LIMIT 20")
-    .all(row.surface, row.class, row.id, row.answered_at) as Array<{ situation_json: string; answer_json: string }>)
+  return (db.prepare(`SELECT situation_json, answer_json FROM lane_pilot_decision WHERE surface=? AND class=? AND id<>? AND answer_json IS NOT NULL AND answered_at<? AND split IN ('exam','backtest') AND ${HUMAN_IN} ORDER BY answered_at DESC LIMIT 20`)
+    .all(row.surface, row.class, row.id, row.answered_at, ...HUMAN) as Array<{ situation_json: string; answer_json: string }>)
     .map((past) => ({ situation: past.situation_json, answer: (JSON.parse(past.answer_json) as { option: string }).option }));
 }
 
@@ -69,7 +73,7 @@ export async function runMemoryExam(db: Db, options: { limit?: number; settings?
   }
 
   const limit = Math.max(1, Math.min(options.limit ?? 60, 500));
-  const rows = db.prepare("SELECT id, surface, class, risk, project_id, run_id, situation_json, options_json, answer_json, answered_at FROM lane_pilot_decision WHERE answer_json IS NOT NULL AND split IN ('exam','backtest') ORDER BY answered_at DESC LIMIT ?").all(limit) as Row[];
+  const rows = db.prepare(`SELECT id, surface, class, risk, project_id, run_id, situation_json, options_json, answer_json, answered_at FROM lane_pilot_decision WHERE answer_json IS NOT NULL AND split IN ('exam','backtest') AND ${HUMAN_IN} ORDER BY answered_at DESC LIMIT ?`).all(...HUMAN, limit) as Row[];
   const withMemory: MemoryExamArm = { decided: 0, exact: 0 }, control: MemoryExamArm = { decided: 0, exact: 0 };
   let predictor = "none";
   for (const row of rows) {

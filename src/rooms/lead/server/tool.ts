@@ -2,7 +2,7 @@ import { z } from "zod";
 import { registerObservedTool, ToolError, type ServerCore, type Services } from "../../core/server";
 import { listDecisions } from "./journal";
 import { LEAD_CLASSES } from "./rights";
-import { addRoad, doneRoad, getRoad, rejectRoad, renderRoadTree, roadTree } from "./road";
+import { addRoad, getRoad, renderRoadTree, roadTree } from "./road";
 
 /**
  * `lane_pilot_lead`: the one tool of the lead's chat (src/rooms/lead/lead-agent.ts). It reads the state and the journal, keeps the road tree
@@ -64,12 +64,12 @@ export function mountLeadTool(ctx: ServerCore, services: Services): void {
         }
         case "road_reject": {
           let ok = false;
-          try { ok = rejectRoad(db, input.roadId, input.why, "lead-chat"); } catch (cause) { throw new ToolError(cause instanceof Error ? cause.message : String(cause), { code: "lead_refused", retryable: false, sideEffects: "none" }); }
+          try { ok = lead.settle(input.roadId, "reject", "lead-chat", input.why); } catch (cause) { throw new ToolError(cause instanceof Error ? cause.message : String(cause), { code: "lead_refused", retryable: false, sideEffects: "none" }); }
           if (!ok) throw new ToolError(`branch ${input.roadId} is not open, proposed or later (or does not exist)`, { code: "lead_refused", retryable: false, sideEffects: "none" });
           return json({ roadId: input.roadId, state: "rejected" });
         }
         case "road_done": {
-          if (!doneRoad(db, input.roadId, input.note)) throw new ToolError(`branch ${input.roadId} cannot be marked done from its state (or does not exist)`, { code: "lead_refused", retryable: false, sideEffects: "none" });
+          if (!lead.settle(input.roadId, "done", "lead-chat", input.note)) throw new ToolError(`branch ${input.roadId} cannot be marked done from its state (or does not exist)`, { code: "lead_refused", retryable: false, sideEffects: "none" });
           return json({ roadId: input.roadId, state: "done" });
         }
         case "journal": return json(listDecisions(db, { class: input.class, limit: input.limit ?? 20 }).map((row) => ({

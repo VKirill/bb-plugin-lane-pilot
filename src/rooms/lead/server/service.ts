@@ -17,7 +17,7 @@ import { answerDecision, examRows, getDecision, labelDecision, listDecisions, op
 import { createLeadSchedule } from "./lead-schedule";
 import { formatMemoryExam, MEMORY_EXAM_KEY, runMemoryExam, type MemoryExam } from "./memory-exam";
 import { actsVia, applyExam, rightsView, type TierChange } from "./rights";
-import { decideRoad, getRoad, roadCounts, roadMarkdown, roadPayload, type RoadRow } from "./road";
+import { decideRoad, doneRoad, getRoad, rejectRoad, roadCounts, roadMarkdown, roadPayload, type RoadRow } from "./road";
 import { registerLeadTickActions, proposalDecisionId, proposalItemKey, type ProposalDecision } from "./tick";
 import { closeTick, getTick, listTicks, openTick, patchTick, sweepStaleTicks, type TickRow } from "./tick-store";
 
@@ -191,9 +191,24 @@ export function createLeadService(ctx: ServerCore, services: Services) {
     answerDecision(db, decisionId, { option: decision, ...(text ? { text } : {}) }, by, now);
     // A mismatch goes to the model judge at once: «later» to a predicted «yes» is a partial, not a miss.
     const verdict = await refineVerdict(db, decisionId, loadProjectSettings(db, GLOBAL_SETTINGS_PROJECT_ID) as never, now);
-    closeOwnerItem(db, proposalItemKey(roadId), by, now);
+    closeOwnerItem(db, proposalItemKey(decisionId), by, now);
     const handover = decision === "yes" ? await handOverAccepted(row, by, now) : null;
     return { ok: true, road: getRoad(db, roadId)!, verdict, handover };
+  }
+
+  /**
+   * A branch closed by hand (the chat's road_reject / road_done, the CLI): a proposed one also answers its journal row «no» and leaves
+   * the owner's list, so no button outlives the branch (Astra F-006: a stale «да» used to return ok:false behind a green toast).
+   */
+  function settle(roadId: string, action: "reject" | "done", by: string, text: string | undefined, now: number = Date.now()): boolean {
+    const row = getRoad(db, roadId);
+    if (!row) return false;
+    const ok = action === "reject" ? rejectRoad(db, roadId, text ?? "", by, now) : doneRoad(db, roadId, text, now);
+    if (ok && row.state === "proposed" && row.decision_id) {
+      answerDecision(db, row.decision_id, { option: "no", text: `${action} by ${by}${text ? `: ${text}` : ""}` }, by, now);
+      closeOwnerItem(db, proposalItemKey(row.decision_id), by, now);
+    }
+    return ok;
   }
 
   /**
@@ -334,7 +349,7 @@ export function createLeadService(ctx: ServerCore, services: Services) {
     return run;
   };
 
-  return { settings, homeProjectId, nextTickAt, due, runTick, sweep, exam, memoryExam, state, decide, label, labelsDue, setEnabled, setPriority, chatStart: chatStartOnce, decisionOf: (id: string) => getDecision(db, id) };
+  return { settings, homeProjectId, nextTickAt, due, runTick, sweep, exam, memoryExam, state, decide, settle, label, labelsDue, setEnabled, setPriority, chatStart: chatStartOnce, decisionOf: (id: string) => getDecision(db, id) };
 }
 export type LeadApi = ReturnType<typeof createLeadService>;
 /** What became of an accepted branch: handed to the project (`started`), stopped with a reason the owner sees (`blocked`), or a mark only (`skipped`). */

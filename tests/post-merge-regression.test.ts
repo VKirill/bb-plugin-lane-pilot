@@ -1,6 +1,7 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { expect, it, vi } from "vitest";
 import { taskV2Schema } from "../src/rooms/contracts";
+import { openDatabase } from "../src/rooms/storage/database";
 import { createWriterFinish } from "../src/rooms/writer/server/finish";
 import { runWithFlakyRerun } from "../src/rooms/writer/server/verify";
 
@@ -20,21 +21,27 @@ async function mergeThenCheck(runs: Array<Row[] | Error>, baseline?: { turned: s
   const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
   const sent: string[] = [];
   const dispatchWriter = vi.fn(async () => ({ state: "queued" }));
-  const ctx = { bb: { storage: bb.storage, sdk: { threads: { send: async (input: { input: Array<{ text: string }> }) => { sent.push(input.input[0]!.text); } }, files: { write: async () => ({}) } } }, db: {}, log: vi.fn(), state: { disposed: false }, host: { call: async () => ({}) } };
+  const db = openDatabase(bb);
+  const log = vi.fn();
+  const ctx = { bb: { storage: bb.storage, sdk: { threads: { send: async (input: { input: Array<{ text: string }> }) => { sent.push(input.input[0]!.text); } }, files: { write: async () => ({}) } } }, db, log, state: { disposed: false }, host: { call: async () => ({}) } };
   const queue = [...runs];
   const runVerification = vi.fn(async () => { const next = queue.shift(); if (next instanceof Error) throw next; return next ?? []; });
   const services = { runVerification, dispatchWriter, ...(baseline ? { baseline: { afterMerge: () => baseline.turned, redBefore: () => baseline.redBefore ?? [] } } : {}) };
   const finish = createWriterFinish(ctx as never, services as never);
   await finish.checkMainAfterMerge({ projectId: "P", pmThreadId: "pm", config: { hostId: "h" } as never, runId: "run", task: { ...task, id: taskId }, basePath: "/work/base", worktreePath: "/work/wt", attemptId: "att", mergeCommit: "abc", ...(greenInWorktree ? { greenInWorktree } : {}) });
-  return { sent, dispatchWriter, runVerification };
+  const rows = () => db.prepare("SELECT key, kind, what, why FROM lane_pilot_owner_item ORDER BY rowid").all() as Array<{ key: string; kind: string; what: string; why: string }>;
+  const logged = (needle: string, also = "") => log.mock.calls.map((call) => String(call[0])).some((line) => line.includes(needle) && line.includes(also));
+  return { sent, dispatchWriter, runVerification, rows, logged };
 }
 
-it("a red that passes on the re-run is flaky: one message to the PM, no repair task", async () => {
-  const { sent, dispatchWriter, runVerification } = await mergeThenCheck([[red("npm run build")], [green("npm run build")]], { turned: ["npm run build"] });
+// 0.1.458: post-merge notes are log lines or rows on the owner's list, never messages into the PM chat (0.1.443).
+it("a red that passes on the re-run is flaky: a log line, no repair task, nothing for the owner", async () => {
+  const { sent, dispatchWriter, runVerification, rows, logged } = await mergeThenCheck([[red("npm run build")], [green("npm run build")]], { turned: ["npm run build"] });
   expect(dispatchWriter).not.toHaveBeenCalled();
   expect(runVerification).toHaveBeenCalledTimes(2);
-  expect(sent).toHaveLength(1);
-  expect(sent[0]).toContain("flaky");
+  expect(sent).toEqual([]);
+  expect(rows()).toEqual([]);
+  expect(logged("flaky")).toBe(true);
 });
 
 it("re-runs only the red checks, once, under its own job key", async () => {
@@ -46,9 +53,10 @@ it("re-runs only the red checks, once, under its own job key", async () => {
 });
 
 it("dispatches the repair task for a red that turned red and reproduces", async () => {
-  const { dispatchWriter, sent } = await mergeThenCheck([[red("npm run build")], [red("npm run build")]], { turned: ["npm run build"] });
+  const { dispatchWriter, sent, logged } = await mergeThenCheck([[red("npm run build")], [red("npm run build")]], { turned: ["npm run build"] });
   expect(dispatchWriter).toHaveBeenCalledTimes(1);
-  expect(sent.some((text) => text.includes("passed on the base before this task") && text.includes("site-fix-mainfix is on its way"))).toBe(true);
+  expect(sent).toEqual([]);
+  expect(logged("passed on the base before this task", "site-fix-mainfix dispatched")).toBe(true);
 });
 
 // 2026-10-29 audit: the first post-merge run re-runs a red itself (runWithFlakyRerun); asking for one more confirming run made four runs of one stable failure.
@@ -69,12 +77,15 @@ it("a red whose own re-run timed out is run again before any repair task", async
   expect(dispatchWriter).not.toHaveBeenCalled();
 });
 
-it("a red that was already red on the base is not this task's regression: one message, no re-run, no repair task", async () => {
-  const { sent, dispatchWriter, runVerification } = await mergeThenCheck([[red("npx vitest run")]], { turned: [], redBefore: ["npx vitest run"] });
+it("a red that was already red on the base is not this task's regression: one row for the owner, no re-run, no repair task", async () => {
+  const { sent, dispatchWriter, runVerification, rows } = await mergeThenCheck([[red("npx vitest run")]], { turned: [], redBefore: ["npx vitest run"] });
   expect(dispatchWriter).not.toHaveBeenCalled();
   expect(runVerification).toHaveBeenCalledTimes(1);
-  expect(sent).toHaveLength(1);
-  expect(sent[0]).toContain("red before this task too");
+  expect(sent).toEqual([]);
+  expect(rows()).toHaveLength(1);
+  expect(rows()[0]).toMatchObject({ kind: "gate_red", key: "post-merge-redbefore:run:site-fix" });
+  expect(rows()[0]!.what).toContain("была красной и до этой задачи");
+  expect(rows()[0]!.why).toContain("npx vitest run");
 });
 
 it("a fix's check red on the base, green in its worktree and red again on main is the merge's clash: re-run, then repaired", async () => {
@@ -85,25 +96,29 @@ it("a fix's check red on the base, green in its worktree and red again on main i
 });
 
 it("splits a mix: the check red before is told, the one that turned red and reproduces is repaired", async () => {
-  const { sent, dispatchWriter } = await mergeThenCheck([[red("npm run build"), red("npx vitest run")], [red("npm run build")]], { turned: ["npm run build"], redBefore: ["npx vitest run"] });
+  const { sent, dispatchWriter, rows } = await mergeThenCheck([[red("npm run build"), red("npx vitest run")], [red("npm run build")]], { turned: ["npm run build"], redBefore: ["npx vitest run"] });
   expect(dispatchWriter).toHaveBeenCalledTimes(1);
   expect((dispatchWriter.mock.calls[0] as unknown as [{ task: { expected_outputs: string[] } }])[0].task.expected_outputs).toEqual(["npm run build"]);
-  expect(sent.some((text) => text.includes("red before this task too") && text.includes("npx vitest run"))).toBe(true);
+  expect(sent).toEqual([]);
+  expect(rows().some((row) => row.key.startsWith("post-merge-redbefore:") && row.why.includes("npx vitest run"))).toBe(true);
 });
 
 it("with no baseline record only the re-run decides", async () => {
   const flaky = await mergeThenCheck([[red("npm run build")], [green("npm run build")]]);
   expect(flaky.dispatchWriter).not.toHaveBeenCalled();
-  expect(flaky.sent[0]).toContain("flaky");
+  expect(flaky.sent).toEqual([]);
+  expect(flaky.logged("flaky")).toBe(true);
   const real = await mergeThenCheck([[red("npm run build")], [red("npm run build")]]);
   expect(real.dispatchWriter).toHaveBeenCalledTimes(1);
 });
 
-it("a -mainfix that leaves main red is still handed to the PM without a re-run", async () => {
-  const { sent, dispatchWriter, runVerification } = await mergeThenCheck([[red("npm run build")]], { turned: ["npm run build"] }, "site-fix-mainfix");
+it("a -mainfix that leaves main red is one row for the owner, without a re-run", async () => {
+  const { sent, dispatchWriter, runVerification, rows } = await mergeThenCheck([[red("npm run build")]], { turned: ["npm run build"] }, "site-fix-mainfix");
   expect(dispatchWriter).not.toHaveBeenCalled();
   expect(runVerification).toHaveBeenCalledTimes(1);
-  expect(sent[0]).toContain("fixed main once already");
+  expect(sent).toEqual([]);
+  expect(rows()).toHaveLength(1);
+  expect(rows()[0]).toMatchObject({ kind: "gate_red", key: "post-merge-red-again:run:site-fix-mainfix" });
 });
 
 it("redBeforeAndAfter keeps only checks that were red on the base and are red now; an unknown or host-failed one says nothing", async () => {

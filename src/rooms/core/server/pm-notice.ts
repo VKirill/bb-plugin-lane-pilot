@@ -12,6 +12,7 @@ export async function sendPmNotice(bb: Pick<BbPluginApi, "sdk">, threadId: strin
   const thread = await Promise.resolve().then(() => bb.sdk.threads.get({ threadId })).catch(() => null) as { updatedAt?: unknown } | null;
   const updatedAt = Number(thread?.updatedAt ?? 0);
   if (!thread || !Number.isFinite(updatedAt) || now - updatedAt > freshMs) return false;
-  await bb.sdk.threads.send({ threadId, mode: "queue-if-active", input: [{ type: "text", text, mentions: [] }] } as never).catch(() => undefined);
-  return true;
+  // A refused send (the chat archived meanwhile, a transport error) is no delivery: the caller falls back to the owner's list
+  // (Astra F-005: the second pilot used to report «owner told» on a chat that only looked warm).
+  try { await bb.sdk.threads.send({ threadId, mode: "queue-if-active", input: [{ type: "text", text, mentions: [] }] } as never); return true; } catch { return false; }
 }

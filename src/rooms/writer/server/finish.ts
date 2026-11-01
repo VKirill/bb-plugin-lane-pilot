@@ -45,7 +45,8 @@ import { attemptMergeMessage, clearMergeIntent, recordMergeIntent } from "../../
 import { sendServiceMessage } from "../../relay/server";
 import { judgeRulesOnDiff, ruleViolationRemark } from "../../learning";
 import { jev, type JevSettings } from "@lane-pilot/jev";
-import { askTaskWord } from "../../lead";
+import { askTaskWord, taskWordItemPrefix } from "../../lead";
+import { closeOwnerItemsByPrefix, postOwnerItem, rpcLine } from "../../owner-waiting";
 import { writerFinishScanJudgment } from "../finish-scan";
 import { runOnHost } from "@lane-pilot/host-calls";
 import { pollPause } from "@lane-pilot/kit";
@@ -111,7 +112,8 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
    */
   function noteMergedForGate(input:{ projectId:string; runId:string; taskId:string; attemptId:string; writerThreadId:string | null; pmThreadId:string; config:{ hostId:string } },
     basePath:string, commitSha:string, produced:string[], live:boolean) {
-    integrationGateRunner.noteMergedTask({ taskId:input.taskId, commitSha, threadId:input.writerThreadId, attemptId:input.attemptId, produced });
+    integrationGateRunner.noteMergedTask({ taskId:input.taskId, commitSha, threadId:input.writerThreadId, attemptId:input.attemptId, produced },
+      { projectId:input.projectId, hostId:input.config.hostId, basePath });
     const drained = !listOpenAttempts(db).some((row) => row.project_id === input.projectId && row.id !== input.attemptId);
     // Called without await: a throw here must never become an unhandled rejection, which kills the whole BB server.
     return integrationGateRunner.maybeRunGate({ runId:input.runId, projectId:input.projectId, pmThreadId:input.pmThreadId, basePath,
@@ -826,15 +828,27 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
       if (wordGap && !wordGap.includes("said no")) {
         // The lead's journal: the question opens here and the prediction is written before the owner answers (src/rooms/lead).
         void askTaskWord(db, { runId:input.runId, projectId:input.projectId, family:taskFamily(input.taskId), task:input.task }, loadProjectSettings(db, input.projectId, getRunSettingsScopes(db, input.runId)) as JevSettings);
+        // The wait is a row on «Ждут владельца» with да / нет (Astra F-004, Gemini F-008: the screen that promises to show what waits did not
+        // show this); the word closes it (answerTaskWord), the end of the wait below closes it too.
+        try {
+          const wordInput = (decision:"yes"|"no") => ({ runId:input.runId, taskId:input.taskId, decision, text: decision === "yes" ? "Да, сливайте" : "Нет, не сливать" });
+          postOwnerItem(db as never, { key:`${taskWordItemPrefix(input.runId, taskFamily(input.taskId))}${input.attemptId}`, source:"writer", kind:"task_word", projectId:input.projectId, wake:false,
+            what:`Задача проверена и ждёт вашего слова перед слиянием: ${input.task.title}`,
+            why:`Риск задачи ${input.task.risk}: по вашему правилу такая работа не сливается без вашего «да». Без ответа за ${Math.round(OWNER_WORD_WAIT_MS / 3_600_000)} часов она остановится, и её можно будет отправить снова.`,
+            evidence:[{ kind:"attempt", ref:input.attemptId }, { kind:"task", ref:input.taskId }],
+            actions:[{ id:"yes", label:"Да, сливать", cli:rpcLine("task_word", wordInput("yes")), rpc:{ method:"task_word", input:wordInput("yes") } },
+              { id:"no", label:"Нет", cli:rpcLine("task_word", wordInput("no")), rpc:{ method:"task_word", input:wordInput("no") } }] });
+        } catch { /* the list is a mirror; the wait itself goes on */ }
         void sendServiceMessage(bb, { threadId:input.pmThreadId, senderThreadId:writerThreadId,
           text:`Lane Pilot: task ${input.taskId} passed its checks and waits for the owner's word before it lands on main (owner.words asks it for this task: risk ${input.task.risk}). Ask him with lane_pilot_ask_owner, then record his answer with lane_pilot_queue {action:"word", taskId:"${input.taskId}", decision:"yes"|"no", text}. It waits up to 6 hours; no need to resend it.` }).catch(() => undefined);
         const since = Date.now();
         while (wordGap && !wordGap.includes("said no") && Date.now() - since < OWNER_WORD_WAIT_MS && !ctx.isDisposed()) {
           await new Promise((wake) => setTimeout(wake, 60_000));
           const stopped = stoppedMeanwhile("the owner's word", writerThreadId);
-          if (stopped) return stopped;
+          if (stopped) { closeOwnerItemsByPrefix(db as never, taskWordItemPrefix(input.runId, taskFamily(input.taskId)), "stopped"); return stopped; }
           wordGap = landingWordGap(ownerWords, await wordsOf());
         }
+        closeOwnerItemsByPrefix(db as never, taskWordItemPrefix(input.runId, taskFamily(input.taskId)), wordGap ? "wait over" : "answered");
       }
       if (wordGap) {
         recordGateEvaluation(db,{projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"rejected",
@@ -1028,24 +1042,26 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
     const failing = checks?.filter((check) => check.exitCode !== 0 && !check.hostError) ?? [];
     // «What turned red» (src/rooms/baseline): the checks that were green on the base before this task and are red on main with it.
     const turnedRed = checks ? services.baseline?.afterMerge({ runId:input.runId, taskId:input.task.id, mergeCommit:input.mergeCommit, checks }) ?? [] : [];
-    const tell = (text:string) => bb.sdk.threads.send({ threadId:input.pmThreadId, mode:"queue-if-active", input:[{ type:"text", text, mentions:[] }] } as never).catch(() => undefined);
+    // No message of the plugin's own into the PM chat (0.1.443; Gemini F-007 found this one still live): the fact is a row on the owner's list.
+    const tell = (kind:"gate_machine"|"gate_red", key:string, what:string, why:string) => {
+      try { postOwnerItem(db as never, { key, source:"integration-gate", kind, projectId:input.projectId, wake:false, what, why, evidence:[{ kind:"run", ref:input.runId }, { kind:"task", ref:input.task.id }] }); } catch { /* the log has it */ }
+    };
     // A check the machine broke (EACCES, EPERM, EEXIST: root-owned files after a deploy) is no clash of merged work, and
     // no writer can fix it inside owns_paths: an infra incident and one message to the PM, no -mainfix.
     const environment = failing.filter((check) => isEnvironmentCheckFailure(check));
     if (environment.length) {
       const evidence = `${environment[0]!.stderr ?? ""}\n${environment[0]!.stdout ?? ""}`.split("\n").find((line) => isEnvironmentCheckFailure({ stderr:line }))?.trim().slice(0, 300) ?? "";
       ctx.log(`infra: post-merge check of ${input.task.id} is red on main from the environment, no repair task: ${environment.map((check) => check.command).join(", ")} (${evidence})`);
-      const noted = `post-merge-infra:${input.runId}:${failureFingerprint(evidence)}`;
-      if (!await bb.storage.kv.get(noted).catch(() => null)) {
-        await bb.storage.kv.set(noted, Date.now() as never).catch(() => undefined);
-        await tell(`Lane Pilot: ${input.task.id} is merged, but ${environment.map((check) => check.command).join(", ")} is red on main because of the machine, not the code: ${evidence}. No repair task was created (a writer cannot fix file permissions). Fix it in ${input.basePath} (for example chown the root-owned files back to the Lane Pilot user), then run the check again.`);
-      }
+      // One row per machine failure (the key is its fingerprint): the same broken permission does not fill the list.
+      tell("gate_machine", `post-merge-infra:${input.runId}:${failureFingerprint(evidence)}`, `После слияния задачи ${input.task.id} проверка ${environment.map((check) => check.command).join(", ")} красная из-за машины, не кода`,
+        `${evidence}. Задача исправления не создана: исполнитель не может починить права на файлы. Проверьте машину, на которой идёт проект.`);
     }
     const red = failing.filter((check) => !isEnvironmentCheckFailure(check));
     if (!red.length) return;
     ctx.log(`post-merge check of ${input.task.id} failed on main: ${red.map((check) => check.command).join(", ")}`);
     if (isMainfixTask(input.task.id)) {
-      await tell(`Lane Pilot: ${input.task.id} fixed main once already and main is red again after it (${red[0]!.command}). Look at what else merged meanwhile and dispatch the fix yourself.`);
+      tell("gate_red", `post-merge-red-again:${input.runId}:${input.task.id}`, `main снова красный после починки ${input.task.id}`,
+        `Проверка ${red[0]!.command} упала уже после задачи, которая чинила main. Посмотрите, что ещё слилось за это время, и поручите починку в чате проекта.`);
       return;
     }
     // Only a reproducible regression of this task gets a writer: a red that was red on the base too is not its doing, and one
@@ -1077,7 +1093,8 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
     }
     if (flaky.length || redBefore.length) {
       ctx.log(`post-merge check of ${input.task.id} on main: no repair task for ${[...flaky, ...redBefore].join(", ")} (${flaky.length ? "flaky" : "red before this task too"})`);
-      await tell(`Lane Pilot: ${input.task.id} is merged.${flaky.length ? ` ${flaky.join(", ")} failed on main once and passed on a re-run (flaky), so it is not this task's regression.` : ""}${redBefore.length ? ` ${redBefore.join(", ")} is red on main, but it was red before this task too (on the base), so it is not this task's regression.` : ""} No repair task was created for ${flaky.length && redBefore.length ? "them" : "it"}${confirmed.length ? "" : "; look at it yourself if it matters"}.`);
+      if (redBefore.length) tell("gate_red", `post-merge-redbefore:${input.runId}:${input.task.id}`, `После слияния задачи ${input.task.id} проверка на main красная, но она была красной и до этой задачи`,
+        `${redBefore.join(", ")}: не регрессия этой задачи, задача исправления не создана. Посмотрите сами, если эта проверка важна.`);
     }
     if (!confirmed.length) return;
     const { fix, plan, logs } = postMergeRepair(onMain, confirmed);
@@ -1087,7 +1104,10 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
         content:log.content, contentEncoding:"utf8", createParents:true, expectedSha256:null }).catch(() => undefined);
     }
     const sent = await services.dispatchWriter({ threadId:input.pmThreadId, projectId:input.projectId, task:fix, plan }).catch((cause:unknown) => ({ state:"rejected", reason:cause instanceof Error ? cause.message : String(cause) }));
-    await tell(`Lane Pilot: ${input.task.id} is merged, but ${confirmed.map((check) => check.command).join(", ")} fails on main with it${turnedRed.length ? ` (${turnedRed.join(", ")} passed on the base before this task)` : ""}. The work stays in main; ${String(sent.state) === "rejected" || String(sent.state) === "blocked" || (sent as { ok?:unknown }).ok === false ? `the repair task could not start (${String((sent as { reason?:unknown }).reason ?? (sent as { hint?:unknown }).hint ?? sent.state)}), dispatch it yourself` : `repair task ${fix.id} is on its way — no action needed`}.`);
+    const notStarted = String(sent.state) === "rejected" || String(sent.state) === "blocked" || (sent as { ok?:unknown }).ok === false;
+    ctx.log(`post-merge check of ${input.task.id}: ${confirmed.map((check) => check.command).join(", ")} fails on main with it${turnedRed.length ? ` (${turnedRed.join(", ")} passed on the base before this task)` : ""}; repair task ${fix.id} ${notStarted ? `could not start (${String((sent as { reason?:unknown }).reason ?? (sent as { hint?:unknown }).hint ?? sent.state)})` : "dispatched"}`);
+    if (notStarted) tell("gate_red", `post-merge-repair:${input.runId}:${input.task.id}`, `После слияния задачи ${input.task.id} проверка на main красная, а задача исправления не запустилась`,
+      `${confirmed.map((check) => check.command).join(", ")}${turnedRed.length ? ` (до этой задачи проходила)` : ""}. Причина: ${String((sent as { reason?:unknown }).reason ?? (sent as { hint?:unknown }).hint ?? sent.state)}. Работа осталась в main; запустите исправление в чате проекта.`);
   }
 
   return { finishWriterAttempt, checkMainAfterMerge, noteMergedForGate };

@@ -62,7 +62,7 @@ export function helperDraft(helper: ForeignHelper): string {
 }
 
 /** One action — one line: the RPC calls that change something, by name. */
-export const MUTATING_RPC = /^(save|set|reset|apply|cancel|close|phase_act|phase_control|task_word|answer|word|conveyor|configure|defer|deferral_defer|deferral_close|retry|revert|install|enable|disable|delete|archive|start|stop|pause|resume|mark|approve|reject|accept|first_run|coord_clear|helpers_import)/;
+export const MUTATING_RPC = /^(save|set|reset|apply|cancel|close|phase_act|phase_control|task_word|answer|word|conveyor|configure|defer|deferral_defer|deferral_close|retry|revert|install|enable|disable|delete|archive|start|stop|pause|resume|mark|approve|reject|accept|first_run|coord_clear|helpers_import|backlog_issue)/;
 
 /** Machines: presence only — what a peer's last snapshot says when it does not answer now. */
 export type PeerSnapshot = { hostId: string; name: string | null; online: boolean; at: number; lastOnlineAt: number | null };

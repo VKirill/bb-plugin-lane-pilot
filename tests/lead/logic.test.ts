@@ -8,6 +8,7 @@ const row = (over: Partial<ExamRow> = {}): ExamRow => ({
   owner_label: null,
   predicted_at: 10,
   answered_at: 20,
+  answered_by: "owner",
   split: "exam",
   ...over,
 });
@@ -50,9 +51,11 @@ describe("examEligible", () => {
     expect(examEligible(row({ predicted_at: 30, answered_at: 20 }))).toBe(false);
     expect(examEligible(row({ split: "backtest" }))).toBe(false);
     expect(examEligible(row({ split: "design" }))).toBe(false);
-    // Only the owner's own word counts: the list's button, his terminal, his word in the lead's chat. A proxy answer stays in the journal, out of the exam.
+    // Only the owner's own word counts: the list's button and his terminal (OWNER_ANSWERERS). A relay (pm, lead-chat) or an agent is a proxy: in the journal, out of the exam (0.1.458).
     expect(examEligible(row({ answered_by: "screen" }))).toBe(true);
-    expect(examEligible(row({ answered_by: "lead-chat" }))).toBe(true);
+    expect(examEligible(row({ answered_by: "lead-chat" }))).toBe(false);
+    expect(examEligible(row({ answered_by: "pm" }))).toBe(false);
+    expect(examEligible(row({ answered_by: null }))).toBe(false);
     expect(examEligible(row({ answered_by: "agent" }))).toBe(false);
     expect(examEligible(row({ answered_by: "lead" }))).toBe(false);
     expect(examEligible(row({ judge_verdict: null }))).toBe(false);

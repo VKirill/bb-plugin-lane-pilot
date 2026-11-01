@@ -1,4 +1,5 @@
 import type { JevSettings } from "@lane-pilot/jev";
+import { closeOwnerItemsByPrefix } from "../../owner-waiting";
 import { answerDecision, askDecision, refineVerdict, type Db } from "./journal";
 
 /**
@@ -23,9 +24,13 @@ export const askTaskWord = (db: Db, input: { runId: string; projectId: string; f
   askDecision(db, { id: wordDecisionId(input.runId, input.family), surface: "words", class: "landing", risk: input.task.risk ?? null, projectId: input.projectId, runId: input.runId,
     situation: wordSituation(input.task, input.family), options: WORD_OPTIONS }, settings, now);
 
-/** lane_pilot_queue word, the task_word RPC: the owner's word is recorded. */
+/** The list's row of a landing that waits for the word, one per attempt under the family's prefix (finish.ts posts, the word or the end of the wait closes). */
+export const taskWordItemPrefix = (runId: string, family: string) => `task-word:${runId}:${family}:`;
+
+/** lane_pilot_queue word, the task_word RPC: the owner's word is recorded, and the question leaves his list. */
 export const answerTaskWord = (db: Db, runId: string, family: string, decision: "yes" | "no", text: string, by: string, now?: number) => {
   try { answerDecision(db, wordDecisionId(runId, family), { option: decision, text }, by, now); void refineVerdict(db, wordDecisionId(runId, family), undefined, now); } catch { /* journal only */ }
+  try { closeOwnerItemsByPrefix(db as never, taskWordItemPrefix(runId, family), by, now); } catch { /* the janitor takes it later */ }
 };
 
 export type WordPhase = { id: string; projectId: string; runId: string | null; title: string; goal: string; stage: string };

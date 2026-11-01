@@ -1,6 +1,6 @@
 import type Database from "better-sqlite3";
 import { jev, type JevSettings } from "@lane-pilot/jev";
-import { PROXY_ANSWERERS, type ExamRow, type Verdict } from "../logic";
+import { OWNER_ANSWERERS, type ExamRow, type Verdict } from "../logic";
 import { LEAD_JUDGE_ID, leadJudgeJudgment, leadPredictJudgment, type PredictDecision } from "../predict";
 
 /**
@@ -40,9 +40,15 @@ export function openDecision(db: Db, input: OpenDecision, now: number = Date.now
 export const getDecision = (db: Db, id: string): DecisionRow | undefined => db.prepare("SELECT * FROM lane_pilot_decision WHERE id=?").get(id) as DecisionRow | undefined;
 
 /** The owner's recent answers to the same kind of question: the memory the prediction is made from. */
-function historyOf(db: Db, row: DecisionRow): Array<{ situation: string; answer: string }> {
-  const rows = db.prepare("SELECT situation_json, answer_json FROM lane_pilot_decision WHERE surface=? AND class=? AND id<>? AND answer_json IS NOT NULL ORDER BY answered_at DESC LIMIT 20")
-    .all(row.surface, row.class, row.id) as Array<{ situation_json: string; answer_json: string }>;
+/** Whose past answers the predictor may remember: the owner's own channels and the backtest's replay of his recorded words. */
+const HISTORY_ANSWERERS = [...OWNER_ANSWERERS, "backtest"];
+function historyOf(db: Db, row: DecisionRow, now: number): Array<{ situation: string; answer: string }> {
+  // Only the owner's answers (never the lead's own «yes» or an agent's relay), only the live and backtest splits (a design switch has
+  // other options), and only what was answered before this row was: a backtest row must not read the future (Gemini F-005, SWE-2 F-002).
+  const before = row.answered_at ?? now;
+  const rows = db.prepare(`SELECT situation_json, answer_json FROM lane_pilot_decision WHERE surface=? AND class=? AND id<>? AND answer_json IS NOT NULL
+    AND answered_at<? AND split IN ('exam','backtest') AND answered_by IN (${HISTORY_ANSWERERS.map(() => "?").join(",")}) ORDER BY answered_at DESC LIMIT 20`)
+    .all(row.surface, row.class, row.id, before, ...HISTORY_ANSWERERS) as Array<{ situation_json: string; answer_json: string }>;
   return rows.map((past) => ({ situation: past.situation_json, answer: (JSON.parse(past.answer_json) as Answer).option }));
 }
 
@@ -58,7 +64,7 @@ export async function predictDecision(db: Db, id: string, settings?: JevSettings
   let predictor = "none";
   try {
     const verdict = await jev()?.judge(leadPredictJudgment, {
-      surface: row.surface, class: row.class, risk: row.risk, situation: JSON.parse(row.situation_json) as Record<string, unknown>, options, history: historyOf(db, row),
+      surface: row.surface, class: row.class, risk: row.risk, situation: JSON.parse(row.situation_json) as Record<string, unknown>, options, history: historyOf(db, row, now),
     }, { projectId: row.project_id, runId: row.run_id, subject: "lead-predict", settings });
     if (verdict?.by === "jev") { decision = verdict.decision; predictor = `jev:${leadPredictJudgment.id}@${leadPredictJudgment.version}`; }
     else if (verdict?.by === "fallback" && verdict.shadow?.decision) { decision = verdict.shadow.decision; predictor = `jev-shadow:${leadPredictJudgment.id}@${leadPredictJudgment.version}`; }
@@ -121,9 +127,10 @@ export async function refineVerdict(db: Db, id: string, settings?: JevSettings, 
 
 export type PendingLabel = { id: string; class: string; surface: string; situation_json: string; prediction_json: string | null; answer_json: string | null; judge_verdict: Verdict; answered_at: number };
 
-const PROXIES = [...PROXY_ANSWERERS];
-/** Judged rows of the exam split without the owner's label; a deferred row has nothing to label and a proxy answer is not his. */
-const PENDING_WHERE = `split='exam' AND answered_at IS NOT NULL AND owner_label IS NULL AND judge_verdict IN ('exact','partial','miss') AND (answered_by IS NULL OR answered_by NOT IN (${PROXIES.map(() => "?").join(",")}))`;
+const PROXIES = [...OWNER_ANSWERERS];
+/** Judged rows of the exam split the owner answered himself: what the label asks about; a deferred row has nothing to label. */
+const LABELABLE_WHERE = `split='exam' AND answered_at IS NOT NULL AND judge_verdict IN ('exact','partial','miss') AND answered_by IN (${PROXIES.map(() => "?").join(",")})`;
+const PENDING_WHERE = `${LABELABLE_WHERE} AND owner_label IS NULL`;
 
 /** Judged exam rows the owner has not labelled yet, in random order: the weekly line asks for up to 20 of them (kappa needs his labels). */
 export function pendingLabels(db: Db, limit = 20): PendingLabel[] {
@@ -135,9 +142,13 @@ export function pendingLabelCount(db: Db): number {
   return (db.prepare(`SELECT COUNT(*) AS n FROM lane_pilot_decision WHERE ${PENDING_WHERE}`).get(...PROXIES) as { n: number }).n;
 }
 
-/** The owner's own label on a judged row (the kappa of the judge is measured against these). */
-export function labelDecision(db: Db, id: string, label: Verdict, now: number = Date.now()): boolean {
-  return db.prepare("UPDATE lane_pilot_decision SET owner_label=?, labeled_at=? WHERE id=? AND answered_at IS NOT NULL").run(label, now, id).changes > 0;
+/**
+ * The owner's own label on a judged row (the kappa of the judge is measured against these): only a row the label can be about — his own
+ * answer, split exam, judged — and never `deferred`, which the judge never says on a decided row (Gemini F-004: a fourth category skews kappa).
+ */
+export function labelDecision(db: Db, id: string, label: Exclude<Verdict, "deferred">, now: number = Date.now()): boolean {
+  if (label === ("deferred" as string)) return false;
+  return db.prepare(`UPDATE lane_pilot_decision SET owner_label=?, labeled_at=? WHERE id=? AND ${LABELABLE_WHERE}`).run(label, now, id, ...PROXIES).changes > 0;
 }
 
 export function listDecisions(db: Db, filter: { class?: string; surface?: string; split?: string; limit?: number } = {}): DecisionRow[] {

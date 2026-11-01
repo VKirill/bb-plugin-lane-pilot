@@ -1,6 +1,7 @@
 import { loadPrototypeConfig } from "../../storage";
 import { scheduleIsolated, type ServerCore } from "../../core/server";
 import { isPmChat } from "../../native-agent/server";
+import { closeOwnerItem, postOwnerItem, rpcLine } from "../../owner-waiting";
 import { backlogBoard, backlogReadCommand, issueMessage, parseBacklogOutput, type BacklogBoard } from "../logic";
 
 /**
@@ -11,6 +12,8 @@ import { backlogBoard, backlogReadCommand, issueMessage, parseBacklogOutput, typ
 const DAY = 86_400_000;
 export const PER_PROJECT_PER_DAY = 1;
 export const PER_DAY = 3;
+
+const offerKey = (projectId: string, todoId: string) => `backlog:${projectId}:${todoId}`;
 
 export function createBacklog(ctx: ServerCore) {
   const { db, bb, host } = ctx;
@@ -40,7 +43,7 @@ export function createBacklog(ctx: ServerCore) {
   async function scan(now = Date.now()) {
     const issuedToday = () => (db.prepare("SELECT count(*) AS n FROM lane_pilot_backlog_issue WHERE issued_at>=?").get(now - DAY) as { n: number }).n;
     const projects = db.prepare("SELECT DISTINCT project_id FROM lane_pilot_run WHERE kind='cli' AND pm_thread_id IS NOT NULL AND updated_at>=?").all(now - 14 * DAY) as Array<{ project_id: string }>;
-    const out: Array<{ projectId: string; issued: string | null; board: { issuable: number; needsEstimate: number; decompose: number; blocked: number } }> = [];
+    const out: Array<{ projectId: string; offered: string | null; board: { issuable: number; needsEstimate: number; decompose: number; blocked: number } }> = [];
     for (const { project_id: projectId } of projects) {
       if (ctx.isDisposed()) break;
       const pm = await pmOf(projectId, now);
@@ -48,18 +51,41 @@ export function createBacklog(ctx: ServerCore) {
       const counts = { issuable: current.issuable.length, needsEstimate: current.needsEstimate.length, decompose: current.decompose.length, blocked: current.blocked.length };
       const projectToday = (db.prepare("SELECT count(*) AS n FROM lane_pilot_backlog_issue WHERE project_id=? AND issued_at>=?").get(projectId, now - DAY) as { n: number }).n;
       const next = current.issuable[0];
-      if (!pm || !next || projectToday >= PER_PROJECT_PER_DAY || issuedToday() >= PER_DAY) { out.push({ projectId, issued: null, board: counts }); continue; }
-      await bb.sdk.threads.send({ threadId: pm, mode: "queue-if-active", input: [{ type: "text", text: issueMessage(next), mentions: [] }] } as never);
-      db.prepare("INSERT OR IGNORE INTO lane_pilot_backlog_issue(project_id,todo_id,pm_thread_id,estimate,issued_at) VALUES (?,?,?,?,?)").run(projectId, next.id, pm, next.estimate, now);
-      ctx.log(`backlog: ${projectId} issued ${next.id} to ${pm}`);
-      out.push({ projectId, issued: next.id, board: counts });
+      if (!pm || !next || projectToday >= PER_PROJECT_PER_DAY || issuedToday() >= PER_DAY) { out.push({ projectId, offered: null, board: counts }); continue; }
+      // Since 0.1.458 the scanner offers, the owner issues: a work order into a PM chat is his word, not the plugin's own event (0.1.443;
+      // the hourly send into a two-week-old chat was one of the leaks the Gemini grill of 0.1.456 found). One open offer per project: the first
+      // ready item; the same key again changes nothing.
+      const offered = postOwnerItem(db, { key: offerKey(projectId, next.id), source: "backlog", kind: "backlog_ready", projectId, wake: false,
+        what: `В бэклоге проекта готова к работе задача «${next.title}»`,
+        why: `Оценка ${next.estimate}, приоритет ${next.priority}. По вашему «выдать» она уйдёт в чат проекта как задание; сама система в чат проекта не пишет.`,
+        evidence: [{ kind: "file", ref: `.agents/todos/items/${next.id}/AGENT.md`, label: "описание" }],
+        actions: [{ id: "issue", label: "Выдать в работу", cli: rpcLine("backlog_issue", { projectId, todoId: next.id }), rpc: { method: "backlog_issue", input: { projectId, todoId: next.id } } }] }, now).created;
+      if (offered) ctx.log(`backlog: ${projectId} offered ${next.id} on the owner's list`);
+      out.push({ projectId, offered: offered ? next.id : null, board: counts });
     }
     return out;
   }
 
-  return { backlog: { board, scan } };
+  /** The owner's «выдать» (the list's button, the RPC `backlog_issue`): the order goes to the project's PM and the item is recorded as issued. */
+  async function issue(projectId: string, todoId: string, now = Date.now()): Promise<{ ok: true; pmThreadId: string } | { ok: false; reason: string }> {
+    const pm = await pmOf(projectId, now);
+    if (!pm) return { ok: false, reason: "в проекте нет чата Lane Pilot, который работал за последние две недели" };
+    const item = (await board(projectId)).issuable.find((row) => row.id === todoId);
+    if (!item) return { ok: false, reason: `в бэклоге проекта нет пункта ${todoId}, готового к работе (уже выдан, закрыт или ждёт оценки)` };
+    await bb.sdk.threads.send({ threadId: pm, mode: "queue-if-active", input: [{ type: "text", text: issueMessage(item), mentions: [] }] } as never);
+    db.prepare("INSERT OR IGNORE INTO lane_pilot_backlog_issue(project_id,todo_id,pm_thread_id,estimate,issued_at) VALUES (?,?,?,?,?)").run(projectId, todoId, pm, item.estimate, now);
+    closeOwnerItem(db, offerKey(projectId, todoId), "owner", now);
+    ctx.log(`backlog: ${projectId} issued ${todoId} to ${pm} on the owner's word`);
+    return { ok: true, pmThreadId: pm };
+  }
+
+  return { backlog: { board, scan, issue } };
 }
 export type BacklogApi = ReturnType<typeof createBacklog>["backlog"];
+
+export function backlogRpc(api: BacklogApi) {
+  return { backlog_issue: async ({ projectId, todoId }: { projectId: string; todoId: string }) => api.issue(projectId, todoId) };
+}
 
 export function mountBacklog(ctx: ServerCore, api: BacklogApi): void {
   scheduleIsolated(ctx.bb, "backlog-scan", "41 * * * *", async () => {

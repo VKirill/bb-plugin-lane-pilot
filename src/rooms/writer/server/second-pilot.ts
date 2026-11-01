@@ -230,7 +230,7 @@ export function createSecondPilot(ctx: ServerCore, services: Services, consult: 
     if (pmThreadId && await sendPmNotice(bb, pmThreadId, text, now)) return;
     postOwnerItem(db as never, { key:`writer-question:${row.run_id}:${row.task_id}`, source:"writer", kind:"product_decision", projectId:row.project_id, wake:false,
       what:`Исполнитель задачи спрашивает: ${question.slice(0, 400)}`, why:`Исполнитель спросил, никто не ответил, и второй пилот не смог решить сам (${grounds.slice(0, 300)}). Ответьте в описании задачи и отправьте её снова.`,
-      evidence:[{ kind:"attempt", ref:row.id }, { kind:"task", ref:row.task_id }] });
+      evidence:[{ kind:"attempt", ref:row.id }, { kind:"task", ref:row.task_id }] }, now);
   }
 
   return { run };

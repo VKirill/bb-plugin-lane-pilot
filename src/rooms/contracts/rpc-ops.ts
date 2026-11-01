@@ -169,6 +169,11 @@ export const rpcOps = {
     input: z.object({ id: z.string().min(1).max(80), evidence: z.string().min(1).max(2000) }).strict(),
     output: z.unknown(),
   },
+  /** The owner's «выдать» on a backlog row of his list: the todo goes to the project's PM as a work order (src/rooms/backlog). */
+  backlog_issue: {
+    input: z.object({ projectId: z.string().min(1).max(200), todoId: z.string().min(1).max(120) }).strict(),
+    output: z.unknown(),
+  },
   /** The task's verification[] again on its recorded base plus the accepted change, in a fresh worktree; a receipt is kept (src/rooms/rollback). */
   task_reverify: {
     input: z.object({ ref: z.string().min(1).max(200) }).strict(),

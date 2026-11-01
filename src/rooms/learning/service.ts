@@ -14,6 +14,7 @@ import { createAutonomy } from "./autonomy";
 import { DEFAULT_CONFIG, loadConfig, type LearningConfig } from "./config";
 import { execFile } from "node:child_process";
 import { createDecisions } from "./decide";
+import { postOwnerItem } from "../owner-waiting";
 import { createDigest } from "./digest";
 import { createExtractor, type ExtractResult } from "./extract";
 import { recordFrustration } from "./frustration";
@@ -132,18 +133,15 @@ export function createLearning(ctx: ServerCore, services: Services) {
     },
   });
 
-  /** A PM chat of the item's own section: the chat it was said in when that is a PM's, else an open PM run with the same scopes. */
-  async function pmThreadFor(item: { projectId: string; threadId: string }): Promise<string | null> {
-    const own = db.prepare("SELECT pm_thread_id FROM lane_pilot_run WHERE pm_thread_id=? AND closed_at IS NULL LIMIT 1").get(item.threadId) as { pm_thread_id: string } | undefined;
-    if (own) return own.pm_thread_id;
-    const scope = JSON.stringify(await scopeOf(item.threadId, item.projectId));
-    const rows = db.prepare("SELECT id, pm_thread_id FROM lane_pilot_run WHERE project_id=? AND closed_at IS NULL AND pm_thread_id IS NOT NULL ORDER BY updated_at DESC").all(item.projectId) as Array<{ id: string; pm_thread_id: string }>;
-    return rows.find((row) => JSON.stringify(getRunSettingsScopes(db, row.id)) === scope)?.pm_thread_id ?? null;
-  }
 
   const digest = createDigest({
-    db, pmThread, pmThreadFor, log,
-    send: async (threadId, text) => { await bb.sdk.threads.send({ threadId, mode: "queue-if-active", input: [{ type: "text", text, mentions: [] }] } as never); },
+    db, log,
+    announce: async (projectId, report) => {
+      postOwnerItem(db as never, { key: `learning-digest:${projectId}:${new Date().toISOString().slice(0, 10)}`, source: "learning", kind: "digest", projectId, wake: false,
+        what: `Система выучила из ваших сообщений: ${report.inForce} уже в силе, ${report.waiting} ждут вашего ответа`,
+        why: "Правила на пробе и заметки уже действуют; их можно снять в чате проекта. То, что ждёт вашего «да», лежит отдельными строками в этом же разделе.",
+        evidence: [{ kind: "text", ref: report.text.split("\n").slice(1).join(" ").trim().slice(0, 300) || "—", label: "что выучено" }] });
+    },
   });
 
   const ops = createOps({

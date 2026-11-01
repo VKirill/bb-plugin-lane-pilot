@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import { backlogBoard, backlogReadCommand, parseBacklogOutput, parseTodoMeta } from "../../src/rooms/backlog";
 import { createBacklog, runBacklogCli } from "../../src/rooms/backlog/server";
 import { createRun, openDatabase, savePrototypeConfig, setRunThread } from "../../src/rooms/storage/database";
+import { collectOwnerWaiting } from "../../src/rooms/owner-waiting";
 
 const meta = (id: string, extra: string) => `id: ${id}\ntitle: "Item ${id}"\ncreated: 2026-10-${id.slice(-2)}T10:00:00+02:00\n${extra}\n`;
 
@@ -48,7 +49,8 @@ describe("the backlog rules", () => {
 });
 
 describe("the scanner", () => {
-  it("hands one item a project a day to its owner's PM, never twice, and skips a project with no recent PM", async () => {
+  // 0.1.458: the scanner offers the first ready item on the owner's list; his «выдать» sends the order to the PM (never the plugin by itself, 0.1.443).
+  it("offers one item a project on the owner's list, never twice, and his «выдать» hands it to the owner's PM", async () => {
     const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
     const sent: Array<{ threadId: string; text: string }> = [];
     harness.sdk.stub("threads.send", async (args: { threadId: string; input: Array<{ text: string }> }) => { sent.push({ threadId: args.threadId, text: args.input[0]!.text }); return undefined; });
@@ -66,11 +68,18 @@ describe("the scanner", () => {
     const api = createBacklog({ db, bb, host, log: () => undefined, isDisposed: () => false } as never).backlog;
     const now = Date.now();
     const first = await api.scan(now);
-    expect(first).toEqual([{ projectId: "P", issued: "t-01", board: { issuable: 2, needsEstimate: 0, decompose: 0, blocked: 0 } }]);
+    expect(first).toEqual([{ projectId: "P", offered: "t-01", board: { issuable: 2, needsEstimate: 0, decompose: 0, blocked: 0 } }]);
+    expect(sent).toEqual([]);
+    const offer = collectOwnerWaiting(db).items.find((item) => item.key === "backlog:P:t-01")!;
+    expect(offer).toMatchObject({ source: "backlog", kind: "backlog_ready", what: expect.stringContaining("«Item t-01»") });
+    expect(offer.actions[0]!.rpc).toEqual({ method: "backlog_issue", input: { projectId: "P", todoId: "t-01" } });
+    expect((await api.scan(now + 3_600_000))[0]!.offered).toBeNull();
+    expect(await api.issue("P", "t-01", now + 2 * 3_600_000)).toEqual({ ok: true, pmThreadId: "thr_pm" });
     expect(sent).toEqual([{ threadId: "thr_pm", text: expect.stringContaining("«Item t-01» (t-01, оценка 3, приоритет high)") }]);
-    expect((await api.scan(now + 3_600_000))[0]!.issued).toBeNull();
-    expect((await api.scan(now + 25 * 3_600_000))[0]!.issued).toBe("t-02");
-    expect((await api.board("P")).issuable).toEqual([]);
+    expect(collectOwnerWaiting(db).items.find((item) => item.key === "backlog:P:t-01")).toBeUndefined();
+    expect(await api.issue("P", "t-01", now + 2 * 3_600_000)).toMatchObject({ ok: false });
+    expect((await api.scan(now + 27 * 3_600_000))[0]!.offered).toBe("t-02");
+    expect((await api.board("P")).issuable.map((item) => item.id)).toEqual(["t-02"]);
     expect((await runBacklogCli(api, [])).exitCode).toBe(1);
   });
 });

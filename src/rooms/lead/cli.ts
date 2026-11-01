@@ -3,7 +3,7 @@ import { examAll, type Verdict } from "./logic";
 import { backtest } from "./server/backtest";
 import { formatMemoryExam } from "./server/memory-exam";
 import { examRows, labelDecision, listDecisions } from "./server/journal";
-import { addRoad, doneRoad, rejectRoad, renderRoadTree, roadTree } from "./server/road";
+import { addRoad, renderRoadTree, roadTree } from "./server/road";
 import type { LeadApi } from "./server/service";
 
 export const LEAD_USAGE = [
@@ -20,7 +20,7 @@ export const LEAD_USAGE = [
   "bb lane-pilot lead journal [--class <c>] [--surface <s>] [--last N] [--json]   the decision journal: situation, prediction, answer, verdict (newest first)",
   "bb lane-pilot lead exam [--json]                 the exam per class: N, decided, Wilson LB, coverage, kappa, tier it would earn",
   "bb lane-pilot lead backtest [--json]             replay the owner's past words (tasks, phases) through the predictor; split backtest, never in the exam",
-  "bb lane-pilot lead label <decision-id> exact|partial|miss|deferred   the owner's own verdict on a judged row (the judge's kappa is measured against it)",
+  "bb lane-pilot lead label <decision-id> exact|partial|miss   the owner's own verdict on a judged exam row he answered himself (the judge's kappa is measured against it)",
   "bb lane-pilot lead memory-exam [--limit N] [--no-recall] [--json]   the memory exam: recall probes on the hub's accepted tasks and the answered rows predicted again with the lead's memory and with none (the control); runs itself on Sunday 05:10",
 ].join("\n");
 
@@ -65,11 +65,11 @@ export async function runLeadCli(ctx: LeadCliContext, argv: string[], now: numbe
       if (sub === "reject") {
         const why = flag(rest, "--why");
         if (!rest[1] || !why) return { exitCode: 2, stderr: LEAD_USAGE };
-        return rejectRoad(ctx.db, rest[1], why, "owner", now) ? { exitCode: 0, stdout: `${rest[1]}: rejected` } : { exitCode: 1, stderr: `${rest[1]}: not open, proposed or later (or unknown)` };
+        return needService(ctx).settle(rest[1], "reject", "owner", why, now) ? { exitCode: 0, stdout: `${rest[1]}: rejected` } : { exitCode: 1, stderr: `${rest[1]}: not open, proposed or later (or unknown)` };
       }
       if (sub === "done") {
         if (!rest[1]) return { exitCode: 2, stderr: LEAD_USAGE };
-        return doneRoad(ctx.db, rest[1], flag(rest, "--note"), now) ? { exitCode: 0, stdout: `${rest[1]}: done` } : { exitCode: 1, stderr: `${rest[1]}: cannot be marked done from its state (or unknown)` };
+        return needService(ctx).settle(rest[1], "done", "owner", flag(rest, "--note"), now) ? { exitCode: 0, stdout: `${rest[1]}: done` } : { exitCode: 1, stderr: `${rest[1]}: cannot be marked done from its state (or unknown)` };
       }
       const project = flag(rest, "--project");
       const nodes = roadTree(ctx.db, { ...(rest.includes("--hub") ? { projectId: null } : project ? { projectId: project } : {}), history: rest.includes("--history") });
@@ -144,8 +144,8 @@ export async function runLeadCli(ctx: LeadCliContext, argv: string[], now: numbe
     }
     if (command === "label") {
       const [id, label] = rest;
-      if (!id || !["exact", "partial", "miss", "deferred"].includes(label ?? "")) return { exitCode: 2, stderr: LEAD_USAGE };
-      return labelDecision(ctx.db, id, label as Verdict, now) ? { exitCode: 0, stdout: `${id}: owner label ${label}` } : { exitCode: 1, stderr: `${id}: no answered decision with that id` };
+      if (!id || !["exact", "partial", "miss"].includes(label ?? "")) return { exitCode: 2, stderr: LEAD_USAGE };
+      return labelDecision(ctx.db, id, label as Exclude<Verdict, "deferred">, now) ? { exitCode: 0, stdout: `${id}: owner label ${label}` } : { exitCode: 1, stderr: `${id}: no judged exam row the owner answered himself has that id (a deferred, proxy, backtest or design row takes no label)` };
     }
   } catch (cause) {
     return { exitCode: 1, stderr: cause instanceof Error ? cause.message : String(cause) };

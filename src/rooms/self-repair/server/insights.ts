@@ -55,7 +55,8 @@ export function acceptRuleProposal(db: LanePilotDatabase, projectId: string, id:
   storeMemoryRecords(db, {
     projectId, personalBot: settings.personalBot, audience: "subagent",
     sourceSha256: sha256Hex(`rule:${id}`), origin: "rule",
-    entries: [{ kind: "core", content, concepts: ["rule", "owner-confirmed"] }],
+    // The concept says who stands behind the rule: a trial the night opened is not the owner's word (Astra F-008).
+    entries: [{ kind: "core", content, concepts: ["rule", by === "auto" ? "trial" : "owner-confirmed"] }],
     coreBudget: settings.coreBudget, noteBudget: settings.noteBudget, indexBudget: settings.indexBudget,
     // A rule of one section is that section's memory too: a sibling section's writers never read it.
     scope: proposal.scope,

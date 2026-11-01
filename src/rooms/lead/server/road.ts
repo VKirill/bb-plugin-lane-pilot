@@ -25,7 +25,7 @@ const MARKS: Record<RoadState, string> = { open: "·", proposed: "?", accepted: 
 
 const newId = () => `road_${randomBytes(5).toString("hex")}`;
 
-function checkEvidence(evidence: RoadEvidence[] | undefined): string {
+function checkEvidence(evidence: readonly RoadEvidence[] | undefined): string {
   if (evidence === undefined) return "[]";
   if (!Array.isArray(evidence) || evidence.length > 12) throw new Error("evidence is an array of at most 12 items");
   for (const item of evidence) {
@@ -59,6 +59,19 @@ export function addRoad(db: RoadDb, input: {
     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
     .run(row.id, row.parent_id, row.project_id, row.title, row.kind, row.source, row.why, row.evidence_json, row.cost_estimate, row.class, row.state, row.created_at, row.updated_at, row.payload_json);
   return row;
+}
+
+/**
+ * A proposal on an existing branch (one born in `branches` without a class, or one the owner said «потом» to) makes the branch say what
+ * the proposal says: class, reason, evidence, price, a project it lacked, a schedule payload. The owner's «да» and the act step both
+ * execute the branch row, so the two must not drift apart (Astra F-003: a branch accepted, then skipped for `class null`).
+ */
+export function syncRoadProposal(db: RoadDb, id: string, input: { class: string; why: string; evidence?: readonly RoadEvidence[]; costEstimate: string; projectId: string | null; payload?: unknown }, now: number = Date.now()): boolean {
+  const row = getRoad(db, id);
+  if (!row) return false;
+  const payload = input.payload === undefined ? row.payload_json : input.payload === null ? null : JSON.stringify(input.payload);
+  return db.prepare("UPDATE lane_pilot_lead_road SET class=?, why=?, evidence_json=?, cost_estimate=?, project_id=?, payload_json=?, updated_at=? WHERE id=?")
+    .run(input.class, input.why, input.evidence?.length ? checkEvidence(input.evidence) : row.evidence_json, input.costEstimate, row.project_id ?? input.projectId, payload, now, id).changes > 0;
 }
 
 /** A proposal on an existing open branch may bring the payload the branch lacked (a schedule for a `schedule` branch). */

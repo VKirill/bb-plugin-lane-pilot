@@ -42,16 +42,17 @@ describe("the learning report", () => {
     reach: "project", dueAt: null, state: "noted", target: null, evidence: `owner message ${threadId}:1:0`, duplicateOf: null, confirmations: 0, note: null,
     createdAt: 1, decidedAt: null, announcedAt: null });
 
-  it("goes to the PM of the section the owner said it in, and wakes no other PM when that section has none", async () => {
+  // 0.1.458: the report is one row on the owner's list per project; no PM chat of any section is woken (0.1.443).
+  it("is one report per project on the owner's list; no section's PM is woken", async () => {
     const { db } = setup();
     insertItem(db as never, item("a", "thr_roblox_chat"));
     insertItem(db as never, item("b", "thr_feedgen_chat"));
-    const sent: Array<[string, string]> = [];
-    const digest = createDigest({ db: db as never, pmThread: () => "thr_latest_pm", send: async (thread, text) => { sent.push([thread, text]); },
-      pmThreadFor: async (row) => (row.threadId === "thr_feedgen_chat" ? "thr_feedgen_pm" : null) });
+    const announced: Array<[string, string]> = [];
+    const digest = createDigest({ db: db as never, announce: async (projectId, report) => { announced.push([projectId, report.text]); } });
     const out = await digest.run();
-    expect(sent.map(([thread]) => thread)).toEqual(["thr_feedgen_pm"]);
-    expect(sent[0]![1]).toContain("Decision b");
-    expect(out.find((row) => !row.sent)?.items).toBe(1);
+    expect(announced.map(([projectId]) => projectId)).toEqual(["P"]);
+    expect(announced[0]![1]).toContain("Decision a");
+    expect(announced[0]![1]).toContain("Decision b");
+    expect(out).toMatchObject([{ projectId: "P", sent: true, items: 2 }]);
   });
 });
