@@ -22,6 +22,7 @@ import {
   finalizeNativeLaneBinding,
   inspectDispatchPlacement,
   resolveNativeDispatchWorkspace,
+  NATIVE_WORKSPACE_REFUSAL,
 } from "./native-run";
 
 type HostClient = {
@@ -297,7 +298,7 @@ export async function handleNativeDispatch(
     }
     if (workspace.phase === "pending") {
       if (!workspace.hostId) {
-        return reject("workspace", "Native send needs the selected project-checkout host and path. Lane Pilot does not invent them.");
+        return reject("workspace", NATIVE_WORKSPACE_REFUSAL);
       }
       traceNativeDispatch(bb.log, "host.call", { ...base, reason: "prepareNativeClaude", host: workspace.hostId, phase: "host-only" });
       const prepared = await host.call("prepareNativeClaude", {

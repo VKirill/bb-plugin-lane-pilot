@@ -86,11 +86,19 @@ export function resolveNativeDispatchWorkspace(ctx: {
   if (placement.kind === "environment") {
     return { phase: "pending", hostId: placement.hostId };
   }
-  if (placement.kind === "provider" && placement.providerId === "project-checkout") {
+  if (placement.kind === "provider" && PENDING_PATH_PROVIDERS.has(placement.providerId ?? "")) {
     return { phase: "pending", hostId: placement.hostId };
   }
-  throw new Error("Native send needs the selected project-checkout host and path. Lane Pilot does not invent them.");
+  throw new Error(NATIVE_WORKSPACE_REFUSAL);
 }
+
+/** Providers whose folder BB names only once the environment attaches: the chat proceeds and binds on the next send (owner, 2026-11-01: a PM chat in the Personal project). */
+export const PENDING_PATH_PROVIDERS = new Set(["project-checkout", "personal-workspace"]);
+
+/** Shown by BB in the new-chat window as it is, so it says what to pick, in the owner's language first. */
+export const NATIVE_WORKSPACE_REFUSAL =
+  "Lane Pilot работает в папке на машине: в окне нового чата выберите машину и папку проекта (или личную рабочую область). Изолированная копия и облако для Lane Pilot не подходят. " +
+  "Lane Pilot works in a folder on a machine: pick the machine and the project folder (or the personal workspace) in the new-chat window; an isolated worktree or a cloud machine does not fit.";
 
 /** Each native chat owns its run: no project setup and no project-wide lock. */
 export function claimNativeLaneRun(input: {

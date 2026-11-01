@@ -43,6 +43,14 @@ it("defers samepath project-checkout until provision attaches the real path", ()
   })).toEqual({ phase: "pending", hostId: "host_a" });
 });
 
+it("defers the Personal project's personal workspace the same way, and refuses other providers in the owner's words", () => {
+  // 2026-11-01: the owner started a Lane Pilot chat in the Personal project (provider personal-workspace, no inputs) and got a developer's refusal.
+  const personal = { kind: "provider" as const, environmentProviderId: "personal-workspace", machine: { type: "existing" as const, hostId: "host_a" }, inputs: null };
+  expect(resolveNativeDispatchWorkspace({ host: { id: "host_a" }, environment: null, environmentIntent: personal })).toEqual({ phase: "pending", hostId: "host_a" });
+  const worktree = { kind: "provider" as const, environmentProviderId: "git-worktree", machine: { type: "existing" as const, hostId: "host_a" }, inputs: {} };
+  expect(() => resolveNativeDispatchWorkspace({ host: { id: "host_a" }, environment: null, environmentIntent: worktree })).toThrow(/выберите машину и папку проекта/);
+});
+
 it("accepts only a cli run that owns this thread and project", () => {
   const fake = createFakePluginHost({ pluginId: "lane-pilot" });
   cleanup.push(() => fake.harness.lifecycle.dispose());
