@@ -117,6 +117,8 @@ resolved-model line and the text are in the edit form.
 
 ### Who runs an errand
 
+Since 0.1.464 the PM tool `lane_pilot_errand` takes the same `providerId`, `model`, `reasoning` and `serviceTier` (`src/rooms/qa/server/errand-graph.ts`), so a PM that wants one model for an errand no longer starts a schedule to get it: a scheduled run is a hidden thread with no parent chat, and the owner saw no helper square next to the chat (thr_yyqwsp3snw, 2026-11-01).
+
 One pure function, `resolveErrandModel({task, settings, pm})` (`src/rooms/schedule/errand-model.ts`), answers for the executor (what is spawned) and for
 `ScheduleView.model` (what the card says). First level that has a model wins; the task's own `reasoning` and `serviceTier` then override the effort
 and tier of that level:

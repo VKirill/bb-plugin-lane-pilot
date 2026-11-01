@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.1.464
+
+- **An errand takes its model from the PM, not from a schedule detour.** `lane_pilot_errand` gains `providerId`, `model`, `reasoning` and `serviceTier`, the same fields the errand run already carried for a schedule (`ErrandRunStart`). Before, a PM that wanted Opus for an errand started a schedule to get it (thr_yyqwsp3snw, 2026-11-01); a scheduled run is spawned hidden with no parent chat (`detached`, the 2026-10-19 rule), so the owner saw no helper square next to the chat and nothing in its card. A model without its provider is refused (`errand_model_needs_provider`); the tool's instructions say not to start a schedule only to pick a model.
+
 ## 0.1.463
 
 The composer's agent menu is for a person, not a developer (owner's words 2026-11-01).

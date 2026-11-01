@@ -163,6 +163,15 @@ describe("the errand graph", () => {
     expect(named.skills.names).toEqual(expect.arrayContaining(["computer-use", "blender-modeler"]));
   });
 
+  it("the errand runs on the model the PM names, as a schedule can set it; a model without its provider is refused (0.1.464)", async () => {
+    const w = world({ requiredPolicy: true });
+    await w.call("lane_pilot_errand", { task: TASK, providerId: "codex", model: "gpt-6-codex", reasoning: "high" });
+    const spawned = JSON.stringify(w.state.spawned[0]);
+    expect(spawned).toContain("gpt-6-codex");
+    expect(spawned).toContain("\"codex\"");
+    expect(JSON.stringify(await w.call("lane_pilot_errand", { task: `${TASK} On Opus.`, model: "claude-opus-5-5" }))).toContain("errand_model_needs_provider");
+  });
+
   it("the same task asked twice is the same run and the same thread; another task is another run", async () => {
     const w = world();
     const one = await w.call("lane_pilot_errand", { task: TASK });
