@@ -56,6 +56,30 @@ describe("mayAct reads the table and the file, never the words of a session", ()
     expect(mayAct(db, "next_step", "low").ok).toBe(false);
   });
 
+  it("refuses a risk the agent left out or misspelt even on a decides class: unknown is not low", () => {
+    // SWE-2 verification (unknown risk): a null or unlisted risk must say "never acts", not pass as low.
+    const db = world();
+    applyExam(db, examAll(rows("next_step", 25, "exact")), 5_000);
+    expect(tierOf(db, "next_step")).toBe("decides");
+    for (const risk of [null, undefined, "weird", ""] as Array<string | null | undefined>) {
+      const verdict = mayAct(db, "next_step", risk);
+      expect(verdict.ok).toBe(false);
+      if (!verdict.ok) expect(verdict.reason).toMatch(/unknown|never acts/);
+    }
+    expect(mayAct(db, "next_step", "low")).toEqual({ ok: true });
+    expect(mayAct(db, "next_step", "medium")).toEqual({ ok: true });
+  });
+
+  it("refuses risk critical on a decides class, same as high", () => {
+    // SWE-2 F-003: critical is high and more, never less — it must never act alone.
+    const db = world();
+    applyExam(db, examAll(rows("next_step", 25, "exact")), 5_000);
+    expect(tierOf(db, "next_step")).toBe("decides");
+    expect(mayAct(db, "next_step", "critical")).toEqual({ ok: false, reason: "risk critical never acts, whatever the tier" });
+    expect(mayAct(db, "next_step", "high").ok).toBe(false);
+    expect(mayAct(db, "next_step", "low").ok).toBe(true);
+  });
+
   it("rightsView shows every class of the policy with its start, its tier and the exam row when there is one", () => {
     const db = world();
     applyExam(db, examAll(rows("process", 30, "exact")), 1);

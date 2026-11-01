@@ -1,7 +1,7 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, describe, expect, it } from "vitest";
 import { setJevForTests } from "@lane-pilot/jev";
-import { examAll } from "../../src/rooms/lead/logic";
+import { examAll, isOwnerAnswer } from "../../src/rooms/lead/logic";
 import { runLeadCli } from "../../src/rooms/lead/cli";
 import { answerDecision, askDecision, examRows, getDecision, labelDecision, listDecisions, openDecision, pendingLabelCount, pendingLabels, predictDecision, refineVerdict, ruleVerdict } from "../../src/rooms/lead/server/journal";
 import { backtest } from "../../src/rooms/lead/server/backtest";
@@ -208,5 +208,71 @@ describe("the model judge and the rows waiting for a label", () => {
     expect(pendingLabels(db, 1)).toHaveLength(1);
     expect(pendingLabelCount(db)).toBe(2);
     expect(pendingLabels(db)[0]).toMatchObject({ class: "landing", surface: "words", judge_verdict: expect.stringMatching(/exact|miss/) });
+  });
+});
+
+/** A Jev that records the history it was shown (the memory-exam pattern). */
+const historyJev = (calls: Array<{ history: number; situations: string[] }>) => setJevForTests({ enabled: () => true, judge: async (_j: unknown, input: { history: Array<{ answer: string; situation: string }> }) => {
+  calls.push({ history: input.history.length, situations: input.history.map((row) => row.situation) });
+  return { by: "jev", decision: { option: "yes", p: 0.9 }, receiptId: null, answers: {} };
+} } as never);
+
+describe("the predictor's history never reads the future", () => {
+  it("a backtest row remembers only answers older than its own birth; a live row sees every answered word", async () => {
+    // Gemini F-005.1 / N-2: the cutoff is the row's `created_at`, not the time of the predict call — otherwise a replayed
+    // backtest row learns answers that came after the moment it replays.
+    const { db } = world();
+    const calls: Array<{ history: number; situations: string[] }> = [];
+    historyJev(calls);
+    openDecision(db, { id: "past", surface: "words", class: "landing", situation: { task: "past-A" }, options: ["yes", "no"], split: "backtest", createdAt: 100 });
+    answerDecision(db, "past", { option: "yes" }, "owner", 120);
+    openDecision(db, { id: "future", surface: "words", class: "landing", situation: { task: "future-B" }, options: ["yes", "no"], split: "backtest", createdAt: 200 });
+    answerDecision(db, "future", { option: "no" }, "owner", 250);
+    // Row C replays the moment t=150: it may remember A (answered 120) and must not see B (answered 250).
+    openDecision(db, { id: "replay", surface: "words", class: "landing", situation: { task: "replay-C" }, options: ["yes", "no"], split: "backtest", createdAt: 150 });
+    await predictDecision(db, "replay", undefined, 9_000);
+    const replayCall = calls.at(-1)!;
+    expect(replayCall.history).toBe(1);
+    expect(replayCall.situations[0]).toContain("past-A");
+    expect(replayCall.situations.some((situation) => situation.includes("future-B"))).toBe(false);
+    // A live row born now sees both.
+    openDecision(db, { id: "live", surface: "words", class: "landing", situation: { task: "live" }, options: ["yes", "no"], split: "exam", createdAt: 300 });
+    await predictDecision(db, "live", undefined, 9_500);
+    const liveCall = calls.at(-1)!;
+    expect(liveCall.history).toBe(2);
+    expect(liveCall.situations.some((situation) => situation.includes("past-A"))).toBe(true);
+    expect(liveCall.situations.some((situation) => situation.includes("future-B"))).toBe(true);
+  });
+});
+
+describe("whose answer counts as the owner's", () => {
+  it("'owner via screen' is the owner's own word; 'pm' is a proxy that never enters the exam", async () => {
+    // SWE-2 N-001: the phase screen answers with the older spelling "owner via screen" — it is the same button.
+    const { db } = world();
+    shadowJev("yes");
+    await askDecision(db, { id: "scr", surface: "words", class: "landing", situation: { task: "s" }, options: ["yes", "no"] }, undefined, 1);
+    answerDecision(db, "scr", { option: "yes" }, "owner via screen", 2);
+    await askDecision(db, { id: "prox", surface: "words", class: "landing", situation: { task: "p" }, options: ["yes", "no"] }, undefined, 1);
+    answerDecision(db, "prox", { option: "yes" }, "pm", 2);
+    const rows = examRows(db);
+    const scr = rows.find((row) => row.answered_by === "owner via screen");
+    const prox = rows.find((row) => row.answered_by === "pm");
+    expect(scr).toBeDefined();
+    expect(isOwnerAnswer(scr!.answered_by)).toBe(true);
+    expect(prox).toBeDefined(); // the row is kept in the journal…
+    expect(isOwnerAnswer(prox!.answered_by)).toBe(false); // …but the exam never counts it
+    const exam = examAll(rows).find((row) => row.class === "landing");
+    expect(exam).toMatchObject({ n: 1, k: 1, m: 1 });
+  });
+});
+
+describe("bb lane-pilot lead decide --by", () => {
+  it("refuses --by screen: the list's buttons are not a terminal answer", async () => {
+    // SWE-2 F-001 remainder: the refusal happens before any road lookup, so a bogus road id is enough.
+    const { bb, db } = world();
+    const result = await runLeadCli({ db, kv: bb.storage.kv as never }, ["decide", "road_bogus", "yes", "--by", "screen"]);
+    expect(result.exitCode).toBe(2);
+    expect(result.stderr).toContain("--by agent");
+    expect((await runLeadCli({ db, kv: bb.storage.kv as never }, ["decide", "road_bogus", "yes", "--by", "owner via screen"])).exitCode).toBe(2);
   });
 });
