@@ -1739,6 +1739,19 @@ describe("stage → native writer → receipt", () => {
     await harness.lifecycle.dispose();
   });
 
+  it("counts the write tasks of this task's plan, not every live task of the run (a PM chat is one run for days)", async () => {
+    const { db, harness } = await setup('{"decision":"approve","summary":"Unused","findings":[]}', undefined, {"plan_critique.min_score":"7","plan_critique.min_write_tasks":"3"});
+    const low = (id:string, file:string) => ({ ...task, id, risk:"low" as const, area:`feature:${id}`, owns_paths:[file], expected_outputs:[file], interfaces:[`${file} exists`],
+      verification:[{ command:`test -f ${file}`, cwd:config.writerWorkspacePath, timeout_sec:30 }] });
+    for (const [id, plan] of [["plan-a", "Plan A"], ["plan-b", "Plan B"], ["plan-c", "Plan C"], ["plan-c2", "Plan C"]] as const) {
+      await harness.behavior.callAgentTool("lane_pilot_dispatch_writer", { confirm:true, objective:"Проверка диспетча", plan, task:low(id, `${id}.txt`) }, { threadId:pmThreadId, projectId });
+    }
+    // Four tasks at work in the run: three plans of one task each stay below the threshold; the fourth shares plan C and counts two.
+    expect(stageReceipt(db, "plan-c", "plan-critique")?.result).toMatchObject({ writeTaskCount:1, decision:"score 2<7 and 1 write tasks<3" });
+    expect(stageReceipt(db, "plan-c2", "plan-critique")?.result).toMatchObject({ writeTaskCount:2, decision:"score 2<7 and 2 write tasks<3" });
+    await harness.lifecycle.dispose();
+  });
+
   it("records a policy receipt and skips low-risk critique below upstream thresholds", async () => {
     const { db, harness, spawned } = await setup('{"decision":"approve","summary":"Unused","findings":[]}');
     const before=await harness.behavior.callRpc("get_screen",{projectId}) as {values:Record<string,unknown>;versions:Record<string,number>};

@@ -1,7 +1,7 @@
 import { unownedExpectedOutputs } from "../../tasks";
 import { hostContract, taskV2Schema } from "../../contracts";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
-import { claimStageSpawn, countAttempts, getRun, getTask, listLiveTasksForRun, listOpenAttempts, listStageReceipts, openDatabase } from "../../storage";
+import { claimStageSpawn, countAttempts, getRun, getTask, getTaskPlan, listLiveTasksForRun, listOpenAttempts, listStageReceipts, openDatabase } from "../../storage";
 import { criticAcrossFamilies, criticOffSpent, criticPairCandidates, effortAfterMove, latestWriterPair, pairApartFromWriter, pickCriticByAccuracy, roleSelection, sdkCriticCatalog, usable } from "../critic-pair";
 import { criticStats } from "../critic-stats";
 import { bbServiceTier, writerExecutionSelection, writerServiceTier, findModelIn, modelFamily, type SpentProbe } from "@lane-pilot/models";
@@ -266,11 +266,16 @@ export async function runPlanCritique(input:{bb:BbPluginApi;db:ReturnType<typeof
       structuralCoverage:{status:coverageStatus,pathCount:coveragePathCount},structuralFindings}});
     return {allowed:false,reason:"structural_plan_critique_blocked",critique:{structuralFindings}};
   }
+  // «Three write tasks» means a plan of three tasks, not a chat's history: a PM chat is one run for days, and counting every
+  // task still at work made 28 of the 41 plan critiques of the owner's prototype chat run on low-risk one-page fixes
+  // (thr_zwif89vbnb, 2026-11-02). The batch is the live tasks that share this task's plan text.
+  // ponytail: a plan edited between two dispatches of one batch splits the count; a batch id on dispatch would be exact.
+  const planTasks = runTasks.filter((task) => task.id === input.taskId || getTaskPlan(input.db, task.id) === input.plan);
   let policy:ReturnType<typeof shouldRunPlanCritique>;
   try {
     policy = shouldRunPlanCritique({
       taskRisk:input.task.risk,
-      tasks:runTasks,
+      tasks:planTasks,
       minScore:settings["plan_critique.min_score"],
       minWriteTasks:settings["plan_critique.min_write_tasks"],
       onHighRisk:settings["plan_critique.on_high_risk"],
