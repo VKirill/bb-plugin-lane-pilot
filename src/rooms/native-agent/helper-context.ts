@@ -88,7 +88,7 @@ export function coreRequiredSessionAdvertisement(): RequiredSessionAdvertisement
  */
 export type HelperRole =
   | "writer" | "code-repair" | "night-fixer"
-  | "plan-critic" | "code-critic" | "critic-tiebreak" | "specialist-reviewer" | "night-reviewer" | "gate-triage" | "pm-reader"
+  | "plan-critic" | "code-critic" | "critic-tiebreak" | "specialist-reviewer" | "gate-triage" | "pm-reader"
   | "docs-maintainer" | "onboarder" | "memory-maintainer" | "project-life"
   | "browser-qa" | "errand" | "api-recon" | "council-seat" | "rules-analyzer"
   | "analyst" | "planner" | "auditor" | "debugger"
@@ -117,7 +117,6 @@ export const ROLE_PROFILES: Record<HelperRole, RoleProfile> = {
   "code-critic": READER,
   "critic-tiebreak": ONE_SHOT,
   "specialist-reviewer": READER,
-  "night-reviewer": READER,
   "gate-triage": READER,
   "pm-reader": ONE_SHOT,
   "docs-maintainer": { bbPlugins: [], skills: ["docs-maintain", "docs-methodology"], mcpServers: ["gitnexus"] },
@@ -238,7 +237,7 @@ export function roleProfilePolicy(role: HelperRole, access: RoleAccess = {}, ext
 
 export const HELPER_SPAWN_ROLES = [
   "pm-reader", "plan-critic", "specialist-reviewer", "docs-maintainer",
-  "onboarder", "memory-maintainer", "night-reviewer", "night-fixer", "gate-triage",
+  "onboarder", "memory-maintainer", "night-fixer", "gate-triage",
 ] as const;
 export type HelperSpawnRole = (typeof HELPER_SPAWN_ROLES)[number];
 

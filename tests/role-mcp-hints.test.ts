@@ -15,7 +15,6 @@ describe("role MCP server configurations", () => {
     // 2. code roles get gitnexus
     const gitnexusRoles: HelperRole[] = [
       "code-critic",
-      "night-reviewer",
       "specialist-reviewer",
       "gate-triage",
       "docs-maintainer",

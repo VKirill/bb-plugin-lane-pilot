@@ -32,7 +32,6 @@ const ROLE_TITLES: Record<string, string> = {
   "docs-maintainer": "Lane Pilot docs",
   onboarder: "Lane Pilot onboarding",
   "memory-maintainer": "Lane Pilot memory",
-  "night-reviewer": "Lane Pilot night review",
   "night-fixer": "Lane Pilot night fix",
   "gate-triage": "Lane Pilot gate triage",
   errand: "Lane Pilot errand",

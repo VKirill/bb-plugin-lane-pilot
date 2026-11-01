@@ -130,10 +130,10 @@ describe("adoc applicability catalog", () => {
   });
 
   it("maps upstream gate-triage auto-merge to the sole native, gated night-fix control",()=>{
-    expect(UI_CATALOG.find((row)=>row.id==="s291")).toMatchObject({uiStatus:"readonly",channel:"NONE",storageKey:"night_review.auto_merge"});
-    expect(UI_CATALOG.find((row)=>row.id==="s007")).toMatchObject({uiStatus:"editable",channel:"OWN",storageKey:"night_review.auto_merge"});
-    expect(UI_CATALOG.find((row)=>row.id==="s290")).toMatchObject({uiStatus:"readonly",channel:"NONE",storageKey:"night_review.provider"});
-    expect(UI_CATALOG.find((row)=>row.id==="s088")).toMatchObject({uiStatus:"editable",channel:"OWN",storageKey:"night_review.provider"});
+    expect(UI_CATALOG.find((row)=>row.id==="s291")).toMatchObject({uiStatus:"excluded",channel:"NONE",storageKey:"night_review.auto_merge"});
+    expect(UI_CATALOG.find((row)=>row.id==="s007")).toMatchObject({uiStatus:"excluded",channel:"OWN",storageKey:"night_review.auto_merge"}); // 0.1.461: reserved, no stage reads it
+    expect(UI_CATALOG.find((row)=>row.id==="s290")).toMatchObject({uiStatus:"excluded",channel:"NONE",storageKey:"night_review.provider"});
+    expect(UI_CATALOG.find((row)=>row.id==="s088")).toMatchObject({uiStatus:"excluded",channel:"OWN",storageKey:"night_review.provider"});
   });
 
   it("maps legacy stage/ownership inputs only when a native runtime equivalent is present",()=>{
@@ -161,7 +161,7 @@ describe("adoc applicability catalog", () => {
       expect(UI_CATALOG.find((row)=>row.id===id)?.uiStatus).toBe("readonly");
       expect(UI_CATALOG.find((row)=>row.id===id)?.evidence).toMatch(/server\.ts:\d+|src\/[a-z/-]+\.ts:\d+/);
     }
-    expect(UI_CATALOG.find((row)=>row.id==="s290")?.uiStatus).toBe("readonly");
+    expect(UI_CATALOG.find((row)=>row.id==="s290")?.uiStatus).toBe("excluded"); // 0.1.461: night_review.* reserved
   });
 
   it("maps the legacy gate-log path to the project-scoped append-only BB event ledger without exposing a global path write",()=>{
@@ -188,10 +188,10 @@ describe("adoc applicability catalog", () => {
   });
 
   it("keeps all former UI-visible fields on screen", () => {
-    expect(VISIBLE_CATALOG).toHaveLength(397); // +2 owner.words, phase.rails (0.1.459), +1 lead.priority (0.1.452), +1 memory.maintain_every (wave10), +3 wave17 rows (failure.interventions, writer.retry_escalate, memory.maintain_mode)
+    expect(VISIBLE_CATALOG).toHaveLength(377) /* 0.1.461: night_review.* rows reserved */; // +2 owner.words, phase.rails (0.1.459), +1 lead.priority (0.1.452), +1 memory.maintain_every (wave10), +3 wave17 rows (failure.interventions, writer.retry_escalate, memory.maintain_mode)
     expect(VISIBLE_CATALOG.every((row) => row.uiStatus !== "excluded")).toBe(true);
     expect(UI_CATALOG.filter((row) => row.id >= "s355" && row.setting.startsWith("docs.")).every((row) => row.uiStatus === "editable" && row.channel === "OWN")).toBe(true);
-    expect(UI_CATALOG.filter((row)=>["night_review.enabled","night_review.provider","night_review.model","night_review.agent"].includes(row.storageKey)&&row.id!=="s290").every((row)=>row.uiStatus==="editable"&&row.channel==="OWN")).toBe(true);
+    expect(UI_CATALOG.filter((row)=>["night_review.enabled","night_review.provider","night_review.model","night_review.agent"].includes(row.storageKey)&&row.id!=="s290").every((row)=>row.uiStatus==="excluded"&&row.channel==="OWN")).toBe(true); // 0.1.461: reserved rows left the screen with the night-review group
     expect(UI_CATALOG.filter((row)=>row.storageKey.startsWith("pm_read.")&&row.id>="s258").every((row)=>row.uiStatus==="editable"&&row.channel==="OWN")).toBe(true);
     expect(UI_CATALOG.filter((row)=>row.id>="s359"&&row.setting.startsWith("onboarding.")).every((row)=>row.uiStatus==="editable"&&row.channel==="OWN")).toBe(true);
   });

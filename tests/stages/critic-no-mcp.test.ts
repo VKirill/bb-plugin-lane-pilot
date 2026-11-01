@@ -40,7 +40,7 @@ describe("one-shot readers load no MCP server beyond the mandatory one", () => {
   });
 
   it("other readers keep the code graph: the code critic, reviewers, triage and the thin chain roles", () => {
-    const keep: HelperRole[] = ["code-critic", "specialist-reviewer", "night-reviewer", "gate-triage", "analyst", "planner", "auditor", "debugger"];
+    const keep: HelperRole[] = ["code-critic", "specialist-reviewer", "gate-triage", "analyst", "planner", "auditor", "debugger"];
     for (const role of keep) expect(ROLE_PROFILES[role].mcpServers, role).toEqual(["gitnexus"]);
     expect(bound("code-critic", "codex").mcpServers?.names).toEqual(["bb-bridge", "gitnexus"]);
     // The profile never takes away reading files: that is the provider's own tool, not an MCP server.

@@ -14,7 +14,7 @@ sources:
   - docs/enabled-settings.snapshot.json
 ---
 
-<!-- enabled-settings:structure 0dc50489e2d5fa76 -->
+<!-- enabled-settings:structure 902ab36aa017b032 -->
 
 # Enabled settings (generated)
 
@@ -145,7 +145,7 @@ switches: `quick` disables both critiques, `full` enables them (`src/rooms/criti
 | `memory.query_floor` | `on` | — | stage setting: relevance floor on the query paths (on by default) |
 | `memory.salience_min` | `40` | — | stage setting: admission floor for maintainer memory notes |
 | `memory.search_engine` | `auto` | — | stage setting: choose FTS5 or BM25 retrieval |
-| `night_review.agent` | `lane-reviewer` | — | stage consumes this reviewer role label in its prompt |
+| `night_review.agent` | `lane-reviewer` | — | stage setting, reserved with night_review.enabled: no stage reads the role label today |
 | `night_review.auto_merge` | `off` | — | stage setting, reserved with night_review.enabled: nothing merges on it today |
 | `night_review.enabled` | `false` | — | stage setting, reserved: no stage reads it yet — the after-accept graph (workflows/lp.after-accept.json) has no night reviewer |
 | `night_review.max_fix_tasks` | `5` | — | stage setting, reserved with night_review.enabled: no night-review fix tasks are created today |
