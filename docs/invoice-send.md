@@ -28,10 +28,12 @@ flowchart LR
 | `amount` (required) | the total in RUB, exactly as it must stand in the invoice (final, never recalculated) |
 | `service` (required) | what the invoice is for, in the owner's words |
 | `recipient` (required) | the Telegram chat that gets the PDF: `@username`, a numeric id, a link, or `me` (Saved Messages) |
+| `send_at` | send the invoice later (ISO local `2026-11-03T07:00` or a delay `+2h`): the approval form asks for the timed send. **Declared, refused today** — the `telegram-send` fragment cannot create a schedule yet, so a given `send_at` ends the run `cannot_delay` |
 | `report_chat` | a chat or project topic for a one-line report after the send; empty: none |
 
-Mail is not offered: there is no mail skill. The result: `status` (`sent`, `aborted`, `blocked`, `send_failed`, `send_unconfirmed`), `invoice_number`,
-`invoice_url`, `pdf_path` (on the Mini), `message_id`, `check_verdict`, `reason`.
+Mail is not offered: there is no mail skill. The send itself is the shared fragment `telegram-send` (docs/telegram-send.md): `send` is a subworkflow
+node that hands it the chat, the PDF path, the caption line and `send_at`. The result: `status` (`sent`, `aborted`, `blocked`, `send_failed`,
+`send_unconfirmed`, `cannot_delay`), `invoice_number`, `invoice_url`, `pdf_path` (on the Mini), `message_id`, `send_at`, `check_verdict`, `reason`.
 
 ## The check (`invoice.check`, src/jev/judgments/invoice-check.ts)
 
