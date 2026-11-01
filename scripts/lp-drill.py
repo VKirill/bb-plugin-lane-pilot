@@ -613,13 +613,32 @@ def scenario_helper_providers(ctx: Context) -> dict:
 
     with ThreadPoolExecutor(max(1, len(pairs))) as pool:
         results = list(pool.map(probe_twice, pairs.items()))
-    problems = []
     for item in results:
         log(f"helper on {item['provider']} ({item['model']}): started={item['started']} answered={item['answered']} {item['reason'] or ''}")
-        if not item["ok"]:
-            what = "did not start" if not item["started"] else "started but did not answer"
-            problems.append(f"{item['provider']} ({item['model']}): a helper {what}: {item['reason'] or 'no reason given'}")
-    return verdict("helper_providers", problems, providers=results)
+    problems, quota = helper_problems(results)
+    return verdict("helper_providers", problems, providers=results, quotaExhausted=quota)
+
+
+# A provider's plan ran out (opencode2 zai-coding-plan on 2026-11-01: «Weekly/Monthly Limit Exhausted. Your limit will reset at …»).
+PROVIDER_QUOTA = re.compile(r"limit exhausted|insufficient_quota|usage limit|quota|rate.?limit", re.I)
+
+
+def helper_problems(results: list[dict]) -> tuple[list[str], list[str]]:
+    """What makes helper_providers red, and which providers only ran out of plan. A helper that started and was refused by its
+    provider's quota is not a broken spawn path: it is a note on the receipt, and red only when no provider answered at all."""
+    problems, quota = [], []
+    for item in results:
+        if item["ok"]:
+            continue
+        reason = item["reason"] or ""
+        if item["started"] and PROVIDER_QUOTA.search(reason):
+            quota.append(f"{item['provider']} ({item['model']}): {reason}")
+            continue
+        what = "did not start" if not item["started"] else "started but did not answer"
+        problems.append(f"{item['provider']} ({item['model']}): a helper {what}: {reason or 'no reason given'}")
+    if quota and not any(item["ok"] for item in results):
+        problems.append("no provider answered, every one is out of plan: " + "; ".join(quota))
+    return problems, quota
 
 
 MEMORY_ANCHOR = "lp-probe/memory"

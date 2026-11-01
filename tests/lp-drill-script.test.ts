@@ -49,6 +49,26 @@ describe("scripts/lp-drill.sh (E3)", () => {
     expect(unknown.status).toBe(2);
   });
 
+  it("helper_providers: a provider that started and was refused by its quota is a note, not a red; red when no provider answered or when a start failed", () => {
+    const code = String.raw`
+import importlib.util, json, sys
+spec = importlib.util.spec_from_file_location("drill", sys.argv[1]); d = importlib.util.module_from_spec(spec); spec.loader.exec_module(d)
+ok = {"provider": "claude-code", "model": "m", "ok": True, "started": True, "answered": True, "reason": None}
+quota = {"provider": "opencode2", "model": "z", "ok": False, "started": True, "answered": False, "reason": "helper_probe_timeout:error:provider_error:Weekly/Monthly Limit Exhausted. Your limit will reset at 2026-11-01 18:30:52"}
+dead = {"provider": "codex", "model": "g", "ok": False, "started": False, "answered": False, "reason": "thread_command_failed"}
+print(json.dumps([d.helper_problems([ok, quota]), d.helper_problems([quota]), d.helper_problems([ok, dead])]))
+`;
+    const run = spawnSync("python3", ["-I", "-c", code, fileURLToPath(new URL("../scripts/lp-drill.py", import.meta.url))], { encoding: "utf8", timeout: 30_000, env: { ...ownEnv, BB_CLI: "/nonexistent/bb" } });
+    expect(run.status, run.stderr).toBe(0);
+    const [withOk, alone, withDead] = JSON.parse(run.stdout.trim().split("\n").at(-1)!) as Array<[string[], string[]]>;
+    expect(withOk[0]).toEqual([]);
+    expect(withOk[1]).toEqual(["opencode2 (z): helper_probe_timeout:error:provider_error:Weekly/Monthly Limit Exhausted. Your limit will reset at 2026-11-01 18:30:52"]);
+    expect(alone[0]).toHaveLength(1);
+    expect(alone[0][0]).toMatch(/no provider answered/);
+    expect(withDead[0]).toEqual(["codex (g): a helper did not start: thread_command_failed"]);
+    expect(withDead[1]).toEqual([]);
+  });
+
   it("--quick leaves out a live scenario whose code did not change since it passed within a day, and runs it otherwise", () => {
     const code = String.raw`
 import importlib.util, json, sys, tempfile, time, pathlib

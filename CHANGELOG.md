@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.1.450
+
+- **Deploy drill: a provider that ran out of plan is a note on the receipt, not a red.** `helper_providers` went red on 0.1.448 and 0.1.449 only because opencode2's zai-coding-plan answered «Weekly/Monthly Limit Exhausted» while claude-code and codex answered: the spawn path the probe checks had worked. `helper_problems` in `scripts/lp-drill.py` now files such a provider under `quotaExhausted` and keeps the scenario green; it is red when no provider answered at all or when a helper did not start. Test in `tests/lp-drill-script.test.ts`.
+
 ## 0.1.449
 
 - **`lead_state` answered HTTP 500 until the first exam.** The hub kv returns `undefined` for a key never written, and the RPC layer refuses `undefined` anywhere in a result: the «Штурман» panel segment and `bb lane-pilot lead status` were broken on 0.1.447–0.1.448 (`rpc result at $result.lastExam is not a JSON value`), caught by the drill scenario `lead_shadow` when it was run by hand. `lastExam` is now `null` until the exam writes it, the state test asserts the whole state survives JSON, and `lead_shadow` joins the quick drill set every deploy runs.
