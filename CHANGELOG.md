@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.1.449
+
+- **`lead_state` answered HTTP 500 until the first exam.** The hub kv returns `undefined` for a key never written, and the RPC layer refuses `undefined` anywhere in a result: the «Штурман» panel segment and `bb lane-pilot lead status` were broken on 0.1.447–0.1.448 (`rpc result at $result.lastExam is not a JSON value`), caught by the drill scenario `lead_shadow` when it was run by hand. `lastExam` is now `null` until the exam writes it, the state test asserts the whole state survives JSON, and `lead_shadow` joins the quick drill set every deploy runs.
+
 ## 0.1.448
 
 - **The lead's tick starts detached and on a connected machine; a tick whose graph fails is closed at once.** The first live tick of 0.1.447 (`tick_2e5d799e`) never reached its agent step: the trigger start bound the run to the home project's current PM chat — the archived chat of a blocked run — so the helper first failed as that chat's child, then, spawned hidden, inherited the chat's environment on a MacBook that was off (`Unmanaged workspace path does not exist`), and the receipt stayed `running` for the 90-minute sweep. Now `workflowTriggers.start` takes `detached: true` (no PM chat, no run link; the lead's tick passes it), `projectFolder` — the folder of every parentless helper — prefers a project folder on a machine the hub lists as connected (`bb.sdk.hosts.list`), and the lead's sweep closes a tick whose workflow run `failed` or was `canceled` as `error` right away, with the failed node and the step's error on the owner's list (`tick_error`). Tests: `tests/workflow/triggers.test.ts`, `tests/lead/service.test.ts`, `tests/standalone-place.test.ts`.

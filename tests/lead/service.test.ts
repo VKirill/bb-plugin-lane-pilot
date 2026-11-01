@@ -116,6 +116,16 @@ describe("the nightly exam of the rights", () => {
   });
 });
 
+describe("the state for the panel and the CLI", () => {
+  it("is a JSON value before the first exam too: the hub kv answers undefined for a key never written (lead_shadow drill, 0.1.448: HTTP 500)", async () => {
+    const { bb, lead } = world();
+    vi.spyOn(bb.storage.kv, "get").mockImplementation(async () => undefined as never);
+    const state = await lead.state(1_000);
+    expect(state.lastExam).toBeNull();
+    expect(JSON.parse(JSON.stringify(state))).toStrictEqual(state);
+  });
+});
+
 describe("the owner's answer to a proposal", () => {
   it("moves the branch, the journal row and the list line together, once", () => {
     const { db, lead } = world();

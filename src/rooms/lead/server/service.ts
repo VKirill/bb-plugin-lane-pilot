@@ -144,7 +144,8 @@ export function createLeadService(ctx: ServerCore, services: Services) {
     const identity = loadIdentity();
     const ticks = listTicks(db, 10);
     const counts = (split: string) => (db.prepare("SELECT COUNT(*) AS n FROM lane_pilot_decision WHERE split=?").get(split) as { n: number }).n;
-    const lastExam = (await bb.storage.kv.get(EXAM_KEY).catch(() => null)) as { at: number; changes: TierChange[] } | null;
+    // The hub kv answers `undefined` for a key never written, and the RPC layer refuses undefined anywhere in a result (lead_shadow, 0.1.448: HTTP 500 until the first exam).
+    const lastExam = ((await bb.storage.kv.get(EXAM_KEY).catch(() => null)) ?? null) as { at: number; changes: TierChange[] } | null;
     return {
       generatedAt: now, settings: current, homeProjectId: await homeProjectId(),
       identity: { sha: identity.sha, path: identity.path, bytes: identity.bytes, seeded: identity.seeded },
