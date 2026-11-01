@@ -111,6 +111,8 @@ with dark(name) as (
   union all
   select 'lane_pilot_owner_item' as name where (select count(*) from lane_pilot_owner_item where created_at >= (select since from lp_morning_30)) = 0
   union all
+  select 'lane_pilot_decision' as name where (select count(*) from lane_pilot_decision where created_at >= (select since from lp_morning_30)) = 0
+  union all
   select 'lane_pilot_owner_push' as name where (select count(*) from lane_pilot_owner_push) = 0
   union all
   select 'lane_pilot_phase' as name where (select count(*) from lane_pilot_phase where created_at >= (select since from lp_morning_30)) = 0

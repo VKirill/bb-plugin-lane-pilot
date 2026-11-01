@@ -37,6 +37,7 @@ Built by Lane Pilot from page frontmatter.
 | [Jev adapter for native writer reasoning](jev-adapter.md) | component | active | 2026-10-13 |
 | [docs/jev-judgments.md](jev-judgments.md) | — | — | — |
 | [docs/learning.md](learning.md) | — | — | — |
+| [The lead's decision journal](lead.md) | component | active | 2026-11-01 |
 | [LP-Bench, the fixed task set](lp-bench.md) | component | active | 2026-10-30 |
 | [Memory tiers (SMA D2-8)](memory-tiers.md) | component | active | 2026-10-28 |
 | [Project memory](memory.md) | component | active | 2026-10-30 |

@@ -22,6 +22,7 @@ import { harnessRpc } from "../../harness/server";
 import { deferralRpc } from "../../deferral/server";
 import { cockpitRpc } from "../../cockpit";
 import { recordTaskWord } from "../../tasks";
+import { answerTaskWord } from "../../lead";
 import { taskFamily } from "../../runs";
 import { rollbackRpc } from "../../rollback/server";
 import { acceptanceRpc } from "../../acceptance/server";
@@ -92,6 +93,7 @@ export function registerRpc(ctx: ServerCore, services: Services) {
     actions_recent: async ({ limit }: { limit?: number }) => services.front.actions(limit),
     task_word: async ({ runId, taskId, decision, text }: { runId: string; taskId: string; decision: "yes" | "no"; text: string }) => {
       await recordTaskWord(ctx.bb.storage.kv as never, runId, taskFamily(taskId), decision, text);
+      answerTaskWord(ctx.db, runId, taskFamily(taskId), decision, text, "screen");
       return { ok: true as const };
     },
     ...cockpitRpc(ctx, services),

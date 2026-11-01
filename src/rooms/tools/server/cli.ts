@@ -37,6 +37,7 @@ import { WALL_USAGE, runWallCli } from "../../wall/server";
 import { CHECKERS_USAGE, runCheckersCli } from "../../checkers/server";
 import { POLICY_USAGE, runPolicyCli } from "../../policy";
 import { WAITING_USAGE, runWaitingCli } from "../../owner-waiting/server";
+import { LEAD_USAGE, runLeadCli } from "../../lead/server";
 import { COVERAGE_USAGE, runCoverageCli } from "../../coverage";
 import { SMA_MAP_USAGE, runSmaLiveCli, runSmaMapCli } from "../../sma-map";
 import { readinessWords, trainedConditions, trainingRatios, type DesignJournalLine } from "../../design-eval";
@@ -101,6 +102,7 @@ export function registerCli(ctx: ServerCore, services: Services) {
     DEFERRAL_USAGE,
     POLICY_USAGE,
     WAITING_USAGE,
+    LEAD_USAGE,
     COVERAGE_USAGE,
     SMA_MAP_USAGE,
     PHASE_USAGE,
@@ -160,6 +162,7 @@ export function registerCli(ctx: ServerCore, services: Services) {
       { name:"policy-exam", summary:"Score the night policy on the newest unseen split (owner decisions made after its freeze) and store the result; a failed or short exam is a measurement and does not change what the night may decide", usage:"bb lane-pilot policy-exam" },
       { name:"policy", summary:"The night policy: show the lists, classify a change descriptor, the three-line morning list", usage:"bb lane-pilot policy show|classify '<json>'|exam-collect|exam-add '<json>'|exam-export|morning" },
       { name:"waiting", summary:"Everything only the owner can decide, with why, evidence and the exact action; what went red overnight; the Telegram digest of new items (quiet hours 23:00-08:00 Europe/Madrid by default)", usage:WAITING_USAGE },
+      { name:"lead", summary:"The lead's decision journal: every question to the owner with the prediction made before his answer, the exam per class, the backtest of his past words, his own labels", usage:LEAD_USAGE },
       { name:"coverage", summary:"What proves each pipeline stage, attempt transition, failure class, gate, memory path, room and key mechanism: covered live by a deploy-drill scenario, covered by tests only (and why no drill), or not covered; --receipt checks the live claims against a drill receipt", usage:COVERAGE_USAGE },
       { name:"passport", summary:"An attempt's passport: provider, model, harness and Lane Pilot versions, the receipts of its stages", usage:"bb lane-pilot passport <attempt-id>" },
       { name:"manifest", summary:"This build: name, version, its tables", usage:"bb lane-pilot manifest" },
@@ -296,6 +299,7 @@ export function registerCli(ctx: ServerCore, services: Services) {
         if (command === "waiting") {
           return runWaitingCli(db, args);
         }
+        if (command === "lead") return await runLeadCli({ db, kv: bb.storage.kv as never }, args);
         if (command === "jev") return runJevCli({ db, saveProjectSetting: (p, k, v) => saveProjectSetting(db, p, k, v), settings: async (p) => (await effectiveProjectSettings(p)).values as Record<string, unknown> }, args);
         if (command === "rules") {
           const hostAt = args.indexOf("--host");

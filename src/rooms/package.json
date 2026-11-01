@@ -14,7 +14,6 @@
     "./workflow/goal-screen.ts",
     "./workflow/plan-check.ts",
     "./writer/finish-scan.ts",
-
     "./phase/intake.ts",
     "./critique/critic-screen.ts",
     "./workflow/route-workflow.ts",
@@ -35,6 +34,8 @@
     "./phase/index.ts",
     "./runs/index.ts",
     "./workflow/index.ts",
-    "./writer/index.ts"
+    "./writer/index.ts",
+    "./lead/index.ts",
+    "./lead/predict.ts"
   ]
 }

@@ -5,6 +5,7 @@ import { noTermDeferralsOf } from "../../deferral/server";
 import { getRunGoal } from "../../run-goal";
 import { getRun, getRunSettingsScopes, getRunWriterHost, getTask, listOpenAttempts, loadProjectSettings, storeMemoryRecords } from "../../storage";
 import { postOwnerItem, closeOwnerItem } from "../../owner-waiting";
+import { answerPhaseWord, askPhaseWord } from "../../lead";
 import { isWholeConsent, ownerWordsOn, spendReserve } from "../../tasks";
 import { hostContract } from "../../contracts";
 import { scheduleIsolated, type ServerCore, type Services } from "../../core/server";
@@ -390,6 +391,7 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
       book(phase, "lessons", "staged", "the lesson waits as a draft for the owner's word «lesson»");
       postOwnerItem(db as never, { key: `phase-word:${phase.id}:lesson`, source: "phase", kind: "word", projectId: phase.projectId,
         what: `Phase «${phase.title}»: the lesson draft — apply it to memory?`, why: text.slice(0, 600) });
+      void askPhaseWord(db as never, phase, "lesson", undefined, text);
     } else writeLesson(phase, text);
     move(phase, "closed", record, "the lessons are written and reviewed");
     savePhase(db, phase.id, { state: "closed", at: now() });
@@ -461,6 +463,7 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
     }
     const record: PhaseRecord = { ...phase.record, words: [...(phase.record.words ?? []), { turn: input.turn, decision: input.decision, by: input.by ?? "owner", text: input.text.slice(0, 2000), at: now(), ...(input.wave !== undefined ? { wave: input.wave } : {}),
       ...(input.turn === "acceptance" ? { useful: input.useful === true, limits: input.limits === true, key: shownKey } : {}) }] };
+    answerPhaseWord(db as never, phase.id, input.turn, input.wave, input.decision, input.text, input.by ?? "owner");
     closeOwnerItem(db as never, `phase-word:${phase.id}:${input.turn}${input.wave !== undefined ? `:${input.wave}` : ""}`, input.by ?? "owner");
     book(phase, "decisions", `word_${input.turn}`, `${input.by ?? "owner"}: ${input.decision} — ${input.text}`);
     if (input.turn === "design") await noteDesignWord(phase.id, input.decision);
@@ -1046,6 +1049,8 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
     const wordTurn = action.key.match(/:word:([a-z]+)(?::(\d+))?(?::(?:v[\w-]+|[0-9a-f]+))?$/);
     if (wordTurn) postOwnerItem(db as never, { key: `phase-word:${phase.id}:${wordTurn[1]}${wordTurn[2] ? `:${wordTurn[2]}` : ""}`, source: "phase", kind: "word", projectId: phase.projectId,
       what: `Phase «${phase.title}»: your word at ${wordTurn[1]}${wordTurn[2] ? ` (wave ${wordTurn[2]})` : ""}`, why: action.text.slice(0, 600) });
+    // The lead's journal: the same question, with the prediction written before the owner's word (src/rooms/lead).
+    if (wordTurn) void askPhaseWord(db as never, phase, wordTurn[1]!, wordTurn[2] ? Number(wordTurn[2]) : undefined, action.text);
     // Aging said once a day; a stalled phase named in the book only: no part for three days (or twelve hours at execution with pieces at work). The PM is not
     // woken with it: it already got the step once (pokedKey), and a daily repeat to an idle chat rewrote its whole context for nothing
     // (live ph_26f65b142d, 2026-10-27..29: three wake-ups for a step the PM had declined).

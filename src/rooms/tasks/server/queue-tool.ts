@@ -2,6 +2,7 @@ import { z } from "zod";
 import { callerPluginMetadata, ToolError, registerObservedTool, type ServerCore } from "../../core/server";
 import { deadLetters, HOLD_FOREVER } from "../rails";
 import { recordTaskWord } from "../words";
+import { answerTaskWord } from "../../lead";
 import { taskFamily } from "../../runs";
 import { hostContract } from "../../contracts";
 import { getRun, getRunWriterHost, latestTaskAttemptState } from "../../storage";
@@ -38,6 +39,7 @@ export function registerQueueTool(ctx: ServerCore): void {
       const runId = await runOf(context);
       if (input.action === "word") {
         await recordTaskWord(bb.storage.kv as never, runId, taskFamily(input.taskId), input.decision, input.text);
+        answerTaskWord(db, runId, taskFamily(input.taskId), input.decision, input.text, "pm");
         return JSON.stringify({ runId, taskId: input.taskId, word: input.decision, next: input.decision === "yes" ? "send the task again: it lands without a new writer pass" : "cancel the task with the owner's words, or change it and send again" });
       }
       if (input.action === "close_backlog") {

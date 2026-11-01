@@ -26,6 +26,7 @@ import { deferralKindMigrations, deferralMigrations } from "../deferral";
 import { rollbackMigrations } from "../rollback";
 import { benchMigrations } from "../bench";
 import { ownerWaitingMigrations } from "../owner-waiting";
+import { leadMigrations } from "../lead";
 import { baselineMigrations } from "../baseline";
 import { stageReturnMigrations } from "../stage-return";
 import { runGoalCoverageMigrations, runGoalMigrations } from "../run-goal";
@@ -470,6 +471,8 @@ export const migrations = [
   // WT2: every Lane Pilot worktree copy, one row at create (server-side, in the host.call wrapper) and released_at at remove/merge.
   `CREATE TABLE IF NOT EXISTS lane_pilot_worktree (id INTEGER PRIMARY KEY, host TEXT NOT NULL, path TEXT NOT NULL, branch TEXT, owner_kind TEXT NOT NULL, owner_id TEXT, created_at INTEGER NOT NULL, released_at INTEGER)`,
   `CREATE UNIQUE INDEX IF NOT EXISTS lane_pilot_worktree_open ON lane_pilot_worktree(host, path) WHERE released_at IS NULL`,
+  // The lead's decision journal: every question to the owner with the prediction made before his answer (src/rooms/lead). Append only.
+  ...leadMigrations,
 ];
 
 export function openDatabase(bb: BbPluginApi): LanePilotDatabase {

@@ -45,6 +45,7 @@ import { attemptMergeMessage, clearMergeIntent, recordMergeIntent } from "../../
 import { sendServiceMessage } from "../../relay/server";
 import { judgeRulesOnDiff, ruleViolationRemark } from "../../learning";
 import { jev, type JevSettings } from "@lane-pilot/jev";
+import { askTaskWord } from "../../lead";
 import { writerFinishScanJudgment } from "../finish-scan";
 import { runOnHost } from "@lane-pilot/host-calls";
 import { pollPause } from "@lane-pilot/kit";
@@ -823,6 +824,8 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
       { const stopped = stoppedMeanwhile("the plan-fact check", writerThreadId); if (stopped) return stopped; }
       let wordGap = landingWordGap(ownerWords, await wordsOf());
       if (wordGap && !wordGap.includes("said no")) {
+        // The lead's journal: the question opens here and the prediction is written before the owner answers (src/rooms/lead).
+        void askTaskWord(db, { runId:input.runId, projectId:input.projectId, family:taskFamily(input.taskId), task:input.task }, loadProjectSettings(db, input.projectId, getRunSettingsScopes(db, input.runId)) as JevSettings);
         void sendServiceMessage(bb, { threadId:input.pmThreadId, senderThreadId:writerThreadId,
           text:`Lane Pilot: task ${input.taskId} passed its checks and waits for the owner's word before it lands on main (owner.words asks it for this task: risk ${input.task.risk}). Ask him with lane_pilot_ask_owner, then record his answer with lane_pilot_queue {action:"word", taskId:"${input.taskId}", decision:"yes"|"no", text}. It waits up to 6 hours; no need to resend it.` }).catch(() => undefined);
         const since = Date.now();
