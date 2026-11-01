@@ -72,7 +72,7 @@ export function createScheduleService(ctx: ServerCore, services: Services) {
    * rows say `kind: "internal"` once the list carries a kind. `displayName` is the row's own, else the picker's label.
    */
   async function pickableAgents(): Promise<Array<{ id: string; displayName: string; description: string }>> {
-    const rows = await services.listedAgentProfiles() as Array<{ id: string; description: string; kind?: string; displayName?: string }>;
+    const rows = await services.listedAgentProfiles({ pickable: true }) as Array<{ id: string; description: string; kind?: string; displayName?: string }>;
     return rows.filter((row) => row.kind !== "internal").map((row) => ({ id: row.id, displayName: row.displayName ?? agentPickerLabel(row, (key) => t(key)), description: row.description }));
   }
 

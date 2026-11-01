@@ -214,7 +214,7 @@ function PmRow({ page }: { page: LpPage }) {
           <SelectTrigger aria-label={t("mainAgent")} className={`${CONTROL_H} min-w-0 max-w-full`}><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="__default__">{t("mainAgentDefault")}</SelectItem>
-            {(data?.mainAgents ?? []).map((agent) => <SelectItem key={agent.id} value={agent.id}>{agentPickerLabel(agent, t)}</SelectItem>)}
+            {(data?.mainAgents ?? []).filter((agent) => agent.kind !== "internal").map((agent) => <SelectItem key={agent.id} value={agent.id}>{agentPickerLabel(agent, t)}</SelectItem>)}
           </SelectContent>
         </Select>
       </div>

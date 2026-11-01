@@ -37,6 +37,15 @@ export const MAIN_AGENT_PROFILE_IDS = [
   "ui-researcher",
 ] as const;
 
+/**
+ * Developer sub-roles of the Claude Lane port that no graph, PM or schedule calls. They stay compiled and reachable by id (`list_agents`,
+ * the CLI), but the pickers (composer, team tab, schedules) list one only once the owner has edited it: the picker is for a person,
+ * not a developer (owner's rule 2026-11-01, 0.1.463).
+ */
+export const UNLISTED_STOCK_IDS: ReadonlySet<string> = new Set([
+  "animator", "doc-classifier", "eval-auditor", "eval-planner", "framework-selector", "nyquist-auditor", "ui-researcher",
+]);
+
 export const compiledMainAgentSchema = z.object({
   id: z.string().regex(MAIN_AGENT_ID),
   sourceVersion: z.string().min(1),

@@ -163,11 +163,18 @@ export function stockEmployee(id: string): EmployeeManifest | undefined {
   return Object.hasOwn(EMPLOYEES, id) ? EMPLOYEES[id as keyof typeof EMPLOYEES] : undefined;
 }
 
+/** Domains of the stock agents that are not employees: the three advisers sit with research, the two Lane Pilot helpers under their own section. */
+// A Map, not an object: an agent named `constructor` must not inherit Object.prototype (tests/owned-settings.test.ts).
+const STOCK_DOMAIN: ReadonlyMap<string, string> = new Map([
+  ["advisor-researcher", "research"], ["domain-researcher", "research"], ["ai-researcher", "research"],
+  ["workflow-architect", "lanepilot"], ["mempalace-curator", "lanepilot"],
+]);
+
 /** Stock manifest, then the owner's meta, then the compiled profile's skills (an old row that only has `skills`). */
 export function employeeView(id: string, meta?: EmployeeMeta, compiledSkills?: string[]): EmployeeManifest {
   const stock = stockEmployee(id);
   return {
-    domain: meta?.domain ?? stock?.domain ?? "general",
+    domain: meta?.domain ?? stock?.domain ?? STOCK_DOMAIN.get(id) ?? "general",
     machineAffinity: meta?.machineAffinity ?? stock?.machineAffinity ?? "any",
     deliverables: meta?.deliverables ?? stock?.deliverables ?? [],
     validator: meta?.validator ?? stock?.validator ?? RESULT_EXISTS,

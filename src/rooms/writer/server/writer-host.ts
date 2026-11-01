@@ -1,4 +1,4 @@
-import { MAIN_AGENT_PROFILE_IDS, agentListItem } from "../../native-agent";
+import { MAIN_AGENT_PROFILE_IDS, UNLISTED_STOCK_IDS, agentListItem } from "../../native-agent";
 import type { AgentListItem } from "../../native-agent";
 import { loadPrototypeConfig } from "../../storage";
 import { GLOBAL_SETTINGS_PROJECT_ID, LP_DEFAULTS_KEY, parseLanePilotDefaults } from "@lane-pilot/settings-catalog";
@@ -105,13 +105,17 @@ export function createWriterHost(ctx: ServerCore) {
     return { ok: true as const, hostId: binding.hostId };
   }
 
-  /** The one list of pickable agents (bundled, then the owner's own), in the shape of `AgentListItem` (src/rooms/native-agent/custom-agent.ts). */
-  async function listedAgentProfiles(): Promise<AgentListItem[]> {
+  /**
+   * The one list of agents (bundled, then the owner's own), in the shape of `AgentListItem` (src/rooms/native-agent/custom-agent.ts). The management
+   * list and the CLI see all of them; a picker (`pickable`) skips an unedited developer sub-role (`UNLISTED_STOCK_IDS`, 0.1.463).
+   */
+  async function listedAgentProfiles(opts?: { pickable?: boolean }): Promise<AgentListItem[]> {
     const owned = await ownedAgents();
     const ids = [...new Set([...MAIN_AGENT_PROFILE_IDS, ...Object.keys(owned)])];
     const rows: AgentListItem[] = [];
     for (const id of ids) {
       try {
+        if (opts?.pickable && UNLISTED_STOCK_IDS.has(id) && !owned[id]) continue;
         if (owned[id]?.compiledCorrupt) continue;
         rows.push(agentListItem(id, owned[id]));
       } catch { /* skip incomplete custom rows */ }

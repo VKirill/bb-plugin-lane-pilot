@@ -40,6 +40,9 @@ describe("the agent registry: an agent is data", () => {
     const byId = Object.fromEntries(agents.map((row) => [row.id, row]));
     expect(byId["dev-orchestrator"]).toMatchObject({ kind: "coordinator", custom: false, displayName: "Development coordinator" });
     expect(byId["project-onboarder"]).toMatchObject({ kind: "internal", custom: false });
+    expect(byId["lead"]).toMatchObject({ kind: "internal", custom: false });
+    for (const id of ["advisor-researcher", "domain-researcher", "ai-researcher"]) expect(byId[id], id).toMatchObject({ domain: "research" });
+    for (const id of ["workflow-architect", "mempalace-curator"]) expect(byId[id], id).toMatchObject({ domain: "lanepilot" });
     for (const id of ["copy-lead", "seo-specialist", "design-lead", "tavily", "video-lead"]) expect(byId[id], id).toMatchObject({ kind: "specialist", custom: false });
     expect(byId["video-lead"]!.skills).toEqual(["video-lead-playbook"]);
     expect(byId["game-dev"]!.skillSections).toContain("Разработка/Игры");

@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 0.1.463
+
+The composer's agent menu is for a person, not a developer (owner's words 2026-11-01).
+
+- **Lane Pilot lets go of a new chat when the model changes.** The composer control remembers the provider and model it set; when the person then picks another one in BB's picker, the dispatch token is detached, the switch turns off and the popover says why (`composerAgentOffSelectionChanged`). Before, the agent stayed on and the send was refused with «needs Claude Code» or started on a model the agent had not chosen (`src/rooms/native-agent/ui/composer-enable.tsx`).
+- **Sections a person scrolls, not one section per agent.** The picker groups specialists by section: Content (design, copy, video, visual, social), Games and 3D, Marketing and research (SEO, research, the three advisers), Helpers (billing, macOS), Lane Pilot (the graph architect, the memory curator), General for the owner's own agents without a domain (`SECTION_OF_DOMAIN`). A domain stays the agent's fine tag for skills and employees; the stock agents that are not employees get theirs from `STOCK_DOMAIN` (employee-manifest.ts).
+- **The lead («Штурман») is internal.** Its chat opens from the panel and the tick runs it; the composer, the team tab and schedules no longer offer it (`INTERNAL_AGENT_IDS`).
+- **Seven developer sub-roles leave the pickers.** `animator`, `doc-classifier`, `eval-auditor`, `eval-planner`, `framework-selector`, `nyquist-auditor`, `ui-researcher` (the Claude Lane port) are called by no graph, PM or schedule. They stay compiled, in `list_agents` and the CLI; a picker lists one once the owner has edited it (`UNLISTED_STOCK_IDS`, `listedAgentProfiles({ pickable: true })`).
+- **The team tab's default-agent select hides internal agents** (`project-onboarder`, `browser-qa`, the lead), as the composer always did.
+
 ## 0.1.462
 
 The leftovers of the 0.1.461 re-verification: three readers went through every item of the four grill reports again, against the code of 0.1.461, and wrote their verdicts into each report (section «Verification notes» / «Заметки сверки»), which the 0.1.461 entry had promised and the reports did not have. What was still open is closed here; what is a product choice is named there.

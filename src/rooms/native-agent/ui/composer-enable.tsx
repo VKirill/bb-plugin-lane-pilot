@@ -24,32 +24,26 @@ import { takeArchitectLaunch } from "../../workflow/ui";
 /** The «Без агента» row of the agent dropdown (a Select item cannot have an empty value). */
 const NO_AGENT = "__none__";
 
-const DOMAIN_ORDER = ["design", "copy", "seo", "video", "3d", "games", "visual", "social", "billing", "macos", "research", "general"];
-const DOMAIN_KEY: Record<string, I18nKey> = {
-  design: "domain.design",
-  copy: "domain.copy",
-  seo: "domain.seo",
-  video: "domain.video",
-  "3d": "domain.3d",
-  games: "domain.games",
-  visual: "domain.visual",
-  social: "domain.social",
-  billing: "domain.billing",
-  macos: "domain.macos",
-  research: "domain.research",
-  general: "domain.general",
+/** The picker's sections: a domain is the agent's fine tag (skills, employees); a section is what a person scrolls (owner's rule 2026-11-01: no section of one agent). */
+const SECTION_OF_DOMAIN: ReadonlyMap<string, string> = new Map([
+  ["design", "content"], ["copy", "content"], ["video", "content"], ["visual", "content"], ["social", "content"],
+  ["games", "games"], ["3d", "games"],
+  ["seo", "marketing"], ["research", "marketing"],
+  ["billing", "helpers"], ["macos", "helpers"],
+  ["lanepilot", "lanepilot"],
+]);
+const SECTION_ORDER = ["content", "games", "marketing", "helpers", "lanepilot", "general"] as const;
+const SECTION_KEY: Record<string, I18nKey> = {
+  content: "section.content", games: "section.games", marketing: "section.marketing", helpers: "section.helpers", lanepilot: "section.lanepilot", general: "domain.general",
 };
 
 function groupsOf(agents: PickableAgent[]): Array<{ id: string; agents: PickableAgent[] }> {
   const buckets = new Map<string, PickableAgent[]>();
   for (const agent of agents) {
-    const domain = agent.domain || "general";
-    const list = buckets.get(domain) ?? [];
-    list.push(agent);
-    buckets.set(domain, list);
+    const section = SECTION_OF_DOMAIN.get(agent.domain ?? "") ?? "general";
+    buckets.set(section, [...(buckets.get(section) ?? []), agent]);
   }
-  const ids = [...DOMAIN_ORDER.filter((id) => buckets.has(id)), ...[...buckets.keys()].filter((id) => !DOMAIN_ORDER.includes(id))];
-  return ids.map((id) => ({ id, agents: buckets.get(id)! }));
+  return SECTION_ORDER.filter((id) => buckets.has(id)).map((id) => ({ id, agents: buckets.get(id)! }));
 }
 
 type ContextPayload = {
@@ -91,7 +85,11 @@ export function EnableLanePilotAction() {
   const threadId = view.scope.kind === "thread" ? view.scope.threadId : null;
   const [chat, setChat] = useState<ChatState | null>(null);
   const projectId = view.scope.kind === "new-thread" ? view.scope.projectId : chat?.projectId || null;
-  const hostId = selectionHostId(useNativeComposerSelection());
+  const selection = useNativeComposerSelection();
+  const hostId = selectionHostId(selection);
+  // The provider and model this control set itself; the person changing them afterwards means a plain chat on that model (owner's rule 2026-11-01).
+  const expected = useRef<{ providerId: string; model: string } | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   // The agent the chat will run as on send: null = a plain chat, the coordinator = Lane Pilot on, anything else = a specialist.
   const [selected, setSelected] = useState<{ id: string; description: string } | null>(null);
   const [pending, setPending] = useState(false);
@@ -155,6 +153,7 @@ export function EnableLanePilotAction() {
     if (blocked || pending || !projectId) return;
     setPending(true);
     setError(null);
+    setNotice(null);
     try {
       const attach = (composer as typeof composer & {
         experimental_vkSetDispatchData?: (data: { token: string } | null) => void;
@@ -165,7 +164,7 @@ export function EnableLanePilotAction() {
       let selected = false;
       for (const model of ["claude-opus-5-5[1m]", "claude-opus-5-5"]) {
         const selection = await composer.setSelection({ providerId: "claude-code", model, permissionMode: "full" });
-        if (selection.providerId === "claude-code" && selection.model === model) { selected = true; break; }
+        if (selection.providerId === "claude-code" && selection.model === model) { selected = true; expected.current = { providerId: "claude-code", model }; break; }
       }
       if (!selected) throw new Error(t("nativeComposerModelUnavailable"));
       if (threadId) {
@@ -182,6 +181,7 @@ export function EnableLanePilotAction() {
       if (result.roleModel) {
         const pick = await composer.setSelection({ providerId: result.roleModel.providerId, model: result.roleModel.model, permissionMode: "full" });
         if (pick.providerId !== result.roleModel.providerId || pick.model !== result.roleModel.model) throw new Error(t("nativeComposerModelUnavailable"));
+        expected.current = { providerId: pick.providerId, model: pick.model };
       }
       // New thread only. An existing chat cannot change host: this branch already returned when threadId is set.
       if (result.environment) await composer.setSelection({ environment: result.environment });
@@ -200,6 +200,7 @@ export function EnableLanePilotAction() {
     if (threadId) { noteChatAgentChanged(); return; }
     setSelected(null);
     setPendingNativeAgent(null);
+    expected.current = null;
   }), [composer.onSubmitted, threadId]);
 
   // A project with a main agent starts every new chat with Lane Pilot on and that agent picked, once per composer;
@@ -235,7 +236,17 @@ export function EnableLanePilotAction() {
       .experimental_vkSetDispatchData?.(null);
     setPendingNativeAgent(null);
     setSelected(null);
+    expected.current = null;
   };
+
+  // The person picked another provider or model after the agent was set: the agent lets go of the new chat (token detached, switch off)
+  // instead of starting on a model it did not choose or being refused on send («needs Claude Code»). An existing chat cannot change model.
+  useEffect(() => {
+    if (threadId || pending || !selected || !expected.current || selection.status !== "ready") return;
+    if (selection.providerId === expected.current.providerId && selection.model === expected.current.model) return;
+    disable();
+    setNotice(t("composerAgentOffSelectionChanged"));
+  }, [selection, selected, pending, threadId]);
 
   const agents = ctx?.mainAgents ?? [];
   const coordinatorId = agents.find((agent) => agentKind(agent) === "coordinator")?.id ?? DEFAULT_NATIVE_AGENT;
@@ -286,7 +297,7 @@ export function EnableLanePilotAction() {
               <SelectItem value={NO_AGENT}>{t("composerAgentNone")}</SelectItem>
               {groupsOf(specialists).map((group) => (
                 <SelectGroup key={group.id}>
-                  <SelectLabel>{t(DOMAIN_KEY[group.id] ?? "domain.general")}</SelectLabel>
+                  <SelectLabel>{t(SECTION_KEY[group.id] ?? "domain.general")}</SelectLabel>
                   {group.agents.map((agent) => <SelectItem key={agent.id} value={agent.id}>{composerAgentLabel(agent, t)}</SelectItem>)}
                 </SelectGroup>
               ))}
@@ -301,6 +312,7 @@ export function EnableLanePilotAction() {
           </div>
         ) : null}
         {error ? <p role="alert" className="text-xs text-destructive">{error}</p> : null}
+        {notice && !selected ? <p role="status" className="text-xs text-muted-foreground" data-testid="lp-composer-notice">{notice}</p> : null}
       </PopoverContent>
     </Popover>
   );

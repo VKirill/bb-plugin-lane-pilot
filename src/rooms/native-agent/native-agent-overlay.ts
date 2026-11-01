@@ -185,8 +185,8 @@ export function isLanePmAgent(agentId: string): boolean {
   return PM_AGENT_IDS.has(nativeAgentName(agentId));
 }
 
-/** Sessions Lane Pilot runs itself for its own work: the owner does not pick them and they never schedule anything. */
-const INTERNAL_AGENT_IDS = new Set(["project-onboarder", "browser-qa"]);
+/** Sessions Lane Pilot runs itself for its own work: the owner does not pick them and they never schedule anything. The lead («Штурман») is one since 0.1.463: the panel opens its chat, the tick runs it. */
+const INTERNAL_AGENT_IDS = new Set(["project-onboarder", "browser-qa", LEAD_ID]);
 
 export function isInternalAgent(agentId: string): boolean {
   return INTERNAL_AGENT_IDS.has(nativeAgentName(agentId));

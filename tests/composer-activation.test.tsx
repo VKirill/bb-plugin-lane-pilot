@@ -9,6 +9,7 @@ import { requestArchitectLaunch, takeArchitectLaunch } from "../src/rooms/workfl
 const hiddenData = vi.hoisted(() => ({ value: null as null | { token: string } }));
 const installStarts = vi.hoisted(() => [] as string[]);
 const running = vi.hoisted(() => ({ value: false }));
+const picked = vi.hoisted(() => ({ providerId: "claude-code", model: "claude-opus-5-5[1m]" }));
 const prepared: string[] = [];
 const switches: Array<{ threadId: string; agentId: string | null }> = [];
 vi.mock("@get-bb/plugin-sdk/app", async (original) => {
@@ -17,7 +18,7 @@ vi.mock("@get-bb/plugin-sdk/app", async (original) => {
     ...sdk,
     useComposer: () => { const view = sdk.useComposer(); return { ...(running.value ? { ...view, isRunning: true } : view), experimental_vkSetDispatchData: (data: null | { token: string }) => { hiddenData.value = data; } }; },
     experimental_useComposerSelection: () => ({
-      status: "ready", scope: { kind: "new-thread", projectId: "p1" }, projectId: "p1", providerId: "claude-code", model: "claude-opus-5-5[1m]", reasoningLevel: "medium",
+      status: "ready", scope: { kind: "new-thread", projectId: "p1" }, projectId: "p1", providerId: picked.providerId, model: picked.model, reasoningLevel: "medium",
       environment: { kind: "provisioning", type: "provider", environmentProviderId: "project-checkout", machine: { type: "existing", hostId: "host_a" } },
       environmentRequest: { type: "provider" }, environmentProvenance: { projectId: "p1", sectionId: null },
     }),
@@ -32,7 +33,7 @@ async function mountComposer(input: {
     bindingStatus: "resolved" | "setup_required" | null;
     projects: Array<{ id: string; name: string }>;
     compiledMainAgent?: "supported" | "none";
-    mainAgents?: Array<{ id: string; description: string; custom?: boolean; kind?: "coordinator" | "specialist" | "internal" }>;
+    mainAgents?: Array<{ id: string; description: string; custom?: boolean; kind?: "coordinator" | "specialist" | "internal"; domain?: string }>;
     pluginRole?: string | null;
     threadStatus?: string | null;
     liveRun?: { threadId: string; runId: string } | null;
@@ -84,6 +85,7 @@ async function mountComposer(input: {
 }
 
 afterEach(() => {
+  picked.providerId = "claude-code"; picked.model = "claude-opus-5-5[1m]";
   cleanup();
   setLocaleOverride(null);
   hiddenData.value = null;
@@ -226,6 +228,30 @@ describe("Enable Lane Pilot composer action", () => {
     slot.lifecycle.unmount();
   });
 
+  it("lets go of a new chat when the person changes the provider or model after Lane Pilot was turned on", async () => {
+    const slot = await mountComposer({
+      projectId: "proj_a",
+      threadId: null,
+      scope: { kind: "new-thread", projectId: "proj_a" },
+      context: { bindingStatus: "resolved", projects: [{ id: "proj_a", name: "Alpha" }] },
+    });
+    fireEvent.click(await slot.findByRole("button", { name: "Lane Pilot / agent" }));
+    await slot.findByTestId("activation-popover");
+    fireEvent.click(slot.getByRole("switch", { name: "Lane Pilot" }));
+    await waitFor(() => expect(hiddenData.value).toEqual({ token: "11111111-1111-1111-1111-111111111111" }));
+    expect(getPendingNativeAgent()).not.toBeNull();
+    // The person picks Codex in BB's own picker: the composer re-renders with the new selection (owner's rule 2026-11-01, 0.1.463).
+    picked.providerId = "codex"; picked.model = "gpt-6-codex";
+    fireEvent.click(slot.getByRole("button", { name: "Lane Pilot" }));
+    await waitFor(() => expect(hiddenData.value).toBeNull());
+    expect(getPendingNativeAgent()).toBeNull();
+    fireEvent.click(await slot.findByRole("button", { name: "Lane Pilot / agent" }));
+    await slot.findByTestId("activation-popover");
+    expect(slot.getByRole("switch", { name: "Lane Pilot" }).getAttribute("aria-checked")).toBe("false");
+    expect(slot.getByTestId("lp-composer-notice").textContent).toMatch(/changed the model/);
+    slot.lifecycle.unmount();
+  });
+
   it("starts a new chat with Lane Pilot on and the project's main agent, and stays off once turned off", async () => {
     const slot = await mountComposer({
       projectId: "proj_a",
@@ -332,6 +358,39 @@ describe("Enable Lane Pilot composer action", () => {
     expect(slot.queryByText("Development coordinator")).toBeNull();
     expect(slot.queryByText("Project onboarding")).toBeNull();
     expect(slot.queryByText("Lane Pilot development orchestrator")).toBeNull();
+    slot.lifecycle.unmount();
+  });
+
+  it("groups the agents into sections a person scrolls, not one section per agent (0.1.463)", async () => {
+    const slot = await mountComposer({
+      projectId: "proj_a",
+      threadId: null,
+      scope: { kind: "new-thread", projectId: "proj_a" },
+      context: {
+        bindingStatus: "resolved",
+        projects: [{ id: "proj_a", name: "Alpha" }],
+        mainAgents: [
+          { id: "my-design", description: "My designer", custom: true, kind: "specialist", domain: "design" },
+          { id: "copy-lead", description: "Lane Pilot copy lead", kind: "specialist", domain: "copy" },
+          { id: "my-seo", description: "My SEO", custom: true, kind: "specialist", domain: "seo" },
+          { id: "my-adviser", description: "Adviser", custom: true, kind: "specialist", domain: "research" },
+          { id: "memory-helper", description: "Memory helper", custom: true, kind: "specialist", domain: "lanepilot" },
+          { id: "my-video", description: "Video agent", custom: true, kind: "specialist" },
+          { id: "lead", description: "Shturman (the lead)", kind: "internal" },
+        ],
+      },
+    });
+    fireEvent.click(await slot.findByRole("button", { name: "Lane Pilot / agent" }));
+    await slot.findByTestId("activation-popover");
+    fireEvent.click(slot.getByRole("combobox", { name: "Agent" }));
+    // Section label first, then its agents; design and copy share «Content», SEO and research share «Marketing and research».
+    expect(slot.getAllByRole("group").map((group) => group.textContent)).toEqual([
+      "ContentMy designerCopy editor",
+      "Marketing and researchMy SEOAdviser",
+      "Lane PilotMemory helper",
+      "GeneralVideo agent",
+    ]);
+    expect(slot.queryByText("Shturman (the lead)")).toBeNull();
     slot.lifecycle.unmount();
   });
 

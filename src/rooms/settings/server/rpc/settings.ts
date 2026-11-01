@@ -236,7 +236,7 @@ export function settingsRpc(ctx: ServerCore, services: Services) {
         compiledMainAgent: detectCompiledMainAgentCapability(
           (bb as { agents?: { experimental_vkCompiledMainAgent?: unknown } }).agents ?? {},
         ),
-        mainAgents: (await services.listedAgentProfiles()).map(pickableAgent),
+        mainAgents: (await services.listedAgentProfiles({ pickable: true })).map(pickableAgent),
         lastWriterTrace: (() => {
           for (const run of listed) {
             for (const attempt of [...run.attempts].reverse()) {

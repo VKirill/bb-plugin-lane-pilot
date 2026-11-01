@@ -8,7 +8,7 @@ export { employeeRoleLines, recordRoleLine, roleLinesKey, withRoleLines } from "
 export type { EmployeePlace } from "./employee-place";
 export { agentPickerLabel } from "./agent-display";
 export { applyResourceMode, collectAgentInventory } from "./agent-inventory";
-export { MAIN_AGENT_ID, MAIN_AGENT_PROFILE_IDS, agentKind, isStockProfileId, compileEffectiveMainAgent, compileMainAgentProfile, detectCompiledMainAgentCapability, parseOwnedAgents } from "./agent-profile";
+export { MAIN_AGENT_ID, MAIN_AGENT_PROFILE_IDS, UNLISTED_STOCK_IDS, agentKind, isStockProfileId, compileEffectiveMainAgent, compileMainAgentProfile, detectCompiledMainAgentCapability, parseOwnedAgents } from "./agent-profile";
 export type { AgentKind, CustomAgentMeta } from "./agent-profile";
 export { agentListItem, createAgentInputSchema, isCustomAgentId, isReservedAgentId, parseAgentFile, pickableAgent, updateAgentInputSchema } from "./custom-agent";
 export type { AgentFailure, AgentListItem } from "./custom-agent";

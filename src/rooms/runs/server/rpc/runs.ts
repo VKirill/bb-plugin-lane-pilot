@@ -322,7 +322,7 @@ export function runsRpc(ctx: ServerCore, services: Services) {
         const thread = await bb.sdk.threads.get({ threadId }).catch(() => null);
         threadStatus = stringAt(thread, "status");
       }
-      const mainAgents = (await services.listedAgentProfiles()).map(pickableAgent);
+      const mainAgents = (await services.listedAgentProfiles({ pickable: true })).map(pickableAgent);
       return {
         projectId,
         projects,

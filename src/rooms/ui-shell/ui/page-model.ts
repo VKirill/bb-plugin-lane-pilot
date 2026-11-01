@@ -66,7 +66,7 @@ export type ScreenPayload = {
   };
   qaHosts?: Array<{ id: string; name: string; status: string; connected: boolean }>;
   compiledMainAgent?: "supported" | "none";
-  mainAgents?: Array<{ id: string; description: string }>;
+  mainAgents?: Array<{ id: string; description: string; kind?: string }>;
   lastWriterTrace?: {
     providerId: string;
     model: string;
