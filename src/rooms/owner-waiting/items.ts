@@ -71,7 +71,7 @@ function learningItems(db: Db): OwnerItem[] {
     key: `learning:${row.id}`, source: "learning", kind: `learning_${row.kind}`, projectId: row.project_id,
     what: clip(row.text, 300), why: "Вы сказали это в чате. Если принять, все проекты будут так делать; если отклонить, это забудется. Решить можете только вы.",
     since: row.created_at, wake: false, evidence: [{ kind: "text", ref: clip(row.evidence, 200) }],
-    actions: (["accept", "reject"] as const).map((action) => ({ id: action, label: action === "accept" ? "Принять" : "Отклонить", cli: `bb lane-pilot learning ${action} ${row.id}` })),
+    actions: (["accept", "reject"] as const).map((action) => ({ id: action, label: action === "accept" ? "Принять" : "Отклонить", cli: `bb lane-pilot learning ${action} ${row.id}`, rpc: { method: "learning_decide", input: { id: row.id, action } } })),
   }));
 }
 

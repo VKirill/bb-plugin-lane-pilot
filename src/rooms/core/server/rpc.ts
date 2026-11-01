@@ -46,6 +46,7 @@ import { createWorkflowArchitect } from "../../workflow/server";
 import { architectStartRpc } from "../../workflow/server";
 import { journalRpcHandlers, timeRpcHandlers } from "./rpc-timing";
 import { anamnesisFor } from "../../anamnesis";
+import { learningFor } from "../../learning";
 import { worldRpc } from "../../world/server";
 
 /** One handler object from the five groups; each group carries the exact contract keys it implements. */
@@ -99,6 +100,16 @@ export function registerRpc(ctx: ServerCore, services: Services) {
       await recordTaskWord(ctx.bb.storage.kv as never, runId, taskFamily(taskId), decision, text);
       answerTaskWord(ctx.db, runId, taskFamily(taskId), decision, text, "screen");
       return { ok: true as const };
+    },
+    learning_decide: async ({ id, action }: { id: string; action: "accept" | "reject" | "drop" }) => {
+      try {
+        const learning = learningFor(ctx);
+        if (!learning) return { ok: false as const, reason: "the learning room did not start" };
+        const { item } = await learning.decisions[action](id);
+        return { ok: true as const, item };
+      } catch (cause) {
+        return { ok: false as const, reason: cause instanceof Error ? cause.message : String(cause) };
+      }
     },
     ...cockpitRpc(ctx, services),
     world_version: async () => ({ version: worldVersion() }),
