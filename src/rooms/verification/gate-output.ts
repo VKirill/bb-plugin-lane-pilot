@@ -75,8 +75,8 @@ export function extractCacheHits(output: string): CacheReport {
 export function cacheHitsNote(report: CacheReport, max = 12): string {
   if (!report.hits.length) return "";
   const shown = report.hits.slice(0, max).join(", ");
-  const rest = report.hits.length > max ? ` and ${report.hits.length - max} more` : "";
-  return `Cache hits (turbo replayed these results instead of running them): ${shown}${rest}${report.summary ? ` (${report.summary})` : ""}.`;
+  const rest = report.hits.length > max ? ` и ещё ${report.hits.length - max}` : "";
+  return `Из кеша (turbo подставил старые результаты вместо запуска): ${shown}${rest}${report.summary ? ` (${report.summary})` : ""}.`;
 }
 
 /**

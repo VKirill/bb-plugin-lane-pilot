@@ -109,7 +109,7 @@ describe("which merged task a red gate is pinned on", () => {
     expect(toWriters()).toEqual([]);
     expect(toPm()).toEqual([]);
     const row = db.prepare("SELECT what, why FROM lane_pilot_owner_item WHERE key LIKE 'gate-red:run-1:%'").get() as { what: string; why: string };
-    expect(row.why).toContain("pre-existing");
+    expect(row.why).toContain("были сломаны раньше");
     expect(row.what).toContain("@acme/admin: tests/admin.test.ts");
   });
 

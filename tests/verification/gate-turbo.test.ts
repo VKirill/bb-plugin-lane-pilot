@@ -75,7 +75,7 @@ describe("the gate report names the workspaces turbo answered from its cache", (
     const pm = `${row.what} ${row.why}`;
     expect(pm).toContain("`node gate.js`");
     expect(pm).not.toContain("--force");
-    expect(pm).toContain("Cache hits");
+    expect(pm).toContain("Из кеша");
     expect(pm).toContain("@acme/marketing#test");
     expect(pm).not.toContain("@acme/api#test");
   });

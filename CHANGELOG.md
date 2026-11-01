@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.1.457
+
+- **The integration gate's analysis reads in Russian too.** The title of a red gate was Russian since 0.1.456, the reason under it still said «Could not unambiguously identify culprit», «pre-existing», «no failing test listed», «Cache hits (turbo replayed…)». `src/rooms/verification/server/integration-gate.ts` (the five why variants and the pre-existing note) and `cacheHitsNote` in `gate-output.ts` now say it in the owner's words; the failing test names, the commands and the log path stay as they are.
+
 ## 0.1.456
 
 - **«Ждут владельца» speaks to a person, not a programmer.** The owner read the screen and understood nothing (2026-11-01). Every row now answers four questions in plain Russian («вы»): what happened, why it is his, what to do, and the technical part (when, key, where to look, commands) folded under «Подробности». The titles of every source lost their ids (runs, ticks, branches, task ids move into `evidence`) and their English: the lead's rows (`src/rooms/lead/server/tick.ts`, `service.ts`), phases, writers' questions, workflow ends and questions, schedules (`src/rooms/schedule/outcome.ts`), walls, the integration gate, the run goal, outages, the learning row. The board names every source in words, says an attempt's state in words, and folds the red attempts of the day. The lead's brief asks for proposals written for a non-technical reader. `tests/owner-waiting/plain-words.test.ts` keeps ids out of titles. docs/owner-waiting.md «The words».

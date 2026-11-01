@@ -582,7 +582,7 @@ export class IntegrationGateRunner {
     }
 
     const preexistingNote = attribution.preexisting.length
-      ? ` Pre-existing, not caused by this batch (they also fail on the base commit): ${attribution.preexisting.map(testLabel).join(", ")}.`
+      ? ` Были сломаны и раньше, не этой партией (падают и на базовом коммите): ${attribution.preexisting.map(testLabel).join(", ")}.`
       : "";
 
     // Reset counts for the next cycle
@@ -635,14 +635,14 @@ export class IntegrationGateRunner {
     const tasks = tasksToCheck.map((task) => task.taskId).join(", ");
     const allPreexisting = attribution.strict && failingTests.length > 0 && attribution.remaining.length === 0;
     const why = !failingTests.length && unhandled
-      ? `The run exited ${activeExitCode} with no failing test listed: it reported an unhandled error outside any test (the tests themselves may be green): ${unhandled}.${preexistingNote}`
+      ? `Проверка завершилась с кодом ${activeExitCode}, но ни один тест не назван упавшим: ошибка случилась вне тестов (сами тесты могут быть зелёными): ${unhandled}.${preexistingNote}`
       : input.live
-      ? `This folder has no git, so no culprit can be searched${tasks ? ` (tasks since the last gate: ${tasks})` : ""}.`
+      ? `В этой папке нет git, поэтому виноватого искать негде${tasks ? ` (задачи с прошлой проверки: ${tasks})` : ""}.`
       : allPreexisting
-        ? `All ${failingTests.length} failing tests also fail on the base from before this batch (pre-existing), so no merged task is to blame.`
+        ? `Все ${failingTests.length} упавших тестов падают и на базе до этой партии (были сломаны раньше), поэтому ни одна слитая задача не виновата.`
         : attribution.strict && attribution.candidates.length === 0
-          ? `No task merged in this batch touched the failing tests or their workspaces, so none is to blame.${preexistingNote}`
-          : `Could not unambiguously identify culprit.${preexistingNote}`;
+          ? `Ни одна задача этой партии не трогала упавшие тесты или их папки, поэтому виноватых среди них нет.${preexistingNote}`
+          : `Виноватого однозначно не определить.${preexistingNote}`;
     const timeoutNote = repeatedTimeouts ? " (дважды не уложились во время, в том числе при перепроверке)" : "";
     const failingList = failingTests.length ? ` Упавшие тесты${timeoutNote}: ${failingTests.map(testLabel).join(", ")}.` : "";
     const cacheSuffix = cacheNote ? ` ${cacheNote}` : "";

@@ -437,7 +437,7 @@ describe("IntegrationGateRunner with mock core & services", () => {
       expect(sentMessages.find((m) => m.threadId === "pm-thread-999")).toBeUndefined();
       const row = ownerRow();
       expect(row.kind).toBe("gate_red");
-      expect(row.why).toContain("no git");
+      expect(row.why).toContain("нет git");
       expect(row.why).toContain("t1, t2");
     });
   });
@@ -581,10 +581,10 @@ AssertionError: expected 1 to be 2
 
       expect(sentMessages.find((m) => m.threadId === "pm-thread-999")).toBeUndefined();
       const why = ownerRow().why;
-      expect(why).toContain("no failing test listed");
-      expect(why).toContain("unhandled error outside any test");
+      expect(why).toContain("ни один тест не назван упавшим");
+      expect(why).toContain("вне тестов");
       expect(why).toContain("Error: db pool closed twice | ❯ Pool.close src/db/pool.ts:41:11");
-      expect(why).not.toContain("Could not unambiguously identify culprit.");
+      expect(why).not.toContain("Виноватого однозначно не определить");
     });
 
     it("a recheck that fails with an assertion error leads to normal culprit flow", async () => {
