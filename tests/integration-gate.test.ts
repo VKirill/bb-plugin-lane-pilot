@@ -530,6 +530,75 @@ describe("IntegrationGateRunner with mock core & services", () => {
       runner.noteMergedTask(merged("b2", ["src/c.ts"]), scopeB());
       expect((await runner.maybeRunGate({ runId: "run-2", projectId: "proj-2", pmThreadId: "pm-2", basePath: dirB, configHostId: "host-1", trigger: "merge" })).ran).toBe(true);
     });
+
+    it("[Astra F-007 residual] a drain parked while another scope's gate was in flight runs when that gate finishes, with no new merge", async () => {
+      const gateCalls: string[] = [];
+      let releaseA!: () => void;
+      const gateA = new Promise<void>((resolve) => { releaseA = resolve; });
+      const core = { ...mockCore, host: { call: async (method: string, input: { basePath?: string }) => {
+        if (method === "gateRun") {
+          gateCalls.push(String(input.basePath));
+          if (input.basePath === dirA) await gateA; // scope A's gate hangs here until the test lets it go
+          return { hostId: "host-1", exitCode: 0, stdout: "", stderr: "", head: "sha" };
+        }
+        return (hostHandlers as unknown as Record<string, (input: unknown) => Promise<unknown>>)[method]?.(input);
+      } } } as unknown as ServerCore;
+      for (const projectId of ["proj-1", "proj-2"]) saveProjectSetting(db, projectId, "integration.gate_command", 'node -e "process.exit(0)"');
+      const runner = new IntegrationGateRunner(core, mockServices);
+      runner.noteMergedTask(merged("a1", ["src/a.ts"]), scopeA());
+      runner.noteMergedTask(merged("b1", ["src/b.ts"]), scopeB());
+
+      const runA = runner.maybeRunGate({ runId: "run-1", projectId: "proj-1", pmThreadId: "pm-1", basePath: dirA, configHostId: "host-1", trigger: "drain" });
+      for (let i = 0; i < 400 && !gateCalls.includes(dirA); i++) await new Promise((resolve) => setTimeout(resolve, 5));
+      // A's gate is in flight: B's drain is parked and gets no run of its own yet.
+      const parked = await runner.maybeRunGate({ runId: "run-2", projectId: "proj-2", pmThreadId: "pm-2", basePath: dirB, configHostId: "host-1", trigger: "drain" });
+      expect(parked).toEqual({ ran: false });
+      expect(gateCalls).toEqual([dirA]);
+
+      releaseA();
+      expect(await runA).toMatchObject({ ran: true, passed: true });
+      for (let i = 0; i < 400 && !gateCalls.includes(dirB); i++) await new Promise((resolve) => setTimeout(resolve, 5));
+      expect(gateCalls).toEqual([dirA, dirB]);
+      expect(runner.getPendingMergeCount()).toBe(0);
+    });
+  });
+
+  it("[Gemini F-006.3] a green gate closes the run's gate-red rows on the owner's list — on a plain pass and on a pass after the recheck", async () => {
+    const redRows = (state: "open" | "closed") => db.prepare("SELECT key, closed_by FROM lane_pilot_owner_item WHERE key LIKE 'gate-red:run-1:%' AND state=?").all(state) as Array<{ key: string; closed_by: string | null }>;
+    const timeoutErr = " FAIL  tests/timeout.test.ts\nError: Test timed out in 5000ms.";
+    const answers: Record<number, { exitCode: number; stdout: string; stderr: string }> = {
+      1: { exitCode: 1, stdout: "", stderr: "Error: db pool closed twice\n ❯ Pool.close src/db/pool.ts:41:11" },
+      2: { exitCode: 0, stdout: "", stderr: "" },
+      3: { exitCode: 1, stdout: "", stderr: timeoutErr },
+      4: { exitCode: 0, stdout: "passed", stderr: "" },
+    };
+    let calls = 0;
+    const core = { ...mockCore, host: { call: async (method: string, input: never) => {
+      if (method === "gateRun") return { hostId: "host-1", head: "sha", ...answers[Math.min(++calls, 4)] };
+      if (method === "readBoundedFile") return { content: "" };
+      return (hostHandlers as unknown as Record<string, (input: unknown) => Promise<unknown>>)[method]?.(input);
+    } } } as unknown as ServerCore;
+    saveProjectSetting(db, "proj-1", "integration.gate_command", "npx vitest run");
+    db.prepare(`INSERT INTO lane_pilot_task (id, run_id, kind, contract_json, created_at) VALUES ('task-1', 'run-1', 'bb', '{}', 0)`).run();
+    const runner = new IntegrationGateRunner(core, mockServices);
+    const merge = (sha: string, produced: string[]) => runner.noteMergedTask({ taskId: "task-1", commitSha: sha, threadId: "thr-1", attemptId: `att-${sha}`, produced });
+    const gate = () => runner.maybeRunGate({ runId: "run-1", projectId: "proj-1", pmThreadId: "pm-1", basePath: "/tmp/project", configHostId: "host-1", trigger: "drain" });
+
+    // The red episode posts its row; the plain pass after it closes it as «gate green».
+    merge("sha-1", ["src/a.ts"]);
+    expect(await gate()).toMatchObject({ ran: true, passed: false });
+    expect(redRows("open").length).toBe(1);
+    merge("sha-2", ["src/b.ts"]);
+    expect(await gate()).toMatchObject({ ran: true, passed: true });
+    expect(redRows("open")).toEqual([]);
+    expect(redRows("closed").every((row) => row.closed_by === "gate green")).toBe(true);
+
+    // A pass that comes only from the timeout recheck clears the episode's rows too.
+    db.prepare("INSERT INTO lane_pilot_owner_item(key,source,kind,project_id,what,why,state,created_at) VALUES ('gate-red:run-1:1717000000000','integration-gate','gate_red','proj-1','red','red','open',1)").run();
+    merge("sha-3", ["src/c.ts"]);
+    expect(await gate()).toMatchObject({ ran: true, passed: true });
+    expect(calls).toBe(4);
+    expect(db.prepare("SELECT state, closed_by FROM lane_pilot_owner_item WHERE key='gate-red:run-1:1717000000000'").get()).toEqual({ state: "closed", closed_by: "gate green" });
   });
 
   describe("F-009: a lone task is no culprit without proof of causality", () => {

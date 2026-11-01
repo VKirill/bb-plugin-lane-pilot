@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
+import { atLeastHigh } from "../src/rooms/lead/logic";
 import { landingWordAsked, ownerWordsMode, ownerWordsOn } from "../src/rooms/tasks";
 
 // SMA person steps (map 481d75c2: Authorized by a person, Issue gate, Person accepts the wave, Plan row awaits a word): the owner asked
@@ -27,5 +28,19 @@ describe("the owner's word by default", () => {
     expect(landingWordAsked({ "owner.words": "risky" }, "high")).toBe(true);
     process.env.LANE_PILOT_OWNER_WORDS_DEFAULT = "off";
     expect(landingWordAsked({}, "high")).toBe(false);
+  });
+
+  // [SWE-2 F-003] `critical` is `high` and more, never less: it waits for the word under `risky` and counts as high wherever the
+  // code asks atLeastHigh.
+  it("treats a critical risk like a high one: the word is asked, and atLeastHigh holds", () => {
+    delete process.env.LANE_PILOT_OWNER_WORDS_DEFAULT;
+    expect(landingWordAsked({}, "critical")).toBe(true);
+    expect(landingWordAsked({ "owner.words": "risky" }, "critical")).toBe(true);
+    expect(landingWordAsked({ "owner.words": "off" }, "critical")).toBe(false);
+    expect(atLeastHigh("critical")).toBe(true);
+    expect(atLeastHigh("high")).toBe(true);
+    expect(atLeastHigh("medium")).toBe(false);
+    expect(atLeastHigh("low")).toBe(false);
+    expect(atLeastHigh(null)).toBe(false);
   });
 });
