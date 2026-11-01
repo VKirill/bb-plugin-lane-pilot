@@ -22,7 +22,11 @@ export function createWriterHost(ctx: ServerCore) {
       // Devin listing only «Agent default» (2026-10-30/31).
       const hosts = mapListedQaHosts(await (bb.sdk as { hosts?: { list?: () => Promise<unknown> } }).hosts?.list?.().catch(() => []) ?? []);
       const preferred = parseLanePilotDefaults(await bb.storage.kv.get(LP_DEFAULTS_KEY)).qaHostId;
-      const catalog = await within(modelCatalogOf(ctx).get(), CATALOG_WAIT_MS).catch(() => null);
+      // A read that does not answer in time falls back to the last snapshot, so the screen and a save made a minute later name the
+      // same machine; with no snapshot at all the first connected one answers (a save judged on another machine's thinner Devin
+      // catalog refused SWE-2 while the row showed it, 2026-10-31).
+      const reader = modelCatalogOf(ctx);
+      const catalog = await within(reader.get(), CATALOG_WAIT_MS).catch(() => reader.peek());
       const offered = (hostId: string) => (catalog?.providers ?? []).reduce((sum, provider) => sum
         + (provider.hostIds.includes(hostId) ? 1000 : 0) + provider.models.filter((model) => model.hostIds.includes(hostId)).length, 0);
       const richest = hosts.filter((row) => row.connected).sort((a, b) => offered(b.id) - offered(a.id) || Number(b.id === preferred) - Number(a.id === preferred))[0];

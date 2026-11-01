@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
 import { createWriterHost } from "../src/rooms/writer/server";
 
@@ -25,6 +25,7 @@ const ctx = {
 };
 
 describe("global settings host", () => {
+  afterEach(() => { vi.useRealTimers(); });
   it("routes the pickers to the machine offering the most providers and models", async () => {
     const host = createWriterHost(ctx as never);
     expect(await host.resolveProjectWriterHost({ projectId: GLOBAL_SETTINGS_PROJECT_ID })).toMatchObject({ status: "resolved", hostId: "host_mini" });
@@ -34,5 +35,23 @@ describe("global settings host", () => {
     const host = createWriterHost(ctx as never);
     expect(await host.resolveProjectWriterHost({ projectId: GLOBAL_SETTINGS_PROJECT_ID, selected: { hostId: "host_macbook", path: "" } }))
       .toMatchObject({ hostId: "host_macbook" });
+  });
+
+  it("keeps the last snapshot's machine when the catalog read does not answer in time", async () => {
+    // The screen named the Mac mini a minute ago; a save whose catalog refresh hangs must not fall back to the first connected machine.
+    vi.useFakeTimers();
+    let hang = false;
+    const slow = {
+      ...ctx,
+      bb: { ...ctx.bb, sdk: { ...ctx.bb.sdk, providers: { ...ctx.bb.sdk.providers,
+        models: (args: { hostId: string; providerId: string }) => hang ? new Promise<never>(() => undefined) : ctx.bb.sdk.providers.models(args) } } },
+    };
+    const host = createWriterHost(slow as never);
+    expect(await host.resolveProjectWriterHost({ projectId: GLOBAL_SETTINGS_PROJECT_ID })).toMatchObject({ hostId: "host_mini" });
+    hang = true;
+    vi.advanceTimersByTime(61_000); // the minute's snapshot is stale: the next ask reads again, and the read hangs
+    const pending = host.resolveProjectWriterHost({ projectId: GLOBAL_SETTINGS_PROJECT_ID });
+    await vi.advanceTimersByTimeAsync(6_500);
+    expect(await pending).toMatchObject({ hostId: "host_mini" });
   });
 });

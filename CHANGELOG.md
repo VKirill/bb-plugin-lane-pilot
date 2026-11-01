@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.1.444
+
+- **A global model pick is judged on the machine the row showed.** The global role table names one machine's catalog for its pickers: the one offering the most providers and models. The save re-read that catalog with a six-second limit and, when the read did not answer in time, fell back to the first connected machine, whose Devin listed only «Agent default» (the MacBook, 2026-10-30/31): the owner picked SWE-2 in a row that offered it, the hub answered «not in the live catalog», and the row went back to the stored writer (Cursor Grok 4.6, the last accepted pick). A late read now falls back to the last snapshot, so the screen and the save name the same machine. A refused writer pick is logged with its reason (`save_writer_selection refused …`): the page shows it once, the log keeps it.
+
 ## 0.1.443
 
 - **No event of the plugin's own is sent into a PM chat.** A PM chat gets only what its run needs to go on: task results, writers' questions, permits, the owner's orders, the end of a workflow or council it started. The integration gate no longer messages the PM: a red gate with no culprit (pre-existing failures, the machine, a gate that ran no test, a repeat of the same red) is one row on the owner's list per episode plus a log line, and the culprit's fix turn goes to the writer alone, its fix coming back as the task's result (SelfyStudio 2026-10-31: the gate ran five minutes after the run was accepted and woke the finished PM two hours after its last turn; the PM re-ran the whole suite). A failed run goal is a row on the owner's list, not a warm-chat notice; a merge recovered after a reload is logged only; the weekly rule-promotion digest to PM chats is gone (the morning line and `bb lane-pilot rules promote` keep the candidates).

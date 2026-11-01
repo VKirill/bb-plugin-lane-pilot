@@ -10,11 +10,13 @@ export function selectionsRpc(ctx: ServerCore, services: Services) {
   const { bb, db, host } = ctx;
   return {
     save_writer_selection: async ({ projectId, sectionId, threadId, selectedBinding, providerId, model: modelId, reasoningLevel, serviceTier, expectedVersions }) => {
-      const reject = (code:"invalid_choice"|"incompatible_setting"|"setup_required"|"writer_binding_ambiguous"|"writer_host_offline"|"catalog_unavailable", key:string, message:string) => ({
-        ok:false, conflict:false, values:{}, versions:{}, validation:{ code, key, params:[key, message] },
-      });
+      // A refusal is logged with its reason: the page shows it once, and a later look at why a pick «did not stick» has only the log.
+      const reject = (code:"invalid_choice"|"incompatible_setting"|"setup_required"|"writer_binding_ambiguous"|"writer_host_offline"|"catalog_unavailable", key:string, message:string) => {
+        bb.log.warn(`save_writer_selection refused for ${projectId}${sectionId ? `/${sectionId}` : ""}: ${providerId}/${modelId} ${reasoningLevel}: ${code} ${key} ${message}`);
+        return { ok:false, conflict:false, values:{}, versions:{}, validation:{ code, key, params:[key, message] } };
+      };
       const catalogHost = await services.selectionCatalogHost(projectId, threadId, selectedBinding);
-      if (!catalogHost.ok) return { ok:false, conflict:false, values:{}, versions:{}, validation:catalogHost.validation };
+      if (!catalogHost.ok) return reject(catalogHost.validation.code, catalogHost.validation.key, catalogHost.validation.params[1] ?? "");
       const catalogHostId = catalogHost.hostId;
       let providers:Awaited<ReturnType<typeof bb.sdk.providers.list>>;
       let catalog:Awaited<ReturnType<typeof bb.sdk.providers.models>>;
