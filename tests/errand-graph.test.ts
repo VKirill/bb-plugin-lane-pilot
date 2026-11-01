@@ -82,11 +82,17 @@ describe("the errand graph", () => {
 
     // A read-only check of our own MagicSEO plugin's screens in BB (a hub errand of 2026-10-30): the router gives it api-recon at 61.
     const pluginCheck = readFileSync(new URL("./fixtures/errand-plugin-check.txt", import.meta.url), "utf8");
-    for (const [task, authorized] of [[recon, true], [recon.replace("https://lk.magicseo.ru/", "the MagicSEO cabinet"), false], [TASK, false], [pluginCheck, false]] as const) {
+    for (const [task, authorized] of [[recon.replace("https://lk.magicseo.ru/", "the MagicSEO cabinet"), false], [TASK, false], [pluginCheck, false]] as const) {
       const other = world();
       expect(await other.call("lane_pilot_errand", { task, authorized })).not.toHaveProperty("workflow");
       expect(other.runs()).toEqual([expect.objectContaining({ workflow_id: "errand" })]);
     }
+
+    // authorized no longer blocks a published match (since 0.1.477): the graph's own forms ask before the irreversible step.
+    const authorizedRun = world();
+    const authorized = await authorizedRun.call("lane_pilot_errand", { task: recon, authorized: true, accounts: ["MAGICSEO_LOGIN"] });
+    expect(authorized).toMatchObject({ workflow: "api-recon", state: "running" });
+    expect(authorizedRun.runs()).toEqual([expect.objectContaining({ workflow_id: "api-recon" })]);
   });
 
   it("is a built-in starter graph (offered to no one) that passes the validator and runs accounts, work, emit", () => {
