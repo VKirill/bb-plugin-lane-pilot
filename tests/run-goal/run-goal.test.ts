@@ -169,6 +169,49 @@ describe("the sweep", () => {
     expect((await runRunGoalCli(api, ["nope"])).exitCode).toBe(1);
     expect((await runRunGoalCli(api, [])).exitCode).toBe(1);
   });
+
+  // [SWE-2 F-006 remainder] a `failed` verdict is re-checked only once a later run of the same project has closed after it:
+  // that is when a fix could have landed, and a now-green check lifts the owner's row by itself.
+  it("re-checks a failed goal after a later run of the project closed, and a green recheck closes the row", async () => {
+    const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
+    harness.sdk.stub("threads.get", async () => ({ updatedAt: Date.now() }));
+    harness.sdk.stub("threads.send", async () => undefined);
+    const db = openDatabase(bb);
+    createRun(db, "run1", "P", "bb", "/repo");
+    for (const id of ["t1", "t2"]) {
+      createTask(db, { id, runId: "run1", kind: "bb", contract: {} as never });
+      createAttempt(db, { id: `${id}-a1`, runId: "run1", taskId: id });
+      transitionAttempt(db, `${id}-a1`, "spawn_requested");
+      transitionAttempt(db, `${id}-a1`, "running", { threadId: `thr_${id}` });
+      transitionAttempt(db, `${id}-a1`, "accepted");
+    }
+    createRun(db, "run2", "P", "bb", "/repo");
+    createTask(db, { id: "t3", runId: "run2", kind: "bb", contract: {} as never });
+    const calls: Array<{ runId?: string }> = [];
+    const regression = { run: async (options: { runId?: string }) => {
+      calls.push(options);
+      const green = calls.length > 1;
+      return { projects: [{ head: "f".repeat(40), tasks: [{ taskId: "t1", checks: [{ command: "check t1", state: "green" }] }, { taskId: "t2", checks: [{ command: "check t2", state: green ? "green" : "red" }] }],
+        findings: green ? [] : [{ taskId: "t2", command: "check t2", culpritCommit: "c".repeat(40), culpritTask: "t1" }] }] };
+    } };
+    const ctx = { db, bb, log: () => undefined, isDisposed: () => false };
+    const api = createRunGoal(ctx as never, { regression } as never).runGoal;
+
+    expect((await api.sweep()).map((row) => [row.runId, row.state])).toEqual([["run1", "failed"]]);
+    const failedAt = api.status("run1")!.at;
+    expect(db.prepare("SELECT state FROM lane_pilot_owner_item WHERE key='run-goal:run1'").get()).toEqual({ state: "open" });
+    // The failed verdict is final on its own: nothing closed after it, so the next sweep does not re-check.
+    expect(await api.sweep()).toEqual([]);
+    expect(calls).toHaveLength(1);
+
+    db.prepare("UPDATE lane_pilot_run SET closed_at=? WHERE id='run2'").run(failedAt + 1);
+    expect((await api.sweep()).map((row) => [row.runId, row.state])).toEqual([["run1", "passed"]]);
+    expect(calls).toHaveLength(2);
+    expect(calls[1]).toMatchObject({ runId: "run1" });
+    const row = db.prepare("SELECT state, closed_by FROM lane_pilot_owner_item WHERE key='run-goal:run1'").get() as { state: string; closed_by: string };
+    expect(row.state).toBe("closed");
+    expect(row.closed_by).toMatch(/^run-goal:/);
+  });
 });
 
   it("a partial goal is no message either, and a check that crashed is retried", async () => {

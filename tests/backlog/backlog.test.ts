@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 import { backlogBoard, backlogReadCommand, parseBacklogOutput, parseTodoMeta } from "../../src/rooms/backlog";
 import { createBacklog, runBacklogCli } from "../../src/rooms/backlog/server";
 import { createRun, openDatabase, savePrototypeConfig, setRunThread } from "../../src/rooms/storage/database";
-import { collectOwnerWaiting } from "../../src/rooms/owner-waiting";
+import { collectOwnerWaiting, postOwnerItem } from "../../src/rooms/owner-waiting";
 
 const meta = (id: string, extra: string) => `id: ${id}\ntitle: "Item ${id}"\ncreated: 2026-10-${id.slice(-2)}T10:00:00+02:00\n${extra}\n`;
 
@@ -81,5 +81,30 @@ describe("the scanner", () => {
     expect((await api.scan(now + 27 * 3_600_000))[0]!.offered).toBe("t-02");
     expect((await api.board("P")).issuable.map((item) => item.id)).toEqual(["t-02"]);
     expect((await runBacklogCli(api, [])).exitCode).toBe(1);
+  });
+
+  // [SWE-2 F-004 remainder] an offer whose item is no longer issuable (closed or re-estimated elsewhere) asks a question that
+  // is gone: the next scan closes it as «janitor:not issuable»; an offer whose item is still ready stays.
+  it("closes the open offer of an item that left the issuable board, and keeps one that is still on it", async () => {
+    const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
+    harness.sdk.stub("threads.send", async () => undefined);
+    harness.sdk.stub("threads.getPluginMetadata", async () => ({ role: "pm" }));
+    const db = openDatabase(bb);
+    savePrototypeConfig(db, { projectId: "P", hostId: "h", pmWorkspacePath: "/repo", writerWorkspacePath: "/repo", pmProviderId: "p", pmModel: "m", writerProviderId: "p", writerModel: "m" });
+    createRun(db, "run_cli", "P", "cli", "/repo");
+    setRunThread(db, "run_cli", "thr_pm");
+    let output = ["t-01", "t-02"].map((id) => `__lp_todo__ .agents/todos/items/${id}/meta.yaml\n${meta(id, "status: ready\npriority: high\nestimate: 3")}`).join("");
+    const host = { call: async () => ({ exitCode: 0, stdout: output, stderr: "" }) };
+    const api = createBacklog({ db, bb, host, log: () => undefined, isDisposed: () => false } as never).backlog;
+    const now = Date.now();
+    expect((await api.scan(now))[0]!.offered).toBe("t-01");
+    postOwnerItem(db, { key: "backlog:P:t-02", source: "backlog", kind: "backlog_ready", projectId: "P", what: "В бэклоге готова t-02", why: "w" }, now);
+
+    // t-01 is done on the board: its offer is stale; t-02 is still ready: its offer is not.
+    output = `__lp_todo__ .agents/todos/items/t-02/meta.yaml\n${meta("t-02", "status: ready\npriority: high\nestimate: 3")}__lp_todo__ .agents/todos/items/t-01/meta.yaml\n${meta("t-01", "status: done")}`;
+    await api.scan(now + 3_600_000);
+
+    expect(db.prepare("SELECT state, closed_by FROM lane_pilot_owner_item WHERE key='backlog:P:t-01'").get()).toEqual({ state: "closed", closed_by: "janitor:not issuable" });
+    expect(db.prepare("SELECT state FROM lane_pilot_owner_item WHERE key='backlog:P:t-02'").get()).toEqual({ state: "open" });
   });
 });

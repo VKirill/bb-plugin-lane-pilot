@@ -5,6 +5,8 @@ import { createPhaseDriver } from "../src/rooms/phase/server/driver";
 import { acceptanceKey, acceptanceLines, nextAction, sha256, type Phase, type PhaseRecord } from "../src/rooms/phase/logic";
 import { listParts, savePhase } from "../src/rooms/phase/store";
 import { createRun, openDatabase } from "../src/rooms/storage";
+import { phaseDecisionId } from "../src/rooms/lead/server/surfaces";
+import { isOwnerAnswer } from "../src/rooms/lead/logic";
 
 // The person steps of the SMA map (481d75c2), on by default since 2026-10-29 (owner.words): the context is signed by a person (p1_confirm),
 // the phase package is decided by a person under its key with two decisions (p6_decide, p6_l_useful, p6_l_limits), and a lesson is a draft
@@ -39,6 +41,18 @@ describe("the context signature", () => {
     expect(nextAction(again, new Map()).key).not.toBe(nextAction(signed, new Map()).key);
     const yes = await phases.word({ phaseId: id, turn: "context", decision: "yes", text: "да", by: "owner via screen" });
     expect(yes.stage).toBe("planning");
+  });
+
+  // [SWE-2 N-001] the phase screen sends `by: "owner via screen"`; the exam counts an answer as the owner's only when
+  // isOwnerAnswer says so, so the journal row must carry a spelling it accepts.
+  it("the screen's word is journaled as the owner's own answer", async () => {
+    const { db, phases, id } = await fixture(true);
+    await phases.context({ phaseId: id, ...card });
+    await phases.tick(); // the poke posts the turn on «Ждут владельца» and asks it in the lead's journal
+    await phases.word({ phaseId: id, turn: "context", decision: "yes", text: "да", by: "owner via screen" });
+    const row = db.prepare("SELECT answered_by FROM lane_pilot_decision WHERE id=?").get(phaseDecisionId(id, "context")) as { answered_by: string | null } | undefined;
+    expect(row?.answered_by).toBe("owner via screen");
+    expect(isOwnerAnswer(row?.answered_by)).toBe(true);
   });
 
   it("[sma:p1_confirm] is unsigned by the person's no, and his words go to the next analysis", async () => {
