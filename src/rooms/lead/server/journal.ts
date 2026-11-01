@@ -108,4 +108,4 @@ export function listDecisions(db: Db, filter: { class?: string; surface?: string
 }
 
 export const examRows = (db: Db): ExamRow[] =>
-  db.prepare("SELECT class, risk, judge_verdict, owner_label, predicted_at, answered_at, split FROM lane_pilot_decision WHERE answered_at IS NOT NULL").all() as ExamRow[];
+  db.prepare("SELECT class, risk, judge_verdict, owner_label, predicted_at, answered_at, split, answered_by FROM lane_pilot_decision WHERE answered_at IS NOT NULL").all() as ExamRow[];

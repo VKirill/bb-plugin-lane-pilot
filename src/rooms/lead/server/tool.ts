@@ -82,9 +82,9 @@ export function mountLeadTool(ctx: ServerCore, services: Services): void {
           return json(result);
         }
         case "decide": {
-          const result = lead.decide(input.roadId, input.decision, input.text, "lead-chat");
+          const result = await lead.decide(input.roadId, input.decision, input.text, "lead-chat");
           if (!result.ok) throw new ToolError(result.reason, { code: "lead_refused", retryable: false, sideEffects: "none" });
-          return json({ roadId: result.road.id, state: result.road.state, verdict: result.verdict });
+          return json({ roadId: result.road.id, state: result.road.state, verdict: result.verdict, handover: result.handover });
         }
       }
     },

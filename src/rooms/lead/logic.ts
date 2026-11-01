@@ -14,7 +14,12 @@ export type ExamRow = {
   predicted_at: number | null;
   answered_at: number | null;
   split: string | null;
+  /** Who answered: `owner` (CLI), `screen` (the list's button), `lead-chat` (his word in the lead's chat), `lead` (the lead acted), `agent` (an agent answered for him). */
+  answered_by?: string | null;
 };
+
+/** Answerers whose rows are not the owner's word: the lead acting on an opened class, an agent answering for him (`bb lane-pilot lead decide --by agent`). Kept in the journal, never counted for the exam. */
+export const PROXY_ANSWERERS: ReadonlySet<string> = new Set(["lead", "agent"]);
 
 export const EXAM_RULES = { minN: 20, minLb: 0.8, minCoverage: 0.5, minKappa: 0.6, revertLb: 0.7, window: 20 };
 export type ExamRules = typeof EXAM_RULES;
@@ -51,10 +56,11 @@ export function cohenKappa(pairs: ReadonlyArray<readonly [string, string]>): num
   return (observed - expected) / (1 - expected);
 }
 
-/** A row counts for the exam only when it was answered, predicted strictly before the answer, is in split "exam" and has a judge verdict. */
+/** A row counts for the exam only when the owner himself answered it, it was predicted strictly before the answer, is in split "exam" and has a judge verdict. */
 export function examEligible(row: ExamRow): boolean {
   return (
     row.answered_at !== null &&
+    !(row.answered_by && PROXY_ANSWERERS.has(row.answered_by)) &&
     row.predicted_at !== null &&
     row.predicted_at < row.answered_at &&
     row.split === "exam" &&

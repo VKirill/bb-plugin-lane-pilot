@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.1.453
+
+- **«Да» on a lead's proposal is a go, not a mark; a proxy answer never counts for the exam.** `service.decide` on `yes` hands a project branch whose class acts through the intake (`next_step`, `process`) to the project's PM at once (`phaseIntake.handOver`, key `lead:<road-id>`, the path the act step already uses for an opened class); the branch stays `accepted`, a hand-over that went through is one quiet line `handed` on «Ждут владельца», one that could not (no open PM chat, the intake refused) is a line `handover_blocked` with the reason, a branch above projects or of a class that acts elsewhere stays a mark (`skipped`); `later` and `no` hand nothing over. The journal keeps who answered (`owner`, `screen`, `lead-chat`, `lead`, `agent`): `bb lane-pilot lead decide … --by agent` marks an answer an agent gave for the owner, and `examEligible` drops rows answered by `lead` or `agent` (`PROXY_ANSWERERS`), so the four answers given for him on 2026-11-01 (re-marked `agent` on the hub) do not open a class. Tests: `tests/lead/service.test.ts`, `tests/lead/logic.test.ts`.
+
 ## 0.1.452
 
 - **The lead's identity is universal; the map of the projects and their order are data.** `LEAD.md` was carrying a prose map of the owner's projects, machines and priorities that would be stale in two weeks, while the tick reads every project of the zone from the hub anyway (`hubSnapshot`: runs, tasks, accepted work, live phases, memory). The seed identity (`DEFAULT_LEAD_MD`) is now the universal core — who the lead is, values, how to propose, what never to do — plus a short «Владелец» section the owner fills with values and dislikes, not lists; the file says where the map lives. The order of the projects is the new global setting `lead.priority` (project ids in the owner's order, on the «Штурман» segment and the settings page): the brief's `projects[]` come ranked with a `priority` field (1 = first, unranked after the ranked) and the brief tells the lead to rank proposals by it and to ask stronger evidence of a lower-ranked project. Test: `tests/lead/tick.test.ts`.

@@ -14,7 +14,7 @@ import { examAll } from "../logic";
 import { parseLeadSettings, type LeadSettings } from "../settings";
 import { identityBlock, loadIdentity, writeRoadExport } from "./identity";
 import { answerDecision, examRows, getDecision, listDecisions, openDecision } from "./journal";
-import { applyExam, rightsView, type TierChange } from "./rights";
+import { actsVia, applyExam, rightsView, type TierChange } from "./rights";
 import { decideRoad, getRoad, roadCounts, roadMarkdown, type RoadRow } from "./road";
 import { registerLeadTickActions, proposalDecisionId, proposalItemKey, type ProposalDecision } from "./tick";
 import { closeTick, getTick, listTicks, openTick, patchTick, sweepStaleTicks, type TickRow } from "./tick-store";
@@ -160,7 +160,7 @@ export function createLeadService(ctx: ServerCore, services: Services) {
   }
 
   /** The owner's answer to a proposal (the button on his list, the CLI, the lead's chat on his word): the tree, the journal and the list move together. */
-  function decide(roadId: string, decision: ProposalDecision, text: string | undefined, by: string, now: number = Date.now()): { ok: true; road: RoadRow; verdict: string | null } | { ok: false; reason: string } {
+  async function decide(roadId: string, decision: ProposalDecision, text: string | undefined, by: string, now: number = Date.now()): Promise<{ ok: true; road: RoadRow; verdict: string | null; handover: Handover | null } | { ok: false; reason: string }> {
     const row = getRoad(db, roadId);
     if (!row) return { ok: false, reason: `no branch ${roadId}` };
     if (row.state !== "proposed") return { ok: false, reason: `branch ${roadId} is ${row.state}, not proposed` };
@@ -168,7 +168,37 @@ export function createLeadService(ctx: ServerCore, services: Services) {
     const decisionId = row.decision_id ?? proposalDecisionId(roadId);
     const judged = answerDecision(db, decisionId, { option: decision, ...(text ? { text } : {}) }, by, now);
     closeOwnerItem(db, proposalItemKey(roadId), by, now);
-    return { ok: true, road: getRoad(db, roadId)!, verdict: judged?.judge_verdict ?? null };
+    const handover = decision === "yes" ? await handOverAccepted(row, by, now) : null;
+    return { ok: true, road: getRoad(db, roadId)!, verdict: judged?.judge_verdict ?? null, handover };
+  }
+
+  /**
+   * «Да» is a go, not a mark (the owner, 2026-11-01: his word must not die in a table): a branch of a project whose class acts through
+   * the intake goes to the project's PM at once, the same way the act step hands an opened class over; the branch stays `accepted` either
+   * way, and what stopped a hand-over is one quiet line on his list. A branch above projects, or a class that acts elsewhere, is a mark.
+   */
+  async function handOverAccepted(row: RoadRow, by: string, now: number): Promise<Handover> {
+    const blocked = (reason: string): Handover => {
+      postOwnerItem(db, { key: `lead-handover-blocked:${row.id}`, source: "lead", kind: "handover_blocked", projectId: row.project_id, wake: false,
+        what: `«Да» принято, но работа не пошла: ${row.title}`, why: `${reason}. Ветка ${row.id} остаётся принятой; откройте PM проекта или передайте вручную.`, evidence: [{ kind: "text", ref: row.id, label: "road" }] }, now);
+      return { state: "blocked", reason };
+    };
+    if (!row.project_id) return { state: "skipped", reason: "a branch above projects has no PM to hand the work to" };
+    if (actsVia(row.class ?? "") !== "intake") return { state: "skipped", reason: `class ${row.class ?? "?"} does not act through a project's intake` };
+    try {
+      const pm = await services.workflowTriggers.pmOf(row.project_id);
+      if (!pm) return blocked("the project has no open PM chat");
+      const started = await services.phaseIntake.handOver({
+        projectId: row.project_id, pmThreadId: pm.pmThreadId, runId: pm.runId, text: `${row.title}\n\n${row.why}`, key: `lead:${row.id}`,
+        origin: `Accepted by the owner («да», by: ${by}) on the lead's («Штурман») proposal: road tree branch ${row.id}, class ${row.class ?? "?"}.`,
+      });
+      if (!started.started) return blocked(started.reason);
+      postOwnerItem(db, { key: `lead-handed:${row.id}`, source: "lead", kind: "handed", projectId: row.project_id, wake: false,
+        what: `«Да» пошло в работу: ${row.title}`, why: `Ветка ${row.id} передана в проект через ${started.via} ${started.id}.`, evidence: [{ kind: "text", ref: started.id, label: started.via }] }, now);
+      return { state: "started", via: started.via, id: started.id };
+    } catch (cause) {
+      return blocked(`hand-over failed: ${cause instanceof Error ? cause.message : String(cause)}`.slice(0, 200));
+    }
   }
 
   /** The owner's word on the switch itself is a decision of the journal (split design: nothing predicted it), so the record says when and by whom the lead was turned on. */
@@ -246,6 +276,8 @@ export function createLeadService(ctx: ServerCore, services: Services) {
   return { settings, homeProjectId, nextTickAt, due, runTick, sweep, exam, state, decide, setEnabled, setPriority, chatStart: chatStartOnce, decisionOf: (id: string) => getDecision(db, id) };
 }
 export type LeadApi = ReturnType<typeof createLeadService>;
+/** What became of an accepted branch: handed to the project (`started`), stopped with a reason the owner sees (`blocked`), or a mark only (`skipped`). */
+export type Handover = { state: "started"; via: string; id: string } | { state: "skipped" | "blocked"; reason: string };
 
 /**
  * After the services are built: the tick's code steps go on the engine (the service only starts the graph), then the crons: the sweep every

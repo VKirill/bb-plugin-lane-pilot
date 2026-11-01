@@ -27,7 +27,7 @@ function world(start: () => Promise<unknown> = async () => ({ ok: true, runId: "
     workflowEngine: { register: () => undefined, get: (runId: string) => runs[runId] ? { runId, output: null, reason: null, error: null, failedNode: null, waiting: [], stopped: false, ...runs[runId] } : null },
   } as unknown as Services;
   const lead = createLeadService(createCore(bb, db), services);
-  return { bb, db, lead, starts };
+  return { bb, db, lead, starts, services };
 }
 const ownerItem = (db: ReturnType<typeof openDatabase>, key: string) => db.prepare("SELECT key, kind, state FROM lane_pilot_owner_item WHERE key=?").get(key) as { key: string; kind: string; state: string } | undefined;
 
@@ -127,7 +127,7 @@ describe("the state for the panel and the CLI", () => {
 });
 
 describe("the owner's answer to a proposal", () => {
-  it("moves the branch, the journal row and the list line together, once", () => {
+  it("moves the branch, the journal row and the list line together, once", async () => {
     const { db, lead } = world();
     addRoad(db, { id: "d1", title: "Grow", kind: "direction", source: "lead", why: "the owner wants growth" }, 1);
     addRoad(db, { id: "o1", parentId: "d1", title: "Paid plans", kind: "option", source: "lead", why: "users asked twice", class: "next_step" }, 2);
@@ -136,14 +136,44 @@ describe("the owner's answer to a proposal", () => {
     db.prepare("UPDATE lane_pilot_decision SET prediction_json=?, predicted_at=?, predictor='test' WHERE id=?").run(JSON.stringify({ option: "later", p: 0.7 }), 4, decisionId);
     proposeRoad(db, "o1", decisionId, 5);
     postOwnerItem(db, { key: proposalItemKey("o1"), source: "lead", kind: "proposal", what: "Paid plans", why: "users asked twice" }, 5);
-    const result = lead.decide("o1", "yes", "да, делаем", "owner", 10);
-    expect(result).toMatchObject({ ok: true, verdict: "miss" });
+    const result = await lead.decide("o1", "yes", "да, делаем", "owner", 10);
+    expect(result).toMatchObject({ ok: true, verdict: "miss", handover: { state: "skipped" } });
     expect(getRoad(db, "o1")).toMatchObject({ state: "accepted", decided_at: 10 });
     expect(getDecision(db, decisionId)).toMatchObject({ answered_by: "owner", judge_verdict: "miss" });
     expect(JSON.parse(getDecision(db, decisionId)!.answer_json!)).toEqual({ option: "yes", text: "да, делаем" });
     expect(ownerItem(db, proposalItemKey("o1"))!.state).not.toBe("open");
-    expect(lead.decide("o1", "no", undefined, "owner", 11)).toEqual({ ok: false, reason: "branch o1 is accepted, not proposed" });
-    expect(lead.decide("ghost", "no", undefined, "owner", 11)).toEqual({ ok: false, reason: "no branch ghost" });
+    expect(await lead.decide("o1", "no", undefined, "owner", 11)).toEqual({ ok: false, reason: "branch o1 is accepted, not proposed" });
+    expect(await lead.decide("ghost", "no", undefined, "owner", 11)).toEqual({ ok: false, reason: "no branch ghost" });
+  });
+
+  it("«да» on a project branch hands it to the project's PM through the intake; without a PM the branch stays accepted and the owner gets one quiet line", async () => {
+    const { db, lead, services } = world();
+    const handed: unknown[] = [];
+    (services as unknown as { phaseIntake: unknown }).phaseIntake = { handOver: async (input: unknown) => { handed.push(input); return { started: true, via: "issue-quick", id: "iq_7" }; } };
+    const propose = (id: string, at: number) => {
+      addRoad(db, { id, projectId: "proj_1", title: `Branch ${id}`, kind: "direction", source: "lead", why: "evidence here", class: "next_step" }, at);
+      openDecision(db, { id: proposalDecisionId(id), surface: "lead", class: "next_step", situation: { title: id }, options: ["yes", "later", "no"] }, at + 1);
+      proposeRoad(db, id, proposalDecisionId(id), at + 2);
+      postOwnerItem(db, { key: proposalItemKey(id), source: "lead", kind: "proposal", what: id, why: "evidence here" }, at + 2);
+    };
+    propose("b1", 1);
+    const noPm = await lead.decide("b1", "yes", undefined, "screen", 10);
+    expect(noPm).toMatchObject({ ok: true, handover: { state: "blocked", reason: "the project has no open PM chat" } });
+    expect(getRoad(db, "b1")).toMatchObject({ state: "accepted" });
+    expect(ownerItem(db, "lead-handover-blocked:b1")).toMatchObject({ kind: "handover_blocked", state: "open" });
+    expect(handed).toHaveLength(0);
+
+    services.workflowTriggers.pmOf = async () => ({ pmThreadId: "thr_pm", runId: "lprun_1" });
+    propose("b2", 20);
+    const went = await lead.decide("b2", "yes", "да", "screen", 30);
+    expect(went).toMatchObject({ ok: true, handover: { state: "started", via: "issue-quick", id: "iq_7" } });
+    expect(handed[0]).toMatchObject({ projectId: "proj_1", pmThreadId: "thr_pm", runId: "lprun_1", key: "lead:b2", text: "Branch b2\n\nevidence here" });
+    expect(String((handed[0] as { origin: string }).origin)).toContain("by: screen");
+    expect(ownerItem(db, "lead-handed:b2")).toMatchObject({ kind: "handed", state: "open" });
+    // «нет» and «потом» hand nothing over.
+    propose("b3", 40);
+    expect(await lead.decide("b3", "later", undefined, "owner", 50)).toMatchObject({ ok: true, handover: null });
+    expect(handed).toHaveLength(1);
   });
 });
 

@@ -50,6 +50,11 @@ describe("examEligible", () => {
     expect(examEligible(row({ predicted_at: 30, answered_at: 20 }))).toBe(false);
     expect(examEligible(row({ split: "backtest" }))).toBe(false);
     expect(examEligible(row({ split: "design" }))).toBe(false);
+    // Only the owner's own word counts: the list's button, his terminal, his word in the lead's chat. A proxy answer stays in the journal, out of the exam.
+    expect(examEligible(row({ answered_by: "screen" }))).toBe(true);
+    expect(examEligible(row({ answered_by: "lead-chat" }))).toBe(true);
+    expect(examEligible(row({ answered_by: "agent" }))).toBe(false);
+    expect(examEligible(row({ answered_by: "lead" }))).toBe(false);
     expect(examEligible(row({ judge_verdict: null }))).toBe(false);
     expect(examEligible(row({ answered_at: null }))).toBe(false);
     expect(examEligible(row({ predicted_at: null }))).toBe(false);
