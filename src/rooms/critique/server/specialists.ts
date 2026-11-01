@@ -90,7 +90,7 @@ export function mountSpecialists(ctx: ServerCore, services: Services): void {
   }
 
   registerObservedTool(bb.agents, {
-    name: "lane_pilot_specialist",
+    name: "lane_pilot_specialist", startsWork: true,
     description: "Start the `specialist` graph: work for a specialist (design-lead, copy-lead, seo-specialist, tavily, video-lead, or an agent the owner created) as a child thread of this PM chat that the owner can open.",
     instructions: "Use from a Lane Pilot PM chat instead of the Agent tool for these roles; an agent the owner created is named by its id. Give the whole task: goal, context, files to read, the deliverable and where to write it. Returns at once with the thread; then call lane_pilot_wait_specialist with that threadId, again while it reports running. Show the owner the returned @thread link. Specialists never change product code; implementation still goes through lane_pilot_dispatch_writer.",
     parameters: z.object({

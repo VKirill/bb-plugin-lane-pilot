@@ -104,8 +104,9 @@ describe("Lane Pilot agents cannot break the hub from a shell by mistake", () =>
     cases.forEach(({ role, command }, index) => {
       expect(`${role}: ${command}: ${/\[hub-guard\]/.test(verdicts[index]!.stdout)}`).toBe(`${role}: ${command}: false`);
     });
-    // The PM's own allowlist of bb commands lets the same commands through, too.
-    const pm = cases.map((row, index) => ({ row, verdict: verdicts[index]! })).filter(({ row }) => row.agentType === "lane-pilot-pm" && /^(bb|\$BB_CLI) /.test(row.command));
+    // The PM's own allowlist of bb commands lets the same commands through, too (except `bb thread tell`: closed to a PM since
+    // 2026-11-01 by the lane-pilot guard, not the hub guard, so a PM cannot hand the owner's work to another chat).
+    const pm = cases.map((row, index) => ({ row, verdict: verdicts[index]! })).filter(({ row }) => row.agentType === "lane-pilot-pm" && /^(bb|\$BB_CLI) /.test(row.command) && !/thread tell/.test(row.command));
     expect(pm.filter(({ verdict }) => verdict.status === 2).map(({ row }) => row.command)).toEqual([]);
   });
 

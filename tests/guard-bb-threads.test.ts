@@ -23,12 +23,12 @@ const cases: Array<[string, boolean]> = [
   ["bb thread log thr_abc --limit 5", true],
   ["bb thread search 'wt-main'", true],
   ["bb thread wait thr_abc --status idle", true],
-  ["bb thread tell thr_abc 'snapshot fixed, restart the writer'", true],
-  ["bb thread tell thr_abc --message-file /tmp/msg.md", true],
-  ["bb thread queue create thr_abc 'hello'", true],
+  ["bb thread tell thr_abc 'snapshot fixed, restart the writer'", false],
+  ["bb thread tell thr_abc --message-file /tmp/msg.md", false],
+  ["bb thread queue create thr_abc 'hello'", false],
   ["bb thread queue list thr_abc", true],
-  ["/home/ubuntu/.bb-machines/x/npm/lib/node_modules/bb-app/host-daemon/dist/bb thread tell thr_abc hi", true],
-  ["\"$BB_CLI\" thread tell thr_abc hi", true],
+  ["/home/ubuntu/.bb-machines/x/npm/lib/node_modules/bb-app/host-daemon/dist/bb thread tell thr_abc hi", false],
+  ["\"$BB_CLI\" thread tell thr_abc hi", false],
   ["bb thread spawn --project p --prompt x", false],
   ["bb thread update thr_abc --title x", false],
   ["bb thread fork thr_abc", false],
@@ -44,7 +44,8 @@ function allowed(agentType: string, command: string): number | null {
   }).status;
 }
 
-describe("PM agents read and message BB threads", () => {
+// 2026-11-01: `bb thread tell` is closed to a PM: one PM handed the owner's work to another PM chat with it, which dispatched it.
+describe("PM agents read BB threads and never message them", () => {
   for (const agentType of ["lane-pilot-pm", "dev-orchestrator"]) {
     for (const [command, ok] of cases) {
       it(`${agentType}: ${command} → ${ok ? "allow" : "deny"}`, () => {

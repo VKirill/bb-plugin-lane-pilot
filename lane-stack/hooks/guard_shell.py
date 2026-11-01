@@ -69,11 +69,12 @@ _PM_OPEN_PLUGINS = {"lane-pilot", "bb-plugin-lane-pilot", "env-catalog"}
 def _pm_plugin_call_open(words: list[str]) -> bool:
     return (words[:3] == ["plugin", "rpc", "call"] and len(words) > 3 and words[3] in _PM_OPEN_PLUGINS) or (
         words[:3] == ["plugin", "run", "lane-pilot"])
-# Agents coordinate by messaging each other's threads; starting or changing threads stays denied.
-PM_BB_MESSAGE_COMMANDS = {
-    ("thread", "tell"), ("thread", "message"),
-    ("thread", "queue", "create"), ("thread", "queue", "send"), ("thread", "queue", "list"),
-}
+# A PM never hands work to another chat (owner, 2026-11-01: a PM in a subfolder told the plugin root's PM to dispatch its tasks, and it did).
+# Reading another thread's queue stays open; writing to a thread goes through Lane Pilot's relay (askId) or to the owner.
+PM_BB_MESSAGE_COMMANDS = {("thread", "queue", "list")}
+PM_BB_HANDOFF_COMMANDS = {("thread", "tell"), ("thread", "message"), ("thread", "queue", "create"), ("thread", "queue", "send")}
+PM_BB_HANDOFF_DENIAL = ("bb thread tell hands work to another chat: a PM never does that. Work outside this chat's folder: name the folder whose "
+                        "chat does it to the owner and stop. A question another thread asked you (it carries an askId) is answered with lane_pilot_relay reply")
 # A Lane Pilot PM stops a stuck thread, archives it and cancels its plan (owner, 2026-10-09). Starting one (bb thread new) stays
 # with Lane Pilot's tools (lane_pilot_dispatch_writer, lane_pilot_helpers, lane_pilot_errand), so a writer never bypasses critique.
 PM_BB_THREAD_CONTROL = {("thread", "stop"), ("thread", "archive"), ("thread", "unarchive"), ("thread", "cancel-plan")}
@@ -924,7 +925,9 @@ def _pm_bb_error(args: list[str]) -> str | None:
     allowed = PM_BB_READ_COMMANDS | PM_BB_MESSAGE_COMMANDS
     if any(tuple(words[:size]) in allowed for size in (1, 2, 3)) or _pm_plugin_call_open(words):
         return None
-    return "bb command neither reads nor messages a thread; delegate it"
+    if any(tuple(words[:size]) in PM_BB_HANDOFF_COMMANDS for size in (2, 3)):
+        return PM_BB_HANDOFF_DENIAL
+    return "bb command neither reads a thread nor runs Lane Pilot; delegate it"
 
 
 def _pm_segment_error(segment: list[str]) -> str | None:
@@ -1230,13 +1233,15 @@ def _lane_pilot_bb_command_error(args: list[str], cwd: object = None) -> str | N
         return None
     if any(tuple(words[:size]) in LANE_PILOT_BB_COMMANDS for size in (1, 2, 3)) or _pm_plugin_call_open(words):
         return None
+    if any(tuple(words[:size]) in PM_BB_HANDOFF_COMMANDS for size in (2, 3)):
+        return PM_BB_HANDOFF_DENIAL
     if tuple(words[:2]) in LANE_PILOT_BB_PLUGIN_SHIP:
         return None if _is_plugin_checkout(cwd) else f"bb {' '.join(words[:2])} runs only from a bb-plugin-* checkout (that plugin's own PM ships it)"
     return f"bb {' '.join(words[:2]) or '(none)'} is not open to the PM"
 
 
 def _lane_pilot_bb_error(command: str, cwd: object = None) -> str | None:
-    """bb in a Lane Pilot PM command: reading threads and messaging them, nothing that spawns, edits or reloads."""
+    """bb in a Lane Pilot PM command: reading threads, nothing that messages, spawns, edits or reloads them."""
     try:
         lexer = shlex.shlex(_without_data_heredocs(command), posix=True, punctuation_chars=";&|<>")
         lexer.whitespace_split = True
@@ -1443,7 +1448,7 @@ def _lane_pilot_shell_checks(client: str, cmd: str, payload: dict) -> None:
     error = _lane_pilot_bb_error(cmd, payload.get("cwd") or payload.get("workspaceRoot"))
     if error:
         emit_deny(client, f"[lane-pilot-guard] {error}. The PM's bb reads BB state (thread, memory, project, plugin, environment, "
-                  "host, provider, skill and settings listings, env-catalog, lane-pilot), messages threads, stops, archives, unarchives "
+                  "host, provider, skill and settings listings, env-catalog, lane-pilot), stops, archives, unarchives "
                   "and cancels the plans of threads, and in a bb-plugin-* checkout builds, reloads, installs or updates plugins "
                   "(a path plugin runs from the hub's copy of its folder: bb-plugin-push <id> from BB-сервис/infrastructure/plugin-deploy "
                   "copies the code there and reloads; bb plugin reload alone re-reads the old copy). "

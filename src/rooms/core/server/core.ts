@@ -25,12 +25,15 @@ import { JEV_PROVIDERS, installJev, jev, resolveJevProvider, type JevEndpoint } 
 import { createOutputGuard } from "@lane-pilot/jev";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type { LanePilotDatabase } from "../../storage";
+import { ownerTurnGate } from "./owner-turn";
+import { setWorkStartGate } from "./tool-result";
 
 /** Everything every server module shares: the SDK, storage, the host client and the small helpers used across modules. */
 export function createCore(bb: BbPluginApi, db: LanePilotDatabase) {
   // Set before the database closes on reload (dispose hooks run LIFO); detached writer tasks check it.
   const state = { disposed: false };
   bb.onDispose(() => { state.disposed = true; });
+  setWorkStartGate(ownerTurnGate(bb));
   // Secret values handed to a check, a browser check or an errand never reach the plugin log (Env Catalog, J3).
   for (const level of ["debug", "info", "warn", "error"] as const) {
     const original = bb.log[level]?.bind(bb.log);

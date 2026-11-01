@@ -67,7 +67,7 @@ export function mountHandoff(ctx: ServerContext, options: { agents?: AgentDefini
   const registry = buildCapabilityRegistry(options.agents ?? bundledAgentDefinitions());
 
   registerObservedTool(bb.agents, {
-    name: "lane_pilot_handoff_create",
+    name: "lane_pilot_handoff_create", startsWork: true,
     description: "Give a task to another agent as a typed card: objective, acceptance, inputs, budget, deadline. Returns the card text to deliver and its id.",
     instructions: [
       "Use from the active Lane Pilot PM thread. Name `toAgent`, or describe the work in `request` and the recipient is chosen from the agent registry.",
