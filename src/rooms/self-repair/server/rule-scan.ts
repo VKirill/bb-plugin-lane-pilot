@@ -8,7 +8,7 @@ import { fileAllowedByOwns, fileBlockedByNeverTouch } from "@lane-pilot/kit";
 import { bbServiceTier, writerExecutionSelection } from "@lane-pilot/models";
 import { outputText } from "../../writer/server/writer-task";
 import { adoptRuleProposal, refreshRuleProposals, retireAdoptedRule, rewordAdoptedRule } from "./insights";
-import { fullAccessSpawn, modelCatalogOf, resolveSpawnModel, spawnUsageOf, warmSpawnUsage } from "../../core/server";
+import { fullAccessSpawn, modelCatalogOf, readProviderFolderBlock, resolveSpawnModel, spawnUsageOf, warmSpawnUsage } from "../../core/server";
 import { spawnTextId } from "../../core/server";
 import { builtinWorkflow } from "../../workflow";
 import type { ChainRuntime } from "../../workflow/server";
@@ -124,7 +124,7 @@ export function createRuleScan(ctx: ServerCore, services: Services) {
   const { bb, db, host } = ctx;
   const running = new Set<string>();
 
-  async function analyzerFor(projectId: string): Promise<AnalyzerSelection | null> {
+  async function analyzerFor(projectId: string, place?: { hostId: string; path: string } | null): Promise<AnalyzerSelection | null> {
     const stored = await bb.storage.kv.get(ANALYZER_KEY(projectId)) as AnalyzerSelection | undefined;
     if (stored?.providerId && stored.model) return stored;
     // Until the owner picks one: the `rules-analyzer` row of the role table (Codex GPT-6 Luna, high). On the SelfyStudio group
@@ -133,7 +133,10 @@ export function createRuleScan(ctx: ServerCore, services: Services) {
     const settings = (await ctx.effectiveProjectSettings(projectId).catch(() => null))?.values ?? {};
     const spawnUsage=spawnUsageOf(ctx);
     await warmSpawnUsage(spawnUsage,null);
-    const role = resolveSpawnModel({ role: "rules-analyzer", settings, catalog: modelCatalogOf(ctx).peek(), usage: spawnUsage });
+    // The folder the analyzer starts in is known here (collectScan, runModel): a provider this machine refused there (opencode2 under
+    // ~/Documents, 2026-10-30: two of the night's seven failures) is out of the offer, as on the workflow-agent path.
+    const folderBlock = place ? await readProviderFolderBlock(bb.storage.kv, place.hostId, "opencode2") : null;
+    const role = resolveSpawnModel({ role: "rules-analyzer", settings, catalog: modelCatalogOf(ctx).peek(), usage: spawnUsage, hostId: place?.hostId ?? null, envPath: place?.path ?? null, folderBlock });
     return { providerId: role.providerId, model: role.model, reasoningLevel: role.reasoningEffort, serviceTier: DEFAULT_ANALYZER.serviceTier };
   }
 
@@ -434,7 +437,7 @@ export function createRuleScan(ctx: ServerCore, services: Services) {
       const groups = writerGroups(db, projectId, since, { chains }).slice(0, MAX_GROUPS_PER_SCAN);
       await setScan(projectId, { groups: groups.length });
       const place = await projectPlace(projectId);
-      const analyzer = await analyzerFor(projectId);
+      const analyzer = await analyzerFor(projectId, place);
       if (groups.length > 0 && (!place || !analyzer)) throw new Error(!place ? "no_host" : "no_analyzer_model");
       const others = writerGroups(db, projectId, since, { minTasks: 1, chains }).flatMap((group) => group.failures);
       const jobs: ScanJob[] = [];
@@ -562,6 +565,8 @@ export function createRuleScan(ctx: ServerCore, services: Services) {
     const projects = await teachingProjects((db.prepare("SELECT DISTINCT project_id FROM lane_pilot_run WHERE updated_at>=?").all(since) as Array<{ project_id: string }>).map((row) => row.project_id));
     for (const projectId of projects) {
       if (ctx.isDisposed() || signal?.aborted) return;
+      // A project with no machine to scan from (three sandbox and bench projects on 2026-10-30) is skipped, not a failed run the wall sees.
+      if (!(await projectPlace(projectId))) { bb.log.info(`Lane Pilot rules nightly: ${projectId} has no machine, skipped`); continue; }
       const stored = await bb.storage.kv.get<string>(LOCALE_KEY(projectId));
       const preferred = await bb.storage.kv.get<string>("preferences:locale");
       const locale = stored === "ru" || stored === "en" ? stored : preferred === "ru" ? "ru" : "en";

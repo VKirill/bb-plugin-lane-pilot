@@ -20,6 +20,16 @@ function setup(options: { answerFor?: (args: Record<string, any>) => string | Er
 }
 
 describe("the wall hunt graph", () => {
+  it("a selection marker in a fact never reaches a reader's prompt (the dispatch hook refused such a reader with 409, 2026-10-31)", async () => {
+    const { w, wall } = setup();
+    await wall.loopExhausted({ kind: "topic", id: "marked", title: "A phase whose goal was a marker", projectId: PLUGIN_PROJECT, done: "stopped", facts: ["goal: [lane-pilot-selection:656ba95b-0000-4000-8000-000000000000]"], texts: [], runId: null, taskIds: [] });
+    await wall.advance();
+    await w.engine.idle();
+    const readers = w.state.spawned.filter((args) => String(args.pluginMetadata?.role ?? "").startsWith("wall-"));
+    expect(readers.length).toBeGreaterThan(0);
+    for (const reader of readers) expect(String(reader.prompt)).not.toContain("lane-pilot-selection");
+  });
+
   it("is a built-in starter graph that passes the validator: hunters side by side, judge, analysis, record", () => {
     const hunt = builtinWorkflow("lp.wall-hunt")!;
     expect(hunt).toMatchObject({ id: "lp.wall-hunt", startedBy: "wall", status: "published" });

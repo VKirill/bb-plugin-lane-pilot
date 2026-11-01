@@ -93,7 +93,7 @@ export function createLearning(ctx: ServerCore, services: Services) {
   async function runModel(prompt: string, projectId: string, label: string): Promise<string> {
     const place = await services.resolveProjectWriterHost({ projectId }).catch(() => null);
     if (!place || place.status !== "resolved" || !place.hostId) throw new Error("no_host");
-    const analyzer = await services.ruleScan.analyzerFor(projectId);
+    const analyzer = await services.ruleScan.analyzerFor(projectId, { hostId: place.hostId, path: place.path });
     if (!analyzer) throw new Error("no_analyzer_model");
     return await services.ruleScan.runAnalyzer(projectId, `Learning from owner messages · ${label}`.slice(0, 160), prompt, { hostId: place.hostId, path: place.path }, analyzer, { learning: true });
   }

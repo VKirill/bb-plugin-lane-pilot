@@ -6,7 +6,7 @@ import { TARGET_SHA } from "../../src/rooms/runs/constants";
 import { openDatabase, savePrototypeConfig } from "../../src/rooms/storage/database";
 import { DEFAULT_RULE_TOKENS, RULE_COUNT_CEILING, poolHasRoom, poolTokens, ruleBudget, ruleTokens, setRuleBudgets } from "../../src/rooms/learning/rule-budget";
 import { pmResumeInstructions, pmRulesBlock, pmRulesOf, pmRulesPromptBlock, relevantPmRules } from "../../src/rooms/learning/pm-rules";
-import { adoptRuleProposal } from "../../src/rooms/self-repair/server/insights";
+import { adoptRuleProposal, rewordAdoptedRule } from "../../src/rooms/self-repair/server/insights";
 import { NOW, database, jevWith } from "./helpers";
 
 const DAY = 86_400_000;
@@ -75,6 +75,16 @@ describe("the budget of a pool of rules (T4)", () => {
     adopted(db, "A PM rule that fills the small PM pool for good.", "pm", { confirm: true });
     expect(adopted(db, "Another PM rule that cannot fit next to it at all.", "pm", { ageDays: 0 }).row).toBeNull();
     expect(adopted(db, "A writer rule that has its own much larger pool.", "writer").row).not.toBeNull();
+  });
+
+  it("a rewrite the core has no room for keeps the old wording and says so, instead of failing the night's apply step", () => {
+    const db = database();
+    const made = adopted(db, "Run the spec next to the file before you answer.");
+    expect(made.row).not.toBeNull();
+    db.prepare("INSERT INTO lane_pilot_project_settings (project_id, key, value, updated_at) VALUES ('proj_1','memory.core_budget','5',?)").run(NOW);
+    expect(rewordAdoptedRule(db, "proj_1", made.id, "Run the spec next to the file and read its fixture before you answer, every time.", "trial recurred")).toBe(false);
+    expect(db.prepare("SELECT rule, state FROM lane_pilot_rule_proposal WHERE id=?").get(made.id)).toMatchObject({ rule: "Run the spec next to the file before you answer.", state: "accepted" });
+    expect(db.prepare("SELECT detail FROM lane_pilot_rule_event WHERE action='cap_reached'").get()).toMatchObject({ detail: expect.stringContaining("new wording") });
   });
 
   it("reports a full core memory as a full pool instead of failing the tool", () => {

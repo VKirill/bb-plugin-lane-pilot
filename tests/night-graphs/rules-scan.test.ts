@@ -7,6 +7,7 @@ import { listRuleProposals } from "@lane-pilot/run-insights";
 import { nightWorld } from "./world";
 import { createWriterHost } from "../../src/rooms/writer/server/writer-host";
 import { savePrototypeConfig } from "../../src/rooms/storage/database";
+import { noteProviderStartFailure } from "../../src/rooms/core/server/spawn-model";
 import incident from "../fixtures/learning-stale-binding-2026-10-30.json";
 
 const PROJECT = "proj-1";
@@ -108,6 +109,19 @@ describe("the rules scan graph", () => {
     expect(await scan.scanState(PROJECT)).toMatchObject({ state: "failed", reason: "no_host" });
     expect(w.engine.get(w.runs("lp.rules-scan")[0]!.id)).toMatchObject({ status: "failed", failedNode: "collect" });
     expect(w.state.spawned).toHaveLength(0);
+  });
+
+  it("the analyzer pick sees the folder it starts in: a provider this machine refused under ~/Documents is out of the offer", async () => {
+    const { w, scan } = setup();
+    const place = { hostId: "host-1", path: "/Users/vechkasov/Documents/Клиенты" };
+    w.ctx.effectiveProjectSettings = async () => ({ values: { "role_model.rules-analyzer": { provider: "opencode2", model: "zai-coding-plan/glm-5.3-flash" } } }) as never;
+    const open = await scan.analyzerFor(PROJECT, place);
+    await noteProviderStartFailure(w.ctx.bb.storage.kv as never, "host-1", "opencode2", place.path, "vk_required_session_policy_unenforceable_mcp_servers");
+    const blocked = await scan.analyzerFor(PROJECT, place);
+    expect(open?.providerId).toBe("opencode2");
+    expect(blocked?.providerId).not.toBe("opencode2");
+    // Without a place (the insights panel) the pick is the plain one.
+    expect(await scan.analyzerFor(PROJECT)).toMatchObject({ providerId: expect.any(String) });
   });
 
   it("the learning review's model call is the one-step graph lp.rules-ask and returns the analyzer's text", async () => {

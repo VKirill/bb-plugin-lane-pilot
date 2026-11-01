@@ -22,6 +22,7 @@ import { createPluginCheckers } from "../../checkers/server";
 import type { HuntOutcome } from "../pack";
 import { WALL_HUNT_WORKFLOW, createWall, type RepairView, type Scope, type ThreadRun, type WallApi, type WallPorts } from "../service";
 import { jev } from "@lane-pilot/jev";
+import { withoutSelectionMarkers } from "@lane-pilot/kit";
 
 const LOG_TAIL_BYTES = 1_000_000;
 
@@ -72,7 +73,8 @@ export function createPluginWall(ctx: ServerCore, services: Services): WallApi {
       title: `Lane Pilot wall ${who}`,
       // A reader only reads and answers once: hidden, and archived once its answer is read (the first night's six hunters sat unread in the project's list, 2026-10-26).
       visibility: "hidden",
-      prompt,
+      // A `[lane-pilot-selection:…]` token in a fact (a phase goal before 0.1.410) made the dispatch hook refuse the reader with 409 (2026-10-31).
+      prompt: withoutSelectionMarkers(prompt),
       ...writerExecutionSelection(wcfg.hunterProviderId, wcfg.hunterModel, who === "analysis" ? "high" : wcfg.hunterReasoningLevel, "default"),
       pluginMetadata: { role: `wall-${who}`, ...graph.metadata, spawnId: graph.spawnId },
     } as Parameters<typeof fullAccessSpawn>[1]);

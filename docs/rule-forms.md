@@ -49,6 +49,10 @@ Measured on the 118 live hub rules (2026-10-22), against the form a reader chose
 The undecided rest can go to System One (`--jev --host <host-id>`): one choice question per rule (eight per call), a form is taken only at p ≥ 0.5, anything less keeps the rule as text (`jev-forms.ts`).
 
 New rules get a form the night they appear: the `rules-nightly` job runs `classifyUnformed` after the scan.
+The scan itself ends quietly where it used to be a failed run (the 2026-10-30 sweep: four causes behind seven failures): a project
+BB cannot place on a machine is skipped with a log line (`src/rooms/self-repair/server/rule-scan.ts:569`), the analyzer pick sees the folder it
+starts in and a provider this machine refused there (`analyzerFor`, `src/rooms/self-repair/server/rule-scan.ts:127`), and a rewrite the core
+memory has no room for is a `cap_reached` journal line that keeps the old wording (`src/rooms/self-repair/server/insights.ts:176`).
 
 ## Promotion: a recurring `check` rule becomes a mechanism task
 

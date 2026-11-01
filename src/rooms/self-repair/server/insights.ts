@@ -179,13 +179,22 @@ export function rewordAdoptedRule(db: LanePilotDatabase, projectId: string, id: 
   const settings = memorySettingsFor(db, projectId);
   const content = rule.replace(/\s+/g, " ").trim().slice(0, 600);
   const memoryId = memoryRecordId(projectId, "core", content, settings.personalBot, "subagent", proposal.scope ?? []);
-  storeMemoryRecords(db, {
-    projectId, personalBot: settings.personalBot, audience: "subagent",
-    sourceSha256: sha256Hex(`rule:${id}:${proposal.revision + 1}`), origin: "rule",
-    entries: [{ kind: "core", content, concepts: ["rule", "auto-adopted"] }],
-    coreBudget: settings.coreBudget, noteBudget: settings.noteBudget, indexBudget: settings.indexBudget,
-    scope: proposal.scope,
-  });
+  try {
+    storeMemoryRecords(db, {
+      projectId, personalBot: settings.personalBot, audience: "subagent",
+      sourceSha256: sha256Hex(`rule:${id}:${proposal.revision + 1}`), origin: "rule",
+      entries: [{ kind: "core", content, concepts: ["rule", "auto-adopted"] }],
+      coreBudget: settings.coreBudget, noteBudget: settings.noteBudget, indexBudget: settings.indexBudget,
+      scope: proposal.scope,
+    });
+  } catch (cause) {
+    // A full core (SelfyStudio 2026-10-30: 3149/3072 tokens) keeps the old wording and says so in the journal, as adoption does; one oversize
+    // rewrite no longer fails the night's whole apply step.
+    const message = cause instanceof Error ? cause.message : String(cause);
+    if (!/core budget exceeded/.test(message)) throw cause;
+    logRuleEvent(db, projectId, id, "cap_reached", `the project's core memory budget has no room for the new wording (${message}); the old one stays`, now);
+    return false;
+  }
   if (!reviseAdoptedRule(db, projectId, id, content, memoryId, now)) { deleteMemoryRecord(db, projectId, memoryId); return false; }
   if (proposal.memoryId && proposal.memoryId !== memoryId) deleteMemoryRecord(db, projectId, proposal.memoryId);
   setRuleTrial(db, projectId, id, { trialState: "trial" });

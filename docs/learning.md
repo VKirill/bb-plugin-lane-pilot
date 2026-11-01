@@ -53,7 +53,7 @@ owner message (a person's request in a visible top-level thread: the one collect
 |---|---|---|
 | `observe` | Judged and recorded, nothing acts. | A Jev error or timeout records the message within the daily cap; receipts keep hash and size only. |
 | `active` | Learn-routed messages are extracted, compared and routed to a rule on trial, a preference, a decision, a reminder or a recorded fact. | A rule on trial stays on trial until adopted; `same_as` confirms or replaces what is in force. |
-| Lessons from runs | `collectLessonSources` gathers night findings, stage rejections and attempt failures, newest first (`packages/run-insights/src/lessons.ts:30-51`); the sweep counts candidates and advances its cursor (`src/rooms/self-repair/server/insights.ts:229-240`), and repeating lessons become rule proposals (`src/rooms/self-repair/server/insights.ts:39-43`). | Drill tasks and noise reasons are excluded (`packages/run-insights/src/lessons.ts:14`, `:34`, `:38`). |
+| Lessons from runs | `collectLessonSources` gathers night findings, stage rejections and attempt failures, newest first (`packages/run-insights/src/lessons.ts:30-51`); the sweep counts candidates and advances its cursor (`src/rooms/self-repair/server/insights.ts:232-243`), and repeating lessons become rule proposals (`src/rooms/self-repair/server/insights.ts:39-43`). | Drill tasks and noise reasons are excluded (`packages/run-insights/src/lessons.ts:14`, `:34`, `:38`). |
 
 ## Switching on
 
@@ -104,4 +104,4 @@ Beside the owner's messages, a project learns from its own runs. `collectLessonS
 
 Bounds: the limit is clamped to 1–2000, default 200 (`packages/run-insights/src/lessons.ts:31`); drill tasks (`drill-*`) are excluded from both queries (`packages/run-insights/src/lessons.ts:34`, `:38`); noise reasons — a retry limit, exhausted attempts, a cancel, a deleted thread, a plugin reload, `needs_human:` — are dropped (`packages/run-insights/src/lessons.ts:14`).
 
-Who reads it: the lessons sweep counts the candidates per project and advances its cursor; failures are counted, not stored as memory, because raw failure logs crowded out knowledge on the hub (`src/rooms/self-repair/server/insights.ts:229-240`). `refreshRuleProposals` turns the lessons that repeat within a 30-day window into rule proposals and keeps the wording and decision of known ones (`src/rooms/self-repair/server/insights.ts:39-43`).
+Who reads it: the lessons sweep counts the candidates per project and advances its cursor; failures are counted, not stored as memory, because raw failure logs crowded out knowledge on the hub (`src/rooms/self-repair/server/insights.ts:232-243`). `refreshRuleProposals` turns the lessons that repeat within a 30-day window into rule proposals and keeps the wording and decision of known ones (`src/rooms/self-repair/server/insights.ts:39-43`).
