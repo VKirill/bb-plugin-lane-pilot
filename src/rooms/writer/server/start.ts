@@ -1175,7 +1175,11 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         let lastFallbackAttemptId:string|null=null;
         // Every writer provider is in a spent window: the task waits for the nearest reset, it is not a task failure.
         if (!chain.length && primaryClass === "limit" && configuredSetting(settings, "writer.capacity_wait") !== "off") {
-          const reason = `capacity_saturated:${routed.nextReset ?? "unknown"}: every writer provider is over its usage window; the task waits for the nearest reset`;
+          // The chain is empty only when no other writer exists (fallbacks off, the PM on the writer's own model): the reason says
+          // so, not «usage windows» — the owner read it as spent limits on 2026-11-01. The prefix keeps the 15-minute recheck.
+          const reason = fallbackList.length
+            ? `capacity_saturated:${routed.nextReset ?? "unknown"}: every writer provider is over its usage window; the task waits for the nearest reset`
+            : `capacity_saturated:unknown: no other writer can take the task (the writer's fallbacks are off and the PM runs the writer's own model); it retries every 15 minutes until the writer works again. Writer: ${typeof primaryFailure.reason === "string" ? primaryFailure.reason.slice(0, 160) : String(primaryFailure.status)}`;
           const latest = getAttempt(db, primaryAttemptId);
           if (latest && RETRY_ELIGIBLE.includes(latest.state as AttemptState)) transitionAttempt(db, latest.id, "blocked", { reason });
           last = { ...last, status:"blocked", reason, emergencyFallback:{ state:"skipped", reason:"capacity_saturated" } };

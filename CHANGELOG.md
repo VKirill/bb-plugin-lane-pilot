@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.473
+
+- **A writer with no fallback says so, not «limits».** On 2026-11-01 the owner set Devin (`devin`/`swe-2-high`) as the writer and turned both fallbacks off; the BB core's session-policy allowlist did not host `devin`, so every task failed with `writer_provider_unavailable:core_unsupported:devin` and Lane Pilot then blocked it as `capacity_saturated:unknown: every writer provider is over its usage window`. The PM relayed that as spent limits and the owner asked which limits. Two causes: the PM chat on its provider's default model reports no model, so the emergency writer (the PM's own pair) fell back to the writer's pair and the chain deduplicated it away (`nativeRunConfig` now takes the catalog's default model, `defaultModelIn`); and an empty chain borrowed the usage-window wording (`start.ts` now says no other writer can take the task, names the writer's failure and the 15-minute retry; the `capacity_saturated:` prefix keeps the parking). The core side (BB runtime 0.48.1-vk.3, `VK_ACP_PLUGIN_POLICY_PROVIDERS = ["devin", "zcode"]`) shipped the same night; the parked tasks restarted on Devin by themselves within a minute of it.
+
 ## 0.1.472
 
 - **A Lane Pilot chat in the Personal project.** The owner started a PM chat in the Personal project (BB's `personal-workspace` provider: a personal directory on a machine, no inputs) and BB showed a developer's refusal («Native send needs the selected project-checkout host and path…»). The provider now defers like a project checkout without a path: the chat proceeds and binds to the folder when BB attaches the environment on the next send (`PENDING_PATH_PROVIDERS`). The refusal that remains (an isolated worktree, a cloud machine) says in the owner's words what to pick in the new-chat window (`NATIVE_WORKSPACE_REFUSAL`).

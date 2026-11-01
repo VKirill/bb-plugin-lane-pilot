@@ -19,6 +19,7 @@ import type { AttemptState } from "../../runs";
 import { cancelRejection } from "../../runs/server";
 import { recordStage } from "../../runs/server";
 import { stringAt, valueAt } from "./values";
+import { defaultModelIn } from "@lane-pilot/models";
 import { resolve } from "node:path";
 import { z } from "zod";
 import { JEV_PROVIDERS, installJev, jev, resolveJevProvider, type JevEndpoint } from "@lane-pilot/jev";
@@ -334,7 +335,11 @@ export function createCore(bb: BbPluginApi, db: LanePilotDatabase) {
     if (!writerProviderId || !writerModel) throw new Error("Choose the writer provider and model in Lane Pilot settings (project or defaults) before delegating.");
     // The emergency writer is the PM's own selection: the model this Lane chat runs on.
     const pmExecution = run.pm_thread_id ? await bb.sdk.threads.defaultExecutionOptions({ threadId:run.pm_thread_id }).catch(() => null) : null;
-    const pmProviderId = stringAt(pmExecution, "providerId"), pmModel = stringAt(pmExecution, "model");
+    const pmProviderId = stringAt(pmExecution, "providerId");
+    // A PM chat on its provider's default model names no model: the catalog's default is that model. Without it the pair fell
+    // back to the writer's own, the chain deduplicated it away, and every limit of the writer read as «capacity_saturated» (2026-11-01).
+    const pmModel = stringAt(pmExecution, "model") ?? (pmProviderId
+      ? defaultModelIn((await bb.sdk.providers.models({ providerId:pmProviderId, hostId }).catch(() => null))?.models) : null);
     return { projectId, hostId, pmWorkspacePath:workspace, writerWorkspacePath:workspace,
       pmProviderId:pmProviderId && pmModel ? pmProviderId : writerProviderId, pmModel:pmProviderId && pmModel ? pmModel : writerModel,
       writerProviderId, writerModel };

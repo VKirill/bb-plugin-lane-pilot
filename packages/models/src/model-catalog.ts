@@ -41,6 +41,8 @@ export const findProvider = (catalog: ModelCatalog, providerId: string): Catalog
 /** The model a provider lists under this id or this model name; every lookup of a model by what the owner or a setting wrote goes through here. */
 export const findModelIn = <T extends { id?: string; model?: string }>(models: readonly T[] | undefined, model: string): T | undefined => models?.find((row) => row.id === model || row.model === model);
 export const findModel = (provider: CatalogProvider | undefined, model: string): CatalogModel | undefined => findModelIn(provider?.models, model);
+/** The model a provider runs when a thread names none (its catalog default); null when the catalog marks none. */
+export const defaultModelIn = <T extends { id?: string; isDefault?: boolean }>(models: readonly T[] | undefined): string | null => models?.find((row) => row.isDefault)?.id ?? null;
 
 /** The one provider that lists the model (by id or name); null when none or several do. */
 export function catalogProviderOf(catalog: ModelCatalog, model: string): string | null {
