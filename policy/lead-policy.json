@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "frozen_at": "2026-11-01T06:00:00Z",
+  "title": "What the lead («Штурман») may decide by itself, class by class",
+  "rule": "A class starts in the tier written here. The nightly exam (src/rooms/lead/server/exam.ts) moves a class between decides and proposes by the rules of src/rooms/lead/logic.ts (Wilson LB ≥ 0.8, coverage ≥ 0.5, N ≥ 20, kappa ≥ 0.6, no high-risk miss; back to proposes when the last 20 fall under 0.7 or a high-risk miss appears). owner_only is never touched by the exam: only the owner edits this file. A class not listed is owner_only. A proposal of risk high never acts, whatever the tier.",
+  "classes": [
+    { "id": "next_step", "tier": "proposes", "description": "What a project does next: a small task (issue-quick) or a phase out of the road tree.", "acts_via": "intake" },
+    { "id": "schedule", "tier": "proposes", "description": "A recurring job: a schedule of kind agent, errand or workflow for a project.", "acts_via": "schedule" },
+    { "id": "landing", "tier": "proposes", "description": "The word on landing a verified task of risk high (the owner's «да»).", "acts_via": "none" },
+    { "id": "process", "tier": "proposes", "description": "A turn of a phase, a hand-over of a process to the architect.", "acts_via": "intake" },
+    { "id": "defer", "tier": "proposes", "description": "Putting a proposal or a deferral off to a later date.", "acts_via": "none" },
+    { "id": "money", "tier": "owner_only", "description": "Anything that spends above the day's budget or opens a paid lane.", "acts_via": "none" },
+    { "id": "external", "tier": "owner_only", "description": "Anything that sends, posts, publishes or pays outside the hub.", "acts_via": "none" }
+  ],
+  "versions": [
+    { "version": 1, "frozen": "2026-11-01T06:00:00Z", "changes": "first policy: every class proposes; money and external owner_only" }
+  ]
+}

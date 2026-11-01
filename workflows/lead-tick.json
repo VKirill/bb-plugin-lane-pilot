@@ -1,0 +1,288 @@
+{
+  "id": "lead-tick",
+  "name": {
+    "en": "The lead's tick",
+    "ru": "Тик Штурмана"
+  },
+  "description": {
+    "en": "One tick of the lead («Штурман»): code reads the hub (projects, runs, phases, the road tree, the open proposals, the exam per class, the budget left today) and writes the brief with the identity first; the lead agent updates the tree and names at most five proposals with evidence and a price; code records them (tree, journal with a prediction, the owner's list with да / потом / нет), acts only in a class the nightly exam opened, and closes the tick's receipt with what it cost.",
+    "ru": "Один тик Штурмана: код читает хаб (проекты, запуски, фазы, дерево дороги, открытые предложения, экзамен по классам, остаток бюджета на день) и пишет бриф с личностью первым блоком; агент-ведущий обновляет дерево и называет до пяти предложений с доказательством и ценой; код записывает их (дерево, журнал с прогнозом, список владельца с кнопками да / потом / нет), действует сам только в классе, открытом ночным экзаменом, и закрывает квитанцию тика с его ценой."
+  },
+  "not_for": [
+    "anything a person asks in a chat: the lead's schedule and «Тик сейчас» start it (src/rooms/lead/server/service.ts)",
+    "a task or a phase of a project: those go through the project's PM chat or through a proposal the owner accepts"
+  ],
+  "status": "published",
+  "tags": [
+    "lead",
+    "schedule"
+  ],
+  "triggers": [
+    "manual"
+  ],
+  "inputs": {
+    "tickId": {
+      "type": "string",
+      "default": "",
+      "note": "the receipt row the service opened before the run (lane_pilot_lead_tick)"
+    },
+    "trigger": {
+      "type": "string",
+      "default": "manual",
+      "note": "cron or manual"
+    }
+  },
+  "outputs": {
+    "status": "ok|off|budget|error|no_receipt",
+    "proposed": "int",
+    "acted": "int",
+    "report": "string"
+  },
+  "live_success": {
+    "output": "status",
+    "in": [
+      "ok",
+      "off",
+      "budget"
+    ]
+  },
+  "budget": {
+    "max_minutes": 45,
+    "max_usd": 5
+  },
+  "nodes": [
+    {
+      "id": "state",
+      "type": "action",
+      "action": "lp.lead_state",
+      "title": {
+        "en": "Read the hub and write the brief",
+        "ru": "Прочитать хаб и составить бриф"
+      },
+      "rule": "code: the identity (LEAD.md), every project in the lead's zone, the road tree, the open proposals, the exam per class, the budget left today; the brief is empty when the lead is off or over budget",
+      "out": {
+        "enabled": "bool",
+        "over_budget": "bool",
+        "budget_left_usd": "number",
+        "brief": "string",
+        "projects": "int",
+        "open_branches": "int"
+      }
+    },
+    {
+      "id": "think",
+      "type": "agent",
+      "role": "lead",
+      "title": {
+        "en": "The lead reads the state and proposes",
+        "ru": "Штурман читает состояние и предлагает"
+      },
+      "prompt": "{{state.brief}}\n\nAnswer with the fields: summary (two or three sentences for the receipt), proposals (the list described above, at most the number the brief names; empty when nothing deserves the owner's morning), branches (new directions or options for the tree, not proposed today), deferred (what you looked at and left, with why), status (done, or blocked with blocked_reason when the state is unreadable).",
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "out": {
+        "summary": "string",
+        "proposals": "object[]",
+        "branches": "object[]",
+        "deferred": "string",
+        "status": "done|blocked",
+        "blocked_reason": "string?"
+      },
+      "guards": {
+        "timeoutMin": 30
+      }
+    },
+    {
+      "id": "propose",
+      "type": "action",
+      "action": "lp.lead_propose",
+      "title": {
+        "en": "Record the branches and the proposals",
+        "ru": "Записать ветки и предложения"
+      },
+      "rule": "code: new branches go into the tree; each complete proposal (class, why, evidence, cost) becomes a branch in state proposed, a journal row with a prediction made now, and a line on the owner's list with да / потом / нет; the rest is dropped with its reason",
+      "out": {
+        "proposed": "int",
+        "proposed_json": "string",
+        "dropped_json": "string",
+        "actable_json": "string",
+        "branches_added": "int"
+      }
+    },
+    {
+      "id": "act",
+      "type": "action",
+      "action": "lp.lead_act",
+      "title": {
+        "en": "Act where the exam allows",
+        "ru": "Действовать там, где разрешил экзамен"
+      },
+      "rule": "code: a proposal in a class the nightly exam opened (never risk high, never money or external) goes through the project's intake marked as the lead's; everything else waits for the owner",
+      "out": {
+        "acted": "int",
+        "acted_json": "string",
+        "deferred_json": "string"
+      }
+    },
+    {
+      "id": "receipt",
+      "type": "action",
+      "action": "lp.lead_receipt",
+      "title": {
+        "en": "Close the receipt",
+        "ru": "Закрыть квитанцию"
+      },
+      "rule": "code: the tick's row gets what was proposed, acted on and deferred, the tokens and the cost; a tick that is over budget, blocked or without a summary is one quiet line on the owner's list",
+      "out": {
+        "status": "ok|off|budget|error|no_receipt",
+        "proposed": "int",
+        "acted": "int",
+        "report": "string"
+      }
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "receipt.status",
+        "proposed": "receipt.proposed",
+        "acted": "receipt.acted",
+        "report": "receipt.report"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "start",
+      "to": "state"
+    },
+    {
+      "from": "state",
+      "to": "think",
+      "when": "state.enabled == true && state.over_budget == false"
+    },
+    {
+      "from": "state",
+      "to": "receipt"
+    },
+    {
+      "from": "think",
+      "to": "propose"
+    },
+    {
+      "from": "propose",
+      "to": "act"
+    },
+    {
+      "from": "act",
+      "to": "receipt"
+    },
+    {
+      "from": "receipt",
+      "to": "done"
+    }
+  ],
+  "test": {
+    "id": "lead-tick-1",
+    "sim": {
+      "input": {
+        "tickId": "tick_test",
+        "trigger": "manual"
+      },
+      "stubs": {
+        "state": {
+          "enabled": true,
+          "over_budget": false,
+          "budget_left_usd": 14.5,
+          "brief": "<lead_identity>…</lead_identity>",
+          "projects": 3,
+          "open_branches": 4
+        },
+        "think": {
+          "summary": "Three projects, one stale branch.",
+          "proposals": [
+            {
+              "title": "Close the stale branch",
+              "class": "next_step",
+              "risk": "low",
+              "why": "nothing moved for two weeks",
+              "evidence": [
+                {
+                  "kind": "run",
+                  "ref": "lprun_1"
+                }
+              ],
+              "cost_estimate": "2h"
+            }
+          ],
+          "branches": [],
+          "deferred": "the SEO direction: no artifact yet",
+          "status": "done"
+        },
+        "propose": {
+          "proposed": 1,
+          "proposed_json": "[{\"roadId\":\"road_1\"}]",
+          "dropped_json": "[]",
+          "actable_json": "[]",
+          "branches_added": 0
+        },
+        "act": {
+          "acted": 0,
+          "acted_json": "[]",
+          "deferred_json": "[]"
+        },
+        "receipt": {
+          "status": "ok",
+          "proposed": 1,
+          "acted": 0,
+          "report": "Three projects, one stale branch.\nПредложений: 1"
+        }
+      },
+      "expect_path": [
+        "state",
+        "think",
+        "propose",
+        "act",
+        "receipt",
+        "done"
+      ],
+      "expect_output": {
+        "status": "ok",
+        "proposed": 1
+      },
+      "variant_off": {
+        "stubs": {
+          "state": {
+            "enabled": false,
+            "over_budget": false,
+            "budget_left_usd": 15,
+            "brief": "",
+            "projects": 0,
+            "open_branches": 0
+          },
+          "receipt": {
+            "status": "off",
+            "proposed": 0,
+            "acted": 0,
+            "report": ""
+          }
+        },
+        "expect_path": [
+          "state",
+          "receipt",
+          "done"
+        ],
+        "expect_output": {
+          "status": "off"
+        }
+      }
+    },
+    "live": "switch lead.enabled on, press «Тик сейчас» on the Self-improvement screen, read the receipt in bb lane-pilot lead ticks and the proposals on the owner's list"
+  },
+  "goal_check": "artifact"
+}

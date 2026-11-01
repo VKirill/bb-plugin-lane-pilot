@@ -90,12 +90,12 @@ OPEN_STATES = ("queued", "spawn_requested", "spawn_unknown", "running")
 TERMINAL = ("accepted", "blocked", "canceled")
 STAMP = time.strftime("%Y%m%d-%H%M%S")
 DATE = time.strftime("%Y-%m-%d")
-ALL = ["guard_hash", "deferrals", "checkers", "watchdog", "memory_paths", "helper_providers", "parallel3", "conflict", "main_moved", "provider", "provider_limit", "live_word", "no_code_exit", "skills", "phase", "phase_route", "reload", "nogit", "nogit_repo", "flow_contract"]
+ALL = ["guard_hash", "deferrals", "checkers", "watchdog", "memory_paths", "helper_providers", "parallel3", "conflict", "main_moved", "provider", "provider_limit", "live_word", "no_code_exit", "skills", "phase", "phase_route", "reload", "nogit", "nogit_repo", "flow_contract", "lead_shadow"]
 QUICK = ["guard_hash", "deferrals", "checkers", "memory_paths", "helper_providers", "parallel3"]
 # What a provider runs when no setting of the sandbox project names a model for it.
 PROVIDER_FALLBACK_MODEL = {"claude-code": "claude-sonnet-5-5", "codex": "gpt-6-luna", "opencode2": "zai-coding-plan/glm-5.3-flash"}
 # Scenarios that need no PM and no run of their own: they run before the PM starts (guard_hash) or on a project of their own (nogit).
-STANDALONE = ("guard_hash", "deferrals", "checkers", "watchdog", "nogit", "nogit_repo")
+STANDALONE = ("guard_hash", "deferrals", "checkers", "watchdog", "nogit", "nogit_repo", "lead_shadow")
 
 # Which changed files a live scenario reads. A path no live scenario reads (NOT_LIVE) starts none; a shared one (FOUNDATION, and anything
 # outside src/ and packages/ that is not NOT_LIVE) starts every one; else parallel3 runs unless the path is in a room it does not pass
@@ -1308,6 +1308,36 @@ def scenario_deferrals(tmp: Path) -> dict:
     return verdict("deferrals", problems, registerDeployed=True, counts=counts, cited=len(cited), needsOwnerTerm=len(data.get("needsOwnerTerm", [])))
 
 
+def scenario_lead_shadow(tmp: Path) -> dict:
+    """The lead («Штурман») in shadow (roadmap WP3/WP4 acceptance): the running plugin answers lead_state; the drill never switches
+    lead.enabled on, so no tick runs by itself here; no class decides without an exam row behind it and money / external stay owner_only;
+    the CLI's status, rights, exam and road read the same rows without an error. A tick's own run needs an agent and is checked on the live hub."""
+    try:
+        state = setting_rpc("lead_state", {})
+    except Exception as cause:
+        if RPC_MISSING.search(str(cause)):
+            return verdict("lead_shadow", [], leadDeployed=False, note=f"the running plugin has no lead yet: {str(cause)[:160]}")
+        return verdict("lead_shadow", [f"lead_state failed: {str(cause)[:200]}"])
+    problems: list[str] = []
+    rights = state.get("rights") or []
+    tiers = {row.get("class"): row.get("tier") for row in rights}
+    if len(rights) < 7:
+        problems.append(f"the rights table lists {len(rights)} classes, the policy has 7")
+    for row in rights:
+        if row.get("tier") == "decides" and not row.get("exam"):
+            problems.append(f"class {row.get('class')} decides without an exam row behind it")
+    for cls in ("money", "external"):
+        if tiers.get(cls) != "owner_only":
+            problems.append(f"class {cls} is {tiers.get(cls)}, the policy keeps it owner_only")
+    for args in (("status",), ("rights",), ("exam",), ("road", "--tree", "--history"), ("ticks",)):
+        rc, out, err = bb("lane-pilot", "lead", *args)
+        if rc != 0:
+            problems.append(f"bb lane-pilot lead {' '.join(args)} exited {rc}: {(err or out).strip()[:160]}")
+    settings = state.get("settings") or {}
+    return verdict("lead_shadow", problems, leadDeployed=True, enabled=bool(settings.get("enabled")), tickCron=settings.get("tickCron"),
+                   ticks=len(state.get("ticks") or []), proposalsOpen=state.get("proposalsOpen"), journal=state.get("journal"), tiers=tiers)
+
+
 def scenario_checkers(tmp: Path) -> dict:
     """The checker drill (src/rooms/checkers): planted defects, the code checkers must catch the class they are for. The checkout's own code is
     bundled and run, so a change that makes a checker blind turns the drill red before it is deployed. Then the same drill with the ownership
@@ -1616,6 +1646,13 @@ def main() -> int:
             except Exception as cause:
                 scenarios.append(verdict("checkers", [f"scenario raised: {cause}"]))
             log(f"scenario checkers: {scenarios[-1]['result']} {scenarios[-1]['problems']}")
+        if "lead_shadow" in names:
+            log("scenario lead_shadow")
+            try:
+                scenarios.append(scenario_lead_shadow(tmp))
+            except Exception as cause:
+                scenarios.append(verdict("lead_shadow", [f"scenario raised: {cause}"]))
+            log(f"scenario lead_shadow: {scenarios[-1]['result']} {scenarios[-1]['problems']}")
         # memory_paths first: its records are planted before the PM starts (its first prompt must carry the probe rule) and removed before
         # the writers of the other scenarios start.
         main_names = sorted((n for n in names if n not in STANDALONE), key=lambda n: n != "memory_paths")

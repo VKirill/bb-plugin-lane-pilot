@@ -8,6 +8,7 @@ import type { RollbackApi } from "../../rollback/server";
 import type { BenchApi } from "../../bench/server";
 import type { BaselineApi, RegressionApi } from "../../baseline/server";
 import type { RunGoalApi } from "../../run-goal/server";
+import type { LeadApi } from "../../lead/server";
 import type { PhaseApi, PhaseIntake } from "../../phase/server";
 import type { MoneyApi } from "../../money";
 import type { FrontApi } from "../../front";
@@ -197,4 +198,6 @@ export interface Services {
   /** Starts a named agent for a scheduled `agent` run and reads its report; set when the tools are mounted. */
   /** The schedule board: scheduler, definitions, previews (src/server/schedule-service.ts). */
   schedules: ScheduleService;
+  /** The lead («Штурман»): the road tree, the decision journal, the ticks and the rights (src/rooms/lead/server/service.ts). */
+  lead: LeadApi;
 }

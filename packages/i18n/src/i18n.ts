@@ -736,6 +736,8 @@ const chromeEn = {
   fieldUnitTokens: "tokens",
   fieldUnitPages: "pages",
   fieldUnitHours: "hour",
+  fieldUnitUsd: "USD",
+  fieldUnitProposals: "proposals",
   fieldUnitLines: "lines",
   fieldUnitRounds: "rounds",
   fieldUnitSeconds: "seconds",
@@ -962,6 +964,8 @@ const chromeEn = {
   enumFailFastOff: "Off: contract order, every check runs",
   enumCleanupOn: "On: the hourly janitor removes finished worktree copies",
   enumCleanupOff: "Off: copies stay until their own removal path",
+  enumLeadOn: "On: the lead runs its ticks on the cron and proposes",
+  enumLeadOff: "Off: no tick runs; the journal and the road still record",
   enumRetrySafetyOn: "On: a touched work area blocks the retry",
   enumRetrySafetyOff: "Off: retries ignore work-area tampering",
   enumRefusalPenaltyOn: "On: refusing pairs lose the pick",
@@ -1209,7 +1213,9 @@ const chromeEn = {
   accessName_specialist_visual_artist: "Visual artist",
   accessPurpose_specialist_visual_artist: "Pictures for the task, via the image catalog and Image Studio.",
   accessName_specialist_macos_operator: "macOS operator",
+  accessName_specialist_lead: "Lead (Shturman)",
   accessPurpose_specialist_macos_operator: "The owner's macOS routine on the Mac mini.",
+  accessPurpose_specialist_lead: "The lead («Штурман») in its tick: reads the hub state in its brief and proposes; edits nothing.",
 };
 
 const chromeRu: { [K in keyof typeof chromeEn]: string } = {
@@ -1943,6 +1949,8 @@ const chromeRu: { [K in keyof typeof chromeEn]: string } = {
   fieldUnitPercent: "%",
   fieldUnitPages: "страниц",
   fieldUnitHours: "час",
+  fieldUnitUsd: "USD",
+  fieldUnitProposals: "предложений",
   fieldUnitLines: "строк",
   fieldUnitRounds: "раундов",
   fieldUnitSeconds: "секунд",
@@ -2156,6 +2164,8 @@ const chromeRu: { [K in keyof typeof chromeEn]: string } = {
   enumFailFastOff: "Выкл: порядок контракта, запускаются все проверки",
   enumCleanupOn: "Вкл: ежечасная уборка удаляет отработанные копии",
   enumCleanupOff: "Выкл: копии ждут только свой путь удаления",
+  enumLeadOn: "Вкл: Штурман ходит тиками по крону и предлагает",
+  enumLeadOff: "Выкл: тики не идут; журнал и дорога по-прежнему пишутся",
   enumRetrySafetyOn: "Вкл: тронутая рабочая область блокирует ретрай",
   enumRetrySafetyOff: "Выкл: ретрай игнорирует изменения области",
   enumRefusalPenaltyOn: "Вкл: отказывающие пары проигрывают выбор",
@@ -2403,7 +2413,9 @@ const chromeRu: { [K in keyof typeof chromeEn]: string } = {
   accessName_specialist_visual_artist: "Художник",
   accessPurpose_specialist_visual_artist: "Картинка под задачу: каталог изображений и плагин Image Studio.",
   accessName_specialist_macos_operator: "Оператор macOS",
+  accessName_specialist_lead: "Штурман",
   accessPurpose_specialist_macos_operator: "Рутина владельца на Mac mini.",
+  accessPurpose_specialist_lead: "Штурман в своём тике: читает состояние хаба из брифа и предлагает; ничего не правит.",
 };
 
 export const en = { ...chromeEn, ...fieldEn, ...workflowEn, ...editorEn, ...opsEn, ...modelsEn, ...canvasEn, ...scheduleEn, ...boardEn, ...ownerEn, ...anamnesisEn, ...tabsEn, ...ownedEn, ...jevEn, ...improvementEn, ...graphEn, ...cockpitEn, ...roleModelsEn, ...agentLabelEn };

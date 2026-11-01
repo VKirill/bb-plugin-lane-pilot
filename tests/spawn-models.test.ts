@@ -17,6 +17,7 @@ type Wrapper = { via: "resolver"; roles: readonly string[]; note?: string; sourc
 const WRAPPERS: Record<string, Wrapper> = {
   "src/rooms/workflow/server/workflow-agent.ts": { via: "resolver", roles: ["*"], note: "every graph helper: withResolvedModel; `run` resolves what was not resolved; a provider-limit fallback asks the resolver again without the failed provider" },
   "src/rooms/workflow/server/architect-start.ts": { via: "resolver", roles: ["workflow-architect"] },
+  "src/rooms/lead/server/service.ts": { via: "resolver", roles: ["lead"], note: "the lead's chat («Штурман») runs on the lead row; the tick's agent step goes through workflow-agent.ts as specialist:lead" },
   "src/rooms/council/server/council-graph.ts": { via: "resolver", roles: ["council"], note: "the chair; the SEATS keep the models they were given (exception: the owner's council.<role>.* or distinct stage selections), only the provider+model pair is made consistent by writerExecutionSelection" },
   "src/rooms/memory/server/memory.ts": { via: "resolver", roles: ["memory"] },
   "src/rooms/project-life/server/project-life.ts": { via: "resolver", roles: ["project-life"] },

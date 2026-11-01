@@ -3,3 +3,4 @@
 export { scheduleRpcContract } from "./contract";
 export { ERRAND_BUILTIN, SCHEDULE_ERRAND_DEFAULT_KEY, errandDefaultProblem } from "./errand-model";
 export { createScheduleStore, scheduleAgentMigrations, scheduleMigrations, taskOf } from "./store";
+export { fireTimes } from "./time";

@@ -7,6 +7,7 @@ import { providerLimitNotice } from "../../writer/server";
 import { MAIN_AGENT_ID, ROLE_PROFILES, compileEffectiveMainAgent, employeeView, isCustomAgentId, isEmployeeSpecialist, mentionContext, placeEmployeeOn } from "../../native-agent";
 import type { ExtraAccess, HelperRole } from "../../native-agent";
 import { storeNativeSelection } from "../../native-agent/server";
+import { LEAD_ID } from "../../lead";
 import { redactKnown } from "@lane-pilot/kit";
 import { READ_ONLY_LINE, agentPrompt, outputContract, parseAgentOutput } from "@lane-pilot/workflow-engine";
 import { contractProblems, contractRepairPrompt, describeProblems, hasContractProblems } from "@lane-pilot/workflow-engine";
@@ -53,7 +54,7 @@ const ROLE_MAP: Record<string, HelperRole> = {
 };
 
 /** A bundled specialist; any other `specialist:<id>` names an agent the owner created, which must exist when the step runs (`ownSpecialist`). */
-export const isBundledSpecialist = (id: string): boolean => (SPECIALIST_ROLES as readonly string[]).includes(id) || isEmployeeSpecialist(id);
+export const isBundledSpecialist = (id: string): boolean => (SPECIALIST_ROLES as readonly string[]).includes(id) || isEmployeeSpecialist(id) || id === LEAD_ID;
 
 /** The graph a schedule of kind agent runs (workflows/agent-routine.json). */
 export const AGENT_ROUTINE = "agent-routine";
@@ -81,7 +82,9 @@ export function downgradableRole(role: string): boolean {
 export function roleSpec(role: string): RoleSpec {
   // Graphs name an employee either as `specialist:game-dev` or as the bare id (`game-dev` in roblox-asset).
   const named = role.startsWith("specialist:") ? role.slice("specialist:".length) : role;
-  const specialist = role.startsWith("specialist:") || isEmployeeSpecialist(role) ? named : null;
+  const specialist = role.startsWith("specialist:") || isEmployeeSpecialist(role) || role === LEAD_ID ? named : null;
+  // The lead («Штурман», workflows/lead-tick.json): its own bundled profile and row of the role table; it reads, proposes and edits nothing of the repository.
+  if (specialist === LEAD_ID) return { helper: `specialist:${LEAD_ID}` as HelperRole, metadata: LEAD_ID, specialist: LEAD_ID, readOnly: true, editable: BASE_ALLOWED };
   if (specialist && (isBundledSpecialist(specialist) || (MAIN_AGENT_ID.test(specialist) && isCustomAgentId(specialist)))) {
     // design-lead keeps the design canon: DESIGN.md at the root and in an app's docs (the specialist's own prompt says the same).
     const designCanon = (file: string) => specialist === "design-lead" && (file === "DESIGN.md" || file.endsWith("/DESIGN.md"));

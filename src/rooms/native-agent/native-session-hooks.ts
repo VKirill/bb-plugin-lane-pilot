@@ -110,6 +110,9 @@ export const NATIVE_LP_BRIDGE_PM_TOOLS = [
 /** The one bridge tool a specialist gets: the schedule, so the owner can ask «every Monday collect…» in the specialist's own chat. */
 export const NATIVE_LP_BRIDGE_SPECIALIST_TOOLS = ["lane_pilot_schedule"] as const;
 
+/** The tools of the lead («Штурман», src/rooms/lead/lead-agent.ts): reading and its own tool; it never dispatches, schedules, spends or sends. */
+export const NATIVE_LP_BRIDGE_LEAD_TOOLS = ["lane_pilot_read", "lane_pilot_lead", "lane_pilot_tool_search"] as const;
+
 /** The tools of the Workflow architect: it builds chains, it does not dispatch writers. */
 export const NATIVE_LP_BRIDGE_ARCHITECT_TOOLS = [
   "lane_pilot_read",

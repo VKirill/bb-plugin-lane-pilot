@@ -4,7 +4,7 @@ import { SAME_FAMILY_JUDGE_BY_LIMIT, consistentProvider, pickedEffort, tablePool
 
 /** Roles that run as a Claude Code agent profile (a specialist, the workflow architect): never moved to another provider. */
 export const CLAUDE_PROFILE_ROLES: ReadonlySet<string> = new Set([
-  "specialist", "workflow-architect",
+  "specialist", "workflow-architect", "lead",
   "copy-lead", "seo-specialist", "design-lead", "video-lead", "tavily",
   "3d-artist", "game-dev", "social-manager", "billing-assistant", "visual-artist", "macos-operator",
 ]);

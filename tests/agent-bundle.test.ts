@@ -26,6 +26,7 @@ describe("bundled BB session profiles", () => {
       "visual-artist",
       "macos-operator",
       "workflow-architect",
+      "lead",
       "advisor-researcher",
       "ai-researcher",
       "animator",

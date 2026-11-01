@@ -375,4 +375,16 @@ export const rpcOps = {
     }).strict(),
     output: z.unknown(),
   },
+  /** The lead («Штурман», src/rooms/lead): everything the Self-improvement strip and the CLI show — settings, identity sha, next and last ticks, road counts, open proposals, the tier of every class with its exam numbers, journal counts. */
+  lead_state: { input: z.object({}).strict(), output: z.unknown() },
+  /** The road tree: open branches by default, `history` adds rejected and done ones with their reasons; `projectId` null = above projects, absent = every project. */
+  lead_road: { input: z.object({ projectId: z.string().min(1).max(200).nullable().optional(), history: z.boolean().optional() }).strict(), output: z.unknown() },
+  /** The owner's answer to a proposal of the lead (да / потом / нет on his list): the branch, the journal row and the list line move together. */
+  lead_decide: { input: z.object({ roadId: z.string().min(1).max(60), decision: z.enum(["yes", "later", "no"]), text: z.string().max(600).optional() }).strict(), output: z.unknown() },
+  /** «Тик сейчас»: one tick of the lead outside its cron (the graph lead-tick); refused while one is running. */
+  lead_tick_now: { input: z.object({}).strict(), output: z.unknown() },
+  /** The switch of the lead's ticks (lead.enabled); the word itself becomes a row of the journal. */
+  lead_set_enabled: { input: z.object({ on: z.boolean() }).strict(), output: z.unknown() },
+  /** «Открыть чат Штурмана»: a chat thread with the lead profile active in its home project; a live one is returned instead of a second (`reused`). */
+  lead_chat_start: { input: z.object({ sectionId: z.string().min(1).optional() }).strict(), output: z.object({ threadId: z.string(), projectId: z.string(), reused: z.boolean() }).strict() },
 };

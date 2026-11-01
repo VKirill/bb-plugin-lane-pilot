@@ -1,8 +1,9 @@
 import { stockEmployee } from "./employee-manifest";
 import { SKILL_CATALOG_BLOCK, SKILL_CATALOG_LINE } from "./skill-catalog";
 import bundledAgents from "./bundled-agents.json";
-import { BB_BRIDGE_MCP_SERVER, NATIVE_LP_BRIDGE_ARCHITECT_TOOLS, NATIVE_LP_BRIDGE_PM_TOOLS, NATIVE_LP_BRIDGE_SPECIALIST_TOOLS, unionLpBridgeTools, withoutLpBridgeTools } from "./native-session-hooks";
+import { BB_BRIDGE_MCP_SERVER, NATIVE_LP_BRIDGE_ARCHITECT_TOOLS, NATIVE_LP_BRIDGE_LEAD_TOOLS, NATIVE_LP_BRIDGE_PM_TOOLS, NATIVE_LP_BRIDGE_SPECIALIST_TOOLS, unionLpBridgeTools, withoutLpBridgeTools } from "./native-session-hooks";
 import { WORKFLOW_ARCHITECT_ID, WORKFLOW_ARCHITECT_SESSION, WORKFLOW_ARCHITECT_SUMMARY } from "../workflow";
+import { LEAD_ID, LEAD_SESSION, LEAD_SUMMARY } from "../lead";
 import { rewriteFoldedToolNames } from "../tools";
 
 /** Official `--agents` JSON fields from https://code.claude.com/docs/en/sub-agents */
@@ -454,6 +455,7 @@ For each promise of the phase: the checks that prove it, whether they would fail
 From the plan and DESIGN.md: every screen the phase changes, its states (empty, loading, error, full), breakpoints 375 and 1280, and the points a test or a browser check can read. Write \`.agents/research/ui-<slug>.md\`. Drawing the screens is design-lead. A live click is the PM's browser check: name the URL and the cases in the file.`),
 
   [WORKFLOW_ARCHITECT_ID]: rewriteFoldedToolNames(WORKFLOW_ARCHITECT_SESSION),
+  [LEAD_ID]: LEAD_SESSION,
 
   "browser-qa": `This chat is a Lane Pilot browser-qa session in BB.
 
@@ -484,6 +486,7 @@ export const BB_AGENT_SUMMARIES: Readonly<Record<string, string>> = {
   "visual-artist": "Pictures for the task via the image catalog and the Image Studio plugin.",
   "macos-operator": "The owner's macOS routine on the Mac mini: computer-use and the browser plugin.",
   [WORKFLOW_ARCHITECT_ID]: WORKFLOW_ARCHITECT_SUMMARY,
+  [LEAD_ID]: LEAD_SUMMARY,
   "advisor-researcher": "One gray area: two or three options, a source for each, and a recommendation; no product code.",
   "ai-researcher": "Current docs, limits and prices of one named AI model or API, with links; does not pick the framework.",
   "animator": "Motion spec for a UI row: trigger, duration, easing, reduced-motion fallback; no static layout and no product code.",
@@ -565,6 +568,11 @@ export function overlaySessionTools(agentId: string, tools: string[]): string[] 
     // The bridge's tools are deferred: without the loader the architect could not load the draft tools it is allowed.
     const architect = unionLpBridgeTools(base, NATIVE_LP_BRIDGE_ARCHITECT_TOOLS);
     return architect.includes(DEFERRED_MCP_LOADER) ? architect : [...architect, DEFERRED_MCP_LOADER];
+  }
+  if (nativeAgentName(agentId) === LEAD_ID) {
+    // The lead keeps the road and the journal; it has no dispatch, schedule, errand or browser tool whatever a saved definition lists.
+    const lead = unionLpBridgeTools(base, NATIVE_LP_BRIDGE_LEAD_TOOLS);
+    return lead.includes(DEFERRED_MCP_LOADER) ? lead : [...lead, DEFERRED_MCP_LOADER];
   }
   if (!isLanePmAgent(agentId)) {
     if (isInternalAgent(agentId)) return base;

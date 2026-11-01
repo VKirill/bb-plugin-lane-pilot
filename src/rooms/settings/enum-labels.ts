@@ -39,6 +39,7 @@ const BY_KEY: Record<string, Record<string, I18nKey>> = {
   "writer.capacity_wait": { on: "enumCapacityWaitOn", off: "enumCapacityWaitOff" },
   "checks.fail_fast": { on: "enumFailFastOn", off: "enumFailFastOff" },
   "cleanup.worktrees": { on: "enumCleanupOn", off: "enumCleanupOff" },
+  "lead.enabled": { on: "enumLeadOn", off: "enumLeadOff" },
   "writer.retry_safety": { on: "enumRetrySafetyOn", off: "enumRetrySafetyOff" },
   "writer.pick_refusal_penalty": { on: "enumRefusalPenaltyOn", off: "enumRefusalPenaltyOff" },
   "writer.owns_barrier": { on: "enumOwnsBarrierOn", off: "enumOwnsBarrierOff" },

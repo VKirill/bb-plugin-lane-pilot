@@ -4,11 +4,12 @@ import { en, t, validationMessage, type I18nKey, type Locale } from "@lane-pilot
 import { Alert, AlertDescription, AlertTitle, Button, Disclosure, Segments, Skeleton, usePanelLayout } from "@lane-pilot/ui-kit";
 import { InheritanceContext, SettingField, SettingsGroup } from "../../settings/ui";
 import { useImprovement, type DryRun, type Improvement, type ImprovementView } from "./use-improvement";
+import { LEAD_SETTING_KEYS, LeadSection } from "../../lead/ui";
 
-const SECTIONS = ["night", "bench", "policy", "checks", "waiting", "memory"] as const;
+const SECTIONS = ["night", "bench", "policy", "checks", "waiting", "memory", "lead"] as const;
 type Section = (typeof SECTIONS)[number];
 const SECTION_LABEL: Record<Section, I18nKey> = {
-  night: "imp_seg_night", bench: "imp_seg_bench", policy: "imp_seg_policy", checks: "imp_seg_checks", waiting: "imp_seg_waiting", memory: "imp_seg_memory",
+  night: "imp_seg_night", bench: "imp_seg_bench", policy: "imp_seg_policy", checks: "imp_seg_checks", waiting: "imp_seg_waiting", memory: "imp_seg_memory", lead: "imp_seg_lead",
 };
 
 const fill = (key: I18nKey, values: Record<string, string | number>) => Object.entries(values).reduce((text, [name, value]) => text.replace(`{${name}}`, String(value)), t(key));
@@ -274,6 +275,7 @@ export function ImprovementScreen({ locale }: { locale: Locale }) {
             {section === "checks" ? <ChecksSection ctl={ctl} /> : null}
             {section === "waiting" ? <WaitingSection ctl={ctl} view={view} /> : null}
             {section === "memory" ? <MemorySection ctl={ctl} /> : null}
+            {section === "lead" ? <LeadSection locale={locale} fields={<Fields ctl={ctl} names={LEAD_SETTING_KEYS} />} /> : null}
             <Commands />
           </>
         ) : null}

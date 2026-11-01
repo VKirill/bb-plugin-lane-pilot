@@ -11,6 +11,7 @@ import type { BenchApi } from "../../bench/server";
 import type { DeferralApi } from "../../deferral/server";
 import { readHubRows } from "../hub";
 import { HUB_SPECS, PROJECT_DEFAULT_KEYS, settingValue } from "../keys";
+import { LEAD_SETTING_KEYS } from "../../lead";
 
 /** The checks and defaults that are project-level settings read at the global level here (the page edits the default every project starts from). */
 export const IMPROVEMENT_PROJECT_KEYS = [...PROJECT_DEFAULT_KEYS, "plan_fact.mode", "critic.code.default_for_risk", "memory.note_budget"] as const;
@@ -55,7 +56,10 @@ export function improvementRpc(deps: ImprovementDeps) {
       // The project-level defaults: what the global level holds, null when nothing is set (the field then shows the catalog default).
       const projectRows = readHubRows(db, IMPROVEMENT_PROJECT_KEYS);
       for (const key of IMPROVEMENT_PROJECT_KEYS) values[key] = projectRows.get(key)?.value ?? null;
-      const versions = getSettingVersions(db, GLOBAL_SETTINGS_PROJECT_ID, [...HUB_SPECS.map((spec) => spec.key), ...IMPROVEMENT_PROJECT_KEYS], "");
+      // The lead's settings (section «Штурман»): rows of the global level like the others, null when unset (the field shows the catalog default).
+      const leadRows = readHubRows(db, LEAD_SETTING_KEYS);
+      for (const key of LEAD_SETTING_KEYS) values[key] = leadRows.get(key)?.value ?? null;
+      const versions = getSettingVersions(db, GLOBAL_SETTINGS_PROJECT_ID, [...HUB_SPECS.map((spec) => spec.key), ...IMPROVEMENT_PROJECT_KEYS, ...LEAD_SETTING_KEYS], "");
 
       const wall = deps.wall.status();
       const lastNight = wall.nights[0] ?? null;

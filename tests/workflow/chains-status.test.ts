@@ -21,7 +21,8 @@ describe("status of the built-in chains", () => {
       const id = item.workflow.id;
       // The body of a schedule of kind agent: its case is in tests/schedule/agent-routine.test.ts, run through the real engine. A starter graph
       // (`startedBy`: lp-task-pipeline, errand) is run by the tool that starts it, with its own test file (tests/errand-graph.test.ts).
-      if (item.workflow.startedBy || id === "agent-routine") continue;
+      // The lead's tick (lead-tick): its case is tests/lead/tick.test.ts (runSim on stubs), next to the code steps it drives.
+      if (item.workflow.startedBy || id === "agent-routine" || id === "lead-tick") continue;
       if (!withCase.has(id)) missing.push(id);
     }
     expect(missing).toEqual([]);
@@ -48,6 +49,6 @@ describe("status of the built-in chains", () => {
     expect(ids).toEqual(expect.arrayContaining(["validate-phase", "eval-review", "ai-integration-phase", "spike", "ship", "pr-branch", "cleanup", "new-milestone", "plan-review-convergence", "project-start"]));
     expect(ids).toEqual(expect.arrayContaining(["3d-asset", "roblox-asset", "social-post"]));
     expect(ids).toEqual(expect.arrayContaining(["research-dossier", "billing-batch", "macos-routine", "seo-page", "api-recon"]));
-    expect(ids).toHaveLength(81);
+    expect(ids).toHaveLength(82); // +1 lead-tick (0.1.447)
   });
 });

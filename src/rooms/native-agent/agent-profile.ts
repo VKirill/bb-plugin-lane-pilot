@@ -3,6 +3,7 @@ import bundledAgents from "./bundled-agents.json";
 import { EMPLOYEES, machineAffinitySchema, stockEmployee } from "./employee-manifest";
 import { isCliLaneAgentPrompt, isInternalAgent, isLanePmAgent, laneSessionOverlayPrompt, overlayDisallowedTools, overlaySessionTools } from "./native-agent-overlay";
 import { WORKFLOW_ARCHITECT_ID, WORKFLOW_ARCHITECT_NAME, WORKFLOW_ARCHITECT_TOOLS } from "../workflow";
+import { LEAD_ID, LEAD_NAME, LEAD_TOOLS } from "../lead";
 import { sha256Hex } from "@lane-pilot/kit";
 
 export const MAIN_AGENT_ID = /^[a-z0-9][a-z0-9-]{0,63}$/;
@@ -21,6 +22,7 @@ export const MAIN_AGENT_PROFILE_IDS = [
   "visual-artist",
   "macos-operator",
   WORKFLOW_ARCHITECT_ID,
+  LEAD_ID,
   // (2026-10-29 lane-stack port) standalone roles. browser-qa stays reserved for the lp.browser-qa graph.
   "advisor-researcher",
   "ai-researcher",
@@ -146,6 +148,10 @@ export const LEGACY_STOCK_TEMPLATES: Readonly<Record<string, { description: stri
     description: "Lane Pilot workflow architect",
     prompt: "You are the Lane Pilot workflow architect. Interview the owner about a repeatable process and build it as a tested workflow with the lane_pilot_workflow tools.",
   },
+  [LEAD_ID]: {
+    description: "Lane Pilot lead",
+    prompt: "You are Shturman, the Lane Pilot lead over every project of the owner. Keep the road tree, propose next steps with evidence and a price, record decisions; never edit code or dispatch writers.",
+  },
   tavily: {
     description: "Lane Pilot Tavily research agent",
     prompt: "You are the Lane Pilot Tavily research agent. Search and summarize only what the task asks. Do not change runtime files unless the task says so.",
@@ -201,6 +207,15 @@ const OWNED_PROFILES: Record<string, BundledAgent> = {
     mcpServers: [],
     omittedNativeFields: ["model", "effort", "permissionMode"],
     provenance: { package: "bb-plugin-lane-pilot", version: "bb-session-1", file: "src/workflow-architect.ts", sha256: "", bytes: 0 },
+  },
+  [LEAD_ID]: {
+    displayName: LEAD_NAME.en,
+    prompt: laneSessionOverlayPrompt(LEAD_ID),
+    tools: [...LEAD_TOOLS],
+    skills: [],
+    mcpServers: [],
+    omittedNativeFields: ["model", "effort", "permissionMode"],
+    provenance: { package: "bb-plugin-lane-pilot", version: "bb-session-1", file: "src/rooms/lead/lead-agent.ts", sha256: "", bytes: 0 },
   },
 };
 

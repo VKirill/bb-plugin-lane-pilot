@@ -14,7 +14,7 @@ sources:
   - docs/enabled-settings.snapshot.json
 ---
 
-<!-- enabled-settings:structure d9489007626eba22 -->
+<!-- enabled-settings:structure 21ac5d40b70ddafe -->
 
 # Enabled settings (generated)
 
@@ -120,6 +120,12 @@ switches: `quick` disables both critiques, `full` enables them (`src/rooms/criti
 | `jev.modes` | — | — | Jev judgments: off, shadow or active per judgment |
 | `jev.provider` | `typesafe` | — | Jev provider: openlux or typesafe serves every Jev request |
 | `jev.thresholds` | — | — | Jev judgments: thresholds as judgment.name=number pairs |
+| `lead.budget_daily_usd` | `15` | — | lead: the dollars its ticks may spend in one day |
+| `lead.enabled` | `off` | — | lead («Штурман», src/rooms/lead/settings.ts): the switch of its ticks |
+| `lead.max_proposals` | `5` | — | lead: how many proposals one tick may put on the owner's list |
+| `lead.project` | — | — | lead: the project its chat and tick runs live in |
+| `lead.projects` | — | — | lead: the projects a tick reads and proposes for |
+| `lead.tick_cron` | `30 6,10,14,18 * * *` | — | lead: when a tick starts, in the owner's time zone |
 | `memory.agent` | `memory-maintainer` | — | memory role label included in its prompt |
 | `memory.audience` | `subagent` | — | stage setting: control memory audience |
 | `memory.context_budget` | `2500` | — | stage setting: cap injected memory context tokens |

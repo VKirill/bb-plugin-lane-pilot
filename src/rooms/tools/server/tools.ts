@@ -19,6 +19,7 @@ import { mountWorkflowTools } from "../../workflow/server";
 import { mountSelfRepair } from "../../self-repair/server";
 import { mountHookTimeoutWatch, mountServiceProjects, mountWorktreeJanitor } from "../../stability/server";
 import { mountWorkflowArchitect } from "../../workflow/server";
+import { mountLeadTool } from "../../lead/server";
 import { mountScheduleTools } from "../../schedule/server";
 import { mountToolFamilies } from "./tool-families";
 import { callerPluginMetadata, registerObservedTool, ToolError } from "../../core/server";
@@ -332,6 +333,7 @@ export function registerTools(ctx: ServerCore, services: Services) {
   mountServiceProjects(ctx);
   mountWorktreeJanitor(ctx, { cleanupStickyLaneWorktrees, cleanupFinishedAttemptEnvironments });
   mountWorkflowArchitect(ctx, services);
+  mountLeadTool(ctx, services);
   mountScheduleTools(ctx, services);
   mountToolFamilies(ctx);
 

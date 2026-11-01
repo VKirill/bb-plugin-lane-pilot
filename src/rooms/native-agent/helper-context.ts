@@ -93,7 +93,8 @@ export type HelperRole =
   | "browser-qa" | "errand" | "api-recon" | "council-seat" | "rules-analyzer"
   | "analyst" | "planner" | "auditor" | "debugger"
   | "specialist:design-lead" | "specialist:copy-lead" | "specialist:seo-specialist" | "specialist:tavily" | "specialist:video-lead"
-  | "specialist:3d-artist" | "specialist:game-dev" | "specialist:social-manager" | "specialist:billing-assistant" | "specialist:visual-artist" | "specialist:macos-operator";
+  | "specialist:3d-artist" | "specialist:game-dev" | "specialist:social-manager" | "specialist:billing-assistant" | "specialist:visual-artist" | "specialist:macos-operator"
+  | "specialist:lead";
 
 type RoleProfile = { bbPlugins: string[]; skills: string[]; mcpServers: string[] };
 const CODER: RoleProfile = { bbPlugins: [], skills: ["writer-practices", "karpathy-guidelines"], mcpServers: ["gitnexus", "metamcp"] };
@@ -149,6 +150,8 @@ export const ROLE_PROFILES: Record<HelperRole, RoleProfile> = {
   "specialist:billing-assistant": { bbPlugins: ["env-catalog"], skills: ["env-catalog", "kontur-elba"], mcpServers: [] },
   "specialist:visual-artist": { bbPlugins: ["image-studio"], skills: ["image-prompting"], mcpServers: [] },
   "specialist:macos-operator": { bbPlugins: ["browser-automation", "env-catalog"], skills: ["env-catalog", "computer-use"], mcpServers: [] },
+  // The lead («Штурман», src/rooms/lead): the tick's agent step reads its brief (the identity and the hub state are in the message) and answers in fields; no repository tools.
+  "specialist:lead": { bbPlugins: [], skills: [], mcpServers: [] },
 };
 
 /** The profile of a specialist the owner defined: it has no entry above, so it starts with Env Catalog; its own skills and MCP servers come in as `extra` on the spawn. */

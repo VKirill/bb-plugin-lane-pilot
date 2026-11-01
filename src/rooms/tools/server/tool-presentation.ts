@@ -61,6 +61,7 @@ export const TOOL_PRESENTATION: Record<string, Entry> = {
   lane_pilot_workflow_draft_test: row("Testing the workflow on stubs", "Tested the workflow on stubs", "Проверяю граф на заглушках", "Граф проверен на заглушках"),
   lane_pilot_workflow_draft_publish: row("Publishing the workflow", "Published the workflow", "Публикую граф", "Граф опубликован"),
   lane_pilot_schedule: row("Working with the schedule", "Worked with the schedule", "Работаю с расписанием", "С расписанием поработал"),
+  lane_pilot_lead: row("Working with the lead's road", "Worked with the lead's road", "Работаю с дорогой Штурмана", "С дорогой Штурмана поработал"),
   lane_pilot_phase: row("Moving the phase", "Moved the phase", "Веду фазу", "Фазу провёл"),
   lane_pilot_queue: row("Working with the queue", "Worked with the queue", "Работаю с очередью", "С очередью поработал"),
   lane_pilot_facts: row("Reading the facts", "Read the facts", "Читаю факты", "Факты прочитал"),

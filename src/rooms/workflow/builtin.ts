@@ -1,6 +1,7 @@
 import asset3d from "../../../workflows/3d-asset.json";
 import aboutSite from "../../../workflows/about-site.json";
 import agentRoutine from "../../../workflows/agent-routine.json";
+import leadTick from "../../../workflows/lead-tick.json";
 import analyzeCode from "../../../workflows/analyze-code.json";
 import analyzePlanExecute from "../../../workflows/analyze-plan-execute.json";
 import billingBatch from "../../../workflows/billing-batch.json";
@@ -94,6 +95,7 @@ export const BUILTIN_SOURCES: ReadonlyArray<{ name: string; value: unknown }> = 
   { name: "3d-asset.json", value: asset3d },
   { name: "about-site.json", value: aboutSite },
   { name: "agent-routine.json", value: agentRoutine },
+  { name: "lead-tick.json", value: leadTick },
   { name: "analyze-code.json", value: analyzeCode },
   { name: "analyze-plan-execute.json", value: analyzePlanExecute },
   { name: "billing-batch.json", value: billingBatch },
