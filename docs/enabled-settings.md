@@ -14,7 +14,7 @@ sources:
   - docs/enabled-settings.snapshot.json
 ---
 
-<!-- enabled-settings:structure 21ac5d40b70ddafe -->
+<!-- enabled-settings:structure 7dc06eaf6abaae32 -->
 
 # Enabled settings (generated)
 
@@ -123,6 +123,7 @@ switches: `quick` disables both critiques, `full` enables them (`src/rooms/criti
 | `lead.budget_daily_usd` | `15` | — | lead: the dollars its ticks may spend in one day |
 | `lead.enabled` | `off` | — | lead («Штурман», src/rooms/lead/settings.ts): the switch of its ticks |
 | `lead.max_proposals` | `5` | — | lead: how many proposals one tick may put on the owner's list |
+| `lead.priority` | — | — | lead: the owner's order of projects |
 | `lead.project` | — | — | lead: the project its chat and tick runs live in |
 | `lead.projects` | — | — | lead: the projects a tick reads and proposes for |
 | `lead.tick_cron` | `30 6,10,14,18 * * *` | — | lead: when a tick starts, in the owner's time zone |

@@ -179,6 +179,13 @@ export function createLeadService(ctx: ServerCore, services: Services) {
     answerDecision(db, id, { option: on ? "on" : "off" }, by, now);
   }
 
+  /** The owner's order of projects (`lead.priority`): ids as given, duplicates dropped; an empty list clears it. Not a journal row: the order is the owner's, not a decision the lead predicts. */
+  function setPriority(ids: readonly string[]): string[] {
+    const clean = [...new Set(ids.map((id) => id.trim()).filter(Boolean))];
+    saveProjectSetting(db, GLOBAL_SETTINGS_PROJECT_ID, "lead.priority", clean.join(","));
+    return clean;
+  }
+
   // --- the lead's chat (the architect's pattern: a visible thread in the home project's folder, the profile marker in a hidden part) ---
   const chatKey = (projectId: string) => `lead-chat-thread:${projectId}`;
   async function liveThread(projectId: string): Promise<string | null> {
@@ -236,7 +243,7 @@ export function createLeadService(ctx: ServerCore, services: Services) {
     return run;
   };
 
-  return { settings, homeProjectId, nextTickAt, due, runTick, sweep, exam, state, decide, setEnabled, chatStart: chatStartOnce, decisionOf: (id: string) => getDecision(db, id) };
+  return { settings, homeProjectId, nextTickAt, due, runTick, sweep, exam, state, decide, setEnabled, setPriority, chatStart: chatStartOnce, decisionOf: (id: string) => getDecision(db, id) };
 }
 export type LeadApi = ReturnType<typeof createLeadService>;
 

@@ -41,7 +41,7 @@ Each room is one component: `index.ts` is its public API, `server/` its services
 | hypotheses | BriefMode, HypothesisState, SEEDED, armsOf, briefMode, briefParts, hypothesisMigrations, settingsPair | 7 | 179 | tests (1) |
 | improvement | HUB_KEYS, HUB_SPECS, HubArea, HubDb, HubKind, HubSpec, PROJECT_DEFAULT_KEYS, QUIET_PATTERN, hubFields, hubSettingProblem, readHubRows, specOf, validTimeZone, writeHubFields, writeHubSettings | 8 | 726 | tests (2) |
 | jev | JEV_USAGE, runJevCli | 3 | 150 | tests (2) |
-| lead | ClassExam, EXAM_RULES, ExamRow, LEAD_DEFAULTS, LEAD_ID, LEAD_LAUNCH, LEAD_NAME, LEAD_PREDICT_ID, LEAD_SESSION, LEAD_SETTING_KEYS, LEAD_SUMMARY, LEAD_TICK, LEAD_TOOLS, LeadSettingKey, LeadSettings, PredictDecision, PredictInput, Verdict, answerPhaseWord, answerTaskWord, askPhaseWord, askTaskWord, cohenKappa, examAll, examClass, examEligible, leadMigrations, leadPredictJudgment, leadSettingProblem, parseLeadSettings, phaseDecisionId, wilsonLower, wordDecisionId | 21 | 1871 | tests (8) |
+| lead | ClassExam, EXAM_RULES, ExamRow, LEAD_DEFAULTS, LEAD_ID, LEAD_LAUNCH, LEAD_NAME, LEAD_PREDICT_ID, LEAD_SESSION, LEAD_SETTING_KEYS, LEAD_SUMMARY, LEAD_TICK, LEAD_TOOLS, LeadSettingKey, LeadSettings, PredictDecision, PredictInput, Verdict, answerPhaseWord, answerTaskWord, askPhaseWord, askTaskWord, cohenKappa, examAll, examClass, examEligible, leadMigrations, leadPredictJudgment, leadSettingProblem, parseLeadSettings, phaseDecisionId, wilsonLower, wordDecisionId | 21 | 1908 | tests (8) |
 | learning | FRUSTRATION_KEY, FrustrationRecord, LEARNING_USAGE, MemoryUnanswered, complexity, frustrationReason, judgeRulesOnDiff, learningFor, memoryUnanswered, mountLearning, ownerMessageJudgment, ownerQuestion, pmResumeInstructions, pmRuleRelevance, pmRulesOf, pmRulesPromptBlock, ruleBudget, ruleViolationRemark, runLearningCli, sameAsJudgment, unkeptPromise | 24 | 2438 | tests (2) |
 | memory | MEMORY_PATHS, MEMORY_PRIMITIVES, MemoryPath, MemoryPrimitive, MemorySettings, ProbeKind, parseMemorySettings, pathById | 11 | 909 | drill: memory_paths |
 | memory-eval | — | 10 | 1064 | tests (2) |
@@ -73,7 +73,7 @@ Each room is one component: `index.ts` is its public API, `server/` its services
 | self-improve | — | 1 | 65 | tests (2) |
 | self-repair | — | 8 | 2678 | tests (4) |
 | session-hooks | buildCapsule, capsuleRestored | 3 | 489 | tests (1) |
-| settings | SettingValidationError, readImportConfig, validateSettingValue, validateSettingsObject, validationErrorText | 20 | 3053 | drill: provider_limit |
+| settings | SettingValidationError, readImportConfig, validateSettingValue, validateSettingsObject, validationErrorText | 20 | 3054 | drill: provider_limit |
 | sma-map | LiveRow, LiveSource, ProofRoots, SMA_CARDS, SMA_CONTRACT_TESTS, SMA_ENTRIES, SMA_LINKS, SMA_LIVE, SMA_MAP_SHA, SMA_MAP_USAGE, SMA_NODES, SMA_REGIONS, SmaCard, SmaCounts, SmaEntry, SmaEvidence, SmaKind, SmaLinkKind, SmaNode, SmaRow, SmaStateCounts, SmaStatus, brokenProof, darkTableNames, defaultProofRoots, isChecked, isDone, readSmaLive, renderSmaLive, renderSmaMap, runSmaLiveCli, runSmaMapCli, smaCheckedPercent, smaCounts, smaDonePercent, smaEvidence, smaGroups, smaHoles, smaRows, smaStateCounts, unjudgedProof | 7 | 9281 | tests (1) |
 | stability | ReconcileCursor, ReconcileResult, parseOpenCodeToolTelemetry, reconcile, reconcileCritic, reconcileCursor | 14 | 1646 | drill: reload |
 | stage-return | StageReturnRecord, finishReturn, getReturn, insertReturn, listReturns, renderReturnNotes, stageReturnMigrations | 10 | 490 | tests (4) |
@@ -186,7 +186,7 @@ States: (new), queued, spawn_requested, running, spawn_rejected, spawn_unknown, 
 | src/rooms/sma-map/graph.ts | 6267 |
 | packages/i18n/src/i18n.ts | 2550 |
 | src/rooms/native-install/native-hook-sources.ts | 2421 |
-| packages/i18n/src/i18n-fields.ts | 2105 |
+| packages/i18n/src/i18n-fields.ts | 2109 |
 | src/rooms/storage/database.ts | 1927 |
 | src/rooms/sma-map/entries.ts | 1810 |
 | packages/workflow-engine/src/engine.ts | 1596 |

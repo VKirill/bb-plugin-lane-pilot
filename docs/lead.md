@@ -58,7 +58,7 @@ The owner wants to stop being the loop (`.agents/plans/2026-11-01-lead-agent-roa
 |---|---|---|
 | Decision journal (WP2) | `lane_pilot_decision` | one row per question the owner is asked on a surface: situation, options, prediction stamped before the answer, answer, judge's verdict, owner's label, split `exam | design | backtest` |
 | Road tree (WP0) | `lane_pilot_lead_road` | directions and options with a reason and evidence; states `open | proposed | accepted | later | rejected | done`; a rejected branch keeps its reason |
-| Identity (WP1) | `~/.lane-pilot/lead/LEAD.md` (`LANE_PILOT_LEAD_DIR`) | the owner's text, read at every tick and chat start, delivered as the first block `<lead_identity sha=…>`; seeded with a default on first read; `ROAD.md` next to it is the daily export of the tree |
+| Identity (WP1) | `~/.lane-pilot/lead/LEAD.md` (`LANE_PILOT_LEAD_DIR`) | the owner's text, read at every tick and chat start, delivered as the first block `<lead_identity sha=…>`; seeded with a default on first read; `ROAD.md` next to it is the daily export of the tree. The file is the universal core (who the lead is, values, how to propose, what never to do) plus a short owner section; the map of the projects and their order are the hub's data in the brief (`projects[]` with `priority`), never prose that goes stale |
 | Tick (WP3) | `lane_pilot_lead_tick`, `workflows/lead-tick.json` | one receipt per tick: what it read, proposed, acted on, deferred, tokens and cost; status `ok | off | budget | error | no_receipt` |
 | Rights (WP4) | `lane_pilot_lead_right`, `policy/lead-policy.json` | the tier a class holds (`decides | proposes | owner_only`); the policy says where a class starts and which classes are the owner's alone; only the exam writes the table |
 | Labels | `lane_pilot_lead_label` | the owner's own verdicts on judged rows (kappa's ground truth) |
@@ -96,7 +96,7 @@ A proposal's line on «Ждут владельца» carries да / потом /
 
 ## Settings
 
-Global rows (`src/rooms/lead/settings.ts`, the «Штурман» segment of Self-improvement or `bb lane-pilot settings`): `lead.enabled` (off), `lead.project` (the project the chat and tick runs live in; empty = the Lane Pilot project of the hub), `lead.projects` (the zone; empty = every project), `lead.budget_daily_usd` (15), `lead.tick_cron` (`30 6,10,14,18 * * *`, owner's time zone), `lead.max_proposals` (5). The tick's budget is the sum of today's receipts; a tick that finds it spent ends `budget`.
+Global rows (`src/rooms/lead/settings.ts`, the «Штурман» segment of Self-improvement or `bb lane-pilot settings`): `lead.enabled` (off), `lead.project` (the project the chat and tick runs live in; empty = the Lane Pilot project of the hub), `lead.projects` (the zone; empty = every project), `lead.priority` (project ids in the owner's order; the brief carries each project's rank, 1 = first, unlisted projects follow, and the lead ranks its proposals by it), `lead.budget_daily_usd` (15), `lead.tick_cron` (`30 6,10,14,18 * * *`, owner's time zone), `lead.max_proposals` (5). The tick's budget is the sum of today's receipts; a tick that finds it spent ends `budget`.
 
 ## The chat and the tool
 

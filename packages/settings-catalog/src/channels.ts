@@ -171,6 +171,7 @@ export const SETTING_CATALOG: SettingSpec[] = [
   { key:"lead.enabled", channel:"OWN", reason:"Native Lane Pilot lead («Штурман», src/rooms/lead/settings.ts): the switch of its ticks" },
   { key:"lead.project", channel:"OWN", reason:"Native Lane Pilot lead: the project its chat and tick runs live in" },
   { key:"lead.projects", channel:"OWN", reason:"Native Lane Pilot lead: the projects a tick reads and proposes for" },
+  { key:"lead.priority", channel:"OWN", reason:"Native Lane Pilot lead: the owner's order of projects; the brief ranks them so and unlisted follow" },
   { key:"lead.budget_daily_usd", channel:"OWN", reason:"Native Lane Pilot lead: the dollars its ticks may spend in one day" },
   { key:"lead.tick_cron", channel:"OWN", reason:"Native Lane Pilot lead: when a tick starts, in the owner's time zone" },
   { key:"lead.max_proposals", channel:"OWN", reason:"Native Lane Pilot lead: how many proposals one tick may put on the owner's list" },

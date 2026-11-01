@@ -65,10 +65,10 @@ export function projectRoot(db: LanePilotDatabase, projectId: string | null, pro
 
 export type HubSnapshot = {
   at: string; tickId: string; trigger: string;
-  settings: Pick<LeadSettings, "projects" | "budgetDailyUsd" | "maxProposals">;
+  settings: Pick<LeadSettings, "projects" | "priority" | "budgetDailyUsd" | "maxProposals">;
   budget: { spentUsd: number; leftUsd: number; ticksToday: number };
   identity: { sha: string; path: string; seeded: boolean };
-  projects: Array<{ id: string; name: string; runs: Record<string, number>; tasks30d: number; accepted30d: number; livePhases: Array<{ id: string; title: string; stage: string }>; memory: string }>;
+  projects: Array<{ id: string; name: string; priority: number | null; runs: Record<string, number>; tasks30d: number; accepted30d: number; livePhases: Array<{ id: string; title: string; stage: string }>; memory: string }>;
   road: { counts: Record<string, number>; open: Array<Pick<RoadRow, "id" | "parent_id" | "project_id" | "title" | "kind" | "state" | "source" | "why" | "class" | "cost_estimate"> & { evidence: RoadEvidence[] }> };
   proposalsOpen: number;
   rights: Array<{ class: string; tier: string }>;
@@ -89,14 +89,18 @@ export async function hubSnapshot(ctx: Pick<ServerCore, "db" | "bb">, settings: 
   const spent = spentSince(db, dayStart(now, zone));
   const listed = await listProjects(bb);
   const inZone = settings.projects.length ? listed.filter((project) => settings.projects.includes(project.id)) : listed;
+  // The owner's order (`lead.priority`) ranks the projects of the brief; the ranked come first, the rest keep the hub's order. The map
+  // itself (names, runs, phases, memory) is read here every tick, so LEAD.md holds no list of projects that would go stale.
+  const rankOf = (id: string): number | null => { const at = settings.priority.indexOf(id); return at === -1 ? null : at + 1; };
+  const ordered = [...inZone].sort((a, b) => (rankOf(a.id) ?? Number.MAX_SAFE_INTEGER) - (rankOf(b.id) ?? Number.MAX_SAFE_INTEGER));
   const since30 = now - 30 * 86_400_000;
-  const projects = inZone.slice(0, 12).map((project) => {
+  const projects = ordered.slice(0, 12).map((project) => {
     const runs = Object.fromEntries((db.prepare("SELECT state, COUNT(*) AS n FROM lane_pilot_run WHERE project_id=? GROUP BY state").all(project.id) as Array<{ state: string; n: number }>).map((row) => [row.state, row.n]));
     const tasks30d = (db.prepare("SELECT COUNT(*) AS n FROM lane_pilot_task t JOIN lane_pilot_run r ON r.id=t.run_id WHERE r.project_id=? AND t.created_at>=?").get(project.id, since30) as { n: number }).n;
     const accepted30d = (db.prepare("SELECT COUNT(*) AS n FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id WHERE r.project_id=? AND a.state='accepted' AND a.updated_at>=?").get(project.id, since30) as { n: number }).n;
     const livePhases = listPhases(db, { projectId: project.id, live: true, limit: 5 }).map((phase) => ({ id: phase.id, title: clip(phase.title, 120), stage: phase.stage }));
     const memory = clip(taskMemoryContext(db, project.id, null, "what the project should do next; open problems; the owner's priorities"), 1_500);
-    return { id: project.id, name: project.name, runs, tasks30d, accepted30d, livePhases, memory };
+    return { id: project.id, name: project.name, priority: rankOf(project.id), runs, tasks30d, accepted30d, livePhases, memory };
   });
   const open = listRoad(db, { state: ["open", "later", "proposed"], limit: 60 }).map((row) => ({
     id: row.id, parent_id: row.parent_id, project_id: row.project_id, title: row.title, kind: row.kind, state: row.state, source: row.source, why: clip(row.why, 400), class: row.class, cost_estimate: row.cost_estimate,
@@ -108,7 +112,7 @@ export async function hubSnapshot(ctx: Pick<ServerCore, "db" | "bb">, settings: 
   }));
   return {
     at: new Date(now).toISOString(), tickId: input.tickId, trigger: input.trigger,
-    settings: { projects: settings.projects, budgetDailyUsd: settings.budgetDailyUsd, maxProposals: settings.maxProposals },
+    settings: { projects: settings.projects, priority: settings.priority, budgetDailyUsd: settings.budgetDailyUsd, maxProposals: settings.maxProposals },
     budget: { spentUsd: spent.costMicroUsd / USD, leftUsd: Math.max(0, settings.budgetDailyUsd - spent.costMicroUsd / USD), ticksToday: spent.ticks },
     identity: { sha: identity.sha, path: identity.path, seeded: identity.seeded },
     projects, road: { counts: roadCounts(db), open }, proposalsOpen: waiting.filter((item) => item.source === "lead" && item.kind === "proposal").length,
@@ -131,6 +135,7 @@ export function tickBrief(snapshot: HubSnapshot, identityText: string): string {
       "3. New directions or options worth keeping in the tree but not proposing today go into branches: {parent_id?, project_id?, title, kind: direction|option, why}.",
       "4. In deferred write what you looked at and left alone, and why, in a few lines. In summary write two or three sentences for the receipt.",
       "Rules: no proposal without an artifact; prefer finishing an open branch over opening a new one; the same proposal is not put to the owner twice (the open ones are in proposalsOpen and in road.open with state proposed); money and external classes are the owner's alone, so propose them only as questions; status is blocked only when the state is unreadable, with blocked_reason.",
+      "The owner's order of projects is projects[].priority (1 = first; null = unranked, listed after the ranked): rank the proposals by it, and a branch of a lower-ranked project needs stronger evidence to take a place from a higher one. The map of the projects (names, runs, phases, memory) is the hub's data above, not the identity file: do not expect it there.",
     ].join("\n"),
   ].join("\n\n");
 }

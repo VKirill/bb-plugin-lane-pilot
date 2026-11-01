@@ -118,7 +118,7 @@ describe("UI storage keys feed runtime channels", () => {
     const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
     await plugin(bb);
     const editable = UI_CATALOG.filter((row) => row.uiStatus === "editable");
-    expect(editable).toHaveLength(281); // 0.1.447: +6 lead.* rows; wave17: +3 (failure.interventions, writer.retry_escalate, memory.maintain_mode); wave10: +1 memory.maintain_every; wave9: +1 writer.fallback_on_provider_failure; batch2-next: +4 editable rows (employee/access pickers of the merged branches); 0.1.341: workflow.agent.* gone; 2026-10-29: CLI-only ops rows are readonly; adoc.041/042 do not choose a worktree
+    expect(editable).toHaveLength(282); // 0.1.452: +1 lead.priority; 0.1.447: +6 lead.* rows; wave17: +3 (failure.interventions, writer.retry_escalate, memory.maintain_mode); wave10: +1 memory.maintain_every; wave9: +1 writer.fallback_on_provider_failure; batch2-next: +4 editable rows (employee/access pickers of the merged branches); 0.1.341: workflow.agent.* gone; 2026-10-29: CLI-only ops rows are readonly; adoc.041/042 do not choose a worktree
     const atomicPickerKeys = new Set([
       "memory.provider", "memory.model", "memory.reasoning_effort", "memory.service_tier",
       "night_review.provider", "night_review.model", "night_review.reasoning_effort", "night_review.service_tier",
@@ -164,7 +164,7 @@ describe("UI storage keys feed runtime channels", () => {
     const booleanFlags = SETTING_CATALOG.filter((spec) => spec.booleanFlag);
     expect(booleanFlags.map((spec) => spec.key)).toEqual([]);
     const editable = UI_CATALOG.filter((row) => row.uiStatus === "editable");
-    expect(editable).toHaveLength(281); // 0.1.447: +6 lead.* rows; wave17: +3 (failure.interventions, writer.retry_escalate, memory.maintain_mode); wave10: +1 memory.maintain_every; wave9: +1 writer.fallback_on_provider_failure; batch2-next: +4 editable rows (employee/access pickers of the merged branches); 0.1.341: workflow.agent.* gone; 2026-10-29: CLI-only ops rows are readonly; adoc.041/042 do not choose a worktree
+    expect(editable).toHaveLength(282); // 0.1.452: +1 lead.priority; 0.1.447: +6 lead.* rows; wave17: +3 (failure.interventions, writer.retry_escalate, memory.maintain_mode); wave10: +1 memory.maintain_every; wave9: +1 writer.fallback_on_provider_failure; batch2-next: +4 editable rows (employee/access pickers of the merged branches); 0.1.341: workflow.agent.* gone; 2026-10-29: CLI-only ops rows are readonly; adoc.041/042 do not choose a worktree
     expect(new Set(editable.map((row) => row.storageKey)).size).toBeLessThan(editable.length);
     for (const row of editable) {
       if (row.storageKey === "ui.language") {

@@ -14,6 +14,7 @@ export const LEAD_USAGE = [
   "bb lane-pilot lead ticks [--last N] [--json]    the receipts of the last ticks: status, proposed, acted, cost",
   "bb lane-pilot lead tick-now                     one tick outside the cron (the graph lead-tick runs; its receipt appears in ticks)",
   "bb lane-pilot lead enable on|off                the switch of the ticks (lead.enabled); the word is a row of the journal",
+  "bb lane-pilot lead priority [<project-id>…]     the owner's order of projects (lead.priority): the brief ranks them so, unlisted follow; no ids clears it",
   "bb lane-pilot lead rights [--json]              the tier of every class (decides | proposes | owner_only) with the exam numbers behind it; only the nightly exam moves it",
   "bb lane-pilot lead journal [--class <c>] [--surface <s>] [--last N] [--json]   the decision journal: situation, prediction, answer, verdict (newest first)",
   "bb lane-pilot lead exam [--json]                 the exam per class: N, decided, Wilson LB, coverage, kappa, tier it would earn",
@@ -93,6 +94,10 @@ export async function runLeadCli(ctx: LeadCliContext, argv: string[], now: numbe
       if (rest[0] !== "on" && rest[0] !== "off") return { exitCode: 2, stderr: LEAD_USAGE };
       needService(ctx).setEnabled(rest[0] === "on", "owner", now);
       return { exitCode: 0, stdout: `lead.enabled = ${rest[0]}` };
+    }
+    if (command === "priority") {
+      const ids = needService(ctx).setPriority(rest.filter((arg) => !arg.startsWith("--")));
+      return { exitCode: 0, stdout: ids.length ? `lead.priority = ${ids.join(", ")}` : "lead.priority cleared: the hub's order" };
     }
     if (command === "rights") {
       const state = await needService(ctx).state(now);

@@ -163,4 +163,14 @@ describe("the switch and the state", () => {
     expect(after.nextTickAt).toBeGreaterThan(3_000);
     expect(after.journal).toMatchObject({ total: 1, exam: 0, backtest: 0 });
   });
+
+  it("setPriority writes the owner's order of projects, deduplicated; an empty call clears it; no journal row", async () => {
+    const { db, lead } = world();
+    expect(lead.setPriority(["proj_b", " proj_a ", "proj_b", ""])).toEqual(["proj_b", "proj_a"]);
+    expect(loadProjectSettings(db, "*")["lead.priority"]).toBe("proj_b,proj_a");
+    expect((await lead.state(1_000)).settings.priority).toEqual(["proj_b", "proj_a"]);
+    expect(lead.setPriority([])).toEqual([]);
+    expect((await lead.state(2_000)).settings.priority).toEqual([]);
+    expect((await lead.state(2_000)).journal.total).toBe(0);
+  });
 });

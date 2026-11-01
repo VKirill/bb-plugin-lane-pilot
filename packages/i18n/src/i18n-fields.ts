@@ -1049,6 +1049,8 @@ export const fieldEn = {
   reason_s606: "When a tick starts, five cron fields in your time zone; read every 15 minutes, so a change needs no reload. Default 30 6,10,14,18 * * *.",
   field_s607: "Lead: proposals per tick",
   reason_s607: "How many proposals one tick may put on your list (1-20); the rest are dropped with the reason in the receipt.",
+  field_s608: "Lead: project priority",
+  reason_s608: "Project ids in your order, separated by commas; the tick's brief carries each project's rank (1 = first) and the lead ranks its proposals by it. Projects not listed follow the listed ones. The map of the projects itself (runs, phases, memory) comes from the hub, not from LEAD.md.",
 } as const;
 
 export const fieldRu: { [K in keyof typeof fieldEn]: string } = {
@@ -2101,4 +2103,6 @@ export const fieldRu: { [K in keyof typeof fieldEn]: string } = {
   reason_s606: "Когда стартует тик: пять полей крона в вашем часовом поясе; читается каждые 15 минут, перезагрузка не нужна. По умолчанию 30 6,10,14,18 * * *.",
   field_s607: "Штурман: предложений за тик",
   reason_s607: "Сколько предложений один тик может положить в ваш список (1-20); остальные отбрасываются с причиной в квитанции.",
+  field_s608: "Штурман: приоритет проектов",
+  reason_s608: "Id проектов в вашем порядке через запятую; бриф тика несёт ранг каждого проекта (1 = первый), и Штурман ранжирует предложения по нему. Не перечисленные идут после перечисленных. Сама карта проектов (запуски, фазы, память) приходит из хаба, не из LEAD.md.",
 };
