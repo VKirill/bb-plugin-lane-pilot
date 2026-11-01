@@ -56,8 +56,8 @@ describe("registerObservedTool with startsWork", () => {
     setWorkStartGate(async (_context, toolName) => `${toolName} refused: foreign turn`);
     const agents = fakeAgents();
     const ran: string[] = [];
-    registerObservedTool(agents, { name: "lane_pilot_dispatch_writer", description: "d", parameters: z.object({}).strict(), startsWork: true, execute: async () => { ran.push("dispatch"); return "ok"; } });
-    registerObservedTool(agents, { name: "lane_pilot_facts", description: "d", parameters: z.object({}).strict(), execute: async () => { ran.push("facts"); return "ok"; } });
+    registerObservedTool(agents as never, { name: "lane_pilot_dispatch_writer", description: "d", parameters: z.object({}).strict(), startsWork: true, execute: async () => { ran.push("dispatch"); return "ok"; } });
+    registerObservedTool(agents as never, { name: "lane_pilot_facts", description: "d", parameters: z.object({}).strict(), execute: async () => { ran.push("facts"); return "ok"; } });
     const direct = JSON.parse(String(await agents.published.get("lane_pilot_dispatch_writer")!.execute({}, context))) as { ok: boolean; error: { code: string } };
     expect(direct).toMatchObject({ ok: false, error: { code: "not_owner_turn" } });
     await expect(registeredTools(agents).get("lane_pilot_dispatch_writer")!.execute({}, context)).rejects.toThrow(/foreign turn/);
@@ -67,7 +67,7 @@ describe("registerObservedTool with startsWork", () => {
 
   it("runs the tool when the gate is quiet or not installed", async () => {
     const agents = fakeAgents();
-    registerObservedTool(agents, { name: "lane_pilot_errand", description: "d", parameters: z.object({}).strict(), startsWork: true, execute: async () => "started" });
+    registerObservedTool(agents as never, { name: "lane_pilot_errand", description: "d", parameters: z.object({}).strict(), startsWork: true, execute: async () => "started" });
     expect(await agents.published.get("lane_pilot_errand")!.execute({}, context)).toBe("started");
     setWorkStartGate(async () => null);
     expect(await agents.published.get("lane_pilot_errand")!.execute({}, context)).toBe("started");
