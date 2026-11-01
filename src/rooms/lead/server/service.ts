@@ -18,7 +18,8 @@ import { createLeadSchedule } from "./lead-schedule";
 import { formatMemoryExam, MEMORY_EXAM_KEY, runMemoryExam, type MemoryExam } from "./memory-exam";
 import { actsVia, applyExam, rightsView, type TierChange } from "./rights";
 import { decideRoad, doneRoad, getRoad, rejectRoad, roadCounts, roadMarkdown, roadPayload, type RoadRow } from "./road";
-import { registerLeadTickActions, proposalDecisionId, proposalItemKey, type ProposalDecision } from "./tick";
+import { architectSeedOf, postArchitectHand, registerLeadTickActions, proposalDecisionId, proposalItemKey, type ProposalDecision } from "./tick";
+import { WORKFLOW_ARCHITECT_ID } from "../../workflow/workflow-architect";
 import { closeTick, getTick, listTicks, openTick, patchTick, sweepStaleTicks, type TickRow } from "./tick-store";
 
 /**
@@ -226,6 +227,13 @@ export function createLeadService(ctx: ServerCore, services: Services) {
     };
     const via = actsVia(row.class ?? "");
     if (via === "none") return { state: "skipped", reason: `class ${row.class ?? "?"} has no way to act` };
+    // A graph-less process (a `process` branch carrying an architectSeed, G2) goes to the Workflow architect, not to the PM intake:
+    // the service cannot start a chat, so the seed and the architect button land on the owner's list.
+    const seed = architectSeedOf(roadPayload(row));
+    if (row.class === "process" && seed) {
+      postArchitectHand(db, { roadId: row.id, projectId: row.project_id ?? (await homeProjectId()), title: row.title, seed, kind: "handed" }, now);
+      return { state: "started", via: "architect", id: WORKFLOW_ARCHITECT_ID };
+    }
     if (!row.project_id) return { state: "skipped", reason: via === "schedule" ? "a schedule needs a project" : "a branch above projects has no PM to hand the work to" };
     if (via === "schedule") {
       // The schedule the proposal carried is created in the project's board through the schedule room's own save, as the lead.
