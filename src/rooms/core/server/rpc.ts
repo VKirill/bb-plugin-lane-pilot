@@ -30,6 +30,7 @@ import { benchRpc } from "../../bench/server";
 import { ownerWaitingRpc } from "../../owner-waiting/server";
 import { backlogRpc } from "../../backlog/server";
 import { leadRpc } from "../../lead/server";
+import { errandsRpc } from "../../errands/server";
 import { baselineRpc } from "../../baseline/server";
 import { stageReturnRpc } from "../../stage-return/server";
 import { forecastRpc } from "../../forecast/server";
@@ -80,6 +81,7 @@ export function registerRpc(ctx: ServerCore, services: Services) {
     ...ownerWaitingRpc(ctx.db),
     ...backlogRpc(services.backlog),
     ...leadRpc(ctx.db, services.lead),
+    ...errandsRpc(ctx),
     ...baselineRpc(services.baseline, services.regression),
     ...stageReturnRpc(services.stageReturn),
     ...forecastRpc(ctx.db),

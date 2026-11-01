@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.468
+
+- **An «Errands» page in the scope rail.** The owner asked for one place that shows which errands the system has, so the kinds can grow over time (2026-11-01). The page (`src/rooms/errands`) has two blocks: the registry of kinds (`computer`, `devops`, `browser`, `research`, `message`, no kind) with the model in force at the global level and its role row, and the period's runs, done, stopped, failed, cost and Jev's shadow picks; and the errands of the last 7, 30 or 90 days with title, kind and who named it, model, outcome in five plain words, who asked (PM chat or schedule), cost and «Open the chat». One RPC `errands_overview` reads the workflow journal only, no table of its own: a new kind in `src/rooms/schedule/errand-kinds.ts` appears by itself. Docs: docs/errands.md. Tests: tests/errands/, tests/ui-project-nav.test.tsx.
+
 ## 0.1.467
 
 - **A failed schedule's row says what to do, and leaves by itself.** The owner saw three rows «Расписание … не сработало … оно продолжит запускаться» with nothing but «Прочитано» (2026-11-01): all three were one-off errand schedules a PM had created to pick Opus (the detour 0.1.464 closed), one had already succeeded on a rerun, one the owner had cancelled himself. Now a one-off's row says it will not fire again and offers «Запустить снова» (`schedule_run_now`, keyed by the failed run so a second press is the same run); a live cron's row offers «Поставить на паузу»; a run the owner cancelled posts no row; the row that paused a schedule is kind `schedule_paused`. The janitor closes a failure row once a later run of the schedule ended, the schedule is paused or gone, and after three days in any case (`src/rooms/schedule/server/schedule-service.ts`, `src/rooms/schedule/outcome.ts`, `src/rooms/owner-waiting/items.ts`). Tests: tests/schedule/board.test.ts, tests/schedule/workflow-outcome.test.ts.

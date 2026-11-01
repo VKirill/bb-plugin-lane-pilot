@@ -116,3 +116,14 @@ describe("the plugin's own page lands on General settings", () => {
     inProject.lifecycle.unmount();
   });
 });
+
+describe("the rail has an «Errands» page", () => {
+  it("opens the Errands screen from the rail", async () => {
+    const slot = await mountPage({ ...projectsRpc, errands_overview: () => ({ days: 7, kinds: [], errands: [] }) }, { projectId: null, threadId: null });
+    await slot.findByTestId("project-settings");
+    fireEvent.click(slot.getByRole("tab", { name: en.navErrands }));
+    await slot.findByTestId("errands-screen");
+    await slot.findByTestId("errands-empty");
+    slot.lifecycle.unmount();
+  });
+});

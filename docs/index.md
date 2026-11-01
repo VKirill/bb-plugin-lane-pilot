@@ -47,6 +47,7 @@ Built by Lane Pilot from page frontmatter.
 | [Lane Pilot overview](overview.md) | overview | active | 2026-10-30 |
 | [The owner at the keyboard](owner-presence.md) | component | active | 2026-10-25 |
 | [Waiting for the owner](owner-waiting.md) | component | active | 2026-10-22 |
+| [Errands: the page and the read model](errands.md) | component | active | 2026-11-01 |
 | [Package operation details](package-operations.md) | component | active | 2026-10-28 |
 | [Shared packages](packages.md) | component | active | 2026-10-30 |
 | [Pilot, then fan-out](pilot.md) | component | active | 2026-10-23 |
