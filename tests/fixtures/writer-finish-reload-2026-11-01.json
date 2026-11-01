@@ -1,0 +1,110 @@
+{
+  "source": {
+    "logs": "bb plugin logs lane-pilot -n 18000 (server capped output at 10000 rows)",
+    "state": "bb lane-pilot state proj_acpiaqf4wq --limit 25",
+    "note": "Raw observed rows. Older three watcher occurrences predate retained log window. Log does not name the metric attempt; nearby dispatch rows and state supply correlation, not a recorded stack."
+  },
+  "logs": [
+    {
+      "ts": 1793484510950,
+      "level": "info",
+      "message": "Lane Pilot drained for reload: no checkout write or check in flight"
+    },
+    {
+      "ts": 1793484511083,
+      "level": "info",
+      "message": "Lane Pilot startup recovery: reload, after a clean drain"
+    },
+    {
+      "ts": 1793484511085,
+      "level": "info",
+      "message": "Lane Pilot drain before this start: reload, nothing in flight"
+    },
+    {
+      "ts": 1793484511089,
+      "level": "info",
+      "message": "Lane Pilot startup recovery: run, worktree and parked-task scans left to their schedules after a clean drain"
+    },
+    {
+      "ts": 1793484547031,
+      "level": "warn",
+      "message": "writer skill switch metric failed: The database connection is not open"
+    },
+    {
+      "ts": 1793547652117,
+      "level": "info",
+      "message": "Lane Pilot drained for reload: no checkout write or check in flight"
+    },
+    {
+      "ts": 1793547652334,
+      "level": "info",
+      "message": "Lane Pilot startup recovery: reload, after a clean drain"
+    },
+    {
+      "ts": 1793547652335,
+      "level": "info",
+      "message": "Lane Pilot drain before this start: reload, nothing in flight"
+    },
+    {
+      "ts": 1793547652339,
+      "level": "info",
+      "message": "Lane Pilot startup recovery: run, worktree and parked-task scans left to their schedules after a clean drain"
+    },
+    {
+      "ts": 1793547652487,
+      "level": "warn",
+      "message": "baseline record of cab-unslop-editor not kept: The database connection is not open"
+    },
+    {
+      "ts": 1793547652489,
+      "level": "warn",
+      "message": "Lane Pilot dispatch of cab-unslop-editor failed: dispatch_failed:The database connection is not open"
+    },
+    {
+      "ts": 1793547652497,
+      "level": "warn",
+      "message": "writer skill switch metric failed: The database connection is not open"
+    },
+    {
+      "ts": 1793547652545,
+      "level": "warn",
+      "message": "Lane Pilot dispatch of cab-unslop-shared-parts failed: dispatch_failed:The database connection is not open"
+    },
+    {
+      "ts": 1793547652546,
+      "level": "warn",
+      "message": "writer skill switch metric failed: The database connection is not open"
+    },
+    {
+      "ts": 1793547656808,
+      "level": "info",
+      "message": "Lane Pilot started the dispatch of cab-unslop-shared-parts again after a reload (1 of 2)"
+    }
+  ],
+  "attempts": [
+    {
+      "id": "lpattempt_8732351eda004d4f95dc32cb01750a38",
+      "run_id": "lprun_9a46fd17e8814c2cacdb8220c0aa0225",
+      "task_id": "cab-unslop-editor",
+      "attempt_no": 1,
+      "state": "blocked",
+      "reason": "dispatch interrupted by a reload before pm-read and plan critique finished (its ownership base was already taken); send the task again",
+      "thread_id": null,
+      "holder_thread_id": null,
+      "created_at": 1793547491197,
+      "updated_at": 1793547653733
+    },
+    {
+      "id": "lpattempt_1b41280b3c274c86b243fbbfeaa038b7",
+      "run_id": "lprun_9a46fd17e8814c2cacdb8220c0aa0225",
+      "task_id": "cab-unslop-shared-parts",
+      "attempt_no": 1,
+      "state": "running",
+      "reason": null,
+      "thread_id": "thr_47qf5dpgcj",
+      "holder_thread_id": null,
+      "created_at": 1793547614529,
+      "updated_at": 1793547817235
+    }
+  ]
+}

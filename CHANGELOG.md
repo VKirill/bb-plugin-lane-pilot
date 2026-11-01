@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **A writer interrupted by reload leaves finalization to the new instance.** `finishWriterAttempt` now checks disposal before its skill metric/cleanup and again after the asynchronous event read. The old instance previously queried its closed database from `finally`, logged `writer skill switch metric failed: The database connection is not open`, then replaced the writer's original outcome with another closed-database error during skill cleanup (2026-11-01, cab-unslop-editor/shared-parts). Regression tests replay the observed reload order with the SDK's disposal and a real SQLite connection, including reload during the event read; live completion still records its metric and removes materialized skills.
+
 ## 0.1.464
 
 - **An errand takes its model from the PM, not from a schedule detour.** `lane_pilot_errand` gains `providerId`, `model`, `reasoning` and `serviceTier`, the same fields the errand run already carried for a schedule (`ErrandRunStart`). Before, a PM that wanted Opus for an errand started a schedule to get it (thr_yyqwsp3snw, 2026-11-01); a scheduled run is spawned hidden with no parent chat (`detached`, the 2026-10-19 rule), so the owner saw no helper square next to the chat and nothing in its card. A model without its provider is refused (`errand_model_needs_provider`); the tool's instructions say not to start a schedule only to pick a model.

@@ -146,26 +146,32 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
       result = await finishWriterAttemptBody(input);
       return result;
     } finally {
-      try {
-        const skills = recordedWriterSkills(getReasoningTrace(db, input.attemptId)?.dispatchContext);
-        const events = await bb.sdk.threads.events.list({ threadId: input.writerThreadId, limit: "100" } as never).then((r: any) => r?.events ?? [], () => []);
-        const outcome = result?.status === "accepted" || result?.state === "accepted" ? "accepted" : "failed";
-        recordSkillSwitchMetric(db, {
-          attemptId: input.attemptId,
-          taskId: input.taskId,
-          runId: input.runId,
-          projectId: input.projectId,
-          events,
-          skills,
-          outcome,
+      // A reload closes this instance's database; recovery in the new instance owns the attempt from then on.
+      if (!ctx.state.disposed) {
+        try {
+          const events = await bb.sdk.threads.events.list({ threadId: input.writerThreadId, limit: "100" } as never).then((r: any) => r?.events ?? [], () => []);
+          if (!ctx.state.disposed) {
+            const skills = recordedWriterSkills(getReasoningTrace(db, input.attemptId)?.dispatchContext);
+            const outcome = result?.status === "accepted" || result?.state === "accepted" ? "accepted" : "failed";
+            recordSkillSwitchMetric(db, {
+              attemptId: input.attemptId,
+              taskId: input.taskId,
+              runId: input.runId,
+              projectId: input.projectId,
+              events,
+              skills,
+              outcome,
+            });
+          }
+        } catch (cause) {
+          ctx.log(`writer skill switch metric failed: ${cause instanceof Error ? cause.message : String(cause)}`);
+        }
+        if (!ctx.state.disposed) await skillMaterial.remove({ attemptId:input.attemptId, hostId:input.config.hostId,
+          workspacePath:getAttempt(db, input.attemptId)?.workspace_path ?? null,
+          names:recordedMaterializedSkills(getReasoningTrace(db, input.attemptId)?.dispatchContext),
+          providerId:getReasoningTrace(db, input.attemptId)?.providerId ?? null
         });
-      } catch (cause) {
-        ctx.log(`writer skill switch metric failed: ${cause instanceof Error ? cause.message : String(cause)}`);
       }
-      await skillMaterial.remove({ attemptId:input.attemptId, hostId:input.config.hostId,
-        workspacePath:getAttempt(db, input.attemptId)?.workspace_path ?? null,
-        names:recordedMaterializedSkills(getReasoningTrace(db, input.attemptId)?.dispatchContext),
-        providerId:getReasoningTrace(db, input.attemptId)?.providerId ?? null });
     }
   }
 
