@@ -32,11 +32,11 @@ describe("Lane Pilot UI", () => {
     expect(openRole(slot, "writer").querySelector("[data-testid='writer-effort-mode']")).not.toBeNull();
     expect(team.querySelector("[data-testid='access-role-writer'] [data-testid='browser-qa-host']")).toBeNull();
     expect(team.querySelector("[data-testid='access-role-browser_qa'] [data-testid='browser-qa-host']")).not.toBeNull();
-    expect(team.querySelector("[data-testid='access-role-night_reviewer'] [data-testid='night-review-settings']")).not.toBeNull();
+    expect(team.querySelector("[data-testid='access-role-specialist_reviewer'] [data-testid='specialist-settings']")).not.toBeNull();
     expect(work.querySelector("[data-testid='bb-provider-model-picker']")).toBeNull();
     expect(work.querySelector("[data-testid='writer-picker']")).toBeNull();
     expect(work.querySelector("[data-testid='browser-qa-host']")).toBeNull();
-    expect(work.querySelector("[data-testid='night-review-settings']")).toBeNull();
+    expect(work.querySelector("[data-testid='specialist-settings']")).toBeNull();
     expect(slot.container.querySelector("[data-testid='field-s004']")).toBeNull();
     expect(slot.container.querySelector("[data-testid='field-s022']")).toBeNull();
     expect(slot.container.querySelector("[data-testid='field-s023']")).toBeNull();
@@ -178,7 +178,7 @@ describe("Lane Pilot UI", () => {
       },
     });
     await waitFor(() => expect(slot.container.querySelector("[data-testid='bb-provider-model-picker']")).not.toBeNull());
-    const input = slot.getByTestId("night-review-policy").querySelector("[data-testid='field-s006'] input[type='number']") as HTMLInputElement;
+    const input = slot.getByTestId("code-critique-policy").querySelector("[data-testid='field-s380'] input[type='number']") as HTMLInputElement;
     fireEvent.change(input, { target: { value: "1" } });
     fireEvent.blur(input);
     await waitFor(() => expect(deferred.length).toBe(1));

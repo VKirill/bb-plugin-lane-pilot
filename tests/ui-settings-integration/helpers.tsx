@@ -120,7 +120,7 @@ export async function mountWithBackend(options?:{ delayWriterSave?:(input:{provi
 
   const saveCalls: Array<{ providerId:string; model:string; reasoningLevel:string; serviceTier:"default"|"fast"|null; expectedVersions:Record<string,number> }> = [];
   const memorySaveCalls: Array<{providerId:string;model:string;reasoningLevel:string;serviceTier:"default"|"fast"|null;expectedVersions:Record<string,number>}> = [];
-  const nightSaveCalls: Array<{providerId:string;model:string;reasoningLevel:string;serviceTier:"default"|"fast"|null;expectedVersions:Record<string,number>}> = [];
+  const specialistSaveCalls: Array<{providerId:string;model:string;reasoningLevel:string;serviceTier:"default"|"fast"|null;expectedVersions:Record<string,number>}> = [];
   const docsSaveCalls: Array<{providerId:string;model:string;reasoningLevel:string;serviceTier:"default"|"fast"|null;expectedVersions:Record<string,number>}> = [];
   const onboardingSaveCalls: Array<{providerId:string;model:string;reasoningLevel:string;serviceTier:"default"|"fast"|null;expectedVersions:Record<string,number>}> = [];
   const singleSaveCalls: Array<{ key:string; value:unknown; expectedVersion:number }> = [];
@@ -147,11 +147,11 @@ export async function mountWithBackend(options?:{ delayWriterSave?:(input:{provi
         memorySaveCalls.push(input as typeof memorySaveCalls[number]);
         return harness.behavior.callRpc("save_memory_selection", input) as Promise<unknown>;
       },
-      save_night_review_selection:async (input)=>{
-        nightSaveCalls.push(input as typeof nightSaveCalls[number]);
+      save_specialist_selection:async (input)=>{
+        specialistSaveCalls.push(input as typeof specialistSaveCalls[number]);
         // The answer is held back, as a slow hub does: the save has already happened there when the next choice goes out.
-        const answer = await harness.behavior.callRpc("save_night_review_selection",input);
-        await options?.delayRpc?.("save_night_review_selection", input);
+        const answer = await harness.behavior.callRpc("save_specialist_selection",input);
+        await options?.delayRpc?.("save_specialist_selection", input);
         return answer;
       },
       save_writer_fallback_selection:async (input)=>{
@@ -194,7 +194,7 @@ export async function mountWithBackend(options?:{ delayWriterSave?:(input:{provi
     expect(picker.getAttribute("data-provider")).toBe("codex");
     expect(picker.getAttribute("data-effort")).toBe("medium");
   });
-  return { harness, slot, saveCalls, memorySaveCalls, nightSaveCalls, docsSaveCalls, onboardingSaveCalls, singleSaveCalls, fallbackSaveCalls, screenCalls };
+  return { harness, slot, saveCalls, memorySaveCalls, specialistSaveCalls, docsSaveCalls, onboardingSaveCalls, singleSaveCalls, fallbackSaveCalls, screenCalls };
 }
 
 export function writerPicker(slot: RenderedSlot) {

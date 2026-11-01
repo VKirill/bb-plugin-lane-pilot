@@ -107,7 +107,7 @@ describe("Lane Pilot UI", () => {
       save_setting: () => ({ ok: false, conflict: true, version: 9, value: 3 }),
     });
     await waitFor(() => expect(slot.container.querySelector("[data-testid='bb-provider-model-picker']")).not.toBeNull());
-    const input = slot.getByTestId("night-review-policy").querySelector("[data-testid='field-s006'] input[type='number']") as HTMLInputElement;
+    const input = slot.getByTestId("code-critique-policy").querySelector("[data-testid='field-s380'] input[type='number']") as HTMLInputElement;
     fireEvent.change(input, { target: { value: "10" } });
     fireEvent.blur(input);
     await slot.findByTestId("cas-conflict");
