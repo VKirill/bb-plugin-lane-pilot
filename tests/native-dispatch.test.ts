@@ -396,7 +396,8 @@ it("rejects a Lane token when neither environment nor project-checkout path is p
     }),
   );
   expect(result).toMatchObject({ action: "reject" });
-  expect((result as { message: string }).message).toMatch(/project-checkout/);
+  // 0.1.472: the refusal is written for the owner (what to pick in the new-chat window), in Russian first and English after.
+  expect((result as { message: string }).message).toMatch(/папку проекта .* project folder/s);
   expect(getActivation(openDatabase(fake.bb), "project_a")).toBeUndefined();
 });
 
