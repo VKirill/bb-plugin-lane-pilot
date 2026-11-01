@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.1.460
+
+- **A sandbox or bench project is out of Штурман's zone unless the owner names it.** The 13:31 tick (hub, 2026-11-01) proposed «close or restart LP bench SelfyStudio»: the owner's list hides the rows of sandbox projects (the canary's set), so `postOwnerItem` returned `created:false`, the branch stayed `proposed` with an open journal row, and nobody saw a card. `hubSnapshot` now drops those projects from the zone by default (`isSandboxProject`, the same set the list uses); `lp.lead_propose` drops a proposal on one with the reason, and a card the list refuses for any other reason answers its row «no» and settles the branch instead of leaving a question nobody sees.
+
 ## 0.1.459
 
 The rest of the Gemini 4 Argon grill of 0.1.456 (`.agents/app-grill/20261101T115522522320Z-lane-pilot-0-1-456-gemini-4-argon/report.md`, F-009 to F-016 and U-002), confirmed by code and closed.

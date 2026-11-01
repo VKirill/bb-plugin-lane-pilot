@@ -84,7 +84,9 @@ const sandboxProjects = new Set<string>(["proj_3tb652jpsi"]);
 export function setSandboxProjects(ids: Iterable<string>): void {
   for (const id of ids) sandboxProjects.add(id);
 }
-const isSandbox = (projectId: string | null | undefined): boolean => !!projectId && sandboxProjects.has(projectId);
+/** A sandbox or bench project (the canary's set): no row of it reaches the owner, and the lead keeps it out of its zone unless named. */
+export const isSandboxProject = (projectId: string | null | undefined): boolean => !!projectId && sandboxProjects.has(projectId);
+const isSandbox = isSandboxProject;
 
 function inbox(db: Db): OwnerItem[] {
   if (!tableExists(db, "lane_pilot_owner_item")) return [];

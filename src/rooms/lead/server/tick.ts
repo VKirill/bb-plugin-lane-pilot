@@ -3,7 +3,7 @@ import type { JevSettings } from "@lane-pilot/jev";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
 import type { ChainRuntime } from "../../workflow/server";
 import type { ServerCore, Services } from "../../core/server";
-import { closeOwnerItem, collectOwnerWaiting, loadPushConfig, postOwnerItem, type OwnerEvidence } from "../../owner-waiting";
+import { closeOwnerItem, collectOwnerWaiting, isSandboxProject, loadPushConfig, postOwnerItem, type OwnerEvidence } from "../../owner-waiting";
 import { listPhases } from "../../phase";
 import { loadProjectSettings, type LanePilotDatabase } from "../../storage";
 import { taskMemoryContext } from "../../memory/server";
@@ -54,9 +54,9 @@ type Actable = ProposalCard & { payload: unknown };
  * proposal the lead may act on gets no card here: the act step either acts (and the list says so after the fact) or, when it could not
  * (no PM chat, a refused schedule), posts this same card then — never a question whose «да» is known to fail (Gemini F-003).
  */
-function postProposalCard(db: LanePilotDatabase, card: ProposalCard, now: number): void {
+function postProposalCard(db: LanePilotDatabase, card: ProposalCard, now: number): boolean {
   const cli = (decision: ProposalDecision) => `bb lane-pilot lead decide ${card.roadId} ${decision}`;
-  postOwnerItem(db, {
+  return postOwnerItem(db, {
     key: proposalItemKey(card.decisionId), source: "lead", kind: "proposal", projectId: card.projectId, wake: false,
     what: card.title, why: `${clip(card.why, 600)} Примерная цена: ${card.cost}.`,
     evidence: [...ownerEvidence(card.evidence), { kind: "note", ref: `${card.roadId} · ${card.tickId}`, label: `класс ${card.class}${card.risk ? `, риск ${card.risk}` : ""}` }],
@@ -65,7 +65,7 @@ function postProposalCard(db: LanePilotDatabase, card: ProposalCard, now: number
       { id: "later", label: "Потом", cli: cli("later"), rpc: { method: "lead_decide", input: { roadId: card.roadId, decision: "later" } } },
       { id: "no", label: "Нет", cli: cli("no"), rpc: { method: "lead_decide", input: { roadId: card.roadId, decision: "no" } } },
     ],
-  }, now);
+  }, now).created;
 }
 
 /** The evidence kinds of the road tree, as the owner's list knows them (its vocabulary has no url or metric: those become text with a label). */
@@ -119,7 +119,8 @@ export async function hubSnapshot(ctx: Pick<ServerCore, "db" | "bb">, settings: 
   const zone = loadPushConfig(db).timezone;
   const spent = spentSince(db, dayStart(now, zone));
   const listed = await listProjects(bb);
-  const inZone = settings.projects.length ? listed.filter((project) => settings.projects.includes(project.id)) : listed;
+  // A sandbox or bench project is out of the zone unless the owner names it: the owner's list refuses its rows, so a proposal on it was a card nobody saw (hub, tick 2026-11-01 13:31).
+  const inZone = settings.projects.length ? listed.filter((project) => settings.projects.includes(project.id)) : listed.filter((project) => !isSandboxProject(project.id));
   // The owner's order (`lead.priority`) ranks the projects of the brief; the ranked come first, the rest keep the hub's order. The map
   // itself (names, runs, phases, memory) is read here every tick, so LEAD.md holds no list of projects that would go stale.
   const rankOf = (id: string): number | null => { const at = settings.priority.indexOf(id); return at === -1 ? null : at + 1; };
@@ -235,6 +236,7 @@ export function registerLeadTickActions(engine: WorkflowEngine, ctx: ServerCore,
         try {
           const projectId = typeof proposal.project_id === "string" && proposal.project_id ? proposal.project_id : null;
           if (projectId && settings.projects.length && !settings.projects.includes(projectId)) { dropped.push({ title: clip(proposal.title!, 120), reason: `project ${projectId} is outside lead.projects` }); continue; }
+          if (projectId && !settings.projects.includes(projectId) && isSandboxProject(projectId)) { dropped.push({ title: clip(proposal.title!, 120), reason: `project ${projectId} is a sandbox or bench project: outside the zone` }); continue; }
           // `critical` stays critical: mayAct refuses it like high, and a word on landing waits for it (SWE-2 F-003: it used to normalise to null).
           const risk = proposal.risk === "critical" || proposal.risk === "high" || proposal.risk === "medium" || proposal.risk === "low" ? proposal.risk : null;
           let row = proposal.road_id ? getRoad(db, proposal.road_id) : undefined;
@@ -255,7 +257,13 @@ export function registerLeadTickActions(engine: WorkflowEngine, ctx: ServerCore,
           proposeRoad(db, row.id, decisionId, now);
           const card: ProposalCard = { roadId: row.id, decisionId, class: proposal.class!, risk, projectId, title: row.title, why: proposal.why!, cost: proposal.cost_estimate!, evidence: proposal.evidence ?? [], tickId };
           if (mayAct(db, proposal.class!, risk).ok) actable.push({ ...card, payload: roadPayload(row) });
-          else postProposalCard(db, card, now);
+          else if (!postProposalCard(db, card, now)) {
+            // The list refused the card (a project it hides): the branch must not stay proposed with a question nobody sees.
+            answerDecision(db, decisionId, { option: "no", text: "the owner's list refused the card" }, "lane-pilot", now);
+            decideRoad(db, row.id, "no", "the owner's list refused the card", now);
+            dropped.push({ title: clip(proposal.title!, 120), reason: "the owner's list refused the card" });
+            continue;
+          }
           proposed.push({ roadId: row.id, decisionId, title: row.title, class: proposal.class! });
         } catch (cause) { dropped.push({ title: clip(proposal.title!, 120), reason: `not recorded: ${cause instanceof Error ? cause.message : String(cause)}`.slice(0, 200) }); }
       }

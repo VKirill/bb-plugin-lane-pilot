@@ -1,3 +1,4 @@
+import { setSandboxProjects } from "../../src/rooms/owner-waiting";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -103,5 +104,15 @@ describe("the hub snapshot and the brief of a tick", () => {
     const brief = tickBrief(snapshot, "# Штурман");
     expect(brief).toContain("projects[].priority");
     expect(brief).toContain("not the identity file");
+  });
+
+  it("keeps a sandbox or bench project out of the zone unless the owner names it (its rows never reach the owner's list)", async () => {
+    setSandboxProjects(["p_bench"]);
+    const { bb } = createFakePluginHost({ pluginId: "lane-pilot", sdk: { projects: { list: async () => [{ id: "p_a", name: "A" }, { id: "p_bench", name: "LP bench A" }] as never } } });
+    const db = openDatabase(bb);
+    const byDefault = await hubSnapshot({ db, bb } as never, { ...LEAD_DEFAULTS, projects: [], priority: [] }, { tickId: "tick_s", trigger: "manual" }, 1_000_000);
+    expect(byDefault.projects.map((project) => project.id)).toEqual(["p_a"]);
+    const named = await hubSnapshot({ db, bb } as never, { ...LEAD_DEFAULTS, projects: ["p_bench"], priority: [] }, { tickId: "tick_s2", trigger: "manual" }, 1_000_000);
+    expect(named.projects.map((project) => project.id)).toEqual(["p_bench"]);
   });
 });
