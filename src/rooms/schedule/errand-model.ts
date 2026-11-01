@@ -1,4 +1,5 @@
-import { PRESET_SLUGS, consistentProvider, presetSelection, presetSlug, roleDefaultModel, tableRowAt } from "@lane-pilot/models";
+import { PRESET_SLUGS, consistentProvider, presetSelection, presetSlug, roleDefaultModel, roleModelKey, tableRowAt } from "@lane-pilot/models";
+import { errandKindRole } from "./errand-kinds";
 
 /**
  * Which model a scheduled errand runs on. ONE pure function answers it for the executor (what is spawned) and for the board (what the
@@ -8,8 +9,9 @@ import { PRESET_SLUGS, consistentProvider, presetSelection, presetSlug, roleDefa
  *  1. the task's own pair: `providerId` + `model`; `model` alone is the legacy form and means provider claude-code;
  *  2. the task's `preset` (a model preset name: `workflow.preset.<slug>.*` in Settings, else the built-in preset);
  *  3. the Automation default (`schedule.errand_default` of the project, else of the global level): a pair or a preset;
- *  4. the errand role default: `errand.provider` / `errand.model` / `errand.reasoning_effort` when set, else the built-in default
- *     (the errand row of the role table: claude-code, claude-sonnet-5-5, medium), and the owner's own row `role_model.errand` over both;
+ *  4. the row of the role table for the task's kind (errand-kinds.ts: `errand-computer`, `errand-devops`, `errand-research`, `errand-browser`;
+ *     a message or no kind is the `errand` row): the owner's own row `role_model.<row>`, else the row's built-in default; for the `errand`
+ *     row the legacy `errand.provider` / `errand.model` / `errand.reasoning_effort` sit between the two;
  *  5. the model of the project's PM chat, used only when level 4 has no model. The built-in default always has one, so today this
  *     level cannot be reached from a caller; it stays as the last resort for a build that ships no built-in (`builtin: null`).
  */
@@ -24,7 +26,7 @@ const LEVELS: ReadonlySet<string> = new Set(["none", ...ERRAND_EFFORTS, "ultra"]
 export type ErrandServiceTier = "default" | "fast";
 export type ErrandDefaultValue = { provider: string; model: string; reasoning_effort?: string; service_tier?: ErrandServiceTier } | { preset: string };
 
-export type ErrandModelTask = { model?: string | undefined; providerId?: string | undefined; reasoning?: string | undefined; serviceTier?: ErrandServiceTier | undefined; preset?: string | undefined };
+export type ErrandModelTask = { model?: string | undefined; providerId?: string | undefined; reasoning?: string | undefined; serviceTier?: ErrandServiceTier | undefined; preset?: string | undefined; /** The kind of errand (errand-kinds.ts): names the row of the role table at level 4. */ kind?: string | undefined };
 export type ErrandModelSource = "task" | "preset" | "schedule-default" | "errand-role" | "pm";
 export type ResolvedErrandModel = {
   providerId: string; model: string; reasoningEffort: string; serviceTier: ErrandServiceTier | null;
@@ -98,8 +100,14 @@ export function resolveErrandModel(input: {
     else level = { providerId: parsed.provider, model: parsed.model, effort: parsed.reasoning_effort ?? null, tier: parsed.service_tier ?? null, source: "schedule-default", sourceKey: SCHEDULE_ERRAND_DEFAULT_KEY };
   }
 
-  const ownRow = !level ? tableRowAt(settings, "errand") : null;
-  if (ownRow) level = { providerId: ownRow.option.providerId, model: ownRow.option.id, effort: ownRow.effort, tier: null, source: "errand-role", sourceKey: "role_model.errand" };
+  const row = errandKindRole(task.kind);
+  const ownRow = !level ? tableRowAt(settings, row) : null;
+  if (ownRow) level = { providerId: ownRow.option.providerId, model: ownRow.option.id, effort: ownRow.effort, tier: null, source: "errand-role", sourceKey: roleModelKey(row) };
+  if (!level && row !== "errand") {
+    // A kind's own row has no legacy keys: the owner's row or the built-in default of that row.
+    const kindDefault = roleDefaultModel(row);
+    level = { providerId: kindDefault.providerId, model: kindDefault.model, effort: kindDefault.effort, tier: null, source: "errand-role", sourceKey: null };
+  }
   if (!level) {
     const roleProvider = text(settings[ERRAND_ROLE_KEYS.provider]), roleModel = text(settings[ERRAND_ROLE_KEYS.model]);
     if (roleModel) level = { providerId: consistentProvider(roleProvider, roleModel) ?? ERRAND_BUILTIN.providerId, model: roleModel, effort: text(settings[ERRAND_ROLE_KEYS.effort]), tier: null, source: "errand-role", sourceKey: ERRAND_ROLE_KEYS.model };

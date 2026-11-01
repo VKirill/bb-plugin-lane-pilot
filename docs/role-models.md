@@ -33,9 +33,9 @@ Every agent step of every graph names a role, and the role names the model: one 
 
 ## How it works
 
-1. A row is the setting `role_model.<role>` = `{ provider?, model, reasoning_effort?, pool?: [{ provider?, model, reasoning_effort? }] }`. `model` may name one of the table's ten options by id, or — with `provider` — any model of any provider that BB's own provider/model window offers; its family and tier are read off the name (`other`/`standard` when the name says nothing) (`packages/models/src/role-models.ts:159-171`). A model named alone that is not in the table is not a pick; the two native providers (`claude-code`, `codex`) serve only their own family (`packages/models/src/role-models.ts:163-165`).
-2. The row is validated as a whole: the provider id is a string of at most 100 characters, the model id at most 200, the effort must be one of the model's own list, and a `pool` is an array of entries with the same shape as the row; a problem string names the first defect (`packages/models/src/role-models.ts:200-223`). Invalid or repeated pool entries are dropped when the pool is read (`packages/models/src/role-models.ts:184-197`).
-3. A spawn resolves the role in order, first hit wins: the owner's row of the table, then a stage selection made before the table existed (`plan_critique.*`, `specialist.*` and the other legacy keys), then the role's built-in default (`packages/models/src/role-models.ts:282-296`, defaults at `:99-119`). A pick that names no effort takes the row's default when it names the row's default model, else the model's own catalog default (`packages/models/src/role-models.ts:273-276`).
+1. A row is the setting `role_model.<role>` = `{ provider?, model, reasoning_effort?, pool?: [{ provider?, model, reasoning_effort? }] }`. `model` may name one of the table's ten options by id, or — with `provider` — any model of any provider that BB's own provider/model window offers; its family and tier are read off the name (`other`/`standard` when the name says nothing) (`packages/models/src/role-models.ts:165-177`). A model named alone that is not in the table is not a pick; the two native providers (`claude-code`, `codex`) serve only their own family (`packages/models/src/role-models.ts:169-171`).
+2. The row is validated as a whole: the provider id is a string of at most 100 characters, the model id at most 200, the effort must be one of the model's own list, and a `pool` is an array of entries with the same shape as the row; a problem string names the first defect (`packages/models/src/role-models.ts:206-229`). Invalid or repeated pool entries are dropped when the pool is read (`packages/models/src/role-models.ts:190-203`).
+3. A spawn resolves the role in order, first hit wins: the owner's row of the table, then a stage selection made before the table existed (`plan_critique.*`, `specialist.*` and the other legacy keys), then the role's built-in default (`packages/models/src/role-models.ts:288-302`, defaults at `:99-119`). A pick that names no effort takes the row's default when it names the row's default model, else the model's own catalog default (`packages/models/src/role-models.ts:279-282`).
 4. The candidates for one run are the row's model plus its pool (a stored table row only). A Claude Code agent profile role — thirteen of them: the specialist, the workflow architect and the named helper roles (copy-lead, seo-specialist, design-lead, video-lead, tavily, 3d-artist, game-dev, social-manager, billing-assistant, visual-artist, macos-operator — `CLAUDE_PROFILE_ROLES`, `packages/models/src/agent-model.ts:6-10`) — takes only the Claude models of its pool: another provider refuses the profile (`packages/models/src/agent-model.ts:6`, `:130-135`).
 5. The pool is ranked for each run by `rankPool`: a provider whose usage window is spent goes last, then the less spent window (compared in steps of ten percent, so a few points do not flip the order), then the provider with fewer helper starts in the last half hour, then the order the owner gave (`packages/models/src/agent-model.ts:69-80`).
 6. Where the load numbers come from: the spawn resolver reads the cached usage reading with a 1% threshold (ZCode has no window, so always `null`) and counts each provider's helper starts over the last 30 minutes in memory; the chosen provider's start is recorded after the resolution (`src/rooms/core/server/spawn-model.ts:45-54`, `:80-83`, `:99`).
@@ -46,10 +46,10 @@ Every agent step of every graph names a role, and the role names the model: one 
 
 | Source | What it is | Beats |
 |---|---|---|
-| Table row | `role_model.<role>` on the project, section or global level; any provider's model with its `provider`, or a table option by id (`packages/models/src/role-models.ts:159-171`). | Everything below. |
-| Legacy stage selection | `plan_critique.*`, `specialist.*` and the other pre-table keys, for the roles `LEGACY_STAGES` lists (`packages/models/src/role-models.ts:282-296`). | The built-in default. |
+| Table row | `role_model.<role>` on the project, section or global level; any provider's model with its `provider`, or a table option by id (`packages/models/src/role-models.ts:165-177`). | Everything below. |
+| Legacy stage selection | `plan_critique.*`, `specialist.*` and the other pre-table keys, for the roles `LEGACY_STAGES` lists (`packages/models/src/role-models.ts:288-302`). | The built-in default. |
 | Built-in default | The row's `default` in `ROLE_TABLE`, with a `why` for each (`packages/models/src/role-models.ts:99-119`). | The fallback. |
-| Role fallback | One named pair per role (a review whose Gemini is not offered takes the GPT model it ran on before) (`packages/models/src/role-models.ts:246-256`). | The PM chat's model. |
+| Role fallback | One named pair per role (a review whose Gemini is not offered takes the GPT model it ran on before) (`packages/models/src/role-models.ts:252-262`). | The PM chat's model. |
 
 ### The ZCode free option
 
@@ -59,8 +59,8 @@ The `zcode` provider serves one option, `glm-5.3-flash-free` («ZCode · GLM-5.3
 
 | Failure | What happens |
 |---|---|
-| Row fails validation | `save_setting` refuses with the `roleModelProblem` string; the stored row stays (`packages/models/src/role-models.ts:200-223`). |
-| Pool entry invalid or repeated | Dropped when the pool is read; the row itself still works (`packages/models/src/role-models.ts:184-197`). |
+| Row fails validation | `save_setting` refuses with the `roleModelProblem` string; the stored row stays (`packages/models/src/role-models.ts:206-229`). |
+| Pool entry invalid or repeated | Dropped when the pool is read; the row itself still works (`packages/models/src/role-models.ts:190-203`). |
 | A pool provider is spent or busier | It goes last in `rankPool`; another pool model or the row's model takes the run (`packages/models/src/agent-model.ts:69-80`). |
 | ZCode cannot work now | Not offered at pick time (`packages/models/src/agent-model.ts:141-145`); a run-time refusal hands the step to the next writer (`src/rooms/writer/writer-model-pick.ts:100-101`). |
 | No usage reading cached | The window percent counts as `null` (0 in the ranking); recent-start counts still order the pool (`src/rooms/core/server/spawn-model.ts:80-83`). |

@@ -10,6 +10,8 @@ import { fenceOutside, findThreadsByMetadata, keyedSpawnSupported, registerObser
 import type { ServerCore, Services } from "../../core/server";
 import type { ErrandCore, ErrandSnapshot } from "./errands";
 import type { ExtraAccess } from "../../native-agent";
+import { loadProjectSettings } from "../../storage";
+import { ERRAND_KINDS, classifyErrand } from "../../schedule";
 
 /**
  * The errand as a graph (workflows/errand.json): `accounts` (code: the Env Catalog names are usable) -> `work` (the helper thread, wrapping the errand
@@ -34,6 +36,8 @@ export type ErrandRunStart = {
   /** BB plugins, skills and MCP servers the helper loads on top of the errand role's own. */
   plugins?: readonly string[] | undefined; skills?: readonly string[] | undefined; mcp?: readonly string[] | undefined;
   providerId?: string | undefined; model?: string | undefined; reasoning?: string | undefined; serviceTier?: "default" | "fast" | undefined;
+  /** The kind of errand (errand-kinds.ts) and who named it (pm, hint, jev, schedule): the row of the role table the helper runs on. */
+  kind?: string | undefined; kindBy?: string | undefined;
   /** A hidden thread with no parent chat. */
   detached?: boolean | undefined;
   /** A schedule started it: the helper cannot create schedules, and the thread says which schedule run it is for. */
@@ -95,7 +99,7 @@ export function mountErrandGraph(ctx: ServerCore, services: Services, core: Erra
       const started = await c.effect<{ threadId: string; browserMachine: string | null }>("spawn", "errand.spawn", () => core.startErrand({
         ...place, runId: rt.runId, task: text(input("task")), title: text(input("title")) || undefined, authorized: input("authorized") === true, accounts: resolved.accounts, access: access(c),
         providerId: text(input("providerId")) || undefined, model: text(input("model")) || undefined, reasoning: text(input("reasoning")) || undefined,
-        serviceTier: tier === "fast" ? "fast" : undefined, spawnId, detached,
+        serviceTier: tier === "fast" ? "fast" : undefined, kind: text(input("kind")) || undefined, spawnId, detached,
         metadata: {
           lanePilotWorkflowRunId: c.runId, lanePilotWorkflowStep: c.stepKey, lanePilotWorkflowSpawn: c.spawnKey, lanePilotWorkflowNode: c.nodeId,
           ...(rt.origin ? { origin: rt.origin } : {}), ...(text(input("scheduleId")) ? { scheduleId: text(input("scheduleId")), scheduleRunKey: text(input("scheduleRunKey")) } : {}),
@@ -155,6 +159,7 @@ export function mountErrandGraph(ctx: ServerCore, services: Services, core: Erra
         plugins: [...input.plugins ?? []], skills: [...input.skills ?? []], mcp: [...input.mcp ?? []],
         providerId: input.providerId ?? "", model: input.model ?? "", reasoning: input.reasoning ?? "", serviceTier: input.serviceTier ?? "default",
         detached: input.detached === true, scheduleId: input.schedule?.id ?? "", scheduleRunKey: input.schedule?.runKey ?? "",
+        kind: input.kind ?? "", kindBy: input.kindBy ?? "",
       },
     });
     started.done.catch((cause: unknown) => ctx.log(`Lane Pilot errand run ${started.runId} stopped with an error: ${cause instanceof Error ? cause.message : String(cause)}`));
@@ -176,7 +181,7 @@ export function mountErrandGraph(ctx: ServerCore, services: Services, core: Erra
   registerObservedTool(bb.agents, {
     name: "lane_pilot_errand",
     description: "Start the `errand` graph for a non-code task: a helper thread works in a cloud console in the owner's browser, a mailbox, a screen recording, an account in Env Catalog.",
-    instructions: "Use from a Lane Pilot PM chat for work that is not a change to this project's code (code goes through lane_pilot_dispatch_writer). Give the whole task: goal, where, what to report. `authorized: true` when the task makes changes. Authorization follows the owner's goal, as in your instructions. Otherwise the helper only reads and reports. For a step that needs an SSH, FTP or login account (a deploy to a server or hosting), pass its Env Catalog names in `accounts`: the helper reads them from the catalog and keeps the keys out of every repository; the project list secrets.allow, when it is not empty, must include the name, and if one is missing or left out of that list nothing starts and the answer says what to do (env_request for a missing one, add a left-out one to secrets.allow), then call again. The helper loads only the browser, computer use and Env Catalog: when the task needs another BB plugin's tools (Image Studio's image_studio_*, File Gateway), an MCP server (blender, chrome-devtools) or a skill, name them in `plugins` (BB plugin ids such as image-studio), `mcp` (server names) and `skills`, and say in the task which tools to use. A single BB plugin call (one picture, one item card) you make yourself; an errand is for long work such as building a model in Blender. To map a web service's API from its pages (scan its requests to build our own API or automation on it), use lane_pilot_route instead: it offers the api-recon graph, which runs on the computer-use model. The helper never changes, commits or pushes repository files: if the task asks for that it stops with ERRAND: blocked and you must dispatch a writer task. Returns at once with the run and the thread; call lane_pilot_wait_errand with its workflowRunId (or threadId), again while it is running, and show the owner the @thread link. The same task asked twice is the same run. A particular model: pass `providerId` and `model` (and `reasoning`, `serviceTier`) here; do not start a schedule only to pick a model, a scheduled run is a hidden thread with no parent chat and the owner does not see it next to this chat.",
+    instructions: "Use from a Lane Pilot PM chat for work that is not a change to this project's code (code goes through lane_pilot_dispatch_writer). Give the whole task: goal, where, what to report. `authorized: true` when the task makes changes. Authorization follows the owner's goal, as in your instructions. Otherwise the helper only reads and reports. For a step that needs an SSH, FTP or login account (a deploy to a server or hosting), pass its Env Catalog names in `accounts`: the helper reads them from the catalog and keeps the keys out of every repository; the project list secrets.allow, when it is not empty, must include the name, and if one is missing or left out of that list nothing starts and the answer says what to do (env_request for a missing one, add a left-out one to secrets.allow), then call again. The helper loads only the browser, computer use and Env Catalog: when the task needs another BB plugin's tools (Image Studio's image_studio_*, File Gateway), an MCP server (blender, chrome-devtools) or a skill, name them in `plugins` (BB plugin ids such as image-studio), `mcp` (server names) and `skills`, and say in the task which tools to use. A single BB plugin call (one picture, one item card) you make yourself; an errand is for long work such as building a model in Blender. To map a web service's API from its pages (scan its requests to build our own API or automation on it), use lane_pilot_route instead: it offers the api-recon graph, which runs on the computer-use model. The helper never changes, commits or pushes repository files: if the task asks for that it stops with ERRAND: blocked and you must dispatch a writer task. Returns at once with the run and the thread; call lane_pilot_wait_errand with its workflowRunId (or threadId), again while it is running, and show the owner the @thread link. The same task asked twice is the same run. A particular model: pass `providerId` and `model` (and `reasoning`, `serviceTier`) here; do not start a schedule only to pick a model, a scheduled run is a hidden thread with no parent chat and the owner does not see it next to this chat. Without a model, the errand's kind picks the row of the role table it runs on: computer (the screen of a machine, an app, a recording), devops (install, deploy, a GPU, Blender over MCP), browser (a site in the owner's browser), research (a report people read), message (an email, a ticket, a Telegram reply); name it in `kind` when you know it, otherwise the skills you name and the brief decide.",
     parameters: z.object({
       task: z.string().min(10).max(20_000),
       title: z.string().min(1).max(1000).optional(),
@@ -190,6 +195,8 @@ export function mountErrandGraph(ctx: ServerCore, services: Services, core: Erra
       model: z.string().min(1).max(120).optional(),
       reasoning: z.string().min(1).max(32).optional(),
       serviceTier: z.enum(["default", "fast"]).optional(),
+      /** The kind of errand, when the PM knows it; absent, the skills and the brief say (errand-kinds.ts). Each kind runs on its own row of the role table. */
+      kind: z.enum(ERRAND_KINDS).optional(),
     }).strict(),
     execute: async (params, context) => {
       if (!context.threadId || !context.projectId) throw new Error("errand_needs_pm_thread");
@@ -208,16 +215,20 @@ export function mountErrandGraph(ctx: ServerCore, services: Services, core: Erra
         run.done.catch((cause: unknown) => ctx.log(`Lane Pilot api-recon run ${run.runId} stopped with an error: ${cause instanceof Error ? cause.message : String(cause)}`));
         return JSON.stringify({ workflowRunId: run.runId, state: "running", workflow: API_RECON_WORKFLOW, note: "this errand maps a web service's API, so it runs as the api-recon graph (role api-recon, GPT-6.1 Terra): wait on it with lane_pilot_wait_errand as usual" }, null, 2);
       }
+      // The kind decides the row of the role table (a pinned model still wins): the PM's word, the skills and the brief, or Jev (shadow until switched on).
+      const picked = await classifyErrand({ task: params.task, skills: params.skills, plugins: params.plugins, mcp: params.mcp, kind: params.kind },
+        { projectId: context.projectId, runId, settings: loadProjectSettings(ctx.db, context.projectId) });
       const started = startRun({
         projectId: context.projectId, pmThreadId: context.threadId, runId, key: `errand:${runId}:${spawnTextId(params.task)}`,
         task: params.task, title: params.title, authorized: params.authorized, accounts: params.accounts ?? [],
         plugins: params.plugins, skills: params.skills, mcp: params.mcp,
         providerId: params.providerId, model: params.model, reasoning: params.reasoning, serviceTier: params.serviceTier,
+        ...(picked.kind !== "errand" ? { kind: picked.kind, kindBy: picked.by } : {}),
       });
       const deadline = Date.now() + SPAWN_WAIT_MS;
       for (;;) {
         const spawned = spawnedOf(started.runId);
-        if (spawned) return JSON.stringify({ workflowRunId: started.runId, threadId: spawned.threadId, state: "running", browserMachine: spawned.browserMachine, link: `@thread:${spawned.threadId}` }, null, 2);
+        if (spawned) return JSON.stringify({ workflowRunId: started.runId, threadId: spawned.threadId, state: "running", browserMachine: spawned.browserMachine, kind: picked.kind, kindBy: picked.by, link: `@thread:${spawned.threadId}` }, null, 2);
         const summary = engine.get(started.runId);
         if (summary && TERMINAL.includes(summary.status)) throw new Error(summary.error ?? summary.reason ?? `the errand run ${summary.status}`);
         if (summary?.status === "succeeded" || Date.now() >= deadline || ctx.isDisposed()) break;

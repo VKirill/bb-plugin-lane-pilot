@@ -257,3 +257,40 @@ describe("the errand graph", () => {
     expect(w.state.stopped).toEqual(["errand-thr-1"]);
   });
 });
+
+describe("the kind of an errand picks the row of the role table (errand-kinds.ts)", () => {
+  const inputsOf = (w: ReturnType<typeof world>) => JSON.parse((w.db.prepare("SELECT inputs_json FROM lane_pilot_wf_run").get() as { inputs_json: string }).inputs_json) as Record<string, unknown>;
+
+  it("the PM's word, else a named skill or MCP server, else the brief; a pinned model still wins; the kind is on the run and the thread", async () => {
+    const byWord = world();
+    expect(await byWord.call("lane_pilot_errand", { task: TASK, kind: "computer" })).toMatchObject({ state: "running", kind: "computer", kindBy: "pm" });
+    expect(byWord.state.spawned[0]).toMatchObject({ model: "claude-opus-5-5", reasoningLevel: "high", pluginMetadata: expect.objectContaining({ role: "errand", errandKind: "computer" }) });
+    expect(inputsOf(byWord)).toMatchObject({ kind: "computer", kindBy: "pm" });
+
+    const byServer = world();
+    await byServer.call("lane_pilot_errand", { task: TASK, mcp: ["blender"] });
+    expect(byServer.state.spawned[0]).toMatchObject({ model: "claude-opus-5-5", reasoningLevel: "high" });
+    expect(inputsOf(byServer)).toMatchObject({ kind: "devops", kindBy: "hint" });
+
+    const byBrief = world();
+    expect(await byBrief.call("lane_pilot_errand", { task: TASK })).toMatchObject({ kind: "browser", kindBy: "hint" });
+    expect(inputsOf(byBrief)).toMatchObject({ kind: "browser", kindBy: "hint" });
+
+    const plain = world();
+    expect(await plain.call("lane_pilot_errand", { task: "Run the nightly backup of the notes folder and report its last line." })).toMatchObject({ kind: "errand", kindBy: "none" });
+    expect(plain.state.spawned[0]).toMatchObject({ model: "claude-sonnet-5-5", reasoningLevel: "medium" });
+    expect(inputsOf(plain)).toMatchObject({ kind: "", kindBy: "" });
+    expect((plain.state.spawned[0] as { pluginMetadata: Record<string, unknown> }).pluginMetadata).not.toHaveProperty("errandKind");
+
+    const pinned = world();
+    await pinned.call("lane_pilot_errand", { task: TASK, kind: "computer", providerId: "codex", model: "gpt-6-luna" });
+    expect(pinned.state.spawned[0]).toMatchObject({ providerId: "codex", model: "gpt-6-luna" });
+    expect(inputsOf(pinned)).toMatchObject({ kind: "computer", kindBy: "pm" });
+  });
+
+  it("the graph declares kind and kindBy as inputs, so a run carries them through a reload", () => {
+    const errand = builtinWorkflow("errand")! as { inputs?: unknown };
+    const names = Array.isArray(errand.inputs) ? errand.inputs.map((input: { name?: string; id?: string }) => input.name ?? input.id) : Object.keys(errand.inputs ?? {});
+    expect(names).toEqual(expect.arrayContaining(["kind", "kindBy"]));
+  });
+});

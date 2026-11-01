@@ -18,6 +18,7 @@ import type { ServerCore } from "../../core/server";
 import { runBrowserStep } from "./browser-graphs";
 import type { Services } from "../../core/server";
 import { mountErrandGraph } from "./errand-graph";
+import { errandKindRole } from "../../schedule";
 import type { ErrandRunStart } from "./errand-graph";
 import type { ExtraAccess } from "../../native-agent";
 
@@ -100,6 +101,8 @@ export type ErrandStart = {
   access?: ExtraAccess | undefined;
   /** Provider, model, reasoning and fast mode of the helper thread; the errand default (claude-code, claude-opus-5-5, high) when absent. */
   providerId?: string | undefined; model?: string | undefined; reasoning?: string | undefined; serviceTier?: "default" | "fast" | undefined;
+  /** The kind of errand (errand-kinds.ts): names the row of the role table the helper runs on when no model is pinned. Absent: the `errand` row. */
+  kind?: string | undefined;
   /** Names this one spawn: the same id repeated returns the same thread. Default: derived from the task. */
   spawnId?: string | undefined;
   /** An employee errand starts on that employee's machine. Absent: the errand stays where it does today. */
@@ -220,10 +223,10 @@ function mountErrandCore(ctx: ServerCore) {
       ? hiddenPlacement(input.projectId, `Lane Pilot errand: ${title}`, place.section)
       : await helperChildPlacement({ bb, db, projectId: input.projectId, runId: input.runId!, role: "errand", taskTitle: title });
     // The one resolver: what the caller named (the schedule's / the tool's resolved model) is a pin, kept as a consistent provider+model pair;
-    // nothing named is the errand row of the role table.
+    // nothing named is the row of the role table for the errand's kind (`errand-computer`…, else `errand`). The helper profile stays `errand`.
     const spawnUsage=spawnUsageOf(ctx);
     await warmSpawnUsage(spawnUsage,place.hostId);
-    const errandRole = resolveSpawnModel({ role: "errand", settings: loadProjectSettings(db, input.projectId), catalog: modelCatalogOf(ctx).peek(), usage: spawnUsage, hostId: place.hostId,
+    const errandRole = resolveSpawnModel({ role: errandKindRole(input.kind), settings: loadProjectSettings(db, input.projectId), catalog: modelCatalogOf(ctx).peek(), usage: spawnUsage, hostId: place.hostId,
       ...(input.model ? { pinned: { provider: input.providerId ?? null, model: input.model, reasoning: input.reasoning ?? null } } : input.reasoning ? { pinned: { reasoning: input.reasoning } } : {}) });
     const providerId = errandRole.providerId;
     const spawned = await fullAccessSpawn(bb, {
@@ -232,7 +235,7 @@ function mountErrandCore(ctx: ServerCore) {
       ...writerExecutionSelection(providerId, errandRole.model, errandRole.reasoningEffort, input.serviceTier ?? "default"),
       prompt: errandPrompt({ task: input.task, browserHostId: setup.hostId, authorized: input.authorized, accounts: [...input.accounts] }),
       environment: place.environment,
-      pluginMetadata: { role: "errand", spawnId: input.spawnId ?? `${input.runId ?? input.projectId}:${spawnTextId(input.task)}`, ...(input.runId ? { lanePilotRunId: input.runId } : {}), ...(detached ? {} : { parentPmThreadId: input.pmThreadId }), helperMode: helperPolicy.mode, ...input.metadata },
+      pluginMetadata: { role: "errand", ...(input.kind ? { errandKind: input.kind } : {}), spawnId: input.spawnId ?? `${input.runId ?? input.projectId}:${spawnTextId(input.task)}`, ...(input.runId ? { lanePilotRunId: input.runId } : {}), ...(detached ? {} : { parentPmThreadId: input.pmThreadId }), helperMode: helperPolicy.mode, ...input.metadata },
     } as Parameters<typeof fullAccessSpawn>[1]);
     const threadId = stringAt(spawned, "id");
     if (!threadId) throw new Error("errand_thread_id_missing");

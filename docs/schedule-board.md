@@ -80,7 +80,7 @@ are in `tests/schedule/time.test.ts`. A one-time task takes `runAt` (ms) or `del
 | `task.kind` | Fields | Runs as |
 | --- | --- | --- |
 | `workflow` | `workflowId`, `inputs` | a workflow run of the engine, started like the Run button (published, inputs whole, requirements met, a PM chat of the project). A `tested` workflow is refused until its first live run (Workflows tab, Run for real). Output: the run's output JSON |
-| `errand` | `task` (text), `title`, `authorized`, `accounts` (Env Catalog names), `providerId`, `model`, `reasoning`, `serviceTier`, `preset` (who runs it, see below) | the `errand` graph: a hidden, detached helper thread filed with the PM project and section; it reuses the PM environment, resolves named accounts, and receives a scheduled-run brief that says nobody is watching and to return `ERRAND: blocked` when it needs a decision, approval or access. The thread carries `origin: "schedule"`. Its report is redacted and checked by the output guard; only a final `ERRAND: done` counts as success (`src/rooms/schedule/server/schedule-executors.ts:54-73`, `src/rooms/qa/server/errands.ts:80-85`, `:188-224`) |
+| `errand` | `task` (text), `title`, `authorized`, `accounts` (Env Catalog names), `providerId`, `model`, `reasoning`, `serviceTier`, `preset`, `errandKind` (who runs it, see below) | the `errand` graph: a hidden, detached helper thread filed with the PM project and section; it reuses the PM environment, resolves named accounts, and receives a scheduled-run brief that says nobody is watching and to return `ERRAND: blocked` when it needs a decision, approval or access. The thread carries `origin: "schedule"`. Its report is redacted and checked by the output guard; only a final `ERRAND: done` counts as success (`src/rooms/schedule/server/schedule-executors.ts:54-73`, `src/rooms/qa/server/errands.ts:80-85`, `:188-224`) |
 | `script` | `hostId`, `command`, `cwd`, `env` (Env Catalog names), `maxOutputBytes` | the host job `runScript` (`bash -lc`, own process group, killed at the timeout) on that machine. The secrets are resolved by the hub (allowed for the project, or the owner is asked), reach the script as environment variables only, are masked on the host and again on the hub; the host deletes `input.json` once the job has read it. stdout and stderr are kept head and tail up to the cap; exit code 0 is success |
 | `agent` | `agentId` (a profile id such as `seo-specialist`), `task` (the standing instruction, 10 to 20000 characters), `title`, `authorized`, `accounts`, `historyRuns` (0 to 20, default 5), `model`, `reasoning`, `serviceTier` | the agent's own native profile (the one a chat started with it from the composer gets: prompt, skills, MCP servers) in a hidden thread with no parent chat, filed with the PM project and section and belonging to the PM's run. Carries `origin: "schedule"`, so it cannot create or change schedules. Its first message holds the standing task, the last `historyRuns` finished runs of this schedule (time, state, the outcome each reported, a marker for a change already handed over) and the project memory for the task. It ends with an `OUTCOME` block (summary, decision, follow-ups, code-change, urgent, status); the whole report is the run's output, so the next run reads it. A report without the block is a failed run (`no_outcome`); `status: blocked: why` is a failed run (`blocked`). One line goes to the owner's morning list (`lane_pilot_owner_item`, source `schedule`, `wake` only when the agent says `urgent: yes`). It edits no code: a `code-change` goes down the road of an owner's request in the PM chat (`phaseIntake.handOver`: a heavy goal opens a phase, a small job starts issue-quick, a batch issue-batch), at most once per run and never twice for the same text as the run before; with no PM chat the morning line only. An unknown agent id fails the run with `agent_unknown` (`src/rooms/schedule/server/schedule-executors.ts`, `src/rooms/critique/server/scheduled-agent.ts`, `src/rooms/schedule/outcome.ts`) |
 
@@ -126,7 +126,7 @@ and tier of that level:
 1. the task's pair: `providerId` + `model` (`model` alone is the legacy form and means `claude-code`); `source: "task"`;
 2. the task's `preset` (a model preset slug or alias: `cheap-fast`, `strong`, `ins-*`; `workflow.preset.<slug>.*` settings, else the built-in); `source: "preset"`;
 3. the Automation default `schedule.errand_default` (the project's own row, else the global one): `{provider, model, reasoning_effort?, service_tier?}` or `{preset}`; `source: "schedule-default"`;
-4. the errand role default: settings `errand.provider` / `errand.model` / `errand.reasoning_effort` when set, else the built-in `claude-code` / `claude-opus-5-5` / `high` (what every errand ran on before); `source: "errand-role"`;
+4. the row of the role table for the errand's kind (`src/rooms/schedule/errand-kinds.ts`): the owner's row `role_model.<row>`, else the row's built-in default; the `errand` row (a message, no kind) also reads the legacy settings `errand.provider` / `errand.model` / `errand.reasoning_effort` between the two; `source: "errand-role"`, `sourceKey` the row's key or null for a built-in;
 5. the PM chat's model, `source: "pm"`, **only when level 4 has no model**. The built-in default always has one, so no caller reaches this level today (the pure function takes `builtin: null` to model a build without it; the executor passes the PM chat's model; the card, which reads it synchronously, does not, and cannot differ while level 4 always has a model).
 
 No effort anywhere: `high` for claude-code, `none` for another provider. Problems found while resolving come back in `issues` (`unknown_preset`, `invalid_schedule_default`,
@@ -134,6 +134,36 @@ No effort anywhere: `high` for claude-code, `none` for another provider. Problem
 reasoningEffort, serviceTier, source, sourceKey, issues}` for an errand and `null` for a script and a chain; the board shows «Will run: provider · model · effort — from: ...».
 A chain lists the resolved executor of each step from `workflow_step_executors`, read-only (step models are set in the workflow). The PM tool
 `lane_pilot_schedule` stores no model when none is named; `create` and `list` echo the model it resolves to.
+
+### Errand kinds (since 0.1.465)
+
+One errand graph and one helper profile, but not one model: an errand has a **kind**, and the kind names the row of the role table it runs on
+(`src/rooms/schedule/errand-kinds.ts`). The kinds and their rows:
+
+| Kind | Row | Built-in default | What it is |
+|---|---|---|---|
+| `computer` | `errand-computer` | Claude Opus 5.5, high | the screen of a machine: an app, Roblox Studio, a recording, a desktop |
+| `devops` | `errand-devops` | Claude Opus 5.5, high | install, deploy, a rented GPU, Blender over MCP, scripts over SSH |
+| `research` | `errand-research` | Claude Sonnet 5.5, high | a report people read: a feature map, a comparison, a cited note |
+| `browser` | `errand-browser` | Claude Sonnet 5.5, medium | a site in the owner's browser: a cabinet, a console, a form |
+| `message` | `errand` | the errand row | an email, a ticket, a Telegram reply |
+| none | `errand` | the errand row | a script or a check, or a brief that fits no kind |
+
+Who names the kind, first hit wins (`classifyErrand`, `src/rooms/schedule/errand-kind-judgment.ts`): the PM's `kind` in `lane_pilot_errand` (a schedule's
+`errandKind`); else a hint, that is a named skill, plugin or MCP server (`computer-use` → computer, `blender` → devops, `browser-automation` → browser,
+`telegram-user` → message, `tavily` → research) and then the words of the brief (`hintedErrandKind`); else the Jev judgment `errand.kind` (J-12), which
+starts in **shadow**: its receipt in `lane_pilot_jev_receipt` keeps what it would have picked while the generic row runs. `jev.modes = errand.kind=active`
+lets Jev name the kind where no hint did (its top option needs p ≥ 0.6, `jev.thresholds errand.kind.min_p`). A hint always wins over Jev. A pinned model,
+a preset and the Automation default stay above the kind (levels 1–3). The run carries `kind` and `kindBy` (`pm`, `hint`, `jev`, `schedule`) in its inputs
+and the helper thread `errandKind` in its metadata, so a week of runs says which kind ran on which model with what outcome:
+
+```sql
+SELECT json_extract(inputs_json,'$.kind') AS kind, json_extract(inputs_json,'$.kindBy') AS by, status, count(*)
+FROM lane_pilot_wf_run WHERE workflow_id='errand' AND created_at > strftime('%s','now','-7 days')*1000 GROUP BY 1,2,3;
+```
+
+The rows are edited where every role is (Settings → Models by role); the owner's row of a kind wins over its default, and the owner's `errand` row
+does not reach another kind. A scheduled errand takes `errandKind` from its task and is not classified by its brief (its brief is standing text).
 
 ### The Automation default (`schedule.errand_default`)
 

@@ -68,11 +68,12 @@ export function createScheduleExecutors(ctx: ServerCore, services: Services): Re
         "", task.task,
       ].join("\n");
       // The same resolution the board shows on the card (src/schedule/errand-model.ts): the task, its preset, the Automation default, the errand role.
-      const model = await errandModelForRun(ctx, schedule.project_id, pm?.pmThreadId ?? null, task);
+      const model = await errandModelForRun(ctx, schedule.project_id, pm?.pmThreadId ?? null, { ...task, kind: task.errandKind });
       const started = services.errands.startRun({
         projectId: schedule.project_id, pmThreadId: pm?.pmThreadId ?? null, runId: pm?.runId ?? null, key: run.run_key,
         task: brief, title: task.title ?? schedule.name, authorized: task.authorized, accounts: task.accounts,
         providerId: model.providerId, model: model.model, reasoning: model.reasoningEffort, serviceTier: model.serviceTier ?? undefined,
+        ...(task.errandKind ? { kind: task.errandKind, kindBy: "schedule" } : {}),
         // Nobody is watching: no parent chat. A thread that carries the schedule origin cannot create or change schedules (schedule-tools.ts).
         detached: true, schedule: { id: schedule.id, runKey: run.run_key },
       });

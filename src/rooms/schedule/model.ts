@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ERRAND_KINDS } from "./errand-kinds";
 import { localTimezone } from "@lane-pilot/workflow-engine/ui";
 import { parseDelay, scheduleTimeProblem } from "./time";
 
@@ -29,6 +30,8 @@ export const errandTaskSchema = z.object({
   reasoning: z.enum(["low", "medium", "high", "xhigh", "ultracode", "max"]).optional(),
   serviceTier: z.enum(["default", "fast"]).optional(),
   preset: z.string().min(1).max(120).optional(),
+  /** The kind of errand (errand-kinds.ts): names the row of the role table the helper runs on when no model, preset or Automation default is set. */
+  errandKind: z.enum(ERRAND_KINDS).optional(),
 }).strict();
 
 export const AGENT_ID = /^[a-z0-9][a-z0-9-]{0,63}$/;

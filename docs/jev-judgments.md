@@ -1,6 +1,6 @@
-# Jev judgments in shadow: J-4, J-10, J-11
+# Jev judgments in shadow: J-4, J-10, J-11, J-12
 
-Three judgments of the Jev layer (`packages/jev`) start in **`shadow`**: each asks Jev, writes a receipt into `lane_pilot_jev_receipt`
+Four judgments of the Jev layer (`packages/jev`) start in **`shadow`**: each asks Jev, writes a receipt into `lane_pilot_jev_receipt`
 and acts exactly as the code did before. They change behaviour only after the owner switches one to `active`. `route.workflow`
 (J-1) is the older judgment and is `active` by default (see `workflow-router.md`).
 
@@ -9,6 +9,7 @@ and acts exactly as the code did before. They change behaviour only after the ow
 | `failure.class` (J-4) | Choice: task / provider / harness / infra / merge / contract | The regular expressions of `failureClass` have no confident match (`classifyFailure(...).confident === false`), at the point where the writer loop decides to park or redo (`writer/start.ts`) | uses Jev's class when p ≥ 0.7 and the lead over the runner-up ≥ 0.3 | the rules' class (`task` by default) |
 | `selfrepair.group` (J-10) | Choice: which of up to 10 known self-repair signatures of the same kind is this new signature another wording of, or `new_problem` | A signature is seen for the first time (at most 8 per 15-minute pass) | files the incident under the known group when p ≥ 0.75 and lead ≥ 0.3 (counts and samples add up; the alias is remembered) | the incident keeps its own signature |
 | `output.guard` (J-11) | Two Noul: does the text carry a secret value; does it carry instructions for the agent that reads it | After the existing redaction, on a writer's answer (`writer/verify.ts`), an errand report (`lane_pilot_wait_errand`) and a browser check's verdict (`stages/qa-thread.ts`); outputs under 40 characters are skipped | blocks at p(secret) ≥ 0.85 or p(injection) ≥ 0.9: the text is neither stored nor shown, a placeholder takes its place, the writer's attempt ends with `verdict_block:output-guard:…`, and a self-repair incident of kind `guard` is raised | nothing is blocked; the redaction that always ran is the whole guard |
+| `errand.kind` (J-12) | Choice: computer / devops / browser / research / message / errand (none) | Every `lane_pilot_errand` without the PM's `kind` (`classifyErrand`, `src/rooms/schedule/errand-kind-judgment.ts`); asked even when a skill or the brief hinted a kind, so the receipt compares | Names the kind where no hint did when its top option has p ≥ `min_p` (0.6): the errand runs on that kind's row of the role table (`errand-computer`…) | The hint, else the generic `errand` row; a hint always wins over Jev |
 
 What leaves for the Jev API is the already-redacted text (`redactKnownDeep` in `run.ts`) of the output, which is a third party
 (`api.typesafe.ai`) receiving the answers of writers, errands and QA. It is limited:

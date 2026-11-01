@@ -135,3 +135,35 @@ describe("the errand task schema", () => {
     expect(got.ok).toBe(true);
   });
 });
+
+describe("resolveErrandModel: the kind's own row at level 4 (errand-kinds.ts)", () => {
+  const legacy = { "errand.model": "gpt-6-luna" };
+  it("a kind picks the built-in default of its row; message and no kind stay on the errand row, legacy keys included", () => {
+    expect(resolve({ kind: "computer" })).toMatchObject({ providerId: "claude-code", model: "claude-opus-5-5", reasoningEffort: "high", source: "errand-role", sourceKey: null });
+    expect(resolve({ kind: "devops" })).toMatchObject({ model: "claude-opus-5-5", reasoningEffort: "high" });
+    expect(resolve({ kind: "research" })).toMatchObject({ model: "claude-sonnet-5-5", reasoningEffort: "high" });
+    expect(resolve({ kind: "browser" })).toMatchObject({ model: "claude-sonnet-5-5", reasoningEffort: "medium" });
+    expect(resolve({ kind: "message" })).toMatchObject({ model: "claude-sonnet-5-5", reasoningEffort: "medium", sourceKey: null });
+    expect(resolve({ kind: "computer" }, legacy)).toMatchObject({ model: "claude-opus-5-5", sourceKey: null });
+    expect(resolve({ kind: "message" }, legacy)).toMatchObject({ model: "gpt-6-luna", sourceKey: "errand.model" });
+  });
+
+  it("the owner's row of the kind wins over its default; the owner's errand row does not reach another kind", () => {
+    const settings = { "role_model.errand": { model: "gpt-6-luna", reasoning_effort: "low" }, "role_model.errand-devops": { model: "gpt-6.1-sol", reasoning_effort: "high" } };
+    expect(resolve({ kind: "devops" }, settings)).toMatchObject({ providerId: "codex", model: "gpt-6.1-sol", reasoningEffort: "high", source: "errand-role", sourceKey: "role_model.errand-devops" });
+    expect(resolve({ kind: "computer" }, settings)).toMatchObject({ model: "claude-opus-5-5", sourceKey: null });
+    expect(resolve({ kind: "message" }, settings)).toMatchObject({ model: "gpt-6-luna", reasoningEffort: "low", sourceKey: "role_model.errand" });
+    expect(resolve({}, settings)).toMatchObject({ model: "gpt-6-luna", sourceKey: "role_model.errand" });
+  });
+
+  it("a pinned model, a preset and the Automation default still sit above the kind", () => {
+    expect(resolve({ kind: "computer", providerId: "codex", model: "gpt-6-luna" })).toMatchObject({ source: "task", model: "gpt-6-luna" });
+    expect(resolve({ kind: "computer", preset: "cheap-fast" })).toMatchObject({ source: "preset", model: "claude-haiku-5-5" });
+    expect(resolve({ kind: "computer" }, { [KEY]: { provider: "codex", model: "gpt-6-luna" } })).toMatchObject({ source: "schedule-default", model: "gpt-6-luna" });
+  });
+
+  it("errandKind is a field of the schedule's errand task, one of the kinds", () => {
+    expect(errandTaskSchema.safeParse({ kind: "errand", task: "Open the CRM and report the leads", errandKind: "browser" }).success).toBe(true);
+    expect(errandTaskSchema.safeParse({ kind: "errand", task: "Open the CRM and report the leads", errandKind: "cooking" }).success).toBe(false);
+  });
+});

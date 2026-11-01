@@ -83,6 +83,16 @@
     "scheduleRunKey": {
       "type": "string",
       "default": ""
+    },
+    "kind": {
+      "type": "string",
+      "default": "",
+      "note": "the kind of errand (computer, devops, browser, research, message): the row of the role table the helper runs on when no model is named; empty is the errand row"
+    },
+    "kindBy": {
+      "type": "string",
+      "default": "",
+      "note": "who named the kind: pm, hint (skills or the brief), jev, schedule"
     }
   },
   "outputs": {

@@ -26,6 +26,7 @@
     "./session-hooks/cli.ts",
     "./learning/rule-diff.ts",
     "./verification/test-hint.ts",
+    "./schedule/errand-kind-judgment.ts",
     "./writer/log-trim.ts",
     "./writer/session-digest.ts",
     "./jev/judgments.ts",
