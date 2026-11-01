@@ -5,10 +5,8 @@ import { recordGateEvaluation } from "../../runs/server/stage-records";
 import { stringAt } from "../../core/server";
 import type { ServerCore } from "../../core/server";
 import type { Services } from "../../core/server";
-import { saveFollowUp } from "../../writer/server/sticky";
-import { sendServiceMessage } from "../../relay/server";
 import { isEnvironmentCheckFailure } from "../../runs";
-import { readCheckRun } from "../../tasks";
+import { isMainfixTask, readCheckRun } from "../../tasks";
 import { gateLabel, gateResolverFor, type ResolvedGate } from "./gate-detect";
 import { continuesEpisode, type GateEpisode } from "./gate-episode";
 import { postOwnerItem } from "../../owner-waiting";
@@ -378,7 +376,7 @@ export class IntegrationGateRunner {
     gate: ResolvedGate;
     live?: boolean;
   }, key: string): Promise<{ ran: boolean; passed?: boolean; culpritTaskId?: string | null }> {
-    const { runId, projectId, pmThreadId, basePath, configHostId, gate } = input;
+    const { runId, projectId, basePath, configHostId, gate } = input;
     const gateCommand = gate.command;
     const label = gateLabel(gate);
     const db = this.ctx.db;
@@ -632,8 +630,11 @@ export class IntegrationGateRunner {
       expectedSha256: null,
     }).catch(() => undefined);
 
-    if (culprit && culprit.threadId) {
-      // Send fix turn into culprit writer thread (no new task id!)
+    if (culprit) {
+      // The culprit's attempt is accepted and its worktree gone: a message into its old writer thread had no loop waiting for the turn, so
+      // nobody verified or merged the fix (Gemini F-013). The repair is a task of its own, dispatched to the run's PM queue like a post-merge
+      // mainfix (finish.ts postMergeRepair); a sticky writer of the area may still take it in the same thread. One that cannot be dispatched
+      // (the run closed, a repair of a repair) is a row on the owner's list, never a lost message.
       const prompt = formatFixTurnPrompt({
         taskId: culprit.taskId,
         gateCommand,
@@ -644,15 +645,13 @@ export class IntegrationGateRunner {
         ...(attribution.strict ? { failingTests: attribution.remaining.map(testLabel), preexistingTests: attribution.preexisting.map(testLabel) } : {}),
         unhandled,
       });
-
-      if (culprit.attemptId) {
-        await saveFollowUp(bb.storage.kv, culprit.attemptId, Date.now());
+      const dispatched = await this.dispatchRepair(input, culprit.taskId, gateCommand, prompt, logRelativePath);
+      if (dispatched) {
+        this.ctx.log(`integration-gate: ${label} failed, traced to ${culprit.taskId}; repair task ${dispatched} dispatched.${preexistingNote} Full log: ${logRelativePath}`);
+      } else {
+        this.noteRed({ runId, projectId }, this.enterEpisode(runId, gateCommand, [culprit.taskId]), "gate_red", `После слияния задачи ${culprit.taskId} общая проверка проекта красная`,
+          `Проверка «${gateCommand}» упала после слияния партии, и виновата задача ${culprit.taskId}.${preexistingNote} Задачу починки создать не удалось (запуск закрыт или это уже починка починки): поручите исправление в чате проекта.`, logRelativePath);
       }
-
-      await sendServiceMessage(bb, { threadId: culprit.threadId, text: prompt, senderThreadId: pmThreadId }).catch(() => undefined);
-      // The PM is not told: the writer's fix comes back to it as that task's result, like any other turn.
-      this.ctx.log(`integration-gate: ${label} failed, traced to ${culprit.taskId}; fix turn sent to ${culprit.threadId}.${preexistingNote} Full log: ${logRelativePath}`);
-
       return { ran: true, passed: false, culpritTaskId: culprit.taskId };
     }
 
@@ -683,6 +682,31 @@ export class IntegrationGateRunner {
    * hours later; the owner wants no event of the plugin's own in that chat, and since 2026-10-09 no question «what should the PM
    * do?» either). One row per red-gate episode: the same red again changes nothing.
    */
+  /**
+   * The repair task of a red gate traced to one merged task: that task's contract with the gate's command as its check and the fix turn as
+   * its objective, dispatched to the run's PM queue (the same «x-mainfix» id the post-merge check uses, so the redispatch and validation rules
+   * of a repair apply). Returns the task id, or null when nothing could be dispatched: no contract, no PM chat, a refused dispatch, or a
+   * culprit that is itself a repair (main red again after a repair is a person's to read, as checkMainAfterMerge holds).
+   */
+  private async dispatchRepair(input: { runId: string; projectId: string; pmThreadId: string }, taskId: string, gateCommand: string, prompt: string, logPath: string): Promise<string | null> {
+    if (isMainfixTask(taskId) || !input.pmThreadId) return null;
+    const contract = getTask(this.ctx.db as never, taskId)?.contract as TaskV2 | undefined;
+    if (!contract || typeof contract !== "object") return null;
+    const fix: TaskV2 = { ...contract, id: `${taskId}-mainfix`.slice(0, 128), title: `Make main green after ${taskId}`.slice(0, 200),
+      display_title: `Починка main после ${taskId}`.slice(0, 60), kind: "fix", area: contract.area ?? "maintenance", depends_on: [],
+      risk: contract.risk === "low" ? "medium" : contract.risk, expected_outputs: [gateCommand], objective: prompt,
+      acceptance: [`\`${gateCommand}\` passes on main`, `${taskId}'s acceptance still holds: ${(contract.acceptance ?? []).join("; ")}`.slice(0, 600)] };
+    const plan = `Integration gate repair, dispatched by Lane Pilot. Full gate log: ${logPath}. Read the failure, find what ${taskId} clashes with on main, fix within owns_paths, run \`${gateCommand}\`.`;
+    try {
+      const result = await this.services.dispatchWriter({ threadId: input.pmThreadId, projectId: input.projectId, task: fix, plan });
+      const rejected = (result as { ok?: unknown }).ok === false || (result as { state?: unknown }).state === "rejected";
+      return rejected ? null : (stringAt(result, "taskId") ?? fix.id);
+    } catch (cause) {
+      this.ctx.log(`integration-gate: repair of ${taskId} not dispatched: ${cause instanceof Error ? cause.message : String(cause)}`);
+      return null;
+    }
+  }
+
   private noteRed(input: { runId: string; projectId: string }, episode: GateEpisode, kind: string, what: string, why: string, logPath?: string): void {
     this.ctx.log(`integration-gate: ${stripAnsi(what)} ${stripAnsi(why)}`);
     postOwnerItem(this.ctx.db as never, {

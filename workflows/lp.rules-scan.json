@@ -48,7 +48,7 @@
         "en": "Triage and plan",
         "ru": "Разобрать и спланировать"
       },
-      "rule": "code: System One sorts the new failures; the writer groups big enough and the rules on trial that did not work become analyzer calls. Without System One the text-grouping fallback runs and the scan ends here",
+      "rule": "code: System One sorts the new failures; the writer groups big enough and the rules on trial that did not work become analyzer calls. Without System One the text-grouping fallback runs: analyze then has no calls to make, and apply only judges the rules already on trial",
       "out": {
         "state": "ok|fallback",
         "triaged": "int",

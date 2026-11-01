@@ -1051,6 +1051,10 @@ export const fieldEn = {
   reason_s607: "How many proposals one tick may put on your list (1-20); the rest are dropped with the reason in the receipt.",
   field_s608: "Lead: project priority",
   reason_s608: "Project ids in your order, separated by commas; the tick's brief carries each project's rank (1 = first) and the lead ranks its proposals by it. Projects not listed follow the listed ones. The map of the projects itself (runs, phases, memory) comes from the hub, not from LEAD.md.",
+  field_s609: "Owner: whose word lands a task",
+  reason_s609: "on: every verified task waits for your yes before it lands; risky (the default): only a task of risk high or critical waits, the rest land by the gates; off: nothing waits. A phase's turns, a forge draft and a permit still ask on risky.",
+  field_s610: "Phases: rails",
+  reason_s610: "on: a graph, a council or a schedule of a phase starts only from that phase's own stage; off (the default): a PM may start them at any time.",
 } as const;
 
 export const fieldRu: { [K in keyof typeof fieldEn]: string } = {
@@ -2105,4 +2109,8 @@ export const fieldRu: { [K in keyof typeof fieldEn]: string } = {
   reason_s607: "Сколько предложений один тик может положить в ваш список (1-20); остальные отбрасываются с причиной в квитанции.",
   field_s608: "Штурман: приоритет проектов",
   reason_s608: "Id проектов в вашем порядке через запятую; бриф тика несёт ранг каждого проекта (1 = первый), и Штурман ранжирует предложения по нему. Не перечисленные идут после перечисленных. Сама карта проектов (запуски, фазы, память) приходит из хаба, не из LEAD.md.",
+  field_s609: "Владелец: чьё слово приземляет задачу",
+  reason_s609: "on: каждая проверенная задача ждёт вашего «да» перед приземлением; risky (по умолчанию): ждёт только задача с риском high или critical, остальные приземляются по воротам; off: никто не ждёт. Ходы этапа, черновик кузницы и разрешение при risky спрашивают как при on.",
+  field_s610: "Этапы: рельсы",
+  reason_s610: "on: граф, совет или расписание этапа стартуют только из его собственной стадии; off (по умолчанию): PM может запускать их в любой момент.",
 };

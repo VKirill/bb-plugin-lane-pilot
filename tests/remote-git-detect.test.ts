@@ -3,7 +3,7 @@ import { join, resolve } from "node:path";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import plugin from "../server";
-import { createRun, openDatabase, saveProjectSetting, setRunThread } from "../src/rooms/storage/database";
+import { createRun, createTask, openDatabase, saveProjectSetting, setRunThread } from "../src/rooms/storage/database";
 import { IntegrationGateRunner } from "../src/rooms/verification/server/integration-gate";
 import type { ServerCore } from "../src/rooms/core/server/core";
 import type { Services } from "../src/rooms/core/server/services";
@@ -32,6 +32,9 @@ type HostCall = { method: string; input: Record<string, unknown>; options: { hos
 describe("the integration gate runs on the project's host", () => {
   let db: ReturnType<typeof openDatabase>;
   let sent: Array<{ threadId: string; text: string }>;
+  /** The repair tasks the gate dispatched (0.1.459: a culprit gets a task in the PM queue, not a message into its closed thread). */
+  let dispatched: Array<{ task: { id: string; objective: string } }>;
+  let services: Services;
   let hostCalls: HostCall[];
   let answers: Record<string, (input: Record<string, unknown>) => unknown>;
   let core: ServerCore;
@@ -43,6 +46,8 @@ describe("the integration gate runs on the project's host", () => {
     db.prepare(`INSERT INTO lane_pilot_run (id, project_id, pm_thread_id, state, created_at, updated_at) VALUES ('run-1', 'proj-1', 'pm-1', 'running', 0, 0)`).run();
     saveProjectSetting(db, "proj-1", "integration.gate_command", "npm run gate");
     sent = [];
+    dispatched = [];
+    services = { dispatchWriter: async (input: { task: { id: string } }) => { dispatched.push(input as never); return { ok: true, taskId: input.task.id }; } } as unknown as Services;
     hostCalls = [];
     answers = {};
     core = {
@@ -65,7 +70,10 @@ describe("the integration gate runs on the project's host", () => {
   });
 
   const run = (runner: IntegrationGateRunner) => runner.maybeRunGate({ runId: "run-1", projectId: "proj-1", pmThreadId: "pm-1", basePath: REMOTE, configHostId: "ovh", trigger: "drain" });
-  const merged = (taskId: string, sha: string, produced: string[]) => ({ taskId, commitSha: sha, threadId: `thr-${taskId}`, attemptId: `att-${taskId}`, produced });
+  const merged = (taskId: string, sha: string, produced: string[]) => {
+    createTask(db, { id: taskId, runId: "run-1", kind: "bb", contract: { id: taskId, title: taskId, objective: "do it", owns_paths: produced, acceptance: ["ok"], verification: [], risk: "low", expected_outputs: [], depends_on: [] } });
+    return { taskId, commitSha: sha, threadId: `thr-${taskId}`, attemptId: `att-${taskId}`, produced };
+  };
   const gate = (exitCode: number, head: string | null, stderr = "", stdout = "") => ({ hostId: "ovh", exitCode, stdout, stderr, head });
 
   it("runs the gate command on the host named by the config, with the project path, and spawns nothing here", async () => {
@@ -87,7 +95,7 @@ describe("the integration gate runs on the project's host", () => {
   it("reads a failing file's imports through the host, and names the culprit without touching the local disk", async () => {
     answers.gateRun = () => gate(1, "c".repeat(40), "", " FAIL tests/shop.test.ts\n");
     answers.readBoundedFile = () => ({ content: "import { price } from '../src/price';\n" });
-    const runner = new IntegrationGateRunner(core, {} as Services);
+    const runner = new IntegrationGateRunner(core, services);
     runner.noteMergedTask(merged("price", "d".repeat(40), ["src/price.ts"]));
     runner.noteMergedTask(merged("cart", "e".repeat(40), ["src/cart.ts"]));
 
@@ -95,7 +103,8 @@ describe("the integration gate runs on the project's host", () => {
 
     expect(res).toMatchObject({ ran: true, passed: false, culpritTaskId: "price" });
     expect(hostCalls.find((call) => call.method === "readBoundedFile")).toMatchObject({ input: { projectCwd: REMOTE, relativePath: "tests/shop.test.ts" }, options: { hostId: "ovh" } });
-    expect(sent.some((message) => message.threadId === "thr-price" && message.text.includes("integration gate failed after merging your task price"))).toBe(true);
+    expect(dispatched.some((d) => d.task.id === "price-mainfix" && d.task.objective.includes("integration gate failed after merging your task price"))).toBe(true);
+    expect(sent).toEqual([]);
     expect(touchedRemotePath()).toEqual([]);
   });
 

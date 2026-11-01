@@ -7,7 +7,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { IntegrationGateRunner, type MergedTaskInfo } from "../../src/rooms/verification/server/integration-gate";
 import { attributeFailures } from "../../src/rooms/verification/server/gate-attribution";
 import { attributeGateOnHost } from "../../src/rooms/verification/integration-gate-host";
-import { openDatabase, saveProjectSetting } from "../../src/rooms/storage/database";
+import { createTask, openDatabase, saveProjectSetting } from "../../src/rooms/storage/database";
 import * as hostHandlers from "../../src/rooms/host-worker/host-handlers";
 import type { ServerCore } from "../../src/rooms/core/server/core";
 import type { Services } from "../../src/rooms/core/server/services";
@@ -42,6 +42,9 @@ describe("which merged task a red gate is pinned on", () => {
   let repo: string;
   let db: ReturnType<typeof openDatabase>;
   let sent: Array<{ threadId: string; text: string }>;
+  /** The repair tasks the gate dispatched (0.1.459: a culprit gets a task in the PM queue, not a message into its closed thread). */
+  let dispatched: Array<{ task: { id: string; objective: string } }>;
+  let services: Services;
   let core: ServerCore;
 
   const sh = async (file: string, args: string[]) => {
@@ -56,7 +59,10 @@ describe("which merged task a red gate is pinned on", () => {
     await sh("git", ["commit", "-q", "-m", message]);
     return await sh("git", ["rev-parse", "HEAD"]);
   };
-  const task = (taskId: string, commitSha: string, produced: string[]): MergedTaskInfo => ({ taskId, commitSha, threadId: `thr-${taskId}`, attemptId: `att-${taskId}`, produced });
+  const task = (taskId: string, commitSha: string, produced: string[]): MergedTaskInfo => {
+    createTask(db, { id: taskId, runId: "run-1", kind: "bb", contract: { id: taskId, title: taskId, objective: "do it", owns_paths: produced, acceptance: ["ok"], verification: [], risk: "low", expected_outputs: [], depends_on: [] } });
+    return { taskId, commitSha, threadId: `thr-${taskId}`, attemptId: `att-${taskId}`, produced };
+  };
 
   beforeEach(async () => {
     repo = mkdtempSync(join(tmpdir(), "lp-gate-attr-"));
@@ -85,6 +91,8 @@ describe("which merged task a red gate is pinned on", () => {
     db.prepare(`INSERT INTO lane_pilot_run (id, project_id, pm_thread_id, state, created_at, updated_at) VALUES ('run-1', 'proj-1', 'pm-1', 'running', 0, 0)`).run();
     saveProjectSetting(db, "proj-1", "integration.gate_command", "node gate.js");
     sent = [];
+    dispatched = [];
+    services = { dispatchWriter: async (input: { task: { id: string } }) => { dispatched.push(input as never); return { ok: true, taskId: input.task.id }; } } as unknown as Services;
     core = {
       db,
       bb: { sdk: { threads: { send: async (input: { threadId: string; input: Array<{ text: string }> }) => { sent.push({ threadId: input.threadId, text: input.input[0]?.text ?? "" }); } }, files: { write: async () => ({ ok: true }) } }, storage: { kv: { get: async () => null, set: async () => null } } },
@@ -100,13 +108,14 @@ describe("which merged task a red gate is pinned on", () => {
 
   it("does not blame the only merged task when it changed another package and the failures were there before", async () => {
     const lib = await commit("lib task", { "packages/lib-a/src/a.ts": "export const a = 2;\n" });
-    const runner = new IntegrationGateRunner(core, {} as Services);
+    const runner = new IntegrationGateRunner(core, services);
     runner.noteMergedTask(task("scene-compile-like", lib, ["packages/lib-a/src/a.ts"]));
 
     const res = await run(runner);
 
     expect(res).toMatchObject({ ran: true, passed: false, culpritTaskId: null });
     expect(toWriters()).toEqual([]);
+    expect(dispatched).toEqual([]);
     expect(toPm()).toEqual([]);
     const row = db.prepare("SELECT what, why FROM lane_pilot_owner_item WHERE key LIKE 'gate-red:run-1:%'").get() as { what: string; why: string };
     expect(row.why).toContain("были сломаны раньше");
@@ -116,16 +125,17 @@ describe("which merged task a red gate is pinned on", () => {
   it("pins the failure the batch broke on the task that touched that workspace, and calls the old failure pre-existing", async () => {
     const lib = await commit("lib task", { "packages/lib-a/src/a.ts": "export const a = 2;\n" });
     const web = await commit("web task", { "apps/web/src/x.ts": "export const web = 'BROKEN';\n" });
-    const runner = new IntegrationGateRunner(core, {} as Services);
+    const runner = new IntegrationGateRunner(core, services);
     runner.noteMergedTask(task("lib", lib, ["packages/lib-a/src/a.ts"]));
     runner.noteMergedTask(task("web", web, ["apps/web/src/x.ts"]));
 
     const res = await run(runner);
 
     expect(res).toMatchObject({ ran: true, passed: false, culpritTaskId: "web" });
-    expect(toWriters().map((m) => m.threadId)).toEqual(["thr-web"]);
-    expect(toWriters()[0]!.text).toContain("@acme/web: tests/web.test.ts");
-    expect(toWriters()[0]!.text).toContain("fail without your change too (not yours, leave them): @acme/admin: tests/admin.test.ts");
+    expect(dispatched.map((d) => d.task.id)).toEqual(["web-mainfix"]);
+    expect(dispatched[0]!.task.objective).toContain("@acme/web: tests/web.test.ts");
+    expect(dispatched[0]!.task.objective).toContain("fail without your change too (not yours, leave them): @acme/admin: tests/admin.test.ts");
+    expect(toWriters()).toEqual([]);
     // A culprit found: nothing for the PM and nothing on the owner's list; the fix comes back as the task's result.
     expect(toPm()).toEqual([]);
     expect(db.prepare("SELECT count(*) AS n FROM lane_pilot_owner_item WHERE key LIKE 'gate-red:%'").get()).toEqual({ n: 0 });
@@ -135,7 +145,7 @@ describe("which merged task a red gate is pinned on", () => {
     const lib = await commit("lib task", { "packages/lib-a/src/a.ts": "export const a = 2;\n" });
     const web1 = await commit("web task one", { "apps/web/src/x.ts": "export const web = 2;\n" });
     const web2 = await commit("web task two", { "apps/web/src/y.ts": "export const web2 = 'BROKEN';\n" });
-    const runner = new IntegrationGateRunner(core, {} as Services);
+    const runner = new IntegrationGateRunner(core, services);
     runner.noteMergedTask(task("lib", lib, ["packages/lib-a/src/a.ts"]));
     runner.noteMergedTask(task("web-one", web1, ["apps/web/src/x.ts"]));
     runner.noteMergedTask(task("web-two", web2, ["apps/web/src/y.ts"]));
@@ -144,7 +154,8 @@ describe("which merged task a red gate is pinned on", () => {
 
     // Two tasks touched apps/web, nothing says which: no culprit, and certainly no fix turn to the lib task.
     expect(res.culpritTaskId).not.toBe("lib");
-    expect(toWriters().map((m) => m.threadId)).not.toContain("thr-lib");
+    expect(toWriters()).toEqual([]);
+    expect(dispatched.map((d) => d.task.id)).not.toContain("lib-mainfix");
   });
 });
 

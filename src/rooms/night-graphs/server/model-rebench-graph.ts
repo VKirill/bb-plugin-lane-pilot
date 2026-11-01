@@ -46,18 +46,22 @@ export function evaluateModelRouting(
   const since = options.sinceMs ?? (now - 30 * 86_400_000);
   const month = monthOf(now);
 
+  // One receipt is one decision: the task's outcome is its accepted attempt, else its latest, in the receipt's own run. A join on
+  // task id alone multiplied a receipt by the task's attempts and by every run that reused the id (Gemini F-011).
   const query = options.projectId
     ? db.prepare(`
-        SELECT r.id, r.judgment, r.decision, r.decided_by, r.model, r.subject, r.project_id, r.outcome, a.state as attempt_state
+        SELECT r.id, r.judgment, r.decision, r.decided_by, r.model, r.subject, r.project_id, r.outcome,
+          (SELECT a.state FROM lane_pilot_attempt a WHERE a.task_id = r.subject AND a.run_id = r.run_id
+             ORDER BY (a.state = 'accepted') DESC, a.created_at DESC LIMIT 1) AS attempt_state
         FROM lane_pilot_jev_receipt r
-        LEFT JOIN lane_pilot_attempt a ON a.task_id = r.subject
         WHERE r.judgment IN ('writer.model', 'route.workflow') AND r.at >= ? AND r.project_id = ?
         ORDER BY r.at DESC
       `).all(since, options.projectId) as any[]
     : db.prepare(`
-        SELECT r.id, r.judgment, r.decision, r.decided_by, r.model, r.subject, r.project_id, r.outcome, a.state as attempt_state
+        SELECT r.id, r.judgment, r.decision, r.decided_by, r.model, r.subject, r.project_id, r.outcome,
+          (SELECT a.state FROM lane_pilot_attempt a WHERE a.task_id = r.subject AND a.run_id = r.run_id
+             ORDER BY (a.state = 'accepted') DESC, a.created_at DESC LIMIT 1) AS attempt_state
         FROM lane_pilot_jev_receipt r
-        LEFT JOIN lane_pilot_attempt a ON a.task_id = r.subject
         WHERE r.judgment IN ('writer.model', 'route.workflow') AND r.at >= ?
         ORDER BY r.at DESC
       `).all(since) as any[];

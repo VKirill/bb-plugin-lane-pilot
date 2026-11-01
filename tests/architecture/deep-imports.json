@@ -37,7 +37,6 @@
  "ui-shell > workflow": 2,
  "ui-shell > writer": 1,
  "verification > runs": 2,
- "verification > writer": 1,
  "workflow > tasks": 1,
  "workflow > ui-shell": 1,
  "writer > critique": 1,

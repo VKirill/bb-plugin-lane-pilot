@@ -611,12 +611,14 @@ export const RULE_TRIAL = {
 export type RuleTrialDecision = { action: "keep" } | { action: "confirm" } | { action: "revise" } | { action: "retire"; reason: "kept_recurring" | "unused" };
 
 /** What the system does with one rule it adopted; owner decisions never reach this. */
-export function decideRuleTrial(rule: Pick<RuleProposal, "trialState" | "revision" | "revisionStartedAt" | "decidedAt">, stats: RuleTrialStats, now = Date.now()): RuleTrialDecision {
+export function decideRuleTrial(rule: Pick<RuleProposal, "trialState" | "revision" | "revisionStartedAt" | "decidedAt"> & Partial<Pick<RuleProposal, "audience">>, stats: RuleTrialStats, now = Date.now()): RuleTrialDecision {
   if (stats.recurrences.length >= RULE_TRIAL.reviseAfterRecurrences) {
     return rule.revision >= RULE_TRIAL.maxRevisions ? { action: "retire", reason: "kept_recurring" } : { action: "revise" };
   }
   const since = stats.lastAppliedAt ?? rule.revisionStartedAt ?? rule.decidedAt ?? now;
-  if (now - since >= RULE_TRIAL.unusedAfterMs) return { action: "retire", reason: "unused" };
+  // A PM rule's use is never recorded (it rides the PM's brief, not a writer attempt): «unused» would retire every one of them at 60 days
+  // whatever the PM read (Gemini F-010). It stays on trial until a recurrence or the owner decides.
+  if (rule.audience !== "pm" && now - since >= RULE_TRIAL.unusedAfterMs) return { action: "retire", reason: "unused" };
   if (rule.trialState === "trial" && stats.applied >= RULE_TRIAL.confirmAfterApplied && stats.recurrences.length === 0 && stats.appliedAccepted / stats.applied >= RULE_TRIAL.confirmMinAcceptedRate) return { action: "confirm" };
   return { action: "keep" };
 }

@@ -81,9 +81,10 @@ const PRE_START_STOP = /^verdict_block: (?:check_cannot_run|red_outside_task):/;
 export const isPreStartStop = (reason:string | null | undefined):boolean => PRE_START_STOP.test(reason ?? "");
 /**
  * A writer's product question nobody answered (writer/server/question-timeout.ts): the owner's to decide; the attempt that asked it is not spent.
- * The second pilot's endings (second-pilot.ts) are the same kind: a task narrowed into a new one (the budget goes on there) or a question left to the owner.
+ * The second pilot's endings (second-pilot.ts) are the same kind: a task narrowed into a new one (the budget goes on there; since 0.1.459 the
+ * original is canceled with the reason «superseded by <new id>», see question-timeout.ts supersede) or a question left to the owner.
  */
-const OWNER_DECISION = /^verdict_block: question_unanswered: (?:product decision|superseded by |left to the owner)/;
+const OWNER_DECISION = /^(?:verdict_block: question_unanswered: (?:product decision|superseded by |left to the owner)|superseded by )/;
 export const isOwnerDecision = (reason:string | null | undefined):boolean => OWNER_DECISION.test(reason ?? "");
 /** The task spent its overall writer-attempt budget (retry-budget.ts): ends for the PM, never parked or redriven. */
 const RETRY_BUDGET = /^retry_budget_exhausted:/;

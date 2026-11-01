@@ -14,7 +14,7 @@ sources:
   - docs/enabled-settings.snapshot.json
 ---
 
-<!-- enabled-settings:structure 902b6b78bf275c16 -->
+<!-- enabled-settings:structure 0dc50489e2d5fa76 -->
 
 # Enabled settings (generated)
 
@@ -160,9 +160,11 @@ switches: `quick` disables both critiques, `full` enables them (`src/rooms/criti
 | `ops.pool_size` | `required, no default` | — | run policy reads this: writers at once |
 | `ops.provider_pool` | — | — | writer pools: a cap on simultaneous writers per provider, as provider=limit pairs |
 | `ops.verify_pool_size` | `required, no default` | — | run policy reads this: verification pool |
+| `owner.words` | `risky` | — | landing: whose word a verified task waits for (on every task, risky = risk high or critical, off none) |
 | `owner_push.enabled` | `true` | — | owner push: the Telegram message about what waits for the owner |
 | `owner_push.quiet` | `23:00-08:00` | — | owner push: quiet hours window, HH:MM-HH:MM |
 | `owner_push.timezone` | `Europe/Madrid` | — | owner push: time zone of the quiet hours |
+| `phase.rails` | `off` | — | phases: with rails on, graphs, councils and schedules of a phase start only from its own stage |
 | `plan_critique.agent` | `plan-critic` | — | plan-critique role label included in its prompt |
 | `plan_critique.enabled` | `true` | — | stage setting |
 | `plan_critique.min_score` | `7` | — | critique threshold applied to the task-risk score adapter |

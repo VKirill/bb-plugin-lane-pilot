@@ -17,6 +17,7 @@ import { benchArmStatus, isLiveProject } from "../../bench/server";
 import { wallLogLines } from "../logs";
 import { revertMerge, type RevertHost } from "../revert";
 import { builtinWorkflow } from "../../workflow";
+import { collectAndAppend } from "../../policy";
 import type { ChainRuntime } from "../../workflow/server";
 import { createPluginCheckers } from "../../checkers/server";
 import type { HuntOutcome } from "../pack";
@@ -273,6 +274,12 @@ export function createPluginWall(ctx: ServerCore, services: Services): WallApi {
     settled: (signature, info) => wall.settled(signature, info),
   });
 
+  // The night policy's growing exam: the owner's decisions since the policy froze become exam items before the loop runs. Append-only and
+  // idempotent (live-exam.ts collectAndAppend); until 0.1.459 only the CLI `policy exam-collect` called it (Gemini F-009).
+  scheduleIsolated(bb, "policy-exam-collect", "50 2 * * *", async () => {
+    if (ctx.isDisposed()) return;
+    await collectAndAppend(ctx.db as never, bb.storage.kv as never).catch((cause: unknown) => ctx.log(`policy exam collect failed: ${cause instanceof Error ? cause.message : String(cause)}`));
+  }, { timeoutMs: 60_000 });
   scheduleIsolated(bb, "wall-night", "0 3 * * *", async () => {
     if (ctx.isDisposed()) return;
     // The conveyor is off (src/rooms/runs/server/conveyor.ts): the night queues no repair.

@@ -1,0 +1,7 @@
+F-001 {"n":200,"lb":0.9104209437021562,"window":0.2992949144298199,"revert":true,"tiers":["decides","proposes","decides","proposes"]}
+F-002 {"reopenedDecision":{"created":false},"reopenedInbox":{"created":false},"road":"proposed","inbox":{"state":"closed"},"answer":"{\"option\":\"later\"}","by":"owner"}
+F-005 {"sendCalls":1,"sendRejected":true,"returnedDelivered":true,"inboxWouldBeSkipped":true}
+F-007 {"mergesA":4,"mergesB":1,"thresholdB":5,"result":{"ran":true,"passed":true},"pendingAfterB":0,"hostCalls":[{"name":"diskFree"},{"name":"gateRun","basePath":"/synthetic-B"}]}
+F-009 {"failingTests":0,"attribution":"none","result":{"ran":true,"passed":false,"culpritTaskId":"innocent"},"sends":["writer-innocent"]}
+F-003/F-010 {"zone":["P"],"proposed":1,"roadClass":null,"decisionClass":"next_step","postedProject":"Q"}
+F-011 {"onlyAnswerBy":"agent","measuredRows":1}

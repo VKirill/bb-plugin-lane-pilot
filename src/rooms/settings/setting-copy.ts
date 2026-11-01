@@ -177,6 +177,8 @@ export const SETTING_META: Record<string, SettingMeta> = {
   "lead.project": { label: "field_s603", help: "reason_s603" },
   "lead.projects": { label: "field_s604", help: "reason_s604" },
   "lead.priority": { label: "field_s608", help: "reason_s608" },
+  "owner.words": { label: "field_s609", help: "reason_s609" },
+  "phase.rails": { label: "field_s610", help: "reason_s610" },
   "lead.budget_daily_usd": { label: "field_s605", help: "reason_s605", unit: "fieldUnitUsd" },
   "lead.tick_cron": { label: "field_s606", help: "reason_s606" },
   "lead.max_proposals": { label: "field_s607", help: "reason_s607", unit: "fieldUnitProposals" },

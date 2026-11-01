@@ -19,6 +19,6 @@ a sweep finds the runs of the last week that are done — every task accepted or
 checks each once: the regression pass (`src/rooms/baseline/server/regress.ts`, option `runId`, mode `full`) runs every accepted task's checks of the run
 together in one throwaway worktree of the project's current main, and bisects a red one to the commit that broke it. The nightly regression stays mode `cheap` and is not this verdict.
 
-- `passed`: every required check ran and was green. `partial`: some ran and some were skipped. `inconclusive`: required checks were skipped and none ran. `failed`: a red check that counts, with the culprit commit and task, and one message to the PM. `skipped`: the pass itself did not run (no git, no checks), with the reason. Counts `planned` / `ran` / `skipped_checks` are on the row. One row per run in `lane_pilot_run_goal`.
+- `passed`: every required check ran and was green. `partial`: some ran and some were skipped. `inconclusive`: required checks were skipped and none ran. `failed`: a red check that counts, with the culprit commit and task, and one row on the owner's list (`goal_failed`; no message into the PM chat since 0.1.443). `skipped`: the pass itself did not run (no git, no checks), with the reason. Counts `planned` / `ran` / `skipped_checks` are on the row. One row per run in `lane_pilot_run_goal`.
 - `bb lane-pilot run-goal <run-id> | --sweep | --status <run-id>`, RPC `run_goal_status`, `run_goal_check`.
 - A red check also stays a regression finding of the baseline room, so the morning list counts it like any other.

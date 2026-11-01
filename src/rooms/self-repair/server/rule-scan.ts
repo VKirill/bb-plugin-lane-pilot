@@ -466,7 +466,13 @@ export function createRuleScan(ctx: ServerCore, services: Services) {
    * is counted; the rest is applied, and the scan ends failed with the count (the step then fails the run) so nothing is lost and nothing is hidden.
    */
   async function applyScan(projectId: string, plan: Pick<ScanPlan, "state">, jobs: readonly ScanJob[], results: readonly JobResult[]): Promise<{ proposals: number; adopted: number; errors: number; reason: string | null }> {
-    if (plan.state === "fallback") return { proposals: 0, adopted: 0, errors: 0, reason: null };
+    if (plan.state === "fallback") {
+      // Without System One no analyzer ran, but the rules already on trial are still judged on what happened to the writers given them;
+      // the scan used to return here before evaluateRules, so a night without Jev confirmed and retired nothing (Gemini F-012).
+      const trial = evaluateRules(projectId, new Map());
+      await setScan(projectId, { ...trial });
+      return { proposals: 0, adopted: 0, errors: 0, reason: null };
+    }
     const byId = new Map(results.map((row) => [row.id, row]));
     const errors: string[] = [];
     let proposals = 0, adopted = 0;

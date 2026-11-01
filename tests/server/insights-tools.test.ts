@@ -366,6 +366,17 @@ describe("insights tools", () => {
     savePrototypeConfig(db, { projectId, hostId: "host-1", pmWorkspacePath: "/tmp/rules-ws", writerWorkspacePath: "/tmp/rules-ws", pmProviderId: "codex", pmModel: "m", writerProviderId: "codex", writerModel: "m" });
     createRun(db, runId, projectId);
     const now = Date.now();
+    // A rule already on trial is still judged on a night without Jev (Gemini F-012: the fallback used to return before evaluateRules).
+    saveProjectSetting(db, projectId, "memory.enabled", "true");
+    db.prepare(`INSERT INTO lane_pilot_rule_proposal (id,project_id,signature,rule,author,state,occurrences,task_count,examples_json,first_seen_at,last_seen_at,updated_at)
+      VALUES ('rule-clean',?,'rule-clean','Quote the passing test line.','model','proposed',3,3,'[]',1,1,1)`).run(projectId);
+    expect(adoptRuleProposal(db, projectId, "rule-clean", now - 60_000)).toMatchObject({ trialState: "trial" });
+    for (let i = 0; i < 5; i++) {
+      createTask(db, { id: `clean-${i}`, runId, kind: "bb", contract: { risk: "low" } });
+      db.prepare("INSERT INTO lane_pilot_attempt(id,run_id,task_id,state,reason,created_at,updated_at,attempt_no,dirt_before_json) VALUES(?,?,?,?,?,?,?,?,?)")
+        .run(`clean-att-${i}`, runId, `clean-${i}`, "accepted", null, now - 50_000 + i, now - 50_000 + i, 1, "[]");
+      db.prepare("INSERT INTO lane_pilot_attempt_reasoning(attempt_id,trace_json) VALUES(?,?)").run(`clean-att-${i}`, JSON.stringify({ attemptId: `clean-att-${i}`, dispatchContext: { rulesPicked: { total: 1, picked: ["rule-clean"] } } }));
+    }
     for (const [index, task] of ["t1", "t2", "t3"].entries()) {
       createTask(db, { id: task, runId, kind: "bb", contract: { risk: "low" } });
       db.prepare("INSERT INTO lane_pilot_attempt(id,run_id,task_id,state,reason,created_at,updated_at,attempt_no,dirt_before_json) VALUES(?,?,?,?,?,?,?,?,?)")
@@ -380,7 +391,8 @@ describe("insights tools", () => {
       if (listed.scan.state !== "running") break;
       await new Promise((resolve) => setTimeout(resolve, 20));
     }
-    expect(listed.scan).toMatchObject({ state: "done", reason: "jev_unavailable:missing_typesafe_api_key", proposals: 1 });
-    expect(listed.proposals).toEqual([expect.objectContaining({ author: "sweep", rule: expect.stringContaining("Could not resolve host") })]);
+    expect(listed.scan).toMatchObject({ state: "done", reason: "jev_unavailable:missing_typesafe_api_key", proposals: 1, confirmed: 1 });
+    expect(listed.proposals.filter((row: { author: string }) => row.author === "sweep")).toEqual([expect.objectContaining({ rule: expect.stringContaining("Could not resolve host") })]);
+    expect(listed.proposals.find((row: { id: string }) => row.id === "rule-clean")).toMatchObject({ trialState: "confirmed" });
   });
 });

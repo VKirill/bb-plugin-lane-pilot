@@ -165,7 +165,7 @@ export function createSecondPilot(ctx: ServerCore, services: Services, consult: 
   }
 
   async function run(row: { id:string; run_id:string; task_id:string; project_id:string; thread_id:string|null }, question: string, now: number,
-    doors: { answerWriter:(answer:string) => Promise<boolean>; end:(why:string) => Promise<void> }): Promise<PilotResult | null> {
+    doors: { answerWriter:(answer:string) => Promise<boolean>; end:(why:string) => Promise<void>; supersede:(by:string, why:string) => Promise<void> }): Promise<PilotResult | null> {
     if (listReturns(db, row.run_id, row.task_id).some((record) => record.by === SECOND_PILOT)) return null;
     const stored = getTask(db, row.task_id);
     const parsed = stored ? taskV2Schema.safeParse(stored.contract) : null;
@@ -204,7 +204,7 @@ export function createSecondPilot(ctx: ServerCore, services: Services, consult: 
       if (!runRow.pm_thread_id) { await doors.end("the second pilot narrowed the task but the run has no PM thread to dispatch it"); return done("narrow", false, "no PM thread"); }
       const narrowed = narrowedTask(task, decision, question);
       // The original attempt ends first: a live member of the family would make the new task a duplicate (dispatch.ts runningFamilyMember).
-      await doors.end(`superseded by ${narrowed.id}: the second pilot narrowed the task (${grounds.slice(0, 200)})`);
+      await doors.supersede(narrowed.id, `the second pilot narrowed the task (${grounds.slice(0, 200)})`);
       try {
         const dispatched = await services.dispatchWriter({ threadId:runRow.pm_thread_id, projectId:row.project_id, task:narrowed, plan:`${pilotCase.plan || narrowed.objective}\n\n${narrowed.objective}`, birth:"redo" });
         const newTaskId = stringAt(dispatched, "taskId");

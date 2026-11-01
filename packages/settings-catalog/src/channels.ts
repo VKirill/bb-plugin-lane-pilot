@@ -172,6 +172,8 @@ export const SETTING_CATALOG: SettingSpec[] = [
   { key:"lead.project", channel:"OWN", reason:"Native Lane Pilot lead: the project its chat and tick runs live in" },
   { key:"lead.projects", channel:"OWN", reason:"Native Lane Pilot lead: the projects a tick reads and proposes for" },
   { key:"lead.priority", channel:"OWN", reason:"Native Lane Pilot lead: the owner's order of projects; the brief ranks them so and unlisted follow" },
+  { key:"owner.words", channel:"OWN", reason:"Native Lane Pilot landing: whose word a verified task waits for (on every task, risky = risk high or critical, off none)" },
+  { key:"phase.rails", channel:"OWN", reason:"Native Lane Pilot phases: with rails on, graphs, councils and schedules of a phase start only from its own stage" },
   { key:"lead.budget_daily_usd", channel:"OWN", reason:"Native Lane Pilot lead: the dollars its ticks may spend in one day" },
   { key:"lead.tick_cron", channel:"OWN", reason:"Native Lane Pilot lead: when a tick starts, in the owner's time zone" },
   { key:"lead.max_proposals", channel:"OWN", reason:"Native Lane Pilot lead: how many proposals one tick may put on the owner's list" },
@@ -299,11 +301,6 @@ export const SETTING_CATALOG: SettingSpec[] = [
   { key:"night_review.provider", channel:"OWN", reason:"Native Lane Pilot stage uses the BB ProviderModelPicker for night review" },
   { key:"night_review.model", channel:"OWN", reason:"Native Lane Pilot stage uses the BB ProviderModelPicker for night review" },
   { key:"night_review.agent", channel:"OWN", reason:"Native Lane Pilot stage consumes this reviewer role label in its prompt" },
-  {
-    key:"night_review.model",
-    channel:"NONE",
-    reason: UNAPPLIED_REASON.nightReviewModel,
-  },
   { key:"checkers.diff_hidden_limit", channel:"OWN", reason:"Native Lane Pilot checkers: task limit for nightly diff-hidden audit, default 0" },
   { key:"bench.model_rebench", channel:"OWN", reason:"Native Lane Pilot monthly model routing rebench switch" },
 ];

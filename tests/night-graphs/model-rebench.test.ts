@@ -148,3 +148,28 @@ describe("monthly model routing re-bench (Item 2)", () => {
     expect(reportRes.output.summary).toContain("Model rebench");
   });
 });
+
+describe("model re-bench counts one decision per receipt", () => {
+  it("a task with a failed and then an accepted attempt is one decision that agreed; another run's task of the same id is not joined", () => {
+    const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
+    const db = openDatabase(bb);
+    db.exec("PRAGMA foreign_keys = OFF");
+    const now = Date.now();
+    const attempt = (id: string, runId: string, state: string, at: number) => db.prepare(`
+      INSERT INTO lane_pilot_attempt (id, run_id, task_id, state, reason, created_at, updated_at) VALUES (?, ?, 'T1', ?, NULL, ?, ?)
+    `).run(id, runId, state, at, at);
+    attempt("att_fail", "run_a", "validation_failed", now - 3000);
+    attempt("att_ok", "run_a", "accepted", now - 2000);
+    attempt("att_other", "run_b", "validation_failed", now - 1000);
+    db.prepare(`
+      INSERT INTO lane_pilot_jev_receipt (judgment, version, mode, project_id, run_id, subject, input_sha256, input_chars, questions, status, decision, decided_by, at)
+      VALUES ('writer.model', 1, 'active', 'proj_1', 'run_a', 'T1', 'sha', 100, 1, 'ok', '{"key":"gpt-5.4-mini"}', 'jev', ?)
+    `).run(now - 3000);
+
+    const metrics = evaluateModelRouting(db);
+    expect(metrics.evaluatedDecisions).toBe(1);
+    expect(metrics.agreedOutcomes).toBe(1);
+    expect(metrics.winRate).toBe(1);
+    expect(metrics.byModel["gpt-5.4-mini"]).toMatchObject({ total: 1, accepted: 1 });
+  });
+});

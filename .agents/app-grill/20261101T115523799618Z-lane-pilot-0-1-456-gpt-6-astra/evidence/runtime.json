@@ -1,0 +1,52 @@
+[
+  {
+    "command": "bb lane-pilot lead status",
+    "exit": 0,
+    "at": "2026-11-01T11:59:52.833711+00:00",
+    "result": "command completed; content omitted to avoid unrelated project data",
+    "output_chars": 798,
+    "stderr": ""
+  },
+  {
+    "command": "bb lane-pilot lead rights",
+    "exit": 0,
+    "at": "2026-11-01T11:59:53.372277+00:00",
+    "output": "next_step  proposes   (starts proposes, acts via intake) — no exam yet\nschedule   proposes   (starts proposes, acts via schedule) — no exam yet\nlanding    proposes   (starts proposes, acts via none) — no exam yet\nprocess    proposes   (starts proposes, acts via intake) — no exam yet\ndefer      proposes   (starts proposes, acts via none) — no exam yet\nmoney      owner_only (starts owner_only, acts via none) — no exam yet\nexternal   owner_only (starts owner_only, acts via none) — no exam yet\n"
+  },
+  {
+    "command": "bb lane-pilot lead exam",
+    "exit": 0,
+    "at": "2026-11-01T11:59:53.895512+00:00",
+    "output": "No class has an exam yet: a row counts only when it was predicted before the owner answered (split exam).\n"
+  },
+  {
+    "command": "bb lane-pilot waiting --json",
+    "exit": 0,
+    "at": "2026-11-01T11:59:54.423867+00:00",
+    "shape": [
+      "generatedAt",
+      "items",
+      "counts",
+      "overnight"
+    ],
+    "items": 0,
+    "by_source": {},
+    "without_actions": 0
+  },
+  {
+    "command": "bb lane-pilot schedule list --json",
+    "exit": 0,
+    "at": "2026-11-01T11:59:54.977807+00:00",
+    "result": "command completed; content omitted to avoid unrelated project data",
+    "output_chars": 19595,
+    "stderr": ""
+  },
+  {
+    "command": "bb lane-pilot phase list",
+    "exit": 0,
+    "at": "2026-11-01T11:59:55.530000+00:00",
+    "result": "command completed; content omitted to avoid unrelated project data",
+    "output_chars": 545,
+    "stderr": ""
+  }
+]

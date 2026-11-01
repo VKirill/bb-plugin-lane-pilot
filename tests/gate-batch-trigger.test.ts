@@ -33,11 +33,13 @@ function setup() {
     bb: { storage: bb.storage, sdk: { threads: { send: async (input: { threadId: string; input: Array<{ text: string }> }) => { sent.push({ threadId: input.threadId, text: input.input[0]?.text ?? "" }); } }, files: { write: async () => ({}) } } },
     host: { call: async (method: string, input: unknown) => (hostHandlers as unknown as Record<string, (input: unknown) => Promise<unknown>>)[method]!(input) },
   };
-  const finish = createWriterFinish(ctx as never, {} as never);
+  // 0.1.459: a culprit's repair is a task dispatched to the PM queue, not a message into the writer's closed thread.
+  const dispatched: Array<{ task: { id: string; objective: string } }> = [];
+  const finish = createWriterFinish(ctx as never, { dispatchWriter: async (input: { task: { id: string } }) => { dispatched.push(input as never); return { ok: true, taskId: input.task.id }; } } as never);
   const landed = (id: string, produced: string[]) => finish.noteMergedForGate(
     { projectId: "proj-1", runId: "run-1", taskId: id, attemptId: `att-${id}`, writerThreadId: `thr-${id}`, pmThreadId: "pm-1", config: { hostId: "h" } },
     dir, `sha-${id}`, produced, false);
-  return { db, sent, landed };
+  return { db, sent, dispatched, landed };
 }
 const writePackage = (failing: string | null) => writeFileSync(join(dir, "package.json"), JSON.stringify({ scripts: {
   test: `node -e "require('fs').appendFileSync('runs.txt','x');${failing ? `console.error('FAIL ${failing}');process.exit(1)` : ""}"`,
@@ -58,15 +60,16 @@ it("a merge while another task is still open only counts; the last one to land r
 
 it("a red gate after the batch goes to the writer whose task owns the failing test; the PM is not messaged", async () => {
   writePackage("t2/b.test.ts");
-  const { db, sent, landed } = setup();
+  const { db, sent, dispatched, landed } = setup();
   await landed("t1", ["t1/a.ts"]);
   for (const state of ["spawn_requested", "running", "accepted"] as const) transitionAttempt(db, "att-t1", state);
 
   expect(await landed("t2", ["t2/b.test.ts"])).toMatchObject({ ran: true, passed: false, culpritTaskId: "t2" });
 
   expect(runs()).toBe(1);
-  expect(sent.find((message) => message.threadId === "thr-t2")?.text).toContain("integration gate failed after merging your task t2");
-  expect(sent.find((message) => message.threadId === "pm-1")).toBeUndefined();
+  expect(dispatched.map((d) => d.task.id)).toEqual(["t2-mainfix"]);
+  expect(dispatched[0]!.task.objective).toContain("integration gate failed after merging your task t2");
+  expect(sent).toEqual([]);
 });
 
 it("with the gate off nothing runs", async () => {

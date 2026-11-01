@@ -65,7 +65,9 @@ export function mountCriticEditGraph(ctx: ServerCore, services: Services): void 
       await engine.start({
         workflow, key, link: { projectId: project.id },
         runtime: { ctx, services, pmThreadId: null, projectId: project.id, runId: null, origin: "schedule" } satisfies ChainRuntime,
-        inputs: { project_id: project.id, bench: "" },
+        // `bench: "on"`: the monthly run is the one that scores a proposal on the bench (criticEditTrial runs only with a proposal and the
+        // trial on). It used to pass "" and so held every proposal for ever (Gemini F-011).
+        inputs: { project_id: project.id, bench: "on" },
       }).done.catch((cause: unknown) => ctx.log(`critic edit for ${project.id} failed: ${cause instanceof Error ? cause.message : String(cause)}`));
     }
   }, { timeoutMs: 30 * 60_000 });

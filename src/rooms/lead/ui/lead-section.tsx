@@ -120,10 +120,10 @@ export function LeadSection({ locale, fields }: { locale: Locale; fields: ReactN
                     <tr key={row.id} data-testid={`lead-label-${row.id}`}>
                       <td className="py-1 pr-2" title={row.id}><span className="font-medium">{row.class}</span> <span className="text-muted-foreground">{situation.slice(0, 60)}</span></td>
                       <td className="py-1 pr-2 whitespace-nowrap">{guess} → {answer}</td>
-                      <td className="py-1 pr-2">{row.judge_verdict}</td>
+                      <td className="py-1 pr-2">{row.judge_verdict ? t(`lead_verdict_${row.judge_verdict}` as never) : "—"}</td>
                       <td className="py-1 pr-2 whitespace-nowrap">
                         {(["exact", "partial", "miss"] as const).map((verdict) => (
-                          <Button key={verdict} type="button" size="sm" variant={row.judge_verdict === verdict ? "default" : "outline"} className="mr-1" disabled={busy !== null} data-testid={`lead-label-${row.id}-${verdict}`} onClick={() => void label(row.id, verdict)}>{verdict}</Button>
+                          <Button key={verdict} type="button" size="sm" variant={row.judge_verdict === verdict ? "default" : "outline"} className="mr-1" disabled={busy !== null} data-testid={`lead-label-${row.id}-${verdict}`} onClick={() => void label(row.id, verdict)}>{t(`lead_verdict_${verdict}` as never)}</Button>
                         ))}
                       </td>
                     </tr>

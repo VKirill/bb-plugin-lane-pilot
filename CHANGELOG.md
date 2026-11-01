@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+## 0.1.459
+
+The rest of the Gemini 4 Argon grill of 0.1.456 (`.agents/app-grill/20261101T115522522320Z-lane-pilot-0-1-456-gemini-4-argon/report.md`, F-009 to F-016 and U-002), confirmed by code and closed.
+
+- **A red gate traced to a task gets a repair task, not a message into a closed thread (F-013).** The culprit's attempt is accepted and its worktree gone by the time the gate runs; the fix turn sent into its old writer thread had no loop waiting for it, so nobody verified or merged the fix and the red was lost. `integration-gate.ts` now dispatches `<task>-mainfix` to the run's PM queue (the culprit's contract with the gate command as its check and the fix turn as its objective, the same id and rules as the post-merge repair); a sticky writer of the area still takes it in its own thread. When nothing can be dispatched — the run closed, no contract, or the culprit is itself a repair — the red is a `gate_red` row on the owner's list, never a lost message.
+- **A task the second pilot narrowed is superseded, not a dead letter (F-014).** The original attempt ended `blocked` with «superseded by …» in its reason, so a day later the queue tool listed it among the dead letters the PM is told to resend. It is now canceled with the cancel code `superseded` (`question-timeout.ts supersede`), uncharged as before. (`sendPmNotice` already returns false on a refused send since 0.1.458.)
+- **A PM rule is never «unused» (F-010).** A rule of audience `pm` records no use (it rides the PM's brief, not a writer attempt), and `decideRuleTrial` retired every one of them at 60 days as unused. The unused rule now applies to writer rules only; a PM rule stays on trial until a recurrence or the owner.
+- **The night without Jev still judges the rules on trial (F-012).** `applyScan` returned on `fallback` before `evaluateRules`, so a night with System One down confirmed and retired nothing; the fallback now judges the trial and records the counts. The `collect` node's rule in `workflows/lp.rules-scan.json` says what the graph does instead of «the scan ends here».
+- **The policy exam collects itself (F-009).** `collectAndAppend` had one caller, the CLI; it runs every night at 02:50 hub time (`policy-exam-collect`, before the wall's loop). The concept of an auto-adopted rule was already `trial` since 0.1.458.
+- **The monthly model re-bench counts one decision per receipt (F-011).** A `LEFT JOIN` on the task id multiplied a receipt by the task's attempts and by every run that reused the id; the task's outcome is now its accepted attempt, else its latest, in the receipt's own run. The monthly `lp.critic-edit` passed itself `bench: ""` and so could never score a proposal; it passes `on`.
+- **The settings catalog tells the truth about the writer and knows two more keys (F-015).** The catalog's writer defaults said `kimi / low / standard` (the adoc CLI's) while the code inherits `codex / gpt-6-luna / high / fast`; the rows say so. `owner.words` (`on | risky | off`) and `phase.rails` (`on | off`) are catalog rows, so `save_setting` validates them and the screen shows them; the duplicate `night_review.model` row is gone; the first-run interview can answer «risky». `docs/self-improvement-settings.md` no longer lists two harness kv fields as settings.
+- **A reset of a model group is judged like a save (F-016).** `reset_project_settings` checked the inherited selection against one host's catalog; it uses the merged catalog of the global level like the twelve saves of 0.1.445.
+- **The judge's verdicts read as words (U-002):** совпал / отчасти / мимо / воздержался on the Разметка block, not `exact / partial / miss`.
+
+Docs: `docs/run-goal.md` (a failed goal is a row, not a PM message), `docs/night-policy.md` (the collector's cron), `docs/self-improvement-settings.md`, `docs/enabled-settings.md`, `docs/atlas.md`.
+
 ## 0.1.458
 
 Three grills of 0.1.456 (SWE-2, Gemini 4 Argon, GPT-6 Astra; reports under `.agents/app-grill/20261101T1155*`) read the Штурман room, the owner's list and the night loops against each other. Everything confirmed by code is closed here.

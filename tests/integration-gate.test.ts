@@ -152,6 +152,12 @@ describe("prompt formatting for fix turn", () => {
 describe("IntegrationGateRunner with mock core & services", () => {
   let db: ReturnType<typeof openDatabase>;
   let sentMessages: Array<{ threadId: string; text: string }>;
+  /** The repair tasks the gate dispatched to the run's PM queue (0.1.459: a culprit gets a task, not a message into its closed thread). */
+  let dispatched: Array<{ threadId: string; projectId: string; task: { id: string; objective: string; risk: string; expected_outputs: string[] }; plan: string }>;
+  let dispatchResult: () => Record<string, unknown>;
+  const contractOf = (id: string) => ({ id, title: id, objective: "do it", owns_paths: ["src", "tests"], acceptance: ["ok"], verification: [], risk: "low", expected_outputs: [], depends_on: [], area: "core" });
+  /** The task the gate's repair copies its contract from. */
+  const seedTask = (id: string) => db.prepare("INSERT OR REPLACE INTO lane_pilot_task(id,run_id,kind,contract_json,created_at,birth) VALUES (?,?,?,?,?,?)").run(id, "run-1", "bb", JSON.stringify(contractOf(id)), 0, "pm");
   let mockCore: ServerCore;
   let mockServices: Services;
 
@@ -187,7 +193,14 @@ describe("IntegrationGateRunner with mock core & services", () => {
       host: { call: async (method: string, input: unknown) => (hostHandlers as unknown as Record<string, (input: unknown) => Promise<unknown>>)[method]!(input) },
     } as unknown as ServerCore;
 
-    mockServices = {} as unknown as Services;
+    dispatched = [];
+    dispatchResult = () => ({ ok: true, state: "queued" });
+    mockServices = {
+      dispatchWriter: async (input: unknown) => {
+        dispatched.push(input as (typeof dispatched)[number]);
+        return { taskId: (input as { task: { id: string } }).task.id, ...dispatchResult() };
+      },
+    } as unknown as Services;
   });
 
   /** The one row a red gate with no culprit leaves on the owner's list (the PM chat gets nothing). */
@@ -316,6 +329,7 @@ describe("IntegrationGateRunner with mock core & services", () => {
     saveProjectSetting(db, "proj-1", "integration.gate_command", 'node -e "console.error(\'FAIL tests/culprit.test.ts\'); process.exit(1)"');
 
     const runner = new IntegrationGateRunner(mockCore, mockServices);
+    seedTask("culprit-task");
     runner.noteMergedTask({
       taskId: "culprit-task",
       commitSha: "sha-culprit",
@@ -337,17 +351,47 @@ describe("IntegrationGateRunner with mock core & services", () => {
     expect(res.passed).toBe(false);
     expect(res.culpritTaskId).toBe("culprit-task");
 
-    // Check sent message to culprit thread
-    const culpritMsg = sentMessages.find((m) => m.threadId === "culprit-thread-123");
-    expect(culpritMsg).toBeDefined();
-    expect(culpritMsg?.text).toContain("Result: integration gate failed after merging your task culprit-task");
+    // The repair is a task in the run's PM queue, the culprit's contract with the gate command as its check; nothing goes into the
+    // culprit's closed writer thread (its loop is over, its worktree gone: a message there was a fix nobody verified or merged).
+    const repair = dispatched.find((d) => d.task.id === "culprit-task-mainfix");
+    expect(repair).toMatchObject({ threadId: "pm-thread-999", projectId: "proj-1", task: { risk: "medium" } });
+    expect(repair?.task.objective).toContain("Result: integration gate failed after merging your task culprit-task");
+    expect(repair?.task.expected_outputs).toEqual([repair?.plan.match(/run `([^`]+)`/)?.[1]]);
+    expect(sentMessages.find((m) => m.threadId === "culprit-thread-123")).toBeUndefined();
 
     // The PM is not told: the fix comes back to it as the task's result.
     expect(sentMessages.find((m) => m.threadId === "pm-thread-999")).toBeUndefined();
 
-    // Check no new task ids created in db
+    // The gate writes no task row itself: the dispatch (mocked here) does.
     const tasksAfter = db.prepare(`SELECT * FROM lane_pilot_task WHERE run_id='run-1'`).all().length;
     expect(tasksAfter).toBe(tasksBefore);
+  });
+
+  it("a culprit whose repair cannot be dispatched is a row on the owner's list; a repair's own red is never a repair of a repair", async () => {
+    saveProjectSetting(db, "proj-1", "integration.gate_command", 'node -e "console.error(\'FAIL tests/culprit.test.ts\'); process.exit(1)"');
+    const runner = new IntegrationGateRunner(mockCore, mockServices);
+    seedTask("culprit-task");
+    runner.noteMergedTask({ taskId: "culprit-task", commitSha: "sha-culprit", threadId: "culprit-thread-123", attemptId: "att-1", produced: ["tests/culprit.test.ts"] });
+    dispatchResult = () => ({ ok: false, state: "rejected", reason: "run closed" });
+
+    const res = await runner.maybeRunGate({ runId: "run-1", projectId: "proj-1", pmThreadId: "pm-thread-999", basePath: process.cwd(), configHostId: "host-1", trigger: "drain" });
+    expect(res).toMatchObject({ ran: true, passed: false, culpritTaskId: "culprit-task" });
+    expect(dispatched.map((d) => d.task.id)).toEqual(["culprit-task-mainfix"]);
+    const row = ownerRow();
+    expect(row.kind).toBe("gate_red");
+    expect(row.what).toContain("culprit-task");
+    expect(row.why).toContain("Задачу починки создать не удалось");
+    expect(sentMessages).toEqual([]);
+
+    // The repair itself merged and the gate is red again: a person reads it (as checkMainAfterMerge holds), no «-mainfix-mainfix».
+    dispatched.length = 0;
+    const again = new IntegrationGateRunner(mockCore, mockServices);
+    seedTask("culprit-task-mainfix");
+    again.noteMergedTask({ taskId: "culprit-task-mainfix", commitSha: "sha-fix", threadId: "thr-fix", attemptId: "att-2", produced: ["tests/culprit.test.ts"] });
+    const res2 = await again.maybeRunGate({ runId: "run-1", projectId: "proj-1", pmThreadId: "pm-thread-999", basePath: process.cwd(), configHostId: "host-1", trigger: "drain" });
+    expect(res2).toMatchObject({ ran: true, passed: false, culpritTaskId: "culprit-task-mainfix" });
+    expect(dispatched).toEqual([]);
+    expect(db.prepare("SELECT COUNT(*) AS n FROM lane_pilot_owner_item WHERE key LIKE 'gate-red:run-1:%'").get()).toEqual({ n: 2 });
   });
 
   describe("with no gate_command: the command is detected on the project's host", () => {
@@ -384,6 +428,7 @@ describe("IntegrationGateRunner with mock core & services", () => {
     it("a red gate goes to the culprit writer's thread and tells the PM which command was detected", async () => {
       writePackage("tests/b.test.ts");
       const runner = new IntegrationGateRunner(mockCore, mockServices);
+      seedTask("t1"); seedTask("t2");
       runner.noteMergedTask(merged("t1", ["src/a.ts"]));
       runner.noteMergedTask(merged("t2", ["tests/b.test.ts"]));
 
@@ -391,9 +436,9 @@ describe("IntegrationGateRunner with mock core & services", () => {
 
       expect(res).toMatchObject({ ran: true, passed: false, culpritTaskId: "t2" });
       expect(runs()).toBe(1);
-      expect(sentMessages.find((m) => m.threadId === "thr-t2")?.text).toContain("integration gate failed after merging your task t2");
-      expect(sentMessages.find((m) => m.threadId === "pm-thread-999")).toBeUndefined();
-      expect(sentMessages.find((m) => m.threadId === "thr-t1")).toBeUndefined();
+      expect(dispatched.find((d) => d.task.id === "t2-mainfix")?.task.objective).toContain("integration gate failed after merging your task t2");
+      expect(sentMessages).toEqual([]);
+      expect(dispatched.some((d) => d.task.id === "t1-mainfix")).toBe(false);
     });
 
     it("an explicit command overrides the detected one", async () => {
@@ -458,6 +503,7 @@ describe("IntegrationGateRunner with mock core & services", () => {
 
     it("a green gate of project B does not clear project A's pending merges", async () => {
       const runner = new IntegrationGateRunner(mockCore, mockServices);
+      seedTask("a1");
       runner.noteMergedTask(merged("a1", ["tests/a.test.ts"]), scopeA());
       runner.noteMergedTask(merged("b1", ["src/b.ts"]), scopeB());
 
@@ -468,7 +514,7 @@ describe("IntegrationGateRunner with mock core & services", () => {
 
       const resA = await runner.maybeRunGate({ runId: "run-1", projectId: "proj-1", pmThreadId: "pm-1", basePath: dirA, configHostId: "host-1", trigger: "drain" });
       expect(resA).toMatchObject({ ran: true, passed: false, culpritTaskId: "a1" });
-      expect(sentMessages.find((m) => m.threadId === "thr-a1")?.text).toContain("integration gate failed after merging your task a1");
+      expect(dispatched.find((d) => d.task.id === "a1-mainfix")?.task.objective).toContain("integration gate failed after merging your task a1");
     });
 
     it("every_n counts each scope's merges, not all merges together", async () => {
@@ -669,7 +715,7 @@ AssertionError: expected 1 to be 2
       } as unknown as ServerCore;
 
       saveProjectSetting(db, "proj-1", "integration.gate_command", "npx vitest run");
-      db.prepare(`INSERT INTO lane_pilot_task (id, run_id, kind, contract_json, created_at) VALUES ('task-1', 'run-1', 'bb', '{}', 0)`).run();
+      seedTask("task-1");
 
       const runner = new IntegrationGateRunner(coreWithGate, mockServices);
       runner.noteMergedTask({
@@ -694,8 +740,8 @@ AssertionError: expected 1 to be 2
         "npx vitest run",
         "npx vitest run tests/timeout.test.ts",
       ]);
-      const writerMsg = sentMessages.find((m) => m.threadId === "thr-1");
-      expect(writerMsg?.text).toContain("AssertionError");
+      const repair = dispatched.find((d) => d.task.id === "task-1-mainfix");
+      expect(repair?.task.objective).toContain("AssertionError");
     });
 
     it("mixed timeout and assertion failures get no recheck", async () => {

@@ -10,7 +10,7 @@ export const FIRST_RUN_STEPS = [
   { id: "goal", question: "What is this project and what should Lane Pilot do in it first?", setting: null },
   { id: "writer", question: "Which provider and model should write the code (for example codex / gpt-6-luna)?", setting: "writer" },
   { id: "quality", question: "How strict should the checks be: quick, standard or full?", setting: "quality_mode" },
-  { id: "words", question: "Should Lane Pilot wait for your word at the turns (yes) or decide by its gates in code (no)?", setting: "owner.words" },
+  { id: "words", question: "Should Lane Pilot wait for your word before every task lands (yes), only before risky work lands (risky, the default) or decide by its gates in code (no)?", setting: "owner.words" },
 ] as const;
 export type FirstRunStep = (typeof FIRST_RUN_STEPS)[number]["id"];
 export type FirstRunDraft = { projectId: string; answers: Partial<Record<FirstRunStep, string>>; at: number; done?: number };
@@ -33,7 +33,7 @@ export function firstRunSettings(draft: FirstRunDraft): Record<string, unknown> 
   const quality = draft.answers.quality?.trim().toLowerCase();
   if (quality && ["quick", "standard", "full"].includes(quality)) out.quality_mode = quality;
   const words = draft.answers.words?.trim().toLowerCase();
-  if (words) out["owner.words"] = /^(yes|да|on)/.test(words) ? "on" : "off";
+  if (words) out["owner.words"] = /risk|риск|high|высок/.test(words) ? "risky" : /^(yes|да|on)/.test(words) ? "on" : "off";
   return out;
 }
 

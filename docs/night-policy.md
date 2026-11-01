@@ -149,7 +149,7 @@ decision order). Item ids are `y_<12 hex of sha256(source type | ref | decision)
 | `lane_pilot_learning_obs` with a review label `ok` / `wrong` (not sensitive; masked excerpt) | `learning_item_adopt` | ok: night_decides, wrong: night_proposes | medium |
 | an owner message that approves or refuses a change | whatever the caller describes (`recordOwnerDecision`, CLI `policy exam-add`) | as given | strong |
 
-The first three are automatic: `bb lane-pilot policy exam-collect` (`collectAndAppend`) is the night step, idempotent, append-only. Owner
+The first three are automatic: `collectAndAppend` runs every night at 02:50 hub time (`policy-exam-collect` in `src/rooms/wall/server/wall.ts`, before the wall's loop; since 0.1.459) and by hand as `bb lane-pilot policy exam-collect`; idempotent, append-only. Owner
 messages need a reader: nothing in the hub classifies a free message into a change descriptor, so whoever reads one (the night loop, a PM) calls
 `exam-add`. That part is not automatic yet. The store refuses to grow past 200 KB (BB's plugin store value limit is 256 KB): export it with
 `policy exam-export` into `policy/exam-v2.json` and commit.
@@ -185,6 +185,5 @@ daily Telegram report (the hub copy of `daily.sh` is installed by hand, so `lp-m
 
 ## Not wired yet
 
-The wall's night loop already calls them: `wall/acceptance.ts` calls `authorize(change)` before acting, and `wall/select.ts` calls `shouldStopCycle` after each cycle; `collectAndAppend` still waits for the P1-1 loop. The P1-1 loop must: tag each change with the
-descriptor vocabulary, call `authorize(change)` before acting (the exam is not an argument and does not block the tier), put `night_proposes` into the morning list, run
-`collectAndAppend` once a night, and call `shouldStopCycle` after each cycle.
+The wall's night loop already calls them: `wall/acceptance.ts` calls `authorize(change)` before acting, and `wall/select.ts` calls `shouldStopCycle` after each cycle, and `collectAndAppend` runs nightly before the loop (0.1.459). The P1-1 loop must: tag each change with the
+descriptor vocabulary, call `authorize(change)` before acting (the exam is not an argument and does not block the tier), put `night_proposes` into the morning list, and call `shouldStopCycle` after each cycle.

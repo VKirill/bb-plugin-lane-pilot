@@ -1,4 +1,4 @@
-import { getRun, getRunSettingsScopes, listUnansweredWriterQuestions, loadProjectSettings, transitionAttempt } from "../../storage";
+import { getRun, getRunSettingsScopes, listUnansweredWriterQuestions, loadProjectSettings, markCancelCode, transitionAttempt } from "../../storage";
 import { isRunHalted, isRunPaused } from "../../runs/server";
 import type { ServerCore } from "../../core/server";
 import type { Services } from "../../core/server";
@@ -43,6 +43,19 @@ export function createWriterQuestionTimeout(ctx: ServerCore, services: Services,
     if (row.thread_id) await services.providerRetry?.abandon(row.thread_id);
   }
 
+  /**
+   * The second pilot narrowed the task into a new one: the original is superseded, a canceled attempt with the code `superseded`, not a
+   * blocked one (a blocked attempt is a dead letter the PM is told to send again; Gemini F-014). The legal path runs through running.
+   */
+  async function supersede(row: ReturnType<typeof listUnansweredWriterQuestions>[number], by: string, why: string): Promise<void> {
+    const reason = `superseded by ${by}: ${why}`.slice(0, 500);
+    if (!transitionAttempt(db, row.id, "running", row.thread_id ? { threadId: row.thread_id } : {})) return;
+    transitionAttempt(db, row.id, "cancel_requested", { reason });
+    transitionAttempt(db, row.id, "canceled", { reason });
+    markCancelCode(db, row.id, "superseded");
+    if (row.thread_id) await services.providerRetry?.abandon(row.thread_id);
+  }
+
   /** A product decision after the wait: the attempt ends (uncharged, see isOwnerDecision) and the owner's list gets the question. */
   async function leaveToOwner(row: ReturnType<typeof listUnansweredWriterQuestions>[number], now: number): Promise<void> {
     const question = writerQuestion(row.reason).slice(0, 400);
@@ -78,6 +91,7 @@ export function createWriterQuestionTimeout(ctx: ServerCore, services: Services,
             return Boolean(pmThreadId) && (await answerWriter({ projectId: row.project_id, runId: row.run_id, pmThreadId: pmThreadId!, taskId: row.task_id, answer })).ok === true;
           },
           end: (why) => end(row, why, question.slice(0, 400)),
+          supersede: (by, why) => supersede(row, by, why),
         });
         if (piloted) { done.push({ taskId: row.task_id, action: `pilot_${piloted.outcome}` }); continue; }
         // null: this task had its one auto-return already; the question is handled as before.

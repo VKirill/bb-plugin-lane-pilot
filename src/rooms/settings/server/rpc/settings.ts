@@ -312,13 +312,14 @@ export function settingsRpc(ctx: ServerCore, services: Services) {
         const host = await services.selectionCatalogHost(projectId);
         if (!host.ok) return { ok: false, conflict: false, values: {}, versions: {}, validation: host.validation };
         try {
-          const providers = await bb.sdk.providers.list({ hostId: host.hostId });
           for (const group of affected) {
             const providerId = effective[group[0]!] ?? effective["writer.provider"];
             const modelId = effective[group[1]!] ?? effective["writer.model"];
             if (typeof providerId !== "string" || typeof modelId !== "string") return reject(group[0]!, "inherited provider and model are not configured");
+            // The catalog the saves judge against (0.1.445): on the global level the merged catalog of every connected machine, not this
+            // host's alone, or a reset failed where the save had passed (Gemini F-016).
+            const [providers, catalog] = await services.selectionCatalog(projectId, host.hostId, providerId);
             const provider = providers.find((item) => item.id === providerId && item.available);
-            const catalog = await bb.sdk.providers.models({ hostId: host.hostId, providerId });
             const model = findModelIn(catalog.models, modelId);
             if (!provider || !model) return reject(group[0]!, "inherited selection is unavailable in this host catalog");
             const effort = effective[group[2]!];

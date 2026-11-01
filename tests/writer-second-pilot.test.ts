@@ -87,9 +87,11 @@ describe("the second pilot on a writer's unanswered question", () => {
     // Never wider than the original: the test file the pilot named is outside it and is dropped.
     expect(sent.task.owns_paths).toEqual(["a.txt"]);
     expect(sent.task.verification).toEqual([{ command:"npm test", cwd:WORKSPACE }]);
+    // The original is superseded, not a blocked dead letter the PM is told to resend (Gemini F-014): canceled with the code `superseded`.
     const row = getAttempt(w.db, "a1")!;
-    expect(row.state).toBe("blocked");
-    expect(row.reason).toMatch(/^verdict_block: question_unanswered: superseded by T1\.n: the second pilot narrowed the task/);
+    expect(row.state).toBe("canceled");
+    expect(row.reason).toMatch(/^superseded by T1\.n: the second pilot narrowed the task/);
+    expect((w.db.prepare("SELECT cancel_code FROM lane_pilot_attempt WHERE id='a1'").get() as { cancel_code: string }).cancel_code).toBe("superseded");
     expect(countChargedAttempts(w.db, "run1", "T1")).toBe(0);
     expect(w.abandoned).toEqual(["thr_w"]);
     expect(w.sends).toEqual([]);
