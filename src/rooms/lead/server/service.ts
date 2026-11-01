@@ -10,10 +10,10 @@ import { storeNativeSelection } from "../../native-agent/server";
 import { CONFIG_KEY, SELF_REPAIR_DEFAULTS } from "../../self-repair/server";
 import { fireTimes } from "../../schedule";
 import { LEAD_ID, LEAD_NAME, LEAD_TICK } from "../lead-agent";
-import { examAll } from "../logic";
+import { examAll, type Verdict } from "../logic";
 import { parseLeadSettings, type LeadSettings } from "../settings";
 import { identityBlock, loadIdentity, writeRoadExport } from "./identity";
-import { answerDecision, examRows, getDecision, listDecisions, openDecision } from "./journal";
+import { answerDecision, examRows, getDecision, labelDecision, listDecisions, openDecision, pendingLabelCount, pendingLabels, refineVerdict, type PendingLabel } from "./journal";
 import { actsVia, applyExam, rightsView, type TierChange } from "./rights";
 import { decideRoad, getRoad, roadCounts, roadMarkdown, type RoadRow } from "./road";
 import { registerLeadTickActions, proposalDecisionId, proposalItemKey, type ProposalDecision } from "./tick";
@@ -30,6 +30,9 @@ const ROAD_EXPORT_KEY = "lead:road-exported";
 const EXAM_KEY = "lead:exam";
 export const LEAD_SWEEP_CRON = "*/15 * * * *";
 export const LEAD_EXAM_CRON = "40 4 * * *";
+/** Monday morning: one line on the owner's list with up to 20 judged rows to label (the judge's kappa is measured against his labels). */
+export const LEAD_LABELS_CRON = "30 7 * * 1";
+const LABELS_BATCH = 20;
 const DEAD_STATUSES = new Set(["error", "stopped"]);
 
 export type LeadState = {
@@ -46,6 +49,8 @@ export type LeadState = {
   exam: ReturnType<typeof examAll>;
   journal: { total: number; exam: number; backtest: number };
   lastExam: { at: number; changes: TierChange[] } | null;
+  /** Judged rows waiting for the owner's own label (up to 20, random order) and how many there are in all. */
+  labels: { pending: number; rows: PendingLabel[] };
 };
 
 export function createLeadService(ctx: ServerCore, services: Services) {
@@ -156,6 +161,7 @@ export function createLeadService(ctx: ServerCore, services: Services) {
       rights: rightsView(db), exam: examAll(examRows(db)),
       journal: { total: listDecisions(db, { limit: 100_000 }).length, exam: counts("exam"), backtest: counts("backtest") },
       lastExam,
+      labels: { pending: pendingLabelCount(db), rows: pendingLabels(db, LABELS_BATCH) },
     };
   }
 
@@ -166,10 +172,12 @@ export function createLeadService(ctx: ServerCore, services: Services) {
     if (row.state !== "proposed") return { ok: false, reason: `branch ${roadId} is ${row.state}, not proposed` };
     decideRoad(db, roadId, decision, text, now);
     const decisionId = row.decision_id ?? proposalDecisionId(roadId);
-    const judged = answerDecision(db, decisionId, { option: decision, ...(text ? { text } : {}) }, by, now);
+    answerDecision(db, decisionId, { option: decision, ...(text ? { text } : {}) }, by, now);
+    // A mismatch goes to the model judge at once: «later» to a predicted «yes» is a partial, not a miss.
+    const verdict = await refineVerdict(db, decisionId, loadProjectSettings(db, GLOBAL_SETTINGS_PROJECT_ID) as never, now);
     closeOwnerItem(db, proposalItemKey(roadId), by, now);
     const handover = decision === "yes" ? await handOverAccepted(row, by, now) : null;
-    return { ok: true, road: getRoad(db, roadId)!, verdict: judged?.judge_verdict ?? null, handover };
+    return { ok: true, road: getRoad(db, roadId)!, verdict, handover };
   }
 
   /**
@@ -207,6 +215,34 @@ export function createLeadService(ctx: ServerCore, services: Services) {
     const id = `lead:enabled:${now}`;
     openDecision(db, { id, surface: "lead", class: "process", situation: { question: "switch the lead's ticks on?", setting: "lead.enabled" }, options: ["on", "off"], split: "design" }, now);
     answerDecision(db, id, { option: on ? "on" : "off" }, by, now);
+  }
+
+  /** The owner's own label on a judged row: exact, partial or miss against the lead's guess; the exam's kappa is the judge against these. */
+  function label(id: string, verdict: Exclude<Verdict, "deferred">, now: number = Date.now()): boolean {
+    return labelDecision(db, id, verdict, now);
+  }
+
+  /**
+   * Monday's line: up to 20 judged rows of the exam split the owner has not labelled, with the guess, his answer and the judge's word, and
+   * the CLI to label each. One line a week (the key is the week), none when nothing waits; the panel's «Разметка» block has the buttons.
+   */
+  function labelsDue(now: number = Date.now()): { posted: boolean; pending: number } {
+    const rows = pendingLabels(db, LABELS_BATCH);
+    if (!rows.length) return { posted: false, pending: 0 };
+    const week = (() => { const d = new Date(now); const day = (d.getUTCDay() + 6) % 7; d.setUTCDate(d.getUTCDate() - day); return d.toISOString().slice(0, 10); })();
+    // The list line is clipped at 600 characters: it carries the count and three rows as a sample, the panel block carries all twenty.
+    const line = (row: PendingLabel) => {
+      const guess = row.prediction_json ? (JSON.parse(row.prediction_json) as { option: string | null }).option ?? "—" : "—";
+      const answer = row.answer_json ? (JSON.parse(row.answer_json) as { option: string }).option : "—";
+      return `${row.id}: прогноз ${guess}, ответ ${answer}, судья ${row.judge_verdict}`;
+    };
+    const { created } = postOwnerItem(db, {
+      key: `lead-labels:${week}`, source: "lead", kind: "labels", projectId: null, wake: false,
+      what: `Разметьте ${rows.length} решений Штурмана: совпал ли его прогноз с вашим ответом`,
+      why: `Ваша метка (exact / partial / miss) — мера судьи: класс открывается только при каппе ≥ 0.6 между судьёй и вами. Блок «Разметка» на экране Self-improvement или \`bb lane-pilot lead label <id> exact|partial|miss\`. Например: ${rows.slice(0, 3).map(line).join("; ")}.`,
+      evidence: [{ kind: "command", ref: "bb lane-pilot lead label <id> exact|partial|miss" }],
+    }, now);
+    return { posted: created, pending: rows.length };
   }
 
   /** The owner's order of projects (`lead.priority`): ids as given, duplicates dropped; an empty list clears it. Not a journal row: the order is the owner's, not a decision the lead predicts. */
@@ -273,7 +309,7 @@ export function createLeadService(ctx: ServerCore, services: Services) {
     return run;
   };
 
-  return { settings, homeProjectId, nextTickAt, due, runTick, sweep, exam, state, decide, setEnabled, setPriority, chatStart: chatStartOnce, decisionOf: (id: string) => getDecision(db, id) };
+  return { settings, homeProjectId, nextTickAt, due, runTick, sweep, exam, state, decide, label, labelsDue, setEnabled, setPriority, chatStart: chatStartOnce, decisionOf: (id: string) => getDecision(db, id) };
 }
 export type LeadApi = ReturnType<typeof createLeadService>;
 /** What became of an accepted branch: handed to the project (`started`), stopped with a reason the owner sees (`blocked`), or a mark only (`skipped`). */
@@ -288,4 +324,5 @@ export function mountLead(ctx: ServerCore, services: Services): void {
   registerLeadTickActions(services.workflowEngine, ctx, services);
   scheduleIsolated(ctx.bb, "lead-sweep", LEAD_SWEEP_CRON, () => lead.sweep().then(() => undefined), { timeoutMs: 10 * 60_000 });
   scheduleIsolated(ctx.bb, "lead-exam", LEAD_EXAM_CRON, () => lead.exam().then(() => undefined), { timeoutMs: 5 * 60_000 });
+  scheduleIsolated(ctx.bb, "lead-labels", LEAD_LABELS_CRON, async () => { lead.labelsDue(); }, { timeoutMs: 60_000 });
 }

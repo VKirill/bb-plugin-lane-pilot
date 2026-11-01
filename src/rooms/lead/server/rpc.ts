@@ -13,8 +13,9 @@ export function leadRpc(db: Db, lead: LeadApi) {
       return { nodes, text: renderRoadTree(nodes) };
     },
     lead_decide: async ({ roadId, decision, text }) => lead.decide(roadId, decision, text, "screen"),
+    lead_label: async ({ id, label }) => ({ ok: lead.label(id, label), id, label }),
     lead_tick_now: async () => lead.runTick("manual"),
     lead_set_enabled: async ({ on }) => { lead.setEnabled(on, "screen"); return { ok: true as const, enabled: on }; },
     lead_chat_start: async ({ sectionId }) => lead.chatStart(sectionId ? { sectionId } : {}),
-  } satisfies Pick<PluginRpcHandlers<typeof rpcContract>, "lead_state" | "lead_road" | "lead_decide" | "lead_tick_now" | "lead_set_enabled" | "lead_chat_start">;
+  } satisfies Pick<PluginRpcHandlers<typeof rpcContract>, "lead_state" | "lead_road" | "lead_decide" | "lead_label" | "lead_tick_now" | "lead_set_enabled" | "lead_chat_start">;
 }

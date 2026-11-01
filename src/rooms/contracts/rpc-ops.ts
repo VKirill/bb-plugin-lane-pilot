@@ -382,6 +382,8 @@ export const rpcOps = {
   /** The owner's answer to a proposal of the lead (да / потом / нет on his list): the branch, the journal row and the list line move together. */
   lead_decide: { input: z.object({ roadId: z.string().min(1).max(60), decision: z.enum(["yes", "later", "no"]), text: z.string().max(600).optional() }).strict(), output: z.unknown() },
   /** «Тик сейчас»: one tick of the lead outside its cron (the graph lead-tick); refused while one is running. */
+  /** The owner's own label on a judged row of the journal (the «Разметка» block): the judge's kappa is measured against these. */
+  lead_label: { input: z.object({ id: z.string().min(1).max(200), label: z.enum(["exact", "partial", "miss"]) }).strict(), output: z.unknown() },
   lead_tick_now: { input: z.object({}).strict(), output: z.unknown() },
   /** The switch of the lead's ticks (lead.enabled); the word itself becomes a row of the journal. */
   lead_set_enabled: { input: z.object({ on: z.boolean() }).strict(), output: z.unknown() },

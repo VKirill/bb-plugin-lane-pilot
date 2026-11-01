@@ -39,3 +39,39 @@ export const leadPredictJudgment = defineJudgment<PredictInput, PredictDecision>
   fallback: () => ({ option: null, p: 0 }),
   describe: (decision) => decision.option ?? "deferred",
 });
+
+/**
+ * The model judge (roadmap §6): the rule judge scores exact and deferred by itself; a mismatch is shown to Jev with the owner's words,
+ * which says whether the lead's guess was the owner's direction with a different timing or wording (`partial`, half a match in the exam)
+ * or simply wrong (`miss`). Shadow by default like the predictor; without Jev the rule's `miss` stands.
+ */
+export const LEAD_JUDGE_ID = "lead.judge";
+export type JudgeInput = { surface: string; class: string; situation: Record<string, unknown>; options: string[]; prediction: { option: string; p: number }; answer: { option: string; text?: string } };
+export type JudgeDecision = { verdict: "partial" | "miss" };
+
+export const leadJudgeJudgment = defineJudgment<JudgeInput, JudgeDecision>({
+  id: LEAD_JUDGE_ID,
+  version: 1,
+  defaultMode: "shadow",
+  timeoutMs: 8_000,
+  stateBuilder: (input) => ({
+    surface: input.surface, class: input.class,
+    situation: JSON.parse(clip(JSON.stringify(input.situation), 3_000)) as unknown ?? clip(JSON.stringify(input.situation), 3_000),
+    options: input.options, predicted: input.prediction.option, answered: input.answer.option, owner_words: clip(input.answer.text ?? "", 600),
+  }),
+  questions: () => ({
+    verdict: choice("`situation` is a question the owner of this software was asked, `predicted` is what the lead guessed he would answer, `answered` is what he answered and `owner_words` what he wrote. Was the guess the owner's direction with another timing or wording, or simply wrong?", {
+      partial: "the guess had the owner's direction: he said «later» to a «yes», or his words accept the substance and change the timing or the wording",
+      miss: "the guess was wrong: the owner went the other way, or his words reject the substance",
+    }),
+  }),
+  thresholds: {
+    min_p: { default: 0.6, min: 0.5, max: 0.95, about: "least probability of «partial» before a miss is softened to a partial" },
+  },
+  decide(answers, t) {
+    const top = choiceOf(answers, "verdict");
+    return { decision: { verdict: top?.top === "partial" && top.p >= t.min_p! ? "partial" : "miss" } };
+  },
+  fallback: () => ({ verdict: "miss" }),
+  describe: (decision) => decision.verdict,
+});

@@ -3,6 +3,7 @@ import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { setJevForTests } from "@lane-pilot/jev";
 import { createCore } from "../../src/rooms/core/server/core";
 import type { Services } from "../../src/rooms/core/server";
 import { answerDecision, getDecision, labelDecision, openDecision } from "../../src/rooms/lead/server/journal";
@@ -202,5 +203,48 @@ describe("the switch and the state", () => {
     expect(lead.setPriority([])).toEqual([]);
     expect((await lead.state(2_000)).settings.priority).toEqual([]);
     expect((await lead.state(2_000)).journal.total).toBe(0);
+  });
+});
+
+describe("the model judge on an answer and the owner's labels", () => {
+  afterEach(() => setJevForTests(null));
+  const seed = (db: ReturnType<typeof openDatabase>, id: string, option: string, at: number) => {
+    openDecision(db, { id, surface: "lead", class: "next_step", risk: "low", situation: { title: id }, options: ["yes", "later", "no"] }, at);
+    db.prepare("UPDATE lane_pilot_decision SET prediction_json=?, predicted_at=?, predictor='test' WHERE id=?").run(JSON.stringify({ option, p: 0.8 }), at + 1, id);
+  };
+
+  it("decide asks the model judge on a mismatch: «yes» to a predicted «later» is a partial when the judge says so", async () => {
+    const { db, lead } = world();
+    setJevForTests({ enabled: () => true, judge: async (judgment: { id: string }) => judgment.id === "lead.judge" ? { by: "jev", decision: { verdict: "partial" }, receiptId: null, answers: {} } : { by: "fallback", status: "off", decision: { option: null, p: 0 }, receiptId: null } } as never);
+    addRoad(db, { id: "d1", title: "Grow", kind: "direction", source: "lead", why: "growth" }, 1);
+    addRoad(db, { id: "o9", parentId: "d1", title: "Paid plans", kind: "option", source: "lead", why: "asked twice", class: "next_step" }, 2);
+    const decisionId = proposalDecisionId("o9");
+    seed(db, decisionId, "later", 3);
+    proposeRoad(db, "o9", decisionId, 5);
+    postOwnerItem(db, { key: proposalItemKey("o9"), source: "lead", kind: "proposal", what: "Paid plans", why: "asked twice" }, 5);
+    expect(await lead.decide("o9", "yes", "да, но после релиза", "owner", 10)).toMatchObject({ ok: true, verdict: "partial" });
+    expect(getDecision(db, decisionId)).toMatchObject({ judge_verdict: "partial", judge_model: "jev:lead.judge@1", judged_at: 10 });
+  });
+
+  it("labelsDue posts one line a week with up to 20 unlabelled rows and none when nothing waits; label writes the owner's verdict; state counts the rest", async () => {
+    const { db, lead } = world();
+    const monday = Date.UTC(2026, 10, 2, 10);
+    expect(lead.labelsDue(monday)).toEqual({ posted: false, pending: 0 });
+    for (let i = 0; i < 22; i += 1) { seed(db, `d${i}`, "yes", 100 + i); answerDecision(db, `d${i}`, { option: i % 2 ? "yes" : "no" }, "owner", 200 + i); }
+    seed(db, "proxy", "yes", 300); answerDecision(db, "proxy", { option: "no" }, "lead", 301);
+    expect(lead.labelsDue(monday)).toEqual({ posted: true, pending: 20 });
+    const line = db.prepare("SELECT kind, state, why FROM lane_pilot_owner_item WHERE key='lead-labels:2026-11-02'").get() as { kind: string; state: string; why: string };
+    expect(line).toMatchObject({ kind: "labels", state: "open" });
+    expect(line.why.match(/d\d+: прогноз yes, ответ (yes|no), судья (exact|miss)/g)).toHaveLength(3);
+    expect(line.why.length).toBeLessThan(600);
+    expect(line.why).not.toContain("proxy");
+    expect(lead.labelsDue(monday + 60_000)).toEqual({ posted: false, pending: 20 });
+    expect(lead.label("d0", "partial", 400)).toBe(true);
+    expect(lead.label("ghost", "exact", 400)).toBe(false);
+    expect(getDecision(db, "d0")).toMatchObject({ owner_label: "partial", labeled_at: 400 });
+    const state = await lead.state(500);
+    expect(state.labels.pending).toBe(21);
+    expect(state.labels.rows).toHaveLength(20);
+    expect(state.labels.rows.map((row) => row.id)).not.toContain("d0");
   });
 });

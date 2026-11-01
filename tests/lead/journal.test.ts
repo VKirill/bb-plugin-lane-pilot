@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { setJevForTests } from "@lane-pilot/jev";
 import { examAll } from "../../src/rooms/lead/logic";
 import { runLeadCli } from "../../src/rooms/lead/cli";
-import { answerDecision, askDecision, examRows, getDecision, labelDecision, listDecisions, openDecision, predictDecision, ruleVerdict } from "../../src/rooms/lead/server/journal";
+import { answerDecision, askDecision, examRows, getDecision, labelDecision, listDecisions, openDecision, pendingLabelCount, pendingLabels, predictDecision, refineVerdict, ruleVerdict } from "../../src/rooms/lead/server/journal";
 import { backtest } from "../../src/rooms/lead/server/backtest";
 import { answerPhaseWord, answerTaskWord, askPhaseWord, askTaskWord, phaseDecisionId, wordDecisionId } from "../../src/rooms/lead/server/surfaces";
 import { insertPhase, savePhase } from "../../src/rooms/phase/store";
@@ -160,5 +160,53 @@ describe("bb lane-pilot lead", () => {
     expect(JSON.parse((await runLeadCli(ctx, ["exam", "--json"])).stdout!)[0]).toMatchObject({ class: "landing", labeled: 1 });
     expect((await runLeadCli(ctx, ["backtest"])).stdout).toContain("Replayed 0 new decision(s)");
     expect((await runLeadCli(ctx, ["nothing"])).exitCode).toBe(2);
+  });
+});
+
+/** A Jev whose predictor says `option` (shadow) and whose judge says `verdict` (live); records which judgments were asked. */
+const judgeJev = (option: string, verdict: "partial" | "miss", asked: string[] = []) => { setJevForTests({ enabled: () => true, judge: async (judgment: { id: string }) => { asked.push(judgment.id); return judgment.id === "lead.judge"
+  ? { by: "jev", decision: { verdict }, receiptId: null, answers: {} }
+  : { by: "fallback", status: "shadow", decision: { option: null, p: 0 }, receiptId: null, shadow: { decision: { option, p: 0.9 } } }; } } as never); return asked; };
+
+describe("the model judge and the rows waiting for a label", () => {
+  it("a miss goes to the model judge and «partial» replaces it; exact and deferred rows are never asked; without Jev the miss stands", async () => {
+    const { db } = world();
+    const asked = judgeJev("yes", "partial");
+    for (const id of ["j1", "j2", "j3"]) await askDecision(db, question(id), undefined, 1);
+    answerDecision(db, "j1", { option: "no", text: "потом, после релиза" }, "pm", 2);
+    answerDecision(db, "j2", { option: "yes" }, "pm", 2);
+    answerDecision(db, "j3", { option: "no" }, "pm", 2);
+    asked.length = 0;
+    expect(await refineVerdict(db, "j1", undefined, 3)).toBe("partial");
+    expect(getDecision(db, "j1")).toMatchObject({ judge_verdict: "partial", judge_model: "jev:lead.judge@1", judged_at: 3 });
+    expect(await refineVerdict(db, "j2", undefined, 3)).toBe("exact");
+    expect(asked).toEqual(["lead.judge"]);
+    setJevForTests(null);
+    expect(await refineVerdict(db, "j3", undefined, 3)).toBe("miss");
+    expect(getDecision(db, "j3")).toMatchObject({ judge_verdict: "miss", judge_model: "rule" });
+    await askDecision(db, question("cold"), undefined, 1);
+    answerDecision(db, "cold", { option: "no" }, "pm", 2);
+    judgeJev("yes", "partial");
+    expect(await refineVerdict(db, "cold", undefined, 3)).toBe("deferred");
+    expect(await refineVerdict(db, "ghost", undefined, 3)).toBeNull();
+  });
+
+  it("the judge's own miss leaves the rule's miss; the rows waiting for a label are judged exam rows without one, never a deferred, proxy-answered or labelled row", async () => {
+    const { db } = world();
+    judgeJev("yes", "miss");
+    for (const id of ["p1", "p2", "p3", "p4"]) await askDecision(db, question(id), undefined, 1);
+    answerDecision(db, "p1", { option: "no" }, "owner", 2);
+    expect(await refineVerdict(db, "p1", undefined, 3)).toBe("miss");
+    answerDecision(db, "p2", { option: "no" }, "lead", 2);
+    answerDecision(db, "p3", { option: "yes" }, "screen", 2);
+    labelDecision(db, "p3", "exact", 3);
+    answerDecision(db, "p4", { option: "yes" }, "pm", 2);
+    setJevForTests(null);
+    await askDecision(db, question("cold"), undefined, 1);
+    answerDecision(db, "cold", { option: "yes" }, "owner", 2);
+    expect(pendingLabels(db).map((row) => row.id).sort()).toEqual(["p1", "p4"]);
+    expect(pendingLabels(db, 1)).toHaveLength(1);
+    expect(pendingLabelCount(db)).toBe(2);
+    expect(pendingLabels(db)[0]).toMatchObject({ class: "landing", surface: "words", judge_verdict: expect.stringMatching(/exact|miss/) });
   });
 });

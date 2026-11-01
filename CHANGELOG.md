@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.1.454
+
+- **The model judge says `partial`; the owner's labels have a block, a CLI and a Monday line.** A row the rule judge scored `miss` now goes to the Jev judgment `lead.judge` (`refineVerdict` in `src/rooms/lead/server/journal.ts`) with the situation, the guess, the answer and the owner's words: the owner's direction with another timing or wording is `partial` (half a match in the exam), the rest stays `miss`; exact and deferred rows are never asked, without Jev the miss stands. The exam's kappa needs the owner's own verdicts, so the Self-improvement screen gains the block «Разметка» (judged exam rows without a label, random order, up to 20, three buttons each; RPC `lead_label`), and Monday 07:30 hub time (`LEAD_LABELS_CRON`) puts one line `labels` on his list with the batch, keyed by the week, none when nothing waits. A deferred row has nothing to label and a proxy answer (`lead`, `agent`) is never offered. Before: every mismatch was a miss and no class could meet kappa ≥ 0.6 because nothing asked for a label.
+
 ## 0.1.453
 
 - **«Да» on a lead's proposal is a go, not a mark; a proxy answer never counts for the exam.** `service.decide` on `yes` hands a project branch whose class acts through the intake (`next_step`, `process`) to the project's PM at once (`phaseIntake.handOver`, key `lead:<road-id>`, the path the act step already uses for an opened class); the branch stays `accepted`, a hand-over that went through is one quiet line `handed` on «Ждут владельца», one that could not (no open PM chat, the intake refused) is a line `handover_blocked` with the reason, a branch above projects or of a class that acts elsewhere stays a mark (`skipped`); `later` and `no` hand nothing over. The journal keeps who answered (`owner`, `screen`, `lead-chat`, `lead`, `agent`): `bb lane-pilot lead decide … --by agent` marks an answer an agent gave for the owner, and `examEligible` drops rows answered by `lead` or `agent` (`PROXY_ANSWERERS`), so the four answers given for him on 2026-11-01 (re-marked `agent` on the hub) do not open a class. Tests: `tests/lead/service.test.ts`, `tests/lead/logic.test.ts`.

@@ -1,7 +1,7 @@
 import type Database from "better-sqlite3";
 import { jev, type JevSettings } from "@lane-pilot/jev";
-import { type ExamRow, type Verdict } from "../logic";
-import { leadPredictJudgment, type PredictDecision } from "../predict";
+import { PROXY_ANSWERERS, type ExamRow, type Verdict } from "../logic";
+import { LEAD_JUDGE_ID, leadJudgeJudgment, leadPredictJudgment, type PredictDecision } from "../predict";
 
 /**
  * The journal's three moves (roadmap §2.4): a surface OPENS a decision when its question appears (situation and options as the owner
@@ -92,6 +92,47 @@ export function answerDecision(db: Db, id: string, answer: Answer, by: string, n
   db.prepare("UPDATE lane_pilot_decision SET answer_json=?, answered_at=?, answered_by=?, judge_verdict=?, judge_model='rule', judged_at=? WHERE id=? AND answered_at IS NULL")
     .run(JSON.stringify({ option: answer.option, ...(answer.text ? { text: answer.text.slice(0, 2_000) } : {}) }), now, by.slice(0, 200), verdict, now, id);
   return getDecision(db, id);
+}
+
+/**
+ * The model judge over a mismatch (roadmap §6): a row the rule judge scored `miss` is shown to Jev with the owner's words; `partial`
+ * (the owner's direction, another timing or wording) replaces the miss and counts half in the exam. Exact and deferred rows are not
+ * asked; without Jev the miss stands. Never throws: a surface's answer never fails on its judge.
+ */
+export async function refineVerdict(db: Db, id: string, settings?: JevSettings, now: number = Date.now()): Promise<Verdict | null> {
+  const row = getDecision(db, id);
+  if (!row || row.judge_verdict !== "miss" || !row.prediction_json || !row.answer_json) return row?.judge_verdict ?? null;
+  const prediction = JSON.parse(row.prediction_json) as PredictDecision;
+  const answer = JSON.parse(row.answer_json) as Answer;
+  if (prediction.option === null) return row.judge_verdict;
+  try {
+    const verdict = await jev()?.judge(leadJudgeJudgment, {
+      surface: row.surface, class: row.class, situation: JSON.parse(row.situation_json) as Record<string, unknown>, options: JSON.parse(row.options_json) as string[],
+      prediction: { option: prediction.option, p: prediction.p }, answer,
+    }, { projectId: row.project_id, runId: row.run_id, subject: "lead-judge", settings });
+    const decided = verdict?.by === "jev" ? verdict.decision : verdict?.by === "fallback" ? verdict.shadow?.decision : undefined;
+    if (decided?.verdict === "partial") {
+      db.prepare("UPDATE lane_pilot_decision SET judge_verdict='partial', judge_model=?, judged_at=? WHERE id=? AND judge_verdict='miss'").run(`jev:${LEAD_JUDGE_ID}@${leadJudgeJudgment.version}`, now, id);
+      return "partial";
+    }
+  } catch { /* the rule's miss stands */ }
+  return "miss";
+}
+
+export type PendingLabel = { id: string; class: string; surface: string; situation_json: string; prediction_json: string | null; answer_json: string | null; judge_verdict: Verdict; answered_at: number };
+
+const PROXIES = [...PROXY_ANSWERERS];
+/** Judged rows of the exam split without the owner's label; a deferred row has nothing to label and a proxy answer is not his. */
+const PENDING_WHERE = `split='exam' AND answered_at IS NOT NULL AND owner_label IS NULL AND judge_verdict IN ('exact','partial','miss') AND (answered_by IS NULL OR answered_by NOT IN (${PROXIES.map(() => "?").join(",")}))`;
+
+/** Judged exam rows the owner has not labelled yet, in random order: the weekly line asks for up to 20 of them (kappa needs his labels). */
+export function pendingLabels(db: Db, limit = 20): PendingLabel[] {
+  return db.prepare(`SELECT id, class, surface, situation_json, prediction_json, answer_json, judge_verdict, answered_at FROM lane_pilot_decision WHERE ${PENDING_WHERE} ORDER BY RANDOM() LIMIT ?`).all(...PROXIES, limit) as PendingLabel[];
+}
+
+/** How many rows wait for the owner's label in all. */
+export function pendingLabelCount(db: Db): number {
+  return (db.prepare(`SELECT COUNT(*) AS n FROM lane_pilot_decision WHERE ${PENDING_WHERE}`).get(...PROXIES) as { n: number }).n;
 }
 
 /** The owner's own label on a judged row (the kappa of the judge is measured against these). */

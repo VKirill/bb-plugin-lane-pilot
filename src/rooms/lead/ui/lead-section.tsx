@@ -48,6 +48,7 @@ export function LeadSection({ locale, fields }: { locale: Locale; fields: ReactN
   const toggle = () => act("enable", async () => { await rpc.call("lead_set_enabled", { on: !state!.settings.enabled }); return state!.settings.enabled ? t("lead_turned_off") : t("lead_turned_on"); });
   const tickNow = () => act("tick", async () => { const r = await rpc.call("lead_tick_now", {}) as { ok: boolean; tickId?: string; reason?: string }; return r.ok ? `${t("lead_tick_started")} ${r.tickId}` : `${t("lead_tick_refused")}: ${r.reason}`; });
   const openChat = () => act("chat", async () => { const r = await rpc.call("lead_chat_start", {}); return `${r.reused ? t("lead_chat_reused") : t("lead_chat_opened")} @thread:${r.threadId}`; });
+  const label = (id: string, verdict: "exact" | "partial" | "miss") => act(`label:${id}`, async () => { await rpc.call("lead_label", { id, label: verdict }); return `${t("lead_labelled")}: ${id} ${verdict}`; });
 
   if (error && !state) return <Alert variant="destructive"><AlertTitle>{t("lead_load_failed")}</AlertTitle><AlertDescription className="break-words">{error}</AlertDescription></Alert>;
   if (!state) return <div aria-busy="true" className="space-y-2" data-testid="lead-loading"><Skeleton className="h-20 w-full" /></div>;
@@ -92,6 +93,36 @@ export function LeadSection({ locale, fields }: { locale: Locale; fields: ReactN
           </table>
         </div>
         {state.lastExam ? <p className="text-xs text-muted-foreground">{t("lead_last_exam")}: {when(state.lastExam.at, locale)}{state.lastExam.changes.length ? ` — ${state.lastExam.changes.map((change) => `${change.class} ${change.from} → ${change.to}`).join(", ")}` : ` — ${t("lead_no_change")}`}</p> : null}
+      </div>
+      <div className="min-w-0 space-y-1" data-testid="lead-labels">
+        <h3 className="text-sm font-medium">{t("lead_labels_title")} · {state.labels.pending}</h3>
+        <p className="max-w-2xl text-xs text-muted-foreground">{t("lead_labels_help")}</p>
+        {state.labels.rows.length ? (
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead><tr className="text-left text-muted-foreground"><th className="py-1 pr-2">{t("lead_col_class")}</th><th className="py-1 pr-2">{t("lead_col_guess")}</th><th className="py-1 pr-2">{t("lead_col_judge")}</th><th className="py-1 pr-2" /></tr></thead>
+              <tbody>
+                {state.labels.rows.map((row) => {
+                  const guess = row.prediction_json ? ((JSON.parse(row.prediction_json) as { option: string | null }).option ?? "—") : "—";
+                  const answer = row.answer_json ? (JSON.parse(row.answer_json) as { option: string }).option : "—";
+                  const situation = (() => { try { const s = JSON.parse(row.situation_json) as Record<string, unknown>; return String(s.title ?? s.task ?? s.question ?? row.id); } catch { return row.id; } })();
+                  return (
+                    <tr key={row.id} data-testid={`lead-label-${row.id}`}>
+                      <td className="py-1 pr-2" title={row.id}><span className="font-medium">{row.class}</span> <span className="text-muted-foreground">{situation.slice(0, 60)}</span></td>
+                      <td className="py-1 pr-2 whitespace-nowrap">{guess} → {answer}</td>
+                      <td className="py-1 pr-2">{row.judge_verdict}</td>
+                      <td className="py-1 pr-2 whitespace-nowrap">
+                        {(["exact", "partial", "miss"] as const).map((verdict) => (
+                          <Button key={verdict} type="button" size="sm" variant={row.judge_verdict === verdict ? "default" : "outline"} className="mr-1" disabled={busy !== null} data-testid={`lead-label-${row.id}-${verdict}`} onClick={() => void label(row.id, verdict)}>{verdict}</Button>
+                        ))}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        ) : <p className="text-xs text-muted-foreground">{t("lead_labels_none")}</p>}
       </div>
       <Disclosure summary={t("lead_ticks_title")} testId="lead-ticks" compact>
         <ul className="min-w-0 space-y-1 pt-2 text-xs">
