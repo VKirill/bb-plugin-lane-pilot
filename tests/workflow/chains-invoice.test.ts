@@ -19,7 +19,8 @@ describe("invoice-send", () => {
     expect(r.skipped).toEqual(["topic"]);
     expect(out(r)).toMatchObject({ status: "sent", invoice_number: "142", message_id: "stub-1", check_verdict: "match", pdf_path: created.pdf_path });
     expect(r.called("send")).toHaveLength(1);
-    expect(r.called("send")[0]!.input).toMatchObject({ pdf_path: created.pdf_path, invoice_number: "142", amount: 50000, recipient: "@ivan_romashka" });
+    expect(r.called("send")[0]!.input).toMatchObject({ chat: "@ivan_romashka", file_path: created.pdf_path, send_at: "" });
+    expect(String(r.called("send")[0]!.input.text)).toContain("Счёт № 142 на 50000 ₽");
     expect(r.called("create")[0]!.input).toMatchObject({ company: "ООО «Ромашка»", inn: "7707083893", amount: 50000, service: "SEO-сопровождение за октябрь" });
   });
 
@@ -68,13 +69,28 @@ describe("invoice-send", () => {
   });
 
   it("a send that failed or may have gone through is reported as such, never retried", async () => {
-    const failed = await runSim("invoice-send", { input, stubs: base({ send: { status: "failed", reason: "not logged in to Telegram" } }), humans: { approve: { answer_kind: "send" } } });
+    const failed = await runSim("invoice-send", { input, stubs: base({ send: { status: "send_failed", reason: "not logged in to Telegram" } }), humans: { approve: { answer_kind: "send" } } });
     expect(pathOf(failed)).toBe("create check approve send send_failed");
     expect(out(failed)).toMatchObject({ status: "send_failed", reason: "not logged in to Telegram" });
-    const unsure = await runSim("invoice-send", { input, stubs: base({ send: { status: "unsure", reason: "the chat did not confirm" } }), humans: { approve: { answer_kind: "send" } } });
+    const unsure = await runSim("invoice-send", { input, stubs: base({ send: { status: "send_unconfirmed", reason: "the chat did not confirm" } }), humans: { approve: { answer_kind: "send" } } });
     expect(pathOf(unsure)).toBe("create check approve send send_unconfirmed");
     expect(out(unsure)).toMatchObject({ status: "send_unconfirmed" });
     expect(failed.called("send")).toHaveLength(1);
     expect(unsure.called("send")).toHaveLength(1);
+  });
+
+  it("send_at set: the owner is asked for the timed send, the fragment refuses it as cannot_delay and nothing is sent", async () => {
+    const r = await runSim("invoice-send", { input: { ...input, send_at: "2026-11-03T07:00" }, stubs: base({ send: { status: "cannot_delay", reason: "the send_at input is set, but a chain cannot create a schedule yet" } }), humans: { approve_later: { answer_kind: "send" } } });
+    expect(pathOf(r)).toBe("create check approve_later send cannot_delay");
+    expect(r.called("approve")).toHaveLength(0);
+    expect(r.called("send")[0]!.input).toMatchObject({ chat: "@ivan_romashka", send_at: "2026-11-03T07:00" });
+    expect(out(r)).toMatchObject({ status: "cannot_delay", invoice_number: "142", send_at: "2026-11-03T07:00" });
+  });
+
+  it("send_at set and the owner aborts: nothing is sent, as before", async () => {
+    const r = await runSim("invoice-send", { input: { ...input, send_at: "+2h" }, stubs: base(), humans: { approve_later: { answer_kind: "abort" } } });
+    expect(pathOf(r)).toBe("create check approve_later aborted");
+    expect(r.called("send")).toHaveLength(0);
+    expect(out(r)).toMatchObject({ status: "aborted", send_at: "+2h" });
   });
 });

@@ -64,6 +64,7 @@ import securityAudit from "../../../workflows/security-audit.json";
 import seoCocoon from "../../../workflows/seo-cocoon.json";
 import seoPage from "../../../workflows/seo-page.json";
 import socialPost from "../../../workflows/social-post.json";
+import telegramSend from "../../../workflows/telegram-send.json";
 import testGen from "../../../workflows/test-gen.json";
 import uiAudit from "../../../workflows/ui-audit.json";
 import webResearch from "../../../workflows/web-research.json";
@@ -158,6 +159,7 @@ export const BUILTIN_SOURCES: ReadonlyArray<{ name: string; value: unknown }> = 
   { name: "seo-cocoon.json", value: seoCocoon },
   { name: "seo-page.json", value: seoPage },
   { name: "social-post.json", value: socialPost },
+  { name: "telegram-send.json", value: telegramSend },
   { name: "test-gen.json", value: testGen },
   { name: "ui-audit.json", value: uiAudit },
   { name: "web-research.json", value: webResearch },
