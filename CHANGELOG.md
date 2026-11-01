@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.470
+
+- **One word, one thing.** The project's «Runs» tab is now «Tasks»: the same board as the rail's «Tasks», locked to the project (no project switch), with Analytics, Council and Maintenance beside it. The old per-run list with its history pages is gone; a task opens on the board and its stage receipts sit on the task page; «Resume» moved to Maintenance; a run left without open attempts is closed by the sweep, so the manual «Finish PM run» button went too. The overview's «All tasks» and its attention rows open the board (the owner, 2026-11-01: «systematise the pages so I am not lost»).
+- **Rail names say what the page is.** «Automation» in the rail is «Schedule» (the project's «Automation» tab keeps its «Workflows» and «Schedule» segments for one project); «Agents» is «Agent profiles», apart from a project's «Team».
+- The page hook no longer pages the history (`list_runs`) or finishes runs; the overview's «now» block is the one reader of the runs window.
+
 ## 0.1.469
 
 - **BB's model window on the «Errands» page.** Each kind's model is picked right on its row with BB's own picker, seeded with the role table's row at the global level and saved there as `role_model.<role>` with the row's version and pool kept, the same save the Team tab does; «Back to default» drops the row (the owner, 2026-11-01: «the native BB picker here»). Two kinds on one row get one window. Models show by display name; a kind with no runs shows dashes.

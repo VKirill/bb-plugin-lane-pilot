@@ -29,9 +29,13 @@ grow over time: the «Errands» page of the scope rail (`src/rooms/errands`).
    the errand; «deleted» when the schedule is gone), the cost, and «Open the chat» for the helper's thread (the same side panel every helper opens in).
 
 **Where it sits.** The rail groups the system pages for a person reading top-down (0.1.469, the owner: «systematise the pages so I am not
-lost»): «Today» holds what the machines are doing and what waits for the owner's word (Waiting for you, Tasks, Errands, Automation); then the
-projects; then «Setup» (General settings, Agents, Workflows, Tokens, Self-improvement). The phone select has the same three groups
+lost»): «Today» holds what the machines are doing and what waits for the owner's word (Waiting for you, Tasks, Errands, Schedule); then the
+projects; then «Setup» (General settings, Agent profiles, Workflows, Tokens, Self-improvement). The phone select has the same three groups
 (`src/rooms/ui-shell/ui/project-nav.tsx:15-30`). The work area is the full width of the plugin's pane since 0.1.469 (`src/rooms/ui-shell/ui/page.tsx:53`).
+The rule since 0.1.470: a rail page shows a thing across all projects, a project's tab shows the same thing for that project under the same
+name. So the project's «Tasks» tab is the rail's board locked to the project (`TaskBoard lockedProjectId`, `src/rooms/ui-shell/ui/tab-runs.tsx`),
+the rail's «Schedule» and «Workflows» are what the project's «Automation» tab shows for one project, and «Agent profiles» (who the agents are)
+is kept apart from a project's «Team» (who works there).
 
 **The read model** (`src/rooms/errands/logic.ts`; RPC `errands_overview` in `src/rooms/errands/server/rpc.ts`, contract `rpc-ops.ts`) reads the
 workflow journal only, no table of its own: the kind, model and source from `inputs_json` (`kind`, `kindBy`, `providerId`, `model`, `scheduleId`),

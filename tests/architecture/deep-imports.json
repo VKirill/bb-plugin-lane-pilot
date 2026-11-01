@@ -32,7 +32,6 @@
  "ui-shell > contracts": 1,
  "ui-shell > docs": 1,
  "ui-shell > native-agent": 2,
- "ui-shell > runs": 2,
  "ui-shell > settings": 1,
  "ui-shell > workflow": 2,
  "ui-shell > writer": 1,

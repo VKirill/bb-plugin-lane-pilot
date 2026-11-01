@@ -30,7 +30,7 @@ import { userVisibleProjects } from "../../native-agent/project-scope";
 import { DOCS_DEFAULT_SELECTION } from "../../docs/docs-defaults";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
 import { writerFallbackKeys, type WriterFallbackSlot } from "../../writer/writer-fallbacks";
-import { BASIC_SETTING_KEYS, CODE_CRITIQUE_EFFORT, CODE_CRITIQUE_MODEL, CODE_CRITIQUE_PROVIDER, CODE_CRITIQUE_SERVICE_TIER, COUNCIL_SEATS, CouncilDetail, CouncilRow, DOCS_EFFORT, DOCS_MODEL, DOCS_PROVIDER, DOCS_SERVICE_TIER, JEV_KEYS, MEMORY_EFFORT, MEMORY_MODEL, MEMORY_PROVIDER, MEMORY_SERVICE_TIER, NIGHT_EFFORT, NIGHT_MODEL, NIGHT_PROVIDER, NIGHT_SERVICE_TIER, ONBOARDING_EFFORT, ONBOARDING_MODEL, ONBOARDING_PROVIDER, ONBOARDING_SERVICE_TIER, PLAN_CRITIQUE_EFFORT, PLAN_CRITIQUE_MODEL, PLAN_CRITIQUE_PROVIDER, PLAN_CRITIQUE_SERVICE_TIER, PM_READ_EFFORT, PM_READ_MODEL, PM_READ_PROVIDER, PM_READ_SERVICE_TIER, PROJECT_LIFE_EFFORT, PROJECT_LIFE_MODEL, PROJECT_LIFE_PROVIDER, PROJECT_LIFE_SERVICE_TIER, RUNS_PAGE, RoutingStats, SPECIALIST_EFFORT, SPECIALIST_MODEL, SPECIALIST_PROVIDER, SPECIALIST_SERVICE_TIER, ScreenPayload, StackDetectResult, WRITER_EFFORT, WRITER_MODEL, WRITER_PROVIDER, WRITER_SERVICE_TIER, diagnosticRows, extraSettingRows } from "./page-model";
+import { BASIC_SETTING_KEYS, CODE_CRITIQUE_EFFORT, CODE_CRITIQUE_MODEL, CODE_CRITIQUE_PROVIDER, CODE_CRITIQUE_SERVICE_TIER, COUNCIL_SEATS, CouncilDetail, CouncilRow, DOCS_EFFORT, DOCS_MODEL, DOCS_PROVIDER, DOCS_SERVICE_TIER, JEV_KEYS, MEMORY_EFFORT, MEMORY_MODEL, MEMORY_PROVIDER, MEMORY_SERVICE_TIER, NIGHT_EFFORT, NIGHT_MODEL, NIGHT_PROVIDER, NIGHT_SERVICE_TIER, ONBOARDING_EFFORT, ONBOARDING_MODEL, ONBOARDING_PROVIDER, ONBOARDING_SERVICE_TIER, PLAN_CRITIQUE_EFFORT, PLAN_CRITIQUE_MODEL, PLAN_CRITIQUE_PROVIDER, PLAN_CRITIQUE_SERVICE_TIER, PM_READ_EFFORT, PM_READ_MODEL, PM_READ_PROVIDER, PM_READ_SERVICE_TIER, PROJECT_LIFE_EFFORT, PROJECT_LIFE_MODEL, PROJECT_LIFE_PROVIDER, PROJECT_LIFE_SERVICE_TIER, RoutingStats, SPECIALIST_EFFORT, SPECIALIST_MODEL, SPECIALIST_PROVIDER, SPECIALIST_SERVICE_TIER, ScreenPayload, StackDetectResult, WRITER_EFFORT, WRITER_MODEL, WRITER_PROVIDER, WRITER_SERVICE_TIER, diagnosticRows, extraSettingRows } from "./page-model";
 import { useLpPoll } from "./use-lp-rpc-query";
 
 export function useLanePilotPage({ subPath = "", scope = "projects" }: { subPath?: string; scope?: "projects" | "globals" | "agents" | "tokens" | "workflows" | "schedule" | "tasks" | "waiting" | "improvement" | "errands" }) {
@@ -62,11 +62,10 @@ export function useLanePilotPage({ subPath = "", scope = "projects" }: { subPath
   const [projects, setProjects] = useState<Array<{ id:string; name:string; kind?:string }>>([]);
   const [projectsLoaded, setProjectsLoaded] = useState(false);
   const [projectListError, setProjectListError] = useState(false);
-  const [finishing, setFinishing] = useState(false);
   const providers = useProviders();
   const [tab, setTab] = useState<TabId>("overview");
   // The part of a segmented tab that is open (the tabs that have segments: knowledge, automation, runs).
-  const [segments, setSegments] = useState<Record<string, string>>({ knowledge: "memory", automation: "workflows", runs: "active" });
+  const [segments, setSegments] = useState<Record<string, string>>({ knowledge: "memory", automation: "workflows", runs: "board" });
   const segmentOf = (id: SegmentedTab) => segments[id] ?? SEGMENTS[id][0];
   const setSegment = (id: SegmentedTab, next: string) => setSegments((current) => ({ ...current, [id]: next }));
   /** Opens a tab, and a part of it. Ids of the old ten tabs work too. */
@@ -79,7 +78,6 @@ export function useLanePilotPage({ subPath = "", scope = "projects" }: { subPath
   // A tab mounts when it is first opened and stays mounted after that: ten tabs at once cost 25 000 DOM nodes on a big project.
   const visited = useRef(new Set<string>());
   visited.current.add(tab);
-  const [runsShown, setRunsShown] = useState(20);
   // How many of the newest runs the screen has fetched; the rest of the history comes by `list_runs` pages.
   const runsWindow = useRef(0);
   const [nativeState, setNativeState] = useState<{ status: string; error: string | null } | null>(null);
@@ -211,22 +209,13 @@ export function useLanePilotPage({ subPath = "", scope = "projects" }: { subPath
     void load();
   }, [load, projectScreenActive]);
 
-  // The runs panel reads its list on its own: the next page of the history, and a light re-read of what is loaded
-  // (no screen reload, so nothing blanks) when an attempt changes or the slow poll fires.
+  // The overview re-reads the runs it shows lightly (no screen reload, so nothing blanks) when an attempt changes or the slow poll fires;
+  // the «Tasks» tab is the board, which reads on its own.
   const mergeRuns = (incoming: ScreenPayload["runs"], total: number, replaceAll: boolean) => setData((prev) => {
     if (!prev || prev.projectId !== projectId) return prev;
     const known = new Set(incoming.map((run) => run.id));
     return { ...prev, runsTotal: total, runs: replaceAll ? incoming : [...prev.runs.filter((run) => !known.has(run.id)), ...incoming] };
   });
-  const loadMoreRuns = async () => {
-    if (!projectId) return;
-    const offset = runsWindow.current;
-    const generation = loadGeneration.current;
-    const page = await rpc.call("list_runs", { ...scoped, projectId, offset, limit: RUNS_PAGE });
-    if (generation !== loadGeneration.current) return;
-    runsWindow.current = offset + RUNS_PAGE;
-    mergeRuns(page.runs as ScreenPayload["runs"], page.total, false);
-  };
   const refreshRuns = useCallback(async () => {
     if (!projectId || isGlobal || !dataRef.current || dataRef.current.projectId !== projectId) return;
     const generation = loadGeneration.current;
@@ -237,7 +226,7 @@ export function useLanePilotPage({ subPath = "", scope = "projects" }: { subPath
     } catch { /* the next signal or poll retries */ }
   }, [projectId, isGlobal, selectedSectionId, rpc]);
   const runsPollMs = useLpRealtime(isGlobal || !projectScreenActive ? null : projectId, ["helpers"], () => { void refreshRuns(); });
-  const runsVisible = projectScreenActive && (tab === "overview" || (tab === "runs" && (segments.runs === "active" || segments.runs === "history")));
+  const runsVisible = projectScreenActive && tab === "overview";
   useLpPoll(runsVisible && projectId && !isGlobal ? runsPollMs : undefined, () => { void refreshRuns(); });
 
   useEffect(() => {
@@ -622,19 +611,6 @@ export function useLanePilotPage({ subPath = "", scope = "projects" }: { subPath
     }
   };
 
-  const finishRuns = async (runId: string) => {
-    if (!projectId || finishing) return;
-    setFinishing(true);
-    try {
-      const result = await rpc.call("finish_run", { projectId, runId });
-      if (!result.closed) toast.error(<span data-bb-ru-skip>{t("finishRunBlocked")}</span>);
-      else toast.success(<span data-bb-ru-skip>{t("runClosed")}</span>);
-      await load();
-    } catch (cause) {
-      toast.error(<span data-bb-ru-skip>{cause instanceof Error ? cause.message : t("toastError")}</span>);
-    } finally { setFinishing(false); }
-  };
-
   const jevRows = useMemo(() => {
     const seen = new Set<string>();
     return VISIBLE_CATALOG.filter((row) => JEV_KEYS.has(row.storageKey) && !seen.has(row.storageKey) && Boolean(seen.add(row.storageKey)));
@@ -707,9 +683,8 @@ export function useLanePilotPage({ subPath = "", scope = "projects" }: { subPath
     routingStats, setRoutingStats, councilDefaults, setCouncilDefaults, councilSeatsTouched, fallbackTouched,
     councilsAll, setCouncilsAll, councils, setCouncils, council, setCouncil,
     openCouncil, sections, setSections, scoped, cacheKey, projects,
-    setProjects, projectsLoaded, setProjectsLoaded, projectListError, setProjectListError, finishing,
-    setFinishing, providers, tab, setTab, visited, runsShown,
-    setRunsShown, runsWindow, nativeState, setNativeState, data, setData,
+    setProjects, projectsLoaded, setProjectsLoaded, projectListError, setProjectListError,
+    providers, tab, setTab, visited, runsWindow, nativeState, setNativeState, data, setData,
     error, setError, saveError, setSaveError, confirmOpen, setConfirmOpen,
     pendingOp, setPendingOp, snapshotPath, setSnapshotPath, detectResult, setDetectResult,
     resultPatch, setResultPatch, resultSource, setResultSource, locale, setLocale,
@@ -717,12 +692,12 @@ export function useLanePilotPage({ subPath = "", scope = "projects" }: { subPath
     shellWidth, contentWidth, compactChrome, stackControls, drafts, setDrafts,
     dataRef, draftsRef, saveTailRef, writerDraftRef, writerDraft, setWriterDraft,
     selectedBinding, setSelectedBinding, writerRejected, setWriterRejected, writerSaveTail, projectCache,
-    loadGeneration, chooseLocale, load, mergeRuns, loadMoreRuns, refreshRuns,
+    loadGeneration, chooseLocale, load, mergeRuns, refreshRuns,
     runsPollMs, runsVisible, level, segmentOf, setSegment, goTo, diagnosticsGrouped, extrasGrouped, chooseProject,
     writeDraft, save, saveKey, applySetting, resetInherited, displayedValue,
     persistWriterSelection, saveWriterSelection, saveCouncilSeatSelection, saveWriterFallback, pickerDrafts,
     councilSeatPickerValue, savedPickerValue, pickerValue, catalogRow,
-    hostId, routing, modelPicker, inheritReset, runStack, finishRuns,
+    hostId, routing, modelPicker, inheritReset, runStack,
     jevRows, selectedProjectName, selectedSectionName, mobileNavValue, flatSections, walkSections,
     tabSelect, wideTable, hiddenProjects, projectGroups, hideProject, showProject, advanced, hostLabel, nativeHostId, installNative, writerChosen,
     screenLoading, activeRuns, trackLines,

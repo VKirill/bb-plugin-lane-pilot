@@ -2,7 +2,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { openTab } from "../ui-tabs";
 import { fireEvent, waitFor } from "@testing-library/react";
-import { mountPage, screenFixture } from "../ui-harness";
+import { boardFixture, mountPage, screenFixture } from "../ui-harness";
 import { en, ru, setLocaleOverride } from "@lane-pilot/i18n";
 import { openRole, useMatrixHooks } from "./helpers";
 
@@ -49,52 +49,19 @@ describe("Lane Pilot UI", () => {
     setLocaleOverride(null);
   });
 
-  it("lists the runs in progress apart from the history, newest first, and opens the history 20 at a time", async () => {
-    const base = screenFixture();
-    const run = (id: string, state: string, updated: number) => ({ ...base.runs[0]!, id, state, updated_at: updated, attempts: [], stageCount: 0 });
-    base.runs = [run("lprun_old", "closed", 1), ...Array.from({ length: 21 }, (_, i) => run(`lprun_h${i}`, "closed", 100 + i)), run("lprun_live", "running", 2)];
-    const slot = await mountPage({ get_screen: () => base });
-    openTab(slot, "monitor");
-    // Active: only what is in progress; the closed runs wait in the history.
-    const active = await slot.findByTestId("run-list");
-    expect(Array.from(active.children).map((card) => card.getAttribute("data-testid"))).toEqual(["run-lprun_live"]);
-    expect(slot.queryByTestId("runs-show-more")).toBeNull();
-    openTab(slot, "monitor", "history");
-    const list = await slot.findByTestId("run-list");
-    const ids = () => Array.from(list.children).map((card) => card.getAttribute("data-testid"));
-    expect(ids()[0]).toBe("run-lprun_h20");
-    expect(ids()).not.toContain("run-lprun_live");
-    expect(ids()).toHaveLength(20);
-    fireEvent.click(slot.getByTestId("runs-show-more"));
-    await waitFor(() => expect(ids()).toHaveLength(22));
-    expect(ids().at(-1)).toBe("run-lprun_old");
+  it("the project's board asks the server for this project only and opens a task on its page", async () => {
+    const taskBoard = vi.fn((_input: unknown) => boardFixture());
+    const slot = await mountPage({ task_board: taskBoard });
+    openTab(slot, "runs");
+    await slot.findByTestId("task-board");
+    await waitFor(() => expect(taskBoard).toHaveBeenCalledWith(expect.objectContaining({ projectId: "proj_ui" })));
+    expect(taskBoard.mock.calls.every(([input]) => (input as { projectId?: string }).projectId === "proj_ui")).toBe(true);
+    fireEvent.click(await slot.findByTestId("board-card-task:lprun_1:task_1"));
+    await slot.findAllByTestId("task-rail");
+    expect(slot.getByTestId("stage-receipts-lprun_1").textContent).toContain("(1)");
     slot.lifecycle.unmount();
   });
 
-  // One page mount per scenario: five mounts in a single test outran the 5 s budget.
-  it.each([
-    { runState:"closed", attemptState:"accepted", cancel:false, retry:false },
-    { runState:"closed", attemptState:"validation_failed", cancel:false, retry:false },
-    { runState:"running", attemptState:"queued", cancel:true, retry:false },
-    { runState:"running", attemptState:"running", cancel:true, retry:false },
-    { runState:"running", attemptState:"validation_failed", cancel:false, retry:true },
-  ])("shows only legal cancel and retry actions (run $runState, attempt $attemptState)", async (scenario) => {
-    {
-      const base = screenFixture();
-      const run = base.runs[0]!;
-      run.state = scenario.runState;
-      run.attempts[0]!.state = scenario.attemptState;
-      (run.attempts[0]! as {thread_id:string|null}).thread_id = scenario.attemptState === "queued" ? null : "thr_writer";
-      const slot = await mountPage({ get_screen:() => base });
-      // A run in progress is listed under Active, a closed one in the History.
-      openTab(slot, "monitor", scenario.runState === "closed" ? "history" : "active");
-      const row = await slot.findByTestId("attempt-lpattempt_1");
-      const buttons = Array.from(row.querySelectorAll("button")).map((button) => button.textContent);
-      expect(buttons.includes(en.cancel)).toBe(scenario.cancel);
-      expect(buttons.includes(en.retry)).toBe(scenario.retry);
-      slot.lifecycle.unmount();
-    }
-  });
 
   it("renders numeric limits instead of sliders and keeps a failed draft", async () => {
     const slot = await mountPage({

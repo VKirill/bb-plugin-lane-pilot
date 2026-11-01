@@ -7,6 +7,7 @@ import type { rpcContract } from "../../contracts";
 import { AcceptanceCard } from "../../acceptance/ui";
 import { StageModelStats, StageStrip, WorkBreakdown, useStageStrips } from "../../work-graph/ui";
 import { useLpRpcQuery } from "../../ui-shell/ui";
+import { RunStages } from "./run-parts";
 type Board = z.infer<(typeof rpcContract)["task_board"]["output"]>;
 type Card = NonNullable<z.infer<(typeof rpcContract)["task_card"]["output"]>>;
 type Item = Board["items"][number];
@@ -120,11 +121,14 @@ function groupOf(item: Item, by: GroupBy, projectName: (id: string | null) => st
   return { key: "all", title: "" };
 }
 
-export function TaskBoard({ projects = [], serviceProjectIds = [], initialProjectId = null, locale }: {
-  projects?: ReadonlyArray<{ id: string; name: string }>; serviceProjectIds?: readonly string[]; initialProjectId?: string | null; locale: string;
+export function TaskBoard({ projects = [], serviceProjectIds = [], initialProjectId = null, lockedProjectId = null, locale }: {
+  projects?: ReadonlyArray<{ id: string; name: string }>; serviceProjectIds?: readonly string[]; initialProjectId?: string | null;
+  /** The project's own tab: the board of this project only, without the project switch and the title the tab already carries. */
+  lockedProjectId?: string | null; locale: string;
 }) {
   const rpc = useRpc<typeof rpcContract>();
-  const [projectId, setProjectId] = useState<string>(initialProjectId ?? "all");
+  const locked = lockedProjectId != null;
+  const [projectId, setProjectId] = useState<string>(lockedProjectId ?? initialProjectId ?? "all");
   const [kind, setKind] = useState<"all" | "task" | "workflow">("all");
   const [view, setView] = useState<"board" | "list" | "stats">("board");
   const [groupBy, setGroupBy] = useState<GroupBy>("goal");
@@ -149,10 +153,12 @@ export function TaskBoard({ projects = [], serviceProjectIds = [], initialProjec
   return (
     <div className="space-y-3" data-testid="task-board">
       <div className="flex flex-wrap items-end justify-between gap-2">
-        <div className="min-w-0">
-          <h2 className="text-lg font-semibold">{t("navTasks")} <span className="text-sm font-normal text-muted-foreground">{shown.length}</span></h2>
-          <p className="text-sm text-muted-foreground">{t("boardHelp")}</p>
-        </div>
+        {locked ? <span className="text-sm text-muted-foreground" data-testid="board-count">{shown.length}</span> : (
+          <div className="min-w-0">
+            <h2 className="text-lg font-semibold">{t("navTasks")} <span className="text-sm font-normal text-muted-foreground">{shown.length}</span></h2>
+            <p className="text-sm text-muted-foreground">{t("boardHelp")}</p>
+          </div>
+        )}
         <div className="inline-flex rounded-md border border-border p-0.5" role="tablist" data-testid="board-view">
           {(["board", "list", "stats"] as const).map((id) => (
             <button key={id} type="button" role="tab" aria-selected={view === id} onClick={() => setView(id)} data-testid={`board-view-${id}`}
@@ -163,13 +169,15 @@ export function TaskBoard({ projects = [], serviceProjectIds = [], initialProjec
         </div>
       </div>
       <div className="flex flex-wrap items-center gap-2">
-        <Select value={projectId} onValueChange={setProjectId}>
-          <SelectTrigger className="h-8 w-full sm:w-48" data-testid="board-project"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">{t("boardAllProjects")}</SelectItem>
-            {projects.map((project) => <SelectItem key={project.id} value={project.id}>{project.name}</SelectItem>)}
-          </SelectContent>
-        </Select>
+        {locked ? null : (
+          <Select value={projectId} onValueChange={setProjectId}>
+            <SelectTrigger className="h-8 w-full sm:w-48" data-testid="board-project"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">{t("boardAllProjects")}</SelectItem>
+              {projects.map((project) => <SelectItem key={project.id} value={project.id}>{project.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        )}
         <Select value={kind} onValueChange={(next) => setKind(next as typeof kind)}>
           <SelectTrigger className="h-8 w-full sm:w-40" data-testid="board-kind"><SelectValue /></SelectTrigger>
           <SelectContent>
@@ -382,7 +390,9 @@ function TaskPage({ item, locale, projectName, onBack }: { item: Item; locale: s
               ) : null}
               {card.kind === "task" && item.taskId ? (
                 <Section title={t("graphTitle")}><WorkBreakdown runId={item.runId} taskId={item.taskId} locale={locale} /></Section>
-              ) : card.stages.length ? (
+              ) : null}
+              {card.stages.length ? <div className="mt-3"><RunStages runId={item.runId} count={card.stages.length} /></div> : null}
+              {card.kind === "task" && item.taskId ? null : card.stages.length ? (
                 <Section title={card.kind === "workflow" ? t("boardSteps") : t("boardProgress")}>
                   <ol className="relative space-y-0 border-l border-border pl-4" data-testid="task-card-stages">
                     {card.stages.map((stage, index) => (

@@ -769,7 +769,7 @@ export const SMA_ENTRIES: Readonly<Record<string, SmaEntry>> = {
   n759: ["have", "решение по партии: слово владельца", "src/rooms/cockpit/ui/screens-work.tsx#The owner's word at a stage gate"],
   n760: ["have", "задержать или отпустить волну", "src/rooms/cockpit/ui/screens-work.tsx#Hold or release a wave"],
   n761: ["have", "руль: поправка или пауза", "src/rooms/cockpit/ui/screens-work.tsx#ckContextNote"],
-  n762: ["have", "остановить работу", "src/rooms/ui-shell/ui/tab-runs.tsx#canCancelAttempt"],
+  n762: ["have", "остановить работу", "src/rooms/runs/ui/task-board.tsx#cancel_attempt"],
   n763: ["have", "закрыть словами", "src/rooms/cockpit/ui/screens-work.tsx#ckClose"],
   n764: ["have", "переключатель конвейера", "src/rooms/core/server/rpc.ts#conveyor:"],
   n765: ["have", "переключить работника", "src/rooms/settings/ui/model-overrides.tsx#export function ModelOverridesPanel"],

@@ -20,7 +20,7 @@ export const DEPTH_TABS = new Set<TabId>(["team", "work", "knowledge", "automati
 export const SEGMENTS = {
   knowledge: ["memory", "docs", "rules", "anamnesis"],
   automation: ["workflows", "schedule"],
-  runs: ["active", "history", "analytics", "council", "service"],
+  runs: ["board", "analytics", "council", "service"],
 } as const;
 export type SegmentedTab = keyof typeof SEGMENTS;
 export type SegmentId<T extends SegmentedTab> = (typeof SEGMENTS)[T][number];
@@ -32,8 +32,7 @@ export const SEGMENT_LABELS: Record<string, I18nKey> = {
   anamnesis: "segAnamnesis",
   workflows: "segWorkflows",
   schedule: "segSchedule",
-  active: "segActive",
-  history: "segHistory",
+  board: "segBoard",
   analytics: "segAnalytics",
   council: "segCouncil",
   service: "segService",
@@ -50,7 +49,7 @@ export const LEGACY_TABS: Record<string, { tab: TabId; segment?: string }> = {
   anamnesis: { tab: "knowledge", segment: "anamnesis" },
   workflows: { tab: "automation", segment: "workflows" },
   schedule: { tab: "automation", segment: "schedule" },
-  monitor: { tab: "runs", segment: "active" },
+  monitor: { tab: "runs", segment: "board" },
   service: { tab: "runs", segment: "service" },
 };
 

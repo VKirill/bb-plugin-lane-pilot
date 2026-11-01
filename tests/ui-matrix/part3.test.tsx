@@ -93,11 +93,11 @@ describe("Lane Pilot UI", () => {
     const listed = { runs: [{ ...base.runs[0]!, id: "lprun_new", state: "running", updated_at: 99, attempts: [], stageCount: 0 }, ...base.runs], total: 2 };
     const listRuns = vi.fn(() => listed);
     const slot = await mountPage({ get_screen: screen, list_runs: listRuns });
-    openTab(slot, "monitor");
-    await slot.findByTestId("run-lprun_1");
-    expect(slot.queryByTestId("run-lprun_new")).toBeNull();
+    // The overview's «now» block is the one reader of the runs window since the project's tab became the board.
+    await slot.findByTestId("now-lprun_1");
+    expect(slot.queryByTestId("now-lprun_new")).toBeNull();
     await slot.behavior.emitRealtime("lp:proj_ui", { kind: "helpers", threadId: "thr_pm" });
-    await slot.findByTestId("run-lprun_new");
+    await slot.findByTestId("now-lprun_new");
     expect(listRuns).toHaveBeenCalledWith(expect.objectContaining({ projectId: "proj_ui", offset: 0, pinOpen: true }));
     expect(screen).toHaveBeenCalledTimes(1);
     slot.lifecycle.unmount();
@@ -109,10 +109,10 @@ describe("Lane Pilot UI", () => {
     expect(slot.getByTestId("work-panel").children).toHaveLength(0);
     expect(slot.getByTestId("runs-panel").children).toHaveLength(0);
     openTab(slot, "monitor");
-    await slot.findByTestId("run-list");
+    await slot.findByTestId("task-board");
     expect(slot.getByTestId("work-panel").children).toHaveLength(0);
     openTab(slot, "overview");
-    expect(slot.getByTestId("run-list")).toBeTruthy();
+    expect(slot.getByTestId("task-board")).toBeTruthy();
     slot.lifecycle.unmount();
   });
 

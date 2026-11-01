@@ -91,7 +91,7 @@ describe("six tabs", () => {
     expect(resolveTab("checks")).toEqual({ tab: "work" });
     expect(resolveTab("access")).toEqual({ tab: "team" });
     expect(resolveTab("service")).toEqual({ tab: "runs", segment: "service" });
-    expect(resolveTab("monitor")).toEqual({ tab: "runs", segment: "active" });
+    expect(resolveTab("monitor")).toEqual({ tab: "runs", segment: "board" });
     expect(resolveTab("team")).toEqual({ tab: "team" });
   });
 

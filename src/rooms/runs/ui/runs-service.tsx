@@ -25,9 +25,13 @@ import type { LpPage } from "../../ui-shell/ui";
 
 /** The machine and the install of Lane Pilot on it, and the technical details behind the settings. */
 export function ServiceSegment({ page }: { page: LpPage }) {
-  const { nativeState, data, error, confirmOpen, setConfirmOpen, pendingOp, setPendingOp, snapshotPath, setSnapshotPath, detectResult, resultPatch, resultSource, stackControls, diagnosticsGrouped, writeDraft, applySetting, displayedValue, runStack, hostLabel, nativeHostId, installNative } = page;
+  const { rpc, load, projectId, nativeState, data, error, confirmOpen, setConfirmOpen, pendingOp, setPendingOp, snapshotPath, setSnapshotPath, detectResult, resultPatch, resultSource, stackControls, diagnosticsGrouped, writeDraft, applySetting, displayedValue, runStack, hostLabel, nativeHostId, installNative } = page;
   return (
     <>
+<div className="flex flex-wrap items-center gap-x-3 gap-y-1" data-testid="runs-resume">
+  <Button size="sm" variant="outline" disabled={!projectId} onClick={() => projectId && void rpc.call("resume_runs", { projectId }).then(load)}>{t("resume")}</Button>
+  <span className="text-xs text-muted-foreground">{t("runsResumeHelp")}</span>
+</div>
 <section className="space-y-4" data-testid="install-panel">
             <Surface testId="native-install">
               <SurfaceHeader><h2 className="text-sm font-medium">{t("nativeTitle").replace("{host}", hostLabel(nativeHostId))}</h2></SurfaceHeader>

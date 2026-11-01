@@ -28,6 +28,8 @@ TL;DR: The Tasks screen presents Lane Pilot tasks and top-level workflow runs as
 
 The app's Tasks navigation scope renders `TaskBoard`; it reads the board and task card through the runs RPC methods (`src/rooms/ui-shell/ui/page.tsx:45-56`, `src/rooms/ui-shell/ui/project-nav.tsx:9-30`, `src/rooms/runs/ui/task-board.tsx:121-153`). The helper-thread panel can show the open run's task dependency graph (`src/rooms/native-agent/ui/helper-threads.tsx:70-84`, `src/rooms/contracts/rpc-native.ts:127-144`).
 
+Since 0.1.470 the project's «Tasks» tab (`src/rooms/ui-shell/ui/tab-runs.tsx`, segment `board`) shows the same board locked to the project: `TaskBoard lockedProjectId` hides the project switch and the title, asks `task_board` for that project only, and the task page carries the run's stage receipts (`RunStages`, `src/rooms/runs/ui/task-board.tsx`). The per-run list of the old «Runs» tab with its history pages (`list_runs` paging in the page hook) is gone; «Resume» moved to the Maintenance segment (`src/rooms/runs/ui/runs-service.tsx`, `runs-resume`), and a run left without open attempts is closed by the sweep (`closeStaleRuns`, `src/rooms/runs/server/run-finish.ts`), so the manual «Finish PM run» button went too. The overview's «All tasks» and its attention rows open the board (`goTo("runs", "board")`); the old `monitor` id resolves there.
+
 ## How it works
 
 1. The `tasks` navigation scope mounts `TaskBoard` with visible projects and the selected project (`src/rooms/ui-shell/ui/page.tsx:45-56`).

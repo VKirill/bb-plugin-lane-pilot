@@ -3,11 +3,9 @@ import { t, type I18nKey } from "@lane-pilot/i18n";
 import { settingUnitKey } from "../../settings/setting-copy";
 import { Tabs } from "@lane-pilot/ui-kit";
 import { HUB_KEYS, PROJECT_DEFAULT_KEYS } from "../../improvement";
-import { MAIN_ATTEMPT_LIMIT, RETRY_ELIGIBLE } from "../../runs/state-machine";
 import type { StageReceipt } from "../../tasks";
 
 /** History comes this many runs at a time. */
-export const RUNS_PAGE = 20;
 
 export const CARD_HEAD = "space-y-1 px-3 pb-2 pt-3";
 
@@ -375,8 +373,6 @@ export const TAB_LABELS: Record<string, I18nKey> = {
 /** Tabs the Basic/Advanced switch applies to. */
 export const SETTINGS_TABS = new Set(["settings", "checks", "council", "memory"]);
 
-export const OPEN_ATTEMPT_STATES = ["queued", "spawn_requested", "spawn_unknown", "running", "cancel_requested"];
-
 export type RoutingStats = { current: { providerId: string; model: string } | null; stats: Array<{ providerId: string; model: string; risk: string; tasks: number; acceptedFirstTry: number }> };
 
 export function runTone(state: string): "default" | "secondary" | "destructive" | "outline" | "success" {
@@ -387,20 +383,6 @@ export function runTone(state: string): "default" | "secondary" | "destructive" 
 }
 
 export type MonitorRun = ScreenPayload["runs"][number];
-
-export type MonitorAttempt = MonitorRun["attempts"][number];
-
-export function canCancelAttempt(run: MonitorRun, attempt: MonitorAttempt): boolean {
-  return (run.state === "pending" || run.state === "running")
-    && ["queued", "spawn_requested", "spawn_unknown", "running", "cancel_requested"].includes(attempt.state)
-    && (attempt.state === "queued" || Boolean(attempt.thread_id));
-}
-
-export function canRetryAttempt(run: MonitorRun, attempt: MonitorAttempt): boolean {
-  return (run.state === "pending" || run.state === "running")
-    && RETRY_ELIGIBLE.some((state) => state === attempt.state)
-    && run.attempts.filter((item) => item.task_id === attempt.task_id).length < MAIN_ATTEMPT_LIMIT;
-}
 
 export type CouncilRow = { id: string; runId: string; question: string; state: string; round: number; maxRounds: number; decisionPath: string | null; updatedAt: number };
 

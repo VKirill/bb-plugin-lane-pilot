@@ -46,13 +46,13 @@ export function OverviewTab({ page }: { page: LpPage }) {
   const attention: Array<{ id: string; text: string; tab: "team" | "runs" | "overview"; segment?: string }> = [];
   if (!error && data && !writerChosen) attention.push({ id: "writer", text: t("attnWriter"), tab: "team" });
   if (binding && binding.status !== "resolved") attention.push({ id: "binding", text: t(binding.status === "ambiguous" ? "bindingAmbiguous" : binding.status === "offline" ? "bindingOffline" : binding.status === "setup_required" ? "bindingSetupRequired" : "writerCatalogUnavailable"), tab: "overview" });
-  if (failed > 0) attention.push({ id: "failed", text: t("attnFailedRuns").replace("{n}", String(failed)), tab: "runs", segment: "history" });
+  if (failed > 0) attention.push({ id: "failed", text: t("attnFailedRuns").replace("{n}", String(failed)), tab: "runs", segment: "board" });
   return (
     <div className="space-y-6">
       <Surface testId="runs-now">
         <SurfaceHeader className="justify-between">
           <h2 className="text-sm font-medium">{t("overviewNow")}</h2>
-          <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => goTo("runs", "active")}>{t("overviewAllRuns")}</Button>
+          <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => goTo("runs", "board")}>{t("overviewAllRuns")}</Button>
         </SurfaceHeader>
         <SurfaceBody className="space-y-2">
           {open.length === 0 ? <p className="text-sm text-muted-foreground">{t("overviewNoRuns")}</p> : open.slice(0, 3).map((run) => (
@@ -89,7 +89,7 @@ export function OverviewTab({ page }: { page: LpPage }) {
           <StatusRow testId="status-start" state="info" title={t("overviewStart")} detail={t("overviewStartHelp")} />
           {selectedSectionId ? null : <StatusRow testId="status-runs" state={activeRuns ? "ok" : "info"} title={t("tabRuns")}
             detail={activeRuns ? t("overviewRuns").replace("{n}", String(activeRuns)) : t("overviewNoRuns")}
-            action={<Button size="sm" variant="outline" onClick={() => goTo("runs", "active")}>{t("overviewOpen")}</Button>} />}
+            action={<Button size="sm" variant="outline" onClick={() => goTo("runs", "board")}>{t("overviewOpen")}</Button>} />}
         </SurfaceBody>
       </Surface>
       <MachineAndFolder page={page} />

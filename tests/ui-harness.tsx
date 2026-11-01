@@ -53,6 +53,18 @@ export function screenFixture() {
 }
 
 // Maintenance shows the Lane Stack install only after a check finds it missing.
+/** The board the «Tasks» tab of the project shows: the one task of the screen fixture, in progress. */
+export const boardFixture = () => ({ items: [{
+  kind: "task", key: "task:lprun_1:task_1", runId: "lprun_1", taskId: "task_1", title: "Task one", techTitle: null, taskKind: "feature", area: null, objective: null,
+  projectId: "proj_ui", pmThreadId: null, pmThreadTitle: null, column: "running", state: "running", phase: "writing", stage: "writer-agent", model: null, since: null,
+  waitingFor: [], detail: null, attemptNo: 1, threadId: "thr_writer", attemptId: "lpattempt_1", updatedAt: 1,
+}] });
+export const cardFixture = () => ({
+  kind: "task", title: "Task one", techTitle: null, taskKind: "feature", area: null, objective: null, pmThreadId: null, id: "task_1", projectId: "proj_ui", state: "running", reason: null,
+  contract: null, plan: null, stages: [{ id: "plan-critique", state: "passed", reason: null, threadId: "thr_critic", model: "test-model", updatedAt: 1 }],
+  attempts: [{ id: "lpattempt_1", no: 1, state: "running", reason: null, threadId: "thr_writer", createdAt: 1, updatedAt: 1 }], threads: null,
+});
+
 export const missingStack = () => ({
   hostId:"host_ui", laneStack:{ present:false, version:null, sourceSha:null },
   openCode:{ present:true, version:"1.18.30" }, workspace:{ path:"/tmp/lane-pilot-ui", present:true },
@@ -81,6 +93,9 @@ export async function mountPage(
       list_projects: () => ({ projects:[{ id:"proj_ui", name:"UI test" }], lastProjectId:"proj_ui" }),
       finish_run: () => ({ projectId:"proj_ui", finishedRunIds:[], closed:true }),
       get_screen: () => screenFixture(),
+      task_board: () => boardFixture(),
+      task_card: () => cardFixture(),
+      work_graph_strips: () => ({}),
       list_run_stages: () => ({ stages: [{
         contractVersion:1, runId:"lprun_1", taskId:"task_1", stageId:"plan-critique", state:"passed",
         inputSha256:"a".repeat(64), outputSha256:"b".repeat(64), attempt:1,
