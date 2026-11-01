@@ -1,5 +1,5 @@
 /**
- * The decision journal of the lead («чувачок», .agents/plans/2026-11-01-lead-agent-roadmap.md §3.2). One row per question the owner is asked
+ * The decision journal of the lead («Штурман», .agents/plans/2026-11-01-lead-agent-roadmap.md §3.2). One row per question the owner is asked
  * on a surface (a task's landing word, a phase's turn, later the owner list and permits): the situation and the options as the surface saw
  * them, the prediction written BEFORE the owner answered, his answer, the judge's verdict and his own label. The exam that opens a class's
  * right to decide reads only rows predicted before they were answered (`predicted_at < answered_at`) in the split `exam`; a `backtest` row

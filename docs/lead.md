@@ -32,7 +32,7 @@ TL;DR: every question the owner is asked on a surface is a row of `lane_pilot_de
 
 ## Purpose
 
-The lead («чувачок», `.agents/plans/2026-11-01-lead-agent-roadmap.md`) may one day decide a class of decisions instead of the owner. The only honest way to earn that is to predict his answers before he gives them, on decisions it never saw, and to count. The journal is that count's source: a prediction after the fact proves nothing, so a row is eligible only when `predicted_at < answered_at`, and a replayed historical decision lives in its own split.
+The lead («Штурман», the name the owner chose on 2026-11-01; `.agents/plans/2026-11-01-lead-agent-roadmap.md`) may one day decide a class of decisions instead of the owner. The only honest way to earn that is to predict his answers before he gives them, on decisions it never saw, and to count. The journal is that count's source: a prediction after the fact proves nothing, so a row is eligible only when `predicted_at < answered_at`, and a replayed historical decision lives in its own split.
 
 ## What a row holds
 
