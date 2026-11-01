@@ -1,6 +1,7 @@
 import type { LanePilotDatabase } from "../storage";
 import { examAll, type Verdict } from "./logic";
 import { backtest } from "./server/backtest";
+import { formatMemoryExam } from "./server/memory-exam";
 import { examRows, labelDecision, listDecisions } from "./server/journal";
 import { addRoad, doneRoad, rejectRoad, renderRoadTree, roadTree } from "./server/road";
 import type { LeadApi } from "./server/service";
@@ -20,6 +21,7 @@ export const LEAD_USAGE = [
   "bb lane-pilot lead exam [--json]                 the exam per class: N, decided, Wilson LB, coverage, kappa, tier it would earn",
   "bb lane-pilot lead backtest [--json]             replay the owner's past words (tasks, phases) through the predictor; split backtest, never in the exam",
   "bb lane-pilot lead label <decision-id> exact|partial|miss|deferred   the owner's own verdict on a judged row (the judge's kappa is measured against it)",
+  "bb lane-pilot lead memory-exam [--limit N] [--no-recall] [--json]   the memory exam: recall probes on the hub's accepted tasks and the answered rows predicted again with the lead's memory and with none (the control); runs itself on Sunday 05:10",
 ].join("\n");
 
 type Result = { exitCode: number; stdout?: string; stderr?: string };
@@ -43,6 +45,7 @@ export async function runLeadCli(ctx: LeadCliContext, argv: string[], now: numbe
         `identity ${state.identity.sha.slice(0, 12)} (${state.identity.bytes} B${state.identity.seeded ? ", seeded now" : ""}) at ${state.identity.path}`,
         `road: open ${state.road.open ?? 0}, proposed ${state.road.proposed ?? 0}, accepted ${state.road.accepted ?? 0}, later ${state.road.later ?? 0}, rejected ${state.road.rejected ?? 0}, done ${state.road.done ?? 0}; proposals on the owner's list ${state.proposalsOpen}`,
         `journal: ${state.journal.total} rows (${state.journal.exam} exam, ${state.journal.backtest} backtest)`,
+        `memory exam: ${state.memoryExam ? formatMemoryExam(state.memoryExam).split("\n").slice(1, 3).join("; ") : "not run yet (bb lane-pilot lead memory-exam)"}`,
         `last tick: ${last ? `${last.id} ${last.status} at ${when(last.started_at)}` : "none"}${state.running ? `; running ${state.running.id}` : ""}`,
         `rights: ${state.rights.map((row) => `${row.class}=${row.tier}`).join(", ")}`,
         state.lastExam ? `last exam ${when(state.lastExam.at)}: ${state.lastExam.changes.length ? state.lastExam.changes.map((change) => `${change.class} ${change.from}→${change.to}`).join(", ") : "no change"}` : "last exam: not yet",
@@ -131,6 +134,13 @@ export async function runLeadCli(ctx: LeadCliContext, argv: string[], now: numbe
       return { exitCode: 0, stdout: [`Replayed ${report.created} new decision(s); skipped ${report.skipped.length}.`,
         ...report.classes.map((row) => `${row.class}: ${row.n} decisions, predictor decided ${row.decided} (exact ${row.exact}, miss ${row.miss}), deferred ${row.deferred}, accuracy ${pct(row.accuracy)}`),
         ...(report.skipped.length ? ["skipped:", ...report.skipped.map((line) => `  ${line}`)] : []), "Split backtest: a measurement, never a row of the exam and never a right."].join("\n") };
+    }
+    if (command === "memory-exam") {
+      const limitRaw = flag(rest, "--limit");
+      const limit = limitRaw ? Number(limitRaw) : undefined;
+      if (limit !== undefined && (!Number.isInteger(limit) || limit < 1)) return { exitCode: 2, stderr: LEAD_USAGE };
+      const exam = await needService(ctx).memoryExam({ ...(limit ? { limit } : {}), recall: !rest.includes("--no-recall") }, now);
+      return { exitCode: 0, stdout: asJson ? json(exam) : formatMemoryExam(exam) };
     }
     if (command === "label") {
       const [id, label] = rest;

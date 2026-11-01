@@ -16,6 +16,8 @@ export type RoadRow = {
   id: string; parent_id: string | null; project_id: string | null; title: string; kind: RoadKind; source: RoadSource; why: string;
   evidence_json: string; cost_estimate: string | null; class: string | null; state: RoadState;
   proposed_at: number | null; decided_at: number | null; decision_id: string | null; created_at: number; updated_at: number;
+  /** What the branch carries to act with (a schedule proposal's schedule); JSON or null. */
+  payload_json: string | null;
 };
 export type RoadNode = { row: RoadRow; evidence: RoadEvidence[]; children: RoadNode[] };
 
@@ -36,7 +38,7 @@ const parseEvidence = (row: RoadRow): RoadEvidence[] => { try { return JSON.pars
 
 export function addRoad(db: RoadDb, input: {
   id?: string; parentId?: string | null; projectId?: string | null; title: string; kind: RoadKind; source: RoadSource;
-  why: string; evidence?: RoadEvidence[]; costEstimate?: string | null; class?: string | null;
+  why: string; evidence?: RoadEvidence[]; costEstimate?: string | null; class?: string | null; payload?: unknown;
 }, now: number = Date.now()): RoadRow {
   const title = input.title.trim();
   const why = input.why.trim();
@@ -51,12 +53,20 @@ export function addRoad(db: RoadDb, input: {
     id: input.id ?? newId(), parent_id: parentId, project_id: input.projectId ?? null, title, kind: input.kind, source: input.source,
     why, evidence_json: checkEvidence(input.evidence), cost_estimate: input.costEstimate ?? null, class: input.class ?? null,
     state: "open", proposed_at: null, decided_at: null, decision_id: null, created_at: now, updated_at: now,
+    payload_json: input.payload === undefined || input.payload === null ? null : JSON.stringify(input.payload),
   };
-  db.prepare(`INSERT INTO lane_pilot_lead_road(id,parent_id,project_id,title,kind,source,why,evidence_json,cost_estimate,class,state,created_at,updated_at)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-    .run(row.id, row.parent_id, row.project_id, row.title, row.kind, row.source, row.why, row.evidence_json, row.cost_estimate, row.class, row.state, row.created_at, row.updated_at);
+  db.prepare(`INSERT INTO lane_pilot_lead_road(id,parent_id,project_id,title,kind,source,why,evidence_json,cost_estimate,class,state,created_at,updated_at,payload_json)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+    .run(row.id, row.parent_id, row.project_id, row.title, row.kind, row.source, row.why, row.evidence_json, row.cost_estimate, row.class, row.state, row.created_at, row.updated_at, row.payload_json);
   return row;
 }
+
+/** A proposal on an existing open branch may bring the payload the branch lacked (a schedule for a `schedule` branch). */
+export function setRoadPayload(db: RoadDb, id: string, payload: unknown, now: number = Date.now()): boolean {
+  return db.prepare("UPDATE lane_pilot_lead_road SET payload_json=?, updated_at=? WHERE id=?").run(payload === undefined || payload === null ? null : JSON.stringify(payload), now, id).changes > 0;
+}
+
+export const roadPayload = (row: Pick<RoadRow, "payload_json">): unknown => { try { return row.payload_json ? JSON.parse(row.payload_json) : null; } catch { return null; } };
 
 export const getRoad = (db: RoadDb, id: string): RoadRow | undefined =>
   db.prepare("SELECT * FROM lane_pilot_lead_road WHERE id=?").get(id) as RoadRow | undefined;

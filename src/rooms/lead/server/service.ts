@@ -14,8 +14,10 @@ import { examAll, type Verdict } from "../logic";
 import { parseLeadSettings, type LeadSettings } from "../settings";
 import { identityBlock, loadIdentity, writeRoadExport } from "./identity";
 import { answerDecision, examRows, getDecision, labelDecision, listDecisions, openDecision, pendingLabelCount, pendingLabels, refineVerdict, type PendingLabel } from "./journal";
+import { createLeadSchedule } from "./lead-schedule";
+import { formatMemoryExam, MEMORY_EXAM_KEY, runMemoryExam, type MemoryExam } from "./memory-exam";
 import { actsVia, applyExam, rightsView, type TierChange } from "./rights";
-import { decideRoad, getRoad, roadCounts, roadMarkdown, type RoadRow } from "./road";
+import { decideRoad, getRoad, roadCounts, roadMarkdown, roadPayload, type RoadRow } from "./road";
 import { registerLeadTickActions, proposalDecisionId, proposalItemKey, type ProposalDecision } from "./tick";
 import { closeTick, getTick, listTicks, openTick, patchTick, sweepStaleTicks, type TickRow } from "./tick-store";
 
@@ -33,6 +35,8 @@ export const LEAD_EXAM_CRON = "40 4 * * *";
 /** Monday morning: one line on the owner's list with up to 20 judged rows to label (the judge's kappa is measured against his labels). */
 export const LEAD_LABELS_CRON = "30 7 * * 1";
 const LABELS_BATCH = 20;
+/** Sunday before dawn: the memory exam (recall probes and the decision replay with an empty control), stored for the panel and `lead status`. */
+export const LEAD_MEMORY_EXAM_CRON = "10 5 * * 0";
 const DEAD_STATUSES = new Set(["error", "stopped"]);
 
 export type LeadState = {
@@ -51,6 +55,8 @@ export type LeadState = {
   lastExam: { at: number; changes: TierChange[] } | null;
   /** Judged rows waiting for the owner's own label (up to 20, random order) and how many there are in all. */
   labels: { pending: number; rows: PendingLabel[] };
+  /** The last memory exam (src/rooms/lead/server/memory-exam.ts), null before the first. */
+  memoryExam: MemoryExam | null;
 };
 
 export function createLeadService(ctx: ServerCore, services: Services) {
@@ -151,6 +157,7 @@ export function createLeadService(ctx: ServerCore, services: Services) {
     const counts = (split: string) => (db.prepare("SELECT COUNT(*) AS n FROM lane_pilot_decision WHERE split=?").get(split) as { n: number }).n;
     // The hub kv answers `undefined` for a key never written, and the RPC layer refuses undefined anywhere in a result (lead_shadow, 0.1.448: HTTP 500 until the first exam).
     const lastExam = ((await bb.storage.kv.get(EXAM_KEY).catch(() => null)) ?? null) as { at: number; changes: TierChange[] } | null;
+    const memoryExam = ((await bb.storage.kv.get(MEMORY_EXAM_KEY).catch(() => null)) ?? null) as MemoryExam | null;
     return {
       generatedAt: now, settings: current, homeProjectId: await homeProjectId(),
       identity: { sha: identity.sha, path: identity.path, bytes: identity.bytes, seeded: identity.seeded },
@@ -162,7 +169,16 @@ export function createLeadService(ctx: ServerCore, services: Services) {
       journal: { total: listDecisions(db, { limit: 100_000 }).length, exam: counts("exam"), backtest: counts("backtest") },
       lastExam,
       labels: { pending: pendingLabelCount(db), rows: pendingLabels(db, LABELS_BATCH) },
+      memoryExam,
     };
+  }
+
+  /** The memory exam on demand or on its Sunday cron: two measurements with a control, stored under one key; nothing of it moves a right. */
+  async function memoryExam(options: { limit?: number; recall?: boolean } = {}, now: number = Date.now()): Promise<MemoryExam> {
+    const exam = await runMemoryExam(db, { ...options, settings: loadProjectSettings(db, GLOBAL_SETTINGS_PROJECT_ID) as never, now });
+    await bb.storage.kv.set(MEMORY_EXAM_KEY, exam);
+    bb.log.info(`lead memory exam: ${formatMemoryExam(exam).split("\n").slice(1, 3).join("; ")}`);
+    return exam;
   }
 
   /** The owner's answer to a proposal (the button on his list, the CLI, the lead's chat on his word): the tree, the journal and the list move together. */
@@ -188,11 +204,20 @@ export function createLeadService(ctx: ServerCore, services: Services) {
   async function handOverAccepted(row: RoadRow, by: string, now: number): Promise<Handover> {
     const blocked = (reason: string): Handover => {
       postOwnerItem(db, { key: `lead-handover-blocked:${row.id}`, source: "lead", kind: "handover_blocked", projectId: row.project_id, wake: false,
-        what: `«Да» принято, но работа не пошла: ${row.title}`, why: `${reason}. Ветка ${row.id} остаётся принятой; откройте PM проекта или передайте вручную.`, evidence: [{ kind: "text", ref: row.id, label: "road" }] }, now);
+        what: `«Да» принято, но работа не пошла: ${row.title}`, why: `${reason}. Ветка ${row.id} остаётся принятой; откройте PM проекта или заведите вручную.`, evidence: [{ kind: "text", ref: row.id, label: "road" }] }, now);
       return { state: "blocked", reason };
     };
-    if (!row.project_id) return { state: "skipped", reason: "a branch above projects has no PM to hand the work to" };
-    if (actsVia(row.class ?? "") !== "intake") return { state: "skipped", reason: `class ${row.class ?? "?"} does not act through a project's intake` };
+    const via = actsVia(row.class ?? "");
+    if (via === "none") return { state: "skipped", reason: `class ${row.class ?? "?"} has no way to act` };
+    if (!row.project_id) return { state: "skipped", reason: via === "schedule" ? "a schedule needs a project" : "a branch above projects has no PM to hand the work to" };
+    if (via === "schedule") {
+      // The schedule the proposal carried is created in the project's board through the schedule room's own save, as the lead.
+      const made = await createLeadSchedule(services, { projectId: row.project_id, payload: roadPayload(row), roadId: row.id, by: `lead:${by}`, why: row.why });
+      if (!made.ok) return blocked(made.reason);
+      postOwnerItem(db, { key: `lead-handed:${row.id}`, source: "lead", kind: "handed", projectId: row.project_id, wake: false,
+        what: `«Да» пошло в работу: ${row.title}`, why: `Расписание «${made.name}» (${made.id}) создано в доске проекта по ветке ${row.id}; снять или поставить на паузу можно там.`, evidence: [{ kind: "text", ref: made.id, label: "schedule" }] }, now);
+      return { state: "started", via: "schedule", id: made.id };
+    }
     try {
       const pm = await services.workflowTriggers.pmOf(row.project_id);
       if (!pm) return blocked("the project has no open PM chat");
@@ -309,7 +334,7 @@ export function createLeadService(ctx: ServerCore, services: Services) {
     return run;
   };
 
-  return { settings, homeProjectId, nextTickAt, due, runTick, sweep, exam, state, decide, label, labelsDue, setEnabled, setPriority, chatStart: chatStartOnce, decisionOf: (id: string) => getDecision(db, id) };
+  return { settings, homeProjectId, nextTickAt, due, runTick, sweep, exam, memoryExam, state, decide, label, labelsDue, setEnabled, setPriority, chatStart: chatStartOnce, decisionOf: (id: string) => getDecision(db, id) };
 }
 export type LeadApi = ReturnType<typeof createLeadService>;
 /** What became of an accepted branch: handed to the project (`started`), stopped with a reason the owner sees (`blocked`), or a mark only (`skipped`). */
@@ -325,4 +350,5 @@ export function mountLead(ctx: ServerCore, services: Services): void {
   scheduleIsolated(ctx.bb, "lead-sweep", LEAD_SWEEP_CRON, () => lead.sweep().then(() => undefined), { timeoutMs: 10 * 60_000 });
   scheduleIsolated(ctx.bb, "lead-exam", LEAD_EXAM_CRON, () => lead.exam().then(() => undefined), { timeoutMs: 5 * 60_000 });
   scheduleIsolated(ctx.bb, "lead-labels", LEAD_LABELS_CRON, async () => { lead.labelsDue(); }, { timeoutMs: 60_000 });
+  scheduleIsolated(ctx.bb, "lead-memory-exam", LEAD_MEMORY_EXAM_CRON, () => lead.memoryExam().then(() => undefined), { timeoutMs: 15 * 60_000 });
 }

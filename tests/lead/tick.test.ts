@@ -43,6 +43,15 @@ describe("the lead-tick graph (workflows/lead-tick.json)", () => {
 
 describe("what a proposal of the agent must carry before it reaches the owner", () => {
   const good = { title: "Ship paid plans", class: "next_step", why: "users asked for it twice", evidence: [{ kind: "task" as const, ref: "task_1" }], cost_estimate: "3h" };
+  it("a proposal of class schedule carries the schedule itself: name, a task of kind workflow, errand or agent, and when; a script is refused", () => {
+    const base = { title: "Nightly scan", class: "schedule", why: "the rules scan has no schedule in this project", evidence: [{ kind: "run" as const, ref: "lprun_1" }], cost_estimate: "$0.3/night" };
+    expect(proposalProblem(base)).toContain("carries schedule");
+    expect(proposalProblem({ ...base, schedule: { name: "Nightly scan", task: { kind: "script", command: "x" }, when: { type: "cron", cron: "0 3 * * *" } } })).toContain("script is a host job");
+    expect(proposalProblem({ ...base, schedule: { name: "Nightly scan", task: { kind: "workflow", workflowId: "lp.rules-scan" } } })).toBe("schedule.when is missing");
+    expect(proposalProblem({ ...base, schedule: { name: "Nightly scan", task: { kind: "workflow", workflowId: "lp.rules-scan" }, when: { type: "cron", cron: "0 3 * * *" } } })).toBeNull();
+    expect(proposalProblem({ ...base, class: "next_step" })).toBeNull();
+  });
+
   it("needs a title, a known class, a reason, one artifact and a price", () => {
     expect(proposalProblem(good)).toBeNull();
     expect(proposalProblem({ ...good, title: " " })).toBe("no title");

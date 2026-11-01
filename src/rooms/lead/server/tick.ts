@@ -12,7 +12,8 @@ import { parseLeadSettings, type LeadSettings } from "../settings";
 import { identityBlock, loadIdentity } from "./identity";
 import { answerDecision, examRows, openDecision, predictDecision } from "./journal";
 import { actsVia, LEAD_CLASSES, mayAct, rightsView } from "./rights";
-import { addRoad, decideRoad, getRoad, listRoad, proposeRoad, roadCounts, type RoadEvidence, type RoadRow } from "./road";
+import { createLeadSchedule, schedulePayloadProblem } from "./lead-schedule";
+import { addRoad, decideRoad, getRoad, listRoad, proposeRoad, roadCounts, roadPayload, setRoadPayload, type RoadEvidence, type RoadRow } from "./road";
 import { closeTick as closeTickRow, dayStart, listTicks, patchTick, spentSince } from "./tick-store";
 
 /**
@@ -35,8 +36,10 @@ const USD = 1_000_000;
 export type Proposal = {
   road_id?: string; parent_id?: string; project_id?: string | null; title: string; class: string; risk?: string;
   why: string; evidence: RoadEvidence[]; cost_estimate: string;
+  /** Class `schedule` only: the schedule to create (name, task {kind: workflow|errand|agent, …}, when {type: cron, …}), kept on the branch. */
+  schedule?: unknown;
 };
-type Actable = { roadId: string; decisionId: string; class: string; risk: string | null; projectId: string | null; title: string; why: string };
+type Actable = { roadId: string; decisionId: string; class: string; risk: string | null; projectId: string | null; title: string; why: string; payload: unknown };
 
 /** The evidence kinds of the road tree, as the owner's list knows them (its vocabulary has no url or metric: those become text with a label). */
 const ownerEvidence = (items: RoadEvidence[]): OwnerEvidence[] =>
@@ -49,6 +52,7 @@ export function proposalProblem(proposal: Partial<Proposal>): string | null {
   if (!proposal.why || proposal.why.trim().length < 10) return "why is shorter than 10 characters";
   if (!Array.isArray(proposal.evidence) || !proposal.evidence.some((item) => item && typeof item.ref === "string" && item.ref.trim())) return "no evidence with a ref";
   if (!proposal.cost_estimate?.trim()) return "no cost estimate";
+  if (proposal.class === "schedule") return schedulePayloadProblem(proposal.schedule);
   return null;
 }
 
@@ -132,6 +136,7 @@ export function tickBrief(snapshot: HubSnapshot, identityText: string): string {
       "Do this, in order:",
       "1. Update the road tree in your head: which directions each project is on, which open branches still hold, which are done or stale.",
       `2. Pick at most ${settings.maxProposals} proposals for the owner's morning list, fewer when the evidence is thin. A proposal is one branch of the tree to act on NOW: title (one line, Russian), class (one of ${LEAD_CLASSES.join(", ")}), risk (low|medium|high), why (two or three sentences with the reason), evidence (at least one artifact: {kind: run|task|file|note|url|metric, ref, label?} — a run id, a task id, a file path, a metric with its value, a link), cost_estimate (hours or dollars, one phrase), project_id (null for above projects), and road_id when it is an existing open branch of the tree, else parent_id of the direction it belongs under (or none).`,
+      "A proposal of class schedule also carries schedule: {name, description?, task, when: {type: cron, cron: five fields, timezone?}} where task is {kind: workflow, workflowId, inputs?} or {kind: errand, task: the instruction, title?} or {kind: agent, agentId, task}; on «да» (or when the class is open) it is created in the project's schedule board exactly as written, so write it complete. A script is a host job: never propose one.",
       "3. New directions or options worth keeping in the tree but not proposing today go into branches: {parent_id?, project_id?, title, kind: direction|option, why}.",
       "4. In deferred write what you looked at and left alone, and why, in a few lines. In summary write two or three sentences for the receipt.",
       "Rules: no proposal without an artifact; prefer finishing an open branch over opening a new one; the same proposal is not put to the owner twice (the open ones are in proposalsOpen and in road.open with state proposed); money and external classes are the owner's alone, so propose them only as questions; status is blocked only when the state is unreadable, with blocked_reason.",
@@ -196,7 +201,10 @@ export function registerLeadTickActions(engine: WorkflowEngine, ctx: ServerCore,
           if (row && row.state !== "open" && row.state !== "later") { dropped.push({ title: clip(proposal.title!, 120), reason: `branch ${row.id} is ${row.state}` }); continue; }
           if (!row) {
             const parent = proposal.parent_id && getRoad(db, proposal.parent_id) ? proposal.parent_id : projectRoot(db, projectId, names.get(projectId ?? "") ?? null, now).id;
-            row = addRoad(db, { parentId: parent, projectId, title: proposal.title!.trim(), kind: "option", source: "lead", why: proposal.why!.trim(), evidence: proposal.evidence, costEstimate: proposal.cost_estimate!.trim(), class: proposal.class! }, now);
+            row = addRoad(db, { parentId: parent, projectId, title: proposal.title!.trim(), kind: "option", source: "lead", why: proposal.why!.trim(), evidence: proposal.evidence, costEstimate: proposal.cost_estimate!.trim(), class: proposal.class!, payload: proposal.class === "schedule" ? proposal.schedule : undefined }, now);
+          } else if (proposal.class === "schedule" && proposal.schedule !== undefined) {
+            setRoadPayload(db, row.id, proposal.schedule, now);
+            row = getRoad(db, row.id)!;
           }
           const decisionId = proposalDecisionId(row.id);
           openDecision(db, { id: decisionId, surface: "lead", class: proposal.class!, risk, projectId, runId: null,
@@ -215,7 +223,7 @@ export function registerLeadTickActions(engine: WorkflowEngine, ctx: ServerCore,
             ],
           }, now);
           proposed.push({ roadId: row.id, decisionId, title: row.title, class: proposal.class! });
-          if (mayAct(db, proposal.class!, risk).ok) actable.push({ roadId: row.id, decisionId, class: proposal.class!, risk, projectId, title: row.title, why: proposal.why! });
+          if (mayAct(db, proposal.class!, risk).ok) actable.push({ roadId: row.id, decisionId, class: proposal.class!, risk, projectId, title: row.title, why: proposal.why!, payload: roadPayload(row) });
         } catch (cause) { dropped.push({ title: clip(proposal.title!, 120), reason: `not recorded: ${cause instanceof Error ? cause.message : String(cause)}`.slice(0, 200) }); }
       }
       try { patchTick(db, tickId, { candidates_json: JSON.stringify(raw.map((item) => ({ title: clip(text(item.title), 160), class: item.class, risk: item.risk }))), proposed_json: JSON.stringify(proposed) }); } catch { /* receipt is best effort */ }
@@ -237,9 +245,21 @@ export function registerLeadTickActions(engine: WorkflowEngine, ctx: ServerCore,
         const may = mayAct(db, item.class, item.risk);
         if (!may.ok) { deferred.push({ roadId: item.roadId, reason: may.reason }); continue; }
         const via = actsVia(item.class);
-        if (via !== "intake") { deferred.push({ roadId: item.roadId, reason: via === "schedule" ? "acting through schedules is not wired yet: proposed to the owner instead" : "the class has no way to act" }); continue; }
-        if (!item.projectId) { deferred.push({ roadId: item.roadId, reason: "a branch above projects has no PM to hand the work to" }); continue; }
+        if (via === "none") { deferred.push({ roadId: item.roadId, reason: "the class has no way to act" }); continue; }
+        if (!item.projectId) { deferred.push({ roadId: item.roadId, reason: via === "schedule" ? "a schedule needs a project" : "a branch above projects has no PM to hand the work to" }); continue; }
         try {
+          if (via === "schedule") {
+            // The schedule room's own save: its validation, defaults and conflicts apply to the lead as to the owner's hand.
+            const made = await c.effect(`lead-act:${item.roadId}`, "lead.schedule", () => createLeadSchedule(services, { projectId: item.projectId!, payload: item.payload, roadId: item.roadId, by: `lead:tick:${tickId}`, why: item.why }));
+            if (!made.ok) { deferred.push({ roadId: item.roadId, reason: made.reason }); continue; }
+            answerDecision(db, item.decisionId, { option: "yes", text: `acted by the lead: schedule ${made.id}` }, "lead", now);
+            decideRoad(db, item.roadId, "yes", `acted by the lead: schedule ${made.id}`, now);
+            closeOwnerItem(db, proposalItemKey(item.roadId), "lead", now);
+            postOwnerItem(db, { key: `lead-acted:${item.roadId}`, source: "lead", kind: "acted", projectId: item.projectId, wake: false, what: `Штурман завёл расписание: ${made.name}`,
+              why: `Класс schedule открыт экзаменом; расписание ${made.id} создано в доске проекта. Ветка ${item.roadId}, тик ${tickId}; снять его можно на доске расписаний.`, evidence: [{ kind: "text", ref: made.id, label: "schedule" }] }, now);
+            acted.push({ roadId: item.roadId, via: "schedule", id: made.id });
+            continue;
+          }
           const pm = await services.workflowTriggers.pmOf(item.projectId);
           if (!pm) { deferred.push({ roadId: item.roadId, reason: "the project has no open PM chat" }); continue; }
           const started = await c.effect(`lead-act:${item.roadId}`, "lead.intake", () => services.phaseIntake.handOver({

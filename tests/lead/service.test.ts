@@ -9,6 +9,8 @@ import type { Services } from "../../src/rooms/core/server";
 import { answerDecision, getDecision, labelDecision, openDecision } from "../../src/rooms/lead/server/journal";
 import { addRoad, getRoad, proposeRoad } from "../../src/rooms/lead/server/road";
 import { createLeadService } from "../../src/rooms/lead/server/service";
+import { runLeadCli } from "../../src/rooms/lead/cli";
+import { MEMORY_EXAM_KEY } from "../../src/rooms/lead/server/memory-exam";
 import { getTick, openTick, patchTick } from "../../src/rooms/lead/server/tick-store";
 import { proposalDecisionId, proposalItemKey } from "../../src/rooms/lead/server/tick";
 import { postOwnerItem } from "../../src/rooms/owner-waiting";
@@ -246,5 +248,64 @@ describe("the model judge on an answer and the owner's labels", () => {
     expect(state.labels.pending).toBe(21);
     expect(state.labels.rows).toHaveLength(20);
     expect(state.labels.rows.map((row) => row.id)).not.toContain("d0");
+  });
+});
+
+describe("acting through schedules (class schedule, acts_via schedule)", () => {
+  it("«да» on a schedule branch creates the schedule in the project's board as the lead; a payload the room refuses, or a script, is one quiet blocked line", async () => {
+    const { db, lead, services } = world();
+    const saved: Array<{ raw: Record<string, unknown>; by: string }> = [];
+    (services as unknown as { schedules: unknown }).schedules = { save: async (raw: Record<string, unknown>, by: string) => {
+      saved.push({ raw, by });
+      return String(raw.name).startsWith("bad") ? { ok: false, problems: ["when: cron has 4 fields"] } : { ok: true, schedule: { id: "sch_1", name: raw.name }, warnings: [], conflicts: [] };
+    } };
+    const propose = (id: string, payload: unknown, at: number) => {
+      addRoad(db, { id, projectId: "proj_1", title: `Schedule ${id}`, kind: "direction", source: "lead", why: "the nightly scan is missing", class: "schedule", payload }, at);
+      openDecision(db, { id: proposalDecisionId(id), surface: "lead", class: "schedule", situation: { title: id }, options: ["yes", "later", "no"] }, at + 1);
+      proposeRoad(db, id, proposalDecisionId(id), at + 2);
+      postOwnerItem(db, { key: proposalItemKey(id), source: "lead", kind: "proposal", what: id, why: "the nightly scan is missing" }, at + 2);
+    };
+    propose("s1", { name: "Nightly rules scan", task: { kind: "workflow", workflowId: "lp.rules-scan", inputs: {} }, when: { type: "cron", cron: "0 3 * * *" }, projectId: "proj_other", id: "sch_existing" }, 1);
+    expect(getRoad(db, "s1")!.payload_json).toContain("Nightly rules scan");
+    const went = await lead.decide("s1", "yes", "да", "owner", 10);
+    expect(went).toMatchObject({ ok: true, handover: { state: "started", via: "schedule", id: "sch_1" } });
+    // The lead never edits an existing schedule nor writes into another project: id and projectId of the payload are dropped.
+    expect(saved[0]).toMatchObject({ by: "lead:owner", raw: { projectId: "proj_1", name: "Nightly rules scan", task: { kind: "workflow", workflowId: "lp.rules-scan" }, when: { type: "cron", cron: "0 3 * * *" } } });
+    expect(saved[0]!.raw.id).toBeUndefined();
+    expect(String(saved[0]!.raw.description)).toContain("branch s1");
+    expect(ownerItem(db, "lead-handed:s1")).toMatchObject({ kind: "handed", state: "open" });
+    expect(getRoad(db, "s1")).toMatchObject({ state: "accepted" });
+
+    propose("s2", { name: "bad one", task: { kind: "workflow", workflowId: "x" }, when: { type: "cron", cron: "0 3 * *" } }, 20);
+    expect(await lead.decide("s2", "yes", undefined, "owner", 30)).toMatchObject({ ok: true, handover: { state: "blocked", reason: "schedule refused: when: cron has 4 fields" } });
+    expect(ownerItem(db, "lead-handover-blocked:s2")).toMatchObject({ kind: "handover_blocked", state: "open" });
+
+    propose("s3", { name: "Host job", task: { kind: "script", command: "rm -rf /" }, when: { type: "cron", cron: "0 3 * * *" } }, 40);
+    expect(await lead.decide("s3", "yes", undefined, "owner", 50)).toMatchObject({ ok: true, handover: { state: "blocked", reason: expect.stringContaining("script is a host job") } });
+    propose("s4", null, 60);
+    expect(await lead.decide("s4", "yes", undefined, "owner", 70)).toMatchObject({ ok: true, handover: { state: "blocked", reason: expect.stringContaining("carries schedule") } });
+    expect(saved).toHaveLength(2);
+  });
+});
+
+describe("the memory exam through the service", () => {
+  afterEach(() => setJevForTests(null));
+  it("runs on demand, stores the result for the panel and the CLI prints it", async () => {
+    const { bb, db, lead } = world();
+    setJevForTests({ enabled: () => true, judge: async (_j: unknown, input: { history: Array<{ answer: string }> }) => ({ by: "jev", decision: { option: input.history.length ? input.history[0]!.answer : null, p: 0.9 }, receiptId: null, answers: {} }) } as never);
+    for (let i = 0; i < 4; i += 1) {
+      openDecision(db, { id: `m${i}`, surface: "words", class: "landing", situation: { task: i }, options: ["yes", "no"] }, 100 + i);
+      answerDecision(db, `m${i}`, { option: "yes" }, "owner", 200 + i);
+    }
+    expect((await lead.state(500)).memoryExam).toBeNull();
+    const exam = await lead.memoryExam({ recall: false }, 1_000);
+    expect(exam.decisions).toMatchObject({ n: 4, withMemory: { decided: 3, exact: 3 }, control: { decided: 0, exact: 0 }, gain: 3 });
+    expect(await bb.storage.kv.get(MEMORY_EXAM_KEY)).toMatchObject({ at: 1_000 });
+    expect((await lead.state(2_000)).memoryExam).toMatchObject({ at: 1_000, decisions: { gain: 3 } });
+    const cli = await runLeadCli({ db, kv: bb.storage.kv as never, lead }, ["memory-exam", "--no-recall", "--limit", "2"], 3_000);
+    expect(cli.exitCode).toBe(0);
+    expect(cli.stdout).toContain("decisions (jev): with memory: decided 2/2, exact 2 (100 %); empty control: decided 0/2, exact 0; gain +2");
+    expect((await runLeadCli({ db, kv: bb.storage.kv as never, lead }, ["status"], 4_000)).stdout).toContain("memory exam: recall: not measured; decisions (jev)");
+    expect((await runLeadCli({ db, kv: bb.storage.kv as never, lead }, ["memory-exam", "--limit", "zero"], 5_000)).exitCode).toBe(2);
   });
 });

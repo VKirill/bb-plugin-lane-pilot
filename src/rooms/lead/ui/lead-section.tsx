@@ -94,6 +94,16 @@ export function LeadSection({ locale, fields }: { locale: Locale; fields: ReactN
         </div>
         {state.lastExam ? <p className="text-xs text-muted-foreground">{t("lead_last_exam")}: {when(state.lastExam.at, locale)}{state.lastExam.changes.length ? ` — ${state.lastExam.changes.map((change) => `${change.class} ${change.from} → ${change.to}`).join(", ")}` : ` — ${t("lead_no_change")}`}</p> : null}
       </div>
+      <div className="min-w-0 space-y-1" data-testid="lead-memory-exam">
+        <h3 className="text-sm font-medium">{t("lead_memory_exam_title")}</h3>
+        {state.memoryExam ? (
+          <ul className="max-w-2xl text-xs text-muted-foreground">
+            <li>{state.memoryExam.recall ? `recall: ${state.memoryExam.recall.probes} probes${state.memoryExam.recall.enough ? "" : " (< 36)"}, ${state.memoryExam.recall.retriever}: hit ${Math.round(state.memoryExam.recall.hit * 100)} %, false hit ${Math.round(state.memoryExam.recall.falseHit * 100)} %` : "recall: —"}</li>
+            <li>{`decisions (${state.memoryExam.decisions.n}): with memory ${state.memoryExam.decisions.withMemory.exact}/${state.memoryExam.decisions.withMemory.decided}, empty control ${state.memoryExam.decisions.control.exact}/${state.memoryExam.decisions.control.decided}, gain ${state.memoryExam.decisions.gain >= 0 ? "+" : ""}${state.memoryExam.decisions.gain}`}</li>
+            {state.memoryExam.caveats.map((line) => <li key={line}>{line}</li>)}
+          </ul>
+        ) : <p className="text-xs text-muted-foreground">{t("lead_memory_exam_none")}</p>}
+      </div>
       <div className="min-w-0 space-y-1" data-testid="lead-labels">
         <h3 className="text-sm font-medium">{t("lead_labels_title")} · {state.labels.pending}</h3>
         <p className="max-w-2xl text-xs text-muted-foreground">{t("lead_labels_help")}</p>

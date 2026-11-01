@@ -91,4 +91,6 @@ export const leadMigrations: readonly string[] = [
     at INTEGER NOT NULL
   )`,
   `CREATE INDEX lane_pilot_lead_label_decision ON lane_pilot_lead_label(decision_id, kind)`,
+  // 0.1.455: a proposal of class schedule carries the schedule itself; the branch keeps it until the owner's «да» or the act step creates it.
+  `ALTER TABLE lane_pilot_lead_road ADD COLUMN payload_json TEXT`,
 ];

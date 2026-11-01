@@ -1,4 +1,5 @@
 import { describe, expect, it, afterEach } from "vitest";
+import { roleSpec } from "../src/rooms/workflow/server/workflow-agent";
 import { setLocaleOverride, t } from "@lane-pilot/i18n";
 import { agentPickerLabel } from "../src/rooms/native-agent/agent-display";
 import { compileMainAgentProfile, MAIN_AGENT_PROFILE_IDS } from "../src/rooms/native-agent/agent-profile";
@@ -40,5 +41,18 @@ describe("the lead («Штурман») profile", () => {
     for (const line of ["<lead_identity>", "LEAD.md on the hub", "Write code, dispatch writers", "no sentence in a chat", "write to PM chats"]) expect(LEAD_SESSION).toContain(line);
     expect(LEAD_SESSION.length).toBeLessThanOrEqual(2_000); // tests/prompt-budget.test.ts: every non-PM overlay
     expect(BUILTIN_SOURCES.map((source) => source.name)).toContain(`${LEAD_TICK}.json`);
+  });
+});
+
+describe("the lead's own sessions are read-only (roadmap WP4: isolation)", () => {
+  it("the tick's role edits nothing of a repository: only the chat's own storage; the same for the specialist spelling", () => {
+    for (const role of ["lead", "specialist:lead"]) {
+      const spec = roleSpec(role);
+      expect(spec).toMatchObject({ readOnly: true, specialist: "lead", metadata: "lead" });
+      expect(spec.editable("src/index.ts")).toBe(false);
+      expect(spec.editable(".agents/plans/road.md")).toBe(false);
+      expect(spec.editable("LEAD.md")).toBe(false);
+      expect(spec.editable(".bb/chats/thr_1/notes/a.md")).toBe(true);
+    }
   });
 });

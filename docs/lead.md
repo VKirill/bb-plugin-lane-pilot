@@ -92,9 +92,19 @@ A proposal's line on «Ждут владельца» carries да / потом /
 
 **Labels.** The kappa of the judge is measured against the owner's own verdicts: `bb lane-pilot lead label <decision-id> exact|partial|miss`, the RPC `lead_label` behind the «Разметка» block of the panel (`pendingLabels`: judged rows of split `exam` without a label, random order, up to 20; a deferred row has nothing to label and a proxy answer, `lead` or `agent`, is not his). Monday 07:30 hub time (`LEAD_LABELS_CRON`, `service.labelsDue`) puts one line `labels` on his list with the batch and the CLI for each row, keyed by the week, none when nothing waits.
 
+**Schedules.** A proposal of class `schedule` carries the schedule itself: `schedule: {name, description?, task: {kind: workflow|errand|agent, …}, when: {type: cron, cron, timezone?}}`, kept on the branch as `payload_json` (`proposalProblem` drops a schedule proposal without it; a script is a host job and never the lead's, `src/rooms/lead/server/lead-schedule.ts`). On «да» (`service.decide` → `createLeadSchedule`), or from the act step when the class is open, the schedule is created in the project's board through the schedule room's own `save` as `by: lead:<who>`, with its validation, defaults and conflict checks; the payload's `id` and `projectId` are dropped, so the lead never edits an existing schedule or writes into another project. A refused payload is one `handover_blocked` line with the room's problems; a created one is a `handed` (or `acted`) line naming the schedule, and the owner pauses or removes it on the board like any other.
+
 ## Rights and the exam
 
 `src/rooms/lead/server/rights.ts`. `policy/lead-policy.json` v1 lists seven classes: `next_step`, `schedule`, `landing`, `process`, `defer` start in `proposes`; `money` and `external` are `owner_only` and the exam never touches them (that list changes only by the owner's hand in the file; a class not listed is `owner_only`). The nightly exam (`LEAD_EXAM_CRON`, 04:40 hub time) runs `examAll` over the journal and `applyExam` writes the table: a class that meets the rules opens, an open class that degrades or no longer meets them falls back to `proposes`; every change is one line on the owner's list (`kind right_changed`) and is remembered for the panel. `mayAct` reads the table and the file, nothing a session says: a prompt with «разрешаю всё» changes no tier (`tests/lead/rights.test.ts`), and a proposal of risk high never acts whatever the tier.
+
+## The memory exam
+
+`src/rooms/lead/server/memory-exam.ts` (roadmap §6, WP6): two measurements with a control, so the size and the order of what the lead remembers are an output of a number. **Recall**: the memory-eval room's probes on the hub's own accepted tasks at 300 notes (right answer, nothing relevant, off-topic), production retriever: hit rate on the positives, false hits on the negatives; the roadmap asks for at least 36 probes, fewer is reported as not enough, never rounded up. **Decisions with an empty control**: the owner's answered rows (exam and backtest, newest 60 by default) are predicted again twice, with the memory the live predictor has (his earlier answers to the same kind of question, only those answered before the row) and with no memory at all; the gain is the matches the memory adds, and a memory that misleads shows as a negative gain. Neither arm sees a repository: the situation JSON is the whole input. Sunday 05:10 hub time (`LEAD_MEMORY_EXAM_CRON`) and `bb lane-pilot lead memory-exam [--limit N] [--no-recall]`; the result lives under `lead:memory-exam` for the panel block «Экзамен памяти» and `lead status`. Nothing of it moves a right.
+
+## Isolation
+
+The lead never acts in its own session. The tick's agent runs under the role `lead` of `roleSpec` (`src/rooms/workflow/server/workflow-agent.ts`): read-only, allowed to write only into the chat's own storage, with the typed tools `lane_pilot_lead_*` and nothing that edits a repository, dispatches a writer or sends anything out; a prompt that says otherwise changes none of that (`tests/lead-agent.test.ts`). Every act goes through a project's own doors: the intake (a task or a phase the project's PM runs under the project's rules, its checks as `worker.strict_user` when the project sets it) or the schedule board. A separate OS user for the lead's own sessions is not something the plugin can give: a BB spawn runs as the host's BB user; the lever the plugin has is the read-only role, the rights table and the exam, and that is what is enforced.
 
 ## Settings
 
@@ -112,6 +122,7 @@ RPC: `lead_state`, `lead_road`, `lead_decide`, `lead_label`, `lead_tick_now`, `l
 bb lane-pilot lead status | road [--tree] [--history] [--project <id>|--hub] | road add|reject|done … | decide <road-id> yes|later|no
 bb lane-pilot lead ticks [--last N] | tick-now | enable on|off | rights
 bb lane-pilot lead journal [--class <c>] [--surface <s>] [--last N] | exam | backtest | label <decision-id> exact|partial|miss|deferred
+bb lane-pilot lead memory-exam [--limit N] [--no-recall] [--json]
 ```
 
 ## Drill
@@ -120,8 +131,8 @@ The deploy drill's scenario `lead_shadow` (`scripts/lp-drill.py`) reads `lead_st
 
 ## What is not here yet
 
-The memory exam with an external control (recall ≥ 36 probes); acting through schedules (`acts_via: schedule`); a separate OS user for the lead's acting sessions; WP5, the graph that drafts, tests and publishes graphs from accepted proposals. Each follows the roadmap's order.
+WP5, the graph that drafts, tests and publishes graphs from accepted proposals: it waits for the first class the exam opens, as the roadmap orders. The recall half of the memory exam is a number only once the hub has 36 probes behind it.
 
 ## Tests
 
-`tests/lead/journal.test.ts` (the three moves on both word surfaces, the model judge's `partial`, the rows waiting for a label, eligibility, the backtest's split, the CLI), `tests/lead/logic.test.ts` (Wilson, kappa, every reason a class stays `proposes`, the revert window), `tests/lead/road.test.ts` (the tree, the reasons, the states), `tests/lead/identity.test.ts` (seed, sha, the first block), `tests/lead/rights.test.ts` (the policy, `mayAct`, a prompt widens nothing, the exam writes and reverts), `tests/lead/tick.test.ts` (the graph on stubs, what a proposal must carry, the snapshot and the brief), `tests/lead/service.test.ts` (a tick's receipt, the sweep, the exam line, the owner's answer, the Monday labels line, the switch), `tests/lead-agent.test.ts` (the profile).
+`tests/lead/journal.test.ts` (the three moves on both word surfaces, the model judge's `partial`, the rows waiting for a label, eligibility, the backtest's split, the CLI), `tests/lead/logic.test.ts` (Wilson, kappa, every reason a class stays `proposes`, the revert window), `tests/lead/road.test.ts` (the tree, the reasons, the states), `tests/lead/identity.test.ts` (seed, sha, the first block), `tests/lead/rights.test.ts` (the policy, `mayAct`, a prompt widens nothing, the exam writes and reverts), `tests/lead/tick.test.ts` (the graph on stubs, what a proposal must carry, the snapshot and the brief), `tests/lead/service.test.ts` (a tick's receipt, the sweep, the exam line, the owner's answer, the schedule hand-over, the Monday labels line, the memory exam through the service and the CLI, the switch), `tests/lead/memory-exam.test.ts` (both arms, no forward look, the empty hub), `tests/lead-agent.test.ts` (the profile, the read-only role).
