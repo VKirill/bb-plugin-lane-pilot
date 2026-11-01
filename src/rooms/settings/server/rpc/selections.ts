@@ -21,10 +21,7 @@ export function selectionsRpc(ctx: ServerCore, services: Services) {
       let providers:Awaited<ReturnType<typeof bb.sdk.providers.list>>;
       let catalog:Awaited<ReturnType<typeof bb.sdk.providers.models>>;
       try {
-        [providers, catalog] = await Promise.all([
-          bb.sdk.providers.list({ hostId:catalogHostId }),
-          bb.sdk.providers.models({ providerId, hostId:catalogHostId }),
-        ]);
+        [providers, catalog] = await services.selectionCatalog(projectId, catalogHostId, providerId);
       } catch {
         return reject("catalog_unavailable", "writer.provider", catalogHostId);
       }
@@ -72,10 +69,7 @@ export function selectionsRpc(ctx: ServerCore, services: Services) {
       let providers:Awaited<ReturnType<typeof bb.sdk.providers.list>>;
       let catalog:Awaited<ReturnType<typeof bb.sdk.providers.models>>;
       try {
-        [providers,catalog]=await Promise.all([
-          bb.sdk.providers.list({hostId:catalogHostId}),
-          bb.sdk.providers.models({providerId,hostId:catalogHostId}),
-        ]);
+        [providers,catalog]=await services.selectionCatalog(projectId, catalogHostId, providerId);
       } catch {
         return reject("catalog_unavailable","memory.provider",catalogHostId);
       }
@@ -100,7 +94,7 @@ export function selectionsRpc(ctx: ServerCore, services: Services) {
       const catalogHost=await services.selectionCatalogHost(projectId);
       if(!catalogHost.ok) return {ok:false,conflict:false,values:{},versions:{},validation:catalogHost.validation};
       let providers:Awaited<ReturnType<typeof bb.sdk.providers.list>>,catalog:Awaited<ReturnType<typeof bb.sdk.providers.models>>;
-      try {[providers,catalog]=await Promise.all([bb.sdk.providers.list({hostId:catalogHost.hostId}),bb.sdk.providers.models({providerId,hostId:catalogHost.hostId})]);}
+      try {[providers,catalog]=await services.selectionCatalog(projectId, catalogHost.hostId, providerId);}
       catch {return reject("catalog_unavailable","night_review.provider",catalogHost.hostId);}
       const provider=providers.find((item)=>item.id===providerId&&item.available);
       if(!provider) return reject("invalid_choice","night_review.provider",`provider ${providerId} is unavailable on this host`);
@@ -123,7 +117,7 @@ export function selectionsRpc(ctx: ServerCore, services: Services) {
       const catalogHost=await services.selectionCatalogHost(projectId);
       if(!catalogHost.ok) return {ok:false,conflict:false,values:{},versions:{},validation:catalogHost.validation};
       let providers:Awaited<ReturnType<typeof bb.sdk.providers.list>>,catalog:Awaited<ReturnType<typeof bb.sdk.providers.models>>;
-      try {[providers,catalog]=await Promise.all([bb.sdk.providers.list({hostId:catalogHost.hostId}),bb.sdk.providers.models({providerId,hostId:catalogHost.hostId})]);}
+      try {[providers,catalog]=await services.selectionCatalog(projectId, catalogHost.hostId, providerId);}
       catch {return reject("catalog_unavailable","docs.provider",catalogHost.hostId);}
       const provider=providers.find((item)=>item.id===providerId&&item.available);
       if(!provider) return reject("invalid_choice","docs.provider",`provider ${providerId} is unavailable on this host`);
@@ -146,7 +140,7 @@ export function selectionsRpc(ctx: ServerCore, services: Services) {
       const catalogHost=await services.selectionCatalogHost(projectId);
       if(!catalogHost.ok) return {ok:false,conflict:false,values:{},versions:{},validation:catalogHost.validation};
       let providers:Awaited<ReturnType<typeof bb.sdk.providers.list>>,catalog:Awaited<ReturnType<typeof bb.sdk.providers.models>>;
-      try {[providers,catalog]=await Promise.all([bb.sdk.providers.list({hostId:catalogHost.hostId}),bb.sdk.providers.models({providerId,hostId:catalogHost.hostId})]);}
+      try {[providers,catalog]=await services.selectionCatalog(projectId, catalogHost.hostId, providerId);}
       catch {return reject("catalog_unavailable","project_life.provider",catalogHost.hostId);}
       const provider=providers.find((item)=>item.id===providerId&&item.available);
       if(!provider) return reject("invalid_choice","project_life.provider",`provider ${providerId} is unavailable on this host`);
@@ -169,7 +163,7 @@ export function selectionsRpc(ctx: ServerCore, services: Services) {
       const catalogHost=await services.selectionCatalogHost(projectId);
       if(!catalogHost.ok) return {ok:false,conflict:false,values:{},versions:{},validation:catalogHost.validation};
       let providers:Awaited<ReturnType<typeof bb.sdk.providers.list>>,catalog:Awaited<ReturnType<typeof bb.sdk.providers.models>>;
-      try {[providers,catalog]=await Promise.all([bb.sdk.providers.list({hostId:catalogHost.hostId}),bb.sdk.providers.models({providerId,hostId:catalogHost.hostId})]);}
+      try {[providers,catalog]=await services.selectionCatalog(projectId, catalogHost.hostId, providerId);}
       catch {return reject("catalog_unavailable","pm_read.provider",catalogHost.hostId);}
       const provider=providers.find((item)=>item.id===providerId&&item.available);
       if(!provider) return reject("invalid_choice","pm_read.provider",`provider ${providerId} is unavailable on this host`);
@@ -192,7 +186,7 @@ export function selectionsRpc(ctx: ServerCore, services: Services) {
       const catalogHost=await services.selectionCatalogHost(projectId);
       if(!catalogHost.ok) return {ok:false,conflict:false,values:{},versions:{},validation:catalogHost.validation};
       let providers:Awaited<ReturnType<typeof bb.sdk.providers.list>>,catalog:Awaited<ReturnType<typeof bb.sdk.providers.models>>;
-      try {[providers,catalog]=await Promise.all([bb.sdk.providers.list({hostId:catalogHost.hostId}),bb.sdk.providers.models({providerId,hostId:catalogHost.hostId})]);}
+      try {[providers,catalog]=await services.selectionCatalog(projectId, catalogHost.hostId, providerId);}
       catch {return reject("catalog_unavailable","onboarding.provider",catalogHost.hostId);}
       const provider=providers.find((item)=>item.id===providerId&&item.available);
       if(!provider) return reject("invalid_choice","onboarding.provider",`provider ${providerId} is unavailable on this host`);
@@ -215,7 +209,7 @@ export function selectionsRpc(ctx: ServerCore, services: Services) {
       const catalogHost=await services.selectionCatalogHost(projectId);
       if(!catalogHost.ok) return {ok:false,conflict:false,values:{},versions:{},validation:catalogHost.validation};
       let providers:Awaited<ReturnType<typeof bb.sdk.providers.list>>,catalog:Awaited<ReturnType<typeof bb.sdk.providers.models>>;
-      try {[providers,catalog]=await Promise.all([bb.sdk.providers.list({hostId:catalogHost.hostId}),bb.sdk.providers.models({providerId,hostId:catalogHost.hostId})]);}
+      try {[providers,catalog]=await services.selectionCatalog(projectId, catalogHost.hostId, providerId);}
       catch {return reject("catalog_unavailable","plan_critique.provider",catalogHost.hostId);}
       const provider=providers.find((item)=>item.id===providerId&&item.available);
       if(!provider) return reject("invalid_choice","plan_critique.provider",`provider ${providerId} is unavailable on this host`);
@@ -238,7 +232,7 @@ export function selectionsRpc(ctx: ServerCore, services: Services) {
       const catalogHost=await services.selectionCatalogHost(projectId);
       if(!catalogHost.ok) return {ok:false,conflict:false,values:{},versions:{},validation:catalogHost.validation};
       let providers:Awaited<ReturnType<typeof bb.sdk.providers.list>>,catalog:Awaited<ReturnType<typeof bb.sdk.providers.models>>;
-      try {[providers,catalog]=await Promise.all([bb.sdk.providers.list({hostId:catalogHost.hostId}),bb.sdk.providers.models({providerId,hostId:catalogHost.hostId})]);}
+      try {[providers,catalog]=await services.selectionCatalog(projectId, catalogHost.hostId, providerId);}
       catch {return reject("catalog_unavailable","code_critique.provider",catalogHost.hostId);}
       const provider=providers.find((item)=>item.id===providerId&&item.available);
       if(!provider) return reject("invalid_choice","code_critique.provider",`provider ${providerId} is unavailable on this host`);
@@ -262,7 +256,7 @@ export function selectionsRpc(ctx: ServerCore, services: Services) {
       const catalogHost=await services.selectionCatalogHost(projectId);
       if(!catalogHost.ok) return {ok:false,conflict:false,values:{},versions:{},validation:catalogHost.validation};
       let providers:Awaited<ReturnType<typeof bb.sdk.providers.list>>,catalog:Awaited<ReturnType<typeof bb.sdk.providers.models>>;
-      try {[providers,catalog]=await Promise.all([bb.sdk.providers.list({hostId:catalogHost.hostId}),bb.sdk.providers.models({providerId,hostId:catalogHost.hostId})]);}
+      try {[providers,catalog]=await services.selectionCatalog(projectId, catalogHost.hostId, providerId);}
       catch {return reject("catalog_unavailable",keys.provider,catalogHost.hostId);}
       if(!providers.find((item)=>item.id===providerId&&item.available)) return reject("invalid_choice",keys.provider,`provider ${providerId} is unavailable on this host`);
       const selectedModel=catalog.models.find((item)=>item.id===modelId||item.model===modelId);
@@ -288,7 +282,7 @@ export function selectionsRpc(ctx: ServerCore, services: Services) {
       const catalogHost=await services.selectionCatalogHost(projectId);
       if(!catalogHost.ok) return {ok:false,conflict:false,values:{},versions:{},validation:catalogHost.validation};
       let providers:Awaited<ReturnType<typeof bb.sdk.providers.list>>,catalog:Awaited<ReturnType<typeof bb.sdk.providers.models>>;
-      try {[providers,catalog]=await Promise.all([bb.sdk.providers.list({hostId:catalogHost.hostId}),bb.sdk.providers.models({providerId,hostId:catalogHost.hostId})]);}
+      try {[providers,catalog]=await services.selectionCatalog(projectId, catalogHost.hostId, providerId);}
       catch {return reject("catalog_unavailable",keys.provider,catalogHost.hostId);}
       if(!providers.find((item)=>item.id===providerId&&item.available)) return reject("invalid_choice",keys.provider,`provider ${providerId} is unavailable on this host`);
       const selectedModel=catalog.models.find((item)=>item.id===modelId||item.model===modelId);
@@ -302,7 +296,7 @@ export function selectionsRpc(ctx: ServerCore, services: Services) {
       const catalogHost=await services.selectionCatalogHost(projectId);
       if(!catalogHost.ok) return {ok:false,conflict:false,values:{},versions:{},validation:catalogHost.validation};
       let providers:Awaited<ReturnType<typeof bb.sdk.providers.list>>,catalog:Awaited<ReturnType<typeof bb.sdk.providers.models>>;
-      try {[providers,catalog]=await Promise.all([bb.sdk.providers.list({hostId:catalogHost.hostId}),bb.sdk.providers.models({providerId,hostId:catalogHost.hostId})]);}
+      try {[providers,catalog]=await services.selectionCatalog(projectId, catalogHost.hostId, providerId);}
       catch {return reject("catalog_unavailable","specialist.provider",catalogHost.hostId);}
       const provider=providers.find((item)=>item.id===providerId&&item.available);
       if(!provider) return reject("invalid_choice","specialist.provider",`provider ${providerId} is unavailable on this host`);

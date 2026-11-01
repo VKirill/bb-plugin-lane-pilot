@@ -119,5 +119,29 @@ export function createWriterHost(ctx: ServerCore) {
     return rows;
   }
 
-  return { resolveProjectWriterHost, selectionCatalogHost, listedAgentProfiles };
+  /**
+   * The providers and the provider's models a pick is judged against, in the SDK's shape so the checks read the same. On the global
+   * level that is every connected machine merged (a global pick is bound to no machine; a project's run checks its own machine when
+   * it starts), elsewhere the named machine's. One machine's thinner list refusing a model another machine offers (Devin on the
+   * MacBook listing only «Agent default», 2026-10-31) is what this ends.
+   */
+  async function selectionCatalog(projectId: string, hostId: string, providerId: string): Promise<[Awaited<ReturnType<typeof bb.sdk.providers.list>>, Awaited<ReturnType<typeof bb.sdk.providers.models>>]> {
+    if (projectId !== GLOBAL_SETTINGS_PROJECT_ID) {
+      return Promise.all([bb.sdk.providers.list({ hostId }), bb.sdk.providers.models({ providerId, hostId })]);
+    }
+    const reader = modelCatalogOf(ctx);
+    const merged = await within(reader.get(), CATALOG_WAIT_MS).catch(() => reader.peek());
+    if (!merged) throw new Error("model catalog unavailable");
+    const providers = merged.providers.map((provider) => ({
+      id: provider.id, displayName: provider.displayName, available: provider.hostIds.length > 0,
+      capabilities: { supportsServiceTier: provider.supportsServiceTier }, serviceTiers: provider.serviceTiers.map((id) => ({ id })),
+    }));
+    const models = (merged.providers.find((provider) => provider.id === providerId)?.models ?? []).filter((model) => model.hostIds.length > 0).map((model) => ({
+      id: model.id, model: model.model, displayName: model.displayName, isDefault: model.isDefault,
+      supportedReasoningEfforts: model.efforts.map((reasoningEffort) => ({ reasoningEffort })), defaultReasoningEffort: model.defaultEffort ?? undefined,
+    }));
+    return [providers, { models }] as unknown as [Awaited<ReturnType<typeof bb.sdk.providers.list>>, Awaited<ReturnType<typeof bb.sdk.providers.models>>];
+  }
+
+  return { resolveProjectWriterHost, selectionCatalogHost, selectionCatalog, listedAgentProfiles };
 }

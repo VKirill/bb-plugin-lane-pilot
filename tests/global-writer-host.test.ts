@@ -3,11 +3,11 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import plugin from "../server";
 
 // 2026-10-30: global settings checked the writer model against the first connected machine; on the MacBook the devin
-// provider lists one model, so SWE-2 could not be chosen as the global writer although the writer hosts list it. Since 0.1.438 the
-// unnamed case asks the machine offering the most models.
+// provider lists one model, so SWE-2 could not be chosen as the global writer although the writer hosts list it. Since 0.1.445 a
+// global pick is judged against every connected machine merged: the laptop below offers more models in all, yet SWE-2 is accepted.
 describe("global writer selection", () => {
-  it("checks the model on the named machine, else on the one offering the most, not on the first connected one", async () => {
-    const catalogs: Record<string, string[]> = { "host-laptop": ["adaptive"], "host-server": ["adaptive", "swe-2-high"] };
+  it("accepts a model any connected machine offers, whichever machine the pickers show", async () => {
+    const catalogs: Record<string, string[]> = { "host-laptop": ["adaptive", "a", "b", "c", "d"], "host-server": ["adaptive", "swe-2-high"] };
     const asked: string[] = [];
     const { bb, harness } = createFakePluginHost({
       pluginId: "lane-pilot",
@@ -32,7 +32,7 @@ describe("global writer selection", () => {
     const named = await harness.behavior.callRpc("save_writer_selection", { ...input, expectedVersions: { "writer.provider": 1, "writer.model": 1, "writer.reasoning_effort": 1, "writer.service_tier": 1 }, selectedBinding: { hostId: "host-server", path: "/srv" } }) as { ok: boolean; values: Record<string, unknown> };
     expect(named.ok).toBe(true);
     expect(named.values).toMatchObject({ "writer.provider": "devin", "writer.model": "swe-2-high", "writer.reasoning_effort": "high" });
-    expect(asked.at(-1)).toBe("host-server");
+    expect(new Set(asked)).toEqual(new Set(["host-laptop", "host-server"]));
     await harness.lifecycle.dispose();
   });
 });

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.1.445
+
+- **A global model pick is judged against every connected machine, not one of them.** The pickers of the role table are BB's own and list one machine's catalog; the save re-checked the pick on a machine Lane Pilot chose, and a thinner catalog there (Devin on the MacBook listing only «Agent default», 2026-10-31) refused what the row offered. On the global level the twelve selection saves (writer, fallbacks, memory, night review, docs, project log, PM reads, onboarding, the critics, the specialist) now check the provider and the model against the merged catalog of all connected machines through one helper; a project or section still checks the machine its runs use. The owner asked that the machine not matter for a global pick.
+
 ## 0.1.444
 
 - **A global model pick is judged on the machine the row showed.** The global role table names one machine's catalog for its pickers: the one offering the most providers and models. The save re-read that catalog with a six-second limit and, when the read did not answer in time, fell back to the first connected machine, whose Devin listed only «Agent default» (the MacBook, 2026-10-30/31): the owner picked SWE-2 in a row that offered it, the hub answered «not in the live catalog», and the row went back to the stored writer (Cursor Grok 4.6, the last accepted pick). A late read now falls back to the last snapshot, so the screen and the save name the same machine. A refused writer pick is logged with its reason (`save_writer_selection refused …`): the page shows it once, the log keeps it.

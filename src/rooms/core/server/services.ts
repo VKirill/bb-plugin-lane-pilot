@@ -167,6 +167,7 @@ export interface Services {
   runWriterPool: WriterStateApi["runWriterPool"];
   saveDocsUnitRecord: DocsNightlyApi["saveDocsUnitRecord"];
   selectionCatalogHost: WriterHostApi["selectionCatalogHost"];
+  selectionCatalog: WriterHostApi["selectionCatalog"];
   spawnDocsThread: DocsNightlyApi["spawnDocsThread"];
   spawnWriterAttempt: WriterSpawnApi["spawnWriterAttempt"];
   isLiveFolder: WriterSpawnApi["isLiveFolder"];
