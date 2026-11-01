@@ -435,8 +435,8 @@ export class IntegrationGateRunner {
     if (exitCode === 0) {
       this.ctx.log(`integration-gate: \`${gateCommand}\` exited 0 but proved nothing, no culprit searched: ${reading.reason}`);
       this.noteRed({ runId, projectId }, this.enterEpisode(runId, gateCommand, ["(no test ran)"]), "gate_no_test",
-        `Integration gate ${label} exited 0 but ran no test (${reading.reason}).`,
-        "That is not a green gate, and no commit is to blame, so no culprit was searched. Fix the gate command or its tests; it runs again on the next merge.");
+        `Проверка после слияния (${label}) завершилась без единого теста: ${reading.reason}.`,
+        "Зелёной её считать нельзя, но и виноватого коммита нет, поэтому никого не искали. Нужно поправить команду проверки или её тесты; проверка повторится при следующем слиянии.");
       return { ran: true, passed: false, culpritTaskId: null };
     }
 
@@ -446,8 +446,8 @@ export class IntegrationGateRunner {
       const evidence = `${stderr}\n${stdout}`.split("\n").find((line) => isEnvironmentCheckFailure({ stderr: line }))?.trim().slice(0, 300) ?? "";
       this.ctx.log(`infra: integration gate \`${gateCommand}\` is red from the environment, no culprit searched: ${evidence}`);
       this.noteRed({ runId, projectId }, this.enterEpisode(runId, gateCommand, ["(environment)"]), "gate_machine",
-        `Integration gate ${label} is red because of the machine, not the code: ${evidence}.`,
-        `No culprit was searched and no fix turn was sent to a writer. The machine needs fixing (file owners or permissions in ${basePath}); the gate runs again on the next merge.`);
+        `Проверка после слияния (${label}) красная из-за машины, а не кода: ${evidence}.`,
+        `Виноватого не искали и исправление никому не отправляли. Нужно починить машину (владельцы файлов или права в ${basePath}); проверка повторится при следующем слиянии.`);
       return { ran: true, passed: false, culpritTaskId: null };
     }
 
@@ -643,11 +643,11 @@ export class IntegrationGateRunner {
         : attribution.strict && attribution.candidates.length === 0
           ? `No task merged in this batch touched the failing tests or their workspaces, so none is to blame.${preexistingNote}`
           : `Could not unambiguously identify culprit.${preexistingNote}`;
-    const timeoutNote = repeatedTimeouts ? " (timed out twice, also on recheck)" : "";
-    const failingList = failingTests.length ? ` Failing tests${timeoutNote}: ${failingTests.map(testLabel).join(", ")}.` : "";
+    const timeoutNote = repeatedTimeouts ? " (дважды не уложились во время, в том числе при перепроверке)" : "";
+    const failingList = failingTests.length ? ` Упавшие тесты${timeoutNote}: ${failingTests.map(testLabel).join(", ")}.` : "";
     const cacheSuffix = cacheNote ? ` ${cacheNote}` : "";
     this.noteRed({ runId, projectId }, this.enterEpisode(runId, gateCommand, failingFiles), "gate_red",
-      `Integration gate ${label} failed (exit ${activeExitCode}).${failingList}`, `${why}${cacheSuffix} Full log: ${logRelativePath}`, logRelativePath);
+      `Проверка после слияния (${label}) не прошла (код ${activeExitCode}).${failingList}`, `${why}${cacheSuffix} Полный лог: ${logRelativePath}`, logRelativePath);
 
     return { ran: true, passed: false, culpritTaskId: null };
   }

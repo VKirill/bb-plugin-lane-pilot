@@ -134,7 +134,7 @@ describe("the integration gate runs on the project's host", () => {
     expect(sent).toEqual([]);
     const row = core.db.prepare("SELECT kind, what FROM lane_pilot_owner_item WHERE key LIKE 'gate-red:run-1:%'").get() as { kind: string; what: string };
     expect(row.kind).toBe("gate_machine");
-    expect(row.what).toContain("because of the machine");
+    expect(row.what).toContain("из-за машины");
     expect(row.what).toContain("EACCES");
     // The merges are still counted: the gate has judged no code yet.
     expect(runner.getPendingMergeCount()).toBe(2);

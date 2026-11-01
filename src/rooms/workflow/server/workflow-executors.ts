@@ -405,8 +405,9 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
       const workflowId = engine.journal.getRun(runId)?.workflow_id ?? "a workflow";
       postOwnerItem(db, {
         key: workflowQuestionKey(runId, stepKey), source: "workflow", kind: "workflow_question", projectId: rt.projectId, wake: true,
-        what: `«${workflowId}» asks: ${base}`,
-        why: `Run ${runId} waits at ${node.id}.${options.length ? ` Options: ${options.map((value) => value.replace(/_/g, " ")).join(" / ")}.` : ""} ${node.timeoutSec ? "If you do not answer, the step's own timeout settles it. " : ""}Answer: bb lane-pilot workflow-answer ${runId} ${stepKey} <${options.length ? "option" : "words"}> [words].`,
+        what: `Процесс «${workflowId}» спрашивает: ${base}`,
+        why: `Процесс стоит, пока нет ответа.${options.length ? ` Варианты: ${options.map((value) => value.replace(/_/g, " ")).join(" / ")}.` : ""}${node.timeoutSec ? " Если не ответить, шаг решит сам, когда выйдет его время." : ""}`,
+        evidence: [{ kind: "run", ref: runId, label: node.id }, { kind: "command", ref: `bb lane-pilot workflow-answer ${runId} ${stepKey} <${options.length ? "option" : "words"}> [words]` }],
         actions: options.map((value) => ({ id: value, label: value.replace(/_/g, " "), cli: `bb lane-pilot workflow-answer ${runId} ${stepKey} ${value}`, rpc: { method: "workflow_answer", input: { runId, stepKey, choice: value } } })),
       });
       openForms.add(key);

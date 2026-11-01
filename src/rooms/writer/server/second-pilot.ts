@@ -229,7 +229,7 @@ export function createSecondPilot(ctx: ServerCore, services: Services, consult: 
     const text = `Lane Pilot: ${row.task_id} waits on the owner. Its writer asked: ${question.slice(0, 400)}\nThe second pilot could not settle it (${grounds.slice(0, 300)}). Answer it in the task's objective and send the task again (the attempt ended uncharged).`;
     if (pmThreadId && await sendPmNotice(bb, pmThreadId, text, now)) return;
     postOwnerItem(db as never, { key:`writer-question:${row.run_id}:${row.task_id}`, source:"writer", kind:"product_decision", projectId:row.project_id, wake:false,
-      what:`${row.task_id}: ${question.slice(0, 400)}`, why:`The writer asked and nobody answered; the second pilot could not settle it (${grounds.slice(0, 300)}). Answer it in the task's objective and send the task again.`,
+      what:`Исполнитель задачи спрашивает: ${question.slice(0, 400)}`, why:`Исполнитель спросил, никто не ответил, и второй пилот не смог решить сам (${grounds.slice(0, 300)}). Ответьте в описании задачи и отправьте её снова.`,
       evidence:[{ kind:"attempt", ref:row.id }, { kind:"task", ref:row.task_id }] });
   }
 

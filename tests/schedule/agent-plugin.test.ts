@@ -101,7 +101,7 @@ describe("a scheduled agent", () => {
     let runs = (await rpc("schedule_runs", { id })).runs as Array<Record<string, any>>;
     expect(runs[0]).toMatchObject({ status: "succeeded", refKind: "workflow_run", refId: expect.stringMatching(/^wfrun_/), output: expect.stringContaining("summary: first look") });
     const items = db.prepare("SELECT source,kind,what,wake FROM lane_pilot_owner_item").all();
-    expect(items).toEqual([{ source: "schedule", kind: "agent_outcome", what: "«SEO positions» (seo-specialist): first look", wake: 0 }]);
+    expect(items).toEqual([{ source: "schedule", kind: "agent_outcome", what: "«SEO positions»: first look", wake: 0 }]);
 
     state.report = OUTCOME("second look: two queries recovered");
     await rpc("schedule_run_now", { id, key: "two" });

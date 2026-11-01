@@ -11,11 +11,11 @@ export type { FinalRule, WorkflowFinish } from "@lane-pilot/workflow-engine";
 
 /** The one message to the PM chat after a failed scheduled run; it says the schedule is paused when this failure paused it. */
 export function scheduleFailureNotice(schedule: Pick<ScheduleRow, "name" | "consecutive_failures">, run: Pick<RunRow, "status" | "error" | "reason">, paused: boolean): string {
-  const what = `Lane Pilot schedule «${schedule.name}» ${run.status === "timed_out" ? "timed out" : "failed"}: ${(run.error ?? run.reason ?? "no detail").slice(0, 300)}`;
+  const what = `Расписание «${schedule.name}» ${run.status === "timed_out" ? "не уложилось во время" : "не сработало"}: ${(run.error ?? run.reason ?? "без подробностей").slice(0, 300)}`;
   const times = schedule.consecutive_failures;
   return paused
-    ? `${what}\nIt failed ${times} times in a row and is paused. Open the schedule board to look at the history and resume it.`
-    : `${what}\nIt failed ${times} time${times === 1 ? "" : "s"} in a row; it keeps running until it has failed too often in a row, then the schedule pauses itself. The history is on the schedule board.`;
+    ? `${what}\nНе сработало ${times} раз подряд и поставлено на паузу. Откройте доску расписаний, чтобы посмотреть историю и возобновить его.`
+    : `${what}\nНе сработало ${times} раз подряд; оно продолжит запускаться, а после слишком многих неудач подряд поставится на паузу само. История на доске расписаний.`;
 }
 
 /**
@@ -133,7 +133,7 @@ export function agentHistoryBlock(runs: ReadonlyArray<Pick<RunRow, "scheduled_at
 }
 
 /** The owner's morning line for a finished agent run (Russian, like the other lines of the list). */
-export function agentOwnerLine(schedule: Pick<ScheduleRow, "id" | "name">, agentId: string, outcome: AgentOutcome, handOver: HandOver = { state: "none", reason: "" }): { what: string; why: string } {
+export function agentOwnerLine(schedule: Pick<ScheduleRow, "id" | "name">, agentId: string, outcome: AgentOutcome, handOver: HandOver = { state: "none", reason: "" }): { what: string; why: string; evidence: Array<{ kind: "command"; ref: string; label: string }> } {
   const code = !outcome.codeChange ? "" : handOver.state === "started" ? `Нужна правка кода: ${outcome.codeChange} Передано Lane Pilot (${handOver.via} ${handOver.id}); агент код не трогает.`
     : handOver.state === "repeat" ? `Нужна та же правка кода, что и в прошлый запуск (уже передана Lane Pilot): ${outcome.codeChange}`
     : `Нужна правка кода (агент её не делает${handOver.reason ? `, Lane Pilot её не взял: ${handOver.reason}` : ""}; передай её в Lane Pilot): ${outcome.codeChange}`;
@@ -141,7 +141,7 @@ export function agentOwnerLine(schedule: Pick<ScheduleRow, "id" | "name">, agent
     outcome.status === "blocked" ? `Агент остановился: ${outcome.blockedReason}.` : outcome.decision && `Решение: ${outcome.decision}`,
     outcome.followUps && `Дальше: ${outcome.followUps}`,
     code,
-    `Расписание ${schedule.id}: bb lane-pilot schedule show ${schedule.id}. Ничего не ждёт тебя.`,
+    "Ничего делать не нужно: это отчёт.",
   ];
-  return { what: `«${schedule.name}» (${agentId}): ${outcome.summary}`, why: parts.filter(Boolean).join(" ") };
+  return { what: `«${schedule.name}»: ${outcome.summary}`, why: parts.filter(Boolean).join(" "), evidence: [{ kind: "command", ref: `bb lane-pilot schedule show ${schedule.id}`, label: agentId }] };
 }

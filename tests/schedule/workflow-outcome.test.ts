@@ -59,10 +59,10 @@ describe("the notice of a failed scheduled run", () => {
   const run = { status: "failed" as const, error: "the chain ended with status «aborted»", reason: "ended_aborted" };
   it("is one message for every failure, and says the schedule is paused when this failure paused it", () => {
     const first = scheduleFailureNotice({ name: "Monthly invoice", consecutive_failures: 1 }, run, false);
-    expect(first).toContain("«Monthly invoice» failed");
-    expect(first).toContain("1 time in a row");
+    expect(first).toContain("«Monthly invoice» не сработало");
+    expect(first).toContain("1 раз подряд");
     expect(first).not.toContain("is paused");
     const last = scheduleFailureNotice({ name: "Monthly invoice", consecutive_failures: 3 }, run, true);
-    expect(last).toContain("3 times in a row and is paused");
+    expect(last).toContain("3 раз подряд и поставлено на паузу");
   });
 });

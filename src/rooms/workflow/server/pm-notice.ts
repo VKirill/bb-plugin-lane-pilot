@@ -105,6 +105,9 @@ export async function maybeNotifyWorkflowRun(input: {
   }
 }
 
+/** A run's end status in the owner's words. */
+const END_RU: Record<string, string> = { failed: "завершился с ошибкой", blocked: "остановился: не хватает ответа или условия", canceled: "отменён", timed_out: "не уложился во время" };
+
 /** The workflows that post their own line to the owner's list when they end well (the scheduled agent's routine). */
 const OWN_REPORT_WORKFLOWS = new Set(["agent-routine"]);
 
@@ -115,14 +118,19 @@ const OWN_REPORT_WORKFLOWS = new Set(["agent-routine"]);
 export function reportEndToOwner(db: LanePilotDatabase, run: RunRow, scheduled: boolean, unmetGoalIds?: string[]): boolean {
   if (!isNoticeStatus(run.status) || run.parent_run_id || !run.project_id || run.link_run_id) return false;
   if (run.workflow_id === LP_TASK_PIPELINE || UPKEEP_WORKFLOWS.has(run.workflow_id) || run.idem_key?.startsWith("lp-task:") || run.idem_key?.startsWith("phase:")) return false;
+  // The machine's own graphs started by its crons (the night loop's lp.* graphs, the lead's tick) have no owner behind them: their end is a fact of the
+  // log and the wall, and the lead reads their failures every tick (0.1.456: 22 such lines sat on the owner's list). A scheduled run that delivers a report is his.
+  if (!scheduled && (run.workflow_id.startsWith("lp.") || run.workflow_id === "lead-tick")) return false;
   const delivered = run.status === "succeeded" ? deliverable(run.output_json ?? null) : null;
   if (scheduled && !delivered) return false;
   if (run.status === "succeeded" && (OWN_REPORT_WORKFLOWS.has(run.workflow_id) || !delivered)) return false;
   const failed = run.status !== "succeeded";
-  const why = delivered ?? workflowEndedText({ workflowRunId: run.id, workflowId: run.workflow_id, status: run.status, reason: run.reason, unmetGoalIds: run.status === "blocked" ? unmetGoalIds : undefined });
+  const unmet = run.status === "blocked" && unmetGoalIds?.length ? ` Не выполнены цели: ${unmetGoalIds.join(", ")}.` : "";
+  const why = delivered ?? `${run.reason ? `Причина: ${run.reason}.` : "Причина не записана."}${unmet}`;
   return postOwnerItem(db, {
     key: `workflow-end:${run.id}:${run.status}`, source: "workflow", kind: `workflow_${run.status}`, projectId: run.project_id, wake: failed,
-    what: `«${run.workflow_id}» (run ${run.id}) ${failed ? `is ${run.status}` : "finished"}`, why,
+    what: `Процесс «${run.workflow_id}» ${failed ? END_RU[run.status] ?? `закончился со статусом ${run.status}` : "завершился"}`, why,
+    evidence: [{ kind: "run", ref: run.id, label: "запуск сценария" }],
   }).created;
 }
 

@@ -143,14 +143,14 @@ describe("a failed scheduled run", () => {
     await tick();
     await tick();
     expect(sent.filter((row) => row.threadId === "thr_pm")).toHaveLength(1);
-    expect(sent[0]!.text).toContain("«Sync keys» failed");
-    expect(sent[0]!.text).toContain("1 time in a row");
+    expect(sent[0]!.text).toContain("«Sync keys» не сработало");
+    expect(sent[0]!.text).toContain("1 раз подряд");
     expect(sent[0]!.text).not.toContain("is paused");
     await rpc("schedule_run_now", { id: made.id, key: "two" });
     await tick();
     await tick();
     expect(sent).toHaveLength(2);
-    expect(sent[1]!.text).toContain("2 times in a row and is paused");
+    expect(sent[1]!.text).toContain("2 раз подряд и поставлено на паузу");
   });
 });
 

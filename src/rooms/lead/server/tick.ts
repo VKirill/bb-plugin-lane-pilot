@@ -136,6 +136,7 @@ export function tickBrief(snapshot: HubSnapshot, identityText: string): string {
       "Do this, in order:",
       "1. Update the road tree in your head: which directions each project is on, which open branches still hold, which are done or stale.",
       `2. Pick at most ${settings.maxProposals} proposals for the owner's morning list, fewer when the evidence is thin. A proposal is one branch of the tree to act on NOW: title (one line, Russian), class (one of ${LEAD_CLASSES.join(", ")}), risk (low|medium|high), why (two or three sentences with the reason), evidence (at least one artifact: {kind: run|task|file|note|url|metric, ref, label?} — a run id, a task id, a file path, a metric with its value, a link), cost_estimate (hours or dollars, one phrase), project_id (null for above projects), and road_id when it is an existing open branch of the tree, else parent_id of the direction it belongs under (or none).`,
+      "Write title and why for a person without a technical background: what is happening, why it matters to him, what you propose and what it costs. No ids, no English words, no internal names (tick, branch, class, road) in the text: ids belong in evidence only.",
       "A proposal of class schedule also carries schedule: {name, description?, task, when: {type: cron, cron: five fields, timezone?}} where task is {kind: workflow, workflowId, inputs?} or {kind: errand, task: the instruction, title?} or {kind: agent, agentId, task}; on «да» (or when the class is open) it is created in the project's schedule board exactly as written, so write it complete. A script is a host job: never propose one.",
       "3. New directions or options worth keeping in the tree but not proposing today go into branches: {parent_id?, project_id?, title, kind: direction|option, why}.",
       "4. In deferred write what you looked at and left alone, and why, in a few lines. In summary write two or three sentences for the receipt.",
@@ -214,8 +215,8 @@ export function registerLeadTickActions(engine: WorkflowEngine, ctx: ServerCore,
           const cli = (decision: ProposalDecision) => `bb lane-pilot lead decide ${row!.id} ${decision}`;
           postOwnerItem(db, {
             key: proposalItemKey(row.id), source: "lead", kind: "proposal", projectId, wake: false,
-            what: row.title, why: `${clip(proposal.why!, 600)} Цена: ${proposal.cost_estimate}. Класс ${proposal.class}${risk ? `, риск ${risk}` : ""}; ветка ${row.id}, тик ${tickId}.`,
-            evidence: ownerEvidence(proposal.evidence ?? []),
+            what: row.title, why: `${clip(proposal.why!, 600)} Примерная цена: ${proposal.cost_estimate}.`,
+            evidence: [...ownerEvidence(proposal.evidence ?? []), { kind: "note", ref: `${row.id} · ${tickId}`, label: `класс ${proposal.class}${risk ? `, риск ${risk}` : ""}` }],
             actions: [
               { id: "yes", label: "Да", cli: cli("yes"), rpc: { method: "lead_decide", input: { roadId: row.id, decision: "yes" } } },
               { id: "later", label: "Потом", cli: cli("later"), rpc: { method: "lead_decide", input: { roadId: row.id, decision: "later" } } },
@@ -255,8 +256,9 @@ export function registerLeadTickActions(engine: WorkflowEngine, ctx: ServerCore,
             answerDecision(db, item.decisionId, { option: "yes", text: `acted by the lead: schedule ${made.id}` }, "lead", now);
             decideRoad(db, item.roadId, "yes", `acted by the lead: schedule ${made.id}`, now);
             closeOwnerItem(db, proposalItemKey(item.roadId), "lead", now);
-            postOwnerItem(db, { key: `lead-acted:${item.roadId}`, source: "lead", kind: "acted", projectId: item.projectId, wake: false, what: `Штурман завёл расписание: ${made.name}`,
-              why: `Класс schedule открыт экзаменом; расписание ${made.id} создано в доске проекта. Ветка ${item.roadId}, тик ${tickId}; снять его можно на доске расписаний.`, evidence: [{ kind: "text", ref: made.id, label: "schedule" }] }, now);
+            postOwnerItem(db, { key: `lead-acted:${item.roadId}`, source: "lead", kind: "acted", projectId: item.projectId, wake: false, what: `Штурман сам поставил в расписание: ${made.name}`,
+              why: "Такие решения он уже сдал на экзамене, поэтому не ждал вашего ответа. Снять или поставить на паузу можно на доске расписаний проекта.",
+              evidence: [{ kind: "text", ref: made.id, label: "schedule" }, { kind: "note", ref: `${item.roadId} · ${tickId}`, label: "ветка · обход" }] }, now);
             acted.push({ roadId: item.roadId, via: "schedule", id: made.id });
             continue;
           }
@@ -270,8 +272,9 @@ export function registerLeadTickActions(engine: WorkflowEngine, ctx: ServerCore,
           answerDecision(db, item.decisionId, { option: "yes", text: `acted by the lead: ${started.via} ${started.id}` }, "lead", now);
           decideRoad(db, item.roadId, "yes", `acted by the lead: ${started.via} ${started.id}`, now);
           closeOwnerItem(db, proposalItemKey(item.roadId), "lead", now);
-          postOwnerItem(db, { key: `lead-acted:${item.roadId}`, source: "lead", kind: "acted", projectId: item.projectId, wake: false, what: `Штурман открыл: ${item.title}`,
-            why: `Класс ${item.class} открыт экзаменом; работа пошла через ${started.via} ${started.id}. Ветка ${item.roadId}, тик ${tickId}.`, evidence: [{ kind: "text", ref: started.id, label: started.via }] }, now);
+          postOwnerItem(db, { key: `lead-acted:${item.roadId}`, source: "lead", kind: "acted", projectId: item.projectId, wake: false, what: `Штурман сам запустил: ${item.title}`,
+            why: "Такие решения он уже сдал на экзамене, поэтому не ждал вашего ответа. Работа пошла в проекте.",
+            evidence: [{ kind: "text", ref: started.id, label: started.via }, { kind: "note", ref: `${item.roadId} · ${tickId}`, label: "ветка · обход" }] }, now);
           acted.push({ roadId: item.roadId, via: started.via, id: started.id });
         } catch (cause) { deferred.push({ roadId: item.roadId, reason: `hand-over failed: ${cause instanceof Error ? cause.message : String(cause)}`.slice(0, 200) }); }
       }
@@ -304,9 +307,9 @@ export function registerLeadTickActions(engine: WorkflowEngine, ctx: ServerCore,
       if (status !== "ok" && status !== "off") {
         try {
           postOwnerItem(db, { key: `lead-tick:${tickId}`, source: "lead", kind: `tick_${status}`, projectId: null, wake: false,
-            what: status === "budget" ? `Тик Штурмана ${tickId} не пошёл: дневной бюджет исчерпан` : status === "error" ? `Тик Штурмана ${tickId} заблокирован` : `Тик Штурмана ${tickId} без квитанции`,
-            why: status === "budget" ? `Потрачено сегодня больше lead.budget_daily_usd; поднимите потолок или дождитесь завтра.` : status === "error" ? clip(text(maybe("think.blocked_reason")) || "the agent reported blocked", 600) : "The agent step left no summary; see the workflow run.",
-            evidence: [{ kind: "text", ref: c.runId, label: "workflow run" }] }, now);
+            what: status === "budget" ? "Штурман пропустил обход: дневной бюджет исчерпан" : status === "error" ? "Обход Штурмана прервался" : "Обход Штурмана не прислал отчёт",
+            why: status === "budget" ? "Сегодня потрачено больше дневного лимита (настройка lead.budget_daily_usd). Поднимите лимит или дождитесь завтра." : status === "error" ? clip(text(maybe("think.blocked_reason")) || "агент сообщил, что не может продолжить", 600) : "Шаг агента не оставил сводки; подробности в запуске сценария.",
+            evidence: [{ kind: "text", ref: c.runId, label: "workflow run" }, { kind: "note", ref: tickId, label: "обход" }] }, now);
         } catch { /* informational */ }
       }
       const report = [summary, proposed ? `Предложений: ${proposed}` : "", acted ? `Открыто самим Штурманом: ${acted}` : "", deferred.dropped.length ? `Отброшено кодом: ${deferred.dropped.length}` : ""].filter(Boolean).join("\n");

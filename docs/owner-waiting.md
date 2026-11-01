@@ -46,7 +46,7 @@ SMA D0-3 («Waiting for you» card, «one wait, one message»). The night policy
 | `learning` | `lane_pilot_learning_item` in state `pending_owner` — learned items from his own messages (`items.ts:66-75`) | no | `bb lane-pilot learning accept\|reject <id>` |
 | `writer` | a writer's question to a human that went unanswered for `writer.question_wait_min` (default two hours): with `writer.auto_return` on, the second pilot could not answer or narrow it and the PM chat was cold (`src/rooms/writer/server/second-pilot.ts`, no wake); with it off, a product question (`src/rooms/writer/server/question-timeout.ts`, wake) | by the row's `wake` | answer in the task's objective and send the task again |
 | `phase` | owner-word turns of a running phase (`src/rooms/phase/server/driver.ts:378`, `:1032`) | by the row's `wake` | the row's own `actions` |
-| `workflow` | the end of a run that has no PM chat to tell (`src/rooms/workflow/server/pm-notice.ts:106-124`) | on failure | the row's own `actions` |
+| `workflow` | the end of a run that has no PM chat to tell, unless it is the machine's own (an `lp.*` graph or `lead-tick` no schedule started: their end is the log's and the wall's, since 0.1.456) or a scheduled run without a report (`src/rooms/workflow/server/pm-notice.ts:111-130`) | on failure | the row's own `actions` |
 | `integration-gate` | a red integration gate no merged task is to blame for (pre-existing failures, the machine, a gate that ran no test), one row per red episode (`src/rooms/verification/server/integration-gate.ts:661`) | no | read the log the row names; fix the tests or the gate command |
 | `run-goal` | a done run whose accepted tasks are red together on main (`src/rooms/run-goal/server/run-goal.ts:34`) | no | a fix task, or `bb lane-pilot return` |
 | `wall` | a wall class that ran out of moves (`src/rooms/wall/service.ts:232`) | no | the row's own `actions` |
@@ -59,6 +59,17 @@ Beside the list the screen shows **what went red overnight** (attempt states of 
 ## The item shape (the contract with the posters)
 
 `OwnerItem` is the stable shape: `key` (stable, a repeat is the same waiting), `source`, `kind`, `projectId`, `what`, `why` it is the owner's, `since`, `wake`, `evidence[]` (`{kind: attempt|task|run|file|note|message|command|text, ref, label?}`) and `actions[]` (`{id, label, cli, rpc?, needsOwnerMessage?, hint?}`; with `rpc` the screen draws a button, without it the command is shown to copy). The night loop writes rows with `postOwnerItem` (or `bb lane-pilot waiting post '<json>'`) and closes them with `closeOwnerItem` (`waiting close <key> --by …`); the screen, the daily line and the Telegram digest pick them up with no further code (`items.ts:104-113`, `:115`). The text of built-in items is Russian (the owner's language); the screen chrome has EN and RU.
+
+## The words (since 0.1.456)
+
+The screen is read by a person who does not program (the owner, 2026-11-01: «ни слова не понял»). Every row answers four questions in plain
+Russian, addressed as «вы» like the rest of the UI: what happened (`what`: one sentence, no ids, no English), why it is his (`why`), what to do
+(buttons when the plugin has the RPC, else one plain instruction), and the technical part for a developer folded under «Подробности»: when it
+appeared, the key, where to look (`evidence`, kinds said in words) and the commands. The ids of runs, ticks, branches, tasks and threads go into
+`evidence`, never into `what`; `tests/owner-waiting/plain-words.test.ts` scans every `postOwnerItem` call for an id in the title. The sections
+name every source in words (`SECTIONS` in `src/rooms/owner-waiting/ui/owner-waiting-board.tsx`), an attempt's state code is said in words
+(`stateLabel`), and the lead's brief asks for proposals written for a person without a technical background
+(`src/rooms/lead/server/tick.ts`). The gate's `why` keeps its technical analysis (the failing tests, the culprit) after a Russian title.
 
 ## Telegram
 

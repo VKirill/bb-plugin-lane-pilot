@@ -305,10 +305,11 @@ export function createWall(deps: WallDeps) {
     const verdicts = ((done.findings as { findings?: CheckedFinding[] } | null)?.findings ?? []).filter((row) => row.verdict !== "unknown").map((row) => `${row.angle}: ${row.verdict} -> ${row.action}`);
     const ran = Boolean(done.findings);
     postOwnerItem(db, { key: `wall:${key}`, source: "wall", kind: "loop_exhausted", projectId: projectId || null, wake: false,
-      what: `Машина закончила петлю: ${subject.slice(0, 240)}`,
+      what: `Система остановилась и отложила работу: ${subject.slice(0, 240)}`,
       why: [(done.pack as EvidencePack | null)?.meta?.done, why.slice(0, 160) + ".",
-        ran ? (verdicts.length ? `Охотники (три угла): ${verdicts.join("; ")}.` : "Охотники не нашли ничего, что держится на цитатах.") : "Охотники не запускались.",
-        `Разбор и предложенный шаг в беклоге: ${id}, bb lane-pilot wall show ${key}. Ничего не ждёт тебя; решай, только если нужен другой объём.`].filter(Boolean).join(" ") }, now);
+        ran ? (verdicts.length ? `Три независимых проверяющих: ${verdicts.join("; ")}.` : "Проверяющие не нашли ничего, что подтверждается цитатами.") : "Проверяющие не запускались.",
+        "Ничего делать не нужно: разбор и предложенный следующий шаг сохранены для того, кто возьмёт эту работу. Вмешайтесь, только если нужен другой объём."].filter(Boolean).join(" "),
+      evidence: [{ kind: "command", ref: `bb lane-pilot wall show ${key}` }, { kind: "note", ref: id, label: "backlog" }] }, now);
     log(`wall: ${subject} went to the backlog (${why}) as ${id}`);
     return id;
   }

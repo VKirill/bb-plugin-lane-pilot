@@ -47,14 +47,16 @@ describe("the «Waiting for you» screen", () => {
     await waitFor(() => expect(slot.getByTestId("owner-count").textContent).toBe("4"));
     const overdue = slot.getByTestId("owner-item-deferral:dfr_b");
     expect(overdue.textContent).toContain("Gate X is put off");
-    expect(overdue.textContent).toContain("Why it is yours");
+    expect(overdue.textContent).toContain("Why this is for you");
     expect(overdue.textContent).toContain("bb lane-pilot deferrals --state overdue");
     expect(slot.getByTestId("owner-command-deferral:dfr_b-term").textContent).toContain("--owner-msg <threadId>#<seq>");
     expect(slot.getByTestId("owner-command-deferral:dfr_b-term").textContent).toContain("needs a message of your own");
     expect(overdue.querySelector("button[data-testid^='owner-run-']")).toBeNull();
-    expect(slot.getByTestId("owner-red").textContent).toContain("validation_failed 2");
+    expect(slot.getByTestId("owner-red").textContent).toContain("validation failed 2");
     expect(slot.getByTestId("owner-overnight").textContent).toContain("attempt: 11111111");
-    expect(slot.getByTestId("owner-accepted").textContent).toContain("Accepted: 4 attempts, rules on trial 1, confirmed 0");
+    expect(slot.getByTestId("owner-accepted").textContent).toContain("Accepted: 4 tasks. New rules on trial: 1, confirmed: 0.");
+    // The technical part of a card (where to look, the commands) is folded under «Details» and rendered closed.
+    expect(slot.getByTestId("owner-details-deferral:dfr_b").closest("details")?.hasAttribute("open")).toBe(false);
     // Deferrals without a term are folded and counted.
     expect(slot.getByTestId("owner-section-deferral_term").textContent).toContain("Deferrals without a term");
     expect(slot.getByTestId("owner-section-deferral_term").querySelector("details")?.hasAttribute("open")).toBe(false);

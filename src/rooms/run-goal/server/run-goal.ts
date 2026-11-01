@@ -32,7 +32,7 @@ export function createRunGoal(ctx: ServerCore, services: Services) {
     saveRunGoal(db, record);
     if (verdict.state === "failed") {
       postOwnerItem(db as never, { key: `run-goal:${runId}`, source: "run-goal", kind: "goal_failed", projectId: run.project_id, wake: false,
-        what: `Run ${runId}: ${verdict.red.length} check(s) red together on main`, why: goalFailedText(runId, verdict.red), evidence: [{ kind: "run", ref: runId }] });
+        what: `После слияния всех задач в main упало проверок: ${verdict.red.length}`, why: goalFailedText(runId, verdict.red), evidence: [{ kind: "run", ref: runId }] });
     }
     // A partial or inconclusive verdict is not a pass either; the log and the verdict say what did not run.
     ctx.log(`run-goal: ${runId} ${verdict.state}${verdict.red.length ? ` (${verdict.red.length} red)` : ""}${verdict.detail ? `: ${verdict.detail}` : ""}`);

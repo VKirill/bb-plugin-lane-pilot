@@ -739,7 +739,7 @@ AssertionError: expected 1 to be 2
         "npx vitest run tests/timeout.test.ts",
       ]);
       expect(sentMessages.find((m) => m.threadId === "pm-thread-999")).toBeUndefined();
-      expect(ownerRow().what).toContain("timed out twice, also on recheck");
+      expect(ownerRow().what).toContain("дважды не уложились во время");
     });
 
     // Astra's recheck of 0.1.336 (P1): exit 0 alone is not a pass for the gate or for its recheck.
@@ -772,7 +772,7 @@ AssertionError: expected 1 to be 2
       expect(await run()).toMatchObject({ ran: true, passed: false, culpritTaskId: null });
       expect(gateRuns).toEqual(["npx vitest run"]);
       expect(sentMessages.find((m) => m.threadId === "pm-thread-999")).toBeUndefined();
-      expect(ownerRow().what).toContain("ran no test");
+      expect(ownerRow().what).toContain("без единого теста");
       const events = db.prepare(`SELECT status FROM lane_pilot_gate_event WHERE run_id='run-1' AND gate='verification'`).all() as { status: string }[];
       expect(events.map((e) => e.status)).toEqual(["failed"]);
     });
@@ -788,7 +788,7 @@ AssertionError: expected 1 to be 2
       expect(await run()).toMatchObject({ ran: true, passed: false, culpritTaskId: null });
       expect(gateRuns).toEqual(["npx vitest run", "npx vitest run tests/timeout.test.ts"]);
       expect(sentMessages.find((m) => m.threadId === "pm-thread-999")).toBeUndefined();
-      expect(ownerRow().what).toContain("timed out twice, also on recheck");
+      expect(ownerRow().what).toContain("дважды не уложились во время");
     });
 
     it("a recheck that exits 0 with every test skipped is not a green either", async () => {

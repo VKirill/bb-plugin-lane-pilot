@@ -47,7 +47,7 @@ export function createWriterQuestionTimeout(ctx: ServerCore, services: Services,
   async function leaveToOwner(row: ReturnType<typeof listUnansweredWriterQuestions>[number]): Promise<void> {
     const question = writerQuestion(row.reason).slice(0, 400);
     postOwnerItem(db as never, { key: `writer-question:${row.run_id}:${row.task_id}`, source: "writer", kind: "product_decision", projectId: row.project_id, wake: true,
-      what: `${row.task_id}: ${question}`, why: "A writer asked a product decision and nobody answered within the wait; the machine does not decide it by default. Answer it in the task's objective and send the task again.",
+      what: `Исполнитель задачи спрашивает: ${question}`, why: "Это решение о продукте: машина его сама не принимает, а за отведённое время никто не ответил. Ответьте в описании задачи и отправьте её снова.",
       evidence: [{ kind: "attempt", ref: row.id }, { kind: "task", ref: row.task_id }] });
     await end(row, "product decision, left to the owner", question);
   }

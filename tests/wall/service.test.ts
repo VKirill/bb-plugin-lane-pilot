@@ -273,7 +273,7 @@ describe("the loop guard on a class: two rounds, the hunt, one informed round, t
     // One line on the morning list for the class the machine ended: informational (no wake), with where the analysis is; nothing waits for the owner.
     const items = h.db.prepare("SELECT key, source, kind, what, why, wake FROM lane_pilot_owner_item").all() as Array<{ key: string; source: string; kind: string; what: string; why: string; wake: number }>;
     expect(items).toEqual([expect.objectContaining({ key: `wall:class:${KEY}`, source: "wall", kind: "loop_exhausted", wake: 0 })]);
-    expect(items[0]!.why).toMatch(/wall show class:.*Ничего не ждёт тебя/s);
+    expect(items[0]!.why).toMatch(/Ничего делать не нужно/);
     // A fifth night picks nothing for it: the backlog keeps it with its analysis.
     flood(4);
     const fifth = await wall.runNight({ now: T(4) });

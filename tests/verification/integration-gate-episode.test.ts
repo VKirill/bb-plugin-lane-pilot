@@ -74,7 +74,7 @@ describe("a red gate never asks the owner and never messages the PM; one owner r
     expect(toPm()).toEqual([]);
     expect(rows()).toHaveLength(1);
     expect(rows()[0]!.what).toContain("tests/a.test.ts");
-    expect(rows()[0]!.why).toContain("Full log:");
+    expect(rows()[0]!.why).toContain("Полный лог:");
 
     await redGate();
     await redGate();

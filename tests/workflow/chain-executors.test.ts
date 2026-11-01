@@ -1064,7 +1064,7 @@ describe("a run in a project that has no PM chat", () => {
     expect(t.harness.pendingInteractions).toEqual([]);
     const [item] = items();
     expect(item).toMatchObject({ source: "workflow", kind: "workflow_question", project_id: PROJECT, wake: 1, state: "open", what: expect.stringContaining("Ship it?") });
-    expect(item!.why).toContain("bb lane-pilot workflow-answer");
+    expect(item!.why).toContain("Процесс стоит");
     const actions = JSON.parse(item!.actions_json) as Array<{ id: string; rpc: { method: string; input: Record<string, unknown> } }>;
     expect(actions.map((action) => action.id)).toEqual(["go", "fix"]);
     expect(actions[0]!.rpc).toMatchObject({ method: "workflow_answer", input: { runId: started.runId, choice: "go" } });
@@ -1085,5 +1085,11 @@ describe("a run in a project that has no PM chat", () => {
     expect(reportEndToOwner(t.db, run, false)).toBe(true);
     expect(t.db.prepare("SELECT source, kind, wake, project_id FROM lane_pilot_owner_item WHERE key LIKE 'workflow-end:%'").all()).toEqual([{ source: "workflow", kind: `workflow_${(run as { status: string }).status}`, wake: 1, project_id: PROJECT }]);
     expect(reportEndToOwner(t.db, run, false)).toBe(false);
+    // The machine's own graphs (the night loop's lp.* graphs, the lead's tick) started by a cron tell the owner nothing; a scheduled run that delivers a report still does.
+    const own = run as { id: string; workflow_id: string; status: string; output_json: string | null };
+    expect(reportEndToOwner(t.db, { ...own, id: `${own.id}-scan`, workflow_id: "lp.rules-scan" } as never, false)).toBe(false);
+    expect(reportEndToOwner(t.db, { ...own, id: `${own.id}-tick`, workflow_id: "lead-tick", status: "succeeded", output_json: JSON.stringify({ report: "4 proposals" }) } as never, false)).toBe(false);
+    expect(reportEndToOwner(t.db, { ...own, id: `${own.id}-sched`, workflow_id: "lp.analyze", status: "succeeded", output_json: JSON.stringify({ report_md: "the weekly report" }) } as never, true)).toBe(true);
+    expect(t.db.prepare("SELECT COUNT(*) AS n FROM lane_pilot_owner_item WHERE key LIKE 'workflow-end:%'").get()).toEqual({ n: 2 });
   });
 });

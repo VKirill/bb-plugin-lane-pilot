@@ -15,13 +15,13 @@ export async function recordStartGap(ctx: Pick<ServerCore, "bb" | "db" | "log">,
   const stop = await kv.get(STOP_KEY).catch(() => null) as { reason?: string; at?: number } | null;
   const outage = gapOutage(typeof last === "number" ? last : null, now);
   if (outage) {
-    const cause = stop?.reason && typeof stop.at === "number" && Math.abs(stop.at - outage.fromAt) < 10 * 60_000 ? stop.reason : "died without a word: a crash, a hang or the machine went down";
+    const cause = stop?.reason && typeof stop.at === "number" && Math.abs(stop.at - outage.fromAt) < 10 * 60_000 ? stop.reason : "остановился без предупреждения: сбой, зависание или машина выключилась";
     insertOutage(ctx.db, outage, cause, now);
     ctx.log(`outage: Lane Pilot was not running for ${outage.minutes} min (last beat ${new Date(outage.fromAt).toISOString()}): ${cause}`);
     // The risen daemon speaks: one row for the owner (the Telegram digest carries it), not a wake-up in the night.
     try {
       postOwnerItem(ctx.db as never, { key: `outage:${outage.fromAt}`, source: "outage", kind: "outage", wake: false,
-        what: `Lane Pilot was down ${outage.minutes} min (${new Date(outage.fromAt).toISOString().slice(0, 16)}–${new Date(outage.toAt).toISOString().slice(11, 16)} UTC)`, why: cause });
+        what: `Lane Pilot не работал ${outage.minutes} мин (${new Date(outage.fromAt).toISOString().slice(0, 16).replace("T", " ")}–${new Date(outage.toAt).toISOString().slice(11, 16)} UTC)`, why: cause });
     } catch { /* the owner-waiting table may not exist in a test database */ }
   }
   await kv.set(BEAT_KEY, now as never).catch(() => undefined);

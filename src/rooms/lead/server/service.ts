@@ -109,7 +109,7 @@ export function createLeadService(ctx: ServerCore, services: Services) {
       if (!run || (run.status !== "failed" && run.status !== "canceled")) continue;
       closeTick(db, tick.id, "error", now);
       closed.push(tick.id);
-      try { postOwnerItem(db, { key: `lead-tick:${tick.id}`, source: "lead", kind: "tick_error", projectId: null, wake: false, what: `Тик Штурмана ${tick.id} не дошёл до квитанции`, why: `The workflow run ${run.status}${run.failedNode ? ` at ${run.failedNode}` : ""}: ${(run.error ?? run.reason ?? "no reason recorded").slice(0, 300)}`, evidence: [{ kind: "text", ref: tick.wf_run_id, label: "workflow run" }] }, now); } catch { /* informational */ }
+      try { postOwnerItem(db, { key: `lead-tick:${tick.id}`, source: "lead", kind: "tick_error", projectId: null, wake: false, what: "Обход Штурмана прервался", why: `Запуск сценария ${run.status}${run.failedNode ? ` на шаге ${run.failedNode}` : ""}: ${(run.error ?? run.reason ?? "причина не записана").slice(0, 300)}`, evidence: [{ kind: "text", ref: tick.wf_run_id, label: "workflow run" }] }, now); } catch { /* informational */ }
     }
     return closed;
   }
@@ -121,7 +121,7 @@ export function createLeadService(ctx: ServerCore, services: Services) {
     const stale = [...failed, ...sweepStaleTicks(db, STALE_TICK_MS, now)];
     for (const id of stale) {
       if (failed.includes(id)) continue;
-      try { postOwnerItem(db, { key: `lead-tick:${id}`, source: "lead", kind: "tick_no_receipt", projectId: null, wake: false, what: `Тик Штурмана ${id} без квитанции`, why: "The tick started more than 90 minutes ago and never closed its receipt; see the workflow run.", evidence: [{ kind: "text", ref: getTick(db, id)?.wf_run_id ?? id, label: "workflow run" }] }, now); } catch { /* informational */ }
+      try { postOwnerItem(db, { key: `lead-tick:${id}`, source: "lead", kind: "tick_no_receipt", projectId: null, wake: false, what: "Обход Штурмана завис", why: "Он начался больше полутора часов назад и не закрыл свой отчёт; подробности в запуске сценария.", evidence: [{ kind: "text", ref: getTick(db, id)?.wf_run_id ?? id, label: "workflow run" }] }, now); } catch { /* informational */ }
     }
     let started: string | null = null;
     if (settings().enabled && due(now)) { const result = await runTick("cron", now); started = result.ok ? result.tickId : null; }
@@ -141,8 +141,8 @@ export function createLeadService(ctx: ServerCore, services: Services) {
     for (const change of changes) {
       try {
         postOwnerItem(db, { key: `lead-right:${change.class}:${now}`, source: "lead", kind: "right_changed", projectId: null, wake: false,
-          what: change.to === "decides" ? `Штурман получил право решать в классе ${change.class}` : `Штурман потерял право решать в классе ${change.class}`,
-          why: change.to === "decides" ? "The nightly exam over the decision journal met every rule (Wilson LB ≥ 0.8, coverage ≥ 0.5, N ≥ 20, kappa ≥ 0.6, no high-risk miss)." : `The exam: ${change.reasons.join("; ") || "the recent window degraded"}.`,
+          what: change.to === "decides" ? `Штурман получил право решать сам: ${classRu(change.class)}` : `Штурман потерял право решать сам: ${classRu(change.class)}`,
+          why: change.to === "decides" ? "Ночной экзамен: его прогнозы достаточно часто совпадали с вашими ответами, по всем правилам экзамена. Теперь такие решения он принимает без вас; каждое вы увидите здесь." : `Экзамен: ${change.reasons.join("; ") || "последние решения стали хуже"}. Такие решения снова ждут вашего ответа.`,
           evidence: [{ kind: "command", ref: "bb lane-pilot lead exam" }] }, now);
       } catch { /* informational */ }
     }
@@ -204,7 +204,7 @@ export function createLeadService(ctx: ServerCore, services: Services) {
   async function handOverAccepted(row: RoadRow, by: string, now: number): Promise<Handover> {
     const blocked = (reason: string): Handover => {
       postOwnerItem(db, { key: `lead-handover-blocked:${row.id}`, source: "lead", kind: "handover_blocked", projectId: row.project_id, wake: false,
-        what: `«Да» принято, но работа не пошла: ${row.title}`, why: `${reason}. Ветка ${row.id} остаётся принятой; откройте PM проекта или заведите вручную.`, evidence: [{ kind: "text", ref: row.id, label: "road" }] }, now);
+        what: `Вы ответили «да», но работа не началась: ${row.title}`, why: `${reason}. Откройте чат проекта или заведите задачу вручную.`, evidence: [{ kind: "text", ref: row.id, label: "road" }] }, now);
       return { state: "blocked", reason };
     };
     const via = actsVia(row.class ?? "");
@@ -215,22 +215,22 @@ export function createLeadService(ctx: ServerCore, services: Services) {
       const made = await createLeadSchedule(services, { projectId: row.project_id, payload: roadPayload(row), roadId: row.id, by: `lead:${by}`, why: row.why });
       if (!made.ok) return blocked(made.reason);
       postOwnerItem(db, { key: `lead-handed:${row.id}`, source: "lead", kind: "handed", projectId: row.project_id, wake: false,
-        what: `«Да» пошло в работу: ${row.title}`, why: `Расписание «${made.name}» (${made.id}) создано в доске проекта по ветке ${row.id}; снять или поставить на паузу можно там.`, evidence: [{ kind: "text", ref: made.id, label: "schedule" }] }, now);
+        what: `Ваше «да» пошло в работу: ${row.title}`, why: `Создано расписание «${made.name}» на доске проекта; там его можно снять или поставить на паузу.`, evidence: [{ kind: "text", ref: made.id, label: "schedule" }, { kind: "note", ref: row.id, label: "ветка" }] }, now);
       return { state: "started", via: "schedule", id: made.id };
     }
     try {
       const pm = await services.workflowTriggers.pmOf(row.project_id);
-      if (!pm) return blocked("the project has no open PM chat");
+      if (!pm) return blocked("в проекте нет открытого чата Lane Pilot");
       const started = await services.phaseIntake.handOver({
         projectId: row.project_id, pmThreadId: pm.pmThreadId, runId: pm.runId, text: `${row.title}\n\n${row.why}`, key: `lead:${row.id}`,
         origin: `Accepted by the owner («да», by: ${by}) on the lead's («Штурман») proposal: road tree branch ${row.id}, class ${row.class ?? "?"}.`,
       });
       if (!started.started) return blocked(started.reason);
       postOwnerItem(db, { key: `lead-handed:${row.id}`, source: "lead", kind: "handed", projectId: row.project_id, wake: false,
-        what: `«Да» пошло в работу: ${row.title}`, why: `Ветка ${row.id} передана в проект через ${started.via} ${started.id}.`, evidence: [{ kind: "text", ref: started.id, label: started.via }] }, now);
+        what: `Ваше «да» пошло в работу: ${row.title}`, why: "Передано в проект, работа началась.", evidence: [{ kind: "text", ref: started.id, label: started.via }, { kind: "note", ref: row.id, label: "ветка" }] }, now);
       return { state: "started", via: started.via, id: started.id };
     } catch (cause) {
-      return blocked(`hand-over failed: ${cause instanceof Error ? cause.message : String(cause)}`.slice(0, 200));
+      return blocked(`передача не удалась: ${cause instanceof Error ? cause.message : String(cause)}`.slice(0, 200));
     }
   }
 
@@ -263,8 +263,8 @@ export function createLeadService(ctx: ServerCore, services: Services) {
     };
     const { created } = postOwnerItem(db, {
       key: `lead-labels:${week}`, source: "lead", kind: "labels", projectId: null, wake: false,
-      what: `Разметьте ${rows.length} решений Штурмана: совпал ли его прогноз с вашим ответом`,
-      why: `Ваша метка (exact / partial / miss) — мера судьи: класс открывается только при каппе ≥ 0.6 между судьёй и вами. Блок «Разметка» на экране Self-improvement или \`bb lane-pilot lead label <id> exact|partial|miss\`. Например: ${rows.slice(0, 3).map(line).join("; ")}.`,
+      what: `Оцените ${rows.length} решений Штурмана: угадал ли он ваш ответ`,
+      why: `Ваша оценка (совпал / отчасти / нет) проверяет автоматического судью: пока оценок мало, Штурман не получит права решать сам. Блок «Разметка» на экране «Самоулучшение». Например: ${rows.slice(0, 3).map(line).join("; ")}.`,
       evidence: [{ kind: "command", ref: "bb lane-pilot lead label <id> exact|partial|miss" }],
     }, now);
     return { posted: created, pending: rows.length };
@@ -352,3 +352,7 @@ export function mountLead(ctx: ServerCore, services: Services): void {
   scheduleIsolated(ctx.bb, "lead-labels", LEAD_LABELS_CRON, async () => { lead.labelsDue(); }, { timeoutMs: 60_000 });
   scheduleIsolated(ctx.bb, "lead-memory-exam", LEAD_MEMORY_EXAM_CRON, () => lead.memoryExam().then(() => undefined), { timeoutMs: 15 * 60_000 });
 }
+
+/** A decision class in the owner's words (the rows on «Ждут владельца»); an unknown class keeps its id. */
+const CLASS_RU: Record<string, string> = { next_step: "следующий шаг", schedule: "расписания", landing: "приземление задач", process: "ход этапов", defer: "отложить", money: "деньги", external: "внешние действия" };
+const classRu = (cls: string): string => CLASS_RU[cls] ?? cls;

@@ -68,7 +68,7 @@ describe("the routine graph of a scheduled agent", () => {
     const report = String((summary.output as { report: string }).report);
     expect(report).toContain("Looked at 12 queries.");
     expect(parseAgentOutcome(report)).toMatchObject({ summary: "3 queries fell out of the top 10", decision: "queued a title test", followUps: "re-check on Monday", status: "done" });
-    expect(w.ownerItems()).toEqual([{ key: "schedule-agent:key-1", source: "schedule", kind: "agent_outcome", project_id: PROJECT, what: "«Positions» (seo-specialist): 3 queries fell out of the top 10", why: expect.stringContaining("Решение: queued a title test"), wake: 0 }]);
+    expect(w.ownerItems()).toEqual([{ key: "schedule-agent:key-1", source: "schedule", kind: "agent_outcome", project_id: PROJECT, what: "«Positions»: 3 queries fell out of the top 10", why: expect.stringContaining("Решение: queued a title test"), wake: 0 }]);
   });
 
   it("wakes the owner when the agent says urgent, and records a blocked agent as blocked with its reason", async () => {

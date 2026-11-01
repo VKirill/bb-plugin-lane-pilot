@@ -154,7 +154,8 @@ describe("the sweep", () => {
     expect(sent).toEqual([]);
     const row = db.prepare("SELECT kind, why FROM lane_pilot_owner_item WHERE key='run-goal:run1'").get() as { kind: string; why: string };
     expect(row.kind).toBe("goal_failed");
-    expect(row.why).toContain("задачи запуска run1 приняты каждая по отдельности");
+    expect(row.why).toContain("приняты каждая по отдельности");
+    expect(row.why).not.toContain("run1");
     expect(await api.sweep()).toEqual([]);
     expect(api.status("run1")).toMatchObject({ state: "failed", red: [{ taskId: "t2", culpritTask: "t1" }] });
     expect(api.status("run2")).toBeNull();

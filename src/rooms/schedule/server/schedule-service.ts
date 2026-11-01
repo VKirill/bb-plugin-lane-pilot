@@ -51,7 +51,7 @@ export function createScheduleService(ctx: ServerCore, services: Services) {
         else {
           // No Lane Pilot in the project: the failure is a line of the owner's list, with a push.
           bb.log.warn(`Lane Pilot schedule «${schedule.name}»: no open PM chat in the project; the failure goes to the owner's list`);
-          try { postOwnerItem(db, { key: `schedule-failure:${run.id}`, source: "schedule", kind: "schedule_failed", projectId: schedule.project_id, wake: true, what: `«${schedule.name}» failed`, why: notice.slice(0, 560) }); } catch { /* the log has it */ }
+          try { postOwnerItem(db, { key: `schedule-failure:${run.id}`, source: "schedule", kind: "schedule_failed", projectId: schedule.project_id, wake: true, what: `Расписание «${schedule.name}» не сработало`, why: notice.slice(0, 560) }); } catch { /* the log has it */ }
         }
       }, () => undefined);
     },

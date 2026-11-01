@@ -390,7 +390,7 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
       // Lesson is a draft (SMA p7_staged): it waits for the person's word in drafts; the phase does not wait for it.
       book(phase, "lessons", "staged", "the lesson waits as a draft for the owner's word «lesson»");
       postOwnerItem(db as never, { key: `phase-word:${phase.id}:lesson`, source: "phase", kind: "word", projectId: phase.projectId,
-        what: `Phase «${phase.title}»: the lesson draft — apply it to memory?`, why: text.slice(0, 600) });
+        what: `Этап «${phase.title}» завершён: записать его урок в память проекта?`, why: text.slice(0, 600) });
       void askPhaseWord(db as never, phase, "lesson", undefined, text);
     } else writeLesson(phase, text);
     move(phase, "closed", record, "the lessons are written and reviewed");
@@ -1048,7 +1048,7 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
     // Call about a waiting decision: a turn that needs the owner's word is also a row on «Ждут владельца» (and its Telegram digest).
     const wordTurn = action.key.match(/:word:([a-z]+)(?::(\d+))?(?::(?:v[\w-]+|[0-9a-f]+))?$/);
     if (wordTurn) postOwnerItem(db as never, { key: `phase-word:${phase.id}:${wordTurn[1]}${wordTurn[2] ? `:${wordTurn[2]}` : ""}`, source: "phase", kind: "word", projectId: phase.projectId,
-      what: `Phase «${phase.title}»: your word at ${wordTurn[1]}${wordTurn[2] ? ` (wave ${wordTurn[2]})` : ""}`, why: action.text.slice(0, 600) });
+      what: `Этап «${phase.title}» ждёт вашего слова: ${STAGE_RU[wordTurn[1]!] ?? wordTurn[1]}${wordTurn[2] ? ` (заход ${wordTurn[2]})` : ""}`, why: action.text.slice(0, 600) });
     // The lead's journal: the same question, with the prediction written before the owner's word (src/rooms/lead).
     if (wordTurn) void askPhaseWord(db as never, phase, wordTurn[1]!, wordTurn[2] ? Number(wordTurn[2]) : undefined, action.text);
     // Aging said once a day; a stalled phase named in the book only: no part for three days (or twelve hours at execution with pieces at work). The PM is not
@@ -1166,7 +1166,7 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
     savePhase(db, phase.id, { state: "stopped", at: now(), record: { ...phase.record, scope, auto: undefined, partial, closing: { by: "Lane Pilot (loop exhausted)", words: done.slice(0, 1000), at: now() },
       lessons: { needed: true, why: "the loop ran out of tries; the phase stopped without its goal met, the analysis of the cut is in the backlog" } } });
     await services.wall?.loopExhausted({
-      kind: input.kind, id: `${phase.id}:${input.stage}`, title: `phase ${phase.id} «${phase.title}»: the ${input.stage} loop ran out of tries`, projectId: phase.projectId, runId: phase.runId,
+      kind: input.kind, id: `${phase.id}:${input.stage}`, title: `этап «${phase.title}»: ${STAGE_RU[input.stage] ?? input.stage} не сошлось за отведённые попытки`, projectId: phase.projectId, runId: phase.runId,
       taskIds: Object.values(issued), facts: [`goal: ${phase.goal}`, `why the loop ended: ${input.why}`, `what the machine did: ${done}`, ...(verdict ? [verdict] : [])],
       texts: [{ path: "PHASE-BOOK", text: renderBook(mustGet(phase.id), listParts(db, phase.id)).slice(-18_000) }],
       done, pmThreadId: phase.pmThreadId,
@@ -1233,3 +1233,6 @@ export function mountPhaseDriver(ctx: ServerCore, api: PhaseApi): void {
     await api.tick(signal).catch((cause: unknown) => ctx.log(`phase drive failed: ${cause instanceof Error ? cause.message : String(cause)}`));
   }, { timeoutMs: 30 * 60_000 });
 }
+
+/** A stage's name in the owner's words (the rows on «Ждут владельца» and the wall's subject). */
+const STAGE_RU: Record<string, string> = { discussion: "обсуждение", planning: "планирование", design: "проектирование", execution: "исполнение", lessons: "уроки" };

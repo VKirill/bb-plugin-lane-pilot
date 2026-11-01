@@ -86,7 +86,7 @@ describe("a stage whose workflow failed twice", () => {
     expect(items).toHaveLength(1);
     expect(items[0]).toMatchObject({ source: "wall", kind: "loop_exhausted", wake: 0, state: "open" });
     expect(items[0]!.why).toMatch(/Scope cut.*phase stops/s);
-    expect(items[0]!.why).toMatch(/Ничего не ждёт тебя/);
+    expect(items[0]!.why).toMatch(/Ничего делать не нужно/);
     await w.wall.advance(NOW + 1000);
     await w.wall.loopExhausted({ kind: "stage", id: `${phase.id}:analyze`, title: "again", projectId: "projA", done: "x", facts: [] });
     expect(w.state.readerCalls).toHaveLength(4);

@@ -82,7 +82,7 @@ describe("the sweep every 15 minutes", () => {
     expect(getTick(db, "tick_alive")).toMatchObject({ status: "running" });
     const item = db.prepare("SELECT key, kind, state, why FROM lane_pilot_owner_item WHERE key=?").get("lead-tick:tick_dead") as { kind: string; why: string };
     expect(item).toMatchObject({ kind: "tick_error" });
-    expect(item.why).toContain("failed at think");
+    expect(item.why).toContain("failed на шаге think");
     expect(item.why).toContain("thread.start failed");
   });
 
@@ -161,7 +161,7 @@ describe("the owner's answer to a proposal", () => {
     };
     propose("b1", 1);
     const noPm = await lead.decide("b1", "yes", undefined, "screen", 10);
-    expect(noPm).toMatchObject({ ok: true, handover: { state: "blocked", reason: "the project has no open PM chat" } });
+    expect(noPm).toMatchObject({ ok: true, handover: { state: "blocked", reason: "в проекте нет открытого чата Lane Pilot" } });
     expect(getRoad(db, "b1")).toMatchObject({ state: "accepted" });
     expect(ownerItem(db, "lead-handover-blocked:b1")).toMatchObject({ kind: "handover_blocked", state: "open" });
     expect(handed).toHaveLength(0);
