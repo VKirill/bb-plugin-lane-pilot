@@ -135,6 +135,8 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
     runId:string; taskId:string; attemptId:string; pmThreadId:string; writerThreadId:string;
     dirtBefore:import("../cli-outcome").DirtSnapshot[];
     emergencyFallback?:{reason:string;primaryAttemptId:string;providerId:string;model:string};
+    /** Gives the writer's pool slot back early: the wait for the owner's word needs no writer seat (Gemini F-008.2). */
+    releaseSlot?:()=>void;
   };
 
   /** The attempt's end, whatever its outcome: the skill links and the compaction config an OpenCode writer got leave its worktree. */
@@ -841,6 +843,9 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
         } catch { /* the list is a mirror; the wait itself goes on */ }
         void sendServiceMessage(bb, { threadId:input.pmThreadId, senderThreadId:writerThreadId,
           text:`Lane Pilot: task ${input.taskId} passed its checks and waits for the owner's word before it lands on main (owner.words asks it for this task: risk ${input.task.risk}). Ask him with lane_pilot_ask_owner, then record his answer with lane_pilot_queue {action:"word", taskId:"${input.taskId}", decision:"yes"|"no", text}. It waits up to 6 hours; no need to resend it.` }).catch(() => undefined);
+        // Up to six hours of waiting held a writer seat of the pool for nothing (Gemini F-008.2): the seat goes back now; `admitted` and the
+        // live key stay, they protect the task's files until the word lands or the wait ends.
+        input.releaseSlot?.();
         const since = Date.now();
         while (wordGap && !wordGap.includes("said no") && Date.now() - since < OWNER_WORD_WAIT_MS && !ctx.isDisposed()) {
           await new Promise((wake) => setTimeout(wake, 60_000));

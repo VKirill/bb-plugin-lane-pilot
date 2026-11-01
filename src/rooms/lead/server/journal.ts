@@ -39,13 +39,16 @@ export function openDecision(db: Db, input: OpenDecision, now: number = Date.now
 
 export const getDecision = (db: Db, id: string): DecisionRow | undefined => db.prepare("SELECT * FROM lane_pilot_decision WHERE id=?").get(id) as DecisionRow | undefined;
 
-/** The owner's recent answers to the same kind of question: the memory the prediction is made from. */
 /** Whose past answers the predictor may remember: the owner's own channels and the backtest's replay of his recorded words. */
 const HISTORY_ANSWERERS = [...OWNER_ANSWERERS, "backtest"];
 function historyOf(db: Db, row: DecisionRow, now: number): Array<{ situation: string; answer: string }> {
   // Only the owner's answers (never the lead's own «yes» or an agent's relay), only the live and backtest splits (a design switch has
   // other options), and only what was answered before this row was: a backtest row must not read the future (Gemini F-005, SWE-2 F-002).
-  const before = row.answered_at ?? now;
+  // The row's birth, not the call: a prediction is made before the answer, so `answered_at` is null here and `now` would show a backtest
+  // row every later word (Gemini F-005.1 verified 2026-11-01: the 0.1.458 filter read the future after all). The backtest stamps
+  // `created_at = word.at`, a live row is born when it is asked.
+  const before = row.created_at;
+  void now;
   const rows = db.prepare(`SELECT situation_json, answer_json FROM lane_pilot_decision WHERE surface=? AND class=? AND id<>? AND answer_json IS NOT NULL
     AND answered_at<? AND split IN ('exam','backtest') AND answered_by IN (${HISTORY_ANSWERERS.map(() => "?").join(",")}) ORDER BY answered_at DESC LIMIT 20`)
     .all(row.surface, row.class, row.id, before, ...HISTORY_ANSWERERS) as Array<{ situation_json: string; answer_json: string }>;

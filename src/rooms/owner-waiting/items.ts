@@ -94,9 +94,13 @@ function inbox(db: Db): OwnerItem[] {
     Array<{ key: string; source: string; kind: string; project_id: string | null; what: string; why: string; evidence_json: string; actions_json: string; wake: number; created_at: number }>;
   return rows.filter((row) => !isSandbox(row.project_id)).map((row) => ({
     key: row.key, source: row.source, kind: row.kind, projectId: row.project_id, what: row.what, why: row.why, since: row.created_at, wake: row.wake === 1,
-    evidence: parse<OwnerEvidence[]>(row.evidence_json, []), actions: parse<OwnerAction[]>(row.actions_json, []),
+    evidence: parse<OwnerEvidence[]>(row.evidence_json, []), actions: withReadButton(row.key, parse<OwnerAction[]>(row.actions_json, [])),
   }));
 }
+
+/** A row that asks nothing still needs a way off the screen before its term (Astra U-001, Gemini F-006.4): «Прочитано» closes it as the owner's. */
+const withReadButton = (key: string, actions: OwnerAction[]): OwnerAction[] =>
+  actions.length ? actions : [{ id: "read", label: "Прочитано", cli: rpcLine("owner_waiting_close", { key }), rpc: { method: "owner_waiting_close", input: { key } } }];
 
 export type PostOwnerItem = Omit<OwnerItem, "since" | "wake" | "evidence" | "actions" | "projectId"> & Partial<Pick<OwnerItem, "wake" | "evidence" | "actions" | "projectId">>;
 
@@ -104,8 +108,14 @@ export type PostOwnerItem = Omit<OwnerItem, "since" | "wake" | "evidence" | "act
 export function postOwnerItem(db: Db, item: PostOwnerItem, now: number = Date.now()): { created: boolean } {
   if (!item.key.trim() || !item.what.trim() || !item.why.trim()) throw new Error("an owner item needs a key, what and why");
   if (isSandbox(item.projectId)) return { created: false };
-  const result = db.prepare(`INSERT OR IGNORE INTO lane_pilot_owner_item(key,source,kind,project_id,what,why,evidence_json,actions_json,wake,state,created_at)
-    VALUES (?,?,?,?,?,?,?,?,?,'open',?)`).run(item.key, item.source, item.kind, item.projectId ?? null, clip(item.what, 600), clip(item.why, 600),
+  // The same key twice: a row the owner answered stays closed (his word stands); a row the system closed — the janitor's term, a run
+  // goal that went green — is a new question when it comes back, so it reopens with the new text (SWE-2 verification N-002: a closed
+  // key was a tombstone, and a second product question on the same task was dropped without a row).
+  const result = db.prepare(`INSERT INTO lane_pilot_owner_item(key,source,kind,project_id,what,why,evidence_json,actions_json,wake,state,created_at)
+    VALUES (?,?,?,?,?,?,?,?,?,'open',?)
+    ON CONFLICT(key) DO UPDATE SET source=excluded.source, kind=excluded.kind, project_id=excluded.project_id, what=excluded.what, why=excluded.why,
+      evidence_json=excluded.evidence_json, actions_json=excluded.actions_json, wake=excluded.wake, state='open', created_at=excluded.created_at, closed_at=NULL, closed_by=NULL
+    WHERE lane_pilot_owner_item.state='closed' AND (lane_pilot_owner_item.closed_by LIKE 'janitor:%' OR lane_pilot_owner_item.closed_by LIKE 'run-goal:%')`).run(item.key, item.source, item.kind, item.projectId ?? null, clip(item.what, 600), clip(item.why, 600),
     JSON.stringify(item.evidence ?? []), JSON.stringify(item.actions ?? []), item.wake === false ? 0 : 1, now);
   return { created: result.changes > 0 };
 }
@@ -131,6 +141,7 @@ const FACT_KINDS = new Set(["handed", "acted", "tick_error", "tick_no_receipt", 
  * «an inbox where rows are born and never die»). Three cases the posters cannot see themselves:
  *  - a writer's question (`writer-question:<run>:<task>`) once the task moved on: a newer attempt, or the blocked one left `blocked`;
  *  - a red run goal (`run-goal:<run>`) once its run is closed (a later green verdict closes it in run-goal.ts);
+ *  - a phase's word (`phase-word:<phase>:<turn>`) once the phase is closed or stopped (Gemini F-006.1);
  *  - a row with no action after its term: a fact after three days, anything else without buttons after seven.
  */
 export function sweepOwnerItems(db: Db, now: number = Date.now()): number {
@@ -138,7 +149,7 @@ export function sweepOwnerItems(db: Db, now: number = Date.now()): number {
   let closed = 0;
   const rows = db.prepare("SELECT key, kind, actions_json, created_at FROM lane_pilot_owner_item WHERE state='open'").all() as Array<{ key: string; kind: string; actions_json: string; created_at: number }>;
   const close = (key: string, by: string) => { closed += closeOwnerItem(db, key, by, now) ? 1 : 0; };
-  const attemptTable = tableExists(db, "lane_pilot_attempt"), runTable = tableExists(db, "lane_pilot_run");
+  const attemptTable = tableExists(db, "lane_pilot_attempt"), runTable = tableExists(db, "lane_pilot_run"), phaseTable = tableExists(db, "lane_pilot_phase");
   for (const row of rows) {
     if (row.key.startsWith("writer-question:") && attemptTable) {
       const [, runId, ...task] = row.key.split(":");
@@ -148,6 +159,10 @@ export function sweepOwnerItems(db: Db, now: number = Date.now()): number {
     if (row.key.startsWith("run-goal:") && runTable) {
       const run = db.prepare("SELECT closed_at FROM lane_pilot_run WHERE id=?").get(row.key.slice("run-goal:".length)) as { closed_at: number | null } | undefined;
       if (!run || run.closed_at !== null) { close(row.key, "janitor:run closed"); continue; }
+    }
+    if (row.key.startsWith("phase-word:") && phaseTable) {
+      const phase = db.prepare("SELECT state FROM lane_pilot_phase WHERE id=?").get(row.key.split(":")[1]) as { state: string } | undefined;
+      if (!phase || phase.state === "closed" || phase.state === "stopped") { close(row.key, "janitor:phase closed"); continue; }
     }
     if (parse<OwnerAction[]>(row.actions_json, []).length === 0 && now - row.created_at > (FACT_KINDS.has(row.kind) ? OWNER_FACT_TTL_MS : OWNER_NOTE_TTL_MS)) close(row.key, "janitor:term");
   }
@@ -184,6 +199,7 @@ export function collectOwnerWaiting(db: Db, now: number = Date.now(), windowMs: 
 
 /** The counts behind the daily report's last line (scripts/lp-morning.sql counts the same, tests/policy/morning.test.ts keeps them equal). */
 export function ownerWaitingCounts(db: Db, now: number = Date.now()): { overdue: number; open: number; inbox: number } {
+  sweepOwnerItems(db, now); // the badge counts what still waits, not what the janitor would close on the next read
   const count = (sql: string, ...params: unknown[]) => (db.prepare(sql).get(...params) as { n: number }).n;
   return {
     // Only a human term can be overdue (deferral/store.ts HUMAN_TERM_SQL): an entry with the code's or an agent's term is «open, no term».

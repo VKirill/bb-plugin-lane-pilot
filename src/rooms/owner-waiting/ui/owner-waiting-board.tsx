@@ -82,7 +82,7 @@ function ItemCard({ item, projectName, busy, onRun }: { item: OwnerItem; project
           {item.evidence.length ? (
             <div className="flex min-w-0 flex-wrap items-center gap-1.5" data-testid={`owner-evidence-${item.key}`}>
               <span className="text-xs text-muted-foreground">{t("ow_evidence")}:</span>
-              {item.evidence.map((evidence, index) => <span key={`${evidence.kind}${index}`} className={chip} title={`${evidence.ref}${evidence.label ? ` (${evidence.label})` : ""}`}>{kindLabel(evidence.kind)}: {shortRef(evidence.kind, evidence.ref)}{evidence.label ? ` (${evidence.label})` : ""}</span>)}
+              {item.evidence.map((evidence, index) => <button type="button" key={`${evidence.kind}${index}`} className={chip} title={`${evidence.ref}${evidence.label ? ` (${evidence.label})` : ""}`} onClick={() => void navigator.clipboard?.writeText(evidence.ref)}>{kindLabel(evidence.kind)}: {shortRef(evidence.kind, evidence.ref)}{evidence.label ? ` (${evidence.label})` : ""}</button>)}
             </div>
           ) : null}
           {item.actions.length ? (

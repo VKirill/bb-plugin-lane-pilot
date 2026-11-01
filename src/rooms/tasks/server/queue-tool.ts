@@ -40,7 +40,10 @@ export function registerQueueTool(ctx: ServerCore): void {
       if (input.action === "word") {
         await recordTaskWord(bb.storage.kv as never, runId, taskFamily(input.taskId), input.decision, input.text);
         answerTaskWord(db, runId, taskFamily(input.taskId), input.decision, input.text, "pm");
-        return JSON.stringify({ runId, taskId: input.taskId, word: input.decision, next: input.decision === "yes" ? "send the task again: it lands without a new writer pass" : "cancel the task with the owner's words, or change it and send again" });
+        // The attempt that waits for the word (finish.ts, up to six hours) picks it up within a minute: telling the PM to resend it made two
+        // attempts of one task (Gemini F-008.3).
+        const waiting = latestTaskAttemptState(db, context.projectId, input.taskId) === "running";
+        return JSON.stringify({ runId, taskId: input.taskId, word: input.decision, next: input.decision === "yes" ? (waiting ? "nothing: the waiting attempt lands by itself within a minute, do not resend the task" : "send the task again: it lands without a new writer pass") : "cancel the task with the owner's words, or change it and send again" });
       }
       if (input.action === "close_backlog") {
         // Close exactly that line: the backlog item the accepted work came from is marked done in its own meta.yaml, nothing else.

@@ -893,6 +893,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
           last = { ...await services.finishWriterAttempt({
             projectId:input.projectId, config:activeConfig, task:activeTask, runId:input.runId,
             taskId:input.taskId, attemptId, pmThreadId:input.pmThreadId, writerThreadId, dirtBefore,
+            releaseSlot:()=>{ releaseWriterSlot?.(); releaseWriterSlot=undefined; },
           }), ...(executionPacketSha256 ? { executionPacketSha256 } : {}) };
           const workspaceBinding=getAttempt(db,attemptId);
           if(workspaceBinding?.workspace_path) last={...last,workspace:{path:workspaceBinding.workspace_path,
@@ -1270,7 +1271,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
               last={...await services.finishWriterAttempt({
                 projectId:input.projectId,config:activeConfig,task:activeTask,runId:input.runId,taskId:input.taskId,
                 attemptId:emergencyAttemptId,pmThreadId:input.pmThreadId,writerThreadId,dirtBefore,
-                emergencyFallback,
+                emergencyFallback,releaseSlot:()=>{ releaseWriterSlot?.(); releaseWriterSlot=undefined; },
               }),emergencyFallback:{state:"completed",...emergencyFallback,attemptId:emergencyAttemptId}};
               if (failureClass(String(last.status), typeof last.reason === "string" ? last.reason : null) === "judgment") dropLiveWriterKey();
               const workspaceBinding=getAttempt(db,emergencyAttemptId);

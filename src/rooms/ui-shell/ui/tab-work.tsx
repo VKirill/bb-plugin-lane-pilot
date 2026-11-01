@@ -67,16 +67,7 @@ export function WorkTab({ page }: { page: LpPage }) {
           t("stageCodeCritique"), t("codeCritiqueHelp"), "code-critique-policy", { key: "code_critique.enabled", fallback: false })}
         {group("specialist", <CatalogField page={page} keyName="specialist.when" />,
           t("specialistReview"), t("settingSpecialistEnabledHelp"), "specialist-policy", { key: "specialist.enabled", fallback: false })}
-        {group("night", <>
-          <div className="flex items-center justify-between gap-2" data-storage-key="night_review.auto_merge">
-            <div className="flex min-w-0 items-center gap-1">
-              <span><Label className="text-sm" htmlFor="night-review-auto-merge">{t("nightReviewAutoMerge")}</Label><HelpSup label={t("nightReviewAutoMergeHelp")}><p>{t("nightReviewAutoMergeHelp")}</p></HelpSup></span>
-            </div>
-            <Switch id="night-review-auto-merge" checked={asBoolean(displayedValue("night_review.auto_merge"), false)} aria-label={t("nightReviewAutoMerge")}
-              onCheckedChange={(next) => { const row = catalogRow("night_review.auto_merge"); if (row) void applySetting(row, next); }} />
-          </div>
-          <CatalogField page={page} keyName="night_review.max_fix_tasks" />
-        </>, t(sectionKey("night-review")), t("nightReviewEnabled"), "night-review-policy", { key: "night_review.enabled", fallback: false })}
+        {/* night_review.* is reserved: no stage reads it (settings-catalog channels.ts), so the screen offers no live switch for it (Astra F-012, Gemini F-015.2). */}
         <section className="space-y-2" data-testid="pm-read-policy">
           <div className="flex min-w-0 items-center justify-between gap-2">
             <h3 className="text-sm font-medium">{t("largeFileRead")}<HelpSup label={t("largeFileReadTechnical")}><p>{t("largeFileReadTechnical")}</p></HelpSup></h3>

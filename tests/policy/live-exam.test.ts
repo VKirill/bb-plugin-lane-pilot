@@ -41,14 +41,14 @@ describe("collectOwnerDecisions", () => {
     for (const item of items) expect(Date.parse(item.decided_at)).toBeGreaterThan(FREEZE);
   });
 
-  it("an auto-adopted rule the owner left for the standing period is a weak night_decides item, dated when the period ended", () => {
+  it("an auto-adopted rule the owner left for the standing period is a weak night_proposes item (silence is not approval), dated when the period ended", () => {
     const { db, rule, event } = seeded();
     rule("r_quiet", "accepted"); rule("r_young", "accepted"); rule("r_taken_back", "revoked"); rule("r_retired", "revoked");
     event("r_quiet", "adopted", FREEZE + HOUR); event("r_young", "adopted", FREEZE + 3 * DAY); event("r_taken_back", "adopted", FREEZE + HOUR); event("r_taken_back", "owner_revoked", FREEZE + DAY);
     const now = FREEZE + (STANDING_DAYS + 1) * DAY;
     const items = collectOwnerDecisions(db, FREEZE, now).filter((item) => item.quote.startsWith("adopted by the night"));
     expect(items).toHaveLength(1);
-    expect(items[0]).toMatchObject({ source: { ref: "proj_1/r_quiet#left_standing" }, expected: "night_decides", strength: "weak" });
+    expect(items[0]).toMatchObject({ source: { ref: "proj_1/r_quiet#left_standing" }, expected: "night_proposes", strength: "weak" });
     expect(Date.parse(items[0]!.decided_at)).toBe(FREEZE + HOUR + STANDING_DAYS * DAY);
   });
 

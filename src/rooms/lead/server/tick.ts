@@ -146,7 +146,7 @@ export async function hubSnapshot(ctx: Pick<ServerCore, "db" | "bb">, settings: 
     id: row.id, parent_id: row.parent_id, project_id: row.project_id, title: row.title, kind: row.kind, state: row.state, source: row.source, why: clip(row.why, 400), class: row.class, cost_estimate: row.cost_estimate,
     evidence: (JSON.parse(row.evidence_json) as RoadEvidence[]).slice(0, 4),
   }));
-  const waiting = collectOwnerWaiting(db, now).items.slice(0, 15).map((item) => ({ key: item.key, source: item.source, kind: item.kind, projectId: item.projectId, what: clip(item.what, 200) }));
+  const waiting = collectOwnerWaiting(db, now).items.filter((item) => item.projectId === null || zoneIds.has(item.projectId)).slice(0, 15).map((item) => ({ key: item.key, source: item.source, kind: item.kind, projectId: item.projectId, what: clip(item.what, 200) }));
   const lastTicks = listTicks(db, 5).filter((row) => row.id !== input.tickId).map((row) => ({
     id: row.id, startedAt: row.started_at, status: row.status, proposed: (JSON.parse(row.proposed_json ?? "[]") as unknown[]).length, acted: (JSON.parse(row.acted_json ?? "[]") as unknown[]).length, costUsd: (row.cost_micro_usd ?? 0) / USD,
   }));
@@ -218,6 +218,8 @@ export function registerLeadTickActions(engine: WorkflowEngine, ctx: ServerCore,
           if (!title || why.length < 10) continue;
           const kind = branch.kind === "direction" ? "direction" : "option";
           const projectId = typeof branch.project_id === "string" && branch.project_id ? branch.project_id : null;
+          // A branch of a project outside the zone (or a sandbox one) is not written: the tree is bound to lead.projects like the proposals (Astra F-010c).
+          if (projectId && (settings.projects.length ? !settings.projects.includes(projectId) : isSandboxProject(projectId))) continue;
           const parent = typeof branch.parent_id === "string" && getRoad(db, branch.parent_id) ? branch.parent_id : kind === "option" ? projectRoot(db, projectId, names.get(projectId ?? "") ?? null, now).id : null;
           if (listRoad(db, { parentId: parent, limit: 200 }).some((row) => row.title.trim().toLowerCase() === title.toLowerCase())) continue;
           added.push(addRoad(db, { parentId: parent, projectId, title, kind, source: "lead", why }, now).id);
@@ -234,13 +236,16 @@ export function registerLeadTickActions(engine: WorkflowEngine, ctx: ServerCore,
         if (problem) { dropped.push({ title: clip(text(item.title) || "(no title)", 120), reason: problem }); continue; }
         if (proposed.length >= settings.maxProposals) { dropped.push({ title: clip(proposal.title!, 120), reason: `over the day's ${settings.maxProposals} proposals` }); continue; }
         try {
-          const projectId = typeof proposal.project_id === "string" && proposal.project_id ? proposal.project_id : null;
+          let row = proposal.road_id ? getRoad(db, proposal.road_id) : undefined;
+          if (row && row.state !== "open" && row.state !== "later") { dropped.push({ title: clip(proposal.title!, 120), reason: `branch ${row.id} is ${row.state}` }); continue; }
+          // An existing branch keeps its project: the zone check, the journal row, the card and the hand-over all read the same one, whatever
+          // the agent wrote in project_id (Astra F-003/F-010: a proposal on an out-of-zone branch passed with project_id null, and «yes» by hand
+          // and the lead's own act disagreed on the project).
+          const projectId = row?.project_id ?? (typeof proposal.project_id === "string" && proposal.project_id ? proposal.project_id : null);
           if (projectId && settings.projects.length && !settings.projects.includes(projectId)) { dropped.push({ title: clip(proposal.title!, 120), reason: `project ${projectId} is outside lead.projects` }); continue; }
           if (projectId && !settings.projects.includes(projectId) && isSandboxProject(projectId)) { dropped.push({ title: clip(proposal.title!, 120), reason: `project ${projectId} is a sandbox or bench project: outside the zone` }); continue; }
           // `critical` stays critical: mayAct refuses it like high, and a word on landing waits for it (SWE-2 F-003: it used to normalise to null).
           const risk = proposal.risk === "critical" || proposal.risk === "high" || proposal.risk === "medium" || proposal.risk === "low" ? proposal.risk : null;
-          let row = proposal.road_id ? getRoad(db, proposal.road_id) : undefined;
-          if (row && row.state !== "open" && row.state !== "later") { dropped.push({ title: clip(proposal.title!, 120), reason: `branch ${row.id} is ${row.state}` }); continue; }
           if (!row) {
             const parent = proposal.parent_id && getRoad(db, proposal.parent_id) ? proposal.parent_id : projectRoot(db, projectId, names.get(projectId ?? "") ?? null, now).id;
             row = addRoad(db, { parentId: parent, projectId, title: proposal.title!.trim(), kind: "option", source: "lead", why: proposal.why!.trim(), evidence: proposal.evidence, costEstimate: proposal.cost_estimate!.trim(), class: proposal.class!, payload: proposal.class === "schedule" ? proposal.schedule : undefined }, now);
@@ -284,6 +289,9 @@ export function registerLeadTickActions(engine: WorkflowEngine, ctx: ServerCore,
       // A proposal the lead could not act on after all becomes the owner's question now, with the card the propose step withheld.
       const defer = (item: Actable, reason: string) => { deferred.push({ roadId: item.roadId, reason }); postProposalCard(db, item, now); };
       for (const item of actable) {
+        // The branch is read again too: a «no» or a reject that landed between propose and act stops the action (Astra H-001).
+        const live = getRoad(db, item.roadId);
+        if (!live || live.state !== "proposed") { deferred.push({ roadId: item.roadId, reason: `branch is ${live?.state ?? "gone"}, not proposed` }); continue; }
         // The right is read again here, from the table and the file, never from the agent's answer: a sentence cannot widen it.
         const may = mayAct(db, item.class, item.risk);
         if (!may.ok) { defer(item, may.reason); continue; }

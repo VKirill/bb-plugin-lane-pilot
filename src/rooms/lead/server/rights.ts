@@ -47,6 +47,8 @@ export function mayAct(db: Db, cls: string, risk: string | null | undefined): { 
   if (tier === "owner_only") return { ok: false, reason: `class ${cls} is owner_only` };
   if (tier === "proposes") return { ok: false, reason: `class ${cls} proposes: the exam has not opened it` };
   if (risk === "high" || risk === "critical") return { ok: false, reason: `risk ${risk} never acts, whatever the tier` };
+  // A risk the agent left out or misspelt is not low: it is unknown, and unknown never acts alone (SWE-2 verification, 2026-11-01).
+  if (risk !== "low" && risk !== "medium") return { ok: false, reason: `risk ${risk ?? "unknown"} never acts: only low and medium may` };
   return { ok: true };
 }
 

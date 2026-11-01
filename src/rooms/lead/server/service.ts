@@ -3,7 +3,7 @@ import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
 import { writerExecutionSelection } from "@lane-pilot/models";
 import type { ServerCore, Services } from "../../core/server";
 import { fullAccessSpawn, modelCatalogOf, resolveSpawnModel, scheduleIsolated, spawnUsageOf, stringAt, warmSpawnUsage } from "../../core/server";
-import { closeOwnerItem, loadPushConfig, postOwnerItem } from "../../owner-waiting";
+import { closeOwnerItem, closeOwnerItemsByPrefix, loadPushConfig, postOwnerItem } from "../../owner-waiting";
 import { loadProjectSettings, saveProjectSetting } from "../../storage";
 import { mentionContext } from "../../native-agent";
 import { storeNativeSelection } from "../../native-agent/server";
@@ -119,6 +119,7 @@ export function createLeadService(ctx: ServerCore, services: Services) {
     // A tick whose graph ended without its receipt (the agent step failed to start, the run was cancelled) is closed now, not after 90 minutes.
     const failed = failedTicks(now);
     const stale = [...failed, ...sweepStaleTicks(db, STALE_TICK_MS, now)];
+    if (pendingLabelCount(db) === 0) closeOwnerItemsByPrefix(db, "lead-labels:", "janitor:labelled", now); // the Monday row asks for labels; none left, none asked (Gemini F-006.4)
     for (const id of stale) {
       if (failed.includes(id)) continue;
       try { postOwnerItem(db, { key: `lead-tick:${id}`, source: "lead", kind: "tick_no_receipt", projectId: null, wake: false, what: "Обход Штурмана завис", why: "Он начался больше полутора часов назад и не закрыл свой отчёт; подробности в запуске сценария.", evidence: [{ kind: "text", ref: getTick(db, id)?.wf_run_id ?? id, label: "workflow run" }] }, now); } catch { /* informational */ }
@@ -146,7 +147,8 @@ export function createLeadService(ctx: ServerCore, services: Services) {
           evidence: [{ kind: "command", ref: "bb lane-pilot lead exam" }] }, now);
       } catch { /* informational */ }
     }
-    await bb.storage.kv.set(EXAM_KEY, { at: now, changes }).catch(() => undefined);
+    await bb.storage.kv.set(EXAM_KEY, { at: now, changes }).catch((cause: unknown) => bb.log.warn?.(`lead: exam result not stored: ${cause instanceof Error ? cause.message : String(cause)}`));
+    bb.log.info?.(`lead: exam ${exams.map((exam) => `${exam.class}=${exam.tier} n=${exam.n}`).join(", ") || "no rows"}; changes ${changes.length}`);
     return { exams, changes };
   }
 

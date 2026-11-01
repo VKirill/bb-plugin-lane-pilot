@@ -18,14 +18,14 @@ export type ExamRow = {
   answered_by?: string | null;
 };
 
-/** Answerers whose rows are not the owner's word: the lead acting on an opened class, an agent answering for him (`bb lane-pilot lead decide --by agent`). Kept in the journal, never counted for the exam. */
 /**
  * Whose answer is the owner's for the exam: the screen's buttons and the CLI's default. Everything else — a PM relaying him (`pm`,
  * `owner via pm`), the lead's own chat (`lead-chat`), the lead acting (`lead`), any agent (`agent`), a replay (`backtest`) — is a proxy:
  * the row is kept but never counts (SWE-2/Gemini/Astra grills of 0.1.456, F-001: `answered_by` is written by the caller, so the exam
  * must trust a short list, not refuse a short list).
  */
-export const OWNER_ANSWERERS: ReadonlySet<string> = new Set(["owner", "screen"]);
+// `owner via screen` is the phase screen's word (phase/server/rpc.ts): the same button, an older spelling (SWE-2 verification N-001, 2026-11-01).
+export const OWNER_ANSWERERS: ReadonlySet<string> = new Set(["owner", "screen", "owner via screen"]);
 export const isOwnerAnswer = (by: string | null | undefined): boolean => !!by && OWNER_ANSWERERS.has(by);
 /** The risks that never act alone and always wait for the owner's word: `critical` is `high` and more, never less. */
 export const atLeastHigh = (risk: string | null | undefined): boolean => risk === "high" || risk === "critical";

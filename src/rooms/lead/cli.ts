@@ -11,7 +11,7 @@ export const LEAD_USAGE = [
   "bb lane-pilot lead road [--tree] [--history] [--project <id>|--hub] [--json]   the road tree (open branches; --history adds rejected and done with their reasons)",
   "bb lane-pilot lead road add <direction|option> \"<title>\" --why \"<reason>\" [--parent <road-id>] [--project <id>] [--source owner|lead]",
   "bb lane-pilot lead road reject <road-id> --why \"<reason>\"   |   bb lane-pilot lead road done <road-id> [--note \"…\"]",
-  "bb lane-pilot lead decide <road-id> yes|later|no [words…] [--by agent]   the owner's answer to a proposal (the same as the buttons on «Ждут владельца»); yes hands a project branch to its PM; --by agent marks a proxy answer that never counts for the exam",
+  "bb lane-pilot lead decide <road-id> yes|later|no [words…] [--by agent]   the owner's own answer to a proposal (an agent answering for him passes --by agent) (the same as the buttons on «Ждут владельца»); yes hands a project branch to its PM; --by agent marks a proxy answer that never counts for the exam",
   "bb lane-pilot lead ticks [--last N] [--json]    the receipts of the last ticks: status, proposed, acted, cost",
   "bb lane-pilot lead tick-now                     one tick outside the cron (the graph lead-tick runs; its receipt appears in ticks)",
   "bb lane-pilot lead enable on|off                the switch of the ticks (lead.enabled); the word is a row of the journal",
@@ -81,6 +81,7 @@ export async function runLeadCli(ctx: LeadCliContext, argv: string[], now: numbe
       if (!roadId || !["yes", "later", "no"].includes(decision ?? "")) return { exitCode: 2, stderr: LEAD_USAGE };
       // `--by agent`: an agent answering for the owner; the row is kept but never counts for the exam (OWNER_ANSWERERS).
       const by = flag(tail, "--by") ?? "owner";
+      if (by === "screen" || by === "owner via screen") return { exitCode: 2, stderr: "--by screen is the list's buttons, not a terminal: an agent answering for the owner passes --by agent" };
       const words = tail.filter((arg, i) => arg !== "--by" && tail[i - 1] !== "--by");
       const result = await needService(ctx).decide(roadId, decision as "yes" | "later" | "no", words.join(" ") || undefined, by, now);
       if (!result.ok) return { exitCode: 1, stderr: result.reason };

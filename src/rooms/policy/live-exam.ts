@@ -86,7 +86,7 @@ export function collectOwnerDecisions(db: Db, since: number, now: number = Date.
       id: liveItemId("rule_proposal", ref, "left_standing"), source: { type: "rule_proposal", ref, date: iso(decidedAt).slice(0, 10) }, decided_at: iso(decidedAt),
       quote: clip(`adopted by the night, not revoked in ${STANDING_DAYS} days: ${row.rule}`),
       descriptor: { kind: "rule_adopt", attrs: { trial: true, always_on: row.always_on === 1 } },
-      expected: "night_decides", strength: "weak", why: `The night put this rule on trial and the owner left it for ${STANDING_DAYS} days (silence, not approval).`,
+      expected: "night_proposes", strength: "weak", why: `The night put this rule on trial and the owner left it for ${STANDING_DAYS} days (silence, not approval): under the policy the night proposes a rule, it does not adopt one.`,
     });
   }
 

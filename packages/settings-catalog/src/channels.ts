@@ -300,7 +300,7 @@ export const SETTING_CATALOG: SettingSpec[] = [
   { key:"night_review.max_fix_tasks", channel:"OWN", reason:"Native Lane Pilot stage setting, reserved with night_review.enabled: no night-review fix tasks are created today" },
   { key:"night_review.provider", channel:"OWN", reason:"Native Lane Pilot stage uses the BB ProviderModelPicker for night review" },
   { key:"night_review.model", channel:"OWN", reason:"Native Lane Pilot stage uses the BB ProviderModelPicker for night review" },
-  { key:"night_review.agent", channel:"OWN", reason:"Native Lane Pilot stage consumes this reviewer role label in its prompt" },
+  { key:"night_review.agent", channel:"OWN", reason:"Native Lane Pilot stage setting, reserved with night_review.enabled: no stage reads the role label today" },
   { key:"checkers.diff_hidden_limit", channel:"OWN", reason:"Native Lane Pilot checkers: task limit for nightly diff-hidden audit, default 0" },
   { key:"bench.model_rebench", channel:"OWN", reason:"Native Lane Pilot monthly model routing rebench switch" },
 ];

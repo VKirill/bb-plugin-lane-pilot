@@ -41,11 +41,14 @@ export function createRunGoal(ctx: ServerCore, services: Services) {
 
   /** The runs that are done and have no verdict, checked one after another; returns the verdicts written. */
   async function sweep(now = Date.now(), signal?: AbortSignal): Promise<RunGoalRecord[]> {
+    // A `failed` record is checked again once a later run of the project closed after it: that is when a fix could have landed, and
+    // the red row then leaves the list by itself instead of waiting for a manual check or its seven-day term (SWE-2 F-006 remainder).
     // A run without a record is checked once. A `skipped` record whose detail is our own failure note means the check itself
     // could not run (a crashed regression call): it is retried on the next sweep. A `skipped` verdict of the goal logic
     // ("nothing to check") is final and is not retried.
     const runs = db.prepare(`SELECT r.id FROM lane_pilot_run r WHERE r.updated_at >= ?
-      AND NOT EXISTS (SELECT 1 FROM lane_pilot_run_goal g WHERE g.run_id = r.id AND NOT (g.state = 'skipped' AND g.detail LIKE 'the check failed:%'))
+      AND NOT EXISTS (SELECT 1 FROM lane_pilot_run_goal g WHERE g.run_id = r.id AND NOT (g.state = 'skipped' AND g.detail LIKE 'the check failed:%')
+        AND NOT (g.state = 'failed' AND EXISTS (SELECT 1 FROM lane_pilot_run r2 WHERE r2.project_id = r.project_id AND r2.id <> r.id AND r2.closed_at IS NOT NULL AND r2.closed_at > g.at)))
       ORDER BY r.updated_at`)
       .all(now - WEEK) as Array<{ id: string }>;
     const out: RunGoalRecord[] = [];

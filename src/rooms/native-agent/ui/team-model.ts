@@ -34,7 +34,6 @@ export const ROLE_GROUPS: Array<{ id: RoleGroupId; roles: RoleSpec[] }> = [
     { id: "code-critic", testId: "code-critique-settings", model: "codeCritique", enabled: { key: "code_critique.enabled", fallback: false, label: "stageCodeCritique" }, keys: ["code_critique.enabled", ...picked("codeCritique")] },
     { id: "critic-tiebreak", keys: [] },
     { id: "specialist-reviewer", testId: "specialist-settings", model: "specialist", enabled: { key: "specialist.enabled", fallback: false, label: "specialistReview" }, keys: ["specialist.enabled", ...picked("specialist")] },
-    { id: "night-reviewer", testId: "night-review-settings", model: "night", enabled: { key: "night_review.enabled", fallback: false, label: "nightReviewEnabled" }, keys: ["night_review.enabled", ...picked("night")] },
     { id: "gate-triage", keys: [] },
     { id: "pm-reader", testId: "pm-read-settings", model: "pmRead", enabled: { key: "pm_read.enabled", fallback: false, label: "largeFileRead" }, keys: ["pm_read.enabled", ...picked("pmRead")] },
     { id: "council-seat", testId: "council-settings", detail: "council", enabled: { key: "council.judge", fallback: true, label: "settingCouncilJudge" },

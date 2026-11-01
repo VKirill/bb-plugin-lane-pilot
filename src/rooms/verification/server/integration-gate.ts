@@ -9,7 +9,7 @@ import { isEnvironmentCheckFailure } from "../../runs";
 import { isMainfixTask, readCheckRun } from "../../tasks";
 import { gateLabel, gateResolverFor, type ResolvedGate } from "./gate-detect";
 import { continuesEpisode, type GateEpisode } from "./gate-episode";
-import { postOwnerItem } from "../../owner-waiting";
+import { closeOwnerItemsByPrefix, postOwnerItem } from "../../owner-waiting";
 import { attributeFailures, testLabel } from "./gate-attribution";
 import { cacheHitsNote, extractCacheHits, extractFailingFiles, extractFailingTests, unhandledErrorBlock, type FailingTest } from "../gate-output";
 import { flakyEvidence, outputTail, readingFrom } from "../machine-pressure";
@@ -265,12 +265,14 @@ export function allFailuresAreTimeouts(output: string, failingTests: readonly Fa
 }
 
 export function buildRecheckGateCommand(gateCommand: string, failingFiles: readonly string[]): string {
+  // A detected `npm test` / `pytest -q` used to re-run the whole suite after an all-timeouts red (grill 2026-10-29 F-007): the files go
+  // after `--` to a package script (vitest, jest, mocha and node --test all take them) and straight to pytest.
   const isVitestOrJest = /(?:^|[;&|]\s*)(?:npx\s+)?(?:vitest|jest)(?:\s+run)?(?:\s+|$)/i.test(gateCommand);
-  if (!isVitestOrJest || !failingFiles.length) {
-    return gateCommand;
-  }
+  const isPytest = /(?:^|[;&|]\s*)(?:python3?\s+-m\s+)?pytest(?:\s|$)/i.test(gateCommand);
+  const isPackageScript = /^(?:npm|pnpm|yarn)\s+(?:run\s+)?test\s*$/i.test(gateCommand.trim());
+  if (!failingFiles.length || !(isVitestOrJest || isPytest || isPackageScript)) return gateCommand;
   const uniqueFiles = [...new Set(failingFiles)];
-  return `${gateCommand} ${uniqueFiles.join(" ")}`;
+  return isPackageScript ? `${gateCommand.trim()} -- ${uniqueFiles.join(" ")}` : `${gateCommand} ${uniqueFiles.join(" ")}`;
 }
 
 /** Which checkout a merge or a gate run belongs to: the gate's queue and green commit are per scope (F-007). */
@@ -360,10 +362,14 @@ export class IntegrationGateRunner {
       return result;
     } finally {
       this.inFlight = false;
-      // Drains of other scopes wait for their own next merge/drain call: only this scope's queued drain re-runs now.
+      // This scope's queued drain re-runs first; otherwise the first parked drain of another scope that still has merges waiting runs now
+      // (Astra F-007 residual: `inFlight` is one flag for every scope, so a drain parked while another project's gate ran used to wait
+      // for that project's next merge, and its batch sat ungated).
       const waiting = this.drainWaiting.get(key);
       this.drainWaiting.delete(key);
-      if (waiting && result.ran && this.pendingFor(key).length > 0) void this.maybeRunGate(waiting).catch((cause: unknown) => this.ctx.log(`integration-gate: queued run failed: ${cause instanceof Error ? cause.message : String(cause)}`));
+      let next = waiting && result.ran && this.pendingFor(key).length > 0 ? waiting : undefined;
+      if (!next) for (const [parkedKey, parked] of this.drainWaiting) { if (this.pendingFor(parkedKey).length > 0) { this.drainWaiting.delete(parkedKey); next = parked; break; } }
+      if (next) void this.maybeRunGate(next).catch((cause: unknown) => this.ctx.log(`integration-gate: queued run failed: ${cause instanceof Error ? cause.message : String(cause)}`));
     }
   }
 
@@ -451,6 +457,7 @@ export class IntegrationGateRunner {
 
     if (passed) {
       this.episodes.delete(runId);
+      closeOwnerItemsByPrefix(this.ctx.db as never, `gate-red:${runId}:`, "gate green"); // the red rows of this run leave the owner's list (Gemini F-006.3)
       this.consumePending(key, batch.length);
       // Save the commit the gate ran on as the last green one
       if (ran.head) this.lastGreenCommits.set(key, ran.head);
@@ -533,6 +540,7 @@ export class IntegrationGateRunner {
         }
 
         this.episodes.delete(runId);
+        closeOwnerItemsByPrefix(this.ctx.db as never, `gate-red:${runId}:`, "gate green"); // the red rows of this run leave the owner's list (Gemini F-006.3)
         this.consumePending(key, batch.length);
         if (rechecked.head) this.lastGreenCommits.set(key, rechecked.head);
         return { ran: true, passed: true };

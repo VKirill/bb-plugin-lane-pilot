@@ -577,16 +577,16 @@ AssertionError: expected 1 to be 2
       expect(allFailuresAreTimeouts(mixedOutput, failing)).toBe(false);
     });
 
-    it("buildRecheckGateCommand appends failing files for vitest and jest", () => {
+    it("buildRecheckGateCommand appends failing files for vitest, jest, pytest and a package test script", () => {
       expect(buildRecheckGateCommand("npx vitest run", ["tests/a.test.ts", "tests/b.test.ts"])).toBe(
         "npx vitest run tests/a.test.ts tests/b.test.ts"
       );
       expect(buildRecheckGateCommand("npx jest", ["tests/a.test.ts"])).toBe(
         "npx jest tests/a.test.ts"
       );
-      expect(buildRecheckGateCommand("npm test", ["tests/a.test.ts"])).toBe(
-        "npm test"
-      );
+      expect(buildRecheckGateCommand("npm test", ["tests/a.test.ts"])).toBe("npm test -- tests/a.test.ts");
+      expect(buildRecheckGateCommand("pytest -q", ["tests/test_a.py"])).toBe("pytest -q tests/test_a.py");
+      expect(buildRecheckGateCommand("make check", ["tests/a.test.ts"])).toBe("make check");
     });
 
     it("reruns load timeouts once and goes green if recheck exits 0", async () => {

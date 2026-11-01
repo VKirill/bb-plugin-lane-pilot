@@ -342,6 +342,7 @@ export const rpcOps = {
     input: z.object({}).strict(),
     output: z.unknown(),
   },
+  owner_waiting_close: { input: z.object({ key: z.string().min(1).max(300) }).strict(), output: z.object({ closed: z.boolean() }) },
   owner_waiting_ack: {
     input: z.object({ keys: z.array(z.string().min(1).max(300)).min(1).max(200) }).strict(),
     output: z.unknown(),
