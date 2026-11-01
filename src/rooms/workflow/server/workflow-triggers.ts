@@ -115,7 +115,9 @@ export function createWorkflowTriggers(ctx: ServerCore, services: Pick<Services,
 
   const refuse = (reason: string, message: string, extra: Partial<Extract<TriggerResult, { ok: false }>> = {}): TriggerResult => ({ ok: false, reason, message, ...extra });
 
-  async function start(input: { projectId: string; workflowId: string; inputs: Record<string, unknown>; source: TriggerSource; key?: string | undefined; liveTrial?: boolean | undefined; origin?: "schedule" | undefined }): Promise<TriggerResult> {
+  async function start(input: { projectId: string; workflowId: string; inputs: Record<string, unknown>; source: TriggerSource; key?: string | undefined; liveTrial?: boolean | undefined; origin?: "schedule" | undefined;
+    /** A run that is nobody's business but the project's (the lead's tick): no PM chat, no run link, hidden helpers in the project's folder even when a PM chat is open. */
+    detached?: boolean | undefined }): Promise<TriggerResult> {
     const { store } = await deps.loadStore(input.projectId);
     const stored = store.get(input.workflowId);
     if (!stored) return refuse("unknown_workflow", `There is no workflow "${input.workflowId}".`);
@@ -136,7 +138,8 @@ export function createWorkflowTriggers(ctx: ServerCore, services: Pick<Services,
 
     // A project that does not use Lane Pilot has no PM chat: the run then works on its own (hidden helper threads of the project, the owner's
     // questions and the end on his list). Steps that build code say so when they are reached.
-    const pm = await pmOf(input.projectId);
+    // The lead's tick (0.1.447 live): bound to the PM chat of a blocked run it inherited that chat's environment on a machine that was off and failed to start.
+    const pm = input.detached ? null : await pmOf(input.projectId);
 
     let notChecked: string[] = [];
     if (deps.preflight) {

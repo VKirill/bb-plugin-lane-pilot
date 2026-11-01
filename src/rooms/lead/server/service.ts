@@ -78,7 +78,7 @@ export function createLeadService(ctx: ServerCore, services: Services) {
     const tick = openTick(db, trigger, now);
     try {
       const projectId = await homeProjectId();
-      const result = await services.workflowTriggers.start({ projectId, workflowId: LEAD_TICK, source: "manual", key: `lead-tick:${tick.id}`, inputs: { tickId: tick.id, trigger } });
+      const result = await services.workflowTriggers.start({ projectId, workflowId: LEAD_TICK, source: "manual", key: `lead-tick:${tick.id}`, inputs: { tickId: tick.id, trigger }, detached: true });
       if (!result.ok) { closeTick(db, tick.id, "error", now); ctx.log(`lead tick ${tick.id} not started: ${result.reason}: ${result.message}`); return { ok: false, reason: `${result.reason}: ${result.message}`, tickId: tick.id }; }
       patchTick(db, tick.id, { wf_run_id: result.runId });
       return { ok: true, tickId: tick.id, runId: result.runId };
@@ -90,10 +90,26 @@ export function createLeadService(ctx: ServerCore, services: Services) {
     }
   }
 
+  function failedTicks(now: number): string[] {
+    const closed: string[] = [];
+    for (const tick of listTicks(db, 5)) {
+      if (tick.status !== "running" || !tick.wf_run_id) continue;
+      const run = services.workflowEngine.get(tick.wf_run_id);
+      if (!run || (run.status !== "failed" && run.status !== "canceled")) continue;
+      closeTick(db, tick.id, "error", now);
+      closed.push(tick.id);
+      try { postOwnerItem(db, { key: `lead-tick:${tick.id}`, source: "lead", kind: "tick_error", projectId: null, wake: false, what: `Тик Штурмана ${tick.id} не дошёл до квитанции`, why: `The workflow run ${run.status}${run.failedNode ? ` at ${run.failedNode}` : ""}: ${(run.error ?? run.reason ?? "no reason recorded").slice(0, 300)}`, evidence: [{ kind: "text", ref: tick.wf_run_id, label: "workflow run" }] }, now); } catch { /* informational */ }
+    }
+    return closed;
+  }
+
   /** Every 15 minutes: stale receipts closed, a due tick started when the lead is on, ROAD.md exported once a day. */
   async function sweep(now: number = Date.now()): Promise<{ stale: string[]; started: string | null; exported: boolean }> {
-    const stale = sweepStaleTicks(db, STALE_TICK_MS, now);
+    // A tick whose graph ended without its receipt (the agent step failed to start, the run was cancelled) is closed now, not after 90 minutes.
+    const failed = failedTicks(now);
+    const stale = [...failed, ...sweepStaleTicks(db, STALE_TICK_MS, now)];
     for (const id of stale) {
+      if (failed.includes(id)) continue;
       try { postOwnerItem(db, { key: `lead-tick:${id}`, source: "lead", kind: "tick_no_receipt", projectId: null, wake: false, what: `Тик Штурмана ${id} без квитанции`, why: "The tick started more than 90 minutes ago and never closed its receipt; see the workflow run.", evidence: [{ kind: "text", ref: getTick(db, id)?.wf_run_id ?? id, label: "workflow run" }] }, now); } catch { /* informational */ }
     }
     let started: string | null = null;

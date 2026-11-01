@@ -15,9 +15,27 @@ export async function projectSources(bb: ServerCore["bb"], projectId: string): P
   }
 }
 
+/** The ids of the machines that are connected right now; null when the hub cannot say (then the first folder is as good as any). */
+async function connectedHosts(bb: ServerCore["bb"]): Promise<Set<string> | null> {
+  try {
+    const rows = await bb.sdk.hosts.list() as ReadonlyArray<{ id?: string; status?: string }>;
+    const online = new Set(rows.filter((row) => row.status === "connected" && row.id).map((row) => row.id as string));
+    return online.size ? online : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The project's folder a parentless helper starts in: the first one on a machine that is connected (the lead's first tick, 0.1.447,
+ * picked the first folder of the list on a MacBook that was off and never started), else the first one of the list.
+ */
 export async function projectFolder(bb: ServerCore["bb"], projectId: string): Promise<ProjectFolder | null> {
-  const source = (await projectSources(bb, projectId)).find((row) => row.hostId && row.path);
-  return source?.hostId && source.path ? { hostId: source.hostId, path: source.path } : null;
+  const folders = (await projectSources(bb, projectId)).filter((row): row is { hostId: string; path: string } => Boolean(row.hostId && row.path));
+  if (!folders.length) return null;
+  const online = await connectedHosts(bb);
+  const source = (online && folders.find((row) => online.has(row.hostId))) ?? folders[0]!;
+  return { hostId: source.hostId, path: source.path };
 }
 
 /** The environment a hidden, parentless helper thread of the project starts in. */

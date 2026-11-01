@@ -222,6 +222,14 @@ describe("starting a workflow from the tab, a schedule or Telegram", () => {
     void engine;
   });
 
+  it("a detached start ignores the open PM chat: no chat, no run link (the lead's tick, 0.1.448)", async () => {
+    const { triggers, db } = world();
+    const started = await triggers.start({ projectId: PROJECT, workflowId: "daily-digest", inputs: { query: "q" }, source: "manual", detached: true });
+    expect(started).toMatchObject({ ok: true });
+    const row = db.prepare("SELECT project_id, link_run_id FROM lane_pilot_wf_run WHERE id=?").get((started as { runId: string }).runId);
+    expect(row).toEqual({ project_id: PROJECT, link_run_id: null });
+  });
+
   it("runs in the PM chat, not in the newer chat of a workflow architect that has an open run too", async () => {
     const { triggers, db, engine } = world();
     createRun(db, "run_arch", PROJECT, "cli");

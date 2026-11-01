@@ -8,7 +8,7 @@ import type { Services } from "../../src/rooms/core/server";
 import { answerDecision, getDecision, labelDecision, openDecision } from "../../src/rooms/lead/server/journal";
 import { addRoad, getRoad, proposeRoad } from "../../src/rooms/lead/server/road";
 import { createLeadService } from "../../src/rooms/lead/server/service";
-import { getTick, openTick } from "../../src/rooms/lead/server/tick-store";
+import { getTick, openTick, patchTick } from "../../src/rooms/lead/server/tick-store";
 import { proposalDecisionId, proposalItemKey } from "../../src/rooms/lead/server/tick";
 import { postOwnerItem } from "../../src/rooms/owner-waiting";
 import { loadProjectSettings, openDatabase, saveProjectSetting } from "../../src/rooms/storage/database";
@@ -17,14 +17,14 @@ let dir = "";
 beforeEach(() => { dir = mkdtempSync(join(tmpdir(), "lead-svc-")); process.env.LANE_PILOT_LEAD_DIR = dir; });
 afterEach(() => { rmSync(dir, { recursive: true, force: true }); delete process.env.LANE_PILOT_LEAD_DIR; });
 
-function world(start: () => Promise<unknown> = async () => ({ ok: true, runId: "wf_1" })) {
+function world(start: () => Promise<unknown> = async () => ({ ok: true, runId: "wf_1" }), runs: Record<string, { status: string; error?: string | null; failedNode?: string | null; reason?: string | null }> = {}) {
   const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
   const db = openDatabase(bb);
   const starts: unknown[] = [];
   const services = {
     workflowTriggers: { start: vi.fn(async (input: unknown) => { starts.push(input); return start(); }), pmOf: async () => null },
     docsPlaces: async () => [],
-    workflowEngine: { register: () => undefined },
+    workflowEngine: { register: () => undefined, get: (runId: string) => runs[runId] ? { runId, output: null, reason: null, error: null, failedNode: null, waiting: [], stopped: false, ...runs[runId] } : null },
   } as unknown as Services;
   const lead = createLeadService(createCore(bb, db), services);
   return { bb, db, lead, starts };
@@ -38,7 +38,7 @@ describe("a tick of the lead", () => {
     expect(result).toMatchObject({ ok: true, runId: "wf_1" });
     const tick = getTick(db, (result as { tickId: string }).tickId)!;
     expect(tick).toMatchObject({ status: "running", trigger: "manual", wf_run_id: "wf_1", started_at: 1_000 });
-    expect(starts[0]).toMatchObject({ workflowId: "lead-tick", source: "manual", key: `lead-tick:${tick.id}`, inputs: { tickId: tick.id, trigger: "manual" } });
+    expect(starts[0]).toMatchObject({ workflowId: "lead-tick", source: "manual", key: `lead-tick:${tick.id}`, inputs: { tickId: tick.id, trigger: "manual" }, detached: true });
     const again = await lead.runTick("cron", 2_000);
     expect(again.ok).toBe(false);
     expect((again as { reason: string }).reason).toMatch(/still running/);
@@ -65,6 +65,22 @@ describe("the sweep every 15 minutes", () => {
     const second = await lead.sweep(101 * 60_000);
     expect(second).toEqual({ stale: [], started: null, exported: false });
     expect(starts).toHaveLength(0);
+  });
+
+  it("closes a tick whose graph failed before the receipt at once, with the step's error for the owner (live 0.1.447: the agent step could not start)", async () => {
+    const { db, lead } = world(undefined, { wf_dead: { status: "failed", error: "thread_failed: Command thread.start failed", failedNode: "think" } });
+    openTick(db, "manual", 10 * 60_000, "tick_dead");
+    patchTick(db, "tick_dead", { wf_run_id: "wf_dead" });
+    openTick(db, "manual", 11 * 60_000, "tick_alive");
+    patchTick(db, "tick_alive", { wf_run_id: "wf_alive" });
+    const result = await lead.sweep(12 * 60_000);
+    expect(result.stale).toEqual(["tick_dead"]);
+    expect(getTick(db, "tick_dead")).toMatchObject({ status: "error" });
+    expect(getTick(db, "tick_alive")).toMatchObject({ status: "running" });
+    const item = db.prepare("SELECT key, kind, state, why FROM lane_pilot_owner_item WHERE key=?").get("lead-tick:tick_dead") as { kind: string; why: string };
+    expect(item).toMatchObject({ kind: "tick_error" });
+    expect(item.why).toContain("failed at think");
+    expect(item.why).toContain("thread.start failed");
   });
 
   it("starts a due tick when the lead is on", async () => {
