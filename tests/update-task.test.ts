@@ -524,3 +524,107 @@ describe("lane_pilot_update_task", () => {
     });
   });
 });
+
+describe("a task blocked by the plan critique before any writer", () => {
+  const runId = "run-test-update";
+  const projectId = "proj-test";
+  const pmThreadId = "pm-thread-1";
+  const taskId = "task-to-update";
+  let db: ReturnType<typeof openDatabase>;
+  let disposeHost: (() => Promise<void>) | null = null;
+
+  const fakeHost = { call: async () => ({ status: "ready", entries: [] }) };
+  const fakeBb = {
+    storage: { kv: { get: async () => null, set: async () => {}, delete: async () => {}, list: async () => [] } },
+    hosts: { experimental_client: () => fakeHost },
+    sdk: { files: { write: async () => {}, read: async () => null }, threads: { send: async () => {} } },
+    log: { warn: () => {}, info: () => {} },
+  };
+
+  // The plan critique's structural findings refuse a contract whose expected output sits outside owns_paths.
+  const refusedTask: TaskV2 = {
+    schema_version: 2, id: taskId, display_title: "Тестовая задача", kind: "feature", area: "feature:update-task",
+    title: "Original title", risk: "low", lane: "core", project_cwd: "/ws",
+    read_first: [], interfaces: [], invariants: [], out_of_scope: [],
+    expected_outputs: ["lib/out.txt"], owns_paths: ["src/**"], never_touch: [], depends_on: [],
+    objective: "Original objective", acceptance: ["all pass"], verify: "tests",
+    verification: [{ command: "npm test", cwd: "/ws" }],
+  };
+
+  beforeEach(() => {
+    const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
+    db = openDatabase(bb);
+    disposeHost = () => harness.lifecycle.dispose();
+    createRun(db, runId, projectId, "bb", "/ws", "none", { schemaVersion: 1, pools: { provider: 5, verification: 2 } }, "host-1");
+    db.prepare("UPDATE lane_pilot_run SET pm_thread_id=? WHERE id=?").run(pmThreadId, runId);
+    savePrototypeConfig(db, { projectId, hostId: "host-1", pmWorkspacePath: "/ws", writerWorkspacePath: "/ws",
+      pmProviderId: "p1", pmModel: "m1", writerProviderId: "p1", writerModel: "m1" });
+  });
+  afterEach(async () => { await disposeHost?.(); disposeHost = null; });
+
+  /** A real dispatch whose plan critique blocks the attempt: the pipeline run ends before any writer. */
+  async function blockedByCritique(ctx: ServerCore, services: Services, task: TaskV2 = refusedTask) {
+    const config = loadPrototypeConfig(db, projectId)!;
+    const engine = new WorkflowEngine({ db, harnessVersion: "1.0.0", resolveWorkflow: (id, version) => builtinWorkflow(id, version) });
+    registerDispatchExecutors(engine);
+    engine.register("lp.qa-gate", { reentrant: true, run: async () => ({ output: { run: false } }) });
+    const started: string[] = [];
+    Object.assign(services, { workflowEngine: engine, isLiveFolder: async () => false, startWriterTask: (input: { task: TaskV2 }) => { started.push(input.task.title); } });
+    const mutable = ctx as unknown as { host?: unknown; refreshRun?: unknown };
+    mutable.host ??= { call: async (method: string) => (method === "gitOwnershipBase" ? { status: "not-git" } : { status: "ready", entries: [] }) };
+    const run = startDispatchRun(engine, { ctx, services, threadId: pmThreadId, projectId, runId, taskId, attemptId: "att-1", config, runConfig: config,
+      workspacePath: "/ws", task, plan: task.objective, lintWarnings: [] });
+    await run.done;
+    return { engine, started, pipelineRunId: run.runId };
+  }
+
+  const baseCtx = () => ({ bb: fakeBb as never, db, state: { disposed: false },
+    configForRun: async (id: string) => loadPrototypeConfig(db, id), log: () => {} }) as unknown as ServerCore;
+
+  it("is fixed in place like a queued one: the contract is rewritten and pm-read and the critique run again, no attempt spent", async () => {
+    createTask(db, { id: taskId, runId, kind: "bb", contract: refusedTask });
+    createAttempt(db, { id: "att-1", runId, taskId });
+    const ctx = baseCtx();
+    const services = { activeWriterTasks: new Set<string>(), stability: { loadParked: async () => [] } } as unknown as Services;
+    const { engine, started, pipelineRunId } = await blockedByCritique(ctx, services);
+    expect(getAttempt(db, "att-1")).toMatchObject({ state: "blocked", thread_id: null, reason: "structural_plan_critique_blocked" });
+
+    const fixed: TaskV2 = { ...refusedTask, title: "Fixed title", expected_outputs: ["src/out.txt"] };
+    const res = await createWriterUpdateTask(ctx, services).updateTask({ projectId, runId, pmThreadId, taskId, task: fixed, plan: "Fixed plan" });
+
+    expect(res.ok).toBe(true);
+    expect(res.state).toBe("queued");
+    expect((getTask(db, taskId)?.contract as TaskV2).title).toBe("Fixed title");
+    expect(getTaskPlan(db, taskId)).toBe("Fixed plan");
+    expect(countAttempts(db, runId, taskId)).toBe(1);
+    expect(getAttempt(db, "att-1")).toMatchObject({ state: "queued", reason: null });
+    // The stages went again through the task's one pipeline run, which waits for the writer once more.
+    expect(engine.get(pipelineRunId)?.status).toBe("waiting");
+    expect(started).toContain("Fixed title");
+    const rerun = db.prepare("SELECT detail FROM lane_pilot_wf_event WHERE run_id=? AND kind='rerun'").all(pipelineRunId) as Array<{ detail: string }>;
+    expect(rerun).toHaveLength(1);
+    expect(rerun[0]!.detail).toContain("node pm-read");
+    expect(res.critiqueAllowed).toBe(true);
+  });
+
+  it("is refused when the blocked attempt already has a writer thread", async () => {
+    createTask(db, { id: taskId, runId, kind: "bb", contract: refusedTask });
+    createAttempt(db, { id: "att-1", runId, taskId });
+    db.prepare("UPDATE lane_pilot_attempt SET state='blocked', reason='structural_plan_critique_blocked', thread_id='thr-w' WHERE id='att-1'").run();
+    const ctx = baseCtx();
+    const services = { activeWriterTasks: new Set<string>(), stability: { loadParked: async () => [] } } as unknown as Services;
+    const res = await createWriterUpdateTask(ctx, services).updateTask({ projectId, runId, pmThreadId, taskId, task: { ...refusedTask, title: "Fixed title" }, plan: "Fixed plan" });
+    expect(res).toMatchObject({ ok: false, error: { code: "task_started" } });
+    expect((getTask(db, taskId)?.contract as TaskV2).title).toBe("Original title");
+  });
+
+  it("is refused when the block is not a pre-writer gate's", async () => {
+    createTask(db, { id: taskId, runId, kind: "bb", contract: refusedTask });
+    createAttempt(db, { id: "att-1", runId, taskId });
+    db.prepare("UPDATE lane_pilot_attempt SET state='blocked', reason='verdict_block:specialist-review: stopped' WHERE id='att-1'").run();
+    const ctx = baseCtx();
+    const services = { activeWriterTasks: new Set<string>(), stability: { loadParked: async () => [] } } as unknown as Services;
+    const res = await createWriterUpdateTask(ctx, services).updateTask({ projectId, runId, pmThreadId, taskId, task: { ...refusedTask, title: "Fixed title" }, plan: "Fixed plan" });
+    expect(res).toMatchObject({ ok: false, error: { code: "task_started" } });
+  });
+});

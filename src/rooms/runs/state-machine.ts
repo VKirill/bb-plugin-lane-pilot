@@ -118,6 +118,7 @@ export const OPERATIONAL_MOVES: ReadonlyArray<{ from:AttemptState; to:AttemptSta
   { from:"running", to:"blocked", why:"a gate after the writer (owns, critique, merge queue, budget) or an internal error ends the attempt with no failure state of its own" },
   { from:"cancel_requested", to:"blocked", why:"an internal error ends an attempt whose stop was requested" },
   { from:"blocked", to:"running", why:"the PM answered the writer's question: the same writer thread goes on" },
+  { from:"blocked", to:"queued", why:"the PM fixed in place a contract a pre-writer gate refused (plan critique, validation): the dispatch stages run again, no attempt spent" },
   { from:"queued", to:"accepted", why:"a mainfix whose failing checks already pass on main closes without a writer" },
   { from:"queued", to:"canceled", why:"canceled before any writer was asked for" },
   { from:"queued", to:"cancel_requested", why:"canceled while its dispatch stages run" },

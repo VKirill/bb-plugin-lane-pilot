@@ -32,7 +32,10 @@ function waitingTasks(ctx: ServerCore, services: Services, row: RegressionRecord
   for (const attempt of listOpenAttempts(db)) {
     if (attempt.project_id !== row.projectId || attempt.task_id === row.taskId || waiting.has(attempt.task_id)) continue;
     if (base && taskBasePath(db, attempt.run_id, attempt.task_id) !== base) continue;
-    const contract = getTask(db, attempt.task_id)?.contract as { owns_paths?: unknown } | undefined;
+    const contract = getTask(db, attempt.task_id)?.contract as { owns_paths?: unknown; fixes_regressions?: unknown } | undefined;
+    // A task that names this row in fixes_regressions is the fix, not a waiter.
+    const fixes = Array.isArray(contract?.fixes_regressions) ? (contract!.fixes_regressions as unknown[]).filter((x): x is number => typeof x === "number") : [];
+    if (fixes.includes(row.id)) continue;
     const owns = Array.isArray(contract?.owns_paths) ? (contract!.owns_paths as unknown[]).filter((x): x is string => typeof x === "string") : [];
     if (ownsPathsOverlap(owns, files)) waiting.add(attempt.task_id);
   }
@@ -59,7 +62,7 @@ export function mountRegressionTools(ctx: ServerCore, services: Services): void 
   registerObservedTool(ctx.bb.agents, {
     name: "lane_pilot_regression_list",
     description: "The open regression findings of this project: which accepted task's check went red on main, which task the bisect blamed, and which tasks wait on the row right now.",
-    instructions: "Use only from the active Lane Pilot PM thread, when a task waits on a quarantine or you want the state of the nightly regression watch. Each row names the check, the culprit task, the shared files and the task ids it holds back. A row whose culprit changed those files on purpose is settled with lane_pilot_regression {action:\"settle\"}; a real break is fixed by a task that owns the shared files.",
+    instructions: "Use only from the active Lane Pilot PM thread, when a task waits on a quarantine or you want the state of the nightly regression watch. Each row names the check, the culprit task, the shared files and the task ids it holds back. A row whose culprit changed those files on purpose is settled with lane_pilot_regression {action:\"settle\"}; a real break is fixed by a task that owns the shared files and names the row's id in its fixes_regressions, so the row does not hold it.",
     parameters: z.object({}).strict(),
     execute: async (_params, context) => {
       const rows = listRegressions(db, { projectId: context.projectId });

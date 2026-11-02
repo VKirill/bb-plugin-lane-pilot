@@ -70,9 +70,12 @@ export function freshAttemptStart(task:TaskV2, config:PrototypeConfig, runWorksp
 /** The latest charged failure of a task's family (its redispatches and mainfixes), to seed the repeated-failure stop. */
 /** The open found regression a task waits for: same checkout, shared files. Another repository of the project only shares
  * names like package.json (BB-сервис keeps dozens of plugin repos: office-viewer's release checks held magicseo, 2026-10-30). */
-export function quarantiningRegression(db:ReturnType<typeof openDatabase>, task:{projectId:string;runId:string;taskId:string;ownsPaths:string[]}, filesOf:(row:RegressionRecord)=>string[]):RegressionRecord|undefined {
+export function quarantiningRegression(db:ReturnType<typeof openDatabase>, task:{projectId:string;runId:string;taskId:string;ownsPaths:string[];fixesRegressions?:number[]}, filesOf:(row:RegressionRecord)=>string[]):RegressionRecord|undefined {
   const base = taskBasePath(db, task.runId, task.taskId);
+  // A task that names the rows it fixes (contract fixes_regressions) is not held by them — it is the fix; every other row still holds it.
+  const fixes = task.fixesRegressions ?? [];
   return listRegressions(db, { projectId:task.projectId }).find((row) => row.kind === "regression" && row.bisectStatus === "found"
+    && !fixes.includes(row.id)
     && (!base || taskBasePath(db, row.runId, row.taskId) === base) && ownsPathsOverlap(task.ownsPaths, filesOf(row)));
 }
 
@@ -404,14 +407,16 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         if (stop) return stop;
         const blocker = (() => {
           try {
-            return quarantiningRegression(db, { projectId:input.projectId, runId:input.runId, taskId:input.taskId, ownsPaths:input.task.owns_paths }, filesOf);
+            // fixes_regressions is optional in the contract: absent reads as no named rows (the cast keeps typecheck honest until the field ships).
+            return quarantiningRegression(db, { projectId:input.projectId, runId:input.runId, taskId:input.taskId, ownsPaths:input.task.owns_paths,
+              fixesRegressions:(input.task as TaskV2 & { fixes_regressions?: number[] }).fixes_regressions }, filesOf);
           } catch { return undefined; } // a test database without the baseline migrations quarantines nothing
         })();
         if (!blocker) return;
         if (noted !== `${blocker.id}`) {
           noted = `${blocker.id}`;
           const shared = filesOf(blocker).slice(0, 6).join(", ");
-          const reason = `quarantine: regression #${blocker.id} of ${blocker.taskId} (check red since ${blocker.culpritTask ?? "unknown"}); if the change was meant: lane_pilot_regression {action:"settle", id:${blocker.id}, reason:"…"}; if it is a real break: fix it in a task that owns ${shared}`;
+          const reason = `quarantine: regression #${blocker.id} of ${blocker.taskId} (check red since ${blocker.culpritTask ?? "unknown"}); if the change was meant: lane_pilot_regression {action:"settle", id:${blocker.id}, reason:"…"}; if it is a real break: fix it in a task that owns ${shared} with fixes_regressions:[${blocker.id}]`;
           ctx.log(`writer ${input.taskId} waits: ${reason}`);
           const stage = listStageReceipts(db,input.runId,input.taskId).find((row) => row.stageId === "writer-agent");
           if (!stage || stage.state === "pending") {
