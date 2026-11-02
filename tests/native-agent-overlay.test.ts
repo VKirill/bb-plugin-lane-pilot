@@ -205,7 +205,8 @@ it("is a unified BB PM instruction, not a CLI orchestrator patch", () => {
   expect(LANE_PILOT_PM_SESSION).toContain("copy-lead");
   expect(LANE_PILOT_PM_SESSION).toContain("seo-specialist");
   // The browser check of a task is its own graph's step: the PM gives qa_url next to qa_cases and never calls the check by hand.
-  expect(LANE_PILOT_PM_SESSION).toContain("every task that has qa_cases also needs qa_url");
+  // qa_url next to qa_cases is the dispatch tool's argument rule; the prompt keeps the consequence: its own graph runs the check.
+  expect(LANE_PILOT_PM_SESSION).toContain("With qa_cases the task's own graph runs the browser check right after acceptance");
   expect(LANE_PILOT_PM_SESSION).toContain("so do not call the browser check by hand");
   expect(LANE_PILOT_PM_SESSION).toContain("send a follow-up task with the same qa_url and qa_cases");
   expect(LANE_PILOT_PM_SESSION).not.toContain("lane_pilot_browser_qa");
