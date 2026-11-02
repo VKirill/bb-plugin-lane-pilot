@@ -10,7 +10,7 @@ import { LANE_PILOT_PM_SESSION } from "../src/rooms/native-agent/native-agent-ov
  * registered surface is what the PM reads). The ceiling is the measured total on 2026-11-02 rounded up to 1 000; over it,
  * cut first or raise it on purpose, saying why in the commit. Per tool, BB refuses registration above 4096 instructions.
  */
-const SURFACE_CEILING = 62_000;
+const SURFACE_CEILING = 62_500; // +500 on 2026-11-02: the decide-yourself rule, the owner's top complaint in the replayed chats
 const TOOL_INSTRUCTIONS_MAX = 4_096;
 
 let dispose: (() => Promise<void> | void) | null = null;
