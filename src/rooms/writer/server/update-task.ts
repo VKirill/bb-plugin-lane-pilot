@@ -35,6 +35,9 @@ const STAGES_WAIT_MS = 240_000;
 /** What a PM may change on a task its writer is waiting on a question about; any other field needs a redispatch. */
 const IN_PLACE_FIELDS: readonly string[] = ["verification", "acceptance", "expected_outputs", "owns_paths", "never_touch", "plan", "display_title", "kind"];
 
+/** Reasons of a block that happened before any writer: the plan critique (structural, model verdict or its own fault) and the contract validation. */
+const PRE_WRITER_GATE_REASON = /^(?:structural_plan_critique|plan_critique|verdict_block:plan-critique|validation_failed)/;
+
 /** The top-level fields whose values differ between two contracts. */
 function changedFields(before: TaskV2, after: TaskV2): FieldChange[] {
   const fields = [...new Set([...Object.keys(before), ...Object.keys(after)])] as Array<keyof TaskV2>;
@@ -131,7 +134,10 @@ export function createWriterUpdateTask(ctx: ServerCore, services: Services) {
     }
     // A blocked task whose writer asked a question is fixed in place below; any other started task is refused.
     const blocked = attempt && awaitsWriterAnswer(attempt) ? attempt : null;
-    if (!blocked && (attempt?.thread_id || attempt?.state !== "queued")) {
+    // A pre-writer gate (plan critique, contract validation) blocked this attempt before it ever had a writer thread:
+    // the task never started, so it is fixed in place like a queued one and pm-read and the critique run again.
+    const gateBlocked = !blocked && attempt?.state === "blocked" && !attempt.thread_id && PRE_WRITER_GATE_REASON.test(attempt.reason ?? "");
+    if (!blocked && !gateBlocked && (attempt?.thread_id || attempt?.state !== "queued")) {
       return {
         ok: false,
         error: {
@@ -275,13 +281,15 @@ export function createWriterUpdateTask(ctx: ServerCore, services: Services) {
 
     // The stages go again from pm-read through the task's pipeline run; while they do, the attempt says so and a second update waits.
     transitionAttempt(db, latestAttempt.id, "queued", { reason: DISPATCH_STAGES_PENDING });
+    ctx.refreshRun?.(input.runId);
     const rerun = await rerunDispatchStages(engine, {
       ctx, services, threadId: input.pmThreadId, projectId: input.projectId, runId: input.runId, taskId: input.taskId, attemptId: latestAttempt.id,
       config, runConfig: taskConfig, workspacePath: taskBase, task: valid.task, plan: canonicalPlan, lintWarnings: [],
     }, STAGES_WAIT_MS);
     if (!rerun.ok) {
-      // Nothing went again: the stored task and its PLAN.md go back as they were.
-      transitionAttempt(db, latestAttempt.id, "queued");
+      // Nothing went again: the stored task and its PLAN.md go back as they were, and a gate-blocked attempt keeps its block.
+      transitionAttempt(db, latestAttempt.id, gateBlocked ? "blocked" : "queued", gateBlocked && attempt?.reason ? { reason: attempt.reason } : {});
+      ctx.refreshRun?.(input.runId);
       updateTaskContract(db, input.taskId, row.contract);
       saveTaskPlan(db, input.taskId, oldPlan);
       await persistPlan(config.hostId, taskBase, input.taskId, oldPlan);

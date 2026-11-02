@@ -172,11 +172,14 @@ export const taskV2Schema = z.object({
     chain: z.array(z.string().trim().min(2).max(200)).min(2).max(8),
     why: z.string().trim().min(1).max(300).optional(),
   }).strict()).max(10).describe("Chains of identifiers a value travels, e.g. [\"ui.theme\", \"loadSettings\", \"ThemeProvider\"]: each neighbouring pair must meet in one file.").optional(),
+  /** The open regression findings this task fixes (lane_pilot_regression row ids): a named row's quarantine does not hold it;
+   *  every other row still does. The row closes when the nightly regression pass re-runs its check green. */
+  fixes_regressions: z.array(z.number().int().min(1)).max(20).describe("Ids of open regression findings this task fixes (lane_pilot_regression {action:\"list\"}); a named row's quarantine does not hold this task.").optional(),
 }).strict();
 
 export type TaskV2 = z.infer<typeof taskV2Schema>;
 /** The optional fields of the task contract: `validateTaskV2` accepts them, any other extra key is refused. */
-export const TASK_V2_OPTIONAL = ["skills", "area", "display_title", "kind", "quality_mode", "qa_cases", "qa_url", "qa_env_class", "qa_dev_server", "convergence", "files", "appetite", "forecast", "wires", "promise", "priority", "clarify", "drawing", "test_removals"] as const;
+export const TASK_V2_OPTIONAL = ["skills", "area", "display_title", "kind", "quality_mode", "qa_cases", "qa_url", "qa_env_class", "qa_dev_server", "convergence", "files", "appetite", "forecast", "wires", "promise", "priority", "clarify", "drawing", "test_removals", "fixes_regressions"] as const;
 
 /**
  * Host calls that run as background jobs: a separate process the host daemon's deadline cannot cut off (B4). A kind is
