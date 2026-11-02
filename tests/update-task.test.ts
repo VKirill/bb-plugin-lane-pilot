@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { openDatabase, createRun, createTask, createAttempt, countAttempts, getAttempt, getTask, getTaskGitBase, getTaskPlan, loadPrototypeConfig,
   savePrototypeConfig, listStageReceipts, saveProjectSetting, transitionAttempt } from "../src/rooms/storage/database";
+import { recordStage } from "../src/rooms/runs/server/stage-records";
 import { createWriterUpdateTask } from "../src/rooms/writer/server/update-task";
 import { registerDispatchExecutors, startDispatchRun } from "../src/rooms/writer/server/dispatch-workflow";
 import { builtinWorkflow } from "../src/rooms/workflow";
@@ -588,6 +589,9 @@ describe("a task blocked by the plan critique before any writer", () => {
     const services = { activeWriterTasks: new Set<string>(), stability: { loadParked: async () => [] } } as unknown as Services;
     const { engine, started, pipelineRunId } = await blockedByCritique(ctx, services);
     expect(getAttempt(db, "att-1")).toMatchObject({ state: "blocked", thread_id: null, reason: "structural_plan_critique_blocked" });
+    const writerStage = () => listStageReceipts(db, runId, taskId).find((row) => row.stageId === "writer-agent")?.state;
+    // The block leaves the writer stage skipped (what the live gate does), so the writer can start again only if the update reopens it.
+    recordStage(db, { runId, taskId, stageId: "writer-agent", state: "skipped", input: "plan", reason: "structural_plan_critique_blocked" });
 
     const fixed: TaskV2 = { ...refusedTask, title: "Fixed title", expected_outputs: ["src/out.txt"] };
     const res = await createWriterUpdateTask(ctx, services).updateTask({ projectId, runId, pmThreadId, taskId, task: fixed, plan: "Fixed plan" });
@@ -605,6 +609,8 @@ describe("a task blocked by the plan critique before any writer", () => {
     expect(rerun).toHaveLength(1);
     expect(rerun[0]!.detail).toContain("node pm-read");
     expect(res.critiqueAllowed).toBe(true);
+    expect(writerStage()).toBe("pending");
+    expect(() => recordStage(db, { runId, taskId, stageId: "writer-agent", state: "running", input: "Fixed plan" })).not.toThrow();
   });
 
   it("is refused when the blocked attempt already has a writer thread", async () => {

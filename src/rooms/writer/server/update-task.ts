@@ -17,7 +17,7 @@ import {
 } from "../../storage";
 import { lintReply } from "../../tasks/server";
 import { createTaskLinter } from "../../tasks/server";
-import { markTaskSatisfied } from "../../runs/server";
+import { markTaskSatisfied, reopenWriterStages } from "../../runs/server";
 import type { ServerCore } from "../../core/server";
 import type { Services } from "../../core/server";
 import { validateTaskV2 } from "../../tasks/task-v2";
@@ -281,6 +281,9 @@ export function createWriterUpdateTask(ctx: ServerCore, services: Services) {
 
     // The stages go again from pm-read through the task's pipeline run; while they do, the attempt says so and a second update waits.
     transitionAttempt(db, latestAttempt.id, "queued", { reason: DISPATCH_STAGES_PENDING });
+    // A gate's block left the writer stages skipped; the writer could never start again («illegal stage transition writer-agent:
+    // skipped -> running», live 2026-11-03 twice). They open as pending, as for a parked task.
+    if (gateBlocked) reopenWriterStages(db, input.runId, input.taskId, "the PM fixed in place the contract a pre-writer gate refused");
     ctx.refreshRun?.(input.runId);
     const rerun = await rerunDispatchStages(engine, {
       ctx, services, threadId: input.pmThreadId, projectId: input.projectId, runId: input.runId, taskId: input.taskId, attemptId: latestAttempt.id,
