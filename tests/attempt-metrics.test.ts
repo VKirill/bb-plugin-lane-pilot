@@ -134,3 +134,24 @@ describe("lp_attempt_metrics", () => {
     expect(report.summary.firstByTier).toMatchObject({ strong: { first:1, accepted:1 }, standard: { first:1, accepted:0 }, unknown: { first:1, accepted:1 } });
     expect(renderAttemptMetrics(report)).toContain("strong 1/1 accepted");
   });
+
+describe("H2 wait metrics", () => {
+  it("reports attemptsPerAcceptedTask and heldShare from the transition journal", () => {
+    const w = world();
+    const at = NOW - 3_600_000;
+    w.task("t1"); w.task("t2");
+    w.attempt("a1", "t1", 1, "accepted", "thr_a", at);
+    w.attempt("a2", "t1", 2, "accepted", "thr_a", at + 1);
+    w.attempt("a3", "t2", 1, "spawn_rejected", null, at);
+    w.attempt("a4", "t2", 2, "accepted", "thr_b", at + 2);
+    // a2 sat parked waiting_writer once (a queued->queued journal row with the prefix).
+    w.db.prepare("INSERT INTO lane_pilot_attempt_transition(attempt_id,from_state,to_state,reason,refused,at) VALUES('a2','queued','queued',?,0,?)")
+      .run("waiting_writer:writer_provider_unavailable:owner_present:claude-code", at + 1);
+    const report = attemptMetrics(w.db as never, { projectId:"proj", days:1, now:NOW });
+    expect(report.summary.attemptsPerAcceptedTask).toBe(2);
+    expect(report.summary.heldShare).toBe(0.25);
+    const text = renderAttemptMetrics(report);
+    expect(text).toContain("Attempts per accepted task: 2");
+    expect(text).toContain("Held (waiting_writer) share: 25%");
+  });
+});

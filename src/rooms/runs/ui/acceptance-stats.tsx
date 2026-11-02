@@ -5,7 +5,7 @@ import { Button } from "@lane-pilot/ui-kit";
 
 type Totals = {
   dispatched:number; firstTryAccepted:number; eventuallyAccepted:number;
-  attempts:number; attemptsPerAccepted:number|null;
+  attempts:number; attemptsPerAccepted:number|null; heldShare:number|null;
   redispatched:number; families:number; causes:Record<string, number>;
 };
 type Week = Totals & { week:string };
@@ -82,7 +82,7 @@ export function AcceptanceStats({ projectId }: { projectId: string }) {
               <td className="pr-2 py-1 text-right">{pct(project!.totals.eventuallyAccepted, project!.totals.dispatched)}</td>
               <td className="pr-2 py-1 text-right">{pct(project!.totals.redispatched, project!.totals.dispatched)}</td>
               <td className="py-1" style={{ overflowWrap:"anywhere" }}>
-                {topCauses(project!.totals.causes)}; попыток на принятую задачу: {num(project!.totals.attemptsPerAccepted)}
+                {topCauses(project!.totals.causes)}; попыток на принятую задачу: {num(project!.totals.attemptsPerAccepted)}; ждали свободного писателя: {num(project!.totals.heldShare === null ? null : Math.round(project!.totals.heldShare * 100), "%")}
               </td>
             </tr>
           </tbody>

@@ -46,7 +46,7 @@ import { mountWorldAssets } from "./src/rooms/world-assets/server";
 import { registerLaneWorktreeProvider } from "./src/rooms/native-agent/server";
 import { scheduleIsolated } from "./src/rooms/core/server";
 import { DRAIN_SNAPSHOT_KEY, skipRedundantStartupScans } from "./src/rooms/stability/server";
-import { createWriterQuestionTimeout, DEFAULT_SILENCE_NUDGE_MIN, OPENCODE_WRITER_PROVIDER, sweepWriterSilence } from "./src/rooms/writer/server";
+import { createWriterQuestionTimeout, DEFAULT_SILENCE_NUDGE_MIN, OPENCODE_WRITER_PROVIDER, sweepWriterSilence, sweepWriterWakes } from "./src/rooms/writer/server";
 import { threadPendingInteractions } from "./src/rooms/relay/server";
 import type { Services } from "./src/rooms/core/server";
 import { createStageChildren } from "./src/rooms/qa/server";
@@ -250,6 +250,9 @@ export default async function plugin(bb: BbPluginApi) {
   const writerQuestions = createWriterQuestionTimeout(ctx, services);
   scheduleIsolated(bb, "writer-question-sweep", "*/5 * * * *", (signal) => writerQuestions.sweepWriterQuestions(Date.now(), signal).then(() => undefined,
     (cause) => pluginStopped(cause) ? undefined : bb.log.warn(`Lane Pilot writer question sweep skipped: ${cause instanceof Error ? cause.message : String(cause)}`)), { timeoutMs: 10 * 60_000 });
+  // The waker of H2: attempts parked `waiting_writer:` are retaken when their earliest provider hold ends.
+  scheduleIsolated(bb, "writer-wake", "* * * * *", () => sweepWriterWakes(ctx, services).then(() => undefined,
+    (cause) => pluginStopped(cause) ? undefined : bb.log.warn(`Lane Pilot writer wake skipped: ${cause instanceof Error ? cause.message : String(cause)}`)), { timeoutMs: 5 * 60_000 });
   // Mondays 05:00: away from the nightly docs (03:00) and rules (03:30) passes.
   // 05:10, not 05:00: BB starts at most 8 isolated runs at once and the hour start already has several.
   scheduleIsolated(bb, "stability-drill", "10 5 * * 1", (signal) => services.stability.drill(Date.now(), signal).then(() => undefined,

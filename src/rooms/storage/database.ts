@@ -473,6 +473,9 @@ export const migrations = [
   `CREATE UNIQUE INDEX IF NOT EXISTS lane_pilot_worktree_open ON lane_pilot_worktree(host, path) WHERE released_at IS NULL`,
   // The lead's decision journal: every question to the owner with the prediction made before his answer (src/rooms/lead). Append only.
   ...leadMigrations,
+  // H2: an attempt parked while every writer is held re-asks at wake_at; NULL while it is not parked. Append only.
+  `ALTER TABLE lane_pilot_attempt ADD COLUMN wake_at INTEGER`,
+  `CREATE INDEX IF NOT EXISTS lane_pilot_attempt_wake ON lane_pilot_attempt(wake_at) WHERE wake_at IS NOT NULL`,
 ];
 
 export function openDatabase(bb: BbPluginApi): LanePilotDatabase {
@@ -900,6 +903,31 @@ export function findOpenNativeRun(db: LanePilotDatabase, projectId: string, thre
   return row?.id ?? null;
 }
 
+/**
+ * Parks a queued attempt until `wakeAt` while every writer provider is held (H2): the attempt stays `queued`, the
+ * wait is journaled as a queued→queued note (an operational move), and the board reads its reason + wake_at.
+ */
+export function parkAttemptWake(db: LanePilotDatabase, attemptId: string, reason: string, wakeAt: number | null): void {
+  transitionAttempt(db, attemptId, "queued", { reason });
+  db.prepare("UPDATE lane_pilot_attempt SET wake_at=? WHERE id=?").run(wakeAt, attemptId);
+}
+
+/** Queued attempts whose writer hold ended (or should be re-checked): the minute waker picks them up. */
+export function listDueWakes(db: LanePilotDatabase, now: number): Array<{ id: string; run_id: string; task_id: string; reason: string | null }> {
+  return db.prepare("SELECT id,run_id,task_id,reason FROM lane_pilot_attempt WHERE state='queued' AND wake_at IS NOT NULL AND wake_at<=? ORDER BY wake_at")
+    .all(now) as Array<{ id: string; run_id: string; task_id: string; reason: string | null }>;
+}
+
+/** Takes the wake of a queued attempt: clears wake_at once, so two ticks cannot spawn the same attempt twice. */
+export function claimAttemptWake(db: LanePilotDatabase, attemptId: string): boolean {
+  return db.prepare("UPDATE lane_pilot_attempt SET wake_at=NULL WHERE id=? AND state='queued' AND wake_at IS NOT NULL").run(attemptId).changes === 1;
+}
+
+/** The wait is over once the attempt leaves `queued`; a spawn that begins clears any wake still set. */
+export function clearAttemptWake(db: LanePilotDatabase, attemptId: string): void {
+  db.prepare("UPDATE lane_pilot_attempt SET wake_at=NULL WHERE id=?").run(attemptId);
+}
+
 export function createAttempt(db: LanePilotDatabase, ids: { id:string; runId:string; taskId:string }): void {
   const now = Date.now();
   const used = countAttempts(db, ids.runId, ids.taskId);
@@ -1259,9 +1287,10 @@ export function transitionAttempt(
     illegalTransitionLog(`Lane Pilot refused ${error.message}${fields.reason ? `: ${fields.reason.slice(0, 200)}` : ""}`);
     throw error;
   }
-  const changed = db.prepare(`UPDATE lane_pilot_attempt SET state=?, thread_id=COALESCE(?,thread_id), reason=?, updated_at=?
+  const changed = db.prepare(`UPDATE lane_pilot_attempt SET state=?, thread_id=COALESCE(?,thread_id), reason=?, updated_at=?,
+    wake_at=CASE WHEN ?<>'queued' THEN NULL ELSE wake_at END
     WHERE id=? AND (state NOT IN (${FINAL_ATTEMPT_STATES.map(() => "?").join(",")}) OR state=?)`)
-    .run(state, fields.threadId ?? null, fields.reason ?? null, now, attemptId, ...FINAL_ATTEMPT_STATES, state).changes === 1;
+    .run(state, fields.threadId ?? null, fields.reason ?? null, now, state, attemptId, ...FINAL_ATTEMPT_STATES, state).changes === 1;
   db.prepare(`INSERT INTO lane_pilot_attempt_transition(attempt_id,from_state,to_state,reason,refused,at) VALUES(?,?,?,?,?,?)`)
     .run(attemptId, before.state, state, fields.reason ?? null, changed ? 0 : 1, now);
   if (changed && before.state !== state) attemptChanged(attemptId);

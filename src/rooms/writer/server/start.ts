@@ -6,7 +6,7 @@ import type { DirtSnapshot } from "../cli-outcome";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
 import { providerPoolCap } from "@lane-pilot/settings-catalog";
 import { isZcodeProvider, WRITER_PROFILES, type WriterProfile } from "@lane-pilot/models";
-import { DEPENDENCY_REDO_WAIT_MS, countAttempts, countChargedAttempts, countThreadTurns, createAttempt, endSpawnFailure, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getTask, getTaskPlan, latestTaskAttemptState, listAttemptsForTask, listOpenAttempts, listStageReceipts, listUnansweredWriterQuestions, loadProjectSettings, noteToldPmDirectly, transitionAttempt, taskBasePath } from "../../storage";
+import { DEPENDENCY_REDO_WAIT_MS, countAttempts, countChargedAttempts, countThreadTurns, createAttempt, endSpawnFailure, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getTask, getTaskPlan, latestTaskAttemptState, listAttemptsForTask, listOpenAttempts, listStageReceipts, listUnansweredWriterQuestions, loadProjectSettings, noteToldPmDirectly, parkAttemptWake, transitionAttempt, taskBasePath } from "../../storage";
 import { taskV2Schema } from "../../contracts";
 import { ownsPathsOverlap, pollPause } from "@lane-pilot/kit";
 import { reconcile, reconcileCursor } from "../../stability";
@@ -22,7 +22,9 @@ import { reassignedReason, takeReassignRequest, type ReassignRequest } from "./r
 import { usageHoldReason, usageSkipPercent } from "../../usage/server";
 import { MAIN_ATTEMPT_LIMIT, RETRY_ELIGIBLE } from "../../runs";
 import { FREE_RETRY_LIMIT, PARKED_CLASSES, REPLAY_CHECK_FAILED, SESSION_MAX_MS, VERIFICATION_TIMEOUT_RETRIES, failureClassCooldownMs, isWaitingSecret, isWriterSilent, repeatedFailureReason, taskFamily, turnFailureKey, verificationTimeoutOverBudget } from "../../runs";
-import { isTaskSatisfied } from "../../runs/server";
+import { coreHostsRequiredProvider, isTaskSatisfied } from "../../runs/server";
+import { walkWriterChain, waitingWriterReason, waitingWriterText, type ChainWalk } from "./writer-hold";
+import { noteUnsupportedProvider, noteWriterWait } from "./writer-wake";
 import { listThreadEventsRaw } from "@lane-pilot/thread-observe";
 import { attemptFeedback, isWriterStreamError, previousAttemptBrief } from "./writer-task";
 import { trimCheckLogsIn } from "../log-trim";
@@ -544,6 +546,35 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
           attempt:countAttempts(db, input.runId, input.taskId), reason });
         refreshRun(input.runId);
       };
+      // H2: the spawn gate's availability sources (breaker, owner presence, core allowlist, usage window) answer
+      // before an attempt is spent on a writer that cannot start (writer-hold.ts).
+      const holdDeps = { breaker:services.providerBreaker, presence:services.ownerPresence, usage:services.providerUsage,
+        coreHosts:(providerId:string) => coreHostsRequiredProvider(bb, providerId) };
+      /**
+       * Every writer of the chain is held: the attempt stays `queued` with `waiting_writer:` + wake_at, the board
+       * line says what it waits for, and the PM hears it once per attempt. A chain of nothing but
+       * `core_unsupported` ends blocked as before, and the owner hears once per provider, not per task.
+       * Returns true when the caller must stop here (the attempt is parked or blocked).
+       */
+      const parkForWriter = async (forAttemptId:string, walk:ChainWalk):Promise<boolean> => {
+        if (walk.free) return false;
+        if (walk.allUnsupported) {
+          const reason = walk.shortest?.hold.reason ?? "writer_provider_unavailable:core_unsupported";
+          transitionAttempt(db, forAttemptId, "blocked", { reason });
+          for (const held of walk.holds) void noteUnsupportedProvider(ctx, { providerId:held.member.providerId, pmThreadId:input.pmThreadId, taskId:input.taskId });
+          last = { status:"blocked", reason, attemptId:forAttemptId };
+          return true;
+        }
+        const held = walk.shortest!.hold;
+        const reason = waitingWriterReason(held);
+        const text = waitingWriterText(held, walk.wakeAt);
+        parkAttemptWake(db, forAttemptId, reason, walk.wakeAt);
+        recordStage(db, { runId:input.runId, taskId:input.taskId, stageId:"writer-agent", state:"pending", input:input.plan, reason:text });
+        void noteWriterWait(ctx, { attemptId:forAttemptId, pmThreadId:input.pmThreadId, taskId:input.taskId, text });
+        ctx.log(`writer ${input.taskId}: every writer is held (${held.reason}); the attempt waits until ${walk.wakeAt ? new Date(walk.wakeAt).toISOString() : "unknown"}`);
+        last = { status:"queued", reason, attemptId:forAttemptId };
+        return true;
+      };
       // Tasks run side by side only when they cannot touch the same files: one whose owns_paths overlap an
       // earlier open task's (in any run on the same checkout) waits for it, instead of conflicting at the merge.
       const runFolder = taskBasePath(db, input.runId, input.taskId) ?? input.task.project_cwd;
@@ -790,18 +821,24 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         }
         if (!writerThreadId && !halfBound && last.status !== "accepted") {
           const reassigned = pendingReassign;
-          // The writer's provider window is nearly spent (provider-usage): another model of the chain takes the task at once,
-          // instead of a failed attempt that opens the breaker. Nothing is skipped when no other pair has room.
           const primaryPair = { providerId:typeof runSettings["writer.provider"] === "string" && runSettings["writer.provider"] ? runSettings["writer.provider"] as string : freshConfig.writerProviderId,
             model:typeof runSettings["writer.model"] === "string" && runSettings["writer.model"] ? runSettings["writer.model"] as string : freshConfig.writerModel };
-          const spentWindow = await services.providerUsage.hold({ ...primaryPair, hostId:freshConfig.hostId, threshold:usageSkipPercent(runSettings), settings:runSettings });
-          if (spentWindow && (await chainWithRoom(writerFallbackChain(primaryPair, writerFallbacks(runSettings), { providerId:freshConfig.pmProviderId, model:freshConfig.pmModel }), freshConfig.hostId, runSettings, input.taskId)).room) {
-            const reason = usageHoldReason(primaryPair.providerId, primaryPair.model, spentWindow);
-            transitionAttempt(db, attemptId, "blocked", { reason });
-            last = { status:"blocked", reason, attemptId };
-            primaryFailure = { status:"spawn_rejected", reason, attemptId };
-            break;
-          }
+          // H2: the gate's sources answer before the attempt is spent. A free member of the chain (the task's writer,
+          // its fallbacks, the PM) spawns in this attempt — the next one when the writer itself is held; nobody free
+          // parks the attempt queued until the earliest hold ends, instead of the spawn_rejected loop it used to run.
+          const chainMembers = [{ ...primaryPair, reasoningLevel:typeof runSettings["writer.reasoning_effort"] === "string" ? runSettings["writer.reasoning_effort"] as string : "medium" },
+            ...writerFallbackChain(primaryPair, writerFallbacks(runSettings), { providerId:freshConfig.pmProviderId, model:freshConfig.pmModel })];
+          // A PM reassignment names its writer: it is tried as ordered (its own refusal is the old path).
+          const walked = reassigned?.request.selection
+            ? { free:{ member:chainMembers[0]!, index:0 }, allUnsupported:false, shortest:undefined, wakeAt:null, holds:[] } as ChainWalk
+            : await walkWriterChain(chainMembers, { hostId:freshConfig.hostId, settings:runSettings }, holdDeps);
+          if (await parkForWriter(attemptId, walked)) return;
+          const spawnSettings = walked.free && walked.free.index > 0
+            ? { ...writerChoice, "writer.provider":walked.free.member.providerId, "writer.model":walked.free.member.model,
+                ...(walked.free.member.reasoningLevel ? { "writer.reasoning_effort":walked.free.member.reasoningLevel } : {}) }
+            : writerChoice;
+          if (walked.free && walked.free.index > 0)
+            ctx.log(`writer ${input.taskId}: ${primaryPair.providerId}/${primaryPair.model} is held (${walked.shortest?.hold.reason ?? "unknown"}); spawning ${walked.free.member.providerId}/${walked.free.member.model} in the same attempt`);
           // A pause the last failure's class asks for before the next attempt (writer.class_cooldowns, hive H-14).
           const classCooldown = failureClassCooldownMs(failureClass(String(last.status), typeof last.reason === "string" ? last.reason : null), runSettings);
           if (classCooldown > 0) await new Promise((resolve) => setTimeout(resolve, classCooldown));
@@ -861,7 +898,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
           const prevFeedback=attemptFeedback(countAttempts(db,input.runId,input.taskId),prevEvents,prevBrief,true);
           const spawned = await services.spawnWriterAttempt({
             projectId:input.projectId, runId:input.runId, taskId:input.taskId, attemptId,
-            config:freshConfig, task:freshTask, plan:input.plan, pmThreadId:input.pmThreadId, pmReadContext, writerSettings:writerChoice,
+            config:freshConfig, task:freshTask, plan:input.plan, pmThreadId:input.pmThreadId, pmReadContext, writerSettings:spawnSettings,
             retryIndex:Math.max(0,countAttempts(db,input.runId,input.taskId)-1),
             // A fresh writer starts from main: of the failures before it, the task's own is the one to avoid, not a provider's cut.
             previousAttempt:roundSeed ? [prevFeedback, roundSeed].filter(Boolean).join("\n\n") : prevFeedback,
@@ -1192,7 +1229,18 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
           last={...last,emergencyFallback:{state:"skipped",
             reason:primaryClass === "provider" || primaryClass === "limit" ? "configured_pm_selection_matches_primary" : escalate ? "no next writer" : `failure is not a provider fault (${primaryClass})`}};
         }
-        for (const fallback of chain) {
+        // H2: a fallback that cannot start costs no attempt — the chain is walked first and held members are skipped.
+        // Nobody free parks one queued attempt until the earliest hold ends (the waker restarts the task); every
+        // member unsupported ends the task blocked as before, with one owner item per provider, not per task.
+        const fallbackWalk = chain.length ? await walkWriterChain(chain, { hostId:input.config.hostId, settings }, holdDeps) : null;
+        if (fallbackWalk && !fallbackWalk.free) {
+          const parkedAttemptId = id("lpattempt");
+          createAttempt(db, { id:parkedAttemptId, runId:input.runId, taskId:input.taskId });
+          await parkForWriter(parkedAttemptId, fallbackWalk);
+          return;
+        }
+        const freeChain = fallbackWalk ? chain.filter((member) => !fallbackWalk.holds.some((held) => held.member === member)) : chain;
+        for (const fallback of freeChain) {
           const decision=emergencyFallbackDecision({
             state:String(failure.status ?? "unknown"),
             reason:typeof failure.reason === "string" ? failure.reason : null,
