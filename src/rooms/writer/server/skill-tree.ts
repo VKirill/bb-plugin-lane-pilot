@@ -205,6 +205,9 @@ export function filterSkillHub(hub: SkillHub, filter: { section?: string; query?
       const hay = `${sk.name} ${sk.description} ${textOf(sk.category?.sectionId)} ${textOf(sk.category?.subsectionId)}`.toLowerCase();
       return words.every((word) => hay.includes(word));
     });
+    // A name hit ranks above a description-only hit; stable sort keeps the hub order inside each group.
+    const nameHits = (sk: SkillHubEntry) => words.filter((word) => sk.name.toLowerCase().includes(word)).length;
+    pool = [...pool].sort((a, b) => nameHits(b) - nameHits(a));
   }
   return pool;
 }

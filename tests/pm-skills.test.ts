@@ -40,6 +40,8 @@ describe("pm skill list filter", () => {
     expect(filterSkillHub(HUB, { query: "EXPO navigation" }).map((sk) => sk.name)).toEqual(["expo-router"]);
     expect(filterSkillHub(HUB, { query: "seo" }).map((sk) => sk.name)).toEqual(["seo-agent"]);
     expect(filterSkillHub(HUB, { query: "expo seo" })).toEqual([]);
+    const hub = { ...HUB, skills: [{ name: "a-helper", description: "talks to telegram" }, { name: "telegram-user", description: "user account" }] } as typeof HUB;
+    expect(filterSkillHub(hub, { query: "telegram" }).map((sk) => sk.name)).toEqual(["telegram-user", "a-helper"]);
   });
 
   it("formats one line per skill with the first sentence of the description", () => {
