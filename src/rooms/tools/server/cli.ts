@@ -17,6 +17,7 @@ import type { Services } from "../../core/server";
 import { ANAMNESIS_USAGE } from "../../anamnesis";
 import { anamnesisFor } from "../../anamnesis";
 import { LEARNING_USAGE, runLearningCli } from "../../learning";
+import { PM_REPLAY_USAGE, runPmReplayCli, listScenarios } from "../../pm-replay";
 import { learningFor } from "../../learning";
 import { attemptMetrics, renderAttemptMetrics } from "../../usage/server";
 import { DEFERRAL_USAGE, runDeferralCli } from "../../deferral/server";
@@ -166,6 +167,7 @@ export function registerCli(ctx: ServerCore, services: Services) {
       { name:"wait-thread", summary:"Read-only waitThreadIdle probe", usage:"bb lane-pilot wait-thread <thread-id>" },
       { name:"anamnesis", summary:"What Lane Pilot knows about its owner (records on the owner's machine); sensitive ones only on explicit request", usage:"bb lane-pilot anamnesis status|list|show|history|add|edit|confirm|reject|forget|sources|host" },
       { name:"learning", summary:"What Lane Pilot learned from the owner's own messages: status, review, learned items, yes or no, settings", usage:LEARNING_USAGE },
+      { name:"pm-replay", summary:"The PM replay set: scenarios grown from the owner's corrections, replayed on the PM surface to prove PM rules", usage:PM_REPLAY_USAGE },
       { name:"policy-exam", summary:"Score the night policy on the newest unseen split (owner decisions made after its freeze) and store the result; a failed or short exam is a measurement and does not change what the night may decide", usage:"bb lane-pilot policy-exam" },
       { name:"policy", summary:"The night policy: show the lists, classify a change descriptor, the three-line morning list", usage:"bb lane-pilot policy show|classify '<json>'|exam-collect|exam-add '<json>'|exam-export|morning" },
       { name:"waiting", summary:"Everything only the owner can decide, with why, evidence and the exact action; what went red overnight; the Telegram digest of new items (quiet hours 23:00-08:00 Europe/Madrid by default)", usage:WAITING_USAGE },
@@ -244,6 +246,10 @@ export function registerCli(ctx: ServerCore, services: Services) {
         }
         if (command === "anamnesis") {
           return await anamnesisFor(ctx).cli(args);
+        }
+        if (command === "pm-replay") {
+          const replay = services.pmReplay;
+          return replay ? await runPmReplayCli(replay, (state) => listScenarios(db, state === "retired" ? { state: "retired" } : { state: "active" }), args) : { exitCode:1, stderr:"pm-replay is not mounted" };
         }
         if (command === "learning") {
           const learning = learningFor(ctx);

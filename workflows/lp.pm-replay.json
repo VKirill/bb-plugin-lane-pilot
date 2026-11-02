@@ -1,0 +1,186 @@
+{
+  "id": "lp.pm-replay",
+  "startedBy": "pm-replay-nightly",
+  "name": {
+    "en": "PM replay night",
+    "ru": "Ночной прогон PM-сценариев"
+  },
+  "description": {
+    "en": "The PM's replay set grows and proves its rules by itself: harvest rebuilds the owner's corrections in PM chats of the last 24h into replay scenarios (cap 20, sandbox projects skipped), run replays the set on a host with the claude CLI against the current PM surface and against the surface plus each PM rule on trial, decide confirms a rule at once when it fixes its incident scenario and adds no new FAIL to the set (a FAIL counts on two samples), report leaves the receipt line. Works with no PM chat.",
+    "ru": "Набор реплеев PM растёт и доказывает правила сам: harvest пересобирает поправки владельца в PM-чатах за сутки в сценарии (не больше 20, песочницы пропускаются), run прогоняет набор на машине с claude против текущей поверхности PM и против неё же с каждым правилом на испытании, decide подтверждает правило сразу, если оно чинит свой инцидент и не ломает набор (FAIL считается по двум прогонам), report оставляет строку-квитанцию. Работает без PM-чата."
+  },
+  "not_for": [
+    "anything a person asks in a chat: Lane Pilot starts this itself from the nightly schedule"
+  ],
+  "status": "published",
+  "tags": [
+    "pm",
+    "replay",
+    "night",
+    "learning"
+  ],
+  "triggers": [
+    "manual",
+    "schedule"
+  ],
+  "inputs": {
+    "rule_id": {
+      "type": "string",
+      "default": ""
+    }
+  },
+  "outputs": {
+    "status": "string",
+    "summary": "string"
+  },
+  "budget": {
+    "max_minutes": 90
+  },
+  "nodes": [
+    {
+      "id": "harvest",
+      "type": "action",
+      "action": "lp.pm_replay_harvest",
+      "title": {
+        "en": "Harvest corrections into scenarios",
+        "ru": "Собрать поправки в сценарии"
+      },
+      "out": {
+        "status": "string",
+        "harvested": "int",
+        "seen": "int",
+        "scenarios": "array"
+      },
+      "guards": {
+        "timeoutMin": 25
+      }
+    },
+    {
+      "id": "run",
+      "type": "action",
+      "action": "lp.pm_replay_run",
+      "title": {
+        "en": "Replay the set on the arms",
+        "ru": "Прогнать набор на руках"
+      },
+      "out": {
+        "status": "string",
+        "ran": "int",
+        "costUsd": "number",
+        "arm": "string"
+      },
+      "guards": {
+        "timeoutMin": 50
+      }
+    },
+    {
+      "id": "decide",
+      "type": "action",
+      "action": "lp.pm_replay_decide",
+      "title": {
+        "en": "Decide rules on the verdicts",
+        "ru": "Решить правила по вердиктам"
+      },
+      "out": {
+        "status": "string",
+        "adopted": "int",
+        "rejected": "int",
+        "waited": "int",
+        "summary": "string"
+      },
+      "guards": {
+        "timeoutMin": 5
+      }
+    },
+    {
+      "id": "report",
+      "type": "action",
+      "action": "lp.pm_replay_report",
+      "title": {
+        "en": "Write the receipt line",
+        "ru": "Записать строку-квитанцию"
+      },
+      "out": {
+        "status": "string",
+        "summary": "string"
+      },
+      "guards": {
+        "timeoutMin": 5
+      }
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "report.status",
+        "summary": "report.summary"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "start",
+      "to": "harvest"
+    },
+    {
+      "from": "harvest",
+      "to": "run"
+    },
+    {
+      "from": "run",
+      "to": "decide"
+    },
+    {
+      "from": "decide",
+      "to": "report"
+    },
+    {
+      "from": "report",
+      "to": "done"
+    }
+  ],
+  "test": {
+    "id": "pm-replay-1",
+    "sim": {
+      "input": {},
+      "stubs": {
+        "harvest": {
+          "status": "done",
+          "harvested": 2,
+          "seen": 5,
+          "scenarios": []
+        },
+        "run": {
+          "status": "done",
+          "ran": 12,
+          "costUsd": 1.4,
+          "arm": "base:abc"
+        },
+        "decide": {
+          "status": "done",
+          "adopted": 1,
+          "rejected": 0,
+          "waited": 0,
+          "summary": "adopted r1"
+        },
+        "report": {
+          "status": "done",
+          "summary": "pm-replay: harvested 2, ran 12, adopted 1, rejected 0, $1.40"
+        }
+      },
+      "expect_path": [
+        "harvest",
+        "run",
+        "decide",
+        "report",
+        "done"
+      ],
+      "expect_output": {
+        "status": "done"
+      }
+    },
+    "live": "the pm-replay-nightly cron (04:20 UTC), or a manual run of lp.pm-replay"
+  },
+  "goal_check": "artifact"
+}
