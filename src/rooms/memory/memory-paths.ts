@@ -112,6 +112,12 @@ export const MEMORY_PATHS: readonly MemoryPath[] = [
   { id: "memory.golden_eval", consumer: "the retrieval evaluation (golden queries)", carries: [], alwaysOn: [], status: "exempt",
     reason: "It measures search quality for the owner and delivers nothing to an agent.",
     sites: [{ file: "src/rooms/self-repair/server/insights.ts", primitive: "searchMemoryRecords", count: 1 }] },
+  { id: "pm.replay_arm", consumer: "the PM prompt a pm-replay arm is graded on (armPrompt in src/rooms/pm-replay/surface.ts)", carries: ["rule"], alwaysOn: [], status: "exempt",
+    reason: "The arm prompt wraps the same pmRulesOf/pmRulesBlock pair pm.start delivers; probing pm.start already proves the rules reach this prompt.",
+    sites: [
+      { file: "src/rooms/pm-replay/surface.ts", primitive: "pmRulesOf", count: 1 },
+      { file: "src/rooms/pm-replay/surface.ts", primitive: "pmRulesBlock", count: 1 },
+    ] },
   { id: "pm.owner_card", consumer: "the owner card in a PM's first prompt (anamnesis)", carries: [], alwaysOn: [], status: "exempt",
     reason: "Facts about the owner from the anamnesis room, not project memory; it has its own checks (`bb lane-pilot anamnesis status`).",
     sites: [{ file: "src/rooms/native-agent/server/activation.ts", primitive: "ownerCardBlock", count: 1 }] },

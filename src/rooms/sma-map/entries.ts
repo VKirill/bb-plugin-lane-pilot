@@ -533,7 +533,7 @@ export const SMA_ENTRIES: Readonly<Record<string, SmaEntry>> = {
   n523: ["have", "запись аварии со временем", "src/rooms/outage/store.ts#export function insertOutage("],
   n524: ["have", "сообщение «упал»", "scripts/hub-watchdog.sh#Хаб BB упал"],
   n525: ["have", "второе сообщение: подъём не удался", "scripts/hub-watchdog.sh#не поднялся после"],
-  n526: ["have", "поднявшийся демон говорит", "src/rooms/outage/server/outage.ts#The risen daemon speaks"],
+  n526: ["have", "поднявшийся демон говорит", "src/rooms/outage/logic.ts#The risen daemon speaks"],
   n527: ["have", "квитанция аварии", "src/rooms/outage/store.ts#lane_pilot_outage"],
   n528: ["have", "сказать владельцу в Telegram", "scripts/hub-watchdog.sh#say()"],
   n529: ["have", "транскрипт рядом с данными: история BB", "src/rooms/runs/server/thread-live.ts#export"],

@@ -17,7 +17,7 @@ import { adoptWaitingRules } from "./src/rooms/self-repair/server";
 import { createRuleScan } from "./src/rooms/self-repair/server";
 import { createPromotionService } from "./src/rooms/rule-forms";
 import { mountNightGraphs } from "./src/rooms/night-graphs/server";
-import { mountPmReplay } from "./src/rooms/pm-replay";
+import { mountPmReplay } from "./src/rooms/pm-replay/server";
 import { createHarness } from "./src/rooms/harness/server";
 import { createDeferrals, sdkOwnerMessagePort } from "./src/rooms/deferral/server";
 import { createRollback } from "./src/rooms/rollback/server";

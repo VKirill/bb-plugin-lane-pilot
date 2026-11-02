@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { Db } from "../learning/store";
+import type { Db } from "../learning";
 import { scenarioId, type Scenario } from "./store";
 
 /**
