@@ -481,6 +481,21 @@ export const migrations = [
   // A3: which skills a PM session opened (PostToolUse hook → `pm-skill-use`), the name as shown. Append only.
   `CREATE TABLE IF NOT EXISTS lane_pilot_pm_skill_use (id INTEGER PRIMARY KEY, thread_id TEXT NOT NULL, project_id TEXT NOT NULL DEFAULT '', skill TEXT NOT NULL, used_at INTEGER NOT NULL)`,
   `CREATE INDEX IF NOT EXISTS lane_pilot_pm_skill_use_at ON lane_pilot_pm_skill_use(used_at)`,
+  // A4 shipgate: one row per integration-gate run — what it ran on (head), the batch it checked, and its verdict,
+  // so a PM/ship decision reads the gate state after the merge instead of guessing from «all tasks accepted».
+  `CREATE TABLE lane_pilot_gate_run (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id TEXT NOT NULL,
+    run_id TEXT NOT NULL,
+    scope_key TEXT NOT NULL,
+    command TEXT NOT NULL,
+    state TEXT NOT NULL CHECK(state IN ('running','passed','failed','not_run')),
+    head TEXT,
+    reason TEXT,
+    batch_json TEXT NOT NULL DEFAULT '[]',
+    updated_at INTEGER NOT NULL
+  )`,
+  `CREATE INDEX lane_pilot_gate_run_project ON lane_pilot_gate_run(project_id, id)`,
 ];
 
 export function openDatabase(bb: BbPluginApi): LanePilotDatabase {

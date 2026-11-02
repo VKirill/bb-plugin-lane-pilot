@@ -8,7 +8,7 @@ import { QUALITY_MODE_SETTING, browserQaRequired, resolveQualityMode, taskQaPlan
 import { reserveAppetite, resolveBestOf } from "../best-of";
 import type { CodeCriticDefault } from "../../critique";
 import { saveCriticCodeDefault } from "./critic-override";
-import { getRunObjective, setRunObjective, createAttempt, createTask, freeTaskId, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getRunWriterHost, getTask, getTaskGitBase, getTaskPlan, latestTaskAttemptState, listAttemptsForTask, listOpenAttempts, listRunsWithAttempts, listStageReceipts, listTaskKinds, listTaskTerminalStates, loadProjectSettings, saveTaskPlan, setRunState, transitionAttempt } from "../../storage";
+import { getRunObjective, setRunObjective, createAttempt, createTask, freeTaskId, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getRunWriterHost, getTask, getTaskGitBase, getTaskPlan, latestTaskAttemptState, listAttemptsForTask, listOpenAttempts, listRunsWithAttempts, listStageReceipts, listTaskKinds, listTaskTerminalStates, loadProjectSettings, saveTaskPlan, setRunState, taskBasePath, transitionAttempt } from "../../storage";
 import { sha256 , spendReserve, type BirthKind } from "../../tasks";
 import { liveFolderLockNote, nextStep, taskFamily } from "../../runs";
 import { commonTaskFolder, isMainfixTask, isTaskBase, parseRepoTop, planWithOutsideReads, repoTopCommand, rerootTask } from "../../tasks";
@@ -21,6 +21,7 @@ import { id, stringAt, valueAt } from "../../core/server";
 import { buildTask } from "./writer-task";
 import { dispatchReply, dispatchRunKey, startDispatchRun, pipelineUnavailable } from "./dispatch-workflow";
 import { suggestTests, testHintLine } from "../../verification";
+import { gateResolverFor, gateRunVerdict, latestGateRunForTask, parseIntegrationGateSettings } from "../../verification/server";
 import { jev } from "@lane-pilot/jev";
 import { batchAdviceFor, topicLoopGuard } from "./dispatch-guards";
 import { reviveCanceledTask } from "./revive";
@@ -365,6 +366,22 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
     return Boolean(db.prepare("SELECT 1 FROM lane_pilot_wf_run WHERE workflow_id='lp-task-pipeline' AND link_run_id=? AND link_task_id=? AND status IN ('running','waiting')").get(runId, taskId));
   };
 
+  /**
+   * The integration gate's verdict for an accepted task's merge (lane_pilot_gate_run; Astra F1): the task is accepted
+   * the moment it lands, but main's own check may still be out. No run row yet and a gate exists: it has not run —
+   * reported `running` so the PM waits for it like for QA instead of reading «accepted» as «ship».
+   */
+  async function taskGateVerdict(runId:string, projectId:string, taskId:string): Promise<{ line:string; pending:boolean; failed:boolean }> {
+    const row = latestGateRunForTask(db, projectId, taskId);
+    if (row) return gateRunVerdict(row);
+    const hostId = getRunWriterHost(db, runId);
+    const basePath = taskBasePath(db, runId, taskId);
+    if (!hostId || !basePath) return { line:"none configured", pending:false, failed:false };
+    const gate = await gateResolverFor(ctx)({ runId, hostId, basePath,
+      gate:parseIntegrationGateSettings(loadProjectSettings(db, projectId, getRunSettingsScopes(db, runId))) }).catch(() => null);
+    return gate ? { line:"running", pending:true, failed:false } : { line:"none configured", pending:false, failed:false };
+  }
+
   async function waitWriter(args:{threadId:string; projectId:string; runId:string; timeoutSec:number}): Promise<Record<string, unknown>> {
     const metadata = await bb.sdk.threads.getPluginMetadata({ threadId:args.threadId });
     if (valueAt(metadata, "role") !== "pm" || stringAt(metadata, "lanePilotRunId") !== args.runId) {
@@ -376,6 +393,8 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
     }
     const deadline = Date.now() + Math.min(240, Math.max(1, args.timeoutSec)) * 1000;
     let qaInGraph = false;
+    let gateLines: Array<{ taskId:string; gate:string }> = [];
+    let gatePending = false;
     while (Date.now() < deadline) {
       // A plugin reload closes this instance's database; the writer keeps running, so ask for a fresh poll.
       if (ctx.state.disposed) return { runId:args.runId, state:"running", reason:"Lane Pilot was reloaded; call lane_pilot_wait_writer again" };
@@ -444,6 +463,20 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
           await new Promise((resolve) => setTimeout(resolve, pollPause(500)));
           continue;
         }
+        // «accepted» is the merge, not main's check: an accepted task whose integration gate is still out keeps the
+        // wait like QA does (Astra F1). The verdict the PM reads comes with the answer: green on <sha> / red / not run / none.
+        gateLines = [];
+        gatePending = false;
+        for (const attempt of latestByTask.values()) {
+          if (attempt.state !== "accepted") continue;
+          const verdict = await taskGateVerdict(args.runId, args.projectId, attempt.task_id);
+          gateLines.push({ taskId:attempt.task_id, gate:verdict.line });
+          if (verdict.pending) gatePending = true;
+        }
+        if (gatePending) {
+          await new Promise((resolve) => setTimeout(resolve, pollPause(500)));
+          continue;
+        }
         // writer.lastResult is one project-wide slot that the last accepted task overwrites; read each task's own receipt.
         const settings = loadProjectSettings(db,args.projectId,getRunSettingsScopes(db,args.runId));
         const lastResult = settings["writer.lastResult"];
@@ -481,6 +514,7 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
         }
         return { runId:args.runId, state, receipt, stages:listStageReceipts(db, args.runId), nudged, ...(reasons.length ? { reason:reasons.join("; ") } : {}),
           ...(next.length ? { next } : {}),
+          ...(gateLines.length ? { gate:gateLines } : {}),
           ...(blockedBy.length ? { blockedBy } : {}) };
       }
       await new Promise((resolve) => setTimeout(resolve, pollPause(500)));
@@ -496,7 +530,9 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
       nudged:await countRunNudges(bb.storage.kv, listRunsWithAttempts(db, args.projectId).find((item) => item.id === args.runId)?.attempts.map((row) => row.id) ?? []),
       tasks:recent.tasks,
       stages:listStageReceipts(db, args.runId).filter((row) => recent.ids.has(row.taskId)),
-      ...(qaInGraph
+      ...(gatePending
+        ? { gate:gateLines, message:"Задачи приняты, но проверка после слияния (integration gate) ещё идёт. Вызови lane_pilot_wait_writer ещё раз с тем же runId." }
+        : qaInGraph
         ? { message:"Задача принята, её граф ещё проверяет страницу в браузере (qa_url). Вызови lane_pilot_wait_writer ещё раз с тем же runId." }
         : writerThreadId
         ? { message:"Писатель ещё работает. Вызови lane_pilot_wait_writer ещё раз с тем же runId." }
