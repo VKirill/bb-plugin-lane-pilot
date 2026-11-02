@@ -21,7 +21,7 @@ does not happen; the owner is asked only where the row says so. A tool that refu
 
 | Reason in the receipt / digest | What it means | Way out |
 |---|---|---|
-| `quarantine: regression #N …` | An older accepted task's check went red on main; tasks sharing its files wait so nobody builds on a break | Read the row: `lane_pilot_regression {action:"list"}` (CLI: `bb lane-pilot regressions <project>`). The later task changed it **on purpose** (the owner asked, the plan said so) → `lane_pilot_regression {action:"settle", id:N, reason:"<who decided what, when>"}` (CLI: `bb lane-pilot regress-close N <reason>`). A real break → dispatch a fix task that owns the shared files; the wait ends when the check is green |
+| `quarantine: regression #N …` | An older accepted task's check went red on main; tasks sharing its files wait so nobody builds on a break | Read the row: `lane_pilot_regression {action:"list"}` (CLI: `bb lane-pilot regressions <project>`). The later task changed it **on purpose** (the owner asked, the plan said so) → `lane_pilot_regression {action:"settle", id:N, reason:"<who decided what, when>"}` (CLI: `bb lane-pilot regress-close N <reason>`). A real break → dispatch a fix task that owns the shared files with `fixes_regressions:[N]` (without it the fix waits on the same row); the nightly pass closes the row once the check is green |
 | `writer_provider_unavailable:owner_present…` / «владелец работает в …» | The owner uses that subscription right now; writers keep off it ≤ 10 min | Nothing: the writer chain already moved to the next provider, or it resumes by itself |
 | `breaker_open`, `usage_window`, `writer_provider_limit` | A provider is down or out of its window | Nothing: the chain moves on. `lane_pilot_reassign_task` (taskId, model) works only on a **running** task (a stuck writer); a queued task waits for a free writer |
 | `waiting_writer:core_unsupported…` / `writer_provider_unavailable` | No writer in the chain can run on this core: it does not pass by itself | Reassign a running task to a supported model, or tell the owner in one line which provider to enable for the project |
@@ -38,7 +38,7 @@ does not happen; the owner is asked only where the row says so. A tool that refu
 
 | Reason | Way out |
 |---|---|
-| `plan_critique_blocked`, `structural_plan_critique_blocked`, `validation_failed` | Read the critique; fix the contract in place: `lane_pilot_update_task` (taskId, task, plan). If it answers `task_started`, cancel it and dispatch the corrected contract |
+| `plan_critique_blocked`, `structural_plan_critique_blocked`, `validation_failed` | Read the critique; fix the contract in place: `lane_pilot_update_task` (taskId, task, plan); pm-read and the critique run again, no attempt is spent. Do not cancel and redispatch |
 | `needs_human: <question>` | The writer waits for you: `lane_pilot_answer_writer` (taskId, answer). A question about checks or paths: fix the contract with `lane_pilot_update_task` |
 | `verdict_block: question_unanswered` | The writer's question timed out and the attempt is closed: answering it fails. Dispatch a new task whose contract carries the answer |
 | `retry limit exhausted`, `test_fit`, `critique_thread_timeout` | The machine stopped retrying | Read the last attempt (`bb lane-pilot timeline <task-id>`), change what made it fail (the contract, the check, the size), then dispatch again; the same contract again fails the same way |
