@@ -81,7 +81,7 @@ describe("lp.lead_propose keeps a proposal inside the lead's zone", () => {
     const { db, run, zone, ownerItems } = world([{ id: "p_bench", name: "LP bench" }]);
     zone(["p_bench"]);
     shadowJev();
-    const list = await dropped(propose(run, { "think.proposals": [proposal({ project_id: "p_bench" })] }));
+    const list = await dropped(propose(run, { "think.proposals": [proposal({ project_id: "p_bench", risk: "high" })] }));
     expect(list).toHaveLength(1);
     expect(list[0]!.reason).toContain("refused the card");
     const road = listRoad(db).find((row) => row.kind === "option")!;
@@ -98,13 +98,14 @@ describe("lp.lead_propose keeps a proposal inside the lead's zone", () => {
     const { db, run, zone, ownerItems } = world([{ id: "p_a", name: "A" }]);
     zone(["p_a"]);
     shadowJev();
-    await propose(run, { "think.proposals": [proposal({ project_id: "p_a" })] }, "tick_a");
+    // risk high never acts (mayAct's guard), so the proposal still goes to the owner as a card.
+    await propose(run, { "think.proposals": [proposal({ project_id: "p_a", risk: "high" })] }, "tick_a");
     const road = listRoad(db).find((row) => row.kind === "option")!;
     expect(road.decision_id).toBe(`lead:${road.id}`);
     answerDecision(db, `lead:${road.id}`, { option: "later" }, "owner");
     decideRoad(db, road.id, "later");
     expect(getRoad(db, road.id)!.state).toBe("later");
-    await propose(run, { "think.proposals": [proposal({ road_id: road.id })] }, "tick_b");
+    await propose(run, { "think.proposals": [proposal({ road_id: road.id, risk: "high" })] }, "tick_b");
     const again = getRoad(db, road.id)!;
     expect(again.state).toBe("proposed");
     expect(again.decision_id).toBe(`lead:${road.id}:tick_b`);
@@ -119,7 +120,7 @@ describe("lp.lead_propose keeps a proposal inside the lead's zone", () => {
       zone(["p_a", "p_other"]);
       shadowJev();
       const branch = addRoad(db, { title: "An open direction", kind: "direction", source: "lead", why: "the owner wants it kept", projectId: "p_a" });
-      await propose(run, { "think.proposals": [proposal({ road_id: branch.id, project_id: claimed })] });
+      await propose(run, { "think.proposals": [proposal({ road_id: branch.id, project_id: claimed, risk: "high" })] });
       expect(getDecision(db, `lead:${branch.id}`)).toMatchObject({ project_id: "p_a" });
       const card = ownerItems().find((item) => item.key === `lead:${branch.id}`)!;
       expect(card.project_id).toBe("p_a");

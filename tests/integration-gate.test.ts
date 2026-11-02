@@ -613,6 +613,33 @@ describe("IntegrationGateRunner with mock core & services", () => {
       expect(sentMessages.find((m) => m.threadId === "thr-innocent")).toBeUndefined();
       expect(ownerRow().kind).toBe("gate_red");
     });
+
+    it("all failing tests red on the base too: no owner row, a next_step branch on the lead's road instead", async () => {
+      // L1 autonomy (policy v2, 2026-11-02): «nobody is guilty» is work for a decides lead, not the owner's decision.
+      saveProjectSetting(db, "proj-1", "integration.gate_command", 'node -e "console.error(\'FAIL tests/old.test.ts\');process.exit(1)"');
+      const coreWithAttribution = {
+        ...mockCore,
+        host: { call: async (method: string, input: any) =>
+          method === "gateAttribute" ? { failing: [{ file: "tests/old.test.ts", preexisting: true }] }
+          : (hostHandlers as any)[method]?.(input) },
+      } as unknown as ServerCore;
+      const runner = new IntegrationGateRunner(coreWithAttribution, mockServices);
+      runner.noteMergedTask({ taskId: "innocent", commitSha: "sha-1", threadId: "thr-innocent", attemptId: "att-1", produced: ["src/foo.ts"] });
+
+      const res = await runner.maybeRunGate({ runId: "run-1", projectId: "proj-1", pmThreadId: "pm-1", basePath: process.cwd(), configHostId: "host-1", trigger: "drain" });
+
+      expect(res).toMatchObject({ ran: true, passed: false, culpritTaskId: null });
+      expect(dispatched).toEqual([]);
+      expect(db.prepare("SELECT COUNT(*) AS n FROM lane_pilot_owner_item WHERE key LIKE 'gate-red:%'").get()).toEqual({ n: 0 });
+      const branch = db.prepare("SELECT title, kind, source, class, state, project_id FROM lane_pilot_lead_road WHERE kind='option'").get() as { title: string; source: string; class: string; state: string; project_id: string };
+      expect(branch).toMatchObject({ source: "lead", class: "next_step", state: "open", project_id: "proj-1" });
+      expect(branch.title).toContain("tests/old.test.ts");
+      // A second red episode files no second branch while the first is still open.
+      const again = new IntegrationGateRunner(coreWithAttribution, mockServices);
+      again.noteMergedTask({ taskId: "innocent-2", commitSha: "sha-2", threadId: "thr-2", attemptId: "att-2", produced: ["src/foo2.ts"] });
+      await again.maybeRunGate({ runId: "run-1", projectId: "proj-1", pmThreadId: "pm-1", basePath: process.cwd(), configHostId: "host-1", trigger: "drain" });
+      expect(db.prepare("SELECT COUNT(*) AS n FROM lane_pilot_lead_road WHERE kind='option'").get()).toEqual({ n: 1 });
+    });
   });
 
   describe("timeout recheck under machine load", () => {

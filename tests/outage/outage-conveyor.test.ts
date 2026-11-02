@@ -27,6 +27,8 @@ describe("outages", () => {
     expect(await bb.storage.kv.get(BEAT_KEY)).toBe(NOW);
     expect(await recordStartGap(ctx as never, NOW + 60_000)).toBeNull();
     expect(listOutages(db, 0)).toHaveLength(1);
+    // A fact, not a decision: the journal and the CLI carry it, the owner's list does not (2026-11-02).
+    expect(db.prepare("SELECT COUNT(*) AS n FROM lane_pilot_owner_item WHERE source='outage'").get()).toEqual({ n: 0 });
     expect(JSON.parse(runOutageCli(ctx as never, ["--days", "1"], NOW).stdout!)).toHaveLength(1);
     expect(runOutageCli(ctx as never, ["--days", "x"], NOW).exitCode).toBe(1);
   });

@@ -184,6 +184,9 @@ export function commandOf(check: string): string {
   return (span ? span[1]! : check).trim();
 }
 
+/** The verification budget a planner's check gets when it names none: the PM's normal tasks run checks for 40 minutes. */
+export const PLAN_CHECK_TIMEOUT_SEC = 2400;
+
 export function withContractDefaults(input: Row): Row {
   // `covers` (the requirement and decision ids a phase's piece carries out) belongs to the plan's piece, not to the strict task-v2.
   const { covers: _covers, ...contract } = input;
@@ -205,7 +208,12 @@ export function withContractDefaults(input: Row): Row {
     expected_outputs: outputs.length ? outputs : files.length ? files : owns.filter((path) => !/[*?]/.test(path)),
     acceptance: asList(contract.acceptance).map((item) => (typeof item === "string" ? item : JSON.stringify(item))),
     verify: VERIFY.includes(str(contract.verify)) ? str(contract.verify) : "tests",
-    verification: asList(contract.verification).map((check) => (typeof check === "string" ? { command: commandOf(check), cwd: "." } : check)),
+    verification: asList(contract.verification).map((check) => {
+      const row = (typeof check === "string" ? { command: commandOf(check), cwd: "." } : check) as Row;
+      // A planner never writes timeout_sec, and without one the sandbox kills the check at 120 s — under a full suite the task
+      // cannot ever go green (live issue-quick, 2026-11-02). The project's normal verification budget is 40 minutes.
+      return row.timeout_sec === undefined || row.timeout_sec === null ? { ...row, timeout_sec: PLAN_CHECK_TIMEOUT_SEC } : row;
+    }),
     objective: str(contract.objective).trim() || str(contract.title).trim(),
     // The criteria are strings; a planner that wrote them like its checks ({command}) meant the command.
     ...(contract.convergence && typeof contract.convergence === "object" ? { convergence: { ...(contract.convergence as Row),

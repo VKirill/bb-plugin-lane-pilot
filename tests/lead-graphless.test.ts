@@ -102,7 +102,8 @@ describe("a process proposal with architectSeed", () => {
   it("lands on the road branch with the seed intact in payload_json; the same stem is never proposed twice", async () => {
     const { db, run } = steps([{ id: "p_a", name: "Alpha" }]);
     setJevForTests({ enabled: () => true, judge: async () => ({ by: "fallback", status: "shadow", decision: { option: null, p: 0 }, shadow: { decision: { option: "yes", p: 0.9 } } }) } as never);
-    const out = await run("lp.lead_propose", { "$inputs.tickId": "tick_a", "think.proposals": [seedProposal()], "think.branches": [] });
+    // risk high never acts even on a decides class (mayAct's guard), so the seed proposal still reaches the owner as a card.
+    const out = await run("lp.lead_propose", { "$inputs.tickId": "tick_a", "think.proposals": [seedProposal({ risk: "high" })], "think.branches": [] });
     expect(out.output.proposed).toBe(1);
     const branch = listRoad(db).find((row) => row.kind === "option")!;
     expect(branch.state).toBe("proposed");
@@ -114,7 +115,7 @@ describe("a process proposal with architectSeed", () => {
     expect(actions.map((action) => action.id)).toEqual(["yes", "later", "no", "architect"]);
     expect(actions[3]!.rpc).toEqual({ method: "prepare_native_session", input: { projectId: "p_a", agentId: "workflow-architect" } });
     // A second tick with the same stem adds no second branch (the title is the dedupe, in any state).
-    const again = await run("lp.lead_propose", { "$inputs.tickId": "tick_b", "think.proposals": [seedProposal()], "think.branches": [] });
+    const again = await run("lp.lead_propose", { "$inputs.tickId": "tick_b", "think.proposals": [seedProposal({ risk: "high" })], "think.branches": [] });
     expect(again.output.proposed).toBe(0);
     expect(listRoad(db).filter((row) => row.kind === "option")).toHaveLength(1);
     const dropped = JSON.parse(again.output.dropped_json as string) as Array<{ reason: string }>;
