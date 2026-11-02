@@ -4,6 +4,7 @@ import type { LanePilotDatabase } from "../../storage";
 import type { RunRow } from "../../storage";
 import { AFTER_ACCEPT, DOCS_MAINTENANCE, DOCS_NIGHT, LP_TASK_PIPELINE, ROUTE_WORKFLOW, SELF_REPAIR } from "../builtin";
 import { startedBySchedule } from "./workflow-runtime";
+import { doneRoad, reopenRoad } from "../../lead";
 
 /** The machine's own upkeep graphs: they tell no PM chat and post nothing to the owner's list (a failed one is the wall's and the next run's to settle). */
 const UPKEEP_WORKFLOWS = new Set<string>([AFTER_ACCEPT, DOCS_NIGHT, DOCS_MAINTENANCE, SELF_REPAIR, ROUTE_WORKFLOW]);
@@ -141,6 +142,10 @@ export async function notifyWorkflowIfEnded(input: {
   run: RunRow;
   unmetGoalIds?: string[];
 }): Promise<boolean> {
+  // Work the lead («Штурман») handed over runs under the project's latest PM chat, which may be about something else entirely: its end
+  // goes back to the lead's road, never into that chat (live 2026-11-03: an issue-quick block landed in an unrelated app-design chat).
+  const leadRoad = leadRoadOf(input.run.idem_key);
+  if (leadRoad) { settleLeadRun(input.db, input.run, leadRoad, input.unmetGoalIds); return false; }
   const linked = input.run.link_run_id ? getRun(input.db, input.run.link_run_id) : undefined;
   if (!input.run.link_run_id) return reportEndToOwner(input.db, input.run, startedBySchedule(input.db, input.run), input.unmetGoalIds);
   return maybeNotifyWorkflowRun({
@@ -149,4 +154,16 @@ export async function notifyWorkflowIfEnded(input: {
     startedBySchedule: startedBySchedule(input.db, input.run),
     unmetGoalIds: input.unmetGoalIds,
   });
+}
+
+/** The road branch a lead hand-over started this run for (intake key `intake:<pm thread>:lead:<road id>`), else null. */
+export function leadRoadOf(idemKey: string | null | undefined): string | null {
+  return /^intake:[^:]+:lead:(road_[\w-]+)/.exec(idemKey ?? "")?.[1] ?? null;
+}
+
+function settleLeadRun(db: LanePilotDatabase, run: RunRow, roadId: string, unmetGoalIds?: string[]): void {
+  if (!isNoticeStatus(run.status)) return;
+  if (run.status === "succeeded") { doneRoad(db, roadId, `run ${run.id} of ${run.workflow_id} succeeded`); return; }
+  const unmet = unmetGoalIds?.length ? `; unmet goals: ${unmetGoalIds.join(", ")}` : "";
+  reopenRoad(db, roadId, `handed run ${run.id} of ${run.workflow_id} ended ${run.status}: ${run.reason ?? "no reason"}${unmet}`);
 }

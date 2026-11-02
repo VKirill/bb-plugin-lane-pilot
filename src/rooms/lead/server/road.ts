@@ -103,6 +103,11 @@ export function doneRoad(db: RoadDb, id: string, note?: string, now: number = Da
   return settle(db, id, ["open", "proposed", "accepted", "later"], "done", note ? `\n\ndone: ${note}` : null, now);
 }
 
+/** A handed branch whose run did not reach its goal is open again with the reason: the lead reads road.open every tick and picks it up. */
+export function reopenRoad(db: RoadDb, id: string, note: string, now: number = Date.now()): boolean {
+  return settle(db, id, ["accepted"], "open", `\n\n${note}`, now);
+}
+
 export function proposeRoad(db: RoadDb, id: string, decisionId: string, now: number = Date.now()): boolean {
   const row = getRoad(db, id);
   if (!row || (row.state !== "open" && row.state !== "later")) return false;
