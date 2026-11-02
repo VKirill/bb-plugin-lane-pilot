@@ -2525,10 +2525,10 @@ describe("stage → native writer → receipt", () => {
     const waited=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:5},{threadId:pmThreadId,projectId})));
     expect(waited.state).toBe("accepted");
     const critic=spawned.find((row)=>(row.pluginMetadata as Record<string,unknown>).stageId==="code-critique") as Record<string,unknown>;
-    expect(String(critic.prompt)).toContain("HOST-READ PACKET");
+    expect(String(critic.prompt)).toContain("<check command=");
     expect(String(critic.prompt)).toContain("reviewed output");
     expect(String(critic.prompt)).toContain("test -f note.txt");
-    expect(String(critic.prompt)).toMatch(/"stdout":""/);
+    expect(String(critic.prompt)).toContain("<stdout>\n\n</stdout>");
     await harness.lifecycle.dispose();
   },20_000);
 

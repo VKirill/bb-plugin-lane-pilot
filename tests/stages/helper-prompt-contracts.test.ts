@@ -105,8 +105,9 @@ describe("JSON-answering prompts state the exact contract", () => {
     for (const prompt of prompts) {
       expect(prompt).toContain("one JSON object and nothing else");
       expect(prompt).toContain("at most");
-      expect(prompt).toContain(NO_TOOLS);
-      expect(prompt).toContain("full access to the project checkout");
+      // The code critic reads project files for context and changes nothing (aa79f14f); every other reviewer opens nothing.
+      if (prompt.startsWith("You are the independent code-critique")) expect(prompt).toContain("Create, edit or delete nothing");
+      else { expect(prompt).toContain(NO_TOOLS); expect(prompt).toContain("full access to the project checkout"); }
     }
     expect(prompts[0]).toContain('status ("pass", "rework" or "block")');
     expect(prompts[0]).toContain('"critical", "high", "medium", "low" or "info"');

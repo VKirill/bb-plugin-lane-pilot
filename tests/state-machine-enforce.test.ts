@@ -73,7 +73,8 @@ describe("transitionAttempt enforces the state machine", () => {
     const spec = new Set(TRANSITION_TABLE.filter((row) => row.from !== null).map((row) => `${row.from}>${row.to === "stay" ? row.from : row.to}`));
     const extra = new Set(OPERATIONAL_MOVES.map((row) => `${row.from}>${row.to}`));
     expect(legal.length).toBe(new Set([...spec, ...extra]).size);
-    for (const pair of ["queued>running", "queued>spawn_unknown", "queued>validation_failed", "running>canceled", "blocked>queued", "accepted>running"]) {
+    // blocked>queued is legal since 2026-11-02: update_task requeues an attempt a pre-writer gate blocked (no writer thread yet).
+    for (const pair of ["queued>running", "queued>spawn_unknown", "queued>validation_failed", "running>canceled", "accepted>running"]) {
       expect(legal).not.toContain(pair);
     }
   });

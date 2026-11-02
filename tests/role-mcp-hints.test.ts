@@ -105,7 +105,7 @@ describe("prompt hints for gitnexus and metamcp", () => {
     );
   });
 
-  const expectedHint = "If you have the gitnexus tools and the project has a `.gitnexus/` index, use `query`/`context`/`impact` to check claims about callers and blast radius; grep for literals.";
+  const expectedHint = "with gitnexus tools and a `.gitnexus/` index use `query`/`context`/`impact`; grep for literals.";
 
   it("critiquePrompt and pmReadPrompt no longer point at tools the role does not load", () => {
     expect(critiquePrompt({ plan: "test-plan", task: { id: "t1" } })).not.toContain("gitnexus");
