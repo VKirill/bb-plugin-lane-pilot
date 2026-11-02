@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildCandidateEvidence, MAX_FILE_EXCERPT_BYTES, NEW_FILE_DIFF, sha256Text } from "../../src/rooms/critique/code-critique";
+import { buildCandidateEvidence, codeCritiquePrompt, MAX_FILE_EXCERPT_BYTES, NEW_FILE_DIFF, sha256Text } from "../../src/rooms/critique/code-critique";
 import { candidateCitations } from "../../src/rooms/critique/citations";
 import { candidatePatches } from "../../src/rooms/critique/server";
 import { createAttempt, createRun, createTask, openDatabase } from "../../src/rooms/storage";
@@ -43,6 +43,10 @@ describe("code critic packet", () => {
       files:[{ path:"src/new.ts", content:fresh }], patches:{ "src/new.ts": freshPatch } });
     expect(evidence.files[0]).toMatchObject({ content:fresh, diff:NEW_FILE_DIFF });
     expect(evidence.verification[0]?.stdout).toBe(" ✓ a.test.ts\n\n Tests 2 passed");
+    const prompt = codeCritiquePrompt({ evidence, task:{ id:"t" } });
+    expect(prompt).toContain(`<file path="src/new.ts" status="new">\n${fresh}`);
+    expect(prompt.indexOf("</checks>")).toBeLessThan(prompt.indexOf("Answer with one JSON object"));
+    expect(prompt).not.toContain("\\n+export");
   });
 
   it("does not demote a finding deep in a large file the packet shows only as its diff", () => {
