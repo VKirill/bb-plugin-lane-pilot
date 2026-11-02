@@ -29,6 +29,18 @@ const OCCURRING_REASONS: Array<{ reason: string; note: string }> = [
   { reason: "provider_error: HTTP 502 from the model gateway", note: "provider fault" },
   { reason: "verification failed (npm test): verification timed out after 120s", note: "check timed out" },
   { reason: "waiting_secret:STRIPE_KEY", note: "an Env Catalog secret the task needs" },
+  // The hub's 14-day frequency table (audit 2026-11-02, appendix): reasons WAY_OUT must know.
+  { reason: "retry limit 2 exhausted: writer thread status error", note: "the task's attempts are spent" },
+  { reason: "repeated_failure: verification failed (npm test): 1 failed", note: "two attempts failed the same way" },
+  { reason: "test_fit: src/a.test.ts: assertion deleted (if removing these tests is the task, name the files in the contract's test_removals)", note: "the writer weakened a base test" },
+  { reason: "plan_critique_failed:critique_thread_timeout", note: "the critic thread timed out" },
+  { reason: "plan_critique_failed:invalid_value", note: "the critic answered something unparseable" },
+  { reason: "owner_word: the owner said no to this task — not now", note: "the owner refused the merge" },
+  { reason: "owner_word: owner.words is on — the task is verified and waits for the owner's word", note: "a risky task waits for his yes" },
+  { reason: "cannot read writer-workspace git diff: spawn /bin/bash ENOENT", note: "a machine fault reading the worktree" },
+  { reason: "writer stop observed before validation", note: "the writer thread stopped before the checks ran" },
+  { reason: "waiting_writer:writer_provider_unavailable:owner_present:claude-code", note: "the real prefix chain the hold writes" },
+  { reason: "waiting_writer:writer_provider_unavailable:usage_window:codex/gpt-5", note: "usage window in the parked form" },
   // Reasons that are ends, not stops: named in NO_WAY_OUT.
   { reason: "canceled", note: "the PM canceled it" },
   { reason: "accepted", note: "a result" },
