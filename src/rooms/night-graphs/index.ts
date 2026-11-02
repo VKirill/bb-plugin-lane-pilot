@@ -8,3 +8,4 @@ export {
   MODEL_REBENCH_SCHEDULE,
   type ModelRebenchMetrics,
 } from "./server/model-rebench-graph";
+export { JEV_LABELS_SCHEDULE, JEV_LABELS_WORKFLOW, mountJevLabelsGraph } from "./server/jev-labels-graph";

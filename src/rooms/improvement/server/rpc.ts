@@ -12,6 +12,9 @@ import type { DeferralApi } from "../../deferral/server";
 import { readHubRows } from "../hub";
 import { HUB_SPECS, PROJECT_DEFAULT_KEYS, settingValue } from "../keys";
 import { LEAD_SETTING_KEYS } from "../../lead";
+import { listJudgments } from "@lane-pilot/jev";
+import { calibrateReceipts } from "@lane-pilot/jev";
+import "../../jev/judgments";
 
 /** The checks and defaults that are project-level settings read at the global level here (the page edits the default every project starts from). */
 export const IMPROVEMENT_PROJECT_KEYS = [...PROJECT_DEFAULT_KEYS, "plan_fact.mode", "critic.code.default_for_risk", "memory.note_budget"] as const;
@@ -25,6 +28,32 @@ export function nextNightRun(now: number): number {
   next.setHours(NIGHT_HOUR, 0, 0, 0);
   if (next.getTime() <= now) next.setDate(next.getDate() + 1);
   return next.getTime();
+}
+
+/** The judge's id as a plain Russian line for the «Судьи» table (H1): what it decides, for a non-programmer. */
+const JUDGE_RU: Record<string, string> = {
+  "critique.screen": "Стоит ли показывать изменение коду-критику",
+  "critique.worth": "Какие критики нужны задаче",
+  "failure.class": "На чьей стороне сбой попытки",
+  "route.workflow": "Какой граф подходит запросу",
+  "lead.predict": "Какой ответ даст владелец",
+  "lead.judge": "Было ли предсказание в направлении ответа",
+  "guard.host_command": "Безопасна ли команда на машине",
+  "plan.fact": "Что из плана уже сделано",
+  "writer.model": "Какой моделью писать задачу",
+  "invoice.check": "Совпадает ли счёт с работой",
+  "errand.kind": "Какого вида поручение",
+  "intake.weight": "Насколько весома запись для обучения",
+};
+
+/** The «Судьи» section's data: each judgment's labeled count, accuracy and fit, as `jev calibrate` computes them. */
+export function judgesReport(db: LanePilotDatabase, sinceMs = 0): Array<{ id: string; name: string; labeled: number; accuracy: number | null; verdict: string }> {
+  try {
+    return calibrateReceipts(db, { sinceMs, judgments: listJudgments() })
+      .map((row) => ({ id: row.judgment, name: JUDGE_RU[row.judgment] ?? row.judgment, labeled: row.labeled, accuracy: row.accuracy, verdict: row.verdict }));
+  } catch {
+    return [];
+  }
 }
 
 type Kv = { get(key: string): Promise<unknown> };
@@ -103,6 +132,7 @@ export function improvementRpc(deps: ImprovementDeps) {
           prohibitions: POLICY.standing_prohibitions.map((entry) => ({ id: entry.id, description: entry.description })),
         },
         deferrals: { open: deferrals.counts.open ?? 0, overdue: deferrals.overdue.length, needsTerm: deferrals.needsOwnerTerm.length },
+        judges: judgesReport(db),
       };
     },
   } satisfies Pick<PluginRpcHandlers<typeof rpcContract>, "improvement_view">;

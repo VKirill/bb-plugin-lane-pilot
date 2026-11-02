@@ -476,6 +476,8 @@ export const migrations = [
   // H2: an attempt parked while every writer is held re-asks at wake_at; NULL while it is not parked. Append only.
   `ALTER TABLE lane_pilot_attempt ADD COLUMN wake_at INTEGER`,
   `CREATE INDEX IF NOT EXISTS lane_pilot_attempt_wake ON lane_pilot_attempt(wake_at) WHERE wake_at IS NOT NULL`,
+  // H1: the sampled input of a Jev receipt (one in five, 8 KB cap), for the nightly model relabeler. Append only.
+  `ALTER TABLE lane_pilot_jev_receipt ADD COLUMN input_json TEXT`,
 ];
 
 export function openDatabase(bb: BbPluginApi): LanePilotDatabase {

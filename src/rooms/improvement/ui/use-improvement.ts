@@ -27,6 +27,7 @@ export type ImprovementView = {
     prohibitions: Array<{ id: string; description: string }>;
   };
   deferrals: { open: number; overdue: number; needsTerm: number };
+  judges?: Array<{ id: string; name: string; labeled: number; accuracy: number | null; verdict: string }>;
 };
 
 export type SaveError = { kind: "conflict" } | { kind: "validation"; code: "invalid_choice" | "incompatible_setting"; params: string[] } | { kind: "failed"; message: string };
