@@ -117,6 +117,7 @@ export const WORKFLOW_REFERENCE = {
   actions: {
     code: "items.dedupe, dag.validate, digest.check, citations.check, verdict.aggregate, lp.path_class, lp.propose_workflow; `emit` ends the chain",
     "plugin state and checkout": "lp.state_probe, lp.run_status, lp.run_close, lp.lint_contract, lp.integration_gate_status (answers skipped today), fs.write, git.diff_files",
+    "put a step off": "schedule.create: one scheduled run of a graph at the moment in the run's input `field` (default send_at: a delay +2h, 30m, or a local time 2026-11-03T07:00); `workflow` (default this graph), `name`; the run's inputs minus that field become its inputs. Ends scheduled (schedule_id, run_at) or cannot_delay (reason)",
     "run in an errand helper with its skills and accounts": "telegram.send_rich, shell.skill_script, shell.repo_script, deploy.post_check, lp.preflight, lp.project_checks; the node takes `model_preset` and `params.skill`",
     note: "an action name outside these lists has no executor: it runs on stubs in the test and a live run stops there",
   },

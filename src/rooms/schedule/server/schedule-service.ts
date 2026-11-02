@@ -141,7 +141,7 @@ export function createScheduleService(ctx: ServerCore, services: Services) {
         const workflow = found.workflow;
         const missing = workflow.inputs.filter((field) => field.required && field.default === undefined && (task.inputs[field.name] === undefined || task.inputs[field.name] === "")).map((field) => field.name);
         if (missing.length) problems.push(`task.inputs: the workflow needs ${missing.join(", ")}`);
-        if (workflow.status !== "published") warnings.push(`workflow "${workflow.id}" is ${workflow.status}: a scheduled run is refused until it is published${workflow.status === "tested" ? " (run it once for real from the Workflows tab first)" : ""}`);
+        if (workflow.status !== "published" && !(workflow.status === "tested" && task.liveTrial)) warnings.push(`workflow "${workflow.id}" is ${workflow.status}: a scheduled run is refused until it is published${workflow.status === "tested" ? " (run it once for real from the Workflows tab first)" : ""}`);
       }
     }
     if (task.kind === "errand") {

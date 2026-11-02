@@ -121,3 +121,26 @@ export function parseDelay(text: string): number | null {
   const ms = Math.round(amount * scale);
   return ms >= MINUTE ? ms : null;
 }
+
+/**
+ * A moment to run once, as a person writes it: a delay («+2h», «30m», «через 2 ч»), a wall-clock time in the zone («2026-11-03T07:00»,
+ * seconds optional), or a full instant («2026-11-03T06:00:00Z»). Null when the text is none of these.
+ */
+export function parseMoment(text: string, now: number, timezone: string): number | null {
+  const trimmed = text.trim().replace(/^\+/u, "");
+  const delay = parseDelay(trimmed);
+  if (delay !== null) return now + delay;
+  const wall = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?$/u.exec(trimmed);
+  if (wall) {
+    const [year, month, day, hour, minute] = wall.slice(1, 6).map(Number) as [number, number, number, number, number];
+    const asUtc = Date.UTC(year, month - 1, day, hour, minute, wall[6] ? Number(wall[6]) : 0);
+    // The zone's offset at the moment itself, not at the same wall time in UTC: two passes settle a clock change.
+    const guess = asUtc - offsetAt(asUtc, timezone);
+    return asUtc - offsetAt(guess, timezone);
+  }
+  const instant = Date.parse(trimmed);
+  return Number.isFinite(instant) ? instant : null;
+}
+
+/** «2026-11-03 07:00»: an instant as the wall clock of the zone reads it. */
+export const wallClock = (ms: number, timezone: string): string => new Date(ms).toLocaleString("sv-SE", { timeZone: timezone, hourCycle: "h23" }).slice(0, 16);

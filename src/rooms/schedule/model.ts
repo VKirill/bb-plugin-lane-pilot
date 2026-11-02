@@ -14,6 +14,8 @@ export const workflowTaskSchema = z.object({
   kind: z.literal("workflow"),
   workflowId: z.string().min(1).max(120),
   inputs: z.record(z.string(), z.unknown()).default({}),
+  /** The scheduled run may be the graph's first live run: a graph that put its own step off (`schedule.create`) runs on the owner's request that started it. */
+  liveTrial: z.boolean().optional(),
 }).strict();
 
 export const errandTaskSchema = z.object({

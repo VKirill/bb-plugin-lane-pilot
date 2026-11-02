@@ -8,7 +8,7 @@ export { WorkflowEngine } from "@lane-pilot/workflow-engine";
 export type { NodeExecutor, RunSummary, StepContext } from "@lane-pilot/workflow-engine";
 export type { Workflow } from "@lane-pilot/workflow-engine";
 export type { ValidateOptions, WorkflowProblem } from "@lane-pilot/workflow-engine";
-export { WORKFLOW_ARCHITECT_ID, WORKFLOW_ARCHITECT_NAME, WORKFLOW_ARCHITECT_SESSION, WORKFLOW_ARCHITECT_SUMMARY, WORKFLOW_ARCHITECT_TOOLS } from "./workflow-architect";
+export { ARCHITECT_LAUNCH, WORKFLOW_ARCHITECT_ID, WORKFLOW_ARCHITECT_NAME, WORKFLOW_ARCHITECT_SESSION, WORKFLOW_ARCHITECT_SUMMARY, WORKFLOW_ARCHITECT_TOOLS } from "./workflow-architect";
 export { SERVICE_JOBS, servicePair, servicePinKey, serviceRole } from "./service-models";
 export { routeWorkflow } from "./route-workflow";
 export { GOAL_SCREEN_ID, goalScreenJudgment } from "./goal-screen";

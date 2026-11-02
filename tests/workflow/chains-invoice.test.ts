@@ -79,12 +79,12 @@ describe("invoice-send", () => {
     expect(unsure.called("send")).toHaveLength(1);
   });
 
-  it("send_at set: the owner is asked for the timed send, the fragment refuses it as cannot_delay and nothing is sent", async () => {
-    const r = await runSim("invoice-send", { input: { ...input, send_at: "2026-11-03T07:00" }, stubs: base({ send: { status: "cannot_delay", reason: "the send_at input is set, but a chain cannot create a schedule yet" } }), humans: { approve_later: { answer_kind: "send" } } });
-    expect(pathOf(r)).toBe("create check approve_later send cannot_delay");
+  it("send_at set: the owner is asked for the timed send, the fragment puts it on the board and the run ends scheduled", async () => {
+    const r = await runSim("invoice-send", { input: { ...input, send_at: "2026-11-03T07:00" }, stubs: base({ send: { status: "scheduled", schedule_id: "sch-1", run_at: "2026-11-03 07:00" } }), humans: { approve_later: { answer_kind: "send" } } });
+    expect(pathOf(r)).toBe("create check approve_later send scheduled");
     expect(r.called("approve")).toHaveLength(0);
     expect(r.called("send")[0]!.input).toMatchObject({ chat: "@ivan_romashka", send_at: "2026-11-03T07:00" });
-    expect(out(r)).toMatchObject({ status: "cannot_delay", invoice_number: "142", send_at: "2026-11-03T07:00" });
+    expect(out(r)).toMatchObject({ status: "scheduled", invoice_number: "142", send_at: "2026-11-03T07:00", schedule_id: "sch-1", run_at: "2026-11-03 07:00" });
   });
 
   it("send_at set and the owner aborts: nothing is sent, as before", async () => {
