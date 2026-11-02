@@ -107,7 +107,10 @@ export function createPmReplay(ctx: ServerCore, services: Services) {
     if ("error" in staged) return { ran: 0, costUsd: 0, arm: "", error: staged.error };
     const baseArm = armId(basePrompt);
     const candArm = candPrompt ? armId(candPrompt, [input.ruleId!]) : null;
-    let ran = 0, cost = 0;
+    // The cap is per day across every replay call of the night, not per call: a night with several candidate rules stays under it.
+    const spentToday = replayStats(db, Date.now() - DAY_MS).costUsd;
+    if (spentToday >= NIGHT_COST_CAP_USD) return { ran: 0, costUsd: 0, arm: "", error: `day cap $${NIGHT_COST_CAP_USD} spent ($${spentToday.toFixed(2)})` };
+    let ran = 0, cost = spentToday;
     const record = async (scenarioId: string, arm: string, sample: number) => {
       const result = await runScenario(host as never, { hostId, dir: staged.dir, arm: arm === baseArm ? "base" : "cand", scenarioId, sample });
       insertResult(db, { scenarioId, arm, sample, verdict: result.verdict, why: result.why, calls: result.calls, costUsd: result.costUsd, at: Date.now() });
@@ -121,7 +124,7 @@ export function createPmReplay(ctx: ServerCore, services: Services) {
       if (!latestVerdicts(db, { arm: baseArm }).has(scenario.id) || isIncident) await record(scenario.id, baseArm, sample);
       if (candArm && (isIncident || incidentVerdictsPass(db, candArm, incidents.map((i) => i.id)))) await record(scenario.id, candArm, sample);
     }
-    return { ran, costUsd: cost, arm: candArm ?? baseArm };
+    return { ran, costUsd: cost - spentToday, arm: candArm ?? baseArm };
   }
 
   /** Stage-2 gate inside replay(): the whole set runs on the candidate only once every incident scenario passed it. */

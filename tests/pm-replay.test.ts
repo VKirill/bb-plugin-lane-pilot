@@ -33,15 +33,19 @@ describe("pm-replay decideReplay (staged A/B)", () => {
   });
   it("asks for a second sample on a single regression FAIL, then rejects when it reproduces", () => {
     const candidate = new Map([["s1", verdict("PASS")], ["s2", verdict("PASS")], ["s3", verdict("FAIL")]]);
-    const d1 = decideReplay({ incidentIds: ["s1"], base: new Map([["s3", verdict("PASS")]]), candidate, activeIds: active });
+    const d1 = decideReplay({ incidentIds: ["s1"], base: new Map([["s1", verdict("FAIL")], ["s3", verdict("PASS")]]), candidate, activeIds: active });
     expect(d1).toMatchObject({ action: "retry", scenarioIds: ["s3"] });
     candidate.set("s3#2", verdict("FAIL"));
-    const d2 = decideReplay({ incidentIds: ["s1"], base: new Map([["s3", verdict("PASS")]]), candidate, activeIds: active });
+    const d2 = decideReplay({ incidentIds: ["s1"], base: new Map([["s1", verdict("FAIL")], ["s3", verdict("PASS")]]), candidate, activeIds: active });
     expect(d2).toMatchObject({ action: "reject", retireIncident: false });
     // A FAIL already red on the base arm is not a regression.
     candidate.set("s3#2", verdict("FAIL"));
-    const d3 = decideReplay({ incidentIds: ["s1"], base: new Map([["s3", verdict("FAIL")]]), candidate, activeIds: active });
+    const d3 = decideReplay({ incidentIds: ["s1"], base: new Map([["s1", verdict("FAIL")], ["s3", verdict("FAIL")]]), candidate, activeIds: active });
     expect(d3).toMatchObject({ action: "adopt" });
+  });
+  it("does not adopt a rule the base arm already passes without", () => {
+    const candidate = new Map([["s1", verdict("PASS")], ["s2", verdict("PASS")], ["s3", verdict("PASS")]]);
+    expect(decideReplay({ incidentIds: ["s1"], base: new Map([["s1", verdict("PASS")]]), candidate, activeIds: active })).toMatchObject({ action: "wait" });
   });
   it("retires the incident when its own scenario fails twice on the candidate", () => {
     const candidate = new Map([["s1", verdict("FAIL")], ["s1#2", verdict("FAIL")], ["s2", verdict("PASS")], ["s3", verdict("PASS")]]);

@@ -54,9 +54,8 @@ export function decideReplay(input: {
   const fixes = incidents.filter((id) => passed(input.candidate.get(id)) && failed(input.base.get(id)));
   const allPass = incidents.every((id) => passed(input.candidate.get(id)));
   if (!allPass) return { action: "wait", reason: "incident scenarios have no clear PASS on the candidate arm" };
-  if (!fixes.length && !incidents.every((id) => passed(input.candidate.get(id)) || passed(input.base.get(id)))) {
-    return { action: "wait", reason: "no incident verdict on either arm is decisive" };
-  }
+  // A rule the base already passes without proves nothing: adopting it would only grow the PM prompt. Its normal trial decides.
+  if (!fixes.length) return { action: "wait", reason: "the base arm already passes the incident scenarios: the rule's normal trial decides" };
 
   // Stage 2: the rest of the active set.
   const rest = input.activeIds.filter((id) => !incidents.includes(id));
@@ -68,7 +67,7 @@ export function decideReplay(input: {
   if (regressions.length) {
     return { action: "reject", retireIncident: false, reason: `new FAIL on the active set vs the base arm: ${regressions.join(", ")}` };
   }
-  return { action: "adopt", reason: fixes.length ? `fixes ${fixes.join(", ")} with no new FAIL on the active set` : "incident scenarios pass and the active set shows no new FAIL" };
+  return { action: "adopt", reason: `fixes ${fixes.join(", ")} with no new FAIL on the active set` };
 }
 
 /** A replay run's own receipt line for the morning/status report. */
