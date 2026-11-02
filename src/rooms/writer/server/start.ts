@@ -11,6 +11,7 @@ import { taskV2Schema } from "../../contracts";
 import { ownsPathsOverlap, pollPause } from "@lane-pilot/kit";
 import { reconcile, reconcileCursor } from "../../stability";
 import { listRegressions, type RegressionRecord } from "../../baseline";
+import { quarantineFileSet } from "../../baseline/regress-files";
 import { emergencyFallbackDecision } from "../../night";
 import { rotatedWriterSettings, writerFallbackChain, writerFallbacks } from "../writer-fallbacks";
 import { resolveBestOf, roundSeedBrief, roundSurvivors } from "../best-of";
@@ -390,13 +391,12 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
     /** W32 rank 8: a task that would touch the files of an open found regression waits for it to close — writing into
      * broken ground reruns the red check and blames the wrong task. No attempt is spent; the reason is in the stage receipt. */
     const waitForRegressionQuarantine = async (shouldStop?:()=>string|null) => {
-      const filesOf = (open: RegressionRecord): string[] => {
-        const changed = (taskId: string | null) => !taskId ? [] : (services.rollback?.status(taskId).attempts ?? [])
-          .filter((a) => a.state === "accepted").flatMap((a) => a.change?.changed.map((f) => f.path) ?? []);
-        const shared = Array.isArray((open.evidence as { sharedFiles?: unknown } | null)?.sharedFiles)
-          ? ((open.evidence as { sharedFiles: unknown[] }).sharedFiles).filter((x): x is string => typeof x === "string") : [];
-        return [...new Set([...shared, ...changed(open.culpritTask), ...changed(open.taskId)])];
-      };
+      // Narrowed 2026-11-02 (SelfyStudio cab-core-brace waited forever on editor.html it never touches): the files the
+      // check can touch — sharedFiles plus the path literals of the command; the union of all changed files only when
+      // neither is known (a check whose files cannot be read stays cautious).
+      const changed = (taskId: string) => (services.rollback?.status(taskId).attempts ?? [])
+        .filter((a) => a.state === "accepted").flatMap((a) => a.change?.changed.map((f) => f.path) ?? []);
+      const filesOf = (open: RegressionRecord): string[] => quarantineFileSet(open, changed);
       let noted = "";
       for (;;) {
         if (ctx.isDisposed()) return;
@@ -410,11 +410,12 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         if (!blocker) return;
         if (noted !== `${blocker.id}`) {
           noted = `${blocker.id}`;
-          ctx.log(`writer ${input.taskId} waits: open regression ${blocker.taskId} \`${blocker.command}\` (${blocker.culpritTask ?? "no culprit"})`);
+          const shared = filesOf(blocker).slice(0, 6).join(", ");
+          const reason = `quarantine: regression #${blocker.id} of ${blocker.taskId} (check red since ${blocker.culpritTask ?? "unknown"}); if the change was meant: lane_pilot_regression {action:"settle", id:${blocker.id}, reason:"…"}; if it is a real break: fix it in a task that owns ${shared}`;
+          ctx.log(`writer ${input.taskId} waits: ${reason}`);
           const stage = listStageReceipts(db,input.runId,input.taskId).find((row) => row.stageId === "writer-agent");
           if (!stage || stage.state === "pending") {
-            recordStage(db, { runId:input.runId, taskId:input.taskId, stageId:"writer-agent", state:"pending", input:input.plan,
-              reason:`quarantine: open regression ${blocker.taskId} \`${blocker.command}\` blamed on ${blocker.culpritTask ?? "unknown"} shares files` });
+            recordStage(db, { runId:input.runId, taskId:input.taskId, stageId:"writer-agent", state:"pending", input:input.plan, reason });
           }
         }
         await new Promise((wake) => setTimeout(wake, pollPause(30_000)));
