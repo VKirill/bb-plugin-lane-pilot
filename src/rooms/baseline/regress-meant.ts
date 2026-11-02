@@ -2,7 +2,7 @@ import { defineJudgment, jev, noul, noulOf, type JudgeContext } from "@lane-pilo
 
 /**
  * `regress.meant`: did the task bisect blamed deliberately remove or change what the red check pins? Asked in the stale
- * sweep of the regression pass, once per culprit (the answer is kept in the row's evidence). At p ≥ 0.9 the row closes
+ * sweep of the regression pass, once per culprit (the answer is kept in the row's note). At p ≥ 0.9 the row closes
  * itself — a meant change is not a regression (the cab-editor hints of SelfyStudio, removed on purpose by a later task,
  * held every task touching editor.html, 2026-11-02). Below the threshold the row stays open and the probability goes
  * into its note. No Jev (off, no key, a failure) leaves the row open: never guessed.

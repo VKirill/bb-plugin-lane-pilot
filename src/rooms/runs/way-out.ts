@@ -16,7 +16,7 @@ const WAY_OUT: ReadonlyArray<readonly [pattern: RegExp, wayOut: string]> = [
   [/^verdict_block|^question_unanswered/, "stopped by a block verdict (the reason names the stage, the finding and its file:line): do not send the same task again; settle what the finding says, by a different approach or by asking the owner, then dispatch a new task"],
   [/needs_human/i, "answer_writer: answer its question with lane_pilot_answer_writer (taskId, answer); a question about the checks/acceptance/paths is fixed in place instead with lane_pilot_update_task (taskId, task: the whole corrected contract); neither answers: ask the owner once with lane_pilot_ask_owner"],
   // Held states: nothing to do — the machine resumes itself.
-  [/^quarantine/, "a regression finding quarantines a file this task touches: settle it with lane_pilot_regression {action:\"settle\", id, reason} (or fix the red check), then send the task again"],
+  [/^quarantine/, "a regression finding quarantines a file this task touches: if the change was meant, settle it with lane_pilot_regression {action:\"settle\", id, reason}; a real break is fixed in a task that owns the shared files; the waiting task starts by itself within 30 s of the row closing"],
   [/^waiting_writer:owner_present/, "nothing: the owner is working in this writer provider; the task resumes by itself when they leave"],
   [/^waiting_writer:usage_window/, "nothing: this provider's usage window is nearly spent; the task resumes by itself when the window resets"],
   [/^waiting_writer:breaker_open/, "nothing: this provider is paused after errors; the task resumes by itself when its breaker closes"],
