@@ -32,7 +32,8 @@ export function inputCitations(...inputs: readonly string[]): Citation {
 export function candidateCitations(files: ReadonlyArray<{ path: string; content: string | null }>, excerptBytes: number): Citation {
   // A file cut at the excerpt ceiling shows the critic only its start, so its line count is unknown.
   const lines = new Map(files.map((row) => [normalize(row.path),
-    row.content === null || Buffer.byteLength(row.content, "utf8") >= excerptBytes ? null : row.content.split("\n").length]));
+    // "" = a large file the packet shows only as its diff: its line count is unknown too.
+    row.content === null || row.content === "" || Buffer.byteLength(row.content, "utf8") >= excerptBytes ? null : row.content.split("\n").length]));
   return (finding) => {
     const count = lines.get(normalize(finding.file));
     return count == null || finding.line == null || finding.line <= count;

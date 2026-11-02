@@ -1,5 +1,5 @@
 import { choice, choiceOf, defineJudgment, jev, type JevSettings } from "@lane-pilot/jev";
-import type { CodeCritiqueResult } from "./code-critique";
+import { NEW_FILE_DIFF, type CodeCritiqueResult } from "./code-critique";
 
 /**
  * Cheap first pass before the code critic. A clear pass or fail is Jev's; a close call escalates to the critic.
@@ -57,9 +57,9 @@ const clip = (text: string, max: number) => text.slice(0, max);
 /** Title, acceptance, a short diff and check codes. The critic still sees the full packet when this stays unsure. */
 export function criticScreenPacket(input: {
   task: { title: string; acceptance: unknown };
-  evidence: { files: readonly { path: string; diff: string }[]; verification: readonly { command: string; exitCode: number }[] };
+  evidence: { files: readonly { path: string; diff: string; content?: string }[]; verification: readonly { command: string; exitCode: number }[] };
 }): string {
-  const diffs = input.evidence.files.slice(0, 8).map((file) => `${file.path}\n${clip(file.diff, 400)}`).join("\n");
+  const diffs = input.evidence.files.slice(0, 8).map((file) => `${file.path}\n${clip(file.diff === NEW_FILE_DIFF ? `new file\n${file.content ?? ""}` : file.diff, 400)}`).join("\n");
   const checks = input.evidence.verification.slice(0, 8).map((row) => `${row.exitCode} ${row.command}`).join("\n");
   return clip([`title: ${input.task.title}`, `acceptance: ${clip(JSON.stringify(input.task.acceptance), 800)}`, diffs, checks].join("\n"), 4_000);
 }

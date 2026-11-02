@@ -2,6 +2,7 @@ import { z } from "zod";
 import { clipped, extractModelJson, NO_TOOLS_LINE } from "@lane-pilot/workflow-engine";
 import { CODE_CRITIC_METHOD } from "./role-method";
 import { demoteUncited } from "./citations";
+import { stripAnsi } from "../verification/gate-output";
 import type { Citation } from "./citations";
 import { CRITIC_RUBRIC, VERDICT_STATUSES, applyRubric, isVerdictShape, legacyOutputToVerdict, normalizeVerdictInput, rubricPromptLine, settleVerdict, verdictSchema, verdictSeverityToLegacy, verdictSummary, withoutDecision } from "@lane-pilot/workflow-engine";
 import type { Verdict, VerdictFinding, VerdictStatus } from "@lane-pilot/workflow-engine";
@@ -206,6 +207,8 @@ export const MAX_FILE_EXCERPT_BYTES = 8 * 1024;
 export const MAX_VERIFICATION_IO_BYTES = 4_000;
 /** Of a long command output the critic sees the head and the tail (errors come last); the cut is said, it does not block. */
 const VERIFICATION_IO_HEAD_BYTES = 1_000;
+export const NEW_FILE_DIFF = "new file: the whole file is in content";
+const plainOutput = (text: string) => stripAnsi(text).replace(/\r\n/g, "\n").split("\n").map((line) => line.slice(line.lastIndexOf("\r") + 1)).join("\n").replace(/\n{3,}/g, "\n\n");
 
 export function buildCandidateEvidence(input: {
   produced: string[];
@@ -247,10 +250,12 @@ export function buildCandidateEvidence(input: {
     const content = small ? raw : typeof patch === "string" ? "" : Buffer.from(raw, "utf8").subarray(0, MAX_FILE_EXCERPT_BYTES).toString("utf8");
     const current = input.hashes[path] ?? null;
     const baseline = baselineHashes[path] ?? null;
-    const diff = typeof patch === "string"
+    // A new small file's patch is the whole file again with `+` in front: the content carries it, the diff only says it is new.
+    const newWhole = small && typeof patch === "string" && /^(?:new file mode|--- \/dev\/null)/m.test(patch);
+    const diff = newWhole ? NEW_FILE_DIFF : typeof patch === "string"
       ? patch
       : baseline && current && baseline !== current ? `hash ${baseline} -> ${current}\n${content}` : `new ${current ?? "unknown"}\n${content}`;
-    const header = Buffer.byteLength(path, "utf8") + Buffer.byteLength(content, "utf8") + (typeof patch === "string" ? Buffer.byteLength(patch, "utf8") : 0);
+    const header = Buffer.byteLength(path, "utf8") + Buffer.byteLength(content, "utf8") + Buffer.byteLength(diff, "utf8");
     if (packetBytes + header > MAX_CRITIQUE_PACKET_BYTES) { packetOver = true; unreadPaths.push(absolute(path)); continue; }
     packetBytes += header;
     files.push({ path, sha256: current, baselineSha256: baseline, content, diff });
@@ -260,8 +265,10 @@ export function buildCandidateEvidence(input: {
     // and tail with the cut said, and is no longer unknown evidence (2026-10-29).
     const bound = (value: string | undefined) => {
       if (typeof value !== "string") return "";
-      const bytes = Buffer.from(value, "utf8");
-      if (bytes.byteLength <= MAX_VERIFICATION_IO_BYTES) return value;
+      // Colour codes and progress redraws (vitest under a TTY) are half of a test run's output and say nothing to the critic.
+      const plain = plainOutput(value);
+      const bytes = Buffer.from(plain, "utf8");
+      if (bytes.byteLength <= MAX_VERIFICATION_IO_BYTES) return plain;
       const tail = MAX_VERIFICATION_IO_BYTES - VERIFICATION_IO_HEAD_BYTES;
       return `${bytes.subarray(0, VERIFICATION_IO_HEAD_BYTES).toString("utf8")}\n[… ${bytes.byteLength - MAX_VERIFICATION_IO_BYTES} bytes cut by Lane Pilot …]\n${bytes.subarray(bytes.byteLength - tail).toString("utf8")}`;
     };
