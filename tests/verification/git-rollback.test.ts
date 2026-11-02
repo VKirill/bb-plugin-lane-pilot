@@ -1,4 +1,4 @@
-import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it, vi } from "vitest";
@@ -52,6 +52,14 @@ it("worktreeState says where a worktree started and what it changed, deletions a
   expect(state).toMatchObject({ status: "ready", base: head, dirty: 2, ahead: 0 });
   expect(state.changed).toEqual([{ path: "new.ts", status: "A" }, { path: "server.ts", status: "D" }]);
   expect((await worktreeState({ basePath: base, worktreePath: join(a, "nope") })).status).toBe("missing");
+});
+
+it("worktreeState reports an unreadable path as failed rather than missing", async () => {
+  const { base } = await repo();
+  const loop = join(base, "loop");
+  await symlink(loop, loop);
+  // ELOOP works even when the suite runs as root, unlike chmod-based EACCES fixtures.
+  expect(await worktreeState({ basePath: base, worktreePath: loop })).toMatchObject({ status: "failed", reason: expect.stringContaining("ELOOP") });
 });
 
 it("reverts a merged task with git revert in a scratch worktree and merges the revert", async () => {

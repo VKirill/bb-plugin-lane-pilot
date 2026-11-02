@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **Nightly docs recover a missing saved worktree before merging it.** On 2026-11-02 six MAC Mini folders still had a `docs-worktree` KV marker after the folder was gone; the next pass tried to merge that path and Node reported `worktree head: spawn git ENOENT` for the missing cwd. `docsWorktree` now inspects the saved copy on its host first. A missing copy goes through the existing worktree creator, which restores an unmerged lane branch and its commits; an inspection or recovery failure keeps the marker and stops the pass for a later retry. Only ENOENT/ENOTDIR mean missing; other filesystem errors from `worktreeState` report failure. Existing copies still land their earlier commits before the next pass. Regression: `tests/server/docs-worktree-recovery.test.ts`, replaying the six original host-job inputs against real temporary Git repositories, including preservation of unmerged docs commits and failed recovery; `tests/verification/git-rollback.test.ts` covers an unreadable path.
+
 ## 0.1.478
 
 - **The harness research batch** (owner's «делай», 2026-11-02; plan `.agents/plans/2026-11-02-harness-research-batch.md`, research `.bb/chats/thr_6pwx5dw9f8/artifacts/research-harness-2026/synthesis.md`: five sources, ~150 posts, talks and papers of 2025–2026 against five theses; the hub's own numbers decided the order).
