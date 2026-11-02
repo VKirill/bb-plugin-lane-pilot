@@ -10,6 +10,7 @@ import { isMainfixTask, readCheckRun } from "../../tasks";
 import { gateLabel, gateResolverFor, type ResolvedGate } from "./gate-detect";
 import { continuesEpisode, type GateEpisode } from "./gate-episode";
 import { closeOwnerItemsByPrefix, postOwnerItem } from "../../owner-waiting";
+import { addRoad, getRoad, listRoad } from "../../lead/server/road";
 import { attributeFailures, testLabel } from "./gate-attribution";
 import { cacheHitsNote, extractCacheHits, extractFailingFiles, extractFailingTests, unhandledErrorBlock, type FailingTest } from "../gate-output";
 import { flakyEvidence, outputTail, readingFrom } from "../machine-pressure";
@@ -781,8 +782,15 @@ export class IntegrationGateRunner {
     const timeoutNote = repeatedTimeouts ? " (дважды не уложились во время, в том числе при перепроверке)" : "";
     const failingList = failingTests.length ? ` Упавшие тесты${timeoutNote}: ${failingTests.map(testLabel).join(", ")}.` : "";
     const cacheSuffix = cacheNote ? ` ${cacheNote}` : "";
-    this.noteRed({ runId, projectId }, this.enterEpisode(runId, gateCommand, failingFiles), "gate_red",
-      `Проверка после слияния (${label}) не прошла (код ${activeExitCode}).${failingList}`, `${why}${cacheSuffix} Полный лог: ${logRelativePath}`, logRelativePath);
+    if (allPreexisting) {
+      // Every failing test is red on the base too, so no merged task is guilty: this is not the owner's decision, it is work a
+      // decides lead can pick up itself. One branch on the lead's road tree (class next_step), the log keeps the rest; no owner row.
+      this.ctx.log(`integration-gate: ${label} red, all ${failingTests.length} failing tests fail on the base too; filed to the lead's road for ${projectId}. Full log: ${logRelativePath}`);
+      this.fileWithLead({ runId, projectId }, failingTests, logRelativePath);
+    } else {
+      this.noteRed({ runId, projectId }, this.enterEpisode(runId, gateCommand, failingFiles), "gate_red",
+        `Проверка после слияния (${label}) не прошла (код ${activeExitCode}).${failingList}`, `${why}${cacheSuffix} Полный лог: ${logRelativePath}`, logRelativePath);
+    }
 
     return { ran: true, passed: false, culpritTaskId: null };
   }
@@ -815,6 +823,36 @@ export class IntegrationGateRunner {
     } catch (cause) {
       this.ctx.log(`integration-gate: repair of ${taskId} not dispatched: ${cause instanceof Error ? cause.message : String(cause)}`);
       return null;
+    }
+  }
+
+  /**
+   * A red the batch did not cause (every failing test is red on the base) becomes a branch of the lead's road tree, class
+   * next_step: «fix the pre-existing red test X in project P». A decides tier of the next tick acts on it without the owner;
+   * a proposes tier still puts it to him as a proposal, which is the right place for it — not a bare «nobody is guilty» row.
+   * One branch per (project, first failing tests): an open, proposed or already-deciding twin is enough.
+   */
+  private fileWithLead(input: { runId: string; projectId: string }, tests: FailingTest[], logPath?: string): void {
+    try {
+      const db = this.ctx.db as never as Parameters<typeof listRoad>[0];
+      const names = tests.map(testLabel).slice(0, 3).join(", ");
+      const title = `Починить ранее красный тест: ${names} (проект ${input.projectId})`.slice(0, 300);
+      const alive = listRoad(db, { projectId: input.projectId, state: ["open", "later", "proposed"], limit: 500 });
+      if (alive.some((row) => row.title === title)) return;
+      const rootId = `dir:${input.projectId}`;
+      const root = getRoad(db, rootId) ?? addRoad(db, { id: rootId, projectId: input.projectId, title: `${input.projectId}: directions`, kind: "direction", source: "lead", why: "the root the lead files a project's branches under when a proposal names no parent" });
+      addRoad(db, {
+        parentId: root.id, projectId: input.projectId, title, kind: "option", source: "lead", class: "next_step",
+        why: `Общая проверка после слияния красная, но все упавшие тесты падают и на базе до этой партии: ни одна слитая задача не виновата. Это работа, а не решение владельца: починить тест, который был сломан раньше.`,
+        evidence: [
+          { kind: "run", ref: input.runId, label: "красная проверка" },
+          ...(logPath ? [{ kind: "file" as const, ref: logPath, label: "полный лог" }] : []),
+          ...tests.slice(0, 5).map((test) => ({ kind: "note" as const, ref: testLabel(test).slice(0, 500), label: "упавший тест" })),
+        ],
+        costEstimate: "one fix",
+      });
+    } catch (cause) {
+      this.ctx.log(`integration-gate: the pre-existing red was not filed to the lead's road: ${cause instanceof Error ? cause.message : String(cause)}`);
     }
   }
 

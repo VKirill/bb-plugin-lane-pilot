@@ -82,7 +82,9 @@ describe("the hub snapshot and the brief of a tick", () => {
     expect(snapshot.road.counts.open).toBe(1);
     expect(snapshot.road.open[0]).toMatchObject({ id: "d1", source: "owner" });
     expect(snapshot.rights).toHaveLength(7);
-    expect(snapshot.rights.every((row) => row.tier !== "decides")).toBe(true);
+    expect(snapshot.rights.find((row) => row.class === "next_step")!.tier).toBe("decides");
+    expect(snapshot.rights.find((row) => row.class === "landing")!.tier).toBe("proposes");
+    expect(snapshot.rights.find((row) => row.class === "money")!.tier).toBe("owner_only");
     expect(snapshot.exam).toEqual([]);
     expect(snapshot.identity.path).toBe(join(dir, "LEAD.md"));
     const brief = tickBrief(snapshot, "# Штурман\n\nМеньше, но до конца.");

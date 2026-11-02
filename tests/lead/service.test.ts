@@ -102,20 +102,21 @@ describe("the sweep every 15 minutes", () => {
 describe("the nightly exam of the rights", () => {
   it("opens a class on the journal's numbers, writes one quiet line for the owner and remembers the change", async () => {
     const { db, lead } = world();
+    // `landing` still starts at proposes (policy v2), so the exam's opening of a class stays covered here.
     for (let i = 0; i < 25; i += 1) {
       const id = `lead:road_${i}`;
-      openDecision(db, { id, surface: "lead", class: "next_step", risk: "low", situation: { q: i }, options: ["yes", "later", "no"] }, 1_000 + i);
+      openDecision(db, { id, surface: "lead", class: "landing", risk: "low", situation: { q: i }, options: ["yes", "later", "no"] }, 1_000 + i);
       db.prepare("UPDATE lane_pilot_decision SET prediction_json=?, predicted_at=?, predictor='test' WHERE id=?").run(JSON.stringify({ option: "yes", p: 0.9 }), 1_100 + i, id);
       answerDecision(db, id, { option: "yes" }, "owner", 2_000 + i);
       labelDecision(db, id, "exact", 3_000 + i);
     }
     const { exams, changes } = await lead.exam(5_000);
-    expect(exams.find((exam) => exam.class === "next_step")).toMatchObject({ n: 25, k: 25, tier: "decides" });
-    expect(changes).toEqual([{ class: "next_step", from: "proposes", to: "decides", reasons: [] }]);
-    expect(ownerItem(db, "lead-right:next_step:5000")).toMatchObject({ kind: "right_changed", state: "open" });
+    expect(exams.find((exam) => exam.class === "landing")).toMatchObject({ n: 25, k: 25, tier: "decides" });
+    expect(changes).toEqual([{ class: "landing", from: "proposes", to: "decides", reasons: [] }]);
+    expect(ownerItem(db, "lead-right:landing:5000")).toMatchObject({ kind: "right_changed", state: "open" });
     const state = await lead.state(6_000);
-    expect(state.rights.find((row) => row.class === "next_step")!.tier).toBe("decides");
-    expect(state.lastExam).toMatchObject({ at: 5_000, changes: [{ class: "next_step", to: "decides" }] });
+    expect(state.rights.find((row) => row.class === "landing")!.tier).toBe("decides");
+    expect(state.lastExam).toMatchObject({ at: 5_000, changes: [{ class: "landing", to: "decides" }] });
   });
 });
 

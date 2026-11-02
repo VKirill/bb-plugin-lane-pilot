@@ -1,5 +1,4 @@
 import { scheduleIsolated, type ServerCore } from "../../core/server";
-import { postOwnerItem } from "../../owner-waiting";
 import { BEAT_KEY, gapOutage } from "../logic";
 import { insertOutage, listOutages } from "../store";
 
@@ -17,12 +16,9 @@ export async function recordStartGap(ctx: Pick<ServerCore, "bb" | "db" | "log">,
   if (outage) {
     const cause = stop?.reason && typeof stop.at === "number" && Math.abs(stop.at - outage.fromAt) < 10 * 60_000 ? stop.reason : "остановился без предупреждения: сбой, зависание или машина выключилась";
     insertOutage(ctx.db, outage, cause, now);
+    // A fact, not a decision: the journal (`lane_pilot_outage`, `bb lane-pilot outages`) and the log keep it; the owner's list
+    // holds only what asks him (2026-11-02: «Ждут владельца» carried a «не работал 5 мин» row that wanted nothing).
     ctx.log(`outage: Lane Pilot was not running for ${outage.minutes} min (last beat ${new Date(outage.fromAt).toISOString()}): ${cause}`);
-    // The risen daemon speaks: one row for the owner (the Telegram digest carries it), not a wake-up in the night.
-    try {
-      postOwnerItem(ctx.db as never, { key: `outage:${outage.fromAt}`, source: "outage", kind: "outage", wake: false,
-        what: `Lane Pilot не работал ${outage.minutes} мин (${new Date(outage.fromAt).toISOString().slice(0, 16).replace("T", " ")}–${new Date(outage.toAt).toISOString().slice(11, 16)} UTC)`, why: cause });
-    } catch { /* the owner-waiting table may not exist in a test database */ }
   }
   await kv.set(BEAT_KEY, now as never).catch(() => undefined);
   await kv.set(STOP_KEY, null as never).catch(() => undefined);

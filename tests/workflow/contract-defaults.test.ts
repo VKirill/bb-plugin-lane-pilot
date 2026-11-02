@@ -29,6 +29,13 @@ describe("a planner's task gets the task-v2 envelope", () => {
   it("keeps what the planner wrote", () => {
     expect(withContractDefaults({ ...planner, risk: "low", lane: "ui", verify: "smoke" })).toMatchObject({ risk: "low", lane: "ui", verify: "smoke" });
   });
+  it("gives a check the planner did not time the normal 40-minute budget, not the sandbox's 120 s (issue-quick, 2026-11-02)", () => {
+    const filled = withContractDefaults(planner);
+    expect(filled.verification).toEqual([{ command: "grep -q '^## Лицензия$' README.md", cwd: ".", timeout_sec: 2400 }]);
+    // A timeout the planner did write is kept.
+    const timed = withContractDefaults({ ...planner, verification: [{ command: "npm test", cwd: ".", timeout_sec: 600 }] });
+    expect((timed.verification as Array<{ timeout_sec: number }>)[0]!.timeout_sec).toBe(600);
+  });
 });
 
 describe("a check written as prose", () => {
