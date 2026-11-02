@@ -5,6 +5,6 @@
 export const SKILL_CATALOG_BLOCK = `## Skill catalog
 Skills are many and filed by section. Run \`bb tools skills-tree --skills --json\`. Start with your sections, then the neighbours. Load only what this task needs (the Skill tool, or read that skill's SKILL.md). If \`progressive_skill_used\` is available, call it for each skill you use. Do not load skills just in case.`;
 
-export const SKILL_CATALOG_LINE = `Skills: \`bb lane-pilot skills [--section <id or name>] [--query <words>]\` — compact list (\`--json\` full); load only what this task needs.`;
+export const SKILL_CATALOG_LINE = `Skills: \`bb lane-pilot skills [--section <s>] [--query <words>]\`; load only what this task needs.`;
 
 export const SKILL_CATALOG_LIMIT = 600;
