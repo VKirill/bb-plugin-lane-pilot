@@ -21,7 +21,7 @@ import { createHarness } from "./src/rooms/harness/server";
 import { createDeferrals, sdkOwnerMessagePort } from "./src/rooms/deferral/server";
 import { createRollback } from "./src/rooms/rollback/server";
 import { createPluginBench, mountBenchNightly, mountBenchSweep, mountBenchWeekly, mountServiceModelRecheck } from "./src/rooms/bench/server";
-import { createBaselineRoom, mountRegress } from "./src/rooms/baseline/server";
+import { createBaselineRoom, mountRegress, mountRegressionTools } from "./src/rooms/baseline/server";
 import { createRunGoal, mountRunGoal } from "./src/rooms/run-goal/server";
 import { createLeadService, mountLead } from "./src/rooms/lead/server";
 import { createPhaseDriver, mountPhaseDriver, mountPhaseIntake, registerPhaseTool } from "./src/rooms/phase/server";
@@ -194,6 +194,8 @@ export default async function plugin(bb: BbPluginApi) {
   mountBenchSweep(ctx, () => services.bench);
   // First of the month, 04:00 UTC: the cheap pin of a service job is benched against its previous model (bench.service_models).
   mountServiceModelRecheck(ctx, () => services.bench);
+  // The PM's lane_pilot_regression family members (list/settle); the family folds them in registerTools → mountToolFamilies.
+  mountRegressionTools(ctx, services);
   registerTools(ctx, services);
   registerCli(ctx, services);
   // The pixel world's GLB files (council office people and cars) over HTTP, not inside app.js.

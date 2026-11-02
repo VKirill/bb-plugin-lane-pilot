@@ -74,6 +74,9 @@ export const TOOL_PRESENTATION: Record<string, Entry> = {
   lane_pilot_relay: row("Writing to another chat", "Wrote to another chat", "Пишу в другой чат", "Другой чат получил сообщение"),
   lane_pilot_memory: row("Working with project memory and lessons", "Worked with project memory and lessons", "Работаю с памятью и уроками", "С памятью и уроками поработал"),
   lane_pilot_workflow_draft: row("Working on a workflow draft", "Worked on a workflow draft", "Работаю над черновиком графа", "Над черновиком графа поработал"),
+  lane_pilot_regression: row("Working with regression findings", "Worked with regression findings", "Работаю с находками регресса", "С находками регресса поработал"),
+  lane_pilot_regression_list: row("Listing regression findings", "Listed regression findings", "Смотрю находки регресса", "Находки регресса получены", true),
+  lane_pilot_regression_settle: row("Settling a regression finding", "Settled a regression finding", "Закрываю находку регресса", "Находка регресса закрыта"),
   lane_pilot_tool_search: row("Looking for a Lane Pilot tool", "Looked for a Lane Pilot tool", "Ищу инструмент Lane Pilot", "Инструмент Lane Pilot найден", true),
   lane_pilot_wait_specialist: row("Waiting for a specialist", "Waited for a specialist", "Жду специалиста", "Дождался специалиста", true),
 };

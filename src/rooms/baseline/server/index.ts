@@ -6,6 +6,7 @@ import { createRegression } from "./regress";
 export { BASELINE_USAGE, runBaselineCli } from "./cli";
 export type { BaselineApi } from "./baseline";
 export { mountRegress } from "./regress";
+export { mountRegressionTools } from "./regression-tools";
 export type { ProjectPass, RegressOptions, RegressResult, RegressionApi } from "./regress";
 export { baselineRpc } from "./rpc";
 
