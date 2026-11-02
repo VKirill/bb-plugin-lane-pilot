@@ -4,6 +4,7 @@ import { registerObservedTool } from "../../core/server";
 import type { Services } from "../../core/server";
 import { bindRunChildBudget } from "../../core/server";
 import { getRun, getRunSettingsScopes, loadProjectSettings } from "../../storage";
+import { wayOut } from "../../runs";
 
 export const HEALTH_TOOLS = ["lane_pilot_run_health"] as const;
 
@@ -14,13 +15,15 @@ export function runHealth(services: Services, runId: string) {
   const budget = services.runBudgets.get(runId);
   if (!budget) return { runId, budget: null, providers: services.providerBreaker.snapshot() };
   const snapshot = budget.snapshot();
+  const check = budget.check();
   return {
     runId,
     budget: {
       ...snapshot,
       childThreads: { used: snapshot.children, limit: snapshot.limits.maxChildren ?? null },
-      check: budget.check(),
+      check,
     },
+    ...(!check.ok ? { next: wayOut("blocked", `run_budget_exceeded:${check.exceeded}`) ?? undefined } : {}),
     providers: services.providerBreaker.snapshot(),
   };
 }

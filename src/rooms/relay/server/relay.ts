@@ -1,5 +1,5 @@
-import { latestTaskAttemptState, listUnreportedTaskOutcomes, markTaskOutcomesReported, pmBookkeepingPending, pmHasTasksAtWork, toldPmDirectly, type TaskOutcome } from "../../storage";
-import { taskFamily } from "../../runs";
+import { latestTaskAttemptState, listUnreportedTaskOutcomes, markTaskOutcomesReported, pmBookkeepingPending, pmHasTasksAtWork, pmTasksWaiting, toldPmDirectly, type TaskOutcome } from "../../storage";
+import { taskFamily, wayOut } from "../../runs";
 import { pmDeferralLines } from "../../deferral/server";
 import { calibrationLine } from "../../forecast";
 import { forecastReport } from "../../forecast/server";
@@ -70,8 +70,9 @@ export type RelayDeps = {
    * that its tasks ended, as before 0.1.232.
    */
   taskOutcomes?():Promise<TaskOutcome[]>;
-  /** The PM's tasks still at work (queued, being spawned, running, being canceled). */
-  tasksAtWork?(pmThreadId:string):Promise<string[]>;
+  /** The PM's tasks still at work (queued, being spawned, running, being canceled) — a bare id, or a wait row
+   * `{taskId, reason}` when the task is parked on a reason (quarantine, a held provider, a paused run). */
+  tasksAtWork?(pmThreadId:string):Promise<Array<string | { taskId:string; reason:string | null }>>;
   /** Lane Pilot's own commit after these accepted tasks (project life) is still on its way to main: the PM would push before it. */
   bookkeeping?(rows:TaskOutcome[]):Promise<boolean>;
   /** Lane Pilot already told the PM this outcome in a message of its own (a writer's question, a task not started). */
@@ -387,11 +388,21 @@ export function createRelay(deps:RelayDeps) {
   const clock = (ms:number) => `${new Date(ms).toISOString().slice(11, 16)} UTC`;
 
   /** One message with the PM's task results and the notes of its reminders they satisfy; null when nothing is due yet. */
-  function noticeText(rows:TaskOutcome[], atWork:string[], notes:RelayReminder[]):string {
+  function noticeText(rows:TaskOutcome[], atWork:Array<string | { taskId:string; reason:string | null }>, notes:RelayReminder[]):string {
     const canceled = rows.filter((row) => row.state === "canceled").length;
-    const lines = rows.filter((row) => row.state !== "canceled").map((row) => `- ${row.taskId} — ${row.state}${row.state === "accepted" ? "" : row.reason ? `: ${row.reason.replace(/\s+/g, " ").slice(0, 300)}` : ""}`);
+    const lines = rows.filter((row) => row.state !== "canceled").map((row) => {
+      const reason = row.state === "accepted" ? "" : row.reason ? `: ${row.reason.replace(/\s+/g, " ").slice(0, 300)}` : "";
+      const out = reason ? wayOut(row.state, row.reason) : null;
+      return `- ${row.taskId} — ${row.state}${reason}${out ? ` → ${out}` : ""}`;
+    });
     if (canceled) lines.push(`- ${canceled} canceled`);
-    const work = atWork.length ? `Still at work: ${atWork.length} (${atWork.slice(0, 8).join(", ")}${atWork.length > 8 ? ", …" : ""}).` : "None of your tasks is at work now.";
+    const workLines = atWork.slice(0, 8).map((entry) => {
+      if (typeof entry === "string") return entry;
+      const short = (entry.reason ?? "").replace(/\s+/g, " ").slice(0, 200);
+      const out = wayOut("pending", entry.reason);
+      return `${entry.taskId} (waits: ${short}${out ? ` → ${out}` : ""})`;
+    });
+    const work = atWork.length ? `Still at work: ${atWork.length} (${workLines.join(", ")}${atWork.length > 8 ? ", …" : ""}).` : "None of your tasks is at work now.";
     const noted = notes.map((item) => `- (${clock(item.createdAt)}) ${item.note}`);
     const deferred = deps.deferralLines ? [...new Set(rows.map((row) => row.projectId))].flatMap((projectId) => deps.deferralLines!(projectId)) : [];
     return [
@@ -619,7 +630,10 @@ export function relayFor(ctx:ServerContext):Relay {
       if (typeof since !== "number") { await bb.storage.kv.set(NOTICE_SINCE_KEY, Date.now() as never); return []; }
       return listUnreportedTaskOutcomes(ctx.db, since);
     },
-    tasksAtWork:async (pmThreadId) => pmHasTasksAtWork(ctx.db, pmThreadId),
+    tasksAtWork:async (pmThreadId) => {
+      const waiting = new Map(pmTasksWaiting(ctx.db, pmThreadId).map((row) => [row.taskId, row.reason]));
+      return pmHasTasksAtWork(ctx.db, pmThreadId).map((taskId) => waiting.has(taskId) ? { taskId, reason: waiting.get(taskId)! } : taskId);
+    },
     bookkeeping:async (rows) => pmBookkeepingPending(ctx.db, rows, Date.now()),
     toldDirectly:(row) => toldPmDirectly(row.pmThreadId, row.taskId, row.at),
     markReported:async (rows) => markTaskOutcomesReported(ctx.db, rows, Date.now()),

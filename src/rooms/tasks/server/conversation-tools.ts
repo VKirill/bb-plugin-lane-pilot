@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { callerPluginMetadata, ToolError, registerObservedTool, type ServerCore } from "../../core/server";
 import { hostContract } from "../../contracts";
-import { failureClass } from "../../runs";
+import { failureClass, wayOut } from "../../runs";
 import { getRun, getRunWriterHost } from "../../storage";
 import { checkRecipe, factKind, type CheckMeasure } from "../rails";
 
@@ -49,7 +49,7 @@ export function registerConversationTools(ctx: ServerCore): void {
       if (kind === "failure") {
         const rows = db.prepare(`SELECT a.task_id AS taskId, a.state, a.reason, a.updated_at AS at FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
           WHERE r.project_id=? AND a.state IN ('validation_failed','blocked','provider_error','timeout','empty_output') ORDER BY a.updated_at DESC LIMIT 10`).all(context.projectId) as Array<{ taskId: string; state: string; reason: string | null; at: number }>;
-        return JSON.stringify({ kind, failures: rows.map((row) => ({ ...row, class: failureClass(row.state, row.reason), reason: (row.reason ?? "").slice(0, 300), at: new Date(row.at).toISOString() })), sources: ["the failed attempts and their failure class (lane_pilot_attempt)"] });
+        return JSON.stringify({ kind, failures: rows.map((row) => ({ ...row, class: failureClass(row.state, row.reason), reason: (row.reason ?? "").slice(0, 300), next: wayOut(row.state, row.reason) ?? undefined, at: new Date(row.at).toISOString() })), sources: ["the failed attempts and their failure class (lane_pilot_attempt)"] });
       }
       return JSON.stringify({ kind, facts: null, note: "no code answer for this kind of question: answer from your reading" });
     },
