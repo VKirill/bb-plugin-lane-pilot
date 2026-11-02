@@ -132,3 +132,104 @@ export async function pickSkillTree(
   }
   return { skills: [...new Set(skills)], picked, by: active ? "jev" : "shadow" };
 }
+
+/* --- `bb lane-pilot skills`: the PM's searchable view of the hub catalog -------------------------- */
+
+export const SKILLS_USAGE = "bb lane-pilot skills [--section <id or name>] [--query <words>] [--json]";
+
+export type SkillHubEntry = { name: string; description: string; category: { sectionId: string; subsectionId: string } | null };
+export type SkillHub = { sections: SkillTreeSection[]; skills: SkillHubEntry[] };
+
+/** `bb tools skills-hub --json` nests the tree under `tree`; flat `sections` is accepted too. */
+export function parseSkillHub(raw: string): SkillHub {
+  const parsed = JSON.parse(raw) as { tree?: { sections?: unknown }; sections?: unknown; skills?: unknown };
+  const sections = parsed.tree?.sections ?? parsed.sections;
+  if (!Array.isArray(sections) || !Array.isArray(parsed.skills)) throw new Error("skill_hub_shape");
+  const skills = (parsed.skills as Array<Record<string, unknown>>).map((sk) => ({
+    name: String(sk.name ?? ""),
+    description: typeof sk.description === "string" ? sk.description : "",
+    category: sk.category && typeof sk.category === "object"
+      ? { sectionId: String((sk.category as Record<string, unknown>).sectionId ?? ""), subsectionId: String((sk.category as Record<string, unknown>).subsectionId ?? "") }
+      : null,
+  })).filter((sk) => sk.name);
+  return { sections: sections as SkillTreeSection[], skills };
+}
+
+/** First sentence of a hub description; falls back to the first 160 characters. */
+export function firstSentence(text: string): string {
+  const clean = text.replace(/\s+/g, " ").trim();
+  const cut = clean.search(/[.!?](?:\s|$)/);
+  const head = cut >= 0 ? clean.slice(0, cut + 1) : clean;
+  return head.length > 160 ? `${head.slice(0, 157)}…` : head;
+}
+
+function sectionHaystack(section: SkillTreeSection): string {
+  return `${section.id} ${section.title} ${section.titleEn ?? ""} ${section.description ?? ""}`.toLowerCase();
+}
+
+function haystackFor(hub: SkillHub): (id: string | undefined) => string {
+  const byId = new Map<string, string>();
+  for (const section of hub.sections) {
+    byId.set(section.id, sectionHaystack(section));
+    for (const sub of section.subsections ?? []) {
+      byId.set(sub.id, `${sub.id} ${sub.title} ${sub.titleEn ?? ""} ${sub.description ?? ""}`.toLowerCase());
+    }
+  }
+  return (id) => (id ? byId.get(id) ?? "" : "");
+}
+
+/**
+ * `--section` keeps the skills under a matching section or subsection (id or title, case-insensitive).
+ * `--query` keeps a skill when every word hits its name, description or section titles.
+ */
+export function filterSkillHub(hub: SkillHub, filter: { section?: string; query?: string }): SkillHubEntry[] {
+  let pool = hub.skills;
+  const textOf = haystackFor(hub);
+  const want = filter.section?.trim().toLowerCase();
+  if (want) {
+    const hit = new Set<string>();
+    for (const section of hub.sections) {
+      if (sectionHaystack(section).includes(want)) hit.add(section.id);
+      for (const sub of section.subsections ?? []) {
+        if (`${sub.id} ${sub.title} ${sub.titleEn ?? ""} ${sub.description ?? ""}`.toLowerCase().includes(want)) hit.add(sub.id);
+      }
+    }
+    pool = pool.filter((sk) => sk.category && (hit.has(sk.category.sectionId) || hit.has(sk.category.subsectionId)));
+  }
+  const words = (filter.query ?? "").toLowerCase().split(/\s+/).filter(Boolean);
+  if (words.length) {
+    pool = pool.filter((sk) => {
+      const hay = `${sk.name} ${sk.description} ${textOf(sk.category?.sectionId)} ${textOf(sk.category?.subsectionId)}`.toLowerCase();
+      return words.every((word) => hay.includes(word));
+    });
+  }
+  return pool;
+}
+
+/** Compact default output: one line per skill. */
+export function formatSkillList(skills: SkillHubEntry[]): string {
+  return skills.map((sk) => {
+    const sentence = firstSentence(sk.description);
+    return sentence ? `${sk.name} — ${sentence}` : sk.name;
+  }).join("\n");
+}
+
+export async function runSkillsCli(args: string[]): Promise<{ exitCode: number; stdout?: string; stderr?: string }> {
+  const at = (flag: string) => args.indexOf(flag);
+  const sectionAt = at("--section");
+  const queryAt = at("--query");
+  const section = sectionAt >= 0 ? args[sectionAt + 1] : undefined;
+  const query = queryAt >= 0 ? args.slice(queryAt + 1).filter((arg) => !arg.startsWith("--")).join(" ") : undefined;
+  const bin = process.env.BB_CLI || "bb";
+  const out = await spawnAsync(bin, ["tools", "skills-hub", "--json"], { timeout: 30_000, maxBuffer: 24_000_000 });
+  if (out.error || out.status !== 0) return { exitCode: 1, stderr: `skills-hub failed: ${out.error?.message ?? out.stderr.slice(0, 200)}` };
+  let hub: SkillHub;
+  try {
+    hub = parseSkillHub(out.stdout);
+  } catch {
+    return { exitCode: 1, stderr: "skills-hub returned a shape this build cannot read" };
+  }
+  const skills = filterSkillHub(hub, { ...(section ? { section } : {}), ...(query ? { query } : {}) });
+  if (args.includes("--json")) return { exitCode: 0, stdout: JSON.stringify({ sections: hub.sections, skills }, null, 2) };
+  return { exitCode: 0, stdout: formatSkillList(skills) || "no skills match" };
+}

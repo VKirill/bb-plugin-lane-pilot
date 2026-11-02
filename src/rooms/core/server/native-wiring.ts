@@ -3,7 +3,7 @@ import { handleNativeDispatch, mentionContext, nativeContributedEnv } from "../.
 import { NATIVE_MENTION_PROVIDER, nativeSelectionSchema } from "../../native-agent";
 import { createClaudeGuardEnv } from "../../native-agent";
 import { attachStreamRetry, droppedStreamDetail } from "../../writer";
-import { createRoleMarkerEnv, mountBbShim } from "../../native-agent/server";
+import { createPmSkillTraceEnv, createRoleMarkerEnv, mountBbShim } from "../../native-agent/server";
 import { observeOwnerDispatch } from "../../owner-presence/server";
 import { THREAD_WATCH_EVENT_TYPES, listThreadEventsRaw } from "@lane-pilot/thread-observe";
 import type { ServerCore } from "./core";
@@ -39,14 +39,16 @@ export function mountNativeWiring(ctx: ServerCore) {
   // started, plus the lane marker (helper-bb-shim.ts). The owner's own chats get none of these. (2026-10-29 claude-guard)
   const marker = createRoleMarkerEnv(ctx);
   const guard = createClaudeGuardEnv(ctx);
+  const pmTrace = createPmSkillTraceEnv(ctx);
   bb.providers.experimental_contributeEnv("claude-code", async (thread) => {
-    const [native, guarded, mark] = await Promise.all([
+    const [native, guarded, mark, trace] = await Promise.all([
       nativeContributedEnv(bb, nativeHost, thread),
       guard(thread),
       marker(thread),
+      pmTrace(thread),
     ]);
     const merged = [...native];
-    for (const entry of [...guarded, ...mark]) {
+    for (const entry of [...guarded, ...mark, ...trace]) {
       if (!merged.some((own) => own.name === entry.name)) merged.push(entry);
     }
     return merged;

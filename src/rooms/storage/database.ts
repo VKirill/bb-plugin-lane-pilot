@@ -478,6 +478,9 @@ export const migrations = [
   `CREATE INDEX IF NOT EXISTS lane_pilot_attempt_wake ON lane_pilot_attempt(wake_at) WHERE wake_at IS NOT NULL`,
   // H1: the sampled input of a Jev receipt (one in five, 8 KB cap), for the nightly model relabeler. Append only.
   `ALTER TABLE lane_pilot_jev_receipt ADD COLUMN input_json TEXT`,
+  // A3: which skills a PM session opened (PostToolUse hook → `pm-skill-use`), the name as shown. Append only.
+  `CREATE TABLE IF NOT EXISTS lane_pilot_pm_skill_use (id INTEGER PRIMARY KEY, thread_id TEXT NOT NULL, project_id TEXT NOT NULL DEFAULT '', skill TEXT NOT NULL, used_at INTEGER NOT NULL)`,
+  `CREATE INDEX IF NOT EXISTS lane_pilot_pm_skill_use_at ON lane_pilot_pm_skill_use(used_at)`,
 ];
 
 export function openDatabase(bb: BbPluginApi): LanePilotDatabase {

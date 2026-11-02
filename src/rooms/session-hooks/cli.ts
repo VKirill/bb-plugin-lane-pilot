@@ -2,12 +2,13 @@
  * Fail-open session hook for a native Claude session Lane Pilot launches.
  * A hook never wedges a session: failOpen swallows errors and the process exits 0.
  */
+import { spawn } from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 // node --experimental-strip-types resolves this file only with a .ts specifier.
 // @ts-expect-error TS5097
-import { buildCapsule, failOpen, hookOutput, injectPack, pretaskDecision, progressRecord, promptRecall, runStreams, sessionEndDraft, sessionStartText, stallObserve, subagentVerify, subagentVerifyText, type Capsule, type ToolCtx } from "./logic.ts";
+import { buildCapsule, failOpen, hookOutput, injectPack, pmSkillUseOf, pretaskDecision, progressRecord, promptRecall, runStreams, sessionEndDraft, sessionStartText, stallObserve, subagentVerify, subagentVerifyText, type Capsule, type PmSkillUse, type ToolCtx } from "./logic.ts";
 
 type Payload = Record<string, unknown>;
 
@@ -43,6 +44,18 @@ function toolName(payload: Payload): string {
 function toolInput(payload: Payload): Record<string, unknown> {
   const input = payload.tool_input ?? payload.toolInput;
   return input && typeof input === "object" ? input as Record<string, unknown> : {};
+}
+
+
+// Fire and forget: a PM's Skill call lands one row in lane_pilot_pm_skill_use. Never blocks the tool call.
+function reportPmSkill(row: PmSkillUse): void {
+  try {
+    const args = ["lane-pilot", "pm-skill-use", row.skill, "--thread", row.thread];
+    if (row.project) args.push("--project", row.project);
+    const child = spawn(process.env.BB_CLI || "bb", args, { detached: true, stdio: "ignore" });
+    child.on("error", () => undefined);
+    child.unref();
+  } catch { /* a lost row never wedges the session */ }
 }
 
 function handle(payload: Payload): void {
@@ -126,6 +139,8 @@ function handle(payload: Payload): void {
     return;
   }
   if (event === "PostToolUse") {
+    const pmSkill = pmSkillUseOf(toolName(payload), toolInput(payload), process.env);
+    if (pmSkill) reportPmSkill(pmSkill);
     const counts = readJson<Record<string, number>>(join(dir, "stall.json"), {});
     const observed = stallObserve(counts, toolName(payload), toolInput(payload), payload.tool_response ?? payload.toolResponse);
     writeFileSync(join(dir, "stall.json"), JSON.stringify(observed.counts));

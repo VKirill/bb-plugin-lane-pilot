@@ -325,3 +325,17 @@ export function hookOutput(event: string, text: string | null, extra?: Record<st
   if (!text && !extra) return null;
   return { hookSpecificOutput: { hookEventName: event, ...(text ? { additionalContext: text } : {}), ...extra } };
 }
+
+export type PmSkillUse = { skill: string; thread: string; project: string };
+
+/**
+ * One Skill call of a PM session, for `bb lane-pilot pm-skill-use`. LANE_PILOT_PM_THREAD_ID is set only on PM
+ * threads (createPmSkillTraceEnv), so writers and helpers land null here and record nothing.
+ */
+export function pmSkillUseOf(tool: string, input: Record<string, unknown>, env: Record<string, string | undefined>): PmSkillUse | null {
+  if (tool !== "Skill") return null;
+  const skill = String(input.skill ?? input.name ?? input.skillName ?? "").trim();
+  const thread = (env.LANE_PILOT_PM_THREAD_ID ?? "").trim();
+  if (!skill || !thread) return null;
+  return { skill, thread, project: (env.LANE_PILOT_PM_PROJECT_ID ?? "").trim() };
+}
