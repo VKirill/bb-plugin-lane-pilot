@@ -110,10 +110,7 @@ export function registerCli(ctx: ServerCore, services: Services) {
     JEV_USAGE,
   ].join("\n");
 
-  bb.cli.register({
-    name:"lane-pilot",
-    summary:"Lane Pilot stage-0 prototype controls",
-    commands:[
+  const commands:Array<{ name:string; summary:string; usage:string }> = [
       { name:"configure", summary:"Save prototype project settings", usage:"bb lane-pilot configure '<json>'" },
       { name:"activate", summary:"Spawn a visible isolated PM thread", usage:"bb lane-pilot activate <project-id> <ordinary-source-thread-id>" },
       { name:"state", summary:"Inspect a project's runs and attempts, newest first, one page at a time", usage:"bb lane-pilot state <project-id> [--limit N] [--before <created-at[:id]>] [--attempt <attempt-id> [--reason-offset N]]" },
@@ -207,7 +204,16 @@ export function registerCli(ctx: ServerCore, services: Services) {
       { name:"checkers", summary:"Checking the checkers: plant known defects in accepted candidates, run every checker on them and print the checker scorecard (score, scorecard, drill, defects)", usage:CHECKERS_USAGE },
       { name:"schedule", summary:"The schedule board: scheduled workflows, errands and scripts (list, show, history, preview, create, update, pause, resume, run-now, delete)", usage:SCHEDULE_USAGE },
       { name:"agents", summary:"The agents the owner can pick: list and show the bundled ones, create, update and delete his own (a JSON or a markdown file with frontmatter)", usage:AGENTS_USAGE },
-    ],
+  ];
+  // The help is the hand list above plus every registered command it does not name: regress, regressions, regress-close and
+  // timeline were missing from it, and a PM told the owner a quarantine could not be lifted (2026-11-02).
+  const usageText = [usage, ...commands.filter((c) => !new RegExp(`^bb lane-pilot ${c.name}(\\s|$)`, "m").test(usage))
+    .map((c) => `${c.usage.split("\n")[0]}   (${c.summary})`)].join("\n");
+
+  bb.cli.register({
+    name:"lane-pilot",
+    summary:"Lane Pilot stage-0 prototype controls",
+    commands,
     async run(argv, invocation) {
       try {
         const [command, ...args] = argv;
@@ -703,7 +709,7 @@ export function registerCli(ctx: ServerCore, services: Services) {
           const persisted = importSettingsOnce(db, args[1]!, imported.imported);
           return { exitCode:0, stdout:JSON.stringify({ ...imported, persisted }, null, 2) };
         }
-        return { exitCode:1, stderr:usage };
+        return { exitCode:1, stderr:usageText };
       } catch (cause) {
         return { exitCode:1, stderr:cause instanceof Error ? cause.message : String(cause) };
       }
