@@ -10,3 +10,5 @@ export * from "./output-guard";
 export * from "./calibrate";
 export * from "./watch";
 export * from "./autoresearch";
+export * from "./labels-outcome";
+export * from "./labels-model";

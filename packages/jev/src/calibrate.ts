@@ -33,6 +33,8 @@ export type JudgmentCalibration = {
   /** Labeled outcomes below `minLabeled`: the verdict is provisional. */
   insufficient: boolean;
   verdict: CalibrationVerdict;
+  /** Where the labels came from (`--by-source`): pipeline truth (`agree*:<suffix>` except `:model`), a second judge (`*:model`), or the escalated judge (bare `agree`/`disagree`). */
+  bySource: { outcome: { agree: number; disagree: number }; model: { agree: number; disagree: number }; escalated: { agree: number; disagree: number } };
   /** The thresholds the calibration certifies (the registry defaults, clamped); a project may override them via jev.thresholds. */
   thresholds: Record<string, number>;
 };
@@ -72,6 +74,14 @@ export function calibratedThresholds(judgment: Pick<Judgment<unknown, unknown>, 
 
 type Row = { judgment: string; version: number; model: string | null; status: string; decided_by: string; outcome: string | null; answers_json: string | null };
 
+/** Which source a label came from: `*:model` the relabeler, a bare verdict the escalated judge, any other suffix the pipeline's truth. */
+export function labelSource(outcome: string): "model" | "escalated" | "outcome" | null {
+  if (outcome.startsWith("agree:model") || outcome.startsWith("disagree:model")) return "model";
+  if (outcome === "agree" || outcome === "disagree") return "escalated";
+  if (outcome.startsWith("agree") || outcome.startsWith("disagree")) return "outcome";
+  return null;
+}
+
 /**
  * The calibration report over the receipts since `sinceMs`, one row per known judgment that was asked at least once
  * (plus an entry per unknown judgment name found in the receipts, so retired ids still show).
@@ -107,6 +117,12 @@ export function calibrateReceipts(db: Database.Database, input: { sinceMs: numbe
     const models = new Map<string, number>();
     for (const row of list) if (row.status === "ok" && row.model) models.set(jevModelBase(row.model), (models.get(jevModelBase(row.model)) ?? 0) + 1);
     const model = [...models.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+    const bySource = { outcome: { agree: 0, disagree: 0 }, model: { agree: 0, disagree: 0 }, escalated: { agree: 0, disagree: 0 } };
+    for (const row of jevRows) {
+      if (!row.outcome) continue;
+      const source = labelSource(row.outcome);
+      if (source) bySource[source][row.outcome.startsWith("agree") ? "agree" : "disagree"] += 1;
+    }
     const accuracy = labeled ? agree / labeled : null;
     const insufficient = labeled < minLabeled;
     const verdict: CalibrationVerdict =
@@ -117,7 +133,7 @@ export function calibrateReceipts(db: Database.Database, input: { sinceMs: numbe
     out.push({
       judgment: id, version: judgment?.version ?? Math.max(...list.map((row) => row.version)), fingerprint: judgment ? judgmentFingerprint(judgment) : "", model,
       calls, labeled, agree, disagree, borderLabeled, borderAgree, borderDisagree, accuracy, meanConfidence: confN ? Math.round((confidences / confN) * 1000) / 1000 : null,
-      insufficient, verdict,
+      insufficient, verdict, bySource,
       thresholds: judgment ? Object.fromEntries(Object.entries(judgment.thresholds).map(([name, spec]) => [name, spec.default])) : {},
     });
   }

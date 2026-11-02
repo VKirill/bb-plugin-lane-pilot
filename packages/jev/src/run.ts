@@ -117,6 +117,8 @@ export function createJev(deps: { client: JevClient; db?: Database.Database | nu
         status: call.ok ? "ok" : call.status, ...(answers ? { answers: summarize(answers) } : {}), decision, decidedBy, escalatedTo, thresholds: resolveThresholds(entry.judgment, entry.settings, call.ok ? call.model : entry.judgment.model ?? null),
         latencyMs: call.latencyMs, tokensIn: call.ok ? Math.round(call.usage.input_tokens / batchSize) : null, tokensOut: call.ok ? Math.round(call.usage.output_tokens / batchSize) : null,
         fields: entry.fields,
+        // The sampled input for the model relabeler: the same redaction the state got (H1).
+        inputJson: JSON.stringify(redactKnownDeep(entry.input)) ?? null,
       });
     } catch (cause) {
       deps.log?.(`jev receipt not stored: ${cause instanceof Error ? cause.message : String(cause)}`);

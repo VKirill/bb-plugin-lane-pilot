@@ -1,5 +1,7 @@
 import type Database from "better-sqlite3";
-import { autoresearchThresholds, calibrateReceipts, calibrationRecord, jevWatch, judgmentFingerprint, listJudgments, renderCalibration, renderWatch, AUTORESEARCH_MIN_LABELED, CALIBRATION_EPOCH_FALLBACK, JEV_CALIBRATED_KEY } from "@lane-pilot/jev";
+import { autoresearchThresholds, calibrationRecord, jevWatch, judgmentFingerprint, listJudgments, renderCalibration, renderWatch, AUTORESEARCH_MIN_LABELED, CALIBRATION_EPOCH_FALLBACK, JEV_CALIBRATED_KEY } from "@lane-pilot/jev";
+// The worktree's calibrate carries `bySource` (H1); the package path keeps the main checkout's older copy out of this build.
+import { calibrateReceipts } from "../../../packages/jev/src/calibrate";
 import "./judgments";
 import { failureClassReport } from "../runs";
 
@@ -89,6 +91,13 @@ export function runJevCli(deps: { db: Database.Database; saveProjectSetting?: (p
   const finish = (sinceMs: number, sinceLabel: string) => {
     const report = calibrateReceipts(deps.db, { sinceMs, judgments: listJudgments(), minLabeled });
     if (flags.has("json")) return { exitCode: 0, stdout: JSON.stringify({ since: sinceLabel, minLabeled, judgments: report }, null, 2) };
+    if (flags.has("by-source")) {
+      const lines = report.map((row) => {
+        const s = row.bySource;
+        return `${row.judgment}: outcome ${s.outcome.agree}+${s.outcome.disagree}, model ${s.model.agree}+${s.model.disagree}, escalated ${s.escalated.agree}+${s.escalated.disagree}`;
+      });
+      return { exitCode: 0, stdout: `Jev label sources since ${sinceLabel}:\n${lines.join("\n") || "  no receipts"}` };
+    }
     if (flags.has("save")) {
       if (!projectId || !deps.saveProjectSetting) return { exitCode: 1, stderr: "--save needs a project id" };
       deps.saveProjectSetting(projectId, JEV_CALIBRATED_KEY, JSON.stringify(calibrationRecord(report)));

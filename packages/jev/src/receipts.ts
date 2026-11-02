@@ -36,6 +36,7 @@ export const jevMigrations: string[] = [
   `CREATE INDEX lane_pilot_jev_receipt_j ON lane_pilot_jev_receipt(judgment, at)`,
   `CREATE INDEX lane_pilot_jev_receipt_p ON lane_pilot_jev_receipt(project_id, at)`,
   `CREATE INDEX lane_pilot_jev_receipt_r ON lane_pilot_jev_receipt(run_id)`,
+  // NOTE: appended statements belong at the END of `migrations` in src/rooms/storage/database.ts (index-locked), not here.
 ];
 
 export type JevReceipt = {
@@ -47,20 +48,36 @@ export type JevReceipt = {
   latencyMs?: number | null; tokensIn?: number | null; tokensOut?: number | null; at?: number;
   /** Top-level state field names and their serialized sizes — never the content (audit requirement: the watch sees what left). */
   fields?: Record<string, number>;
+  /** The judgment's input as JSON, already redacted. Stored only for the sampled receipts (one in five, `sampledInput`), capped at 8 KB. */
+  inputJson?: string | null;
 };
 
 const KEEP_ROWS = 50_000;
 const KEEP_MS = 30 * 24 * 3600_000;
 
+export const INPUT_JSON_CAP = 8 * 1024;
+export const INPUT_JSON_TRUNC = "…[truncated]";
+
+/**
+ * One receipt in five keeps its input (deterministic on the input hash, so a repeated state either always or never lands
+ * in the sample): the nightly model relabeler re-renders the judgment's questions from it. Capped at 8 KB; a longer input
+ * is cut with a marker and `input_json` then holds JSON that may not parse — the labeler skips what it cannot parse.
+ */
+export function sampledInput(inputSha256: string, text: string | null | undefined): string | null {
+  if (!text) return null;
+  if (Number.parseInt(inputSha256.slice(0, 8), 16) % 5 !== 0) return null;
+  return text.length > INPUT_JSON_CAP ? `${text.slice(0, INPUT_JSON_CAP - INPUT_JSON_TRUNC.length)}${INPUT_JSON_TRUNC}` : text;
+}
+
 export function insertReceipt(db: Database.Database, receipt: JevReceipt): number {
   const at = receipt.at ?? Date.now();
-  const row = db.prepare(`INSERT INTO lane_pilot_jev_receipt (judgment,version,model,mode,project_id,run_id,subject,input_sha256,input_chars,questions,batch_size,status,answers_json,decision,decided_by,escalated_to,thresholds_json,latency_ms,tokens_in,tokens_out,fields_json,at)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+  const row = db.prepare(`INSERT INTO lane_pilot_jev_receipt (judgment,version,model,mode,project_id,run_id,subject,input_sha256,input_chars,questions,batch_size,status,answers_json,decision,decided_by,escalated_to,thresholds_json,latency_ms,tokens_in,tokens_out,fields_json,input_json,at)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
     receipt.judgment, receipt.version, receipt.model ?? null, receipt.mode, receipt.projectId ?? null, receipt.runId ?? null, receipt.subject ?? null,
     receipt.inputSha256, receipt.inputChars, receipt.questions, receipt.batchSize ?? 1, receipt.status,
     receipt.answers === undefined ? null : JSON.stringify(receipt.answers), receipt.decision ?? null, receipt.decidedBy, receipt.escalatedTo ?? null,
     receipt.thresholds === undefined ? null : JSON.stringify(receipt.thresholds), receipt.latencyMs ?? null, receipt.tokensIn ?? null, receipt.tokensOut ?? null,
-    receipt.fields === undefined ? null : JSON.stringify(receipt.fields), at);
+    receipt.fields === undefined ? null : JSON.stringify(receipt.fields), sampledInput(receipt.inputSha256, receipt.inputJson), at);
   // Roughly one receipt in a hundred also prunes: a row count and an age bound, like the check-duration table.
   if (Number(row.lastInsertRowid) % 100 === 0) pruneReceipts(db, at);
   return Number(row.lastInsertRowid);

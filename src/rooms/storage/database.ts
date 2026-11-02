@@ -473,6 +473,8 @@ export const migrations = [
   `CREATE UNIQUE INDEX IF NOT EXISTS lane_pilot_worktree_open ON lane_pilot_worktree(host, path) WHERE released_at IS NULL`,
   // The lead's decision journal: every question to the owner with the prediction made before his answer (src/rooms/lead). Append only.
   ...leadMigrations,
+  // H1: the sampled input of a Jev receipt (one in five, 8 KB cap), for the nightly model relabeler. Append only.
+  `ALTER TABLE lane_pilot_jev_receipt ADD COLUMN input_json TEXT`,
 ];
 
 export function openDatabase(bb: BbPluginApi): LanePilotDatabase {
