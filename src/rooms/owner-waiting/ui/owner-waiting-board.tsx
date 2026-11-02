@@ -145,8 +145,33 @@ export function OwnerWaitingBoard({ projects }: { projects: Array<{ id: string; 
   };
   const projectName = (id: string | null) => (id ? projects.find((project) => project.id === id)?.name ?? id : null);
   const items = waiting?.items ?? [];
+  // «now» is the five rows worth his attention (items.ts NOW_CAP); the rest wait folded. A row without a tier (an older server) is «now».
+  const tierOf = (item: OwnerItem) => (item as { tier?: "now" | "later" }).tier ?? "now";
+  const nowItems = items.filter((item) => tierOf(item) === "now"), laterItems = items.filter((item) => tierOf(item) === "later");
   const known = new Set(SECTIONS.map((section) => section.source));
-  const sections = [...SECTIONS, ...[...new Set(items.filter((item) => !known.has(item.source)).map((item) => item.source))].map((source) => ({ source, title: null as I18nKey | null, folded: false }))];
+  const sectionsOf = (rows: OwnerItem[]) => [...SECTIONS, ...[...new Set(rows.filter((item) => !known.has(item.source)).map((item) => item.source))].map((source) => ({ source, title: null as I18nKey | null, folded: false }))];
+  const renderSections = (all: OwnerItem[], folding: boolean) => sectionsOf(all).map((section) => {
+    const rows = all.filter((item) => item.source === section.source);
+    if (!rows.length) return null;
+    const title = section.title ? t(section.title) : section.source;
+    const list = (
+      <ul className="overflow-hidden rounded-lg border border-border bg-card" data-testid={`owner-list-${section.source}`}>
+        {rows.map((item) => <ItemCard key={item.key} item={item} projectName={projectName(item.projectId)} busy={busy === item.key} onRun={(action) => void run(item, action)} />)}
+      </ul>
+    );
+    return (
+      <section key={section.source} className="space-y-2" data-testid={`owner-section-${section.source}`}>
+        {folding && (section.folded || rows.length > FOLD_OVER) && !rows.some((item) => item.wake) ? (
+          <Disclosure summary={<span className="text-sm font-semibold">{title} <span className="font-normal text-muted-foreground">{rows.length}</span></span>}>{list}</Disclosure>
+        ) : (
+          <>
+            <h3 className="text-sm font-semibold">{title} <span className="font-normal text-muted-foreground">{rows.length}</span></h3>
+            {list}
+          </>
+        )}
+      </section>
+    );
+  });
   const redAttempts = waiting?.overnight.red.flatMap((row) => row.attempts) ?? [];
   return (
     <div className="space-y-4" data-testid="owner-waiting">
@@ -160,6 +185,7 @@ export function OwnerWaitingBoard({ projects }: { projects: Array<{ id: string; 
         <section className="space-y-1 rounded-lg border border-border p-3.5 text-sm" data-testid="owner-overnight">
           <h3 className="text-xs font-semibold text-muted-foreground">{t("ow_overnight")}</h3>
           <p data-testid="owner-accepted">{fill("ow_accepted", { n: waiting.overnight.accepted, adopted: waiting.overnight.rulesAdopted, confirmed: waiting.overnight.rulesConfirmed })}</p>
+          {waiting.answered ? <p data-testid="owner-answered">{fill("ow_answered", waiting.answered)}</p> : null}
           <p data-testid="owner-red"><span className="font-medium">{t("ow_red")}:</span> {waiting.overnight.red.length
             ? waiting.overnight.red.map((row) => `${stateLabel(row.state)} ${row.count}`).join(", ") : t("ow_red_none")}</p>
           {redAttempts.length ? (
@@ -170,28 +196,19 @@ export function OwnerWaitingBoard({ projects }: { projects: Array<{ id: string; 
         </section>
       ) : null}
       {waiting && !items.length ? <p className="text-sm text-muted-foreground" data-testid="owner-empty">{t("ow_empty")}</p> : null}
-      {sections.map((section) => {
-        const rows = items.filter((item) => item.source === section.source);
-        if (!rows.length) return null;
-        const title = section.title ? t(section.title) : section.source;
-        const list = (
-          <ul className="overflow-hidden rounded-lg border border-border bg-card" data-testid={`owner-list-${section.source}`}>
-            {rows.map((item) => <ItemCard key={item.key} item={item} projectName={projectName(item.projectId)} busy={busy === item.key} onRun={(action) => void run(item, action)} />)}
-          </ul>
-        );
-        return (
-          <section key={section.source} className="space-y-2" data-testid={`owner-section-${section.source}`}>
-            {(section.folded || rows.length > FOLD_OVER) && !rows.some((item) => item.wake) ? (
-              <Disclosure summary={<span className="text-sm font-semibold">{title} <span className="font-normal text-muted-foreground">{rows.length}</span></span>}>{list}</Disclosure>
-            ) : (
-              <>
-                <h3 className="text-sm font-semibold">{title} <span className="font-normal text-muted-foreground">{rows.length}</span></h3>
-                {list}
-              </>
-            )}
-          </section>
-        );
-      })}
+      {nowItems.length ? (
+        <section className="space-y-3" data-testid="owner-now">
+          {laterItems.length ? <div><h3 className="text-sm font-semibold">{t("ow_now")} <span className="font-normal text-muted-foreground">{nowItems.length}</span></h3><p className="text-xs text-muted-foreground">{t("ow_now_help")}</p></div> : null}
+          {renderSections(nowItems, true)}
+        </section>
+      ) : null}
+      {laterItems.length ? (
+        <section data-testid="owner-later">
+          <Disclosure summary={<span className="text-sm font-semibold">{t("ow_later")} <span className="font-normal text-muted-foreground">{laterItems.length}</span></span>}>
+            <div className="space-y-3 pt-2">{renderSections(laterItems, false)}</div>
+          </Disclosure>
+        </section>
+      ) : null}
       <PushSettings />
     </div>
   );
@@ -200,6 +217,7 @@ export function OwnerWaitingBoard({ projects }: { projects: Array<{ id: string; 
 /** The number next to the screen's name in the rail; nothing while it is 0 or cannot be read. */
 export function OwnerWaitingBadge() {
   const rpc = useRpc<typeof rpcContract>();
-  const count = ((useLpRpcQuery("owner_waiting", {}, { pollMs: 60_000 }).data ?? null) as OwnerWaiting | null)?.items.length ?? 0;
+  const waiting = (useLpRpcQuery("owner_waiting", {}, { pollMs: 60_000 }).data ?? null) as OwnerWaiting | null;
+  const count = waiting?.now ?? waiting?.items.length ?? 0;
   return count ? <span className="ml-1.5 rounded-full bg-secondary px-1.5 text-[11px] leading-5 text-muted-foreground" data-testid="owner-badge">{count}</span> : null;
 }

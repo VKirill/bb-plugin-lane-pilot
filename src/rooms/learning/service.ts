@@ -272,7 +272,7 @@ export function mountLearning(ctx: ServerCore, services: Services): Learning | n
       bb.agents.contributeInstructions(({ threadId, projectId }) => {
         const run = db.prepare("SELECT id FROM lane_pilot_run WHERE pm_thread_id=? AND closed_at IS NULL LIMIT 1").get(threadId) as { id: string } | undefined;
         if (!run) return null;
-        return pmResumeInstructions(db, projectId, getRunSettingsScopes(db, run.id));
+        return pmResumeInstructions(db, projectId, getRunSettingsScopes(db, run.id), `pm:${run.id}`);
       });
     } catch (cause) { bb.log.info(`Lane Pilot learning cannot contribute instructions: ${cause instanceof Error ? cause.message : String(cause)}`); }
 

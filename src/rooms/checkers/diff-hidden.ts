@@ -175,8 +175,9 @@ export async function auditCandidateDiffHidden(
 
   // 4. test_fit
   if (enabled.has("test_fit")) {
-    const withDiff = testFitFindings(subject.changes).map((h) => `${h.kind}:${h.path}`);
-    const hidden = testFitFindings(hiddenSubject.changes).map((h) => `${h.kind}:${h.path}`);
+    const declared = subject.contract.test_removals ?? [];
+    const withDiff = testFitFindings(subject.changes, declared).map((h) => `${h.kind}:${h.path}`);
+    const hidden = testFitFindings(hiddenSubject.changes, declared).map((h) => `${h.kind}:${h.path}`);
     const phantom = withDiff.length > 0 && sameStrings(withDiff, hidden);
     const blindPass = false;
     const diffSensitive = !sameStrings(withDiff, hidden) || withDiff.length === 0;

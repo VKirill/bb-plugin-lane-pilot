@@ -41,7 +41,7 @@ export {
   scopeApplies,
   splitRuleScope,
   listRuleEvents,
-  logRuleEvent,
+  logRuleEvent, logRulesShown,
   reviseAdoptedRule,
   RULE_TRIAL,
   ruleTrialStats,

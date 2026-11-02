@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { listRuleProposals, upsertLessonProposal } from "@lane-pilot/run-insights";
+import { decideRuleTrial, listRuleProposals, ruleTrialStats, upsertLessonProposal } from "@lane-pilot/run-insights";
 import plugin from "../../server";
 import { TARGET_SHA } from "../../src/rooms/runs/constants";
 import { openDatabase, savePrototypeConfig } from "../../src/rooms/storage/database";
@@ -23,6 +23,26 @@ function adopted(db: ReturnType<typeof database>, rule: string, audience: "pm" |
 /** Rules that share no words, so the proposal store does not take one for a repeat of another. */
 const word = (n: number, k: number) => `${String.fromCharCode(97 + (n % 26), 97 + Math.floor(n / 26), 97 + k)}wort`;
 const distinct = (n: number) => `Always ${word(n, 0)} the ${word(n, 1)} before the ${word(n, 2)} and ${word(n, 3)} it.`;
+
+describe("a PM rule's uses are counted (harness batch 2026-11-02)", () => {
+  it("entering a PM prompt is a use, once per run or task; five clean uses confirm the rule, none in 60 days retires it", () => {
+    const db = database();
+    const { id } = adopted(db, "Ask the owner before a deploy to production.", "pm");
+    pmRulesPromptBlock(db, "proj_1", [], ruleBudget("pm"), "pm:run_1");
+    pmRulesPromptBlock(db, "proj_1", [], ruleBudget("pm"), "pm:run_1");
+    expect(ruleTrialStats(db, "proj_1", id, 0)).toMatchObject({ applied: 1, appliedAccepted: 1, recurrences: [] });
+    expect(pmResumeInstructions(db, "proj_1", [], "pm:run_2")).toContain("Ask the owner before a deploy");
+    for (const use of ["pm:run_3", "task:t1", "task:t2"]) pmRulesPromptBlock(db, "proj_1", [], ruleBudget("pm"), use);
+    const rule = listRuleProposals(db, "proj_1").find((row) => row.id === id)!;
+    expect(ruleTrialStats(db, "proj_1", id, 0).applied).toBe(5);
+    expect(decideRuleTrial(rule, ruleTrialStats(db, "proj_1", id, 0), Date.now())).toEqual({ action: "confirm" });
+    // Shown without a use record (no `use`): nothing is counted, as before.
+    const idle = adopted(db, distinct(7), "pm", { ageDays: 70 });
+    pmRulesPromptBlock(db, "proj_1", [], ruleBudget("pm"));
+    const idleRule = listRuleProposals(db, "proj_1").find((row) => row.id === idle.id)!;
+    expect(decideRuleTrial(idleRule, ruleTrialStats(db, "proj_1", idle.id, 0), NOW)).toEqual({ action: "retire", reason: "unused" });
+  });
+});
 
 describe("the budget of a pool of rules (T4)", () => {
   it("counts a rule in tokens, and a pool has room until its budget is spent", () => {

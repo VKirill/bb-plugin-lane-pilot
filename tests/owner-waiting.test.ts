@@ -29,6 +29,26 @@ function seeded() {
 }
 
 describe("the owner's waiting list", () => {
+  it("ranks by the cost of delay and keeps at most five rows «now»; the digest pushes only those; who settled the week's rows is counted (harness batch 2026-11-02)", () => {
+    const db = openDatabase(createFakePluginHost({ pluginId: "lane-pilot" }).bb);
+    const post = (key: string, kind: string, at: number, wake = true) => postOwnerItem(db, { key, source: "night", kind, what: `${key} what`, why: `${key}: why it is the owner's, long enough`, wake }, at);
+    for (let i = 0; i < 6; i++) post(`d${i}`, "decision", NOW - (6 - i) * HOUR);
+    post("wall1", "wall", NOW);
+    post("red1", "canary_red", NOW, false);
+    const waiting = collectOwnerWaiting(db, NOW);
+    expect(waiting.items.filter((item) => item.tier === "now").map((item) => item.key)).toEqual(["red1", "wall1", "d0", "d1", "d2"]);
+    expect(waiting.items.filter((item) => item.tier === "later").map((item) => item.key)).toEqual(["d3", "d4", "d5"]);
+    expect(waiting.now).toBe(5);
+    expect(planDigest(db, NOW).keys).toEqual(["wall1", "d0", "d1", "d2"]);
+    closeOwnerItem(db, "red1", "screen", NOW); closeOwnerItem(db, "d0", "agent:thr_1", NOW); closeOwnerItem(db, "d1", "janitor:term", NOW);
+    const after = collectOwnerWaiting(db, NOW);
+    expect(after.items.filter((item) => item.tier === "now").map((item) => item.key)).toEqual(["wall1", "d2", "d3", "d4", "d5"]);
+    expect(after.answered).toEqual({ owner: 1, agent: 1, lead: 0, janitor: 1 });
+    const text = runWaitingCli(db, [], NOW).stdout;
+    expect(text).toContain("Сейчас: 5");
+    expect(text).toContain("Решено за 7 дней: вы 1, помощник 1, Штурман 0, уборщик 1.");
+  });
+
   it("holds only what the owner's own words started: a waiting rule, a deferral and a memory conflict are the system's, not his", () => {
     const waiting = collectOwnerWaiting(seeded(), NOW);
     expect(waiting.counts).toEqual({ learning: 1 });
@@ -108,13 +128,17 @@ describe("the Telegram digest", () => {
     expect(inQuietHours(Date.UTC(2026, 9, 22, 10, 0), "09:00-13:00", "Europe/Madrid")).toBe(true);
   });
 
-  it("names six items at most and counts the rest; every key is acknowledged after the send", () => {
+  it("pushes only the «now» rows (five at most); the rest wait their turn on the screen and are not even counted in the message", () => {
     const db = seeded();
     for (let i = 0; i < 9; i++) postOwnerItem(db, { key: `night:p${i}`, source: "night", kind: "proposal", what: `proposal ${i}`, why: "graph change", evidence: [], actions: [] }, NOW);
     const digest = planDigest(db, NOW);
-    expect(digest.keys).toHaveLength(9);
-    expect(digest).toMatchObject({ shown: 6, more: 3 });
-    expect(digest.text).toContain("…и ещё 3.");
+    expect(digest.keys).toHaveLength(5);
+    expect(digest).toMatchObject({ shown: 5, more: 0 });
+    expect(digest.text).not.toContain("…и ещё");
+    // Once a «now» row closes, the next one moves up and pushes on the next tick.
+    ackDigest(db, digest.keys, NOW);
+    closeOwnerItem(db, digest.keys[0]!, "screen", NOW + 1);
+    expect(planDigest(db, NOW + 2).keys).toEqual(["night:p5"]);
   });
 
   it("has settings: on/off, quiet hours and time zone, refused when wrong", () => {
@@ -135,7 +159,7 @@ describe("bb lane-pilot waiting", () => {
     const db = seeded();
     const list = runWaitingCli(db, [], NOW);
     expect(list.exitCode).toBe(0);
-    expect(list.stdout).toContain("Ждут владельца: 1. Ничего не блокируется.");
+    expect(list.stdout).toContain("Ждут владельца: 1. Сейчас: 1, остальное подождёт (помечено «потом»). Ничего не блокируется.");
     expect(list.stdout).toContain("Prefer short answers");
     postOwnerItem(db, { key: "night:x", source: "night", kind: "proposal", what: "x", why: "posted by a caller", evidence: [], actions: [] }, NOW);
     const digest = JSON.parse(runWaitingCli(db, ["digest", "--json"], NOW).stdout!);

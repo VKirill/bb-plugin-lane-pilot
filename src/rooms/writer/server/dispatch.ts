@@ -31,6 +31,7 @@ import type { Services } from "../../core/server";
 import { runOnHost } from "@lane-pilot/host-calls";
 import { pollPause } from "@lane-pilot/kit";
 import { pmRulesOf } from "../../learning";
+import { logRulesShown } from "@lane-pilot/run-insights";
 
 /** How long a dispatch waits for its stages before it answers «queued» and lets them go on in the background. */
 const dispatchAnswerMs = () => {
@@ -246,6 +247,8 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
       const advised = batchAdvice.length && reply.state === "queued" ? { ...reply, batchAdvice } : reply;
       if (reply.state !== "queued") return advised;
       const pathRules = pmRulesOf(db, args.projectId, getRunSettingsScopes(db, runId), [...task.owns_paths, ...task.read_first]);
+      // A rule given to the PM for this task is a use of it (the trial counts it; a resumed session counts once per task).
+      if (pathRules.length) { try { logRulesShown(db, args.projectId, pathRules.map((rule) => rule.id), `task:${task.id}`); } catch { /* best effort */ } }
       return pathRules.length ? { ...advised, pathRules: pathRules.map((rule) => ({ id: rule.id, rule: rule.rule, scope: rule.scope })) } : advised;
     };
     // The run's objective (the Tasks board groups by it) comes with the PM's first dispatch; Lane Pilot's own dispatches (mainfix, workflows) need none.

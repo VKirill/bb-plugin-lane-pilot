@@ -505,11 +505,25 @@ export function pickRelevantRules<T>(rules: readonly T[], answers: Record<string
 }
 
 
-export type RuleEventAction = "adopted" | "confirmed" | "revised" | "retired" | "cap_reached" | "made_room" | "needs_second_evidence" | "owner_accepted" | "owner_rejected" | "owner_revoked";
+export type RuleEventAction = "adopted" | "confirmed" | "revised" | "retired" | "cap_reached" | "made_room" | "needs_second_evidence" | "owner_accepted" | "owner_rejected" | "owner_revoked" | "shown";
 export type RuleEvent = { ruleId: string; action: RuleEventAction; detail: string | null; at: number };
 
 export function logRuleEvent(db: RulesDatabase, projectId: string, ruleId: string, action: RuleEventAction, detail: string | null = null, now = Date.now()): void {
   db.prepare("INSERT INTO lane_pilot_rule_event(project_id,rule_id,action,detail,at) VALUES(?,?,?,?,?)").run(projectId, ruleId, action, detail, now);
+}
+
+/**
+ * A rule entered a PM's prompt (`detail` = `pm:<runId>` for a session's start or resume, `task:<taskId>` for a dispatch): one event per rule and
+ * detail, so a session resumed ten times counts once. The trial reads these as the PM rule's uses (harness batch 2026-11-02; before it a PM
+ * rule had no recorded use, so it could neither be confirmed nor retired).
+ */
+export function logRulesShown(db: RulesDatabase, projectId: string, ruleIds: readonly string[], detail: string, now = Date.now()): number {
+  let added = 0;
+  for (const ruleId of ruleIds) {
+    added += db.prepare(`INSERT INTO lane_pilot_rule_event(project_id,rule_id,action,detail,at) SELECT ?,?,'shown',?,?
+      WHERE NOT EXISTS (SELECT 1 FROM lane_pilot_rule_event WHERE project_id=? AND rule_id=? AND action='shown' AND detail=?)`).run(projectId, ruleId, detail, now, projectId, ruleId, detail).changes;
+  }
+  return added;
 }
 
 export function listRuleEvents(db: RulesDatabase, projectId: string, limit = 50): RuleEvent[] {
@@ -535,9 +549,9 @@ export function reviseAdoptedRule(db: RulesDatabase, projectId: string, id: stri
 }
 
 export type RuleTrialStats = {
-  /** Writer attempts that were given the rule since its current wording. */
+  /** Writer attempts that were given the rule, plus PM prompts it entered (`shown` events), since its current wording. */
   applied: number;
-  /** Of those, attempts that were accepted. */
+  /** Of those, attempts that were accepted; a PM prompt counts as accepted (nothing measures it). */
   appliedAccepted: number;
   /** Failures System One matched to the rule among the attempts that were given it: the rule did not prevent them. */
   recurrences: Array<{ attemptId: string; taskId: string; reason: string }>;
@@ -557,12 +571,26 @@ export function ruleTrialStats(db: RulesDatabase, projectId: string, ruleId: str
   const recurrences = (db.prepare(`SELECT attempt_id AS attemptId, task_id AS taskId, reason FROM lane_pilot_failure_triage
     WHERE project_id=? AND same_rule_id=? AND status='ok' AND failed_at>=?`).all(projectId, ruleId, since) as Array<{ attemptId: string; taskId: string; reason: string }>)
     .filter((row) => ids.has(row.attemptId));
-  return {
+  const shown = shownStats(db, projectId).get(ruleId);
+  return withShown({
     applied: applied.length,
     appliedAccepted: applied.filter((row) => row.state === "accepted").length,
     recurrences,
     lastAppliedAt: applied.length ? Math.max(...applied.map((row) => row.at)) : null,
-  };
+  }, shown, since);
+}
+
+/** PM uses per rule: the `shown` events, as (count since, last at). */
+function shownStats(db: RulesDatabase, projectId: string): Map<string, Array<{ at: number }>> {
+  const out = new Map<string, Array<{ at: number }>>();
+  for (const row of db.prepare("SELECT rule_id AS ruleId, at FROM lane_pilot_rule_event WHERE project_id=? AND action='shown'").all(projectId) as Array<{ ruleId: string; at: number }>) out.set(row.ruleId, [...(out.get(row.ruleId) ?? []), { at: row.at }]);
+  return out;
+}
+function withShown(stats: RuleTrialStats, shown: Array<{ at: number }> | undefined, since: number): RuleTrialStats {
+  const uses = (shown ?? []).filter((row) => row.at >= since);
+  if (!uses.length) return stats;
+  const last = Math.max(...uses.map((row) => row.at));
+  return { ...stats, applied: stats.applied + uses.length, appliedAccepted: stats.appliedAccepted + uses.length, lastAppliedAt: Math.max(stats.lastAppliedAt ?? 0, last) };
 }
 
 /**
@@ -578,17 +606,18 @@ export function ruleTrialStatsMany(db: RulesDatabase, projectId: string, rules: 
     WHERE run.project_id=?`).all(projectId) as Array<{ id: string; state: string; at: number; ruleId: string }>;
   const triaged = db.prepare(`SELECT attempt_id AS attemptId, task_id AS taskId, reason, same_rule_id AS ruleId, failed_at AS failedAt FROM lane_pilot_failure_triage
     WHERE project_id=? AND same_rule_id IS NOT NULL AND status='ok'`).all(projectId) as Array<{ attemptId: string; taskId: string; reason: string; ruleId: string; failedAt: number }>;
+  const shown = shownStats(db, projectId);
   for (const { id, since } of rules) {
     const applied = picked.filter((row) => row.ruleId === id && row.at >= since);
     const ids = new Set(applied.map((row) => row.id));
     const recurrences = triaged.filter((row) => row.ruleId === id && row.failedAt >= since && ids.has(row.attemptId))
       .map(({ attemptId, taskId, reason }) => ({ attemptId, taskId, reason }));
-    out.set(id, {
+    out.set(id, withShown({
       applied: applied.length,
       appliedAccepted: applied.filter((row) => row.state === "accepted").length,
       recurrences,
       lastAppliedAt: applied.length ? Math.max(...applied.map((row) => row.at)) : null,
-    });
+    }, shown.get(id), since));
   }
   return out;
 }
@@ -616,9 +645,9 @@ export function decideRuleTrial(rule: Pick<RuleProposal, "trialState" | "revisio
     return rule.revision >= RULE_TRIAL.maxRevisions ? { action: "retire", reason: "kept_recurring" } : { action: "revise" };
   }
   const since = stats.lastAppliedAt ?? rule.revisionStartedAt ?? rule.decidedAt ?? now;
-  // A PM rule's use is never recorded (it rides the PM's brief, not a writer attempt): «unused» would retire every one of them at 60 days
-  // whatever the PM read (Gemini F-010). It stays on trial until a recurrence or the owner decides.
-  if (rule.audience !== "pm" && now - since >= RULE_TRIAL.unusedAfterMs) return { action: "retire", reason: "unused" };
+  // A PM rule's uses are its `shown` events (logRulesShown, since the harness batch of 2026-11-02); before that it had none, and «unused»
+  // would have retired every PM rule at 60 days whatever the PM read (Gemini F-010).
+  if (now - since >= RULE_TRIAL.unusedAfterMs) return { action: "retire", reason: "unused" };
   if (rule.trialState === "trial" && stats.applied >= RULE_TRIAL.confirmAfterApplied && stats.recurrences.length === 0 && stats.appliedAccepted / stats.applied >= RULE_TRIAL.confirmMinAcceptedRate) return { action: "confirm" };
   return { action: "keep" };
 }

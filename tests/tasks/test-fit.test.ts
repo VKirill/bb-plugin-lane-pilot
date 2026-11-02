@@ -4,6 +4,14 @@ import { testFitFindings } from "../../src/rooms/tasks";
 
 const testFile = (before: string, after: string | null) => ({ path: "tests/money.test.ts", before, after });
 
+it("a removal the contract declares in test_removals is not a hit; an undeclared one still is (harness batch 2026-11-02)", () => {
+  const before = `it("adds", () => {\n  expect(add(1, 2)).toBe(3);\n});\n`;
+  const files = [testFile(before, null), { path: "tests/other.test.ts", before, after: null }];
+  expect(testFitFindings(files).map((hit) => hit.path)).toEqual(["tests/money.test.ts", "tests/other.test.ts"]);
+  expect(testFitFindings(files, ["tests/money.test.ts"]).map((hit) => hit.path)).toEqual(["tests/other.test.ts"]);
+  expect(testFitFindings(files, ["tests/**"])).toEqual([]);
+});
+
 it("flags a test that was weakened instead of the code", () => {
   const before = `it("adds", () => {\n  expect(add(1, 2)).toBe(3);\n  expect(add(0, 0)).toBe(0);\n});\n`;
   const removed = testFitFindings([testFile(before, `it("adds", () => {\n  expect(add(1, 2)).toBe(3);\n});\n`)]);

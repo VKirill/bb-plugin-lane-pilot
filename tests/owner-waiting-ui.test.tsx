@@ -63,6 +63,20 @@ describe("the «Waiting for you» screen", () => {
     expect(slot.getByTestId("owner-push").textContent).toContain("Telegram");
   });
 
+  it("shows the «now» rows first and folds the «later» ones; the badge counts «now» (harness batch 2026-11-02)", async () => {
+    const base = waiting();
+    const items = (base.items as Array<Record<string, unknown>>).map((item) => ({ ...item, tier: String(item.key).startsWith("deferral:dfr_") && item.source === "deferral_term" ? "later" : "now" }));
+    const slot = await mount({ owner_waiting: () => ({ ...base, items, now: 2, answered: { owner: 3, agent: 2, lead: 0, janitor: 9 } }), owner_waiting_config: () => ({ enabled: true, quiet: "23:00-08:00", timezone: "Europe/Madrid" }) });
+    await slot.findByTestId("owner-now");
+    expect(slot.getByTestId("owner-now").textContent).toContain("Gate X is put off");
+    expect(slot.getByTestId("owner-now").textContent).not.toContain("tests/a.test.ts");
+    const later = slot.getByTestId("owner-later");
+    expect(later.textContent).toContain("Later");
+    expect(later.querySelector("details")?.hasAttribute("open")).toBe(false);
+    expect(later.textContent).toContain("tests/a.test.ts is skipped");
+    expect(slot.getByTestId("owner-answered").textContent).toBe("Settled in 7 days: you 3, the helper 2, the lead 0, the janitor 9.");
+  });
+
   it("accepts a rule with the button: the same RPC as the Rules tab, then the list is read again", async () => {
     const decide = vi.fn().mockResolvedValue({ proposal: {} });
     let reads = 0;

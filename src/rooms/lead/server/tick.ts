@@ -106,8 +106,17 @@ export function projectRoot(db: LanePilotDatabase, projectId: string | null, pro
  * graph route (Maslov's law 9, stream G2), grouped by kind and the stem of their titles.
  */
 export type GraphlessRow = { key: string; kind: string; count30d: number; costUsd: number; projects: string[]; samples: string[]; threadIds: string[] };
-/** What the think step puts on a `process` proposal for the architect: the group's kind, stem, sample titles and helper threads. */
-export type ArchitectSeed = { kind?: unknown; stem?: unknown; threadIds?: unknown; samples?: unknown };
+/** What the think step puts on a `process` proposal: the form it should take (skill or graph), the group's kind, stem, sample titles and helper threads. */
+export type ArchitectSeed = { form?: unknown; kind?: unknown; stem?: unknown; threadIds?: unknown; samples?: unknown };
+
+/**
+ * The form a hand-run process takes (harness research 2026-11-02: practitioners grow skills first and build a graph only for a gate, a timetable or a
+ * chain of helpers). A seed without a form is one from before the rule: a graph, as its title said.
+ */
+export const seedForm = (seed: ArchitectSeed): "skill" | "graph" => (text(seed.form) === "skill" ? "skill" : "graph");
+const PROCESS_TITLE = /^(?:граф|навык) для:\s*/iu;
+/** The stem a process title carries, whichever form it names: «Навык для: X» and «Граф для: X» are the same process. */
+export const processStemOf = (title: string): string => title.trim().toLowerCase().replace(PROCESS_TITLE, "");
 
 const STEM_STOP = new Set(["тест", "проверка", "проверить", "the", "a", "an", "for", "of", "to", "in", "on", "and", "or", "на", "в", "и", "у", "о", "об", "с", "к", "по", "за", "из", "от", "до", "не", "что", "как", "для", "это"]);
 
@@ -159,11 +168,15 @@ export const architectSeedOf = (payload: unknown): ArchitectSeed | null => {
 
 /** The first message for the architect: the stem, the errand kind, the titles and the helper threads it learns the process from. */
 export function architectPrompt(seed: ArchitectSeed, title: string): string {
-  const stem = text(seed.stem) || title.replace(/^Граф для:\s*/u, "").trim();
+  const stem = text(seed.stem) || title.replace(PROCESS_TITLE, "").trim();
   const kind = text(seed.kind) || "errand";
   const samples = (Array.isArray(seed.samples) ? seed.samples : []).map(String).slice(0, 3);
   const threads = (Array.isArray(seed.threadIds) ? seed.threadIds : []).map(String).slice(0, 10);
-  return `Build a tested graph for this process from what these errand threads did. Process: «${stem}» (errand kind ${kind}). Errand titles: ${samples.join("; ") || "—"}. Helper threads to learn from: ${threads.map((id) => `@thread:${id}`).join(", ") || "—"}.`;
+  const facts = `Process: «${stem}» (errand kind ${kind}). Errand titles: ${samples.join("; ") || "—"}. Helper threads to learn from: ${threads.map((id) => `@thread:${id}`).join(", ") || "—"}.`;
+  if (seedForm(seed) === "skill") {
+    return `Write a skill for this process from what these errand threads did: the steps in order, the places (addresses, hosts, folders, accounts), the pitfalls they hit and how they got past them, the check at the end that says it worked. Put it where this project's skills live (.agents/skills/<slug>/SKILL.md, or the folder the project already uses) so the next helper reads it before this work; no graph: no step here needs the owner's word or a timetable. ${facts}`;
+  }
+  return `Build a tested graph for this process from what these errand threads did. ${facts}`;
 }
 
 /** The card's fourth button: the same RPC the Workflows tab's architect button calls (ARCHITECT_LAUNCH). */
@@ -270,7 +283,7 @@ export function tickBrief(snapshot: HubSnapshot, identityText: string): string {
       "A proposal of class schedule also carries schedule: {name, description?, task, when: {type: cron, cron: five fields, timezone?}} where task is {kind: workflow, workflowId, inputs?} or {kind: errand, task: the instruction, title?} or {kind: agent, agentId, task}; on «да» (or when the class is open) it is created in the project's schedule board exactly as written, so write it complete. A script is a host job: never propose one.",
       "3. New directions or options worth keeping in the tree but not proposing today go into branches: {parent_id?, project_id?, title, kind: direction|option, why}.",
       "4. In deferred write what you looked at and left alone, and why, in a few lines. In summary write two or three sentences for the receipt.",
-      "`graphless` lists processes done by hand (errands) with no graph: errand runs of the last 30 days with no confident route, grouped by kind and the stem of their titles. A row with count30d >= 3 deserves a proposal of class process: title «Граф для: <stem>», why = the count, the cost and the samples, evidence = the thread ids, and architectSeed: { kind, stem, threadIds, samples } on the proposal. One per row, never twice for the same stem (a branch with that title already in the road tree, any state, means skip).",
+      "`graphless` lists processes done by hand (errands) with no graph: errand runs of the last 30 days with no confident route, grouped by kind and the stem of their titles. A row with count30d >= 3 deserves a proposal of class process. Name its form first, in architectSeed.form: `skill` when the work is one helper's know-how (how to do X: the steps, the places, the pitfalls) and no step needs the owner's word or a timetable — the default; `graph` only when the process has a gate (money, a message to someone else, publishing, deleting), runs on a schedule, or chains helpers of different kinds. Title «Навык для: <stem>» or «Граф для: <stem>», why = the count, the cost, the samples and one phrase on why this form, evidence = the thread ids, architectSeed: { form, kind, stem, threadIds, samples }. One per row, never twice for the same stem in either form (a branch «Навык для: <stem>» or «Граф для: <stem>» already in the road tree, any state, means skip).",
       "Rules: no proposal without an artifact; prefer finishing an open branch over opening a new one; the same proposal is not put to the owner twice (the open ones are in proposalsOpen and in road.open with state proposed); money and external classes are the owner's alone, so propose them only as questions; status is blocked only when the state is unreadable, with blocked_reason.",
       "The owner's order of projects is projects[].priority (1 = first; null = unranked, listed after the ranked): rank the proposals by it, and a branch of a lower-ranked project needs stronger evidence to take a place from a higher one. The map of the projects (names, runs, phases, memory) is the hub's data above, not the identity file: do not expect it there.",
     ].join("\n"),
@@ -332,8 +345,8 @@ export function registerLeadTickActions(engine: WorkflowEngine, ctx: ServerCore,
           const seed = proposal.class === "process" ? proposal.architectSeed : undefined;
           let row = proposal.road_id ? getRoad(db, proposal.road_id) : undefined;
           if (!row && seed !== undefined) {
-            // «Граф для: <stem>» is proposed once ever: a branch with the same title in any state is the same process already heard.
-            const twin = listRoad(db, { limit: 500 }).find((entry) => entry.title.trim().toLowerCase() === proposal.title!.trim().toLowerCase());
+            // A process is proposed once ever, in either form: a branch «Навык для: X» or «Граф для: X» in any state is the same process already heard.
+            const twin = listRoad(db, { limit: 500 }).find((entry) => processStemOf(entry.title) === processStemOf(proposal.title!));
             if (twin && twin.state !== "open" && twin.state !== "later") { dropped.push({ title: clip(proposal.title!, 120), reason: `a branch titled «${clip(twin.title, 80)}» is already ${twin.state}` }); continue; }
             row = twin;
           }
@@ -362,7 +375,7 @@ export function registerLeadTickActions(engine: WorkflowEngine, ctx: ServerCore,
           await predictDecision(db, decisionId, jevSettings(), now);
           proposeRoad(db, row.id, decisionId, now);
           const card: ProposalCard = { roadId: row.id, decisionId, class: proposal.class!, risk, projectId, title: row.title, why: proposal.why!, cost: proposal.cost_estimate!, evidence: proposal.evidence ?? [], tickId,
-            architectProjectId: seed !== undefined ? (projectId ?? (settings.project || null)) : null };
+            architectProjectId: seed !== undefined && seedForm(architectSeedOf({ architectSeed: seed }) ?? {}) === "graph" ? (projectId ?? (settings.project || null)) : null };
           if (mayAct(db, proposal.class!, risk).ok) actable.push({ ...card, payload: roadPayload(row) });
           else if (!postProposalCard(db, card, now)) {
             // The list refused the card (a project it hides): the branch must not stay proposed with a question nobody sees.
@@ -400,9 +413,10 @@ export function registerLeadTickActions(engine: WorkflowEngine, ctx: ServerCore,
         const via = actsVia(item.class);
         if (via === "none") { defer(item, "the class has no way to act"); continue; }
         const seed = architectSeedOf(item.payload);
-        if (seed) {
-          // A graph-less process is handed to the Workflow architect, not to the PM intake: the act path cannot start a chat, so the
-          // seed and the architect button land on the owner's list (G2; the «да» path in service.handOverAccepted does the same).
+        if (seed && seedForm(seed) === "graph") {
+          // A process that needs a graph is handed to the Workflow architect, not to the PM intake: the act path cannot start a chat, so the
+          // seed and the architect button land on the owner's list (G2; the «да» path in service.handOverAccepted does the same). A skill
+          // goes through the PM intake below, as a writer task, with the seed's prompt.
           const projectId = item.projectId ?? settingsOf().project;
           if (!projectId) { defer(item, "the seed has no project to open the architect in"); continue; }
           postArchitectHand(db, { roadId: item.roadId, projectId, title: item.title, seed, kind: "acted" }, now);
@@ -430,7 +444,7 @@ export function registerLeadTickActions(engine: WorkflowEngine, ctx: ServerCore,
           const pm = await services.workflowTriggers.pmOf(item.projectId);
           if (!pm) { defer(item, "the project has no open PM chat"); continue; }
           const started = await c.effect(`lead-act:${item.roadId}`, "lead.intake", () => services.phaseIntake.handOver({
-            projectId: item.projectId!, pmThreadId: pm.pmThreadId, runId: pm.runId, text: `${item.title}\n\n${item.why}`, key: `lead:${item.roadId}`,
+            projectId: item.projectId!, pmThreadId: pm.pmThreadId, runId: pm.runId, text: `${item.title}\n\n${item.why}${seed ? `\n\n${architectPrompt(seed, item.title)}` : ""}`, key: `lead:${item.roadId}`,
             origin: `Opened by the lead («Штурман») from the road tree branch ${item.roadId} in tick ${tickId}: class ${item.class} is open to it by the nightly exam (by: lead). The owner sees this on his list as a fact.`,
           }));
           if (!started.started) { defer(item, started.reason); continue; }

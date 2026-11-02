@@ -94,7 +94,7 @@ export async function runScore(deps: ScoreDeps, options: ScoreOptions): Promise<
     contract_lint: blind.has("contract_lint") ? [] : lintFindings(subject),
     plan_fact: blind.has("plan_fact") ? [] : planFactFindings(subject),
     verification: verification === null ? null : blind.has("verification") ? [] : verificationFindings(verification),
-    test_fit: blind.has("test_fit") ? [] : testFitFindings(subject.changes).map((hit) => `${hit.path}: ${hit.kind}: ${hit.evidence}`),
+    test_fit: blind.has("test_fit") ? [] : testFitFindings(subject.changes, subject.contract.test_removals ?? []).map((hit) => `${hit.path}: ${hit.kind}: ${hit.evidence}`),
   });
 
   for (const candidate of options.candidates) {

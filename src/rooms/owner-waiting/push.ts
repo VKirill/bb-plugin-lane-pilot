@@ -1,6 +1,7 @@
 import type Database from "better-sqlite3";
 import { hubFields, writeHubFields } from "../improvement";
-import { collectOwnerWaiting, type OwnerItem } from "./items";
+import { callReason, collectOwnerWaiting, type OwnerItem } from "./items";
+export { CALL_REASONS, callReason, type CallReason } from "./items";
 
 /**
  * The Telegram side of «waiting for the owner». Lane Pilot has no Telegram sender of its own: the hub's script (scripts/lp-owner-push.sh)
@@ -78,16 +79,6 @@ const line = (item: OwnerItem) => `• ${LABEL[item.source] ?? item.source} [${R
 /** An open item is said again once, this long after its first push. */
 export const REPEAT_AFTER_MS = 6 * 3_600_000;
 
-/** The four reasons a person is called (SMA: Four reasons to call): a decision only they make, work that cannot go on, something red, a term that ends. */
-export const CALL_REASONS = ["decision", "blocked", "red", "term"] as const;
-export type CallReason = (typeof CALL_REASONS)[number];
-export function callReason(kind: string): CallReason {
-  if (/canary|regress|red|outage/.test(kind)) return "red";
-  if (/deferral|term|deadline|expire/.test(kind)) return "term";
-  if (/wall|blocked|stuck|needs_human|stall/.test(kind)) return "blocked";
-  return "decision";
-}
-
 export type Digest = { send: boolean; reason: "disabled" | "quiet_hours" | "nothing_new" | null; text: string; keys: string[]; shown: number; more: number };
 
 /** What to send now. `keys` are all the new wake items, also the ones only counted: the caller acknowledges them after a successful send. */
@@ -97,7 +88,8 @@ export function planDigest(db: Db, now: number = Date.now()): Digest {
   if (!config.enabled) return none("disabled");
   if (inQuietHours(now, config.quiet, config.timezone)) return none("quiet_hours");
   const pushedAt = new Map((db.prepare("SELECT key, pushed_at FROM lane_pilot_owner_push").all() as Array<{ key: string; pushed_at: number }>).map((row) => [row.key, row.pushed_at]));
-  const open = collectOwnerWaiting(db, now).items.filter((item) => item.wake);
+  // Only a «now» row may push: a «later» one waits its turn on the screen (NOW_CAP, items.ts).
+  const open = collectOwnerWaiting(db, now).items.filter((item) => item.wake && item.tier === "now");
   // Repeat after six hours: an item still open six hours after its push is said once more (key «…#again»), never a third time.
   const again = open.filter((item) => (pushedAt.get(item.key) ?? now) <= now - REPEAT_AFTER_MS && !pushedAt.has(`${item.key}#again`));
   const fresh = [...open.filter((item) => !pushedAt.has(item.key)), ...again.map((item) => ({ ...item, key: `${item.key}#again`, what: `(ещё ждёт, 6 ч) ${item.what}` }))];

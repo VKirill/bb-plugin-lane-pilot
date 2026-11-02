@@ -24,17 +24,18 @@ export function renderWaiting(waiting: OwnerWaiting): string {
   const lines: string[] = [];
   const bySource = new Map<string, typeof waiting.items>();
   for (const item of waiting.items) bySource.set(item.source, [...(bySource.get(item.source) ?? []), item]);
-  lines.push(waiting.items.length ? `Ждут владельца: ${waiting.items.length}. Ничего не блокируется.` : "Владельца ничто не ждёт.");
+  lines.push(waiting.items.length ? `Ждут владельца: ${waiting.items.length}. Сейчас: ${waiting.now}, остальное подождёт (помечено «потом»). Ничего не блокируется.` : "Владельца ничто не ждёт.");
   for (const [source, items] of bySource) {
     lines.push("", `${SECTION[source] ?? source} (${items.length})`);
     for (const item of items) {
-      lines.push(`- [${item.key}] ${item.what}`, `    почему твоё: ${item.why}`);
+      lines.push(`- [${item.key}] ${item.what}${item.tier === "later" ? " · потом" : ""}`, `    почему твоё: ${item.why}`);
       for (const evidence of item.evidence) lines.push(`    ${evidence.kind}: ${evidence.ref}${evidence.label ? ` (${evidence.label})` : ""}`);
       for (const action of item.actions) lines.push(`    ${action.label}: ${action.cli}${action.needsOwnerMessage ? "   (нужно твоё сообщение)" : ""}`);
     }
   }
   const { red, accepted, rulesAdopted, rulesConfirmed } = waiting.overnight;
-  lines.push("", `Красное за сутки: ${red.length ? red.map((row) => `${row.state} ${row.count} (${row.attempts.join(", ")})`).join("; ") : "ничего"}.`, `Принято: ${accepted} попыток, правил на пробу ${rulesAdopted}, подтверждено ${rulesConfirmed}.`);
+  lines.push("", `Красное за сутки: ${red.length ? red.map((row) => `${row.state} ${row.count} (${row.attempts.join(", ")})`).join("; ") : "ничего"}.`, `Принято: ${accepted} попыток, правил на пробу ${rulesAdopted}, подтверждено ${rulesConfirmed}.`,
+    `Решено за 7 дней: вы ${waiting.answered.owner}, помощник ${waiting.answered.agent}, Штурман ${waiting.answered.lead}, уборщик ${waiting.answered.janitor}.`);
   return lines.join("\n");
 }
 

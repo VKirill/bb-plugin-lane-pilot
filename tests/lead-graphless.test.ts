@@ -11,7 +11,7 @@ import { LEAD_DEFAULTS } from "../src/rooms/lead/settings";
 import { openDecision } from "../src/rooms/lead/server/journal";
 import { addRoad, getRoad, listRoad, proposeRoad, roadPayload } from "../src/rooms/lead/server/road";
 import { createLeadService } from "../src/rooms/lead/server/service";
-import { errandStem, graphlessErrands, hubSnapshot, proposalDecisionId, proposalItemKey, registerLeadTickActions, tickBrief } from "../src/rooms/lead/server/tick";
+import { architectPrompt, errandStem, graphlessErrands, hubSnapshot, processStemOf, proposalDecisionId, proposalItemKey, registerLeadTickActions, seedForm, tickBrief } from "../src/rooms/lead/server/tick";
 import { postOwnerItem } from "../src/rooms/owner-waiting";
 import { openDatabase, saveProjectSetting } from "../src/rooms/storage/database";
 
@@ -151,3 +151,19 @@ describe("«да» on a seeded process proposal", () => {
     expect(actions[0]).toMatchObject({ id: "architect", rpc: { method: "prepare_native_session", input: { projectId: "p_a", agentId: "workflow-architect" } } });
   });
 });
+
+describe("skill before graph (harness batch 2026-11-02)", () => {
+  it("a seed names its form; a skill is written, a graph is built; the two titles of one stem are one process", () => {
+    expect(seedForm({})).toBe("graph");
+    expect(seedForm({ form: "skill" })).toBe("skill");
+    const skill = architectPrompt({ form: "skill", stem: "партия моделей", kind: "devops", threadIds: ["thr_1"], samples: ["Партия моделей на GPU"] }, "Навык для: партия моделей");
+    expect(skill).toMatch(/^Write a skill/u);
+    expect(skill).toContain("SKILL.md");
+    expect(skill).toContain("@thread:thr_1");
+    expect(architectPrompt({ form: "graph", stem: "счёт" }, "Граф для: счёт")).toMatch(/^Build a tested graph/u);
+    expect(architectPrompt({}, "Навык для: без формы")).toContain("«без формы»");
+    expect(processStemOf("Навык для: Партия моделей")).toBe(processStemOf("Граф для: партия моделей"));
+    expect(processStemOf("Другое предложение")).toBe("другое предложение");
+  });
+});
+

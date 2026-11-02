@@ -36,6 +36,8 @@ export type OwnerItem = {
   why: string;
   since: number;
   wake: boolean;
+  /** «now»: one of the NOW_CAP rows the owner sees first and the digest may push; «later» waits folded until a «now» row is settled (harness batch 2026-11-02). */
+  tier: "now" | "later";
   evidence: OwnerEvidence[];
   actions: OwnerAction[];
 };
@@ -43,10 +45,35 @@ export type OwnerItem = {
 export type OwnerWaiting = {
   generatedAt: number;
   items: OwnerItem[];
-  /** Count per source, for the badge and the daily line. */
+  /** Count per source, for the daily line. */
   counts: Record<string, number>;
   overnight: Overnight;
+  /** How many rows are «now» (the rail badge shows this, not the whole list). */
+  now: number;
+  /** Who settled the rows closed in the last 7 days. */
+  answered: Answered;
 };
+
+/** The owner himself (the screen, his CLI), the helper thread that decides for him (`--by agent…`), the lead, the janitor (terms, rows whose question went away). */
+export type Answered = { owner: number; agent: number; lead: number; janitor: number };
+
+/**
+ * At most this many rows are «now». The research of 2026-11-02 (synthesis §4 row 5): an inbox of 28 rows a day is answered by reflex, and a
+ * reflex answer is not a decision; five ranked by the cost of putting them off are read. The rest wait folded and move up as rows close.
+ */
+export const NOW_CAP = 5;
+
+/** The four reasons a person is called (SMA: Four reasons to call): a decision only they make, work that cannot go on, something red, a term that ends. */
+export const CALL_REASONS = ["decision", "blocked", "red", "term"] as const;
+export type CallReason = (typeof CALL_REASONS)[number];
+export function callReason(kind: string): CallReason {
+  if (/canary|regress|red|outage/.test(kind)) return "red";
+  if (/deferral|term|deadline|expire/.test(kind)) return "term";
+  if (/wall|blocked|stuck|needs_human|stall/.test(kind)) return "blocked";
+  return "decision";
+}
+/** The cost of putting a row off: something red first, then work that stands, then a term that ends, then a decision. */
+const REASON_RANK: Record<CallReason, number> = { red: 0, blocked: 1, term: 2, decision: 3 };
 
 export type Overnight = {
   windowMs: number;
@@ -70,7 +97,7 @@ function learningItems(db: Db): OwnerItem[] {
   return rows.map((row) => ({
     key: `learning:${row.id}`, source: "learning", kind: `learning_${row.kind}`, projectId: row.project_id,
     what: clip(row.text, 300), why: "Вы сказали это в чате. Если принять, все проекты будут так делать; если отклонить, это забудется. Решить можете только вы.",
-    since: row.created_at, wake: false, evidence: [{ kind: "text", ref: clip(row.evidence, 200) }],
+    since: row.created_at, wake: false, tier: "later", evidence: [{ kind: "text", ref: clip(row.evidence, 200) }],
     actions: (["accept", "reject"] as const).map((action) => ({ id: action, label: action === "accept" ? "Принять" : "Отклонить", cli: `bb lane-pilot learning ${action} ${row.id}`, rpc: { method: "learning_decide", input: { id: row.id, action } } })),
   }));
 }
@@ -93,7 +120,7 @@ function inbox(db: Db): OwnerItem[] {
   const rows = db.prepare("SELECT key, source, kind, project_id, what, why, evidence_json, actions_json, wake, created_at FROM lane_pilot_owner_item WHERE state='open' ORDER BY created_at").all() as
     Array<{ key: string; source: string; kind: string; project_id: string | null; what: string; why: string; evidence_json: string; actions_json: string; wake: number; created_at: number }>;
   return rows.filter((row) => !isSandbox(row.project_id)).map((row) => ({
-    key: row.key, source: row.source, kind: row.kind, projectId: row.project_id, what: row.what, why: row.why, since: row.created_at, wake: row.wake === 1,
+    key: row.key, source: row.source, kind: row.kind, projectId: row.project_id, what: row.what, why: row.why, since: row.created_at, wake: row.wake === 1, tier: "later",
     evidence: parse<OwnerEvidence[]>(row.evidence_json, []), actions: withReadButton(row.key, parse<OwnerAction[]>(row.actions_json, [])),
   }));
 }
@@ -102,7 +129,7 @@ function inbox(db: Db): OwnerItem[] {
 const withReadButton = (key: string, actions: OwnerAction[]): OwnerAction[] =>
   actions.length ? actions : [{ id: "read", label: "Прочитано", cli: rpcLine("owner_waiting_close", { key }), rpc: { method: "owner_waiting_close", input: { key } } }];
 
-export type PostOwnerItem = Omit<OwnerItem, "since" | "wake" | "evidence" | "actions" | "projectId"> & Partial<Pick<OwnerItem, "wake" | "evidence" | "actions" | "projectId">>;
+export type PostOwnerItem = Omit<OwnerItem, "since" | "wake" | "tier" | "evidence" | "actions" | "projectId"> & Partial<Pick<OwnerItem, "wake" | "evidence" | "actions" | "projectId">>;
 
 /** The night loop's door: an open waiting with a stable `key`; posting the same key again changes nothing (one waiting, one row). */
 export function postOwnerItem(db: Db, item: PostOwnerItem, now: number = Date.now()): { created: boolean } {
@@ -201,10 +228,25 @@ export function collectOwnerWaiting(db: Db, now: number = Date.now(), windowMs: 
   sweepOwnerItems(db, now);
   const items = [...learningItems(db), ...inbox(db)];
   const rank = (item: OwnerItem) => { const at = SOURCE_ORDER.indexOf(item.source); return at < 0 ? SOURCE_ORDER.indexOf("night") : at; };
-  items.sort((a, b) => rank(a) - rank(b) || a.since - b.since || a.key.localeCompare(b.key));
+  // The cost of putting a row off first, a row that would push before one that would not, then the sources' order and age; the first NOW_CAP are «now».
+  items.sort((a, b) => REASON_RANK[callReason(a.kind)] - REASON_RANK[callReason(b.kind)] || Number(b.wake) - Number(a.wake) || rank(a) - rank(b) || a.since - b.since || a.key.localeCompare(b.key));
+  items.forEach((item, index) => { item.tier = index < NOW_CAP ? "now" : "later"; });
   const counts: Record<string, number> = {};
   for (const item of items) counts[item.source] = (counts[item.source] ?? 0) + 1;
-  return { generatedAt: now, items, counts, overnight: overnight(db, now, windowMs) };
+  return { generatedAt: now, items, counts, overnight: overnight(db, now, windowMs), now: Math.min(items.length, NOW_CAP), answered: answered(db, now) };
+}
+
+/** Who closed the rows of the last 7 days (the answer statistics the research asked for: a reflex inbox shows as «janitor» and «agent», never «owner»). */
+export function answered(db: Db, now: number = Date.now()): Answered {
+  const out: Answered = { owner: 0, agent: 0, lead: 0, janitor: 0 };
+  if (!tableExists(db, "lane_pilot_owner_item")) return out;
+  const rows = db.prepare("SELECT closed_by AS by, count(*) AS n FROM lane_pilot_owner_item WHERE state='closed' AND closed_at>=? GROUP BY closed_by").all(now - 7 * 24 * 3_600_000) as Array<{ by: string | null; n: number }>;
+  for (const row of rows) {
+    const by = row.by ?? "";
+    const who: keyof Answered = by.startsWith("janitor:") || by.startsWith("run-goal:") ? "janitor" : by.startsWith("lead") ? "lead" : by.startsWith("agent") ? "agent" : "owner";
+    out[who] += row.n;
+  }
+  return out;
 }
 
 /** The counts behind the daily report's last line (scripts/lp-morning.sql counts the same, tests/policy/morning.test.ts keeps them equal). */

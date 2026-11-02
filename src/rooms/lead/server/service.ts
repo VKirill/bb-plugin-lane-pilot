@@ -18,7 +18,7 @@ import { createLeadSchedule } from "./lead-schedule";
 import { formatMemoryExam, MEMORY_EXAM_KEY, runMemoryExam, type MemoryExam } from "./memory-exam";
 import { actsVia, applyExam, rightsView, type TierChange } from "./rights";
 import { decideRoad, doneRoad, getRoad, rejectRoad, roadCounts, roadMarkdown, roadPayload, type RoadRow } from "./road";
-import { architectSeedOf, postArchitectHand, registerLeadTickActions, proposalDecisionId, proposalItemKey, type ProposalDecision } from "./tick";
+import { architectPrompt, architectSeedOf, postArchitectHand, registerLeadTickActions, proposalDecisionId, proposalItemKey, seedForm, type ProposalDecision } from "./tick";
 import { WORKFLOW_ARCHITECT_ID } from "../../workflow";
 import { closeTick, getTick, listTicks, openTick, patchTick, sweepStaleTicks, type TickRow } from "./tick-store";
 
@@ -227,10 +227,11 @@ export function createLeadService(ctx: ServerCore, services: Services) {
     };
     const via = actsVia(row.class ?? "");
     if (via === "none") return { state: "skipped", reason: `class ${row.class ?? "?"} has no way to act` };
-    // A graph-less process (a `process` branch carrying an architectSeed, G2) goes to the Workflow architect, not to the PM intake:
-    // the service cannot start a chat, so the seed and the architect button land on the owner's list.
+    // A process that needs a graph (a `process` branch carrying an architectSeed with form graph, G2) goes to the Workflow architect, not to
+    // the PM intake: the service cannot start a chat, so the seed and the architect button land on the owner's list. A skill goes to the
+    // PM intake below with the seed's prompt: a writer writes it from the helper threads.
     const seed = architectSeedOf(roadPayload(row));
-    if (row.class === "process" && seed) {
+    if (row.class === "process" && seed && seedForm(seed) === "graph") {
       postArchitectHand(db, { roadId: row.id, projectId: row.project_id ?? (await homeProjectId()), title: row.title, seed, kind: "handed" }, now);
       return { state: "started", via: "architect", id: WORKFLOW_ARCHITECT_ID };
     }
@@ -247,7 +248,7 @@ export function createLeadService(ctx: ServerCore, services: Services) {
       const pm = await services.workflowTriggers.pmOf(row.project_id);
       if (!pm) return blocked("в проекте нет открытого чата Lane Pilot");
       const started = await services.phaseIntake.handOver({
-        projectId: row.project_id, pmThreadId: pm.pmThreadId, runId: pm.runId, text: `${row.title}\n\n${row.why}`, key: `lead:${row.id}`,
+        projectId: row.project_id, pmThreadId: pm.pmThreadId, runId: pm.runId, text: `${row.title}\n\n${row.why}${seed ? `\n\n${architectPrompt(seed, row.title)}` : ""}`, key: `lead:${row.id}`,
         origin: `Accepted by the owner («да», by: ${by}) on the lead's («Штурман») proposal: road tree branch ${row.id}, class ${row.class ?? "?"}.`,
       });
       if (!started.started) return blocked(started.reason);

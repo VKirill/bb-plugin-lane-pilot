@@ -763,9 +763,10 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
       for (const path of (candidate.produced ?? []).filter((path) => /(^|\/)package\.json$|\.(?:sh|ya?ml)$/.test(path)).slice(0, 10)) {
         fitFiles.push({ path, before: await readFit(basePathForTests, path), after: await readFit(fitAttempt?.workspace_path, path) });
       }
-      const fitHits = testFitFindings(fitFiles);
+      const fitHits = testFitFindings(fitFiles, input.task.test_removals ?? []);
       if (fitHits.length) {
-        const reason = `test_fit: ${fitHits.slice(0, 5).map((hit) => `${hit.path}: ${hit.evidence}`).join("; ")}`.slice(0, 500);
+        // The refusal names the door: a removal that is the task's purpose goes into the contract's test_removals, and the PM dispatches again.
+        const reason = `test_fit: ${fitHits.slice(0, 5).map((hit) => `${hit.path}: ${hit.evidence}`).join("; ")} (if removing these tests is the task, name the files in the contract's test_removals)`.slice(0, 500);
         recordGateEvaluation(db,{projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"rejected",
           attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{writerStatus:"test_fit",reason}});
         transitionAttempt(db, input.attemptId, "validation_failed", { reason });

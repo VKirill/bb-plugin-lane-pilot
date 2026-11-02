@@ -90,6 +90,9 @@ export const taskV2Schema = z.object({
   expected_outputs: z.array(z.string().min(1)).min(1),
   owns_paths: z.array(z.string().min(1)).min(1),
   never_touch: z.array(z.string().min(1)),
+  /** Tests the task removes or rewrites on purpose (a cleanup, a feature that goes away): paths or globs as in owns_paths. The test_fit check
+   *  does not count a removed or weakened assertion in these files; the code critic still reads them (harness batch 2026-11-02). */
+  test_removals: z.array(z.string().min(1).max(300)).max(40).describe("Tests this task deletes or weakens on purpose (paths or globs as owns_paths); the test_fit check skips them. Only when removing the test is the task, never for a test that is in the way.").optional(),
   depends_on: z.array(z.string().min(1)),
   objective: z.string().min(1),
   acceptance: z.array(z.string().min(1)).min(1),

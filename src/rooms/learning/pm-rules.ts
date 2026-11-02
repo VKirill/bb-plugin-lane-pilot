@@ -1,4 +1,4 @@
-import { listRuleProposals, scopeApplies, RULE_RELEVANCE_THRESHOLD, type RuleProposal } from "@lane-pilot/run-insights";
+import { listRuleProposals, logRulesShown, scopeApplies, RULE_RELEVANCE_THRESHOLD, type RuleProposal } from "@lane-pilot/run-insights";
 import type { Jev } from "@lane-pilot/jev";
 import { defineJudgment, noul, noulOf } from "@lane-pilot/jev";
 import type { Db } from "./store";
@@ -24,31 +24,37 @@ export function pmRulesOf(db: Db, projectId: string, chain?: readonly string[], 
     .sort((a, b) => priority(a) - priority(b) || (b.decidedAt ?? 0) - (a.decidedAt ?? 0));
 }
 
-export type PmRulesBlock = { text: string; shown: number; hidden: number; tokens: number };
+export type PmRulesBlock = { text: string; shown: number; hidden: number; tokens: number; /** The rules in the block, for the use record (logRulesShown). */ ids: string[] };
 
 export function pmRulesBlock(rules: readonly PmRule[], budgetTokens: number): PmRulesBlock {
   const head = "Rules the owner taught in this project (they came from his corrections; follow them in planning, task contracts, reviews, merges, deploys and in what you ask him):";
   const lines: string[] = [];
+  const ids: string[] = [];
   let used = ruleTokens(head);
   for (const rule of rules) {
     const cost = ruleTokens(rule.rule);
     if (used + cost > budgetTokens) continue;
     lines.push(`- ${rule.rule}`);
+    ids.push(rule.id);
     used += cost;
   }
   const hidden = rules.length - lines.length;
-  if (!lines.length) return { text: "", shown: 0, hidden, tokens: 0 };
+  if (!lines.length) return { text: "", shown: 0, hidden, tokens: 0, ids };
   const tail = hidden > 0 ? `\n(${hidden} more rule${hidden === 1 ? "" : "s"} did not fit here: lane_pilot_memory {action:"learned", op:"rules", text:"<what you are about to do>"} lists the ones that apply.)` : "";
-  return { text: `\n\n${head}\n${lines.join("\n")}${tail}`, shown: lines.length, hidden, tokens: used };
+  return { text: `\n\n${head}\n${lines.join("\n")}${tail}`, shown: lines.length, hidden, tokens: used, ids };
 }
 
-/** The rules block of a PM that is being started for a run (activation.ts); empty when the project has no rule for the PM. */
-export function pmRulesPromptBlock(db: Db, projectId: string, chain: readonly string[], budgetTokens: number): string {
-  try { return pmRulesBlock(pmRulesOf(db, projectId, chain), budgetTokens).text; } catch { return ""; }
+/** The rules block of a PM that is being started for a run (activation.ts); empty when the project has no rule for the PM. `use` (`pm:<runId>`) records the rules it holds as used, once per run. */
+export function pmRulesPromptBlock(db: Db, projectId: string, chain: readonly string[], budgetTokens: number, use?: string): string {
+  try {
+    const block = pmRulesBlock(pmRulesOf(db, projectId, chain), budgetTokens);
+    if (use && block.ids.length) logRulesShown(db as never, projectId, block.ids, use);
+    return block.text;
+  } catch { return ""; }
 }
 
 /** The instructions a PM session that starts or resumes gets from `contributeInstructions` (service.ts): the rules block, cut to BB's limit; null when there is none. */
-export function pmResumeInstructions(db: Db, projectId: string, chain: readonly string[]): string | null {
+export function pmResumeInstructions(db: Db, projectId: string, chain: readonly string[], use?: string): string | null {
   const rules = pmRulesOf(db, projectId, chain);
   const budget = ruleBudget("pm");
   const chosen: PmRule[] = [];
@@ -57,6 +63,7 @@ export function pmResumeInstructions(db: Db, projectId: string, chain: readonly 
     const text = pmRulesBlock([...chosen, rule], budget).text.trim();
     if (text.length <= 4_000) chosen.push(rule);
   }
+  if (use && chosen.length) { try { logRulesShown(db as never, projectId, chosen.map((rule) => rule.id), use); } catch { /* the record is best effort */ } }
   return pmRulesBlock(chosen, budget).text.trim() || null;
 }
 
