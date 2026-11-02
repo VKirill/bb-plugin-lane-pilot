@@ -200,4 +200,6 @@ export interface Services {
   schedules: ScheduleService;
   /** The lead («Штурман»): the road tree, the decision journal, the ticks and the rights (src/rooms/lead/server/service.ts). */
   lead: LeadApi;
+  /** The PM replay set: harvest, replay runs, the staged A/B decision (src/rooms/pm-replay). Set when it is mounted. */
+  pmReplay?: import("../../pm-replay").PmReplay;
 }

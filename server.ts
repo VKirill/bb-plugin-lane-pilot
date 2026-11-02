@@ -17,6 +17,7 @@ import { adoptWaitingRules } from "./src/rooms/self-repair/server";
 import { createRuleScan } from "./src/rooms/self-repair/server";
 import { createPromotionService } from "./src/rooms/rule-forms";
 import { mountNightGraphs } from "./src/rooms/night-graphs/server";
+import { mountPmReplay } from "./src/rooms/pm-replay";
 import { createHarness } from "./src/rooms/harness/server";
 import { createDeferrals, sdkOwnerMessagePort } from "./src/rooms/deferral/server";
 import { createRollback } from "./src/rooms/rollback/server";
@@ -148,6 +149,9 @@ export default async function plugin(bb: BbPluginApi) {
   mountCouncilGraph(ctx, services, services.council);
   // The night jobs are graphs too: the rules scan, the wall's hunt and the harness editor (their steps wrap the functions of those rooms).
   mountNightGraphs(ctx, services);
+  // The PM replay night: harvest corrections into scenarios, replay the set, decide rules on the verdicts.
+  const pmReplay = mountPmReplay(ctx, services);
+  services.pmReplay = pmReplay;
   mountLifecycleEvents(ctx, { onQueued: (name, entry) => {
     const id = entry && typeof entry === "object" ? Reflect.get(entry, "id") : undefined;
     if (typeof id === "string") return relayFor(ctx).queueEvent(name, id).then(() => undefined);

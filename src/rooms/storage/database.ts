@@ -19,6 +19,7 @@ import { workflowNotVerifiedMigrations, workflowOpsMigrations } from "@lane-pilo
 import { draftMigrations } from "@lane-pilot/workflow-engine";
 import { jevMigrations } from "@lane-pilot/jev";
 import { learningMigrations } from "../learning/migrations";
+import { pmReplayMigrations } from "../pm-replay/migrations";
 import { scheduleAgentMigrations, scheduleMigrations } from "../schedule";
 import { worldMigrations } from "../world";
 import { harnessMigrations } from "../harness";
@@ -496,6 +497,9 @@ export const migrations = [
     updated_at INTEGER NOT NULL
   )`,
   `CREATE INDEX lane_pilot_gate_run_project ON lane_pilot_gate_run(project_id, id)`,
+  // Stream L2: the PM replay set (scenarios grown nightly from the owner's corrections) and each replay's verdict
+  // (src/rooms/pm-replay). Append only.
+  ...pmReplayMigrations,
 ];
 
 export function openDatabase(bb: BbPluginApi): LanePilotDatabase {
