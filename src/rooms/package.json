@@ -5,6 +5,7 @@
   "sideEffects": [
     "./anamnesis/index.ts",
     "./anamnesis/judgment.ts",
+    "./baseline/regress-meant.ts",
     "./critique/critic-screen.ts",
     "./critique/critique-worth.ts",
     "./critique/index.ts",

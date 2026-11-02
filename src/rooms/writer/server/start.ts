@@ -11,7 +11,7 @@ import { taskV2Schema } from "../../contracts";
 import { ownsPathsOverlap, pollPause } from "@lane-pilot/kit";
 import { reconcile, reconcileCursor } from "../../stability";
 import { listRegressions, type RegressionRecord } from "../../baseline";
-import { quarantineFileSet } from "../../baseline/regress-files";
+import { quarantineFileSet } from "../../baseline";
 import { emergencyFallbackDecision } from "../../night";
 import { rotatedWriterSettings, writerFallbackChain, writerFallbacks } from "../writer-fallbacks";
 import { resolveBestOf, roundSeedBrief, roundSurvivors } from "../best-of";

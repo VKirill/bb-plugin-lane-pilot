@@ -134,6 +134,7 @@ it("gives specialists the schedule and no other bb-bridge tool, and keeps the fo
     "mcp__bb-bridge__lane_pilot_relay",
     "mcp__bb-bridge__lane_pilot_memory",
     "mcp__bb-bridge__lane_pilot_workflow_draft",
+    "mcp__bb-bridge__lane_pilot_regression",
     "mcp__bb-bridge__lane_pilot_schedule",
     "mcp__bb-bridge__lane_pilot_phase",
     "mcp__bb-bridge__lane_pilot_queue",

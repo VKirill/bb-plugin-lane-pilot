@@ -2,11 +2,12 @@ import { z } from "zod";
 import { clipped, extractModelJson, NO_TOOLS_LINE } from "@lane-pilot/workflow-engine";
 import { CODE_CRITIC_METHOD } from "./role-method";
 import { demoteUncited } from "./citations";
-import { stripAnsi } from "../verification/gate-output";
 import type { Citation } from "./citations";
 import { CRITIC_RUBRIC, VERDICT_STATUSES, applyRubric, isVerdictShape, legacyOutputToVerdict, normalizeVerdictInput, rubricPromptLine, settleVerdict, verdictSchema, verdictSeverityToLegacy, verdictSummary, withoutDecision } from "@lane-pilot/workflow-engine";
 import type { Verdict, VerdictFinding, VerdictStatus } from "@lane-pilot/workflow-engine";
 import { sha256Hex } from "@lane-pilot/kit";
+/** Terminal colour codes out of check output (the same regex as verification/gate-output; a cross-room import would cycle). */
+const stripAnsi = (text: string): string => text.replace(/\u001b\[[0-9;?]*[A-Za-z]/g, "");
 
 export const CODE_CRITIQUE_STAGE = "code-critique" as const;
 export const CODE_CRITIQUE_MAX_ROUNDS = 3;
