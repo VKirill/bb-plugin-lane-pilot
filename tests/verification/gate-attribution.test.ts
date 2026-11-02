@@ -117,9 +117,13 @@ describe("which merged task a red gate is pinned on", () => {
     expect(toWriters()).toEqual([]);
     expect(dispatched).toEqual([]);
     expect(toPm()).toEqual([]);
-    const row = db.prepare("SELECT what, why FROM lane_pilot_owner_item WHERE key LIKE 'gate-red:run-1:%'").get() as { what: string; why: string };
-    expect(row.why).toContain("были сломаны раньше");
-    expect(row.what).toContain("@acme/admin: tests/admin.test.ts");
+    // Lead policy v2: a nobody-guilty red is work the lead picks up, not the owner's decision — a next_step branch on
+    // the road tree, no owner row, no PM ping.
+    expect(db.prepare("SELECT 1 FROM lane_pilot_owner_item WHERE key LIKE 'gate-red:run-1:%'").get()).toBeUndefined();
+    const row = db.prepare("SELECT title, why, class FROM lane_pilot_lead_road WHERE project_id = 'proj-1' AND kind = 'option'").get() as { title: string; why: string; class: string };
+    expect(row.class).toBe("next_step");
+    expect(row.why).toContain("не виновата");
+    expect(row.title).toContain("@acme/admin: tests/admin.test.ts");
   });
 
   it("pins the failure the batch broke on the task that touched that workspace, and calls the old failure pre-existing", async () => {

@@ -6,3 +6,5 @@ export { LEAD_PREDICT_ID, leadPredictJudgment, type PredictDecision, type Predic
 export { answerPhaseWord, answerTaskWord, askPhaseWord, askTaskWord, phaseDecisionId, taskWordItemPrefix, wordDecisionId } from "./server/surfaces";
 export { LEAD_DEFAULTS, LEAD_SETTING_KEYS, leadSettingProblem, parseLeadSettings, type LeadSettingKey, type LeadSettings } from "./settings";
 export { LEAD_ID, LEAD_LAUNCH, LEAD_NAME, LEAD_SESSION, LEAD_SUMMARY, LEAD_TICK, LEAD_TOOLS } from "./lead-agent";
+export { addRoad, getRoad, listRoad } from "./server/road";
+export type { RoadEvidence, RoadRow } from "./server/road";

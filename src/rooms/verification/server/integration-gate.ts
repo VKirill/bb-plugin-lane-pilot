@@ -10,7 +10,7 @@ import { isMainfixTask, readCheckRun } from "../../tasks";
 import { gateLabel, gateResolverFor, type ResolvedGate } from "./gate-detect";
 import { continuesEpisode, type GateEpisode } from "./gate-episode";
 import { closeOwnerItemsByPrefix, postOwnerItem } from "../../owner-waiting";
-import { addRoad, getRoad, listRoad } from "../../lead/server/road";
+import { addRoad, getRoad, listRoad } from "../../lead";
 import { attributeFailures, testLabel } from "./gate-attribution";
 import { cacheHitsNote, extractCacheHits, extractFailingFiles, extractFailingTests, unhandledErrorBlock, type FailingTest } from "../gate-output";
 import { flakyEvidence, outputTail, readingFrom } from "../machine-pressure";

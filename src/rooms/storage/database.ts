@@ -19,7 +19,7 @@ import { workflowNotVerifiedMigrations, workflowOpsMigrations } from "@lane-pilo
 import { draftMigrations } from "@lane-pilot/workflow-engine";
 import { jevMigrations } from "@lane-pilot/jev";
 import { learningMigrations } from "../learning/migrations";
-import { pmReplayMigrations } from "../pm-replay/migrations";
+import { pmReplayMigrations } from "../pm-replay";
 import { scheduleAgentMigrations, scheduleMigrations } from "../schedule";
 import { worldMigrations } from "../world";
 import { harnessMigrations } from "../harness";

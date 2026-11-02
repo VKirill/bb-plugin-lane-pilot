@@ -1,5 +1,5 @@
 import { sha256Hex } from "@lane-pilot/kit";
-import type { Db } from "../learning/store";
+import type { Db } from "../learning";
 
 /** One replay scenario: the moment before the PM's wrong action, plus the rubric a judge grades a replay against. */
 export type Scenario = {
