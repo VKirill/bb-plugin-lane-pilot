@@ -49,7 +49,7 @@ export function verificationTimeoutOverBudget(reasons: ReadonlyArray<string | nu
 /** The attempt replayed on a moved main failed the task's own checks there; part of the merge-conflict reason, so the redo is free. */
 export const REPLAY_CHECK_FAILED = "checks red after the replay on main";
 // Linux git 2.43 names no lock in «Unable to write index» (OVH 2026-10-06); the wording is added beside index.lock.
-const INFRA = /ENOSPC|no space left|PermissionError|disk_low|index\.lock|unable to write (new )?index|host is not connected|host offline|ECONNRESET|ETIMEDOUT|EAI_AGAIN|ECONNREFUSED/i;
+const INFRA = /ENOSPC|no space left|PermissionError|disk_low|index\.lock|unable to write (new )?index|host is not connected|host offline|ECONNRESET|ETIMEDOUT|EAI_AGAIN|ECONNREFUSED|cannot read writer-workspace git diff: spawn \S+ ENOENT/i;
 // A permission error is the machine's only when it is not a check's own output: a red test that logs «EACCES» is the task's
 // (0.1.177). A reason built from a check names the environment itself (ENVIRONMENT_REASON); any other reason keeps the wording.
 const PERMISSION = /\b(?:EACCES|EPERM)\b|permission denied/i;

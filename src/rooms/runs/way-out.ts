@@ -43,12 +43,12 @@ export const WAY_OUT: ReadonlyArray<readonly [key: string, pattern: RegExp, wayO
   ["owns_paths rejected", /owns_paths rejected|writer changed paths outside owns_paths|repo_edited/i, "the writer touched files outside owns_paths/never_touch, or the repo was edited while it ran: commit or discard those edits in the checkout, narrow owns_paths, then send the task again"],
   ["interrupted by a reload", /interrupted by a plugin reload|Lane Pilot was reloaded/i, "send the task again with lane_pilot_dispatch_writer (same contract): a reload cut the dispatch mid-flight, no attempt was spent"],
   // Provider faults that are worth one retry.
-  ["provider_error", /provider_error|writer_stream_error|timeout/i, "the writer's provider faulted or timed out: retry once with lane_pilot_update_task (or move it to the next writer with lane_pilot_reassign_task); a repeat fault means the provider itself is down — wait it out"],
+  ["provider_error", /provider_error|writer_stream_error|timeout/i, "nothing: a provider fault starts the next writer of the chain by itself; a running task stuck on a dead provider moves with lane_pilot_reassign_task (taskId, model); the same fault on every writer means the provider side is down — wait it out"],
   ["waiting_secret", /^waiting_secret/, "waiting for an Env Catalog secret: call env_request for each name in the reason; the task restarts by itself once it is saved"],
   ["verification timed out", /verification timed out after \d+s/, "the check timed out: its retry budget is separate from the task's attempts; raise timeout_sec or narrow the command, then send the task again"],
   ["verification failed", /^verification failed/, "the task's own checks are red: read the check output in the reason, fix the code or the check, then send the task again"],
   // Machine faults that read like task failures: not the contract's to fix, but nothing retries them either.
-  ["cannot read writer-workspace", /cannot read writer-workspace/, "the writer's workspace could not be read — a machine fault (a missing shell, a dead host), not the task's code: send the task again; if it repeats, tell the owner what the error says"],
+  ["cannot read writer-workspace", /cannot read writer-workspace/, "the writer's workspace could not be read — a machine fault, not the task's code. A missing shell (spawn … ENOENT) parks the task and it restarts by itself after a short wait; any other error: send the task again, and if it repeats tell the owner which machine fails"],
   ["writer stop observed", /writer stop observed/, "its writer thread stopped before the checks ran — the attempt ended without a result: send the task again if the work is still needed"],
 ];
 

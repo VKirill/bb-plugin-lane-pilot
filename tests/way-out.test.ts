@@ -66,7 +66,7 @@ it("names the specific ways out the digest must carry", () => {
   expect(wayOut("blocked", "run_budget_exceeded:tokens")).toMatch(/lane_pilot_workflow_status/);
   expect(wayOut("blocked", "budget_exceeded:cost")).toMatch(/step receipts/);
   expect(wayOut("blocked", "owns_paths rejected a.ts")).toMatch(/owns_paths/);
-  expect(wayOut("blocked", "provider_error: HTTP 502")).toMatch(/retry once/);
+  expect(wayOut("blocked", "provider_error: HTTP 502")).toMatch(/starts the next writer/);
   expect(wayOut("blocked", "needs_human: q")).toMatch(/lane_pilot_ask_owner/);
   expect(wayOut("blocked", "unknown_reason_string")).toBeNull();
 });
