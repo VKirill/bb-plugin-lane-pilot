@@ -819,6 +819,11 @@ export class WorkflowEngine {
     return null;
   }
 
+  /** True when the node will be skipped; an expression that fails is left to the skip path below. */
+  private skipsFree(run: RunRow, c: Compiled, step: StepRow, node: WorkflowNode): boolean {
+    try { return this.skipReason(run, c, step, node) !== null; } catch { return false; }
+  }
+
   /** A skipped node still has a typed output: `skip_out`, checked against its declared fields. */
   private skipOutput(run: RunRow, c: Compiled, step: StepRow, node: WorkflowNode): Record<string, unknown> {
     const env = this.env(run, step);
@@ -846,7 +851,9 @@ export class WorkflowEngine {
     // A budget guards spending; an emit spends nothing, so what was already paid for is handed on, the overrun on record.
     // A step or time budget too: magicseo lp.plan (2026-10-30) had its critic pass on step 14 of 14, and the run was
     // blocked on the end emit — 31 minutes of planning thrown away and run again from the start.
-    const paidFor = found !== null && found.startsWith("budget_exceeded:") && executorKey(node) === "builtin:emit";
+    // A node its skip_when skips spends nothing either: invoice-send 2026-11-02 had telegram-send blocked on the skipped
+    // report after the send step was done, and the parent run failed on work that was finished.
+    const paidFor = found !== null && found.startsWith("budget_exceeded:") && (executorKey(node) === "builtin:emit" || this.skipsFree(run, c, step, node));
     if (paidFor && !j.db.prepare("SELECT 1 FROM lane_pilot_wf_event WHERE run_id=? AND kind='budget_overrun' LIMIT 1").get(runId)) j.event(runId, stepKey, "budget_overrun", null, null, `${found}: the end emits what the run already paid for`);
     const limit = paidFor ? null : found;
     if (limit) { if (j.setRunStatus(runId, ["running", "waiting"], "blocked", limit)) { this.cancelOpenSteps(runId); this.aborts.get(runId)?.abort(); } return "skip"; }

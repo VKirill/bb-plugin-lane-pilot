@@ -302,6 +302,14 @@ describe("guards", () => {
       edges: [{ from: "start", to: "collect" }, { from: "collect", to: "again" }, { from: "again", to: "end", with: { result: "input.query" } }],
     });
     expect(await run(engineOn(journalDb(), { collect: paid }), paidAfter)).toMatchObject({ status: "blocked", reason: "budget_exceeded:cost" });
+    // invoice-send 2026-11-02: the send was done over budget, the report after it is skipped; the run ends succeeded.
+    const skippedAfter = wf({
+      budget: { maxCostUsd: 0.5 },
+      outputs: [{ name: "n", type: "number", required: false }],
+      nodes: [{ id: "collect", type: "action", action: "collect", output: [{ name: "n", type: "number" }] }, { id: "report", type: "action", action: "collect", skip_when: "collect.n == 7", skip_out: { n: 0 }, output: [{ name: "n", type: "number" }] }, { id: "done", type: "action", action: "emit", map: { n: "collect.n" } }],
+      edges: [{ from: "start", to: "collect" }, { from: "collect", to: "report" }, { from: "report", to: "done" }],
+    });
+    expect(await run(engineOn(journalDb(), { collect: paid }), skippedAfter)).toMatchObject({ status: "succeeded", output: { n: 7 } });
   });
 
   it("budget: there is no step budget; a max_steps a graph still names stops nothing (magicseo lp.plan, 2026-10-30)", async () => {
