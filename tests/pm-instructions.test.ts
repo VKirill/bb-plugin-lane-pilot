@@ -65,7 +65,7 @@ it("describes every handoff recipient by what it does, not by its header line", 
 // Instructions audit 2026-10-08: numbers the PM prompt states about the writer are code constants; a copy in prose drifts when one changes.
 it("states the writer limits the code enforces", () => {
   expect(LANE_PILOT_PM_SESSION).toContain(`at most ${SESSION_MAX_TURNS} turns or ${SESSION_MAX_MS / 60_000} minutes`);
-  expect(LANE_PILOT_PM_SESSION).toContain(`for ${STICKY_WINDOW_MS / 3_600_000 === 3 ? "three" : "?"} hours after its last accepted task`);
+  expect(LANE_PILOT_PM_SESSION).toContain(`for ${STICKY_WINDOW_MS / 3_600_000} hours after its last accepted task`);
   expect(LANE_PILOT_PM_SESSION).toContain(`over ${String(LIVE_FOLDER_FILE_CAP).replace(/(\d)(?=(\d{3})$)/, "$1 ")} files`);
 });
 
