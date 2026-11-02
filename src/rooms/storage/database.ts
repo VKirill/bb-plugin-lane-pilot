@@ -1114,6 +1114,20 @@ export function pmHasTasksAtWork(db: LanePilotDatabase, pmThreadId: string): str
 }
 
 /**
+ * The tasks of this PM still at work that are parked on a reason, written the way writer/server/start.ts writes
+ * them: the `writer-agent` stage receipt in `pending` with a reason (quarantine, a held writer provider, a paused
+ * run, a hold-until). The digest lists them as `task (waits: reason → wayOut)` instead of a bare id.
+ */
+export function pmTasksWaiting(db: LanePilotDatabase, pmThreadId: string): Array<{ taskId: string; reason: string }> {
+  return db.prepare(`SELECT DISTINCT s.task_id AS taskId, s.reason FROM lane_pilot_stage_receipt s
+    JOIN lane_pilot_attempt a ON a.run_id=s.run_id AND a.task_id=s.task_id
+    JOIN lane_pilot_run r ON r.id=a.run_id
+    WHERE r.pm_thread_id=? AND s.stage_id='writer-agent' AND s.state='pending' AND s.reason IS NOT NULL AND s.reason != ''
+      AND a.state IN (${HOLDING_ATTEMPT_STATES.map(() => "?").join(",")})
+    ORDER BY s.task_id`).all(pmThreadId, ...HOLDING_ATTEMPT_STATES) as Array<{ taskId: string; reason: string }>;
+}
+
+/**
  * Lane Pilot's own commit after an accepted task is still on its way to main: the project-life stage of one of these accepted attempts
  * is pending or running, or has not started within `startMs` of the acceptance. A PM told its results now would push before it.
  */

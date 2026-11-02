@@ -3,7 +3,7 @@ import { callerPluginMetadata, ToolError, registerObservedTool, type ServerCore 
 import { deadLetters, HOLD_FOREVER } from "../rails";
 import { recordTaskWord } from "../words";
 import { answerTaskWord } from "../../lead";
-import { taskFamily } from "../../runs";
+import { taskFamily, wayOut } from "../../runs";
 import { hostContract } from "../../contracts";
 import { getRun, getRunWriterHost, latestTaskAttemptState } from "../../storage";
 
@@ -34,7 +34,7 @@ export function registerQueueTool(ctx: ServerCore): void {
       if (input.action === "dead_letters") {
         const rows = db.prepare(`SELECT a.task_id AS taskId, a.state, a.reason, a.updated_at AS updatedAt FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
           WHERE r.project_id=? AND a.created_at=(SELECT MAX(b.created_at) FROM lane_pilot_attempt b WHERE b.task_id=a.task_id) ORDER BY a.updated_at DESC LIMIT 500`).all(context.projectId) as Array<{ taskId: string; state: string; reason: string | null; updatedAt: number }>;
-        return JSON.stringify({ deadLetters: deadLetters(rows, Date.now()).slice(0, 50) });
+        return JSON.stringify({ deadLetters: deadLetters(rows, Date.now()).slice(0, 50).map((row) => ({ ...row, next: wayOut(row.state, row.reason) ?? undefined })) });
       }
       const runId = await runOf(context);
       if (input.action === "word") {
