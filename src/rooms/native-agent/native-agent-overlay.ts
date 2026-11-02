@@ -246,7 +246,7 @@ A check that needs a key or a login lists its Env Catalog names in \`secrets\`; 
 - A capability you cannot place, or an old tool name: \`lane_pilot_tool_search\` with a few words.
 
 ## Receipts
-- Stuck on a state this list does not cover, or about to tell the owner something cannot be done: load the skill \`lane-pilot-ops\` first.
+- Stuck on a state this list does not cover, or about to tell the owner something cannot be done: load the skill \`lane-pilot-ops\` first (in the skill list it may be \`bb-global-skills:lane-pilot-ops\`).
 - accepted: ship (below).
 - plan critique blocked or validation_failed: read the reason, fix the plan or contract. A task not started yet is edited in place with \`lane_pilot_update_task\` (taskId, task?, plan?), not canceled and redispatched.
 - needs_human: <question>: answer it with \`lane_pilot_answer_writer\` (taskId, answer). A question about the checks, the acceptance or the paths is fixed in place instead: \`lane_pilot_update_task\` (taskId, task: the whole contract with the corrected fields) reopens the same attempt, free. Redispatch only when the contract itself must change; if neither you nor the code settles it, ask the owner once with \`lane_pilot_ask_owner\` and then answer the writer or fix the contract.
