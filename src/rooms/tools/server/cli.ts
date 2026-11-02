@@ -4,7 +4,7 @@ import { cancelRejection, confirmWriterStopped, finishRunSafely, pauseRun } from
 import { markCancelCode } from "../../storage";
 import { renderTimeline, taskTimeline } from "../../runs";
 import { stringAt, valueAt } from "../../core/server";
-import { outputText } from "../../writer/server";
+import { outputText, runSkillsCli, SKILLS_USAGE } from "../../writer/server";
 import { THREAD_WATCH_EVENT_TYPES, decideThreadCompletion, eventsListQueryLabel, listThreadEventsRaw, waitThreadIdle } from "@lane-pilot/thread-observe";
 import type { ServerCore } from "../../core/server";
 import { RUN_BUDGET_SETTINGS, runHealth } from "../../stability/server";
@@ -12,7 +12,7 @@ import { configuredSetting } from "../../core/server";
 import { getCouncilSession } from "@lane-pilot/council";
 import { SCHEDULE_USAGE, runScheduleCli } from "../../schedule/server";
 import { answerWorkflowQuestion } from "../../workflow/server";
-import { AGENTS_USAGE, agentRegistry, runAgentsCli } from "../../native-agent/server";
+import { AGENTS_USAGE, agentRegistry, PM_SKILLS_USAGE, runAgentsCli, runPmSkillsCli, runPmSkillUseCli } from "../../native-agent/server";
 import type { Services } from "../../core/server";
 import { ANAMNESIS_USAGE } from "../../anamnesis";
 import { anamnesisFor } from "../../anamnesis";
@@ -114,10 +114,14 @@ export function registerCli(ctx: ServerCore, services: Services) {
     PHASE_USAGE,
     RULES_USAGE,
     JEV_USAGE,
+    SKILLS_USAGE,
+    PM_SKILLS_USAGE,
   ].join("\n");
 
   const commands:Array<{ name:string; summary:string; usage:string }> = [
       { name:"configure", summary:"Save prototype project settings", usage:"bb lane-pilot configure '<json>'" },
+      { name:"skills", summary:"Searchable skill catalog list for the PM", usage:SKILLS_USAGE },
+      { name:"pm-skills", summary:"Which skills PM sessions opened lately", usage:PM_SKILLS_USAGE },
       { name:"activate", summary:"Spawn a visible isolated PM thread", usage:"bb lane-pilot activate <project-id> <ordinary-source-thread-id>" },
       { name:"state", summary:"Inspect a project's runs and attempts, newest first, one page at a time", usage:"bb lane-pilot state <project-id> [--limit N] [--before <created-at[:id]>] [--attempt <attempt-id> [--reason-offset N]]" },
       { name:"budget", summary:"Set or show the run budget of a project (attempts, wall minutes, tokens, child threads; empty value clears)", usage:"bb lane-pilot budget <project-id> [run.max_attempts=N] [run.max_wall_minutes=N] [run.max_tokens=N] [run.max_children=N]" },
@@ -250,6 +254,15 @@ export function registerCli(ctx: ServerCore, services: Services) {
         }
         if (command === "coverage") {
           return runCoverageCli(args);
+        }
+        if (command === "skills") {
+          return await runSkillsCli(args);
+        }
+        if (command === "pm-skills") {
+          return runPmSkillsCli(db, args);
+        }
+        if (command === "pm-skill-use") {
+          return runPmSkillUseCli(db, args);
         }
         if (command === "passport") {
           const result = args[0] ? passport(db, args[0]) : null;

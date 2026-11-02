@@ -25,4 +25,5 @@ export { createWriterHost } from "./writer-host";
 export { DEFAULT_SILENCE_NUDGE_MIN, sweepWriterSilence } from "./writer-silence";
 export { asJsonText, outputText, providerLimitNotice, writerBriefSegments, writerContextBlocks } from "./writer-task";
 export { stickyTurnPromptWithRules, writerKnowledge, writerRules } from "./writer-knowledge";
-export { pickSkillTree, readSkillTreeText, skillTreeCached } from "./skill-tree";
+export { SKILLS_USAGE, filterSkillHub, firstSentence, formatSkillList, parseSkillHub, pickSkillTree, readSkillTreeText, runSkillsCli, skillTreeCached } from "./skill-tree";
+export type { SkillHub, SkillHubEntry } from "./skill-tree";

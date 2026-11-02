@@ -116,6 +116,26 @@ export function createRoleMarkerEnv(ctx: Pick<ServerCore, "bb">) {
   };
 }
 
+/**
+ * The PM's thread and project ids in the session env: the bundled PostToolUse hook reports a Skill call through
+ * `bb lane-pilot pm-skill-use` only when these are set, so writer and helper sessions stay silent. (A3, audit Fable 5.1-8)
+ */
+export function createPmSkillTraceEnv(ctx: Pick<ServerCore, "bb">) {
+  const { bb } = ctx;
+  return async (context: ProviderEnvContext): Promise<ExperimentalPluginProviderEnvEntry[]> => {
+    if (!context.threadId) return [];
+    let metadata: unknown = null;
+    try { metadata = context.experimental_vkPluginMetadata !== undefined ? context.experimental_vkPluginMetadata : await within(CALL_MS, "getPluginMetadata", Promise.resolve(bb.sdk.threads.getPluginMetadata({ threadId: context.threadId }))); } catch { return []; }
+    if (stringAt(metadata, "role") !== "pm") return [];
+    const reason = "Lane Pilot: PM skill-use trace; the session hook reports which skills the PM opens";
+    const env: ExperimentalPluginProviderEnvEntry[] = [{ name: "LANE_PILOT_PM_THREAD_ID", value: context.threadId, reason }];
+    const thread = await bb.sdk.threads.get({ threadId: context.threadId }).catch(() => null);
+    const projectId = stringAt(thread, "projectId");
+    if (projectId) env.push({ name: "LANE_PILOT_PM_PROJECT_ID", value: projectId, reason });
+    return env;
+  };
+}
+
 export function mountBbShim(ctx: ServerCore) {
   const resolve = createBbShimEnv(ctx);
   for (const providerId of BB_SHIM_PROVIDER_IDS) ctx.bb.providers.experimental_contributeEnv(providerId, (thread) => resolve(thread, providerId));
