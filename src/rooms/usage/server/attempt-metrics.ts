@@ -42,13 +42,17 @@ export type AttemptMetricsReport = {
     queueWait: { samples: number; p50Ms: number | null; p99Ms: number | null };
     /** First attempts (attempt_no = 1) grouped by writer tier: how many ran and how many were accepted. */
     firstByTier: Record<ModelTier | "unknown", { first: number; accepted: number }>;
+    /** Attempts of the window per task accepted in the window (H2: the cost the research measures). */
+    attemptsPerAcceptedTask: number | null;
+    /** Share of the window's attempts that ever sat parked `waiting_writer:` (a provider hold, journaled queued→queued). */
+    heldShare: number | null;
   };
   attempts: AttemptMetrics[];
 };
 
 type AttemptRow = { id: string; run_id: string; task_id: string; attempt_no: number; state: string; thread_id: string | null; created_at: number; updated_at: number };
 type StageEventRow = { run_id: string; task_id: string; stage_id: string; state: string; occurred_at: number };
-type TransitionRow = { attempt_id: string; from_state: string; to_state: string; at: number };
+type TransitionRow = { attempt_id: string; from_state: string; to_state: string; at: number; reason?: string | null };
 type GateEventRow = { run_id: string; task_id: string; status: string; occurred_at: number };
 type CursorRow = { thread_id: string; provider_id: string; last_provider: string; last_model: string; total_json: string };
 
@@ -110,7 +114,7 @@ export function attemptMetrics(db: Database.Database, input: { projectId: string
     WHERE project_id = ? AND occurred_at >= ? ${input.taskId ? "AND task_id = ?" : ""} ORDER BY id`).all(input.projectId, since - DAY_MS, ...(input.taskId ? [input.taskId] : [])) as StageEventRow[];
   const gateEvents = db.prepare(`SELECT run_id, task_id, status, occurred_at FROM lane_pilot_gate_event
     WHERE project_id = ? AND occurred_at >= ? ${input.taskId ? "AND task_id = ?" : ""} ORDER BY id`).all(input.projectId, since - DAY_MS, ...(input.taskId ? [input.taskId] : [])) as GateEventRow[];
-  const transitions = db.prepare(`SELECT t.attempt_id, t.from_state, t.to_state, t.at FROM lane_pilot_attempt_transition t
+  const transitions = db.prepare(`SELECT t.attempt_id, t.from_state, t.to_state, t.at, t.reason FROM lane_pilot_attempt_transition t
     JOIN lane_pilot_attempt a ON a.id = t.attempt_id JOIN lane_pilot_run r ON r.id = a.run_id
     WHERE r.project_id = ? AND a.created_at >= ? AND t.refused = 0 ${input.taskId ? "AND a.task_id = ?" : ""} ORDER BY t.attempt_id, t.at, t.rowid`)
     .all(input.projectId, since, ...(input.taskId ? [input.taskId] : [])) as TransitionRow[];
@@ -175,6 +179,11 @@ export function attemptMetrics(db: Database.Database, input: { projectId: string
   }
   rows.sort((a, b) => b.createdAt - a.createdAt);
   const measured = rows.filter((row) => row.costState === "measured");
+  // H2: attempts parked while every writer provider was held journal the wait as queued→queued rows with
+  // `waiting_writer:` reasons; an attempt with at least one counts as held.
+  const heldAttempts = rows.filter((row) =>
+    (transitionsByAttempt.get(row.attemptId) ?? []).some((row2) => row2.reason?.startsWith("waiting_writer:"))).length;
+  const acceptedTasks = new Set(rows.filter((row) => row.state === "accepted").map((row) => `${row.taskId}`)).size;
   const notMeasuredByProvider: Record<string, number> = {};
   for (const row of rows) if (row.costState === "not_measured") {
     const key = row.writer.threadId ? row.writer.providerId ?? "no usage row" : "no writer thread";
@@ -191,6 +200,8 @@ export function attemptMetrics(db: Database.Database, input: { projectId: string
       stagesPassed: rows.reduce((sum, row) => sum + row.stagesPassed, 0), stagesFailed: rows.reduce((sum, row) => sum + row.stagesFailed, 0),
       queueWait: queueWaitPercentiles(rows.flatMap((row) => row.queueWaitMs == null ? [] : [row.queueWaitMs]).sort((a, b) => a - b)),
       firstByTier: firstByTier(rows),
+      attemptsPerAcceptedTask: acceptedTasks ? Math.round(rows.length / acceptedTasks * 100) / 100 : null,
+      heldShare: rows.length ? Math.round(heldAttempts / rows.length * 1000) / 1000 : null,
     },
     attempts: rows,
   };
@@ -225,6 +236,7 @@ export function renderAttemptMetrics(report: AttemptMetricsReport): string {
     ...(Object.keys(s.notMeasuredByProvider).length ? [`Not measured by provider: ${Object.entries(s.notMeasuredByProvider).map(([key, n]) => `${key} ${n}`).join(", ")} (these report no token usage; their cost is unknown, not zero).`] : []),
     `Stages: ${s.stagesPassed} passed, ${s.stagesFailed} failed or blocked.`,
     `First attempts by tier: ${Object.entries(s.firstByTier).map(([tier, n]) => `${tier} ${n.accepted}/${n.first} accepted`).join(", ") || "none"}.`,
+    `Attempts per accepted task: ${s.attemptsPerAcceptedTask ?? "none accepted"}. Held (waiting_writer) share: ${s.heldShare === null ? "no attempts" : `${Math.round(s.heldShare * 100)}%`} — attempts parked while every writer provider was held.`,
     "",
   ];
   for (const row of report.attempts) {

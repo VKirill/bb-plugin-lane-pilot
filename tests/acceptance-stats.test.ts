@@ -54,7 +54,7 @@ it("aggregates first-try acceptance, redispatches and causes per project and ISO
     dispatched:5, firstTryAccepted:2, eventuallyAccepted:3,
     attempts:7, attemptsPerAccepted:1.3,
     redispatched:1, families:1,
-    causes:{ outputs_empty:1, ownership_dirt:1, provider_limit:1, needs_human:1 },
+    causes:{ outputs_empty:1, ownership_dirt:1, provider_limit:1, needs_human:1 }, heldShare:0,
   });
   expect(stats.projects[0]!.weeks).toHaveLength(1);
   const week = stats.projects[0]!.weeks[0]!;
