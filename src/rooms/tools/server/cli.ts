@@ -59,6 +59,12 @@ function requireCriticCodeDefault(value: string): CodeCriticDefault {
   return value;
 }
 
+/** `timeline <task-id> [--run <run-id>] [--json]`: without --run the first bare word is the task (it was skipped until 2026-11-02). */
+export function timelineArgs(args: string[]): { taskId: string | undefined; runId: string | undefined } {
+  const runAt = args.indexOf("--run");
+  return { taskId: args.find((arg, index) => !arg.startsWith("--") && (runAt < 0 || index !== runAt + 1)), runId: runAt >= 0 ? args[runAt + 1] : undefined };
+}
+
 export function registerCli(ctx: ServerCore, services: Services) {
   const { bb, cancelQueuedAttempt, db, effectiveProjectSettings, host } = ctx;
 
@@ -351,10 +357,9 @@ export function registerCli(ctx: ServerCore, services: Services) {
           return { exitCode:0, stdout:JSON.stringify(presence.map((row) => ({ ...row, minutesAgo:Math.round((now - row.at) / 60_000), holdsWriters:services.ownerPresence.holds(row.providerId, now) !== null })), null, 2) };
         }
         if (command === "timeline") {
-          const runAt = args.indexOf("--run");
-          const taskId = args.find((arg, index) => !arg.startsWith("--") && index !== runAt + 1);
+          const { taskId, runId } = timelineArgs(args);
           if (!taskId) return { exitCode:1, stderr:"usage: bb lane-pilot timeline <task-id> [--run <run-id>] [--json]" };
-          const timeline = taskTimeline(db, taskId, runAt >= 0 ? args[runAt + 1] : undefined);
+          const timeline = taskTimeline(db, taskId, runId);
           if (!timeline.runId) return { exitCode:1, stderr:renderTimeline(timeline) };
           return { exitCode:0, stdout:args.includes("--json") ? JSON.stringify(timeline, null, 2) : renderTimeline(timeline) };
         }

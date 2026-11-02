@@ -1,3 +1,4 @@
+import { timelineArgs } from "../src/rooms/tools/server/cli";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import { appendGateEvaluation, createAttempt, createRun, createTask, openDatabase, transitionAttempt } from "../src/rooms/storage/database";
@@ -53,5 +54,14 @@ describe("bb lane-pilot timeline: one task's record in time order (post-mortem o
     createTask(db, { id: "t1", runId: "run-1", kind: "bb", contract });
     expect(taskTimeline(db, "t1", "run-2").runId).toBeNull();
     expect(taskTimeline(db, "t1", "run-1").runId).toBe("run-1");
+  });
+});
+
+describe("bb lane-pilot timeline arguments", () => {
+  it("takes the task id with and without --run", () => {
+    expect(timelineArgs(["task-a"])).toEqual({ taskId: "task-a", runId: undefined });
+    expect(timelineArgs(["task-a", "--json"])).toEqual({ taskId: "task-a", runId: undefined });
+    expect(timelineArgs(["--run", "run-1", "task-a"])).toEqual({ taskId: "task-a", runId: "run-1" });
+    expect(timelineArgs(["task-a", "--run", "run-1"])).toEqual({ taskId: "task-a", runId: "run-1" });
   });
 });
