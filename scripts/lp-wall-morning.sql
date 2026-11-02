@@ -127,6 +127,10 @@ with dark(name) as (
   union all
   select 'lane_pilot_pm_notice' as name where (select count(*) from lane_pilot_pm_notice where sent_at >= (select since from lp_morning_30)) = 0
   union all
+  select 'lane_pilot_pm_skill_use' as name where (select count(*) from lane_pilot_pm_skill_use where used_at >= (select since from lp_morning_30)) = 0
+  union all
+  select 'lane_pilot_gate_run' as name where (select count(*) from lane_pilot_gate_run where updated_at >= (select since from lp_morning_30)) = 0
+  union all
   select 'lane_pilot_project_settings' as name where (select count(*) from lane_pilot_project_settings where updated_at >= (select since from lp_morning_30)) = 0
   union all
   select 'lane_pilot_reconcile_cursor' as name where (select count(*) from lane_pilot_reconcile_cursor where updated_at >= (select since from lp_morning_30)) = 0

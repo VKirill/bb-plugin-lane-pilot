@@ -146,7 +146,8 @@ describe("claude threads Lane Pilot starts get the bundled guard", () => {
       expect(await resolve({ threadId: "thr_owner", hostId: "local", projectId: "p" })).toEqual([]);
       expect(await resolve({ threadId: null, hostId: "local", projectId: "p" })).toEqual([]);
       const native = await resolve({ threadId: "thr_native", hostId: "local", projectId: "p" });
-      expect(native).toEqual([expect.objectContaining({ name: "BB_CLAUDE_CODE_EXECUTABLE", value: "/native/claude" })]);
+      // A PM's native session also carries the PM skill-use trace (A3, 2026-11-02); still no guard executable of ours.
+      expect(native).toEqual([expect.objectContaining({ name: "BB_CLAUDE_CODE_EXECUTABLE", value: "/native/claude" }), expect.objectContaining({ name: "LANE_PILOT_PM_THREAD_ID", value: "thr_native" })]);
       expect(calls).toEqual([]);
     } finally {
       process.env.PATH = previous;

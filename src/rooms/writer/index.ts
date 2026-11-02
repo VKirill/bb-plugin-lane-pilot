@@ -24,3 +24,5 @@ export {
   type SkillSwitchRecord,
   type SkillSwitchStats,
 } from "./skill-switch";
+export { STICKY_WINDOW_MS } from "./sticky-window";
+export { LIVE_FOLDER_FILE_CAP } from "./live-folder";

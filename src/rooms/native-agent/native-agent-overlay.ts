@@ -5,10 +5,9 @@ import { BB_BRIDGE_MCP_SERVER, NATIVE_LP_BRIDGE_ARCHITECT_TOOLS, NATIVE_LP_BRIDG
 import { WORKFLOW_ARCHITECT_ID, WORKFLOW_ARCHITECT_SESSION, WORKFLOW_ARCHITECT_SUMMARY } from "../workflow";
 import { LEAD_ID, LEAD_SESSION, LEAD_SUMMARY } from "../lead";
 import { rewriteFoldedToolNames } from "../tools";
-import { SESSION_MAX_MS, SESSION_MAX_TURNS } from "../runs/failure-class";
-import { DEPENDENCY_REDO_WAIT_MS } from "../storage/database";
-import { STICKY_WINDOW_MS } from "../writer/sticky-window";
-import { LIVE_FOLDER_FILE_CAP } from "../writer/live-folder";
+import { SESSION_MAX_MS, SESSION_MAX_TURNS } from "../runs";
+import { DEPENDENCY_REDO_WAIT_MS } from "../storage";
+import { LIVE_FOLDER_FILE_CAP, STICKY_WINDOW_MS } from "../writer";
 
 /** Official `--agents` JSON fields from https://code.claude.com/docs/en/sub-agents */
 export const AGENTS_JSON_FIELDS = [
