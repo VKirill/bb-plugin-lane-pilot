@@ -1,4 +1,4 @@
-import { latestTaskAttemptState, listUnreportedTaskOutcomes, markTaskOutcomesReported, pmBookkeepingPending, pmHasTasksAtWork, pmTasksWaiting, toldPmDirectly, type TaskOutcome } from "../../storage";
+import { getAttempt, getRunSettingsScopes, latestTaskAttemptState, listUnreportedTaskOutcomes, loadProjectSettings, markTaskOutcomesReported, pmBookkeepingPending, pmHasTasksAtWork, pmTasksWaiting, toldPmDirectly, type TaskOutcome } from "../../storage";
 import { taskFamily, wayOut } from "../../runs";
 import { pmDeferralLines } from "../../deferral/server";
 import { calibrationLine } from "../../forecast";
@@ -8,6 +8,7 @@ import { z } from "zod";
 import type { ServerContext } from "../../core/server";
 import { sendServiceMessage } from "./service-message";
 import { registerObservedTool } from "../../core/server";
+import { gateRunVerdict, latestGateRun, latestGateRunForTask, parseIntegrationGateSettings } from "../../verification/server";
 
 /**
  * Lane Pilot's relay: agents ask other threads and answer back; the plugin server also wakes a PM with internal
@@ -80,6 +81,8 @@ export type RelayDeps = {
   markReported?(rows:TaskOutcome[]):Promise<void>;
   /** Lines about the overdue and open deferrals of a project, added to the task-result message (SMA rule 6: read them before you promise a date). */
   deferralLines?(projectId:string):string[];
+  /** The integration gate's verdict for an accepted task's merge commit (lane_pilot_gate_run), appended to its line. */
+  gateLine?(row:TaskOutcome):Promise<string | null>;
   now():number;
   log(message:string):void;
   /** Puts the text into BB's queue for `sendAt`; the queued row's id, or null when it could not be queued (the sweep then sends). */
@@ -388,12 +391,19 @@ export function createRelay(deps:RelayDeps) {
   const clock = (ms:number) => `${new Date(ms).toISOString().slice(11, 16)} UTC`;
 
   /** One message with the PM's task results and the notes of its reminders they satisfy; null when nothing is due yet. */
-  function noticeText(rows:TaskOutcome[], atWork:Array<string | { taskId:string; reason:string | null }>, notes:RelayReminder[]):string {
+  async function noticeText(rows:TaskOutcome[], atWork:Array<string | { taskId:string; reason:string | null }>, notes:RelayReminder[]):Promise<string> {
     const canceled = rows.filter((row) => row.state === "canceled").length;
+    const gates = new Map<string, string>();
+    for (const row of rows) {
+      if (row.state !== "accepted" || !deps.gateLine) continue;
+      const line = await deps.gateLine(row).catch(() => null);
+      if (line) gates.set(row.taskId, line);
+    }
     const lines = rows.filter((row) => row.state !== "canceled").map((row) => {
       const reason = row.state === "accepted" ? "" : row.reason ? `: ${row.reason.replace(/\s+/g, " ").slice(0, 300)}` : "";
       const out = reason ? wayOut(row.state, row.reason) : null;
-      return `- ${row.taskId} — ${row.state}${reason}${out ? ` → ${out}` : ""}`;
+      const gate = gates.get(row.taskId);
+      return `- ${row.taskId} — ${row.state}${reason}${out ? ` → ${out}` : ""}${gate ? ` (gate: ${gate})` : ""}`;
     });
     if (canceled) lines.push(`- ${canceled} canceled`);
     const workLines = atWork.slice(0, 8).map((entry) => {
@@ -449,7 +459,7 @@ export function createRelay(deps:RelayDeps) {
       // Results wait for the project-life commit (FeedGen 2026-10-23: the PM pushed, then PROGRESS landed on main unpushed), a blocked task does not.
       if (!urgent && now - oldest < TASK_NOTICE.bookkeepingMaxMs && await deps.bookkeeping?.(rows).catch(() => false)) continue;
       try {
-        await deps.send(threadId, noticeText(rows, atWork, satisfied));
+        await deps.send(threadId, await noticeText(rows, atWork, satisfied));
       } catch (cause) {
         const message = cause instanceof Error ? cause.message : String(cause);
         // An archived PM chat never reads its results, and BB answers 409 to every try: the results are dropped at once.
@@ -643,6 +653,17 @@ export function relayFor(ctx:ServerContext):Relay {
       try { lines.push(...pmDeferralLines(ctx.db, projectId, Date.now())); } catch { /* the register is informational here */ }
       try { const line = calibrationLine(forecastReport(ctx.db, { projectId, days:60 }).calibration.overall ?? undefined); if (line) lines.push(line); } catch { /* idem */ }
       return lines;
+    },
+    // «accepted» is the merge, not main's check: the results message carries the integration gate's verdict of the
+    // task's merge commit (running / red / not run / none configured), so «all tasks accepted» is never read as «ship» (Astra F1).
+    gateLine:async (row) => {
+      const found = latestGateRunForTask(ctx.db, row.projectId, row.taskId);
+      if (found) return gateRunVerdict(found).line;
+      // No run for this merge yet. The gate exists when the project set it or one ran before; otherwise the merge
+      // itself never called the runner (finish.ts only notes a merge when the gate resolved) — «none configured».
+      const settings = parseIntegrationGateSettings(loadProjectSettings(ctx.db, row.projectId, getRunSettingsScopes(ctx.db, getAttempt(ctx.db, row.attemptId)?.run_id ?? "")));
+      if (settings.gateOff) return "none configured";
+      return settings.gateCommand || latestGateRun(ctx.db, row.projectId) ? "running" : "none configured";
     },
     now:() => Date.now(),
     log:ctx.log,

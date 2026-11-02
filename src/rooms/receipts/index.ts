@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 import type Database from "better-sqlite3";
 import packageJson from "../../../package.json";
+import { gateRunVerdict, latestGateRun, parseIntegrationGateSettings } from "../verification/server";
+import { loadProjectSettings } from "../storage";
 
 /**
  * Receipts and evidence (SMA map: Receipts and evidence). Read-only assemblies over what the stages left:
@@ -50,6 +52,26 @@ export function preship(db: Db, projectId?: string) {
     ...(regressions as Array<{ taskId: string; state: string }>).map((row) => ({ what: `regression of ${row.taskId} (${row.state})`, disposition: "fix, or revert the task" })),
     ...(deferrals as Array<{ id: string; title: string }>).map((row) => ({ what: `deferred: ${row.title ?? row.id}`, disposition: "keep with its term" })),
   ];
+  // The ship gate (Astra F1): «all tasks accepted» says nothing about the post-merge check on main. Its latest run
+  // still out, red or never run stops the ship; a project without a gate passes as before.
+  const gate = latestGateRun(db, projectId);
+  if (gate) {
+    const verdict = gateRunVerdict(gate);
+    if (verdict.pending) {
+      items.push({ what: `integration gate is still running (${gate.command})`, disposition: "wait for its verdict, then preship again" });
+    } else if (verdict.failed) {
+      items.push(gate.state === "failed"
+        ? { what: `integration gate is ${verdict.line} on ${gate.head ? gate.head.slice(0, 12) : "main"}`, disposition: "a failing check on main: dispatch a fix task" }
+        : { what: `integration gate ${verdict.line}`, disposition: `rerun the gate: run \`${gate.command}\` on main (or merge a task to trigger it)` });
+    }
+  } else if (projectId) {
+    // No gate run was ever recorded. An explicit command means the gate exists and has not run on this head;
+    // an empty setting leaves detection to the host, which preship cannot ask — passes as today.
+    const settings = parseIntegrationGateSettings(loadProjectSettings(db as never, projectId));
+    if (!settings.gateOff && settings.gateCommand) {
+      items.push({ what: `integration gate not run: no run of \`${settings.gateCommand}\` is recorded for this project`, disposition: `rerun the gate: run \`${settings.gateCommand}\` on main (or merge a task to trigger it)` });
+    }
+  }
   return { clear: items.every((item) => item.disposition === "keep with its term"), items };
 }
 

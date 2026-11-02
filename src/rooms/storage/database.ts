@@ -478,6 +478,21 @@ export const migrations = [
   `CREATE INDEX IF NOT EXISTS lane_pilot_attempt_wake ON lane_pilot_attempt(wake_at) WHERE wake_at IS NOT NULL`,
   // H1: the sampled input of a Jev receipt (one in five, 8 KB cap), for the nightly model relabeler. Append only.
   `ALTER TABLE lane_pilot_jev_receipt ADD COLUMN input_json TEXT`,
+  // A4 shipgate: one row per integration-gate run — what it ran on (head), the batch it checked, and its verdict,
+  // so a PM/ship decision reads the gate state after the merge instead of guessing from «all tasks accepted».
+  `CREATE TABLE lane_pilot_gate_run (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id TEXT NOT NULL,
+    run_id TEXT NOT NULL,
+    scope_key TEXT NOT NULL,
+    command TEXT NOT NULL,
+    state TEXT NOT NULL CHECK(state IN ('running','passed','failed','not_run')),
+    head TEXT,
+    reason TEXT,
+    batch_json TEXT NOT NULL DEFAULT '[]',
+    updated_at INTEGER NOT NULL
+  )`,
+  `CREATE INDEX lane_pilot_gate_run_project ON lane_pilot_gate_run(project_id, id)`,
 ];
 
 export function openDatabase(bb: BbPluginApi): LanePilotDatabase {

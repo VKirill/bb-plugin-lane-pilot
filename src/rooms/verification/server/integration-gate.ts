@@ -57,6 +57,93 @@ export type MergedTaskInfo = {
 };
 
 /**
+ * The durable record of one integration-gate run (lane_pilot_gate_run): «all tasks accepted» alone never said what
+ * main's own check did after the merge — still running, red, never ran, or green, and on which commit (Astra F1).
+ */
+export type GateRunState = "running" | "passed" | "failed" | "not_run";
+export type GateRunRow = {
+  id: number;
+  projectId: string;
+  runId: string;
+  scopeKey: string;
+  command: string;
+  state: GateRunState;
+  /** The main commit the run's verdict belongs to (`gateRun`'s head). */
+  head: string | null;
+  /** `failed`: the first failing evidence; `not_run`: why it never ran. */
+  reason: string | null;
+  batch: Array<{ taskId: string; commitSha: string }>;
+  updatedAt: number;
+};
+
+const GATE_RUN_STALE_MS = 35 * 60_000; // gate timeout (30 min) + slack
+
+type GateRunDb = { prepare(sql: string): { get(...args: unknown[]): unknown; run(...args: unknown[]): { lastInsertRowid: number | bigint } } };
+
+function gateRunRow(raw: Record<string, unknown>): GateRunRow {
+  let batch: GateRunRow["batch"] = [];
+  try { batch = JSON.parse(raw.batch_json as string) as GateRunRow["batch"]; } catch { /* empty */ }
+  return {
+    id: raw.id as number, projectId: raw.project_id as string, runId: raw.run_id as string,
+    scopeKey: raw.scope_key as string, command: raw.command as string, state: raw.state as GateRunState,
+    head: (raw.head as string | null) ?? null, reason: (raw.reason as string | null) ?? null,
+    batch: Array.isArray(batch) ? batch : [], updatedAt: raw.updated_at as number,
+  };
+}
+
+/** The gate run started: a `running` row the PM can already see; finished by `finishGateRun`. Returns the row id. */
+export function noteGateRunStart(db: GateRunDb, input: {
+  projectId: string; runId: string; scopeKey: string; command: string; batch: MergedTaskInfo[];
+}): number {
+  return Number(db.prepare(`INSERT INTO lane_pilot_gate_run (project_id,run_id,scope_key,command,state,batch_json,updated_at)
+    VALUES (?,?,?,?,'running',?,?)`)
+    .run(input.projectId, input.runId, input.scopeKey, input.command,
+      JSON.stringify(input.batch.map((task) => ({ taskId: task.taskId, commitSha: task.commitSha }))), Date.now()).lastInsertRowid);
+}
+
+export function finishGateRun(db: GateRunDb, id: number, state: Exclude<GateRunState, "running">, fields: { head?: string | null; reason?: string | null }): void {
+  db.prepare("UPDATE lane_pilot_gate_run SET state=?, head=?, reason=?, updated_at=? WHERE id=?")
+    .run(state, fields.head ?? null, fields.reason ?? null, Date.now(), id);
+}
+
+/** A run left `running` past the gate's own timeout died with it (a reload kills the in-flight call): it ran no verdict. */
+function gateRunEffective(row: GateRunRow, now = Date.now()): { state: GateRunState; reason: string | null } {
+  if (row.state === "running" && now - row.updatedAt > GATE_RUN_STALE_MS) {
+    return { state: "not_run", reason: "the gate run was interrupted (timeout or reload)" };
+  }
+  return { state: row.state, reason: row.reason };
+}
+
+/** The latest gate run that checked a merge of this task (its task id rides the batch), per project. */
+export function latestGateRunForTask(db: GateRunDb, projectId: string, taskId: string): GateRunRow | undefined {
+  const raw = db.prepare(`SELECT * FROM lane_pilot_gate_run WHERE project_id=? AND EXISTS (
+      SELECT 1 FROM json_each(lane_pilot_gate_run.batch_json) WHERE json_extract(value,'$.taskId')=?)
+    ORDER BY id DESC LIMIT 1`).get(projectId, taskId) as Record<string, unknown> | undefined;
+  return raw ? gateRunRow(raw) : undefined;
+}
+
+/** The newest gate run of the project — what preship measures the head being shipped against. */
+export function latestGateRun(db: GateRunDb, projectId?: string): GateRunRow | undefined {
+  const raw = (projectId
+    ? db.prepare("SELECT * FROM lane_pilot_gate_run WHERE project_id=? ORDER BY id DESC LIMIT 1").get(projectId)
+    : db.prepare("SELECT * FROM lane_pilot_gate_run ORDER BY id DESC LIMIT 1").get()) as Record<string, unknown> | undefined;
+  return raw ? gateRunRow(raw) : undefined;
+}
+
+/**
+ * The gate state the PM reads next to an accepted task / in preship, in the brief's words:
+ * `green on <short sha>` / `running` / `red: <command>` / `not run: <reason>`. `pending` while the verdict is still out.
+ */
+export function gateRunVerdict(row: GateRunRow | undefined): { line: string; pending: boolean; failed: boolean } {
+  if (!row) return { line: "running", pending: true, failed: false };
+  const eff = gateRunEffective(row);
+  if (eff.state === "running") return { line: "running", pending: true, failed: false };
+  if (eff.state === "passed") return { line: `green on ${row.head ? row.head.slice(0, 12) : "unknown commit"}`, pending: false, failed: false };
+  if (eff.state === "failed") return { line: `red: ${row.command}${eff.reason ? ` (${eff.reason.slice(0, 160)})` : ""}`, pending: false, failed: true };
+  return { line: `not run: ${eff.reason ?? "unknown"}`, pending: false, failed: true };
+}
+
+/**
  * Parses static imports from file content to trace dependency to changed files.
  */
 export function extractStaticImports(source: string): string[] {
@@ -417,13 +504,19 @@ export class IntegrationGateRunner {
     };
     const beforeGate = await sampleMachine();
 
+    // The run's record goes down before it starts: «accepted» alone never says the gate is still out (Astra F1).
+    const gateRunId = noteGateRunStart(db, { projectId, runId, scopeKey: key, command: gateCommand, batch });
+
     const ran = await host.call("gateRun", { requestedHostId: configHostId, basePath, command: gateCommand, timeoutSec: GATE_TIMEOUT_SEC },
       { hostId: configHostId, timeoutMs: (GATE_TIMEOUT_SEC + 60) * 1000 }).catch((cause: unknown) => {
       this.ctx.log(`integration-gate: could not run \`${gateCommand}\` on host ${configHostId}: ${cause instanceof Error ? cause.message : String(cause)}`);
       return null;
     });
-    // A gate that could not run says nothing about main: no receipt, no culprit; the merges stay counted for the next run.
-    if (!ran) return { ran: false };
+    // A gate that could not run says nothing about main: no culprit; the merges stay counted for the next run.
+    if (!ran) {
+      finishGateRun(db, gateRunId, "not_run", { reason: `host could not run it on ${configHostId}` });
+      return { ran: false };
+    }
 
     const exitCode = ran.exitCode;
     const stdout = ran.stdout;
@@ -442,6 +535,7 @@ export class IntegrationGateRunner {
       exitCode,
       passed,
       mergesChecked: batch.length,
+      head: ran.head ?? null,
     };
 
     // The gate's verdict is a gate evaluation of the batch. It used to be written over the last merged task's own
@@ -462,11 +556,13 @@ export class IntegrationGateRunner {
       this.consumePending(key, batch.length);
       // Save the commit the gate ran on as the last green one
       if (ran.head) this.lastGreenCommits.set(key, ran.head);
+      finishGateRun(db, gateRunId, "passed", { head: ran.head ?? null });
       return { ran: true, passed: true };
     }
 
     // Exit 0 with no test run: nothing is red, so no culprit; but nothing is proven either, and the merges stay counted for the next run.
     if (exitCode === 0) {
+      finishGateRun(db, gateRunId, "not_run", { head: ran.head ?? null, reason: `exit 0 but no test ran: ${reading.reason}` });
       this.ctx.log(`integration-gate: \`${gateCommand}\` exited 0 but proved nothing, no culprit searched: ${reading.reason}`);
       this.noteRed({ runId, projectId }, this.enterEpisode(runId, gateCommand, ["(no test ran)"]), "gate_no_test",
         `Проверка после слияния (${label}) завершилась без единого теста: ${reading.reason}.`,
@@ -478,6 +574,7 @@ export class IntegrationGateRunner {
     // writer can fix it in owns_paths, so no culprit, no bisect, no fix turn. The merges stay counted for the next run.
     if (isEnvironmentCheckFailure({ stdout, stderr })) {
       const evidence = `${stderr}\n${stdout}`.split("\n").find((line) => isEnvironmentCheckFailure({ stderr: line }))?.trim().slice(0, 300) ?? "";
+      finishGateRun(db, gateRunId, "not_run", { head: ran.head ?? null, reason: `machine: ${evidence.slice(0, 200)}` });
       this.ctx.log(`infra: integration gate \`${gateCommand}\` is red from the environment, no culprit searched: ${evidence}`);
       this.noteRed({ runId, projectId }, this.enterEpisode(runId, gateCommand, ["(environment)"]), "gate_machine",
         `Проверка после слияния (${label}) красная из-за машины, а не кода: ${evidence}.`,
@@ -521,6 +618,7 @@ export class IntegrationGateRunner {
             exitCode: 0,
             passed: true,
             mergesChecked: batch.length,
+            head: rechecked.head ?? ran.head ?? null,
             note: `rechecked: timeouts passed on the second run (${evidence.classification})`,
             flakyEvidence: evidence,
             recheckedTests: failingTests.map(testLabel),
@@ -545,6 +643,7 @@ export class IntegrationGateRunner {
         closeOwnerItemsByPrefix(this.ctx.db as never, `gate-red:${runId}:`, "gate green"); // the red rows of this run leave the owner's list (Gemini F-006.3)
         this.consumePending(key, batch.length);
         if (rechecked.head) this.lastGreenCommits.set(key, rechecked.head);
+        finishGateRun(db, gateRunId, "passed", { head: rechecked.head ?? ran.head ?? null });
         return { ran: true, passed: true };
       }
 
@@ -621,6 +720,8 @@ export class IntegrationGateRunner {
 
     // Reset this scope's counts for the next cycle; merges that landed during the run stay queued.
     this.consumePending(key, batch.length);
+    finishGateRun(db, gateRunId, "failed", { head: activeHead ?? ran.head ?? null,
+      reason: (failingTests.length ? failingTests.slice(0, 3).map(testLabel).join(", ") : `exit ${activeExitCode}`).slice(0, 300) });
 
     // An unhandled error outside any test fails the run with every test green; its block sits above the summary the log tail ends with.
     const unhandled = unhandledErrorBlock(`${activeStderr}\n${activeStdout}`);
