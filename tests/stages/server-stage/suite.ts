@@ -1420,12 +1420,13 @@ describe("stage → native writer → receipt", () => {
     const {db,harness,spawned}=await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,{"plan_critique.enabled":false,"writer.fallback1.provider":"","writer.fallback2.provider":""},undefined,undefined,undefined,undefined,undefined,undefined,false,0,{providerId:"critic",model:"critic-model"});
     await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,objective:"Проверка диспетча",plan:"Write a verified fixture",task},{threadId:pmThreadId,projectId});
     await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:3},{threadId:pmThreadId,projectId});
-    expect(spawned.filter((row)=>((row.pluginMetadata as Record<string,unknown>).role)==="writer")).toHaveLength(0);
-    const fallback=spawned.filter((row)=>((row.pluginMetadata as Record<string,unknown>).role)==="emergency-writer");
-    expect(fallback).toHaveLength(1);
-    expect(fallback[0]).toMatchObject({providerId:"critic",model:"critic-model"});
+    // H2 (2026-11-02): the held writer spends no attempt; the next member of the chain spawns in the same attempt, as the writer.
+    const writers=spawned.filter((row)=>((row.pluginMetadata as Record<string,unknown>).role)==="writer");
+    expect(writers).toHaveLength(1);
+    expect(writers[0]).toMatchObject({providerId:"critic",model:"critic-model"});
+    expect(spawned.filter((row)=>((row.pluginMetadata as Record<string,unknown>).role)==="emergency-writer")).toHaveLength(0);
     const attempts=db.prepare("SELECT state,reason FROM lane_pilot_attempt WHERE task_id=? ORDER BY attempt_no").all(task.id) as Array<{state:string;reason:string|null}>;
-    expect(attempts[0]).toMatchObject({state:"blocked",reason:expect.stringContaining("writer_provider_unavailable:usage_window:codex/gpt-6-luna")});
+    expect(attempts).toHaveLength(1);
     expect(attempts.at(-1)?.state).toBe("accepted");
     expect(countChargedAttempts(db,"stage-run",task.id)).toBe(1);
     const health=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_run_health",{runId:"stage-run"},{threadId:pmThreadId,projectId})));

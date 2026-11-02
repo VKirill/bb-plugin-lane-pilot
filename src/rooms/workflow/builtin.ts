@@ -43,6 +43,7 @@ import lpHarnessEdit from "../../../workflows/lp.harness-edit.json";
 import lpCriticEdit from "../../../workflows/lp.critic-edit.json";
 import lpModelRebench from "../../../workflows/lp.model-rebench.json";
 import lpHarnessReflect from "../../../workflows/lp.harness-reflect.json";
+import lpJevLabels from "../../../workflows/lp.jev-labels.json";
 import lpWallHunt from "../../../workflows/lp.wall-hunt.json";
 import lpRoute from "../../../workflows/lp.route.json";
 import lpRulesAsk from "../../../workflows/lp.rules-ask.json";
@@ -138,6 +139,7 @@ export const BUILTIN_SOURCES: ReadonlyArray<{ name: string; value: unknown }> = 
   { name: "lp.critic-edit.json", value: lpCriticEdit },
   { name: "lp.model-rebench.json", value: lpModelRebench },
   { name: "lp.harness-reflect.json", value: lpHarnessReflect },
+  { name: "lp.jev-labels.json", value: lpJevLabels },
   { name: "lp.wall-hunt.json", value: lpWallHunt },
   { name: "lp.route.json", value: lpRoute },
   { name: "lp.rules-ask.json", value: lpRulesAsk },

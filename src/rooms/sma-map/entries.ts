@@ -510,7 +510,7 @@ export const SMA_ENTRIES: Readonly<Record<string, SmaEntry>> = {
   n500: ["have", "девять разрешённых полей", "src/rooms/outbound/outbound.ts#export const EVENT_FIELDS"],
   n501: ["have", "нет адреса — тишина", "src/rooms/outbound/outbound.ts#No address, no post"],
   n502: ["have", "позвать человека в Telegram", "src/rooms/owner-waiting/push.ts#export function planDigest("],
-  n503: ["have", "четыре причины позвать", "src/rooms/owner-waiting/push.ts#export const CALL_REASONS"],
+  n503: ["have", "четыре причины позвать", "src/rooms/owner-waiting/items.ts#export const CALL_REASONS"],
   n504: ["have", "сводка приёмки одним сообщением", "src/rooms/owner-waiting/push.ts#export function planDigest("],
   n505: ["have", "одно ожидание — одно сообщение", "src/rooms/owner-waiting/push.ts#export function ackDigest("],
   n506: ["have", "память звонков на диске", "src/rooms/owner-waiting/push.ts#lane_pilot_owner_push"],

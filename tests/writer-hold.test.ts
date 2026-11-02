@@ -90,6 +90,15 @@ describe("walkWriterChain", () => {
     expect(walk.allUnsupported).toBe(false);
   });
 
+  it("a usage window nearly spent on every member is a forecast, not a refusal: the writer itself is the pick (no park)", async () => {
+    const walk = await walkWriterChain(
+      [{ providerId: "claude-code", model: "sonnet" }, { providerId: "codex", model: "gpt" }],
+      { hostId: "h1", settings: {} },
+      { ...deps({}), usage: { hold: async () => ({ percent: 97, window: "5h", resetsAt: new Date(NOW + 3_600_000).toISOString() }) } }, NOW);
+    expect(walk.free).toMatchObject({ index: 0 });
+    expect(walk.holds).toHaveLength(2);
+  });
+
   it("all core_unsupported → allUnsupported, wakeAt null", async () => {
     const walk = await walkWriterChain(
       [{ providerId: "devin", model: "d" }, { providerId: "devin", model: "e" }],

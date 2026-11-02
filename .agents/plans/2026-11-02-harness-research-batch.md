@@ -15,13 +15,20 @@ research on where agent harnesses go. Base 0.1.477 (669f9f39). One release for t
 | 5 | Rules: PM rule use is recorded, so the trial can confirm or retire PM rules too; the rules page shows hits | me | `src/rooms/learning/pm-rules.ts`, `packages/run-insights/src/rules.ts` | no rule in force without a recorded use after 60 days |
 | 6 | (owner's question tonight) `test_fit` respects an intended test removal declared in the contract (`test_removals`), and its refusal tells the PM the field | me | `packages/contracts/src/schemas.ts`, `src/rooms/writer/server/finish.ts`, tools | a cleanup task passes without a trip to another chat |
 
-## Streams
+## Streams (both done 2026-11-02 ~04:30 Madrid, merged into main for 0.1.478)
 
 | Stream | Branch | Worktree | Brief |
 |---|---|---|---|
-| H1 judge labels | swe2/h1-judge-labels | ~/BB-service/wt/h1-judge-labels | `.bb/chats/thr_6pwx5dw9f8/tmp/brief-h1.md` |
-| H2 attempt waste | swe2/h2-attempt-waste | ~/BB-service/wt/h2-attempt-waste | `.bb/chats/thr_6pwx5dw9f8/tmp/brief-h2.md` |
+| H1 judge labels | swe2/h1-judge-labels (cca957cc) | ~/BB-service/wt/h1-judge-labels | `.bb/chats/thr_6pwx5dw9f8/tmp/brief-h1.md` · thread thr_rf4f276qkd |
+| H2 attempt waste | swe2/h2-attempt-waste (8ef17ffa) | ~/BB-service/wt/h2-attempt-waste | `.bb/chats/thr_6pwx5dw9f8/tmp/brief-h2.md` · thread thr_8ajqd7r258 |
 
 ## Not doing (the research said no)
 Event-sourced status; per-step model routing; an architect that drafts graphs from a blank page; automatic promotion of any
 autonomy class before N ≥ 20 labeled decisions; more memory notes to writers (the narrow-brief bench arm decides that).
+
+## Measure again (~2026-11-09 and ~2026-11-16)
+- Judges: `bb lane-pilot jev calibrate --by-source` — which judgments reached 50 labels; accuracy per judge; then wire `judgeAccuracy` into the lead's tiers (the open step).
+- Writers: `bb lane-pilot metrics <project>` — `attemptsPerAcceptedTask` (was 1.66) and `heldShare`; blocked share of attempts (was 40 %).
+- Owner: `bb lane-pilot waiting` — `answered` (owner vs agent vs janitor) and whether the «later» list grows without end.
+- Rules: PM rules confirmed/retired in `lane_pilot_rule_event`; any PM rule still `trial` with 0 `shown` after 14 days means a prompt site is missed.
+- Lead: the first «Навык для:» proposals; did the PM intake produce a SKILL.md.

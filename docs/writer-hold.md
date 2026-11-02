@@ -53,3 +53,5 @@ Where the walk happens:
   (attempts journaled `waiting_writer:` / all).
 
 The spawn gate in `spawn.ts` keeps every check — the hold is advisory, the gate is the last line of defence.
+
+A usage window «nearly spent» on every member of the chain is a forecast, not a refusal: `walkWriterChain` then picks the writer itself (the rule of the old pre-block: nothing is skipped when no other pair has room) instead of parking the task until the windows reset. A hard hold anywhere — the owner at the keyboard, an open breaker, the core's allowlist — parks as described above.

@@ -174,8 +174,9 @@ describe("rule scope and trial", () => {
     expect(decideRuleTrial({ ...rule, revision: RULE_TRIAL.maxRevisions }, stats(6, 2), now)).toEqual({ action: "retire", reason: "kept_recurring" });
     expect(decideRuleTrial({ ...rule, trialState: "confirmed" }, stats(9, 0), now)).toEqual({ action: "keep" });
     expect(decideRuleTrial(rule, stats(0, 0, null), now + RULE_TRIAL.unusedAfterMs)).toEqual({ action: "retire", reason: "unused" });
-    // [Gemini F-010] A PM rule records no use: it is never «unused» (it would have left at 60 days however often the PM read it).
-    expect(decideRuleTrial({ ...rule, audience: "pm" as const }, stats(0, 0, null), now + RULE_TRIAL.unusedAfterMs)).toEqual({ action: "keep" });
+    // [Gemini F-010, closed 2026-11-02] A PM rule's uses are its `shown` events now (logRulesShown), so one nobody needed for 60 days leaves like any other.
+    expect(decideRuleTrial({ ...rule, audience: "pm" as const }, stats(0, 0, null), now + RULE_TRIAL.unusedAfterMs)).toEqual({ action: "retire", reason: "unused" });
+    expect(decideRuleTrial({ ...rule, audience: "pm" as const }, stats(1, 1, now + RULE_TRIAL.unusedAfterMs - 1), now + RULE_TRIAL.unusedAfterMs)).toEqual({ action: "keep" });
     expect(decideRuleTrial({ ...rule, audience: "both" as const }, stats(0, 0, null), now + RULE_TRIAL.unusedAfterMs)).toEqual({ action: "retire", reason: "unused" });
     expect(decideRuleTrial({ ...rule, audience: "writer" as const }, stats(0, 0, null), now + RULE_TRIAL.unusedAfterMs)).toEqual({ action: "retire", reason: "unused" });
     // Rank 13: a rule writers keep rejecting when given stays on trial — under 80% accepted is no confirmation.

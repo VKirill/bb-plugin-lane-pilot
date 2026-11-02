@@ -14,7 +14,7 @@ import { HUB_SPECS, PROJECT_DEFAULT_KEYS, settingValue } from "../keys";
 import { LEAD_SETTING_KEYS } from "../../lead";
 import { listJudgments } from "@lane-pilot/jev";
 import { calibrateReceipts } from "@lane-pilot/jev";
-import "../../jev/judgments";
+import "../../jev";
 
 /** The checks and defaults that are project-level settings read at the global level here (the page edits the default every project starts from). */
 export const IMPROVEMENT_PROJECT_KEYS = [...PROJECT_DEFAULT_KEYS, "plan_fact.mode", "critic.code.default_for_risk", "memory.note_budget"] as const;

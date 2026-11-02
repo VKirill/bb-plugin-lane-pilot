@@ -1,7 +1,7 @@
 import { breakerKey } from "@lane-pilot/resilience";
 import { PRESENCE_WINDOW_MS } from "../../owner-presence";
 import { usageHoldReason, usageSkipPercent } from "../../usage/server";
-import type { UsageHold } from "../../usage/server/provider-usage";
+import type { UsageHold } from "../../usage/server";
 import type { createProviderBreaker } from "@lane-pilot/resilience";
 import type { Presence } from "../../owner-presence";
 
@@ -97,6 +97,9 @@ export async function walkWriterChain<T extends WriterCandidate>(
     if (hold) holds.push({ member, hold });
     else if (!free) free = { member, index };
   }
+  // A usage window «nearly spent» on every member is a forecast, not a refusal (the old pre-block: «nothing is skipped when no other pair
+  // has room»): the writer itself is tried rather than parked for hours on a soft signal. A hard hold anywhere (presence, breaker, core) parks.
+  if (!free && holds.length > 0 && holds.every((row) => /usage_window/u.test(row.hold.reason))) free = { member: members[0]!, index: 0 };
   const timed = holds.flatMap((row) => (row.hold.until !== null ? [row.hold.until] : []));
   const shortest = holds.slice().sort((a, b) => {
     if (a.hold.until === null) return 1;
