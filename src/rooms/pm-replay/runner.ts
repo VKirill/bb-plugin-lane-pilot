@@ -10,7 +10,8 @@ import type { Scenario } from "./store";
  */
 
 const SCRIPT = readFileSync(join(__dirname, "../../../scripts/pm-replay/pm-replay.mjs"), "utf8");
-const DIR = ".lane-pilot/pm-replay";
+// Absolute: the host RPC refuses a relative cwd. /tmp keeps the bundle out of every repository.
+const DIR = "/tmp/lp-pm-replay";
 
 export type ReplayRunResult = { verdict: string; why: string; calls: Array<{ tool: string; args: unknown }>; costUsd: number; reply: string; error?: string };
 
@@ -29,7 +30,7 @@ export async function stageBundle(host: RunCommandHost, input: {
   ];
   for (const [arm, prompt] of Object.entries(input.arms)) files.push([`${dir}/prompt-${arm}.txt`, prompt]);
   const command = files.map(([path, text]) => `mkdir -p $(dirname ${path}) && printf %s ${b64(text)} | base64 -d > ${path}`).join(" && ");
-  const ran = await runOnHost(host, { hostId: input.hostId, cwd: ".", command: `command -v node >/dev/null && command -v claude >/dev/null && ${command}`, timeoutSec: 60 }).catch((cause: unknown) => ({ hostId: input.hostId, exitCode: 1, stdout: "", stderr: String(cause) }));
+  const ran = await runOnHost(host, { hostId: input.hostId, cwd: "/tmp", command: `command -v node >/dev/null && command -v claude >/dev/null && ${command}`, timeoutSec: 60 }).catch((cause: unknown) => ({ hostId: input.hostId, exitCode: 1, stdout: "", stderr: String(cause) }));
   if (ran.exitCode !== 0) return { error: `host has no node/claude or the write failed: ${ran.stderr.slice(0, 300)}` };
   return { dir };
 }
@@ -40,7 +41,7 @@ export async function runScenario(host: RunCommandHost, input: {
 }): Promise<ReplayRunResult> {
   const work = `${input.dir}/run-${input.arm}-${input.scenarioId}-${input.sample ?? 1}`;
   const cmd = `cd ${input.dir} && node -e "const s=JSON.parse(require('fs').readFileSync('scenarios.json','utf8'));const x=s.find(y=>y.id==='${input.scenarioId}');if(!x)process.exit(3);require('fs').writeFileSync('one.json',JSON.stringify(x))" && node pm-replay.mjs run --scenario one.json --surface surface.json --prompt prompt-${input.arm}.txt --workdir ${work}`;
-  const ran = await runOnHost(host, { hostId: input.hostId, cwd: ".", command: cmd, timeoutSec: input.timeoutSec ?? 700 }).catch((cause: unknown) => ({ hostId: input.hostId, exitCode: 1, stdout: "", stderr: String(cause) }));
+  const ran = await runOnHost(host, { hostId: input.hostId, cwd: "/tmp", command: cmd, timeoutSec: input.timeoutSec ?? 700 }).catch((cause: unknown) => ({ hostId: input.hostId, exitCode: 1, stdout: "", stderr: String(cause) }));
   const line = ran.stdout.trim().split("\n").pop() ?? "";
   try {
     const out = JSON.parse(line) as { verdict?: string; why?: string; calls?: Array<{ tool: string; args: unknown }>; cost_usd?: number; reply?: string };

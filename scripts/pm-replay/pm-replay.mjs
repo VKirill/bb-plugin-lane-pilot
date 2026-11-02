@@ -10,11 +10,11 @@
 // surface dump (canned answers from the scenario's `responses`), records every call, then asks a judge model to
 // grade the turn against the scenario's should/fail_if. Stdout: {"verdict","why","calls","cost_usd","reply"}.
 import { spawnSync } from "node:child_process";
-import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 const args = process.argv.slice(2);
 const flag = (name, dflt) => { const i = args.indexOf(`--${name}`); return i >= 0 ? args[i + 1] : dflt; };
@@ -92,9 +92,17 @@ function mechanicalVerdict(scenario, calls) {
 
 function run() {
   const scenario = JSON.parse(readFileSync(flag("scenario"), "utf8"));
-  const surface = flag("surface"), prompt = flag("prompt");
+  // Absolute: claude runs in the workdir, so a relative prompt or surface path would resolve there.
+  const surface = resolve(flag("surface")), prompt = resolve(flag("prompt"));
   const workdir = flag("workdir") ?? mkdtempSync(join(tmpdir(), "pm-replay-"));
   mkdirSync(workdir, { recursive: true });
+  // A PM opened in a bare temp folder says «no project here» and does nothing (seen in the manual eval): give it a small git project.
+  if (!existsSync(join(workdir, ".git"))) {
+    mkdirSync(join(workdir, "src", "pages"), { recursive: true });
+    writeFileSync(join(workdir, "README.md"), "# Site\nNuxt site. Pages in src/pages.\n");
+    writeFileSync(join(workdir, "src", "pages", "index.vue"), "<template><main>Home</main></template>\n");
+    spawnSync("sh", ["-c", "git init -q && git add -A && git -c user.email=replay@lp -c user.name=replay commit -qm init"], { cwd: workdir });
+  }
   const responsesPath = join(workdir, "responses.json");
   writeFileSync(responsesPath, JSON.stringify(scenario.responses ?? {}));
   const callsPath = join(workdir, "calls.jsonl");
