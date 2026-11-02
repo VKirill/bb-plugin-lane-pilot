@@ -1,0 +1,125 @@
+{
+  "note": "Original gitIntegrate inputs and results from MAC Mini jobs, 2026-11-02 04:56-04:58 UTC; read through bb file read.",
+  "incidents": [
+    {
+      "jobId": "job_mvyse9z7623ebf8c1b",
+      "input": {
+        "requestedHostId": "host_7sea4qaad8",
+        "basePath": "/Users/vechkasov/Documents/BB-сервис/plugins/bb-plugin-pokecut-theme",
+        "worktreePath": "/Users/vechkasov/.lane-pilot/worktrees/docs-440ce2f44f6f/bb-plugin-pokecut-theme",
+        "message": "docs: earlier pass",
+        "committedOnly": true
+      },
+      "result": {
+        "ok": true,
+        "value": {
+          "hostId": "host_7sea4qaad8",
+          "status": "failed",
+          "commit": null,
+          "conflicts": [],
+          "reason": "worktree head: spawn git ENOENT"
+        }
+      }
+    },
+    {
+      "jobId": "job_mvyseqfw4f03e63cc5",
+      "input": {
+        "requestedHostId": "host_7sea4qaad8",
+        "basePath": "/Users/vechkasov/Documents/BB-сервис/plugins/bb-plugin-file-gateway",
+        "worktreePath": "/Users/vechkasov/.lane-pilot/worktrees/docs-9c3f424bb093/bb-plugin-file-gateway",
+        "message": "docs: earlier pass",
+        "committedOnly": true
+      },
+      "result": {
+        "ok": true,
+        "value": {
+          "hostId": "host_7sea4qaad8",
+          "status": "failed",
+          "commit": null,
+          "conflicts": [],
+          "reason": "worktree head: spawn git ENOENT"
+        }
+      }
+    },
+    {
+      "jobId": "job_mvysesbca3b9d1955f",
+      "input": {
+        "requestedHostId": "host_7sea4qaad8",
+        "basePath": "/Users/vechkasov/Documents/BB-сервис/plugins/bb-plugin-paste-file",
+        "worktreePath": "/Users/vechkasov/.lane-pilot/worktrees/docs-3805cde68f00/bb-plugin-paste-file",
+        "message": "docs: earlier pass",
+        "committedOnly": true
+      },
+      "result": {
+        "ok": true,
+        "value": {
+          "hostId": "host_7sea4qaad8",
+          "status": "failed",
+          "commit": null,
+          "conflicts": [],
+          "reason": "worktree head: spawn git ENOENT"
+        }
+      }
+    },
+    {
+      "jobId": "job_mvyseu4hdaec092ab5",
+      "input": {
+        "requestedHostId": "host_7sea4qaad8",
+        "basePath": "/Users/vechkasov/Documents/BB-сервис/plugins/bb-plugin-repo-pulse",
+        "worktreePath": "/Users/vechkasov/.lane-pilot/worktrees/docs-dd1926ff778b/bb-plugin-repo-pulse",
+        "message": "docs: earlier pass",
+        "committedOnly": true
+      },
+      "result": {
+        "ok": true,
+        "value": {
+          "hostId": "host_7sea4qaad8",
+          "status": "failed",
+          "commit": null,
+          "conflicts": [],
+          "reason": "worktree head: spawn git ENOENT"
+        }
+      }
+    },
+    {
+      "jobId": "job_mvysew1p7c959db875",
+      "input": {
+        "requestedHostId": "host_7sea4qaad8",
+        "basePath": "/Users/vechkasov/Documents/BB-сервис/plugins/claude-lane-stack",
+        "worktreePath": "/Users/vechkasov/.lane-pilot/worktrees/docs-cfaca5d84770/claude-lane-stack",
+        "message": "docs: earlier pass",
+        "committedOnly": true
+      },
+      "result": {
+        "ok": true,
+        "value": {
+          "hostId": "host_7sea4qaad8",
+          "status": "failed",
+          "commit": null,
+          "conflicts": [],
+          "reason": "worktree head: spawn git ENOENT"
+        }
+      }
+    },
+    {
+      "jobId": "job_mvysgphk61790d324b",
+      "input": {
+        "requestedHostId": "host_7sea4qaad8",
+        "basePath": "/Users/vechkasov/Documents/BB-сервис/plugins/bb-plugin-git-history",
+        "worktreePath": "/Users/vechkasov/.lane-pilot/worktrees/docs-53de7c0c9c39/bb-plugin-git-history",
+        "message": "docs: earlier pass",
+        "committedOnly": true
+      },
+      "result": {
+        "ok": true,
+        "value": {
+          "hostId": "host_7sea4qaad8",
+          "status": "failed",
+          "commit": null,
+          "conflicts": [],
+          "reason": "worktree head: spawn git ENOENT"
+        }
+      }
+    }
+  ]
+}

@@ -203,20 +203,29 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
   async function docsWorktree(place:{hostId:string;path:string}):Promise<{hostId:string;path:string}> {
     const name=`docs-${sha256(place.path).slice(0,12)}`, key=`docs-worktree:${place.hostId}:${name}`;
     const known=await bb.storage.kv.get(key).catch(()=>null) as {path?:string}|null;
+    let missing=false;
     if(known?.path){
-      const open=(await bb.storage.kv.get(DOCS_UNITS_OPEN_KEY).catch(()=>null) as Record<string,true>|null)??{};
-      for(const unitKey of Object.keys(open)){
-        const record=await bb.storage.kv.get(unitKey).catch(()=>null) as DocsUnitRecord|null;
-        if(record?.place.path===known.path) return {hostId:place.hostId,path:known.path};
+      // A durable marker can outlive its folder. Recreate a missing copy through gitCreateWorktree, which keeps
+      // an unmerged lane branch; a failed inspection must keep the marker and the work for a later retry.
+      const state=await host.call("gitWorktreeState",{requestedHostId:place.hostId,basePath:place.path,worktreePath:known.path},{hostId:place.hostId,timeoutMs:120_000});
+      if(state.status==="failed") throw new Error(`docs_worktree_inspection_failed: ${state.reason}`);
+      missing=state.status==="missing";
+      if(state.status==="ready"){
+        const open=(await bb.storage.kv.get(DOCS_UNITS_OPEN_KEY).catch(()=>null) as Record<string,true>|null)??{};
+        for(const unitKey of Object.keys(open)){
+          const record=await bb.storage.kv.get(unitKey).catch(()=>null) as DocsUnitRecord|null;
+          if(record?.place.path===known.path) return {hostId:place.hostId,path:known.path};
+        }
+        // Its committed pages reach main before it goes; a busy main waits for the next tick.
+        const merged=await mergeDocs(place.path,{hostId:place.hostId,path:known.path},"docs: earlier pass",true);
+        if(merged==="busy") throw new Error("docs_worktree_merge_busy: main is merging other work; the pass retries");
+        await host.call("gitRemoveWorktree",{requestedHostId:place.hostId,basePath:place.path,worktreePath:known.path},{hostId:place.hostId,timeoutMs:120_000}).catch(()=>null);
+        await bb.storage.kv.delete(key).catch(()=>undefined);
       }
-      // Its committed pages reach main before it goes; a busy main waits for the next tick.
-      const merged=await mergeDocs(place.path,{hostId:place.hostId,path:known.path},"docs: earlier pass",true);
-      if(merged==="busy") throw new Error("docs_worktree_merge_busy: main is merging other work; the pass retries");
-      await host.call("gitRemoveWorktree",{requestedHostId:place.hostId,basePath:place.path,worktreePath:known.path},{hostId:place.hostId,timeoutMs:120_000}).catch(()=>null);
-      await bb.storage.kv.delete(key).catch(()=>undefined);
     }
     const created=await host.call("gitCreateWorktree",{requestedHostId:place.hostId,basePath:place.path,name},{hostId:place.hostId,timeoutMs:120_000}).catch((cause)=>({status:"failed" as const,path:null,reason:cause instanceof Error?cause.message:String(cause)}));
     if(created.status!=="ready"||!created.path){
+      if(missing) throw new Error(`docs_worktree_recovery_failed: ${created.reason}`);
       bb.log.warn(`Lane Pilot docs worktree for ${place.path} not created (${created.reason}); the pass works in the checkout`);
       return place;
     }

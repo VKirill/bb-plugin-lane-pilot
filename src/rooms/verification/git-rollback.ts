@@ -24,7 +24,12 @@ export type WorktreeState = {
 /** What a worktree holds now and where it started, without touching it. Used when a stop is confirmed and before a failed attempt's worktree goes. */
 export async function worktreeState(input:{basePath:string;worktreePath:string}):Promise<WorktreeState> {
   const empty = (status:WorktreeState["status"], reason:string|null):WorktreeState => ({status,head:null,base:null,dirty:0,ahead:0,changed:[],reason});
-  if(!(await stat(input.worktreePath).catch(()=>null))?.isDirectory()) return empty("missing",null);
+  try {
+    if(!(await stat(input.worktreePath)).isDirectory()) return empty("missing",null);
+  } catch(cause) {
+    if(["ENOENT","ENOTDIR"].includes((cause as NodeJS.ErrnoException).code??"")) return empty("missing",null);
+    return empty("failed",cause instanceof Error?cause.message:String(cause));
+  }
   const head=await git(input.worktreePath,["rev-parse","HEAD"]);
   if(!head.ok||!SHA.test(head.stdout.trim())) return empty("failed",head.ok?"HEAD is not a commit":head.reason);
   const baseHead=await git(input.basePath,["rev-parse","HEAD"]);
