@@ -25,9 +25,12 @@ export function resetSkillTreeCache(): void {
 }
 
 export function parseSkillTree(raw: string): SkillTree {
-  const parsed = JSON.parse(raw) as { sections?: unknown; skills?: unknown };
-  if (!Array.isArray(parsed.sections) || !Array.isArray(parsed.skills)) throw new Error("skill_tree_shape");
-  return parsed as SkillTree;
+  // bb core prints `{ tree: { sections }, skills }`; an older core printed `{ sections, skills }` (until 2026-11-02 only that was read,
+  // and every writer's skill pick silently went without the tree).
+  const parsed = JSON.parse(raw) as { sections?: unknown; skills?: unknown; tree?: { sections?: unknown } };
+  const sections = parsed.sections ?? parsed.tree?.sections;
+  if (!Array.isArray(sections) || !Array.isArray(parsed.skills)) throw new Error("skill_tree_shape");
+  return { ...parsed, sections } as SkillTree;
 }
 
 /** Words of 4+ letters. Short tokens («3d», «ui») match too much of the tree. */

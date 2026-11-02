@@ -86,3 +86,13 @@ describe("pm skill use", () => {
     expect(viaRead.stdout).toContain("lane-pilot-ops — 3 (2 threads)");
   });
 });
+
+import { parseSkillTree } from "../src/rooms/writer/server/skill-tree";
+describe("parseSkillTree", () => {
+  it("reads the core's { tree: { sections }, skills } and the old flat shape", () => {
+    const skills = [{ name: "a" }];
+    expect(parseSkillTree(JSON.stringify({ tree: { sections: [{ id: "dev" }] }, skills })).sections).toEqual([{ id: "dev" }]);
+    expect(parseSkillTree(JSON.stringify({ sections: [{ id: "dev" }], skills })).sections).toEqual([{ id: "dev" }]);
+    expect(() => parseSkillTree(JSON.stringify({ skills }))).toThrow("skill_tree_shape");
+  });
+});
