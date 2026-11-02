@@ -27,6 +27,10 @@ the table says so.
 | waits on another task (`depends_on`, overlapping owns_paths) | Queued behind it | Nothing. A blocker you verified by hand: `lane_pilot_update_task` (taskId, satisfied: true) |
 | merge held by another chat (`blockedBy`) | Uncommitted edits or a holder in the same checkout | `lane_pilot_relay {action:"ask"}` to the holder, end the turn |
 | run paused | Someone paused it | `bb lane-pilot resume <run-id>` when the reason is gone |
+| merge conflict with main | Main moved under the task; it goes back to the task's own writer (main merged into its worktree, it keeps main's work, no attempt spent). Uncommitted edits in the base checkout are not a conflict: Lane Pilot asks the chats in that folder to commit, then merges | Wait. Do not rebase, commit others' edits or redispatch |
+| `waiting_secret:NAME` | The check needs a name missing from Env Catalog, or left out of the project's non-empty `secrets.allow` | `env_request` for a missing name; otherwise add it to `secrets.allow`. No attempt is spent; the task starts once the value is saved |
+| `blockedBy` that does not move | The holder's state, output and `retryAfterSec` stopped changing | Tell the owner in one message what you tried and what to choose |
+| `depends_on` a blocked task | Dependents wait up to 6 hours | Fix and redispatch the blocked one; they start once it is accepted. Do not resend them |
 
 ## 2. A task is blocked
 
@@ -36,8 +40,15 @@ the table says so.
 | `needs_human: <question>` / `verdict_block: question_unanswered` | Answer it: `lane_pilot_answer_writer` (taskId, answer). A question about checks or paths: fix the contract with `lane_pilot_update_task` |
 | `dispatch interrupted by a reload …; send the task again` | Send it again with `lane_pilot_dispatch_writer` (same contract) |
 | `owns_paths rejected`, `repo_edited`, a stray file | The contract is too narrow or the writer strayed: widen owns_paths with `lane_pilot_update_task`, or send a feedback turn |
-| Lane Pilot's own fault (`internal_error`, `reconcile_*`, `merge_failed`, `spawn failed`, `thread_provisioning_failed`) | Parked, not lost: a repair thread fixes Lane Pilot and the task restarts. Nothing to do; say so in one line |
+| Lane Pilot's own fault (`internal_error`, `reconcile_*`, `attempt_worktree_*`, `merge_failed`, `spawn failed`, `thread_provisioning_failed`, `snapshot_failed`, `execution_packet_failed`) or the machine's (no disk space, git lock, host offline) | Parked, not lost: a repair thread fixes Lane Pilot and the task restarts from its writer stage by itself (a machine fault: after a short wait); Lane Pilot tells you which. Nothing to do; say so in one line. Do not diagnose or patch Lane Pilot, `~/.lane-pilot` or the hub |
+| dispatch refused `task_in_progress` | A task of that family runs or is parked: `lane_pilot_update_task` or `lane_pilot_answer_writer` instead |
+| dispatch refused `topic_loop` | Send nothing more on that topic; tell the owner what keeps failing |
 | the same failure twice | Stop resending. `bb lane-pilot timeline <task-id>` and name the cause before a third try |
+
+## 2b. A folder without git (`mode live-folder`)
+
+No worktree, commit, merge or shipping; one writer per folder, so tasks queue. A task that is not accepted is rolled back from a
+backup of its `owns_paths`; files outside `owns_paths` are not. Keep `owns_paths` narrow; a folder over 50 000 files needs git.
 
 ## 3. A graph (workflow) failed or stopped
 
