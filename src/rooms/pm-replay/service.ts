@@ -34,7 +34,7 @@ type RunDeps = {
 export function createPmReplay(ctx: ServerCore, services: Services) {
   const { bb, db } = ctx;
   const kv = bb.storage.kv as unknown as { get<T>(key: string): Promise<T | null | undefined>; set(key: string, value: never): Promise<unknown> };
-  const host = ctx as unknown as Parameters<typeof stageBundle>[0] extends never ? never : import("@lane-pilot/host-calls").RunCommandHost;
+  const host = ctx.host;
 
   const tools = () => pmSurfaceTools(registeredTools(bb.agents));
   const toolNames = () => tools().map((tool) => tool.name);

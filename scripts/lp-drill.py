@@ -1329,7 +1329,7 @@ def scenario_deferrals(tmp: Path) -> dict:
 
 def scenario_lead_shadow(tmp: Path) -> dict:
     """The lead («Штурман») in shadow (roadmap WP3/WP4 acceptance): the running plugin answers lead_state; the drill never switches
-    lead.enabled on, so no tick runs by itself here; no class decides without an exam row behind it and money / external stay owner_only;
+    lead.enabled on, so no tick runs by itself here; no class decides without an exam row or a policy start at decides, and money / external stay owner_only;
     the CLI's status, rights, exam and road read the same rows without an error. A tick's own run needs an agent and is checked on the live hub."""
     try:
         state = setting_rpc("lead_state", {})
@@ -1343,8 +1343,10 @@ def scenario_lead_shadow(tmp: Path) -> dict:
     if len(rights) < 7:
         problems.append(f"the rights table lists {len(rights)} classes, the policy has 7")
     for row in rights:
-        if row.get("tier") == "decides" and not row.get("exam"):
-            problems.append(f"class {row.get('class')} decides without an exam row behind it")
+        # Policy v2 (owner's word 2026-11-02) starts the safe classes at decides; a class may decide without an exam only
+        # when the policy file starts it there — the exam alone must not open one the file keeps at proposes.
+        if row.get("tier") == "decides" and not row.get("exam") and row.get("start") != "decides":
+            problems.append(f"class {row.get('class')} decides without an exam row behind it or a policy start at decides")
     for cls in ("money", "external"):
         if tiers.get(cls) != "owner_only":
             problems.append(f"class {cls} is {tiers.get(cls)}, the policy keeps it owner_only")
