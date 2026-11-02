@@ -16,6 +16,7 @@ import { notifyWorkflowIfEnded } from "./pm-notice";
 import { registerDispatchExecutors } from "../../writer/server";
 import { createAfterAcceptStarter, registerAfterAcceptExecutors } from "./after-accept";
 import { registerInvoiceActions } from "./workflow-invoice";
+import { registerTelegramActions } from "./workflow-telegram";
 import { registerAnamnesisActions } from "../../anamnesis";
 import { anamnesisFor } from "../../anamnesis";
 import type { ServerCore } from "../../core/server";
@@ -73,6 +74,7 @@ export function createWorkflowEngine(ctx: ServerCore, services: Services) {
   registerChainExecutors(engine, ctx, services, workflowAgents);
   // The invoice check of `invoice-send` (a Jev judgment behind a chain action).
   registerInvoiceActions(engine, ctx);
+  registerTelegramActions(engine, ctx);
   // The public-only facts of the anamnesis for `about-site`, `resume` and `year-review`, and the check of what they wrote.
   registerAnamnesisActions(engine, ctx, (core) => anamnesisFor(core).hub);
   bb.onDispose(() => engine.dispose());

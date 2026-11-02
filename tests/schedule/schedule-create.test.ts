@@ -25,6 +25,7 @@ function world(save?: Save) {
   const sends: unknown[] = [];
   engine.register("agent", { reentrant: true, run: async (c: any) => { sends.push(c.input.with); return { output: { status: "sent", message_id: "m-1", message_url: "", reason: "", handoff: "sent" } }; } });
   engine.register("telegram.send_rich", { reentrant: true, run: async () => ({ output: { message_id: "", status: "ok" } }) });
+  engine.register("telegram.send_file", { reentrant: true, run: async () => ({ output: { status: "failed", message_id: "", message_url: "", reason: "not in this test" } }) });
   registerAgentRoutineActions(engine, ctx, services);
   const run = async (inputs: Record<string, unknown>) => {
     const started = engine.start({ workflow: builtinWorkflow("telegram-send")!, inputs: { chat: "@ivan", text: "доброе утро", file_path: "", report_chat: "", ...inputs }, runtime: { ctx, services, pmThreadId: null, projectId: "p1", runId: null } as never });
@@ -54,7 +55,7 @@ describe("schedule.create", () => {
     expect(w.saves[0]!.by).toBe(`workflow:${runId}`);
     expect(w.saves[0]!.raw).toEqual({
       projectId: "p1", name: "Telegram → @ivan",
-      task: { kind: "workflow", workflowId: "telegram-send", inputs: { chat: "@ivan", text: "доброе утро", file_path: "", report_chat: "" }, liveTrial: true },
+      task: { kind: "workflow", workflowId: "telegram-send", inputs: { chat: "@ivan", text: "доброе утро", file_path: "", report_chat: "", host: "host_7sea4qaad8" }, liveTrial: true },
       when: { type: "once", runAt: Date.UTC(2026, 10, 3, 6) },
     });
     expect(w.sends).toHaveLength(0);

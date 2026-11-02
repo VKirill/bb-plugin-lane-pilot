@@ -10,19 +10,33 @@ import { runSim } from "./chain-harness";
 const sent = { status: "sent", message_id: "stub-1", message_url: "https://t.me/c/1/2" };
 
 describe("telegram-send", () => {
-  it("a text and a file go to the chat, once; the run ends sent", async () => {
-    const r = await runSim("telegram-send", { input: { chat: "@ivan", text: "Счёт № 142", file_path: "/tmp/invoice-142.pdf" }, stubs: { send: sent } });
+  it("a file goes by the Telegram client in seconds, no agent; the run ends sent", async () => {
+    const r = await runSim("telegram-send", { input: { chat: "@ivan", text: "Счёт № 142", file_path: "/tmp/invoice-142.pdf" }, stubs: { direct: sent, send: sent } });
     expect(r.summary.status).toBe("succeeded");
-    expect(pathOf(r)).toBe("later send report sent");
-    expect(r.skipped).toEqual(["later", "report"]);
+    expect(pathOf(r)).toBe("later direct report_direct sent_direct");
+    expect(r.skipped).toEqual(["later", "report_direct"]);
+    expect(r.called("send")).toHaveLength(0);
+    expect(out(r)).toMatchObject({ status: "sent", message_id: "stub-1" });
+  });
+
+  it("the client failing hands the file to the agent step, once", async () => {
+    const r = await runSim("telegram-send", { input: { chat: "@ivan", text: "Счёт № 142", file_path: "/tmp/invoice-142.pdf" }, stubs: { direct: { status: "failed", reason: "tg: no client" }, send: { ...sent, message_id: "stub-2" } } });
+    expect(pathOf(r)).toBe("later direct send report sent");
     expect(r.called("send")).toHaveLength(1);
     expect(r.called("send")[0]!.input).toMatchObject({ chat: "@ivan", file_path: "/tmp/invoice-142.pdf" });
-    expect(out(r)).toMatchObject({ status: "sent", message_id: "stub-1" });
+    expect(out(r)).toMatchObject({ status: "sent", message_id: "stub-2" });
+  });
+
+  it("a client send it cannot confirm is reported unconfirmed and never sent again", async () => {
+    const r = await runSim("telegram-send", { input: { chat: "@ivan", text: "x", file_path: "/tmp/a.pdf" }, stubs: { direct: { status: "unsure", message_id: "9", reason: "no read-back" }, send: sent } });
+    expect(pathOf(r)).toBe("later direct send_unconfirmed_direct");
+    expect(r.called("send")).toHaveLength(0);
+    expect(out(r)).toMatchObject({ status: "send_unconfirmed" });
   });
 
   it("a report chat gets the one-line report", async () => {
     const r = await runSim("telegram-send", { input: { chat: "@ivan", text: "hi", report_chat: "-100123/45" }, stubs: { send: sent, report: { message_id: "r-1", status: "ok" } } });
-    expect(pathOf(r)).toBe("later send report sent");
+    expect(pathOf(r)).toBe("later direct send report sent");
     expect(r.called("report")).toHaveLength(1);
     expect(out(r)).toMatchObject({ status: "sent" });
   });
@@ -44,10 +58,10 @@ describe("telegram-send", () => {
 
   it("a send that failed or may have gone through is reported as such, never retried", async () => {
     const failed = await runSim("telegram-send", { input: { chat: "@ivan", text: "hi" }, stubs: { send: { status: "failed", reason: "not logged in" } } });
-    expect(pathOf(failed)).toBe("later send send_failed");
+    expect(pathOf(failed)).toBe("later direct send send_failed");
     expect(out(failed)).toMatchObject({ status: "send_failed", reason: "not logged in" });
     const unsure = await runSim("telegram-send", { input: { chat: "@ivan", text: "hi" }, stubs: { send: { status: "unsure", reason: "no confirmation" } } });
-    expect(pathOf(unsure)).toBe("later send send_unconfirmed");
+    expect(pathOf(unsure)).toBe("later direct send send_unconfirmed");
     expect(out(unsure)).toMatchObject({ status: "send_unconfirmed" });
     expect(failed.called("send")).toHaveLength(1);
     expect(unsure.called("send")).toHaveLength(1);

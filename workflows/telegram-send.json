@@ -16,7 +16,8 @@
     "text": { "type": "string", "default": "", "note": "the message text; with file_path it becomes the file's caption" },
     "file_path": { "type": "string", "default": "", "note": "a file on the sending machine to send as a file" },
     "send_at": { "type": "string", "default": "", "note": "the delayed send: a delay (+2h, 30m) or a local time in the owner's zone (2026-11-03T07:00). Set, the run puts one send on the schedule board and ends scheduled; a time that is not one, or past, ends cannot_delay" },
-    "report_chat": { "type": "string", "default": "", "note": "a Telegram chat or project topic for a one-line report after the send; empty means no report" }
+    "report_chat": { "type": "string", "default": "", "note": "a Telegram chat or project topic for a one-line report after the send; empty means no report" },
+    "host": { "type": "string", "default": "host_7sea4qaad8", "note": "the machine with the owner's Telegram client (~/toolkit/telegram/tg); file_path is a path on it" }
   },
   "outputs": {
     "status": "sent|send_failed|send_unconfirmed|scheduled|cannot_delay",
@@ -49,6 +50,46 @@
       "field": "send_at",
       "name": "Telegram → {{$inputs.chat}}",
       "out": { "status": "scheduled|cannot_delay|now", "schedule_id": "string", "run_at": "string", "reason": "string" }
+    },
+    {
+      "id": "direct",
+      "type": "action",
+      "action": "telegram.send_file",
+      "title": { "en": "Send the file with the Telegram client", "ru": "Отправить файл клиентом Telegram" },
+      "rule": "code: tg send-file on the sending machine, seconds and no agent; it looks back 50 messages and never sends a file of the same name twice; anything but sent or unsure hands the send to the agent step",
+      "skip_when": "$inputs.file_path == ''",
+      "skip_out": { "status": "skipped", "message_id": "", "message_url": "", "reason": "" },
+      "host": "{{$inputs.host}}",
+      "chat": "{{$inputs.chat}}",
+      "file_path": "{{$inputs.file_path}}",
+      "caption": "{{$inputs.text}}",
+      "out": { "status": "sent|unsure|failed|skipped", "message_id": "string", "message_url": "string", "reason": "string" },
+      "guards": { "maxAttempts": 1, "maxVisits": 1 }
+    },
+    {
+      "id": "report_direct",
+      "type": "action",
+      "action": "telegram.send_rich",
+      "title": { "en": "Report in the project topic", "ru": "Отчёт в тему проекта" },
+      "skip_when": "$inputs.report_chat == ''",
+      "skip_out": { "message_id": "", "status": "skipped" },
+      "target": "{{$inputs.report_chat}}",
+      "markdown": "Сообщение отправлено в {{$inputs.chat}}.",
+      "via": "tg rich-send --execute",
+      "out": { "message_id": "string", "status": "string" },
+      "guards": { "maxAttempts": 1 }
+    },
+    {
+      "id": "sent_direct",
+      "type": "action",
+      "action": "emit",
+      "map": { "status": "sent", "message_id": "direct.message_id", "message_url": "direct.message_url", "schedule_id": "''", "run_at": "''", "send_at": "$inputs.send_at", "reason": "direct.reason" }
+    },
+    {
+      "id": "send_unconfirmed_direct",
+      "type": "action",
+      "action": "emit",
+      "map": { "status": "send_unconfirmed", "message_id": "direct.message_id", "message_url": "direct.message_url", "schedule_id": "''", "run_at": "''", "send_at": "$inputs.send_at", "reason": "direct.reason" }
     },
     {
       "id": "send",
@@ -110,7 +151,11 @@
     { "from": "start", "to": "later" },
     { "from": "later", "to": "scheduled", "when": "later.status == 'scheduled'" },
     { "from": "later", "to": "cannot_delay", "when": "later.status == 'cannot_delay'" },
-    { "from": "later", "to": "send", "with": { "chat": "input.chat", "text": "input.text", "file_path": "input.file_path" } },
+    { "from": "later", "to": "direct" },
+    { "from": "direct", "to": "report_direct", "when": "direct.status == 'sent'" },
+    { "from": "direct", "to": "send_unconfirmed_direct", "when": "direct.status == 'unsure'" },
+    { "from": "direct", "to": "send", "with": { "chat": "input.chat", "text": "input.text", "file_path": "input.file_path" } },
+    { "from": "report_direct", "to": "sent_direct" },
     { "from": "send", "to": "report", "when": "send.status == 'sent'" },
     { "from": "send", "to": "send_unconfirmed", "when": "send.status == 'unsure'" },
     { "from": "send", "to": "send_failed" },
@@ -120,9 +165,10 @@
     "id": "telegram-send-1",
     "sim": {
       "input": { "chat": "@ivan_romashka", "text": "Счёт № 142 на 50 000 ₽ — SEO-сопровождение за октябрь", "file_path": "/Users/owner/deals/romashka/invoice-142.pdf" },
-      "stubs": { "send": { "status": "sent", "message_id": "stub-1", "message_url": "https://t.me/c/1/2" } },
-      "expect_path": ["later", "send", "report", "sent"],
+      "stubs": { "direct": { "status": "sent", "message_id": "stub-1", "message_url": "https://t.me/c/1/2", "reason": "" } },
+      "expect_path": ["later", "direct", "report_direct", "sent_direct"],
       "expect_output": { "status": "sent", "message_id": "stub-1" },
+      "variant_direct_failed": { "input": { "chat": "@ivan_romashka", "text": "Счёт № 142", "file_path": "/Users/owner/deals/romashka/invoice-142.pdf" }, "stubs": { "direct": { "status": "failed", "message_id": "", "message_url": "", "reason": "tg: no client" }, "send": { "status": "sent", "message_id": "stub-2", "message_url": "https://t.me/c/1/3" } }, "expect_path": ["later", "direct", "send", "report", "sent"], "expect_output": { "status": "sent", "message_id": "stub-2" } },
       "variant_scheduled": { "input": { "chat": "@ivan_romashka", "text": "доброе утро", "send_at": "2026-11-03T07:00" }, "stubs": { "later": { "status": "scheduled", "schedule_id": "sch-1", "run_at": "2026-11-03 07:00" } }, "expect_path": ["later", "scheduled"], "expect_output": { "status": "scheduled", "schedule_id": "sch-1", "run_at": "2026-11-03 07:00", "send_at": "2026-11-03T07:00" } },
       "variant_unconfirmed": { "input": { "chat": "@ivan_romashka", "text": "доброе утро" }, "stubs": { "send": { "status": "unsure", "reason": "the chat did not confirm" } }, "expect_path": ["later", "send", "send_unconfirmed"], "expect_output": { "status": "send_unconfirmed" } },
       "variant_cannot_delay": { "input": { "chat": "@ivan_romashka", "text": "доброе утро", "send_at": "tomorrow morning" }, "stubs": { "later": { "status": "cannot_delay", "reason": "«tomorrow morning» is not a time" } }, "expect_path": ["later", "cannot_delay"], "expect_output": { "status": "cannot_delay", "send_at": "tomorrow morning" } }
