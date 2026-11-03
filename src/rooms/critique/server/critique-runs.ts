@@ -629,6 +629,8 @@ export async function runCodeCritique(input:{
     const critique = critiqueFromScreen(screened);
     const blocked = codeCritiqueStops(parsed.mode, critique);
     const result = { ...ledgerCarry, ...hashFields, ...critique, mode: parsed.mode, by: "jev", policy };
+    // pending -> passed is refused: the screen's verdict goes through running (muse-release-030 parked as internal_error, 2026-11-03).
+    recordStage(input.db, { ...base, state: "running", result });
     recordStage(input.db, { ...base, state: blocked ? "blocked" : "passed", result, reason: blocked ? verdictReasons(critique, "code-critique").receipt : undefined });
     return blocked
       ? { allowed: false, reason: verdictReasons(critique, "code-critique").returned, critique: result, parsed: critique, settings: parsed, review: "not_required", policy }

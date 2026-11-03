@@ -2,6 +2,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, describe, expect, it } from "vitest";
 import { runCodeCritique, runPlanCritique, runPmRead } from "../src/rooms/critique/server/critique-runs";
 import { recordStage, resetHelperStages } from "../src/rooms/runs/server/stage-records";
+import { createJev, setJevForTests, type JevClient } from "@lane-pilot/jev";
 import { createAttempt, createRun, createTask, listStageReceipts, openDatabase, saveProjectSetting } from "../src/rooms/storage";
 
 // 2026-10-29 audit (lane-pilot-roast F-001, F-003): quick paid the catalog and the coverage scan for a critic it skipped; pm-read
@@ -100,6 +101,32 @@ describe("helper stages decide before they prepare, and reuse only a receipt of 
     expect(result.allowed).toBe(true);
     expect(result.reason).toContain("code_critique_evidence_unknown:packet_truncated");
     expect(listStageReceipts(w.db, "r", "t1").find((row) => row.stageId === "code-critique")?.state).toBe("skipped");
+  });
+
+  it("a clear Jev screen settles the code critique without an illegal pending -> passed (muse-release-030, 2026-11-03)", async () => {
+    const w = world();
+    saveProjectSetting(w.db, "P", "code_critique.enabled", true);
+    const hash = "b".repeat(64);
+    const evidence = {
+      truncated: false, artifactRevisionSha256: hash, evidenceSha256: hash, revisionSha256: hash,
+      produced: ["note.txt"], hashes: {}, baselineHashes: {}, verification: [{ command: "npm test", exitCode: 0 }], files: [{ path: "note.txt", diff: "+ok", content: "ok" }],
+      packetSha256: hash, outputSha256: hash, ownsPaths: ["note.txt"], neverTouch: [],
+    };
+    const client = {
+      breaker: () => ({ open: false, failures: 0 }),
+      async call(request: { questions: Record<string, unknown> }) {
+        const answers = Object.fromEntries(Object.keys(request.questions).map((id) => [id, { type: "choice" as const, choice: "pass", probabilities: { pass: 0.97, fail: 0.01, unsure: 0.02 }, confidence: 0.9 }]));
+        return { ok: true as const, answers, model: "t", usage: { input_tokens: 1, output_tokens: 1 }, latencyMs: 1, attempts: 1 };
+      },
+    } as unknown as JevClient;
+    setJevForTests(createJev({ client, db: null }));
+    try {
+      const result = await runCodeCritique({ ...w, projectId: "P", runId: "r", taskId: "t1", config, task, evidence } as never);
+      expect(result).toMatchObject({ allowed: true, review: "passed" });
+      const receipt = listStageReceipts(w.db, "r", "t1").find((row) => row.stageId === "code-critique")!;
+      expect(receipt).toMatchObject({ state: "passed" });
+      expect((receipt.result as { by: string }).by).toBe("jev");
+    } finally { setJevForTests(null); }
   });
 
   it("resetHelperStages keeps a passed plan critique and specialist review and drops the rest", async () => {
