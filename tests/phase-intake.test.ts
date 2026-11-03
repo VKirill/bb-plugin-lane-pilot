@@ -398,6 +398,18 @@ describe("a hand-over from a scheduled agent is one start per key (RECHECK-341 F
   });
 });
 
+describe("a hand-over is approved work, whatever it reads like (lead «да», 2026-11-03)", () => {
+  it("a diagnosis that reads as a question starts the small graph instead of «hand-over blocked»", async () => {
+    const started: string[] = [];
+    const train: IntakeTrain = { start: (input) => { started.push(input.kind); return `wfrun_${started.length}`; }, status: () => "succeeded" };
+    const { intake } = world({ train });
+    const text = "Найти причину, по которой три задачи подряд не прошли проверку учётных записей?";
+    expect(await intake.handOver({ projectId: "projA", pmThreadId: PM, runId: "run1", text, key: "lead:road_x", origin: "Accepted by the owner" }))
+      .toMatchObject({ started: true, via: "issue-quick" });
+    expect(started).toEqual(["small"]);
+  });
+});
+
 describe("intake self-consistency", () => {
   it("the re-ask reads the same question with the criteria in the reverse order", async () => {
     const { intakeJudgment } = await import("../src/rooms/phase/intake");

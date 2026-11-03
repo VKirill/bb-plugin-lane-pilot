@@ -255,7 +255,13 @@ export function createPhaseIntake(ctx: Deps, phases: IntakePhases, train?: Intak
     if (!run) return { started: false, kind: null, reason: "the PM run is gone" };
     const settings = await ctx.effectiveProjectSettings(run.project_id, getRunSettingsScopes(db, run.id)).then((result) => result.values as Record<string, unknown>, () => ({} as Record<string, unknown>));
     if (await isRunHalted(bb.storage.kv as never, run.id) || await isRunPaused(bb.storage.kv as never, run.id)) return { started: false, kind: null, reason: "the owner stopped or paused the run" };
-    const { kind, by, path } = await classifyBundle(withoutCredentials(input.text), null, run.project_id, run.id, settings);
+    const read = await classifyBundle(withoutCredentials(input.text), null, run.project_id, run.id, settings);
+    const { by, path } = read;
+    // A lead branch (key lead:<road>) is work already decided — by the owner's «да» or the lead's own right: read as a reply, question or
+    // process («Найти причину…») it started nothing and sat «hand-over blocked» (2026-11-03). Only its size is read. A scheduled
+    // agent's hand-over is still judged whole: its question is no work.
+    const decided = input.key.startsWith("lead:");
+    const kind = decided && read.kind !== "heavy" && read.kind !== "batch" ? "small" : read.kind;
     const text = `${input.origin}\n\n${input.text}`;
     if (kind === "heavy") {
       if (!railsOn(settings)) return { started: false, kind, reason: "phase rails are off" };
