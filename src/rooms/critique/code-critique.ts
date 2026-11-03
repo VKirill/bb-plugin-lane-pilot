@@ -484,6 +484,7 @@ export function codeCritiquePrompt(input: {
     workspace
       ? `- \`git -C ${workspace} diff HEAD -- ${packets.filter((file) => file.diff !== NEW_FILE_DIFF && file.baselineSha256 !== null).map((file) => file.path).join(" ") || "<paths>"}\` for changed files; read new files whole.`
       : "- `git diff HEAD -- <paths>` for changed files; read new files whole.",
+    "If that diff is empty the change was committed: `git log -p` on those paths shows it.",
     ...(evidence.unreadPaths?.length ? [`Files the evidence could not carry — read them at these absolute paths before you judge:\n${evidence.unreadPaths.join("\n")}`] : []),
   ].join("\n");
   const change = [
