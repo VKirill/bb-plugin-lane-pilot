@@ -49,7 +49,9 @@ export function registerAfterAcceptExecutors(engine: WorkflowEngine, ctx: Server
       // `running` in the journal, exactly as after a crash, and the next instance runs it again (the stage finds its helper thread by its receipt).
       const interrupted = (): Promise<never> => new Promise<never>(() => undefined);
       try {
-        const why = skipped ? await skipped({ projectId, runId }) : null;
+        // Start conditions do not abandon a receipt already opened before a reload, or hide its final verdict.
+        const existing = listStageReceipts(db, runId, taskId).find((row) => row.stageId === stage);
+        const why = skipped && !existing ? await skipped({ projectId, runId }) : null;
         if (why) return await done({ state: "skipped", reason: why });
         let result: Row = { state: "running" };
         for (let round = 0; round < ROUNDS && !ctx.state.disposed && !c.signal.aborted; round++) {

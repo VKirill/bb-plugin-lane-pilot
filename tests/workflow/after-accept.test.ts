@@ -7,6 +7,7 @@ import { maybeNotifyWorkflowRun } from "../../src/rooms/workflow/server/pm-notic
 import { createAttempt, createRun, listStageReceipts, openDatabase, setRunThread } from "../../src/rooms/storage/database";
 import { recordStage } from "../../src/rooms/runs/server";
 import { collectEntries } from "../../src/rooms/wall/journal";
+import lifeReceipt from "../fixtures/stage-left-open/T1.4.json";
 
 const spent = (total: number) => [{ type: "turn/started", seq: 1 }, { type: "thread/tokenUsage/updated", seq: 2, createdAt: 2, data: { turnId: "t1", tokenUsage: { last: { inputTokens: total, outputTokens: 0, totalTokens: total }, total: { inputTokens: total, outputTokens: 0, totalTokens: total } } } }];
 
@@ -144,6 +145,19 @@ describe("the after-acceptance graph", () => {
     await live.engine.idle();
     expect(outputOf(live.rows()[0]!).life_state).toBe("skipped");
     expect(live.calls.map((call) => call.stage)).toEqual(["memory-maintenance"]);
+  });
+
+  it.each(["pending", "running", "passed", "failed"] as const)("resumes an existing %s project-life receipt even when a new wave is busy", async (state) => {
+    // T1.4, hub 2026-10-30: after a reload the graph returned wave_not_idle, abandoning this running child.
+    // Map its run/task onto this graph fixture; retain the real child, snapshot and observed state.
+    const t = setup({ "project-life": () => ({ state: ["pending", "running"].includes(state) ? "passed" : state }) }, { extraOpenAttempt: true });
+    recordStage(t.db, { runId: "run-1", taskId: "T1", stageId: "project-life", state, input: "x", threadId: lifeReceipt.threadId, result: lifeReceipt.result });
+    t.start("proj-1", "run-1", "T1", "pm-1");
+    await t.engine.idle();
+    expect(t.calls.map((call) => call.stage)).toContain("project-life");
+    expect(t.rows()[0]).toMatchObject({ status: state === "failed" ? "failed" : "succeeded" });
+    expect(t.db.prepare("SELECT output_json FROM lane_pilot_wf_step WHERE node_id='life'").get())
+      .toEqual({ output_json: expect.not.stringContaining("wave_not_idle") });
   });
 
   it("leaves a step cut off by a reload open, so the next instance runs it again", async () => {

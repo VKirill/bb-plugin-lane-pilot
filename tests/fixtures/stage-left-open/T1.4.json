@@ -1,0 +1,51 @@
+{
+  "contractVersion": 1,
+  "runId": "lprun_fbf057b4772045669f46d00ec2674bf7",
+  "taskId": "T1.4",
+  "stageId": "project-life",
+  "state": "running",
+  "inputSha256": "c70162d0c658be54a064e13c4cf71e24700226b53ddf8cfe3c63c6c3818d5ab2",
+  "outputSha256": "8f9d30aa513a4c33f967b10a34c89f03440487f1708d6625a72d313950ccadb2",
+  "attempt": 0,
+  "providerId": "opencode2",
+  "model": "zai-coding-plan/glm-5.3-flash",
+  "threadId": "thr_zh5dxzew57",
+  "reason": null,
+  "updatedAt": 1793376562108,
+  "result": {
+    "snapshot": {
+      "coveredTaskIds": [
+        "T1.4",
+        "T2.5"
+      ],
+      "tasks": [
+        {
+          "id": "T1.4",
+          "title": "MagicSEO cabinet client: JWT auth, documented endpoints, logged mutations, start/stop with verify",
+          "objective": "MagicSEO BB plugin: typed client over the lk.magicseo.ru cabinet API with logged mutations and verified start/stop (phase ph_f16b2b8b06).",
+          "acceptanceSummary": ""
+        },
+        {
+          "id": "T2.5",
+          "title": "Site rules config, read-only WordPress concerts source, city → Yandex region + timezone map",
+          "objective": "MagicSEO BB plugin: site rules config, read-only concerts source and city map (phase ph_f16b2b8b06).",
+          "acceptanceSummary": ""
+        }
+      ],
+      "baseHeadSha": "24a041f621dba1d0c55c0850a02ef20c44111890",
+      "agent": "project-life-maintainer",
+      "dispatchInput": {
+        "coveredTaskIds": [
+          "T1.4",
+          "T2.5"
+        ],
+        "providerId": "opencode2",
+        "model": "zai-coding-plan/glm-5.3-flash",
+        "reasoningEffort": "high",
+        "serviceTier": "standard"
+      }
+    },
+    "spawnAttempted": true,
+    "observing": "status=active;queuedWork=unknown;started_seq=6;turn=none"
+  }
+}

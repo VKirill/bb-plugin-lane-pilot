@@ -1,0 +1,16 @@
+{
+  "contractVersion": 1,
+  "runId": "lprun_adae76e942f24d348acd60f06532e40c",
+  "taskId": "muse-session-sync",
+  "stageId": "project-life",
+  "state": "pending",
+  "inputSha256": "213d39e35f774cd600977b9f4d9dc4cf1e49081994a4a645d18e79cdaec27839",
+  "outputSha256": null,
+  "attempt": 0,
+  "providerId": null,
+  "model": null,
+  "threadId": null,
+  "reason": null,
+  "updatedAt": 1793707186988,
+  "result": null
+}
