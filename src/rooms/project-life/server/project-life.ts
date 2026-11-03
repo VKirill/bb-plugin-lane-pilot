@@ -2,7 +2,7 @@ import { acceptanceArtifactDir } from "../../tasks";
 import { taskV2Schema } from "../../contracts";
 import { claimStageSpawn, getRun, getTask, listStageReceipts } from "../../storage";
 import { bbServiceTier, writerExecutionSelection } from "@lane-pilot/models";
-import { findOutOfScopeProjectLifeWrites, foldCoveredTaskIds, parseProjectLifeFinalMessage, parseProjectLifeSettings, projectLifePrompt, projectLifeServiceTier } from "../project-life";
+import { changelogCommand, changelogLine, findOutOfScopeProjectLifeWrites, foldCoveredTaskIds, parseProjectLifeFinalMessage, parseProjectLifeSettings, projectLifePrompt, projectLifeServiceTier } from "../project-life";
 import { ProjectLifeChildSnapshot, childResultObject, projectLifeChildSnapshot, spawnRefused } from "../../runs/server";
 import { configuredSetting, modelCatalogOf, resolveSpawnModel, spawnUsageOf, warmSpawnUsage, stageHelperSettings } from "../../core/server";
 import { fullAccessSpawn, graphStepMetadata } from "../../core/server";
@@ -68,6 +68,25 @@ export function createProjectLifeStage(ctx: ServerCore, services: Services) {
     if(!coveredTaskIds.length && !liveChild) {
       recordStage(db,{...base,state:"skipped",reason:"no_uncovered_tasks",result:{coveredTaskIds}});
       return {runId:args.runId,taskId:args.taskId,state:"skipped",reason:"no_uncovered_tasks"};
+    }
+    // ponytail: since 2026-11-03 the diary is one CHANGELOG line written by script (seconds, no model; the agent took 6-7 min and
+    // failed 80 of 144 runs). The agent path below only finishes children started before; delete it once none is running.
+    if(!liveChild){
+      const tasks=coveredTaskIds.map((id)=>services.projectLifeTaskSummary(args.runId,id));
+      try {
+        const out=await host.call("runCommand",{requestedHostId:config.hostId,cwd:workspace.path,timeoutSec:30,
+          command:changelogCommand(changelogLine({date:new Date().toISOString().slice(0,10),runId:args.runId,tasks}),args.runId)},
+          {hostId:config.hostId,timeoutMs:40_000}) as {exitCode:number;stdout:string;stderr?:string};
+        if(out.exitCode!==0) throw new Error(`changelog_commit_failed:${(out.stderr||out.stdout||"").trim().slice(0,200)}`);
+        const sha=out.stdout.trim().split("\n").at(-1) ?? "";
+        const result={status:"updated",commit:/^[0-9a-f]{40}$/.test(sha)?sha:null,files:[".agents/CHANGELOG.md"],coveredTaskIds};
+        recordStage(db,{...base,state:"passed",providerId:"script",model:null,result});
+        return {runId:args.runId,taskId:args.taskId,state:"passed",result};
+      } catch(cause) {
+        const reason=cause instanceof Error?cause.message:String(cause);
+        recordStage(db,{...base,state:"failed",providerId:"script",model:null,reason,result:{error:reason}});
+        return {runId:args.runId,taskId:args.taskId,state:"failed",reason};
+      }
     }
     const claimed=listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="project-life");
     if(claimed?.state==="pending") recordStage(db,{...base,state:"running",providerId:projectLifeProviderId,model:projectLifeModel,threadId:claimed.threadId,result:claimed.result,reason:"project_life_spawn_requested"});

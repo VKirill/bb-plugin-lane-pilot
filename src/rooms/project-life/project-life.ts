@@ -99,3 +99,28 @@ export function projectLifePrompt(input: {
     'Finish with exactly one JSON line as your final message, and nothing after it: {"status":"updated"|"no_change","commit":"<full 40-char sha from git rev-parse HEAD, or null>","files":[...]}',
   ].join("\n\n");
 }
+
+/** One CHANGELOG line for the accepted tasks: titles, whitespace folded, capped; written by script, no model. */
+export function changelogLine(input: { date: string; runId: string; tasks: ProjectLifeTaskSummary[] }): string {
+  const what = input.tasks.map((task) => (task.title || task.objective || task.id).replace(/\s+/g, " ").trim()).join("; ").slice(0, 400);
+  return `- ${input.date} ${input.runId}: ${what} (${input.tasks.map((task) => task.id).join(", ")})\n`;
+}
+
+/**
+ * The shell that appends the line to .agents/CHANGELOG.md and commits only that file on the checked-out branch.
+ * Prints the commit sha, or `none` when .agents is git-ignored (the line stays local). Hooks are skipped: a diary line.
+ */
+export function changelogCommand(line: string, runId: string): string {
+  if (!/^[A-Za-z0-9_-]+$/.test(runId)) throw new Error("project_life_run_id_unsafe");
+  const b64 = Buffer.from(line, "utf8").toString("base64");
+  return [
+    "set -e", "f=.agents/CHANGELOG.md", "mkdir -p .agents",
+    `[ -f "$f" ] || printf '# Changelog\\n\\n' > "$f"`,
+    `if [ -s "$f" ] && [ -n "$(tail -c1 "$f")" ]; then echo >> "$f"; fi`,
+    `printf %s '${b64}' | base64 --decode >> "$f"`,
+    `if git check-ignore -q "$f"; then echo none; exit 0; fi`,
+    `git add -- "$f"`,
+    `git commit -q --no-verify -m 'chore(progress): changelog after ${runId}' --only -- "$f"`,
+    "git rev-parse HEAD",
+  ].join("\n");
+}

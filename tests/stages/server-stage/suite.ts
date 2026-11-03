@@ -1024,33 +1024,6 @@ describe("stage → native writer → receipt", () => {
       refuseStageSpawn=null;
     }
   });
-  it("fails a project-life stage whose spawn BB refused instead of leaving it running",async()=>{
-    refuseStageSpawn="project-life";
-    try {
-      const {db,harness}=await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,{"project_life.service_tier":"standard","project_life.provider":"codex","project_life.model":"gpt-6-luna"});
-      await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,objective:"Проверка диспетча",plan:"Write a verified fixture",task},{threadId:pmThreadId,projectId});
-      await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:3},{threadId:pmThreadId,projectId});
-      const failed=await until("project-life stage to fail",()=>stageReceipt(db,task.id,"project-life")?.state==="failed" && stageReceipt(db,task.id,"project-life"));
-      expect(failed.reason).toBe("HTTP 409: Environment unavailable");
-      await harness.lifecycle.dispose();
-    } finally {
-      refuseStageSpawn=null;
-    }
-  });
-  it("retries a project-life stage after a host hiccup before its spawn claim",async()=>{
-    projectLifeHostHiccup=true;
-    try {
-      const {db,harness,spawned}=await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,{"project_life.service_tier":"standard","project_life.provider":"codex","project_life.model":"gpt-6-luna"});
-      await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,objective:"Проверка диспетча",plan:"Write a verified fixture",task},{threadId:pmThreadId,projectId});
-      await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:3},{threadId:pmThreadId,projectId});
-      await until("project-life child to be spawned",()=>spawned.some((row)=>(row.pluginMetadata as Record<string,unknown>).stageId==="project-life"));
-      expect(projectLifeHostHiccup).toBe(false);
-      expect(stageReceipt(db,task.id,"project-life")?.reason).not.toContain("factory registration");
-      await harness.lifecycle.dispose();
-    } finally {
-      projectLifeHostHiccup=false;
-    }
-  });
   it("reconstructs memory recordIds after insert-before-receipt without duplicate FTS rows",async()=>{
     const entry={kind:"core" as const,content:"Durable deployment convention uses managed workspaces",concepts:["deployment","workspace"]};
     const release=holdEvents("memory-thread");
