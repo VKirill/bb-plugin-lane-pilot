@@ -17,12 +17,11 @@ function setup(metadata: Record<string, unknown> = {}, archived: string[] = []) 
   return { bb, db, sent };
 }
 
-it("remembers an ordinary chat working in a run's folder and tells it once to commit as it goes", async () => {
+it("remembers an ordinary chat working in a run's folder and sends it nothing up front", async () => {
   const { bb, db, sent } = setup({ thr_writer:{ role:"writer" } });
   await noteCheckoutGuest(bb, db, "thr_owner", "/repo/plugin");
   await noteCheckoutGuest(bb, db, "thr_owner", "/repo/plugin/");
-  expect(sent.map((row) => row.threadId)).toEqual(["thr_owner"]);
-  expect(sent[0]!.text).toContain("Commit your changes immediately");
+  expect(sent).toEqual([]);
   expect((await listGuests(bb.storage.kv, "/repo/plugin")).map((row) => row.threadId)).toEqual(["thr_owner"]);
   // Lane Pilot's own threads, the PM and folders without a run are not guests.
   await noteCheckoutGuest(bb, db, "thr_writer", "/repo/plugin");

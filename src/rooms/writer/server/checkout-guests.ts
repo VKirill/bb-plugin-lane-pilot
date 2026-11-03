@@ -7,11 +7,10 @@ import { sendServiceMessage } from "../../relay/server";
  * Threads that are not Lane Pilot's but work in a folder where a Lane Pilot run merges writers' work. Agents on the
  * market keep the shared checkout off-limits (each agent its own worktree) and never move someone's uncommitted
  * work; when a person or another chat does edit there, the writers' merges stop on those edits. Lane Pilot remembers
- * who works in the folder, tells them once to commit as they go, and asks them by name when their edits block a merge.
+ * who works in the folder and asks them by name only when their edits block a merge.
  */
 
 const GUESTS = (path: string) => `checkout-guests:${resolve(path)}`;
-const NOTICED = (threadId: string, runId: string) => `checkout-guest-noticed:${threadId}:${runId}`;
 const ASKED = (threadId: string, path: string) => `checkout-guest-asked:${threadId}:${resolve(path)}`;
 /** A guest older than this no longer counts as working in the folder. */
 const GUEST_TTL_MS = 6 * 3600_000;
@@ -37,7 +36,7 @@ export async function listGuests(kv: Kv, path: string, now = Date.now()): Promis
 
 /**
  * Called for every send of a thread that is not a Lane Pilot chat. When it works in a folder of an active run and is
- * not one of Lane Pilot's own helpers, it is remembered, and told once per run to commit its work as it goes.
+ * not one of Lane Pilot's own helpers, it is remembered; nothing is sent to it.
  */
 export async function noteCheckoutGuest(bb: BbPluginApi, db: LanePilotDatabase, threadId: string, path: string | null | undefined): Promise<void> {
   if (!path) return;
@@ -48,10 +47,7 @@ export async function noteCheckoutGuest(bb: BbPluginApi, db: LanePilotDatabase, 
   const now = Date.now();
   const guests = (await listGuests(bb.storage.kv, path, now)).filter((row) => row.threadId !== threadId);
   await bb.storage.kv.set(GUESTS(path), [{ threadId, at:now }, ...guests].slice(0, 10) as never);
-  if (await bb.storage.kv.get(NOTICED(threadId, run.id)).catch(() => null)) return;
-  await bb.storage.kv.set(NOTICED(threadId, run.id), now as never);
-  await sendServiceMessage(bb, { threadId, senderThreadId:run.pmThreadId,
-    text:`Lane Pilot: a development orchestrator is working in this directory (${resolve(path)}) — its writers merge their work into main here. Commit your changes immediately after finishing each change: uncommitted changes in the same files prevent merging their work. If your work takes long and it is too early to commit, do it in a separate git worktree instead of this directory.` }).catch(() => undefined);
+  // No up-front notice into the chat: the owner's chats stay clean; a guest is asked only when its edits block a merge.
 }
 
 /**
