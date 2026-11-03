@@ -147,6 +147,10 @@ describe("the owner's answer to a proposal", () => {
     expect(JSON.parse(getDecision(db, decisionId)!.answer_json!)).toEqual({ option: "yes", text: "да, делаем" });
     expect(ownerItem(db, proposalItemKey("o1"))!.state).not.toBe("open");
     expect(await lead.decide("o1", "no", undefined, "owner", 11)).toEqual({ ok: false, reason: "branch o1 is accepted, not proposed" });
+    // A second «да» retries only the hand-over: the journal keeps the first answer.
+    expect(await lead.decide("o1", "yes", "ещё раз", "agent", 12)).toMatchObject({ ok: true, verdict: null, handover: { state: "skipped" } });
+    expect(JSON.parse(getDecision(db, decisionId)!.answer_json!)).toEqual({ option: "yes", text: "да, делаем" });
+    expect(getRoad(db, "o1")).toMatchObject({ state: "accepted", decided_at: 10 });
     expect(await lead.decide("ghost", "no", undefined, "owner", 11)).toEqual({ ok: false, reason: "no branch ghost" });
   });
 

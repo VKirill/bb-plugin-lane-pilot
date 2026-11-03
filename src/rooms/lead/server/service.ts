@@ -188,6 +188,9 @@ export function createLeadService(ctx: ServerCore, services: Services) {
   async function decide(roadId: string, decision: ProposalDecision, text: string | undefined, by: string, now: number = Date.now()): Promise<{ ok: true; road: RoadRow; verdict: string | null; handover: Handover | null } | { ok: false; reason: string }> {
     const row = getRoad(db, roadId);
     if (!row) return { ok: false, reason: `no branch ${roadId}` };
+    // «Да» again on an accepted branch retries only its hand-over (one start per key): a refused hand-over left it accepted with nothing
+    // running and no way on (2026-11-03). The journal and the exam keep the first answer.
+    if (row.state === "accepted" && decision === "yes") return { ok: true, road: row, verdict: null, handover: await handOverAccepted(row, by, now) };
     if (row.state !== "proposed") return { ok: false, reason: `branch ${roadId} is ${row.state}, not proposed` };
     decideRoad(db, roadId, decision, text, now);
     const decisionId = row.decision_id ?? proposalDecisionId(roadId);
