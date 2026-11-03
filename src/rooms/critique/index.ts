@@ -16,6 +16,8 @@ export { resolveRetryEffort } from "./retry-effort";
 export { CRITIC_TIEBREAK_ROLE, majorityRubric, parseTiebreakVotes, resolveRubricTiebreak, rubricDisagreements, tiebreakPrompt } from "./tiebreak";
 export type { TiebreakVote } from "./tiebreak";
 export { FAILURE_TRIAGE_METHOD, FRONTEND_VERIFY_METHOD, SCIENTIFIC_DEBUG_METHOD, SUBJECTIVE_WORDS, roleMethod } from "./role-method";
+export { taskBrief } from "./task-brief";
+export type { TaskBriefField } from "./task-brief";
 export { boundedAgentName } from "./role";
 export { qaStateToStatus, settleVerdict, verdictSchema, verdictSummary } from "@lane-pilot/workflow-engine";
 export type { Verdict, VerdictFinding, VerdictStatus } from "@lane-pilot/workflow-engine";

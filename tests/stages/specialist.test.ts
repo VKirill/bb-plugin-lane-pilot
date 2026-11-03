@@ -26,7 +26,7 @@ describe("specialist review stage contract", () => {
   it("embeds the exact task and plan in a non-executing review prompt", () => {
     const prompt = specialistPrompt({task:{risk:"critical",id:"T-1"},plan:"Keep rollback snapshot",agent:"compatibility-reviewer"});
     expect(prompt).toContain("You are compatibility-reviewer");
-    expect(prompt).toContain('"risk":"critical"');
+    expect(prompt).toContain("risk: critical");
     expect(prompt).toContain("Keep rollback snapshot");
     expect(prompt).toContain("open no files, run no commands and call no tools");
   });
