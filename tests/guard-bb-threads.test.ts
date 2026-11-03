@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { afterAll, describe, expect, it } from "vitest";
 import { hookEnv } from "./hook-env";
@@ -119,6 +119,21 @@ describe("BB native PM can run project node scripts", () => {
       expect(allowedIn("/srv/apps/selfystudio", command)).toBe(2);
     }
     for (const command of ["bb thread create --prompt x", "bb plugin rpc call x y"]) expect(allowedNative(command)).toBe(2);
+  });
+  // Owner 2026-11-03: a plugin folder is also one whose package.json has BB's plugin block (plugins/muse-ai-connector), and its PM may
+  // remove that plugin to reinstall it; never Lane Pilot or Env Catalog, never another plugin.
+  it("ships and removes the plugin of its own folder, found by its manifest", () => {
+    const muse = join(guardHome, "plugins", "muse-ai-connector");
+    mkdirSync(muse, { recursive: true });
+    writeFileSync(join(muse, "package.json"), JSON.stringify({ name: "muse-ai-connector", bb: { name: "Muse", server: "./server.ts" } }));
+    for (const command of ["bb plugin install .", "bb plugin update muse-ai-connector", "bb plugin remove muse-ai-connector", "bb plugin uninstall muse-ai-connector"]) {
+      expect(allowedIn(muse, command), command).toBe(0);
+    }
+    for (const command of ["bb plugin remove lane-pilot", "bb plugin remove env-catalog", "bb plugin remove project-folders"]) {
+      expect(allowedIn(muse, command), command).toBe(2);
+    }
+    expect(allowedNative("bb plugin remove lane-pilot", pluginCheckout)).toBe(2);
+    expect(allowedIn("/srv/apps/selfystudio", "bb plugin remove muse-ai-connector")).toBe(2);
   });
   // thr_zh5pvz36p7 (2026-10-12): reload of a path plugin re-read the hub's old copy; the denial names the push script that ships it.
   it("a denial tells the PM how a path plugin reaches the hub", () => {

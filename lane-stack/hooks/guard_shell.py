@@ -92,10 +92,42 @@ LANE_PILOT_BB_COMMANDS = PM_BB_READ_COMMANDS | PM_BB_MESSAGE_COMMANDS | PM_BB_TH
 # Shipping a plugin is the job of that plugin's own PM: reload/install/update only from a bb-plugin-* checkout, so a
 # product PM cannot reload Lane Pilot under running writers.
 LANE_PILOT_BB_PLUGIN_SHIP = {("plugin", "build"), ("plugin", "reload"), ("plugin", "install"), ("plugin", "update")}
+# Remove deletes the plugin's settings, secrets and schedules: the PM may remove only the plugin of the folder it works in (to install
+# it again), never Lane Pilot itself or Env Catalog (owner 2026-11-03: «если по задаче надо удалить и поставить заново, пусть удаляет»).
+LANE_PILOT_BB_PLUGIN_REMOVE = {("plugin", "remove"), ("plugin", "uninstall")}
+_PLUGIN_NEVER_REMOVED = {"lane-pilot", "env-catalog"}
+
+
+def _plugin_manifest(cwd: object) -> dict | None:
+    try:
+        data = json.loads((Path(cwd) / "package.json").read_text(encoding="utf-8")) if isinstance(cwd, str) else None
+    except (OSError, ValueError):
+        return None
+    return data if isinstance(data, dict) and isinstance(data.get("bb"), dict) else None
 
 
 def _is_plugin_checkout(cwd: object) -> bool:
-    return isinstance(cwd, str) and any(part.startswith("bb-plugin-") for part in Path(cwd).parts)
+    """A BB plugin's own folder: named bb-plugin-*, or its package.json carries BB's plugin block (plugins/muse-ai-connector)."""
+    return isinstance(cwd, str) and (any(part.startswith("bb-plugin-") for part in Path(cwd).parts) or _plugin_manifest(cwd) is not None)
+
+
+def _checkout_plugin_id(cwd: object) -> str | None:
+    """The id BB gives the plugin of this folder: the package name without its scope and the bb-plugin- prefix."""
+    manifest = _plugin_manifest(cwd)
+    name = str(manifest.get("name") or "") if manifest else (Path(cwd).name if isinstance(cwd, str) and Path(cwd).name.startswith("bb-plugin-") else "")
+    name = name.rsplit("/", 1)[-1]
+    return (name[len("bb-plugin-"):] if name.startswith("bb-plugin-") else name) or None
+
+
+def _plugin_remove_error(words: list[str], cwd: object) -> str | None:
+    target = words[2] if len(words) > 2 else ""
+    if target in _PLUGIN_NEVER_REMOVED:
+        return f"bb plugin remove {target} would stop every Lane Pilot chat or lose every secret; reinstall it with bb plugin install/update instead"
+    own = _checkout_plugin_id(cwd) if _is_plugin_checkout(cwd) else None
+    if own and target == own:
+        return None
+    return (f"bb plugin remove deletes a plugin's settings, secrets and schedules: only the plugin of this folder ({own}) may be removed here"
+            if own else "bb plugin remove runs only from that plugin's own folder; to reinstall, bb plugin install/update keeps its settings")
 
 
 # The bb CLI by name, by absolute path, or through the BB_CLI variable BB sets for agents.
@@ -1235,8 +1267,10 @@ def _lane_pilot_bb_command_error(args: list[str], cwd: object = None) -> str | N
         return None
     if any(tuple(words[:size]) in PM_BB_HANDOFF_COMMANDS for size in (2, 3)):
         return PM_BB_HANDOFF_DENIAL
+    if tuple(words[:2]) in LANE_PILOT_BB_PLUGIN_REMOVE:
+        return _plugin_remove_error(words, cwd)
     if tuple(words[:2]) in LANE_PILOT_BB_PLUGIN_SHIP:
-        return None if _is_plugin_checkout(cwd) else f"bb {' '.join(words[:2])} runs only from a bb-plugin-* checkout (that plugin's own PM ships it)"
+        return None if _is_plugin_checkout(cwd) else f"bb {' '.join(words[:2])} runs only from a BB plugin's own folder (bb-plugin-* or a package.json with a bb block): that plugin's PM ships it"
     return f"bb {' '.join(words[:2]) or '(none)'} is not open to the PM"
 
 
