@@ -72,6 +72,7 @@ export function createProjectLifeStage(ctx: ServerCore, services: Services) {
     // ponytail: since 2026-11-03 the diary is one CHANGELOG line written by script (seconds, no model; the agent took 6-7 min and
     // failed 80 of 144 runs). The agent path below only finishes children started before; delete it once none is running.
     if(!liveChild){
+      recordStage(db,{...base,state:"running",providerId:"script",model:null});
       const tasks=coveredTaskIds.map((id)=>services.projectLifeTaskSummary(args.runId,id));
       try {
         const out=await host.call("runCommand",{requestedHostId:config.hostId,cwd:workspace.path,timeoutSec:30,
