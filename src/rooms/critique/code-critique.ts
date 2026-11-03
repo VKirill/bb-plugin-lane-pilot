@@ -6,7 +6,7 @@ import type { Citation } from "./citations";
 import { CRITIC_RUBRIC, VERDICT_STATUSES, applyRubric, isVerdictShape, legacyOutputToVerdict, normalizeVerdictInput, rubricPromptLine, settleVerdict, verdictSchema, verdictSeverityToLegacy, verdictSummary, withoutDecision } from "@lane-pilot/workflow-engine";
 import type { Verdict, VerdictFinding, VerdictStatus } from "@lane-pilot/workflow-engine";
 import { sha256Hex } from "@lane-pilot/kit";
-import { TRUSTED_TOOLING_PATTERNS, verificationScriptPaths } from "../tasks/trusted-tooling";
+import { TRUSTED_TOOLING_PATTERNS, verificationScriptPaths } from "../tasks";
 /** Terminal colour codes out of check output (the same regex as verification/gate-output; a cross-room import would cycle). */
 const stripAnsi = (text: string): string => text.replace(/\u001b\[[0-9;?]*[A-Za-z]/g, "");
 
