@@ -202,8 +202,8 @@ export function tableRowAt(settings: Record<string, unknown>, rowId: string): { 
 }
 
 /**
- * The other models the owner allows for a row (`role_model.<role>` = `{ model, reasoning_effort?, pool: [{ model, reasoning_effort? }] }`): the row's
- * model and these share the role's work, the least loaded provider first (resolveAgentModel). Invalid or repeated entries are dropped.
+ * The fallbacks the owner names for a row (`role_model.<role>` = `{ model, reasoning_effort?, pool: [{ model, reasoning_effort? }] }`): the row's
+ * model runs first, these in the owner's order only when the ones before are spent (resolveAgentModel). Invalid or repeated entries are dropped.
  */
 export function tablePoolAt(settings: Record<string, unknown>, rowId: string): Array<{ option: RoleModelOption; effort: string | null }> {
   const raw = settings[roleModelKey(rowId)];

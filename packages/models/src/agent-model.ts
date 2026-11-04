@@ -67,23 +67,15 @@ export type AgentModelInput = {
    * its author's family keeps going and says `same_family_judge_by_limit`. Absent or unknown: the table's pick stands.
    */
   spent?: SpentProbe;
-  /**
-   * How busy a provider is now, for a row with a pool of models (`tablePoolAt`): the spent share of its usage window (null: not measured) and
-   * how many helpers started on it lately. The row's model and its pool are tried least loaded first; absent: the row's model first, as stored.
-   */
-  load?: (providerId: string, model: string) => { percent: number | null; recent: number };
 };
 /**
- * The row's model and its pool in the order they should take the next run: a spent provider last, then the less spent window (in steps of
- * ten percent, so a few points do not flip it), then the fewer recent starts, then the order the owner gave.
+ * The row's model and its fallbacks (its pool) in the order they take the next run: the owner's order, a spent provider (its usage window, or a
+ * limit a helper just hit) moved to the end. The owner's choice of 2026-11-04: the main model always first, a fallback only when it cannot run
+ * — the pool used to share runs by load, which sent docs and the rules analyzer to the GLM fallback and spent its plan every night.
  */
-export function rankPool<T extends { providerId: string; model: string }>(rows: readonly T[], load: AgentModelInput["load"], spent: SpentProbe | undefined): T[] {
-  if (rows.length < 2 || !load) return [...rows];
-  const score = rows.map((row, index) => {
-    const now = load(row.providerId, row.model);
-    return { row, index, spent: spent?.(row.providerId, row.model) ? 1 : 0, band: Math.floor((now.percent ?? 0) / 10), recent: now.recent };
-  });
-  return score.sort((a, b) => a.spent - b.spent || a.band - b.band || a.recent - b.recent || a.index - b.index).map((item) => item.row);
+export function rankPool<T extends { providerId: string; model: string }>(rows: readonly T[], spent: SpentProbe | undefined): T[] {
+  if (rows.length < 2 || !spent) return [...rows];
+  return [...rows.filter((row) => !spent(row.providerId, row.model)), ...rows.filter((row) => spent(row.providerId, row.model))];
 }
 
 /** The author rows each judge row is judged against, in order: the first one whose model is known is the author. Other roles judge no one. */
@@ -135,13 +127,13 @@ export function resolveAgentModel(input: AgentModelInput): AgentModel {
   const builtin = roleDefaultModel(row.id);
   type Candidate = { providerId: string; model: string; effort: string; source: AgentModelSource; sourceKey: string | null };
   const first: Candidate = { providerId: chosen.providerId, model: chosen.model, effort: chosen.effort, source: chosen.source === "default" ? "role-default" : chosen.source, sourceKey: chosen.sourceKey };
-  // The owner's row may share the role between several models (its pool): the least loaded provider takes this run, the others follow it.
+  // The owner's row may name fallbacks (its pool): they follow the row's model in the owner's order, a spent one last.
   // A Claude Code agent profile role (a specialist, the workflow architect) takes only Claude models of its pool: another provider refuses the profile.
   const profileOnly = CLAUDE_PROFILE_ROLES.has(row.id);
   const pool: Candidate[] = chosen.source === "table"
     ? tablePoolAt(input.settings, row.id).filter(({ option }) => !profileOnly || option.providerId === "claude-code").map(({ option, effort }) => ({ providerId: option.providerId, model: option.id, effort: effort ?? pickedEffort(row, option), source: "table", sourceKey: chosen.sourceKey }))
     : [];
-  const candidates: Candidate[] = rankPool([first, ...pool], input.load, input.spent);
+  const candidates: Candidate[] = rankPool([first, ...pool], input.spent);
   // A background row the owner left on its default tries ZCode's free tokens first, only where the caller says ZCode can work now (its machine,
   // its hours, a free slot); a caller that cannot tell (no `offered`) never gets it. ZCode refusing at run time hands the step to the next candidate.
   if (chosen.source === "default" && ZCODE_FREE_ROWS.includes(row.id) && zcodeBackgroundOn(input.settings) && input.offered?.(ZCODE_PROVIDER_ID, ZCODE_FREE_MODEL) === true) {

@@ -69,17 +69,6 @@ export async function warmSpawnUsage(usage: SpawnUsageUse | undefined, hostId: s
   void usage?.warm({ providerIds: TABLE_PROVIDERS, hostId }).catch(() => undefined);
 }
 
-/** Helper starts per provider over the last half hour, for a row with a pool of models to spread its runs (resolveAgentModel's `load`). */
-const RECENT_MS = 30 * 60_000;
-const recentStarts = new Map<string, number[]>();
-function recentOf(providerId: string, now: number): number {
-  const kept = (recentStarts.get(providerId) ?? []).filter((at) => now - at < RECENT_MS);
-  recentStarts.set(providerId, kept);
-  return kept.length;
-}
-/** Test hook: forget the recent starts. */
-export function resetRecentStarts(): void { recentStarts.clear(); }
-
 /** A folder under a macOS user's Documents — the one place an observed opencode2 EPERM can be about. */
 const DOCUMENTS_FOLDER = /^\/Users\/[^/]+\/Documents(\/|$)/;
 
@@ -121,7 +110,7 @@ export function providerBlockedForFolder(providerId: string, envPath: string | n
   return null;
 }
 
-export type SpawnModelInput = Omit<AgentModelInput, "offered" | "providerOf" | "pm" | "load"> & {
+export type SpawnModelInput = Omit<AgentModelInput, "offered" | "providerOf" | "pm"> & {
   /** The folder the thread starts in: a provider that cannot work there (`providerBlockedForFolder`) is not offered. */
   envPath?: string | null;
   pm?: AgentModelInput["pm"];
@@ -148,14 +137,8 @@ export function resolveSpawnModel(input: SpawnModelInput): AgentModel {
     return catalog && hostId ? offeredForRole(catalog, providerId, model, hostId) : null;
   };
   const usageSpent: SpentProbe = (providerId, model) => seenProviderLimit(providerId, model) ?? usage?.peek({ providerId, model, hostId: hostId ?? null, settings: rest.settings }) ?? null;
-  const now = Date.now();
-  // The spent share of a window from the cache (a threshold of 1% returns the reading itself; ZCode has no window) and the recent starts.
-  const load = (providerId: string, model: string) => ({
-    percent: usage && !isZcodeProvider(providerId) ? usage.peek({ providerId, model, hostId: hostId ?? null, settings: { ...rest.settings, "usage.skip_percent": 1 } })?.percent ?? null : null,
-    recent: recentOf(providerId, now),
-  });
   const resolve = (avoided: boolean, spent: SpentProbe | undefined): AgentModel => resolveAgentModel({
-    ...rest, pm: pm ?? null, offered: offeredAt(avoided), load,
+    ...rest, pm: pm ?? null, offered: offeredAt(avoided),
     ...(catalog ? { providerOf: (model: string) => catalogProviderOf(catalog, model) } : {}), ...(spent ? { spent } : {}),
   });
   let answer = resolve(true, usageSpent);
@@ -169,6 +152,5 @@ export function resolveSpawnModel(input: SpawnModelInput): AgentModel {
   }
   const moved = answer.issues.find((issue) => issue.startsWith("usage_moved:"));
   if (moved && usage?.log) usage.log(`Lane Pilot: the ${rest.role} helper moves to the other model family, ${moved.slice("usage_moved: ".length)}`);
-  recentStarts.set(answer.providerId, [...(recentStarts.get(answer.providerId) ?? []), now]);
   return answer;
 }
