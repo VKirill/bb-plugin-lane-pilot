@@ -3,6 +3,7 @@ import { runGraphHelper, sumUsage } from "../../workflow/server";
 import type { ChainRuntime, GraphHelperRun } from "../../workflow/server";
 import type { ServerCore, Services } from "../../core/server";
 import type { AnalyzerSelection, JobResult, ScanJob } from "../../self-repair/server";
+import { providerLimitNotice } from "../../writer/server";
 
 /**
  * The night rules scan as graphs (workflows/lp.rules-scan.json, workflows/lp.rules-ask.json). Planning and judging stay code: `collect` triages
@@ -21,11 +22,29 @@ export function mountRulesScanGraph(ctx: ServerCore, services: Services): void {
   const stopped = (c: StepContext<ChainRuntime>): boolean => ctx.isDisposed() || c.signal.aborted;
 
   /** One analyzer call as a step's helper: the thread, its answer and what it spent. A thread that does not finish in time is stopped. */
-  const runJob = (c: StepContext<ChainRuntime>, job: { key: string; projectId: string; title: string; prompt: string; metadata: Record<string, unknown> }, place: { hostId: string; path: string }, analyzer: AnalyzerSelection) =>
+  const runOnce = (c: StepContext<ChainRuntime>, job: { key: string; projectId: string; title: string; prompt: string; metadata: Record<string, unknown> }, place: { hostId: string; path: string }, analyzer: AnalyzerSelection) =>
     runGraphHelper(ctx, c, {
       key: job.key, label: "rules_analyzer", waitMs: scan.graph.ANALYZER_LIMIT_MS, projectId: job.projectId,
       spawn: (graph) => scan.graph.spawnAnalyzer({ projectId: job.projectId, title: job.title, prompt: job.prompt, place, analyzer, metadata: job.metadata }, graph),
     });
+  // An analyzer out of its plan window (opencode2 GLM «Usage limit reached for 5 hour», six PM-replay harvests on 2026-11-03) answers or
+  // fails with the notice: the call runs once more on the role's next provider, as a workflow agent step does (workflow-agent.ts).
+  const runJob = async (c: StepContext<ChainRuntime>, job: { key: string; projectId: string; title: string; prompt: string; metadata: Record<string, unknown> }, place: { hostId: string; path: string }, analyzer: AnalyzerSelection): Promise<GraphHelperRun> => {
+    let limit: string | null = null, first: GraphHelperRun | null = null, error: unknown = null;
+    try {
+      first = await runOnce(c, job, place, analyzer);
+      limit = providerLimitNotice(first.text);
+    } catch (cause) {
+      if (stopped(c)) throw cause;
+      error = cause;
+      limit = providerLimitNotice((cause instanceof Error ? cause.message : String(cause)).slice(0, 400));
+    }
+    if (!limit) { if (first) return first; throw error; }
+    const next = await scan.analyzerFor(job.projectId, place, { avoidProvider: analyzer.providerId }).catch(() => null);
+    if (!next || next.providerId === analyzer.providerId) throw new Error(`${analyzer.providerId}/${analyzer.model} hit a provider limit (${limit}) and no other provider is on offer`);
+    ctx.bb.log.warn(`rules analyzer ${job.key}: ${analyzer.providerId}/${analyzer.model} hit a provider limit (${limit}); rerunning on ${next.providerId}/${next.model}`);
+    return await runOnce(c, { ...job, key: `${job.key}:limit` }, place, next);
+  };
 
   engine.register<ChainRuntime>("lp.rules_collect", {
     reentrant: true,

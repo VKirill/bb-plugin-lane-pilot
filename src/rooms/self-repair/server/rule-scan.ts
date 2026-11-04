@@ -132,9 +132,10 @@ export function createRuleScan(ctx: ServerCore, services: Services) {
   const { bb, db, host } = ctx;
   const running = new Set<string>();
 
-  async function analyzerFor(projectId: string, place?: { hostId: string; path: string } | null): Promise<AnalyzerSelection | null> {
+  /** `avoidProvider`: a provider that just hit its limit; the owner's pick on it is skipped and the role's next provider answers. */
+  async function analyzerFor(projectId: string, place?: { hostId: string; path: string } | null, options: { avoidProvider?: string } = {}): Promise<AnalyzerSelection | null> {
     const stored = await bb.storage.kv.get(ANALYZER_KEY(projectId)) as AnalyzerSelection | undefined;
-    if (stored?.providerId && stored.model) return stored;
+    if (stored?.providerId && stored.model && stored.providerId !== options.avoidProvider) return stored;
     // Until the owner picks one: the `rules-analyzer` row of the role table (Codex GPT-6 Luna, high). On the SelfyStudio group
     // (2026-10-01) it set aside three failures that were not the writers' (foreign specs, untouched files) where Grok 4.6 wrote a
     // rule that would have sent writers outside their owns_paths; it is also the cheaper model. Fast tier, as it always ran.
@@ -144,7 +145,7 @@ export function createRuleScan(ctx: ServerCore, services: Services) {
     // The folder the analyzer starts in is known here (collectScan, runModel): a provider this machine refused there (opencode2 under
     // ~/Documents, 2026-10-30: two of the night's seven failures) is out of the offer, as on the workflow-agent path.
     const folderBlock = place ? await readProviderFolderBlock(bb.storage.kv, place.hostId, "opencode2") : null;
-    const role = resolveSpawnModel({ role: "rules-analyzer", settings, catalog: modelCatalogOf(ctx).peek(), usage: spawnUsage, hostId: place?.hostId ?? null, envPath: place?.path ?? null, folderBlock });
+    const role = resolveSpawnModel({ role: "rules-analyzer", settings, catalog: modelCatalogOf(ctx).peek(), usage: spawnUsage, hostId: place?.hostId ?? null, envPath: place?.path ?? null, folderBlock, avoidProvider: options.avoidProvider ?? null });
     return { providerId: role.providerId, model: role.model, reasoningLevel: role.reasoningEffort, serviceTier: DEFAULT_ANALYZER.serviceTier };
   }
 

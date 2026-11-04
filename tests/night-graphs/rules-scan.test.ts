@@ -127,6 +127,19 @@ describe("the rules scan graph", () => {
     expect(await scan.analyzerFor(PROJECT)).toMatchObject({ providerId: expect.any(String) });
   });
 
+  it("an analyzer out of its plan window reruns the call once on the role's next provider (PM-replay harvests, 2026-11-03)", async () => {
+    const LIMIT = "Usage limit reached for 5 hour. Your limit will reset at 2026-11-03 13:34:43";
+    for (const first of [LIMIT, new Error(LIMIT)]) {
+      const { w, scan } = setup([first, "{\"items\":[]}"]);
+      const glm = { providerId: "opencode2", model: "zai-coding-plan/glm-5.3-flash", reasoningLevel: "high", serviceTier: null } as const;
+      const text = await scan.runAnalyzer(PROJECT, "PM replay · harvest x", "Extract", { hostId: "host-1", path: "/proj" }, glm, { learning: true });
+      expect(text).toBe("{\"items\":[]}");
+      // A refused spawn (the Error) leaves no thread; a limit answer leaves the opencode2 one.
+      expect(w.state.spawned.map((row: any) => row.providerId)).toEqual(first instanceof Error ? ["codex"] : ["opencode2", "codex"]);
+      expect(w.runs("lp.rules-ask")).toEqual([expect.objectContaining({ status: "succeeded" })]);
+    }
+  });
+
   it("the learning review's model call is the one-step graph lp.rules-ask and returns the analyzer's text", async () => {
     const { w, scan } = setup(["{\"items\":[]}"]);
     const place = { hostId: "host-1", path: "/proj" };
