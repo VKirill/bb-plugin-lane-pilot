@@ -3,6 +3,7 @@ import { mapListedQaHosts } from "../../qa";
 import { scheduleIsolated, configuredSetting } from "../../core/server";
 import type { ServerCore } from "../../core/server";
 import { loadProjectSettings } from "../../storage";
+import { STICKY_WINDOW_MS } from "../../writer";
 
 /**
  * The hourly safety net over ~/.lane-pilot/worktrees on every connected machine (WT1, 2026-10-30): copies of docs,
@@ -100,13 +101,18 @@ export async function runWorktreeJanitor(ctx: Pick<ServerCore, "bb" | "db" | "lo
 }
 
 /** Whether a registry row's owning process is still alive: the attempt runs, or the pass's KV marker stands. */
-async function ownerAlive(ctx: Pick<ServerCore, "bb" | "db">, row: { owner_kind: string; owner_id: string | null; created_at: number }, now = Date.now()): Promise<boolean> {
+async function ownerAlive(ctx: Pick<ServerCore, "bb" | "db">, row: { owner_kind: string; owner_id: string | null; created_at: number; host: string; path: string }, now = Date.now()): Promise<boolean> {
   const { bb, db } = ctx;
   if (row.owner_kind === "attempt") {
-    const attempt = db.prepare("SELECT state, updated_at FROM lane_pilot_attempt WHERE id=?").get(row.owner_id) as { state?: string; updated_at?: number } | undefined;
-    if (!attempt) return false;
-    if (JANITOR_OPEN_STATES.includes(attempt.state ?? "")) return true;
-    return JANITOR_REOPENABLE_STATES.includes(attempt.state ?? "") && now - Number(attempt.updated_at ?? 0) < worktreeGraceMs(db);
+    // Sticky turns and retries borrow the original attempt's copy; the registry's creator is not its only owner.
+    // Keep the creator too: its path may not be bound yet when a reload interrupts provisioning.
+    const attempts = db.prepare(`SELECT a.state, a.updated_at, json_extract(t.contract_json,'$.area') AS area
+      FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
+      LEFT JOIN lane_pilot_task t ON t.id=a.task_id AND t.run_id=a.run_id
+      WHERE a.id=? OR (a.workspace_path=? AND r.writer_host_id=?)`).all(row.owner_id, row.path, row.host) as Array<{ state: string; updated_at: number; area: string | null }>;
+    return attempts.some((attempt) => JANITOR_OPEN_STATES.includes(attempt.state)
+      || (JANITOR_REOPENABLE_STATES.includes(attempt.state) && now - attempt.updated_at < worktreeGraceMs(db))
+      || (attempt.state === "accepted" && Boolean(attempt.area) && now - attempt.updated_at <= STICKY_WINDOW_MS));
   }
   if (row.owner_kind === "docs" && row.owner_id) return (await bb.storage.kv.list("docs-worktree:").catch(() => [] as string[])).some((key) => key.endsWith(`:${row.owner_id}`));
   if (row.owner_kind === "regress" && row.owner_id) return (await bb.storage.kv.list("regress-worktree:").catch(() => [] as string[])).some((key) => key.slice("regress-worktree:".length) === row.owner_id);

@@ -1,0 +1,124 @@
+{
+  "source": "bb lane-pilot state proj_acpiaqf4wq --attempt <id>; bb thread messages <thread> --json --all",
+  "classKey": "task:3a2427174301",
+  "hostId": "host_rwrxyi39aw",
+  "basePath": "/home/ubuntu/apps/selfystudio",
+  "origins": [
+    {
+      "id": "lpattempt_1b41280b3c274c86b243fbbfeaa038b7",
+      "run_id": "lprun_9a46fd17e8814c2cacdb8220c0aa0225",
+      "task_id": "cab-unslop-shared-parts",
+      "thread_id": "thr_47qf5dpgcj",
+      "state": "accepted",
+      "reason": null,
+      "created_at": 1793547614529,
+      "updated_at": 1793549420322,
+      "attempt_no": 1,
+      "workspace_path": "/home/ubuntu/.lane-pilot/worktrees/lpattempt_1b41280b3c274c86b243fbbfeaa038b7/selfystudio",
+      "environment_id": "env_wufc8ma74r",
+      "harness_version": "0.1.463",
+      "area": "feature:cabinet-shell"
+    },
+    {
+      "id": "lpattempt_6f0f25341b7e40a9acba64737170709e",
+      "run_id": "lprun_9a46fd17e8814c2cacdb8220c0aa0225",
+      "task_id": "cab-create-onescreen.2",
+      "thread_id": "thr_tix3bchwaa",
+      "state": "accepted",
+      "reason": null,
+      "created_at": 1793571301852,
+      "updated_at": 1793571827658,
+      "attempt_no": 7,
+      "workspace_path": "/home/ubuntu/.lane-pilot/worktrees/lpattempt_6f0f25341b7e40a9acba64737170709e/selfystudio",
+      "environment_id": "env_phgkzijnpk",
+      "harness_version": "0.1.473",
+      "area": "page:/cabinet/generate-photo"
+    }
+  ],
+  "failures": [
+    {
+      "id": "lpattempt_318d1df390094804b751d83d287cfcfc",
+      "run_id": "lprun_9a46fd17e8814c2cacdb8220c0aa0225",
+      "task_id": "cab-unslop-dropdowns",
+      "thread_id": "thr_47qf5dpgcj",
+      "state": "validation_failed",
+      "reason": "cannot read writer-workspace git diff: spawn /bin/bash ENOENT",
+      "created_at": 1793547795621,
+      "updated_at": 1793550755620,
+      "attempt_no": 1,
+      "workspace_path": "/home/ubuntu/.lane-pilot/worktrees/lpattempt_1b41280b3c274c86b243fbbfeaa038b7/selfystudio",
+      "environment_id": "env_wufc8ma74r",
+      "harness_version": "0.1.464"
+    },
+    {
+      "id": "lpattempt_cb51d85547cd4196a1656f9cecffe615",
+      "run_id": "lprun_9a46fd17e8814c2cacdb8220c0aa0225",
+      "task_id": "cab-unslop-dropdowns",
+      "thread_id": "thr_47qf5dpgcj",
+      "state": "validation_failed",
+      "reason": "cannot read writer-workspace git diff: spawn /bin/bash ENOENT",
+      "created_at": 1793550756538,
+      "updated_at": 1793550804806,
+      "attempt_no": 2,
+      "workspace_path": "/home/ubuntu/.lane-pilot/worktrees/lpattempt_1b41280b3c274c86b243fbbfeaa038b7/selfystudio",
+      "environment_id": "env_wufc8ma74r",
+      "harness_version": "0.1.464"
+    },
+    {
+      "id": "lpattempt_802975e796e04de5a73a9d79cd958655",
+      "run_id": "lprun_9a46fd17e8814c2cacdb8220c0aa0225",
+      "task_id": "cab-gp-redo.2",
+      "thread_id": "thr_tix3bchwaa",
+      "state": "validation_failed",
+      "reason": "cannot read writer-workspace git diff: spawn /bin/bash ENOENT",
+      "created_at": 1793573244521,
+      "updated_at": 1793573706810,
+      "attempt_no": 2,
+      "workspace_path": "/home/ubuntu/.lane-pilot/worktrees/lpattempt_6f0f25341b7e40a9acba64737170709e/selfystudio",
+      "environment_id": "env_phgkzijnpk",
+      "harness_version": "0.1.474"
+    },
+    {
+      "id": "lpattempt_32d5e2fa457d4794bedbf5c092787c4c",
+      "run_id": "lprun_9a46fd17e8814c2cacdb8220c0aa0225",
+      "task_id": "cab-gp-redo.2",
+      "thread_id": "thr_tix3bchwaa",
+      "state": "validation_failed",
+      "reason": "cannot read writer-workspace git diff: spawn /bin/bash ENOENT",
+      "created_at": 1793573707157,
+      "updated_at": 1793573862376,
+      "attempt_no": 3,
+      "workspace_path": "/home/ubuntu/.lane-pilot/worktrees/lpattempt_6f0f25341b7e40a9acba64737170709e/selfystudio",
+      "environment_id": "env_phgkzijnpk",
+      "harness_version": "0.1.474"
+    },
+    {
+      "id": "lpattempt_da3ea33dd5984ab6b29d2e8e52d26807",
+      "run_id": "lprun_9a46fd17e8814c2cacdb8220c0aa0225",
+      "task_id": "cab-gp-redo.2",
+      "thread_id": "thr_tix3bchwaa",
+      "state": "validation_failed",
+      "reason": "cannot read writer-workspace git diff: spawn /bin/bash ENOENT",
+      "created_at": 1793573862502,
+      "updated_at": 1793573887225,
+      "attempt_no": 4,
+      "workspace_path": "/home/ubuntu/.lane-pilot/worktrees/lpattempt_6f0f25341b7e40a9acba64737170709e/selfystudio",
+      "environment_id": "env_phgkzijnpk",
+      "harness_version": "0.1.474"
+    }
+  ],
+  "missingCwdEvents": [
+    {
+      "threadId": "thr_47qf5dpgcj",
+      "seq": 7737,
+      "at": 1793549911634,
+      "output": "Working directory does not exist: /home/ubuntu/.lane-pilot/worktrees/lpattempt_1b41280b3c274c86b243fbbfeaa038b7/selfystudio"
+    },
+    {
+      "threadId": "thr_tix3bchwaa",
+      "seq": 540,
+      "at": 1793573297993,
+      "output": "Working directory '/home/ubuntu/.lane-pilot/worktrees/lpattempt_6f0f25341b7e40a9acba64737170709e/selfystudio' does not exist. The session's workspace directory may be misconfigured."
+    }
+  ]
+}
