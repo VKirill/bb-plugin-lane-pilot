@@ -126,7 +126,7 @@ export const ROLE_PROFILES: Record<HelperRole, RoleProfile> = {
   "project-life": { bbPlugins: [], skills: ["project-life"], mcpServers: ["gitnexus"] },
   "browser-qa": { bbPlugins: ["browser-automation"], skills: ["browser-automation"], mcpServers: [] },
   // A PM's errand outside the code: a console, a mailbox, a recording. The browser on the browser machine, the fast
-  // jev-ultrafast loop (computer-use) and Env Catalog for the accounts it needs; no code skills.
+  // jev-ultrafast loop and agent-desktop for apps on the Mac mini (both through computer-use) and Env Catalog for the accounts it needs; no code skills.
   "errand": { bbPlugins: ["browser-automation", "env-catalog"], skills: ["browser-automation", "computer-use", "env-catalog"], mcpServers: [] },
   // The API map of a web service (workflows/api-recon.json): the browser and the login, nothing else.
   "api-recon": { bbPlugins: ["browser-automation", "env-catalog"], skills: ["browser-automation", "env-catalog"], mcpServers: [] },

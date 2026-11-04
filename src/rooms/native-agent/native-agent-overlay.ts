@@ -430,7 +430,7 @@ ${BB_SPECIALIST_SCHEDULE}`,
   "social-manager": employeeSession("social-manager", "You post, reply and read what the audience did. telegram-user is always loaded. Rich messages, the browser and the insight skills come from the catalog for this task.", "Any machine. Telegram and the social browser do not need the Mac.", ".agents/social/<slug>/"),
   "billing-assistant": employeeSession("billing-assistant", "You handle invoices and closing documents. kontur-elba is always loaded. Diadoc is the same catalog section and runs on Windows when the task is an ЭДО document.", "Mac mini for Elba. Say so when a step needs the Windows machine for Diadoc.", ".agents/billing/<slug>/"),
   "visual-artist": employeeSession("visual-artist", "You make the picture the task asks for. image-prompting is always loaded. nano-banana and the style skills come from the catalog. Image Studio is a plugin (image_studio_*), not a skill folder.", "Any machine.", ".agents/visual/<slug>/"),
-  "macos-operator": employeeSession("macos-operator", "You do the owner's macOS routine: clicks, files, the signed-in browser. computer-use is always loaded and can run with --remote from another machine onto the Mac mini. browser-automation is a plugin, not a catalog skill.", "Mac mini.", ".agents/macos/<slug>/"),
+  "macos-operator": employeeSession("macos-operator", "You do the owner's macOS routine: clicks, files, the signed-in browser. computer-use is always loaded: an app's UI goes through agent-desktop (`bin/run desktop --app <app> --goal <goal>`, or `bin/run ad snapshot` / `ad click @ref` step by step), headless, with no mouse; AppleScript, osascript or the real mouse only when the task names them. It runs with --remote from another machine onto the Mac mini. browser-automation is a plugin, not a catalog skill.", "Mac mini.", ".agents/macos/<slug>/"),
 
   // (2026-10-29 lane-stack port) standalone Claude Lane roles. Live browser clicks stay on the lp.browser-qa graph;
   // docs-maintainer stays a nightly pass. These sessions do not call lane-ctl or run-controller.
@@ -487,7 +487,7 @@ export const BB_AGENT_SUMMARIES: Readonly<Record<string, string>> = {
   "social-manager": "Posts, replies and audience reads; telegram-user plus the social sections of the catalog.",
   "billing-assistant": "Invoices and closing documents (Elba on the Mac mini, Diadoc on Windows).",
   "visual-artist": "Pictures for the task via the image catalog and the Image Studio plugin.",
-  "macos-operator": "The owner's macOS routine on the Mac mini: computer-use and the browser plugin.",
+  "macos-operator": "The owner's macOS routine on the Mac mini: computer-use (agent-desktop for apps) and the browser plugin.",
   [WORKFLOW_ARCHITECT_ID]: WORKFLOW_ARCHITECT_SUMMARY,
   [LEAD_ID]: LEAD_SUMMARY,
   "advisor-researcher": "One gray area: two or three options, a source for each, and a recommendation; no product code.",

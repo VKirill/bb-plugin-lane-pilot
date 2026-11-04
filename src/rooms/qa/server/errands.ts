@@ -70,6 +70,7 @@ export function errandPrompt(input: { task: string; browserHostId: string | null
     "",
     "What you have:",
     ...browser,
+    "- Apps on the Mac mini (Finder, System Settings, Xcode, a dialog, a menu-bar item): agent-desktop through the computer-use skill. A whole goal: `.../toolkit/computer-use/bin/run --remote desktop --app '<app>' --goal '<goal>'`; step by step: `... ad snapshot --app '<app>' -i --compact`, then `... ad click @ref`. Headless: no mouse, no focus change. AppleScript, osascript or the real mouse only when the task names them.",
     "- Accounts and keys: Env Catalog (skill env-catalog: env_list, then env_get with the exact name). Never print a secret. If an account is missing, env_request it and stop.",
     ...errandAccountLines(input.accounts ?? []),
     "- Never change, commit or push this repository's files — no edits, no `git add`/`git commit`/`git push`, no redirects or `tee` into the checkout; reading the repository stays allowed. If the task asks for a repository change, stop right there with `ERRAND: blocked: repository edits go through the PM's writer task` and change nothing.",

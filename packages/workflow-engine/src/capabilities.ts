@@ -102,7 +102,7 @@ export const WORKFLOW_REFERENCE = {
     "analyst, planner, auditor, debugger": "read-only thin roles: they read the code graph (gitnexus) and nothing else, no browser, no accounts. An unknown role, the default `worker` included, runs as `analyst`",
     "plan-critic, pm-reader, council, memory": "answer from the message alone: no tools, no code graph",
     "code-critic, triager": "read-only, code graph",
-    errand: "work outside the code: the owner's browser (browser-automation, computer-use), Env Catalog accounts by name (env_get), mail, consoles",
+    errand: "work outside the code: the owner's browser (browser-automation, computer-use), apps on the Mac mini (computer-use: agent-desktop), Env Catalog accounts by name (env_get), mail, consoles",
     "api-recon": "maps a web service's API through its pages (GPT-6.1 Terra by default): browser-automation and Env Catalog, read-only",
     "browser-qa": "a browser check of a URL with cases; browser-automation only",
     "project-life": "may write .agents/ and CHANGELOG.md",
@@ -147,7 +147,7 @@ export async function collectCapabilities(ports: CapabilityPorts, query: Capabil
     result.browser = {
       browserMachine: ports.browserHostId?.() ?? null,
       howToUse: [
-        "an agent node with skills browser-automation (persistent pages, snapshots, forms) or computer-use (one goal in the owner's signed-in Chrome through jev) and role errand-style prompt",
+        "an agent node with skills browser-automation (persistent pages, snapshots, forms) or computer-use (one goal in the owner's signed-in Chrome through jev; an app on the Mac mini through agent-desktop) and role errand-style prompt",
         "a PM chat reaches the same browser through lane_pilot_helpers {action:\"browser\"} (one step) and lane_pilot_errand (long jobs); a chain agent node uses the skills instead",
         "set requires.browserSession: true so the library shows that the chain needs the signed-in browser",
       ],
