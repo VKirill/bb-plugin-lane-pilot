@@ -1,5 +1,5 @@
 import { resolveRoleModel } from "@lane-pilot/models";
-import { ERRAND_KINDS, ERRAND_KIND_ID, errandKindRole, type ErrandKind } from "../schedule";
+import { ERRAND_KINDS, ERRAND_KIND_ID, errandRoleFor, type ErrandKind } from "../schedule";
 
 /**
  * The «Errands» page (owner, 2026-11-01: «a tab where I see which errands the system has and can grow them»): the kinds with the model each
@@ -97,7 +97,7 @@ export function kindsOverview(db: Db, settings: Record<string, unknown>, days: n
     .all(since) as Array<{ kind: string; status: string; reason: string | null; output_json: string | null; cost_micro_usd: number }>;
   const jev = jevShadowCounts(db, since);
   return ERRAND_KINDS_WITH_NONE.map((kind) => {
-    const role = errandKindRole(kind === "none" ? null : kind);
+    const role = errandRoleFor(kind === "none" ? null : kind, settings);
     const chosen = resolveRoleModel(role, settings);
     const mine = runs.filter((run) => kindOf(run.kind) === kind);
     const outcomes = mine.map((run) => errandOutcome(run.status, parse<{ state?: unknown; reason?: unknown } | null>(run.output_json, null), run.reason).outcome);

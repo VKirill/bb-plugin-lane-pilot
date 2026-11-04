@@ -144,14 +144,16 @@ describe("resolveErrandModel: the kind's own row at level 4 (errand-kinds.ts)", 
     expect(resolve({ kind: "research" })).toMatchObject({ model: "claude-sonnet-5-5", reasoningEffort: "high" });
     expect(resolve({ kind: "browser" })).toMatchObject({ model: "claude-sonnet-5-5", reasoningEffort: "medium" });
     expect(resolve({ kind: "message" })).toMatchObject({ model: "claude-sonnet-5-5", reasoningEffort: "medium", sourceKey: null });
-    expect(resolve({ kind: "computer" }, legacy)).toMatchObject({ model: "claude-opus-5-5", sourceKey: null });
+    expect(resolve({ kind: "computer" }, legacy)).toMatchObject({ model: "gpt-6-luna", sourceKey: "errand.model" });
     expect(resolve({ kind: "message" }, legacy)).toMatchObject({ model: "gpt-6-luna", sourceKey: "errand.model" });
   });
 
-  it("the owner's row of the kind wins over its default; the owner's errand row does not reach another kind", () => {
+  it("the owner's row of the kind wins; else the owner's errand row covers every kind (errand set to GLM, a computer errand ran on Opus, 2026-11-04)", () => {
     const settings = { "role_model.errand": { model: "gpt-6-luna", reasoning_effort: "low" }, "role_model.errand-devops": { model: "gpt-6.1-sol", reasoning_effort: "high" } };
     expect(resolve({ kind: "devops" }, settings)).toMatchObject({ providerId: "codex", model: "gpt-6.1-sol", reasoningEffort: "high", source: "errand-role", sourceKey: "role_model.errand-devops" });
-    expect(resolve({ kind: "computer" }, settings)).toMatchObject({ model: "claude-opus-5-5", sourceKey: null });
+    expect(resolve({ kind: "computer" }, settings)).toMatchObject({ model: "gpt-6-luna", reasoningEffort: "low", sourceKey: "role_model.errand" });
+    const glm = { "role_model.errand": { provider: "opencode2", model: "zai-coding-plan/glm-5.3-flash", reasoning_effort: "high" } };
+    for (const kind of ["computer", "devops", "research", "browser"]) expect(resolve({ kind }, glm)).toMatchObject({ providerId: "opencode2", model: "zai-coding-plan/glm-5.3-flash" });
     expect(resolve({ kind: "message" }, settings)).toMatchObject({ model: "gpt-6-luna", reasoningEffort: "low", sourceKey: "role_model.errand" });
     expect(resolve({}, settings)).toMatchObject({ model: "gpt-6-luna", sourceKey: "role_model.errand" });
   });

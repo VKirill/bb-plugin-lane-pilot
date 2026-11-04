@@ -100,13 +100,20 @@ describe("the table «role -> model» on the Team tab", () => {
     await openTeam(slot);
     const analyst = await picker(slot, "team-model-analyst");
     expect(analyst.getAttribute("data-model")).toBe("claude-opus-5-5");
-    expect(slot.getByTestId("team-model-analyst").textContent).toContain("+1");
+    // The pool is listed under the model, as the writer's fallbacks are (2026-11-04: the errand row showed no other models).
+    expect(slot.getByTestId("team-pool-analyst").textContent).toContain(`${en.roleModelsPool}gpt-6.1-sol`);
+    expect(slot.getByTestId("team-pool-add-analyst")).toBeTruthy();
     expect(slot.getByTestId("team-model-code-repair").textContent).toBe(en.teamModelAsWriter);
     // A choice in the roster's window goes into the role's row of the table, its pool kept.
     await choosePickerValue({ providerId: "acp-cursor", model: "grok-4.6", reasoningLevel: "medium" }, analyst);
     await waitFor(() => expect(saves(calls)).toHaveLength(1));
     expect(saves(calls)[0]!.input).toMatchObject({ key: roleModelKey("analyst"), expectedVersion: 1,
       value: { provider: "acp-cursor", model: "grok-4.6", reasoning_effort: "medium", pool: [{ provider: "codex", model: "gpt-6.1-sol" }] } });
+    // «×» drops a model of the pool and keeps the role's own model.
+    slot.getByTestId("team-pool-remove-analyst-gpt-6.1-sol").click();
+    await waitFor(() => expect(saves(calls)).toHaveLength(2));
+    expect(saves(calls)[1]!.input).toMatchObject({ key: roleModelKey("analyst"), value: { provider: "claude-code", model: "claude-opus-5-5", reasoning_effort: "high" } });
+    expect(saves(calls)[1]!.input.value).not.toHaveProperty("pool");
     slot.lifecycle.unmount();
   });
 

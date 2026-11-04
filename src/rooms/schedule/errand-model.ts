@@ -16,6 +16,17 @@ import { errandKindRole } from "./errand-kinds";
  *     level cannot be reached from a caller; it stays as the last resort for a build that ships no built-in (`builtin: null`).
  */
 export const SCHEDULE_ERRAND_DEFAULT_KEY = "schedule.errand_default";
+
+/**
+ * The row an errand of this kind runs on. The owner's pick for «Поручение» covers every kind (2026-11-04: errand set to GLM, a «computer»
+ * errand still started on the hidden row's Opus); a kind's own row wins only when the owner set that row, and its built-in default only
+ * when the owner picked no errand model at all.
+ */
+export function errandRoleFor(kind: string | null | undefined, settings: Record<string, unknown>): string {
+  const row = errandKindRole(kind);
+  if (row === "errand" || tableRowAt(settings, row)) return row;
+  return tableRowAt(settings, "errand") || text(settings[ERRAND_ROLE_KEYS.model]) ? "errand" : row;
+}
 /** The errand row of the role table (packages/models/src/role-models.ts): the one place the built-in default is written. */
 export const ERRAND_BUILTIN = (() => { const row = roleDefaultModel("errand"); return { providerId: row.providerId, model: row.model, reasoningEffort: row.effort }; })();
 export const ERRAND_ROLE_KEYS = { provider: "errand.provider", model: "errand.model", effort: "errand.reasoning_effort" } as const;
@@ -100,7 +111,7 @@ export function resolveErrandModel(input: {
     else level = { providerId: parsed.provider, model: parsed.model, effort: parsed.reasoning_effort ?? null, tier: parsed.service_tier ?? null, source: "schedule-default", sourceKey: SCHEDULE_ERRAND_DEFAULT_KEY };
   }
 
-  const row = errandKindRole(task.kind);
+  const row = errandRoleFor(task.kind, settings);
   const ownRow = !level ? tableRowAt(settings, row) : null;
   if (ownRow) level = { providerId: ownRow.option.providerId, model: ownRow.option.id, effort: ownRow.effort, tier: null, source: "errand-role", sourceKey: roleModelKey(row) };
   if (!level && row !== "errand") {

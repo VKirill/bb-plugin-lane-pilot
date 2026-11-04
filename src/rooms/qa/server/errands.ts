@@ -18,7 +18,7 @@ import type { ServerCore } from "../../core/server";
 import { runBrowserStep } from "./browser-graphs";
 import type { Services } from "../../core/server";
 import { mountErrandGraph } from "./errand-graph";
-import { errandKindRole } from "../../schedule";
+import { errandRoleFor } from "../../schedule";
 import type { ErrandRunStart } from "./errand-graph";
 import type { ExtraAccess } from "../../native-agent";
 
@@ -227,7 +227,8 @@ function mountErrandCore(ctx: ServerCore) {
     // nothing named is the row of the role table for the errand's kind (`errand-computer`…, else `errand`). The helper profile stays `errand`.
     const spawnUsage=spawnUsageOf(ctx);
     await warmSpawnUsage(spawnUsage,place.hostId);
-    const errandRole = resolveSpawnModel({ role: errandKindRole(input.kind), settings: loadProjectSettings(db, input.projectId), catalog: modelCatalogOf(ctx).peek(), usage: spawnUsage, hostId: place.hostId,
+    const errandSettings = loadProjectSettings(db, input.projectId);
+    const errandRole = resolveSpawnModel({ role: errandRoleFor(input.kind, errandSettings), settings: errandSettings, catalog: modelCatalogOf(ctx).peek(), usage: spawnUsage, hostId: place.hostId,
       ...(input.model ? { pinned: { provider: input.providerId ?? null, model: input.model, reasoning: input.reasoning ?? null } } : input.reasoning ? { pinned: { reasoning: input.reasoning } } : {}) });
     const providerId = errandRole.providerId;
     const spawned = await fullAccessSpawn(bb, {

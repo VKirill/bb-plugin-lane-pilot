@@ -63,9 +63,35 @@ function useRoleModel(page: LpPage) {
 }
 
 /** One role of the table: name, on/off, model picker, origin and access, with a drawer for what is specific to the role. */
-function RoleRow({ spec, page, access, rules, open, onToggle, fallbackNames, tableRoles, saveTableRole }: {
+/** The other models of a role, as the writer row shows its fallbacks: listed under the model, «+» adds one in BB's own window, «×» drops it. */
+function PoolLine({ row, names, page, onSave }: { row: TableRole; names: ReadonlyMap<string, string>; page: LpPage; onSave: (pool: TableRole["pool"]) => void }) {
+  const [adding, setAdding] = useState(false);
+  const name = (entry: { providerId: string; model: string }) => names.get(`${entry.providerId}/${entry.model}`) ?? entry.model;
+  return (
+    <div className="flex min-w-0 flex-wrap items-center gap-1 text-xs text-muted-foreground" data-testid={`team-pool-${row.role}`}>
+      <span>{row.pool.length ? t("roleModelsPool") : t("teamPoolNone")}</span>
+      {row.pool.map((entry) => (
+        <span key={`${entry.providerId}/${entry.model}`} className="inline-flex items-center gap-1 rounded-md border border-[var(--lp-hairline)] px-1.5 py-0.5 text-foreground">
+          {name(entry)}
+          <button type="button" className="text-muted-foreground hover:text-foreground" aria-label={t("roleModelsPoolRemove").replace("{model}", name(entry))}
+            data-testid={`team-pool-remove-${row.role}-${entry.model}`} onClick={() => onSave(row.pool.filter((item) => item !== entry))}>×</button>
+        </span>
+      ))}
+      <button type="button" className="rounded border border-[var(--lp-hairline)] px-1.5 hover:bg-[var(--lp-well)]" aria-expanded={adding}
+        data-testid={`team-pool-add-${row.role}`} onClick={() => setAdding((open) => !open)}>{adding ? "−" : "+"}</button>
+      {adding ? <div className="basis-full">{page.modelPicker({ providerId: "", model: "", reasoningLevel: "none" as never }, (next) => {
+        setAdding(false);
+        if (!next.model || (next.providerId === row.providerId && next.model === row.model) || row.pool.some((entry) => entry.providerId === next.providerId && entry.model === next.model)) return;
+        onSave([...row.pool, { providerId: next.providerId, model: next.model, effort: TABLE_EFFORTS.has(next.reasoningLevel) ? next.reasoningLevel : null }]);
+      })}</div> : null}
+    </div>
+  );
+}
+
+function RoleRow({ spec, page, access, rules, open, onToggle, fallbackNames, tableRoles, saveTableRole, saveTablePool }: {
   spec: RoleSpec; page: LpPage; access: AccessApi; rules: ReturnType<typeof useRulesAnalyzer>; open: boolean; onToggle: () => void; fallbackNames: ReadonlyMap<string, string>;
   tableRoles: ReadonlyMap<string, TableRole> | null; saveTableRole: (row: TableRole, next: { providerId: string; model: string; reasoningLevel: string }) => void;
+  saveTablePool: (row: TableRole, pool: TableRole["pool"]) => void;
 }) {
   const { data, isGlobal, selectedSectionId, displayedValue, applySetting, catalogRow, modelPicker, pickerValue, saveWriterSelection, pickers, inheritReset, stackControls, wideTable } = page;
   const id = roleKey(spec.id);
@@ -108,9 +134,9 @@ function RoleRow({ spec, page, access, rules, open, onToggle, fallbackNames, tab
     const row = tableRoles?.get(roleRowOf(spec.id));
     if (row && (row.source === "table" || !spec.model || spec.detail === "browser" || spec.detail === "council")) {
       // BB's own window, as everywhere; a choice is saved into the role's row of the table (its pool stays), «+N» is the rest of the pool.
-      model = <div className="flex min-w-0 items-center gap-1.5" title={t("teamModelFromTable")} data-testid={`team-model-${spec.id}`}>
-        <div className="min-w-0 flex-1">{modelPicker({ providerId: row.providerId, model: row.model, reasoningLevel: row.effort as never }, (next) => saveTableRole(row, next))}</div>
-        {row.pool.length ? <span className="shrink-0 text-xs text-muted-foreground">+{row.pool.length}</span> : null}
+      model = <div className="min-w-0 space-y-1" title={t("teamModelFromTable")} data-testid={`team-model-${spec.id}`}>
+        <div className="min-w-0">{modelPicker({ providerId: row.providerId, model: row.model, reasoningLevel: row.effort as never }, (next) => saveTableRole(row, next))}</div>
+        <PoolLine row={row} names={fallbackNames} page={page} onSave={(pool) => saveTablePool(row, pool)} />
       </div>;
     }
   }
@@ -246,6 +272,12 @@ export function TeamTab({ page }: { page: LpPage }) {
     void rpc.call("save_setting", { projectId: projectId!, ...(selectedSectionId ? { sectionId: selectedSectionId } : {}), key: `role_model.${row.role}`, value, expectedVersion: row.version })
       .finally(() => setTableTick((tick) => tick + 1));
   };
+  const saveTablePool = (row: TableRole, nextPool: TableRole["pool"]) => {
+    const pool = nextPool.map((entry) => ({ provider: entry.providerId, model: entry.model, ...(entry.effort ? { reasoning_effort: entry.effort } : {}) }));
+    const value = { provider: row.providerId, model: row.model, ...(TABLE_EFFORTS.has(row.effort) ? { reasoning_effort: row.effort } : {}), ...(pool.length ? { pool } : {}) };
+    void rpc.call("save_setting", { projectId: projectId!, ...(selectedSectionId ? { sectionId: selectedSectionId } : {}), key: `role_model.${row.role}`, value, expectedVersion: row.version })
+      .finally(() => setTableTick((tick) => tick + 1));
+  };
   useEffect(() => {
     let live = true;
     if (!projectId) return;
@@ -285,7 +317,7 @@ export function TeamTab({ page }: { page: LpPage }) {
                 <section key={group.id} data-testid={`access-section-${group.id}`}>
                   <h3 className="border-t border-[var(--lp-hairline)] bg-[var(--lp-well)] px-3 py-1.5 text-xs font-medium text-muted-foreground first:border-t-0">{t(`accessGroup_${group.id}` as I18nKey)}</h3>
                   {group.roles.map((spec) => (
-                    <RoleRow key={spec.id} spec={spec} page={page} access={access} rules={rules} open={open.has(spec.id)} onToggle={() => toggle(spec.id)} fallbackNames={fallbackNames} tableRoles={tableRoles} saveTableRole={saveTableRole} />
+                    <RoleRow key={spec.id} spec={spec} page={page} access={access} rules={rules} open={open.has(spec.id)} onToggle={() => toggle(spec.id)} fallbackNames={fallbackNames} tableRoles={tableRoles} saveTableRole={saveTableRole} saveTablePool={saveTablePool} />
                   ))}
                 </section>
               ))}
