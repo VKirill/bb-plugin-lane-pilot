@@ -4,7 +4,7 @@ import type { PrototypeConfig, TaskV2 } from "../src/rooms/contracts";
 import { countChargedAttempts, createAttempt, createRun, createTask, getAttempt, openDatabase, transitionAttempt } from "../src/rooms/storage/database";
 import { createWriterFinish } from "../src/rooms/writer/server/finish";
 import { failureClass, isWriterSilent } from "../src/rooms/runs/failure-class";
-import { countRunNudges, loadWriterNudge, openCodeSessionOf, sweepWriterSilence, type OpenCodeLimit, type SilenceDeps } from "../src/rooms/writer/server/writer-silence";
+import { countRunNudges, loadWriterNudge, NO_ANSWER_HOLD_MS, openCodeSessionOf, unansweredSince, sweepWriterSilence, type OpenCodeLimit, type SilenceDeps } from "../src/rooms/writer/server/writer-silence";
 import { createProviderBreaker } from "@lane-pilot/resilience";
 import { saveReasoningTrace } from "../src/rooms/storage/database";
 
@@ -294,5 +294,24 @@ describe("writer_provider_limit at the writer's watcher", () => {
     const key = "acp-opencode/router9/ag/gemini-3.8-flash-high";
     expect(providerBreaker.decide(key, T0 + MIN)).toMatchObject({ allow:false, retryAt:resetAt });
     expect(providerBreaker.decide(key, resetAt)).toMatchObject({ allow:true, state:"half_open" });
+  });
+  it("ends a writer whose model sent no word 5 min after its prompt, as a provider limit that moves the task to the next model", async () => {
+    // Devin 2026-11-04: GetChatMessage answers empty after 60 s and the CLI waits for ever; the thread shows the prompt and nothing else.
+    const silent = [{ type:"turn/input/accepted", createdAt:T0 }, { type:"turn/started", createdAt:T0 }, { type:"provider.env-resolved", createdAt:T0 }];
+    const { deps, sent, kv } = setup();
+    (deps.bb as unknown as { sdk:{ threads:{ events:{ list:() => Promise<unknown[]> } } } }).sdk.threads.events.list = async () => silent;
+    expect(await sweepWriterSilence(deps, T0 + 4 * MIN)).toEqual([]);
+    expect(await sweepWriterSilence(deps, T0 + 5 * MIN)).toEqual([{ attemptId:"a1", action:"ended", count:0 }]);
+    expect(sent).toEqual([]);
+    const record = await loadWriterNudge(kv, "a1");
+    expect(record).toMatchObject({ ended:true, until:T0 + 5 * MIN + NO_ANSWER_HOLD_MS });
+    expect(failureClass("provider_error", record!.reason!)).toBe("limit");
+  });
+
+  it("does not count a writer that answered and then works quietly as unanswered", () => {
+    expect(unansweredSince([{ type:"turn/started", createdAt:T0 }, { type:"item/reasoning/textDelta", createdAt:T0 + 6_000 }])).toBeNull();
+    // A nudge into a hung turn is a new input with no answer after it.
+    expect(unansweredSince([{ type:"turn/started", createdAt:T0 }, { type:"item/started", createdAt:T0 + 6_000 }, { type:"turn/input/accepted", createdAt:T0 + 30 * MIN }])).toBe(T0 + 30 * MIN);
+    expect(unansweredSince([{ type:"item/started", createdAt:T0 }])).toBeNull();
   });
 });

@@ -8,6 +8,28 @@ export const DEFAULT_SILENCE_NUDGE_MIN = 20;
 export const MAX_WRITER_NUDGES = 2;
 /** A silent OpenCode writer's session is checked for a provider limit after this much silence, well before its nudges. */
 export const LIMIT_PROBE_MIN = 3;
+/** A writer whose model sent nothing at all this long after its last input is held by a silent provider limit (Devin answers empty after 60 s). */
+export const NO_ANSWER_MIN = 5;
+/** How long a provider that answered nothing is skipped before one trial task tries it again. */
+export const NO_ANSWER_HOLD_MS = 20 * 60_000;
+
+function eventType(event:unknown):string {
+  const value = event && typeof event === "object" ? Reflect.get(event, "type") : undefined;
+  return typeof value === "string" ? value : "";
+}
+
+/** Time of the writer's last input (turn start, prompt or nudge) when no model output came after it; null once the model answered. */
+export function unansweredSince(events:unknown[]):number | null {
+  let input = 0;
+  let output = 0;
+  for (const event of events) {
+    const type = eventType(event);
+    const at = eventTime(event) ?? 0;
+    if (type === "turn/started" || type === "turn/input/accepted") input = Math.max(input, at);
+    else if (type.startsWith("item/")) output = Math.max(output, at);
+  }
+  return input > 0 && output < input ? input : null;
+}
 
 /**
  * Count and time of the nudges of one attempt; `ended` tells its watcher to fail the attempt. An attempt that ended for a
@@ -113,6 +135,16 @@ export async function sweepWriterSilence(deps:SilenceDeps, now = Date.now()):Pro
           done.push({ attemptId:attempt.id, action:"ended", count });
           continue;
         }
+      }
+      // The model sent no word since its last input: a provider that holds requests silently (Devin's free SWE-2 answers empty
+      // after 60 s and its CLI then waits forever). A nudge would hang the same way, so the next model in the chain takes the task.
+      const asked = unansweredSince(listed.events);
+      if (asked !== null && now - asked >= NO_ANSWER_MIN * 60_000) {
+        const reason = `writer_provider_limit: the model sent no answer for ${Math.round((now - asked) / 60_000)} min after its prompt (a silent provider limit)`;
+        await bb.storage.kv.set(key(attempt.id), { count, at:now, ended:true, reason, until:now + NO_ANSWER_HOLD_MS } as never);
+        deps.log(`Lane Pilot ended ${attempt.task_id} (${attempt.id}): ${reason}`);
+        done.push({ attemptId:attempt.id, action:"ended", count });
+        continue;
       }
       if (silentMs < limitMs) continue;
       if (count >= MAX_WRITER_NUDGES) {
