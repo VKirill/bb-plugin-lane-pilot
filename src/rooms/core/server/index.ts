@@ -8,7 +8,7 @@ export type { ServerCore } from "./core";
 export { CATALOG_WAIT_MS, createModelCatalog, modelCatalogOf, pmHostOf, within } from "./model-catalog-reader";
 export type { ModelCatalogReader } from "./model-catalog-reader";
 export { bindGraphStepLookup, bindRunChildBudget, fullAccessSpawn, graphStepMetadata, pmHasGuard, pmPrompt, providerSupportsServiceTier } from "./pm-spawn";
-export { noteProviderStartFailure, noteProviderStartSuccess, providerBlockedForFolder, PROVIDER_FOLDER_BLOCK_TTL_MS, readProviderFolderBlock, registerSpawnUsage, resolveSpawnModel, spawnUsageOf, warmSpawnUsage } from "./spawn-model";
+export { noteProviderLimit, noteProviderStartFailure, rememberThreadModel, resetSeenLimits, SEEN_LIMIT_HOLD_MS, seenProviderLimit, threadModelOf, noteProviderStartSuccess, providerBlockedForFolder, PROVIDER_FOLDER_BLOCK_TTL_MS, readProviderFolderBlock, registerSpawnUsage, resolveSpawnModel, spawnUsageOf, warmSpawnUsage } from "./spawn-model";
 export type { ProviderFolderBlock } from "./spawn-model";
 export { noteZcodeThread, zcodeBusy, zcodeBusyPeek } from "./zcode-slot";
 export type { SpawnUsage, SpawnUsageUse } from "./spawn-model";

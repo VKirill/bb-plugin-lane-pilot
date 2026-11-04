@@ -21,6 +21,7 @@ export {
   waitThreadIdle,
   turnHeldByPlugin,
   startLimitWaiting,
+  onThreadFailure,
   observeStageChild,
   type StageChildObservation,
   type ThreadEventsQuery,

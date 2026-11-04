@@ -4,6 +4,7 @@ import { RunBudgetExceeded, type RunBudget } from "@lane-pilot/resilience";
 import { isZcodeProvider } from "@lane-pilot/models";
 import { spawnKeyed } from "./thread-keys";
 import { stringAt } from "./values";
+import { rememberThreadModel } from "./spawn-model";
 import { noteZcodeThread, reserveZcodeSlot } from "./zcode-slot";
 
 /**
@@ -172,6 +173,8 @@ export function fullAccessSpawn(bb: BbPluginApi, args: Parameters<BbPluginApi["s
     try {
       const spawned = await spawnKeyed(bb, full, () => bb.sdk.threads.spawn(full));
       if (isZcodeProvider(args.providerId)) noteZcodeThread(bb, stringAt(spawned, "id"));
+      const model = typeof (full as Record<string, unknown>).model === "string" ? (full as Record<string, unknown>).model as string : "";
+      if (stringAt(spawned, "id") && args.providerId) rememberThreadModel(stringAt(spawned, "id")!, args.providerId, model);
       return spawned as Awaited<ReturnType<BbPluginApi["sdk"]["threads"]["spawn"]>>;
     } finally { release(); }
   })();

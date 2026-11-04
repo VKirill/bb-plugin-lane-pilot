@@ -48,6 +48,10 @@ export async function turnHeldByPlugin(bb: BbPluginApi, threadId: string): Promi
   }
 }
 
+/** Who hears that a waited thread failed (the plugin's provider-limit memory); one per plugin instance. */
+const failureListeners = new WeakMap<object, (threadId: string, detail: string) => void>();
+export function onThreadFailure(bb: object, listener: (threadId: string, detail: string) => void): void { failureListeners.set(bb, listener); }
+
 /** A failure that is only the start limit, while the turn waits in a plugin's queue, is no failure. */
 export async function startLimitWaiting(bb: BbPluginApi, threadId: string, failure: string | null): Promise<boolean> {
   return Boolean(failure && failure.startsWith("provider_not_started") && await turnHeldByPlugin(bb, threadId));
@@ -80,6 +84,7 @@ export async function waitThreadIdle(bb: BbPluginApi, threadId: string, timeoutM
     });
     if (decision.ok) return;
     if ((decision.via === "error" || decision.via === "canceled") && !(decision.via === "error" && await startLimitWaiting(bb, threadId, decision.detail))) {
+      if (decision.via === "error") { try { failureListeners.get(bb)?.(threadId, decision.detail); } catch { /* a listener never fails the wait */ } }
       throw new Error(`${timeoutMessage}:${decision.via}:${decision.detail}`);
     }
     lastDetail = decision.detail;

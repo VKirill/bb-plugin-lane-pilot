@@ -27,7 +27,7 @@ import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from ".
 import { detectRepoEdits, gitRepoStatus, namedByChat } from "../../verification/server";
 import { SPECIALIST_GRAPH, SPECIALIST_ROLES, rememberSpecialistThread } from "../../critique/server";
 import { findThreadsByMetadata, keyedSpawnSupported } from "../../core/server";
-import { modelCatalogOf, noteProviderStartFailure, noteProviderStartSuccess, pmHostOf, providerBlockedForFolder, readProviderFolderBlock, resolveSpawnModel, spawnUsageOf, warmSpawnUsage, PROVIDER_FOLDER_BLOCK_TTL_MS } from "../../core/server";
+import { modelCatalogOf, noteProviderLimit, noteProviderStartFailure, noteProviderStartSuccess, pmHostOf, providerBlockedForFolder, readProviderFolderBlock, resolveSpawnModel, spawnUsageOf, warmSpawnUsage, PROVIDER_FOLDER_BLOCK_TTL_MS } from "../../core/server";
 import { modelTier, ROLE_IDS, ROLE_MODEL_OPTIONS, roleRowOf } from "@lane-pilot/models";
 import { threadUsage } from "../../usage/server";
 import { stringAt } from "../../core/server";
@@ -395,6 +395,7 @@ export function createWorkflowAgents() {
     if (limit && !request.intoThread && (request.role.startsWith("specialist") || request.role === "workflow-architect")) throw new HelperFailure("provider_limit", `the ${request.role} helper hit Claude's limit (${limit}); a specialist runs only on Claude Code, so it waits for the window to reset`);
     if (limit && !request.intoThread) {
       const failed = request.provider ?? DEFAULT_PROVIDER;
+      noteProviderLimit(failed, request.model ?? null, limit);
       const again = await withResolvedModel({ ...request, provider: undefined as never, model: undefined as never, reasoning: undefined as never, resolved: undefined as never }, { avoidProvider: failed }).catch(() => null);
       // Nothing else on offer (the answer is the failed provider again): the step fails with the limit notice, it does not run the same pair twice.
       if (!again || again.provider === failed) throw new HelperFailure("provider_limit", `${failed}/${request.model ?? ""} hit a provider limit (${limit}) and no other model family is on offer on this machine`);
