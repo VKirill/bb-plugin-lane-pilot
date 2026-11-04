@@ -6,6 +6,8 @@
 export type TaskWord = { turn: "land"; decision: "yes" | "no"; text: string; at: number };
 
 export const TASK_WORDS_KEY = "lp.task.words";
+/** A verified attempt waits for its landing decision for at most six hours. */
+export const OWNER_WORD_WAIT_MS = 6 * 3600_000;
 
 /**
  * The setting owner.words: `on` (every verified task waits for the word), `risky` (only a task of risk high; the default) or `off`.

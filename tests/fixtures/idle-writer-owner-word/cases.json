@@ -1,0 +1,50 @@
+{
+  "source": "Read-only hub BB timeline and PM thread events captured 2026-11-04. The owner-item opening is reconstructed at the notification time using postOwnerItem; its historical DB row was not exported.",
+  "cases": [
+    {
+      "projectId": "proj_acpiaqf4wq",
+      "runId": "lprun_9a46fd17e8814c2cacdb8220c0aa0225",
+      "taskId": "worker-flaky-port-tests.2",
+      "attemptId": "lpattempt_859981a4305245ca88207c20cc0c81ef",
+      "writerThreadId": "thr_dhsiwdp3ar",
+      "pmThreadId": "thr_zwif89vbnb",
+      "updatedAt": 1793474598398,
+      "observedAt": "2026-10-31T20:15:08.790Z",
+      "notification": {
+        "seq": 2594,
+        "createdAt": 1793474763375,
+        "text": "[bb message from thread:thr_dhsiwdp3ar]\n\nLane Pilot: task worker-flaky-port-tests.2 passed its checks and waits for the owner's word before it lands on main (owner.words is on). Ask him with lane_pilot_ask_owner, then record his answer with lane_pilot_queue {action:\"word\", taskId:\"worker-flaky-port-tests.2\", decision:\"yes\"|\"no\", text}. It waits up to 6 hours; no need to resend it."
+      }
+    },
+    {
+      "projectId": "proj_9tzjyzsumb",
+      "runId": "lprun_ee75c2ea556f42749b08297b31e19752",
+      "taskId": "storekit-purchases.5",
+      "attemptId": "lpattempt_0fe1b1e5355b4ce6babd931d222f2174",
+      "writerThreadId": "thr_q2dxg9anpb",
+      "pmThreadId": "thr_5cdehzvkjs",
+      "updatedAt": 1793651946398,
+      "observedAt": "2026-11-02T21:30:06.533Z",
+      "notification": {
+        "seq": 4754,
+        "createdAt": 1793653085865,
+        "text": "[bb message from thread:thr_q2dxg9anpb]\n\nLane Pilot: task storekit-purchases.5 passed its checks and waits for the owner's word before it lands on main (owner.words asks it for this task: risk high). Ask him with lane_pilot_ask_owner, then record his answer with lane_pilot_queue {action:\"word\", taskId:\"storekit-purchases.5\", decision:\"yes\"|\"no\", text}. It waits up to 6 hours; no need to resend it."
+      }
+    },
+    {
+      "projectId": "proj_9tzjyzsumb",
+      "runId": "lprun_974c8ef63be34a93a75ddc274ab2e3bd",
+      "taskId": "attr-dirty-queue",
+      "attemptId": "lpattempt_4fb351ebca1a4f13b1eb6263ebe3cda1",
+      "writerThreadId": "thr_twvk2kh9cw",
+      "pmThreadId": "thr_prit6g3ee9",
+      "updatedAt": 1793663692738,
+      "observedAt": "2026-11-03T00:45:07.514Z",
+      "notification": {
+        "seq": 4795,
+        "createdAt": 1793664358798,
+        "text": "[bb message from thread:thr_twvk2kh9cw]\n\nLane Pilot: task attr-dirty-queue passed its checks and waits for the owner's word before it lands on main (owner.words asks it for this task: risk high). Ask him with lane_pilot_ask_owner, then record his answer with lane_pilot_queue {action:\"word\", taskId:\"attr-dirty-queue\", decision:\"yes\"|\"no\", text}. It waits up to 6 hours; no need to resend it."
+      }
+    }
+  ]
+}

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { openDatabase } from "../../src/rooms/storage/database";
 import { createSelfRepair, firstSeenOnRunningVersion, isDue, lastPmOwnerMessageAt, logIncidents, parseVerdict, reasonSignature, repairPriority, repairPrompt, repairStatus, VERSION, writerRedCheck, writerStrayFiles } from "../../src/rooms/self-repair/server/self-repair";
@@ -7,6 +7,10 @@ import { setJevForTests } from "@lane-pilot/jev";
 import type { JevClient } from "@lane-pilot/jev";
 import type { ServerCore } from "../../src/rooms/core/server/core";
 import { beginChecks, checksMoved } from "../../src/rooms/runs";
+import { postOwnerItem, closeOwnerItem } from "../../src/rooms/owner-waiting";
+import { taskWordItemPrefix } from "../../src/rooms/lead";
+import { taskFamily } from "../../src/rooms/runs";
+import ownerWordCases from "../fixtures/idle-writer-owner-word/cases.json";
 
 type HostCall = { method: string; input: Record<string, unknown> };
 
@@ -182,6 +186,38 @@ describe("self-repair", () => {
     attempt("lpattempt_r", "lprun_a", "running", null, now - 5 * 60_000);
     const incidents = await createSelfRepair(ctx).collect(0, { ...(await createSelfRepair(ctx).config()) });
     expect(incidents.map((row) => [row.kind, row.attemptId])).toEqual([["stuck", "lpattempt_s"]]);
+  });
+
+  it.each(ownerWordCases.cases)("does not report $taskId while its verified attempt awaits the owner's word (hub replay)", async (sample) => {
+    const clock = vi.spyOn(Date, "now").mockReturnValue(Date.parse(sample.observedAt));
+    const { ctx, db, attempt } = setup();
+    try {
+      db.prepare("UPDATE lane_pilot_run SET id=?, project_id=?, pm_thread_id=? WHERE id='lprun_a'")
+        .run(sample.runId, sample.projectId, sample.pmThreadId);
+      attempt(sample.attemptId, sample.runId, "running", null, sample.updatedAt, sample.writerThreadId);
+      db.prepare("UPDATE lane_pilot_attempt SET task_id=? WHERE id=?").run(sample.taskId, sample.attemptId);
+      const key = `${taskWordItemPrefix(sample.runId, taskFamily(sample.taskId))}${sample.attemptId}`;
+      // The historical inbox row is reconstructed from the captured notification sent just after finish.ts posts it.
+      postOwnerItem(db as never, { key, source:"writer", kind:"task_word", projectId:sample.projectId,
+        what:sample.notification.text, why:"Verified work awaits its landing decision", wake:false }, sample.notification.createdAt);
+      const repair = createSelfRepair(ctx);
+      expect(await repair.collect(0, await repair.config())).toEqual([]);
+      // An answered row cannot conceal an attempt that no longer makes progress.
+      closeOwnerItem(db as never, key, "answered");
+      expect((await repair.collect(0, await repair.config())).map((row) => row.attemptId)).toEqual([sample.attemptId]);
+    } finally { clock.mockRestore(); db.close(); }
+  });
+
+  it.each(["expired", "other-attempt", "other-run", "other-kind", "error", "stopped"])("still reports an attempt with an %s owner item or writer", async (variation) => {
+    const { ctx, db, attempt, now } = setup({ thr_w_lpattempt_word:variation === "error" || variation === "stopped" ? variation : "idle" });
+    try {
+      attempt("lpattempt_word", "lprun_a", "running", null, now - 60 * 60_000);
+      const key = `${taskWordItemPrefix(variation === "other-run" ? "lprun_s" : "lprun_a", "task-lpattempt_word")}${variation === "other-attempt" ? "lpattempt_old" : "lpattempt_word"}`;
+      postOwnerItem(db as never, { key, source:"writer", kind:variation === "other-kind" ? "notice" : "task_word",
+        what:"Wait for a decision", why:"Owner's word" }, now - (variation === "expired" ? 6 * 3_600_000 : 60_000));
+      const repair = createSelfRepair(ctx);
+      expect((await repair.collect(0, await repair.config())).map((row) => row.attemptId)).toEqual(["lpattempt_word"]);
+    } finally { db.close(); }
   });
 
   it("does not take an attempt whose checks wait in a moving check pool for a stuck one, and does take a pool that stopped", async () => {
