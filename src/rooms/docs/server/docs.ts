@@ -1,6 +1,6 @@
 import { taskV2Schema } from "../../contracts";
 import { claimDocsSpawn, getRun, getTask, listStageReceipts } from "../../storage";
-import { bbServiceTier, writerExecutionSelection } from "@lane-pilot/models";
+import { bbServiceTier, listedServiceTier, writerExecutionSelection } from "@lane-pilot/models";
 import { sha256 } from "../../tasks";
 import { extractModelJson } from "../../critique";
 import { docsInputHash, docsMaintenancePrompt, docsSelection, parseDocsSettings, selectDocsPages, validateDocsEdits } from "../docs";
@@ -176,7 +176,7 @@ export function createDocsStage(ctx: ServerCore, services: Services) {
       if (!provider||!model) throw new Error("docs_writer_provider_or_model_unavailable");
       const docsEffort=configuredDocsEffort??(model.supportedReasoningEfforts.some((item)=>item.reasoningEffort==="medium")?"medium":model.supportedReasoningEfforts[0]?.reasoningEffort);
       if (!docsEffort) throw new Error("docs_writer_model_has_no_supported_reasoning_effort");
-      const tier=provider.capabilities.supportsServiceTier?bbServiceTier(docsServiceTier):null;
+      const tier=listedServiceTier(provider, bbServiceTier(docsServiceTier));
       if(tier&&!(provider.serviceTiers??[]).some((item)=>item.id===tier)) throw new Error(`docs_writer_service_tier_unsupported:${tier}`);
       const helperPolicy=requireHelperSpawn({bb,db,projectId:args.projectId,runId:args.runId});
       const placement=await helperChildPlacement({

@@ -21,4 +21,9 @@ describe("picker catalog remapping", () => {
     expect(compatibleServiceTier("fast", [])).toBeNull();
     expect(compatibleServiceTier("fast", ["fast"])).toBe("fast");
   });
+
+  it("keeps the normal speed on a provider that lists only fast (Devin 2026-11-05)", () => {
+    expect(compatibleServiceTier("default", ["fast"])).toBe("default");
+    expect(compatibleServiceTier(null, ["fast"])).toBe("default");
+  });
 });

@@ -81,7 +81,7 @@ export function selectionsRpc(ctx: ServerCore, services: Services) {
       if(!supportedEfforts.includes(reasoningLevel)) return reject("incompatible_setting","memory.reasoning_effort",`model supports: ${supportedEfforts.join(", ")}`);
       const supportedTiers=provider.serviceTiers?.map((tier)=>tier.id)??[];
       const selectedTier=serviceTier??(provider.capabilities.supportsServiceTier&&supportedTiers.includes("default")?"default":null);
-      if(selectedTier&&!supportedTiers.includes(selectedTier)) return reject("invalid_choice","memory.service_tier",`provider supports: ${supportedTiers.join(", ")||"no service tiers"}`);
+      if(selectedTier==="fast"&&!supportedTiers.includes("fast")) return reject("invalid_choice","memory.service_tier",`provider supports: ${supportedTiers.join(", ")||"no service tiers"}`);
       return casUpsertSettings(db,{projectId,bindingId:sectionId?sectionBindingId(sectionId):"",changes:[
         {key:"memory.provider",value:providerId,expectedVersion:expectedVersions["memory.provider"]},
         {key:"memory.model",value:modelId,expectedVersion:expectedVersions["memory.model"]},
@@ -104,7 +104,7 @@ export function selectionsRpc(ctx: ServerCore, services: Services) {
       if(!efforts.includes(reasoningLevel)) return reject("incompatible_setting","night_review.reasoning_effort",`model supports: ${efforts.join(", ")}`);
       const tiers=provider.serviceTiers?.map((tier)=>tier.id)??[];
       const selectedTier=serviceTier??(provider.capabilities.supportsServiceTier&&tiers.includes("default")?"default":null);
-      if(selectedTier&&!tiers.includes(selectedTier)) return reject("invalid_choice","night_review.service_tier",`provider supports: ${tiers.join(", ")||"no service tiers"}`);
+      if(selectedTier==="fast"&&!tiers.includes("fast")) return reject("invalid_choice","night_review.service_tier",`provider supports: ${tiers.join(", ")||"no service tiers"}`);
       return casUpsertSettings(db,{projectId,bindingId:sectionId?sectionBindingId(sectionId):"",changes:[
         {key:"night_review.provider",value:providerId,expectedVersion:expectedVersions["night_review.provider"]},
         {key:"night_review.model",value:modelId,expectedVersion:expectedVersions["night_review.model"]},
@@ -127,7 +127,7 @@ export function selectionsRpc(ctx: ServerCore, services: Services) {
       if(!efforts.includes(reasoningLevel)) return reject("incompatible_setting","docs.reasoning_effort",`model supports: ${efforts.join(", ")}`);
       const tiers=provider.serviceTiers?.map((tier)=>tier.id)??[];
       const selectedTier=serviceTier??(provider.capabilities.supportsServiceTier&&tiers.includes("default")?"default":null);
-      if(selectedTier&&!tiers.includes(selectedTier)) return reject("invalid_choice","docs.service_tier",`provider supports: ${tiers.join(", ")||"no service tiers"}`);
+      if(selectedTier==="fast"&&!tiers.includes("fast")) return reject("invalid_choice","docs.service_tier",`provider supports: ${tiers.join(", ")||"no service tiers"}`);
       return casUpsertSettings(db,{projectId,bindingId:sectionId?sectionBindingId(sectionId):"",changes:[
         {key:"docs.provider",value:providerId,expectedVersion:expectedVersions["docs.provider"]},
         {key:"docs.model",value:modelId,expectedVersion:expectedVersions["docs.model"]},
@@ -150,7 +150,7 @@ export function selectionsRpc(ctx: ServerCore, services: Services) {
       if(!efforts.includes(reasoningLevel)) return reject("incompatible_setting","project_life.reasoning_effort",`model supports: ${efforts.join(", ")}`);
       const tiers=provider.serviceTiers?.map((tier)=>tier.id)??[];
       const selectedTier=serviceTier??(provider.capabilities.supportsServiceTier&&tiers.includes("default")?"default":null);
-      if(selectedTier&&!tiers.includes(selectedTier)) return reject("invalid_choice","project_life.service_tier",`provider supports: ${tiers.join(", ")||"no service tiers"}`);
+      if(selectedTier==="fast"&&!tiers.includes("fast")) return reject("invalid_choice","project_life.service_tier",`provider supports: ${tiers.join(", ")||"no service tiers"}`);
       return casUpsertSettings(db,{projectId,bindingId:sectionId?sectionBindingId(sectionId):"",changes:[
         {key:"project_life.provider",value:providerId,expectedVersion:expectedVersions["project_life.provider"]},
         {key:"project_life.model",value:modelId,expectedVersion:expectedVersions["project_life.model"]},
@@ -173,7 +173,7 @@ export function selectionsRpc(ctx: ServerCore, services: Services) {
       if(!efforts.includes(reasoningLevel)) return reject("incompatible_setting","pm_read.reasoning_effort",`model supports: ${efforts.join(", ")}`);
       const tiers=provider.serviceTiers?.map((tier)=>tier.id)??[];
       const selectedTier=serviceTier??(provider.capabilities.supportsServiceTier&&tiers.includes("default")?"default":null);
-      if(selectedTier&&!tiers.includes(selectedTier)) return reject("invalid_choice","pm_read.service_tier",`provider supports: ${tiers.join(", ")||"no service tiers"}`);
+      if(selectedTier==="fast"&&!tiers.includes("fast")) return reject("invalid_choice","pm_read.service_tier",`provider supports: ${tiers.join(", ")||"no service tiers"}`);
       return casUpsertSettings(db,{projectId,bindingId:sectionId?sectionBindingId(sectionId):"",changes:[
         {key:"pm_read.provider",value:providerId,expectedVersion:expectedVersions["pm_read.provider"]},
         {key:"pm_read.model",value:modelId,expectedVersion:expectedVersions["pm_read.model"]},
@@ -196,7 +196,7 @@ export function selectionsRpc(ctx: ServerCore, services: Services) {
       if(!efforts.includes(reasoningLevel)) return reject("incompatible_setting","onboarding.reasoning_effort",`model supports: ${efforts.join(", ")}`);
       const tiers=provider.serviceTiers?.map((tier)=>tier.id)??[];
       const selectedTier=serviceTier??(provider.capabilities.supportsServiceTier&&tiers.includes("default")?"default":null);
-      if(selectedTier&&!tiers.includes(selectedTier)) return reject("invalid_choice","onboarding.service_tier",`provider supports: ${tiers.join(", ")||"no service tiers"}`);
+      if(selectedTier==="fast"&&!tiers.includes("fast")) return reject("invalid_choice","onboarding.service_tier",`provider supports: ${tiers.join(", ")||"no service tiers"}`);
       return casUpsertSettings(db,{projectId,bindingId:sectionId?sectionBindingId(sectionId):"",changes:[
         {key:"onboarding.provider",value:providerId,expectedVersion:expectedVersions["onboarding.provider"]},
         {key:"onboarding.model",value:modelId,expectedVersion:expectedVersions["onboarding.model"]},
@@ -219,7 +219,7 @@ export function selectionsRpc(ctx: ServerCore, services: Services) {
       if(!efforts.includes(reasoningLevel)) return reject("incompatible_setting","plan_critique.reasoning_effort",`model supports: ${efforts.join(", ")}`);
       const tiers=provider.serviceTiers?.map((tier)=>tier.id)??[];
       const selectedTier=serviceTier??(provider.capabilities.supportsServiceTier&&tiers.includes("default")?"default":null);
-      if(selectedTier&&!tiers.includes(selectedTier)) return reject("invalid_choice","plan_critique.service_tier",`provider supports: ${tiers.join(", ")||"no service tiers"}`);
+      if(selectedTier==="fast"&&!tiers.includes("fast")) return reject("invalid_choice","plan_critique.service_tier",`provider supports: ${tiers.join(", ")||"no service tiers"}`);
       return casUpsertSettings(db,{projectId,bindingId:sectionId?sectionBindingId(sectionId):"",changes:[
         {key:"plan_critique.provider",value:providerId,expectedVersion:expectedVersions["plan_critique.provider"]},
         {key:"plan_critique.model",value:modelId,expectedVersion:expectedVersions["plan_critique.model"]},
@@ -242,7 +242,7 @@ export function selectionsRpc(ctx: ServerCore, services: Services) {
       if(!efforts.includes(reasoningLevel)) return reject("incompatible_setting","code_critique.reasoning_effort",`model supports: ${efforts.join(", ")}`);
       const tiers=provider.serviceTiers?.map((tier)=>tier.id)??[];
       const selectedTier=serviceTier??(provider.capabilities.supportsServiceTier&&tiers.includes("default")?"default":null);
-      if(selectedTier&&!tiers.includes(selectedTier)) return reject("invalid_choice","code_critique.service_tier",`provider supports: ${tiers.join(", ")||"no service tiers"}`);
+      if(selectedTier==="fast"&&!tiers.includes("fast")) return reject("invalid_choice","code_critique.service_tier",`provider supports: ${tiers.join(", ")||"no service tiers"}`);
       return casUpsertSettings(db,{projectId,bindingId:sectionId?sectionBindingId(sectionId):"",changes:[
         {key:"code_critique.provider",value:providerId,expectedVersion:expectedVersions["code_critique.provider"]},
         {key:"code_critique.model",value:modelId,expectedVersion:expectedVersions["code_critique.model"]},
@@ -306,7 +306,7 @@ export function selectionsRpc(ctx: ServerCore, services: Services) {
       if(!efforts.includes(reasoningLevel)) return reject("incompatible_setting","specialist.reasoning_effort",`model supports: ${efforts.join(", ")}`);
       const tiers=provider.serviceTiers?.map((tier)=>tier.id)??[];
       const selectedTier=serviceTier??(provider.capabilities.supportsServiceTier&&tiers.includes("default")?"default":null);
-      if(selectedTier&&!tiers.includes(selectedTier)) return reject("invalid_choice","specialist.service_tier",`provider supports: ${tiers.join(", ")||"no service tiers"}`);
+      if(selectedTier==="fast"&&!tiers.includes("fast")) return reject("invalid_choice","specialist.service_tier",`provider supports: ${tiers.join(", ")||"no service tiers"}`);
       return casUpsertSettings(db,{projectId,bindingId:sectionId?sectionBindingId(sectionId):"",changes:[
         {key:"specialist.provider",value:providerId,expectedVersion:expectedVersions["specialist.provider"]},
         {key:"specialist.model",value:modelId,expectedVersion:expectedVersions["specialist.model"]},

@@ -8,7 +8,7 @@ import { shouldTriggerProjectLife } from "../../project-life";
 import { coreShelf, dropMemoryIndexes, memoryEntrySupported, pathsNamed, retireStaleCuratorClaims, storeMemoryRecordsKeepingOverflow, memoryEntrySalience } from "@lane-pilot/memory-core";
 import { applyScopeMigration } from "../../../../scripts/memory-scope-dry-run";
 import { projectUsesSections, resolveProjectKind, sharedScope } from "@lane-pilot/memory-core";
-import { bbServiceTier, writerExecutionSelection } from "@lane-pilot/models";
+import { bbServiceTier, listedServiceTier, writerExecutionSelection } from "@lane-pilot/models";
 import { sha256 } from "../../tasks";
 import { memoryMaintenancePrompt, memoryRecordId, parseMemoryCandidates, parseMemorySettings } from "../memory";
 import { NOTHING_RELEVANT } from "@lane-pilot/memory-core";
@@ -231,7 +231,7 @@ export function createMemoryStage(ctx: ServerCore, services: Services) {
       const model=catalog.models.find((item)=>item.id===memoryModel||item.model===memoryModel);
       if(!provider||!model) throw new Error("memory_writer_provider_or_model_unavailable");
       if(!model.supportedReasoningEfforts.some((item)=>item.reasoningEffort===memoryEffort)) throw new Error(`memory_writer_reasoning_effort_unsupported:${memoryEffort}`);
-      const tier=provider.capabilities.supportsServiceTier?bbServiceTier(memoryTier):null;
+      const tier=listedServiceTier(provider, bbServiceTier(memoryTier));
       if(tier&&!(provider.serviceTiers??[]).some((item)=>item.id===tier)) throw new Error(`memory_writer_service_tier_unsupported:${tier}`);
       const helperPolicy=requireHelperSpawn({bb,db,projectId:args.projectId,runId:args.runId});
       const placement=await helperChildPlacement({

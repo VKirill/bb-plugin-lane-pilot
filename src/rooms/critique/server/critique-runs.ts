@@ -4,7 +4,7 @@ import type { PrototypeConfig, TaskV2 } from "../../contracts";
 import { claimStageSpawn, countAttempts, getRun, getTask, getTaskPlan, listLiveTasksForRun, listOpenAttempts, listStageReceipts, openDatabase } from "../../storage";
 import { criticAcrossFamilies, criticOffSpent, criticPairCandidates, effortAfterMove, latestWriterPair, pairApartFromWriter, pickCriticByAccuracy, roleSelection, sdkCriticCatalog, usable } from "../critic-pair";
 import { criticStats } from "../critic-stats";
-import { bbServiceTier, writerExecutionSelection, writerServiceTier, findModelIn, modelFamily, type SpentProbe } from "@lane-pilot/models";
+import { bbServiceTier, listedServiceTier, writerExecutionSelection, writerServiceTier, findModelIn, modelFamily, type SpentProbe } from "@lane-pilot/models";
 import { qaSpawnClaimed } from "../../qa";
 import { reconcileCritic } from "../../stability";
 import { resolveStageWriterSelection } from "../../writer";
@@ -121,7 +121,7 @@ export async function runPmRead(input:{bb:BbPluginApi;db:ReturnType<typeof openD
     const model=catalog.models.find((row)=>row.id===modelId||row.model===modelId);
     if(!provider||!model) throw new Error("pm_read_provider_or_model_unavailable");
     if(!model.supportedReasoningEfforts.some((row)=>row.reasoningEffort===parsedSettings.effort)) throw new Error(`pm_read_reasoning_effort_unsupported:${parsedSettings.effort}`);
-    const serviceTier=provider.capabilities.supportsServiceTier?bbServiceTier(parsedSettings.serviceTier):null;
+    const serviceTier=listedServiceTier(provider, bbServiceTier(parsedSettings.serviceTier));
     if(serviceTier&&!(provider.serviceTiers??[]).some((row)=>row.id===serviceTier)) throw new Error(`pm_read_service_tier_unsupported:${serviceTier}`);
     const helperPolicy=requireHelperSpawn(input);
     const placement=await helperChildPlacement({
@@ -322,7 +322,7 @@ export async function runPlanCritique(input:{bb:BbPluginApi;db:ReturnType<typeof
         if (!provider || !model) throw new Error("critique_provider_or_model_unavailable");
         const levels = model.supportedReasoningEfforts.map((item) => item.reasoningEffort);
         if (!new Set<string>(levels).has(configuredEffort)) throw new Error(`critique_reasoning_effort_unsupported:${configuredEffort}`);
-        const serviceTier = provider.capabilities.supportsServiceTier ? bbServiceTier(tier) : null;
+        const serviceTier = listedServiceTier(provider, bbServiceTier(tier));
         if (serviceTier && !(provider.serviceTiers ?? []).some((item) => item.id === serviceTier)) {
           throw new Error(`critique_service_tier_unsupported:${serviceTier}`);
         }
@@ -718,7 +718,7 @@ export async function runCodeCritique(input:{
         const levels = model.supportedReasoningEfforts.map((item) => item.reasoningEffort);
         if (!new Set<string>(levels).has(configuredEffort)) throw new Error(`critique_reasoning_effort_unsupported:${configuredEffort}`);
         const tier = savedTier === "fast" || savedTier === "standard" ? savedTier : writerServiceTier(settings);
-        const serviceTier = provider.capabilities.supportsServiceTier ? bbServiceTier(tier) : null;
+        const serviceTier = listedServiceTier(provider, bbServiceTier(tier));
         if (serviceTier && !(provider.serviceTiers ?? []).some((item) => item.id === serviceTier)) {
           throw new Error(`critique_service_tier_unsupported:${serviceTier}`);
         }
@@ -837,7 +837,7 @@ export async function runSpecialistReview(input:{bb:BbPluginApi;db:ReturnType<ty
     if (!model.supportedReasoningEfforts.some((item) => item.reasoningEffort === effort)) {
       throw new Error(`specialist_reasoning_effort_unsupported:${effort}`);
     }
-    const tier = provider.capabilities.supportsServiceTier ? bbServiceTier(serviceTier) : null;
+    const tier = listedServiceTier(provider, bbServiceTier(serviceTier));
     if (tier && !(provider.serviceTiers ?? []).some((item) => item.id === tier)) throw new Error(`specialist_service_tier_unsupported:${tier}`);
     const helperPolicy=requireHelperSpawn(input);
     // An answer that does not read (magicseo T3.2, 2026-10-30: Gemini answered the rubric items {id,result,evidence} and no

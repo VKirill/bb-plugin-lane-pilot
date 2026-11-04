@@ -1,7 +1,7 @@
 import { acceptanceArtifactDir } from "../../tasks";
 import { taskV2Schema } from "../../contracts";
 import { claimStageSpawn, getRun, getTask, listStageReceipts } from "../../storage";
-import { bbServiceTier, writerExecutionSelection } from "@lane-pilot/models";
+import { bbServiceTier, listedServiceTier, writerExecutionSelection } from "@lane-pilot/models";
 import { changelogCommand, changelogLine, findOutOfScopeProjectLifeWrites, foldCoveredTaskIds, parseProjectLifeFinalMessage, parseProjectLifeSettings, projectLifePrompt, projectLifeServiceTier } from "../project-life";
 import { ProjectLifeChildSnapshot, childResultObject, projectLifeChildSnapshot, spawnRefused } from "../../runs/server";
 import { configuredSetting, modelCatalogOf, resolveSpawnModel, spawnUsageOf, warmSpawnUsage, stageHelperSettings } from "../../core/server";
@@ -189,7 +189,7 @@ export function createProjectLifeStage(ctx: ServerCore, services: Services) {
       const model=catalog.models.find((item)=>item.id===projectLifeModel||item.model===projectLifeModel);
       if(!provider||!model) throw new Error("project_life_writer_provider_or_model_unavailable");
       if(!model.supportedReasoningEfforts.some((item)=>item.reasoningEffort===projectLifeEffort)) throw new Error(`project_life_writer_reasoning_effort_unsupported:${projectLifeEffort}`);
-      const tier=provider.capabilities.supportsServiceTier?bbServiceTier(projectLifeTier):null;
+      const tier=listedServiceTier(provider, bbServiceTier(projectLifeTier));
       if(tier&&!(provider.serviceTiers??[]).some((item)=>item.id===tier)) throw new Error(`project_life_writer_service_tier_unsupported:${tier}`);
       const helperPolicy=requireHelperSpawn({bb,db,projectId:args.projectId,runId:args.runId});
       const placement=await helperChildPlacement({

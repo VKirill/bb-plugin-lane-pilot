@@ -50,6 +50,16 @@ export function bbServiceTier(tier: WriterServiceTier): BbServiceTier {
   return tier === "fast" ? "fast" : "default";
 }
 
+/**
+ * The tier a helper's spawn names: none when the provider has no tiers, and none for the normal speed when the provider lists only
+ * "fast" (Devin) — the normal speed is its default then. A "fast" the provider lacks stays, for the caller to refuse.
+ */
+export function listedServiceTier(provider: { capabilities: { supportsServiceTier?: boolean }; serviceTiers?: Array<{ id: string }> }, tier: BbServiceTier): BbServiceTier | null {
+  if (!provider.capabilities.supportsServiceTier) return null;
+  if (tier === "default" && !(provider.serviceTiers ?? []).some((item) => item.id === "default")) return null;
+  return tier;
+}
+
 export function writerExecutionSelection(
   providerId:string,
   model:string,
