@@ -31,7 +31,7 @@ Each room is one component: `index.ts` is its public API, `server/` its services
 | critique | CODE_CRITIC_DEFAULTS, CODE_CRITIC_DEFAULT_SETTING, CRITIC_EDIT_TRIAL_KEY, CRITIC_TIEBREAK_ROLE, CRITIQUE_WORTH_ID, CodeCriticDefault, ConfirmScreenInput, CriticEditRow, CriticEditStore, CriticEditTrialOutcome, CritiqueWorthDecision, CritiqueWorthInput, FAILURE_TRIAGE_METHOD, FRONTEND_VERIFY_METHOD, MAX_FILE_EXCERPT_BYTES, NO_TOOLS_LINE, QUALITY_MODE_SETTING, QualityMode, REVIEW_CONFIRM_SCREEN_ID, SCIENTIFIC_DEBUG_METHOD, SUBJECTIVE_WORDS, TaskBriefField, TaskQaPlan, TiebreakVote, Verdict, VerdictFinding, VerdictStatus, WriterIdentity, actionableFindings, advisoryFeedback, applyCodeCriticDefault, applyQualityMode, boundedAgentName, browserQaRequired, buildCandidateEvidence, clipped, codeCritiquePrompt, codeCritiqueSource, codeCritiqueStops, codeRepairPrompt, criticEditGate, criticEditTrialOn, criticEditTrialSettle, criticEditWasRejected, criticPromptOf, criticPromptProposal, criticPromptRollback, criticStats, critiqueFromStageResult, critiquePrompt, critiqueWorthJudgment, extractModelJson, findSandboxUnsafeMissingExcludes, findingsHash, isCodeCriticDefault, majorityRubric, nextRepairAction, parseCodeCritique, parseCodeCritiqueSettings, parseCritique, parseSandboxUnsafePatterns, parseTiebreakVotes, parseWriterRepairReply, qaStateToStatus, repairLedgerFromResult, resolveCodeCriticDefault, resolveQualityMode, resolveRetryEffort, resolveRubricTiebreak, reviewConfirmScreenJudgment, roleMethod, rubricDisagreements, runnerFilterArgs, runsWholeSuite, sameUnresolvedFindings, sameWriterIdentity, scanCritiqueCoverage, settingsFromFrozenPolicy, settleVerdict, shouldRequestRepair, taskBrief, taskQaPlan, tiebreakPrompt, verdictSchema, verdictSummary, withReferenceTestCritic, worthOutcome | 26 | 3907 | tests (2) |
 | deferral | deferralKindMigrations, deferralMigrations | 11 | 738 | drill: deferrals |
 | design-eval | CRITIQUE_AXES, Criterion, CritiqueAxis, DesignJournalLine, DrawingCritique, MEASURE_SCRIPT, Measurement, RUBRIC, compareDesigns, critiqueProblems, designScore, mergeFrames, readinessWords, roleLine, scoreMeasurement, trainedConditions, trainingRatios | 3 | 159 | tests (1) |
-| docs | CITATION_SOURCE, DocsPage, expandCitationLists, parseDocsSettings | 10 | 2153 | tests (4) |
+| docs | CITATION_SOURCE, DocsPage, expandCitationLists, parseDocsSettings | 10 | 2161 | tests (4) |
 | errands | ERRAND_KINDS_WITH_NONE, ErrandKindOrNone, ErrandOutcome, ErrandRow, ErrandSource, KindSummary, errandOutcome, errandTitle, kindsOverview, listErrands | 6 | 331 | tests (2) |
 | forecast | Calibration, Forecast, ForecastFact, ForecastScore, calibrate, calibrationLine, scoreForecast | 6 | 166 | tests (1) |
 | forge | FORBIDDEN_GRANTS, FORGE_KINDS, ForgeKind, ForgeReceipt, LintFinding, creatorBrief, draftFile, draftFolder, enabledPath, lintDraft, mountForge | 3 | 184 | tests (1) |
@@ -198,7 +198,7 @@ States: (new), queued, spawn_requested, running, spawn_rejected, spawn_unknown, 
 | src/rooms/phase/server/driver.ts | 1241 |
 | src/rooms/verification/git-integrate.ts | 1132 |
 | src/rooms/writer/server/finish.ts | 1127 |
-| src/rooms/docs/server/docs-nightly.ts | 1028 |
+| src/rooms/docs/server/docs-nightly.ts | 1036 |
 | src/rooms/critique/server/critique-runs.ts | 970 |
 | src/rooms/wall/service.ts | 967 |
 | src/rooms/host-worker/host-handlers.ts | 943 |

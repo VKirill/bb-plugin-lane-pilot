@@ -151,6 +151,53 @@ describe("the nightly docs of a unit is the graph lp.docs-night", () => {
     expect(run.idem_key).toMatch(/^docs-night:docs-unit:proj_docs_write:[0-9a-f]{12}:\d{4}-\d{2}-\d{2}:\d{13}$/);
   });
 
+  it("a unit whose model's plan ran out goes to the next model at once, the same night (docs-night on GLM, 2026-11-02..04)", async () => {
+    const projectId = "proj_docs_limit";
+    const spawned: Array<Record<string, any>> = [];
+    const limitEvents = [ev(1, "client/turn/requested", {}, 1_000), ev(2, "turn/started", {}, 1_100),
+      ev(3, "provider/error", { message: "Usage limit reached for 5 hour. Your limit will reset at 2026-11-04 13:11:20" }, 1_200)].reverse();
+    const { bb, harness } = createFakePluginHost({
+      pluginId: "lane-pilot",
+      sdk: {
+        files: { read: async () => { throw new Error("no such file"); } } as never,
+        projects: { get: async () => ({ id: projectId, name: "P", sources: [{ hostId: "ovh", path: "/work/p", isDefault: true }] }) as never, list: async () => [{ id: projectId }] as never },
+        providers: {
+          list: async () => [{ id: "codex", available: true, capabilities: { supportsServiceTier: false }, serviceTiers: [] }, { id: "opencode2", available: true, capabilities: { supportsServiceTier: false }, serviceTiers: [] }] as never,
+          models: async ({ providerId }: { providerId: string }) => ({ models: providerId === "opencode2"
+            ? [{ id: "zai-coding-plan/glm-5.3-flash", model: "zai-coding-plan/glm-5.3-flash", supportedReasoningEfforts: [{ reasoningEffort: "high" }] }]
+            : [{ id: "gpt-6.1-sol", model: "gpt-6.1-sol", supportedReasoningEfforts: [{ reasoningEffort: "high" }, { reasoningEffort: "medium" }] }] }) as never,
+        } as never,
+        threads: {
+          spawn: async (args: Record<string, any>) => { spawned.push(args); return { id: spawned.length === 1 ? "thr_glm" : "thr_docs" } as never; },
+          get: async ({ threadId }: { threadId: string }) => ({ id: threadId, status: threadId === "thr_glm" ? "error" : "idle" }) as never,
+          events: { list: async ({ threadId }: { threadId: string }) => (threadId === "thr_glm" ? limitEvents : idleEvents) as never },
+        } as never,
+      },
+      experimental_callHostRpc: (call) => {
+        const input = call.input as Record<string, unknown>;
+        if (call.method === "gitDocsScope") return { hostId: "ovh", status: "ready", isRepoRoot: true, hasDocs: false, changed: ["src/a.ts"], dirty: input.docsDir ? ["docs/overview.md"] : [], base: null, workspaces: [], localDate: localDateKey(new Date()), localHour: 4, reason: null };
+        if (call.method === "gitCreateWorktree") return { hostId: "ovh", status: "failed", path: null, branch: null, reason: "no worktree in the test" };
+        if (call.method === "listDocsPages") return { hostId: "ovh", pages: [], oversized: [] };
+        if (call.method === "docsFlows") return { hostId: "ovh", briefPath: "/tmp/flows.md", jev: "disabled", routes: 0, flows: [] };
+        if (call.method === "docsAnchors") return { hostId: "ovh", briefPath: "/tmp/brief.md", anchors: 0, jev: "disabled", tables: [], deploy: false, core: [], productFiles: [] };
+        if (call.method === "docsLineCounts") return { hostId: "ovh", counts: {} };
+        if (call.method === "writeDocsPages") return { hostId: "ovh", previewSha256: sha("p"), status: "applied", writes: [], reason: null };
+        if (call.method === "gitCommitDocs") return { hostId: "ovh", status: "committed", commit: "abc123", reason: null };
+        throw new Error(`stop at ${call.method}`);
+      },
+    });
+    await plugin(bb);
+    dispose = () => harness.lifecycle.dispose();
+    const db = openDatabase(bb);
+    savePrototypeConfig(db, { projectId, hostId: "ovh", pmWorkspacePath: "/work/p", writerWorkspacePath: "/work/p", pmProviderId: "codex", pmModel: "m", writerProviderId: "codex", writerModel: "m" });
+    saveProjectSetting(db, projectId, "docs.enabled", true);
+    saveProjectSetting(db, projectId, "role_model.docs-maintainer", { provider: "opencode2", model: "zai-coding-plan/glm-5.3-flash" });
+    const result = await harness.behavior.runCli(["docs-nightly", projectId]) as { stdout: string };
+    expect(JSON.parse(result.stdout)).toEqual([expect.objectContaining({ projectId, state: "passed", commit: "abc123", threadId: "thr_docs" })]);
+    expect(spawned.map((row) => row.providerId)).toEqual(["opencode2", "codex"]);
+    expect(String(spawned[1]!.pluginMetadata.spawnId)).toMatch(/:limit$/);
+  });
+
   it("the hourly docs upkeep of an accepted task is the graph lp.docs-maintenance: one run per task, the stage function inside it, and no notice to the PM", async () => {
     const projectId = "proj_docs_task";
     const { bb, harness } = createFakePluginHost({

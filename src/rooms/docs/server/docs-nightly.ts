@@ -1,6 +1,7 @@
 import { projectRoleField } from "../../runs/server";
 import { claimDailySchedule, getActivation, getRun, listRunsWithAttempts, listStageReceipts, loadProjectSettings, loadPrototypeConfig } from "../../storage";
 import { bbServiceTier, writerExecutionSelection } from "@lane-pilot/models";
+import { providerLimitNotice } from "../../writer/server";
 import { sha256 } from "../../tasks";
 import { docsRepairPrompt, docsSelection, docsScheduleDue, docsSinceEpoch, flowDocsWritable, localDateKey, nightlyDocsPrompt, nightlyDocsWritable, parseDocsSettings } from "../docs";
 import type { DocsUnit } from "../docs";
@@ -499,7 +500,7 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
    * The second step of a unit: the docs agent. Starts it (once: the unit record names its thread, and its spawn key is the unit's night) and waits
    * until its turn ends. A unit with saved progress does not start a second agent; one in its repair round is waited for in the verify step.
    */
-  async function writeDocsUnit(i:UnitInputs,plan:UnitPlan|null,step:{runId:string;stepKey:string;nodeId:string},stop:()=>string|null):Promise<string> {
+  async function writeDocsUnit(i:UnitInputs,plan:UnitPlan|null,step:{runId:string;stepKey:string;nodeId:string},stop:()=>string|null,retry=""):Promise<string> {
     const {place,unit}=i;
     const label=unitLabelOf(unit);
     const recordKey=docsUnitRecordKey(i.projectId,place.path,label);
@@ -520,7 +521,7 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
         prompt:nightlyDocsPrompt({since:docs.since,hasDocs:plan.hasDocs,changed:plan.changed,refresh:plan.refresh,anchorsPath:plan.anchors?.briefPath,deploy:plan.anchors?.deploy??false,missingPages:plan.gaps.missingPages,uncoveredCore:plan.gaps.uncoveredCore,
           agent:typeof settings["docs.agent"]==="string"?settings["docs.agent"] as string:undefined,unit,doubts:plan.doubts,decisionDrafts:plan.decisionDrafts}),
         environment:{type:"host",hostId:place.hostId,workspace:{type:"unmanaged",path:place.path}},
-        pluginMetadata:{role:"docs-nightly",stageId:"docs-nightly",spawnId:`${i.projectId}:${sha256(`${place.path}\n${label}`).slice(0,12)}:${plan.localDate}`,...graphStepMetadata(step)}});
+        pluginMetadata:{role:"docs-nightly",stageId:"docs-nightly",spawnId:`${i.projectId}:${sha256(`${place.path}\n${label}`).slice(0,12)}:${plan.localDate}${retry}`,...graphStepMetadata(step)}});
       // From here on the unit's progress is saved, so a plugin reload picks the same agent thread up again.
       record={version:1,projectId:i.projectId,place,...(i.basePath&&i.basePath!==place.path?{basePath:i.basePath}:{}),label,unit,threadId,phase:"writing",beforeDirty:plan.beforeDirty,localDate:plan.localDate,
         since:docs.since,roots:i.roots,workspaces:i.workspaces,hasDocs:plan.hasDocs,changedCount:plan.changedCount,refresh:plan.refresh,gaps:plan.gaps,
@@ -533,6 +534,13 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
       catch(cause){
         // The agent's thread failed: the unit is done for tonight, its pages stay pending. A reload keeps the progress for the next instance.
         if(!pluginStopped(cause)&&!ctx.isDisposed()) await dropDocsUnitRecord(record).catch(()=>undefined);
+        // The model's plan ran out before the work: the unit goes to the next model at once (the failure took the spent plan off the
+        // pick, spawn-model.ts), not to the next night. Once: a second refusal is a real failure.
+        const limit=!retry&&plan&&!pluginStopped(cause)&&!ctx.isDisposed()?providerLimitNotice((cause instanceof Error?cause.message:String(cause)).replace(/^.*?provider_error:/,"").slice(0,400)):null;
+        if(limit){
+          bb.log.warn(`docs unit ${label}: its model hit a provider limit (${limit}); rerunning on the next model`);
+          return await writeDocsUnit(i,plan,step,stop,":limit");
+        }
         throw cause;
       }
     }
