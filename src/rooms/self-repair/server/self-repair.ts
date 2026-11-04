@@ -1,5 +1,7 @@
 import { writerReuseStats } from "../../writer";
-import { checksInFlight, failureClass } from "../../runs";
+import { checksInFlight, failureClass, taskFamily } from "../../runs";
+import { OWNER_WORD_WAIT_MS } from "../../tasks";
+import { taskWordItemPrefix } from "../../lead";
 import { closeSync, fstatSync, openSync, readSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
@@ -565,6 +567,12 @@ export function createSelfRepair(ctx: ServerCore, engineOf?: () => WorkflowEngin
       const thread = await bb.sdk.threads.get({ threadId: row.thread_id }).catch(() => null);
       const status = thread ? stringAt(thread, "status") : "missing";
       if (status !== "idle" && status !== "error" && status !== "stopped" && status !== "missing") continue;
+      // finish.ts deliberately keeps a verified attempt running while its landing decision is open (hub 2026-10-31/11-03).
+      // Match this attempt's receipt, not the project's policy; an answered or expired wait cannot hide a stuck attempt.
+      if (status === "idle" && db.prepare(`SELECT 1 FROM lane_pilot_owner_item
+        WHERE key=? AND source='writer' AND kind='task_word' AND state='open' AND created_at>?`).get(
+        `${taskWordItemPrefix(row.run_id, taskFamily(row.task_id))}${row.id}`, now - OWNER_WORD_WAIT_MS,
+      )) continue;
       // Its checks run or wait in the run's check pool, and that pool moves: the writer is idle by design, not stuck
       // (Vampirism Fire 2026-10-24: six attempts behind other tasks' Studio tests were reported after 47–53 minutes).
       const checks = checksInFlight(row.thread_id);

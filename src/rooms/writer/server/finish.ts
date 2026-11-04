@@ -21,7 +21,7 @@ import { stringAt } from "../../core/server";
 import { wasAnsweredByDefault } from "./question-default";
 import { needsHumanQuestion, outputText, providerLimitNotice, providerStreamError, WRITER_STREAM_ERROR, writerContextBlocks, writerSetupLines } from "./writer-task";
 import { isLiveDecision } from "../live-folder";
-import { TASK_WORDS_KEY, acceptanceProofGap, taskSizeOf, isMainfixTask, landingWordGap, landingWordAsked, questionsFromFile, checkScriptEdits, referenceTestEdits, taskWordKey, testFitFindings, writerMarkers } from "../../tasks";
+import { OWNER_WORD_WAIT_MS, TASK_WORDS_KEY, acceptanceProofGap, taskSizeOf, isMainfixTask, landingWordGap, landingWordAsked, questionsFromFile, checkScriptEdits, referenceTestEdits, taskWordKey, testFitFindings, writerMarkers } from "../../tasks";
 import type { TaskWord } from "../../tasks";
 import type { StageId } from "../../tasks";
 import { readCheckRun } from "../../tasks/server";
@@ -66,8 +66,6 @@ const FOLLOW_UP_DELETED = "the owner deleted the queued instruction for this wri
 const MERGE_QUEUE_MS = 15 * 60_000;
 /** How long finished work waits for someone's uncommitted edits in the base checkout to be committed or put away. */
 const DIRTY_BASE_WAIT_MS = 2 * 3600_000;
-/** How long a verified task waits for the owner's word to land when owner.words is on. */
-const OWNER_WORD_WAIT_MS = 6 * 3600_000;
 const dirtyBase = (merged:{ status:string; reason?:string|null }) => merged.status === "conflict" && Boolean(merged.reason?.startsWith("base checkout has uncommitted changes"));
 
 /**

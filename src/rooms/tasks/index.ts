@@ -19,7 +19,7 @@ export { BIRTH_KINDS, CHECK_RECIPES, FACT_KINDS, HOLD_FOREVER, LANE_QUEUES, QUES
 export { testFitFindings } from "./test-fit";
 export type { TestFitFile, TestFitHit } from "./test-fit";
 export type { BirthKind, BlockingClass, CheckMeasure, CheckRecipe, FactKind, Priority, QuestionKind, WriterMarkers } from "./rails";
-export { TASK_WORDS_KEY, landingWordAsked, landingWordGap, ownerWordsMode, ownerWordsOn, recordTaskWord, taskWordKey, type OwnerWordsMode } from "./words";
+export { OWNER_WORD_WAIT_MS, TASK_WORDS_KEY, landingWordAsked, landingWordGap, ownerWordsMode, ownerWordsOn, recordTaskWord, taskWordKey, type OwnerWordsMode } from "./words";
 export type { TaskWord } from "./words";
 export { SHARED_PATH_TASKS, batchShapeAdvice } from "./batch-shape";
 export type { OpenShape } from "./batch-shape";
