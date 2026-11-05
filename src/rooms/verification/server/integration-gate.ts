@@ -814,7 +814,8 @@ export class IntegrationGateRunner {
     const fix: TaskV2 = { ...contract, id: `${taskId}-mainfix`.slice(0, 128), title: `Make main green after ${taskId}`.slice(0, 200),
       display_title: `Починка main после ${taskId}`.slice(0, 60), kind: "fix", area: contract.area ?? "maintenance", depends_on: [],
       risk: contract.risk === "low" ? "medium" : contract.risk, expected_outputs: [gateCommand], objective: prompt,
-      acceptance: [`\`${gateCommand}\` passes on main`, `${taskId}'s acceptance still holds: ${(contract.acceptance ?? []).join("; ")}`.slice(0, 600)] };
+      // Each of the culprit's items whole: one string cut at 600 characters left a requirement broken mid-word and the plan critic blocked it.
+      acceptance: [`\`${gateCommand}\` passes on main`, ...(contract.acceptance ?? []).map((item) => `${taskId}'s acceptance still holds: ${item}`)] };
     const plan = `Integration gate repair, dispatched by Lane Pilot. Full gate log: ${logPath}. Read the failure, find what ${taskId} clashes with on main, fix within owns_paths, run \`${gateCommand}\`.`;
     try {
       const result = await this.services.dispatchWriter({ threadId: input.pmThreadId, projectId: input.projectId, task: fix, plan });

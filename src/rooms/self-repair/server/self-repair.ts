@@ -115,6 +115,10 @@ type SignatureRecord = {
    * hex, so the short text can never be its input (wall repairs wr_8462ad860c03, wr_16de9a4704de, wr_662642de0aa6: every revert refused).
    */
   mergedCommit?: string | null;
+  /** A needs-owner repair keeps its worktree until the owner answers or this time passes: «go ahead» continues in that worktree. */
+  ownerWaitUntil?: number | null;
+  /** When the owner's «go ahead» went into the thread: its old needs-owner report is not read again before the new turn starts. */
+  continuedAt?: number | null;
   /**
    * A spawn that threw, so whether the thread exists is unknown. Its worktree is kept and the next pass repeats the spawn
    * under the same key (the same thread comes back when it was made); only a spawn that cannot be settled releases it.
@@ -214,6 +218,8 @@ const STATE_BUDGET_BYTES = 200 * 1024;
 const MERGE_TRIES = 4;
 /** A repair thread that ended without a verdict for this long is abandoned: its worktree is saved as a patch and released. */
 const ABANDON_MS = 86_400_000;
+/** Time the repair thread gets to start the turn the owner's «go ahead» queued before its closing line is read again. */
+const CONTINUE_GRACE_MS = 5 * 60_000;
 
 /**
  * Whether a kind of failure is the workflow engine itself failing: its signature, its samples or the night loop's brief show a fault in the engine's code, on its
@@ -757,6 +763,8 @@ export function createSelfRepair(ctx: ServerCore, engineOf?: () => WorkflowEngin
       return;
     }
     if (!record.verdict && now - (record.spawnedAt ?? now) < ABANDON_MS) return;
+    // The owner's «go ahead» continues the repair thread in this worktree: it stays until he answers or the question times out.
+    if (record.verdict === "needs-owner" && (record.ownerWaitUntil ?? 0) > now) return;
     await releaseWorktree(worktree);
     record.worktree = null;
     record.outcome = `released: ${record.verdict ?? "no verdict"}`;
@@ -768,15 +776,28 @@ export function createSelfRepair(ctx: ServerCore, engineOf?: () => WorkflowEngin
    * message. The repair's worktree is released as for any verdict but «fixed», so the answer is a decision to act on in a
    * new repair, not a continuation of the old edits. An older BB without question forms leaves the report as it was.
    */
-  async function askOwnerAboutRepair(threadId: string, signature: string, report: string): Promise<void> {
+  async function askOwnerAboutRepair(threadId: string, signature: string, report: string): Promise<boolean> {
     const title = signature.split(":").slice(2).join(":").slice(0, 100);
     const body = report.replace(/SELF-REPAIR-VERDICT:.*$/im, "").trim();
     const form = selfRepairOwnerForm(await ownerLocale(ctx.bb), title);
     const englishQuestion = selfRepairOwnerForm("en", title).question;
     const TIMEOUT_MS = 60 * 60_000;
+    const settled = async (answer: OwnerAnswer) => {
+      // Silence, a dismissal or «leave as is» sends nothing: the thread has no work to do, and the next pass releases its worktree.
+      // (A message into it once its worktree was gone failed: «Provider codex failed to start: spawn /usr/bin/node ENOENT».)
+      const goAhead = answer.outcome === "answered" && answer.choice?.id !== "2";
+      if (goAhead) await ctx.ownerAsk.sendToThread(threadId, ctx.ownerAsk.answerMessage(englishQuestion, repairAnswerForThread(answer), TIMEOUT_MS));
+      await patchRecord(signature, (stored) => {
+        stored.ownerWaitUntil = null;
+        // The thread works again: its next closing line is the verdict, read once it is idle.
+        if (goAhead) { stored.verdict = null; stored.spawnedAt = Date.now(); stored.continuedAt = Date.now(); }
+      });
+      ctx.log(`self-repair: the owner's answer on @thread:${threadId}: ${goAhead ? "go ahead, the repair continues" : "no go-ahead, its worktree is released"}`);
+    };
     const opened = await ctx.ownerAsk?.askInBackground(threadId, { source: "repair", question: form.question, detail: body.slice(-3000), options: form.options },
-      (answer) => ctx.ownerAsk.sendToThread(threadId, ctx.ownerAsk.answerMessage(englishQuestion, repairAnswerForThread(answer), TIMEOUT_MS)), { timeoutMs: TIMEOUT_MS }).catch(() => false);
+      settled, { timeoutMs: TIMEOUT_MS }).catch(() => false) ?? false;
     if (opened) ctx.log(`self-repair: asked the owner about @thread:${threadId} (needs-owner)`);
+    return opened;
   }
 
   /**
@@ -815,7 +836,9 @@ export function createSelfRepair(ctx: ServerCore, engineOf?: () => WorkflowEngin
     if (record.verdict === "needs-owner" && !dryRun) {
       // A graph step stores the verdict first: a step run again after a reload must not ask the owner twice.
       if (record.runId) await patchRecord(signature, (stored) => { stored.verdict = record.verdict; });
-      await askOwnerAboutRepair(threadId, signature, report);
+      // The worktree waits for the answer (60 min form + a margin); unopened, it is released as before.
+      record.ownerWaitUntil = await askOwnerAboutRepair(threadId, signature, report) ? Date.now() + 65 * 60_000 : null;
+      if (record.runId) await patchRecord(signature, (stored) => { stored.ownerWaitUntil = record.ownerWaitUntil; });
     }
   }
 
@@ -936,6 +959,7 @@ export function createSelfRepair(ctx: ServerCore, engineOf?: () => WorkflowEngin
       signal?.throwIfAborted();
       // A repair whose graph run is going reads its own verdict (the `verdict` step of the run).
       if (!record.threadId || record.verdict || runIsLive(record.runId) || await threadBusy(record.threadId)) continue;
+      if (record.continuedAt && now - record.continuedAt < CONTINUE_GRACE_MS) continue;
       await readVerdict(signature, record, options.dryRun === true, current);
     }
     if (!options.dryRun) {
@@ -1205,7 +1229,7 @@ export function createSelfRepair(ctx: ServerCore, engineOf?: () => WorkflowEngin
       }
       // A branch that cannot be merged yet (a busy base, a conflict) stays: the watcher's next passes retry it, then release it.
       if (work.worktree && !(await threadBusy(record.threadId))) await settleRecord(signature, work, Date.now());
-      await patchRecord(signature, (stored) => { stored.verdict = work.verdict; stored.worktree = work.worktree; stored.outcome = work.outcome; stored.mergedCommit = work.mergedCommit; });
+      await patchRecord(signature, (stored) => { stored.verdict = work.verdict; stored.ownerWaitUntil = work.ownerWaitUntil; stored.worktree = work.worktree; stored.outcome = work.outcome; stored.mergedCommit = work.mergedCommit; });
       return { output: { verdict: work.verdict ?? "none", outcome: work.outcome ?? "" } };
     }) });
   }

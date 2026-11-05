@@ -342,6 +342,28 @@ describe("self-repair", () => {
     expect(form.harness.pendingInteractions).toHaveLength(0);
   });
 
+  it("keeps a needs-owner repair's worktree while the owner is asked and sends nothing into the thread on silence or «leave» (2026-11-05)", async () => {
+    // The worktree used to go at once; the timeout notice queued later started Codex in a deleted folder: spawn /usr/bin/node ENOENT.
+    const env = setup({}, { thr_repair1: "Нужен выбор?\nSELF-REPAIR-VERDICT: needs-owner" });
+    const { createFakePluginHost } = await import("@get-bb/plugin-sdk/testing");
+    const form = createFakePluginHost({ pluginId: "lane-pilot" });
+    const { createOwnerAsk } = await import("../../src/rooms/relay/server/owner-ask");
+    const real = createOwnerAsk(form.bb, () => undefined);
+    const sent: Array<[string, string]> = [];
+    Object.assign(env.ctx, { ownerAsk: { ...real, sendToThread: async (threadId: string, text: string) => { sent.push([threadId, text]); } } });
+    env.attempt("lpattempt_1", "lprun_a", "blocked", "merge_failed: index.lock exists");
+    const repair = createSelfRepair(env.ctx);
+    await repair.tick({ since: 0 });
+    await repair.tick();
+    const removed = () => env.hostCalls.filter((call) => call.method === "gitRemoveWorktree").length;
+    expect(removed()).toBe(0);
+    form.harness.behavior.submitInteraction(form.harness.pendingInteractions[0]!.id, { choice: "2" });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(sent).toEqual([]);
+    await repair.tick();
+    expect(removed()).toBe(1);
+  });
+
   it("a repair that ends needs-owner uses the English form title when locale is en (H8)", async () => {
     const env = setup({}, { thr_repair1: "Нужен выбор: чинить в Lane Stack или в ядре?\nSELF-REPAIR-VERDICT: needs-owner" });
     await env.ctx.bb.storage.kv.set("preferences:locale", "en");

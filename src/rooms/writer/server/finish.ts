@@ -86,7 +86,8 @@ export function postMergeRepair(onMain:TaskV2, red:Array<{ command:string; exitC
     display_title:`Починка main после ${onMain.id}`.slice(0, 60), kind:"fix", area:onMain.area ?? "maintenance",
     depends_on:[], risk:onMain.risk === "low" ? "medium" : onMain.risk, expected_outputs:red.map((check) => check.command),
     objective:`Main is red after merging ${onMain.id} (${onMain.title}): these checks fail on main while they passed in the task's own worktree, so the merged work clashes with what landed meanwhile. Make each of them pass on main, keeping what ${onMain.id} and the work merged before it intended; change the least code that does it. Failing now:\n${red.map((check) => `\`${check.command}\` (exit ${check.exitCode}) output tail:\n${tail(check)}`).join("\n\n")}`,
-    acceptance:[...red.map((check) => `\`${check.command}\` passes on main`), `${onMain.id}'s acceptance still holds: ${onMain.acceptance.join("; ")}`.slice(0, 600)] };
+    // Each of the merged task's items whole, never one string cut at 600 characters (a requirement broken mid-word blocks the plan critic).
+    acceptance:[...red.map((check) => `\`${check.command}\` passes on main`), ...onMain.acceptance.map((item) => `${onMain.id}'s acceptance still holds: ${item}`)] };
   const logs = red.map((check, index) => ({
     path:`.agents/plans/items/${fix.id}/logs/${logName(check.command, index)}`,
     content:`$ ${check.command}\nexit ${check.exitCode}\n\n${check.stdout ?? ""}\n${check.stderr ?? ""}`.trim() + "\n",

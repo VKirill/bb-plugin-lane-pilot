@@ -48,3 +48,12 @@ it("saves the full output of every failing check under the task folder logs/", (
     expect(log.content).toContain(red[index]!.stderr ?? "");
   }
 });
+
+// musebridge-*-mainfix (2026-11-05): the merged task's acceptance was joined and cut at 600 characters, so a requirement
+// ended mid-word and the plan critic blocked the repair (plan_critique_blocked).
+it("carries every acceptance item of the merged task whole", () => {
+  const long = { ...merged, acceptance:["a".repeat(500) + " end-of-first", "b".repeat(400) + " end-of-second"] };
+  const { fix } = postMergeRepair(long, red);
+  expect(taskV2Schema.safeParse(fix).success).toBe(true);
+  expect(fix.acceptance.filter((line) => line.endsWith("end-of-first") || line.endsWith("end-of-second"))).toHaveLength(2);
+});
