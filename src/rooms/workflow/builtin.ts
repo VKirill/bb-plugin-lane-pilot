@@ -68,6 +68,8 @@ import seoPage from "../../../workflows/seo-page.json";
 import seoBrief from "../../../workflows/seo-brief.json";
 import seoResearch from "../../../workflows/seo-research.json";
 import seoRelease from "../../../workflows/seo-release.json";
+import seoMonitor from "../../../workflows/seo-monitor.json";
+import seoProjectIntake from "../../../workflows/seo-project-intake.json";
 import socialPost from "../../../workflows/social-post.json";
 import telegramSend from "../../../workflows/telegram-send.json";
 import testGen from "../../../workflows/test-gen.json";
@@ -166,6 +168,8 @@ export const BUILTIN_SOURCES: ReadonlyArray<{ name: string; value: unknown }> = 
   { name: "seo-brief.json", value: seoBrief },
   { name: "seo-cocoon.json", value: seoCocoon },
   { name: "seo-page.json", value: seoPage },
+  { name: "seo-monitor.json", value: seoMonitor },
+  { name: "seo-project-intake.json", value: seoProjectIntake },
   { name: "seo-release.json", value: seoRelease },
   { name: "seo-research.json", value: seoResearch },
   { name: "social-post.json", value: socialPost },

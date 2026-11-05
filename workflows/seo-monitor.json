@@ -1,0 +1,460 @@
+{
+  "id": "seo-monitor",
+  "name": {
+    "en": "SEO monitor",
+    "ru": "SEO-монитор"
+  },
+  "description": {
+    "en": "The weekly loop over a live site: segmented GSC/analytics cohorts, robots and sitemap watch, CWV groups, anomaly buckets, a scored task queue, the monthly link-response review and the cadence checks. It routes each signal to the graph that would handle it and starts the follow-ups that are due; it applies no fixes itself.",
+    "ru": "Еженедельный цикл по живому сайту: сегментированные когорты GSC/аналитики, надзор за robots и картами, группы CWV, корзины аномалий, оценённая очередь задач, месячный обзор отклика на ссылки и каденс-проверки. Маршрутизирует каждый сигнал к графу, который бы его обработал, и запускает положенные продолжения; сам ничего не исправляет."
+  },
+  "examples": {
+    "ru": [
+      "Проведи недельный SEO-мониторинг сайта",
+      "Что изменилось в поиске за неделю и что в очереди",
+      "Запусти монитор по паспорту проекта"
+    ],
+    "en": [
+      "Run the weekly SEO monitor on the site",
+      "What changed in search this week and what's queued",
+      "Start the monitor from the project passport"
+    ]
+  },
+  "not_for": [
+    "seo-project-intake",
+    "seo-release"
+  ],
+  "status": "tested",
+  "tags": [
+    "seo",
+    "drmax"
+  ],
+  "inputs": {
+    "site_url": {
+      "type": "string",
+      "required": true
+    },
+    "project_passport_path": {
+      "type": "string",
+      "default": ""
+    },
+    "change_log_path": {
+      "type": "string",
+      "default": ""
+    },
+    "cohort_map_path": {
+      "type": "string",
+      "default": ""
+    },
+    "link_campaign": {
+      "type": "bool",
+      "default": false,
+      "note": "идёт кампания по ссылкам - нужен месячный обзор"
+    },
+    "period": {
+      "type": "weekly|monthly|quarterly",
+      "default": "weekly",
+      "note": "каденс этого прогона"
+    },
+    "release_items": {
+      "type": "string[]",
+      "note": "релизные элементы, если долг по проверке индексации наступил"
+    }
+  },
+  "outputs": {
+    "status": "done|partial|blocked",
+    "report_path": "string?",
+    "queue_path": "string?",
+    "recommendations": "string[]?"
+  },
+  "requires": {
+    "plugins": [
+      "lane-pilot"
+    ],
+    "skills": [
+      "google",
+      "yandex",
+      "seo-project-life",
+      "seo-agent",
+      "seo-measurement-loop",
+      "seo-update-forensics"
+    ],
+    "browserSession": true
+  },
+  "budget": {
+    "max_minutes": 120,
+    "max_usd": 8
+  },
+  "entry": "pull",
+  "nodes": [
+    {
+      "id": "pull",
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "errand-browser",
+      "profile": {
+        "skills": [
+          "google",
+          "yandex",
+          "seo-measurement-loop"
+        ]
+      },
+      "title": {
+        "en": "Pull the week",
+        "ru": "Выгрузка недели"
+      },
+      "prompt": "Weekly exports in the owner's session (seo-measurement-loop): GSC, Yandex Webmaster and analytics joined by URL, brand vs non-brand split, page-class cohorts, the raw archive and the striking-distance list. Return pull_path and urls.",
+      "out": {
+        "pull_path": "string",
+        "urls": "int"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 40
+      }
+    },
+    {
+      "id": "tech_watch",
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "specialist:seo-specialist",
+      "title": {
+        "en": "Tech watch",
+        "ru": "Технический надзор"
+      },
+      "prompt": "robots.txt hash vs last known, indexing rate per sitemap segment and lastmod credibility, CWV group status, manual actions and security issues for {{$inputs.site_url}}. Return watch_path and alerts.",
+      "out": {
+        "watch_path": "string",
+        "alerts": "string[]"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 20
+      }
+    },
+    {
+      "id": "anomalies",
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "specialist:seo-specialist",
+      "profile": {
+        "skills": [
+          "seo-update-forensics",
+          "seo-measurement-loop"
+        ]
+      },
+      "title": {
+        "en": "Anomaly buckets",
+        "ru": "Корзины аномалий"
+      },
+      "prompt": "Page-role map and the A-D anomaly buckets, 28 days before vs after (seo-update-forensics). Return anomalies_path and buckets.",
+      "out": {
+        "anomalies_path": "string",
+        "buckets": "int"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 25
+      }
+    },
+    {
+      "id": "queue",
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "specialist:seo-specialist",
+      "profile": {
+        "skills": [
+          "seo-project-life"
+        ]
+      },
+      "title": {
+        "en": "Task queue",
+        "ru": "Очередь задач"
+      },
+      "prompt": "Score each signal into a task passport (seo-measurement-loop): sprint, reserve or frozen, the A/B/C queues with WIP limits, the idea archive and the stop-list. Return queue_path and queued.",
+      "out": {
+        "queue_path": "string",
+        "queued": "int"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 20
+      }
+    },
+    {
+      "id": "links_review",
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "specialist:seo-specialist",
+      "skip_when": "$inputs.link_campaign == false || $inputs.period == 'weekly'",
+      "skip_out": {
+        "links_path": "",
+        "verdicts": []
+      },
+      "title": {
+        "en": "Link response review",
+        "ru": "Обзор отклика на ссылки"
+      },
+      "prompt": "Only when a link campaign is active and the period is monthly or quarterly: how the cluster responded in GSC after each batch, plus the decision for each campaign. Return links_path and verdicts.",
+      "out": {
+        "links_path": "string",
+        "verdicts": "string[]"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 20
+      }
+    },
+    {
+      "id": "cadence",
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "specialist:seo-specialist",
+      "skip_when": "$inputs.period == 'weekly'",
+      "skip_out": {
+        "cadence_path": ""
+      },
+      "title": {
+        "en": "Cadence plan",
+        "ru": "Каденс-план"
+      },
+      "prompt": "First run of the month or quarter: the improvement loop and the quarterly structural and E-E-A-T plan; turn Bing AI Performance exports into a plan when available. Return cadence_path.",
+      "out": {
+        "cadence_path": "string"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 25
+      }
+    },
+    {
+      "id": "route",
+      "produces": [
+        {
+          "kind": "verdict",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "plan-critic",
+      "session": "new",
+      "title": {
+        "en": "Route the signals",
+        "ru": "Маршрутизация сигналов"
+      },
+      "prompt": "Check the Search Status Dashboard and route each signal as a recommendation: drop or finished core update -> seo-drop-diagnosis; CTR, stalled or stale page -> seo-page-refresh; positions 8-20 -> seo-structure-audit; template or tech regression -> seo-tech-audit; quarterly -> seo-trust. These are recommendations only - this graph starts nothing but a due seo-release index_check, and owner's manual-action signals go to the owner. Set release_due only when an index check is due. Status pass | rework | block; severity one of critical, high, medium, low, info.",
+      "out": {
+        "status": "pass|rework|block",
+        "signals": "string[]",
+        "recommendations": "string[]",
+        "release_due": "bool"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 20
+      }
+    },
+    {
+      "id": "release_check",
+      "type": "subworkflow",
+      "workflow": "seo-release",
+      "skip_when": "route.release_due != true",
+      "skip_out": {
+        "status": "done",
+        "index_status_path": ""
+      },
+      "title": {
+        "en": "Due index check",
+        "ru": "Проверка индексации по сроку"
+      },
+      "with": {
+        "mode": "index_check",
+        "items": "{{$inputs.release_items}}"
+      },
+      "out": {
+        "status": "string",
+        "index_status_path": "string"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 60
+      }
+    },
+    {
+      "id": "report",
+      "type": "action",
+      "action": "fs.write",
+      "path": ".agents/seo/monitor/{{date}}/",
+      "files": [
+        "weekly-report.md",
+        "queue.json",
+        "anomalies.json",
+        "recommendations.md"
+      ],
+      "note": "weekly-report.md: changes, the scored queue, routed recommendations (seo-drop-diagnosis, seo-page-refresh, seo-structure-audit, seo-tech-audit) and the follow-ups this run started; update the SEO Change Log",
+      "out": {
+        "report_path": "string"
+      }
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "done",
+        "report_path": "report.report_path",
+        "queue_path": "queue.queue_path",
+        "recommendations": "route.recommendations"
+      }
+    },
+    {
+      "id": "blocked",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "blocked"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "pull",
+      "to": "tech_watch",
+      "pass": "artifact"
+    },
+    {
+      "from": "tech_watch",
+      "to": "anomalies",
+      "pass": "artifact"
+    },
+    {
+      "from": "anomalies",
+      "to": "queue",
+      "pass": "artifact"
+    },
+    {
+      "from": "queue",
+      "to": "links_review",
+      "pass": "artifact"
+    },
+    {
+      "from": "links_review",
+      "to": "cadence",
+      "pass": "artifact"
+    },
+    {
+      "from": "cadence",
+      "to": "route",
+      "pass": "artifact"
+    },
+    {
+      "from": "route",
+      "to": "release_check",
+      "pass": "artifact",
+      "when": "route.status != 'block'"
+    },
+    {
+      "from": "route",
+      "to": "blocked",
+      "pass": "artifact"
+    },
+    {
+      "from": "release_check",
+      "to": "report",
+      "pass": "artifact"
+    },
+    {
+      "from": "report",
+      "to": "done",
+      "pass": "artifact"
+    }
+  ],
+  "test": {
+    "id": "sm-1",
+    "sim": {
+      "input": {
+        "site_url": "https://example.ru",
+        "period": "weekly",
+        "link_campaign": false
+      },
+      "stubs": {
+        "pull": {
+          "pull_path": "pull/",
+          "urls": 320
+        },
+        "tech_watch": {
+          "watch_path": "watch.md",
+          "alerts": []
+        },
+        "anomalies": {
+          "anomalies_path": "anomalies.json",
+          "buckets": 2
+        },
+        "queue": {
+          "queue_path": "queue.json",
+          "queued": 5
+        },
+        "route": {
+          "status": "pass",
+          "signals": [],
+          "recommendations": [
+            "seo-page-refresh: /old-page"
+          ],
+          "release_due": false
+        },
+        "report": {
+          "report_path": ".agents/seo/monitor/2026-11-05/weekly-report.md"
+        }
+      },
+      "expect_path": [
+        "pull",
+        "tech_watch",
+        "anomalies",
+        "queue",
+        "links_review",
+        "cadence",
+        "route",
+        "release_check",
+        "report",
+        "done"
+      ],
+      "expect_outputs": [
+        "status == 'done'",
+        "report_path != ''"
+      ]
+    },
+    "live": "еженедельный прогон по живому сайту после seo-project-intake",
+    "note": "Tested on stubs. The monitor recommends wave-2 graphs by name and only ever starts seo-release index_check; it applies no fixes."
+  },
+  "goal_check": "artifact"
+}
