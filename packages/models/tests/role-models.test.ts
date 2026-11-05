@@ -5,10 +5,10 @@ import {
 } from "@lane-pilot/models";
 
 describe("the table «role -> model»", () => {
-  it("offers only the Claude, GPT, Gemini Flash (9router) and ZCode GLM-5.3-Flash models, with the provider ids the machines use, and each is a model the writers' anamnesis knows", () => {
+  it("offers only the Claude, GPT, Gemini Flash (9router), Gemini 4 Argon (Antigravity) and ZCode GLM-5.3-Flash models, with the provider ids the machines use, and each is a model the writers' anamnesis knows", () => {
     expect(ROLE_MODEL_OPTIONS.map((option) => `${option.providerId}/${option.id}`)).toEqual([
       "claude-code/claude-fable-5-1", "claude-code/claude-opus-5-5", "claude-code/claude-sonnet-5-5", "claude-code/claude-haiku-5-5", "codex/gpt-6.1-sol", "codex/gpt-6.1-terra", "codex/gpt-6-astra", "codex/gpt-6-luna",
-      "opencode2/router9/ag/gemini-3.8-flash-high", "zcode/glm-5.3-flash-free",
+      "opencode2/router9/ag/gemini-3.8-flash-high", "acp-antigravity/gemini-4-argon", "zcode/glm-5.3-flash-free",
     ]);
     for (const option of ROLE_MODEL_OPTIONS) {
       const profile = WRITER_PROFILES.find((row) => row.model === option.id);
@@ -67,15 +67,16 @@ describe("the table «role -> model»", () => {
     // The owner picks the Gemini for a row that runs on Opus: the effort is the model's own default, not the row's «high».
     expect(resolveRoleModel("analyst", { [roleModelKey("analyst")]: { model: "router9/ag/gemini-3.8-flash-high" } })).toMatchObject({ providerId: "opencode2", effort: "medium", source: "table" });
     expect(resolveRoleModel("analyst", { [roleModelKey("analyst")]: { model: "router9/ag/gemini-3.8-flash-high", reasoning_effort: "high" } })).toMatchObject({ effort: "high" });
-    // The table wins over the stage selection; a row that is not one of the six is no row.
+    // The table wins over the stage selection; a row that is not one of the table models is no row.
     expect(resolveRoleModel("code-critic", { ...stage, [roleModelKey("code-critic")]: { model: "claude-sonnet-5-5" } })).toMatchObject({ model: "claude-sonnet-5-5", source: "table" });
     expect(resolveRoleModel("code-critic", { ...stage, [roleModelKey("code-critic")]: { model: "gemini-9" } })).toMatchObject({ model: "gpt-6.1-terra", source: "stage" });
   });
 
-  it("validates a stored row: one of the roles, one of the six models, one of the efforts", () => {
+  it("validates a stored row: one of the roles, one of the table models, one of the efforts", () => {
     expect(roleModelProblem(roleModelKey("analyst"), { model: "claude-opus-5-5", reasoning_effort: "max" })).toBeNull();
     expect(roleModelProblem(roleModelKey("analyst"), null)).toBeNull();
     expect(roleModelProblem(roleModelKey("code-critic"), { model: "router9/ag/gemini-3.8-flash-high", reasoning_effort: "medium" })).toBeNull();
+    expect(roleModelProblem(roleModelKey("pm-reader"), { model: "gemini-4-argon" })).toBeNull();
     expect(roleModelProblem(roleModelKey("code-critic"), { model: "gemini-3.8-flash-high" })).toContain("model: one of");
     expect(roleModelProblem(roleModelKey("analyst"), { model: "claude-opus-5" })).toContain("model: one of");
     expect(roleModelProblem(roleModelKey("analyst"), { model: "claude-opus-5-5", reasoning_effort: "ultra" })).toContain("reasoning_effort");
