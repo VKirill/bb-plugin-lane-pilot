@@ -1,4 +1,5 @@
 import type { Workflow } from "@lane-pilot/workflow-engine";
+import { describeWorkflowMarkdown, exportIntro } from "./step-describe";
 import { WORKFLOW_CATEGORIES, workflowCategory, type WorkflowCategory } from "./categories";
 
 /** One workflow of the library with the text its file carries (the raw JSON object; builtins keep their bundled value). */
@@ -56,22 +57,14 @@ export function redactDefinition(value: unknown): unknown {
   return typeof value === "string" ? scrub(value) : value;
 }
 
-const nodeLine = (node: Workflow["nodes"][number], locale: "en" | "ru"): string => {
-  const title = "title" in node && node.title ? node.title[locale] : node.id;
-  const role = "role" in node && node.role ? `, ${node.role}` : "";
-  return `  - ${title} — ${node.type}${role}`;
-};
-
-/** The human-readable overview of the export: a section per category, a block per graph, its steps in order. */
-export function exportMarkdown(entries: WorkflowExportEntry[], locale: "en" | "ru" = "ru"): string {
-  const lines: string[] = [locale === "ru" ? "# Графы Lane Pilot" : "# Lane Pilot graphs", ""];
+/** The overview of the export: how to read it, then a section per category and every graph step by step, in full. */
+export function exportMarkdown(entries: WorkflowExportEntry[], locale: "en" | "ru" = "ru", redact = true): string {
+  const lines: string[] = [locale === "ru" ? "# Графы Lane Pilot" : "# Lane Pilot graphs", "", ...exportIntro(locale)];
   for (const category of WORKFLOW_CATEGORIES) {
     const group = entries.filter((entry) => workflowCategory(entry.workflow) === category);
     if (!group.length) continue;
     lines.push(`## ${category}`, "");
-    for (const entry of group) {
-      lines.push(`### ${entry.workflow.name[locale]} (\`${entry.workflow.id}\`)`, "", entry.workflow.description[locale], "", ...(entry.workflow.nodes.map((node) => nodeLine(node, locale))), "");
-    }
+    for (const entry of group) lines.push(...describeWorkflowMarkdown(redact ? redactDefinition(entry.definition) as Record<string, unknown> : entry.definition, locale));
   }
   return lines.join("\n").replace(/\n{3,}/g, "\n\n");
 }
@@ -102,6 +95,6 @@ export function buildWorkflowExport(input: {
       graphs: selected.map((entry) => ({ id: entry.workflow.id, version: entry.workflow.version, category: workflowCategory(entry.workflow), scope: entry.scope })),
     },
     files,
-    markdown: exportMarkdown(selected),
+    markdown: exportMarkdown(selected, "ru", input.redact),
   };
 }

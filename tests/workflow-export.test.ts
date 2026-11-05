@@ -1,3 +1,4 @@
+import { describeStep } from "../src/rooms/workflow/step-describe";
 import { describe, expect, it } from "vitest";
 import { parseWorkflowObject, type Workflow } from "@lane-pilot/workflow-engine";
 import { BUILTIN_SOURCES } from "../src/rooms/workflow/builtin";
@@ -82,7 +83,27 @@ describe("workflow export build", () => {
     expect(result.markdown).toContain("## code");
     expect(result.markdown).toContain(workflow.name.ru);
     expect(result.markdown).toContain("`analyze-plan-execute`");
-    const node = workflow.nodes.find((item) => item.type !== "note")!;
-    expect(result.markdown).toContain(`— ${node.type}`);
+    // Every step is described in full, so the file alone is enough to hand to an agent.
+    expect(result.markdown).toContain("Как читать этот файл");
+    for (const node of workflow.nodes) {
+      if (node.type === "note") continue;
+      expect(result.markdown).toContain(`(\`${node.id}\`)`);
+      if (node.type === "agent" && node.prompt) expect(result.markdown).toContain(node.prompt.split("\n")[0]!.slice(0, 60));
+    }
+    expect(result.markdown).toContain("**Дальше:**");
+  });
+});
+
+describe("describeStep", () => {
+  it("names the step's task, skills, sources and next steps; a subworkflow names the graph it calls", () => {
+    const cocoon = builtinEntries().find((entry) => entry.workflow.id === "seo-cocoon")!.definition;
+    const nodes = cocoon.nodes as Array<Record<string, unknown>>;
+    const call = nodes.find((node) => node.type === "subworkflow")!;
+    const facts = describeStep(cocoon, String(call.id));
+    expect(facts.find((fact) => fact.label === "Вызывает граф")?.value).toBe(call.workflow);
+    expect(facts.some((fact) => fact.label === "Получает")).toBe(true);
+    expect(facts.some((fact) => fact.label === "Дальше")).toBe(true);
+    const agent = nodes.find((node) => node.type === "agent" && node.prompt)!;
+    expect(describeStep(cocoon, String(agent.id)).find((fact) => fact.label === "Задание")?.value).toBe(agent.prompt);
   });
 });
