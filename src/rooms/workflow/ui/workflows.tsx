@@ -15,6 +15,7 @@ import { WorkflowDraftDetail } from "./workflow-draft-detail";
 import { listDrafts, startArchitect, type DraftRow } from "./workflow-drafts";
 import { CategoryChips, CategorySection, groupByCategory, shortTime, type LibraryView } from "./workflow-library-parts";
 import { ExportGraphsButton } from "./workflow-export";
+import { WorkflowMap } from "./workflow-map";
 import type { WorkflowCategory } from "../categories";
 
 type Listing = z.infer<(typeof rpcContract)["workflow_list"]["output"]>;
@@ -46,7 +47,7 @@ export function matches(row: Row, query: string): boolean {
  * With a project it lists that project's view of the library (built-in, global and the project's own files); without
  * one, the hub's. The list re-reads on the server's `workflow` signal, so run counts and the active marker stay current.
  */
-export function WorkflowsScreen({ locale, projectId, architectProjectId = projectId, renderNodePanel, headerActions, mapView }: {
+export function WorkflowsScreen({ locale, projectId, architectProjectId = projectId, renderNodePanel, headerActions, mapView: mapSlot }: {
   locale: Locale; projectId: string | null;
   /** The project the architect is started in; the library of a project starts it there, the global one in the project the page has open. */
   architectProjectId?: string | null;
@@ -146,6 +147,7 @@ export function WorkflowsScreen({ locale, projectId, architectProjectId = projec
   }
 
   const notice = listing?.project === "unavailable" ? t("wfProjectUnavailable") : listing?.project === "no_machine" ? t("wfProjectNoMachine") : null;
+  const mapView = mapSlot ?? <WorkflowMap locale={locale} projectId={projectId} onOpenGraph={setOpenId} />;
   const switcher = mapView ? (
     <div className="inline-flex w-fit rounded-lg border border-border p-0.5" role="tablist" data-testid="wf-view-switch" aria-label={t("wfViewLabel")}>
       {(["library", "map"] as const).map((value) => (

@@ -8,8 +8,8 @@ type Locale = "en" | "ru";
 export type StepFact = { label: string; value: string };
 
 const L = {
-  ru: { type: "Тип", role: "Исполнитель", skills: "Навыки", task: "Задание", question: "Вопрос владельцу", options: "Варианты ответа", calls: "Вызывает граф", action: "Действие", params: "Параметры", forEach: "Для каждого", gets: "Получает", gives: "Отдаёт", gates: "Готово, когда", next: "Дальше", modes: "Только в режимах", skip: "Пропуск", limits: "Ограничения", other: "Прочие настройки", end: "конец графа" },
-  en: { type: "Type", role: "Performer", skills: "Skills", task: "Task", question: "Question to the owner", options: "Answer options", calls: "Calls graph", action: "Action", params: "Parameters", forEach: "For each", gets: "Gets", gives: "Gives", gates: "Done when", next: "Next", modes: "Only in modes", skip: "Skipped", limits: "Limits", other: "Other settings", end: "end of graph" },
+  ru: { type: "Тип", role: "Исполнитель", skills: "Навыки", task: "Задание", question: "Вопрос владельцу", options: "Варианты ответа", calls: "Вызывает граф", action: "Действие", params: "Параметры", forEach: "Для каждого", gets: "Получает", gives: "Отдаёт", inputs: "Входные данные", skipOut: "Если пропущен, отдаёт", gates: "Готово, когда", next: "Дальше", modes: "Только в режимах", skip: "Пропуск", limits: "Ограничения", other: "Прочие настройки", end: "конец графа" },
+  en: { type: "Type", role: "Performer", skills: "Skills", task: "Task", question: "Question to the owner", options: "Answer options", calls: "Calls graph", action: "Action", params: "Parameters", forEach: "For each", gets: "Gets", gives: "Gives", inputs: "Input data", skipOut: "When skipped, gives", gates: "Done when", next: "Next", modes: "Only in modes", skip: "Skipped", limits: "Limits", other: "Other settings", end: "end of graph" },
 } as const;
 
 const TYPE: Record<string, { ru: string; en: string }> = {
@@ -25,7 +25,12 @@ const TYPE: Record<string, { ru: string; en: string }> = {
 };
 
 /** Keys printed by name; everything else that is not layout goes to «other settings» so nothing is lost. */
-const SHOWN = new Set(["id", "type", "title", "label", "role", "profile", "prompt", "question", "options", "workflow", "action", "params", "for_each", "consumes", "out", "produces", "gates", "applicable_modes", "skip_when", "guards", "maxVisits", "maxAttempts", "timeoutSec", "position", "src", "provider", "model", "reasoning", "service_tier"]);
+const SHOWN = new Set(["id", "type", "title", "label", "role", "profile", "prompt", "question", "options", "workflow", "action", "params", "for_each", "consumes", "out", "produces", "gates", "applicable_modes", "skip_when", "skip_out", "with", "inputs", "skills", "guards", "maxVisits", "maxAttempts", "timeoutSec", "position", "src", "provider", "model", "reasoning", "service_tier"]);
+
+/** Values the schema fills in by itself: an empty list or map, or the default of the field. */
+const DEFAULTS: Raw = { environment: "none", onTimeout: "stop", pass: "artifact" };
+const isDefault = (key: string, value: unknown): boolean =>
+  value === undefined || DEFAULTS[key] === value || (Array.isArray(value) && !value.length) || (!!value && typeof value === "object" && !Array.isArray(value) && !Object.keys(value as Raw).length);
 
 const str = (value: unknown): string => typeof value === "string" ? value : JSON.stringify(value);
 const fieldNames = (value: unknown): string[] => Array.isArray(value)
@@ -50,7 +55,8 @@ export function describeStep(definition: Raw, nodeId: string, locale: Locale = "
   const type = String(node.type);
   add(l.type, TYPE[type]?.[locale] ?? type);
   add(l.role, node.role);
-  add(l.skills, ((node.profile as Raw | undefined)?.skills as string[] | undefined)?.join(", "));
+  const skills = [...new Set([...(node.skills as string[] | undefined) ?? [], ...((node.profile as Raw | undefined)?.skills as string[] | undefined) ?? []])];
+  add(l.skills, skills.join(", "));
   add(l.task, node.prompt);
   add(l.question, node.question);
   add(l.options, (node.options as string[] | undefined)?.join(" / "));
@@ -58,6 +64,8 @@ export function describeStep(definition: Raw, nodeId: string, locale: Locale = "
   add(l.action, node.action);
   if (node.params && Object.keys(node.params as Raw).length) add(l.params, node.params);
   add(l.forEach, node.for_each);
+  const given = { ...(node.inputs as Raw | undefined), ...(node.with as Raw | undefined) };
+  if (Object.keys(given).length) add(l.inputs, Object.entries(given).map(([key, from]) => `${key} = ${str(from)}`).join("; "));
   const incoming = edges.filter((edge) => edge.to === nodeId).map((edge) => {
     const passed = edge.with ? ` (${Object.entries(edge.with as Raw).map(([key, from]) => `${key} ← ${str(from)}`).join(", ")})` : "";
     return `${str(edge.from)}${passed}`;
@@ -70,10 +78,11 @@ export function describeStep(definition: Raw, nodeId: string, locale: Locale = "
   add(l.next, next.length ? next.join("; ") : l.end);
   add(l.modes, (node.applicable_modes as string[] | undefined)?.join(", "));
   add(l.skip, node.skip_when);
+  if (node.skip_out && Object.keys(node.skip_out as Raw).length) add(l.skipOut, node.skip_out);
   const limits: Raw = { ...(node.guards as Raw | undefined) };
   for (const key of ["maxVisits", "maxAttempts", "timeoutSec"]) if (node[key] !== undefined) limits[key] = node[key];
   if (Object.keys(limits).length) add(l.limits, Object.entries(limits).map(([key, value]) => `${key} ${str(value)}`).join(", "));
-  const rest = Object.fromEntries(Object.entries(node).filter(([key]) => !SHOWN.has(key)));
+  const rest = Object.fromEntries(Object.entries(node).filter(([key, value]) => !SHOWN.has(key) && !isDefault(key, value)));
   if (Object.keys(rest).length) add(l.other, rest);
   return facts;
 }

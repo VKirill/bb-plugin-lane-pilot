@@ -7,6 +7,7 @@ import { rpcOps } from "./rpc-ops";
 import { rpcKnowledge } from "./rpc-knowledge";
 import { rpcWorkflow } from "./rpc-workflow";
 import { rpcWorkflowExport } from "./rpc-workflow-export";
+import { rpcWorkflowMap } from "./rpc-workflow-map";
 import { rpcWorld } from "./rpc-world";
 
 // The RPC contracts of the plugin. The schemas are in schemas.ts, the host methods in host.ts and the methods of the
@@ -25,5 +26,6 @@ export const rpcContract = defineRpcContract({
   ...rpcKnowledge,
   ...rpcWorkflow,
   ...rpcWorkflowExport,
+  ...rpcWorkflowMap,
   ...rpcWorld,
 });

@@ -6,8 +6,9 @@ import type { Field, Workflow } from "@lane-pilot/workflow-engine";
 import { sha256Text } from "../../storage";
 import { parseGoals } from "@lane-pilot/workflow-engine";
 import { createStatusResolver } from "../../storage";
-import { globalWorkflowDir, loadWorkflowStore, nodeFileSource, projectWorkflowDir, type StoredWorkflow, type WorkflowFileSource, type WorkflowStore } from "../../storage";
+import { globalWorkflowDir, loadWorkflowStore, nodeFileSource, projectWorkflowDir, type StoredWorkflow, type WorkflowFileSource, type WorkflowStore, HARNESS_VERSION } from "../../storage";
 import { legacyDefinitionSha256, tallyOutcomes, workDoneRate, workflowView, type WorkflowView } from "@lane-pilot/workflow-engine";
+import { buildWorkflowMap } from "./workflow-map";
 import type { ServerCore } from "../../core/server";
 import type { Services } from "../../core/server";
 
@@ -95,6 +96,12 @@ export function createWorkflowLibrary(ctx: ServerCore, services: Pick<Services, 
         problems: store.problems.map((row) => ({ origin: row.origin, source: row.source, messages: row.problems.map((problem) => problem.message) })),
         project,
       };
+    },
+
+    /** The library as one map for «Карта графов»: the same definitions `list` reads, plus the calls between graphs. */
+    async map(input: { projectId?: string; locale?: "en" | "ru" }): Promise<Output<"workflow_map">> {
+      const { store, project } = await loadStore(input.projectId);
+      return { ...buildWorkflowMap(store.list(), (id) => statsFor(id, input.projectId), HARNESS_VERSION, input.locale), project };
     },
 
     /** A workflow of the library with the file it was read from (its text hashed), so an editor can start from it and publish over that file and no other. */

@@ -13,6 +13,7 @@ export function workflowsRpc(ctx: ServerCore, services: Services) {
   const models = createWorkflowModels(ctx, { drafts: architect.drafts, source: library.source });
   return {
     workflow_list: ({ projectId }) => library.list({ projectId }),
+    workflow_map: ({ projectId, locale }) => library.map({ projectId, locale }),
     workflow_get: ({ id, projectId }) => library.get({ id, projectId }),
     workflow_run_snapshot: ({ runId }) => library.runSnapshot({ runId }),
     workflow_step_executors: (input) => models.stepExecutors(input),
@@ -39,5 +40,5 @@ export function workflowsRpc(ctx: ServerCore, services: Services) {
       const draft = architect.createFrom({ projectId, scope: scope ?? "global", workflowId: copyId, definition: { ...definition, name, version: 1 }, name, description: found.workflow.description });
       return { draftId: draft.id, workflowId: copyId, reused: false };
     },
-  } satisfies Pick<PluginRpcHandlers<typeof rpcContract>, "workflow_list" | "workflow_get" | "workflow_run_snapshot" | "workflow_draft_create" | "workflow_step_executors" | "workflow_model_catalog">;
+  } satisfies Pick<PluginRpcHandlers<typeof rpcContract>, "workflow_list" | "workflow_map" | "workflow_get" | "workflow_run_snapshot" | "workflow_draft_create" | "workflow_step_executors" | "workflow_model_catalog">;
 }
