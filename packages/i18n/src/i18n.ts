@@ -1,6 +1,7 @@
 import { UNAPPLIED_REASON } from "@lane-pilot/settings-catalog";
 import { fieldEn, fieldRu } from "./i18n-fields";
 import { workflowEn, workflowRu } from "./i18n-workflows";
+import { libraryEn, libraryRu } from "./i18n-workflow-library";
 import { editorEn, editorRu } from "./i18n-workflow-editor";
 import { opsEn, opsRu } from "./i18n-workflow-ops";
 import { modelsEn, modelsRu } from "./i18n-workflow-models";
@@ -2431,8 +2432,8 @@ const chromeRu: { [K in keyof typeof chromeEn]: string } = {
   accessPurpose_specialist_lead: "Штурман в своём тике: читает состояние хаба из брифа и предлагает; ничего не правит.",
 };
 
-export const en = { ...chromeEn, ...fieldEn, ...workflowEn, ...editorEn, ...opsEn, ...modelsEn, ...canvasEn, ...scheduleEn, ...boardEn, ...ownerEn, ...anamnesisEn, ...tabsEn, ...ownedEn, ...jevEn, ...improvementEn, ...errandsEn, ...graphEn, ...cockpitEn, ...roleModelsEn, ...agentLabelEn };
-export const ru: { [K in keyof typeof en]: string } = { ...chromeRu, ...fieldRu, ...workflowRu, ...editorRu, ...opsRu, ...modelsRu, ...canvasRu, ...scheduleRu, ...boardRu, ...ownerRu, ...anamnesisRu, ...tabsRu, ...ownedRu, ...jevRu, ...improvementRu, ...errandsRu, ...graphRu, ...cockpitRu, ...roleModelsRu, ...agentLabelRu };
+export const en = { ...chromeEn, ...fieldEn, ...workflowEn, ...libraryEn, ...editorEn, ...opsEn, ...modelsEn, ...canvasEn, ...scheduleEn, ...boardEn, ...ownerEn, ...anamnesisEn, ...tabsEn, ...ownedEn, ...jevEn, ...improvementEn, ...errandsEn, ...graphEn, ...cockpitEn, ...roleModelsEn, ...agentLabelEn };
+export const ru: { [K in keyof typeof en]: string } = { ...chromeRu, ...fieldRu, ...workflowRu, ...libraryRu, ...editorRu, ...opsRu, ...modelsRu, ...canvasRu, ...scheduleRu, ...boardRu, ...ownerRu, ...anamnesisRu, ...tabsRu, ...ownedRu, ...jevRu, ...improvementRu, ...errandsRu, ...graphRu, ...cockpitRu, ...roleModelsRu, ...agentLabelRu };
 
 // keyof typeof en drops keys once the spread is large enough to export (2026-10-29 lane-stack port). The small module stays intact.
 export type I18nKey = keyof typeof en | keyof typeof agentLabelEn;

@@ -13,6 +13,8 @@ import { useLpPoll, useLpRealtime } from "../../ui-shell/ui";
 import { WorkflowDetail, type NodePanelRenderer } from "./workflow-detail";
 import { WorkflowDraftDetail } from "./workflow-draft-detail";
 import { listDrafts, startArchitect, type DraftRow } from "./workflow-drafts";
+import { CategoryChips, CategorySection, groupByCategory, shortTime, type LibraryView } from "./workflow-library-parts";
+import type { WorkflowCategory } from "../categories";
 
 type Listing = z.infer<(typeof rpcContract)["workflow_list"]["output"]>;
 type Row = Listing["workflows"][number];
@@ -20,9 +22,16 @@ type Row = Listing["workflows"][number];
 const STATUSES = ["draft", "tested", "published", "deprecated"] as const;
 const SCOPES = ["builtin", "global", "project"] as const;
 const ANY = "any";
-const STATUS_PILL: Record<Row["status"], string> = { draft: "lp-pill-muted", tested: "lp-pill-info", published: "lp-pill-success", deprecated: "lp-pill-warning" };
+const VIEW_KEY = "lp.wf.view";
 
-const shortTime = (at: number) => new Date(at).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" });
+const storedView = (): LibraryView => {
+  try {
+    const saved = localStorage.getItem(VIEW_KEY);
+    if (saved === "grid" || saved === "list") return saved;
+    // ponytail: viewport width decides only the first run; the owner's toggle wins from then on.
+    return typeof matchMedia === "function" && matchMedia("(max-width: 767px)").matches ? "list" : "grid";
+  } catch { return "grid"; }
+};
 
 /** The search matches what an owner types: name in either language, id, tags, description. */
 export function matches(row: Row, query: string): boolean {
@@ -31,31 +40,21 @@ export function matches(row: Row, query: string): boolean {
   return [row.id, row.name.en, row.name.ru, row.description.en, row.description.ru, ...row.tags].some((text) => text.toLowerCase().includes(needle));
 }
 
-function Stats({ stats }: { stats: Row["stats"] }) {
-  if (!stats.runs) return <span>{t("wfNoRuns")}</span>;
-  return (
-    <>
-      <span>{stats.runs === 1 ? t("wfRunCountOne") : t("wfRunCount").replace("{n}", String(stats.runs))}</span>
-      {stats.successRate !== null ? <span>{t("wfSuccessRate").replace("{pct}", String(Math.round(stats.successRate * 100)))}</span> : null}
-      {stats.successRate !== null ? <span>{t("wfOutcomeCounts").replace("{executed}", String(stats.executed)).replace("{done}", String(stats.workDone)).replace("{refused}", String(stats.refused)).replace("{escalated}", String(stats.escalated))}</span> : null}
-      {stats.active ? <span className="font-medium text-timeline-accent">{t("wfActiveRuns").replace("{n}", String(stats.active))}</span> : null}
-      <span>{t("wfRuns30d").replace("{n}", String(stats.runs30d))}</span>
-      {stats.lastRunAt ? <span>{t("wfLastRun").replace("{time}", shortTime(stats.lastRunAt))}</span> : null}
-    </>
-  );
-}
-
 /**
  * The Workflows tab: the library (search, status, where it comes from, how it has run) and one workflow opened as a graph.
  * With a project it lists that project's view of the library (built-in, global and the project's own files); without
  * one, the hub's. The list re-reads on the server's `workflow` signal, so run counts and the active marker stay current.
  */
-export function WorkflowsScreen({ locale, projectId, architectProjectId = projectId, renderNodePanel }: {
+export function WorkflowsScreen({ locale, projectId, architectProjectId = projectId, renderNodePanel, headerActions, mapView }: {
   locale: Locale; projectId: string | null;
   /** The project the architect is started in; the library of a project starts it there, the global one in the project the page has open. */
   architectProjectId?: string | null;
   /** W6: the editor's property form for the selected node, in the graph views' panel slot. */
   renderNodePanel?: NodePanelRenderer;
+  /** Extra actions at the right of the title row (stream slot, e.g. the export button). */
+  headerActions?: ReactNode;
+  /** When given, the header gets a «Library | Graph map» switch and this node replaces the library when the map is chosen. */
+  mapView?: ReactNode;
 }) {
   const rpc = useRpc<typeof rpcContract>();
   // The architect's chat sits beside the library or graph (owner, 2026-10-07): the chain it builds stays in view.
@@ -71,7 +70,12 @@ export function WorkflowsScreen({ locale, projectId, architectProjectId = projec
   const [status, setStatus] = useState<string>(ANY);
   const [scope, setScope] = useState<string>(ANY);
   const [openId, setOpenId] = useState<string | null>(null);
+  const [section, setSection] = useState<"library" | "map">("library");
+  const [view, setView] = useState<LibraryView>(storedView);
+  const [focusCat, setFocusCat] = useState<WorkflowCategory | null>(null);
+  const [collapsed, setCollapsed] = useState<ReadonlySet<WorkflowCategory>>(() => new Set<WorkflowCategory>(["service"]));
   const generation = useRef(0);
+  const listRef = useRef<HTMLDivElement>(null);
 
   const load = useCallback(async () => {
     const mine = ++generation.current;
@@ -109,6 +113,17 @@ export function WorkflowsScreen({ locale, projectId, architectProjectId = projec
 
   const shown = useMemo(() => (listing?.workflows ?? []).filter((row) =>
     matches(row, query) && (status === ANY || row.status === status) && (scope === ANY || row.scope === scope)), [listing, query, status, scope]);
+  const chipGroups = useMemo(() => groupByCategory(listing?.workflows ?? []), [listing]);
+  const shownGroups = useMemo(() => groupByCategory(shown), [shown]);
+
+  const pickView = (next: LibraryView) => { setView(next); try { localStorage.setItem(VIEW_KEY, next); } catch { /* private mode */ } };
+  const toggleCat = (cat: WorkflowCategory) => setCollapsed((prev) => { const next = new Set(prev); next.has(cat) ? next.delete(cat) : next.add(cat); return next; });
+  const focusCategory = (cat: WorkflowCategory | null) => {
+    setFocusCat(cat);
+    if (!cat) return;
+    setCollapsed((prev) => { const next = new Set(prev); next.delete(cat); return next; });
+    requestAnimationFrame(() => listRef.current?.querySelector(`[data-cat="${cat}"]`)?.scrollIntoView?.({ block: "start", behavior: "smooth" }));
+  };
 
   const withArchitect = (content: ReactNode) => !architectThread ? content : (
     <div className="flex min-w-0 flex-col gap-4 xl:flex-row xl:items-start" data-testid="wf-architect-split">
@@ -130,20 +145,40 @@ export function WorkflowsScreen({ locale, projectId, architectProjectId = projec
   }
 
   const notice = listing?.project === "unavailable" ? t("wfProjectUnavailable") : listing?.project === "no_machine" ? t("wfProjectNoMachine") : null;
-  return withArchitect(
-    <div className="min-w-0 space-y-4" data-testid="workflows">
+  const switcher = mapView ? (
+    <div className="inline-flex w-fit rounded-lg border border-border p-0.5" role="tablist" data-testid="wf-view-switch" aria-label={t("wfViewLabel")}>
+      {(["library", "map"] as const).map((value) => (
+        <button type="button" role="tab" key={value} aria-selected={section === value} data-testid={`wf-tab-${value}`} onClick={() => setSection(value)}
+          className={`rounded-md px-3 py-1 text-xs font-medium ${section === value ? "bg-primary/10 text-foreground" : "text-muted-foreground hover:text-foreground"}`}>
+          {t(value === "library" ? "wfTabLibrary" : "wfTabMap")}
+        </button>
+      ))}
+    </div>
+  ) : null;
+  const header = (
+    <>
       <div className="lp-strip flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
         <div className="min-w-0">
           <h1 className="break-words text-xl font-medium">{t("wfTitle")}</h1>
           <p className="max-w-xl text-xs text-muted-foreground">{projectId ? t("wfHelpProject") : t("wfHelp")}</p>
         </div>
-        {architectProjectId ? (
-          <Button type="button" size="sm" className="lp-accent h-8 shrink-0 px-3 text-sm" disabled={architect.busy} data-testid="wf-architect-start" onClick={() => void buildWithArchitect()}>
-            {architect.busy ? t("wfArchitectStarting") : t("wfArchitectBuild")}
-          </Button>
-        ) : null}
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
+          {headerActions}
+          {architectProjectId ? (
+            <Button type="button" size="sm" className="lp-accent h-8 shrink-0 px-3 text-sm" disabled={architect.busy} data-testid="wf-architect-start" onClick={() => void buildWithArchitect()}>
+              {architect.busy ? t("wfArchitectStarting") : t("wfArchitectBuild")}
+            </Button>
+          ) : null}
+        </div>
         {architect.error ? <p className="w-full break-words text-xs text-destructive" role="alert" data-testid="wf-architect-error">{t("wfArchitectError").replace("{error}", architect.error)}</p> : null}
       </div>
+      {switcher}
+    </>
+  );
+  return withArchitect(
+    <div className="min-w-0 space-y-4" data-testid="workflows">
+      {header}
+      {section === "map" ? mapView : (<>
       {drafts.length ? (
         <Surface testId="workflow-drafts">
           <SurfaceHeader className="flex-wrap">
@@ -190,7 +225,16 @@ export function WorkflowsScreen({ locale, projectId, architectProjectId = projec
                 {SCOPES.filter((value) => value !== "project" || projectId).map((value) => <SelectItem key={value} value={value}>{t(`wfScope_${value}` as I18nKey)}</SelectItem>)}
               </SelectContent>
             </Select>
+            <div className="ml-auto inline-flex rounded-lg border border-border p-0.5" role="group" aria-label={t("wfViewLabel")} data-testid="wf-layout">
+              {(["grid", "list"] as const).map((value) => (
+                <button type="button" key={value} aria-pressed={view === value} data-testid={`wf-layout-${value}`} onClick={() => pickView(value)}
+                  className={`rounded-md px-2.5 py-1 text-xs font-medium ${view === value ? "bg-primary/10 text-foreground" : "text-muted-foreground hover:text-foreground"}`}>
+                  {t(value === "grid" ? "wfViewGrid" : "wfViewList")}
+                </button>
+              ))}
+            </div>
           </div>
+          {chipGroups.length > 1 ? <CategoryChips groups={chipGroups} focus={focusCat} onFocus={focusCategory} /> : null}
           {notice ? <p className="text-xs text-warning-text" role="status" data-testid="wf-project-notice">{notice}</p> : null}
           {listing?.problems.length ? (
             <details className="text-xs" data-testid="wf-problems">
@@ -214,30 +258,16 @@ export function WorkflowsScreen({ locale, projectId, architectProjectId = projec
             </div>
           ) : null}
           {shown.length ? (
-            <ul className="divide-y divide-border/60" data-testid="wf-list">
-              {shown.map((row) => (
-                <li key={row.id}>
-                  <button type="button" className="flex w-full min-w-0 flex-col gap-1 rounded-lg px-2 py-2.5 text-left hover:bg-state-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                    data-testid={`wf-row-${row.id}`} aria-label={t("wfOpen").replace("{name}", row.name[locale])} onClick={() => setOpenId(row.id)}>
-                    <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-                      <span className="min-w-0 break-words text-sm font-medium">{row.name[locale]}</span>
-                      <span className={`${STATUS_PILL[row.status]} rounded-full px-2 py-0.5 text-[11px] font-medium`} data-testid={`wf-status-${row.id}`}>{t(`wfStatus_${row.status}` as I18nKey)}</span>
-                      <span className="lp-pill-neutral rounded-full px-2 py-0.5 text-[11px] font-medium" data-testid={`wf-scope-${row.id}`}>{t(`wfScope_${row.scope}` as I18nKey)}</span>
-                      {row.internal ? <span className="lp-pill-muted rounded-full px-2 py-0.5 text-[11px] font-medium">{t("wfInternal")}</span> : null}
-                    </span>
-                    <span className="line-clamp-2 break-words text-xs text-muted-foreground">{row.description[locale]}</span>
-                    <span className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground" data-testid={`wf-stats-${row.id}`}>
-                      <span className="font-mono">{row.id} · {t("wfVersion").replace("{n}", String(row.version))}</span>
-                      <span>{t("wfSteps").replace("{n}", String(row.nodes))}</span>
-                      <Stats stats={row.stats} />
-                    </span>
-                  </button>
-                </li>
+            <div className="space-y-4" data-testid="wf-list" ref={listRef}>
+              {shownGroups.map(({ cat, rows }) => (
+                <CategorySection key={cat} cat={cat} rows={rows} collapsed={collapsed.has(cat)} focused={focusCat === cat}
+                  onToggle={() => toggleCat(cat)} view={view} locale={locale} onOpen={setOpenId} />
               ))}
-            </ul>
+            </div>
           ) : null}
         </SurfaceBody>
       </Surface>
+      </>)}
     </div>
   );
 }

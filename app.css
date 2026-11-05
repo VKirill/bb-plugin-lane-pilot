@@ -30,6 +30,9 @@
   --lp-warning: var(--warning, #e8a33d);
   --lp-warning-text: var(--warning-text, #b4540f);
   --lp-danger-text: var(--destructive-text, var(--destructive));
+  --lp-gap: 16px;
+  --lp-page-pad: 24px;
+  --lp-card-pad: 20px;
 }
 
 @layer components {
