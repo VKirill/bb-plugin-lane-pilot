@@ -51,7 +51,7 @@ describe("status of the built-in chains", () => {
     expect(ids).toEqual(expect.arrayContaining(["research-dossier", "billing-batch", "macos-routine", "seo-page", "api-recon"]));
     // SEO wave 1: the intake and the monitor are chains; the research, the brief and the release are called by other graphs.
     expect(ids).toEqual(expect.arrayContaining(["seo-project-intake", "seo-monitor", "seo-research", "seo-brief", "seo-release"]));
-    expect(ids).toEqual(expect.arrayContaining(["seo-template-scale"]));
-    expect(ids).toHaveLength(91); // +5 seo wave-1 graphs (research, brief, release, project-intake, monitor), +1 seo wave-3a (template-scale)
+    expect(ids).toEqual(expect.arrayContaining(["seo-template-scale", "seo-trust"]));
+    expect(ids).toHaveLength(92); // +5 seo wave-1 graphs (research, brief, release, project-intake, monitor), +2 seo wave-3a (template-scale, trust)
   });
 });

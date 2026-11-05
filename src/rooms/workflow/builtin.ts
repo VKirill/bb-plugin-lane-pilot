@@ -71,6 +71,7 @@ import seoRelease from "../../../workflows/seo-release.json";
 import seoMonitor from "../../../workflows/seo-monitor.json";
 import seoProjectIntake from "../../../workflows/seo-project-intake.json";
 import seoTemplateScale from "../../../workflows/seo-template-scale.json";
+import seoTrust from "../../../workflows/seo-trust.json";
 import socialPost from "../../../workflows/social-post.json";
 import telegramSend from "../../../workflows/telegram-send.json";
 import testGen from "../../../workflows/test-gen.json";
@@ -174,6 +175,7 @@ export const BUILTIN_SOURCES: ReadonlyArray<{ name: string; value: unknown }> = 
   { name: "seo-release.json", value: seoRelease },
   { name: "seo-research.json", value: seoResearch },
   { name: "seo-template-scale.json", value: seoTemplateScale },
+  { name: "seo-trust.json", value: seoTrust },
   { name: "social-post.json", value: socialPost },
   { name: "telegram-send.json", value: telegramSend },
   { name: "test-gen.json", value: testGen },
