@@ -225,14 +225,15 @@
       "profile": {
         "skills": [
           "gist-content-logic",
-          "drmax-text-humanization"
+          "drmax-text-humanization",
+          "seo-page-templates"
         ]
       },
       "title": {
         "en": "Write SEO page content",
         "ru": "Написание текста SEO-страницы"
       },
-      "prompt": "Pick the page-type template (seo-page-templates) and draft grounded in the fact map and the brief {{brief.brief_path}}: core first, answer-first modules, semantic tables, extractable snippet units and an AEO FAQ, then a completeness pass. No simulated first-person experience. Return ok, raw_page_path, word_count, status done | blocked.",
+      "prompt": "Pick the page-type template and draft grounded in the fact map and the brief {{brief.brief_path}}: core first, answer-first modules, semantic tables, extractable snippet units and an AEO FAQ, then a completeness pass. No simulated first-person experience. Return ok, raw_page_path, word_count, status done | blocked.",
       "out": {
         "ok": "bool",
         "raw_page_path": "string",

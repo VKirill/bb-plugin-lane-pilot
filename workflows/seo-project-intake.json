@@ -151,14 +151,15 @@
         "skills": [
           "google",
           "yandex",
-          "seo-agent"
+          "seo-agent",
+          "seo-tech-audit-kit"
         ]
       },
       "title": {
         "en": "Tech gate",
         "ru": "Технический гейт"
       },
-      "prompt": "Read-only snapshot in the owner's session: GSC and Yandex Webmaster (indexed vs submitted, page-indexing buckets, manual actions, CWV groups) plus a small sample crawl of {{$inputs.site_url}} (seo-tech-audit-kit). Verdict pass or tech-first, with the failed markers and a baseline. Return tech_verdict and tech_path.",
+      "prompt": "Read-only snapshot in the owner's session: GSC and Yandex Webmaster (indexed vs submitted, page-indexing buckets, manual actions, CWV groups) plus a small sample crawl of {{$inputs.site_url}}. Verdict pass or tech-first, with the failed markers and a baseline. Return tech_verdict and tech_path.",
       "out": {
         "tech_verdict": "pass|tech-first",
         "tech_path": "string"

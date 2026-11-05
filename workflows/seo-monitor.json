@@ -108,7 +108,7 @@
         "en": "Pull the week",
         "ru": "Выгрузка недели"
       },
-      "prompt": "Weekly exports in the owner's session (seo-measurement-loop): GSC, Yandex Webmaster and analytics joined by URL, brand vs non-brand split, page-class cohorts, the raw archive and the striking-distance list. Return pull_path and urls.",
+      "prompt": "Weekly exports in the owner's session: GSC, Yandex Webmaster and analytics joined by URL, brand vs non-brand split, page-class cohorts, the raw archive and the striking-distance list. Return pull_path and urls.",
       "out": {
         "pull_path": "string",
         "urls": "int"
@@ -162,7 +162,7 @@
         "en": "Anomaly buckets",
         "ru": "Корзины аномалий"
       },
-      "prompt": "Page-role map and the A-D anomaly buckets, 28 days before vs after (seo-update-forensics). Return anomalies_path and buckets.",
+      "prompt": "Page-role map and the A-D anomaly buckets, 28 days before vs after. Return anomalies_path and buckets.",
       "out": {
         "anomalies_path": "string",
         "buckets": "int"
@@ -184,14 +184,15 @@
       "role": "specialist:seo-specialist",
       "profile": {
         "skills": [
-          "seo-project-life"
+          "seo-project-life",
+          "seo-measurement-loop"
         ]
       },
       "title": {
         "en": "Task queue",
         "ru": "Очередь задач"
       },
-      "prompt": "Score each signal into a task passport (seo-measurement-loop): sprint, reserve or frozen, the A/B/C queues with WIP limits, the idea archive and the stop-list. Return queue_path and queued.",
+      "prompt": "Score each signal into a task passport: sprint, reserve or frozen, the A/B/C queues with WIP limits, the idea archive and the stop-list. Return queue_path and queued.",
       "out": {
         "queue_path": "string",
         "queued": "int"

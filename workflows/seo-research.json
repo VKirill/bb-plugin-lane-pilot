@@ -104,7 +104,7 @@
         "en": "Research charter",
         "ru": "Устав исследования"
       },
-      "prompt": "Draft the research charter from the project passport: goal, buyer situations, include/exclude/defer rules, a never-promise list and the missing-data list (seo-evidence-contract procedure). Return charter_path and ok.",
+      "prompt": "Draft the research charter from the project passport: goal, buyer situations, include/exclude/defer rules, a never-promise list and the missing-data list. Return charter_path and ok.",
       "out": {
         "charter_path": "string",
         "ok": "bool"
@@ -118,7 +118,12 @@
           "kind": "report",
           "version": 1
         }
-      ]
+      ],
+      "profile": {
+        "skills": [
+          "seo-evidence-contract"
+        ]
+      }
     },
     {
       "id": "charter_ok",
@@ -197,7 +202,7 @@
         "en": "Corpus registry",
         "ru": "Реестр корпуса"
       },
-      "prompt": "Build the provenance registry over the corpus: cleaning, separate metric columns, an uncertainty list and the list of materials not obtained (seo-evidence-contract). Return corpus_path and missing.",
+      "prompt": "Build the provenance registry over the corpus: cleaning, separate metric columns, an uncertainty list and the list of materials not obtained. Return corpus_path and missing.",
       "out": {
         "corpus_path": "string",
         "missing": "string[]"
@@ -211,7 +216,12 @@
           "kind": "report",
           "version": 1
         }
-      ]
+      ],
+      "profile": {
+        "skills": [
+          "seo-evidence-contract"
+        ]
+      }
     },
     {
       "id": "discovery",

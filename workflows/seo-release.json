@@ -95,7 +95,7 @@
         "en": "Baseline and control cohort",
         "ru": "Базовая линия и контрольная когорта"
       },
-      "prompt": "Capture the GSC/analytics baseline for the affected URLs in the owner's session, choose a control cohort of the same template, write the SEO Change Log entry with due dates (seo-release-protocol). Return change_log_path and cohort.",
+      "prompt": "Capture the GSC/analytics baseline for the affected URLs in the owner's session, choose a control cohort of the same template, write the SEO Change Log entry with due dates. Return change_log_path and cohort.",
       "out": {
         "change_log_path": "string",
         "cohort": "string"
@@ -107,6 +107,11 @@
       "skip_out": {
         "change_log_path": "",
         "cohort": ""
+      },
+      "profile": {
+        "skills": [
+          "seo-release-protocol"
+        ]
       }
     },
     {
@@ -124,7 +129,7 @@
         "en": "Release plan",
         "ru": "План релиза"
       },
-      "prompt": "Plan the release (seo-release-protocol): an MVC batch with indexed donors per new URL, template cohorts with override locks and a split test, restructure waves with control pauses. Return plan_path.",
+      "prompt": "Plan the release: an MVC batch with indexed donors per new URL, template cohorts with override locks and a split test, restructure waves with control pauses. Return plan_path.",
       "out": {
         "plan_path": "string"
       },
@@ -134,6 +139,11 @@
       },
       "skip_out": {
         "plan_path": ""
+      },
+      "profile": {
+        "skills": [
+          "seo-release-protocol"
+        ]
       }
     },
     {
@@ -301,7 +311,7 @@
         "en": "Index check",
         "ru": "Проверка индексации"
       },
-      "prompt": "mode index_check (seo-measurement-loop): URL Inspection in the owner's GSC, a per-level diagnosis of each non-indexed URL, and fix tasks. In other modes re-check the submitted URLs. Return index_status_path and not_indexed.",
+      "prompt": "mode index_check: URL Inspection in the owner's GSC, a per-level diagnosis of each non-indexed URL, and fix tasks. In other modes re-check the submitted URLs. Return index_status_path and not_indexed.",
       "out": {
         "index_status_path": "string",
         "not_indexed": "string[]"
@@ -309,6 +319,11 @@
       "guards": {
         "maxVisits": 1,
         "timeoutMin": 30
+      },
+      "profile": {
+        "skills": [
+          "seo-measurement-loop"
+        ]
       }
     },
     {

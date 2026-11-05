@@ -95,7 +95,7 @@
         "en": "Entity passport",
         "ru": "Паспорт сущности"
       },
-      "prompt": "Entity passport for the page (seo-page-templates): JSON with the Wikidata id and the focus formula, plus the format template and outline skeleton for informational pages. Return passport_path and focus.",
+      "prompt": "Entity passport for the page: JSON with the Wikidata id and the focus formula, plus the format template and outline skeleton for informational pages. Return passport_path and focus.",
       "out": {
         "passport_path": "string",
         "focus": "string"
@@ -109,7 +109,12 @@
           "kind": "report",
           "version": 1
         }
-      ]
+      ],
+      "profile": {
+        "skills": [
+          "seo-page-templates"
+        ]
+      }
     },
     {
       "id": "serp_gap",
@@ -202,14 +207,15 @@
         "skills": [
           "tavily",
           "alphaxiv",
-          "drmax-brandcore"
+          "drmax-brandcore",
+          "seo-evidence-contract"
         ]
       },
       "title": {
         "en": "Evidence cards",
         "ru": "Карточки доказательств"
       },
-      "prompt": "Verify the brief's claims against internal evidence (seo-evidence-contract); run targeted external research only where it could change a decision. Grade evidence A-E with transfer classes, write the evidence cards and the test plan. On ymyl pages also write the claim passport bound to first-tier sources. Return evidence_path and cards.",
+      "prompt": "Verify the brief's claims against internal evidence; run targeted external research only where it could change a decision. Grade evidence A-E with transfer classes, write the evidence cards and the test plan. On ymyl pages also write the claim passport bound to first-tier sources. Return evidence_path and cards.",
       "out": {
         "evidence_path": "string",
         "cards": "int"
