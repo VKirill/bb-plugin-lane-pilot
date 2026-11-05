@@ -1,0 +1,516 @@
+{
+  "id": "seo-template-scale",
+  "name": {
+    "en": "SEO template scale",
+    "ru": "SEO-масштаб шаблонов"
+  },
+  "description": {
+    "en": "Template-level work for catalogs and service/geo matrices: page-type passports, the facet whitelist and stock-driven indexation rules, a commercial investigation chain, the service hierarchy and Difference Map for geo pages, the proof layer, and batch meta and alt generation. The critic samples the result, the owner approves the pilot cohort, and every rollout goes through seo-release.",
+    "ru": "Шаблонная работа для каталогов и матриц услуг/гео: паспорта типов страниц, белый список фасет и правила индексации по остаткам, коммерческая цепочка исследования, иерархия услуг и Difference Map для гео-страниц, слой доказательств и пакетная генерация мета и alt. Критик выборочно проверяет результат, владелец утверждает пилотную когорту, а каждый выкат идёт через seo-release."
+  },
+  "examples": {
+    "ru": [
+      "Собери шаблоны категорий и карточек для каталога",
+      "Построй матрицу гео-страниц услуги по location-registry",
+      "Сгенерируй мета и alt для импорта в CMS"
+    ],
+    "en": [
+      "Build the category and PDP templates for the catalog",
+      "Build the geo-page matrix for a service from the location registry",
+      "Generate meta and alt text for a CMS import"
+    ]
+  },
+  "not_for": [
+    "seo-page",
+    "seo-cocoon",
+    "seo-release"
+  ],
+  "status": "published",
+  "tags": [
+    "seo",
+    "drmax"
+  ],
+  "inputs": {
+    "mode": {
+      "type": "catalog|service_geo|meta_alt",
+      "default": "catalog"
+    },
+    "catalog_export_path": {
+      "type": "string",
+      "default": "",
+      "note": "выгрузка каталога/CMS: атрибуты, остатки, цены"
+    },
+    "location_registry_path": {
+      "type": "string",
+      "default": ""
+    },
+    "demand_data_path": {
+      "type": "string",
+      "default": "",
+      "note": "платные данные спроса только с согласия владельца"
+    },
+    "proofs_path": {
+      "type": "string",
+      "default": "",
+      "note": "кейсы, отзывы, мастера - данные владельца"
+    },
+    "target": {
+      "type": "string",
+      "default": "",
+      "note": "CMS или репозиторий, куда выкатываем"
+    }
+  },
+  "outputs": {
+    "status": "done|blocked",
+    "passports_path": "string?",
+    "facet_matrix_path": "string?",
+    "geo_specs_path": "string?",
+    "meta_import_path": "string?",
+    "verdict_path": "string?",
+    "release_report_path": "string?"
+  },
+  "requires": {
+    "plugins": [
+      "lane-pilot"
+    ],
+    "skills": [
+      "seo-agent",
+      "seo-tools",
+      "seo-page-templates",
+      "seo-release-protocol",
+      "seo-measurement-loop"
+    ]
+  },
+  "budget": {
+    "max_minutes": 240,
+    "max_usd": 12
+  },
+  "entry": "passports",
+  "nodes": [
+    {
+      "id": "passports",
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "specialist:seo-specialist",
+      "skip_when": "$inputs.mode == 'meta_alt'",
+      "skip_out": {
+        "passports_path": ""
+      },
+      "title": {
+        "en": "Page-type passports",
+        "ru": "Паспорта типов страниц"
+      },
+      "prompt": "Commercial page-type registry with template passports: the category L1 layout and the PDP template with variants plus a raw-HTML validation spec. Return passports_path.",
+      "out": {
+        "passports_path": "string"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 40
+      },
+      "profile": {
+        "skills": [
+          "seo-page-templates"
+        ]
+      }
+    },
+    {
+      "id": "facets_stock",
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "specialist:seo-specialist",
+      "skip_when": "$inputs.mode != 'catalog'",
+      "skip_out": {
+        "facet_matrix_path": "",
+        "indexation_rules_path": ""
+      },
+      "title": {
+        "en": "Facet whitelist and stock indexation",
+        "ru": "Белый список фасет и индексация по остаткам"
+      },
+      "prompt": "Whitelist SEO filters by demand and stock: the robots-meta and sitemap rules per stock band, and what to do with trafficless subcategories. Demand data only from the provided export. Return facet_matrix_path and indexation_rules_path.",
+      "out": {
+        "facet_matrix_path": "string",
+        "indexation_rules_path": "string"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 40
+      },
+      "profile": {
+        "skills": [
+          "seo-page-templates",
+          "seo-tools"
+        ]
+      }
+    },
+    {
+      "id": "commercial_chain",
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "specialist:seo-specialist",
+      "skip_when": "$inputs.mode != 'catalog'",
+      "skip_out": {
+        "chain_specs_path": ""
+      },
+      "title": {
+        "en": "Commercial investigation chain",
+        "ru": "Коммерческая цепочка"
+      },
+      "prompt": "Spec the commercial investigation chain: curated selections, brand nodes and comparison pages between category and SKU. Return chain_specs_path.",
+      "out": {
+        "chain_specs_path": "string"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 30
+      },
+      "profile": {
+        "skills": [
+          "seo-page-templates"
+        ]
+      }
+    },
+    {
+      "id": "service_geo",
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "specialist:seo-specialist",
+      "skip_when": "$inputs.mode != 'service_geo'",
+      "skip_out": {
+        "geo_specs_path": ""
+      },
+      "title": {
+        "en": "Service hierarchy and geo pages",
+        "ru": "Иерархия услуг и гео-страницы"
+      },
+      "prompt": "Main service and sub-service hierarchy from the location registry: the eligibility gate and Difference Map for geo pages, layered Data-Shift builds, and branch pages with LocalBusiness @graph plus sitemap-locations. Return geo_specs_path.",
+      "out": {
+        "geo_specs_path": "string"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 40
+      },
+      "profile": {
+        "skills": [
+          "seo-page-templates"
+        ]
+      }
+    },
+    {
+      "id": "proof",
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "specialist:seo-specialist",
+      "skip_when": "$inputs.mode != 'service_geo'",
+      "skip_out": {
+        "proof_specs_path": ""
+      },
+      "title": {
+        "en": "Proof layer",
+        "ru": "Слой доказательств"
+      },
+      "prompt": "Tag schema and rendering rules for cases, reviews and Q&A from the owner-supplied records in {{$inputs.proofs_path}}; never invent a record. Return proof_specs_path.",
+      "out": {
+        "proof_specs_path": "string"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 30
+      },
+      "profile": {
+        "skills": [
+          "seo-page-templates"
+        ]
+      }
+    },
+    {
+      "id": "meta_alt",
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "specialist:seo-specialist",
+      "title": {
+        "en": "Batch meta and alt",
+        "ru": "Пакетные мета и alt"
+      },
+      "prompt": "CMS meta formulas with null fallbacks, batch LLM meta with a pre-import audit, slot-based gallery alt and the vision-LLM media audit. Return meta_import_path and the release_items list of spec/import paths this run produced.",
+      "out": {
+        "meta_import_path": "string",
+        "release_items": "string[]"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 40
+      },
+      "profile": {
+        "skills": [
+          "seo-page-templates"
+        ]
+      }
+    },
+    {
+      "id": "critic",
+      "produces": [
+        {
+          "kind": "verdict",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "auditor",
+      "title": {
+        "en": "Pilot sample verdict",
+        "ru": "Вердикт по пилотной выборке"
+      },
+      "prompt": "Sample 20 generated pages or meta records per template: uniqueness, geo differentiation, null-variable leaks, protected-page locks. Verdict status pass | rework; findings carry severity critical | high | medium | low | info. Return status, verdict_path, pilot_items.",
+      "out": {
+        "status": "pass|rework",
+        "verdict_path": "string",
+        "pilot_items": "string[]"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 30
+      },
+      "profile": {
+        "skills": [
+          "seo-page-templates",
+          "seo-measurement-loop"
+        ]
+      }
+    },
+    {
+      "id": "approve",
+      "type": "human",
+      "role": "owner",
+      "title": {
+        "en": "Approve specs and pilot",
+        "ru": "Утверждение спецификаций и пилота"
+      },
+      "prompt": "Approve the template specs and the pilot cohort with the critic verdict in front of you. approve sends the pilot to seo-release; anything else stops the run.",
+      "out": {
+        "answer": "string",
+        "answer_kind": "approve|decline|timeout"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 1440
+      }
+    },
+    {
+      "id": "rollout",
+      "type": "subworkflow",
+      "workflow": "seo-release",
+      "title": {
+        "en": "Cohort rollout",
+        "ru": "Выкат когорты"
+      },
+      "with": {
+        "mode": "template_cohort",
+        "items": "{{critic.pilot_items}}",
+        "target": "{{$inputs.target}}"
+      },
+      "out": {
+        "status": "string",
+        "release_report_path": "string"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 240
+      },
+      "profile": {
+        "skills": [
+          "seo-release-protocol"
+        ]
+      }
+    },
+    {
+      "id": "package",
+      "type": "action",
+      "action": "fs.write",
+      "path": ".agents/seo/template-scale/{{run_id}}/",
+      "files": [
+        "template-passports.md",
+        "facet-matrix.json",
+        "geo-specs.md",
+        "meta-import.json",
+        "pilot-verdict.md"
+      ],
+      "note": "Write the template-scale report package",
+      "out": {
+        "package_path": "string"
+      }
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "done",
+        "passports_path": "passports.passports_path",
+        "facet_matrix_path": "facets_stock.facet_matrix_path",
+        "geo_specs_path": "service_geo.geo_specs_path",
+        "meta_import_path": "meta_alt.meta_import_path",
+        "verdict_path": "critic.verdict_path",
+        "release_report_path": "rollout.release_report_path"
+      }
+    },
+    {
+      "id": "blocked",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "blocked"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "passports",
+      "to": "facets_stock",
+      "pass": "artifact"
+    },
+    {
+      "from": "facets_stock",
+      "to": "commercial_chain",
+      "pass": "artifact"
+    },
+    {
+      "from": "commercial_chain",
+      "to": "service_geo",
+      "pass": "artifact"
+    },
+    {
+      "from": "service_geo",
+      "to": "proof",
+      "pass": "artifact"
+    },
+    {
+      "from": "proof",
+      "to": "meta_alt",
+      "pass": "artifact"
+    },
+    {
+      "from": "meta_alt",
+      "to": "critic",
+      "pass": "artifact"
+    },
+    {
+      "from": "critic",
+      "to": "approve",
+      "pass": "artifact"
+    },
+    {
+      "from": "approve",
+      "to": "rollout",
+      "pass": "artifact",
+      "when": "approve.answer_kind == 'approve'"
+    },
+    {
+      "from": "approve",
+      "to": "blocked",
+      "pass": "artifact"
+    },
+    {
+      "from": "rollout",
+      "to": "package",
+      "pass": "artifact"
+    },
+    {
+      "from": "package",
+      "to": "done",
+      "pass": "artifact"
+    }
+  ],
+  "test": {
+    "id": "stpl-1",
+    "sim": {
+      "input": {
+        "mode": "catalog",
+        "catalog_export_path": ".agents/seo/shop/catalog-export.json",
+        "target": "cms:shop"
+      },
+      "stubs": {
+        "passports": {
+          "passports_path": "template-passports.md"
+        },
+        "facets_stock": {
+          "facet_matrix_path": "facet-matrix.json",
+          "indexation_rules_path": "indexation-rules.md"
+        },
+        "commercial_chain": {
+          "chain_specs_path": "chain-specs.md"
+        },
+        "meta_alt": {
+          "meta_import_path": "meta-import.json",
+          "release_items": [
+            "meta-import.json"
+          ]
+        },
+        "critic": {
+          "status": "pass",
+          "verdict_path": "pilot-verdict.md",
+          "pilot_items": [
+            "meta-import.json"
+          ]
+        },
+        "rollout": {
+          "status": "done",
+          "release_report_path": ".agents/seo/release/r1/release-report.md"
+        },
+        "package": {
+          "package_path": ".agents/seo/template-scale/r1/"
+        }
+      },
+      "expect_path": [
+        "passports",
+        "facets_stock",
+        "commercial_chain",
+        "service_geo",
+        "proof",
+        "meta_alt",
+        "critic",
+        "approve",
+        "rollout",
+        "package",
+        "done"
+      ],
+      "expect_outputs": [
+        "status == 'done'"
+      ]
+    },
+    "live": "спецификации шаблонов по режиму, вердикт критика, go владельца, выкат только через seo-release",
+    "note": "Tested on stubs: agents, the human gate and the subworkflow answer from stubs."
+  }
+}

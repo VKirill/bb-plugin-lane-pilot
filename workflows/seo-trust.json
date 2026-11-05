@@ -1,0 +1,609 @@
+{
+  "id": "seo-trust",
+  "name": {
+    "en": "SEO trust layer",
+    "ru": "SEO-слой доверия"
+  },
+  "description": {
+    "en": "Site-wide trust: trust nodes, an editorial and methodology policy, a connected Organization @graph, author and reviewer hubs, the brand entity footprint and poisoning forensics, a real-vs-imitation E-E-A-T audit, optional bottom-up trust recovery, and Google Business Profile operations with review triage behind the owner's word.",
+    "ru": "Доверие на уровне сайта: трастовые узлы, редакционная политика и методология, связанный Organization @graph, хабы авторов и рецензентов, entity-футпринт бренда и форензика отравления, аудит E-E-A-T «настоящее против имитации», опциональное восстановление доверия снизу вверх и операции Google Business Profile с триажем отзывов — только с разрешения владельца."
+  },
+  "examples": {
+    "ru": [
+      "Построй слой доверия: политики, авторы, Organization @graph",
+      "Проведи аудит E-E-A-T и футпринт бренда",
+      "Проверь карточки GBP и подготовь ответы на отзывы"
+    ],
+    "en": [
+      "Build the trust layer: policies, authors, Organization @graph",
+      "Run the E-E-A-T audit and the brand entity footprint",
+      "Check the GBP listings and draft review replies"
+    ]
+  },
+  "not_for": [
+    "seo-page",
+    "seo-release",
+    "seo-monitor"
+  ],
+  "status": "published",
+  "tags": [
+    "seo",
+    "drmax"
+  ],
+  "inputs": {
+    "project_passport_path": {
+      "type": "string",
+      "default": ""
+    },
+    "brandcore_path": {
+      "type": "string",
+      "default": "",
+      "note": "brandcore.md - факты о компании"
+    },
+    "location_registry_path": {
+      "type": "string",
+      "default": ""
+    },
+    "run_gbp": {
+      "type": "bool",
+      "default": true,
+      "note": "операции Google Business Profile в браузере владельца"
+    },
+    "recovery": {
+      "type": "bool",
+      "default": false,
+      "note": "сайт пессимизирован - нужен bottom-up trust recovery"
+    }
+  },
+  "outputs": {
+    "status": "done|partial|blocked",
+    "trust_specs_path": "string?",
+    "author_specs_path": "string?",
+    "footprint_path": "string?",
+    "eeat_path": "string?",
+    "gbp_report_path": "string?"
+  },
+  "requires": {
+    "plugins": [
+      "lane-pilot"
+    ],
+    "skills": [
+      "seo-agent",
+      "tavily",
+      "drmax-brandcore",
+      "seo-trust-eeat",
+      "seo-prompt-kit"
+    ],
+    "browserSession": true
+  },
+  "budget": {
+    "max_minutes": 240,
+    "max_usd": 10
+  },
+  "entry": "intake",
+  "nodes": [
+    {
+      "id": "intake",
+      "type": "human",
+      "role": "owner",
+      "title": {
+        "en": "Owner data intake",
+        "ru": "Сбор данных владельца"
+      },
+      "prompt": "Provide the legal entity details, licence scans, department contacts, delivery/refund/editorial policies, author credentials and external profiles. Missing items block the trust claim that needs them, not the graph. timeout continues without them.",
+      "out": {
+        "answer": "string",
+        "answer_kind": "given|timeout"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 1440
+      }
+    },
+    {
+      "id": "trust_nodes",
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "specialist:seo-specialist",
+      "title": {
+        "en": "Trust nodes and entity graph",
+        "ru": "Трастовые узлы и граф сущностей"
+      },
+      "prompt": "Spec the site trust infrastructure: trust nodes, the editorial and methodology policy, a help hub, and an Organization @graph with its sameAs inventory, checked against the BrandCore facts. Return trust_specs_path, spec_paths (page slugs to build), org_graph_path.",
+      "out": {
+        "trust_specs_path": "string",
+        "spec_paths": "string[]",
+        "org_graph_path": "string"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 40
+      },
+      "profile": {
+        "skills": [
+          "seo-trust-eeat",
+          "drmax-brandcore"
+        ]
+      }
+    },
+    {
+      "id": "authors",
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "specialist:seo-specialist",
+      "title": {
+        "en": "Author hub",
+        "ru": "Хаб авторов"
+      },
+      "prompt": "Author hub spec per roster entry: /authors/slug pages with the fact grid, cluster-grouped links, scope disclaimer and ProfilePage JSON-LD. Credentials only from the owner intake. Return author_specs_path and spec_paths.",
+      "out": {
+        "author_specs_path": "string",
+        "spec_paths": "string[]"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 30
+      },
+      "profile": {
+        "skills": [
+          "seo-trust-eeat",
+          "drmax-brandcore"
+        ]
+      }
+    },
+    {
+      "id": "footprint",
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "tavily",
+      "title": {
+        "en": "Entity footprint and poisoning",
+        "ru": "Футпринт сущности и отравление"
+      },
+      "prompt": "Map how the brand appears across the site and open sources by market; investigate conflicting or negative mentions; write a remediation plan. Removal requests on third-party sites are drafted, never sent. Return footprint_path and remediation_path.",
+      "out": {
+        "footprint_path": "string",
+        "remediation_path": "string"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 40
+      },
+      "profile": {
+        "skills": [
+          "seo-trust-eeat",
+          "tavily",
+          "drmax-brandcore"
+        ]
+      }
+    },
+    {
+      "id": "eeat",
+      "produces": [
+        {
+          "kind": "verdict",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "auditor",
+      "title": {
+        "en": "E-E-A-T audit",
+        "ru": "Аудит E-E-A-T"
+      },
+      "prompt": "Real-vs-imitation E-E-A-T audit: the trust basis per template, YMYL facts checked against official databases, reputation searches, post-click defects. Verdict status pass | rework | block; findings carry severity critical | high | medium | low | info. Return status and eeat_path.",
+      "out": {
+        "status": "pass|rework|block",
+        "eeat_path": "string"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 40
+      },
+      "profile": {
+        "skills": [
+          "seo-trust-eeat",
+          "seo-prompt-kit"
+        ]
+      }
+    },
+    {
+      "id": "recovery",
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "specialist:seo-specialist",
+      "skip_when": "$inputs.recovery == false",
+      "skip_out": {
+        "recovery_path": ""
+      },
+      "title": {
+        "en": "Trust recovery",
+        "ru": "Восстановление доверия"
+      },
+      "prompt": "Demoted or low-trust site only: bottom-up trust recovery that removes unbacked decorative claims before rebuilding. Return recovery_path.",
+      "out": {
+        "recovery_path": "string"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 30
+      },
+      "profile": {
+        "skills": [
+          "seo-trust-eeat"
+        ]
+      }
+    },
+    {
+      "id": "gbp",
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "errand-browser",
+      "skip_when": "$inputs.run_gbp == false",
+      "skip_out": {
+        "gbp_report_path": "",
+        "drafts_path": ""
+      },
+      "title": {
+        "en": "GBP read and drafts",
+        "ru": "Чтение GBP и черновики"
+      },
+      "prompt": "In the owner's browser session read the GBP listings: hours, attributes, reviews, Q&A. Triage reviews for fakes, draft replies and a review-request flow. Post nothing. Return gbp_report_path and drafts_path.",
+      "out": {
+        "gbp_report_path": "string",
+        "drafts_path": "string"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 40
+      },
+      "profile": {
+        "skills": [
+          "seo-trust-eeat"
+        ]
+      }
+    },
+    {
+      "id": "send_ok",
+      "type": "human",
+      "role": "owner",
+      "skip_when": "$inputs.run_gbp == false",
+      "skip_out": {
+        "answer": "",
+        "answer_kind": "timeout"
+      },
+      "title": {
+        "en": "Approve GBP edits and replies",
+        "ru": "Утверждение правок GBP и ответов"
+      },
+      "prompt": "Approve which GBP edits and review replies may be posted; they speak to other people and change public listings. approve sends only the approved ones; anything else keeps them as drafts.",
+      "out": {
+        "answer": "string",
+        "answer_kind": "approve|decline|timeout"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 1440
+      }
+    },
+    {
+      "id": "gbp_apply",
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "errand-browser",
+      "title": {
+        "en": "Apply approved GBP items",
+        "ru": "Применить утверждённые правки GBP"
+      },
+      "prompt": "Post exactly the GBP edits and review replies the owner approved in send_ok; everything unapproved stays a draft. Return applied_count and apply_path.",
+      "out": {
+        "applied_count": "int",
+        "apply_path": "string"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "maxAttempts": 1,
+        "timeoutMin": 30
+      }
+    },
+    {
+      "id": "trust_pages",
+      "type": "parallel",
+      "for_each": "trust_nodes.spec_paths",
+      "title": {
+        "en": "Trust pages",
+        "ru": "Трастовые страницы"
+      },
+      "child": {
+        "type": "subworkflow",
+        "workflow": "seo-page",
+        "with": {
+          "page_topic": "{{item}}",
+          "page_type": "trust",
+          "site_goal": "trust",
+          "mode": "new"
+        },
+        "out": {
+          "status": "string",
+          "site_page_path": "string"
+        }
+      },
+      "join": {
+        "policy": "all"
+      },
+      "concurrency": 3
+    },
+    {
+      "id": "author_pages",
+      "type": "parallel",
+      "for_each": "authors.spec_paths",
+      "title": {
+        "en": "Author pages",
+        "ru": "Страницы авторов"
+      },
+      "child": {
+        "type": "subworkflow",
+        "workflow": "seo-page",
+        "with": {
+          "page_topic": "{{item}}",
+          "page_type": "trust",
+          "site_goal": "trust",
+          "mode": "new"
+        },
+        "out": {
+          "status": "string",
+          "site_page_path": "string"
+        }
+      },
+      "join": {
+        "policy": "all"
+      },
+      "concurrency": 3
+    },
+    {
+      "id": "package",
+      "type": "action",
+      "action": "fs.write",
+      "path": ".agents/seo/trust/{{run_id}}/",
+      "files": [
+        "trust-specs.md",
+        "author-specs.md",
+        "entity-footprint.md",
+        "eeat-audit.md",
+        "gbp-report.md"
+      ],
+      "note": "Write the trust-layer report package",
+      "out": {
+        "package_path": "string"
+      }
+    },
+    {
+      "id": "goal_check",
+      "type": "action",
+      "action": "deliverable.validate",
+      "title": {
+        "en": "Check the goal was met",
+        "ru": "Проверить, что цель достигнута"
+      },
+      "rule": "validateDeliverable on the trust-layer package the run produced; a fail means the goal is not met",
+      "out": {
+        "ok": "bool",
+        "verdict": "pass|rework|fail",
+        "reason": "string",
+        "details": "object"
+      }
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "done",
+        "trust_specs_path": "trust_nodes.trust_specs_path",
+        "author_specs_path": "authors.author_specs_path",
+        "footprint_path": "footprint.footprint_path",
+        "eeat_path": "eeat.eeat_path",
+        "gbp_report_path": "gbp.gbp_report_path"
+      }
+    },
+    {
+      "id": "blocked",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "blocked"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "intake",
+      "to": "trust_nodes",
+      "pass": "artifact"
+    },
+    {
+      "from": "trust_nodes",
+      "to": "authors",
+      "pass": "artifact"
+    },
+    {
+      "from": "authors",
+      "to": "footprint",
+      "pass": "artifact"
+    },
+    {
+      "from": "footprint",
+      "to": "eeat",
+      "pass": "artifact"
+    },
+    {
+      "from": "eeat",
+      "to": "recovery",
+      "pass": "artifact"
+    },
+    {
+      "from": "recovery",
+      "to": "gbp",
+      "pass": "artifact"
+    },
+    {
+      "from": "gbp",
+      "to": "send_ok",
+      "pass": "artifact"
+    },
+    {
+      "from": "send_ok",
+      "to": "gbp_apply",
+      "pass": "artifact",
+      "when": "send_ok.answer_kind == 'approve'"
+    },
+    {
+      "from": "send_ok",
+      "to": "trust_pages",
+      "pass": "artifact"
+    },
+    {
+      "from": "gbp_apply",
+      "to": "trust_pages",
+      "pass": "artifact"
+    },
+    {
+      "from": "trust_pages",
+      "to": "author_pages",
+      "pass": "artifact"
+    },
+    {
+      "from": "author_pages",
+      "to": "package",
+      "pass": "artifact"
+    },
+    {
+      "from": "package",
+      "to": "goal_check",
+      "pass": "artifact"
+    },
+    {
+      "from": "goal_check",
+      "to": "done",
+      "when": "goal_check.ok != false"
+    },
+    {
+      "from": "goal_check",
+      "to": "blocked"
+    },
+    {
+      "from": "eeat",
+      "to": "blocked",
+      "when": "eeat.status == 'block'"
+    }
+  ],
+  "test": {
+    "id": "stru-1",
+    "sim": {
+      "input": {
+        "project_passport_path": ".agents/seo/site/passport.json",
+        "brandcore_path": ".agents/seo/site/brandcore.md",
+        "run_gbp": true,
+        "recovery": false
+      },
+      "stubs": {
+        "trust_nodes": {
+          "trust_specs_path": "trust-specs.md",
+          "spec_paths": [
+            "about",
+            "editorial-policy"
+          ],
+          "org_graph_path": "org-graph.json"
+        },
+        "authors": {
+          "author_specs_path": "author-specs.md",
+          "spec_paths": [
+            "authors/ivan"
+          ]
+        },
+        "footprint": {
+          "footprint_path": "entity-footprint.md",
+          "remediation_path": "remediation.md"
+        },
+        "eeat": {
+          "status": "pass",
+          "eeat_path": "eeat-audit.md"
+        },
+        "gbp": {
+          "gbp_report_path": "gbp-report.md",
+          "drafts_path": "gbp-drafts.md"
+        },
+        "gbp_apply": {
+          "applied_count": 2,
+          "apply_path": "gbp-applied.md"
+        },
+        "trust_pages": {
+          "trust_page_paths": [
+            "content/pages/about.md"
+          ],
+          "ok_count": 1
+        },
+        "author_pages": {
+          "author_page_paths": [
+            "content/pages/authors-ivan.md"
+          ],
+          "ok_count": 1
+        },
+        "package": {
+          "package_path": ".agents/seo/trust/r1/"
+        }
+      },
+      "expect_path": [
+        "intake",
+        "trust_nodes",
+        "authors",
+        "footprint",
+        "eeat",
+        "recovery",
+        "gbp",
+        "send_ok",
+        "gbp_apply",
+        "trust_pages",
+        "author_pages",
+        "package",
+        "goal_check",
+        "done"
+      ],
+      "expect_outputs": [
+        "status == 'done'"
+      ]
+    },
+    "live": "данные владельца, черновики GBP, утверждённые ответы публикует только errand, страницы через seo-page",
+    "note": "Tested on stubs: agents, human gates, parallels and the seo-page subworkflow answer from stubs."
+  }
+}

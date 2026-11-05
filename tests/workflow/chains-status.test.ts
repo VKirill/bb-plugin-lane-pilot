@@ -53,6 +53,7 @@ describe("status of the built-in chains", () => {
     expect(ids).toEqual(expect.arrayContaining(["seo-project-intake", "seo-monitor", "seo-research", "seo-brief", "seo-release"]));
     // SEO wave 2: the drop diagnosis is called by the monitor; the audits and the refresh are chains and monitor follow-ups.
     expect(ids).toEqual(expect.arrayContaining(["seo-drop-diagnosis", "seo-tech-audit", "seo-page-refresh", "seo-structure-audit"]));
-    expect(ids).toHaveLength(94); // +5 seo wave-1 graphs (research, brief, release, project-intake, monitor), +4 seo wave-2 graphs
+    expect(ids).toEqual(expect.arrayContaining(["seo-template-scale", "seo-trust"]));
+    expect(ids).toHaveLength(96); // +5 seo wave-1, +4 wave-2, +2 wave-3a (template-scale, trust)
   });
 });
