@@ -18,6 +18,7 @@ import { jevEn, jevRu } from "./i18n-jev";
 import { improvementEn, improvementRu } from "./i18n-improvement";
 import { errandsEn, errandsRu } from "./i18n-errands";
 import { agentLabelEn, agentLabelRu } from "./i18n-agent-labels";
+import { mapEn, mapRu } from "./i18n-workflow-map";
 
 const chromeEn = {
   panelTitle: "Lane Pilot",
@@ -2431,8 +2432,8 @@ const chromeRu: { [K in keyof typeof chromeEn]: string } = {
   accessPurpose_specialist_lead: "Штурман в своём тике: читает состояние хаба из брифа и предлагает; ничего не правит.",
 };
 
-export const en = { ...chromeEn, ...fieldEn, ...workflowEn, ...editorEn, ...opsEn, ...modelsEn, ...canvasEn, ...scheduleEn, ...boardEn, ...ownerEn, ...anamnesisEn, ...tabsEn, ...ownedEn, ...jevEn, ...improvementEn, ...errandsEn, ...graphEn, ...cockpitEn, ...roleModelsEn, ...agentLabelEn };
-export const ru: { [K in keyof typeof en]: string } = { ...chromeRu, ...fieldRu, ...workflowRu, ...editorRu, ...opsRu, ...modelsRu, ...canvasRu, ...scheduleRu, ...boardRu, ...ownerRu, ...anamnesisRu, ...tabsRu, ...ownedRu, ...jevRu, ...improvementRu, ...errandsRu, ...graphRu, ...cockpitRu, ...roleModelsRu, ...agentLabelRu };
+export const en = { ...chromeEn, ...fieldEn, ...workflowEn, ...editorEn, ...opsEn, ...modelsEn, ...canvasEn, ...scheduleEn, ...boardEn, ...ownerEn, ...anamnesisEn, ...tabsEn, ...ownedEn, ...jevEn, ...improvementEn, ...errandsEn, ...graphEn, ...cockpitEn, ...roleModelsEn, ...agentLabelEn, ...mapEn };
+export const ru: { [K in keyof typeof en]: string } = { ...chromeRu, ...fieldRu, ...workflowRu, ...editorRu, ...opsRu, ...modelsRu, ...canvasRu, ...scheduleRu, ...boardRu, ...ownerRu, ...anamnesisRu, ...tabsRu, ...ownedRu, ...jevRu, ...improvementRu, ...errandsRu, ...graphRu, ...cockpitRu, ...roleModelsRu, ...agentLabelRu, ...mapRu };
 
 // keyof typeof en drops keys once the spread is large enough to export (2026-10-29 lane-stack port). The small module stays intact.
 export type I18nKey = keyof typeof en | keyof typeof agentLabelEn;
