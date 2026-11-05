@@ -76,6 +76,9 @@ import seoPageRefresh from "../../../workflows/seo-page-refresh.json";
 import seoStructureAudit from "../../../workflows/seo-structure-audit.json";
 import seoTemplateScale from "../../../workflows/seo-template-scale.json";
 import seoTrust from "../../../workflows/seo-trust.json";
+import seoLinkbuilding from "../../../workflows/seo-linkbuilding.json";
+import seoOutreach from "../../../workflows/seo-outreach.json";
+import seoMentions from "../../../workflows/seo-mentions.json";
 import socialPost from "../../../workflows/social-post.json";
 import telegramSend from "../../../workflows/telegram-send.json";
 import testGen from "../../../workflows/test-gen.json";
@@ -184,6 +187,9 @@ export const BUILTIN_SOURCES: ReadonlyArray<{ name: string; value: unknown }> = 
   { name: "seo-research.json", value: seoResearch },
   { name: "seo-template-scale.json", value: seoTemplateScale },
   { name: "seo-trust.json", value: seoTrust },
+  { name: "seo-linkbuilding.json", value: seoLinkbuilding },
+  { name: "seo-mentions.json", value: seoMentions },
+  { name: "seo-outreach.json", value: seoOutreach },
   { name: "social-post.json", value: socialPost },
   { name: "telegram-send.json", value: telegramSend },
   { name: "test-gen.json", value: testGen },

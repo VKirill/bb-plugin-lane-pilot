@@ -1,0 +1,311 @@
+{
+  "id": "seo-outreach",
+  "name": {
+    "en": "SEO outreach",
+    "ru": "SEO-аутрич"
+  },
+  "description": {
+    "en": "Drafts outreach per channel of the sprint plan (guest columns, partner links, digital PR, expert kits and roundups, AI-cited listicles, local links), humanises and proofreads every message, and sends only the batch the owner approved.",
+    "ru": "Готовит аутрич по каналам спринта (гостевые колонки, партнёрские ссылки, digital PR, экспертные комментарии и обзоры, листикл-цитирования, локальные ссылки), очеловечивает и вычитывает каждое сообщение, отправляет только одобренный владельцем батч."
+  },
+  "examples": {
+    "ru": [
+      "Подготовь питчи по донорскому медиаплану",
+      "Черновики аутрича для спринта",
+      "Отправь одобренные письма донорам"
+    ],
+    "en": [
+      "Draft pitches for the donor media plan",
+      "Outreach drafts for the sprint",
+      "Send the approved batch to donors"
+    ]
+  },
+  "not_for": [
+    "seo-linkbuilding",
+    "seo-mentions"
+  ],
+  "status": "published",
+  "tags": [
+    "seo",
+    "drmax"
+  ],
+  "inputs": {
+    "sprint_plan_path": {
+      "type": "string",
+      "default": "",
+      "note": "план спринта из seo-linkbuilding"
+    },
+    "anchor_spec_path": {
+      "type": "string",
+      "default": "",
+      "note": "анкоры и окружение ссылки"
+    },
+    "donor_plan_path": {
+      "type": "string",
+      "default": "",
+      "note": "паспорта доноров и медиаплан"
+    },
+    "brandcore_path": {
+      "type": "string",
+      "default": "",
+      "note": "проверенные факты о компании"
+    },
+    "acceptor_urls": {
+      "type": "string[]",
+      "default": [],
+      "note": "страницы-акцепторы, под которые пишем"
+    }
+  },
+  "outputs": {
+    "status": "done|blocked",
+    "sent": "int",
+    "log_path": "string?"
+  },
+  "requires": {
+    "plugins": [
+      "lane-pilot"
+    ],
+    "skills": [
+      "seo-linkbuilding-method",
+      "seo-prompt-kit",
+      "drmax-text-humanization",
+      "ru-check",
+      "drmax-brandcore",
+      "telegram-user",
+      "seo-tools"
+    ],
+    "browserSession": true
+  },
+  "budget": {
+    "max_minutes": 120,
+    "max_usd": 6
+  },
+  "entry": "drafts",
+  "nodes": [
+    {
+      "id": "drafts",
+      "type": "parallel",
+      "for_each": [
+        "guest_posts",
+        "partner_links",
+        "digital_pr",
+        "expert_roundups",
+        "listicle_gaps",
+        "local_branch"
+      ],
+      "title": {
+        "en": "Draft per channel",
+        "ru": "Черновики по каналам"
+      },
+      "child": {
+        "type": "agent",
+        "role": "specialist:seo-specialist",
+        "prompt": "Outreach channel {{item}} of the sprint: vet donors, then draft the pitch, press kit or quote atoms for that channel's procedure. Facts only from brandcore; every claim checked. Return channel and draft_paths.",
+        "out": {
+          "channel": "string",
+          "draft_paths": "string[]"
+        },
+        "produces": [
+          {
+            "kind": "report",
+            "version": 1
+          }
+        ],
+        "profile": {
+          "skills": [
+            "seo-linkbuilding-method",
+            "seo-prompt-kit",
+            "drmax-brandcore",
+            "seo-tools"
+          ]
+        }
+      },
+      "join": {
+        "policy": "all",
+        "out": {
+          "draft_paths": "string[]"
+        }
+      },
+      "concurrency": 3
+    },
+    {
+      "id": "humanize",
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "auditor",
+      "title": {
+        "en": "Humanise and proofread",
+        "ru": "Очеловечить и вычитать"
+      },
+      "prompt": "Humanise and proofread every draft; facts checked against BrandCore. Return clean_paths and ready (count of send-ready messages).",
+      "out": {
+        "clean_paths": "string[]",
+        "ready": "int"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 30
+      },
+      "profile": {
+        "skills": [
+          "drmax-text-humanization",
+          "ru-check"
+        ]
+      }
+    },
+    {
+      "id": "send_ok",
+      "type": "human",
+      "role": "owner",
+      "title": {
+        "en": "Approve the batch",
+        "ru": "Одобрение батча"
+      },
+      "prompt": "Approve each message and its recipient; outreach to other people needs your word. approve sends the approved batch only.",
+      "out": {
+        "answer": "string",
+        "answer_kind": "approve|decline|timeout"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 1440
+      }
+    },
+    {
+      "id": "send",
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "errand-browser",
+      "title": {
+        "en": "Send approved messages",
+        "ru": "Отправка одобренных"
+      },
+      "prompt": "Send only the owner-approved messages from the owner's mailbox or Telegram; log each send. Nothing goes out that send_ok did not approve. Return sent and send_log_path.",
+      "out": {
+        "sent": "int",
+        "send_log_path": "string"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "maxAttempts": 1,
+        "timeoutMin": 30
+      }
+    },
+    {
+      "id": "log",
+      "type": "action",
+      "action": "fs.write",
+      "path": ".agents/seo/outreach/{{run_id}}/",
+      "files": [
+        "placement-log.json",
+        "send-log.md"
+      ],
+      "note": "Append the sent batch to the tracking registry",
+      "out": {
+        "log_path": "string"
+      }
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "done",
+        "sent": "send.sent",
+        "log_path": "log.log_path"
+      }
+    },
+    {
+      "id": "blocked",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "blocked"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "drafts",
+      "to": "humanize",
+      "pass": "artifact"
+    },
+    {
+      "from": "humanize",
+      "to": "send_ok",
+      "pass": "artifact"
+    },
+    {
+      "from": "send_ok",
+      "to": "send",
+      "pass": "artifact",
+      "when": "send_ok.answer_kind == 'approve'"
+    },
+    {
+      "from": "send_ok",
+      "to": "blocked",
+      "pass": "artifact"
+    },
+    {
+      "from": "send",
+      "to": "log",
+      "pass": "artifact"
+    },
+    {
+      "from": "log",
+      "to": "done",
+      "pass": "artifact"
+    }
+  ],
+  "test": {
+    "id": "sout-1",
+    "sim": {
+      "input": {
+        "sprint_plan_path": ".agents/seo/links/sprint.md",
+        "anchor_spec_path": ".agents/seo/links/anchors.md",
+        "donor_plan_path": ".agents/seo/links/donors.md",
+        "brandcore_path": ".agents/seo/brandcore.md",
+        "acceptor_urls": [
+          "https://site.example/services/install"
+        ]
+      },
+      "stubs": {
+        "drafts": {
+          "channel": "guest_posts",
+          "draft_paths": [
+            ".agents/seo/outreach/r1/draft-1.md"
+          ]
+        },
+        "humanize": {
+          "clean_paths": [
+            ".agents/seo/outreach/r1/clean-1.md"
+          ],
+          "ready": 1
+        },
+        "send": {
+          "sent": 1,
+          "send_log_path": ".agents/seo/outreach/r1/send-log.md"
+        },
+        "log": {
+          "log_path": ".agents/seo/outreach/r1/placement-log.json"
+        }
+      },
+      "expect_outputs": [
+        "status == 'done'"
+      ]
+    },
+    "live": "черновики по каналам, одобрение владельца, отправка только одобренного батча",
+    "note": "Tested on stubs: send is reachable only through send_ok approve."
+  },
+  "goal_check": "artifact"
+}

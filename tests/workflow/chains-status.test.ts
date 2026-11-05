@@ -54,6 +54,8 @@ describe("status of the built-in chains", () => {
     // SEO wave 2: the drop diagnosis is called by the monitor; the audits and the refresh are chains and monitor follow-ups.
     expect(ids).toEqual(expect.arrayContaining(["seo-drop-diagnosis", "seo-tech-audit", "seo-page-refresh", "seo-structure-audit"]));
     expect(ids).toEqual(expect.arrayContaining(["seo-template-scale", "seo-trust"]));
-    expect(ids).toHaveLength(96); // +5 seo wave-1, +4 wave-2, +2 wave-3a (template-scale, trust)
+    // SEO wave 3b: the link program is a chain; outreach and mentions are subworkflows it calls.
+    expect(ids).toEqual(expect.arrayContaining(["seo-linkbuilding", "seo-outreach", "seo-mentions"]));
+    expect(ids).toHaveLength(99); // +5 seo wave-1, +4 wave-2, +5 wave-3 (template-scale, trust, linkbuilding, outreach, mentions)
   });
 });

@@ -1,0 +1,330 @@
+{
+  "id": "seo-mentions",
+  "name": {
+    "en": "SEO mentions",
+    "ru": "SEO-упоминания"
+  },
+  "description": {
+    "en": "Weekly harvest of brand and entity mentions: triage into linked, unlinked, wrong fact and toxic, reclamation drafts, canonical source-page specs for cited entities, and lost-link recovery against URL changes. Outreach drafts go out only after the owner's word.",
+    "ru": "Еженедельный сбор упоминаний бренда и сущностей: разбор на linked, unlinked, wrong fact и toxic, черновики рекламации, спецификации канонических страниц-источников для цитируемых сущностей и восстановление потерянных ссылок при смене URL. Черновики уходят только после слова владельца."
+  },
+  "examples": {
+    "ru": [
+      "Собери упоминания бренда за неделю",
+      "Найди unlinked-упоминания и подготовь рекламации",
+      "Проверь потерянные ссылки после переезда URL"
+    ],
+    "en": [
+      "Harvest this week's brand mentions",
+      "Find unlinked mentions and draft reclamations",
+      "Check lost links after the URL change"
+    ]
+  },
+  "not_for": [
+    "seo-linkbuilding",
+    "seo-outreach"
+  ],
+  "status": "published",
+  "tags": [
+    "seo",
+    "drmax"
+  ],
+  "inputs": {
+    "entity_dict_path": {
+      "type": "string",
+      "default": "",
+      "note": "словарь сущностей: названия, опечатки, продукты, авторы"
+    },
+    "acceptor_map_path": {
+      "type": "string",
+      "default": "",
+      "note": "карта сущность -> акцептор"
+    },
+    "gsc_links_path": {
+      "type": "string",
+      "default": "",
+      "note": "экспорт ссылок из GSC"
+    },
+    "release_log_path": {
+      "type": "string",
+      "default": "",
+      "note": "журнал релизов со сменой URL"
+    }
+  },
+  "outputs": {
+    "status": "done|blocked",
+    "log_path": "string?",
+    "entity_specs_path": "string?",
+    "redirect_fixes_path": "string?"
+  },
+  "requires": {
+    "plugins": [
+      "lane-pilot"
+    ],
+    "skills": [
+      "seo-linkbuilding-method",
+      "tavily",
+      "drmax-text-humanization",
+      "ru-check",
+      "google"
+    ],
+    "browserSession": true
+  },
+  "budget": {
+    "max_minutes": 90,
+    "max_usd": 5
+  },
+  "entry": "harvest",
+  "nodes": [
+    {
+      "id": "harvest",
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "tavily",
+      "title": {
+        "en": "Mention harvest and triage",
+        "ru": "Сбор и разбор упоминаний"
+      },
+      "prompt": "Harvest brand and entity mentions (-site: queries, alerts). Classify each as linked | unlinked | wrong_fact | toxic, map to an acceptor, draft reclamation notes. Return mentions_path, reclamation_paths, unlinked, toxic.",
+      "out": {
+        "mentions_path": "string",
+        "reclamation_paths": "string[]",
+        "unlinked": "int",
+        "toxic": "int"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 30
+      },
+      "profile": {
+        "skills": [
+          "seo-linkbuilding-method",
+          "tavily",
+          "google"
+        ]
+      }
+    },
+    {
+      "id": "entity_pages",
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "specialist:seo-specialist",
+      "title": {
+        "en": "Entity source pages",
+        "ru": "Страницы-источники сущностей"
+      },
+      "prompt": "List cited entities that lack a canonical source page; write a page spec for each, to hand to seo-page. Return entity_specs_path and spec_count.",
+      "out": {
+        "entity_specs_path": "string",
+        "spec_count": "int"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 20
+      },
+      "profile": {
+        "skills": [
+          "seo-linkbuilding-method"
+        ]
+      }
+    },
+    {
+      "id": "lost_links",
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "specialist:seo-specialist",
+      "title": {
+        "en": "Lost-link recovery",
+        "ru": "Восстановление потерянных ссылок"
+      },
+      "prompt": "Match lost links against the release log's URL changes and restored pages; write recovery drafts and redirect fixes for seo-release. Return recovery_paths and redirect_fixes_path.",
+      "out": {
+        "recovery_paths": "string[]",
+        "redirect_fixes_path": "string"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 20
+      },
+      "profile": {
+        "skills": [
+          "seo-linkbuilding-method"
+        ]
+      }
+    },
+    {
+      "id": "send_ok",
+      "type": "human",
+      "role": "owner",
+      "title": {
+        "en": "Approve reclamation drafts",
+        "ru": "Одобрение рекламаций"
+      },
+      "prompt": "Approve the reclamation and recovery drafts and their recipients; messages to other people need your word. approve sends the approved batch only.",
+      "out": {
+        "answer": "string",
+        "answer_kind": "approve|decline|timeout"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 1440
+      }
+    },
+    {
+      "id": "send",
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "errand-browser",
+      "title": {
+        "en": "Send approved drafts",
+        "ru": "Отправка одобренных"
+      },
+      "prompt": "Send only the owner-approved reclamation and recovery messages from the owner's mailbox or Telegram; log each send. Nothing goes out that send_ok did not approve. Return sent and send_log_path.",
+      "out": {
+        "sent": "int",
+        "send_log_path": "string"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "maxAttempts": 1,
+        "timeoutMin": 30
+      }
+    },
+    {
+      "id": "log",
+      "type": "action",
+      "action": "fs.write",
+      "path": ".agents/seo/mentions/{{run_id}}/",
+      "files": [
+        "mentions.json",
+        "weekly-report.md",
+        "reclamations.md"
+      ],
+      "note": "Append to the tracking registry and write the weekly report",
+      "out": {
+        "log_path": "string"
+      }
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "done",
+        "log_path": "log.log_path",
+        "entity_specs_path": "entity_pages.entity_specs_path",
+        "redirect_fixes_path": "lost_links.redirect_fixes_path"
+      }
+    },
+    {
+      "id": "blocked",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "blocked"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "harvest",
+      "to": "entity_pages",
+      "pass": "artifact"
+    },
+    {
+      "from": "entity_pages",
+      "to": "lost_links",
+      "pass": "artifact"
+    },
+    {
+      "from": "lost_links",
+      "to": "send_ok",
+      "pass": "artifact"
+    },
+    {
+      "from": "send_ok",
+      "to": "send",
+      "pass": "artifact",
+      "when": "send_ok.answer_kind == 'approve'"
+    },
+    {
+      "from": "send_ok",
+      "to": "blocked",
+      "pass": "artifact"
+    },
+    {
+      "from": "send",
+      "to": "log",
+      "pass": "artifact"
+    },
+    {
+      "from": "log",
+      "to": "done",
+      "pass": "artifact"
+    }
+  ],
+  "test": {
+    "id": "smen-1",
+    "sim": {
+      "input": {
+        "entity_dict_path": ".agents/seo/links/entities.json",
+        "acceptor_map_path": ".agents/seo/links/acceptor-map.json",
+        "gsc_links_path": ".agents/seo/links/gsc-links.csv",
+        "release_log_path": ".agents/seo/release/change-log.json"
+      },
+      "stubs": {
+        "harvest": {
+          "mentions_path": ".agents/seo/mentions/r1/mentions.json",
+          "reclamation_paths": [
+            ".agents/seo/mentions/r1/rec-1.md"
+          ],
+          "unlinked": 3,
+          "toxic": 0
+        },
+        "entity_pages": {
+          "entity_specs_path": ".agents/seo/mentions/r1/entity-specs.json",
+          "spec_count": 1
+        },
+        "lost_links": {
+          "recovery_paths": [
+            ".agents/seo/mentions/r1/lost-1.md"
+          ],
+          "redirect_fixes_path": ".agents/seo/mentions/r1/redirects.json"
+        },
+        "send": {
+          "sent": 2,
+          "send_log_path": ".agents/seo/mentions/r1/send-log.md"
+        },
+        "log": {
+          "log_path": ".agents/seo/mentions/r1/mentions.json"
+        }
+      },
+      "expect_outputs": [
+        "status == 'done'"
+      ]
+    },
+    "live": "сбор упоминаний, спецификации страниц-источников, рекламации после одобрения владельца",
+    "note": "Tested on stubs: send is reachable only through send_ok approve."
+  },
+  "goal_check": "artifact"
+}

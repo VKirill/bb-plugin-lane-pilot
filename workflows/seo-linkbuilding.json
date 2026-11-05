@@ -1,0 +1,514 @@
+{
+  "id": "seo-linkbuilding",
+  "name": {
+    "en": "SEO link building",
+    "ru": "SEO-линкбилдинг"
+  },
+  "description": {
+    "en": "Link program planning and execution: the acceptor registry and monthly admission gate, consolidation of competing acceptors, competitor placement audit and own-profile risk audit, a cluster-first sprint (layers, anchors with context, donor media plan, event-tied velocity), drafted outreach and mentions as subworkflows, the four-registry tracker and the post-batch audit. Nothing is sent without the owner's word.",
+    "ru": "Планирование и исполнение ссылочной программы: реестр акцепторов и ежемесячный гейт допуска, консолидация конкурирующих акцепторов, аудит размещений конкурентов и рисков своего профиля, кластерный спринт (слои, анкоры с окружением, донорский медиаплан, скорость под события), аутрич и упоминания саб-воркфлоу, трекер четырёх реестров и пост-батч аудит. Ничего не отправляется без слова владельца."
+  },
+  "examples": {
+    "ru": [
+      "Запусти ссылочную программу для нового кластера",
+      "Проведи ежемесячный допуск акцепторов",
+      "Собери спринт линкбилдинга на месяц"
+    ],
+    "en": [
+      "Start the link program for the new cluster",
+      "Run the monthly acceptor admission",
+      "Plan this month's link sprint"
+    ]
+  },
+  "not_for": [
+    "seo-outreach",
+    "seo-mentions",
+    "seo-monitor"
+  ],
+  "status": "published",
+  "tags": [
+    "seo",
+    "drmax"
+  ],
+  "inputs": {
+    "acceptors_path": {
+      "type": "string",
+      "default": "",
+      "note": "acceptors.json из seo-cocoon"
+    },
+    "gsc_export_path": {
+      "type": "string",
+      "default": "",
+      "note": "GSC Query-Page экспорт"
+    },
+    "backlink_export_path": {
+      "type": "string",
+      "default": "",
+      "note": "экспорт бэклинков от владельца"
+    },
+    "pr_calendar": {
+      "type": "string",
+      "default": "",
+      "note": "бизнес/PR-календарь событий"
+    },
+    "partner_list_path": {
+      "type": "string",
+      "default": "",
+      "note": "список партнёров из CRM, опционально"
+    },
+    "brandcore_path": {
+      "type": "string",
+      "default": "",
+      "note": "проверенные факты о компании"
+    },
+    "entity_dict_path": {
+      "type": "string",
+      "default": "",
+      "note": "словарь сущностей для seo-mentions"
+    },
+    "acceptor_map_path": {
+      "type": "string",
+      "default": "",
+      "note": "карта сущность -> акцептор"
+    },
+    "acceptor_urls": {
+      "type": "string[]",
+      "default": [],
+      "note": "допущенные страницы-акцепторы"
+    },
+    "cluster": {
+      "type": "string",
+      "default": "",
+      "note": "кластер/раздел, под который спринт"
+    }
+  },
+  "outputs": {
+    "status": "done|blocked",
+    "admission_path": "string?",
+    "remediation_path": "string?",
+    "sprint_plan_path": "string?",
+    "tracking_path": "string?"
+  },
+  "requires": {
+    "plugins": [
+      "lane-pilot"
+    ],
+    "skills": [
+      "seo-linkbuilding-method",
+      "seo-prompt-kit",
+      "seo-tools",
+      "topical-graph-architect",
+      "google",
+      "seo-project-life",
+      "seo-measurement-loop"
+    ],
+    "browserSession": true
+  },
+  "budget": {
+    "max_minutes": 300,
+    "max_usd": 15
+  },
+  "entry": "setup",
+  "nodes": [
+    {
+      "id": "setup",
+      "type": "human",
+      "role": "owner",
+      "title": {
+        "en": "Program setup",
+        "ru": "Настройка программы"
+      },
+      "prompt": "Business priorities, ready pages, supplier/partner/event records, experts; confirm the first campaign card.",
+      "out": {
+        "answer": "string",
+        "answer_kind": "given|answered|timeout"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 1440
+      }
+    },
+    {
+      "id": "admission",
+      "produces": [
+        {
+          "kind": "verdict",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "plan-critic",
+      "title": {
+        "en": "Acceptor admission gate",
+        "ru": "Гейт допуска акцепторов"
+      },
+      "prompt": "Monthly admission of the candidate URLs: merge competing acceptors, give each a readiness tier, pause the campaign scoped to the defects found. Status pass | rework | block; findings cite the URL and the failed check, severity one of critical, high, medium, low, info. Return admission_path, admitted_count, remediation_path.",
+      "out": {
+        "status": "pass|rework|block",
+        "findings": "Finding[]",
+        "admission_path": "string",
+        "admitted_count": "int",
+        "remediation_path": "string"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 30
+      },
+      "profile": {
+        "skills": [
+          "seo-linkbuilding-method",
+          "seo-prompt-kit"
+        ]
+      }
+    },
+    {
+      "id": "research",
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "specialist:seo-specialist",
+      "title": {
+        "en": "Placement and risk research",
+        "ru": "Аудит размещений и рисков"
+      },
+      "prompt": "Classify competitor placements, find repeatable magnets, unmet reference demand and broken links; audit our own profile for naturalness and risk. Return opportunities_path and risk_audit_path.",
+      "out": {
+        "opportunities_path": "string",
+        "risk_audit_path": "string"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 40
+      },
+      "profile": {
+        "skills": [
+          "seo-linkbuilding-method",
+          "seo-tools",
+          "google"
+        ]
+      }
+    },
+    {
+      "id": "sprint",
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "specialist:seo-specialist",
+      "title": {
+        "en": "Sprint plan",
+        "ru": "План спринта"
+      },
+      "prompt": "Cluster-first sprint: link counts per layer, anchors with surrounding context, donor passports and unlinked-mention targets, a weekly calendar tied to real events. Return sprint_plan_path, anchor_spec_path, donor_plan_path.",
+      "out": {
+        "sprint_plan_path": "string",
+        "anchor_spec_path": "string",
+        "donor_plan_path": "string"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 30
+      },
+      "profile": {
+        "skills": [
+          "seo-linkbuilding-method",
+          "topical-graph-architect"
+        ]
+      }
+    },
+    {
+      "id": "approve",
+      "type": "human",
+      "role": "owner",
+      "title": {
+        "en": "Approve the sprint",
+        "ru": "Одобрение спринта"
+      },
+      "prompt": "Approve the sprint plan and budget; any vendor or expired-domain proposal is checked against the risk policy here.",
+      "out": {
+        "answer": "string",
+        "answer_kind": "approve|decline|timeout"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 1440
+      }
+    },
+    {
+      "id": "outreach",
+      "type": "subworkflow",
+      "workflow": "seo-outreach",
+      "title": {
+        "en": "Outreach",
+        "ru": "Аутрич"
+      },
+      "with": {
+        "sprint_plan_path": "{{sprint.sprint_plan_path}}",
+        "anchor_spec_path": "{{sprint.anchor_spec_path}}",
+        "donor_plan_path": "{{sprint.donor_plan_path}}",
+        "brandcore_path": "{{$inputs.brandcore_path}}",
+        "acceptor_urls": "{{$inputs.acceptor_urls}}"
+      },
+      "out": {
+        "status": "string",
+        "sent": "int",
+        "log_path": "string"
+      },
+      "guards": {
+        "timeoutMin": 180
+      }
+    },
+    {
+      "id": "mentions",
+      "type": "subworkflow",
+      "workflow": "seo-mentions",
+      "title": {
+        "en": "Mentions harvest",
+        "ru": "Сбор упоминаний"
+      },
+      "with": {
+        "entity_dict_path": "{{$inputs.entity_dict_path}}",
+        "acceptor_map_path": "{{$inputs.acceptor_map_path}}",
+        "gsc_links_path": "{{$inputs.gsc_export_path}}",
+        "release_log_path": ""
+      },
+      "out": {
+        "status": "string",
+        "log_path": "string",
+        "entity_specs_path": "string",
+        "redirect_fixes_path": "string"
+      },
+      "guards": {
+        "timeoutMin": 120
+      }
+    },
+    {
+      "id": "tracking",
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "specialist:seo-specialist",
+      "title": {
+        "en": "Tracking registry",
+        "ru": "Реестр отслеживания"
+      },
+      "prompt": "Four-registry tracker: contacts, campaigns, acceptors/assets, placements, with immutable IDs and an anomaly queue. Return tracking_path and anomalies.",
+      "out": {
+        "tracking_path": "string",
+        "anomalies": "int"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 20
+      },
+      "profile": {
+        "skills": [
+          "seo-linkbuilding-method",
+          "seo-project-life"
+        ]
+      }
+    },
+    {
+      "id": "post_batch_audit",
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "errand-browser",
+      "title": {
+        "en": "Post-batch audit",
+        "ru": "Пост-батч аудит"
+      },
+      "prompt": "Post-batch audit in the owner's GSC: what the batch moved for the acceptors, anomaly check against the tracking registry. Return audit_path and findings.",
+      "out": {
+        "audit_path": "string",
+        "findings": "int"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 30
+      },
+      "profile": {
+        "skills": [
+          "seo-linkbuilding-method",
+          "seo-measurement-loop"
+        ]
+      }
+    },
+    {
+      "id": "package",
+      "type": "action",
+      "action": "fs.write",
+      "path": ".agents/seo/links/{{run_id}}/",
+      "files": [
+        "admission.json",
+        "opportunities.json",
+        "sprint-plan.md",
+        "anchor-spec.md",
+        "donor-plan.md",
+        "tracking.json",
+        "post-batch-audit.md"
+      ],
+      "note": "Write the sprint package and update the tracking registry",
+      "out": {
+        "package_path": "string"
+      }
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "done",
+        "admission_path": "admission.admission_path",
+        "remediation_path": "admission.remediation_path",
+        "sprint_plan_path": "sprint.sprint_plan_path",
+        "tracking_path": "tracking.tracking_path"
+      }
+    },
+    {
+      "id": "blocked",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "blocked",
+        "remediation_path": "admission.remediation_path"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "setup",
+      "to": "admission",
+      "pass": "artifact"
+    },
+    {
+      "from": "admission",
+      "to": "research",
+      "pass": "artifact",
+      "when": "admission.status == 'pass'"
+    },
+    {
+      "from": "admission",
+      "to": "blocked",
+      "pass": "artifact"
+    },
+    {
+      "from": "research",
+      "to": "sprint",
+      "pass": "artifact"
+    },
+    {
+      "from": "sprint",
+      "to": "approve",
+      "pass": "artifact"
+    },
+    {
+      "from": "approve",
+      "to": "outreach",
+      "pass": "artifact",
+      "when": "approve.answer_kind == 'approve'"
+    },
+    {
+      "from": "approve",
+      "to": "blocked",
+      "pass": "artifact"
+    },
+    {
+      "from": "outreach",
+      "to": "mentions",
+      "pass": "artifact"
+    },
+    {
+      "from": "mentions",
+      "to": "tracking",
+      "pass": "artifact"
+    },
+    {
+      "from": "tracking",
+      "to": "post_batch_audit",
+      "pass": "artifact"
+    },
+    {
+      "from": "post_batch_audit",
+      "to": "package",
+      "pass": "artifact"
+    },
+    {
+      "from": "package",
+      "to": "done",
+      "pass": "artifact"
+    }
+  ],
+  "test": {
+    "id": "slb-1",
+    "sim": {
+      "input": {
+        "acceptors_path": ".agents/seo/conditioners/acceptors.json",
+        "gsc_export_path": ".agents/seo/gsc.csv",
+        "backlink_export_path": ".agents/seo/backlinks.csv",
+        "pr_calendar": ".agents/seo/pr-calendar.md",
+        "cluster": "conditioners"
+      },
+      "stubs": {
+        "admission": {
+          "proceed": "yes",
+          "admission_path": ".agents/seo/links/r1/admission.json",
+          "admitted_count": 12,
+          "remediation_path": ""
+        },
+        "research": {
+          "opportunities_path": ".agents/seo/links/r1/opportunities.json",
+          "risk_audit_path": ".agents/seo/links/r1/risk.md"
+        },
+        "sprint": {
+          "sprint_plan_path": ".agents/seo/links/r1/sprint.md",
+          "anchor_spec_path": ".agents/seo/links/r1/anchors.md",
+          "donor_plan_path": ".agents/seo/links/r1/donors.md"
+        },
+        "seo-outreach": {
+          "status": "done",
+          "sent": 3,
+          "log_path": ".agents/seo/outreach/r1/placement-log.json"
+        },
+        "seo-mentions": {
+          "status": "done",
+          "log_path": ".agents/seo/mentions/r1/mentions.json",
+          "entity_specs_path": "",
+          "redirect_fixes_path": ""
+        },
+        "tracking": {
+          "tracking_path": ".agents/seo/links/r1/tracking.json",
+          "anomalies": 0
+        },
+        "post_batch_audit": {
+          "audit_path": ".agents/seo/links/r1/post-batch-audit.md",
+          "findings": 0
+        },
+        "package": {
+          "package_path": ".agents/seo/links/r1/"
+        }
+      },
+      "expect_outputs": [
+        "status == 'done'"
+      ]
+    },
+    "live": "допуск акцепторов, спринт после одобрения владельца, аутрич и упоминания саб-воркфлоу",
+    "note": "Tested on stubs: the sprint and sends run only behind owner approvals; subworkflows answer from stubs."
+  },
+  "goal_check": "artifact"
+}
