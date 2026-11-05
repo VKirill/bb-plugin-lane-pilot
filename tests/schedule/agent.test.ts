@@ -245,12 +245,12 @@ describe("PhaseIntake.handOver", () => {
   }
   const base = { projectId: "p1", pmThreadId: "thr_pm", runId: "lprun_1", key: "schedule:k1", origin: "Work found by the scheduled agent x; source: schedule." };
 
-  it("sends a small change down issue-quick with the origin in the text, and the key makes the start the request id", async () => {
+  it("sends a small change down issue-quick with the origin after the work, and the key makes the start the request id", async () => {
     const world1 = intake();
     const result = await world1.handOver({ ...base, text: "Add the canonical tag to /pricing." });
     expect(result).toEqual({ started: true, via: "issue-quick", id: "wfrun_1" });
     expect(world1.started[0]).toMatchObject({ projectId: "p1", pmThreadId: "thr_pm", runId: "lprun_1", requestId: "schedule:k1", kind: "small" });
-    expect(world1.started[0]!.text).toMatch(/^Work found by the scheduled agent x; source: schedule\.\n\nAdd the canonical tag/);
+    expect(world1.started[0]!.text).toMatch(/^Add the canonical tag to \/pricing\.\n\nWork found by the scheduled agent x; source: schedule\./);
   });
 
   it("starts the full-lifecycle graph for a heavy goal by default", async () => {

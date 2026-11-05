@@ -408,6 +408,17 @@ describe("a hand-over is approved work, whatever it reads like (lead «да», 2
       .toMatchObject({ started: true, via: "issue-quick" });
     expect(started).toEqual(["small"]);
   });
+
+  it("decided work that reads large goes down issue-full, titled by the work, not by its origin (hub, 2026-11-06)", async () => {
+    const started: Array<{ kind: string; text: string }> = [];
+    const train: IntakeTrain = { start: (input) => { started.push({ kind: input.kind, text: input.text }); return `wfrun_${started.length}`; }, status: () => "succeeded" };
+    const { intake } = world({ train });
+    const text = "Навык для: прогоны фото-инструмента. Перепиши порядок действий помощника в один навык.";
+    expect(await intake.handOver({ projectId: "projA", pmThreadId: PM, runId: "run1", text, key: "lead:road_y", origin: "Opened by the lead" }))
+      .toMatchObject({ started: true, via: "issue-full" });
+    expect(started[0]!.kind).toBe("full");
+    expect(started[0]!.text.startsWith("Навык для: прогоны фото-инструмента")).toBe(true);
+  });
 });
 
 describe("intake self-consistency", () => {

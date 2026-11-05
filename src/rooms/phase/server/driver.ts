@@ -1196,11 +1196,11 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
   const library = createWorkflowLibrary(ctx, services);
   // The small-task graph for a small job or a batch of fixes: started by the machine, not chosen by the PM.
   const train = {
-    start: (input: { projectId: string; pmThreadId: string; runId: string; requestId: string; text: string; kind: "small" | "batch" | "heavy"; path?: { size: string; risk: string } }) => {
+    start: (input: { projectId: string; pmThreadId: string; runId: string; requestId: string; text: string; kind: "small" | "batch" | "heavy" | "full"; path?: { size: string; risk: string } }) => {
       // A batch of independent fixes is one task per fix (issue-batch); a small job is one task (issue-quick); a heavy goal is the
       // full-lifecycle graph: analysis, plan, build in waves, review, browser check, the owner's acceptance, close.
       const settings = loadProjectSettings(db, input.projectId);
-      const workflow = builtinWorkflow(input.kind === "heavy" ? "full-lifecycle" : input.kind === "batch" ? "issue-batch" : issueQuickWorkflowId(settings));
+      const workflow = builtinWorkflow(input.kind === "heavy" ? "full-lifecycle" : input.kind === "batch" ? "issue-batch" : input.kind === "full" ? "issue-full" : issueQuickWorkflowId(settings));
       if (!workflow) return null;
       const title = input.text.trim().split("\n").find((line) => line.trim())?.trim().slice(0, 120) ?? "Owner's request";
       try {

@@ -29,7 +29,7 @@ export type IntakeRecord = { requestId: string; kind: IntakeKind; by: "rules" | 
 
 /** The machine's start of the small-task graph for a request, and the state of a run it started (src/rooms/phase/server/driver.ts wires them). */
 export type IntakeTrain = {
-  start(input: { projectId: string; pmThreadId: string; runId: string; requestId: string; text: string; kind: "small" | "batch" | "heavy"; path?: { size: PathSize; risk: PathRisk } }): string | null;
+  start(input: { projectId: string; pmThreadId: string; runId: string; requestId: string; text: string; kind: "small" | "batch" | "heavy" | "full"; path?: { size: PathSize; risk: PathRisk } }): string | null;
   status(wfRunId: string): string | null;
   /** The workflow architect, started with the owner's process as its order; resolves to its chat. */
   startProcess?(input: { projectId: string; pmThreadId: string; text: string }): Promise<string | null>;
@@ -46,7 +46,7 @@ const railsOn = (settings: Record<string, unknown>) => String(settings["phase.ra
 const graphRoad = (settings: Record<string, unknown>) => String(settings["phase.road"] ?? "graph") !== "phase";
 /** What a hand-over key started, kept for good: the key maps to the phase or graph run whether it is alive or finished. */
 const HANDOVER_KEY = (projectId: string, key: string) => `phase-handover:${projectId}:${key}`;
-type HandOverStarted = { started: true; via: "phase" | "issue-quick" | "issue-batch" | "full-lifecycle"; id: string };
+type HandOverStarted = { started: true; via: "phase" | "issue-quick" | "issue-batch" | "issue-full" | "full-lifecycle"; id: string };
 type HandOverResult = HandOverStarted | { started: false; kind: IntakeKind | null; reason: string };
 
 type Deps = Pick<ServerCore, "bb" | "db" | "effectiveProjectSettings" | "log" | "cancelQueuedAttempt">;
@@ -241,7 +241,7 @@ export function createPhaseIntake(ctx: Deps, phases: IntakePhases, train?: Intak
     if (running) return running;
     const job = (async (): Promise<HandOverResult> => {
       const known = await bb.storage.kv.get(slot).catch(() => null) as Partial<HandOverStarted> | null;
-      if (known && typeof known.id === "string" && (known.via === "phase" || known.via === "issue-quick" || known.via === "issue-batch" || known.via === "full-lifecycle")) return { started: true, via: known.via, id: known.id };
+      if (known && typeof known.id === "string" && (known.via === "phase" || known.via === "issue-quick" || known.via === "issue-batch" || known.via === "issue-full" || known.via === "full-lifecycle")) return { started: true, via: known.via, id: known.id };
       const result = await startHandOver(input);
       if (result.started) await bb.storage.kv.set(slot, { via: result.via, id: result.id, at: Date.now() });
       return result;
@@ -262,7 +262,9 @@ export function createPhaseIntake(ctx: Deps, phases: IntakePhases, train?: Intak
     // agent's hand-over is still judged whole: its question is no work.
     const decided = input.key.startsWith("lead:");
     const kind = decided && read.kind !== "heavy" && read.kind !== "batch" ? "small" : read.kind;
-    const text = `${input.origin}\n\n${input.text}`;
+    // The work comes first: the run's title and its goal are read from the first line, and the origin line made them «Opened by the lead…»
+    // on every hand-over (hub, 2026-11-04: the goal audit then judged that sentence).
+    const text = `${input.text}\n\n${input.origin}`;
     if (kind === "heavy") {
       if (!railsOn(settings)) return { started: false, kind, reason: "phase rails are off" };
       const live = phases.list({ pmThreadId: input.pmThreadId, live: true })[0];
@@ -278,8 +280,12 @@ export function createPhaseIntake(ctx: Deps, phases: IntakePhases, train?: Intak
       return { started: true, via: "phase", id: phase.id };
     }
     if ((kind === "small" || kind === "batch") && train && String(settings["phase.train"] ?? "on") !== "off") {
-      const id = train.start({ projectId: run.project_id, pmThreadId: input.pmThreadId, runId: run.id, requestId: input.key, text, kind, ...(kind === "small" ? { path } : {}) });
-      if (id) { ctx.log(`phase intake: hand-over (${input.origin.slice(0, 80)}) is ${kind} (${by}); ${kind === "batch" ? "issue-batch" : "issue-quick"} ${id} started`); return { started: true, via: kind === "batch" ? "issue-batch" : "issue-quick", id }; }
+      // Decided work the size reads as large or risky would stop at issue-quick's «proposed to the full path», which nobody takes up for a
+      // hand-over: all four such lead runs of a month ended blocked there (hub, 2026-11-06). It goes down issue-full itself.
+      const full = decided && kind === "small" && (path.size === "large" || path.risk === "high");
+      const via = full ? "issue-full" : kind === "batch" ? "issue-batch" : "issue-quick";
+      const id = train.start({ projectId: run.project_id, pmThreadId: input.pmThreadId, runId: run.id, requestId: input.key, text, kind: full ? "full" : kind, ...(kind === "small" ? { path } : {}) });
+      if (id) { ctx.log(`phase intake: hand-over (${input.origin.slice(0, 80)}) is ${kind} (${by}); ${via} ${id} started`); return { started: true, via, id }; }
       return { started: false, kind, reason: "the small-task graph did not start" };
     }
     return { started: false, kind, reason: kind === "small" || kind === "batch" ? "the small-task graph is off" : `the text reads as ${kind}, not as work to build` };
