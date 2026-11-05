@@ -9,7 +9,7 @@
  *  3. the built-in default below.
  * The writer of a task is NOT in this table: it stays the pick of Jev from the writers' anamnesis (model-profiles.ts).
  *
- * The options of the table are the Claude, GPT, Gemini Flash (through 9router) and ZCode GLM-5.3-Flash models the machines offer, nothing else.
+ * The options of the table are the Claude, GPT, Gemini Flash (through 9router), Gemini 4 Argon (Antigravity) and ZCode GLM-5.3-Flash models the machines offer, nothing else.
  */
 import { belowTier, modelTier, type ModelTier } from "./model-tiers";
 import { offeredOnHost, type ModelCatalog } from "./model-catalog";
@@ -38,6 +38,8 @@ export const ROLE_MODEL_OPTIONS: readonly RoleModelOption[] = [
   // The owner's near-free Gemini subscription through 9router (OpenCode v2 provider `opencode2`, 2026-10-27): the judges' default. The «high» is
   // in the model's name; the reasoning effort stays the catalog default «medium» (what the writer profile and the harness editor run on).
   { id: "router9/ag/gemini-3.8-flash-high", providerId: "opencode2", label: "Gemini 3.8 Flash (9router)", family: "google", tier: "standard", defaultEffort: "medium" },
+  // The owner's Antigravity subscription; BB core advertises it on acp-antigravity, 2026-11-05. Never a default of a row.
+  { id: "gemini-4-argon", providerId: "acp-antigravity", label: "Gemini 4 Argon (Antigravity)", family: "google", tier: "strong" },
   // The owner's ZCode app on the Mac mini (BB provider `zcode`, zcbridge): GLM-5.3-Flash on the Start Plan's free tokens («· Free», bb-plugin-zcode 0.4.3:
   // it never bills the plan), 15:00-01:00 UTC. Never a default of a row; the rows of ZCODE_FREE_ROWS try it first in its hours. It is offered only
   // where packages/models/src/zcode.ts says it can work (the Mac mini, the free window unless `zcode.window` = always, no other ZCode task running); else the row's default runs.

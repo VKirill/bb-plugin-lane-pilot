@@ -2,7 +2,7 @@
  * The writers' anamnesis: what each coding model is good and bad at, from public benchmarks, reviews and developers' reports
  * (October 2026; the sources are listed per model). The writer pick (`writer.model`, a Jev judgment) reads `summary` and chooses the
  * model for each task; `available: false` keeps a model out of the pick with the reason in `note`. The owner's words of 2026-10-25:
- * pick the model for the task, not only the effort; Gemini Pro is weak, Argon and MiniMax are not in the subscriptions.
+ * pick the model for the task, not only the effort; Gemini Pro is weak; Argon is in the Antigravity subscription but has no review-based writer profile yet; MiniMax is not in the subscriptions.
  */
 import type { ModelTier } from "./model-tiers";
 
@@ -103,8 +103,8 @@ export const WRITER_PROFILES: readonly WriterProfile[] = [
     summary: "Google's large model.", note: "the owner's verdict: weak for this work; not used", sources: [],
   },
   {
-    key: "gemini-argon", providerId: "opencode2", model: "openlux/gemini-4-argon", reasoning: "high", label: "Gemini 4 Argon", tier: "strong", available: false,
-    summary: "Google's newest large model.", note: "not in the owner's subscriptions", sources: [],
+    key: "gemini-argon", providerId: "acp-antigravity", model: "gemini-4-argon", reasoning: "high", label: "Gemini 4 Argon", tier: "strong", available: false,
+    summary: "Google's newest large model.", note: "in the owner's Antigravity subscription since 2026-11; not a writer yet: no review-based profile", sources: [],
   },
 ];
 
