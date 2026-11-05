@@ -1,0 +1,588 @@
+{
+  "id": "seo-structure-audit",
+  "name": {
+    "en": "SEO structure audit",
+    "ru": "Аудит структуры сайта"
+  },
+  "description": {
+    "en": "Restructures an established site: a URL decision registry (prune, merge, canonicalize, noindex, 410, enrich), cohort-level systemic quality checks, an internal link graph audit and section restructures. Two lighter modes: a weekly striking-distance internal-link boost, and quarterly expansion planning that hands MVC packets to seo-cocoon. Approved waves ship only through seo-release.",
+    "ru": "Реструктуризация устоявшегося сайта: реестр решений по URL (prune, merge, canonicalize, noindex, 410, enrich), системные проверки качества по когортам, аудит графа внутренних ссылок и перестройка разделов. Два облегчённых режима: еженедельный линк-буст страниц на грани топа и квартальное планирование расширения с MVC-пакетами для seo-cocoon. Одобренные волны уходят только через seo-release."
+  },
+  "examples": {
+    "ru": [
+      "Проведи аудит структуры сайта и реестр решений по URL",
+      "Линк-буст страниц на позициях 8-20",
+      "Квартальный план расширения кокона"
+    ],
+    "en": [
+      "Audit the site structure and build the URL decision registry",
+      "Internal-link boost for striking-distance pages",
+      "Quarterly expansion plan for the cocoon"
+    ]
+  },
+  "not_for": [
+    "seo-cocoon",
+    "seo-tech-audit",
+    "seo-release"
+  ],
+  "status": "published",
+  "tags": [
+    "seo",
+    "drmax"
+  ],
+  "inputs": {
+    "site_url": {
+      "type": "string",
+      "required": true
+    },
+    "mode": {
+      "type": "reconstruction|link_boost|expansion",
+      "default": "reconstruction"
+    },
+    "project_passport_path": {
+      "type": "string",
+      "default": ""
+    },
+    "crawl_path": {
+      "type": "string",
+      "default": "",
+      "note": "выгрузка краула, если есть"
+    },
+    "backlink_path": {
+      "type": "string",
+      "default": "",
+      "note": "выгрузка бэклинков для защиты от prune"
+    }
+  },
+  "outputs": {
+    "status": "done|partial|blocked",
+    "registry_path": "string?",
+    "report_path": "string?",
+    "release_status": "string?"
+  },
+  "requires": {
+    "plugins": [
+      "lane-pilot"
+    ],
+    "skills": [
+      "topical-graph-architect",
+      "gist-content-logic",
+      "seo-agent",
+      "seo-tools",
+      "drmax-text-humanization",
+      "seo-project-life",
+      "seo-tech-audit-kit",
+      "seo-evidence-contract"
+    ],
+    "browserSession": true
+  },
+  "budget": {
+    "max_minutes": 240,
+    "max_usd": 15
+  },
+  "entry": "inventory",
+  "nodes": [
+    {
+      "id": "inventory",
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "specialist:seo-specialist",
+      "profile": {
+        "skills": [
+          "topical-graph-architect",
+          "seo-tech-audit-kit",
+          "seo-evidence-contract"
+        ]
+      },
+      "title": {
+        "en": "URL decision registry",
+        "ru": "Реестр решений по URL"
+      },
+      "prompt": "Procedure url-inventory-decision-registry for {{$inputs.site_url}}: one row per URL — type, status, role, clicks, links, decision — and the rebuilt canonical cluster map. Return registry_path and urls.",
+      "out": {
+        "registry_path": "string",
+        "urls": "int"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 30
+      }
+    },
+    {
+      "id": "quality_cohorts",
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "auditor",
+      "session": "new",
+      "skip_when": "$inputs.mode != 'reconstruction'",
+      "skip_out": {
+        "defects_path": "",
+        "defect_count": 0
+      },
+      "profile": {
+        "skills": [
+          "seo-tech-audit-kit",
+          "seo-evidence-contract"
+        ]
+      },
+      "title": {
+        "en": "Systemic quality audit",
+        "ru": "Системный аудит качества"
+      },
+      "prompt": "Procedures systemic-quality-audit and systemic-defect-remediation: defect audit by template, cluster and host (sampling, shingles) with defect passports and a two-wave fix plan. Return defects_path and defect_count.",
+      "out": {
+        "defects_path": "string",
+        "defect_count": "int"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 30
+      }
+    },
+    {
+      "id": "link_graph",
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "specialist:seo-specialist",
+      "skip_when": "$inputs.mode != 'reconstruction'",
+      "skip_out": {
+        "linkgraph_path": "",
+        "orphans": 0
+      },
+      "profile": {
+        "skills": [
+          "topical-graph-architect",
+          "seo-tools"
+        ]
+      },
+      "title": {
+        "en": "Internal link graph",
+        "ru": "Граф внутренних ссылок"
+      },
+      "prompt": "Procedure internal-link-graph-audit: anchors, orphans, dead ends, dilution and breadcrumbs; a fix list per URL. Return linkgraph_path and orphans.",
+      "out": {
+        "linkgraph_path": "string",
+        "orphans": "int"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 25
+      }
+    },
+    {
+      "id": "prune_merge",
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "specialist:seo-specialist",
+      "skip_when": "$inputs.mode != 'reconstruction'",
+      "skip_out": {
+        "prune_path": "",
+        "redirects": 0
+      },
+      "profile": {
+        "skills": [
+          "topical-graph-architect",
+          "seo-evidence-contract",
+          "seo-tools"
+        ]
+      },
+      "title": {
+        "en": "Prune and merge",
+        "ru": "Сокращение и слияние"
+      },
+      "prompt": "Procedures content-pruning and merge-301-consolidation with a demand check: thin and boilerplate pages enriched, merged, noindexed or 410'd; cannibalizing pages merged onto one acceptor with a 301 map. Respect {{$inputs.backlink_path}} protection. Return prune_path and redirects.",
+      "out": {
+        "prune_path": "string",
+        "redirects": "int"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 30
+      }
+    },
+    {
+      "id": "restructure",
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "specialist:seo-specialist",
+      "skip_when": "$inputs.mode != 'reconstruction'",
+      "skip_out": {
+        "restructure_path": "",
+        "waves": 0
+      },
+      "profile": {
+        "skills": [
+          "topical-graph-architect",
+          "seo-project-life"
+        ]
+      },
+      "title": {
+        "en": "Section restructure",
+        "ru": "Перестройка разделов"
+      },
+      "prompt": "Procedure workshop-restructure-section: inventory existing answers, classify the gaps, decide per section and plan a limited rollout of waves. Return restructure_path and waves.",
+      "out": {
+        "restructure_path": "string",
+        "waves": "int"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 30
+      }
+    },
+    {
+      "id": "link_boost",
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "specialist:seo-specialist",
+      "skip_when": "$inputs.mode != 'link_boost'",
+      "skip_out": {
+        "boost_path": "",
+        "boosted": 0
+      },
+      "profile": {
+        "skills": [
+          "drmax-text-humanization",
+          "seo-measurement-loop"
+        ]
+      },
+      "title": {
+        "en": "Striking-distance link boost",
+        "ru": "Линк-буст страниц на грани топа"
+      },
+      "prompt": "Procedure striking-distance-link-boost: URLs at positions 8-20, dormant donors, paragraph rewrites carrying the link; a weekly batch with a tracking sheet. Return boost_path and boosted.",
+      "out": {
+        "boost_path": "string",
+        "boosted": "int"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 25
+      }
+    },
+    {
+      "id": "expansion",
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "specialist:seo-specialist",
+      "skip_when": "$inputs.mode != 'expansion'",
+      "skip_out": {
+        "expansion_path": "",
+        "mvc_packets": []
+      },
+      "profile": {
+        "skills": [
+          "topical-graph-architect",
+          "gist-content-logic",
+          "seo-tools"
+        ]
+      },
+      "title": {
+        "en": "Expansion planning",
+        "ru": "План расширения"
+      },
+      "prompt": "Procedures delta-gap-expansion-planning and topical-expansion-incubation: delta clustering, gap triage, the scaling stop-list, the readiness matrix and sandbox-to-section incubation; MVC packets for seo-cocoon. Return expansion_path and mvc_packets.",
+      "out": {
+        "expansion_path": "string",
+        "mvc_packets": "string[]"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 30
+      }
+    },
+    {
+      "id": "critic",
+      "produces": [
+        {
+          "kind": "verdict",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "plan-critic",
+      "session": "new",
+      "title": {
+        "en": "Protective check",
+        "ru": "Защитная проверка"
+      },
+      "prompt": "No URL with clicks, backlinks or conversions is pruned without a successor; one hypothesis per wave. Status pass | rework | block; findings cite the registry row, severity one of critical, high, medium, low, info.",
+      "out": {
+        "status": "pass|rework|block",
+        "findings": "Finding[]"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 25
+      }
+    },
+    {
+      "id": "approve",
+      "type": "human",
+      "role": "owner",
+      "title": {
+        "en": "Approve the registry and wave plan",
+        "ru": "Утверждение реестра и плана волн"
+      },
+      "prompt": "Approve the decision registry and the wave plan; decline ships nothing.",
+      "out": {
+        "answer": "string",
+        "answer_kind": "approved|declined|timeout"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 240
+      }
+    },
+    {
+      "id": "release",
+      "type": "subworkflow",
+      "workflow": "seo-release",
+      "skip_when": "approve.answer_kind != 'approved'",
+      "skip_out": {
+        "status": "skipped"
+      },
+      "title": {
+        "en": "Restructure wave release",
+        "ru": "Релиз волны реструктуризации"
+      },
+      "with": {
+        "mode": "restructure_wave",
+        "items": "{{inventory.registry_path}}",
+        "url_changes": true
+      },
+      "out": {
+        "status": "string"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 90
+      }
+    },
+    {
+      "id": "package",
+      "type": "action",
+      "action": "fs.write",
+      "path": ".agents/seo/structure-audit/{{date}}/",
+      "files": [
+        "decision-registry.csv",
+        "cluster-map.md",
+        "defect-passports.md",
+        "link-fixes.md",
+        "report.md"
+      ],
+      "note": "registry, cluster map, defect passports, link fix list or weekly donor batch, MVC packets in expansion mode",
+      "out": {
+        "report_path": "string"
+      }
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "done",
+        "registry_path": "inventory.registry_path",
+        "report_path": "package.report_path",
+        "release_status": "release.status"
+      }
+    },
+    {
+      "id": "partial",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "partial",
+        "registry_path": "inventory.registry_path",
+        "report_path": "package.report_path"
+      }
+    },
+    {
+      "id": "blocked",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "blocked"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "inventory",
+      "to": "quality_cohorts",
+      "pass": "artifact"
+    },
+    {
+      "from": "quality_cohorts",
+      "to": "link_graph",
+      "pass": "artifact"
+    },
+    {
+      "from": "link_graph",
+      "to": "prune_merge",
+      "pass": "artifact"
+    },
+    {
+      "from": "prune_merge",
+      "to": "restructure",
+      "pass": "artifact"
+    },
+    {
+      "from": "restructure",
+      "to": "link_boost",
+      "pass": "artifact"
+    },
+    {
+      "from": "link_boost",
+      "to": "expansion",
+      "pass": "artifact"
+    },
+    {
+      "from": "expansion",
+      "to": "critic",
+      "pass": "artifact"
+    },
+    {
+      "from": "critic",
+      "to": "inventory",
+      "pass": "same-session",
+      "when": "critic.status == 'rework' && visits('critic') < 2",
+      "label": "rework registry"
+    },
+    {
+      "from": "critic",
+      "to": "approve",
+      "pass": "artifact",
+      "when": "critic.status == 'pass'"
+    },
+    {
+      "from": "critic",
+      "to": "blocked",
+      "pass": "artifact"
+    },
+    {
+      "from": "approve",
+      "to": "release",
+      "pass": "artifact"
+    },
+    {
+      "from": "release",
+      "to": "package",
+      "pass": "artifact"
+    },
+    {
+      "from": "package",
+      "to": "done",
+      "pass": "artifact",
+      "when": "release.status == 'done'"
+    },
+    {
+      "from": "package",
+      "to": "partial",
+      "pass": "artifact"
+    }
+  ],
+  "test": {
+    "id": "ssa-1",
+    "sim": {
+      "input": {
+        "site_url": "https://example.ru",
+        "mode": "reconstruction"
+      },
+      "stubs": {
+        "inventory": {
+          "registry_path": "registry.csv",
+          "urls": 412
+        },
+        "quality_cohorts": {
+          "defects_path": "defects.md",
+          "defect_count": 9
+        },
+        "link_graph": {
+          "linkgraph_path": "linkgraph.md",
+          "orphans": 14
+        },
+        "prune_merge": {
+          "prune_path": "prune.md",
+          "redirects": 6
+        },
+        "restructure": {
+          "restructure_path": "restructure.md",
+          "waves": 2
+        },
+        "critic": {
+          "status": "pass",
+          "findings": []
+        },
+        "seo-release": {
+          "status": "done"
+        },
+        "package": {
+          "report_path": ".agents/seo/structure-audit/2026-11-06/report.md"
+        }
+      },
+      "humans": {
+        "approve": {
+          "answer": "",
+          "answer_kind": "approved"
+        }
+      },
+      "expect_path": [
+        "inventory",
+        "quality_cohorts",
+        "link_graph",
+        "prune_merge",
+        "restructure",
+        "link_boost",
+        "expansion",
+        "critic",
+        "approve",
+        "release",
+        "package",
+        "done"
+      ],
+      "expect_outputs": [
+        "status == 'done'",
+        "registry_path != ''"
+      ]
+    },
+    "live": "реструктуризация по сигналу seo-monitor или после seo-drop-diagnosis",
+    "note": "Tested on stubs. Prune and 301s ship only through approve plus seo-release; lighter modes skip the reconstruction nodes."
+  },
+  "goal_check": "artifact"
+}
