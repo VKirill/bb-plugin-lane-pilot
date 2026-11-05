@@ -1,0 +1,529 @@
+{
+  "id": "seo-drop-diagnosis",
+  "name": {
+    "en": "SEO drop diagnosis",
+    "ru": "Диагноз SEO-просадки"
+  },
+  "description": {
+    "en": "Diagnosis of a traffic drop or a post-core-update loss: aligned comparison windows, a mechanism label per cohort, the scope (page, template or site), parallel layer checks, scored hypothesis cards with falsifiers, an independent falsification attempt and an owner-approved staged recovery pilot. Fixes run in other graphs.",
+    "ru": "Диагноз просадки трафика или потерь после core-апдейта: выровненные окна сравнения, метка механизма по когортам, область просадки (страница, шаблон или сайт), параллельные проверки слоёв, оценённые карты гипотез с фальсификатором, независимая попытка опровержения и поэтапный пилот восстановления, который утверждает владелец. Исправления выполняют другие графы."
+  },
+  "examples": {
+    "ru": [
+      "Разбери, почему сайт просел после апдейта",
+      "Диагноз падения трафика по GSC",
+      "Что сломалось: просадка на шаблоне каталога"
+    ],
+    "en": [
+      "Diagnose why the site dropped after the update",
+      "Traffic-drop diagnosis from GSC",
+      "What broke: a drop on the catalog template"
+    ]
+  },
+  "not_for": [
+    "seo-monitor",
+    "seo-tech-audit",
+    "seo-release"
+  ],
+  "status": "published",
+  "tags": [
+    "seo",
+    "drmax"
+  ],
+  "inputs": {
+    "site_url": {
+      "type": "string",
+      "required": true
+    },
+    "affected_urls": {
+      "type": "string[]",
+      "note": "затронутые URL или когорты из seo-monitor",
+      "default": []
+    },
+    "update_window": {
+      "type": "string",
+      "default": "",
+      "note": "T_start/T_end завершившегося апдейта, если известно"
+    },
+    "project_passport_path": {
+      "type": "string",
+      "default": ""
+    }
+  },
+  "outputs": {
+    "status": "done|partial|frozen|blocked",
+    "diagnosis_path": "string?",
+    "hypotheses_path": "string?",
+    "pilot_path": "string?",
+    "freeze_due": "string?"
+  },
+  "requires": {
+    "plugins": [
+      "lane-pilot"
+    ],
+    "skills": [
+      "google",
+      "seo-tools",
+      "seo-agent",
+      "seo-update-forensics",
+      "seo-measurement-loop",
+      "seo-evidence-contract"
+    ],
+    "browserSession": true
+  },
+  "budget": {
+    "max_minutes": 120,
+    "max_usd": 10
+  },
+  "entry": "intake",
+  "nodes": [
+    {
+      "id": "intake",
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "specialist:seo-specialist",
+      "profile": {
+        "skills": [
+          "seo-update-forensics",
+          "seo-measurement-loop"
+        ]
+      },
+      "title": {
+        "en": "Update window and clean comparison",
+        "ru": "Окно апдейта и чистое сравнение"
+      },
+      "prompt": "Procedure core-update-response: check the Search Status Dashboard for {{$inputs.site_url}}. If an update is still rolling out, set the freeze flag and a due date of T_end+7 and return status frozen. Otherwise build aligned clean comparison windows, the observation log and the top-3 competitor gap. Return status proceed | frozen, freeze_due, log_path and windows_path.",
+      "out": {
+        "status": "proceed|frozen",
+        "freeze_due": "string",
+        "log_path": "string",
+        "windows_path": "string"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 20
+      }
+    },
+    {
+      "id": "mechanism",
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "specialist:seo-specialist",
+      "profile": {
+        "skills": [
+          "seo-update-forensics"
+        ]
+      },
+      "title": {
+        "en": "Drop mechanism",
+        "ru": "Механизм просадки"
+      },
+      "prompt": "Procedure gsc-drop-mechanism-classification: label the mechanism per affected cohort (ranking loss, SERP capture, demand contraction, noise); for pages whose clicks the SERP captured, add zero-click recovery tasks. Return mechanism_path and labels.",
+      "out": {
+        "mechanism_path": "string",
+        "labels": "string[]"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 20
+      }
+    },
+    {
+      "id": "scope",
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "specialist:seo-specialist",
+      "profile": {
+        "skills": [
+          "seo-update-forensics",
+          "seo-tools"
+        ]
+      },
+      "title": {
+        "en": "Drop scope",
+        "ru": "Область просадки"
+      },
+      "prompt": "Procedure drop-scope-cohort-audit: merge GSC and crawl data, label the scope page | template | site and write the bucket specs for developers. Return scope and scope_path.",
+      "out": {
+        "scope": "page|template|site",
+        "scope_path": "string"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 20
+      }
+    },
+    {
+      "id": "layers",
+      "type": "parallel",
+      "for_each": [
+        "demand",
+        "serp_layout",
+        "index_canonical",
+        "crawl",
+        "bloat",
+        "content",
+        "trust",
+        "ux_cwv",
+        "architecture",
+        "freshness"
+      ],
+      "title": {
+        "en": "Layer checks",
+        "ru": "Проверки слоёв"
+      },
+      "child": {
+        "type": "agent",
+        "role": "specialist:seo-specialist",
+        "profile": {
+          "skills": [
+            "seo-update-forensics",
+            "seo-tech-audit-kit",
+            "seo-evidence-contract"
+          ]
+        },
+        "prompt": "Layer {{item}} of the post-update drop diagnosis for {{$inputs.site_url}}: run the check of this layer only, every claim grounded in the pull data or marked not-measured. Return findings_paths, defects, skipped (true when the layer needs data the owner did not give) and skipped_branches.",
+        "out": {
+          "findings_paths": "string[]",
+          "defects": "Finding[]",
+          "skipped": "bool",
+          "skipped_branches": "string[]"
+        },
+        "produces": [
+          {
+            "kind": "report",
+            "version": 1
+          }
+        ]
+      },
+      "join": {
+        "policy": "all_or_low_confidence",
+        "out": {
+          "findings_paths": "string[]",
+          "defects": "Finding[]",
+          "skipped_branches": "string[]"
+        }
+      },
+      "concurrency": 4
+    },
+    {
+      "id": "contour",
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "specialist:seo-specialist",
+      "profile": {
+        "skills": [
+          "seo-update-forensics"
+        ]
+      },
+      "title": {
+        "en": "Fix contour",
+        "ru": "Контур исправления"
+      },
+      "prompt": "Procedure defect-scope-diagnosis: pick the fix contour from the layer findings — single_url | template | device | geo | fact | role_decay. Return contour and contour_path.",
+      "out": {
+        "contour": "single_url|template|device|geo|fact|role_decay",
+        "contour_path": "string"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 15
+      }
+    },
+    {
+      "id": "hypotheses",
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "specialist:seo-specialist",
+      "profile": {
+        "skills": [
+          "seo-update-forensics",
+          "seo-measurement-loop",
+          "seo-evidence-contract"
+        ]
+      },
+      "title": {
+        "en": "Hypothesis cards and pilot",
+        "ru": "Карты гипотез и пилот"
+      },
+      "prompt": "Procedures seo-hypothesis-card and post-update-recovery-pilot: hypothesis cards scored with evidence and a falsifier each, then a staged recovery pilot plan. Return hypotheses_path, pilot_path and top_count.",
+      "out": {
+        "hypotheses_path": "string",
+        "pilot_path": "string",
+        "top_count": "int"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 25
+      }
+    },
+    {
+      "id": "critic",
+      "produces": [
+        {
+          "kind": "verdict",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "auditor",
+      "session": "new",
+      "title": {
+        "en": "Falsify the hypotheses",
+        "ru": "Фальсификация гипотез"
+      },
+      "prompt": "Try to falsify every top hypothesis using only the data in the package; a hypothesis the data cannot kill stays. Status pass | rework | block; findings cite the card and the evidence, severity one of critical, high, medium, low, info.",
+      "out": {
+        "status": "pass|rework|block",
+        "findings": "Finding[]"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 25
+      }
+    },
+    {
+      "id": "review",
+      "type": "human",
+      "role": "owner",
+      "title": {
+        "en": "Approve the recovery pilot",
+        "ru": "Утверждение пилота восстановления"
+      },
+      "prompt": "Choose which staged recovery pilot runs; decline sends the diagnosis back without a pilot.",
+      "out": {
+        "answer": "string",
+        "answer_kind": "approved|declined|timeout"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 240
+      }
+    },
+    {
+      "id": "package",
+      "type": "action",
+      "action": "fs.write",
+      "path": ".agents/seo/drop-diagnosis/{{date}}/",
+      "files": [
+        "diagnosis.md",
+        "hypotheses.md",
+        "pilot.md"
+      ],
+      "note": "diagnosis log by segment and layer, scored hypothesis cards, the approved pilot; route follow-ups to seo-page-refresh / seo-tech-audit / seo-structure-audit / seo-trust",
+      "out": {
+        "diagnosis_path": "string"
+      }
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "done",
+        "diagnosis_path": "package.diagnosis_path",
+        "hypotheses_path": "hypotheses.hypotheses_path",
+        "pilot_path": "hypotheses.pilot_path"
+      }
+    },
+    {
+      "id": "partial",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "partial"
+      }
+    },
+    {
+      "id": "frozen",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "frozen",
+        "freeze_due": "intake.freeze_due"
+      }
+    },
+    {
+      "id": "blocked",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "blocked"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "intake",
+      "to": "frozen",
+      "pass": "artifact",
+      "when": "intake.status == 'frozen'"
+    },
+    {
+      "from": "intake",
+      "to": "mechanism",
+      "pass": "artifact"
+    },
+    {
+      "from": "mechanism",
+      "to": "scope",
+      "pass": "artifact"
+    },
+    {
+      "from": "scope",
+      "to": "layers",
+      "pass": "artifact"
+    },
+    {
+      "from": "layers",
+      "to": "contour",
+      "pass": "artifact"
+    },
+    {
+      "from": "contour",
+      "to": "hypotheses",
+      "pass": "artifact"
+    },
+    {
+      "from": "hypotheses",
+      "to": "critic",
+      "pass": "artifact"
+    },
+    {
+      "from": "critic",
+      "to": "hypotheses",
+      "pass": "same-session",
+      "when": "critic.status == 'rework' && visits('critic') < 2",
+      "label": "rework hypotheses"
+    },
+    {
+      "from": "critic",
+      "to": "review",
+      "pass": "artifact",
+      "when": "critic.status == 'pass'"
+    },
+    {
+      "from": "critic",
+      "to": "blocked",
+      "pass": "artifact"
+    },
+    {
+      "from": "review",
+      "to": "package",
+      "pass": "artifact",
+      "when": "review.answer_kind == 'approved'"
+    },
+    {
+      "from": "review",
+      "to": "partial",
+      "pass": "artifact"
+    },
+    {
+      "from": "package",
+      "to": "done",
+      "pass": "artifact"
+    }
+  ],
+  "test": {
+    "id": "sdd-1",
+    "sim": {
+      "input": {
+        "site_url": "https://example.ru",
+        "affected_urls": [
+          "/catalog/a"
+        ]
+      },
+      "stubs": {
+        "intake": {
+          "status": "proceed",
+          "freeze_due": "",
+          "log_path": "log.md",
+          "windows_path": "windows.md"
+        },
+        "mechanism": {
+          "mechanism_path": "mechanism.md",
+          "labels": [
+            "ranking"
+          ]
+        },
+        "scope": {
+          "scope": "template",
+          "scope_path": "scope.md"
+        },
+        "layers": {
+          "findings_paths": [
+            "layer.md"
+          ],
+          "defects": [],
+          "skipped_branches": []
+        },
+        "contour": {
+          "contour": "template",
+          "contour_path": "contour.md"
+        },
+        "hypotheses": {
+          "hypotheses_path": "hypotheses.md",
+          "pilot_path": "pilot.md",
+          "top_count": 3
+        },
+        "critic": {
+          "status": "pass",
+          "findings": []
+        },
+        "package": {
+          "diagnosis_path": ".agents/seo/drop-diagnosis/2026-11-06/diagnosis.md"
+        }
+      },
+      "humans": {
+        "review": {
+          "answer": "pilot A",
+          "answer_kind": "approved"
+        }
+      },
+      "expect_path": [
+        "intake",
+        "mechanism",
+        "scope",
+        "layers",
+        "contour",
+        "hypotheses",
+        "critic",
+        "review",
+        "package",
+        "done"
+      ],
+      "expect_outputs": [
+        "status == 'done'",
+        "hypotheses_path != ''"
+      ]
+    },
+    "live": "прогон диагноза по завершившемуся апдейту или ведру drop из seo-monitor",
+    "note": "Tested on stubs. During an active core update the intake freezes the run until T_end+7; fixes run in other graphs."
+  },
+  "goal_check": "artifact"
+}

@@ -70,6 +70,10 @@ import seoResearch from "../../../workflows/seo-research.json";
 import seoRelease from "../../../workflows/seo-release.json";
 import seoMonitor from "../../../workflows/seo-monitor.json";
 import seoProjectIntake from "../../../workflows/seo-project-intake.json";
+import seoDropDiagnosis from "../../../workflows/seo-drop-diagnosis.json";
+import seoTechAudit from "../../../workflows/seo-tech-audit.json";
+import seoPageRefresh from "../../../workflows/seo-page-refresh.json";
+import seoStructureAudit from "../../../workflows/seo-structure-audit.json";
 import socialPost from "../../../workflows/social-post.json";
 import telegramSend from "../../../workflows/telegram-send.json";
 import testGen from "../../../workflows/test-gen.json";
@@ -170,6 +174,10 @@ export const BUILTIN_SOURCES: ReadonlyArray<{ name: string; value: unknown }> = 
   { name: "seo-page.json", value: seoPage },
   { name: "seo-monitor.json", value: seoMonitor },
   { name: "seo-project-intake.json", value: seoProjectIntake },
+  { name: "seo-drop-diagnosis.json", value: seoDropDiagnosis },
+  { name: "seo-tech-audit.json", value: seoTechAudit },
+  { name: "seo-page-refresh.json", value: seoPageRefresh },
+  { name: "seo-structure-audit.json", value: seoStructureAudit },
   { name: "seo-release.json", value: seoRelease },
   { name: "seo-research.json", value: seoResearch },
   { name: "social-post.json", value: socialPost },

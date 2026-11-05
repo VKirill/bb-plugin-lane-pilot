@@ -1,0 +1,498 @@
+{
+  "id": "seo-page-refresh",
+  "name": {
+    "en": "SEO page refresh",
+    "ru": "Обновление SEO-страницы"
+  },
+  "description": {
+    "en": "Maintenance of an existing URL: pull GSC and SERP data, diagnose why the page stalls or drops, pick one hypothesis, then apply the matching fix - a CTR snippet rewrite, a declutter and Information Gain upgrade spec for seo-page, a targeted fact update, or an H2 spin-off spec into child pages. Each change gets a measured single-URL experiment and the owner's approval before it becomes a release item.",
+    "ru": "Поддержка существующего URL: выгрузка данных GSC и SERP, диагноз причины стагнации или просадки, одна гипотеза, затем подходящее исправление — переписывание сниппета под CTR, апгрейд через seo-page с чисткой и Information Gain, точечное обновление факта или вынос H2 в дочерние страницы. Каждое изменение получает измеряемый эксперимент на одном URL и одобрение владельца до превращения в релизный элемент."
+  },
+  "examples": {
+    "ru": [
+      "Обнови страницу, которая застряла на 12-й позиции",
+      "Страница потеряла CTR — разберись и почини сниппет",
+      "Факт изменился: синхронизируй зависимые блоки на сайте"
+    ],
+    "en": [
+      "Refresh the page stuck at position 12",
+      "The page lost CTR — diagnose and fix the snippet",
+      "A fact changed: sync the dependent blocks on the site"
+    ]
+  },
+  "not_for": [
+    "seo-page",
+    "seo-structure-audit",
+    "seo-release"
+  ],
+  "status": "published",
+  "tags": [
+    "seo",
+    "drmax"
+  ],
+  "inputs": {
+    "site_url": {
+      "type": "string",
+      "required": true
+    },
+    "url_list": {
+      "type": "string[]",
+      "required": true
+    },
+    "reason": {
+      "type": "string",
+      "default": "",
+      "note": "сигнал из seo-monitor или seo-drop-diagnosis"
+    },
+    "mode": {
+      "type": "auto|ctr|quality|fact_update|split",
+      "default": "auto"
+    },
+    "fact_revision": {
+      "type": "string",
+      "default": "",
+      "note": "новая редакция факта при mode fact_update"
+    }
+  },
+  "outputs": {
+    "status": "done|partial|blocked",
+    "diagnosis_path": "string?",
+    "experiment_path": "string?",
+    "release_items": "string[]?"
+  },
+  "requires": {
+    "plugins": [
+      "lane-pilot"
+    ],
+    "skills": [
+      "gist-content-logic",
+      "drmax-signalforge",
+      "drmax-brandcore",
+      "seo-tools",
+      "google",
+      "seo-prompt-kit",
+      "seo-update-forensics",
+      "seo-measurement-loop",
+      "seo-evidence-contract"
+    ],
+    "browserSession": true
+  },
+  "budget": {
+    "max_minutes": 180,
+    "max_usd": 12
+  },
+  "entry": "pull",
+  "nodes": [
+    {
+      "id": "pull",
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "errand-browser",
+      "profile": {
+        "skills": [
+          "google",
+          "seo-tools"
+        ]
+      },
+      "title": {
+        "en": "Pull the URL data",
+        "ru": "Выгрузка данных по URL"
+      },
+      "prompt": "For {{$inputs.url_list}} on {{$inputs.site_url}}: GSC query and page data for 3-16 months, URL Inspection, a live HTML snapshot and a SERP screenshot per URL. Return pull_path and urls.",
+      "out": {
+        "pull_path": "string",
+        "urls": "int"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 30
+      }
+    },
+    {
+      "id": "diagnose",
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "specialist:seo-specialist",
+      "profile": {
+        "skills": [
+          "seo-update-forensics",
+          "seo-prompt-kit",
+          "seo-tools"
+        ]
+      },
+      "title": {
+        "en": "Diagnose the stall",
+        "ru": "Диагноз стагнации"
+      },
+      "prompt": "Procedures ranking-pipeline-stage-diagnosis and page-and-section-audit plus the SERP barrier check: a bottom-up audit of the 5-stage ranking pipeline per URL with a delta against the last audit. Return diagnosis_path and stage.",
+      "out": {
+        "diagnosis_path": "string",
+        "stage": "string"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 30
+      }
+    },
+    {
+      "id": "route",
+      "produces": [
+        {
+          "kind": "verdict",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "plan-critic",
+      "session": "new",
+      "title": {
+        "en": "One hypothesis per URL",
+        "ru": "Одна гипотеза на URL"
+      },
+      "prompt": "Pick one hypothesis per URL with a falsifier and choose the fix branch; honor input mode unless it is auto. Return status pass | rework | block, branch ctr | upgrade | fact_update | split, hypothesis_path and url; findings cite the URL, severity one of critical, high, medium, low, info.",
+      "out": {
+        "status": "pass|rework|block",
+        "branch": "ctr|upgrade|fact_update|split",
+        "hypothesis_path": "string",
+        "url": "string"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 20
+      }
+    },
+    {
+      "id": "ctr_fix",
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "specialist:seo-specialist",
+      "profile": {
+        "skills": [
+          "seo-measurement-loop",
+          "seo-prompt-kit"
+        ]
+      },
+      "title": {
+        "en": "CTR snippet fix",
+        "ru": "Правка сниппета под CTR"
+      },
+      "prompt": "Procedure gsc-snippet-ctr-audit on {{route.url}}: positions 2-10 with CTR below the norm — rewrite the snippet and the markup, log before and after. Return fix_path and release_item.",
+      "out": {
+        "fix_path": "string",
+        "release_item": "string"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 20
+      }
+    },
+    {
+      "id": "spec",
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "specialist:seo-specialist",
+      "profile": {
+        "skills": [
+          "gist-content-logic",
+          "seo-prompt-kit",
+          "seo-page-templates"
+        ]
+      },
+      "title": {
+        "en": "Upgrade or spin-off spec",
+        "ru": "Спецификация апгрейда или выноса"
+      },
+      "prompt": "Branch {{route.branch}} on {{route.url}}: upgrade = declutter, content-effort and E-E-A-T upgrade spec with Information Gain and an honest freshness refresh (procedures page-quality-upgrade, page-utility-enrichment, content-freshness-refresh); split = spin off the H2 stalling at positions 8-30, parent teaser plus Daughter link and child briefs (split-spinoff-incubation, workshop-page-to-node). The spec becomes a rewrite item for seo-page, which the parent graph or the owner starts. Return spec_path and rewrite_item.",
+      "out": {
+        "spec_path": "string",
+        "rewrite_item": "string"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 25
+      }
+    },
+    {
+      "id": "fact_update",
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "specialist:seo-specialist",
+      "profile": {
+        "skills": [
+          "drmax-brandcore",
+          "seo-measurement-loop"
+        ]
+      },
+      "title": {
+        "en": "Targeted fact update",
+        "ru": "Точечное обновление факта"
+      },
+      "prompt": "Procedures targeted-fact-update and fact-contradiction-resolution for revision {{$inputs.fact_revision}}: find contradictions through the fact registry, recalculate dependent blocks, metadata and comparisons, log the version. Return fix_path, dependent_count and release_item.",
+      "out": {
+        "fix_path": "string",
+        "dependent_count": "int",
+        "release_item": "string"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 25
+      }
+    },
+    {
+      "id": "experiment",
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "specialist:seo-specialist",
+      "profile": {
+        "skills": [
+          "drmax-signalforge",
+          "seo-measurement-loop"
+        ]
+      },
+      "title": {
+        "en": "Experiment contract",
+        "ru": "Контракт эксперимента"
+      },
+      "prompt": "Procedure signalforge-page-experiment: one change, the primary and control metrics, the day-28 verdict date written to the SEO Change Log. Return experiment_path and due_date.",
+      "out": {
+        "experiment_path": "string",
+        "due_date": "string"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 20
+      }
+    },
+    {
+      "id": "approve",
+      "type": "human",
+      "role": "owner",
+      "title": {
+        "en": "Approve the change set",
+        "ru": "Утверждение набора изменений"
+      },
+      "prompt": "Approve the fix package and the experiment contract before they go to seo-release; decline keeps the diagnosis without a release item.",
+      "out": {
+        "answer": "string",
+        "answer_kind": "approved|declined|timeout"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 240
+      }
+    },
+    {
+      "id": "package",
+      "type": "action",
+      "action": "fs.write",
+      "path": ".agents/seo/page-refresh/{{date}}/",
+      "files": [
+        "diagnosis.md",
+        "fix-package.md",
+        "experiment.md",
+        "release-items.json",
+        "rewrite-items.json"
+      ],
+      "note": "diagnosis per URL, the fix package, the experiment contract; rewrite items go to seo-page, release items to seo-release",
+      "out": {
+        "package_path": "string"
+      }
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "done",
+        "diagnosis_path": "diagnose.diagnosis_path",
+        "experiment_path": "experiment.experiment_path"
+      }
+    },
+    {
+      "id": "partial",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "partial",
+        "diagnosis_path": "diagnose.diagnosis_path"
+      }
+    },
+    {
+      "id": "blocked",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "blocked"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "pull",
+      "to": "diagnose",
+      "pass": "artifact"
+    },
+    {
+      "from": "diagnose",
+      "to": "route",
+      "pass": "artifact"
+    },
+    {
+      "from": "route",
+      "to": "ctr_fix",
+      "pass": "artifact",
+      "when": "route.branch == 'ctr'"
+    },
+    {
+      "from": "route",
+      "to": "spec",
+      "pass": "artifact",
+      "when": "route.branch == 'upgrade'"
+    },
+    {
+      "from": "route",
+      "to": "fact_update",
+      "pass": "artifact",
+      "when": "route.branch == 'fact_update'"
+    },
+    {
+      "from": "route",
+      "to": "spec",
+      "pass": "artifact",
+      "when": "route.branch == 'split'"
+    },
+    {
+      "from": "route",
+      "to": "blocked",
+      "pass": "artifact"
+    },
+    {
+      "from": "ctr_fix",
+      "to": "experiment",
+      "pass": "artifact"
+    },
+    {
+      "from": "fact_update",
+      "to": "experiment",
+      "pass": "artifact"
+    },
+    {
+      "from": "spec",
+      "to": "experiment",
+      "pass": "artifact"
+    },
+    {
+      "from": "experiment",
+      "to": "approve",
+      "pass": "artifact"
+    },
+    {
+      "from": "approve",
+      "to": "package",
+      "pass": "artifact",
+      "when": "approve.answer_kind == 'approved'"
+    },
+    {
+      "from": "approve",
+      "to": "partial",
+      "pass": "artifact"
+    },
+    {
+      "from": "package",
+      "to": "done",
+      "pass": "artifact"
+    }
+  ],
+  "test": {
+    "id": "spr-1",
+    "sim": {
+      "input": {
+        "site_url": "https://example.ru",
+        "url_list": [
+          "/old-page"
+        ],
+        "mode": "auto"
+      },
+      "stubs": {
+        "pull": {
+          "pull_path": "pull/",
+          "urls": 1
+        },
+        "diagnose": {
+          "diagnosis_path": "diagnosis.md",
+          "stage": "ranking"
+        },
+        "route": {
+          "status": "pass",
+          "branch": "upgrade",
+          "hypothesis_path": "hypothesis.md",
+          "url": "/old-page"
+        },
+        "experiment": {
+          "experiment_path": "experiment.md",
+          "due_date": "2026-12-04"
+        },
+        "package": {
+          "package_path": ".agents/seo/page-refresh/2026-11-06/"
+        },
+        "spec": {
+          "spec_path": "spec.md",
+          "rewrite_item": "rewrite-item.json"
+        }
+      },
+      "humans": {
+        "approve": {
+          "answer": "",
+          "answer_kind": "approved"
+        }
+      },
+      "expect_path": [
+        "pull",
+        "diagnose",
+        "route",
+        "spec",
+        "experiment",
+        "approve",
+        "package",
+        "done"
+      ],
+      "expect_outputs": [
+        "status == 'done'",
+        "experiment_path != ''"
+      ]
+    },
+    "live": "обслуживание URL по сигналу seo-monitor или seo-drop-diagnosis",
+    "note": "Tested on stubs. One hypothesis picks one fix branch; rewrite items are packaged for seo-page (the subworkflow depth cap of 3 keeps seo-page out of this graph when it runs under seo-monitor)."
+  },
+  "goal_check": "artifact"
+}

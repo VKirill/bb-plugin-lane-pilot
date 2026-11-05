@@ -1,0 +1,437 @@
+{
+  "id": "seo-tech-audit",
+  "name": {
+    "en": "SEO technical audit",
+    "ru": "Технический SEO-аудит"
+  },
+  "description": {
+    "en": "Full technical audit of a site: GSC baseline, a JS-rendering crawl and Googlebot log checks in parallel, then a per-area specialist audit (index, robots, sitemap, canonical, parameters, pagination, rendering, CWV, hreflang, traps, duplicates). Everything lands in a Master Audit Matrix and a prioritized root-cause backlog with a definition of done per ticket; the tickets become release items for seo-release.",
+    "ru": "Полный технический аудит сайта: базовая линия GSC, краул с JS-рендерингом и проверка логов Googlebot параллельно, затем специализированный аудит по каждой области (индекс, robots, карта, canonical, параметры, пагинация, рендеринг, CWV, hreflang, ловушки, дубли). Всё сводится в Master Audit Matrix и приоритизированный бэклог первопричин с definition of done по каждому тикету; тикеты становятся релизными элементами для seo-release."
+  },
+  "examples": {
+    "ru": [
+      "Проведи полный технический аудит сайта",
+      "Собери Master Audit Matrix и бэклог дефектов",
+      "Аудит индексации, canonical и краулингового бюджета"
+    ],
+    "en": [
+      "Run a full technical audit of the site",
+      "Build the Master Audit Matrix and the defect backlog",
+      "Audit indexation, canonicals and crawl budget"
+    ]
+  },
+  "not_for": [
+    "seo-monitor",
+    "seo-drop-diagnosis",
+    "seo-release"
+  ],
+  "status": "published",
+  "tags": [
+    "seo",
+    "drmax"
+  ],
+  "inputs": {
+    "site_url": {
+      "type": "string",
+      "required": true
+    },
+    "project_passport_path": {
+      "type": "string",
+      "default": ""
+    },
+    "template_list_path": {
+      "type": "string",
+      "default": "",
+      "note": "список CMS-шаблонов, если есть"
+    }
+  },
+  "outputs": {
+    "status": "done|partial|blocked",
+    "matrix_path": "string?",
+    "backlog_path": "string?",
+    "release_items": "string[]?"
+  },
+  "requires": {
+    "plugins": [
+      "lane-pilot"
+    ],
+    "skills": [
+      "seo-agent",
+      "google",
+      "yandex",
+      "seo-tech-audit-kit",
+      "seo-evidence-contract",
+      "tavily"
+    ],
+    "browserSession": true
+  },
+  "budget": {
+    "max_minutes": 240,
+    "max_usd": 15
+  },
+  "entry": "access",
+  "nodes": [
+    {
+      "id": "access",
+      "type": "human",
+      "role": "owner",
+      "title": {
+        "en": "Logs and crawl export",
+        "ru": "Логи и выгрузка краула"
+      },
+      "prompt": "Provide server logs for 14-30 days and any crawl export (paths or empty). Log-dependent branches are skipped without logs.",
+      "out": {
+        "logs_path": "string",
+        "crawl_path": "string",
+        "answer_kind": "given|timeout"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 240
+      }
+    },
+    {
+      "id": "intake",
+      "type": "parallel",
+      "for_each": [
+        "gsc",
+        "crawl",
+        "logs"
+      ],
+      "title": {
+        "en": "Intake streams",
+        "ru": "Входные потоки"
+      },
+      "child": {
+        "type": "agent",
+        "role": "specialist:seo-specialist",
+        "profile": {
+          "skills": [
+            "seo-tech-audit-kit",
+            "google",
+            "seo-evidence-contract"
+          ]
+        },
+        "prompt": "Intake {{item}} for {{$inputs.site_url}}: gsc = technical baseline per template; crawl = JS-rendering crawl with crawl-budget leaks (use {{access.crawl_path}} when given); logs = verified Googlebot patterns and phantom URLs (skipped when {{access.logs_path}} is empty). Cross-check with the sitemap. Return findings_paths, defects, skipped and skipped_branches.",
+        "out": {
+          "findings_paths": "string[]",
+          "defects": "Finding[]",
+          "skipped": "bool",
+          "skipped_branches": "string[]"
+        },
+        "produces": [
+          {
+            "kind": "report",
+            "version": 1
+          }
+        ]
+      },
+      "join": {
+        "policy": "all_or_low_confidence",
+        "out": {
+          "findings_paths": "string[]",
+          "defects": "Finding[]",
+          "skipped_branches": "string[]"
+        }
+      },
+      "concurrency": 3
+    },
+    {
+      "id": "specialists",
+      "type": "parallel",
+      "for_each": [
+        "index",
+        "robots",
+        "sitemap",
+        "canonical",
+        "parameters",
+        "pagination",
+        "rendering",
+        "dom_diff",
+        "cwv",
+        "hreflang",
+        "traps",
+        "duplicates"
+      ],
+      "title": {
+        "en": "Specialist audits",
+        "ru": "Аудиты по областям"
+      },
+      "child": {
+        "type": "agent",
+        "role": "specialist:seo-specialist",
+        "profile": {
+          "skills": [
+            "seo-tech-audit-kit",
+            "seo-agent",
+            "seo-evidence-contract"
+          ]
+        },
+        "prompt": "Audit area {{item}} of {{$inputs.site_url}}: index hygiene, robots.txt, sitemap, canonical alignment, parameter registry, pagination, rendering and mobile parity, DOM diff, CWV, hreflang, spider traps or duplicates — one defect table per template, grounded or marked not-measured. Return findings_paths, defects, skipped and skipped_branches.",
+        "out": {
+          "findings_paths": "string[]",
+          "defects": "Finding[]",
+          "skipped": "bool",
+          "skipped_branches": "string[]"
+        },
+        "produces": [
+          {
+            "kind": "report",
+            "version": 1
+          }
+        ]
+      },
+      "join": {
+        "policy": "all_or_low_confidence",
+        "out": {
+          "findings_paths": "string[]",
+          "defects": "Finding[]",
+          "skipped_branches": "string[]"
+        }
+      },
+      "concurrency": 4
+    },
+    {
+      "id": "matrix",
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "specialist:seo-specialist",
+      "profile": {
+        "skills": [
+          "seo-tech-audit-kit",
+          "seo-evidence-contract"
+        ]
+      },
+      "title": {
+        "en": "Master Audit Matrix",
+        "ru": "Master Audit Matrix"
+      },
+      "prompt": "Procedure master-audit-matrix: join every defect row into the matrix with conflict flags and the three-cohort crawl distribution. Return matrix_path and rows.",
+      "out": {
+        "matrix_path": "string",
+        "rows": "int"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 25
+      }
+    },
+    {
+      "id": "backlog",
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "specialist:seo-specialist",
+      "profile": {
+        "skills": [
+          "seo-tech-audit-kit",
+          "seo-evidence-contract"
+        ]
+      },
+      "title": {
+        "en": "Root-cause backlog",
+        "ru": "Бэклог первопричин"
+      },
+      "prompt": "Procedure defect-backlog-prioritization: aggregate matrix rows into root-cause tickets with a definition of done and verification method, prioritize and route to teams; each ticket is a release item for seo-release. Return backlog_path, tickets and release_items.",
+      "out": {
+        "backlog_path": "string",
+        "tickets": "int",
+        "release_items": "string[]"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 25
+      }
+    },
+    {
+      "id": "critic",
+      "produces": [
+        {
+          "kind": "verdict",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "plan-critic",
+      "session": "new",
+      "title": {
+        "en": "Backlog critique",
+        "ru": "Критика бэклога"
+      },
+      "prompt": "Every ticket has evidence rows, a scope, a definition of done and a verification method; reject row-level noise that is not a defect. Status pass | rework | block; findings cite the ticket, severity one of critical, high, medium, low, info.",
+      "out": {
+        "status": "pass|rework|block",
+        "findings": "Finding[]"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 25
+      }
+    },
+    {
+      "id": "package",
+      "type": "action",
+      "action": "fs.write",
+      "path": ".agents/seo/tech-audit/{{date}}/",
+      "files": [
+        "matrix.csv",
+        "backlog.md",
+        "robots.diff",
+        "sitemap-plan.md",
+        "release-items.json"
+      ],
+      "note": "the matrix, the prioritized backlog and the change sets; release items go to seo-release, the graph itself changes no site",
+      "out": {
+        "package_path": "string"
+      }
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "done",
+        "matrix_path": "matrix.matrix_path",
+        "backlog_path": "backlog.backlog_path",
+        "release_items": "backlog.release_items"
+      }
+    },
+    {
+      "id": "blocked",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "blocked"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "access",
+      "to": "intake",
+      "pass": "artifact"
+    },
+    {
+      "from": "intake",
+      "to": "specialists",
+      "pass": "artifact"
+    },
+    {
+      "from": "specialists",
+      "to": "matrix",
+      "pass": "artifact"
+    },
+    {
+      "from": "matrix",
+      "to": "backlog",
+      "pass": "artifact"
+    },
+    {
+      "from": "backlog",
+      "to": "critic",
+      "pass": "artifact"
+    },
+    {
+      "from": "critic",
+      "to": "backlog",
+      "pass": "same-session",
+      "when": "critic.status == 'rework' && visits('critic') < 2",
+      "label": "rework backlog"
+    },
+    {
+      "from": "critic",
+      "to": "package",
+      "pass": "artifact",
+      "when": "critic.status == 'pass'"
+    },
+    {
+      "from": "critic",
+      "to": "blocked",
+      "pass": "artifact"
+    },
+    {
+      "from": "package",
+      "to": "done",
+      "pass": "artifact"
+    }
+  ],
+  "test": {
+    "id": "sta-1",
+    "sim": {
+      "input": {
+        "site_url": "https://example.ru"
+      },
+      "stubs": {
+        "intake": {
+          "findings_paths": [
+            "gsc.md",
+            "crawl.md"
+          ],
+          "defects": [],
+          "skipped_branches": [
+            "logs"
+          ]
+        },
+        "specialists": {
+          "findings_paths": [
+            "index.md",
+            "canonical.md"
+          ],
+          "defects": [],
+          "skipped_branches": []
+        },
+        "matrix": {
+          "matrix_path": "matrix.csv",
+          "rows": 24
+        },
+        "backlog": {
+          "backlog_path": "backlog.md",
+          "tickets": 6,
+          "release_items": [
+            ".agents/seo/release/r1/item.json"
+          ]
+        },
+        "critic": {
+          "status": "pass",
+          "findings": []
+        },
+        "package": {
+          "package_path": ".agents/seo/tech-audit/2026-11-06/"
+        }
+      },
+      "humans": {
+        "access": {
+          "logs_path": "",
+          "crawl_path": "",
+          "answer_kind": "given"
+        }
+      },
+      "expect_path": [
+        "access",
+        "intake",
+        "specialists",
+        "matrix",
+        "backlog",
+        "critic",
+        "package",
+        "done"
+      ],
+      "expect_outputs": [
+        "status == 'done'",
+        "backlog_path != ''"
+      ]
+    },
+    "live": "полный техаудит по паспорту проекта или по сигналу seo-monitor",
+    "note": "Tested on stubs. Log branches skip without the owner's logs; the graph writes a backlog, seo-release ships the fixes."
+  },
+  "goal_check": "artifact"
+}
