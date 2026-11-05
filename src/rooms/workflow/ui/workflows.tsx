@@ -14,6 +14,7 @@ import { WorkflowDetail, type NodePanelRenderer } from "./workflow-detail";
 import { WorkflowDraftDetail } from "./workflow-draft-detail";
 import { listDrafts, startArchitect, type DraftRow } from "./workflow-drafts";
 import { CategoryChips, CategorySection, groupByCategory, shortTime, type LibraryView } from "./workflow-library-parts";
+import { ExportGraphsButton } from "./workflow-export";
 import type { WorkflowCategory } from "../categories";
 
 type Listing = z.infer<(typeof rpcContract)["workflow_list"]["output"]>;
@@ -164,6 +165,8 @@ export function WorkflowsScreen({ locale, projectId, architectProjectId = projec
         </div>
         <div className="flex shrink-0 flex-wrap items-center gap-2">
           {headerActions}
+          {/* «Selected» exports what the search and filters show now. */}
+          <ExportGraphsButton locale={locale} projectId={projectId} selectedIds={shown.length < (listing?.workflows.length ?? 0) ? shown.map((row) => row.id) : []} />
           {architectProjectId ? (
             <Button type="button" size="sm" className="lp-accent h-8 shrink-0 px-3 text-sm" disabled={architect.busy} data-testid="wf-architect-start" onClick={() => void buildWithArchitect()}>
               {architect.busy ? t("wfArchitectStarting") : t("wfArchitectBuild")}
