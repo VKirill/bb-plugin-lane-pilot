@@ -367,7 +367,8 @@ export function WorkflowMap({ locale, projectId, onOpenGraph }: { locale: Locale
 
       <div className="relative min-h-[480px] flex-1 overflow-hidden rounded-lg border border-border" data-testid="wf-map-canvas" data-layout={ready ? "ready" : "loading"}>
         {layout ? (
-          <ReactFlowProvider>
+          // An absolute box: React Flow fills `height: 100%`, which resolves to 0 inside a flex item that has only a min-height (the map was blank).
+          <div className="absolute inset-0"><ReactFlowProvider>
             <ReactFlow
               nodes={layout.nodes} edges={layout.edges} nodeTypes={nodeTypes}
               onNodeClick={onNodeClick} onPaneClick={() => setSelected(null)}
@@ -388,7 +389,7 @@ export function WorkflowMap({ locale, projectId, onOpenGraph }: { locale: Locale
                 </div>
               </Panel>
             </ReactFlow>
-          </ReactFlowProvider>
+          </ReactFlowProvider></div>
         ) : null}
         {searching && filtered && found.graphs.size === 0 && found.steps.size === 0 ? (
           <div className="absolute left-1/2 top-3 -translate-x-1/2 rounded-md border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground" data-testid="wf-map-empty">{t("wmEmpty")}</div>
@@ -404,7 +405,6 @@ export function WorkflowMap({ locale, projectId, onOpenGraph }: { locale: Locale
               <Button type="button" size="sm" variant="ghost" className="h-7 px-2 text-xs" data-testid="wf-map-card-close" onClick={() => setSelected(null)}>{t("wmClose")}</Button>
             </div>
             <dl className="mt-3 space-y-2 text-xs">
-              <div><dt className="text-muted-foreground">{t((TYPE_LABEL[selected.step.type] ?? "wmTypeAgent") as Parameters<typeof t>[0])}</dt></div>
               {selected.step.facts.map((fact) => (
                 <div key={fact.label} data-testid="wf-map-fact"><dt className="text-muted-foreground">{fact.label}</dt><dd className="whitespace-pre-wrap break-words">{fact.value}</dd></div>
               ))}
