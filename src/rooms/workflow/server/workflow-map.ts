@@ -10,6 +10,7 @@ export type WorkflowMapData = Omit<MapOutput, "project">;
 export type MapStats = Pick<MapOutput["graphs"][number], "runs30d" | "successRate">;
 
 const PROMPT_LIMIT = 200;
+const pickStats = ({ runs30d, successRate }: MapStats): MapStats => ({ runs30d, successRate });
 
 /** The role a step names: an agent's own, a human's (usually "owner"); the other types have none. */
 const roleOf = (node: WorkflowNode): string | null =>
@@ -43,7 +44,8 @@ export function buildWorkflowMap(items: StoredWorkflow[], statsOf: (workflowId: 
     graphs.push({
       id: workflow.id, name: workflow.name, category: workflowCategory(workflow), tags: workflow.tags,
       scope: item.origin, status: workflow.status,
-      ...statsOf(workflow.id),
+      // Only the two counters the map shows: the library's stats carry a dozen more fields the strict output refuses.
+      ...pickStats(statsOf(workflow.id)),
     });
     for (const node of workflow.nodes) {
       if (node.type === "note") continue;

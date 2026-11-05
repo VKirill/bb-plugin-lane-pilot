@@ -48,3 +48,13 @@ describe("workflow map builder", () => {
     expect(chainsmith!.prompt!.length).toBeLessThanOrEqual(200);
   });
 });
+
+it("keeps only the map's two counters when the library hands over its full stats row", async () => {
+  const { rpcContract } = await import("../src/rooms/contracts");
+  const { parseWorkflowObject } = await import("@lane-pilot/workflow-engine");
+  const { BUILTIN_SOURCES } = await import("../src/rooms/workflow/builtin");
+  const items = BUILTIN_SOURCES.slice(0, 3).map((source) => ({ workflow: parseWorkflowObject(source.value).data, origin: "builtin" })) as never;
+  const fullStats = () => ({ runs: 4, succeeded: 3, failed: 1, active: 0, runs30d: 2, successRate: 0.75, lastRunAt: 1, lastStatus: "done" }) as never;
+  const data = { ...buildWorkflowMap(items, fullStats, "v"), project: "not_requested" as const };
+  expect(rpcContract.workflow_map.output.safeParse(data).success).toBe(true);
+});
