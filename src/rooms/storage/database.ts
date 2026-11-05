@@ -692,8 +692,11 @@ export function getTask(db: LanePilotDatabase, taskId: string): {
  * dispatch moved into a git repository of a run folder without git), else the run's folder.
  */
 export function taskBasePath(db: LanePilotDatabase, runId: string, taskId: string): string | null {
-  const runPath = getRun(db, runId)?.writer_workspace_path ?? null;
-  const cwd = (getTask(db, taskId)?.contract as { project_cwd?: unknown } | undefined)?.project_cwd;
+  return checkoutBase(getRun(db, runId)?.writer_workspace_path ?? null, (getTask(db, taskId)?.contract as { project_cwd?: unknown } | undefined)?.project_cwd);
+}
+
+/** taskBasePath of a contract not saved yet: its project_cwd inside the run's folder, else the run's folder. */
+export function checkoutBase(runPath: string | null, cwd: unknown): string | null {
   if (!runPath || typeof cwd !== "string") return runPath;
   const rel = relative(resolve(runPath), resolve(cwd));
   return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel)) ? cwd : runPath;

@@ -31,7 +31,7 @@ import { attemptFeedback, isWriterStreamError, previousAttemptBrief } from "./wr
 import { trimCheckLogsIn } from "../log-trim";
 import { stickyTurnPromptWithRules } from "./writer-knowledge";
 import { parseMemorySettings } from "../../memory";
-import { isMainfixTask, ownsFromOuterBase, retargetTask , priorityRank, HOLD_FOREVER, laneCap, laneQueueOf } from "../../tasks";
+import { checkoutOwnsOverlap, isMainfixTask, retargetTask , priorityRank, HOLD_FOREVER, laneCap, laneQueueOf } from "../../tasks";
 import { openDatabase } from "../../storage";
 import { createWriterSticky } from "./sticky";
 import { WRITER_QUESTION_WAIT_TEXT } from "./question-default";
@@ -484,10 +484,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
             .some((dep) => dep !== row.task_id && latestTaskAttemptState(db, row.project_id, dep) !== "accepted")) return false;
           // A task of a repository inside this folder (or of the folder around this repository) is another checkout: it
           // waits only when the two own the same files, read from the outer folder.
-          if (base && rowBase !== base) {
-            const pair = rowBase && parsed.success ? ownsFromOuterBase(base, input.task.owns_paths, rowBase, parsed.data.owns_paths) : null;
-            return Boolean(pair && ownsPathsOverlap(pair[0], pair[1]));
-          }
+          if (base && rowBase !== base) return Boolean(rowBase && parsed.success && checkoutOwnsOverlap(base, input.task.owns_paths, rowBase, parsed.data.owns_paths));
           // One writer at a time per area: the next task of a page continues in its writer's thread once it is free.
           if (liveFolder) return true;
           if (parsed.success && sameArea(parsed.data.area, input.task.area)) return true;

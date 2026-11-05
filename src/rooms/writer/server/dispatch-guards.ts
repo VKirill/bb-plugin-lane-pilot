@@ -1,9 +1,9 @@
 import { taskV2Schema } from "../../contracts";
 import type { TaskV2 } from "../../contracts";
-import { batchShapeAdvice, medianTaskSize, topicHold, topicLoop, topicLoopMessage } from "../../tasks";
+import { batchShapeAdvice, checkoutOwnsOverlap, medianTaskSize, topicHold, topicLoop, topicLoopMessage } from "../../tasks";
 import type { LoopTask, OpenShape } from "../../tasks";
 import { taskFamily } from "../../runs";
-import { getTask, listOpenAttempts } from "../../storage";
+import { checkoutBase, getRun, getTask, listOpenAttempts, taskBasePath } from "../../storage";
 import type { LanePilotDatabase } from "../../storage";
 import type { Services } from "../../core/server";
 
@@ -67,13 +67,16 @@ export async function topicLoopStop(wall: Services["wall"] | undefined, runId: s
   return topicLoopMessage(found, hunt);
 }
 
-/** Advice on the queue the new task joins: the open tasks of its project it waits for, and the fix when three or more own one path. */
-export function batchAdviceFor(db: LanePilotDatabase, projectId: string, task: TaskV2): string[] {
+/** Advice on the queue the new task joins: the open tasks of its checkout it waits for, and the fix when three or more own one path. */
+export function batchAdviceFor(db: LanePilotDatabase, projectId: string, runId: string, task: TaskV2): string[] {
+  const base = checkoutBase(getRun(db, runId)?.writer_workspace_path ?? null, task.project_cwd);
   const open: OpenShape[] = [];
   for (const row of listOpenAttempts(db)) {
     if (row.project_id !== projectId || row.task_id === task.id || open.some((other) => other.id === row.task_id)) continue;
     const parsed = taskV2Schema.safeParse(getTask(db, row.task_id)?.contract);
-    if (parsed.success) open.push({ id: row.task_id, ownsPaths: parsed.data.owns_paths, dependsOn: parsed.data.depends_on });
+    // Another repository of the BB project is another queue: the scheduler never holds a task for it (checkoutOwnsOverlap).
+    if (!parsed.success || !checkoutOwnsOverlap(base, task.owns_paths, taskBasePath(db, row.run_id, row.task_id), parsed.data.owns_paths)) continue;
+    open.push({ id: row.task_id, ownsPaths: parsed.data.owns_paths, dependsOn: parsed.data.depends_on });
   }
   return batchShapeAdvice({ id: task.id, ownsPaths: task.owns_paths, dependsOn: task.depends_on }, open, medianTaskSize(db, projectId));
 }

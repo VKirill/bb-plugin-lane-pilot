@@ -243,7 +243,7 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
     // in one message with the fix, before a task or an attempt exists.
     const lint = await lintTask(args.projectId, runId, task, taskBase, config.hostId);
     // The queue the task joins, said once in the answer: which open tasks hold it and on what, and how to cut the batch if three own one path.
-    const batchAdvice = batchAdviceFor(db, args.projectId, task);
+    const batchAdvice = batchAdviceFor(db, args.projectId, runId, task);
     const withAdvice = (reply:Record<string,unknown>): Record<string,unknown> => {
       const advised = batchAdvice.length && reply.state === "queued" ? { ...reply, batchAdvice } : reply;
       if (reply.state !== "queued") return advised;

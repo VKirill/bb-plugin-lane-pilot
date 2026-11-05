@@ -1,7 +1,8 @@
 import { taskV2Schema } from "../../contracts";
 import type { TaskV2 } from "../../contracts";
-import { getRunSettingsScopes, getTask, latestTaskAttemptState, listCheckDurations, listCheckTimeouts, listOpenAttempts, loadProjectSettings } from "../../storage";
+import { checkoutBase, getRun, getRunSettingsScopes, getTask, taskBasePath, latestTaskAttemptState, listCheckDurations, listCheckTimeouts, listOpenAttempts, loadProjectSettings } from "../../storage";
 import { taskFamily } from "../../runs";
+import { checkoutOwnsOverlap } from "../task-base";
 import { QUALITY_MODE_SETTING, parseSandboxUnsafePatterns, resolveQualityMode } from "../../critique";
 import { isTaskSatisfied } from "../../runs/server";
 import { lintContract, lintProbePaths, siblingTestFolders } from "./contract-lint";
@@ -40,11 +41,14 @@ export function createTaskLinter(ctx: ServerCore, services: Services) {
         if (Array.isArray(answer?.entries)) listings = new Map(answer.entries.map((entry) => [entry.path, entry.names]));
       } catch { listings = null; }
     }
+    const base = checkoutBase(getRun(db, runId)?.writer_workspace_path ?? null, task.project_cwd);
     const openTasks:LintOpenTask[] = [];
     for (const row of listOpenAttempts(db)) {
       if (row.project_id !== projectId || row.task_id === task.id || openTasks.some((open) => open.id === row.task_id)) continue;
       const parsed = taskV2Schema.safeParse(getTask(db, row.task_id)?.contract);
-      if (parsed.success) openTasks.push({ id:row.task_id, owns_paths:parsed.data.owns_paths, never_touch:parsed.data.never_touch, depends_on:parsed.data.depends_on });
+      // Only the tasks this one can share files with: another repository of the BB project is another queue.
+      if (!parsed.success || !checkoutOwnsOverlap(base, task.owns_paths, taskBasePath(db, row.run_id, row.task_id), parsed.data.owns_paths)) continue;
+      openTasks.push({ id:row.task_id, owns_paths:parsed.data.owns_paths, never_touch:parsed.data.never_touch, depends_on:parsed.data.depends_on });
     }
     const parked = task.depends_on.length ? await services.stability.loadParked() : [];
     const deadDependencies:Array<{ id:string; state:"blocked" | "canceled" }> = [];

@@ -1,4 +1,5 @@
 import { isAbsolute, relative, resolve } from "node:path";
+import { ownsPathsOverlap } from "@lane-pilot/kit";
 import type { TaskV2 } from "../contracts";
 import { isOutputPath } from "./validate-output";
 import { applyTrustedTooling } from "./trusted-tooling";
@@ -134,4 +135,16 @@ export function ownsFromOuterBase(baseA: string, ownsA: readonly string[], baseB
   const aInB = relative(resolve(baseB), resolve(baseA)).split("\\").join("/");
   if (!aInB.startsWith("..") && !isAbsolute(aInB)) return [prefixed(aInB, ownsA), [...ownsB]];
   return null;
+}
+
+/**
+ * Whether two tasks can touch the same files, each owns_paths read in its own checkout (taskBasePath): one checkout compares
+ * them as written, nested checkouts from the outer one, sibling repositories never. Every queue, wait and overlap note goes
+ * through here: comparing raw owns_paths across a BB project told MyPosts' PM its tasks waited for Lane Pilot's
+ * `integrate-origin-main-b` (owns `**`), and the PM chased the other chat to cancel it (2026-11-05).
+ */
+export function checkoutOwnsOverlap(baseA: string | null, ownsA: readonly string[], baseB: string | null, ownsB: readonly string[]): boolean {
+  if (!baseA || !baseB || resolve(baseA) === resolve(baseB)) return ownsPathsOverlap([...ownsA], [...ownsB]);
+  const pair = ownsFromOuterBase(baseA, ownsA, baseB, ownsB);
+  return Boolean(pair && ownsPathsOverlap(pair[0], pair[1]));
 }
