@@ -273,16 +273,125 @@
         "en": "Route the signals",
         "ru": "Маршрутизация сигналов"
       },
-      "prompt": "Check the Search Status Dashboard and route each signal as a recommendation: drop or finished core update -> seo-drop-diagnosis; CTR, stalled or stale page -> seo-page-refresh; positions 8-20 -> seo-structure-audit; template or tech regression -> seo-tech-audit; quarterly -> seo-trust. These are recommendations only - this graph starts nothing but a due seo-release index_check, and owner's manual-action signals go to the owner. Set release_due only when an index check is due. Status pass | rework | block; severity one of critical, high, medium, low, info.",
+      "prompt": "Check the Search Status Dashboard and route each due signal: drop or finished core update -> drop_due; CTR, stalled or stale page -> refresh_due; positions 8-20 -> structure_due; template or tech regression -> tech_due. Wave-3 graphs (seo-trust, seo-linkbuilding, seo-template-scale) stay recommendations in the report. Set release_due only when an index check is due; owner's manual-action signals go to the owner. Status pass | rework | block; severity one of critical, high, medium, low, info.",
       "out": {
         "status": "pass|rework|block",
         "signals": "string[]",
         "recommendations": "string[]",
+        "drop_due": "bool",
+        "refresh_due": "bool",
+        "structure_due": "bool",
+        "tech_due": "bool",
         "release_due": "bool"
       },
       "guards": {
         "maxVisits": 1,
         "timeoutMin": 20
+      }
+    },
+    {
+      "id": "drop",
+      "type": "subworkflow",
+      "workflow": "seo-drop-diagnosis",
+      "skip_when": "route.drop_due != true",
+      "skip_out": {
+        "status": "skipped",
+        "diagnosis_path": ""
+      },
+      "title": {
+        "en": "Drop diagnosis",
+        "ru": "Диагноз просадки"
+      },
+      "with": {
+        "site_url": "{{$inputs.site_url}}",
+        "project_passport_path": "{{$inputs.project_passport_path}}"
+      },
+      "out": {
+        "status": "string",
+        "diagnosis_path": "string"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 90
+      }
+    },
+    {
+      "id": "refresh",
+      "type": "subworkflow",
+      "workflow": "seo-page-refresh",
+      "skip_when": "route.refresh_due != true",
+      "skip_out": {
+        "status": "skipped",
+        "diagnosis_path": ""
+      },
+      "title": {
+        "en": "Page refresh",
+        "ru": "Обновление страниц"
+      },
+      "with": {
+        "site_url": "{{$inputs.site_url}}",
+        "url_list": "{{route.signals}}"
+      },
+      "out": {
+        "status": "string",
+        "diagnosis_path": "string"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 120
+      }
+    },
+    {
+      "id": "structure",
+      "type": "subworkflow",
+      "workflow": "seo-structure-audit",
+      "skip_when": "route.structure_due != true",
+      "skip_out": {
+        "status": "skipped",
+        "report_path": ""
+      },
+      "title": {
+        "en": "Structure link boost",
+        "ru": "Линк-буст структуры"
+      },
+      "with": {
+        "site_url": "{{$inputs.site_url}}",
+        "mode": "link_boost",
+        "project_passport_path": "{{$inputs.project_passport_path}}"
+      },
+      "out": {
+        "status": "string",
+        "report_path": "string"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 90
+      }
+    },
+    {
+      "id": "tech",
+      "type": "subworkflow",
+      "workflow": "seo-tech-audit",
+      "skip_when": "route.tech_due != true",
+      "skip_out": {
+        "status": "skipped",
+        "backlog_path": ""
+      },
+      "title": {
+        "en": "Tech audit",
+        "ru": "Техаудит"
+      },
+      "with": {
+        "site_url": "{{$inputs.site_url}}",
+        "project_passport_path": "{{$inputs.project_passport_path}}"
+      },
+      "out": {
+        "status": "string",
+        "backlog_path": "string"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 120
       }
     },
     {
@@ -322,7 +431,7 @@
         "anomalies.json",
         "recommendations.md"
       ],
-      "note": "weekly-report.md: changes, the scored queue, routed recommendations (seo-drop-diagnosis, seo-page-refresh, seo-structure-audit, seo-tech-audit) and the follow-ups this run started; update the SEO Change Log",
+      "note": "weekly-report.md: changes, the scored queue, the follow-up graphs this run started (seo-drop-diagnosis, seo-page-refresh, seo-structure-audit, seo-tech-audit), wave-3 recommendations and the SEO Change Log update",
       "out": {
         "report_path": "string"
       }
@@ -380,13 +489,18 @@
     },
     {
       "from": "route",
-      "to": "release_check",
+      "to": "drop",
       "pass": "artifact",
       "when": "route.status != 'block'"
     },
     {
       "from": "route",
       "to": "blocked",
+      "pass": "artifact"
+    },
+    {
+      "from": "tech",
+      "to": "release_check",
       "pass": "artifact"
     },
     {
@@ -397,6 +511,21 @@
     {
       "from": "report",
       "to": "done",
+      "pass": "artifact"
+    },
+    {
+      "from": "drop",
+      "to": "refresh",
+      "pass": "artifact"
+    },
+    {
+      "from": "refresh",
+      "to": "structure",
+      "pass": "artifact"
+    },
+    {
+      "from": "structure",
+      "to": "tech",
       "pass": "artifact"
     }
   ],
@@ -429,8 +558,12 @@
           "status": "pass",
           "signals": [],
           "recommendations": [
-            "seo-page-refresh: /old-page"
+            "seo-trust: quarterly eeat"
           ],
+          "drop_due": false,
+          "refresh_due": false,
+          "structure_due": false,
+          "tech_due": false,
           "release_due": false
         },
         "report": {
@@ -445,6 +578,10 @@
         "links_review",
         "cadence",
         "route",
+        "drop",
+        "refresh",
+        "structure",
+        "tech",
         "release_check",
         "report",
         "done"
@@ -455,7 +592,7 @@
       ]
     },
     "live": "еженедельный прогон по живому сайту после seo-project-intake",
-    "note": "Tested on stubs. The monitor recommends wave-2 graphs by name and only ever starts seo-release index_check; it applies no fixes."
+    "note": "Tested on stubs. The monitor starts each wave-2 graph only when route marks it due; wave-3 graphs stay recommendations."
   },
   "goal_check": "artifact"
 }
