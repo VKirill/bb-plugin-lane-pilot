@@ -11,7 +11,7 @@ import { jevProviderRpc, secretsRpc } from "../../secrets/server";
 import { workspaceProviderRpc } from "../../native-agent/server";
 import { chatAgentRpc } from "./rpc-chat-agent";
 import { tokenUsageRpc } from "../../usage/server";
-import { workflowsRpc } from "../../workflow/server";
+import { workflowExportRpc, workflowsRpc } from "../../workflow/server";
 import { workflowOpsRpc } from "../../workflow/server";
 import { schedulesRpc } from "../../schedule/server";
 import { councilRpc } from "../../council/server";
@@ -67,6 +67,7 @@ export function registerRpc(ctx: ServerCore, services: Services) {
     ...workspaceProviderRpc(ctx),
     ...chatAgentRpc(ctx),
     ...workflowsRpc(ctx, services),
+    ...workflowExportRpc(ctx, services),
     ...workflowOpsRpc(ctx, services),
     ...schedulesRpc(ctx, services),
     ...councilRpc(ctx.db, services.council),
