@@ -5,8 +5,8 @@
     "ru": "SEO-страница (от кокона до сайта)"
   },
   "description": {
-    "en": "Builds a targeted SEO page: runs seo-cocoon subworkflow for topical context and internal linking architecture, writes intent-driven GIST content, proofreads with ru-check, and exports the final page brief into site files.",
-    "ru": "Создание целевой SEO-страницы: запуск кокона seo-cocoon для контекста и перелинковки, написание GIST-текста под интент, вычитка по ru-check и экспорт готового брифа в файлы сайта."
+    "en": "Takes one approved page from brief to a verified package in the site's files: cocoon context, a GIST brief, grounded drafting, media brief, an independent quality audit, compression and language pass, metadata and JSON-LD, a claim risk scan, human sign-off, pre-publish QA and an indexability gate. It does not publish; it emits a release item for seo-release.",
+    "ru": "Ведёт одну согласованную страницу от брифа до проверенного пакета в файлах сайта: контекст кокона, GIST-бриф, текст на карте фактов, медиабриф, независимый аудит качества, сжатие и языковая правка, метаданные и JSON-LD, скан рисков утверждений, согласование с человеком, предпубликационная проверка и гейт индексируемости. Не публикует; отдаёт релизный элемент для seo-release."
   },
   "examples": {
     "ru": [
@@ -24,6 +24,7 @@
   },
   "not_for": [
     "a full cluster audit without writing (use seo-cocoon)",
+    "publishing to production (use seo-release)",
     "social-post",
     "analyze-code"
   ],
@@ -40,6 +41,10 @@
       "type": "string",
       "required": true,
       "note": "тема страницы или ключевой интент"
+    },
+    "slug": {
+      "type": "string",
+      "default": ""
     },
     "site_goal": {
       "type": "string",
@@ -60,6 +65,33 @@
       "type": "string",
       "default": "ru",
       "note": "язык текста"
+    },
+    "page_type": {
+      "type": "homepage|category|product|service|article|local|tool|asset|trust",
+      "default": "article"
+    },
+    "mode": {
+      "type": "new|rewrite",
+      "default": "new"
+    },
+    "locales": {
+      "type": "string[]",
+      "note": "локали страницы; одна - без плана локалей",
+      "default": []
+    },
+    "cocoon_folder": {
+      "type": "string",
+      "default": "",
+      "note": "готовая папка кокона; тогда кокон и бриф не запускаются"
+    },
+    "brief_path": {
+      "type": "string",
+      "default": "",
+      "note": "готовый GIST-бриф; тогда бриф не запускается"
+    },
+    "risk_tier": {
+      "type": "low|standard|ymyl",
+      "default": "low"
     }
   },
   "outputs": {
@@ -76,12 +108,20 @@
     "skills": [
       "drmax-cocoon-engine-x4",
       "gist-content-logic",
+      "drmax-text-humanization",
       "ru-check",
-      "seo-agent"
+      "ru-text",
+      "ai-detect",
+      "seo-agent",
+      "drmax-brandcore",
+      "nano-banana",
+      "seo-page-templates",
+      "seo-prompt-kit",
+      "seo-evidence-contract"
     ]
   },
   "budget": {
-    "max_minutes": 120,
+    "max_minutes": 240,
     "max_usd": 12
   },
   "entry": "cocoon",
@@ -90,15 +130,22 @@
       "id": "cocoon",
       "type": "subworkflow",
       "workflow": "seo-cocoon",
+      "skip_when": "$inputs.cocoon_folder != '' || $inputs.brief_path != ''",
+      "skip_out": {
+        "status": "done",
+        "folder": "{{$inputs.cocoon_folder}}",
+        "handoff_path": "",
+        "briefs_dir": ""
+      },
       "title": {
         "en": "Generate cocoon context",
         "ru": "Построение семантического кокона"
       },
       "with": {
-        "topic": "$inputs.page_topic",
-        "site_goal": "$inputs.site_goal",
-        "geo": "$inputs.geo",
-        "language": "$inputs.language",
+        "topic": "{{$inputs.page_topic}}",
+        "site_goal": "{{$inputs.site_goal}}",
+        "geo": "{{$inputs.geo}}",
+        "language": "{{$inputs.language}}",
         "max_pages": 5
       },
       "out": {
@@ -112,7 +159,34 @@
       }
     },
     {
-      "id": "write_content",
+      "id": "brief",
+      "type": "subworkflow",
+      "workflow": "seo-brief",
+      "skip_when": "$inputs.brief_path != '' || $inputs.cocoon_folder != ''",
+      "skip_out": {
+        "status": "done",
+        "brief_path": "{{$inputs.brief_path}}"
+      },
+      "title": {
+        "en": "GIST brief",
+        "ru": "GIST-бриф"
+      },
+      "with": {
+        "slug": "{{$inputs.slug}}",
+        "intent": "{{$inputs.page_topic}}",
+        "research_package_path": "{{cocoon.folder}}",
+        "risk_tier": "{{$inputs.risk_tier}}"
+      },
+      "out": {
+        "status": "string",
+        "brief_path": "string"
+      },
+      "guards": {
+        "timeoutMin": 60
+      }
+    },
+    {
+      "id": "locale_plan",
       "produces": [
         {
           "kind": "report",
@@ -120,18 +194,45 @@
         }
       ],
       "type": "agent",
-      "role": "seo-specialist",
-      "title": {
-        "en": "Write SEO page content",
-        "ru": "Написание текста SEO-страницы"
+      "role": "specialist:seo-specialist",
+      "skip_when": "$inputs.locales.length <= 1",
+      "skip_out": {
+        "locale_plan_path": ""
       },
+      "title": {
+        "en": "Locale plan",
+        "ru": "План локалей"
+      },
+      "prompt": "For the multi-locale page: what to keep, adapt, supply or verify per locale (market-scoped differentiation, not translation). Return locale_plan_path.",
+      "out": {
+        "locale_plan_path": "string"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 15
+      }
+    },
+    {
+      "id": "write",
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "specialist:seo-specialist",
       "profile": {
         "skills": [
           "gist-content-logic",
           "drmax-text-humanization"
         ]
       },
-      "prompt": "На основе архитектуры кокона ({{cocoon.handoff_path}}) и GIST-логики напиши полный текст целевой страницы по теме '{{$inputs.page_topic}}'. Раздел каталога: «SEO и семантика». Структура: заголовок H1, интент-блоки, решение задач пользователя, перелинковка на родительские и дочерние узлы кокона, мета-теги. Сохрани черновик в .agents/seo/page_raw.md. Верни статус done или blocked.",
+      "title": {
+        "en": "Write SEO page content",
+        "ru": "Написание текста SEO-страницы"
+      },
+      "prompt": "Pick the page-type template (seo-page-templates) and draft grounded in the fact map and the brief {{brief.brief_path}}: core first, answer-first modules, semantic tables, extractable snippet units and an AEO FAQ, then a completeness pass. No simulated first-person experience. Return ok, raw_page_path, word_count, status done | blocked.",
       "out": {
         "ok": "bool",
         "raw_page_path": "string",
@@ -144,14 +245,55 @@
       }
     },
     {
-      "id": "proofread",
-      "consumes": [
+      "id": "media_brief",
+      "produces": [
         {
           "kind": "report",
-          "version": 1,
-          "from": "write_content"
+          "version": 1
         }
       ],
+      "type": "agent",
+      "role": "specialist:seo-specialist",
+      "title": {
+        "en": "Media brief",
+        "ru": "Медиабриф"
+      },
+      "prompt": "Shot list, alt and figcaption, hero spec, and diagrams rendered from code (SVG/Mermaid); optional original visuals via nano-banana with the product locked. Return media_path.",
+      "out": {
+        "media_path": "string"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 15
+      }
+    },
+    {
+      "id": "quality",
+      "produces": [
+        {
+          "kind": "verdict",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "auditor",
+      "session": "new",
+      "title": {
+        "en": "Quality audit",
+        "ru": "Аудит качества"
+      },
+      "prompt": "Fresh rater-emulation audit of the draft {{write.raw_page_path}}: main-content value, then spam patterns; which blocks survive summarisation, the role minimum, and link context against the link map. Status pass | rework | block; findings cite the passage, severity one of critical, high, medium, low, info.",
+      "out": {
+        "status": "pass|rework|block",
+        "findings": "Finding[]"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 25
+      }
+    },
+    {
+      "id": "edit",
       "produces": [
         {
           "kind": "report",
@@ -160,17 +302,18 @@
       ],
       "type": "agent",
       "role": "auditor",
-      "title": {
-        "en": "Proofread with ru-check",
-        "ru": "Вычитка текста по ru-check"
-      },
       "profile": {
         "skills": [
           "ru-check",
-          "ru-text"
+          "ru-text",
+          "ai-detect"
         ]
       },
-      "prompt": "Вычитай созданный текст {{write_content.raw_page_path}} по правилам ru-check: типографика, удаление штампов и нейрослопа, проверка естественности. Раздел каталога: «Тексты и редактура». Запиши очищенный текст в .agents/seo/page_clean.md и оцени качество ru_score. Если балл ниже 7, верни status rework. При успехе верни status pass.",
+      "title": {
+        "en": "Edit and language pass",
+        "ru": "Редактура и язык"
+      },
+      "prompt": "Compress the draft without losing constraints, finalise the block set, then ru-check language diagnosis and controlled humanisation (drmax-text-humanization); check high-risk token classes against the source and make fragments self-contained and citable. Return clean_page_path, ru_score, status pass | rework.",
       "out": {
         "status": "pass|rework",
         "clean_page_path": "string",
@@ -183,14 +326,7 @@
       }
     },
     {
-      "id": "export_to_site",
-      "consumes": [
-        {
-          "kind": "report",
-          "version": 1,
-          "from": "proofread"
-        }
-      ],
+      "id": "meta_schema",
       "produces": [
         {
           "kind": "report",
@@ -198,20 +334,120 @@
         }
       ],
       "type": "agent",
-      "role": "seo-specialist",
-      "title": {
-        "en": "Export page brief to site files",
-        "ru": "Сохранение страницы в файлы сайта"
-      },
+      "role": "specialist:seo-specialist",
       "profile": {
         "skills": [
           "seo-agent"
         ]
       },
-      "prompt": "Сохрани вычитанный текст {{proofread.clean_page_path}} и метаданные страницы в файлы сайта по пути {{$inputs.site_dir}}. Раздел каталога: «SEO и семантика». Создай файл страницы с URL-слагом, title, description, h1 и телом статьи. Запиши путь в site_page_path. Верни статус done или blocked.",
+      "title": {
+        "en": "Metadata and JSON-LD",
+        "ru": "Метаданные и JSON-LD"
+      },
+      "prompt": "Title, description and H1 that survive AI Overviews, with a first-screen promise check; metadata from the GIST fallback and the mutable-fact table. Content-first JSON-LD @graph, validated, matching the visible content 100%. Return meta_path.",
+      "out": {
+        "meta_path": "string"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 15
+      }
+    },
+    {
+      "id": "risk_scan",
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "specialist-reviewer",
+      "title": {
+        "en": "Claim risk scan",
+        "ru": "Скан рисков"
+      },
+      "prompt": "Regulatory and claim risk scan of the page: the queue of claims that need a credentialed specialist, each with exact wording and its source. Return queue_count and risk_queue.",
+      "out": {
+        "queue_count": "int",
+        "risk_queue": "string[]"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 15
+      }
+    },
+    {
+      "id": "signoff",
+      "type": "human",
+      "role": "owner",
+      "skip_when": "risk_scan.queue_count == 0 && $inputs.risk_tier == 'low'",
+      "skip_out": {
+        "answer": "",
+        "answer_kind": "approved"
+      },
+      "title": {
+        "en": "Sign-off on regulated claims",
+        "ru": "Согласование регулируемых утверждений"
+      },
+      "prompt": "Approve the regulated claims in the risk queue with exact wording and source; the sign-off is recorded against this version. approve accepts all, decline stops the page.",
+      "out": {
+        "answer": "string",
+        "answer_kind": "approved|declined|timeout"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 240
+      }
+    },
+    {
+      "id": "prepublish_qa",
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "browser-qa",
+      "title": {
+        "en": "Pre-publish QA",
+        "ru": "Предпубликационная проверка"
+      },
+      "prompt": "On a local or staging render: facts, meta, schema in the rich-results check, alt and IPTC fields, and an audit of the semantic HTML (headings, lists, tables, parameter-value pairs). Status pass | rework | block.",
+      "out": {
+        "status": "pass|rework|block",
+        "qa_path": "string"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 25
+      }
+    },
+    {
+      "id": "export",
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "specialist:seo-specialist",
+      "profile": {
+        "skills": [
+          "seo-agent"
+        ]
+      },
+      "title": {
+        "en": "Export page to site files",
+        "ru": "Сохранение страницы в файлы сайта"
+      },
+      "prompt": "Named write: page file, meta, JSON-LD and the media brief into {{$inputs.site_dir}} (not production), and build the release item (url, parent, donors, control metrics) for seo-release. Return ok, site_page_path, release_item, status done | blocked.",
       "out": {
         "ok": "bool",
         "site_page_path": "string",
+        "release_item": "string",
         "status": "done|blocked"
       },
       "guards": {
@@ -220,32 +456,27 @@
       }
     },
     {
-      "id": "done",
-      "type": "action",
-      "action": "emit",
-      "map": {
-        "status": "done",
-        "site_page_path": "export_to_site.site_page_path",
-        "cocoon_folder": "cocoon.folder",
-        "ru_score": "proofread.ru_score"
-      }
-    },
-    {
-      "id": "partial",
-      "type": "action",
-      "action": "emit",
-      "map": {
-        "status": "partial",
-        "clean_page_path": "proofread.clean_page_path",
-        "cocoon_folder": "cocoon.folder"
-      }
-    },
-    {
-      "id": "blocked",
-      "type": "action",
-      "action": "emit",
-      "map": {
-        "status": "blocked"
+      "id": "indexability_gate",
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "browser-qa",
+      "title": {
+        "en": "Indexability gate",
+        "ru": "Гейт индексируемости"
+      },
+      "prompt": "Pre-publication gate on the exported page: 200, self-canonical, robots clean, a mother link in the first third, no orphan, a sitemap entry planned, the @graph present. Status pass | rework | block.",
+      "out": {
+        "status": "pass|rework|block",
+        "gate_path": "string"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 15
       }
     },
     {
@@ -256,19 +487,50 @@
         "en": "Check the goal was met",
         "ru": "Проверить, что цель достигнута"
       },
-      "rule": "validateDeliverable on the artifact the run produced: the deliverable/validator/brief inputs name what to check; a fail means the goal is not met",
+      "rule": "validateDeliverable on the artifact the run produced: re-audit the versioned snapshot against the accepted task and block set; a fail means the goal is not met",
       "out": {
         "ok": "bool",
         "verdict": "pass|rework|fail",
         "reason": "string",
         "details": "object"
       }
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "done",
+        "site_page_path": "export.site_page_path",
+        "clean_page_path": "edit.clean_page_path",
+        "cocoon_folder": "cocoon.folder",
+        "ru_score": "edit.ru_score"
+      }
+    },
+    {
+      "id": "partial",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "partial",
+        "clean_page_path": "edit.clean_page_path",
+        "cocoon_folder": "cocoon.folder",
+        "ru_score": "edit.ru_score"
+      }
+    },
+    {
+      "id": "blocked",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "blocked"
+      }
     }
   ],
   "edges": [
     {
       "from": "cocoon",
-      "to": "write_content",
+      "to": "brief",
       "pass": "artifact",
       "when": "cocoon.status == 'done'"
     },
@@ -278,43 +540,112 @@
       "pass": "artifact"
     },
     {
-      "from": "write_content",
-      "to": "proofread",
+      "from": "brief",
+      "to": "locale_plan",
       "pass": "artifact",
-      "when": "write_content.ok"
+      "when": "brief.status == 'done'"
     },
     {
-      "from": "write_content",
+      "from": "brief",
       "to": "blocked",
       "pass": "artifact"
     },
     {
-      "from": "proofread",
-      "to": "write_content",
+      "from": "locale_plan",
+      "to": "write",
+      "pass": "artifact"
+    },
+    {
+      "from": "write",
+      "to": "media_brief",
+      "pass": "artifact",
+      "when": "write.ok"
+    },
+    {
+      "from": "write",
+      "to": "blocked",
+      "pass": "artifact"
+    },
+    {
+      "from": "media_brief",
+      "to": "quality",
+      "pass": "artifact"
+    },
+    {
+      "from": "quality",
+      "to": "write",
       "pass": "same-session",
-      "when": "proofread.status == 'rework' && visits('proofread') < 2",
+      "when": "quality.status == 'rework' && visits('quality') < 2",
       "label": "rework text"
     },
     {
-      "from": "proofread",
-      "to": "export_to_site",
+      "from": "quality",
+      "to": "edit",
       "pass": "artifact",
-      "when": "proofread.status == 'pass'"
+      "when": "quality.status == 'pass'"
     },
     {
-      "from": "proofread",
+      "from": "quality",
+      "to": "blocked",
+      "pass": "artifact"
+    },
+    {
+      "from": "edit",
+      "to": "meta_schema",
+      "pass": "artifact"
+    },
+    {
+      "from": "meta_schema",
+      "to": "risk_scan",
+      "pass": "artifact"
+    },
+    {
+      "from": "risk_scan",
+      "to": "signoff",
+      "pass": "artifact"
+    },
+    {
+      "from": "signoff",
+      "to": "blocked",
+      "pass": "artifact",
+      "when": "signoff.answer_kind == 'declined'"
+    },
+    {
+      "from": "signoff",
+      "to": "prepublish_qa",
+      "pass": "artifact"
+    },
+    {
+      "from": "prepublish_qa",
+      "to": "export",
+      "pass": "artifact",
+      "when": "prepublish_qa.status == 'pass'"
+    },
+    {
+      "from": "prepublish_qa",
       "to": "partial",
       "pass": "artifact"
     },
     {
-      "from": "export_to_site",
-      "to": "goal_check",
+      "from": "export",
+      "to": "indexability_gate",
       "pass": "artifact",
-      "when": "export_to_site.ok"
+      "when": "export.ok"
     },
     {
-      "from": "export_to_site",
+      "from": "export",
       "to": "blocked",
+      "pass": "artifact"
+    },
+    {
+      "from": "indexability_gate",
+      "to": "goal_check",
+      "pass": "artifact",
+      "when": "indexability_gate.status == 'pass'"
+    },
+    {
+      "from": "indexability_gate",
+      "to": "partial",
       "pass": "artifact"
     },
     {
@@ -343,29 +674,65 @@
           "handoff_path": ".agents/seo/conditioners/handoff.md",
           "briefs_dir": ".agents/seo/conditioners/briefs"
         },
-        "write_content": {
+        "seo-brief": {
+          "status": "done",
+          "brief_path": ".agents/seo/conditioners/briefs/page.md"
+        },
+        "write": {
           "ok": true,
           "raw_page_path": ".agents/seo/conditioners/page_raw.md",
           "word_count": 1200,
           "status": "done"
         },
-        "proofread": {
+        "media_brief": {
+          "media_path": ".agents/seo/conditioners/media.md"
+        },
+        "quality": {
+          "status": "pass",
+          "findings": []
+        },
+        "edit": {
           "status": "pass",
           "clean_page_path": ".agents/seo/conditioners/page_clean.md",
           "ru_score": 9,
           "issues": []
         },
-        "export_to_site": {
+        "meta_schema": {
+          "meta_path": ".agents/seo/conditioners/meta.json"
+        },
+        "risk_scan": {
+          "queue_count": 0,
+          "risk_queue": []
+        },
+        "prepublish_qa": {
+          "status": "pass",
+          "qa_path": ".agents/seo/conditioners/qa.md"
+        },
+        "export": {
           "ok": true,
           "site_page_path": "content/services/ustanovka-kondicionerov.md",
+          "release_item": ".agents/seo/conditioners/release-item.json",
           "status": "done"
+        },
+        "indexability_gate": {
+          "status": "pass",
+          "gate_path": ".agents/seo/conditioners/indexability.md"
         }
       },
       "expect_path": [
         "cocoon",
-        "write_content",
-        "proofread",
-        "export_to_site",
+        "brief",
+        "locale_plan",
+        "write",
+        "media_brief",
+        "quality",
+        "edit",
+        "meta_schema",
+        "risk_scan",
+        "signoff",
+        "prepublish_qa",
+        "export",
+        "indexability_gate",
         "goal_check",
         "done"
       ],
@@ -375,7 +742,7 @@
         "ru_score >= 8"
       ]
     },
-    "live": "Построение семантического кокона X4, написание текста страницы, проверка по ru-check и экспорт в контент сайта",
+    "live": "Кокон или готовый бриф, текст по шаблону типа страницы, независимый аудит, вычитка, метаданные и гейт индексируемости; публикация - не здесь",
     "note": "Tested on stubs: subworkflow and model calls answer from stubs."
   },
   "goal_check": "validate"
