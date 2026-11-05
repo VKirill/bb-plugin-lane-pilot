@@ -1,0 +1,547 @@
+{
+  "id": "seo-research",
+  "name": {
+    "en": "SEO research package",
+    "ru": "Исследовательский пакет SEO"
+  },
+  "description": {
+    "en": "Demand and audience research for a topic: an owner-approved charter, a provenance-registered corpus, demand and decision maps (Reddit Mapper), a task and latent-intent map, SERP-verified groups and gap verdicts; on an existing site also a section audit and opportunity cards. Delivers a versioned package; changes no site.",
+    "ru": "Исследование спроса и аудитории по теме: устав, согласованный с владельцем, корпус с реестром источников, карты болей и решений (Reddit Mapper), карта задач и скрытых интентов, группы, проверенные по SERP, и вердикты по пробелам; для существующего сайта — ещё аудит раздела и карточки возможностей. Отдаёт версионируемый пакет; сайт не меняет."
+  },
+  "examples": {
+    "ru": [
+      "Исследуй спрос по теме «кофемашины для дома»",
+      "Собери исследовательский пакет для нового раздела про йогу",
+      "Проведи исследование аудитории перед коконом для интернет-магазина"
+    ],
+    "en": [
+      "Research the demand for 'home coffee machines'",
+      "Build the research package for a new yoga section",
+      "Run audience research before the cocoon for an online store"
+    ]
+  },
+  "not_for": [
+    "web-research",
+    "seo-cocoon",
+    "analyze-plan-execute"
+  ],
+  "status": "tested",
+  "tags": [
+    "seo",
+    "drmax"
+  ],
+  "inputs": {
+    "topic": {
+      "type": "string",
+      "required": true
+    },
+    "project_passport_path": {
+      "type": "string",
+      "default": ""
+    },
+    "mode": {
+      "type": "new_section|existing_section",
+      "default": "new_section"
+    },
+    "material": {
+      "type": "string[]",
+      "note": "пути к имеющимся данным: выгрузки GSC, CRM, файлы владельца"
+    },
+    "use_seo_tools": {
+      "type": "bool",
+      "default": false,
+      "note": "платные Mutagen/xmlstock; только при согласии"
+    },
+    "slug": {
+      "type": "string",
+      "default": ""
+    }
+  },
+  "outputs": {
+    "status": "done|partial|blocked",
+    "package_path": "string?",
+    "corpus_path": "string?",
+    "groups_path": "string?",
+    "verdict": "pass|rework|block?"
+  },
+  "quality_mode": {
+    "default": "standard",
+    "effect": "quick - без согласования устава с владельцем"
+  },
+  "requires": {
+    "plugins": [
+      "lane-pilot"
+    ],
+    "skills": [
+      "reddit-mapper",
+      "cocoon-pilot",
+      "topical-graph-architect",
+      "drmax-latent-intent",
+      "seo-tools",
+      "alphaxiv",
+      "tavily",
+      "google",
+      "seo-evidence-contract",
+      "seo-prompt-kit"
+    ],
+    "secrets": [
+      "TAVILY_API_KEY",
+      "MUTAGEN_API_KEY (только при use_seo_tools)"
+    ]
+  },
+  "budget": {
+    "max_minutes": 240,
+    "max_usd": 10,
+    "max_fan_out": 8
+  },
+  "entry": "charter",
+  "nodes": [
+    {
+      "id": "charter",
+      "type": "agent",
+      "role": "specialist:seo-specialist",
+      "title": {
+        "en": "Research charter",
+        "ru": "Устав исследования"
+      },
+      "prompt": "Draft the research charter from the project passport: goal, buyer situations, include/exclude/defer rules, a never-promise list and the missing-data list (seo-evidence-contract procedure). Return charter_path and ok.",
+      "out": {
+        "charter_path": "string",
+        "ok": "bool"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 20
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ]
+    },
+    {
+      "id": "charter_ok",
+      "type": "human",
+      "role": "owner",
+      "applicable_modes": [
+        "standard",
+        "full"
+      ],
+      "skip_out": {
+        "answer": "",
+        "answer_kind": "given"
+      },
+      "title": {
+        "en": "Charter approval",
+        "ru": "Согласование устава"
+      },
+      "prompt": "Approve or correct the research charter; an empty answer accepts it as written.",
+      "out": {
+        "answer": "string",
+        "answer_kind": "given|answered|timeout"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 240
+      }
+    },
+    {
+      "id": "corpus",
+      "type": "parallel",
+      "for_each": [
+        "gsc_queries",
+        "frequency",
+        "crm_support",
+        "discussions",
+        "primary_sources",
+        "trends"
+      ],
+      "title": {
+        "en": "Collect the corpus",
+        "ru": "Собрать корпус"
+      },
+      "child": {
+        "type": "agent",
+        "role": "specialist:seo-specialist",
+        "prompt": "Corpus branch {{item}}: gsc_queries = GSC export via errand-browser; frequency = seo-tools (Mutagen/xmlstock) ONLY when use_seo_tools is on, else return skipped true; crm_support = owner files only; discussions = reddit-mapper public sources; primary_sources = closed folder to a JSON fact map; trends = trend scan. Every source row keeps its context. Never claim a source you did not read.",
+        "out": {
+          "branch": "string",
+          "findings_path": "string",
+          "sources": "Source[]",
+          "skipped": "bool"
+        },
+        "produces": [
+          {
+            "kind": "report",
+            "version": 1
+          }
+        ]
+      },
+      "join": {
+        "policy": "all",
+        "out": {
+          "findings_paths": "string[]",
+          "sources": "Source[]",
+          "skipped_branches": "string[]"
+        },
+        "uses": "reduce.seo-cocoon.evidence"
+      },
+      "concurrency": 3
+    },
+    {
+      "id": "corpus_registry",
+      "type": "agent",
+      "role": "specialist:seo-specialist",
+      "title": {
+        "en": "Corpus registry",
+        "ru": "Реестр корпуса"
+      },
+      "prompt": "Build the provenance registry over the corpus: cleaning, separate metric columns, an uncertainty list and the list of materials not obtained (seo-evidence-contract). Return corpus_path and missing.",
+      "out": {
+        "corpus_path": "string",
+        "missing": "string[]"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 30
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ]
+    },
+    {
+      "id": "discovery",
+      "type": "agent",
+      "role": "specialist:seo-specialist",
+      "profile": {
+        "skills": [
+          "reddit-mapper",
+          "cocoon-pilot",
+          "alphaxiv",
+          "tavily"
+        ]
+      },
+      "title": {
+        "en": "Demand and decision maps",
+        "ru": "Карты спроса и решений"
+      },
+      "prompt": "Reddit Mapper Total on the registered corpus: pain, language and decision maps; counterexamples per segment; expectation vs reality; international observations rechecked locally. alphaXiv/Tavily only where they change a decision. Return maps_path.",
+      "out": {
+        "maps_path": "string"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 45
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ]
+    },
+    {
+      "id": "tasks",
+      "type": "agent",
+      "role": "specialist:seo-specialist",
+      "profile": {
+        "skills": [
+          "drmax-latent-intent"
+        ]
+      },
+      "title": {
+        "en": "Task and intent map",
+        "ru": "Карта задач и интентов"
+      },
+      "prompt": "Latent Intent per query: split queries into entity, task, modifiers and constraints; grade latent tasks; cluster by micro-task; rank intents by confirmation tier. Output the task map and the exclusion map with prohibited claims flagged. Return tasks_path and intents.",
+      "out": {
+        "tasks_path": "string",
+        "intents": "int"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 40
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ]
+    },
+    {
+      "id": "serp_grouping",
+      "type": "agent",
+      "role": "specialist:seo-specialist",
+      "profile": {
+        "skills": [
+          "seo-tools",
+          "topical-graph-architect"
+        ]
+      },
+      "title": {
+        "en": "SERP-verified groups",
+        "ru": "Группы, проверенные по SERP"
+      },
+      "prompt": "Group the task map by task and verify against controlled SERP snapshots (engine, region, device); audit the machine clustering; InfoGapRadar verdict create | dont_create | mixed per group. Paid SERP only when use_seo_tools. Return groups_path and gap_verdict.",
+      "out": {
+        "groups_path": "string",
+        "gap_verdict": "create|dont_create|mixed"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 40
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ]
+    },
+    {
+      "id": "existing_section",
+      "type": "agent",
+      "role": "browser-qa",
+      "skip_when": "$inputs.mode != 'existing_section'",
+      "skip_out": {
+        "section_audit_path": "",
+        "cards": []
+      },
+      "title": {
+        "en": "Existing section audit",
+        "ru": "Аудит существующего раздела"
+      },
+      "prompt": "existing_section mode only: a bounded audit of the live section, three annotated corpora (audience, own site, competitors) with scoped negatives, and opportunity cards in three statuses. Do not crawl beyond the section. Return section_audit_path and cards.",
+      "out": {
+        "section_audit_path": "string",
+        "cards": "Card[]"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 40
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ]
+    },
+    {
+      "id": "critic",
+      "produces": [
+        {
+          "kind": "verdict",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "auditor",
+      "session": "new",
+      "title": {
+        "en": "Research audit",
+        "ru": "Аудит исследования"
+      },
+      "prompt": "Verdict on the research package from the files only: every finding has a source and a status (evidence, hypothesis or proposal); no module is claimed to have run unless it did. Status pass | rework | block; findings cite the file and passage, severity one of critical, high, medium, low, info.",
+      "out": {
+        "status": "pass|rework|block",
+        "findings": "Finding[]"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 25
+      }
+    },
+    {
+      "id": "package",
+      "type": "action",
+      "action": "fs.write",
+      "path": ".agents/seo/research/{{slug}}/",
+      "files": [
+        "charter.md",
+        "corpus.json",
+        "maps.md",
+        "tasks.json",
+        "groups.json",
+        "opportunity-cards.json"
+      ],
+      "note": "Version and export the research package: sources, maps, tasks, groups, gap verdicts, opportunity cards",
+      "out": {
+        "package_path": "string"
+      }
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "done",
+        "package_path": "package.package_path",
+        "corpus_path": "corpus_registry.corpus_path",
+        "groups_path": "serp_grouping.groups_path",
+        "verdict": "critic.status"
+      }
+    },
+    {
+      "id": "partial",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "partial",
+        "package_path": "package.package_path",
+        "corpus_path": "corpus_registry.corpus_path",
+        "groups_path": "serp_grouping.groups_path",
+        "verdict": "critic.status"
+      }
+    },
+    {
+      "id": "blocked",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "blocked",
+        "verdict": "critic.status"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "charter",
+      "to": "charter_ok",
+      "pass": "artifact"
+    },
+    {
+      "from": "charter_ok",
+      "to": "corpus",
+      "pass": "artifact"
+    },
+    {
+      "from": "corpus",
+      "to": "corpus_registry",
+      "pass": "artifact"
+    },
+    {
+      "from": "corpus_registry",
+      "to": "discovery",
+      "pass": "artifact"
+    },
+    {
+      "from": "discovery",
+      "to": "tasks",
+      "pass": "artifact"
+    },
+    {
+      "from": "tasks",
+      "to": "serp_grouping",
+      "pass": "artifact"
+    },
+    {
+      "from": "serp_grouping",
+      "to": "existing_section",
+      "pass": "artifact"
+    },
+    {
+      "from": "existing_section",
+      "to": "critic",
+      "pass": "artifact"
+    },
+    {
+      "from": "critic",
+      "to": "tasks",
+      "pass": "same-session",
+      "when": "critic.status == 'rework' && visits('critic') < 2",
+      "label": "fix task map"
+    },
+    {
+      "from": "critic",
+      "to": "package",
+      "pass": "artifact",
+      "when": "critic.status != 'block'"
+    },
+    {
+      "from": "critic",
+      "to": "blocked",
+      "pass": "artifact"
+    },
+    {
+      "from": "package",
+      "to": "done",
+      "pass": "artifact",
+      "when": "critic.status == 'pass'"
+    },
+    {
+      "from": "package",
+      "to": "partial",
+      "pass": "artifact"
+    }
+  ],
+  "test": {
+    "id": "sr-1",
+    "sim": {
+      "input": {
+        "topic": "кофемашины для дома",
+        "mode": "new_section",
+        "use_seo_tools": false
+      },
+      "stubs": {
+        "charter": {
+          "charter_path": "charter.md",
+          "ok": true
+        },
+        "corpus:child": {
+          "branch": "frequency",
+          "findings_path": "frequency.md",
+          "sources": [],
+          "skipped": true
+        },
+        "corpus_registry": {
+          "corpus_path": "corpus.json",
+          "missing": []
+        },
+        "discovery": {
+          "maps_path": "maps.md"
+        },
+        "tasks": {
+          "tasks_path": "tasks.json",
+          "intents": 24
+        },
+        "serp_grouping": {
+          "groups_path": "groups.json",
+          "gap_verdict": "create"
+        },
+        "critic": {
+          "status": "pass",
+          "findings": []
+        },
+        "package": {
+          "package_path": ".agents/seo/research/x"
+        }
+      },
+      "expect_path": [
+        "charter",
+        "charter_ok",
+        "corpus",
+        "corpus_registry",
+        "discovery",
+        "tasks",
+        "serp_grouping",
+        "existing_section",
+        "critic",
+        "package",
+        "done"
+      ],
+      "expect_outputs": [
+        "status == 'done'",
+        "package_path != ''"
+      ]
+    },
+    "live": "небольшая тема, без платных API; в quick-режиме устав не согласовывается",
+    "note": "Tested on stubs: every outside action answers from a stub. Paid SEO tools only with the owner's consent."
+  },
+  "goal_check": "artifact"
+}

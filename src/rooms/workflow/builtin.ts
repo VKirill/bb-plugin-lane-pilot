@@ -65,6 +65,8 @@ import roadmapDriven from "../../../workflows/roadmap-driven.json";
 import securityAudit from "../../../workflows/security-audit.json";
 import seoCocoon from "../../../workflows/seo-cocoon.json";
 import seoPage from "../../../workflows/seo-page.json";
+import seoBrief from "../../../workflows/seo-brief.json";
+import seoResearch from "../../../workflows/seo-research.json";
 import socialPost from "../../../workflows/social-post.json";
 import telegramSend from "../../../workflows/telegram-send.json";
 import testGen from "../../../workflows/test-gen.json";
@@ -160,8 +162,10 @@ export const BUILTIN_SOURCES: ReadonlyArray<{ name: string; value: unknown }> = 
   { name: "review-fix.json", value: reviewFix },
   { name: "roadmap-driven.json", value: roadmapDriven },
   { name: "security-audit.json", value: securityAudit },
+  { name: "seo-brief.json", value: seoBrief },
   { name: "seo-cocoon.json", value: seoCocoon },
   { name: "seo-page.json", value: seoPage },
+  { name: "seo-research.json", value: seoResearch },
   { name: "social-post.json", value: socialPost },
   { name: "telegram-send.json", value: telegramSend },
   { name: "test-gen.json", value: testGen },

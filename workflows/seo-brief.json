@@ -1,0 +1,413 @@
+{
+  "id": "seo-brief",
+  "name": {
+    "en": "GIST brief for one page",
+    "ru": "GIST-бриф одной страницы"
+  },
+  "description": {
+    "en": "One page's GIST brief: entity passport and focus formula, a SERP gap with a snippet-first wireframe, job/core/decision map, missing decision nodes, link rows, graded evidence cards and the utility gate. Ends in briefs/<slug>.md and evidence-cards/<slug>.json; changes no site.",
+    "ru": "GIST-бриф одной страницы: паспорт сущности и формула фокуса, пробел SERP с wireframe под сниппет, карта задачи/ядра/решений, недостающие узлы решений, строки ссылок, градуированные карточки доказательств и фильтр полезности. На выходе briefs/<slug>.md и evidence-cards/<slug>.json; сайт не меняет."
+  },
+  "examples": {
+    "ru": [
+      "Собери бриф для страницы «выбор кофемашины»",
+      "Нужен GIST-бриф по странице услуги установки кондиционеров"
+    ],
+    "en": [
+      "Build the brief for the 'choose a coffee machine' page",
+      "I need a GIST brief for the air conditioner installation service page"
+    ]
+  },
+  "not_for": [
+    "seo-cocoon",
+    "seo-page"
+  ],
+  "status": "tested",
+  "tags": [
+    "seo",
+    "drmax"
+  ],
+  "inputs": {
+    "slug": {
+      "type": "string",
+      "required": true
+    },
+    "intent": {
+      "type": "string",
+      "default": ""
+    },
+    "entity": {
+      "type": "string",
+      "default": ""
+    },
+    "parent": {
+      "type": "string",
+      "default": ""
+    },
+    "research_package_path": {
+      "type": "string",
+      "default": ""
+    },
+    "fact_registry_path": {
+      "type": "string",
+      "default": ""
+    },
+    "risk_tier": {
+      "type": "low|standard|ymyl",
+      "default": "standard"
+    }
+  },
+  "outputs": {
+    "status": "done|partial|blocked",
+    "brief_path": "string?",
+    "evidence_path": "string?",
+    "gate": "pass|merge|rebuild|block?"
+  },
+  "requires": {
+    "plugins": [
+      "lane-pilot"
+    ],
+    "skills": [
+      "gist-content-logic",
+      "topical-graph-architect",
+      "seo-tools",
+      "tavily",
+      "alphaxiv",
+      "drmax-brandcore",
+      "seo-page-templates",
+      "seo-evidence-contract"
+    ],
+    "secrets": [
+      "TAVILY_API_KEY"
+    ]
+  },
+  "budget": {
+    "max_minutes": 90,
+    "max_usd": 5
+  },
+  "entry": "passport",
+  "nodes": [
+    {
+      "id": "passport",
+      "type": "agent",
+      "role": "specialist:seo-specialist",
+      "title": {
+        "en": "Entity passport",
+        "ru": "Паспорт сущности"
+      },
+      "prompt": "Entity passport for the page (seo-page-templates): JSON with the Wikidata id and the focus formula, plus the format template and outline skeleton for informational pages. Return passport_path and focus.",
+      "out": {
+        "passport_path": "string",
+        "focus": "string"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 20
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ]
+    },
+    {
+      "id": "serp_gap",
+      "type": "agent",
+      "role": "specialist:seo-specialist",
+      "profile": {
+        "skills": [
+          "seo-tools"
+        ]
+      },
+      "title": {
+        "en": "SERP gap",
+        "ru": "Пробел SERP"
+      },
+      "prompt": "Demand gate: reverse-engineer the top-10 SERP into a matrix, a JSON gap of entities, questions and formats, and an H2-H4 snippet-first wireframe. Paid SERP calls only when the run allows them. Return gap_path and wireframe_path.",
+      "out": {
+        "gap_path": "string",
+        "wireframe_path": "string"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 30
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ]
+    },
+    {
+      "id": "gist_core",
+      "type": "agent",
+      "role": "specialist:seo-specialist",
+      "profile": {
+        "skills": [
+          "gist-content-logic",
+          "topical-graph-architect"
+        ]
+      },
+      "title": {
+        "en": "GIST core",
+        "ru": "Ядро GIST"
+      },
+      "prompt": "GIST content logic: the user job, the minimum core, block roles, the decision map and the missing decision nodes; score each block's value and split what a competitor could replicate; escalate structural conflicts to TGA notes. Return core_path, job and decision_nodes.",
+      "out": {
+        "core_path": "string",
+        "job": "string",
+        "decision_nodes": "int"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 30
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ]
+    },
+    {
+      "id": "link_rows",
+      "type": "agent",
+      "role": "specialist:seo-specialist",
+      "title": {
+        "en": "Link rows",
+        "ru": "Строки ссылок"
+      },
+      "prompt": "The link block of the brief: target, type, placement, inverted anchor, acceptor query, per-type quotas, widgets and breadcrumbs, against the cocoon link registries. Return links_path.",
+      "out": {
+        "links_path": "string"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 20
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ]
+    },
+    {
+      "id": "evidence",
+      "type": "agent",
+      "role": "tavily",
+      "profile": {
+        "skills": [
+          "tavily",
+          "alphaxiv",
+          "drmax-brandcore"
+        ]
+      },
+      "title": {
+        "en": "Evidence cards",
+        "ru": "Карточки доказательств"
+      },
+      "prompt": "Verify the brief's claims against internal evidence (seo-evidence-contract); run targeted external research only where it could change a decision. Grade evidence A-E with transfer classes, write the evidence cards and the test plan. On ymyl pages also write the claim passport bound to first-tier sources. Return evidence_path and cards.",
+      "out": {
+        "evidence_path": "string",
+        "cards": "int"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 30
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ]
+    },
+    {
+      "id": "utility_gate",
+      "type": "agent",
+      "role": "plan-critic",
+      "session": "new",
+      "title": {
+        "en": "Utility gate",
+        "ru": "Фильтр полезности"
+      },
+      "prompt": "The utility filter on the assembled brief: differentiation from neighbour pages and the zero-context replicability test. Verdict gate: pass ships the brief, merge folds it into a sibling page, rebuild sends it back, block means the page should not exist.",
+      "out": {
+        "gate": "pass|merge|rebuild|block",
+        "notes": "string"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 20
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ]
+    },
+    {
+      "id": "package",
+      "type": "action",
+      "action": "fs.write",
+      "path": ".agents/seo/briefs/{{$inputs.slug}}/",
+      "files": [
+        "brief.md",
+        "evidence-cards.json"
+      ],
+      "note": "fs.write briefs/<slug>.md + evidence-cards/<slug>.json",
+      "out": {
+        "brief_path": "string",
+        "evidence_path": "string"
+      }
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "done",
+        "brief_path": "package.brief_path",
+        "evidence_path": "package.evidence_path",
+        "gate": "utility_gate.gate"
+      }
+    },
+    {
+      "id": "partial",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "partial",
+        "brief_path": "package.brief_path",
+        "evidence_path": "package.evidence_path",
+        "gate": "utility_gate.gate"
+      }
+    },
+    {
+      "id": "blocked",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "blocked",
+        "gate": "utility_gate.gate"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "passport",
+      "to": "serp_gap",
+      "pass": "artifact"
+    },
+    {
+      "from": "serp_gap",
+      "to": "gist_core",
+      "pass": "artifact"
+    },
+    {
+      "from": "gist_core",
+      "to": "link_rows",
+      "pass": "artifact"
+    },
+    {
+      "from": "link_rows",
+      "to": "evidence",
+      "pass": "artifact"
+    },
+    {
+      "from": "evidence",
+      "to": "utility_gate",
+      "pass": "artifact"
+    },
+    {
+      "from": "utility_gate",
+      "to": "gist_core",
+      "pass": "same-session",
+      "when": "utility_gate.gate == 'rebuild' && visits('utility_gate') < 2",
+      "label": "rebuild brief"
+    },
+    {
+      "from": "utility_gate",
+      "to": "package",
+      "pass": "artifact",
+      "when": "utility_gate.gate != 'block'"
+    },
+    {
+      "from": "utility_gate",
+      "to": "blocked",
+      "pass": "artifact"
+    },
+    {
+      "from": "package",
+      "to": "done",
+      "pass": "artifact",
+      "when": "utility_gate.gate == 'pass'"
+    },
+    {
+      "from": "package",
+      "to": "partial",
+      "pass": "artifact"
+    }
+  ],
+  "test": {
+    "id": "sb-1",
+    "sim": {
+      "input": {
+        "slug": "vybor-kofemashiny",
+        "intent": "comparison",
+        "risk_tier": "standard"
+      },
+      "stubs": {
+        "passport": {
+          "passport_path": "passport.json",
+          "focus": "f"
+        },
+        "serp_gap": {
+          "gap_path": "gap.json",
+          "wireframe_path": "wireframe.md"
+        },
+        "gist_core": {
+          "core_path": "core.md",
+          "job": "choose",
+          "decision_nodes": 4
+        },
+        "link_rows": {
+          "links_path": "links.json"
+        },
+        "evidence": {
+          "evidence_path": "evidence.json",
+          "cards": 6
+        },
+        "utility_gate": {
+          "gate": "pass",
+          "notes": ""
+        },
+        "package": {
+          "brief_path": "briefs/vybor-kofemashiny.md",
+          "evidence_path": "evidence-cards/vybor-kofemashiny.json"
+        }
+      },
+      "expect_path": [
+        "passport",
+        "serp_gap",
+        "gist_core",
+        "link_rows",
+        "evidence",
+        "utility_gate",
+        "package",
+        "done"
+      ],
+      "expect_outputs": [
+        "status == 'done'",
+        "brief_path != ''"
+      ]
+    },
+    "live": "одна страница на готовом исследовательском пакете; gate pass",
+    "note": "Tested on stubs: model and tool calls answer from stubs."
+  },
+  "goal_check": "artifact"
+}
