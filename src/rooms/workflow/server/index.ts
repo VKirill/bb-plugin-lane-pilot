@@ -3,6 +3,7 @@
 export { architectStartRpc, architectStarter } from "./architect-start";
 export { workflowOpsRpc } from "./rpc/workflow-ops";
 export { workflowsRpc } from "./rpc/workflows";
+export { workflowExportRpc } from "./rpc/workflow-export";
 export { createWorkflowArchitect, mountWorkflowArchitect } from "./workflow-architect";
 export { answerWorkflowQuestion } from "./workflow-answer";
 export { createWorkflowLibrary } from "./workflow-library";
