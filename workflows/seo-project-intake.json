@@ -1,0 +1,405 @@
+{
+  "id": "seo-project-intake",
+  "name": {
+    "en": "SEO project passport",
+    "ru": "Паспорт SEO-проекта"
+  },
+  "description": {
+    "en": "The project passport, built once before any SEO work: business scope and topic boundaries, a verified company fact base, a cost-of-error tier per topic, local-SEO and young-domain flags, and the lowest broken layer. Every later graph reads the same passport, and the passport names which graph runs first.",
+    "ru": "Паспорт проекта, собирается один раз до любой SEO-работы: границы бизнеса и тем, проверенная база фактов о компании, уровень цены ошибки по каждой теме, флаги локального SEO и молодого домена и самый нижний сломанный слой. Все последующие графы читают один паспорт, и паспорт называет, какой граф идёт первым."
+  },
+  "examples": {
+    "ru": [
+      "Собери SEO-паспорт для нового сайта",
+      "Начни SEO-проект: паспорт, факты, маршрут",
+      "Сделай интейк SEO-проекта для интернет-магазина"
+    ],
+    "en": [
+      "Build the SEO passport for a new site",
+      "Start the SEO project: passport, facts, route",
+      "Run the SEO project intake for an online store"
+    ]
+  },
+  "not_for": [
+    "seo-cocoon",
+    "seo-monitor"
+  ],
+  "status": "published",
+  "tags": [
+    "seo",
+    "drmax"
+  ],
+  "inputs": {
+    "site_url": {
+      "type": "string",
+      "required": true
+    },
+    "offer": {
+      "type": "string",
+      "default": "",
+      "note": "оффер словами владельца"
+    },
+    "audience": {
+      "type": "string",
+      "default": ""
+    },
+    "markets": {
+      "type": "string",
+      "default": ""
+    },
+    "language": {
+      "type": "string",
+      "default": "ru"
+    },
+    "material": {
+      "type": "string[]",
+      "note": "выгрузки CRM/поддержки, список авторов и рецензентов, адреса филиалов"
+    }
+  },
+  "outputs": {
+    "status": "done|partial|blocked",
+    "passport_path": "string?",
+    "brandcore_path": "string?",
+    "route": "string?",
+    "verdict": "pass|rework|block?"
+  },
+  "requires": {
+    "plugins": [
+      "lane-pilot"
+    ],
+    "skills": [
+      "drmax-brandcore",
+      "topical-graph-architect",
+      "drmax-latent-intent",
+      "google",
+      "yandex",
+      "seo-agent",
+      "seo-tech-audit-kit",
+      "seo-evidence-contract"
+    ],
+    "browserSession": true
+  },
+  "budget": {
+    "max_minutes": 180,
+    "max_usd": 10
+  },
+  "entry": "ask_scope",
+  "nodes": [
+    {
+      "id": "ask_scope",
+      "type": "human",
+      "role": "owner",
+      "skip_when": "$inputs.offer != ''",
+      "skip_out": {
+        "answer": "",
+        "answer_kind": "given"
+      },
+      "title": {
+        "en": "Scope form",
+        "ru": "Форма скоупа"
+      },
+      "prompt": "One form: the offer, a one-sentence specialization, topics never to cover, markets, who can verify claims (names and credentials), physical locations, domain age, and which accesses exist. Everything else gets a default.",
+      "out": {
+        "answer": "string",
+        "answer_kind": "given|answered|timeout"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 480
+      }
+    },
+    {
+      "id": "brandcore",
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "specialist:seo-specialist",
+      "profile": {
+        "skills": [
+          "drmax-brandcore"
+        ]
+      },
+      "title": {
+        "en": "Verified fact base",
+        "ru": "База проверенных фактов"
+      },
+      "prompt": "BrandCore: build the verified company fact base from the site {{$inputs.site_url}} and the owner's answers. A fact that can't be confirmed stays open and is never filled in by guessing. Return brandcore_path and open_facts.",
+      "out": {
+        "brandcore_path": "string",
+        "open_facts": "int"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 30
+      }
+    },
+    {
+      "id": "tech_gate",
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "errand-browser",
+      "profile": {
+        "skills": [
+          "google",
+          "yandex",
+          "seo-agent"
+        ]
+      },
+      "title": {
+        "en": "Tech gate",
+        "ru": "Технический гейт"
+      },
+      "prompt": "Read-only snapshot in the owner's session: GSC and Yandex Webmaster (indexed vs submitted, page-indexing buckets, manual actions, CWV groups) plus a small sample crawl of {{$inputs.site_url}} (seo-tech-audit-kit). Verdict pass or tech-first, with the failed markers and a baseline. Return tech_verdict and tech_path.",
+      "out": {
+        "tech_verdict": "pass|tech-first",
+        "tech_path": "string"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 40
+      }
+    },
+    {
+      "id": "risk_flags",
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "specialist:seo-specialist",
+      "profile": {
+        "skills": [
+          "drmax-latent-intent",
+          "topical-graph-architect"
+        ]
+      },
+      "title": {
+        "en": "Risk and local flags",
+        "ru": "Флаги риска и локальности"
+      },
+      "prompt": "Per topic: a cost-of-error tier, a page role (Experience, Reference or Directive) and a production mode. Run the local-fit check, seed the location registry, and set the host-age flag (a young domain is capped at a narrow cocoon). Return flags_path and host_age.",
+      "out": {
+        "flags_path": "string",
+        "host_age": "young|established"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 25
+      }
+    },
+    {
+      "id": "layer_verdict",
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "specialist:seo-specialist",
+      "title": {
+        "en": "Weak-layer verdict",
+        "ru": "Вердикт по слабому слою"
+      },
+      "prompt": "The five-layer weak-link verdict (index, architecture, content, trust, links) and the project's stage; name the first graph to run: seo-tech-audit when tech gate failed, seo-cocoon for content work, seo-trust for trust gaps. Return route and broken_layer.",
+      "out": {
+        "route": "string",
+        "broken_layer": "index|architecture|content|trust|links|none"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 20
+      }
+    },
+    {
+      "id": "critic",
+      "produces": [
+        {
+          "kind": "verdict",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "plan-critic",
+      "session": "new",
+      "title": {
+        "en": "Passport audit",
+        "ru": "Аудит паспорта"
+      },
+      "prompt": "Check the passport: every claim has a source or is marked open, and the route fixes the lowest broken layer before cocoon or content work. Status pass | rework | block; findings cite the section, severity one of critical, high, medium, low, info.",
+      "out": {
+        "status": "pass|rework|block",
+        "findings": "Finding[]"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 20
+      }
+    },
+    {
+      "id": "package",
+      "type": "action",
+      "action": "fs.write",
+      "path": ".agents/seo/{{slug}}/",
+      "files": [
+        "project-passport.json",
+        "brandcore.md",
+        "location-registry.csv",
+        "route.md"
+      ],
+      "note": "fs.write project-passport.json, brandcore.md, location-registry.csv, route.md",
+      "out": {
+        "passport_path": "string"
+      }
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "done",
+        "passport_path": "package.passport_path",
+        "brandcore_path": "brandcore.brandcore_path",
+        "route": "layer_verdict.route",
+        "verdict": "critic.status"
+      }
+    },
+    {
+      "id": "partial",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "partial",
+        "passport_path": "package.passport_path",
+        "verdict": "critic.status"
+      }
+    },
+    {
+      "id": "blocked",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "blocked",
+        "verdict": "critic.status"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "ask_scope",
+      "to": "brandcore",
+      "pass": "artifact"
+    },
+    {
+      "from": "brandcore",
+      "to": "tech_gate",
+      "pass": "artifact"
+    },
+    {
+      "from": "tech_gate",
+      "to": "risk_flags",
+      "pass": "artifact"
+    },
+    {
+      "from": "risk_flags",
+      "to": "layer_verdict",
+      "pass": "artifact"
+    },
+    {
+      "from": "layer_verdict",
+      "to": "critic",
+      "pass": "artifact"
+    },
+    {
+      "from": "critic",
+      "to": "layer_verdict",
+      "pass": "same-session",
+      "when": "critic.status == 'rework' && visits('critic') < 2",
+      "label": "fix verdict"
+    },
+    {
+      "from": "critic",
+      "to": "package",
+      "pass": "artifact",
+      "when": "critic.status != 'block'"
+    },
+    {
+      "from": "critic",
+      "to": "blocked",
+      "pass": "artifact"
+    },
+    {
+      "from": "package",
+      "to": "done",
+      "pass": "artifact",
+      "when": "critic.status == 'pass'"
+    },
+    {
+      "from": "package",
+      "to": "partial",
+      "pass": "artifact"
+    }
+  ],
+  "test": {
+    "id": "spi-1",
+    "sim": {
+      "input": {
+        "site_url": "https://example.ru",
+        "offer": "продажа кофемашин"
+      },
+      "stubs": {
+        "brandcore": {
+          "brandcore_path": "brandcore.md",
+          "open_facts": 2
+        },
+        "tech_gate": {
+          "tech_verdict": "pass",
+          "tech_path": "tech.md"
+        },
+        "risk_flags": {
+          "flags_path": "flags.json",
+          "host_age": "established"
+        },
+        "layer_verdict": {
+          "route": "seo-cocoon",
+          "broken_layer": "content"
+        },
+        "critic": {
+          "status": "pass",
+          "findings": []
+        },
+        "package": {
+          "passport_path": ".agents/seo/example/project-passport.json"
+        }
+      },
+      "expect_path": [
+        "ask_scope",
+        "brandcore",
+        "tech_gate",
+        "risk_flags",
+        "layer_verdict",
+        "critic",
+        "package",
+        "done"
+      ],
+      "expect_outputs": [
+        "status == 'done'",
+        "passport_path != ''"
+      ]
+    },
+    "live": "новый сайт с доступом владельца к GSC/Вебмастеру в браузере",
+    "note": "Tested on stubs: browser and model calls answer from stubs. GSC history is limited to what the UI exports."
+  },
+  "goal_check": "artifact"
+}

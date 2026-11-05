@@ -134,41 +134,43 @@ describe("reels", () => {
 
 describe("seo-cocoon", () => {
   const input = { topic: "кофемашины для дома", geo: "RU", language: "ru", site_goal: "интернет-магазин", use_seo_tools: false, max_pages: 12 };
-  const pages = Array.from({ length: 10 }, (_unused, at) => ({ slug: `page-${at}`, intent: "buy" }));
-  const brief = ((ctx: { input: { item?: unknown } }) => ({ slug: (ctx.input.item as { slug: string }).slug, brief_path: `briefs/${(ctx.input.item as { slug: string }).slug}.md` })) as never;
-  const base = () => ({ chainsmith: { ok: true }, "evidence:child": ((ctx: { input: { item?: unknown } }) => ({ branch: String(ctx.input.item), findings_path: `${String(ctx.input.item)}.md`, sources: [], skipped: ctx.input.item === "frequency" })) as never,
-    architecture: { page_count: 10, clusters: [{ name: "выбор" }, { name: "уход" }], pages }, "briefs:child": brief, package: { folder: ".agents/seo/kofemashiny", handoff_path: ".agents/seo/kofemashiny/handoff.md" } });
+  const pages = Array.from({ length: 10 }, (_unused, at) => ({ slug: `page-${at}`, intent: "buy", entity: `e${at}`, parent: "root" }));
+  const brief = ((ctx: { input: { item?: unknown } }) => ({ status: "done", brief_path: `briefs/${(ctx.input.item as { slug: string }).slug}.md` })) as never;
+  const base = (batch = pages) => ({ chainsmith: { ok: true },
+    "seo-research": { status: "done", package_path: ".agents/seo/research/kofemashiny" },
+    boundaries: { boundaries_path: "boundaries.md", entity_graph_path: "entities.json" },
+    architecture: { page_count: batch.length, clusters: [{ name: "выбор" }, { name: "уход" }], pages: batch, fact_registry_path: "fact_registry.json", acceptors_path: "acceptors.json", architecture_path: "architecture.json" },
+    page_map: { page_map_path: "page_map.json", batch, locked_count: batch.length },
+    "seo-brief": brief,
+    package: { folder: ".agents/seo/kofemashiny", handoff_path: ".agents/seo/kofemashiny/handoff.md" } });
 
   it("the spec's case: a rework of the audit goes back to the architecture and the briefs once, then the package", async () => {
-    const r = await runSim("seo-cocoon", { input, stubs: { ...base(), audit: [{ status: "rework", cannibal_count: 1 }, { status: "pass" }] } });
-    expect(pathOf(r)).toBe("ask_brief chainsmith evidence architecture briefs audit architecture briefs audit package done");
+    const r = await runSim("seo-cocoon", { input, stubs: { ...base(), audit: [{ status: "rework", cannibal_count: 1 }, { status: "pass" }] }, humans: { scope_freeze: { answer_kind: "approved", answer: "" } } });
+    expect(pathOf(r)).toBe("ask_brief chainsmith research boundaries architecture page_map scope_freeze briefs audit architecture page_map scope_freeze briefs audit package done");
     expect(r.skipped).toEqual(["ask_brief"]);
     expect(out(r)).toMatchObject({ status: "done", page_count: 10, audit_status: "pass", folder: ".agents/seo/kofemashiny", handoff_path: ".agents/seo/kofemashiny/handoff.md" });
     expect(r.called("briefs:child")).toHaveLength(20);
-    // The evidence branch that had no data is named, not silently dropped.
-    const evidence = r.db.prepare("SELECT output_json FROM lane_pilot_wf_step WHERE run_id=? AND node_id='evidence' LIMIT 1").get(r.summary.runId) as { output_json: string };
-    expect(JSON.parse(evidence.output_json)).toMatchObject({ skipped_branches: ["frequency"], findings_paths: ["audience.md", "external.md"] });
   });
 
-  it("30 pages fit: the briefs run three at a time, not 5 in total", async () => {
-    const many = Array.from({ length: 30 }, (_unused, at) => ({ slug: `p${at}` }));
-    const r = await runSim("seo-cocoon", { input, stubs: { ...base(), architecture: { page_count: 30, pages: many }, audit: { status: "pass" } } });
+  it("30 pages fit: the briefs fan out one seo-brief per page", async () => {
+    const many = Array.from({ length: 30 }, (_unused, at) => ({ slug: `p${at}`, intent: "buy", entity: `e${at}`, parent: "root" }));
+    const r = await runSim("seo-cocoon", { input, stubs: { ...base(many), architecture: { page_count: 30, pages: many, clusters: [{ name: "выбор" }] }, audit: { status: "pass" } }, humans: { scope_freeze: { answer_kind: "approved", answer: "" } } });
     expect(out(r)).toMatchObject({ status: "done" });
     expect(r.called("briefs:child")).toHaveLength(30);
   });
 
   it("the brief is asked first when the geo or the site goal is missing; the chainsmith can refuse", async () => {
-    const r = await runSim("seo-cocoon", { input: { topic: "кофе" }, stubs: { ...base(), audit: { status: "pass" } }, humans: { ask_brief: { answer_kind: "answered", answer: "RU, shop" } } });
+    const r = await runSim("seo-cocoon", { input: { topic: "кофе" }, stubs: { ...base(), audit: { status: "pass" } }, humans: { ask_brief: { answer_kind: "answered", answer: "RU, shop" }, scope_freeze: { answer_kind: "approved", answer: "" } } });
     expect(pathOf(r).startsWith("ask_brief chainsmith")).toBe(true);
     expect(r.skipped).not.toContain("ask_brief");
     expect(pathOf(await runSim("seo-cocoon", { input, stubs: { chainsmith: { ok: false } } }))).toBe("ask_brief chainsmith blocked");
   });
 
   it("a second failed audit is a partial result with the audit status; quick has no audit", async () => {
-    const r = await runSim("seo-cocoon", { input, stubs: { ...base(), audit: { status: "rework" } } });
-    expect(pathOf(r)).toBe("ask_brief chainsmith evidence architecture briefs audit architecture briefs audit package partial");
+    const r = await runSim("seo-cocoon", { input, stubs: { ...base(), audit: { status: "rework" } }, humans: { scope_freeze: { answer_kind: "approved", answer: "" } } });
+    expect(pathOf(r)).toBe("ask_brief chainsmith research boundaries architecture page_map scope_freeze briefs audit architecture page_map scope_freeze briefs audit package partial");
     expect(out(r)).toMatchObject({ status: "partial", audit_status: "rework" });
-    const quick = await runSim("seo-cocoon", { input, mode: "quick", stubs: base() });
+    const quick = await runSim("seo-cocoon", { input, mode: "quick", stubs: base(), humans: { scope_freeze: { answer_kind: "approved", answer: "" } } });
     expect(quick.skipped).toEqual(expect.arrayContaining(["audit"]));
     expect(out(quick)).toMatchObject({ status: "done" });
   });

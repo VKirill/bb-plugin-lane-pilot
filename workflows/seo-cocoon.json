@@ -5,13 +5,13 @@
     "ru": "Семантический кокон (Cocoon Engine X4)"
   },
   "description": {
-    "en": "Brief, audience evidence (Reddit Mapper), external cited research, page architecture (entity to intent to pages, canonical parents, internal links), GIST content briefs per page and a cocoon audit. Delivers files and a handoff; changes no site.",
-    "ru": "Бриф, доказательства по аудитории (Reddit Mapper), внешнее исследование с источниками, архитектура страниц (сущность, интент, страницы, канонические родители, внутренние ссылки), GIST-брифы по каждой странице и аудит кокона. Отдаёт файлы и передачу; сайт не меняет."
+    "en": "Turns a research package into a cocoon architecture: topic boundaries, an entity graph, page decisions (H2 or its own URL), roles, canonical parents, the internal link graph, a mutable-fact registry and link acceptors; then a GIST brief per page of the frozen batch, a cocoon audit and a frozen export. Delivers files and a handoff; changes no site.",
+    "ru": "Превращает исследовательский пакет в архитектуру кокона: границы темы, граф сущностей, решения по страницам (H2 или свой URL), роли, канонические родители, граф внутренних ссылок, реестр изменяемых фактов и акцепторы ссылок; затем GIST-бриф на каждую страницу замороженного батча, аудит кокона и замороженный экспорт. Отдаёт файлы и передачу; сайт не меняет."
   },
   "examples": {
     "ru": [
       "Собери семантический кокон для сайта про окна ПВХ в Москве",
-      "Построй структуру раздела и бриефы страниц по методу X4",
+      "Построй структуру раздела и брифы страниц по методу X4",
       "Проведи аудит кластера статей про йогу",
       "Нужен кокон 4.0 для интернет-магазина кофемашин",
       "Сделай исследование аудитории и архитектуру страниц для блога о путешествиях",
@@ -64,9 +64,22 @@
     "site_url": {
       "type": "string"
     },
+    "project_passport_path": {
+      "type": "string",
+      "default": ""
+    },
+    "mode": {
+      "type": "new_section|existing_section",
+      "default": "new_section"
+    },
     "material": {
       "type": "string[]",
       "note": "пути к имеющимся данным: семантика, тексты, выгрузки"
+    },
+    "research_package_path": {
+      "type": "string",
+      "default": "",
+      "note": "готовый пакет seo-research; без него исследование запускается"
     },
     "slug": {
       "type": "string"
@@ -92,7 +105,7 @@
   },
   "quality_mode": {
     "default": "standard",
-    "effect": "quick - без аудита; full - независимое подтверждение выводов вторым агентом и расширенный Reddit/научный поиск"
+    "effect": "quick - без аудита; full - независимое подтверждение выводов вторым агентом"
   },
   "requires": {
     "plugins": [
@@ -107,7 +120,8 @@
       "gist-content-logic",
       "tavily",
       "seo-tools",
-      "alphaxiv"
+      "alphaxiv",
+      "seo-evidence-contract"
     ],
     "secrets": [
       "TAVILY_API_KEY",
@@ -179,54 +193,66 @@
       }
     },
     {
-      "id": "evidence",
-      "type": "parallel",
-      "for_each": [
-        "audience",
-        "external",
-        "frequency"
-      ],
+      "id": "research",
+      "type": "subworkflow",
+      "workflow": "seo-research",
+      "skip_when": "$inputs.research_package_path != ''",
+      "skip_out": {
+        "status": "done",
+        "package_path": "{{$inputs.research_package_path}}"
+      },
       "title": {
-        "en": "Collect evidence",
-        "ru": "Собрать доказательства"
+        "en": "Research package",
+        "ru": "Исследовательский пакет"
       },
-      "child": {
-        "produces": [
-          {
-            "kind": "report",
-            "version": 1
-          }
-        ],
-        "type": "agent",
-        "role": "specialist:seo-specialist",
-        "prompt": "Branch {{item}}.\naudience: /исследование - Reddit Mapper evidence from forums, reviews and supplied material (pains, language, decision criteria, demand map, gaps); alphaXiv for scientific evidence when relevant.\nexternal: cited research (Tavily) - competitors, regulations, market facts; each fact with URL; separate evidence, hypothesis and proposal.\nfrequency: ONLY if use_seo_tools and the key is available - Mutagen/xmlstock frequency and competition; otherwise return skipped. Paid calls: log count and cost.\nNever claim a module ran or an artifact exists unless it did.\n",
-        "out": {
-          "branch": "string",
-          "findings_path": "string",
-          "sources": "Source[]",
-          "skipped": "bool"
+      "with": {
+        "topic": "{{$inputs.topic}}",
+        "slug": "{{slug}}",
+        "mode": "{{$inputs.mode}}",
+        "project_passport_path": "{{$inputs.project_passport_path}}",
+        "material": "{{$inputs.material}}",
+        "use_seo_tools": "{{$inputs.use_seo_tools}}"
+      },
+      "out": {
+        "status": "string",
+        "package_path": "string"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 240
+      }
+    },
+    {
+      "id": "boundaries",
+      "type": "agent",
+      "role": "specialist:seo-specialist",
+      "profile": {
+        "skills": [
+          "drmax-cocoon-engine-x4"
+        ]
+      },
+      "title": {
+        "en": "Topic boundaries",
+        "ru": "Границы темы"
+      },
+      "prompt": "Boundary spec over the research package {{research.package_path}}: core, support, comparison and adjacent topics, exclusions and negative intents with fallbacks; the source-backed entity graph stays separate from the task map. Return boundaries_path and entity_graph_path.",
+      "out": {
+        "boundaries_path": "string",
+        "entity_graph_path": "string"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 30
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
         }
-      },
-      "join": {
-        "policy": "all",
-        "out": {
-          "findings_paths": "string[]",
-          "sources": "Source[]",
-          "skipped_branches": "string[]"
-        },
-        "uses": "reduce.seo-cocoon.evidence"
-      },
-      "concurrency": 3
+      ]
     },
     {
       "id": "architecture",
-      "consumes": [
-        {
-          "kind": "verdict",
-          "version": 1,
-          "from": "audit"
-        }
-      ],
       "produces": [
         {
           "kind": "report",
@@ -245,13 +271,15 @@
         "en": "Page architecture",
         "ru": "Архитектура страниц"
       },
-      "prompt": "TGA v4: entity to intent to pages, not keyword silos. Clusters, pages (slug, intent, entity, canonical parent), internal link map with anchors, depth <= 3. At most `max_pages` pages in this run - mark the rest as phase 2. Mapper produces evidence, TGA owns architecture and canonical parents.",
+      "prompt": "TGA v4: entity to intent to pages, not keyword silos. For each intent pick the page type from the SERP and resolve H2 vs its own URL through the granularity, absorption and new-URL gates; assign roles, one structural home and action-based links. Output the three registries (Page Inventory, Link & Context Graph, Entity Consistency Map) plus fact_registry and link acceptors; at most max_pages pages, the rest phase 2.",
       "out": {
         "clusters": "Cluster[]",
         "pages": "Page[]",
         "links": "Link[]",
         "page_count": "int",
-        "changed_pages": "string[]",
+        "fact_registry_path": "string",
+        "acceptors_path": "string",
+        "architecture_path": "string",
         "phase2": "string[]"
       },
       "guards": {
@@ -260,30 +288,69 @@
       }
     },
     {
+      "id": "page_map",
+      "type": "agent",
+      "role": "specialist:seo-specialist",
+      "title": {
+        "en": "Final page map",
+        "ru": "Финальная карта страниц"
+      },
+      "prompt": "Versioned Final Page Map: observed state, candidates, absorbed topics and rejections, prioritized with dependencies and maintenance owners; propose the locked batch (<= max_pages) for the owner. Return page_map_path, batch and locked_count.",
+      "out": {
+        "page_map_path": "string",
+        "batch": "Page[]",
+        "locked_count": "int"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 25
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ]
+    },
+    {
+      "id": "scope_freeze",
+      "type": "human",
+      "role": "owner",
+      "title": {
+        "en": "Freeze the batch",
+        "ru": "Заморозка батча"
+      },
+      "prompt": "Approve and freeze the batch: mandatory, selected optional, deferred and excluded pages, with notes on what each deferral affects. An empty answer freezes the proposed batch as is.",
+      "out": {
+        "answer": "string",
+        "answer_kind": "approved|edited|timeout"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 240
+      }
+    },
+    {
       "id": "briefs",
       "type": "parallel",
-      "for_each": "architecture.pages",
+      "for_each": "page_map.batch",
       "title": {
         "en": "GIST brief per page",
         "ru": "GIST-бриф на страницу"
       },
       "child": {
-        "produces": [
-          {
-            "kind": "report",
-            "version": 1
-          }
-        ],
-        "type": "agent",
-        "role": "specialist:seo-specialist",
-        "profile": {
-          "skills": [
-            "gist-content-logic"
-          ]
+        "type": "subworkflow",
+        "workflow": "seo-brief",
+        "with": {
+          "slug": "{{item.slug}}",
+          "intent": "{{item.intent}}",
+          "entity": "{{item.entity}}",
+          "parent": "{{item.parent}}",
+          "research_package_path": "{{research.package_path}}",
+          "fact_registry_path": "{{architecture.fact_registry_path}}"
         },
-        "prompt": "GIST content brief for page {{item.slug}}: user job, topic core, missing decision nodes, content utility, redundancy against sibling pages, competitor replaceability, metadata (title, H1, description). A brief states what the page must let the reader decide, not keywords to sprinkle.",
         "out": {
-          "slug": "string",
+          "status": "string",
           "brief_path": "string"
         }
       },
@@ -322,7 +389,7 @@
         "en": "Cocoon audit",
         "ru": "Аудит кокона"
       },
-      "prompt": "Verdict on the whole cocoon from the files only: every audience pain/intent has a page; no two pages target one intent (cannibalization, quote both); no orphan pages; link graph depth <= 3; every brief states the decision the reader makes. Findings cite the page slug and the passage. Severity is one of critical, high, medium, low, info.",
+      "prompt": "Verdict on the whole cocoon from the files only: vector overlap and cannibalization, functional duplicates, architectural home vs rel=canonical, drift and the three-filter pruning (a list of support pages to spawn), and the provenance and claim bounds of every map row. Status pass | rework | block; findings cite the page slug and the passage, severity one of critical, high, medium, low, info.",
       "out": {
         "status": "pass|rework|block",
         "findings": "Finding[]",
@@ -342,11 +409,14 @@
       "files": [
         "research.md",
         "architecture.json",
+        "page_map.json",
+        "fact_registry.json",
+        "acceptors.json",
         "briefs/*.md",
         "audit.md",
         "handoff.md"
       ],
-      "note": "handoff.md separates actual evidence, hypotheses, proposed changes and publication readiness; code changes for the site go in a block 'для PM'",
+      "note": "Freeze the manifest, run the readiness gates and export by tier; handoff.md separates actual evidence, hypotheses, proposed changes and publication readiness; code changes for the site go in a block 'для PM'",
       "out": {
         "folder": "string",
         "handoff_path": "string"
@@ -396,7 +466,7 @@
     },
     {
       "from": "chainsmith",
-      "to": "evidence",
+      "to": "research",
       "pass": "artifact",
       "when": "chainsmith.ok"
     },
@@ -406,12 +476,27 @@
       "pass": "artifact"
     },
     {
-      "from": "evidence",
+      "from": "research",
+      "to": "boundaries",
+      "pass": "artifact"
+    },
+    {
+      "from": "boundaries",
       "to": "architecture",
       "pass": "artifact"
     },
     {
       "from": "architecture",
+      "to": "page_map",
+      "pass": "artifact"
+    },
+    {
+      "from": "page_map",
+      "to": "scope_freeze",
+      "pass": "artifact"
+    },
+    {
+      "from": "scope_freeze",
       "to": "briefs",
       "pass": "artifact"
     },
@@ -459,11 +544,13 @@
         "chainsmith": {
           "ok": true
         },
-        "evidence:child": {
-          "branch": "frequency",
-          "findings_path": "frequency.md",
-          "sources": [],
-          "skipped": false
+        "seo-research": {
+          "status": "done",
+          "package_path": ".agents/seo/research/kofemashiny"
+        },
+        "boundaries": {
+          "boundaries_path": "boundaries.md",
+          "entity_graph_path": "entities.json"
         },
         "architecture": {
           "page_count": 10,
@@ -483,43 +570,32 @@
             {
               "slug": "page-1",
               "intent": "buy"
+            }
+          ],
+          "fact_registry_path": "fact_registry.json",
+          "acceptors_path": "acceptors.json",
+          "architecture_path": "architecture.json"
+        },
+        "page_map": {
+          "page_map_path": "page_map.json",
+          "locked_count": 2,
+          "batch": [
+            {
+              "slug": "page-0",
+              "intent": "buy",
+              "entity": "e0",
+              "parent": "root"
             },
             {
-              "slug": "page-2",
-              "intent": "buy"
-            },
-            {
-              "slug": "page-3",
-              "intent": "buy"
-            },
-            {
-              "slug": "page-4",
-              "intent": "buy"
-            },
-            {
-              "slug": "page-5",
-              "intent": "buy"
-            },
-            {
-              "slug": "page-6",
-              "intent": "buy"
-            },
-            {
-              "slug": "page-7",
-              "intent": "buy"
-            },
-            {
-              "slug": "page-8",
-              "intent": "buy"
-            },
-            {
-              "slug": "page-9",
-              "intent": "buy"
+              "slug": "page-1",
+              "intent": "buy",
+              "entity": "e1",
+              "parent": "root"
             }
           ]
         },
-        "briefs:child": {
-          "slug": "page-0",
+        "seo-brief": {
+          "status": "done",
           "brief_path": "briefs/page-0.md"
         },
         "audit": [
@@ -539,11 +615,16 @@
       "expect_path": [
         "ask_brief",
         "chainsmith",
-        "evidence",
+        "research",
+        "boundaries",
         "architecture",
+        "page_map",
+        "scope_freeze",
         "briefs",
         "audit",
         "architecture",
+        "page_map",
+        "scope_freeze",
         "briefs",
         "audit",
         "package",

@@ -226,30 +226,38 @@ describe("seo-page", () => {
   const input = { page_topic: "Установка кондиционеров в квартире", site_goal: "услуги", site_dir: "content/services", geo: "RU" };
   const base = () => ({
     "seo-cocoon": { status: "done", folder: ".agents/seo/conditioners", handoff_path: ".agents/seo/conditioners/handoff.md", briefs_dir: ".agents/seo/conditioners/briefs" },
-    write_content: { ok: true, raw_page_path: ".agents/seo/conditioners/page_raw.md", word_count: 1200, status: "done" },
-    proofread: { status: "pass", clean_page_path: ".agents/seo/conditioners/page_clean.md", ru_score: 9, issues: [] },
-    export_to_site: { ok: true, site_page_path: "content/services/ustanovka-kondicionerov.md", status: "done" },
+    "seo-brief": { status: "done", brief_path: ".agents/seo/conditioners/briefs/page.md" },
+    write: { ok: true, raw_page_path: ".agents/seo/conditioners/page_raw.md", word_count: 1200, status: "done" },
+    media_brief: { media_path: ".agents/seo/conditioners/media.md" },
+    quality: { status: "pass", findings: [] },
+    edit: { status: "pass", clean_page_path: ".agents/seo/conditioners/page_clean.md", ru_score: 9, issues: [] },
+    meta_schema: { meta_path: ".agents/seo/conditioners/meta.json" },
+    risk_scan: { queue_count: 0, risk_queue: [] },
+    prepublish_qa: { status: "pass", qa_path: ".agents/seo/conditioners/qa.md" },
+    export: { ok: true, site_page_path: "content/services/ustanovka-kondicionerov.md", release_item: ".agents/seo/conditioners/release-item.json", status: "done" },
+    indexability_gate: { status: "pass", gate_path: ".agents/seo/conditioners/indexability.md" },
   });
 
-  it("happy path: cocoon -> write content -> ru-check proofread -> export to site -> done", async () => {
+  it("happy path: cocoon -> brief -> write -> media -> quality -> edit -> meta -> risk -> signoff -> QA -> export -> gate -> done", async () => {
     const r = await runSim("seo-page", { input, stubs: base() });
     expect(r.summary.status).toBe("succeeded");
-    expect(pathOf(r)).toBe("cocoon write_content proofread export_to_site goal_check done");
+    expect(pathOf(r)).toBe("cocoon brief locale_plan write media_brief quality edit meta_schema risk_scan signoff prepublish_qa export indexability_gate goal_check done");
+    expect(r.skipped).toEqual(["locale_plan", "signoff"]);
     expect(out(r)).toMatchObject({ status: "done", site_page_path: "content/services/ustanovka-kondicionerov.md", ru_score: 9 });
   });
 
-  it("poor proofreading score loops back to write_content once", async () => {
+  it("a rework quality audit loops back to write once", async () => {
     const r = await runSim("seo-page", {
       input,
       stubs: {
         ...base(),
-        proofread: [
-          { status: "rework", clean_page_path: ".agents/seo/conditioners/page_clean.md", ru_score: 5, issues: ["many clichés", "bad typography"] },
-          { status: "pass", clean_page_path: ".agents/seo/conditioners/page_clean.md", ru_score: 9, issues: [] },
+        quality: [
+          { status: "rework", findings: [{ severity: "high", title: "thin core" }] },
+          { status: "pass", findings: [] },
         ],
       },
     });
-    expect(pathOf(r)).toBe("cocoon write_content proofread write_content proofread export_to_site goal_check done");
+    expect(pathOf(r)).toBe("cocoon brief locale_plan write media_brief quality write media_brief quality edit meta_schema risk_scan signoff prepublish_qa export indexability_gate goal_check done");
     expect(out(r)).toMatchObject({ status: "done" });
   });
 

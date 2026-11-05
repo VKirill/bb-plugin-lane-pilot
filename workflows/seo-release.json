@@ -1,0 +1,489 @@
+{
+  "id": "seo-release",
+  "name": {
+    "en": "SEO release",
+    "ru": "SEO-релиз"
+  },
+  "description": {
+    "en": "The single path for any change to a live site: baseline and control cohort in the SEO Change Log, wave or cohort plan, redirect map, staging QA, the owner's go, one named publish step, production QA, sitemap and URL submission, and the delayed index check.",
+    "ru": "Единственный путь любых изменений на живом сайте: базовая линия и контрольная когорта в SEO Change Log, план волн или когорт, карта редиректов, QA на стейджинге, «go» владельца, один именованный шаг публикации, QA на проде, отправка карт и URL, и отложенная проверка индексации."
+  },
+  "examples": {
+    "ru": [
+      "Опубликуй батч новых страниц кокона",
+      "Проведи релиз реструктуризации раздела с редиректами",
+      "Проверь индексацию опубликованных страниц"
+    ],
+    "en": [
+      "Publish the batch of new cocoon pages",
+      "Run the section restructure release with redirects",
+      "Check indexing of the published pages"
+    ]
+  },
+  "not_for": [
+    "seo-page",
+    "seo-cocoon"
+  ],
+  "status": "published",
+  "tags": [
+    "seo",
+    "drmax"
+  ],
+  "inputs": {
+    "items": {
+      "type": "string[]",
+      "note": "релизные элементы: пакеты страниц, карта редиректов, спецификация шаблона, тикеты дефектов"
+    },
+    "mode": {
+      "type": "new_batch|restructure_wave|template_cohort|migration|index_check",
+      "default": "new_batch"
+    },
+    "target": {
+      "type": "string",
+      "default": "",
+      "note": "CMS или репозиторий, куда публикуем"
+    },
+    "url_changes": {
+      "type": "bool",
+      "default": false,
+      "note": "URL меняются - нужна карта редиректов"
+    },
+    "rollback_path": {
+      "type": "string",
+      "default": ""
+    }
+  },
+  "outputs": {
+    "status": "done|blocked",
+    "change_log_path": "string?",
+    "release_report_path": "string?",
+    "redirect_map_path": "string?",
+    "index_status_path": "string?"
+  },
+  "requires": {
+    "plugins": [
+      "lane-pilot"
+    ],
+    "skills": [
+      "seo-agent",
+      "google",
+      "yandex",
+      "seo-project-life",
+      "seo-release-protocol",
+      "seo-measurement-loop"
+    ],
+    "browserSession": true
+  },
+  "budget": {
+    "max_minutes": 240,
+    "max_usd": 10
+  },
+  "entry": "baseline",
+  "nodes": [
+    {
+      "id": "baseline",
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "errand-browser",
+      "skip_when": "$inputs.mode == 'index_check'",
+      "title": {
+        "en": "Baseline and control cohort",
+        "ru": "Базовая линия и контрольная когорта"
+      },
+      "prompt": "Capture the GSC/analytics baseline for the affected URLs in the owner's session, choose a control cohort of the same template, write the SEO Change Log entry with due dates (seo-release-protocol). Return change_log_path and cohort.",
+      "out": {
+        "change_log_path": "string",
+        "cohort": "string"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 30
+      },
+      "skip_out": {
+        "change_log_path": "",
+        "cohort": ""
+      }
+    },
+    {
+      "id": "plan",
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "specialist:seo-specialist",
+      "skip_when": "$inputs.mode == 'index_check'",
+      "title": {
+        "en": "Release plan",
+        "ru": "План релиза"
+      },
+      "prompt": "Plan the release (seo-release-protocol): an MVC batch with indexed donors per new URL, template cohorts with override locks and a split test, restructure waves with control pauses. Return plan_path.",
+      "out": {
+        "plan_path": "string"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 25
+      },
+      "skip_out": {
+        "plan_path": ""
+      }
+    },
+    {
+      "id": "redirects",
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "specialist:seo-specialist",
+      "skip_when": "$inputs.mode == 'index_check' || $inputs.url_changes == false",
+      "skip_out": {
+        "redirect_map_path": ""
+      },
+      "title": {
+        "en": "Redirect map",
+        "ru": "Карта редиректов"
+      },
+      "prompt": "Only when URLs change: a 1:1 redirect map from the six sources (GSC, analytics, crawl, sitemap, backlinks, Wayback), flattened to single hops across CDN, server and CMS. Return redirect_map_path.",
+      "out": {
+        "redirect_map_path": "string"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 25
+      }
+    },
+    {
+      "id": "staging_qa",
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "browser-qa",
+      "skip_when": "$inputs.mode == 'index_check'",
+      "title": {
+        "en": "Staging QA",
+        "ru": "QA на стейджинге"
+      },
+      "prompt": "Stages 1-2 of fix verification on staging: the control URL list in list mode, statuses, canonicals, redirects, CWV against the baseline. Status pass | rework | block.",
+      "out": {
+        "status": "pass|rework|block",
+        "qa_path": "string"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 30
+      },
+      "skip_out": {
+        "status": "pass",
+        "qa_path": ""
+      }
+    },
+    {
+      "id": "owner_go",
+      "type": "human",
+      "role": "owner",
+      "skip_when": "$inputs.mode == 'index_check'",
+      "skip_out": {
+        "answer": "",
+        "answer_kind": "timeout"
+      },
+      "title": {
+        "en": "Go / no-go",
+        "ru": "Подтверждение публикации"
+      },
+      "prompt": "Approve the publish with the release diff and the rollback plan in front of you. approve publishes exactly the staged items; decline stops the release.",
+      "out": {
+        "answer": "string",
+        "answer_kind": "approve|decline|timeout"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 1440
+      }
+    },
+    {
+      "id": "publish",
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "specialist:seo-specialist",
+      "title": {
+        "en": "Publish",
+        "ru": "Публикация"
+      },
+      "prompt": "The named CMS/repo write of exactly the approved items into {{$inputs.target}}; nothing else. Return publish_status ok | failed.",
+      "out": {
+        "publish_status": "ok|failed"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "maxAttempts": 1,
+        "timeoutMin": 30
+      }
+    },
+    {
+      "id": "prod_qa",
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "browser-qa",
+      "title": {
+        "en": "Production QA",
+        "ru": "QA на проде"
+      },
+      "prompt": "Production QA of the pilot slice: scenario walk-through, links resolving live, fact propagation; a rollback ticket if a check fails. Status pass | fail.",
+      "out": {
+        "status": "pass|fail",
+        "rollback_ticket": "string?"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 30
+      }
+    },
+    {
+      "id": "submit",
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "errand-browser",
+      "title": {
+        "en": "Submit to search consoles",
+        "ru": "Отправка в консоли"
+      },
+      "prompt": "In the owner's GSC and Webmaster: resubmit sitemaps, request inspection for the new URLs; Change of Address only in migration mode. Return submit_path and requested.",
+      "out": {
+        "submit_path": "string",
+        "requested": "int"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 30
+      }
+    },
+    {
+      "id": "index_check",
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "type": "agent",
+      "role": "errand-browser",
+      "title": {
+        "en": "Index check",
+        "ru": "Проверка индексации"
+      },
+      "prompt": "mode index_check (seo-measurement-loop): URL Inspection in the owner's GSC, a per-level diagnosis of each non-indexed URL, and fix tasks. In other modes re-check the submitted URLs. Return index_status_path and not_indexed.",
+      "out": {
+        "index_status_path": "string",
+        "not_indexed": "string[]"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 30
+      }
+    },
+    {
+      "id": "package",
+      "type": "action",
+      "action": "fs.write",
+      "path": ".agents/seo/release/{{run_id}}/",
+      "files": [
+        "change-log.json",
+        "release-report.md",
+        "redirect-map.json",
+        "index-status.json"
+      ],
+      "note": "Write the release report and update the SEO Change Log",
+      "out": {
+        "release_report_path": "string"
+      }
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "done",
+        "change_log_path": "baseline.change_log_path",
+        "release_report_path": "package.release_report_path",
+        "redirect_map_path": "redirects.redirect_map_path",
+        "index_status_path": "index_check.index_status_path"
+      }
+    },
+    {
+      "id": "blocked",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "blocked"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "baseline",
+      "to": "plan",
+      "pass": "artifact"
+    },
+    {
+      "from": "plan",
+      "to": "redirects",
+      "pass": "artifact"
+    },
+    {
+      "from": "redirects",
+      "to": "staging_qa",
+      "pass": "artifact"
+    },
+    {
+      "from": "staging_qa",
+      "to": "owner_go",
+      "pass": "artifact"
+    },
+    {
+      "from": "owner_go",
+      "to": "publish",
+      "pass": "artifact",
+      "when": "owner_go.answer_kind == 'approve'"
+    },
+    {
+      "from": "owner_go",
+      "to": "blocked",
+      "pass": "artifact",
+      "when": "owner_go.answer_kind == 'decline'"
+    },
+    {
+      "from": "owner_go",
+      "to": "index_check",
+      "pass": "artifact"
+    },
+    {
+      "from": "publish",
+      "to": "prod_qa",
+      "pass": "artifact",
+      "when": "publish.publish_status == 'ok'"
+    },
+    {
+      "from": "publish",
+      "to": "blocked",
+      "pass": "artifact"
+    },
+    {
+      "from": "prod_qa",
+      "to": "submit",
+      "pass": "artifact",
+      "when": "prod_qa.status == 'pass'"
+    },
+    {
+      "from": "prod_qa",
+      "to": "blocked",
+      "pass": "artifact"
+    },
+    {
+      "from": "submit",
+      "to": "index_check",
+      "pass": "artifact"
+    },
+    {
+      "from": "index_check",
+      "to": "package",
+      "pass": "artifact"
+    },
+    {
+      "from": "package",
+      "to": "done",
+      "pass": "artifact"
+    }
+  ],
+  "test": {
+    "id": "srel-1",
+    "sim": {
+      "input": {
+        "items": [
+          ".agents/seo/conditioners/release-item.json"
+        ],
+        "mode": "new_batch",
+        "target": "repo:site",
+        "url_changes": false
+      },
+      "stubs": {
+        "baseline": {
+          "change_log_path": "change-log.json",
+          "cohort": "service"
+        },
+        "plan": {
+          "plan_path": "plan.md"
+        },
+        "staging_qa": {
+          "status": "pass",
+          "qa_path": "staging-qa.md"
+        },
+        "publish": {
+          "publish_status": "ok"
+        },
+        "prod_qa": {
+          "status": "pass"
+        },
+        "submit": {
+          "submit_path": "submit.md",
+          "requested": 3
+        },
+        "index_check": {
+          "index_status_path": "index-status.json",
+          "not_indexed": []
+        },
+        "package": {
+          "release_report_path": ".agents/seo/release/r1/release-report.md"
+        }
+      },
+      "expect_path": [
+        "baseline",
+        "plan",
+        "redirects",
+        "staging_qa",
+        "owner_go",
+        "publish",
+        "prod_qa",
+        "submit",
+        "index_check",
+        "package",
+        "done"
+      ],
+      "expect_outputs": [
+        "status == 'done'"
+      ]
+    },
+    "live": "батч на стейджинге, go владельца, публикация одним шагом, QA на проде",
+    "note": "Tested on stubs: publish is reachable only through owner_go; index_check mode skips the publish path."
+  },
+  "goal_check": "artifact"
+}
