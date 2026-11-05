@@ -49,6 +49,8 @@ describe("status of the built-in chains", () => {
     expect(ids).toEqual(expect.arrayContaining(["validate-phase", "eval-review", "ai-integration-phase", "spike", "ship", "pr-branch", "cleanup", "new-milestone", "plan-review-convergence", "project-start"]));
     expect(ids).toEqual(expect.arrayContaining(["3d-asset", "roblox-asset", "social-post"]));
     expect(ids).toEqual(expect.arrayContaining(["research-dossier", "billing-batch", "macos-routine", "seo-page", "api-recon"]));
-    expect(ids).toHaveLength(85); // +1 lead-tick (0.1.447), +1 telegram-send (0.1.477), +1 lp.jev-labels (0.1.478, the nightly judge labels), +1 lp.pm-replay (the nightly PM replay)
+    // SEO wave 1: the intake and the monitor are chains; the research, the brief and the release are called by other graphs.
+    expect(ids).toEqual(expect.arrayContaining(["seo-project-intake", "seo-monitor", "seo-research", "seo-brief", "seo-release"]));
+    expect(ids).toHaveLength(90); // +5 seo wave-1 graphs (research, brief, release, project-intake, monitor)
   });
 });
