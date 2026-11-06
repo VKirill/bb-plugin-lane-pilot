@@ -117,3 +117,11 @@ it("hover and search keep every unrelated node and edge object identical (nothin
     });
   }
 }, 60_000);
+
+it("hyphenates long Russian words at syllables, leaves short and Latin words alone", async () => {
+  const { softHyphens } = await import("../src/rooms/workflow/ui/workflow-map");
+  const show = (text: string) => softHyphens(text).replace(/­/g, "-");
+  expect(show("Исследовательский пакет SEO")).toBe("Ис-сле-до-ва-тель-ский пакет SEO");
+  expect(show("Семантический кокон (Cocoon Engine X4)")).toBe("Се-ман-ти-чес-кий кокон (Cocoon Engine X4)");
+  expect(show("Review and fix")).toBe("Review and fix");
+});

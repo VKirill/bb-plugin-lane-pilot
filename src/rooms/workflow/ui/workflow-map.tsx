@@ -100,7 +100,7 @@ const CELL_GAP = 48;
 const CAT_HEAD = 340;
 /** Overview chip: one size and one type scale for every graph. */
 export const CHIP_W = 520;
-export const CHIP_H = 300;
+export const CHIP_H = 312;
 const CHIP_TITLE = 54;
 const CHIP_META = 26;
 /** The cluster title: one line, and the cluster is at least as wide as it. */
@@ -206,7 +206,7 @@ export async function layoutMap(data: MapData, locale: Locale = "en"): Promise<M
         const position = { x: CAT_PAD + cluster.packed.at[at]!.x, y: CAT_HEAD + cluster.packed.at[at]!.y };
         centers.set(graph.id, { x: origin.x + position.x + size.w / 2, y: origin.y + position.y + size.h / 2 });
         nodes.push({ id: gid, type: "graphGroup", parentId: catId, extent: "parent", selectable: false, position,
-          data: { graph, label: graph.name[locale] || graph.id, cat: cluster.cat, mode, steps: stepsOf.get(graph.id)?.length ?? 0, dim: false },
+          data: { graph, label: graph.name[locale] || graph.id, lang: graph.name[locale] ? locale : "en", cat: cluster.cat, mode, steps: stepsOf.get(graph.id)?.length ?? 0, dim: false },
           style: { width: size.w, height: size.h } });
         if (mode === "overview") return;
         for (const child of laidGraphs.get(graph.id)?.children ?? []) {
@@ -281,6 +281,30 @@ function graphStats(graph: MapGraph): string {
   return t("wmGraphStats").replace("{runs}", String(graph.runs30d)).replace("{pct}", String(Math.round((graph.successRate ?? 0) * 100)));
 }
 
+const VOWEL = /[аеёиоуыэюяaeiouy]/i;
+/**
+ * Soft hyphens at syllable joins of long Cyrillic words (≥ 10 letters), so a narrow chip breaks «Исследова-тельский» with
+ * a hyphen even where the browser has no Russian hyphenation dictionary (Chrome on Linux). Rules: a break needs a vowel on
+ * both sides and two letters at each end; after й/ь/ъ; between vowel and consonant+vowel; between two consonants.
+ */
+// ponytail: syllable heuristics, not a dictionary — a rare odd split, swap for a pattern set if titles ever look wrong
+export function softHyphens(text: string): string {
+  return text.replace(/[а-яё]{10,}/gi, (word) => {
+    let out = word[0]!;
+    for (let i = 1; i < word.length; i++) {
+      const left = word.slice(0, i), right = word.slice(i);
+      const prev = word[i - 1]!, here = word[i]!, next = word[i + 1] ?? "";
+      const ok = i >= 2 && right.length >= 2 && VOWEL.test(left) && VOWEL.test(right) && (
+        /[йьъ]/i.test(prev)
+        || (VOWEL.test(prev) && !VOWEL.test(here) && VOWEL.test(next))
+        || (!VOWEL.test(prev) && !/[йьъ]/i.test(prev) && !VOWEL.test(here) && !/[йьъ]/i.test(here) && VOWEL.test(word[i - 2]!))
+      );
+      out += (ok ? "\u00ad" : "") + here;
+    }
+    return out;
+  });
+}
+
 /** A graph: in the overview a chip of the one size and type scale; in the detail view a tinted frame over its steps. */
 function GraphGroup({ data }: NodeProps) {
   const graph = data.graph as MapGraph;
@@ -306,9 +330,11 @@ function GraphGroup({ data }: NodeProps) {
           <span className="shrink-0 text-sm text-muted-foreground">{steps} · {graphStats(graph)}</span>
         </div>
       ) : (
-        <div className="flex h-full flex-col justify-between px-8 pb-7 pt-9">
-          <div className="line-clamp-3 break-words font-semibold leading-[1.15] tracking-tight" style={{ fontSize: CHIP_TITLE }}>{data.label as string}</div>
-          <div className="flex items-center gap-3 whitespace-nowrap" style={{ fontSize: CHIP_META }}>
+        <div className="flex h-full flex-col justify-between gap-3 px-8 pb-7 pt-9">
+          {/* Long words break at soft hyphens (syllables) instead of mid-word; 12 px always separate it from the meta row. */}
+          <div lang={data.lang as string} className="line-clamp-3 min-h-0 break-words font-semibold leading-[1.15] tracking-tight"
+            style={{ fontSize: CHIP_TITLE, hyphens: "manual", WebkitHyphens: "manual" }}>{softHyphens(data.label as string)}</div>
+          <div className="flex shrink-0 items-center gap-3 whitespace-nowrap" style={{ fontSize: CHIP_META }}>
             <span className="text-muted-foreground">{steps}</span>
             <span className="truncate rounded-full px-[0.6em] py-[0.15em] font-medium"
               style={ran ? { background: catColor(cat, 62, 0.14), color: catColor(cat, 38) } : { background: "var(--muted)", color: "var(--muted-foreground)" }}>
