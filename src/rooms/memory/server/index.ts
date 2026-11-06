@@ -6,6 +6,5 @@ export { sessionMemoryRpc } from "./session-memory";
 export { MAX_SETTLED_PER_RUN, createMemoryConflicts } from "./memory-conflicts";
 export type { MemoryConflictsApi } from "./memory-conflicts";
 export { MEMORY_CONFLICT_USAGE, runMemoryConflictCli } from "./memory-conflict-cli";
-export { MEMORY_IMPORT_SOURCES, MEMORY_IMPORT_USAGE, evalMemoryImport, formatImportEval, formatImportSummary, maskImportContent, pmTopIds, readImportReport, reportPath, runMemoryImport, writeImportReport } from "./import";
+export { MEMORY_IMPORT_SOURCES, MEMORY_IMPORT_USAGE, evalMemoryImport, formatImportEval, formatImportSummary, maskImportContent, pmTopIds, runMemoryImport } from "./import";
 export type { ImportOutcome, ImportReport, MemoryImportOptions, MemoryImportSource } from "./import";
-export { runMemoryImportCli } from "./import-cli";

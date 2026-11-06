@@ -60,6 +60,14 @@ export const rpcKnowledge = {
     }).strict(),
   },
   ...anamnesisRpcMethods,
+  // M1 one-door import: the client reads its JSONL export (`bb plugin rpc call lane-pilot memory_import --input-file x.json`), the hub
+  // writes it through the agent write path and answers with the receipt; the plugin server reads and writes no file itself.
+  memory_import: {
+    input: z.object({ source: z.enum(["bb-memory", "claude-files", "agentmemory"]), projectId: z.string().min(1).max(200),
+      jsonl: z.string().max(8_000_000), dryRun: z.boolean().optional() }).strict(),
+    output: z.unknown(),
+  },
+  memory_import_eval: { input: z.object({ report: z.object({ projectId: z.string().min(1), outcomes: z.array(z.unknown()) }).passthrough() }).strict(), output: z.unknown() },
   session_memory_project: {
     input: z.object({ hostId: z.string().min(1), path: z.string().startsWith("/") }).strict(),
     output: z.object({ projectId: z.string().nullable(), scopes: z.array(z.string()) }).strict(),

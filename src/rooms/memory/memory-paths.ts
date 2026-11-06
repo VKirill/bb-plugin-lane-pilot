@@ -96,6 +96,9 @@ export const MEMORY_PATHS: readonly MemoryPath[] = [
       { file: "src/rooms/council/server/council.ts", primitive: "searchMemoryRecords", count: 1 },
       { file: "src/rooms/council/server/council.ts", primitive: "memoryContext", count: 1 },
     ] },
+  { id: "hub.memory_import_eval", consumer: "the M1 import gate (RPC memory_import_eval): measures how many imported records the PM search finds", carries: [], alwaysOn: [], status: "exempt",
+    reason: "A measurement over the import receipt, read by the operator; nothing it finds reaches an agent prompt.",
+    sites: [{ file: "src/rooms/memory/server/import.ts", primitive: "searchMemoryRecords", count: 1 }] },
   { id: "hub.session_rpc", consumer: "the hub session_memory RPCs, not a Lane Pilot agent prompt", carries: [], alwaysOn: [], status: "exempt",
     reason: "Claude Lane's terminal client is gone (2026-10-29). The RPCs stay for the hub; they do not deliver into an agent prompt.",
     sites: [

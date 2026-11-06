@@ -1,3 +1,4 @@
+import { evalMemoryImport, formatImportEval, formatImportSummary, pmTopIds, runMemoryImport, type ImportReport } from "./import";
 import { resolve } from "node:path";
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import { getRuleProposal, upsertLessonProposal } from "@lane-pilot/run-insights";
@@ -27,6 +28,16 @@ export function sessionMemoryRpc(ctx: ServerCore, services: Services) {
         }
       }
       return best ? { projectId: best.projectId, scopes: best.scopes } : { projectId: null, scopes: [] };
+    },
+    memory_import: async ({ source, projectId, jsonl, dryRun }) => {
+      const report = runMemoryImport({ db, projectId, source, jsonl, settings: memorySettingsFor(db, projectId), dryRun: dryRun === true });
+      return { ...report, summary: formatImportSummary(report) };
+    },
+    memory_import_eval: async ({ report }) => {
+      const typed = report as unknown as ImportReport;
+      const settings = memorySettingsFor(db, typed.projectId);
+      const result = evalMemoryImport(typed, (query) => pmTopIds(db, typed.projectId, query, settings));
+      return { ...result, summary: formatImportEval(result) };
     },
     session_memory_write: async ({ projectId, kind, content, concepts, source, chain }) => {
       const settings = memorySettingsFor(db, projectId);
@@ -83,5 +94,5 @@ export function sessionMemoryRpc(ctx: ServerCore, services: Services) {
       const proposal = getRuleProposal(db, projectId, result.id);
       return { proposalId: result.id, repeatOf: result.repeatOf, state: proposal?.state ?? "proposed", adopted };
     },
-  } satisfies Pick<PluginRpcHandlers<typeof rpcContract>, "session_memory_project" | "session_memory_write" | "session_memory_search" | "session_memory_core" | "session_lesson">;
+  } satisfies Pick<PluginRpcHandlers<typeof rpcContract>, "memory_import" | "memory_import_eval" | "session_memory_project" | "session_memory_write" | "session_memory_search" | "session_memory_core" | "session_lesson">;
 }

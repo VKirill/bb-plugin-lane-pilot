@@ -996,7 +996,7 @@ export const SMA_ENTRIES: Readonly<Record<string, SmaEntry>> = {
   n986: ["have", "ровно один черновик", "src/rooms/forge/server/index.ts#Exactly one draft"],
   n987: ["have", "папки черновиков", "src/rooms/forge/logic.ts#export const draftFolder"],
   n988: ["have", "линт черновика", "src/rooms/forge/logic.ts#export function lintDraft("],
-  n989: ["have", "запрещённые права", "src/rooms/forge/logic.ts#export const FORBIDDEN_GRANTS"],
+  n989: ["have", "запрещённые права", "src/rooms/forge/skill-lint.ts#export const FORBIDDEN_GRANTS"],
   n990: ["have", "черновик не прошёл линт", "src/rooms/forge/server/index.ts#the draft failed the lint"],
   n991: ["have", "квитанция forge", "src/rooms/forge/server/index.ts#The forge receipt"],
   n992: ["have", "включение в два шага", "src/rooms/forge/server/index.ts#enabling is two steps"],

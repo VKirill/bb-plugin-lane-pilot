@@ -22,7 +22,7 @@ import { learningFor } from "../../learning";
 import { attemptMetrics, renderAttemptMetrics } from "../../usage/server";
 import { DEFERRAL_USAGE, runDeferralCli } from "../../deferral/server";
 import { MEMORY_EVAL_USAGE, runMemoryEvalCommand } from "../../memory-eval/server";
-import { MEMORY_CONFLICT_USAGE, runMemoryConflictCli, runMemoryImportCli } from "../../memory/server";
+import { MEMORY_CONFLICT_USAGE, runMemoryConflictCli, } from "../../memory/server";
 import { BENCH_USAGE, runBenchCli } from "../../bench/server";
 import { BASELINE_USAGE, runBaselineCli } from "../../baseline/server";
 import { RETURN_USAGE, runReturnCli } from "../../stage-return/server";
@@ -155,7 +155,6 @@ export function registerCli(ctx: ServerCore, services: Services) {
       { name:"memory-eval", summary:"Score memory retrieval at 30, 300 and 3000 notes on real accepted tasks (right answer, nothing relevant, off-topic) against a plain path-and-keyword baseline; reads the hub data, writes nothing", usage:MEMORY_EVAL_USAGE },
       { name:"memory-conflicts", summary:"Memory notes that disagree: held out of every brief until a person settles them; --detect looks for new ones", usage:"bb lane-pilot memory-conflicts [--project P] [--state held|settled] [--detect]" },
       { name:"memory-conflict-settle", summary:"Settle a held memory conflict: keep one note, both, or neither, with the evidence", usage:"bb lane-pilot memory-conflict-settle <mc_id> --keep a|b|both|none --evidence <text>" },
-      { name:"memory", summary:"One door for the old memory stores: import a JSONL export (bb memory, Claude auto-memory files, the agentmemory archive) through the same mask and store write path as an agent write, with a receipt per line; import-eval counts how many imported records the PM search still finds", usage:"bb lane-pilot memory import --source bb-memory|claude-files|agentmemory --file <jsonl> --project <id> [--dry-run] [--json]\nbb lane-pilot memory import-eval --report <json> [--json]" },
       { name:"start-ambiguous-probe", summary:"Create duplicate metadata and prove reconcile blocks", usage:"bb lane-pilot start-ambiguous-probe <project-id> <pm-thread-id>" },
       { name:"host-detect", summary:"Call the host worker detect method", usage:"bb lane-pilot host-detect <host-id> <workspace-path>" },
       { name:"host-snapshot", summary:"Call read-only snapshotDryRun", usage:"bb lane-pilot host-snapshot <host-id> <absolute-path>..." },
@@ -623,9 +622,6 @@ export function registerCli(ctx: ServerCore, services: Services) {
         }
         if (command === "memory-conflicts" || command === "memory-conflict-settle") {
           return runMemoryConflictCli(services.memoryConflicts, command, args);
-        }
-        if (command === "memory") {
-          return runMemoryImportCli(db, args);
         }
         if (command === "start-ambiguous-probe" && args.length === 2) {
           return { exitCode:0, stdout:JSON.stringify(await services.startAmbiguousProbe(args[0]!, args[1]!), null, 2) };
