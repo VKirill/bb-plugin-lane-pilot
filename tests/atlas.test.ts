@@ -18,7 +18,7 @@ describe("the atlas of Lane Pilot (SMA D2-11)", () => {
   it("the system map puts each table with the code that owns it and links graphs to what they run", () => {
     const map = collectSystemMap(root);
     const node = (id: string) => map.nodes.find((item) => item.id === id);
-    expect(node("table:lane_pilot_memory")?.parent).toBe("pkg:memory-core");
+    expect(node("table:lane_pilot_wall_repair")?.parent).toBe("room:wall");
     expect(map.nodes.some((item) => item.type === "table" && item.parent === "room:sma-map")).toBe(false);
     expect(node("cmd:errands")?.parent).toBe("room:errands");
     expect(map.edges.some((edge) => edge.source === "graph:invoice-send" && edge.type === "runs")).toBe(true);
