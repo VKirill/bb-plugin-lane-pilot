@@ -2,7 +2,7 @@
 title: Workflow UI Projections and Schedule Helpers
 type: component
 created: 2026-10-10
-updated: 2026-10-30
+updated: 2026-11-06
 status: active
 confidence: high
 tags: [workflow-engine, ui, schedules]
@@ -23,12 +23,12 @@ TL;DR: Browser-facing helpers turn validated workflows and incomplete drafts int
 
 ## Purpose
 
-`workflowView` produces plain display data from the lowered graph that runs; `draftView` tolerates incomplete draft JSON and omits pieces it cannot interpret. The `/ui` entry re-exports cron checks, draft views, edge-label helpers, and display types (`packages/workflow-engine/src/view.ts:8-12`, `packages/workflow-engine/src/draft-view.ts:3-8`, `packages/workflow-engine/src/ui.ts:1-4`).
+`workflowView` produces plain display data from the lowered graph that runs; `draftView` tolerates incomplete draft data and omits pieces it cannot interpret. The `/ui` entry re-exports the `cron`, `draft-view`, `edge-label`, and `view-core` modules (`packages/workflow-engine/src/view.ts:48`, `packages/workflow-engine/src/draft-view.ts:63`, `packages/workflow-engine/src/ui.ts:1-4`).
 
 ## How it works
 
 1. A complete workflow passes to `workflowView`, which lowers it, maps each node and edge to display fields, inserts explicit start/end sentinels when referenced, and retains canvas positions (`packages/workflow-engine/src/view.ts:14-55`).
-2. An incomplete draft passes to `draftView`; it reads raw objects without closed-schema validation and drops nodes/edges that do not have enough interpretable shape (`packages/workflow-engine/src/draft-view.ts:3-8`, `packages/workflow-engine/src/draft-view.ts:30-54`, `packages/workflow-engine/src/draft-view.ts:63-87`).
+2. An incomplete draft passes to `draftView`; it reads raw objects without closed-schema validation and drops nodes/edges that do not have enough interpretable shape (`packages/workflow-engine/src/draft-view.ts:63`, `packages/workflow-engine/src/draft-view.ts:63`, `packages/workflow-engine/src/draft-view.ts:63-87`).
 3. `conditionText` converts structured boolean conditions into expression text. `humanCondition` converts recognized expression fragments to English or Russian prose; `edgeCaption` prefers the author label and otherwise uses that prose (`packages/workflow-engine/src/view-core.ts:30-39`, `packages/workflow-engine/src/edge-label.ts:153-168`).
 4. Schedule consumers call `cronProblem` and `timezoneProblem`; they return `null` for accepted input or a problem string (`packages/workflow-engine/src/cron.ts:8-28`).
 
@@ -37,7 +37,7 @@ TL;DR: Browser-facing helpers turn validated workflows and incomplete drafts int
 | Helper | Input mode | Result or failure |
 |---|---|---|
 | `workflowView` | Validated workflow, optional subworkflow resolver | Lowers the graph, so generated `:fan` and `:child` nodes and lowered edge indexes match runtime graph identities (`packages/workflow-engine/src/view.ts:46-55`). |
-| `draftView` | Raw/incomplete draft object | Returns a partial view; unrecognized nodes or edges are skipped rather than raising schema errors (`packages/workflow-engine/src/draft-view.ts:3-8`, `packages/workflow-engine/src/draft-view.ts:30-54`). |
+| `draftView` | Raw/incomplete draft object | Returns a partial view; unrecognized nodes or edges are skipped rather than raising schema errors (`packages/workflow-engine/src/draft-view.ts:63`, `packages/workflow-engine/src/draft-view.ts:63`). |
 | `edgeCaption` | Explicit edge label and/or condition text | Nonempty explicit label wins; otherwise humanized condition; no condition gives `null` (`packages/workflow-engine/src/edge-label.ts:153-168`). |
 | `cronProblem` | Five cron fields | Returns a message for wrong field count, unsupported syntax, zero step, or out-of-range/reversed values (`packages/workflow-engine/src/cron.ts:8-23`). |
 | `timezoneProblem` | Time-zone name | Returns an error string when `Intl.DateTimeFormat` rejects the zone (`packages/workflow-engine/src/cron.ts:26-28`). |
@@ -54,10 +54,10 @@ TL;DR: Browser-facing helpers turn validated workflows and incomplete drafts int
 | Import | Purpose |
 |---|---|
 | `@lane-pilot/workflow-engine`: `workflowView`, `conditionText`, `roleTone`, `WorkflowView`, `ViewNode`, `ViewEdge`, `NodeTone` | Complete-workflow graph projection and shared view types (`packages/workflow-engine/src/view.ts:5-6`, `packages/workflow-engine/src/view.ts:47-55`). |
-| `@lane-pilot/workflow-engine/ui`: `cronProblem`, `timezoneProblem`, `localTimezone` | Schedule validation and default zone (`packages/workflow-engine/src/ui.ts:1`, `packages/workflow-engine/src/cron.ts:8-31`). |
-| `@lane-pilot/workflow-engine/ui`: `draftView`, `draftChanges` | Partial draft display and diff (`packages/workflow-engine/src/ui.ts:2`, `packages/workflow-engine/src/draft-view.ts:63-102`). |
-| `@lane-pilot/workflow-engine/ui`: `humanCondition`, `edgeCaption`, `OTHERWISE`, `LabelLang`, `NameOf` | Localized edge labels (`packages/workflow-engine/src/ui.ts:3`, `packages/workflow-engine/src/edge-label.ts:7-9`, `packages/workflow-engine/src/edge-label.ts:153-168`). |
-| `@lane-pilot/workflow-engine`: `modelsSection`, `collectCapabilities` | Build the model catalog projection and collect queried capability sections (`packages/workflow-engine/src/index.ts:5`, `packages/workflow-engine/src/capabilities.ts:37-55`, `packages/workflow-engine/src/capabilities.ts:127-174`). |
+| `@lane-pilot/workflow-engine/ui` `cron` module: `cronProblem`, `timezoneProblem`, `localTimezone` | Schedule validation and default zone (`packages/workflow-engine/src/ui.ts:1`, `packages/workflow-engine/src/cron.ts:8-31`). |
+| `@lane-pilot/workflow-engine/ui` `draft` view module: `draftView`, `draftChanges` | Partial draft display and diff (`packages/workflow-engine/src/ui.ts:2`, `packages/workflow-engine/src/draft-view.ts:63-102`). |
+| `@lane-pilot/workflow-engine/ui` `edge` label module: `humanCondition`, `edgeCaption`, `OTHERWISE`, `LabelLang`, `NameOf` | Localized edge labels (`packages/workflow-engine/src/ui.ts:3`, `packages/workflow-engine/src/edge-label.ts:7-9`, `packages/workflow-engine/src/edge-label.ts:153-168`). |
+| `@lane-pilot/workflow-engine` `capabilities` entry: `modelsSection`, `collectCapabilities` | Build the model catalog projection and collect queried capability sections (`packages/workflow-engine/src/index.ts:5`, `packages/workflow-engine/src/capabilities.ts:37-55`, `packages/workflow-engine/src/capabilities.ts:127-174`). |
 
 ## Package shape
 
@@ -71,18 +71,18 @@ The complete view deliberately follows the lowered graph rather than the source 
 
 1. Lower the validated workflow with the optional resolver; the resulting graph is the graph used for display, including generated parallel node IDs (`packages/workflow-engine/src/view.ts:47-50`).
 2. Convert each lowered node to a plain view node. Notes get a 400-character text excerpt; agents and humans get flattened/clipped prompt or question excerpts; lp-task, action, decision, parallel, join, and subworkflow nodes expose corresponding stages, action, source, loop, or called-workflow data (`packages/workflow-engine/src/view.ts:14-34`).
-3. Add `$start` and `$end` display nodes only if an edge references those sentinels. Preserve edge indexes and pass modes, turn conditions into display text, and list carried field names (`packages/workflow-engine/src/view.ts:36-44`, `packages/workflow-engine/src/view.ts:48-55`).
+3. Add `$start` and `$end` display nodes only if an edge references those sentinels. Preserve edge indexes and pass modes, turn conditions into display text, and list carried field names (`packages/workflow-engine/src/view.ts:54`, `packages/workflow-engine/src/view.ts:48-55`).
 4. Copy `ui.positions`, converting position keys `start` and `end` to `$start` and `$end`; include positions only when the resulting object has keys (`packages/workflow-engine/src/view.ts:53-55`).
 
 The function assumes a parsed `Workflow` and catches neither lowering nor resolver errors; those exceptions propagate to the caller (`packages/workflow-engine/src/view.ts:47-55`, `packages/workflow-engine/src/lower.ts:17-19`).
 
 ### `draftView`
 
-`draftView` projects unvalidated authoring JSON leniently. Non-record input becomes an empty object; non-array `nodes` and `edges` become empty collections (`packages/workflow-engine/src/draft-view.ts:9-14`, `packages/workflow-engine/src/draft-view.ts:62-71`).
+`draftView` projects unvalidated authoring JSON leniently. Non-record input becomes an empty object; non-array `nodes` and `edges` become empty collections (`packages/workflow-engine/src/draft-view.ts:6`, `packages/workflow-engine/src/draft-view.ts:62-71`).
 
 | Draft input branch | Projection behavior |
 |---|---|
-| Node lacks a nonempty string `id` or is not a record | Omitted. A missing or unknown type with an ID is rendered as `agent`; known kinds get kind-specific tone and excerpts (`packages/workflow-engine/src/draft-view.ts:30-49`, `packages/workflow-engine/src/draft-view.ts:64-66`). |
+| Node lacks a nonempty string `id` or is not a record | Omitted. A missing or unknown type with an ID is rendered as `agent`; known kinds get kind-specific tone and excerpts (`packages/workflow-engine/src/draft-view.ts:30-49`, `packages/workflow-engine/src/draft-view.ts:39`). |
 | Outputs use `out` or legacy `output` | Array entries contribute a string value or record `name`; object maps contribute keys; other shapes produce no output names (`packages/workflow-engine/src/draft-view.ts:16-22`). |
 | `entry` names an existing node and no edge starts at `start` | Adds a synthetic start edge before source edges. `start`/`end` are aliases for `$start`/`$end` only when no ordinary node has that ID (`packages/workflow-engine/src/draft-view.ts:67-72`). |
 | Edge has a missing endpoint or a non-sentinel endpoint not in the projected node IDs | Omitted. For retained edges, unknown pass values default to `artifact`; condition text is projected only for strings or record-shaped conditions (`packages/workflow-engine/src/draft-view.ts:70-80`). |
@@ -92,7 +92,7 @@ Malformed pieces are dropped or normalized rather than returned as validation di
 
 ### `atom` in localized edge labels
 
-`atom` handles one expression fragment at a time. It unwraps enclosing parentheses, recognizes negation, then tests membership, comparisons, and finally a bare field name; an unrecognized shape is returned as its trimmed original text (`packages/workflow-engine/src/edge-label.ts:62-74`, `packages/workflow-engine/src/edge-label.ts:100-150`).
+`atom` handles one expression fragment at a time. It unwraps enclosing parentheses, recognizes negation, then tests membership, comparisons, and finally a bare field name; an unrecognized shape is returned as its trimmed original text (`packages/workflow-engine/src/edge-label.ts:100`, `packages/workflow-engine/src/edge-label.ts:100-150`).
 
 | Recognized form | Output branch |
 |---|---|
@@ -102,31 +102,31 @@ Malformed pieces are dropped or normalized rather than returned as validation di
 | `field.length` compared with zero | `> 0`/`!= 0` means nonempty; `== 0` means empty (`packages/workflow-engine/src/edge-label.ts:137-138`). |
 | Field comparison or bare field | Status equality uses status wording; booleans use positive/negative field phrases; empty-string equality describes set/empty; other recognized comparisons translate field names and operators (`packages/workflow-engine/src/edge-label.ts:139-150`). |
 
-`humanCondition` applies `atom` after splitting top-level `||` alternatives and `&&` conjunctions, then joins the localized phrases. When `bare` is false it prefixes “if”/“если”; an empty condition returns `null` (`packages/workflow-engine/src/edge-label.ts:46-60`, `packages/workflow-engine/src/edge-label.ts:153-161`).
+`humanCondition` applies `atom` after splitting top-level `||` alternatives and `&&` conjunctions, then joins the localized phrases. When `bare` is false it prefixes “if”/“если”; an empty condition returns `null` (`packages/workflow-engine/src/edge-label.ts:9`, `packages/workflow-engine/src/edge-label.ts:153-161`).
 
 ### Model capability projection
 
-`modelsSection` turns the supplied model catalog and settings into names a workflow author can use. It omits providers and models with no host IDs. A query matching a provider ID keeps that provider's models; otherwise its models are filtered by model ID or display name. The result includes at most 40 models per provider with a `moreModels` count, each model's supported node efforts, and host availability (`packages/workflow-engine/src/capabilities.ts:29-31`, `packages/workflow-engine/src/capabilities.ts:38-54`).
+`modelsSection` projects the Settings role-to-model table. It filters roles by role ID substring, resolves each remaining role from the supplied settings and model catalog, and returns its provider, model, reasoning effort, source, default rationale, whether that model is offered on the run host, and machine names when the catalog lists hosts for the model (`packages/workflow-engine/src/capabilities.ts:37-47`).
 
-The result also lists connected-state host names, provider service tiers when supported, and each preset's resolved provider/model/reasoning choice and whether the run host offers that pair. It adds `notOnThisMachine` to model rows that are unavailable on the run host; the note describes preset and model fallback behavior (`packages/workflow-engine/src/capabilities.ts:38-67`). `collectCapabilities` returns models as unavailable when the port is absent, returns no catalog, or supplies no providers; a thrown model read becomes an error result (`packages/workflow-engine/src/capabilities.ts:155-162`). For the `specialists` section, it accepts either a supplied ID list or an async reader, returns the roles and usage note on success, and returns an error status if the reader throws (`packages/workflow-engine/src/capabilities.ts:23-24`, `packages/workflow-engine/src/capabilities.ts:163-171`).
+The result includes connected-state entries for every catalog host and a note describing role fallback behavior. If the selected provider/model is absent from the catalog, `offered` is false; if the model has no catalog host IDs, the `machines` property is omitted. `collectCapabilities` returns models as unavailable when the port is absent, returns no catalog, or supplies no providers; a thrown model read becomes an error result (`packages/workflow-engine/src/capabilities.ts:37-55`, `packages/workflow-engine/src/capabilities.ts:166`). For `specialists`, it accepts either a supplied ID list or an async reader, returns the roles and usage note on success, and returns an error status if the reader throws (`packages/workflow-engine/src/capabilities.ts:23-24`, `packages/workflow-engine/src/capabilities.ts:163-171`).
 
 ### `collectCapabilities`
 
-1. An omitted/empty section selection requests every section; otherwise only named sections are added. The optional query is trimmed and lowercased for substring matching by the simple list sections and by `modelsSection`; browser, specialist, and reference results are not query-filtered (`packages/workflow-engine/src/capabilities.ts:128-131`, `packages/workflow-engine/src/capabilities.ts:127-174`).
-2. Skills, plugins, MCP servers, secrets, and hosts use the shared section reader: absent reader or null result is `unavailable`; successful results are filtered and capped at 120 items, with `total` when more matched; thrown reads become `{status: "error", items: [], error}` and collection continues (`packages/workflow-engine/src/capabilities.ts:29-30`, `packages/workflow-engine/src/capabilities.ts:57-67`, `packages/workflow-engine/src/capabilities.ts:133-140`). Skill descriptions are clipped to 160 characters. Secrets include names and kinds only, with the usage note (`packages/workflow-engine/src/capabilities.ts:133`, `packages/workflow-engine/src/capabilities.ts:136-139`).
-3. Browser data reads plugins and skills independently; either rejected read becomes `null` for that sub-result. It also includes the configured browser host and static usage instructions (`packages/workflow-engine/src/capabilities.ts:141-154`).
-4. Models are unavailable when no model port/catalog/providers exist, ready when the catalog can be projected, and error when the read throws (`packages/workflow-engine/src/capabilities.ts:155-162`). Specialists accept a list or async reader; success returns roles and a usage note, while a thrown reader returns error status (`packages/workflow-engine/src/capabilities.ts:163-171`). The reference section returns `WORKFLOW_REFERENCE` directly (`packages/workflow-engine/src/capabilities.ts:70-125`, `packages/workflow-engine/src/capabilities.ts:172`).
+1. An omitted/empty section selection requests every section; otherwise only named sections are added. The optional query is trimmed and lowercased for substring matching by the simple list sections and by `modelsSection`; browser, specialist, and reference results are not query-filtered (`packages/workflow-engine/src/capabilities.ts:161`, `packages/workflow-engine/src/capabilities.ts:127-174`).
+2. Skills, plugins, MCP servers, secrets, and hosts use the shared section reader: absent reader or null result is `unavailable`; successful results are filtered and capped at 120 items, with `total` when more matched; thrown reads become `{status: "error", items: [], error}` and collection continues (`packages/workflow-engine/src/capabilities.ts:10`, `packages/workflow-engine/src/capabilities.ts:57-67`, `packages/workflow-engine/src/capabilities.ts:161`). Skill descriptions are clipped to 160 characters. Secrets include names and kinds only, with the usage note (`packages/workflow-engine/src/capabilities.ts:161`, `packages/workflow-engine/src/capabilities.ts:161`).
+3. Browser data reads plugins and skills independently; either rejected read becomes `null` for that sub-result. It also includes the configured browser host and static usage instructions, including computer-use on the Mac mini through agent-desktop (`packages/workflow-engine/src/capabilities.ts:144-155`).
+4. Models are unavailable when no model port/catalog/providers exist, ready when the catalog can project the Settings role table, and error when the read throws (`packages/workflow-engine/src/capabilities.ts:175`). Specialists accept a list or async reader; success returns roles and a usage note, while a thrown reader returns error status (`packages/workflow-engine/src/capabilities.ts:175`). The reference section returns `WORKFLOW_REFERENCE` directly (`packages/workflow-engine/src/capabilities.ts:70`, `packages/workflow-engine/src/capabilities.ts:175`).
 
 There is no outer catch around section construction. The shared reader catches errors for its five list sections; model and specialist reads have their own catches, and browser reads turn individual failures into nulls (`packages/workflow-engine/src/capabilities.ts:57-67`, `packages/workflow-engine/src/capabilities.ts:133-171`).
 
 ## Dependencies
 
-The graph projections use workflow lowering and display types; the schedule helpers use built-in JavaScript `Intl` time-zone validation, and the `/ui` export contains no Node-only imports (`packages/workflow-engine/src/view.ts:1-3`, `packages/workflow-engine/src/cron.ts:26-31`, `packages/workflow-engine/src/ui.ts:1-4`). Model capability projection depends on the models catalog package and receives settings through its caller-provided catalog and settings arguments (`packages/workflow-engine/src/capabilities.ts:1-4`, `packages/workflow-engine/src/capabilities.ts:38-59`).
+`workflowView` lowers the graph into display nodes and edges (`packages/workflow-engine/src/view.ts:48-55`). Schedule helpers use `Intl` time-zone validation (`packages/workflow-engine/src/cron.ts:26-31`); the `/ui` entry re-exports the `cron`, `draft-view`, `edge-label`, and `view-core` modules (`packages/workflow-engine/src/ui.ts:1-4`). `modelsSection` receives the catalog and settings as arguments (`packages/workflow-engine/src/capabilities.ts:37-59`).
 
 ## Gotchas
 
 - `cronProblem` validates syntax and numeric ranges but does not calculate upcoming firing times; the host schedule implementation owns that behavior (`packages/workflow-engine/src/cron.ts:8-23`, `src/rooms/schedule/time.ts:1-30`).
-- A partial `draftView` omits unrecognized content, so its output is a display projection and not a validation report (`packages/workflow-engine/src/draft-view.ts:3-8`).
+- A partial `draftView` omits unrecognized content, so its output is a display projection and not a validation report (`packages/workflow-engine/src/draft-view.ts:63`).
 
 <!-- lane-pilot:backlinks -->
 ## Referenced by
