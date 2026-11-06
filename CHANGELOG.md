@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.481
+
+- **Every background brief in one format, and a nightly profile check.** The remaining ~20 brief builders (docs night, wall, episode analyst, large-file reader, rules analyzer, council, lead, memory maintainer, browser QA, self-repair, harness, project-life, workflow architect) render through `src/rooms/brief`; a data block is cut only where the builder set an explicit cap, so nothing that used to reach a model whole is cut now; docs pages go whole or not at all; no text points at `~/.agents/skills`. `profile-check-daily` (04:52) reads the core DB read-only (indexed, ~71 ms for 188 helpers) and puts a red line on the owner list when a hidden Lane Pilot helper has no stored session policy, the core does not answer `required`, or a provider row drifts; an unreadable DB is «не проверено», not red.
+
 ## 0.1.480
 
 - **Lean background context.** Helpers get their role profiles again on every provider (the plugin reads the core advertisement per provider row; a drifted row narrows only that provider and logs once); five spawns that ran without a profile (workspace provisioner, lead, workflow architect, harness, episode analyst) bind theirs; prompt-only roles drop user and project instructions; core vk.5 stops a compiled PM chat's own skill selection from becoming its helpers' ceiling. Brief v2: one tagged-section format (`src/rooms/brief`) for writer, errand and critic briefs, no JSON contract dump, memory rule and picked skill names in the brief, per-role budgets with a spawn-time check, wall and docs-night material in a file only when it does not fit. Memory search by meaning (gemini-embedding-2, Jev rerank below 0.82, words as fallback).
