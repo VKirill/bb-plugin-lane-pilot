@@ -1,4 +1,5 @@
 import type { NodeExecutor, StepContext, WorkflowEngine } from "@lane-pilot/workflow-engine";
+import type { ThreadToolTraceEntry } from "@lane-pilot/harness-core";
 import type { JevSettings } from "@lane-pilot/jev";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
 import type { ChainRuntime } from "../../workflow/server";
@@ -17,6 +18,7 @@ import { actsVia, LEAD_CLASSES, mayAct, rightsView } from "./rights";
 import { createLeadSchedule, schedulePayloadProblem } from "./lead-schedule";
 import { addRoad, decideRoad, getRoad, listRoad, proposeRoad, roadCounts, roadPayload, syncRoadProposal, type RoadEvidence, type RoadRow } from "./road";
 import { closeTick as closeTickRow, dayStart, listTicks, patchTick, spentSince } from "./tick-store";
+import { attachNearest, type FormHint, type GroupSignals, type NearestUnit } from "./nearest";
 
 /**
  * The code steps of the lead's tick (workflows/lead-tick.json, roadmap §2.3). `lp.lead_state` reads the hub and writes the agent's brief:
@@ -103,20 +105,41 @@ export function projectRoot(db: LanePilotDatabase, projectId: string | null, pro
 
 /**
  * A process the owner keeps running by hand, as the snapshot's `graphless` list: errand runs of the last 30 days with no confident
- * graph route (Maslov's law 9, stream G2), grouped by kind and the stem of their titles.
+ * graph route (Maslov's law 9, stream G), grouped by kind and the group's process key — the episode's `process_key` when the
+ * `episodes.process_key` setting is active, else its `process_key_proposed`, else the stem of the titles as before. `nearest`
+ * and `hint` are filled by `attachNearest` once per tick; a row whose skills list could not be read keeps `hint: null` and
+ * proposes nothing this tick.
  */
-export type GraphlessRow = { key: string; kind: string; count30d: number; costUsd: number; projects: string[]; samples: string[]; threadIds: string[] };
-/** What the think step puts on a `process` proposal: the form it should take (skill or graph), the group's kind, stem, sample titles and helper threads. */
-export type ArchitectSeed = { form?: unknown; kind?: unknown; stem?: unknown; threadIds?: unknown; samples?: unknown };
+export type GraphlessRow = { key: string; kind: string; count30d: number; costUsd: number; projects: string[]; samples: string[]; threadIds: string[];
+  nearest: NearestUnit[]; hint: FormHint | null; signals: GroupSignals };
+/** What the think step puts on a `process` proposal: the form it should take, the group's kind, stem, sample titles, helper threads, the target unit and the nearest catalog units it was chosen against. */
+export type ArchitectSeed = { form?: unknown; kind?: unknown; stem?: unknown; threadIds?: unknown; samples?: unknown; target?: unknown; nearest?: unknown };
+
+/** The five forms a process proposal can take (stream G/R8): only `graph` goes to the Workflow architect, the other four to the writer through the PM intake. */
+export const PROCESS_FORMS = ["rule", "reference", "script", "skill", "graph"] as const;
+export type ProcessForm = (typeof PROCESS_FORMS)[number];
+
+const PROCESS_FORM_TITLE: Record<ProcessForm, string> = { rule: "Правило", reference: "Справка", script: "Скрипт", skill: "Навык", graph: "Граф" };
+const PROCESS_TITLE = new RegExp(`^(?:${Object.values(PROCESS_FORM_TITLE).join("|")}) для:\\s*`, "iu");
+/** The form a «<word> для: …» title names; null for any other title. */
+const processTitleForm = (title: string): ProcessForm | null => {
+  const word = /^\s*([\p{L}]+)\s+для:/iu.exec(title)?.[1]?.toLowerCase();
+  return word ? (PROCESS_FORMS.find((form) => PROCESS_FORM_TITLE[form].toLowerCase() === word) ?? null) : null;
+};
+/** The stem a process title carries, whichever form it names: «Навык для: X» and «Скрипт для: X» are the same process. */
+export const processStemOf = (title: string): string => title.trim().toLowerCase().replace(PROCESS_TITLE, "");
+/** A process title's dedupe pair: its form and its stem. «Скрипт для: X» and «Навык для: X» are different proposals of one process. */
+export const processPartsOf = (title: string): { form: ProcessForm | null; stem: string } => ({ form: processTitleForm(title), stem: processStemOf(title) });
 
 /**
- * The form a hand-run process takes (harness research 2026-11-02: practitioners grow skills first and build a graph only for a gate, a timetable or a
- * chain of helpers). A seed without a form is one from before the rule: a graph, as its title said.
+ * The form a hand-run process takes (stream G/R8): one of the five, or null when the seed names none or names something else.
+ * Null is refused at propose time and logged — the old default turned every unknown form into a graph, which is how a typo
+ * once became an architect hand-over. A stored seed from before the five forms has no readable form and takes the writer path.
  */
-export const seedForm = (seed: ArchitectSeed): "skill" | "graph" => (text(seed.form) === "skill" ? "skill" : "graph");
-const PROCESS_TITLE = /^(?:граф|навык) для:\s*/iu;
-/** The stem a process title carries, whichever form it names: «Навык для: X» and «Граф для: X» are the same process. */
-export const processStemOf = (title: string): string => title.trim().toLowerCase().replace(PROCESS_TITLE, "");
+export const seedForm = (seed: ArchitectSeed): ProcessForm | null => {
+  const form = text(seed.form);
+  return (PROCESS_FORMS as readonly string[]).includes(form) ? (form as ProcessForm) : null;
+};
 
 const STEM_STOP = new Set(["тест", "проверка", "проверить", "the", "a", "an", "for", "of", "to", "in", "on", "and", "or", "на", "в", "и", "у", "о", "об", "с", "к", "по", "за", "из", "от", "до", "не", "что", "как", "для", "это"]);
 
@@ -128,15 +151,87 @@ export function errandStem(title: string): string {
 }
 
 /** The confidence of a `routeTop` string («<workflowId>:<confidence>», stream G1); NaN when the run has no route or no readable number. */
-const routeConfidence = (routeTop: string): number => { const at = /:(\d+)\s*$/u.exec(routeTop); return at ? Number(at[1]) : Number.NaN; };
+export const routeConfidence = (routeTop: string): number => { const at = /:(\d+)\s*$/u.exec(routeTop); return at ? Number(at[1]) : Number.NaN; };
 
-/** Errand runs of the last 30 days in the lead's zone with no route or a route under 90 confidence, grouped by (kind, stem); groups of one are dropped. */
+/** The episode columns `graphlessErrands` reads; the process-key pair arrives with a parallel stream, so each is checked on its own. */
+type EpisodeColumns = { processKey: boolean; processKeyProposed: boolean; provider: boolean; model: boolean; trace: boolean };
+
+function episodeColumns(db: LanePilotDatabase): EpisodeColumns {
+  const none: EpisodeColumns = { processKey: false, processKeyProposed: false, provider: false, model: false, trace: false };
+  try {
+    const names = new Set((db.prepare("PRAGMA table_info(lane_pilot_errand_episode)").all() as Array<{ name: string }>).map((column) => column.name));
+    return { processKey: names.has("process_key"), processKeyProposed: names.has("process_key_proposed"), provider: names.has("provider_id"), model: names.has("model"), trace: names.has("trace_json") };
+  } catch { return none; }
+}
+
+type EpisodeFacts = { processKey: string | null; processKeyProposed: string | null; provider: string | null };
+
+/** Facts of the group's episodes, one batched read per chunk of run ids; run_id -> facts (first version wins, the keys do not change between extractors). */
+function episodeFacts(db: LanePilotDatabase, runIds: string[], columns: EpisodeColumns): Map<string, EpisodeFacts> {
+  const facts = new Map<string, EpisodeFacts>();
+  if (!runIds.length || (!columns.processKey && !columns.processKeyProposed && !columns.provider && !columns.model)) return facts;
+  const fields = ["run_id", ...(columns.processKey ? ["process_key"] : []), ...(columns.processKeyProposed ? ["process_key_proposed"] : []), ...(columns.provider ? ["provider_id"] : []), ...(columns.model ? ["model"] : [])];
+  for (let at = 0; at < runIds.length; at += 400) {
+    const chunk = runIds.slice(at, at + 400);
+    const rows = db.prepare(`SELECT ${fields.join(", ")} FROM lane_pilot_errand_episode WHERE run_id IN (${chunk.map(() => "?").join(",")})`).all(...chunk) as Array<Record<string, string | null>>;
+    for (const row of rows) {
+      const runId = row.run_id;
+      if (typeof runId !== "string" || facts.has(runId)) continue;
+      facts.set(runId, {
+        processKey: typeof row.process_key === "string" && row.process_key ? row.process_key : null,
+        processKeyProposed: typeof row.process_key_proposed === "string" && row.process_key_proposed ? row.process_key_proposed : null,
+        provider: typeof row.provider_id === "string" && row.provider_id ? row.provider_id : typeof row.model === "string" && row.model ? row.model : null,
+      });
+    }
+  }
+  return facts;
+}
+
+/** Trace json of the group's episodes, same chunked read; run_id -> parsed trace (null when absent or unreadable). */
+function episodeTraces(db: LanePilotDatabase, runIds: string[], columns: EpisodeColumns): Map<string, ThreadToolTraceEntry[] | null> {
+  const traces = new Map<string, ThreadToolTraceEntry[] | null>();
+  if (!columns.trace) return traces;
+  for (let at = 0; at < runIds.length; at += 400) {
+    const chunk = runIds.slice(at, at + 400);
+    const rows = db.prepare(`SELECT run_id, trace_json FROM lane_pilot_errand_episode WHERE run_id IN (${chunk.map(() => "?").join(",")})`).all(...chunk) as Array<{ run_id: string; trace_json: string | null }>;
+    for (const row of rows) {
+      if (traces.has(row.run_id)) continue;
+      try { traces.set(row.run_id, row.trace_json ? (JSON.parse(row.trace_json) as ThreadToolTraceEntry[]) : null); } catch { traces.set(row.run_id, null); }
+    }
+  }
+  return traces;
+}
+
+/**
+ * The repeated command sequence of a group: episodes whose tool+argsSha256 sequence is identical, in at least three of them.
+ * `ok` when every call of the repeated sequence succeeded, `failed` when one failed (the trap the runs keep hitting), null below three.
+ */
+function repeatedTrace(traces: Array<ThreadToolTraceEntry[] | null>): "ok" | "failed" | null {
+  const counts = new Map<string, { n: number; ok: boolean }>();
+  for (const trace of traces) {
+    if (!Array.isArray(trace) || !trace.length) continue;
+    const key = trace.map((entry) => `${entry.tool}:${entry.argsSha256}`).join("|");
+    const ok = trace.every((entry) => entry.ok);
+    const cur = counts.get(key);
+    counts.set(key, { n: (cur?.n ?? 0) + 1, ok: (cur?.ok ?? true) && ok });
+  }
+  const best = [...counts.values()].filter((entry) => entry.n >= 3).sort((a, b) => b.n - a.n)[0];
+  return best ? (best.ok ? "ok" : "failed") : null;
+}
+
+/** `episodes.process_key` is active only on an explicit word; absent or «shadow» keeps the proposed key in charge. */
+function processKeyActive(db: LanePilotDatabase): boolean {
+  const value = loadProjectSettings(db, GLOBAL_SETTINGS_PROJECT_ID)["episodes.process_key"];
+  return value === "active" || value === true || value === 1 || value === "on";
+}
+
+/** Errand runs of the last 30 days in the lead's zone with no route or a route under 90 confidence, grouped by (kind, process key); groups of one are dropped. */
 export function graphlessErrands(db: LanePilotDatabase, zoneIds: ReadonlySet<string>, since: number): GraphlessRow[] {
   const rows = db.prepare(`SELECT r.id, r.project_id, r.inputs_json, r.cost_micro_usd,
       (SELECT json_extract(e.result_json,'$.threadId') FROM lane_pilot_wf_effect e WHERE e.run_id=r.id AND e.kind='errand.spawn' AND e.state='done' LIMIT 1) AS thread_id
     FROM lane_pilot_wf_run r WHERE r.workflow_id='errand' AND r.created_at>=?`).all(since) as
     Array<{ id: string; project_id: string | null; inputs_json: string; cost_micro_usd: number | null; thread_id: string | null }>;
-  const groups = new Map<string, GraphlessRow & { seen: Set<string> }>();
+  const candidates: Array<{ runId: string; projectId: string | null; kind: string; title: string; cost: number; threadId: string | null }> = [];
   for (const row of rows) {
     if (row.project_id !== null && !zoneIds.has(row.project_id)) continue;
     let inputs: Record<string, unknown> = {};
@@ -145,19 +240,35 @@ export function graphlessErrands(db: LanePilotDatabase, zoneIds: ReadonlySet<str
     if (routeTop && routeConfidence(routeTop) >= 90) continue;
     const kind = typeof inputs.kind === "string" && inputs.kind ? inputs.kind : "errand";
     const title = errandTitle(inputs);
-    const stem = errandStem(title);
-    if (!stem) continue;
-    const key = `${kind}:${stem}`;
-    let group = groups.get(key);
-    if (!group) { group = { key, kind, count30d: 0, costUsd: 0, projects: [], samples: [], threadIds: [], seen: new Set() }; groups.set(key, group); }
+    if (!errandStem(title)) continue;
+    candidates.push({ runId: row.id, projectId: row.project_id, kind, title, cost: (row.cost_micro_usd ?? 0) / USD, threadId: row.thread_id });
+  }
+  if (!candidates.length) return [];
+  const columns = episodeColumns(db);
+  const facts = episodeFacts(db, candidates.map((run) => run.runId), columns);
+  const active = processKeyActive(db);
+  const groups = new Map<string, GraphlessRow & { seen: Set<string>; runIds: string[]; providers: Set<string> }>();
+  for (const run of candidates) {
+    const stem = errandStem(run.title);
+    const episode = facts.get(run.runId);
+    // Active: the confirmed process key, the proposed one as the bridge, the title stem last. Shadow: proposed, then stem.
+    const key = active ? (episode?.processKey || episode?.processKeyProposed || stem) : (episode?.processKeyProposed || stem);
+    const groupKey = `${run.kind}:${key}`;
+    let group = groups.get(groupKey);
+    if (!group) { group = { key: groupKey, kind: run.kind, count30d: 0, costUsd: 0, projects: [], samples: [], threadIds: [], seen: new Set(), runIds: [], providers: new Set(), nearest: [], hint: null, signals: { repeatedTrace: null, providers: 0 } }; groups.set(groupKey, group); }
     group.count30d += 1;
-    group.costUsd += (row.cost_micro_usd ?? 0) / USD;
-    if (row.project_id && !group.projects.includes(row.project_id)) group.projects.push(row.project_id);
-    if (group.samples.length < 3) group.samples.push(title);
-    if (row.thread_id && !group.seen.has(row.thread_id)) { group.seen.add(row.thread_id); group.threadIds.push(row.thread_id); }
+    group.costUsd += run.cost;
+    if (run.projectId && !group.projects.includes(run.projectId)) group.projects.push(run.projectId);
+    if (group.samples.length < 3) group.samples.push(run.title);
+    if (run.threadId && !group.seen.has(run.threadId)) { group.seen.add(run.threadId); group.threadIds.push(run.threadId); }
+    group.runIds.push(run.runId);
+    if (episode?.provider) group.providers.add(episode.provider);
   }
   return [...groups.values()].filter((group) => group.count30d >= 2).sort((a, b) => b.count30d - a.count30d).slice(0, 10)
-    .map(({ seen: _seen, ...row }) => row);
+    .map(({ seen: _seen, runIds, providers, ...row }) => {
+      const traces = episodeTraces(db, runIds, columns);
+      return { ...row, signals: { repeatedTrace: repeatedTrace(runIds.map((runId) => traces.get(runId) ?? null)), providers: providers.size } };
+    });
 }
 
 /** The architect seed of a `process` proposal, stored on the branch as { architectSeed: … }; null otherwise. */
@@ -166,17 +277,47 @@ export const architectSeedOf = (payload: unknown): ArchitectSeed | null => {
   return seed && typeof seed === "object" ? (seed as ArchitectSeed) : null;
 };
 
-/** The first message for the architect: the stem, the errand kind, the titles and the helper threads it learns the process from. */
+/** The seed as the branch stores it: the known fields only, `nearest` cut to four {kind,id,score} units of the two known kinds. */
+function cleanArchitectSeed(raw: ArchitectSeed): ArchitectSeed {
+  const seed: ArchitectSeed = {};
+  for (const key of ["form", "kind", "stem", "target"] as const) { const value = text(raw[key]); if (value) seed[key] = value; }
+  const threads = (Array.isArray(raw.threadIds) ? raw.threadIds : []).map(String).filter(Boolean).slice(0, 10);
+  if (threads.length) seed.threadIds = threads;
+  const samples = (Array.isArray(raw.samples) ? raw.samples : []).map(String).filter(Boolean).slice(0, 3);
+  if (samples.length) seed.samples = samples;
+  const nearest = (Array.isArray(raw.nearest) ? raw.nearest : []).flatMap((unit) => {
+    const entry = unit as { kind?: unknown; id?: unknown; score?: unknown };
+    return typeof entry?.id === "string" && entry.id && (entry.kind === "graph" || entry.kind === "skill")
+      ? [{ kind: entry.kind, id: entry.id.slice(0, 120), score: typeof entry.score === "number" && Number.isFinite(entry.score) ? entry.score : 0 }] : [];
+  }).slice(0, 4);
+  if (nearest.length) seed.nearest = nearest;
+  return seed;
+}
+
+/** What each of the four writer forms delivers; only `graph` goes to the architect instead (its own line below). */
+const FORM_TASK: Record<Exclude<ProcessForm, "graph">, string> = {
+  rule: "Write a RULE for this process: the trap or pitfall the errand threads keep hitting — what breaks and the warning that prevents it, one short «when / what / don't» block. When the nearest catalog units name an existing skill of this family, the rule is an edit of that skill, not a new file.",
+  reference: "Write a REFERENCE for this process: a per-variant file under references/ of the family's existing skill — the variant is one target of the same goal (one shop or service against another: Dia vs Carrefour is the shape). When the nearest list has the family's skill, name it and draft the file; otherwise propose the new skill that would hold it.",
+  script: "Write a SCRIPT for this process: the same command sequence the errand threads ran — tool and arguments, in order — as a runnable script the next run replays instead of re-deriving it. When the nearest list has a skill of this family, the script lives inside that skill instead of a new skill.",
+  skill: "Write a skill for this process from what these errand threads did: the steps in order, the places (addresses, hosts, folders, accounts), the pitfalls they hit and how they got past them, the check at the end that says it worked. Put it where this project's skills live (.agents/skills/<slug>/SKILL.md, or the folder the project already uses) so the next helper reads it before this work; no graph: no step here needs the owner's word or a timetable.",
+};
+/** Stage 1 is proposal-only: the writer hands the owner a file and its text, nothing reaches the canon by itself. */
+const PROPOSAL_ONLY = "Deliver a proposal — the file path and the full text — for the owner to approve; in this stage nothing is written into the canon.";
+
+/** The first message for the architect (graph) or the writer (the other four forms): the stem, the target, the errand kind, the titles, the threads and the nearest units. */
 export function architectPrompt(seed: ArchitectSeed, title: string): string {
   const stem = text(seed.stem) || title.replace(PROCESS_TITLE, "").trim();
   const kind = text(seed.kind) || "errand";
   const samples = (Array.isArray(seed.samples) ? seed.samples : []).map(String).slice(0, 3);
   const threads = (Array.isArray(seed.threadIds) ? seed.threadIds : []).map(String).slice(0, 10);
-  const facts = `Process: «${stem}» (errand kind ${kind}). Errand titles: ${samples.join("; ") || "—"}. Helper threads to learn from: ${threads.map((id) => `@thread:${id}`).join(", ") || "—"}.`;
-  if (seedForm(seed) === "skill") {
-    return `Write a skill for this process from what these errand threads did: the steps in order, the places (addresses, hosts, folders, accounts), the pitfalls they hit and how they got past them, the check at the end that says it worked. Put it where this project's skills live (.agents/skills/<slug>/SKILL.md, or the folder the project already uses) so the next helper reads it before this work; no graph: no step here needs the owner's word or a timetable. ${facts}`;
-  }
-  return `Build a tested graph for this process from what these errand threads did. ${facts}`;
+  const nearest = (Array.isArray(seed.nearest) ? seed.nearest : []).flatMap((unit) => {
+    const entry = unit as { kind?: unknown; id?: unknown; score?: unknown };
+    return typeof entry?.id === "string" && entry.id ? [`${entry.kind === "skill" ? "skill" : "graph"}:${entry.id}${typeof entry.score === "number" && Number.isFinite(entry.score) ? ` (${entry.score.toFixed(2)})` : ""}`] : [];
+  }).slice(0, 4);
+  const facts = `Process: «${stem}» (errand kind ${kind}). Target: ${text(seed.target) || "—"}. Errand titles: ${samples.join("; ") || "—"}. Helper threads to learn from: ${threads.map((id) => `@thread:${id}`).join(", ") || "—"}. Nearest catalog units: ${nearest.join("; ") || "—"}.`;
+  const form = seedForm(seed) ?? "skill";
+  if (form === "graph") return `Build a tested graph for this process from what these errand threads did. ${facts}`;
+  return `${FORM_TASK[form]} ${PROPOSAL_ONLY} ${facts}`;
 }
 
 /** The card's fourth button: the same RPC the Workflows tab's architect button calls (ARCHITECT_LAUNCH). */
@@ -217,7 +358,7 @@ async function listProjects(bb: ServerCore["bb"]): Promise<Array<{ id: string; n
   try { return await (bb.sdk.projects.list({ includePersonal: true }) as Promise<Array<{ id: string; name: string }>>); } catch { return []; }
 }
 
-export async function hubSnapshot(ctx: Pick<ServerCore, "db" | "bb">, settings: LeadSettings, input: { tickId: string; trigger: string }, now: number = Date.now()): Promise<HubSnapshot> {
+export async function hubSnapshot(ctx: Pick<ServerCore, "db" | "bb">, settings: LeadSettings, input: { tickId: string; trigger: string }, now: number = Date.now(), services?: Services): Promise<HubSnapshot> {
   const { db, bb } = ctx;
   const identity = loadIdentity();
   const zone = loadPushConfig(db).timezone;
@@ -254,6 +395,11 @@ export async function hubSnapshot(ctx: Pick<ServerCore, "db" | "bb">, settings: 
   const lastTicks = listTicks(db, 5).filter((row) => row.id !== input.tickId).map((row) => ({
     id: row.id, startedAt: row.started_at, status: row.status, proposed: (JSON.parse(row.proposed_json ?? "[]") as unknown[]).length, acted: (JSON.parse(row.acted_json ?? "[]") as unknown[]).length, costUsd: (row.cost_micro_usd ?? 0) / USD,
   }));
+  const graphless = graphlessErrands(db, zoneIds, since30);
+  // The nearest catalog units and the form hint are read once per tick, only when the rooms that own the catalogs are wired.
+  if (services && graphless.length) {
+    await attachNearest({ bb, workflowCatalog: services.workflowCatalog, fallbackProjectId: settings.project || null, rows: graphless, log: (message) => bb.log.warn(message) });
+  }
   return {
     at: new Date(now).toISOString(), tickId: input.tickId, trigger: input.trigger,
     settings: { projects: settings.projects, priority: settings.priority, budgetDailyUsd: settings.budgetDailyUsd, maxProposals: settings.maxProposals },
@@ -262,7 +408,7 @@ export async function hubSnapshot(ctx: Pick<ServerCore, "db" | "bb">, settings: 
     projects, omitted, zone: settings.projects.length ? [...zoneIds] : null, road: { counts: roadCounts(db), open },
     proposalsOpen: waiting.filter((item) => item.source === "lead" && item.kind === "proposal" && (item.projectId === null || zoneIds.has(item.projectId))).length,
     rights: rightsView(db).map((row) => ({ class: row.class, tier: row.tier })), exam: examAll(examRows(db)), waiting, lastTicks,
-    graphless: graphlessErrands(db, zoneIds, since30),
+    graphless,
   };
 }
 
@@ -283,7 +429,7 @@ export function tickBrief(snapshot: HubSnapshot, identityText: string): string {
       "A proposal of class schedule also carries schedule: {name, description?, task, when: {type: cron, cron: five fields, timezone?}} where task is {kind: workflow, workflowId, inputs?} or {kind: errand, task: the instruction, title?} or {kind: agent, agentId, task}; on «да» (or when the class is open) it is created in the project's schedule board exactly as written, so write it complete. A script is a host job: never propose one.",
       "3. New directions or options worth keeping in the tree but not proposing today go into branches: {parent_id?, project_id?, title, kind: direction|option, why}.",
       "4. In deferred write what you looked at and left alone, and why, in a few lines. In summary write two or three sentences for the receipt.",
-      "`graphless` lists processes done by hand (errands) with no graph: errand runs of the last 30 days with no confident route, grouped by kind and the stem of their titles. A row with count30d >= 3 deserves a proposal of class process. Name its form first, in architectSeed.form: `skill` when the work is one helper's know-how (how to do X: the steps, the places, the pitfalls) and no step needs the owner's word or a timetable — the default; `graph` only when the process has a gate (money, a message to someone else, publishing, deleting), runs on a schedule, or chains helpers of different kinds. Title «Навык для: <stem>» or «Граф для: <stem>», why = the count, the cost, the samples and one phrase on why this form, evidence = the thread ids, architectSeed: { form, kind, stem, threadIds, samples }. One per row, never twice for the same stem in either form (a branch «Навык для: <stem>» or «Граф для: <stem>» already in the road tree, any state, means skip).",
+      "`graphless` lists processes done by hand (errands) with no graph: errand runs of the last 30 days with no confident route, grouped by kind and process key. Each row carries `nearest` (up to four catalog units it sits near: {kind: graph|skill, id, score}) and `hint` {form, why} — the form the code guesses; a row with hint null had its catalog unreadable this tick and proposes nothing. A row with count30d >= 3 and a hint deserves a proposal of class process. Name its form in architectSeed.form — the hint's form unless the evidence says otherwise: `rule` (a trap the runs keep hitting; an edit of an existing skill when one is near), `reference` (a new variant of a near skill family; a file under its references/), `script` (the same command sequence in 3+ runs; a runnable script), `skill` (nothing near; a new skill), `graph` (a gate, a schedule or different helpers; only a graph carries those). Title «<form> для: <stem>» — «Правило для:», «Справка для:», «Скрипт для:», «Навык для:», «Граф для:» — why = the count, the cost, the samples and one phrase on why this form, evidence = the thread ids, architectSeed: { form, kind, stem, threadIds, samples, target, nearest } where target names the existing unit to edit (or \"new\") and nearest copies the row's list. One per row, never twice for the same form and stem (a branch with the same «<form> для: <stem>» title in the road tree, any state, means skip; the same stem under another form is a different proposal).",
       "Rules: no proposal without an artifact; prefer finishing an open branch over opening a new one; the same proposal is not put to the owner twice (the open ones are in proposalsOpen and in road.open with state proposed); money and external classes are the owner's alone, so propose them only as questions; status is blocked only when the state is unreadable, with blocked_reason.",
       "The owner's order of projects is projects[].priority (1 = first; null = unranked, listed after the ranked): rank the proposals by it, and a branch of a lower-ranked project needs stronger evidence to take a place from a higher one. The map of the projects (names, runs, phases, memory) is the hub's data above, not the identity file: do not expect it there.",
     ].join("\n"),
@@ -301,7 +447,7 @@ export function registerLeadTickActions(engine: WorkflowEngine, ctx: ServerCore,
     run: async (c) => {
       const settings = settingsOf();
       const tickId = tickIdOf(c);
-      const snapshot = await hubSnapshot(ctx, settings, { tickId, trigger: text(c.resolve("$inputs.trigger")) || "manual" });
+      const snapshot = await hubSnapshot(ctx, settings, { tickId, trigger: text(c.resolve("$inputs.trigger")) || "manual" }, Date.now(), services);
       const identity = loadIdentity();
       const overBudget = snapshot.budget.leftUsd <= 0;
       try { patchTick(db, tickId, { state_json: JSON.stringify({ projects: snapshot.projects.map((project) => ({ id: project.id, runs: project.runs, tasks30d: project.tasks30d })), road: snapshot.road.counts, proposalsOpen: snapshot.proposalsOpen, budget: snapshot.budget }), identity_sha: identity.sha, wf_run_id: c.runId }); } catch { /* the receipt is best effort */ }
@@ -342,11 +488,24 @@ export function registerLeadTickActions(engine: WorkflowEngine, ctx: ServerCore,
         if (problem) { dropped.push({ title: clip(text(item.title) || "(no title)", 120), reason: problem }); continue; }
         if (proposed.length >= settings.maxProposals) { dropped.push({ title: clip(proposal.title!, 120), reason: `over the day's ${settings.maxProposals} proposals` }); continue; }
         try {
-          const seed = proposal.class === "process" ? proposal.architectSeed : undefined;
+          const rawSeed = proposal.class === "process" ? proposal.architectSeed : undefined;
+          const seed = rawSeed && typeof rawSeed === "object" ? cleanArchitectSeed(rawSeed as ArchitectSeed) : undefined;
+          if (seed !== undefined && seedForm(seed) === null) {
+            // A form the code does not know is refused and logged, never bent into a graph (the old default's bug).
+            dropped.push({ title: clip(proposal.title!, 120), reason: `unknown process form ${clip(text(seed.form) || "(none)", 40)}` });
+            bb.log.warn(`lead tick ${tickId}: process proposal refused, unknown form «${clip(text(seed.form), 40) || "(none)"}» on «${clip(proposal.title!, 80)}»`);
+            continue;
+          }
           let row = proposal.road_id ? getRoad(db, proposal.road_id) : undefined;
           if (!row && seed !== undefined) {
-            // A process is proposed once ever, in either form: a branch «Навык для: X» or «Граф для: X» in any state is the same process already heard.
-            const twin = listRoad(db, { limit: 500 }).find((entry) => processStemOf(entry.title) === processStemOf(proposal.title!));
+            // A process is proposed once per form and stem: «Скрипт для: X» does not swallow «Навык для: X», the same form and
+            // stem in any state does; a title without a «<form> для:» prefix keeps the old stem-only dedupe.
+            const form = seedForm(seed)!;
+            const stem = processStemOf(proposal.title!);
+            const twin = listRoad(db, { limit: 500 }).find((entry) => {
+              const parts = processPartsOf(entry.title);
+              return parts.stem === stem && (parts.form === null || parts.form === form);
+            });
             if (twin && twin.state !== "open" && twin.state !== "later") { dropped.push({ title: clip(proposal.title!, 120), reason: `a branch titled «${clip(twin.title, 80)}» is already ${twin.state}` }); continue; }
             row = twin;
           }
@@ -375,7 +534,7 @@ export function registerLeadTickActions(engine: WorkflowEngine, ctx: ServerCore,
           await predictDecision(db, decisionId, jevSettings(), now);
           proposeRoad(db, row.id, decisionId, now);
           const card: ProposalCard = { roadId: row.id, decisionId, class: proposal.class!, risk, projectId, title: row.title, why: proposal.why!, cost: proposal.cost_estimate!, evidence: proposal.evidence ?? [], tickId,
-            architectProjectId: seed !== undefined && seedForm(architectSeedOf({ architectSeed: seed }) ?? {}) === "graph" ? (projectId ?? (settings.project || null)) : null };
+            architectProjectId: seed !== undefined && seedForm(seed) === "graph" ? (projectId ?? (settings.project || null)) : null };
           if (mayAct(db, proposal.class!, risk).ok) actable.push({ ...card, payload: roadPayload(row) });
           else if (!postProposalCard(db, card, now)) {
             // The list refused the card (a project it hides): the branch must not stay proposed with a question nobody sees.
@@ -415,8 +574,8 @@ export function registerLeadTickActions(engine: WorkflowEngine, ctx: ServerCore,
         const seed = architectSeedOf(item.payload);
         if (seed && seedForm(seed) === "graph") {
           // A process that needs a graph is handed to the Workflow architect, not to the PM intake: the act path cannot start a chat, so the
-          // seed and the architect button land on the owner's list (G2; the «да» path in service.handOverAccepted does the same). A skill
-          // goes through the PM intake below, as a writer task, with the seed's prompt.
+          // seed and the architect button land on the owner's list (G2; the «да» path in service.handOverAccepted does the same). The other
+          // four forms (rule, reference, script, skill) go through the PM intake below, as a writer task, with the seed's prompt.
           const projectId = item.projectId ?? settingsOf().project;
           if (!projectId) { defer(item, "the seed has no project to open the architect in"); continue; }
           postArchitectHand(db, { roadId: item.roadId, projectId, title: item.title, seed, kind: "acted" }, now);
