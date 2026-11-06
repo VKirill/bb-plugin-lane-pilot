@@ -11,6 +11,7 @@
     "./critique/index.ts",
     "./critique/review-screen.ts",
     "./errands/failure-judgment.ts",
+    "./errands/process-key.ts",
     "./jev/index.ts",
     "./jev/judgments.ts",
     "./lead/index.ts",
