@@ -599,7 +599,7 @@ describe("self-repair", () => {
     expect(text).toMatch(/<incidents>[\s\S]*1970-01-01T00:00:00.000Z[\s\S]*<\/incidents>/);
     expect(text).toMatch(/never git add -A/);
     expect(text).toMatch(/already fixed/);
-    expect(text.trim().split("\n").at(-3)).toMatch(/SELF-REPAIR-VERDICT: fixed \| already-fixed \| not-lane-pilot \| needs-owner/);
+    expect(text).toMatch(/SELF-REPAIR-VERDICT: fixed \| already-fixed \| not-lane-pilot \| needs-owner/);
     expect(text).toContain("bb thread tell");
     expect(text).toContain("Tell a PM thread only when that PM has to do something now");
     expect(text).toMatch(/Never send an informational note: already-fixed, false alarm, «was not stuck», «for the record»/);

@@ -5,6 +5,7 @@ export {
   MEMORY_SEARCH_ENGINES,
   estimateTokens,
   memoryContext,
+  memoryMaintenanceBrief,
   memoryMaintenancePrompt,
   memoryRecordId,
   parseMemoryCandidates,

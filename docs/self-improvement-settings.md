@@ -92,9 +92,9 @@ Every row is in the catalog (`scripts/ui-catalog-hand.json`, written by `scripts
 | `wall.rerun_sandbox_only` | `src/rooms/wall/config.ts:25` | `rerunSandboxOnly: boolean` |
 | `bench.budget_tokens` | `src/rooms/bench/runner.ts:69` | `DEFAULT_BUDGET_TOKENS` |
 | `bench.budget_hours` | `src/rooms/bench/runner.ts:70` | `DEFAULT_BUDGET_HOURS` |
-| `harness.adopt_by` | `src/rooms/harness/server/harness.ts:57` | `adoptBy: AdoptBy` |
-| (kv field `probe`, no setting key) | `src/rooms/harness/server/harness.ts:59` | `ProbeBudget` |
-| (kv field `graphEdits`, no setting key) | `src/rooms/harness/server/harness.ts:61` | `graphEdits` |
+| `harness.adopt_by` | `src/rooms/harness/server/harness.ts:67` | `adoptBy: AdoptBy` |
+| (kv field `probe`, no setting key) | `src/rooms/harness/server/harness.ts:69` | `ProbeBudget` |
+| (kv field `graphEdits`, no setting key) | `src/rooms/harness/server/harness.ts:71` | `graphEdits` |
 | `owner_push.enabled` | `src/rooms/owner-waiting/push.ts:17` | `export type PushConfig` |
 | `owner_push.quiet` | `src/rooms/owner-waiting/push.ts:23` | `const QUIET` |
 | `owner_push.timezone` | `src/rooms/owner-waiting/push.ts:25` | `function validTimezone` |

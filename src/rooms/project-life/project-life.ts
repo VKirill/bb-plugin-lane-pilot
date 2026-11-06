@@ -1,4 +1,5 @@
 import { resolveRoleModel } from "@lane-pilot/models";
+import { checkBrief, renderBrief } from "../brief";
 
 export type ProjectLifeSettings = { enabled: boolean };
 
@@ -77,27 +78,36 @@ export function projectLifePrompt(input: {
   tasks: ProjectLifeTaskSummary[];
   nowIso: string;
 }): string {
-  return [
-    "Project-life maintainer: update this project's living memory (progress, changelog, plans, todos) after accepted Lane Pilot work. Do not touch application code.",
-    `Workspace: ${input.workspace}`,
-    `Lane Pilot run: ${input.runId}`,
-    `Run artifact dirs (writer reports for the accepted tasks): ${input.artifactDirs.join(", ") || "none"}`,
-    `Current UTC time: ${input.nowIso}`,
-    "Planning notes live in .agents/plans/ and .agents/todos/; read the ones that mention this Lane Pilot run id or the task ids below. Read ~/.agents/skills/project-life/SKILL.md and its references/memory.md, plans.md and todos.md first.",
-    [
-      "Then, in this order:",
-      "1. .agents/PROGRESS.md (create it if missing): at most 40 lines, sections Now/Blocked/Next/Last verify/Pointers. It is a snapshot of the whole project, not of this run. Now lists 3-5 bullets of what the product can do today, by capability (read the code and README for it), not a list of recent tasks; documentation-only work is one short bullet at most.",
-      "   Start from the current file and keep every line that is still true; change only what this work changed, and drop a line only when it is closed or no longer true. Pointers is rebuilt from the files every time: open todos from .agents/todos/INDEX.md (id and title), active plans from .agents/plans/, and .agents/CHANGELOG.md. Keep the <!-- auto:session-ledger --> block untouched.",
-      `2. Append exactly one line to .agents/CHANGELOG.md (create it with a "# Changelog" heading if missing; never edit older lines): - ${input.nowIso.slice(0, 10)} ${input.runId}: <what changed, one sentence> (<task ids>; commit: see git log)`,
-      "3. Tick the matching tasks in .agents/plans/items/*/PLAN.md and refresh .agents/plans/ROADMAP.md, only if those already exist.",
-      "4. Add this run id to related_runs of an .agents/todos meta.yaml item only when this work clearly implements it, and refresh .agents/todos/INDEX.md statuses.",
+  const brief = renderBrief({
+    role: "project-life",
+    instructions: [
+      [
+        "Then, in this order:",
+        "1. .agents/PROGRESS.md (create it if missing): at most 40 lines, sections Now/Blocked/Next/Last verify/Pointers. It is a snapshot of the whole project, not of this run. Now lists 3-5 bullets of what the product can do today, by capability (read the code and README for it), not a list of recent tasks; documentation-only work is one short bullet at most.",
+        "   Start from the current file and keep every line that is still true; change only what this work changed, and drop a line only when it is closed or no longer true. Pointers is rebuilt from the files every time: open todos from .agents/todos/INDEX.md (id and title), active plans from .agents/plans/, and .agents/CHANGELOG.md. Keep the <!-- auto:session-ledger --> block untouched.",
+        `2. Append exactly one line to .agents/CHANGELOG.md (create it with a "# Changelog" heading if missing; never edit older lines): - ${input.nowIso.slice(0, 10)} ${input.runId}: <what changed, one sentence> (<task ids>; commit: see git log)`,
+        "3. Tick the matching tasks in .agents/plans/items/*/PLAN.md and refresh .agents/plans/ROADMAP.md, only if those already exist.",
+        "4. Add this run id to related_runs of an .agents/todos meta.yaml item only when this work clearly implements it, and refresh .agents/todos/INDEX.md statuses.",
+      ].join("\n"),
+    ],
+    goal: "Project-life maintainer: update this project's living memory (progress, changelog, plans, todos) after accepted Lane Pilot work. Do not touch application code.",
+    inputs: [
+      `Workspace: ${input.workspace}`,
+      `Lane Pilot run: ${input.runId}`,
+      `Run artifact dirs (writer reports for the accepted tasks): ${input.artifactDirs.join(", ") || "none"}`,
+      `Current UTC time: ${input.nowIso}`,
+      "Planning notes live in .agents/plans/ and .agents/todos/; read the ones that mention this Lane Pilot run id or the task ids below. When the project-life skill is among your skills, its references/memory.md, plans.md and todos.md describe the formats.",
     ].join("\n"),
-    "Write everything in English. You may write only .agents/PROGRESS.md, .agents/CHANGELOG.md, .agents/plans/** and .agents/todos/**: Lane Pilot rejects the run on any other changed path. That leaves out application code, LESSONS.md, decision drafts in .agents/decisions/ (they stay with the PM), anything under .agents/runs/, and anything under docs/ (Lane Pilot writes the code documentation).",
-    `When done, git add only the paths you changed under those allowed locations and, if anything changed, commit with message: chore(progress): update project memory after ${input.runId}`,
-    "Accepted tasks:",
-    JSON.stringify(input.tasks),
-    'Finish with exactly one JSON line as your final message, and nothing after it: {"status":"updated"|"no_change","commit":"<full 40-char sha from git rev-parse HEAD, or null>","files":[...]}',
-  ].join("\n\n");
+    boundaries: "Write everything in English. You may write only .agents/PROGRESS.md, .agents/CHANGELOG.md, .agents/plans/** and .agents/todos/**: Lane Pilot rejects the run on any other changed path. That leaves out application code, LESSONS.md, decision drafts in .agents/decisions/ (they stay with the PM), anything under .agents/runs/, and anything under docs/ (Lane Pilot writes the code documentation).",
+    output: [
+      `When done, git add only the paths you changed under those allowed locations and, if anything changed, commit with message: chore(progress): update project memory after ${input.runId}`,
+      'Finish with exactly one JSON line as your final message, and nothing after it: {"status":"updated"|"no_change","commit":"<full 40-char sha from git rev-parse HEAD, or null>","files":[...]}',
+    ].join("\n"),
+    data: [{ tag: "accepted_tasks", title: "Accepted tasks", text: JSON.stringify(input.tasks) }],
+    restate: "update the living memory after this Lane Pilot run and end with the JSON line",
+  });
+  checkBrief("project-life", brief.text, { instructionsLength: brief.instructionsLength });
+  return brief.text;
 }
 
 /** One CHANGELOG line for the accepted tasks: titles, whitespace folded, capped; written by script, no model. */

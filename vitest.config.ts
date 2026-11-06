@@ -54,6 +54,8 @@ export default defineConfig({
       "@": fileURLToPath(new URL(".", import.meta.url)),
       // node_modules is a symlink to the main checkout in worktrees; pin i18n to this tree so tests see this branch's strings.
       "@lane-pilot/i18n": fileURLToPath(new URL("./packages/i18n/src/index.ts", import.meta.url)),
+      "@lane-pilot/council": fileURLToPath(new URL("./packages/council/src/index.ts", import.meta.url)),
+      "@lane-pilot/memory-core": fileURLToPath(new URL("./packages/memory-core/src/index.ts", import.meta.url)),
     },
   },
 });

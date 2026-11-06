@@ -5,11 +5,12 @@ import type { NodeExecutor, StepContext } from "@lane-pilot/workflow-engine";
 import { modelFamily, writerExecutionSelection, findModelIn } from "@lane-pilot/models";
 import {
   CHAIR_SEAT_ID, IMPULSE_SCORES, MODERATOR_SEAT_ID,
-  addCouncilMessage, agendaPrompt, chairPrompt, chooseSpeaker, createCouncilSession, decideRequestedIn, decisionFileName, decisionMarkdown, getCouncilSession,
-  lastSeqOf, listCouncilMessages, maxTurnsOf, moderate, parseAgenda, parseDecisionRecord, roomPlan, roundNovelty, roundsPlan, ruleImpulse, seatPrompt, seenBySeat,
+  addCouncilMessage, agendaBrief, chairBrief, chooseSpeaker, createCouncilSession, decideRequestedIn, decisionFileName, decisionMarkdown, getCouncilSession,
+  lastSeqOf, listCouncilMessages, maxTurnsOf, moderate, parseAgenda, parseDecisionRecord, roomPlan, roundNovelty, roundsPlan, ruleImpulse, seatBrief, seenBySeat,
   setCouncilAgenda, setCouncilRun, setCouncilState, verdictWritten,
   type CouncilMessage, type CouncilMessageKind, type CouncilSeat, type CouncilSession, type Impulse, type Moderator,
 } from "@lane-pilot/council";
+import { checkBrief, renderBrief } from "../../brief";
 import { getRun, getRunSettingsScopes } from "../../storage";
 import { builtinWorkflow } from "../../workflow";
 import type { ChainRuntime } from "../../workflow/server";
@@ -398,9 +399,12 @@ export function mountCouncilGraph(ctx: ServerCore, services: Services, council: 
         const feed = listCouncilMessages(db, councilId);
         const evidence = await evidenceFor(session, place, Array.isArray(materials) ? materials.map(String) : []);
         const live = sessionOf(councilId);
-        const prompt = kind === "agenda" ? agendaPrompt({ session: live, evidence, workspace: place.workspace })
-          : kind === "chair" ? chairPrompt({ session: live, evidence, feed, workspace: place.workspace })
-          : seatPrompt({ session: live, seat: seat!, round, evidence, feed, sinceSeq: seenBySeat(feed, seat!.id), workspace: place.workspace });
+        const parts = kind === "agenda" ? agendaBrief({ session: live, evidence, workspace: place.workspace })
+          : kind === "chair" ? chairBrief({ session: live, evidence, feed, workspace: place.workspace })
+          : seatBrief({ session: live, seat: seat!, round, evidence, feed, sinceSeq: seenBySeat(feed, seat!.id), workspace: place.workspace });
+        const brief = renderBrief({ role: "council", ...parts });
+        checkBrief("council", brief.text, { instructionsLength: brief.instructionsLength });
+        const prompt = brief.text;
         const providerId = seat?.providerId ?? chair.providerId;
         const model = seat?.model ?? chair.model;
         const effort = seat?.effort ?? (seat ? await effortFor(place.hostId, providerId, model) : chair.effort);

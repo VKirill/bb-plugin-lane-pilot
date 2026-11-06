@@ -47,7 +47,7 @@ describe("Workflow architect profile", () => {
     expect([...mentioned].filter((name) => !(NATIVE_LP_BRIDGE_ARCHITECT_TOOLS as readonly string[]).includes(name))).toEqual([]);
     for (const tool of NATIVE_LP_BRIDGE_ARCHITECT_TOOLS) if (tool.startsWith("lane_pilot_workflow_")) expect(mentioned.has(tool), tool).toBe(true);
     for (const phrase of ["Interview, briefly", "lane_pilot_workflow_capabilities", "browser-automation", "computer-use", "tavily", "Env Catalog", "env_request", "never ask for the value in chat", "lp-task",
-      "same-session", "read-prior-session", "maxVisits", "human", "parallel", "quality_mode", "SKILL.md", "~/.agents/skills", "confirm: true", "data from outside"]) {
+      "same-session", "read-prior-session", "maxVisits", "human", "parallel", "quality_mode", "SKILL.md", "lane-pilot-workflows skill", "confirm: true", "data from outside"]) {
       expect(WORKFLOW_ARCHITECT_SESSION, phrase).toContain(phrase);
     }
     expect(WORKFLOW_ARCHITECT_SESSION.length).toBeLessThan(32_000);

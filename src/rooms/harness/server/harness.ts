@@ -26,6 +26,14 @@ import { formatProbeReplays, runHarnessProbe } from "./probe-run";
 import { builtinWorkflow } from "../../workflow";
 import type { StepContext } from "../../workflow";
 import type { ChainRuntime, GraphHelperRun } from "../../workflow/server";
+import { checkBrief, renderBrief } from "../../brief";
+
+/** Every helper mission of the harness graphs renders through the shared brief (evidence lives on disk under context/, so the brief is instructions only). */
+function harnessMission(job: string, layout: string): string {
+  const brief = renderBrief({ role: "harness-editor", instructions: [missionPointer(job, layout)] });
+  checkBrief("harness-editor", brief.text, { instructionsLength: brief.instructionsLength });
+  return brief.text;
+}
 
 /** The graphs that run the model work of the harness: an improvement round for a key (prepare, edit, validate) and the reflection on a decided trial. */
 export const HARNESS_EDIT_WORKFLOW = "lp.harness-edit";
@@ -497,6 +505,7 @@ export function createHarness(ctx: ServerCore, services: Services) {
    * parallel, one composer. KEEP_BASE at any stage ends the round with nothing to put on trial. Every session is a helper thread of the step; the
    * step returns what the round made (the composed tree, the editors' notes) and `validate` decides what to do with it.
    */
+
   async function editRound(step: GraphStep, input: { projectId: string; area: string; writerKey: string; where: { hostId: string; path: string }; stamp: string }): Promise<Record<string, unknown>> {
     const { projectId, area, writerKey, where } = input;
     const key = `${projectId}:${area}:${writerKey}`;
@@ -512,14 +521,14 @@ export function createHarness(ctx: ServerCore, services: Services) {
     const promptCtx = { area: area || "(whole project)", writerKey, surface };
     const rejected = rejectedFor(projectId, area, writerKey);
     await Promise.all(["inv", "dom"].map((label) => writeFiles(where, `${round}/${label}`, base)));
-    const layout = evidenceLayout(base);
+        const layout = evidenceLayout(base);
     // The two editors run side by side, the second one started a little later: two OpenCode processes starting on the
     // same host within two seconds collided on OpenCode's database («thread.start failed … database is locked»,
     // BB-сервис feature:shell, 2026-10-19 04:10 UTC). The self-repair's second session covers the rest.
     const [inv, dom] = await Promise.all((["INV", "DOM"] as const).map(async (dim, index) => { if (index > 0) await new Promise((resolve) => setTimeout(resolve, HARNESS_TUNING.editorStaggerMs)); return stage({
       projectId, where, folder: `${round}/${dim.toLowerCase()}`, cfg, fallback: active.tree, step, label: dim.toLowerCase(),
       title: `Lane Pilot harness editor (${dim}): ${area || "project"} / ${writerKey}`, role: "harness-editor", model: dim === "INV" ? "inv" : "dom",
-      mission: missionPointer(proposePrompt(dim, promptCtx, rejected), layout), surface,
+      mission: harnessMission(proposePrompt(dim, promptCtx, rejected), layout), surface,
     }); }));
     const threadIds = [...inv.threadIds, ...dom.threadIds];
     const common = { inv_notes: inv.notes, dom_notes: dom.notes, compose_notes: "" };
@@ -558,7 +567,7 @@ export function createHarness(ctx: ServerCore, services: Services) {
     const composed = await stage({
       projectId, where, folder: `${round}/compose`, cfg, fallback: active.tree, step, label: "compose",
       title: `Lane Pilot harness composer: ${area || "project"} / ${writerKey}`, role: "harness-composer", model: "compose",
-      mission: missionPointer(composePrompt(promptCtx, 2), evidenceLayout(composeFiles)), surface,
+      mission: harnessMission(composePrompt(promptCtx, 2), evidenceLayout(composeFiles)), surface,
     });
     threadIds.push(...composed.threadIds);
     if (composed.error) ctx.log(`harness ${key}: composer failed: ${composed.error}`);
@@ -704,7 +713,7 @@ export function createHarness(ctx: ServerCore, services: Services) {
     });
     const folder = `${HARNESS_DIR}-edit/${slug(trial.area || "project")}__${slug(trial.writerKey)}/reflect-${trial.id}`;
     await writeFiles(where, folder, files);
-    const mission = missionPointer(`${experiencePrompt({ area: trial.area || "(whole project)", writerKey: trial.writerKey })}\n\n# WHAT HAPPENED\n\nThe candidate (context/pool/candidate/, also context/harness/) was ${trial.state}: ${trial.reason ?? ""}. Attempts of both arms are under context/attempts/ (brief.md names the tree and arm). Compare context/harness/ with context/base_harness/.`, evidenceLayout(files));
+    const mission = harnessMission(`${experiencePrompt({ area: trial.area || "(whole project)", writerKey: trial.writerKey })}\n\n# WHAT HAPPENED\n\nThe candidate (context/pool/candidate/, also context/harness/) was ${trial.state}: ${trial.reason ?? ""}. Attempts of both arms are under context/attempts/ (brief.md names the tree and arm). Compare context/harness/ with context/base_harness/.`, evidenceLayout(files));
     return { status: "ready", detail: "", projectId: trial.projectId, hostId: where.hostId, path: where.path, folder, mission };
   }
 
