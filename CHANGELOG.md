@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **Zero failed episodes do not start a repair.** Six successful hourly sweep summaries on 2026-11-06 were read as failures because the self-repair watcher and wall journal matched the word `failed` inside `0 failed`. Both readers now exclude the successful episode-summary prefix (zero failed and zero held) when looking for failure text, while keeping nonzero counts, held episodes, unrelated messages such as `step 0 failed`, other failures in the same line and wall's error-level entries. `tests/server/episode-summary-log.test.ts` replays all six original hub log rows from `tests/fixtures/episode-summary-log.json`.
+
 ## 0.1.479
 
 - **Stage 1 of crystallization and the one project memory.** Every finished errand leaves an episode (facts at completion, an hourly sweep: masked trace → one model → failure class, a process key chosen by Jev among the 8 nearest); `CHECK:` lines give a verified outcome; `bb lane-pilot errands diagnose` shows cost and repeats; the lead offers five forms (rule, note, script, skill, graph); the skill standard and lint library; memory import through one door (BB memory, Claude Code, agentmemory) that never evicts; the owner anamnesis on the hub; the memory index and the `lane-memory` rule in every ordinary BB thread; Jev `memory.rerank` lets search answer «nothing».

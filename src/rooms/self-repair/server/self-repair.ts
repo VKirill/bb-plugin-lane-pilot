@@ -332,7 +332,8 @@ export function logIncidents(text: string, since: number): Incident[] {
     let row: { ts?: unknown; message?: unknown };
     try { row = JSON.parse(line) as typeof row; } catch { continue; }
     if (typeof row.ts !== "number" || row.ts <= since || typeof row.message !== "string") continue;
-    if (!LOG_FAILURE.test(row.message) || LOG_NOT_OURS.test(row.message)) continue;
+    // A successful episode summary is status; other failure text in the same line still counts.
+    if (!LOG_FAILURE.test(row.message.replace(/^episodes: \d+ enriched, \d+ skipped, 0 failed, 0 held of \d+ picked\b/i, "")) || LOG_NOT_OURS.test(row.message)) continue;
     const projectId = /\bproj_[a-z0-9]+/i.exec(row.message)?.[0] ?? "-";
     out.push({ signature: reasonSignature("log", row.message), kind: "log", projectId, runId: "-", taskId: "-",
       attemptId: `log:${row.ts}`, pmThreadId: null, writerThreadId: null, reason: row.message, at: row.ts });
