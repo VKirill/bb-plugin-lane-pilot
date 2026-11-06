@@ -1404,6 +1404,22 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         void sendServiceMessage(bb, { threadId:input.pmThreadId, senderThreadId:writerThreadId || undefined,
           text:`Lane Pilot: ${input.taskId} stopped with a question from its writer. Answer it with lane_pilot_answer_writer (taskId, answer) — from the code or docs if they settle it, else ask the owner once; the writer continues in its own thread and no attempt is spent. ${WRITER_QUESTION_WAIT_TEXT} Send the task again only when the contract itself must change; tasks that depend on it wait for that.${liveFolder ? " This folder has no git, so the writer's files stay where they are and the folder stays locked: other tasks for it queue until this question is answered (or the task is sent again)." : ""}\n${reason.slice(0, 1200)}` }).catch(() => undefined);
       }
+      // A failed task is told to stability before the receipts close the run: its record reads the run still running
+      // (the harness breaker's noteHarnessFailure skips a run that is already blocked). Accepted work emits after the
+      // refresh below — the after-acceptance graph starts on the settled run, as before.
+      if (!accepted && last.status !== "canceled") {
+        try {
+          await emitAttemptFinished(ctx, { scope:"task", projectId:input.projectId, runId:input.runId, taskId:input.taskId,
+            attemptId, pmThreadId:input.pmThreadId, writerThreadId:writerThreadId ?? null, task:input.task, config:activeConfig,
+            status:String(last.status), reason:reason ?? null, result:last,
+            writerSelection:writerSelection ? { providerId:writerSelection.providerId, model:writerSelection.model } : undefined,
+            judged:judged && judged.status === String(last.status) && judged.reason === (typeof last.reason === "string" ? last.reason : null)
+              ? { failureClass:judged.klass, mast:judged.mast ?? null, intervention:judged.intervention ?? null, streak:judged.streak ?? null } : undefined,
+            acceptedAttemptId:null });
+        } catch (emitCause) {
+          ctx.log(`attempt-finished: emit failed for ${input.taskId}: ${emitCause instanceof Error ? emitCause.message : String(emitCause)}`);
+        }
+      }
       for (const stageId of ["writer-agent", "verification", "acceptance-receipt"] as const) {
         const current = listStageReceipts(db, input.runId, input.taskId).find((row) => row.stageId === stageId);
         if (current?.state === "pending") {
@@ -1431,18 +1447,16 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
             : last : null, reason:accepted ? undefined : reason });
       }
       refreshRun(input.runId);
-      // The reactions: stability hears the failure, the area records the accepted writer, the after-acceptance graph
-      // starts — subscribers to attempt-finished (attempt-finished.ts), in registration order.
-      try {
-        await emitAttemptFinished(ctx, { scope:"task", projectId:input.projectId, runId:input.runId, taskId:input.taskId,
-          attemptId, pmThreadId:input.pmThreadId, writerThreadId:writerThreadId ?? null, task:input.task, config:activeConfig,
-          status:String(last.status), reason:accepted ? null : reason ?? null, result:last,
-          writerSelection:writerSelection ? { providerId:writerSelection.providerId, model:writerSelection.model } : undefined,
-          judged:judged && judged.status === String(last.status) && judged.reason === (typeof last.reason === "string" ? last.reason : null)
-            ? { failureClass:judged.klass, mast:judged.mast ?? null, intervention:judged.intervention ?? null, streak:judged.streak ?? null } : undefined,
-          acceptedAttemptId });
-      } catch (emitCause) {
-        ctx.log(`attempt-finished: emit failed for ${input.taskId}: ${emitCause instanceof Error ? emitCause.message : String(emitCause)}`);
+      if (accepted) {
+        try {
+          await emitAttemptFinished(ctx, { scope:"task", projectId:input.projectId, runId:input.runId, taskId:input.taskId,
+            attemptId, pmThreadId:input.pmThreadId, writerThreadId:writerThreadId ?? null, task:input.task, config:activeConfig,
+            status:"accepted", reason:null, result:last,
+            writerSelection:writerSelection ? { providerId:writerSelection.providerId, model:writerSelection.model } : undefined,
+            acceptedAttemptId });
+        } catch (emitCause) {
+          ctx.log(`attempt-finished: emit failed for ${input.taskId}: ${emitCause instanceof Error ? emitCause.message : String(emitCause)}`);
+        }
       }
       };
       void (async () => {
@@ -1480,6 +1494,10 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         if (attempt && ["queued", "spawn_requested", "spawn_unknown", "spawn_rejected", "running", "cancel_requested", "provider_error", "timeout", "empty_output", "validation_failed"].includes(attempt.state)) {
           transitionAttempt(db, attemptId, "blocked", { threadId:writerThreadId, reason });
         }
+        // Stability hears the failure while the run is still running — its record before the receipts, as before.
+        await emitAttemptFinished(ctx, { scope:"task", projectId:input.projectId, runId:input.runId, taskId:input.taskId,
+          attemptId, pmThreadId:input.pmThreadId, writerThreadId:writerThreadId ?? null, task:input.task, config:activeConfig,
+          status:"blocked", reason, result:last, acceptedAttemptId:null }).catch(() => undefined);
         for (const stageId of ["writer-agent", "verification", "acceptance-receipt"] as const) {
           const current = listStageReceipts(db, input.runId, input.taskId).find((row) => row.stageId === stageId);
           if (!current || current.state === "passed" || current.state === "failed" || current.state === "skipped") continue;
@@ -1495,9 +1513,6 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         } catch (refreshCause) {
           bb.log.error(`Lane Pilot failed to refresh run ${input.runId} after attempt ${attemptId} error: ${refreshCause instanceof Error ? refreshCause.message : String(refreshCause)}`);
         }
-        await emitAttemptFinished(ctx, { scope:"task", projectId:input.projectId, runId:input.runId, taskId:input.taskId,
-          attemptId, pmThreadId:input.pmThreadId, writerThreadId:writerThreadId ?? null, task:input.task, config:activeConfig,
-          status:"blocked", reason, result:last, acceptedAttemptId:null }).catch(() => undefined);
       } catch (inner) {
         // A failure while recording the failure must never escape a detached task and crash BB.
         try { bb.log.error(`Lane Pilot writer attempt ${attemptId} could not record its failure: ${inner instanceof Error ? inner.message : String(inner)}`); } catch { /* ctx.state.disposed */ }

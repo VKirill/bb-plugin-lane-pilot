@@ -56,18 +56,23 @@ export type AttemptFinishedSubscriber = (event: AttemptFinished) => void | Promi
  * The bus lives on the plugin instance (the core), like `admittedByCore` in start.ts: tests that build
  * a fresh core get a fresh subscriber list.
  */
-const buses = new WeakMap<object, AttemptFinishedSubscriber[]>();
+const buses = new WeakMap<object, Array<{ name: string; run: AttemptFinishedSubscriber }>>();
 
 /** Register a reaction to attempt end. Registration order is the run order — it is a contract. */
-export function onAttemptFinished(ctx: ServerCore, subscriber: AttemptFinishedSubscriber): void {
+export function onAttemptFinished(ctx: ServerCore, subscriber: AttemptFinishedSubscriber, name = subscriber.name || "anonymous"): void {
   const list = buses.get(ctx) ?? [];
   buses.set(ctx, list);
-  list.push(subscriber);
+  list.push({ name, run: subscriber });
 }
 
 /** How many reactions are registered — for the ordering test. */
 export function attemptFinishedSubscriberCount(ctx: ServerCore): number {
   return buses.get(ctx)?.length ?? 0;
+}
+
+/** The registered reaction names in run order — the ordering test locks this list. */
+export function attemptFinishedSubscriberNames(ctx: ServerCore): string[] {
+  return (buses.get(ctx) ?? []).map((entry) => entry.name);
 }
 
 /**
@@ -78,9 +83,9 @@ export function attemptFinishedSubscriberCount(ctx: ServerCore): number {
 export async function emitAttemptFinished(ctx: ServerCore, event: AttemptFinished): Promise<void> {
   const list = buses.get(ctx);
   if (!list) return;
-  for (const subscriber of list) {
+  for (const { run } of list) {
     try {
-      await subscriber(event);
+      await run(event);
     } catch (cause) {
       ctx.log(`attempt-finished: a reaction failed after ${event.taskId}/${event.attemptId}: ${cause instanceof Error ? cause.message : String(cause)}`);
     }

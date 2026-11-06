@@ -12,5 +12,5 @@ export function mountWorkflowAttemptFinished(ctx: ServerCore, services: Services
   onAttemptFinished(ctx, (event) => {
     if (event.scope !== "task" || event.status !== "accepted") return;
     services.startAfterAcceptance(event.projectId, event.runId, event.taskId, event.pmThreadId);
-  });
+  }, "workflow:after-accept");
 }

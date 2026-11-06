@@ -13,5 +13,5 @@ export function mountRuleFormsAttemptFinished(ctx: ServerCore, services: Service
   onAttemptFinished(ctx, (event) => {
     if (event.scope !== "attempt" || !event.writerStopped) return;
     services.promotions?.settleTask({ taskId: event.taskId, outcome: "failed", reason: event.reason ?? event.status });
-  });
+  }, "rule-forms:settle-stopped-writer");
 }

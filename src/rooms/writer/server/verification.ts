@@ -9,7 +9,6 @@ import { isRunHalted } from "../../runs/server";
 import { join, relative, resolve } from "node:path";
 import type { TaskV2 } from "../../contracts";
 import type { ServerCore, Services } from "../../core/server";
-import { onAttemptFinished, type AttemptFinished } from "./attempt-finished";
 
 /**
  * MERGER: this file belongs to src/rooms/verification. Move it there and call
@@ -134,20 +133,30 @@ export function mountVerificationAttemptFinished(ctx: ServerCore, services: Serv
       `${confirmed.map((check) => check.command).join(", ")}${turnedRed.length ? ` (до этой задачи проходила)` : ""}. Причина: ${String((sent as { reason?: unknown }).reason ?? (sent as { hint?: unknown }).hint ?? sent.state)}. Работа осталась в main; запустите исправление в чате проекта.`);
   }
 
-  onAttemptFinished(ctx, (event: AttemptFinished) => {
-    if (event.scope !== "attempt" || !event.landed) return;
-    const { basePath, commit, produced, live, worktreePath } = event.landed;
+  /**
+   * What a landed task leaves for verification: the project's gate hears the merge, or — without one — the task's
+   * checks rerun on main. Launched from finish.ts at the merge point, before the merge intent is cleared: a reload
+   * between merge and this launch leaves the intent, and recovery redoes the check. Fire-and-forget as before;
+   * a rejection is logged, and a disposed instance does nothing (its recovery owns the attempt).
+   */
+  function landed(input:{ projectId:string; runId:string; taskId:string; attemptId:string; writerThreadId:string | null; pmThreadId:string;
+      config:{ hostId:string }; task:TaskV2 }, basePath:string, commit:string | null, produced:string[], live:boolean,
+      worktreePath:string | null, greenInWorktree:readonly string[] | undefined): void {
     void (async () => {
-      const gate = await gateFor(event.projectId, event.runId, event.config.hostId, basePath);
-      if (gate) void noteMergedForGate(event, basePath, commit ?? "", produced, live);
-      else if (!live && worktreePath) void checkMainAfterMerge({ projectId: event.projectId, pmThreadId: event.pmThreadId, config: event.config,
-        runId: event.runId, task: event.task, basePath, worktreePath, attemptId: event.attemptId, mergeCommit: commit ?? undefined,
-        greenInWorktree: event.greenInWorktree });
-    })();
-  });
+      if (ctx.state.disposed) return;
+      const gate = await gateFor(input.projectId, input.runId, input.config.hostId, basePath);
+      if (ctx.state.disposed) return;
+      if (gate) await noteMergedForGate(input, basePath, commit ?? "", produced, live);
+      else if (!live && worktreePath) await checkMainAfterMerge({ projectId:input.projectId, pmThreadId:input.pmThreadId, config:input.config as never,
+        runId:input.runId, task:input.task, basePath, worktreePath, attemptId:input.attemptId, mergeCommit:commit ?? undefined,
+        greenInWorktree });
+    })().catch((cause:unknown) => {
+      ctx.log(`landed reactions of ${input.taskId} failed: ${cause instanceof Error ? cause.message : String(cause)}`);
+    });
+  }
 
   // Returned for the finish API's callers (tests drive the post-merge check directly).
-  return { noteMergedForGate, checkMainAfterMerge };
+  return { noteMergedForGate, checkMainAfterMerge, landed };
 }
 
 // parseIntegrationGateSettings is re-exported here under a short alias to keep `gateFor` readable.

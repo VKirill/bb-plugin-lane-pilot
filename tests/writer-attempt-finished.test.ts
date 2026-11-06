@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
-import { attemptFinishedSubscriberCount, emitAttemptFinished, onAttemptFinished, type AttemptFinished } from "../src/rooms/writer/server/attempt-finished";
+import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
+import { attemptFinishedSubscriberCount, attemptFinishedSubscriberNames, emitAttemptFinished, onAttemptFinished, type AttemptFinished } from "../src/rooms/writer/server/attempt-finished";
+import { createWriterFinish } from "../src/rooms/writer/server/finish";
+import { mountStabilityAttemptFinished } from "../src/rooms/writer/server/stability";
+import { mountWriterTaskFinished } from "../src/rooms/writer/server/attempt-reactions";
+import { mountWorkflowAttemptFinished } from "../src/rooms/writer/server/workflow";
 
 const ctx = () => ({ log: vi.fn(), state: { disposed: false }, isDisposed: () => false }) as never;
 
@@ -11,8 +16,11 @@ const event = (over: Partial<AttemptFinished> = {}): AttemptFinished => ({
 
 /**
  * The order that mattered before the bus and must keep holding:
- * - attempt scope, registration order: rule-forms settle → verification landed → writer metric+materialize → finish-scan.
- * - task scope: stability onTaskFailed → writer area record → workflow after-accept, after the receipts and refreshRun.
+ * - attempt scope, registered by createWriterFinish: settle (rule-forms) before the writer's own
+ *   skill metric + materialize cleanup.
+ * - task scope, registered by createWriterStart: stability's failure record → the area's writer
+ *   record → the after-acceptance graph; and the failed-task emit happens before the receipts and
+ *   refreshRun, the accepted-task emit after them (start.ts recordOutcome).
  * - a failed reaction is logged and the rest still run; a reaction returning void stays fire-and-forget.
  */
 describe("attempt-finished bus", () => {
@@ -50,5 +58,24 @@ describe("attempt-finished bus", () => {
     expect(order).toEqual(["sync", "next"]);
     await new Promise((wake) => setTimeout(wake, 60));
     expect(order).toEqual(["sync", "next", "slow"]);
+  });
+
+  it("locks the production reaction order: finish mounts settle before writer cleanup; start mounts stability, area, then after-accept", () => {
+    const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
+    const finishCore = { bb, db: {}, getThreadBounded: vi.fn(), host: {}, log: vi.fn(), state: { disposed: false } };
+    createWriterFinish(finishCore as never, {} as never);
+    expect(attemptFinishedSubscriberNames(finishCore as never)).toEqual([
+      "rule-forms:settle-stopped-writer",
+      "writer:skill-metric-and-materialize",
+    ]);
+    const startCore = { log: vi.fn(), state: { disposed: false } };
+    mountStabilityAttemptFinished(startCore as never, { stability: {} } as never);
+    mountWriterTaskFinished(startCore as never, {} as never, { noteAccepted: vi.fn() } as never);
+    mountWorkflowAttemptFinished(startCore as never, {} as never);
+    expect(attemptFinishedSubscriberNames(startCore as never)).toEqual([
+      "stability:task-failed",
+      "writer:area-accepted",
+      "workflow:after-accept",
+    ]);
   });
 });

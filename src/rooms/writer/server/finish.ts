@@ -41,6 +41,7 @@ import { judgeRulesOnDiff, ruleViolationRemark } from "../../learning";
 import { jev, type JevSettings } from "@lane-pilot/jev";
 import { askTaskWord, taskWordItemPrefix } from "../../lead";
 import { closeOwnerItemsByPrefix, postOwnerItem, rpcLine } from "../../owner-waiting";
+import { writerFinishScanJudgment } from "../finish-scan";
 import { runOnHost } from "@lane-pilot/host-calls";
 import { pollPause } from "@lane-pilot/kit";
 import { emitAttemptFinished, type AttemptFinished } from "./attempt-finished";
@@ -97,7 +98,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
   async function finishWriterAttempt(input: FinishInput): Promise<Record<string,unknown>> {
     let result: Record<string, unknown> | null = null;
     // Facts the body learns on the way out, for the reactions: what landed, how far the gates passed.
-    const facts: Pick<AttemptFinished, "landed" | "greenInWorktree" | "acceptanceReached" | "writerStopped" | "candidate"> = {};
+    const facts: Pick<AttemptFinished, "writerStopped"> = {};
     try {
       result = await finishWriterAttemptBody(input, facts);
       return result;
@@ -113,7 +114,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
     }
   }
 
-  async function finishWriterAttemptBody(input: FinishInput, facts: Pick<AttemptFinished, "landed" | "greenInWorktree" | "acceptanceReached" | "writerStopped" | "candidate">): Promise<Record<string,unknown>> {
+  async function finishWriterAttemptBody(input: FinishInput, facts: Pick<AttemptFinished, "writerStopped">): Promise<Record<string,unknown>> {
     // The PM's stop and a failure can land together: an attempt whose stop was requested ends canceled whatever failed
     // (cancel_requested has only canceled, blocked and accepted to go to, and the owner asked for the stop).
     const endedByStop = (reason:string, threadId = input.writerThreadId):Record<string,unknown>|null => {
@@ -842,9 +843,18 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
         transitionAttempt(db, input.attemptId, "blocked", { reason:wordGap });
         return { status:"blocked", reason:wordGap, attemptId:input.attemptId, writerThreadId };
       }
-      // The candidate passed every gate up to the acceptance receipt: the finish-scan reaction fires on this data.
-      facts.acceptanceReached = true;
-      facts.candidate = { output:candidate.output, produced:candidate.produced ?? [], verification:candidate.verification ?? [] };
+      // The parallel finish scan (Gemini 7): three cheap nouls on the landing attempt — diff risk, UI, docs — for
+      // receipts and the task's profile; it never changes the finish path. Awaited here: a stop during the scan
+      // still cancels the merge below (stoppedMeanwhile at the next boundary).
+      try {
+        const scan = await jev()?.judge(writerFinishScanJudgment, {
+          title: input.task.title, contract: JSON.stringify({ invariants: input.task.invariants, out_of_scope: input.task.out_of_scope }),
+          produced: (candidate.produced ?? []).slice(0, 40).join("\n"),
+          verification: (candidate.verification ?? []).slice(0, 10).map((row) => `${row.command}:${row.exitCode}`).join("\n"),
+          summary: typeof candidate.output === "string" ? candidate.output : "",
+        }, { projectId: input.projectId, runId: input.runId, subject: "writer-finish", settings: loadProjectSettings(db, input.projectId, getRunSettingsScopes(db, input.runId)) as JevSettings });
+        if (scan?.by === "jev") bb.log.info(`Lane Pilot finish-scan ${input.taskId}: ${writerFinishScanJudgment.describe(scan.decision)}`);
+      } catch { /* a scan is never a gate */ }
       { const stopped = stoppedMeanwhile("the finish scan", writerThreadId); if (stopped) return stopped; }
       const receipt = await services.persistWriterAcceptance({
         config:input.config, task:input.task, runId:input.runId, taskId:input.taskId,
@@ -961,12 +971,14 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
         // The base, the merge commit and the files it changed (deletions included) go on the attempt's record (SMA wall 4).
         services.rollback?.noteMerge(input.attemptId, merged);
         if (merged.status === "merged") {
-          facts.landed = { basePath, commit:merged.commit, produced:candidate.produced ?? [], live:false, worktreePath:bound.workspace_path };
-          facts.greenInWorktree = (candidate.verification ?? []).filter((check) => check.exitCode === 0).map((check) => check.command);
+          // The landed reactions run now, fire-and-forget as before: the merge intent is cleared below, and a
+          // reload between merge and this launch leaves the intent for recovery to redo.
+          verification.landed(input, basePath, merged.commit, candidate.produced ?? [], false, bound.workspace_path,
+            (candidate.verification ?? []).filter((check) => check.exitCode === 0).map((check) => check.command));
         }
       } else if (bound && basePath && isLiveDecision(bound.workspace_decision)) {
         // A folder with no repository has no merge: the accepted task is in place, and the gate runs there once the queue drains.
-        facts.landed = { basePath, commit:null, produced:candidate.produced ?? [], live:true, worktreePath:null };
+        verification.landed(input, basePath, null, candidate.produced ?? [], true, null, undefined);
       }
       // #29 task-size metric: what this accepted task cost (files, diff lines, minutes, attempts) rides the receipt;
       // the project's median over these rows is what plan warnings measure new slices against.

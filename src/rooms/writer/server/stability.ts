@@ -16,5 +16,5 @@ export function mountStabilityAttemptFinished(ctx: ServerCore, services: Service
     void services.stability.onTaskFailed({ projectId: event.projectId, runId: event.runId, taskId: event.taskId,
       pmThreadId: event.pmThreadId, state: event.status, reason: event.reason ?? "",
       ...(event.judged ? { klass: event.judged.failureClass as FailureClass, mast: event.judged.mast, intervention: event.judged.intervention } : {}) }).catch(() => false);
-  });
+  }, "stability:task-failed");
 }
