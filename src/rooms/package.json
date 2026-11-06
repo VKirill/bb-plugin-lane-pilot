@@ -10,6 +10,7 @@
     "./critique/critique-worth.ts",
     "./critique/index.ts",
     "./critique/review-screen.ts",
+    "./errands/failure-judgment.ts",
     "./jev/index.ts",
     "./jev/judgments.ts",
     "./lead/index.ts",

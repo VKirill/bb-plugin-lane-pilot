@@ -112,3 +112,15 @@ export function kindsOverview(db: Db, settings: Record<string, unknown>, days: n
     };
   });
 }
+
+const STEM_STOP = new Set(["тест", "проверка", "проверить", "the", "a", "an", "for", "of", "to", "in", "on", "and", "or", "на", "в", "и", "у", "о", "об", "с", "к", "по", "за", "из", "от", "до", "не", "что", "как", "для", "это"]);
+
+/** The stem a group of hand-run errands shares: the title lower-cased, without urls, @names, digits, ids or dates, its first four significant words. */
+export function errandStem(title: string): string {
+  const words = (title.toLowerCase().replace(/https?:\/\/\S+/gu, " ").replace(/@[\p{L}\p{N}_]+/gu, " ").match(/[\p{L}\p{N}]+/gu) ?? [])
+    .filter((word) => !/\p{N}/u.test(word) && !STEM_STOP.has(word));
+  return words.slice(0, 4).join(" ");
+}
+
+/** The confidence of a `routeTop` string («<workflowId>:<confidence>», stream G1); NaN when the run has no route or no readable number. */
+export const routeConfidence = (routeTop: string): number => { const at = /:(\d+)\s*$/u.exec(routeTop); return at ? Number(at[1]) : Number.NaN; };

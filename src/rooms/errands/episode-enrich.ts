@@ -5,7 +5,7 @@ import { pmSkillName } from "../native-agent";
 import { extractSkillSequence } from "../writer";
 import type { LanePilotDatabase } from "../storage";
 import { collectEnabled, ERRAND_EPISODE_EXTRACTOR_VERSION, ERRAND_EPISODE_TABLE, recordErrandEpisode } from "./episodes";
-import { errandOutcome, errandTitle } from "./logic";
+import { errandOutcome, errandStem, errandTitle } from "./logic";
 import { ERRAND_FAILURE_CLASSES, ERRAND_FAILURE_ID, type ErrandFailureClass, type ErrandFailureInput } from "./failure-judgment";
 
 /**
@@ -317,7 +317,6 @@ export async function episodesBackfill(
     WHERE (r.workflow_id='errand' OR EXISTS (SELECT 1 FROM ${ERRAND_EPISODE_TABLE} e WHERE e.run_id=r.id AND e.status='running'))
       AND NOT EXISTS (SELECT 1 FROM ${ERRAND_EPISODE_TABLE} e WHERE e.run_id=r.id AND e.status != 'running')
     ORDER BY r.created_at DESC`).all() as Array<Record<string, unknown>>;
-  const { errandStem } = await import("../lead/server/tick");
   type Candidate = { runId: string; stem: string; outcome: string; at: number };
   const candidates: Candidate[] = [];
   for (const row of rows) {
