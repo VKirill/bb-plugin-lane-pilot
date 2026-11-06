@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { configSchema } from "./hub";
-import { anamnesisRequestSchema } from "./ops";
+import { anamnesisRequestSchema, hostRequestSchema } from "./ops";
 
 /**
  * The two entries anamnesis adds to the contracts, kept here so `src/contracts.ts` takes one line each:
@@ -10,7 +10,9 @@ import { anamnesisRequestSchema } from "./ops";
  */
 export const anamnesisHostMethods = {
   anamnesis: {
-    input: z.object({ requestedHostId: z.string().min(1), request: anamnesisRequestSchema }).strict(),
+    // Since M1b the host answers only host-bound requests (collection scans, the portrait files, the migration export);
+    // the store ops in `anamnesisRequestSchema` stay in the union so a stale caller gets the handler's refusal, not a schema error.
+    input: z.object({ requestedHostId: z.string().min(1), request: z.union([anamnesisRequestSchema, hostRequestSchema]) }).strict(),
     output: z.object({ hostId: z.string(), response: z.unknown() }).strict(),
   },
 };

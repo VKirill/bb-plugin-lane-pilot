@@ -6,6 +6,8 @@ import type { ServerCore } from "../core/server";
 import type { AnamnesisRpcRequest } from "./contract";
 import { runAnamnesisCli, type CliResult } from "./cli";
 import { createHub, type Hub } from "./hub";
+import { OWNER_KEY_NAME, parseOwnerKey } from "./crypto";
+import { openOwnerStore, type StoreDb } from "./store";
 import { jev } from "@lane-pilot/jev";
 import { fragmentJudgment, matchJudgment } from "./judgment";
 import { loadAnamnesis, type LoadDeps, type LoadOptions } from "./load";
@@ -17,11 +19,27 @@ import { scheduleIsolated } from "../core/server";
 const cache = new WeakMap<object, ReturnType<typeof build>>();
 
 function build(ctx: ServerCore) {
-  const { bb, db, host } = ctx;
+  const { bb, db, host, secrets } = ctx;
+  /**
+   * The owner tables of the plugin base (M1b): every anamnesis operation runs here. `LP_OWNER_MEMORY_KEY` is fetched
+   * from Env Catalog before each ask and never kept anywhere but this closure; without it sensitive records stay closed.
+   */
+  let ownerKey: Buffer | null = null;
+  const refreshOwnerKey = async (): Promise<void> => {
+    try { ownerKey = parseOwnerKey((await secrets.record(OWNER_KEY_NAME))?.value ?? null); }
+    catch { ownerKey = null; }
+  };
+  const store = openOwnerStore(db as unknown as StoreDb, {
+    crypto: {
+      key: () => ownerKey,
+      missing: () => bb.log.warn(`anamnesis owner_key_missing: ${OWNER_KEY_NAME} is not in Env Catalog; sensitive records stay closed`),
+    },
+  });
   const innerHub: Hub = createHub({
     hostCall: async (hostId, request, timeoutMs) => (await host.call("anamnesis", { requestedHostId: hostId, request }, { hostId, timeoutMs })).response,
     listHosts: async () => mapListedQaHosts(await (bb.sdk as unknown as { hosts: { list: () => Promise<unknown> } }).hosts.list().catch(() => [])),
     kv: bb.storage.kv as never,
+    store,
   });
   /** The hub-side memory catalog for a collect request (A-b2): the memory plugin's RPC answers it; absent, the host's `bb` CLI is the fallback. */
   const callRpc = (bb.sdk as unknown as { plugins?: { callRpc?: (args: { pluginId: string; method: string; input: unknown; outputSchema: { parse(input: unknown): unknown } }) => Promise<unknown> } }).plugins?.callRpc;
@@ -36,9 +54,14 @@ function build(ctx: ServerCore) {
   const hub: Hub = {
     ...innerHub,
     ask: async (request, timeoutMs) => {
+      await refreshOwnerKey();
       const collect = "sources" in request ? request : undefined;
       return innerHub.ask(collect && collect.sources.includes("bb-memory") && collect.bbMemories === undefined
         ? { ...request, bbMemories: await bbMemories() } : request, timeoutMs);
+    },
+    dispatch: async (request) => {
+      await refreshOwnerKey();
+      return innerHub.dispatch(request);
     },
   };
 
@@ -112,7 +135,14 @@ function build(ctx: ServerCore) {
       await runPass(signal);
     },
     rpc: { anamnesis: async ({ request }: { request: AnamnesisRpcRequest }) => ({ result: request.op === "pass" ? await runPass() : await hub.dispatch(request) }) } satisfies Pick<PluginRpcHandlers<typeof rpcContract>, "anamnesis">,
-    cli: (argv: string[]): Promise<CliResult> => runAnamnesisCli(argv, { hub, load: (options: LoadOptions) => loadAnamnesis(loadDeps(), options) }),
+    cli: (argv: string[]): Promise<CliResult> => runAnamnesisCli(argv, {
+      hub, load: (options: LoadOptions) => loadAnamnesis(loadDeps(), options),
+      /** The one-off migration (M1b): the legacy file's rows over the host's read-only `export`, then `importRows` — idempotent. */
+      migrate: {
+        exportTables: async () => { await refreshOwnerKey(); return innerHub.exportTables(); },
+        importRows: async (tables, dryRun) => { await refreshOwnerKey(); return innerHub.store.importRows(tables, { dryRun }); },
+      },
+    }),
   };
 }
 

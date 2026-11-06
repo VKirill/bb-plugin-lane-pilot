@@ -29,6 +29,7 @@ export const ANAMNESIS_USAGE = [
   "bb lane-pilot anamnesis notes [--sync]",
   "bb lane-pilot anamnesis card [--max-chars N]",
   "bb lane-pilot anamnesis import-profile --profile '<JSON of bb memory-profile get --json>'",
+  "bb lane-pilot anamnesis migrate-to-hub [--dry-run] [--json]",
 ].join("\n");
 
 export type CliResult = { exitCode: number; stdout?: string; stderr?: string };
@@ -36,6 +37,11 @@ export type CliDeps = {
   hub: Hub;
   /** The first load; absent where Lane Pilot is not mounted (tests of the plain commands). */
   load?: (options: LoadOptions) => Promise<LoadReport>;
+  /** The one-off migration (M1b): the legacy file's rows from the host's `export`, then `importRows` into the hub tables. */
+  migrate?: {
+    exportTables(): Promise<Record<string, Array<Record<string, unknown>>>>;
+    importRows(tables: Record<string, Array<Record<string, unknown>>>, dryRun?: boolean): Promise<Record<string, { rows: number; inserted: number; existing: number; skipped: number }>>;
+  };
   now?: () => number;
 };
 
@@ -215,6 +221,20 @@ async function core(command: string, { values, positionals }: Parsed, deps: CliD
       if (!parsed.success) throw new Error(`--profile is not a memory-profile card: ${parsed.error.issues[0]?.message ?? "invalid"}`);
       const result = await hub.ask({ op: "import_profile", profile: parsed.data });
       return out(result, values.json, () => `moved ${result.imported} records from the card${result.skipped.length ? ` (empty fields: ${result.skipped.join(", ")})` : ""}; they are confirmed. Check them in the Anamnesis tab, then the plugin can be switched off.`);
+    }
+    case "migrate-to-hub": {
+      if (!deps.migrate) throw new Error("migrate-to-hub is not available here");
+      const dryRun = values["dry-run"] === true;
+      const tables = await deps.migrate.exportTables();
+      const counts = await deps.migrate.importRows(tables, dryRun);
+      const total = Object.values(counts).reduce((sum, row) => sum + row.rows, 0);
+      const skippedSensitive = (counts.records?.skipped ?? 0) + (counts.evidence?.skipped ?? 0) + (counts.history?.skipped ?? 0) + (counts.notes_lines?.skipped ?? 0);
+      return out({ dryRun, counts }, values.json, () => [
+        `${dryRun ? "would import" : "imported"} ${total} rows from the Mac-mini anamnesis file into the hub`,
+        ...Object.entries(counts).map(([table, row]) => `  ${table}: ${row.rows} read, ${row.inserted} new, ${row.existing} already there${row.skipped ? `, ${row.skipped} skipped (sensitive, no key)` : ""}`),
+        ...(skippedSensitive ? [`owner_key_missing: ${skippedSensitive} rows of sensitive records stay on the Mac mini until ${"LP_OWNER_MEMORY_KEY"} is in Env Catalog; run again after setting it`] : []),
+        ...(dryRun ? ["dry run: nothing was written; run without --dry-run to import"] : ["idempotent: a second run reports everything as already there"]),
+      ].join("\n"));
     }
     case "review": {
       const perKind = values.limit ? Number(values.limit) : 8;

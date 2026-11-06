@@ -6,6 +6,7 @@ import { runAnamnesisCli } from "../../src/rooms/anamnesis/cli";
 import { hostContract } from "../../src/rooms/contracts";
 import { anamnesisHandler } from "../../src/rooms/anamnesis/host";
 import { createHub } from "../../src/rooms/anamnesis/hub";
+import { openStore } from "../../src/rooms/anamnesis/store";
 import type { FragmentDecision } from "../../src/rooms/anamnesis/judgment";
 import { DEFAULT_MAX_CLASSIFY, HARD_MAX_CLASSIFY, JEV_TOKENS_PER_MESSAGE, formatReport, loadAnamnesis, type LoadDeps } from "../../src/rooms/anamnesis/load";
 import type { EventLike, ThreadLike, ThreadsPort } from "../../src/rooms/anamnesis/owner-messages";
@@ -33,6 +34,7 @@ function makeDeps(events: Record<string, EventLike[]>, judge?: LoadDeps["judge"]
     hostCall: async (hostId, request) => hostContract.anamnesis.output.parse(await anamnesisHandler(hostContract.anamnesis.input.parse({ requestedHostId: hostId, request }))).response,
     listHosts: async () => [{ id: "host_mini", name: "MAC Mini", connected: true }],
     kv: { get: async <T>(key: string) => kv.get(key) as T | undefined, set: async (key, value) => { kv.set(key, value); } },
+    store: openStore(":memory:"),
   });
   return {
     hub, threads: port(events), now: () => NOW,
