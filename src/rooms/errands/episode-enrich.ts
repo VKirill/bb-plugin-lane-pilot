@@ -313,16 +313,29 @@ export function knownProcessKeys(db: Db): KnownProcessKey[] {
 
 export type SweepResult = { picked: number; enriched: number; skipped: number; failed: number; held: number };
 
-/** One sweep pass: the oldest pending episodes, at most `limit` (EPISODE_SWEEP_LIMIT in the graph). */
+// One pass at a time per plugin process: the hourly node and `errands episodes-sweep` overlapped on 2026-11-06 and both
+// enriched the same rows (the analyzer call is shared by key, the Jev calls and the writes were not).
+let sweeping = false;
+
+/** One sweep pass: the oldest pending episodes, at most `limit` (EPISODE_SWEEP_LIMIT in the graph); a second concurrent pass picks nothing. */
 export async function sweepErrandEpisodes(deps: EpisodeEnrichDeps, limit = EPISODE_SWEEP_LIMIT): Promise<SweepResult> {
-  const now = deps.now?.() ?? Date.now();
   const result: SweepResult = { picked: 0, enriched: 0, skipped: 0, failed: 0, held: 0 };
-  for (const row of pendingEpisodes(deps.db, now, limit)) {
-    if (deps.stopped?.()) break;
-    result.picked += 1;
-    result[await enrichEpisode(row, deps)] += 1;
+  if (sweeping) {
+    deps.log?.("episodes: a sweep pass is already running; this one picks nothing");
+    return result;
   }
-  return result;
+  sweeping = true;
+  try {
+    const now = deps.now?.() ?? Date.now();
+    for (const row of pendingEpisodes(deps.db, now, limit)) {
+      if (deps.stopped?.()) break;
+      result.picked += 1;
+      result[await enrichEpisode(row, deps)] += 1;
+    }
+    return result;
+  } finally {
+    sweeping = false;
+  }
 }
 
 export type BackfillResult = { picked: number; total: number; groups: number; failed: number; single: number; written: number; errors: string[] };

@@ -116,6 +116,24 @@ describe("errand episode sweep", () => {
     expect(judged).toHaveLength(1);
   });
 
+  it("a second pass while one runs picks nothing (no double enrichment)", async () => {
+    const { db } = world();
+    addRun(db, { id: "wfrun-1", inputs: { title: "Count open leads", task: "count" }, output: { state: "done", verified: "done_checked" } });
+    await recorded(db, "wfrun-1");
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    let calls = 0;
+    const first = sweepErrandEpisodes(deps(db, {
+      readOutline: async () => "User: count\nAssistant: done",
+      runModel: async () => { calls += 1; await gate; return { text: ANSWER, model: "fake/analyst-1" }; },
+    }));
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(await sweepErrandEpisodes(deps(db, { readOutline: async () => "x", runModel: async () => { calls += 1; return { text: ANSWER, model: "m" }; } }))).toMatchObject({ picked: 0 });
+    release();
+    expect(await first).toMatchObject({ picked: 1, enriched: 1 });
+    expect(calls).toBe(1);
+  });
+
   it("R6 wiring: chooseKey gets the candidate, the title and the known keys; its answer is the stored process_key", async () => {
     const { db } = world();
     addRun(db, { id: "wfrun-old", inputs: { title: "Count leads in CRM", task: "count" }, output: { state: "done" } });
