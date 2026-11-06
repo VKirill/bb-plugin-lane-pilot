@@ -49,7 +49,7 @@ export function errandTitle(inputs: { title?: unknown; task?: unknown }): string
   return line.replace(/^Owner request \([^)]*\):\s*/u, "").replace(/^"|"$/gu, "").slice(0, 120) || "—";
 }
 
-const kindOf = (value: unknown): ErrandKindOrNone => (typeof value === "string" && (ERRAND_KINDS as readonly string[]).includes(value) ? (value as ErrandKind) : "none");
+export const kindOf = (value: unknown): ErrandKindOrNone => (typeof value === "string" && (ERRAND_KINDS as readonly string[]).includes(value) ? (value as ErrandKind) : "none");
 
 type RunRow = {
   id: string; project_id: string | null; status: string; reason: string | null; inputs_json: string; output_json: string | null;

@@ -421,7 +421,7 @@ export function registerCli(ctx: ServerCore, services: Services) {
         if (command === "errands") {
           return await runEpisodesCli({
             db, readEvents: (threadId) => services.harness.threadEvents(threadId, ERRAND_EPISODE_TRACE_EVENTS),
-            log: (message) => ctx.log(message), warn: (message) => ctx.log(message),
+            log: (message) => ctx.log(message), warn: (message) => ctx.log(message), catalog: services.workflowCatalog,
           }, args[0] ?? "", args.slice(1));
         }
         if (command === "configure" && args.length === 1) {

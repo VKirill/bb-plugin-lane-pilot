@@ -9,6 +9,7 @@ import { HELPER_PANEL_ACTION } from "../../native-agent/ui";
 import { Pill, useOpenThreadPanel } from "../../ui-shell/ui";
 import { NativeModelPicker, useModelCatalog, type ModelChoice } from "../../workflow/ui";
 import type { ErrandKindOrNone, ErrandOutcome, ErrandRow, KindSummary } from "../logic";
+import type { ErrandsDiagnosis } from "../diagnosis";
 
 type Payload = { days: number; kinds: KindSummary[]; errands: ErrandRow[] };
 type RoleRow = { role: string; providerId: string; model: string; effort: string; own: boolean; version: number; pool: Array<{ providerId: string; model: string; effort: string | null }> };
@@ -55,12 +56,16 @@ export function ErrandsScreen({ projects, locale }: { projects: Array<{ id: stri
   const [days, setDays] = useState<number>(7);
   const [kind, setKind] = useState<"all" | ErrandKindOrNone>("all");
   const [data, setData] = useState<Payload | null>(null);
+  const [diag, setDiag] = useState<ErrandsDiagnosis | null>(null);
   const [roles, setRoles] = useState<RoleRow[] | null>(null);
   const [failed, setFailed] = useState(false);
   const [saveError, setSaveError] = useState("");
   const [busy, setBusy] = useState(false);
   const loadRoles = useCallback(() => rpc.call("get_role_models", { projectId: GLOBAL_SETTINGS_PROJECT_ID }).then((next) => setRoles((next as { roles: RoleRow[] }).roles), () => setRoles(null)), [rpc]);
-  const load = useCallback(() => rpc.call("errands_overview", { days }).then((next) => { setData(next as Payload); setFailed(false); }, () => setFailed(true)), [days, rpc]);
+  const load = useCallback(() => {
+    void rpc.call("errands_overview", { days }).then((next) => { setData(next as Payload); setFailed(false); }, () => setFailed(true));
+    void rpc.call("errands_diagnosis", { days }).then((next) => setDiag(next as ErrandsDiagnosis), () => setDiag(null));
+  }, [days, rpc]);
   useEffect(() => { void load(); }, [load]);
   useEffect(() => { void loadRoles(); }, [loadRoles]);
 
@@ -148,6 +153,27 @@ export function ErrandsScreen({ projects, locale }: { projects: Array<{ id: stri
           </div>
         </SurfaceBody>
       </Surface>
+      {/* «Диагноз»: owner-facing Russian on purpose (the brief's plain-Russian rule); the i18n package is shared from main, so new keys cannot land here before the merge. */}
+      {diag ? (
+        <Surface testId="errand-diagnosis">
+          <SurfaceHeader><h2 className="text-sm font-medium">Диагноз</h2></SurfaceHeader>
+          <SurfaceBody>
+            <p className="mb-2 max-w-3xl text-xs text-muted-foreground">К чему пришли поручения за период, сколько они стоили и где повторяются. У каждого числа — его количество.</p>
+            <ul className="space-y-1 text-xs" data-testid="errand-diagnosis-list">
+              <li>{`Запусков: ${diag.runs}, завершено ${diag.ended} — сделано ${diag.outcomes.done}, остановилось ${diag.outcomes.blocked}, сбой ${diag.outcomes.failed}, отменено ${diag.outcomes.canceled}, идёт ${diag.outcomes.running}.`}</li>
+              <li>{`Итог проверен у ${diag.ended - diag.unknownVerified.count} из ${diag.ended} завершённых поручений; неизвестен у ${diag.unknownVerified.count}.`}</li>
+              <li>{`Стоимость: ${usd(diag.cost.totalUsd)} всего, медиана ${diag.cost.medianUsd === null ? "нет данных" : usd(diag.cost.medianUsd)} на поручение, медиана времени ${diag.cost.medianMinutes === null ? "нет данных" : `${Math.round(diag.cost.medianMinutes)} мин`} (из ${diag.ended} завершённых).`}</li>
+              <li>{diag.failureClasses.available ? `Причины сбоев разобраны у ${diag.failureClasses.counts.reduce((sum, row) => sum + row.count, 0)} эпизодов.` : "Причины сбоев: нет данных."}</li>
+              <li>{`Повторяющиеся процессы: ${diag.repeats.groups}; второй прогон был дешевле в ${diag.repeats.cheaperSecond.count} из ${diag.repeats.cheaperSecond.of} сопоставимых группах.`}</li>
+              <li>{`Роутер почти подобрал граф: ${diag.nearMisses.count} из ${diag.nearMisses.of} поручений с маршрутом.`}</li>
+              <li>{diag.skillsUnused.available
+                ? `Навыки предлагались, но не применялись: ${diag.skillsUnused.counts.length ? diag.skillsUnused.counts.map((row) => `${row.name} ×${row.count}`).join(", ") : "нет"} (разобрано эпизодов: ${diag.skillsUnused.of}).`
+                : "Навыки без применения: нет данных."}</li>
+              <li>{diag.catalog.available ? `Тестовые заготовки в каталоге графов: ${diag.catalog.count}.` : "Заготовки в каталоге графов: нет данных."}</li>
+            </ul>
+          </SurfaceBody>
+        </Surface>
+      ) : null}
       <Surface testId="errand-list">
         <SurfaceHeader className="flex-wrap justify-between gap-2">
           <h2 className="text-sm font-medium">{fill("er_list_title", { days })}</h2>
