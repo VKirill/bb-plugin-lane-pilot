@@ -5,7 +5,7 @@ export { registerAnamnesisActions } from "./chain-actions";
 export { ANAMNESIS_USAGE } from "./cli";
 export { anamnesisHostMethods, anamnesisRpcMethods } from "./contract";
 export { anamnesisHandler } from "./host";
-export { sensitiveReason } from "./model";
+export { scrubQuote, sensitiveReason } from "./model";
 export { TURN_REQUESTED, isOwnerThread, ownerMessagesOf } from "./owner-messages";
 export type { EventLike, OwnerMessage, OwnerMessageConsumer, OwnerMessageHub, OwnerMessageMeta, ThreadLike } from "./owner-messages";
 export { maskPii } from "./pii";

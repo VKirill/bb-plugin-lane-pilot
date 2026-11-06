@@ -5,7 +5,7 @@ import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
 import type { ChainRuntime } from "../../workflow/server";
 import type { ServerCore, Services } from "../../core/server";
 import { closeOwnerItem, collectOwnerWaiting, isSandboxProject, loadPushConfig, postOwnerItem, rpcLine, type OwnerAction, type OwnerEvidence } from "../../owner-waiting";
-import { errandTitle } from "../../errands";
+import { errandStem, errandTitle, routeConfidence } from "../../errands";
 import { ARCHITECT_LAUNCH, WORKFLOW_ARCHITECT_ID } from "../../workflow";
 import { listPhases } from "../../phase";
 import { loadProjectSettings, type LanePilotDatabase } from "../../storage";
@@ -140,18 +140,6 @@ export const seedForm = (seed: ArchitectSeed): ProcessForm | null => {
   const form = text(seed.form);
   return (PROCESS_FORMS as readonly string[]).includes(form) ? (form as ProcessForm) : null;
 };
-
-const STEM_STOP = new Set(["тест", "проверка", "проверить", "the", "a", "an", "for", "of", "to", "in", "on", "and", "or", "на", "в", "и", "у", "о", "об", "с", "к", "по", "за", "из", "от", "до", "не", "что", "как", "для", "это"]);
-
-/** The stem a group of hand-run errands shares: the title lower-cased, without urls, @names, digits, ids or dates, its first four significant words. */
-export function errandStem(title: string): string {
-  const words = (title.toLowerCase().replace(/https?:\/\/\S+/gu, " ").replace(/@[\p{L}\p{N}_]+/gu, " ").match(/[\p{L}\p{N}]+/gu) ?? [])
-    .filter((word) => !/\p{N}/u.test(word) && !STEM_STOP.has(word));
-  return words.slice(0, 4).join(" ");
-}
-
-/** The confidence of a `routeTop` string («<workflowId>:<confidence>», stream G1); NaN when the run has no route or no readable number. */
-export const routeConfidence = (routeTop: string): number => { const at = /:(\d+)\s*$/u.exec(routeTop); return at ? Number(at[1]) : Number.NaN; };
 
 /** The episode columns `graphlessErrands` reads; the process-key pair arrives with a parallel stream, so each is checked on its own. */
 type EpisodeColumns = { processKey: boolean; processKeyProposed: boolean; provider: boolean; model: boolean; trace: boolean };

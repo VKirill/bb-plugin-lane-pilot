@@ -69,6 +69,8 @@ export const MEMORY_PATHS: readonly MemoryPath[] = [
       { file: "src/rooms/learning/service.ts", primitive: "contributeInstructions", count: 1 },
       { file: "src/rooms/learning/service.ts", primitive: "pmResumeInstructions", count: 1 },
     ] },
+  { id: "bb.thread", consumer: "every ordinary BB thread of the project (contributeInstructions, the L1 showcase)", carries: ["core"], alwaysOn: [], status: "probed",
+    sites: [{ file: "src/rooms/memory/server/thread-block.ts", primitive: "contributeInstructions", count: 1 }] },
   { id: "pm.rules_tool", consumer: "the PM tool lane_pilot_memory {action:\"learned\", op:\"rules\"}", carries: ["rule"], alwaysOn: ["rule"], status: "probed",
     sites: [{ file: "src/rooms/learning/service.ts", primitive: "pmRulesOf", count: 1 }] },
   { id: "pm.contract", consumer: "path-scoped rules returned with a queued task contract", carries: ["rule"], alwaysOn: [], status: "exempt",
@@ -96,6 +98,9 @@ export const MEMORY_PATHS: readonly MemoryPath[] = [
       { file: "src/rooms/council/server/council.ts", primitive: "searchMemoryRecords", count: 1 },
       { file: "src/rooms/council/server/council.ts", primitive: "memoryContext", count: 1 },
     ] },
+  { id: "hub.memory_import_eval", consumer: "the M1 import gate (RPC memory_import_eval): measures how many imported records the PM search finds", carries: [], alwaysOn: [], status: "exempt",
+    reason: "A measurement over the import receipt, read by the operator; nothing it finds reaches an agent prompt.",
+    sites: [{ file: "src/rooms/memory/server/import.ts", primitive: "searchMemoryRecords", count: 1 }] },
   { id: "hub.session_rpc", consumer: "the hub session_memory RPCs, not a Lane Pilot agent prompt", carries: [], alwaysOn: [], status: "exempt",
     reason: "Claude Lane's terminal client is gone (2026-10-29). The RPCs stay for the hub; they do not deliver into an agent prompt.",
     sites: [

@@ -6,10 +6,11 @@ import { hostContract, rpcContract } from "../../src/rooms/contracts";
 import { runAnamnesisCli } from "../../src/rooms/anamnesis/cli";
 import { createHub, type HostInfo } from "../../src/rooms/anamnesis/hub";
 import { anamnesisHandler } from "../../src/rooms/anamnesis/host";
-import type { AnamnesisRequest } from "../../src/rooms/anamnesis/ops";
+import { openStore } from "../../src/rooms/anamnesis/store";
+import type { AnamnesisRequest, HostRequest } from "../../src/rooms/anamnesis/ops";
 
 const T0 = Date.UTC(2026, 2, 1);
-let hostCalls: Array<{ hostId: string; request: AnamnesisRequest }>;
+let hostCalls: Array<{ hostId: string; request: AnamnesisRequest | HostRequest }>;
 let kv: Map<string, unknown>;
 let hosts: HostInfo[];
 const previousDir = process.env.LANE_PILOT_ANAMNESIS_DIR;
@@ -25,6 +26,8 @@ function makeHub() {
     },
     listHosts: async () => hosts,
     kv: { get: async <T>(key: string) => kv.get(key) as T | undefined, set: async (key, value) => { kv.set(key, value); } },
+    // M1b: the records live on the hub; the host call below sees only collect scans and the portrait files.
+    store: openStore(":memory:"),
   });
 }
 
@@ -64,7 +67,7 @@ describe("hub to host to store", () => {
     await expect(hub.resolveHost()).rejects.toThrow(/No connected Mac mini/);
   });
 
-  it("stores through the host, answers with counts and no content, and advances the checkpoint with the batch", async () => {
+  it("stores on the hub, answers with counts and no content, and advances the checkpoint with the batch", async () => {
     const hub = makeHub();
     const summary = await hub.ask({ op: "upsert", actor: "auto:git", reason: "pass", checkpoint: { source: "git", at: T0, detail: { repos: 2 } },
       records: [

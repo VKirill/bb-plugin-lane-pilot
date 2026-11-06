@@ -151,6 +151,23 @@ export function labelGuardHostCommand(db: Db, now = Date.now()): OutcomeLabel[] 
   return out;
 }
 
+/**
+ * `errand.failure` (the episode sweep's shadow judgment, src/rooms/errands/failure-judgment.ts): the episode's own
+ * `failure_class` — code-computed first, the analyst's word second — is the later truth the receipt is graded against.
+ * An episode not yet enriched, or one with no class (a clean done), stays unlabeled.
+ */
+export function labelErrandFailure(db: Db, now = Date.now()): OutcomeLabel[] {
+  const out: OutcomeLabel[] = [];
+  for (const row of unlabeled(db, "errand.failure", now - TASK_TRUTH_AGE_MS)) {
+    if (!row.run_id || !row.decision) continue;
+    const episode = db.prepare("SELECT failure_class, enrichment_state FROM lane_pilot_errand_episode WHERE run_id=? ORDER BY extractor_version DESC LIMIT 1")
+      .get(row.run_id) as { failure_class: string | null; enrichment_state: string } | undefined;
+    if (!episode || episode.enrichment_state !== "enriched" || !episode.failure_class) continue;
+    out.push({ receiptId: row.id, outcome: `${row.decision === episode.failure_class ? "agree" : "disagree"}:outcome` });
+  }
+  return out;
+}
+
 /** Every outcome rule this file covers, run over the unlabeled receipts and written. Returns per-judgment counts. */
 export function applyOutcomeLabels(db: Database.Database, now = Date.now()): Record<string, number> {
   const groups: Array<[string, OutcomeLabel[]]> = [
@@ -158,6 +175,7 @@ export function applyOutcomeLabels(db: Database.Database, now = Date.now()): Rec
     ["critique.worth", labelCritiqueWorth(db, now)],
     ["lead.predict", labelLeadPredict(db, now)],
     ["guard.host_command", labelGuardHostCommand(db, now)],
+    ["errand.failure", labelErrandFailure(db, now)],
   ];
   const counts: Record<string, number> = {};
   for (const [judgment, labels] of groups) {

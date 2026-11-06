@@ -90,12 +90,12 @@ OPEN_STATES = ("queued", "spawn_requested", "spawn_unknown", "running")
 TERMINAL = ("accepted", "blocked", "canceled")
 STAMP = time.strftime("%Y%m%d-%H%M%S")
 DATE = time.strftime("%Y-%m-%d")
-ALL = ["guard_hash", "deferrals", "checkers", "watchdog", "memory_paths", "helper_providers", "parallel3", "conflict", "main_moved", "provider", "provider_limit", "live_word", "no_code_exit", "skills", "phase", "phase_route", "reload", "nogit", "nogit_repo", "flow_contract", "lead_shadow"]
-QUICK = ["guard_hash", "deferrals", "checkers", "memory_paths", "helper_providers", "parallel3", "lead_shadow"]
+ALL = ["guard_hash", "deferrals", "checkers", "watchdog", "memory_paths", "helper_providers", "parallel3", "conflict", "main_moved", "provider", "provider_limit", "live_word", "no_code_exit", "skills", "phase", "phase_route", "reload", "nogit", "nogit_repo", "flow_contract", "lead_shadow", "episodes", "memory_thread"]
+QUICK = ["guard_hash", "deferrals", "checkers", "memory_paths", "helper_providers", "parallel3", "lead_shadow", "episodes"]
 # What a provider runs when no setting of the sandbox project names a model for it.
 PROVIDER_FALLBACK_MODEL = {"claude-code": "claude-sonnet-5-5", "codex": "gpt-6-luna", "opencode2": "zai-coding-plan/glm-5.3-flash"}
 # Scenarios that need no PM and no run of their own: they run before the PM starts (guard_hash) or on a project of their own (nogit).
-STANDALONE = ("guard_hash", "deferrals", "checkers", "watchdog", "nogit", "nogit_repo", "lead_shadow")
+STANDALONE = ("guard_hash", "deferrals", "checkers", "watchdog", "nogit", "nogit_repo", "lead_shadow", "episodes", "memory_thread")
 
 # Which changed files a live scenario reads. A path no live scenario reads (NOT_LIVE) starts none; a shared one (FOUNDATION, and anything
 # outside src/ and packages/ that is not NOT_LIVE) starts every one; else parallel3 runs unless the path is in a room it does not pass
@@ -112,6 +112,7 @@ FOUNDATION = ["scripts/lp-drill.py", "scripts/lp-drill.sh", "package-lock.json",
 PARALLEL3_SKIP = [f"src/rooms/{room}/**" for room in ("phase", "council", "cockpit", "night", "night-graphs", "hypotheses", "bench", "forge", "money",
                   "forecast", "coverage", "docs", "backlog", "anamnesis", "twins", "outbound", "owner-presence", "memory-eval", "design-eval", "deferral", "checkers")]
 SCENARIO_CODE = {
+    "episodes": ["src/rooms/errands/**", "src/rooms/qa/server/errand*", "src/rooms/workflow/server/workflow.ts", "packages/harness-core/src/trajectory.ts"],
     "helper_providers": ["src/rooms/native-agent/**", "src/rooms/runs/server/run-routing*", "src/rooms/stability/server/probes.ts", "src/rooms/tools/server/cli.ts",
                          "src/rooms/critique/pm-read.ts", "packages/thread-observe/**"],
     "memory_paths": ["src/rooms/memory/**", "src/rooms/memory-probe/**", "src/rooms/memory-tiers/**", "packages/memory-core/**", "src/rooms/native-agent/**",
@@ -1359,6 +1360,90 @@ def scenario_lead_shadow(tmp: Path) -> dict:
                    ticks=len(state.get("ticks") or []), proposalsOpen=state.get("proposalsOpen"), journal=state.get("journal"), tiers=tiers)
 
 
+def scenario_episodes(tmp: Path) -> dict:
+    """Errand episodes (stage 1 R1/R3/R5/R7): every errand run that ended after the episodes shipped has its episode row (the recorder
+    hangs off the engine's onEvent, so a missing row is a dropped hook); a done run carries a parsed `verified`; the sweep moves rows out
+    of pending within two hours; the diagnosis command answers. Reads the live hub, starts nothing."""
+    try:
+        first = hubsql("SELECT MIN(created_at) AS at FROM lane_pilot_errand_episode")
+    except RuntimeError as cause:
+        if "no such table" in str(cause):
+            return verdict("episodes", [], episodesDeployed=False, note="the running plugin has no episode table yet")
+        return verdict("episodes", [f"hub query failed: {str(cause)[:200]}"])
+    since = (first[0] or {}).get("at") if first else None
+    if not since:
+        return verdict("episodes", [], episodesDeployed=True, note="no episode written yet: no errand ended since the deploy")
+    problems: list[str] = []
+    missing = hubsql(f"""SELECT r.id FROM lane_pilot_wf_run r WHERE r.workflow_id='errand' AND r.status IN
+        ('succeeded','failed','canceled','blocked','interrupted','not_verified') AND r.updated_at >= {int(since)}
+        AND NOT EXISTS (SELECT 1 FROM lane_pilot_errand_episode e WHERE e.run_id=r.id) LIMIT 5""")
+    if missing:
+        problems.append(f"{len(missing)}+ ended errand runs have no episode, e.g. {missing[0].get('id')}")
+    counts = hubsql("""SELECT COUNT(*) AS n, SUM(outcome='done' AND verified IS NULL AND created_at > strftime('%s','now','-3 days')*1000) AS doneNoVerdict,
+        SUM(enrichment_state='pending' AND created_at < (strftime('%s','now')-7200)*1000) AS stalePending,
+        SUM(enrichment_state='held') AS held FROM lane_pilot_errand_episode""")[0]
+    if counts.get("doneNoVerdict"):
+        problems.append(f"{counts['doneNoVerdict']} recent done episodes have no parsed verified outcome")
+    if counts.get("stalePending"):
+        problems.append(f"{counts['stalePending']} episodes stayed pending for over 2 h: the sweep lp.episodes is not running")
+    rc, out, err = bb("lane-pilot", "errands", "diagnose", "--json")
+    if rc != 0:
+        problems.append(f"bb lane-pilot errands diagnose exited {rc}: {(err or out).strip()[:160]}")
+    return verdict("episodes", problems, episodesDeployed=True, episodes=counts.get("n"), held=counts.get("held"), since=since)
+
+
+def scenario_memory_thread(tmp: Path) -> dict:
+    """M2: every ordinary BB thread of the project gets the L1 memory block (contributeInstructions); the drill reads the same
+    block over the plugin RPC. A core fact written through the one door must be in it, another project's must not, and a PM
+    thread gets nothing (its own resume block stays). Reads and writes the sandbox project only; the fact is deleted after."""
+    project = SANDBOX["project"]
+    thread = "drill-memory-thread"
+    try:
+        block = setting_rpc("memory_thread_block", {"projectId": project, "threadId": thread}).get("block")
+    except Exception as cause:
+        if RPC_MISSING.search(str(cause)):
+            return verdict("memory_thread", [], deployed=False, note=f"the running plugin has no memory_thread_block yet: {str(cause)[:160]}")
+        return verdict("memory_thread", [f"memory_thread_block failed: {str(cause)[:200]}"])
+    problems: list[str] = []
+    record_id = None
+    try:
+        if block is None:
+            problems.append("an ordinary thread got no memory block")
+        else:
+            if len(block) > 1200:
+                problems.append(f"the block is {len(block)} chars, over the 1200 cap")
+            for needle in ("lane-memory search", "lane-memory write", "не в файлы"):
+                if needle not in block:
+                    problems.append(f"the block misses «{needle}»")
+        token = f"drill-memory-{STAMP}"
+        wrote = setting_rpc("session_memory_write", {"projectId": project, "kind": "core", "source": "drill",
+                                                   "content": f"Drill fact {token}: the sandbox keeps one memory.", "concepts": ["drill"]})
+        record_id = wrote.get("id")
+        if not wrote.get("stored") and not record_id:
+            problems.append(f"the drill fact was not stored: {wrote.get('reason')}")
+        else:
+            again = setting_rpc("memory_thread_block", {"projectId": project, "threadId": thread}).get("block") or ""
+            if token not in again:
+                problems.append("a core fact written through the door is not in the thread block")
+            other = next((row["project_id"] for row in hubsql("select distinct project_id from lane_pilot_run limit 50") if row["project_id"] != project), None)
+            if other:
+                foreign = setting_rpc("memory_thread_block", {"projectId": other, "threadId": thread}).get("block") or ""
+                if token in foreign:
+                    problems.append("the block of another project carries this project's fact")
+        pm = hubsql(f"select pm_thread_id as t from lane_pilot_run where project_id='{project}' and pm_thread_id is not null order by created_at desc limit 1")
+        if pm:
+            got = setting_rpc("memory_thread_block", {"projectId": project, "threadId": pm[0]["t"]}).get("block")
+            if got is not None:
+                problems.append("a PM thread got the ordinary-thread memory block")
+    finally:
+        if record_id:
+            try:
+                setting_rpc("memory_record_delete", {"projectId": project, "id": record_id})
+            except Exception as cause:
+                log(f"drill fact {record_id} was not deleted: {str(cause)[:160]}")
+    return verdict("memory_thread", problems, deployed=True, chars=len(block or ""), fact=bool(record_id))
+
+
 def scenario_checkers(tmp: Path) -> dict:
     """The checker drill (src/rooms/checkers): planted defects, the code checkers must catch the class they are for. The checkout's own code is
     bundled and run, so a change that makes a checker blind turns the drill red before it is deployed. Then the same drill with the ownership
@@ -1674,6 +1759,20 @@ def main() -> int:
             except Exception as cause:
                 scenarios.append(verdict("lead_shadow", [f"scenario raised: {cause}"]))
             log(f"scenario lead_shadow: {scenarios[-1]['result']} {scenarios[-1]['problems']}")
+        if "episodes" in names:
+            log("scenario episodes")
+            try:
+                scenarios.append(scenario_episodes(tmp))
+            except Exception as cause:
+                scenarios.append(verdict("episodes", [f"scenario raised: {cause}"]))
+            log(f"scenario episodes: {scenarios[-1]['result']} {scenarios[-1]['problems']}")
+        if "memory_thread" in names:
+            log("scenario memory_thread")
+            try:
+                scenarios.append(scenario_memory_thread(tmp))
+            except Exception as cause:
+                scenarios.append(verdict("memory_thread", [f"scenario raised: {cause}"]))
+            log(f"scenario memory_thread: {scenarios[-1]['result']} {scenarios[-1]['problems']}")
         # memory_paths first: its records are planted before the PM starts (its first prompt must carry the probe rule) and removed before
         # the writers of the other scenarios start.
         main_names = sorted((n for n in names if n not in STANDALONE), key=lambda n: n != "memory_paths")

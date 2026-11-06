@@ -71,7 +71,7 @@ describe("outcome labels: critique.screen on the task's fate", () => {
     database.prepare("UPDATE lane_pilot_jev_receipt SET outcome='agree:outcome' WHERE id=?").run(id);
     database.prepare("UPDATE lane_pilot_jev_receipt SET at=? WHERE id=?").run(OLD, id);
     expect(labelCritiqueScreen(database, NOW)).toEqual([]);
-    expect(applyOutcomeLabels(database, NOW)).toEqual({ "critique.screen": 0, "critique.worth": 0, "lead.predict": 0, "guard.host_command": 0 });
+    expect(applyOutcomeLabels(database, NOW)).toEqual({ "critique.screen": 0, "critique.worth": 0, "lead.predict": 0, "guard.host_command": 0, "errand.failure": 0 });
   });
 });
 

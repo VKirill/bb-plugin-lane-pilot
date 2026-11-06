@@ -60,6 +60,14 @@ export const rpcKnowledge = {
     }).strict(),
   },
   ...anamnesisRpcMethods,
+  // M1 one-door import: the client reads its JSONL export (`bb plugin rpc call lane-pilot memory_import --input-file x.json`), the hub
+  // writes it through the agent write path and answers with the receipt; the plugin server reads and writes no file itself.
+  memory_import: {
+    input: z.object({ source: z.enum(["bb-memory", "claude-files", "agentmemory"]), projectId: z.string().min(1).max(200),
+      jsonl: z.string().max(8_000_000), dryRun: z.boolean().optional() }).strict(),
+    output: z.unknown(),
+  },
+  memory_import_eval: { input: z.object({ report: z.object({ projectId: z.string().min(1), outcomes: z.array(z.unknown()) }).passthrough() }).strict(), output: z.unknown() },
   session_memory_project: {
     input: z.object({ hostId: z.string().min(1), path: z.string().startsWith("/") }).strict(),
     output: z.object({ projectId: z.string().nullable(), scopes: z.array(z.string()) }).strict(),
@@ -80,6 +88,11 @@ export const rpcKnowledge = {
   session_memory_core: {
     input: z.object({ projectId: z.string().min(1), chain: z.array(z.string()).max(16).optional() }).strict(),
     output: z.object({ records: z.array(z.object({ id: z.string(), content: z.string() }).strict()) }).strict(),
+  },
+  // The L1 showcase an ordinary BB thread gets from contributeInstructions (M2); null for a PM or plugin thread.
+  memory_thread_block: {
+    input: z.object({ projectId: z.string().min(1), threadId: z.string().min(1) }).strict(),
+    output: z.object({ block: z.string().nullable() }).strict(),
   },
   session_lesson: {
     // audience defaults to both for older lane-memory clients that do not send it.

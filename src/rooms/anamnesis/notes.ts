@@ -45,7 +45,7 @@ const ALL_FILES: readonly NoteFile[] = [...NOTE_FILES, REVIEW_FILE];
 const KIND_RU: Record<Kind, string> = { self: "обо мне", fact: "факт", knowledge: "знание", skill: "умение", person: "близкие", hobby: "хобби", interest: "интерес", event: "событие", preference: "предпочтение", project: "проект", tool: "инструмент" };
 const SOURCE_RU: Record<string, string> = { "bb-message": "чат", git: "git", journal: "журнал", registry: "реестр", "claude-memory": "память Claude", "bb-memory": "память BB", "lp-runs": "прогоны", telegram: "Telegram", elba: "Эльба", manual: "вручную" };
 
-const sha = (text: string): string => createHash("sha256").update(text).digest("hex");
+export const sha = (text: string): string => createHash("sha256").update(text).digest("hex");
 const MARKER = /<!--\s*a:(\S+?)\s*-->/;
 const BULLET = /^\s*[-*]\s+(?:\[( |x|X)\]\s+)?(.*)$/;
 const NOTE_TAIL = /\s+_\([^()]*\)_\s*$/;
@@ -107,21 +107,18 @@ function allRecords(store: Store): AnamnesisRecord[] {
   }
 }
 
-type Applied = NotesResponse["applied"];
+export type Applied = NotesResponse["applied"];
 
-/** Half one: the owner's edits of the files, read back into the records. */
-function readBack(store: Store, dir: string, now: number, applied: Applied): { created: Map<string, Map<number, string>>; failed: Set<string>; contents: Map<string, string> } {
-  const created = new Map<string, Map<number, string>>(), failed = new Set<string>(), changed = new Set<string>(), contents = new Map<string, string>();
+/** Half one: the owner's edits of the files, read back into the records. `files` is the snapshot of the folder the plan runs on. */
+function readBack(store: Store, files: ReadonlyMap<string, string | null>, now: number, applied: Applied): { created: Map<string, Map<number, string>>; failed: Set<string> } {
+  const created = new Map<string, Map<number, string>>(), failed = new Set<string>(), seen = new Set<string>();
   const state = store.notesState();
   const found = new Set<string>();
-  const seen = new Set<string>();
   for (const file of ALL_FILES) {
-    const content = read(join(dir, file.name));
+    const content = files.get(file.name) ?? null;
     // A missing or empty file is a lost file, not a decision to reject everything in it: it is written again.
     if (content === null || !content.trim()) continue;
-    contents.set(file.name, content);
     if (state.files.get(file.name) === sha(content)) continue;
-    changed.add(file.name);
     const lines = content.split("\n");
     lines.forEach((line, index) => {
       const bullet = parseBullet(line);
@@ -163,12 +160,13 @@ function readBack(store: Store, dir: string, now: number, applied: Applied): { c
   }
   // A line that was written and is now gone from a file that still has content: the owner took it out.
   for (const [id, { file, line }] of state.lines) {
-    if (!changed.has(file) || found.has(id) || failed.has(id)) continue;
+    const content = files.get(file) ?? null;
+    if (content === null || !content.trim() || state.files.get(file) === sha(content) || found.has(id) || failed.has(id)) continue;
     const record = store.get(id, { includeSensitive: true });
     if (!record || record.status === "rejected" || !line) continue;
     try { store.edit(id, { status: "rejected" }, "removed from the notes file", now); applied.rejected += 1; } catch { applied.skipped += 1; }
   }
-  return { created, failed, contents };
+  return { created, failed };
 }
 
 const displayTextOf = (record: AnamnesisRecord): string => clean(displayText(record, "ru")) || clean(record.title);
@@ -238,35 +236,83 @@ export function notesStatus(dir: string | null): NotesResponse {
   return statusOf(dir, { created: 0, edited: 0, confirmed: 0, rejected: 0, skipped: 0 }, 0);
 }
 
-/** One pass: the owner's edits are read back, then the files are written from the records. Never throws; a failure is in the answer. */
+export type PlannedNoteFile = { name: string; content: string; lines: Map<string, string>; changed: boolean; base: string | null; stored: string };
+export type NotesPlan = { applied: Applied; files: PlannedNoteFile[] };
+
+/**
+ * One sync pass without touching the disk: the owner's edits are read back into the records and every file's new content
+ * is rendered. `files` maps each file name to its content (null when absent) — the hub plans against the host's snapshot,
+ * the file store against the folder itself. A file is `changed` when its content differs (the `updated:` stamp ignored);
+ * `base` is what the write must still find on disk, `stored` the content whose hash `saveNotesState` keeps.
+ */
+export function planNotes(store: Store, files: ReadonlyMap<string, string | null>, now: number, applied: Applied = { created: 0, edited: 0, confirmed: 0, rejected: 0, skipped: 0 }): NotesPlan {
+  return store.transaction(() => {
+    const { created, failed } = readBack(store, files, now, applied);
+    const records = allRecords(store);
+    const heads = store.evidenceHeads();
+    const wanted = new Map<string, Array<{ id: string; line: string }>>(ALL_FILES.map((file) => [file.name, []]));
+    for (const file of [...NOTE_FILES, REVIEW_FILE]) {
+      const mine = file === REVIEW_FILE ? records.filter((r) => r.status !== "confirmed" && fileOfKind(r.kind)) : records.filter((r) => r.status === "confirmed" && fileOfKind(r.kind) === file);
+      wanted.set(file.name, order(file, mine).map((record) => ({ id: record.id, line: renderLine(record, heads, file === REVIEW_FILE) })));
+    }
+    const planned = ALL_FILES.map((file): PlannedNoteFile => {
+      const existing = files.get(file.name) ?? null;
+      const base = existing !== null && existing.trim() ? existing : null;
+      const { content, lines } = build(file, now, base, wanted.get(file.name)!, created.get(file.name), failed);
+      // The state stays on the line we last wrote for a line the owner changed and we could not apply, so the next pass tries again.
+      for (const id of failed) { const old = store.notesState().lines.get(id); if (old && old.file === file.name) lines.set(id, old.line); }
+      const changed = base === null || withoutUpdated(base) !== withoutUpdated(content);
+      return { name: file.name, content, lines, changed, base, stored: changed ? content : base! };
+    });
+    return { applied, files: planned };
+  });
+}
+
+export type NotesDirEntry = { name: string; path: string; exists: boolean; records: number; content?: string | null };
+
+/** The folder as the host sees it: one entry per notes file, with content only when the hub asked for the plan (`full`). */
+export function notesDirListing(dir: string, full = false): { dir: string; files: NotesDirEntry[] } {
+  return {
+    dir,
+    files: ALL_FILES.map((file) => {
+      const path = join(dir, file.name);
+      const content = read(path);
+      return { name: file.name, path, exists: content !== null, records: content ? content.split("\n").filter((line) => parseBullet(line)?.id).length : 0,
+        ...(full ? { content } : {}) };
+    }),
+  };
+}
+
+/**
+ * The write half on the machine that owns the folder: a planned file is written only while its content still equals
+ * `base` — a file the owner touched since the plan is left for the next pass, never overwritten.
+ */
+export function applyNotesWrites(dir: string, writes: readonly { name: string; content: string; base: string | null }[]): { written: number; wrote: string[] } {
+  ensureDir(dir);
+  const wrote: string[] = [];
+  for (const write of writes) {
+    const path = join(dir, write.name);
+    const current = read(path);
+    if (write.base === null ? current !== null && current.trim() : current !== write.base) continue;
+    atomicWrite(path, write.content);
+    wrote.push(write.name);
+  }
+  return { written: wrote.length, wrote };
+}
+
+/** One pass on a single machine (the file store, the tests): plan, write, keep the state. Never throws; a failure is in the answer. */
 export function syncNotes(store: Store, dir: string, now: number = Date.now()): NotesResponse {
   const applied: Applied = { created: 0, edited: 0, confirmed: 0, rejected: 0, skipped: 0 };
   let written = 0;
   try {
     ensureDir(dir);
+    const snapshot = new Map(ALL_FILES.map((file) => [file.name, read(join(dir, file.name))] as const));
+    const plan = planNotes(store, snapshot, now, applied);
+    const result = applyNotesWrites(dir, plan.files.filter((file) => file.changed).map((file) => ({ name: file.name, content: file.content, base: file.base })));
+    written = result.written;
+    const wrote = new Set(result.wrote);
     store.transaction(() => {
-      const { created, failed, contents } = readBack(store, dir, now, applied);
-      const records = allRecords(store);
-      const heads = store.evidenceHeads();
-      const wanted = new Map<string, Array<{ id: string; line: string }>>(ALL_FILES.map((file) => [file.name, []]));
-      for (const file of [...NOTE_FILES, REVIEW_FILE]) {
-        const mine = file === REVIEW_FILE ? records.filter((r) => r.status !== "confirmed" && fileOfKind(r.kind)) : records.filter((r) => r.status === "confirmed" && fileOfKind(r.kind) === file);
-        wanted.set(file.name, order(file, mine).map((record) => ({ id: record.id, line: renderLine(record, heads, file === REVIEW_FILE) })));
-      }
-      for (const file of ALL_FILES) {
-        const path = join(dir, file.name);
-        const existing = read(path);
-        // The file moved since it was read back (the owner is typing in it): its lines are read at the next pass.
-        if (contents.has(file.name) && contents.get(file.name) !== existing) continue;
-        const { content, lines } = build(file, now, existing, wanted.get(file.name)!, created.get(file.name), failed);
-        // The state stays on the line we last wrote for a line the owner changed and we could not apply, so the next pass tries again.
-        for (const id of failed) { const old = store.notesState().lines.get(id); if (old && old.file === file.name) lines.set(id, old.line); }
-        if (existing === null || withoutUpdated(existing) !== withoutUpdated(content)) {
-          if (existing !== null && read(path) !== existing) continue;   // changed under us: the next pass reads it
-          atomicWrite(path, content); written += 1;
-          store.saveNotesState(file.name, sha(content), lines, now);
-        } else store.saveNotesState(file.name, sha(existing), lines, now);
-      }
+      for (const file of plan.files) if (!file.changed || wrote.has(file.name)) store.saveNotesState(file.name, sha(file.stored), file.lines, now);
     });
     return statusOf(dir, applied, written);
   } catch (cause) {

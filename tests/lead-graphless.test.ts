@@ -11,7 +11,8 @@ import { LEAD_DEFAULTS } from "../src/rooms/lead/settings";
 import { openDecision } from "../src/rooms/lead/server/journal";
 import { addRoad, getRoad, listRoad, proposeRoad, roadPayload } from "../src/rooms/lead/server/road";
 import { createLeadService } from "../src/rooms/lead/server/service";
-import { architectPrompt, errandStem, graphlessErrands, hubSnapshot, processPartsOf, processStemOf, proposalDecisionId, proposalItemKey, registerLeadTickActions, routeConfidence, seedForm, tickBrief } from "../src/rooms/lead/server/tick";
+import { architectPrompt, graphlessErrands, hubSnapshot, processPartsOf, processStemOf, proposalDecisionId, proposalItemKey, registerLeadTickActions, seedForm, tickBrief } from "../src/rooms/lead/server/tick";
+import { errandStem } from "../src/rooms/errands";
 import { postOwnerItem } from "../src/rooms/owner-waiting";
 import { openDatabase, saveProjectSetting } from "../src/rooms/storage/database";
 
@@ -218,7 +219,6 @@ describe("process-key grouping and run signals (stream G/R8)", () => {
       .run(runId, NOW, NOW);
     for (const [column, value] of Object.entries(fields)) db.prepare(`UPDATE lane_pilot_errand_episode SET ${column}=? WHERE run_id=?`).run(value, runId);
   };
-  const keyColumns = (db: Db) => { db.exec("ALTER TABLE lane_pilot_errand_episode ADD COLUMN process_key TEXT"); db.exec("ALTER TABLE lane_pilot_errand_episode ADD COLUMN process_key_proposed TEXT"); };
 
   it("without the process-key columns the stem grouping stands; rows wait for the tick's nearest and hint", () => {
     const { db } = world();
@@ -229,7 +229,6 @@ describe("process-key grouping and run signals (stream G/R8)", () => {
 
   it("shadow mode groups by process_key_proposed; a confirmed process_key wins only when the setting is active", () => {
     const { db } = world();
-    keyColumns(db);
     episode(db, "wf_1", { process_key_proposed: "selfystudio|photo|deliver" });
     episode(db, "wf_2", { process_key_proposed: "selfystudio|photo|deliver" });
     episode(db, "wf_3", { process_key_proposed: "other|key|here" });

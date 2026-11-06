@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { runAnamnesisCli } from "../../src/rooms/anamnesis/cli";
 import { anamnesisHandler } from "../../src/rooms/anamnesis/host";
 import { createHub } from "../../src/rooms/anamnesis/hub";
+import { openStore } from "../../src/rooms/anamnesis/store";
 import type { AnamnesisRecord } from "../../src/rooms/anamnesis/model";
 import { renderCard, renderWhoami, type WhoamiRecord } from "../../src/rooms/anamnesis/whoami";
 
@@ -153,6 +154,7 @@ describe("whoami through the hub, the host and the command", () => {
     hub = createHub({
       hostCall: async (hostId, request) => (await anamnesisHandler({ requestedHostId: hostId, request })).response,
       listHosts: async () => [{ id: "mini", name: "Mac mini", connected: true }], kv: { get: async () => null, set: async () => undefined },
+      store: openStore(":memory:"),
     });
     const ev = (ref: string) => [{ source: "git", ref, at: NOW - DAY }];
     await hub.ask({ op: "upsert", actor: "auto:git", reason: "t", records: [
@@ -185,10 +187,16 @@ describe("whoami through the hub, the host and the command", () => {
     expect((await cli(["whoami", "--detail", "huge"])).stderr).toMatch(/detail must be one of/);
   });
 
-  it("on a machine without a store it answers from nothing and creates no file", async () => {
+  it("on a hub with an empty store it answers from nothing and creates no file on the machine", async () => {
     process.env.LANE_PILOT_ANAMNESIS_DIR = join(tmpdir(), `anamnesis-none-${Date.now()}`);
-    expect((await cli(["whoami"])).stdout).toContain("Nothing recorded yet");
-    expect((await cli(["card"])).stdout).toContain("No confirmed facts yet");
+    const empty = createHub({
+      hostCall: async (hostId, request) => (await anamnesisHandler({ requestedHostId: hostId, request })).response,
+      listHosts: async () => [{ id: "mini", name: "Mac mini", connected: true }], kv: { get: async () => null, set: async () => undefined },
+      store: openStore(":memory:"),
+    });
+    const cliEmpty = (argv: string[]) => runAnamnesisCli(argv, { hub: empty });
+    expect((await cliEmpty(["whoami"])).stdout).toContain("Nothing recorded yet");
+    expect((await cliEmpty(["card"])).stdout).toContain("No confirmed facts yet");
     expect((await import("node:fs")).existsSync(process.env.LANE_PILOT_ANAMNESIS_DIR)).toBe(false);
   });
 });

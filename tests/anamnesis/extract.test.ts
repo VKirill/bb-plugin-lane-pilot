@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { hostContract } from "../../src/rooms/contracts";
 import { anamnesisHandler } from "../../src/rooms/anamnesis/host";
 import { createHub } from "../../src/rooms/anamnesis/hub";
+import { openStore } from "../../src/rooms/anamnesis/store";
 import { dailyDue, dailyPass, markDailyDone, type DailyDeps } from "../../src/rooms/anamnesis/daily";
 import { BUDGET_KEY, SEEN_KEY, createExtractConsumer, extractMessages, madridDay, madridHour, overlap, type ExtractDeps } from "../../src/rooms/anamnesis/extract";
 import { matchJudgment, type FragmentDecision, type MatchDecision } from "../../src/rooms/anamnesis/judgment";
@@ -21,6 +22,7 @@ const makeHub = () => createHub({
   hostCall: async (hostId, request) => hostContract.anamnesis.output.parse(await anamnesisHandler(hostContract.anamnesis.input.parse({ requestedHostId: hostId, request }))).response,
   listHosts: async () => [{ id: "host_mini", name: "MAC Mini", connected: true }],
   kv: { get: async <T>(key: string) => kv.get(key) as T | undefined, set: async (key, value) => { kv.set(key, value); } },
+  store: openStore(":memory:"),
 });
 
 type Fragment = Partial<FragmentDecision>;
