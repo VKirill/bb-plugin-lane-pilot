@@ -15,6 +15,8 @@ import { errandOutcome } from "./logic";
  */
 export const ERRAND_EPISODE_TABLE = "lane_pilot_errand_episode";
 export const ERRAND_EPISODE_EXTRACTOR_VERSION = 1;
+/** The phase-B columns the hourly sweep writes (src/rooms/errands/episode-enrich.ts); `process_key` stays NULL — stream E owns it. */
+export const ERRAND_EPISODE_ENRICH_COLUMNS = ["process_key", "enriched_model", "enriched_at", "summary_json", "failure_class", "process_key_proposed", "enrichment_reason"] as const;
 /** Events of the helper thread the trace reads at most (the harness reader pages 100 at a time). */
 export const ERRAND_EPISODE_TRACE_EVENTS = 1500;
 const DAY_MS = 86_400_000;
@@ -24,7 +26,7 @@ type Db = { prepare(sql: string): { all(...params: unknown[]): unknown[]; get(..
 const parse = <T,>(text: string | null | undefined, fallback: T): T => { try { return text ? (JSON.parse(text) as T) : fallback; } catch { return fallback; } };
 
 /** episodes.collect (default on): a project or the global layer may switch the recorder off; nothing is written then. */
-function collectEnabled(db: LanePilotDatabase, projectId: string | null): boolean {
+export function collectEnabled(db: LanePilotDatabase, projectId: string | null): boolean {
   const value = loadProjectSettings(db, projectId ?? GLOBAL_SETTINGS_PROJECT_ID)["episodes.collect"];
   if (typeof value === "boolean") return value;
   if (typeof value === "number") return value !== 0;

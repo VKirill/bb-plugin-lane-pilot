@@ -2,6 +2,7 @@
 // this room wires the model work of them onto the workflow engine (one mount per graph), so a plugin start registers every executor before a run resumes.
 import type { ServerCore, Services } from "../../core/server";
 import { mountCriticEditGraph } from "./critic-edit-graph";
+import { mountEpisodesGraph } from "./episodes-graph";
 import { mountHarnessGraph } from "./harness-graph";
 import { mountJevLabelsGraph } from "./jev-labels-graph";
 import { mountModelRebenchGraph } from "./model-rebench-graph";
@@ -15,6 +16,7 @@ export function mountNightGraphs(ctx: ServerCore, services: Services): void {
   mountCriticEditGraph(ctx, services);
   mountModelRebenchGraph(ctx, services);
   mountJevLabelsGraph(ctx, services);
+  mountEpisodesGraph(ctx, services);
 }
 export {
   evaluateModelRouting,

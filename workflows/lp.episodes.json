@@ -1,0 +1,98 @@
+{
+  "id": "lp.episodes",
+  "startedBy": "episodes-hourly",
+  "name": {
+    "en": "Hourly errand episode enrichment",
+    "ru": "Часовое обогащение эпизодов поручений"
+  },
+  "description": {
+    "en": "The hourly sweep that adds meaning to errand episodes: reads each pending episode's helper thread, masks secrets and PII before the model sees it, asks the episode-analyst role for a strict JSON summary with a failure class and a process-key candidate, and writes the enrichment columns. At most ten episodes per pass.",
+    "ru": "Часовой проход, который придаёт смысл эпизодам поручений: читает тред помощника, маскирует секреты и персональные данные до того, как текст увидит модель, просит аналитика эпизодов строгий JSON с классом ошибки и кандидатом в ключ процесса и пишет колонки обогащения. Не больше десяти эпизодов за проход."
+  },
+  "status": "published",
+  "tags": [
+    "errands",
+    "episodes",
+    "hourly"
+  ],
+  "triggers": [
+    "manual",
+    "schedule"
+  ],
+  "inputs": {},
+  "outputs": {
+    "status": "string",
+    "summary": "string"
+  },
+  "budget": {
+    "max_minutes": 60
+  },
+  "nodes": [
+    {
+      "id": "sweep",
+      "type": "action",
+      "action": "lp.episodes_sweep",
+      "title": {
+        "en": "Enrich pending errand episodes",
+        "ru": "Обогатить ожидающие эпизоды поручений"
+      },
+      "out": {
+        "status": "string",
+        "picked": "int",
+        "enriched": "int",
+        "skipped": "int",
+        "failed": "int",
+        "held": "int",
+        "summary": "string"
+      },
+      "guards": {
+        "timeoutMin": 55
+      }
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "sweep.status",
+        "summary": "sweep.summary"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "start",
+      "to": "sweep"
+    },
+    {
+      "from": "sweep",
+      "to": "done"
+    }
+  ],
+  "test": {
+    "id": "episodes-1",
+    "sim": {
+      "input": {},
+      "stubs": {
+        "sweep": {
+          "status": "done",
+          "picked": 3,
+          "enriched": 2,
+          "skipped": 1,
+          "failed": 0,
+          "held": 0,
+          "summary": "episodes: 2 enriched, 1 skipped, 0 failed, 0 held of 3 picked"
+        }
+      },
+      "expect_path": [
+        "sweep",
+        "done"
+      ],
+      "expect_output": {
+        "status": "done"
+      }
+    },
+    "live": "the episodes-hourly cron (minute 23 of every hour), or a manual run of lp.episodes"
+  },
+  "goal_check": "artifact"
+}
