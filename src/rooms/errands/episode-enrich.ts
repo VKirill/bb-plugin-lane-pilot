@@ -23,8 +23,8 @@ import { ERRAND_FAILURE_CLASSES, ERRAND_FAILURE_ID, type ErrandFailureClass, typ
  * along for the nightly labels.
  */
 export const EPISODE_SWEEP_LIMIT = 10;
-/** A row whose last attempt is younger than this is not picked again (the same-hour backoff). */
-export const EPISODE_ENRICH_BACKOFF_MS = 3_600_000;
+/** A row whose last attempt is younger than this is not picked again: five minutes (an hour kept 18 rows waiting for no reason, owner 2026-11-06). */
+export const EPISODE_ENRICH_BACKOFF_MS = 300_000;
 const SUMMARY_MAX_BYTES = 2048;
 const MODEL_TEXT_MAX = 12_000;
 const PROCESS_KEY_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*\|[a-z0-9]+(?:-[a-z0-9]+)*$/;

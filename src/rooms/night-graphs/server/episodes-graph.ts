@@ -9,7 +9,7 @@ import { builtinWorkflow } from "../../workflow";
 import type { ChainRuntime } from "../../workflow/server";
 import {
   chooseProcessKey, errandFailureJudgment, sweepErrandEpisodes,
-  ERRAND_EPISODE_TRACE_EVENTS, type EpisodeEnrichDeps,
+  ERRAND_EPISODE_TABLE, ERRAND_EPISODE_TRACE_EVENTS, type EpisodeEnrichDeps,
 } from "../../errands";
 
 export const EPISODES_WORKFLOW = "lp.episodes";
@@ -24,6 +24,21 @@ export const EPISODES_SCHEDULE = "episodes-hourly";
 /** The sweep's live deps (helper thread, analyzer model, Jev); the hourly node and `errands episodes-sweep` share them. */
 const analystRooms = new Map<string, string>();
 
+/**
+ * The machine the episode analyst runs on: the errand's own project's writer host, else (a project with no writer host,
+ * proj_personal: 18 of 132 errands on 2026-11-06) the host of the project whose episodes were analyzed last. The analyst needs a
+ * machine, not the project's checkout: it works in an empty folder. Resolving with no project found no host at all.
+ */
+export async function analystPlace(db: ServerCore["db"], projectId: string | null, resolve: (projectId: string | undefined) => Promise<unknown>): Promise<unknown> {
+  const ok = (value: unknown) => (value as { status?: string } | null)?.status === "resolved";
+  const own = await resolve(projectId ?? undefined);
+  if (ok(own)) return own;
+  const donors = db.prepare(`SELECT project_id FROM ${ERRAND_EPISODE_TABLE} WHERE enrichment_state='enriched' AND project_id IS NOT NULL
+    AND project_id IS NOT ? GROUP BY project_id ORDER BY MAX(enriched_at) DESC LIMIT 5`).all(projectId) as Array<{ project_id: string }>;
+  for (const donor of donors) { const place = await resolve(donor.project_id); if (ok(place)) return place; }
+  return own;
+}
+
 export function episodeSweepDeps(ctx: ServerCore, services: Services, stopped: () => boolean): EpisodeEnrichDeps {
   return {
     db: ctx.db,
@@ -37,11 +52,7 @@ export function episodeSweepDeps(ctx: ServerCore, services: Services, stopped: (
     },
     readEvents: (threadId) => services.harness.threadEvents(threadId, ERRAND_EPISODE_TRACE_EVENTS),
     runModel: async (prompt, projectId, runId) => {
-      // A project with no writer host (proj_personal: 18 of 132 errands on 2026-11-06) reads on the global one: the analyzer
-      // needs a machine, not the project's checkout.
-      const resolved = (id: string | undefined) => services.resolveProjectWriterHost({ projectId: id } as never).catch(() => null);
-      let place = await resolved(projectId ?? undefined);
-      if (projectId && (place as { status?: string } | null)?.status !== "resolved") place = await resolved(undefined);
+      const place = await analystPlace(ctx.db, projectId ?? null, (id) => services.resolveProjectWriterHost({ projectId: id } as never).catch(() => null));
       if (!place || (place as { status?: string }).status !== "resolved") throw new Error("episode_enrich_no_host");
       const project = place as { hostId: string; path: string };
       // The analyzer is a full-access agent: in the project folder it read other threads' unmasked histories
