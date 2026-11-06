@@ -82,7 +82,7 @@ export function registerRpc(ctx: ServerCore, services: Services) {
     ...ownerWaitingRpc(ctx.db),
     ...backlogRpc(services.backlog),
     ...leadRpc(ctx.db, services.lead),
-    ...errandsRpc(ctx),
+    ...errandsRpc(ctx, services),
     ...baselineRpc(services.baseline, services.regression),
     ...stageReturnRpc(services.stageReturn),
     ...forecastRpc(ctx.db),

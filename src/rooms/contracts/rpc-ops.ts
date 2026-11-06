@@ -383,6 +383,8 @@ export const rpcOps = {
   },
   /** The «Errands» page (src/rooms/errands): the kinds with the model in force and the period's counts, and the period's errand runs with outcome, source, helper thread and cost. */
   errands_overview: { input: z.object({ days: z.number().int().min(1).max(365).optional(), kind: z.string().min(1).max(40).optional(), projectId: z.string().min(1).max(200).optional(), limit: z.number().int().min(1).max(500).optional() }).strict(), output: z.unknown() },
+  /** The «Диагноз» block of the «Errands» page (src/rooms/errands/diagnosis): outcomes with their N, cost and time, failure classes, repeats, router near misses, unused skills and catalog litter. */
+  errands_diagnosis: { input: z.object({ days: z.number().int().min(1).max(365).optional(), projectId: z.string().min(1).max(200).optional() }).strict(), output: z.unknown() },
   /** The lead («Штурман», src/rooms/lead): everything the Self-improvement strip and the CLI show — settings, identity sha, next and last ticks, road counts, open proposals, the tier of every class with its exam numbers, journal counts. */
   lead_state: { input: z.object({}).strict(), output: z.unknown() },
   /** The road tree: open branches by default, `history` adds rejected and done ones with their reasons; `projectId` null = above projects, absent = every project. */
