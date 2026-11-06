@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Background, BackgroundVariant, Controls, Handle, Position, ReactFlow, ReactFlowProvider, useReactFlow, useViewport, type Edge, type Node, type NodeProps, type ReactFlowInstance } from "@xyflow/react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Background, BackgroundVariant, ControlButton, Controls, Handle, Position, ReactFlow, ReactFlowProvider, useReactFlow, useViewport, type Edge, type Node, type NodeProps, type ReactFlowInstance } from "@xyflow/react";
 import { useRpc } from "@get-bb/plugin-sdk/app";
 import type { z } from "zod";
 import type { rpcContract } from "../../contracts";
@@ -80,18 +80,39 @@ type ElkEngine = { layout(graph: ElkNode): Promise<ElkNode> };
 let engine: Promise<ElkEngine> | null = null;
 const elk = (): Promise<ElkEngine> => (engine ??= import("elkjs/lib/elk.bundled.js").then((module) => new module.default()));
 
-export type MapLayout = { nodes: Node[]; edges: Edge[]; categories: WorkflowCategory[] };
+export type MapMode = "overview" | "detail";
+/** One drawing of the map: its nodes (stable objects, never rebuilt by hover or search) and each graph's centre. */
+export type ModeLayout = { nodes: Node[]; centers: Map<string, { x: number; y: number }> };
+/**
+ * Two drawings of the same map, laid out once: «overview» — every graph a chip of one size in a grid per category;
+ * «detail» — every graph a frame sized by its steps, steps inside. Edges: the steps' own (detail only) and graph→graph calls,
+ * each call also in a lit version, so a hover swaps one edge object and touches nothing else.
+ */
+export type MapLayout = {
+  overview: ModeLayout; detail: ModeLayout; categories: WorkflowCategory[];
+  innerEdges: Edge[]; callEdges: Edge[]; litCalls: Map<string, Edge>;
+};
 
 const HEAD_H = 72;
 const CELL_MIN_W = 480;
 const CELL_MIN_H = 300;
 const CELL_GAP = 48;
-const CAT_HEAD = 380;
+const CAT_HEAD = 340;
+/** Overview chip: one size and one type scale for every graph. */
+export const CHIP_W = 520;
+export const CHIP_H = 300;
+const CHIP_TITLE = 54;
+const CHIP_META = 26;
+/** The cluster title: one line, and the cluster is at least as wide as it. */
+const CAT_TITLE = 170;
+const titleWidth = (label: string) => CAT_PAD * 2 + 120 + Math.ceil(label.length * CAT_TITLE * 0.64);
 const CAT_PAD = 48;
 const CAT_GAP = 200;
 /** Steps are drawn from this zoom on; further out a graph is one chip with its title (semantic zoom). */
 export const DETAIL_ZOOM = 0.6;
 export const DETAIL_ZOOM_NARROW = 0.3;
+/** Back to the overview below this share of the switch-in zoom (hysteresis: a fitted graph does not flip back). */
+const DETAIL_OUT = 0.4;
 
 /** Shelf packing: boxes in rows no wider than `maxW`; returns positions and the bounding size. */
 function shelf(sizes: { w: number; h: number }[], maxW: number, gap: number): { at: { x: number; y: number }[]; w: number; h: number } {
@@ -107,23 +128,6 @@ function shelf(sizes: { w: number; h: number }[], maxW: number, gap: number): { 
   return { at, w, h: y + row };
 }
 
-/** The largest font (canvas px) at which `text` fits the box when wrapped; the far-out chip title scales with its graph. */
-export function chipFont(text: string, w: number, h: number): number {
-  // Words wrap whole, so a line holds fewer characters than the width allows: 0.66 em per character keeps it inside.
-  for (let size = 200; size > 20; size -= 2) {
-    const perLine = Math.max(1, Math.floor((w - 56) / (size * 0.66)));
-    let lines = 1, used = 0;
-    for (const word of text.split(/\s+/)) {
-      const need = used ? used + 1 + word.length : word.length;
-      if (need <= perLine) { used = need; continue; }
-      lines += used ? 1 : 0;
-      lines += Math.floor(Math.max(0, word.length - 1) / perLine); // a word longer than a line breaks (break-words)
-      used = word.length % perLine || perLine;
-    }
-    if (lines * size * 1.25 + 2 * size * 0.55 * 1.4 <= h - 56) return size;
-  }
-  return 20;
-}
 
 /** How visible a «calls» line is while neither of its graphs is hovered or picked. */
 export const CALL_DIM = 0.08;
@@ -134,21 +138,19 @@ const catOf = (graph: MapGraph): WorkflowCategory => (WORKFLOW_CATEGORIES as rea
 const runsOf = (graphs: MapGraph[]) => graphs.reduce((sum, graph) => sum + graph.runs30d, 0);
 
 /**
- * The library as a map: a cluster per category (most runs first), inside it a framed cell per graph (most runs first),
- * inside a cell the graph's steps laid out by elk. Every step is laid out once, so zooming only shows or hides them and
- * nothing moves; dashed edges join a graph to the graphs it calls.
+ * The library as a map: a cluster per category (most runs first, service last), a cell per graph (most runs first).
+ * Both drawings are laid out here once; the screen only picks one and never re-lays out on hover, search or zoom.
  */
-export async function layoutMap(data: MapData, dimmed: ReadonlySet<string>, locale: Locale = "en"): Promise<MapLayout> {
+export async function layoutMap(data: MapData, locale: Locale = "en"): Promise<MapLayout> {
   const stepsOf = new Map<string, MapStep[]>();
   for (const step of data.steps) (stepsOf.get(step.graph) ?? stepsOf.set(step.graph, []).get(step.graph)!).push(step);
   const stepIds = new Set(data.steps.map((step) => `${step.graph}/${step.id}`));
-  const innerEdges = (graphId: string) => data.edges
+  const innerOf = (graphId: string) => data.edges
     .filter((edge) => edge.graph === graphId && stepIds.has(`${graphId}/${edge.from}`) && stepIds.has(`${graphId}/${edge.to}`));
 
   const laidGraphs = new Map<string, ElkNode>();
   const engineReady = await elk();
   await Promise.all(data.graphs.map(async (graph) => {
-    const steps = stepsOf.get(graph.id) ?? [];
     const laid = await engineReady.layout({
       id: graph.id,
       layoutOptions: {
@@ -157,70 +159,103 @@ export async function layoutMap(data: MapData, dimmed: ReadonlySet<string>, loca
         "elk.padding": `[top=${HEAD_H + 12},left=20,bottom=20,right=20]`,
         "elk.spacing.nodeNode": "18", "elk.layered.spacing.nodeNodeBetweenLayers": "56",
       },
-      children: steps.map((step) => ({ id: step.id, width: STEP_W, height: STEP_H })),
-      edges: innerEdges(graph.id).map((edge, index) => ({ id: `${index}`, sources: [edge.from], targets: [edge.to] })),
+      children: (stepsOf.get(graph.id) ?? []).map((step) => ({ id: step.id, width: STEP_W, height: STEP_H })),
+      edges: innerOf(graph.id).map((edge, index) => ({ id: `${index}`, sources: [edge.from], targets: [edge.to] })),
     });
     laidGraphs.set(graph.id, laid);
   }));
-  const sizeOf = (graph: MapGraph) => {
-    const laid = laidGraphs.get(graph.id);
-    return { w: Math.max(CELL_MIN_W, laid?.width ?? 0), h: Math.max(CELL_MIN_H, laid?.height ?? 0) };
-  };
 
   const byCat = new Map<WorkflowCategory, MapGraph[]>();
   for (const graph of data.graphs) (byCat.get(catOf(graph)) ?? byCat.set(catOf(graph), []).get(catOf(graph))!).push(graph);
   // Most runs first; the service graphs (lp.*) always last — they run the most and say the least about the owner's work.
   const categories = [...byCat.keys()].sort((a, b) => Number(a === "service") - Number(b === "service")
     || runsOf(byCat.get(b)!) - runsOf(byCat.get(a)!) || WORKFLOW_CATEGORIES.indexOf(a) - WORKFLOW_CATEGORIES.indexOf(b));
+  const sorted = new Map(categories.map((cat) => [cat, [...byCat.get(cat)!].sort((a, b) => b.runs30d - a.runs30d || a.id.localeCompare(b.id))]));
+  const catLabel = (cat: WorkflowCategory) => t(CAT_LABEL[cat] as Parameters<typeof t>[0]);
 
-  const clusters = categories.map((cat) => {
-    const graphs = [...byCat.get(cat)!].sort((a, b) => b.runs30d - a.runs30d || a.id.localeCompare(b.id));
-    const sizes = graphs.map(sizeOf);
-    const area = sizes.reduce((sum, size) => sum + (size.w + CELL_GAP) * (size.h + CELL_GAP), 0);
-    const widest = Math.max(...sizes.map((size) => size.w));
-    const packed = shelf(sizes, Math.max(widest, Math.sqrt(area * 1.6)), CELL_GAP);
-    return { cat, graphs, sizes, packed, w: packed.w + CAT_PAD * 2, h: packed.h + CAT_HEAD + CAT_PAD };
-  });
-  const totalArea = clusters.reduce((sum, cluster) => sum + (cluster.w + CAT_GAP) * (cluster.h + CAT_GAP), 0);
-  const placed = shelf(clusters, Math.max(...clusters.map((cluster) => cluster.w), Math.sqrt(totalArea * 1.8)), CAT_GAP);
-
-  const nodes: Node[] = [];
-  const edges: Edge[] = [];
-  clusters.forEach((cluster, index) => {
-    const catId = `cat:${cluster.cat}`;
-    nodes.push({ id: catId, type: "category", position: placed.at[index]!, selectable: false, draggable: false,
-      data: { label: t(CAT_LABEL[cluster.cat] as Parameters<typeof t>[0]), cat: cluster.cat, count: cluster.graphs.length, runs: runsOf(cluster.graphs) },
-      style: { width: cluster.w, height: cluster.h } });
-    cluster.graphs.forEach((graph, at) => {
-      const size = cluster.sizes[at]!;
-      const label = graph.name[locale] || graph.id;
-      const gid = `g:${graph.id}`;
-      nodes.push({ id: gid, type: "graphGroup", parentId: catId, extent: "parent", selectable: false,
-        position: { x: CAT_PAD + cluster.packed.at[at]!.x, y: CAT_HEAD + cluster.packed.at[at]!.y },
-        data: { graph, label, cat: cluster.cat, dim: dimmed.has(gid), steps: stepsOf.get(graph.id)?.length ?? 0, font: chipFont(label, size.w, size.h) },
-        style: { width: size.w, height: size.h } });
-      for (const child of laidGraphs.get(graph.id)?.children ?? []) {
-        const step = (stepsOf.get(graph.id) ?? []).find((item) => item.id === child.id)!;
-        const sid = `s:${graph.id}/${step.id}`;
-        nodes.push({ id: sid, type: "step", parentId: gid, extent: "parent", position: { x: child.x ?? 0, y: child.y ?? 0 },
-          data: { step, dim: dimmed.has(sid), label: step.title?.[locale] || step.id }, style: { width: STEP_W, height: STEP_H } });
-      }
-      innerEdges(graph.id).forEach((edge) => {
-        edges.push({ id: `e:${graph.id}:${edge.from}->${edge.to}`, source: `s:${graph.id}/${edge.from}`, target: `s:${graph.id}/${edge.to}`,
-          data: { graph: graph.id }, style: { stroke: catColor(cluster.cat, 45, 0.55), strokeWidth: 1.6 } });
+  const draw = (mode: MapMode): ModeLayout => {
+    const sizeOf = (graph: MapGraph) => {
+      if (mode === "overview") return { w: CHIP_W, h: CHIP_H };
+      const laid = laidGraphs.get(graph.id);
+      return { w: Math.max(CELL_MIN_W, laid?.width ?? 0), h: Math.max(CELL_MIN_H, laid?.height ?? 0) };
+    };
+    const clusters = categories.map((cat) => {
+      const graphs = sorted.get(cat)!;
+      const sizes = graphs.map(sizeOf);
+      const area = sizes.reduce((sum, size) => sum + (size.w + CELL_GAP) * (size.h + CELL_GAP), 0);
+      // Overview: a uniform grid (≈ square in screen terms); detail: shelf rows of step-sized frames.
+      const rowW = mode === "overview"
+        ? Math.ceil(Math.sqrt(graphs.length * 1.4)) * (CHIP_W + CELL_GAP) - CELL_GAP
+        : Math.max(...sizes.map((size) => size.w), Math.sqrt(area * 1.6));
+      const packed = shelf(sizes, rowW, CELL_GAP);
+      return { cat, graphs, sizes, packed, w: Math.max(packed.w + CAT_PAD * 2, titleWidth(catLabel(cat))), h: packed.h + CAT_HEAD + CAT_PAD };
+    });
+    const totalArea = clusters.reduce((sum, cluster) => sum + (cluster.w + CAT_GAP) * (cluster.h + CAT_GAP), 0);
+    const placed = shelf(clusters, Math.max(...clusters.map((cluster) => cluster.w), Math.sqrt(totalArea * 1.8)), CAT_GAP);
+    const nodes: Node[] = [];
+    const centers = new Map<string, { x: number; y: number }>();
+    clusters.forEach((cluster, index) => {
+      const catId = `cat:${cluster.cat}`;
+      const origin = placed.at[index]!;
+      nodes.push({ id: catId, type: "category", position: origin, selectable: false, draggable: false,
+        data: { label: catLabel(cluster.cat), cat: cluster.cat, count: cluster.graphs.length, runs: runsOf(cluster.graphs) },
+        style: { width: cluster.w, height: cluster.h } });
+      cluster.graphs.forEach((graph, at) => {
+        const size = cluster.sizes[at]!;
+        const gid = `g:${graph.id}`;
+        const position = { x: CAT_PAD + cluster.packed.at[at]!.x, y: CAT_HEAD + cluster.packed.at[at]!.y };
+        centers.set(graph.id, { x: origin.x + position.x + size.w / 2, y: origin.y + position.y + size.h / 2 });
+        nodes.push({ id: gid, type: "graphGroup", parentId: catId, extent: "parent", selectable: false, position,
+          data: { graph, label: graph.name[locale] || graph.id, cat: cluster.cat, mode, steps: stepsOf.get(graph.id)?.length ?? 0, dim: false },
+          style: { width: size.w, height: size.h } });
+        if (mode === "overview") return;
+        for (const child of laidGraphs.get(graph.id)?.children ?? []) {
+          const step = (stepsOf.get(graph.id) ?? []).find((item) => item.id === child.id)!;
+          nodes.push({ id: `s:${graph.id}/${step.id}`, type: "step", parentId: gid, extent: "parent", position: { x: child.x ?? 0, y: child.y ?? 0 },
+            data: { step, dim: false, label: step.title?.[locale] || step.id }, style: { width: STEP_W, height: STEP_H } });
+        }
       });
     });
-  });
+    return { nodes, centers };
+  };
+
+  const innerEdges: Edge[] = [];
+  for (const graph of data.graphs) {
+    for (const edge of innerOf(graph.id)) {
+      innerEdges.push({ id: `e:${graph.id}:${edge.from}->${edge.to}`, source: `s:${graph.id}/${edge.from}`, target: `s:${graph.id}/${edge.to}`,
+        data: { graph: graph.id }, style: { stroke: catColor(catOf(graph), 45, 0.55), strokeWidth: 1.6 } });
+    }
+  }
+  const callEdges: Edge[] = [];
+  const litCalls = new Map<string, Edge>();
   const seen = new Set<string>();
   for (const call of data.calls) {
     const id = `c:${call.fromGraph}->${call.toGraph}`;
     if (seen.has(id) || call.fromGraph === call.toGraph) continue;
     seen.add(id);
-    edges.push({ id, source: `g:${call.fromGraph}`, target: `g:${call.toGraph}`, className: "wm-call", zIndex: 0,
+    const edge: Edge = { id, source: `g:${call.fromGraph}`, target: `g:${call.toGraph}`, className: "wm-call", zIndex: 0,
       data: { from: call.fromGraph, to: call.toGraph },
-      style: { stroke: "var(--lp-info)", strokeDasharray: "10 8", strokeWidth: 3, opacity: CALL_DIM } });
+      style: { stroke: "var(--lp-info)", strokeDasharray: "10 8", strokeWidth: 3, opacity: CALL_DIM } };
+    callEdges.push(edge);
+    litCalls.set(id, { ...edge, style: { ...edge.style, opacity: 0.9 } });
   }
-  return { nodes, edges, categories };
+  return { overview: draw("overview"), detail: draw("detail"), categories, innerEdges, callEdges, litCalls };
+}
+
+/** The nodes to draw: the layout's own objects, except the few whose dim flag the search changes (hover touches none). */
+export function viewNodes(layout: MapLayout, mode: MapMode, dimmed: ReadonlySet<string>): Node[] {
+  return layout[mode].nodes.map((node) => {
+    if (node.type === "category") return node;
+    const dim = dimmed.has(node.id);
+    return dim === Boolean(node.data.dim) ? node : { ...node, data: { ...node.data, dim } };
+  });
+}
+
+/** The edges to draw: «calls» lines are faint except those of the hovered or picked graph, which swap to their lit copy. */
+export function viewEdges(layout: MapLayout, mode: MapMode, lit: ReadonlyArray<string | null | undefined>): Edge[] {
+  const on = lit.filter(Boolean) as string[];
+  const calls = on.length ? layout.callEdges.map((edge) => on.some((id) => id === edge.data!.from || id === edge.data!.to) ? layout.litCalls.get(edge.id)! : edge) : layout.callEdges;
+  return mode === "detail" ? [...layout.innerEdges, ...calls] : calls;
 }
 
 // ------------------------------------------------------------------ nodes
@@ -232,7 +267,7 @@ function CategoryNode({ data }: NodeProps) {
       style={{ background: catColor(cat, 72, 0.08), border: `3px solid ${catColor(cat, 62, 0.28)}` }}>
       <div className="flex items-center gap-8">
         <span className="h-24 w-24 shrink-0 rounded-[28px]" style={{ background: catColor(cat, 62, 0.85) }} />
-        <div className="font-extrabold leading-none tracking-tight" style={{ fontSize: 190, color: catColor(cat, 50, 0.6) }}>{data.label as string}</div>
+        <div className="min-w-0 truncate whitespace-nowrap font-extrabold leading-none tracking-tight" style={{ fontSize: CAT_TITLE, color: catColor(cat, 50, 0.6) }}>{data.label as string}</div>
       </div>
       <div className="mt-6 font-medium" style={{ fontSize: 60, color: catColor(cat, 42, 0.75) }}>
         {t("wmCatSummary").replace("{graphs}", String(data.count as number)).replace("{runs}", String(data.runs as number))}
@@ -246,27 +281,18 @@ function graphStats(graph: MapGraph): string {
   return t("wmGraphStats").replace("{runs}", String(graph.runs30d)).replace("{pct}", String(Math.round((graph.successRate ?? 0) * 100)));
 }
 
-/** A graph's frame: far out a white chip with a category bar and a title that fills it; close up a tinted frame over its steps. */
+/** A graph: in the overview a chip of the one size and type scale; in the detail view a tinted frame over its steps. */
 function GraphGroup({ data }: NodeProps) {
   const graph = data.graph as MapGraph;
   const cat = data.cat as WorkflowCategory;
-  const detail = data.detail as boolean;
-  const font = data.font as number;
+  const detail = data.mode === "detail";
   const ran = graph.runs30d > 0;
-  const meta = (size: number) => (
-    <div className="mt-3 flex flex-wrap items-center gap-3" style={{ fontSize: size }}>
-      <span className="text-muted-foreground">{t("wmStepCount").replace("{n}", String(data.steps as number))}</span>
-      <span className="rounded-full px-[0.6em] py-[0.15em] font-medium"
-        style={ran ? { background: catColor(cat, 62, 0.14), color: catColor(cat, 38) } : { background: "var(--muted)", color: "var(--muted-foreground)" }}>
-        {graphStats(graph)}
-      </span>
-    </div>
-  );
+  const steps = t("wmStepCount").replace("{n}", String(data.steps as number));
   return (
-    <div className="relative h-full w-full cursor-pointer overflow-hidden rounded-3xl transition-shadow"
+    <div className="relative h-full w-full cursor-pointer overflow-hidden rounded-3xl"
       data-testid={`wm-graph-${graph.id}`} data-dim={data.dim ? "1" : "0"} data-detail={detail ? "1" : "0"}
       style={{
-        opacity: data.dim ? 0.25 : ran || detail ? 1 : 0.82,
+        opacity: data.dim ? 0.25 : 1,
         background: detail ? catColor(cat, 72, 0.06) : "var(--card)",
         border: `2px solid ${catColor(cat, 62, detail ? 0.35 : 0.22)}`,
         boxShadow: detail ? "none" : `0 2px 4px rgb(0 0 0 / 0.04), 0 22px 44px -24px ${catColor(cat, 45, 0.45)}`,
@@ -277,12 +303,18 @@ function GraphGroup({ data }: NodeProps) {
       {detail ? (
         <div className="flex items-baseline gap-3 px-5 pt-6" data-testid={`wm-graph-head-${graph.id}`}>
           <span className="truncate text-2xl font-semibold" title={graph.id}>{data.label as string}</span>
-          <span className="shrink-0 text-sm text-muted-foreground">{t("wmStepCount").replace("{n}", String(data.steps as number))} · {graphStats(graph)}</span>
+          <span className="shrink-0 text-sm text-muted-foreground">{steps} · {graphStats(graph)}</span>
         </div>
       ) : (
-        <div className="flex h-full flex-col justify-center overflow-hidden px-7 pb-5 pt-8">
-          <div className="break-words font-semibold leading-tight tracking-tight" style={{ fontSize: font }}>{data.label as string}</div>
-          {meta(Math.max(18, font * 0.42))}
+        <div className="flex h-full flex-col justify-between px-8 pb-7 pt-9">
+          <div className="line-clamp-3 break-words font-semibold leading-[1.15] tracking-tight" style={{ fontSize: CHIP_TITLE }}>{data.label as string}</div>
+          <div className="flex items-center gap-3 whitespace-nowrap" style={{ fontSize: CHIP_META }}>
+            <span className="text-muted-foreground">{steps}</span>
+            <span className="truncate rounded-full px-[0.6em] py-[0.15em] font-medium"
+              style={ran ? { background: catColor(cat, 62, 0.14), color: catColor(cat, 38) } : { background: "var(--muted)", color: "var(--muted-foreground)" }}>
+              {graphStats(graph)}
+            </span>
+          </div>
         </div>
       )}
     </div>
@@ -315,9 +347,10 @@ function ZoomWatch({ onZoom }: { onZoom: (zoom: number) => void }) {
 }
 
 /** Moves the view to the picked category's cluster, or to the whole map for «all», whenever the pick or the layout changes. */
-function FitTo({ target, layout }: { target: string; layout: MapLayout }) {
+function FitTo({ target, layout, settle }: { target: string; layout: MapLayout; settle: { current: number } }) {
   const flow = useReactFlow();
   useEffect(() => {
+    settle.current = Date.now() + 800;
     const run = () => void flow.fitView(target === ANY ? { padding: 0.04, duration: 300 } : { nodes: [{ id: `cat:${target}` }], padding: 0.03, duration: 300 });
     const timer = setTimeout(run, 30);
     return () => clearTimeout(timer);
@@ -336,8 +369,7 @@ export function WorkflowMap({ locale, projectId, onOpenGraph }: { locale: Locale
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<string | null>(null);
-  const [opened, setOpened] = useState<ReadonlySet<string>>(new Set());
-  const [zoom, setZoom] = useState(0);
+  const [mode, setMode] = useState<MapMode>("overview");
   const [layout, setLayout] = useState<MapLayout | null>(null);
   const [ready, setReady] = useState(false);
   const [selected, setSelected] = useState<{ graph: MapGraph; step: MapStep } | null>(null);
@@ -353,7 +385,7 @@ export function WorkflowMap({ locale, projectId, onOpenGraph }: { locale: Locale
 
   useEffect(() => {
     let live = true;
-    setData(null); setSelected(null); setOpened(new Set()); setReady(false);
+    setData(null); setSelected(null); setMode("overview"); setReady(false);
     rpc.call("workflow_map", { ...(projectId ? { projectId } : {}), locale: locale === "ru" ? "ru" : "en" })
       .then((result) => { if (live) { setData(result); setError(null); } })
       .catch((cause) => { if (live) setError(cause instanceof Error ? cause.message : String(cause)); });
@@ -374,7 +406,7 @@ export function WorkflowMap({ locale, projectId, onOpenGraph }: { locale: Locale
     if (!data) return;
     const mine = ++generation.current;
     setReady(false);
-    layoutMap(data, dimmed, locale)
+    layoutMap(data, locale)
       .then((next) => {
         if (mine !== generation.current) return;
         setLayout(next);
@@ -383,25 +415,45 @@ export function WorkflowMap({ locale, projectId, onOpenGraph }: { locale: Locale
         setReady(true);
       })
       .catch(() => { if (mine === generation.current) setReady(true); });
-  }, [data, dimmed, locale]);
+  }, [data, locale]);
 
-  // Semantic zoom: far out a graph is a chip; from DETAIL_ZOOM on (or once clicked) its steps and edges show. Nothing is re-laid out.
-  // A phone shows steps from a lower zoom: a whole graph fits its 375 px only well below DETAIL_ZOOM.
-  const detail = zoom >= ((globalThis.innerWidth ?? 1280) < 640 ? DETAIL_ZOOM_NARROW : DETAIL_ZOOM);
-  const shown = useMemo(() => {
-    if (!layout) return null;
-    const open = (graphId: string) => detail || opened.has(graphId);
-    return {
-      nodes: layout.nodes.map((node) => node.type === "graphGroup" ? { ...node, data: { ...node.data, detail: open((node.data.graph as MapGraph).id) } }
-        : node.type === "step" ? { ...node, hidden: !open((node.data.step as MapStep).graph) } : node),
-      edges: layout.edges.map((edge) => {
-        if (edge.data?.graph) return { ...edge, hidden: !open(edge.data.graph as string) };
-        // «Calls» lines stay faint unless one of their two graphs is hovered or has the picked step.
-        const lit = edge.data && [hot, selected?.graph.id].some((id) => id && (id === edge.data!.from || id === edge.data!.to));
-        return lit ? { ...edge, style: { ...edge.style, opacity: 0.9 } } : edge;
-      }),
-    };
-  }, [layout, detail, opened, hot, selected]);
+  // Semantic zoom: the overview (chips) until the switch-in zoom, the detail view (steps) from it; a phone switches earlier,
+  // a whole graph fits its 375 px only well below DETAIL_ZOOM. Hysteresis keeps a fitted graph from flipping back.
+  const detail = mode === "detail";
+  const canvasRef = useRef<HTMLDivElement>(null);
+  const modeRef = useRef(mode);
+  modeRef.current = mode;
+  const pendingView = useRef<{ x: number; y: number; zoom: number } | null>(null);
+  /** Swaps the drawing and keeps `anchor` (or the graph nearest the view's centre) at the same place on screen. */
+  const switchMode = useCallback((next: MapMode, anchor?: string) => {
+    const flow = flowRef.current, rect = canvasRef.current?.getBoundingClientRect();
+    if (layout && flow && rect && modeRef.current !== next) {
+      const view = flow.getViewport();
+      const cx = (rect.width / 2 - view.x) / view.zoom, cy = (rect.height / 2 - view.y) / view.zoom;
+      const from = layout[modeRef.current].centers;
+      let id = anchor ?? null, best = Infinity;
+      if (!id) for (const [graph, at] of from) { const d = (at.x - cx) ** 2 + (at.y - cy) ** 2; if (d < best) { best = d; id = graph; } }
+      const a = id ? from.get(id) : undefined, b = id ? layout[next].centers.get(id) : undefined;
+      if (a && b) pendingView.current = { zoom: view.zoom, x: view.x + (a.x - b.x) * view.zoom, y: view.y + (a.y - b.y) * view.zoom };
+    }
+    setMode(next);
+  }, [layout]);
+  useLayoutEffect(() => {
+    if (pendingView.current) { void flowRef.current?.setViewport(pendingView.current); pendingView.current = null; }
+  }, [mode]);
+  // While the map moves the view itself (a category fit, a tap on a graph) its passing zooms do not switch the drawing.
+  // Until the first fit runs the viewport reports React Flow's default zoom 1, which must not open the steps.
+  const settle = useRef(Number.POSITIVE_INFINITY);
+  const onZoom = useCallback((zoom: number) => {
+    if (Date.now() < settle.current) return;
+    const at = (globalThis.innerWidth ?? 1280) < 640 ? DETAIL_ZOOM_NARROW : DETAIL_ZOOM;
+    if (modeRef.current === "overview" && zoom >= at) switchMode("detail");
+    else if (modeRef.current === "detail" && zoom < at * DETAIL_OUT) switchMode("overview");
+  }, [switchMode]);
+
+  // Hover and search swap only the objects they change; everything else keeps its identity, so nothing re-measures or blinks.
+  const nodes = useMemo(() => (layout ? viewNodes(layout, mode, dimmed) : []), [layout, mode, dimmed]);
+  const edges = useMemo(() => (layout ? viewEdges(layout, mode, [hot, selected?.graph.id]) : []), [layout, mode, hot, selected]);
 
   const onNodeClick = useCallback((_: unknown, node: Node) => {
     if (node.type === "step") {
@@ -412,12 +464,13 @@ export function WorkflowMap({ locale, projectId, onOpenGraph }: { locale: Locale
     }
     if (node.type === "graphGroup") {
       const graph = node.data.graph as MapGraph;
-      setOpened((prev) => new Set(prev).add(graph.id));
       setSelected(null);
-      // A tap on a graph also moves the view onto it, so its steps are readable on a phone too.
-      setTimeout(() => void flowRef.current?.fitView({ nodes: [{ id: node.id }], padding: 0.04, duration: 300 }), 30);
+      // A tap on a graph opens the steps and moves the view onto it, so they are readable on a phone too.
+      switchMode("detail", graph.id);
+      settle.current = Date.now() + 800;
+      setTimeout(() => void flowRef.current?.fitView({ nodes: [{ id: node.id }], padding: 0.04, duration: 300 }), 60);
     }
-  }, [data]);
+  }, [data, switchMode]);
 
   const picked = category && category !== ANY ? data?.graphs.filter((graph) => catOf(graph) === category) ?? [] : data?.graphs ?? [];
   const pickedIds = new Set(picked.map((graph) => graph.id));
@@ -485,20 +538,27 @@ export function WorkflowMap({ locale, projectId, onOpenGraph }: { locale: Locale
       {error ? <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs" data-testid="wf-map-error">{t("wmError").replace("{message}", error)}</div> : null}
 
       {/* The window's height (720 px at least); React Flow sits in an absolute box, its `height: 100%` needs a sized parent. */}
-      <div className="relative overflow-hidden rounded-xl border border-border" style={{ height: "max(720px, calc(100vh - 240px))", background: CANVAS_BG }}
+      <div ref={canvasRef} className="relative overflow-hidden rounded-xl border border-border" style={{ height: "max(720px, calc(100vh - 240px))", background: CANVAS_BG }}
         data-testid="wf-map-canvas" data-layout={ready ? "ready" : "loading"} data-focus={category ?? ""} data-detail={detail ? "1" : "0"}>
-        {shown && layout ? (
+        {layout ? (
           <div className="absolute inset-0"><ReactFlowProvider>
             <ReactFlow
-              nodes={shown.nodes} edges={shown.edges} nodeTypes={nodeTypes}
-              onInit={(instance) => { flowRef.current = instance; }}
+              nodes={nodes} edges={edges} nodeTypes={nodeTypes}
+              onInit={(instance) => { flowRef.current = instance; }} defaultViewport={{ x: 0, y: 0, zoom: 0.05 }}
               onNodeClick={onNodeClick} onPaneClick={() => setSelected(null)}
               onNodeMouseEnter={(_, node) => setHot(graphIdOf(node))} onNodeMouseLeave={() => setHot(null)}
               minZoom={0.02} maxZoom={2} onlyRenderVisibleElements nodesDraggable={false} nodesConnectable={false} elementsSelectable>
               <Background variant={BackgroundVariant.Dots} gap={28} size={1.6} color="color-mix(in oklab, var(--muted-foreground) 35%, transparent)" />
-              <ZoomWatch onZoom={setZoom} />
-              <FitTo target={category ?? ANY} layout={layout} />
-              <Controls showInteractive={false} position="bottom-left" />
+              <ZoomWatch onZoom={onZoom} />
+              <FitTo target={category ?? ANY} layout={layout} settle={settle} />
+              <Controls showInteractive={false} showFitView={false} position="bottom-left">
+                {/* «Fit»: back to the overview of the whole map. */}
+                <ControlButton data-testid="wf-map-fit" title={t("wmFit")} aria-label={t("wmFit")} onClick={() => {
+                  settle.current = Date.now() + 800;
+                  setMode("overview"); setCategory(ANY);
+                  setTimeout(() => void flowRef.current?.fitView({ padding: 0.04, duration: 300 }), 60);
+                }}>⤢</ControlButton>
+              </Controls>
             </ReactFlow>
           </ReactFlowProvider></div>
         ) : null}

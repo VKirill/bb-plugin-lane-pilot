@@ -59,29 +59,61 @@ it("keeps only the map's two counters when the library hands over its full stats
   expect(rpcContract.workflow_map.output.safeParse(data).success).toBe(true);
 });
 
-it("lays the built-in library out as clusters of framed graphs that never overlap, with a readable chip title", async () => {
-  const { layoutMap, chipFont } = await import("../src/rooms/workflow/ui/workflow-map");
+it("lays the built-in library out twice — uniform chips and step frames — clusters never overlap, titles fit", async () => {
+  const { layoutMap, CHIP_W, CHIP_H } = await import("../src/rooms/workflow/ui/workflow-map");
   const data = await map();
-  const { nodes, categories } = await layoutMap(data, new Set(), "ru");
-  expect(categories.length).toBeGreaterThan(3);
-  const box = (id: string) => {
-    const node = nodes.find((item) => item.id === id)!;
-    const parent = node.parentId ? nodes.find((item) => item.id === node.parentId)! : null;
-    const x = node.position.x + (parent?.position.x ?? 0), y = node.position.y + (parent?.position.y ?? 0);
-    return { x, y, w: Number(node.style!.width), h: Number(node.style!.height) };
-  };
-  const apart = (a: ReturnType<typeof box>, b: ReturnType<typeof box>) => a.x + a.w <= b.x || b.x + b.w <= a.x || a.y + a.h <= b.y || b.y + b.h <= a.y;
-  const cats = nodes.filter((node) => node.type === "category").map((node) => box(node.id));
-  const cells = nodes.filter((node) => node.type === "graphGroup").map((node) => box(node.id));
-  expect(cells.length).toBe(data.graphs.length);
-  for (let i = 0; i < cats.length; i++) for (let j = i + 1; j < cats.length; j++) expect(apart(cats[i]!, cats[j]!)).toBe(true);
-  for (let i = 0; i < cells.length; i++) for (let j = i + 1; j < cells.length; j++) expect(apart(cells[i]!, cells[j]!)).toBe(true);
-  // Every step sits inside its own graph's frame.
-  for (const node of nodes.filter((item) => item.type === "step")) {
-    const cell = nodes.find((item) => item.id === node.parentId)!;
-    expect(node.position.x + Number(node.style!.width)).toBeLessThanOrEqual(Number(cell.style!.width) + 1);
-    expect(node.position.y + Number(node.style!.height)).toBeLessThanOrEqual(Number(cell.style!.height) + 1);
+  const layout = await layoutMap(data, "ru");
+  expect(layout.categories.length).toBeGreaterThan(3);
+  for (const mode of ["overview", "detail"] as const) {
+    const nodes = layout[mode].nodes;
+    const box = (id: string) => {
+      const node = nodes.find((item) => item.id === id)!;
+      const parent = node.parentId ? nodes.find((item) => item.id === node.parentId)! : null;
+      const x = node.position.x + (parent?.position.x ?? 0), y = node.position.y + (parent?.position.y ?? 0);
+      return { x, y, w: Number(node.style!.width), h: Number(node.style!.height) };
+    };
+    const apart = (a: ReturnType<typeof box>, b: ReturnType<typeof box>) => a.x + a.w <= b.x || b.x + b.w <= a.x || a.y + a.h <= b.y || b.y + b.h <= a.y;
+    const cats = nodes.filter((node) => node.type === "category").map((node) => box(node.id));
+    const cells = nodes.filter((node) => node.type === "graphGroup");
+    expect(cells.length).toBe(data.graphs.length);
+    for (let i = 0; i < cats.length; i++) for (let j = i + 1; j < cats.length; j++) expect(apart(cats[i]!, cats[j]!)).toBe(true);
+    const boxes = cells.map((node) => box(node.id));
+    for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) expect(apart(boxes[i]!, boxes[j]!)).toBe(true);
+    // A cluster is at least as wide as its one-line title (≈0.64 em per character at 170 px).
+    for (const node of nodes.filter((item) => item.type === "category")) {
+      expect(Number(node.style!.width)).toBeGreaterThanOrEqual(String(node.data.label).length * 170 * 0.64);
+    }
+    if (mode === "overview") {
+      // One size for every chip, whatever its step count; no steps drawn.
+      expect(new Set(cells.map((node) => `${node.style!.width}x${node.style!.height}`))).toEqual(new Set([`${CHIP_W}x${CHIP_H}`]));
+      expect(nodes.some((node) => node.type === "step")).toBe(false);
+    } else {
+      for (const node of nodes.filter((item) => item.type === "step")) {
+        const cell = nodes.find((item) => item.id === node.parentId)!;
+        expect(node.position.x + Number(node.style!.width)).toBeLessThanOrEqual(Number(cell.style!.width) + 1);
+        expect(node.position.y + Number(node.style!.height)).toBeLessThanOrEqual(Number(cell.style!.height) + 1);
+      }
+    }
   }
-  // The chip title fills its frame: a long name in the smallest frame still gets more than the minimum.
-  expect(chipFont("Семантический кокон (Cocoon Engine X4)", 360, 220)).toBeGreaterThan(20);
+}, 60_000);
+
+it("hover and search keep every unrelated node and edge object identical (nothing re-measures, nothing blinks)", async () => {
+  const { layoutMap, viewNodes, viewEdges } = await import("../src/rooms/workflow/ui/workflow-map");
+  const layout = await layoutMap(await map(), "ru");
+  for (const mode of ["overview", "detail"] as const) {
+    const base = viewNodes(layout, mode, new Set());
+    base.forEach((node, index) => expect(node).toBe(layout[mode].nodes[index]));
+    // Search dims one graph: only that node is a new object.
+    const one = base.find((node) => node.type === "graphGroup")!;
+    const dimmed = viewNodes(layout, mode, new Set([one.id]));
+    dimmed.forEach((node, index) => (node.id === one.id ? expect(node).not.toBe(base[index]) : expect(node).toBe(base[index])));
+    // Hover lights only the calls of that graph.
+    const call = layout.callEdges[0]!;
+    const still = viewEdges(layout, mode, [null]);
+    const lit = viewEdges(layout, mode, [call.data!.from as string]);
+    lit.forEach((edge, index) => {
+      const mine = edge.data?.from === call.data!.from || edge.data?.to === call.data!.from;
+      if (mine) expect(edge.style!.opacity).toBe(0.9); else expect(edge).toBe(still[index]);
+    });
+  }
 }, 60_000);
