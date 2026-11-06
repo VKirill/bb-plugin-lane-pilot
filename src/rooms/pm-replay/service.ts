@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import type { NodeExecutor, StepContext } from "@lane-pilot/workflow-engine";
 import { getRuleProposal, logRuleEvent, setRuleTrial } from "@lane-pilot/run-insights";
-import { adoptRuleProposal, resolveLanePilotProject } from "../self-repair/server";
+import { adoptRuleProposal, lanePilotProjectOrNotice } from "../self-repair/server";
 import { isSandboxProjectName } from "../stability/server";
 import { postOwnerItem } from "../owner-waiting";
 import { registeredTools, scheduleIsolated, type ServerCore, type Services } from "../core/server";
@@ -39,7 +39,7 @@ export function createPmReplay(ctx: ServerCore, services: Services) {
   const tools = () => pmSurfaceTools(registeredTools(bb.agents));
   const toolNames = () => tools().map((tool) => tool.name);
 
-  const lanePilotProjectId = async (): Promise<string> => (await resolveLanePilotProject(bb, ctx.host))?.projectId ?? "";
+  const lanePilotProjectId = async (): Promise<string> => (await lanePilotProjectOrNotice(db, bb, ctx.host))?.projectId ?? "";
 
   async function runModel(prompt: string, projectId: string, label: string): Promise<string> {
     const place = await services.resolveProjectWriterHost({ projectId: projectId === "*" ? await lanePilotProjectId() : projectId } as never).catch(() => null);

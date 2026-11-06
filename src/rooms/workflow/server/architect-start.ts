@@ -9,7 +9,7 @@ import { createDraftStore } from "../../storage";
 import type { ServerCore } from "../../core/server";
 import { storeNativeSelection } from "../../native-agent/server";
 import { fullAccessSpawn, modelCatalogOf, resolveSpawnModel, spawnUsageOf, warmSpawnUsage } from "../../core/server";
-import { CONFIG_KEY, resolveLanePilotProject } from "../../self-repair/server";
+import { lanePilotProjectOrNotice } from "../../self-repair/server";
 import type { Services } from "../../core/server";
 import { stringAt } from "../../core/server";
 
@@ -83,9 +83,9 @@ export function architectStarter(ctx: ServerCore, services: Pick<Services, "docs
   }
 
   async function lanePilotProjectId(): Promise<string> {
-    const raw = await bb.storage.kv.get(CONFIG_KEY).catch(() => null) as { projectId?: unknown } | null;
-    if (typeof raw?.projectId === "string" && raw.projectId) return raw.projectId;
-    return (await resolveLanePilotProject(bb, ctx.host))?.projectId ?? "";
+    const found = await lanePilotProjectOrNotice(db, bb, ctx.host);
+    if (!found) throw new Error("lane_pilot_project_unresolved: self-repair:config has no projectId and no project source shares this repository's remote");
+    return found.projectId;
   }
 
   async function placeThread(threadId: string, projectId: string, folderId: string): Promise<void> {

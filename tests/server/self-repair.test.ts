@@ -117,6 +117,29 @@ describe("self-repair", () => {
     expect(env.spawns[0]?.projectId).toBe("proj_lp");
   });
 
+  it("uses the stored self-repair:config ids even when a project source's remote matches (a deployed copy knows no git)", async () => {
+    const remote = execFileSync("git", ["remote", "get-url", "origin"], { encoding: "utf8" }).trim();
+    const env = setup({}, {}, { runCommand: { exitCode: 0, stdout: `${remote}\n` } }, {}, {
+      projects: { list: async () => [{ id: "proj_wrong" }], get: async () => ({ id: "proj_wrong", sources: [{ hostId: "host_hub", path: "/elsewhere" }] }) },
+      environmentsList: async () => [{ id: "env_wrong" }],
+    });
+    // The seeded config names proj_ejbam66722; discovery is not consulted.
+    env.attempt("lpattempt_1", "lprun_a", "blocked", "merge_failed: index.lock exists");
+    await createSelfRepair(env.ctx).tick({ since: 0 });
+    expect(env.spawns[0]?.projectId).toBe("proj_ejbam66722");
+  });
+
+  it("posts lane-pilot:no-project when neither the stored config nor a matching source names the project", async () => {
+    const env = setup({}, {}, { runCommand: { exitCode: 0, stdout: "https://github.com/other/repo.git\n" } }, {}, {
+      projects: { list: async () => [{ id: "proj_other" }], get: async () => ({ id: "proj_other", sources: [{ hostId: "host_hub", path: "/elsewhere" }] }) },
+    });
+    await env.ctx.bb.storage.kv.set("self-repair:config", {} as never);
+    env.attempt("lpattempt_1", "lprun_a", "blocked", "merge_failed: index.lock exists");
+    await createSelfRepair(env.ctx).tick({ since: 0 });
+    expect(env.spawns).toHaveLength(0);
+    expect(env.db.prepare("SELECT state FROM lane_pilot_owner_item WHERE key=?").get("lane-pilot:no-project")).toMatchObject({ state: "open" });
+  });
+
   it("a reason listing thousands of files does not overflow the stored state", async () => {
     const { ctx, attempt } = setup({ thr_repair1: "running" });
     const huge = `writer changed paths outside owns_paths or inside never_touch: ${Array.from({ length: 50_000 }, (_, i) => `docs/folder/file-${i}.md`).join(", ")}`;

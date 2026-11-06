@@ -7,7 +7,7 @@ import type { ServerCore, Services } from "../../core/server";
 import { createAttempt, getAttempt } from "../../storage";
 import { projectRoleField, reopenWriterStages } from "../../runs/server";
 import { sendServiceMessage } from "../../relay/server";
-import { CONFIG_KEY as SELF_REPAIR_CONFIG_KEY, SELF_REPAIR_DEFAULTS, VERSION, readRepairRecord, readTail, resolveLanePilotProject, setRepairHooks } from "../../self-repair/server";
+import { CONFIG_KEY as SELF_REPAIR_CONFIG_KEY, SELF_REPAIR_DEFAULTS, VERSION, lanePilotProjectOrNotice, readRepairRecord, readTail, setRepairHooks } from "../../self-repair/server";
 import type { SelfRepairConfig } from "../../self-repair/server";
 import { DRILL_KEY, isSandboxProjectName } from "../../stability/server";
 import type { DrillOutcome } from "../../stability/server";
@@ -36,11 +36,12 @@ export function createPluginWall(ctx: ServerCore, services: Services): WallApi {
     const raw = await bb.storage.kv.get(SELF_REPAIR_CONFIG_KEY).catch(() => null);
     const merged = { ...SELF_REPAIR_DEFAULTS, ...(raw && typeof raw === "object" ? raw as Partial<SelfRepairConfig> : {}) };
     if (!merged.projectId || !merged.environmentId) {
-      const discovered = await resolveLanePilotProject(bb, host);
+      const discovered = await lanePilotProjectOrNotice(db, bb, host);
       if (!merged.projectId && discovered?.projectId) merged.projectId = discovered.projectId;
       if (!merged.environmentId && discovered?.environmentId) merged.environmentId = discovered.environmentId;
     }
     if (!merged.hubDb) merged.hubDb = db.name;
+    if (!merged.projectId) throw new Error("lane_pilot_project_unresolved: self-repair:config has no projectId and no project source shares this repository's remote");
     return merged;
   };
   const environmentOf = async () => {
