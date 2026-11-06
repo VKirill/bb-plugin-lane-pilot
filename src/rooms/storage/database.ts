@@ -2012,8 +2012,20 @@ export function markAcceptedFactsSummarized(db: LanePilotDatabase, runId: string
 /** WT2 registry: one row per Lane Pilot worktree copy, written by the host.call wrapper (server side, one place). */
 export type WorktreeOwnerKind = "attempt" | "docs" | "baseline" | "regress" | "self-repair" | "rollback" | "phase" | "unknown";
 export type WorktreeRow = { id: number; host: string; path: string; branch: string | null; owner_kind: WorktreeOwnerKind; owner_id: string | null; created_at: number; released_at: number | null };
+export type WorktreeOwner = { kind: WorktreeOwnerKind; id: string | null };
 
-export function ownerKindOfName(name: string, taskId?: string | null): { kind: WorktreeOwnerKind; id: string | null } {
+const WORKTREE_OWNER_KINDS: readonly string[] = ["attempt", "docs", "baseline", "regress", "self-repair", "rollback", "phase", "unknown"];
+/** The owner a `gitCreateWorktree` caller declared in the call's `worktreeOwner` option; anything malformed is no declaration. */
+export function declaredWorktreeOwner(value: unknown): WorktreeOwner | null {
+  if (typeof value !== "object" || value === null) return null;
+  const kind = Reflect.get(value, "kind");
+  const id = Reflect.get(value, "id");
+  if (typeof kind !== "string" || !WORKTREE_OWNER_KINDS.includes(kind)) return null;
+  return { kind: kind as WorktreeOwnerKind, id: typeof id === "string" ? id : null };
+}
+
+/** The fallback for creations that declare no owner: the pass is guessed from the worktree name's prefix. */
+export function ownerKindOfName(name: string, taskId?: string | null): WorktreeOwner {
   if (taskId) return { kind: "attempt", id: name };
   if (name.startsWith("docs-")) return { kind: "docs", id: name };
   if (name.startsWith("self-repair-")) return { kind: "self-repair", id: name };

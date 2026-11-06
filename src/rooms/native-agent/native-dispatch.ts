@@ -15,6 +15,7 @@ import {
   tokensFrom,
   type NativeSelection,
 } from "./native-session";
+import { nativeAgentTypeKey, nativeEnvKey, nativeSelectionKey, nativeThreadKey } from "./native-kv";
 import {
   projectCheckoutIntentPath,
   attachNativeLaneClaim,
@@ -159,12 +160,12 @@ export function handoffSourceThread(blocks: unknown): string | null {
 async function handoffSelection(bb: BbPluginApi, ctx: { project: { id: string }; input: { blocks?: unknown } }): Promise<NativeSelection | null> {
   const source = handoffSourceThread(ctx.input.blocks);
   if (!source) return null;
-  const raw = await bb.storage.kv.get<NativeSelection>(`native-thread:${source}`).catch(() => null);
+  const raw = await bb.storage.kv.get<NativeSelection>(nativeThreadKey(source)).catch(() => null);
   const parsed = raw ? nativeSelectionSchema.safeParse(raw) : null;
   if (!parsed?.success || parsed.data.projectId !== ctx.project.id) return null;
   const { parentRunId: _specialistRun, ...profile } = parsed.data;
   const selection: NativeSelection = { ...profile, token: randomUUID(), createdAt: Date.now() };
-  await bb.storage.kv.set(`native-selection:${selection.token}`, selection);
+  await bb.storage.kv.set(nativeSelectionKey(selection.token), selection);
   return selection;
 }
 
@@ -218,7 +219,7 @@ export async function handleNativeDispatch(
     if (tokens.length > 1) {
       return reject("multiple_tokens", "Select one Lane Pilot profile per chat.");
     }
-    const boundRaw = await bb.storage.kv.get<NativeSelection>(`native-thread:${ctx.thread.id}`);
+    const boundRaw = await bb.storage.kv.get<NativeSelection>(nativeThreadKey(ctx.thread.id));
     const bound = boundRaw ? nativeSelectionSchema.parse(boundRaw) : null;
     // «Передать в новый тред» from a Lane Pilot chat: BB starts the new thread from the thread composer, where no
     // profile is attached, so the new chat came up without the agent. It takes the source chat's profile instead.
@@ -245,7 +246,7 @@ export async function handleNativeDispatch(
     }
     let selected = bound ?? inherited;
     if (tokens.length) {
-      const candidate = await bb.storage.kv.get<NativeSelection>(`native-selection:${tokens[0]}`);
+      const candidate = await bb.storage.kv.get<NativeSelection>(nativeSelectionKey(tokens[0]));
       if (!candidate) {
         if (switching) await bb.storage.kv.delete(switchKey);
         return reject("selection_missing", "Lane Pilot selection is missing. Choose the profile again.");
@@ -308,9 +309,9 @@ export async function handleNativeDispatch(
         env: ExperimentalPluginProviderEnvEntry[];
         agentId: string;
       };
-      await bb.storage.kv.set(`native-thread:${ctx.thread.id}`, selected);
-      await bb.storage.kv.set(`native-env:${ctx.thread.id}`, prepared.env);
-      await bb.storage.kv.set(`native-agent-type:${ctx.thread.id}`, prepared.agentId);
+      await bb.storage.kv.set(nativeThreadKey(ctx.thread.id), selected);
+      await bb.storage.kv.set(nativeEnvKey(ctx.thread.id), prepared.env);
+      await bb.storage.kv.set(nativeAgentTypeKey(ctx.thread.id), prepared.agentId);
       if (switching) await bb.storage.kv.delete(switchKey);
       traceNativeDispatch(bb.log, "dispatch.proceed", { ...base, reason: "workspace_pending" });
       return { action: "proceed" };
@@ -333,7 +334,7 @@ export async function handleNativeDispatch(
     // to 36 s to prepare, and every message into the PM (owner's or a relay reminder) failed with «did not decide».
     // nativeContributedEnv refreshes the launcher on the same send.
     if (bound && !switching) {
-      const cached = await bb.storage.kv.get<ExperimentalPluginProviderEnvEntry[]>(`native-env:${ctx.thread.id}`);
+      const cached = await bb.storage.kv.get<ExperimentalPluginProviderEnvEntry[]>(nativeEnvKey(ctx.thread.id));
       if (cached?.length) {
         traceNativeDispatch(bb.log, "dispatch.proceed", { ...base, reason: "bound_cached_env" });
         return { action: "proceed" };
@@ -348,9 +349,9 @@ export async function handleNativeDispatch(
       env: ExperimentalPluginProviderEnvEntry[];
       agentId: string;
     };
-    await bb.storage.kv.set(`native-thread:${ctx.thread.id}`, selected);
-    await bb.storage.kv.set(`native-env:${ctx.thread.id}`, prepared.env);
-    await bb.storage.kv.set(`native-agent-type:${ctx.thread.id}`, prepared.agentId);
+    await bb.storage.kv.set(nativeThreadKey(ctx.thread.id), selected);
+    await bb.storage.kv.set(nativeEnvKey(ctx.thread.id), prepared.env);
+    await bb.storage.kv.set(nativeAgentTypeKey(ctx.thread.id), prepared.agentId);
     if (switching) await bb.storage.kv.delete(switchKey);
     traceNativeDispatch(bb.log, "dispatch.proceed", { ...base, reason: "ok" });
     return { action: "proceed" };
@@ -371,9 +372,9 @@ export async function nativeContributedEnv(
   const threadId = ctx.threadId;
   if (!threadId) return [];
   try {
-    const selected = await bb.storage.kv.get<NativeSelection>(`native-thread:${threadId}`);
+    const selected = await bb.storage.kv.get<NativeSelection>(nativeThreadKey(threadId));
     if (!selected) return [];
-    const cached = await bb.storage.kv.get<ExperimentalPluginProviderEnvEntry[]>(`native-env:${threadId}`);
+    const cached = await bb.storage.kv.get<ExperimentalPluginProviderEnvEntry[]>(nativeEnvKey(threadId));
     const thread = await bb.sdk.threads.get({ threadId }).catch(() => null);
     const environmentId = thread && typeof thread.environmentId === "string" ? thread.environmentId.trim() : "";
     const environment = environmentId
@@ -401,8 +402,8 @@ export async function nativeContributedEnv(
             env: ExperimentalPluginProviderEnvEntry[];
             agentId: string;
           };
-          await bb.storage.kv.set(`native-env:${threadId}`, prepared.env);
-          await bb.storage.kv.set(`native-agent-type:${threadId}`, prepared.agentId);
+          await bb.storage.kv.set(nativeEnvKey(threadId), prepared.env);
+          await bb.storage.kv.set(nativeAgentTypeKey(threadId), prepared.agentId);
           return prepared.env;
         })();
         if (!cached?.length) return await refresh;
