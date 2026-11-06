@@ -67,6 +67,8 @@ with dark(name) as (
   union all
   select 'lane_pilot_diff_hidden_audit' as name where (select count(*) from lane_pilot_diff_hidden_audit where recorded_at >= (select since from lp_morning_30)) = 0
   union all
+  select 'lane_pilot_errand_episode' as name where (select count(*) from lane_pilot_errand_episode where updated_at >= (select since from lp_morning_30)) = 0
+  union all
   select 'lane_pilot_failure_triage' as name where (select count(*) from lane_pilot_failure_triage where triaged_at >= (select since from lp_morning_30)) = 0
   union all
   select 'lane_pilot_gate_event' as name where (select count(*) from lane_pilot_gate_event where occurred_at >= (select since from lp_morning_30)) = 0

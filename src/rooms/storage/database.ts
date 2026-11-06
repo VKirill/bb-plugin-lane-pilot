@@ -500,6 +500,29 @@ export const migrations = [
   // Stream L2: the PM replay set (scenarios grown nightly from the owner's corrections) and each replay's verdict
   // (src/rooms/pm-replay). Append only.
   ...pmReplayMigrations,
+  // Errand episodes, phase A (src/rooms/errands/episodes.ts): the facts of an errand run written when it ends;
+  // (run_id, extractor_version) lets a later extractor re-read the same run. Append only.
+  `CREATE TABLE lane_pilot_errand_episode (
+    run_id TEXT NOT NULL,
+    extractor_version INTEGER NOT NULL,
+    project_id TEXT,
+    workflow_id TEXT NOT NULL,
+    status TEXT NOT NULL,
+    outcome TEXT NOT NULL,
+    verified TEXT,
+    checks_json TEXT,
+    thread_id TEXT,
+    model TEXT,
+    provider_id TEXT,
+    skills_offered_json TEXT,
+    trace_json TEXT,
+    trace_stats_json TEXT,
+    enrichment_state TEXT NOT NULL DEFAULT 'pending',
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY (run_id, extractor_version)
+  )`,
+  `CREATE INDEX lane_pilot_errand_episode_updated ON lane_pilot_errand_episode(updated_at)`,
 ];
 
 export function openDatabase(bb: BbPluginApi): LanePilotDatabase {

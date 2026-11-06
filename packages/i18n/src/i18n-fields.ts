@@ -1055,6 +1055,8 @@ export const fieldEn = {
   reason_s609: "on: every verified task waits for your yes before it lands; risky (the default): only a task of risk high or critical waits, the rest land by the gates; off: nothing waits. A phase's turns, a forge draft and a permit still ask on risky.",
   field_s610: "Phases: rails",
   reason_s610: "on: a graph, a council or a schedule of a phase starts only from that phase's own stage; off (the default): a PM may start them at any time.",
+  field_s611: "Errand episodes: collect",
+  reason_s611: "on: when an errand run ends a row of lane_pilot_errand_episode is written — outcome, verdict, helper thread, model, the skills it was offered and a privacy-safe tool trace (tool names, argument hashes, success flags); a run the router sent to another graph is marked pending at start. off: nothing is recorded. Default on.",
 } as const;
 
 export const fieldRu: { [K in keyof typeof fieldEn]: string } = {
@@ -2113,4 +2115,6 @@ export const fieldRu: { [K in keyof typeof fieldEn]: string } = {
   reason_s609: "on: каждая проверенная задача ждёт вашего «да» перед приземлением; risky (по умолчанию): ждёт только задача с риском high или critical, остальные приземляются по воротам; off: никто не ждёт. Ходы этапа, черновик кузницы и разрешение при risky спрашивают как при on.",
   field_s610: "Этапы: рельсы",
   reason_s610: "on: граф, совет или расписание этапа стартуют только из его собственной стадии; off (по умолчанию): PM может запускать их в любой момент.",
+  field_s611: "Эпизоды поручений: сбор",
+  reason_s611: "on: когда запуск поручения завершается, пишется строка lane_pilot_errand_episode — итог, вердикт, поток помощника, модель, выданные навыки и приватный след инструментов (имена, хэши аргументов, признак успеха); запуск, который маршрутизатор отправил в другой граф, помечается ожидающим на старте. off: ничего не записывается. По умолчанию on.",
 };

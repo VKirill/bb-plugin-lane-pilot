@@ -2,7 +2,7 @@ import { HARNESS_VERSION } from "../../storage";
 import { LP_ALL_PROJECTS } from "@lane-pilot/ui-kit/realtime-channel";
 import { BUILTIN_SOURCES, LP_TASK_PIPELINE, builtinWorkflow } from "../builtin";
 import { createWorkflowCatalog } from "@lane-pilot/workflow-engine";
-import { ENGINE_COMPAT_VERSION, WorkflowEngine } from "@lane-pilot/workflow-engine";
+import { ENGINE_COMPAT_VERSION, TERMINAL_RUN, WorkflowEngine } from "@lane-pilot/workflow-engine";
 import type { RunRow } from "../../storage";
 import { createStatusResolver } from "../../storage";
 import { registerPureActions } from "@lane-pilot/workflow-engine";
@@ -13,6 +13,7 @@ import { isEmployeeSpecialist } from "../../native-agent";
 import { createGoalAuditor } from "./workflow-goal-audit";
 import { chainRuntimeFor, registerChainExecutors } from "./workflow-executors";
 import { notifyWorkflowIfEnded } from "./pm-notice";
+import { ERRAND_EPISODE_TRACE_EVENTS, recordErrandEpisode } from "../../errands";
 import { registerDispatchExecutors } from "../../writer/server";
 import { createAfterAcceptStarter, registerAfterAcceptExecutors } from "./after-accept";
 import { registerInvoiceActions } from "./workflow-invoice";
@@ -44,6 +45,15 @@ export function createWorkflowEngine(ctx: ServerCore, services: Services) {
     void notifyWorkflowIfEnded({ bb: ctx.bb, db, log: (message) => ctx.log(message), run, unmetGoalIds: unmet }).catch((cause: unknown) => {
       ctx.log(`Lane Pilot workflow ${runId}: PM notice failed: ${cause instanceof Error ? cause.message : String(cause)}`);
     });
+    // The errand episode facts (R3): written when an errand run ends — the `errand` graph by workflow_id, a routed run by its pending row.
+    if ((TERMINAL_RUN as readonly string[]).includes(run.status)) {
+      void recordErrandEpisode({
+        db, runId,
+        readEvents: (threadId) => services.harness.threadEvents(threadId, ERRAND_EPISODE_TRACE_EVENTS),
+        log: (message) => ctx.log(message),
+        warn: (message) => bb.log.warn(`Lane Pilot ${message}`),
+      }).catch((cause: unknown) => ctx.log(`Lane Pilot errand episode ${runId} failed: ${cause instanceof Error ? cause.message : String(cause)}`));
+    }
   };
   const statuses = createStatusResolver(db);
   const workflowCatalog = createWorkflowCatalog({ builtin: BUILTIN_SOURCES, log: (message) => bb.log.warn(`Lane Pilot ${message}`), resolveStatus: statuses.resolve });
