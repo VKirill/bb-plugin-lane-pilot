@@ -1379,12 +1379,18 @@ def scenario_episodes(tmp: Path) -> dict:
         AND NOT EXISTS (SELECT 1 FROM lane_pilot_errand_episode e WHERE e.run_id=r.id) LIMIT 5""")
     if missing:
         problems.append(f"{len(missing)}+ ended errand runs have no episode, e.g. {missing[0].get('id')}")
-    counts = hubsql("""SELECT COUNT(*) AS n, SUM(outcome='done' AND verified IS NULL AND created_at > strftime('%s','now','-3 days')*1000) AS doneNoVerdict,
-        SUM(enrichment_state='pending' AND created_at < (strftime('%s','now')-7200)*1000) AS stalePending,
-        SUM(enrichment_state='held') AS held FROM lane_pilot_errand_episode""")[0]
+    # Recent = the errand RUN started after the first episode row and within 3 days: a backfilled row is new but its run predates
+    # the `CHECK:` lines, so it has no verdict to parse. A pending row is stale only when the sweep enriched nothing for 2 h — a
+    # backfill queues 100+ rows that the 10-per-hour sweep takes hours to clear.
+    counts = hubsql(f"""SELECT COUNT(*) AS n,
+        SUM(e.outcome='done' AND e.verified IS NULL AND r.created_at >= {int(since)} AND r.created_at > strftime('%s','now','-3 days')*1000) AS doneNoVerdict,
+        SUM(e.enrichment_state='pending' AND e.created_at < (strftime('%s','now')-7200)*1000) AS stalePending,
+        (SELECT COUNT(*) FROM lane_pilot_errand_episode WHERE enriched_at > (strftime('%s','now')-7200)*1000) AS enrichedRecently,
+        SUM(e.enrichment_state='held') AS held
+        FROM lane_pilot_errand_episode e LEFT JOIN lane_pilot_wf_run r ON r.id=e.run_id""")[0]
     if counts.get("doneNoVerdict"):
         problems.append(f"{counts['doneNoVerdict']} recent done episodes have no parsed verified outcome")
-    if counts.get("stalePending"):
+    if counts.get("stalePending") and not counts.get("enrichedRecently"):
         problems.append(f"{counts['stalePending']} episodes stayed pending for over 2 h: the sweep lp.episodes is not running")
     rc, out, err = bb("lane-pilot", "errands", "diagnose", "--json")
     if rc != 0:
