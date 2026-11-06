@@ -4,7 +4,7 @@ import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join } from "node:path";
 import { extractRoutes, type RouteRef } from "./docs-routes";
 import { parsePrisma, prismaAccess, renderDataMap } from "./docs-data";
-import { CITATION_SOURCE, expandCitationLists } from "../docs";
+import { CITATION_SOURCE, expandCitationLists } from "./docs-lint";
 import { promisify } from "node:util";
 import { JEV_PROVIDERS, jevProviderOfHostCall, type JevProvider } from "@lane-pilot/jev/provider";
 

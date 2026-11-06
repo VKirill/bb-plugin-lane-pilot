@@ -5,7 +5,8 @@ import { delimiter, join, relative } from "node:path";
 import { homedir, networkInterfaces } from "node:os";
 import type { ExperimentalHostRpcHandlers } from "@get-bb/plugin-sdk";
 import { hostContract } from "../../contracts";
-import { readMachineFacts, runStabilityDrill, userToolBins } from "../../verification";
+import { readMachineFacts, userToolBins } from "../../verification";
+import { runStabilityDrill } from "../../stability";
 import { writePmSettingsOnHost } from "../../writer";
 
 /** Free space for whoever decides before a spawn: a full disk (OVH, 2026-10-03) killed the BB host daemon. With `machine`: the host's load and memory too, the reading taken before a check. */

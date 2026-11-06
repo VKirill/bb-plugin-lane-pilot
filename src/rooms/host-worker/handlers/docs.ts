@@ -1,9 +1,6 @@
 import type { ExperimentalHostRpcHandlers } from "@get-bb/plugin-sdk";
 import { hostContract } from "../../contracts";
-import { buildDocsAnchors, docsDepth as readDocsDepth, docsStaleness, verifyDocsCitations } from "../../verification";
-import { buildDocsFlows } from "../../verification";
-import { docsLineCounts as readDocsLineCounts, docsWorthinessFacts as readDocsWorthinessFacts, gitDocsScope as readGitDocsScope } from "../../verification";
-import { commitDocs } from "../../verification";
+import { buildDocsAnchors, buildDocsFlows, commitDocs, docsDepth as readDocsDepth, docsLineCounts as readDocsLineCounts, docsStaleness, docsWorthinessFacts as readDocsWorthinessFacts, gitDocsScope as readGitDocsScope, verifyDocsCitations } from "../../docs";
 import { jevSource } from "./judges";
 
 export const gitDocsScope: ExperimentalHostRpcHandlers<typeof hostContract>["gitDocsScope"] = async (input) => ({

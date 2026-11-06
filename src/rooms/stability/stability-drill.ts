@@ -2,7 +2,7 @@ import { mkdtemp, rm, statfs, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnAsync } from "@lane-pilot/kit";
-import { integrateWorktree } from "./git-integrate";
+import { integrateWorktree } from "../verification";
 
 export type DrillCheck = { name:string; ok:boolean; detail:string | null };
 

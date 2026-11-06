@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
 import { classifyPlan } from "../src/rooms/host-worker/host-handlers";
-import { boundJevState, jevAsk, jevCallFor, verifyDocsCitations } from "../src/rooms/verification/docs-jev";
+import { boundJevState, jevAsk, jevCallFor, verifyDocsCitations } from "../src/rooms/docs/docs-jev";
 
 afterEach(() => vi.unstubAllGlobals());
 
