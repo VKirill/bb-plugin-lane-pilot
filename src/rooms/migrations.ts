@@ -525,4 +525,21 @@ export const migrations = [
   `CREATE INDEX IF NOT EXISTS lane_pilot_memory_vec_project ON lane_pilot_memory_vec(project_id, model)`,
   // The daily read-back of role profiles (src/rooms/native-agent/profile-check.ts): one report row a day.
   `CREATE TABLE IF NOT EXISTS lane_pilot_profile_check (id INTEGER PRIMARY KEY, at INTEGER NOT NULL, report_json TEXT NOT NULL)`,
+  // Structured failure fields: a verification timeout or red check is read from failure_code/check_name/timeout_sec, not
+  // parsed out of the human reason (listCheckTimeouts) or a run-goal's detail. Append only; existing rows backfilled once.
+  `ALTER TABLE lane_pilot_attempt ADD COLUMN failure_code TEXT`,
+  `ALTER TABLE lane_pilot_attempt ADD COLUMN check_name TEXT`,
+  `ALTER TABLE lane_pilot_attempt ADD COLUMN timeout_sec INTEGER`,
+  `UPDATE lane_pilot_attempt SET failure_code='verification_timeout',
+    check_name=substr(reason, instr(reason, 'verification failed (') + 21,
+      instr(reason, '): verification timed out after ') - instr(reason, 'verification failed (') - 21),
+    timeout_sec=CAST(substr(reason, instr(reason, '): verification timed out after ') + 32,
+      instr(substr(reason, instr(reason, '): verification timed out after ') + 32), 's') - 1) AS INTEGER)
+    WHERE instr(reason, 'verification failed (') > 0 AND instr(reason, '): verification timed out after ') > 0`,
+  `UPDATE lane_pilot_attempt SET failure_code='verification_failed',
+    check_name=substr(reason, instr(reason, 'verification failed (') + 21,
+      instr(reason, '): ') - instr(reason, 'verification failed (') - 21)
+    WHERE instr(reason, 'verification failed (') > 0 AND instr(reason, '): verification timed out after ') = 0 AND instr(reason, '): ') > 0`,
+  `ALTER TABLE lane_pilot_run_goal ADD COLUMN failure_code TEXT`,
+  `UPDATE lane_pilot_run_goal SET failure_code='check_failed' WHERE state='skipped' AND detail LIKE 'the check failed:%'`,
 ];
