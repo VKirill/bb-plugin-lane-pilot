@@ -175,7 +175,7 @@ export const SETTING_CATALOG: SettingSpec[] = [
   { key:"owner.words", channel:"OWN", reason:"Native Lane Pilot landing: whose word a verified task waits for (on every task, risky = risk high or critical, off none)" },
   { key:"phase.rails", channel:"OWN", reason:"Native Lane Pilot phases: with rails on, graphs, councils and schedules of a phase start only from its own stage" },
   { key:"episodes.collect", channel:"OWN", reason:"Native Lane Pilot errand episodes: on writes lane_pilot_errand_episode when an errand run ends and marks a routed run pending at start" },
-  { key:"episodes.process_key", channel:"OWN", reason:"Errand process-key choice: shadow keeps Jev's pick in the receipt only, active lets a confident pick set process_key once the gold-set F1 gate passes" },
+  { key:"episodes.process_key", channel:"OWN", reason:"Native Lane Pilot errand process-key choice: shadow keeps Jev's pick in the receipt only, active lets a confident pick set process_key once the gold-set F1 gate passes" },
   { key:"lead.budget_daily_usd", channel:"OWN", reason:"Native Lane Pilot lead: the dollars its ticks may spend in one day" },
   { key:"lead.tick_cron", channel:"OWN", reason:"Native Lane Pilot lead: when a tick starts, in the owner's time zone" },
   { key:"lead.max_proposals", channel:"OWN", reason:"Native Lane Pilot lead: how many proposals one tick may put on the owner's list" },
