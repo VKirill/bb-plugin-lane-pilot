@@ -231,8 +231,8 @@ export function createLeadService(ctx: ServerCore, services: Services) {
     const via = actsVia(row.class ?? "");
     if (via === "none") return { state: "skipped", reason: `class ${row.class ?? "?"} has no way to act` };
     // A process that needs a graph (a `process` branch carrying an architectSeed with form graph, G2) goes to the Workflow architect, not to
-    // the PM intake: the service cannot start a chat, so the seed and the architect button land on the owner's list. A skill goes to the
-    // PM intake below with the seed's prompt: a writer writes it from the helper threads.
+    // the PM intake: the service cannot start a chat, so the seed and the architect button land on the owner's list. The other four forms
+    // (rule, reference, script, skill) go to the PM intake below with the seed's prompt: a writer writes the proposal from the helper threads.
     const seed = architectSeedOf(roadPayload(row));
     if (row.class === "process" && seed && seedForm(seed) === "graph") {
       postArchitectHand(db, { roadId: row.id, projectId: row.project_id ?? (await homeProjectId()), title: row.title, seed, kind: "handed" }, now);
