@@ -3,14 +3,14 @@ import { checkTimeoutSec } from "../check-timing";
 import { pipelineWriterStep, pipelineWriterTag } from "./pipeline-tag";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
 import { writerLeftWorktree } from "./left-worktree";
-import { countAttempts, countThreadTurns, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getTaskPlan, listOpenAttempts, listStageReceipts, loadProjectSettings, transitionAttempt, taskBasePath } from "../../storage";
+import { countAttempts, countThreadTurns, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getTask, getTaskPlan, listOpenAttempts, listStageReceipts, loadProjectSettings, transitionAttempt, taskBasePath } from "../../storage";
 import { saveBlockedBy, type BlockedBy } from "../../runs/server";
 import { relayFor } from "../../relay/server";
 import type { HelperPolicySnapshot } from "../../native-agent";
 import { writerExecutionSelection } from "@lane-pilot/models";
 import { actionableFindings, advisoryFeedback, buildCandidateEvidence, codeCritiqueSource, codeRepairPrompt, findingsHash, nextRepairAction, parseCodeCritiqueSettings, parseWriterRepairReply, repairLedgerFromResult, sameUnresolvedFindings, sameWriterIdentity, settingsFromFrozenPolicy, shouldRequestRepair } from "../../critique";
 import type { WriterIdentity } from "../../critique";
-import { CODE_CRITIC_DEFAULT_SETTING, QUALITY_MODE_SETTING, applyCodeCriticDefault, applyQualityMode, resolveCodeCriticDefault, resolveQualityMode, withReferenceTestCritic } from "../../critique";
+import { CODE_CRITIC_DEFAULT_SETTING, QUALITY_MODE_SETTING, applyCodeCriticDefault, applyQualityMode, critiqueRepeatSkip, patchChangedLines, resolveCodeCriticDefault, resolveQualityMode, withReferenceTestCritic } from "../../critique";
 import { loadCriticCodeDefault } from "./critic-override";
 import { runPlanFactStage } from "./plan-fact";
 import { candidatePatches, runCodeCritique } from "../../critique/server";
@@ -402,6 +402,15 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
       }
       const yardstick = [...referenceTests, ...checkScripts];
       const liveCritiquePolicy = frozenPolicy ?? parseCodeCritiqueSettings(withReferenceTestCritic(applyCodeCriticDefault(applyQualityMode(projectSettings,qualityMode),qualityMode,input.task.risk,criticDefault), yardstick));
+      // Other tasks of this run whose code critique passed «approve»: the repeat skip below reads their freshness and owns_paths.
+      const priorCriticApprovals = listStageReceipts(db, input.runId)
+        .filter((row) => row.stageId === "code-critique" && row.taskId !== input.taskId)
+        .map((row) => {
+          const owns = (getTask(db, row.taskId)?.contract as { owns_paths?: unknown } | undefined)?.owns_paths;
+          return { taskId:row.taskId, ownsPaths:Array.isArray(owns) ? owns as string[] : [], state:row.state,
+            decision:(row.result as { decision?: unknown } | null)?.decision, updatedAt:row.updatedAt };
+        });
+      let repeatSkipChecked = false;
       const baselineHashes = Object.fromEntries(input.dirtBefore.map((row) => [row.path, row.sha256 || null]));
       let lastPatches: Record<string, string> | undefined;
       const captureEvidence = async () => {
@@ -511,6 +520,33 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
             attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{writerStatus:"code_critique_blocked",reason}});
           transitionAttempt(db, input.attemptId, "blocked", { reason });
           return { status:"blocked", reason, attemptId:input.attemptId, writerThreadId };
+        }
+        // The same files a critic approved < 48 h ago and a small diff: skip the review, receipt says why (hub R10).
+        // Only a task with no critique ledger of its own — a repair in flight always re-reviews — and only where a
+        // skipped receipt is a legal stage move (no receipt yet, or a pending one a crash left behind).
+        if (!repeatSkipChecked) {
+          repeatSkipChecked = true;
+          const patchMap = lastPatches ?? {};
+          const producedPaths = candidate.produced ?? [];
+          const skip = (!existingCritique || existingCritique.state === "pending") && !storedLedger && repairRound === 0
+            && (!evidence.truncated || evidence.truncateReason === "packet_truncated")
+            ? critiqueRepeatSkip({
+                risk:input.task.risk, referenceTestEdits:yardstick,
+                changedLines:producedPaths.length === 0 ? 0 : Object.keys(patchMap).length === 0 ? null : patchChangedLines(patchMap),
+                ownsPaths:input.task.owns_paths, priorApprovals:priorCriticApprovals,
+              })
+            : null;
+          if (skip) {
+            recordStage(db, {
+              runId:input.runId, taskId:input.taskId, stageId:"code-critique",
+              state:"skipped",
+              input:codeCritiqueSource({ evidence, task:input.task, agent:frozenPolicy?.agent ?? "code-critic" }),
+              result:{ skipped:"repeat", priorTaskId:skip.priorTaskId, changedLines:patchChangedLines(patchMap) },
+              reason:`repeat:${skip.priorTaskId}`,
+            });
+            approvedArtifact = evidence.artifactRevisionSha256;
+            break;
+          }
         }
         const critique = await runCodeCritique({
           bb, db, projectId:input.projectId, runId:input.runId, taskId:input.taskId,
