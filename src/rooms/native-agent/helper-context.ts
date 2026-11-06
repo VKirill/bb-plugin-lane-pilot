@@ -33,8 +33,6 @@ export const CORE_PROVIDER_GROUPS = {
   // rows here: the core lists them with the Cursor rules, and the parse below accepts any such extra row (ACP_EXTRA_GROUPS), so a core that
   // adds one does not stop Lane Pilot recognising it — the exact match did, from 0.48.1-vk (devin, zcode) to 2026-11-06.
 } as const;
-/** Cores before 0.44.0-vk.15 could not narrow BB skills for Cursor. */
-const LEGACY_CURSOR_GROUPS = ["bbPlugins", "mcpServers"] as const;
 export const CORE_INSTRUCTION_SWITCHES = {
   "claude-code": ["userInstructions", "projectInstructions", "claudeAiSync"],
   codex: ["userInstructions", "projectInstructions"],
@@ -42,14 +40,6 @@ export const CORE_INSTRUCTION_SWITCHES = {
   "acp-cursor": ["userInstructions"],
   opencode2: ["userInstructions"],
 } as const;
-/** Cores before 0.46.1-vk.2 do not advertise opencode2: their helpers on it run with BB's ordinary context. */
-const { opencode2: _groupsV2, ...PRE_OPENCODE2_GROUPS } = CORE_PROVIDER_GROUPS;
-const { opencode2: _switchesV2, ...PRE_OPENCODE2_SWITCHES } = CORE_INSTRUCTION_SWITCHES;
-/** The 0.46.1-vk.2 core narrows only BB plugins for opencode2. */
-const VK2_GROUPS = { ...CORE_PROVIDER_GROUPS, opencode2: ["bbPlugins"] as const };
-const ADVERTISED_GROUPS: ReadonlyArray<Record<string, readonly string[]>> = [CORE_PROVIDER_GROUPS, VK2_GROUPS, PRE_OPENCODE2_GROUPS]
-  .flatMap((groups) => [groups, { ...groups, "acp-cursor": LEGACY_CURSOR_GROUPS }]);
-const ADVERTISED_SWITCHES: ReadonlyArray<Record<string, readonly string[]>> = [CORE_INSTRUCTION_SWITCHES, PRE_OPENCODE2_SWITCHES];
 export type RequiredSessionAdvertisement = {
   version: 1;
   persist: true;
@@ -93,6 +83,7 @@ export type HelperRole =
   | "docs-maintainer" | "onboarder" | "memory-maintainer" | "project-life"
   | "browser-qa" | "errand" | "api-recon" | "council-seat" | "rules-analyzer" | "episode-analyst" | "wall-hunter"
   | "analyst" | "planner" | "auditor" | "debugger"
+  | "workspace-provisioner" | "lead" | "workflow-architect" | "harness-editor" | "harness-composer" | "harness-reflection"
   | "specialist:design-lead" | "specialist:copy-lead" | "specialist:seo-specialist" | "specialist:tavily" | "specialist:video-lead"
   | "specialist:3d-artist" | "specialist:game-dev" | "specialist:social-manager" | "specialist:billing-assistant" | "specialist:visual-artist" | "specialist:macos-operator"
   | "specialist:lead";
@@ -155,6 +146,16 @@ export const ROLE_PROFILES: Record<HelperRole, RoleProfile> = {
   "specialist:macos-operator": { bbPlugins: ["browser-automation", "env-catalog"], skills: ["env-catalog", "computer-use"], mcpServers: [] },
   // The lead («Штурман», src/rooms/lead): the tick's agent step reads its brief (the identity and the hub state are in the message) and answers in fields; no repository tools.
   "specialist:lead": { bbPlugins: [], skills: [], mcpServers: [] },
+  // The holder thread that provisions a managed worktree: its whole job is answering «OK» (spawn.ts).
+  "workspace-provisioner": { bbPlugins: [], skills: [], mcpServers: [] },
+  // The lead's own chat: it answers from its brief and the lane_pilot_* tools, so the plugin stays allowed.
+  "lead": { bbPlugins: ["lane-pilot"], skills: [], mcpServers: [] },
+  // The Workflow architect builds chains with the lane_pilot_workflow_* tools; its method is the lane-pilot-workflows skill.
+  "workflow-architect": { bbPlugins: ["lane-pilot"], skills: ["lane-pilot-workflows"], mcpServers: [] },
+  // A harness session edits files in a throwaway folder (.lane-pilot/harness-edit): the mission on disk is the whole brief.
+  "harness-editor": { bbPlugins: [], skills: [], mcpServers: [] },
+  "harness-composer": { bbPlugins: [], skills: [], mcpServers: [] },
+  "harness-reflection": { bbPlugins: [], skills: [], mcpServers: [] },
 };
 
 /** The profile of a specialist the owner defined: it has no entry above, so it starts with Env Catalog; its own skills and MCP servers come in as `extra` on the spawn. */
@@ -219,12 +220,19 @@ export function effectiveGroup(role: HelperRole, group: AccessGroup, access: Rol
   return { names: withMandatory(base, mandatory), source: "role" };
 }
 
-export function effectiveSwitch(sw: AccessSwitch, access: RoleAccess = {}): { include: boolean; source: "role" | "owner" } {
+/** A role whose profile holds no plugin, skill or MCP server answers from the prompt itself: project instructions are files it cannot usefully read. */
+function promptOnlyRole(role: HelperRole): boolean {
+  const profile = ROLE_PROFILES[role] ?? CUSTOM_SPECIALIST_PROFILE;
+  return profile.bbPlugins.length === 0 && profile.skills.length === 0 && profile.mcpServers.length === 0;
+}
+
+export function effectiveSwitch(sw: AccessSwitch, access: RoleAccess = {}, role?: HelperRole): { include: boolean; source: "role" | "owner" } {
   const own = access[sw];
   if (own === "include") return { include: true, source: "owner" };
   if (own === "leave_out") return { include: false, source: "owner" };
-  // Role default: the user's personal instructions are left out, the project's stay.
-  return { include: sw === "projectInstructions", source: "role" };
+  // Role default: the user's personal instructions are left out, the project's stay — except for a prompt-only
+  // (one-shot) role, which reads nothing off the disk anyway.
+  return { include: sw === "projectInstructions" && !(role && promptOnlyRole(role)), source: "role" };
 }
 
 export function roleProfilePolicy(role: HelperRole, access: RoleAccess = {}, extra: ExtraAccess = {}): VkSessionPolicy {
@@ -234,8 +242,8 @@ export function roleProfilePolicy(role: HelperRole, access: RoleAccess = {}, ext
     const added = group === "bbPlugins" ? extra.bbPlugins : group === "skills" ? extra.skills : group === "mcpServers" ? extra.mcpServers : undefined;
     if (names) policy[group] = { mode: "allow", names: added?.length ? [...new Set([...names, ...added])] : names };
   }
-  if (!effectiveSwitch("userInstructions", access).include) policy.userInstructions = false;
-  if (!effectiveSwitch("projectInstructions", access).include) policy.projectInstructions = false;
+  if (!effectiveSwitch("userInstructions", access, role).include) policy.userInstructions = false;
+  if (!effectiveSwitch("projectInstructions", access, role).include) policy.projectInstructions = false;
   return policy;
 }
 
@@ -312,6 +320,10 @@ function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((item) => typeof item === "string");
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
 function sameStringSet(actual: unknown, expected: readonly string[]): boolean {
   if (!isStringArray(actual) || actual.length !== expected.length) return false;
   const left = [...actual].sort();
@@ -324,20 +336,61 @@ const ACP_EXTRA_GROUPS = ["bbPlugins", "skills", "mcpServers"] as const;
 const ACP_EXTRA_SWITCHES = ["userInstructions"] as const;
 
 /**
- * Every row of the table exactly as expected. A row of a provider the table does not know (`known`) may hold only the ACP subset:
- * such a provider runs on the core's word. A known provider's row outside the expected variant is still a mismatch.
+ * The provider rows Lane Pilot accepts as its own, per provider. A known provider may advertise one of these variants
+ * (older cores narrowed less: Cursor without skills before 0.44.0-vk.15, opencode2 only plugins on 0.46.1-vk.2, and no
+ * opencode2 row at all before that — a missing row is handled as «not advertised», not as a mismatch).
  */
-function advertisedMatrixMatch(
-  raw: unknown,
-  expected: Record<string, readonly string[]>,
-  known: Record<string, readonly string[]>,
-  extra: readonly string[],
-): raw is Record<string, string[]> {
-  if (!raw || typeof raw !== "object") return false;
-  const row = raw as Record<string, unknown>;
-  return Object.keys(expected).every((key) => sameStringSet(row[key], expected[key]!))
-    && Object.keys(row).filter((key) => !Object.hasOwn(expected, key)).every((key) => !Object.hasOwn(known, key)
-      && isStringArray(row[key]) && (row[key] as string[]).every((name) => extra.includes(name)));
+const KNOWN_GROUP_VARIANTS: Record<string, readonly (readonly string[])[]> = {
+  "claude-code": [["bbPlugins", "skills", "mcpServers", "nativePlugins"]],
+  codex: [["bbPlugins", "skills", "mcpServers", "nativePlugins"]],
+  "acp-opencode": [["bbPlugins", "skills", "mcpServers"]],
+  "acp-cursor": [["bbPlugins", "skills", "mcpServers"], ["bbPlugins", "mcpServers"]],
+  opencode2: [["bbPlugins", "skills", "mcpServers"], ["bbPlugins"]],
+};
+const KNOWN_SWITCH_VARIANTS: Record<string, readonly (readonly string[])[]> = {
+  "claude-code": [["userInstructions", "projectInstructions", "claudeAiSync"]],
+  codex: [["userInstructions", "projectInstructions"]],
+  "acp-opencode": [["userInstructions", "projectInstructions"]],
+  "acp-cursor": [["userInstructions"]],
+  opencode2: [["userInstructions"]],
+};
+
+function providerRowMatch(raw: unknown, known: boolean, variants: readonly (readonly string[])[], extra: readonly string[]): raw is string[] {
+  if (!isStringArray(raw)) return false;
+  if (known) return variants.some((variant) => sameStringSet(raw, variant));
+  // An ACP provider the table does not know runs on the core's word, but only inside the bridge's subset.
+  return raw.every((name) => (extra as readonly string[]).includes(name));
+}
+
+export type ProviderPolicyRows =
+  | { ok: true; groups: readonly string[]; switches: readonly string[] }
+  | { ok: false; advertised: boolean; reason: string };
+
+/**
+ * What one provider may narrow, read row by row off the core's advertisement. A missing row means the core does not
+ * host the provider under required policies at all (the caller picks another provider — nothing to warn about). A row
+ * that differs from every variant the table holds is a drift to flag: that provider alone cannot be narrowed, the rest
+ * keep their required policies (the all-or-nothing matrix check of 0.48.1-vk silently dropped every role profile when
+ * the core added devin and zcode, 2026-11-06).
+ */
+export function providerPolicyRows(advertised: RequiredSessionAdvertisement, providerId: string): ProviderPolicyRows {
+  const groups = advertised.providerGroups[providerId as keyof typeof advertised.providerGroups];
+  const switches = advertised.instructionSwitches[providerId as keyof typeof advertised.instructionSwitches];
+  if (groups === undefined || switches === undefined) return { ok: false, advertised: false, reason: "not advertised" };
+  if (!providerRowMatch(groups, Object.hasOwn(CORE_PROVIDER_GROUPS, providerId), KNOWN_GROUP_VARIANTS[providerId] ?? [], ACP_EXTRA_GROUPS))
+    return { ok: false, advertised: true, reason: `providerGroups ${JSON.stringify(groups)}` };
+  if (!providerRowMatch(switches, Object.hasOwn(CORE_INSTRUCTION_SWITCHES, providerId), KNOWN_SWITCH_VARIANTS[providerId] ?? [], ACP_EXTRA_SWITCHES))
+    return { ok: false, advertised: true, reason: `instructionSwitches ${JSON.stringify(switches)}` };
+  return { ok: true, groups, switches };
+}
+
+/** One warning per provider per process (the spawn path is hit for every helper start). */
+const advertisedDiffLogged = new Set<string>();
+
+function warnAdvertisementDiff(providerId: string, reason: string, log: ((line: string) => void) | undefined): void {
+  if (!log || advertisedDiffLogged.has(providerId)) return;
+  advertisedDiffLogged.add(providerId);
+  log(`core advertisement for ${providerId} differs: ${reason}`);
 }
 
 export function parseRequiredSessionPolicyCapability(agents: {
@@ -354,8 +407,8 @@ export function parseRequiredSessionPolicyCapability(agents: {
     || row.parentCeiling !== true
     || row.bridgeHandshakeVersion !== REQUIRED_SESSION_HANDSHAKE_VERSION
     || (row.hostDaemonProtocolVersion !== REQUIRED_SESSION_HOST_DAEMON_PROTOCOL && row.markerStorage !== "thread-plugin-metadata")
-    || !ADVERTISED_GROUPS.some((groups) => advertisedMatrixMatch(row.providerGroups, groups, CORE_PROVIDER_GROUPS, ACP_EXTRA_GROUPS))
-    || !ADVERTISED_SWITCHES.some((switches) => advertisedMatrixMatch(row.instructionSwitches, switches, CORE_INSTRUCTION_SWITCHES, ACP_EXTRA_SWITCHES))
+    || !isRecord(row.providerGroups)
+    || !isRecord(row.instructionSwitches)
     || !isStringArray(row.mandatoryBbPlugins)
     || !MANDATORY_BB_PLUGINS.every((name) => (row.mandatoryBbPlugins as string[]).includes(name))
     || !isStringArray(row.mandatoryMcpServers)
@@ -399,25 +452,30 @@ export function requiredSessionPolicySpawnBinding(input: {
   providerId?: string;
   role?: HelperRole;
   extra?: ExtraAccess;
+  log?: (line: string) => void;
 }): { experimental_vkRequiredSessionPolicy: RequiredSessionPolicySpawn } | Record<string, never> {
   if (input.snapshot.mode === "inherit") return {};
   if (input.snapshot.mode === "roles") {
     // By role is a default, not a demand: a core without required policies, an unknown role or provider
     // runs the helper with BB's ordinary context instead of refusing it.
     if (!input.role || input.capability !== "required" || !input.advertised || !input.providerId) return {};
-    const groups = input.advertised.providerGroups[input.providerId as keyof typeof CORE_PROVIDER_GROUPS];
-    const switches = input.advertised.instructionSwitches[input.providerId as keyof typeof CORE_INSTRUCTION_SWITCHES];
-    if (!groups || !switches) return {};
-    return { experimental_vkRequiredSessionPolicy: { version: 1, policy: spawnPolicyForProvider(roleProfilePolicy(input.role, input.snapshot.settings.roleAccess?.[input.role], input.extra), groups, switches, true) } };
+    const rows = providerPolicyRows(input.advertised, input.providerId);
+    if (!rows.ok) {
+      if (rows.advertised) warnAdvertisementDiff(input.providerId, rows.reason, input.log);
+      return {};
+    }
+    return { experimental_vkRequiredSessionPolicy: { version: 1, policy: spawnPolicyForProvider(roleProfilePolicy(input.role, input.snapshot.settings.roleAccess?.[input.role], input.extra), rows.groups, rows.switches, true) } };
   }
   if (input.capability !== "required" || !input.advertised) {
     throw new Error("helper_context_required_api_unavailable");
   }
   if (!input.providerId) throw new Error("helper_context_provider_required");
-  const groups = input.advertised.providerGroups[input.providerId as keyof typeof CORE_PROVIDER_GROUPS];
-  const switches = input.advertised.instructionSwitches[input.providerId as keyof typeof CORE_INSTRUCTION_SWITCHES];
-  if (!groups || !switches) throw new Error(`helper_context_unsupported_provider:${input.providerId}`);
-  const policy = spawnPolicyForProvider(input.snapshot.policy ?? {}, groups, switches);
+  const rows = providerPolicyRows(input.advertised, input.providerId);
+  if (!rows.ok) {
+    if (rows.advertised) warnAdvertisementDiff(input.providerId, rows.reason, input.log);
+    throw new Error(`helper_context_unsupported_provider:${input.providerId}`);
+  }
+  const policy = spawnPolicyForProvider(input.snapshot.policy ?? {}, rows.groups, rows.switches);
   return {
     experimental_vkRequiredSessionPolicy: {
       version: 1,

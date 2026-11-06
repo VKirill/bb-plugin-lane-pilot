@@ -23,7 +23,7 @@ import { parseWorkspaceMode, requireManagedWorktreeProvider, resolveAttemptWorks
 import { createProviderGate, providerListed, providerSwitchOn, waitProviderEnvironment } from "../../verification";
 import { LANE_WORKTREE_PROVIDER_ID } from "../../native-agent/server";
 import { fullAccessSpawn } from "../../core/server";
-import { WriterSelectionError, coreHostsRequiredProvider, helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server";
+import { WriterSelectionError, coreHostsRequiredProvider, helperChildPlacement, projectRoleField, requireHelperSpawn, requiredPolicyField } from "../../runs/server";
 import { configuredSetting, holderSpawnKey, stringAt } from "../../core/server";
 import { planDigest, writerBriefInput, writerBriefSegments, type TaskFolderBrief } from "./writer-task";
 import { areaHistoryText, loadArea } from "./sticky";
@@ -374,6 +374,8 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
           await bb.storage.kv.set(holderSpawnKey(input.attemptId),Date.now());
           const holder = await spawnWithSeam(() => fullAccessSpawn(bb, {
             projectId:input.projectId, ...execution,
+            // The holder only answers «OK»: the workspace-provisioner profile (no plugins, skills, MCP or instructions).
+            ...projectRoleField(bb, db, input.projectId, writerProviderId, "workspace-provisioner"),
             prompt:"Make no file changes and reply with the single word OK.",
             environment:{type:"host",hostId:input.config.hostId,workspace:{type:"managed-worktree",baseBranch:{kind:"default"}}},
             visibility:"hidden",pluginMetadata:{role:"workspace-provisioner",lanePilotRunId:input.runId,lanePilotTaskId:input.taskId,workspaceAttemptId:input.attemptId},

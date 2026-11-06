@@ -12,6 +12,7 @@ import {
   helperContextToPolicy,
   intersectPolicy,
   parseHelperContextSettings,
+  providerPolicyRows,
   requiredSessionPolicySpawnBinding,
 } from "../src/rooms/native-agent/helper-context";
 
@@ -202,7 +203,13 @@ it("accepts a core with and without opencode2 in its matrix, and no other change
   const before = { ...vk, providerGroups: oldGroups, instructionSwitches: oldSwitches };
   expect(parse({ experimental_vkRequiredSessionPolicy: () => before })).not.toBeNull();
   expect(parse({ experimental_vkRequiredSessionPolicy: () => ({ ...before, providerGroups: { ...oldGroups, "acp-cursor": ["bbPlugins", "mcpServers"] } }) })).not.toBeNull();
-  expect(parse({ experimental_vkRequiredSessionPolicy: () => ({ ...vk, providerGroups: { ...vk.providerGroups, opencode2: ["bbPlugins", "skills"] } }) })).toBeNull();
+  // A row that differs from every variant is a per-provider «cannot narrow», not a refused advertisement:
+  // opencode2 alone would run with BB's ordinary context, the other providers keep their role profiles.
+  const drifted = { ...vk, providerGroups: { ...vk.providerGroups, opencode2: ["bbPlugins", "skills"] } };
+  const parsedDrift = parse({ experimental_vkRequiredSessionPolicy: () => drifted });
+  expect(parsedDrift).not.toBeNull();
+  expect(providerPolicyRows(parsedDrift!, "opencode2").ok).toBe(false);
+  expect(providerPolicyRows(parsedDrift!, "codex").ok).toBe(true);
   expect(parse({ experimental_vkRequiredSessionPolicy: () => ({ ...vk, instructionSwitches: oldSwitches }) })).not.toBeNull();
   // 0.46.1-vk.2 narrowed only BB plugins for opencode2; 0.46.1-vk.3 adds skills and MCP servers.
   expect(vk.providerGroups.opencode2).toEqual(["bbPlugins", "skills", "mcpServers"]);
