@@ -43,6 +43,7 @@ const BY_KEY: Record<string, Record<string, I18nKey>> = {
   "cleanup.worktrees": { on: "enumCleanupOn", off: "enumCleanupOff" },
   "lead.enabled": { on: "enumLeadOn", off: "enumLeadOff" },
   "episodes.collect": { on: "enumEpisodesCollectOn", off: "enumEpisodesCollectOff" },
+  "episodes.process_key": { shadow: "enumEpisodesProcessKeyShadow", active: "enumEpisodesProcessKeyActive" },
   "writer.retry_safety": { on: "enumRetrySafetyOn", off: "enumRetrySafetyOff" },
   "writer.pick_refusal_penalty": { on: "enumRefusalPenaltyOn", off: "enumRefusalPenaltyOff" },
   "writer.owns_barrier": { on: "enumOwnsBarrierOn", off: "enumOwnsBarrierOff" },
