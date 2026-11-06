@@ -1,6 +1,5 @@
-import { readFile } from "node:fs/promises";
-import { fileURLToPath } from "node:url";
 import type { Jev } from "@lane-pilot/jev";
+import goldFile from "../../../tests/fixtures/errand-gold.json";
 import { chooseProcessKey, pairwiseF1, type KnownProcessKey, type ProcessKeyDecision, type ProcessKeyInput } from "./process-key";
 
 /**
@@ -13,7 +12,6 @@ import { chooseProcessKey, pairwiseF1, type KnownProcessKey, type ProcessKeyDeci
  */
 export const ERRANDS_USAGE = "bb lane-pilot errands process-key-eval [--json]";
 
-const GOLD_FIXTURE = fileURLToPath(new URL("../../../tests/fixtures/errand-gold.json", import.meta.url));
 
 type GoldRow = { id: string; title: string; process_key: string; real_outcome?: string; form?: string };
 type GoldFile = { rows: GoldRow[] };
@@ -74,7 +72,7 @@ export async function processKeyEval(rows: GoldRow[], judge?: Jev | null): Promi
 export async function runErrandsCli(args: string[]): Promise<{ exitCode: number; stdout?: string; stderr?: string }> {
   const [command, ...rest] = args;
   if (command !== "process-key-eval") return { exitCode: 1, stderr: `usage: ${ERRANDS_USAGE}` };
-  const file = JSON.parse(await readFile(GOLD_FIXTURE, "utf8")) as GoldFile;
+  const file = goldFile as GoldFile;
   const result = await processKeyEval(file.rows, wordJudge());
   const { predicted: _predicted, ...summary } = result;
   if (rest.includes("--json")) return { exitCode: 0, stdout: JSON.stringify(result, null, 2) };
