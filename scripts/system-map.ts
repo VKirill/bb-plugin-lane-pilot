@@ -86,18 +86,6 @@ export function collectSystemMap(root: string): SystemMap {
     if (!seen || rank(path) < seen.rank) declared.set(hit[1]!, { owner, rank: rank(path) });
   }
   const tables = new Map([...declared].map(([table, { owner }]) => [table, owner]));
-  // storage/database.ts declares the core tables for everyone; such a table belongs to the room that names it most.
-  for (const [table, owner] of tables) {
-    if (owner !== "room:storage") continue;
-    const uses = new Map<string, number>();
-    const word = new RegExp(`\\b${table}\\b`, "g");
-    for (const [path, text] of source) {
-      const room = ownerOf(path);
-      if (room && room !== "room:storage" && !describers.has(room)) uses.set(room, (uses.get(room) ?? 0) + (text.match(word)?.length ?? 0));
-    }
-    const best = [...uses].sort((a, b) => b[1] - a[1])[0];
-    if (best && best[1] > 0) tables.set(table, best[0]);
-  }
   for (const [table, owner] of tables) add({ id: `table:${table}`, label: table, type: "table", parent: owner });
   // ponytail: substring scan, tables × files; fine at ~120 tables and ~1500 files (a second or two).
   for (const [path, text] of source) {
