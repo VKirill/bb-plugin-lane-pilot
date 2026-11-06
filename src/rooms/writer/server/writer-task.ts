@@ -1,5 +1,3 @@
-import { existsSync } from "node:fs";
-import { join } from "node:path";
 import { taskV2Schema } from "../../contracts";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
 import { valueAt } from "../../core/server";
@@ -8,9 +6,9 @@ import { summarizeThreadEvents, type ThreadEventLike } from "@lane-pilot/harness
 import { cleanCheckOutput, failureExcerpt, sha256Hex } from "@lane-pilot/kit";
 import { fileAllowedByOwns, matchOwnsPath } from "@lane-pilot/kit";
 import { SKILL_CATALOG_BLOCK } from "../../native-agent";
-import { ROLE_PROFILES } from "../../native-agent/helper-context";
-import { THREAD_MEMORY_RULE } from "../../memory/server/thread-block";
-import { checkBrief, renderBrief, tagSection, writerBriefContextFor, type WriterBriefContext } from "../../native-agent/brief-standard";
+import { ROLE_PROFILES } from "../../native-agent";
+import { checkBrief, renderBrief, tagSection, writerBriefContextFor, type WriterBriefContext } from "../../brief";
+import { THREAD_MEMORY_RULE } from "../../memory";
 import { PLAN_FACT_BRIEF_LINE , MARKER_BRIEF_LINE, gateVocabularyLines } from "../../tasks";
 export function outputText(value: unknown): string {
   for (const key of ["text", "output", "lastAssistantText", "content"]) {
@@ -139,11 +137,6 @@ export function writerToolLine(context: WriterBriefContext = {}): string {
   else parts.push("Find code with grep, the file tree and reads");
   if (context.metamcpTools ?? false) parts.push("for a library's API use the context7 docs (through metamcp) before guessing");
   return `${parts.join("; ")}. If you lack a tool, read the code yourself; that is no reason to stop.`;
-}
-
-/** Whether `.gitnexus/` sits at the workspace root, for spawn sites that cannot check on the workspace's host. */
-export function gitnexusIndexAt(workspacePath: string | undefined): boolean {
-  return typeof workspacePath === "string" && existsSync(join(workspacePath, ".gitnexus"));
 }
 
 /** The setup lines of a writer that works in a folder without git: the worktree line gives way to the live-folder one. */
@@ -301,10 +294,7 @@ export function attemptFeedback(attemptNo: number, events: readonly ThreadEventL
   return `${head}${summarizeThreadEvents(events)}`;
 }
 
-export type WriterBriefOptions = WriterBriefContext & {
-  /** The check for `.gitnexus/` when no context was registered: the workspace's own path, on this host only. */
-  workspacePath?: string;
-};
+export type WriterBriefOptions = WriterBriefContext;
 
 /** The one line replacing the catalog instructions for a thread whose skills were picked. */
 export function skillPickedLine(context: WriterBriefContext): string {
@@ -325,60 +315,85 @@ const OUTPUT_CONTRACT = [
  */
 export function contractSections(task: TaskV2, readListShown: boolean, taskFolder?: TaskFolderBrief | null): { goal: string; inputs: string; boundaries: string; acceptance: string } {
   const row = compactContract(task, readListShown);
-  const list = (key: string) => Array.isArray(row[key]) ? (row[key] as unknown[]) : [];
-  const scalar = (key: string, label = key) => typeof row[key] === "string" || typeof row[key] === "number" || typeof row[key] === "boolean" ? [`${label}: ${row[key]}`] : [];
+  const rendered = new Set<string>();
+  const take = (key: string) => { rendered.add(key); return row[key]; };
+  const list = (key: string) => Array.isArray(take(key)) ? (row[key] as unknown[]) : [];
+  const scalar = (key: string, label = key) => { const value = take(key); return typeof value === "string" || typeof value === "number" || typeof value === "boolean" ? [`${label}: ${value}`] : []; };
   const bullets = (key: string, label = key) => list(key).length ? [`${label}:`, ...list(key).map((item) => `- ${typeof item === "string" ? item : JSON.stringify(item)}`)] : [];
-  const inline = (key: string, label = key) => row[key] != null ? [`${label}: ${JSON.stringify(row[key])}`] : [];
-  const checks = Array.isArray(row.verification) ? row.verification : [];
-  const checkLines = checks.map((check) => `- ${typeof check === "string" ? check : JSON.stringify(check)}`);
-  const hiddenCount = typeof row.verification_hidden_count === "number" ? row.verification_hidden_count : 0;
-  return {
-    goal: [
-      ...scalar("id"),
-      ...scalar("title"),
-      ...scalar("display_title"),
-      ...scalar("kind"),
-      ...scalar("area"),
-      ...scalar("lane"),
-      ...scalar("risk"),
-      ...scalar("objective"),
-      ...bullets("expected_outputs"),
-      ...(task.promise ? [`promise: given ${task.promise.given}; when ${task.promise.when}; then ${task.promise.then}. Your checks prove exactly this sentence.`] : []),
-    ].join("\n"),
-    inputs: [
-      `workspace: ${task.project_cwd}`,
-      ...(list("read_first").length ? [`read_first: ${list("read_first").join(", ")}`] : []),
-      ...taskFolderLines(taskFolder, true),
-      ...bullets("files"),
-      ...bullets("wires"),
-      ...(task.drawing?.length ? [`drawing: ${task.drawing.join(", ")} — read it first; the screens you change match it, and the acceptance checks the drawing is unchanged.`] : []),
-      ...bullets("skills"),
-      ...scalar("qa_url"),
-      ...bullets("qa_cases"),
-      ...scalar("qa_env_class"),
-      ...scalar("qa_dev_server"),
-      ...scalar("priority"),
-      ...inline("appetite"),
-      ...bullets("fixes_regressions"),
-      ...scalar("quality_mode"),
-    ].join("\n"),
-    boundaries: [
-      `owns_paths: ${list("owns_paths").join(", ")}`,
-      ...(list("never_touch").length ? [`never_touch: ${list("never_touch").join(", ")}`] : []),
-      ...bullets("interfaces"),
-      ...bullets("invariants"),
-      ...bullets("out_of_scope"),
-      ...bullets("test_removals"),
-      ...bullets("depends_on"),
-    ].join("\n"),
-    acceptance: [
-      ...bullets("acceptance"),
-      ...scalar("verify"),
-      ...(checkLines.length ? ["verification:", ...checkLines] : []),
-      ...(hiddenCount ? [`Lane Pilot also runs ${hiddenCount} check(s) you do not see.`] : []),
-      ...bullets("convergence"),
-    ].join("\n"),
+  const inline = (key: string, label = key) => { const value = take(key); return value != null ? [`${label}: ${JSON.stringify(value)}`] : []; };
+  /** A field value as brief lines: scalars inline, arrays as bullets, objects key by key — nothing compactContract emits is dropped. */
+  const render = (value: unknown): string[] => {
+    if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return [String(value)];
+    if (Array.isArray(value)) return value.flatMap((item) => render(item)).map((line) => line.startsWith("- ") ? line : `- ${line}`);
+    if (value && typeof value === "object") return Object.entries(value).flatMap(([key, inner]) => {
+      const lines = render(inner);
+      return lines.length ? [`${key}:`, ...lines.map((line) => `  ${line}`)] : [];
+    });
+    return [];
   };
+  /** A field compactContract emits that no line above claimed yet: rendered into `inputs` under its own key name. */
+  const leftovers = () => Object.keys(row).filter((key) => !rendered.has(key)).flatMap((key) => {
+    const lines = render(row[key]);
+    return lines.length ? [`${key}:`, ...lines.map((line) => `  ${line}`)] : [];
+  });
+  const checks = Array.isArray(take("verification")) ? row.verification as unknown[] : [];
+  const checkLines = checks.map((check) => `- ${typeof check === "string" ? check : JSON.stringify(check)}`);
+  // `promise` and `drawing` are rendered from the task itself below; mark them so `leftovers` does not repeat them.
+  rendered.add("promise");
+  rendered.add("drawing");
+  const hiddenCount = typeof take("verification_hidden_count") === "number" ? row.verification_hidden_count as number : 0;
+  // Every section's take() runs before `leftovers` decides what is left: goal and inputs first, then the two
+  // contract halves, and only then does inputs gain the fields no line above claimed (a key added to the schema
+  // lands here instead of vanishing).
+  const goal = [
+    ...scalar("id"),
+    ...scalar("title"),
+    ...scalar("display_title"),
+    ...scalar("kind"),
+    ...scalar("area"),
+    ...scalar("lane"),
+    ...scalar("risk"),
+    ...scalar("objective"),
+    ...bullets("expected_outputs"),
+    // The promise this task keeps: the writer's checks prove exactly the given/when/then sentence.
+    ...(task.promise ? [`promise: given ${task.promise.given}; when ${task.promise.when}; then ${task.promise.then}. Your checks prove exactly this sentence.`] : []),
+  ];
+  const inputLines = [
+    `workspace: ${task.project_cwd}`,
+    ...(list("read_first").length ? [`read_first: ${list("read_first").join(", ")}`] : []),
+    ...taskFolderLines(taskFolder, true),
+    ...bullets("files"),
+    ...bullets("wires"),
+    // This task follows a drawing: its screens are read first and the acceptance checks them unchanged.
+    ...(task.drawing?.length ? [`drawing: ${task.drawing.join(", ")} — read it first; the screens you change match it, and the acceptance checks the drawing is unchanged.`] : []),
+    ...bullets("skills"),
+    ...scalar("qa_url"),
+    ...bullets("qa_cases"),
+    ...scalar("qa_env_class"),
+    ...scalar("qa_dev_server"),
+    ...scalar("priority"),
+    ...inline("appetite"),
+    ...bullets("fixes_regressions"),
+    ...scalar("quality_mode"),
+    ...(take("clarify") ? ["clarify:", ...render(row.clarify).map((line) => `  ${line}`)] : []),
+  ];
+  const boundaries = [
+    `owns_paths: ${list("owns_paths").join(", ")}`,
+    ...(list("never_touch").length ? [`never_touch: ${list("never_touch").join(", ")}`] : []),
+    ...bullets("interfaces"),
+    ...bullets("invariants"),
+    ...bullets("out_of_scope"),
+    ...bullets("test_removals"),
+    ...bullets("depends_on"),
+  ];
+  const acceptance = [
+    ...bullets("acceptance"),
+    ...scalar("verify"),
+    ...(checkLines.length ? ["verification:", ...checkLines] : []),
+    ...(hiddenCount ? [`verification_hidden_count: ${hiddenCount} — Lane Pilot also runs these check(s) you do not see`] : []),
+    ...(take("convergence") ? ["convergence:", ...render(row.convergence).map((line) => `  ${line}`)] : []),
+  ];
+  return { goal: goal.join("\n"), inputs: [...inputLines, ...leftovers()].join("\n"), boundaries: boundaries.join("\n"), acceptance: acceptance.join("\n") };
 }
 
 /** The same contract as tagged text, for the follow-up turns that resend it (merge, next task). */
@@ -390,7 +405,8 @@ export function contractSectionText(task: TaskV2, readListShown: boolean, taskFo
 export function writerBriefSegments(task: TaskV2, memoryText="", executionPacket="", emergencyContext?:string, agent="Lane Pilot writer", pmReadContext="", rulesText="", previousAttempt="", taskFolder?:TaskFolderBrief|null, liveFolder=false, opts?: WriterBriefOptions): BriefSegment[] {
   // The instructions and the data blocks are for the agent; the chat keeps the task and its contract sections.
   const hidden = (text: string): BriefSegment => ({ text, hidden:true });
-  const context: WriterBriefContext = { gitnexusIndex: gitnexusIndexAt(opts?.workspacePath ?? task.project_cwd), ...writerBriefContextFor(task.id), ...(opts ?? {}) };
+  // .gitnexus lives only in the registered context (writer-knowledge checks it on the workspace's host): no context, no gitnexus line.
+  const context: WriterBriefContext = { ...writerBriefContextFor(task.id), ...(opts ?? {}) };
   const s = contractSections(task, Boolean(executionPacket), taskFolder);
   const pmRead = pmReadContext ? pmReadBrief(pmReadContext) : { facts:"", openQuestions:[] };
   const brief = renderBrief({
@@ -414,11 +430,11 @@ export function writerBriefSegments(task: TaskV2, memoryText="", executionPacket
       ...(executionPacket ? [{ tag: "read_first", text: executionPacket }] : []),
       ...(pmRead.facts ? [{ tag: "pm_read_facts", title: "Facts the PM read stage found in these files; verify against the files", text: pmRead.facts }] : []),
       ...(memoryText ? [{ tag: "project_memory", title: "Project knowledge about these paths, written by earlier tasks; verify against current files", text: memoryText }] : []),
-      ...(rulesText ? [{ tag: "rules", title: "Project rules for writers, each from a failure that kept repeating here (the contract wins over a rule)", text: rulesText }] : []),
+      ...(rulesText ? [{ tag: "rules", title: "Project rules for writers; each comes from a failure that kept repeating here, and some are still on trial. The task contract and owns_paths win over a rule; if you set one aside, say which and why", text: rulesText }] : []),
     ],
     restate: `Task ${task.id}: ${task.title} — change only owns_paths, run the verification commands, answer with the changed paths or NEEDS_HUMAN.`,
   });
-  checkBrief("writer", brief.text, { skillsPicked: !context.broadSkills, instructionsLength: brief.instructionsLength });
+  checkBrief("writer", brief.text, { skillsPicked: !context.broadSkills, instructionsLength: brief.instructionsLength, context7Allowed: context.metamcpTools === true });
   return [
     hidden(brief.parts.instructions),
     ...brief.parts.sections.map((text) => ({ text, hidden:false })),

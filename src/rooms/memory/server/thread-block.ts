@@ -11,11 +11,9 @@ import type { ServerCore } from "../../core/server";
  * tool (learning room), and a hidden analyzer must not run tools at all, so both get nothing.
  */
 
-/** The exact rule the block ends with (and the line AGENTS.md carries). */
-export const THREAD_MEMORY_RULE = [
-  'Память проекта — Lane Pilot: искать `bb lane-pilot memory search "<вопрос>"`, записать `bb lane-pilot memory write "<факт>"`;',
-  "не в файлы ~/.claude/…/memory и не в BB memory",
-] as const;
+/** The exact rule the block ends with (and the line AGENTS.md carries); the constant itself lives in the leaf `../thread-rule`. */
+export { THREAD_MEMORY_RULE } from "../thread-rule";
+import { THREAD_MEMORY_RULE } from "../thread-rule";
 
 const BLOCK_LIMIT = 1200;
 const FACT_LIMIT = 8;

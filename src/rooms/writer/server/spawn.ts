@@ -480,7 +480,9 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
       const taskFolder = await listTaskFolder(bb, input.config.hostId, workspacePath, input.taskId);
       const contextSegments = writerBriefSegments(attemptTask,briefMemoryText,executionPacket,input.emergency&&!input.continuation
         ? "fallback"  // the reason stays in the trace; the writer is only told it is the fallback
-        : undefined,writerAgent,brief.pmRead,briefRulesText,input.previousAttempt ?? "",taskFolder,live);
+        : undefined,writerAgent,brief.pmRead,briefRulesText,input.previousAttempt ?? "",taskFolder,live,
+        // The real picks, so the brief's skills line names them instead of «the picked ones».
+        { skills: [...writerSkills.skills, ...harnessSkills] });
       // A fallback that continues the interrupted session reads its handoff right after its role line.
       const handoffSegments = input.continuation
         ? [contextSegments[0]!,{text:input.continuation.brief,hidden:true},...contextSegments.slice(1)]

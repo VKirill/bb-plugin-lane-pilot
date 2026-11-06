@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BRIEF_BUDGETS, capBlock, renderBrief, tagSection, validateBrief } from "../src/rooms/native-agent/brief-standard";
+import { BRIEF_BUDGETS, capBlock, renderBrief, tagSection, validateBrief } from "../src/rooms/brief";
 
 describe("renderBrief", () => {
   it("emits instructions, the five tagged sections in order, data marked as data, and the goal restated last", () => {
@@ -45,7 +45,10 @@ describe("renderBrief", () => {
     expect(validateBrief("run `bb tools skills-tree --skills --json`", { skillsPicked: true }).map((v) => v.code)).toContain("skills_tree_for_picked");
     expect(validateBrief("run `bb tools skills-tree --skills --json`", { skillsPicked: false })).toHaveLength(0);
     expect(validateBrief("Task contract:\n{\n  \"schema_version\": 2,").map((v) => v.code)).toContain("contract_json_dump");
-    expect(validateBrief("use context7 docs").map((v) => v.code)).toContain("context7_reference");
+    expect(validateBrief("use context7 docs", { context7Allowed: false }).map((v) => v.code)).toContain("context7_reference");
+    // context7 is a real tool of a role whose MCP list allows metamcp: naming it there is no violation.
+    expect(validateBrief("use context7 docs", { context7Allowed: true }).map((v) => v.code)).not.toContain("context7_reference");
+    expect(validateBrief("use context7 docs").map((v) => v.code)).not.toContain("context7_reference");
     expect(validateBrief(tagSection("task_goal", "objective: x"))).toHaveLength(0);
   });
 });

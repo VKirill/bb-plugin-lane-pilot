@@ -92,7 +92,7 @@ describe("area records and rules", () => {
   it("sends only what changed in a continued turn", () => {
     const next = stickyTurnPrompt({ kind: "next-task", task: task("gc-faq", "page:/cards") });
     expect(next).toContain("Next task for you in the same area");
-    expect(next).toContain("\"id\": \"gc-faq\"");
+    expect(next).toContain("id: gc-faq");
     expect(next).not.toContain("previous_attempt");
     const retry = stickyTurnPrompt({ kind: "retry", task: task("gc-faq"), previousAttempt: "Failure: verification failed" });
     expect(retry).toContain("fix them in place");

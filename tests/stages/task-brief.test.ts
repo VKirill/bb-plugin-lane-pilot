@@ -34,7 +34,7 @@ const EVIDENCE = buildCandidateEvidence({ produced: [], hashes: {}, verification
 describe("taskBrief prints the contract as readable lines", () => {
   it("the base set: title, objective, acceptance, invariants, out_of_scope, owns_paths; empty fields are absent", () => {
     const brief = taskBrief({ title: "t", objective: "o", acceptance: ["a1"], owns_paths: ["src/**"] });
-    expect(brief).toBe("title: t\nobjective: o\nacceptance:\n- a1\nowns_paths: src/**");
+    expect(brief).toBe("<task_goal>\ntitle: t\nobjective: o\n</task_goal>\n\n<boundaries>\nowns_paths: src/**\n</boundaries>\n\n<acceptance>\nacceptance:\n- a1\n</acceptance>");
     expect(brief).not.toContain("invariants:");
     expect(brief).not.toContain("out_of_scope:");
   });
@@ -47,7 +47,7 @@ describe("taskBrief prints the contract as readable lines", () => {
     expect(brief).toContain("verification:\n- npx vitest run tests/auth  (cwd: /repo)");
     expect(brief).not.toContain("objective:");
     const thin = taskBrief({ title: "t" }, { fields: ["title", "depends_on", "verification"] });
-    expect(thin).toBe("title: t");
+    expect(thin).toBe("<task_goal>\ntitle: t\n</task_goal>");
   });
 
   it("verification shows command and cwd only: no secret names, no flags", () => {
@@ -116,7 +116,7 @@ describe("each review stage hands the model a readable task, not the JSON contra
 
   it("code critique keeps its base set inside <task>", () => {
     const prompt = codeCritiquePrompt({ evidence: EVIDENCE, task: TASK });
-    expect(prompt).toContain("<task>\ntitle: Add rate limit to /login\nobjective: Throttle repeated login failures per IP.");
+    expect(prompt).toContain("<task>\n<task_goal>\ntitle: Add rate limit to /login\nobjective: Throttle repeated login failures per IP.");
     expect(prompt).toContain("- no schema change"); // invariants stay in the code critic's set
     expect(prompt).toContain("never_touch (on top of the standard trusted tooling): migrations/**");
     expect(prompt).not.toContain('"schema_version"');

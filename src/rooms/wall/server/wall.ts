@@ -158,6 +158,21 @@ export function createPluginWall(ctx: ServerCore, services: Services): WallApi {
         return written ? abs : null;
       } catch { return null; }
     },
+    // The step's material file goes away once the step read it; a missed cleanup leaves a stray file in .bb, nothing worse.
+    deleteText: async (absPath) => {
+      try {
+        const { hostId, basePath } = await environmentOf();
+        await host.call("runCommand", { requestedHostId: hostId, cwd: basePath, timeoutSec: 10, command: `rm -f -- ${JSON.stringify(absPath)}` }, { hostId, timeoutMs: 15_000 });
+      } catch { /* a stray temp file, not a failure */ }
+    },
+    // A reader's provider opens files itself only when it is a coding agent with its own file tools; a raw chat model gets the pack inline.
+    readerReadsFiles: async () => {
+      try {
+        const { cfg, hostId, basePath } = await environmentOf();
+        const hunter = await hunterModelOf(await wallRef.current.config(), cfg.projectId, hostId, basePath);
+        return hunter.providerId === "claude-code" || hunter.providerId === "codex" || hunter.providerId === "opencode2" || hunter.providerId === "devin" || hunter.providerId.startsWith("acp-");
+      } catch { return false; }
+    },
     graph: {
       hunt: async ({ wallKey, pack, angles }) => {
         const out = await runGraph(wallKey, "hunt", { pack, angles: [...angles] });

@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
+import { mkdtempSync, mkdirSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { ROLE_PROFILES, HelperRole, requiredSessionPolicySpawnBinding, coreRequiredSessionAdvertisement } from "../src/rooms/native-agent/helper-context";
-import { WRITER_SETUP_LINES } from "../src/rooms/writer/server/writer-task";
+import { writerToolLine } from "../src/rooms/writer/server/writer-task";
 import { critiquePrompt } from "../src/rooms/critique/critique";
 import { codeCritiquePrompt, buildCandidateEvidence } from "../src/rooms/critique/code-critique";
 import { pmReadPrompt } from "../src/rooms/critique/pm-read";
@@ -113,12 +116,20 @@ describe("role MCP server configurations", () => {
 });
 
 describe("prompt hints for gitnexus and metamcp", () => {
-  it("WRITER_SETUP_LINES carries the gitnexus-first and context7 lines", () => {
-    const gitnexusLine = WRITER_SETUP_LINES.find((line) => line.includes("GitNexus index") && line.includes("gitnexus"));
-    expect(gitnexusLine).toBeDefined();
-    expect(gitnexusLine).toBe(
-      "If the project has a GitNexus index (a `.gitnexus/` folder) and you have the gitnexus tools, find code with them first: `query` for a concept, `context` for a symbol's callers and callees, `impact` before changing a shared function. Use grep for literals and when the index has no answer. For a library's API use the context7 docs (through metamcp) before guessing. If you lack a tool, read the code yourself; that is no reason to stop.",
-    );
+  it("the writer's tool line names gitnexus and context7 only when the role has them and the index exists", () => {
+    const full = writerToolLine({ gitnexusTools: true, gitnexusIndex: true, metamcpTools: true });
+    expect(full).toContain("GitNexus index");
+    expect(full).toContain("`query` for a concept");
+    expect(full).toContain("context7");
+    // Tools the role does not load are not pointed at; a missing index drops the gitnexus part alone.
+    const noIndex = writerToolLine({ gitnexusTools: true, metamcpTools: true });
+    expect(noIndex).not.toContain("GitNexus");
+    expect(noIndex).toContain("context7");
+    const bare = writerToolLine();
+    expect(bare).toContain("Find code with grep");
+    expect(bare).not.toContain("GitNexus");
+    expect(bare).not.toContain("context7");
+    expect(bare).toContain("that is no reason to stop");
   });
 
   const expectedHint = "with gitnexus tools and a `.gitnexus/` index use `query`/`context`/`impact`; grep for literals.";
@@ -128,17 +139,22 @@ describe("prompt hints for gitnexus and metamcp", () => {
     expect(pmReadPrompt({ agent: "pm-reader", packet: "packet", task: { id: "t1" } })).not.toContain("gitnexus");
   });
 
-  it("codeCritiquePrompt carries the gitnexus line", () => {
-    const evidence = buildCandidateEvidence({
-      produced: [],
-      hashes: {},
-      verification: [],
-      output: "",
-      ownsPaths: [],
-      neverTouch: [],
-      dirtOk: true,
-    });
-    const prompt = codeCritiquePrompt({ evidence, task: { id: "t1" } });
-    expect(prompt).toContain(expectedHint);
+  it("codeCritiquePrompt carries the gitnexus line only for a workspace that has the index", () => {
+    const dir = mkdtempSync(join(tmpdir(), "lp-gnx-hint-"));
+    const evidence = {
+      ...buildCandidateEvidence({
+        produced: [],
+        hashes: {},
+        verification: [],
+        output: "",
+        ownsPaths: [],
+        neverTouch: [],
+        dirtOk: true,
+      }),
+      workspace: dir,
+    };
+    expect(codeCritiquePrompt({ evidence, task: { id: "t1" } })).not.toContain(expectedHint);
+    mkdirSync(join(dir, ".gitnexus"));
+    expect(codeCritiquePrompt({ evidence, task: { id: "t1" } })).toContain(expectedHint);
   });
 });

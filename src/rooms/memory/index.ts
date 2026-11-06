@@ -4,3 +4,4 @@ export { parseMemorySettings } from "./memory";
 export type { MemorySettings } from "./memory";
 export { MEMORY_PATHS, MEMORY_PRIMITIVES, pathById } from "./memory-paths";
 export type { MemoryPath, MemoryPrimitive, ProbeKind } from "./memory-paths";
+export { THREAD_MEMORY_RULE } from "./thread-rule";

@@ -28,16 +28,16 @@ it("keeps the compact contract inline and only adds the folder block when the fo
   const stickyWithout = stickyTurnPrompt({ kind: "next-task", task });
   expect(without).not.toContain(".agents/plans/items/");
   expect(stickyWithout).not.toContain(".agents/plans/items/");
-  expect(without).toContain('"objective": "do x"');
+  expect(without).toContain('objective: do x');
   const folder = { path: ".agents/plans/items/t1/", files: ["PLAN.md"] };
   const withFolder = writerPrompt(task, "", "", undefined, "Lane Pilot writer", "", "", "", folder);
   const sticky = stickyTurnPrompt({ kind: "retry", task, taskFolder: folder });
   expect(withFolder).toContain(".agents/plans/items/t1/");
   expect(withFolder).toContain("- PLAN.md");
-  expect(withFolder).toContain('"objective": "do x"');
+  expect(withFolder).toContain('objective: do x');
   expect(sticky).toContain(".agents/plans/items/t1/");
   expect(sticky).toContain("- PLAN.md");
-  expect(sticky).toContain('"objective": "do x"');
+  expect(sticky).toContain('objective: do x');
 });
 
 it("does not treat task-folder files as produced, stray, or owns_paths violations", () => {

@@ -359,7 +359,11 @@ describe("what the writer and the PM are told", () => {
     expect(normal).toContain("own git worktree");
     expect(normal).not.toContain(LIVE);
     expect(writerSetupLines(true)).toContain(LIVE);
-    expect(writerSetupLines(false)).toEqual(WRITER_SETUP_LINES);
+    expect(writerSetupLines(true).some((line) => line.includes("git worktree"))).toBe(false);
+    // Only the worktree line is swapped: a normal writer keeps it, plus the memory rule and the tool line that follow the setup.
+    expect(writerSetupLines(false).slice(0, WRITER_SETUP_LINES.length)).toEqual(WRITER_SETUP_LINES);
+    expect(writerSetupLines(false).some((line) => line.includes("You work in your own git worktree"))).toBe(true);
+    expect(writerSetupLines(false).some((line) => line.includes("no git: you edit the live files"))).toBe(false);
   });
 
   it("tells a retry writer that Lane Pilot rolled the files back and does not send it to git checkout", () => {

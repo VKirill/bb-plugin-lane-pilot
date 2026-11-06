@@ -6,8 +6,8 @@ import { mixWriterMemory, snapshotFileRead, writerCandidates, writerMemoryPaths 
 import { getRunSettingsScopes, loadProjectSettings, taskBasePath, type LanePilotDatabase } from "../../storage";
 import type { ServerCore } from "../../core/server";
 import { runOnHost } from "@lane-pilot/host-calls";
-import { effectiveGroup, parseHelperContextSettings } from "../../native-agent/helper-context";
-import { registerWriterBriefContext } from "../../native-agent/brief-standard";
+import { effectiveGroup, parseHelperContextSettings } from "../../native-agent";
+import { registerWriterBriefContext } from "../../brief";
 import { stickyTurnPrompt } from "./writer-task";
 
 /**

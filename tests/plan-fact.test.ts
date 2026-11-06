@@ -136,11 +136,12 @@ describe("what the writer is told and what a retry is told", () => {
   });
 
   it("puts the format in the first brief and in a continuing turn, only for a contract with acceptance items", () => {
-    expect(writerBriefSegments(task).some((segment) => segment.text === PLAN_FACT_BRIEF_LINE && segment.hidden)).toBe(true);
+    // The format line rides inside the hidden instructions part of the first brief, no longer a segment of its own.
+    expect(writerBriefSegments(task).some((segment) => segment.hidden && segment.text.includes(PLAN_FACT_BRIEF_LINE))).toBe(true);
     expect(stickyTurnPrompt({ kind: "retry", task, previousAttempt: "Result: x" })).toContain("```plan-fact");
     expect(PLAN_FACT_BRIEF_LINE).toContain('"status":"not_done"');
     expect(PLAN_FACT_BRIEF_LINE).toContain("cmd:");
-    expect(writerBriefSegments({ ...task, acceptance: [] }).some((segment) => segment.text === PLAN_FACT_BRIEF_LINE)).toBe(false);
+    expect(writerBriefSegments({ ...task, acceptance: [] }).some((segment) => segment.text.includes(PLAN_FACT_BRIEF_LINE))).toBe(false);
   });
 
   it("sends an unproven item back with what to cite", () => {

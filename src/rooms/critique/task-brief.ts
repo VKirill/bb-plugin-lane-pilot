@@ -1,5 +1,5 @@
 import { TRUSTED_TOOLING_PATTERNS, verificationScriptPaths } from "../tasks";
-import { renderBrief } from "../native-agent/brief-standard";
+import { renderBrief } from "../brief";
 
 /**
  * The contract fields a review stage can ask for, beyond the code critic's base set

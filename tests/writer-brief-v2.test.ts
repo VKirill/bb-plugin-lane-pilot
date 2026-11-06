@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { taskV2Schema } from "../src/rooms/contracts";
 import { compactContract, writerMemory } from "../src/rooms/writer/writer-brief";
 import { contractSections, stickyTurnPrompt, writerPrompt } from "../src/rooms/writer/server/writer-task";
-import { THREAD_MEMORY_RULE } from "../src/rooms/memory/server/thread-block";
+import { THREAD_MEMORY_RULE } from "../src/rooms/memory";
 import { errandPrompt } from "../src/rooms/qa/server/errands";
 import { taskBrief } from "../src/rooms/critique/task-brief";
 import { codeCritiquePrompt } from "../src/rooms/critique/code-critique";
@@ -68,6 +68,29 @@ describe("writer brief v2", () => {
     expect(output).toContain("NEEDS_HUMAN: check <command> cannot run in the sandbox");
     // the NEEDS_HUMAN instruction lives only there now
     expect(brief.slice(brief.indexOf("</output>")).split("answer with the first line").length).toBe(1);
+  });
+
+  it("renders every field compactContract emits — object fields like convergence and clarify are not dropped", () => {
+    const rich = taskV2Schema.parse({
+      ...JSON.parse(original.slice(original.indexOf('{\n  "schema_version"'))),
+      display_title: "Полировка главной", kind: "feature", area: "page:/tools/cards", skills: ["web-design"], quality_mode: "full",
+      qa_url: "http://localhost:3000/cards", qa_cases: ["open the page"], qa_env_class: "local", qa_dev_server: "npm run dev",
+      convergence: { criteria: ["src/a.ts contains 'RATE_LIMIT = 10'", "npm test exits 0"] },
+      clarify: { questions: [], answers: [{ question: "which colour?", answer: "blue", by: "owner" }] },
+      files: [{ path: "src/a.ts", action: "modify", target: "rateLimit", change: "raise the limit" }],
+      wires: [{ chain: ["ui.theme", "loadSettings", "ThemeProvider"] }],
+      promise: { given: "a request", when: "over the limit", then: "429" },
+      appetite: { minutes: 30 }, priority: "high", drawing: ["design/cards.png"], test_removals: ["old/cards.test.ts"], fixes_regressions: [3],
+      forecast: { files: 2, checks_pass_first_try: true },
+    });
+    const brief = writerPrompt(rich);
+    // Parity: no key of the compacted contract may vanish from the brief.
+    for (const key of Object.keys(compactContract(rich, false))) expect(brief, `contract field ${key} missing`).toContain(`${key}:`);
+    expect(brief).toContain("src/a.ts contains 'RATE_LIMIT = 10'");
+    expect(brief).toContain("which colour?");
+    expect(brief).toContain("blue");
+    // forecast stays out: the PM's guess is measured, not shown.
+    expect(brief).not.toContain("checks_pass_first_try");
   });
 
   it("the retry turn says the contract is unchanged; a next task resends it as tagged sections", () => {

@@ -69,6 +69,10 @@ export type WallPorts = {
   spawnReader?(input: { who: "hunter" | "analysis"; prompt: string; graph: { spawnId: string; metadata: Record<string, unknown> } }): Promise<string>;
   /** Writes a file into the wall's environment folder for the long material a brief names instead of inlining; returns the path the reader opens, or null. */
   writeText?(relPath: string, content: string): Promise<string | null>;
+  /** Removes a material file written for a step once the step read it (a stray temp file must not stay in the checkout). */
+  deleteText?(absPath: string): Promise<void>;
+  /** Whether the reader threads of `who` (their provider) can open a file themselves; a wall-hunter has no file tools otherwise. */
+  readerReadsFiles?(who: "hunter" | "analysis"): Promise<boolean>;
   tellPm(threadId: string, text: string): Promise<boolean>;
   repair: {
     view(signature: string): Promise<RepairView | null>;
@@ -211,18 +215,34 @@ export function createWall(deps: WallDeps) {
     }
   }
 
-  // The pack of a hunt or an analysis goes to a file of the wall's folder (15–28 KB would not survive a ~12 KB first
-  // message); the brief names the file. The graph's steps get the pack serialized, so the file is looked up by content hash.
+  // The pack of a hunt or an analysis is inlined while it fits the wall-hunter budget. A bigger one goes to a file
+  // under .bb/ (gitignored) only when the reader's provider opens files natively — a wall-hunter thread has no file
+  // tools otherwise — and the file is removed once the step that used it ends. The graph's steps get the pack
+  // serialized, so the file is looked up by content hash.
   const packPathBySha = new Map<string, string>();
   const packSha = (pack: EvidencePack): string => sha(JSON.stringify(pack));
   const packPathOf = (pack: EvidencePack): string | undefined => packPathBySha.get(packSha(pack)) || undefined;
+  const WALL_PACK_INLINE_CAP = 9_000;
   const packFileFor = async (pack: EvidencePack, name: string): Promise<string | undefined> => {
     const key = packSha(pack);
     if (packPathBySha.has(key)) return packPathOf(pack);
     const safe = name.replace(/[^A-Za-z0-9_.-]+/g, "-").slice(0, 80);
-    const path = await ports.writeText?.(`.agents/wall/${safe}-${key.slice(0, 8)}.json`, JSON.stringify(pack)).catch(() => null) ?? null;
+    const path = await ports.writeText?.(`.bb/wall/${safe}-${key.slice(0, 8)}.json`, JSON.stringify(pack)).catch(() => null) ?? null;
     packPathBySha.set(key, path ?? "");
     return path ?? undefined;
+  };
+  /** The pack path a step needs, or undefined for an inline pack: over the cap, only a file-reading provider gets one. */
+  const packPathFor = async (pack: EvidencePack, name: string, who: "hunter" | "analysis"): Promise<string | undefined> => {
+    if (JSON.stringify(pack).length <= WALL_PACK_INLINE_CAP) return undefined;
+    if (!(await ports.readerReadsFiles?.(who).catch(() => false))) return undefined;
+    return packFileFor(pack, name);
+  };
+  /** The material file of a finished step goes away, and the next step over the same pack writes its own. */
+  const dropPackFile = async (pack: EvidencePack): Promise<void> => {
+    const key = packSha(pack);
+    const path = packPathBySha.get(key);
+    packPathBySha.delete(key);
+    if (path) await ports.deleteText?.(path).catch(() => undefined);
   };
 
   /**
@@ -230,7 +250,7 @@ export function createWall(deps: WallDeps) {
    * In the plugin this is a run of the graph `lp.wall-hunt` (named by the wall's key); a run that fails reads as hunters that found nothing.
    */
   async function hunt(pack: EvidencePack, cfg: WallConfig, wallKey: string): Promise<{ outcome: HuntOutcome; tokens: number }> {
-    const packPath = await packFileFor(pack, `hunt-${wallKey}`);
+    const packPath = await packPathFor(pack, `hunt-${wallKey}`, "hunter");
     const filterDecision = await checkHuntFilter(pack, wallKey);
     if (filterDecision.action === "skip") {
       log(`wall: hunt of ${wallKey} skipped by Jev filter (${filterDecision.category}): ${filterDecision.reason}`);
@@ -240,17 +260,20 @@ export function createWall(deps: WallDeps) {
         usable: [],
         demoted: 0,
       };
+      await dropPackFile(pack);
       return { outcome: skippedOutcome, tokens: 0 };
     }
     const angles = HUNT_ANGLES.slice(0, cfg.hunters);
     if (ports.graph) {
       const ran = await ports.graph.hunt({ wallKey, pack, angles }).catch((cause: unknown) => { log(`wall: the hunt graph of ${wallKey} failed: ${cause instanceof Error ? cause.message : String(cause)}`); return null; });
+      await dropPackFile(pack);
       return ran ?? judgeRuns(pack, angles.map((angle) => ({ angle, text: null, tokens: 0 })));
     }
     const runs = await Promise.all(angles.map(async (angle) => {
       const run = await ports.reader!(hunterPrompt(angle, pack, packPath), "hunter").catch(() => ({ text: null, tokens: 0 } as ThreadRun));
       return { angle, text: run.text, tokens: run.tokens };
     }));
+    await dropPackFile(pack);
     return judgeRuns(pack, runs);
   }
 
@@ -314,7 +337,8 @@ export function createWall(deps: WallDeps) {
       const pack = (wall.pack as EvidencePack | null) ?? (extra.classKey ? buildClassPack(db, extra.classKey) : null);
       if (pack) {
         const history = [`wall ${key}`, ...listRepairs(db, extra.classKey ? { classKey: extra.classKey } : {}).map((row) => `round ${row.round} (${row.role}) ${row.state}: ${row.outcome ?? ""}`)];
-        const run = await readAnalysis(key, analysisPrompt({ subject, pack, findings: ((wall.findings as { findings?: CheckedFinding[] } | null)?.findings) ?? [], history, packPath: await packFileFor(pack, `analysis-${key}`) }));
+        const run = await readAnalysis(key, analysisPrompt({ subject, pack, findings: ((wall.findings as { findings?: CheckedFinding[] } | null)?.findings) ?? [], history, packPath: await packPathFor(pack, `analysis-${key}`, "analysis") }));
+        await dropPackFile(pack);
         updateWall(db, key, { analysis: { text: run.text, at: ports.now() }, tokensUsed: (wall.tokensUsed ?? 0) + run.tokens }, ports.now());
       }
     }

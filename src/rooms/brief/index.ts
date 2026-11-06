@@ -22,6 +22,8 @@ export const BRIEF_BUDGETS: Record<string, { instructions: number; total: number
   writer: { instructions: INSTRUCTIONS_BUDGET, total: WRITER_BUDGET },
   errand: { instructions: 4_000, total: 12_000 },
   critic: { instructions: 4_000, total: 30_000 },
+  // A hunter's first message must stay under the tightest provider cap the night readers run on (~12 KB, Antigravity).
+  "wall-hunter": { instructions: 4_000, total: 12_000 },
   generic: { instructions: INSTRUCTIONS_BUDGET, total: WRITER_BUDGET },
 };
 
@@ -49,17 +51,22 @@ export type BriefSectionInput = {
   data?: readonly BriefDataBlock[];
   /** The one-line restatement after the data blocks; defaults to the first line of `goal`. */
   restate?: string;
+  /** False when the role's MCP allow-list lacks metamcp: a context7 mention then counts as a violation. */
+  context7Allowed?: boolean;
 };
 
-/** The strings a valid brief never carries. `skills_tree` only counts when the thread's skills were picked. */
-export function validateBrief(brief: string, opts?: { role?: string; skillsPicked?: boolean; instructionsLength?: number }): BriefViolation[] {
+/**
+ * The strings a valid brief never carries. `skills_tree` only counts when the thread's skills were picked;
+ * `context7` only when the role's MCP allow-list really lacks metamcp (the caller knows; absent means no verdict).
+ */
+export function validateBrief(brief: string, opts?: { role?: string; skillsPicked?: boolean; instructionsLength?: number; context7Allowed?: boolean }): BriefViolation[] {
   const violations: BriefViolation[] = [];
   const budget = BRIEF_BUDGETS[opts?.role ?? "generic"] ?? BRIEF_BUDGETS.generic!;
   if (opts?.skillsPicked && brief.includes("bb tools skills-tree"))
     violations.push({ code: "skills_tree_for_picked", detail: "the brief tells an agent with picked skills how to browse the whole catalog" });
   if (/Task contract:\s*\n\s*\{/.test(brief) || brief.includes('"schema_version": 2'))
     violations.push({ code: "contract_json_dump", detail: "the brief carries the raw Task contract JSON; contract fields belong in the tagged sections" });
-  if (/context7/i.test(brief))
+  if (opts?.context7Allowed === false && /context7/i.test(brief))
     violations.push({ code: "context7_reference", detail: "the brief names context7, a tool a narrowed helper does not have" });
   if (brief.length > budget.total)
     violations.push({ code: "brief_over_budget", detail: `the brief is ${brief.length} characters, over the ${budget.total} cap of a ${opts?.role ?? "generic"} brief` });
@@ -108,7 +115,7 @@ export function renderBrief(input: BriefSectionInput): { text: string; instructi
   // Anthropic's long-context guidance: with a long data tail the question lands last, so the goal is restated after the blocks.
   const restate = data.length ? `The task again: ${input.restate ?? (input.goal ?? "").split("\n")[0] ?? ""}` : "";
   const text = [instructions, ...sections, ...data, ...(restate ? [restate] : [])].filter(Boolean).join("\n\n");
-  violations.push(...validateBrief(text, { role: input.role, instructionsLength: instructions.length }));
+  violations.push(...validateBrief(text, { role: input.role, instructionsLength: instructions.length, context7Allowed: input.context7Allowed }));
   return { text, instructionsLength: instructions.length, violations, parts: { instructions, sections, data, restate } };
 }
 
@@ -120,8 +127,8 @@ export function setBriefViolationLogger(log: (line: string) => void): void { vio
 export const recentBriefViolations: Array<{ kind: string; violations: BriefViolation[] }> = [];
 
 /** Validates a finished brief; over-cap data blocks were already cut by renderBrief, the rest is logged. */
-export function checkBrief(kind: string, brief: string, opts?: { skillsPicked?: boolean; instructionsLength?: number }): BriefViolation[] {
-  const violations = validateBrief(brief, { role: kind, skillsPicked: opts?.skillsPicked, instructionsLength: opts?.instructionsLength });
+export function checkBrief(kind: string, brief: string, opts?: { skillsPicked?: boolean; instructionsLength?: number; context7Allowed?: boolean }): BriefViolation[] {
+  const violations = validateBrief(brief, { role: kind, skillsPicked: opts?.skillsPicked, instructionsLength: opts?.instructionsLength, context7Allowed: opts?.context7Allowed });
   if (violations.length) {
     recentBriefViolations.push({ kind, violations });
     if (recentBriefViolations.length > 50) recentBriefViolations.shift();
