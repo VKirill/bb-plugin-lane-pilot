@@ -600,19 +600,22 @@ ${ERRANDS_USAGE}` },
           if (stringAt(thread, "status") !== "idle") throw new Error(`writer is not idle: ${stringAt(thread, "status") ?? "unknown"}`);
           const config = loadPrototypeConfig(db, run.project_id);
           if (!config) throw new Error("prototype configuration is missing");
-          const output = await bb.sdk.threads.output({ threadId:writerThreadId });
           const savedTask = getTask(db, attempt.task_id);
           if (!savedTask) throw new Error(`reconciled task missing: ${attempt.task_id}`);
           const recoveredTask = taskV2Schema.parse(savedTask.contract);
-          const verification = await services.runVerification(config, recoveredTask,attempt.run_id);
-          if (verification.some((item) => item.exitCode !== 0)) {
-            transitionAttempt(db, attempt.id, "validation_failed", { threadId:writerThreadId, reason:"recovered writer verification failed" });
-            throw new Error("reconciled writer verification failed");
+          const checked = await services.validateWriterResult({
+            config, projectId:run.project_id, runId:attempt.run_id, taskId:attempt.task_id,
+            attempt:attempt.attempt_no, task:recoveredTask, writerThreadId, attemptId:attempt.id,
+            dirtBefore:attempt.dirt_before,
+          });
+          if (checked.status !== "accepted") {
+            transitionAttempt(db, attempt.id, checked.status, { threadId:writerThreadId, reason:checked.reason ?? checked.status });
+            throw new Error(`reconciled writer validation failed: ${checked.reason ?? checked.status}`);
           }
           const receipt = await services.persistWriterAcceptance({
             config, task:recoveredTask, runId:attempt.run_id,
             taskId:attempt.task_id, attempt:attempt.attempt_no, attemptId:attempt.id,
-            pmThreadId:run.pm_thread_id, writerThreadId, output:outputText(output), verification,
+            pmThreadId:run.pm_thread_id, writerThreadId, output:checked.output, verification:checked.verification,
           });
           transitionAttempt(db, attempt.id, "accepted", { threadId:writerThreadId });
           return { exitCode:0, stdout:JSON.stringify(receipt, null, 2) };

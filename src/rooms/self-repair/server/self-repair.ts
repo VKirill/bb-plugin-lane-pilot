@@ -5,6 +5,8 @@ import { projectRoleField } from "../../runs/server";
 import { OWNER_WORD_WAIT_MS } from "../../tasks";
 import { taskWordItemPrefix } from "../../lead";
 import { closeSync, fstatSync, openSync, readSync } from "node:fs";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { join } from "node:path";
 import { z } from "zod";
 import packageJson from "../../../../package.json";
@@ -35,6 +37,7 @@ import { fileAllowedByOwns, fileBlockedByNeverTouch, pluginRootFromModule, sha25
 import { codeVerdict, splitRejectedPaths } from "@lane-pilot/run-insights";
 import { DEPENDENCY_REDO_WAIT_MS, HOLDING_ATTEMPT_STATES, latestTaskAttempt } from "../../storage";
 import { getRepairHooks, type NightAssignment } from "./hooks";
+import { postOwnerItem } from "../../owner-waiting";
 
 /**
  * Self-repair: every 15 minutes Lane Pilot looks for failures that are its own fault (triage origin
@@ -462,38 +465,64 @@ export function repairPrompt(
   return brief.text;
 }
 
+type LpProjectBb = { sdk?: { projects?: { list?: (query: unknown) => Promise<unknown>; get?: (input: unknown) => Promise<unknown> }; environments?: { list?: (query: unknown) => Promise<unknown> } } };
+type LpProjectHost = { call?: (method: string, input: Record<string, unknown>, options?: Record<string, unknown>) => Promise<unknown> } | null;
+
+const lpProjectByBb = new WeakMap<object, { projectId: string; environmentId: string } | null>();
+const runGit = promisify(execFile);
+
+/** The git identity of a checkout: its toplevel (a worktree keeps its own) and the origin remote; either may be null. */
+async function repoFacts(path: string): Promise<{ toplevel: string | null; remote: string | null }> {
+  const run = (args: string[]) => runGit("git", args, { timeout: 10_000 }).then((result) => String(result.stdout).trim() || null).catch(() => null);
+  const toplevel = await run(["-C", path, "rev-parse", "--show-toplevel"]);
+  const remote = toplevel ? await run(["-C", toplevel, "remote", "get-url", "origin"]) : null;
+  return { toplevel, remote };
+}
+
+/**
+ * «The Lane Pilot project» on this install: the project whose source is a checkout of the repository this plugin runs
+ * from — matched by git toplevel, then by the origin remote asked on the source's own host (a second checkout or a
+ * worktree still matches, and the plugin's own folder need not be inside the source). `self-repair:config` overrides
+ * it; null when no source matches.
+ */
+export async function resolveLanePilotProject(bb: unknown, host: unknown): Promise<{ projectId: string; environmentId: string } | null> {
+  const cached = lpProjectByBb.get(bb as object);
+  if (cached !== undefined) return cached;
+  const found = await findLanePilotProject(bb as LpProjectBb, host as LpProjectHost).catch(() => null);
+  lpProjectByBb.set(bb as object, found);
+  return found;
+}
+
+async function findLanePilotProject(bb: LpProjectBb, host: LpProjectHost): Promise<{ projectId: string; environmentId: string } | null> {
+  const local = await repoFacts(pluginRootFromModule(import.meta.url));
+  const rows = await Promise.resolve(bb.sdk?.projects?.list?.({ includePersonal: true }) ?? []).catch(() => []) as Array<{ id?: unknown }>;
+  for (const row of rows) {
+    if (typeof row?.id !== "string") continue;
+    const project = await Promise.resolve(bb.sdk?.projects?.get?.({ projectId: row.id }) ?? null).catch(() => null) as { sources?: Array<{ hostId?: unknown; path?: unknown }> } | null;
+    for (const source of project?.sources ?? []) {
+      if (typeof source?.hostId !== "string" || typeof source?.path !== "string") continue;
+      const path = source.path.replace(/[\\/]+$/, "");
+      const sameCheckout = local.toplevel !== null && (local.toplevel === path || local.toplevel.startsWith(`${path}/`) || path.startsWith(`${local.toplevel}/`));
+      const sameRepo = !sameCheckout && local.remote !== null && host?.call != null
+        && await Promise.resolve(host.call("runCommand", { requestedHostId: source.hostId, cwd: source.path, timeoutSec: 15, command: "git remote get-url origin" }, { hostId: source.hostId, timeoutMs: 20_000 }))
+          .then((out) => (stringAt(out, "stdout")?.trim() ?? "") === local.remote).catch(() => false);
+      if (!sameCheckout && !sameRepo) continue;
+      const envs = await Promise.resolve(bb.sdk?.environments?.list?.({ hostId: source.hostId, path: source.path }) ?? []).catch(() => []) as Array<{ id?: unknown }>;
+      return { projectId: row.id, environmentId: typeof envs?.[0]?.id === "string" ? envs[0].id : "" };
+    }
+  }
+  return null;
+}
+
 export function createSelfRepair(ctx: ServerCore, engineOf?: () => WorkflowEngine | undefined) {
   const { bb, db, host } = ctx;
-
-  let selfProjectCache: { projectId: string; environmentId: string } | null | undefined;
-  /** The project whose source holds this plugin's checkout — «the Lane Pilot project» on this install — and the environment of that source. */
-  async function selfProject(): Promise<{ projectId: string; environmentId: string } | null> {
-    if (selfProjectCache !== undefined) return selfProjectCache;
-    selfProjectCache = await (async () => {
-      try {
-      const root = pluginRootFromModule(import.meta.url);
-      const rows = await Promise.resolve((bb.sdk.projects as { list?: (q: unknown) => Promise<unknown> } | undefined)?.list?.({ includePersonal: true }) ?? []).catch(() => []) as Array<{ id?: unknown }>;
-      for (const row of rows) {
-        if (typeof row?.id !== "string") continue;
-        const project = await Promise.resolve(bb.sdk.projects.get({ projectId: row.id })).catch(() => null) as { sources?: Array<{ hostId?: unknown; path?: unknown }> } | null;
-        const source = (project?.sources ?? []).find((item) => typeof item?.path === "string"
-          && (root === item.path || root.startsWith(`${String(item.path).replace(/[\\/]+$/, "")}/`)));
-        if (!source || typeof source.hostId !== "string" || typeof source.path !== "string") continue;
-        const envs = await Promise.resolve((bb.sdk.environments as { list?: (q: unknown) => Promise<unknown> } | undefined)?.list?.({ hostId: source.hostId, path: source.path }) ?? []).catch(() => []) as Array<{ id?: unknown }>;
-        return { projectId: row.id, environmentId: typeof envs?.[0]?.id === "string" ? envs[0].id : "" };
-      }
-      return null;
-      } catch { return null; }
-    })();
-    return selfProjectCache;
-  }
 
   async function config(): Promise<SelfRepairConfig> {
     const raw = await bb.storage.kv.get(CONFIG_KEY).catch(() => null);
     const stored = raw && typeof raw === "object" ? raw as Partial<SelfRepairConfig> : {};
     const merged = { ...SELF_REPAIR_DEFAULTS, ...stored };
     if (!merged.projectId || !merged.environmentId) {
-      const discovered = await selfProject();
+      const discovered = await resolveLanePilotProject(bb, host);
       if (!merged.projectId && discovered?.projectId) merged.projectId = discovered.projectId;
       if (!merged.environmentId && discovered?.environmentId) merged.environmentId = discovered.environmentId;
     }
@@ -1046,7 +1075,13 @@ export function createSelfRepair(ctx: ServerCore, engineOf?: () => WorkflowEngin
     else if (due.length && today.length >= cfg.maxPerDay) reason = `daily limit ${cfg.maxPerDay} reached`;
     else if (due.length && options.dryRun) reason = `would start a repair for ${due[0]![0]}`;
     else if (due.length) target = due[0]!;
-    if (target && !cfg.projectId) { reason = "no Lane Pilot project configured or discovered"; target = null; }
+    if (target && !cfg.projectId) {
+      reason = "no Lane Pilot project configured or discovered";
+      target = null;
+      postOwnerItem(db, { key: "self-repair:no-project", source: "self-repair", kind: "self-repair",
+        what: "Self-repair cannot find the Lane Pilot project",
+        why: "No project source is a checkout of this repository and self-repair:config names no projectId; set it with self_repair_configure." });
+    }
     // A repair is a run of the graph `lp.self-repair` (worktree, repair thread, verdict). Exception: a kind of failure whose class is the workflow
     // engine itself (packages/workflow-engine, src/rooms/workflow/) keeps the direct spawn below, because a broken engine cannot run its own repair.
     const graphEngine = engineOf?.();

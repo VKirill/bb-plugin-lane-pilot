@@ -2,7 +2,7 @@ import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { browserGoal } from "../../src/rooms/host-worker/host-handlers";
+import { browserGoal, jevRunnerCandidates } from "../../src/rooms/host-worker/host-handlers";
 import { errandPrompt, errandVerdict } from "../../src/rooms/qa/server/errands";
 
 describe("errands", () => {
@@ -18,6 +18,14 @@ describe("errands", () => {
 });
 
 describe("browserGoal", () => {
+  it("looks for the launcher in the env var first, then ~/toolkit, then the shared BB-сервис checkout", () => {
+    expect(jevRunnerCandidates({ LANE_PILOT_JEV_RUNNER: "/custom/run" } as NodeJS.ProcessEnv, "/home/me")).toEqual(["/custom/run"]);
+    expect(jevRunnerCandidates({} as NodeJS.ProcessEnv, "/home/me")).toEqual([
+      "/home/me/toolkit/computer-use/bin/run",
+      "/home/me/Documents/BB-сервис/toolkit/computer-use/bin/run",
+    ]);
+  });
+
   const saved = process.env.LANE_PILOT_JEV_RUNNER;
   afterEach(() => { if (saved === undefined) delete process.env.LANE_PILOT_JEV_RUNNER; else process.env.LANE_PILOT_JEV_RUNNER = saved; });
 

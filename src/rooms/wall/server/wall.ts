@@ -7,7 +7,7 @@ import type { ServerCore, Services } from "../../core/server";
 import { createAttempt, getAttempt } from "../../storage";
 import { projectRoleField, reopenWriterStages } from "../../runs/server";
 import { sendServiceMessage } from "../../relay/server";
-import { CONFIG_KEY as SELF_REPAIR_CONFIG_KEY, SELF_REPAIR_DEFAULTS, VERSION, readRepairRecord, readTail, setRepairHooks } from "../../self-repair/server";
+import { CONFIG_KEY as SELF_REPAIR_CONFIG_KEY, SELF_REPAIR_DEFAULTS, VERSION, readRepairRecord, readTail, resolveLanePilotProject, setRepairHooks } from "../../self-repair/server";
 import type { SelfRepairConfig } from "../../self-repair/server";
 import { DRILL_KEY, isSandboxProjectName } from "../../stability/server";
 import type { DrillOutcome } from "../../stability/server";
@@ -34,7 +34,14 @@ export function createPluginWall(ctx: ServerCore, services: Services): WallApi {
 
   const repairConfig = async (): Promise<SelfRepairConfig> => {
     const raw = await bb.storage.kv.get(SELF_REPAIR_CONFIG_KEY).catch(() => null);
-    return { ...SELF_REPAIR_DEFAULTS, ...(raw && typeof raw === "object" ? raw as Partial<SelfRepairConfig> : {}) };
+    const merged = { ...SELF_REPAIR_DEFAULTS, ...(raw && typeof raw === "object" ? raw as Partial<SelfRepairConfig> : {}) };
+    if (!merged.projectId || !merged.environmentId) {
+      const discovered = await resolveLanePilotProject(bb, host);
+      if (!merged.projectId && discovered?.projectId) merged.projectId = discovered.projectId;
+      if (!merged.environmentId && discovered?.environmentId) merged.environmentId = discovered.environmentId;
+    }
+    if (!merged.hubDb) merged.hubDb = db.name;
+    return merged;
   };
   const environmentOf = async () => {
     const cfg = await repairConfig();
@@ -290,7 +297,7 @@ export function createPluginWall(ctx: ServerCore, services: Services): WallApi {
     kv: bb.storage.kv as never,
     ports,
     log: (line) => ctx.log(line),
-    hubDb: SELF_REPAIR_DEFAULTS.hubDb,
+    hubDb: db.name,
     jev: () => jev(),
     settings: () => ctx.effectiveProjectSettings("*").then((r) => r.values),
     diffHiddenAudit: async (limit: number) => {

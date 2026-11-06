@@ -11,10 +11,11 @@ import { postOwnerItem, closeOwnerItem } from "../../src/rooms/owner-waiting";
 import { taskWordItemPrefix } from "../../src/rooms/lead";
 import { taskFamily } from "../../src/rooms/runs";
 import ownerWordCases from "../fixtures/idle-writer-owner-word/cases.json";
+import { execFileSync } from "node:child_process";
 
 type HostCall = { method: string; input: Record<string, unknown> };
 
-function setup(threadStatus: Record<string, string> = {}, outputs: Record<string, string> = {}, hostResults: Record<string, unknown> = {}, ownerTurns: Record<string, number | null> = {}) {
+function setup(threadStatus: Record<string, string> = {}, outputs: Record<string, string> = {}, hostResults: Record<string, unknown> = {}, ownerTurns: Record<string, number | null> = {}, sdkExtra: { projects?: unknown; environmentsList?: unknown } = {}) {
   const spawns: Array<Record<string, unknown>> = [];
   const hostCalls: HostCall[] = [];
   const placed: unknown[] = [];
@@ -22,7 +23,8 @@ function setup(threadStatus: Record<string, string> = {}, outputs: Record<string
   const { bb } = createFakePluginHost({
     pluginId: "lane-pilot",
     sdk: {
-      environments: { get: async ({ environmentId }: { environmentId: string }) => ({ id: environmentId, hostId: "host_mac", path: "/repo/lane-pilot" }) as never },
+      environments: { get: async ({ environmentId }: { environmentId: string }) => ({ id: environmentId, hostId: "host_mac", path: "/repo/lane-pilot" }) as never, list: (sdkExtra.environmentsList ?? (async () => [])) as never },
+      projects: (sdkExtra.projects ?? { list: async () => [] }) as never,
       plugins: { callRpc: async (args: { method: string; input: unknown }) => { placed.push([args.method, args.input]); return { ok: true }; } },
       threads: {
         output: async ({ threadId }: { threadId: string }) => ({ output: outputs[threadId] ?? "" }) as never,
@@ -101,6 +103,18 @@ describe("self-repair", () => {
     expect(String(spawns[0]!.prompt)).toContain("@thread:thr_pm");
     expect(placed).toEqual([["thread_place", { threadId: "thr_repair1", projectId: "proj_ejbam66722", folderId: "9b66deb6-0e31-42d3-840f-19fa9601380c" }]]);
     expect(String(spawns[0]!.prompt)).toContain("host plugin calls are unavailable");
+  });
+
+  it("discovers the Lane Pilot project by the repository's remote when the plugin runs outside every source path", async () => {
+    const remote = execFileSync("git", ["remote", "get-url", "origin"], { encoding: "utf8" }).trim();
+    const env = setup({}, {}, { runCommand: { exitCode: 0, stdout: `${remote}\n` } }, {}, {
+      projects: { list: async () => [{ id: "proj_lp" }], get: async () => ({ id: "proj_lp", sources: [{ hostId: "host_hub", path: "/elsewhere/checkout" }] }) },
+      environmentsList: async () => [{ id: "env_lp" }],
+    });
+    await env.ctx.bb.storage.kv.set("self-repair:config", {} as never);
+    env.attempt("lpattempt_1", "lprun_a", "blocked", "merge_failed: index.lock exists");
+    await createSelfRepair(env.ctx).tick({ since: 0 });
+    expect(env.spawns[0]?.projectId).toBe("proj_lp");
   });
 
   it("a reason listing thousands of files does not overflow the stored state", async () => {
