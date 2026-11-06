@@ -1,0 +1,1063 @@
+{
+ "made": "2026-11-06",
+ "by": "claude-opus-5-5 by hand from title, brief and report tail",
+ "n": 132,
+ "rows": [
+  {
+   "id": "wfrun_defdd4c467534f0d8107e6f84aaa93c3",
+   "title": "Z.ai: разрешить вход ZCode CLI",
+   "status": "failed",
+   "process_key": "one-off|0",
+   "real_outcome": "failed",
+   "form": "none"
+  },
+  {
+   "id": "wfrun_4a110744ec0f4fea8c90775854aff2a7",
+   "title": "Ответ в тикет Yandex Cloud VP814113214",
+   "status": "blocked",
+   "process_key": "yandex-cloud|ticket-reply",
+   "real_outcome": "blocked",
+   "form": "none"
+  },
+  {
+   "id": "wfrun_3a057868e24b4f50a142219e5ba8b348",
+   "title": "Разведка API личного кабинета MagicSEO",
+   "status": "succeeded",
+   "process_key": "magicseo|api-recon",
+   "real_outcome": "done_checked",
+   "form": "none"
+  },
+  {
+   "id": "wfrun_6e7e78c671ff4f0b87e273b1e7f52e66",
+   "title": "Ответ в тикет VP814113214 (computer-use)",
+   "status": "succeeded",
+   "process_key": "yandex-cloud|ticket-reply",
+   "real_outcome": "done_checked",
+   "form": "none"
+  },
+  {
+   "id": "wfrun_d6c5453c38fc4f708ebb91c5c444d48b",
+   "title": "Install MagicSEO plugin v0.1.0 on the BB hub",
+   "status": "succeeded",
+   "process_key": "bb-plugin|ship-and-check",
+   "real_outcome": "done_checked",
+   "form": "graph"
+  },
+  {
+   "id": "wfrun_666d9017b6d547d3b7963c9ea90f9616",
+   "title": "Check the live MagicSEO plugin screens in BB",
+   "status": "succeeded",
+   "process_key": "bb-plugin|ship-and-check",
+   "real_outcome": "done_checked",
+   "form": "graph"
+  },
+  {
+   "id": "wfrun_132e1d4f67e649f8aab8b69681534020",
+   "title": "Owner request: ship the MagicSEO BB plugin release 0.1.1 and prove it works live (the owner asked for a running plugin; ",
+   "status": "succeeded",
+   "process_key": "bb-plugin|ship-and-check",
+   "real_outcome": "done_checked",
+   "form": "graph"
+  },
+  {
+   "id": "wfrun_70f54813f0bc4e46b48e4ade5dd48748",
+   "title": "Разведка API кабинета MagicSEO",
+   "status": "failed",
+   "process_key": "magicseo|api-recon",
+   "real_outcome": "failed",
+   "form": "none"
+  },
+  {
+   "id": "wfrun_32d67dd2f0de428b85136754c226fdfe",
+   "title": "MagicSEO: проверка старта и стопа на Оренбурге (527052)",
+   "status": "succeeded",
+   "process_key": "bb-plugin|ship-and-check",
+   "real_outcome": "done_checked",
+   "form": "graph"
+  },
+  {
+   "id": "wfrun_b507de2d453a48dd9db2ff364fc2405b",
+   "title": "Карта функционала iShot",
+   "status": "succeeded",
+   "process_key": "app|feature-map",
+   "real_outcome": "done_unchecked",
+   "form": "none"
+  },
+  {
+   "id": "wfrun_cdd55361d9a74126a6e332bf47d1f1e9",
+   "title": "iShot Pro с MacBook: разбор приложения",
+   "status": "failed",
+   "process_key": "app|feature-map",
+   "real_outcome": "failed",
+   "form": "none"
+  },
+  {
+   "id": "wfrun_3c6225ed579049618d834a85b894e9d3",
+   "title": "Тест: оружие на арендованной GPU → Blender → Roblox",
+   "status": "failed",
+   "process_key": "gpu-3d|pipeline-test",
+   "real_outcome": "failed",
+   "form": "reference"
+  },
+  {
+   "id": "wfrun_e2e45589410b4edb90dff58523dfa51c",
+   "title": "Тест: оружие на арендованной GPU → Blender → Roblox (Opus)",
+   "status": "succeeded",
+   "process_key": "gpu-3d|pipeline-test",
+   "real_outcome": "done_checked",
+   "form": "reference"
+  },
+  {
+   "id": "wfrun_75dd7127647241579c48e147b238900d",
+   "title": "Тест Idol (картинка → 3D) на арендованной GPU (Opus)",
+   "status": "succeeded",
+   "process_key": "gpu-3d|pipeline-test",
+   "real_outcome": "done_checked",
+   "form": "reference"
+  },
+  {
+   "id": "wfrun_8ccce03bc0ff4fa6bb73c51c401aecd5",
+   "title": "Багет: концепт → сетка → Blender → развёртка (Opus)",
+   "status": "failed",
+   "process_key": "gpu-3d|pipeline-test",
+   "real_outcome": "failed",
+   "form": "reference"
+  },
+  {
+   "id": "wfrun_d9e4b589c7a345659f71fa56977a55d2",
+   "title": "Blender на арендованной GPU через MCP (Opus)",
+   "status": "failed",
+   "process_key": "gpu-3d|pipeline-test",
+   "real_outcome": "failed",
+   "form": "reference"
+  },
+  {
+   "id": "wfrun_e1e058e0b34a4111b129bea90a6189e7",
+   "title": "Blender на арендованной GPU через MCP (Opus)",
+   "status": "succeeded",
+   "process_key": "gpu-3d|pipeline-test",
+   "real_outcome": "done_checked",
+   "form": "reference"
+  },
+  {
+   "id": "wfrun_70492c6850044b96bb76a6bdcc3a9281",
+   "title": "Партия 2-5-10-50 моделей на RTX 5090 (Opus)",
+   "status": "succeeded",
+   "process_key": "gpu-3d|pipeline-test",
+   "real_outcome": "blocked",
+   "form": "reference"
+  },
+  {
+   "id": "wfrun_aeade41b783045b89b6e718abdb2532e",
+   "title": "Счёт для @barebina + отложенное сообщение в TG на 07:00 МСК",
+   "status": "succeeded",
+   "process_key": "invoice|create-and-send",
+   "real_outcome": "done_checked",
+   "form": "existing"
+  },
+  {
+   "id": "wfrun_a3f646cf51744ca99ef4587dd2cb9449",
+   "title": "Web section acceptance: one Muse generation per mode for a test site",
+   "status": "succeeded",
+   "process_key": "image-studio-web|acceptance-run",
+   "real_outcome": "done_checked",
+   "form": "script"
+  },
+  {
+   "id": "wfrun_d556423407224245b941417ba6b276a7",
+   "title": "Research: prompting Muse Image vs GPT Image 2 for website page/block mockups",
+   "status": "succeeded",
+   "process_key": "research|image-prompting",
+   "real_outcome": "done_unchecked",
+   "form": "none"
+  },
+  {
+   "id": "wfrun_833b5c0b14fe46439667169ff09ff64a",
+   "title": "Счёт Дейн на 3 размещения + отложенное сообщение @konstera",
+   "status": "succeeded",
+   "process_key": "invoice|create-and-send",
+   "real_outcome": "done_checked",
+   "form": "existing"
+  },
+  {
+   "id": "wfrun_3ec39e677f1241a28133d3a6c4d668bf",
+   "title": "Поднять RU-прокси selfystudio (Beget)",
+   "status": "succeeded",
+   "process_key": "one-off|22",
+   "real_outcome": "done_checked",
+   "form": "none"
+  },
+  {
+   "id": "wfrun_2d956eacfb7d4070b62a1baf3558ca0d",
+   "title": "Аудит времени проверок (Lane Pilot + verify)",
+   "status": "succeeded",
+   "process_key": "lp|audit",
+   "real_outcome": "done_checked",
+   "form": "none"
+  },
+  {
+   "id": "wfrun_11888dd6b7a045cfbdb3674716674872",
+   "title": "Аудит лишних тестов (только чтение)",
+   "status": "succeeded",
+   "process_key": "lp|audit",
+   "real_outcome": "done_checked",
+   "form": "none"
+  },
+  {
+   "id": "wfrun_20a94e6e3a34481cb84898341f7bd6f1",
+   "title": "Слой vk ядра BB: еженедельная проверка",
+   "status": "succeeded",
+   "process_key": "bb-core|vk-weekly",
+   "real_outcome": "done_checked",
+   "form": "existing"
+  },
+  {
+   "id": "wfrun_89e02b861d324856b0450a6aae5e79b8",
+   "title": "Отправить счёт №179 Маняшкину в рабочий чат",
+   "status": "succeeded",
+   "process_key": "invoice|create-and-send",
+   "real_outcome": "done_checked",
+   "form": "existing"
+  },
+  {
+   "id": "wfrun_5d33ee52d0a04c56b4d0d3ae09e2914b",
+   "title": "Перенос aura-lab.pw на FirstVDS 157.22.197.97",
+   "status": "succeeded",
+   "process_key": "one-off|27",
+   "real_outcome": "done_checked",
+   "form": "none"
+  },
+  {
+   "id": "wfrun_2be183447af546f9995dfeba83905018",
+   "title": "Aura Lab: недельный отчёт 26.10–01.11 (записи + Директ)",
+   "status": "succeeded",
+   "process_key": "aura-lab|weekly-report",
+   "real_outcome": "done_checked",
+   "form": "skill"
+  },
+  {
+   "id": "wfrun_079565055f294fbbb9e8da36b23a5c74",
+   "title": "Apple Developer: соглашение, приложение, ключ API",
+   "status": "succeeded",
+   "process_key": "apple-developer|setup",
+   "real_outcome": "not_done",
+   "form": "none"
+  },
+  {
+   "id": "wfrun_d85ea33cd54140ae9876429edb4c1dd0",
+   "title": "Apple Developer на MacBook: соглашение, приложение, ключ API",
+   "status": "succeeded",
+   "process_key": "apple-developer|setup",
+   "real_outcome": "not_done",
+   "form": "none"
+  },
+  {
+   "id": "wfrun_280c9f3fd4784019aab6937912d1ee43",
+   "title": "Aura Lab: пересчёт недель 05.10–01.11 и октября по свежей выгрузке",
+   "status": "succeeded",
+   "process_key": "aura-lab|weekly-report",
+   "real_outcome": "done_checked",
+   "form": "skill"
+  },
+  {
+   "id": "wfrun_480bcb709c1b47eb81739dc8cdfd2e88",
+   "title": "ProArt: show \"moved to Atmosphere\" note on concert page",
+   "status": "succeeded",
+   "process_key": "one-off|32",
+   "real_outcome": "not_done",
+   "form": "none"
+  },
+  {
+   "id": "wfrun_d81a9160a18c4d338ed93988d69b35d2",
+   "title": "Mea Culpa на iPad: снимки экранов и список проблем вёрстки",
+   "status": "failed",
+   "process_key": "meaculpa|ipad-screenshots",
+   "real_outcome": "failed",
+   "form": "script"
+  },
+  {
+   "id": "wfrun_c1d05cb045f348f4bafdfa483e3feed8",
+   "title": "Mea Culpa на iPad: снимки экранов и список проблем вёрстки (повтор)",
+   "status": "succeeded",
+   "process_key": "meaculpa|ipad-screenshots",
+   "real_outcome": "done_checked",
+   "form": "script"
+  },
+  {
+   "id": "wfrun_94f2750d0a7d4bc1a1394263a6bd126d",
+   "title": "Повторная проверка iPad после исправлений",
+   "status": "succeeded",
+   "process_key": "meaculpa|ipad-screenshots",
+   "real_outcome": "blocked",
+   "form": "script"
+  },
+  {
+   "id": "wfrun_3e4c569d2a6e4aa9ace32e524a037348",
+   "title": "Rich-сообщение Алисе в Telegram: преподаватели вокала и барабанов",
+   "status": "succeeded",
+   "process_key": "telegram|send-message",
+   "real_outcome": "done_checked",
+   "form": "existing"
+  },
+  {
+   "id": "wfrun_750ca540105949dfb35180ed45113bf2",
+   "title": "Найти ссылки на преподавателей и дослать Алисе в Telegram",
+   "status": "succeeded",
+   "process_key": "telegram|send-message",
+   "real_outcome": "done_checked",
+   "form": "existing"
+  },
+  {
+   "id": "wfrun_8a18e5961833405fa9727819ddd07ff4",
+   "title": "Ссылка на Marcos из ChatGPT-переписки → дослать Алисе",
+   "status": "succeeded",
+   "process_key": "telegram|send-message",
+   "real_outcome": "done_checked",
+   "form": "existing"
+  },
+  {
+   "id": "wfrun_4075bacbccd24ef486977ffb29d3bd37",
+   "title": "Рынок приложений «уборка для детей как игра»",
+   "status": "succeeded",
+   "process_key": "research|app-market",
+   "real_outcome": "done_unchecked",
+   "form": "none"
+  },
+  {
+   "id": "wfrun_6328c677a93b4159918a25ca9d4132b6",
+   "title": "iPad: третий круг снимков",
+   "status": "succeeded",
+   "process_key": "meaculpa|ipad-screenshots",
+   "real_outcome": "done_checked",
+   "form": "script"
+  },
+  {
+   "id": "wfrun_104baae3f32240b9bdd08e8bcb708914",
+   "title": "Российские аналоги и разбор механик детских приложений-уборок",
+   "status": "succeeded",
+   "process_key": "research|app-market",
+   "real_outcome": "done_unchecked",
+   "form": "none"
+  },
+  {
+   "id": "wfrun_c6a3760ecc9048de85adaa34aceda946",
+   "title": "Web section 0.10.3: rerun all 13 modes with the new prompts (before/after)",
+   "status": "succeeded",
+   "process_key": "image-studio-web|acceptance-run",
+   "real_outcome": "done_checked",
+   "form": "script"
+  },
+  {
+   "id": "wfrun_87ebba9ac24b41ceaf7d4f7a3408861b",
+   "title": "Установить плагин Muse на хаб BB",
+   "status": "succeeded",
+   "process_key": "bb-plugin|ship-and-check",
+   "real_outcome": "done_checked",
+   "form": "graph"
+  },
+  {
+   "id": "wfrun_32dfc4a8e3b440f0a1dea38074c0a714",
+   "title": "Research 2: full prompts for GPT Image 2/2.5 and Nano Banana to design whole website pages",
+   "status": "succeeded",
+   "process_key": "research|image-prompting",
+   "real_outcome": "blocked",
+   "form": "none"
+  },
+  {
+   "id": "wfrun_007ab6c5ef8f45559af924a8a83ff38a",
+   "title": "GitHub: skills and instructions for making striking website prototypes with image generators",
+   "status": "succeeded",
+   "process_key": "research|image-prompting",
+   "real_outcome": "done_unchecked",
+   "form": "none"
+  },
+  {
+   "id": "wfrun_867374e85fe4469da92e118f0bdca506",
+   "title": "Owner request: «да делай всё что надо» — ship the Muse connector fix (provider advertises model Muse Spark, accepts BB r",
+   "status": "succeeded",
+   "process_key": "bb-plugin|ship-and-check",
+   "real_outcome": "done_checked",
+   "form": "graph"
+  },
+  {
+   "id": "wfrun_c155800f2e5a4afb8acd66672ecb0a2c",
+   "title": "LongCat в opencode на MacBook и Mac mini",
+   "status": "succeeded",
+   "process_key": "opencode|add-provider",
+   "real_outcome": "done_checked",
+   "form": "reference"
+  },
+  {
+   "id": "wfrun_68204c31864f4ad3b149828b65e5ab31",
+   "title": "Owner's request (answered «Да, ограничь» in the BB chat, 2026-11-03): restrict his Muse assistant's devices in HIS Tails",
+   "status": "succeeded",
+   "process_key": "tailscale|acl-restrict",
+   "real_outcome": "done_checked",
+   "form": "none"
+  },
+  {
+   "id": "wfrun_b3d7a585795f4e80b4968cc6dd812f4b",
+   "title": "Owner's request (BB chat, 2026-11-03, answered «Да, ограничь»): Muse devices (tag:muse) may reach ONLY SSH port 2222 on ",
+   "status": "succeeded",
+   "process_key": "tailscale|acl-restrict",
+   "real_outcome": "not_done",
+   "form": "none"
+  },
+  {
+   "id": "wfrun_7b52fc5ae4424403aef3c0ccfe3154e1",
+   "title": "Owner's request (BB chat, 2026-11-03, «Да, ограничь»): fix one Tailscale access rule so Muse devices (tag:muse) can reac",
+   "status": "succeeded",
+   "process_key": "tailscale|acl-restrict",
+   "real_outcome": "blocked",
+   "form": "none"
+  },
+  {
+   "id": "wfrun_1194ae35c3334ec09e057c619e844713",
+   "title": "LongCat в OpenCode v2 на Mac mini и MacBook",
+   "status": "succeeded",
+   "process_key": "opencode|add-provider",
+   "real_outcome": "done_checked",
+   "form": "reference"
+  },
+  {
+   "id": "wfrun_72c69251574a40d79186bb49967f37f3",
+   "title": "Enable the Muse provider on the OVH machine in BB",
+   "status": "succeeded",
+   "process_key": "bb-plugin|ship-and-check",
+   "real_outcome": "done_checked",
+   "form": "graph"
+  },
+  {
+   "id": "wfrun_11e89a42224748f99bffc77401c46ca2",
+   "title": "Owner request (this chat): package the Muse connector as a plugin any BB user can install, and ship it. Release v0.3.0 i",
+   "status": "succeeded",
+   "process_key": "bb-plugin|ship-and-check",
+   "real_outcome": "done_checked",
+   "form": "graph"
+  },
+  {
+   "id": "wfrun_d74575a7157e4159afd96f2d95ab721e",
+   "title": "Owner request (this chat): ship the Muse connector plugin v0.3.0 (tag v0.3.0 on https://github.com/VKirill/muse-ai-conne",
+   "status": "succeeded",
+   "process_key": "bb-plugin|ship-and-check",
+   "real_outcome": "done_checked",
+   "form": "graph"
+  },
+  {
+   "id": "wfrun_371b8a0fdc1e46b1800c02c30e81f868",
+   "title": "Owner request (this chat): ship the Muse connector v0.3.0 to the hub; the owner chose the workaround: tag v0.1.2 on http",
+   "status": "succeeded",
+   "process_key": "bb-plugin|ship-and-check",
+   "real_outcome": "done_checked",
+   "form": "graph"
+  },
+  {
+   "id": "wfrun_cb43443cd7fb4f87beee8791797925e4",
+   "title": "Owner request (this chat): ship the Muse connector fix to the hub. Tag v0.1.3 (same commit 6c61587 as v0.3.1) is on http",
+   "status": "succeeded",
+   "process_key": "bb-plugin|ship-and-check",
+   "real_outcome": "done_checked",
+   "form": "graph"
+  },
+  {
+   "id": "wfrun_1d8573b5f92748d6b329ffaa304a0769",
+   "title": "Owner request (this chat): BB chats on the Muse provider fail to start («/bin/sh: --bb-permission=full: invalid option»)",
+   "status": "succeeded",
+   "process_key": "bb-plugin|ship-and-check",
+   "real_outcome": "done_checked",
+   "form": "graph"
+  },
+  {
+   "id": "wfrun_903ba0f94d5149cca0f01234a2cfcc55",
+   "title": "Owner request (this chat): the Muse account kennethc990@mail.com (id `kennethc990-mail-com`) was copied by the muse plug",
+   "status": "succeeded",
+   "process_key": "muse|accounts",
+   "real_outcome": "done_checked",
+   "form": "reference"
+  },
+  {
+   "id": "wfrun_fe7aaa2ffa5f4d17a6616c40fc0d3e66",
+   "title": "Live check of the new Muse panel in BB (0.3.9)",
+   "status": "succeeded",
+   "process_key": "bb-plugin|ship-and-check",
+   "real_outcome": "not_done",
+   "form": "graph"
+  },
+  {
+   "id": "wfrun_26b2f9742af94c179bc39e715fda2754",
+   "title": "Copy Muse accounts to all machines and read every machine's state (0.3.9)",
+   "status": "succeeded",
+   "process_key": "muse|accounts",
+   "real_outcome": "done_checked",
+   "form": "reference"
+  },
+  {
+   "id": "wfrun_e7eb6caf3eb940bfa372b38c32f8fc7f",
+   "title": "Диагностика выпусков Дзен Завода 2–4 ноября",
+   "status": "succeeded",
+   "process_key": "dzen-factory|operate",
+   "real_outcome": "done_checked",
+   "form": "reference"
+  },
+  {
+   "id": "wfrun_87845883fa4347f794c2d8832d13a864",
+   "title": "Поднять демон браузера Дзен Завода и разблокировать выпуск",
+   "status": "succeeded",
+   "process_key": "dzen-factory|operate",
+   "real_outcome": "done_checked",
+   "form": "reference"
+  },
+  {
+   "id": "wfrun_6353d0ded23b43a189c18d5d3e8f1088",
+   "title": "Выгрузить граф сценария «SelfyStudio: страница фотосессии»",
+   "status": "succeeded",
+   "process_key": "content-factory|shoot-scenario-edit",
+   "real_outcome": "done_unchecked",
+   "form": "reference"
+  },
+  {
+   "id": "wfrun_b4ef7777a8ef4ea597b4809ed39e40ba",
+   "title": "Mac mini: готовность musebridge и где лежит ss-photo",
+   "status": "succeeded",
+   "process_key": "ss-photo|deliver-mac-mini",
+   "real_outcome": "done_checked",
+   "form": "script"
+  },
+  {
+   "id": "wfrun_362bf11fe902438cb9434bd4f4582c0b",
+   "title": "Сценарий фотосессии: кадры 3:4, фотосет 10–12",
+   "status": "succeeded",
+   "process_key": "content-factory|shoot-scenario-edit",
+   "real_outcome": "done_checked",
+   "form": "reference"
+  },
+  {
+   "id": "wfrun_2f50b4abf8d44dfdb1a29e02859f2cc6",
+   "title": "Доставить новый ss-photo (Muse CLI) на Mac mini",
+   "status": "succeeded",
+   "process_key": "ss-photo|deliver-mac-mini",
+   "real_outcome": "done_checked",
+   "form": "script"
+  },
+  {
+   "id": "wfrun_b85c7e8d83c6478f94fa095057440d8c",
+   "title": "Пробная страница фотосессии на Muse CLI",
+   "status": "succeeded",
+   "process_key": "content-factory|shoot-page-run",
+   "real_outcome": "done_checked",
+   "form": "reference"
+  },
+  {
+   "id": "wfrun_d7288f07ffba4e9ab3ba9d6de600445a",
+   "title": "Сценарий фотосессии: запросы «<тема> фотосессия мужчина/женщина», 2 референса на кадр",
+   "status": "succeeded",
+   "process_key": "content-factory|shoot-scenario-edit",
+   "real_outcome": "done_checked",
+   "form": "reference"
+  },
+  {
+   "id": "wfrun_a9dccafa895a43d4982c21eccb7bd9cf",
+   "title": "Пробная страница: поправить путь в ref-queries и перезапустить",
+   "status": "succeeded",
+   "process_key": "content-factory|shoot-scenario-edit",
+   "real_outcome": "blocked",
+   "form": "reference"
+  },
+  {
+   "id": "wfrun_00d78900d7764e39b1cdbfc8a136cd97",
+   "title": "Пробная страница: путь в ref-queries и перезапуск (повтор)",
+   "status": "succeeded",
+   "process_key": "content-factory|shoot-scenario-edit",
+   "real_outcome": "blocked",
+   "form": "reference"
+  },
+  {
+   "id": "wfrun_b3ffaa72a49841738d256864d12c2854",
+   "title": "Проверка Дзен Завода 0.1.98 и оценка каталога GitHub",
+   "status": "succeeded",
+   "process_key": "dzen-factory|operate",
+   "real_outcome": "done_checked",
+   "form": "reference"
+  },
+  {
+   "id": "wfrun_243240831a134fb9808ef162a126de52",
+   "title": "Mac mini: ss-photo с разбором сцены через Muse",
+   "status": "succeeded",
+   "process_key": "ss-photo|deliver-mac-mini",
+   "real_outcome": "done_checked",
+   "form": "script"
+  },
+  {
+   "id": "wfrun_8842581994464485b059b7044c4c6f9a",
+   "title": "Перегенерировать и опубликовать страницу юриста (адвоката)",
+   "status": "failed",
+   "process_key": "content-factory|shoot-page-run",
+   "real_outcome": "failed",
+   "form": "reference"
+  },
+  {
+   "id": "wfrun_5a2edb89e6b34938af126d2ca29ae17e",
+   "title": "Выгрузить фото профиля «Кирилл» из Image Studio для обложек",
+   "status": "succeeded",
+   "process_key": "one-off|74",
+   "real_outcome": "done_checked",
+   "form": "none"
+  },
+  {
+   "id": "wfrun_b2b3c07352e540aa9ef29122d3e88ef2",
+   "title": "Страница юриста: образы из Pinterest, перегенерация и публикация",
+   "status": "succeeded",
+   "process_key": "content-factory|shoot-page-run",
+   "real_outcome": "blocked",
+   "form": "reference"
+  },
+  {
+   "id": "wfrun_7df65740523c4323b8db7965079c88eb",
+   "title": "ИИ-инструменты для фото: черновики в конструкторе site-tools",
+   "status": "succeeded",
+   "process_key": "one-off|76",
+   "real_outcome": "done_checked",
+   "form": "none"
+  },
+  {
+   "id": "wfrun_9cf3065ec7ae4c4ca14277ecad4a1ec2",
+   "title": "Проверка Дзен Завода 0.1.100: Muse на всех этапах",
+   "status": "succeeded",
+   "process_key": "dzen-factory|operate",
+   "real_outcome": "done_checked",
+   "form": "reference"
+  },
+  {
+   "id": "wfrun_12c65dea3cc340e587f15faedf547553",
+   "title": "Сценарий фотосессии: 2 референса, разные образы, без шага items",
+   "status": "succeeded",
+   "process_key": "content-factory|shoot-scenario-edit",
+   "real_outcome": "done_checked",
+   "form": "reference"
+  },
+  {
+   "id": "wfrun_5ed8e493715548ceba59729ee3c8f7da",
+   "title": "Lawyer page: wrong reference in «repeat» pairs",
+   "status": "succeeded",
+   "process_key": "content-factory|shoot-page-run",
+   "real_outcome": "done_checked",
+   "form": "reference"
+  },
+  {
+   "id": "wfrun_e3dfb033ea7d42658bde7b69e49c94d4",
+   "title": "Lawyer page: fix «repeat» pairs 1, 3, 4",
+   "status": "succeeded",
+   "process_key": "content-factory|shoot-page-run",
+   "real_outcome": "done_checked",
+   "form": "reference"
+  },
+  {
+   "id": "wfrun_d71161f7b2c846eeab7b3596b3397a9b",
+   "title": "Lawyer page: new frame for «repeat» pair 4",
+   "status": "succeeded",
+   "process_key": "content-factory|shoot-page-run",
+   "real_outcome": "done_checked",
+   "form": "reference"
+  },
+  {
+   "id": "wfrun_602b217265b241168946a024cf499b81",
+   "title": "Снять полный текст аудита atmosphere-show.ru",
+   "status": "succeeded",
+   "process_key": "browser|extract-page-text",
+   "real_outcome": "not_done",
+   "form": "none"
+  },
+  {
+   "id": "wfrun_78fbd0d3b6e14b46a5ea8ca5bed79a87",
+   "title": "Снять текст аудита atmosphere-show.ru (computer use)",
+   "status": "succeeded",
+   "process_key": "browser|extract-page-text",
+   "real_outcome": "done_checked",
+   "form": "none"
+  },
+  {
+   "id": "wfrun_7682843c1cdc46e0915d42afaedc3b08",
+   "title": "Отправить @lyorqa задачи программисту по аудиту",
+   "status": "succeeded",
+   "process_key": "telegram|send-message",
+   "real_outcome": "done_checked",
+   "form": "existing"
+  },
+  {
+   "id": "wfrun_e216be7d320a4da0960cad8474d80b6a",
+   "title": "Заменить файл в сообщении @lyorqa на новую версию",
+   "status": "succeeded",
+   "process_key": "telegram|send-message",
+   "real_outcome": "done_checked",
+   "form": "existing"
+  },
+  {
+   "id": "wfrun_74a9367b62974d359c917d6fb5980e13",
+   "title": "Mac mini: new ss-photo + fresh shoot page run",
+   "status": "failed",
+   "process_key": "ss-photo|deliver-mac-mini",
+   "real_outcome": "failed",
+   "form": "script"
+  },
+  {
+   "id": "wfrun_ce0f5a36a4204db48d18000ae2adb809",
+   "title": "Shoot scenario: speed — timings and parallelism",
+   "status": "failed",
+   "process_key": "content-factory|shoot-scenario-edit",
+   "real_outcome": "failed",
+   "form": "reference"
+  },
+  {
+   "id": "wfrun_006a70a173ea4791bba5a2ba3288366c",
+   "title": "Shoot scenario v2: one Pinterest pool per gender",
+   "status": "succeeded",
+   "process_key": "content-factory|shoot-scenario-edit",
+   "real_outcome": "blocked",
+   "form": "reference"
+  },
+  {
+   "id": "wfrun_006fa9772a3a46249e750240d33272e5",
+   "title": "Mac mini: ss-photo with per-frame timings",
+   "status": "succeeded",
+   "process_key": "ss-photo|deliver-mac-mini",
+   "real_outcome": "done_checked",
+   "form": "script"
+  },
+  {
+   "id": "wfrun_16b3ed62475b442cb0ad4da74524476e",
+   "title": "Finish LinkedIn run cfr_4ce776c93e31",
+   "status": "failed",
+   "process_key": "content-factory|shoot-page-run",
+   "real_outcome": "failed",
+   "form": "reference"
+  },
+  {
+   "id": "wfrun_4d28c6d1d07d4af9b9ec82484c77fa72",
+   "title": "Scenario v2: finish run, loosen pool assignment",
+   "status": "failed",
+   "process_key": "content-factory|shoot-scenario-edit",
+   "real_outcome": "failed",
+   "form": "reference"
+  },
+  {
+   "id": "wfrun_be5c033cf5254926ad4dfc3407633bde",
+   "title": "Lawyer page: regenerate with scenario v2",
+   "status": "failed",
+   "process_key": "content-factory|shoot-page-run",
+   "real_outcome": "failed",
+   "form": "reference"
+  },
+  {
+   "id": "wfrun_d298243524bd408a8d81030e1b463c10",
+   "title": "Lawyer page: regenerate with scenario v2 (native)",
+   "status": "succeeded",
+   "process_key": "content-factory|shoot-page-run",
+   "real_outcome": "blocked",
+   "form": "reference"
+  },
+  {
+   "id": "wfrun_d73be890ab9c4d19b64547cc889e10c4",
+   "title": "Lawyer page: finish run cfr_e2f5138cec63 and publish",
+   "status": "succeeded",
+   "process_key": "content-factory|shoot-page-run",
+   "real_outcome": "done_checked",
+   "form": "reference"
+  },
+  {
+   "id": "wfrun_6163fb45ce8649789c05282e4c512998",
+   "title": "Lawyer page: fix team looks, finish run, merge scenario",
+   "status": "succeeded",
+   "process_key": "content-factory|shoot-page-run",
+   "real_outcome": "blocked",
+   "form": "reference"
+  },
+  {
+   "id": "wfrun_a893c20d96374cafb8f5a366c9db7651",
+   "title": "Muse: add new accounts, review account pooling",
+   "status": "succeeded",
+   "process_key": "muse|accounts",
+   "real_outcome": "blocked",
+   "form": "reference"
+  },
+  {
+   "id": "wfrun_00f449cb7cc640d18473632ea9b470e0",
+   "title": "Mac mini: ss-photo with scene cache",
+   "status": "succeeded",
+   "process_key": "ss-photo|deliver-mac-mini",
+   "real_outcome": "blocked",
+   "form": "script"
+  },
+  {
+   "id": "wfrun_0677558cbe9c4dd7adebc0bb1515f3be",
+   "title": "Muse: maxParallel 20 on main and kennethc990",
+   "status": "succeeded",
+   "process_key": "muse|accounts",
+   "real_outcome": "done_checked",
+   "form": "reference"
+  },
+  {
+   "id": "wfrun_1fb44f3b0cf84d969a7e71790ba58049",
+   "title": "Lawyer page: deliver ss-photo, finish run, publish, merge scenario",
+   "status": "failed",
+   "process_key": "content-factory|shoot-page-run",
+   "real_outcome": "failed",
+   "form": "reference"
+  },
+  {
+   "id": "wfrun_2638dca6d4a54602aa47aaf0b298b733",
+   "title": "Lawyer page: check state, deliver ss-photo, start retry",
+   "status": "succeeded",
+   "process_key": "ss-photo|deliver-mac-mini",
+   "real_outcome": "done_checked",
+   "form": "script"
+  },
+  {
+   "id": "wfrun_7d448bc8a26e4606a9a8d90c95e023f1",
+   "title": "Shoot scenario: 12 frames, one scenario, no elderly on profession pages; regenerate lawyer page",
+   "status": "failed",
+   "process_key": "content-factory|shoot-scenario-edit",
+   "real_outcome": "failed",
+   "form": "reference"
+  },
+  {
+   "id": "wfrun_ce7761426ed646f4bba06f7097427db8",
+   "title": "Dzen 0.1.102: restart today's failed articles and watch one live",
+   "status": "succeeded",
+   "process_key": "dzen-factory|operate",
+   "real_outcome": "done_checked",
+   "form": "reference"
+  },
+  {
+   "id": "wfrun_f0af43e76a7641bab29c8f4b19e905e6",
+   "title": "Fill the Content Factory passport for selfystudio.art from project docs",
+   "status": "succeeded",
+   "process_key": "content-factory|site-passport",
+   "real_outcome": "blocked",
+   "form": "none"
+  },
+  {
+   "id": "wfrun_439db0a79f1243449e0a311ae68f1bf2",
+   "title": "Dzen: approve and publish production_3fa540fa tonight",
+   "status": "succeeded",
+   "process_key": "dzen-factory|operate",
+   "real_outcome": "done_checked",
+   "form": "reference"
+  },
+  {
+   "id": "wfrun_89466356a4d64090948608efbf2b811b",
+   "title": "Dzen: publish the ready draft «Клики есть, заявок нет» (check for duplicate first)",
+   "status": "succeeded",
+   "process_key": "dzen-factory|operate",
+   "real_outcome": "done_checked",
+   "form": "reference"
+  },
+  {
+   "id": "wfrun_1814fce10f434712b335f2210d7f7e35",
+   "title": "Redirect URI для Direct Queries в Яндекс OAuth",
+   "status": "succeeded",
+   "process_key": "yandex-oauth|redirect-uri",
+   "real_outcome": "done_checked",
+   "form": "none"
+  },
+  {
+   "id": "wfrun_ae780771c43c4ed9b67e5b8c671ef338",
+   "title": "Redirect URI и ключи «ohmy-seo Директ» для Direct Queries",
+   "status": "succeeded",
+   "process_key": "yandex-oauth|redirect-uri",
+   "real_outcome": "done_checked",
+   "form": "none"
+  },
+  {
+   "id": "wfrun_242b96044e384733a4032719eb7a6e1c",
+   "title": "Dzen 0.1.104: set the 8-slot daily calendar",
+   "status": "succeeded",
+   "process_key": "dzen-factory|operate",
+   "real_outcome": "done_checked",
+   "form": "reference"
+  },
+  {
+   "id": "wfrun_0a8ee5c54c874735a1cc0558ca0cf544",
+   "title": "Install style-skills into BB user skills on the hub",
+   "status": "succeeded",
+   "process_key": "bb-skills|publish-and-check",
+   "real_outcome": "done_checked",
+   "form": "skill"
+  },
+  {
+   "id": "wfrun_571ab68b12cc45efa81b10d91e1cd4e1",
+   "title": "Fix machine-independent script paths in style-skills",
+   "status": "succeeded",
+   "process_key": "bb-skills|publish-and-check",
+   "real_outcome": "done_checked",
+   "form": "skill"
+  },
+  {
+   "id": "wfrun_ea25c40d576d449d940bd77417cefc42",
+   "title": "Check Agent Tools category and cards for style-skills",
+   "status": "succeeded",
+   "process_key": "bb-skills|publish-and-check",
+   "real_outcome": "done_unchecked",
+   "form": "skill"
+  },
+  {
+   "id": "wfrun_83644ad67a134cc9ae228b7f410c98de",
+   "title": "Make Agent Tools suggest style-skills",
+   "status": "succeeded",
+   "process_key": "bb-skills|publish-and-check",
+   "real_outcome": "done_checked",
+   "form": "skill"
+  },
+  {
+   "id": "wfrun_6ade357200004de58f08f34398298f92",
+   "title": "Снять профиль стиля с @pomogay_marketing",
+   "status": "failed",
+   "process_key": "style|model-bench",
+   "real_outcome": "failed",
+   "form": "none"
+  },
+  {
+   "id": "wfrun_0b13584f27aa4c63b777b761f6e799e1",
+   "title": "Корпус и отложенные посты @pomogay_marketing для теста моделей",
+   "status": "succeeded",
+   "process_key": "style|model-bench",
+   "real_outcome": "done_unchecked",
+   "form": "none"
+  },
+  {
+   "id": "wfrun_a4f2272b77664e71a32306ebb62a4d77",
+   "title": "Тест стиля: Opus 5.5",
+   "status": "succeeded",
+   "process_key": "style|model-bench",
+   "real_outcome": "done_unchecked",
+   "form": "none"
+  },
+  {
+   "id": "wfrun_feab047acfd9400ba4181da2691780f6",
+   "title": "Тест стиля: GPT-6 Astra",
+   "status": "succeeded",
+   "process_key": "style|model-bench",
+   "real_outcome": "done_checked",
+   "form": "none"
+  },
+  {
+   "id": "wfrun_23deec7fb89e4281b5cd6152c676cff4",
+   "title": "Тест стиля: слепые пары и общая линейка",
+   "status": "succeeded",
+   "process_key": "style|model-bench",
+   "real_outcome": "done_unchecked",
+   "form": "none"
+  },
+  {
+   "id": "wfrun_32ba411b367e478c88771ea55119a82f",
+   "title": "Тест стиля: слепой судья Gemini",
+   "status": "succeeded",
+   "process_key": "style|model-bench",
+   "real_outcome": "done_unchecked",
+   "form": "none"
+  },
+  {
+   "id": "wfrun_b655087678fd431897c8ca874a869af2",
+   "title": "Слепой лист A/B владельцу в @aivech_bot",
+   "status": "succeeded",
+   "process_key": "telegram|send-message",
+   "real_outcome": "done_checked",
+   "form": "existing"
+  },
+  {
+   "id": "wfrun_70b299e305a24aa285488e8de294fd11",
+   "title": "Тест стиля: прочитать ключ A/B",
+   "status": "succeeded",
+   "process_key": "style|model-bench",
+   "real_outcome": "done_unchecked",
+   "form": "none"
+  },
+  {
+   "id": "wfrun_a2e9cf761d0244778ad570141de45fbe",
+   "title": "Dzen 0.1.103: did the 08:00 slot publish by itself?",
+   "status": "succeeded",
+   "process_key": "dzen-factory|operate",
+   "real_outcome": "done_checked",
+   "form": "reference"
+  },
+  {
+   "id": "wfrun_9c67b45f233c4c18869f096464f65492",
+   "title": "Тест стиля: скопировать посты в чат PM",
+   "status": "succeeded",
+   "process_key": "style|model-bench",
+   "real_outcome": "done_checked",
+   "form": "none"
+  },
+  {
+   "id": "wfrun_0a6f307cbd4343d7bb0542ccb92b2e6c",
+   "title": "Подключить Вебмастер и GSC к паспорту сайта и запустить TGA",
+   "status": "succeeded",
+   "process_key": "content-factory|site-passport",
+   "real_outcome": "done_checked",
+   "form": "none"
+  },
+  {
+   "id": "wfrun_1e61d11d600846cb852ad8365a079918",
+   "title": "Muse plugin: install test on a clean BB",
+   "status": "succeeded",
+   "process_key": "bb-plugin|ship-and-check",
+   "real_outcome": "done_checked",
+   "form": "graph"
+  },
+  {
+   "id": "wfrun_42eccfda32714e8a949fbd84cd2accf2",
+   "title": "Purelymail: domain my-album.art + support@ mailbox",
+   "status": "succeeded",
+   "process_key": "one-off|125",
+   "real_outcome": "done_checked",
+   "form": "none"
+  },
+  {
+   "id": "wfrun_bb94e133d4c84c489c39a77dda98f0f4",
+   "title": "Live check of the newly installed BB plugin MyPosts (id my-posts, v0.1.1 from https://github.com/VKirill/bb-plugin-my-po",
+   "status": "succeeded",
+   "process_key": "bb-plugin|ship-and-check",
+   "real_outcome": "done_checked",
+   "form": "graph"
+  },
+  {
+   "id": "wfrun_66094598c5f5479d934ce9c0848bd822",
+   "title": "Live re-check of BB plugin MyPosts v0.1.2 (just updated on the hub) in the owner's signed-in Chrome at https://bb.vechka",
+   "status": "succeeded",
+   "process_key": "bb-plugin|ship-and-check",
+   "real_outcome": "done_checked",
+   "form": "graph"
+  },
+  {
+   "id": "wfrun_d72d9f6c67454da285f6661d1f722904",
+   "title": "MyPosts v0.1.3 live check + panel freeze diagnosis",
+   "status": "succeeded",
+   "process_key": "bb-plugin|ship-and-check",
+   "real_outcome": "done_checked",
+   "form": "graph"
+  },
+  {
+   "id": "wfrun_22f5a3f4aaab4c96b6cd5f9ed27741dc",
+   "title": "MyPosts v0.1.4 live check + voice test on «Вечкасов К.А.»",
+   "status": "succeeded",
+   "process_key": "bb-plugin|ship-and-check",
+   "real_outcome": "done_checked",
+   "form": "graph"
+  },
+  {
+   "id": "wfrun_8b85f2705f504d8bb54fa8c591b50c82",
+   "title": "MyPosts v0.1.5 voice test #2 on «Вечкасов К.А.»",
+   "status": "succeeded",
+   "process_key": "bb-plugin|ship-and-check",
+   "real_outcome": "done_checked",
+   "form": "graph"
+  },
+  {
+   "id": "wfrun_4b52acd9df5c4bd2b0c9012efa4ad641",
+   "title": "Включить «Только на хабе» в Agent Tools и проверить первый прогон",
+   "status": "succeeded",
+   "process_key": "bb-skills|publish-and-check",
+   "real_outcome": "done_checked",
+   "form": "skill"
+  }
+ ]
+}
