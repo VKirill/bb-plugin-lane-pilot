@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.483
+
+- **Claude Code helpers start without the orchestration built-ins.** Background helpers launch with `--disallowedTools Workflow,ScheduleWakeup,AskUserQuestion,Agent` (~40 KB of tool definitions per first request); a `--disallowedTools` from BB core adds to it. PM chats keep them.
+
 ## 0.1.482
 
 - **Claude Code helpers keep the core's settings layer.** Claude Code keeps only the last `--settings`; the Lane Pilot launchers appended the guard file after BB core's flag layer, so every claude-code helper and PM lost native-plugins-off, CLAUDE.md excludes, denied MCP servers and skill overrides (a writer still ran the owner's ADHD and ponytail hooks, ~25 KB). The exec line now merges every `--settings` with the guard file (guard last, hook lists concatenate) and passes one.
