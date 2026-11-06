@@ -2,6 +2,7 @@ import { resolve } from "node:path";
 import { taskV2Schema } from "../../contracts";
 import { jev } from "@lane-pilot/jev";
 import { memoryRerankJudgment } from "@lane-pilot/jev/judgments/memory-rerank";
+import { rerankRecords } from "./rerank";
 import { demoteUnusedPromotions, enrichMemoryContext, episodeCandidates } from "../../memory-tiers/server";
 import { appendAcceptedFact, claimStageSpawn, getRun, getRunSettingsScopes, getTask, listAcceptedFacts, listOpenAttempts, listPendingAcceptedFacts, listStageReceipts, markAcceptedFactsSummarized, searchMemoryRecords } from "../../storage";
 import { shouldTriggerProjectLife } from "../../project-life";
@@ -12,7 +13,7 @@ import { bbServiceTier, listedServiceTier, writerExecutionSelection } from "@lan
 import { sha256 } from "../../tasks";
 import { memoryMaintenancePrompt, memoryRecordId, parseMemoryCandidates, parseMemorySettings } from "../memory";
 import { NOTHING_RELEVANT } from "@lane-pilot/memory-core";
-import { pmMemoryContext, snapshotFileRead } from "./memory-mix";
+import { pmMemoryContext, pmShortlist, snapshotFileRead } from "./memory-mix";
 import { boundedAgentName } from "../../critique";
 import { MemoryChildSnapshot, childResultObject, memoryChildSnapshot, spawnRefused } from "../../runs/server";
 import { compactAcceptedResult } from "../../tasks/server";
@@ -305,7 +306,9 @@ export function createMemoryStage(ctx: ServerCore, services: Services) {
     if(!memorySettings.enabled) return {runId:args.runId,state:"skipped",reason:"memory_disabled"};
     const demoted = demoteUnusedPromotions(db);
     const chain=getRunSettingsScopes(db,args.runId);
-    const selected=pmMemoryContext(db,args.projectId,memorySettings,args.query,chain);
+    // M4: Jev keeps only what helps with the question (active); shadow/off leaves the word order as it was.
+    const kept=new Set((await rerankRecords(pmShortlist(db,args.projectId,memorySettings,args.query,chain),args.query,{projectId:args.projectId,runId:args.runId,settings:settings as Record<string,unknown>})).map((record)=>record.id));
+    const selected=pmMemoryContext(db,args.projectId,memorySettings,args.query,chain,"pm",undefined,(records)=>records.filter((record)=>kept.has(record.id)));
     // The cold tier, past tasks like this one and the misses (src/rooms/memory-tiers): never fails the query. Candidates stay expired.
     let tiers:{text:string;promoted:string[];episodes:number;miss:boolean;addedTokens:number}={text:"",promoted:[],episodes:0,miss:false,addedTokens:0};
     // B6: Jev re-ranks the lexical episode shortlist (shadow first; active delivers only the ones it keeps).

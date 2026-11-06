@@ -6,7 +6,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import { storeMemoryRecords, type MemorySettings } from "../packages/memory-core/src";
 import { openDatabase } from "../src/rooms/storage/database";
-import { evalMemoryImport, maskImportContent, pmTopIds, runMemoryImport, type ImportReport } from "../src/rooms/memory/server/import";
+import { evalMemoryImport, formatImportSummary, maskImportContent, pmTopIds, runMemoryImport, type ImportReport } from "../src/rooms/memory/server/import";
 
 const PROJECT = "proj_import_test";
 const settings: MemorySettings = { enabled: true, maintain: true, inject: true, audience: "subagent", personalBot: "",
@@ -98,6 +98,26 @@ describe("memory import: one door, one outcome per line", () => {
     const fresh = importJsonl(database, line({ source_id: "new", content: "Deploys go through port 3100 on the staging host every night.", created_at: new Date().toISOString() }));
     expect(fresh.outcomes[0]!.outcome).toBe("added");
     expect(fresh.outcomes[0]!.superseded).toHaveLength(1);
+  });
+
+  it("never evicts: a run that would push stored notes out of the shelf writes nothing and names the budget it needs", () => {
+    const database = db();
+    const small = { ...settings, noteBudget: 30 };
+    expect(importJsonl(database, `${line()}\n`, { settings: small }).counts.added).toBe(1);
+    const before = memoryCount(database);
+    const other = line({ source_id: "s2", content: "The nightly invoice export writes CSV files into the reports bucket of the finance account.", concepts: ["invoice"] });
+    const report = importJsonl(database, `${other}\n`, { settings: small });
+    expect(report.refused).toMatchObject({ reason: "would_evict", evicted: 1, noteBudget: 30 });
+    expect(report.refused!.noteTokensNeeded).toBeGreaterThan(30);
+    expect(report.dryRun).toBe(true);
+    expect(memoryCount(database)).toBe(before);
+    expect((database.prepare("SELECT count(*) n FROM lane_pilot_memory WHERE status='active'").get() as { n: number }).n).toBe(1);
+    expect(formatImportSummary(report)).toContain("memory.note_budget");
+    // With the budget it names, the same run goes through and keeps the old note.
+    const ok = importJsonl(database, `${other}\n`, { settings: { ...small, noteBudget: report.refused!.noteTokensNeeded } });
+    expect(ok.refused).toBeUndefined();
+    expect(ok.counts.added).toBe(1);
+    expect((database.prepare("SELECT count(*) n FROM lane_pilot_memory WHERE status='active'").get() as { n: number }).n).toBe(2);
   });
 
   it("reports invalid lines and computes real outcomes on dry-run without writing", () => {

@@ -93,10 +93,17 @@ export function taskMemoryContext(db: LanePilotDatabase, projectId: string, runI
   }
 }
 
-/** What the PM tool `lane_pilot_memory {action:"context"}` returns for a query: the project's records ranked for it, within the context budget. Also what the memory probe reads. */
-export function pmMemoryContext(db: LanePilotDatabase, projectId: string, memory: MemorySettings, query: string, chain?: readonly string[], role = "pm", floor: RelevanceFloor | null = memory.queryFloor === false ? null : DEFAULT_RELEVANCE_FLOOR) {
+/** The PM path's ranked records after the relevance floor, before packing: what the M4 rerank judges. */
+export function pmShortlist(db: LanePilotDatabase, projectId: string, memory: MemorySettings, query: string, chain?: readonly string[], floor: RelevanceFloor | null = memory.queryFloor === false ? null : DEFAULT_RELEVANCE_FLOOR): MemoryRecord[] {
   const records = searchMemoryRecords(db, projectId, query, 100, memory.searchEngine, memory.audience, memory.personalBot, { chain: chain ?? [] });
+  return relevantRecords(db, projectId, query, records, { audience: memory.audience, personalBot: memory.personalBot, floor });
+}
+
+/** What the PM tool `lane_pilot_memory {action:"context"}` returns for a query: the project's records ranked for it, within the context budget. Also what the memory probe reads. */
+export function pmMemoryContext(db: LanePilotDatabase, projectId: string, memory: MemorySettings, query: string, chain?: readonly string[], role = "pm", floor: RelevanceFloor | null = memory.queryFloor === false ? null : DEFAULT_RELEVANCE_FLOOR, keep?: (records: MemoryRecord[]) => MemoryRecord[]) {
   // The relevance floor (a query path only): a question the notes cannot answer gets an explicit «nothing». `floor: null` is the old behaviour.
-  const packed = memoryContext(relevantRecords(db, projectId, query, records, { audience: memory.audience, personalBot: memory.personalBot, floor }), query, roleContextBudget(role,memory.contextBudget));
+  // `keep` is the M4 rerank's verdict (pmShortlist + rerankRecords): only what it kept is packed.
+  const floored = pmShortlist(db, projectId, memory, query, chain, floor);
+  const packed = memoryContext(keep ? keep(floored) : floored, query, roleContextBudget(role,memory.contextBudget));
   return { ...packed, nothingRelevant: packed.records.length === 0 };
 }
