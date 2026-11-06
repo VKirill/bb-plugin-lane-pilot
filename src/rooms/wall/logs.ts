@@ -24,7 +24,7 @@ export function wallLogLines(text: string, since: number, until: number): LogLin
     if (typeof row.ts !== "number" || row.ts < since || row.ts >= until || typeof row.message !== "string") continue;
     const level = typeof row.level === "string" ? row.level : "";
     if (level !== "warn" && level !== "error") continue;
-    if (NOT_OURS.test(row.message) || (level === "warn" && !FAILURE_WORDS.test(row.message))) continue;
+    if (NOT_OURS.test(row.message) || (level === "warn" && !FAILURE_WORDS.test(row.message.replace(/^episodes: \d+ enriched, \d+ skipped, 0 failed, 0 held of \d+ picked\b/i, "")))) continue;
     out.push({ message: row.message, at: row.ts, projectId: /\bproj_[a-z0-9]+/i.exec(row.message)?.[0] ?? "-", level });
   }
   return out;
