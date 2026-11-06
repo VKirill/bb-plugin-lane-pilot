@@ -71,3 +71,16 @@ export function parseWallConfig(raw: unknown): WallConfig {
     recurrenceFloor: Math.max(1, count(row.recurrenceFloor, WALL_DEFAULTS.recurrenceFloor, 50)),
   };
 }
+
+/**
+ * The hunters' model: a wall config the owner changed (`bb lane-pilot wall config hunterModel=…`) wins, else the `wall-hunter` row of
+ * the role table (the «Команда» page), whose default is the model the wall always ran on.
+ */
+// ponytail: «changed» means different from WALL_DEFAULTS; a stored value equal to the default reads as unset, which runs the same model until the role row is changed.
+export function pickHunter(wcfg: WallConfig, role: () => { providerId: string; model: string; reasoningEffort: string }): { providerId: string; model: string; reasoningLevel: string } {
+  if (wcfg.hunterProviderId !== WALL_DEFAULTS.hunterProviderId || wcfg.hunterModel !== WALL_DEFAULTS.hunterModel || wcfg.hunterReasoningLevel !== WALL_DEFAULTS.hunterReasoningLevel) {
+    return { providerId: wcfg.hunterProviderId, model: wcfg.hunterModel, reasoningLevel: wcfg.hunterReasoningLevel };
+  }
+  const row = role();
+  return { providerId: row.providerId, model: row.model, reasoningLevel: row.reasoningEffort };
+}

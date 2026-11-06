@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import { writerExecutionSelection } from "@lane-pilot/models";
-import { fullAccessSpawn, scheduleIsolated, stringAt } from "../../core/server";
+import { fullAccessSpawn, modelCatalogOf, resolveSpawnModel, scheduleIsolated, stringAt } from "../../core/server";
+import { pickHunter, type WallConfig } from "../config";
 import { conveyorState } from "../../conveyor";
 import type { ServerCore, Services } from "../../core/server";
 import { createAttempt, getAttempt } from "../../storage";
@@ -43,6 +44,12 @@ export function createPluginWall(ctx: ServerCore, services: Services): WallApi {
     return { cfg, hostId, basePath };
   };
 
+  /** The hunters' model: the wall config the owner changed, else the `wall-hunter` row of the role table (pickHunter). */
+  const hunterModelOf = async (wcfg: WallConfig, projectId: string, hostId: string, envPath: string) => {
+    const settings = (await ctx.effectiveProjectSettings(projectId).catch(() => null))?.values ?? {};
+    return pickHunter(wcfg, () => resolveSpawnModel({ role: "wall-hunter", settings, catalog: modelCatalogOf(ctx).peek(), hostId, envPath }));
+  };
+
   let sandbox: { at: number; ids: ReadonlySet<string> } | null = null;
   let benchIds: ReadonlySet<string> = new Set();
   const loadScope = async (): Promise<Scope> => {
@@ -68,6 +75,7 @@ export function createPluginWall(ctx: ServerCore, services: Services): WallApi {
   const spawnReader: NonNullable<WallPorts["spawnReader"]> = async ({ who, prompt, graph }) => {
     const { cfg, hostId, basePath } = await environmentOf();
     const wcfg = await wallRef.current.config();
+    const hunter = await hunterModelOf(wcfg, cfg.projectId, hostId, basePath);
     const spawned = await fullAccessSpawn(bb, {
       projectId: cfg.projectId,
       environment: { type: "host", hostId, workspace: { type: "unmanaged", path: basePath } },
@@ -76,7 +84,7 @@ export function createPluginWall(ctx: ServerCore, services: Services): WallApi {
       visibility: "hidden",
       // A `[lane-pilot-selection:…]` token in a fact (a phase goal before 0.1.410) made the dispatch hook refuse the reader with 409 (2026-10-31).
       prompt: withoutSelectionMarkers(prompt),
-      ...writerExecutionSelection(wcfg.hunterProviderId, wcfg.hunterModel, who === "analysis" ? "high" : wcfg.hunterReasoningLevel, "default"),
+      ...writerExecutionSelection(hunter.providerId, hunter.model, who === "analysis" ? "high" : hunter.reasoningLevel, "default"),
       pluginMetadata: { role: `wall-${who}`, ...graph.metadata, spawnId: graph.spawnId },
     } as Parameters<typeof fullAccessSpawn>[1]);
     const threadId = stringAt(spawned, "id");
