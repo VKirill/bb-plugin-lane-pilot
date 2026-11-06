@@ -1,3 +1,5 @@
+import { ownsPathsOverlap } from "@lane-pilot/kit";
+
 /**
  * quality_mode decides which review stages a task goes through. It is a project setting and an optional field of the task
  * contract (the task's wins), and nothing has to be set: no value is `standard`, which is the behaviour before the mode existed.
@@ -75,4 +77,58 @@ export function applyCodeCriticDefault(settings: Record<string, unknown>, mode: 
  */
 export function withReferenceTestCritic(settings: Record<string, unknown>, referenceTestEdits: readonly string[] | undefined): Record<string, unknown> {
   return referenceTestEdits?.length ? { ...settings, "code_critique.enabled": true, "code_critique.mode": "gate" } : settings;
+}
+
+/**
+ * The code critic does not re-review the same files for a small change (hub, 30 days: 221 of 294 runs looked at files a
+ * critic approved < 48 h earlier and 4 found anything above info). 40 changed lines is the «мелкая правка» bound.
+ */
+export const CRITIQUE_REPEAT_MAX_LINES = 40;
+export const CRITIQUE_REPEAT_WINDOW_MS = 48 * 3_600_000;
+
+export type CritiqueRepeatApproval = {
+  taskId: string;
+  ownsPaths: readonly string[];
+  state: string;
+  decision: unknown;
+  updatedAt: number;
+};
+
+/** Added+removed lines across the candidate's unified patches; the +++/--- file headers do not count. */
+export function patchChangedLines(patches: Record<string, string> | null | undefined): number {
+  let lines = 0;
+  for (const patch of Object.values(patches ?? {})) {
+    for (const line of patch.split("\n")) {
+      if (line.startsWith("+++") || line.startsWith("---")) continue;
+      if (line.startsWith("+") || line.startsWith("-")) lines += 1;
+    }
+  }
+  return lines;
+}
+
+/**
+ * Whether this task's code critique is a repeat of one already approved in this run: skips only a low or medium risk
+ * task (never high or critical), with no reference-test edits (the withReferenceTestCritic case never skips), a diff of
+ * at most CRITIQUE_REPEAT_MAX_LINES changed lines (`null` — the diff could not be measured — never skips), and a prior
+ * code-critique receipt of another task, state passed with decision approve, less than CRITIQUE_REPEAT_WINDOW_MS old,
+ * whose owns_paths overlap this task's. Returns the prior task id for the `repeat:` receipt reason.
+ */
+export function critiqueRepeatSkip(input: {
+  risk: string | undefined;
+  referenceTestEdits: readonly string[] | undefined;
+  changedLines: number | null;
+  ownsPaths: readonly string[];
+  priorApprovals: readonly CritiqueRepeatApproval[];
+  now?: number;
+}): { reason: "repeat"; priorTaskId: string } | null {
+  const rank = RISK_RANK[input.risk ?? ""];
+  if (rank === undefined || rank > RISK_RANK.medium!) return null;
+  if (input.referenceTestEdits?.length) return null;
+  if (input.changedLines === null || input.changedLines > CRITIQUE_REPEAT_MAX_LINES) return null;
+  const now = input.now ?? Date.now();
+  const prior = input.priorApprovals.find((row) =>
+    row.state === "passed" && row.decision === "approve"
+    && now - row.updatedAt >= 0 && now - row.updatedAt < CRITIQUE_REPEAT_WINDOW_MS
+    && ownsPathsOverlap([...row.ownsPaths], [...input.ownsPaths]));
+  return prior ? { reason: "repeat", priorTaskId: prior.taskId } : null;
 }
