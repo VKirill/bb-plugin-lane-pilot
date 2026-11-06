@@ -58,8 +58,3 @@ Then the edge list is rebuilt (`packages/workflow-engine/src/lower.ts:95-100`): 
 
 - The join keeps the parallel's id, but the fan-out and body are new nodes: `maxVisits`, `skip_when`, and similar per-node fields stay on the node they were written on, and the fan/body split is invisible only as long as nothing references `<id>:fan` directly (`packages/workflow-engine/src/lower.ts:61-67`).
 - A subworkflow whose child cannot be resolved keeps no output fields, so every reference into it reads `unknown` and contract checks on its output are skipped (`packages/workflow-engine/src/lower.ts:29-32`).
-
-<!-- lane-pilot:backlinks -->
-## Referenced by
-
-- [Workflow Execution Engine](execution-engine.md)
