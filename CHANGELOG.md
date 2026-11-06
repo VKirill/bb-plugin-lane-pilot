@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.1.480
+
+- **Lean background context.** Helpers get their role profiles again on every provider (the plugin reads the core advertisement per provider row; a drifted row narrows only that provider and logs once); five spawns that ran without a profile (workspace provisioner, lead, workflow architect, harness, episode analyst) bind theirs; prompt-only roles drop user and project instructions; core vk.5 stops a compiled PM chat's own skill selection from becoming its helpers' ceiling. Brief v2: one tagged-section format (`src/rooms/brief`) for writer, errand and critic briefs, no JSON contract dump, memory rule and picked skill names in the brief, per-role budgets with a spawn-time check, wall and docs-night material in a file only when it does not fit. Memory search by meaning (gemini-embedding-2, Jev rerank below 0.82, words as fallback).
 
 - **Zero failed episodes do not start a repair.** Six successful hourly sweep summaries on 2026-11-06 were read as failures because the self-repair watcher and wall journal matched the word `failed` inside `0 failed`. Both readers now exclude the successful episode-summary prefix (zero failed and zero held) when looking for failure text, while keeping nonzero counts, held episodes, unrelated messages such as `step 0 failed`, other failures in the same line and wall's error-level entries. `tests/server/episode-summary-log.test.ts` replays all six original hub log rows from `tests/fixtures/episode-summary-log.json`.
 
