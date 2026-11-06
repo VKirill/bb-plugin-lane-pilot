@@ -125,7 +125,7 @@ describe("step executors by node type", () => {
   });
 
   it("lists the same delegated actions the executors register", () => {
-    const source = fileContaining("const DELEGATED").text;
+    const source = fileContaining('"telegram.send_rich": { role:').text;
     const block = source.slice(source.indexOf("const DELEGATED"), source.indexOf("for (const [key, spec] of Object.entries(DELEGATED))"));
     const keys = [...block.matchAll(/^\s+"([a-z_.]+)": \{ role:/gm)].map((match) => match[1]);
     expect([...DELEGATED_ACTIONS].sort()).toEqual(keys.sort());

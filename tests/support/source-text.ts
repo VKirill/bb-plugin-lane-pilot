@@ -19,11 +19,15 @@ function* sources(dir: string): Generator<string> {
  * still fails it.
  */
 export function fileContaining(marker: string, within = "src"): { path: string; text: string } {
+  const found: Array<{ path: string; text: string }> = [];
   for (const file of sources(join(ROOT, within))) {
     const text = readFileSync(file, "utf8");
-    if (text.includes(marker)) return { path: file.slice(ROOT.length + 1), text };
+    if (text.includes(marker)) found.push({ path: file.slice(ROOT.length + 1), text });
+    if (found.length > 1) break;
   }
-  throw new Error(`no source file under ${within}/ contains ${JSON.stringify(marker)}`);
+  if (found.length > 1) throw new Error(`marker ${JSON.stringify(marker)} is in more than one file under ${within}/: ${found.map((f) => f.path).join(", ")} — pick a unique marker`);
+  if (!found.length) throw new Error(`no source file under ${within}/ contains ${JSON.stringify(marker)}`);
+  return found[0]!;
 }
 
 /** All source files under `within` carrying `marker` (paths relative to the plugin root), for "no file may" guards. */

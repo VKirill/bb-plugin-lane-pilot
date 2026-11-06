@@ -1,6 +1,8 @@
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { SMA_ENTRIES } from "./entries";
+import { relocateAnchor } from "./exports";
 import { brokenProof, isChecked, isDone, proofDrift, smaCheckedPercent, smaCounts, smaDonePercent, smaHoles, smaRows, smaStateCounts, unjudgedProof, type ProofRoots, type SmaRow } from "./model";
 import { SMA_LINKS, SMA_MAP_SHA, SMA_NODES, SMA_REGIONS } from "./graph";
 
@@ -36,7 +38,36 @@ export function renderSmaMap(all: readonly SmaRow[], listed: readonly SmaRow[] =
   return lines.join("\n");
 }
 
+/**
+ * `--fix-proofs`: every broken local `path#anchor` proof whose anchor lives in exactly one file now (an exporting
+ * module for identifier anchors, a text carrier otherwise) gets its path rewritten in entries.ts. A deleted or
+ * ambiguous anchor stays broken — it needs a human, not a pointer update.
+ */
+export function fixProofsInFile(entriesFile: string, proofs: readonly string[], root: string): { fixed: Array<{ from: string; to: string }>; unfixable: string[] } {
+  const roots = { lanePilot: root };
+  const fixed: Array<{ from: string; to: string }> = [];
+  const unfixable: string[] = [];
+  let text = readFileSync(entriesFile, "utf8");
+  for (const proof of new Set(proofs)) {
+    if (/^(lane-stack|core|telegram):/.test(proof) || !proof.includes("#")) continue;
+    const [where, anchor] = proof.split("#", 2) as [string, string];
+    if (!brokenProof(proof, roots)) continue;
+    const at = relocateAnchor(root, anchor);
+    if (!at || at === where) { unfixable.push(proof); continue; }
+    text = text.split(JSON.stringify(proof)).join(JSON.stringify(`${at}#${anchor}`));
+    fixed.push({ from: proof, to: `${at}#${anchor}` });
+  }
+  if (fixed.length) writeFileSync(entriesFile, text);
+  return { fixed, unfixable };
+}
+
 export function runSmaMapCli(argv: string[], cwd: string = process.cwd()): Result {
+  if (argv.includes("--fix-proofs")) {
+    const { fixed, unfixable } = fixProofsInFile(join(cwd, "src/rooms/sma-map/entries.ts"), Object.values(SMA_ENTRIES).flatMap((e) => (e[2] ? [e[2]] : [])), cwd);
+    const lines = fixed.map((f) => `  ${f.from} -> ${f.to}`);
+    if (unfixable.length) lines.push("", `still broken (${unfixable.length}) — anchor deleted or ambiguous:`, ...unfixable.map((p) => `  ${p}`));
+    return { exitCode: unfixable.length ? 1 : 0, stdout: `Fixed ${fixed.length} proof path(s).\n${lines.join("\n")}` };
+  }
   const all = smaRows();
   const regionArg = flag(argv, "--region"), status = flag(argv, "--status");
   const region = regionArg === undefined ? undefined : /^\d+$/.test(regionArg) ? SMA_REGIONS[Number(regionArg)] : SMA_REGIONS.find((name) => name.toLowerCase().includes(regionArg.toLowerCase()));

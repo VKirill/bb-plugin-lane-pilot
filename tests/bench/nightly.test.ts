@@ -1,5 +1,7 @@
+import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import packageJson from "../../package.json";
+import plugin from "../../server";
 import { nightArm } from "../../src/rooms/bench/runner";
 import { isSkippedByBudget, markSkippedRun, insertSet } from "../../src/rooms/bench/store";
 import { nightlySets } from "../../src/rooms/bench/server/weekly";
@@ -33,6 +35,13 @@ describe("bench nightly on OVH", () => {
     expect(scheduled).toEqual([{ name: "bench-nightly", cron: "30 1 * * *", work: expect.any(Function) }]);
     await scheduled[0]!.work();
     expect(runs[0]).toMatchObject({ version: "v3", arm: nightArm(packageJson.version), wait: true, hostId: OVH_BENCH_HOST, noise: true });
+  });
+
+  it("is registered by the plugin itself at 01:30 UTC", async () => {
+    const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
+    await plugin(bb);
+    expect(harness.registrations.schedules).toContainEqual({ name: "bench-nightly", cron: "30 1 * * *", fn: expect.any(Function) });
+    await harness.lifecycle.dispose();
   });
 });
 

@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { IDENTIFIER, symbolLocations, textLocation } from "./exports";
+import { relocateAnchor } from "./exports";
 import { SMA_CONTRACT_GAPS, SMA_CONTRACT_TESTS } from "./contracts";
 import { SMA_ENTRIES, type SmaStatus } from "./entries";
 import { SMA_CARDS, SMA_NODES, SMA_REGIONS, type SmaKind } from "./graph";
@@ -102,12 +102,9 @@ export function unjudgedProof(proof: string, roots: ProofRoots): boolean {
   return !!prefix && !(prefix[1] === "lane-stack" ? roots.laneStack : prefix[1] === "telegram" ? roots.telegram : roots.core);
 }
 
-/**
- * A proof that does not resolve: the file is missing, or the anchor is not in it — and neither survives a move.
- * Proofs into an absent sibling repository are not judged. For this repository a moved proof still resolves: an
- * identifier anchor holds while some module exports the symbol (resolved over the export surface, not text), and
- * any anchor holds while some source file still carries the text (exports.ts).
- */
+/** A proof that does not resolve: the file is missing, or the anchor is not in it. Strict — a moved anchor is a
+ * broken proof (see proofDrift for where it went and `sma-map --fix-proofs` to repair the path). Proofs into an
+ * absent sibling repository are not judged. */
 export function brokenProof(proof: string, roots: ProofRoots): string | null {
   const [where, symbol] = proof.split("#", 2) as [string, string | undefined];
   const prefix = where.match(/^(lane-stack|core|telegram):(.*)$/);
@@ -115,28 +112,22 @@ export function brokenProof(proof: string, roots: ProofRoots): string | null {
   const path = prefix ? prefix[2]! : where;
   if (!root) return null;
   const file = resolve(join(root, path));
-  const text = existsSync(file) ? readFileSync(file, "utf8") : null;
-  if (symbol === undefined) return text === null ? `${proof}: no such file` : null;
-  if (text?.includes(symbol)) return null;
-  if (!prefix && ((IDENTIFIER.test(symbol) && symbolLocations(root, symbol).length > 0) || textLocation(root, symbol))) return null;
-  return text === null ? `${proof}: no such file` : `${proof}: ${symbol} is not in the file`;
+  if (!existsSync(file)) return `${proof}: no such file`;
+  if (symbol && !readFileSync(file, "utf8").includes(symbol)) return `${proof}: ${symbol} is not in the file`;
+  return null;
 }
 
-/**
- * A proof that resolves but no longer where it was written: its path stopped holding the anchor while an export
- * or the text took it elsewhere. Informational — a stale path misleads whoever follows the link, so `--check-proofs`
- * names the new location.
- */
-export function proofDrift(proof: string, roots: ProofRoots): string | null {
+/** Where a broken local proof's anchor now lives: exactly one file exporting the identifier (module surface,
+ * not text) or carrying the text — or null (deleted, or ambiguous). `--fix-proofs` rewrites the entry path then. */
+export function proofRelocation(proof: string, roots: ProofRoots): string | null {
   const [where, symbol] = proof.split("#", 2) as [string, string | undefined];
   if (!symbol || /^(lane-stack|core|telegram):/.test(where)) return null;
-  const file = resolve(join(roots.lanePilot, where));
-  const text = existsSync(file) ? readFileSync(file, "utf8") : null;
-  if (text?.includes(symbol)) return null;
-  if (IDENTIFIER.test(symbol)) {
-    const at = symbolLocations(roots.lanePilot, symbol);
-    if (at.length) return `${proof}: ${symbol} is exported by ${at.join(", ")}`;
-  }
-  const at = textLocation(roots.lanePilot, symbol);
-  return at ? `${proof}: the text lives in ${at}` : null;
+  if (!brokenProof(proof, roots)) return null;
+  return relocateAnchor(roots.lanePilot, symbol);
+}
+
+/** The drift line `--check-proofs` prints for a proof whose anchor moved: name and how to repair. */
+export function proofDrift(proof: string, roots: ProofRoots): string | null {
+  const at = proofRelocation(proof, roots);
+  return at ? `${proof}: moved to ${at} — run sma-map --fix-proofs` : null;
 }

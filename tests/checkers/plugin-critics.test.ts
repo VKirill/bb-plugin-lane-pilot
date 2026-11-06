@@ -9,9 +9,13 @@ describe("the checker scorecard inside the plugin asks no model", () => {
   });
 
   it("the plugin's ports start no thread at all: model work is a graph, and the critics have none", async () => {
-    // Built with a ctx that offers no threads/host spawn: any hidden spawn would throw here, and the critic path
-    // is the same refusal the scorecard test above asserts — `model` is null by construction.
-    const api = createPluginCheckers({ bb: { sdk: { projects: { list: async () => [] } } }, db: {}, host: {}, log: () => undefined } as never);
-    expect(Object.keys(api).filter((key) => /spawn|thread/i.test(key))).toEqual([]);
+    // A fake host that records every spawn attempt: scoring through the plugin's ports must never reach one.
+    const spawns: string[] = [];
+    const boom = (kind: string) => () => { spawns.push(kind); throw new Error(`no spawn in plugin checkers: ${kind}`); };
+    const bb = { threads: { spawn: boom("threads.spawn") }, fullAccessSpawn: boom("fullAccessSpawn"), sdk: { projects: { list: async () => [] } } };
+    const db = { prepare: () => ({ all: () => [], get: () => undefined }) };
+    const api = createPluginCheckers({ bb, db, host: {}, log: () => undefined } as never);
+    await api.score({}).catch(() => null);
+    expect(spawns).toEqual([]);
   });
 });
