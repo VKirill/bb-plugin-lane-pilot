@@ -22,6 +22,8 @@ export const EPISODES_SCHEDULE = "episodes-hourly";
  * strict JSON answer and writes the enrichment columns. `episodes.collect` off makes the whole pass a no-op.
  */
 /** The sweep's live deps (helper thread, analyzer model, Jev); the hourly node and `errands episodes-sweep` share them. */
+const analystRooms = new Map<string, string>();
+
 export function episodeSweepDeps(ctx: ServerCore, services: Services, stopped: () => boolean): EpisodeEnrichDeps {
   return {
     db: ctx.db,
@@ -41,7 +43,19 @@ export function episodeSweepDeps(ctx: ServerCore, services: Services, stopped: (
       let place = await resolved(projectId ?? undefined);
       if (projectId && (place as { status?: string } | null)?.status !== "resolved") place = await resolved(undefined);
       if (!place || (place as { status?: string }).status !== "resolved") throw new Error("episode_enrich_no_host");
-      const host = place as { hostId: string; path: string };
+      const project = place as { hostId: string; path: string };
+      // The analyzer is a full-access agent: in the project folder it read other threads' unmasked histories
+      // (.bb/chats/*/history, 2026-11-06), past the mask. It works in an empty folder of its own on that machine.
+      let room = analystRooms.get(project.hostId);
+      if (!room) {
+        const made = await ctx.host.call("runCommand", { requestedHostId: project.hostId, cwd: project.path, timeoutSec: 30,
+          command: 'mkdir -p "$HOME/.lane-pilot/episode-analyst" && cd "$HOME/.lane-pilot/episode-analyst" && pwd' },
+          { hostId: project.hostId, timeoutMs: 40_000 }) as { exitCode: number; stdout: string };
+        room = made.exitCode === 0 ? made.stdout.trim().split("\n").at(-1) : undefined;
+        if (!room) throw new Error("episode_enrich_no_empty_room");
+        analystRooms.set(project.hostId, room);
+      }
+      const host = { hostId: project.hostId, path: room };
       const settings = (await ctx.effectiveProjectSettings(projectId ?? GLOBAL_SETTINGS_PROJECT_ID).catch(() => null))?.values ?? {};
       const spawnUsage = spawnUsageOf(ctx);
       await warmSpawnUsage(spawnUsage, host.hostId);
