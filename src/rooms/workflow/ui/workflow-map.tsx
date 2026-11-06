@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Background, BackgroundVariant, Controls, Handle, Position, ReactFlow, ReactFlowProvider, useReactFlow, useViewport, type Edge, type Node, type NodeProps } from "@xyflow/react";
+import { Background, BackgroundVariant, Controls, Handle, Position, ReactFlow, ReactFlowProvider, useReactFlow, useViewport, type Edge, type Node, type NodeProps, type ReactFlowInstance } from "@xyflow/react";
 import { useRpc } from "@get-bb/plugin-sdk/app";
 import type { z } from "zod";
 import type { rpcContract } from "../../contracts";
@@ -91,6 +91,7 @@ const CAT_PAD = 48;
 const CAT_GAP = 200;
 /** Steps are drawn from this zoom on; further out a graph is one chip with its title (semantic zoom). */
 export const DETAIL_ZOOM = 0.6;
+export const DETAIL_ZOOM_NARROW = 0.3;
 
 /** Shelf packing: boxes in rows no wider than `maxW`; returns positions and the bounding size. */
 function shelf(sizes: { w: number; h: number }[], maxW: number, gap: number): { at: { x: number; y: number }[]; w: number; h: number } {
@@ -341,6 +342,7 @@ export function WorkflowMap({ locale, projectId, onOpenGraph }: { locale: Locale
   const [ready, setReady] = useState(false);
   const [selected, setSelected] = useState<{ graph: MapGraph; step: MapStep } | null>(null);
   const [hot, setHot] = useState<string | null>(null);
+  const flowRef = useRef<ReactFlowInstance | null>(null);
   const [copied, setCopied] = useState(false);
   // The step as markdown, to paste into a chat or hand to an agent.
   const copyStep = (graph: MapGraph, step: MapStep) => {
@@ -384,7 +386,8 @@ export function WorkflowMap({ locale, projectId, onOpenGraph }: { locale: Locale
   }, [data, dimmed, locale]);
 
   // Semantic zoom: far out a graph is a chip; from DETAIL_ZOOM on (or once clicked) its steps and edges show. Nothing is re-laid out.
-  const detail = zoom >= DETAIL_ZOOM;
+  // A phone shows steps from a lower zoom: a whole graph fits its 375 px only well below DETAIL_ZOOM.
+  const detail = zoom >= ((globalThis.innerWidth ?? 1280) < 640 ? DETAIL_ZOOM_NARROW : DETAIL_ZOOM);
   const shown = useMemo(() => {
     if (!layout) return null;
     const open = (graphId: string) => detail || opened.has(graphId);
@@ -411,6 +414,8 @@ export function WorkflowMap({ locale, projectId, onOpenGraph }: { locale: Locale
       const graph = node.data.graph as MapGraph;
       setOpened((prev) => new Set(prev).add(graph.id));
       setSelected(null);
+      // A tap on a graph also moves the view onto it, so its steps are readable on a phone too.
+      setTimeout(() => void flowRef.current?.fitView({ nodes: [{ id: node.id }], padding: 0.04, duration: 300 }), 30);
     }
   }, [data]);
 
@@ -486,6 +491,7 @@ export function WorkflowMap({ locale, projectId, onOpenGraph }: { locale: Locale
           <div className="absolute inset-0"><ReactFlowProvider>
             <ReactFlow
               nodes={shown.nodes} edges={shown.edges} nodeTypes={nodeTypes}
+              onInit={(instance) => { flowRef.current = instance; }}
               onNodeClick={onNodeClick} onPaneClick={() => setSelected(null)}
               onNodeMouseEnter={(_, node) => setHot(graphIdOf(node))} onNodeMouseLeave={() => setHot(null)}
               minZoom={0.02} maxZoom={2} onlyRenderVisibleElements nodesDraggable={false} nodesConnectable={false} elementsSelectable>
