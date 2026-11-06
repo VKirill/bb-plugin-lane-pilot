@@ -95,3 +95,5 @@ domains never import `core` or `tools` (the composition root).
   via opencode2 router9) before merge; full vitest on main after each merge.
 - Generated files (README.md, docs/atlas.md, docs/map/index.html) are regenerated once
   per merge, never taken from a stream.
+- Owner 2026-11-07: no deploy per wave. All waves merge into main (full vitest after
+  each merge); one release at the end, after the final check, then the drill.
