@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.482
+
+- **Claude Code helpers keep the core's settings layer.** Claude Code keeps only the last `--settings`; the Lane Pilot launchers appended the guard file after BB core's flag layer, so every claude-code helper and PM lost native-plugins-off, CLAUDE.md excludes, denied MCP servers and skill overrides (a writer still ran the owner's ADHD and ponytail hooks, ~25 KB). The exec line now merges every `--settings` with the guard file (guard last, hook lists concatenate) and passes one.
+
 ## 0.1.481
 
 - **Every background brief in one format, and a nightly profile check.** The remaining ~20 brief builders (docs night, wall, episode analyst, large-file reader, rules analyzer, council, lead, memory maintainer, browser QA, self-repair, harness, project-life, workflow architect) render through `src/rooms/brief`; a data block is cut only where the builder set an explicit cap, so nothing that used to reach a model whole is cut now; docs pages go whole or not at all; no text points at `~/.agents/skills`. `profile-check-daily` (04:52) reads the core DB read-only (indexed, ~71 ms for 188 helpers) and puts a red line on the owner list when a hidden Lane Pilot helper has no stored session policy, the core does not answer `required`, or a provider row drifts; an unreadable DB is «не проверено», not red.
