@@ -43,6 +43,7 @@ function setup(threadStatus: Record<string, string> = {}, outputs: Record<string
     } as never,
   });
   const db = openDatabase(bb);
+  void bb.storage.kv.set("self-repair:config", { projectId: "proj_ejbam66722", environmentId: "env_7etjwdpbuw", sectionId: "9b66deb6-0e31-42d3-840f-19fa9601380c" } as never);
   const host = {
     call: async (method: string, input: Record<string, unknown>) => {
       hostCalls.push({ method, input });
@@ -657,14 +658,14 @@ describe("self-repair", () => {
   it("tells the repair where the hub's run data is from the configuration, with today's values as the default", async () => {
     const workspace = { path: "/wt/r/lane-pilot", branch: "lane/r", basePath: "/repo/lane-pilot" };
     const byDefault = repairPrompt([], "blocked:abc:x", workspace);
-    expect(byDefault).toContain("ssh -i ~/.ssh/id_ed25519 ubuntu@10.8.0.1, sqlite3 /home/ubuntu/.bb/plugins/lane-pilot/data.db");
-    expect(byDefault).toContain("Plugin log: /home/ubuntu/.bb/plugins/lane-pilot/logs/plugin.log on the hub.");
+    expect(byDefault).toContain("sqlite3 ~/.bb/plugins/lane-pilot/data.db");
+    expect(byDefault).toContain("Plugin log: ~/.bb/plugins/lane-pilot/logs/plugin.log on the hub.");
     const env = setup();
     await createSelfRepair(env.ctx).setConfig({ hubSsh: "ssh ops@hub2", hubDb: "/srv/lp/data.db", hubLog: "/srv/lp/plugin.log" });
     env.attempt("lpattempt_1", "lprun_a", "blocked", "merge_failed: index.lock exists");
     await createSelfRepair(env.ctx).tick({ since: 0 });
     const prompt = String(env.spawns[0]!.prompt);
-    expect(prompt).toContain("on the hub: ssh ops@hub2, sqlite3 /srv/lp/data.db (");
+    expect(prompt).toContain("on the hub (ssh ops@hub2): sqlite3 /srv/lp/data.db (");
     expect(prompt).toContain("Plugin log: /srv/lp/plugin.log on the hub.");
     expect(prompt).not.toContain("id_ed25519");
   });

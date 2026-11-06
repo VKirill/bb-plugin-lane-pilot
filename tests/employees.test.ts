@@ -119,24 +119,28 @@ describe("employee machine", () => {
     expect(chooseEmployeePlace({
       affinity: "mac-mini",
       agentId: "game-dev",
-      sources: [{ hostId: "host_7sea4qaad8", path: "/Users/me/game" }],
+      hosts: [{ id: "host_mini", name: "Mac mini" }],
+      sources: [{ hostId: "host_mini", path: "/Users/me/game" }],
       hostHome: "/Users/me",
-    })).toEqual({ mode: "folder", hostId: "host_7sea4qaad8", path: "/Users/me/game", created: false });
+    })).toEqual({ mode: "folder", hostId: "host_mini", path: "/Users/me/game", created: false });
   });
 
   it("makes a work folder when that host has no project folder", () => {
     expect(chooseEmployeePlace({
       affinity: "mac-mini",
       agentId: "game-dev",
-      sources: [{ hostId: "host_rwrxyi39aw", path: "/srv/app" }],
+      hosts: [{ id: "host_mini", name: "Mac mini" }, { id: "host_vps", name: "ovh" }],
+      sources: [{ hostId: "host_vps", path: "/srv/app" }],
       hostHome: "/Users/me",
-    })).toEqual({ mode: "folder", hostId: "host_7sea4qaad8", path: "/Users/me/LanePilot/employees/game-dev", created: true });
+    })).toEqual({ mode: "folder", hostId: "host_mini", path: "/Users/me/LanePilot/employees/game-dev", created: true });
   });
 
-  it("stays on the current environment when affinity is empty, and falls back when the host has no home", () => {
-    expect(chooseEmployeePlace({ affinity: "any", agentId: "copy-lead", sources: [], hostHome: "/Users/me" })).toEqual({ mode: "inherit" });
-    expect(chooseEmployeePlace({ affinity: null, agentId: "copy-lead", sources: [], hostHome: null })).toEqual({ mode: "inherit" });
-    expect(chooseEmployeePlace({ affinity: "mac-mini", agentId: "game-dev", sources: [], hostHome: null })).toMatchObject({ mode: "fallback", hostId: "host_7sea4qaad8" });
+  it("stays on the current environment when affinity is empty or names no enrolled host, and falls back when the host has no home", () => {
+    const hosts = [{ id: "host_mini", name: "Mac mini" }];
+    expect(chooseEmployeePlace({ affinity: "any", agentId: "copy-lead", hosts, sources: [], hostHome: "/Users/me" })).toEqual({ mode: "inherit" });
+    expect(chooseEmployeePlace({ affinity: null, agentId: "copy-lead", hosts, sources: [], hostHome: null })).toEqual({ mode: "inherit" });
+    expect(chooseEmployeePlace({ affinity: "mac-mini", agentId: "game-dev", hosts: [], sources: [], hostHome: null })).toEqual({ mode: "inherit" });
+    expect(chooseEmployeePlace({ affinity: "mac-mini", agentId: "game-dev", hosts, sources: [], hostHome: null })).toMatchObject({ mode: "fallback", hostId: "host_mini" });
   });
 
   it("treats a bare graph role as that employee", () => {

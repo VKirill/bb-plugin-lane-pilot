@@ -1,4 +1,4 @@
-import type { LanePilotDatabase } from "./db";
+import type Database from "better-sqlite3";
 
 import { WorkflowEngine } from "./engine";
 import type { NodeExecutor, StepContext } from "./engine";
@@ -106,7 +106,7 @@ function answerFor(node: GraphNode | undefined, given: unknown, options: unknown
 }
 
 export type DraftTestPorts = {
-  db: LanePilotDatabase;
+  db: Database.Database;
   harnessVersion: string;
   resolveWorkflow?: (id: string, version?: number) => Workflow | null;
   now?: () => number;

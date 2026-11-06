@@ -1,15 +1,20 @@
-import { employeeView, type MachineAffinity } from "./employee-manifest";
+import { employeeView } from "./employee-manifest";
 
 /**
  * Where an employee thread starts. `threads.spawn` already takes `{ type: "host", hostId, workspace: { type: "unmanaged", path } }`,
  * and a new-thread composer takes the same shape on `experimental_setSelection`. A kernel `experimental_vkHostPlacement` is not needed.
  * An existing chat cannot move host: selection.environment applies to a new thread only.
  */
-export const AFFINITY_HOSTS: Record<Exclude<MachineAffinity, "any">, string> = {
-  "mac-mini": "host_7sea4qaad8",
-  ovh: "host_rwrxyi39aw",
-  windows: "host_z8sapas8an",
-};
+export type ListedHost = { id: string; name?: string | null };
+
+const normalized = (value: string): string => value.toLowerCase().replace(/[^a-z0-9]+/g, "");
+
+/** The id of the enrolled host whose name the affinity names («mac-mini» ↔ "Mac mini"), or null when no host carries that name. */
+export function affinityHostId(affinity: string, hosts: readonly ListedHost[]): string | null {
+  const wanted = normalized(affinity);
+  if (!wanted) return null;
+  return hosts.find((host) => typeof host.name === "string" && normalized(host.name) === wanted)?.id ?? null;
+}
 
 export type EmployeePlace =
   | { mode: "inherit" }
@@ -18,13 +23,14 @@ export type EmployeePlace =
 
 export function chooseEmployeePlace(input: {
   affinity?: string | null;
+  hosts: readonly ListedHost[];
   sources: ReadonlyArray<{ hostId?: string | undefined; path?: string | undefined }>;
   hostHome?: string | null;
   agentId: string;
 }): EmployeePlace {
   const affinity = input.affinity || "any";
   if (affinity === "any") return { mode: "inherit" };
-  const hostId = AFFINITY_HOSTS[affinity as Exclude<MachineAffinity, "any">];
+  const hostId = affinityHostId(affinity, input.hosts);
   if (!hostId) return { mode: "inherit" };
   const source = input.sources.find((row) => row.hostId === hostId && row.path);
   if (source?.path) return { mode: "folder", hostId, path: source.path, created: false };
@@ -38,12 +44,15 @@ export function chooseEmployeePlace(input: {
 
 type PlaceClient = {
   sdk: {
-    hosts: { directory: (input: { hostId: string }) => Promise<{ directory?: string | null }> };
+    hosts: {
+      list?: () => Promise<unknown>;
+      directory: (input: { hostId: string }) => Promise<{ directory?: string | null }>;
+    };
     files: { mkdir: (input: { hostId: string; path: string; recursive?: boolean }) => Promise<unknown> };
   };
 };
 
-/** The place for this employee. `any` and an unknown affinity stay on the caller's environment. */
+/** The place for this employee. `any`, an unknown affinity and a name no enrolled host carries stay on the caller's environment. */
 export async function placeEmployeeOn(
   bb: PlaceClient,
   agentId: string,
@@ -51,12 +60,15 @@ export async function placeEmployeeOn(
 ): Promise<EmployeePlace> {
   const affinity = employeeView(agentId).machineAffinity;
   if (!affinity || affinity === "any") return { mode: "inherit" };
-  const hostId = AFFINITY_HOSTS[affinity];
+  const listed = await Promise.resolve(bb.sdk.hosts.list?.()).then((rows) => rows ?? []).catch(() => []) as Array<{ id?: unknown; name?: unknown }>;
+  const hosts: ListedHost[] = listed.flatMap((row) => typeof row?.id === "string" ? [{ id: row.id, name: typeof row.name === "string" ? row.name : null }] : []);
+  const hostId = affinityHostId(affinity, hosts);
+  if (!hostId) return { mode: "inherit" };
   const home = await Promise.resolve()
     .then(() => bb.sdk.hosts.directory({ hostId }))
     .then((row) => row.directory || null)
     .catch(() => null);
-  const place = chooseEmployeePlace({ affinity, sources, hostHome: home, agentId });
+  const place = chooseEmployeePlace({ affinity, hosts, sources, hostHome: home, agentId });
   if (place.mode !== "folder" || !place.created) return place;
   try {
     await bb.sdk.files.mkdir({ hostId: place.hostId, path: place.path, recursive: true });

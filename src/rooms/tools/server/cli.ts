@@ -600,16 +600,7 @@ ${ERRANDS_USAGE}` },
           if (stringAt(thread, "status") !== "idle") throw new Error(`writer is not idle: ${stringAt(thread, "status") ?? "unknown"}`);
           const config = loadPrototypeConfig(db, run.project_id);
           if (!config) throw new Error("prototype configuration is missing");
-          const [hello, test, output] = await Promise.all([
-            bb.sdk.files.read({ hostId:config.hostId, rootPath:config.writerWorkspacePath, path:`${config.writerWorkspacePath}/hello.txt` }),
-            bb.sdk.files.read({ hostId:config.hostId, rootPath:config.writerWorkspacePath, path:`${config.writerWorkspacePath}/tests/hello.test.txt` }),
-            bb.sdk.threads.output({ threadId:writerThreadId }),
-          ]);
-          if (stringAt(hello, "content") !== "hello from native BB writer\n"
-            || stringAt(test, "content") !== "hello from native BB writer\n") {
-            transitionAttempt(db, attempt.id, "validation_failed", { threadId:writerThreadId, reason:"fixture output content mismatch" });
-            throw new Error("reconciled writer output failed validation");
-          }
+          const output = await bb.sdk.threads.output({ threadId:writerThreadId });
           const savedTask = getTask(db, attempt.task_id);
           if (!savedTask) throw new Error(`reconciled task missing: ${attempt.task_id}`);
           const recoveredTask = taskV2Schema.parse(savedTask.contract);

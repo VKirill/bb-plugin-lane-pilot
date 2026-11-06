@@ -31,7 +31,7 @@ import { jev } from "@lane-pilot/jev";
 import { GUARD_BLOCKED_KEY, type GuardBlock } from "@lane-pilot/jev";
 import { FRUSTRATION_KEY, frustrationReason, type FrustrationRecord } from "../../learning";
 import { MAX_CANDIDATES, repairGroup } from "@lane-pilot/jev/judgments/repair-group";
-import { fileAllowedByOwns, fileBlockedByNeverTouch, sha256Hex } from "@lane-pilot/kit";
+import { fileAllowedByOwns, fileBlockedByNeverTouch, pluginRootFromModule, sha256Hex } from "@lane-pilot/kit";
 import { codeVerdict, splitRejectedPaths } from "@lane-pilot/run-insights";
 import { DEPENDENCY_REDO_WAIT_MS, HOLDING_ATTEMPT_STATES, latestTaskAttempt } from "../../storage";
 import { getRepairHooks, type NightAssignment } from "./hooks";
@@ -63,18 +63,23 @@ export type SelfRepairConfig = {
 
 export const SELF_REPAIR_DEFAULTS: SelfRepairConfig = {
   enabled: true,
-  projectId: "proj_ejbam66722",
-  environmentId: "env_7etjwdpbuw",
-  sectionId: "9b66deb6-0e31-42d3-840f-19fa9601380c",
+  /** Empty — resolved in config(): the project whose source holds this plugin's checkout, or the value set with self_repair_configure. */
+  projectId: "",
+  /** Same: the environment of that checkout. */
+  environmentId: "",
+  sectionId: null,
   // GPT-6.1 Sol, not Opus: the owner moved the repairs off Claude on 2026-10-28 (the `repairer` row of the role table says the same).
   providerId: "codex",
   model: "gpt-6.1-sol",
   reasoningLevel: "high",
   maxPerDay: 4,
-  ignoreProjects: ["proj_3tb652jpsi"],
-  hubSsh: "ssh -i ~/.ssh/id_ed25519 ubuntu@10.8.0.1",
-  hubDb: "/home/ubuntu/.bb/plugins/lane-pilot/data.db",
-  hubLog: "/home/ubuntu/.bb/plugins/lane-pilot/logs/plugin.log",
+  // The deliberate-failure sandboxes are already ignored through DRILL_SANDBOX_PROJECT_IDS (stability/canary.ts); this list is for the owner's extra ones.
+  ignoreProjects: [],
+  /** How a repair thread reaches the hub's data when it is not on the hub («ssh -i …»); empty — it is on the hub already. */
+  hubSsh: "",
+  // Overridden in config() by the live db path and the server data dir; these spellings are the bb convention a thread on the hub can use as-is.
+  hubDb: "~/.bb/plugins/lane-pilot/data.db",
+  hubLog: "~/.bb/plugins/lane-pilot/logs/plugin.log",
 };
 
 export type Incident = {
@@ -430,7 +435,7 @@ export function repairPrompt(
       [
         "Work in this order:",
         "For a «log» incident the evidence is the plugin log line itself: find the code that writes it and why it fails.",
-        `1. Reproduce from data. Run data is on the hub: ${hub.hubSsh}, sqlite3 ${hub.hubDb} (lane_pilot_attempt, lane_pilot_stage_receipt, lane_pilot_failure_triage). Threads: bb thread messages <id> --json, bb thread output <id>. Plugin log: ${hub.hubLog} on the hub.`,
+        `1. Reproduce from data. Run data is on the hub${hub.hubSsh ? ` (${hub.hubSsh})` : ""}: sqlite3 ${hub.hubDb} (lane_pilot_attempt, lane_pilot_stage_receipt, lane_pilot_failure_triage). Threads: bb thread messages <id> --json, bb thread output <id>. Plugin log: ${hub.hubLog} on the hub.`,
         "2. Check whether it is already fixed: compare the failure time with git log and CHANGELOG.md. The watcher can report a failure that happened just before a fix was deployed. If a later release fixed it and the log shows no new occurrence, change no code; go to step 6.",
         "3. Decide whose fault it is. If it is not Lane Pilot's (writer mistake, wrong task contract, the project's own code or machine), change no code, because a code change here would hide a problem that belongs to the PM; go to step 6 and tell the PM what to do differently.",
         "4. If it is Lane Pilot's (this repository, including the guard in lane-stack/hooks/; the claude-lane-stack copy of the guard and the VK core are not, see the last paragraph), fix the cause, not the symptom. Follow AGENTS.md and CLAUDE.md here (GitNexus impact before edits, detect-changes before commit) and add a test that fails without the fix. Verify against the real case, because unit tests here have missed real failures before: build the test from the failing data you pulled in step 1 and run what you can from your worktree. The code you commit runs nowhere until the release train deploys it, so name in the report what must be checked live after that deploy (scripts/lp-drill.sh runs the sandbox drills).",
@@ -460,12 +465,44 @@ export function repairPrompt(
 export function createSelfRepair(ctx: ServerCore, engineOf?: () => WorkflowEngine | undefined) {
   const { bb, db, host } = ctx;
 
+  let selfProjectCache: { projectId: string; environmentId: string } | null | undefined;
+  /** The project whose source holds this plugin's checkout — «the Lane Pilot project» on this install — and the environment of that source. */
+  async function selfProject(): Promise<{ projectId: string; environmentId: string } | null> {
+    if (selfProjectCache !== undefined) return selfProjectCache;
+    selfProjectCache = await (async () => {
+      try {
+      const root = pluginRootFromModule(import.meta.url);
+      const rows = await Promise.resolve((bb.sdk.projects as { list?: (q: unknown) => Promise<unknown> } | undefined)?.list?.({ includePersonal: true }) ?? []).catch(() => []) as Array<{ id?: unknown }>;
+      for (const row of rows) {
+        if (typeof row?.id !== "string") continue;
+        const project = await Promise.resolve(bb.sdk.projects.get({ projectId: row.id })).catch(() => null) as { sources?: Array<{ hostId?: unknown; path?: unknown }> } | null;
+        const source = (project?.sources ?? []).find((item) => typeof item?.path === "string"
+          && (root === item.path || root.startsWith(`${String(item.path).replace(/[\\/]+$/, "")}/`)));
+        if (!source || typeof source.hostId !== "string" || typeof source.path !== "string") continue;
+        const envs = await Promise.resolve((bb.sdk.environments as { list?: (q: unknown) => Promise<unknown> } | undefined)?.list?.({ hostId: source.hostId, path: source.path }) ?? []).catch(() => []) as Array<{ id?: unknown }>;
+        return { projectId: row.id, environmentId: typeof envs?.[0]?.id === "string" ? envs[0].id : "" };
+      }
+      return null;
+      } catch { return null; }
+    })();
+    return selfProjectCache;
+  }
+
   async function config(): Promise<SelfRepairConfig> {
     const raw = await bb.storage.kv.get(CONFIG_KEY).catch(() => null);
     const stored = raw && typeof raw === "object" ? raw as Partial<SelfRepairConfig> : {};
     const merged = { ...SELF_REPAIR_DEFAULTS, ...stored };
+    if (!merged.projectId || !merged.environmentId) {
+      const discovered = await selfProject();
+      if (!merged.projectId && discovered?.projectId) merged.projectId = discovered.projectId;
+      if (!merged.environmentId && discovered?.environmentId) merged.environmentId = discovered.environmentId;
+    }
+    if (!stored.hubDb && typeof (db as { name?: unknown }).name === "string" && db.name) merged.hubDb = db.name;
+    if (!stored.hubLog) {
+      try { merged.hubLog = join(bb.server.experimental_dataDir, "plugins", "lane-pilot", "logs", "plugin.log"); } catch { /* the bb convention default stands */ }
+    }
     // The repair engineer's model is the `repairer` row of the table «role -> model» when the owner set one and the watcher's own config names no model.
-    if (!stored.model && !stored.providerId && typeof ctx.effectiveProjectSettings === "function") {
+    if (merged.projectId && !stored.model && !stored.providerId && typeof ctx.effectiveProjectSettings === "function") {
       const row = tableRowAt((await ctx.effectiveProjectSettings(merged.projectId).catch(() => null))?.values ?? {}, "repairer");
       if (row) return { ...merged, providerId: row.option.providerId, model: row.option.id, reasoningLevel: row.effort ?? merged.reasoningLevel };
     }
@@ -1009,6 +1046,7 @@ export function createSelfRepair(ctx: ServerCore, engineOf?: () => WorkflowEngin
     else if (due.length && today.length >= cfg.maxPerDay) reason = `daily limit ${cfg.maxPerDay} reached`;
     else if (due.length && options.dryRun) reason = `would start a repair for ${due[0]![0]}`;
     else if (due.length) target = due[0]!;
+    if (target && !cfg.projectId) { reason = "no Lane Pilot project configured or discovered"; target = null; }
     // A repair is a run of the graph `lp.self-repair` (worktree, repair thread, verdict). Exception: a kind of failure whose class is the workflow
     // engine itself (packages/workflow-engine, src/rooms/workflow/) keeps the direct spawn below, because a broken engine cannot run its own repair.
     const graphEngine = engineOf?.();

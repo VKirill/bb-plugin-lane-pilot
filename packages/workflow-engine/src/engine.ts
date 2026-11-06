@@ -1,4 +1,4 @@
-import type { LanePilotDatabase } from "./db";
+import type Database from "better-sqlite3";
 import { randomUUID } from "node:crypto";
 
 import { MissingValueError, evalCondition, evalSpec, parseExpr, refOf, renderValue, toExpr, valueSpecOf } from "./expr";
@@ -124,7 +124,7 @@ export const ENGINE_COMPAT_VERSION = "wfe-1";
 const LEGACY_BUILD_STAMP = /^\d+\.\d+\.\d+/;
 
 export type EngineOptions = {
-  db: LanePilotDatabase;
+  db: Database.Database;
   /** The build (package version): written to receipts and to the run row, informational. */
   harnessVersion: string;
   /** What a reload compares to decide whether an in-flight step may be re-run (default: `harnessVersion`, i.e. every build is its own). */
