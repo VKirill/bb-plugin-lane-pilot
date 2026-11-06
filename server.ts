@@ -52,7 +52,7 @@ import { threadPendingInteractions } from "./src/rooms/relay/server";
 import type { Services } from "./src/rooms/core/server";
 import { createStageChildren } from "./src/rooms/qa/server";
 import { createDocsStage } from "./src/rooms/docs/server";
-import { createMemoryStage } from "./src/rooms/memory/server";
+import { createMemoryStage, mountThreadBlock } from "./src/rooms/memory/server";
 import { createNightStages } from "./src/rooms/night/server";
 import { createProjectLifeStage } from "./src/rooms/project-life/server";
 import { createQaStages } from "./src/rooms/qa/server";
@@ -184,6 +184,8 @@ export default async function plugin(bb: BbPluginApi) {
   await mountOutage(ctx).catch((cause: unknown) => bb.log.warn(`Lane Pilot: outage record skipped: ${cause instanceof Error ? cause.message : String(cause)}`));
   // Learning from the owner's messages (src/learning): registers its PM tool before the tool families fold, so it comes first.
   mountLearning(ctx, services);
+  // Every ordinary thread of a project gets the L1 memory showcase (M2); PM and plugin threads are left out inside.
+  mountThreadBlock(ctx);
   registerPhaseTool(ctx, services);
   registerQueueTool(ctx);
   registerConversationTools(ctx);

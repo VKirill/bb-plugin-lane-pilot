@@ -89,6 +89,11 @@ export const rpcKnowledge = {
     input: z.object({ projectId: z.string().min(1), chain: z.array(z.string()).max(16).optional() }).strict(),
     output: z.object({ records: z.array(z.object({ id: z.string(), content: z.string() }).strict()) }).strict(),
   },
+  // The L1 showcase an ordinary BB thread gets from contributeInstructions (M2); null for a PM or plugin thread.
+  memory_thread_block: {
+    input: z.object({ projectId: z.string().min(1), threadId: z.string().min(1) }).strict(),
+    output: z.object({ block: z.string().nullable() }).strict(),
+  },
   session_lesson: {
     // audience defaults to both for older lane-memory clients that do not send it.
     input: z.object({ projectId: z.string().min(1), rule: z.string().min(8).max(600), evidence: z.string().max(1000).optional(), scope: z.array(z.string()).max(8).optional(),

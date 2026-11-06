@@ -3,6 +3,7 @@
 export { mixReviewerMemory, mixWriterMemory, pmMemoryContext, reviewerMemoryFor, snapshotFileRead, taskMemoryContext, writerCandidates, writerMemoryPaths } from "./memory-mix";
 export { createMemoryStage } from "./memory";
 export { sessionMemoryRpc } from "./session-memory";
+export { mountThreadBlock, threadMemoryBlock } from "./thread-block";
 export { MAX_SETTLED_PER_RUN, createMemoryConflicts } from "./memory-conflicts";
 export type { MemoryConflictsApi } from "./memory-conflicts";
 export { MEMORY_CONFLICT_USAGE, runMemoryConflictCli } from "./memory-conflict-cli";
