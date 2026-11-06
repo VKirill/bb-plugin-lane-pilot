@@ -1,0 +1,86 @@
+# Untangle decision log — Lane Pilot plugin
+
+Started 2026-11-07. Goal: pieces that change together live together, nothing
+imports something more volatile than itself, as few special cases as possible.
+Owner chose both additions: **Comments** (drop comments that only restate the
+code) and **Tests** (drop tests that cannot catch a real bug, fix tests that
+fail without one — done last).
+
+Full problem list with file:line evidence: `argon-audit-ru.md` (Argon, verified
+by recount on 2026-11-06). Measure progress with `node scripts/room-graph.mjs`.
+
+## Baseline (2026-11-07, main c6b443cb)
+
+| metric | value |
+|---|---|
+| rooms | 81 |
+| largest room SCC | 65 |
+| mutual room pairs | 123 |
+| room edges | 671 |
+| `.catch(() => x)` | 799 |
+| empty / comment-only `catch {}` | 168 |
+| `db.prepare` | 910 |
+
+Hubs: core (out 54 / in 51), storage (out 27 / in 53), writer (28/26),
+contracts (2/50), tools (50/2), runs (17/32).
+
+## Fixes, each above the problems it solves
+
+### F1. Dependency direction: kit/contracts/storage at the bottom, domains in the middle, core/tools/server.ts on top
+The one fix behind most of the SCC. Bottom layers never import a domain room;
+domains never import `core` or `tools` (the composition root).
+- storage/database.ts imports 27 domain rooms; `transitionAttempt` calls memory-core.
+- 51 rooms import `core` (Services type, rpc helpers) — the composition root is imported by what it composes.
+- `const services = {} as Services` in server.ts:93, filled by mutation; order of `mountLearning`/`mountRegressionTools` before `registerTools` is implicit.
+- `Services` is one 135-field bag passed everywhere, carries private room constants (DOCS_NIGHT_ATTEMPTS).
+- setting-validation.ts bare side-effect imports to fill the judgment registry.
+
+### F2. One owner per table; cross-room readers go through that owner's read functions
+- `lane_pilot_run` touched by 40 rooms, `attempt` 36, `task` 25 (raw `db.prepare`, `json_extract`).
+- `listCheckTimeouts` parses `attempt.reason` text with `instr`/regex; run-goal filters on `detail LIKE 'the check failed:%'` → store `failure_code`/`check_name`/`timeout_sec` columns.
+- worktree owner guessed from name prefixes (`ownerKindOfName`, core.ts:137).
+- KV keys are global string conventions (`host-job:`, `native-selection:`, `native-thread:`).
+
+### F3. One role registry (`RoleSpec`) drives settings RPC, defaults, routing and UI
+- selections.ts: the same 25-line validate+`casUpsertSettings` block copied 9 times.
+- role lists repeated in settings.ts, run-routing.ts, page-model.ts, role-models.ts, rpc-settings.ts.
+- providerId special branches spread over server.ts, database.ts, settings.ts, spawn-model.ts.
+
+### F4. sma-map and tests depend on exported symbols, not source text
+- sma-map/model.ts verifies 1 798 `path#substring` pairs with `readFileSync().includes()`; live.ts hardcodes table names.
+- 12 test files read `src/rooms/**` as text. Every move/rename breaks them → blocks every other fix.
+- boundaries.test.ts checks file cycles only; add a room-level ratchet (SCC and mutual pairs may only go down).
+
+### F5. Attempt lifecycle in one place
+- attempt transitions spread over tasks, runs, writer, verification, critique, stability, stage-return, rollback, run-goal, pilot via `reason` prefixes (`WAITING_WRITER_PREFIX`, `REPLAY_CHECK_FAILED`, `thread_status_error:`).
+- writer/start.ts 1 469 LOC, writer/finish.ts 1 161, phase/driver.ts 1 240, self-repair.ts 1 309; side effects (learning, memory, metrics, notices) hard-wired in finish.ts.
+- docs-*.ts, git-docs.ts and stability-drill.ts live in `verification`.
+
+### F6. Host contract split by domain; no `node -e` string runner
+- host-handlers.ts 942 LOC mixes git, TypeSafe/OpenLux HTTP, jev-ultrafast desktop, WireGuard scan, YAML regex edit; contracts/host.ts 76 methods.
+- jobs.ts runs a JS string via `node -e`, finds handlers by `.default?.handlers?.[kind]`; busy-wait file lock `setTimeout(100)×20×3`.
+
+### F7. No developer environment in product code
+- cli.ts:604 `recover` checks `hello.txt` / `tests/hello.test.txt`.
+- self-repair.ts:66 hardcodes projectId, environmentId, sectionId, ignoreProjects, hub ssh.
+- employee-place.ts `AFFINITY_HOSTS` host ids; host-handlers.ts:913 `~/Documents/BB-сервис/toolkit/...`; spawn-model.ts macOS `/Users/*/Documents` check for opencode2.
+
+### F8. Errors: expected ones handled by name, unexpected ones logged
+- 799 `.catch(() => x)` + 168 empty catch. Each one either names the expected error (ENOENT, gone thread) or logs through `bb.log`.
+
+### F9. Surplus
+- dead rooms atlas, twins, guard-tools; dead files listed in argon-audit-ru.md cluster D (install-runner.ts has a type import from stack-ops.ts — move the type, then delete); packages/workflow-engine/src/db.ts; duplicated `compiledMainAgentSpawnBinding` in activation.ts.
+- 25+ micro rooms (25–200 LOC) that change with one neighbour → merge into that neighbour (cluster D list).
+
+## Waves and status
+
+| wave | fixes | stream | status |
+|---|---|---|---|
+| 0 | F7, F9 dead code | U0 | started 2026-11-07 |
+| 1 | F4 + room ratchet test | U1 | started 2026-11-07 |
+| 1 | F3 | U2 | started 2026-11-07 |
+| survey | F1/F2 import map for storage and core | U4 | started 2026-11-07 |
+| 2 | F1 storage side, F2 | — | after U0–U2 merge |
+| 3 | F1 core side, F6 | — | after wave 2 |
+| 4 | F5 | — | after wave 3 |
+| 5 | F9 micro rooms, F8, Tests | — | last |
