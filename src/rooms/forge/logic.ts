@@ -1,4 +1,8 @@
 import { createHash } from "node:crypto";
+import { parseFrontmatter } from "../docs";
+import { FORBIDDEN_GRANTS, SKILL_NAME, lintSkillFiles } from "./skill-lint";
+
+export { FORBIDDEN_GRANTS } from "./skill-lint";
 
 /**
  * The forge (SMA map, The forge): the «Creator» role writes exactly one draft — a skill, a role or a workflow — into its draft folder; the
@@ -8,7 +12,7 @@ import { createHash } from "node:crypto";
 export const FORGE_KINDS = ["skill", "role", "workflow"] as const;
 export type ForgeKind = (typeof FORGE_KINDS)[number];
 
-export const NAME = /^[a-z][a-z0-9-]{1,47}$/;
+export const NAME = SKILL_NAME;
 
 /** Draft folders: one per kind, one folder per draft. */
 export const draftFolder = (kind: ForgeKind, name: string) => `.agents/forge/${kind}s/${name}`;
@@ -16,29 +20,14 @@ export const draftFile = (kind: ForgeKind, name: string) => `${draftFolder(kind,
 /** Where an enabled draft lands in the project. */
 export const enabledPath = (kind: ForgeKind, name: string) => kind === "skill" ? `.claude/skills/${name}/SKILL.md` : kind === "role" ? `.claude/agents/${name}.md` : `.lane-pilot/workflows/${name}.json`;
 
-/** Forbidden grants: what a forged skill or role may never ask for. */
-export const FORBIDDEN_GRANTS: ReadonlyArray<{ pattern: RegExp; why: string }> = [
-  { pattern: /--dangerously-skip-permissions|bypassPermissions|permission-mode\s+bypass/i, why: "bypasses the permission prompts" },
-  { pattern: /^tools:\s*\*\s*$|allowed-tools:\s*\*|"tools"\s*:\s*"\*"/im, why: "asks for every tool" },
-  { pattern: /Bash\(\s*\*\s*\)|Bash\(rm\b|Bash\(sudo\b/i, why: "an unrestricted or destructive shell grant" },
-  { pattern: /env_get|Env Catalog|\.env\b|secrets?\//i, why: "reads secrets — a forged draft gets none; the PM hands accounts by name" },
-  { pattern: /guard_shell|LANE_GUARD|agent-guard|disable[_ -]?hooks?/i, why: "touches the guard or the hooks" },
-  { pattern: /curl[^\n]*\|\s*(ba)?sh|wget[^\n]*\|\s*(ba)?sh/i, why: "pipes a download into a shell" },
-];
-
 export type LintFinding = { code: string; message: string };
 
-const frontmatter = (text: string): Record<string, string> | null => {
-  if (!text.startsWith("---\n")) return null;
-  const head = text.slice(4).split("\n---", 1)[0] ?? "";
-  return Object.fromEntries(head.split("\n").filter((line) => /^[A-Za-z_-]+:/.test(line)).map((line) => [line.slice(0, line.indexOf(":")).trim(), line.slice(line.indexOf(":") + 1).trim().replace(/^"|"$/g, "")]));
-};
-
-/** Draft lint: the shape of its kind, a description with a trigger, a size cap, no forbidden grant. */
+/** Draft lint: the shape of its kind, a description with a trigger, a size cap, no forbidden grant. A skill draft is linted by the skill library (skill-lint.ts), the same rules the published canon passes. */
 export function lintDraft(kind: ForgeKind, name: string, text: string): LintFinding[] {
   const found: LintFinding[] = [];
   if (!text.trim()) return [{ code: "empty", message: "the draft is empty" }];
-  if (Buffer.byteLength(text, "utf8") > 40_000) found.push({ code: "too_big", message: "the draft is over 40 KB: a skill or role says what to do, not everything there is" });
+  // The skill draft's size cap lives in the skill library with the rest of the skill rules.
+  if (kind !== "skill" && Buffer.byteLength(text, "utf8") > 40_000) found.push({ code: "too_big", message: "the draft is over 40 KB: a skill or role says what to do, not everything there is" });
   if (kind === "workflow") {
     try {
       const parsed = JSON.parse(text) as { id?: unknown; nodes?: unknown; entry?: unknown; description?: unknown };
@@ -47,18 +36,24 @@ export function lintDraft(kind: ForgeKind, name: string, text: string): LintFind
       if (typeof parsed.entry !== "string") found.push({ code: "entry", message: "the workflow has no entry node" });
       if (!parsed.description) found.push({ code: "description", message: "the workflow has no description" });
     } catch { found.push({ code: "json", message: "the workflow draft is not JSON" }); }
+  } else if (kind === "skill") {
+    for (const finding of lintSkillFiles([{ path: "SKILL.md", text }], name))
+      if (finding.severity === "error") found.push({ code: finding.code, message: finding.message });
+    if (parseFrontmatter(text)?.data.draft === "true") found.push({ code: "draft_mark", message: "remove draft: true and fill the trigger before linting" });
   } else {
-    const meta = frontmatter(text);
-    if (!meta) found.push({ code: "frontmatter", message: "the draft has no front matter (--- name, description ---)" });
+    const parsed = parseFrontmatter(text);
+    if (!parsed) found.push({ code: "frontmatter", message: "the draft has no front matter (--- name, description ---)" });
     else {
-      if (meta.name !== name) found.push({ code: "name", message: `front matter name must be ${name}` });
-      const description = meta.description ?? "";
+      const meta = parsed.data;
+      const metaName = Array.isArray(meta.name) ? meta.name[0] : meta.name;
+      if (metaName !== name) found.push({ code: "name", message: `front matter name must be ${name}` });
+      const description = Array.isArray(meta.description) ? meta.description.join(" ") : meta.description ?? "";
       if (description.length < 40) found.push({ code: "description", message: "the description is too short to be found by: say what it does and when to use it" });
       if (!/use when|применяется|используй|when:/i.test(description)) found.push({ code: "trigger", message: "the description has no trigger (\"Use when …\")" });
-      if (/draft:\s*true/.test(text.split("\n---", 2)[0] ?? "")) found.push({ code: "draft_mark", message: "remove draft: true and fill the trigger before linting" });
+      if (meta.draft === "true") found.push({ code: "draft_mark", message: "remove draft: true and fill the trigger before linting" });
     }
   }
-  for (const grant of FORBIDDEN_GRANTS) if (grant.pattern.test(text)) found.push({ code: "forbidden_grant", message: `forbidden grant: ${grant.why}` });
+  if (kind !== "skill") for (const grant of FORBIDDEN_GRANTS) if (grant.pattern.test(text)) found.push({ code: "forbidden_grant", message: `forbidden grant: ${grant.why}` });
   return found;
 }
 

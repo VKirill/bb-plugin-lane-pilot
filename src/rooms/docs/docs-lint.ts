@@ -50,18 +50,41 @@ export function parseFrontmatter(content:string): { data:Frontmatter; body:strin
   if (!match) return null;
   const data:Frontmatter = {};
   let listKey:string | null = null;
-  for (const raw of match[1]!.split("\n")) {
+  const lines = match[1]!.split("\n");
+  for (let index = 0; index < lines.length; index++) {
+    const raw = lines[index]!;
     const item = /^[ \t]*-[ \t]+(.*)$/.exec(raw);
     if (item && listKey) { (data[listKey] as string[]).push(unquote(item[1]!)); continue; }
     const field = /^([A-Za-z_][\w-]*):\s*(.*)$/.exec(raw);
     if (!field) continue;
     const [, key, value] = field as unknown as [string, string, string];
+    // A block scalar (`key: >` folds its indented lines into one, `key: |` keeps the line breaks) is how a
+    // long description is written; read as the bare ">" it looked like an empty value and every check on it failed.
+    const block = /^([|>])[+-]?\d*$/.exec(value.trim());
+    if (block) {
+      const collected:string[] = [];
+      while (index + 1 < lines.length && (/^[ \t]/.test(lines[index + 1]!) || lines[index + 1]!.trim() === "")) collected.push(lines[++index]!.trim());
+      while (collected.length && collected[collected.length - 1] === "") collected.pop();
+      data[key] = block[1] === ">" ? foldBlockScalar(collected) : collected.join("\n");
+      listKey = null;
+      continue;
+    }
     if (value === "") { data[key] = []; listKey = key; continue; }
     listKey = null;
     const inline = /^\[(.*)\]$/.exec(value.trim());
     data[key] = inline ? inline[1]!.split(",").map((part) => unquote(part.trim())).filter(Boolean) : unquote(value.trim());
   }
   return { data, body:content.slice(match[0].length) };
+}
+
+/** YAML folded style: single line breaks become spaces, a blank line is a paragraph break. */
+function foldBlockScalar(lines:string[]):string {
+  let out = "";
+  for (const line of lines) {
+    if (line === "") { if (out && !out.endsWith("\n")) out += "\n"; continue; }
+    out += (out && !out.endsWith("\n") ? " " : "") + line;
+  }
+  return out.trim();
 }
 
 function unquote(value:string):string {

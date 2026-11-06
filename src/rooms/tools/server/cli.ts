@@ -53,6 +53,7 @@ import { JEV_USAGE, runJevCli } from "../../jev";
 import { retireAdoptedRule } from "../../self-repair/server";
 import { ROLLBACK_USAGE, runRollbackCli } from "../../rollback/server";
 import { CODE_CRITIC_DEFAULTS, isCodeCriticDefault } from "../../critique";
+import { runSkillLintCli } from "../../forge";
 import type { CodeCriticDefault } from "../../critique";
 
 function requireCriticCodeDefault(value: string): CodeCriticDefault {
@@ -216,6 +217,7 @@ export function registerCli(ctx: ServerCore, services: Services) {
       { name:"checkers", summary:"Checking the checkers: plant known defects in accepted candidates, run every checker on them and print the checker scorecard (score, scorecard, drill, defects)", usage:CHECKERS_USAGE },
       { name:"schedule", summary:"The schedule board: scheduled workflows, errands and scripts (list, show, history, preview, create, update, pause, resume, run-now, delete)", usage:SCHEDULE_USAGE },
       { name:"agents", summary:"The agents the owner can pick: list and show the bundled ones, create, update and delete his own (a JSON or a markdown file with frontmatter)", usage:AGENTS_USAGE },
+      { name:"skill-lint", summary:"Lint a local skill folder against the skill standard (SKILL.md, references/, scripts/): errors and warnings, exit 1 on errors", usage:"bb lane-pilot skill-lint <dir>" },
   ];
   // The help is the hand list above plus every registered command it does not name: regress, regressions, regress-close and
   // timeline were missing from it, and a PM told the owner a quarantine could not be lifted (2026-11-02).
@@ -408,6 +410,9 @@ export function registerCli(ctx: ServerCore, services: Services) {
         }
         if (command === "agents") {
           return await runAgentsCli({ list: () => services.listedAgentProfiles(), registry: agentRegistry(ctx) }, args);
+        }
+        if (command === "skill-lint") {
+          return runSkillLintCli(args);
         }
         if (command === "configure" && args.length === 1) {
           const config = prototypeConfigSchema.parse(JSON.parse(args[0]!));
