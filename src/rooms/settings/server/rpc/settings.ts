@@ -106,7 +106,7 @@ export function settingsRpc(ctx: ServerCore, services: Services) {
           origin: originOf(key),
           originBelow: originBelow(key),
           groups: Object.fromEntries(ACCESS_GROUPS.map((group) => [group, effectiveGroup(role, group, access)])) as never,
-          switches: Object.fromEntries(ACCESS_SWITCHES.map((sw) => [sw, effectiveSwitch(sw, access)])) as never,
+          switches: Object.fromEntries(ACCESS_SWITCHES.map((sw) => [sw, effectiveSwitch(sw, access, role)])) as never,
         };
       });
       const { pluginRows, skillRows } = await loadCatalog(projectId, isGlobal);

@@ -75,24 +75,40 @@ describe("role MCP server configurations", () => {
     });
     expect(bound).toHaveProperty("experimental_vkRequiredSessionPolicy");
 
-    // When provider does NOT support mcpServers (e.g. legacy or custom provider), lenient mode strips unsupported groups without error
+    // A known provider whose row differs from every expected variant cannot be narrowed at all (one warning, then {}).
     const limitedAdvertised = {
       ...advertised,
       providerGroups: {
         ...advertised.providerGroups,
-        "claude-code": ["bbPlugins", "skills"], // mcpServers omitted
+        "claude-code": ["bbPlugins", "skills"], // not a variant the table holds for claude-code
       },
     };
-    const boundLimited = requiredSessionPolicySpawnBinding({
+    const boundDrifted = requiredSessionPolicySpawnBinding({
       capability: "required",
       advertised: limitedAdvertised,
       snapshot,
       providerId: "claude-code",
       role: "writer",
     });
+    expect(boundDrifted).toEqual({});
+
+    // A provider that advertises only an ACP subset (no mcpServers) still binds; lenient mode strips the unsupported groups.
+    const acpAdvertised = {
+      ...advertised,
+      providerGroups: { ...advertised.providerGroups, "acp-future": ["bbPlugins", "skills"] },
+      instructionSwitches: { ...advertised.instructionSwitches, "acp-future": ["userInstructions"] },
+    };
+    const boundLimited = requiredSessionPolicySpawnBinding({
+      capability: "required",
+      advertised: acpAdvertised,
+      snapshot,
+      providerId: "acp-future",
+      role: "writer",
+    });
     expect(boundLimited).toHaveProperty("experimental_vkRequiredSessionPolicy");
-    const policy = (boundLimited as { experimental_vkRequiredSessionPolicy: { policy: Record<string, unknown> } }).experimental_vkRequiredSessionPolicy.policy;
-    expect(policy.mcpServers).toBeUndefined();
+    const limited = (boundLimited as { experimental_vkRequiredSessionPolicy: { policy: Record<string, unknown> } }).experimental_vkRequiredSessionPolicy.policy;
+    expect(limited.mcpServers).toBeUndefined();
+    expect(limited.nativePlugins).toBeUndefined();
   });
 });
 

@@ -131,7 +131,11 @@ function RoleRow({ spec, page, access, rules, open, onToggle, fallbackNames, tab
   // older stage picker (plan_critique.*, memory.*…), so such a picker is replaced by what the table says, not left on screen doing nothing.
   if (AS_WRITER.has(spec.id)) model = <span className="text-xs text-muted-foreground" data-testid={`team-model-${spec.id}`}>{t("teamModelAsWriter")}</span>;
   else if (!OWN_PICKER.has(spec.id)) {
-    const row = tableRoles?.get(roleRowOf(spec.id));
+    // A role without a table row of its own (the worktree holder, the harness sessions) resolves onto another
+    // role's row — showing that row's pool here would repeat it under the same testid and mislead the owner.
+    const resolved = roleRowOf(spec.id);
+    const foreignSpecRow = resolved !== spec.id && ROLE_GROUPS.some((group) => group.roles.some((item) => item.id === resolved));
+    const row = foreignSpecRow ? undefined : tableRoles?.get(resolved);
     if (row && (row.source === "table" || !spec.model || spec.detail === "browser" || spec.detail === "council")) {
       // BB's own window, as everywhere; a choice is saved into the role's row of the table (its pool stays), «+N» is the rest of the pool.
       model = <div className="min-w-0 space-y-1" title={t("teamModelFromTable")} data-testid={`team-model-${spec.id}`}>
