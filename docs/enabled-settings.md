@@ -14,7 +14,7 @@ sources:
   - docs/enabled-settings.snapshot.json
 ---
 
-<!-- enabled-settings:structure e39a76070668eb8d -->
+<!-- enabled-settings:structure 6a5f0cafc937ee95 -->
 
 # Enabled settings (generated)
 
@@ -103,6 +103,7 @@ switches: `quick` disables both critiques, `full` enables them (`src/rooms/criti
 | `docs.reasoning_effort` | `inherit writer selection` | — | docs stage uses model-supported reasoning selection |
 | `docs.service_tier` | `inherit writer selection` | — | docs stage uses provider-supported service tier selection |
 | `docs.since` | `yesterday` | — | stage setting: age window for docs candidates |
+| `episodes.collect` | `on` | — | errand episodes: on writes lane_pilot_errand_episode when an errand run ends and marks a routed run pending at start |
 | `failure.interventions` | `on` | — | writer loop: a same-class failure streak gets the class's intervention instead of the same retry |
 | `harness.adopt_by` | `bench` | — | harness: who adopts a taught tree, the bench comparison or the live alternation |
 | `helper.bb_plugins` | — | — | helper BB-plugin allowlist when helper.context_mode is selected |

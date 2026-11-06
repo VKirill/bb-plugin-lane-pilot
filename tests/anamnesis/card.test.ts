@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { hostContract } from "../../src/rooms/contracts";
 import { anamnesisHandler } from "../../src/rooms/anamnesis/host";
 import { createHub, type Hub } from "../../src/rooms/anamnesis/hub";
+import { openStore } from "../../src/rooms/anamnesis/store";
 import { PM_CARD_MAX_CHARS, ownerCardBlock } from "../../src/rooms/anamnesis/card";
 
 // Audit 2026-10-08 round 4, item 19 (F-12 / A5): `renderCard` was written for the PM's context and never connected to it.
@@ -16,6 +17,7 @@ beforeEach(() => {
     hostCall: async (hostId, request) => hostContract.anamnesis.output.parse(await anamnesisHandler(hostContract.anamnesis.input.parse({ requestedHostId: hostId, request }))).response,
     listHosts: async () => [{ id: "host_mini", name: "MAC Mini", connected: true }],
     kv: { get: async () => undefined, set: async () => undefined },
+    store: openStore(":memory:"),
   });
 });
 afterEach(() => { if (previousDir === undefined) delete process.env.LANE_PILOT_ANAMNESIS_DIR; else process.env.LANE_PILOT_ANAMNESIS_DIR = previousDir; });

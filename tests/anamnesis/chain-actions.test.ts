@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { anamnesisHandler } from "../../src/rooms/anamnesis/host";
 import { createHub } from "../../src/rooms/anamnesis/hub";
+import { openStore } from "../../src/rooms/anamnesis/store";
 import { checkArtifact, publicFacts, registerAnamnesisActions } from "../../src/rooms/anamnesis/chain-actions";
 
 /** A8: the chains read the public, confirmed records only, and what they write is checked against them. Real store, no Jev. */
@@ -16,6 +17,7 @@ beforeEach(async () => {
   hub = createHub({
     hostCall: async (hostId, request) => (await anamnesisHandler({ requestedHostId: hostId, request })).response,
     listHosts: async () => [{ id: "mini", name: "Mac mini", connected: true }], kv: { get: async () => null, set: async () => undefined },
+    store: openStore(":memory:"),
   });
   const ev = (ref: string) => [{ source: "git", ref, at }];
   await hub.ask({ op: "upsert", actor: "auto:git", reason: "t", records: [

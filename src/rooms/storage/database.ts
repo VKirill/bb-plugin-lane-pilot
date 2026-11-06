@@ -18,6 +18,7 @@ import { workflowMigrations } from "@lane-pilot/workflow-engine";
 import { workflowNotVerifiedMigrations, workflowOpsMigrations } from "@lane-pilot/workflow-engine";
 import { draftMigrations } from "@lane-pilot/workflow-engine";
 import { jevMigrations } from "@lane-pilot/jev";
+import { anamnesisOwnerMigrations } from "../anamnesis/server";
 import { learningMigrations } from "../learning/migrations";
 import { pmReplayMigrations } from "../pm-replay";
 import { scheduleAgentMigrations, scheduleMigrations } from "../schedule";
@@ -533,6 +534,9 @@ export const migrations = [
   `ALTER TABLE lane_pilot_errand_episode ADD COLUMN failure_class TEXT`,
   `ALTER TABLE lane_pilot_errand_episode ADD COLUMN process_key_proposed TEXT`,
   `ALTER TABLE lane_pilot_errand_episode ADD COLUMN enrichment_reason TEXT`,
+  // Stream M1b: the owner anamnesis moves to the hub (src/rooms/anamnesis/migrations.ts) — the same columns as the
+  // Mac-mini file store under the lane_pilot_owner_ prefix, so one base holds it next to the rest of Lane Pilot's data.
+  ...anamnesisOwnerMigrations,
 ];
 
 export function openDatabase(bb: BbPluginApi): LanePilotDatabase {

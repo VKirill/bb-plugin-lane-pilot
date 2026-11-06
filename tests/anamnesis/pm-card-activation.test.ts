@@ -19,7 +19,7 @@ function hostRpc(anamnesis: (input: { request: { op: string; maxChars?: number }
   };
 }
 
-async function startPm(anamnesis: Parameters<typeof hostRpc>[0]) {
+async function startPm(anamnesis: Parameters<typeof hostRpc>[0], seed?: (harness: { behavior: { callRpc(method: string, input: unknown): Promise<unknown> } }) => Promise<void>) {
   const spawns: Array<Record<string, unknown>> = [];
   const { bb, harness } = createFakePluginHost({
     pluginId: "lane-pilot",
@@ -37,6 +37,7 @@ async function startPm(anamnesis: Parameters<typeof hostRpc>[0]) {
   Object.assign(bb.agents, { experimental_vkCompiledMainAgent: () => ({ persist: true, bridgeAgentOptions: true, requiredMarker: true, snapshotDigest: true, providerIds: ["claude-code"] }) });
   savePrototypeConfig(openDatabase(bb), { projectId, hostId: "host-test", pmWorkspacePath: "/tmp/pm", writerWorkspacePath: "/tmp/writer", pmProviderId: "claude-code", pmModel: "claude-saved", writerProviderId: "codex", writerModel: "codex-test" });
   await plugin(bb);
+  await seed?.(harness as never);
   await harness.behavior.callRpc("activate_pm", {
     projectId, sourceThreadId: null, agentId: "dev-orchestrator",
     snapshot: { status: "ready", scope: { kind: "new-thread", projectId }, projectId, providerId: "claude-code", model: "claude-opus-5", reasoningLevel: "medium",
@@ -47,13 +48,18 @@ async function startPm(anamnesis: Parameters<typeof hostRpc>[0]) {
 }
 
 describe("the owner card in the PM's starting prompt", () => {
-  it("is appended after the role, from the confirmed records of the owner's store, within 1800 characters", async () => {
+  it("is appended after the role, from the confirmed records of the hub store, within 1800 characters — no host call (M1b)", async () => {
     const asked: Array<{ op: string; maxChars?: number }> = [];
-    const prompt = await startPm((input) => { asked.push(input.request); return { hostId: "host-owner-mini", response: { text: CARD, chars: CARD.length, records: 1 } }; });
-    expect(asked).toEqual([{ op: "card", maxChars: 1800 }]);
+    const prompt = await startPm(
+      (input) => { asked.push(input.request); return { hostId: "host-owner-mini", response: { text: CARD, chars: CARD.length, records: 1 } }; },
+      // The owner's own record, confirmed: the card is built from the hub's lane_pilot_owner_* tables.
+      async (harness) => { await harness.behavior.callRpc("anamnesis", { request: { op: "add", record: { kind: "skill", key: "Blender", title: "Blender", statement: "Blender scripting" }, reason: "told" } }); },
+    );
     expect(prompt).toMatch(/Wait for the user's task/);
-    expect(prompt).toContain(CARD);
-    expect(prompt.indexOf("Wait for the user's task")).toBeLessThan(prompt.indexOf("Owner card"));
+    expect(prompt).toContain("Blender");
+    expect(prompt.indexOf("Wait for the user's task")).toBeLessThan(prompt.indexOf("Blender"));
+    // The card is hub-local: the host sees at most the portrait files' sync, never a store op.
+    expect(asked.every((call) => call.op === "notes_read" || call.op === "notes_write")).toBe(true);
   });
 
   it("adds nothing when the owner has confirmed nothing, and the PM still starts when the store cannot be reached", async () => {

@@ -7,17 +7,20 @@ import { runAnamnesisCli } from "../../src/rooms/anamnesis/cli";
 import { hostContract } from "../../src/rooms/contracts";
 import { anamnesisHandler } from "../../src/rooms/anamnesis/host";
 import { createHub, type Hub } from "../../src/rooms/anamnesis/hub";
+import { openStore } from "../../src/rooms/anamnesis/store";
 
 /** The one-shot cleanup of what the first load put into the portrait that is not about the owner as a person. */
 const previousDir = process.env.LANE_PILOT_ANAMNESIS_DIR;
-let hub: Hub, store: string;
+let hub: Hub, store: string, hubDb: string;
 beforeEach(() => {
   store = join(mkdtempSync(join(tmpdir(), "anamnesis-purge-")), "store");
   process.env.LANE_PILOT_ANAMNESIS_DIR = store;
+  hubDb = join(store, "hub.db");
   hub = createHub({
     hostCall: async (hostId, request) => hostContract.anamnesis.output.parse(await anamnesisHandler(hostContract.anamnesis.input.parse({ requestedHostId: hostId, request }))).response,
     listHosts: async () => [{ id: "host_mini", name: "MAC Mini", connected: true }],
     kv: { get: async () => undefined, set: async () => undefined },
+    store: openStore(hubDb),
   });
 });
 afterEach(() => { if (previousDir === undefined) delete process.env.LANE_PILOT_ANAMNESIS_DIR; else process.env.LANE_PILOT_ANAMNESIS_DIR = previousDir; });
@@ -48,8 +51,8 @@ async function seed() {
   await hub.ask({ op: "edit", id: "event:confirmed-journal", patch: { status: "confirmed" }, reason: "owner" });
   await put("touched registry", "registry", {}, "project");
   await hub.ask({ op: "edit", id: "project:touched-registry", patch: { statement: "my own words", status: "draft" }, reason: "owner" });
-  // A legacy draft with infrastructure text, written before the filter existed (straight into the file).
-  const db = new DatabaseSync(join(store, "anamnesis.db"));
+  // A legacy draft with infrastructure text, written before the filter existed (straight into the store file).
+  const db = new DatabaseSync(hubDb);
   db.prepare("INSERT INTO records(id,kind,title,statement,attributes,sensitivity,confidence,status,first_seen,last_seen,manual_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)")
     .run("fact:legacy-infra", "fact", "ssh to the hub", "ssh -i ~/.ssh/key root@10.0.0.5", "{}", "private", 0.6, "draft", AT, AT, 0, AT, AT);
   db.prepare("INSERT INTO evidence(record_id,source,ref,at) VALUES (?,?,?,?)").run("fact:legacy-infra", "bb-message", "thr_9:1:0", AT);

@@ -123,6 +123,24 @@ with dark(name) as (
   union all
   select 'lane_pilot_owner_push' as name where (select count(*) from lane_pilot_owner_push) = 0
   union all
+  select 'lane_pilot_owner_records' as name where (select count(*) from lane_pilot_owner_records where updated_at >= (select since from lp_morning_30)) = 0
+  union all
+  select 'lane_pilot_owner_evidence' as name where (select count(*) from lane_pilot_owner_evidence where at >= (select since from lp_morning_30)) = 0
+  union all
+  select 'lane_pilot_owner_history' as name where (select count(*) from lane_pilot_owner_history where at >= (select since from lp_morning_30)) = 0
+  union all
+  select 'lane_pilot_owner_tombstones' as name where (select count(*) from lane_pilot_owner_tombstones where cutoff >= (select since from lp_morning_30)) = 0
+  union all
+  select 'lane_pilot_owner_checkpoints' as name where (select count(*) from lane_pilot_owner_checkpoints where updated_at >= (select since from lp_morning_30)) = 0
+  union all
+  select 'lane_pilot_owner_sources' as name where (select count(*) from lane_pilot_owner_sources where changed_at >= (select since from lp_morning_30)) = 0
+  union all
+  select 'lane_pilot_owner_loads' as name where (select count(*) from lane_pilot_owner_loads where at >= (select since from lp_morning_30)) = 0
+  union all
+  select 'lane_pilot_owner_notes_files' as name where (select count(*) from lane_pilot_owner_notes_files where written_at >= (select since from lp_morning_30)) = 0
+  union all
+  select 'lane_pilot_owner_notes_lines' as name where (select count(*) from lane_pilot_owner_notes_lines) = 0
+  union all
   select 'lane_pilot_phase' as name where (select count(*) from lane_pilot_phase where created_at >= (select since from lp_morning_30)) = 0
   union all
   select 'lane_pilot_phase_part' as name where (select count(*) from lane_pilot_phase_part where at >= (select since from lp_morning_30)) = 0

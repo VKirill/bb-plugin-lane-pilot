@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { runAnamnesisCli } from "../../src/rooms/anamnesis/cli";
 import { anamnesisHandler } from "../../src/rooms/anamnesis/host";
 import { createHub } from "../../src/rooms/anamnesis/hub";
+import { openStore } from "../../src/rooms/anamnesis/store";
 import type { AnamnesisRecord } from "../../src/rooms/anamnesis/model";
 import { currentLevel, levelAt, levelFor, skillSeries, stepsOf } from "../../src/rooms/anamnesis/skills";
 import { scanGit } from "../../src/rooms/anamnesis/sources/git";
@@ -128,6 +129,7 @@ describe("through the hub, the host and the command", () => {
     hub = createHub({
       hostCall: async (hostId, request) => (await anamnesisHandler({ requestedHostId: hostId, request })).response,
       listHosts: async () => [{ id: "mini", name: "Mac mini", connected: true }], kv: { get: async () => null, set: async () => undefined },
+      store: openStore(":memory:"),
     });
     await hub.ask({ op: "upsert", actor: "auto:git", reason: "t", records: [
       { kind: "skill", key: "lang:Go", title: "Go", attributes: { level: "applies", levels: [{ month: "2026-03", level: "applies", commits: 20 }] }, evidence: [{ source: "git", ref: "a@1", at: Date.UTC(2026, 2, 3) }] },
