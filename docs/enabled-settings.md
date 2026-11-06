@@ -14,7 +14,7 @@ sources:
   - docs/enabled-settings.snapshot.json
 ---
 
-<!-- enabled-settings:structure 6a5f0cafc937ee95 -->
+<!-- enabled-settings:structure da1047c0dc6a5574 -->
 
 # Enabled settings (generated)
 
@@ -104,6 +104,7 @@ switches: `quick` disables both critiques, `full` enables them (`src/rooms/criti
 | `docs.service_tier` | `inherit writer selection` | — | docs stage uses provider-supported service tier selection |
 | `docs.since` | `yesterday` | — | stage setting: age window for docs candidates |
 | `episodes.collect` | `on` | — | errand episodes: on writes lane_pilot_errand_episode when an errand run ends and marks a routed run pending at start |
+| `episodes.process_key` | `shadow` | — | Errand process-key choice: shadow keeps Jev's pick in the receipt only, active lets a confident pick set process_key once the gold-set F1 gate passes |
 | `failure.interventions` | `on` | — | writer loop: a same-class failure streak gets the class's intervention instead of the same retry |
 | `harness.adopt_by` | `bench` | — | harness: who adopts a taught tree, the bench comparison or the live alternation |
 | `helper.bb_plugins` | — | — | helper BB-plugin allowlist when helper.context_mode is selected |
