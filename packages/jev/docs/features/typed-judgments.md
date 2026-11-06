@@ -2,7 +2,7 @@
 title: Typed judgments
 type: component
 created: 2026-11-05
-updated: 2026-11-05
+updated: 2026-11-06
 status: active
 confidence: high
 tags: [jev, judgments, registry]
@@ -65,7 +65,7 @@ Registered judgments default to `shadow` unless the mode column says otherwise. 
 | `output.guard`: classify output for screening | Output kind and text → a guard decision | Capped prompt text and per-kind thresholds; fallback is defined in the judgment | `packages/jev/src/judgments/output-guard.ts:13-56` |
 | `d.render_match`: compare 3D render to concept | Brief and two images → match and defect probabilities | Image-backed; separate match and defect thresholds; fallback matches | `packages/jev/src/judgments/render-match.ts:10-47` |
 | `selfrepair.group`: group an incident with a known cause | Incident kind/reason and candidate groups → known signature or null | At most ten candidates; low probability or margin returns a new group; fallback is null | `packages/jev/src/judgments/repair-group.ts:13-55` |
-| Skill selector helper (not a registry ID): select writer skills | Catalog, task, plan, hints and callbacks → skill set with counts | Chunks of eight, six shared in-flight asks, at most five domain and three craft picks, eight hints; failed chunks add no picks | `packages/jev/src/judgments/skill-pick.ts:25-46`, `packages/jev/src/judgments/skill-pick.ts:174-184`, `packages/jev/src/judgments/skill-pick.ts:238-258` |
+| Skill selector helper (not a registry ID): select writer skills | Catalog, task, plan, hints and callbacks → skill set with counts | Chunks of eight, six shared in-flight asks, at most five domain and three craft picks, eight hints; kind-filtered skills are cached by name and description, unanswered skills are not kept, and failed chunks add no picks | `packages/jev/src/judgments/skill-pick.ts:25-46`, `packages/jev/src/judgments/skill-pick.ts:174-184`, `packages/jev/src/judgments/skill-pick.ts:192-210`, `packages/jev/src/judgments/skill-pick.ts:238-258` |
 | `skills.tree_pick`: one level of hierarchical skill selection | Task, level, path and options → selected names | At most 24 options in state and six picks; `none` ends descent; fallback selects none | `packages/jev/src/judgments/skill-tree-pick.ts:8-43` |
 | `graph.step_trivial`: determine if workflow step is mechanical | Node type, role, input size and optional risk → trivial boolean | Fallback says not trivial; caller owns whether downgrade is allowed | `packages/jev/src/judgments/step-trivial.ts:8-35` |
 | `audit.trace`: score attempt trace checks | Task and trace → seven scores and flags | Safety checks have their own threshold; fallback flags all checks | `packages/jev/src/judgments/trace-checks.ts:12-22`, `packages/jev/src/judgments/trace-checks.ts:28-77` |
