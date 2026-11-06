@@ -28,3 +28,4 @@ export type { ProjectSourceBinding, WriterBindingResolution } from "./project-bi
 export { userVisibleProjects } from "./project-scope";
 export type { ListedProject } from "./project-scope";
 export { sessionInventory } from "./session-inventory";
+export { pmSkillName } from "./server/pm-skill-use";

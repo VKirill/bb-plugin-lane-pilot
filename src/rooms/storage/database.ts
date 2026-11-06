@@ -523,6 +523,16 @@ export const migrations = [
     PRIMARY KEY (run_id, extractor_version)
   )`,
   `CREATE INDEX lane_pilot_errand_episode_updated ON lane_pilot_errand_episode(updated_at)`,
+  // Errand episodes, phase B (src/rooms/errands/episode-enrich.ts): what the hourly sweep's analyst wrote — the masked
+  // summary, the failure class, the model's process-key candidate. `process_key` itself stays NULL: stream E owns it.
+  // Append only.
+  `ALTER TABLE lane_pilot_errand_episode ADD COLUMN process_key TEXT`,
+  `ALTER TABLE lane_pilot_errand_episode ADD COLUMN enriched_model TEXT`,
+  `ALTER TABLE lane_pilot_errand_episode ADD COLUMN enriched_at INTEGER`,
+  `ALTER TABLE lane_pilot_errand_episode ADD COLUMN summary_json TEXT`,
+  `ALTER TABLE lane_pilot_errand_episode ADD COLUMN failure_class TEXT`,
+  `ALTER TABLE lane_pilot_errand_episode ADD COLUMN process_key_proposed TEXT`,
+  `ALTER TABLE lane_pilot_errand_episode ADD COLUMN enrichment_reason TEXT`,
 ];
 
 export function openDatabase(bb: BbPluginApi): LanePilotDatabase {
