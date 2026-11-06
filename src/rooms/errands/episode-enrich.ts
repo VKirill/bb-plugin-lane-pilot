@@ -286,10 +286,14 @@ export async function enrichEpisode(row: PendingEpisode, deps: EpisodeEnrichDeps
     [model, now, fitSummary(answer, skills), failureClass, answer.process_key_proposed], now);
   if (answer.process_key_proposed) {
     const candidate = answer.process_key_proposed;
-    const key = deps.chooseKey
-      ? await deps.chooseKey({ candidate, title: row.title, known: knownProcessKeys(db) }, { runId: row.runId, projectId: row.projectId }).catch(() => candidate)
-      : candidate;
-    db.prepare(`UPDATE ${ERRAND_EPISODE_TABLE} SET process_key=? WHERE run_id=?`).run(key, row.runId);
+    // Parallel episodes choose their keys one at a time, so each sees the keys the others just chose (two runs of one
+    // process in the same batch must not both become new keys).
+    await inKeyTurn(async () => {
+      const key = deps.chooseKey
+        ? await deps.chooseKey({ candidate, title: row.title, known: knownProcessKeys(db) }, { runId: row.runId, projectId: row.projectId }).catch(() => candidate)
+        : candidate;
+      db.prepare(`UPDATE ${ERRAND_EPISODE_TABLE} SET process_key=? WHERE run_id=?`).run(key, row.runId);
+    });
   }
   const actions = row.traceStats?.actions ?? 0;
   try {
@@ -319,6 +323,15 @@ export type SweepResult = { picked: number; enriched: number; skipped: number; f
 // One pass at a time per plugin process: the hourly node and `errands episodes-sweep` overlapped on 2026-11-06 and both
 // enriched the same rows (the analyzer call is shared by key, the Jev calls and the writes were not).
 let sweeping = false;
+let keyTurn: Promise<unknown> = Promise.resolve();
+const inKeyTurn = (step: () => Promise<void>): Promise<void> => {
+  const turn = keyTurn.then(step, step);
+  keyTurn = turn.catch(() => undefined);
+  return turn;
+};
+
+/** Episodes enriched at once in one pass: the model call is the slow part (~1 min each on Gemini Flash). */
+export const EPISODE_SWEEP_PARALLEL = 3;
 
 /** One sweep pass: the oldest pending episodes, at most `limit` (EPISODE_SWEEP_LIMIT in the graph); a second concurrent pass picks nothing. */
 export async function sweepErrandEpisodes(deps: EpisodeEnrichDeps, limit = EPISODE_SWEEP_LIMIT): Promise<SweepResult> {
@@ -330,11 +343,15 @@ export async function sweepErrandEpisodes(deps: EpisodeEnrichDeps, limit = EPISO
   sweeping = true;
   try {
     const now = deps.now?.() ?? Date.now();
-    for (const row of pendingEpisodes(deps.db, now, limit)) {
-      if (deps.stopped?.()) break;
-      result.picked += 1;
-      result[await enrichEpisode(row, deps)] += 1;
-    }
+    const queue = pendingEpisodes(deps.db, now, limit);
+    const worker = async () => {
+      for (let row = queue.shift(); row; row = queue.shift()) {
+        if (deps.stopped?.()) return;
+        result.picked += 1;
+        result[await enrichEpisode(row, deps)] += 1;
+      }
+    };
+    await Promise.all(Array.from({ length: EPISODE_SWEEP_PARALLEL }, worker));
     return result;
   } finally {
     sweeping = false;

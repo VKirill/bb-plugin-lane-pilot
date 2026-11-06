@@ -116,6 +116,25 @@ describe("errand episode sweep", () => {
     expect(judged).toHaveLength(1);
   });
 
+  it("enriches up to three episodes at once; their keys are chosen one at a time and each sees the previous", async () => {
+    const { db } = world();
+    for (const id of ["wfrun-a", "wfrun-b", "wfrun-c"]) {
+      addRun(db, { id, inputs: { title: "Count open leads", task: "count" }, output: { state: "done", verified: "done_checked" } });
+      await recorded(db, id);
+    }
+    let inModel = 0, maxInModel = 0, inKey = 0, maxInKey = 0;
+    const knownSeen: number[] = [];
+    const result = await sweepErrandEpisodes(deps(db, {
+      readOutline: async () => "User: count\nAssistant: done",
+      runModel: async () => { inModel += 1; maxInModel = Math.max(maxInModel, inModel); await new Promise((r) => setTimeout(r, 20)); inModel -= 1; return { text: ANSWER, model: "m" }; },
+      chooseKey: async ({ candidate, known }) => { inKey += 1; maxInKey = Math.max(maxInKey, inKey); knownSeen.push(known.length); await new Promise((r) => setTimeout(r, 5)); inKey -= 1; return candidate; },
+    }));
+    expect(result).toMatchObject({ picked: 3, enriched: 3 });
+    expect(maxInModel).toBe(3);
+    expect(maxInKey).toBe(1);
+    expect(knownSeen).toEqual([0, 1, 1]);
+  });
+
   it("a second pass while one runs picks nothing (no double enrichment)", async () => {
     const { db } = world();
     addRun(db, { id: "wfrun-1", inputs: { title: "Count open leads", task: "count" }, output: { state: "done", verified: "done_checked" } });
