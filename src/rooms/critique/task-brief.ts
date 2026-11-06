@@ -1,4 +1,5 @@
 import { TRUSTED_TOOLING_PATTERNS, verificationScriptPaths } from "../tasks";
+import { renderBrief } from "../native-agent/brief-standard";
 
 /**
  * The contract fields a review stage can ask for, beyond the code critic's base set
@@ -33,17 +34,17 @@ export function taskBrief(task: unknown, options?: { fields?: readonly TaskBrief
   const row = task as Record<string, unknown>;
   const include = new Set(options?.fields ?? BASE_FIELDS);
   const strings = (key: string) => Array.isArray(row[key]) ? (row[key] as unknown[]).filter((item): item is string => typeof item === "string") : [];
-  const lines: string[] = [];
-  const push = (label: string, items: string[]) => { if (items.length) lines.push(`${label}:`, ...items.map((item) => `- ${item}`)); };
+  const bodies: Record<string, string[]> = { goal: [], inputs: [], boundaries: [], acceptance: [] };
+  const push = (label: string, items: string[]) => { if (items.length) bodies[sectionOf(label)]!.push(`${label}:`, ...items.map((item) => `- ${item}`)); };
   for (const field of FIELD_ORDER) {
     if (!include.has(field)) continue;
     if (field === "title" || field === "objective" || field === "risk") {
-      if (typeof row[field] === "string" && row[field]) lines.push(`${field}: ${row[field]}`);
+      if (typeof row[field] === "string" && row[field]) bodies.goal!.push(`${field}: ${row[field]}`);
       continue;
     }
     if (field === "owns_paths") {
       const owns = strings("owns_paths");
-      if (owns.length) lines.push(`owns_paths: ${owns.join(", ")}`);
+      if (owns.length) bodies.boundaries!.push(`owns_paths: ${owns.join(", ")}`);
       continue;
     }
     if (field === "never_touch") {
@@ -52,7 +53,7 @@ export function taskBrief(task: unknown, options?: { fields?: readonly TaskBrief
         ...verificationScriptPaths({ project_cwd: String(row.project_cwd ?? ""), verification: Array.isArray(row.verification) ? row.verification as Array<{ command: string; cwd: string }> : [] }),
       ]);
       const extra = strings("never_touch").filter((pattern) => !standard.has(pattern));
-      if (extra.length) lines.push(`never_touch (on top of the standard trusted tooling): ${extra.join(", ")}`);
+      if (extra.length) bodies.boundaries!.push(`never_touch (on top of the standard trusted tooling): ${extra.join(", ")}`);
       continue;
     }
     if (field === "verification") {
@@ -65,5 +66,19 @@ export function taskBrief(task: unknown, options?: { fields?: readonly TaskBrief
     }
     push(field, strings(field));
   }
-  return lines.join("\n") || JSON.stringify(task);
+  const rendered = renderBrief({
+    role: "critic",
+    ...(bodies.goal!.length ? { goal: bodies.goal!.join("\n") } : {}),
+    ...(bodies.inputs!.length ? { inputs: bodies.inputs!.join("\n") } : {}),
+    ...(bodies.boundaries!.length ? { boundaries: bodies.boundaries!.join("\n") } : {}),
+    ...(bodies.acceptance!.length ? { acceptance: bodies.acceptance!.join("\n") } : {}),
+  });
+  return rendered.text || JSON.stringify(task);
+}
+
+/** Which tagged section a contract field lands in (title/objective/risk → task_goal, the rest by their kind). */
+function sectionOf(field: string): "goal" | "inputs" | "boundaries" | "acceptance" {
+  if (field === "read_first" || field === "interfaces" || field === "expected_outputs") return "inputs";
+  if (field === "acceptance" || field === "verification") return "acceptance";
+  return "boundaries";
 }

@@ -149,6 +149,15 @@ export function createPluginWall(ctx: ServerCore, services: Services): WallApi {
       } catch { return []; }
     },
     spawnReader,
+    // Long material of a brief (a hunt pack, an analysis pack) as a file the reader opens: same unmanaged workspace.
+    writeText: async (relPath, content) => {
+      try {
+        const { hostId, basePath } = await environmentOf();
+        const abs = join(basePath, relPath);
+        const written = await bb.sdk.files.write({ hostId, rootPath: basePath, path: abs, content, contentEncoding: "utf8", createParents: true } as Parameters<typeof bb.sdk.files.write>[0]).then(() => true).catch(() => false);
+        return written ? abs : null;
+      } catch { return null; }
+    },
     graph: {
       hunt: async ({ wallKey, pack, angles }) => {
         const out = await runGraph(wallKey, "hunt", { pack, angles: [...angles] });

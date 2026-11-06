@@ -53,7 +53,7 @@ describe("writer brief", () => {
     expect(brief.length).toBeLessThan(original.length / 1.9);
     expect(brief.startsWith("You are Lane Pilot writer")).toBe(true);
     expect(brief).toMatch(/every path you create must match an owns_paths pattern/);
-    expect(brief.indexOf("NEEDS_HUMAN")).toBeLessThan(brief.indexOf("Workspace:"));
+    expect(brief.indexOf("<task_goal>")).toBeLessThan(brief.indexOf("<output>"));
     expect(brief.split(task.project_cwd)).toHaveLength(2);
     expect(brief.split(task.objective)).toHaveLength(2);
     expect(brief).not.toContain("openQuestions");
@@ -68,7 +68,7 @@ describe("writer brief", () => {
     const stickyWithout = stickyTurnPrompt({ kind: "next-task", task });
     expect(without).not.toContain(".agents/plans/items/");
     expect(stickyWithout).not.toContain(".agents/plans/items/");
-    expect(without).toContain("Task contract:");
+    expect(without).toContain("<task_goal>");
     expect(without).toContain(task.objective);
     const folder = { path: `.agents/plans/items/${task.id}/`, files: ["PLAN.md", "notes.md"] };
     const withFolder = writerPrompt(task, writerMemory(notes, task), packet, undefined, "Lane Pilot writer", pmRead, "", "", folder);
@@ -76,14 +76,15 @@ describe("writer brief", () => {
     expect(withFolder).toContain(".agents/plans/items/");
     expect(withFolder).toContain(`- PLAN.md`);
     expect(withFolder).toContain(`- notes.md`);
-    expect(withFolder).toContain("the compact contract below stays the source of truth");
-    expect(withFolder).toContain("Task contract:");
+    expect(withFolder).toContain("the contract in your brief above stays the source of truth");
+    expect(withFolder).toContain("<task_goal>");
     expect(withFolder).toContain(task.objective);
-    expect(withFolder).toContain(without.slice(without.indexOf("Task contract:")));
+    expect(withFolder).toContain(without.slice(without.indexOf("<task_goal>"), without.indexOf("</task_goal>") + "</task_goal>".length));
+    expect(withFolder).toContain(without.slice(without.indexOf("<boundaries>"), without.indexOf("</acceptance>") + "</acceptance>".length));
     expect(sticky).toContain(".agents/plans/items/");
     expect(sticky).toContain(`- PLAN.md`);
     expect(sticky).toContain(`- notes.md`);
-    expect(sticky).toContain("the compact contract below stays the source of truth");
+    expect(sticky).toContain("the contract in your brief above stays the source of truth");
     expect(sticky).toContain(task.objective);
   });
 
@@ -189,11 +190,11 @@ describe("writer brief", () => {
     expect(retry).toContain("the contract in your brief above stays the source of truth");
     expect(retry).toContain("<previous_attempt>");
     const next = stickyTurnPrompt({ kind:"next-task", task });
-    expect(next).toContain("Task contract:");
-    expect(next).toContain(`"id": "${task.id}"`);
-    expect(stickyTurnPrompt({ kind:"merge", task, conflicts:["src/a.ts"] })).toContain("Task contract:");
+    expect(next).toContain("<task_goal>");
+    expect(next).toContain(`id: ${task.id}`);
+    expect(stickyTurnPrompt({ kind:"merge", task, conflicts:["src/a.ts"] })).toContain("<task_goal>");
     // A retry without a failure record keeps the contract as a conservative fallback.
-    expect(stickyTurnPrompt({ kind:"retry", task })).toContain("Task contract:");
+    expect(stickyTurnPrompt({ kind:"retry", task })).toContain("<task_goal>");
   });
 
   it("a run-scope ownership rejection names files outside owns_paths as such and asks to undo only the writer's own edits", () => {
@@ -283,7 +284,7 @@ describe("the NEEDS_HUMAN marker", () => {
     const brief = writerPrompt(task);
     expect(brief).not.toMatch(/end with `NEEDS_HUMAN/);
     expect(brief).toContain("answer with the first line `NEEDS_HUMAN: <one question>`");
-    expect(brief).toContain("answer with the first line `NEEDS_HUMAN: needs secret <NAME>`");
+    expect(brief).toContain("`NEEDS_HUMAN: needs secret <NAME>`");
     expect(needsHumanQuestion("NEEDS_HUMAN: which port?\nnothing changed")).toBe("which port?");
     expect(needsHumanQuestion("Checked it.\nNEEDS_HUMAN: which port?")).toBeNull();
     // SelfyStudio fix-en-routes-empty-group (2026-10-12): the writer copied the brief's backticks around the marker.

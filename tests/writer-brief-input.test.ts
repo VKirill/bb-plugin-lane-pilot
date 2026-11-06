@@ -19,7 +19,7 @@ describe("writer brief as BB input parts", () => {
     expect(parts[0]).toEqual({ type: "text", text: "Lane Pilot task t-1: Add the footer", mentions: [] });
     const visible = parts.filter((part) => !part.visibility).map((part) => part.text).join("\n");
     const hidden = parts.filter((part) => part.visibility === "agent-only").map((part) => part.text).join("\n");
-    expect(visible).toContain("Task contract:");
+    expect(visible).toContain("<task_goal>");
     expect(visible).toContain("src/footer.ts");
     for (const secret of ["NOTE-MEMORY", "PACKET-FILES", "RULE-ONE"]) {
       expect(hidden).toContain(secret);
@@ -30,14 +30,14 @@ describe("writer brief as BB input parts", () => {
     expect(parts.every((part) => part.type === "text" && Array.isArray(part.mentions))).toBe(true);
   });
 
-  it("opens the visible contract with a line break, so the chat does not run the title into «Task contract:» (H4)", () => {
+  it("opens the visible contract with a line break, so the chat does not run the title into the contract (H4)", () => {
     for (const providerId of ["claude-code", "codex", "opencode2", "acp-cursor"]) {
       const parts = writerBriefInput(task, writerBriefSegments(...args), providerId);
       const visible = parts.filter((part) => !part.visibility);
       expect(visible[0]!.text).toBe("Lane Pilot task t-1: Add the footer");
-      expect(visible[1]!.text.startsWith("\n\nTask contract:")).toBe(true);
+      expect(visible[1]!.text.startsWith("\n\n<task_goal>")).toBe(true);
       // What the chat shows: the title, a blank line, then the contract.
-      expect(visible.map((part) => part.text).join("")).toMatch(/^Lane Pilot task t-1: Add the footer\n\nTask contract:/);
+      expect(visible.map((part) => part.text).join("")).toMatch(/^Lane Pilot task t-1: Add the footer\n\n<task_goal>/);
     }
   });
 

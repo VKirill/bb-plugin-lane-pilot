@@ -3,8 +3,11 @@ import { embedQuery } from "../../memory/server";
 import { DEFAULT_RELEVANCE_FLOOR, buildContextPack, clearsFloor, filesDrifted, memoryCandidates, pathsNamed, questionWords, recordRelevance, shadowPackCompare, wordFrequencies, type MemorySettings } from "@lane-pilot/memory-core";
 import type { TaskV2 } from "../../contracts";
 import { mixWriterMemory, snapshotFileRead, writerCandidates, writerMemoryPaths } from "../../memory/server";
-import type { LanePilotDatabase } from "../../storage";
+import { getRunSettingsScopes, loadProjectSettings, taskBasePath, type LanePilotDatabase } from "../../storage";
 import type { ServerCore } from "../../core/server";
+import { runOnHost } from "@lane-pilot/host-calls";
+import { effectiveGroup, parseHelperContextSettings } from "../../native-agent/helper-context";
+import { registerWriterBriefContext } from "../../native-agent/brief-standard";
 import { stickyTurnPrompt } from "./writer-task";
 
 /**
@@ -50,6 +53,19 @@ export async function writerRules(deps:KnowledgeDeps, input:KnowledgeInput) {
 export async function writerKnowledge(deps:KnowledgeDeps & { log?: (line:string)=>void }, input:KnowledgeInput) {
   const memoryOn=input.memorySettings.enabled&&input.memorySettings.inject;
   const taskMemoryQuery=`${input.task.title}\n${input.task.objective}\n${input.task.acceptance.join(" ")}`;
+  // The spawn's fixed call site cannot pass the context the brief needs, so it is registered here for
+  // writerBriefSegments (brief-standard): whether skills are truly broad, which tools the role allows, .gitnexus presence.
+  {
+    const parsed=parseHelperContextSettings(loadProjectSettings(deps.db,input.projectId,getRunSettingsScopes(deps.db,input.runId)));
+    const mode=parsed.ok?parsed.settings.mode:"roles";
+    const access=parsed.ok?parsed.settings.roleAccess?.writer:undefined;
+    const skillsGroup=mode==="roles"?effectiveGroup("writer","skills",access):{names:null};
+    const mcpGroup=mode==="roles"?effectiveGroup("writer","mcpServers",access):{names:null};
+    const gitnexusTools=mcpGroup.names===null||mcpGroup.names.includes("gitnexus");
+    const memoryRoot=taskBasePath(deps.db,input.runId,input.task.id)??input.task.project_cwd;
+    const gitnexusIndex=gitnexusTools&&(await runOnHost(deps.host,{hostId:input.hostId,cwd:memoryRoot,command:"test -d .gitnexus",timeoutSec:10}).catch(()=>null))?.exitCode===0;
+    registerWriterBriefContext(input.task.id,{broadSkills:mode!=="roles"||skillsGroup.names===null,gitnexusTools,metamcpTools:mcpGroup.names===null||mcpGroup.names.includes("metamcp"),gitnexusIndex});
+  }
   const { allRules, rules, rulesText }=await writerRules(deps,input);
   const ruleMemoryIds=new Set(allRules.map((rule)=>rule.memoryId));
   // The writer gets at most three notes that name a path of this task; other helpers keep the budgeted context.

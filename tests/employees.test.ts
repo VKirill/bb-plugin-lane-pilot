@@ -65,9 +65,13 @@ describe("skill catalog note", () => {
       expect(laneSessionOverlayPrompt(id), id).toContain("## Skill catalog");
       expect(BB_AGENT_SESSIONS[id]!.length, id).toBeLessThanOrEqual(id === "workflow-architect" ? 12_000 : 2_000);
     }
+    // A helper whose skills were picked gets one naming line instead of the catalog instructions (Brief v2);
+    // a thread with a broad skill list still gets the block.
     const brief = writerBriefSegments({ title: "t", objective: "o", owns_paths: [], expected_outputs: [], acceptance: [], verification: [] } as unknown as TaskV2);
-    expect(brief.map((segment) => segment.text).join("\n")).toContain("## Skill catalog");
-    expect(errandPrompt({ task: "check the mailbox", browserHostId: null, authorized: false })).toContain("## Skill catalog");
+    expect(brief.map((segment) => segment.text).join("\n")).toContain("Your skills for this task:");
+    expect(writerBriefSegments({ title: "t", objective: "o", owns_paths: [], expected_outputs: [], acceptance: [], verification: [] } as unknown as TaskV2, "", "", undefined, "w", "", "", "", null, false, { broadSkills: true }).map((segment) => segment.text).join("\n")).toContain("## Skill catalog");
+    expect(errandPrompt({ task: "check the mailbox", browserHostId: null, authorized: false })).toContain("Your skills for this task:");
+    expect(errandPrompt({ task: "check the mailbox", browserHostId: null, authorized: false, broadSkills: true })).toContain("## Skill catalog");
   });
 });
 

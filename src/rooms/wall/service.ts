@@ -67,6 +67,8 @@ export type WallPorts = {
   };
   /** The hidden thread of one reader of the graph, tied to the step that asks (its spawn id and metadata); returns the thread's id. */
   spawnReader?(input: { who: "hunter" | "analysis"; prompt: string; graph: { spawnId: string; metadata: Record<string, unknown> } }): Promise<string>;
+  /** Writes a file into the wall's environment folder for the long material a brief names instead of inlining; returns the path the reader opens, or null. */
+  writeText?(relPath: string, content: string): Promise<string | null>;
   tellPm(threadId: string, text: string): Promise<boolean>;
   repair: {
     view(signature: string): Promise<RepairView | null>;
@@ -209,11 +211,26 @@ export function createWall(deps: WallDeps) {
     }
   }
 
+  // The pack of a hunt or an analysis goes to a file of the wall's folder (15–28 KB would not survive a ~12 KB first
+  // message); the brief names the file. The graph's steps get the pack serialized, so the file is looked up by content hash.
+  const packPathBySha = new Map<string, string>();
+  const packSha = (pack: EvidencePack): string => sha(JSON.stringify(pack));
+  const packPathOf = (pack: EvidencePack): string | undefined => packPathBySha.get(packSha(pack)) || undefined;
+  const packFileFor = async (pack: EvidencePack, name: string): Promise<string | undefined> => {
+    const key = packSha(pack);
+    if (packPathBySha.has(key)) return packPathOf(pack);
+    const safe = name.replace(/[^A-Za-z0-9_.-]+/g, "-").slice(0, 80);
+    const path = await ports.writeText?.(`.agents/wall/${safe}-${key.slice(0, 8)}.json`, JSON.stringify(pack)).catch(() => null) ?? null;
+    packPathBySha.set(key, path ?? "");
+    return path ?? undefined;
+  };
+
   /**
    * Three read-only hunters from other sides over one pack; their citations are held against it by code. The tokens are the wall's spend.
    * In the plugin this is a run of the graph `lp.wall-hunt` (named by the wall's key); a run that fails reads as hunters that found nothing.
    */
   async function hunt(pack: EvidencePack, cfg: WallConfig, wallKey: string): Promise<{ outcome: HuntOutcome; tokens: number }> {
+    const packPath = await packFileFor(pack, `hunt-${wallKey}`);
     const filterDecision = await checkHuntFilter(pack, wallKey);
     if (filterDecision.action === "skip") {
       log(`wall: hunt of ${wallKey} skipped by Jev filter (${filterDecision.category}): ${filterDecision.reason}`);
@@ -231,7 +248,7 @@ export function createWall(deps: WallDeps) {
       return ran ?? judgeRuns(pack, angles.map((angle) => ({ angle, text: null, tokens: 0 })));
     }
     const runs = await Promise.all(angles.map(async (angle) => {
-      const run = await ports.reader!(hunterPrompt(angle, pack), "hunter").catch(() => ({ text: null, tokens: 0 } as ThreadRun));
+      const run = await ports.reader!(hunterPrompt(angle, pack, packPath), "hunter").catch(() => ({ text: null, tokens: 0 } as ThreadRun));
       return { angle, text: run.text, tokens: run.tokens };
     }));
     return judgeRuns(pack, runs);
@@ -240,7 +257,7 @@ export function createWall(deps: WallDeps) {
   /** The code steps of the graph `lp.wall-hunt`: the hunter's prompt, the judgment of the hunters' answers (recorded in the wall row), the analysis's record. */
   const graphSteps = {
     angles: (hunters: number) => HUNT_ANGLES.slice(0, hunters) as readonly string[],
-    hunterPrompt: (angle: string, pack: EvidencePack): string => hunterPrompt(angle as (typeof HUNT_ANGLES)[number], pack),
+    hunterPrompt: (angle: string, pack: EvidencePack): string => hunterPrompt(angle as (typeof HUNT_ANGLES)[number], pack, packPathOf(pack)),
     judge(wallKey: string, pack: EvidencePack, runs: ReadonlyArray<{ angle: string; text: string | null; tokens: number }>): { outcome: HuntOutcome; tokens: number } {
       const judged = judgeRuns(pack, runs.map((run) => ({ ...run, angle: run.angle as (typeof HUNT_ANGLES)[number] })));
       // The findings are on record the moment they are judged, so a reload before the caller goes on loses nothing; the caller sets the wall's state.
@@ -297,7 +314,7 @@ export function createWall(deps: WallDeps) {
       const pack = (wall.pack as EvidencePack | null) ?? (extra.classKey ? buildClassPack(db, extra.classKey) : null);
       if (pack) {
         const history = [`wall ${key}`, ...listRepairs(db, extra.classKey ? { classKey: extra.classKey } : {}).map((row) => `round ${row.round} (${row.role}) ${row.state}: ${row.outcome ?? ""}`)];
-        const run = await readAnalysis(key, analysisPrompt({ subject, pack, findings: ((wall.findings as { findings?: CheckedFinding[] } | null)?.findings) ?? [], history }));
+        const run = await readAnalysis(key, analysisPrompt({ subject, pack, findings: ((wall.findings as { findings?: CheckedFinding[] } | null)?.findings) ?? [], history, packPath: await packFileFor(pack, `analysis-${key}`) }));
         updateWall(db, key, { analysis: { text: run.text, at: ports.now() }, tokensUsed: (wall.tokensUsed ?? 0) + run.tokens }, ports.now());
       }
     }

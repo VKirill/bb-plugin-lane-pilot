@@ -515,11 +515,27 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
       if(!provider||!model) throw new Error(`docs provider or model unavailable: ${selection.providerId}/${selection.model}`);
       const effort=selection.reasoningLevel;
       const tier=provider.capabilities.supportsServiceTier?bbServiceTier(selection.serviceTier):null;
+      // The long material (changed paths, pages to refresh, gaps, doubts, drafts) goes to a file in the task's folder;
+      // the brief names it, so a first-message cap (Antigravity ~12 KB) cannot drop it. Inline stays the fallback.
+      let materialPath:string|undefined;
+      if(plan.hasDocs&&(plan.changed.length||plan.refresh.length||plan.gaps.missingPages.length||plan.gaps.uncoveredCore.length||plan.doubts.length||plan.decisionDrafts.length)){
+        const rel=`.agents/docs-night/${plan.localDate}-${label.replace(/[^A-Za-z0-9_.-]+/g,"-")}.md`;
+        const material=["# Docs-night material",`Unit: ${label}`, "",
+          ...plan.changed.length?["## Changed paths",...plan.changed.map((p)=>`- ${p}`),""]:[],
+          ...plan.refresh.length?["## Pages whose sources changed or that are drafts",...plan.refresh.map((p)=>`- ${p}`),""]:[],
+          ...plan.gaps.missingPages.length?["## Pages the method requires that do not exist yet",...plan.gaps.missingPages.map((p)=>`- ${p}`),""]:[],
+          ...plan.gaps.uncoveredCore.length?["## Core behaviour and routes no page cites yet",...plan.gaps.uncoveredCore.map((p)=>`- ${p}`),""]:[],
+          ...plan.doubts.length?["## Claims the analyzer doubted; recheck each in the code",...plan.doubts.map((d)=>`- ${d.path}: ${d.detail}`),""]:[],
+          ...plan.decisionDrafts.length?["## Decision drafts to fold into docs/decisions.md as ADRs",...plan.decisionDrafts.map((p)=>`- ${p}`),""]:[],
+        ].join("\n");
+        const written=await bb.sdk.files.write({hostId:place.hostId,rootPath:place.path,path:resolve(place.path,rel),content:material,contentEncoding:"utf8",createParents:true}).then(()=>true).catch(()=>false);
+        if(written) materialPath=rel;
+      }
       const threadId=await spawnDocsThread({projectId:i.projectId,visibility:"hidden",title:`Lane Pilot docs: ${basename(place.path)}${unit.workspace?` · ${unit.workspace.path}`:unit.flow?` · flow ${unit.flow.slug}`:""}`,
         ...writerExecutionSelection(selection.providerId,selection.model,effort,tier),
         ...projectRoleField(bb,db,i.projectId,selection.providerId,"docs-maintainer"),
         prompt:nightlyDocsPrompt({since:docs.since,hasDocs:plan.hasDocs,changed:plan.changed,refresh:plan.refresh,anchorsPath:plan.anchors?.briefPath,deploy:plan.anchors?.deploy??false,missingPages:plan.gaps.missingPages,uncoveredCore:plan.gaps.uncoveredCore,
-          agent:typeof settings["docs.agent"]==="string"?settings["docs.agent"] as string:undefined,unit,doubts:plan.doubts,decisionDrafts:plan.decisionDrafts}),
+          agent:typeof settings["docs.agent"]==="string"?settings["docs.agent"] as string:undefined,unit,doubts:plan.doubts,decisionDrafts:plan.decisionDrafts,...(materialPath?{materialPath}:{})}),
         environment:{type:"host",hostId:place.hostId,workspace:{type:"unmanaged",path:place.path}},
         pluginMetadata:{role:"docs-nightly",stageId:"docs-nightly",spawnId:`${i.projectId}:${sha256(`${place.path}\n${label}`).slice(0,12)}:${plan.localDate}${retry}`,...graphStepMetadata(step)}});
       // From here on the unit's progress is saved, so a plugin reload picks the same agent thread up again.
