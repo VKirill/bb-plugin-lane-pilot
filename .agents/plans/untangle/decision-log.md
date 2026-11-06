@@ -80,7 +80,18 @@ domains never import `core` or `tools` (the composition root).
 | 1 | F4 + room ratchet test | U1 | started 2026-11-07 |
 | 1 | F3 | U2 | started 2026-11-07 |
 | survey | F1/F2 import map for storage and core | U4 | started 2026-11-07 |
-| 2 | F1 storage side, F2 | — | after U0–U2 merge |
-| 3 | F1 core side, F6 | — | after wave 2 |
-| 4 | F5 | — | after wave 3 |
+| 3 | F6 host contract split, jobs runner | U5 | started 2026-11-07 |
+| 4 | F5 verification moves + F2 structured failure fields | U6 | started 2026-11-07 |
+| 2 | F2 typed KV keys, explicit worktree owner | U7 | started 2026-11-07 |
+| 4 | F5 phase driver | U8 | started 2026-11-07 |
+| 4 | F5 writer start/finish | U9 | started 2026-11-07 |
+| 4 | F5 self-repair | U10 | started 2026-11-07 |
+| 2 | F1 storage side, F2 table owners | — | from the U4 survey |
+| 3 | F1 core side (Services, server.ts order) | — | from the U4 survey |
 | 5 | F9 micro rooms, F8, Tests | — | last |
+
+## Merge rules (merger = the orchestrator thread)
+- Review each stream by another model family (Grok 4.7 via acp-cursor, Gemini 3.8 Flash
+  via opencode2 router9) before merge; full vitest on main after each merge.
+- Generated files (README.md, docs/atlas.md, docs/map/index.html) are regenerated once
+  per merge, never taken from a stream.
