@@ -35,7 +35,11 @@ export function episodeSweepDeps(ctx: ServerCore, services: Services, stopped: (
     },
     readEvents: (threadId) => services.harness.threadEvents(threadId, ERRAND_EPISODE_TRACE_EVENTS),
     runModel: async (prompt, projectId, runId) => {
-      const place = await services.resolveProjectWriterHost({ projectId: projectId ?? undefined } as never).catch(() => null);
+      // A project with no writer host (proj_personal: 18 of 132 errands on 2026-11-06) reads on the global one: the analyzer
+      // needs a machine, not the project's checkout.
+      const resolved = (id: string | undefined) => services.resolveProjectWriterHost({ projectId: id } as never).catch(() => null);
+      let place = await resolved(projectId ?? undefined);
+      if (projectId && (place as { status?: string } | null)?.status !== "resolved") place = await resolved(undefined);
       if (!place || (place as { status?: string }).status !== "resolved") throw new Error("episode_enrich_no_host");
       const host = place as { hostId: string; path: string };
       const settings = (await ctx.effectiveProjectSettings(projectId ?? GLOBAL_SETTINGS_PROJECT_ID).catch(() => null))?.values ?? {};
