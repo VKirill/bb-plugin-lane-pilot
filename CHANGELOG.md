@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.1.479
+
+- **Stage 1 of crystallization and the one project memory.** Every finished errand leaves an episode (facts at completion, an hourly sweep: masked trace → one model → failure class, a process key chosen by Jev among the 8 nearest); `CHECK:` lines give a verified outcome; `bb lane-pilot errands diagnose` shows cost and repeats; the lead offers five forms (rule, note, script, skill, graph); the skill standard and lint library; memory import through one door (BB memory, Claude Code, agentmemory) that never evicts; the owner anamnesis on the hub; the memory index and the `lane-memory` rule in every ordinary BB thread; Jev `memory.rerank` lets search answer «nothing».
+
 
 - **A verified attempt waiting for the owner's landing decision is not stuck.** The watcher reported `worker-flaky-port-tests.2` (2026-10-31), `storekit-purchases.5` (2026-11-02) and `attr-dirty-queue` (2026-11-03) after 52, 51 and 50 minutes with idle writers, although each PM had received the explicit owner-word wait. The stuck check now recognises the exact attempt's open writer `task_word` inbox receipt, bounded by the same six-hour limit the writer uses. Closed, expired or unrelated receipts and failed/missing writers still count as stuck. Captured PM events and attempt transitions are replayed in `tests/server/self-repair.test.ts` from `tests/fixtures/idle-writer-owner-word/cases.json`; historical inbox rows are reconstructed through the production posting function, not claimed as exported rows.
 
