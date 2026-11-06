@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { closeSync, openSync } from "node:fs";
-import { link, mkdir, open, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, open, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -106,28 +106,26 @@ export async function startHostJob(
 
 const keyFile = (key: string, options: JobOptions) => join(jobsRoot(options), "keys", `${sha256Hex(key).slice(0, 32)}.id`);
 
-/** The job id a key file holds, or null when it is absent, malformed, or its job folder is gone. */
-async function keyedJobId(file: string, options: JobOptions): Promise<string | null> {
-  const jobId = (await readFile(file, "utf8").catch(() => "")).trim();
-  return JOB_ID.test(jobId) && await stat(jobDir(jobId, options)).then(() => true, () => false) ? jobId : null;
-}
-
 /**
- * Takes the key atomically with its content: the id is written to a staging name and hard-linked in, so the key
- * file either exists holding the complete id or does not exist — a rival read never sees it half-written.
+ * The id a key file holds, or null to retry the claim: the file is absent, or held a stale id and is now removed.
+ * A winner that took the file but has not written its id yet gets a short grace; a stale file is removed only when
+ * it still holds the same id a rival could not have claimed in the meantime — never a rival's fresh claim.
  */
-async function claimKeyFile(file: string, jobId: string): Promise<boolean> {
-  const staging = `${file}.${process.pid.toString(36)}${randomBytes(4).toString("hex")}.tmp`;
-  await writeFile(staging, jobId);
-  try { await link(staging, file); return true; }
-  catch (cause) { if ((cause as NodeJS.ErrnoException).code === "EEXIST") return false; throw cause; }
-  finally { await rm(staging, { force: true }); }
+async function keyedJobId(file: string, options: JobOptions): Promise<string | null> {
+  let content = "";
+  for (let wait = 0; wait < 20 && !content; wait += 1) {
+    content = (await readFile(file, "utf8").catch(() => "")).trim();
+    if (!content) await new Promise((wake) => setTimeout(wake, 100));
+  }
+  if (JOB_ID.test(content) && await stat(jobDir(content, options)).then(() => true, () => false)) return content;
+  if ((await readFile(file, "utf8").catch(() => "")).trim() === content) await rm(file, { force: true });
+  return null;
 }
 
 /**
- * One logical job per key: the first start stages its folder, then links the key file to its id and launches;
- * a second start with the same key, also after a crash between the launch and the caller recording the id, gets
- * the first job's id. A key whose job folder was pruned is free again.
+ * One logical job per key: the first start takes the key file exclusively, then stages, writes its id and launches;
+ * a second start with the same key, also after a crash between the launch and the caller recording the id, gets the
+ * first job's id. A key whose job folder was pruned is free again.
  */
 async function startKeyedJob(
   request: { kind: HostJobKind; input: Record<string, unknown>; timeoutSec: number; key: string },
@@ -136,14 +134,23 @@ async function startKeyedJob(
   const file = keyFile(request.key, options);
   await mkdir(join(jobsRoot(options), "keys"), { recursive: true });
   for (let attempt = 0; attempt < 3; attempt += 1) {
+    const handle = await open(file, "wx").catch((cause: NodeJS.ErrnoException) => {
+      if (cause.code === "EEXIST") return null;
+      throw cause;
+    });
+    if (handle) {
+      const jobId = await stageJob(request, options).catch(async (cause) => {
+        await handle.close();
+        await rm(file, { force: true });
+        throw cause;
+      });
+      await handle.writeFile(jobId);
+      await handle.close();
+      await spawnJob(jobId, options);
+      return jobId;
+    }
     const existing = await keyedJobId(file, options);
     if (existing) return existing;
-    // Whatever is there names no live job: an empty leftover or a pruned folder. Free the key and claim it.
-    if (await stat(file).then(() => true, () => false)) await rm(file, { force: true });
-    const jobId = await stageJob(request, options);
-    if (await claimKeyFile(file, jobId)) { await spawnJob(jobId, options); return jobId; }
-    // Another start linked first: drop the staging and take its id (its folder is guaranteed staged before the link).
-    await rm(jobDir(jobId, options), { recursive: true, force: true });
   }
   throw new Error(`could not claim job key ${request.key}`);
 }

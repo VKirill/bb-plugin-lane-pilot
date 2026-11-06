@@ -1,8 +1,14 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { sha256Hex } from "@lane-pilot/kit";
 import { cancelHostJob, hostJobStatus, startHostJob, type JobOptions, type JobStatus } from "../src/rooms/host-worker/jobs";
+
+const execFileAsync = promisify(execFile);
 
 /**
  * A stand-in for the host bundle: an executable runner like the real one (host-worker/job-runner.ts), whose
@@ -51,6 +57,17 @@ process.exit(0);
 }
 `;
 
+/** A process that calls startHostJob once for a key and prints the job id it got — the racers in the claim test. */
+const STARTER = `
+import { startHostJob } from ${JSON.stringify(fileURLToPath(new URL("../src/rooms/host-worker/jobs.ts", import.meta.url)))};
+const [root, entryFile, key] = process.argv.slice(2);
+const jobId = await startHostJob(
+  { kind: "detect", input: { requestedHostId: "h1", workspacePath: "/ok" }, timeoutSec: 30, key },
+  { root, entryFile },
+);
+process.stdout.write(jobId);
+`;
+
 let dir = "";
 let options: JobOptions = {};
 const request = (workspacePath: string, timeoutSec = 30) =>
@@ -68,6 +85,11 @@ async function until(jobId: string, done: (status: JobStatus) => boolean): Promi
 beforeAll(async () => {
   dir = await mkdtemp(join(tmpdir(), "lp-jobs-"));
   await writeFile(join(dir, "host.mjs"), FIXTURE);
+  const source = join(dir, "start-job.mts");
+  await writeFile(source, STARTER);
+  await execFileAsync(join(import.meta.dirname, "../node_modules/.bin/esbuild"), [
+    source, "--bundle", "--platform=node", "--format=esm", `--outfile=${join(dir, "start-job.mjs")}`,
+  ]);
   options = { root: join(dir, "jobs"), entryFile: join(dir, "host.mjs") };
 });
 afterAll(async () => { await rm(dir, { recursive: true, force: true }); });
@@ -111,6 +133,31 @@ describe("host background jobs", () => {
     process.kill(-pid, "SIGKILL");
     expect(await until(jobId, (row) => row.state !== "running")).toMatchObject({ state: "lost" });
   });
+
+  it("keeps one job per key when rival processes race a stale claim", async () => {
+    const starter = join(dir, "start-job.mjs");
+    const keysDir = join(options.root!, "keys");
+    await mkdir(keysDir, { recursive: true });
+    const key = "concurrent-race";
+    const file = join(keysDir, `${sha256Hex(key).slice(0, 32)}.id`);
+    const winners = new Set<string>();
+    for (let round = 0; round < 20; round += 1) {
+      // A key file naming a job that no longer exists: every racer must free and re-claim it exactly once.
+      await writeFile(file, "job_0000000000\n");
+      const ids = await Promise.all(
+        Array.from({ length: 4 }, async () => {
+          const { stdout } = await execFileAsync(
+            process.execPath, [starter, options.root!, options.entryFile!, key],
+          );
+          return stdout.trim();
+        }),
+      );
+      expect(new Set(ids).size).toBe(1);
+      winners.add(ids[0]);
+      await until(ids[0], (row) => row.state !== "running");
+    }
+    expect(winners.size).toBe(20);
+  }, 120_000);
 
   it("answers an unknown job as lost and refuses a malformed id or input", async () => {
     expect(await hostJobStatus("job_doesnotexist0", options)).toMatchObject({ state: "lost", error: "no such job" });
