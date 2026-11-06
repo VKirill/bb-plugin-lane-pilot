@@ -6,3 +6,5 @@ export { ERRAND_EPISODE_ENRICH_COLUMNS, ERRAND_EPISODE_EXTRACTOR_VERSION, ERRAND
 export { EPISODE_ENRICH_BACKOFF_MS, EPISODE_SWEEP_LIMIT, codeFailureClass, enrichEpisode, episodeSkills, episodesBackfill, parseEpisodeAnswer, pendingEpisodes, sweepErrandEpisodes, type BackfillResult, type EpisodeAnswer, type EpisodeEnrichDeps, type EpisodeSkillUse, type PendingEpisode, type SweepResult } from "./episode-enrich";
 export { ERRAND_FAILURE_CLASSES, ERRAND_FAILURE_ID, errandFailureJudgment, type ErrandFailureClass, type ErrandFailureDecision, type ErrandFailureInput } from "./failure-judgment";
 export { diagnosisLines, errandsDiagnosis, errandsDiagnosisMorningLine, type DiagnosisKindCost, type DiagnosisShare, type ErrandsDiagnosis } from "./diagnosis";
+export { PROCESS_KEY_JUDGMENT_ID, chooseProcessKey, nearestKeys, pairwiseF1, processKeyJudgment, type KnownProcessKey, type NearProcessKey, type ProcessKeyDecision, type ProcessKeyInput, type ProcessKeyPick } from "./process-key";
+export { ERRANDS_USAGE, processKeyEval, runErrandsCli, wordJudge, type ProcessKeyEvalResult } from "./process-key-eval";

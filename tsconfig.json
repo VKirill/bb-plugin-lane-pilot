@@ -9,6 +9,8 @@
     "types": ["node", "vitest/globals"],
     "paths": {
       "@/*": ["./*"],
+      // node_modules is a symlink to the main checkout in worktrees; pin i18n to this tree so new keys typecheck before merge.
+      "@lane-pilot/i18n": ["./packages/i18n/src/index.ts"],
       "elkjs/lib/elk.bundled.js": ["./src/rooms/workflow/ui/elk-shim.d.ts"]
     },
     "noEmit": true,

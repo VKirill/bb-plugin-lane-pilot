@@ -56,6 +56,6 @@ describe("status of the built-in chains", () => {
     expect(ids).toEqual(expect.arrayContaining(["seo-template-scale", "seo-trust"]));
     // SEO wave 3b: the link program is a chain; outreach and mentions are subworkflows it calls.
     expect(ids).toEqual(expect.arrayContaining(["seo-linkbuilding", "seo-outreach", "seo-mentions"]));
-    expect(ids).toHaveLength(99); // +5 seo wave-1, +4 wave-2, +5 wave-3 (template-scale, trust, linkbuilding, outreach, mentions)
+    expect(ids).toHaveLength(100); // +1 lp.episodes (stage 1 R5), +5 seo wave-1, +4 wave-2, +5 wave-3 (template-scale, trust, linkbuilding, outreach, mentions)
   });
 });

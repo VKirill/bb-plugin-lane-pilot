@@ -22,7 +22,7 @@ import { learningFor } from "../../learning";
 import { attemptMetrics, renderAttemptMetrics } from "../../usage/server";
 import { DEFERRAL_USAGE, runDeferralCli } from "../../deferral/server";
 import { MEMORY_EVAL_USAGE, runMemoryEvalCommand } from "../../memory-eval/server";
-import { MEMORY_CONFLICT_USAGE, runMemoryConflictCli, runMemoryImportCli } from "../../memory/server";
+import { MEMORY_CONFLICT_USAGE, runMemoryConflictCli, } from "../../memory/server";
 import { BENCH_USAGE, runBenchCli } from "../../bench/server";
 import { BASELINE_USAGE, runBaselineCli } from "../../baseline/server";
 import { RETURN_USAGE, runReturnCli } from "../../stage-return/server";
@@ -50,6 +50,7 @@ import { smaCheckedPercent, smaCounts, smaDonePercent, smaRows } from "../../sma
 import { loadLiveExam } from "../../policy";
 import { RULES_USAGE, runRulesCli } from "../../rule-forms";
 import { JEV_USAGE, runJevCli } from "../../jev";
+import { ERRANDS_USAGE, runErrandsCli } from "../../errands";
 import { retireAdoptedRule } from "../../self-repair/server";
 import { ROLLBACK_USAGE, runRollbackCli } from "../../rollback/server";
 import { CODE_CRITIC_DEFAULTS, isCodeCriticDefault } from "../../critique";
@@ -155,7 +156,6 @@ export function registerCli(ctx: ServerCore, services: Services) {
       { name:"memory-eval", summary:"Score memory retrieval at 30, 300 and 3000 notes on real accepted tasks (right answer, nothing relevant, off-topic) against a plain path-and-keyword baseline; reads the hub data, writes nothing", usage:MEMORY_EVAL_USAGE },
       { name:"memory-conflicts", summary:"Memory notes that disagree: held out of every brief until a person settles them; --detect looks for new ones", usage:"bb lane-pilot memory-conflicts [--project P] [--state held|settled] [--detect]" },
       { name:"memory-conflict-settle", summary:"Settle a held memory conflict: keep one note, both, or neither, with the evidence", usage:"bb lane-pilot memory-conflict-settle <mc_id> --keep a|b|both|none --evidence <text>" },
-      { name:"memory", summary:"One door for the old memory stores: import a JSONL export (bb memory, Claude auto-memory files, the agentmemory archive) through the same mask and store write path as an agent write, with a receipt per line; import-eval counts how many imported records the PM search still finds", usage:"bb lane-pilot memory import --source bb-memory|claude-files|agentmemory --file <jsonl> --project <id> [--dry-run] [--json]\nbb lane-pilot memory import-eval --report <json> [--json]" },
       { name:"start-ambiguous-probe", summary:"Create duplicate metadata and prove reconcile blocks", usage:"bb lane-pilot start-ambiguous-probe <project-id> <pm-thread-id>" },
       { name:"host-detect", summary:"Call the host worker detect method", usage:"bb lane-pilot host-detect <host-id> <workspace-path>" },
       { name:"host-snapshot", summary:"Call read-only snapshotDryRun", usage:"bb lane-pilot host-snapshot <host-id> <absolute-path>..." },
@@ -221,7 +221,8 @@ export function registerCli(ctx: ServerCore, services: Services) {
       { name:"schedule", summary:"The schedule board: scheduled workflows, errands and scripts (list, show, history, preview, create, update, pause, resume, run-now, delete)", usage:SCHEDULE_USAGE },
       { name:"agents", summary:"The agents the owner can pick: list and show the bundled ones, create, update and delete his own (a JSON or a markdown file with frontmatter)", usage:AGENTS_USAGE },
       { name:"skill-lint", summary:"Lint a local skill folder against the skill standard (SKILL.md, references/, scripts/): errors and warnings, exit 1 on errors", usage:"bb lane-pilot skill-lint <dir>" },
-      { name:"errands", summary:"Errand episodes: backfill phase-A rows for past errand runs that have none (repeated processes first)", usage:EPISODES_USAGE },
+      { name:"errands", summary:"Errands: backfill episode rows for past runs (repeated processes first); the process-key eval over the gold set", usage:`${EPISODES_USAGE}
+${ERRANDS_USAGE}` },
   ];
   // The help is the hand list above plus every registered command it does not name: regress, regressions, regress-close and
   // timeline were missing from it, and a PM told the owner a quarantine could not be lifted (2026-11-02).
@@ -338,6 +339,7 @@ export function registerCli(ctx: ServerCore, services: Services) {
         }
         if (command === "lead") return await runLeadCli({ db, kv: bb.storage.kv as never, lead: services.lead }, args);
         if (command === "jev") return runJevCli({ db, saveProjectSetting: (p, k, v) => saveProjectSetting(db, p, k, v), settings: async (p) => (await effectiveProjectSettings(p)).values as Record<string, unknown> }, args);
+        if (command === "errands" && args[0] === "process-key-eval") return runErrandsCli(args);
         if (command === "rules") {
           const hostAt = args.indexOf("--host");
           const hostId = hostAt >= 0 ? args[hostAt + 1] : undefined;
@@ -623,9 +625,6 @@ export function registerCli(ctx: ServerCore, services: Services) {
         }
         if (command === "memory-conflicts" || command === "memory-conflict-settle") {
           return runMemoryConflictCli(services.memoryConflicts, command, args);
-        }
-        if (command === "memory") {
-          return runMemoryImportCli(db, args);
         }
         if (command === "start-ambiguous-probe" && args.length === 2) {
           return { exitCode:0, stdout:JSON.stringify(await services.startAmbiguousProbe(args[0]!, args[1]!), null, 2) };

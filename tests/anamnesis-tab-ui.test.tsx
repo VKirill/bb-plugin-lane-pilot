@@ -7,6 +7,7 @@ import { cleanup, fireEvent, waitFor, within } from "@testing-library/react";
 import { installTestPluginRuntime, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { anamnesisHandler } from "../src/rooms/anamnesis/host";
 import { createHub } from "../src/rooms/anamnesis/hub";
+import { openStore } from "../src/rooms/anamnesis/store";
 import { setLocaleOverride } from "@lane-pilot/i18n";
 
 vi.mock("sonner", () => ({ toast: { info: vi.fn(), success: vi.fn(), error: vi.fn() } }));
@@ -28,6 +29,7 @@ beforeEach(async () => {
     hostCall: async (hostId, request) => (await anamnesisHandler({ requestedHostId: hostId, request })).response,
     listHosts: async () => [{ id: "mini", name: "Mac mini", connected: true }],
     kv: { get: async <V,>(key: string) => kv.get(key) as V | undefined, set: async (key, value) => { kv.set(key, value); } },
+    store: openStore(":memory:"),
   });
   await hub.ask({ op: "upsert", actor: "auto:git", reason: "t", records: [
     { kind: "skill", key: "lang:TypeScript", title: "TypeScript", statement: "many commits", attributes: { commits: 90, level: "applies", levels: [{ month: "2026-02", level: "familiar", commits: 5 }, { month: "2026-04", level: "applies", commits: 30 }] }, evidence: ev("a@1") },

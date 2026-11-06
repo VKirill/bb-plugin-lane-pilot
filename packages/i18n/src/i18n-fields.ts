@@ -1057,6 +1057,8 @@ export const fieldEn = {
   reason_s610: "on: a graph, a council or a schedule of a phase starts only from that phase's own stage; off (the default): a PM may start them at any time.",
   field_s611: "Errand episodes: collect",
   reason_s611: "on: when an errand run ends a row of lane_pilot_errand_episode is written — outcome, verdict, helper thread, model, the skills it was offered and a privacy-safe tool trace (tool names, argument hashes, success flags); a run the router sent to another graph is marked pending at start. off: nothing is recorded. Default on.",
+  field_s612: "Errand episodes: process key",
+  reason_s612: "shadow: the process-key judgment asks which known kind of work the errand continues and keeps the answer in a receipt, but the proposed key stands. active: a confident answer sets the process key. Turn on only after the gold-set score reaches 0.8. Default shadow.",
 } as const;
 
 export const fieldRu: { [K in keyof typeof fieldEn]: string } = {
@@ -2117,4 +2119,6 @@ export const fieldRu: { [K in keyof typeof fieldEn]: string } = {
   reason_s610: "on: граф, совет или расписание этапа стартуют только из его собственной стадии; off (по умолчанию): PM может запускать их в любой момент.",
   field_s611: "Эпизоды поручений: сбор",
   reason_s611: "on: когда запуск поручения завершается, пишется строка lane_pilot_errand_episode — итог, вердикт, поток помощника, модель, выданные навыки и приватный след инструментов (имена, хэши аргументов, признак успеха); запуск, который маршрутизатор отправил в другой граф, помечается ожидающим на старте. off: ничего не записывается. По умолчанию on.",
+  field_s612: "Эпизоды поручений: ключ процесса",
+  reason_s612: "shadow: проверка ключа процесса спрашивает, к какому известному виду работы относится поручение, и хранит ответ в квитанции, но предложенный ключ остаётся. active: уверенный ответ назначает ключ процесса. Включайте только после того, как оценка на размеченном наборе достигнет 0.8. По умолчанию shadow.",
 };

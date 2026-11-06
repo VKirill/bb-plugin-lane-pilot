@@ -80,6 +80,26 @@ export const hostOps = {
   sources: z.object({ op: z.literal("sources"), set: z.object({ source: source.exclude(["manual"]), enabled: z.boolean() }).strict().optional() }).strict(),
 } as const;
 
+/**
+ * What the host method `anamnesis` carries since M1b: only what cannot run on the hub — the collection scans of the
+ * owner's machine (raw records, stored hub-side through the same door), the portrait files' read and write, and the
+ * read-only `export` of the legacy file for the one-off migration. Store operations never reach the host.
+ */
+export const hostFileOps = {
+  /** The portrait files of this machine: `full` returns each file's content for the hub's sync plan, otherwise only the listing. */
+  notes_read: z.object({ op: z.literal("notes_read"), full: z.boolean().optional() }).strict(),
+  /** Writes the files the hub planned; a file is written only while its content still equals `base` (the owner's edits are never overwritten). */
+  notes_write: z.object({
+    op: z.literal("notes_write"),
+    writes: z.array(z.object({ name: z.string().min(1).max(120), content: z.string().max(2_000_000), base: z.string().max(2_000_000).nullable() }).strict()).max(20),
+  }).strict(),
+  /** Every row of the legacy store, for `anamnesis migrate-to-hub`; the file itself is not touched. */
+  export: z.object({ op: z.literal("export") }).strict(),
+} as const;
+
+export const hostRequestSchema = z.union([hostOps.collect, hostFileOps.notes_read, hostFileOps.notes_write, hostFileOps.export]);
+export type HostRequest = z.infer<typeof hostRequestSchema>;
+
 export const anamnesisRequestSchema = z.union([
   hostOps.status, hostOps.upsert, hostOps.add, hostOps.list, hostOps.get, hostOps.edit, hostOps.history, hostOps.forget, hostOps.collect, hostOps.load_report, hostOps.loads, hostOps.whoami, hostOps.card, hostOps.import_profile, hostOps.sources, hostOps.purge_technical, hostOps.notes,
 ]);
@@ -155,3 +175,30 @@ export const responseSchemas = {
 export type OpName = keyof typeof responseSchemas;
 export type ResponseOf<O extends OpName> = z.infer<(typeof responseSchemas)[O]>;
 export { evidenceSchema };
+
+/* ---- answers of the host-bound ops (M1b): raw scans, file listings, the migration export ---- */
+
+/** One source's raw scan: items looked at and the records themselves; the hub stores them through the store door. */
+export const collectScanSchema = z.object({
+  source: z.enum(HOST_SOURCES), items: z.number().int(), records: z.array(z.record(z.string(), z.unknown())),
+  note: z.string().optional(), error: z.string().optional(),
+}).strict();
+export const collectScanResponseSchema = z.object({ mode: z.enum(["plan", "run"]), sources: z.array(collectScanSchema) }).strict();
+export type CollectScanResponse = z.infer<typeof collectScanResponseSchema>;
+
+export const notesFileSchema = z.object({
+  name: z.string(), path: z.string(), exists: z.boolean(), records: z.number().int(),
+  /** Present only when the hub asked for the sync plan (`full`); the file's whole content or null when absent. */
+  content: z.string().nullable().optional(),
+}).strict();
+export const notesReadResponseSchema = z.object({ dir: z.string(), files: z.array(notesFileSchema) }).strict();
+export type NotesReadResponse = z.infer<typeof notesReadResponseSchema>;
+
+export const notesWriteResponseSchema = z.object({
+  written: z.number().int(),
+  files: z.array(z.object({ name: z.string(), wrote: z.boolean() }).strict()),
+}).strict();
+export type NotesWriteResponse = z.infer<typeof notesWriteResponseSchema>;
+
+export const exportResponseSchema = z.object({ tables: z.record(z.string(), z.array(z.record(z.string(), z.unknown()))) }).strict();
+export type ExportResponse = z.infer<typeof exportResponseSchema>;

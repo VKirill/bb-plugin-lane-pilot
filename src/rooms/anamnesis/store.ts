@@ -2,6 +2,7 @@ import { DatabaseSync } from "node:sqlite";
 import { chmodSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import { decryptOwnerField, encryptOwnerField, OwnerKeyError } from "./crypto";
 import { infrastructureReason } from "./infra";
 import {
   DEFAULT_SOURCES, SOURCES, maxSensitivity, recordId, recordInputSchema, scrubQuote, sensitivityFloor, unsafeReason,
@@ -9,8 +10,10 @@ import {
 } from "./model";
 
 /**
- * The anamnesis store (A1). A SQLite file on the owner's machine (the Mac mini), `~/.lane-pilot/anamnesis/anamnesis.db`, mode 0600 in
- * a 0700 folder; the hub never holds a copy. Opened by the host worker for each call.
+ * The anamnesis store (A1, M1b). One implementation over a `DatabaseSync`-compatible handle: the Mac-mini file
+ * (`~/.lane-pilot/anamnesis/anamnesis.db`, mode 0600 in a 0700 folder, opened by `openStore`) and the hub's plugin
+ * base (`lane_pilot_owner_*` tables of `data.db`, opened by `openOwnerStore`). The hub serves every operation from
+ * its own tables; the host keeps no store and only collects raw input and the one-off export for migration.
  *
  * The evidence rules are the ones of the retired memory-profile plugin, kept in the store so that no writer can skip them:
  *  - an automatic change names evidence (a pointer with the original date), or it is not stored;
@@ -18,9 +21,17 @@ import {
  *  - forgetting leaves a cutoff, so the chats and commits that taught it cannot bring it back; only newer evidence can;
  *  - each source has a checkpoint, advanced by the caller after its batch is stored;
  *  - text that carries a credential or an instruction to a reader is not stored.
+ *
+ * On the hub (`crypto` given) the free-text fields of a record whose sensitivity is `sensitive` — title, statement,
+ * attributes, evidence quotes, history changes, note lines — are AES-256-GCM ciphertext (`v1:…`, see crypto.ts) under
+ * `LP_OWNER_MEMORY_KEY` from Env Catalog. Without the key a sensitive record is refused (`owner_key_missing`), never
+ * written in clear.
  */
 export const anamnesisDir = (): string => process.env.LANE_PILOT_ANAMNESIS_DIR || join(homedir(), ".lane-pilot", "anamnesis");
 export const anamnesisDbPath = (): string => join(anamnesisDir(), "anamnesis.db");
+
+/** The hub's owner tables inside the plugin base. */
+export const OWNER_TABLE_PREFIX = "lane_pilot_owner_";
 
 const KEEP_OLDEST_EVIDENCE = 40;
 const KEEP_NEWEST_EVIDENCE = 100;
@@ -45,9 +56,24 @@ export type Counts = {
   byKind: Record<string, number>; byStatus: Record<string, number>; bySensitivity: Record<string, number>;
 };
 
+/** The slice of `node:sqlite`/`better-sqlite3` the store needs, so the hub base and the file share one implementation. */
+export type StoreDb = {
+  exec(sql: string): unknown;
+  prepare(sql: string): {
+    get(...args: Array<string | number | null>): unknown;
+    all(...args: Array<string | number | null>): unknown[];
+    run(...args: Array<string | number | null>): unknown;
+  };
+  close(): void;
+};
+
+/** Field encryption of the hub store; `missing` is the `owner_key_missing` log line, called on each refused sensitive write. */
+export type OwnerCrypto = { key(): Buffer | null; missing(): void };
+
 type Row = Record<string, unknown>;
 const num = (value: unknown): number => Number(value ?? 0);
 const json = (value: unknown): Record<string, unknown> => { try { const parsed = JSON.parse(String(value ?? "{}")) as unknown; return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {}; } catch { return {}; } };
+const str = (value: unknown): string => (value === null || value === undefined ? "" : String(value));
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS records(
@@ -71,22 +97,28 @@ CREATE TABLE IF NOT EXISTS notes_files(file TEXT PRIMARY KEY, hash TEXT NOT NULL
 CREATE TABLE IF NOT EXISTS notes_lines(record_id TEXT PRIMARY KEY, file TEXT NOT NULL, line TEXT NOT NULL);
 `;
 
-export type Store = ReturnType<typeof openStore>;
+/** The nine store tables, so one schema serves the file (`records`) and the hub base (`lane_pilot_owner_records`). */
+const TABLE_RE = /\b(records|evidence|history|tombstones|checkpoints|sources|loads|notes_files|notes_lines)\b/g;
+const prefixed = (prefix: string, sql: string): string => (prefix ? sql.replace(TABLE_RE, (name) => prefix + name) : sql);
+/** The store's DDL for a table prefix — the file store's unprefixed names or the hub's `lane_pilot_owner_` ones. */
+export const anamnesisSchemaSql = (prefix = ""): string => prefixed(prefix, SCHEMA);
 
-export function openStore(path: string = anamnesisDbPath()) {
-  if (path !== ":memory:") {
-    mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
-    try { chmodSync(dirname(path), 0o700); } catch { /* a folder we do not own keeps its mode */ }
+export type Store = ReturnType<typeof createStore>;
+
+function createStore(db: StoreDb, options: { prefix?: string; path?: string; crypto?: OwnerCrypto; ensureSchema?: boolean; closeDb?: boolean } = {}) {
+  const prefix = options.prefix ?? "";
+  const crypt = options.crypto;
+  if (options.ensureSchema !== false) {
+    db.exec(anamnesisSchemaSql(prefix));
+    try { db.exec(`ALTER TABLE ${prefix}records ADD COLUMN authored_by TEXT`); } catch { /* the column is already in SCHEMA */ }
   }
-  const db = new DatabaseSync(path);
-  db.exec("PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON;");
-  db.exec(SCHEMA);
-  try { db.exec("ALTER TABLE records ADD COLUMN authored_by TEXT"); } catch { /* the column is already in SCHEMA */ }
-  if (path !== ":memory:") for (const suffix of ["", "-wal", "-shm"]) { try { chmodSync(path + suffix, 0o600); } catch { /* not created yet */ } }
 
-  const one = (sql: string, ...args: Array<string | number | null>): Row | undefined => db.prepare(sql).get(...args) as Row | undefined;
-  const all = (sql: string, ...args: Array<string | number | null>): Row[] => db.prepare(sql).all(...args) as Row[];
-  const run = (sql: string, ...args: Array<string | number | null>): void => { db.prepare(sql).run(...args); };
+  const one = (sql: string, ...args: Array<string | number | null>): Row | undefined => db.prepare(prefixed(prefix, sql)).get(...args) as Row | undefined;
+  const all = (sql: string, ...args: Array<string | number | null>): Row[] => db.prepare(prefixed(prefix, sql)).all(...args) as Row[];
+  const run = (sql: string, ...args: Array<string | number | null>): number => {
+    const result = db.prepare(prefixed(prefix, sql)).run(...args) as { changes?: number | bigint } | undefined;
+    return Number(result?.changes ?? 0);
+  };
   let depth = 0;
   /** One transaction; a call made inside another one joins it. */
   const tx = <T>(work: () => T): T => {
@@ -95,14 +127,58 @@ export function openStore(path: string = anamnesisDbPath()) {
     depth = 1;
     try { const out = work(); db.exec("COMMIT"); return out; } catch (cause) { try { db.exec("ROLLBACK"); } catch { /* already rolled back */ } throw cause; } finally { depth = 0; }
   };
+  /** `work` rolled back afterwards: a plan counted by the real rules that changes nothing (also the dry run of the migration). */
+  const dry = <T>(work: () => T): T => {
+    if (depth > 0) throw new Error("dryRun cannot join a transaction");
+    db.exec("BEGIN IMMEDIATE");
+    depth = 1;
+    try { return work(); } finally { depth = 0; db.exec("ROLLBACK"); }
+  };
 
-  const toRecord = (row: Row): AnamnesisRecord => ({
-    id: String(row.id), kind: row.kind as Kind, title: String(row.title), statement: String(row.statement), attributes: json(row.attributes),
-    sensitivity: row.sensitivity as Sensitivity, confidence: num(row.confidence), status: row.status as Status,
-    firstSeen: row.first_seen === null ? null : num(row.first_seen), lastSeen: row.last_seen === null ? null : num(row.last_seen),
-    manualAt: num(row.manual_at), createdAt: num(row.created_at), updatedAt: num(row.updated_at), evidenceCount: num(row.evidence_count),
-    authoredBy: row.authored_by === "model" || row.authored_by === "owner" ? row.authored_by : null,
-  });
+  /* ---- field encryption: only the free text of a `sensitive` record, self-describing `v1:` ciphertext ---- */
+
+  const isSensitive = (sensitivity: Sensitivity): boolean => sensitivity === "sensitive";
+  /** Plain text in, storable text out: ciphertext for a sensitive record on the hub, the input itself elsewhere. */
+  const seal = (plain: string, sensitiveRecord: boolean): string => {
+    if (!plain || !sensitiveRecord || !crypt) return plain;
+    const key = crypt.key();
+    if (!key) { crypt.missing(); throw new OwnerKeyError("owner_key_missing: LP_OWNER_MEMORY_KEY is not available, sensitive records are refused"); }
+    return encryptOwnerField(key, plain);
+  };
+  /** Stored text back to plain: `v1:` opens with the key, anything else passes through (the legacy file is plaintext). */
+  const open = (value: string): string => (crypt ? decryptOwnerField(crypt.key(), value) : value);
+  /** A sensitive write is refused, never written in clear, while the key is missing. */
+  const keyRefusal = (sensitivity: Sensitivity): UpsertResult | null =>
+    isSensitive(sensitivity) && crypt && !crypt.key() ? (crypt.missing(), { id: null, action: "ignored", reason: "owner_key_missing", newEvidence: 0 }) : null;
+
+  /** Moves a record's encrypted fields across the sensitive boundary: evidence quotes, history changes and note lines follow it. */
+  function rekeyRecord(id: string, toSensitive: boolean): void {
+    if (!crypt) return;
+    const flip = (value: string | null): string | null => {
+      if (value === null) return null;
+      const plain = open(value);
+      return toSensitive ? seal(plain, true) : plain;
+    };
+    for (const row of all("SELECT rowid AS rid, quote FROM evidence WHERE record_id=? AND quote IS NOT NULL", id)) run("UPDATE evidence SET quote=? WHERE rowid=?", flip(str(row.quote))!, num(row.rid));
+    for (const row of all("SELECT id AS hid, changes FROM history WHERE record_id=?", id)) run("UPDATE history SET changes=? WHERE id=?", flip(str(row.changes))!, num(row.hid));
+    for (const row of all("SELECT line FROM notes_lines WHERE record_id=?", id)) run("UPDATE notes_lines SET line=? WHERE record_id=?", flip(str(row.line))!, id);
+  }
+
+  const toRecord = (row: Row): AnamnesisRecord | null => {
+    try {
+      return {
+        id: str(row.id), kind: row.kind as Kind, title: open(str(row.title)), statement: open(str(row.statement)), attributes: json(open(str(row.attributes))),
+        sensitivity: row.sensitivity as Sensitivity, confidence: num(row.confidence), status: row.status as Status,
+        firstSeen: row.first_seen === null ? null : num(row.first_seen), lastSeen: row.last_seen === null ? null : num(row.last_seen),
+        manualAt: num(row.manual_at), createdAt: num(row.created_at), updatedAt: num(row.updated_at), evidenceCount: num(row.evidence_count),
+        authoredBy: row.authored_by === "model" || row.authored_by === "owner" ? row.authored_by : null,
+      };
+    } catch (cause) {
+      // A sensitive record without its key stays closed: invisible to lists and reads, never an exception that stops a batch.
+      if (cause instanceof OwnerKeyError) return null;
+      throw cause;
+    }
+  };
   const SELECT = "SELECT r.*, (SELECT count(*) FROM evidence e WHERE e.record_id=r.id) AS evidence_count FROM records r";
 
   const sourceEnabled = (source: Source): boolean => {
@@ -111,8 +187,10 @@ export function openStore(path: string = anamnesisDbPath()) {
     return row ? num(row.enabled) === 1 : DEFAULT_SOURCES[source];
   };
   const cutoffFor = (id: string): number => Math.max(num(one("SELECT cutoff FROM tombstones WHERE id='*'")?.cutoff), num(one("SELECT cutoff FROM tombstones WHERE id=?", id)?.cutoff));
-  const log = (id: string, at: number, actor: string, action: string, reason: string, changes: Record<string, unknown>): void =>
-    run("INSERT INTO history(record_id,at,actor,action,reason,changes) VALUES (?,?,?,?,?,?)", id, at, actor, action, reason.slice(0, 300), JSON.stringify(changes));
+  const log = (id: string, at: number, actor: string, action: string, reason: string, changes: Record<string, unknown>, sensitiveRecord = false): void => {
+    run("INSERT INTO history(record_id,at,actor,action,reason,changes) VALUES (?,?,?,?,?,?)", id, at, actor, action, reason.slice(0, 300),
+      sensitiveRecord ? seal(JSON.stringify(changes), true) : JSON.stringify(changes));
+  };
 
   function pruneEvidence(id: string): void {
     const total = num(one("SELECT count(*) AS n FROM evidence WHERE record_id=?", id)?.n);
@@ -151,18 +229,22 @@ export function openStore(path: string = anamnesisDbPath()) {
 
     if (!existing) {
       const sensitivity: Sensitivity = owner ? (input.sensitivity ?? floor) : maxSensitivity(input.sensitivity === "public" ? "private" : input.sensitivity, floor);
+      const refused = keyRefusal(sensitivity);
+      if (refused) return { ...refused, id };
       const status: Status = owner ? "confirmed" : input.status ?? "draft";
       const authoredBy = input.attributes.authoredBy === "model" || input.attributes.authoredBy === "owner" ? input.attributes.authoredBy : null;
+      const sensitiveRecord = isSensitive(sensitivity);
       run("INSERT INTO records(id,kind,title,statement,attributes,sensitivity,confidence,status,first_seen,last_seen,manual_at,created_at,updated_at,authored_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-        id, input.kind, input.title, input.statement, JSON.stringify(input.attributes), sensitivity, input.confidence, status,
+        id, input.kind, seal(input.title, sensitiveRecord), seal(input.statement, sensitiveRecord), seal(JSON.stringify(input.attributes), sensitiveRecord), sensitivity, input.confidence, status,
         input.firstSeen ?? oldest, input.lastSeen ?? newest, owner ? now : 0, now, now, authoredBy);
-      for (const item of evidence) run("INSERT OR IGNORE INTO evidence(record_id,source,ref,at,quote) VALUES (?,?,?,?,?)", id, item.source, item.ref, item.at, item.quote ?? null);
+      for (const item of evidence) run("INSERT OR IGNORE INTO evidence(record_id,source,ref,at,quote) VALUES (?,?,?,?,?)", id, item.source, item.ref, item.at, item.quote == null ? null : seal(item.quote, sensitiveRecord));
       pruneEvidence(id);
-      log(id, now, ctx.actor, "create", ctx.reason, { title: input.title, sensitivity, status, evidence: evidence.length });
+      log(id, now, ctx.actor, "create", ctx.reason, { title: input.title, sensitivity, status, evidence: evidence.length }, sensitiveRecord);
       return { id, action: "created", reason: null, newEvidence: evidence.length };
     }
 
     const current = toRecord(existing);
+    if (!current) return { id, action: "ignored", reason: "owner_key_missing", newEvidence: 0 };
     if (!owner) {
       // The owner's word protects a record from evidence that came before it; a record the owner rejected stays rejected.
       if (current.status === "rejected") return { id, action: "blocked", reason: "rejected_by_owner", newEvidence: 0 };
@@ -188,33 +270,45 @@ export function openStore(path: string = anamnesisDbPath()) {
     const confidence = Math.max(current.confidence, input.confidence);
     const firstSeen = Math.min(current.firstSeen ?? Infinity, input.firstSeen ?? oldest);
     const lastSeen = Math.max(current.lastSeen ?? 0, input.lastSeen ?? newest);
+    const sensitiveRecord = isSensitive(sensitivity);
+    const refused = keyRefusal(sensitivity);
+    if (refused) return { ...refused, id };
     let added = 0;
     for (const item of evidence) {
       const before = num(one("SELECT count(*) AS n FROM evidence WHERE record_id=? AND source=? AND ref=?", id, item.source, item.ref)?.n);
-      if (!before) { run("INSERT INTO evidence(record_id,source,ref,at,quote) VALUES (?,?,?,?,?)", id, item.source, item.ref, item.at, item.quote ?? null); added += 1; }
+      if (!before) { run("INSERT INTO evidence(record_id,source,ref,at,quote) VALUES (?,?,?,?,?)", id, item.source, item.ref, item.at, item.quote == null ? null : seal(item.quote, sensitiveRecord)); added += 1; }
     }
     if (added) pruneEvidence(id);
     const dirty = Object.keys(changes).length > 0 || attributesChanged || confidence !== current.confidence || firstSeen !== current.firstSeen || lastSeen !== current.lastSeen || added > 0;
     if (!dirty) return { id, action: "unchanged", reason: null, newEvidence: 0 };
+    if (isSensitive(current.sensitivity) !== sensitiveRecord) rekeyRecord(id, sensitiveRecord);
     run("UPDATE records SET title=?, statement=?, attributes=?, sensitivity=?, confidence=?, status=?, first_seen=?, last_seen=?, manual_at=?, updated_at=? WHERE id=?",
-      title, statement, JSON.stringify(attributes), sensitivity, confidence, status, firstSeen, lastSeen, owner ? now : current.manualAt, now, id);
+      seal(title, sensitiveRecord), seal(statement, sensitiveRecord), seal(JSON.stringify(attributes), sensitiveRecord), sensitivity, confidence, status, firstSeen, lastSeen, owner ? now : current.manualAt, now, id);
     // History keeps what a person would want to read back; counters that move on every pass are not a change.
     const meaningful = Object.keys(changes).length > 0;
-    if (meaningful) log(id, now, ctx.actor, "update", ctx.reason, { ...changes, ...(added ? { evidence: added } : {}) });
+    if (meaningful) log(id, now, ctx.actor, "update", ctx.reason, { ...changes, ...(added ? { evidence: added } : {}) }, sensitiveRecord);
     return { id, action: meaningful || added || attributesChanged ? "updated" : "unchanged", reason: null, newEvidence: added };
   }
 
+  function readFull(id: string): AnamnesisRecordFull {
+    const row = one(`${SELECT} WHERE r.id=?`, id)!;
+    const record = toRecord(row);
+    if (!record) throw new OwnerKeyError("owner_key_missing: the record stays closed without LP_OWNER_MEMORY_KEY");
+    const evidence = all("SELECT source, ref, at, quote FROM evidence WHERE record_id=? ORDER BY at", id)
+      .map((item) => ({ source: item.source as Source, ref: str(item.ref), at: num(item.at), ...(item.quote ? { quote: open(str(item.quote)) } : {}) }));
+    return { ...record, evidence };
+  }
+  function checkpointAt(source: Source): number | null {
+    const row = one("SELECT at FROM checkpoints WHERE source=?", source);
+    return row ? num(row.at) : null;
+  }
+
   return {
-    path,
-    close: () => db.close(),
+    path: options.path ?? ":memory:",
+    close: () => { if (options.closeDb !== false) db.close(); },
     transaction: tx,
     /** Runs `work` and rolls everything back: the plan of a load, counted by the same rules as the real write, changing nothing. */
-    dryRun<T>(work: () => T): T {
-      if (depth > 0) throw new Error("dryRun cannot join a transaction");
-      db.exec("BEGIN IMMEDIATE");
-      depth = 1;
-      try { return work(); } finally { depth = 0; db.exec("ROLLBACK"); }
-    },
+    dryRun: dry,
 
     /** One record; a bad record is a result, never an exception, so one fragment cannot stop a batch. */
     upsert(raw: unknown, ctx: UpsertContext): UpsertResult {
@@ -228,9 +322,10 @@ export function openStore(path: string = anamnesisDbPath()) {
       const row = one(`${SELECT} WHERE r.id=?`, id);
       if (!row) return null;
       const record = toRecord(row);
+      if (!record) return null;
       if (record.sensitivity === "sensitive" && !options.includeSensitive) return null;
       const evidence = all("SELECT source, ref, at, quote FROM evidence WHERE record_id=? ORDER BY at", id)
-        .map((item) => ({ source: item.source as Source, ref: String(item.ref), at: num(item.at), ...(item.quote ? { quote: String(item.quote) } : {}) }));
+        .map((item) => ({ source: item.source as Source, ref: str(item.ref), at: num(item.at), ...(item.quote ? { quote: open(str(item.quote)) } : {}) }));
       return { ...record, evidence };
     },
 
@@ -239,13 +334,23 @@ export function openStore(path: string = anamnesisDbPath()) {
       if (filter.kinds?.length) { where.push(`r.kind IN (${filter.kinds.map(() => "?").join(",")})`); args.push(...filter.kinds); }
       if (filter.statuses?.length) { where.push(`r.status IN (${filter.statuses.map(() => "?").join(",")})`); args.push(...filter.statuses); }
       if (!filter.includeSensitive) where.push("r.sensitivity != 'sensitive'");
-      if (filter.query) { where.push("(r.title LIKE ? ESCAPE '\\' OR r.statement LIKE ? ESCAPE '\\')"); const like = `%${filter.query.replace(/[\\%_]/g, "\\$&")}%`; args.push(like, like); }
       const limit = Math.min(Math.max(filter.limit ?? 200, 1), 2000), offset = Math.max(filter.offset ?? 0, 0);
-      return all(`${SELECT}${where.length ? ` WHERE ${where.join(" AND ")}` : ""} ORDER BY COALESCE(r.last_seen, r.updated_at) DESC, r.id LIMIT ${limit} OFFSET ${offset}`, ...args).map(toRecord);
+      const clause = where.length ? ` WHERE ${where.join(" AND ")}` : "";
+      // Encrypted fields cannot be matched by SQL LIKE: with the owner key the query filters decrypted text instead.
+      if (filter.query && crypt) {
+        const needle = filter.query.toLowerCase();
+        return all(`${SELECT}${clause} ORDER BY COALESCE(r.last_seen, r.updated_at) DESC, r.id LIMIT 5000`, ...args)
+          .map(toRecord)
+          .filter((record): record is AnamnesisRecord => record !== null && (record.title.toLowerCase().includes(needle) || record.statement.toLowerCase().includes(needle)))
+          .slice(offset, offset + limit);
+      }
+      if (filter.query) { where.push("(r.title LIKE ? ESCAPE '\\' OR r.statement LIKE ? ESCAPE '\\')"); const like = `%${filter.query.replace(/[\\%_]/g, "\\$&")}%`; args.push(like, like); }
+      return all(`${SELECT}${where.length ? ` WHERE ${where.join(" AND ")}` : ""} ORDER BY COALESCE(r.last_seen, r.updated_at) DESC, r.id LIMIT ${limit} OFFSET ${offset}`, ...args)
+        .map(toRecord).filter((record): record is AnamnesisRecord => record !== null);
     },
 
     counts(): Counts {
-      const group = (column: string) => Object.fromEntries(all(`SELECT ${column} AS k, count(*) AS n FROM records GROUP BY ${column}`).map((row) => [String(row.k), num(row.n)]));
+      const group = (column: string) => Object.fromEntries(all(`SELECT ${column} AS k, count(*) AS n FROM records GROUP BY ${column}`).map((row) => [str(row.k), num(row.n)]));
       return { records: num(one("SELECT count(*) AS n FROM records")?.n), evidence: num(one("SELECT count(*) AS n FROM evidence")?.n),
         byKind: group("kind"), byStatus: group("status"), bySensitivity: group("sensitivity") };
     },
@@ -256,6 +361,7 @@ export function openStore(path: string = anamnesisDbPath()) {
         const row = one(`${SELECT} WHERE r.id=?`, id);
         if (!row) throw new Error(`no record ${id}`);
         const current = toRecord(row);
+        if (!current) throw new OwnerKeyError("owner_key_missing: the record stays closed without LP_OWNER_MEMORY_KEY");
         for (const text of [patch.title, patch.statement]) { const bad = text ? unsafeReason(text) : null; if (bad) throw new Error(`The text carries ${bad}; write plain facts`); }
         const changes: Record<string, unknown> = {};
         const next = { title: current.title, statement: current.statement, sensitivity: current.sensitivity, confidence: current.confidence, status: current.status, attributes: current.attributes };
@@ -265,17 +371,20 @@ export function openStore(path: string = anamnesisDbPath()) {
         if (patch.confidence !== undefined && patch.confidence !== current.confidence) { changes.confidence = [current.confidence, patch.confidence]; next.confidence = patch.confidence; }
         if (patch.status !== undefined && patch.status !== current.status) { changes.status = [current.status, patch.status]; next.status = patch.status; }
         if (patch.attributes) { next.attributes = { ...current.attributes, ...patch.attributes }; changes.attributes = Object.keys(patch.attributes); }
+        const sensitiveRecord = isSensitive(next.sensitivity);
+        if (keyRefusal(next.sensitivity)) throw new OwnerKeyError("owner_key_missing: LP_OWNER_MEMORY_KEY is not available, sensitive records are refused");
         run("UPDATE records SET title=?, statement=?, attributes=?, sensitivity=?, confidence=?, status=?, manual_at=?, updated_at=? WHERE id=?",
-          next.title, next.statement, JSON.stringify(next.attributes), next.sensitivity, next.confidence, next.status, now, now, id);
+          seal(next.title, sensitiveRecord), seal(next.statement, sensitiveRecord), seal(JSON.stringify(next.attributes), sensitiveRecord), next.sensitivity, next.confidence, next.status, now, now, id);
+        if (isSensitive(current.sensitivity) !== sensitiveRecord) rekeyRecord(id, sensitiveRecord);
         run("INSERT OR IGNORE INTO evidence(record_id,source,ref,at,quote) VALUES (?,?,?,?,NULL)", id, "manual", `edit:${now}`, now);
-        log(id, now, "owner", Object.keys(changes).length === 1 && changes.status ? "status" : "edit", reason, changes);
+        log(id, now, "owner", Object.keys(changes).length === 1 && changes.status ? "status" : "edit", reason, changes, sensitiveRecord);
         return readFull(id);
       });
     },
 
     history(id: string, limit = 50): HistoryEntry[] {
       return all("SELECT id, record_id, at, actor, action, reason, changes FROM history WHERE record_id=? ORDER BY id DESC LIMIT ?", id, Math.min(Math.max(limit, 1), 500))
-        .map((row) => ({ id: num(row.id), recordId: String(row.record_id), at: num(row.at), actor: String(row.actor), action: String(row.action), reason: String(row.reason), changes: json(row.changes) }));
+        .map((row) => ({ id: num(row.id), recordId: str(row.record_id), at: num(row.at), actor: str(row.actor), action: str(row.action), reason: str(row.reason), changes: json(open(str(row.changes))) }));
     },
 
     /** Removes one record with its evidence and history and keeps only a cutoff: older sources cannot bring it back. */
@@ -284,6 +393,7 @@ export function openStore(path: string = anamnesisDbPath()) {
         const existed = !!one("SELECT 1 AS x FROM records WHERE id=?", id);
         run("DELETE FROM records WHERE id=?", id);
         run("DELETE FROM history WHERE record_id=?", id);
+        run("DELETE FROM notes_lines WHERE record_id=?", id);
         run("INSERT INTO tombstones(id,cutoff) VALUES (?,?) ON CONFLICT(id) DO UPDATE SET cutoff=excluded.cutoff", id, now);
         return existed;
       });
@@ -303,10 +413,10 @@ export function openStore(path: string = anamnesisDbPath()) {
     forgetSource(source: Source, now = Date.now()): { evidence: number; records: number } {
       return tx(() => {
         const evidence = num(one("SELECT count(*) AS n FROM evidence WHERE source=?", source)?.n);
-        const orphans = all("SELECT record_id FROM evidence GROUP BY record_id HAVING sum(CASE WHEN source=? THEN 0 ELSE 1 END)=0 AND count(*)>0", source).map((row) => String(row.record_id));
+        const orphans = all("SELECT record_id FROM evidence GROUP BY record_id HAVING sum(CASE WHEN source=? THEN 0 ELSE 1 END)=0 AND count(*)>0", source).map((row) => str(row.record_id));
         run("DELETE FROM evidence WHERE source=?", source);
         for (const id of orphans) {
-          run("DELETE FROM records WHERE id=?", id); run("DELETE FROM history WHERE record_id=?", id);
+          run("DELETE FROM records WHERE id=?", id); run("DELETE FROM history WHERE record_id=?", id); run("DELETE FROM notes_lines WHERE record_id=?", id);
           run("INSERT INTO tombstones(id,cutoff) VALUES (?,?) ON CONFLICT(id) DO UPDATE SET cutoff=excluded.cutoff", id, now);
         }
         run("DELETE FROM checkpoints WHERE source=?", source);
@@ -333,10 +443,11 @@ export function openStore(path: string = anamnesisDbPath()) {
       return tx(() => {
         report.kept.confirmed = num(one("SELECT count(*) AS n FROM records WHERE status='confirmed'")?.n);
         report.kept.ownerTouched = num(one("SELECT count(*) AS n FROM records WHERE status IN ('draft','candidate') AND manual_at>0")?.n);
-        const rows = all(`${SELECT} WHERE r.status IN ('draft','candidate') AND r.manual_at=0`).map(toRecord);
+        // A record that stays closed without its key cannot be judged and is kept.
+        const rows = all(`${SELECT} WHERE r.status IN ('draft','candidate') AND r.manual_at=0`).map(toRecord).filter((record): record is AnamnesisRecord => record !== null);
         report.scanned = rows.length;
         for (const record of rows) {
-          const sources = all("SELECT DISTINCT source FROM evidence WHERE record_id=?", record.id).map((row) => String(row.source));
+          const sources = all("SELECT DISTINCT source FROM evidence WHERE record_id=?", record.id).map((row) => str(row.source));
           let reason: string | null = null;
           if (infrastructureReason(record.title, record.statement)) reason = "infrastructure";
           else if (record.kind === "project" && record.attributes.bbProjectId !== undefined) reason = "project_activity";
@@ -355,10 +466,10 @@ export function openStore(path: string = anamnesisDbPath()) {
     /** For each record, its newest evidence and, when messages taught it, the thread of the newest message: what the notes files point to. */
     evidenceHeads(): Map<string, { latest: { source: string; at: number }; thread?: string }> {
       const heads = new Map<string, { latest: { source: string; at: number }; thread?: string }>();
-      for (const row of all("SELECT record_id, source, MAX(at) AS at FROM evidence GROUP BY record_id")) heads.set(String(row.record_id), { latest: { source: String(row.source), at: num(row.at) } });
+      for (const row of all("SELECT record_id, source, MAX(at) AS at FROM evidence GROUP BY record_id")) heads.set(str(row.record_id), { latest: { source: str(row.source), at: num(row.at) } });
       for (const row of all("SELECT record_id, ref, MAX(at) AS at FROM evidence WHERE source='bb-message' GROUP BY record_id")) {
-        const head = heads.get(String(row.record_id));
-        if (head) head.thread = String(row.ref).split(":")[0]!;
+        const head = heads.get(str(row.record_id));
+        if (head) head.thread = str(row.ref).split(":")[0]!;
       }
       return heads;
     },
@@ -366,15 +477,18 @@ export function openStore(path: string = anamnesisDbPath()) {
     /** Where the portrait files stand: the hash of what was last written per file and the line written for each record. */
     notesState(): { files: Map<string, string>; lines: Map<string, { file: string; line: string }> } {
       return {
-        files: new Map(all("SELECT file, hash FROM notes_files").map((row) => [String(row.file), String(row.hash)])),
-        lines: new Map(all("SELECT record_id, file, line FROM notes_lines").map((row) => [String(row.record_id), { file: String(row.file), line: String(row.line) }])),
+        files: new Map(all("SELECT file, hash FROM notes_files").map((row) => [str(row.file), str(row.hash)])),
+        lines: new Map(all("SELECT record_id, file, line FROM notes_lines").map((row) => [str(row.record_id), { file: str(row.file), line: open(str(row.line)) }])),
       };
     },
     saveNotesState(file: string, hash: string, lines: ReadonlyMap<string, string>, now = Date.now()): void {
       tx(() => {
         run("INSERT INTO notes_files(file,hash,written_at) VALUES (?,?,?) ON CONFLICT(file) DO UPDATE SET hash=excluded.hash, written_at=excluded.written_at", file, hash, now);
         run("DELETE FROM notes_lines WHERE file=?", file);
-        for (const [id, line] of lines) run("INSERT OR REPLACE INTO notes_lines(record_id,file,line) VALUES (?,?,?)", id, file, line);
+        for (const [id, line] of lines) {
+          const sensitive = one("SELECT sensitivity FROM records WHERE id=?", id)?.sensitivity === "sensitive";
+          run("INSERT OR REPLACE INTO notes_lines(record_id,file,line) VALUES (?,?,?)", id, file, seal(line, sensitive));
+        }
       });
     },
     dropNotesLine(id: string): void { run("DELETE FROM notes_lines WHERE record_id=?", id); },
@@ -405,18 +519,120 @@ export function openStore(path: string = anamnesisDbPath()) {
       return num(one("SELECT max(id) AS id FROM loads")?.id);
     },
     loads(limit = 5): Array<{ id: number; at: number; mode: string; report: unknown }> {
-      return all("SELECT id, at, mode, report FROM loads ORDER BY id DESC LIMIT ?", limit).map((row) => ({ id: num(row.id), at: num(row.at), mode: String(row.mode), report: JSON.parse(String(row.report)) as unknown }));
+      return all("SELECT id, at, mode, report FROM loads ORDER BY id DESC LIMIT ?", limit).map((row) => ({ id: num(row.id), at: num(row.at), mode: str(row.mode), report: JSON.parse(str(row.report)) as unknown }));
+    },
+
+    /** Every row of every table, for the one-off migration export → hub import. Raw values, encryption applied on the way in. */
+    exportAll(): Record<string, Row[]> {
+      const tables: Record<string, Row[]> = {};
+      for (const table of ["records", "evidence", "history", "tombstones", "checkpoints", "sources", "loads", "notes_files", "notes_lines"]) tables[table] = all(`SELECT * FROM ${table} ORDER BY rowid`);
+      return tables;
+    },
+
+    /**
+     * The migration's write side: rows from the host's `export` op into this store, idempotent by primary key.
+     * Sensitive records are sealed again under this store's key; without the key they are skipped (`owner_key_missing`),
+     * never written in clear, and so are the rows that only they parent. `dryRun` counts what a run would do.
+     */
+    importRows(tables: Record<string, Row[]>, options: { dryRun?: boolean } = {}): Record<string, { rows: number; inserted: number; existing: number; skipped: number }> {
+      const work = () => {
+        const counts: Record<string, { rows: number; inserted: number; existing: number; skipped: number }> = {};
+        const bump = (table: string, key: "rows" | "inserted" | "existing" | "skipped"): void => { (counts[table] ??= { rows: 0, inserted: 0, existing: 0, skipped: 0 })[key] += 1; };
+        const sensitivityOf = new Map<string, string>();
+        for (const row of all("SELECT id, sensitivity FROM records")) sensitivityOf.set(str(row.id), str(row.sensitivity));
+        const skippedRecords = new Set<string>();
+        let keyMissingLogged = false;
+        const refuse = (): boolean => {
+          if (keyMissingLogged) return true;
+          keyMissingLogged = true; crypt?.missing();
+          return true;
+        };
+        for (const row of tables.records ?? []) {
+          bump("records", "rows");
+          const id = str(row.id), sensitivity = str(row.sensitivity);
+          sensitivityOf.set(id, sensitivity);
+          const sensitiveRecord = isSensitive(sensitivity as Sensitivity);
+          if (sensitiveRecord && crypt && !crypt.key() && refuse()) { skippedRecords.add(id); bump("records", "skipped"); continue; }
+          const written = run("INSERT OR IGNORE INTO records(id,kind,title,statement,attributes,sensitivity,confidence,status,first_seen,last_seen,manual_at,created_at,updated_at,authored_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            id, str(row.kind), seal(str(row.title), sensitiveRecord), seal(str(row.statement), sensitiveRecord), seal(str(row.attributes), sensitiveRecord), sensitivity, num(row.confidence), str(row.status),
+            row.first_seen == null ? null : num(row.first_seen), row.last_seen == null ? null : num(row.last_seen), num(row.manual_at), num(row.created_at), num(row.updated_at), row.authored_by == null ? null : str(row.authored_by));
+          bump("records", written ? "inserted" : "existing");
+        }
+        for (const row of tables.evidence ?? []) {
+          bump("evidence", "rows");
+          const record = str(row.record_id);
+          if (skippedRecords.has(record)) { bump("evidence", "skipped"); continue; }
+          const sensitiveRecord = sensitivityOf.get(record) === "sensitive";
+          const written = run("INSERT OR IGNORE INTO evidence(record_id,source,ref,at,quote) VALUES (?,?,?,?,?)", record, str(row.source), str(row.ref), num(row.at), row.quote == null ? null : seal(str(row.quote), sensitiveRecord));
+          bump("evidence", written ? "inserted" : "existing");
+        }
+        for (const row of tables.history ?? []) {
+          bump("history", "rows");
+          const record = str(row.record_id);
+          if (skippedRecords.has(record)) { bump("history", "skipped"); continue; }
+          const sensitiveRecord = sensitivityOf.get(record) === "sensitive";
+          const written = run("INSERT OR IGNORE INTO history(id,record_id,at,actor,action,reason,changes) VALUES (?,?,?,?,?,?,?)",
+            num(row.id), record, num(row.at), str(row.actor), str(row.action), str(row.reason), sensitiveRecord ? seal(str(row.changes), true) : str(row.changes));
+          bump("history", written ? "inserted" : "existing");
+        }
+        for (const row of tables.tombstones ?? []) {
+          bump("tombstones", "rows");
+          const written = run("INSERT OR IGNORE INTO tombstones(id,cutoff) VALUES (?,?)", str(row.id), num(row.cutoff));
+          bump("tombstones", written ? "inserted" : "existing");
+        }
+        for (const row of tables.checkpoints ?? []) {
+          bump("checkpoints", "rows");
+          const written = run("INSERT OR IGNORE INTO checkpoints(source,at,detail,updated_at) VALUES (?,?,?,?)", str(row.source), num(row.at), str(row.detail), num(row.updated_at));
+          bump("checkpoints", written ? "inserted" : "existing");
+        }
+        for (const row of tables.sources ?? []) {
+          bump("sources", "rows");
+          const written = run("INSERT OR IGNORE INTO sources(source,enabled,changed_at) VALUES (?,?,?)", str(row.source), num(row.enabled), num(row.changed_at));
+          bump("sources", written ? "inserted" : "existing");
+        }
+        for (const row of tables.loads ?? []) {
+          bump("loads", "rows");
+          const written = run("INSERT OR IGNORE INTO loads(id,at,mode,report) VALUES (?,?,?,?)", num(row.id), num(row.at), str(row.mode), str(row.report));
+          bump("loads", written ? "inserted" : "existing");
+        }
+        for (const row of tables.notes_files ?? []) {
+          bump("notes_files", "rows");
+          const written = run("INSERT OR IGNORE INTO notes_files(file,hash,written_at) VALUES (?,?,?)", str(row.file), str(row.hash), num(row.written_at));
+          bump("notes_files", written ? "inserted" : "existing");
+        }
+        for (const row of tables.notes_lines ?? []) {
+          bump("notes_lines", "rows");
+          const record = str(row.record_id);
+          if (skippedRecords.has(record)) { bump("notes_lines", "skipped"); continue; }
+          const sensitiveRecord = sensitivityOf.get(record) === "sensitive";
+          const written = run("INSERT OR IGNORE INTO notes_lines(record_id,file,line) VALUES (?,?,?)", record, str(row.file), seal(str(row.line), sensitiveRecord));
+          bump("notes_lines", written ? "inserted" : "existing");
+        }
+        return counts;
+      };
+      return options.dryRun ? dry(work) : tx(work);
     },
   };
+}
 
-  function readFull(id: string): AnamnesisRecordFull {
-    const row = one(`${SELECT} WHERE r.id=?`, id)!;
-    const evidence = all("SELECT source, ref, at, quote FROM evidence WHERE record_id=? ORDER BY at", id)
-      .map((item) => ({ source: item.source as Source, ref: String(item.ref), at: num(item.at), ...(item.quote ? { quote: String(item.quote) } : {}) }));
-    return { ...toRecord(row), evidence };
+/** The Mac-mini file store: plaintext at rest, the migration's export source and the tests' fixture. */
+export function openStore(path: string = anamnesisDbPath()): Store {
+  if (path !== ":memory:") {
+    mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+    try { chmodSync(dirname(path), 0o700); } catch { /* a folder we do not own keeps its mode */ }
   }
-  function checkpointAt(source: Source): number | null {
-    const row = one("SELECT at FROM checkpoints WHERE source=?", source);
-    return row ? num(row.at) : null;
-  }
+  const db = new DatabaseSync(path);
+  db.exec("PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON;");
+  const store = createStore(db as unknown as StoreDb, { path, ensureSchema: true });
+  if (path !== ":memory:") for (const suffix of ["", "-wal", "-shm"]) { try { chmodSync(path + suffix, 0o600); } catch { /* not created yet */ } }
+  return store;
+}
+
+/**
+ * The hub's store: the same implementation over the plugin base's `lane_pilot_owner_*` tables (already created by the
+ * append-only migrations; `ensureSchema` keeps tests on a bare handle working). `crypto` turns on field encryption of
+ * sensitive records; the handle stays open — the plugin base owns it.
+ */
+export function openOwnerStore(db: StoreDb, options: { crypto?: OwnerCrypto; path?: string } = {}): Store {
+  return createStore(db, { prefix: OWNER_TABLE_PREFIX, path: options.path ?? "hub:data.db", crypto: options.crypto, ensureSchema: true, closeDb: false });
 }

@@ -1,6 +1,3 @@
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { join } from "node:path";
 import { redactKnown, sha256Hex } from "@lane-pilot/kit";
 import { maskPii, scrubQuote } from "../../anamnesis";
 import { memoryTokens, relevantRecords, sameSubject, searchMemoryRecords, storeMemoryRecords,
@@ -15,8 +12,8 @@ export const MEMORY_IMPORT_SOURCES = ["bb-memory", "claude-files", "agentmemory"
 export type MemoryImportSource = (typeof MEMORY_IMPORT_SOURCES)[number];
 
 export const MEMORY_IMPORT_USAGE = [
-  "bb lane-pilot memory import --source bb-memory|claude-files|agentmemory --file <jsonl> --project <id> [--dry-run] [--json]",
-  "bb lane-pilot memory import-eval --report <json> [--json]",
+  "scripts/memory-import.sh <bb-memory|claude-files|agentmemory> <jsonl> <project-id> [--dry-run]   (RPC memory_import; the report lands next to the jsonl)",
+  "scripts/memory-import.sh eval <report.json>   (RPC memory_import_eval)",
 ].join("\n");
 
 /** Source kinds the collectors emit, mapped to the tag the store keeps in concepts (`kind:<value>`; the store's own kind stays `note`). */
@@ -180,25 +177,11 @@ export function runMemoryImport(options: MemoryImportOptions): ImportReport {
   return { source, projectId, generatedAt: now, dryRun: options.dryRun === true, counts, byReason, evictedIds, heldIds, outcomes };
 }
 
-export function reportPath(reportDir: string, source: string, stamp: Date): string {
-  const pad = (value: number) => String(value).padStart(2, "0");
-  const name = `${source}-${stamp.getFullYear()}${pad(stamp.getMonth() + 1)}${pad(stamp.getDate())}-${pad(stamp.getHours())}${pad(stamp.getMinutes())}${pad(stamp.getSeconds())}.json`;
-  return join(reportDir, name);
-}
-
-/** Writes the JSON receipt and returns its path. */
-export function writeImportReport(report: ImportReport, reportDir = join(homedir(), ".lane-pilot", "memory-import")): string {
-  mkdirSync(reportDir, { recursive: true });
-  const path = reportPath(reportDir, report.source, new Date(report.generatedAt));
-  writeFileSync(path, `${JSON.stringify(report, null, 2)}\n`);
-  return path;
-}
-
 /** Plain-Russian one-line summary for the owner; reasons stay English `word` tokens for the log. */
-export function formatImportSummary(report: ImportReport, path: string): string {
+export function formatImportSummary(report: ImportReport): string {
   const reasons = Object.entries(report.byReason).sort((a, b) => b[1] - a[1]).map(([reason, n]) => `${reason} ${n}`).join(", ");
   const dry = report.dryRun ? " (прогон всухую, ничего не записано)" : "";
-  return `Импорт ${report.source}${dry}: добавлено ${report.counts.added}, объединено ${report.counts.merged_with}, пропущено ${report.counts.dropped}${reasons ? ` (${reasons})` : ""}. Отчёт: ${path}`;
+  return `Импорт ${report.source}${dry}: добавлено ${report.counts.added}, объединено ${report.counts.merged_with}, пропущено ${report.counts.dropped}${reasons ? ` (${reasons})` : ""}.`;
 }
 
 /* ---- import-eval: the 30+10 gate set (§6 gate 3) ---- */
@@ -245,12 +228,6 @@ export function evalMemoryImport(report: ImportReport, topIds: (query: string) =
     questions: results.length, hits: results.filter((row) => row.hit).length,
     silentQuestions: silentResults.length, silent: silentResults.filter((row) => row.empty).length,
     results, silentResults };
-}
-
-export function readImportReport(path: string): ImportReport {
-  const parsed = JSON.parse(readFileSync(path, "utf8")) as ImportReport;
-  if (!Array.isArray(parsed.outcomes)) throw new Error(`not a memory-import report: ${path}`);
-  return parsed;
 }
 
 export function formatImportEval(result: ImportEvalResult): string {

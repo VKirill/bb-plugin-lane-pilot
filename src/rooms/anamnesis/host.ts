@@ -1,16 +1,18 @@
-import type { AnamnesisRequest, ResponseOf, UpsertSummary } from "./ops";
-import { anamnesisRequestSchema } from "./ops";
+import type { AnamnesisRequest, HostRequest, ResponseOf, UpsertSummary } from "./ops";
+import { anamnesisRequestSchema, hostRequestSchema } from "./ops";
 import { existsSync } from "node:fs";
-import { collectSources } from "./collect";
+import { collectSources, scanSources } from "./collect";
 import { renderCard, renderWhoami, type WhoamiRecord } from "./whoami";
-import { notesDir, notesStatus, syncNotes } from "./notes";
+import { applyNotesWrites, notesDir, notesDirListing, notesStatus, syncNotes } from "./notes";
 import { profileRecords } from "./profile-import";
 import { renderYearReview } from "./year-review";
 import { anamnesisDbPath, openStore, type Store, type UpsertResult } from "./store";
 
 /**
- * The host side of anamnesis: runs on the owner's machine and is the only code that opens the store. The hub sends a request,
- * gets an answer; the file never leaves the machine.
+ * Two halves of anamnesis (M1b): `executeRequest` is the store-op executor — the hub runs it against its own tables;
+ * `anamnesisHandler` is what remains on the owner's machine: the collection scans (raw records go back to the hub,
+ * which stores them through the same door), the portrait files' read and write, and the read-only `export` of the
+ * legacy file for the one-off migration. The host keeps no store.
  */
 export function summarizeUpserts(results: readonly UpsertResult[]): UpsertSummary {
   const counts: Record<string, number> = {}, reasons: Record<string, number> = {};
@@ -24,14 +26,20 @@ export function summarizeUpserts(results: readonly UpsertResult[]): UpsertSummar
 /** `notesDir` is where the portrait files live; absent, no file is read or written (tests of the store). */
 export type HostContext = { now?: number; notesDir?: string };
 
-/** The operations that change what the files say; each one is followed by a sync pass (the owner's edits are read first, then the files are written). */
+/** The operations that change what the files say; each one is followed by a notes sync (the owner's edits are read first, then the files are written). */
 const WRITES_NOTES = new Set(["upsert", "add", "edit", "forget", "collect", "import_profile", "purge_technical", "sources"]);
+
+/** Whether an op is followed by a notes sync — the file store does it in `executeRequest`, the hub in `ask`. */
+export const writesNotes = (request: AnamnesisRequest): boolean =>
+  request.op === "collect" ? request.mode === "run"
+    : request.op === "sources" ? request.set !== undefined
+    : request.op === "purge_technical" ? request.dryRun !== true
+    : WRITES_NOTES.has(request.op);
 
 export async function executeRequest(request: AnamnesisRequest, store: Store, context: HostContext = {}): Promise<unknown> {
   const response = await execute(request, store, context);
-  const wrote = request.op === "collect" ? request.mode === "run" : request.op === "sources" ? request.set !== undefined : request.op === "purge_technical" ? request.dryRun !== true : WRITES_NOTES.has(request.op);
   // The files never fail an operation: a problem is in the answer of `notes` and is tried again at the next change.
-  if (wrote && context.notesDir) syncNotes(store, context.notesDir, context.now ?? Date.now());
+  if (writesNotes(request) && context.notesDir) syncNotes(store, context.notesDir, context.now ?? Date.now());
   return response;
 }
 
@@ -105,16 +113,28 @@ async function execute(request: AnamnesisRequest, store: Store, context: HostCon
   }
 }
 
-/** The handler of the host method `anamnesis`. The file is opened for the call and closed after it. */
+/** The handler of the host method `anamnesis`: collection scans, the portrait files, and the migration export. No store ops. */
 export async function anamnesisHandler(input: { requestedHostId: string; request: unknown }): Promise<{ hostId: string; response: unknown }> {
-  const request = anamnesisRequestSchema.parse(input.request);
-  // Reading, or planning a load, on a machine that has no store yet answers from an empty one in memory and leaves no file behind.
-  const readOnly = request.op === "status" || request.op === "whoami" || request.op === "card" || request.op === "list" || request.op === "get" || request.op === "history" || request.op === "loads"
-    || (request.op === "collect" && request.mode === "plan") || (request.op === "sources" && !request.set) || (request.op === "purge_technical" && request.dryRun === true) || (request.op === "notes" && !request.sync);
-  const store = readOnly && !existsSync(anamnesisDbPath()) ? openStore(":memory:") : openStore();
-  try {
-    return { hostId: process.env.BB_HOST_ID ?? input.requestedHostId, response: await executeRequest(request, store, { notesDir: notesDir() }) };
-  } finally {
-    store.close();
+  const request = hostRequestSchema.parse(input.request);
+  const hostId = process.env.BB_HOST_ID ?? input.requestedHostId;
+  switch (request.op) {
+    case "collect": {
+      // Raw scans only: the hub stores the records through its own store door.
+      return { hostId, response: { mode: request.mode, sources: await scanSources(request) } };
+    }
+    case "notes_read": {
+      return { hostId, response: notesDirListing(notesDir(), request.full === true) };
+    }
+    case "notes_write": {
+      const result = applyNotesWrites(notesDir(), request.writes);
+      const wrote = new Set(result.wrote);
+      return { hostId, response: { written: result.written, files: request.writes.map((write) => ({ name: write.name, wrote: wrote.has(write.name) })) } };
+    }
+    case "export": {
+      // Read-only: a machine without the file answers an empty export and no file is created.
+      const store = existsSync(anamnesisDbPath()) ? openStore() : openStore(":memory:");
+      try { return { hostId, response: { tables: store.exportAll() } }; }
+      finally { store.close(); }
+    }
   }
 }

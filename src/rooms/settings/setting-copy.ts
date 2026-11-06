@@ -230,6 +230,7 @@ export const SETTING_META: Record<string, SettingMeta> = {
   "checkers.diff_hidden_limit": { label: "field_s526", help: "reason_s526", unit: "fieldUnitTasks" },
   "bench.model_rebench": { label: "field_s527", help: "reason_s527" },
   "episodes.collect": { label: "field_s611", help: "reason_s611" },
+  "episodes.process_key": { label: "field_s612", help: "reason_s612" },
 };
 
 export function settingMeta(storageKey: string): SettingMeta | undefined {

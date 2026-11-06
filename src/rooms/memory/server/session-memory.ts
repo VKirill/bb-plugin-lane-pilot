@@ -1,3 +1,4 @@
+import { evalMemoryImport, formatImportEval, formatImportSummary, pmTopIds, runMemoryImport, type ImportReport } from "./import";
 import { resolve } from "node:path";
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import { getRuleProposal, upsertLessonProposal } from "@lane-pilot/run-insights";
@@ -7,6 +8,7 @@ import { adoptRuleProposal, memorySettingsFor } from "../../self-repair/server";
 import type { ServerCore } from "../../core/server";
 import type { Services } from "../../core/server";
 import { sha256Hex } from "@lane-pilot/kit";
+import { threadMemoryBlock } from "./thread-block";
 
 /**
  * Project memory on the hub, for any machine. (2026-10-29) Claude Lane's lane-memory no longer calls these.
@@ -27,6 +29,16 @@ export function sessionMemoryRpc(ctx: ServerCore, services: Services) {
         }
       }
       return best ? { projectId: best.projectId, scopes: best.scopes } : { projectId: null, scopes: [] };
+    },
+    memory_import: async ({ source, projectId, jsonl, dryRun }) => {
+      const report = runMemoryImport({ db, projectId, source, jsonl, settings: memorySettingsFor(db, projectId), dryRun: dryRun === true });
+      return { ...report, summary: formatImportSummary(report) };
+    },
+    memory_import_eval: async ({ report }) => {
+      const typed = report as unknown as ImportReport;
+      const settings = memorySettingsFor(db, typed.projectId);
+      const result = evalMemoryImport(typed, (query) => pmTopIds(db, typed.projectId, query, settings));
+      return { ...result, summary: formatImportEval(result) };
     },
     session_memory_write: async ({ projectId, kind, content, concepts, source, chain }) => {
       const settings = memorySettingsFor(db, projectId);
@@ -69,6 +81,8 @@ export function sessionMemoryRpc(ctx: ServerCore, services: Services) {
         .all(projectId, settings.personalBot) as Array<{ id: string; content: string }>;
       return { records: rows };
     },
+    // The same block contributeInstructions gives an ordinary thread (M2); the drill reads it for a thread id.
+    memory_thread_block: async ({ projectId, threadId }) => ({ block: threadMemoryBlock(db, { projectId, threadId }) }),
     // A lesson is a rule proposal: a repeat of a live rule counts towards it, a new one goes on trial within the cap.
     session_lesson: async ({ projectId, rule, evidence, scope, audience, always }) => {
       // audience may be `specialist:<id>` (wider than RuleAudience — the column is TEXT); the employee's slice reads it back.
@@ -83,5 +97,5 @@ export function sessionMemoryRpc(ctx: ServerCore, services: Services) {
       const proposal = getRuleProposal(db, projectId, result.id);
       return { proposalId: result.id, repeatOf: result.repeatOf, state: proposal?.state ?? "proposed", adopted };
     },
-  } satisfies Pick<PluginRpcHandlers<typeof rpcContract>, "session_memory_project" | "session_memory_write" | "session_memory_search" | "session_memory_core" | "session_lesson">;
+  } satisfies Pick<PluginRpcHandlers<typeof rpcContract>, "memory_import" | "memory_import_eval" | "session_memory_project" | "session_memory_write" | "session_memory_search" | "session_memory_core" | "memory_thread_block" | "session_lesson">;
 }
