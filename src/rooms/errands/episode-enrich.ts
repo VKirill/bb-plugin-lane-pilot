@@ -47,8 +47,11 @@ export function pendingEpisodes(db: Db, now: number, limit: number): PendingEpis
     SELECT e.run_id, e.project_id, e.status, e.outcome, e.verified, e.thread_id, e.model, e.skills_offered_json,
       e.trace_json, e.trace_stats_json, r.reason AS run_reason, r.inputs_json AS run_inputs
     FROM ${ERRAND_EPISODE_TABLE} e JOIN lane_pilot_wf_run r ON r.id=e.run_id
-    WHERE e.enrichment_state='pending' AND (e.enriched_at IS NULL OR e.enriched_at < ?)
-    ORDER BY e.created_at ASC LIMIT ?`).all(now - EPISODE_ENRICH_BACKOFF_MS, limit) as Array<Record<string, unknown>>;
+    WHERE (e.enrichment_state='pending' AND (e.enriched_at IS NULL OR e.enriched_at < ?))
+      -- A row is held from before masking until the model answers; a reload in between left it held for good
+      -- (3 rows on 2026-11-06). Masking is deterministic, so a real mask failure is held again without a model call.
+      OR (e.enrichment_state='held' AND e.updated_at < ?)
+    ORDER BY e.created_at ASC LIMIT ?`).all(now - EPISODE_ENRICH_BACKOFF_MS, now - EPISODE_ENRICH_BACKOFF_MS, limit) as Array<Record<string, unknown>>;
   return rows.map((row) => ({
     runId: String(row.run_id), projectId: (row.project_id as string | null) ?? null, status: String(row.status), outcome: String(row.outcome),
     verified: row.verified === null || row.verified === undefined ? null : parse<string | null>(String(row.verified), null),

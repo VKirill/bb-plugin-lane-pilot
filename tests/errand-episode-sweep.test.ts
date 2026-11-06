@@ -171,8 +171,9 @@ describe("errand episode sweep", () => {
     expect(result).toMatchObject({ held: 1, enriched: 0 });
     expect(row(db, "wfrun-m")).toMatchObject({ enrichment_state: "held" });
     expect(warns.some((m) => m.startsWith("episode_mask_failed:wfrun-m"))).toBe(true);
-    // Held is not pending: the next sweep does not pick it again.
+    // Held is not pending within the hour; after it (a reload mid-call left it held) it is tried again.
     expect(pendingEpisodes(db, Date.now(), 10)).toEqual([]);
+    expect(pendingEpisodes(db, Date.now() + 2 * 3_600_000, 10).map((pending) => pending.runId)).toEqual(["wfrun-m"]);
   });
 
   it("a model failure returns the row to pending with the same-hour backoff and logs episode_enrich_failed", async () => {
