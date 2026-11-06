@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { t, validationMessage } from "@lane-pilot/i18n";
 import { Alert, AlertDescription, AlertTitle } from "@lane-pilot/ui-kit";
 import { Button } from "@lane-pilot/ui-kit";
@@ -32,6 +32,10 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
     activeScope, projectId, projects, locale, shellRef, contentRef, compactChrome, stackControls, data, resetInherited, error, saveError, load,
     tab, goTo, visited, tabSelect, selectedProjectId, routeProjectId,
   } = page;
+  // «Графы» on a computer takes the whole block: the section rail hides, the «Меню» button brings it back.
+  const [railShown, setRailShown] = useState(false);
+  useEffect(() => setRailShown(false), [activeScope]);
+  const wideScope = activeScope === "workflows" && !compactChrome;
   const otherScope = activeScope === "agents" || activeScope === "tokens" || activeScope === "workflows" || activeScope === "schedule" || activeScope === "tasks" || activeScope === "waiting" || activeScope === "improvement" || activeScope === "errands";
   const panels: Record<TabId, () => ReactNode> = {
     overview: () => <OverviewTab page={page} />,
@@ -47,12 +51,17 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
         <div className={compactChrome ? "flex shrink-0 flex-col gap-2 border-b border-border p-2" : "hidden"}>
           <div className="flex items-center gap-2"><MobileScopeSelect page={page} /></div>
         </div>
-        <ScopeRail page={page} />
+        {wideScope && !railShown ? null : <ScopeRail page={page} />}
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           <div className="min-h-0 min-w-0 flex-1 overflow-y-auto">
             <div ref={contentRef} className="w-full min-w-0 space-y-6 px-6 py-5">
               <OwnedSettings scope={activeScope === "agents" ? "agents" : "projects"} locale={locale} />
               {activeScope === "tokens" ? <TokenUsage projects={projects} /> : null}
+              {wideScope ? (
+                <Button type="button" size="sm" variant="outline" className="h-8 px-3 text-xs" data-testid="scope-rail-toggle" aria-expanded={railShown} onClick={() => setRailShown((was) => !was)}>
+                  {railShown ? t("scopeNavHide") : `☰ ${t("scopeNavShow")}`}
+                </Button>
+              ) : null}
               {activeScope === "workflows" ? <WorkflowsScreen locale={locale} projectId={null} architectProjectId={selectedProjectId ?? routeProjectId ?? (subPath || null)} /> : null}
               {activeScope === "schedule" ? <ScheduleBoard projectId={null} projects={projects} locale={locale} /> : null}
               {activeScope === "tasks" ? <TaskBoard projects={projects} serviceProjectIds={page.projectGroups.service.map((project) => project.id)} initialProjectId={selectedProjectId ?? null} locale={locale} /> : null}

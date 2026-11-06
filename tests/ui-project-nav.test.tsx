@@ -130,3 +130,18 @@ describe("the rail has an «Errands» page", () => {
     slot.lifecycle.unmount();
   });
 });
+
+describe("«Графы» takes the whole block", () => {
+  beforeEach(() => { cleanup(); document.body.innerHTML = ""; });
+  afterEach(() => { cleanup(); setLocaleOverride(null); document.documentElement.lang = "en"; });
+
+  it("hides the section rail on a computer and brings it back with «Menu»", async () => {
+    const slot = await mountPage(projectsRpc);
+    fireEvent.click(await slot.findByTestId("scope-nav-workflows"));
+    const shell = slot.getByTestId("project-picker");
+    if (shell.dataset.lpChrome !== "rail") return; // a phone-width shell keeps its own compact picker
+    await waitFor(() => expect(slot.queryByTestId("scope-rail")).toBeNull());
+    fireEvent.click(slot.getByTestId("scope-rail-toggle"));
+    expect(await slot.findByTestId("scope-rail")).toBeTruthy();
+  });
+});
