@@ -21,25 +21,19 @@ import { stringAt } from "../../core/server";
 import { wasAnsweredByDefault } from "./question-default";
 import { needsHumanQuestion, outputText, providerLimitNotice, providerStreamError, WRITER_STREAM_ERROR, writerContextBlocks, writerSetupLines } from "./writer-task";
 import { isLiveDecision } from "../live-folder";
-import { OWNER_WORD_WAIT_MS, TASK_WORDS_KEY, acceptanceProofGap, taskSizeOf, isMainfixTask, landingWordGap, landingWordAsked, questionsFromFile, checkScriptEdits, referenceTestEdits, taskWordKey, testFitFindings, writerMarkers } from "../../tasks";
+import { OWNER_WORD_WAIT_MS, TASK_WORDS_KEY, acceptanceProofGap, taskSizeOf, landingWordGap, landingWordAsked, questionsFromFile, checkScriptEdits, referenceTestEdits, taskWordKey, testFitFindings, writerMarkers } from "../../tasks";
 import type { TaskWord } from "../../tasks";
 import type { StageId } from "../../tasks";
-import { readCheckRun } from "../../tasks/server";
-import { IntegrationGateRunner, parseIntegrationGateSettings } from "../../verification/server";
-import { gateResolverFor } from "../../verification/server";
 import { THREAD_WATCH_EVENT_TYPES, listThreadEventsRaw, sleepUntilThreadSignal, startLimitWaiting, threadFailure, threadWatchMark, waitThreadIdle } from "@lane-pilot/thread-observe";
-import { join, relative, resolve } from "node:path";
+import { resolve } from "node:path";
 import type { ServerCore } from "../../core/server";
 import type { Services } from "../../core/server";
-import { isRunHalted } from "../../runs/server";
 import { clearFollowUpCancelled, followUpCancelled, loadFollowUp } from "./sticky";
 import { askGuestsToCommit } from "./checkout-guests";
 import { shouldMergeAttemptWorktree } from "./spawn";
 import { loadWriterNudge } from "./writer-silence";
 import { recordedWriterSkills } from "./skill-pick";
-import { createSkillMaterializer, recordedMaterializedSkills } from "./skill-materialize";
-import { recordSkillSwitchMetric } from "../skill-switch";
-import { REPLAY_CHECK_FAILED, WRITER_SILENT_REASON, beginChecks, checksMoved, failureFingerprint, isEnvironmentCheckFailure, taskFamily } from "../../runs";
+import { REPLAY_CHECK_FAILED, WRITER_SILENT_REASON, beginChecks, checksMoved, taskFamily } from "../../runs";
 import { bookkeepingSetting } from "@lane-pilot/settings-catalog";
 import { attemptMergeMessage, clearMergeIntent, recordMergeIntent } from "../../verification/server";
 import { sendServiceMessage } from "../../relay/server";
@@ -47,9 +41,14 @@ import { judgeRulesOnDiff, ruleViolationRemark } from "../../learning";
 import { jev, type JevSettings } from "@lane-pilot/jev";
 import { askTaskWord, taskWordItemPrefix } from "../../lead";
 import { closeOwnerItemsByPrefix, postOwnerItem, rpcLine } from "../../owner-waiting";
-import { writerFinishScanJudgment } from "../finish-scan";
 import { runOnHost } from "@lane-pilot/host-calls";
 import { pollPause } from "@lane-pilot/kit";
+import { emitAttemptFinished, type AttemptFinished } from "./attempt-finished";
+import { mountWriterAttemptFinished } from "./attempt-reactions";
+import { mountVerificationAttemptFinished } from "./verification";
+import { mountRuleFormsAttemptFinished } from "./rule-forms";
+
+export { postMergeRepair } from "./verification";
 
 /** The area's copy stays while it holds queued or running work; with none, the merge removes it now, not at the sweep (WT2 A2). */
 function areaHasLiveWork(db: { prepare(sql: string): { get(...args: unknown[]): { n: number } | undefined } }, input: { projectId: string; taskId: string }): boolean {
@@ -68,57 +67,13 @@ const MERGE_QUEUE_MS = 15 * 60_000;
 const DIRTY_BASE_WAIT_MS = 2 * 3600_000;
 const dirtyBase = (merged:{ status:string; reason?:string|null }) => merged.status === "conflict" && Boolean(merged.reason?.startsWith("base checkout has uncommitted changes"));
 
-/**
- * The follow-up task that makes main green after a merge. It keeps the merged task's scope and checks but not its
- * expected_outputs (a prose entry names no file): those files are already in main, and the fix may sit in another owned
- * file or nowhere. Inherited, they made the writer of a green main edit routes.ts only to «put the required file in the
- * diff» (SelfyStudio cards-checkout-typecheck-fix-mainfix, 2026-10-05). The objective carries each failing command with
- * its output tail, the full output goes to the task folder's logs/, and expected_outputs holds the commands themselves.
- */
-export function postMergeRepair(onMain:TaskV2, red:Array<{ command:string; exitCode:number; stdout?:string; stderr?:string }>):{
-  fix:TaskV2; plan:string; logs:Array<{ path:string; content:string }>;
-} {
-  const tail = (check:typeof red[number], size=600) => `${check.stderr ?? ""}\n${check.stdout ?? ""}`.trim().slice(-size);
-  const logName = (command:string, index:number) =>
-    `${String(index + 1).padStart(2, "0")}-${command.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60) || "check"}.log`;
-  const fix:TaskV2 = { ...onMain, id:`${onMain.id}-mainfix`.slice(0, 128), title:`Make main green after ${onMain.id}`.slice(0, 200),
-    // The task standard (the Tasks board): Lane Pilot's own task fills it, so the contract lint never sends it back.
-    display_title:`Починка main после ${onMain.id}`.slice(0, 60), kind:"fix", area:onMain.area ?? "maintenance",
-    depends_on:[], risk:onMain.risk === "low" ? "medium" : onMain.risk, expected_outputs:red.map((check) => check.command),
-    objective:`Main is red after merging ${onMain.id} (${onMain.title}): these checks fail on main while they passed in the task's own worktree, so the merged work clashes with what landed meanwhile. Make each of them pass on main, keeping what ${onMain.id} and the work merged before it intended; change the least code that does it. Failing now:\n${red.map((check) => `\`${check.command}\` (exit ${check.exitCode}) output tail:\n${tail(check)}`).join("\n\n")}`,
-    // Each of the merged task's items whole, never one string cut at 600 characters (a requirement broken mid-word blocks the plan critic).
-    acceptance:[...red.map((check) => `\`${check.command}\` passes on main`), ...onMain.acceptance.map((item) => `${onMain.id}'s acceptance still holds: ${item}`)] };
-  const logs = red.map((check, index) => ({
-    path:`.agents/plans/items/${fix.id}/logs/${logName(check.command, index)}`,
-    content:`$ ${check.command}\nexit ${check.exitCode}\n\n${check.stdout ?? ""}\n${check.stderr ?? ""}`.trim() + "\n",
-  }));
-  const plan = `Post-merge repair, dispatched by Lane Pilot. Full output of every failing check: ${logs.map((log) => log.path).join(", ")}.\n\nRead the failure, find which merged change clashes (git log -5 on main), fix within owns_paths, run the checks. If every check already passes in your worktree before you change anything, main is green now: change no files and answer with the first line \`NEEDS_HUMAN: main is already green, nothing to fix\`.`;
-  return { fix, plan, logs };
-}
-
 export function createWriterFinish(ctx: ServerCore, services: Services) {
   const { bb, db, getThreadBounded, host } = ctx;
-  const integrationGateRunner = new IntegrationGateRunner(ctx, services);
-  const skillMaterial = createSkillMaterializer(ctx, (message) => bb.log.info(message));
-
-  /** The project's gate (explicit, detected on its host, or none). */
-  const gateFor = (projectId:string, runId:string, hostId:string, basePath:string) =>
-    gateResolverFor(ctx)({ runId, hostId, basePath, gate:parseIntegrationGateSettings(loadProjectSettings(db, projectId, getRunSettingsScopes(db, runId))) });
-
-  /**
-   * A task landed (merged, or accepted in place in a folder with no repository): the batch gate counts it. The gate runs
-   * once the project has no other open attempt; with `every_n` it also runs every n merges.
-   */
-  function noteMergedForGate(input:{ projectId:string; runId:string; taskId:string; attemptId:string; writerThreadId:string | null; pmThreadId:string; config:{ hostId:string } },
-    basePath:string, commitSha:string, produced:string[], live:boolean) {
-    integrationGateRunner.noteMergedTask({ taskId:input.taskId, commitSha, threadId:input.writerThreadId, attemptId:input.attemptId, produced },
-      { projectId:input.projectId, hostId:input.config.hostId, basePath });
-    const drained = !listOpenAttempts(db).some((row) => row.project_id === input.projectId && row.id !== input.attemptId);
-    // Called without await: a throw here must never become an unhandled rejection, which kills the whole BB server.
-    return integrationGateRunner.maybeRunGate({ runId:input.runId, projectId:input.projectId, pmThreadId:input.pmThreadId, basePath,
-      configHostId:input.config.hostId, trigger:drained ? "drain" : "merge", ...(live ? { live:true } : {}) })
-      .catch((cause:unknown) => { ctx.log(`integration-gate: failed after merging ${input.taskId}: ${cause instanceof Error ? cause.message : String(cause)}`); return { ran:false }; });
-  }
+  // The attempt-finished reactions, in run order: the settle record, the landed check (verification's,
+  // fire-and-forget), the skill metric and materialize, the finish scan (attempt-reactions.ts).
+  mountRuleFormsAttemptFinished(ctx, services);
+  const verification = mountVerificationAttemptFinished(ctx, services);
+  mountWriterAttemptFinished(ctx, services);
 
   /** Who holds the checkout: the open attempt whose task the holder's commit message names. */
   function mergeHolder(runId: string, holder: string | null, since: number): BlockedBy {
@@ -138,43 +93,27 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
     releaseSlot?:()=>void;
   };
 
-  /** The attempt's end, whatever its outcome: the skill links and the compaction config an OpenCode writer got leave its worktree. */
+  /** The attempt's end, whatever its outcome: the reactions on the attempt-finished bus run last (attempt-finished.ts). */
   async function finishWriterAttempt(input: FinishInput): Promise<Record<string,unknown>> {
     let result: Record<string, unknown> | null = null;
+    // Facts the body learns on the way out, for the reactions: what landed, how far the gates passed.
+    const facts: Pick<AttemptFinished, "landed" | "greenInWorktree" | "acceptanceReached" | "writerStopped" | "candidate"> = {};
     try {
-      result = await finishWriterAttemptBody(input);
+      result = await finishWriterAttemptBody(input, facts);
       return result;
     } finally {
-      // A reload closes this instance's database; recovery in the new instance owns the attempt from then on.
-      if (!ctx.state.disposed) {
-        try {
-          const events = await bb.sdk.threads.events.list({ threadId: input.writerThreadId, limit: "100" } as never).then((r: any) => r?.events ?? [], () => []);
-          if (!ctx.state.disposed) {
-            const skills = recordedWriterSkills(getReasoningTrace(db, input.attemptId)?.dispatchContext);
-            const outcome = result?.status === "accepted" || result?.state === "accepted" ? "accepted" : "failed";
-            recordSkillSwitchMetric(db, {
-              attemptId: input.attemptId,
-              taskId: input.taskId,
-              runId: input.runId,
-              projectId: input.projectId,
-              events,
-              skills,
-              outcome,
-            });
-          }
-        } catch (cause) {
-          ctx.log(`writer skill switch metric failed: ${cause instanceof Error ? cause.message : String(cause)}`);
-        }
-        if (!ctx.state.disposed) await skillMaterial.remove({ attemptId:input.attemptId, hostId:input.config.hostId,
-          workspacePath:getAttempt(db, input.attemptId)?.workspace_path ?? null,
-          names:recordedMaterializedSkills(getReasoningTrace(db, input.attemptId)?.dispatchContext),
-          providerId:getReasoningTrace(db, input.attemptId)?.providerId ?? null
-        });
+      try {
+        await emitAttemptFinished(ctx, { scope:"attempt", projectId:input.projectId, runId:input.runId, taskId:input.taskId,
+          attemptId:input.attemptId, pmThreadId:input.pmThreadId, writerThreadId:input.writerThreadId,
+          task:input.task, config:input.config, status:String(result?.status ?? "error"),
+          reason:typeof result?.reason === "string" ? result.reason : null, result, ...facts });
+      } catch (cause) {
+        ctx.log(`attempt-finished: emit failed after ${input.attemptId}: ${cause instanceof Error ? cause.message : String(cause)}`);
       }
     }
   }
 
-  async function finishWriterAttemptBody(input: FinishInput): Promise<Record<string,unknown>> {
+  async function finishWriterAttemptBody(input: FinishInput, facts: Pick<AttemptFinished, "landed" | "greenInWorktree" | "acceptanceReached" | "writerStopped" | "candidate">): Promise<Record<string,unknown>> {
     // The PM's stop and a failure can land together: an attempt whose stop was requested ends canceled whatever failed
     // (cancel_requested has only canceled, blocked and accepted to go to, and the owner asked for the stop).
     const endedByStop = (reason:string, threadId = input.writerThreadId):Record<string,unknown>|null => {
@@ -241,7 +180,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
           runId:input.runId, taskId:input.taskId, plan:getTaskPlan(db, input.taskId) ?? "",
           terminal:"failed", attempt:countAttempts(db, input.runId, input.taskId), reason, threadId:input.writerThreadId,
         });
-        services.promotions?.settleTask({ taskId: input.taskId, outcome: "failed", reason });
+        facts.writerStopped = true;
         return { status:"blocked", reason, attemptId:input.attemptId, writerThreadId:input.writerThreadId };
       };
       // A continued thread is idle from its previous task until the new turn starts: wait for the turn sent after `since`.
@@ -903,17 +842,9 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
         transitionAttempt(db, input.attemptId, "blocked", { reason:wordGap });
         return { status:"blocked", reason:wordGap, attemptId:input.attemptId, writerThreadId };
       }
-      // The parallel finish scan (Gemini 7): three cheap nouls on the landing attempt — diff risk, UI, docs — for
-      // receipts and the task's profile; it never changes the finish path.
-      try {
-        const scan = await jev()?.judge(writerFinishScanJudgment, {
-          title: input.task.title, contract: JSON.stringify({ invariants: input.task.invariants, out_of_scope: input.task.out_of_scope }),
-          produced: (candidate.produced ?? []).slice(0, 40).join("\n"),
-          verification: (candidate.verification ?? []).slice(0, 10).map((row) => `${row.command}:${row.exitCode}`).join("\n"),
-          summary: typeof candidate.output === "string" ? candidate.output : "",
-        }, { projectId: input.projectId, runId: input.runId, subject: "writer-finish", settings: loadProjectSettings(db, input.projectId, getRunSettingsScopes(db, input.runId)) as JevSettings });
-        if (scan?.by === "jev") bb.log.info(`Lane Pilot finish-scan ${input.taskId}: ${writerFinishScanJudgment.describe(scan.decision)}`);
-      } catch { /* a scan is never a gate */ }
+      // The candidate passed every gate up to the acceptance receipt: the finish-scan reaction fires on this data.
+      facts.acceptanceReached = true;
+      facts.candidate = { output:candidate.output, produced:candidate.produced ?? [], verification:candidate.verification ?? [] };
       { const stopped = stoppedMeanwhile("the finish scan", writerThreadId); if (stopped) return stopped; }
       const receipt = await services.persistWriterAcceptance({
         config:input.config, task:input.task, runId:input.runId, taskId:input.taskId,
@@ -1030,18 +961,12 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
         // The base, the merge commit and the files it changed (deletions included) go on the attempt's record (SMA wall 4).
         services.rollback?.noteMerge(input.attemptId, merged);
         if (merged.status === "merged") {
-          const gate = await gateFor(input.projectId, input.runId, input.config.hostId, basePath);
-          if (gate) {
-            void noteMergedForGate(input, basePath, merged.commit ?? "", candidate.produced, false);
-          } else {
-            void checkMainAfterMerge({ projectId:input.projectId, pmThreadId:input.pmThreadId, config:input.config,
-              runId:input.runId, task:input.task, basePath, worktreePath:bound.workspace_path, attemptId:input.attemptId, mergeCommit:merged.commit ?? undefined,
-              greenInWorktree:(candidate.verification ?? []).filter((check) => check.exitCode === 0).map((check) => check.command) });
-          }
+          facts.landed = { basePath, commit:merged.commit, produced:candidate.produced ?? [], live:false, worktreePath:bound.workspace_path };
+          facts.greenInWorktree = (candidate.verification ?? []).filter((check) => check.exitCode === 0).map((check) => check.command);
         }
       } else if (bound && basePath && isLiveDecision(bound.workspace_decision)) {
         // A folder with no repository has no merge: the accepted task is in place, and the gate runs there once the queue drains.
-        if (await gateFor(input.projectId, input.runId, input.config.hostId, basePath)) void noteMergedForGate(input, basePath, "", candidate.produced, true);
+        facts.landed = { basePath, commit:null, produced:candidate.produced ?? [], live:true, worktreePath:null };
       }
       // #29 task-size metric: what this accepted task cost (files, diff lines, minutes, attempts) rides the receipt;
       // the project's median over these rows is what plan warnings measure new slices against.
@@ -1066,96 +991,5 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
     } finally { endMerge(); }
   }
 
-  /**
-   * The task's checks again on main once it is merged: green alone, two tasks can break main together (merge queues
-   * test the merged result). The work stays merged — nothing is thrown away — and a follow-up task makes main green
-   * on top of it, so an agent repairs it rather than the owner or the PM. A follow-up that breaks main again is
-   * reported to the PM instead of chaining.
-   */
-  async function checkMainAfterMerge(input:{ projectId:string; pmThreadId:string; config:Parameters<typeof services.runVerification>[0];
-    runId:string; task:TaskV2; basePath:string; worktreePath:string;
-    /** The merge this check follows: one merge commit of one attempt is one check, never another's. */ attemptId?:string; mergeCommit?:string;
-    /** Checks this attempt ran green in its own worktree: red on the base, green there and red on main again is a clash of the merge. */ greenInWorktree?:readonly string[] }) {
-    if (!input.task.verification.length || !input.pmThreadId || await isRunHalted(bb.storage.kv as never, input.runId)) return;
-    const onBase = (cwd:string) => resolve(cwd).startsWith(resolve(input.worktreePath)) ? join(input.basePath, relative(input.worktreePath, cwd)) : cwd;
-    const onMain = { ...input.task, project_cwd:input.basePath, verification:input.task.verification.map((command) => ({ ...command, cwd:onBase(command.cwd) })) };
-    const checks = await services.runVerification(input.config, onMain, input.runId, undefined, { background:true, jobKey:`post-merge:${input.attemptId ?? input.task.id}:${input.mergeCommit ?? ""}` }).catch((cause:unknown) => {
-      ctx.log(`post-merge check of ${input.task.id} could not run: ${cause instanceof Error ? cause.message : String(cause)}`);
-      return null;
-    });
-    // A check whose host call failed says nothing about main: read as red, it dispatched a mainfix for a green main.
-    const unrun = checks?.filter((check) => check.hostError) ?? [];
-    if (unrun.length) ctx.log(`post-merge check of ${input.task.id} could not run on the host: ${unrun.map((check) => `${check.command} (${check.stderr.slice(0, 160)})`).join(", ")}`);
-    const failing = checks?.filter((check) => check.exitCode !== 0 && !check.hostError) ?? [];
-    // «What turned red» (src/rooms/baseline): the checks that were green on the base before this task and are red on main with it.
-    const turnedRed = checks ? services.baseline?.afterMerge({ runId:input.runId, taskId:input.task.id, mergeCommit:input.mergeCommit, checks }) ?? [] : [];
-    // No message of the plugin's own into the PM chat (0.1.443; Gemini F-007 found this one still live): the fact is a row on the owner's list.
-    const tell = (kind:"gate_machine"|"gate_red", key:string, what:string, why:string) => {
-      try { postOwnerItem(db as never, { key, source:"integration-gate", kind, projectId:input.projectId, wake:false, what, why, evidence:[{ kind:"run", ref:input.runId }, { kind:"task", ref:input.task.id }] }); } catch { /* the log has it */ }
-    };
-    // A check the machine broke (EACCES, EPERM, EEXIST: root-owned files after a deploy) is no clash of merged work, and
-    // no writer can fix it inside owns_paths: an infra incident and one message to the PM, no -mainfix.
-    const environment = failing.filter((check) => isEnvironmentCheckFailure(check));
-    if (environment.length) {
-      const evidence = `${environment[0]!.stderr ?? ""}\n${environment[0]!.stdout ?? ""}`.split("\n").find((line) => isEnvironmentCheckFailure({ stderr:line }))?.trim().slice(0, 300) ?? "";
-      ctx.log(`infra: post-merge check of ${input.task.id} is red on main from the environment, no repair task: ${environment.map((check) => check.command).join(", ")} (${evidence})`);
-      // One row per machine failure (the key is its fingerprint): the same broken permission does not fill the list.
-      tell("gate_machine", `post-merge-infra:${input.runId}:${failureFingerprint(evidence)}`, `После слияния задачи ${input.task.id} проверка ${environment.map((check) => check.command).join(", ")} красная из-за машины, не кода`,
-        `${evidence}. Задача исправления не создана: исполнитель не может починить права на файлы. Проверьте машину, на которой идёт проект.`);
-    }
-    const red = failing.filter((check) => !isEnvironmentCheckFailure(check));
-    if (!red.length) return;
-    ctx.log(`post-merge check of ${input.task.id} failed on main: ${red.map((check) => check.command).join(", ")}`);
-    if (isMainfixTask(input.task.id)) {
-      tell("gate_red", `post-merge-red-again:${input.runId}:${input.task.id}`, `main снова красный после починки ${input.task.id}`,
-        `Проверка ${red[0]!.command} упала уже после задачи, которая чинила main. Посмотрите, что ещё слилось за это время, и поручите починку в чате проекта.`);
-      return;
-    }
-    // Only a reproducible regression of this task gets a writer: a red that was red on the base too is not its doing, and one
-    // that passes on a re-run is flaky. Without a baseline record for a check, the re-run alone decides.
-    // A fix turns a check red on the base green: green in its own worktree and red again on main is the merge's doing, not an old red.
-    const ownGreen = new Set(input.greenInWorktree ?? []);
-    const redBefore = (services.baseline?.redBefore?.({ runId:input.runId, taskId:input.task.id, checks:checks ?? [] }) ?? []).filter((command) => !ownGreen.has(command));
-    const candidates = red.filter((check) => !redBefore.includes(check.command));
-    // A red that already failed its own re-run (runWithFlakyRerun: `reran`) as a product red both times is reproduced; running it again
-    // only repeated the same command twice more (2026-10-29 audit). A re-run that timed out or broke reproduced nothing (audit N-05).
-    const reproduced = candidates.filter((check) => {
-      const rerun = (check as { rerun?:{ exitCode:number; stdout?:string; stderr?:string; hostError?:boolean; threw?:boolean } }).rerun;
-      return !!rerun && rerun.exitCode !== 124 && readCheckRun(check, { command: check.command }).verdict === "product_fail" && readCheckRun({ ...check, hostError:false, threw:false, ...rerun }, { command: check.command }).verdict === "product_fail";
-    });
-    const toRerun = candidates.filter((check) => !reproduced.includes(check));
-    let confirmed = candidates;
-    let flaky:string[] = [];
-    if (toRerun.length) {
-      const names = new Set(toRerun.map((check) => check.command));
-      const again = await services.runVerification(input.config, { ...onMain, verification:onMain.verification.filter((command) => names.has(command.command)) }, input.runId, undefined,
-        { background:true, jobKey:`post-merge:${input.attemptId ?? input.task.id}:${input.mergeCommit ?? ""}:rerun` }).catch(() => null);
-      // Only a re-run that is a product red again reproduces the defect (readCheckRun, the reading replay and the gate share). One the
-      // machine or the host broke, that threw, or that ran no test says nothing: the first red stays recorded, no writer is sent.
-      const readings = new Map((again ?? []).map((check) => [check.command, readCheckRun(check, { command: check.command })] as const));
-      flaky = toRerun.filter((check) => readings.get(check.command)?.verdict === "pass").map((check) => check.command);
-      confirmed = [...reproduced, ...toRerun.filter((check) => readings.get(check.command)?.verdict === "product_fail")];
-      const unsettled = toRerun.filter((check) => !flaky.includes(check.command) && !confirmed.includes(check));
-      if (unsettled.length) ctx.log(`post-merge check of ${input.task.id}: red on main once, the re-run did not reproduce it (${unsettled.map((check) => `${check.command}: ${readings.get(check.command)?.verdict ?? "no result"}`).join(", ")}); no repair task, the red stays recorded`);
-    }
-    if (flaky.length || redBefore.length) {
-      ctx.log(`post-merge check of ${input.task.id} on main: no repair task for ${[...flaky, ...redBefore].join(", ")} (${flaky.length ? "flaky" : "red before this task too"})`);
-      if (redBefore.length) tell("gate_red", `post-merge-redbefore:${input.runId}:${input.task.id}`, `После слияния задачи ${input.task.id} проверка на main красная, но она была красной и до этой задачи`,
-        `${redBefore.join(", ")}: не регрессия этой задачи, задача исправления не создана. Посмотрите сами, если эта проверка важна.`);
-    }
-    if (!confirmed.length) return;
-    const { fix, plan, logs } = postMergeRepair(onMain, confirmed);
-    // The writer reads the failure from its task folder; a full log per failing check, best-effort.
-    for (const log of logs) {
-      await bb.sdk.files.write({ hostId:input.config.hostId, rootPath:input.basePath, path:`${input.basePath}/${log.path}`,
-        content:log.content, contentEncoding:"utf8", createParents:true, expectedSha256:null }).catch(() => undefined);
-    }
-    const sent = await services.dispatchWriter({ threadId:input.pmThreadId, projectId:input.projectId, task:fix, plan }).catch((cause:unknown) => ({ state:"rejected", reason:cause instanceof Error ? cause.message : String(cause) }));
-    const notStarted = String(sent.state) === "rejected" || String(sent.state) === "blocked" || (sent as { ok?:unknown }).ok === false;
-    ctx.log(`post-merge check of ${input.task.id}: ${confirmed.map((check) => check.command).join(", ")} fails on main with it${turnedRed.length ? ` (${turnedRed.join(", ")} passed on the base before this task)` : ""}; repair task ${fix.id} ${notStarted ? `could not start (${String((sent as { reason?:unknown }).reason ?? (sent as { hint?:unknown }).hint ?? sent.state)})` : "dispatched"}`);
-    if (notStarted) tell("gate_red", `post-merge-repair:${input.runId}:${input.task.id}`, `После слияния задачи ${input.task.id} проверка на main красная, а задача исправления не запустилась`,
-      `${confirmed.map((check) => check.command).join(", ")}${turnedRed.length ? ` (до этой задачи проходила)` : ""}. Причина: ${String((sent as { reason?:unknown }).reason ?? (sent as { hint?:unknown }).hint ?? sent.state)}. Работа осталась в main; запустите исправление в чате проекта.`);
-  }
-
-  return { finishWriterAttempt, checkMainAfterMerge, noteMergedForGate };
+  return { finishWriterAttempt, ...verification };
 }

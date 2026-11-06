@@ -1,0 +1,79 @@
+import { getAttempt, getReasoningTrace, getRunSettingsScopes, loadProjectSettings } from "../../storage";
+import { recordSkillSwitchMetric } from "../skill-switch";
+import { createSkillMaterializer, recordedMaterializedSkills } from "./skill-materialize";
+import { recordedWriterSkills } from "./skill-pick";
+import { writerFinishScanJudgment } from "../finish-scan";
+import { jev, type JevSettings } from "@lane-pilot/jev";
+import type { ServerCore, Services } from "../../core/server";
+import { onAttemptFinished, type AttemptFinished } from "./attempt-finished";
+import type { createWriterSticky } from "./sticky";
+
+/**
+ * The writer's own reactions to an attempt's end: the skill-switch metric, the materialized-skill
+ * cleanup, the finish scan, and the area record of an accepted task. They stay in this room — unlike
+ * the room-named files next to them, the merger keeps them here.
+ *
+ * Registration order is the run order (attempt-finished.ts). Attempt scope, from createWriterFinish:
+ *   1. writer:skill-switch-metric → 2. writer:skill-materialize — the metric accounts the attempt
+ *      before its skills leave the worktree (the old finally's order).
+ *   3. writer:finish-scan — observational; used to run just before the acceptance receipt, now fires
+ *      after it on the same data (it never changed the finish path).
+ * Task scope, from createWriterStart (mountWriterTaskFinished):
+ *   4. writer:area-accepted — the area's writer record, after the task's receipts and run refresh.
+ */
+export function mountWriterAttemptFinished(ctx: ServerCore, services: Services): void {
+  const { bb, db } = ctx;
+  const skillMaterial = createSkillMaterializer(ctx, (message) => bb.log.info(message));
+
+  // A reload closes this instance's database; recovery in the new instance owns the attempt from then on.
+  onAttemptFinished(ctx, async (event) => {
+    if (event.scope !== "attempt" || ctx.state.disposed) return;
+    try {
+      const events = await bb.sdk.threads.events.list({ threadId: event.writerThreadId, limit: "100" } as never).then((r: any) => r?.events ?? [], () => []);
+      if (!ctx.state.disposed) {
+        recordSkillSwitchMetric(db, {
+          attemptId: event.attemptId,
+          taskId: event.taskId,
+          runId: event.runId,
+          projectId: event.projectId,
+          events,
+          skills: recordedWriterSkills(getReasoningTrace(db, event.attemptId)?.dispatchContext),
+          outcome: event.result?.status === "accepted" || (event.result as { state?: unknown } | null)?.state === "accepted" ? "accepted" : "failed",
+        });
+      }
+    } catch (cause) {
+      ctx.log(`writer skill switch metric failed: ${cause instanceof Error ? cause.message : String(cause)}`);
+    }
+    if (!ctx.state.disposed) await skillMaterial.remove({ attemptId: event.attemptId, hostId: event.config.hostId,
+      workspacePath: getAttempt(db, event.attemptId)?.workspace_path ?? null,
+      names: recordedMaterializedSkills(getReasoningTrace(db, event.attemptId)?.dispatchContext),
+      providerId: getReasoningTrace(db, event.attemptId)?.providerId ?? null });
+  });
+
+  // The finish scan (Gemini 7): three cheap nouls on the landing attempt — diff risk, UI, docs — for
+  // receipts and the task's profile; it never changes the finish path.
+  onAttemptFinished(ctx, async (event) => {
+    if (event.scope !== "attempt" || !event.acceptanceReached || !event.candidate) return;
+    try {
+      const scan = await jev()?.judge(writerFinishScanJudgment, {
+        title: event.task.title, contract: JSON.stringify({ invariants: event.task.invariants, out_of_scope: event.task.out_of_scope }),
+        produced: event.candidate.produced.slice(0, 40).join("\n"),
+        verification: event.candidate.verification.slice(0, 10).map((row) => `${(row as { command?: string }).command}:${(row as { exitCode?: number }).exitCode}`).join("\n"),
+        summary: typeof event.candidate.output === "string" ? event.candidate.output : "",
+      }, { projectId: event.projectId, runId: event.runId, subject: "writer-finish", settings: loadProjectSettings(db, event.projectId, getRunSettingsScopes(db, event.runId)) as JevSettings });
+      if (scan?.by === "jev") bb.log.info(`Lane Pilot finish-scan ${event.taskId}: ${writerFinishScanJudgment.describe(scan.decision)}`);
+    } catch { /* a scan is never a gate */ }
+  });
+
+}
+
+/** Task-scope reactions the writer owns; mounted by createWriterStart with its sticky instance. */
+export function mountWriterTaskFinished(ctx: ServerCore, _services: Services, sticky: ReturnType<typeof createWriterSticky>): void {
+  // The area's writer record: accepted work makes this thread the area's hot writer for the next task.
+  onAttemptFinished(ctx, (event) => {
+    if (event.scope !== "task" || event.status !== "accepted" || !event.acceptedAttemptId) return;
+    return sticky.noteAccepted(event.projectId, event.runId, event.task, event.acceptedAttemptId,
+      Array.isArray(event.result?.produced) ? (event.result.produced as unknown[]).filter((path): path is string => typeof path === "string") : [])
+      .then(() => undefined, (cause) => { ctx.log(`area record of ${event.taskId} failed: ${cause instanceof Error ? cause.message : String(cause)}`); return undefined; });
+  });
+}
