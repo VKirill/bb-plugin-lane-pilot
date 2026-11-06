@@ -11,6 +11,7 @@ import type { ServerCore, Services } from "../../core/server";
 import type { ErrandCore, ErrandSnapshot } from "./errands";
 import type { ExtraAccess } from "../../native-agent";
 import { loadProjectSettings } from "../../storage";
+import { errandSpawnOf, pendingErrandEpisode } from "../../errands";
 import { ERRAND_KINDS, classifyErrand } from "../../schedule";
 
 /**
@@ -190,8 +191,7 @@ export function mountErrandGraph(ctx: ServerCore, services: Services, core: Erra
 
   /** What the `spawn` effect of a run's helper step recorded: the thread and the browser machine, once the thread exists. */
   function spawnedOf(runId: string): { threadId: string; browserMachine: string | null } | null {
-    const row = db.prepare("SELECT result_json FROM lane_pilot_wf_effect WHERE run_id=? AND kind='errand.spawn' AND state='done'").get(runId) as { result_json: string | null } | undefined;
-    try { const value = JSON.parse(row?.result_json ?? "null") as { threadId?: unknown; browserMachine?: unknown } | null; return value && typeof value.threadId === "string" ? { threadId: value.threadId, browserMachine: typeof value.browserMachine === "string" ? value.browserMachine : null } : null; } catch { return null; }
+    return errandSpawnOf(db, runId);
   }
   /** The errand run whose helper thread this is; null for a thread no errand run made (one an earlier version started). */
   function runOfThread(threadId: string): string | null {
@@ -235,6 +235,8 @@ export function mountErrandGraph(ctx: ServerCore, services: Services, core: Erra
           runtime: { ctx, services, pmThreadId: context.threadId, projectId: context.projectId, runId } satisfies ChainRuntime,
         });
         run.done.catch((cause: unknown) => ctx.log(`Lane Pilot ${workflow.id} run ${run.runId} stopped with an error: ${cause instanceof Error ? cause.message : String(cause)}`));
+        // The episode's pending row: the completion hook fills it — this is how it knows the run came from an errand.
+        pendingErrandEpisode(db, { runId: run.runId, projectId: context.projectId, workflowId: workflow.id }, (message) => ctx.log(message));
         return JSON.stringify({ workflowRunId: run.runId, state: "running", workflow: workflow.id, confidence,
           note: `this errand matched the graph ${workflow.id} (confidence ${confidence}): it runs as that graph; wait on it with lane_pilot_workflow_status; what the brief asks beyond the graph's result you do after it, nothing twice` }, null, 2);
       }

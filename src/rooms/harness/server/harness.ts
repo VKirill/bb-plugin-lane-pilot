@@ -314,8 +314,8 @@ export function createHarness(ctx: ServerCore, services: Services) {
     return attempt ? checksForAttempt(attempt.id) : [];
   }
 
-  /** Every event of a thread, oldest first; a failure is logged once and gives what was read so far. */
-  async function listThreadEvents(threadId: string): Promise<unknown[]> {
+  /** Every event of a thread, oldest first, at most `maxEvents`; a failure is logged once and gives what was read so far. */
+  async function listThreadEvents(threadId: string, maxEvents = Number.POSITIVE_INFINITY): Promise<unknown[]> {
     const events: unknown[] = [];
     let cursor = 0;
     for (let pages = 0; pages < EVENT_PAGES_MAX; pages++) {
@@ -329,11 +329,12 @@ export function createHarness(ctx: ServerCore, services: Services) {
       if (!Array.isArray(listed)) { ctx.log(`harness: events of ${threadId} came back as ${listed === null ? "null" : typeof listed}`); break; }
       if (listed.length === 0) break;
       events.push(...listed);
+      if (events.length >= maxEvents) break;
       const last = Number((listed[listed.length - 1] as { seq?: unknown })?.seq ?? 0);
       if (!Number.isFinite(last) || last <= cursor || listed.length < EVENT_PAGE) break;
       cursor = last;
     }
-    return events;
+    return events.slice(0, maxEvents);
   }
 
   /** The rendered trajectory of one thread, cut to one task's turns when a task id is given (sticky writers share a thread). */
@@ -811,7 +812,7 @@ export function createHarness(ctx: ServerCore, services: Services) {
 
   /** The code and session steps the graphs `lp.harness-edit` and `lp.harness-reflect` wrap (night-graphs/server/harness-graph.ts). */
   const graph = { prepareEdit, editRound, validateEdit, prepareReflect, reflectSession, recordReflect };
-  return { config, setConfig, forAttempt, materialize, checksForAttempt, checksForWriterThread, runEditor, evaluateTrials, reflect, tick, status, trajectory, graph };
+  return { config, setConfig, forAttempt, materialize, checksForAttempt, checksForWriterThread, runEditor, evaluateTrials, reflect, tick, status, trajectory, graph, threadEvents: listThreadEvents };
 }
 
 export type HarnessApi = ReturnType<typeof createHarness>;

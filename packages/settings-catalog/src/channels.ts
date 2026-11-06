@@ -174,6 +174,7 @@ export const SETTING_CATALOG: SettingSpec[] = [
   { key:"lead.priority", channel:"OWN", reason:"Native Lane Pilot lead: the owner's order of projects; the brief ranks them so and unlisted follow" },
   { key:"owner.words", channel:"OWN", reason:"Native Lane Pilot landing: whose word a verified task waits for (on every task, risky = risk high or critical, off none)" },
   { key:"phase.rails", channel:"OWN", reason:"Native Lane Pilot phases: with rails on, graphs, councils and schedules of a phase start only from its own stage" },
+  { key:"episodes.collect", channel:"OWN", reason:"Native Lane Pilot errand episodes: on writes lane_pilot_errand_episode when an errand run ends and marks a routed run pending at start" },
   { key:"lead.budget_daily_usd", channel:"OWN", reason:"Native Lane Pilot lead: the dollars its ticks may spend in one day" },
   { key:"lead.tick_cron", channel:"OWN", reason:"Native Lane Pilot lead: when a tick starts, in the owner's time zone" },
   { key:"lead.max_proposals", channel:"OWN", reason:"Native Lane Pilot lead: how many proposals one tick may put on the owner's list" },
