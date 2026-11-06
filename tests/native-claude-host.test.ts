@@ -64,3 +64,25 @@ it("hands claude one --settings: the core flag layer merged with the guard file,
   const plain = spawnSync(launcher, ["-p", "hi"], { encoding: "utf8" }).stdout.trim().split("\n");
   expect(plain[plain.indexOf("--settings") + 1]).toBe(settingsPath);
 });
+
+it("a helper launcher denies the orchestration built-ins, a PM launcher keeps them", async () => {
+  const { claudeGuardLauncherScript, HELPER_DISALLOWED_TOOLS } = await import("../src/rooms/native-agent/claude-guard-launch");
+  const dest = await mkdtemp(join(tmpdir(), "lp-guard-tools-"));
+  await mkdir(join(dest, "hooks"), { recursive: true });
+  const settingsPath = join(dest, "settings.json");
+  await writeFile(settingsPath, "{}");
+  await writeFile(join(dest, "hooks", "inject_agent_type.py"), "");
+  await writeFile(join(dest, "hooks", "guard_shell.py"), "");
+  const command = join(dest, "real-claude");
+  await writeFile(command, "#!/bin/sh\nfor a in \"$@\"; do echo \"$a\"; done\n");
+  await chmod(command, 0o700);
+  const run = async (role: string) => {
+    const launcher = join(dest, `claude-${role}`);
+    await writeFile(launcher, claudeGuardLauncherScript({ destDir: dest, command, settingsPath, role, agentType: role }));
+    await chmod(launcher, 0o700);
+    return spawnSync(launcher, ["-p", "hi"], { encoding: "utf8" }).stdout.trim().split("\n");
+  };
+  const writer = await run("writer");
+  expect(writer[writer.indexOf("--disallowedTools") + 1]).toBe(HELPER_DISALLOWED_TOOLS);
+  expect(await run("pm")).not.toContain("--disallowedTools");
+});

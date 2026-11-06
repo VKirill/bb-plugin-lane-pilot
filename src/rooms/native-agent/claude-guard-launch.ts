@@ -17,6 +17,13 @@ export function claudeGuardAgentType(role: string): string {
   return role === "pm" ? "lane-pilot-pm" : role;
 }
 
+/**
+ * Claude Code built-ins a background helper never uses: orchestration, self-wakeups, questions nobody answers, its own
+ * subagents. Their definitions are ~40 KB of every helper's first request (Workflow alone 22.9 KB, measured 2026-11-07).
+ * A second `--disallowedTools` from BB core adds to this one (real claude run: both sets are removed). PM keeps them.
+ */
+export const HELPER_DISALLOWED_TOOLS = "Workflow,ScheduleWakeup,AskUserQuestion,Agent";
+
 /** Same launcher shape as a native session: `--settings` with the bundled guard, and no machine-wide hook. No `--agent`. */
 export function claudeGuardLauncherScript(input: {
   destDir: string;
@@ -43,7 +50,7 @@ export function claudeGuardLauncherScript(input: {
     `export LANE_PILOT_AGENT_TYPE=${shellQuote(input.agentType)}`,
     "export AGENT_HOOK_CLIENT=claude",
     `export LANE_PILOT_HOOK_TRACE=${shellQuote(join(input.destDir, "hook-trace.jsonl"))}`,
-    claudeExecLine(input.command, input.settingsPath),
+    claudeExecLine(input.command, input.settingsPath, input.role === "pm" ? [] : [`--disallowedTools ${shellQuote(HELPER_DISALLOWED_TOOLS)}`]),
     "",
   ].join("\n");
 }
