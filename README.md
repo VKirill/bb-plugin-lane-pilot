@@ -9,12 +9,14 @@ It is for people who run several agents on one codebase and want the boring part
 ## If you are an agent, read this first
 
 1. **What this repository is.** The plugin's code: `server.ts` (hub server, SQLite), `host.ts` (git, sandbox and machine work on enrolled hosts), `app.tsx` (UI). Each subsystem is a room in `src/rooms/<room>/`; other rooms import only its `index.ts`, `server/index.ts` or `ui/index.ts`. Shared code lives in `packages/*`, shipped graphs in `workflows/*.json`.
-2. **Where to look a thing up.** The [atlas](docs/atlas.md) is generated from the code: every room with its public API, every task stage, the attempt state machine, every `bb lane-pilot` command and every shipped graph. The [guide](#the-guide) below explains how the parts work together; deep pages per subsystem are in the [documentation map](#documentation-map).
+2. **Where to look a thing up.** The [interactive system map](https://vkirill.github.io/bb-plugin-lane-pilot/map/) and the [atlas](docs/atlas.md) are generated from the code: every room with its public API, every task stage, the attempt state machine, every `bb lane-pilot` command and every shipped graph. The [guide](#the-guide) below explains how the parts work together; deep pages per subsystem are in the [documentation map](#documentation-map).
 3. **Project facts that are not in the code** (who the owner is, decisions, lessons) live in the hub memory: `bb lane-pilot memory search "<question>"`, record one with `bb lane-pilot memory write "<fact>"`. Not in local memory files.
 4. **Rules that bite.** The database schema is append-only (see [Development](docs/guide/development.md#database-migrations)). A release goes only through the deploy script, at most one a day, and ends with a drill that rolls back on red. Run focused tests while working (`npx vitest related <files> --run`); the full suite runs at the gate. Traps: [gotchas](docs/gotchas.md).
 5. **When you change behaviour,** fix the guide page that describes it in the same commit, and run `npx tsx scripts/generate-atlas.ts` when you add a room, command, graph, stage or RPC method (the atlas test fails until you do).
 
 ## How it works in one picture
+
+> **[Open the interactive map of the whole system](https://vkirill.github.io/bb-plugin-lane-pilot/map/)**: every room, table, command, agent tool, graph action, shipped graph, role, task stage and attempt state, and the links between them (imports, table reads, graph runs and calls, roles). Every node and link is read from the code; click a node to see what it contains, what it uses and what uses it. Source: [docs/map/index.html](docs/map/index.html), written by `npx tsx scripts/generate-atlas.ts`.
 
 ```mermaid
 flowchart LR
@@ -106,7 +108,7 @@ How the system works, one page per part. Start with the first one.
 
 ## Keeping these docs current
 
-- The numbers above, the [atlas](docs/atlas.md) (rooms, stages, commands, graphs, RPC) are generated from the code; `tests/atlas.test.ts` fails when they are stale.
+- The numbers above, the [system map](docs/map/index.html) and the [atlas](docs/atlas.md) (rooms, stages, commands, graphs, RPC) are generated from the code; `tests/atlas.test.ts` fails when they are stale.
 - Every night the docs pass (`lp.docs-night`, [docs night](docs/docs-night.md)) reads the day's diff, finds the pages and README sections it made wrong, rewrites them and commits. `bb lane-pilot docs-nightly <project-id>` runs it now.
 - [CHANGELOG.md](CHANGELOG.md) has every release; a guide page cites it rather than repeating it.
 
