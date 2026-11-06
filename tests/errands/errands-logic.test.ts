@@ -24,9 +24,9 @@ describe("the Errands page: the read model over errand runs", () => {
   it("maps a run to the owner's five outcomes; a helper the owner stopped is cancelled, not failed", () => {
     expect(errandOutcome("running", null, null).outcome).toBe("running");
     expect(errandOutcome("succeeded", { state: "done" }, null).outcome).toBe("done");
-    expect(errandOutcome("succeeded", { state: "blocked", reason: "needs the owner's login" }, null)).toEqual({ outcome: "blocked", reason: "needs the owner's login" });
+    expect(errandOutcome("succeeded", { state: "blocked", reason: "needs the owner's login" }, null)).toMatchObject({ outcome: "blocked", reason: "needs the owner's login" });
     expect(errandOutcome("succeeded", { state: "blocked", reason: "canceled by owner" }, null).outcome).toBe("canceled");
-    expect(errandOutcome("failed", null, "step_failed:work")).toEqual({ outcome: "failed", reason: "step_failed:work" });
+    expect(errandOutcome("failed", null, "step_failed:work")).toMatchObject({ outcome: "failed", reason: "step_failed:work" });
     expect(errandOutcome("canceled", null, "stopped").outcome).toBe("canceled");
   });
 

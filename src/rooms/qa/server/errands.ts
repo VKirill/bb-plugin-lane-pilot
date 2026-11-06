@@ -75,7 +75,7 @@ export function errandPrompt(input: { task: string; browserHostId: string | null
     ...errandAccountLines(input.accounts ?? []),
     "- Never change, commit or push this repository's files — no edits, no `git add`/`git commit`/`git push`, no redirects or `tee` into the checkout; reading the repository stays allowed. If the task asks for a repository change, stop right there with `ERRAND: blocked: repository edits go through the PM's writer task` and change nothing.",
     "",
-    "Finish with what you did, what you saw (exact values, URLs, quotes), and proof (screenshot paths or the final URL). The very last line is exactly one of `ERRAND: done` or `ERRAND: blocked: <why>`. Without it the PM treats your work as unfinished.",
+    "Finish with what you did, what you saw (exact values, URLs, quotes), and proof (screenshot paths or the final URL). Before the last line write one `CHECK:` line per check you made of the result: what you ran or looked at, an arrow, what it showed — a command and its output, for a browser task the page state or final URL, for a send the message id (for example `CHECK: tg read @lyorqa --last 1 → message 977889 with the file`). A done without a CHECK line counts as unchecked. The very last line is exactly one of `ERRAND: done` or `ERRAND: blocked: <why>`. Without it the PM treats your work as unfinished.",
     "",
     SKILL_CATALOG_BLOCK,
   ].join("\n");
@@ -91,6 +91,23 @@ export function errandVerdict(output: string): { state: "done" | "blocked"; reas
   const verdict = match[1]!;
   if (verdict.toLowerCase() === "done") return { state: "done" };
   return { state: "blocked", reason: verdict.replace(/^blocked\s*:?\s*/i, "").trim() || "blocked without a reason" };
+}
+
+export type ErrandCheck = { claim: string; evidence: string };
+export type ErrandVerified = "done_checked" | "done_unchecked" | "blocked";
+
+/**
+ * The helper's `CHECK: <what it ran or looked at> → <what it showed>` lines (also `->`), read by code, no model: a done with at least
+ * one check that names what it showed is `done_checked`; a done without one is `done_unchecked`, so «done» stops being only the helper's word.
+ */
+export function errandCheck(output: string, state: "done" | "blocked"): { verified: ErrandVerified; checks: ErrandCheck[] } {
+  const checks: ErrandCheck[] = [];
+  for (const line of output.split("\n")) {
+    const match = /^[\s>*`-]*CHECK:\s*(.*?)\s*(?:→|->)\s*(.*?)[\s`*]*$/u.exec(line);
+    if (match && match[1] && match[2]) checks.push({ claim: match[1].slice(0, 300), evidence: match[2].slice(0, 500) });
+  }
+  if (state === "blocked") return { verified: "blocked", checks };
+  return { verified: checks.length ? "done_checked" : "done_unchecked", checks };
 }
 
 /** The checkout's changed files from before an errand's helper started (kept in the graph step's journal, so a reload does not lose it). */
@@ -245,19 +262,20 @@ function mountErrandCore(ctx: ServerCore) {
   }
 
   /** The report of an errand thread that has ended: the helper's verdict and output, or `blocked` when it edited the repository (the `snapshot` of the checkout from before it started). */
-  async function completedReport(threadId: string, projectId = "-", snapshot: ErrandSnapshot | null = null): Promise<{ state: "done" | "blocked"; reason?: string; output: string; files?: string[] }> {
+  async function completedReport(threadId: string, projectId = "-", snapshot: ErrandSnapshot | null = null): Promise<{ state: "done" | "blocked"; reason?: string; output: string; files?: string[]; verified: ErrandVerified; checks: ErrandCheck[] }> {
     if (snapshot) {
       const afterStatus = await gitRepoStatus(host, snapshot.hostId, snapshot.cwd);
       const edited = afterStatus ? detectRepoEdits(new Set(snapshot.before), afterStatus, (f) => f.startsWith(".bb/chats/")) : [];
-      if (edited.length > 0) return { state: "blocked", reason: "repo_edited", files: edited, output: `Helper edited repository files: ${edited.join(", ")}` };
+      if (edited.length > 0) return { state: "blocked", reason: "repo_edited", files: edited, output: `Helper edited repository files: ${edited.join(", ")}`, verified: "blocked", checks: [] };
     }
     const raw = (await bb.sdk.threads.output({ threadId })).output;
     // The report is checked (J-11) before anyone sees it; a blocked one is a placeholder, not a verdict from the helper.
     const text = typeof raw === "string" ? raw : outputText(raw);
     const guarded = ctx.outputGuard ? await ctx.outputGuard({ kind: "errand", text, projectId, subject: threadId }) : null;
-    if (guarded?.blocked) return { state: "blocked", reason: `output_guard_blocked:${guarded.reason}`, output: guarded.text };
+    if (guarded?.blocked) return { state: "blocked", reason: `output_guard_blocked:${guarded.reason}`, output: guarded.text, verified: "blocked", checks: [] };
     const output = guarded ? guarded.text : redactKnown(text);
-    return { ...errandVerdict(output), output };
+    const verdict = errandVerdict(output);
+    return { ...verdict, output, ...errandCheck(output, verdict.state) };
   }
 
   return { resolveAccounts, startErrand, errandSnapshot, completedReport, openRun };

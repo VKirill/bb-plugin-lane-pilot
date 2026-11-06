@@ -128,6 +128,7 @@ export function mountErrandGraph(ctx: ServerCore, services: Services, core: Erra
       return {
         output: {
           state: report.state, reason: report.reason ?? "", output: report.output, files: report.files ?? [], thread_id: started.threadId,
+          verified: report.verified, checks: report.checks.map((row) => `${row.claim} → ${row.evidence}`),
           handoff: `errand ${report.state}${report.reason ? `: ${report.reason}` : ""}`,
         },
         ...(await withUsage(bb, started.threadId)),

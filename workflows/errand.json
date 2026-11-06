@@ -110,7 +110,9 @@
     "reason": "string",
     "output": "string",
     "files": "string[]",
-    "thread_id": "string"
+    "thread_id": "string",
+    "verified": "done_checked|done_unchecked|blocked",
+    "checks": "string[]"
   },
   "live_success": {
     "output": "state",
@@ -149,7 +151,7 @@
       "proof": {
         "kind": "advisory",
         "reason": "the helper's own report; the closing ERRAND: line, the repository check and the output guard decide done or blocked",
-        "form": "errandVerdict: the last line is ERRAND: done or ERRAND: blocked: <why>; a report without it is blocked (no_marker)"
+        "form": "errandVerdict: the last line is ERRAND: done or ERRAND: blocked: <why>; a report without it is blocked (no_marker). errandCheck: CHECK: <what was run or looked at> → <what it showed> lines make a done done_checked; a done without one is done_unchecked (recorded, never blocks)"
       },
       "produces": [
         {
@@ -162,7 +164,9 @@
         "reason": "string",
         "output": "string",
         "files": "string[]",
-        "thread_id": "string"
+        "thread_id": "string",
+        "verified": "done_checked|done_unchecked|blocked",
+        "checks": "string[]"
       },
       "guards": {
         "timeoutMin": 58
@@ -177,7 +181,9 @@
         "reason": "work.reason",
         "output": "work.output",
         "files": "work.files",
-        "thread_id": "work.thread_id"
+        "thread_id": "work.thread_id",
+        "verified": "work.verified",
+        "checks": "work.checks"
       }
     }
   ],
