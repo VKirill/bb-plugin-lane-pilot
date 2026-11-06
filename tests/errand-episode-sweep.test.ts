@@ -83,7 +83,7 @@ const row = (db: LanePilotDatabase, runId: string) =>
   db.prepare(`SELECT * FROM ${ERRAND_EPISODE_TABLE} WHERE run_id=?`).get(runId) as Record<string, unknown>;
 
 describe("errand episode sweep", () => {
-  it("a pending episode is enriched: masked text reaches the model, strict JSON lands in the columns, process_key stays null", async () => {
+  it("a pending episode is enriched: masked text reaches the model, strict JSON lands in the columns, the candidate becomes process_key", async () => {
     const { db } = world();
     addRun(db, { id: "wfrun-1", inputs: { title: "Count open leads", skills: ["browser-qa", "crm-export"], task: "count leads; mail boss@secret-mail.example the number" }, output: { state: "done", verified: "done_checked" } });
     await recorded(db, "wfrun-1");
@@ -98,7 +98,7 @@ describe("errand episode sweep", () => {
     expect(result).toMatchObject({ picked: 1, enriched: 1 });
     const stored = row(db, "wfrun-1");
     expect(stored).toMatchObject({
-      enrichment_state: "enriched", enriched_model: "fake/analyst-1", failure_class: null, process_key: null,
+      enrichment_state: "enriched", enriched_model: "fake/analyst-1", failure_class: null, process_key: "crm|count-open-leads",
       process_key_proposed: "crm|count-open-leads", enrichment_reason: null,
     });
     expect(stored.enriched_at).toBeTypeOf("number");
@@ -114,6 +114,31 @@ describe("errand episode sweep", () => {
     expect(prompts[0]).toContain("reference material");
     expect(String(stored.summary_json)).not.toContain("boss@secret-mail.example");
     expect(judged).toHaveLength(1);
+  });
+
+  it("R6 wiring: chooseKey gets the candidate, the title and the known keys; its answer is the stored process_key", async () => {
+    const { db } = world();
+    addRun(db, { id: "wfrun-old", inputs: { title: "Count leads in CRM", task: "count" }, output: { state: "done" } });
+    await recorded(db, "wfrun-old");
+    db.prepare("UPDATE lane_pilot_errand_episode SET process_key='crm|count-leads', enrichment_state='enriched' WHERE run_id='wfrun-old'").run();
+    addRun(db, { id: "wfrun-1", inputs: { title: "Count open leads", task: "count" }, output: { state: "done", verified: "done_checked" } });
+    await recorded(db, "wfrun-1");
+    const seen: unknown[] = [];
+    await sweepErrandEpisodes(deps(db, {
+      readOutline: async () => "User: count\nAssistant: done",
+      runModel: async () => ({ text: ANSWER, model: "fake/analyst-1" }),
+      chooseKey: async (input) => { seen.push(input); return "crm|count-leads"; },
+    }));
+    expect(seen).toEqual([{ candidate: "crm|count-open-leads", title: "Count open leads", known: [{ key: "crm|count-leads", titles: ["Count leads in CRM"] }] }]);
+    expect(row(db, "wfrun-1")).toMatchObject({ process_key: "crm|count-leads", process_key_proposed: "crm|count-open-leads" });
+    // A throwing chooser leaves the candidate.
+    db.prepare("UPDATE lane_pilot_errand_episode SET enrichment_state='pending', enriched_at=NULL, process_key=NULL WHERE run_id='wfrun-1'").run();
+    await sweepErrandEpisodes(deps(db, {
+      readOutline: async () => "User: count\nAssistant: done",
+      runModel: async () => ({ text: ANSWER, model: "fake/analyst-1" }),
+      chooseKey: async () => { throw new Error("jev down"); },
+    }));
+    expect(row(db, "wfrun-1").process_key).toBe("crm|count-open-leads");
   });
 
   it("a masking failure leaves the row held and logs episode_mask_failed:<runId>", async () => {

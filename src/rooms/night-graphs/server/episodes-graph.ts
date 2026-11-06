@@ -8,7 +8,7 @@ import {
 import { builtinWorkflow } from "../../workflow";
 import type { ChainRuntime } from "../../workflow/server";
 import {
-  errandFailureJudgment, sweepErrandEpisodes,
+  chooseProcessKey, errandFailureJudgment, sweepErrandEpisodes,
   ERRAND_EPISODE_TRACE_EVENTS, type EpisodeEnrichDeps,
 } from "../../errands";
 
@@ -49,6 +49,10 @@ export function mountEpisodesGraph(ctx: ServerCore, services: Services): void {
       const analyzer = { providerId: role.providerId, model: role.model, reasoningLevel: role.reasoningEffort, serviceTier: role.serviceTier };
       const text = await services.ruleScan.runAnalyzer(projectId ?? "*", `episode ${runId}`, prompt, host, analyzer, { episode: runId });
       return { text, model: `${analyzer.providerId}/${analyzer.model}` };
+    },
+    chooseKey: async (input, { runId, projectId }) => {
+      const settings = ((await ctx.effectiveProjectSettings(projectId ?? GLOBAL_SETTINGS_PROJECT_ID).catch(() => null))?.values ?? {}) as JevSettings;
+      return (await chooseProcessKey({ ...input, ctx: { projectId: projectId ?? "*", runId, subject: runId, settings } })).key;
     },
     judge: async (input, { runId, projectId }) => {
       const instance = jev();

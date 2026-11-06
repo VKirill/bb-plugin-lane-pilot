@@ -6,6 +6,7 @@ import { extractSkillSequence } from "../writer";
 import type { LanePilotDatabase } from "../storage";
 import { collectEnabled, ERRAND_EPISODE_EXTRACTOR_VERSION, ERRAND_EPISODE_TABLE, recordErrandEpisode } from "./episodes";
 import { errandOutcome, errandStem, errandTitle } from "./logic";
+import type { KnownProcessKey } from "./process-key";
 import { ERRAND_FAILURE_CLASSES, ERRAND_FAILURE_ID, type ErrandFailureClass, type ErrandFailureInput } from "./failure-judgment";
 
 /**
@@ -13,8 +14,8 @@ import { ERRAND_FAILURE_CLASSES, ERRAND_FAILURE_ID, type ErrandFailureClass, typ
  * phase-A facts. For each pending episode it reads the helper thread, masks secrets and PII before any model sees the
  * text (redactKnown → scrubQuote → maskPii; the row sits in `enrichment_state='held'` while unmasked text is in
  * memory), makes exactly one call to the `episode-analyst` role's hidden analyzer thread, parses the strict JSON answer
- * and writes the enrichment columns. `process_key` is never touched — stream E owns it; the model only proposes a
- * candidate into `process_key_proposed`.
+ * and writes the enrichment columns. The model proposes a candidate into `process_key_proposed`; `deps.chooseKey`
+ * (R6: 8 nearest known keys, Jev chooses) writes the final `process_key`.
  *
  * Failure classes come from the code first: `timeout`, `looped`, `stopped_early` and `unverified` are computed from the
  * stored trace, status and verdict before the model's word is read, and a code class always wins. The model's class is
@@ -35,7 +36,7 @@ const clip = (text: string, max: number): string => (text.length > max ? `${text
 
 export type PendingEpisode = {
   runId: string; projectId: string | null; status: string; outcome: string; verified: string | null;
-  reason: string | null; threadId: string | null; model: string | null; skillsOffered: unknown;
+  reason: string | null; threadId: string | null; model: string | null; skillsOffered: unknown; title: string;
   trace: ThreadToolTraceEntry[] | null;
   traceStats: { actions: number; failedObservations: number; errors: number; userTurns: number } | null;
 };
@@ -44,7 +45,7 @@ export type PendingEpisode = {
 export function pendingEpisodes(db: Db, now: number, limit: number): PendingEpisode[] {
   const rows = db.prepare(`
     SELECT e.run_id, e.project_id, e.status, e.outcome, e.verified, e.thread_id, e.model, e.skills_offered_json,
-      e.trace_json, e.trace_stats_json, r.reason AS run_reason
+      e.trace_json, e.trace_stats_json, r.reason AS run_reason, r.inputs_json AS run_inputs
     FROM ${ERRAND_EPISODE_TABLE} e JOIN lane_pilot_wf_run r ON r.id=e.run_id
     WHERE e.enrichment_state='pending' AND (e.enriched_at IS NULL OR e.enriched_at < ?)
     ORDER BY e.created_at ASC LIMIT ?`).all(now - EPISODE_ENRICH_BACKOFF_MS, limit) as Array<Record<string, unknown>>;
@@ -52,6 +53,7 @@ export function pendingEpisodes(db: Db, now: number, limit: number): PendingEpis
     runId: String(row.run_id), projectId: (row.project_id as string | null) ?? null, status: String(row.status), outcome: String(row.outcome),
     verified: row.verified === null || row.verified === undefined ? null : parse<string | null>(String(row.verified), null),
     reason: (row.run_reason as string | null) ?? null, threadId: (row.thread_id as string | null) ?? null,
+    title: errandTitle(parse<Record<string, unknown>>(row.run_inputs as string | null, {})),
     model: (row.model as string | null) ?? null, skillsOffered: parse<unknown>(row.skills_offered_json as string | null, null),
     trace: parse<ThreadToolTraceEntry[] | null>(row.trace_json as string | null, null),
     traceStats: parse<PendingEpisode["traceStats"]>(row.trace_stats_json as string | null, null),
@@ -69,6 +71,11 @@ export type EpisodeEnrichDeps = {
   runModel?: (prompt: string, projectId: string | null, runId: string) => Promise<{ text: string; model: string }>;
   /** The `errand.failure` shadow judgment; called after a successful write, never allowed to fail the episode. */
   judge?: (input: ErrandFailureInput, ctx: { runId: string; projectId: string | null }) => Promise<void> | void;
+  /**
+   * R6: the final key for the model's candidate — 8 nearest known keys, Jev chooses (`chooseProcessKey`). Absent → the
+   * candidate stands. Never allowed to fail the episode: a throw leaves the candidate.
+   */
+  chooseKey?: (input: { candidate: string; title: string; known: KnownProcessKey[] }, ctx: { runId: string; projectId: string | null }) => Promise<string>;
   /** True between episodes (graph disposed or step aborted): the sweep stops before the next row. */
   stopped?: () => boolean;
   log?: (message: string) => void;
@@ -274,6 +281,13 @@ export async function enrichEpisode(row: PendingEpisode, deps: EpisodeEnrichDeps
   mark(db, row.runId,
     "enrichment_state='enriched', enriched_model=?, enriched_at=?, summary_json=?, failure_class=?, process_key_proposed=?, enrichment_reason=NULL",
     [model, now, fitSummary(answer, skills), failureClass, answer.process_key_proposed], now);
+  if (answer.process_key_proposed) {
+    const candidate = answer.process_key_proposed;
+    const key = deps.chooseKey
+      ? await deps.chooseKey({ candidate, title: row.title, known: knownProcessKeys(db) }, { runId: row.runId, projectId: row.projectId }).catch(() => candidate)
+      : candidate;
+    db.prepare(`UPDATE ${ERRAND_EPISODE_TABLE} SET process_key=? WHERE run_id=?`).run(key, row.runId);
+  }
   const actions = row.traceStats?.actions ?? 0;
   try {
     await deps.judge?.({
@@ -282,6 +296,19 @@ export async function enrichEpisode(row: PendingEpisode, deps: EpisodeEnrichDeps
     }, { runId: row.runId, projectId: row.projectId });
   } catch { /* shadow judgment never fails the episode */ }
   return "enriched";
+}
+
+/** The keys already chosen, each with up to 5 titles of its errands: the `known` list R6 ranks the candidate against. */
+export function knownProcessKeys(db: Db): KnownProcessKey[] {
+  const rows = db.prepare(`SELECT e.process_key AS key, r.inputs_json FROM ${ERRAND_EPISODE_TABLE} e JOIN lane_pilot_wf_run r ON r.id=e.run_id
+    WHERE e.process_key IS NOT NULL ORDER BY e.created_at DESC LIMIT 2000`).all() as Array<{ key: string; inputs_json: string | null }>;
+  const byKey = new Map<string, string[]>();
+  for (const row of rows) {
+    const titles = byKey.get(row.key) ?? [];
+    if (titles.length < 5) titles.push(errandTitle(parse<Record<string, unknown>>(row.inputs_json, {})));
+    byKey.set(row.key, titles);
+  }
+  return [...byKey].map(([key, titles]) => ({ key, titles }));
 }
 
 export type SweepResult = { picked: number; enriched: number; skipped: number; failed: number; held: number };
