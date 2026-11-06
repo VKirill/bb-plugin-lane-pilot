@@ -27,16 +27,18 @@ const analystRooms = new Map<string, string>();
 /**
  * The machine the episode analyst runs on: the errand's own project's writer host, else (a project with no writer host,
  * proj_personal: 18 of 132 errands on 2026-11-06) the host of the project whose episodes were analyzed last. The analyst needs a
- * machine, not the project's checkout: it works in an empty folder. Resolving with no project found no host at all.
+ * machine, not the project's checkout: it works in an empty folder. Resolving with no project found no host at all. Returns the
+ * project whose machine it is, for the analyst's thread.
  */
-export async function analystPlace(db: ServerCore["db"], projectId: string | null, resolve: (projectId: string | undefined) => Promise<unknown>): Promise<unknown> {
+export async function analystPlace(db: ServerCore["db"], projectId: string | null, resolve: (projectId: string | undefined) => Promise<unknown>): Promise<{ place: unknown; projectId: string | null }> {
   const ok = (value: unknown) => (value as { status?: string } | null)?.status === "resolved";
   const own = await resolve(projectId ?? undefined);
-  if (ok(own)) return own;
+  if (ok(own)) return { place: own, projectId };
   const donors = db.prepare(`SELECT project_id FROM ${ERRAND_EPISODE_TABLE} WHERE enrichment_state='enriched' AND project_id IS NOT NULL
     AND project_id IS NOT ? GROUP BY project_id ORDER BY MAX(enriched_at) DESC LIMIT 5`).all(projectId) as Array<{ project_id: string }>;
-  for (const donor of donors) { const place = await resolve(donor.project_id); if (ok(place)) return place; }
-  return own;
+  // The analyst's thread is opened in the donor project too: BB refuses a personal project's thread outside a personal workspace.
+  for (const donor of donors) { const place = await resolve(donor.project_id); if (ok(place)) return { place, projectId: donor.project_id }; }
+  return { place: own, projectId };
 }
 
 export function episodeSweepDeps(ctx: ServerCore, services: Services, stopped: () => boolean): EpisodeEnrichDeps {
@@ -52,7 +54,7 @@ export function episodeSweepDeps(ctx: ServerCore, services: Services, stopped: (
     },
     readEvents: (threadId) => services.harness.threadEvents(threadId, ERRAND_EPISODE_TRACE_EVENTS),
     runModel: async (prompt, projectId, runId) => {
-      const place = await analystPlace(ctx.db, projectId ?? null, (id) => services.resolveProjectWriterHost({ projectId: id } as never).catch(() => null));
+      const { place, projectId: threadProject } = await analystPlace(ctx.db, projectId ?? null, (id) => services.resolveProjectWriterHost({ projectId: id } as never).catch(() => null));
       if (!place || (place as { status?: string }).status !== "resolved") throw new Error("episode_enrich_no_host");
       const project = place as { hostId: string; path: string };
       // The analyzer is a full-access agent: in the project folder it read other threads' unmasked histories
@@ -76,7 +78,7 @@ export function episodeSweepDeps(ctx: ServerCore, services: Services, stopped: (
         hostId: host.hostId, envPath: host.path, folderBlock,
       });
       const analyzer = { providerId: role.providerId, model: role.model, reasoningLevel: role.reasoningEffort, serviceTier: role.serviceTier };
-      const text = await services.ruleScan.runAnalyzer(projectId ?? "*", `episode ${runId}`, prompt, host, analyzer, { episode: runId });
+      const text = await services.ruleScan.runAnalyzer(threadProject ?? "*", `episode ${runId}`, prompt, host, analyzer, { episode: runId });
       return { text, model: `${analyzer.providerId}/${analyzer.model}` };
     },
     chooseKey: async (input, { runId, projectId }) => {

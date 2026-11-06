@@ -20,12 +20,12 @@ describe("the episode analyst's machine", () => {
     add("r3", "proj_personal", "pending", 3_000);
     const hosts: Record<string, unknown> = { proj_old: { status: "resolved", hostId: "ovh", path: "/o" }, proj_mini: { status: "resolved", hostId: "mini", path: "/m" } };
     const resolve = async (id: string | undefined) => (id && hosts[id]) ?? { status: "missing_host" };
-    expect(await analystPlace(database as never, "proj_personal", resolve)).toMatchObject({ hostId: "mini" });
-    expect(await analystPlace(database as never, "proj_old", resolve)).toMatchObject({ hostId: "ovh" });
+    expect(await analystPlace(database as never, "proj_personal", resolve)).toMatchObject({ place: { hostId: "mini" }, projectId: "proj_mini" });
+    expect(await analystPlace(database as never, "proj_old", resolve)).toMatchObject({ place: { hostId: "ovh" }, projectId: "proj_old" });
   });
 
   it("with no analyzed project anywhere the own answer comes back, so the sweep reports no host", async () => {
     const { database } = db();
-    expect(await analystPlace(database as never, "proj_personal", async () => ({ status: "missing_host" }))).toEqual({ status: "missing_host" });
+    expect(await analystPlace(database as never, "proj_personal", async () => ({ status: "missing_host" }))).toEqual({ place: { status: "missing_host" }, projectId: "proj_personal" });
   });
 });
