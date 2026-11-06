@@ -79,3 +79,37 @@ describe("a draft in the Workflow architect", () => {
     expect((await architect.capabilities({ projectId: "p1", threadId: "t", sections: ["specialists"] }) as { specialists: { roles: string[] } }).specialists.roles).toContain("blog-writer");
   });
 });
+
+describe("publishing a test fixture", () => {
+  const dirs: string[] = [];
+  afterEach(async () => { await Promise.all(dirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true }))); });
+  const setup = async (projectName: string) => {
+    const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
+    const db = bb.storage.database();
+    bb.storage.migrate(db, migrations);
+    const globalDir = await mkdtemp(join(tmpdir(), "lp-fixture-"));
+    dirs.push(globalDir);
+    const deps: ArchitectDeps = {
+      globalDir: () => globalDir, projectPlace: async () => null, writeProjectFile: async () => ({ status: "conflict", path: "", afterSha256: null, reason: "no machine" }),
+      hasExecutor: () => true, capabilityPorts: () => ({}), projectName: async () => projectName,
+    };
+    return createWorkflowArchitect({ db, log: () => undefined, realtime: { notify: () => undefined } } as never, { workflowEngine: null } as unknown as Pick<Services, "workflowEngine">, deps);
+  };
+  const publishAs = async (architect: Awaited<ReturnType<typeof setup>>, id: string, scope: "global" | "project") => {
+    const draft = architect.drafts.create({ projectId: "p1", threadId: null, scope, name: "Fixture", description: "A fixture" });
+    architect.patch({ projectId: "p1", draftId: draft.id, ops: [{ op: "set_meta", set: { id } }] as never });
+    return await architect.publish({ projectId: "p1", draftId: draft.id }) as { published: boolean; reason: string };
+  };
+
+  it("is refused outside a sandbox, globally or in a real project, before anything is checked or written", async () => {
+    const real = await setup("SelfyStudio");
+    expect(await publishAs(real, "pm-fixture-invoice", "project")).toMatchObject({ published: false, reason: "fixture_outside_sandbox" });
+    expect(await publishAs(real, "fixture-a", "global")).toMatchObject({ published: false, reason: "fixture_outside_sandbox" });
+    expect(await publishAs(await setup("LP sandbox rules"), "pm-fixture-invoice", "global")).toMatchObject({ reason: "fixture_outside_sandbox" });
+  });
+
+  it("goes on to the usual checks inside a sandbox project, and a real id is not touched by the rule", async () => {
+    expect((await publishAs(await setup("LP sandbox rules"), "pm-fixture-invoice", "project")).reason).not.toBe("fixture_outside_sandbox");
+    expect((await publishAs(await setup("SelfyStudio"), "invoice-send-2", "global")).reason).not.toBe("fixture_outside_sandbox");
+  });
+});

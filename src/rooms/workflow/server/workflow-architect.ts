@@ -24,6 +24,7 @@ import { EMPLOYEE_IDS, isCustomAgentId, isEmployeeSpecialist } from "../../nativ
 import { modelCatalogOf } from "../../core/server";
 import { registerObservedTool, ToolError } from "../../core/server";
 import { stringAt } from "../../core/server";
+import { DRILL_SANDBOX_PROJECT_IDS, isSandboxProjectName } from "../../stability/server";
 import type { ServerCore } from "../../core/server";
 import type { Services } from "../../core/server";
 
@@ -33,6 +34,8 @@ const MAX_SHOWN_PROBLEMS = 30;
 type Place = { hostId: string; path: string };
 
 /** What the architect touches outside the plugin's database; a test replaces them. */
+const FIXTURE_ID = /^(pm-)?fixture-/;
+
 export type ArchitectDeps = {
   globalDir: () => string;
   /** The folder and machine of the project the calling chat works in. */
@@ -43,6 +46,8 @@ export type ArchitectDeps = {
   /** A skill, plugin, MCP, secret and machine lister for the project; see collectCapabilities. */
   capabilityPorts: (input: { projectId: string; threadId: string }) => Parameters<typeof collectCapabilities>[0];
   hasExecutor: (key: string) => boolean;
+  /** The project's name, to tell a sandbox (canary.ts isSandboxProjectName); null when unknown. */
+  projectName?: (projectId: string) => Promise<string | null>;
   /** Whether `specialist:<id>` names a bundled specialist or an agent the owner created; null when the owner's agents have not been read yet. */
   specialistKnown?: (id: string) => boolean | null;
 };
@@ -60,6 +65,7 @@ export function realDeps(ctx: ServerCore, services: Services): ArchitectDeps {
   const catalog = modelCatalogOf(ctx);
   return {
     globalDir: () => globalWorkflowDir(),
+    projectName: async (projectId) => stringAt(await bb.sdk.projects.get({ projectId }).catch(() => null), "name"),
     specialistKnown: (id) => {
       if (SPECIALIST_ROLES.includes(id as never) || isEmployeeSpecialist(id)) return true;
       const own = ctx.knownCustomAgentIds();
@@ -246,6 +252,12 @@ export function createWorkflowArchitect(ctx: ServerCore, services: Pick<Services
   async function publish(input: { projectId: string; threadId?: string; draftId: string }) {
     const draft = own(input.draftId, input.projectId);
     const refuse = (reason: string, next: string, extra: Record<string, unknown> = {}) => ({ draftId: draft.id, published: false, reason, next, ...extra });
+    // A test fixture (pm-fixture-*, fixture-*) is published only into a sandbox project, never globally: the router of a real project must not offer it.
+    const draftId = stringAt(draft.definition, "id") ?? "";
+    if (FIXTURE_ID.test(draftId) && !(draft.scope === "project" && (DRILL_SANDBOX_PROJECT_IDS.includes(draft.projectId) || isSandboxProjectName(await deps.projectName?.(draft.projectId) ?? null)))) {
+      ctx.log(`workflow_publish_refused:fixture_outside_sandbox ${draftId} ${draft.projectId}`);
+      return refuse("fixture_outside_sandbox", "a test fixture is published only into a sandbox project (LP sandbox / LP bench); rename it with set_meta {id} if it is real");
+    }
     const load = loaded(draft);
     if (!load.ok) return refuse("invalid", "fix the errors with lane_pilot_workflow_draft, action patch", { problems: load.problems.filter((problem) => problem.level === "error").slice(0, MAX_SHOWN_PROBLEMS) });
     if (!draft.tests) return refuse("no_tests", "run lane_pilot_workflow_draft, action test first");

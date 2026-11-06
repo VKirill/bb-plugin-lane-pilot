@@ -39,6 +39,8 @@ export const ROLE_GROUPS: Array<{ id: RoleGroupId; roles: RoleSpec[] }> = [
     { id: "council-seat", testId: "council-settings", detail: "council", enabled: { key: "council.judge", fallback: true, label: "settingCouncilJudge" },
       keys: ["council.judge", ...COUNCIL_SEATS.flatMap((seat) => [`council.${seat}.provider`, `council.${seat}.model`, `council.${seat}.reasoning_effort`])] },
     { id: "rules-analyzer", testId: "rules-analyzer", model: "rules", keys: [] },
+    { id: "episode-analyst", keys: [] },
+    { id: "wall-hunter", keys: [] },
   ] },
   { id: "project", roles: [
     { id: "docs-maintainer", testId: "docs-picker", model: "docs", enabled: { key: "docs.enabled", mode: true, label: "groupDocs" }, keys: ["docs.enabled", ...picked("docs")] },
