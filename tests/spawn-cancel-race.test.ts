@@ -1,9 +1,9 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import plugin from "../server";
 import type { PrototypeConfig, TaskV2 } from "../src/rooms/contracts";
 import { createAttempt, createRun, createTask, getAttempt, openDatabase, savePrototypeConfig, setRunThread, transitionAttempt } from "../src/rooms/storage/database";
-import { createWriterSpawn } from "../src/rooms/writer/server/spawn";
+import { START_STALL_MS, createWriterSpawn } from "../src/rooms/writer/server/spawn";
 
 const config: PrototypeConfig = {
   projectId:"P", hostId:"h", pmWorkspacePath:"/repo", writerWorkspacePath:"/repo",
@@ -16,7 +16,7 @@ const task: TaskV2 = {
 };
 
 /** The PM's stop lands while the writer starts: the attempt is `cancel_requested` before the spawn finds out. */
-function world(options:{ onBreaker?:boolean; providers?:unknown[]; spawn?:() => Promise<unknown> }) {
+function world(options:{ onBreaker?:boolean; providers?:unknown[]; spawn?:() => Promise<unknown>; settings?:() => Promise<unknown> }) {
   const { bb } = createFakePluginHost({ pluginId:"lane-pilot" });
   const db = openDatabase(bb);
   createRun(db, "run", "P", "cli", "/repo");
@@ -36,13 +36,13 @@ function world(options:{ onBreaker?:boolean; providers?:unknown[]; spawn?:() => 
       if (method === "gitCreateWorktree") return { status:"ready", path:"/wt/a1/repo", branch:"lane/a1", reason:null };
       return {};
     } },
-    effectiveProjectSettings:async () => { if (!options.onBreaker) stop(); return { values:{ "jev.LANE_JEV_EFFORT":false, "memory.enabled":false, "adoc.040":"auto" } }; },
+    effectiveProjectSettings:options.settings ?? (async () => { if (!options.onBreaker) stop(); return { values:{ "jev.LANE_JEV_EFFORT":false, "memory.enabled":false, "adoc.040":"auto" } }; }),
   };
   const services = { providerBreaker:{ decide:() => { if (options.onBreaker) stop(); return options.onBreaker ? { allow:false, reason:"open" } : { allow:true }; } }, ruleScan:{ chainForRun:async () => [] } };
   const writer = createWriterSpawn(ctx as never, services as never);
   const run = () => writer.spawnWriterAttempt({ projectId:"P", runId:"run", taskId:"t1", attemptId:"a1", config, task, plan:"write", pmThreadId:"pm" });
   const refused = () => db.prepare("SELECT from_state, to_state FROM lane_pilot_attempt_transition WHERE attempt_id='a1' AND refused=1").all();
-  return { db, run, refused };
+  return { db, run, refused, stop };
 }
 
 describe("a stop requested while the writer starts", () => {
@@ -84,5 +84,34 @@ describe("a stop requested while the writer's thread is looked up again", () => 
     expect(getAttempt(db, triple.attemptId)).toMatchObject({ state:"canceled" });
     expect(db.prepare("SELECT 1 FROM lane_pilot_attempt_transition WHERE attempt_id=? AND refused=1").all(triple.attemptId)).toEqual([]);
     await harness.lifecycle.dispose();
+  });
+});
+
+describe("a writer start that waits on something that never answers", () => {
+  afterEach(() => { vi.useRealTimers(); });
+  const never = () => new Promise<never>(() => {});
+
+  it("ends canceled within a poll once its stop is requested", async () => {
+    vi.useFakeTimers();
+    const w = world({ settings:never });
+    const result = w.run();
+    w.stop();
+    await vi.advanceTimersByTimeAsync(20_000);
+    await expect(result).resolves.toMatchObject({ ok:false, status:"canceled", attemptId:"a1" });
+    expect(getAttempt(w.db, "a1")?.reason).toContain("step settings");
+    expect(w.refused()).toEqual([]);
+  });
+
+  it("fails with the step it waited at after the stall limit, and not before", async () => {
+    vi.useFakeTimers();
+    const w = world({ settings:never });
+    let settled = false;
+    const result = w.run().then((value) => { settled = true; return value; });
+    await vi.advanceTimersByTimeAsync(START_STALL_MS - 30_000);
+    expect(settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(60_000);
+    await expect(result).resolves.toMatchObject({ ok:false, status:"spawn_rejected", attemptId:"a1" });
+    expect(getAttempt(w.db, "a1")).toMatchObject({ state:"spawn_rejected" });
+    expect(getAttempt(w.db, "a1")?.reason).toMatch(/writer_start_stalled.*step settings/);
   });
 });

@@ -92,6 +92,30 @@ async function listTaskFolder(bb:{sdk:{files:{read(args:{hostId:string;rootPath:
   return { path:`${rel}/`, files:[...files].sort() };
 }
 
+type SpawnInput = {
+    projectId:string; runId:string; taskId:string; attemptId:string;
+    config:PrototypeConfig; task:TaskV2; plan:string; pmThreadId:string; pmReadContext?:string;
+    /** A fallback writer: its model, and its effort when it is one of the writer's fallbacks (the PM's model has none). */
+    emergency?:{providerId:string;model:string;reason:string;reasoningLevel?:string}; retryIndex?:number;
+    /** The previous attempt's failure, for a retry (`previousAttemptBrief`). */
+    previousAttempt?:string;
+    /** The writer the start chose for this task (Jev's pick or the rotation's share): read here over the stored settings, or the pick is lost. */
+    writerSettings?:Record<string, unknown>;
+    /**
+     * A fallback that continues an interrupted attempt: it works in that attempt's worktree with the edits left there, against
+     * the dirt baseline the attempt was measured with, and starts from the handoff brief.
+     */
+    continuation?:{workspacePath:string; environmentId:string|null; dirtBefore:DirtSnapshot[]; fromThreadId:string; brief:string};
+};
+type SpawnResult =
+    | { ok:true; threadId:string; providerId:string|null; model:string|null; reasoningLevel?:string; serviceTier?:"default"|"fast"|null; selectionSource?:{providerId:string;model:string;reasoningLevel:string;serviceTier:"default"|"fast"|null;reasoningLevelSource:"explicit"|"client-preference"}; dirtBefore:import("../cli-outcome").DirtSnapshot[]; workspacePath:string; executionPacketSha256?:string }
+    | { ok:false; status:"spawn_rejected" | "canceled" | "blocked"; reason:string; attemptId:string };
+
+/** Generous over a big repo's worktree, baseline and holder start (minutes); a start past it waits on something that will not answer. */
+export const START_STALL_MS = 15 * 60_000;
+const START_POLL_MS = 15_000;
+const startSteps = new Map<string, string>();
+
 export function createWriterSpawn(ctx: ServerCore, services: Services) {
   const { bb, db, effectiveProjectSettings, host } = ctx;
   const liveFolder = createLiveFolder(ctx);
@@ -109,28 +133,13 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
     return reason;
   }
 
-  async function spawnWriterAttempt(input: {
-    projectId:string; runId:string; taskId:string; attemptId:string;
-    config:PrototypeConfig; task:TaskV2; plan:string; pmThreadId:string; pmReadContext?:string;
-    /** A fallback writer: its model, and its effort when it is one of the writer's fallbacks (the PM's model has none). */
-    emergency?:{providerId:string;model:string;reason:string;reasoningLevel?:string}; retryIndex?:number;
-    /** The previous attempt's failure, for a retry (`previousAttemptBrief`). */
-    previousAttempt?:string;
-    /** The writer the start chose for this task (Jev's pick or the rotation's share): read here over the stored settings, or the pick is lost. */
-    writerSettings?:Record<string, unknown>;
-    /**
-     * A fallback that continues an interrupted attempt: it works in that attempt's worktree with the edits left there, against
-     * the dirt baseline the attempt was measured with, and starts from the handoff brief.
-     */
-    continuation?:{workspacePath:string; environmentId:string|null; dirtBefore:DirtSnapshot[]; fromThreadId:string; brief:string};
-  }): Promise<
-    | { ok:true; threadId:string; providerId:string|null; model:string|null; reasoningLevel?:string; serviceTier?:"default"|"fast"|null; selectionSource?:{providerId:string;model:string;reasoningLevel:string;serviceTier:"default"|"fast"|null;reasoningLevelSource:"explicit"|"client-preference"}; dirtBefore:import("../cli-outcome").DirtSnapshot[]; workspacePath:string; executionPacketSha256?:string }
-    | { ok:false; status:"spawn_rejected" | "canceled" | "blocked"; reason:string; attemptId:string }
-  > {
+  async function spawnWriterAttemptOnce(input: SpawnInput): Promise<SpawnResult> {
     let selectedProviderId:string|null=null;
     let selectedModel:string|null=null;
     let lastExecution:{reasoningLevel:string;serviceTier:"default"|"fast"|null;selectionSource:{providerId:string;model:string;reasoningLevel:string;serviceTier:"default"|"fast"|null;reasoningLevelSource:"explicit"|"client-preference"}}|null=null;
     transitionAttempt(db, input.attemptId, "spawn_requested");
+    const at=(step:string)=>startSteps.set(input.attemptId,step);
+    at("settings");
     // A half-open trial this attempt reserved and has not handed to a running writer (2026-10-29 audit A-034).
     let unusedTrial: { key: string; token: number } | null = null;
     let writerHoldsTrial = false;
@@ -165,6 +174,7 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
         const content=file&&typeof file==="object"?(file as {content?:unknown}).content:null;
         return typeof content==="string"?new TextEncoder().encode(content):null;
       };
+      at("knowledge");
       const { allRules, rules, rulesText, mixed }=await writerKnowledge({db,host,chainForRun:(runId)=>services.ruleScan.chainForRun(runId)},
         {projectId:input.projectId,runId:input.runId,hostId:input.config.hostId,task:input.task,memorySettings,readBytes});
       // A fresh writer of an area hears what its earlier tasks decided, in place of the thread that remembered it.
@@ -296,6 +306,7 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
       // Set when the attempt's worktree is a BB environment of Lane Pilot's own provider; `environment` is then the old
       // path's answer for the same worktree, which the attempt falls back to.
       let providerEnvironment:ProviderEnvironment|null=null;
+      at("worktree");
       if (input.continuation) {
         // The interrupted attempt's worktree is kept as it was left: its edits and its dirt baseline stay as they were.
         const continued=input.continuation;
@@ -455,6 +466,7 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
       }
       const helperSnapshot = requireHelperSpawn({ bb, db, projectId:input.projectId, runId:input.runId });
       // Jev picks the task's skills before the writer starts; the picks and the PM's hints are the writer's extra access.
+      at("skills");
       const writerSkills = await skillPick.pick({ attemptId:input.attemptId, projectId:input.projectId, hostId:input.config.hostId,
         projectCwd:input.task.project_cwd, task:input.task, plan:input.plan, settings });
       // An OpenCode writer's guard reads its skills from the worktree: the picked ones are linked there before it starts.
@@ -536,6 +548,12 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
         },
       };
       const launch = (target:WriterEnvironment) => spawnWithSeam(() => fullAccessSpawn(bb, { ...launchArgs, environment:target }));
+      // The watchdog below ended this start while it waited: a thread made now would belong to no attempt.
+      if (getAttempt(db, input.attemptId)?.state !== "spawn_requested") {
+        const reason = "the writer start ended while it was being prepared";
+        return { ok:false, status:endSpawnFailure(db, input.attemptId, reason), reason, attemptId:input.attemptId };
+      }
+      at("launch");
       const spawned = providerEnvironment ? await launchOnProvider({ input, providerEnvironment, fallback:environment, launch }) : await launch(environment);
       const writerThreadId = stringAt(spawned, "id") ?? "";
       if (!writerThreadId) throw new Error("threads.spawn returned no writer thread id");
@@ -544,6 +562,10 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
         await bb.sdk.threads.stop({ threadId:writerThreadId }).catch(() => undefined);
         transitionAttempt(db, input.attemptId, "canceled", { threadId:writerThreadId, reason:"canceled while its writer was starting" });
         return { ok:false, status:"canceled", reason:"canceled while its writer was starting", attemptId:input.attemptId };
+      }
+      if (getAttempt(db, input.attemptId)?.state !== "spawn_requested") {
+        await bb.sdk.threads.stop({ threadId:writerThreadId }).catch(() => undefined);
+        return { ok:false, status:"spawn_rejected", reason:"the writer thread came after its start had ended", attemptId:input.attemptId };
       }
       transitionAttempt(db, input.attemptId, "running", { threadId:writerThreadId });
       // A BB environment, a folder in place: the base is asked of git (a worktree Lane Pilot made recorded its own already).
@@ -592,8 +614,35 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
       return { ok:true, threadId: await services.reconcileAttemptThread(input.projectId, attempt), providerId:selectedProviderId, model:selectedModel, dirtBefore:attempt.dirt_before,
         workspacePath:attempt.workspace_path ?? input.task.project_cwd };
     } finally {
+      startSteps.delete(input.attemptId);
       if (!writerHoldsTrial && unusedTrial) services.providerBreaker.releaseTrial(unusedTrial.key, unusedTrial.token);
     }
+  }
+
+  /**
+   * A start that never makes its thread ends instead of holding the attempt «starting» and its task's slots forever: a stop
+   * request ends it within a poll, and a start with no thread after START_STALL_MS fails with the step it waited at.
+   * Drill 2026-11-07 (0.1.483): parallel3 task a waited on BB or the machine with no answer and no log; its stop never landed.
+   */
+  async function spawnWriterAttempt(input: SpawnInput): Promise<SpawnResult> {
+    const started = Date.now();
+    let poll: ReturnType<typeof setInterval> | undefined;
+    const watchdog = new Promise<SpawnResult>((resolve) => {
+      poll = setInterval(() => {
+        const state = getAttempt(db, input.attemptId)?.state;
+        const step = startSteps.get(input.attemptId) ?? "start";
+        const stalled = Date.now() - started >= START_STALL_MS;
+        if (state === "spawn_requested" && !stalled) return;
+        if (state !== "spawn_requested" && state !== "cancel_requested") return;
+        const reason = state === "cancel_requested" ? `stopped while the writer start waited at step ${step}`
+          : `writer_start_stalled: no writer thread after ${Math.round(START_STALL_MS / 60_000)} min, waiting at step ${step}`;
+        bb.log.warn(`Lane Pilot writer ${input.attemptId}: ${reason}`);
+        resolve({ ok:false, status:endSpawnFailure(db, input.attemptId, reason), reason, attemptId:input.attemptId });
+      }, START_POLL_MS);
+      poll.unref?.();
+    });
+    try { return await Promise.race([spawnWriterAttemptOnce(input), watchdog]); }
+    finally { clearInterval(poll); }
   }
 
   /**
