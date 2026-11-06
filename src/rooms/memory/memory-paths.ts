@@ -69,6 +69,8 @@ export const MEMORY_PATHS: readonly MemoryPath[] = [
       { file: "src/rooms/learning/service.ts", primitive: "contributeInstructions", count: 1 },
       { file: "src/rooms/learning/service.ts", primitive: "pmResumeInstructions", count: 1 },
     ] },
+  { id: "bb.thread", consumer: "every ordinary BB thread of the project (contributeInstructions, the L1 showcase)", carries: ["core"], alwaysOn: [], status: "probed",
+    sites: [{ file: "src/rooms/memory/server/thread-block.ts", primitive: "contributeInstructions", count: 1 }] },
   { id: "pm.rules_tool", consumer: "the PM tool lane_pilot_memory {action:\"learned\", op:\"rules\"}", carries: ["rule"], alwaysOn: ["rule"], status: "probed",
     sites: [{ file: "src/rooms/learning/service.ts", primitive: "pmRulesOf", count: 1 }] },
   { id: "pm.contract", consumer: "path-scoped rules returned with a queued task contract", carries: ["rule"], alwaysOn: [], status: "exempt",

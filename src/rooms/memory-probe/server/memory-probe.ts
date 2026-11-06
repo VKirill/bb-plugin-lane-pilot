@@ -4,7 +4,7 @@ import { storeMemoryRecords, type MemoryKind, type MemorySettings } from "@lane-
 import { sha256Hex } from "@lane-pilot/kit";
 import { taskV2Schema, type TaskV2 } from "../../contracts";
 import { MEMORY_PATHS, pathById, type MemoryPath, type ProbeKind } from "../../memory";
-import { pmMemoryContext, reviewerMemoryFor, taskMemoryContext } from "../../memory/server";
+import { pmMemoryContext, reviewerMemoryFor, taskMemoryContext, threadMemoryBlock } from "../../memory/server";
 import { stickyTurnPromptWithRules, writerBriefSegments, writerContextBlocks, writerKnowledge } from "../../writer/server";
 import { memoryUnanswered, pmResumeInstructions, pmRulesOf, pmRulesPromptBlock, ruleBudget, type MemoryUnanswered } from "../../learning";
 import { codeCritiquePrompt, codeRepairPrompt } from "../../critique";
@@ -99,6 +99,12 @@ const PROBES: Record<string, (c: Context) => Promise<Probe> | Probe> = {
   "pm.resume": (c) => {
     const text = pmResumeInstructions(c.db, c.projectId, []) ?? "";
     return { delivered: text, negative: text };
+  },
+  // A thread id no plugin table recorded is an ordinary thread; the negative asks the same thread id of another project.
+  "bb.thread": (c) => {
+    const other = (c.db.prepare("SELECT project_id FROM lane_pilot_memory WHERE project_id != ? LIMIT 1").get(c.projectId) as { project_id: string } | undefined)?.project_id ?? "memory-probe-none";
+    return { delivered: threadMemoryBlock(c.db, { projectId: c.projectId, threadId: "memory-probe-thread" }) ?? "",
+      negative: threadMemoryBlock(c.db, { projectId: other, threadId: "memory-probe-thread" }) ?? "" };
   },
   "pm.rules_tool": (c) => {
     const text = lines(pmRulesOf(c.db, c.projectId).map((rule) => rule.rule));
