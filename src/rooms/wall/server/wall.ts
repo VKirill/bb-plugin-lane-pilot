@@ -5,7 +5,7 @@ import { pickHunter, type WallConfig } from "../config";
 import { conveyorState } from "../../conveyor";
 import type { ServerCore, Services } from "../../core/server";
 import { createAttempt, getAttempt } from "../../storage";
-import { reopenWriterStages } from "../../runs/server";
+import { projectRoleField, reopenWriterStages } from "../../runs/server";
 import { sendServiceMessage } from "../../relay/server";
 import { CONFIG_KEY as SELF_REPAIR_CONFIG_KEY, SELF_REPAIR_DEFAULTS, VERSION, readRepairRecord, readTail, setRepairHooks } from "../../self-repair/server";
 import type { SelfRepairConfig } from "../../self-repair/server";
@@ -85,6 +85,8 @@ export function createPluginWall(ctx: ServerCore, services: Services): WallApi {
       // A `[lane-pilot-selection:…]` token in a fact (a phase goal before 0.1.410) made the dispatch hook refuse the reader with 409 (2026-10-31).
       prompt: withoutSelectionMarkers(prompt),
       ...writerExecutionSelection(hunter.providerId, hunter.model, who === "analysis" ? "high" : hunter.reasoningLevel, "default"),
+      // The wall-hunter profile: no plugin, skill or MCP server; the prompt carries what the reader needs.
+      ...projectRoleField(bb, db, cfg.projectId, hunter.providerId, "wall-hunter"),
       pluginMetadata: { role: `wall-${who}`, ...graph.metadata, spawnId: graph.spawnId },
     } as Parameters<typeof fullAccessSpawn>[1]);
     const threadId = stringAt(spawned, "id");

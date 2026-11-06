@@ -1,5 +1,6 @@
 import { writerReuseStats } from "../../writer";
 import { checksInFlight, failureClass, taskFamily } from "../../runs";
+import { projectRoleField } from "../../runs/server";
 import { OWNER_WORD_WAIT_MS } from "../../tasks";
 import { taskWordItemPrefix } from "../../lead";
 import { closeSync, fstatSync, openSync, readSync } from "node:fs";
@@ -1111,6 +1112,8 @@ export function createSelfRepair(ctx: ServerCore, engineOf?: () => WorkflowEngin
       title: `Lane Pilot self-repair: ${signature.split(":").slice(2).join(":").slice(0, 70)}`,
       prompt: repairPrompt(samples, signature, worktree, cfg, { now, lastOwnerAt, ...(night ? { brief: night.brief } : {}) }),
       ...writerExecutionSelection(repairer.providerId, repairer.model, repairer.reasoningEffort, "default"),
+      // The code-repair profile (writer skills, gitnexus): without it the repair carried every plugin's instructions and the whole skill list.
+      ...projectRoleField(bb, db, cfg.projectId, repairer.providerId, "code-repair"),
       pluginMetadata: { role: "self-repair", signature, spawnId, repairBranch: worktree.branch, ...graphStepMetadata(args.step) },
     } as Parameters<typeof fullAccessSpawn>[1]);
     return stringAt(result, "id");

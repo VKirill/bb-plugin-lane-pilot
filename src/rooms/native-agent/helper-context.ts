@@ -29,8 +29,9 @@ export const CORE_PROVIDER_GROUPS = {
   // OpenCode v2 runs one shared service per machine: the opencode2 bridge (1.1.0-vk.3) turns skills and MCP servers into the
   // session's permission rules; native plugins and project instructions load for the whole service and cannot be narrowed.
   opencode2: ["bbPlugins", "skills", "mcpServers"],
-  // No devin row: the VK core (packages/domain/src/vk-session-policy.ts) does not host devin under a required policy, and
-  // this table must equal the core's advertisement key for key, or Lane Pilot stops recognising the core (0.1.396–0.1.402).
+  // The ACP provider plugins on the shared bridge (devin, zcode, acp-antigravity, VK_ACP_PLUGIN_POLICY_PROVIDERS in the core) are not
+  // rows here: the core lists them with the Cursor rules, and the parse below accepts any such extra row (ACP_EXTRA_GROUPS), so a core that
+  // adds one does not stop Lane Pilot recognising it — the exact match did, from 0.48.1-vk (devin, zcode) to 2026-11-06.
 } as const;
 /** Cores before 0.44.0-vk.15 could not narrow BB skills for Cursor. */
 const LEGACY_CURSOR_GROUPS = ["bbPlugins", "mcpServers"] as const;
@@ -318,15 +319,25 @@ function sameStringSet(actual: unknown, expected: readonly string[]): boolean {
   return left.every((item, index) => item === right[index]);
 }
 
+/** What the core may list for a provider beyond the table: an ACP agent on the shared bridge narrows only these (the Cursor rules). */
+const ACP_EXTRA_GROUPS = ["bbPlugins", "skills", "mcpServers"] as const;
+const ACP_EXTRA_SWITCHES = ["userInstructions"] as const;
+
+/**
+ * Every row of the table exactly as expected. A row of a provider the table does not know (`known`) may hold only the ACP subset:
+ * such a provider runs on the core's word. A known provider's row outside the expected variant is still a mismatch.
+ */
 function advertisedMatrixMatch(
   raw: unknown,
   expected: Record<string, readonly string[]>,
+  known: Record<string, readonly string[]>,
+  extra: readonly string[],
 ): raw is Record<string, string[]> {
   if (!raw || typeof raw !== "object") return false;
   const row = raw as Record<string, unknown>;
-  const keys = Object.keys(expected);
-  if (Object.keys(row).length !== keys.length) return false;
-  return keys.every((key) => sameStringSet(row[key], expected[key]!));
+  return Object.keys(expected).every((key) => sameStringSet(row[key], expected[key]!))
+    && Object.keys(row).filter((key) => !Object.hasOwn(expected, key)).every((key) => !Object.hasOwn(known, key)
+      && isStringArray(row[key]) && (row[key] as string[]).every((name) => extra.includes(name)));
 }
 
 export function parseRequiredSessionPolicyCapability(agents: {
@@ -343,8 +354,8 @@ export function parseRequiredSessionPolicyCapability(agents: {
     || row.parentCeiling !== true
     || row.bridgeHandshakeVersion !== REQUIRED_SESSION_HANDSHAKE_VERSION
     || (row.hostDaemonProtocolVersion !== REQUIRED_SESSION_HOST_DAEMON_PROTOCOL && row.markerStorage !== "thread-plugin-metadata")
-    || !ADVERTISED_GROUPS.some((groups) => advertisedMatrixMatch(row.providerGroups, groups))
-    || !ADVERTISED_SWITCHES.some((switches) => advertisedMatrixMatch(row.instructionSwitches, switches))
+    || !ADVERTISED_GROUPS.some((groups) => advertisedMatrixMatch(row.providerGroups, groups, CORE_PROVIDER_GROUPS, ACP_EXTRA_GROUPS))
+    || !ADVERTISED_SWITCHES.some((switches) => advertisedMatrixMatch(row.instructionSwitches, switches, CORE_INSTRUCTION_SWITCHES, ACP_EXTRA_SWITCHES))
     || !isStringArray(row.mandatoryBbPlugins)
     || !MANDATORY_BB_PLUGINS.every((name) => (row.mandatoryBbPlugins as string[]).includes(name))
     || !isStringArray(row.mandatoryMcpServers)
