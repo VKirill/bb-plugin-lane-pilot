@@ -45,17 +45,20 @@ describe("threadMemoryBlock", () => {
     expect(threadMemoryBlock(db, { projectId: "P", threadId: "thr_pm" })).toBeNull();
   });
 
-  it("gives a plugin thread nothing: a hidden analyzer's id is recorded in a workflow spawn effect", () => {
+  it("gives a hidden analyzer nothing (it must not run tools) and a pilot working thread the rule alone", () => {
     const db = setup();
     core(db, "P", "Writers keep one port per service.");
     db.prepare("INSERT INTO lane_pilot_wf_effect(id,run_id,step_key,effect_key,kind,state,result_json,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)")
       .run("e1", "wf-1", "step-1", "spawn:rules-analyzer", "night.spawn", "done", JSON.stringify({ threadId: "thr_analyzer" }), 1, 1);
     expect(threadMemoryBlock(db, { projectId: "P", threadId: "thr_analyzer" })).toBeNull();
-    // And a writer thread of an attempt is just as much the plugin's own.
+    // A writer of an attempt and an errand helper work in the pilot: the rule reaches them, the facts come in their brief.
     createRun(db, "run-2", "P");
     db.prepare("INSERT INTO lane_pilot_task(id,run_id,kind,contract_json,created_at) VALUES(?,?,?,?,?)").run("t1", "run-2", "bb", "{}", 1);
     db.prepare("INSERT INTO lane_pilot_attempt(id,run_id,task_id,state,created_at,updated_at,thread_id) VALUES(?,?,?,?,?,?,?)").run("a1", "run-2", "t1", "running", 1, 1, "thr_writer");
-    expect(threadMemoryBlock(db, { projectId: "P", threadId: "thr_writer" })).toBeNull();
+    expect(threadMemoryBlock(db, { projectId: "P", threadId: "thr_writer" })).toBe(THREAD_MEMORY_RULE.join("\n"));
+    db.prepare("INSERT INTO lane_pilot_wf_effect(id,run_id,step_key,effect_key,kind,state,result_json,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)")
+      .run("e2", "wf-2", "work", "spawn:errand", "errand.spawn", "done", JSON.stringify({ threadId: "thr_helper" }), 1, 1);
+    expect(threadMemoryBlock(db, { projectId: "P", threadId: "thr_helper" })).toBe(THREAD_MEMORY_RULE.join("\n"));
   });
 
   it("never carries a fact of another project", () => {

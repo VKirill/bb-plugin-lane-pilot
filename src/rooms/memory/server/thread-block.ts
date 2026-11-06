@@ -4,10 +4,11 @@ import type { LanePilotDatabase } from "../../storage";
 import type { ServerCore } from "../../core/server";
 
 /**
- * The memory showcase every ordinary BB thread gets (M2): the project's L1 core facts plus the two lines that name the
- * one memory (`lane-memory` over the session RPCs) and the places it must not go. A PM thread keeps its own resume
- * block (learning room), and a thread the plugin spawned for itself (analyzers, helpers, repairs) carries its own
- * context, so both get nothing here.
+ * The memory rule every BB thread on every machine gets (M2), so work started anywhere in the pilot writes to one memory:
+ * an ordinary thread gets the project's L1 core facts plus the two lines naming the one memory (`bb lane-pilot memory`
+ * over the session RPCs) and the places it must not go; a thread the pilot spawned for work (writer, errand helper,
+ * repair) gets the two lines alone — its brief already carries the facts. A PM thread keeps its own memory block and
+ * tool (learning room), and a hidden analyzer must not run tools at all, so both get nothing.
  */
 
 /** The exact rule the block ends with (and the line AGENTS.md carries). */
@@ -90,15 +91,32 @@ function renderBlock(facts: readonly string[]): string {
   return `${head}${lines.join("\n")}\n${rule}`;
 }
 
-/** What an ordinary thread of the project is handed; null for a PM thread, a plugin thread, or a project with memory off. */
+/** A PM thread (its own memory block and tool) or a hidden analyzer (no tools): both get no block. */
+function silentThread(db: LanePilotDatabase, threadId: string): boolean {
+  const row = db.prepare(`SELECT (
+    EXISTS(SELECT 1 FROM lane_pilot_run WHERE pm_thread_id=?)
+    OR EXISTS(SELECT 1 FROM lane_pilot_activation WHERE pm_thread_id=?)
+    OR EXISTS(SELECT 1 FROM lane_pilot_pm_notice WHERE pm_thread_id=?)
+    OR EXISTS(SELECT 1 FROM lane_pilot_wf_effect WHERE kind='night.spawn' AND result_json LIKE '%' || ? || '%')
+  ) AS silent`).get(threadId, threadId, threadId, threadId) as { silent: number };
+  return row.silent === 1;
+}
+
+/**
+ * What a thread of the project is handed: facts + rule for an ordinary thread, the rule alone for the pilot's own working
+ * threads, null for a PM thread, a hidden analyzer, or a project with memory off. ponytail: a thread is known by the rows
+ * that record it, and a spawn records its id after the thread starts, so a just-spawned analyzer can still get the rule;
+ * its own prompt forbids tools. Upgrade: pluginMetadata in contributeInstructions.
+ */
 export function threadMemoryBlock(db: LanePilotDatabase, input: { projectId: string; threadId: string }): string | null {
-  if (pluginThread(db, input.threadId)) return null;
+  if (silentThread(db, input.threadId)) return null;
   const settings = memorySettingsFor(db, input.projectId);
   if (!settings.enabled) return null;
+  if (pluginThread(db, input.threadId)) return THREAD_MEMORY_RULE.join("\n");
   return renderBlock(l1Facts(db, input.projectId, settings.personalBot));
 }
 
-/** The second contributeInstructions contributor: the memory showcase for every thread that is not the plugin's own. */
+/** The second contributeInstructions contributor: the memory rule (and for an ordinary thread the facts) on every machine. */
 export function mountThreadBlock(ctx: ServerCore): void {
   const { bb, db } = ctx;
   try {
