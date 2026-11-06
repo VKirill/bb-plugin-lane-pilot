@@ -10,6 +10,7 @@ describe("the atlas of Lane Pilot (SMA D2-11)", () => {
   it("docs/atlas.md was generated from the registries the code has now", () => {
     const input = collectAtlasInput(root);
     expect(readFileSync(join(root, "docs/atlas.md"), "utf8"), "run: npx tsx scripts/generate-atlas.ts").toContain(`<!-- atlas:structure ${atlasHash(input)} -->`);
+    expect(readFileSync(join(root, "README.md"), "utf8"), "run: npx tsx scripts/generate-atlas.ts").toContain(`<!-- numbers:start ${atlasHash(input)} -->`);
   });
 
   it("lists every room once with its public API, and the hash ignores sizes", () => {
@@ -18,6 +19,9 @@ describe("the atlas of Lane Pilot (SMA D2-11)", () => {
     expect(input.rooms.find((room) => room.name === "wires")!.publicExports).toContain("wiresCommand");
     expect(atlasHash({ ...input, rooms: input.rooms.map((room) => ({ ...room, lines: room.lines + 1 })), largestFiles: [] })).toBe(atlasHash(input));
     expect(atlasHash({ ...input, rpc: [...input.rpc, "new_method"] })).not.toBe(atlasHash(input));
+    expect(atlasHash({ ...input, cli: [...input.cli, { name: "new-command", summary: "" }] })).not.toBe(atlasHash(input));
+    expect(input.cli.map((command) => command.name)).toContain("errands");
+    expect(input.graphs.length).toBeGreaterThan(50);
     expect(renderAtlas(input)).toContain("stateDiagram-v2");
   });
 });
