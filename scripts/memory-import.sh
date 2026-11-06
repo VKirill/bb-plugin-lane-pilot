@@ -12,6 +12,7 @@ fi
 source=$1 file=$2 project=$3 dry=false
 [ "${4:-}" = --dry-run ] && dry=true
 jq -n --arg s "$source" --arg p "$project" --rawfile j "$file" --argjson d "$dry" '{source: $s, projectId: $p, jsonl: $j, dryRun: $d}' > "$tmp"
-report="${file%.jsonl}.report$([ "$dry" = true ] && echo .dry).json"
+suffix=""; [ "$dry" = true ] && suffix=.dry
+report="${file%.jsonl}.report${suffix}.json"
 bb plugin rpc call lane-pilot memory_import --input-file "$tmp" --json | jq '.result // .' > "$report"
 jq -r '.summary' "$report"; echo "receipt: $report"
