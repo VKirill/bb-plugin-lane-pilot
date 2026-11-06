@@ -11,31 +11,34 @@ import { ERRAND_KINDS, ERRAND_KIND_ID, errandRoleFor, type ErrandKind } from "..
 type Db = { prepare(sql: string): { all(...params: unknown[]): unknown[]; get(...params: unknown[]): unknown } };
 
 export type ErrandOutcome = "running" | "done" | "blocked" | "failed" | "canceled";
+/** What the code saw of a done (errandCheck): `unknown` for a run before CHECK lines, and for one that did not end in a report. */
+export type ErrandVerifiedOutcome = "done_checked" | "done_unchecked" | "blocked" | "unknown";
 export type ErrandKindOrNone = ErrandKind | "none";
 export const ERRAND_KINDS_WITH_NONE: readonly ErrandKindOrNone[] = [...ERRAND_KINDS, "none"];
 export type ErrandSource = { type: "schedule"; name: string } | { type: "pm"; threadId: string | null } | { type: "other" };
 export type ErrandRow = {
   id: string; projectId: string | null; title: string; kind: ErrandKindOrNone; kindBy: string; providerId: string; model: string;
-  outcome: ErrandOutcome; reason: string; source: ErrandSource; threadId: string | null; tokens: number; costUsd: number; startedAt: number; endedAt: number | null;
+  outcome: ErrandOutcome; verified: ErrandVerifiedOutcome; reason: string; source: ErrandSource; threadId: string | null; tokens: number; costUsd: number; startedAt: number; endedAt: number | null;
 };
 export type KindSummary = {
   kind: ErrandKindOrNone; role: string; providerId: string; model: string; effort: string; source: string;
-  runs: number; done: number; blocked: number; failed: number; costUsd: number; jevWouldPick: number;
+  runs: number; done: number; checked: number; blocked: number; failed: number; costUsd: number; jevWouldPick: number;
 };
 
 const DAY_MS = 86_400_000;
 const parse = <T,>(text: string | null | undefined, fallback: T): T => { try { return text ? (JSON.parse(text) as T) : fallback; } catch { return fallback; } };
 
 /** What an errand run came to, in the owner's five words; a helper the owner stopped is «canceled», not a failure (schedule-service.ts says the same). */
-export function errandOutcome(status: string, output: { state?: unknown; reason?: unknown } | null, reason: string | null): { outcome: ErrandOutcome; reason: string } {
-  if (status === "running" || status === "waiting") return { outcome: "running", reason: "" };
+export function errandOutcome(status: string, output: { state?: unknown; reason?: unknown; verified?: unknown } | null, reason: string | null): { outcome: ErrandOutcome; reason: string; verified: ErrandVerifiedOutcome } {
+  const verified: ErrandVerifiedOutcome = status === "succeeded" && (output?.verified === "done_checked" || output?.verified === "done_unchecked" || output?.verified === "blocked") ? output.verified : "unknown";
+  if (status === "running" || status === "waiting") return { outcome: "running", reason: "", verified };
   const why = typeof output?.reason === "string" && output.reason ? output.reason : reason ?? "";
-  if (status === "canceled") return { outcome: "canceled", reason: why };
+  if (status === "canceled") return { outcome: "canceled", reason: why, verified };
   if (status === "succeeded") {
-    if (output?.state === "done") return { outcome: "done", reason: "" };
-    return /cancel/iu.test(why) ? { outcome: "canceled", reason: why } : { outcome: "blocked", reason: why };
+    if (output?.state === "done") return { outcome: "done", reason: "", verified };
+    return /cancel/iu.test(why) ? { outcome: "canceled", reason: why, verified } : { outcome: "blocked", reason: why, verified };
   }
-  return { outcome: "failed", reason: why };
+  return { outcome: "failed", reason: why, verified };
 }
 
 /** The errand's name on the page: the title it was given, else the first line of the brief after a schedule's standing preamble. */
@@ -69,14 +72,14 @@ export function listErrands(db: Db, input: { days: number; kind?: string | undef
     ORDER BY r.created_at DESC LIMIT ?`).all(since, ...(input.projectId ? [input.projectId] : []), ...(kind ? [kind] : []), input.limit ?? 200) as RunRow[];
   return rows.map((row) => {
     const inputs = parse<Record<string, unknown>>(row.inputs_json, {});
-    const output = parse<{ state?: unknown; reason?: unknown } | null>(row.output_json, null);
-    const { outcome, reason } = errandOutcome(row.status, output, row.reason);
+    const output = parse<{ state?: unknown; reason?: unknown; verified?: unknown } | null>(row.output_json, null);
+    const { outcome, reason, verified } = errandOutcome(row.status, output, row.reason);
     const scheduleId = typeof inputs.scheduleId === "string" ? inputs.scheduleId : "";
     const source: ErrandSource = scheduleId ? { type: "schedule", name: row.schedule_name ?? "" } : row.pm_thread_id ? { type: "pm", threadId: row.pm_thread_id } : { type: "other" };
     return {
       id: row.id, projectId: row.project_id, title: errandTitle(inputs), kind: kindOf(inputs.kind), kindBy: typeof inputs.kindBy === "string" ? inputs.kindBy : "",
       providerId: typeof inputs.providerId === "string" ? inputs.providerId : "", model: typeof inputs.model === "string" ? inputs.model : "",
-      outcome, reason: reason.slice(0, 300), source, threadId: row.thread_id, tokens: row.tokens_used, costUsd: row.cost_micro_usd / 1e6,
+      outcome, verified, reason: reason.slice(0, 300), source, threadId: row.thread_id, tokens: row.tokens_used, costUsd: row.cost_micro_usd / 1e6,
       startedAt: row.created_at, endedAt: outcome === "running" ? null : row.updated_at,
     };
   });
@@ -100,10 +103,11 @@ export function kindsOverview(db: Db, settings: Record<string, unknown>, days: n
     const role = errandRoleFor(kind === "none" ? null : kind, settings);
     const chosen = resolveRoleModel(role, settings);
     const mine = runs.filter((run) => kindOf(run.kind) === kind);
-    const outcomes = mine.map((run) => errandOutcome(run.status, parse<{ state?: unknown; reason?: unknown } | null>(run.output_json, null), run.reason).outcome);
+    const results = mine.map((run) => errandOutcome(run.status, parse<{ state?: unknown; reason?: unknown; verified?: unknown } | null>(run.output_json, null), run.reason));
+    const outcomes = results.map((row) => row.outcome);
     return {
       kind, role, providerId: chosen.providerId, model: chosen.model, effort: chosen.effort, source: chosen.source,
-      runs: mine.length, done: outcomes.filter((o) => o === "done").length, blocked: outcomes.filter((o) => o === "blocked").length, failed: outcomes.filter((o) => o === "failed").length,
+      runs: mine.length, done: outcomes.filter((o) => o === "done").length, checked: results.filter((row) => row.verified === "done_checked").length, blocked: outcomes.filter((o) => o === "blocked").length, failed: outcomes.filter((o) => o === "failed").length,
       costUsd: mine.reduce((sum, run) => sum + run.cost_micro_usd, 0) / 1e6, jevWouldPick: jev[kind === "none" ? "errand" : kind] ?? 0,
     };
   });

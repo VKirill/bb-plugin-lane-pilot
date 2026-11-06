@@ -177,7 +177,7 @@ export function ErrandsScreen({ projects, locale }: { projects: Array<{ id: stri
                         <td className={`${td} max-w-md`}>{row.title}</td>
                         <td className={td}>{t(KIND_NAME[row.kind])}{row.kindBy && BY[row.kindBy] ? <div className="text-[11px] text-muted-foreground">{t(BY[row.kindBy]!)}</div> : null}</td>
                         <td className={`${td} whitespace-nowrap`}>{label(row)}</td>
-                        <td className={td}><Pill tone={OUTCOME[row.outcome].tone}>{t(OUTCOME[row.outcome].key)}</Pill>{row.reason ? <div className="mt-1 max-w-xs text-[11px] text-muted-foreground" data-testid="errand-reason">{plainReason(row.reason)}</div> : null}</td>
+                        <td className={td}><Pill tone={OUTCOME[row.outcome].tone}>{t(OUTCOME[row.outcome].key)}</Pill>{row.outcome === "done" && row.verified !== "unknown" ? <div className="mt-1 text-[11px] text-muted-foreground" data-testid="errand-verified">{t(row.verified === "done_checked" ? "er_verified_checked" : "er_verified_unchecked")}</div> : null}{row.reason ? <div className="mt-1 max-w-xs text-[11px] text-muted-foreground" data-testid="errand-reason">{plainReason(row.reason)}</div> : null}</td>
                         <td className={`${td} max-w-[14rem]`}>{sourceText(row)}</td>
                         <td className={`${td} whitespace-nowrap text-right tabular-nums`}>{usd(row.costUsd)}</td>
                         <td className={`${td} text-right`}>{row.threadId ? <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => open(row)} data-testid="errand-open">{t("er_open_thread")}</Button> : null}</td>
