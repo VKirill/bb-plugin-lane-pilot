@@ -16,11 +16,11 @@ const BODY_MAX_BYTES = 8_192;
 const DRAFT_MAX_BYTES = 40_000;
 
 /** Forbidden grants: what a forged skill or role may never ask for. */
-export const FORBIDDEN_GRANTS: ReadonlyArray<{ pattern: RegExp; why: string }> = [
+export const FORBIDDEN_GRANTS: ReadonlyArray<{ pattern: RegExp; why: string; canon?: "allowed" }> = [
   { pattern: /--dangerously-skip-permissions|bypassPermissions|permission-mode\s+bypass/i, why: "bypasses the permission prompts" },
   { pattern: /^tools:\s*\*\s*$|allowed-tools:\s*\*|"tools"\s*:\s*"\*"/im, why: "asks for every tool" },
   { pattern: /Bash\(\s*\*\s*\)|Bash\(rm\b|Bash\(sudo\b/i, why: "an unrestricted or destructive shell grant" },
-  { pattern: /env_get|Env Catalog|\.env\b|secrets?\//i, why: "reads secrets — a forged draft gets none; the PM hands accounts by name" },
+  { pattern: /env_get|Env Catalog|\.env\b|secrets?\//i, why: "reads secrets — a forged draft gets none; the PM hands accounts by name", canon: "allowed" },
   { pattern: /guard_shell|LANE_GUARD|agent-guard|disable[_ -]?hooks?/i, why: "touches the guard or the hooks" },
   { pattern: /curl[^\n]*\|\s*(ba)?sh|wget[^\n]*\|\s*(ba)?sh/i, why: "pipes a download into a shell" },
 ];
@@ -33,7 +33,8 @@ const isScript = (path: string) => path.startsWith("scripts/") || /\.(sh|bash|py
 /** A path the SKILL.md names: `references/x.md`, `scripts/y`, in prose or in a link. */
 const NAMED_PATH = /(?:references|scripts)\/[A-Za-z0-9_@.[\]+~/-]+/g;
 
-export function lintSkillFiles(files: SkillFile[], expectedName?: string): SkillFinding[] {
+/** `draft`: a forged one-file draft (no secrets, no grants at all); the canon (`draft: false`) is human-owned and may read the Env Catalog. */
+export function lintSkillFiles(files: SkillFile[], expectedName?: string, { draft = true }: { draft?: boolean } = {}): SkillFinding[] {
   const findings: SkillFinding[] = [];
   const add = (severity: SkillFinding["severity"], code: string, file: string, message: string) => findings.push({ severity, code, file, message });
   const skill = files.find((file) => file.path === SKILL_MD || file.path.endsWith(`/${SKILL_MD}`));
@@ -55,17 +56,22 @@ export function lintSkillFiles(files: SkillFile[], expectedName?: string): Skill
     const description = scalar(data.description);
     if (description.length < 40) add("error", "description", skill.path, "the description is too short to be found by: say what it does and when to use it");
     else if (description.length > DESCRIPTION_MAX) add("error", "description", skill.path, "the description is over 1024 characters: keep the triggers here, move the detail to the body");
-    if (!/use when|применяется|используй|when:/i.test(description)) add("error", "trigger", skill.path, "the description has no trigger (\"Use when …\")");
+    if (!/use (this skill )?(when|for|whenever)|triggers?( on)?:|trigger on\b|примен|использу|вызывай|when:/i.test(description)) add("error", "trigger", skill.path, "the description has no trigger (\"Use when …\")");
     if (!/not for|do not use|\bskip\b|не используй|когда не/i.test(description)) add("warning", "scope", skill.path, "the description has no «when not to use it» clause (\"not for …\", \"SKIP: …\")");
   }
-  for (const file of files) for (const grant of FORBIDDEN_GRANTS) if (grant.pattern.test(file.text)) add("error", "forbidden_grant", file.path, `forbidden grant: ${grant.why}`);
+  for (const file of files) for (const grant of FORBIDDEN_GRANTS) {
+    if (!grant.pattern.test(file.text) || (!draft && grant.canon === "allowed")) continue;
+    add(draft ? "error" : "warning", "forbidden_grant", file.path, `forbidden grant: ${grant.why}`);
+  }
   const known = files.map((file) => file.path);
   const named = new Set<string>();
   for (const match of text.matchAll(NAMED_PATH)) {
     const target = match[0].replace(/[.,;:!?)\]]+$/, "").replace(/\/+$/, "");
     if (target) named.add(target);
   }
-  for (const target of named) if (!known.some((path) => path === target || path.startsWith(`${target}/`))) add("error", "missing_file", skill.path, `${target} is named but the skill does not carry it`);
+  // In the canon scripts/ is also a repository folder a skill talks about, so a missing scripts/ path only warns there; references/ is the skill's own.
+  for (const target of named) if (!known.some((path) => path === target || path.startsWith(`${target}/`)))
+    add(draft || target.startsWith("references/") ? "error" : "warning", "missing_file", skill.path, `${target} is named but the skill does not carry it`);
   for (const file of files) {
     if (!isScript(file.path)) continue;
     file.text.split("\n").forEach((line, index) => {
@@ -86,7 +92,7 @@ export function lintSkillFiles(files: SkillFile[], expectedName?: string): Skill
 
 /** Lint a skill folder read as {path, text}[] (paths relative to the skill root, `/` separators). */
 export function lintSkillDir(files: SkillFile[]): { errors: string[]; warnings: string[] } {
-  const findings = lintSkillFiles(files);
+  const findings = lintSkillFiles(files, undefined, { draft: false });
   const render = (finding: SkillFinding) => `${finding.file}: ${finding.message}`;
   return {
     errors: findings.filter((finding) => finding.severity === "error").map(render),
@@ -99,6 +105,8 @@ const TEXT_FILE = /\.(md|markdown|sh|bash|py|js|mjs|cjs|ts|json|txt|yaml|yml)$/;
 function readSkillDir(dir: string): SkillFile[] {
   const walk = (current: string): string[] => readdirSync(current).flatMap((name) => {
     const full = join(current, name);
+    // Bundled and installed code is not the skill's text: vendor/ and node_modules/ are skipped.
+    if (name === "node_modules" || name === "vendor" || name.startsWith(".")) return [];
     return statSync(full).isDirectory() ? walk(full) : [full];
   });
   return walk(dir)

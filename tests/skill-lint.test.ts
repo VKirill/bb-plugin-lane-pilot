@@ -28,10 +28,11 @@ describe("lintSkillDir", () => {
     expect(errors.some((line) => line.includes("1024"))).toBe(true);
   });
 
-  it("errors when SKILL.md names a references/ or scripts/ file the folder does not carry", () => {
+  it("errors on a missing references/ file and warns on a missing scripts/ one (a repository folder too)", () => {
     const files = goodSkill("Read references/missing.md first, then run scripts/go.sh.");
-    const { errors } = lintSkillDir(files);
-    expect(errors.filter((line) => line.includes("is named but the skill does not carry it")).length).toBe(2);
+    const { errors, warnings } = lintSkillDir(files);
+    expect(errors.filter((line) => line.includes("is named but the skill does not carry it"))).toEqual([expect.stringContaining("references/missing.md")]);
+    expect(warnings.some((line) => line.includes("scripts/go.sh is named"))).toBe(true);
     expect(errors.some((line) => line.includes("references/missing.md") && line.includes("scripts/go.sh"))).toBe(false);
   });
 
@@ -88,6 +89,15 @@ describe("lintDraft on a skill draft", () => {
   it("a skill draft naming a missing script fails the lint", () => {
     const text = "---\nname: cell-sum\ndescription: Sums empty cells in a sheet. Use when the owner asks for a forged draft of this one skill and nothing else.\n---\nRun scripts/go.sh.\n";
     expect(lintDraft("skill", "cell-sum", text).map((row) => row.code)).toContain("missing_file");
+  });
+});
+
+describe("canon vs draft", () => {
+  it("the canon may read the Env Catalog; a forged draft may not", () => {
+    const body = "Read the key with env_get before the call.";
+    expect(lintSkillDir(goodSkill(body)).errors).toEqual([]);
+    const draft = `---\nname: cell-sum\ndescription: Sums empty cells in a sheet. Use when the owner asks for a forged draft of this one skill and nothing else.\n---\n${body}\n`;
+    expect(lintDraft("skill", "cell-sum", draft).map((row) => row.code)).toContain("forbidden_grant");
   });
 });
 
