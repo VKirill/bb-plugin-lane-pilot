@@ -22,7 +22,7 @@ import { learningFor } from "../../learning";
 import { attemptMetrics, renderAttemptMetrics } from "../../usage/server";
 import { DEFERRAL_USAGE, runDeferralCli } from "../../deferral/server";
 import { MEMORY_EVAL_USAGE, runMemoryEvalCommand } from "../../memory-eval/server";
-import { MEMORY_CONFLICT_USAGE, runMemoryConflictCli, } from "../../memory/server";
+import { MEMORY_CONFLICT_USAGE, runMemoryConflictCli, sessionMemoryRpc } from "../../memory/server";
 import { BENCH_USAGE, runBenchCli } from "../../bench/server";
 import { BASELINE_USAGE, runBaselineCli } from "../../baseline/server";
 import { RETURN_USAGE, runReturnCli } from "../../stage-return/server";
@@ -58,6 +58,8 @@ import { runSkillLintCli } from "../../forge";
 import { ERRAND_EPISODE_TRACE_EVENTS } from "../../errands";
 import { EPISODES_USAGE, runEpisodesCli } from "../../errands/server";
 import { episodeSweepDeps } from "../../night-graphs/server";
+
+const MEMORY_CLI_USAGE = 'bb lane-pilot memory search "<question>" [--project P] | memory write "<fact>" [--project P]   (the project memory on the hub; inside a BB thread the project is the thread\'s own)';
 import type { CodeCriticDefault } from "../../critique";
 
 function requireCriticCodeDefault(value: string): CodeCriticDefault {
@@ -93,6 +95,7 @@ export function registerCli(ctx: ServerCore, services: Services) {
     "bb lane-pilot memory-probe <project-id> [--paths a,b] [--keep] [--clean] [--report] [--force]",
     MEMORY_EVAL_USAGE,
     MEMORY_CONFLICT_USAGE,
+    MEMORY_CLI_USAGE,
     "bb lane-pilot host-detect <host-id> <workspace-path>",
     "bb lane-pilot host-snapshot <host-id> <absolute-path>...",
     "bb lane-pilot host-snapshot-manifest <host-id> [thread-storage]",
@@ -417,6 +420,23 @@ ${ERRANDS_USAGE}` },
         }
         if (command === "agents") {
           return await runAgentsCli({ list: () => services.listedAgentProfiles(), registry: agentRegistry(ctx) }, args);
+        }
+        if (command === "memory" && (args[0] === "search" || args[0] === "write")) {
+          // M2's door for any thread or shell: the project is --project or the calling thread's own.
+          const rest = args.slice(1);
+          const flag = rest.indexOf("--project");
+          const explicit = flag >= 0 ? rest[flag + 1] : undefined;
+          const text = rest.filter((_, index) => flag < 0 || (index !== flag && index !== flag + 1)).join(" ").trim();
+          const thread = !explicit && invocation?.threadId ? await bb.sdk.threads.get({ threadId: invocation.threadId }).catch(() => null) : null;
+          const projectId = explicit ?? ((thread as { projectId?: unknown } | null)?.projectId as string | undefined);
+          if (!text || !projectId) return { exitCode:1, stderr:`${MEMORY_CLI_USAGE}\n${projectId ? "" : "no project: pass --project <id> outside a BB thread"}` };
+          const rpc = sessionMemoryRpc(ctx, services);
+          if (args[0] === "search") {
+            const found = await rpc.session_memory_search({ projectId, query: text });
+            return { exitCode:0, stdout: found.records.length ? `${found.records.map((record) => `- [${record.id}] ${record.content}`).join("\n")}\n` : `${found.message ?? "nothing relevant"}\n` };
+          }
+          const written = await rpc.session_memory_write({ projectId, kind: "note", content: text, concepts: [], source: `cli:${invocation?.threadId ?? "shell"}` });
+          return { exitCode: written.id ? 0 : 1, stdout: `${JSON.stringify(written)}\n` };
         }
         if (command === "skill-lint") {
           return runSkillLintCli(args);

@@ -12,7 +12,7 @@ import type { ServerCore } from "../../core/server";
 
 /** The exact rule the block ends with (and the line AGENTS.md carries). */
 export const THREAD_MEMORY_RULE = [
-  'Память проекта — Lane Pilot: искать `lane-memory search "<вопрос>"`, записать `lane-memory write …`;',
+  'Память проекта — Lane Pilot: искать `bb lane-pilot memory search "<вопрос>"`, записать `bb lane-pilot memory write "<факт>"`;',
   "не в файлы ~/.claude/…/memory и не в BB memory",
 ] as const;
 
