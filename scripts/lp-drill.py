@@ -90,12 +90,12 @@ OPEN_STATES = ("queued", "spawn_requested", "spawn_unknown", "running")
 TERMINAL = ("accepted", "blocked", "canceled")
 STAMP = time.strftime("%Y%m%d-%H%M%S")
 DATE = time.strftime("%Y-%m-%d")
-ALL = ["guard_hash", "deferrals", "checkers", "watchdog", "memory_paths", "helper_providers", "parallel3", "conflict", "main_moved", "provider", "provider_limit", "live_word", "no_code_exit", "skills", "phase", "phase_route", "reload", "nogit", "nogit_repo", "flow_contract", "lead_shadow"]
-QUICK = ["guard_hash", "deferrals", "checkers", "memory_paths", "helper_providers", "parallel3", "lead_shadow"]
+ALL = ["guard_hash", "deferrals", "checkers", "watchdog", "memory_paths", "helper_providers", "parallel3", "conflict", "main_moved", "provider", "provider_limit", "live_word", "no_code_exit", "skills", "phase", "phase_route", "reload", "nogit", "nogit_repo", "flow_contract", "lead_shadow", "episodes"]
+QUICK = ["guard_hash", "deferrals", "checkers", "memory_paths", "helper_providers", "parallel3", "lead_shadow", "episodes"]
 # What a provider runs when no setting of the sandbox project names a model for it.
 PROVIDER_FALLBACK_MODEL = {"claude-code": "claude-sonnet-5-5", "codex": "gpt-6-luna", "opencode2": "zai-coding-plan/glm-5.3-flash"}
 # Scenarios that need no PM and no run of their own: they run before the PM starts (guard_hash) or on a project of their own (nogit).
-STANDALONE = ("guard_hash", "deferrals", "checkers", "watchdog", "nogit", "nogit_repo", "lead_shadow")
+STANDALONE = ("guard_hash", "deferrals", "checkers", "watchdog", "nogit", "nogit_repo", "lead_shadow", "episodes")
 
 # Which changed files a live scenario reads. A path no live scenario reads (NOT_LIVE) starts none; a shared one (FOUNDATION, and anything
 # outside src/ and packages/ that is not NOT_LIVE) starts every one; else parallel3 runs unless the path is in a room it does not pass
@@ -112,6 +112,7 @@ FOUNDATION = ["scripts/lp-drill.py", "scripts/lp-drill.sh", "package-lock.json",
 PARALLEL3_SKIP = [f"src/rooms/{room}/**" for room in ("phase", "council", "cockpit", "night", "night-graphs", "hypotheses", "bench", "forge", "money",
                   "forecast", "coverage", "docs", "backlog", "anamnesis", "twins", "outbound", "owner-presence", "memory-eval", "design-eval", "deferral", "checkers")]
 SCENARIO_CODE = {
+    "episodes": ["src/rooms/errands/**", "src/rooms/qa/server/errand*", "src/rooms/workflow/server/workflow.ts", "packages/harness-core/src/trajectory.ts"],
     "helper_providers": ["src/rooms/native-agent/**", "src/rooms/runs/server/run-routing*", "src/rooms/stability/server/probes.ts", "src/rooms/tools/server/cli.ts",
                          "src/rooms/critique/pm-read.ts", "packages/thread-observe/**"],
     "memory_paths": ["src/rooms/memory/**", "src/rooms/memory-probe/**", "src/rooms/memory-tiers/**", "packages/memory-core/**", "src/rooms/native-agent/**",
@@ -1359,6 +1360,38 @@ def scenario_lead_shadow(tmp: Path) -> dict:
                    ticks=len(state.get("ticks") or []), proposalsOpen=state.get("proposalsOpen"), journal=state.get("journal"), tiers=tiers)
 
 
+def scenario_episodes(tmp: Path) -> dict:
+    """Errand episodes (stage 1 R1/R3/R5/R7): every errand run that ended after the episodes shipped has its episode row (the recorder
+    hangs off the engine's onEvent, so a missing row is a dropped hook); a done run carries a parsed `verified`; the sweep moves rows out
+    of pending within two hours; the diagnosis command answers. Reads the live hub, starts nothing."""
+    try:
+        first = hubsql("SELECT MIN(created_at) AS at FROM lane_pilot_errand_episode")
+    except RuntimeError as cause:
+        if "no such table" in str(cause):
+            return verdict("episodes", [], episodesDeployed=False, note="the running plugin has no episode table yet")
+        return verdict("episodes", [f"hub query failed: {str(cause)[:200]}"])
+    since = (first[0] or {}).get("at") if first else None
+    if not since:
+        return verdict("episodes", [], episodesDeployed=True, note="no episode written yet: no errand ended since the deploy")
+    problems: list[str] = []
+    missing = hubsql(f"""SELECT r.id FROM lane_pilot_wf_run r WHERE r.workflow_id='errand' AND r.status IN
+        ('succeeded','failed','canceled','blocked','interrupted','not_verified') AND r.updated_at >= {int(since)}
+        AND NOT EXISTS (SELECT 1 FROM lane_pilot_errand_episode e WHERE e.run_id=r.id) LIMIT 5""")
+    if missing:
+        problems.append(f"{len(missing)}+ ended errand runs have no episode, e.g. {missing[0].get('id')}")
+    counts = hubsql("""SELECT COUNT(*) AS n, SUM(outcome='done' AND verified IS NULL AND created_at > strftime('%s','now','-3 days')*1000) AS doneNoVerdict,
+        SUM(enrichment_state='pending' AND created_at < (strftime('%s','now')-7200)*1000) AS stalePending,
+        SUM(enrichment_state='held') AS held FROM lane_pilot_errand_episode""")[0]
+    if counts.get("doneNoVerdict"):
+        problems.append(f"{counts['doneNoVerdict']} recent done episodes have no parsed verified outcome")
+    if counts.get("stalePending"):
+        problems.append(f"{counts['stalePending']} episodes stayed pending for over 2 h: the sweep lp.episodes is not running")
+    rc, out, err = bb("lane-pilot", "errands", "diagnose", "--json")
+    if rc != 0:
+        problems.append(f"bb lane-pilot errands diagnose exited {rc}: {(err or out).strip()[:160]}")
+    return verdict("episodes", problems, episodesDeployed=True, episodes=counts.get("n"), held=counts.get("held"), since=since)
+
+
 def scenario_checkers(tmp: Path) -> dict:
     """The checker drill (src/rooms/checkers): planted defects, the code checkers must catch the class they are for. The checkout's own code is
     bundled and run, so a change that makes a checker blind turns the drill red before it is deployed. Then the same drill with the ownership
@@ -1674,6 +1707,13 @@ def main() -> int:
             except Exception as cause:
                 scenarios.append(verdict("lead_shadow", [f"scenario raised: {cause}"]))
             log(f"scenario lead_shadow: {scenarios[-1]['result']} {scenarios[-1]['problems']}")
+        if "episodes" in names:
+            log("scenario episodes")
+            try:
+                scenarios.append(scenario_episodes(tmp))
+            except Exception as cause:
+                scenarios.append(verdict("episodes", [f"scenario raised: {cause}"]))
+            log(f"scenario episodes: {scenarios[-1]['result']} {scenarios[-1]['problems']}")
         # memory_paths first: its records are planted before the PM starts (its first prompt must carry the probe rule) and removed before
         # the writers of the other scenarios start.
         main_names = sorted((n for n in names if n not in STANDALONE), key=lambda n: n != "memory_paths")
