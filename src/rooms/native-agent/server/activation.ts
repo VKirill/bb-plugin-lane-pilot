@@ -95,7 +95,8 @@ export function createActivation(ctx: ServerCore, services: Services) {
       else settings["main.agent"] = agentId;
     }
     const owned = await ownedAgents();
-    compiledMainAgentSpawnBinding({
+    // Built before createRun so an unsupported profile fails before the run row exists.
+    const mainAgentBinding = compiledMainAgentSpawnBinding({
       capability: detectCompiledMainAgentCapability(
         (bb as { agents?: { experimental_vkCompiledMainAgent?: unknown } }).agents ?? {},
       ),
@@ -149,15 +150,7 @@ export function createActivation(ctx: ServerCore, services: Services) {
           : { type:"host", hostId:config.hostId, workspace:{ type:"unmanaged", path:config.pmWorkspacePath } })) as never,
         visibility:"visible",
         pluginMetadata:{ role:"pm", lanePilotRunId:runId },
-        ...compiledMainAgentSpawnBinding({
-          capability: detectCompiledMainAgentCapability(
-            (bb as { agents?: { experimental_vkCompiledMainAgent?: unknown } }).agents ?? {},
-          ),
-          profile: (() => {
-            const profile = resolveSelectedMainAgentProfile(settings, owned);
-            return profile ? Object.freeze(JSON.parse(JSON.stringify(profile)) as CompiledMainAgent) : null;
-          })(),
-        }),
+        ...mainAgentBinding,
         ...requiredPolicyField(bb, requireHelperSpawn({ bb, db, projectId, runId }), spawnProviderId),
       });
     } catch (cause) {

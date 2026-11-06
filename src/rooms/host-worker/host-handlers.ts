@@ -903,14 +903,21 @@ export const snapshotDryRun: ExperimentalHostRpcHandlers<typeof hostContract>["s
 });
 
 
+/** Where the jev-ultrafast launcher can live on this host: LANE_PILOT_JEV_RUNNER, else the host's toolkit checkout
+ *  (~/toolkit, the convention of ~/toolkit/telegram in anamnesis/sources/telegram.ts), else the shared BB-сервис
+ *  checkout the owner's machines carry (Mac mini 2026-10). */
+export const jevRunnerCandidates = (env: NodeJS.ProcessEnv, home: string): string[] =>
+  env.LANE_PILOT_JEV_RUNNER
+    ? [env.LANE_PILOT_JEV_RUNNER]
+    : [join(home, "toolkit", "computer-use", "bin", "run"), join(home, "Documents", "BB-сервис", "toolkit", "computer-use", "bin", "run")];
+
 /**
  * One browser goal through the jev-ultrafast runner, without a shell: the goal is an argument, never shell text.
  * The runner prints its steps and, last, one JSON line {status,url,actions}. Asynchronous, so the host worker keeps
  * serving writer checks while Chrome works.
  */
 export const browserGoal: ExperimentalHostRpcHandlers<typeof hostContract>["browserGoal"] = async (input) => {
-  // The computer-use launcher of this machine: LANE_PILOT_JEV_RUNNER, else the BB-сервис toolkit checkout.
-  const candidates = process.env.LANE_PILOT_JEV_RUNNER ? [process.env.LANE_PILOT_JEV_RUNNER] : [join(homedir(), "Documents", "BB-сервис", "toolkit", "computer-use", "bin", "run")];
+  const candidates = jevRunnerCandidates(process.env, homedir());
   let runner: string | null = null;
   for (const path of candidates) { if (await lstat(path).then(() => true, () => false)) { runner = path; break; } }
   if (!runner) return { hostId: process.env.BB_HOST_ID ?? input.requestedHostId, exitCode: 127, status: "no_runner", url: null, actions: null, title: null, text: null, log: `jev-ultrafast launcher not found; looked at ${candidates.join(", ")}` };

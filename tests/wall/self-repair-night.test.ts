@@ -28,6 +28,7 @@ function setup(threadStatus: Record<string, string> = {}, outputs: Record<string
     } as never,
   });
   const db = openDatabase(bb);
+  void bb.storage.kv.set("self-repair:config", { projectId: "proj_ejbam66722", environmentId: "env_7etjwdpbuw", sectionId: "9b66deb6-0e31-42d3-840f-19fa9601380c" } as never);
   const host = {
     call: async (method: string, input: Record<string, unknown>) => {
       hostCalls.push({ method, input });

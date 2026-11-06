@@ -1,4 +1,4 @@
-import type { LanePilotDatabase } from "./db";
+import type Database from "better-sqlite3";
 import { randomUUID } from "node:crypto";
 
 import { applyDraftOps, checkDraft, newDraftDefinition, slugWorkflowId } from "./draft";
@@ -78,7 +78,7 @@ export type PatchResult =
 
 export type RestoreResult = { ok: true; draft: DraftRow } | { ok: false; reason: "not_found" | "version_conflict" | "no_such_version"; currentVersion?: number };
 
-export function createDraftStore(db: LanePilotDatabase, now: () => number = Date.now) {
+export function createDraftStore(db: Database.Database, now: () => number = Date.now) {
   const get = (id: string): DraftRow | null => {
     const raw = db.prepare("SELECT * FROM lane_pilot_wf_draft WHERE id=?").get(id) as Raw | undefined;
     return raw ? toRow(raw) : null;

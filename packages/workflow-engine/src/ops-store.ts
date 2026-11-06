@@ -1,4 +1,4 @@
-import type { LanePilotDatabase } from "./db";
+import type Database from "better-sqlite3";
 
 import { workflowFinish } from "./business-outcome";
 import { legacyDefinitionSha256, type StoredWorkflow } from "./store";
@@ -91,7 +91,7 @@ export type StatusVerdict = { status: Workflow["status"]; notes: WorkflowProblem
  *   this definition; without it the workflow is a `draft` (it is not offered, not run by the PM), so a hand-written `published` cannot skip the tests;
  * - a `tested` workflow (the built-in own chains, or the owner's) is `published` after a live run of this definition that did the job. Canvas positions are not part of that definition.
  */
-export function createStatusResolver(db: LanePilotDatabase) {
+export function createStatusResolver(db: Database.Database) {
   const receipt = (workflowId: string, sha256: string) =>
     db.prepare("SELECT green, results_json, at FROM lane_pilot_wf_test WHERE workflow_id=? AND definition_sha256=?").get(workflowId, sha256) as { green: number; results_json: string; at: number } | undefined;
   /**

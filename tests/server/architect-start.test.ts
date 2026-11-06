@@ -2,10 +2,10 @@ import { afterEach, describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import plugin from "../../server";
 import { rpcContract } from "../../src/rooms/contracts";
-import { SELF_REPAIR_DEFAULTS } from "../../src/rooms/self-repair/server/self-repair";
 import { tokensFrom } from "../../src/rooms/native-agent/native-session";
 
 const projectId = "proj_arch";
+const hubProjectId = "proj_lp_hub";
 let dispose: (() => Promise<void> | void) | null = null;
 afterEach(async () => { await dispose?.(); dispose = null; });
 
@@ -18,12 +18,13 @@ async function setup(options: { sources?: Array<{ hostId: string; path: string }
     sdk: {
       threads: {
         spawn: async (args: unknown) => { spawned.push(args as Record<string, any>); counter += 1; await new Promise((done) => setTimeout(done, 5)); return { id: `thr_architect_${counter}` }; },
-        get: async ({ threadId }: { threadId: string }) => ({ id: threadId, status: "idle", projectId: threadId.startsWith("thr_architect_hub") ? SELF_REPAIR_DEFAULTS.projectId : projectId, archivedAt: options.archived?.() ? 1 : null }),
+        get: async ({ threadId }: { threadId: string }) => ({ id: threadId, status: "idle", projectId: threadId.startsWith("thr_architect_hub") ? hubProjectId : projectId, archivedAt: options.archived?.() ? 1 : null }),
       },
       projects: { get: async ({ projectId: id }: { projectId: string }) => ({ id, name: "Arch project", sources: options.sources ?? [{ hostId: "host_arch", path: "/work/arch" }] }) },
       plugins: { callRpc: async ({ method, input }: { method: string; input: Record<string, unknown> }) => { if (method === "thread_place") { placed.push(input); return { ok: true }; } throw new Error(`unexpected rpc ${method}`); } },
     } as never,
   });
+  await bb.storage.kv.set("self-repair:config", { projectId: hubProjectId } as never);
   await plugin(bb);
   dispose = () => harness.lifecycle.dispose();
   const rpc = async (input: Record<string, unknown>) => await harness.behavior.callRpc("workflow_architect_start", input) as { threadId: string; projectId: string; reused: boolean };
@@ -89,12 +90,12 @@ describe("workflow_architect_start", () => {
     await expect(rpc({ draftId: "draft_missing" })).rejects.toThrow(/does not exist/);
   });
 
-  it("without a project uses the Lane Pilot project of the hub, and files the chat in the given section", async () => {
+  it("without a project uses the Lane Pilot project named in the self-repair config, and files the chat in the given section", async () => {
     const { spawned, placed, rpc } = await setup();
     const started = await rpc({ sectionId: "section_1" });
-    expect(started.projectId).toBe(SELF_REPAIR_DEFAULTS.projectId);
-    expect(spawned[0]!.projectId).toBe(SELF_REPAIR_DEFAULTS.projectId);
-    expect(placed).toEqual([{ threadId: "thr_architect_1", projectId: SELF_REPAIR_DEFAULTS.projectId, folderId: "section_1" }]);
+    expect(started.projectId).toBe(hubProjectId);
+    expect(spawned[0]!.projectId).toBe(hubProjectId);
+    expect(placed).toEqual([{ threadId: "thr_architect_1", projectId: hubProjectId, folderId: "section_1" }]);
   });
 
   it("says plainly when the project has no folder on a machine", async () => {

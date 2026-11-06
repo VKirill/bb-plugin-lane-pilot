@@ -291,6 +291,41 @@ describe("production spawn_unknown reconciliation", () => {
     await harness.lifecycle.dispose();
   });
 
+  it("recovery accepts nothing the writer did not produce: the workspace holds no expected output", async () => {
+    const triple = { lanePilotRunId:"run-recover-check", lanePilotTaskId:"task-recover-check", attemptId:"attempt-recover-check" };
+    const { bb, harness } = createFakePluginHost({
+      pluginId:"lane-pilot",
+      sdk:{
+        threads:{
+          list: async () => [{ id:"writer-done" }] as never,
+          getPluginMetadata: async () => triple,
+          get: async () => ({ id:"writer-done", status:"idle" }) as never,
+          output: async () => ({ output:"done" }) as never,
+        },
+      },
+      experimental_callHostRpc: async ({ method }: { method:string }) =>
+        method === "runCommand" ? { exitCode:0, stdout:"[]", stderr:"" } : { ok:true },
+    });
+    const db = openDatabase(bb);
+    savePrototypeConfig(db, config);
+    createRun(db, triple.lanePilotRunId, projectId);
+    setRunThread(db, triple.lanePilotRunId, pmThreadId);
+    createTask(db, { id:triple.lanePilotTaskId, runId:triple.lanePilotRunId, kind:"bb", contract:{
+      schema_version:2, id:triple.lanePilotTaskId, title:"Write the hello files", risk:"low", lane:"main",
+      project_cwd:"/ws", read_first:[], interfaces:[], invariants:[], out_of_scope:[],
+      expected_outputs:["tests/hello.test.txt"], owns_paths:["tests/**"], never_touch:[], depends_on:[],
+      objective:"produce the file", acceptance:["tests/hello.test.txt exists"], verify:"none", verification:[],
+    } });
+    createAttempt(db, { id:triple.attemptId, runId:triple.lanePilotRunId, taskId:triple.lanePilotTaskId });
+    transitionAttempt(db, triple.attemptId, "spawn_requested");
+    transitionAttempt(db, triple.attemptId, "spawn_unknown", { reason:"response lost" });
+    await plugin(bb);
+    const result = await harness.behavior.runCli(["recover", triple.attemptId]);
+    expect(result.exitCode).toBe(1);
+    expect(getAttempt(db, triple.attemptId)?.state).toBe("validation_failed");
+    await harness.lifecycle.dispose();
+  });
+
   it("finding the thread of an attempt whose stop was requested does not turn it back into running", async () => {
     const triple = { lanePilotRunId:"run-cancel-recover", lanePilotTaskId:"task-cancel-recover", attemptId:"attempt-cancel-recover" };
     const { bb, harness } = createFakePluginHost({

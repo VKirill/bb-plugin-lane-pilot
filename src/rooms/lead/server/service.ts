@@ -8,7 +8,7 @@ import { loadProjectSettings, saveProjectSetting } from "../../storage";
 import { mentionContext } from "../../native-agent";
 import { projectRoleField } from "../../runs/server";
 import { storeNativeSelection } from "../../native-agent/server";
-import { CONFIG_KEY, SELF_REPAIR_DEFAULTS } from "../../self-repair/server";
+import { lanePilotProjectOrNotice } from "../../self-repair/server";
 import { fireTimes } from "../../schedule";
 import { LEAD_ID, LEAD_NAME, LEAD_TICK } from "../lead-agent";
 import { examAll, type Verdict } from "../logic";
@@ -70,8 +70,9 @@ export function createLeadService(ctx: ServerCore, services: Services) {
   async function homeProjectId(): Promise<string> {
     const own = settings().project;
     if (own) return own;
-    const raw = await bb.storage.kv.get(CONFIG_KEY).catch(() => null) as { projectId?: unknown } | null;
-    return typeof raw?.projectId === "string" && raw.projectId ? raw.projectId : SELF_REPAIR_DEFAULTS.projectId;
+    const found = await lanePilotProjectOrNotice(db, bb, ctx.host);
+    if (!found) throw new Error("lane_pilot_project_unresolved: self-repair:config has no projectId and no project source shares this repository's remote");
+    return found.projectId;
   }
 
   /** The next time the lead's cron fires after `afterMs`, in the owner's time zone; null when the cron is unreadable. */

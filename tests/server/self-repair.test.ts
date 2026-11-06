@@ -11,10 +11,11 @@ import { postOwnerItem, closeOwnerItem } from "../../src/rooms/owner-waiting";
 import { taskWordItemPrefix } from "../../src/rooms/lead";
 import { taskFamily } from "../../src/rooms/runs";
 import ownerWordCases from "../fixtures/idle-writer-owner-word/cases.json";
+import { execFileSync } from "node:child_process";
 
 type HostCall = { method: string; input: Record<string, unknown> };
 
-function setup(threadStatus: Record<string, string> = {}, outputs: Record<string, string> = {}, hostResults: Record<string, unknown> = {}, ownerTurns: Record<string, number | null> = {}) {
+function setup(threadStatus: Record<string, string> = {}, outputs: Record<string, string> = {}, hostResults: Record<string, unknown> = {}, ownerTurns: Record<string, number | null> = {}, sdkExtra: { projects?: unknown; environmentsList?: unknown } = {}) {
   const spawns: Array<Record<string, unknown>> = [];
   const hostCalls: HostCall[] = [];
   const placed: unknown[] = [];
@@ -22,7 +23,8 @@ function setup(threadStatus: Record<string, string> = {}, outputs: Record<string
   const { bb } = createFakePluginHost({
     pluginId: "lane-pilot",
     sdk: {
-      environments: { get: async ({ environmentId }: { environmentId: string }) => ({ id: environmentId, hostId: "host_mac", path: "/repo/lane-pilot" }) as never },
+      environments: { get: async ({ environmentId }: { environmentId: string }) => ({ id: environmentId, hostId: "host_mac", path: "/repo/lane-pilot" }) as never, list: (sdkExtra.environmentsList ?? (async () => [])) as never },
+      projects: (sdkExtra.projects ?? { list: async () => [] }) as never,
       plugins: { callRpc: async (args: { method: string; input: unknown }) => { placed.push([args.method, args.input]); return { ok: true }; } },
       threads: {
         output: async ({ threadId }: { threadId: string }) => ({ output: outputs[threadId] ?? "" }) as never,
@@ -43,6 +45,7 @@ function setup(threadStatus: Record<string, string> = {}, outputs: Record<string
     } as never,
   });
   const db = openDatabase(bb);
+  void bb.storage.kv.set("self-repair:config", { projectId: "proj_ejbam66722", environmentId: "env_7etjwdpbuw", sectionId: "9b66deb6-0e31-42d3-840f-19fa9601380c" } as never);
   const host = {
     call: async (method: string, input: Record<string, unknown>) => {
       hostCalls.push({ method, input });
@@ -100,6 +103,41 @@ describe("self-repair", () => {
     expect(String(spawns[0]!.prompt)).toContain("@thread:thr_pm");
     expect(placed).toEqual([["thread_place", { threadId: "thr_repair1", projectId: "proj_ejbam66722", folderId: "9b66deb6-0e31-42d3-840f-19fa9601380c" }]]);
     expect(String(spawns[0]!.prompt)).toContain("host plugin calls are unavailable");
+  });
+
+  it("discovers the Lane Pilot project by the repository's remote when the plugin runs outside every source path", async () => {
+    const remote = execFileSync("git", ["remote", "get-url", "origin"], { encoding: "utf8" }).trim();
+    const env = setup({}, {}, { runCommand: { exitCode: 0, stdout: `${remote}\n` } }, {}, {
+      projects: { list: async () => [{ id: "proj_lp" }], get: async () => ({ id: "proj_lp", sources: [{ hostId: "host_hub", path: "/elsewhere/checkout" }] }) },
+      environmentsList: async () => [{ id: "env_lp" }],
+    });
+    await env.ctx.bb.storage.kv.set("self-repair:config", {} as never);
+    env.attempt("lpattempt_1", "lprun_a", "blocked", "merge_failed: index.lock exists");
+    await createSelfRepair(env.ctx).tick({ since: 0 });
+    expect(env.spawns[0]?.projectId).toBe("proj_lp");
+  });
+
+  it("uses the stored self-repair:config ids even when a project source's remote matches (a deployed copy knows no git)", async () => {
+    const remote = execFileSync("git", ["remote", "get-url", "origin"], { encoding: "utf8" }).trim();
+    const env = setup({}, {}, { runCommand: { exitCode: 0, stdout: `${remote}\n` } }, {}, {
+      projects: { list: async () => [{ id: "proj_wrong" }], get: async () => ({ id: "proj_wrong", sources: [{ hostId: "host_hub", path: "/elsewhere" }] }) },
+      environmentsList: async () => [{ id: "env_wrong" }],
+    });
+    // The seeded config names proj_ejbam66722; discovery is not consulted.
+    env.attempt("lpattempt_1", "lprun_a", "blocked", "merge_failed: index.lock exists");
+    await createSelfRepair(env.ctx).tick({ since: 0 });
+    expect(env.spawns[0]?.projectId).toBe("proj_ejbam66722");
+  });
+
+  it("posts lane-pilot:no-project when neither the stored config nor a matching source names the project", async () => {
+    const env = setup({}, {}, { runCommand: { exitCode: 0, stdout: "https://github.com/other/repo.git\n" } }, {}, {
+      projects: { list: async () => [{ id: "proj_other" }], get: async () => ({ id: "proj_other", sources: [{ hostId: "host_hub", path: "/elsewhere" }] }) },
+    });
+    await env.ctx.bb.storage.kv.set("self-repair:config", {} as never);
+    env.attempt("lpattempt_1", "lprun_a", "blocked", "merge_failed: index.lock exists");
+    await createSelfRepair(env.ctx).tick({ since: 0 });
+    expect(env.spawns).toHaveLength(0);
+    expect(env.db.prepare("SELECT state FROM lane_pilot_owner_item WHERE key=?").get("lane-pilot:no-project")).toMatchObject({ state: "open" });
   });
 
   it("a reason listing thousands of files does not overflow the stored state", async () => {
@@ -657,14 +695,14 @@ describe("self-repair", () => {
   it("tells the repair where the hub's run data is from the configuration, with today's values as the default", async () => {
     const workspace = { path: "/wt/r/lane-pilot", branch: "lane/r", basePath: "/repo/lane-pilot" };
     const byDefault = repairPrompt([], "blocked:abc:x", workspace);
-    expect(byDefault).toContain("ssh -i ~/.ssh/id_ed25519 ubuntu@10.8.0.1, sqlite3 /home/ubuntu/.bb/plugins/lane-pilot/data.db");
-    expect(byDefault).toContain("Plugin log: /home/ubuntu/.bb/plugins/lane-pilot/logs/plugin.log on the hub.");
+    expect(byDefault).toContain("sqlite3 ~/.bb/plugins/lane-pilot/data.db");
+    expect(byDefault).toContain("Plugin log: ~/.bb/plugins/lane-pilot/logs/plugin.log on the hub.");
     const env = setup();
     await createSelfRepair(env.ctx).setConfig({ hubSsh: "ssh ops@hub2", hubDb: "/srv/lp/data.db", hubLog: "/srv/lp/plugin.log" });
     env.attempt("lpattempt_1", "lprun_a", "blocked", "merge_failed: index.lock exists");
     await createSelfRepair(env.ctx).tick({ since: 0 });
     const prompt = String(env.spawns[0]!.prompt);
-    expect(prompt).toContain("on the hub: ssh ops@hub2, sqlite3 /srv/lp/data.db (");
+    expect(prompt).toContain("on the hub (ssh ops@hub2): sqlite3 /srv/lp/data.db (");
     expect(prompt).toContain("Plugin log: /srv/lp/plugin.log on the hub.");
     expect(prompt).not.toContain("id_ed25519");
   });

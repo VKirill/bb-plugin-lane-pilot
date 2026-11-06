@@ -1,16 +1,24 @@
 import { describe, expect, it } from "vitest";
 import { EMPLOYEES, employeeView } from "../src/rooms/native-agent/employee-manifest";
-import { placeEmployeeOn, AFFINITY_HOSTS } from "../src/rooms/native-agent/employee-place";
+import { placeEmployeeOn, affinityHostId } from "../src/rooms/native-agent/employee-place";
 import { roleRowOf, roleRow } from "@lane-pilot/models";
 import { laneSessionOverlayPrompt } from "../src/rooms/native-agent/native-agent-overlay";
 import { roleSpec } from "../src/rooms/workflow/server/workflow-agent";
 import { compileEffectiveMainAgent } from "../src/rooms/native-agent/agent-profile";
 import type { MachineAffinity } from "../src/rooms/native-agent/employee-manifest";
 
-// bb SDK stub: every host answers a home directory, mkdir always succeeds.
+// bb SDK stub: the enrolled hosts are named like the affinities, every host answers a home directory, mkdir always succeeds.
+const HOSTS = [
+  { id: "host_mini", name: "Mac mini" },
+  { id: "host_vps", name: "ovh" },
+  { id: "host_win", name: "windows" },
+];
 const bbStub = () => ({
   sdk: {
-    hosts: { directory: async ({ hostId }: { hostId: string }) => ({ directory: `/home/${hostId}` }) },
+    hosts: {
+      list: async () => HOSTS,
+      directory: async ({ hostId }: { hostId: string }) => ({ directory: `/home/${hostId}` }),
+    },
     files: { mkdir: async () => ({}) },
   },
 });
@@ -30,7 +38,7 @@ describe("employee spawn path: host + model + catalog sections per employee", ()
         expect(place.mode).toBe("inherit");
       } else {
         expect(place.mode).toBe("folder");
-        expect((place as { hostId: string }).hostId).toBe(AFFINITY_HOSTS[AFFINITY_FOR(manifest.machineAffinity)]);
+        expect((place as { hostId: string }).hostId).toBe(affinityHostId(AFFINITY_FOR(manifest.machineAffinity), HOSTS));
       }
 
       // 3. The role table has a real row (model + effort) for this role (real roleRow).

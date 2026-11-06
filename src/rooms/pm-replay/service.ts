@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import type { NodeExecutor, StepContext } from "@lane-pilot/workflow-engine";
 import { getRuleProposal, logRuleEvent, setRuleTrial } from "@lane-pilot/run-insights";
-import { adoptRuleProposal, SELF_REPAIR_DEFAULTS } from "../self-repair/server";
+import { adoptRuleProposal, lanePilotProjectOrNotice } from "../self-repair/server";
 import { isSandboxProjectName } from "../stability/server";
 import { postOwnerItem } from "../owner-waiting";
 import { registeredTools, scheduleIsolated, type ServerCore, type Services } from "../core/server";
@@ -39,8 +39,10 @@ export function createPmReplay(ctx: ServerCore, services: Services) {
   const tools = () => pmSurfaceTools(registeredTools(bb.agents));
   const toolNames = () => tools().map((tool) => tool.name);
 
+  const lanePilotProjectId = async (): Promise<string> => (await lanePilotProjectOrNotice(db, bb, ctx.host))?.projectId ?? "";
+
   async function runModel(prompt: string, projectId: string, label: string): Promise<string> {
-    const place = await services.resolveProjectWriterHost({ projectId: projectId === "*" ? SELF_REPAIR_DEFAULTS.projectId : projectId } as never).catch(() => null);
+    const place = await services.resolveProjectWriterHost({ projectId: projectId === "*" ? await lanePilotProjectId() : projectId } as never).catch(() => null);
     if (!place || (place as { status?: string }).status !== "resolved") throw new Error("no_host");
     const analyzer = await services.ruleScan.analyzerFor(projectId, { hostId: (place as { hostId: string }).hostId, path: (place as { path: string }).path });
     if (!analyzer) throw new Error("no_analyzer_model");
@@ -48,7 +50,7 @@ export function createPmReplay(ctx: ServerCore, services: Services) {
   }
 
   async function replayHost(projectId: string): Promise<string | null> {
-    const place = await services.resolveProjectWriterHost({ projectId: projectId === "*" ? SELF_REPAIR_DEFAULTS.projectId : projectId } as never).catch(() => null);
+    const place = await services.resolveProjectWriterHost({ projectId: projectId === "*" ? await lanePilotProjectId() : projectId } as never).catch(() => null);
     return place && (place as { status?: string }).status === "resolved" ? (place as { hostId: string }).hostId : null;
   }
 

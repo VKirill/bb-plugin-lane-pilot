@@ -69,8 +69,14 @@ export async function warmSpawnUsage(usage: SpawnUsageUse | undefined, hostId: s
   void usage?.warm({ providerIds: TABLE_PROVIDERS, hostId }).catch(() => undefined);
 }
 
-/** A folder under a macOS user's Documents — the one place an observed opencode2 EPERM can be about. */
+/** A folder under a macOS user's Documents — the one place an observed provider EPERM can be about. */
 const DOCUMENTS_FOLDER = /^\/Users\/[^/]+\/Documents(\/|$)/;
+
+/**
+ * Providers whose start observedly fails inside a macOS TCC-protected folder (~/Documents): opencode2's serve EPERM'd there
+ * on the Mac mini (2026-10-30, vk_required_session_policy_unenforceable_mcp_servers; lifted when the owner re-granted access).
+ */
+const PROVIDER_DOCUMENTS_SENSITIVE: ReadonlySet<string> = new Set(["opencode2"]);
 
 /** The observed start failure of a provider in a ~/Documents folder on one machine, with when it was seen. */
 export type ProviderFolderBlock = { reason: string; at: number };
@@ -92,21 +98,21 @@ export async function readProviderFolderBlock(kv: { get(key: string): Promise<un
  * success or the TTL (Mac mini 2026-10-30: opencode2 serve without Documents access; lifted after the owner re-granted it).
  */
 export async function noteProviderStartFailure(kv: { set(key: string, value: never): Promise<unknown> }, hostId: string | null, providerId: string, envPath: string | null | undefined, reason: string): Promise<void> {
-  if (providerId !== "opencode2" || !envPath || !DOCUMENTS_FOLDER.test(envPath)) return;
+  if (!PROVIDER_DOCUMENTS_SENSITIVE.has(providerId) || !envPath || !DOCUMENTS_FOLDER.test(envPath)) return;
   if (!/EPERM|unenforceable|\b500\b.*mcp|mcp.*\b500\b/i.test(reason)) return;
   await kv.set(providerFolderBlockKey(hostId, providerId), { reason, at: Date.now() } as never).catch(() => undefined);
 }
 
 /** A start that went through in the folder: clears the observed block for this machine+provider. */
 export async function noteProviderStartSuccess(kv: { set(key: string, value: never): Promise<unknown> }, hostId: string | null, providerId: string, envPath: string | null | undefined): Promise<void> {
-  if (providerId !== "opencode2" || !envPath || !DOCUMENTS_FOLDER.test(envPath)) return;
+  if (!PROVIDER_DOCUMENTS_SENSITIVE.has(providerId) || !envPath || !DOCUMENTS_FOLDER.test(envPath)) return;
   await kv.set(providerFolderBlockKey(hostId, providerId), null as never).catch(() => undefined);
 }
 
 /** A provider that cannot work in this folder on this machine, by an observed cause (not a guessed one): the reason for the record, or null. */
 export function providerBlockedForFolder(providerId: string, envPath: string | null | undefined, block?: ProviderFolderBlock | null): string | null {
   // Only an observed refusal holds opencode2 out of ~/Documents: its start EPERM'd there before (vk_required_session_policy_unenforceable_mcp_servers).
-  if (providerId === "opencode2" && envPath && DOCUMENTS_FOLDER.test(envPath) && block) return block.reason;
+  if (PROVIDER_DOCUMENTS_SENSITIVE.has(providerId) && envPath && DOCUMENTS_FOLDER.test(envPath) && block) return block.reason;
   return null;
 }
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { decideThreadCompletion } from "../src/rooms/native-agent/thread-completion";
+import { decideThreadCompletion } from "@lane-pilot/thread-observe";
 
 const threadId = "night-thread";
 
