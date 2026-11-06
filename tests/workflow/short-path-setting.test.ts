@@ -1,6 +1,6 @@
-import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { issueQuickModelCalls, issueQuickShortPath, issueQuickWorkflowId } from "../../src/rooms/workflow/short-path";
+import { fileContaining } from "../support/source-text";
 
 describe("issue_quick.short_path", () => {
   it("stays on the short path unless the setting is off", () => {
@@ -13,7 +13,7 @@ describe("issue_quick.short_path", () => {
   });
 
   it("the intake starts the graph the setting names", () => {
-    const driver = readFileSync(new URL("../../src/rooms/phase/server/driver.ts", import.meta.url), "utf8");
-    expect(driver).toContain("issueQuickWorkflowId(settings)");
+    // The intake calls it wherever the intake lives now: the setting goes dead if the call does.
+    expect(fileContaining("issueQuickWorkflowId(settings)").path).toMatch(/\.tsx?$/);
   });
 });

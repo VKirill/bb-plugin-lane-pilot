@@ -1,5 +1,5 @@
-import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { modelsSection } from "../../packages/workflow-engine/src/capabilities";
 import { ROLE_PROFILES } from "../../src/rooms/native-agent/helper-context";
 import { WORKFLOW_ARCHITECT_SESSION } from "../../src/rooms/workflow/workflow-architect";
 import { PURE_ACTION_KEYS } from "@lane-pilot/workflow-engine";
@@ -70,8 +70,7 @@ describe("the workflow reference the architect reads", () => {
     // Audit round 2, item 17: the prompt only summarizes the format, the reference carries it.
     expect(WORKFLOW_ARCHITECT_SESSION.length).toBeLessThan(12_000);
     // The note of the models section says what a step does when the machine lacks the role's model (resolveAgentModel): the role's default, then the PM's model.
-    const source = readFileSync(new URL("../../packages/workflow-engine/src/capabilities.ts", import.meta.url), "utf8");
-    expect(source).toContain("the step then takes the role's default, then the PM chat's model");
+    expect(modelsSection({ hosts: [], providers: [], runHostId: "none" } as never, {}).note).toContain("the step then takes the role's default, then the PM chat's model");
     expect(WORKFLOW_ARCHITECT_SESSION).toContain("put no model on the node");
     expect(WORKFLOW_ARCHITECT_SESSION).not.toContain("say the pair is unchecked");
   });

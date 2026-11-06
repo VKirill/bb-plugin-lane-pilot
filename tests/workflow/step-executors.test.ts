@@ -1,6 +1,6 @@
-import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { builtinWorkflow } from "../../src/rooms/workflow/builtin";
+import { fileContaining } from "../support/source-text";
 import { costTier, nodeEffortsFor, roleModelKey, validateChoice, type ModelCatalog } from "@lane-pilot/models";
 import { DELEGATED_ACTIONS, resolveStepExecutors, type StepExecutor } from "../../src/rooms/workflow/server/workflow-step-executors";
 
@@ -125,7 +125,7 @@ describe("step executors by node type", () => {
   });
 
   it("lists the same delegated actions the executors register", () => {
-    const source = readFileSync(new URL("../../src/rooms/workflow/server/workflow-executors.ts", import.meta.url), "utf8");
+    const source = fileContaining("const DELEGATED").text;
     const block = source.slice(source.indexOf("const DELEGATED"), source.indexOf("for (const [key, spec] of Object.entries(DELEGATED))"));
     const keys = [...block.matchAll(/^\s+"([a-z_.]+)": \{ role:/gm)].map((match) => match[1]);
     expect([...DELEGATED_ACTIONS].sort()).toEqual(keys.sort());

@@ -1,14 +1,14 @@
-import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import packageJson from "../../package.json";
 import { nightArm } from "../../src/rooms/bench/runner";
 import { isSkippedByBudget, markSkippedRun, insertSet } from "../../src/rooms/bench/store";
 import { nightlySets } from "../../src/rooms/bench/server/weekly";
 import { benchWorld } from "./helpers";
 import type { ManifestTask } from "../../src/rooms/bench/types";
-import { OVH_BENCH_HOST, nightlyRepeats, nightlyRun } from "../../src/rooms/bench/server/weekly";
+import { OVH_BENCH_HOST, mountBenchNightly, nightlyRepeats, nightlyRun } from "../../src/rooms/bench/server/weekly";
 
 describe("bench nightly on OVH", () => {
-  it("runs the whole set on the OVH host under a night arm", () => {
+  it("runs the whole set on the OVH host under a night arm", async () => {
     const input = nightlyRun("v3", "0.1.389");
     expect(OVH_BENCH_HOST).toBe("host_rwrxyi39aw");
     expect(input).toEqual({ version: "v3", arm: nightArm("0.1.389"), wait: true, hostId: OVH_BENCH_HOST, noise: true });
@@ -17,12 +17,22 @@ describe("bench nightly on OVH", () => {
     expect(nightlyRepeats(0)).toBe(3);
     expect(nightlyRepeats(1)).toBe(3);
     expect(nightlyRepeats(3)).toBe(3);
-    const weekly = readFileSync(new URL("../../src/rooms/bench/server/weekly.ts", import.meta.url), "utf8");
-    const server = readFileSync(new URL("../../server.ts", import.meta.url), "utf8");
-    expect(weekly).toContain("await bench().run({ version: newest.version, arm, wait: true, noise: true })");
-    expect(weekly).toContain('scheduleIsolated(ctx.bb, "bench-nightly", "30 1 * * *"');
-    expect(weekly).toContain('["bench.nightly"]');
-    expect(server).toContain("mountBenchNightly");
+    const scheduled: Array<{ name: string; cron: string; work: (signal?: AbortSignal) => Promise<void> | void }> = [];
+    const runs: unknown[] = [];
+    const bb = { background: { schedule: (name: string, cron: string, work: (signal?: AbortSignal) => Promise<void> | void) => scheduled.push({ name, cron, work }) } };
+    const bench = () => ({
+      status: () => [{ version: "v3", createdAt: 1 }],
+      placement: async () => ({ noiseRepeats: 3 }),
+      settings: async () => ({ budgetTokens: 100 }),
+      run: async (input: unknown) => { runs.push(input); return []; },
+      armStrata: async () => [],
+      markSkipped: () => undefined,
+    });
+    const ctx = { bb, db: { prepare: () => ({ all: () => [], get: () => undefined }) }, isDisposed: () => false, log: () => undefined };
+    mountBenchNightly(ctx as never, bench as never);
+    expect(scheduled).toEqual([{ name: "bench-nightly", cron: "30 1 * * *", work: expect.any(Function) }]);
+    await scheduled[0]!.work();
+    expect(runs[0]).toMatchObject({ version: "v3", arm: nightArm(packageJson.version), wait: true, hostId: OVH_BENCH_HOST, noise: true });
   });
 });
 

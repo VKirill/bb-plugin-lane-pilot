@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { brokenProof, isChecked, isDone, smaCheckedPercent, smaCounts, smaDonePercent, smaHoles, smaRows, smaStateCounts, unjudgedProof, type ProofRoots, type SmaRow } from "./model";
+import { brokenProof, isChecked, isDone, proofDrift, smaCheckedPercent, smaCounts, smaDonePercent, smaHoles, smaRows, smaStateCounts, unjudgedProof, type ProofRoots, type SmaRow } from "./model";
 import { SMA_LINKS, SMA_MAP_SHA, SMA_NODES, SMA_REGIONS } from "./graph";
 
 export const SMA_MAP_USAGE = "bb lane-pilot sma-map [--json] [--region <number|name>] [--status have|partial|missing|skip|upstream|unproven|unchecked] [--check-proofs] [--live [--days N]] [--states]   the SMA product map node by node: the card, what Lane Pilot has for it, the proof link and the contract tests; mapped is a link, checked is a test of the card's behaviour; --live says which groups left a trace in the window; --states splits the evidence (available / reachable / checked / observed / outcome-verified)";
@@ -46,6 +46,7 @@ export function runSmaMapCli(argv: string[], cwd: string = process.cwd()): Resul
   const roots = defaultProofRoots(cwd);
   const checking = argv.includes("--check-proofs");
   const broken = checking ? all.flatMap((row) => (row.proof ? [brokenProof(row.proof, roots)] : [])).filter((x): x is string => !!x) : [];
+  const drifted = checking ? all.flatMap((row) => (row.proof ? [proofDrift(row.proof, roots)] : [])).filter((x): x is string => !!x) : [];
   const unjudged = checking ? all.filter((row) => row.proof && unjudgedProof(row.proof, roots)).length : 0;
   const states = argv.includes("--states") ? smaStateCounts(all, roots) : null;
   if (argv.includes("--json")) return { exitCode: holes.length || broken.length ? 1 : 0, stdout: JSON.stringify({ sha: SMA_MAP_SHA, mapped: smaDonePercent(all), checked: smaCheckedPercent(all), counts: smaCounts(all), ...(states ? { states } : {}), rows, holes, broken, unjudged, notMapped: all.filter((row) => !isDone(row)).length }, null, 2) };
@@ -53,6 +54,7 @@ export function runSmaMapCli(argv: string[], cwd: string = process.cwd()): Resul
   if (states) out.push("", `States (X-2): available ${states.available}, reachable ${states.reachable} (${states.unreachable} broken, ${states.unjudged} unjudged), checked by a contract test ${states.checked}; observed and outcome-verified need --live.`);
   if (holes.length) out.push("", `Registry holes (${holes.length}):`, ...holes.map((hole) => `  ${hole}`));
   if (broken.length) out.push("", `Broken proofs (${broken.length}):`, ...broken.map((line) => `  ${line}`));
+  if (drifted.length) out.push("", `Drifted proofs (${drifted.length}) — they resolve, but no longer where the entry points:`, ...drifted.map((line) => `  ${line}`));
   if (unjudged) out.push("", `Proofs not judged: ${unjudged} point into a sibling repository this machine does not have.`);
   return { exitCode: holes.length || broken.length ? 1 : 0, stdout: out.join("\n") };
 }

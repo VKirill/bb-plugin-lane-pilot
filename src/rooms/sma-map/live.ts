@@ -4,7 +4,9 @@
 
 export type LiveSource = { sql: string } | { outside: string };
 
-const t = (table: string, at: string, where = "1=1"): LiveSource => ({ sql: `SELECT COUNT(*) AS n, MAX(${at}) AS last FROM ${table} WHERE ${at} >= :since AND (${where})` });
+// Table names come from the one list below (TABLE_CLOCKS, kept honest against the live schema by tests/sma-live.test.ts):
+// a table no migration created is a compile error here, not a silent `no live source`.
+const t = (table: keyof typeof TABLE_CLOCKS, at: string, where = "1=1"): LiveSource => ({ sql: `SELECT COUNT(*) AS n, MAX(${at}) AS last FROM ${table} WHERE ${at} >= :since AND (${where})` });
 const wf = (...ids: string[]): LiveSource => t("lane_pilot_wf_run", "created_at", `workflow_id IN (${ids.map((id) => `'${id}'`).join(",")})`);
 const part = (where: string): LiveSource => t("lane_pilot_phase_part", "at", where);
 const stage = (...ids: string[]): LiveSource => t("lane_pilot_stage_event", "occurred_at", `stage_id IN (${ids.map((id) => `'${id}'`).join(",")})`);
