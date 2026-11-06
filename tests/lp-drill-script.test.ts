@@ -93,7 +93,7 @@ print(json.dumps(out))
       "src/rooms/memory/memory-paths.ts": ["memory_paths", "parallel3"], "bb-plugin.json": ["memory_paths", "helper_providers", "parallel3"],
     });
     // Nothing changed since HEAD passed an hour ago: only the scenarios without models run; a day later all of them do.
-    expect(out.fresh).toEqual({ names: ["guard_hash", "deferrals", "checkers", "lead_shadow"], skipped: ["helper_providers", "memory_paths", "parallel3"] });
-    expect(out.stale).toEqual({ names: ["guard_hash", "deferrals", "checkers", "memory_paths", "helper_providers", "parallel3", "lead_shadow"], skipped: [] });
+    expect(out.fresh).toEqual({ names: ["guard_hash", "deferrals", "checkers", "lead_shadow", "episodes"], skipped: ["helper_providers", "memory_paths", "parallel3"] });
+    expect(out.stale).toEqual({ names: ["guard_hash", "deferrals", "checkers", "memory_paths", "helper_providers", "parallel3", "lead_shadow", "episodes"], skipped: [] });
   });
 });
