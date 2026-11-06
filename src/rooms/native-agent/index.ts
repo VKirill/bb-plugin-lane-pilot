@@ -29,3 +29,5 @@ export { userVisibleProjects } from "./project-scope";
 export type { ListedProject } from "./project-scope";
 export { sessionInventory } from "./session-inventory";
 export { pmSkillName } from "./server/pm-skill-use";
+export { PROFILE_CHECK_WINDOW_MS, buildProfileReport, helperThreads, latestProfileCheck, narrowedByCeiling, profileCheckMorningLine, providerVerdicts, rolePolicyCounts, saveProfileCheck } from "./profile-check";
+export type { HelperThreadRow, ProfileReport, ProviderVerdict, RolePolicyCount } from "./profile-check";

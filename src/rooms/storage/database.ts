@@ -540,6 +540,8 @@ export const migrations = [
   // Meaning search (packages/memory-core/src/vectors.ts): one vector per active record, made by src/rooms/memory/server/embeddings.ts. Append only.
   `CREATE TABLE IF NOT EXISTS lane_pilot_memory_vec (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, model TEXT NOT NULL, content_sha TEXT NOT NULL, vec BLOB NOT NULL, created_at INTEGER NOT NULL)`,
   `CREATE INDEX IF NOT EXISTS lane_pilot_memory_vec_project ON lane_pilot_memory_vec(project_id, model)`,
+  // The daily read-back of role profiles (src/rooms/native-agent/profile-check.ts): one report row a day.
+  `CREATE TABLE IF NOT EXISTS lane_pilot_profile_check (id INTEGER PRIMARY KEY, at INTEGER NOT NULL, report_json TEXT NOT NULL)`,
 ];
 
 export function openDatabase(bb: BbPluginApi): LanePilotDatabase {

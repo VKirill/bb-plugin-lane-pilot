@@ -207,7 +207,7 @@ export const TABLE_CLOCKS: Record<string, string> = {
   lane_pilot_owner_history: "at", lane_pilot_owner_tombstones: "cutoff", lane_pilot_owner_checkpoints: "updated_at",
   lane_pilot_owner_sources: "changed_at", lane_pilot_owner_loads: "at", lane_pilot_owner_notes_files: "written_at",
   lane_pilot_owner_notes_lines: "",
-  lane_pilot_phase: "created_at", lane_pilot_phase_part: "at",
+  lane_pilot_phase: "created_at", lane_pilot_phase_part: "at", lane_pilot_profile_check: "at",
   lane_pilot_pm_notice: "sent_at", lane_pilot_pm_replay: "at", lane_pilot_pm_scenario: "created_at", lane_pilot_pm_skill_use: "used_at", lane_pilot_gate_run: "updated_at", lane_pilot_project_settings: "updated_at", lane_pilot_reconcile_cursor: "updated_at",
   lane_pilot_regress_pass: "at", lane_pilot_regression: "found_at", lane_pilot_rule_event: "at",
   lane_pilot_rule_promotion: "created_at", lane_pilot_rule_proposal: "updated_at",

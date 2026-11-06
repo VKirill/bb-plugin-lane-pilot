@@ -136,13 +136,13 @@ export function postOwnerItem(db: Db, item: PostOwnerItem, now: number = Date.no
   if (!item.key.trim() || !item.what.trim() || !item.why.trim()) throw new Error("an owner item needs a key, what and why");
   if (isSandbox(item.projectId)) return { created: false };
   // The same key twice: a row the owner answered stays closed (his word stands); a row the system closed — the janitor's term, a run
-  // goal that went green — is a new question when it comes back, so it reopens with the new text (SWE-2 verification N-002: a closed
-  // key was a tombstone, and a second product question on the same task was dropped without a row).
+  // goal that went green, a profile check that went green — is a new question when it comes back, so it reopens with the new text
+  // (SWE-2 verification N-002: a closed key was a tombstone, and a second product question on the same task was dropped without a row).
   const result = db.prepare(`INSERT INTO lane_pilot_owner_item(key,source,kind,project_id,what,why,evidence_json,actions_json,wake,state,created_at)
     VALUES (?,?,?,?,?,?,?,?,?,'open',?)
     ON CONFLICT(key) DO UPDATE SET source=excluded.source, kind=excluded.kind, project_id=excluded.project_id, what=excluded.what, why=excluded.why,
       evidence_json=excluded.evidence_json, actions_json=excluded.actions_json, wake=excluded.wake, state='open', created_at=excluded.created_at, closed_at=NULL, closed_by=NULL
-    WHERE lane_pilot_owner_item.state='closed' AND (lane_pilot_owner_item.closed_by LIKE 'janitor:%' OR lane_pilot_owner_item.closed_by LIKE 'run-goal:%')`).run(item.key, item.source, item.kind, item.projectId ?? null, clip(item.what, 600), clip(item.why, 600),
+    WHERE lane_pilot_owner_item.state='closed' AND (lane_pilot_owner_item.closed_by LIKE 'janitor:%' OR lane_pilot_owner_item.closed_by LIKE 'run-goal:%' OR lane_pilot_owner_item.closed_by LIKE 'profile-check:%')`).run(item.key, item.source, item.kind, item.projectId ?? null, clip(item.what, 600), clip(item.why, 600),
     JSON.stringify(item.evidence ?? []), JSON.stringify(item.actions ?? []), item.wake === false ? 0 : 1, now);
   return { created: result.changes > 0 };
 }

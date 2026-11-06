@@ -24,6 +24,7 @@ import { createRollback } from "./src/rooms/rollback/server";
 import { createPluginBench, mountBenchNightly, mountBenchSweep, mountBenchWeekly, mountServiceModelRecheck } from "./src/rooms/bench/server";
 import { createBaselineRoom, mountRegress, mountRegressionTools } from "./src/rooms/baseline/server";
 import { createRunGoal, mountRunGoal } from "./src/rooms/run-goal/server";
+import { createProfileCheck, mountProfileCheck } from "./src/rooms/native-agent/server";
 import { createLeadService, mountLead } from "./src/rooms/lead/server";
 import { createPhaseDriver, mountPhaseDriver, mountPhaseIntake, registerPhaseTool } from "./src/rooms/phase/server";
 import { registerConversationTools, registerQueueTool } from "./src/rooms/tasks/server";
@@ -125,6 +126,7 @@ export default async function plugin(bb: BbPluginApi) {
     createBaselineRoom(ctx, services),
     createStageReturn(ctx, services),
     createRunGoal(ctx, services),
+    createProfileCheck(ctx),
     createPhaseDriver(ctx, services),
     createMoney(ctx),
     createFront(ctx),
@@ -164,6 +166,8 @@ export default async function plugin(bb: BbPluginApi) {
   mountRegress(ctx, services.regression);
   // Once a run is done, every accepted task's checks run together on the final main (every 20 minutes, a verdict per run).
   mountRunGoal(ctx, services.runGoal);
+  // Once a day: the helper threads of the last 24 h read back for their stored required policies; a loss goes to the owner's list.
+  mountProfileCheck(ctx, services.profileCheck);
   // The lead («Штурман»): the code steps of its tick graph go on the engine; its sweep (every 15 min: due tick, stale receipts, ROAD.md) and its nightly exam of the rights (04:40).
   mountLead(ctx, services);
   // Every two minutes: each live phase is moved by its gates, the next wave of its plan is issued, and the PM gets the one thing the stage needs.

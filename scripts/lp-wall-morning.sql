@@ -147,6 +147,8 @@ with dark(name) as (
   union all
   select 'lane_pilot_phase_part' as name where (select count(*) from lane_pilot_phase_part where at >= (select since from lp_morning_30)) = 0
   union all
+  select 'lane_pilot_profile_check' as name where (select count(*) from lane_pilot_profile_check where at >= (select since from lp_morning_30)) = 0
+  union all
   select 'lane_pilot_pm_notice' as name where (select count(*) from lane_pilot_pm_notice where sent_at >= (select since from lp_morning_30)) = 0
   union all
   select 'lane_pilot_pm_replay' as name where (select count(*) from lane_pilot_pm_replay where at >= (select since from lp_morning_30)) = 0

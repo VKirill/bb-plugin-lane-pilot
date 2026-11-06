@@ -71,7 +71,7 @@ export function benchPipeline(ctx: Pick<ServerCore, "bb" | "db" | "host" | "canc
       const spawned = await fullAccessSpawn(bb, {
         projectId: project.projectId, providerId, model, prompt: "Reply with OK only.",
         environment: { type: "host", hostId: project.hostId, workspace: { type: "unmanaged", path: project.path } },
-        visibility: "visible", pluginMetadata: { role: "bench-source" },
+        visibility: "visible", pluginMetadata: { role: "bench-source", lanePilotBench: true },
       } as never);
       const sourceId = stringAt(spawned, "id");
       if (!sourceId) throw new Error("the bench source thread did not start");
@@ -90,7 +90,7 @@ export function benchPipeline(ctx: Pick<ServerCore, "bb" | "db" | "host" | "canc
       }
       const activated = await services.activate(project.projectId, sourceId, "bb");
       // The PM prompt tells the PM to delegate a fixture task of its own; a bench run takes its tasks only from the bench, so the PM is stopped at once.
-      await bb.sdk.threads.updatePluginMetadata({ threadId: activated.threadId, set: { role: "bench-pm" } } as never).catch(() => undefined);
+      await bb.sdk.threads.updatePluginMetadata({ threadId: activated.threadId, set: { role: "bench-pm", lanePilotBench: true } } as never).catch(() => undefined);
       await bb.sdk.threads.stop({ threadId: activated.threadId }).catch(() => undefined);
       return { pmThreadId: activated.threadId, runId: activated.runId };
     },

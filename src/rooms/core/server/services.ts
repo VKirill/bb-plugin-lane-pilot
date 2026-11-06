@@ -18,6 +18,7 @@ import type { HypothesesApi } from "../../hypotheses/server";
 import type { OwnerPresenceApi } from "../../owner-presence/server";
 import type { WallApi } from "../../wall/server";
 import type { CheckersApi } from "../../checkers/server";
+import type { ProfileCheckApi } from "../../native-agent/server";
 import type { StageReturnApi } from "../../stage-return/server";
 import type { WorldApi } from "../../world/server";
 import type { Canary } from "../../stability/server";
@@ -202,4 +203,6 @@ export interface Services {
   lead: LeadApi;
   /** The PM replay set: harvest, replay runs, the staged A/B decision (src/rooms/pm-replay). Set when it is mounted. */
   pmReplay?: import("../../pm-replay").PmReplay;
+  /** The daily read-back of role profiles: per role, the helpers with/without a stored required policy (src/rooms/native-agent). */
+  profileCheck: ProfileCheckApi;
 }

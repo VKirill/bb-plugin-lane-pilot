@@ -18,6 +18,7 @@ import { diffHiddenMorningLine } from "../checkers/server";
 import { modelRebenchMorningLine } from "../night-graphs";
 import { skillSwitchMorningLine } from "../writer";
 import { errandsDiagnosisMorningLine } from "../errands";
+import { profileCheckMorningLine } from "../native-agent";
 import { watchMorningLine } from "@lane-pilot/jev";
 import { HUNT_ANGLES, buildClassPack, buildLoopPack, buildTaskPack, judgeHunt, parseFinding, type CheckedFinding, type EvidencePack, type HuntOutcome, type LoopEvidence, type PackFile } from "./pack";
 import { executable, headPartsOf, planClassRerun, recordRerun, type RerunPlan, type RerunScope } from "./rerun";
@@ -974,6 +975,7 @@ export function createWall(deps: WallDeps) {
         ...(modelRebenchMorningLine(db as never, ports.now()) ? [modelRebenchMorningLine(db as never, ports.now())!] : []),
         ...(skillSwitchMorningLine(db as never, ports.now()) ? [skillSwitchMorningLine(db as never, ports.now())!] : []),
         ...(errandsDiagnosisMorningLine(db as never) ? [errandsDiagnosisMorningLine(db as never)!] : []),
+        ...(profileCheckMorningLine(db as never) ? [profileCheckMorningLine(db as never)!] : []),
       ],
     };
   }
@@ -1004,6 +1006,7 @@ export function createWall(deps: WallDeps) {
       ...(modelRebenchMorningLine(db as never, now ?? ports.now()) ? [modelRebenchMorningLine(db as never, now ?? ports.now())!] : []),
       ...(skillSwitchMorningLine(db as never, now ?? ports.now()) ? [skillSwitchMorningLine(db as never, now ?? ports.now())!] : []),
       ...(errandsDiagnosisMorningLine(db as never) ? [errandsDiagnosisMorningLine(db as never)!] : []),
+      ...(profileCheckMorningLine(db as never) ? [profileCheckMorningLine(db as never)!] : []),
     ], classes: () => listClasses(db), huntClass };
 }
 

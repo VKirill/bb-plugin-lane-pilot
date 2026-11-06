@@ -26,7 +26,7 @@ export function createProbes(ctx: ServerCore, services: Services) {
         prompt:"Lane Pilot cancel probe. Run `sleep 300` using Bash before responding. Do not edit any file.",
         environment:{ type:"host", hostId:config.hostId, workspace:{ type:"unmanaged", path:config.writerWorkspacePath } },
         visibility:"hidden",
-        pluginMetadata:{ role:"writer", lanePilotRunId:runId, lanePilotTaskId:taskId, attemptId, parentPmThreadId:pmThreadId },
+        pluginMetadata:{ role:"writer", lanePilotRunId:runId, lanePilotTaskId:taskId, attemptId, parentPmThreadId:pmThreadId, helperProbe:true },
         serviceTier:"default" as const,
         executionInputSources:{ providerId:"explicit", model:"explicit", serviceTier:"explicit" as const },
       });
@@ -57,7 +57,7 @@ export function createProbes(ctx: ServerCore, services: Services) {
       prompt:"Lane Pilot provider-error probe. Reply only ok.",
       environment:{ type:"host", hostId:config.hostId, workspace:{ type:"unmanaged", path:config.writerWorkspacePath } },
       visibility:"hidden",
-      pluginMetadata:{ role:"writer", lanePilotRunId:runId, lanePilotTaskId:taskId, attemptId, parentPmThreadId:pmThreadId },
+      pluginMetadata:{ role:"writer", lanePilotRunId:runId, lanePilotTaskId:taskId, attemptId, parentPmThreadId:pmThreadId, helperProbe:true },
       serviceTier:"default" as const,
       executionInputSources:{ providerId:"explicit", model:"explicit", serviceTier:"explicit" as const },
     });
@@ -95,7 +95,7 @@ export function createProbes(ctx: ServerCore, services: Services) {
           sendAt:Date.now() + 86_400_000,
           environment:{ type:"host", hostId:config.hostId, workspace:{ type:"unmanaged", path:config.writerWorkspacePath } },
           visibility:"hidden",
-          pluginMetadata:{ role:"ambiguous-probe", probeOrdinal:ordinal },
+          pluginMetadata:{ role:"ambiguous-probe", probeOrdinal:ordinal, helperProbe:true },
           serviceTier:"default" as const,
           executionInputSources:{ providerId:"explicit", model:"explicit", serviceTier:"explicit" as const },
         });
@@ -106,7 +106,7 @@ export function createProbes(ctx: ServerCore, services: Services) {
       for (const threadId of threadIds) {
         await bb.sdk.threads.updatePluginMetadata({
           threadId,
-          set:{ role:"writer", lanePilotRunId:runId, lanePilotTaskId:taskId, attemptId, parentPmThreadId:pmThreadId },
+          set:{ role:"writer", lanePilotRunId:runId, lanePilotTaskId:taskId, attemptId, parentPmThreadId:pmThreadId, helperProbe:true },
           remove:["probeOrdinal"],
         });
       }
