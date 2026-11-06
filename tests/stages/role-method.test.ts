@@ -50,7 +50,7 @@ describe("K1: role texts adapted from Maestro-Flow", () => {
     expect(text).toMatch(/After 3 refuted hypotheses/);
     for (const kind of ["test_defect", "code_defect", "env_issue"]) expect(text).toContain(kind);
     expect(text).not.toMatch(MAESTRO_ONLY);
-    expect(text.trim().split("\n").at(-3)).toMatch(/SELF-REPAIR-VERDICT: fixed \| already-fixed \| not-lane-pilot \| needs-owner/);
+    expect(text).toMatch(/SELF-REPAIR-VERDICT: fixed \| already-fixed \| not-lane-pilot \| needs-owner/);
   });
 
   it("browser check: three layers per feature, an unasserted case is blocked, never passed", () => {

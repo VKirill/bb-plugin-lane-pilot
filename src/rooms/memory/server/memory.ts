@@ -12,7 +12,8 @@ import { applyScopeMigration } from "../../../../scripts/memory-scope-dry-run";
 import { projectUsesSections, resolveProjectKind, sharedScope } from "@lane-pilot/memory-core";
 import { bbServiceTier, listedServiceTier, writerExecutionSelection } from "@lane-pilot/models";
 import { sha256 } from "../../tasks";
-import { memoryMaintenancePrompt, memoryRecordId, parseMemoryCandidates, parseMemorySettings } from "../memory";
+import { checkBrief, renderBrief } from "../../brief";
+import { memoryMaintenanceBrief, memoryRecordId, parseMemoryCandidates, parseMemorySettings } from "../memory";
 import { NOTHING_RELEVANT } from "@lane-pilot/memory-core";
 import { pmMemoryContext, pmShortlist, snapshotFileRead } from "./memory-mix";
 import { boundedAgentName } from "../../critique";
@@ -252,9 +253,9 @@ export function createMemoryStage(ctx: ServerCore, services: Services) {
       const excerpts=named.flatMap((path)=>{const bytes=excerptRead(path);return bytes?[`FILE ${path}:\n${new TextDecoder().decode(bytes).slice(0,2000)}`]:[];}).join("\n\n");
       const spawned=await fullAccessSpawn(bb, {...placement,...requiredPolicyField(bb, helperPolicy, memoryProviderId, "memory-maintainer"),
         ...writerExecutionSelection(memoryProviderId,memoryModel,memoryEffort,tier),
-        prompt:memoryMaintenancePrompt({task,acceptedResult:compactAcceptedResult(accepted.result),settings:snapshot.settings,agent:snapshot.agent,
+        prompt:(()=>{const brief=renderBrief({role:"memory-maintainer",...memoryMaintenanceBrief({task,acceptedResult:compactAcceptedResult(accepted.result),settings:snapshot.settings,agent:snapshot.agent,
           existing,excerpts,facts:snapshot.facts,
-          core:(({tokens,replaceable})=>({tokens,records:replaceable}))(coreShelf(db,args.projectId,snapshot.settings.personalBot,snapshot.settings.audience,getRunSettingsScopes(db,args.runId)))}),
+          core:(({tokens,replaceable})=>({tokens,records:replaceable}))(coreShelf(db,args.projectId,snapshot.settings.personalBot,snapshot.settings.audience,getRunSettingsScopes(db,args.runId)))})});checkBrief("memory-maintainer",brief.text,{instructionsLength:brief.instructionsLength});return brief.text})(),
         environment:workspaceExecutionEnvironment(config.hostId,workspace),
         pluginMetadata:{role:"memory-maintainer",lanePilotRunId:args.runId,lanePilotTaskId:args.taskId,
           stageId:"memory-maintenance",parentPmThreadId:args.threadId,helperMode:helperPolicy.mode,helperRequired:helperPolicy.policy?.required===true,...graphStepMetadata(args.workflow)}});

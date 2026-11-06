@@ -19,7 +19,7 @@ export { estimateTokens, memoryEntrySupported, memoryRecordId, parseMemoryCandid
 export { isSharedScope, resolveProjectKind, sharedScope, UNASSIGNED_SCOPE, type ProjectKind } from "./sections";
 export { DEFAULT_RELEVANCE_FLOOR, DENSE_FLOOR, NOTHING_RELEVANT, clearsFloor, floorThreshold, recordRelevance, relevantRecords, wordFrequencies, questionWords, pathAnchorsOf, type RelevanceFloor, type RecordRelevance } from "./floor";
 export { buildContextPack, memoryCandidates, shadowPackCompare, type ContextPack, type PackCandidate, type PackSource } from "./context-pack";
-export { ROLE_CONTEXT_BUDGET, explainMemory, memoryContext, memoryMaintenancePrompt, memoryMaintainerTools, roleContextBudget } from "./context";
+export { ROLE_CONTEXT_BUDGET, explainMemory, memoryContext, memoryMaintenanceBrief, memoryMaintenancePrompt, memoryMaintainerTools, roleContextBudget } from "./context";
 export { fileFingerprint, filesDrifted, pathsNamed } from "./fingerprint";
 export { MEMORY_SCHEMA, addToIndexes, coreShelf, dropMemoryIndexes, trigramReady, listMemory, hideRecordsOfFile, memoryVisibilitySql, scopeValuesFor, projectUsesSections, searchMemoryAllSections, searchMemoryRecords, storeMemoryRecords, storeMemoryRecordsKeepingOverflow, type MemoryDatabase, type SearchOptions, type StoreMemoryInput, type StoreMemoryResult } from "./store";
 export { memoryStem, memoryTokens } from "./terms";
