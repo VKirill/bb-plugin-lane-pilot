@@ -8,6 +8,17 @@ type JobEntry = { jobId: string; hostId: string; startedAt: number };
 
 export const isHostJobKind = (method: string): method is HostJobKind => (HOST_JOB_KINDS as readonly string[]).includes(method);
 
+export const HOST_JOB_KV_PREFIX = "host-job:";
+/** The KV key a host call's job id is kept under until the answer is taken. */
+export function hostJobKey(kind: HostJobKind, hostId: string, input: unknown, jobKey?: string): string {
+  return `${HOST_JOB_KV_PREFIX}${kind}:${hostId}:${sha256Hex(JSON.stringify(input)).slice(0, 24)}${jobKey ? `:${sha256Hex(jobKey).slice(0, 16)}` : ""}`;
+}
+/** The host a `host-job:<kind>:<host>:<hash>` key belongs to; null for a key of another shape. */
+export function hostJobHostId(key: string): string | null {
+  const parts = key.split(":");
+  return parts.length >= 4 && parts[0] === "host-job" ? parts[2] ?? null : null;
+}
+
 /** The least a job may be waited for: its caller's own call timeout was sized for a call, not for the work behind it. */
 const MIN_WAIT_MS: Partial<Record<HostJobKind, number>> = {
   detect: 180_000, install: 600_000, rollback: 600_000, snapshot: 600_000, importConfig: 600_000, connectOpencode: 600_000,
@@ -39,7 +50,7 @@ export function createHostJobs(deps: {
   return {
     async run(kind: HostJobKind, input: unknown, options: { hostId: string; timeoutMs?: number; signal?: AbortSignal }, directCall: () => Promise<unknown>, jobKey?: string): Promise<unknown> {
       const { hostId } = options;
-      const key = `host-job:${kind}:${hostId}:${sha256Hex(JSON.stringify(input)).slice(0, 24)}${jobKey ? `:${sha256Hex(jobKey).slice(0, 16)}` : ""}`;
+      const key = hostJobKey(kind, hostId, input, jobKey);
       // A check's verdict is of one moment: a finished one is taken again only by the call that named it (same jobKey, e.g. after
       // a reload), never by a later call whose input happens to be identical (a second merge's post-merge check).
       const takeFinished = kind !== "runSandboxedCommand" || Boolean(jobKey);

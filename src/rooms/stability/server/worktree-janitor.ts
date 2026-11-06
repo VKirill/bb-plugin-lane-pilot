@@ -3,6 +3,7 @@ import { mapListedQaHosts } from "../../qa";
 import { scheduleIsolated, configuredSetting } from "../../core/server";
 import type { ServerCore } from "../../core/server";
 import { loadProjectSettings } from "../../storage";
+import { DOCS_WORKTREE_PREFIX, docsWorktreeName, REGRESS_WORKTREE_PREFIX, regressWorktreePath, SELF_REPAIR_STATE_KEY, type SelfRepairWorktreeState } from "../../storage";
 import { STICKY_WINDOW_MS } from "../../writer";
 
 /**
@@ -43,18 +44,18 @@ export async function protectedWorktreePaths(ctx: Pick<ServerCore, "bb" | "db">,
   for (const row of db.prepare(`SELECT workspace_path AS p FROM lane_pilot_attempt WHERE workspace_path IS NOT NULL AND state IN (${placeholders})`).all(...JANITOR_OPEN_STATES) as Array<{ p: string }>) paths.add(row.p);
   const reopenable = JANITOR_REOPENABLE_STATES.map(() => "?").join(",");
   for (const row of db.prepare(`SELECT workspace_path AS p FROM lane_pilot_attempt WHERE workspace_path IS NOT NULL AND state IN (${reopenable}) AND updated_at>=?`).all(...JANITOR_REOPENABLE_STATES, now - worktreeGraceMs(db)) as Array<{ p: string }>) paths.add(row.p);
-  for (const key of await bb.storage.kv.list("docs-worktree:").catch(() => [] as string[])) {
+  for (const key of await bb.storage.kv.list(DOCS_WORKTREE_PREFIX).catch(() => [] as string[])) {
     const record = await bb.storage.kv.get(key).catch(() => null) as { path?: string } | null;
     if (record?.path) paths.add(record.path);
   }
   // A regress pass is bounded by four hours; its KV marker older than six is a leftover the pass itself would drop (regress.ts LEFTOVER_AFTER_MS).
-  for (const key of await bb.storage.kv.list("regress-worktree:").catch(() => [] as string[])) {
+  for (const key of await bb.storage.kv.list(REGRESS_WORKTREE_PREFIX).catch(() => [] as string[])) {
     const entry = await bb.storage.kv.get(key).catch(() => null) as { at?: number } | null;
-    if (Date.now() - (entry?.at ?? 0) < 6 * 3_600_000) paths.add(key.slice("regress-worktree:".length));
+    if (Date.now() - (entry?.at ?? 0) < 6 * 3_600_000) paths.add(regressWorktreePath(key));
   }
   // The registry is the primary source: every open row is a copy its process still owns.
   for (const row of db.prepare("SELECT path FROM lane_pilot_worktree WHERE released_at IS NULL").all() as Array<{ path: string }>) paths.add(row.path);
-  const repair = await bb.storage.kv.get("self-repair:state").catch(() => null) as { signatures?: Record<string, { worktree?: { path?: string } | null; pending?: { worktree?: { path?: string } } | null }> } | null;
+  const repair = await bb.storage.kv.get(SELF_REPAIR_STATE_KEY).catch(() => null) as SelfRepairWorktreeState | null;
   for (const record of Object.values(repair?.signatures ?? {})) {
     if (record?.worktree?.path) paths.add(record.worktree.path);
     if (record?.pending?.worktree?.path) paths.add(record.pending.worktree.path);
@@ -114,10 +115,10 @@ async function ownerAlive(ctx: Pick<ServerCore, "bb" | "db">, row: { owner_kind:
       || (JANITOR_REOPENABLE_STATES.includes(attempt.state) && now - attempt.updated_at < worktreeGraceMs(db))
       || (attempt.state === "accepted" && Boolean(attempt.area) && now - attempt.updated_at <= STICKY_WINDOW_MS));
   }
-  if (row.owner_kind === "docs" && row.owner_id) return (await bb.storage.kv.list("docs-worktree:").catch(() => [] as string[])).some((key) => key.endsWith(`:${row.owner_id}`));
-  if (row.owner_kind === "regress" && row.owner_id) return (await bb.storage.kv.list("regress-worktree:").catch(() => [] as string[])).some((key) => key.slice("regress-worktree:".length) === row.owner_id);
+  if (row.owner_kind === "docs" && row.owner_id) return (await bb.storage.kv.list(DOCS_WORKTREE_PREFIX).catch(() => [] as string[])).some((key) => docsWorktreeName(key) === row.owner_id);
+  if (row.owner_kind === "regress" && row.owner_id) return (await bb.storage.kv.list(REGRESS_WORKTREE_PREFIX).catch(() => [] as string[])).some((key) => regressWorktreePath(key) === row.owner_id);
   if (row.owner_kind === "self-repair") {
-    const repair = await bb.storage.kv.get("self-repair:state").catch(() => null) as { signatures?: Record<string, { worktree?: { path?: string } | null }> } | null;
+    const repair = await bb.storage.kv.get(SELF_REPAIR_STATE_KEY).catch(() => null) as SelfRepairWorktreeState | null;
     return Object.values(repair?.signatures ?? {}).some((record) => record?.worktree);
   }
   // rollback/baseline/phase/unknown: no liveness marker exists — a pass is bounded, so age is the only doubt;

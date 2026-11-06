@@ -10,7 +10,8 @@ import { aggregateRun } from "../../runs";
 import { TARGET_SHA } from "../../runs";
 import { hostContract } from "../../contracts";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
-import { getAttempt, getRun, getRunSettingsScopes, ownerKindOfName, registerWorktree, releaseWorktree, getRunWriterHost, getTask, getTaskPlan, listAttemptsForTask, listStageReceipts, listTaskTerminalStates, loadProjectSettings, loadPrototypeConfig, sectionBindingId, setIllegalTransitionLog, setRunSettingsScopes, setRunState, transitionAttempt } from "../../storage";
+import { getAttempt, getRun, getRunSettingsScopes, declaredWorktreeOwner, ownerKindOfName, registerWorktree, releaseWorktree, getRunWriterHost, getTask, getTaskPlan, listAttemptsForTask, listStageReceipts, listTaskTerminalStates, loadProjectSettings, loadPrototypeConfig, sectionBindingId, setIllegalTransitionLog, setRunSettingsScopes, setRunState, transitionAttempt } from "../../storage";
+import type { WorktreeOwner } from "../../storage";
 import { GLOBAL_SETTINGS_PROJECT_ID, LP_AGENT_OVERRIDES_KEY, LP_DEFAULTS_KEY, inheritProjectValues, parseLanePilotDefaults } from "@lane-pilot/settings-catalog";
 import { createNativeInstaller } from "../../native-install";
 import type { WriterBindingResolution } from "../../native-agent";
@@ -117,11 +118,12 @@ export function createCore(bb: BbPluginApi, db: LanePilotDatabase) {
       // `job: true` asks for a background job where it is not the rule (the post-merge check); the host never sees it.
       // `jobKey` names the one logical call a job answers (an attempt's post-merge check of one merge commit): a finished job
       // is taken again only under the same key, never by another call with the same input.
-      const { job, jobKey, ...hostOptions } = withSignal as typeof withSignal & { jobKey?: string };
+      // `worktreeOwner` is the creating pass's name for the registry; the host never sees either of these.
+      const { job, jobKey, worktreeOwner, ...hostOptions } = withSignal as typeof withSignal & { jobKey?: string; worktreeOwner?: WorktreeOwner };
       const direct = async () => {
         const endpoint = JEV_METHODS.has(method) ? await jevEndpoint() : undefined;
         const result = await rawCall(method, endpoint?.apiKey ? { ...(input as Record<string, unknown>), jevApiKey:endpoint.apiKey, jevProvider:endpoint.provider.id } : input, hostOptions);
-        noteWorktreeRegistry(method, input, result, options);
+        noteWorktreeRegistry(method, input, result, options, worktreeOwner);
         return result;
       };
       // LANE_PILOT_HOST_JOBS=0 runs every call directly, as before jobs: a switch for a host where they misbehave.
@@ -134,13 +136,14 @@ export function createCore(bb: BbPluginApi, db: LanePilotDatabase) {
 
   // WT2: the worktree registry writes itself on the server side, in this one place every creator's host call passes
   // through — never in each pass's code. A row at create, released_at when the copy goes by remove or by a merge.
-  const noteWorktreeRegistry = (method: string, input: unknown, result: unknown, options: unknown): void => {
+  const noteWorktreeRegistry = (method: string, input: unknown, result: unknown, options: unknown, declared: unknown): void => {
     try {
       const opt = (options ?? {}) as { hostId?: string };
       const inp = (input ?? {}) as { name?: string; taskId?: string; worktreePath?: string; removeWorktree?: boolean };
       const out = (result ?? {}) as { status?: string; path?: string | null; branch?: string | null; removed?: boolean };
       if (method === "gitCreateWorktree" && out.status === "ready" && out.path && typeof opt.hostId === "string") {
-        const owner = ownerKindOfName(typeof inp.name === "string" ? inp.name : "", typeof inp.taskId === "string" ? inp.taskId : null);
+        // The caller declares the owner in `worktreeOwner`; the name-prefix guess is the fallback for callers that don't.
+        const owner = declaredWorktreeOwner(declared) ?? ownerKindOfName(typeof inp.name === "string" ? inp.name : "", typeof inp.taskId === "string" ? inp.taskId : null);
         registerWorktree(db, { host: opt.hostId, path: out.path, branch: out.branch ?? null, owner_kind: owner.kind, owner_id: owner.id });
         return;
       }

@@ -5,6 +5,7 @@ import { closeAbandonedRuns, pluginStopped } from "../../runs/server";
 import type { ServerCore } from "./core";
 import { loadFollowUp, markFollowUpCancelled } from "../../writer/server";
 import { valueAt } from "./values";
+import { HOST_JOB_KV_PREFIX, hostJobHostId } from "@lane-pilot/host-calls";
 
 /**
  * What BB announces about threads, queued messages and machines, handled when it happens instead of at the next sweep
@@ -98,8 +99,8 @@ export function mountLifecycleEvents(ctx: ServerCore, extra?: { onQueued?: (name
     if (!hostId) return;
     await ctx.nativeInstaller.forget(hostId);
     let jobs = 0;
-    for (const key of await bb.storage.kv.list("host-job:")) {
-      if (key.split(":")[2] !== hostId) continue;
+    for (const key of await bb.storage.kv.list(HOST_JOB_KV_PREFIX)) {
+      if (hostJobHostId(key) !== hostId) continue;
       await bb.storage.kv.delete(key);
       jobs++;
     }

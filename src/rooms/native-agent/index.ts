@@ -18,6 +18,7 @@ export type { ExtraAccess, HelperPolicySnapshot, HelperRole } from "./helper-con
 export { discoverClaudeAgents, prepareNativeClaude } from "./native-claude-host";
 export { createClaudeGuardEnv, prepareClaudeGuard } from "./claude-guard-launch";
 export { handleNativeDispatch, mentionContext, nativeContributedEnv } from "./native-dispatch";
+export { nativeAgentTypeKey, nativeEnvKey, nativeSelectionKey, nativeThreadKey } from "./native-kv";
 export { reconcileClaudeLane } from "./native-lane-reconcile";
 export { finalizeNativeLaneBinding, nativeRunReady, ownedNativePmRun, writerWorkspaceForPmInstructions } from "./native-run";
 export { NATIVE_LP_BRIDGE_PM_TOOLS } from "./native-session-hooks";

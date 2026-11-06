@@ -1,6 +1,6 @@
 import { getAttempt } from "../../storage";
 import { handleNativeDispatch, mentionContext, nativeContributedEnv } from "../../native-agent";
-import { NATIVE_MENTION_PROVIDER, nativeSelectionSchema } from "../../native-agent";
+import { NATIVE_MENTION_PROVIDER, nativeSelectionKey, nativeSelectionSchema, nativeThreadKey } from "../../native-agent";
 import { createClaudeGuardEnv } from "../../native-agent";
 import { attachStreamRetry, droppedStreamDetail } from "../../writer";
 import { createPmSkillTraceEnv, createRoleMarkerEnv, mountBbShim } from "../../native-agent/server";
@@ -16,7 +16,7 @@ export function mountNativeWiring(ctx: ServerCore) {
     label: "Lane Pilot",
     search: () => [],
     resolve: async (token) => {
-      const selected = await bb.storage.kv.get(`native-selection:${token}`);
+      const selected = await bb.storage.kv.get(nativeSelectionKey(token));
       if (!selected) {
         bb.log.debug(`native-trace mention.resolve token=${token} reason=selection_missing`);
         throw new Error("Lane Pilot selection is missing. Choose the profile again.");
@@ -76,7 +76,7 @@ export function mountNativeWiring(ctx: ServerCore) {
         if (attempt && (attempt.state === "cancel_requested" || attempt.state === "canceled")) return false;
       }
       if ((typeof role === "string" && role) || (typeof runId === "string" && runId)) return true;
-      return Boolean(await bb.storage.kv.get(`native-thread:${threadId}`));
+      return Boolean(await bb.storage.kv.get(nativeThreadKey(threadId)));
     },
   });
 }
