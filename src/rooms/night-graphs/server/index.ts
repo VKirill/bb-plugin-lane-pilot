@@ -3,6 +3,7 @@
 import type { ServerCore, Services } from "../../core/server";
 import { mountCriticEditGraph } from "./critic-edit-graph";
 import { mountEpisodesGraph } from "./episodes-graph";
+export { episodeSweepDeps } from "./episodes-graph";
 import { mountHarnessGraph } from "./harness-graph";
 import { mountJevLabelsGraph } from "./jev-labels-graph";
 import { mountModelRebenchGraph } from "./model-rebench-graph";

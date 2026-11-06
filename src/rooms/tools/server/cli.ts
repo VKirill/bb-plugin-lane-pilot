@@ -57,6 +57,7 @@ import { CODE_CRITIC_DEFAULTS, isCodeCriticDefault } from "../../critique";
 import { runSkillLintCli } from "../../forge";
 import { ERRAND_EPISODE_TRACE_EVENTS } from "../../errands";
 import { EPISODES_USAGE, runEpisodesCli } from "../../errands/server";
+import { episodeSweepDeps } from "../../night-graphs/server";
 import type { CodeCriticDefault } from "../../critique";
 
 function requireCriticCodeDefault(value: string): CodeCriticDefault {
@@ -424,6 +425,7 @@ ${ERRANDS_USAGE}` },
           return await runEpisodesCli({
             db, readEvents: (threadId) => services.harness.threadEvents(threadId, ERRAND_EPISODE_TRACE_EVENTS),
             log: (message) => ctx.log(message), warn: (message) => ctx.log(message), catalog: services.workflowCatalog,
+            sweepDeps: () => episodeSweepDeps(ctx, services, () => ctx.isDisposed()),
           }, args[0] ?? "", args.slice(1));
         }
         if (command === "configure" && args.length === 1) {

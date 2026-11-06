@@ -290,6 +290,12 @@ describe("episodes-backfill", () => {
     addRun(db2, { id: "a3", title: "Weekly CRM pipeline check", output: { state: "done", verified: "done_checked" } });
     const cli2 = await runEpisodesCli({ db: db2 }, "episodes-backfill", []);
     expect(cli2.stdout).toContain("picked 3 of 3: groups 3, failed 0, single 0");
+
+    // episodes-sweep: refuses without live deps; with them, one pass over the pending rows.
+    expect((await runEpisodesCli({ db: db2 }, "episodes-sweep", [])).exitCode).toBe(1);
+    const swept = await runEpisodesCli({ db: db2, sweepDeps: () => ({ db: db2 }) }, "episodes-sweep", ["--limit", "5"]);
+    expect(swept.exitCode).toBe(0);
+    expect(swept.stdout).toMatch(/^episodes: \d+ enriched, \d+ skipped, \d+ failed, \d+ held of 3 picked/);
   });
 });
 

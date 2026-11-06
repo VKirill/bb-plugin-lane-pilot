@@ -21,9 +21,9 @@ export const EPISODES_SCHEDULE = "episodes-hourly";
  * thread, masks secrets and PII before the `episode-analyst` role's hidden analyzer thread sees the text, parses the
  * strict JSON answer and writes the enrichment columns. `episodes.collect` off makes the whole pass a no-op.
  */
-export function mountEpisodesGraph(ctx: ServerCore, services: Services): void {
-  const engine = services.workflowEngine;
-  const deps = (stopped: () => boolean): EpisodeEnrichDeps => ({
+/** The sweep's live deps (helper thread, analyzer model, Jev); the hourly node and `errands episodes-sweep` share them. */
+export function episodeSweepDeps(ctx: ServerCore, services: Services, stopped: () => boolean): EpisodeEnrichDeps {
+  return {
     db: ctx.db,
     stopped,
     log: (message) => ctx.log(message),
@@ -61,7 +61,12 @@ export function mountEpisodesGraph(ctx: ServerCore, services: Services): void {
       if (!instance.enabled(settings)) return;
       await instance.judge(errandFailureJudgment, input, { projectId: projectId ?? "*", runId, subject: runId, settings });
     },
-  });
+  };
+}
+
+export function mountEpisodesGraph(ctx: ServerCore, services: Services): void {
+  const engine = services.workflowEngine;
+  const deps = (stopped: () => boolean): EpisodeEnrichDeps => episodeSweepDeps(ctx, services, stopped);
 
   engine.register<ChainRuntime>("lp.episodes_sweep", {
     reentrant: true,
