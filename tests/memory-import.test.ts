@@ -34,6 +34,11 @@ describe("memory import: one door, one outcome per line", () => {
     expect(row).toMatchObject({ kind: "note", audience: "subagent", trust: "confirmed", origin: "import", source_file_id: "import:bb-memory:s1", scope_json: "[]" });
   });
 
+  it("an unknown source kind leaves the field out: the RPC result is plain JSON", () => {
+    const report = importJsonl(db(), `${line({ kind: "mystery" })}\n`);
+    expect(Object.hasOwn(report.outcomes[0]!, "kind")).toBe(false);
+  });
+
   it("merges into an observed record a second source confirms", () => {
     const database = db();
     const first = storeMemoryRecords(database, { projectId: PROJECT, personalBot: "", audience: "subagent", sourceSha256: "b".repeat(64),

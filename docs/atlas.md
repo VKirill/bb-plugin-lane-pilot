@@ -44,7 +44,7 @@ Each room is one component: `index.ts` is its public API, `server/` its services
 | jev | JEV_USAGE, judgeAccuracy, runJevCli | 3 | 163 | tests (2) |
 | lead | ClassExam, EXAM_RULES, ExamRow, LEAD_DEFAULTS, LEAD_ID, LEAD_LAUNCH, LEAD_NAME, LEAD_PREDICT_ID, LEAD_SESSION, LEAD_SETTING_KEYS, LEAD_SUMMARY, LEAD_TICK, LEAD_TOOLS, LeadSettingKey, LeadSettings, PredictDecision, PredictInput, RoadEvidence, RoadRow, Verdict, addRoad, answerPhaseWord, answerTaskWord, askPhaseWord, askTaskWord, cohenKappa, doneRoad, examAll, examClass, examEligible, getRoad, leadMigrations, leadPredictJudgment, leadSettingProblem, listRoad, parseLeadSettings, phaseDecisionId, reopenRoad, taskWordItemPrefix, wilsonLower, wordDecisionId | 24 | 2873 | tests (8) |
 | learning | Db, FRUSTRATION_KEY, FrustrationRecord, LEARNING_USAGE, MemoryUnanswered, PmRule, complexity, frustrationReason, judgeRulesOnDiff, learningFor, memoryUnanswered, mountLearning, ownerMessageJudgment, ownerQuestion, pmResumeInstructions, pmRuleRelevance, pmRulesBlock, pmRulesOf, pmRulesPromptBlock, ruleBudget, ruleViolationRemark, runLearningCli, sameAsJudgment, startOfDay, unkeptPromise | 24 | 2437 | tests (2) |
-| memory | MEMORY_PATHS, MEMORY_PRIMITIVES, MemoryPath, MemoryPrimitive, MemorySettings, ProbeKind, parseMemorySettings, pathById | 14 | 1339 | drill: memory_paths |
+| memory | MEMORY_PATHS, MEMORY_PRIMITIVES, MemoryPath, MemoryPrimitive, MemorySettings, ProbeKind, parseMemorySettings, pathById | 14 | 1341 | drill: memory_paths |
 | memory-eval | — | 10 | 1064 | tests (2) |
 | memory-probe | — | 2 | 231 | drill: memory_paths |
 | memory-tiers | Episode, episodeLines, memoryTierMigrations, minHits, queryWords, wordHits | 5 | 200 | tests (1) |

@@ -19,7 +19,7 @@ export const MEMORY_IMPORT_USAGE = [
 /** Source kinds the collectors emit, mapped to the tag the store keeps in concepts (`kind:<value>`; the store's own kind stays `note`). */
 const KIND_MAP: Record<string, string> = {
   user: "preference", feedback: "rule", project: "fact", reference: "fact",
-  process: "procedure", decision: "fact", procedure: "procedure", fact: "fact", preference: "preference", rule: "rule",
+  process: "procedure", decision: "fact", episode: "fact", procedure: "procedure", fact: "fact", preference: "preference", rule: "rule",
 };
 
 const MAX_ENTRY_BYTES = 64_000;
@@ -143,11 +143,13 @@ export function runMemoryImport(options: MemoryImportOptions): ImportReport {
     if (Buffer.byteLength(masked, "utf8") > MAX_ENTRY_BYTES) return { ...base, outcome: "dropped" as const, reason: "oversize" };
 
     const kind = typeof line.kind === "string" ? KIND_MAP[line.kind.trim().toLowerCase()] : undefined;
+    // An unknown source kind is left out, not sent as undefined: the RPC result refuses a non-JSON value.
+    const kindOf = kind ? { kind } : {};
     const concepts = [...normalizeConcepts(line.concepts), ...(kind ? [`kind:${kind}`] : [])].slice(0, MAX_CONCEPTS);
     const entry: MemoryCandidate = { kind: "note", content: masked, concepts,
       sourceFileId: `import:${source}:${sourceId}`, ...(createdAt != null ? { validFrom: createdAt } : {}) };
 
-    if (createdAt != null && staleSuperseded(activeRows(db, projectId), entry, createdAt)) return { ...base, outcome: "dropped" as const, reason: "stale_superseded", kind, concepts, content: masked };
+    if (createdAt != null && staleSuperseded(activeRows(db, projectId), entry, createdAt)) return { ...base, outcome: "dropped" as const, reason: "stale_superseded", ...kindOf, concepts, content: masked };
 
     try {
       const result = storeMemoryRecords(db, { projectId, personalBot, audience: "subagent",
@@ -155,13 +157,13 @@ export function runMemoryImport(options: MemoryImportOptions): ImportReport {
         trust: "confirmed", origin: "import", now, ...budgets });
       evictedIds.push(...result.evictedIds);
       heldIds.push(...result.heldIds);
-      const shared = { kind, concepts, content: masked };
+      const shared = { ...kindOf, concepts, content: masked };
       if (result.insertedIds.length) return { ...base, ...shared, outcome: "added" as const, id: result.insertedIds[0],
         ...(result.supersededIds.length ? { superseded: result.supersededIds } : {}) };
       if (result.corroboratedIds.length) return { ...base, ...shared, outcome: "merged_with" as const, id: result.corroboratedIds[0]! };
       return { ...base, ...shared, outcome: "dropped" as const, reason: "duplicate" };
     } catch (cause) {
-      return { ...base, outcome: "dropped" as const, reason: dropReason(cause), kind, concepts, content: masked };
+      return { ...base, outcome: "dropped" as const, reason: dropReason(cause), ...kindOf, concepts, content: masked };
     }
   };
 
