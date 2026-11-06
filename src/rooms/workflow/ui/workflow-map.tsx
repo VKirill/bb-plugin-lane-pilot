@@ -352,7 +352,7 @@ export function WorkflowMap({ locale, projectId, onOpenGraph }: { locale: Locale
           {data?.commit ? ` · ${t("wmFromCommit").replace("{commit}", data.commit)}` : ""}
         </div>
         <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-2">
-          <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("wmSearch")} className="h-8 w-48 max-w-full text-xs" data-testid="wf-map-search" />
+          <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("wmSearch")} className="h-8 w-full min-w-0 shrink-0 text-xs sm:w-48" data-testid="wf-map-search" />
           <Select value={category} onValueChange={setCategory}>
             <SelectTrigger className="h-8 w-40 text-xs" data-testid="wf-map-cat"><SelectValue /></SelectTrigger>
             <SelectContent>
