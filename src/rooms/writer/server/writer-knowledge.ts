@@ -1,4 +1,5 @@
 import { acceptedRules, pickRelevantRules, ruleRelevanceQuestions, ruleRelevanceState } from "@lane-pilot/run-insights";
+import { embedQuery } from "../../memory/server";
 import { DEFAULT_RELEVANCE_FLOOR, buildContextPack, clearsFloor, filesDrifted, memoryCandidates, pathsNamed, questionWords, recordRelevance, shadowPackCompare, wordFrequencies, type MemorySettings } from "@lane-pilot/memory-core";
 import type { TaskV2 } from "../../contracts";
 import { mixWriterMemory, snapshotFileRead, writerCandidates, writerMemoryPaths } from "../../memory/server";
@@ -53,6 +54,7 @@ export async function writerKnowledge(deps:KnowledgeDeps & { log?: (line:string)
   const ruleMemoryIds=new Set(allRules.map((rule)=>rule.memoryId));
   // The writer gets at most three notes that name a path of this task; other helpers keep the budgeted context.
   const mixInput={projectId:input.projectId,query:taskMemoryQuery,task:input.task,searchEngine:input.memorySettings.searchEngine,personalBot:input.memorySettings.personalBot,ruleMemoryIds,kind:input.memorySettings.projectKind,chain:await deps.chainForRun(input.runId)};
+  if(memoryOn) await embedQuery(taskMemoryQuery);
   const readFile=memoryOn&&input.readBytes?await snapshotFileRead(writerMemoryPaths(deps.db,mixInput),input.readBytes):undefined;
   const mixed=memoryOn?mixWriterMemory(deps.db,{...mixInput,readFile}):{text:"",ids:[] as string[]};
   // M4 shadow: one pack is compiled from the same sources next to the legacy mix and compared; nothing it builds is delivered.

@@ -102,9 +102,10 @@ export const MEMORY_PATHS: readonly MemoryPath[] = [
     reason: "A measurement over the import receipt, read by the operator; nothing it finds reaches an agent prompt.",
     sites: [{ file: "src/rooms/memory/server/import.ts", primitive: "searchMemoryRecords", count: 1 }] },
   { id: "hub.session_rpc", consumer: "the hub session_memory RPCs, not a Lane Pilot agent prompt", carries: [], alwaysOn: [], status: "exempt",
-    reason: "Claude Lane's terminal client is gone (2026-10-29). The RPCs stay for the hub; they do not deliver into an agent prompt.",
+    reason: "The RPCs answer `bb lane-pilot memory search|write` (an agent's shell command, M2 rule): the agent reads the answer as command output, not as injected prompt text.",
     sites: [
       { file: "src/rooms/memory/server/session-memory.ts", primitive: "session_memory_search", count: 1 },
+      { file: "src/rooms/tools/server/cli.ts", primitive: "session_memory_search", count: 1 },
       { file: "src/rooms/memory/server/session-memory.ts", primitive: "session_memory_core", count: 1 },
       { file: "src/rooms/memory/server/session-memory.ts", primitive: "searchMemoryRecords", count: 1 },
     ] },

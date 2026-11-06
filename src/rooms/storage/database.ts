@@ -537,6 +537,9 @@ export const migrations = [
   // Stream M1b: the owner anamnesis moves to the hub (src/rooms/anamnesis/migrations.ts) — the same columns as the
   // Mac-mini file store under the lane_pilot_owner_ prefix, so one base holds it next to the rest of Lane Pilot's data.
   ...anamnesisOwnerMigrations,
+  // Meaning search (packages/memory-core/src/vectors.ts): one vector per active record, made by src/rooms/memory/server/embeddings.ts. Append only.
+  `CREATE TABLE IF NOT EXISTS lane_pilot_memory_vec (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, model TEXT NOT NULL, content_sha TEXT NOT NULL, vec BLOB NOT NULL, created_at INTEGER NOT NULL)`,
+  `CREATE INDEX IF NOT EXISTS lane_pilot_memory_vec_project ON lane_pilot_memory_vec(project_id, model)`,
 ];
 
 export function openDatabase(bb: BbPluginApi): LanePilotDatabase {

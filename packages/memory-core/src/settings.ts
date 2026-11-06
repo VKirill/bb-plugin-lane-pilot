@@ -29,7 +29,9 @@ export type MemoryRecord=MemoryCore & {id:string;projectId:string;personalBot:st
   /** The accepted task this record was distilled from. */
   originTaskId?:string|null;
   /** Who vouched for the fact: one entry per independent source (arXiv #21). */
-  verification?:Array<{by:string;sha:string;at:number}>};
+  verification?:Array<{by:string;sha:string;at:number}>;
+  /** Cosine to the question when the search ranked by meaning (`vectors.ts`); absent on a word search. */
+  similarity?:number};
 
 export const MAX_BUDGET=1_000_000;
 /** The settings keys `parseMemorySettings` reads. */

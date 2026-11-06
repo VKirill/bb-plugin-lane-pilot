@@ -98,6 +98,13 @@ export function floorThreshold(floor: RelevanceFloor, words: number): number {
   return floor.minScoreShort + (floor.minScore - floor.minScoreShort) * along;
 }
 
+/**
+ * The floor of a meaning search (a record carrying `similarity`, `vectors.ts`): the cosine below which a record is noise. Chosen on the
+ * hub copy 2026-11-06 (gemini-embedding-2, 768): 0.65 keeps 99.5% of the wanted records; a question with no answer still mostly finds
+ * something above it, so this floor cuts noise and does not decide «nothing» (that is the rerank's job).
+ */
+export const DENSE_FLOOR = 0.65;
+
 export const clearsFloor = (relevance: RecordRelevance, floor: RelevanceFloor, words: number): boolean =>
   (floor.anchor && relevance.anchor) || relevance.score >= floorThreshold(floor, words);
 
@@ -107,5 +114,7 @@ export function relevantRecords(db: MemoryDatabase, projectId: string, query: st
   if (!floor || records.length === 0) return [...records];
   const relevance = recordRelevance(wordFrequencies(db, projectId, opts.audience ?? "subagent", opts.personalBot ?? ""), query, records);
   const words = questionWords(query);
-  return records.filter((record) => clearsFloor(relevance.get(record.id)!, floor, words));
+  return records.filter((record) => record.similarity !== undefined
+    ? (floor.anchor && relevance.get(record.id)!.anchor) || record.similarity >= DENSE_FLOOR
+    : clearsFloor(relevance.get(record.id)!, floor, words));
 }

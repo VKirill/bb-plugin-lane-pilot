@@ -1,4 +1,5 @@
 import { evalMemoryImport, formatImportEval, formatImportSummary, pmTopIds, runMemoryImport, type ImportReport } from "./import";
+import { embedQuery } from "./embeddings";
 import { resolve } from "node:path";
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import { getRuleProposal, upsertLessonProposal } from "@lane-pilot/run-insights";
@@ -71,6 +72,7 @@ export function sessionMemoryRpc(ctx: ServerCore, services: Services) {
       // The session sees its own fresh notes. A missing chain is the project root, not every section.
       const wanted = limit ?? 8;
       // The floor drops records, so the search looks further than the limit to fill it; a query nothing clears gets the explicit «nothing» next to the empty list.
+      await embedQuery(query);
       const found = searchMemoryRecords(db, projectId, query, Math.min(100, Math.max(40, wanted * 4)), settings.searchEngine, "subagent", settings.personalBot, { includeObserved: true, chain: chain ?? [], umbrella: resolveProjectKind(settings.projectKind, projectUsesSections(db, projectId)) === "umbrella" });
       const floored = relevantRecords(db, projectId, query, found, { audience: "subagent", personalBot: settings.personalBot, floor: settings.queryFloor === false ? null : DEFAULT_RELEVANCE_FLOOR });
       const records = (await rerankRecords(floored, query, { projectId, settings: loadProjectSettings(db, projectId, chain ?? []) })).slice(0, wanted)

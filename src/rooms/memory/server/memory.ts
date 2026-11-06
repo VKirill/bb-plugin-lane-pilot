@@ -1,4 +1,5 @@
 import { resolve } from "node:path";
+import { embedQuery } from "./embeddings";
 import { taskV2Schema } from "../../contracts";
 import { jev } from "@lane-pilot/jev";
 import { memoryRerankJudgment } from "@lane-pilot/jev/judgments/memory-rerank";
@@ -306,6 +307,7 @@ export function createMemoryStage(ctx: ServerCore, services: Services) {
     if(!memorySettings.enabled) return {runId:args.runId,state:"skipped",reason:"memory_disabled"};
     const demoted = demoteUnusedPromotions(db);
     const chain=getRunSettingsScopes(db,args.runId);
+    await embedQuery(args.query);
     // M4: Jev keeps only what helps with the question (active); shadow/off leaves the word order as it was.
     const kept=new Set((await rerankRecords(pmShortlist(db,args.projectId,memorySettings,args.query,chain),args.query,{projectId:args.projectId,runId:args.runId,settings:settings as Record<string,unknown>})).map((record)=>record.id));
     const selected=pmMemoryContext(db,args.projectId,memorySettings,args.query,chain,"pm",undefined,(records)=>records.filter((record)=>kept.has(record.id)));

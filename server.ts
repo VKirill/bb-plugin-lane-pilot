@@ -52,7 +52,7 @@ import { threadPendingInteractions } from "./src/rooms/relay/server";
 import type { Services } from "./src/rooms/core/server";
 import { createStageChildren } from "./src/rooms/qa/server";
 import { createDocsStage } from "./src/rooms/docs/server";
-import { createMemoryStage, mountThreadBlock } from "./src/rooms/memory/server";
+import { createMemoryStage, mountMemoryEmbeddings, mountThreadBlock } from "./src/rooms/memory/server";
 import { createNightStages } from "./src/rooms/night/server";
 import { createProjectLifeStage } from "./src/rooms/project-life/server";
 import { createQaStages } from "./src/rooms/qa/server";
@@ -186,6 +186,7 @@ export default async function plugin(bb: BbPluginApi) {
   mountLearning(ctx, services);
   // Every ordinary thread of a project gets the L1 memory showcase (M2); PM and plugin threads are left out inside.
   mountThreadBlock(ctx);
+  mountMemoryEmbeddings(ctx);
   registerPhaseTool(ctx, services);
   registerQueueTool(ctx);
   registerConversationTools(ctx);

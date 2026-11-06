@@ -105,6 +105,8 @@ with dark(name) as (
   union all
   select 'lane_pilot_memory_receipt' as name where (select count(*) from lane_pilot_memory_receipt where created_at >= (select since from lp_morning_30)) = 0
   union all
+  select 'lane_pilot_memory_vec' as name where (select count(*) from lane_pilot_memory_vec where created_at >= (select since from lp_morning_30)) = 0
+  union all
   select 'lane_pilot_model_rebench' as name where (select count(*) from lane_pilot_model_rebench where recorded_at >= (select since from lp_morning_30)) = 0
   union all
   select 'lane_pilot_outage' as name where (select count(*) from lane_pilot_outage where noticed_at >= (select since from lp_morning_30)) = 0

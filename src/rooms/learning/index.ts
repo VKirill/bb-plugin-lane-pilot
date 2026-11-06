@@ -15,3 +15,5 @@ export { judgeRulesOnDiff, ruleViolationRemark } from "./rule-diff";
 export { ownerMessageJudgment, sameAsJudgment } from "./judgment";
 export { pmRuleRelevance } from "./pm-rules";
 export { unkeptPromise, ownerQuestion, complexity } from "./signals";
+
+export { envCatalogKey } from "./keys";

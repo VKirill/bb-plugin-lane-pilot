@@ -4,6 +4,8 @@ import type Database from "better-sqlite3";
 import { OBSERVED_QUARANTINE_MS, expireMemory, hideRecord, idleSql, sameSubject } from "./lifecycle";
 import { memoryStem, memoryTokens } from "./terms";
 import { conflictTableReady, heldClause, holdConflict } from "./conflict-store";
+import { denseRank, queryVectorFor } from "./vectors";
+import { pathAnchorsOf } from "./floor";
 import type { MemoryAudience, MemoryCandidate, MemoryKind, MemoryRecord, MemorySearchEngine, MemoryStatus, MemoryTrust } from "./settings";
 
 /** The better-sqlite3 surface this package needs; BB's `bb.storage.database()` satisfies it. */
@@ -337,15 +339,39 @@ export function searchMemoryRecords(db: MemoryDatabase, projectId: string, query
         ORDER BY bm25(lane_pilot_memory_trgm) LIMIT ?`).all(stems.map((stem) => `"${stem.replaceAll('"', "")}"`).join(" OR "), projectId, audience, personalBot, limit) as Row[]
       : scanRows(db, projectId, audience, personalBot, stems, options, limit);
     rows = fuse([words, parts], limit);
+    const dense = denseRows(db, projectId, query, audience, personalBot, options, rows);
+    if (dense) rows = dense.slice(0, limit);
   } else {
     const all = db.prepare(`SELECT ${cols("m.")} FROM lane_pilot_memory m WHERE m.project_id=? AND m.audience=? AND m.personal_bot=? AND ${visibility(db, "m", options)}`).all(projectId, audience, personalBot) as Row[];
     const score = (text: string) => tokens.reduce((sum, token) => sum + (text.toLowerCase().split(token).length - 1), 0);
     rows = all.map((row) => ({ ...row, _score: score(`${row.content} ${row.concepts_json}`) })).filter((row) => row._score > 0).sort((a, b) => b._score - a._score || b.created_at - a.created_at).slice(0, limit);
   }
-  const records = rows.map(toRecord);
+  const records = rows.map((row) => { const record = toRecord(row); const similarity = (row as Row & { similarity?: number }).similarity; return similarity === undefined ? record : { ...record, similarity }; });
   // M7 receipt: a pre-M7 root row delivered inside an umbrella reads with the legacy_scope flag.
   if (options.umbrella) rows.forEach((row, index) => { if (!parseScopeJson((row as Row & { scope_json: string | null }).scope_json).length) (records[index] as MemoryRecord & { legacyScope?: boolean }).legacyScope = true; });
   return records;
+}
+
+/**
+ * The meaning ranking (`vectors.ts`) when the caller embedded the question and the project has vectors: visible records by cosine,
+ * each carrying its `similarity` for the floor. Words only add the records that name a path written in the question, first — an exact
+ * path is the one thing a word match knows better. A record with no vector yet is not lost: the word hits follow the ranked ones.
+ */
+function denseRows(db: MemoryDatabase, projectId: string, query: string, audience: MemoryAudience, personalBot: string, options: SearchOptions, wordRows: Row[]): Array<Row & { similarity?: number }> | null {
+  const vector = queryVectorFor(query);
+  const ranked = vector ? denseRank(db, projectId, vector) : null;
+  if (!ranked) return null;
+  const visible = new Map((db.prepare(`SELECT ${cols("m.")} FROM lane_pilot_memory m WHERE m.project_id=? AND m.audience=? AND m.personal_bot=? AND ${visibility(db, "m", options)}`)
+    .all(projectId, audience, personalBot) as Row[]).map((row) => [row.id, row]));
+  const similarity = new Map(ranked.map((item) => [item.id, item.similarity]));
+  const anchors = pathAnchorsOf(query);
+  const anchored = anchors.length ? wordRows.filter((row) => anchors.some((anchor) => row.content.includes(anchor))) : [];
+  const out: Array<Row & { similarity?: number }> = [], seen = new Set<string>();
+  const add = (row: Row | undefined) => { if (row && !seen.has(row.id)) { seen.add(row.id); out.push({ ...row, ...(similarity.has(row.id) ? { similarity: similarity.get(row.id)! } : {}) }); } };
+  anchored.forEach(add);
+  for (const item of ranked) add(visible.get(item.id));
+  wordRows.filter((row) => !similarity.has(row.id)).forEach(add);
+  return out;
 }
 
 /** Reciprocal rank fusion of ranked lists with equal weight: a record both lists find outranks one only a list finds. */

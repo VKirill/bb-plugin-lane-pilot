@@ -28,7 +28,8 @@ export const memoryRerankJudgment = defineJudgment<RerankInput, RerankDecision>(
       { true: "the passage helps with this query", false: "shared words but different problem, or irrelevant detail" }),
   ])),
   thresholds: {
-    keep_p: { default: 0.5, min: 0.2, max: 0.9, about: "p(helps) a passage needs to be delivered" },
+    // 0.8 chosen on the hub copy 2026-11-06 behind the meaning search: 0.5 kept a passage for 21% of the questions memory cannot answer.
+    keep_p: { default: 0.8, min: 0.2, max: 0.9, about: "p(helps) a passage needs to be delivered" },
   },
   decide(answers, t, input) {
     const scores = input.passages.slice(0, MAX_PASSAGES).map((_, i) => Math.round((noulOf(answers, `p${i}`) ?? 0) * 1000) / 1000);

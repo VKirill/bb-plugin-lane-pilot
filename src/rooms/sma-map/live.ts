@@ -200,7 +200,7 @@ export const TABLE_CLOCKS: Record<string, string> = {
   lane_pilot_harness_experience: "created_at", lane_pilot_hypothesis: "created_at", lane_pilot_janitor: "at", lane_pilot_jev_receipt: "at",
   lane_pilot_learning_item: "created_at", lane_pilot_learning_obs: "at", lane_pilot_learning_signal: "at",
   lane_pilot_memory: "created_at", lane_pilot_memory_conflict: "", lane_pilot_memory_miss: "at",
-  lane_pilot_memory_probe: "at", lane_pilot_memory_promotion: "at", lane_pilot_memory_receipt: "created_at",
+  lane_pilot_memory_probe: "at", lane_pilot_memory_promotion: "at", lane_pilot_memory_receipt: "created_at", lane_pilot_memory_vec: "created_at",
   lane_pilot_model_rebench: "recorded_at", lane_pilot_outage: "noticed_at", lane_pilot_owner_config: "updated_at", lane_pilot_owner_item: "created_at", lane_pilot_decision: "created_at",
   lane_pilot_lead_road: "created_at", lane_pilot_lead_tick: "started_at", lane_pilot_lead_right: "",
   lane_pilot_owner_push: "", lane_pilot_owner_records: "updated_at", lane_pilot_owner_evidence: "at",
