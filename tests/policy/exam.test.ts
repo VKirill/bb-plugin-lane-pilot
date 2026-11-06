@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { EXAM, EXAM_LIVE, EXAM_RESULT_KEY, authorize, examSchema, liveExamSchema, policyHash, runExam, runLiveExam, unseenItems, type Exam, type LiveItem } from "../../src/rooms/policy/exam";
 import { POLICY, classifyChange, type Policy } from "../../src/rooms/policy/policy";
 import { runPolicyCli } from "../../src/rooms/policy/cli";
+import { fileContaining, filesContaining } from "../support/source-text";
 
 const ROOT = join(__dirname, "..", "..");
 const proof = { bench_subset_passed: true, auto_revertible: true };
@@ -150,18 +151,15 @@ describe("authorize: the classification is final, the exam is a measurement (the
   });
 
   it("F-002: a failed exam is not documented as blocking authorize", () => {
-    const exam = readFileSync(join(ROOT, "src/rooms/policy/exam.ts"), "utf8");
-    const policy = readFileSync(join(ROOT, "src/rooms/policy/policy.ts"), "utf8");
     const doc = readFileSync(join(ROOT, "docs/night-policy.md"), "utf8");
-    const cli = readFileSync(join(ROOT, "src/rooms/tools/server/cli.ts"), "utf8");
-    expect(exam).toContain("A failed exam does not block night_decides");
-    expect(exam).not.toContain("The gate itself never reads it");
-    expect(policy).not.toContain("The split the gate reads");
+    expect(fileContaining("A failed exam does not block night_decides").path).toMatch(/\.tsx?$/);
+    expect(filesContaining("The gate itself never reads it")).toEqual([]);
+    expect(filesContaining("The split the gate reads")).toEqual([]);
     expect(doc).toContain("does not turn night_decides into night_proposes");
     expect(doc).not.toContain("stands only when `runLiveExam` passes");
     expect(doc).not.toContain("night decides nothing alone");
     expect(doc).not.toContain("the answer counts only while");
-    expect(cli).not.toContain("the night proposes instead of deciding");
+    expect(filesContaining("the night proposes instead of deciding")).toEqual([]);
   });
 
   it("a missing proof, a judge's file or data stay out of the night's hands", () => {

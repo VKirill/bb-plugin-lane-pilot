@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { fileContaining } from "./support/source-text";
 import { STAGE_IDS, STAGE_PROOF, acceptanceProofGap, isAdvisoryProof, stageProofSchema } from "@lane-pilot/contracts";
 import type { StageId } from "@lane-pilot/contracts";
 import { LP_TASK_PIPELINE, builtinWorkflow } from "../src/rooms/workflow/builtin";
@@ -66,7 +67,7 @@ describe("a model's opinion alone never accepts a task", () => {
   });
 
   it("is checked where acceptance is decided: before the acceptance receipt is written", () => {
-    const source = readFileSync(join(__dirname, "../src/rooms/writer/server/finish.ts"), "utf8");
+    const { text: source } = fileContaining("acceptanceProofGap(provenBy)");
     const guard = source.indexOf("acceptanceProofGap(provenBy)");
     const accept = source.indexOf("services.persistWriterAcceptance(");
     expect(guard).toBeGreaterThan(0);

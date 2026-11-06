@@ -291,13 +291,12 @@ it("overlay PM session carries the goal-based authorization policy and omits per
   expect(LANE_PILOT_PM_SESSION).not.toContain("exactly that change");
 });
 
-it("PM routes non-code requests to lane_pilot_route before searching (thr_n6ukbhcv9t, 2026-10-09)", async () => {
-  const src = (await import("node:fs")).readFileSync(new URL("../src/rooms/native-agent/native-agent-overlay.ts", import.meta.url), "utf8");
-  const act = src.indexOf("## When to act");
-  const route = src.indexOf("goes to \\`lane_pilot_route\\` first", act);
+it("PM routes non-code requests to lane_pilot_route before searching (thr_n6ukbhcv9t, 2026-10-09)", () => {
+  const act = LANE_PILOT_PM_SESSION.indexOf("## When to act");
+  const route = LANE_PILOT_PM_SESSION.indexOf("goes to `lane_pilot_route` first", act);
   expect(act).toBeGreaterThan(0);
   expect(route).toBeGreaterThan(act);
-  expect(route).toBeLessThan(src.indexOf("## Dispatch"));
-  expect(src).toContain("the router names the graph to start (\\`web-research\\`, \\`errand\\`, \\`specialist\\`)");
-  expect(src).not.toContain("work the usual way");
+  expect(route).toBeLessThan(LANE_PILOT_PM_SESSION.indexOf("## Dispatch"));
+  expect(LANE_PILOT_PM_SESSION).toContain("the router names the graph to start (`web-research`, `errand`, `specialist`)");
+  expect(LANE_PILOT_PM_SESSION).not.toContain("work the usual way");
 });

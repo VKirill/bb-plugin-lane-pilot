@@ -34,39 +34,21 @@ describe("dark tables (W32 rank 9)", () => {
   it("names every lane_pilot_* table the migrations create", async () => {
     const fs = await import("node:fs"), path = await import("node:path");
     const root = path.join(import.meta.dirname, "..");
-    const files: string[] = [];
-    const walk = (dir: string) => {
-      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-        const p = path.join(dir, entry.name);
-        if (entry.isDirectory()) { if (entry.name !== "tests" && entry.name !== "test") walk(p); } else if (entry.name.endsWith(".ts") && !entry.name.endsWith(".test.ts")) files.push(p);
-      }
-    };
-    walk(path.join(root, "src")); walk(path.join(root, "packages"));
-    const missing: string[] = [], seen = new Set<string>(), dropped = new Set<string>();
-    for (const file of files) {
-      for (const line of fs.readFileSync(file, "utf8").split("\n")) {
-        const d = /DROP TABLE(?: IF EXISTS)? `?(lane_pilot_[a-z_]+)`?/i.exec(line);
-        if (d) dropped.add(d[1]!);
-        const m = /CREATE TABLE(?: IF NOT EXISTS)? `?(lane_pilot_[a-z_]+)`?/i.exec(line);
-        if (!m || seen.has(m[1]!) || /_next$|_nv$|_v$|_fts/.test(m[1]!)) continue;
-        seen.add(m[1]!);
-        if (!(m[1]! in TABLE_CLOCKS)) missing.push(m[1]!);
-      }
-    }
-    // A table a later migration drops (lane_pilot_lead_label, 0.1.458) is not live and needs no clock.
-    expect(missing.filter((table) => !dropped.has(table))).toEqual([]);
-    // The clock a map row names must be a real column ("" counts the table in full); the live schema is the referee —
-    // a CREATE ..._next rename or a later ALTER would fool any text scan.
+    // The live schema is the referee: a CREATE ..._next rename, a DROP or a later ALTER would fool any text scan.
     const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
     const dbc = openDatabase(bb) as unknown as { prepare(sql: string): { all(...args: unknown[]): unknown[] } };
+    const seen = new Set<string>((dbc.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'lane_pilot_%'").all() as Array<{ name: string }>).map((row) => row.name));
+    const missing = [...seen].filter((name) => !/_next$|_nv$|_v$|_fts/.test(name) && !(name in TABLE_CLOCKS));
+    expect(missing).toEqual([]);
+    // The clock a map row names must be a real column ("" counts the table in full).
     const wrongClock = Object.entries(TABLE_CLOCKS).filter(([table, clock]) => {
-      if (!clock) return false;
+      if (!clock || !seen.has(table)) return false;
       const cols = (dbc.prepare("SELECT name FROM pragma_table_info(?)").all(table) as Array<{ name: string }>).map((row) => row.name);
       return !cols.includes(clock);
     }).map(([table]) => table);
     expect(wrongClock).toEqual([]);
     const sql = fs.readFileSync(path.join(root, "scripts/lp-wall-morning.sql"), "utf8");
-    expect([...seen].filter((name) => !dropped.has(name) && !sql.includes(`'${name}'`))).toEqual([]);
+    expect([...seen].filter((name) => !/_next$|_nv$|_v$|_fts/.test(name) && !sql.includes(`'${name}'`))).toEqual([]);
   });
   it("counts every named table on the real schema, dark or lit", () => {
     const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });

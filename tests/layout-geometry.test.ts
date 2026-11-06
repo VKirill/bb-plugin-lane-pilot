@@ -1,6 +1,12 @@
+/** @vitest-environment jsdom */
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { cleanup, render } from "@testing-library/react";
+import { createElement } from "react";
+import { Disclosure } from "../packages/ui-kit/src/ui/disclosure";
+import { Alert, AlertTitle } from "../packages/ui-kit/src/ui/alert";
+import { fileContaining, filesContaining } from "./support/source-text";
 
 describe("layout geometry harness", () => {
   it("loads the full bundled prompt, not a stub", () => {
@@ -12,10 +18,9 @@ describe("layout geometry harness", () => {
   });
 
   it("requires fieldset min-inline-size reset in Agents markup", () => {
-    const source = readFileSync(join(import.meta.dirname, "../src/rooms/settings/ui/owned-settings.tsx"), "utf8");
+    const source = fileContaining('id="agent-prompt"').text;
     expect(source).toContain("minInlineSize: 0");
     expect(source).toContain("min-w-0 max-w-full");
-    expect(source).toContain('id="agent-prompt"');
     expect(source).toContain("agentSavedUnknownHelp");
     expect(source).toContain("items-start");
     expect(source).toContain("CONTROL_H");
@@ -24,26 +29,26 @@ describe("layout geometry harness", () => {
   });
 
   it("uses one Disclosure and matching control height on project settings", () => {
-    const source = readFileSync(join(import.meta.dirname, "../src/rooms/ui-shell/ui/page.tsx"), "utf8");
-    const header = readFileSync(join(import.meta.dirname, "../src/rooms/ui-shell/ui/project-header.tsx"), "utf8");
-    const service = readFileSync(join(import.meta.dirname, "../src/rooms/runs/ui/runs-service.tsx"), "utf8");
-    expect(service).toContain("<Disclosure");
+    const source = fileContaining("titleOnly").text;
+    const header = fileContaining("settings-depth").text;
+    const service = filesContaining("<Disclosure", "src/rooms/runs");
+    expect(service.length).toBeGreaterThan(0);
     expect(source).toContain("CONTROL_H");
-    expect(header).toContain("settings-depth");
     expect(header).not.toMatch(/<details /);
     expect(source).not.toMatch(/<details /);
     expect(source).not.toMatch(/size="sm" variant=\{settingsDepth/);
-    expect(source).toContain("titleOnly");
     expect(source).toContain("mb-0 leading-5");
   });
 
   it("rotates only the summary chevron and keeps BB AlertTitle defaults", () => {
-    const disclosure = readFileSync(join(import.meta.dirname, "../packages/ui-kit/src/ui/disclosure.tsx"), "utf8");
-    expect(disclosure).toContain("data-disclosure-chevron");
-    expect(disclosure).toContain("[&[open]>summary_[data-disclosure-chevron]]:rotate-90");
-    expect(disclosure).not.toContain("[&[open]_svg]:rotate-90");
-    const alert = readFileSync(join(import.meta.dirname, "../packages/ui-kit/src/ui/alert.tsx"), "utf8");
-    expect(alert).toContain("mb-1 font-medium leading-none");
+    const { container, unmount } = render(createElement(Disclosure, { summary: "More", children: createElement("div") }));
+    expect(container.querySelector("details")?.className).toContain("[&[open]>summary_[data-disclosure-chevron]]:rotate-90");
+    expect(container.querySelector("details")?.className).not.toContain("[&[open]_svg]:rotate-90");
+    expect(container.querySelector("[data-disclosure-chevron]")).toBeTruthy();
+    unmount();
+    const alert = render(createElement(Alert, null, createElement(AlertTitle, null, "t")));
+    expect(alert.container.querySelector(".mb-1.font-medium.leading-none")).toBeTruthy();
+    cleanup();
   });
 
   it("exposes panel descendant measurement, not only document width", () => {

@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { relocateAnchor } from "./exports";
 import { SMA_CONTRACT_GAPS, SMA_CONTRACT_TESTS } from "./contracts";
 import { SMA_ENTRIES, type SmaStatus } from "./entries";
 import { SMA_CARDS, SMA_NODES, SMA_REGIONS, type SmaKind } from "./graph";
@@ -101,7 +102,9 @@ export function unjudgedProof(proof: string, roots: ProofRoots): boolean {
   return !!prefix && !(prefix[1] === "lane-stack" ? roots.laneStack : prefix[1] === "telegram" ? roots.telegram : roots.core);
 }
 
-/** A proof that does not resolve: the file is missing, or the symbol is not in it. Proofs into an absent sibling repository are not judged. */
+/** A proof that does not resolve: the file is missing, or the anchor is not in it. Strict — a moved anchor is a
+ * broken proof (see proofDrift for where it went and `sma-map --fix-proofs` to repair the path). Proofs into an
+ * absent sibling repository are not judged. */
 export function brokenProof(proof: string, roots: ProofRoots): string | null {
   const [where, symbol] = proof.split("#", 2) as [string, string | undefined];
   const prefix = where.match(/^(lane-stack|core|telegram):(.*)$/);
@@ -112,4 +115,19 @@ export function brokenProof(proof: string, roots: ProofRoots): string | null {
   if (!existsSync(file)) return `${proof}: no such file`;
   if (symbol && !readFileSync(file, "utf8").includes(symbol)) return `${proof}: ${symbol} is not in the file`;
   return null;
+}
+
+/** Where a broken local proof's anchor now lives: exactly one file exporting the identifier (module surface,
+ * not text) or carrying the text — or null (deleted, or ambiguous). `--fix-proofs` rewrites the entry path then. */
+export function proofRelocation(proof: string, roots: ProofRoots): string | null {
+  const [where, symbol] = proof.split("#", 2) as [string, string | undefined];
+  if (!symbol || /^(lane-stack|core|telegram):/.test(where)) return null;
+  if (!brokenProof(proof, roots)) return null;
+  return relocateAnchor(roots.lanePilot, symbol);
+}
+
+/** The drift line `--check-proofs` prints for a proof whose anchor moved: name and how to repair. */
+export function proofDrift(proof: string, roots: ProofRoots): string | null {
+  const at = proofRelocation(proof, roots);
+  return at ? `${proof}: moved to ${at} — run sma-map --fix-proofs` : null;
 }

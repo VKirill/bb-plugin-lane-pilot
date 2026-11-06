@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { isLiveProject, liveStability, renderLiveStability, type LiveAttempt } from "../../src/rooms/bench/live-rate";
+import { filesContaining } from "../support/source-text";
 
 const row = (over: Partial<LiveAttempt> & Pick<LiveAttempt, "taskId" | "state">): LiveAttempt => ({
   projectId: "proj_live", projectName: "SelfyStudio", reason: null, harnessVersion: "0.1.389", updatedAt: 1, ...over,
@@ -43,9 +44,8 @@ describe("live stability", () => {
   });
 
   it("is what the wall and the daily summary ask for", () => {
-    const wall = readFileSync(new URL("../../src/rooms/wall/server/wall.ts", import.meta.url), "utf8");
     const daily = readFileSync(new URL("../../scripts/lp-metrics-daily.sh", import.meta.url), "utf8");
-    expect(wall).toContain("isLiveProject");
+    expect(filesContaining(/\bisLiveProject\(/, "src/rooms/wall").length).toBeGreaterThan(0);
     expect(daily).toContain("print-live-stability.ts");
     expect(daily).not.toMatch(/Вина Lane Pilot \(harness\)/);
   });
