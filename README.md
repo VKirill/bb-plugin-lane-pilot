@@ -19,15 +19,15 @@ It is for people who run several agents on one codebase and want the boring part
 ```mermaid
 flowchart LR
   owner([Owner]) --> pm[PM chat]
-  pm -->|task contracts| graph[Graph run]
-  pm -->|errand, browser, specialist| graph
-  graph --> stages[Stages: plan, brief, critic]
+  pm -->|task contracts| run[Graph run]
+  pm -->|errand, browser, specialist| run
+  run --> stages[Stages: plan, brief, critic]
   stages --> writer[Writer in its own worktree]
   writer --> checks[Checks in a sandbox]
   checks --> critics[Critics]
   critics -->|accepted| merge[Merge queue, integration gate]
   merge --> release[Release]
-  graph -.->|episode, receipts| learn[Memory, lessons, rules]
+  run -.->|episode, receipts| learn[Memory, lessons, rules]
   learn -.->|facts and rules in every brief and thread| pm
   night[Night loop: wall, bench, docs, labels] -.-> learn
 ```
