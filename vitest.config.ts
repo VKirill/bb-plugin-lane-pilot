@@ -51,6 +51,8 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": fileURLToPath(new URL(".", import.meta.url)),
+      // node_modules is a symlink to the main checkout in worktrees; pin i18n to this tree so tests see this branch's strings.
+      "@lane-pilot/i18n": fileURLToPath(new URL("./packages/i18n/src/index.ts", import.meta.url)),
     },
   },
 });
