@@ -156,6 +156,12 @@ describe("jev standby provider", () => {
     expect(calls[2]!.auth).toBe("Bearer k-spare");
   });
 
+  it("a saturated provider (429 after its retries) goes to the standby too", async () => {
+    const { client, calls } = withFallback([{ status: 429 }, { status: 429 }, { status: 200, body: OK_BODY }]);
+    expect(await client.call({ state: "x", questions: QUESTIONS })).toMatchObject({ ok: true });
+    expect(calls.at(-1)!.url).toBe("https://api.openlux.ai/v1/systemone");
+  });
+
   it("does not try the standby for a bad request (our key or request is wrong)", async () => {
     const { client, calls } = withFallback([{ status: 401 }, { status: 200, body: OK_BODY }]);
     expect(await client.call({ state: "x", questions: QUESTIONS })).toMatchObject({ ok: false });

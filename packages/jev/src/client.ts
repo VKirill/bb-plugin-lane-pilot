@@ -112,10 +112,11 @@ export function createJevClient(deps: JevClientDeps): JevClient {
         if (last.status !== 200) {
           // 401, 422 and a 500 invalid_request say our key or request is wrong: they must not trip the breaker for a healthy service, but do not retry either.
           if (!last.badRequest && (last.status === 0 || last.status >= 429 || last.status === 408)) recordFailure();
-          // A dead provider (5xx, timeout, no answer) is retried once on the standby one when its key exists; the receipt's
-          // model is prefixed with the answering provider id so it shows who actually served the call.
+          // A dead or saturated provider (5xx, 429, timeout, no answer) is retried once on the standby one when its key exists
+          // (OpenLux answers 429 «upstream load is saturated» for hours: 2026-11-06); the receipt's model is prefixed with the
+          // answering provider id so it shows who actually served the call.
           const spare = endpoint.fallback;
-          if (spare && !last.badRequest && (last.timedOut || last.status === 0 || last.status >= 500) && !options.signal?.aborted) {
+          if (spare && !last.badRequest && (last.timedOut || last.status === 0 || last.status === 429 || last.status >= 500) && !options.signal?.aborted) {
             attempts += 1;
             const spareBody = JSON.stringify({ state: request.state, model: request.model ?? spare.provider.model, questions: request.questions });
             const r = await once(spare.provider.url, spareBody, spare.apiKey, (options.timeoutMs ?? DEFAULT_TIMEOUT_MS) + spare.provider.timeoutPadMs, options.signal);
