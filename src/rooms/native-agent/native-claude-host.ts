@@ -217,7 +217,7 @@ export function nativeLauncherScript(input: {
 }): string {
   const inject = join(input.destDir, "hooks", "inject_agent_type.py");
   const guard = join(input.destDir, "hooks", "guard_shell.py");
-  const args = [...input.extraArgs, `--settings ${shellQuote(input.settingsPath)}`, `--agent ${shellQuote(input.agentId)}`];
+  const args = [...input.extraArgs, `--agent ${shellQuote(input.agentId)}`];
   return [
     "#!/bin/sh",
     "unset BB_CLAUDE_CODE_EXECUTABLE",
@@ -233,9 +233,57 @@ export function nativeLauncherScript(input: {
     `export LANE_PILOT_AGENT_TYPE=${shellQuote(input.settingId)}`,
     "export AGENT_HOOK_CLIENT=claude",
     `export LANE_PILOT_HOOK_TRACE=${shellQuote(join(input.destDir, "hook-trace.jsonl"))}`,
-    `exec ${shellQuote(input.command)} "$@" ${args.join(" ")}`,
+    claudeExecLine(input.command, input.settingsPath, args),
     "",
   ].join("\n");
+}
+
+/**
+ * Claude Code keeps only the last `--settings` it is given. BB core passes its own flag layer (native plugins off,
+ * CLAUDE.md excludes, denied MCP servers, skill overrides) as `--settings`, and a launcher that appended the guard file
+ * as a second `--settings` threw that layer away: the owner's ADHD and ponytail hooks then ran in every helper (2026-11-07).
+ * The exec line merges every `--settings` it sees with the guard file (guard last; hook lists concatenate) and hands
+ * Claude one. No `--settings` from core: the guard file goes as before. A layer that cannot be read: guard only, said on stderr.
+ */
+const MERGE_SETTINGS_PY = [
+  "import json,os,sys,hashlib,tempfile",
+  "cmd,guard=sys.argv[1],sys.argv[2]",
+  "rest=sys.argv[3:]; i=rest.index(\"--\"); extra,args=rest[:i],rest[i+1:]",
+  "vals=[]; kept=[]; j=0",
+  "while j<len(args):",
+  "  a=args[j]",
+  "  if a==\"--settings\" and j+1<len(args): vals.append(args[j+1]); j+=2; continue",
+  "  if a.startswith(\"--settings=\"): vals.append(a[11:]); j+=1; continue",
+  "  kept.append(a); j+=1",
+  "def load(v):",
+  "  v=v.strip()",
+  "  if v.startswith(\"{\"): return json.loads(v)",
+  "  with open(v) as f: return json.load(f)",
+  "def merge(a,b):",
+  "  for k,v in b.items():",
+  "    if k==\"hooks\" and isinstance(v,dict) and isinstance(a.get(k),dict):",
+  "      for ev,lst in v.items(): a[k][ev]=list(a[k].get(ev,[]))+list(lst)",
+  "    elif isinstance(v,dict) and isinstance(a.get(k),dict): merge(a[k],v)",
+  "    else: a[k]=v",
+  "final=guard",
+  "if vals:",
+  "  try:",
+  "    m={}",
+  "    for v in vals+[guard]: merge(m,load(v))",
+  "    body=json.dumps(m,sort_keys=True)",
+  "    d=os.path.join(tempfile.gettempdir(),\"lane-pilot-claude-settings-%d\"%os.getuid()); os.makedirs(d,mode=0o700,exist_ok=True)",
+  "    final=os.path.join(d,hashlib.sha256(body.encode()).hexdigest()[:16]+\".json\")",
+  "    fd=os.open(final+\".tmp\",os.O_WRONLY|os.O_CREAT|os.O_TRUNC,0o600)",
+  "    with os.fdopen(fd,\"w\") as f: f.write(body)",
+  "    os.replace(final+\".tmp\",final)",
+  "  except Exception as e:",
+  "    sys.stderr.write(\"Lane Pilot: core settings layer unreadable, guard only: %s\\n\"%e); final=guard",
+  "os.execv(cmd,[cmd]+kept+[\"--settings\",final]+extra)",
+].join("\n");
+
+/** The launcher's last line: exec Claude with one merged `--settings` (see MERGE_SETTINGS_PY), extra args after it. */
+export function claudeExecLine(command: string, settingsPath: string, extraArgs: readonly string[] = []): string {
+  return `exec python3 -c ${shellQuote(MERGE_SETTINGS_PY)} ${shellQuote(command)} ${shellQuote(settingsPath)} ${extraArgs.join(" ")} -- "$@"`;
 }
 
 export async function prepareNativeClaude(input: {

@@ -1,4 +1,5 @@
 import { chmod, mkdtemp, mkdir, unlink, writeFile } from "node:fs/promises";
+import { readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -34,4 +35,32 @@ it("exits 78 when session hooks are missing and does not exec claude", async () 
   expect(missing.status).toBe(78);
   expect(missing.stderr).toMatch(/native hooks missing/);
   expect(missing.stdout).toBe("");
+});
+
+it("hands claude one --settings: the core flag layer merged with the guard file, guard hooks kept", async () => {
+  const dest = await mkdtemp(join(tmpdir(), "lp-native-merge-"));
+  const hooks = join(dest, "hooks");
+  await mkdir(hooks, { recursive: true });
+  const settingsPath = join(dest, "settings.json");
+  await writeFile(settingsPath, JSON.stringify({ hooks: { PreToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command: "guard" }] }] } }));
+  await writeFile(join(hooks, "inject_agent_type.py"), "# inject\n");
+  await writeFile(join(hooks, "guard_shell.py"), "# guard\n");
+  const command = join(dest, "real-claude");
+  await writeFile(command, "#!/bin/sh\nfor a in \"$@\"; do echo \"$a\"; done\n");
+  await chmod(command, 0o700);
+  const launcher = join(dest, "claude");
+  await writeFile(launcher, nativeLauncherScript({ destDir: dest, command, settingsPath, agentId: "dev-orchestrator", settingId: "dev-orchestrator", extraArgs: [] }));
+  await chmod(launcher, 0o700);
+  const core = JSON.stringify({ enabledPlugins: { "i-have-adhd@i-have-adhd": false }, hooks: { PreToolUse: [{ matcher: "*", hooks: [{ type: "command", command: "core" }] }] } });
+  const run = spawnSync(launcher, ["-p", "hi", "--settings", core], { encoding: "utf8" });
+  expect(run.status).toBe(0);
+  const args = run.stdout.trim().split("\n");
+  expect(args.filter((a) => a === "--settings")).toHaveLength(1);
+  expect(args.slice(0, 2)).toEqual(["-p", "hi"]);
+  expect(args.slice(-2)).toEqual(["--agent", "'dev-orchestrator'".replace(/'/g, "")]);
+  const merged = JSON.parse(readFileSync(args[args.indexOf("--settings") + 1], "utf8"));
+  expect(merged.enabledPlugins).toEqual({ "i-have-adhd@i-have-adhd": false });
+  expect(merged.hooks.PreToolUse.map((h: { hooks: { command: string }[] }) => h.hooks[0].command)).toEqual(["core", "guard"]);
+  const plain = spawnSync(launcher, ["-p", "hi"], { encoding: "utf8" }).stdout.trim().split("\n");
+  expect(plain[plain.indexOf("--settings") + 1]).toBe(settingsPath);
 });

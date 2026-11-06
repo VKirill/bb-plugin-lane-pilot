@@ -66,7 +66,7 @@ async function claudeOnPath(root: string) {
 }
 
 function settingsCommand(script: string, dataDir: string): string {
-  const settingsPath = script.match(/--settings '([^']+)'/)?.[1];
+  const settingsPath = script.match(/--settings '([^']+)'/)?.[1] ?? [...script.matchAll(/'([^']+\.json)'/g)].map((m) => m[1]).find((p) => p.startsWith(dataDir));
   if (!settingsPath?.startsWith(dataDir)) throw new Error(`settings path is not under the host data dir: ${settingsPath}`);
   return settingsPath;
 }

@@ -3,7 +3,7 @@ import { mkdir, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { sha256Hex } from "@lane-pilot/kit";
-import { installedClaudeExecutable, shellQuote } from "./native-claude-host";
+import { claudeExecLine, installedClaudeExecutable, shellQuote } from "./native-claude-host";
 import { materializeNativeHookSession } from "./native-session-hooks";
 
 type EnvEntry = { name: string; value: string; reason: string };
@@ -43,7 +43,7 @@ export function claudeGuardLauncherScript(input: {
     `export LANE_PILOT_AGENT_TYPE=${shellQuote(input.agentType)}`,
     "export AGENT_HOOK_CLIENT=claude",
     `export LANE_PILOT_HOOK_TRACE=${shellQuote(join(input.destDir, "hook-trace.jsonl"))}`,
-    `exec ${shellQuote(input.command)} "$@" --settings ${shellQuote(input.settingsPath)}`,
+    claudeExecLine(input.command, input.settingsPath),
     "",
   ].join("\n");
 }
