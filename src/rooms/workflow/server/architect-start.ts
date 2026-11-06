@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { rpcContract } from "../../contracts";
 import { writerExecutionSelection } from "@lane-pilot/models";
 import { mentionContext } from "../../native-agent";
+import { projectRoleField } from "../../runs/server";
 import { WORKFLOW_ARCHITECT_ID, WORKFLOW_ARCHITECT_NAME } from "../workflow-architect";
 import { createDraftStore } from "../../storage";
 import type { ServerCore } from "../../core/server";
@@ -112,6 +113,8 @@ export function architectStarter(ctx: ServerCore, services: Pick<Services, "docs
     const execution = await architectExecution(ctx, projectId);
     const spawned = await fullAccessSpawn(bb, {
       projectId,
+      // The architect works through the lane_pilot_workflow_* tools and its skill; the profile keeps exactly that.
+      ...projectRoleField(bb, db, projectId, execution.providerId, "workflow-architect"),
       ...writerExecutionSelection(execution.providerId, execution.model, execution.reasoningLevel, "default"),
       title: WORKFLOW_ARCHITECT_NAME.ru,
       input: architectOpening({ marker: mentionContext(selection), projectId, projectName: typeof described?.name === "string" ? described.name : null,

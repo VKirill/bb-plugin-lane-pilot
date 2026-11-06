@@ -143,6 +143,7 @@ export function requiredPolicyField(bb: BbPluginApi, snapshot: HelperPolicySnaps
     providerId,
     role,
     extra,
+    log: (line) => bb.log.warn(`Lane Pilot: ${line}`),
   });
 }
 

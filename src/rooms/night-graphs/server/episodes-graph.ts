@@ -78,7 +78,7 @@ export function episodeSweepDeps(ctx: ServerCore, services: Services, stopped: (
         hostId: host.hostId, envPath: host.path, folderBlock,
       });
       const analyzer = { providerId: role.providerId, model: role.model, reasoningLevel: role.reasoningEffort, serviceTier: role.serviceTier };
-      const text = await services.ruleScan.runAnalyzer(threadProject ?? "*", `episode ${runId}`, prompt, host, analyzer, { episode: runId });
+      const text = await services.ruleScan.runAnalyzer(threadProject ?? "*", `episode ${runId}`, prompt, host, analyzer, { episode: runId }, "episode-analyst");
       return { text, model: `${analyzer.providerId}/${analyzer.model}` };
     },
     chooseKey: async (input, { runId, projectId }) => {

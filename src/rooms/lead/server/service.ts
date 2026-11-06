@@ -6,6 +6,7 @@ import { fullAccessSpawn, modelCatalogOf, resolveSpawnModel, scheduleIsolated, s
 import { closeOwnerItem, closeOwnerItemsByPrefix, loadPushConfig, postOwnerItem } from "../../owner-waiting";
 import { loadProjectSettings, saveProjectSetting } from "../../storage";
 import { mentionContext } from "../../native-agent";
+import { projectRoleField } from "../../runs/server";
 import { storeNativeSelection } from "../../native-agent/server";
 import { CONFIG_KEY, SELF_REPAIR_DEFAULTS } from "../../self-repair/server";
 import { fireTimes } from "../../schedule";
@@ -342,6 +343,8 @@ export function createLeadService(ctx: ServerCore, services: Services) {
     const part = (text: string, hide: boolean) => ({ type: "text" as const, text, mentions: [] as [], ...(hide ? { visibility: "agent-only" as const } : {}) });
     const spawned = await fullAccessSpawn(bb, {
       projectId,
+      // The lead's chat answers from its brief and the lane_pilot_* tools; the «lead» profile keeps that plugin only.
+      ...projectRoleField(bb, db, projectId, picked.providerId, "lead"),
       ...writerExecutionSelection(picked.providerId, picked.model, picked.reasoningEffort, "default"),
       title: LEAD_NAME.ru,
       input: [part("Чат Штурмана.", false), part(`${mentionContext(selection)}\n\n${brief}`, true)],

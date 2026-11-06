@@ -7,6 +7,8 @@ import {
   type ProbeBudget, type RejectedEdit, type ThreadEventLike, type Tree,
 } from "@lane-pilot/harness-core";
 import { fullAccessSpawn, scheduleIsolated, stringAt, type ServerCore, type Services } from "../../core/server";
+import { projectRoleField } from "../../runs/server";
+import { HELPER_ROLES, type HelperRole } from "../../native-agent";
 import { SANDBOX_PROJECT_ID, isSandboxProjectName } from "../../stability/server";
 import { ensureExcludeLinesCommand, EXCLUDE_NOT_GIT } from "../../verification";
 import { getAttempt, getTaskGitBase } from "../../storage";
@@ -440,6 +442,7 @@ export function createHarness(ctx: ServerCore, services: Services) {
         spawn: async (graph) => {
           const spawned = await fullAccessSpawn(bb, {
             projectId: input.projectId,
+            ...projectRoleField(bb, db, input.projectId, selection.providerId, (HELPER_ROLES as readonly string[]).includes(input.role) ? input.role as HelperRole : "harness-editor"),
             environment: { type: "host", hostId: input.where.hostId, workspace: { type: "unmanaged", path: cwd } },
             title: input.title, prompt: input.mission,
             ...writerExecutionSelection(selection.providerId, selection.model, selection.reasoningLevel, "default"),

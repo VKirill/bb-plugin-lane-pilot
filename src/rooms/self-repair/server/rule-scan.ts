@@ -1,4 +1,5 @@
 import { projectRoleField } from "../../runs/server";
+import { HELPER_ROLES, type HelperRole } from "../../native-agent";
 import {
   classifyUnformed, codeVerdict, decideRuleTrial, scopeApplies, getRuleProposal, listRuleProposals, logRuleEvent, ruleTrialStats, saveTriage, setRuleTrial, splitRejectedPaths, triageQuestions, triageState, triageSummary, untriagedAttempts, upsertModelProposal, writerGroups,
   type FailedAttempt, type RuleEvidence, type TriageSummary, type WriterGroup,
@@ -316,15 +317,19 @@ export function createRuleScan(ctx: ServerCore, services: Services) {
   }
 
   /** The thread of one analyzer job: hidden, parentless, tied to the graph step that asked for it (so it is quiet and counted as graph work). */
-  async function spawnAnalyzer(input: { projectId: string; title: string; prompt: string; place: { hostId: string; path: string }; analyzer: AnalyzerSelection; metadata: Record<string, unknown> }, graph: { spawnId: string; metadata: Record<string, unknown> }): Promise<string> {
+  async function spawnAnalyzer(input: { projectId: string; title: string; prompt: string; place: { hostId: string; path: string }; analyzer: AnalyzerSelection; metadata: Record<string, unknown>; role?: HelperRole }, graph: { spawnId: string; metadata: Record<string, unknown> }): Promise<string> {
     const { analyzer, place } = input;
+    // The caller names the analyzer's role (the episodes sweep asks for "episode-analyst" through the metadata
+    // runAnalyzer forwards); anything else is a rules analyzer of the scan or the ask graph.
+    const metaRole = typeof input.metadata?.role === "string" && (HELPER_ROLES as readonly string[]).includes(input.metadata.role) ? input.metadata.role as HelperRole : undefined;
+    const role = input.role ?? metaRole ?? "rules-analyzer";
     const spawned = await fullAccessSpawn(bb, {
       projectId: input.projectId, visibility: "hidden", title: input.title,
-      ...projectRoleField(bb, db, input.projectId, analyzer.providerId, "rules-analyzer"),
+      ...projectRoleField(bb, db, input.projectId, analyzer.providerId, role),
       ...writerExecutionSelection(analyzer.providerId, analyzer.model, analyzer.reasoningLevel, analyzer.serviceTier ? bbServiceTier(analyzer.serviceTier === "fast" ? "fast" : "standard") : "default"),
       prompt: input.prompt,
       environment: { type: "host", hostId: place.hostId, workspace: { type: "unmanaged", path: place.path } },
-      pluginMetadata: { role: "rules-analyzer", stageId: "rules-analyzer", ...input.metadata, ...graph.metadata, spawnId: graph.spawnId },
+      pluginMetadata: { role, stageId: role, ...input.metadata, ...graph.metadata, spawnId: graph.spawnId },
     } as Parameters<typeof fullAccessSpawn>[1]);
     const threadId = stringAt(spawned, "id");
     if (!threadId) throw new Error("rules_analyzer_thread_id_missing");
@@ -554,7 +559,7 @@ export function createRuleScan(ctx: ServerCore, services: Services) {
    * One prompt to the rules analyzer, for a caller that wants the answer in hand (the learning review of the owner's messages): a run of the
    * one-step graph `lp.rules-ask`. A thread that fails or does not finish in 20 minutes fails the run and the call throws, as it always did.
    */
-  async function runAnalyzer(projectId: string, title: string, prompt: string, place: { hostId: string; path: string }, analyzer: AnalyzerSelection, metadata: Record<string, unknown>): Promise<string> {
+  async function runAnalyzer(projectId: string, title: string, prompt: string, place: { hostId: string; path: string }, analyzer: AnalyzerSelection, metadata: Record<string, unknown>, role?: HelperRole): Promise<string> {
     const workflow = builtinWorkflow(RULES_ASK_WORKFLOW);
     if (!workflow) throw new Error(`built-in workflow ${RULES_ASK_WORKFLOW} is not loaded`);
     const runtime: ChainRuntime = { ctx, services, pmThreadId: null, projectId, runId: null };
@@ -569,7 +574,7 @@ export function createRuleScan(ctx: ServerCore, services: Services) {
     }
     const started = services.workflowEngine.start({
       workflow, runtime, key, link: { projectId },
-      inputs: { project_id: projectId, title, prompt, host_id: place.hostId, path: place.path, analyzer, metadata },
+      inputs: { project_id: projectId, title, prompt, host_id: place.hostId, path: place.path, analyzer, metadata: { ...metadata, ...(role ? { role } : {}) } },
     });
     const summary = await started.done;
     if (summary.status !== "succeeded") throw new Error(summary.error ?? summary.reason ?? `rules analyzer run ${summary.status}`);
