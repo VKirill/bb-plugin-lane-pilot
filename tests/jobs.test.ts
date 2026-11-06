@@ -1,16 +1,16 @@
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { pathToFileURL } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { cancelHostJob, hostJobStatus, startHostJob, type JobOptions, type JobStatus } from "../src/rooms/host-worker/jobs";
 
 /**
- * A stand-in for the host bundle: its `detect` handler does what the workspace path asks. The job process loads it
- * the way it loads the real bundle, through the default export's handlers.
+ * A stand-in for the host bundle: an executable runner like the real one (host-worker/job-runner.ts), whose
+ * `detect` handler does what the workspace path asks. The job process runs it as `node <file> <arg> <dir>`.
  */
 const FIXTURE = `
-export default { handlers: {
+import { readFileSync, writeFileSync, renameSync, unlinkSync } from "node:fs";
+const HANDLERS = {
   detect: async (input, context) => {
     if (input.workspacePath === "/fail") throw new Error("boom: " + input.requestedHostId);
     if (input.workspacePath === "/slow") { console.log("waiting for the slow part"); await new Promise((wake) => setTimeout(wake, 60000)); }
@@ -20,7 +20,35 @@ export default { handlers: {
       workspace: { path: input.workspacePath, present: true }, targetSha: "t", matchesTarget: false, scenario: "S3",
     };
   },
-} };
+};
+if (process.argv[2] === "--lane-pilot-host-job") {
+const dir = process.argv[3];
+const job = JSON.parse(readFileSync(dir + "/job.json", "utf8"));
+const input = JSON.parse(readFileSync(dir + "/input.json", "utf8"));
+if (job.scrubInput) { try { unlinkSync(dir + "/input.json"); } catch {} }
+const beat = () => { try { writeFileSync(dir + "/heartbeat", String(Date.now())); } catch {} };
+beat();
+setInterval(beat, 5000).unref();
+const done = (body) => {
+  writeFileSync(dir + "/result.json.tmp", JSON.stringify(body));
+  renameSync(dir + "/result.json.tmp", dir + "/result.json");
+};
+setTimeout(() => {
+  done({ ok: false, error: "job timed out after " + job.timeoutSec + " s" });
+  try { process.kill(-process.pid, "SIGTERM"); } catch {}
+  process.exit(1);
+}, job.timeoutSec * 1000).unref();
+try {
+  const handler = HANDLERS[job.kind];
+  if (typeof handler !== "function") throw new Error("the host module has no handler " + job.kind);
+  const ac = new AbortController();
+  done({ ok: true, value: await handler(input, { signal: ac.signal, lifecycle: { signal: ac.signal } }) });
+} catch (cause) {
+  console.error(cause);
+  done({ ok: false, error: cause instanceof Error ? cause.message : String(cause) });
+}
+process.exit(0);
+}
 `;
 
 let dir = "";
@@ -40,7 +68,7 @@ async function until(jobId: string, done: (status: JobStatus) => boolean): Promi
 beforeAll(async () => {
   dir = await mkdtemp(join(tmpdir(), "lp-jobs-"));
   await writeFile(join(dir, "host.mjs"), FIXTURE);
-  options = { root: join(dir, "jobs"), hostModuleUrl: pathToFileURL(join(dir, "host.mjs")).href };
+  options = { root: join(dir, "jobs"), entryFile: join(dir, "host.mjs") };
 });
 afterAll(async () => { await rm(dir, { recursive: true, force: true }); });
 
