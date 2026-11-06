@@ -2,7 +2,7 @@
 title: Jev receipts, calibration and monitoring
 type: component
 created: 2026-11-05
-updated: 2026-11-05
+updated: 2026-11-06
 status: active
 confidence: medium
 tags: [jev, receipts, calibration, monitoring]
@@ -34,8 +34,10 @@ The `createJev` runner writes only when a DB exists, mode is not off and the pro
 1. On a non-cached judgment call, `createJev` inserts a receipt with the redacted state's hash and size, answer summary, field sizes and current thresholds (`packages/jev/src/run.ts:79-122`).
 2. One in five deterministic input-hash samples retains redacted input JSON, capped at 8 KiB; the state itself is not written as plain text (`packages/jev/src/receipts.ts:58-70`).
 3. Escalated or later outcome workflows attach a label using `recordOutcome`; outcome and timestamp are stored on the row (`packages/jev/src/receipts.ts:86-88`).
-4. Calibration calculates candidate threshold performance from labeled receipts and stores proposals with judgment fingerprint and model binding (`packages/jev/src/calibrate.ts:48-76`, `packages/jev/src/calibrate.ts:89-147`).
-5. Watch compares judgment/project slices against a baseline and returns accuracy, error, escalation and latency findings (`packages/jev/src/watch.ts:35-45`, `packages/jev/src/watch.ts:79-116`).
+4. `applyOutcomeLabels` grades eligible receipts for `critique.screen`, `critique.worth`, `lead.predict`, `guard.host_command` and `errand.failure`; each labeler leaves a receipt unlabeled when its later truth is unavailable (`packages/jev/src/labels-outcome.ts:20-30`, `packages/jev/src/labels-outcome.ts:171-185`).
+5. `judgeAccuracy` counts `agree*` and `disagree*` labels across all labeled successful receipts, including outcome, model and escalation labels; it returns null if the judgment has no receipts (`packages/jev/src/labels-outcome.ts:188-200`).
+6. Calibration calculates candidate threshold performance from labeled receipts and stores proposals with judgment fingerprint and model binding (`packages/jev/src/calibrate.ts:48-76`, `packages/jev/src/calibrate.ts:89-147`).
+7. Watch compares judgment/project slices against a baseline and returns accuracy, error, escalation and latency findings (`packages/jev/src/watch.ts:35-45`, `packages/jev/src/watch.ts:79-116`).
 
 ## Modes and report branches
 
@@ -43,6 +45,8 @@ The `createJev` runner writes only when a DB exists, mode is not off and the pro
 |---|---|---|---|
 | Receipt insert | Judgment call with DB, not off and not cached | Row ID; insert failure is logged by runner and yields null | `packages/jev/src/run.ts:109-127` |
 | Outcome label | Receipt ID and label text | Sets `outcome` and `outcome_at` | `packages/jev/src/receipts.ts:86-88` |
+| Deterministic outcome labeling | Successful, decided, unlabeled receipts older than 24 hours | Counts labels written per supported judgment; unavailable truth stays unlabeled | `packages/jev/src/labels-outcome.ts:20-30`, `packages/jev/src/labels-outcome.ts:171-185` |
+| Per-judgment accuracy | Judgment ID | Labeled count and `agree / (agree + disagree)` across labeled successful receipts, or null if never asked | `packages/jev/src/labels-outcome.ts:188-200` |
 | Threshold calibration | Receipts since timestamp; minimum 10 labels by default | Gate, sort-only or dead classification and suggested thresholds | `packages/jev/src/calibrate.ts:16-17`, `packages/jev/src/calibrate.ts:42-47`, `packages/jev/src/calibrate.ts:89-147` |
 | Autoresearch | At least 30 labeled receipts by default | Grid-search threshold proposals | `packages/jev/src/autoresearch.ts:10-12`, `packages/jev/src/autoresearch.ts:37-62` |
 | Watch | Explicit window and baseline days | Per judgment/project slices and drift findings | `packages/jev/src/watch.ts:17-45`, `packages/jev/src/watch.ts:79-116` |
@@ -66,6 +70,8 @@ The `createJev` runner writes only when a DB exists, mode is not off and the pro
 
 `recordOutcome` writes outcome labels (`packages/jev/src/receipts.ts:86-88`).
 
+`applyOutcomeLabels` applies deterministic later-truth rules and returns counts by judgment (`packages/jev/src/labels-outcome.ts:171-185`). `judgeAccuracy` returns the labeled sample size and accuracy used by autonomy tiers (`packages/jev/src/labels-outcome.ts:188-200`).
+
 `pruneReceipts` removes expired or excess rows (`packages/jev/src/receipts.ts:90-93`).
 
 `summarizeReceipts` groups receipt results (`packages/jev/src/receipts.ts:95-100`).
@@ -80,7 +86,7 @@ Parent-plugin commands such as `bb lane-pilot jev calibrate` and `jev watch` are
 
 ## Gotchas
 
-- The receipt table's initial DDL is followed by plugin migrations adding `fields_json` (`src/rooms/storage/database.ts:444-445`) and `input_json` (`src/rooms/storage/database.ts:480-481`).
+- The receipt table's initial DDL is followed by plugin migrations adding `fields_json` (`src/rooms/storage/database.ts:445-446`) and `input_json` (`src/rooms/storage/database.ts:481-482`).
 - Use the assembled migrations, not the initial statement alone (`packages/jev/src/receipts.ts:9-40`).
 - Outcome labelers query only eligible receipts with `outcome IS NULL`, so already labeled rows do not enter their normal relabel flow (`packages/jev/src/labels-outcome.ts:22-31`).
 - The CLI's `--save` writes certified thresholds into project settings; autoresearch itself returns proposals (`src/rooms/jev/cli.ts:10-20`, `packages/jev/src/autoresearch.ts:37-62`).

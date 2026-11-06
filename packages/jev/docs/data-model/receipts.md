@@ -2,7 +2,7 @@
 title: Judgment receipts
 type: data-model
 created: 2026-11-05
-updated: 2026-11-05
+updated: 2026-11-06
 status: active
 confidence: medium
 tags: [jev, receipts, sqlite]
@@ -39,7 +39,7 @@ erDiagram
 
 `id` is the primary key; indexes support judgment/time, project/time and run lookup (`packages/jev/src/receipts.ts:10-38`).
 
-The plugin appends `fields_json` and `input_json` columns to the base table (`src/rooms/storage/database.ts:444-445`, `src/rooms/storage/database.ts:480-481`).
+The plugin appends `fields_json` and `input_json` columns to the base table (`src/rooms/storage/database.ts:445-446`, `src/rooms/storage/database.ts:481-482`).
 
 ## Table: `lane_pilot_jev_receipt`
 
@@ -72,8 +72,8 @@ Sampled `input_json` is retained separately for model relabeling (`packages/jev/
 | `outcome` | Later label; common prefixes are `agree` and `disagree`, with suffixes identifying label source | `packages/jev/src/receipts.ts:32`, `packages/jev/src/labels-outcome.ts:5-13`, `packages/jev/src/calibrate.ts:77-83` |
 | `outcome_at` | Unix timestamp in milliseconds when the label was written | `packages/jev/src/receipts.ts:33`, `packages/jev/src/receipts.ts:86-88` |
 | `at` | Unix timestamp in milliseconds when the receipt was inserted | `packages/jev/src/receipts.ts:34`, `packages/jev/src/receipts.ts:72-80` |
-| `fields_json` | Serialized map of top-level state field names to character sizes; no field content | `src/rooms/storage/database.ts:444-445`, `packages/jev/src/receipts.ts:74-80` |
-| `input_json` | Redacted original judgment input for a deterministic one-in-five sample, capped at 8 KiB | `src/rooms/storage/database.ts:480-481`, `packages/jev/src/receipts.ts:58-70` |
+| `fields_json` | Serialized map of top-level state field names to character sizes; no field content | `src/rooms/storage/database.ts:445-446`, `packages/jev/src/receipts.ts:74-80` |
+| `input_json` | Redacted original judgment input for a deterministic one-in-five sample, capped at 8 KiB | `src/rooms/storage/database.ts:481-482`, `packages/jev/src/receipts.ts:58-70` |
 
 ## Status and label transitions
 
@@ -86,8 +86,23 @@ Sampled `input_json` is retained separately for model relabeling (`packages/jev/
 | No row | `status = ok` or a call failure status | `insertReceipt` called from `createJev` | Non-cached call with DB and non-off mode; status is copied from provider result (`packages/jev/src/run.ts:79-127`) |
 | `outcome = NULL` | `agree...` or `disagree...` | `recordOutcome` | The receipt label is updated with its timestamp (`packages/jev/src/receipts.ts:86-88`) |
 | `outcome = NULL` | `agree:model` or `disagree:model` | Model relabeling workflow plans sampled inputs (`packages/jev/src/labels-model.ts:22-37`) | `recordOutcome` persists a returned label (`packages/jev/src/receipts.ts:86-88`) |
+| `outcome = NULL` | `agree:outcome...` or `disagree:outcome...` | Deterministic outcome labelers read later task, journal, permit or errand truth (`packages/jev/src/labels-outcome.ts:27-30`, `packages/jev/src/labels-outcome.ts:74-178`) | `applyOutcomeLabels` persists each result with `recordOutcome` (`packages/jev/src/labels-outcome.ts:171-185`) |
 
 `recordOutcome` itself does not require the prior value to be null (`packages/jev/src/receipts.ts:86-88`). Normal outcome queries select only `outcome IS NULL` rows (`packages/jev/src/labels-outcome.ts:27-30`). Model label planning also selects only `outcome IS NULL` rows (`packages/jev/src/labels-model.ts:29-31`).
+
+### Deterministic outcome labels
+
+The outcome labelers read only successful (`status = 'ok'`) receipts with a decision, no existing outcome, and an insertion time more than 24 hours before the supplied clock (`packages/jev/src/labels-outcome.ts:20-30`). A rule that cannot find its later truth leaves the receipt unlabeled (`packages/jev/src/labels-outcome.ts:74-80`, `packages/jev/src/labels-outcome.ts:92-108`, `packages/jev/src/labels-outcome.ts:117-126`, `packages/jev/src/labels-outcome.ts:136-149`, `packages/jev/src/labels-outcome.ts:159-167`).
+
+| Judgment | Later truth and label rule | Evidence |
+|---|---|---|
+| `critique.screen` | `pass` agrees with a cleanly accepted task; `fail` agrees with a failed task. Pending task truth and other decisions, including escalation, remain unlabeled. | `packages/jev/src/labels-outcome.ts:37-50`, `packages/jev/src/labels-outcome.ts:69-83` |
+| `critique.worth` | A skipped plan critique agrees when its task was accepted and disagrees when it failed. A run critique that found nothing yields `disagree:outcome:critic_found_nothing`; one that found changes yields `agree:outcome`. | `packages/jev/src/labels-outcome.ts:87-109` |
+| `lead.predict` | The nearest same-run decision journal prediction within 120 seconds supplies the owner label, falling back to judge verdict: `exact`/`partial` agree and `miss` disagrees; deferred or absent verdict remains unlabeled. | `packages/jev/src/labels-outcome.ts:112-128` |
+| `guard.host_command` | The latest answered `permit` decision for the run grades `allow` or `deny` against whether the judgment said stop; absent, malformed or other options remain unlabeled. | `packages/jev/src/labels-outcome.ts:131-151` |
+| `errand.failure` | The newest extractor-version episode for the run grades the judgment against its `failure_class` only after enrichment and when a class exists. | `packages/jev/src/labels-outcome.ts:154-168` |
+
+Task truth is `accepted` only when there is an accepted attempt with no regression naming the task and no `<task-id>-mainfix` task. A terminal non-accepted attempt, regression, mainfix, or closed/non-running run without acceptance is failed; an open attempt or a still-running run without an attempt is pending (`packages/jev/src/labels-outcome.ts:32-50`).
 
 ## Invariants
 
