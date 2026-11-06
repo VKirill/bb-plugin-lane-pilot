@@ -109,12 +109,6 @@ export interface Services {
   ownerPresence: OwnerPresenceApi;
   /** Checking the checkers: planted defects in accepted candidates, the checker scorecard and the drill (src/rooms/checkers). */
   checkers: CheckersApi;
-  DOCS_NIGHT_ATTEMPTS: DocsNightlyApi["DOCS_NIGHT_ATTEMPTS"];
-  DOCS_OPEN_KEY: DocsNightlyApi["DOCS_OPEN_KEY"];
-  DOCS_TOOLING: DocsNightlyApi["DOCS_TOOLING"];
-  DOCS_UNITS_OPEN_KEY: DocsNightlyApi["DOCS_UNITS_OPEN_KEY"];
-  DOCS_UNIT_CONCURRENCY: DocsNightlyApi["DOCS_UNIT_CONCURRENCY"];
-  WORKSPACE_DOCS_MIN_FILES: DocsNightlyApi["WORKSPACE_DOCS_MIN_FILES"];
   docsVerdict: DocsNightlyApi["docsVerdict"];
   docsPlaces: DocsNightlyApi["docsPlaces"];
   docsPlaceStatus: DocsNightlyApi["docsPlaceStatus"];
@@ -127,24 +121,14 @@ export interface Services {
   concurrencyLimit: WriterStateApi["concurrencyLimit"];
   runBudgets: WriterStateApi["runBudgets"];
   runBudgetFor: WriterStateApi["runBudgetFor"];
-  assertComposerEnvironment: ActivationApi["assertComposerEnvironment"];
   dispatchWriter: WriterDispatchApi["dispatchWriter"];
   resumeDispatch: WriterDispatchApi["resumeDispatch"];
   registerDocsGraphs: DocsNightlyApi["registerDocsGraphs"];
-  docsPassesRunning: DocsNightlyApi["docsPassesRunning"];
-  docsSpawnGate: DocsNightlyApi["docsSpawnGate"];
-  docsUnitRecordKey: DocsNightlyApi["docsUnitRecordKey"];
-  docsUnitsFinishing: DocsNightlyApi["docsUnitsFinishing"];
-  docsUnitsIndexChain: DocsNightlyApi["docsUnitsIndexChain"];
-  dropDocsUnitRecord: DocsNightlyApi["dropDocsUnitRecord"];
   enqueueResumedWriter: ReconcileApi["enqueueResumedWriter"];
-  finishDocsUnit: DocsNightlyApi["finishDocsUnit"];
   finishWriterAttempt: WriterFinishApi["finishWriterAttempt"];
   ingestOpenCodeTelemetry: QaStagesApi["ingestOpenCodeTelemetry"];
   listedAgentProfiles: WriterHostApi["listedAgentProfiles"];
-  maybeFinishResumedAttempt: ReconcileApi["maybeFinishResumedAttempt"];
   persistWriterAcceptance: WriterVerifyApi["persistWriterAcceptance"];
-  pluginStopped: DocsNightlyApi["pluginStopped"];
   projectLifeTaskSummary: StageChildrenApi["projectLifeTaskSummary"];
   readWriterWorkspaceFile: WriterDispatchApi["readWriterWorkspaceFile"];
   reconcileAttemptThread: ReconcileApi["reconcileAttemptThread"];
@@ -156,21 +140,16 @@ export interface Services {
   resumeOrphans: ReconcileApi["resumeOrphans"];
   runBrowserQa: QaStagesApi["runBrowserQa"];
   resumeBrowserQaThreads: QaStagesApi["resumeBrowserQaThreads"];
-  runDocsCatchUps: DocsNightlyApi["runDocsCatchUps"];
   runDocsMaintenance: DocsStageApi["runDocsMaintenance"];
-  runDocsUnit: DocsNightlyApi["runDocsUnit"];
   runMemoryContext: MemoryStageApi["runMemoryContext"];
   runMemoryMaintenance: MemoryStageApi["runMemoryMaintenance"];
   runNightlyDocs: DocsNightlyApi["runNightlyDocs"];
   runProjectLifeMaintenance: ProjectLifeStageApi["runProjectLifeMaintenance"];
-  runScheduledDocsMaintenance: DocsNightlyApi["runScheduledDocsMaintenance"];
   runVerification: WriterVerifyApi["runVerification"];
   runWorkspaceStatus: NightStagesApi["runWorkspaceStatus"];
   runWriterPool: WriterStateApi["runWriterPool"];
-  saveDocsUnitRecord: DocsNightlyApi["saveDocsUnitRecord"];
   selectionCatalogHost: WriterHostApi["selectionCatalogHost"];
   selectionCatalog: WriterHostApi["selectionCatalog"];
-  spawnDocsThread: DocsNightlyApi["spawnDocsThread"];
   spawnWriterAttempt: WriterSpawnApi["spawnWriterAttempt"];
   isLiveFolder: WriterSpawnApi["isLiveFolder"];
   restoreLiveFolder: WriterSpawnApi["restoreLiveFolder"];
@@ -183,18 +162,14 @@ export interface Services {
   memoryConflicts: MemoryConflictsApi;
   startWriterTask: WriterStartApi["startWriterTask"];
   stability: ReturnType<typeof createStability>["stability"];
-  threadReconcilePort: ReconcileApi["threadReconcilePort"];
-  unitWritable: DocsNightlyApi["unitWritable"];
-  updateDocsUnitsIndex: DocsNightlyApi["updateDocsUnitsIndex"];
   validateWriterResult: WriterVerifyApi["validateWriterResult"];
   waitWriter: WriterDispatchApi["waitWriter"];
   workspaceDirt: WriterSpawnApi["workspaceDirt"];
   workflowEngine: WorkflowEngineApi["workflowEngine"];
   workflowCatalog: WorkflowEngineApi["workflowCatalog"];
-  workflowAgents: WorkflowEngineApi["workflowAgents"];
   startAfterAcceptance: WorkflowEngineApi["startAfterAcceptance"];
   workflowTriggers: WorkflowTriggersApi["workflowTriggers"];
-  /** The errand starter of the PM tools (also used by scheduled errands); set when the tools are mounted. */
+  /** The errand starter of the PM tools (also used by scheduled errands); set in server.ts before the tools mount. */
   errands: ErrandsApi;
   /** Starts a named agent for a scheduled `agent` run and reads its report; set when the tools are mounted. */
   /** The schedule board: scheduler, definitions, previews (src/server/schedule-service.ts). */

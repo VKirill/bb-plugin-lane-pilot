@@ -51,7 +51,7 @@ import { DRAIN_SNAPSHOT_KEY, skipRedundantStartupScans } from "./src/rooms/stabi
 import { createWriterQuestionTimeout, DEFAULT_SILENCE_NUDGE_MIN, OPENCODE_WRITER_PROVIDER, sweepWriterSilence, sweepWriterWakes } from "./src/rooms/writer/server";
 import { threadPendingInteractions } from "./src/rooms/relay/server";
 import type { Services } from "./src/rooms/core/server";
-import { createStageChildren } from "./src/rooms/qa/server";
+import { createStageChildren, mountErrands } from "./src/rooms/qa/server";
 import { createDocsStage } from "./src/rooms/docs/server";
 import { createMemoryStage, mountMemoryEmbeddings, mountThreadBlock } from "./src/rooms/memory/server";
 import { createNightStages } from "./src/rooms/night/server";
@@ -115,12 +115,14 @@ export default async function plugin(bb: BbPluginApi) {
     createWriterHost(ctx),
     { council: createCouncil(ctx) },
     { world: createWorldService(ctx, { projectName: (projectId) => bb.sdk.projects.get({ projectId }).then((p) => (typeof p?.name === "string" ? p.name : null), () => null) }) },
+    // providerBreaker is another field of this bag: the canary reads it at call time through the thunk.
     { canary: createCanary(ctx, () => services.providerBreaker) },
     { memoryProbe: createMemoryProbe(ctx, services) },
     { ruleScan: createRuleScan(ctx, services) },
     { promotions: createPromotionService(ctx, services) },
     { harness: createHarness(ctx, services) },
     { deferrals },
+    // deferrals is another field of this bag: memoryConflicts reads it at call time through the thunk.
     { memoryConflicts: createMemoryConflicts({ db, deferrals: () => services.deferrals, log: ctx.log }) },
     createRollback(ctx, services),
     createBaselineRoom(ctx, services),
@@ -186,8 +188,6 @@ export default async function plugin(bb: BbPluginApi) {
   try { services.hypotheses.seed(); } catch (cause) { bb.log.warn(`Lane Pilot: hypotheses seed skipped: ${cause instanceof Error ? cause.message : String(cause)}`); }
   // A gap in the heartbeat longer than 5 minutes is an outage on record; then one beat a minute.
   await mountOutage(ctx).catch((cause: unknown) => bb.log.warn(`Lane Pilot: outage record skipped: ${cause instanceof Error ? cause.message : String(cause)}`));
-  // Learning from the owner's messages (src/learning): registers its PM tool before the tool families fold, so it comes first.
-  mountLearning(ctx, services);
   // Every ordinary thread of a project gets the L1 memory showcase (M2); PM and plugin threads are left out inside.
   mountThreadBlock(ctx);
   mountMemoryEmbeddings(ctx);
@@ -197,6 +197,7 @@ export default async function plugin(bb: BbPluginApi) {
   mountPermits(ctx);
   mountForge(ctx, services);
   mountFront(ctx, services.front);
+  // bench is another field of this bag: each mount below reads it at call time through the thunk.
   // Every Sunday 02:00 UTC the newest bench set runs as this week's arm and is compared with last week's (bench.weekly).
   mountBenchWeekly(ctx, () => services.bench);
   // Every day 01:30 UTC the full set runs on OVH as the night arm (bench.nightly). The deploy gate reads that run.
@@ -205,9 +206,14 @@ export default async function plugin(bb: BbPluginApi) {
   mountBenchSweep(ctx, () => services.bench);
   // First of the month, 04:00 UTC: the cheap pin of a service job is benched against its previous model (bench.service_models).
   mountServiceModelRecheck(ctx, () => services.bench);
-  // The PM's lane_pilot_regression family members (list/settle); the family folds them in registerTools → mountToolFamilies.
-  mountRegressionTools(ctx, services);
-  registerTools(ctx, services);
+  // The errand starter the PM tools and the scheduled errands share: a services field like the rest, built here — not inside registerTools.
+  services.errands = mountErrands(ctx, services);
+  // lane_pilot_learned and the lane_pilot_regression members are family members from other rooms: passed as contributors,
+  // the fold mounts them itself, so their call order against registerTools does not matter.
+  registerTools(ctx, services, [
+    () => mountLearning(ctx, services),
+    () => mountRegressionTools(ctx, services),
+  ]);
   registerCli(ctx, services);
   // The pixel world's GLB files (council office people and cars) over HTTP, not inside app.js.
   mountWorldAssets(bb);

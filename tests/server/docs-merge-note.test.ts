@@ -1,7 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createDocsNightly, docsMergeNote } from "../../src/rooms/docs/server/docs-nightly";
-import type { ServerCore } from "../../src/rooms/core/server/core";
-import type { Services } from "../../src/rooms/core/server/services";
+import { docsMergeNote, pluginStopped } from "../../src/rooms/docs/server/docs-nightly";
 import { logIncidents } from "../../src/rooms/self-repair/server/self-repair";
 
 // treba-sites, 2026-10-07: the leftover docs worktree of 2026-10-06 met docs the owner had committed to main meanwhile.
@@ -32,7 +30,6 @@ describe("docsMergeNote", () => {
 
 describe("docs passes stopped by a plugin reload", () => {
   it("read the closed database and the stale handle as a stop, not a failure", () => {
-    const { pluginStopped } = createDocsNightly({ bb: { background: { schedule: () => undefined } }, db: {}, host: {} } as unknown as ServerCore, {} as Services);
     // 2026-10-07 02:37 UTC, the 0.1.170 deploy reload: both lines came from passes in flight.
     expect(pluginStopped(new Error("The database connection is not open"))).toBe(true);
     expect(pluginStopped(new Error('plugin "lane-pilot" used a stale API handle — it was reloaded or disabled; re-entry happens via a fresh factory call'))).toBe(true);
@@ -40,7 +37,6 @@ describe("docs passes stopped by a plugin reload", () => {
   });
 
   it("read host calls the reload cut off as a stop, a crashed or killed worker as a failure", () => {
-    const { pluginStopped } = createDocsNightly({ bb: { background: { schedule: () => undefined } }, db: {}, host: {} } as unknown as ServerCore, {} as Services);
     // 2026-10-22 12:00:14 UTC, the 0.1.266 deploy reload: the hourly pass of the old instance had host calls in flight.
     expect(pluginStopped(new Error("host plugin worker exited (0)"))).toBe(true);
     expect(pluginStopped(Object.assign(new Error("Host plugin call was cancelled"), { name:"AbortError" }))).toBe(true);

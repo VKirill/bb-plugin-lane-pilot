@@ -9,7 +9,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, expect, it, vi } from "vitest";
 import { noOptionalPlugins } from "../optional-plugin-stubs";
 import type { PrototypeConfig, TaskV2 } from "../../src/rooms/contracts";
-import { createAttempt, createRun, createTask, getAttempt, listStageReceipts, openDatabase, savePrototypeConfig, saveTaskPlan, setAttemptWorkspace, setRunThread, transitionAttempt } from "../../src/rooms/storage/database";
+import { createAttempt, createRun, createTask, listStageReceipts, openDatabase, savePrototypeConfig, saveTaskPlan, setAttemptWorkspace, setRunThread, transitionAttempt } from "../../src/rooms/storage/database";
 import { createCore } from "../../src/rooms/core/server/core";
 import type { Services } from "../../src/rooms/core/server/services";
 import { recordStage } from "../../src/rooms/runs/server/stage-records";
@@ -103,9 +103,15 @@ it("a writer turn that ended during a reload is redone in its own thread with th
   setAttemptWorkspace(env.db, "lpattempt_432e3386", { path:WORKTREE, environmentId:null, decision:{} });
   transitionAttempt(env.db, "lpattempt_432e3386", "spawn_requested");
   transitionAttempt(env.db, "lpattempt_432e3386", "running", { threadId:"thr_574xukin82" });
+  // The reload recovery finds the writer thread by its metadata, then checks the idle turn in it.
+  env.harness.sdk.stub("threads.list", async () => [{ id:"thr_574xukin82" }]);
+  env.harness.sdk.stub("threads.getPluginMetadata", async (args:{ threadId:string }) =>
+    args.threadId === "thr_574xukin82"
+      ? { lanePilotRunId:"run1", lanePilotTaskId:contract.id, attemptId:"lpattempt_432e3386" }
+      : { role:"pm", lanePilotRunId:"run1" });
   const reconcile = createReconcile(env.ctx, env.services);
-  const attempt = getAttempt(env.db, "lpattempt_432e3386")!;
-  expect(await reconcile.maybeFinishResumedAttempt({ projectId:"proj1", attempt, writerThreadId:"thr_574xukin82" })).toBe(true);
+  const resumed = await reconcile.resumeOrphans("proj1");
+  expect(resumed.finished).toContain("lpattempt_432e3386");
   await vi.waitFor(() => expect(writerStage(env.db).state).toBe("passed"));
   expect(env.spawns).toEqual([]);
   expect(env.sends.map((send) => send.threadId)).toEqual(["thr_574xukin82"]);

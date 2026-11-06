@@ -44,6 +44,12 @@ export function docsMergeNote(basePath:string,result:{status:string;reason?:stri
   return {level:"warn",message:`Lane Pilot docs merge into ${basePath} ${result.status}: ${result.reason ?? ""}${files}`};
 }
 
+// A reload stops a pass in flight: its API handle goes stale and its database closes. The catch-up resumes it.
+// Its host calls end too: the daemon disposes the retired generation's worker, which exits with 0 and rejects the
+// calls still pending with «host plugin worker exited (0)», and the core aborts the schedule run, whose signal
+// cancels the rest («Host plugin call was cancelled»). A worker that crashes or is killed exits otherwise and stays a failure.
+export const pluginStopped=(cause:unknown)=>/stale API handle|generation .* is retired|plugin .* (reloaded|disabled)|database connection is not open|host plugin worker exited \(0\)|^Host plugin call was cancelled$/i.test(cause instanceof Error?cause.message:String(cause));
+
 export function createDocsNightly(ctx: ServerCore, services: Services) {
   const { bb, db, host, listProjectSections, sectionChain } = ctx;
 
@@ -639,12 +645,6 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
   /** How long after the start of its night a unit may still be finished from saved progress. */
   const DOCS_UNIT_RESUME_MS=48*3_600_000;
 
-  // A reload stops a pass in flight: its API handle goes stale and its database closes. The catch-up resumes it.
-  // Its host calls end too: the daemon disposes the retired generation's worker, which exits with 0 and rejects the
-  // calls still pending with «host plugin worker exited (0)», and the core aborts the schedule run, whose signal
-  // cancels the rest («Host plugin call was cancelled»). A worker that crashes or is killed exits otherwise and stays a failure.
-  const pluginStopped=(cause:unknown)=>/stale API handle|generation .* is retired|plugin .* (reloaded|disabled)|database connection is not open|host plugin worker exited \(0\)|^Host plugin call was cancelled$/i.test(cause instanceof Error?cause.message:String(cause));
-
   /** The checks of a unit's pages: what the agent touched, what is dirty in its docs, per-page citation stats, the findings that block and the ones left as warnings. */
   type DocsFinding={path:string;rule:string;detail:string};
   type Checked={touched:string[];docsDirty:string[];pageStats:Array<{path:string;checked:number;supported:number;partial:number}>;findings:DocsFinding[];kept:DocsFinding[]};
@@ -1047,5 +1047,5 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
 
   scheduleDocs("docs-nightly-catchup","*/2 * * * *",runDocsCatchUps,6*3_600_000);
 
-  return { registerDocsGraphs, docsPlaces, docsVerdict, docsPlaceStatus, docsLastRead, WORKSPACE_DOCS_MIN_FILES, DOCS_UNIT_CONCURRENCY, docsSpawnGate, spawnDocsThread, DOCS_NIGHT_ATTEMPTS, DOCS_OPEN_KEY, docsPassesRunning, DOCS_TOOLING, unitWritable, runNightlyDocs, runDocsUnit, docsUnitRecordKey, DOCS_UNITS_OPEN_KEY, docsUnitsIndexChain, updateDocsUnitsIndex, saveDocsUnitRecord, dropDocsUnitRecord, docsUnitsFinishing, pluginStopped, finishDocsUnit, runScheduledDocsMaintenance, runDocsCatchUps };
+  return { registerDocsGraphs, docsPlaces, docsVerdict, docsPlaceStatus, docsLastRead, runNightlyDocs };
 }

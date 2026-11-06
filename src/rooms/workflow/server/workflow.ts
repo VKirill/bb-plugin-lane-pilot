@@ -88,5 +88,5 @@ export function createWorkflowEngine(ctx: ServerCore, services: Services) {
   // The public-only facts of the anamnesis for `about-site`, `resume` and `year-review`, and the check of what they wrote.
   registerAnamnesisActions(engine, ctx, (core) => anamnesisFor(core).hub);
   bb.onDispose(() => engine.dispose());
-  return { workflowEngine: engine, workflowCatalog, workflowAgents, startAfterAcceptance: createAfterAcceptStarter(engine, ctx) };
+  return { workflowEngine: engine, workflowCatalog, startAfterAcceptance: createAfterAcceptStarter(engine, ctx) };
 }
