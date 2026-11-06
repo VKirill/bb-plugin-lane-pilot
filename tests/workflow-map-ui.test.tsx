@@ -56,13 +56,17 @@ describe("Workflow map", () => {
     const slot = await mount({ onOpenGraph: (id: string) => opened.push(id) });
     const canvas = await slot.findByTestId("wf-map-canvas");
     await waitFor(() => expect(canvas.getAttribute("data-layout")).toBe("ready"));
-    expect(slot.getByTestId("wf-map-stats").textContent).toContain("2 graphs · 4 steps · 7 links");
+    // Opens on the category with the most runs (a tie goes to the catalogue order: «code»), its counts in the strip.
+    expect(canvas.getAttribute("data-focus")).toBe("code");
+    expect(slot.getByTestId("wf-map-stats").textContent).toContain("1 graphs");
     expect(slot.getByTestId("wf-map-stats").textContent).toContain("v-test");
+    fireEvent.click(slot.getByTestId("wf-map-cat"));
+    fireEvent.click(await slot.findByRole("option", { name: "All categories" }));
+    await waitFor(() => expect(slot.getByTestId("wf-map-stats").textContent).toContain("2 graphs · 4 steps · 7 links"));
 
-    // Collapsed by default: a box per graph, no step cards.
-    expect(slot.getByTestId("wm-graph-review-fix")).toBeTruthy();
+    // Every graph has its frame with its title on the map.
+    expect(slot.getByTestId("wm-graph-review-fix").textContent).toContain("Review and fix");
     expect(slot.getByTestId("wm-graph-x-digest")).toBeTruthy();
-    expect(slot.queryByTestId("wm-step-review-fix/build")).toBeNull();
 
     // Click a graph: its steps appear; click a step: its card opens.
     fireEvent.click(slot.getByTestId("wm-graph-review-fix"));
@@ -89,11 +93,10 @@ describe("Workflow map", () => {
     expect(slot.getByTestId("wm-graph-x-digest").getAttribute("data-dim")).toBe("0");
     fireEvent.change(slot.getByTestId("wf-map-search"), { target: { value: "" } });
 
-    // The category filter keeps only its shelf: «content» holds the digest (tag «social»), «code» the rest.
+    // The category filter moves the view to its cluster: «content» holds the digest (tag «social»); the counts follow.
     fireEvent.click(slot.getByTestId("wf-map-cat"));
     fireEvent.click(await slot.findByRole("option", { name: "Content" }));
-    await waitFor(() => expect(slot.queryByTestId("wm-graph-review-fix")).toBeNull());
-    expect(slot.getByTestId("wm-graph-x-digest")).toBeTruthy();
+    await waitFor(() => expect(slot.getByTestId("wf-map-canvas").getAttribute("data-focus")).toBe("content"));
     expect(slot.getByTestId("wf-map-stats").textContent).toContain("1 graphs");
   });
 });

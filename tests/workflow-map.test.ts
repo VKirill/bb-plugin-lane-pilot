@@ -58,3 +58,30 @@ it("keeps only the map's two counters when the library hands over its full stats
   const data = { ...buildWorkflowMap(items, fullStats, "v"), project: "not_requested" as const };
   expect(rpcContract.workflow_map.output.safeParse(data).success).toBe(true);
 });
+
+it("lays the built-in library out as clusters of framed graphs that never overlap, with a readable chip title", async () => {
+  const { layoutMap, chipFont } = await import("../src/rooms/workflow/ui/workflow-map");
+  const data = await map();
+  const { nodes, categories } = await layoutMap(data, new Set(), "ru");
+  expect(categories.length).toBeGreaterThan(3);
+  const box = (id: string) => {
+    const node = nodes.find((item) => item.id === id)!;
+    const parent = node.parentId ? nodes.find((item) => item.id === node.parentId)! : null;
+    const x = node.position.x + (parent?.position.x ?? 0), y = node.position.y + (parent?.position.y ?? 0);
+    return { x, y, w: Number(node.style!.width), h: Number(node.style!.height) };
+  };
+  const apart = (a: ReturnType<typeof box>, b: ReturnType<typeof box>) => a.x + a.w <= b.x || b.x + b.w <= a.x || a.y + a.h <= b.y || b.y + b.h <= a.y;
+  const cats = nodes.filter((node) => node.type === "category").map((node) => box(node.id));
+  const cells = nodes.filter((node) => node.type === "graphGroup").map((node) => box(node.id));
+  expect(cells.length).toBe(data.graphs.length);
+  for (let i = 0; i < cats.length; i++) for (let j = i + 1; j < cats.length; j++) expect(apart(cats[i]!, cats[j]!)).toBe(true);
+  for (let i = 0; i < cells.length; i++) for (let j = i + 1; j < cells.length; j++) expect(apart(cells[i]!, cells[j]!)).toBe(true);
+  // Every step sits inside its own graph's frame.
+  for (const node of nodes.filter((item) => item.type === "step")) {
+    const cell = nodes.find((item) => item.id === node.parentId)!;
+    expect(node.position.x + Number(node.style!.width)).toBeLessThanOrEqual(Number(cell.style!.width) + 1);
+    expect(node.position.y + Number(node.style!.height)).toBeLessThanOrEqual(Number(cell.style!.height) + 1);
+  }
+  // The chip title fills its frame: a long name in the smallest frame still gets more than the minimum.
+  expect(chipFont("Семантический кокон (Cocoon Engine X4)", 360, 220)).toBeGreaterThan(20);
+}, 60_000);
