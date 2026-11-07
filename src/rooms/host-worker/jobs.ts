@@ -4,8 +4,10 @@ import { closeSync, openSync } from "node:fs";
 import { mkdir, open, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { HOST_JOB_KINDS, hostContract, type HostJobKind } from "../contracts";
 import { sha256Hex } from "@lane-pilot/kit";
+import { HOST_JOB_ARG } from "./job-runner";
 
 /**
  * Background jobs on a host (B4). The host daemon cancels a call at its deadline and SIGKILLs the plugin worker five
@@ -15,12 +17,14 @@ import { sha256Hex } from "@lane-pilot/kit";
  *
  * A job lives in <root>/<jobId>/: job.json (what runs, its pid), input.json, log.txt (the process's output),
  * heartbeat (touched every few seconds), result.json (written last, by the process) and cancelled (a marker).
+ * The process is the host bundle itself run as `node <bundle> --lane-pilot-host-job <dir>`; job-runner.ts holds
+ * the protocol and the handler table.
  */
 export type JobOptions = {
   /** Folder of all jobs; ~/.lane-pilot/jobs by default. */
   root?: string;
-  /** The module whose default export holds the host handlers: this bundle. A test passes a small module instead. */
-  hostModuleUrl?: string;
+  /** The file the job process executes: this bundle in production; a test passes its own runner file. */
+  entryFile?: string;
 };
 
 export type JobState = "running" | "succeeded" | "failed" | "cancelled" | "lost";
@@ -38,7 +42,6 @@ const SCRUB_INPUT: readonly HostJobKind[] = ["runScript"];
 type JobResult = { ok: true; value: unknown } | { ok: false; error: string };
 
 const JOB_ID = /^job_[a-z0-9]{10,40}$/;
-const HEARTBEAT_MS = 5_000;
 /** A job whose heartbeat stopped this long ago is gone even if its pid was reused. */
 const HEARTBEAT_STALE_MS = 120_000;
 const KEEP_FINISHED_MS = 3 * 24 * 3600_000;
@@ -49,40 +52,6 @@ function jobDir(jobId: string, options: JobOptions): string {
   if (!JOB_ID.test(jobId)) throw new Error(`invalid job id: ${jobId}`);
   return join(jobsRoot(options), jobId);
 }
-
-/**
- * What the detached process runs: it loads the host handlers, runs the one the job names with the job's input and
- * writes result.json last. Plain JavaScript on purpose: it is handed to `node -e`, so it imports only node modules.
- */
-const RUNNER = `
-import { readFileSync, writeFileSync, renameSync, unlinkSync } from "node:fs";
-const [moduleUrl, dir] = process.argv.slice(1);
-const job = JSON.parse(readFileSync(dir + "/job.json", "utf8"));
-const input = JSON.parse(readFileSync(dir + "/input.json", "utf8"));
-if (job.scrubInput) { try { unlinkSync(dir + "/input.json"); } catch {} }
-const beat = () => { try { writeFileSync(dir + "/heartbeat", String(Date.now())); } catch {} };
-beat();
-setInterval(beat, ${HEARTBEAT_MS}).unref();
-const done = (body) => {
-  writeFileSync(dir + "/result.json.tmp", JSON.stringify(body));
-  renameSync(dir + "/result.json.tmp", dir + "/result.json");
-};
-setTimeout(() => {
-  done({ ok: false, error: "job timed out after " + job.timeoutSec + " s" });
-  try { process.kill(-process.pid, "SIGTERM"); } catch {}
-  process.exit(1);
-}, job.timeoutSec * 1000).unref();
-try {
-  const handler = (await import(moduleUrl)).default?.handlers?.[job.kind];
-  if (typeof handler !== "function") throw new Error("the host module has no handler " + job.kind);
-  const ac = new AbortController();
-  done({ ok: true, value: await handler(input, { signal: ac.signal, lifecycle: { signal: ac.signal } }) });
-} catch (cause) {
-  console.error(cause);
-  done({ ok: false, error: cause instanceof Error ? cause.message : String(cause) });
-}
-process.exit(0);
-`;
 
 async function readJson<T>(path: string): Promise<T | null> {
   try { return JSON.parse(await readFile(path, "utf8")) as T; } catch { return null; }
@@ -127,45 +96,102 @@ export async function startHostJob(
   options: JobOptions = {},
 ): Promise<string> {
   if (!HOST_JOB_KINDS.includes(request.kind)) throw new Error(`host job kind not supported: ${request.kind}`);
-  if (!request.key) return await launchJob(request, options);
-  const taken = await claimJobKey(request.key, options);
-  return taken.existing ?? await launchJob(request, options, taken.claim);
+  if (!request.key) {
+    const jobId = await stageJob(request, options);
+    await spawnJob(jobId, options);
+    return jobId;
+  }
+  return await startKeyedJob({ ...request, key: request.key }, options);
 }
+
+const EMPTY_CLAIM_STALE_MS = 60_000;
 
 const keyFile = (key: string, options: JobOptions) => join(jobsRoot(options), "keys", `${sha256Hex(key).slice(0, 32)}.id`);
 
 /**
- * One logical job per key: the first start writes the key file (exclusively) and launches; a second start with the same key, also
- * after a crash between the launch and the caller recording the id, gets the first job's id. A key whose job folder was pruned is free again.
+ * The id a key file holds, or null to retry the claim: the file is absent, or held a stale id and is now removed.
+ * A winner that took the file but has not written its id yet gets a short grace; a stale file is removed only when
+ * it still holds the same id a rival could not have claimed in the meantime — never a rival's fresh claim.
  */
-async function claimJobKey(key: string, options: JobOptions): Promise<{ existing: string; claim?: undefined } | { existing?: undefined; claim: (jobId: string) => Promise<void> }> {
-  const file = keyFile(key, options);
-  await mkdir(join(jobsRoot(options), "keys"), { recursive: true });
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    try {
-      const handle = await open(file, "wx");
-      return { claim: async (jobId: string) => { await handle.writeFile(jobId); await handle.close(); } };
-    } catch (cause) {
-      if ((cause as NodeJS.ErrnoException).code !== "EEXIST") throw cause;
-    }
-    // The other start may not have written the id yet: wait for it briefly.
-    let jobId = "";
-    for (let wait = 0; wait < 20 && !jobId; wait += 1) {
-      jobId = (await readFile(file, "utf8").catch(() => "")).trim();
-      if (!jobId) await new Promise((wake) => setTimeout(wake, 100));
-    }
-    if (jobId && JOB_ID.test(jobId) && await stat(jobDir(jobId, options)).then(() => true, () => false)) return { existing: jobId };
-    await rm(file, { force: true });
+async function keyedJobId(file: string, options: JobOptions): Promise<string | null> {
+  // An empty file is a claim still staging; under load staging can take seconds, so it is waited out until it is
+  // older than EMPTY_CLAIM_STALE_MS (a crashed claimant) — never removed just because the wait ran out.
+  let content = "";
+  for (;;) {
+    content = (await readFile(file, "utf8").catch(() => "")).trim();
+    if (content) break;
+    const age = await stat(file).then((info) => Date.now() - info.mtimeMs, () => Infinity);
+    if (age >= EMPTY_CLAIM_STALE_MS) break;
+    await new Promise((wake) => setTimeout(wake, 100));
   }
-  throw new Error(`could not claim job key ${key}`);
+  if (JOB_ID.test(content) && await stat(jobDir(content, options)).then(() => true, () => false)) return content;
+  await removeIfStill(file, content);
+  return null;
 }
 
-async function launchJob(
+const STALE_LOCK_MS = 30_000;
+
+/**
+ * Removes the key file only while it still holds `stale`. Removal happens under a per-key lock directory: a fresh
+ * claim can only appear after the stale file is gone, and only a lock holder removes it, so the re-read under the
+ * lock cannot be overtaken by a rival's claim between the read and the rm. Without the lock two racers that both
+ * read the stale id let the slower one delete the faster one's fresh claim (drill race test, 2026-11-07).
+ */
+async function removeIfStill(file: string, stale: string): Promise<void> {
+  const lock = `${file}.lock`;
+  for (;;) {
+    try { await mkdir(lock); break; } catch (cause) {
+      if ((cause as NodeJS.ErrnoException).code !== "EEXIST") throw cause;
+      const age = await stat(lock).then((info) => Date.now() - info.mtimeMs, () => 0);
+      if (age >= STALE_LOCK_MS) await rm(lock, { recursive: true, force: true });
+      else await new Promise((wake) => setTimeout(wake, 20));
+    }
+  }
+  try {
+    if ((await readFile(file, "utf8").catch(() => null))?.trim() === stale) await rm(file, { force: true });
+  } finally {
+    await rm(lock, { recursive: true, force: true });
+  }
+}
+
+/**
+ * One logical job per key: the first start takes the key file exclusively, then stages, writes its id and launches;
+ * a second start with the same key, also after a crash between the launch and the caller recording the id, gets the
+ * first job's id. A key whose job folder was pruned is free again.
+ */
+async function startKeyedJob(
+  request: { kind: HostJobKind; input: Record<string, unknown>; timeoutSec: number; key: string },
+  options: JobOptions,
+): Promise<string> {
+  const file = keyFile(request.key, options);
+  await mkdir(join(jobsRoot(options), "keys"), { recursive: true });
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const handle = await open(file, "wx").catch((cause: NodeJS.ErrnoException) => {
+      if (cause.code === "EEXIST") return null;
+      throw cause;
+    });
+    if (handle) {
+      const jobId = await stageJob(request, options).catch(async (cause) => {
+        await handle.close();
+        await rm(file, { force: true });
+        throw cause;
+      });
+      await handle.writeFile(jobId);
+      await handle.close();
+      await spawnJob(jobId, options);
+      return jobId;
+    }
+    const existing = await keyedJobId(file, options);
+    if (existing) return existing;
+  }
+  throw new Error(`could not claim job key ${request.key}`);
+}
+
+/** Writes the job's folder: job.json and input.json. The same validation as a direct call, here not inside the process. */
+async function stageJob(
   request: { kind: HostJobKind; input: Record<string, unknown>; timeoutSec: number; key?: string },
   options: JobOptions,
-  claim?: (jobId: string) => Promise<void>,
 ): Promise<string> {
-  // The same validation the daemon applies to a direct call: a malformed input fails here, not inside the process.
   const input = hostContract[request.kind].input.parse(request.input);
   await pruneJobs(options).catch(() => undefined);
   const jobId = `job_${Date.now().toString(36)}${randomBytes(5).toString("hex")}`;
@@ -174,20 +200,25 @@ async function launchJob(
   const meta: JobMeta = { jobId, kind: request.kind, startedAt: Date.now(), timeoutSec: request.timeoutSec, pid: null,
     ...(request.key ? { key: request.key } : {}), ...(SCRUB_INPUT.includes(request.kind) ? { scrubInput: true } : {}) };
   await writeJson(join(dir, "job.json"), meta);
-  await claim?.(jobId);
   await writeJson(join(dir, "input.json"), input);
+  return jobId;
+}
+
+/** Detaches the job process on a staged folder: the host bundle run as its own job runner. */
+async function spawnJob(jobId: string, options: JobOptions): Promise<void> {
+  const dir = jobDir(jobId, options);
   const log = openSync(join(dir, "log.txt"), "a");
   try {
-    const child = spawn(process.execPath, ["--no-warnings", "--input-type=module", "-e", RUNNER, options.hostModuleUrl ?? import.meta.url, dir], {
+    const child = spawn(process.execPath, ["--no-warnings", options.entryFile ?? fileURLToPath(import.meta.url), HOST_JOB_ARG, dir], {
       cwd: dir, detached: true, stdio: ["ignore", log, log], windowsHide: true,
     });
     child.on("error", (cause) => {
       void writeJson(join(dir, "result.json"), { ok: false, error: `job process could not start: ${cause.message}` } satisfies JobResult);
     });
     child.unref();
-    if (child.pid) await writeJson(join(dir, "job.json"), { ...meta, pid: child.pid });
+    const meta = await readJson<JobMeta>(join(dir, "job.json"));
+    if (child.pid && meta) await writeJson(join(dir, "job.json"), { ...meta, pid: child.pid });
   } finally { closeSync(log); }
-  return jobId;
 }
 
 export async function hostJobStatus(jobId: string, options: JobOptions = {}): Promise<JobStatus> {

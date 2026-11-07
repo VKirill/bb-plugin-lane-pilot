@@ -1,7 +1,6 @@
 import { mkdtemp, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { pathToFileURL } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { hostJobStatus, startHostJob, type JobOptions, type JobStatus } from "../../src/rooms/host-worker/jobs";
 import { createCapture, runScriptOnHost } from "../../src/rooms/host-worker/script-run";
@@ -52,11 +51,40 @@ describe("a scheduled script on the host", () => {
   });
 });
 
-/** A host bundle stand-in whose runScript answers with what the job received, to see what survives on disk. */
+/** A host bundle stand-in (same protocol as host-worker/job-runner.ts) whose runScript answers with what the job received, to see what survives on disk. */
 const FIXTURE = `
-export default { handlers: {
+import { readFileSync, writeFileSync, renameSync, unlinkSync } from "node:fs";
+const HANDLERS = {
   runScript: async (input) => ({ hostId: input.requestedHostId, exitCode: 0, stdout: Object.keys(input.env ?? {}).join(","), stderr: "", truncated: false, timedOut: false, durationMs: 1 }),
-} };
+};
+if (process.argv[2] === "--lane-pilot-host-job") {
+const dir = process.argv[3];
+const job = JSON.parse(readFileSync(dir + "/job.json", "utf8"));
+const input = JSON.parse(readFileSync(dir + "/input.json", "utf8"));
+if (job.scrubInput) { try { unlinkSync(dir + "/input.json"); } catch {} }
+const beat = () => { try { writeFileSync(dir + "/heartbeat", String(Date.now())); } catch {} };
+beat();
+setInterval(beat, 5000).unref();
+const done = (body) => {
+  writeFileSync(dir + "/result.json.tmp", JSON.stringify(body));
+  renameSync(dir + "/result.json.tmp", dir + "/result.json");
+};
+setTimeout(() => {
+  done({ ok: false, error: "job timed out after " + job.timeoutSec + " s" });
+  try { process.kill(-process.pid, "SIGTERM"); } catch {}
+  process.exit(1);
+}, job.timeoutSec * 1000).unref();
+try {
+  const handler = HANDLERS[job.kind];
+  if (typeof handler !== "function") throw new Error("the host module has no handler " + job.kind);
+  const ac = new AbortController();
+  done({ ok: true, value: await handler(input, { signal: ac.signal, lifecycle: { signal: ac.signal } }) });
+} catch (cause) {
+  console.error(cause);
+  done({ ok: false, error: cause instanceof Error ? cause.message : String(cause) });
+}
+process.exit(0);
+}
 `;
 let dir = "";
 let options: JobOptions = {};
@@ -74,7 +102,7 @@ describe("script jobs on the host", () => {
   beforeAll(async () => {
     dir = await mkdtemp(join(tmpdir(), "lp-script-jobs-"));
     await writeFile(join(dir, "host.mjs"), FIXTURE);
-    options = { root: join(dir, "jobs"), hostModuleUrl: pathToFileURL(join(dir, "host.mjs")).href };
+    options = { root: join(dir, "jobs"), entryFile: join(dir, "host.mjs") };
   });
   afterAll(async () => { await rm(dir, { recursive: true, force: true }); });
 

@@ -76,10 +76,17 @@ import {
   prepareClaudeGuardHost,
   prepareBbShimHost,
   worktreeJanitor,
+  HOST_JOB_ARG,
+  runJobProcess,
 } from "./src/rooms/host-worker";
 import { sessionInventory } from "./src/rooms/native-agent";
 import { nativeInstallHost, removeClaudeLaneLeftoversHost } from "./src/rooms/native-install/native-install-host";
 import { anamnesisHandler } from "./src/rooms/anamnesis";
+
+// A host job is this same bundle run as its own process (host-worker/jobs.ts spawns it): `node <bundle> <arg> <dir>`.
+if (process.argv[2] === HOST_JOB_ARG && process.argv[3]) {
+  process.exit(await runJobProcess(process.argv[3]));
+}
 
 export default experimental_defineHostEntry({
   contract: hostContract,
