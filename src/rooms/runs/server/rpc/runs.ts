@@ -9,7 +9,7 @@ import { pickableAgent } from "../../../contracts/agent-picker";
 import { countAttempts, createAttempt, failureFieldsOf, getActivation, getAttempt, transitionAttempt } from "../../../storage";
 import { detectRequiredSessionPolicyCapability } from "../../../contracts/helper-context";
 import { DEFAULT_NATIVE_AGENT, nativeAgentCliId } from "../../../contracts/native-agent-id"
-import { nativeAgentTypeKey, nativeThreadKey } from "../../../contracts/agent-ops"
+import { nativeAgentTypeKey, nativeThreadKey } from "../../../contracts"
 import { nativeSelectionSchema } from "../../../contracts/native-selection";
 import { userVisibleProjects } from "../../../contracts/project-scope";
 import { MAIN_ATTEMPT_LIMIT, RETRY_ELIGIBLE } from "../../../contracts/state-machine";
@@ -28,7 +28,7 @@ import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import { rpcContract } from "../../../contracts";
 import type { ServerCore } from "../../../contracts/server";
 
-import type { ActivationApi, AgentOpsApi } from "../../../contracts/agent-ops";
+import type { ActivationApi, AgentOpsApi } from "../../../contracts";
 import type { RollbackApi } from "../../../rollback/server/rollback";
 import type { ResumeOrphansPort } from "../../../contracts/stability-api";
 import type { WriterHostApi } from "../../../platform/server";

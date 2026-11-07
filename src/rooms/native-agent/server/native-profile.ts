@@ -1,4 +1,4 @@
-import { nativeSelectionKey } from "../../contracts/agent-ops";
+import { nativeSelectionKey } from "../../contracts";
 import { MAIN_AGENT_PROFILE_IDS } from "../../contracts/server";
 import { compileEffectiveMainAgent, compileMainAgentProfile, type CustomAgentMeta } from "../agent-profile";
 import { sessionOverrideAgentsJson } from "../native-agent-definition";

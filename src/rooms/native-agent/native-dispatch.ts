@@ -6,7 +6,7 @@ import type { LanePilotDatabase } from "../storage";
 import { classifyCliAgentsCollision, cliAgentsSelectionNullableSchema, collisionMessage, isMissingPluginRpc, nativeSelectionMarker, nativeSwitchKey, tokensFrom } from "./native-session"
 import { CLI_AGENTS_PLUGIN_ID } from "../contracts/native-agent-id"
 import { nativeSelectionSchema, type NativeSelection } from "../contracts/native-selection";
-import { nativeAgentTypeKey, nativeEnvKey, nativeSelectionKey, nativeThreadKey } from "../contracts/agent-ops";
+import { nativeAgentTypeKey, nativeEnvKey, nativeSelectionKey, nativeThreadKey } from "../contracts";
 import {
   projectCheckoutIntentPath,
   attachNativeLaneClaim,

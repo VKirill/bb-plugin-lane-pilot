@@ -25,7 +25,7 @@ import type { ServerCore } from "../../contracts/server";
 import type { DocsStageApi } from "./docs";
 import type { WorkflowEngineApi, WriterHostApi } from "../../platform/server";
 import {DOCS_MAINTENANCE, DOCS_NIGHT} from "../../contracts";
-import { docsWorktreeKey } from "../../contracts/worktrees";
+import { docsWorktreeKey } from "../../contracts";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {

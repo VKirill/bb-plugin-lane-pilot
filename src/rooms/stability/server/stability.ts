@@ -1,6 +1,6 @@
 import { SETTING_WRITER_CAPACITY_WAIT_MAX_MIN } from "@lane-pilot/settings-catalog";
-import { PARKED_KEY } from "../../contracts/stability-api";
-import type { ParkedTask } from "../../contracts/stability-api";
+import { PARKED_KEY } from "../../contracts";
+import type { ParkedTask } from "../../contracts";
 import packageJson from "../../../../package.json";
 import { PARKED_CLASSES, failureClass, failureFingerprint, isCapacitySaturated, isWaitingSecret, type FailureClass } from "../../contracts/failure-class";
 import { allowedSecretNames, secretProblem, waitingSecretNote, WAITING_SECRET_PREFIX } from "../../secrets/server";
@@ -27,7 +27,7 @@ export const BREAKERS_KEY = "stability:breakers";
 export const DRILL_KEY = "stability:drill";
 /** The version of a task parked at start-up that no build is known for (an attempt from before harness_version): it restarts at once. */
 const ADOPTED_VERSION = "before-adoption";
-import type { DrillOutcome } from "../../contracts/stability-api";
+import type { DrillOutcome } from "../../contracts";
 /** Same harness fingerprint this many times in the window opens the project's breaker (Mergify pause, circuit breaker). */
 const BREAKER_THRESHOLD = 3;
 const BREAKER_WINDOW_MS = 15 * 60_000;

@@ -3,7 +3,7 @@ import { getAttempt, getTask, listCheckDurations, listStageReceipts, taskBasePat
 import type { RollbackApi, RollbackItem, RollbackTarget } from "../../rollback/server";
 import { scheduleIsolated } from "../../platform/server";
 import { bestEffort } from "@lane-pilot/kit";
-import { REGRESS_MARKER_TTL_MS, REGRESS_WORKTREE_PREFIX, regressWorktreeKey, regressWorktreePath } from "../../contracts/worktrees";
+import { REGRESS_MARKER_TTL_MS, REGRESS_WORKTREE_PREFIX, regressWorktreeKey, regressWorktreePath } from "../../contracts";
 import { type ServerCore } from "../../contracts/server";
 import { readingFrom, readingNote } from "../../verification";
 import {

@@ -6,6 +6,10 @@ import {
 } from "../../src/rooms/owner-waiting";
 import { insertPhase, savePhase } from "../../src/rooms/phase/store";
 import { ownerWaitingRpc } from "../../src/rooms/owner-waiting/server/rpc";
+import { writerQuestionSweep } from "../../src/rooms/writer/server";
+import { runGoalSweep } from "../../src/rooms/run-goal/server";
+import { phaseWordSweep } from "../../src/rooms/phase/server";
+import { scheduleFailureSweep } from "../../src/rooms/schedule/server";
 import type { PostOwnerItem } from "../../src/rooms/owner-waiting";
 
 const T = Date.UTC(2026, 9, 30, 10, 0, 0);
@@ -16,7 +20,8 @@ function db() {
 function item(key: string, extra: Partial<PostOwnerItem> = {}): PostOwnerItem {
   return { key, source: "writer", kind: "question", what: `what of ${key}`, why: `why of ${key}`, ...extra };
 }
-const openKeys = (database: ReturnType<typeof db>, now: number) => collectOwnerWaiting(database, now).items.map((row) => row.key);
+const OWNER_ITEM_SWEEPS = [writerQuestionSweep, runGoalSweep, phaseWordSweep, scheduleFailureSweep];
+const openKeys = (database: ReturnType<typeof db>, now: number) => collectOwnerWaiting(database, now, OWNER_ITEM_SWEEPS).items.map((row) => row.key);
 const rowOf = (database: ReturnType<typeof db>, key: string) =>
   database.prepare("SELECT * FROM lane_pilot_owner_item WHERE key=?").get(key) as
     { state: string; what: string; created_at: number; closed_at: number | null; closed_by: string | null } | undefined;

@@ -4,7 +4,7 @@ import { z } from "zod";
 
 export * from "../contracts/native-agent-id";
 import { nativeAgentCliId } from "../contracts/native-agent-id";
-import { nativeSelectionKey } from "../contracts/agent-ops";
+import { nativeSelectionKey } from "../contracts";
 
 export const nativeSelectionMarker = (token: string) => `[lane-pilot-selection:${token}]`;
 

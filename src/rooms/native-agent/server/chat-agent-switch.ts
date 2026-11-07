@@ -3,7 +3,7 @@ import { compileEffectiveMainAgent } from "../agent-profile"
 import { agentKind } from "../agent-profile";
 import { nativeSwitchKey, pendingSwitch } from "../native-session"
 import { nativeAgentCliId } from "../../contracts/native-agent-id"
-import { nativeAgentTypeKey, nativeEnvKey, nativeThreadKey } from "../../contracts/agent-ops";
+import { nativeAgentTypeKey, nativeEnvKey, nativeThreadKey } from "../../contracts";
 import { nativeSelectionSchema, type NativeSelection } from "../../contracts/native-selection";
 import { storeNativeSelection } from "./native-profile";
 import { isNotFound, orMiss, stringAt, valueAt } from "@lane-pilot/kit";

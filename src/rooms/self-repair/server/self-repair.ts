@@ -16,8 +16,7 @@ import { waitThreadIdle } from "@lane-pilot/thread-observe";
 import { withUsage } from "../../usage/server";
 import type { StepContext, WorkflowEngine } from "../../workflow";
 import { BREAKERS_KEY, DRILL_KEY, HOOK_TIMEOUTS_KEY, type HookTimeoutRecord } from "../../stability/server"
-import { DRILL_SANDBOX_PROJECT_IDS } from "../../contracts"
-import { PARKED_KEY, type DrillOutcome, type ParkedTask } from "../../contracts/stability-api";
+import { DRILL_SANDBOX_PROJECT_IDS, PARKED_KEY, type DrillOutcome, type ParkedTask } from "../../contracts"
 import { tableRowAt, writerExecutionSelection } from "@lane-pilot/models";
 import { criticStats, FAILURE_TRIAGE_METHOD, SCIENTIFIC_DEBUG_METHOD } from "../../critique";
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";

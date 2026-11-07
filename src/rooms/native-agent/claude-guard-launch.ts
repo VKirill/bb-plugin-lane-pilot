@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
-import { nativeThreadKey } from "../contracts/agent-ops";
+import { nativeThreadKey } from "../contracts";
 import { sha256Hex } from "@lane-pilot/kit";
 import { claudeExecLine, installedClaudeExecutable, shellQuote } from "./native-claude-host";
 import { materializeNativeHookSession } from "./native-session-hooks";
