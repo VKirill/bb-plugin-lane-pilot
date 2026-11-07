@@ -81,7 +81,7 @@ export function vendor(args: string[]): number {
   return out(untriaged.slice(0, 50).map(([name, row]) => `untriaged vendor update ${name} ${row.from ?? "new"} → ${row.to} (npx tsx scripts/lp-ship.ts vendor triage ${name} "<why it is fine>")`), `vendor ledger: every update since ${tag ?? "the start"} is triaged`);
 }
 
-function licenses(): number {
+export function licenses(): number {
   const notices = existsSync(join(ROOT, "THIRD_PARTY_NOTICES.md")) ? read("THIRD_PARTY_NOTICES.md") : "";
   const findings: string[] = [];
   const rows: string[] = [];

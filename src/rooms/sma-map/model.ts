@@ -1,7 +1,8 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { exportedOf, relocateAnchor } from "./exports";
-import { SMA_CONTRACT_GAPS, SMA_CONTRACT_TESTS } from "./contracts";
+import { SMA_CONTRACT_TESTS } from "./contracts";
+import { SMA_CONTRACT_GAPS } from "./gaps";
 import { SMA_ENTRIES, type SmaStatus } from "./entries";
 import { SMA_CARDS, SMA_NODES, SMA_REGIONS, type SmaKind } from "./graph";
 

@@ -95,7 +95,7 @@ export function providerStreamError(output: string): string | null {
  * a fact of the setup with the reason a model cannot guess.
  */
 export const LIVE_FOLDER_SETUP_LINE = "This folder has no git: you edit the live files directly; Lane Pilot does not commit; do not run git commands.";
-const WORKTREE_SETUP_LINE = "You work in your own git worktree. Do not commit, push, merge, rebase or switch branches: Lane Pilot commits and merges your accepted changes into main.";
+export const WORKTREE_SETUP_LINE = "You work in your own git worktree. Do not commit, push, merge, rebase or switch branches: Lane Pilot commits and merges your accepted changes into main.";
 
 export const WRITER_SETUP_LINES = [
     "Work only inside owns_paths and never touch never_touch. New files too: every path you create must match an owns_paths pattern, so put helpers next to the code you change; acceptance rejects the whole attempt for one stray file.",

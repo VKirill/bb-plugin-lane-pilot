@@ -375,7 +375,7 @@ function denseRows(db: MemoryDatabase, projectId: string, query: string, audienc
 }
 
 /** Reciprocal rank fusion of ranked lists with equal weight: a record both lists find outranks one only a list finds. */
-function fuse(lists: Row[][], limit: number): Row[] {
+export function fuse(lists: Row[][], limit: number): Row[] {
   const scored = new Map<string, { row: Row; score: number }>();
   for (const list of lists) list.forEach((row, rank) => {
     const hit = scored.get(row.id);

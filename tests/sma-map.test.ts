@@ -40,6 +40,12 @@ describe("the SMA map registry", () => {
     expect(unmapped).toEqual([]);
   });
 
+  it("counts a card whose gap register names a missing behaviour as partial, not have", () => {
+    const gapped = smaRows().filter((row) => row.gaps.length);
+    expect(gapped.length).toBeGreaterThan(0);
+    for (const row of gapped) expect(row.status).not.toBe("have");
+  });
+
   it("prints the share done and the regions", () => {
     const result = runSmaMapCli([]);
     expect(result.stdout).toMatch(/SMA map \(code 481d75c2\): 1798 nodes, 2654 links — checked by a contract test \d+ \([\d.]+%\); mapped [\d.]+%/);

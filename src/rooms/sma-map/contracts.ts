@@ -345,8 +345,3 @@ export const SMA_CONTRACT_TESTS: Readonly<Record<string, readonly string[]>> = {
   wr_vendors: ["tests/sma/worker-lane-1.test.ts › claude and codex are vendor groups, and claude is one of the cores"],
   wr_windows: ["tests/sma/worker-gates-1.test.ts › an exhausted window is a limit: it spends no attempt and the next step is to wait"],
 };
-
-// The cards whose behaviour a test found missing (it.todo): partial on the map until the gap is closed.
-export const SMA_CONTRACT_GAPS: Readonly<Record<string, readonly string[]>> = {
-
-};

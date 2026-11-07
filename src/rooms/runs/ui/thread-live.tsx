@@ -17,7 +17,7 @@ const POLL_MS = 8_000;
 const fill = (key: I18nKey, values: Record<string, string | number>) => Object.entries(values).reduce((text, [name, value]) => text.replace(`{${name}}`, String(value)), t(key));
 const label = (prefix: string, id: string | null) => { if (!id) return null; const key = `${prefix}${id.replace(/-/g, "_")}` as I18nKey; const text = t(key); return text === key ? id : text; };
 const model = (id: string | null) => (id ? id.split("/").at(-1)!.replace(/^claude-/, "").replace(/\[.*\]$/, "") : null);
-function minutes(since: number | null, locale: string): string | null {
+export function minutes(since: number | null, locale: string): string | null {
   if (!since) return null;
   const m = Math.max(0, Math.round((Date.now() - since) / 60_000));
   if (m < 60) return locale.startsWith("ru") ? `${m} мин` : `${m} min`;
@@ -25,7 +25,7 @@ function minutes(since: number | null, locale: string): string | null {
   return locale.startsWith("ru") ? `${h} ч ${m % 60} мин` : `${h}h ${m % 60}m`;
 }
 
-function Row({ item, strip, locale, open, onToggle }: { item: Item; strip: Strip | undefined; locale: string; open: boolean; onToggle: () => void }) {
+export function Row({ item, strip, locale, open, onToggle }: { item: Item; strip: Strip | undefined; locale: string; open: boolean; onToggle: () => void }) {
   const navigate = useBbNavigate();
   const now = item.column !== "done";
   const line = [label("phase_", item.phase), now ? label("stage_", item.stage) : null, now ? model(item.model) : null, now ? minutes(item.since, locale) : null].filter(Boolean).join(" · ");

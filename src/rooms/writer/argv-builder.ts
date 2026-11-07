@@ -22,7 +22,7 @@ export type CliInvocation = {
 };
 
 // Forbidden flags (SMA): installers and the flags that switch a CLI's own permission checks off never reach a lane CLI.
-const FORBIDDEN_TOKENS = ["--apply", "setup", "--dangerously-skip-permissions", "--dangerously-bypass-approvals-and-sandbox", "--yolo"];
+export const FORBIDDEN_TOKENS = ["--apply", "setup", "--dangerously-skip-permissions", "--dangerously-bypass-approvals-and-sandbox", "--yolo"];
 
 function appliesTo(spec: SettingSpec, binary: CliBinary, subcommand: string): boolean {
   if (spec.binaries && !spec.binaries.includes(binary)) return false;

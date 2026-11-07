@@ -5,7 +5,7 @@ const MAX_ENTRY_BYTES=64_000;
 /** The concepts the maintainer prompt tells a note to carry for reviewers (context.ts). */
 const REVIEW_CONCEPTS=new Set(["review","pitfall","invariant","security","regression"]);
 const KNOWN_FIELDS=new Set(["kind","content","concepts","supersedes","valid_until","valid_from"]);
-const SECRET_LIKE=/(?:\bsk-[A-Za-z0-9_-]{20,}\b|\bgh[pousr]_[A-Za-z0-9]{20,}\b|\bxox[baprs]-[A-Za-z0-9-]{20,}\b|\bAKIA[0-9A-Z]{16}\b|\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}|\bBearer\s+[A-Za-z0-9._~+/-]{20,}|-----BEGIN [A-Z ]*PRIVATE KEY-----|(?:api[_-]?key|access[_-]?token|secret|password)\s*[:=]\s*\S+)/i;
+export const SECRET_LIKE=/(?:\bsk-[A-Za-z0-9_-]{20,}\b|\bgh[pousr]_[A-Za-z0-9]{20,}\b|\bxox[baprs]-[A-Za-z0-9-]{20,}\b|\bAKIA[0-9A-Z]{16}\b|\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}|\bBearer\s+[A-Za-z0-9._~+/-]{20,}|-----BEGIN [A-Z ]*PRIVATE KEY-----|(?:api[_-]?key|access[_-]?token|secret|password)\s*[:=]\s*\S+)/i;
 const INSTRUCTION_INJECTION=/(?:ignore (?:all )?(?:previous|prior|above) instructions|forget (?:all )?(?:previous|prior) instructions|disregard (?:all )?(?:previous|prior|above)|you are now\b|^\s*#{0,6}\s*(?:system|assistant)\s*:|<\/?(?:system|instructions)>|забудь(?:те)? (?:все )?(?:прежние |предыдущие )?инструкции|игнорируй (?:все )?(?:прежние |предыдущие )?инструкции)/im;
 
 /**

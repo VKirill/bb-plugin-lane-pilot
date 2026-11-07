@@ -9,7 +9,7 @@ import { MoneyScreen, TodayScreen, WorkersScreen } from "./screens-day";
 import { CoordScreen, FirstRunScreen, ForgeScreen, MemoryScreen, ShipScreen, SystemScreen } from "./screens-ops";
 import { useLpRpcQuery } from "../../ui-shell/ui";
 
-const PROJECT_KEY = "lane-pilot:cockpit:project";
+export const PROJECT_KEY = "lane-pilot:cockpit:project";
 const PING_MS = 15_000;
 
 type Screen = { hostId: string | null; runs: Array<{ id: string; state: string }> };
@@ -66,7 +66,7 @@ export function CockpitPage({ subPath = "" }: { subPath?: string }) {
   );
 }
 
-function ScreenBody({ id, rpc, projectId, runId, hostId, onOpen }: { id: ScreenId | "building"; rpc: ReturnType<typeof useCockpitRpc>; projectId: string; runId: string | null; hostId: string | null; onOpen: (id: ScreenId) => void }) {
+export function ScreenBody({ id, rpc, projectId, runId, hostId, onOpen }: { id: ScreenId | "building"; rpc: ReturnType<typeof useCockpitRpc>; projectId: string; runId: string | null; hostId: string | null; onOpen: (id: ScreenId) => void }) {
   useSeen(rpc, id);
   switch (id) {
     case "home": return <HomeScreen onOpen={onOpen} />;
@@ -87,7 +87,7 @@ function ScreenBody({ id, rpc, projectId, runId, hostId, onOpen }: { id: ScreenI
 }
 
 /** System home: every screen, one tap away. */
-function HomeScreen({ onOpen }: { onOpen: (id: ScreenId) => void }) {
+export function HomeScreen({ onOpen }: { onOpen: (id: ScreenId) => void }) {
   return (
     <Panel title={t("ckScreen_home")} testId="ck-home">
       <p className="text-sm text-muted-foreground">{t("ckHomeLead")}</p>
@@ -97,7 +97,7 @@ function HomeScreen({ onOpen }: { onOpen: (id: ScreenId) => void }) {
 }
 
 /** The screen registry: each screen, whether it needs a wide window, the events that open it. */
-function RegistryScreen({ onOpen }: { onOpen: (id: ScreenId) => void }) {
+export function RegistryScreen({ onOpen }: { onOpen: (id: ScreenId) => void }) {
   return (
     <Panel title={t("ckScreen_registry")} testId="ck-registry">
       <ul className="space-y-1 text-sm">{SCREENS.map((row) => <li key={row.id}><button type="button" className="hover:underline" onClick={() => onOpen(row.id)}>{t(row.title)}</button> <span className="text-xs text-muted-foreground">{row.id}{row.wide ? " · wide" : ""}{row.events.length ? ` · event/${row.events.join(", event/")}` : ""}</span></li>)}</ul>

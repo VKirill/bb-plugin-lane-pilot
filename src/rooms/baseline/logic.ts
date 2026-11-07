@@ -359,7 +359,7 @@ export function bisectCommand(relativeCwd: string, command: string): string {
   return `${folder}CI=1 /bin/bash -c ${shellQuote(command)}; code=$?; if [ $code -eq 0 ]; then exit 0; else exit 1; fi`;
 }
 
-const ATTEMPT_TRAILER = /^Lane-Pilot-Attempt:\s*(\S+)\s*$/m;
+export const ATTEMPT_TRAILER = /^Lane-Pilot-Attempt:\s*(\S+)\s*$/m;
 const SUBJECT_TASK = /^([A-Za-z0-9][A-Za-z0-9._-]{0,127}): /;
 
 /** The attempt a commit message names by its trailer, or the task its subject starts with. */
