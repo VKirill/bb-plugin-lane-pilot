@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createAttempt, createRun, createTask, openDatabase, saveProjectSetting, setRunThread, transitionAttempt } from "../src/rooms/plugin-db";
-import { preship } from "../src/rooms/receipts";
+import { preship } from "../src/rooms/tools/server/receipts";
 import { finishGateRun, gateRunVerdict, latestGateRunForTask, noteGateRunStart } from "../src/rooms/verification/server";
 import { createWriterDispatch } from "../src/rooms/writer/server/dispatch";
 import { createWriterFinish } from "../src/rooms/writer/server/finish";

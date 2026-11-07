@@ -2,7 +2,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import { baselineVerdict, type BaselineCheck } from "../../src/rooms/baseline/logic";
 import { calibrationLine, calibrate, scoreForecast } from "../../src/rooms/forecast/logic";
-import { prPassport } from "../../src/rooms/receipts";
+import { prPassport } from "../../src/rooms/tools/server/receipts";
 import { recordStage } from "../../src/rooms/runs/server/stage-records";
 import { createRun, createTask, openDatabase } from "../../src/rooms/plugin-db";
 import { brokenWireReason, readWires, wiresCommand } from "../../src/rooms/wires";

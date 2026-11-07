@@ -28,6 +28,7 @@ export { createWriterVerify } from "./verify";
 export { createWriterHost } from "./writer-host";
 export { DEFAULT_SILENCE_NUDGE_MIN, sweepWriterSilence } from "./writer-silence";
 export { writerBriefSegments, writerContextBlocks } from "./writer-task";
+export { mountPermits } from "./permits";
 ;
 export { stickyTurnPromptWithRules, writerKnowledge, writerRules } from "./writer-knowledge";
 export type { SkillHub, SkillHubEntry, SkillTree } from "../../platform/server";

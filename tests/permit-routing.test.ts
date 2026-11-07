@@ -1,6 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { expect, it } from "vitest";
-import { mountPermits } from "../src/rooms/permits";
+import { mountPermits } from "../src/rooms/writer/server";
 import { createAttempt, createRun, createTask, openDatabase, transitionAttempt } from "../src/rooms/plugin-db";
 
 async function fixture() {

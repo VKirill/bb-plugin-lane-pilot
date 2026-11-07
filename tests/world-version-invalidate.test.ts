@@ -1,6 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it, vi } from "vitest";
-import { mountOutbound, worldVersion } from "../src/rooms/outbound";
+import { mountOutbound, worldVersion } from "../src/rooms/relay/server";
 import { createAttempt, createRun, openDatabase, transitionAttempt } from "../src/rooms/plugin-db";
 
 describe("world_version invalidation (B-9)", () => {

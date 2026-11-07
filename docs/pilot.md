@@ -7,7 +7,7 @@ status: active
 confidence: medium
 tags: [sma, pilot, dispatch]
 sources:
-  - src/rooms/pilot/logic.ts
+  - src/rooms/writer/server/pilot/logic.ts
   - src/rooms/writer/server/start.ts
 ---
 

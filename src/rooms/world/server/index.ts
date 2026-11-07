@@ -2,3 +2,5 @@
 export { worldRpc } from "./rpc";
 export { createWorldService } from "./service";
 export type { WorldApi, WorldServiceOptions, WorldStatus } from "./service";
+export { WORLD_ASSETS, mountWorldAssets, worldAssetResponse } from "./world-assets";
+export type { WorldAssetName } from "./world-assets";

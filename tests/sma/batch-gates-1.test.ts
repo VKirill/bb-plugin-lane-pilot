@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { blindVerdict, designDecision, designGate, issuable, nextAction, pieceSha, waveCleared, waveLines, wavePackage, waveProblems, type Phase, type PhaseRecord, type PlanItem, type TaskFact, type WaveRecord } from "../../src/rooms/phase/logic";
-import { pilotOf, type RunTask } from "../../src/rooms/pilot/logic";
+import { pilotOf, type RunTask } from "../../src/rooms/writer/server/pilot/logic";
 import { goalFailedText, goalVerdict } from "../../src/rooms/run-goal/logic";
 import { spendReserve } from "../../src/rooms/tasks/rails";
 

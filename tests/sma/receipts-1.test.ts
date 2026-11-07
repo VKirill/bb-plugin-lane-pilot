@@ -1,7 +1,7 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import { calibrate, scoreForecast } from "../../src/rooms/forecast/logic";
-import { preship, receiptChain, verifyChain } from "../../src/rooms/receipts";
+import { preship, receiptChain, verifyChain } from "../../src/rooms/tools/server/receipts";
 import { recordStage } from "../../src/rooms/runs/server/stage-records";
 import { createAttempt, createRun, createTask, openDatabase } from "../../src/rooms/plugin-db";
 

@@ -1,13 +1,13 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { bestEffort } from "@lane-pilot/kit";
 import type { DesignJournalLine } from "@lane-pilot/contracts";
-import type { LanePilotDatabase } from "../storage";
+import type { LanePilotDatabase } from "../../storage";
 import { storeMemoryRecords } from "@lane-pilot/memory-core";
-import { closeOwnerItem, closeOwnerItemsByPrefix, postOwnerItem } from "../owner-waiting";
-import { answerPhaseWord, askPhaseWord } from "../lead";
-import { appendDesignJournalLine, critiqueProblems, noteDesignJournalWord, roleLine } from "../design-eval";
-import { roleLinesKey } from "../contracts/server";
-import type { PhaseReactions } from "../phase/server";
+import { closeOwnerItem, closeOwnerItemsByPrefix, postOwnerItem } from "../../owner-waiting";
+import { answerPhaseWord, askPhaseWord } from "../../lead";
+import { appendDesignJournalLine, critiqueProblems, noteDesignJournalWord, roleLine } from "../../design-eval";
+import { roleLinesKey } from "../../contracts/server";
+import type { PhaseReactions } from "../../phase/server";
 
 /** The default bindings: the plugin's own rooms. Moved to the composition root, the phase room imports none of them. */
 export function createPhaseReactions(db: LanePilotDatabase, bb: BbPluginApi): PhaseReactions {

@@ -24,7 +24,7 @@ scene built with the props kit ─► batchStatic ─► PixelPresenter.render (
 | `nav` | `createNavGrid({ bounds, obstacles, step?, margin?, segmentMargin? })` | Walkable area from plain rectangles. `isBlocked(x, z, margin?)`, `isSegmentBlocked(...)`, `findPath(start, target)` (A* on a grid built once, string-pulled). Obstacles are filed into buckets, so a query tests the few rectangles near the point, not all of them. |
 | `assets` | `loadModel(name)` | Downloads a GLB from the asset base (bytes cached per page), parses it, gives the bones their plain names back, offers `clone(node)` (SkeletonUtils). |
 | | `toToon(THREE, mesh, owned)` | Swaps a loaded material for the toon one (texture kept). |
-| | `setAssetBase(url)`, `assetUrl(name)`, `DEFAULT_ASSET_BASE` | Where the files come from; default `/api/v1/plugins/lane-pilot/http/world/assets/` (served by `src/rooms/world-assets/server` from `assets/world/`). |
+| | `setAssetBase(url)`, `assetUrl(name)`, `DEFAULT_ASSET_BASE` | Where the files come from; default `/api/v1/plugins/lane-pilot/http/world/assets/` (served by `src/rooms/world/server` from `assets/world/`). |
 | `people` | `loadPeople(THREE)` | Eight rigged characters from `office-people.glb`: `createPerson(variant)` gives a `Person` with `play(clip)` (crossfade), `setTimeScale`, `setSeat(amount, seatHeight)`, `update(dt)`, `headTop`. |
 | | `clipForState`, `walkTimeScale`, `seatPlacement` | Pure helpers: which clip for what a person does, feet speed for the ground speed, where a seated person sits. |
 | `vehicles` | `loadVehicles(THREE, nodes)` | Cars from `office-cars.glb` by node name: `create(id)` gives a group sharing geometry and material. `advanceAlongLane(x, speed, dt, minX, maxX)` loops a driver. |

@@ -229,7 +229,7 @@ export const rpcOps = {
     input: z.object({}).strict(),
     output: z.unknown(),
   },
-  /** The world version (src/rooms/outbound): one number that grows with every attempt change; a screen reads the board again when it moved. */
+  /** The world version (src/rooms/relay/server): one number that grows with every attempt change; a screen reads the board again when it moved. */
   world_version: {
     input: z.object({}).strict(),
     output: z.object({ version: z.number().int().nonnegative() }).strict(),

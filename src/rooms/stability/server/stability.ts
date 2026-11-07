@@ -7,7 +7,7 @@ import { createAttempt, getAttempt, getRun, getRunSettingsScopes, listOpenAttemp
 import { bestEffort, id } from "@lane-pilot/kit";
 import { reopenWriterStages } from "../../runs/server/stage-records";
 import { isRunHalted, isRunPaused } from "../../runs/server/runs-halt";
-import { conveyorState } from "../../conveyor";
+import { conveyorState } from "../../runs";
 import type { ServerCore } from "../../contracts/server";
 
 import { reconcileScanOpen } from "../reconcile";

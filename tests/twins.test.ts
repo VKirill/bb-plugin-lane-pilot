@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { RECORD_MAX_AGE_MS, shapeOf, twinDiffers, type Shape } from "../src/rooms/twins";
+import { RECORD_MAX_AGE_MS, shapeOf, twinDiffers, type Shape } from "./helpers/twins";
 import { TWINS } from "./fixtures/twins";
 
 const dir = join(__dirname, "fixtures/real-shapes");

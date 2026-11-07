@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { atlasHash, renderAtlas } from "../src/rooms/atlas";
+import { atlasHash, renderAtlas } from "../scripts/atlas";
 import { collectAtlasInput } from "../scripts/atlas-input";
 import { collectSystemMap } from "../scripts/system-map";
 

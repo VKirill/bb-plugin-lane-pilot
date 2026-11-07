@@ -1,7 +1,7 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import { createCore } from "../../src/rooms/core/server/core";
-import { costPerVerified } from "../../src/rooms/self-improve";
+import { costPerVerified } from "../../src/rooms/tools/server/self-improve";
 import { createPhaseDriver } from "../phase-driver";
 import { sha256Hex } from "@lane-pilot/kit";
 import { contextSignature, nextAction, phaseFolder, planSignature, type PlanItem } from "../../src/rooms/phase/logic";

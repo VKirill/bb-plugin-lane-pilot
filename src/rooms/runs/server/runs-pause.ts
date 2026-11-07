@@ -2,7 +2,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { pollPause } from "@lane-pilot/kit";
 import { getRun } from "../../storage";
 import { isRunPaused, runPausedSince, setRunPaused } from "./runs-halt";
-import { conveyorState } from "../../conveyor";
+import { conveyorState } from "../conveyor";
 import type { ServerCore } from "../../contracts/server";
 
 /**
@@ -13,7 +13,7 @@ import type { ServerCore } from "../../contracts/server";
  */
 type Kv = { get(key: string): Promise<unknown>; set(key: string, value: unknown): Promise<void> };
 
-/** A run's work waits: the run is paused, or the conveyor is off (src/rooms/conveyor). */
+/** A run's work waits: the run is paused, or the conveyor is off (src/rooms/runs/conveyor). */
 export async function isHeld(kv: Kv, runId: string): Promise<boolean> {
   return await isRunPaused(kv, runId) || !(await conveyorState(kv as never)).on;
 }

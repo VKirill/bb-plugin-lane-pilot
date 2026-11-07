@@ -6,7 +6,7 @@ import { rpcContract } from "../src/rooms/contracts";
 import { MEMORY_PATHS } from "../src/rooms/memory/memory-paths";
 import { TRANSITION_TABLE } from "../src/rooms/contracts/state-machine";
 import { SETTING_CATALOG } from "../packages/settings-catalog/src/channels";
-import type { AtlasInput } from "../src/rooms/atlas";
+import type { AtlasInput } from "./atlas";
 
 /** The atlas's input read from the checkout: the rooms on disk and the registries in code. */
 export function collectAtlasInput(root: string): AtlasInput {
