@@ -39,7 +39,7 @@ import { pollPause, bestEffort, parseJsonOr } from "@lane-pilot/kit";
 import { pmRulesOf } from "../../learning";
 import { logRulesShown } from "@lane-pilot/run-insights";
 
-import type { StabilityApi } from "../../stability/server/stability";
+import type { StabilityPort } from "../../contracts";
 import type { WallApi } from "../../wall/service";
 import type { WriterSpawnApi } from "./spawn";
 import type { WriterStartApi } from "./start";
@@ -55,7 +55,7 @@ interface Services {
   isLiveFolder: WriterSpawnApi["isLiveFolder"];
   isTaskSatisfied: IsTaskSatisfied;
   runBudgets: WriterStateApi["runBudgets"];
-  stability: StabilityApi;
+  stability: StabilityPort;
   resolveIntegrationGate: VerificationGatePort;
   startWriterTask: WriterStartApi["startWriterTask"];
   wall: WallApi;

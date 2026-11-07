@@ -1,7 +1,8 @@
 import type Database from "better-sqlite3";
 import { EXAM, EXAM_RESULT_KEY, authorize, runExam, runLiveExam, storedExam, type StoredExam } from "./exam";
 import { collectAndAppend, loadLiveExam, recordOwnerDecision, appendLiveItems, type OwnerDecisionInput } from "./live-exam";
-import { composeMorningList } from "./morning";
+import { composeMorningList, MORNING_WINDOW_MS } from "./morning";
+import type { OwnerItemSweep } from "../owner-waiting";
 import { POLICY, TIERS, explainChange, type ChangeDescriptor } from "./policy";
 
 export const POLICY_USAGE = [
@@ -15,7 +16,7 @@ export const POLICY_USAGE = [
 ].join("\n");
 
 type Kv = { get<T>(key: string): Promise<T | null | undefined>; set(key: string, value: never): Promise<unknown> };
-export type PolicyCliDeps = { db: Pick<Database.Database, "prepare">; kv: Kv; now?(): number };
+export type PolicyCliDeps = { db: Pick<Database.Database, "prepare">; kv: Kv; now?(): number; ownerSweeps?: readonly OwnerItemSweep[] };
 
 const json = (value: unknown) => JSON.stringify(value, null, 2);
 
@@ -54,7 +55,7 @@ export async function runPolicyCli(deps: PolicyCliDeps, command: "policy-exam" |
       return { exitCode: 0, stdout: json(await appendLiveItems(deps.kv, [recordOwnerDecision({ ...input, at: input.at ?? now() })])) };
     }
     if (op === "exam-export") return { exitCode: 0, stdout: json(await loadLiveExam(deps.kv)) };
-    if (op === "morning") return { exitCode: 0, stdout: composeMorningList(deps.db, now()).join("\n") };
+    if (op === "morning") return { exitCode: 0, stdout: composeMorningList(deps.db, now(), MORNING_WINDOW_MS, deps.ownerSweeps ?? []).join("\n") };
     return { exitCode: 1, stderr: `unknown policy operation «${op}»\n${POLICY_USAGE}` };
   } catch (cause) {
     return { exitCode: 1, stderr: cause instanceof Error ? cause.message : String(cause) };

@@ -30,6 +30,8 @@ export const UNAPPLIED_REASON = {
   legacyFastModeMigrated: "legacy writer.fast_mode is diagnostic only; its value migrates to writer.service_tier",
 } as const;
 
+import { SETTING_EPISODES_PROCESS_KEY, SETTING_JEV_PROVIDER, SETTING_WRITER_CAPACITY_WAIT_MAX_MIN, SETTING_WRITER_SILENCE_NUDGE_MIN } from "./keys";
+
 export function unappliedNotValidReason(spec: SettingSpec, binary: CliBinary, subcommand: string): string {
   return `${spec.channel} flag ${spec.flag ?? spec.env} is not valid on ${binary} ${subcommand}`;
 }
@@ -72,7 +74,7 @@ export const SETTING_CATALOG: SettingSpec[] = [
   { key:"critic.code.default_for_risk", channel:"OWN", reason:"Native Lane Pilot code critic by task risk: off, medium or high; the dispatch can carry its own value for one task (the bench arm)" },
   { key:"plan_fact.mode", channel:"OWN", reason:"Native Lane Pilot plan against fact: record shows the blind check of the writer's table, gate sends an acceptance item with no evidence back to the writer" },
   { key:"checks.require_red_on_base", channel:"OWN", reason:"Native Lane Pilot baseline gate: a task of medium risk or more whose every check is green on the base does not start; off, medium or high" },
-  { key:"jev.provider", channel:"OWN", reason:"Native Lane Pilot Jev provider: openlux or typesafe serves every Jev request; the server picks the Env Catalog key and the host workers get the provider id" },
+  { key:SETTING_JEV_PROVIDER, channel:"OWN", reason:"Native Lane Pilot Jev provider: openlux or typesafe serves every Jev request; the server picks the Env Catalog key and the host workers get the provider id" },
   { key:"sandbox.backend", channel:"OWN", reason:"Native Lane Pilot verification selects Seatbelt on macOS or bubblewrap on Linux and fails closed when unavailable" },
   { key:"pm_read.enabled", channel:"OWN", reason:"Native Lane Pilot PM-read stage enable switch" },
   { key:"pm_read.min_lines", channel:"OWN", reason:"Native Lane Pilot PM-read minimum input size" },
@@ -141,7 +143,7 @@ export const SETTING_CATALOG: SettingSpec[] = [
   { key:"run.max_wall_minutes", channel:"OWN", reason:"Native Lane Pilot run budget: wall-clock minutes a run may take from its first writer attempt" },
   { key:"run.max_tokens", channel:"OWN", reason:"Native Lane Pilot run budget: total tokens of writer threads in a run, from bb usage events" },
   { key:"run.max_children", channel:"OWN", reason:"Native Lane Pilot run budget: writer and helper threads one run may spawn" },
-  { key:"writer.silence_nudge_min", channel:"OWN", reason:"Native Lane Pilot writer watchdog: minutes of silence before a running writer is nudged" },
+  { key:SETTING_WRITER_SILENCE_NUDGE_MIN, channel:"OWN", reason:"Native Lane Pilot writer watchdog: minutes of silence before a running writer is nudged" },
   { key:"bookkeeping.paths", channel:"OWN", reason:"Native Lane Pilot project bookkeeping patterns that ownership gates and merges treat as not the writer's work" },
   { key:"integration.gate_command", channel:"OWN", reason:"Native Lane Pilot integration gate: the whole-suite command run after a batch of tasks merged" },
   { key:"integration.gate_when", channel:"OWN", reason:"Native Lane Pilot integration gate: run when the queue is drained or after every N merged tasks" },
@@ -163,7 +165,7 @@ export const SETTING_CATALOG: SettingSpec[] = [
   { key:"writer.pair_pin", channel:"OWN", reason:"Native Lane Pilot writer pin: the task's provider+model for its whole life; moves only on provider failure or failure-class intervention, the reason recorded" },
   { key:"writer.route_record", channel:"OWN", reason:"Native Lane Pilot writer route record: the route decision — candidates, exclusions with reasons, the pick — kept in the task KV for the attempt receipt and the task screen" },
   { key:"writer.capacity_wait", channel:"OWN", reason:"Native Lane Pilot capacity: all writer providers spent, the task waits for the nearest window reset as capacity_saturated instead of ending blocked" },
-  { key:"writer.capacity_wait_max_min", channel:"OWN", reason:"Native Lane Pilot capacity: the most minutes a task waits on every writer provider being spent (recheck every 15 min) before the PM is told to resend it; counted from the first parking" },
+  { key:SETTING_WRITER_CAPACITY_WAIT_MAX_MIN, channel:"OWN", reason:"Native Lane Pilot capacity: the most minutes a task waits on every writer provider being spent (recheck every 15 min) before the PM is told to resend it; counted from the first parking" },
   { key:"writer.pick_refusal_penalty", channel:"OWN", reason:"Native Lane Pilot writer pick: on charges a model pair for this project's provider-refusal share over 30 days (from 10 attempts) when Jev spreads the pick" },
   { key:"checks.fail_fast", channel:"OWN", reason:"Native Lane Pilot verification: order checks by expected fail cost and stop starting new checks after the first non-zero exit" },
   { key:"cleanup.worktrees", channel:"OWN", reason:"Native Lane Pilot janitor: the hourly sweep of finished worktree copies and Lane Pilot tmp folders on every connected machine" },
@@ -175,7 +177,7 @@ export const SETTING_CATALOG: SettingSpec[] = [
   { key:"owner.words", channel:"OWN", reason:"Native Lane Pilot landing: whose word a verified task waits for (on every task, risky = risk high or critical, off none)" },
   { key:"phase.rails", channel:"OWN", reason:"Native Lane Pilot phases: with rails on, graphs, councils and schedules of a phase start only from its own stage" },
   { key:"episodes.collect", channel:"OWN", reason:"Native Lane Pilot errand episodes: on writes lane_pilot_errand_episode when an errand run ends and marks a routed run pending at start" },
-  { key:"episodes.process_key", channel:"OWN", reason:"Native Lane Pilot errand process-key choice: shadow keeps Jev's pick in the receipt only, active lets a confident pick set process_key once the gold-set F1 gate passes" },
+  { key:SETTING_EPISODES_PROCESS_KEY, channel:"OWN", reason:"Native Lane Pilot errand process-key choice: shadow keeps Jev's pick in the receipt only, active lets a confident pick set process_key once the gold-set F1 gate passes" },
   { key:"lead.budget_daily_usd", channel:"OWN", reason:"Native Lane Pilot lead: the dollars its ticks may spend in one day" },
   { key:"lead.tick_cron", channel:"OWN", reason:"Native Lane Pilot lead: when a tick starts, in the owner's time zone" },
   { key:"lead.max_proposals", channel:"OWN", reason:"Native Lane Pilot lead: how many proposals one tick may put on the owner's list" },

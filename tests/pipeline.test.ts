@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import { NO_UPSTREAM, upstreamPath } from "./upstream-fixture";
 import { aggregateRun } from "../src/rooms/runs/aggregation";
 import { buildCliInvocation } from "../src/rooms/writer/argv-builder";
+import { argvValidationMap } from "../src/rooms/settings/setting-validation";
 import { attemptProduced } from "../src/rooms/writer/cli-outcome";
 import { classifyWriterOutput, parseGitChangedPaths } from "../src/rooms/tasks/validate-output";
 import {
@@ -103,6 +104,7 @@ describe("§3.5 aggregation", () => {
 describe("argv-builder channels", () => {
   it("keeps writer and pool settings off the dead CLI argv", () => {
     const built = buildCliInvocation({
+        validate: argvValidationMap,
       binary:"run-controller",
       subcommand:"run",
       settings:{
@@ -120,6 +122,7 @@ describe("argv-builder channels", () => {
   });
   it("emits one unapplied row for a duplicated catalog key", () => {
     const built = buildCliInvocation({
+        validate: argvValidationMap,
       binary:"run-controller",
       subcommand:"run",
       settings:{ "night_review.model":"gpt-6-astra", "writer.reasoning_effort":"medium" },
@@ -131,6 +134,7 @@ describe("argv-builder channels", () => {
   });
   it("rejects --apply / setup", () => {
     expect(() => buildCliInvocation({
+        validate: argvValidationMap,
       binary:"run-controller",
       subcommand:"run",
       settings:{},

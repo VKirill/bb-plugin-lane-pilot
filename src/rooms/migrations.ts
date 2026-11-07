@@ -13,7 +13,7 @@ import { pmReplayMigrations } from "./pm-replay";
 import { scheduleAgentMigrations, scheduleMigrations } from "./schedule";
 import { worldMigrations } from "./world";
 import { harnessMigrations } from "./harness";
-import { deferralKindMigrations, deferralMigrations } from "./deferral";
+import { deferralKindMigrations, deferralMigrations, wallDeferralKindMigrations } from "./deferral";
 import { rollbackMigrations } from "./rollback";
 import { benchMigrations } from "./bench";
 import { ownerWaitingMigrations } from "./owner-waiting";
@@ -27,7 +27,7 @@ import { outageMigrations } from "./outage";
 import { backlogMigrations } from "./backlog";
 import { memoryTierMigrations } from "./memory-tiers";
 import { hypothesisMigrations } from "./hypotheses";
-import { wallDeferralKindMigrations, wallMigrations } from "./wall";
+import { wallMigrations } from "./wall";
 import { checkerMigrations } from "./checkers";
 import { memoryConflictMigrations } from "@lane-pilot/memory-core";
 export const migrations = [

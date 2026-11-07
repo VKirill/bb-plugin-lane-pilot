@@ -6,3 +6,4 @@ export type { IntakeRecord, PhaseIntake } from "./intake";
 export { registerPhaseTool } from "./tool";
 export { phaseRpc } from "./rpc";
 export { PHASE_USAGE, runPhaseCli } from "./cli";
+export { phaseWordItemKey, phaseWordItemPrefix, phaseWordSweep } from "./word-item";

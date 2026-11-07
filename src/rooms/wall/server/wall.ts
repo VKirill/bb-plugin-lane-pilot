@@ -13,7 +13,7 @@ import { CONFIG_KEY as SELF_REPAIR_CONFIG_KEY, SELF_REPAIR_DEFAULTS, VERSION, la
 import type { SelfRepairConfig } from "../../self-repair/server";
 import { DRILL_KEY } from "../../stability/server";
 import { isSandboxProjectName } from "../../contracts";
-import type { DrillOutcome } from "../../stability/server";
+import type { DrillOutcome } from "../../contracts";
 import { threadUsage } from "../../usage/server";
 import { id as newId } from "@lane-pilot/kit";
 import { saveVerdict } from "../../bench";
@@ -23,14 +23,14 @@ import { revertMerge, type RevertHost } from "../revert";
 
 import { collectAndAppend } from "../../policy";
 import type { ChainRuntime } from "../../contracts/server";
-import { createPluginCheckers } from "../../checkers/server";
+import type { CheckersApi } from "../../checkers/server";
 import type { HuntOutcome } from "../pack";
 import { WALL_HUNT_WORKFLOW, createWall, type RepairView, type Scope, type ThreadRun, type WallApi, type WallPorts } from "../service";
 import { jev } from "@lane-pilot/jev";
 import { withoutSelectionMarkers } from "@lane-pilot/kit";
 
-import type { BenchApi } from "../../bench/service";
-import type { DeferralApi } from "../../deferral/service";
+import type { BenchApi } from "../../bench/server";
+import type { DeferralApi } from "../../deferral/server";
 import type { Canary } from "../../stability/server/canary";
 import type { ReconcileApi } from "../../stability/server/reconcile";
 import type { SkillSwitchMorningLine, WorkflowEngineApi, WriterStateApi } from "../../platform/server";
@@ -40,6 +40,7 @@ interface Services {
   activeWriterTasks: WriterStateApi["activeWriterTasks"];
   bench: BenchApi;
   canary: Canary;
+  checkers: CheckersApi;
   deferrals: DeferralApi;
   enqueueResumedWriter: ReconcileApi["enqueueResumedWriter"];
   skillSwitchMorningLine: SkillSwitchMorningLine;
@@ -312,7 +313,6 @@ export function createPluginWall(ctx: ServerCore, services: Services): WallApi {
   };
 
   const wallRef = { current: null as unknown as WallApi };
-  const checkers = createPluginCheckers(ctx);
   const wall = createWall({
     db,
     kv: bb.storage.kv as never,
@@ -323,7 +323,7 @@ export function createPluginWall(ctx: ServerCore, services: Services): WallApi {
     jev: () => jev(),
     settings: () => ctx.effectiveProjectSettings("*").then((r) => r.values),
     diffHiddenAudit: async (limit: number) => {
-      const res = await checkers.diffHidden({ limit });
+      const res = await services.checkers.diffHidden({ limit });
       ctx.log(`diff-hidden audit: ${res.candidatesCount} candidate(s), ${res.totalChecks} check(s), ${res.blindPassCount} blind pass(es), ${res.phantomCount} phantom(s)`);
       return res;
     },

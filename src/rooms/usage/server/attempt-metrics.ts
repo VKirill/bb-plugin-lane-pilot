@@ -1,7 +1,7 @@
 import type Database from "better-sqlite3";
 import { costUsd, priceFor, modelTier, WRITER_PROFILES } from "@lane-pilot/models";
 import type { ModelTier } from "@lane-pilot/models";
-import { STAGE_PROOF } from "../../tasks";
+import { STAGE_PROOF } from "@lane-pilot/contracts";
 import { billedFrom, parseBreakdown } from "../token-math";
 import { isOpenAttemptState } from "../../contracts/state-machine";
 

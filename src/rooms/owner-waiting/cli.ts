@@ -1,5 +1,5 @@
 import type Database from "better-sqlite3";
-import { closeOwnerItem, collectOwnerWaiting, postOwnerItem, type OwnerWaiting, type PostOwnerItem } from "./items";
+import { closeOwnerItem, collectOwnerWaiting, postOwnerItem, type OwnerItemSweep, type OwnerWaiting, type PostOwnerItem } from "./items";
 import { ackDigest, loadPushConfig, planDigest, savePushConfig, PUSH_CONFIG_KEYS } from "./push";
 
 export const WAITING_USAGE = [
@@ -39,18 +39,18 @@ export function renderWaiting(waiting: OwnerWaiting): string {
   return lines.join("\n");
 }
 
-export function runWaitingCli(db: Db, argv: string[], now: number = Date.now()): Result {
+export function runWaitingCli(db: Db, argv: string[], now: number = Date.now(), sweeps: readonly OwnerItemSweep[] = []): Result {
   try {
     const flags = argv.filter((word) => word.startsWith("--"));
     const words = argv.filter((word) => !word.startsWith("--"));
     const asJson = flags.includes("--json");
     const [op, ...rest] = words;
     if (!op) {
-      const waiting = collectOwnerWaiting(db, now);
+      const waiting = collectOwnerWaiting(db, now, sweeps);
       return { exitCode: 0, stdout: asJson ? json(waiting) : renderWaiting(waiting) };
     }
     if (op === "digest") {
-      const digest = planDigest(db, now);
+      const digest = planDigest(db, now, sweeps);
       return { exitCode: 0, stdout: asJson ? json(digest) : digest.send ? digest.text : `nothing to send (${digest.reason})` };
     }
     if (op === "ack") {

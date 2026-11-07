@@ -15,9 +15,8 @@ import type { RepairDeps } from "./deps";
 import { waitThreadIdle } from "@lane-pilot/thread-observe";
 import { withUsage } from "../../usage/server";
 import type { StepContext, WorkflowEngine } from "../../workflow";
-import { BREAKERS_KEY, DRILL_KEY, HOOK_TIMEOUTS_KEY, type DrillOutcome, type HookTimeoutRecord } from "../../stability/server"
-import { DRILL_SANDBOX_PROJECT_IDS } from "../../contracts"
-import { PARKED_KEY, type ParkedTask } from "../../contracts/stability-api";
+import { BREAKERS_KEY, DRILL_KEY, HOOK_TIMEOUTS_KEY, type HookTimeoutRecord } from "../../stability/server"
+import { DRILL_SANDBOX_PROJECT_IDS, PARKED_KEY, type DrillOutcome, type ParkedTask } from "../../contracts"
 import { tableRowAt, writerExecutionSelection } from "@lane-pilot/models";
 import { criticStats, FAILURE_TRIAGE_METHOD, SCIENTIFIC_DEBUG_METHOD } from "../../critique";
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
@@ -28,6 +27,7 @@ import { MAX_CANDIDATES, repairGroup } from "@lane-pilot/jev/judgments/repair-gr
 import { GUARD_BLOCKED_KEY, type GuardBlock } from "@lane-pilot/jev";
 import { DEPENDENCY_REDO_WAIT_MS, latestTaskAttempt } from "../../storage";
 import { FAILED_ATTEMPT_STATES, isOpenAttemptState, OPEN_ATTEMPT_STATES } from "../../contracts/state-machine";
+import { hasOpenOwnerItem } from "../../owner-waiting";
 import { getRepairHooks, type NightAssignment } from "./hooks";
 import { CONFIG_KEY, lanePilotProjectOrNotice, resolveLanePilotProject } from "./project";
 import { LOADED_AT, LOG_TAIL_BYTES, VERSION, isDue, lastPmOwnerMessageAt, logIncidents, pointsAtEngine, reasonSignature, repairPriority, writerRedCheck, writerStrayFiles } from "./episodes";
@@ -312,10 +312,7 @@ export function createSelfRepair(ctx: ServerCore, deps: RepairDeps, engineOf?: (
       if (status !== "idle" && status !== "error" && status !== "stopped" && status !== "missing") continue;
       // finish.ts deliberately keeps a verified attempt running while its landing decision is open (hub 2026-10-31/11-03).
       // Match this attempt's receipt, not the project's policy; an answered or expired wait cannot hide a stuck attempt.
-      if (status === "idle" && db.prepare(`SELECT 1 FROM lane_pilot_owner_item
-        WHERE key=? AND source='writer' AND kind='task_word' AND state='open' AND created_at>?`).get(
-        `${taskWordItemPrefix(row.run_id, taskFamily(row.task_id))}${row.id}`, now - OWNER_WORD_WAIT_MS,
-      )) continue;
+      if (status === "idle" && hasOpenOwnerItem(db, { key: `${taskWordItemPrefix(row.run_id, taskFamily(row.task_id))}${row.id}`, source: "writer", kind: "task_word", since: now - OWNER_WORD_WAIT_MS })) continue;
       // Its checks run or wait in the run's check pool, and that pool moves: the writer is idle by design, not stuck
       // (Vampirism Fire 2026-10-24: six attempts behind other tasks' Studio tests were reported after 47–53 minutes).
       const checks = checksInFlight(row.thread_id);

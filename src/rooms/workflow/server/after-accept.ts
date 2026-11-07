@@ -6,6 +6,9 @@ import { requireGreen } from "@lane-pilot/workflow-engine";
 import type { NodeExecutor, StepContext, WorkflowEngine } from "@lane-pilot/workflow-engine";
 import type { ServerCore } from "../../contracts/server";
 
+/** The writer's attempt-finished subscription, injected (writer imports this room, so the function cannot be imported). */
+export type OnAttemptFinished = (ctx: ServerCore, subscriber: (event: { scope: string; status: string; projectId: string; runId: string; taskId: string; pmThreadId: string }) => void | Promise<void>, name?: string) => void;
+
 import type { MemoryStageApi } from "../../memory/server/memory";
 import type { ProjectLifeStageApi } from "../../project-life/server/project-life";
 import type {IsLiveFolder} from "../../platform/server";
@@ -112,6 +115,17 @@ export function registerAfterAcceptExecutors(engine: WorkflowEngine, ctx: Server
  * keyed by the task, so a second event for the same task (a merge intent found after the writer's own finish) starts nothing new.
  * Never throws and never waits: a refusal of the engine is logged, the task stays accepted.
  */
+/**
+ * The after-acceptance graph starts once a task landed (the task-finished event emitted at the end of the writer's
+ * epilogue, after the receipts and the run refresh — the order kept by that emission point).
+ */
+export function mountWorkflowAttemptFinished(ctx: ServerCore, services: { onAttemptFinished: OnAttemptFinished; startAfterAcceptance: (projectId: string, runId: string, taskId: string, pmThreadId: string) => void }): void {
+  services.onAttemptFinished(ctx, (event) => {
+    if (event.scope !== "task" || event.status !== "accepted") return;
+    services.startAfterAcceptance(event.projectId, event.runId, event.taskId, event.pmThreadId);
+  }, "workflow:after-accept");
+}
+
 export function createAfterAcceptStarter(engine: WorkflowEngine, ctx: ServerCore) {
   return function startAfterAcceptance(projectId: string, runId: string, taskId: string, pmThreadId: string): void {
     try {

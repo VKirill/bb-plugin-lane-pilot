@@ -4,6 +4,7 @@ import { z } from "zod";
 
 export * from "../contracts/native-agent-id";
 import { nativeAgentCliId } from "../contracts/native-agent-id";
+import { nativeSelectionKey } from "../contracts";
 
 export const nativeSelectionMarker = (token: string) => `[lane-pilot-selection:${token}]`;
 
@@ -82,7 +83,7 @@ export function collisionMessage(kind: CliAgentsCollision): string {
 export async function pendingSwitch(kv: { get<T>(key: string): Promise<T | undefined> }, threadId: string): Promise<NativeSelection | null> {
   const token = await kv.get<string>(nativeSwitchKey(threadId));
   if (typeof token !== "string") return null;
-  const raw = await kv.get(`native-selection:${token}`);
+  const raw = await kv.get(nativeSelectionKey(token));
   const parsed = raw ? nativeSelectionSchema.safeParse(raw) : null;
   return parsed?.success ? parsed.data : null;
 }

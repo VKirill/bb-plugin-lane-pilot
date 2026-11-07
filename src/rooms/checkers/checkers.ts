@@ -2,7 +2,7 @@ import { filterOwnershipNoise } from "@lane-pilot/settings-catalog";
 import type { TaskV2 } from "../contracts";
 import { MAX_FILE_EXCERPT_BYTES, buildCandidateEvidence, codeCritiquePrompt, critiquePrompt, parseCodeCritique, parseCritique } from "../critique";
 import { blindPlanFact } from "../tasks";
-import type { PlanFactFacts, PlanFactTable } from "../tasks";
+import type { PlanFactTable } from "../tasks";
 import { lintContract } from "../tasks/server";
 import { findUnownedChanges } from "../contracts/ownership";
 import { changedRanges, linesOf } from "./linediff";

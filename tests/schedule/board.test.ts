@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import plugin from "../../server";
 import { createRun, openDatabase, saveProjectSetting, setRunThread } from "../../src/rooms/plugin-db";
 import { sweepOwnerItems } from "../../src/rooms/owner-waiting/items";
+import { scheduleFailureSweep } from "../../src/rooms/schedule/server";
 
 /**
  * The schedule board through the whole plugin: the RPCs the board uses, the tick of the isolated schedule, a script that runs as a
@@ -301,7 +302,7 @@ describe("the failure row of a schedule (0.1.467)", () => {
     expect(ids(rows()[0]!)).toEqual(["pause", "read"]);
     expect(rows()[0]!.why).toContain("продолжит запускаться");
     await rpc("schedule_pause", { id: cron.id, reason: "enough" });
-    sweepOwnerItems(db);
+    sweepOwnerItems(db, Date.now(), [scheduleFailureSweep]);
     expect(rows()[0]!.state).toBe("closed");
 
     const once = (await rpc("schedule_upsert", { definition: script({ name: "Once", when: { type: "once", runAt: Date.now() + 3_600_000 } }) })).schedule;
@@ -311,7 +312,7 @@ describe("the failure row of a schedule (0.1.467)", () => {
     expect(first.why).not.toContain("продолжит запускаться");
     expect(ids(first)).toEqual(["run_again", "read"]);
     await rpc("schedule_run_now", { id: once.id, key: "second" }); await tick(); await tick();
-    sweepOwnerItems(db);
+    sweepOwnerItems(db, Date.now(), [scheduleFailureSweep]);
     const open = rows().filter((row) => row.state === "open");
     expect(open).toHaveLength(1);
     expect(open[0]!.key).not.toBe(first.key);

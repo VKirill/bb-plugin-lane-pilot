@@ -17,7 +17,7 @@ import { chainRuntimeFor, registerChainExecutors } from "./workflow-executors";
 import { notifyWorkflowIfEnded } from "./pm-notice";
 import { ERRAND_EPISODE_TRACE_EVENTS, type ErrandEpisodesApi } from "../../contracts/server";
 import type { LeadRoadApi } from "../../contracts";
-import { createAfterAcceptStarter, registerAfterAcceptExecutors } from "./after-accept";
+import { createAfterAcceptStarter, mountWorkflowAttemptFinished, registerAfterAcceptExecutors, type OnAttemptFinished } from "./after-accept";
 import { registerInvoiceActions } from "./workflow-invoice";
 import { registerTelegramActions } from "./workflow-telegram";
 import { registerAnamnesisActions } from "../../anamnesis";
@@ -57,6 +57,7 @@ interface Services {
   workflowTriggers: WorkflowTriggersApi["workflowTriggers"];
   leadRoad: LeadRoadApi;
   errandEpisodes: ErrandEpisodesApi;
+  onAttemptFinished: OnAttemptFinished;
 }
 
 /**
@@ -123,7 +124,9 @@ export function createWorkflowEngine(ctx: ServerCore, services: Services) {
   // The public-only facts of the anamnesis for `about-site`, `resume` and `year-review`, and the check of what they wrote.
   registerAnamnesisActions(engine, ctx, (core) => anamnesisFor(core).hub);
   bb.onDispose(() => engine.dispose());
-  return { workflowEngine: engine, workflowCatalog, startAfterAcceptance: createAfterAcceptStarter(engine, ctx) };
+  const startAfterAcceptance = createAfterAcceptStarter(engine, ctx);
+  mountWorkflowAttemptFinished(ctx, { onAttemptFinished: services.onAttemptFinished, startAfterAcceptance });
+  return { workflowEngine: engine, workflowCatalog, startAfterAcceptance };
 }
 
 export type WorkflowEngineApi = ReturnType<typeof createWorkflowEngine>;

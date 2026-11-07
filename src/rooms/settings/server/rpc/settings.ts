@@ -1,4 +1,4 @@
-import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
+import { GLOBAL_SETTINGS_PROJECT_ID, SETTING_INSTALL_LAST_RECEIPT } from "@lane-pilot/settings-catalog";
 import { SCHEDULE_ERRAND_DEFAULT_KEY } from "../../../schedule";
 import { ACCESS_GROUPS, ACCESS_SWITCHES, CORE_PROVIDER_GROUPS, HELPER_ROLES, MANDATORY_BB_PLUGINS, MANDATORY_MCP_SERVERS, effectiveGroup, effectiveSwitch, parseHelperContextSettings, parseRoleAccess, roleAccessKey } from "../../../contracts/helper-context";
 import { detectCompiledMainAgentCapability } from "../../../native-agent";
@@ -233,7 +233,7 @@ export function settingsRpc(ctx: ServerCore, services: Services) {
           unapplied,
         },
         lastSnapshotPath: typeof values["install.lastSnapshotPath"] === "string" ? values["install.lastSnapshotPath"] as string : null,
-        lastReceiptJson: asJsonText(values["install.lastReceipt"]),
+        lastReceiptJson: asJsonText(values[SETTING_INSTALL_LAST_RECEIPT]),
         writerResultJson: asJsonText(values["writer.lastResult"]),
         writerResultPatch: asJsonText(values["writer.lastPatch"]),
         cliReceiptJson: latestReceipt,

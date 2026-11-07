@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
+import { nativeThreadKey } from "../contracts";
 import { sha256Hex } from "@lane-pilot/kit";
 import { claudeExecLine, installedClaudeExecutable, shellQuote } from "./native-claude-host";
 import { materializeNativeHookSession } from "./native-session-hooks";
@@ -121,7 +122,7 @@ export function createClaudeGuardEnv(ctx: { bb: BbPluginApi; nativeHost: HostCal
   const cache = new Map<string, { at: number; env: EnvEntry[] }>();
   return async (thread: { threadId: string | null; hostId: string }): Promise<EnvEntry[]> => {
     if (!thread.threadId) return [];
-    const native = await ctx.bb.storage.kv.get(`native-thread:${thread.threadId}`);
+    const native = await ctx.bb.storage.kv.get(nativeThreadKey(thread.threadId));
     if (native) return [];
     let metadata: unknown = null;
     try {

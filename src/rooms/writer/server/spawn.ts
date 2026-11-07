@@ -198,7 +198,7 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
         return typeof content==="string"?new TextEncoder().encode(content):null;
       };
       at("knowledge");
-      const { allRules, rules, rulesText, mixed }=await writerKnowledge({db,host,chainForRun:(runId)=>services.ruleScan.chainForRun(runId),log:(line)=>bb.log.warn(line)},
+      const { allRules, rules, rulesText, mixed, briefContext }=await writerKnowledge({db,host,chainForRun:(runId)=>services.ruleScan.chainForRun(runId),log:(line)=>bb.log.warn(line)},
         {projectId:input.projectId,runId:input.runId,hostId:input.config.hostId,task:input.task,memorySettings,readBytes});
       // A fresh writer of an area hears what its earlier tasks decided, in place of the thread that remembered it.
       const areaHistory=input.task.area?areaHistoryText(await loadArea(bb.storage.kv,input.projectId,input.task.area)):"";
@@ -517,7 +517,7 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
         ? "fallback"  // the reason stays in the trace; the writer is only told it is the fallback
         : undefined,writerAgent,brief.pmRead,briefRulesText,input.previousAttempt ?? "",taskFolder,live,
         // The real picks, so the brief's skills line names them instead of «the picked ones».
-        { skills: [...writerSkills.skills, ...harnessSkills] });
+        { ...briefContext, skills: [...writerSkills.skills, ...harnessSkills] });
       // A fallback that continues the interrupted session reads its handoff right after its role line.
       const handoffSegments = input.continuation
         ? [contextSegments[0]!,{text:input.continuation.brief,hidden:true},...contextSegments.slice(1)]

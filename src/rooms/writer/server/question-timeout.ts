@@ -5,6 +5,7 @@ import type { ServerCore } from "../../contracts/server";
 
 import { configuredSetting } from "../../contracts/server";
 import { postOwnerItem } from "../../owner-waiting";
+import { writerQuestionKey } from "./writer-question-item";
 import { createWriterAnswer } from "./answer";
 import { DEFAULT_QUESTION_WAIT_MIN, isProductDecision, markAnsweredByDefault, SAFE_DEFAULT_ANSWER, wasAnsweredByDefault } from "./question-default";
 import { createSecondPilot } from "./second-pilot";
@@ -13,11 +14,8 @@ import { writerQuestion } from "./reopen-attempt";
 
 import type { WriterStateApi } from "./state";
 
-import type { HarnessApi } from "../../harness/server/harness";
 import type { WriterDispatchApi } from "./dispatch";
 import type { WriterSpawnApi } from "./spawn";
-
-import type { BaselineApi } from "../../baseline/server/baseline";
 
 import type { WriterStartApi } from "./start";
 
@@ -25,9 +23,7 @@ import type { WriterStartApi } from "./start";
 interface Services {
   stageHelperSettings: StageHelperSettings;
   activeWriterTasks: WriterStateApi["activeWriterTasks"];
-  baseline: BaselineApi;
   dispatchWriter: WriterDispatchApi["dispatchWriter"];
-  harness: HarnessApi;
   providerRetry: WriterStateApi["providerRetry"];
   startWriterTask: WriterStartApi["startWriterTask"];
   workspaceDirt: WriterSpawnApi["workspaceDirt"];
@@ -82,7 +78,7 @@ export function createWriterQuestionTimeout(ctx: ServerCore, services: Services,
   /** A product decision after the wait: the attempt ends (uncharged, see isOwnerDecision) and the owner's list gets the question. */
   async function leaveToOwner(row: ReturnType<typeof listUnansweredWriterQuestions>[number], now: number): Promise<void> {
     const question = writerQuestion(row.reason).slice(0, 400);
-    postOwnerItem(db as never, { key: `writer-question:${row.run_id}:${row.task_id}`, source: "writer", kind: "product_decision", projectId: row.project_id, wake: true,
+    postOwnerItem(db as never, { key: writerQuestionKey(row.run_id, row.task_id), source: "writer", kind: "product_decision", projectId: row.project_id, wake: true,
       what: `Исполнитель задачи спрашивает: ${question}`, why: "Это решение о продукте: машина его сама не принимает, а за отведённое время никто не ответил. Ответьте в описании задачи и отправьте её снова.",
       evidence: [{ kind: "attempt", ref: row.id }, { kind: "task", ref: row.task_id }] }, now);
     await end(row, "product decision, left to the owner", question);

@@ -2,7 +2,6 @@ import {
   dropMemoryIndexes, filesDrifted, findConflicts, getConflict, hideRecord, holdConflict, listConflicts, markSettled, pathsNamed,
   type ConflictNote, type ConflictResolution, type ConflictRow,
 } from "@lane-pilot/memory-core";
-import type { DeferralApi } from "../../deferral/server";
 import type { LanePilotDatabase } from "../../storage";
 
 /**
@@ -11,7 +10,7 @@ import type { LanePilotDatabase } from "../../storage";
  * note is the later observation and supersedes the older one, which leaves every reader and stays in the store as `superseded`. The
  * register keeps the pair and the evidence. A conflict whose note is gone (replaced, evicted, expired) settles itself as `moot`.
  */
-export type ConflictDeps = { db: LanePilotDatabase; deferrals: () => DeferralApi; log?: (line: string) => void; now?: () => number;
+export type ConflictDeps = { db: LanePilotDatabase; deferrals: () => { close(input: { id: string; evidence: string }): unknown }; log?: (line: string) => void; now?: () => number;
   /** Current bytes of a repo-relative path. When set, the note whose stored file hash still matches the file wins over a newer one that does not. */
   readFile?: (path: string) => Uint8Array | null };
 /** More pairs than this found by one write means the heuristics are misfiring: none is settled, the log says so. */

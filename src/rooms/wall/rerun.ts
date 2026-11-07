@@ -1,4 +1,4 @@
-import { RESTARTABLE_STAGES, affectedFrom, type Affected, type HeadPart, type ReceiptSummary, type TaskStage } from "@lane-pilot/contracts";
+import { RESTARTABLE_STAGES, TASK_PIPELINE_STAGES, affectedFrom, type Affected, type HeadPart, type ReceiptSummary, type TaskStage } from "@lane-pilot/contracts";
 import { globMatch, type ChangeDescriptor } from "../policy";
 import type { WallDb } from "./journal";
 import { FAILED_ATTEMPT_STATES } from "../contracts";
@@ -62,7 +62,7 @@ export type RerunPlan = {
 
 /** The stage a failed attempt broke in: the first stage of its task that did not pass. */
 export function failedStageOf(receipts: readonly ReceiptSummary[]): string | null {
-  const order: readonly string[] = ["pm-read", "plan-critique", "specialist-review", "writer-agent", "verification", "code-critique", "plan-fact", "acceptance-receipt"];
+  const order: readonly string[] = TASK_PIPELINE_STAGES.filter((stage) => stage !== "run-gate");
   for (const stage of order) {
     const receipt = receipts.find((row) => row.stage === stage);
     if (receipt && ["failed", "blocked"].includes(receipt.state)) return stage;

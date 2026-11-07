@@ -14,6 +14,7 @@ import { allowedSecretNames } from "../../secrets/server";
 import { agentPickerLabel } from "../../contracts/agent-display";
 import { t } from "@lane-pilot/i18n";
 import { loadPushConfig, postOwnerItem, rpcLine } from "../../owner-waiting";
+import { scheduleFailureItemKey } from "./failure-item";
 import { errandModelView, readErrandDefault } from "./schedule-default";
 import { createThreadHosts, projectPlaces, whereOf, type ProjectPlace } from "./schedule-place";
 import { NO_USAGE, errandRunThread, scheduleCost, threadUsage } from "./schedule-usage";
@@ -66,8 +67,8 @@ export function createScheduleService(ctx: ServerCore, services: Services) {
       bb.log.warn(notice.split("\n", 1)[0]!);
       // What the row offers (owner, 2026-11-01: a row that only says «read» is not an action): a one-off can run again (the same key,
       // so a second press is the same run), a live cron can be paused; the pause row asks only to be read. The janitor closes the row
-      // once a later run ended, the schedule is paused or gone (owner-waiting/items.ts).
-      const key = `schedule-failure:${run.id}`;
+      // once a later run ended, the schedule is paused or gone (scheduleFailureSweep in failure-item.ts).
+      const key = scheduleFailureItemKey(run.id);
       const read = { id: "read", label: "Прочитано", cli: rpcLine("owner_waiting_close", { key }), rpc: { method: "owner_waiting_close", input: { key } } };
       const again = { id: schedule.id, key: run.id }, pause = { id: schedule.id, reason: "остановлено владельцем со списка «Ждут владельца»" };
       const actions = paused ? [] : schedule.trigger_type === "once"

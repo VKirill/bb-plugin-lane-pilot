@@ -88,7 +88,7 @@ export type Overnight = {
 export const OVERNIGHT_WINDOW_MS = 24 * 3_600_000;
 const SOURCE_ORDER = ["night", "wall", "backlog", "learning"];
 const clip = (text: string, max: number) => (text.length > max ? `${text.slice(0, max - 1)}…` : text);
-const tableExists = (db: Db, name: string): boolean => Boolean(db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(name));
+export const tableExists = (db: Db, name: string): boolean => Boolean(db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(name));
 const parse = <T>(text: string | null | undefined, fallback: T): T => { try { return text ? JSON.parse(text) as T : fallback; } catch { return fallback; } };
 export const rpcLine = (method: string, input: Record<string, unknown>) => `echo '${JSON.stringify(input)}' > /tmp/owner-action.json && bb plugin rpc call lane-pilot ${method} --input-file /tmp/owner-action.json --json`;
 
@@ -164,6 +164,33 @@ export function ownerItemPrefixCount(db: Db, prefix: string): number {
   return (db.prepare("SELECT COUNT(*) AS n FROM lane_pilot_owner_item WHERE substr(key, 1, ?)=?").get(prefix.length, prefix) as { n: number }).n;
 }
 
+export type OpenOwnerItemFilter = { key?: string; source?: string; kind?: string; projectId?: string; since?: number };
+
+const openOwnerItemWhere = (filter: OpenOwnerItemFilter): { where: string; params: unknown[] } => {
+  const where = ["state='open'"], params: unknown[] = [];
+  if (filter.key !== undefined) { where.push("key=?"); params.push(filter.key); }
+  if (filter.source !== undefined) { where.push("source=?"); params.push(filter.source); }
+  if (filter.kind !== undefined) { where.push("kind=?"); params.push(filter.kind); }
+  if (filter.projectId !== undefined) { where.push("project_id=?"); params.push(filter.projectId); }
+  if (filter.since !== undefined) { where.push("created_at>?"); params.push(filter.since); }
+  return { where: where.join(" AND "), params };
+};
+
+export function hasOpenOwnerItem(db: Db, filter: OpenOwnerItemFilter): boolean {
+  const { where, params } = openOwnerItemWhere(filter);
+  return db.prepare(`SELECT 1 FROM lane_pilot_owner_item WHERE ${where} LIMIT 1`).get(...params) !== undefined;
+}
+
+export function countOpenOwnerItems(db: Db, filter: OpenOwnerItemFilter): number {
+  const { where, params } = openOwnerItemWhere(filter);
+  return (db.prepare(`SELECT COUNT(*) AS n FROM lane_pilot_owner_item WHERE ${where}`).get(...params) as { n: number }).n;
+}
+
+export function listOpenOwnerItemKeys(db: Db, filter: OpenOwnerItemFilter): string[] {
+  const { where, params } = openOwnerItemWhere(filter);
+  return (db.prepare(`SELECT key FROM lane_pilot_owner_item WHERE ${where}`).all(...params) as Array<{ key: string }>).map((row) => row.key);
+}
+
 /** How long a row that asks nothing (no actions: a fact, a notice) stays on the list before the janitor takes it. */
 export const OWNER_FACT_TTL_MS = 3 * 24 * 60 * 60_000;
 /** How long a row without buttons that still describes something to do (a writer's question, a red gate) stays. */
@@ -171,42 +198,26 @@ export const OWNER_NOTE_TTL_MS = 7 * 24 * 60 * 60_000;
 const FACT_KINDS = new Set(["handed", "acted", "tick_error", "tick_no_receipt", "labels", "right_changed", "schedule_failed", "schedule_paused", "digest", "outage", "gate_machine", "gate_no_test", "rule_proposed", "backlog_ready"]);
 
 /**
+ * A room whose rows sit on the owner's list answers «janitor:<why>» when the row's question is gone (the writer's task moved on, the
+ * run closed, the schedule paused or gone), null while it still stands. The sweep calls the probe for every open row; the probe keeps
+ * its own table query, so the room's key format and schema change in one place.
+ */
+export type OwnerItemSweep = (db: Pick<Database.Database, "prepare">, item: { key: string; kind: string; created_at: number }) => string | null;
+
+/**
  * The list shows what still waits; a row whose question went away is closed here, on every read (SWE-2 F-004..F-006, Gemini F-006:
- * «an inbox where rows are born and never die»). Three cases the posters cannot see themselves:
- *  - a writer's question (`writer-question:<run>:<task>`) once the task moved on: a newer attempt, or the blocked one left `blocked`;
- *  - a red run goal (`run-goal:<run>`) once its run is closed (a later green verdict closes it in run-goal.ts);
- *  - a phase's word (`phase-word:<phase>:<turn>`) once the phase is closed or stopped (Gemini F-006.1);
+ * «an inbox where rows are born and never die»). Two cases the posters cannot see themselves:
+ *  - a row whose owner says it is gone (`sweeps`: the writer's question, a red run goal, a phase's word, a failed schedule run);
  *  - a row with no action after its term: a fact after three days, anything else without buttons after seven.
  */
-export function sweepOwnerItems(db: Db, now: number = Date.now()): number {
+export function sweepOwnerItems(db: Db, now: number = Date.now(), sweeps: readonly OwnerItemSweep[] = []): number {
   if (!tableExists(db, "lane_pilot_owner_item")) return 0;
   let closed = 0;
   const rows = db.prepare("SELECT key, kind, actions_json, created_at FROM lane_pilot_owner_item WHERE state='open'").all() as Array<{ key: string; kind: string; actions_json: string; created_at: number }>;
   const close = (key: string, by: string) => { closed += closeOwnerItem(db, key, by, now) ? 1 : 0; };
-  const attemptTable = tableExists(db, "lane_pilot_attempt"), runTable = tableExists(db, "lane_pilot_run"), phaseTable = tableExists(db, "lane_pilot_phase");
   for (const row of rows) {
-    if (row.key.startsWith("writer-question:") && attemptTable) {
-      const [, runId, ...task] = row.key.split(":");
-      const latest = db.prepare("SELECT state, created_at FROM lane_pilot_attempt WHERE run_id=? AND task_id=? ORDER BY created_at DESC, attempt_no DESC LIMIT 1").get(runId, task.join(":")) as { state: string; created_at: number } | undefined;
-      if (latest && (latest.created_at > row.created_at || latest.state !== "blocked")) { close(row.key, "janitor:task moved on"); continue; }
-    }
-    if (row.key.startsWith("run-goal:") && runTable) {
-      const run = db.prepare("SELECT closed_at FROM lane_pilot_run WHERE id=?").get(row.key.slice("run-goal:".length)) as { closed_at: number | null } | undefined;
-      if (!run || run.closed_at !== null) { close(row.key, "janitor:run closed"); continue; }
-    }
-    // The lesson draft is asked as the phase closes (phase/server/driver.ts lessons), so a closed phase is its normal state: it leaves by the owner's word (Gemini F-006.1 remainder).
-    if (row.key.startsWith("phase-word:") && !row.key.endsWith(":lesson") && phaseTable) {
-      const phase = db.prepare("SELECT state FROM lane_pilot_phase WHERE id=?").get(row.key.split(":")[1]) as { state: string } | undefined;
-      if (!phase || phase.state === "closed" || phase.state === "stopped") { close(row.key, "janitor:phase closed"); continue; }
-    }
-    // A failed schedule run (`schedule-failure:<run>`) once the schedule moved on: a later run ended (a failed one has its own row), the schedule is paused or gone (0.1.467).
-    if (row.key.startsWith("schedule-failure:") && row.kind === "schedule_failed" && tableExists(db, "lane_pilot_schedule_run")) {
-      const run = db.prepare("SELECT schedule_id, finished_at FROM lane_pilot_schedule_run WHERE id=?").get(row.key.slice("schedule-failure:".length)) as { schedule_id: string; finished_at: number | null } | undefined;
-      const schedule = run ? db.prepare("SELECT state FROM lane_pilot_schedule WHERE id=?").get(run.schedule_id) as { state: string } | undefined : undefined;
-      if (!run || !schedule) { close(row.key, "janitor:schedule gone"); continue; }
-      if (schedule.state === "paused") { close(row.key, "janitor:schedule paused"); continue; }
-      if (db.prepare("SELECT 1 FROM lane_pilot_schedule_run WHERE schedule_id=? AND finished_at>? LIMIT 1").get(run.schedule_id, run.finished_at ?? 0)) { close(row.key, "janitor:a later run ended"); continue; }
-    }
+    const gone = sweeps.map((sweep) => sweep(db, row)).find((reason) => reason !== null);
+    if (gone) { close(row.key, gone); continue; }
     // A failure row keeps its buttons, but a fact three days old is no longer news: it leaves with the other facts.
     if ((row.kind === "schedule_failed" || parse<OwnerAction[]>(row.actions_json, []).length === 0) && now - row.created_at > (FACT_KINDS.has(row.kind) ? OWNER_FACT_TTL_MS : OWNER_NOTE_TTL_MS)) close(row.key, "janitor:term");
   }
@@ -231,8 +242,8 @@ export function overnight(db: Db, now: number = Date.now(), windowMs: number = O
   };
 }
 
-export function collectOwnerWaiting(db: Db, now: number = Date.now(), windowMs: number = OVERNIGHT_WINDOW_MS): OwnerWaiting {
-  sweepOwnerItems(db, now);
+export function collectOwnerWaiting(db: Db, now: number = Date.now(), sweeps: readonly OwnerItemSweep[] = [], windowMs: number = OVERNIGHT_WINDOW_MS): OwnerWaiting {
+  sweepOwnerItems(db, now, sweeps);
   const items = [...learningItems(db), ...inbox(db)];
   const rank = (item: OwnerItem) => { const at = SOURCE_ORDER.indexOf(item.source); return at < 0 ? SOURCE_ORDER.indexOf("night") : at; };
   // The cost of putting a row off first, a row that would push before one that would not, then the sources' order and age; the first NOW_CAP are «now».
@@ -257,8 +268,8 @@ export function answered(db: Db, now: number = Date.now()): Answered {
 }
 
 /** The counts behind the daily report's last line (scripts/lp-morning.sql counts the same, tests/policy/morning.test.ts keeps them equal). */
-export function ownerWaitingCounts(db: Db, now: number = Date.now()): { overdue: number; open: number; inbox: number } {
-  sweepOwnerItems(db, now); // the badge counts what still waits, not what the janitor would close on the next read
+export function ownerWaitingCounts(db: Db, now: number = Date.now(), sweeps: readonly OwnerItemSweep[] = []): { overdue: number; open: number; inbox: number } {
+  sweepOwnerItems(db, now, sweeps); // the badge counts what still waits, not what the janitor would close on the next read
   const count = (sql: string, ...params: unknown[]) => (db.prepare(sql).get(...params) as { n: number }).n;
   return {
     // Only a human term can be overdue (deferral/store.ts HUMAN_TERM_SQL): an entry with the code's or an agent's term is «open, no term».

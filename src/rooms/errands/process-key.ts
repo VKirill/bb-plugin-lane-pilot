@@ -1,3 +1,4 @@
+import { SETTING_EPISODES_PROCESS_KEY } from "@lane-pilot/settings-catalog";
 import { stems } from "@lane-pilot/workflow-engine";
 import { choice, choiceOf, defineJudgment, jev, type Jev, type JudgeContext } from "@lane-pilot/jev";
 
@@ -102,7 +103,7 @@ export async function chooseProcessKey(input: {
   if (!verdict) return deterministic("fallback");
   // episodes.process_key=active is the feature switch: a live pick is used as is; a shadow verdict still carries what
   // Jev would have picked (`shadow.decision`), which the active switch adopts — the receipt keeps mode shadow either way.
-  if (input.ctx?.settings?.["episodes.process_key"] === "active") {
+  if (input.ctx?.settings?.[SETTING_EPISODES_PROCESS_KEY] === "active") {
     const decided = verdict.by === "jev" ? verdict.decision : verdict.by === "fallback" && verdict.status === "shadow" ? verdict.shadow?.decision : undefined;
     if (decided) return { key: decided.key, how: decided.how };
   }

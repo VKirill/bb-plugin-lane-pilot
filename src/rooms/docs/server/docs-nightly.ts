@@ -25,6 +25,7 @@ import type { ServerCore } from "../../contracts/server";
 import type { DocsStageApi } from "./docs";
 import type { WorkflowEngineApi, WriterHostApi } from "../../platform/server";
 import {DOCS_MAINTENANCE, DOCS_NIGHT} from "../../contracts";
+import { docsWorktreeKey } from "../../contracts";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {
@@ -219,7 +220,7 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
    * its worktree while units still have saved progress in it. Without a worktree the pass runs in place, as before.
    */
   async function docsWorktree(place:{hostId:string;path:string}):Promise<{hostId:string;path:string}> {
-    const name=`docs-${sha256(place.path).slice(0,12)}`, key=`docs-worktree:${place.hostId}:${name}`;
+    const name=`docs-${sha256(place.path).slice(0,12)}`, key=docsWorktreeKey(place.hostId, name);
     const known=await bb.storage.kv.get(key) as {path?:string}|null;
     let missing=false;
     if(known?.path){
@@ -391,7 +392,7 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
             }
             if(!progress){
               await bestEffort(bb.log, `docs worktree cleanup ${work.path}`, host.call("gitRemoveWorktree",{requestedHostId:place.hostId,basePath:place.path,worktreePath:work.path},{hostId:place.hostId,timeoutMs:120_000}), null);
-              await bestEffort(bb.log, `docs worktree record ${place.path}`, bb.storage.kv.delete(`docs-worktree:${place.hostId}:${`docs-${sha256(place.path).slice(0,12)}`}`), undefined);
+              await bestEffort(bb.log, `docs worktree record ${place.path}`, bb.storage.kv.delete(docsWorktreeKey(place.hostId, `docs-${sha256(place.path).slice(0,12)}`)), undefined);
             }
           }
           } finally { docsPassesRunning.delete(place.path); }

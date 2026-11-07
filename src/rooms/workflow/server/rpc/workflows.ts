@@ -8,14 +8,14 @@ import { createWorkflowModels } from "../workflow-models";
 
 
 import type { DocsNightlyApi } from "../../../docs/server/docs-nightly";
-import type { StabilityApi } from "../../../stability/server/stability";
+import type { StabilityPort } from "../../../contracts";
 import type { WorkflowEngineApi } from "../workflow";
 import type { WorkflowTriggersApi } from "../workflow-triggers-live";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {
   docsPlaces: DocsNightlyApi["docsPlaces"];
-  stability: StabilityApi;
+  stability: StabilityPort;
   workflowCatalog: WorkflowEngineApi["workflowCatalog"];
   workflowEngine: WorkflowEngineApi["workflowEngine"];
   workflowTriggers: WorkflowTriggersApi["workflowTriggers"];

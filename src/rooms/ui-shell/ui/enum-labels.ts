@@ -1,3 +1,4 @@
+import { SETTING_EPISODES_PROCESS_KEY, SETTING_JEV_PROVIDER } from "@lane-pilot/settings-catalog";
 import { t, type I18nKey } from "@lane-pilot/i18n";
 
 const BRANDS = new Set([
@@ -43,7 +44,7 @@ const BY_KEY: Record<string, Record<string, I18nKey>> = {
   "cleanup.worktrees": { on: "enumCleanupOn", off: "enumCleanupOff" },
   "lead.enabled": { on: "enumLeadOn", off: "enumLeadOff" },
   "episodes.collect": { on: "enumEpisodesCollectOn", off: "enumEpisodesCollectOff" },
-  "episodes.process_key": { shadow: "enumEpisodesProcessKeyShadow", active: "enumEpisodesProcessKeyActive" },
+  [SETTING_EPISODES_PROCESS_KEY]: { shadow: "enumEpisodesProcessKeyShadow", active: "enumEpisodesProcessKeyActive" },
   "writer.retry_safety": { on: "enumRetrySafetyOn", off: "enumRetrySafetyOff" },
   "writer.pick_refusal_penalty": { on: "enumRefusalPenaltyOn", off: "enumRefusalPenaltyOff" },
   "writer.owns_barrier": { on: "enumOwnsBarrierOn", off: "enumOwnsBarrierOff" },
@@ -56,7 +57,7 @@ const BY_KEY: Record<string, Record<string, I18nKey>> = {
   "bench.weekly": { on: "enumBenchWeeklyOn", off: "enumBenchWeeklyOff" },
   "bench.nightly": { on: "enumBenchNightlyOn", off: "enumBenchNightlyOff" },
   "memory.project_kind": { auto: "enumProjectKindAuto", standalone: "enumProjectKindStandalone", umbrella: "enumProjectKindUmbrella" },
-  "jev.provider": { openlux: "enumJevProviderOpenlux", typesafe: "enumJevProviderTypesafe" },
+  [SETTING_JEV_PROVIDER]: { openlux: "enumJevProviderOpenlux", typesafe: "enumJevProviderTypesafe" },
   "sandbox.backend": {
     auto: "enumSandboxAuto",
     "macos-seatbelt": "enumSandboxSeatbelt",

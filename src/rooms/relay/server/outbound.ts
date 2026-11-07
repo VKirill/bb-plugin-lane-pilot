@@ -1,3 +1,4 @@
+import { SETTING_EVENTS_WEBHOOK_URL } from "@lane-pilot/settings-catalog";
 import { getAttempt, getRun, getTask, loadProjectSettings, onAttemptChanged } from "../../storage";
 import type { ServerCore } from "../../contracts/server";
 
@@ -33,7 +34,7 @@ export function mountOutbound(ctx: Pick<ServerCore, "db" | "bb" | "log" | "isDis
     if (!attempt || !isOutboundState(attempt.state) || sent.has(`${attemptId}:${attempt.state}`)) return;
     const run = getRun(ctx.db, attempt.run_id);
     if (!run) return;
-    const url = String(loadProjectSettings(ctx.db, run.project_id)["events.webhook_url"] ?? "").trim();
+    const url = String(loadProjectSettings(ctx.db, run.project_id)[SETTING_EVENTS_WEBHOOK_URL] ?? "").trim();
     if (!/^https:\/\/[^\s]+$/.test(url)) return;
     sent.add(`${attemptId}:${attempt.state}`);
     const contract = getTask(ctx.db, attempt.task_id)?.contract as { display_title?: string; title?: string; kind?: string } | undefined;

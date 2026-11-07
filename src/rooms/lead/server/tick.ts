@@ -2,11 +2,15 @@ import { checkBrief, renderBrief } from "../../brief";
 import type { NodeExecutor, StepContext, WorkflowEngine } from "@lane-pilot/workflow-engine";
 import type { ThreadToolTraceEntry } from "@lane-pilot/harness-core";
 import type { JevSettings } from "@lane-pilot/jev";
-import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
+import { GLOBAL_SETTINGS_PROJECT_ID, SETTING_EPISODES_PROCESS_KEY } from "@lane-pilot/settings-catalog";
 import type { ChainRuntime } from "../../contracts/server";
 
 import type { ServerCore } from "../../contracts/server";
 import { closeOwnerItem, collectOwnerWaiting, isSandboxProject, loadPushConfig, postOwnerItem, rpcLine, type OwnerAction, type OwnerEvidence } from "../../owner-waiting";
+import { writerQuestionSweep } from "../../writer/server";
+import { runGoalSweep } from "../../run-goal/server";
+import { phaseWordSweep } from "../../phase/server";
+import { scheduleFailureSweep } from "../../schedule/server";
 import { errandStem, errandTitle, routeConfidence } from "../../errands";
 import { WORKFLOW_ARCHITECT_ID } from "../../contracts/server";
 import { ARCHITECT_LAUNCH } from "../../native-agent";
@@ -31,6 +35,8 @@ import type { ScheduleService } from "../../schedule/server/schedule-service";
 import type { WorkflowEngineApi, WorkflowTriggersApi } from "../../platform/server";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
+const OWNER_ITEM_SWEEPS = [writerQuestionSweep, runGoalSweep, phaseWordSweep, scheduleFailureSweep];
+
 interface Services {
   phaseIntake: PhaseIntake;
   schedules: ScheduleService;
@@ -228,7 +234,7 @@ function repeatedTrace(traces: Array<ThreadToolTraceEntry[] | null>): "ok" | "fa
 
 /** `episodes.process_key` is active only on an explicit word; absent or «shadow» keeps the proposed key in charge. */
 function processKeyActive(db: LanePilotDatabase): boolean {
-  const value = loadProjectSettings(db, GLOBAL_SETTINGS_PROJECT_ID)["episodes.process_key"];
+  const value = loadProjectSettings(db, GLOBAL_SETTINGS_PROJECT_ID)[SETTING_EPISODES_PROCESS_KEY];
   return value === "active" || value === true || value === 1 || value === "on";
 }
 
@@ -398,7 +404,7 @@ export async function hubSnapshot(ctx: Pick<ServerCore, "db" | "bb">, settings: 
     id: row.id, parent_id: row.parent_id, project_id: row.project_id, title: row.title, kind: row.kind, state: row.state, source: row.source, why: clip(row.why, 400), class: row.class, cost_estimate: row.cost_estimate,
     evidence: (JSON.parse(row.evidence_json) as RoadEvidence[]).slice(0, 4),
   }));
-  const waiting = collectOwnerWaiting(db, now).items.filter((item) => item.projectId === null || zoneIds.has(item.projectId)).slice(0, 15).map((item) => ({ key: item.key, source: item.source, kind: item.kind, projectId: item.projectId, what: clip(item.what, 200) }));
+  const waiting = collectOwnerWaiting(db, now, OWNER_ITEM_SWEEPS).items.filter((item) => item.projectId === null || zoneIds.has(item.projectId)).slice(0, 15).map((item) => ({ key: item.key, source: item.source, kind: item.kind, projectId: item.projectId, what: clip(item.what, 200) }));
   const lastTicks = listTicks(db, 5).filter((row) => row.id !== input.tickId).map((row) => ({
     id: row.id, startedAt: row.started_at, status: row.status, proposed: (JSON.parse(row.proposed_json ?? "[]") as unknown[]).length, acted: (JSON.parse(row.acted_json ?? "[]") as unknown[]).length, costUsd: (row.cost_micro_usd ?? 0) / USD,
   }));

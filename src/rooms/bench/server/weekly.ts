@@ -52,7 +52,8 @@ export function mountBenchWeekly(ctx: ServerCore, bench: () => BenchApi): void {
 
 export const SEALED_GAP_SETTING = "bench.sealed_gap_pp";
 export const SEALED_GAP_DEFAULT_PP = 15;
-const SEALED_GAP_KEY = "bench:sealed_gap";
+export const SEALED_GAP_KEY = "bench:sealed_gap";
+export type SealedGapRecord = { gapPp?: number; thresholdPp?: number; openRate?: number; sealedRate?: number; openVersion?: string; sealedVersion?: string; arm?: string; at?: number };
 
 /**
  * The weekly holdout probe (direction S6): a sealed set is built from the candidates the open strata skipped and run with the

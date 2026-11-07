@@ -7,7 +7,7 @@ import { cleanCheckOutput, failureExcerpt, sha256Hex } from "@lane-pilot/kit";
 import { fileAllowedByOwns, matchOwnsPath } from "@lane-pilot/kit";
 import { SKILL_CATALOG_BLOCK } from "../../native-agent";
 import { ROLE_PROFILES } from "../../contracts/helper-context";
-import { checkBrief, renderBrief, tagSection, writerBriefContextFor, type WriterBriefContext } from "../../brief";
+import { checkBrief, renderBrief, tagSection, type WriterBriefContext } from "../../brief";
 import { THREAD_MEMORY_RULE } from "../../contracts/thread-rule";
 import { PLAN_FACT_BRIEF_LINE , MARKER_BRIEF_LINE } from "../../tasks";
 import { gateVocabularyLines } from "../../contracts";
@@ -351,8 +351,8 @@ export function contractSectionText(task: TaskV2, readListShown: boolean, taskFo
 export function writerBriefSegments(task: TaskV2, memoryText="", executionPacket="", emergencyContext?:string, agent="Lane Pilot writer", pmReadContext="", rulesText="", previousAttempt="", taskFolder?:TaskFolderBrief|null, liveFolder=false, opts?: WriterBriefOptions): BriefSegment[] {
   // The instructions and the data blocks are for the agent; the chat keeps the task and its contract sections.
   const hidden = (text: string): BriefSegment => ({ text, hidden:true });
-  // .gitnexus lives only in the registered context (writer-knowledge checks it on the workspace's host): no context, no gitnexus line.
-  const context: WriterBriefContext = { ...writerBriefContextFor(task.id), ...(opts ?? {}) };
+  // .gitnexus lives only in the context writer-knowledge probed on the workspace's host: no context, no gitnexus line.
+  const context: WriterBriefContext = { ...(opts ?? {}) };
   const s = contractSections(task, Boolean(executionPacket), taskFolder);
   const pmRead = pmReadContext ? pmReadBrief(pmReadContext) : { facts:"", openQuestions:[] };
   const brief = renderBrief({

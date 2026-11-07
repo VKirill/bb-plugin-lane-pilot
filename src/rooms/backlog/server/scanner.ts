@@ -2,7 +2,7 @@ import { loadPrototypeConfig } from "../../storage";
 import { scheduleIsolated } from "../../platform/server";
 import { type ServerCore } from "../../contracts/server";
 import { isPmChat } from "../../native-agent/server";
-import { closeOwnerItem, postOwnerItem, rpcLine } from "../../owner-waiting";
+import { closeOwnerItem, listOpenOwnerItemKeys, postOwnerItem, rpcLine } from "../../owner-waiting";
 import { backlogBoard, backlogReadCommand, issueMessage, parseBacklogOutput, type BacklogBoard } from "../logic";
 
 /**
@@ -53,8 +53,8 @@ export function createBacklog(ctx: ServerCore) {
       const projectToday = (db.prepare("SELECT count(*) AS n FROM lane_pilot_backlog_issue WHERE project_id=? AND issued_at>=?").get(projectId, now - DAY) as { n: number }).n;
       // An offer whose item was issued, closed or re-estimated elsewhere asks a question that is gone: close it before offering anew.
       const issuable = new Set(current.issuable.map((row) => row.id));
-      for (const row of db.prepare("SELECT key FROM lane_pilot_owner_item WHERE state='open' AND source='backlog' AND project_id=?").all(projectId) as Array<{ key: string }>) {
-        if (!issuable.has(row.key.slice(offerKey(projectId, "").length))) closeOwnerItem(db, row.key, "janitor:not issuable", now);
+      for (const key of listOpenOwnerItemKeys(db, { source: "backlog", projectId })) {
+        if (!issuable.has(key.slice(offerKey(projectId, "").length))) closeOwnerItem(db, key, "janitor:not issuable", now);
       }
       const next = current.issuable[0];
       if (!pm || !next || projectToday >= PER_PROJECT_PER_DAY || issuedToday() >= PER_DAY) { out.push({ projectId, offered: null, board: counts }); continue; }

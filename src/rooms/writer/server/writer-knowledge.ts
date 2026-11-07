@@ -4,11 +4,11 @@ import { DEFAULT_RELEVANCE_FLOOR, buildContextPack, clearsFloor, filesDrifted, m
 import type { TaskV2 } from "../../contracts";
 import { mixWriterMemory, snapshotFileRead, writerCandidates, writerMemoryPaths } from "../../memory/server";
 import { getRunSettingsScopes, loadProjectSettings, taskBasePath, type LanePilotDatabase } from "../../storage";
+import type { WriterBriefContext } from "../../brief";
 import type { ServerCore } from "../../contracts/server";
 import { runOnHost } from "@lane-pilot/host-calls";
 import { bestEffort } from "@lane-pilot/kit";
 import { effectiveGroup, parseHelperContextSettings } from "../../contracts/helper-context";
-import { registerWriterBriefContext } from "../../brief";
 import { stickyTurnPrompt } from "./writer-task";
 
 /**
@@ -54,9 +54,8 @@ export async function writerRules(deps:KnowledgeDeps, input:KnowledgeInput) {
 export async function writerKnowledge(deps:KnowledgeDeps, input:KnowledgeInput) {
   const memoryOn=input.memorySettings.enabled&&input.memorySettings.inject;
   const taskMemoryQuery=`${input.task.title}\n${input.task.objective}\n${input.task.acceptance.join(" ")}`;
-  // The spawn's fixed call site cannot pass the context the brief needs, so it is registered here for
-  // writerBriefSegments (brief-standard): whether skills are truly broad, which tools the role allows, .gitnexus presence.
-  {
+  // The brief's context (writerBriefSegments): whether skills are truly broad, which tools the role allows, .gitnexus presence.
+  const briefContext = await (async (): Promise<WriterBriefContext> => {
     const parsed=parseHelperContextSettings(loadProjectSettings(deps.db,input.projectId,getRunSettingsScopes(deps.db,input.runId)));
     const mode=parsed.ok?parsed.settings.mode:"roles";
     const access=parsed.ok?parsed.settings.roleAccess?.writer:undefined;
@@ -65,8 +64,8 @@ export async function writerKnowledge(deps:KnowledgeDeps, input:KnowledgeInput) 
     const gitnexusTools=mcpGroup.names===null||mcpGroup.names.includes("gitnexus");
     const memoryRoot=taskBasePath(deps.db,input.runId,input.task.id)??input.task.project_cwd;
     const gitnexusIndex=gitnexusTools&&(await bestEffort(deps.log, "writer gitnexus index probe", runOnHost(deps.host,{hostId:input.hostId,cwd:memoryRoot,command:"test -d .gitnexus",timeoutSec:10}), null))?.exitCode===0;
-    registerWriterBriefContext(input.task.id,{broadSkills:mode!=="roles"||skillsGroup.names===null,gitnexusTools,metamcpTools:mcpGroup.names===null||mcpGroup.names.includes("metamcp"),gitnexusIndex});
-  }
+    return {broadSkills:mode!=="roles"||skillsGroup.names===null,gitnexusTools,metamcpTools:mcpGroup.names===null||mcpGroup.names.includes("metamcp"),gitnexusIndex};
+  })();
   const { allRules, rules, rulesText }=await writerRules(deps,input);
   const ruleMemoryIds=new Set(allRules.map((rule)=>rule.memoryId));
   // The writer gets at most three notes that name a path of this task; other helpers keep the budgeted context.
@@ -90,7 +89,7 @@ export async function writerKnowledge(deps:KnowledgeDeps, input:KnowledgeInput) 
       deps.log(`context-pack shadow ${pack.packId}: kept=${diff.kept.length} added=${diff.added.length} dropped=${diff.dropped.length} bytes ${diff.oldBytes}->${diff.packedBytes}`);
     } catch(cause) { deps.log(`context-pack shadow failed: ${cause instanceof Error?cause.message:String(cause)}`); }
   }
-  return { allRules, rules, rulesText, mixed };
+  return { allRules, rules, rulesText, mixed, briefContext };
 }
 
 /**
