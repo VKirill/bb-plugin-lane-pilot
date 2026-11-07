@@ -6,7 +6,7 @@ import { bindRunChildBudget } from "../../platform/server";
 import { getRun, getRunSettingsScopes, loadProjectSettings } from "../../storage";
 import { wayOut } from "../../runs";
 
-import type { WriterStateApi } from "../../writer/server/state";
+import type { WriterStateApi } from "../../platform/server";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {

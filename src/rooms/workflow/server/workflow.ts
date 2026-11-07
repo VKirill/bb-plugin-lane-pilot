@@ -1,6 +1,6 @@
 import { HARNESS_VERSION } from "../../storage";
 import { LP_ALL_PROJECTS } from "@lane-pilot/ui-kit/realtime-channel";
-import { BUILTIN_SOURCES, LP_TASK_PIPELINE, builtinWorkflow } from "../builtin";
+;
 import { createWorkflowCatalog } from "@lane-pilot/workflow-engine";
 import { ENGINE_COMPAT_VERSION, TERMINAL_RUN, WorkflowEngine } from "@lane-pilot/workflow-engine";
 import type { RunRow } from "../../storage";
@@ -14,7 +14,6 @@ import { createGoalAuditor } from "./workflow-goal-audit";
 import { chainRuntimeFor, registerChainExecutors } from "./workflow-executors";
 import { notifyWorkflowIfEnded } from "./pm-notice";
 import { ERRAND_EPISODE_TRACE_EVENTS, recordErrandEpisode } from "../../errands";
-import { registerDispatchExecutors } from "../../writer/server";
 import { createAfterAcceptStarter, registerAfterAcceptExecutors } from "./after-accept";
 import { registerInvoiceActions } from "./workflow-invoice";
 import { registerTelegramActions } from "./workflow-telegram";
@@ -26,33 +25,32 @@ import type { HarnessApi } from "../../harness/server/harness";
 
 import type { MemoryStageApi } from "../../memory/server/memory";
 import type { ProjectLifeStageApi } from "../../project-life/server/project-life";
-import type { WriterDispatchApi } from "../../writer/server/dispatch";
-import type { WriterSpawnApi } from "../../writer/server/spawn";
-import type { WriterStartApi } from "../../writer/server/start";
-import type { WriterStateApi } from "../../writer/server/state";
+import type {DispatchWriter, TaskUsage, IsLiveFolder, StartWriterTask, WriterStateApi} from "../../platform/server";
 
 import type { DocsNightlyApi } from "../../docs/server/docs-nightly";
 import type { StabilityApi } from "../../stability/server/stability";
 
 import type { BaselineApi } from "../../baseline/server/baseline";
 import type { WorkflowTriggersApi } from "./workflow-triggers-live";
+import {LP_TASK_PIPELINE} from "../../contracts";
+import {BUILTIN_SOURCES, builtinWorkflow} from "../builtin";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {
   activeWriterTasks: WriterStateApi["activeWriterTasks"];
   baseline: BaselineApi;
-  dispatchWriter: WriterDispatchApi["dispatchWriter"];
+  dispatchWriter: DispatchWriter;
+  taskUsage: TaskUsage;
   docsPlaces: DocsNightlyApi["docsPlaces"];
   harness: HarnessApi;
-  isLiveFolder: WriterSpawnApi["isLiveFolder"];
+  isLiveFolder: IsLiveFolder;
   runMemoryMaintenance: MemoryStageApi["runMemoryMaintenance"];
   runProjectLifeMaintenance: ProjectLifeStageApi["runProjectLifeMaintenance"];
   stability: StabilityApi;
-  startWriterTask: WriterStartApi["startWriterTask"];
+  startWriterTask: StartWriterTask;
   workflowEngine: WorkflowEngineApi["workflowEngine"];
   workflowTriggers: WorkflowTriggersApi["workflowTriggers"];
 }
-
 
 /**
  * The one workflow engine of this plugin instance, with the executors of the built-in workflows. It stops at a step
@@ -106,7 +104,6 @@ export function createWorkflowEngine(ctx: ServerCore, services: Services) {
     resumePolicy: (run) => (run.workflow_id === LP_TASK_PIPELINE || run.idem_key?.startsWith("lp-task:") ? "interrupt" : "continue"),
   });
   engineRef.current = engine;
-  registerDispatchExecutors(engine, ctx.bb);
   // What runs once a task is accepted (memory and project life), started by the merge.
   registerAfterAcceptExecutors(engine, ctx, services);
   // The chains of workflows/: the code-only actions and the joins' reducers, then the executors that need the host (agents, the owner, code tasks, files).

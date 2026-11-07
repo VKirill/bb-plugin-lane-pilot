@@ -9,7 +9,7 @@ import { BB_AGENT_SUMMARIES, LANE_PILOT_PM_SESSION, laneSessionOverlayPrompt, ov
 import { finalizeNativeLaneBinding } from "../src/rooms/native-agent/native-run";
 import { NATIVE_LP_BRIDGE_ARCHITECT_TOOLS, NATIVE_LP_BRIDGE_PM_TOOLS, NATIVE_LP_BRIDGE_TOOLS } from "../src/rooms/native-agent/native-session-hooks";
 import { foldedToolHome } from "../src/rooms/platform/server/pm-tool-families";
-import { ARCHITECT_LAUNCH, WORKFLOW_ARCHITECT_ID, WORKFLOW_ARCHITECT_SESSION } from "../src/rooms/workflow/workflow-architect";
+import { ARCHITECT_LAUNCH, WORKFLOW_ARCHITECT_ID, WORKFLOW_ARCHITECT_SESSION } from "../src/rooms/native-agent";
 import { setLocaleOverride, t } from "@lane-pilot/i18n";
 
 const cleanup: Array<() => Promise<void>> = [];

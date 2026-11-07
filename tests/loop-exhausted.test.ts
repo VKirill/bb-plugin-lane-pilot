@@ -1,4 +1,5 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
+import { builtinWorkflow } from "../src/rooms/workflow/builtin";
 import { describe, expect, it } from "vitest";
 import { createCore } from "../src/rooms/core/server/core";
 import type { Services } from "../server";
@@ -36,6 +37,7 @@ function world() {
   const services = {
     wall, rollback: {},
     workflowEngine: {
+      resolveWorkflow: (id: string) => builtinWorkflow(id),
       start: () => ({ runId: `wf${++state.wf}`, created: true, done: new Promise(() => undefined) }),
       get: (runId: string) => ({ runId, status: "failed", output: null, error: "the planner crashed", reason: null, failedNode: null, waiting: [], stopped: false }),
     },

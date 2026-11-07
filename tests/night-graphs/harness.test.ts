@@ -3,7 +3,7 @@ import { validateWorkflow } from "@lane-pilot/workflow-engine";
 import { createHarness, HARNESS_TUNING } from "../../src/rooms/harness/server/harness";
 import { getHarness, insertHarness, listHarnesses, setHarnessState } from "../../src/rooms/harness/server/store";
 import { mountNightGraphs } from "../../src/rooms/night-graphs/server";
-import { builtinWorkflow } from "../../src/rooms/workflow/builtin";
+import {builtinWorkflow} from "../../src/rooms/workflow/builtin";
 import { createRun, createTask } from "../../src/rooms/plugin-db";
 import { nightWorld } from "./world";
 

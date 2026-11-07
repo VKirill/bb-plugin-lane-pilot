@@ -11,8 +11,8 @@ import { checkBrief, renderBrief, tagSection } from "../../brief";
 import { THREAD_MEMORY_RULE } from "../../memory";
 import { spawnTextId } from "../../platform/server";
 import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server";
-import { stringAt, orMiss, isNotFound } from "@lane-pilot/kit";
-import { outputText } from "../../writer/server";
+import {isNotFound, orMiss, outputText, stringAt} from "@lane-pilot/kit";
+;
 import { fenceOutside, registerObservedTool } from "../../platform/server";
 import { redactKnown } from "@lane-pilot/kit";
 import { allowedSecretNames, secretFixLines, secretProblem, waitingSecretReason } from "../../secrets/server";
@@ -26,11 +26,9 @@ import { errandRoleFor } from "../../schedule";
 import type { ErrandRunStart } from "./errand-graph";
 import type { ExtraAccess } from "../../native-agent";
 
-
 import type { WorkflowEngineApi } from "../../workflow/server/workflow";
 
 import type { DocsNightlyApi } from "../../docs/server/docs-nightly";
-
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {

@@ -5,7 +5,7 @@ import { createScheduleStore } from "../store";
 import type { ScheduleTask } from "../model";
 import { agentBrief } from "./schedule-agent-brief";
 import { parseMoment, wallClock } from "../time";
-import type { ChainRuntime } from "../../workflow/server";
+import type { ChainRuntime } from "../../contracts/server";
 import type { ServerCore } from "../../contracts/server";
 
 import type { PhaseIntake } from "../../phase/server/intake";

@@ -4,7 +4,7 @@ import { openDatabase, saveProjectSetting } from "../../src/rooms/plugin-db";
 import { memoryUsefulness, storeMemoryRecords } from "../../packages/memory-core/src";
 import type { MemoryCandidate } from "../../packages/memory-core/src";
 import { mixReviewerMemory, reviewerMemoryFor } from "../../src/rooms/memory/server/memory-mix";
-import { writerMemory } from "../../src/rooms/writer/writer-brief";
+import { writerMemory } from "../../src/rooms/memory/server";
 import { codeCritiquePrompt } from "../../src/rooms/critique/code-critique";
 import { nightReviewPrompt } from "../../src/rooms/night/night";
 
@@ -105,7 +105,7 @@ describe("K8 reviewer role: reviewers and critics get the notes relevant to revi
 
 describe("a new core convention reaches the reviewers", () => {
   it("goes before proven core conventions for three days, then takes its place by usefulness", async () => {
-    const { reviewerMemoryPicks } = await import("../../src/rooms/writer/writer-brief");
+    const { reviewerMemoryPicks } = await import("../../src/rooms/memory/server");
     const now = Date.UTC(2026, 9, 25);
     const proven = Array.from({ length: 8 }, (_, index) => ({ id: `c${index}`, kind: "core", content: `convention ${index}`, concepts: [], useCount: 10, acceptedCount: 9, createdAt: now - 30 * 86_400_000 }));
     const fresh = { id: "new", kind: "core", content: "the new convention", concepts: [], useCount: 0, acceptedCount: 0, createdAt: now - 3_600_000 };

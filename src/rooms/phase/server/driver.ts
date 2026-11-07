@@ -17,23 +17,26 @@ import type { RegressionApi } from "../../baseline/server/regress";
 import type { RollbackApi } from "../../rollback/server/rollback";
 import type { RunGoalApi } from "../../run-goal/server/run-goal";
 import type { WallApi } from "../../wall/service";
-import type { WorkflowEngineApi } from "../../workflow/server/workflow";
-import type { WriterDispatchApi } from "../../writer/server/dispatch";
-import type { WriterStateApi } from "../../writer/server/state";
+import type { ArchitectApi, DispatchWriter, ReadWriterWorkspaceFile, RecheckPlanFact, WorkflowEngineApi, WorkflowLibraryApi, WriterStateApi } from "../../platform/server";
+
+
 
 import type { DocsNightlyApi } from "../../docs/server/docs-nightly";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {
-  dispatchWriter: WriterDispatchApi["dispatchWriter"];
+  architect: ArchitectApi;
+  dispatchWriter: DispatchWriter;
   docsPlaces: DocsNightlyApi["docsPlaces"];
-  readWriterWorkspaceFile: WriterDispatchApi["readWriterWorkspaceFile"];
+  readWriterWorkspaceFile: ReadWriterWorkspaceFile;
   regression: RegressionApi;
   rollback: RollbackApi;
+  recheckPlanFact: RecheckPlanFact;
   runBudgets: WriterStateApi["runBudgets"];
   runGoal: RunGoalApi;
   wall: WallApi;
   workflowCatalog: WorkflowEngineApi["workflowCatalog"];
+  workflowLibrary: WorkflowLibraryApi;
   workflowEngine: WorkflowEngineApi["workflowEngine"];
 }
 

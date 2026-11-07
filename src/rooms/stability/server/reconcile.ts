@@ -14,14 +14,14 @@ import type { ServerCore } from "../../contracts/server";
 import type { ReconcilePort } from "../reconcile";
 
 import type { RollbackApi } from "../../rollback/server/rollback";
-import type { WriterDispatchApi } from "../../writer/server/dispatch";
-import type { WriterStartApi } from "../../writer/server/start";
+import type { ResumeDispatch } from "../../platform/server";
+import type { StartWriterTask } from "../../platform/server";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {
-  resumeDispatch: WriterDispatchApi["resumeDispatch"];
+  resumeDispatch: ResumeDispatch;
   rollback: RollbackApi;
-  startWriterTask: WriterStartApi["startWriterTask"];
+  startWriterTask: StartWriterTask;
 }
 
 

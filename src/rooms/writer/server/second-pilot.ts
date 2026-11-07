@@ -1,9 +1,10 @@
 import { taskV2Schema } from "../../contracts";
+import type { StageHelperSettings } from "../../platform/server";
 import type { TaskV2 } from "../../contracts";
 import { getRun, getTask, getTaskPlan } from "../../storage";
 
 import type { ServerCore } from "../../contracts/server";
-import { fullAccessSpawn, sendPmNotice, stageHelperSettings } from "../../platform/server";
+import { fullAccessSpawn, sendPmNotice } from "../../platform/server";
 import { id, stringAt } from "@lane-pilot/kit";
 import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server";
 import { roleSelection, sdkCriticCatalog } from "../../critique/critic-pair";
@@ -21,6 +22,7 @@ import type { WriterDispatchApi } from "./dispatch";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {
+  stageHelperSettings: StageHelperSettings;
   dispatchWriter: WriterDispatchApi["dispatchWriter"];
 }
 
@@ -126,7 +128,7 @@ export function narrowedTask(original: TaskV2, decision: Extract<PilotDecision, 
 }
 
 /** The real consult: the plan critic's role model, one shot, no tools; null when no helper can be spawned here. */
-export function modelConsult(ctx: ServerCore): Consult {
+export function modelConsult(ctx: ServerCore, stageHelperSettings: StageHelperSettings): Consult {
   const { bb, db } = ctx;
   return async (input) => {
     const run = getRun(db, input.runId);
@@ -157,7 +159,7 @@ export type PilotResult = { outcome:PilotDecision["outcome"]; returnId:string; n
  * One auto-return of a blocked question. `answerWriter` and `end` are the sweep's own doors (question-timeout.ts), so the pilot adds no
  * second way from «blocked» to «running». Returns null when this task already had its auto-return.
  */
-export function createSecondPilot(ctx: ServerCore, services: Services, consult: Consult = modelConsult(ctx)) {
+export function createSecondPilot(ctx: ServerCore, services: Services, consult: Consult = modelConsult(ctx, services.stageHelperSettings)) {
   const { bb, db } = ctx;
 
   async function excerptsFor(task: TaskV2, projectId: string, runId: string): Promise<string> {

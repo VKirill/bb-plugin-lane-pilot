@@ -1,4 +1,6 @@
-import { gateVocabularyLines, secretShaped } from "../../tasks";
+import { secretShaped } from "../../tasks";
+import type { StageHelperSettings } from "../../platform/server";
+import { gateVocabularyLines } from "../../contracts";
 import { registerBrowserExecutors, runBrowserQaGraph } from "../../qa/server";
 import { cancelAttemptById, cleanupFinishedAttemptEnvironments, cleanupStickyLaneWorktrees } from "../../runs/server";
 import { LANE_PILOT_READ_NAME } from "@lane-pilot/kit";
@@ -55,6 +57,7 @@ import type { WriterStartApi } from "../../writer/server/start";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {
+  stageHelperSettings: StageHelperSettings;
   activeWriterTasks: WriterStateApi["activeWriterTasks"];
   baseline: BaselineApi;
   council: CouncilApi;

@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { stageHelperSettings } from "../../src/rooms/settings/server/stage-settings";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -47,7 +48,7 @@ function setup(fail: boolean, prior: "missing" | "pending" | "running") {
       return { exitCode: 0, stdout: execFileSync("sh", ["-c", args.command], { cwd: dir, encoding: "utf8" }) };
     },
   } } as unknown as ServerCore;
-  const services = { projectLifeTaskSummary: () => ({ id: receipt.taskId, title: "Muse session sync", objective: "Sync session", acceptanceSummary: "" }) } as unknown as Services;
+  const services = { stageHelperSettings, projectLifeTaskSummary: () => ({ id: receipt.taskId, title: "Muse session sync", objective: "Sync session", acceptanceSummary: "" }) } as unknown as Services;
   const { runProjectLifeMaintenance } = createProjectLifeStage(ctx, services);
   const run = () => runProjectLifeMaintenance({ threadId: pmThreadId, projectId, runId: receipt.runId, taskId: receipt.taskId });
   return { db, dir, run, git, calls: () => calls };

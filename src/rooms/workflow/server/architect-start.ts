@@ -4,7 +4,7 @@ import type { rpcContract } from "../../contracts";
 import { writerExecutionSelection } from "@lane-pilot/models";
 import { mentionContext } from "../../native-agent";
 import { projectRoleField } from "../../runs/server";
-import { WORKFLOW_ARCHITECT_ID, WORKFLOW_ARCHITECT_NAME } from "../workflow-architect";
+import { WORKFLOW_ARCHITECT_ID, WORKFLOW_ARCHITECT_NAME } from "../../native-agent";
 import { createDraftStore } from "../../storage";
 import type { ServerCore } from "../../contracts/server";
 import { storeNativeSelection } from "../../native-agent/server";

@@ -3,8 +3,8 @@ import { CRITIC_EDIT_TRIAL_KEY, criticEditGate, criticEditTrialOn, criticEditTri
 import { judgeSharedTrial, TRIAL_DEFAULTS } from "../../harness/server";
 import { scheduleIsolated } from "../../platform/server";
 import { type ServerCore } from "../../contracts/server";
-import { builtinWorkflow } from "../../workflow";
-import type { ChainRuntime } from "../../workflow/server";
+
+import type { ChainRuntime } from "../../contracts/server";
 
 import type { BenchApi } from "../../bench/service";
 import type { WorkflowEngineApi } from "../../workflow/server/workflow";
@@ -62,7 +62,7 @@ export function mountCriticEditGraph(ctx: ServerCore, services: Services): void 
 
   scheduleIsolated(ctx.bb, "critic-edit-monthly", "20 5 1 * *", async (signal) => {
     if (ctx.isDisposed() || signal?.aborted) return;
-    const workflow = builtinWorkflow("lp.critic-edit");
+    const workflow = services.workflowEngine.resolveWorkflow("lp.critic-edit");
     if (!workflow) return;
     const month = new Date().toISOString().slice(0, 7);
     const projects = ctx.db.prepare(`SELECT DISTINCT r.project_id AS id FROM lane_pilot_stage_receipt s JOIN lane_pilot_run r ON r.id=s.run_id

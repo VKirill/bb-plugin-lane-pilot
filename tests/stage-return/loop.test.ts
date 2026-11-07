@@ -8,6 +8,8 @@ import type { Services } from "../../server";
 import { recordStage } from "../../src/rooms/runs/server/stage-records";
 import { createWriterStart } from "../../src/rooms/writer/server/start";
 import { createStageReturn, type ReturnResult } from "../../src/rooms/stage-return/server";
+import { createAttemptReopen } from "../../src/rooms/writer/server/reopen-attempt";
+import { createWriterReassign } from "../../src/rooms/writer/server/reassign";
 import { renderReturnNotes } from "../../src/rooms/stage-return";
 
 // The real writer loop (start.ts) with a task returned to its writer while the writer works: the loop stops it, starts the next writer in the same
@@ -80,7 +82,9 @@ describe("a task returned to its writer while the writer works", () => {
         transitionAttempt(db, input.attemptId, "accepted");
         return { status: "accepted", produced: ["a.txt"], verification: [], attemptId: input.attemptId };
       },
+      writerReassign: createWriterReassign(ctx),
     } as unknown as Services;
+    Object.assign(services, { attemptReopen: createAttemptReopen(ctx, services) });
     const stageReturn = createStageReturn(ctx, services).stageReturn;
 
     createTask(db, { id: "T1", runId: "run1", kind: "bb", contract: contract("T1") });

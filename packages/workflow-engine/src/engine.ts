@@ -217,6 +217,8 @@ export class WorkflowEngine {
 
   register<R>(key: string, executor: NodeExecutor<R>): this { this.executors.set(key, executor); return this; }
   hasExecutor = (key: string): boolean => this.executors.has(key);
+  /** The store or built-in workflow of an id (the resolveWorkflow option; the chain callers that hold the engine do not import the registry). */
+  readonly resolveWorkflow = (id: string, version?: number) => this.options.resolveWorkflow?.(id, version) ?? null;
   private fault(point: string): void { this.options.fault?.(point); }
   /** sha256(run | step | attempt), and the number of the owner's re-runs when there were any. */
   private spawnKeyOf(runId: string, step: StepRow, attempt: number): string {

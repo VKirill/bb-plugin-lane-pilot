@@ -1,11 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { stageHelperSettings } from "../src/rooms/settings/server/stage-settings";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { openDatabase, createRun, createTask, createAttempt, countAttempts, getAttempt, getTask, getTaskGitBase, getTaskPlan, loadPrototypeConfig,
   savePrototypeConfig, listStageReceipts, saveProjectSetting, transitionAttempt } from "../src/rooms/plugin-db";
 import { recordStage } from "../src/rooms/runs/server/stage-records";
 import { createWriterUpdateTask } from "../src/rooms/writer/server/update-task";
 import { registerDispatchExecutors, startDispatchRun } from "../src/rooms/writer/server/dispatch-workflow";
-import { builtinWorkflow } from "../src/rooms/workflow";
+import {builtinWorkflow} from "../src/rooms/workflow/builtin";
 import { WorkflowEngine } from "@lane-pilot/workflow-engine";
 import type { TaskV2 } from "../src/rooms/contracts";
 import type { ServerCore } from "../src/rooms/contracts/server";
@@ -74,7 +75,7 @@ describe("lane_pilot_update_task", () => {
     // The pipeline's browser-check gate (registered by the qa room in the plugin): these tasks have no qa_url, so it never runs a check.
     engine.register("lp.qa-gate", { reentrant: true, run: async () => ({ output: { run: false } }) });
     const started: string[] = [];
-    Object.assign(services, { workflowEngine: engine, isLiveFolder: async () => false, startWriterTask: (input: { task: TaskV2 }) => { started.push(input.task.title); } });
+    Object.assign(services, { workflowEngine: engine, stageHelperSettings, isLiveFolder: async () => false, startWriterTask: (input: { task: TaskV2 }) => { started.push(input.task.title); } });
     const mutable = ctx as unknown as { host?: unknown; refreshRun?: unknown };
     mutable.host ??= { call: async (method: string) => (method === "gitOwnershipBase" ? { status: "not-git" } : { status: "ready", entries: [] }) };
     mutable.refreshRun ??= () => undefined;
@@ -200,7 +201,7 @@ describe("lane_pilot_update_task", () => {
     createAttempt(db, { id: "att-1", runId, taskId });
     const ctx = { bb: fakeBb as never, db, state: { disposed: false }, configForRun: async (id: string) => loadPrototypeConfig(db, id), log: () => {} } as unknown as ServerCore;
     const engine = new WorkflowEngine({ db, harnessVersion: "1.0.0" });
-    const { updateTask } = createWriterUpdateTask(ctx, { activeWriterTasks: new Set<string>(), stability: { loadParked: async () => [] }, workflowEngine: engine } as unknown as Services);
+    const { updateTask } = createWriterUpdateTask(ctx, { activeWriterTasks: new Set<string>(), stability: { loadParked: async () => [] }, workflowEngine: engine, stageHelperSettings } as unknown as Services);
     const res = await updateTask({ projectId, runId, pmThreadId, taskId, task: { ...baseTask, title: "Updated title" }, plan: "New plan" });
     expect(res).toMatchObject({ ok: false, error: { code: "pipeline_run_missing", sideEffects: "none" } });
     expect((getTask(db, taskId)?.contract as TaskV2).title).toBe("Original title");
@@ -570,7 +571,7 @@ describe("a task blocked by the plan critique before any writer", () => {
     registerDispatchExecutors(engine);
     engine.register("lp.qa-gate", { reentrant: true, run: async () => ({ output: { run: false } }) });
     const started: string[] = [];
-    Object.assign(services, { workflowEngine: engine, isLiveFolder: async () => false, startWriterTask: (input: { task: TaskV2 }) => { started.push(input.task.title); } });
+    Object.assign(services, { workflowEngine: engine, stageHelperSettings, isLiveFolder: async () => false, startWriterTask: (input: { task: TaskV2 }) => { started.push(input.task.title); } });
     const mutable = ctx as unknown as { host?: unknown; refreshRun?: unknown };
     mutable.host ??= { call: async (method: string) => (method === "gitOwnershipBase" ? { status: "not-git" } : { status: "ready", entries: [] }) };
     const run = startDispatchRun(engine, { ctx, services, threadId: pmThreadId, projectId, runId, taskId, attemptId: "att-1", config, runConfig: config,

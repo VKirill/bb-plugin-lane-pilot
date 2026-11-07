@@ -11,9 +11,10 @@ import { modelCatalogOf } from "../../src/rooms/platform/server/model-catalog-re
 import type { Services } from "../../server";
 import { createWorkflowAgents } from "../../src/rooms/workflow/server/workflow-agent";
 import { chainRuntimeFor, humanOptions, humanOutput, registerChainExecutors } from "../../src/rooms/workflow/server/workflow-executors";
+import { registerDispatchExecutors, taskUsage } from "../../src/rooms/writer/server";
 import { answerWorkflowQuestion } from "../../src/rooms/workflow/server/workflow-answer";
 import { reportEndToOwner } from "../../src/rooms/workflow/server/pm-notice";
-import type { ChainRuntime } from "../../src/rooms/workflow/server/workflow-runtime";
+import type { ChainRuntime } from "../../src/rooms/contracts/server";
 import { registerPureActions } from "@lane-pilot/workflow-engine";
 import { WorkflowEngine } from "@lane-pilot/workflow-engine";
 import { registerReducers } from "@lane-pilot/workflow-engine";
@@ -106,11 +107,14 @@ async function setup(script: Script, options: { pmEvents?: () => Row[]; dirty?: 
   }
   const ctx = createCore(bb, db);
   const dispatched: Row[] = [];
-  const services = { dispatchWriter: vi.fn(async (args: Row) => { dispatched.push(args); return { runId: RUN, taskId: (args.task as Row).id, state: "queued" }; }), stability: { loadParked: async () => [] } } as unknown as Services;
+  const services = { dispatchWriter: vi.fn(async (args: Row) => { dispatched.push(args); return { runId: RUN, taskId: (args.task as Row).id, state: "queued" }; }), stability: { loadParked: async () => [] }, taskUsage } as unknown as Services;
   const engine = new WorkflowEngine({ db, harnessVersion: "test", runtimeFor: chainRuntimeFor(ctx, services) });
   registerPureActions(engine);
   registerReducers(engine);
+  // The composition root's order (server.ts: createWorkflowEngine, then registerDispatchExecutors): a chain's
+  // lp-task node must still reach the writer dispatch, not the bare pipeline.
   registerChainExecutors(engine, ctx, services, createWorkflowAgents());
+  registerDispatchExecutors(engine, ctx.bb);
   const rt: ChainRuntime = { ctx, services, pmThreadId: options.noPm ? null : PM, projectId: PROJECT, runId: options.noPm ? null : RUN };
   const start = (workflow: Workflow, inputs: Row = {}) => engine.start({ workflow, inputs, runtime: rt, link: options.noPm ? { projectId: PROJECT } : { projectId: PROJECT, runId: RUN } });
   void options;
@@ -711,6 +715,16 @@ describe("a code task of a chain", () => {
     edges: [{ from: "start", to: "build" }, { from: "build", to: "done" }],
   });
   const task = (checkout: string) => ({ schema_version: 2, id: "c1", title: "Write a note", risk: "low", lane: "writer", read_first: ["README.md"], interfaces: ["note.txt exists"], invariants: ["only note.txt"], out_of_scope: ["the rest"], expected_outputs: ["note.txt"], owns_paths: ["note.txt"], never_touch: [".git/**"], depends_on: [], objective: "Write note.txt", acceptance: ["note.txt exists"], verify: "tests", verification: [{ command: "test -f note.txt", cwd: checkout, timeout_sec: 30 }] });
+
+  it("a chain lp-task node still takes the chain path when the dispatch executors register after the chain ones (server.ts order)", async () => {
+    // Regression: registerDispatchExecutors used to overwrite the merged "lp-task" executor with the bare pipeline,
+    // which runs a chain's code task on a DispatchRuntime it does not have.
+    const t = await setup({});
+    dispose = t.dispose;
+    const started = t.start(taskChain(task(t.checkout)));
+    expect((await started.done).status).toBe("waiting");
+    expect(t.dispatched).toHaveLength(1);
+  });
 
   it("dispatches the task through the writer pipeline with the run's workspace and waits for the attempt; an accepted attempt gives the merge commit by its trailer", async () => {
     const t = await setup({});

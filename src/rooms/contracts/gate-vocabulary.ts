@@ -1,5 +1,9 @@
-import { EXISTENCE_ONLY_WORDS } from "../baseline";
-import { INVARIANT_WORDS } from "./plan-fact";
+export const EXISTENCE_ONLY_WORDS: readonly string[] = ["test -f", "test -e", "test -s", "test -d", "grep -q", "grep -c", "ls"];
+
+export const INVARIANT_WORDS: readonly string[] = ["unchanged", "not changed", "untouched", "stays the same", "still works", "still returns", "still passes", "still serves",
+  "no changes", "no other changes", "as now", "as before", "as today", "as it is", "as it was", "remains as", "remains the same", "remains unchanged",
+  "не меняется", "не трогать", "не изменяется", "без изменений", "по-прежнему", "как раньше", "как сейчас"];
+
 
 /**
  * The words the gates decide by, one line each, for the agents the gates judge. A gate that reads «as now» as «the code stays untouched», or

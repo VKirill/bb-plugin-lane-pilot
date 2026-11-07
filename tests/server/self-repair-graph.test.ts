@@ -4,7 +4,8 @@ import { WorkflowEngine } from "@lane-pilot/workflow-engine";
 import { openDatabase } from "../../src/rooms/plugin-db";
 import { pointsAtEngine } from "../../src/rooms/self-repair/server/self-repair";
 import { createSelfRepair } from "../helpers/self-repair";
-import { SELF_REPAIR, builtinWorkflow } from "../../src/rooms/workflow/builtin";
+import {builtinWorkflow} from "../../src/rooms/workflow/builtin";
+import {SELF_REPAIR} from "../../src/rooms/contracts";
 import { maybeNotifyWorkflowRun } from "../../src/rooms/workflow/server/pm-notice";
 import type { ServerCore } from "../../src/rooms/contracts/server";
 
@@ -48,7 +49,7 @@ function setup(options: { status?: Record<string, string>; outputs?: Record<stri
   const state = { disposed: false };
   const logs: string[] = [];
   const ctx = { bb, db, host, log: (message: string) => logs.push(message), isDisposed: () => state.disposed } as unknown as ServerCore;
-  const engine = new WorkflowEngine({ db, harnessVersion: "t", isDisposed: () => state.disposed });
+  const engine = new WorkflowEngine({ db, harnessVersion: "t", isDisposed: () => state.disposed, resolveWorkflow: (id) => builtinWorkflow(id) });
   const repair = createSelfRepair(ctx, () => engine);
   repair.registerGraph(engine);
   const now = Date.now();
@@ -121,7 +122,7 @@ describe("self-repair as a graph", () => {
     expect(t.runs()[0]!.status).toBe("running");
     // The next instance: its own engine over the same database, its own context.
     const ctx2 = { ...t.ctx, isDisposed: () => false } as unknown as ServerCore;
-    const engine2 = new WorkflowEngine({ db: t.db, harnessVersion: "t" });
+    const engine2 = new WorkflowEngine({ db: t.db, harnessVersion: "t", resolveWorkflow: (id) => builtinWorkflow(id) });
     createSelfRepair(ctx2, () => engine2).registerGraph(engine2);
     t.status.thr_repair1 = "idle";
     await engine2.resume();

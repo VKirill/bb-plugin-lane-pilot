@@ -77,7 +77,7 @@ export function closesWhenAlreadyGreen(setting: RequireRed, task: { risk: string
 /** A check that only says a file or a word exists (`test -f`, `grep -q`, `ls`): red before a new file, it proves no behaviour. */
 const EXISTENCE_ONLY = /^\s*(?:cd [^&;|]+&&\s*)?(?:(?:test|\[) -[efsd] \S+\s*\]?|grep -[qcFE]+[qcFE]* .+|ls \S+)\s*$/;
 /** The forms EXISTENCE_ONLY reads, one example of each, for the briefs (tasks/gate-vocabulary.ts); a test holds each one against the pattern. */
-export const EXISTENCE_ONLY_WORDS: readonly string[] = ["test -f", "test -e", "test -s", "test -d", "grep -q", "grep -c", "ls"];
+export { EXISTENCE_ONLY_WORDS } from "../contracts";
 export const isExistenceOnly = (command: string): boolean => command.split(/\s*(?:&&|;)\s*/).filter(Boolean).every((part) => EXISTENCE_ONLY.test(part));
 
 /**

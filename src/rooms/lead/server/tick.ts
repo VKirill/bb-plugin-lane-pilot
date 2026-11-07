@@ -3,12 +3,12 @@ import type { NodeExecutor, StepContext, WorkflowEngine } from "@lane-pilot/work
 import type { ThreadToolTraceEntry } from "@lane-pilot/harness-core";
 import type { JevSettings } from "@lane-pilot/jev";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
-import type { ChainRuntime } from "../../workflow/server";
+import type { ChainRuntime } from "../../contracts/server";
 
 import type { ServerCore } from "../../contracts/server";
 import { closeOwnerItem, collectOwnerWaiting, isSandboxProject, loadPushConfig, postOwnerItem, rpcLine, type OwnerAction, type OwnerEvidence } from "../../owner-waiting";
 import { errandStem, errandTitle, routeConfidence } from "../../errands";
-import { ARCHITECT_LAUNCH, WORKFLOW_ARCHITECT_ID } from "../../workflow";
+import { ARCHITECT_LAUNCH, WORKFLOW_ARCHITECT_ID } from "../../native-agent";
 import { listPhases } from "../../phase";
 import { loadProjectSettings, type LanePilotDatabase } from "../../storage";
 import { taskMemoryContext } from "../../memory/server";

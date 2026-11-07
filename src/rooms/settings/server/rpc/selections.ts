@@ -1,6 +1,6 @@
-import { writerFallbackKeys } from "../../../writer";
+;
 import { casUpsertSettings, sectionBindingId } from "../../../storage";
-import { compatibleReasoningLevel, compatibleServiceTier, findModelIn, PAIR_ROLE_SPECS, roleSpec, type PairRoleSelectionRpc, type RoleSpec } from "@lane-pilot/models";
+import {PAIR_ROLE_SPECS, compatibleReasoningLevel, compatibleServiceTier, findModelIn, roleSpec, type PairRoleSelectionRpc, type RoleSpec, writerFallbackKeys} from "@lane-pilot/models";
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import { rpcContract } from "../../../contracts";
 import type { ServerCore } from "../../../contracts/server";
@@ -13,7 +13,6 @@ interface Services {
   selectionCatalog: WriterHostApi["selectionCatalog"];
   selectionCatalogHost: WriterHostApi["selectionCatalogHost"];
 }
-
 
 type ValidationCode = "invalid_choice" | "incompatible_setting" | "setup_required" | "writer_binding_ambiguous" | "writer_host_offline" | "catalog_unavailable";
 type SelectionOutput = {

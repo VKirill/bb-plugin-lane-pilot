@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { builtinWorkflow } from "../../src/rooms/workflow/builtin";
+import {builtinWorkflow} from "../../src/rooms/workflow/builtin";
 import { fileContaining } from "../support/source-text";
 import { costTier, nodeEffortsFor, roleModelKey, validateChoice, type ModelCatalog } from "@lane-pilot/models";
 import { DELEGATED_ACTIONS, resolveStepExecutors, type StepExecutor } from "../../src/rooms/workflow/server/workflow-step-executors";

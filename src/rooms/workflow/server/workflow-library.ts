@@ -1,7 +1,8 @@
 import { dirname } from "node:path";
+import { issueQuickModelCalls, issueQuickShortPath, issueQuickWorkflowId } from "../short-path";
 import type { z } from "zod";
 import type { rpcContract } from "../../contracts";
-import { BUILTIN_SOURCES } from "../builtin";
+;
 import type { Field, Workflow } from "@lane-pilot/workflow-engine";
 import { sha256Hex } from "@lane-pilot/kit";
 import { parseGoals } from "@lane-pilot/workflow-engine";
@@ -13,13 +14,13 @@ import type { ServerCore } from "../../contracts/server";
 
 import type { DocsNightlyApi } from "../../docs/server/docs-nightly";
 import type { WorkflowEngineApi } from "./workflow";
+import {BUILTIN_SOURCES} from "../builtin";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {
   docsPlaces: DocsNightlyApi["docsPlaces"];
   workflowEngine: WorkflowEngineApi["workflowEngine"];
 }
-
 
 type Output<K extends keyof typeof rpcContract> = z.infer<(typeof rpcContract)[K]["output"]>;
 export type WorkflowSummary = Output<"workflow_list">["workflows"][number];
@@ -96,6 +97,7 @@ export function createWorkflowLibrary(ctx: ServerCore, services: Pick<Services, 
   });
 
   return {
+    issueQuickWorkflowId, issueQuickModelCalls, issueQuickShortPath,
     loadStore,
 
     async list(input: { projectId?: string }): Promise<Output<"workflow_list">> {

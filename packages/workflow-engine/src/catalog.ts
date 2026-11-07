@@ -1,4 +1,6 @@
 import { globalWorkflowDir, loadWorkflowStore } from "./store";
+import { parseWorkflow } from "./validate";
+import type { Workflow } from "./schema";
 import type { WorkflowFileSource, WorkflowStore } from "./store";
 
 /**
@@ -12,6 +14,10 @@ export type WorkflowCatalog = {
   /** The last store loaded, without waiting; null before the first load. */
   peek(): WorkflowStore | null;
   invalidate(): void;
+  /** A built-in workflow by id (and version when given); the registry the store is built from, synchronously. */
+  builtin(id: string, version?: number): Workflow | null;
+  /** Every built-in workflow, in registry order. */
+  builtins(): Workflow[];
 };
 
 export function createWorkflowCatalog(options: { builtin: Parameters<typeof loadWorkflowStore>[0]["builtin"]; globalDir?: string | null; files?: WorkflowFileSource; ttlMs?: number; now?: () => number; log?: (message: string) => void;
@@ -32,6 +38,21 @@ export function createWorkflowCatalog(options: { builtin: Parameters<typeof load
       throw cause;
     }
   };
+  let builtinParsed: Map<string, Workflow> | null = null;
+  const parsedBuiltins = (): Map<string, Workflow> => {
+    if (builtinParsed) return builtinParsed;
+    const parsed = new Map<string, Workflow>();
+    let pending = (options.builtin ?? []).map((source) => source.value);
+    for (let round = 0; pending.length && round < 5; round += 1) {
+      const failed: unknown[] = [];
+      for (const value of pending) {
+        try { const workflow = parseWorkflow(value, { resolve: (id) => parsed.get(id) ?? null }); parsed.set(workflow.id, workflow); }
+        catch (cause) { if (round === 4) throw cause; failed.push(value); }
+      }
+      pending = failed;
+    }
+    return (builtinParsed = parsed);
+  };
   return {
     store: () => {
       if (last && now() - loadedAt < ttl) return Promise.resolve(last);
@@ -40,5 +61,7 @@ export function createWorkflowCatalog(options: { builtin: Parameters<typeof load
     },
     peek: () => last,
     invalidate: () => { loadedAt = 0; },
+    builtin: (id, version) => { const found = parsedBuiltins().get(id) ?? null; return found && (version === undefined || found.version === version) ? found : null; },
+    builtins: () => [...parsedBuiltins().values()],
   };
 }

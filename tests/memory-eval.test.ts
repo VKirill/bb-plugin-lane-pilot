@@ -10,7 +10,7 @@ import { formatEvalReport, runMemoryEval, score, stat } from "../src/rooms/memor
 import { exportEvalExtract, loadEvalData, type EvalData, type RawNote, type RawQuestion } from "../src/rooms/memory-eval/server/source";
 import { runMemoryEvalCommand } from "../src/rooms/memory-eval/server/command";
 import { migrations } from "../src/rooms/plugin-db";
-import { writerMemoryPicks } from "../src/rooms/writer/writer-brief";
+import { writerMemoryPicks } from "../src/rooms/memory/server";
 import { SHELF_CONFIGS, durabilityScore, formatShelf, pickThree, replayShelf, runShelfReplay } from "../src/rooms/memory-eval/server/shelf";
 
 // SMA block 4 «Next» (P2-7): retrieval measured on real accepted tasks, with questions whose right answer is nothing.

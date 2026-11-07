@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { validateWorkflow } from "@lane-pilot/workflow-engine";
-import { builtinWorkflow } from "../../src/rooms/workflow/builtin";
+import {builtinWorkflow} from "../../src/rooms/workflow/builtin";
 import { createRouterModel, registerRouterExecutor } from "../../src/rooms/workflow/server/workflow-router-model";
 import { maybeNotifyWorkflowRun } from "../../src/rooms/workflow/server/pm-notice";
 import { nightWorld } from "../night-graphs/world";

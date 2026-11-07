@@ -1,12 +1,12 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { runOnHost } from "@lane-pilot/host-calls";
-import { builtinWorkflow } from "../../workflow";
+
 import { fenceOutside, spawnTextId } from "../../platform/server";
 import { getRun } from "../../storage";
 
 import type { ServerCore } from "../../contracts/server";
 
-import type { WorkflowEngineApi } from "../../workflow/server/workflow";
+import type { WorkflowEngineApi } from "../../platform/server";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {
@@ -41,7 +41,7 @@ export async function specialistRunOfThread(bb: BbPluginApi, threadId: string): 
 }
 
 export async function startSpecialistRun(ctx: ServerCore, services: Services, input: { projectId: string; pmThreadId: string; runId: string; role: string; task: string; title: string; extra?: Record<string, unknown> }): Promise<{ workflowRunId: string; threadId: string }> {
-  const workflow = builtinWorkflow(SPECIALIST_GRAPH);
+  const workflow = services.workflowEngine.resolveWorkflow(SPECIALIST_GRAPH);
   if (!workflow) throw new Error(`built-in workflow ${SPECIALIST_GRAPH} is not loaded`);
   const engine = services.workflowEngine;
   const key = `specialist:${input.runId}:${input.role}:${spawnTextId(input.task)}`;
@@ -143,7 +143,7 @@ export async function pageReviewByAgent(
   ].join("\n");
   try {
     const started = services.workflowEngine.start({
-      workflow: builtinWorkflow(SPECIALIST_GRAPH)!,
+      workflow: services.workflowEngine.resolveWorkflow(SPECIALIST_GRAPH)!,
       inputs: { role, task, title: `page review ${input.request.url.slice(0, 60)}` },
       key: `page-review:${input.parentRunId}:${Date.now()}`,
       runtime: { ctx, services, pmThreadId: input.pmThreadId, projectId: input.projectId, runId: input.parentRunId },

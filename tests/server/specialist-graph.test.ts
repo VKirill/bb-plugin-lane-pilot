@@ -2,7 +2,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, describe, expect, it } from "vitest";
 import plugin from "../../server";
 import { createRun, openDatabase, setRunThread } from "../../src/rooms/plugin-db";
-import { builtinWorkflow } from "../../src/rooms/workflow/builtin";
+import {builtinWorkflow} from "../../src/rooms/workflow/builtin";
 import { roleSpec } from "../../src/rooms/workflow/server/workflow-agent";
 import { SPECIALIST_GRAPH } from "../../src/rooms/critique/server";
 import { waitSpecialistRun } from "../../src/rooms/critique/server/specialist-graph";

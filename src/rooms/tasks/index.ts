@@ -13,7 +13,7 @@ export { classifyWriterOutput, isMainfixTask, isOutputPath, unownedExpectedOutpu
 export type { VerifyResult } from "./validate-output";
 export { checkoutOwnsOverlap, commonTaskFolder, isTaskBase, ownsFromOuterBase, parseRepoTop, planWithOutsideReads, repoTopCommand, rerootTask } from "./task-base";
 export { TRUSTED_TOOLING_PATTERNS, applyTrustedTooling, trustedToolingFor, trustedToolingHint, trustedToolingHits, verificationScriptPaths } from "./trusted-tooling";
-export { GATE_CODES, gateVocabularyLines } from "./gate-vocabulary";
+export { dependsOnTask } from "./depends";
 export { INVARIANT_ITEM, INVARIANT_WORDS } from "./plan-fact";
 export { NO_CODE_KINDS, PLAN_FACT_BRIEF_LINE, PLAN_FACT_RULES, blindPlanFact, diffHunksCommand, existsCommand, existsFromCommandOutput, hunksFromCommandOutput, parsePlanFact, planFactOutcome, untouchedCitations } from "./plan-fact";
 export type { EvidenceCheck, ItemVerdict, PlanFactCheck, PlanFactFacts, PlanFactTable } from "./plan-fact";

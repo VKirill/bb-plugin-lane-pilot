@@ -19,17 +19,17 @@ interface Services {
 }
 import { checkBrief, renderBrief } from "../../brief";
 import { getRun, getRunSettingsScopes } from "../../storage";
-import { builtinWorkflow } from "../../workflow";
-import type { ChainRuntime } from "../../workflow/server";
+
+import type { ChainRuntime } from "../../contracts/server";
 import { withUsage } from "../../usage/server";
 import { fullAccessSpawn, graphStepMetadata, findThreadsByMetadata, keyedSpawnSupported, modelCatalogOf, resolveSpawnModel, spawnUsageOf, warmSpawnUsage } from "../../platform/server";
-import { stringAt } from "@lane-pilot/kit";
+import {outputText, stringAt} from "@lane-pilot/kit";
 import { configuredSetting } from "../../contracts/server";
 
 import type { ServerCore } from "../../contracts/server";
 import { councilOwnerForm, ownerLocale } from "../../relay/server";
 import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server";
-import { outputText } from "../../writer/server";
+;
 import { councilDecisionText, sendCouncilNotice } from "./pm-notice";
 import { askOwnerToJoin, configuredSeatPair, councilMemoryBlock, selectionPairs, seatsFor } from "./council";
 import type { CouncilApi } from "./council";
@@ -132,7 +132,7 @@ export function mountCouncilGraph(ctx: ServerCore, services: Services, council: 
     return (async () => {
       const id = `cncl_${randomUUID().replaceAll("-", "").slice(0, 16)}`;
       const { session } = await openSession({ ...args, id });
-      const workflow = builtinWorkflow(COUNCIL_WORKFLOW);
+      const workflow = services.workflowEngine.resolveWorkflow(COUNCIL_WORKFLOW);
       if (!workflow) throw new Error(`built-in workflow ${COUNCIL_WORKFLOW} is not loaded`);
       const settings = (await ctx.effectiveProjectSettings(args.projectId)).values;
       const judgeSetting = configuredSetting(settings, "council.judge");

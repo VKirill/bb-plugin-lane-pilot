@@ -10,7 +10,7 @@ import { sha256 } from "../../tasks";
 import { parseReadFirstHints } from "../../tasks/read-first";
 import { buildRunExecutionProfile, buildRunPolicy, mapBounded } from "../../tasks";
 import { classifyWriterOutput, isOutputPath, trustedToolingHint } from "../../tasks";
-import { cleanCheckOutput, pollPause } from "@lane-pilot/kit";
+import {cleanCheckOutput, outputText, pollPause} from "@lane-pilot/kit";
 import { redactKnown, redactSecrets } from "@lane-pilot/kit";
 import { SecretsNotReadyError, allowedSecretNames, secretProblem } from "../../secrets/server";
 import type { VerifyResult } from "../../tasks";
@@ -24,7 +24,7 @@ import { hollowRerun, noTestRanReason, testSummaries } from "../../tasks/server"
 import { recordGateEvaluation } from "../../runs/server";
 import { listThreadEventsRaw } from "@lane-pilot/thread-observe";
 import { stringAt } from "@lane-pilot/kit";
-import { outputText, writerPatchFromOutput } from "./writer-task";
+import {writerPatchFromOutput} from "./writer-task";
 import type { ServerCore } from "../../contracts/server";
 import type { FailureCode } from "../../platform/server";
 
@@ -42,7 +42,6 @@ interface Services {
 }
 
 /** A sandbox that refused the runner its own files: macOS python3 shim «couldn't create cache file … Operation not permitted». */
-
 
 /**
  * A verification command that fails is run once more: a check that fails once and passes on a re-run (a cold cache, a

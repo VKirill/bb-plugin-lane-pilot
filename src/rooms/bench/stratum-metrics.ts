@@ -1,4 +1,3 @@
-import { issueQuickModelCalls } from "../workflow";
 
 export type StratumRow = {
   taskId: string;
@@ -53,7 +52,7 @@ export function stratumMetrics(rows: readonly StratumRow[]): StratumMetric[] {
   });
 }
 
-export function renderStratumMetrics(rows: readonly StratumMetric[], settings?: Record<string, unknown> | null): string {
+export function renderStratumMetrics(rows: readonly StratumMetric[], settings?: Record<string, unknown> | null, issueQuickModelCalls: (settings: Record<string, unknown> | null | undefined) => number = () => 0): string {
   const lines = rows.map((row) => {
     const time = row.secondsToAccept === null ? "no acceptance" : `${row.secondsToAccept}s to accept`;
     const calls = row.callsBeforeWriter === null ? "calls not measured" : `${row.callsBeforeWriter} model calls before the writer`;

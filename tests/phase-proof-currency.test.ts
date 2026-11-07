@@ -1,3 +1,4 @@
+import { builtinWorkflow } from "../src/rooms/workflow/builtin";
 import { execFile, execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -182,7 +183,7 @@ describe("the goal audit gets the currency facts", () => {
     record: { verification: { verdict: { state: "passed", detail: "ok", inputSha: "x", at: 1, mainSha: null } } } } as unknown as Phase;
   function start(proofCurrency?: (phase: Phase) => Promise<string | null>) {
     const started: Array<{ workflow: { id: string }; inputs: Record<string, unknown> }> = [];
-    const auto = createAutoStages({ log: () => undefined }, { workflowEngine: { start: (input: never) => { started.push(input); return { runId: "wf1", created: true, done: new Promise(() => undefined) }; }, get: () => null } as never }, {
+    const auto = createAutoStages({ log: () => undefined }, { workflowEngine: { resolveWorkflow: (id: string) => builtinWorkflow(id), start: (input: never) => { started.push(input); return { runId: "wf1", created: true, done: new Promise(() => undefined) }; }, get: () => null } as never }, {
       exhausted: async () => undefined, api: {} as never, get: () => phase, save: () => undefined, book: () => undefined, writeDocs: async () => ({ written: [] }), runtime: () => ({}), pmIdle: async () => true, now: () => 1,
       ...(proofCurrency ? { proofCurrency } : {}),
     });

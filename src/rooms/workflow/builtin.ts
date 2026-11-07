@@ -100,7 +100,7 @@ import planReviewConvergence from "../../../workflows/plan-review-convergence.js
 import projectStart from "../../../workflows/project-start.json";
 import type { Workflow } from "@lane-pilot/workflow-engine";
 import { parseWorkflow } from "@lane-pilot/workflow-engine";
-import { gateVocabularyLines } from "../tasks";
+import { gateVocabularyLines } from "../contracts";
 
 /** The planner's instructions with the gate vocabulary: the plan's acceptance items are judged by those words (tasks/gate-vocabulary.ts). */
 const withGateVocabulary = (workflow: { nodes: Array<{ id: string; prompt?: string }> }): unknown => ({
@@ -212,20 +212,7 @@ export const BUILTIN_SOURCES: ReadonlyArray<{ name: string; value: unknown }> = 
   { name: "project-start.json", value: projectStart },
 ];
 
-/** The per-task pipeline every dispatch runs through (PM read, critiques, ownership base, writer). */
-export const LP_TASK_PIPELINE = "lp-task-pipeline";
-/** The graph that runs once a task is accepted: memory maintenance and project life, side by side (started by the merge, never offered). */
-export const AFTER_ACCEPT = "lp.after-accept";
-/** The graph of one docs unit of the night (prepare, write, verify, commit), started by the nightly docs schedules. */
-export const DOCS_NIGHT = "lp.docs-night";
-/** The graph of the docs upkeep of one accepted task, started by the hourly docs-maintenance schedule. */
-export const DOCS_MAINTENANCE = "lp.docs-maintenance";
-/** The graph of one self-repair (worktree, repair thread, verdict and merge), started by the self-repair watcher. */
-export const SELF_REPAIR = "lp.self-repair";
-/** The graph of the router's model step (`lane_pilot_route` escalates a request System One cannot decide alone): one read-only helper thread, a real run of its own. */
-export const ROUTE_WORKFLOW = "lp.route";
-/** The outer chain of the chains spec: analyze, plan, build, check, close. */
-export const ANALYZE_PLAN_EXECUTE = "analyze-plan-execute";
+export { LP_TASK_PIPELINE, AFTER_ACCEPT, DOCS_NIGHT, DOCS_MAINTENANCE, SELF_REPAIR, ROUTE_WORKFLOW, ANALYZE_PLAN_EXECUTE } from "../contracts";
 
 const parsed = new Map<string, Workflow>();
 // A fragment is parsed before the chains that call it, so the files are loaded in rounds until every reference resolves.

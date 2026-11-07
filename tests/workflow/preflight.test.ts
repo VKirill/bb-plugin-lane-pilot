@@ -8,7 +8,7 @@ import type { WorkflowToolDeps } from "../../src/rooms/workflow/server/workflow-
 import { checkRequires, effectiveRequires, preflightRefusal, secretName, toolGroup } from "@lane-pilot/workflow-engine";
 import type { RequirePorts } from "@lane-pilot/workflow-engine";
 import type { Workflow } from "@lane-pilot/workflow-engine";
-import { builtinWorkflow, builtinWorkflows } from "../../src/rooms/workflow/builtin";
+import {builtinWorkflow, builtinWorkflows} from "../../src/rooms/workflow/builtin";
 import { wf } from "./engine-helpers";
 
 const requires = (extra: Partial<Workflow["requires"]>): Workflow["requires"] =>

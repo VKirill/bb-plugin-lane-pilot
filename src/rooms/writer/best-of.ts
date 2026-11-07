@@ -16,8 +16,9 @@
  *    runs the three in turn — best-of keeps working, just slower).
  * All three are catalog settings; `writer.best_of` off is the behaviour before this existed.
  */
-import { writerFallbackChain, type WriterFallback } from "./writer-fallbacks";
+;
 import type { QualityMode } from "../critique";
+import {type WriterFallback, writerFallbackChain} from "@lane-pilot/models";
 
 export const BEST_OF_SETTING = "writer.best_of";
 export const BEST_OF_TOKEN_BUDGET_SETTING = "writer.best_of.token_budget";

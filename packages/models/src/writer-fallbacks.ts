@@ -4,10 +4,9 @@
  * the PM's model (the emergency writer). Owner's defaults of 2026-10-03: GLM 5.3 Flash, then Gemini 3.8 high (Antigravity
  * through router9); both are in the opencode catalogs of the OVH server and the Mac mini. Fallback 3 is off by default.
  */
-export type WriterFallback = { providerId:string; model:string; reasoningLevel:string };
+import { WRITER_FALLBACK_SLOTS } from "./role-specs";
 
-export const WRITER_FALLBACK_SLOTS = [1, 2, 3] as const;
-export type WriterFallbackSlot = (typeof WRITER_FALLBACK_SLOTS)[number];
+export type WriterFallback = { providerId:string; model:string; reasoningLevel:string };
 
 /** A slot without a default (fallback 3) is off until the owner turns it on and picks a model. */
 export const WRITER_FALLBACK_DEFAULTS: ReadonlyArray<WriterFallback | null> = [

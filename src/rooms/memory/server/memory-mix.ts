@@ -1,7 +1,7 @@
 import { DEFAULT_RELEVANCE_FLOOR, MEMORY_SETTING_KEYS, projectUsesSections, relevantRecords, resolveProjectKind, REVIEWER_CONCEPTS, estimateTokens, filesDrifted, listMemory, memoryContext, parseMemorySettings, pathsNamed, recordCriticUse, roleContextBudget, searchMemoryRecords, type MemoryRecord, type MemorySearchEngine, type MemorySettings, type RelevanceFloor } from "@lane-pilot/memory-core";
 import type { TaskV2 } from "../../contracts";
 import { getRunSettingsScopes, loadProjectSettings, type LanePilotDatabase } from "../../storage";
-import { memoryLine, reviewerMemoryPicks, writerMemory, writerMemoryPicks } from "../../writer";
+import { memoryLine, reviewerMemoryPicks, writerMemory, writerMemoryPicks } from "./memory-picks";
 import { configuredSetting } from "../../contracts/server";
 
 type TaskPaths = Pick<TaskV2, "owns_paths" | "read_first">;

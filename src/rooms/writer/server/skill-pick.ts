@@ -1,6 +1,6 @@
 import { basename, dirname, join } from "node:path";
 import { pickWriterSkills, skillCatalog, type CatalogEntry, type KindCache, type ListedSkill, type SkillAsk, type SkillPick, type PickTaskInput } from "@lane-pilot/jev/judgments/skill-pick";
-import { candidateNames, readSkillTreeText, skillTreeCached } from "./skill-tree";
+import { candidateNames, readSkillTreeText, skillTreeCached } from "../../platform/server";
 import type { TaskV2 } from "../../contracts";
 import type { ServerCore } from "../../contracts/server";
 

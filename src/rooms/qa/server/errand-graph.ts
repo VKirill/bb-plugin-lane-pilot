@@ -2,9 +2,10 @@ import { observeStageChild, waitThreadIdle } from "@lane-pilot/thread-observe";
 import { isOffered, routeIntent, type NodeExecutor, type StepContext, type Workflow } from "@lane-pilot/workflow-engine";
 import { redactKnown } from "@lane-pilot/kit";
 import { z } from "zod";
-import { builtinWorkflow, builtinWorkflows } from "../../workflow";
+
 import { createWorkflowLibrary, SCHEDULE_RUN_KEY_PREFIX } from "../../workflow/server";
-import type { ChainRuntime } from "../../workflow/server";
+import { builtinWorkflows } from "../../workflow";
+import type { ChainRuntime } from "../../contracts/server";
 import { withUsage } from "../../usage/server";
 import { fenceOutside, findThreadsByMetadata, keyedSpawnSupported, registerObservedTool, spawnTextId } from "../../platform/server";
 
@@ -153,7 +154,7 @@ export function mountErrandGraph(ctx: ServerCore, services: Services, core: Erra
   const library = createWorkflowLibrary(ctx, services);
   async function offeredCatalog(projectId: string): Promise<Workflow[]> {
     try { return (await library.loadStore(projectId)).store.list().map((item) => item.workflow); }
-    catch { return services.workflowCatalog?.store ? await services.workflowCatalog.store().then((store) => store.list().map((item) => item.workflow)).catch(() => builtinWorkflows()) : builtinWorkflows(); }
+    catch { return services.workflowCatalog?.store ? await services.workflowCatalog.store().then((store) => store.list().map((item) => item.workflow)).catch(() => services.workflowCatalog!.builtins()) : (services.workflowCatalog?.builtins() ?? builtinWorkflows()); }
   }
 
   /**
@@ -182,7 +183,7 @@ export function mountErrandGraph(ctx: ServerCore, services: Services, core: Erra
 
   /** Starts the errand graph, or returns the run that already has the key. */
   function startRun(input: ErrandRunStart): { runId: string; created: boolean } {
-    const workflow = builtinWorkflow(ERRAND_WORKFLOW);
+    const workflow = services.workflowEngine.resolveWorkflow(ERRAND_WORKFLOW);
     if (!workflow) throw new Error(`built-in workflow ${ERRAND_WORKFLOW} is not loaded`);
     const runtime: ChainRuntime = { ctx, services, pmThreadId: input.pmThreadId, projectId: input.projectId, runId: input.runId, ...(input.schedule ? { origin: "schedule" as const } : {}) };
     // A scheduled run carries the schedule prefix in its key: after a reload the key is all that says who started it.

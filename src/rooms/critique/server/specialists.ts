@@ -5,19 +5,20 @@ import { judgeEmployeeRemark, recordEmployeeLesson } from "./employee-lessons";
 import { observeStageChild } from "@lane-pilot/thread-observe";
 import { z } from "zod";
 import { findOpenNativeRun, getRun } from "../../storage";
-import { outputText } from "../../writer/server/writer-task";
+;
 import { fenceOutside, registerObservedTool } from "../../platform/server";
 import { ToolError } from "../../contracts/server";
 
 import type { ServerCore } from "../../contracts/server";
-import type { ChainRuntime } from "../../workflow/server";
-import type { StepContext, WorkflowEngine } from "../../workflow";
+import type { ChainRuntime } from "../../contracts/server";
+import type { StepContext, WorkflowEngine } from "@lane-pilot/workflow-engine";
 import { specialistRunOfThread, startSpecialistRun, waitSpecialistRun } from "./specialist-graph";
 
 import type { PhaseApi } from "../../phase/server/driver";
 
 import type { ScheduleService } from "../../schedule/server/schedule-service";
-import type { WorkflowEngineApi } from "../../workflow/server/workflow";
+import type { WorkflowEngineApi } from "../../platform/server";
+import {outputText} from "@lane-pilot/kit";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {

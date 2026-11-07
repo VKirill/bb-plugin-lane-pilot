@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { issueQuickModelCalls } from "../../src/rooms/workflow/short-path";
 import { strataFor } from "../../src/rooms/bench/build";
 import { DEFAULT_STRATA, isNoncodeCandidate, isSmallCandidate, smallPathSettings } from "../../src/rooms/bench/stratify";
 import { callsBeforeWriter, renderStratumMetrics, stratumMetrics } from "../../src/rooms/bench/stratum-metrics";
@@ -30,7 +31,7 @@ describe("small and non-code strata", () => {
     const text = renderStratumMetrics(stratumMetrics([
       { taskId: "a", stratum: "small", accepted: true, seconds: 40, tokens: 100, stages: [{ stageId: "plan" }, { stageId: "write" }] },
       { taskId: "b", stratum: "small", accepted: true, seconds: 80, tokens: 300, stages: [{ stageId: "triage" }, { stageId: "plan" }, { stageId: "build" }] },
-    ]), { "issue_quick.short_path": "off" });
+    ]), { "issue_quick.short_path": "off" }, issueQuickModelCalls);
     expect(text).toContain("small: 2 tasks, accepted 2, 60s to accept, 2 model calls before the writer, 400 tokens");
     expect(text).toContain("old issue-quick, 2 model calls before the writer");
     expect(smallPathSettings("short")).toEqual({});

@@ -1,6 +1,6 @@
 import type { NodeExecutor, StepContext } from "@lane-pilot/workflow-engine";
 import { runGraphHelper, sumUsage } from "../../workflow/server";
-import type { ChainRuntime } from "../../workflow/server";
+import type { ChainRuntime } from "../../contracts/server";
 
 import type { ServerCore } from "../../contracts/server";
 import type { HarnessStep } from "../../harness/server";

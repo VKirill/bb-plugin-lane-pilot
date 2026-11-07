@@ -5,7 +5,7 @@ import { waitSpecialistRun, startSpecialistRun } from "../src/rooms/critique/ser
 import { EMPLOYEES } from "../src/rooms/native-agent/employee-manifest";
 import { EMPLOYEE_VALIDATORS } from "../src/rooms/critique/server/specialists";
 import { employeeView } from "../src/rooms/native-agent/employee-manifest";
-import { builtinWorkflow } from "../src/rooms/workflow";
+import {builtinWorkflow} from "../src/rooms/workflow/builtin";
 
 const dbOf = () => openDatabase(createFakePluginHost({ pluginId: "lane-pilot" }).bb);
 
@@ -17,7 +17,7 @@ function ctxWith(db: ReturnType<typeof dbOf>) {
 }
 
 function servicesStub(status = "succeeded") {
-  return { workflowEngine: { get: () => ({ status, output: { report: "done" } }), start: () => ({ runId: "wr1", created: true, done: Promise.resolve() }), journal: { getRun: () => null } } } as never;
+  return { workflowEngine: { resolveWorkflow: (id: string) => builtinWorkflow(id), get: () => ({ status, output: { report: "done" } }), start: () => ({ runId: "wr1", created: true, done: Promise.resolve() }), journal: { getRun: () => null } } } as never;
 }
 
 const VALIDATOR_WITNESS: Record<string, RegExp> = {
@@ -54,7 +54,7 @@ describe("employee delegation: real path per registry employee", () => {
     const db = dbOf();
     const kv = new Map<string, unknown>();
     const ctx = { db, bb: { storage: { kv: { get: async (k: string) => kv.get(k) ?? null, set: async (k: string, v: never) => { kv.set(k, v); } } } }, log: () => {}, isDisposed: () => false } as never;
-    const services = { workflowEngine: engine } as never;
+    const services = { workflowEngine: { ...engine, resolveWorkflow: (id: string) => builtinWorkflow(id) } } as never;
     void startSpecialistRun(ctx, services, { projectId: "p1", pmThreadId: "pm", runId: "r1", role: "3d-artist", task: "model", title: "t", extra: { validator: "3d", deliverable: ".agents/3d/" } }).catch(() => {});
     await new Promise((r) => setTimeout(r, 50));
     expect(engine.captured?.inputs?.validator).toBe("3d");

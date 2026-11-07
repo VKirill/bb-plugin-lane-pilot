@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { modelsSection } from "../../packages/workflow-engine/src/capabilities";
 import { ROLE_PROFILES } from "../../src/rooms/native-agent/helper-context";
-import { WORKFLOW_ARCHITECT_SESSION } from "../../src/rooms/workflow/workflow-architect";
+import { WORKFLOW_ARCHITECT_SESSION } from "../../src/rooms/native-agent";
 import { PURE_ACTION_KEYS } from "@lane-pilot/workflow-engine";
 import { WORKFLOW_REFERENCE } from "@lane-pilot/workflow-engine";
 import { ROLE_IDS, roleModelKey } from "@lane-pilot/models";

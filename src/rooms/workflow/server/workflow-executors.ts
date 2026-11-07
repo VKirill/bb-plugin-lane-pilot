@@ -17,28 +17,38 @@ import type { WorkflowAgents } from "./workflow-agent";
 import { registerRouterExecutor } from "./workflow-router-model";
 import type { Judgment } from "@lane-pilot/jev";
 import { registerQualityLoopClassifyExecutor } from "./workflow-classify";
-import { lpTaskPipelineExecutor, taskUsage } from "../../writer/server";
-import type { DispatchRuntime } from "../../writer/server";
+import type { TaskUsage } from "../../platform/server";
+
 import { keyedSpawnSupported, projectFolder } from "../../platform/server";
 import { stringAt } from "@lane-pilot/kit";
-import { startedBySchedule, type ChainRuntime } from "./workflow-runtime";
+import { startedBySchedule } from "./workflow-runtime";
+import { pickSkillTree, readSkillTreeText, skillTreeCached } from "../../platform/server";
+import type { ChainRuntime } from "../../contracts/server";
 import type { ServerCore } from "../../contracts/server";
 
 import { ownerLocale, workflowHumanDetail } from "../../relay/server";
 import { runOnHost } from "@lane-pilot/host-calls";
 import { pageReviewByAgent } from "../../critique/server";
 
-import type { WriterDispatchApi } from "../../writer/server/dispatch";
+import type { DispatchWriter } from "../../platform/server";
 
 import type { StabilityApi } from "../../stability/server/stability";
-import type { WorkflowEngineApi } from "./workflow";
+import type { WorkflowEngineApi } from "../../platform/server";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {
-  dispatchWriter: WriterDispatchApi["dispatchWriter"];
+  dispatchWriter: DispatchWriter;
+  taskUsage: TaskUsage;
   stability: StabilityApi;
   workflowEngine: WorkflowEngineApi["workflowEngine"];
 }
+
+type LpTaskRuntime = { attemptId: string };
+
+/** The dispatch pipeline's `lp-task` executor: the writer room provides it from the composition root, per engine; the merged
+ * executor reads it at run time, never at mount. */
+const lpTaskPipelines = new WeakMap<WorkflowEngine, NodeExecutor<LpTaskRuntime>>();
+export function provideLpTaskPipeline(engine: WorkflowEngine, executor: NodeExecutor<LpTaskRuntime>): void { lpTaskPipelines.set(engine, executor); }
 
 /**
  * The executors that run a chain on the host: the generic agent step, the owner's question, the code task of a chain, the actions
@@ -347,7 +357,7 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
     const rt = runtimeOf(c, c.runId);
     const judge = jev();
     if (!judge) return { output: { skills: [], picked: [], by: "off" } };
-    const { skillTreeCached, readSkillTreeText, pickSkillTree } = await import("../../writer/server");
+    
     const tree = await skillTreeCached(readSkillTreeText);
     if (!tree) return { output: { skills: [], picked: [], by: "off" } };
     const settings = rt?.projectId ? await ctx.effectiveProjectSettings(rt.projectId).then((r) => r.values as Record<string, unknown>).catch(() => ({})) : {};
@@ -493,7 +503,7 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
   } as NodeExecutor<ChainRuntime>);
 
   // ---------------------------------------------------------------- lp-task: one code task through the writer pipeline
-  const pipeline = lpTaskPipelineExecutor(engine, bb);
+  const pipeline = () => { const p = lpTaskPipelines.get(engine); if (!p) throw new Error("the lp-task pipeline executor is not registered"); return p; };
   const chainTask: NodeExecutor<ChainRuntime> = {
     reentrant: true,
     run: async (c) => {
@@ -531,7 +541,7 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
       const merge = state === "accepted" && rt ? await mergeFacts(rt, latest.id) : { commit: "", files: [] as string[] };
       // What the task spent: the turns of its attempts in their threads (a sticky writer's thread carries other tasks' turns too) and the helpers it
       // started inside, read once, when the task is over (attempt-usage.ts).
-      const spent = await taskUsage(bb, db, detail.runId, detail.taskId);
+      const spent = await services.taskUsage(bb, db, detail.runId, detail.taskId);
       const usage: HelperUsage | undefined = spent.usage;
       return { output: { state, attempts: listed.length, merge_commit: merge.commit, files: merge.files,
         verdict: { status: state === "accepted" ? "pass" : "rework", summary: reason, findings: [], evidence: reason || state } }, ...(usage ? { usage } : {}) };
@@ -569,13 +579,13 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
   }
 
   // One key serves the per-task pipeline (its runtime has an attempt) and the code tasks of a chain.
-  engine.register<ChainRuntime | DispatchRuntime>("lp-task", {
+  engine.register<ChainRuntime | LpTaskRuntime>("lp-task", {
     reentrant: true,
-    run: (c) => ((c.runtime as { attemptId?: string } | undefined)?.attemptId !== undefined ? pipeline.run(c as StepContext<DispatchRuntime>) : chainTask.run(c as StepContext<ChainRuntime>)),
+    run: (c) => ((c.runtime as { attemptId?: string } | undefined)?.attemptId !== undefined ? pipeline().run(c as StepContext<LpTaskRuntime>) : chainTask.run(c as StepContext<ChainRuntime>)),
     // A step of the per-task pipeline waits on an attempt it started itself (its detail names the attempt); a chain's code task waits on a dispatched task.
     poll: (step, extra) => (step.await.detail && "attemptId" in (step.await.detail as object)
-      ? pipeline.poll!(step, extra as { runtime: DispatchRuntime | undefined; node: GraphNode }) : chainTask.poll!(step, extra as { runtime: ChainRuntime | undefined; node: GraphNode })),
-  } as NodeExecutor<ChainRuntime | DispatchRuntime>);
+      ? pipeline().poll!(step, extra as { runtime: LpTaskRuntime | undefined; node: GraphNode }) : chainTask.poll!(step, extra as { runtime: ChainRuntime | undefined; node: GraphNode })),
+  } as NodeExecutor<ChainRuntime | LpTaskRuntime>);
 
   // ---------------------------------------------------------------- actions on the plugin's own state and the PM's checkout
   const action = (key: string, run: (c: StepContext<ChainRuntime>, rt: ChainRuntime) => Promise<Row>) =>

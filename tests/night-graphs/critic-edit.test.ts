@@ -1,7 +1,7 @@
 import { expect, it } from "vitest";
 import { criticEditGate, criticEditTrialOn, criticPromptProposal } from "../../src/rooms/critique";
 import { judgeSharedTrial, TRIAL_DEFAULTS } from "../../src/rooms/harness/server";
-import { builtinWorkflow } from "../../src/rooms/workflow";
+import {builtinWorkflow} from "../../src/rooms/workflow/builtin";
 
 const low = {
   stage: "code-critique",

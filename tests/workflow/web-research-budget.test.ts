@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { costUsd, resolveRoleModel } from "@lane-pilot/models";
-import { builtinWorkflow } from "../../src/rooms/workflow/builtin";
+import {builtinWorkflow} from "../../src/rooms/workflow/builtin";
 
 /**
  * `web-research` never finished live: all 3 runs stopped with budget_exceeded:cost after the frame step and three search children

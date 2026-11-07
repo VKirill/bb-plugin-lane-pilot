@@ -19,9 +19,9 @@ import { saveVerdict } from "../../bench";
 import { benchArmStatus, isLiveProject } from "../../bench/server";
 import { wallLogLines } from "../logs";
 import { revertMerge, type RevertHost } from "../revert";
-import { builtinWorkflow } from "../../workflow";
+
 import { collectAndAppend } from "../../policy";
-import type { ChainRuntime } from "../../workflow/server";
+import type { ChainRuntime } from "../../contracts/server";
 import { createPluginCheckers } from "../../checkers/server";
 import type { HuntOutcome } from "../pack";
 import { WALL_HUNT_WORKFLOW, createWall, type RepairView, type Scope, type ThreadRun, type WallApi, type WallPorts } from "../service";
@@ -124,7 +124,7 @@ export function createPluginWall(ctx: ServerCore, services: Services): WallApi {
   /** A run of `lp.wall-hunt` named by the night, the wall and what it does: asking again the same night finds the run and its result. */
   const runGraph = async (wallKey: string, kind: "hunt" | "analysis", inputs: Record<string, unknown>): Promise<Record<string, unknown>> => {
     const { cfg } = await environmentOf();
-    const workflow = builtinWorkflow(WALL_HUNT_WORKFLOW);
+    const workflow = services.workflowEngine.resolveWorkflow(WALL_HUNT_WORKFLOW);
     if (!workflow) throw new Error(`built-in workflow ${WALL_HUNT_WORKFLOW} is not loaded`);
     const night = new Date(ports.now()).toISOString().slice(0, 10);
     const started = services.workflowEngine.start({

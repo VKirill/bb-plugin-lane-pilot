@@ -1,7 +1,7 @@
 import type Database from "better-sqlite3";
 import { DEFAULT_RELEVANCE_FLOOR, memoryContext, memoryTokens, relevantRecords, searchMemoryRecords, type RelevanceFloor } from "@lane-pilot/memory-core";
 import { mixReviewerMemory, mixWriterMemory } from "../../memory/server";
-import { pathAnchors } from "../../writer";
+import { pathAnchors } from "../../memory/server";
 import type { CorpusNote } from "./corpus";
 import type { EvalQuestion } from "./questions";
 

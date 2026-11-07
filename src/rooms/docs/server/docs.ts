@@ -1,4 +1,5 @@
 import { taskV2Schema } from "../../contracts";
+import type { StageHelperSettings } from "../../platform/server";
 import { claimDocsSpawn, getRun, getTask, listStageReceipts } from "../../storage";
 import { bbServiceTier, listedServiceTier, writerExecutionSelection } from "@lane-pilot/models";
 import { sha256 } from "../../tasks";
@@ -7,7 +8,7 @@ import { docsInputHash, docsMaintenancePrompt, docsSelection, parseDocsSettings,
 import type { DocsPage } from "../docs";
 import { boundedAgentName } from "../../critique";
 import { DocsChildSnapshot, docsChildSnapshot, docsResultObject, resolveDocsSnapshotPageCap } from "../../runs/server";
-import { modelCatalogOf, resolveSpawnModel, spawnUsageOf, warmSpawnUsage, stageHelperSettings } from "../../platform/server";
+import { modelCatalogOf, resolveSpawnModel, spawnUsageOf, warmSpawnUsage } from "../../platform/server";
 import { configuredSetting } from "../../contracts/server";
 import { fullAccessSpawn, graphStepMetadata } from "../../platform/server";
 import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server";
@@ -21,6 +22,7 @@ import type { StageChildrenApi } from "../../qa/server/children";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {
+  stageHelperSettings: StageHelperSettings;
   docsVerdict: DocsNightlyApi["docsVerdict"];
   reconcileDocsChild: StageChildrenApi["reconcileDocsChild"];
 }
@@ -38,7 +40,7 @@ export function createDocsStage(ctx: ServerCore, services: Services) {
     const workspace=acceptedTaskWorkspace(args.runId,args.taskId,run.writer_workspace_path!,taskContract);
     const task=workspace.task;
     if (listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="acceptance-receipt")?.state !== "passed") throw new Error("docs maintenance requires an accepted writer receipt first");
-    const settings = await stageHelperSettings(bb,db,args.projectId,args.runId);
+    const settings = await services.stageHelperSettings(bb,db,args.projectId,args.runId);
     const docsAgent=boundedAgentName(settings["docs.agent"],"docs-maintainer");
     const spawnUsage=spawnUsageOf(ctx);
     await warmSpawnUsage(spawnUsage,config.hostId);

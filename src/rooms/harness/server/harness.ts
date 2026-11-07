@@ -33,9 +33,10 @@ import { getBenchProject, verdictForHarness } from "../../bench";
 import type { HostPort } from "../../bench/server";
 import { graphEditProblems } from "./graph-edit";
 import { formatProbeReplays, runHarnessProbe } from "./probe-run";
-import { builtinWorkflow } from "../../workflow";
+
 import type { StepContext } from "../../workflow";
-import type { ChainRuntime, GraphHelperRun } from "../../workflow/server";
+import type { ChainRuntime } from "../../contracts/server";
+import type { GraphHelperRun } from "../../workflow/server";
 import { checkBrief, renderBrief } from "../../brief";
 
 /** Every helper mission of the harness graphs renders through the shared brief (evidence lives on disk under context/, so the brief is instructions only). */
@@ -648,7 +649,7 @@ export function createHarness(ctx: ServerCore, services: Services) {
     const runKey = `harness-edit:${key}:${input.night ?? Date.now()}`;
     const prior = db.prepare("SELECT status FROM lane_pilot_wf_run WHERE idem_key=?").get(runKey) as { status: string } | undefined;
     if (prior && TERMINAL_RUN.includes(prior.status)) return { status: "skipped", detail: "the round of this night already ran", threadIds: [] };
-    const workflow = builtinWorkflow(HARNESS_EDIT_WORKFLOW);
+    const workflow = services.workflowEngine.resolveWorkflow(HARNESS_EDIT_WORKFLOW);
     if (!workflow) return { status: "failed", detail: `built-in workflow ${HARNESS_EDIT_WORKFLOW} is not loaded`, threadIds: [] };
     running.add(key);
     try {
@@ -759,7 +760,7 @@ export function createHarness(ctx: ServerCore, services: Services) {
   async function reflect(trialId: string): Promise<{ status: "done" | "skipped" | "failed"; detail: string }> {
     const trial = getHarness(db, trialId);
     if (!trial || !["adopted", "retired"].includes(trial.state)) return { status: "skipped", detail: "the trial has not decided" };
-    const workflow = builtinWorkflow(HARNESS_REFLECT_WORKFLOW);
+    const workflow = services.workflowEngine.resolveWorkflow(HARNESS_REFLECT_WORKFLOW);
     if (!workflow) return { status: "failed", detail: `built-in workflow ${HARNESS_REFLECT_WORKFLOW} is not loaded` };
     try {
       const started = services.workflowEngine.start({

@@ -1,6 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { filterSkillHub, firstSentence, formatSkillList, parseSkillHub, type SkillHub } from "../src/rooms/writer/server/skill-tree";
+import {filterSkillHub, firstSentence, formatSkillList, parseSkillHub, type SkillHub} from "../src/rooms/platform/server";
 import { pmSkillName, pmSkillUseCounts, recordPmSkillUse, runPmSkillsCli, runPmSkillUseCli } from "../src/rooms/native-agent/server/pm-skill-use";
 import { pmSkillUseOf } from "../src/rooms/session-hooks/logic";
 import { openDatabase } from "../src/rooms/plugin-db";
@@ -89,7 +89,7 @@ describe("pm skill use", () => {
   });
 });
 
-import { parseSkillTree } from "../src/rooms/writer/server/skill-tree";
+import {parseSkillTree} from "../src/rooms/platform/server";
 describe("parseSkillTree", () => {
   it("reads the core's { tree: { sections }, skills } and the old flat shape", () => {
     const skills = [{ name: "a" }];

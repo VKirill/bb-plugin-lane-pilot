@@ -22,7 +22,7 @@ it("blocks the task when a new plan critique blocks after the specialist review 
   recordStage(db, { runId:"r", taskId:"t1", stageId:"specialist-review", state:"running", input:"plan 1" });
   recordStage(db, { runId:"r", taskId:"t1", stageId:"specialist-review", state:"passed", input:"plan 1" });
   const executors = new Map<string, { run: (ctx: unknown) => Promise<{ output?: Record<string, unknown> }> }>();
-  registerDispatchExecutors({ register: (key: string, executor: never) => executors.set(key, executor) } as never, bb);
+  registerDispatchExecutors({ register: (key: string, executor: never) => executors.set(key, executor), hasExecutor: (key: string) => executors.has(key) } as never, bb);
   const runtime = { ctx:{ db, bb, refreshRun:() => undefined }, threadId:"pm", projectId:"P", runId:"r", taskId:"t1", attemptId:"a",
     config:{}, runConfig:{ hostId:"h" }, workspacePath:"/repo", task, plan:"plan 2", lintWarnings:[] };
   const out = (await executors.get("lp.block-plan-critique")!.run({ runtime, input:{ with:{ reason:"plan_critique_blocked" } }, runId:"wf", stepKey:"s", nodeId:"block-plan-critique" } as never)).output!;

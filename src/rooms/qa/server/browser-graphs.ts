@@ -3,13 +3,13 @@ import { getAttempt, getRunSettingsScopes, getTask, listAttemptsForTask, listSta
 import { taskV2Schema } from "../../contracts";
 import { taskQaPlan } from "../../critique";
 import { QA_HOST_KEY } from "../qa-host";
-import { builtinWorkflow } from "../../workflow";
+
 import { fenceOutside } from "../../platform/server";
 import { configuredSetting } from "../../contracts/server";
 
 import type { ServerCore } from "../../contracts/server";
 import { requireGreen } from "../../workflow/server";
-import type { ChainRuntime } from "../../workflow/server";
+import type { ChainRuntime } from "../../contracts/server";
 import { withUsage } from "../../usage/server";
 
 import type { QaStagesApi } from "./qa";
@@ -213,7 +213,7 @@ export async function runBrowserStep(ctx: ServerCore, input: { projectId: string
   const refused = refusal(input, browserHostId(ctx, input.projectId, input.runId));
   if (refused) return JSON.stringify({ status: "refused", reason: refused });
   const { engine, services } = binding(ctx);
-  const workflow = builtinWorkflow(BROWSER_STEP);
+  const workflow = engine.resolveWorkflow(BROWSER_STEP);
   if (!workflow) throw new Error(`built-in workflow ${BROWSER_STEP} is not loaded`);
   const started = engine.start({
     workflow, inputs: { url: input.url, goal: input.goal, changes: input.changes, authorized: input.authorized, timeout_sec: input.timeoutSec },
@@ -235,7 +235,7 @@ export async function runBrowserStep(ctx: ServerCore, input: { projectId: string
  */
 export async function runBrowserQaGraph(ctx: ServerCore, input: { pmThreadId: string; projectId: string; runId: string; taskId: string; url: string; cases: string[]; envClass: string; viewports: string; authorized: boolean; devServer?: string | undefined }): Promise<Row> {
   const { engine, services } = binding(ctx);
-  const workflow = builtinWorkflow(BROWSER_QA);
+  const workflow = engine.resolveWorkflow(BROWSER_QA);
   if (!workflow) throw new Error(`built-in workflow ${BROWSER_QA} is not loaded`);
   const started = engine.start({
     workflow,

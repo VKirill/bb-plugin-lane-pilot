@@ -2,12 +2,13 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { noOptionalPlugins } from "./optional-plugin-stubs";
 import type { PrototypeConfig, TaskV2 } from "../src/rooms/contracts";
-import { WRITER_FALLBACK_DEFAULTS, writerFallbackChain, writerFallbackSlots, writerFallbacks } from "../src/rooms/writer/writer-fallbacks";
+;
 import { createAttempt, createRun, createTask, getAttempt, latestTaskAttemptState, listStageReceipts, listUnreportedTaskOutcomes, openDatabase, saveProjectSetting, savePrototypeConfig, saveTaskPlan, setAttemptDirtBefore, setAttemptWorkspace, setRunThread, transitionAttempt } from "../src/rooms/plugin-db";
 import { createCore } from "../src/rooms/core/server/core";
 import type { Services } from "../server";
 import { recordStage } from "../src/rooms/runs/server/stage-records";
 import { createWriterStart } from "../src/rooms/writer/server/start";
+import {WRITER_FALLBACK_DEFAULTS, writerFallbackChain, writerFallbackSlots, writerFallbacks} from "@lane-pilot/models";
 
 describe("writer fallbacks", () => {
   it("defaults to GLM 5.3 Flash, then Gemini 3.8 high; an emptied slot is off", () => {

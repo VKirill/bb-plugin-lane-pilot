@@ -1,6 +1,7 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, describe, expect, it } from "vitest";
 import { runCodeCritique, runPlanCritique, runPmRead } from "../src/rooms/critique/server/critique-runs";
+import { stageHelperSettings } from "../src/rooms/settings/server/stage-settings";
 import { recordStage, resetHelperStages } from "../src/rooms/runs/server/stage-records";
 import { createJev, setJevForTests, type JevClient } from "@lane-pilot/jev";
 import { createAttempt, createRun, createTask, listStageReceipts, openDatabase, saveProjectSetting } from "../src/rooms/plugin-db";
@@ -34,7 +35,7 @@ function world() {
 describe("helper stages decide before they prepare, and reuse only a receipt of the same input", () => {
   it("quick skips the plan critique without asking the provider catalog or scanning coverage", async () => {
     const w = world();
-    const result = await runPlanCritique({ ...w, projectId:"P", runId:"r", taskId:"t1", config, task:{ ...(task as object), quality_mode:"quick" } as never, plan:"write note" });
+    const result = await runPlanCritique({ stageHelperSettings, ...w, projectId:"P", runId:"r", taskId:"t1", config, task:{ ...(task as object), quality_mode:"quick" } as never, plan:"write note" });
     expect(result.allowed).toBe(true);
     expect(w.calls).toEqual([]);
     expect(listStageReceipts(w.db, "r", "t1").find((row) => row.stageId === "plan-critique")?.reason).toBe("quality_mode_quick");
@@ -44,20 +45,20 @@ describe("helper stages decide before they prepare, and reuse only a receipt of 
     const w = world();
     saveProjectSetting(w.db, "P", "pm_read.enabled", true);
     for (const state of ["pending", "running", "passed"] as const) recordStage(w.db, { runId:"r", taskId:"t1", stageId:"pm-read", input:"old-input", state, ...(state === "passed" ? { result:{ summary:"OLD SUMMARY" } } : {}) });
-    const fresh = await runPmRead({ ...w, projectId:"P", runId:"r", taskId:"t1", pmThreadId:"pm", config, task });
+    const fresh = await runPmRead({ stageHelperSettings, ...w, projectId:"P", runId:"r", taskId:"t1", pmThreadId:"pm", config, task });
     expect(fresh.summary).not.toBe("OLD SUMMARY");
     expect(w.calls).toContain("files.read");
     w.calls.length = 0;
-    const again = await runPmRead({ ...w, projectId:"P", runId:"r", taskId:"t1", pmThreadId:"pm", config, task });
+    const again = await runPmRead({ stageHelperSettings, ...w, projectId:"P", runId:"r", taskId:"t1", pmThreadId:"pm", config, task });
     expect(again.state).toBe(fresh.state);
     expect(w.calls).toEqual([]);
   });
 
   it("a plan critique that passed on the same input is reused, not run again (before: illegal stage transition passed -> pending)", async () => {
     const w = world();
-    await runPlanCritique({ ...w, projectId:"P", runId:"r", taskId:"t1", config, task, plan:"write note" });
+    await runPlanCritique({ stageHelperSettings, ...w, projectId:"P", runId:"r", taskId:"t1", config, task, plan:"write note" });
     w.db.prepare("UPDATE lane_pilot_stage_receipt SET state='passed', result_json=? WHERE run_id='r' AND task_id='t1' AND stage_id='plan-critique'").run(JSON.stringify({ decision:"approve" }));
-    const again = await runPlanCritique({ ...w, projectId:"P", runId:"r", taskId:"t1", config, task, plan:"write note" });
+    const again = await runPlanCritique({ stageHelperSettings, ...w, projectId:"P", runId:"r", taskId:"t1", config, task, plan:"write note" });
     expect(again).toEqual({ allowed:true, critique:{ decision:"approve" } });
   });
 
@@ -65,10 +66,10 @@ describe("helper stages decide before they prepare, and reuse only a receipt of 
   it("a kept advisory «changes requested» blocks once the project gates", async () => {
     const w = world();
     saveProjectSetting(w.db, "P", "plan_critique.mode", "advisory");
-    await runPlanCritique({ ...w, projectId:"P", runId:"r", taskId:"t1", config, task, plan:"write note" });
+    await runPlanCritique({ stageHelperSettings, ...w, projectId:"P", runId:"r", taskId:"t1", config, task, plan:"write note" });
     w.db.prepare("UPDATE lane_pilot_stage_receipt SET state='passed', result_json=? WHERE run_id='r' AND task_id='t1' AND stage_id='plan-critique'").run(JSON.stringify({ decision:"changes_requested", mode:"advisory", summary:"fix the boundary" }));
     saveProjectSetting(w.db, "P", "plan_critique.mode", "gate");
-    const again = await runPlanCritique({ ...w, projectId:"P", runId:"r", taskId:"t1", config, task, plan:"write note" });
+    const again = await runPlanCritique({ stageHelperSettings, ...w, projectId:"P", runId:"r", taskId:"t1", config, task, plan:"write note" });
     expect(again.allowed).toBe(false);
     expect(again.reason).toBeTruthy();
   });
@@ -78,12 +79,12 @@ describe("helper stages decide before they prepare, and reuse only a receipt of 
     const w = world();
     const bad = { ...(task as Record<string, unknown>), expected_outputs:["src/outside.ts"] } as never;
     saveProjectSetting(w.db, "P", "plan_critique.mode", "advisory");
-    await runPlanCritique({ ...w, projectId:"P", runId:"r", taskId:"t1", config, task:bad, plan:"write note" });
+    await runPlanCritique({ stageHelperSettings, ...w, projectId:"P", runId:"r", taskId:"t1", config, task:bad, plan:"write note" });
     const receipt = listStageReceipts(w.db, "r", "t1").find((row) => row.stageId === "plan-critique")!;
     expect((receipt.result as { structuralFindings: Array<{ severity: string }> }).structuralFindings.some((row) => row.severity === "error")).toBe(true);
     w.db.prepare("UPDATE lane_pilot_stage_receipt SET state='passed', result_json=? WHERE run_id='r' AND task_id='t1' AND stage_id='plan-critique'").run(JSON.stringify({ ...(receipt.result as object), decision:"approve", mode:"advisory" }));
     saveProjectSetting(w.db, "P", "plan_critique.mode", "gate");
-    const cached = await runPlanCritique({ ...w, projectId:"P", runId:"r", taskId:"t1", config, task:bad, plan:"write note" });
+    const cached = await runPlanCritique({ stageHelperSettings, ...w, projectId:"P", runId:"r", taskId:"t1", config, task:bad, plan:"write note" });
     expect(cached).toMatchObject({ allowed:false, reason:"structural_plan_critique_blocked" });
   });
 
@@ -97,7 +98,7 @@ describe("helper stages decide before they prepare, and reuse only a receipt of 
       produced: ["note.txt"], hashes: {}, baselineHashes: {}, verification: [], files: [],
       packetSha256: hash, outputSha256: hash, ownsPaths: ["note.txt"], neverTouch: [],
     };
-    const result = await runCodeCritique({ ...w, projectId: "P", runId: "r", taskId: "t1", config, task, evidence });
+    const result = await runCodeCritique({ stageHelperSettings, ...w, projectId: "P", runId: "r", taskId: "t1", config, task, evidence });
     expect(result.allowed).toBe(true);
     expect(result.reason).toContain("code_critique_evidence_unknown:packet_truncated");
     expect(listStageReceipts(w.db, "r", "t1").find((row) => row.stageId === "code-critique")?.state).toBe("skipped");
@@ -121,7 +122,7 @@ describe("helper stages decide before they prepare, and reuse only a receipt of 
     } as unknown as JevClient;
     setJevForTests(createJev({ client, db: null }));
     try {
-      const result = await runCodeCritique({ ...w, projectId: "P", runId: "r", taskId: "t1", config, task, evidence } as never);
+      const result = await runCodeCritique({ stageHelperSettings, ...w, projectId: "P", runId: "r", taskId: "t1", config, task, evidence } as never);
       expect(result).toMatchObject({ allowed: true, review: "passed" });
       const receipt = listStageReceipts(w.db, "r", "t1").find((row) => row.stageId === "code-critique")!;
       expect(receipt).toMatchObject({ state: "passed" });

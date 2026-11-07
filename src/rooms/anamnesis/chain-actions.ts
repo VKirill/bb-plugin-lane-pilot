@@ -1,6 +1,6 @@
-import type { NodeExecutor, WorkflowEngine } from "../workflow";
+import type { NodeExecutor, WorkflowEngine } from "@lane-pilot/workflow-engine";
 import type { ServerCore } from "../contracts/server";
-import type { ChainRuntime } from "../workflow/server";
+import type { ChainRuntime } from "../contracts/server";
 import type { Hub } from "./hub";
 import type { Section } from "./whoami";
 

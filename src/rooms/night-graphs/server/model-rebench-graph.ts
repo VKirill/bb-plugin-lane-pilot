@@ -3,8 +3,8 @@ import type Database from "better-sqlite3";
 import type { NodeExecutor, StepContext } from "@lane-pilot/workflow-engine";
 import { scheduleIsolated } from "../../platform/server";
 import { type ServerCore } from "../../contracts/server";
-import { builtinWorkflow } from "../../workflow";
-import type { ChainRuntime } from "../../workflow/server";
+
+import type { ChainRuntime } from "../../contracts/server";
 
 import type { WorkflowEngineApi } from "../../workflow/server/workflow";
 
@@ -270,7 +270,7 @@ export function mountModelRebenchGraph(ctx: ServerCore, services: Services): voi
     if (ctx.isDisposed() || signal?.aborted) return;
     const settings = (await Promise.resolve().then(() => ctx.effectiveProjectSettings("*")).catch(() => null))?.values ?? {};
     if (String(settings["bench.model_rebench"] ?? "on") !== "on") return;
-    const workflow = builtinWorkflow(MODEL_REBENCH_WORKFLOW);
+    const workflow = services.workflowEngine.resolveWorkflow(MODEL_REBENCH_WORKFLOW);
     if (!workflow) return;
     const month = monthOf(Date.now());
     const key = `model-rebench:global:${month}`;

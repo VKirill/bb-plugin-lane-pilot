@@ -11,7 +11,6 @@ import type { ServerCore } from "../../contracts/server";
 import type { RepairDeps } from "./deps";
 import { waitThreadIdle } from "@lane-pilot/thread-observe";
 import { withUsage } from "../../usage/server";
-import { SELF_REPAIR, builtinWorkflow } from "../../workflow";
 import type { StepContext, WorkflowEngine } from "../../workflow";
 import { BREAKERS_KEY, DRILL_KEY, DRILL_SANDBOX_PROJECT_IDS, HOOK_TIMEOUTS_KEY, PARKED_KEY, type DrillOutcome, type HookTimeoutRecord, type ParkedTask } from "../../stability/server";
 import { tableRowAt, writerExecutionSelection } from "@lane-pilot/models";
@@ -31,6 +30,7 @@ import { readVerdict, type VerdictEnv } from "./verdict";
 import { MERGE_TRIES, createRepairWorktree, placeThread, releaseWorktree, settleWorktree, threadBusy, waitForSpawn } from "./spawn";
 import { readRepairRecord, selfRepairStatus, STATE_KEY } from "./report";
 import type { Incident, PmLastOwnerAt, RepairWorktree, SelfRepairConfig, SelfRepairState, SignatureRecord, Verdict } from "./types";
+import {SELF_REPAIR} from "../../contracts";
 
 /**
  * Self-repair: every 15 minutes Lane Pilot looks for failures that are its own fault (triage origin
@@ -631,7 +631,7 @@ export function createSelfRepair(ctx: ServerCore, deps: RepairDeps, engineOf?: (
         record.runTries = (record.runTries ?? 0) + 1;
         try {
           signal?.throwIfAborted();
-          const workflow = builtinWorkflow(SELF_REPAIR);
+          const workflow = graphEngine.resolveWorkflow(SELF_REPAIR);
           if (!workflow) throw new Error(`built-in workflow ${SELF_REPAIR} is not loaded`);
           // The steps read the kind's record from the stored state: it is written first.
           await writeState(current);

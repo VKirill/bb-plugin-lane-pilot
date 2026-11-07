@@ -4,7 +4,7 @@ import { cleanup, fireEvent, waitFor } from "@testing-library/react";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { setLocaleOverride } from "@lane-pilot/i18n";
 import { getPendingNativeAgent, setPendingNativeAgent } from "../src/rooms/native-agent/ui/pending-native-agent";
-import { requestArchitectLaunch, takeArchitectLaunch } from "../src/rooms/workflow/ui/architect-launch";
+import { requestArchitectLaunch, takeArchitectLaunch } from "../src/rooms/native-agent";
 
 const hiddenData = vi.hoisted(() => ({ value: null as null | { token: string } }));
 const installStarts = vi.hoisted(() => [] as string[]);

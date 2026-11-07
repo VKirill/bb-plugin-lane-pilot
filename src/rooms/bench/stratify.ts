@@ -1,6 +1,7 @@
 import { pathClassByRules } from "@lane-pilot/workflow-engine";
-import { ISSUE_QUICK_SHORT_PATH } from "../workflow";
+;
 import { sha256, type Candidate, type Risk } from "./types";
+import { ISSUE_QUICK_SHORT_PATH } from "../contracts";
 
 /** One slice of the set. `quota` is how many tasks the set takes from it; `minHardShare` of them must be «hard» (accepted after a retry). */
 export type Stratum = { key: string; quota: number; match: (candidate: Candidate) => boolean };

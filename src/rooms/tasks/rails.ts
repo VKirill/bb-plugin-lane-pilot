@@ -4,8 +4,8 @@
  */
 
 /** Where a task row was born (SMA: Five birth kinds of a row); recorded on the task, the board and the metrics read it. */
-export const BIRTH_KINDS = ["pm", "workflow", "backlog", "phase", "redo", "bench"] as const;
-export type BirthKind = (typeof BIRTH_KINDS)[number];
+export { BIRTH_KINDS } from "../contracts";
+export type { BirthKind } from "../contracts";
 
 /** Queue priority (SMA: Queue priority, Urgency into queue position): a higher one starts first when the run waits for a free writer. */
 export const PRIORITIES = ["low", "normal", "high", "urgent"] as const;

@@ -12,7 +12,8 @@ import type { StoredWorkflow, WorkflowStore } from "../../storage";
 import type { ServerCore } from "../../contracts/server";
 import { isPmChat } from "../../native-agent/server";
 
-import { SCHEDULE_RUN_KEY_PREFIX, type ChainRuntime } from "./workflow-runtime";
+import { SCHEDULE_RUN_KEY_PREFIX } from "./workflow-runtime";
+import type { ChainRuntime } from "../../contracts/server";
 
 import type { WorkflowEngineApi } from "./workflow";
 

@@ -4,7 +4,7 @@ import { noTermDeferralsOf } from "../../deferral/server";
 import { getRunGoal, goalVerdict } from "../../run-goal";
 import { getRun, getRunSettingsScopes, getRunWriterHost, getTask, listOpenAttempts, loadProjectSettings } from "../../storage";
 import { spendReserve } from "../../tasks";
-import { recheckPlanFact } from "../../writer/server";
+import type { RecheckPlanFact } from "../../platform/server";
 import { hostContract } from "../../contracts";
 import { runOnHost } from "@lane-pilot/host-calls";
 import { bookkeepingSetting } from "@lane-pilot/settings-catalog";
@@ -201,7 +201,7 @@ export function installSteps(tools: StepsTools) {
     if (!phase.runId || !hostId) return;
     for (const [pieceId, fact] of facts(phase)) {
       if (fact.state !== "accepted" || fact.planFact !== "failed" || !fact.taskId) continue;
-      const state = await recheckPlanFact(ctx, { projectId: phase.projectId, runId: phase.runId, taskId: fact.taskId, hostId })
+      const state = await services.recheckPlanFact({ projectId: phase.projectId, runId: phase.runId, taskId: fact.taskId, hostId })
         .catch((cause: unknown) => { ctx.log(`phase ${phase.id}: plan-fact of ${fact.taskId} not weighed again: ${cause instanceof Error ? cause.message : String(cause)}`); return null; });
       if (state) book(phase, "execution", "plan_fact_recheck", `${pieceId} (task ${fact.taskId}): plan-fact weighed again by the current rules of the check: ${state}`);
     }

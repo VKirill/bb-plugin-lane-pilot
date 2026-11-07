@@ -12,7 +12,7 @@ import { repairPrompt } from "../src/rooms/self-repair/server/self-repair";
 import { qaThreadPrompt } from "../src/rooms/qa/server/qa-thread";
 import { projectLifePrompt } from "../src/rooms/project-life/project-life";
 import { tickBrief } from "../src/rooms/lead/server/tick";
-import { WORKFLOW_ARCHITECT_SESSION } from "../src/rooms/workflow/workflow-architect";
+import { WORKFLOW_ARCHITECT_SESSION } from "../src/rooms/native-agent";
 import { missionPointer } from "../packages/harness-core/src/prompts";
 import { agendaBrief, chairBrief, seatBrief } from "../packages/council/src/prompts";
 import { memoryMaintenanceBrief } from "../packages/memory-core/src/context";

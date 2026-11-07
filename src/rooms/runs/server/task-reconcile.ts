@@ -4,8 +4,8 @@ import type { ServerCore } from "../../contracts/server";
 
 import type { ReconcileApi } from "../../stability/server/reconcile";
 import type { StabilityApi } from "../../stability/server/stability";
-import type { WorkflowEngineApi } from "../../workflow/server/workflow";
-import type { WriterStateApi } from "../../writer/server/state";
+import type { WorkflowEngineApi } from "../../platform/server";
+import type { WriterStateApi } from "../../platform/server";
 
 import type { DocsNightlyApi } from "../../docs/server/docs-nightly";
 

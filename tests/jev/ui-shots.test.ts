@@ -1,4 +1,5 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
+import { builtinWorkflow } from "../../src/rooms/workflow/builtin";
 import { describe, expect, it } from "vitest";
 import { openDatabase } from "../../src/rooms/plugin-db";
 import { createJev, type JevAnswer, type JevClient, type JevQuestion, type JevRequest } from "@lane-pilot/jev";
@@ -129,6 +130,7 @@ describe("pageReviewByAgent verdict parsing (real wiring)", () => {
     const { pageReviewByAgent } = await import("../../src/rooms/critique/server/specialist-graph");
     const ctx = { db: { prepare: () => ({ get: () => ({ project_id: "p1" }) }) }, log: () => {}, isDisposed: () => false } as never;
     const services = { workflowEngine: {
+      resolveWorkflow: (id: string) => builtinWorkflow(id),
       start: () => ({ runId: "r1", done: Promise.resolve() }),
       get: () => ({ status: "succeeded", output: { report: "VERDICT: rework\nISSUE h1.hero: heading hidden under the form\nISSUE img.logo: empty image" } }),
     } } as never;

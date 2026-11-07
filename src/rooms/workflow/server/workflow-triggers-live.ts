@@ -7,12 +7,12 @@ import { automationsOverRpc, createWorkflowTriggers } from "./workflow-triggers"
 
 
 import type { DocsNightlyApi } from "../../docs/server/docs-nightly";
-import type { WorkflowEngineApi } from "./workflow";
-import type { WriterDispatchApi } from "../../writer/server/dispatch";
+import type { WorkflowEngineApi } from "../../platform/server";
+import type { DispatchWriter } from "../../platform/server";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {
-  dispatchWriter: WriterDispatchApi["dispatchWriter"];
+  dispatchWriter: DispatchWriter;
   docsPlaces: DocsNightlyApi["docsPlaces"];
   workflowCatalog: WorkflowEngineApi["workflowCatalog"];
   workflowEngine: WorkflowEngineApi["workflowEngine"];

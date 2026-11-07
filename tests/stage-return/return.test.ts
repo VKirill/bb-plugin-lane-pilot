@@ -8,7 +8,8 @@ import { recordStage } from "../../src/rooms/runs/server/stage-records";
 import { renderReturnNotes } from "../../src/rooms/stage-return";
 import { createStageReturn } from "../../src/rooms/stage-return/server";
 import { runReturnCli } from "../../src/rooms/stage-return/server";
-import { takeReassignRequest } from "../../src/rooms/writer/server/reassign";
+import { createWriterReassign, takeReassignRequest } from "../../src/rooms/writer/server/reassign";
+import { createAttemptReopen } from "../../src/rooms/writer/server/reopen-attempt";
 
 // The stop is confirmed by asking the thread until it is idle (30 s at most); a test decides the answer.
 const stopAnswer = vi.hoisted(() => ({ stopped: true }));
@@ -47,7 +48,9 @@ function setup() {
   const enqueueResumedWriter = vi.fn(async () => true);
   const services = {
     activeWriterTasks: new Set<string>(), enqueueResumedWriter, rollback: { noteStopped: async () => undefined }, startWriterTask: vi.fn(),
+    writerReassign: createWriterReassign(ctx),
   } as unknown as Services;
+  Object.assign(services, { attemptReopen: createAttemptReopen(ctx, services) });
   const api = createStageReturn(ctx, services).stageReturn;
   return { bb, db, ctx, stops, sent, api, enqueueResumedWriter, services };
 }

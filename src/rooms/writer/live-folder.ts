@@ -14,7 +14,8 @@ export const LIVE_FOLDER_REASON = "live_folder";
 /** The receipt's `workspace` value of an accepted attempt in such a folder. */
 export const LIVE_FOLDER_RECEIPT = "live-folder";
 /** More files than this and the snapshot would be slower than the work: the owner puts the folder under git. */
-export const LIVE_FOLDER_FILE_CAP = 50_000;
+import { LIVE_FOLDER_FILE_CAP } from "../platform/server";
+export { LIVE_FOLDER_FILE_CAP };
 /** Files above this size are fingerprinted by size and mtime, not by content. */
 export const LIVE_FOLDER_BIG_BYTES = 20 * 1024 * 1024;
 export const LIVE_BACKUP_KEEP_DAYS = 7;

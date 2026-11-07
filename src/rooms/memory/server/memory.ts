@@ -1,4 +1,5 @@
 import { resolve } from "node:path";
+import type { StageHelperSettings } from "../../platform/server";
 import { embedQuery } from "./embeddings";
 import { taskV2Schema } from "../../contracts";
 import { jev } from "@lane-pilot/jev";
@@ -20,7 +21,7 @@ import { pmMemoryContext, pmShortlist, snapshotFileRead } from "./memory-mix";
 import { boundedAgentName } from "../../critique";
 import { MemoryChildSnapshot, childResultObject, memoryChildSnapshot, spawnRefused } from "../../runs/server";
 import { compactAcceptedResult } from "../../tasks/server";
-import { modelCatalogOf, resolveSpawnModel, spawnUsageOf, warmSpawnUsage, stageHelperSettings } from "../../platform/server";
+import { modelCatalogOf, resolveSpawnModel, spawnUsageOf, warmSpawnUsage } from "../../platform/server";
 import { configuredSetting } from "../../contracts/server";
 import { fullAccessSpawn, graphStepMetadata } from "../../platform/server";
 import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server";
@@ -35,6 +36,7 @@ import type { StageChildrenApi } from "../../qa/server/children";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {
+  stageHelperSettings: StageHelperSettings;
   memoryConflicts: MemoryConflictsApi;
   reconcileStageChild: StageChildrenApi["reconcileStageChild"];
 }
@@ -59,7 +61,7 @@ export function createMemoryStage(ctx: ServerCore, services: Services) {
     appendAcceptedFact(db,{projectId:args.projectId,runId:args.runId,taskId:args.taskId,
       fact:{taskId:args.taskId,title:task.title,objective:task.objective,acceptedResult:compactAcceptedResult(accepted.result)}});
     retireStaleCuratorClaims(db, args.projectId, (projectId, id) => dropMemoryIndexes(db, projectId, id));
-    const settings=await stageHelperSettings(bb,db,args.projectId,args.runId);
+    const settings=await services.stageHelperSettings(bb,db,args.projectId,args.runId);
     const memoryAgent=boundedAgentName(settings["memory.agent"],"memory-maintainer");
     const memorySettings=parseMemorySettings(Object.fromEntries([
       "memory.enabled","memory.maintain","memory.inject","memory.audience","memory.personal_bot","memory.search_engine",
@@ -312,7 +314,7 @@ export function createMemoryStage(ctx: ServerCore, services: Services) {
     if(valueAt(metadata,"role")!=="pm"||stringAt(metadata,"lanePilotRunId")!==args.runId) throw new Error("runId does not belong to this Lane Pilot PM thread");
     const run=getRun(db,args.runId);
     if(!run||run.project_id!==args.projectId||run.pm_thread_id!==args.threadId||run.closed_at) throw new Error("run does not belong to this active PM thread and project");
-    const settings=await stageHelperSettings(bb,db,args.projectId,args.runId);
+    const settings=await services.stageHelperSettings(bb,db,args.projectId,args.runId);
     const memorySettings=parseMemorySettings(Object.fromEntries([
       "memory.enabled","memory.maintain","memory.inject","memory.audience","memory.personal_bot","memory.search_engine",
       "memory.core_budget","memory.note_budget","memory.index_budget","memory.context_budget","memory.maintain_every",

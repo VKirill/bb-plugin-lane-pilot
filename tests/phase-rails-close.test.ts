@@ -6,6 +6,7 @@ import { createPhaseDriver } from "./phase-driver";
 import { phaseToolParams } from "../src/rooms/phase/server/tool";
 import { contextSignature, acceptanceLines, planSignature, type PlanItem } from "../src/rooms/phase/logic";
 import { recordStage } from "../src/rooms/runs/server";
+import { recheckPlanFact } from "../src/rooms/writer/server/plan-fact";
 import { listParts, savePhase } from "../src/rooms/phase/store";
 import { createAttempt, createRun, createTask, openDatabase } from "../src/rooms/plugin-db";
 
@@ -17,7 +18,8 @@ function driver(status = "idle") {
   harness.sdk.stub("threads.list", async () => []);
   const db = openDatabase(bb);
   createRun(db, "run1", "projA");
-  return Object.assign(createPhaseDriver(createCore(bb, db), { runBudgets: { get: () => undefined } } as unknown as Services).phases, { sent, db });
+  const ctx = createCore(bb, db);
+  return Object.assign(createPhaseDriver(ctx, { runBudgets: { get: () => undefined }, recheckPlanFact: (input: { projectId: string; runId: string; taskId: string; hostId: string }) => recheckPlanFact(ctx, input) } as unknown as Services).phases, { sent, db });
 }
 
 describe("a phase the rails opened", () => {

@@ -1,4 +1,4 @@
-import { ARCHITECT_LAUNCH } from "../workflow-architect";
+import { ARCHITECT_LAUNCH } from "./workflow-architect";
 
 /**
  * «Build with the architect»: the Workflows tab asks for the architect and sends the owner to the new-chat composer of
