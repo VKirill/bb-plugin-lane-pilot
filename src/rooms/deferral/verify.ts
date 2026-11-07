@@ -1,5 +1,6 @@
-import { createHash } from "node:crypto";
+
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
+import { sha256Hex } from "@lane-pilot/kit";
 import { TURN_REQUESTED, ownerMessagesOf } from "../anamnesis";
 import type { EventLike, ThreadLike } from "../anamnesis";
 
@@ -18,7 +19,7 @@ export type OwnerMessagePort = {
 
 export type VerifiedOwnerMessage = { threadId: string; seq: number; index: number; messageId: string; at: number; text: string; sha256: string };
 
-export const sha256Text = (text: string): string => createHash("sha256").update(text).digest("hex");
+
 
 /** `thr_x#12`, `thr_x#12:1` (the second input group of that event) or the id the owner-message collector gives, `thr_x:12:1`. */
 export function parseOwnerRef(ref: string): { threadId: string; seq: number; index: number } | null {
@@ -51,7 +52,7 @@ export async function verifyOwnerMessage(port: OwnerMessagePort, ref: string): P
       : found.length ? `the event has only ${found.length} text input(s)` : "it holds no text from the user";
     return { ok: false, error: `${parsed.threadId}#${parsed.seq} is not a message the owner wrote: ${why}` };
   }
-  return { ok: true, message: { threadId: message.threadId, seq: parsed.seq, index: parsed.index, messageId: message.id, at: message.at, text: message.text, sha256: sha256Text(message.text) } };
+  return { ok: true, message: { threadId: message.threadId, seq: parsed.seq, index: parsed.index, messageId: message.id, at: message.at, text: message.text, sha256: sha256Hex(message.text) } };
 }
 
 /** The SDK of a plugin as the port. */

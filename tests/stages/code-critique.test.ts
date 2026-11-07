@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { sha256Hex } from "@lane-pilot/kit";
 import {
   buildCandidateEvidence,
   codeCritiqueSource,
@@ -14,7 +15,6 @@ import {
   sameUnresolvedFindings,
   sameWriterIdentity,
   settingsFromFrozenPolicy,
-  sha256Text,
   shouldRequestRepair,
 } from "../../src/rooms/critique/code-critique";
 
@@ -81,7 +81,7 @@ describe("code critique policy", () => {
   });
 
   it("requires host-read file bytes and verification io, not only hashes and exit codes", () => {
-    const hashes = { "note.txt": sha256Text("FORBIDDEN_TOKEN=real-bytes\n") };
+    const hashes = { "note.txt": sha256Hex("FORBIDDEN_TOKEN=real-bytes\n") };
     const truncated = buildCandidateEvidence({
       produced:["note.txt"], hashes, verification:[{ command:"test -f note.txt", exitCode:0 }],
       output:"ok", ownsPaths:["note.txt"], neverTouch:[".git/**"], dirtOk:true,
@@ -101,7 +101,7 @@ describe("code critique policy", () => {
 
   it("keeps artifact revision when writer reply or stdout change, and splits evidence identity", () => {
     const shared = {
-      produced:["note.txt"], hashes:{ "note.txt": sha256Text("same file\n") }, files:[{ path:"note.txt", content:"same file\n" }],
+      produced:["note.txt"], hashes:{ "note.txt": sha256Hex("same file\n") }, files:[{ path:"note.txt", content:"same file\n" }],
       ownsPaths:["note.txt"], neverTouch:[".git/**"] as string[], dirtOk:true,
     };
     const first = buildCandidateEvidence({
@@ -148,7 +148,7 @@ describe("code critique policy", () => {
 
   it("keeps output up to the limit whole and cuts a longer one to its head and tail without blocking", () => {
     const content = "ok\n";
-    const hashes = { "note.txt": sha256Text(content) };
+    const hashes = { "note.txt": sha256Hex(content) };
     const atLimit = "x".repeat(MAX_VERIFICATION_IO_BYTES);
     const complete = buildCandidateEvidence({
       produced:["note.txt"], hashes, files:[{ path:"note.txt", content }],
@@ -173,7 +173,7 @@ describe("code critique policy", () => {
   it("marks unknown when host-read bytes do not match the captured path hash", () => {
     const content = "host-read bytes\n";
     const mismatch = buildCandidateEvidence({
-      produced:["note.txt"], hashes:{ "note.txt": sha256Text("dirt hash only\n") },
+      produced:["note.txt"], hashes:{ "note.txt": sha256Hex("dirt hash only\n") },
       files:[{ path:"note.txt", content }],
       verification:[{ command:"test -f note.txt", exitCode:0, stdout:"", stderr:"" }],
       output:"ok", ownsPaths:["note.txt"], neverTouch:[".git/**"], dirtOk:true,
@@ -181,7 +181,7 @@ describe("code critique policy", () => {
     expect(mismatch.truncated).toBe(true);
     expect(mismatch.truncateReason).toContain("content_hash_mismatch:note.txt");
     const matched = buildCandidateEvidence({
-      produced:["note.txt"], hashes:{ "note.txt": sha256Text(content) },
+      produced:["note.txt"], hashes:{ "note.txt": sha256Hex(content) },
       files:[{ path:"note.txt", content }],
       verification:[{ command:"test -f note.txt", exitCode:0, stdout:"", stderr:"" }],
       output:"ok", ownsPaths:["note.txt"], neverTouch:[".git/**"], dirtOk:true,

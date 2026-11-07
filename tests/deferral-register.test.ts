@@ -4,7 +4,8 @@ import plugin from "../server";
 import type { EventLike, ThreadLike } from "../src/rooms/anamnesis";
 import { SEED_ENTRIES } from "../src/rooms/deferral/seed";
 import { createDeferrals, noTermDeferralsOf, runDeferralCli } from "../src/rooms/deferral/server";
-import { parseOwnerRef, sha256Text, verifyOwnerMessage, type OwnerMessagePort } from "../src/rooms/deferral/verify";
+import { sha256Hex } from "@lane-pilot/kit";
+import { parseOwnerRef, verifyOwnerMessage, type OwnerMessagePort } from "../src/rooms/deferral/verify";
 import { migrations, openDatabase } from "../src/rooms/plugin-db";
 
 // SMA rule 5: a deferral's term is the owner's date, read from a real message of the owner; an agent cannot make one up or move one.
@@ -68,7 +69,7 @@ describe("the owner's message that gives a term", () => {
   it("accepts a request the user made in his own thread and keeps the text's hash", async () => {
     const checked = await verifyOwnerMessage(fakePort(), "thr_owner#3");
     expect(checked).toMatchObject({ ok: true, message: { threadId: "thr_owner", seq: 3, messageId: "thr_owner:3:0", at: T0, text: "отложим до 5 ноября, это не горит" } });
-    expect(checked.ok && checked.message.sha256).toBe(sha256Text("отложим до 5 ноября, это не горит"));
+    expect(checked.ok && checked.message.sha256).toBe(sha256Hex("отложим до 5 ноября, это не горит"));
   });
 
   it.each([
@@ -99,7 +100,7 @@ describe("writing a term", () => {
     expect(entry).toMatchObject({ state: "open", kind: "drill_scenario", due: "2026-11-05", dueSource: "explicit", ownerMsg: "thr_owner#3", projectId: null });
     expect(entry.ownerQuote).toContain("до 5 ноября");
     const row = db.prepare("SELECT * FROM lane_pilot_deferral WHERE id=?").get(entry.id) as { owner_ref: string; due_at: number; closed_by: string | null };
-    expect(JSON.parse(row.owner_ref)).toMatchObject({ threadId: "thr_owner", seq: 3, index: 0, sha256: sha256Text("отложим до 5 ноября, это не горит"), at: T0 });
+    expect(JSON.parse(row.owner_ref)).toMatchObject({ threadId: "thr_owner", seq: 3, index: 0, sha256: sha256Hex("отложим до 5 ноября, это не горит"), at: T0 });
     expect(row.due_at).toBe(Date.parse("2026-11-05T23:59:59.999Z"));
   });
 

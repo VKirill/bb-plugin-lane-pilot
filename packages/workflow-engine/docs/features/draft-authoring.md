@@ -61,7 +61,7 @@ The authoring API stores editable definitions and version history, applies struc
 | `DraftTestCase`, `DraftTestResult` | Authored test case definitions and results (`packages/workflow-engine/src/draft-test.ts:17-44`). |
 | `runDraftTest`, `testCasesOf` | Execute authored test cases in the draft harness (`packages/workflow-engine/src/draft-test.ts:72-180`). |
 | `draftView`, `draftChanges` | Create editor-facing definition and change views (`packages/workflow-engine/src/draft-view.ts:63-102`). |
-| `casWriteWorkflowFile`, `sha256Text`, `WORKFLOW_FILE_ID` | Publish a definition with content-hash conflict detection (`packages/workflow-engine/src/files.ts:6-39`). |
+| `casWriteWorkflowFile`, `WORKFLOW_FILE_ID` | Publish a definition with content-hash conflict detection (`packages/workflow-engine/src/files.ts:6-39`). |
 
 ## Package shape
 

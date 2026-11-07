@@ -3,7 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { writeWorkflowFile } from "../../src/rooms/host-worker/host-handlers";
-import { casWriteWorkflowFile, sha256Text } from "@lane-pilot/workflow-engine";
+import { sha256Hex } from "@lane-pilot/kit";
+import { casWriteWorkflowFile } from "@lane-pilot/workflow-engine";
 
 const dirs: string[] = [];
 const temp = () => { const dir = mkdtempSync(join(tmpdir(), "lp-wff-")); dirs.push(dir); return dir; };
@@ -13,9 +14,9 @@ describe("writing a chain file", () => {
   it("creates it whole, replaces only the version it last saw, and leaves no temp file", async () => {
     const dir = join(temp(), "workflows");
     const first = await casWriteWorkflowFile(dir, "demo", "{\"v\":1}\n", null);
-    expect(first).toMatchObject({ status: "applied", beforeSha256: null, afterSha256: sha256Text("{\"v\":1}\n") });
+    expect(first).toMatchObject({ status: "applied", beforeSha256: null, afterSha256: sha256Hex("{\"v\":1}\n") });
     expect(await casWriteWorkflowFile(dir, "demo", "{\"v\":2}\n", null)).toMatchObject({ status: "conflict" });
-    expect(await casWriteWorkflowFile(dir, "demo", "{\"v\":2}\n", sha256Text("{\"v\":0}\n"))).toMatchObject({ status: "conflict" });
+    expect(await casWriteWorkflowFile(dir, "demo", "{\"v\":2}\n", sha256Hex("{\"v\":0}\n"))).toMatchObject({ status: "conflict" });
     expect(await casWriteWorkflowFile(dir, "demo", "{\"v\":2}\n", first.afterSha256)).toMatchObject({ status: "applied" });
     expect(readFileSync(join(dir, "demo.json"), "utf8")).toBe("{\"v\":2}\n");
     expect(readdirSync(dir)).toEqual(["demo.json"]);
