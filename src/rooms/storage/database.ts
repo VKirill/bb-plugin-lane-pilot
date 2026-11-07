@@ -3,7 +3,7 @@ import { isAbsolute, relative, resolve } from "node:path";
 import type Database from "better-sqlite3";
 import type { PrototypeConfig, StageId, StageState } from "@lane-pilot/contracts";
 import { parseDirtSnapshots, type DirtSnapshot } from "../dirt-snapshot";
-import { FREE_CLASSES, failureClass, isOwnerDecision, isPreStartStop, isWaitingSecret, isWriterSilent, taskFamily } from "../platform";
+import { FREE_CLASSES, failureClass, isOwnerDecision, isPreStartStop, isWaitingSecret, isWriterSilent, taskFamily, type FailureCode } from "../platform";
 import { IllegalTransitionError, isLegalMove } from "../state-machine";
 import type { SettingValidationError, SettingsValidator } from "../setting-validation";
 import { sha256Buffer } from "@lane-pilot/kit";
@@ -609,7 +609,7 @@ export function latestTaskAttempt(db: LanePilotDatabase, projectId: string, task
 }
 
 /** A task result the PM has not been told: the latest attempt of a task of a PM's run ended accepted, blocked or canceled. A closed run tells no one: its PM chat has handed the lead back or the run is over. */
-export type TaskOutcome = { transitionId:number; attemptId:string; projectId:string; pmThreadId:string; taskId:string; state:string; reason:string|null; at:number };
+export type TaskOutcome = { transitionId:number; attemptId:string; projectId:string; pmThreadId:string; taskId:string; state:string; reason:string|null; failureCode?:string|null; at:number };
 
 /**
  * Task results not yet told to their PM, ended at `since` or later. Only the latest attempt of a task counts (an attempt
@@ -618,7 +618,7 @@ export type TaskOutcome = { transitionId:number; attemptId:string; projectId:str
  */
 export function listUnreportedTaskOutcomes(db: LanePilotDatabase, since: number): TaskOutcome[] {
   const rows = db.prepare(`SELECT t.rowid AS transitionId, a.id AS attemptId, r.project_id AS projectId, r.pm_thread_id AS pmThreadId,
-      a.task_id AS taskId, a.state, a.reason, t.at, a.created_at AS createdAt
+      a.task_id AS taskId, a.state, a.reason, a.failure_code AS failureCode, t.at, a.created_at AS createdAt
     FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
     JOIN lane_pilot_attempt_transition t ON t.rowid=(SELECT t2.rowid FROM lane_pilot_attempt_transition t2
       WHERE t2.attempt_id=a.id AND t2.refused=0 AND t2.to_state=a.state ORDER BY t2.at DESC, t2.rowid DESC LIMIT 1)
@@ -828,18 +828,18 @@ function attemptChanged(attemptId:string):void {
 }
 
 /** The structured facts of a verification failure; the human reason text keeps its wording. */
-export type AttemptFailureFields = { failureCode?: string; checkName?: string; timeoutSec?: number };
+export type AttemptFailureFields = { failureCode?: FailureCode; checkName?: string; timeoutSec?: number };
 
-/**
- * The failure a reason text names, for the columns readers use instead of parsing it. The writer of an attempt row is this
- * one function, so the text is read once here; `listCheckTimeouts` and the other readers get the fields.
- */
-function failureFieldsFromReason(reason: string | null | undefined): AttemptFailureFields {
-  if (!reason) return {};
-  const timedOut = /verification failed \((.+?)\): verification timed out after (\d+)s/.exec(reason);
-  if (timedOut) return { failureCode: "verification_timeout", checkName: timedOut[1]!, timeoutSec: Number(timedOut[2]) };
-  const failed = /verification failed \((.+?)\):/.exec(reason);
-  return failed ? { failureCode: "verification_failed", checkName: failed[1]! } : {};
+/** The structured failure facts of a validateWriterResult-like record, for a caller that passes them to `transitionAttempt`. */
+export function failureFieldsOf(row: { failureCode?: unknown; checkName?: unknown; timeoutSec?: unknown }): AttemptFailureFields {
+  const failureCode = typeof row.failureCode === "string" ? row.failureCode as FailureCode : undefined;
+  const checkName = typeof row.checkName === "string" ? row.checkName : undefined;
+  const timeoutSec = typeof row.timeoutSec === "number" ? row.timeoutSec : undefined;
+  return {
+    ...(failureCode ? { failureCode } : {}),
+    ...(checkName ? { checkName } : {}),
+    ...(timeoutSec !== undefined ? { timeoutSec } : {}),
+  };
 }
 
 /**
@@ -850,6 +850,9 @@ function failureFieldsFromReason(reason: string | null | undefined): AttemptFail
  * Every other move must be a row of the state machine's table (src/state-machine.ts) or one of its documented operational
  * moves. An illegal one is logged, journaled as refused and thrown as `IllegalTransitionError`: a caller that did it is
  * wrong, and the writer loop's catch ends the attempt as `internal_error` (a Lane Pilot fault, parked and restarted).
+ *
+ * The structured failure facts come from the caller (the producer that knows them); the migration backfilled the rows
+ * written before the fields existed. A caller that does not pass them writes NULL.
  */
 export function transitionAttempt(
   db: LanePilotDatabase,
@@ -868,12 +871,11 @@ export function transitionAttempt(
     illegalTransitionLog(`Lane Pilot refused ${error.message}${fields.reason ? `: ${fields.reason.slice(0, 200)}` : ""}`);
     throw error;
   }
-  const derived = failureFieldsFromReason(fields.reason);
   const changed = db.prepare(`UPDATE lane_pilot_attempt SET state=?, thread_id=COALESCE(?,thread_id), reason=?, failure_code=?, check_name=?, timeout_sec=?, updated_at=?,
     wake_at=CASE WHEN ?<>'queued' THEN NULL ELSE wake_at END
     WHERE id=? AND (state NOT IN (${FINAL_ATTEMPT_STATES.map(() => "?").join(",")}) OR state=?)`)
-    .run(state, fields.threadId ?? null, fields.reason ?? null, fields.failureCode ?? derived.failureCode ?? null,
-      fields.checkName ?? derived.checkName ?? null, fields.timeoutSec ?? derived.timeoutSec ?? null,
+    .run(state, fields.threadId ?? null, fields.reason ?? null, fields.failureCode ?? null,
+      fields.checkName ?? null, fields.timeoutSec ?? null,
       now, state, attemptId, ...FINAL_ATTEMPT_STATES, state).changes === 1;
   db.prepare(`INSERT INTO lane_pilot_attempt_transition(attempt_id,from_state,to_state,reason,refused,at) VALUES(?,?,?,?,?,?)`)
     .run(attemptId, before.state, state, fields.reason ?? null, changed ? 0 : 1, now);
@@ -977,16 +979,18 @@ export function inspectAttempt(db: LanePilotDatabase, projectId: string, attempt
 }
 
 export function getAttempt(db: LanePilotDatabase, attemptId: string): {
-  id:string; run_id:string; task_id:string; thread_id:string|null; holder_thread_id:string|null; state:string; reason:string|null; attempt_no:number; dirt_before:DirtSnapshot[];
+  id:string; run_id:string; task_id:string; thread_id:string|null; holder_thread_id:string|null; state:string; reason:string|null;
+  failure_code:string|null; check_name:string|null; timeout_sec:number|null; attempt_no:number; dirt_before:DirtSnapshot[];
   workspace_path:string|null;environment_id:string|null;workspace_decision:unknown|null;harness_version:string|null;
 }|undefined {
-  const row = db.prepare("SELECT id,run_id,task_id,thread_id,holder_thread_id,state,reason,attempt_no,dirt_before_json,workspace_path,environment_id,workspace_decision_json,harness_version FROM lane_pilot_attempt WHERE id=?").get(attemptId) as
-    {id:string; run_id:string; task_id:string; thread_id:string|null; holder_thread_id:string|null; state:string; reason:string|null; attempt_no:number; dirt_before_json?:string;workspace_path:string|null;environment_id:string|null;workspace_decision_json:string|null;harness_version:string|null}|undefined;
+  const row = db.prepare("SELECT id,run_id,task_id,thread_id,holder_thread_id,state,reason,failure_code,check_name,timeout_sec,attempt_no,dirt_before_json,workspace_path,environment_id,workspace_decision_json,harness_version FROM lane_pilot_attempt WHERE id=?").get(attemptId) as
+    {id:string; run_id:string; task_id:string; thread_id:string|null; holder_thread_id:string|null; state:string; reason:string|null; failure_code:string|null; check_name:string|null; timeout_sec:number|null; attempt_no:number; dirt_before_json?:string;workspace_path:string|null;environment_id:string|null;workspace_decision_json:string|null;harness_version:string|null}|undefined;
   if (!row) return undefined;
   const dirt_before = parseDirtSnapshots(row.dirt_before_json ?? "[]");
   let workspace_decision:unknown|null=null;
   if(row.workspace_decision_json){try{workspace_decision=JSON.parse(row.workspace_decision_json);}catch{workspace_decision={invalidStoredDecision:true};}}
-  return { id:row.id, run_id:row.run_id, task_id:row.task_id, thread_id:row.thread_id, holder_thread_id:row.holder_thread_id, state:row.state, reason:row.reason ?? null, attempt_no:row.attempt_no, dirt_before,
+  return { id:row.id, run_id:row.run_id, task_id:row.task_id, thread_id:row.thread_id, holder_thread_id:row.holder_thread_id, state:row.state, reason:row.reason ?? null,
+    failure_code:row.failure_code ?? null, check_name:row.check_name ?? null, timeout_sec:row.timeout_sec ?? null, attempt_no:row.attempt_no, dirt_before,
     workspace_path:row.workspace_path,environment_id:row.environment_id,workspace_decision,harness_version:row.harness_version ?? null };
 }
 
@@ -1449,8 +1453,8 @@ export function listCheckTimeouts(db: LanePilotDatabase, projectId: string, chec
   const want = checkHistoryKey(check);
   const rows = db.prepare(`SELECT a.check_name AS checkName, a.timeout_sec AS timeoutSec, t.contract_json AS contract FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
       LEFT JOIN lane_pilot_task t ON t.id=a.task_id AND t.run_id=a.run_id
-      WHERE r.project_id=? AND a.failure_code='verification_timeout' ORDER BY a.created_at DESC, a.attempt_no DESC LIMIT ?`)
-    .all(projectId, limit * 10) as Array<{ checkName: string | null; timeoutSec: number | null; contract: string | null }>;
+      WHERE r.project_id=? AND a.failure_code=? ORDER BY a.created_at DESC, a.attempt_no DESC LIMIT ?`)
+    .all(projectId, "verification_timeout", limit * 10) as Array<{ checkName: string | null; timeoutSec: number | null; contract: string | null }>;
   return rows.flatMap((row) => {
     const checkName = row.checkName;
     const timeoutSec = row.timeoutSec;

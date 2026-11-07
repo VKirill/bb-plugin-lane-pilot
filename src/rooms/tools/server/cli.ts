@@ -1,5 +1,5 @@
 import { prototypeConfigSchema, taskV2Schema } from "../../contracts";
-import { getActivation, getAttempt, getRun, getTask, importSettingsOnce, inspectAttempt, inspectState, listRunsWithAttempts, loadProjectSettings, loadPrototypeConfig, savePrototypeConfig, saveProjectSetting, transitionAttempt } from "../../storage";
+import { getActivation, getAttempt, getRun, getTask, importSettingsOnce, inspectAttempt, inspectState, listRunsWithAttempts, loadProjectSettings, loadPrototypeConfig, savePrototypeConfig, saveProjectSetting, transitionAttempt, failureFieldsOf } from "../../storage";
 import { cancelRejection, confirmWriterStopped, finishRunSafely, pauseRun } from "../../runs/server";
 import { markCancelCode } from "../../storage";
 import { renderTimeline, taskTimeline } from "../../runs";
@@ -699,7 +699,7 @@ ${ERRANDS_USAGE}` },
             dirtBefore:attempt.dirt_before,
           });
           if (checked.status !== "accepted") {
-            transitionAttempt(db, attempt.id, checked.status, { threadId:writerThreadId, reason:checked.reason ?? checked.status });
+            transitionAttempt(db, attempt.id, checked.status, { threadId:writerThreadId, reason:checked.reason ?? checked.status, ...failureFieldsOf(checked) });
             throw new Error(`reconciled writer validation failed: ${checked.reason ?? checked.status}`);
           }
           const receipt = await services.persistWriterAcceptance({

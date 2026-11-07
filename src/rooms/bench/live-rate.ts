@@ -13,6 +13,8 @@ export type LiveAttempt = {
   projectName: string | null;
   state: string;
   reason: string | null;
+  /** The attempt's structured failure code (its own red check), when it has one. */
+  failureCode?: string | null;
   harnessVersion: string | null;
   updatedAt: number;
 };
@@ -55,9 +57,9 @@ function bare(reason: string | null): string {
 }
 
 /** A red check, a path outside the task, or a check that does not test the task. An LP fault that only appears inside a verification line stays a task failure. */
-function bucket(reason: string | null): "task" | "lp" | "other" {
+function bucket(reason: string | null, failureCode?: string | null): "task" | "lp" | "other" {
   const text = bare(reason);
-  if (/owns_paths|outside_scope|verification failed|verification timed out|empty_check/.test(text)) return "task";
+  if (failureCode === "verification_failed" || failureCode === "verification_timeout" || /owns_paths|outside_scope|empty_check/.test(text)) return "task";
   if (/owner_present|internal_error|reconcile|plugin reload|page_cap|attempt_worktree_|attempt_workspace_|critic broken/.test(text)) return "lp";
   return "other";
 }
@@ -82,7 +84,7 @@ export function liveStability(rows: readonly LiveAttempt[], input: { floorVersio
     report.tasks++;
     if (judged.some((row) => row.state === "accepted")) { report.accepted++; continue; }
     const latest = judged.reduce((best, row) => row.updatedAt >= best.updatedAt ? row : best);
-    const kind = bucket(latest.reason);
+    const kind = bucket(latest.reason, latest.failureCode);
     if (kind === "lp") report.lpErrors++;
     else if (kind === "task") report.taskFailures++;
     else report.other++;

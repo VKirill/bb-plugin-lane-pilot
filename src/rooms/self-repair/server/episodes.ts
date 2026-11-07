@@ -48,10 +48,12 @@ export function writerStrayFiles(reason: string, contractJson: string | null | u
  * in four tasks, each triaged writer, opened a repair. The night wall skips these too (wall/select.ts). A red check triaged to Lane
  * Pilot's side (orchestrator, environment) or marked environment by the check gate keeps counting; no triage yet reads as the writer's.
  */
-const RED_CHECK = /^verification failed \(/;
-export function writerRedCheck(reason: string, triageOrigin: string | null | undefined): boolean {
+export function writerRedCheck(reason: string, triageOrigin: string | null | undefined, failureCode?: string | null): boolean {
   const text = reason.replace(/^retry limit \d+ exhausted:\s*/i, "").trim();
-  return RED_CHECK.test(text) && failureClass("validation_failed", text) === "task" && triageOrigin !== "orchestrator" && triageOrigin !== "environment";
+  // A merge-conflict replay also names a failed check, and the failureClass rule below keeps it out (it is a free redo,
+  // not the writer's own red check).
+  return (failureCode === "verification_failed" || failureCode === "verification_timeout")
+    && failureClass("validation_failed", text) === "task" && triageOrigin !== "orchestrator" && triageOrigin !== "environment";
 }
 
 /**

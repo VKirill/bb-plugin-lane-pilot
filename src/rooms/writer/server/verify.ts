@@ -26,6 +26,7 @@ import { listThreadEventsRaw } from "@lane-pilot/thread-observe";
 import { stringAt } from "@lane-pilot/kit";
 import { outputText, writerPatchFromOutput } from "./writer-task";
 import type { ServerCore } from "../../contracts/server";
+import type { FailureCode } from "../../platform/server";
 
 import type { HarnessApi } from "../../harness/server/harness";
 import type { PromotionServiceApi } from "../../rule-forms/promotion-service";
@@ -39,7 +40,6 @@ interface Services {
   runWriterPool: WriterStateApi["runWriterPool"];
   workspaceDirt: WriterSpawnApi["workspaceDirt"];
 }
-
 
 /** A sandbox that refused the runner its own files: macOS python3 shim «couldn't create cache file … Operation not permitted». */
 
@@ -228,7 +228,7 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
           return null;
         }) : null;
       if (inTerminal) return recorded({command:command.command,exitCode:inTerminal.exitCode,stdout:redactKnown(inTerminal.stdout),stderr:redactKnown(inTerminal.stderr),
-        sandboxBackend:inTerminal.backend,policySha256:inTerminal.policySha256,workspacePath:inTerminal.workspacePath});
+        sandboxBackend:inTerminal.backend,policySha256:inTerminal.policySha256,workspacePath:inTerminal.workspacePath,timeoutSec});
       const ran = await host.call("runSandboxedCommand", {
         requestedHostId: config.hostId,
         workspacePath:task.project_cwd,
@@ -257,7 +257,7 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
       // Any check also loses the values this process handed to another run (redactKnown).
       const mask=(text:string)=>redactKnown(hasSecrets?redactSecrets(text,Object.values(env)):text);
       return recorded({command:command.command,exitCode:ran.exitCode,stdout:typeof ran.stdout==="string"?mask(ran.stdout):"",stderr:typeof ran.stderr==="string"?mask(ran.stderr):"",
-        sandboxBackend:ran.backend,policySha256:ran.policySha256,workspacePath:ran.workspacePath,...("hostError" in ran?{hostError:true as const}:{})});
+        sandboxBackend:ran.backend,policySha256:ran.policySha256,workspacePath:ran.workspacePath,timeoutSec,...("hostError" in ran?{hostError:true as const}:{})});
       },(line)=>bb.log.info(line),sampleMachine));
       if(failFast&&outcome.exitCode!==0)halt=true;
       return outcome;
@@ -350,7 +350,9 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
     /** Receipt warnings of an accepted result (a shape-only gate that did not reject). */
     warnings?:string[];
     /** Hash of the content of the files the attempt changed: two turns with the same one left the diff as it was. */
-    diffKey?:string }> {
+    diffKey?:string;
+    /** The structured facts of a red check, when the failure is one (classifyWriterOutput). */
+    failureCode?:FailureCode; checkName?:string; timeoutSec?:number }> {
     const output = await bb.sdk.threads.output({ threadId:input.writerThreadId });
     // J-11: the writer's answer is checked before it is stored with the attempt (shadow by default: recorded, never blocks).
     const guarded = ctx.outputGuard ? await ctx.outputGuard({ kind:"writer", text:outputText(output), projectId:input.projectId, runId:input.runId, subject:input.taskId }) : null;
@@ -568,6 +570,9 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
     if (!classified.ok) {
       recordGateEvaluation(db,{...input,gate:"validate",status:"rejected",input:JSON.stringify(input.task),summary:{reason:"writer_output_not_accepted"}});
       return { status:classified.state, reason:classified.reason, output:answerText, produced:checkedPaths, verification:verifies, diffKey,
+        ...(classified.failureCode ? { failureCode:classified.failureCode } : {}),
+        ...(classified.checkName ? { checkName:classified.checkName } : {}),
+        ...(classified.timeoutSec !== undefined ? { timeoutSec:classified.timeoutSec } : {}),
         ...(checkLogPath ? { checkLogPath } : {}) };
     }
     recordGateEvaluation(db,{...input,gate:"validate",status:"passed",input:JSON.stringify(input.task),summary:{producedCount:checkedPaths.length,...(classified.warnings?.length?{warnings:classified.warnings}:{})}});

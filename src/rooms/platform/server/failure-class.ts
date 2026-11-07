@@ -18,6 +18,14 @@
  */
 export type FailureClass = "task" | "provider" | "merge" | "dirty_base" | "harness" | "infra" | "contract" | "judgment" | "budget" | "limit" | "reassign" | "verification_timeout";
 
+/**
+ * The structured failure code a producer writes at the source, so a reader reads the field instead of parsing the reason text.
+ * `verification_failed`/`verification_timeout` are an attempt's own check (writer/server/verify.ts, tasks/validate-output.ts);
+ * `check_failed` is a run-goal row whose regression pass itself could not run (run-goal/server/run-goal.ts). One enum, one place.
+ */
+export const FAILURE_CODES = ["verification_failed", "verification_timeout", "check_failed"] as const;
+export type FailureCode = (typeof FAILURE_CODES)[number];
+
 import { cleanCheckOutput } from "@lane-pilot/kit";
 import { zcodeEnvironmentError } from "@lane-pilot/models";
 

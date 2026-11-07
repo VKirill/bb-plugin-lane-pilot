@@ -29,6 +29,9 @@ export type GitIntegration = {
   rebuilt?:Array<{dir:string;ok:boolean;detail:string|null}>;
   /** With «conflict» and no files: the task's checks that went red on the attempt replayed on the moved main. */
   checks?:ReplayCheck[];
+  /** With a replay red: the structured failure facts of the check that failed (the reason text names them too). */
+  failureCode?:"verification_failed"|"verification_timeout";
+  checkName?:string;
   /** With «merged»: main's HEAD before the merge (the merge commit's first parent), and what the merge changed there, deletions included. */
   base?:string|null;
   changed?:ChangedFile[];
@@ -388,7 +391,7 @@ export async function integrateWorktree(input:{basePath:string;worktreePath:stri
       // recorded red still refuses the merge — otherwise a retried integration would merge code whose checks failed.
       if(!rebased&&input.replayCheck) {
         const settled=await recordedReplayFailure(input.worktreePath);
-        if(settled) return {status:"conflict",commit:null,conflicts:[],reason:`${REPLAY_CHECK_FAILED}: verification failed (${settled.command})`,checks:[{command:settled.command,exitCode:settled.exitCode||1,stdout:settled.stdout,stderr:settled.stderr}]};
+        if(settled) return {status:"conflict",commit:null,conflicts:[],reason:`${REPLAY_CHECK_FAILED}: verification failed (${settled.command})`,checks:[{command:settled.command,exitCode:settled.exitCode||1,stdout:settled.stdout,stderr:settled.stderr}],failureCode:settled.exitCode===124?"verification_timeout":"verification_failed",checkName:settled.command};
       }
       // main moved and the attempt was replayed on it: the replayed result has not been run anywhere yet, and two tasks
       // that merge cleanly can still break each other. Red, nothing merges: the writer gets the output as a free redo.
@@ -401,7 +404,8 @@ export async function integrateWorktree(input:{basePath:string;worktreePath:stri
         }
         const replay=await input.replayCheck();
         if(!replay.ok) {
-          return {status:"conflict",commit:null,conflicts:[],reason:`${REPLAY_CHECK_FAILED}: verification failed (${replay.failed.map((check)=>check.command).join(", ")})${replay.environment?`: ${ENVIRONMENT_REASON}the check did not run`:""}`,checks:replay.failed};
+          const failed=replay.failed;
+          return {status:"conflict",commit:null,conflicts:[],reason:`${REPLAY_CHECK_FAILED}: verification failed (${failed.map((check)=>check.command).join(", ")})${replay.environment?`: ${ENVIRONMENT_REASON}the check did not run`:""}`,checks:failed,failureCode:failed.some((check)=>check.exitCode===124)?"verification_timeout":"verification_failed",checkName:failed[0]?.command};
         }
       }
       const merged=await merge(input.basePath,rebased??input.expectedHead??sha,input.message,input.bookkeeping,input.ownsPaths,input.indexLockWaitMs);

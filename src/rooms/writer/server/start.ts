@@ -6,7 +6,7 @@ import type { DirtSnapshot } from "../cli-outcome";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
 import { providerPoolCap } from "@lane-pilot/settings-catalog";
 import { isZcodeProvider, WRITER_PROFILES, type WriterProfile } from "@lane-pilot/models";
-import { DEPENDENCY_REDO_WAIT_MS, countAttempts, countChargedAttempts, countThreadTurns, createAttempt, endSpawnFailure, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getTask, getTaskPlan, latestTaskAttemptState, listAttemptsForTask, listOpenAttempts, listStageReceipts, listUnansweredWriterQuestions, loadProjectSettings, noteToldPmDirectly, parkAttemptWake, transitionAttempt, taskBasePath } from "../../storage";
+import { DEPENDENCY_REDO_WAIT_MS, countAttempts, countChargedAttempts, countThreadTurns, createAttempt, endSpawnFailure, failureFieldsOf, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getTask, getTaskPlan, latestTaskAttemptState, listAttemptsForTask, listOpenAttempts, listStageReceipts, listUnansweredWriterQuestions, loadProjectSettings, noteToldPmDirectly, parkAttemptWake, transitionAttempt, taskBasePath } from "../../storage";
 import { taskV2Schema } from "../../contracts";
 import { ownsPathsOverlap, pollPause } from "@lane-pilot/kit";
 import { reconcile, reconcileCursor } from "../../stability";
@@ -141,18 +141,22 @@ export function familyFailureRecord(db:ReturnType<typeof openDatabase>, runId:st
 const isOwnFailure = (outcome:Record<string, unknown>) =>
   ["task", "contract"].includes(failureClass(String(outcome.status), typeof outcome.reason === "string" ? outcome.reason : null));
 
+/** The attempt's own check failed (its structured failure_code), as opposed to a merge, a stray file or a provider fault. */
+const verificationFailure = (outcome:Record<string, unknown>):boolean =>
+  outcome.failureCode === "verification_failed" || outcome.failureCode === "verification_timeout";
+
 /**
  * The task's last own failure before this start (a retry from the board, a restart of a parked task, a reload): a writer
  * that starts fresh was told nothing of it and redid it (vf-s4-items 2026-10-24, «owns_paths rejected …/Buffs.luau» twice).
  * An acceptance since then clears it.
  */
 function lastOwnFailure(db:ReturnType<typeof openDatabase>, runId:string, taskId:string, exceptAttemptId:string):Record<string, unknown>|null {
-  const rows = db.prepare("SELECT id, state, reason FROM lane_pilot_attempt WHERE run_id=? AND task_id=? ORDER BY created_at DESC, rowid DESC")
-    .all(runId, taskId) as Array<{ id:string; state:string; reason:string|null }>;
+  const rows = db.prepare("SELECT id, state, reason, check_name FROM lane_pilot_attempt WHERE run_id=? AND task_id=? ORDER BY created_at DESC, rowid DESC")
+    .all(runId, taskId) as Array<{ id:string; state:string; reason:string|null; check_name:string|null }>;
   for (const row of rows) {
     if (row.id === exceptAttemptId) continue;
     if (row.state === "accepted") return null;
-    if (row.reason && isOwnFailure({ status:row.state, reason:row.reason })) return { status:row.state, reason:row.reason };
+    if (row.reason && isOwnFailure({ status:row.state, reason:row.reason })) return { status:row.state, reason:row.reason, ...(row.check_name ? { checkName: row.check_name } : {}) };
   }
   return null;
 }
@@ -1109,7 +1113,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
           if (verificationTimeoutOverBudget(reasons)) {
             const reason = `verification_timeout_budget: the check timed out again after its ${VERIFICATION_TIMEOUT_RETRIES} retry; this budget is separate from the task's attempts. Raise timeout_sec or narrow the command, then dispatch again`;
             const latest = getAttempt(db, attemptId);
-            if (latest && RETRY_ELIGIBLE.includes(latest.state as AttemptState)) transitionAttempt(db, latest.id, "blocked", { reason });
+            if (latest && RETRY_ELIGIBLE.includes(latest.state as AttemptState)) transitionAttempt(db, latest.id, "blocked", { reason, ...failureFieldsOf(last) });
             last = { ...last, status:"blocked", reason };
             break;
           }
@@ -1126,14 +1130,14 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
           && runSettings["writer.fallback_on_provider_failure"] === "immediate";
         if (failedClass === "limit" || providerHandsOff || isWriterSilent(typeof last.reason === "string" ? last.reason : null) || streamHandOff) {
           const latest = getAttempt(db, attemptId);
-          if (latest && RETRY_ELIGIBLE.includes(latest.state as AttemptState)) transitionAttempt(db, latest.id, "blocked", { reason:String(last.reason ?? last.status) });
+          if (latest && RETRY_ELIGIBLE.includes(latest.state as AttemptState)) transitionAttempt(db, latest.id, "blocked", { reason:String(last.reason ?? last.status), ...failureFieldsOf(last) });
           last = { ...last, status:"blocked" };
           break;
         }
         // A secret the checks need went away mid-task: the attempt is not charged and the task is parked until it is back.
         if (PARKED_CLASSES.has(failedClass) || isWaitingSecret(typeof last.reason === "string" ? last.reason : null)) {
           const latest = getAttempt(db, attemptId);
-          if (latest && RETRY_ELIGIBLE.includes(latest.state as AttemptState)) transitionAttempt(db, latest.id, "blocked", { reason:String(last.reason ?? last.status) });
+          if (latest && RETRY_ELIGIBLE.includes(latest.state as AttemptState)) transitionAttempt(db, latest.id, "blocked", { reason:String(last.reason ?? last.status), ...failureFieldsOf(last) });
           last = { ...last, status:"blocked" };
           break;
         }
@@ -1166,12 +1170,12 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         // the same diff twice) does not: the next attempt goes to the next writer in the chain, not this one again.
         if (sessionEnd) {
           const ended = `${sessionEnd}: ${String(last.reason ?? last.status)}`;
-          if (sessionEnd.startsWith("no progress:") && failedClass !== "verification_timeout" && /^verification failed\b/.test(String(last.reason ?? ""))) {
+          if (sessionEnd.startsWith("no progress:") && failedClass !== "verification_timeout" && verificationFailure(last)) {
             checkEscalation = ended;
             break;
           }
           const latest = getAttempt(db, attemptId);
-          if (latest && RETRY_ELIGIBLE.includes(latest.state as AttemptState)) transitionAttempt(db, latest.id, "blocked", { reason:ended });
+          if (latest && RETRY_ELIGIBLE.includes(latest.state as AttemptState)) transitionAttempt(db, latest.id, "blocked", { reason:ended, ...failureFieldsOf(last) });
           last = { ...last, status:"blocked", reason:ended };
           break;
         }
@@ -1180,7 +1184,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
           const latest = getAttempt(db, attemptId);
           if (latest && RETRY_ELIGIBLE.includes(latest.state as AttemptState)) {
             const exhausted = `retry limit 2 exhausted${typeof last.reason === "string" && last.reason ? `: ${last.reason}` : ""}`;
-            transitionAttempt(db, latest.id, "blocked", { reason:exhausted });
+            transitionAttempt(db, latest.id, "blocked", { reason:exhausted, ...failureFieldsOf(last) });
             last = { ...last, status:"blocked", reason:exhausted };
           }
           break;
@@ -1189,7 +1193,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         // would only repeat them. A repeated red check is the exception: the next attempt is the next writer in the
         // chain. A turn in the same thread is not stopped here: the session's own early stop is above.
         const repeated = redo ? null : repeatedFailureReason(familyFailure, { state:String(last.status), reason:typeof last.reason === "string" ? last.reason : null });
-        if (repeated && failedClass !== "verification_timeout" && /^verification failed\b/.test(String(last.reason ?? ""))) {
+        if (repeated && failedClass !== "verification_timeout" && verificationFailure(last)) {
           checkEscalation = repeated;
           primaryFailure = { ...last };
           break;
@@ -1197,19 +1201,19 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         // Cascade retry (arXiv #25/26, writer.retry_escalate): with the setting on, the first red check already goes to
         // the next writer in the fallback chain — a cheaper writer failing the task's check is reason enough to try
         // the next one, inside the same attempt budget. Off by default: a single failure retries the same writer.
-        if (!repeated && failedClass === "task" && /^verification failed\b/.test(String(last.reason ?? "")) && runSettings["writer.retry_escalate"] === true) {
+        if (!repeated && failedClass === "task" && verificationFailure(last) && runSettings["writer.retry_escalate"] === true) {
           checkEscalation = `retry_escalate: ${String(last.reason ?? "")}`;
           primaryFailure = { ...last };
           break;
         }
         if (repeated) {
           const latest = getAttempt(db, attemptId);
-          if (latest && RETRY_ELIGIBLE.includes(latest.state as AttemptState)) transitionAttempt(db, latest.id, "blocked", { reason:repeated });
+          if (latest && RETRY_ELIGIBLE.includes(latest.state as AttemptState)) transitionAttempt(db, latest.id, "blocked", { reason:repeated, ...failureFieldsOf(last) });
           last = { ...last, status:"blocked", reason:repeated };
           primaryFailure = { ...last };
           // The two normal moves are spent: the wall ladder opens (hunters from other sides, then the backlog), see src/rooms/wall.
           services.wall?.noteTaskStop({ projectId:input.projectId, runId:input.runId, taskId:input.taskId, family:taskFamily(input.taskId), state:familyFailure?.state ?? "validation_failed",
-            reason:repeated.replace(/^repeated_failure:\s*/, ""), pmThreadId:input.pmThreadId ?? null, task:input.task, plan:input.plan })
+            reason:repeated.replace(/^repeated_failure:\s*/, ""), failureCode:typeof last.failureCode === "string" ? last.failureCode : null, pmThreadId:input.pmThreadId ?? null, task:input.task, plan:input.plan })
             .catch((cause:unknown) => ctx.log(`wall: could not note the stop of ${input.taskId}: ${cause instanceof Error ? cause.message : String(cause)}`));
           break;
         }
@@ -1223,13 +1227,13 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
           // a receipt reader (and the live-folder rollback test) still sees what actually failed.
           const reason = `narrow_brief: ${String(last.reason ?? last.status)} — ${failedClass} failed ${sameClassStreak} attempts in a row; narrow the brief or change the approach, then dispatch again`;
           const latest = getAttempt(db, attemptId);
-          if (latest && RETRY_ELIGIBLE.includes(latest.state as AttemptState)) transitionAttempt(db, latest.id, "blocked", { reason });
+          if (latest && RETRY_ELIGIBLE.includes(latest.state as AttemptState)) transitionAttempt(db, latest.id, "blocked", { reason, ...failureFieldsOf(last) });
           last = { ...last, status:"blocked", reason };
           break;
         }
         if (!redo && intervention === "next_writer" && failedClass === "provider" && sameClassStreak >= 2) {
           const latest = getAttempt(db, attemptId);
-          if (latest && RETRY_ELIGIBLE.includes(latest.state as AttemptState)) transitionAttempt(db, latest.id, "blocked", { reason:String(last.reason ?? last.status) });
+          if (latest && RETRY_ELIGIBLE.includes(latest.state as AttemptState)) transitionAttempt(db, latest.id, "blocked", { reason:String(last.reason ?? last.status), ...failureFieldsOf(last) });
           last = { ...last, status:"blocked" };
           break;
         }
@@ -1299,7 +1303,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         } else if (!chain.length) {
           if (escalate && checkEscalation) {
             const stuck = getAttempt(db, typeof primaryFailure.attemptId === "string" ? primaryFailure.attemptId : attemptId);
-            if (stuck && RETRY_ELIGIBLE.includes(stuck.state as AttemptState)) transitionAttempt(db, stuck.id, "blocked", { reason:checkEscalation });
+            if (stuck && RETRY_ELIGIBLE.includes(stuck.state as AttemptState)) transitionAttempt(db, stuck.id, "blocked", { reason:checkEscalation, ...failureFieldsOf(primaryFailure) });
             last = { ...last, status:"blocked", reason:checkEscalation };
           }
           last={...last,emergencyFallback:{state:"skipped",
@@ -1320,6 +1324,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
           const decision=emergencyFallbackDecision({
             state:String(failure.status ?? "unknown"),
             reason:typeof failure.reason === "string" ? failure.reason : null,
+            failureCode:typeof failure.failureCode === "string" ? failure.failureCode : null,
             stopConfirmed:failure.stopConfirmed === true,
             checkEscalation:failure.checkEscalation === true,
           });
@@ -1419,7 +1424,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         const endedFallback=lastFallbackAttemptId && last.status !== "accepted" ? getAttempt(db,lastFallbackAttemptId) : undefined;
         if (endedFallback && RETRY_ELIGIBLE.includes(endedFallback.state as AttemptState)) {
           const endedReason=typeof last.reason === "string" && last.reason ? last.reason : String(last.status);
-          transitionAttempt(db,endedFallback.id,"blocked",{reason:endedReason});
+          transitionAttempt(db,endedFallback.id,"blocked",{reason:endedReason, ...failureFieldsOf(last)});
           last={...last,status:"blocked",reason:endedReason};
         }
       }

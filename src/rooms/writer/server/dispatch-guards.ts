@@ -30,8 +30,8 @@ export function loopTaskOf(id: string, createdAt: number, contract: unknown, att
  */
 export async function topicLoopGuard(db: LanePilotDatabase, runId: string, task: TaskV2, opts: { wall?: Services["wall"]; projectId?: string; pmThreadId?: string; now?: number } = {}): Promise<string | null> {
   const attempts = new Map<string, LoopTask["attempts"]>();
-  for (const row of db.prepare("SELECT task_id, state, reason FROM lane_pilot_attempt WHERE run_id=? ORDER BY created_at").all(runId) as Array<{ task_id: string; state: string; reason: string | null }>) {
-    attempts.set(row.task_id, [...(attempts.get(row.task_id) ?? []), { state: row.state, reason: row.reason }]);
+  for (const row of db.prepare("SELECT task_id, state, reason, failure_code FROM lane_pilot_attempt WHERE run_id=? ORDER BY created_at").all(runId) as Array<{ task_id: string; state: string; reason: string | null; failure_code: string | null }>) {
+    attempts.set(row.task_id, [...(attempts.get(row.task_id) ?? []), { state: row.state, reason: row.reason, failureCode: row.failure_code }]);
   }
   const earlier: LoopTask[] = [];
   for (const row of db.prepare("SELECT id, contract_json, created_at FROM lane_pilot_task WHERE run_id=?").all(runId) as Array<{ id: string; contract_json: string; created_at: number }>) {

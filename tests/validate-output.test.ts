@@ -116,3 +116,15 @@ it("cleans ANSI escapes and truncates stderr to 300 characters in failure reason
     expect(tail.startsWith("FAIL")).toBe(true);
   }
 });
+
+it("names the failed check and its timeout in the structured fields, from the exit code", () => {
+  const t = task(["apps/marketing/app/components/greeting-cards/CardMockCard.vue"]);
+  const produced = ["apps/marketing/app/components/greeting-cards/CardMockCard.vue"];
+  const contents = { [produced[0]!]: "content" };
+  const red = classifyWriterOutput({ task: t, produced, contents, verifies: [{ command: "vitest run", exitCode: 1, stdout: "", stderr: "FAIL" }] });
+  expect(red).toMatchObject({ ok: false, state: "validation_failed", failureCode: "verification_failed", checkName: "vitest run" });
+  // Exit 124 is the sandbox's timeout status: the host path returns it without the «verification timed out after Ns»
+  // wording the old reason-derived field read, so a host-side timeout was not counted (listCheckTimeouts missed it).
+  const timed = classifyWriterOutput({ task: t, produced, contents, verifies: [{ command: "vitest run", exitCode: 124, stdout: "", stderr: "", timeoutSec: 120 }] });
+  expect(timed).toMatchObject({ ok: false, state: "validation_failed", failureCode: "verification_timeout", checkName: "vitest run", timeoutSec: 120 });
+});

@@ -401,7 +401,7 @@ export function createRelay(deps:RelayDeps) {
     }
     const lines = rows.filter((row) => row.state !== "canceled").map((row) => {
       const reason = row.state === "accepted" ? "" : row.reason ? `: ${row.reason.replace(/\s+/g, " ").slice(0, 300)}` : "";
-      const out = reason ? wayOut(row.state, row.reason) : null;
+      const out = reason ? wayOut(row.state, row.reason, row.failureCode) : null;
       const gate = gates.get(row.taskId);
       return `- ${row.taskId} — ${row.state}${reason}${out ? ` → ${out}` : ""}${gate ? ` (gate: ${gate})` : ""}`;
     });

@@ -70,6 +70,9 @@ describe("the task's checks after the replay on a moved main", () => {
     expect(res.conflicts).toEqual([]);
     expect(res.reason).toBe(`${REPLAY_CHECK_FAILED}: verification failed (unique keys)`);
     expect(res.checks?.[0]).toMatchObject({ command: "unique keys", exitCode: 1, stderr: "duplicate key: A\n" });
+    // The structured facts ride with the reason, so finish.ts stores them (the reason text has no colon after the command).
+    expect(res.failureCode).toBe("verification_failed");
+    expect(res.checkName).toBe("unique keys");
     // Nothing merged; the attempt stays replayed on main in its worktree for the writer to fix there.
     expect(git(base, "rev-parse", "HEAD")).toBe(mainHead);
     expect(spawnSync("test", ["-e", join(base, "two.key")]).status).not.toBe(0);

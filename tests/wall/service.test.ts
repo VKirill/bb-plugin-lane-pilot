@@ -77,8 +77,8 @@ function fakePorts(h: ReturnType<typeof freshDb>, patch: { version?: { v: string
 function seedNight(h: ReturnType<typeof freshDb>, failures = 5) {
   for (let i = 0; i < 25; i++) h.attempt("accepted", null, NOW - 20 * HOUR + i);
   for (let i = 0; i < failures; i++) h.attempt("blocked", REASON, NOW - 3 * HOUR + i * 1000, { version: "0.1.268", task: `tf${i}` });
-  h.attempt("validation_failed", "verification failed (npx vitest run a): 1 failed", NOW - 2 * HOUR);
-  h.attempt("validation_failed", "verification failed (npx vitest run b): 2 failed", NOW - 2 * HOUR + 1);
+  h.attempt("validation_failed", "verification failed (npx vitest run a): 1 failed", NOW - 2 * HOUR, { failureCode: "verification_failed" });
+  h.attempt("validation_failed", "verification failed (npx vitest run b): 2 failed", NOW - 2 * HOUR + 1, { failureCode: "verification_failed" });
 }
 
 const verdictLine = (verdict: string) => `report\nNIGHT-REPORT: test=tests/x.test.ts sites=2 class=${KEY}\nSITE: src/a.ts:1 — fixed\nSITE: src/b.ts:2 — fixed\nSELF-REPAIR-VERDICT: ${verdict}`;

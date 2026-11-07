@@ -55,10 +55,15 @@ export const WAY_OUT: ReadonlyArray<readonly [key: string, pattern: RegExp, wayO
 /**
  * The way out of this reason, or null when nothing is named (the line stays as it reads today).
  * `state` is kept for callers that hold it (waiting vs blocked shapes differ in the digest).
+ * `failureCode` is the attempt's structured failure code: it answers the two verification rows directly, so a caller
+ * that has it need not rely on the reason's wording (a wrapped reason still names the check after its prefix).
  */
-export function wayOut(state: string, reason: string | null | undefined): string | null {
+export function wayOut(state: string, reason: string | null | undefined, failureCode?: string | null): string | null {
   const text = (reason ?? "").trim();
   if (!text) return null;
+  const byKey = new Map(WAY_OUT.map(([key, , out]) => [key, out]));
+  if (failureCode === "verification_timeout") return byKey.get("verification timed out") ?? null;
+  if (failureCode === "verification_failed") return byKey.get("verification failed") ?? null;
   for (const [, pattern, out] of WAY_OUT) if (pattern.test(text)) return out;
   return null;
 }

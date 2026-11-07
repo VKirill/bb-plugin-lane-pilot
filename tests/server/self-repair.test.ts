@@ -65,8 +65,8 @@ function setup(threadStatus: Record<string, string> = {}, outputs: Record<string
   const now = Date.now();
   db.prepare("INSERT INTO lane_pilot_run (id,project_id,pm_thread_id,state,created_at,updated_at) VALUES (?,?,?,?,?,?)").run("lprun_a", "proj_real", "thr_pm", "running", now, now);
   db.prepare("INSERT INTO lane_pilot_run (id,project_id,pm_thread_id,state,created_at,updated_at) VALUES (?,?,?,?,?,?)").run("lprun_s", "proj_3tb652jpsi", "thr_pm2", "running", now, now);
-  const attempt = (id: string, run: string, state: string, reason: string | null, updatedAt = now, thread = `thr_w_${id}`) =>
-    db.prepare("INSERT INTO lane_pilot_attempt (id,run_id,task_id,thread_id,state,reason,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)").run(id, run, `task-${id}`, thread, state, reason, updatedAt, updatedAt);
+  const attempt = (id: string, run: string, state: string, reason: string | null, updatedAt = now, thread = `thr_w_${id}`, failureCode: string | null = null) =>
+    db.prepare("INSERT INTO lane_pilot_attempt (id,run_id,task_id,thread_id,state,reason,failure_code,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)").run(id, run, `task-${id}`, thread, state, reason, failureCode, updatedAt, updatedAt);
   const triage = (id: string, project: string, run: string, reason: string, origin = "orchestrator") =>
     db.prepare(`INSERT INTO lane_pilot_failure_triage (project_id,attempt_id,run_id,task_id,reason_sha256,reason,origin,status,failed_at,triaged_at)
       VALUES (?,?,?,?,?,?,?,'ok',?,?)`).run(project, id, run, `task-${id}`, "x", reason, origin, now, now);
@@ -521,9 +521,9 @@ describe("self-repair", () => {
       ["lpattempt_34ad", "verification failed (cd game && python3 -I scripts/studio_test.py --filter Par070): exit 1", "writer"],
     ];
     const env = setup();
-    for (const [id, reason, origin] of cases) { env.attempt(id, "lprun_a", "validation_failed", reason); env.triage(id, "proj_real", "lprun_a", reason, origin); }
+    for (const [id, reason, origin] of cases) { env.attempt(id, "lprun_a", "validation_failed", reason, env.now, undefined, "verification_failed"); env.triage(id, "proj_real", "lprun_a", reason, origin); }
     // Not triaged yet: the writer's side by default, as on the night wall (originOf).
-    env.attempt("lpattempt_new", "lprun_a", "validation_failed", "verification failed (cd game && python3 -I scripts/studio_test.py --filter Par040): exit 1");
+    env.attempt("lpattempt_new", "lprun_a", "validation_failed", "verification failed (cd game && python3 -I scripts/studio_test.py --filter Par040): exit 1", env.now, undefined, "verification_failed");
     expect((await createSelfRepair(env.ctx).collect(0, await createSelfRepair(env.ctx).config())).filter((row) => row.kind === "repeat")).toEqual([]);
     // The same checks red from the machine in three tasks stay a pattern: triaged environment, or an environment-marked reason.
     const machine = setup();
@@ -537,9 +537,12 @@ describe("self-repair", () => {
     machine.attempt("lpattempt_m5", "lprun_a", "validation_failed", "verification failed (npm test -- t5): environment: EACCES: permission denied, rmSync '/z/.output'");
     const rows = (await createSelfRepair(machine.ctx).collect(0, await createSelfRepair(machine.ctx).config())).filter((row) => row.kind === "repeat");
     expect(rows.map((row) => row.attemptId).sort()).toEqual(["lpattempt_m3", "lpattempt_m4", "lpattempt_m5"]);
-    expect(writerRedCheck("verification failed (x): exit 1", "writer")).toBe(true);
-    expect(writerRedCheck("verification failed (x): exit 1", "orchestrator")).toBe(false);
-    expect(writerRedCheck("merge_conflict: main changed since this attempt started: checks red after the replay on main: verification failed (x)", null)).toBe(false);
+    expect(writerRedCheck("verification failed (x): exit 1", "writer", "verification_failed")).toBe(true);
+    expect(writerRedCheck("verification failed (x): exit 1", "orchestrator", "verification_failed")).toBe(false);
+    expect(writerRedCheck("merge_conflict: main changed since this attempt started: checks red after the replay on main: verification failed (x)", null, "verification_failed")).toBe(false);
+    // The structured code answers it; a merge-conflict replay that names a failed check is still not the writer's own red check.
+    expect(writerRedCheck("verification failed (x): exit 1", "writer", "verification_timeout")).toBe(true);
+    expect(writerRedCheck("verification failed (x): exit 1", "writer", null)).toBe(false);
   });
 
   it("sees a task queued for hours while nothing runs, and a stage nobody will finish", async () => {

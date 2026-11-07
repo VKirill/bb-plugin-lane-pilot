@@ -1,5 +1,6 @@
 import { fileAllowedByOwns, fileBlockedByNeverTouch } from "@lane-pilot/kit";
 import { ENVIRONMENT_REASON, NO_ANSWER_REASON, isEnvironmentCheckFailure } from "../runs";
+import type { FailureCode } from "../platform";
 import { cleanCheckOutput } from "@lane-pilot/kit";
 import type { TaskV2 } from "../contracts";
 import type { FlakyEvidence } from "../verification";
@@ -13,10 +14,10 @@ export function isTaskFolderFile(path:string):boolean {
 
 export type OutputCheck =
   | { ok:true; warnings?:string[] }
-  | { ok:false; state:"empty_output"|"validation_failed"; reason:string };
+  | { ok:false; state:"empty_output"|"validation_failed"; reason:string; failureCode?:FailureCode; checkName?:string; timeoutSec?:number };
 
 /** `flakyEvidence`: with `flaky`, the first failure and the machine reading before it (src/rooms/verification/machine-pressure.ts). */
-export type VerifyResult = { command:string; exitCode:number; stdout:string; stderr:string; flaky?:true; flakyEvidence?:FlakyEvidence };
+export type VerifyResult = { command:string; exitCode:number; stdout:string; stderr:string; flaky?:true; flakyEvidence?:FlakyEvidence; /** The limit the check was given, when it timed out (exit 124): the fact listCheckTimeouts reads. */ timeoutSec?:number };
 
 export function parseGitChangedPaths(stdout: string): string[] {
   const paths = new Set<string>();
@@ -124,10 +125,17 @@ export function classifyWriterOutput(input: {
   for (const verify of input.verifies ?? []) {
     if (verify.exitCode !== 0) {
       const cleaned = cleanCheckOutput(verify.stderr || "").slice(0, 300);
+      // Exit 124 is the sandbox/terminal's timeout status (verification/sandbox.ts): the check was killed at its limit.
+      // The reason text only carries that wording on the terminal path; the host path returns a bare 124, which the old
+      // reason-derived field missed (a timed-out check was not counted in listCheckTimeouts).
+      const timedOut = verify.exitCode === 124;
       return {
         ok:false,
         state:"validation_failed",
         reason:`verification failed (${verify.command}): ${isEnvironmentCheckFailure(verify) ? ENVIRONMENT_REASON : ""}${cleaned || `exit ${verify.exitCode}`}`,
+        failureCode: timedOut ? "verification_timeout" : "verification_failed",
+        checkName: verify.command,
+        ...(timedOut && typeof verify.timeoutSec === "number" ? { timeoutSec: verify.timeoutSec } : {}),
       };
     }
   }

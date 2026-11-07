@@ -78,8 +78,10 @@ function services(db:ReturnType<typeof openDatabase>, script:Step[]) {
         return { status:"provider_error", reason:step.providerError, attemptId:input.attemptId, writerThreadId:input.writerThreadId };
       }
       const reason = step.reason ?? "verification failed (npm test): boom";
-      transitionAttempt(db, input.attemptId, "validation_failed", { reason });
-      return { status:"validation_failed", reason, produced:["a.txt"], attemptId:input.attemptId, writerThreadId:input.writerThreadId,
+      // The real finishWriterAttempt carries the structured failure code (validateWriterResult → finish.ts).
+      const failureCode = /^verification failed\b/.test(reason) ? "verification_failed" as const : undefined;
+      transitionAttempt(db, input.attemptId, "validation_failed", { reason, ...(failureCode ? { failureCode } : {}) });
+      return { status:"validation_failed", reason, ...(failureCode ? { failureCode } : {}), produced:["a.txt"], attemptId:input.attemptId, writerThreadId:input.writerThreadId,
         verification:[{ command:"npm test", exitCode:1, stdout:"", stderr:"AssertionError: boom" }],
         checkLogPath:".agents/plans/items/T1/logs/npm-test.log", diffKey:step.diff ?? `d${turn}` };
     },

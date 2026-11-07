@@ -40,14 +40,14 @@ export type Entry = EntryKey & {
   samples: string[]; firstAt: number; lastAt: number;
 };
 
-type FailedRow = { id: string; run_id: string; task_id: string; state: string; reason: string | null; updated_at: number; harness_version: string | null; project_id: string; triage_origin: string | null };
+type FailedRow = { id: string; run_id: string; task_id: string; state: string; reason: string | null; failure_code: string | null; updated_at: number; harness_version: string | null; project_id: string; triage_origin: string | null };
 
 /**
  * One night's failures grouped by signature (failure class, normalised reason) x LP version x project. Four sources: the attempt itself,
  * its failure triage (the origin), the gate events and the stage receipts of its task (where it broke), and the plugin log's failure lines.
  */
 export function collectEntries(db: WallDb, options: JournalOptions): Entry[] {
-  const rows = db.prepare(`SELECT a.id, a.run_id, a.task_id, a.state, a.reason, a.updated_at, a.harness_version, r.project_id, t.origin AS triage_origin
+  const rows = db.prepare(`SELECT a.id, a.run_id, a.task_id, a.state, a.reason, a.failure_code, a.updated_at, a.harness_version, r.project_id, t.origin AS triage_origin
     FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
     LEFT JOIN lane_pilot_failure_triage t ON t.attempt_id=a.id AND t.project_id=r.project_id AND t.status='ok'
     WHERE a.updated_at>=? AND a.updated_at<? AND a.state IN (${quoted(FAILED_STATES)})
@@ -69,7 +69,7 @@ export function collectEntries(db: WallDb, options: JournalOptions): Entry[] {
   };
   for (const row of rows) {
     if (!options.isReal(row.project_id, row.task_id)) continue;
-    const sig = wallSignature(row.state, row.reason);
+    const sig = wallSignature(row.state, row.reason, row.failure_code);
     const origin = originOf(sig.failureClass, row.triage_origin);
     const key = { classKey: classKeyOf(sig, origin), version: row.harness_version ?? "", projectId: row.project_id };
     const entry = slot(key, () => ({ ...key, failureClass: sig.failureClass, reasonNorm: sig.reasonNorm, origin }), row.updated_at);
@@ -164,7 +164,7 @@ export function rungOf(counts: readonly [number, number, number]): 0 | 1 | 2 | 3
   return rung as 0 | 1 | 2 | 3;
 }
 
-type AttemptRow = { id: string; run_id: string; task_id: string; state: string; reason: string | null; updated_at: number; project_id: string; triage_origin: string | null };
+type AttemptRow = { id: string; run_id: string; task_id: string; state: string; reason: string | null; failure_code: string | null; updated_at: number; project_id: string; triage_origin: string | null };
 
 /**
  * Recomputes the recurrence of every class seen in the last `lookbackDays`: failures among the last 10 / 100 / 500 finished real attempts,
@@ -173,7 +173,7 @@ type AttemptRow = { id: string; run_id: string; task_id: string; state: string; 
 export function refreshClasses(db: WallDb, options: { now: number; isReal: JournalOptions["isReal"]; lookbackDays?: number }): WallClass[] {
   const { now } = options;
   const since = now - (options.lookbackDays ?? 30) * DAY;
-  const finished = db.prepare(`SELECT a.id, a.run_id, a.task_id, a.state, a.reason, a.updated_at, r.project_id, t.origin AS triage_origin
+  const finished = db.prepare(`SELECT a.id, a.run_id, a.task_id, a.state, a.reason, a.failure_code, a.updated_at, r.project_id, t.origin AS triage_origin
     FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
     LEFT JOIN lane_pilot_failure_triage t ON t.attempt_id=a.id AND t.project_id=r.project_id AND t.status='ok'
     WHERE a.updated_at<=? AND a.state NOT IN (${quoted([...IN_FLIGHT, "canceled"])})
@@ -184,7 +184,7 @@ export function refreshClasses(db: WallDb, options: { now: number; isReal: Journ
     if (!options.isReal(row.project_id, row.task_id)) continue;
     if (real.length >= 2000) break;
     const failed = (FAILED_STATES as readonly string[]).includes(row.state);
-    const sig = failed ? wallSignature(row.state, row.reason) : null;
+    const sig = failed ? wallSignature(row.state, row.reason, row.failure_code) : null;
     const origin = sig ? originOf(sig.failureClass, row.triage_origin) : "";
     real.push({ ...row, classKey: sig ? classKeyOf(sig, origin) : null, failureClass: sig?.failureClass ?? "", reasonNorm: sig?.reasonNorm ?? "", origin });
   }

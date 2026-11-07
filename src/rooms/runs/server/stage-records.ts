@@ -1,4 +1,4 @@
-import { appendGateEvaluation, deleteStageReceipt, getTaskPlan, listStageReceipts, openDatabase, saveStageReceipt, transitionAttempt } from "../../storage";
+import { appendGateEvaluation, deleteStageReceipt, failureFieldsOf, getTaskPlan, listStageReceipts, openDatabase, saveStageReceipt, transitionAttempt } from "../../storage";
 import { RETRY_ELIGIBLE } from "../state-machine";
 import type { AttemptState } from "../state-machine";
 import { sha256, stageTransition, validateStageReceipt } from "../../tasks";
@@ -121,23 +121,23 @@ export async function resetHelperStages(db:ReturnType<typeof openDatabase>, stop
 export function closeOrphanWriterStages(db:ReturnType<typeof openDatabase>, active:ReadonlySet<string>, idleMs = 0, now = Date.now()): number {
   // A retry-eligible attempt whose loop died before its stage receipts exist (a failed spawn, a reload in the gap)
   // is visible to no receipt row: close it or nothing ever will (seed 14, fault-injection).
-  for (const stray of db.prepare(`SELECT id, run_id, task_id, state, reason, updated_at FROM lane_pilot_attempt
+  for (const stray of db.prepare(`SELECT id, run_id, task_id, state, reason, failure_code, check_name, timeout_sec, updated_at FROM lane_pilot_attempt
       WHERE state IN ('spawn_rejected','provider_error','timeout','empty_output','validation_failed')
-        AND updated_at < ?`).all(now - idleMs) as Array<{ id:string; run_id:string; task_id:string; state:string; reason:string|null; updated_at:number }>) {
+        AND updated_at < ?`).all(now - idleMs) as Array<{ id:string; run_id:string; task_id:string; state:string; reason:string|null; failure_code:string|null; check_name:string|null; timeout_sec:number|null; updated_at:number }>) {
     if (active.has(`${stray.run_id}:${stray.task_id}`)) continue;
     const scanning = db.prepare("SELECT 1 AS n FROM lane_pilot_reconcile_cursor WHERE attempt_id=? LIMIT 1").get(stray.id) as { n:number } | undefined;
     if (scanning) continue;
     const newer = db.prepare(`SELECT state FROM lane_pilot_attempt WHERE run_id=? AND task_id=? ORDER BY rowid DESC LIMIT 1`).get(stray.run_id, stray.task_id) as { state:string } | undefined;
     if (newer && ["accepted","blocked","canceled","queued","spawn_requested","spawn_unknown","running","cancel_requested"].includes(newer.state)) continue;
-    transitionAttempt(db, stray.id, "blocked", { reason:`${stray.reason ?? stray.state}; its retry was lost in a plugin reload` });
+    transitionAttempt(db, stray.id, "blocked", { reason:`${stray.reason ?? stray.state}; its retry was lost in a plugin reload`, ...failureFieldsOf({ failureCode: stray.failure_code, checkName: stray.check_name, timeoutSec: stray.timeout_sec }) });
   }
   const rows = db.prepare(`SELECT DISTINCT s.run_id, s.task_id FROM lane_pilot_stage_receipt s
     WHERE s.stage_id IN ('writer-agent','verification','acceptance-receipt','docs-maintenance') AND s.state IN ('pending','running')`).all() as Array<{ run_id:string; task_id:string }>;
   let closed = 0;
   for (const row of rows) {
     if (active.has(`${row.run_id}:${row.task_id}`)) continue;
-    const latest = db.prepare(`SELECT id, state, reason, thread_id, updated_at FROM lane_pilot_attempt WHERE run_id=? AND task_id=? ORDER BY created_at DESC, attempt_no DESC LIMIT 1`)
-      .get(row.run_id, row.task_id) as { id:string; state:string; reason:string|null; thread_id:string|null; updated_at:number } | undefined;
+    const latest = db.prepare(`SELECT id, state, reason, failure_code, check_name, timeout_sec, thread_id, updated_at FROM lane_pilot_attempt WHERE run_id=? AND task_id=? ORDER BY created_at DESC, attempt_no DESC LIMIT 1`)
+      .get(row.run_id, row.task_id) as { id:string; state:string; reason:string|null; failure_code:string|null; check_name:string|null; timeout_sec:number|null; thread_id:string|null; updated_at:number } | undefined;
     if (!latest || now - latest.updated_at < idleMs) continue;
     // A failed attempt waiting for its retry: the loop that would retry it died with a reload, and start-up recovery
     // resumes only attempts in flight. Nobody retries it, so it ends here and the PM decides.
@@ -145,7 +145,7 @@ export function closeOrphanWriterStages(db:ReturnType<typeof openDatabase>, acti
     const scanning = db.prepare("SELECT 1 AS n FROM lane_pilot_reconcile_cursor WHERE attempt_id=? LIMIT 1").get(latest.id) as { n:number } | undefined;
     if (RETRY_ELIGIBLE.includes(latest.state as AttemptState) && !scanning) {
       const reason = `${latest.reason ?? latest.state}; its retry was lost in a plugin reload`;
-      transitionAttempt(db, latest.id, "blocked", { reason });
+      transitionAttempt(db, latest.id, "blocked", { reason, ...failureFieldsOf({ failureCode: latest.failure_code, checkName: latest.check_name, timeoutSec: latest.timeout_sec }) });
       latest.state = "blocked";
       latest.reason = reason;
     }

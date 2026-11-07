@@ -3,7 +3,7 @@ import { checkTimeoutSec } from "../check-timing";
 import { pipelineWriterStep, pipelineWriterTag } from "./pipeline-tag";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
 import { writerLeftWorktree } from "./left-worktree";
-import { countAttempts, countThreadTurns, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getTask, getTaskPlan, listOpenAttempts, listStageReceipts, loadProjectSettings, transitionAttempt, taskBasePath } from "../../storage";
+import { countAttempts, countThreadTurns, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getTask, getTaskPlan, listOpenAttempts, listStageReceipts, loadProjectSettings, transitionAttempt, taskBasePath, failureFieldsOf } from "../../storage";
 import { saveBlockedBy, type BlockedBy } from "../../runs/server";
 import { relayFor } from "../../relay/server";
 import type { HelperPolicySnapshot } from "../../native-agent";
@@ -324,7 +324,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
           attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{writerStatus:checked.status}});
         const stopped = endedByStop(checked.reason ?? checked.status);
         if (stopped) return stopped;
-        transitionAttempt(db, input.attemptId, checked.status, { reason:checked.reason });
+        transitionAttempt(db, input.attemptId, checked.status, { reason:checked.reason, ...failureFieldsOf(checked) });
         return { ...checked, attemptId:input.attemptId, writerThreadId:input.writerThreadId };
       }
       { const stopped = stoppedMeanwhile("validation"); if (stopped) return stopped; }
@@ -464,7 +464,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
               attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{writerStatus:candidate.status}});
             const stopped = endedByStop(candidate.reason ?? candidate.status, writerThreadId);
             if (stopped) return stopped;
-            transitionAttempt(db, input.attemptId, candidate.status, { reason:candidate.reason });
+            transitionAttempt(db, input.attemptId, candidate.status, { reason:candidate.reason, ...failureFieldsOf(candidate) });
             return { ...candidate, attemptId:input.attemptId, writerThreadId };
           }
           recordStage(db, {
@@ -717,7 +717,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
             attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{writerStatus:candidate.status}});
           const stopped = endedByStop(candidate.reason ?? candidate.status, writerThreadId);
           if (stopped) return stopped;
-          transitionAttempt(db, input.attemptId, candidate.status, { reason:candidate.reason });
+          transitionAttempt(db, input.attemptId, candidate.status, { reason:candidate.reason, ...failureFieldsOf(candidate) });
           return { ...candidate, attemptId:input.attemptId, writerThreadId };
         }
         recordStage(db, {
@@ -984,7 +984,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
           recordGateEvaluation(db,{projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"rejected",
             attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{integration:merged}});
           const stopped = endedByStop(reason, writerThreadId);
-          if (!stopped) transitionAttempt(db, input.attemptId, "validation_failed", { reason });
+          if (!stopped) transitionAttempt(db, input.attemptId, "validation_failed", { reason, ...failureFieldsOf(merged) });
           await settleIntent();
           if (stopped) return stopped;
           return { status:"validation_failed", reason, output:candidate.output, produced:candidate.produced, verification:replayRed && merged.checks?.length ? merged.checks : candidate.verification,

@@ -18,7 +18,7 @@ const db = new Database(flag("db"), { readonly: true, fileMustExist: true });
 db.exec(`attach database '${flag("core").replaceAll("'", "''")}' as core`);
 const epoch = statsEpochMs((db.prepare("SELECT value FROM lane_pilot_project_settings WHERE project_id=? AND key=?").get("*", STATS_EPOCH_SETTING) as { value:string } | undefined)?.value);
 const since = Math.max(Date.now() - days * 86_400_000, epoch);
-const rows = db.prepare(`select a.task_id as taskId, r.project_id as projectId, p.name as projectName, a.state as state, a.reason as reason, a.harness_version as harnessVersion, a.updated_at as updatedAt
+const rows = db.prepare(`select a.task_id as taskId, r.project_id as projectId, p.name as projectName, a.state as state, a.reason as reason, a.failure_code as failureCode, a.harness_version as harnessVersion, a.updated_at as updatedAt
   from lane_pilot_attempt a
   join lane_pilot_run r on r.id = a.run_id
   left join core.projects p on p.id = r.project_id

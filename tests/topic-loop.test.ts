@@ -93,7 +93,7 @@ describe("topicLoop", () => {
   it("stops a test that three other families could not get green, from their red reasons or their checks", () => {
     const red = (id: string, hours: number, extra: Partial<LoopTask>) => task(id, hours, { files: [`src/${id}.ts`], attempts: [{ state: "validation_failed", reason: null }], ...extra });
     const earlier = [
-      red("a", 1, { attempts: [{ state: "validation_failed", reason: "verification failed (npx runner --filter Flaky1 && npx runner --filter Other): exit 1" }] }),
+      red("a", 1, { attempts: [{ state: "validation_failed", reason: "verification failed (npx runner --filter Flaky1 && npx runner --filter Other): exit 1", failureCode: "verification_failed" }] }),
       red("b", 2, { commands: ["npx runner --filter flaky1"] }),
       red("c", 3, { commands: ["for m in One Flaky1; do npx runner --filter $m || exit 1; done"] }),
     ];
@@ -101,6 +101,17 @@ describe("topicLoop", () => {
     expect(topicLoop(next, earlier)).toMatchObject({ topic: "test", key: "flaky1", families: ["a", "b", "c"] });
     // A family whose checks all passed first time says nothing about the test.
     expect(topicLoop(next, [...earlier.slice(0, 2), task("c", 3, { commands: ["npx runner --filter Flaky1"], files: ["src/c.ts"] })])).toBeNull();
+  });
+
+  it("counts a replay-red attempt (a merge conflict that only names a failed check) by its failure_code", () => {
+    const red = (id: string, hours: number, extra: Partial<LoopTask>) => task(id, hours, { files: [`src/${id}.ts`], attempts: [{ state: "validation_failed", reason: null }], ...extra });
+    const earlier = [
+      red("a", 1, { attempts: [{ state: "validation_failed", reason: `merge_conflict: main changed since this attempt started: checks red after the replay on main: verification failed (npx runner --filter Flaky1)`, failureCode: "verification_failed" }] }),
+      red("b", 2, { commands: ["npx runner --filter flaky1"] }),
+      red("c", 3, { commands: ["for m in One Flaky1; do npx runner --filter $m || exit 1; done"] }),
+    ];
+    const next = task("d", 4, { kind: "feature", title: "add d", files: ["src/d.ts"], commands: ["npx runner --filter Flaky1"] });
+    expect(topicLoop(next, earlier)).toMatchObject({ topic: "test", key: "flaky1", families: ["a", "b", "c"] });
   });
 
   it("is released by an accepted research task on the topic, and held while one is open", () => {
