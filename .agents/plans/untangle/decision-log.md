@@ -97,3 +97,11 @@ domains never import `core` or `tools` (the composition root).
   per merge, never taken from a stream.
 - Owner 2026-11-07: no deploy per wave. All waves merge into main (full vitest after
   each merge); one release at the end, after the final check, then the drill.
+
+## Wave G (2026-11-07) — from final-audit-b.md
+Audit B: the 64-room SCC holds by three causes (core barrel imported by 43 rooms; UI/settings/contracts consumed both ways; a domain mesh). FAS ≈110 edges, near-minimal. Groups G1–G7c simulate to SCC 1 / 0 mutual pairs.
+- G1+G2 platform surface out of core → thr_4rw8e9tn77 (SWE-2 Flash high)
+- G3+G6 UI kit leaf → thr_agws6iissb (LongCat 2.5)
+- G4+G7a contracts + migrations leaves → thr_tzqp8jncww (SWE-2 Flash high)
+- G7b shared constants down → thr_bjt4ue7sg5 (LongCat 2.5)
+- G5 (writer/workflow ports) and G7c (runs split, critique/tasks/verification owner APIs) wait for F3 (writer failure fields) to merge — they touch the same files.
