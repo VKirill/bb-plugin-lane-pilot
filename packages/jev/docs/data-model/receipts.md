@@ -2,7 +2,7 @@
 title: Judgment receipts
 type: data-model
 created: 2026-11-05
-updated: 2026-11-06
+updated: 2026-11-07
 status: active
 confidence: medium
 tags: [jev, receipts, sqlite]
@@ -13,7 +13,7 @@ sources:
   - packages/jev/src/labels-outcome.ts
   - packages/jev/src/labels-model.ts
   - packages/jev/src/watch.ts
-  - src/rooms/storage/database.ts
+  - src/rooms/migrations.ts
   - packages/jev/src/autoresearch.ts
   - packages/jev/src/registry.ts
   - packages/jev/src/types.ts
@@ -39,7 +39,7 @@ erDiagram
 
 `id` is the primary key; indexes support judgment/time, project/time and run lookup (`packages/jev/src/receipts.ts:10-38`).
 
-The plugin appends `fields_json` and `input_json` columns to the base table (`src/rooms/storage/database.ts:445-446`, `src/rooms/storage/database.ts:481-482`).
+The plugin appends `fields_json` and `input_json` columns to the base table (`src/rooms/migrations.ts:429`, `src/rooms/migrations.ts:465`).
 
 ## Table: `lane_pilot_jev_receipt`
 
@@ -69,11 +69,11 @@ Sampled `input_json` is retained separately for model relabeling (`packages/jev/
 | `thresholds_json` | Effective thresholds used for the receipt | `packages/jev/src/receipts.ts:28` |
 | `latency_ms` | Request latency in milliseconds | `packages/jev/src/receipts.ts:29` |
 | `tokens_in`, `tokens_out` | Provider token counts apportioned across grouped judgments; null on failure | `packages/jev/src/receipts.ts:30-31` |
-| `outcome` | Later label; common prefixes are `agree` and `disagree`, with suffixes identifying label source | `packages/jev/src/receipts.ts:32`, `packages/jev/src/labels-outcome.ts:5-13`, `packages/jev/src/calibrate.ts:77-83` |
+| `outcome` | Later label; common prefixes are `agree` and `disagree`, with suffixes identifying label source | `packages/jev/src/receipts.ts:32`, `packages/jev/src/calibrate.ts:78-83` |
 | `outcome_at` | Unix timestamp in milliseconds when the label was written | `packages/jev/src/receipts.ts:33`, `packages/jev/src/receipts.ts:86-88` |
 | `at` | Unix timestamp in milliseconds when the receipt was inserted | `packages/jev/src/receipts.ts:34`, `packages/jev/src/receipts.ts:72-80` |
-| `fields_json` | Serialized map of top-level state field names to character sizes; no field content | `src/rooms/storage/database.ts:445-446`, `packages/jev/src/receipts.ts:74-80` |
-| `input_json` | Redacted original judgment input for a deterministic one-in-five sample, capped at 8 KiB | `src/rooms/storage/database.ts:481-482`, `packages/jev/src/receipts.ts:58-70` |
+| `fields_json` | Serialized map of top-level state field names to character sizes; no field content | `src/rooms/migrations.ts:429`, `packages/jev/src/receipts.ts:74-80` |
+| `input_json` | Redacted original judgment input for a deterministic one-in-five sample, capped at 8 KiB | `src/rooms/migrations.ts:465`, `packages/jev/src/receipts.ts:58-70` |
 
 ## Status and label transitions
 
@@ -96,13 +96,13 @@ The outcome labelers read only successful (`status = 'ok'`) receipts with a deci
 
 | Judgment | Later truth and label rule | Evidence |
 |---|---|---|
-| `critique.screen` | `pass` agrees with a cleanly accepted task; `fail` agrees with a failed task. Pending task truth and other decisions, including escalation, remain unlabeled. | `packages/jev/src/labels-outcome.ts:37-50`, `packages/jev/src/labels-outcome.ts:69-83` |
-| `critique.worth` | A skipped plan critique agrees when its task was accepted and disagrees when it failed. A run critique that found nothing yields `disagree:outcome:critic_found_nothing`; one that found changes yields `agree:outcome`. | `packages/jev/src/labels-outcome.ts:87-109` |
-| `lead.predict` | The nearest same-run decision journal prediction within 120 seconds supplies the owner label, falling back to judge verdict: `exact`/`partial` agree and `miss` disagrees; deferred or absent verdict remains unlabeled. | `packages/jev/src/labels-outcome.ts:112-128` |
-| `guard.host_command` | The latest answered `permit` decision for the run grades `allow` or `deny` against whether the judgment said stop; absent, malformed or other options remain unlabeled. | `packages/jev/src/labels-outcome.ts:131-151` |
-| `errand.failure` | The newest extractor-version episode for the run grades the judgment against its `failure_class` only after enrichment and when a class exists. | `packages/jev/src/labels-outcome.ts:154-168` |
+| `critique.screen` | `pass` agrees with a cleanly accepted task; `fail` agrees with a failed task. Pending task truth and other decisions, including escalation, remain unlabeled. | `packages/jev/src/labels-outcome.ts:37-53`, `packages/jev/src/labels-outcome.ts:74-91` |
+| `critique.worth` | A skipped plan critique agrees when its task was accepted and disagrees when it failed. A run critique that found nothing yields `disagree:outcome:critic_found_nothing`; one that found changes yields `agree:outcome`. | `packages/jev/src/labels-outcome.ts:92-110` |
+| `lead.predict` | The nearest same-run decision journal prediction within 120 seconds supplies the owner label, falling back to judge verdict: `exact`/`partial` agree and `miss` disagrees; deferred or absent verdict remains unlabeled. | `packages/jev/src/labels-outcome.ts:117-129` |
+| `guard.host_command` | The latest answered `permit` decision for the run grades `allow` or `deny` against whether the judgment said stop; absent, malformed or other options remain unlabeled. | `packages/jev/src/labels-outcome.ts:136-152` |
+| `errand.failure` | The newest extractor-version episode for the run grades the judgment against its `failure_class` only after enrichment and when a class exists. | `packages/jev/src/labels-outcome.ts:159-169` |
 
-Task truth is `accepted` only when there is an accepted attempt with no regression naming the task and no `<task-id>-mainfix` task. A terminal non-accepted attempt, regression, mainfix, or closed/non-running run without acceptance is failed; an open attempt or a still-running run without an attempt is pending (`packages/jev/src/labels-outcome.ts:32-50`).
+Task truth is `accepted` only when there is an accepted attempt with no regression naming the task and no `<task-id>-mainfix` task. A terminal non-accepted attempt, regression, mainfix, or closed/non-running run without acceptance is failed; an open attempt or a still-running run without an attempt is pending (`packages/jev/src/labels-outcome.ts:37-53`).
 
 ## Invariants
 
