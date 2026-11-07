@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { WorkflowEngine, registerPureActions } from "@lane-pilot/workflow-engine";
 import { openDatabase } from "../../src/rooms/plugin-db";
-import { builtinWorkflow } from "../../src/rooms/platform/server";
+import {builtinWorkflow} from "../../src/rooms/workflow/builtin";
 import { registerAgentRoutineActions } from "../../src/rooms/schedule/server/schedule-agent-actions";
 import { agentHistoryBlock, agentOutcomeOf, handOverTrailer, parseAgentOutcome, parseHandOver, renderAgentOutcome } from "../../src/rooms/schedule/outcome";
 import { createScheduleStore } from "../../src/rooms/schedule/store";

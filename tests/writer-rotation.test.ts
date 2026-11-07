@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { WRITER_ROTATION_SHARE_DEFAULT, rotatedWriterSettings, rotationBucket } from "../src/rooms/platform";
+import {WRITER_ROTATION_SHARE_DEFAULT, rotatedWriterSettings, rotationBucket} from "@lane-pilot/models";
+;
 
 const base = {
   "writer.provider": "acp-cursor", "writer.model": "composer-2.5", "writer.reasoning_effort": "medium",

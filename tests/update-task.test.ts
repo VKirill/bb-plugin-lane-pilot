@@ -5,7 +5,7 @@ import { openDatabase, createRun, createTask, createAttempt, countAttempts, getA
 import { recordStage } from "../src/rooms/runs/server/stage-records";
 import { createWriterUpdateTask } from "../src/rooms/writer/server/update-task";
 import { registerDispatchExecutors, startDispatchRun } from "../src/rooms/writer/server/dispatch-workflow";
-import { builtinWorkflow } from "../src/rooms/workflow";
+import {builtinWorkflow} from "../src/rooms/workflow/builtin";
 import { WorkflowEngine } from "@lane-pilot/workflow-engine";
 import type { TaskV2 } from "../src/rooms/contracts";
 import type { ServerCore } from "../src/rooms/contracts/server";

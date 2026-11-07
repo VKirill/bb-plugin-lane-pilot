@@ -1,4 +1,8 @@
+<<<<<<< HEAD
 import { PROVIDER_CAPABILITIES, usageProviderOf, zcodeBlock } from "@lane-pilot/models";
+=======
+import {providerLimitNotice, zcodeBlock} from "@lane-pilot/models";
+>>>>>>> f99e1d3f (untangle G5 (review fixes): engine-scoped lp-task provider, platform de-dumped)
 import { createProviderBreaker, createRunBudget, parseRunBudgetLimits, type RunBudget } from "@lane-pilot/resilience";
 import { RunWriterPool } from "../../tasks";
 import { createProviderUsage, usageSkipPercent } from "../../usage/server";
@@ -6,7 +10,7 @@ import { createProviderRetryGuard } from "../../stability/server";
 import { createConcurrencyLimit } from "./concurrency-limit";
 import { CATALOG_WAIT_MS, modelCatalogOf, noteProviderLimit, registerSpawnUsage, SEEN_LIMIT_HOLD_MS, threadModelOf, within, zcodeBusy, zcodeBusyPeek } from "../../platform/server";
 import { onThreadFailure } from "@lane-pilot/thread-observe";
-import { providerLimitNotice } from "../../platform/server";
+;
 import type { ServerCore } from "../../contracts/server";
 
 /** State shared by the writer modules: the live task set, the provider pool, the provider breaker and one budget per run. */

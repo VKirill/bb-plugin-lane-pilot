@@ -5,7 +5,7 @@ import plugin from "../server";
 import { NATIVE_LP_BRIDGE_ARCHITECT_TOOLS, NATIVE_LP_BRIDGE_PM_TOOLS, NATIVE_LP_BRIDGE_TOOLS } from "../src/rooms/native-agent/native-session-hooks";
 import { PM_CORE_TOOLS, PM_TOOL_FAMILIES, foldedToolCall, foldedToolHome, rewriteFoldedToolNames } from "../src/rooms/platform/server/pm-tool-families";
 import { mountToolFamilies } from "../src/rooms/tools/server/tool-families";
-import { registerObservedTool } from "../src/rooms/platform/server";
+import {registerObservedTool} from "../src/rooms/platform/server";
 
 // A compiled Claude Code profile holds at most 64 tools; the PM had 39 Lane Pilot tools next to 24 stock ones (audit round 4, P2-24).
 describe("the PM's folded tool list", () => {

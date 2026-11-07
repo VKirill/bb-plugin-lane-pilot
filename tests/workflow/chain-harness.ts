@@ -1,6 +1,6 @@
 import { PURE_ACTION_KEYS, pureActionExecutor } from "@lane-pilot/workflow-engine";
 import { writeFileSync } from "node:fs";
-import { BUILTIN_SOURCES } from "../../src/rooms/platform/server";
+import {BUILTIN_SOURCES} from "../../src/rooms/workflow/builtin";
 import type { RunGoal } from "@lane-pilot/workflow-engine";
 import type { NodeExecutor, RunSummary, StepContext } from "@lane-pilot/workflow-engine";
 import { executorKey, lowerWorkflow, outputFields } from "@lane-pilot/workflow-engine";

@@ -2,7 +2,7 @@ import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { resolve } from "node:path";
 import { sendServiceMessage } from "../../relay/server";
 import { isNotFound, orMiss } from "@lane-pilot/kit";
-import { listGuests } from "../../platform/server";
+import { listGuests } from "../../verification/server";
 
 const ASKED = (threadId: string, path: string) => `checkout-guest-asked:${threadId}:${resolve(path)}`;
 /** One question to a guest per folder in this time; the merge keeps waiting in between. */

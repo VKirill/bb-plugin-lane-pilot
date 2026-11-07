@@ -1,4 +1,5 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
+import { stageHelperSettings } from "../src/rooms/settings/server/stage-settings";
 import { LP_DEFAULTS_KEY } from "@lane-pilot/settings-catalog";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { PrototypeConfig, TaskV2 } from "../src/rooms/contracts";
@@ -51,7 +52,7 @@ function pmReadWorld() {
   createAttempt(db, { id: "a1", runId: "run", taskId: "t1" });
   saveProjectSetting(db, PROJECT, "pm_read.enabled", true);
   saveProjectSetting(db, PROJECT, "pm_read.min_lines", 50);
-  const run = () => runPmRead({ bb, db, projectId: PROJECT, runId: "run", taskId: "t1", pmThreadId: "pm-thread", config, task });
+  const run = () => runPmRead({ stageHelperSettings, bb, db, projectId: PROJECT, runId: "run", taskId: "t1", pmThreadId: "pm-thread", config, task });
   return { bb, db, spawned, run };
 }
 
@@ -85,7 +86,7 @@ describe("stage helper spawns read the settings in effect at spawn time", () => 
     expect(listStageReceipts(bothOff.db, "run", "t1").find((row) => row.stageId === "pm-read")?.reason).toBe("critics_disabled");
 
     const quick = pmReadWorld();
-    const quickResult = await runPmRead({
+    const quickResult = await runPmRead({ stageHelperSettings,
       bb: quick.bb, db: quick.db, projectId: PROJECT, runId: "run", taskId: "t1", pmThreadId: "pm-thread", config,
       task: { ...task, quality_mode: "quick" },
     });

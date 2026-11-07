@@ -3,8 +3,9 @@ import type { StepContext } from "@lane-pilot/workflow-engine";
 import { findThreadsByMetadata, graphStepMetadata, keyedSpawnSupported } from "../../platform/server";
 import type { ServerCore } from "../../contracts/server";
 import { withUsage } from "../../usage/server";
-import { outputText } from "../../platform/server";
+;
 import type { ChainRuntime } from "../../contracts/server";
+import {outputText} from "@lane-pilot/kit";
 
 /**
  * One helper thread of a graph step, for the executors that wrap a night job (rules scan, wall hunt, harness edit): the spawn is a journal

@@ -3,7 +3,7 @@ import { jev, type JevSettings } from "@lane-pilot/jev";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
 import { modelCatalogOf, readProviderFolderBlock, resolveSpawnModel, scheduleIsolated, spawnUsageOf, warmSpawnUsage } from "../../platform/server";
 import { type ServerCore } from "../../contracts/server";
-import { builtinWorkflow } from "../../platform/server";
+
 import type { ChainRuntime } from "../../contracts/server";
 import {
   chooseProcessKey, errandFailureJudgment, sweepErrandEpisodes,
@@ -124,7 +124,7 @@ export function mountEpisodesGraph(ctx: ServerCore, services: Services): void {
   // repeated tick in the same hour a no-op.
   scheduleIsolated(ctx.bb, EPISODES_SCHEDULE, "23 * * * *", async (signal) => {
     if (ctx.isDisposed() || signal?.aborted) return;
-    const workflow = builtinWorkflow(EPISODES_WORKFLOW);
+    const workflow = services.workflowEngine.resolveWorkflow(EPISODES_WORKFLOW);
     if (!workflow) return;
     const key = `episodes:${new Date().toISOString().slice(0, 13)}`;
     const prior = ctx.db.prepare("SELECT status FROM lane_pilot_wf_run WHERE idem_key=?").get(key) as { status: string } | undefined;

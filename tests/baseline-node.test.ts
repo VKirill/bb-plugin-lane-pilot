@@ -16,7 +16,7 @@ function world(preflight: () => Promise<{ stop: string | null; record: unknown; 
   createTask(db, { id:"t1", runId:"r", kind:"bb", contract:task });
   createAttempt(db, { id:"a", runId:"r", taskId:"t1" });
   const executors = new Map<string, { run: (ctx: unknown) => Promise<{ output?: Record<string, unknown> }> }>();
-  registerDispatchExecutors({ register: (key: string, executor: never) => executors.set(key, executor) } as never, bb);
+  registerDispatchExecutors({ register: (key: string, executor: never) => executors.set(key, executor), hasExecutor: (key: string) => executors.has(key) } as never, bb);
   const asked: unknown[] = [];
   const runtime = { ctx:{ db, bb, refreshRun:() => undefined }, services:{ baseline:{ preflight:async (input: unknown) => { asked.push(input); return preflight(); } } },
     threadId:"pm", projectId:"P", runId:"r", taskId:"t1", attemptId:"a", config:{}, runConfig:{ hostId:"h" }, workspacePath:"/repo", task, plan:"plan", lintWarnings:[] };

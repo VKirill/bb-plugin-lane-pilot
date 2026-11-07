@@ -1,4 +1,4 @@
-import { builtinWorkflow } from "../../platform/server";
+
 
 import type { ServerCore } from "../../contracts/server";
 import { threatGap } from "../stages";
@@ -482,7 +482,7 @@ export function createAutoStages(ctx: Pick<ServerCore, "log">, services: Pick<Se
     // A context signed without the threat model its security risk needs can never pass the plan gate, and replanning cannot give it one: the machine
     // writes SECURITY.md from the signed risk, signs the context again with it and plans anew (drill ph_5cd09d1c7a: two plans, both refused for it alone).
     if (due.kind === "plan" && threatGap(phase.record)) return repairThreatModel(phase);
-    const workflow = builtinWorkflow(AUTO_WORKFLOWS[due.kind]);
+    const workflow = services.workflowEngine.resolveWorkflow(AUTO_WORKFLOWS[due.kind]);
     const runtime = deps.runtime(phase);
     if (!workflow || !runtime) return false;
     try {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { resolveStageWriterSelection } from "../src/rooms/platform/server";
+import {resolveStageWriterSelection} from "@lane-pilot/models";
+;
 
 const config = { writerProviderId: "codex", writerModel: "gpt-5.6-luna" };
 

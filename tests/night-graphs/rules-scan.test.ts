@@ -3,7 +3,7 @@ import { validateWorkflow } from "@lane-pilot/workflow-engine";
 import { createRuleScan } from "../../src/rooms/self-repair/server/rule-scan";
 import { selfRepairDeps } from "../../src/rooms/self-repair/server";
 import { mountNightGraphs } from "../../src/rooms/night-graphs/server";
-import { builtinWorkflow } from "../../src/rooms/platform/server";
+import {builtinWorkflow} from "../../src/rooms/workflow/builtin";
 import { listRuleProposals } from "@lane-pilot/run-insights";
 import { nightWorld } from "./world";
 import { createWriterHost } from "../../src/rooms/writer/server/writer-host";

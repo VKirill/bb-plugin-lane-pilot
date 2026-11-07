@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { loadWorkflowStore } from "@lane-pilot/workflow-engine";
-import { BUILTIN_SOURCES } from "../src/rooms/platform/server";
+import {BUILTIN_SOURCES} from "../src/rooms/workflow/builtin";
 import { buildWorkflowMap } from "../src/rooms/workflow/server/workflow-map";
 
 const noRuns = () => ({ runs30d: 0, successRate: null });
@@ -52,7 +52,7 @@ describe("workflow map builder", () => {
 it("keeps only the map's two counters when the library hands over its full stats row", async () => {
   const { rpcContract } = await import("../src/rooms/contracts");
   const { parseWorkflowObject } = await import("@lane-pilot/workflow-engine");
-  const { BUILTIN_SOURCES } = await import("../src/rooms/platform/server");
+  const { BUILTIN_SOURCES } = await import("../src/rooms/workflow/builtin");
   const items = BUILTIN_SOURCES.slice(0, 3).map((source) => ({ workflow: parseWorkflowObject(source.value).data, origin: "builtin" })) as never;
   const fullStats = () => ({ runs: 4, succeeded: 3, failed: 1, active: 0, runs30d: 2, successRate: 0.75, lastRunAt: 1, lastStatus: "done" }) as never;
   const data = { ...buildWorkflowMap(items, fullStats, "v"), project: "not_requested" as const };

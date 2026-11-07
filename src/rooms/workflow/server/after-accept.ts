@@ -1,14 +1,16 @@
 import { getRun, listOpenAttempts, listStageReceipts } from "../../storage";
 import { shouldTriggerProjectLife } from "../../project-life";
 import { withUsage } from "../../usage/server";
-import { AFTER_ACCEPT, builtinWorkflow } from "../../platform/server";
+;
 import { requireGreen } from "./require-green";
 import type { NodeExecutor, StepContext, WorkflowEngine } from "@lane-pilot/workflow-engine";
 import type { ServerCore } from "../../contracts/server";
 
 import type { MemoryStageApi } from "../../memory/server/memory";
 import type { ProjectLifeStageApi } from "../../project-life/server/project-life";
-import type { IsLiveFolder } from "../../platform/server";
+import type {IsLiveFolder} from "../../platform/server";
+import {AFTER_ACCEPT} from "../../contracts";
+import {builtinWorkflow} from "../builtin";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {
@@ -16,7 +18,6 @@ interface Services {
   runMemoryMaintenance: MemoryStageApi["runMemoryMaintenance"];
   runProjectLifeMaintenance: ProjectLifeStageApi["runProjectLifeMaintenance"];
 }
-
 
 /**
  * The graph `lp.after-accept` (workflows/lp.after-accept.json): once a task is accepted, the memory maintainer and the project-life

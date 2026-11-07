@@ -1,6 +1,6 @@
 import { choice, choiceOf, defineJudgment, score, type Answers, type Jev } from "@lane-pilot/jev";
-import { isZcodeProvider, writerCandidates, type WriterProfile } from "@lane-pilot/models";
-import { writerFallbackKeys, writerFallbackSlots, WRITER_FALLBACK_SLOTS } from "../platform/server";
+import {WRITER_FALLBACK_SLOTS, isZcodeProvider, type WriterProfile, writerCandidates, writerFallbackKeys, writerFallbackSlots} from "@lane-pilot/models";
+;
 // Last import on purpose: judgment fingerprints hash `questions`/`decide` source, and the SSR transform
 // numbers imports — a new import ahead of these would silently re-fingerprint writer.model.
 import { bestEffort } from "@lane-pilot/kit";

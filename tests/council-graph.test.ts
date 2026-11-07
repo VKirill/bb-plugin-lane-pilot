@@ -5,7 +5,7 @@ import { ROOM_TURN_CAP, maxTurnsOf } from "@lane-pilot/council";
 import { listHandoffs } from "@lane-pilot/handoff";
 import plugin from "../server";
 import { createRun, openDatabase, saveProjectSetting, savePrototypeConfig, setRunThread } from "../src/rooms/plugin-db";
-import { builtinWorkflow } from "../src/rooms/platform/server";
+import {builtinWorkflow} from "../src/rooms/workflow/builtin";
 
 /**
  * The council as a graph (workflows/council.json): the real plugin, the real engine and journal, BB's threads and files as doubles.

@@ -19,6 +19,7 @@ import {
 type Kv = { get(key: string): Promise<unknown>; set(key: string, value: never): Promise<unknown> };
 
 export type BenchDeps = {
+  issueQuickModelCalls?(settings: Record<string, unknown> | null | undefined): number;
   db: BenchDb;
   kv: Kv;
   host: HostPort;
@@ -220,7 +221,7 @@ export function createBench(deps: BenchDeps) {
     };
     const armB = listRuns(deps.db, set.id).filter((row) => row.arm === input.armB).at(-1);
     const settings = (armB?.config as { settings?: Record<string, unknown> } | undefined)?.settings;
-    const strata = renderStratumMetrics(stratumMetrics(rowsOf(input.armB).length ? rowsOf(input.armB) : rowsOf(input.armA)), settings);
+    const strata = renderStratumMetrics(stratumMetrics(rowsOf(input.armB).length ? rowsOf(input.armB) : rowsOf(input.armA)), settings, deps.issueQuickModelCalls);
     const text = strata ? `${renderComparison(comparison)}\n${strata}` : renderComparison(comparison);
     return { comparison, text, verdictId: verdict?.id ?? null };
   }
@@ -296,7 +297,7 @@ export function createBench(deps: BenchDeps) {
       if (!task || result.state === "skipped_budget" || result.state === "error") continue;
       byTask.set(result.taskId, { taskId: result.taskId, stratum: task.stratum, accepted: result.accepted, seconds: result.seconds, tokens: result.tokens });
     }
-    const rendered = renderStratumMetrics(stratumMetrics([...byTask.values()]), (runs.at(-1)?.config as { settings?: Record<string, unknown> } | undefined)?.settings);
+    const rendered = renderStratumMetrics(stratumMetrics([...byTask.values()]), (runs.at(-1)?.config as { settings?: Record<string, unknown> } | undefined)?.settings, deps.issueQuickModelCalls);
     const lines = rendered ? rendered.split("\n") : [];
     // The critic-eval stratum reports recall against the reference bugs, not the generic metrics.
     const critiqueTasks = set.tasks.filter((task) => task.stratum === "critique" && byTask.has(task.taskId));

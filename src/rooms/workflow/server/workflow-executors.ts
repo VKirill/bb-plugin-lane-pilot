@@ -45,10 +45,10 @@ interface Services {
 
 type LpTaskRuntime = { attemptId: string };
 
-/** The dispatch pipeline's `lp-task` executor: the writer room provides it from the composition root; the merged
+/** The dispatch pipeline's `lp-task` executor: the writer room provides it from the composition root, per engine; the merged
  * executor reads it at run time, never at mount. */
-let lpTaskPipeline: NodeExecutor<LpTaskRuntime> | null = null;
-export function provideLpTaskPipeline(executor: NodeExecutor<LpTaskRuntime>): void { lpTaskPipeline = executor; }
+const lpTaskPipelines = new WeakMap<WorkflowEngine, NodeExecutor<LpTaskRuntime>>();
+export function provideLpTaskPipeline(engine: WorkflowEngine, executor: NodeExecutor<LpTaskRuntime>): void { lpTaskPipelines.set(engine, executor); }
 
 /**
  * The executors that run a chain on the host: the generic agent step, the owner's question, the code task of a chain, the actions
@@ -503,7 +503,7 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
   } as NodeExecutor<ChainRuntime>);
 
   // ---------------------------------------------------------------- lp-task: one code task through the writer pipeline
-  const pipeline = () => { const p = lpTaskPipeline; if (!p) throw new Error("the lp-task pipeline executor is not registered"); return p; };
+  const pipeline = () => { const p = lpTaskPipelines.get(engine); if (!p) throw new Error("the lp-task pipeline executor is not registered"); return p; };
   const chainTask: NodeExecutor<ChainRuntime> = {
     reentrant: true,
     run: async (c) => {

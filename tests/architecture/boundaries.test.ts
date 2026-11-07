@@ -134,7 +134,7 @@ describe("import boundaries", () => {
   it("lists every room file that does something when it is imported in src/rooms/package.json (sideEffects)", () => {
     const listed = new Set<string>((JSON.parse(readFileSync(join(ROOT, "src/rooms/package.json"), "utf8")).sideEffects as string[]).map((p) => `src/rooms/${p.replace(/^\.\//, "")}`));
     // Built from a loop over constants, no effect outside the module: dropping it when unused is right.
-    const PURE_DESPITE_LOOP = new Set(["src/rooms/platform/server/builtin-workflows.ts"]);
+    const PURE_DESPITE_LOOP = new Set(["src/rooms/workflow/builtin.ts"]);
     const found = new Set<string>();
     for (const file of graph.files) {
       if (!file.startsWith("src/rooms/") || !/\.tsx?$/.test(file)) continue;

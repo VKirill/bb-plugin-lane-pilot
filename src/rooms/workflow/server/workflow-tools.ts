@@ -20,7 +20,7 @@ import type { ServerCore } from "../../contracts/server";
 import { jev } from "@lane-pilot/jev";
 import { createJevRouterModel } from "../route-model";
 import { createRouterModel } from "./workflow-router-model";
-import { builtinWorkflows } from "../../platform/server";
+;
 import { realDeps } from "./workflow-architect";
 import { createWorkflowLibrary } from "./workflow-library";
 import { createWorkflowPreflight } from "./workflow-preflight";
@@ -32,6 +32,7 @@ import type { WorkflowEngineApi } from "./workflow";
 import type { DocsNightlyApi } from "../../docs/server/docs-nightly";
 
 import type { WorkflowTriggersApi } from "./workflow-triggers-live";
+import {builtinWorkflows} from "../builtin";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {

@@ -7,7 +7,7 @@ import type { Workflow } from "@lane-pilot/workflow-engine";
 import { loadWorkflowStore } from "@lane-pilot/workflow-engine";
 import type { WorkflowStore } from "@lane-pilot/workflow-engine";
 import { loadWorkflow, validateWorkflow } from "@lane-pilot/workflow-engine";
-import { BUILTIN_SOURCES } from "../../src/rooms/platform/server";
+import {BUILTIN_SOURCES} from "../../src/rooms/workflow/builtin";
 import { engineOn, journalDb, ok, rows, stepStates, wf } from "./engine-helpers";
 
 /**

@@ -4,8 +4,10 @@ import type { Field } from "@lane-pilot/workflow-engine";
 import type { WorkflowAgents } from "./workflow-agent";
 import type { ChainRuntime } from "../../contracts/server";
 import { sha256Hex } from "@lane-pilot/kit";
-import { ROUTE_WORKFLOW, builtinWorkflow } from "../../platform/server";
+;
 import { serviceRole } from "../service-models";
+import {ROUTE_WORKFLOW} from "../../contracts";
+import {builtinWorkflow} from "../builtin";
 
 /**
  * The escalation of `lane_pilot_route` (Jev decides the clear cases first, src/jev/route-model.ts): a read-only helper thread of the PM chat that sees the owner's request and the cards of

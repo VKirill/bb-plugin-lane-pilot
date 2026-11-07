@@ -70,6 +70,7 @@ import { createWriterFinish } from "./src/rooms/writer/server";
 import { createWriterStart } from "./src/rooms/writer/server";
 import { createWriterDispatch } from "./src/rooms/writer/server";
 import { createAttemptReopen, createWriterReassign, recheckPlanFact, registerDispatchExecutors, taskUsage } from "./src/rooms/writer/server";
+import { stageHelperSettings } from "./src/rooms/settings/server";
 import { createWorkflowEngine } from "./src/rooms/workflow/server";
 import { architectStarter, createWorkflowLibrary } from "./src/rooms/workflow/server";
 import { createWorkflowTriggersService } from "./src/rooms/workflow/server";
@@ -99,7 +100,7 @@ import type { WriterVerifyApi } from "./src/rooms/writer/server/verify";
 import type { WriterFinishApi } from "./src/rooms/writer/server/finish";
 import type { WriterStartApi } from "./src/rooms/writer/server/start";
 import type { WriterDispatchApi } from "./src/rooms/writer/server/dispatch";
-import type { ArchitectApi, AttemptReopenApi, RecheckPlanFact, TaskUsage, WorkflowEngineApi, WorkflowLibraryApi, WriterReassignApi } from "./src/rooms/platform/server";
+import type { ArchitectApi, AttemptReopenApi, RecheckPlanFact, StageHelperSettings, TaskUsage, WorkflowEngineApi, WorkflowLibraryApi, WriterReassignApi } from "./src/rooms/platform/server";
 import type { WorkflowTriggersApi } from "./src/rooms/workflow/server/workflow-triggers-live";
 import type { MemoryProbeApi } from "./src/rooms/memory-probe/server/memory-probe";
 import type { CouncilApi } from "./src/rooms/council/server";
@@ -237,6 +238,7 @@ export interface Services {
   writerReassign: WriterReassignApi;
   workflowEngine: WorkflowEngineApi["workflowEngine"];
   workflowCatalog: WorkflowEngineApi["workflowCatalog"];
+  stageHelperSettings: StageHelperSettings;
   startAfterAcceptance: WorkflowEngineApi["startAfterAcceptance"];
   workflowTriggers: WorkflowTriggersApi["workflowTriggers"];
   /** The errand starter of the PM tools (also used by scheduled errands); set in server.ts before the tools mount. */
@@ -304,12 +306,13 @@ export default async function plugin(bb: BbPluginApi) {
     { memoryConflicts: createMemoryConflicts({ db, deferrals: () => services.deferrals, log: ctx.log }) },
     createRollback(ctx, services),
     createBaselineRoom(ctx, services),
-    { architect: architectStarter(ctx, services) },
-    { workflowLibrary: createWorkflowLibrary(ctx, services) },
-    { recheckPlanFact: (input: { projectId: string; runId: string; taskId: string; hostId: string }) => recheckPlanFact(ctx, input) },
-    { taskUsage },
-    { attemptReopen: createAttemptReopen(ctx, services) },
-    { writerReassign: createWriterReassign(ctx) },
+    { architect: architectStarter(ctx, services) satisfies ArchitectApi },
+    { workflowLibrary: createWorkflowLibrary(ctx, services) satisfies WorkflowLibraryApi },
+    { recheckPlanFact: ((input: { projectId: string; runId: string; taskId: string; hostId: string }) => recheckPlanFact(ctx, input)) satisfies RecheckPlanFact },
+    { taskUsage: taskUsage satisfies TaskUsage },
+    { stageHelperSettings: stageHelperSettings satisfies StageHelperSettings },
+    { attemptReopen: createAttemptReopen(ctx, services) satisfies AttemptReopenApi },
+    { writerReassign: createWriterReassign(ctx) satisfies WriterReassignApi },
     createStageReturn(ctx, services),
     createRunGoal(ctx, services),
     createProfileCheck(ctx),

@@ -1,10 +1,11 @@
 import { acceptanceArtifactDir } from "../../tasks";
+import type { StageHelperSettings } from "../../platform/server";
 import { taskV2Schema } from "../../contracts";
 import { claimStageSpawn, getRun, getTask, listStageReceipts } from "../../storage";
 import { bbServiceTier, listedServiceTier, writerExecutionSelection } from "@lane-pilot/models";
 import { changelogCommand, changelogLine, findOutOfScopeProjectLifeWrites, foldCoveredTaskIds, parseProjectLifeFinalMessage, parseProjectLifeSettings, projectLifePrompt, projectLifeServiceTier } from "../project-life";
 import { ProjectLifeChildSnapshot, childResultObject, projectLifeChildSnapshot, spawnRefused } from "../../runs/server";
-import { modelCatalogOf, resolveSpawnModel, spawnUsageOf, warmSpawnUsage, stageHelperSettings } from "../../platform/server";
+import { modelCatalogOf, resolveSpawnModel, spawnUsageOf, warmSpawnUsage } from "../../platform/server";
 import { configuredSetting } from "../../contracts/server";
 import { fullAccessSpawn, graphStepMetadata } from "../../platform/server";
 import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server";
@@ -17,6 +18,7 @@ import type { StageChildrenApi } from "../../qa/server/children";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {
+  stageHelperSettings: StageHelperSettings;
   projectLifeTaskSummary: StageChildrenApi["projectLifeTaskSummary"];
   reconcileProjectLifeChild: StageChildrenApi["reconcileProjectLifeChild"];
 }
@@ -40,7 +42,7 @@ export function createProjectLifeStage(ctx: ServerCore, services: Services) {
     const accepted=listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="acceptance-receipt");
     if(accepted?.state!=="passed") throw new Error("project-life maintenance requires an accepted writer receipt first");
 
-    const settings=await stageHelperSettings(bb,db,args.projectId,args.runId);
+    const settings=await services.stageHelperSettings(bb,db,args.projectId,args.runId);
     const projectLifeSettings=parseProjectLifeSettings({"project_life.enabled":configuredSetting(settings,"project_life.enabled")});
     // The project-life row of the role table (the stage's own project_life.* settings still win), through the one resolver.
     const spawnUsage=spawnUsageOf(ctx);

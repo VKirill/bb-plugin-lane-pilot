@@ -1,4 +1,5 @@
 import { relative, resolve } from "node:path";
+import type { StageHelperSettings } from "../../platform/server";
 import { isDeepStrictEqual } from "node:util";
 import { DISPATCH_STAGES_PENDING } from "../../runs";
 import { taskV2Schema } from "../../contracts";
@@ -26,6 +27,7 @@ import type { WriterStateApi } from "./state";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {
+  stageHelperSettings: StageHelperSettings;
   activeWriterTasks: WriterStateApi["activeWriterTasks"];
   baseline: BaselineApi;
   isLiveFolder: WriterSpawnApi["isLiveFolder"];

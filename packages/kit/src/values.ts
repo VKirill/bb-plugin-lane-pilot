@@ -12,3 +12,11 @@ export function stringAt(value: unknown, key: string): string | null {
   const found = valueAt(value, key);
   return typeof found === "string" && found.length > 0 ? found : null;
 }
+
+export function outputText(value: unknown): string {
+  for (const key of ["text", "output", "lastAssistantText", "content"]) {
+    const found = valueAt(value, key);
+    if (typeof found === "string") return found;
+  }
+  return JSON.stringify(value);
+}

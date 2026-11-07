@@ -11,14 +11,14 @@ import { ModelOverridesPanel } from "../ui-shell/ui";
 import { RoleModelsPanel } from "./role-models";
 import { useRulesAnalyzer } from "../self-repair/ui";
 import { asBoolean } from "../ui-shell/ui";
-import { writerFallbackSlots } from "../writer/ui";
+;
 import { SettingField } from "../ui-shell/ui";
 import { originOfKeys, roleKey, roleName, rolePurpose, ROLE_GROUPS, type RoleOrigin, type RoleSpec } from "../native-agent/ui";
 import { BrowserDetail, CouncilDetail, WriterDetail } from "./team-details";
 import { Pill, type PillTone } from "../ui-shell/ui";
 import { Surface, SurfaceBody, SurfaceHeader } from "@lane-pilot/ui-kit";
 import type { LpPage } from "./use-lp-page";
-import { roleRowOf } from "@lane-pilot/models";
+import {roleRowOf, writerFallbackSlots} from "@lane-pilot/models";
 
 /** A row of the table «role -> model» as `get_role_models` reads it for the place: what the role runs on now. */
 type TableRole = { role: string; providerId: string; model: string; effort: string; source: "table" | "stage" | "default"; version: number;

@@ -10,9 +10,9 @@ import type { WorkflowEngineApi } from "../../workflow/server/workflow";
 import type { WriterHostApi } from "../../writer/server/writer-host";
 
 import { getRun, getRunSettingsScopes } from "../../storage";
-import { fileAllowedByOwns, fileBlockedByNeverTouch, orMiss, isNotFound } from "@lane-pilot/kit";
+import {fileAllowedByOwns, fileBlockedByNeverTouch, isNotFound, orMiss, outputText} from "@lane-pilot/kit";
 import { bbServiceTier, writerExecutionSelection } from "@lane-pilot/models";
-import { outputText } from "../../platform/server";
+;
 import { adoptRuleProposal, nightMayAdopt, refreshRuleProposals, retireAdoptedRule, rewordAdoptedRule } from "./insights";
 import { postOwnerItem } from "../../owner-waiting";
 
@@ -22,7 +22,7 @@ import { postOwnerItem } from "../../owner-waiting";
  * version 1 until 0.1.458 (Astra F-008: the classifier and the executor described two different rules of admission). Read at use, so a
  * policy that moves `rule_trial_apply` back to `night_decides` turns the trials on again without a code change.
  */
-import { builtinWorkflow } from "../../platform/server";
+
 import { stringAt } from "@lane-pilot/kit";
 import { SANDBOX_PROJECT_ID, isSandboxProjectName } from "../../stability/server";
 import type { ServerCore } from "../../contracts/server";
@@ -550,7 +550,7 @@ export function createRuleScan(ctx: ServerCore, services: RuleScanServices, deps
     const key = `rules-scan:${projectId}:${options.night ?? Date.now()}`;
     const prior = db.prepare("SELECT status FROM lane_pilot_wf_run WHERE idem_key=?").get(key) as { status: string } | undefined;
     if (prior && ["succeeded", "failed", "blocked", "interrupted", "canceled", "not_verified"].includes(prior.status)) return { started: false, scan: await scanState(projectId) };
-    const workflow = builtinWorkflow(RULES_SCAN_WORKFLOW);
+    const workflow = services.workflowEngine.resolveWorkflow(RULES_SCAN_WORKFLOW);
     if (!workflow) throw new Error(`built-in workflow ${RULES_SCAN_WORKFLOW} is not loaded`);
     running.add(projectId);
     try {
@@ -576,7 +576,7 @@ export function createRuleScan(ctx: ServerCore, services: RuleScanServices, deps
    * one-step graph `lp.rules-ask`. A thread that fails or does not finish in 20 minutes fails the run and the call throws, as it always did.
    */
   async function runAnalyzer(projectId: string, title: string, prompt: string, place: { hostId: string; path: string }, analyzer: AnalyzerSelection, metadata: Record<string, unknown>, role?: HelperRole): Promise<string> {
-    const workflow = builtinWorkflow(RULES_ASK_WORKFLOW);
+    const workflow = services.workflowEngine.resolveWorkflow(RULES_ASK_WORKFLOW);
     if (!workflow) throw new Error(`built-in workflow ${RULES_ASK_WORKFLOW} is not loaded`);
     const runtime = { ctx, services, pmThreadId: null, projectId, runId: null };
     // The key is the question itself (project, day, title and prompt): a reload or a repeat finds the run it already made. A run that ended

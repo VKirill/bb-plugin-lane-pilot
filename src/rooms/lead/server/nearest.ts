@@ -1,7 +1,7 @@
 import { routeIntent, stems, type Workflow } from "@lane-pilot/workflow-engine";
 import { skillCatalog, type ListedSkill } from "@lane-pilot/jev/judgments/skill-pick";
-import { builtinWorkflows } from "../../platform/server";
-import { candidateNames, readSkillTreeText, skillTreeCached, type SkillTree } from "../../writer/server";
+
+import { candidateNames, readSkillTreeText, skillTreeCached, type SkillTree } from "../../platform/server";
 
 import type { ServerCore } from "../../contracts/server";
 import type { ProcessForm } from "./tick";
@@ -106,8 +106,8 @@ export async function attachNearest(input: {
   const { bb, rows } = input;
   if (!rows.length) return;
   const workflows = input.workflowCatalog
-    ? await input.workflowCatalog.store().then((store) => store.list().map((item) => item.workflow)).catch(() => builtinWorkflows())
-    : builtinWorkflows();
+    ? await input.workflowCatalog.store().then((store) => store.list().map((item) => item.workflow)).catch(() => input.workflowCatalog!.builtins())
+    : [];
   const tree = await (input.readTree ?? (() => skillTreeCached(readSkillTreeText)))().catch(() => null);
   const skillsCache = new Map<string, Promise<ListedSkill[] | null>>();
   const skillsOf = (projectId: string): Promise<ListedSkill[] | null> => {

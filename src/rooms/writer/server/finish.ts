@@ -1,4 +1,5 @@
 import { appetiteStop, breakerKey, runningWriterBudgetStop, tokenUsageFromEvent } from "@lane-pilot/resilience";
+import type { StageHelperSettings } from "../../platform/server";
 import { checkTimeoutSec } from "../check-timing";
 import { pipelineWriterStep, pipelineWriterTag } from "./pipeline-tag";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
@@ -7,7 +8,7 @@ import { countAttempts, countThreadTurns, getAttempt, getReasoningTrace, getRun,
 import { saveBlockedBy, type BlockedBy } from "../../runs/server";
 import { relayFor } from "../../relay/server";
 import type { HelperPolicySnapshot } from "../../native-agent";
-import { writerExecutionSelection } from "@lane-pilot/models";
+import {providerLimitNotice, writerExecutionSelection} from "@lane-pilot/models";
 import { actionableFindings, advisoryFeedback, buildCandidateEvidence, codeCritiqueSource, codeRepairPrompt, findingsHash, nextRepairAction, parseCodeCritiqueSettings, parseWriterRepairReply, repairLedgerFromResult, sameUnresolvedFindings, sameWriterIdentity, settingsFromFrozenPolicy, shouldRequestRepair } from "../../critique";
 import type { WriterIdentity } from "../../critique";
 import { CODE_CRITIC_DEFAULT_SETTING, QUALITY_MODE_SETTING, applyCodeCriticDefault, applyQualityMode, critiqueRepeatSkip, patchChangedLines, resolveCodeCriticDefault, resolveQualityMode, withReferenceTestCritic } from "../../critique";
@@ -17,9 +18,9 @@ import { candidatePatches, runCodeCritique } from "../../critique/server";
 import { fullAccessSpawn } from "../../platform/server";
 import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server";
 import { closeWriterStages, recordGateEvaluation, recordStage } from "../../runs/server";
-import { stringAt, orMiss, isNotFound } from "@lane-pilot/kit";
+import {isNotFound, orMiss, outputText, stringAt} from "@lane-pilot/kit";
 import { wasAnsweredByDefault } from "./question-default";
-import { needsHumanQuestion, outputText, providerLimitNotice, providerStreamError, WRITER_STREAM_ERROR, writerContextBlocks, writerSetupLines } from "./writer-task";
+import {needsHumanQuestion, providerStreamError, WRITER_STREAM_ERROR, writerContextBlocks, writerSetupLines} from "./writer-task";
 import { isLiveDecision } from "../live-folder";
 import { OWNER_WORD_WAIT_MS, TASK_WORDS_KEY, acceptanceProofGap, taskSizeOf, landingWordGap, landingWordAsked, questionsFromFile, checkScriptEdits, referenceTestEdits, taskWordKey, testFitFindings, writerMarkers } from "../../tasks";
 import type { TaskWord } from "../../tasks";
@@ -60,6 +61,7 @@ import type { WriterDispatchApi } from "./dispatch";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {
+  stageHelperSettings: StageHelperSettings;
   baseline: BaselineApi;
   dispatchWriter: WriterDispatchApi["dispatchWriter"];
   persistWriterAcceptance: WriterVerifyApi["persistWriterAcceptance"];
@@ -427,7 +429,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
         const disputes = repairRound > 0 ? parseWriterRepairReply(candidate.output) : null;
         if (disputes && disputes.replies.length > 0 && disputes.replies.every((row) => row.status === "disputed")) {
           const recritique = await runCodeCritique({
-            bb, db, projectId:input.projectId, runId:input.runId, taskId:input.taskId,
+            stageHelperSettings: services.stageHelperSettings, bb, db, projectId:input.projectId, runId:input.runId, taskId:input.taskId,
             config:input.config, task:input.task, evidence, disputes, frozenPolicy, criticDefault:taskCriticDefault,
             workflow:pipelineWriterStep(db, input.runId, input.taskId) ?? undefined,
           });
@@ -512,7 +514,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
           }
         }
         const critique = await runCodeCritique({
-          bb, db, projectId:input.projectId, runId:input.runId, taskId:input.taskId,
+          stageHelperSettings: services.stageHelperSettings, bb, db, projectId:input.projectId, runId:input.runId, taskId:input.taskId,
           config:input.config, task:input.task, evidence, frozenPolicy, criticDefault:taskCriticDefault,
           workflow:pipelineWriterStep(db, input.runId, input.taskId) ?? undefined,
         });

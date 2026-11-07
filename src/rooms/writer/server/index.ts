@@ -1,6 +1,8 @@
 // Public API of writer/server: what other rooms import. Everything else in this room is private.
 // Add a name here to make it public; scripts/refactor/barrels.ts wrote the first version from the existing imports.
 export { createWriterAnswer } from "./answer";
+import {providerLimitNotice} from "@lane-pilot/models";
+import {outputText} from "@lane-pilot/kit";
 export { lpTaskPipelineExecutor, registerDispatchExecutors } from "./dispatch-workflow";
 export { markAttemptStart } from "./attempt-marker";
 export { taskThreadWindows, taskUsage } from "./attempt-usage";
@@ -26,7 +28,6 @@ export { createWriterVerify } from "./verify";
 export { createWriterHost } from "./writer-host";
 export { DEFAULT_SILENCE_NUDGE_MIN, sweepWriterSilence } from "./writer-silence";
 export { asJsonText, writerBriefSegments, writerContextBlocks } from "./writer-task";
-export { outputText, providerLimitNotice } from "../../platform/server";
+;
 export { stickyTurnPromptWithRules, writerKnowledge, writerRules } from "./writer-knowledge";
-export { SKILLS_USAGE, candidateNames, filterSkillHub, firstSentence, formatSkillList, parseSkillHub, pickSkillTree, readSkillTreeText, runSkillsCli, skillTreeCached } from "../../platform/server";
 export type { SkillHub, SkillHubEntry, SkillTree } from "../../platform/server";

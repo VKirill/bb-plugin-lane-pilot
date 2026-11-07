@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it } from "vitest";
-import { builtinWorkflows } from "../../src/rooms/platform/server";
+import {builtinWorkflows} from "../../src/rooms/workflow/builtin";
 import { MAX_QUESTIONS, MIN_CONFIDENCE, TOP_N, isOffered, normalizeText, routeIntent, setRouterModel, stateProblem, stems } from "@lane-pilot/workflow-engine";
 import type { RouterModel, RouterState } from "@lane-pilot/workflow-engine";
 import { publishedCatalog } from "./router-catalog";

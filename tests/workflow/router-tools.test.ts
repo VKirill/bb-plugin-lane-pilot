@@ -5,7 +5,7 @@ import { createRun, openDatabase, setRunThread } from "../../src/rooms/plugin-db
 import type { LanePilotDatabase } from "../../src/rooms/plugin-db";
 import { routeTool, runWorkflowTool, workflowStatusTool } from "../../src/rooms/workflow/server/workflow-tools";
 import type { WorkflowToolDeps } from "../../src/rooms/workflow/server/workflow-tools";
-import { BUILTIN_SOURCES } from "../../src/rooms/platform/server";
+import {BUILTIN_SOURCES} from "../../src/rooms/workflow/builtin";
 import { WorkflowEngine } from "@lane-pilot/workflow-engine";
 import { loadWorkflowStore } from "@lane-pilot/workflow-engine";
 import type { WorkflowStore } from "@lane-pilot/workflow-engine";

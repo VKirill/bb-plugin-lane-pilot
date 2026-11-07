@@ -1,4 +1,5 @@
 import { isTaskSatisfied, loadBlockedBy } from "../../runs/server";
+import type { StageHelperSettings } from "../../platform/server";
 import { setRunHalted } from "../../runs/server";
 import { isLiveDecision } from "../live-folder";
 import { DISPATCH_IDEMPOTENT_WINDOW_MS, DISPATCH_STAGES_PENDING } from "../../runs";
@@ -45,6 +46,7 @@ import type { BaselineApi } from "../../baseline/server/baseline";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {
+  stageHelperSettings: StageHelperSettings;
   activeWriterTasks: WriterStateApi["activeWriterTasks"];
   baseline: BaselineApi;
   isLiveFolder: WriterSpawnApi["isLiveFolder"];

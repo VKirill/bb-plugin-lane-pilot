@@ -5,7 +5,7 @@ import { afterEach, expect, it } from "vitest";
 import { z } from "zod";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import plugin from "../server";
-import { registeredTools, unionMembers } from "../src/rooms/platform/server";
+import {registeredTools, unionMembers} from "../src/rooms/platform/server";
 import { BB_AGENT_SESSIONS, LANE_PILOT_PM_SESSION } from "../src/rooms/native-agent/native-agent-overlay";
 import { PM_TOOL_FAMILIES } from "../src/rooms/platform/server/pm-tool-families";
 

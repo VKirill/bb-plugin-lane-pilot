@@ -1,10 +1,10 @@
 import { countAttempts, getAttempt, getRunSettingsScopes, getTaskGitBase, listAttemptsForTask, listStageReceipts, loadProjectSettings, saveTaskGitBase, setRunState, transitionAttempt } from "../../storage";
+import type {StageHelperSettings} from "../../platform/server";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
 import { QUALITY_MODE_SETTING, resolveQualityMode, worthOutcome } from "../../critique";
 import { jev } from "@lane-pilot/jev";
 import { appendExcludeCommand, persistTaskFolder } from "../../verification";
 import { pmReadBrief } from "../writer-brief";
-import { LP_TASK_PIPELINE, builtinWorkflow } from "../../platform/server";
 import type { NodeExecutor, RunSummary, StepContext, WorkflowEngine } from "../../workflow";
 import { provideLpTaskPipeline } from "../../workflow/server";
 import { runPlanCritique, runPmRead, runSpecialistReview } from "../../critique/server";
@@ -20,9 +20,11 @@ import { taskUsage } from "./attempt-usage";
 import type { BaselineApi } from "../../baseline/server/baseline";
 import type { WriterSpawnApi } from "./spawn";
 import type { WriterStartApi } from "./start";
+import {LP_TASK_PIPELINE} from "../../contracts";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {
+  stageHelperSettings: StageHelperSettings;
   baseline: BaselineApi;
   isLiveFolder: WriterSpawnApi["isLiveFolder"];
   startWriterTask: WriterStartApi["startWriterTask"];
@@ -46,7 +48,7 @@ export type DispatchRuntime = {
 /** Why the task pipeline cannot start on this engine, or null when it can: no engine, no pipeline graph, or a graph the engine refuses. */
 export function pipelineUnavailable(engine: WorkflowEngine | undefined): string | null {
   if (!engine) return "the workflow engine is not running";
-  const workflow = builtinWorkflow(LP_TASK_PIPELINE);
+  const workflow = engine.resolveWorkflow(LP_TASK_PIPELINE);
   if (!workflow) return `built-in workflow ${LP_TASK_PIPELINE} is not loaded`;
   const problems = engine.preflight(workflow);
   return problems.length ? problems.slice(0, 3).join("; ") : null;
@@ -128,7 +130,7 @@ export function registerDispatchExecutors(engine: WorkflowEngine, bb?: BbPluginA
     }, ...extra });
 
   exec("lp.pm-read", async (r, ctx) => {
-    const pmRead = await runPmRead({ bb: r.ctx.bb, db: r.ctx.db, projectId: r.projectId, runId: r.runId, taskId: r.taskId, pmThreadId: r.threadId, config: r.runConfig, task: r.task, workflow: stepRef(ctx) });
+    const pmRead = await runPmRead({ stageHelperSettings: r.services.stageHelperSettings, bb: r.ctx.bb, db: r.ctx.db, projectId: r.projectId, runId: r.runId, taskId: r.taskId, pmThreadId: r.threadId, config: r.runConfig, task: r.task, workflow: stepRef(ctx) });
     return { state: pmRead.state, summary: pmRead.summary, ...(pmRead.reason !== undefined ? { reason: pmRead.reason } : {}), handoff: handoffOf("pm-read", pmRead.state, pmRead.reason) };
   }, {}, "pm-read");
 
@@ -140,7 +142,7 @@ export function registerDispatchExecutors(engine: WorkflowEngine, bb?: BbPluginA
   exec("lp.plan-critique", async (r, ctx) => {
     // A canceled task starts no new helper: the block branch then answers with the ended attempt.
     if (endedReply(r)) return { allowed: false, reason: "attempt ended before its stages finished", handoff: handoffOf("plan-critique", "skipped", "attempt ended") };
-    const critique = await runPlanCritique({ bb: r.ctx.bb, db: r.ctx.db, projectId: r.projectId, runId: r.runId, taskId: r.taskId,
+    const critique = await runPlanCritique({ stageHelperSettings: r.services.stageHelperSettings, bb: r.ctx.bb, db: r.ctx.db, projectId: r.projectId, runId: r.runId, taskId: r.taskId,
       config: r.runConfig, task: r.task, plan: r.plan, pmReadContext: text(ctx.input.with.pmReadContext) || undefined, workflow: stepRef(ctx) });
     labelWorth(r, ctx, critique.allowed);
     return { allowed: critique.allowed, ...(critique.reason !== undefined ? { reason: critique.reason } : {}), handoff: handoffOf("plan-critique", critique.allowed ? "allowed" : "blocked", critique.reason) };
@@ -161,7 +163,7 @@ export function registerDispatchExecutors(engine: WorkflowEngine, bb?: BbPluginA
   exec("lp.specialist-review", async (r, ctx) => {
     // A canceled task starts no new helper: the block branch then answers with the ended attempt.
     if (endedReply(r)) return { allowed: false, reason: "attempt ended before its stages finished", handoff: handoffOf("specialist-review", "skipped", "attempt ended") };
-    const specialist = await runSpecialistReview({ bb: r.ctx.bb, db: r.ctx.db, projectId: r.projectId, runId: r.runId, taskId: r.taskId, config: r.runConfig, task: r.task, plan: r.plan, workflow: stepRef(ctx) });
+    const specialist = await runSpecialistReview({ stageHelperSettings: r.services.stageHelperSettings, bb: r.ctx.bb, db: r.ctx.db, projectId: r.projectId, runId: r.runId, taskId: r.taskId, config: r.runConfig, task: r.task, plan: r.plan, workflow: stepRef(ctx) });
     return { allowed: specialist.allowed, ...(specialist.reason !== undefined ? { reason: specialist.reason } : {}), handoff: handoffOf("specialist-review", specialist.allowed ? "allowed" : "blocked", specialist.reason) };
   }, {}, "specialist-review");
 
@@ -261,8 +263,11 @@ export function registerDispatchExecutors(engine: WorkflowEngine, bb?: BbPluginA
     return { reply: blockedReply(r, reason) };
   });
 
-  engine.register<DispatchRuntime>("lp-task", lpTaskPipelineExecutor(engine, bb));
-  provideLpTaskPipeline(lpTaskPipelineExecutor(engine, bb));
+  const pipelineExecutor = lpTaskPipelineExecutor(engine, bb);
+  // The chain executor of the same key, when it is already on the engine, multiplexes to this pipeline by the runtime's
+  // attemptId — registering over it would route a chain's code tasks here with the wrong runtime (server.ts order).
+  if (!engine.hasExecutor("lp-task")) engine.register<DispatchRuntime>("lp-task", pipelineExecutor);
+  provideLpTaskPipeline(engine, pipelineExecutor);
 }
 
 /**
@@ -324,7 +329,7 @@ export const dispatchRunKey = (attemptId: string, resume = 0): string => `lp-tas
  * baseRef goes into the run's inputs: it is the one dispatch argument nothing else stores, and a restart needs it.
  */
 export function startDispatchRun(engine: WorkflowEngine, runtime: DispatchRuntime, resume = 0): { runId: string; done: Promise<RunSummary> } {
-  const workflow = builtinWorkflow(LP_TASK_PIPELINE);
+  const workflow = engine.resolveWorkflow(LP_TASK_PIPELINE);
   if (!workflow) throw new Error(`built-in workflow ${LP_TASK_PIPELINE} is not loaded`);
   return engine.start({
     workflow, inputs: { taskId: runtime.taskId, attemptId: runtime.attemptId, ...(runtime.baseRef === undefined ? {} : { baseRef: runtime.baseRef }) },

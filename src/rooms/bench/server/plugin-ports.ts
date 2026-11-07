@@ -1,4 +1,5 @@
 import { runOnHost } from "@lane-pilot/host-calls";
+import type { StageHelperSettings } from "../../platform/server";
 import { waitThreadIdle } from "@lane-pilot/thread-observe";
 import { taskV2Schema } from "../../contracts";
 import { fullAccessSpawn } from "../../platform/server";
@@ -26,6 +27,8 @@ import type { WriterHostApi } from "../../writer/server/writer-host";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {
+  workflowLibrary: import("../../platform/server").WorkflowLibraryApi;
+  stageHelperSettings: StageHelperSettings;
   activate: ActivationApi["activate"];
   dispatchWriter: WriterDispatchApi["dispatchWriter"];
   listedAgentProfiles: WriterHostApi["listedAgentProfiles"];
@@ -155,6 +158,7 @@ export function createPluginBench(ctx: ServerCore, services: Services): BenchApi
     },
   };
   return createBench({
+    issueQuickModelCalls: services.workflowLibrary.issueQuickModelCalls,
     db: db as never, kv: bb.storage.kv as never, host: hostPort, pipeline: benchPipeline(ctx, services),
     projectNames: async () => new Map((await listProjects(bb)).map((row) => [row.id, row.name])),
     isSandboxName: isSandboxProjectName, log: ctx.log,
@@ -188,7 +192,7 @@ export function createPluginBench(ctx: ServerCore, services: Services): BenchApi
         output: "", ownsPaths: ["patch.diff"], neverTouch: [], dirtOk: true,
       });
       const verdict = await runCodeCritique({
-        bb, db, projectId: "critic-eval", runId, taskId: task.taskId,
+        stageHelperSettings: services.stageHelperSettings, bb, db, projectId: "critic-eval", runId, taskId: task.taskId,
         config: (loadPrototypeConfig(db, "critic-eval") ?? { projectId:"critic-eval", hostId:"", pmWorkspacePath:"", writerWorkspacePath:"", pmProviderId:"", pmModel:"", writerProviderId:"", writerModel:"" }) as never,
         task: { id: task.taskId, title: contract.title ?? task.taskId, risk: task.risk, kind: "code",
                 objective: `Review this patch for the bug it introduces:\n\n${diff}` } as never,

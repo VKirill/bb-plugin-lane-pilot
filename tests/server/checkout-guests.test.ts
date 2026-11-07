@@ -2,7 +2,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { expect, it, vi } from "vitest";
 import { createAttempt, createRun, openDatabase } from "../../src/rooms/plugin-db";
 import { askGuestsToCommit } from "../../src/rooms/writer/server/checkout-guests";
-import { listGuests, noteCheckoutGuest } from "../../src/rooms/platform/server/checkout-guests";
+import { listGuests, noteCheckoutGuest } from "../../src/rooms/verification/server/checkout-guests";
 
 function setup(metadata: Record<string, unknown> = {}, archived: string[] = []) {
   const sent: Array<{ threadId: string; text: string }> = [];

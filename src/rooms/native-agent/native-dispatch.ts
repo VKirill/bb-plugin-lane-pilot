@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { noteCheckoutGuest } from "../platform/server";
+import { noteCheckoutGuest } from "../verification/server";
 import type { BbPluginApi, ExperimentalPluginProviderEnvEntry } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import type { LanePilotDatabase } from "../storage";

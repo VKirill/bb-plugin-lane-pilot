@@ -4,7 +4,7 @@ import { createAttempt, createRun, createTask, getAttempt, getReasoningTrace, op
 import { validateTaskV2 } from "../../src/rooms/tasks/task-v2";
 import { sameArea } from "../../src/rooms/writer/server/start";
 import { STICKY_MAX_TURNS, areaHistoryText, createWriterSticky, loadArea, loadFollowUp, nextAreaRecord, retryInSameThread } from "../../src/rooms/writer/server/sticky";
-import { STICKY_WINDOW_MS } from "../../src/rooms/platform/server";
+import {STICKY_WINDOW_MS} from "../../src/rooms/platform/server";
 import { stickyTurnPrompt } from "../../src/rooms/writer/server/writer-task";
 
 const base = "/home/ubuntu/apps/selfystudio";

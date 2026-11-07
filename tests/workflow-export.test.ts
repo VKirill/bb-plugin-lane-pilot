@@ -1,7 +1,7 @@
 import { describeStep } from "../src/rooms/workflow/step-describe";
 import { describe, expect, it } from "vitest";
 import { parseWorkflowObject, type Workflow } from "@lane-pilot/workflow-engine";
-import { BUILTIN_SOURCES } from "../src/rooms/platform/server";
+import {BUILTIN_SOURCES} from "../src/rooms/workflow/builtin";
 import { buildWorkflowExport, redactDefinition, selectExportEntries, type WorkflowExportEntry } from "../src/rooms/workflow/workflow-export";
 
 const builtinEntries = (): WorkflowExportEntry[] =>

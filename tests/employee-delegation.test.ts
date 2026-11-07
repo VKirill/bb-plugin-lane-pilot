@@ -5,7 +5,7 @@ import { waitSpecialistRun, startSpecialistRun } from "../src/rooms/critique/ser
 import { EMPLOYEES } from "../src/rooms/native-agent/employee-manifest";
 import { EMPLOYEE_VALIDATORS } from "../src/rooms/critique/server/specialists";
 import { employeeView } from "../src/rooms/native-agent/employee-manifest";
-import { builtinWorkflow } from "../src/rooms/workflow";
+import {builtinWorkflow} from "../src/rooms/workflow/builtin";
 
 const dbOf = () => openDatabase(createFakePluginHost({ pluginId: "lane-pilot" }).bb);
 

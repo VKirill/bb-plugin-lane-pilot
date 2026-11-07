@@ -1,6 +1,6 @@
 import type { I18nKey } from "@lane-pilot/i18n";
-import { COUNCIL_KEYS, ROLE_SPECS, type RoleSelectionId, type RoleSpec as RoleSelectionSpec } from "@lane-pilot/models";
-import { WRITER_FALLBACK_SLOTS, writerFallbackKeys } from "../../platform/ui";
+import {COUNCIL_KEYS, ROLE_SPECS, WRITER_FALLBACK_SLOTS, type RoleSelectionId, type RoleSpec as RoleSelectionSpec, writerFallbackKeys} from "@lane-pilot/models";
+;
 
 /** Which roles the table lists, in the order of the access roles (the same groups as the agent profile). */
 export type RoleGroupId = "code" | "check" | "project" | "browser" | "specialists" | "workflow";

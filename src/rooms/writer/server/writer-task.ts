@@ -1,7 +1,7 @@
 import { taskV2Schema } from "../../contracts";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
 import { providerForwardsAgentOnly } from "@lane-pilot/models";
-import { valueAt } from "@lane-pilot/kit";
+import { outputText, valueAt } from "@lane-pilot/kit";
 import { compactContract, pmReadBrief } from "../writer-brief";
 import { summarizeThreadEvents, type ThreadEventLike } from "@lane-pilot/harness-core";
 import { cleanCheckOutput, failureExcerpt, sha256Hex } from "@lane-pilot/kit";
@@ -11,10 +11,9 @@ import { ROLE_PROFILES } from "../../native-agent";
 import { checkBrief, renderBrief, tagSection, writerBriefContextFor, type WriterBriefContext } from "../../brief";
 import { THREAD_MEMORY_RULE } from "../../memory";
 import { PLAN_FACT_BRIEF_LINE , MARKER_BRIEF_LINE } from "../../tasks";
-import { gateVocabularyLines } from "../../platform/server";
-import { outputText, providerLimitNotice } from "../../platform/server";
-// verify.ts and finish.ts are another stream's files; they import the pair from this module until it lands.
-export { outputText, providerLimitNotice };
+import { gateVocabularyLines } from "../../contracts";
+import {providerLimitNotice} from "@lane-pilot/models";
+;
 export function asJsonText(value: unknown): string | null {
   if (value == null) return null;
   if (typeof value === "string") return value;
@@ -96,7 +95,6 @@ export function providerStreamError(output: string): string | null {
   if (!text || text.length > 400 || !PROVIDER_STREAM_ERROR.test(text)) return null;
   return text.replace(/\s+/g, " ").slice(0, 200);
 }
-
 
 /**
  * What a writer needs to know about where it works, shared by the first brief and a repair round. Each line states

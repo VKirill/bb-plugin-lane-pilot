@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { validateWorkflow } from "@lane-pilot/workflow-engine";
 import { createPluginWall } from "../../src/rooms/wall/server/wall";
 import { mountNightGraphs } from "../../src/rooms/night-graphs/server";
-import { builtinWorkflow } from "../../src/rooms/platform/server";
+import {builtinWorkflow} from "../../src/rooms/workflow/builtin";
 import { nightWorld } from "./world";
 
 const FINDING = JSON.stringify({ verdict: "contract_wrong", summary: "the contract asks for a file the task does not own", action: "update_contract", evidence: [{ kind: "file", ref: "game/runner.py", line: 1, quote: "the runner fails here" }] });

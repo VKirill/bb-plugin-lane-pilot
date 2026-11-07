@@ -6,7 +6,7 @@ import { isSandboxProjectName } from "../stability/server";
 import { postOwnerItem } from "../owner-waiting";
 import { registeredTools, scheduleIsolated } from "../platform/server";
 import { type ServerCore } from "../contracts/server";
-import { builtinWorkflow } from "../platform/server";
+
 import type { ChainRuntime } from "../contracts/server";
 import { startOfDay, type Db } from "../learning";
 import { correctionObservations, harvestPrompt, importScenarios, parseHarvested, pmThreadIds } from "./harvest";
@@ -266,7 +266,7 @@ export function mountPmReplay(ctx: ServerCore, services: Services): PmReplay {
 
   scheduleIsolated(ctx.bb, PM_REPLAY_SCHEDULE, "20 4 * * *", async (signal) => {
     if (ctx.isDisposed() || signal?.aborted) return;
-    const workflow = builtinWorkflow(PM_REPLAY_WORKFLOW);
+    const workflow = services.workflowEngine.resolveWorkflow(PM_REPLAY_WORKFLOW);
     if (!workflow) return;
     const key = `pm-replay:${new Date().toISOString().slice(0, 10)}`;
     if (ctx.db.prepare("SELECT status FROM lane_pilot_wf_run WHERE idem_key=?").get(key)) return;

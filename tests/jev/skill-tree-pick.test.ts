@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createJev, type JevAnswer, type JevClient } from "@lane-pilot/jev";
 import { skillTreePickJudgment } from "@lane-pilot/jev/judgments/skill-tree-pick";
-import { pickSkillTree } from "../../src/rooms/platform/server";
+import {pickSkillTree} from "../../src/rooms/platform/server";
 
 const ch = (top: string) => ({ type: "choice" as const, choice: top, probabilities: { [top]: 0.8 }, confidence: 0.9 });
 

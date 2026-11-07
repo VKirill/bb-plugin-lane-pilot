@@ -1,4 +1,5 @@
 import { getRun, getRunSettingsScopes, listUnansweredWriterQuestions, loadProjectSettings, markCancelCode, transitionAttempt } from "../../storage";
+import type { StageHelperSettings } from "../../platform/server";
 import { isRunHalted, isRunPaused } from "../../runs/server";
 import type { ServerCore } from "../../contracts/server";
 
@@ -22,6 +23,7 @@ import type { WriterStartApi } from "./start";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {
+  stageHelperSettings: StageHelperSettings;
   activeWriterTasks: WriterStateApi["activeWriterTasks"];
   baseline: BaselineApi;
   dispatchWriter: WriterDispatchApi["dispatchWriter"];

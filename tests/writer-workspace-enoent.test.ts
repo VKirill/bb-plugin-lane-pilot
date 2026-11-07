@@ -7,7 +7,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { createRun, openDatabase, registerWorktree } from "../src/rooms/plugin-db";
 import { reconcileWorktreeRegistry } from "../src/rooms/stability/server/worktree-janitor";
 import { runCommandOnHost } from "../src/rooms/writer/cli-run";
-import { STICKY_WINDOW_MS } from "../src/rooms/platform/server";
+import {STICKY_WINDOW_MS} from "../src/rooms/platform/server";
 import samples from "./fixtures/writer-workspace-enoent/attempts.json";
 
 function setup(origin = samples.origins[0]) {

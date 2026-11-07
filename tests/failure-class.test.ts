@@ -3,7 +3,8 @@ import { describe, expect, it } from "vitest";
 import { FREE_CLASSES, PARKED_CLASSES, failureClass, isEnvironmentCheckFailure, nextStep, repeatedFailureReason, taskFamily, verificationTimeoutOverBudget } from "../src/rooms/runs/failure-class";
 import { classifyWriterOutput } from "../src/rooms/tasks/validate-output";
 import type { TaskV2 } from "../src/rooms/contracts";
-import { providerLimitNotice, providerStreamError } from "../src/rooms/writer/server/writer-task";
+import {providerStreamError} from "../src/rooms/writer/server/writer-task";
+import {providerLimitNotice} from "@lane-pilot/models";
 
 describe("failure classes", () => {
   it("reads a check that timed out as its own class with its own retry, not as the task's red check", () => {

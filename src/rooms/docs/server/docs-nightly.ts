@@ -1,30 +1,30 @@
 import { projectRoleField } from "../../runs/server";
 import { claimDailySchedule, getActivation, getRun, listRunsWithAttempts, listStageReceipts, loadProjectSettings, loadPrototypeConfig } from "../../storage";
-import { bbServiceTier, writerExecutionSelection } from "@lane-pilot/models";
-import { providerLimitNotice } from "../../writer/server";
+import {bbServiceTier, providerLimitNotice, writerExecutionSelection} from "@lane-pilot/models";
+;
 import { sha256 } from "../../tasks";
 import { docsRepairPrompt, docsSelection, docsScheduleDue, docsSinceEpoch, flowDocsWritable, localDateKey, nightlyDocsPrompt, nightlyDocsWritable, parseDocsSettings } from "../docs";
 import type { DocsUnit } from "../docs";
 import { cadenceAllowsToday, codeDocsVerdict, docsCadence, docsFactsKey, docsWorthinessState, DOCS_WORTHINESS_QUESTION, fallbackDocsVerdict } from "../docs-worthiness";
 import type { DocsCadence, DocsVerdict, DocsWorthinessFacts } from "../docs-worthiness";
 import { blockingDocsFindings, buildBacklinks, buildDocsIndex, citedFiles, docsCompletenessGaps, isDesignCanon, isDocsIndex, lintCitationClaims, lintDocsPages, oversizedPageFindings, pagesToRefresh, uncataloguedPages, withCitedSources, withVerifiedConfidence } from "../docs-lint";
-import { graphStepMetadata, modelCatalogOf, resolveSpawnModel, spawnUsageOf } from "../../platform/server";
+import {graphStepMetadata, modelCatalogOf, resolveSpawnModel, spawnUsageOf} from "../../platform/server";
 import { configuredSetting } from "../../contracts/server";
-import { fullAccessSpawn } from "../../platform/server";
+import {fullAccessSpawn} from "../../platform/server";
 import { withUsage } from "../../usage/server";
-import { DOCS_MAINTENANCE, DOCS_NIGHT, builtinWorkflow } from "../../platform/server";
 import type { StepContext, WorkflowEngine } from "../../workflow";
 import { requireGreen } from "../../workflow/server";
 import { stringAt, valueAt, orMiss, isNotFound } from "@lane-pilot/kit";
 import { recordStage } from "../../runs/server";
 import { sleepUntilThreadSignal, threadWatchMark, waitThreadIdle } from "@lane-pilot/thread-observe";
 import { basename, resolve } from "node:path";
-import { abortable, scheduleIsolated } from "../../platform/server";
+import {abortable, scheduleIsolated} from "../../platform/server";
 import type { ServerCore } from "../../contracts/server";
 
 import type { DocsStageApi } from "./docs";
 import type { WorkflowEngineApi } from "../../workflow/server/workflow";
 import type { WriterHostApi } from "../../writer/server/writer-host";
+import {DOCS_MAINTENANCE, DOCS_NIGHT} from "../../contracts";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {
@@ -32,7 +32,6 @@ interface Services {
   runDocsMaintenance: DocsStageApi["runDocsMaintenance"];
   workflowEngine: WorkflowEngineApi["workflowEngine"];
 }
-
 
 /** Runs the work it is given one after another, in the order it was given; a failure does not stop the queue. */
 export function createSerialQueue():<T>(work:()=>Promise<T>)=>Promise<T> {
@@ -601,7 +600,7 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
 
   async function startUnitRun(i:UnitInputs,recordKey:string):Promise<Record<string,unknown>> {
     const engine=services.workflowEngine;
-    const workflow=builtinWorkflow(DOCS_NIGHT);
+    const workflow=services.workflowEngine.resolveWorkflow(DOCS_NIGHT);
     if(!workflow) throw new Error(`built-in workflow ${DOCS_NIGHT} is not loaded`);
     const started=engine.start({workflow,key:i.runKey,link:{projectId:i.projectId},inputs:{project_id:i.projectId,host_id:i.place.hostId,path:i.place.path,base_path:i.basePath,scopes:i.scopes,unit:i.unit,
       roots:i.roots,exclude:i.exclude,workspaces:i.workspaces,base:i.base,run_key:i.runKey}});
@@ -941,7 +940,7 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
    */
   async function runDocsMaintenanceGraph(args:{threadId:string;projectId:string;runId:string;taskId:string}):Promise<void> {
     const engine=services.workflowEngine;
-    const workflow=builtinWorkflow(DOCS_MAINTENANCE);
+    const workflow=services.workflowEngine.resolveWorkflow(DOCS_MAINTENANCE);
     if(!workflow) throw new Error(`built-in workflow ${DOCS_MAINTENANCE} is not loaded`);
     const prefix=`docs-maintenance:${args.runId}:${args.taskId}:`;
     const runs=db.prepare("SELECT idem_key, status FROM lane_pilot_wf_run WHERE idem_key LIKE ? ORDER BY created_at DESC").all(`${prefix}%`) as Array<{idem_key:string;status:string}>;

@@ -22,6 +22,9 @@ export interface WorkflowEngineApi {
 /** workflow/server/workflow-library.ts — the graphs a project has, over the built-in and global stores. */
 export interface WorkflowLibraryApi {
   loadStore(projectId?: string): Promise<{ store: WorkflowStore }>;
+  issueQuickWorkflowId(settings: Record<string, unknown> | null | undefined): "issue-quick" | "issue-quick-legacy";
+  issueQuickModelCalls(settings: Record<string, unknown> | null | undefined): number;
+  issueQuickShortPath(settings: Record<string, unknown> | null | undefined): boolean;
 }
 
 /** workflow/server/architect-start.ts — starts the workflow architect for an owner's request. */
@@ -134,3 +137,7 @@ export interface WriterHostApi {
   }): Promise<{ status: "offline" | "resolved" | "setup_required" | "catalog_unavailable" | "ambiguous"; [key: string]: unknown }>;
   listedAgentProfiles(opts?: { pickable?: boolean }): Promise<ListedAgentProfile[]>;
 }
+
+/** The settings a stage's helpers see (project + run scopes merged): owned by the settings room, injected so critique,
+ * writer, memory, docs and project-life do not import the high settings room. */
+export type StageHelperSettings = (bb: BbPluginApi, db: LanePilotDatabase, projectId: string, runId: string) => Promise<Record<string, unknown>>;

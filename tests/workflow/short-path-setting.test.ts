@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { issueQuickModelCalls, issueQuickShortPath, issueQuickWorkflowId } from "../../src/rooms/platform/server";
+import {issueQuickModelCalls, issueQuickShortPath, issueQuickWorkflowId} from "../../src/rooms/workflow/short-path";
 import { fileContaining } from "../support/source-text";
 
 describe("issue_quick.short_path", () => {

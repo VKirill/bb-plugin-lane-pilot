@@ -8,7 +8,7 @@ import { parseAgentFile } from "../src/rooms/native-agent/custom-agent";
 import { roleSpec } from "../src/rooms/workflow/server/workflow-agent";
 import { errandPrompt } from "../src/rooms/qa/server/errands";
 import { writerBriefSegments } from "../src/rooms/writer/server/writer-task";
-import { candidateNames, resetSkillTreeCache, skillTreeCached, type SkillTree } from "../src/rooms/platform/server";
+import {candidateNames, resetSkillTreeCache, skillTreeCached, type SkillTree} from "../src/rooms/platform/server";
 import type { TaskV2 } from "../src/rooms/contracts";
 
 const tree: SkillTree = {

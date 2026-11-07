@@ -1,5 +1,5 @@
-import { builtinWorkflow } from "../../platform/server";
-import { issueQuickWorkflowId } from "../../platform/server";
+
+
 import type { ArchitectApi, WorkflowLibraryApi } from "../../platform/server";
 import { routeIntent } from "@lane-pilot/workflow-engine";
 import { loadProjectSettings } from "../../storage";
@@ -47,7 +47,7 @@ export function installWiring(tools: WiringTools) {
       // A batch of independent fixes is one task per fix (issue-batch); a small job is one task (issue-quick); a heavy goal is the
       // full-lifecycle graph: analysis, plan, build in waves, review, browser check, the owner's acceptance, close.
       const settings = loadProjectSettings(db, input.projectId);
-      const workflow = builtinWorkflow(input.kind === "heavy" ? "full-lifecycle" : input.kind === "batch" ? "issue-batch" : input.kind === "full" ? "issue-full" : issueQuickWorkflowId(settings));
+      const workflow = services.workflowEngine.resolveWorkflow(input.kind === "heavy" ? "full-lifecycle" : input.kind === "batch" ? "issue-batch" : input.kind === "full" ? "issue-full" : services.workflowLibrary.issueQuickWorkflowId(settings));
       if (!workflow) return null;
       const title = input.text.trim().split("\n").find((line) => line.trim())?.trim().slice(0, 120) ?? "Owner's request";
       try {

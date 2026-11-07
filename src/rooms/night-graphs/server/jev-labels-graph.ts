@@ -5,7 +5,7 @@ import { recordOutcome } from "@lane-pilot/jev";
 import { listJudgments } from "@lane-pilot/jev";
 import { scheduleIsolated } from "../../platform/server";
 import { type ServerCore } from "../../contracts/server";
-import { builtinWorkflow } from "../../platform/server";
+
 import type { ChainRuntime } from "../../contracts/server";
 import { runGraphHelper } from "../../workflow/server";
 import { sweepFailureClassOutcomes, sweepInvoiceCheckOutcomes, sweepPlanFactOutcomes, sweepRouteWorkflowOutcomes, sweepWriterModelOutcomes } from "../../runs";
@@ -112,7 +112,7 @@ export function mountJevLabelsGraph(ctx: ServerCore, services: Services): void {
   // Nightly after the rules scan (03:30 UTC): the labels land while the machine is idle anyway.
   scheduleIsolated(ctx.bb, JEV_LABELS_SCHEDULE, "45 3 * * *", async (signal) => {
     if (ctx.isDisposed() || signal?.aborted) return;
-    const workflow = builtinWorkflow(JEV_LABELS_WORKFLOW);
+    const workflow = services.workflowEngine.resolveWorkflow(JEV_LABELS_WORKFLOW);
     if (!workflow) return;
     const key = `jev-labels:${new Date().toISOString().slice(0, 10)}`;
     const prior = ctx.db.prepare("SELECT status FROM lane_pilot_wf_run WHERE idem_key=?").get(key) as { status: string } | undefined;

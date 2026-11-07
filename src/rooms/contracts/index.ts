@@ -33,3 +33,5 @@ export const rpcMethods = {
 };
 
 export const rpcContract = defineRpcContract(rpcMethods);
+export * from "./gate-vocabulary";
+export * from "./workflow-ids";

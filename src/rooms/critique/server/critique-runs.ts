@@ -4,10 +4,10 @@ import type { PrototypeConfig, TaskV2 } from "../../contracts";
 import { claimStageSpawn, countAttempts, getRun, getTask, getTaskPlan, listLiveTasksForRun, listOpenAttempts, listStageReceipts, openDatabase } from "../../storage";
 import { criticAcrossFamilies, criticOffSpent, criticPairCandidates, effortAfterMove, latestWriterPair, pairApartFromWriter, pickCriticByAccuracy, roleSelection, sdkCriticCatalog, usable } from "../critic-pair";
 import { criticStats } from "../critic-stats";
-import { bbServiceTier, listedServiceTier, writerExecutionSelection, writerServiceTier, findModelIn, modelFamily, type SpentProbe } from "@lane-pilot/models";
+import {bbServiceTier, findModelIn, listedServiceTier, modelFamily, resolveStageWriterSelection, type SpentProbe, writerExecutionSelection, writerServiceTier} from "@lane-pilot/models";
 import { qaSpawnClaimed } from "../../qa";
 import { reconcileCritic } from "../../stability";
-import { resolveStageWriterSelection } from "../../platform/server";
+;
 import { MAX_FILE_EXCERPT_BYTES } from "../code-critique";
 import { codeCritiquePrompt, codeCritiqueSource, codeCritiqueStops, criticPersonas, critiqueFromStageResult, critiquePolicyFromResult, freezeCritiquePolicy, parseCodeCritique, parseCodeCritiqueSettings, persistLedgerFields, settingsFromFrozenPolicy, unionCriticFails } from "../code-critique";
 import { critiqueFromScreen, screenCodeCritique } from "../critic-screen";
@@ -27,7 +27,7 @@ import { CODE_CRITIC_DEFAULT_SETTING, QUALITY_MODE_SETTING, applyCodeCriticDefau
 import type { CodeCriticDefault } from "../quality-mode";
 import type { Verdict, VerdictStatus } from "@lane-pilot/workflow-engine";
 import { MAIN_ATTEMPT_LIMIT } from "../../runs";
-import { GIT_PLUGIN_ID, gitCallRpc, gitFilesReplySchema, gitPatchKey, gitPatchesReplySchema, spawnUsageOf, stageHelperSettings, warmSpawnUsage, zcodeBusyPeek } from "../../platform/server";
+import { GIT_PLUGIN_ID, gitCallRpc, gitFilesReplySchema, gitPatchKey, gitPatchesReplySchema, spawnUsageOf, warmSpawnUsage, zcodeBusyPeek } from "../../platform/server";
 import { configuredSetting } from "../../contracts/server";
 import type { PluginCallRpc } from "../../platform/server";
 import { fullAccessSpawn, graphStepMetadata } from "../../platform/server";
@@ -39,6 +39,7 @@ import { settingOff, settingOn } from "@lane-pilot/models";
 import { stringAt, orMiss, isNotFound } from "@lane-pilot/kit";
 import { dependsOnTask } from "../../tasks";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
+import type { StageHelperSettings } from "../../platform/server";
 import { waitThreadIdle } from "@lane-pilot/thread-observe";
 import { resolve } from "node:path";
 /** Whether a provider's usage window is nearly spent, read from the cache the writers share (a bounded warm-up first); undefined without a usage source. */
@@ -55,9 +56,9 @@ const logLimitMove = (bb: BbPluginApi, what: string, issues: readonly string[] |
   for (const issue of issues ?? []) bb.log.info(`${what}: ${issue}`);
 };
 
-export async function runPmRead(input:{bb:BbPluginApi;db:ReturnType<typeof openDatabase>;projectId:string;runId:string;taskId:string;pmThreadId:string;config:PrototypeConfig;task:TaskV2;workflow?:{runId:string;stepKey:string;nodeId:string}})
+export async function runPmRead(input:{bb:BbPluginApi;db:ReturnType<typeof openDatabase>;projectId:string;runId:string;stageHelperSettings:StageHelperSettings;taskId:string;pmThreadId:string;config:PrototypeConfig;task:TaskV2;workflow?:{runId:string;stepKey:string;nodeId:string}})
   :Promise<{state:"skipped"|"passed"|"failed";summary:string;reason?:string}> {
-  const settings=await stageHelperSettings(input.bb,input.db,input.projectId,input.runId);
+  const settings=await input.stageHelperSettings(input.bb,input.db,input.projectId,input.runId);
   const parsedSettings=parsePmReadSettings(Object.fromEntries([
     "pm_read.enabled","pm_read.min_lines","pm_read.provider","pm_read.model","pm_read.reasoning_effort","pm_read.service_tier",
   ].map((key)=>[key,configuredSetting(settings,key)])));
@@ -187,9 +188,9 @@ function verdictReasons(result:{status?:VerdictStatus;summary?:string;verdict?:V
   return { receipt:text, returned:text };
 }
 
-export async function runPlanCritique(input:{bb:BbPluginApi;db:ReturnType<typeof openDatabase>;projectId:string;runId:string;taskId:string;config:PrototypeConfig;task:TaskV2;plan:string;pmReadContext?:string;workflow?:{runId:string;stepKey:string;nodeId:string}})
+export async function runPlanCritique(input:{bb:BbPluginApi;db:ReturnType<typeof openDatabase>;projectId:string;runId:string;stageHelperSettings:StageHelperSettings;taskId:string;config:PrototypeConfig;task:TaskV2;plan:string;pmReadContext?:string;workflow?:{runId:string;stepKey:string;nodeId:string}})
   : Promise<{allowed:boolean;reason?:string;critique?:unknown}> {
-  const projectSettings = await stageHelperSettings(input.bb,input.db,input.projectId,input.runId);
+  const projectSettings = await input.stageHelperSettings(input.bb,input.db,input.projectId,input.runId);
   // quality_mode (task, else project, else standard) decides whether this task goes through the plan critique at all.
   const qualityMode = resolveQualityMode(input.task,projectSettings[QUALITY_MODE_SETTING]);
   const settings = applyQualityMode(projectSettings,qualityMode);
@@ -454,7 +455,7 @@ export function attemptEnvironment(db:ReturnType<typeof openDatabase>, runId:str
 }
 
 export async function runCodeCritique(input:{
-  bb:BbPluginApi;db:ReturnType<typeof openDatabase>;projectId:string;runId:string;taskId:string;
+  bb:BbPluginApi;db:ReturnType<typeof openDatabase>;projectId:string;runId:string;stageHelperSettings:StageHelperSettings;taskId:string;
   config:PrototypeConfig;task:TaskV2;evidence:CandidateEvidence;disputes?:unknown;frozenPolicy?:FrozenCritiquePolicy;
   /** This task's `critic.code.default_for_risk` when the dispatch carried one; else the project's setting decides. */
   criticDefault?:CodeCriticDefault;
@@ -463,7 +464,7 @@ export async function runCodeCritique(input:{
 }): Promise<{allowed:boolean;reason?:string;review:"passed"|"not_required";critique?:unknown;parsed?:ReturnType<typeof parseCodeCritique>;settings?:ReturnType<typeof parseCodeCritiqueSettings>;policy?:FrozenCritiquePolicy}> {
   // The code check on the critic's opinion: a finding's line must exist in the file the critic was shown.
   const cites = candidateCitations(input.evidence.files, MAX_FILE_EXCERPT_BYTES);
-  const projectSettings = await stageHelperSettings(input.bb,input.db,input.projectId,input.runId);
+  const projectSettings = await input.stageHelperSettings(input.bb,input.db,input.projectId,input.runId);
   const qualityMode = resolveQualityMode(input.task,projectSettings[QUALITY_MODE_SETTING]);
   const settings = withReferenceTestCritic(applyCodeCriticDefault(applyQualityMode(projectSettings,qualityMode),qualityMode,input.task.risk,resolveCodeCriticDefault(projectSettings[CODE_CRITIC_DEFAULT_SETTING],input.criticDefault)), input.evidence.referenceTestEdits);
   const existing = listStageReceipts(input.db, input.runId, input.taskId).find((row) => row.stageId === "code-critique");
@@ -795,9 +796,9 @@ export async function runCodeCritique(input:{
   }
 }
 
-export async function runSpecialistReview(input:{bb:BbPluginApi;db:ReturnType<typeof openDatabase>;projectId:string;runId:string;taskId:string;config:PrototypeConfig;task:TaskV2;plan:string;workflow?:{runId:string;stepKey:string;nodeId:string}})
+export async function runSpecialistReview(input:{bb:BbPluginApi;db:ReturnType<typeof openDatabase>;projectId:string;runId:string;stageHelperSettings:StageHelperSettings;taskId:string;config:PrototypeConfig;task:TaskV2;plan:string;workflow?:{runId:string;stepKey:string;nodeId:string}})
   : Promise<{allowed:boolean;reason?:string;review?:unknown}> {
-  const settings = await stageHelperSettings(input.bb,input.db,input.projectId,input.runId);
+  const settings = await input.stageHelperSettings(input.bb,input.db,input.projectId,input.runId);
   const policy = shouldRunSpecialist({enabled:settings["specialist.enabled"],when:settings["specialist.when"],risk:input.task.risk});
   const agent=boundedAgentName(settings["specialist.agent"],"specialist-reviewer");
   const source = `${input.plan}\n\n${JSON.stringify(input.task)}\n\nagent=${agent}`;
@@ -901,11 +902,11 @@ export async function runSpecialistReview(input:{bb:BbPluginApi;db:ReturnType<ty
  * map, and the contested items stay a fail — never a quiet pass.
  */
 export async function criticTiebreakVote(input: {
-  bb: BbPluginApi; db: ReturnType<typeof openDatabase>; projectId: string; runId: string; taskId: string;
+  bb: BbPluginApi; db: ReturnType<typeof openDatabase>; projectId: string; runId: string; stageHelperSettings: StageHelperSettings; taskId: string;
   config: PrototypeConfig; task: TaskV2; workflow?: { runId: string; stepKey: string; nodeId: string };
 }): Promise<(items: readonly string[], prompt: string) => Promise<ReadonlyMap<string, "ok" | "fail">>> {
   return async (items, prompt) => {
-    const settings = await stageHelperSettings(input.bb, input.db, input.projectId, input.runId);
+    const settings = await input.stageHelperSettings(input.bb, input.db, input.projectId, input.runId);
     const base = { runId: input.runId, taskId: input.taskId, stageId: "critic-tiebreak" as const, input: prompt };
     recordStage(input.db, { ...base, state: "pending", replaceOnNewInput: true, restart: true });
     const fallback = resolveStageWriterSelection({ settings, config: input.config });

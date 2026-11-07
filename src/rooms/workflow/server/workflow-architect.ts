@@ -3,7 +3,7 @@ import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import type { rpcContract } from "../../contracts";
 import { HARNESS_VERSION, findOpenNativeRun, getRunSettingsScopes, loadProjectSettings } from "../../storage";
 import { QA_HOST_KEY } from "../../qa";
-import { mapListedQaHosts } from "../../platform/server";
+import {mapListedQaHosts} from "../../platform/server";
 import { collectCapabilities, CAPABILITY_SECTIONS } from "@lane-pilot/workflow-engine";
 import { draftOpSchema, checkDraft } from "@lane-pilot/workflow-engine";
 import type { DraftCheck } from "@lane-pilot/workflow-engine";
@@ -11,9 +11,14 @@ import { createDraftStore } from "../../storage";
 import type { DraftRow, DraftStore } from "../../storage";
 import { runDraftTest, testCasesOf } from "@lane-pilot/workflow-engine";
 import type { DraftTestResult } from "@lane-pilot/workflow-engine";
+<<<<<<< HEAD
 import { builtinWorkflow } from "../builtin";
 import { casWriteWorkflowFile } from "../../storage";
 import { sha256Hex } from "@lane-pilot/kit";
+=======
+;
+import { casWriteWorkflowFile, sha256Text } from "../../storage";
+>>>>>>> f99e1d3f (untangle G5 (review fixes): engine-scoped lp-task provider, platform de-dumped)
 import { executorKey, lowerWorkflow } from "@lane-pilot/workflow-engine";
 import type { Workflow } from "@lane-pilot/workflow-engine";
 import { createStatusResolver } from "../../storage";
@@ -23,8 +28,8 @@ import { loadWorkflow } from "@lane-pilot/workflow-engine";
 import { configuredSetting } from "../../contracts/server";
 import { SPECIALIST_ROLES } from "../../critique/server";
 import { EMPLOYEE_IDS, isCustomAgentId, isEmployeeSpecialist } from "../../native-agent";
-import { modelCatalogOf } from "../../platform/server";
-import { registerObservedTool } from "../../platform/server";
+import {modelCatalogOf} from "../../platform/server";
+import {registerObservedTool} from "../../platform/server";
 import { ToolError } from "../../contracts/server";
 import { stringAt, orMiss, isNotFound } from "@lane-pilot/kit";
 import { DRILL_SANDBOX_PROJECT_IDS, isSandboxProjectName } from "../../stability/server";
@@ -33,6 +38,7 @@ import type { ServerCore } from "../../contracts/server";
 import type { DocsNightlyApi } from "../../docs/server/docs-nightly";
 import type { WorkflowEngineApi } from "./workflow";
 import type { WorkflowTriggersApi } from "./workflow-triggers-live";
+import {builtinWorkflow} from "../builtin";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {
@@ -41,7 +47,6 @@ interface Services {
   workflowEngine: WorkflowEngineApi["workflowEngine"];
   workflowTriggers: WorkflowTriggersApi["workflowTriggers"];
 }
-
 
 const bilingual = z.union([z.string().trim().min(1).max(2000), z.object({ en: z.string().trim().min(1).max(2000), ru: z.string().trim().min(1).max(2000) }).strict()]);
 const MAX_SHOWN_PROBLEMS = 30;

@@ -1,6 +1,6 @@
 import { HARNESS_VERSION } from "../../storage";
 import { LP_ALL_PROJECTS } from "@lane-pilot/ui-kit/realtime-channel";
-import { BUILTIN_SOURCES, LP_TASK_PIPELINE, builtinWorkflow } from "../../platform/server";
+;
 import { createWorkflowCatalog } from "@lane-pilot/workflow-engine";
 import { ENGINE_COMPAT_VERSION, TERMINAL_RUN, WorkflowEngine } from "@lane-pilot/workflow-engine";
 import type { RunRow } from "../../storage";
@@ -25,16 +25,15 @@ import type { HarnessApi } from "../../harness/server/harness";
 
 import type { MemoryStageApi } from "../../memory/server/memory";
 import type { ProjectLifeStageApi } from "../../project-life/server/project-life";
-import type { DispatchWriter, TaskUsage, IsLiveFolder, StartWriterTask, WriterStateApi } from "../../platform/server";
-
-
-
+import type {DispatchWriter, TaskUsage, IsLiveFolder, StartWriterTask, WriterStateApi} from "../../platform/server";
 
 import type { DocsNightlyApi } from "../../docs/server/docs-nightly";
 import type { StabilityApi } from "../../stability/server/stability";
 
 import type { BaselineApi } from "../../baseline/server/baseline";
 import type { WorkflowTriggersApi } from "./workflow-triggers-live";
+import {LP_TASK_PIPELINE} from "../../contracts";
+import {BUILTIN_SOURCES, builtinWorkflow} from "../builtin";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {
@@ -52,7 +51,6 @@ interface Services {
   workflowEngine: WorkflowEngineApi["workflowEngine"];
   workflowTriggers: WorkflowTriggersApi["workflowTriggers"];
 }
-
 
 /**
  * The one workflow engine of this plugin instance, with the executors of the built-in workflows. It stops at a step
