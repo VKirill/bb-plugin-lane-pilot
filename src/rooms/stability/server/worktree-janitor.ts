@@ -6,6 +6,7 @@ import type { ServerCore } from "../../contracts/server";
 import { loadProjectSettings, registerWorktree } from "../../storage";
 import { OPEN_ATTEMPT_STATES, RETRY_ELIGIBLE, isOpenAttemptState } from "../../state-machine";
 import { STICKY_WINDOW_MS } from "../../platform/server";
+import { bestEffort } from "@lane-pilot/kit";
 
 /**
  * The hourly safety net over ~/.lane-pilot/worktrees on every connected machine (WT1, 2026-10-30): copies of docs,
@@ -66,18 +67,18 @@ export async function runWorktreeJanitor(ctx: Pick<ServerCore, "bb" | "db" | "lo
   // lpattempt_* copies piled up; they run here, inside the janitor. `release` snapshots the work before the copy goes.
   const released = new Set<string>();
   const { cleanupFinishedAttemptEnvironments, cleanupStickyLaneWorktrees } = sweeps;
-  const swept = await cleanupStickyLaneWorktrees(db, async (hostId, basePath, worktreePath) => {
-    const out = await ctx.host.call("gitRemoveWorktree", { requestedHostId: hostId, basePath, worktreePath, release: true }, { hostId, timeoutMs: 120_000 }).catch(() => null) as { removed?: boolean } | null;
+  const swept = await bestEffort(ctx.log, "sticky lane worktree sweep", cleanupStickyLaneWorktrees(db, async (hostId, basePath, worktreePath) => {
+    const out = await ctx.host.call("gitRemoveWorktree", { requestedHostId: hostId, basePath, worktreePath, release: true }, { hostId, timeoutMs: 120_000 }).catch((cause: unknown) => { ctx.log(`Lane Pilot janitor: worktree removal on ${hostId} failed: ${cause instanceof Error ? cause.message : String(cause)}`); return null; }) as { removed?: boolean } | null;
     return out?.removed === true;
-  }, released, now, signal).catch(() => [] as string[]);
+  }, released, now, signal), [] as string[]);
   const snapshot = async (hostId: string, worktreePath: string, name: string) =>
     (await ctx.host.call("gitWorktreeSnapshot", { requestedHostId: hostId, worktreePath, name }, { hostId, timeoutMs: 120_000 })) as { status: "clean" | "saved" | "missing" | "failed"; path: string | null; reason: string | null };
-  const envSwept = await cleanupFinishedAttemptEnvironments(bb, db, snapshot, now, signal).catch(() => [] as string[]);
+  const envSwept = await bestEffort(ctx.log, "attempt environment sweep", cleanupFinishedAttemptEnvironments(bb, db, snapshot, now, signal), [] as string[]);
   const hosts = await listQaHosts(bb);
   let removed = 0, freedBytes = 0, kept = 0;
   for (const machine of hosts.filter((row) => row.connected)) {
     if (ctx.isDisposed()) break;
-    const out = await ctx.host.call("worktreeJanitor", { requestedHostId: machine.id, protectedPaths: [...protectedPaths], graceMs }, { hostId: machine.id, timeoutMs: 300_000 }).catch(() => null) as JanitorOutcome | null;
+    const out = await ctx.host.call("worktreeJanitor", { requestedHostId: machine.id, protectedPaths: [...protectedPaths], graceMs }, { hostId: machine.id, timeoutMs: 300_000 }).catch((cause: unknown) => { ctx.log(`Lane Pilot janitor on ${machine.id} failed: ${cause instanceof Error ? cause.message : String(cause)}`); return null; }) as JanitorOutcome | null;
     if (!out) continue;
     const keptRows = out.kept ?? [];
     removed += out.removed?.length ?? 0;
@@ -206,7 +207,7 @@ export async function reconcileWorktreeRegistry(ctx: Pick<ServerCore, "bb" | "db
     // The host call needs the base checkout the copy came from; the attempt's run knows it, others take it from the worktree itself.
     const known = db.prepare("SELECT writer_workspace_path AS p FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id WHERE a.workspace_path=? LIMIT 1").get(row.path) as { p?: string } | undefined;
     const basePath = known?.p ?? row.path;
-    const out = await ctx.host.call("gitRemoveWorktree", { requestedHostId: row.host, basePath, worktreePath: row.path, release: true }, { hostId: row.host, timeoutMs: 120_000 }).catch(() => null) as { removed?: boolean } | null;
+    const out = await ctx.host.call("gitRemoveWorktree", { requestedHostId: row.host, basePath, worktreePath: row.path, release: true }, { hostId: row.host, timeoutMs: 120_000 }).catch((cause: unknown) => { ctx.log(`Lane Pilot reconcile: worktree removal on ${row.host} failed: ${cause instanceof Error ? cause.message : String(cause)}`); return null; }) as { removed?: boolean } | null;
     if (out?.removed === true) { db.prepare("UPDATE lane_pilot_worktree SET released_at=? WHERE id=?").run(now, row.id); removed++; }
   }
   if (removed) ctx.log(`Lane Pilot reconcile: removed ${removed} worktree copies whose owner is gone`);
@@ -220,7 +221,7 @@ export function mountWorktreeJanitor(ctx: ServerCore, sweeps: AttemptSweeps): vo
   bb.onDispose(() => clearTimeout(boot));
   scheduleIsolated(bb, "worktree-janitor", "14 * * * *", async (signal) => {
     if (ctx.isDisposed() || signal?.aborted) return;
-    await reconcileWorktreeRegistry(ctx).catch(() => 0);
+    await bestEffort(bb.log, "worktree registry reconcile", reconcileWorktreeRegistry(ctx), 0);
     const outcome = await runWorktreeJanitor(ctx, sweeps, Date.now(), signal);
     if (outcome.removed || outcome.kept) bb.log.info(`Lane Pilot janitor: removed ${outcome.removed} worktree(s), freed ${Math.round(outcome.freedBytes / 1e6)} MB, kept ${outcome.kept}`);
   }, { timeoutMs: 10 * 60_000 });

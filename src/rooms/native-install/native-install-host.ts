@@ -8,6 +8,7 @@ import { detectOwnInstall, lanePilotEnv, materializeOwnTools, placeLanePilotGuar
 import { removeClaudeLaneLeftovers, type LeftoverReport } from "./claude-lane-leftovers";
 import { reconcileClaudeLane } from "../native-agent";
 import { transitionOwned } from "./native-install-owned";
+import { readTextOrNull } from "@lane-pilot/kit";
 
 const manifestSchema = z.object({
   schemaVersion: z.literal(1), home: z.string(), sourceSha: z.string().regex(/^[a-f0-9]{40}$/),
@@ -24,7 +25,7 @@ export async function nativeInstallOperation(input: { root: string; home: string
   await mkdir(root, { recursive: true });
   await mkdir(lock).catch(async (error: NodeJS.ErrnoException) => {
     if (error.code !== "EEXIST") throw error;
-    const pid = Number(await readFile(join(lock, "pid"), "utf8").catch(() => ""));
+    const pid = Number((await readTextOrNull(join(lock, "pid"))) ?? "");
     let stale = false;
     if (Number.isInteger(pid) && pid > 0) try { process.kill(pid, 0); } catch (error) { stale = (error as NodeJS.ErrnoException).code === "ESRCH"; }
     if (!stale) throw new Error("Native installation is already being changed. Retry when it finishes.");

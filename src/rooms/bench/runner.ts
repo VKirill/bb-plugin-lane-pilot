@@ -12,6 +12,7 @@ import { jevalsLine, type JevalsResult } from "./jevals";
 import { BENCH_PROJECT_PREFIX, BENCH_PROJECTS, benchProjectName, type ManifestTask, type VerificationItem } from "./types";
 import { MIN_FREE_GB, STOP_FREE_GB, cleanBenchCaches, freeGb, linkDependenciesCommand } from "./warmup";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
+import { bestEffort } from "@lane-pilot/kit";
 
 /**
  * A series on the bench (SMA plan P0-1): the SAME contracts of a set, through the normal pipeline, on one arm. Memory and rules are
@@ -133,9 +134,9 @@ export function aggregateAttempts(attempts: readonly AttemptMetrics[]): Pick<Ben
 }
 
 /** The paths of `wanted` that exist in the clone (relative paths, or absolute ones inside the original checkout). */
-async function existingFiles(host: HostPort, project: BenchProjectRef, task: ManifestTask, wanted: readonly string[]): Promise<string[]> {
+async function existingFiles(host: HostPort, project: BenchProjectRef, task: ManifestTask, wanted: readonly string[], log: (message: string) => void): Promise<string[]> {
   const probe = wanted.map((item) => `[ -e ${q(mapVerificationCwd(item, task.repoPath, project.path) ?? item)} ] && echo ${q(item)}`).join("; ");
-  const result = await host.run(project.hostId, project.path, `${probe}; true`, 60).catch(() => null);
+  const result = await host.run(project.hostId, project.path, `${probe}; true`, 60).catch((cause: unknown) => { log(`bench: read_first probe failed: ${cause instanceof Error ? cause.message : String(cause)}`); return null; });
   const found = new Set((result?.stdout ?? "").split("\n").map((line) => line.trim()).filter(Boolean));
   return wanted.filter((item) => found.has(item));
 }
@@ -188,10 +189,10 @@ export async function runSeries(deps: RunnerDeps, input: SeriesInput): Promise<S
   // Two thresholds, not one point: a series starts only with MIN_FREE_GB free, but once running it keeps going
   // until STOP_FREE_GB — the 13–20 GB nights of 2026-10-27/28 were deferred work, not disk emergencies.
   const checkDisk = async (hostId: string, limitGb: number, projectPath?: string): Promise<string | null> => {
-    let free = await freeGb(deps.host, hostId);
+    let free = await freeGb(deps.host, hostId, log);
     if (free !== null && free < limitGb && cleanupOn) {
-      await cleanBenchCaches(deps.host, hostId, projectPath);
-      free = await freeGb(deps.host, hostId);
+      await cleanBenchCaches(deps.host, hostId, projectPath, log);
+      free = await freeGb(deps.host, hostId, log);
     }
     return diskDeferral(free, limitGb, hostId);
   };
@@ -257,7 +258,7 @@ export async function runSeries(deps: RunnerDeps, input: SeriesInput): Promise<S
         }
         if (task.stratum === "noncode") {
           const source = resolveRepoPath(task.repoPath, input.reposRoot);
-          const probe = await deps.host.run(placed.hostId, "/", `[ -e ${q(source)} ] && { [ -s ${q(source)} ] || [ -n "$(find ${q(source)} -mindepth 1 -print -quit)" ]; }`, 30).catch(() => null);
+          const probe = await deps.host.run(placed.hostId, "/", `[ -e ${q(source)} ] && { [ -s ${q(source)} ] || [ -n "$(find ${q(source)} -mindepth 1 -print -quit)" ]; }`, 30).catch((cause: unknown) => { log(`bench ${input.arm} r${repeat}: ${task.taskId} source probe failed: ${cause instanceof Error ? cause.message : String(cause)}`); return null; });
           const verdict = await runValidator(task.validator, probe && probe.exitCode === 0 ? source : null, {
             host: deps.host, hostId: placed.hostId,
             brief: (task as { brief?: Record<string, unknown> }).brief,
@@ -288,7 +289,7 @@ export async function runSeries(deps: RunnerDeps, input: SeriesInput): Promise<S
         if (!lp) lp = await deps.pipeline.startRun(placed);
         // A file the live checkout had untracked (a plan, a spec) is not in the clone at the base commit: the lint would refuse the task, so it is left out of read_first, on every arm alike.
         const wanted = Array.isArray(task.contract.read_first) ? (task.contract.read_first as unknown[]).filter((item): item is string => typeof item === "string") : [];
-        const present = wanted.length ? await existingFiles(deps.host, placed, task, wanted) : [];
+        const present = wanted.length ? await existingFiles(deps.host, placed, task, wanted, log) : [];
         if (present.length < wanted.length) log(`bench ${input.arm} r${repeat}: ${task.taskId}: read_first without ${wanted.filter((item) => !present.includes(item)).join(", ")} (not in the base commit)`);
         const contract = benchContract(task, { version: set.version, arm: input.arm, repeat, root: placed.path, fault: input.fault, readFirst: present });
         let benchTaskId = String(contract.id);
@@ -302,22 +303,22 @@ export async function runSeries(deps: RunnerDeps, input: SeriesInput): Promise<S
           const deadline = clock.now() + (input.taskTimeoutMin ?? DEFAULT_TASK_TIMEOUT_MIN) * 60_000;
           let settled = 0;
           while (clock.now() < deadline) {
-            outcome = await deps.pipeline.outcome(lp.runId, benchTaskId).catch(() => outcome);
+            outcome = await deps.pipeline.outcome(lp.runId, benchTaskId).catch((cause: unknown) => { log(`bench ${input.arm} r${repeat}: ${benchTaskId} outcome unreadable: ${cause instanceof Error ? cause.message : String(cause)}`); return outcome; });
             const terminal = outcome.latestState === "accepted" || outcome.latestState === "blocked" || outcome.latestState === "canceled";
             settled = terminal ? settled + 1 : 0;
             if (settled >= 2) break;
             await clock.sleep(input.pollMs ?? 20_000);
           }
-          if (settled < 2) { reason = `no end after ${input.taskTimeoutMin ?? DEFAULT_TASK_TIMEOUT_MIN} min; cancelled`; await deps.pipeline.cancel(lp.runId, benchTaskId).catch(() => undefined); }
+          if (settled < 2) { reason = `no end after ${input.taskTimeoutMin ?? DEFAULT_TASK_TIMEOUT_MIN} min; cancelled`; await bestEffort(log, "bench task cancel", deps.pipeline.cancel(lp.runId, benchTaskId), undefined); }
         }
-        const attempts = sent.ok ? await deps.pipeline.metrics(placed, lp.runId, benchTaskId).catch(() => [] as AttemptMetrics[]) : [];
+        const attempts = sent.ok ? await bestEffort(log, "bench task metrics", deps.pipeline.metrics(placed, lp.runId, benchTaskId), [] as AttemptMetrics[]) : [];
         const accepted = outcome.latestState === "accepted";
         const sums = aggregateAttempts(attempts);
         saveResult(deps.db, {
           runId: run.id, taskId: task.taskId, position: task.position, state: reason && !sent.ok ? "error" : accepted ? "accepted" : "not_accepted", accepted,
           benchTaskId, lpRunId: lp.runId, ...sums, reason: reason ?? (accepted ? null : `ended ${outcome.latestState ?? "without an attempt"}`), recordedAt: clock.now(),
         }, attempts);
-        const evals = deps.jevals ? await deps.jevals({ task, outcome, attempts, reason: reason ?? (accepted ? null : `ended ${outcome.latestState ?? "without an attempt"}`) }).catch(() => null) : null;
+        const evals = deps.jevals ? await bestEffort(log, "bench jevals", deps.jevals({ task, outcome, attempts, reason: reason ?? (accepted ? null : `ended ${outcome.latestState ?? "without an attempt"}`) }), null) : null;
         if (evals) {
           const line = jevalsLine(evals);
           if (line) log(`bench ${input.arm} r${repeat}: ${benchTaskId} ${line}`);

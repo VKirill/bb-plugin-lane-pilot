@@ -1,5 +1,6 @@
 import { MAIN_AGENT_ID, isCustomAgentId } from "../../native-agent";
 import { EMPLOYEES } from "../../native-agent";
+import { bestEffort } from "@lane-pilot/kit";
 import { jev } from "@lane-pilot/jev";
 import { judgeEmployeeRemark, recordEmployeeLesson } from "./employee-lessons";
 import { observeStageChild } from "@lane-pilot/thread-observe";
@@ -146,7 +147,7 @@ export function mountSpecialists(ctx: ServerCore, services: Services): void {
     parameters: z.object({ role: z.string().regex(MAIN_AGENT_ID), text: z.string().min(1).max(4000) }).strict(),
     execute: async (params, context) => {
       if (!context.projectId) throw new Error("employee_remark_needs_pm_thread");
-      const settings = await ctx.effectiveProjectSettings(context.projectId).then((r) => r.values as Record<string, unknown>).catch(() => ({} as Record<string, unknown>));
+      const settings = (await bestEffort(ctx.log, "employee remark settings", ctx.effectiveProjectSettings(context.projectId), { values: {}, inherited: [], explicitKeys: [] })).values as Record<string, unknown>;
       const verdict = await judgeEmployeeRemark({ settings }, { projectId: context.projectId, role: params.role, text: params.text });
       let recorded: { line: string; proposalId: string } | null = null;
       if (verdict.by === "jev" && verdict.remark) {

@@ -51,7 +51,7 @@ export function useRulesAnalyzer(projectId: string | null): {
     if (!projectId) { setAnalyzer(null); setLoaded(true); return; }
     let live = true;
     setLoaded(false);
-    void rpc.call("list_rule_proposals", { projectId }).then((listed) => { if (live) { setAnalyzer((listed as Listed).analyzer); setLoaded(true); } }).catch(() => { if (live) setLoaded(true); });
+    void rpc.call("list_rule_proposals", { projectId }).then((listed) => { if (live) { setAnalyzer((listed as Listed).analyzer); setLoaded(true); } }).catch((cause: unknown) => { if (live) { setLoaded(true); toast.error(t("rulesFailed"), { description: cause instanceof Error ? cause.message : String(cause) }); } });
     return () => { live = false; };
   }, [projectId, rpc]);
   const save = async (next: ExperimentalProviderModelPickerValue) => {

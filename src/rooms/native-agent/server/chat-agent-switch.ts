@@ -3,7 +3,7 @@ import { listPhases } from "../../phase";
 import { agentKind, compileEffectiveMainAgent } from "../agent-profile";
 import { nativeAgentCliId, nativeSelectionSchema, nativeSwitchKey, pendingSwitch, type NativeSelection } from "../native-session";
 import { storeNativeSelection } from "./native-profile";
-import { stringAt, valueAt } from "@lane-pilot/kit";
+import { isNotFound, orMiss, stringAt, valueAt } from "@lane-pilot/kit";
 import type { ServerCore } from "../../contracts/server";
 
 /** A chat whose reply is running (or starting or stopping) keeps its agent until the reply ends. */
@@ -64,7 +64,7 @@ export async function chatAgentState(ctx: Pick<ServerCore, "bb" | "ownedAgents">
   const { bb } = ctx;
   const thread = await bb.sdk.threads.get({ threadId });
   const projectId = stringAt(thread, "projectId") ?? "";
-  const role = valueAt(await bb.sdk.threads.getPluginMetadata({ threadId }).catch(() => null), "role");
+  const role = valueAt(await orMiss(bb.sdk.threads.getPluginMetadata({ threadId }), null, isNotFound), "role");
   const bound = await readSelection(ctx, `native-thread:${threadId}`);
   const pending = await pendingSwitch(bb.storage.kv, threadId);
   let reason: ChatAgentReason | null = null;

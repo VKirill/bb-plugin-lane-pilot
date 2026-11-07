@@ -4,6 +4,7 @@ import { type ServerCore } from "../../contracts/server";
 import { loadProjectSettings } from "../../storage";
 import { isSealedVersion } from "../store";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
+import { bestEffort } from "@lane-pilot/kit";
 import type { BenchApi } from "../service";
 import { renderBaseline } from "../baseline";
 import { nightArm } from "../runner";
@@ -78,7 +79,7 @@ async function sealedWeek(ctx: ServerCore, bench: BenchApi, openVersion: string,
   const gapPp = Math.round((openRate - sealedRate) * 100);
   const threshold = Number(loadProjectSettings(ctx.db, GLOBAL_SETTINGS_PROJECT_ID)[SEALED_GAP_SETTING] ?? SEALED_GAP_DEFAULT_PP) || SEALED_GAP_DEFAULT_PP;
   const flagged = gapPp > threshold;
-  await (ctx.bb.storage.kv as { set?: (key: string, value: unknown) => Promise<void> }).set?.(SEALED_GAP_KEY, { gapPp, thresholdPp: threshold, openRate, sealedRate, openVersion, sealedVersion: version, arm, at: Date.now() }).catch(() => undefined);
+  await bestEffort(ctx.log, "bench-weekly sealed gap write", (async () => { await (ctx.bb.storage.kv as { set?: (key: string, value: unknown) => Promise<void> }).set?.(SEALED_GAP_KEY, { gapPp, thresholdPp: threshold, openRate, sealedRate, openVersion, sealedVersion: version, arm, at: Date.now() }); })(), undefined);
   ctx.log(`bench-weekly sealed: ${version} pass ${(sealedRate * 100).toFixed(0)}% vs ${openVersion} ${(openRate * 100).toFixed(0)}% — gap ${gapPp} pp${flagged ? ` > ${threshold}: possible overfit to the open set, new fixes held` : ""}`);
 }
 

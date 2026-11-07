@@ -1,5 +1,6 @@
 import { OWNER_ASK_RENDERER_ID, ownerAnswerText, ownerAskResponseSchema, ownerAskTitle, buildOwnerAskPayload, resolveOwnerResponse, type OwnerAskRequest, type OwnerChoice } from "../owner-ask";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
+import { bestEffort } from "@lane-pilot/kit";
 
 export type OwnerAnswer =
   | { outcome: "answered"; choice: OwnerChoice; text: string; line: string }
@@ -46,7 +47,7 @@ export function createOwnerAsk(bb: BbPluginApi, log: (message: string) => void) 
     const title = ownerAskTitle(payload);
     open.add(threadId);
     // Kept until the form is settled: a reload leaves it here for the next instance to find.
-    const recorded = Promise.resolve(bb.storage.kv.set(`${PENDING_PREFIX}${threadId}`, { threadId, question: clip(request.question, 300), source: request.source, at: Date.now() } satisfies PendingRecord as never)).catch(() => undefined);
+    const recorded = bestEffort(log, "owner question pending record", Promise.resolve(bb.storage.kv.set(`${PENDING_PREFIX}${threadId}`, { threadId, question: clip(request.question, 300), source: request.source, at: Date.now() } satisfies PendingRecord as never)), undefined);
     let lostToReload = false;
     try {
       const result = await ask({
@@ -80,7 +81,7 @@ export function createOwnerAsk(bb: BbPluginApi, log: (message: string) => void) 
     } finally {
       open.delete(threadId);
       await recorded;
-      if (!lostToReload) await bb.storage.kv.delete(`${PENDING_PREFIX}${threadId}`).catch(() => undefined);
+      if (!lostToReload) await bestEffort(log, "owner question pending clear", bb.storage.kv.delete(`${PENDING_PREFIX}${threadId}`), undefined);
     }
   }
 
@@ -100,7 +101,7 @@ export function createOwnerAsk(bb: BbPluginApi, log: (message: string) => void) 
       let record: PendingRecord | undefined;
       try {
         record = await bb.storage.kv.get<PendingRecord>(key);
-        await bb.storage.kv.delete(key).catch(() => undefined);
+        await bestEffort(log, "owner question pending clear", bb.storage.kv.delete(key), undefined);
       } catch (cause) { log(`owner question record ${key} unreadable, skipped: ${cause instanceof Error ? cause.message : String(cause)}`); continue; }
       if (!record?.threadId || open.has(record.threadId)) continue;
       try {

@@ -61,14 +61,13 @@ export async function placeEmployeeOn(
 ): Promise<EmployeePlace> {
   const affinity = employeeView(agentId).machineAffinity;
   if (!affinity || affinity === MACHINE_AFFINITY_ANY) return { mode: "inherit" };
-  const listed = await Promise.resolve().then(() => bb.sdk.hosts.list?.() ?? []).then((rows) => rows ?? []).catch(() => []) as Array<{ id?: unknown; name?: unknown }>;
+  const listed = ((await bb.sdk.hosts.list?.()) ?? []) as Array<{ id?: unknown; name?: unknown }>;
   const hosts: ListedHost[] = listed.flatMap((row) => typeof row?.id === "string" ? [{ id: row.id, name: typeof row.name === "string" ? row.name : null }] : []);
   const hostId = affinityHostId(affinity, hosts);
   if (!hostId) return { mode: "inherit" };
   const home = await Promise.resolve()
     .then(() => bb.sdk.hosts.directory({ hostId }))
-    .then((row) => row.directory || null)
-    .catch(() => null);
+    .then((row) => row.directory || null);
   const place = chooseEmployeePlace({ affinity, hosts, sources, hostHome: home, agentId });
   if (place.mode !== "folder" || !place.created) return place;
   try {

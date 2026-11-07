@@ -10,7 +10,7 @@ import type { WorkflowEngineApi } from "../../workflow/server/workflow";
 import type { WriterHostApi } from "../../writer/server/writer-host";
 
 import { getRun, getRunSettingsScopes } from "../../storage";
-import {fileAllowedByOwns, fileBlockedByNeverTouch, isNotFound, orMiss, outputText} from "@lane-pilot/kit";
+import {fileAllowedByOwns, fileBlockedByNeverTouch, isNotFound, orMiss, outputText, bestEffort} from "@lane-pilot/kit";
 import { bbServiceTier, writerExecutionSelection } from "@lane-pilot/models";
 ;
 import { adoptRuleProposal, nightMayAdopt, refreshRuleProposals, retireAdoptedRule, rewordAdoptedRule } from "./insights";
@@ -158,7 +158,7 @@ export function createRuleScan(ctx: ServerCore, services: RuleScanServices, deps
     // Until the owner picks one: the `rules-analyzer` row of the role table (Codex GPT-6 Luna, high). On the SelfyStudio group
     // (2026-10-01) it set aside three failures that were not the writers' (foreign specs, untouched files) where Grok 4.6 wrote a
     // rule that would have sent writers outside their owns_paths; it is also the cheaper model. Fast tier, as it always ran.
-    const settings = (await ctx.effectiveProjectSettings(projectId).catch(() => null))?.values ?? {};
+    const settings = (await bestEffort(ctx.log, "rules analyzer settings", ctx.effectiveProjectSettings(projectId), { values: {}, inherited: [], explicitKeys: [] })).values;
     const spawnUsage=spawnUsageOf(ctx);
     await warmSpawnUsage(spawnUsage,null);
     // The folder the analyzer starts in is known here (collectScan, runModel): a provider this machine refused there (opencode2 under
@@ -199,7 +199,7 @@ export function createRuleScan(ctx: ServerCore, services: RuleScanServices, deps
     const run = getRun(db, runId);
     if (!run?.writer_workspace_path) return [];
     const key = `${run.project_id}\u0000${run.writer_workspace_path}`;
-    if (!cache.has(key)) cache.set(key, await ctx.scopesForWorkspace(run.project_id, run.writer_workspace_path).catch(() => []));
+    if (!cache.has(key)) cache.set(key, await ctx.scopesForWorkspace(run.project_id, run.writer_workspace_path));
     return cache.get(key)!;
   }
 
@@ -261,7 +261,7 @@ export function createRuleScan(ctx: ServerCore, services: RuleScanServices, deps
   }
 
   async function projectPlace(projectId: string): Promise<{ hostId: string; path: string } | null> {
-    const resolved = await services.resolveProjectWriterHost({ projectId }).catch(() => null);
+    const resolved = await services.resolveProjectWriterHost({ projectId });
     return resolved && resolved.status === "resolved" && resolved.hostId ? { hostId: resolved.hostId, path: resolved.path } : null;
   }
 
@@ -322,7 +322,7 @@ export function createRuleScan(ctx: ServerCore, services: RuleScanServices, deps
       .map((row) => ({ stage: row.stage_id, state: row.state, reason: row.reason, result: row.result_json?.slice(0, 1500) ?? null }));
     let writerTail: string | null = null;
     if (failure.threadId) {
-      const output = await bb.sdk.threads.output({ threadId: failure.threadId }).catch(() => null);
+      const output = await orMiss(bb.sdk.threads.output({ threadId: failure.threadId }), null, isNotFound);
       const text = output ? outputText(output) : "";
       writerTail = text ? text.slice(-2500) : null;
     }
@@ -421,7 +421,7 @@ export function createRuleScan(ctx: ServerCore, services: RuleScanServices, deps
   }
 
   async function failScan(projectId: string, reason: string): Promise<void> {
-    await setScan(projectId, { state: "failed", finishedAt: Date.now(), reason: reason.slice(0, 500) }).catch(() => undefined);
+    await bestEffort(ctx.log, "rules scan failed-state write", setScan(projectId, { state: "failed", finishedAt: Date.now(), reason: reason.slice(0, 500) }), undefined);
   }
 
   /**

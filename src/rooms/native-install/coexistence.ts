@@ -3,7 +3,7 @@ import { access, lstat, mkdir, readFile, readdir, rename, rm } from "node:fs/pro
 import { dirname, join } from "node:path";
 import { parse, type ParseError } from "jsonc-parser/lib/esm/main.js";
 import { TARGET_SHA } from "../runs";
-import { hashPath } from "@lane-pilot/kit";
+import {hashPath, isFsAbsent, orMiss} from "@lane-pilot/kit";
 import { agentsDir, resolveHome } from "@lane-pilot/kit";
 import { assessEngineCapabilities, IMPACTED_FUNCTIONS, inspectEngineCapabilities, inspectEngineCapabilitiesDetailed } from "./capabilities";
 import { createOpenCodePluginShim, isManagedOpenCodePlugin } from "./opencode-plugin";
@@ -114,22 +114,20 @@ function emptyState(
   };
 }
 
-function cacheCandidates(home: string): Promise<string[]> {
+async function cacheCandidates(home: string): Promise<string[]> {
   const parent = join(home, ".claude/plugins/cache/claude-lane-stack/lane-stack");
-  return readdir(parent, { withFileTypes: true })
-    .then((entries) => entries.filter((entry) => entry.isDirectory()).map((entry) => join(parent, entry.name)).sort())
-    .catch(() => []);
+  const entries = await orMiss(readdir(parent, { withFileTypes: true }), null, isFsAbsent);
+  return (entries ?? []).filter((entry) => entry.isDirectory()).map((entry) => join(parent, entry.name)).sort();
 }
 
 async function managedEngineCandidates(home: string, targetSha: string): Promise<string[]> {
   const parent = join(home, ".agents/lane-pilot/engines");
   const canonical = join(parent, targetSha);
-  const variants = await readdir(parent, { withFileTypes: true })
-    .then((entries) => entries
-      .filter((entry) => entry.isDirectory() && entry.name.startsWith(`${targetSha}-managed-`))
-      .map((entry) => join(parent, entry.name))
-      .sort())
-    .catch(() => []);
+  const entries = await orMiss(readdir(parent, { withFileTypes: true }), null, isFsAbsent);
+  const variants = (entries ?? [])
+    .filter((entry) => entry.isDirectory() && entry.name.startsWith(`${targetSha}-managed-`))
+    .map((entry) => join(parent, entry.name))
+    .sort();
   return [canonical, ...variants];
 }
 

@@ -1,5 +1,5 @@
 import { constants } from "node:fs";
-import { spawnAsync } from "@lane-pilot/kit";
+import { isFsAbsent, lstatOrNull, orMiss, parseJsonOr, spawnAsync } from "@lane-pilot/kit";
 import { lstat, open, readdir, realpath } from "node:fs/promises";
 import { basename, extname, isAbsolute, join, relative, sep } from "node:path";
 
@@ -73,10 +73,8 @@ export function parseSandboxUnsafePatterns(settingValue: unknown): string[] {
     const trimmed = settingValue.trim();
     if (!trimmed) return [];
     if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
-      try {
-        const parsed = JSON.parse(trimmed);
-        if (Array.isArray(parsed)) return parsed.map((item) => String(item).trim()).filter(Boolean);
-      } catch {}
+      const parsed = parseJsonOr<unknown>(trimmed, null);
+      if (Array.isArray(parsed)) return parsed.map((item) => String(item).trim()).filter(Boolean);
     }
     return trimmed.split(/[,\n]/).map((item) => item.trim()).filter(Boolean);
   }
@@ -218,7 +216,7 @@ export function collectGitNexusCallerPaths(payload:unknown,root:string):string[]
 }
 async function runGitNexusCallers(root:string,targets:readonly {filePath:string;symbol:string}[]):Promise<{paths:string[];complete:boolean}> {
   if(targets.length===0)return {paths:[],complete:true};
-  const info=await lstat(join(root,".gitnexus")).catch(()=>null);
+  const info=await lstatOrNull(join(root,".gitnexus"));
   if(!info?.isDirectory()||info.isSymbolicLink())return {paths:[],complete:false};
   const deadline=Date.now()+8_000,paths=new Set<string>();
   const status=await spawnAsync("gitnexus",["status","--json"],{cwd:root,timeout:1_500,maxBuffer:512*1024});
@@ -294,7 +292,7 @@ export async function scanCritiqueCoverage(input:{workspacePath:string;plan:stri
     if(packageScripts.has(ws))return packageScripts.get(ws)!;
     const dir=ws.replace(/^\.\//,"").replace(/\/$/,"");let found:Record<string,unknown>|null=null;
     for(const file of files.filter((path)=>/^(?:[^/]+\/){0,4}package\.json$/.test(path)).slice(0,40)) {
-      const handle=await open(join(root,...file.split("/")),constants.O_RDONLY|constants.O_NOFOLLOW).catch(()=>null);
+      const handle=await orMiss(open(join(root,...file.split("/")),constants.O_RDONLY|constants.O_NOFOLLOW),null,isFsAbsent);
       if(!handle)continue;
       try {
         const info=await handle.stat();if(!info.isFile()||info.size>65_536)continue;
@@ -321,7 +319,7 @@ export async function scanCritiqueCoverage(input:{workspacePath:string;plan:stri
   let readFiles=0,readBytes=0;const textCache=new Map<string,string>();
   const mentionedTexts:Array<{source:string;text:string}>=[{source:"Plan",text:input.plan}];
   if(existing.has("SPEC.md")) {
-    const handle=await open(join(root,"SPEC.md"),constants.O_RDONLY|constants.O_NOFOLLOW).catch(()=>null);
+    const handle=await orMiss(open(join(root,"SPEC.md"),constants.O_RDONLY|constants.O_NOFOLLOW),null,isFsAbsent);
     if(handle)try {
       const info=await handle.stat();
       if(info.isFile()&&info.size<=65_536&&readFiles<300&&readBytes+info.size<=4*1024*1024) {
@@ -340,7 +338,7 @@ export async function scanCritiqueCoverage(input:{workspacePath:string;plan:stri
     const normalized=own.replace(/\/$/,""),stem=basename(normalized).replace(/\.[^.]+$/,"");if(GENERIC.has(stem.toLowerCase()))continue;
     let ownedSource=textCache.get(normalized);
     if(ownedSource===undefined&&existing.has(normalized)&&CODE.has(extname(normalized).toLowerCase())) {
-      const handle=await open(join(root,...normalized.split("/")),constants.O_RDONLY|constants.O_NOFOLLOW).catch(()=>null);
+      const handle=await orMiss(open(join(root,...normalized.split("/")),constants.O_RDONLY|constants.O_NOFOLLOW),null,isFsAbsent);
       if(handle)try {
         const info=await handle.stat();
         if(info.isFile()&&info.size<=65_536&&readFiles<300&&readBytes+info.size<=4*1024*1024) {
@@ -357,7 +355,7 @@ export async function scanCritiqueCoverage(input:{workspacePath:string;plan:stri
       if(findings.length>=10)break;
       if(path===normalized||owns.some((pattern)=>covered(pattern,path))||!TEXT.has(extname(path).toLowerCase()))continue;
       const absolute=join(root,...path.split("/"));
-      const handle=await open(absolute,constants.O_RDONLY|constants.O_NOFOLLOW).catch(()=>null);
+      const handle=await orMiss(open(absolute,constants.O_RDONLY|constants.O_NOFOLLOW),null,isFsAbsent);
       if(!handle)continue;
       let body=textCache.get(path);
       try {

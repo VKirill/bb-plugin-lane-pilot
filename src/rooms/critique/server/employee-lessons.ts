@@ -30,7 +30,7 @@ export function specialistMemorySlice(db: LanePilotDatabase, projectId: string, 
 export async function judgeEmployeeRemark(ctx: JudgeContext, input: { projectId: string; role: string; text: string }): Promise<{ remark: boolean; by: "jev" | "shadow" | "off" }> {
   const judge = jev();
   if (!judge) return { remark: false, by: "off" };
-  const verdict = await judge.judge(employeeRemarkJudgment, { text: input.text, role: input.role }, { ...ctx, projectId: input.projectId }).catch(() => null);
+  const verdict = await judge.judge(employeeRemarkJudgment, { text: input.text, role: input.role }, { ...ctx, projectId: input.projectId });
   if (!verdict) return { remark: false, by: "off" };
   if (verdict.by === "jev") return { remark: verdict.decision.remark, by: "jev" };
   return { remark: verdict.by === "fallback" ? (verdict.shadow?.decision?.remark ?? false) : false, by: "shadow" };

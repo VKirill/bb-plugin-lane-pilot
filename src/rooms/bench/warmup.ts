@@ -1,4 +1,5 @@
 import { mapVerificationCwd } from "../tasks";
+import { bestEffort } from "@lane-pilot/kit";
 import { q, type ExecResult, type HostPort } from "./ports";
 import { resolveRepoPath } from "./repos";
 import type { Candidate, VerificationItem, WarmRecord } from "./types";
@@ -26,6 +27,7 @@ export type WarmOptions = {
   reposRoot?: string | null;
   /** Machine the checkout is on. Absent: the machine the path prefix names. */
   hostId?: string;
+  log?: (message: string) => void;
 };
 
 const tail = (result: ExecResult): string => `${result.stdout}\n${result.stderr}`.trim().slice(-300);
@@ -112,7 +114,7 @@ export async function warmUp(host: HostPort, candidate: Candidate, options: Warm
     const discriminating = base.filter((row, index) => row.exitCode !== 0 && withSolution[index]!.exitCode === 0).map((row) => row.command);
     return { ok: true, solutionCommit: solution.commit, patchSha256, record: { base, solution: withSolution, discriminating, applied, files } };
   } finally {
-    if (!options.keep) await host.run(hostId, "/", `rm -rf ${q(work)}`, 300).catch(() => undefined);
+    if (!options.keep) await bestEffort(options.log ?? (() => undefined), "bench warmup cleanup", host.run(hostId, "/", `rm -rf ${q(work)}`, 300), undefined);
   }
 }
 
@@ -127,15 +129,15 @@ export const STOP_FREE_GB = 12;
 
 /** Removes what earlier bench work left behind: warm-up scratch older than a day, and the clone's node_modules
  * (the next task relinks it). Run before a disk deferral is declared, not before every measurement. */
-export async function cleanBenchCaches(host: HostPort, hostId: string, projectPath?: string): Promise<void> {
+export async function cleanBenchCaches(host: HostPort, hostId: string, projectPath?: string, log?: (message: string) => void): Promise<void> {
   const parts = [`{ [ -d "$HOME/lp-bench" ] && find "$HOME/lp-bench" -mindepth 1 -mtime +1 -exec rm -rf {} + ; }`];
   if (projectPath) parts.push(`rm -rf ${q(`${projectPath}/node_modules`)}`);
-  await host.run(hostId, "/", `${parts.join("; ")}; true`, 300).catch(() => undefined);
+  await bestEffort(log ?? (() => undefined), "bench cache cleanup", host.run(hostId, "/", `${parts.join("; ")}; true`, 300), undefined);
 }
 
 /** Free space in GB on the host's home volume. */
-export async function freeGb(host: HostPort, hostId: string): Promise<number | null> {
-  const result = await host.run(hostId, "/", `df -Pk "$HOME" | awk 'NR==2{print int($4/1048576)}'`, 30).catch(() => null);
+export async function freeGb(host: HostPort, hostId: string, log?: (message: string) => void): Promise<number | null> {
+  const result = await host.run(hostId, "/", `df -Pk "$HOME" | awk 'NR==2{print int($4/1048576)}'`, 30).catch((cause: unknown) => { log?.(`bench: free-space probe on ${hostId} failed: ${cause instanceof Error ? cause.message : String(cause)}`); return null; });
   const value = Number(result?.stdout.trim());
   return result && result.exitCode === 0 && Number.isFinite(value) ? value : null;
 }

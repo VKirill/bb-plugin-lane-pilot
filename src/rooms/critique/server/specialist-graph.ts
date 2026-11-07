@@ -1,4 +1,5 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
+import { bestEffort } from "@lane-pilot/kit";
 import { runOnHost } from "@lane-pilot/host-calls";
 
 import { fenceOutside, spawnTextId } from "../../platform/server";
@@ -31,12 +32,12 @@ const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve,
 
 /** Called when the agent step of a `specialist` run spawns its thread. */
 export async function rememberSpecialistThread(bb: BbPluginApi, runId: string, threadId: string): Promise<void> {
-  await Promise.all([bb.storage.kv.set(threadOfRun(runId), threadId as never), bb.storage.kv.set(runOfThread(threadId), runId as never)]).catch(() => undefined);
+  await bestEffort(bb.log, "specialist thread link", Promise.all([bb.storage.kv.set(threadOfRun(runId), threadId as never), bb.storage.kv.set(runOfThread(threadId), runId as never)]), undefined);
 }
 
 /** The `specialist` run a thread belongs to, or null for a thread that no run started (one that was running when this version came in). */
 export async function specialistRunOfThread(bb: BbPluginApi, threadId: string): Promise<string | null> {
-  const runId = await bb.storage.kv.get<string>(runOfThread(threadId)).catch(() => null);
+  const runId = await bb.storage.kv.get<string>(runOfThread(threadId));
   return typeof runId === "string" && runId ? runId : null;
 }
 
@@ -56,7 +57,7 @@ export async function startSpecialistRun(ctx: ServerCore, services: Services, in
   started.done.catch((cause: unknown) => ctx.log(`Lane Pilot specialist run ${started.runId} stopped with an error: ${cause instanceof Error ? cause.message : String(cause)}`));
   const deadline = Date.now() + THREAD_WAIT_MS;
   for (;;) {
-    const threadId = await ctx.bb.storage.kv.get<string>(threadOfRun(started.runId)).catch(() => null);
+    const threadId = await ctx.bb.storage.kv.get<string>(threadOfRun(started.runId));
     if (typeof threadId === "string" && threadId) return { workflowRunId: started.runId, threadId };
     const summary = engine.get(started.runId);
     if (summary && ENDED_BADLY.includes(summary.status)) throw new Error(summary.error ?? summary.reason ?? `the specialist run ${summary.status}`);
@@ -72,7 +73,7 @@ export async function waitSpecialistRun(ctx: ServerCore, services: Services, inp
   const deadline = Date.now() + input.timeoutSec * 1000;
   for (;;) {
     const summary = services.workflowEngine.get(input.runId);
-    const threadId = await ctx.bb.storage.kv.get<string>(threadOfRun(input.runId)).catch(() => null) ?? "";
+    const threadId = await ctx.bb.storage.kv.get<string>(threadOfRun(input.runId)) ?? "";
     const base = { threadId, workflowRunId: input.runId };
     if (summary?.status === "succeeded") {
       // Artifact guard (agents-design 3.5): a deliverable that fails its validator goes back to the same thread
@@ -87,7 +88,7 @@ export async function waitSpecialistRun(ctx: ServerCore, services: Services, inp
           const { validateDeliverable } = await import("../../validators");
           const hostId = typeof inputs.hostId === "string" ? inputs.hostId : "";
           const brief = inputs.brief as Record<string, unknown> | undefined;
-          const settings = await ctx.effectiveProjectSettings(owner.project_id).then((r) => r.values as Record<string, unknown>).catch(() => ({}));
+          const settings = (await bestEffort(ctx.log, "specialist deliverable settings", ctx.effectiveProjectSettings(owner.project_id), { values: {}, inherited: [], explicitKeys: [] })).values as Record<string, unknown>;
           const run = getRun(ctx.db, input.runId);
           const verdict = await validateDeliverable(validator, deliverable, {
             host: { run: (id, cwd, command, timeoutSec) => runOnHost(ctx.host, { hostId: id, cwd, command, timeoutSec }) as never },
@@ -98,7 +99,7 @@ export async function waitSpecialistRun(ctx: ServerCore, services: Services, inp
           });
           if (!verdict.ok) {
             const remark = `Revision needed: ${validator} validator rejected ${deliverable} — ${verdict.reason}`;
-            await ctx.bb.sdk.threads.send({ threadId, mode: "queue-if-active", input: [{ type: "text", text: remark, mentions: [] }] } as never).catch(() => undefined);
+            await bestEffort(ctx.log, "specialist revision remark", ctx.bb.sdk.threads.send({ threadId, mode: "queue-if-active", input: [{ type: "text", text: remark, mentions: [] }] } as never), undefined);
             return { ...base, state: "revision", reason: verdict.reason, output: fenceOutside("specialist", remark) };
           }
         } catch (cause) {
@@ -149,7 +150,7 @@ export async function pageReviewByAgent(
       runtime: { ctx, services, pmThreadId: input.pmThreadId, projectId: input.projectId, runId: input.parentRunId },
       link: { projectId: input.projectId, runId: input.parentRunId },
     });
-    started.done.catch(() => undefined);
+    started.done.catch((cause: unknown) => ctx.log(`Lane Pilot page-review run ${started.runId} stopped with an error: ${cause instanceof Error ? cause.message : String(cause)}`));
     const deadline = Date.now() + PAGE_REVIEW_TIMEOUT_MS;
     while (Date.now() < deadline) {
       const summary = services.workflowEngine.get(started.runId);

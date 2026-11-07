@@ -1,6 +1,6 @@
 import { createAttempt, createRun, getAttempt, loadPrototypeConfig, setRunThread, transitionAttempt } from "../../storage";
 import { fullAccessSpawn } from "../../platform/server";
-import { id, stringAt, valueAt } from "@lane-pilot/kit";
+import { bestEffort, id, stringAt, valueAt } from "@lane-pilot/kit";
 import { createHelperProbe } from "../../native-agent/server/helper-probe";
 import type { ServerCore } from "../../contracts/server";
 
@@ -75,8 +75,8 @@ export function createProbes(ctx: ServerCore, services: Services) {
     const observedThread = valueAt(observed, "thread");
     if (stringAt(observedThread, "status") !== "error") throw new Error("provider-error probe did not observe error status");
     transitionAttempt(db, attemptId, "provider_error", { threadId, reason:"observed provider error from deliberately missing model" });
-    await bb.sdk.threads.stop({ threadId }).catch(() => undefined);
-    await bb.sdk.threads.archive({ threadId }).catch(() => undefined);
+    await bestEffort(ctx.log, "provider probe thread cleanup", bb.sdk.threads.stop({ threadId }), undefined);
+    await bestEffort(ctx.log, "provider probe thread cleanup", bb.sdk.threads.archive({ threadId }), undefined);
     return { runId, taskId, attemptId, threadId, observedStatus:"error", state:"provider_error" };
   }
 
@@ -138,8 +138,8 @@ export function createProbes(ctx: ServerCore, services: Services) {
       };
     } finally {
       for (const threadId of threadIds) {
-        await bb.sdk.threads.stop({ threadId }).catch(() => undefined);
-        await bb.sdk.threads.delete({ threadId, childThreadsConfirmed:true }).catch(() => undefined);
+        await bestEffort(ctx.log, "ambiguous probe thread cleanup", bb.sdk.threads.stop({ threadId }), undefined);
+        await bestEffort(ctx.log, "ambiguous probe thread cleanup", bb.sdk.threads.delete({ threadId, childThreadsConfirmed:true }), undefined);
       }
     }
   }

@@ -3,7 +3,7 @@ import type { StageHelperSettings } from "../../platform/server";
 import { waitThreadIdle } from "@lane-pilot/thread-observe";
 import { taskV2Schema } from "../../contracts";
 import { fullAccessSpawn } from "../../platform/server";
-import { stringAt, orMiss, isNotFound } from "@lane-pilot/kit";
+import { bestEffort, stringAt, orMiss, isNotFound } from "@lane-pilot/kit";
 import { type ServerCore } from "../../contracts/server";
 import { cancelAttemptById, finishRunSafely } from "../../runs/server";
 import { createRun, createTask, getActivation, getRun, getTask, listOpenAttempts, loadProjectSettings, loadPrototypeConfig, saveProjectSetting, savePrototypeConfig } from "../../storage";
@@ -37,19 +37,19 @@ interface Services {
 
 /** The bench inside the plugin: the machines through `runCommand`, the pipeline through the plugin's own services. */
 const listProjects = async (bb: ServerCore["bb"]): Promise<Array<{ id: string; name: string }>> => {
-  const rows = await bb.sdk.projects.list({ includePersonal: true } as never).catch(() => []) as Array<{ id?: unknown; name?: unknown }>;
+  const rows = await bb.sdk.projects.list({ includePersonal: true } as never) as Array<{ id?: unknown; name?: unknown }>;
   return rows.flatMap((row) => typeof row.id === "string" && typeof row.name === "string" ? [{ id: row.id, name: row.name }] : []);
 };
 
 /** The pipeline the bench drives: projects through the SDK, run lifecycle through the plugin's own services. */
-export function benchPipeline(ctx: Pick<ServerCore, "bb" | "db" | "host" | "cancelQueuedAttempt">, services: Services): PipelinePort {
+export function benchPipeline(ctx: Pick<ServerCore, "bb" | "db" | "host" | "cancelQueuedAttempt" | "log">, services: Services): PipelinePort {
   const { bb, db } = ctx;
 
   const keysKey = (projectId: string) => `bench:keys:${projectId}`;
 
   // Every attempt of a bench run is the bench's, also the ones its PM queued on its own: they go before the run closes.
   const closeRun = async (projectId: string, runId: string) => {
-    for (const row of listOpenAttempts(db).filter((attempt) => attempt.run_id === runId)) await cancelAttemptById(ctx, row.id, undefined, "canceled: the bench closed the run", "run_closed").catch(() => undefined);
+    for (const row of listOpenAttempts(db).filter((attempt) => attempt.run_id === runId)) await bestEffort(ctx.log, "bench attempt cancel", cancelAttemptById(ctx, row.id, undefined, "canceled: the bench closed the run", "run_closed").then(() => undefined), undefined);
     await finishRunSafely(bb, db, projectId, runId, "cli");
   };
 
@@ -99,7 +99,7 @@ export function benchPipeline(ctx: Pick<ServerCore, "bb" | "db" | "host" | "canc
       const left = getActivation(db, project.projectId);
       const leftRun = left ? getRun(db, left.run_id) : undefined;
       if (left && (leftRun?.state === "pending" || leftRun?.state === "running")) {
-        const meta = await bb.sdk.threads.getPluginMetadata({ threadId: left.pm_thread_id }).catch(() => null) as Record<string, unknown> | null;
+        const meta = await orMiss(bb.sdk.threads.getPluginMetadata({ threadId: left.pm_thread_id }), null, isNotFound) as Record<string, unknown> | null;
         const ours = stringAt(meta, "role") === "bench-pm" || left.pm_thread_id.startsWith("pending:");
         // A live non-bench PM keeps the project: the series defers instead of crashing on the activation
         // lock (hive W28-3). bench.live_pm=close restores the old takeover.
@@ -109,8 +109,8 @@ export function benchPipeline(ctx: Pick<ServerCore, "bb" | "db" | "host" | "canc
       }
       const activated = await services.activate(project.projectId, sourceId, "bb");
       // The PM prompt tells the PM to delegate a fixture task of its own; a bench run takes its tasks only from the bench, so the PM is stopped at once.
-      await bb.sdk.threads.updatePluginMetadata({ threadId: activated.threadId, set: { role: "bench-pm", lanePilotBench: true } } as never).catch(() => undefined);
-      await bb.sdk.threads.stop({ threadId: activated.threadId }).catch(() => undefined);
+      await bestEffort(ctx.log, "bench pm metadata", bb.sdk.threads.updatePluginMetadata({ threadId: activated.threadId, set: { role: "bench-pm", lanePilotBench: true } } as never).then(() => undefined), undefined);
+      await bb.sdk.threads.stop({ threadId: activated.threadId });
       return { pmThreadId: activated.threadId, runId: activated.runId };
     },
 
@@ -133,13 +133,13 @@ export function benchPipeline(ctx: Pick<ServerCore, "bb" | "db" | "host" | "canc
     async metrics(project, _runId, taskId) {
       const read = () => attemptMetrics(db, { projectId: project.projectId, days: 7 }).attempts.filter((row) => row.taskId === taskId).sort((a, b) => a.attemptNo - b.attemptNo);
       // The usage sync writes a writer thread's token row minutes after the attempt: sync now before calling the cost not measured.
-      if (read().some((row) => row.writer.threadId && row.costNote?.startsWith("no usage row"))) await syncTokenUsage({ bb, db }, { sinceDays: 2 }).catch(() => undefined);
+      if (read().some((row) => row.writer.threadId && row.costNote?.startsWith("no usage row"))) await bestEffort(ctx.log, "bench usage sync", syncTokenUsage({ bb, db }, { sinceDays: 2 }).then(() => undefined), undefined);
       return read();
     },
 
     async cancel(runId, taskId) {
       const open = db.prepare("SELECT id FROM lane_pilot_attempt WHERE run_id=? AND task_id=? AND state IN ('queued','spawn_requested','spawn_unknown','running')").all(runId, taskId) as Array<{ id: string }>;
-      for (const row of open) await cancelAttemptById(ctx, row.id, undefined, "canceled: the bench canceled the task", "superseded").catch(() => undefined);
+      for (const row of open) await bestEffort(ctx.log, "bench attempt cancel", cancelAttemptById(ctx, row.id, undefined, "canceled: the bench canceled the task", "superseded").then(() => undefined), undefined);
     },
 
     async finishRun(project, runId) {
@@ -163,13 +163,13 @@ export function createPluginBench(ctx: ServerCore, services: Services): BenchApi
     projectNames: async () => new Map((await listProjects(bb)).map((row) => [row.id, row.name])),
     isSandboxName: isSandboxProjectName, log: ctx.log,
     jevals: async (input) => {
-      const settings = input.task.projectId ? await ctx.effectiveProjectSettings(input.task.projectId).then((r) => r.values as Record<string, unknown>).catch(() => ({})) : {};
-      return await judgeTrace({ jev, settings, projectId: input.task.projectId, runId: null }, input);
+      const settings = input.task.projectId ? await bestEffort(ctx.log, "bench jevals settings", ctx.effectiveProjectSettings(input.task.projectId).then((r) => r.values as Record<string, unknown>), {}) : {};
+      return await judgeTrace({ jev, settings, projectId: input.task.projectId, runId: null, log: ctx.log }, input);
     },
     jevCtx: async (task) => ({
       projectId: task.projectId ?? null,
       runId: null,
-      settings: task.projectId ? await ctx.effectiveProjectSettings(task.projectId).then((r) => r.values as Record<string, unknown>).catch(() => ({} as Record<string, unknown>)) : {},
+      settings: task.projectId ? await bestEffort(ctx.log, "bench jev settings", ctx.effectiveProjectSettings(task.projectId).then((r) => r.values as Record<string, unknown>), {} as Record<string, unknown>) : {},
     }),
     pageReview: async (task, req) => pageReviewByAgent(ctx, services, {
       pmThreadId: "", projectId: task.projectId ?? "", parentRunId: "",

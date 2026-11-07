@@ -36,7 +36,7 @@ import { clearSpawnMarker } from "../../platform/server";
 import { CRITIC_OUTCOME_UNKNOWN, criticReconcilePort, helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server";
 import { recordStage } from "../../runs/server";
 import { settingOff, settingOn } from "@lane-pilot/models";
-import { stringAt, orMiss, isNotFound } from "@lane-pilot/kit";
+import { bestEffort, stringAt, orMiss, isNotFound } from "@lane-pilot/kit";
 import { dependsOnTask } from "../../tasks";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type { StageHelperSettings } from "../../platform/server";
@@ -149,7 +149,7 @@ export async function runPmRead(input:{bb:BbPluginApi;db:ReturnType<typeof openD
     const reason=cause instanceof Error?cause.message:String(cause);
     if(threadId) {
       const thread=await orMiss(input.bb.sdk.threads.get({threadId}), null, isNotFound);
-      if(["active","starting"].includes(stringAt(thread,"status")??"")) await input.bb.sdk.threads.stop({threadId}).catch(()=>undefined);
+      if(["active","starting"].includes(stringAt(thread,"status")??"")) await bestEffort(input.bb.log, "critique thread stop", input.bb.sdk.threads.stop({ threadId }), undefined);
     }
     if(!started) recordStage(input.db,{...base,state:"running",providerId,model:modelId});
     recordStage(input.db,{...base,state:"failed",providerId,model:modelId,threadId,reason,result:{error:reason}});
@@ -357,7 +357,7 @@ export async function runPlanCritique(input:{bb:BbPluginApi;db:ReturnType<typeof
         if (threadId) {
           const thread = await orMiss(input.bb.sdk.threads.get({ threadId }), null, isNotFound);
           if (stringAt(thread, "status") === "active" || stringAt(thread, "status") === "starting") {
-            await input.bb.sdk.threads.stop({ threadId }).catch(() => undefined);
+            await bestEffort(input.bb.log, "critique thread stop", input.bb.sdk.threads.stop({ threadId }), undefined);
           }
         }
         threadId = null;
@@ -376,7 +376,7 @@ export async function runPlanCritique(input:{bb:BbPluginApi;db:ReturnType<typeof
     if (threadId) {
       const thread = await orMiss(input.bb.sdk.threads.get({ threadId }), null, isNotFound);
       if (stringAt(thread, "status") === "active" || stringAt(thread, "status") === "starting") {
-        await input.bb.sdk.threads.stop({ threadId }).catch(() => undefined);
+        await bestEffort(input.bb.log, "critique thread stop", input.bb.sdk.threads.stop({ threadId }), undefined);
       }
     }
     recordStage(input.db, { ...base, state:"failed", providerId, model:modelId, threadId, reason,
@@ -559,7 +559,7 @@ export async function runCodeCritique(input:{
     // A critic still running on an older revision of the candidate is stopped and its receipt starts over: running -> pending was
     // refused and parked a finished task as internal_error (selfystudio 2026-10-30, after a reload recaptured the evidence).
     const superseded = existing?.state === "running" && existing.inputSha256 !== sha256(source);
-    if (superseded && existing.threadId) await input.bb.sdk.threads.stop({ threadId:existing.threadId }).catch(() => undefined);
+    if (superseded && existing.threadId) await bestEffort(input.bb.log, "critique thread stop", input.bb.sdk.threads.stop({ threadId: existing.threadId }), undefined);
     recordStage(input.db, { ...base, state:"pending", replaceOnNewInput:true, supersede:superseded, result:{ ...ledgerCarry, ...hashFields, truncated:input.evidence.truncated } });
   }
   // The role table's code-critic (packages/models/src/role-models.ts), else what the stage ran on before it (its selection, else the writer's).
@@ -767,7 +767,7 @@ export async function runCodeCritique(input:{
         if (threadId) {
           const thread = await orMiss(input.bb.sdk.threads.get({ threadId }), null, isNotFound);
           if (stringAt(thread, "status") === "active" || stringAt(thread, "status") === "starting") {
-            await input.bb.sdk.threads.stop({ threadId }).catch(() => undefined);
+            await bestEffort(input.bb.log, "critique thread stop", input.bb.sdk.threads.stop({ threadId }), undefined);
           }
         }
         threadId = null;
@@ -788,7 +788,7 @@ export async function runCodeCritique(input:{
     if (threadId) {
       const thread = await orMiss(input.bb.sdk.threads.get({ threadId }), null, isNotFound);
       if (stringAt(thread, "status") === "active" || stringAt(thread, "status") === "starting") {
-        await input.bb.sdk.threads.stop({ threadId }).catch(() => undefined);
+        await bestEffort(input.bb.log, "critique thread stop", input.bb.sdk.threads.stop({ threadId }), undefined);
       }
     }
     recordStage(input.db, { ...base, state:"failed", providerId, model:modelId, threadId, reason, result:{ ...ledgerCarry, error:reason, policy } });
@@ -871,7 +871,7 @@ export async function runSpecialistReview(input:{bb:BbPluginApi;db:ReturnType<ty
         return blocked ? {allowed:false,reason:why.returned,review} : {allowed:true,review};
       } catch (cause) {
         if (!unreadableAnswer(cause)) throw cause;
-        if (threadId) await input.bb.sdk.threads.stop({threadId}).catch(() => undefined);
+        if (threadId) await bestEffort(input.bb.log, "critique thread stop", input.bb.sdk.threads.stop({ threadId }), undefined);
         const issue = (cause instanceof Error ? cause.message : String(cause)).slice(0, 600);
         if (attempt >= 2) {
           const reason = `failed_infra:specialist answer unreadable twice: ${issue}`;
@@ -887,7 +887,7 @@ export async function runSpecialistReview(input:{bb:BbPluginApi;db:ReturnType<ty
     if (threadId) {
       const thread = await orMiss(input.bb.sdk.threads.get({threadId}), null, isNotFound);
       if (stringAt(thread,"status") === "active" || stringAt(thread,"status") === "starting") {
-        await input.bb.sdk.threads.stop({threadId}).catch(() => undefined);
+        await bestEffort(input.bb.log, "critique thread stop", input.bb.sdk.threads.stop({ threadId }), undefined);
       }
     }
     recordStage(input.db,{...base,state:"failed",providerId,model:modelId,threadId,reason,result:{error:reason}});
@@ -958,7 +958,7 @@ export async function criticTiebreakVote(input: {
       const reason = cause instanceof Error ? cause.message : String(cause);
       if (threadId) {
         const thread = await orMiss(input.bb.sdk.threads.get({ threadId }), null, isNotFound);
-        if (["active", "starting"].includes(stringAt(thread, "status") ?? "")) await input.bb.sdk.threads.stop({ threadId }).catch(() => undefined);
+        if (["active", "starting"].includes(stringAt(thread, "status") ?? "")) await bestEffort(input.bb.log, "critique thread stop", input.bb.sdk.threads.stop({ threadId }), undefined);
       }
       recordStage(input.db, { ...base, state: "failed", providerId, model: modelId, threadId, reason, result: { error: reason } });
       return new Map();

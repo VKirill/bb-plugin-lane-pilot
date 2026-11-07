@@ -1,5 +1,6 @@
 import { jev } from "@lane-pilot/jev";
 import { GUARD_BLOCKED_KEY, type GuardBlock } from "@lane-pilot/jev";
+import { bestEffort, isNotFound, orMiss } from "@lane-pilot/kit";
 import { englishSelfRepairChoice, ownerLocale, selfRepairOwnerForm, type OwnerAnswer, type OwnerAsk } from "../../relay/server";
 import type { VerdictStatus } from "../../critique";
 import type { ServerCore } from "../../contracts/server";
@@ -82,19 +83,18 @@ export async function askOwnerAboutRepair(env: VerdictEnv, threadId: string, sig
     });
     env.log(`self-repair: the owner's answer on @thread:${threadId}: ${goAhead ? "go ahead, the repair continues" : "no go-ahead, its worktree is released"}`);
   };
-  const opened = await env.ownerAsk?.askInBackground(threadId, { source: "repair", question: form.question, detail: body.slice(-3000), options: form.options },
-    settled, { timeoutMs: TIMEOUT_MS }).catch(() => false) ?? false;
+  const opened = await bestEffort(env.log, "repair owner ask", env.ownerAsk?.askInBackground(threadId, { source: "repair", question: form.question, detail: body.slice(-3000), options: form.options },
+    settled, { timeoutMs: TIMEOUT_MS }) ?? Promise.resolve(false), false);
   if (opened) env.log(`self-repair: asked the owner about @thread:${threadId} (needs-owner)`);
   return opened;
 }
 
 export async function readVerdict(env: VerdictEnv, signature: string, record: SignatureRecord, dryRun: boolean, current?: SelfRepairState): Promise<void> {
   const threadId = record.threadId!;
-  const report = await Promise.resolve().then(() => env.bb.sdk.threads.output({ threadId }))
-    .then((result) => { const value = (result as { output?: unknown; text?: unknown }).output ?? (result as { text?: unknown }).text; return typeof value === "string" ? value.slice(-4000) : ""; })
-    .catch(() => "");
+  const report = await orMiss(Promise.resolve().then(() => env.bb.sdk.threads.output({ threadId }))
+    .then((result) => { const value = (result as { output?: unknown; text?: unknown }).output ?? (result as { text?: unknown }).text; return typeof value === "string" ? value.slice(-4000) : ""; }), "", isNotFound);
   record.verdict = parseVerdict(report);
-  if (record.verdict && !dryRun && current) await labelJevReceipts(env, signature, record.verdict, current).catch(() => undefined);
+  if (record.verdict && !dryRun && current) await bestEffort(env.log, "jev receipt labels", labelJevReceipts(env, signature, record.verdict, current), undefined);
   if (record.verdict === "needs-owner" && !dryRun) {
     // A graph step stores the verdict first: a step run again after a reload must not ask the owner twice.
     if (record.runId) await env.patchRecord(signature, (stored) => { stored.verdict = record.verdict; });

@@ -1,6 +1,7 @@
 import { chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
+import { isFsAbsent, orMiss } from "@lane-pilot/kit";
 
 /**
  * The shell guard of Codex, OpenCode and Cursor helpers and writers (audit 2026-10-08 round 3, P0-2), cut down to protection from
@@ -141,7 +142,7 @@ exec "$real" "$@"
 `.replaceAll("@{", "${");
 
 async function writeIfChanged(path: string, content: string): Promise<void> {
-  if ((await readFile(path, "utf8").catch(() => null)) !== content) {
+  if ((await orMiss(readFile(path, "utf8"), null, isFsAbsent)) !== content) {
     const staging = `${path}.${process.pid}.${randomBytes(4).toString("hex")}.tmp`;
     await writeFile(staging, content, { mode: 0o755 });
     await rename(staging, path);

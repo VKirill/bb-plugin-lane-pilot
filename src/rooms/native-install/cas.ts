@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { link, lstat, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
-import { sha256Hex } from "@lane-pilot/kit";
+import {sha256Hex, readTextOrNull} from "@lane-pilot/kit";
 
 export type FileState = { text: string | null; sha256: string | null; mode: number | null };
 export type FileCasResult = {
@@ -38,7 +38,7 @@ async function lockIsStale(lockPath: string): Promise<boolean> {
   try {
     const info = await lstat(lockPath);
     if (info.isSymbolicLink() || !info.isFile()) return true;
-    const pid = Number((await readFile(lockPath, "utf8").catch(() => "")).split(" ")[0]);
+    const pid = Number(((await readTextOrNull(lockPath)) ?? "").split(" ")[0]);
     if (!pidAlive(pid)) return true;
     return Date.now() - info.mtimeMs > LOCK_STALE_MS;
   } catch (error) {

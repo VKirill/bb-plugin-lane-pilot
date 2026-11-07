@@ -8,7 +8,7 @@ import type { IdempotencyTriple } from "../reconcile";
 import { shouldReconcileAttemptThread, shouldResumeWorktreeHolder, shouldScanLostWorktreeHolder } from "../../tasks";
 import { WriterSelectionError } from "../../runs/server/run-routing";
 import { holderSpawnKey } from "../../platform/server";
-import { stringAt, orMiss, isNotFound } from "@lane-pilot/kit";
+import { bestEffort, stringAt, orMiss, isNotFound } from "@lane-pilot/kit";
 import { findThreadsByMetadata } from "../../platform/server";
 import type { ServerCore } from "../../contracts/server";
 import type { ReconcilePort } from "../reconcile";
@@ -135,7 +135,7 @@ export function createReconcile(ctx: ServerCore, services: Services) {
     const status = stringAt(thread, "status");
     if (status !== "idle" && status !== "error") return false;
     if (input.attempt.state === "cancel_requested") {
-      await services.rollback?.noteStopped(input.attempt.id).catch(() => undefined);
+      await bestEffort(ctx.log, "reconcile stop note", Promise.resolve(services.rollback?.noteStopped(input.attempt.id)), undefined);
       transitionAttempt(db, input.attempt.id, "canceled", { threadId:input.writerThreadId, reason:"writer stop observed during recovery" });
       markCancelCode(db, input.attempt.id, "stuck");
       refreshRun(input.attempt.run_id);
@@ -174,7 +174,7 @@ export function createReconcile(ctx: ServerCore, services: Services) {
     try {
       await bb.sdk.threads.stop({ threadId });
       if (!await stopSeen(threadId) || ctx.isDisposed()) return;
-      await services.rollback?.noteStopped(attemptId).catch(() => undefined);
+      await bestEffort(ctx.log, "reconcile stop note", Promise.resolve(services.rollback?.noteStopped(attemptId)), undefined);
       if (getAttempt(db, attemptId)?.state !== "cancel_requested") return;
       transitionAttempt(db, attemptId, "canceled", { threadId, reason:"writer stop observed during recovery" });
       markCancelCode(db, attemptId, "stuck");

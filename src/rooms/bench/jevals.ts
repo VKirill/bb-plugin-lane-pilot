@@ -1,3 +1,4 @@
+import { bestEffort } from "@lane-pilot/kit";
 import type { Jev } from "@lane-pilot/jev";
 import { traceChecks, TRACE_CHECKS, type TraceCheck, type TraceDecision } from "@lane-pilot/jev/judgments/trace-checks";
 import type { AttemptMetrics } from "../usage/server";
@@ -22,13 +23,13 @@ export function traceText(task: ManifestTask, outcome: { latestState: string | n
 }
 
 /** One judge call per task (shadow until the project raises it): a result entry for metrics_json, never a blocker. */
-export async function judgeTrace(deps: { jev(): Jev | null; settings?: Record<string, unknown>; projectId?: string | null; runId?: string | null; now?: () => number },
+export async function judgeTrace(deps: { jev(): Jev | null; settings?: Record<string, unknown>; projectId?: string | null; runId?: string | null; now?: () => number; log?: (message: string) => void },
   input: { task: ManifestTask; outcome: { latestState: string | null }; attempts: readonly AttemptMetrics[]; reason: string | null }): Promise<JevalsResult | null> {
   const jev = deps.jev();
   if (!jev || !jev.enabled(deps.settings)) return null;
-  const verdict = await jev.judge(traceChecks, { task: { title: String(input.task.contract.title ?? input.task.taskId), objective: String(input.task.contract.objective ?? ""), acceptance: Array.isArray(input.task.contract.acceptance) ? input.task.contract.acceptance.map(String) : [] },
+  const verdict = await bestEffort(deps.log ?? (() => undefined), "bench jevals judge", jev.judge(traceChecks, { task: { title: String(input.task.contract.title ?? input.task.taskId), objective: String(input.task.contract.objective ?? ""), acceptance: Array.isArray(input.task.contract.acceptance) ? input.task.contract.acceptance.map(String) : [] },
     trace: traceText(input.task, input.outcome, input.attempts, input.reason) },
-    { projectId: deps.projectId ?? null, runId: deps.runId ?? null, subject: `bench:${input.task.taskId}`, settings: deps.settings }).catch(() => null);
+    { projectId: deps.projectId ?? null, runId: deps.runId ?? null, subject: `bench:${input.task.taskId}`, settings: deps.settings }), null);
   if (!verdict) return null;
   const decision: TraceDecision = verdict.by === "jev" ? verdict.decision : (verdict.by === "fallback" ? verdict.shadow?.decision : undefined) ?? traceChecks.fallback({ task: { title: "" }, trace: "" });
   if (decision.flags.includes("indirect_injection")) jev.outcome(verdict.receiptId, "warn:indirect_injection");

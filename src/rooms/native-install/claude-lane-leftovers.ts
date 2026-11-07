@@ -3,6 +3,7 @@ import { dirname, join, relative, sep } from "node:path";
 import { applyEdits, modify, parse, type ParseError } from "jsonc-parser/lib/esm/main.js";
 import { compareAndSwapText, readTextState, withCasLock } from "./cas";
 import { ownedPmGuardPath } from "./guard-apply";
+import { isFsAbsent, orMiss } from "@lane-pilot/kit";
 
 const PLUGIN_ID = "codex-lane@claude-lane-stack";
 const HOOKS_SUFFIX = ".agents/hooks/";
@@ -148,7 +149,7 @@ async function plannedMoves(home: string): Promise<string[]> {
   const hooks = join(home, ".agents/hooks");
   if (await present(hooks) && !await isShimDir(hooks)) paths.push(hooks);
   const bin = join(home, ".agents/bin");
-  const entries = await readdir(bin).catch(() => [] as string[]);
+  const entries = await orMiss(readdir(bin), [] as string[], isFsAbsent);
   for (const name of entries) if (isLaneBin(name)) paths.push(join(bin, name));
   const checkout = join(home, ".local/share/claude-lane-stack-installed");
   if (await present(checkout)) paths.push(checkout);
@@ -164,7 +165,7 @@ async function plannedMoves(home: string): Promise<string[]> {
 }
 
 async function isShimDir(dir: string): Promise<boolean> {
-  return (await readFile(join(dir, "README.md"), "utf8").catch(() => "")).includes(SHIM_MARK);
+  return ((await orMiss(readFile(join(dir, "README.md"), "utf8"), "", isFsAbsent))).includes(SHIM_MARK);
 }
 
 /** Hook files the removed settings commands ran; guard_shell.py always, it is the one most sessions call. */

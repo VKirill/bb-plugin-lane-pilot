@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { chmod, lstat, mkdir, readFile, readlink, rename, rm, rmdir, symlink, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { applyEdits, modify, parse, type ParseError } from "jsonc-parser/lib/esm/main.js";
-import { sha256Hex } from "@lane-pilot/kit";
+import { lstatOrNull, sha256Hex } from "@lane-pilot/kit";
 
 export type OwnedFile = { path: string; payload: string; mode: number; link?: string; hash: string };
 export type OwnedJson = { path: string; key: string[]; value: unknown; array: boolean; existed: boolean; parents: string[][] };
@@ -43,7 +43,7 @@ async function fingerprint(path: string): Promise<string | null> {
 }
 
 async function jsonText(path: string): Promise<{ text: string; value: Record<string, unknown> }> {
-  if ((await lstat(path).catch(() => null))?.isSymbolicLink()) throw new Error(`Config is a symlink: ${path}`);
+  if ((await lstatOrNull(path))?.isSymbolicLink()) throw new Error(`Config is a symlink: ${path}`);
   const text = await readFile(path, "utf8").catch((error: NodeJS.ErrnoException) => { if (error.code === "ENOENT") return "{}\n"; throw error; });
   const errors: ParseError[] = [], value: unknown = parse(text, errors, { allowTrailingComma: true });
   if (errors.length || !value || typeof value !== "object" || Array.isArray(value)) throw new Error(`Invalid config: ${path}`);
@@ -88,7 +88,7 @@ export async function transitionOwned(root: string, manifest: NativeInstallManif
     for (const name of [...manifest.files.map((file) => file.path), ...manifest.createdConfigs]) {
       let parent = dirname(await safeTarget(manifest.home, name));
       while (parent !== resolve(manifest.home)) {
-        if (!await lstat(parent).catch(() => null)) {
+        if (!await lstatOrNull(parent)) {
           const relativePath = relative(manifest.home, parent);
           if (!manifest.createdDirs.includes(relativePath)) manifest.createdDirs.push(relativePath);
         }
@@ -135,7 +135,7 @@ export async function transitionOwned(root: string, manifest: NativeInstallManif
   for (const block of manifest.blocks) {
     signal?.throwIfAborted();
     const path = await safeTarget(manifest.home, block.path);
-    if ((await lstat(path).catch(() => null))?.isSymbolicLink()) throw new Error(`Config is a symlink: ${path}`);
+    if ((await lstatOrNull(path))?.isSymbolicLink()) throw new Error(`Config is a symlink: ${path}`);
     const current = await readFile(path, "utf8").catch((error: NodeJS.ErrnoException) => { if (error.code === "ENOENT") return ""; throw error; });
     const begin = "# lane-pilot:managed:start", end = "# lane-pilot:managed:end";
     const start = current.indexOf(begin), finish = current.indexOf(end);
