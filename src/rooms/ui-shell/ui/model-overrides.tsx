@@ -5,7 +5,7 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
   Button, Surface, SurfaceBody, SurfaceHeader,
 } from "@lane-pilot/ui-kit";
-import type { LpPage } from "../../ui-shell/ui";
+import type { ModelOverridesPage } from "./page-kit";
 
 type Level = { projectId: string; projectName: string | null; sectionId: string | null; sectionName: string | null; keys: string[] };
 
@@ -16,21 +16,21 @@ const message = (cause: unknown) => cause instanceof Error ? cause.message : Str
  * The global Team tab: the projects and sections that keep their own role models over the global ones, and one action that gives
  * them all the global models back. The list is what the reset applies to; only model, provider, effort and fallback rows go.
  */
-export function ModelOverridesPanel({ page }: { page: LpPage }) {
+export function ModelOverridesPanel({ page }: { page: ModelOverridesPage }) {
   const { rpc, projectCache } = page;
   const [levels, setLevels] = useState<Level[] | null>(null);
   const [error, setError] = useState("");
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
 
-  const load = () => rpc.call("list_model_overrides", {}).then((next) => { setLevels(next.levels); setError(""); }, (cause) => { setLevels([]); setError(fill(t("modelOverridesLoadFailed"), { error: message(cause) })); });
+  const load = () => (rpc.call("list_model_overrides", {}) as Promise<{ levels: Level[] }>).then((next) => { setLevels(next.levels); setError(""); }, (cause) => { setLevels([]); setError(fill(t("modelOverridesLoadFailed"), { error: message(cause) })); });
   useEffect(() => { void load(); }, [rpc]);
 
   const reset = async () => {
     if (!levels) return;
     setBusy(true);
     try {
-      const done = await rpc.call("reset_model_overrides", { levels: levels.map(({ projectId, sectionId }) => ({ projectId, sectionId })) });
+      const done = await (rpc.call("reset_model_overrides", { levels: levels.map(({ projectId, sectionId }) => ({ projectId, sectionId })) }) as Promise<{ levels: number }>);
       // Screens read before the reset still show the old models.
       projectCache.current.clear();
       toast.success(<span data-bb-ru-skip>{fill(t("modelOverridesDone"), { places: done.levels })}</span>);

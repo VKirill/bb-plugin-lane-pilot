@@ -2,7 +2,7 @@ import { useState, type ReactNode } from "react";
 import { VISIBLE_CATALOG } from "@lane-pilot/settings-catalog";
 import { en, t, validationMessage, type I18nKey, type Locale } from "@lane-pilot/i18n";
 import { Alert, AlertDescription, AlertTitle, Button, Disclosure, Segments, Skeleton, usePanelLayout } from "@lane-pilot/ui-kit";
-import { InheritanceContext, SettingField, SettingsGroup } from "../../settings/ui";
+import { InheritanceContext, SettingField, SettingsGroup } from "../../ui-shell/ui";
 import { useImprovement, type DryRun, type Improvement, type ImprovementView } from "./use-improvement";
 import { LEAD_SETTING_KEYS, LeadSection } from "../../lead/ui";
 

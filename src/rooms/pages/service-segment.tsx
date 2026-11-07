@@ -1,6 +1,6 @@
 import { experimental_Diff as Diff, experimental_SourceCode as SourceCode } from "@get-bb/plugin-sdk/app";
 import { t, unappliedReason } from "@lane-pilot/i18n";
-import { settingLabel } from "../../settings/setting-copy";
+import { settingLabel } from "../ui-shell/ui";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -16,12 +16,11 @@ import { Button } from "@lane-pilot/ui-kit";
 import { Card, CardContent, CardHeader, CardTitle } from "@lane-pilot/ui-kit";
 import { Input } from "@lane-pilot/ui-kit";
 import { Label } from "@lane-pilot/ui-kit";
-import { EXTERNAL_OPS_BY_ACTION } from "../constants";
+import { EXTERNAL_OPS_BY_ACTION } from "../runs/constants";
 import { Disclosure } from "@lane-pilot/ui-kit";
 import { Surface, SurfaceBody, SurfaceHeader } from "@lane-pilot/ui-kit";
-import { CARD_BODY, CARD_HEAD, COEXISTENCE_MANAGER_KEYS, COEXISTENCE_VALUE_KEYS, compatibilityAliasRows, reasonKey, sectionKey } from "../../ui-shell/ui";
-import { FieldControl, StatusBadge, StatusRow } from "../../settings/ui";
-import type { LpPage } from "../../ui-shell/ui";
+import { CARD_BODY, CARD_HEAD, COEXISTENCE_MANAGER_KEYS, COEXISTENCE_VALUE_KEYS, FieldControl, StatusBadge, StatusRow, compatibilityAliasRows, reasonKey, sectionKey } from "../ui-shell/ui";
+import type { LpPage } from "./use-lp-page";
 
 /** The machine and the install of Lane Pilot on it, and the technical details behind the settings. */
 export function ServiceSegment({ page }: { page: LpPage }) {

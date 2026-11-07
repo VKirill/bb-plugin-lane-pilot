@@ -1,7 +1,7 @@
 import { createContext, useContext, type ReactNode } from "react";
 import { type CatalogRow } from "@lane-pilot/settings-catalog";
 import { t, type Locale, type LocalePreference } from "@lane-pilot/i18n";
-import { settingHelp, settingLabel, settingUsesNumericControl } from "../setting-copy";
+import { settingHelp, settingLabel, settingUsesNumericControl } from "./setting-copy";
 import { Badge } from "@lane-pilot/ui-kit";
 import { Button } from "@lane-pilot/ui-kit";
 import { Input } from "@lane-pilot/ui-kit";
@@ -10,10 +10,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@lane-pilot/ui-kit";
 import { Skeleton } from "@lane-pilot/ui-kit";
 import { HelpSup } from "@lane-pilot/ui-kit";
-import { presentEnumLabel } from "../enum-labels";
+import { presentEnumLabel } from "./enum-labels";
 import { usePanelLayout } from "@lane-pilot/ui-kit";
 import { Surface, SurfaceBody, SurfaceHeader } from "@lane-pilot/ui-kit";
-import { HELP_BY_KEY, JEV_KEYS, ScreenPayload, asBoolean, numericUnit, reasonKey } from "../../ui-shell/ui";
+import { HELP_BY_KEY, JEV_KEYS, ScreenPayload, asBoolean, numericUnit, reasonKey } from "./page-kit";
 
 export function SettingsGroup({ title, testId, help, children }: { title?: string; testId: string; help?: ReactNode; children: ReactNode }) {
   return (

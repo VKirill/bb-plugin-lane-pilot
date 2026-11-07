@@ -1,6 +1,6 @@
 import type { ExperimentalProviderModelPickerValue } from "@get-bb/plugin-sdk/app";
-import { DOCS_DEFAULT_SELECTION } from "../../docs/docs-defaults";
-import { WRITER_EFFORT, WRITER_MODEL, WRITER_PROVIDER } from "../../ui-shell/ui/page-model";
+import { DOCS_DEFAULT_SELECTION } from "../docs/docs-defaults";
+import { WRITER_EFFORT, WRITER_MODEL, WRITER_PROVIDER } from "./page-model";
 import { ROLE_SPECS, type RoleSelectionId } from "@lane-pilot/models";
 
 /** The roles whose model is one native picker saved by one RPC (the writer and the council seats have their own flow). */

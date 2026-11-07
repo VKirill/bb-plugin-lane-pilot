@@ -3,7 +3,7 @@ import "./app.css";
 import { detectLocale, t } from "@lane-pilot/i18n";
 import type { ComponentType } from "react";
 import type { JsonValue } from "@get-bb/plugin-sdk/app";
-import { LanePilotPage } from "./src/rooms/ui-shell/ui/page";
+import { LanePilotPage } from "./src/rooms/pages";
 import { useCockpitPageTitle, useOwnerWaitingBadge } from "./src/rooms/ui-shell/ui";
 import { CouncilPage } from "./src/rooms/council/ui";
 import { CockpitPage } from "./src/rooms/cockpit/ui";

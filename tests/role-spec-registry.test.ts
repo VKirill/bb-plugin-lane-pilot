@@ -4,7 +4,7 @@ import {
   roleAtomicMessage, roleSpec, roleSpecKey, WRITER_FALLBACK_KEYS, WRITER_FALLBACK_SLOTS,
 } from "@lane-pilot/models";
 import { rpcSettings } from "../src/rooms/contracts/rpc-settings";
-import { SELECTION_SPECS, selectionKeys, type SelectionId } from "../src/rooms/settings/ui/picker-selections";
+import { SELECTION_SPECS, selectionKeys, type SelectionId } from "../src/rooms/pages/picker-selections";
 import { ROLE_GROUPS } from "../src/rooms/native-agent/ui/team-model";
 import { en, ru } from "@lane-pilot/i18n";
 import { NATIVE_CODE_CRITIQUE_KEYS, NATIVE_DOCS_KEYS, NATIVE_MEMORY_KEYS, NATIVE_NIGHT_REVIEW_KEYS, NATIVE_ONBOARDING_KEYS, NATIVE_PLAN_CRITIQUE_KEYS, NATIVE_PM_READ_KEYS, NATIVE_PROJECT_LIFE_KEYS, NATIVE_SPECIALIST_KEYS, NATIVE_WRITER_KEYS } from "../src/rooms/runs/server/run-routing";

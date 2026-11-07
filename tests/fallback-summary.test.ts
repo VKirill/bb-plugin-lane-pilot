@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fallbackModelNames, writerFallbackSummaryText, type FallbackCatalog } from "../src/rooms/ui-shell/ui/tab-team";
+import { fallbackModelNames, writerFallbackSummaryText, type FallbackCatalog } from "../src/rooms/pages/tab-team";
 
 const catalog: FallbackCatalog = {
   providers: [

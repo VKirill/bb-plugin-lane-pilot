@@ -2,12 +2,12 @@ import type { ReactNode } from "react";
 import { t } from "@lane-pilot/i18n";
 import { Label } from "@lane-pilot/ui-kit";
 import { Switch } from "@lane-pilot/ui-kit";
-import { asBoolean, sectionKey } from "./page-model";
+import { asBoolean, sectionKey } from "../ui-shell/ui";
 import { extraSettingTab } from "./placement";
-import { CatalogField, CatalogFields } from "../../settings/ui";
-import { AdvancedRows, JevProviderNote, JevProviderPanel, SettingsGroup } from "../../settings/ui";
+import { AdvancedRows, CatalogField, CatalogFields, SettingsGroup } from "../ui-shell/ui";
+import { JevProviderNote, JevProviderPanel } from "./jev-provider";
 import { HelpSup } from "@lane-pilot/ui-kit";
-import { Pill } from "./pill";
+import { Pill } from "../ui-shell/ui";
 import type { LpPage } from "./use-lp-page";
 
 /** The state of a role whose switch lives in «Team»: this tab only shows it next to the policy it governs. */

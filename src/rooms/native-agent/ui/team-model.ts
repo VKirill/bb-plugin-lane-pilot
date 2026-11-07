@@ -1,5 +1,4 @@
 import type { I18nKey } from "@lane-pilot/i18n";
-import type { SelectionId } from "../../settings/ui/picker-selections";
 import { COUNCIL_KEYS, ROLE_SPECS, type RoleSelectionId, type RoleSpec as RoleSelectionSpec } from "@lane-pilot/models";
 import { WRITER_FALLBACK_SLOTS, writerFallbackKeys } from "../../writer/writer-fallbacks";
 
@@ -12,7 +11,7 @@ export type RoleSpec = {
   /** Test id of the row (the old per-tab block it replaces). */
   testId?: string;
   /** The role's model: one native picker. */
-  model?: SelectionId | "writer" | "rules";
+  model?: RoleSelectionId | "writer" | "rules";
   /** The on/off column: a switch on this key, or the three-way docs mode. */
   enabled?: { key: string; fallback: boolean; label: I18nKey } | { key: "docs.enabled"; mode: true; label: I18nKey };
   /** The row opens into settings of its own besides the access. */

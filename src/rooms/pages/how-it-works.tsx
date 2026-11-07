@@ -1,6 +1,6 @@
 import { t, type I18nKey } from "@lane-pilot/i18n";
 import { Disclosure } from "@lane-pilot/ui-kit";
-import { Pill } from "./pill";
+import { Pill } from "../ui-shell/ui";
 
 const STEPS = ["order", "pm", "workflow", "writer", "checks", "accept", "learn"] as const;
 const LEVELS = ["Defaults", "Project", "Section"] as const;

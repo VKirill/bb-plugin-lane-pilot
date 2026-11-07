@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { experimental_useRpcQuery, useRpc } from "@get-bb/plugin-sdk/app";
-import { uiQueryContract } from "../../contracts/ui-query";
-import type { rpcContract } from "../../contracts";
+import { uiQueryContract } from "./ui-query-contract";
 
 type Method = keyof typeof uiQueryContract & string;
 
@@ -39,7 +38,7 @@ function useModernRpcQuery<T>(method: Method | null, input: unknown, options?: {
 }
 
 function useLegacyRpcPoll<T>(method: Method | null, input: unknown, options?: { pollMs?: number; enabled?: boolean; fetcher?: () => Promise<T> }): LpRpcQueryState<T> {
-  const rpc = useRpc<typeof rpcContract>();
+  const rpc = useRpc();
   const enabled = options?.enabled ?? true;
   const [state, setState] = useState<{ data: T | undefined; error: unknown; loading: boolean; fetching: boolean }>({ data: undefined, error: null, loading: enabled, fetching: enabled });
   const inputKey = input === undefined ? "" : JSON.stringify(input);

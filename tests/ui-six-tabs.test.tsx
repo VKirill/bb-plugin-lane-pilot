@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, configure, fireEvent, waitFor } from "@testing-library/react";
 import { VISIBLE_CATALOG } from "@lane-pilot/settings-catalog";
-import { SEGMENTS, TAB_IDS, resolveTab, segmentsFor } from "../src/rooms/ui-shell/ui/tabs-model";
+import { SEGMENTS, TAB_IDS, resolveTab, segmentsFor } from "../src/rooms/pages/tabs-model";
 import { setLocaleOverride, en, ru } from "@lane-pilot/i18n";
 import { HELPER_ROLES } from "../src/rooms/native-agent/helper-context";
 import { ROLE_GROUPS } from "../src/rooms/native-agent/ui/team-model";
