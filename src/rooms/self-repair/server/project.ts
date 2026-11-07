@@ -1,5 +1,4 @@
-import { pluginRootFromModule } from "@lane-pilot/kit";
-import { stringAt } from "../../core/server";
+import { pluginRootFromModule, stringAt } from "@lane-pilot/kit";
 import { closeOwnerItem, postOwnerItem } from "../../owner-waiting";
 
 export const CONFIG_KEY = "self-repair:config";

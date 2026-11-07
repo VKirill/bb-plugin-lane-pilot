@@ -4,12 +4,15 @@ import { acceptanceStats } from "../../../runs";
 import { rpcContract } from "../../../contracts";
 import { loadProjectSettings } from "../../../storage";
 import { parseDocsSettings } from "../../../docs";
-import { configuredSetting } from "../../../core/server";
+import { configuredSetting, type ServerCore } from "../../../contracts/server";
 import { acceptRuleProposal, deleteMemoryRecord, memorySettingsFor, rejectRuleProposal, revokeRule } from "../insights";
-import type { ServerCore } from "../../../core/server";
-import type { Services } from "../../../core/server";
+import type { createDocsNightly } from "../../../docs/server";
+import type { RuleScanApi } from "../rule-scan";
 
-type DocsStatus = Awaited<ReturnType<Services["docsPlaceStatus"]>>;
+type DocsNightlyApi = ReturnType<typeof createDocsNightly>;
+/** The services-bag members the insights RPC reads, named structurally so the room imports no `Services` type from core. */
+type InsightsServices = { ruleScan: RuleScanApi } & Pick<DocsNightlyApi, "docsPlaces" | "docsPlaceStatus" | "docsLastRead">;
+type DocsStatus = Awaited<ReturnType<InsightsServices["docsPlaceStatus"]>>;
 /** How long the verdict of a folder is reused by the tab, and how long one open waits for a slow machine. */
 const DOCS_STATUS_TTL_MS = 5 * 60_000;
 const DOCS_STATUS_WAIT_MS = 1_500;
@@ -21,7 +24,7 @@ const ruleView = ({ id, rule, author, state, occurrences, taskCount, examples, e
   ({ id, rule, author, state, occurrences, taskCount, examples, evidence, lastSeenAt, decidedAt, decidedBy, trialState, revision, retiredReason, trial, scope, scopeLabel, audience, always, form, cue, confidence, formReason, mechanizedBy });
 
 /** What the settings screen shows next to the writer picker: first-try acceptance per risk against the configured pair. */
-export function insightsRpc(ctx: ServerCore, services: Services) {
+export function insightsRpc(ctx: ServerCore, services: InsightsServices) {
   const { db } = ctx;
   const docsStatusCache = new Map<string, { at: number; status: DocsStatus }>();
   return {

@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { sha256Hex } from "@lane-pilot/kit";
-import type { ServerCore } from "../../core/server";
-import type { stringAt as stringAtOf } from "../../core/server";
+import type { ServerCore } from "../../contracts/server";
+import type { stringAt as stringAtOf } from "@lane-pilot/kit";
 import type { RepairWorktree, SelfRepairConfig, SelfRepairState, SignatureRecord } from "./types";
 
 export const MERGE_TRIES = 4;

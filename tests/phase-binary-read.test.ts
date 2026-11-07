@@ -8,7 +8,7 @@ import { describe, expect, it } from "vitest";
 import { createCore } from "../src/rooms/core/server/core";
 import type { Services } from "../src/rooms/core/server/services";
 import { runCommand } from "../src/rooms/host-worker/host-handlers";
-import { createPhaseDriver } from "../src/rooms/phase/server/driver";
+import { createPhaseDriver } from "./phase-driver";
 import { binaryFileCommand, binaryFileFingerprint } from "../src/rooms/phase/stages";
 import { getPhase, savePhase } from "../src/rooms/phase/store";
 import { createRun, openDatabase, setRunThread } from "../src/rooms/plugin-db";

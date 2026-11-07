@@ -3,7 +3,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import { createCore } from "../src/rooms/core/server/core";
 import type { Services } from "../src/rooms/core/server/services";
-import { createPhaseDriver } from "../src/rooms/phase/server/driver";
+import { createPhaseDriver } from "./phase-driver";
 import { MACHINE_STAGE_FAILURE, autoDue, contextDoc, createAutoStages, recoverStopped } from "../src/rooms/phase/server/auto-stages";
 import { planGate, type Phase, type PhaseRecord } from "../src/rooms/phase/logic";
 import { threatGap } from "../src/rooms/phase/stages";

@@ -3,7 +3,7 @@ import { cancelAttemptById } from "../../runs/server";
 import { taskFamily } from "../../runs";
 import { listOpenAttempts } from "../../storage";
 import { isWholeConsent, ownerWordsOn } from "../../tasks";
-import { critiqueProblems, roleLine, type DrawingCritique } from "../../design-eval";
+import type { DrawingCritique } from "@lane-pilot/contracts";
 import { PHASE_STAGES, RETURN_STAGES, RISK_KINDS, acceptanceKey, checkerIndependence, contextSignature, designDecision, designGate, discussionGate, executionGate, phaseFolder, planGate, planGate as planGateOf, planSignature, sha256, staleAfterReturn } from "../logic";
 import { archiveDrawing, uatState } from "../stages";
 import { insertPhase, listParts, savePhase } from "../store";
@@ -165,13 +165,13 @@ export function installMethods(tools: MethodsTools) {
     if (archived.length > (phase.record.design?.archived?.length ?? 0)) book(phase, "design", "archived", `previous drawing ${phase.record.design!.drawing!.sha256.slice(0, 12)} (${phase.record.design!.drawing!.paths.join(", ")}) archived`);
     const record: PhaseRecord = { ...phase.record, design: { ...(phase.record.design ?? { decision: "needed", why: "" }), drawing: drawn, archived } };
     if (input.critique) {
-      const why = critiqueProblems(input.critique);
+      const why = reactions.critiqueProblems(input.critique);
       if (why.length) throw new PhaseRefusal("the drawing critique form is not filled", why);
     }
     // The design measurement journal: one line per drawing; first pass = the first drawing of the phase, feasible, and passed by its critic.
     await reactions.journalDrawing({ at: now(), projectId: phase.projectId, phaseId: phase.id, designer: input.designer, reviewer: input.reviewer ?? null, drawingSha: drawn.sha256,
       firstPass: archived.length === 0 && input.feasible && (input.critique ? input.critique.verdict === "pass" : true), critique: input.critique ?? null, codeScore: null, ownerWord: null });
-    if (input.lesson?.trim()) await reactions.addRoleLine(phase.projectId, "design-lead", roleLine(input.lesson));
+    if (input.lesson?.trim()) await reactions.addRoleLine(phase.projectId, "design-lead", reactions.roleLine(input.lesson));
     book(phase, "design", "drawing", `${input.paths.join(", ")} by ${input.designer}; ${input.feasible ? "feasible" : `contradiction: ${input.contradiction ?? "?"}`}${input.reviewer ? `; reviewed by ${input.reviewer}` : ""}`);
     if (!input.feasible) {
       savePhase(db, phase.id, { record, at: now() });

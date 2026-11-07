@@ -1,5 +1,5 @@
 import type { LanePilotDatabase } from "../../storage";
-import type { ServerCore } from "../../core/server";
+import type { ServerCore } from "../../contracts/server";
 import type { Incident, SelfRepairConfig, SelfRepairState, SignatureRecord, Verdict } from "./types";
 import { firstSeenOnRunningVersion, isDue, repairPriority, VERSION } from "./episodes";
 import { repairStatus } from "./verdict";

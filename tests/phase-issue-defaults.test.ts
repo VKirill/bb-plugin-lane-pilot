@@ -2,7 +2,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import { createCore } from "../src/rooms/core/server/core";
 import type { Services } from "../src/rooms/core/server/services";
-import { createPhaseDriver } from "../src/rooms/phase/server/driver";
+import { createPhaseDriver } from "./phase-driver";
 import { planSignature, type PlanItem } from "../src/rooms/phase/logic";
 import { savePhase } from "../src/rooms/phase/store";
 import { createRun, openDatabase } from "../src/rooms/plugin-db";

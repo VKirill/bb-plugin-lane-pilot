@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { expect, it } from "vitest";
 import { openDatabase } from "../src/rooms/plugin-db";
-import { createSelfRepair } from "../src/rooms/self-repair/server/self-repair";
+import { createSelfRepair } from "./helpers/self-repair";
 import type { ServerCore } from "../src/rooms/core/server/core";
 import { worktreeCreateError } from "../src/rooms/writer/server/spawn";
 import { createWorktree, integrateWorktree, workspaceGitLayout } from "../src/rooms/verification/git-integrate";
