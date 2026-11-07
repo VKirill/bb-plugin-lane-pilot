@@ -38,7 +38,7 @@ import { acceptRuleProposal, adoptRuleProposal, deleteMemoryRecord, rejectRulePr
 import { lanePilotProjectOrNotice } from "./src/rooms/self-repair/server";
 import { recordErrandEpisode, errandSpawnOf } from "./src/rooms/errands";
 import { loadEvalData, runMemoryEval } from "./src/rooms/memory-eval/server";
-import type { ErrandEpisodesApi, InsightsApi, LaneProjectNotice, LeadRoadApi, MemoryEvalRunner, ScheduleAgentApi, TaskWordPort } from "./src/rooms/contracts";
+import type { ErrandEpisodesApi, InsightsApi, LaneProjectNotice, LeadRoadApi, MemoryEvalRunner, ScheduleAgentApi, StabilityPort, TaskWordPort } from "./src/rooms/contracts";
 import { createPhaseDriver, mountPhaseDriver, mountPhaseIntake, registerPhaseTool } from "./src/rooms/phase/server";
 import { createPhaseReactions } from "./src/rooms/core/server";
 import { selfRepairDeps } from "./src/rooms/self-repair/server";
@@ -401,7 +401,7 @@ export default async function plugin(bb: BbPluginApi) {
     { bench: createPluginBench(ctx, services) },
     { checkers: createPluginCheckers(ctx) },
     { wall: createPluginWall(ctx, services) satisfies WallGraphApi },
-    createStability(ctx, services),
+    createStability(ctx, services) satisfies { stability: StabilityPort },
     createScheduleService(ctx, services),
     { lead: createLeadService(ctx, services, services.memoryEval, lanePilotMigrations) },
   );

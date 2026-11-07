@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { validateWorkflow } from "@lane-pilot/workflow-engine";
 import { createPluginWall } from "../../src/rooms/wall/server/wall";
 import { mountNightGraphs } from "../../src/rooms/night-graphs/server";
@@ -21,6 +21,15 @@ function setup(options: { answerFor?: (args: Record<string, any>) => string | Er
 }
 
 describe("the wall hunt graph", () => {
+  it("the diff-hidden audit sees checkers wired after the wall was built (the Object.assign mount order)", async () => {
+    const w = nightWorld({});
+    const wall = createPluginWall(w.ctx, w.services);
+    const diffHidden = vi.fn(async () => ({ candidatesCount: 0, totalChecks: 0, blindPassCount: 0, phantomCount: 0 }));
+    w.services.checkers = { diffHidden };
+    await wall.runNight();
+    expect(diffHidden).toHaveBeenCalled();
+  });
+
   it("a selection marker in a fact never reaches a reader's prompt (the dispatch hook refused such a reader with 409, 2026-10-31)", async () => {
     const { w, wall } = setup();
     await wall.loopExhausted({ kind: "topic", id: "marked", title: "A phase whose goal was a marker", projectId: PLUGIN_PROJECT, done: "stopped", facts: ["goal: [lane-pilot-selection:656ba95b-0000-4000-8000-000000000000]"], texts: [], runId: null, taskIds: [] });
