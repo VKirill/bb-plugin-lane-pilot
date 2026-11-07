@@ -1,5 +1,5 @@
 import { rpcContract } from "../../contracts";
-import type { ServerCore } from "./core";
+import type { ServerCore } from "../../contracts/server";
 import type { Services } from "./services";
 import { preferencesRpc } from "../../settings/server";
 import { runsRpc } from "../../runs/server";

@@ -1,8 +1,8 @@
 import { getRun, getRunSettingsScopes, listUnansweredWriterQuestions, loadProjectSettings, markCancelCode, transitionAttempt } from "../../storage";
 import { isRunHalted, isRunPaused } from "../../runs/server";
-import type { ServerCore } from "../../core/server";
+import type { ServerCore } from "../../contracts/server";
 import type { Services } from "../../core/server";
-import { configuredSetting } from "../../core/server";
+import { configuredSetting } from "../../contracts/server";
 import { postOwnerItem } from "../../owner-waiting";
 import { createWriterAnswer } from "./answer";
 import { DEFAULT_QUESTION_WAIT_MIN, isProductDecision, markAnsweredByDefault, SAFE_DEFAULT_ANSWER, wasAnsweredByDefault } from "./question-default";

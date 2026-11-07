@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { parseLpSignal } from "@lane-pilot/ui-kit/realtime-channel";
 import { createWorkflowLibrary, clipJson } from "../../src/rooms/workflow/server/workflow-library";
-import type { ServerCore } from "../../src/rooms/core/server/core";
+import type { ServerCore } from "../../src/rooms/contracts/server";
 import type { Services } from "../../src/rooms/core/server/services";
 import { parseWorkflow } from "@lane-pilot/workflow-engine";
 import { draftView } from "@lane-pilot/workflow-engine/ui";

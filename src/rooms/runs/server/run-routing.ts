@@ -6,7 +6,7 @@ import { helperSpawnFields, resolveHelperPlacement } from "../../native-agent/he
 import { LP_DEFAULTS_KEY, inheritProjectValues, parseHelperPlacement, parseLanePilotDefaults } from "@lane-pilot/settings-catalog";
 import type { HelperPlacementMode } from "@lane-pilot/settings-catalog";
 import { roleSpec } from "@lane-pilot/models";
-import { stringAt } from "../../core/server";
+import { stringAt } from "@lane-pilot/kit";
 import { findThreadsByMetadata } from "../../core/server";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 export class WriterSelectionError extends Error {}

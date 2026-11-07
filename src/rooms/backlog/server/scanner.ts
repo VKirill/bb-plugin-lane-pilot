@@ -1,5 +1,6 @@
 import { loadPrototypeConfig } from "../../storage";
-import { scheduleIsolated, type ServerCore } from "../../core/server";
+import { scheduleIsolated } from "../../core/server";
+import { type ServerCore } from "../../contracts/server";
 import { isPmChat } from "../../native-agent/server";
 import { closeOwnerItem, postOwnerItem, rpcLine } from "../../owner-waiting";
 import { backlogBoard, backlogReadCommand, issueMessage, parseBacklogOutput, type BacklogBoard } from "../logic";

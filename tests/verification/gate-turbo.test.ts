@@ -7,7 +7,7 @@ import { detectGateCommand } from "../../src/rooms/verification/server/gate-dete
 import { IntegrationGateRunner } from "../../src/rooms/verification/server/integration-gate";
 import { openDatabase, saveProjectSetting } from "../../src/rooms/plugin-db";
 import * as hostHandlers from "../../src/rooms/host-worker/host-handlers";
-import type { ServerCore } from "../../src/rooms/core/server/core";
+import type { ServerCore } from "../../src/rooms/contracts/server";
 import type { Services } from "../../src/rooms/core/server/services";
 
 /**

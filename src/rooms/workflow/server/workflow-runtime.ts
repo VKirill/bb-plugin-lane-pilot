@@ -1,6 +1,6 @@
 import type { LanePilotDatabase } from "../../storage";
 import type { RunRow } from "../../storage";
-import type { ServerCore } from "../../core/server";
+import type { ServerCore } from "../../contracts/server";
 import type { Services } from "../../core/server";
 
 /**

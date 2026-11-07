@@ -7,7 +7,8 @@ import { createWorkflowLibrary, SCHEDULE_RUN_KEY_PREFIX } from "../../workflow/s
 import type { ChainRuntime } from "../../workflow/server";
 import { withUsage } from "../../usage/server";
 import { fenceOutside, findThreadsByMetadata, keyedSpawnSupported, registerObservedTool, spawnTextId } from "../../core/server";
-import type { ServerCore, Services } from "../../core/server";
+import type { Services } from "../../core/server";
+import type { ServerCore } from "../../contracts/server";
 import type { ErrandCore, ErrandSnapshot } from "./errands";
 import type { ExtraAccess } from "../../native-agent";
 import { loadProjectSettings } from "../../storage";

@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { registerObservedTool, ToolError, type ServerCore, type Services } from "../../core/server";
+import { registerObservedTool, type Services } from "../../core/server";
+import { ToolError, type ServerCore } from "../../contracts/server";
 import { listDecisions } from "./journal";
 import { LEAD_CLASSES } from "./rights";
 import { addRoad, getRoad, renderRoadTree, roadTree } from "./road";

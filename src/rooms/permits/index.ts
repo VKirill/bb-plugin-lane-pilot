@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { ToolError, registerObservedTool, scheduleIsolated, type ServerCore } from "../core/server";
+import { registerObservedTool, scheduleIsolated } from "../core/server";
+import { ToolError, type ServerCore } from "../contracts/server";
 import { hostContract } from "../contracts";
 import { getAttempt, getRun, getRunWriterHost, listOpenAttempts } from "../storage";
 

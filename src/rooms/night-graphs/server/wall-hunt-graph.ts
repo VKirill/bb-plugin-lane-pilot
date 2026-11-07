@@ -1,7 +1,8 @@
 import type { NodeExecutor, StepContext } from "@lane-pilot/workflow-engine";
 import { runGraphHelper } from "../../workflow/server";
 import type { ChainRuntime } from "../../workflow/server";
-import type { ServerCore, Services } from "../../core/server";
+import type { Services } from "../../core/server";
+import type { ServerCore } from "../../contracts/server";
 
 /**
  * The wall's hunt as a graph (workflows/lp.wall-hunt.json): the read-only hunters side by side (one step per angle: task, system, big picture), then

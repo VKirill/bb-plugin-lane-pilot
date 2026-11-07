@@ -14,11 +14,11 @@ import { mapListedQaHosts } from "../../../qa";
 import { VISIBLE_CATALOG } from "@lane-pilot/settings-catalog";
 import { NATIVE_WRITER_KEYS } from "../../../runs/server";
 import { asJsonText } from "../../../writer/server";
-import { stringAt } from "../../../core/server";
+import { stringAt } from "@lane-pilot/kit";
 import { PAIR_ROLE_SPECS, PROVIDER_CAPABILITIES, roleAtomicMessage } from "@lane-pilot/models";
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import { rpcContract } from "../../../contracts";
-import type { ServerCore } from "../../../core/server";
+import type { ServerCore } from "../../../contracts/server";
 import type { Services } from "../../../core/server";
 
 /** Runs the screen carries up front (plus every open one); older history comes page by page from `list_runs`. */

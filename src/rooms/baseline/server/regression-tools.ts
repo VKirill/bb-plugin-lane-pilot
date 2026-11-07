@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { callerPluginMetadata, registerObservedTool, ToolError, type ServerCore, type Services } from "../../core/server";
+import { callerPluginMetadata, registerObservedTool, type Services } from "../../core/server";
+import { ToolError, type ServerCore } from "../../contracts/server";
 import { getTask, listOpenAttempts, taskBasePath } from "../../storage";
 import { ownsPathsOverlap } from "@lane-pilot/kit";
 import { quarantineFileSet } from "../regress-files";

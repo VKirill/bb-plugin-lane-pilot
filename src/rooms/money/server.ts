@@ -1,6 +1,6 @@
 import { hostContract } from "../contracts";
 import { loadProjectSettings } from "../storage";
-import type { ServerCore } from "../core/server";
+import type { ServerCore } from "../contracts/server";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
 import { capOf, moneyHold, spendBook, windowHold, type DailyRow, type Price, type UsageWindow } from "./logic";
 

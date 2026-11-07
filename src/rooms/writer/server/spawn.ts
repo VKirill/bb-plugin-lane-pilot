@@ -24,13 +24,15 @@ import { createProviderGate, providerListed, providerSwitchOn, waitProviderEnvir
 import { LANE_WORKTREE_PROVIDER_ID } from "../../native-agent/server";
 import { fullAccessSpawn } from "../../core/server";
 import { WriterSelectionError, coreHostsRequiredProvider, helperChildPlacement, projectRoleField, requireHelperSpawn, requiredPolicyField } from "../../runs/server";
-import { configuredSetting, holderSpawnKey, stringAt } from "../../core/server";
+import { holderSpawnKey } from "../../core/server";
+import { stringAt } from "@lane-pilot/kit";
+import { configuredSetting } from "../../contracts/server";
 import { planDigest, writerBriefInput, writerBriefSegments, type TaskFolderBrief } from "./writer-task";
 import { areaHistoryText, loadArea } from "./sticky";
 import { taskFolderRel } from "../../verification";
 import { resolve } from "node:path";
 import { listReturns, renderReturnNotes } from "../../stage-return";
-import type { ServerCore } from "../../core/server";
+import type { ServerCore } from "../../contracts/server";
 import type { Services } from "../../core/server";
 import { runOnHost } from "@lane-pilot/host-calls";
 

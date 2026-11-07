@@ -30,10 +30,10 @@ import { findThreadsByMetadata, keyedSpawnSupported } from "../../core/server";
 import { modelCatalogOf, noteProviderLimit, noteProviderStartFailure, noteProviderStartSuccess, pmHostOf, providerBlockedForFolder, readProviderFolderBlock, resolveSpawnModel, spawnUsageOf, warmSpawnUsage, PROVIDER_FOLDER_BLOCK_TTL_MS } from "../../core/server";
 import { modelTier, ROLE_IDS, ROLE_MODEL_OPTIONS, roleRowOf } from "@lane-pilot/models";
 import { threadUsage } from "../../usage/server";
-import { stringAt } from "../../core/server";
+import { stringAt } from "@lane-pilot/kit";
 import { AUTHOR_ROWS, AUTHOR_ROW_IDS, DEFAULT_MODEL, pmAuthorOf, DEFAULT_PROVIDER, DEFAULT_REASONING } from "./workflow-agent-model";
 import { outputText } from "../../writer/server";
-import type { ServerCore } from "../../core/server";
+import type { ServerCore } from "../../contracts/server";
 import type { ChainRuntime } from "./workflow-runtime";
 
 /**

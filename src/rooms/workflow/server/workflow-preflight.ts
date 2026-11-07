@@ -2,7 +2,7 @@ import { checkRequires, effectiveRequires } from "@lane-pilot/workflow-engine";
 import type { PreflightResult, RequirePorts } from "@lane-pilot/workflow-engine";
 import type { Workflow } from "@lane-pilot/workflow-engine";
 import type { ArchitectDeps } from "./workflow-architect";
-import type { ServerCore } from "../../core/server";
+import type { ServerCore } from "../../contracts/server";
 import { runOnHost } from "@lane-pilot/host-calls";
 
 type Place = { hostId: string; path: string };

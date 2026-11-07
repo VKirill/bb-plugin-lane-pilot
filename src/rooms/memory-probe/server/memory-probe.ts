@@ -13,7 +13,7 @@ import { councilMemoryBlock } from "../../council/server";
 import { adoptRuleProposal, deleteMemoryRecord, memorySettingsFor, retireAdoptedRule } from "../../self-repair/server";
 import { HARNESS_VERSION, loadPrototypeConfig } from "../../storage";
 import { DRILL_SANDBOX_PROJECT_IDS } from "../../stability/server";
-import type { ServerCore } from "../../core/server";
+import type { ServerCore } from "../../contracts/server";
 import type { Services } from "../../core/server";
 
 /**

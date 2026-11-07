@@ -4,8 +4,6 @@ export { checkArguments, flatParameters, memberOf, signature, unionMembers, with
 export type { ActionMember } from "./action-schema";
 export { callerPluginMetadata, requirePmRun } from "./context";
 export type { ServerContext } from "./context";
-export { configuredSetting } from "../../contracts/server";
-export type { ServerCore } from "../../contracts/server";
 export { CATALOG_WAIT_MS, createModelCatalog, modelCatalogOf, pmHostOf, within } from "./model-catalog-reader";
 export type { ModelCatalogReader } from "./model-catalog-reader";
 export { bindGraphStepLookup, bindRunChildBudget, fullAccessSpawn, graphStepMetadata, pmHasGuard, pmPrompt, providerSupportsServiceTier } from "./pm-spawn";
@@ -24,7 +22,6 @@ export { stageHelperSettings } from "./stage-settings";
 export type { Services } from "./services";
 export { clearSpawnMarker, findThreadsByMetadata, keyedSpawnSupported, spawnTextId } from "./thread-keys";
 export { selfRepairDeps } from "./self-repair-deps";
-export { ToolError } from "../../contracts/server";
 export { fenceOutside, registerObservedTool, registeredTools } from "./tool-result";
 export type { ObservedTool } from "./tool-result";
-export { holderSpawnKey, id, stringAt, valueAt } from "./values";
+export { holderSpawnKey } from "./values";

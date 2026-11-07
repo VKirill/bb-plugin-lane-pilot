@@ -4,8 +4,9 @@ import { taskV2Schema } from "../../contracts";
 import { createAttempt, getAttempt, getRun, getTask, getTaskPlan, listAttemptsForTask, listOpenAttempts, listStageReceipts } from "../../storage";
 import { cancelAttemptById, recordStage, reopenWriterStages } from "../../runs/server";
 import { createAttemptReopen, createWriterReassign } from "../../writer/server";
-import { id } from "../../core/server";
-import type { ServerCore, Services } from "../../core/server";
+import { id } from "@lane-pilot/kit";
+import type { Services } from "../../core/server";
+import type { ServerCore } from "../../contracts/server";
 import { checkNote, pmReturnMessage, pmWriterLine, returnTurnPrompt } from "../logic";
 import { finishReturn, getReturn, insertReturn, listReturns, type StageReturnRecord } from "../store";
 

@@ -1,7 +1,7 @@
 import { coreShelf, isSharedScope } from "@lane-pilot/memory-core";
 import { memorySettingsFor } from "../../self-repair/server";
 import type { LanePilotDatabase } from "../../storage";
-import type { ServerCore } from "../../core/server";
+import type { ServerCore } from "../../contracts/server";
 
 /**
  * The memory rule every BB thread on every machine gets (M2), so work started anywhere in the pilot writes to one memory:

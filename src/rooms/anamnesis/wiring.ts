@@ -2,7 +2,7 @@ import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import type { rpcContract } from "../contracts";
 import { mapListedQaHosts } from "../qa";
-import type { ServerCore } from "../core/server";
+import type { ServerCore } from "../contracts/server";
 import type { AnamnesisRpcRequest } from "./contract";
 import { runAnamnesisCli, type CliResult } from "./cli";
 import { createHub, type Hub } from "./hub";

@@ -8,7 +8,7 @@ import { relayFor } from "../relay/server";
 import { scheduleIsolated } from "../core/server";
 import { memorySettingsFor } from "../self-repair/server/insights";
 import { registerObservedTool } from "../core/server";
-import type { ServerCore } from "../core/server";
+import type { ServerCore } from "../contracts/server";
 import type { Services } from "../core/server";
 import { createAutonomy } from "./autonomy";
 import { DEFAULT_CONFIG, loadConfig, type LearningConfig } from "./config";

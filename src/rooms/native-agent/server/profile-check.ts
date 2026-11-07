@@ -1,7 +1,8 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { scheduleIsolated, type ServerCore } from "../../core/server";
+import { scheduleIsolated } from "../../core/server";
+import { type ServerCore } from "../../contracts/server";
 import { closeOwnerItem, postOwnerItem } from "../../owner-waiting";
 import {
   PROFILE_CHECK_WINDOW_MS,

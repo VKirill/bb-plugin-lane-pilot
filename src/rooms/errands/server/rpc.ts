@@ -1,7 +1,8 @@
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
 import type { rpcContract } from "../../contracts";
-import type { ServerCore, Services } from "../../core/server";
+import type { Services } from "../../core/server";
+import type { ServerCore } from "../../contracts/server";
 import { errandsDiagnosis } from "../diagnosis";
 import { kindsOverview, listErrands } from "../logic";
 

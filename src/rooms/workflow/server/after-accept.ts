@@ -4,7 +4,7 @@ import { withUsage } from "../../usage/server";
 import { AFTER_ACCEPT, builtinWorkflow } from "../builtin";
 import { requireGreen } from "./require-green";
 import type { NodeExecutor, StepContext, WorkflowEngine } from "@lane-pilot/workflow-engine";
-import type { ServerCore } from "../../core/server";
+import type { ServerCore } from "../../contracts/server";
 import type { Services } from "../../core/server";
 
 /**

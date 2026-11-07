@@ -1,6 +1,6 @@
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import type { rpcContract } from "../../../contracts";
-import type { ServerCore } from "../../../core/server";
+import type { ServerCore } from "../../../contracts/server";
 import type { Services } from "../../../core/server";
 import { createWorkflowLibrary } from "../workflow-library";
 import { realDeps } from "../workflow-architect";

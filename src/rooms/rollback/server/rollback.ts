@@ -5,7 +5,8 @@ import { taskV2Schema, type PrototypeConfig, type TaskV2 } from "../../contracts
 import { getAttempt, getRun, getRunSettingsScopes, getRunWriterHost, getTask, loadProjectSettings, taskBasePath } from "../../storage";
 import { retargetTask } from "../../tasks";
 import { gateResolverFor, parseIntegrationGateSettings } from "../../verification/server";
-import type { ServerCore, Services } from "../../core/server";
+import type { Services } from "../../core/server";
+import type { ServerCore } from "../../contracts/server";
 import {
   appendTaskReceipt, getAttemptChange, listTaskReceipts, upsertAttemptChange,
   type ChangedFile, type TaskReceipt, type TaskReceiptKind, type TaskReceiptState,

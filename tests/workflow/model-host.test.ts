@@ -7,7 +7,7 @@ import { resolveStepExecutors } from "../../src/rooms/workflow/server/workflow-s
 import { offeredForRole, offeredOnHost, validateChoice, type ModelCatalog } from "@lane-pilot/models";
 import { modelsSection } from "@lane-pilot/workflow-engine";
 import { roleModelKey } from "@lane-pilot/models";
-import type { ServerCore } from "../../src/rooms/core/server/core";
+import type { ServerCore } from "../../src/rooms/contracts/server";
 import { journalDb } from "./engine-helpers";
 
 /** Two machines: the Mac mini (where the project's PM chat lives) has Claude and Codex; the MacBook has Gemini through OpenCode as well. */

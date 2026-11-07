@@ -5,7 +5,7 @@ import type { LanePilotDatabase } from "../../storage";
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import type { rpcContract } from "../../contracts";
 import { scheduleIsolated } from "../../core/server";
-import type { ServerCore } from "../../core/server";
+import type { ServerCore } from "../../contracts/server";
 
 /**
  * Canary and error budget for Lane Pilot's own releases (G7). A new version is watched while its first attempts finish:

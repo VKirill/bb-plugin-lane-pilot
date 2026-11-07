@@ -1,7 +1,7 @@
 import { getAttempt, getTask, getRunSettingsScopes, listAttemptsForTask, listOpenAttempts, loadPrototypeConfig, loadProjectSettings, transitionAttempt } from "../../storage";
 import { retireAreaWriter } from "./sticky";
 import { markCancelCode } from "../../storage";
-import type { ServerCore } from "../../core/server";
+import type { ServerCore } from "../../contracts/server";
 
 /**
  * lane_pilot_reassign_task: a running task moves to a fresh writer thread in the same worktree, on the model the PM names (or the

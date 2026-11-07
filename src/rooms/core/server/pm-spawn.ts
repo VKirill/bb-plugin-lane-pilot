@@ -3,7 +3,7 @@ import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { RunBudgetExceeded, type RunBudget } from "@lane-pilot/resilience";
 import { isZcodeProvider } from "@lane-pilot/models";
 import { spawnKeyed } from "./thread-keys";
-import { stringAt } from "./values";
+import { stringAt } from "@lane-pilot/kit";
 import { rememberThreadModel } from "./spawn-model";
 import { noteZcodeThread, reserveZcodeSlot } from "./zcode-slot";
 

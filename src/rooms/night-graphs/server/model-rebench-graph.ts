@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import type Database from "better-sqlite3";
 import type { NodeExecutor, StepContext } from "@lane-pilot/workflow-engine";
-import { scheduleIsolated, type ServerCore, type Services } from "../../core/server";
+import { scheduleIsolated, type Services } from "../../core/server";
+import { type ServerCore } from "../../contracts/server";
 import { builtinWorkflow } from "../../workflow";
 import type { ChainRuntime } from "../../workflow/server";
 

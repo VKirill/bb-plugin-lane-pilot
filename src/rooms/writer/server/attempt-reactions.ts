@@ -2,7 +2,8 @@ import { getAttempt, getReasoningTrace } from "../../storage";
 import { recordSkillSwitchMetric } from "../skill-switch";
 import { createSkillMaterializer, recordedMaterializedSkills } from "./skill-materialize";
 import { recordedWriterSkills } from "./skill-pick";
-import type { ServerCore, Services } from "../../core/server";
+import type { Services } from "../../core/server";
+import type { ServerCore } from "../../contracts/server";
 import { onAttemptFinished, type AttemptFinished } from "./attempt-finished";
 import type { createWriterSticky } from "./sticky";
 

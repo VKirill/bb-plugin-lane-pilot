@@ -1,5 +1,6 @@
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
-import type { ServerCore, Services } from "../../core/server";
+import type { Services } from "../../core/server";
+import type { ServerCore } from "../../contracts/server";
 import { taskFamily } from "../../runs";
 import { deleteStageReceipt, getAttempt, getTaskGitBase, listAttemptsForTask, listStageReceipts, reviveCanceledAttempt } from "../../storage";
 import { isMainfixTask } from "../../tasks";

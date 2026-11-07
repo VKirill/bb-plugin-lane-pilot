@@ -1,6 +1,6 @@
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import { rpcContract } from "../../../contracts";
-import type { ServerCore } from "../../../core/server";
+import type { ServerCore } from "../../../contracts/server";
 import { attemptMetrics } from "../attempt-metrics";
 import { attachTokenUsage, queryTokenUsage } from "../token-usage";
 

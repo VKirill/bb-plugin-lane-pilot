@@ -6,7 +6,7 @@ import { createSelfRepair } from "../helpers/self-repair";
 import { createJev } from "@lane-pilot/jev";
 import { setJevForTests } from "@lane-pilot/jev";
 import type { JevClient } from "@lane-pilot/jev";
-import type { ServerCore } from "../../src/rooms/core/server/core";
+import type { ServerCore } from "../../src/rooms/contracts/server";
 import { beginChecks, checksMoved } from "../../src/rooms/runs";
 import { postOwnerItem, closeOwnerItem } from "../../src/rooms/owner-waiting";
 import { taskWordItemPrefix } from "../../src/rooms/lead";

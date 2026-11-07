@@ -3,7 +3,7 @@ import { sessionOverrideAgentsJson } from "../native-agent-definition";
 import { employeeRoleLines, withRoleLines } from "../employee-lessons";
 import { prepareNativeSessionRecord } from "../native-dispatch";
 import { nativeAgentCliId, type NativeSelection } from "../native-session";
-import type { ServerCore } from "../../core/server";
+import type { ServerCore } from "../../contracts/server";
 
 /**
  * A stored profile selection that turns the next Claude Code send of a thread into the given Lane Pilot agent:

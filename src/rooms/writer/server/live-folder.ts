@@ -5,7 +5,7 @@ import {
   LIVE_FOLDER_PROBE_COMMAND, parseBackupFailure, parseLiveOwnedList, parseLiveSnapshot,
 } from "../live-folder";
 import { resolve } from "node:path";
-import type { ServerCore } from "../../core/server";
+import type { ServerCore } from "../../contracts/server";
 import { runOnHost } from "@lane-pilot/host-calls";
 
 type Ran = { exitCode: number; stdout: string; stderr: string };

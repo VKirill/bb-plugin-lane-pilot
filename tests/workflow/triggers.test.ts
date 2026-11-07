@@ -2,7 +2,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import { createRun, openDatabase, setRunThread } from "../../src/rooms/plugin-db";
 import type { LanePilotDatabase } from "../../src/rooms/plugin-db";
-import type { ServerCore } from "../../src/rooms/core/server/core";
+import type { ServerCore } from "../../src/rooms/contracts/server";
 import type { Services } from "../../src/rooms/core/server/services";
 import { automationsOverRpc, createWorkflowTriggers, desiredSchedules, triggerScript } from "../../src/rooms/workflow/server/workflow-triggers";
 import type { AutomationsPort, TriggerDeps } from "../../src/rooms/workflow/server/workflow-triggers";

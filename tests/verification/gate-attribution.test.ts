@@ -9,7 +9,7 @@ import { attributeFailures } from "../../src/rooms/verification/server/gate-attr
 import { attributeGateOnHost } from "../../src/rooms/verification/integration-gate-host";
 import { createTask, openDatabase, saveProjectSetting } from "../../src/rooms/plugin-db";
 import * as hostHandlers from "../../src/rooms/host-worker/host-handlers";
-import type { ServerCore } from "../../src/rooms/core/server/core";
+import type { ServerCore } from "../../src/rooms/contracts/server";
 import type { Services } from "../../src/rooms/core/server/services";
 
 /**

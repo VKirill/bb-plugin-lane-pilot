@@ -2,7 +2,7 @@ import { claimAttemptWake, getRun, getTask, getTaskPlan, listDueWakes } from "..
 import { taskV2Schema } from "../../contracts";
 import { sendServiceMessage } from "../../relay/server";
 import { providerDisplayName } from "./writer-hold";
-import type { ServerCore } from "../../core/server";
+import type { ServerCore } from "../../contracts/server";
 import type { Services } from "../../core/server";
 
 /**

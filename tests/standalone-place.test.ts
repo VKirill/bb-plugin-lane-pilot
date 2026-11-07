@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { projectFolder } from "../src/rooms/core/server/standalone-place";
-import type { ServerCore } from "../src/rooms/core/server/core";
+import type { ServerCore } from "../src/rooms/contracts/server";
 
 const sources = [{ hostId: "host_macbook", path: "/Users/me/app" }, { hostId: "host_ovh", path: "/home/me/app" }];
 const bbWith = (hosts: Array<{ id: string; status: string }> | Error) => ({ sdk: {

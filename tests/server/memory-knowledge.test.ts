@@ -4,7 +4,7 @@ import { openDatabase } from "../../src/rooms/plugin-db";
 import { searchMemoryRecords, storeMemoryRecords } from "../../packages/memory-core/src/store";
 import { OBSERVED_QUARANTINE_MS } from "../../packages/memory-core/src/lifecycle";
 import { sessionMemoryRpc } from "../../src/rooms/memory/server/session-memory";
-import type { ServerCore } from "../../src/rooms/core/server/core";
+import type { ServerCore } from "../../src/rooms/contracts/server";
 import type { Services } from "../../src/rooms/core/server/services";
 
 type Db = ReturnType<typeof openDatabase>;

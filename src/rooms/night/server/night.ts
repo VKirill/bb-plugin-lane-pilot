@@ -2,12 +2,13 @@ import { taskV2Schema } from "../../contracts";
 import { getRun, getTask, listAttemptsForTask, listStageReceipts } from "../../storage";
 import { resolveManagedWorkspace } from "../../verification";
 import { recordStage } from "../../runs/server";
-import { GIT_PLUGIN_ID, gitCallRpc, stringAt, valueAt } from "../../core/server";
+import { GIT_PLUGIN_ID, gitCallRpc } from "../../core/server";
+import { stringAt, valueAt } from "@lane-pilot/kit";
 
 /** The retired environments.status/diff calls, kept as the fallback where bb--git RPC fails (older BB served them directly). */
 const legacyEnvironments = (bb: unknown) => ((bb as { sdk?: { environments?: { status?: (a:{environmentId:string})=>Promise<unknown>; diff?: (a:{environmentId:string;target:string})=>Promise<unknown> } } }).sdk?.environments ?? {});
 import { z } from "zod";
-import type { ServerCore } from "../../core/server";
+import type { ServerCore } from "../../contracts/server";
 
 export function createNightStages(ctx: ServerCore) {
   const { acceptedTaskWorkspace, bb, configForRun, db, workspaceExecutionEnvironment } = ctx;

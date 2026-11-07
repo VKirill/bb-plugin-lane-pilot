@@ -2,11 +2,11 @@ import packageJson from "../../../../package.json";
 import { PARKED_CLASSES, failureClass, failureFingerprint, isCapacitySaturated, isWaitingSecret, type FailureClass } from "../../runs";
 import { allowedSecretNames, secretProblem, waitingSecretNote, WAITING_SECRET_PREFIX } from "../../secrets/server";
 import { createAttempt, getAttempt, getRun, getRunSettingsScopes, listOpenAttempts, loadProjectSettings, transitionAttempt } from "../../storage";
-import { id } from "../../core/server";
+import { id } from "@lane-pilot/kit";
 import { reopenWriterStages } from "../../runs/server/stage-records";
 import { isRunHalted, isRunPaused } from "../../runs/server/runs-halt";
 import { conveyorState } from "../../conveyor";
-import type { ServerCore } from "../../core/server";
+import type { ServerCore } from "../../contracts/server";
 import type { Services } from "../../core/server";
 
 const VERSION: string = packageJson.version;

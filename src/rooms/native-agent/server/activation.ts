@@ -13,8 +13,8 @@ import { parseWorkspaceMode, resolveManagedWorkspace, usesManagedWorktree } from
 import { excludeBookkeeping } from "../../verification/server";
 import { fullAccessSpawn, pmHasGuard, pmPrompt } from "../../core/server";
 import { requireHelperSpawn, requiredPolicyField } from "../../runs/server";
-import { id, stringAt, valueAt } from "../../core/server";
-import type { ServerCore } from "../../core/server";
+import { id, stringAt, valueAt } from "@lane-pilot/kit";
+import type { ServerCore } from "../../contracts/server";
 import type { Services } from "../../core/server";
 
 export function createActivation(ctx: ServerCore, services: Services) {

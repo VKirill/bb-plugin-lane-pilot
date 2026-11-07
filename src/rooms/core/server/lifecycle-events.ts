@@ -2,9 +2,9 @@ import { getRun, getRunWriterHost, listOpenAttempts } from "../../storage";
 import { threadSignalHub } from "@lane-pilot/thread-observe";
 import { loadBlockedBy, saveBlockedBy, type BlockedBy } from "../../runs/server";
 import { closeAbandonedRuns, pluginStopped } from "../../runs/server";
-import type { ServerCore } from "./core";
+import type { ServerCore } from "../../contracts/server";
 import { loadFollowUp, markFollowUpCancelled } from "../../writer/server";
-import { valueAt } from "./values";
+import { valueAt } from "@lane-pilot/kit";
 import { HOST_JOB_KV_PREFIX, hostJobHostId } from "@lane-pilot/host-calls";
 
 /**

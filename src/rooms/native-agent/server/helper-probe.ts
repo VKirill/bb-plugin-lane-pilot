@@ -3,8 +3,8 @@ import { getRun, loadPrototypeConfig } from "../../storage";
 import { writerExecutionSelection, findModelIn } from "@lane-pilot/models";
 import { fullAccessSpawn } from "../../core/server";
 import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server/run-routing";
-import { stringAt } from "../../core/server";
-import type { ServerCore } from "../../core/server";
+import { stringAt } from "@lane-pilot/kit";
+import type { ServerCore } from "../../contracts/server";
 
 /**
  * One helper on one provider, started the way the pm-read stage starts its helper (same placement, session policy, execution

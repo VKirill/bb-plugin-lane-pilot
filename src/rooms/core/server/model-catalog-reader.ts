@@ -1,7 +1,7 @@
 import type { ModelCatalog, CatalogProvider } from "@lane-pilot/models";
 import { mapListedQaHosts } from "../../qa";
-import type { ServerCore } from "./core";
-import { stringAt } from "./values";
+import type { ServerCore } from "../../contracts/server";
+import { stringAt } from "@lane-pilot/kit";
 
 const CATALOG_TTL_MS = 60_000;
 const CALL_TIMEOUT_MS = 8_000;

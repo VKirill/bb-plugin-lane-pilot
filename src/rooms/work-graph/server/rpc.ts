@@ -1,7 +1,7 @@
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import type { rpcContract } from "../../contracts";
 import { TURN_REQUESTED } from "../../anamnesis";
-import type { ServerCore } from "../../core/server";
+import type { ServerCore } from "../../contracts/server";
 import { workGraphStats, workGraphStrips, workGraphTask } from "./report";
 
 /** BB pages thread events at 100 at most; a thread with more requested turns shows 100. */

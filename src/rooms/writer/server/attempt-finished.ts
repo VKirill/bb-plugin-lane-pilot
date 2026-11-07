@@ -1,5 +1,5 @@
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
-import type { ServerCore } from "../../core/server";
+import type { ServerCore } from "../../contracts/server";
 
 /**
  * What the writer knows when an attempt (or the task's whole writer session) ends.

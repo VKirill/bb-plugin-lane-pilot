@@ -1,6 +1,6 @@
 import { taskV2Schema } from "../../contracts";
 import { getAttempt, getRun, getTask, listAttemptsForTask } from "../../storage";
-import type { ServerCore } from "../../core/server";
+import type { ServerCore } from "../../contracts/server";
 import type { Services } from "../../core/server";
 import { answerTurnPrompt } from "./writer-task";
 import { awaitsWriterAnswer, createAttemptReopen } from "./reopen-attempt";

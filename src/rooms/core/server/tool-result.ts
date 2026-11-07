@@ -1,7 +1,6 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type { z } from "zod";
 import { ToolError, type SideEffects } from "../../contracts/server";
-export { ToolError } from "../../contracts/server";
 import { failureClass } from "../../runs";
 import { boundPresentation } from "../../tools/server";
 import { checkArguments, flatParameters, unionMembers, withSignatures } from "./action-schema";

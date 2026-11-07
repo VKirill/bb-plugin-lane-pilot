@@ -4,7 +4,7 @@ import { openDatabase } from "../../src/rooms/plugin-db";
 import { readRepairRecord } from "../../src/rooms/self-repair/server/self-repair";
 import { createSelfRepair } from "../helpers/self-repair";
 import { setRepairHooks, type NightAssignment, type RepairHooks } from "../../src/rooms/self-repair/server/hooks";
-import type { ServerCore } from "../../src/rooms/core/server/core";
+import type { ServerCore } from "../../src/rooms/contracts/server";
 import { hostContract } from "../../src/rooms/contracts/host";
 
 /** What the real host answers to a merge: the whole SHA. The fake used to answer 16 characters, which hid that only 12 of them were handed on. */

@@ -7,7 +7,7 @@ import { agentRegistry } from "../../../native-agent/server";
 import { mapListedQaHosts } from "../../../qa";
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import { rpcContract } from "../../../contracts";
-import type { ServerCore } from "../../../core/server";
+import type { ServerCore } from "../../../contracts/server";
 import type { Services } from "../../../core/server";
 import { recordResolvedLocale } from "../../../relay/server";
 

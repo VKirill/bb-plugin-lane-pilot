@@ -1,6 +1,6 @@
 import { setTimeout as sleep } from "node:timers/promises";
-import type { ServerCore } from "../../core/server";
-import { stringAt } from "../../core/server";
+import type { ServerCore } from "../../contracts/server";
+import { stringAt } from "@lane-pilot/kit";
 
 /**
  * «Stopped» has two conditions (SMA wall 3, rule 9): the writer's process is confirmed gone, and its work is back. The first

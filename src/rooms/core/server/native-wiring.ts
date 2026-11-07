@@ -6,7 +6,7 @@ import { attachStreamRetry, droppedStreamDetail } from "../../writer";
 import { createPmSkillTraceEnv, createRoleMarkerEnv, mountBbShim } from "../../native-agent/server";
 import { observeOwnerDispatch } from "../../owner-presence/server";
 import { THREAD_WATCH_EVENT_TYPES, listThreadEventsRaw } from "@lane-pilot/thread-observe";
-import type { ServerCore } from "./core";
+import type { ServerCore } from "../../contracts/server";
 
 export function mountNativeWiring(ctx: ServerCore) {
   const { bb, db, nativeHost } = ctx;

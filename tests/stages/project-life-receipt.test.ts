@@ -8,7 +8,8 @@ import { describe, expect, it } from "vitest";
 import { createProjectLifeStage } from "../../src/rooms/project-life/server/project-life";
 import { createRun, createTask, listStageReceipts, openDatabase, saveStageReceipt, setRunThread, setRunWorkspace } from "../../src/rooms/plugin-db";
 import { recordStage } from "../../src/rooms/runs/server/stage-records";
-import type { ServerCore, Services } from "../../src/rooms/core/server";
+import type { Services } from "../../src/rooms/core/server";
+import type { ServerCore } from "../../src/rooms/contracts/server";
 import receipt from "../fixtures/stage-left-open/muse-session-sync.json";
 
 // Hub list_run_stages, 2026-11-03: accepted task, pending project-life, no child or result.

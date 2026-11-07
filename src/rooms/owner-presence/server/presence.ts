@@ -1,5 +1,5 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
-import type { ServerCore } from "../../core/server";
+import type { ServerCore } from "../../contracts/server";
 import { laneOwnedMetadata, presenceHold, readPresence, type Presence } from "../logic";
 
 const PRESENCE_KV = "owner-presence";

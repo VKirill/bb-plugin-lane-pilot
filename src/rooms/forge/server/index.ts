@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { ToolError, registerObservedTool, type ServerCore, type Services } from "../../core/server";
+import { registerObservedTool, type Services } from "../../core/server";
+import { ToolError, type ServerCore } from "../../contracts/server";
 import { hostContract } from "../../contracts";
 import { getRun, getRunWriterHost, loadProjectSettings } from "../../storage";
 import { isWholeConsent, ownerWordsOn } from "../../tasks";

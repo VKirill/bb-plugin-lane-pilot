@@ -4,13 +4,13 @@ import { fullAccessSpawn } from "../../core/server";
 import { spawnTextId } from "../../core/server";
 import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server";
 import { redactKnownDeep } from "@lane-pilot/kit";
-import { stringAt } from "../../core/server";
+import { stringAt } from "@lane-pilot/kit";
 import { outputText } from "../../writer/server";
 import { FRONTEND_VERIFY_METHOD } from "../../critique";
 import { qaStateToStatus, settleVerdict, verdictSchema, verdictSummary } from "../../critique";
 import { checkBrief, renderBrief } from "../../brief";
 import type { VerdictFinding, VerdictStatus } from "../../critique";
-import type { ServerCore } from "../../core/server";
+import type { ServerCore } from "../../contracts/server";
 
 export type QaVerdict = {
   verdict: "passed" | "failed" | "blocked";

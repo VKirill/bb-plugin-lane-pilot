@@ -22,12 +22,13 @@ import { mountWorkflowArchitect } from "../../workflow/server";
 import { mountLeadTool } from "../../lead/server";
 import { mountScheduleTools } from "../../schedule/server";
 import { mountToolFamilies } from "./tool-families";
-import { callerPluginMetadata, registerObservedTool, selfRepairDeps, ToolError } from "../../core/server";
+import { callerPluginMetadata, registerObservedTool, selfRepairDeps } from "../../core/server";
+import { ToolError } from "../../contracts/server";
 import { compactDispatchReply, compactReceipt, stageDetail } from "../../runs/server";
 import { createWriterAnswer } from "../../writer/server";
 import { createWriterReassign, createWriterUpdateTask } from "../../writer/server";
 import { z } from "zod";
-import type { ServerCore } from "../../core/server";
+import type { ServerCore } from "../../contracts/server";
 import type { Services } from "../../core/server";
 
 /**

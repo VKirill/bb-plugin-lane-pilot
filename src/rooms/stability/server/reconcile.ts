@@ -7,9 +7,10 @@ import { reconcile, reconcileCursor, reconcileHolder } from "../reconcile";
 import type { IdempotencyTriple } from "../reconcile";
 import { shouldReconcileAttemptThread, shouldResumeWorktreeHolder, shouldScanLostWorktreeHolder } from "../../tasks";
 import { WriterSelectionError } from "../../runs/server/run-routing";
-import { holderSpawnKey, stringAt } from "../../core/server";
+import { holderSpawnKey } from "../../core/server";
+import { stringAt } from "@lane-pilot/kit";
 import { findThreadsByMetadata } from "../../core/server";
-import type { ServerCore } from "../../core/server";
+import type { ServerCore } from "../../contracts/server";
 import type { ReconcilePort } from "../reconcile";
 import type { Services } from "../../core/server";
 

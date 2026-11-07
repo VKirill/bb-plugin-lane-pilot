@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import plugin from "../server";
 import { createRun, createTask, openDatabase, saveProjectSetting, setRunThread } from "../src/rooms/plugin-db";
 import { IntegrationGateRunner } from "../src/rooms/verification/server/integration-gate";
-import type { ServerCore } from "../src/rooms/core/server/core";
+import type { ServerCore } from "../src/rooms/contracts/server";
 import type { Services } from "../src/rooms/core/server/services";
 import { roomFaceFiles } from "./support/room-files";
 

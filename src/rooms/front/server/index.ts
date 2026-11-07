@@ -1,5 +1,6 @@
 import { hostContract } from "../../contracts";
-import { scheduleIsolated, type ServerCore } from "../../core/server";
+import { scheduleIsolated } from "../../core/server";
+import { type ServerCore } from "../../contracts/server";
 import { mapListedQaHosts } from "../../qa";
 import { getRun, getRunWriterHost, loadProjectSettings, saveProjectSetting } from "../../storage";
 import { runOnHost } from "@lane-pilot/host-calls";

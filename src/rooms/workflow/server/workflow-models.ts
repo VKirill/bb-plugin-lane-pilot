@@ -4,8 +4,8 @@ import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
 import type { DraftStore } from "../../storage";
 import type { ModelCatalog } from "@lane-pilot/models";
 import { CATALOG_WAIT_MS, createModelCatalog, modelCatalogOf, pmHostOf, spawnUsageOf, within, type ModelCatalogReader } from "../../core/server";
-import type { ServerCore } from "../../core/server";
-import { stringAt } from "../../core/server";
+import type { ServerCore } from "../../contracts/server";
+import { stringAt } from "@lane-pilot/kit";
 import { resolveStepExecutors, type PmPair, type WorkflowShape } from "./workflow-step-executors";
 
 type Output<K extends keyof typeof rpcContract> = z.infer<(typeof rpcContract)[K]["output"]>;

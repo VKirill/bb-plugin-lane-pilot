@@ -8,18 +8,19 @@ import type { DocsUnit } from "../docs";
 import { cadenceAllowsToday, codeDocsVerdict, docsCadence, docsFactsKey, docsWorthinessState, DOCS_WORTHINESS_QUESTION, fallbackDocsVerdict } from "../docs-worthiness";
 import type { DocsCadence, DocsVerdict, DocsWorthinessFacts } from "../docs-worthiness";
 import { blockingDocsFindings, buildBacklinks, buildDocsIndex, citedFiles, docsCompletenessGaps, isDesignCanon, isDocsIndex, lintCitationClaims, lintDocsPages, oversizedPageFindings, pagesToRefresh, uncataloguedPages, withCitedSources, withVerifiedConfidence } from "../docs-lint";
-import { configuredSetting, graphStepMetadata, modelCatalogOf, resolveSpawnModel, spawnUsageOf } from "../../core/server";
+import { graphStepMetadata, modelCatalogOf, resolveSpawnModel, spawnUsageOf } from "../../core/server";
+import { configuredSetting } from "../../contracts/server";
 import { fullAccessSpawn } from "../../core/server";
 import { withUsage } from "../../usage/server";
 import { DOCS_MAINTENANCE, DOCS_NIGHT, builtinWorkflow } from "../../workflow";
 import type { StepContext, WorkflowEngine } from "../../workflow";
 import { requireGreen } from "../../workflow/server";
-import { stringAt, valueAt } from "../../core/server";
+import { stringAt, valueAt } from "@lane-pilot/kit";
 import { recordStage } from "../../runs/server";
 import { sleepUntilThreadSignal, threadWatchMark, waitThreadIdle } from "@lane-pilot/thread-observe";
 import { basename, resolve } from "node:path";
 import { abortable, scheduleIsolated } from "../../core/server";
-import type { ServerCore } from "../../core/server";
+import type { ServerCore } from "../../contracts/server";
 import type { Services } from "../../core/server";
 
 /** Runs the work it is given one after another, in the order it was given; a failure does not stop the queue. */
