@@ -1,6 +1,7 @@
 import { taskV2Schema } from "../../contracts";
 import { claimStageSpawn, countAttempts, recordSecretIssuance, getRun, getRunSettingsScopes, getTask, listStageReceipts, loadProjectSettings } from "../../storage";
-import { QA_HOST_KEY, QA_WORKSPACE_KEY, qaCodexPreflight, qaHostUnreachableReason, resolveBrowserQaTarget, resolveStaleBrowserQaReceipt } from "../qa-host";
+import { QA_HOST_KEY, QA_WORKSPACE_KEY } from "@lane-pilot/settings-catalog";
+import { qaCodexPreflight, qaHostUnreachableReason, resolveBrowserQaTarget, resolveStaleBrowserQaReceipt } from "../qa-host";
 import { sha256 } from "../../tasks";
 import { parseOpenCodeToolTelemetry } from "../../stability";
 import { MAIN_ATTEMPT_LIMIT } from "../../runs";

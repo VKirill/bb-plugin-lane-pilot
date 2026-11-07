@@ -1,6 +1,7 @@
 import { mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { addRoad, getRoad, listRoad } from "../src/rooms/lead/server/road";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import {
@@ -196,6 +197,7 @@ describe("IntegrationGateRunner with mock core & services", () => {
     dispatched = [];
     dispatchResult = () => ({ ok: true, state: "queued" });
     mockServices = {
+      leadRoad: { addRoad, getRoad, listRoad },
       dispatchWriter: async (input: unknown) => {
         dispatched.push(input as (typeof dispatched)[number]);
         return { taskId: (input as { task: { id: string } }).task.id, ...dispatchResult() };

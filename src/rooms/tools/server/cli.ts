@@ -56,7 +56,7 @@ import { retireAdoptedRule } from "../../self-repair/server";
 import { ROLLBACK_USAGE, runRollbackCli } from "../../rollback/server";
 import { CODE_CRITIC_DEFAULTS, isCodeCriticDefault } from "../../critique";
 import { runSkillLintCli } from "../../forge";
-import { ERRAND_EPISODE_TRACE_EVENTS } from "../../errands";
+import { ERRAND_EPISODE_TRACE_EVENTS } from "../../contracts/server";
 import { EPISODES_USAGE, runEpisodesCli } from "../../errands/server";
 import { episodeSweepDeps } from "../../night-graphs/server";
 

@@ -10,7 +10,8 @@ import { memoryUnanswered, pmResumeInstructions, pmRulesOf, pmRulesPromptBlock, 
 import { codeCritiquePrompt, codeRepairPrompt } from "../../critique";
 import { nightReviewPrompt } from "../../night";
 import { councilMemoryBlock } from "../../council/server";
-import { memorySettingsFor, type InsightsApi } from "../../contracts/server";
+import { memorySettingsFor } from "../../memory/server";
+import type { InsightsApi } from "../../contracts/server";
 import { HARNESS_VERSION, loadPrototypeConfig } from "../../storage";
 import { loadProjectSettings } from "../../storage";
 import { DRILL_SANDBOX_PROJECT_IDS } from "../../stability/server";

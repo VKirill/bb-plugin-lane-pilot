@@ -2,7 +2,7 @@ import type { NodeExecutor, RunSummary, StepContext, WorkflowEngine } from "@lan
 import { getAttempt, getRunSettingsScopes, getTask, listAttemptsForTask, listStageReceipts, loadProjectSettings } from "../../storage";
 import { taskV2Schema } from "../../contracts";
 import { taskQaPlan } from "../../critique";
-import { QA_HOST_KEY } from "../qa-host";
+import { QA_HOST_KEY } from "@lane-pilot/settings-catalog";
 
 import { fenceOutside } from "../../platform/server";
 import { configuredSetting } from "../../contracts/server";

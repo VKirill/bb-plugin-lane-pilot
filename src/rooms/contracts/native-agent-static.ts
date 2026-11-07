@@ -1,4 +1,3 @@
-import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { LEAD_ID, LEAD_SUMMARY } from "./lead-agent";
 
 /** The Workflow architect's id and one-line summary. The workflow room owns the profile (src/rooms/native-agent/workflow-architect.ts);
@@ -133,24 +132,6 @@ export const EMPLOYEES: Record<string, EmployeeManifest> = {
 
 /** The KV key of the role's lesson lines, shared by every reader (specialist brief, employee chat, PM tools). */
 export const roleLinesKey = (projectId: string, role: string) => `lp.role.lines:${projectId}:${role}`;
-
-/** A dated rule line on `lp.role.lines:<projectId>:<role>` — what the specialist's brief prepends. */
-export async function recordRoleLine(kv: BbPluginApi["storage"]["kv"], projectId: string, role: string, line: string): Promise<string> {
-  const dated = /^\d{4}-\d{2}-\d{2}:/.test(line) ? line.trim().slice(0, 500) : `${new Date().toISOString().slice(0, 10)}: ${line.trim().slice(0, 500)}`;
-  const key = roleLinesKey(projectId, role);
-  const lines = ((await kv.get(key)) as string[] | null) ?? [];
-  if (!lines.includes(dated)) await kv.set(key, [...lines, dated].slice(-30) as never);
-  return dated;
-}
-
-/**
- * The role's lessons for a directly called employee: the same `lp.role.lines:<project>:<role>` list the
- * `lp.specialist_brief` step renders (written by employee.remark / recordEmployeeLesson), so a chat the owner
- * opens with an employee carries the same rules a PM-delegated run does.
- */
-export async function employeeRoleLines(bb: Pick<BbPluginApi, "storage">, projectId: string, agentId: string): Promise<string[]> {
-  return ((await bb.storage.kv.get(roleLinesKey(projectId, agentId))) as string[] | null) ?? [];
-}
 
 export const MAIN_AGENT_ID = /^[a-z0-9][a-z0-9-]{0,63}$/;
 export const MAIN_AGENT_PROFILE_IDS = [

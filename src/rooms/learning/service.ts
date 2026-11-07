@@ -6,7 +6,8 @@ import { ownerWordsOn } from "../tasks";
 import { jev } from "@lane-pilot/jev";
 import { explicitOwnerLocale, relayFor } from "../relay/server";
 import { scheduleIsolated } from "../platform/server";
-import { memorySettingsFor, type InsightsApi, type RuleScanSurface } from "../contracts/server";
+import type { MemorySettings } from "@lane-pilot/memory-core";
+import type { InsightsApi, RuleScanSurface } from "../contracts/server";
 import { registerObservedTool } from "../platform/server";
 import type { ServerCore } from "../contracts/server";
 
@@ -25,7 +26,7 @@ import { createObserver } from "./observe";
 import { createOps, type Kv } from "./ops";
 import { KEY_NAME, createDecisionsClient } from "./opinion";
 import { pmResumeInstructions, pmRulesOf, relevantPmRules } from "./pm-rules";
-import { setRuleBudgets } from "../contracts/rule-budget";
+import { setRuleBudgets } from "./rule-budget";
 import { lpNotesPort, lpRulesPort } from "./rules-port";
 import { complexityReport, noteOwnerQuestion, scanComplexity, scanPromises } from "./signals";
 import { DAY_MS, projectsWithCandidates, purgeStaleBodies, startOfDay, type ItemKind, type ItemState } from "./store";
@@ -41,6 +42,7 @@ interface Services {
   resolveProjectWriterHost: WriterHostApi["resolveProjectWriterHost"];
   ruleScan: RuleScanSurface;
   insights: InsightsApi;
+  memorySettings: (settings: Record<string, unknown>) => MemorySettings;
 }
 
 /**
@@ -64,7 +66,7 @@ export function createLearning(ctx: ServerCore, services: Services) {
   void refresh();
 
   const decisionsClient = createDecisionsClient({ apiKey: envCatalogKey(bb, KEY_NAME) });
-  const rules = lpRulesPort(db, services.insights), notes = lpNotesPort(db, services.insights);
+  const rules = lpRulesPort(db, services.insights, services.memorySettings), notes = lpNotesPort(db, services.insights, services.memorySettings);
   const log = (line: string) => ctx.log(line);
 
   const pmThread = (projectId: string): string | null =>
@@ -159,7 +161,7 @@ export function createLearning(ctx: ServerCore, services: Services) {
 
   const ops = createOps({
     db, kv, onConfig: (next) => { config = next; setRuleBudgets({ pm: next.pmRulesTokens, writer: next.writerRulesTokens }); },
-    memoryFill: () => memoryFill(db, (projectId) => { const s = memorySettingsFor(loadProjectSettings(db, projectId)); return { noteBudget: s.noteBudget, coreBudget: s.coreBudget }; }).slice(0, 12),
+    memoryFill: () => memoryFill(db, (projectId) => { const s = services.memorySettings(loadProjectSettings(db, projectId)); return { noteBudget: s.noteBudget, coreBudget: s.coreBudget }; }).slice(0, 12),
   });
 
   const sendToPm = async (threadId: string, text: string) => { await bb.sdk.threads.send({ threadId, mode: "queue-if-active", input: [{ type: "text", text, mentions: [] }] } as never); };

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { memorySettingsFor } from "../../src/rooms/memory/server";
 import { acceptRuleProposal, adoptRuleProposal, deleteMemoryRecord, rejectRuleProposal, retireAdoptedRule } from "../../src/rooms/self-repair/server";
 const insightsStub = { acceptRuleProposal, adoptRuleProposal, deleteMemoryRecord, rejectRuleProposal, retireAdoptedRule };
 import { bbMemoryAddArgs, bbMemoryAddLine, createDecisions } from "../../src/rooms/learning/decide";
@@ -26,7 +27,7 @@ function setup(modelAnswer: (prompt: string) => string, jevRules: Parameters<typ
   const db = database();
   const { jev, calls } = jevWith(db, jevRules);
   const prompts: string[] = [];
-  const rules = lpRulesPort(db, insightsStub), notes = lpNotesPort(db, insightsStub);
+  const rules = lpRulesPort(db, insightsStub, memorySettingsFor), notes = lpNotesPort(db, insightsStub, memorySettingsFor);
   const extractor = createExtractor({ db, jev: () => jev, rules, notes, now: () => NOW, globalPreferences: async () => globals, runModel: async (prompt) => { prompts.push(prompt); return modelAnswer(prompt); } });
   return { db, extractor, calls, prompts, rules, notes, jev };
 }

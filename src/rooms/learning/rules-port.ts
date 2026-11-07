@@ -1,13 +1,14 @@
 import { memoryRecordId, storeMemoryRecords } from "@lane-pilot/memory-core";
 import { listRuleProposals, upsertLessonProposal } from "@lane-pilot/run-insights";
 import type { LanePilotDatabase } from "../storage";
-import { memorySettingsFor, type InsightsApi } from "../contracts/server";
+import type { MemorySettings } from "@lane-pilot/memory-core";
+import type { InsightsApi } from "../contracts/server";
 import { loadProjectSettings } from "../storage";
 import type { NotesPort, RulesPort } from "./extract";
 import { sha256Hex } from "@lane-pilot/kit";
 
 /** The extractor's view of Lane Pilot's rules (server/insights.ts): the same proposal, trial and retirement a PM's `lane_pilot_lesson` uses. */
-export function lpRulesPort(db: LanePilotDatabase, insights: InsightsApi): RulesPort {
+export function lpRulesPort(db: LanePilotDatabase, insights: InsightsApi, memorySettings: (settings: Record<string, unknown>) => MemorySettings): RulesPort {
   return {
     list: (projectId) => [
       ...listRuleProposals(db, projectId, { state: "accepted", limit: 200 }),
@@ -22,10 +23,10 @@ export function lpRulesPort(db: LanePilotDatabase, insights: InsightsApi): Rules
 }
 
 /** Decisions of the owner go to the project's memory as notes, where writers and the PM find them with the memory search. */
-export function lpNotesPort(db: LanePilotDatabase, insights: InsightsApi): NotesPort {
+export function lpNotesPort(db: LanePilotDatabase, insights: InsightsApi, memorySettings: (settings: Record<string, unknown>) => MemorySettings): NotesPort {
   return {
     remember(projectId, text, evidence, at, scope) {
-      const settings = memorySettingsFor(loadProjectSettings(db, projectId));
+      const settings = memorySettings(loadProjectSettings(db, projectId));
       const content = `Decision of the owner, ${new Date(at).toISOString().slice(0, 10)}: ${text} (${evidence})`.slice(0, 900);
       const result = storeMemoryRecords(db, {
         projectId, personalBot: settings.personalBot, audience: "subagent",

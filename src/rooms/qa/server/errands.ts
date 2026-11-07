@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { findOpenNativeRun, recordSecretIssuance, getRun, getRunSettingsScopes, loadProjectSettings } from "../../storage";
 import { writerExecutionSelection } from "@lane-pilot/models";
-import { QA_HOST_KEY } from "../qa-host";
+import { QA_HOST_KEY } from "@lane-pilot/settings-catalog";
 import { modelCatalogOf, resolveSpawnModel, spawnUsageOf, warmSpawnUsage } from "../../platform/server";
 import { configuredSetting } from "../../contracts/server";
 import { fullAccessSpawn, folderEnvironment, hiddenPlacement, projectFolder, projectSources } from "../../platform/server";

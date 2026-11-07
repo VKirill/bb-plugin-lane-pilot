@@ -6,7 +6,7 @@ import { loadProjectSettings } from "../../../storage";
 import { parseDocsSettings } from "../../../docs";
 import { configuredSetting, type ServerCore } from "../../../contracts/server";
 import { acceptRuleProposal, deleteMemoryRecord, rejectRuleProposal, revokeRule } from "../insights";
-import { memorySettingsFor } from "../../../contracts/server";
+import { memorySettingsFor } from "../../../memory/server";
 import type { RuleScanApi } from "../rule-scan";
 
 import type { DocsNightlyApi } from "../../../docs/server/docs-nightly";

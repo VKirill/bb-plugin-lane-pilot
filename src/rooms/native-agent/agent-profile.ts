@@ -5,7 +5,8 @@ import { stockEmployee } from "./employee-manifest";
 import { EMPLOYEES } from "../contracts/server";
 import { isLanePmAgent } from "../contracts/server";
 import { isCliLaneAgentPrompt, isInternalAgent, laneSessionOverlayPrompt, overlayDisallowedTools, overlaySessionTools } from "./native-agent-overlay";
-import { WORKFLOW_ARCHITECT_ID, WORKFLOW_ARCHITECT_NAME, WORKFLOW_ARCHITECT_TOOLS } from "./workflow-architect";
+import { WORKFLOW_ARCHITECT_ID } from "../contracts/server";
+import { WORKFLOW_ARCHITECT_NAME, WORKFLOW_ARCHITECT_TOOLS } from "./workflow-architect";
 import { LEAD_ID, LEAD_NAME, LEAD_TOOLS } from "../contracts";
 import { sha256Hex } from "@lane-pilot/kit";
 

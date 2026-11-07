@@ -6,11 +6,12 @@ import {
   upsertLessonProposal, ruleTrialStats,
 } from "@lane-pilot/run-insights";
 import { loadProjectSettings, type LanePilotDatabase } from "../../storage";
-import { configuredSetting, memorySettingsFor } from "../../contracts/server";
+import { configuredSetting } from "../../contracts/server";
+import { memorySettingsFor } from "../../memory/server";
 import type { InsightsDeps } from "./deps";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type { LpRealtimeKind } from "@lane-pilot/ui-kit/realtime-channel";
-import { poolHasRoom, poolTokens, ruleBudget } from "../../contracts/rule-budget";
+import { poolHasRoom, poolTokens, ruleBudget } from "../../learning";
 import { sha256Hex } from "@lane-pilot/kit";
 import { authorize } from "../../policy";
 

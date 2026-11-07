@@ -5,7 +5,8 @@ import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import { getRuleProposal, upsertLessonProposal } from "@lane-pilot/run-insights";
 import { DEFAULT_RELEVANCE_FLOOR, NOTHING_RELEVANT, projectUsesSections, resolveProjectKind, sharedScope, UNASSIGNED_SCOPE, memoryVisibilitySql, parseMemoryCandidates, relevantRecords, searchMemoryRecords, storeMemoryRecordsKeepingOverflow } from "@lane-pilot/memory-core";
 import type { rpcContract } from "../../contracts";
-import { memorySettingsFor, type InsightsApi } from "../../contracts/server";
+import { memorySettingsFor } from "./memory-settings";
+import type { InsightsApi } from "../../contracts/server";
 import type { ServerCore } from "../../contracts/server";
 
 import {sha256Hex, bestEffort} from "@lane-pilot/kit";
@@ -105,7 +106,7 @@ export function sessionMemoryRpc(ctx: ServerCore, services: Services) {
       // audience `specialist:<id>` also appends a dated line to `lp.role.lines` — the section the specialist's brief renders.
       const employee = /^specialist:([\w-]{1,60})$/.exec(audience ?? "")?.[1];
       if (employee) {
-        const { recordRoleLine } = await import("../../contracts/server");
+        const { recordRoleLine } = await import("../../native-agent");
         await bestEffort(ctx.bb.log, "session memory role line", recordRoleLine(ctx.bb.storage.kv, projectId, employee, rule), undefined);
       }
       const adopted = result.created ? Boolean(services.insights.adoptRuleProposal(db, projectId, result.id)) : false;

@@ -23,7 +23,7 @@ import { actsVia, applyExam, rightsView, type TierChange } from "./rights";
 import { decideRoad, doneRoad, getRoad, rejectRoad, roadCounts, roadMarkdown, roadPayload } from "./road";
 import type { RoadRow } from "../../contracts/lead-road";
 import { architectPrompt, architectSeedOf, postArchitectHand, registerLeadTickActions, proposalDecisionId, proposalItemKey, seedForm, type ProposalDecision } from "./tick";
-import { WORKFLOW_ARCHITECT_ID } from "../../native-agent";
+import { WORKFLOW_ARCHITECT_ID } from "../../contracts/server";
 import { closeTick, getTick, listTicks, openTick, patchTick, sweepStaleTicks, type TickRow } from "./tick-store";
 
 import type { DocsNightlyApi } from "../../docs/server/docs-nightly";

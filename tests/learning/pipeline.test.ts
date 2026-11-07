@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { memorySettingsFor } from "../../src/rooms/memory/server";
 import { acceptRuleProposal, adoptRuleProposal, deleteMemoryRecord, rejectRuleProposal, retireAdoptedRule } from "../../src/rooms/self-repair/server";
 const insightsStub = { acceptRuleProposal, adoptRuleProposal, deleteMemoryRecord, rejectRuleProposal, retireAdoptedRule };
 import { createOwnerMessageHub, TURN_REQUESTED, type EventLike, type ThreadLike } from "../../src/rooms/anamnesis/owner-messages";
@@ -44,7 +45,7 @@ describe("from a correction to a rule the next PM follows", () => {
     ]);
     expect(secondAsked).toHaveLength(2);
 
-    const rules = lpRulesPort(db, insightsStub), notes = lpNotesPort(db, insightsStub);
+    const rules = lpRulesPort(db, insightsStub, memorySettingsFor), notes = lpNotesPort(db, insightsStub, memorySettingsFor);
     const prompts: string[] = [];
     const extractor = createExtractor({
       db, jev: () => jev, rules, notes, now: () => NOW,

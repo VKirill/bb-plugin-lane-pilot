@@ -3,7 +3,7 @@
 export { LEARNING_USAGE, runLearningCli } from "./cli";
 export { FRUSTRATION_KEY, frustrationReason } from "./frustration";
 export type { FrustrationRecord } from "./frustration";
-export { ruleBudget } from "../contracts/rule-budget";
+export { poolHasRoom, poolTokens, ruleBudget, ruleTokens, setRuleBudgets } from "./rule-budget";
 export { learningFor, mountLearning } from "./service";
 export { memoryUnanswered } from "./unanswered";
 export type { MemoryUnanswered } from "./unanswered";

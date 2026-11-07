@@ -4,7 +4,8 @@ import { decideRuleTrial, listRuleProposals, ruleTrialStats, upsertLessonProposa
 import plugin from "../../server";
 import { TARGET_SHA } from "../../src/rooms/runs/constants";
 import { openDatabase, savePrototypeConfig } from "../../src/rooms/plugin-db";
-import { DEFAULT_RULE_TOKENS, RULE_COUNT_CEILING, poolHasRoom, poolTokens, ruleBudget, ruleTokens, setRuleBudgets } from "../../src/rooms/contracts/rule-budget";
+import { DEFAULT_RULE_TOKENS, RULE_COUNT_CEILING } from "../../src/rooms/contracts/rule-budget";
+import { poolHasRoom, poolTokens, ruleBudget, ruleTokens, setRuleBudgets } from "../../src/rooms/learning";
 import { pmResumeInstructions, pmRulesBlock, pmRulesOf, pmRulesPromptBlock, relevantPmRules } from "../../src/rooms/learning/pm-rules";
 import { adoptRuleProposal, rewordAdoptedRule } from "../../src/rooms/self-repair/server/insights";
 import { NOW, database, jevWith } from "./helpers";

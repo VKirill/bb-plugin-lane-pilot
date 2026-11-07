@@ -18,7 +18,7 @@ import { loadPrototypeConfig, type LanePilotDatabase } from "../../storage";
 import { requirePmRun } from "../../platform/server";
 import { configuredSetting, ToolError } from "../../contracts/server";
 import type { ServerCore } from "../../contracts/server";
-import { memorySettingsFor } from "../../contracts/server";
+import { memorySettingsFor } from "../../memory/server";
 import { loadProjectSettings } from "../../storage";
 import type { OwnerAsk } from "../../relay/server";
 import { fenceOutside, registerObservedTool } from "../../platform/server";

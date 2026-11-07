@@ -86,6 +86,8 @@ import { createScheduleService, registerAgentRoutineActions, scheduleAgentApi } 
 import { registerSpecialistActions } from "./src/rooms/critique/server";
 import { knownOwnerLocale, relayFor } from "./src/rooms/relay/server";
 import { mountLearning } from "./src/rooms/learning";
+import { memorySettingsFor } from "./src/rooms/memory/server";
+import type { MemorySettings } from "@lane-pilot/memory-core";
 import { installThreadSignals } from "@lane-pilot/thread-observe";
 import { mountLifecycleEvents } from "./src/rooms/core/server/lifecycle-events";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
@@ -265,6 +267,7 @@ export interface Services {
   leadRoad: LeadRoadApi;
   /** The self-repair rule/insight writes, handed to learning and memory (src/rooms/self-repair). */
   insights: InsightsApi;
+  memorySettings: (settings: Record<string, unknown>) => MemorySettings;
   /** The errand episode recorder and spawn read, handed to the workflow engine (src/rooms/errands). */
   errandEpisodes: ErrandEpisodesApi;
   /** The schedule board's active-agent read, handed to the native-agent registry (src/rooms/schedule). */
@@ -299,6 +302,7 @@ export default async function plugin(bb: BbPluginApi) {
     laneProject: lanePilotProjectOrNotice,
     leadRoad: { addRoad, doneRoad, getRoad, listRoad, reopenRoad },
     insights: { acceptRuleProposal, adoptRuleProposal, deleteMemoryRecord, rejectRuleProposal, retireAdoptedRule },
+    memorySettings: memorySettingsFor,
     errandEpisodes: { recordErrandEpisode, errandSpawnOf },
     scheduleAgents: scheduleAgentApi(),
     memoryEval: { load: loadEvalData, run: runMemoryEval },

@@ -1,13 +1,12 @@
+import { WORKFLOW_ARCHITECT_ID, WORKFLOW_ARCHITECT_SUMMARY } from "../contracts/server";
 /**
  * The Workflow architect: an agent profile of Lane Pilot's own (not part of the Claude Lane Stack catalog in
  * bundled-agents.json). It starts like the PM, from the composer's «Lane Pilot / agent» popover, in any chat of any
  * project, and builds chains with the lane_pilot_workflow_* tools while the owner watches the graph take shape.
  */
-export const WORKFLOW_ARCHITECT_ID = "workflow-architect";
 
 export const WORKFLOW_ARCHITECT_NAME = { en: "Workflow architect", ru: "Архитектор графов" } as const;
 
-export const WORKFLOW_ARCHITECT_SUMMARY = "Workflow architect: interviews the owner about a repeatable process and builds it as a tested chain (agent, action, human and code steps) live; does not edit product code or dispatch writers.";
 
 /** Opens the architect from a tab of the plugin: the composer of a new chat in this project, with this agent picked. */
 export const ARCHITECT_LAUNCH = {

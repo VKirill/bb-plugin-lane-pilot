@@ -1,5 +1,5 @@
 import { coreShelf, isSharedScope } from "@lane-pilot/memory-core";
-import { memorySettingsFor } from "../../contracts/server";
+import { memorySettingsFor } from "./memory-settings";
 import { loadProjectSettings, type LanePilotDatabase } from "../../storage";
 import type { ServerCore } from "../../contracts/server";
 

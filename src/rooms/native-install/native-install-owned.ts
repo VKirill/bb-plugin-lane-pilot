@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { atomicText } from "../platform";
 import { chmod, lstat, mkdir, readFile, readlink, rename, rm, rmdir, symlink, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { applyEdits, modify, parse, type ParseError } from "jsonc-parser/lib/esm/main.js";
@@ -14,13 +15,6 @@ export type NativeInstallManifest = {
 
 export const hashBytes = (bytes: Buffer | string): string => sha256Hex(bytes);
 const equal = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b);
-
-export async function atomicText(path: string, text: string): Promise<void> {
-  await mkdir(dirname(path), { recursive: true });
-  const tmp = `${path}.${randomUUID()}.tmp`;
-  try { await writeFile(tmp, text, { mode: 0o600, flag: "wx" }); await rename(tmp, path); }
-  finally { await rm(tmp, { force: true }); }
-}
 
 export async function safeTarget(home: string, name: string): Promise<string> {
   const target = resolve(home, name), rel = relative(home, target);

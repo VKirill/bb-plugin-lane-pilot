@@ -2,6 +2,7 @@
 // Add a name here to make it public; scripts/refactor/barrels.ts wrote the first version from the existing imports.
 export { mixReviewerMemory, mixWriterMemory, pmMemoryContext, reviewerMemoryFor, snapshotFileRead, taskMemoryContext, writerCandidates, writerMemoryPaths } from "./memory-mix";
 export { createMemoryStage } from "./memory";
+export { memorySettingsFor } from "./memory-settings";
 export { sessionMemoryRpc } from "./session-memory";
 export { mountThreadBlock, threadMemoryBlock } from "./thread-block";
 export { embedPending, embedQuery, mountMemoryEmbeddings } from "./embeddings";

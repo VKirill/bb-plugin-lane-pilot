@@ -5,7 +5,7 @@ import plugin from "../server";
 import { createRun, openDatabase, saveProjectSetting, savePrototypeConfig, setRunThread } from "../src/rooms/plugin-db";
 import { fenceOutside, toolFailure } from "../src/rooms/platform/server/tool-result";
 import { ToolError } from "../src/rooms/contracts/server";
-import { QA_HOST_KEY } from "../src/rooms/qa/qa-host";
+import { QA_HOST_KEY } from "@lane-pilot/settings-catalog";
 
 function parseFailure(raw: unknown) {
   const parsed = JSON.parse(String(raw)) as { ok: boolean; error: { code: string; message: string; retryable: boolean; sideEffects: string; next?: string } };

@@ -3,9 +3,10 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { openDatabase, saveProjectSetting, type LanePilotDatabase } from "../src/rooms/plugin-db";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
 import {
-  ERRAND_EPISODE_TABLE, codeFailureClass, enrichEpisode, episodeSkills, episodesBackfill,
+  codeFailureClass, enrichEpisode, episodeSkills, episodesBackfill,
   parseEpisodeAnswer, pendingEpisodes, recordErrandEpisode, sweepErrandEpisodes,
 } from "../src/rooms/errands";
+import { ERRAND_EPISODE_TABLE } from "../src/rooms/contracts/server";
 import { runEpisodesCli } from "../src/rooms/errands/server";
 import { applyOutcomeLabels, labelErrandFailure } from "../packages/jev/src/labels-outcome";
 import { errandFailureJudgment, ERRAND_FAILURE_CLASSES, ERRAND_FAILURE_ID } from "../src/rooms/errands";

@@ -3,7 +3,6 @@
 // behind ./server, the screen behind ./ui.
 export { ERRAND_KINDS_WITH_NONE, errandStem, errandTitle, routeConfidence, kindsOverview, listErrands, type ErrandKindOrNone, type ErrandRow, type ErrandSource, type KindSummary } from "./logic";
 export { ERRAND_EPISODE_ENRICH_COLUMNS, errandSpawnOf, listEpisodes, pendingErrandEpisode, recordErrandEpisode, type EpisodeDeps, type EpisodeRow } from "./episodes";
-export { ERRAND_EPISODE_EXTRACTOR_VERSION, ERRAND_EPISODE_TABLE, ERRAND_EPISODE_TRACE_EVENTS, collectEnabled, errandOutcome, type ErrandOutcome, type ErrandVerifiedOutcome } from "../contracts/server";
 export { EPISODE_ENRICH_BACKOFF_MS, EPISODE_SWEEP_LIMIT, codeFailureClass, enrichEpisode, episodeSkills, episodesBackfill, parseEpisodeAnswer, pendingEpisodes, sweepErrandEpisodes, type BackfillResult, type EpisodeAnswer, type EpisodeEnrichDeps, type EpisodeSkillUse, type PendingEpisode, type SweepResult } from "./episode-enrich";
 export { ERRAND_FAILURE_CLASSES, ERRAND_FAILURE_ID, errandFailureJudgment, type ErrandFailureClass, type ErrandFailureDecision, type ErrandFailureInput } from "./failure-judgment";
 export { diagnosisLines, errandsDiagnosis, errandsDiagnosisMorningLine, type DiagnosisKindCost, type DiagnosisShare, type ErrandsDiagnosis } from "./diagnosis";
