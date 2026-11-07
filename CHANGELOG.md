@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.1.485
+
+- **No deploy limits.** The once-a-day rule, the 7-day error budget, the incident lane (`Lane-Pilot-Incident` trailer) and the bench gate are gone from the deploy script, `canary_status`, self-repair, the deploy workflow and the docs. Deploys keep the clean tree, pushed HEAD, tests, build from HEAD, dist hash, drill after reload and rollback.
+
 ## 0.1.484
 
 - **The plugin's rooms form a graph without cycles.** The untangle refactor (plan and decisions in `.agents/plans/untangle/`): 89 rooms → 77, the largest strongly connected set 65 → 1, mutual room pairs 123 → 0, room edges ≈730 → 593. Every room imports only rooms below it; `contracts` imports nothing; owner `*Api` types reach other rooms through ports in `platform/server/ports.ts` checked with `satisfies` in `server.ts`. `tests/architecture/room-graph.test.ts` fails on any new cycle, mutual pair or edge growth; `tests/architecture/foreign-sql.test.ts` fails when a room's SQL on another room's table grows (394 today).
