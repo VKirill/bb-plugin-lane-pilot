@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { brokenProof, proofDrift } from "../src/rooms/sma-map";
 import { exportedOf, relocateAnchor } from "../src/rooms/sma-map/exports";
 import { clockForColumns, darkClockExpr } from "../src/rooms/sma-map/live";
-import { failureClass } from "../src/rooms/platform/server/failure-class";
+import { failureClass } from "../src/rooms/contracts/failure-class";
 import { stageTransition } from "../src/rooms/tasks";
 import { attemptPercent } from "../src/rooms/world/server/signals";
 
