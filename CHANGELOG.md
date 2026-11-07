@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 0.1.484
+
+- **The plugin's rooms form a graph without cycles.** The untangle refactor (plan and decisions in `.agents/plans/untangle/`): 89 rooms → 77, the largest strongly connected set 65 → 1, mutual room pairs 123 → 0, room edges ≈730 → 593. Every room imports only rooms below it; `contracts` imports nothing; owner `*Api` types reach other rooms through ports in `platform/server/ports.ts` checked with `satisfies` in `server.ts`. `tests/architecture/room-graph.test.ts` fails on any new cycle, mutual pair or edge growth; `tests/architecture/foreign-sql.test.ts` fails when a room's SQL on another room's table grows (394 today).
+- **Failures are named, not swallowed.** Blind `catch` sites 1263 → ≈120, each remaining one commented. A failed read is its own outcome (wait, park, skip, refuse) instead of "absent"; loops keep going past one bad item; polls log once per streak. Bugs this surfaced and fixed, each with a test: a task held 6 h on an unreadable owner word, a second architect chat, a resent workflow step, a KV history overwritten after a failed read, a reminder sent mid-turn, a critic skipping a whole review on one unreadable file, a store-read park that never ended, a duplicate keyed host job.
+- **Special cases became data.** Provider quirks live in `PROVIDER_CAPABILITIES`; one sandbox rule (ids + name prefixes) for the canary, owner list, sidebar and live rate; one failed-state set from the state machine (self-repair now sees `timeout`); stage order from `STAGE_IDS`; judgment titles on the judgment; `dispatch-bb` without a task contract fails instead of starting the hello fixture.
+- **Dead code removed.** The `critic-tiebreak` stage (never run), unused ui-kit pointer/viewport API, unread tool-name arrays, 425 empty `it.todo` stubs (the SMA map keeps the gap list in its own file).
+- **A writer start that never makes its thread ends** after 15 min with the step it waited at; a stop lands within a poll.
+- **A workflow schedule is checked against the library again** (it threw on `loadStore` since the library is wired after the schedule service).
 - **A writer moving to a free fallback is routing status.** The wall log reader matched `unavailable` inside a held primary's reason and opened repairs for normal same-attempt fallback selection (class `log:a10ac833ef2c`). It now ignores the complete routing clause when scanning warning text, preserving appended failures, separate spawn failures, error-level lines and holds without a selected fallback. `tests/wall/writer-fallback-log.test.ts` replays 20 original hub log rows, including both samples of this class, across the wall and self-repair readers.
 
 ## 0.1.483
