@@ -10,6 +10,6 @@ Built by Lane Pilot from page frontmatter.
 
 | Page | Type | Status | Updated |
 |---|---|---|---|
-| [Locale resolution and translation](features/locale-and-translation.md) | component | active | 2026-11-06 |
-| [i18n gotchas](gotchas.md) | gotchas | active | 2026-11-06 |
-| [i18n workspace overview](overview.md) | overview | active | 2026-11-06 |
+| [Locale resolution and translation](features/locale-and-translation.md) | component | active | 2026-11-07 |
+| [i18n gotchas](gotchas.md) | gotchas | active | 2026-11-07 |
+| [i18n workspace overview](overview.md) | overview | active | 2026-11-07 |
