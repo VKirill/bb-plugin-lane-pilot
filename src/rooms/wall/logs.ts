@@ -14,6 +14,8 @@ const NOT_OURS = /^self-repair|^wall|writer attempt \S+ failed|writer spawn for 
  * task result(s)», «integration-gate: running …», «writer … continues in thread …»); those are not walls. An error-level line always counts.
  */
 const FAILURE_WORDS = /fail|error|could not|cannot|can't|unable|refus|reject|time[d ]?out|HTTP [45]\d\d|not connected|offline|exhaust|unavailable|invalid|stale|ENOSPC|no space|gb free|crash|abort|unhandled|uncaught|lost\b|archived/i;
+/** A held primary with a free fallback is routing status; any failure after this clause still counts. */
+const WRITER_FALLBACK = /^writer \S+: \S+ is held \([^\r\n)]*\); spawning \S+ in the same attempt\b/;
 
 export function wallLogLines(text: string, since: number, until: number): LogLine[] {
   const out: LogLine[] = [];
@@ -24,7 +26,10 @@ export function wallLogLines(text: string, since: number, until: number): LogLin
     if (typeof row.ts !== "number" || row.ts < since || row.ts >= until || typeof row.message !== "string") continue;
     const level = typeof row.level === "string" ? row.level : "";
     if (level !== "warn" && level !== "error") continue;
-    if (NOT_OURS.test(row.message) || (level === "warn" && !FAILURE_WORDS.test(row.message.replace(/^episodes: \d+ enriched, \d+ skipped, 0 failed, 0 held of \d+ picked\b/i, "")))) continue;
+    const failureText = row.message
+      .replace(/^episodes: \d+ enriched, \d+ skipped, 0 failed, 0 held of \d+ picked\b/i, "")
+      .replace(WRITER_FALLBACK, "");
+    if (NOT_OURS.test(row.message) || (level === "warn" && !FAILURE_WORDS.test(failureText))) continue;
     out.push({ message: row.message, at: row.ts, projectId: /\bproj_[a-z0-9]+/i.exec(row.message)?.[0] ?? "-", level });
   }
   return out;
