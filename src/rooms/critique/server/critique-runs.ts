@@ -14,7 +14,7 @@ import { critiqueFromScreen, screenCodeCritique } from "../critic-screen";
 import type { CandidateEvidence, FrozenCritiquePolicy } from "../code-critique";
 import { sha256 } from "../../tasks";
 import { critiquePrompt, parseCritique, shouldRunPlanCritique } from "../critique";
-import { binaryOutputs, findTaskPlaceholderPaths } from "../critique-coverage";
+import { binaryOutputs, dropIntendedGaps, findTaskPlaceholderPaths } from "../critique-coverage";
 import type { CoverageFinding } from "../critique-coverage";
 import { buildExecutionPacket, renderPacketExcerpts } from "../../tasks/execution-packet";
 import { parsePmReadResult, parsePmReadSettings, pmReadPrompt } from "../pm-read";
@@ -234,7 +234,7 @@ export async function runPlanCritique(input:{bb:BbPluginApi;db:ReturnType<typeof
       plan:input.plan,tasks:runTasks.map((task)=>({id:task.id,lane:task.lane??"write",ownsPaths:task.owns_paths??[],hasVerification:task.verify==="none"||!!task.verification?.length,
         verification:(task.verification??[]).map((command)=>({command:command.command,timeoutSec:command.timeout_sec??undefined}))}))},{hostId:input.config.hostId,timeoutMs:30_000});
     coverageStatus=scan.status;coveragePathCount=scan.pathCount;// A bad command of a task already running must not block an unrelated dispatch of the run.
-    structuralFindings=[...structuralFindings,...scan.findings.map((finding)=>finding.code==="verify_filter_ignored"&&finding.path!==`tasks/${input.task.id}`?{...finding,severity:"warning" as const}:finding)].slice(0,10);
+    structuralFindings=[...structuralFindings,...dropIntendedGaps(scan.findings,input.task.never_touch??[]).map((finding)=>finding.code==="verify_filter_ignored"&&finding.path!==`tasks/${input.task.id}`?{...finding,severity:"warning" as const}:finding)].slice(0,10);
   } catch {
     coverageStatus="unavailable";
   }
@@ -345,7 +345,9 @@ export async function runPlanCritique(input:{bb:BbPluginApi;db:ReturnType<typeof
         await waitThreadIdle(input.bb,threadId,"critique_thread_timeout");
         const raw = (await input.bb.sdk.threads.output({ threadId })).output;
         if (typeof raw !== "string" || !raw.trim()) throw new Error("critique_output_empty");
-        const critique = parseCritique(raw, inputCitations(JSON.stringify(input.task), input.plan, input.pmReadContext ?? "", JSON.stringify(structuralFindings)));
+        // ponytail: the critic reads the checkout itself, so a file it cites may be one it opened; the hub cannot see the host's files to check
+        // the path, so only file, line and quoted evidence are required (settleVerdict). A host-side path check if invented paths show up.
+        const critique = parseCritique(raw);
         const blocked = critique.decision === "changes_requested" && mode === "gate";
         const result = { ...critique, mode, ...(qualityMode !== "standard" ? { qualityMode } : {}), structuralCoverage:{status:coverageStatus,pathCount:coveragePathCount}, structuralFindings, rawOutput:raw.slice(0, 12_000) };
         const why = verdictReasons(critique, "plan-critique");

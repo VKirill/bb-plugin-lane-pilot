@@ -657,7 +657,9 @@ describe("stage → native writer → receipt", () => {
     const critique=spawned.find((row)=>((row.pluginMetadata as Record<string,unknown>).stageId)==="plan-critique");
     const writer=spawned.find((row)=>((row.pluginMetadata as Record<string,unknown>).role)==="writer");
     expect(pmRead).toMatchObject({providerId:"critic",model:"critic-model",reasoningLevel:"medium",serviceTier:"default"});
-    expect(critique?.prompt).toContain("README notes the managed workspace contract.");
+    // The critic reads the code itself (2026-11-08): the PM reader's summary is not sent to it, only its open questions.
+    expect(critique?.prompt).not.toContain("README notes the managed workspace contract.");
+    expect(critique?.prompt).toContain("You are running in the project checkout");
     // The writer gets the read stage's key facts; its overview repeats the task.
     expect(writer?.prompt).toContain("Managed workspaces isolate task edits.");
     // The PM-read stage reads in the run folder; the writer's packet is read in the attempt's own worktree.

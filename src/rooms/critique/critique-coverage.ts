@@ -5,13 +5,13 @@ import { basename, extname, isAbsolute, join, relative, sep } from "node:path";
 
 export type CoverageFinding={code:"plan_path_unowned"|"owns_gap"|"coverage_scan_truncated"|"owns_overlap"|"verify_missing"|"verify_heavy"|"owns_empty"|"plan_missing"|"no_tasks"|"caller_unowned"|"task_placeholder"|"output_unowned"|"output_binary"|"verify_filter_ignored"|"depends_cycle"|"depends_self";path:string;severity:"error"|"warning"|"info";finding:string};
 export type CoverageScan={status:"complete"|"truncated";pathCount:number;findings:CoverageFinding[]};
-const SKIP=new Set([".git","node_modules",".agents",".bb",".claude",".lane-pilot","dist","build","vendor","__pycache__",".venv",".tox","coverage"]);
+const SKIP=new Set([".git",".gitnexus","node_modules",".agents",".bb",".claude",".lane-pilot","dist","build","vendor","__pycache__",".venv",".tox","coverage"]);
 const TEXT=new Set([".ts",".tsx",".js",".jsx",".mjs",".cjs",".py",".md",".json",".yaml",".yml",".sh",".go",".rs"]);
 const CODE=new Set([".ts",".tsx",".js",".jsx",".mjs",".cjs",".py",".go",".rs"]);
 const GENERIC=new Set(["index","main","app","utils","util","types","type","const","constants","config","settings","style","styles","test","spec","init"]);
 const PLAN_PATH=/(?<![\w./])((?:[\w.-]+\/){1,8}[\w.-]+\.[A-Za-z][\w.-]{0,12})(?=$|[`\s),:])/gm;
 
-function covered(pattern:string,path:string):boolean {
+export function covered(pattern:string,path:string):boolean {
   const a=pattern.replace(/\\/g,"/").replace(/^\.\//,"").split("/");
   const b=path.split("/");
   for(let i=0;i<a.length;i++) {
@@ -290,4 +290,10 @@ export async function scanCritiqueCoverage(input:{workspacePath:string;plan:stri
   if(unreadable.length){truncated=true;add(findings,"coverage_scan_truncated",".",`${unreadable.length} file(s) could not be read and were skipped: ${unreadable.slice(0,10).join(", ")}${unreadable.length>10?", …":""}`,"warning");}
   if(findings.some((finding)=>finding.code==="coverage_scan_truncated"))truncated=true;
   return {status:truncated?"truncated":"complete",pathCount:files.length,findings};
+}
+
+const GAP_CODES=new Set<CoverageFinding["code"]>(["owns_gap","caller_unowned","plan_path_unowned"]);
+/** «Nobody owns X» is no gap when the task forbids X on purpose (never_touch): the critic got these as noise (audit 2026-11-08). */
+export function dropIntendedGaps(findings:readonly CoverageFinding[],neverTouch:readonly string[]):CoverageFinding[] {
+  return findings.filter((finding)=>!(GAP_CODES.has(finding.code)&&neverTouch.some((pattern)=>covered(pattern,finding.path))));
 }

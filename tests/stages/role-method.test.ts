@@ -20,7 +20,14 @@ describe("K1: role texts adapted from Maestro-Flow", () => {
     expect(prompt).toMatch(/exit code/);
     expect(prompt).toMatch(/without a file:line does not count/);
     expect(prompt).toContain("15 to 60 minutes");
-    expect(prompt).toContain("PM read context");
+    // It reads the code itself and gets only the PM reader's open questions, not its summary (2026-11-08).
+    expect(prompt).toContain("open the files the plan changes");
+    expect(prompt).toMatch(/Read only: create, edit or delete nothing/);
+    expect(prompt).not.toContain("PM read context");
+    const asked = critiquePrompt({ plan: "p", task: {}, pmReadContext: JSON.stringify({ summary: "S-SUMMARY", keyFacts: ["K-FACT"], openQuestions: ["Does spawn take a policy argument?"] }) });
+    expect(asked).toContain("- Does spawn take a policy argument?");
+    expect(asked).not.toContain("S-SUMMARY");
+    expect(asked).not.toContain("K-FACT");
     // A build that writes under .agents/ is a plan step, not a check (cab-unslop 2026-10-31: the critic demanded one, the sandbox refused it).
     expect(prompt).toMatch(/read-only for every check/);
     expect(prompt).toMatch(/not a missing expected output/);

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.1.487
+
+- **The plan critic reads the code.** It used to be told to open no files and judged the plan from the PM reader's summary, so a plan that did not fit the code passed. It now opens the files the plan changes and the read_first files and greps the names the plan relies on, read-only, in the project checkout (like the code critic). The PM reader's summary is no longer sent to it, only its open questions, which it answers from the code. Its serious findings need a file, a line and a quoted line, but the cited path is no longer required to appear in its prompt. Structural findings drop the `.gitnexus` index and «nobody owns X» for files the task puts in `never_touch` (7 of 10 findings in the 2026-11-08 audit were such noise).
+
 ## 0.1.486
 
 - **Rooms read other rooms' tables only through the owner.** Room SQL on another room's table 394 → 0: every such query moved into a function of the table's owner room (stores in `storage/`, `wall/store.ts`, `learning/store.ts`, the workflow journal), joins kept as one SQL in the owner with the other table's name imported (`ATTEMPT_TABLE`, `RUN_TABLE`, `WF_RUN_TABLE`). 18 sites remain in the `jev` and `run-insights` packages, which cannot import rooms. Review fixes kept the old behaviour: a hub setting stored as the string "1" stays a string, one unreadable receipt no longer stops the failure-class sweep or the PM stage status, a 7-day errand diagnosis no longer counts older episodes, episode batches and lists skip episodes without a run inside the limit. `tests/architecture/foreign-sql.test.ts` now holds 18.

@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { dependencyFindings } from "../../src/rooms/critique/server/critique-runs";
-import { binaryOutputs,collectGitNexusCallerPaths, filteredScriptRun, findTaskPlaceholderPaths, ignoresTrailingFilter, scanCritiqueCoverage } from "../../src/rooms/critique/critique-coverage";
+import { binaryOutputs,collectGitNexusCallerPaths, dropIntendedGaps, filteredScriptRun, findTaskPlaceholderPaths, ignoresTrailingFilter, scanCritiqueCoverage } from "../../src/rooms/critique/critique-coverage";
 
 const roots:string[]=[];
 async function workspace():Promise<string>{const path=await mkdtemp(join(tmpdir(),"lane-pilot-critique-"));roots.push(path);return path;}
@@ -204,5 +204,26 @@ describe("depends_on findings",()=>{
   });
   it("leaves a plain chain alone",()=>{
     expect(dependencyFindings({id:"C",depends_on:["B"]},[{id:"B",depends_on:["A"]},{id:"A",depends_on:[]}])).toEqual([]);
+  });
+});
+
+// Audit 2026-11-08: 7 of 10 structural findings the plan critic got were noise — the gitnexus index and files the task forbids on purpose.
+describe("structural findings without the noise",()=>{
+  it("does not list the .gitnexus index as an unowned file",async()=>{
+    const root=await workspace();
+    await mkdir(join(root,"src"),{recursive:true});await mkdir(join(root,".gitnexus"),{recursive:true});
+    await writeFile(join(root,"src/sessions.ts"),"export function spawnSession() { return 1; }\n");
+    await writeFile(join(root,".gitnexus/meta.json"),'{"files":["src/sessions.ts"]}\n');
+    const scan=await scanCritiqueCoverage({workspacePath:root,plan:"Edit src/sessions.ts",tasks:[{id:"t",lane:"write",owns_paths:["src/sessions.ts"],has_verification:true}]});
+    expect(scan.findings.filter((finding)=>finding.path.startsWith(".gitnexus")&&finding.code!=="coverage_scan_truncated")).toEqual([]);
+  });
+  it("drops «nobody owns X» when the task puts X in never_touch, keeps the rest",()=>{
+    const findings=[
+      {code:"owns_gap" as const,path:"tests/server/sessions.test.ts",severity:"warning" as const,finding:"unowned"},
+      {code:"caller_unowned" as const,path:"src/server/rpc.ts",severity:"warning" as const,finding:"caller"},
+      {code:"verify_heavy" as const,path:"tests/server/sessions.test.ts",severity:"warning" as const,finding:"heavy"},
+    ];
+    expect(dropIntendedGaps(findings,["tests/server/**"]).map((finding)=>finding.code)).toEqual(["caller_unowned","verify_heavy"]);
+    expect(dropIntendedGaps(findings,[])).toHaveLength(3);
   });
 });
