@@ -105,7 +105,7 @@ export async function spawnKeyed(bb: BbPluginApi, args: Record<string, unknown>,
     // Held by an earlier spawn of the same identity that finished: the next number is a new spawn. Held after a spawn
     // whose answer was lost (the marker names this number): that thread is this spawn.
     const isResumed = resumed !== null && n === resumed;
-    if (!isResumed && typeof threads.experimental_vkFindByKey === "function" && await threads.experimental_vkFindByKey(key).catch(() => null)) continue;
+    if (!isResumed && typeof threads.experimental_vkFindByKey === "function" && await threads.experimental_vkFindByKey(key)) continue;
     try { await kv.set(markerKey(identity), { n, at: Date.now() }); } catch { return plain(); }
     const result = await keyedOrRecover(bb, args, key);
     if (result.reused && !result.recovered && !isResumed) continue;

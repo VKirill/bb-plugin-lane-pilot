@@ -19,7 +19,7 @@ export type FrustrationRecord = {
 };
 
 export async function recordFrustration(kv: Kv, record: FrustrationRecord): Promise<boolean> {
-  const known = await kv.get<FrustrationRecord[]>(FRUSTRATION_KEY).catch(() => null);
+  const known = await kv.get<FrustrationRecord[]>(FRUSTRATION_KEY);
   const list = Array.isArray(known) ? known : [];
   if (list.some((row) => row.messageId === record.messageId || (row.threadId === record.threadId && record.at - row.at < ONE_PER_THREAD_MS))) return false;
   await kv.set(FRUSTRATION_KEY, [...list, record].slice(-KEEP) as never);
