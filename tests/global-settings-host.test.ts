@@ -11,6 +11,7 @@ const catalog: Record<string, Record<string, string[]>> = {
 const ctx = {
   log: () => undefined,
   bb: {
+    log: { warn() {} },
     storage: { kv: { get: async () => null } },
     sdk: {
       hosts: { list: async () => [{ id: "host_macbook", name: "MacBook", status: "connected" }, { id: "host_mini", name: "MAC Mini", status: "connected" }] },

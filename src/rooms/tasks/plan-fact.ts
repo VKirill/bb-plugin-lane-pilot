@@ -67,6 +67,8 @@ export type PlanFactFacts = {
   lineCount: Readonly<Record<string, number>>;
   /** Whether each cited file the candidate did not change exists in the repository. Absent when the repository could not be read: a file the item says stays as it was is then not shown to exist. */
   exists?: Readonly<Record<string, boolean>>;
+  /** Cited files whose content could not be read: their cited lines are a named hold, never a silent pass. */
+  unreadable?: Readonly<Record<string, boolean>>;
   /** False when the diff against the task's base could not be read: line ranges are then not checked, and the report says so. */
   hunksKnown: boolean;
   /** The contract's `verification[].command` values. */
@@ -148,6 +150,7 @@ function checkEvidence(evidence: string, facts: PlanFactFacts, invariant = false
   const match = /^(.+?)(?::(\d+)(?:-(\d+))?)?$/.exec(raw);
   if (!match || /\s/.test(match[1]!)) return { evidence, kind: "unparsed", ok: false, code: "unparsed", note: "neither path[:lines] nor cmd:<command>" };
   const path = relativePath(match[1]!, facts.root);
+  if (facts.unreadable?.[path]) return { evidence, kind: "file", ok: false, code: "file_unreadable", note: `${path} could not be read, so its cited lines are not checked` };
   if (!facts.produced.includes(path)) {
     if (!invariant) return { evidence, kind: "file", ok: false, code: "file_not_in_diff", note: `${path} is not among the changed files` };
     // A path that is nowhere in the repository is not code that stays as it was: it proves nothing.
@@ -181,6 +184,8 @@ export function blindPlanFact(acceptance: readonly string[], table: PlanFactTabl
       notChecked: ["every acceptance item: the writer gave no readable plan-fact table"] };
   }
   if (!facts.hunksKnown) notChecked.push("line ranges: the diff against the task's base could not be read, so only the files were checked");
+  const unreadablePaths = facts.unreadable ? Object.keys(facts.unreadable) : [];
+  if (unreadablePaths.length) notChecked.push(`files: ${unreadablePaths.join(", ")} could not be read, so their cited lines were not checked`);
   const byItem = new Map(table.rows.map((row) => [row.item, row]));
   const items: ItemVerdict[] = acceptance.map((text, index) => {
     const row = byItem.get(index + 1);

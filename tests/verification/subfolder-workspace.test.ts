@@ -79,6 +79,7 @@ async function writerVerify(options: {
   setAttemptWorkspace(db, "att-sub", { path: options.sub, environmentId: null, decision: { strategy: "inherit_run", reason: "subfolder test" } });
   const ctx = {
     bb, db,
+    log: () => undefined,
     host: { call: async () => { throw new Error("host must not be reached in this test"); } },
     runPolicyFor: () => buildRunPolicy({}),
   };

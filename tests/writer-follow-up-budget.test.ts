@@ -41,6 +41,7 @@ describe("budget stop during a follow-up wait", () => {
     await saveFollowUp(bb.storage.kv as never, "a1", Date.now());
     const ctx = {
       state: { disposed: false },
+      log: () => undefined,
       bb: {
         storage: bb.storage,
         log: { warn() {}, error() {}, info() {} },

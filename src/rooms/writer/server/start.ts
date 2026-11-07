@@ -854,7 +854,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         }
         // The next task of an area is a different contract: its rules come with it (writer-knowledge.ts); a retry or a merge keeps the brief's.
         const memorySettings = parseMemorySettings((await bestEffort(ctx.log, "writer memory settings", effectiveProjectSettings(input.projectId, getRunSettingsScopes(db, input.runId)), null))?.values ?? {});
-        const turnPrompt = await stickyTurnPromptWithRules({ db, host, chainForRun:(runId) => services.ruleScan.chainForRun(runId) },
+        const turnPrompt = await stickyTurnPromptWithRules({ db, host, chainForRun:(runId) => services.ruleScan.chainForRun(runId), log:ctx.log },
           { projectId:input.projectId, runId:input.runId, hostId:freshConfig.hostId, task:bound, memorySettings },
           { kind, task:bound, previousAttempt:kind === "merge" && !previousAttempt.includes(REPLAY_CHECK_FAILED) ? "" : feedback, liveFolder });
         // A task a person sent back to an earlier stage with a note (src/rooms/stage-return) takes the note into the area writer's next-task turn.

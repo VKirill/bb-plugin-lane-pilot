@@ -1,7 +1,6 @@
 import { listThreadEventsRaw } from "@lane-pilot/thread-observe";
 import { pluginStopped } from "../../runs/server";
 import { sendServiceMessage } from "../../relay/server";
-import { bestEffort } from "@lane-pilot/kit";
 
 /** A writer thread that is active with no event for this long is nudged (setting writer.silence_nudge_min). */
 export const DEFAULT_SILENCE_NUDGE_MIN = 20;
@@ -54,6 +53,9 @@ export function openCodeSessionOf(events:unknown[]):string | null {
 
 type Kv = { get(key:string):Promise<unknown>; set(key:string, value:never):Promise<unknown> };
 const key = (attemptId:string) => `writer-nudge:${attemptId}`;
+
+/** Attempts whose owner-form probe is currently failing: the failure is logged once per streak, not every sweep. */
+const ownerProbeFailing = new Set<string>();
 
 export async function loadWriterNudge(kv:Kv, attemptId:string):Promise<WriterNudge | null> {
   const value = await kv.get(key(attemptId));
@@ -117,8 +119,20 @@ export async function sweepWriterSilence(deps:SilenceDeps, now = Date.now()):Pro
       const silentMs = now - Math.max(last, record?.at ?? 0);
       if (silentMs < Math.min(limitMs, LIMIT_PROBE_MIN * 60_000)) continue;
       // A form open for the owner (on the writer's thread, or the PM's question that its answer may hang on) is a wait, not silence.
-      if (await bestEffort(deps.log, "writer owner wait probe", deps.waitingForOwner?.(attempt.thread_id) ?? Promise.resolve(false), false)) continue;
-      if (attempt.pm_thread_id && await bestEffort(deps.log, "writer owner wait probe", deps.waitingForOwner?.(attempt.pm_thread_id) ?? Promise.resolve(false), false)) continue;
+      // A probe that throws is unknown, not "no form": skip this writer this sweep, and log the failure once per streak.
+      let ownerFormOpen = false;
+      try {
+        ownerFormOpen = await (deps.waitingForOwner?.(attempt.thread_id) ?? Promise.resolve(false));
+        if (!ownerFormOpen && attempt.pm_thread_id) ownerFormOpen = await (deps.waitingForOwner?.(attempt.pm_thread_id) ?? Promise.resolve(false));
+      } catch (cause) {
+        if (!ownerProbeFailing.has(attempt.id)) {
+          ownerProbeFailing.add(attempt.id);
+          deps.log(`Lane Pilot owner-form probe of ${attempt.id} failed: ${cause instanceof Error ? cause.message : String(cause)}; the writer is skipped this sweep`);
+        }
+        continue;
+      }
+      ownerProbeFailing.delete(attempt.id);
+      if (ownerFormOpen) continue;
       const count = record?.count ?? 0;
       const minutes = Math.round((now - last) / 60_000);
       // A silent writer whose session names a provider limit ends now, uncharged, and its breaker holds to the reset time: no nudge.

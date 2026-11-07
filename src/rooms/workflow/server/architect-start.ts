@@ -113,7 +113,7 @@ export function architectStarter(ctx: ServerCore, services: Pick<Services, "docs
     const reusedId = await liveThread(key, projectId);
     if (reusedId) return { threadId: reusedId, projectId, reused: true };
 
-    const places = await bestEffort(ctx.log, "architect project places", services.docsPlaces(projectId), []);
+    const places = await services.docsPlaces(projectId);
     const root = places.find((place) => place.scopes.length === 0) ?? places[0];
     if (!root) throw new Error(`project ${projectId} has no source folder on a machine: add one to the project in BB, then press the button again`);
 

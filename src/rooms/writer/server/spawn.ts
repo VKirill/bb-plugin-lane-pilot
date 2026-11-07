@@ -198,7 +198,7 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
         return typeof content==="string"?new TextEncoder().encode(content):null;
       };
       at("knowledge");
-      const { allRules, rules, rulesText, mixed }=await writerKnowledge({db,host,chainForRun:(runId)=>services.ruleScan.chainForRun(runId)},
+      const { allRules, rules, rulesText, mixed }=await writerKnowledge({db,host,chainForRun:(runId)=>services.ruleScan.chainForRun(runId),log:(line)=>bb.log.warn(line)},
         {projectId:input.projectId,runId:input.runId,hostId:input.config.hostId,task:input.task,memorySettings,readBytes});
       // A fresh writer of an area hears what its earlier tasks decided, in place of the thread that remembered it.
       const areaHistory=input.task.area?areaHistoryText(await loadArea(bb.storage.kv,input.projectId,input.task.area)):"";

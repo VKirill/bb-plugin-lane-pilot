@@ -1,5 +1,5 @@
-import { claimAttemptWake, getRun, getTask, getTaskPlan, listDueWakes } from "../../storage";
-import { taskV2Schema } from "../../contracts";
+import { claimAttemptWake, getRun, getTask, getTaskPlan, listDueWakes, parkAttemptWake } from "../../storage";
+import { taskV2Schema, type PrototypeConfig } from "../../contracts";
 import { sendServiceMessage } from "../../relay/server";
 import { providerDisplayName } from "./writer-hold";
 import type { ServerCore } from "../../contracts/server";
@@ -12,6 +12,9 @@ interface Services {
   startWriterTask: WriterStartApi["startWriterTask"];
 }
 
+
+/** A failed config read re-wakes the attempt this long after the failed tick, so a transient store error cannot strand it. */
+const WAKE_RETRY_MS = 60_000;
 
 /**
  * The waker of H2: every minute the attempts parked `waiting_writer:` whose earliest hold ended are taken up again —
@@ -31,11 +34,17 @@ export async function sweepWriterWakes(ctx: ServerCore, services: Services, now 
       ctx.log(`writer wake ${attempt.id}: the run or task of the parked attempt is gone; leaving it queued for the reconcile`);
       continue;
     }
-    const config = await bestEffort(ctx.log, "writer wake config", ctx.configForRun(run.project_id, run), null);
-    if (!config) {
-      ctx.log(`writer wake ${attempt.id}: no prototype config for ${run.project_id}; leaving it queued for the reconcile`);
+    let config: PrototypeConfig | null = null;
+    try { config = await ctx.configForRun(run.project_id, run); }
+    catch (cause) {
+      // The claim cleared wake_at: without a fresh one the attempt would sit queued forever (listDueWakes needs it,
+      // and the reconcile never restarts a queued attempt). Re-wake it and name the real cause.
+      const why = cause instanceof Error ? cause.message : String(cause);
+      ctx.log(`writer wake ${attempt.id}: the prototype config of ${run.project_id} is unreadable (${why}); re-waking in ${WAKE_RETRY_MS / 1000} s`);
+      parkAttemptWake(db, attempt.id, `wake_config_unreadable: ${why.slice(0, 160)}`, now + WAKE_RETRY_MS);
       continue;
     }
+    if (!config) continue;
     woken += 1;
     services.startWriterTask({
       projectId: run.project_id, runId: run.id, taskId: attempt.task_id, firstAttemptId: attempt.id,

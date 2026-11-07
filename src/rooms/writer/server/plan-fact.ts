@@ -76,6 +76,7 @@ export async function runPlanFactStage(ctx: ServerCore, input: {
   // ph_ae0a8de9db: the redo's evidence in scripts/notes.js was «not in a changed hunk»).
   const gitBase = gitBaseFamily ?? getTaskGitBase(db, input.taskId);
   const base = gitBase ? gitBase.base_sha ?? gitBase.initial_head_sha : null;
+  const unreadable: Record<string, boolean> = {};
   if (table.status === "ok" && base && produced.length > 0 && produced.length <= MAX_DIFF_PATHS) {
     try {
       const out = await runOnHost(host, { hostId: input.hostId, cwd: input.task.project_cwd, command: diffHunksCommand(base, produced), timeoutSec: 30 });
@@ -84,8 +85,14 @@ export async function runPlanFactStage(ctx: ServerCore, input: {
     const cited = new Set(table.rows.flatMap((row) => row.evidence ?? []).map((entry) => /^(.+?)(?::\d+(?:-\d+)?)?$/.exec(entry.trim())?.[1] ?? ""));
     for (const [path, ranges] of Object.entries(hunks.changed)) {
       if (ranges !== "all" || !cited.has(path)) continue;
-      const file = await orMiss(bb.sdk.files.read({ hostId: input.hostId, rootPath: input.task.project_cwd, path: `${input.task.project_cwd}/${path}` }), null, isNotFound);
-      if (file && typeof file.content === "string") lineCount[path] = file.content.split("\n").length;
+      try {
+        const file = await orMiss(bb.sdk.files.read({ hostId: input.hostId, rootPath: input.task.project_cwd, path: `${input.task.project_cwd}/${path}` }), null, isNotFound);
+        if (file && typeof file.content === "string") lineCount[path] = file.content.split("\n").length;
+      } catch (cause) {
+        // An unreadable cited file is a named hold, not a silent pass; the rest of the gate still runs.
+        unreadable[path] = true;
+        ctx.log(`plan-fact: ${path} of ${input.taskId} could not be read (${cause instanceof Error ? cause.message : String(cause)}); its cited lines are not checked`);
+      }
     }
   }
   // A file the table cites but the candidate did not change is shown to exist before an "unchanged" item may rest on it; unread, nothing is known.
@@ -96,7 +103,7 @@ export async function runPlanFactStage(ctx: ServerCore, input: {
     if (existsRan) exists = existsFromCommandOutput(existsRan.stdout, cited);
   }
   const check = blindPlanFact(input.task.acceptance, table, {
-    produced, ...hunks, lineCount, ...(exists ? { exists } : {}), root: input.task.project_cwd,
+    produced, ...hunks, lineCount, ...(exists ? { exists } : {}), ...(Object.keys(unreadable).length ? { unreadable } : {}), root: input.task.project_cwd,
     contractCommands: input.task.verification.map((row) => row.command), ran: input.verification,
   });
   if (input.task.wires?.length) {

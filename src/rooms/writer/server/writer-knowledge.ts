@@ -51,7 +51,7 @@ export async function writerRules(deps:KnowledgeDeps, input:KnowledgeInput) {
   return { allRules, rules, rulesText:rules.map((rule)=>`- ${rule.rule}`).join("\n") };
 }
 
-export async function writerKnowledge(deps:KnowledgeDeps & { log?: (line:string)=>void }, input:KnowledgeInput) {
+export async function writerKnowledge(deps:KnowledgeDeps, input:KnowledgeInput) {
   const memoryOn=input.memorySettings.enabled&&input.memorySettings.inject;
   const taskMemoryQuery=`${input.task.title}\n${input.task.objective}\n${input.task.acceptance.join(" ")}`;
   // The spawn's fixed call site cannot pass the context the brief needs, so it is registered here for

@@ -3,6 +3,8 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import plugin from "../../server";
 import { rpcContract } from "../../src/rooms/contracts";
 import { tokensFrom } from "../../src/rooms/native-agent/native-session";
+import { architectStartRpc } from "../../src/rooms/workflow/server/architect-start";
+import { openDatabase } from "../../src/rooms/plugin-db";
 
 const projectId = "proj_arch";
 const hubProjectId = "proj_lp_hub";
@@ -75,6 +77,13 @@ describe("workflow_architect_start", () => {
     await expect(rpc({ projectId })).rejects.toThrow("store down");
     expect(spawned).toHaveLength(0);
     get.mockRestore();
+  });
+
+  it("a docsPlaces outage surfaces instead of 'the project has no source folder'", async () => {
+    const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
+    const db = openDatabase(bb);
+    const rpc = architectStartRpc({ bb, db, log: () => undefined } as never, { docsPlaces: async () => { throw new Error("docs down"); } });
+    await expect(rpc.workflow_architect_start({ projectId })).rejects.toThrow("docs down");
   });
 
   it("starts a new chat when the earlier one is archived", async () => {

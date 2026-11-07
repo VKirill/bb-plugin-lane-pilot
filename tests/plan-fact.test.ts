@@ -189,7 +189,8 @@ describe("the plan-fact stage and the acceptance card on a database", () => {
     saveTaskGitBase(db, "t1", { baseRef: "main", baseSha: BASE, initialHeadSha: BASE, branch: "lp/t1", compareCommitted: true });
     const commands: string[] = [];
     const ctx = {
-      db, bb: { sdk: { files: { read: async () => ({ content: "a\nb\nc\n" }) } } },
+      db, log: () => undefined,
+      bb: { sdk: { files: { read: async () => ({ content: "a\nb\nc\n" }) } } },
       host: { call: async (_method: string, input: { command: string }) => { commands.push(input.command); return { hostId: "h", exitCode: 0, stdout: "+++ b/src/a.ts\n@@ -3 +4,2 @@\n---untracked---\nsrc/new.ts\n", stderr: "" }; } },
     };
     return { db, task, ctx, commands };
@@ -223,6 +224,23 @@ describe("the plan-fact stage and the acceptance card on a database", () => {
     gated.db.prepare("INSERT INTO lane_pilot_project_settings(project_id,binding_id,key,value,version,updated_at) VALUES('proj','','plan_fact.mode','\"gate\"',1,1)").run();
     const refused = await run(gated, answers);
     expect(refused.refusal).toBe("plan_fact_unproven: acceptance item 1 has no evidence that holds in the diff");
+  });
+
+  it("an unreadable cited file is a named hold, not a silent pass: the rest of the gate still refuses", async () => {
+    const w = world();
+    w.db.prepare("INSERT INTO lane_pilot_project_settings(project_id,binding_id,key,value,version,updated_at) VALUES('proj','','plan_fact.mode','\"gate\"',1,1)").run();
+    (w.ctx.bb.sdk.files as { read: (args: { path: string }) => Promise<{ content: string }> }).read = async (args) => {
+      if (args.path.includes("src/new.ts")) { const cause = new Error("EACCES: permission denied") as NodeJS.ErrnoException; cause.code = "EACCES"; throw cause; }
+      return { content: "a\nb\nc\n" };
+    };
+    const answers = [fence([
+      { item: 1, status: "done", evidence: ["src/new.ts:2"] },
+      { item: 2, status: "done", evidence: ["src/a.ts:300"] },
+    ])];
+    const result = await run(w, answers);
+    expect(result.refusal).toBe("plan_fact_unproven: acceptance item 1, 2 have no evidence that holds in the diff");
+    expect(result.check.notChecked.some((line) => line.includes("src/new.ts") && line.includes("could not be read"))).toBe(true);
+    expect(result.check.items[0]).toMatchObject({ verdict: "unproven", severity: "blocking", evidence: [expect.objectContaining({ code: "file_unreadable" })] });
   });
 
   it("a missing table is a skipped stage in record mode, listed as not run on the card, and never a refusal", async () => {

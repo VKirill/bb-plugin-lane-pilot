@@ -7,15 +7,14 @@
  */
 export type BestEffortLog = ((message: string) => void) | { warn(message: string): void };
 
-const warnLine = (log: BestEffortLog | undefined, line: string): void => {
-  if (!log) return;
+const warnLine = (log: BestEffortLog, line: string): void => {
   if (typeof log === "function") log(line);
   else log.warn(line);
 };
 
 const why = (cause: unknown): string => (cause instanceof Error ? cause.message : String(cause));
 
-export async function bestEffort<T>(log: BestEffortLog | undefined, label: string, work: Promise<T>, fallback: T): Promise<T> {
+export async function bestEffort<T>(log: BestEffortLog, label: string, work: Promise<T>, fallback: T): Promise<T> {
   try {
     return await work;
   } catch (cause) {
