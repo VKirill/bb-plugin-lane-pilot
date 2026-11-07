@@ -4,6 +4,9 @@ import { settingUnitKey } from "../../settings/setting-copy";
 import { Tabs } from "@lane-pilot/ui-kit";
 import { HUB_KEYS, PROJECT_DEFAULT_KEYS } from "../../improvement";
 import type { StageReceipt } from "../../tasks";
+import { COUNCIL_KEYS, COUNCIL_SEATS, PAIR_ROLE_SPECS, roleSpecKey } from "@lane-pilot/models";
+
+export { COUNCIL_SEATS };
 
 /** History comes this many runs at a time. */
 
@@ -115,87 +118,87 @@ export const COEXISTENCE_VALUE_KEYS: Record<string, I18nKey> = {
   skip:"coexDecisionSkip", "disconnect-owned":"coexDecisionDisconnectOwned",
 };
 
-export const WRITER_PROVIDER = "writer.provider";
+const key = (id: string, suffix: "provider" | "model" | "reasoning_effort" | "service_tier") => roleSpecKey(id, suffix);
 
-export const WRITER_MODEL = "writer.model";
+export const WRITER_PROVIDER = key("writer", "provider");
 
-export const WRITER_EFFORT = "writer.reasoning_effort";
+export const WRITER_MODEL = key("writer", "model");
 
-export const WRITER_SERVICE_TIER = "writer.service_tier";
+export const WRITER_EFFORT = key("writer", "reasoning_effort");
 
-export const MEMORY_PROVIDER = "memory.provider";
+export const WRITER_SERVICE_TIER = key("writer", "service_tier");
 
-export const MEMORY_MODEL = "memory.model";
+export const MEMORY_PROVIDER = key("memory", "provider");
 
-export const MEMORY_EFFORT = "memory.reasoning_effort";
+export const MEMORY_MODEL = key("memory", "model");
 
-export const MEMORY_SERVICE_TIER = "memory.service_tier";
+export const MEMORY_EFFORT = key("memory", "reasoning_effort");
 
-export const NIGHT_PROVIDER = "night_review.provider";
+export const MEMORY_SERVICE_TIER = key("memory", "service_tier");
 
-export const NIGHT_MODEL = "night_review.model";
+export const NIGHT_PROVIDER = key("night_review", "provider");
 
-export const NIGHT_EFFORT = "night_review.reasoning_effort";
+export const NIGHT_MODEL = key("night_review", "model");
 
-export const NIGHT_SERVICE_TIER = "night_review.service_tier";
+export const NIGHT_EFFORT = key("night_review", "reasoning_effort");
 
-export const DOCS_PROVIDER = "docs.provider";
+export const NIGHT_SERVICE_TIER = key("night_review", "service_tier");
 
-export const DOCS_MODEL = "docs.model";
+export const DOCS_PROVIDER = key("docs", "provider");
 
-export const DOCS_EFFORT = "docs.reasoning_effort";
+export const DOCS_MODEL = key("docs", "model");
 
-export const DOCS_SERVICE_TIER = "docs.service_tier";
+export const DOCS_EFFORT = key("docs", "reasoning_effort");
 
-export const PROJECT_LIFE_PROVIDER = "project_life.provider";
+export const DOCS_SERVICE_TIER = key("docs", "service_tier");
 
-export const PROJECT_LIFE_MODEL = "project_life.model";
+export const PROJECT_LIFE_PROVIDER = key("project_life", "provider");
 
-export const PROJECT_LIFE_EFFORT = "project_life.reasoning_effort";
+export const PROJECT_LIFE_MODEL = key("project_life", "model");
 
-export const PROJECT_LIFE_SERVICE_TIER = "project_life.service_tier";
+export const PROJECT_LIFE_EFFORT = key("project_life", "reasoning_effort");
 
-export const ONBOARDING_PROVIDER = "onboarding.provider";
+export const PROJECT_LIFE_SERVICE_TIER = key("project_life", "service_tier");
 
-export const ONBOARDING_MODEL = "onboarding.model";
+export const ONBOARDING_PROVIDER = key("onboarding", "provider");
 
-export const ONBOARDING_EFFORT = "onboarding.reasoning_effort";
+export const ONBOARDING_MODEL = key("onboarding", "model");
 
-export const ONBOARDING_SERVICE_TIER = "onboarding.service_tier";
+export const ONBOARDING_EFFORT = key("onboarding", "reasoning_effort");
 
-export const PM_READ_PROVIDER = "pm_read.provider";
+export const ONBOARDING_SERVICE_TIER = key("onboarding", "service_tier");
 
-export const PM_READ_MODEL = "pm_read.model";
+export const PM_READ_PROVIDER = key("pm_read", "provider");
 
-export const PM_READ_EFFORT = "pm_read.reasoning_effort";
+export const PM_READ_MODEL = key("pm_read", "model");
 
-export const PM_READ_SERVICE_TIER = "pm_read.service_tier";
+export const PM_READ_EFFORT = key("pm_read", "reasoning_effort");
 
-export const PLAN_CRITIQUE_PROVIDER = "plan_critique.provider";
+export const PM_READ_SERVICE_TIER = key("pm_read", "service_tier");
 
-export const PLAN_CRITIQUE_MODEL = "plan_critique.model";
+export const PLAN_CRITIQUE_PROVIDER = key("plan_critique", "provider");
 
-export const PLAN_CRITIQUE_EFFORT = "plan_critique.reasoning_effort";
+export const PLAN_CRITIQUE_MODEL = key("plan_critique", "model");
 
-export const PLAN_CRITIQUE_SERVICE_TIER = "plan_critique.service_tier";
+export const PLAN_CRITIQUE_EFFORT = key("plan_critique", "reasoning_effort");
 
-export const CODE_CRITIQUE_PROVIDER = "code_critique.provider";
+export const PLAN_CRITIQUE_SERVICE_TIER = key("plan_critique", "service_tier");
 
-export const CODE_CRITIQUE_MODEL = "code_critique.model";
+export const CODE_CRITIQUE_PROVIDER = key("code_critique", "provider");
 
-export const CODE_CRITIQUE_EFFORT = "code_critique.reasoning_effort";
+export const CODE_CRITIQUE_MODEL = key("code_critique", "model");
 
-export const CODE_CRITIQUE_SERVICE_TIER = "code_critique.service_tier";
+export const CODE_CRITIQUE_EFFORT = key("code_critique", "reasoning_effort");
 
-export const COUNCIL_SEATS = ["product", "demand", "audience", "skeptic", "growth", "ux", "chair"] as const;
+export const CODE_CRITIQUE_SERVICE_TIER = key("code_critique", "service_tier");
 
-export const SPECIALIST_PROVIDER = "specialist.provider";
+export const SPECIALIST_PROVIDER = key("specialist", "provider");
 
-export const SPECIALIST_MODEL = "specialist.model";
+export const SPECIALIST_MODEL = key("specialist", "model");
 
-export const SPECIALIST_EFFORT = "specialist.reasoning_effort";
+export const SPECIALIST_EFFORT = key("specialist", "reasoning_effort");
 
-export const SPECIALIST_SERVICE_TIER = "specialist.service_tier";
+export const SPECIALIST_SERVICE_TIER = key("specialist", "service_tier");
 
 export function fieldKey(id: string): I18nKey {
   return `field_${id}` as I18nKey;
@@ -228,19 +231,7 @@ export function stageTitle(stageId: string): string {
   return key ? t(key) : stageId;
 }
 
-export const PICKER_KEYS = new Set([
-  WRITER_PROVIDER, WRITER_MODEL, WRITER_EFFORT, WRITER_SERVICE_TIER,
-  MEMORY_PROVIDER, MEMORY_MODEL, MEMORY_EFFORT, MEMORY_SERVICE_TIER,
-  NIGHT_PROVIDER, NIGHT_MODEL, NIGHT_EFFORT, NIGHT_SERVICE_TIER,
-  DOCS_PROVIDER, DOCS_MODEL, DOCS_EFFORT, DOCS_SERVICE_TIER,
-  PROJECT_LIFE_PROVIDER, PROJECT_LIFE_MODEL, PROJECT_LIFE_EFFORT, PROJECT_LIFE_SERVICE_TIER,
-  ONBOARDING_PROVIDER, ONBOARDING_MODEL, ONBOARDING_EFFORT, ONBOARDING_SERVICE_TIER,
-  PM_READ_PROVIDER, PM_READ_MODEL, PM_READ_EFFORT, PM_READ_SERVICE_TIER,
-  PLAN_CRITIQUE_PROVIDER, PLAN_CRITIQUE_MODEL, PLAN_CRITIQUE_EFFORT, PLAN_CRITIQUE_SERVICE_TIER,
-  CODE_CRITIQUE_PROVIDER, CODE_CRITIQUE_MODEL, CODE_CRITIQUE_EFFORT, CODE_CRITIQUE_SERVICE_TIER,
-  SPECIALIST_PROVIDER, SPECIALIST_MODEL, SPECIALIST_EFFORT, SPECIALIST_SERVICE_TIER,
-  ...COUNCIL_SEATS.flatMap((seat) => [`council.${seat}.provider`, `council.${seat}.model`, `council.${seat}.reasoning_effort`]),
-]);
+export const PICKER_KEYS = new Set([...PAIR_ROLE_SPECS.flatMap((spec) => [...spec.keys]), ...COUNCIL_KEYS]);
 
 export const DEDICATED_KEYS = new Set([
   "night_review.enabled", "night_review.auto_merge", "night_review.max_fix_tasks",

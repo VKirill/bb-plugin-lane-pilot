@@ -1,5 +1,7 @@
+import { PAIR_ROLE_SPECS } from "@lane-pilot/models";
+
 /** Roles whose provider, model, reasoning effort and service tier are chosen in the «Roles and models» table. */
-const ROLE_PREFIXES = ["writer", "memory", "night_review", "docs", "project_life", "onboarding", "pm_read", "plan_critique", "code_critique", "specialist"];
+const ROLE_PREFIXES = PAIR_ROLE_SPECS.map((spec) => spec.prefix);
 
 const MODEL_KEY = new RegExp(`^(?:(?:${ROLE_PREFIXES.join("|")})\\.(?:provider|model|reasoning_effort|service_tier)|writer\\.fallback[1-3]\\.(?:provider|model|reasoning_effort)|council\\.[a-z]+\\.(?:provider|model|reasoning_effort)|browser_qa\\.(?:provider|model|reasoning_effort)|role_model\\.[a-z-]+)$`);
 

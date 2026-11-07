@@ -13,6 +13,7 @@
  */
 import { belowTier, modelTier, type ModelTier } from "./model-tiers";
 import { offeredOnHost, type ModelCatalog } from "./model-catalog";
+import { nativeProviderFamily } from "./providers";
 
 /** «other»: a model of any other provider the owner picked in BB's own window (Grok, Composer, GLM on a coding plan…). */
 export type ModelFamily = "claude" | "gpt" | "google" | "glm" | "other";
@@ -189,7 +190,7 @@ export function rowOption(provider: string | null, model: string | null): RoleMo
   const table = roleModelOption(model);
   if (table && (!provider || provider === table.providerId)) return table;
   // The two native providers serve only their own family: `codex` + Claude Opus is not a pair that can run.
-  if (!provider || (table && (provider === "claude-code" || provider === "codex"))) return undefined;
+  if (!provider || (table && nativeProviderFamily(provider))) return undefined;
   return { id: model, providerId: provider, label: model, family: modelFamily(model) ?? "other", tier: modelTier(model) ?? "standard" };
 }
 const effortOf = (raw: Record<string, unknown>, option: RoleModelOption): string | null => {
@@ -266,7 +267,7 @@ export function offeredForRole(catalog: ModelCatalog, providerId: string, model:
   const listed = offeredOnHost(catalog, providerId, model, hostId);
   if (listed !== null || !hostId || !catalog.providers.length) return listed;
   const option = optionOfName(model);
-  if (!option || option.providerId === "claude-code" || option.providerId === "codex") return null;
+  if (!option || nativeProviderFamily(option.providerId)) return null;
   return catalog.hosts.find((row) => row.id === hostId)?.connected ? false : null;
 }
 
@@ -286,7 +287,7 @@ export function roleFallbackModel(rowId: string): RoleModel | null {
 export function consistentProvider(providerId: string | null | undefined, model: string, catalogProvider?: (model: string) => string | null | undefined): string | null {
   const option = optionOfName(model);
   const given = providerId?.trim() || null;
-  if (given && !(option && option.providerId !== given && (given === "claude-code" || given === "codex"))) return given;
+  if (given && !(option && option.providerId !== given && nativeProviderFamily(given))) return given;
   if (option) return option.providerId;
   const listed = catalogProvider?.(model);
   if (listed) return listed;

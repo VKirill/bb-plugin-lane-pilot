@@ -6,5 +6,7 @@ export * from "./model-prices";
 export * from "./model-tiers";
 export * from "./model-profiles";
 export * from "./role-models";
+export * from "./role-specs";
+export * from "./providers";
 export * from "./agent-model";
 export * from "./zcode";

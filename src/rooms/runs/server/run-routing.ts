@@ -5,30 +5,34 @@ import type { HelperPolicySnapshot, HelperRole } from "../../native-agent";
 import { helperSpawnFields, resolveHelperPlacement } from "../../native-agent/helper-placement";
 import { LP_DEFAULTS_KEY, inheritProjectValues, parseHelperPlacement, parseLanePilotDefaults } from "@lane-pilot/settings-catalog";
 import type { HelperPlacementMode } from "@lane-pilot/settings-catalog";
+import { roleSpec } from "@lane-pilot/models";
 import { stringAt } from "../../core/server";
 import { findThreadsByMetadata } from "../../core/server";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 export class WriterSelectionError extends Error {}
 
-export const NATIVE_WRITER_KEYS = new Set(["writer.provider", "writer.model", "writer.reasoning_effort", "writer.service_tier"]);
+/** The four settings a role's selection owns; the table in packages/models is the one list of them. */
+const nativeKeys = (id: string): Set<string> => new Set(roleSpec(id)!.keys);
 
-export const NATIVE_MEMORY_KEYS = new Set(["memory.provider", "memory.model", "memory.reasoning_effort", "memory.service_tier"]);
+export const NATIVE_WRITER_KEYS = nativeKeys("writer");
 
-export const NATIVE_NIGHT_REVIEW_KEYS = new Set(["night_review.provider", "night_review.model", "night_review.reasoning_effort", "night_review.service_tier"]);
+export const NATIVE_MEMORY_KEYS = nativeKeys("memory");
 
-export const NATIVE_DOCS_KEYS = new Set(["docs.provider", "docs.model", "docs.reasoning_effort", "docs.service_tier"]);
+export const NATIVE_NIGHT_REVIEW_KEYS = nativeKeys("night_review");
 
-export const NATIVE_PROJECT_LIFE_KEYS = new Set(["project_life.provider", "project_life.model", "project_life.reasoning_effort", "project_life.service_tier"]);
+export const NATIVE_DOCS_KEYS = nativeKeys("docs");
 
-export const NATIVE_ONBOARDING_KEYS = new Set(["onboarding.provider", "onboarding.model", "onboarding.reasoning_effort", "onboarding.service_tier"]);
+export const NATIVE_PROJECT_LIFE_KEYS = nativeKeys("project_life");
 
-export const NATIVE_PM_READ_KEYS = new Set(["pm_read.provider", "pm_read.model", "pm_read.reasoning_effort", "pm_read.service_tier"]);
+export const NATIVE_ONBOARDING_KEYS = nativeKeys("onboarding");
 
-export const NATIVE_PLAN_CRITIQUE_KEYS = new Set(["plan_critique.provider", "plan_critique.model", "plan_critique.reasoning_effort", "plan_critique.service_tier"]);
+export const NATIVE_PM_READ_KEYS = nativeKeys("pm_read");
 
-export const NATIVE_CODE_CRITIQUE_KEYS = new Set(["code_critique.provider", "code_critique.model", "code_critique.reasoning_effort", "code_critique.service_tier"]);
+export const NATIVE_PLAN_CRITIQUE_KEYS = nativeKeys("plan_critique");
 
-export const NATIVE_SPECIALIST_KEYS = new Set(["specialist.provider", "specialist.model", "specialist.reasoning_effort", "specialist.service_tier"]);
+export const NATIVE_CODE_CRITIQUE_KEYS = nativeKeys("code_critique");
+
+export const NATIVE_SPECIALIST_KEYS = nativeKeys("specialist");
 
 export function parseRunHelperJson(stored: string | null): Record<string, unknown> | null {
   if (!stored) return null;
