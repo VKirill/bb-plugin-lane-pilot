@@ -15,6 +15,7 @@ import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type { ServerCore } from "../../contracts/server";
 
 import { runOnHost } from "@lane-pilot/host-calls";
+import { parseJsonOr } from "@lane-pilot/kit";
 import { withUsage } from "../../usage/server";
 import { taskUsage } from "./attempt-usage";
 
@@ -367,9 +368,9 @@ export async function rerunDispatchStages(engine: WorkflowEngine, runtime: Dispa
   if (!pipelineRunId) return { ok: false, reason: "no_pipeline_run" };
   // The PM's baseRef is kept only in the pipeline run's inputs.
   try {
-    const baseRef = (JSON.parse(wfRunInputsJson(runtime.ctx.db, pipelineRunId) || "{}") as { baseRef?: unknown }).baseRef;
+    const baseRef = (parseJsonOr(wfRunInputsJson(runtime.ctx.db, pipelineRunId) || "{}", {}) as { baseRef?: unknown }).baseRef;
     if (typeof baseRef === "string") runtime.baseRef = baseRef;
-  } catch { /* no baseRef */ }
+  } catch (cause) { runtime.ctx.log(`workflow ${pipelineRunId}: no baseRef: ${cause instanceof Error ? cause.message : String(cause)}`); }
   engine.cancel(pipelineRunId, "the task was updated");
   const pause = () => new Promise<void>((resolve) => setTimeout(resolve, 50));
   // The drive of the canceled run winds down on its own; the re-run is refused until it has.
@@ -385,9 +386,7 @@ export async function rerunDispatchStages(engine: WorkflowEngine, runtime: Dispa
   const status = engine.get(pipelineRunId)?.status;
   const critique = engine.snapshot(pipelineRunId)?.steps.filter((step) => (step.node_id === "plan-critique" || step.node_id === "plan-critique-quick") && step.state === "succeeded").at(-1);
   let verdict: { allowed: boolean; reason?: string } | null = null;
-  try {
-    const out = JSON.parse(critique?.output_json ?? "null") as { allowed?: unknown; reason?: unknown } | null;
-    if (out && typeof out.allowed === "boolean") verdict = { allowed: out.allowed, ...(typeof out.reason === "string" ? { reason: out.reason } : {}) };
-  } catch { /* no verdict yet */ }
+  const out = parseJsonOr(critique?.output_json ?? "null", null) as { allowed?: unknown; reason?: unknown } | null;
+  if (out && typeof out.allowed === "boolean") verdict = { allowed: out.allowed, ...(typeof out.reason === "string" ? { reason: out.reason } : {}) };
   return { ok: true, pipelineRunId, settled: status !== "running", critique: verdict };
 }

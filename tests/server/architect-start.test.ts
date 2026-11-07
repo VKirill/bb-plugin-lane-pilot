@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import plugin from "../../server";
 import { rpcContract } from "../../src/rooms/contracts";
@@ -64,6 +64,17 @@ describe("workflow_architect_start", () => {
     const again = await rpc({ projectId });
     expect(again).toEqual({ threadId: first.threadId, projectId, reused: true });
     expect(spawned).toHaveLength(1);
+  });
+
+  it("a plugin-store read failure surfaces instead of spawning a second architect chat", async () => {
+    const { bb, spawned, rpc } = await setup();
+    const get = vi.spyOn(bb.storage.kv, "get").mockImplementation(async (key: string) => {
+      if (key.startsWith("architect-thread:")) throw new Error("store down");
+      return null;
+    });
+    await expect(rpc({ projectId })).rejects.toThrow("store down");
+    expect(spawned).toHaveLength(0);
+    get.mockRestore();
   });
 
   it("starts a new chat when the earlier one is archived", async () => {

@@ -7,6 +7,7 @@ import {
 import { resolve } from "node:path";
 import type { ServerCore } from "../../contracts/server";
 import { runOnHost } from "@lane-pilot/host-calls";
+import { bestEffort, parseJsonOr } from "@lane-pilot/kit";
 
 type Ran = { exitCode: number; stdout: string; stderr: string };
 
@@ -41,12 +42,12 @@ export function createLiveFolder(ctx: ServerCore) {
     if (!pending) {
       pending = runOnHost(host, { hostId, cwd: folder, command: LIVE_FOLDER_PROBE_COMMAND, timeoutSec: 15 })
         .then(classifyFolderProbe)
-        .catch(() => "unknown" as const)
+        .catch((cause: unknown) => { ctx.log(`writer live folder probe: ${cause instanceof Error ? cause.message : String(cause)}`); return "unknown" as const; })
         .finally(() => { probing.delete(probeKey); });
       probing.set(probeKey, pending);
     }
     const kind = await pending;
-    if (key && kv && kind !== "unknown") await kv.set(key, kind as never).catch(() => undefined);
+    if (key && kv && kind !== "unknown") await bestEffort(ctx.log, "writer live folder record", kv.set(key, kind as never), undefined);
     return kind === "no-git";
   }
 
@@ -99,7 +100,7 @@ export function createLiveFolder(ctx: ServerCore) {
     for (const chunk of chunkPaths(created)) {
       const ran = await run(input.hostId, input.folder, liveTrashCommand(input.backupId, chunk), 300);
       if (ran.exitCode !== 0) return { ok: false, reason: `files restored, created files not removed: ${ran.stderr.trim() || `exit ${ran.exitCode}`}` };
-      try { removed.push(...(JSON.parse(ran.stdout) as { removed: string[] }).removed); } catch { /* the folder is already restored */ }
+      removed.push(...(parseJsonOr(ran.stdout, { removed: [] }) as { removed: string[] }).removed);
     }
     return { ok: true, restored: restored.restored, removed, failed: restored.failed };
   }

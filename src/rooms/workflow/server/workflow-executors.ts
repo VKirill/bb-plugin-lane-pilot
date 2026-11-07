@@ -1,6 +1,6 @@
 import type { TaskV2 } from "../../contracts";
 import { getAttempt, getRun, getRunWriterHost, listAttemptsForTask, listOpenAttempts } from "../../storage";
-import { redactKnown, sha256Hex, orMiss, isNotFound } from "@lane-pilot/kit";
+import { redactKnown, sha256Hex, orMiss, isNotFound, bestEffort } from "@lane-pilot/kit";
 import { validateTaskV2 } from "../../tasks/task-v2";
 import { agentPrompt, outputContract, parseAgentOutput, resolveTaskQualityMode } from "@lane-pilot/workflow-engine";
 import type { NodeExecutor, PollResult, StepContext, WorkflowEngine } from "@lane-pilot/workflow-engine";
@@ -269,7 +269,7 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
       const judgment = getJudgment(node.judgment) as Judgment<Record<string, unknown>, unknown> | undefined;
       if (!judgment) throw new Error(`builtin:jev: unknown judgment "${node.judgment}" (the id is registered in the Jev layer, e.g. route.workflow)`);
       const rt = c.runtime;
-      const settings = rt ? (((await rt.ctx.effectiveProjectSettings(rt.projectId).catch(() => null))?.values) ?? {}) : {};
+      const settings = rt ? (((await bestEffort(rt.ctx.log, "workflow jev settings", rt.ctx.effectiveProjectSettings(rt.projectId), null))?.values) ?? {}) : {};
       // The whitelist, field by field; a long text is clipped with a marker (no spread of run data into the state).
       // `"$task.<path>"` reads the dispatch task's own fields (title, contract) — the spec stays the whitelist.
       const state: Record<string, unknown> = {};
@@ -313,7 +313,7 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
       const row = rec(item);
       return { claim: str(row.claim), quote: str(row.quote), sourceTitle: str(row.title ?? row.source_title), sourceUrl: str(row.url ?? row.source_url), excerpt: str(row.excerpt ?? row.text), question: str(row.question) };
     });
-    const settings = rt?.projectId ? await ctx.effectiveProjectSettings(rt.projectId).then((r) => r.values as Record<string, unknown>).catch(() => ({})) : {};
+    const settings = rt?.projectId ? await bestEffort(ctx.log, "workflow settings", ctx.effectiveProjectSettings(rt.projectId).then((r) => r.values as Record<string, unknown>), {}) : {};
     const verdicts = await judge.judgeMany(citationCheckJudgment, inputs, { projectId: rt?.projectId ?? null, runId: rt?.runId ?? null, settings });
     const out = verdicts.map((v, i) => {
       const decision = v.by === "jev" ? v.decision : v.by === "fallback" && v.shadow?.decision ? v.shadow.decision : citationCheckJudgment.fallback(inputs[i]!);
@@ -333,7 +333,7 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
     const rt = runtimeOf(c, c.runId);
     if (!target) throw new Error("deliverable.validate: no target");
     const hostId = str(pick("hostId") ?? "");
-    const settings = rt?.projectId ? await ctx.effectiveProjectSettings(rt.projectId).then((r) => r.values as Record<string, unknown>).catch(() => ({})) : {};
+    const settings = rt?.projectId ? await bestEffort(ctx.log, "workflow settings", ctx.effectiveProjectSettings(rt.projectId).then((r) => r.values as Record<string, unknown>), {}) : {};
     const { validateDeliverable } = await import("../../validators");
     const verdict = await validateDeliverable(validator, target, {
       host: { run: (id, cwd, command, timeoutSec) => runOnHost(host, { hostId: id, cwd, command, timeoutSec }) as never },
@@ -360,7 +360,7 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
     
     const tree = await skillTreeCached(readSkillTreeText);
     if (!tree) return { output: { skills: [], picked: [], by: "off" } };
-    const settings = rt?.projectId ? await ctx.effectiveProjectSettings(rt.projectId).then((r) => r.values as Record<string, unknown>).catch(() => ({})) : {};
+    const settings = rt?.projectId ? await bestEffort(ctx.log, "workflow settings", ctx.effectiveProjectSettings(rt.projectId).then((r) => r.values as Record<string, unknown>), {}) : {};
     const got = await pickSkillTree(judge, tree, { title: task, prompt: "" }, { projectId: rt?.projectId ?? null, runId: rt?.runId ?? null, settings });
     return { output: { skills: got.skills, picked: got.picked, by: got.by } };
   } });
@@ -408,7 +408,7 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
     const known = composing.get(key);
     if (known) return known;
     const job = (async () => {
-      const locale = await ownerLocale(rt.ctx.bb).catch(() => "ru");
+      const locale = await bestEffort(rt.ctx.log, "workflow owner locale", ownerLocale(rt.ctx.bb), "ru");
       const results = engine.journal.steps(runId).filter((step) => step.state === "succeeded" && step.output_json && step.output_json !== "{}").slice(-6)
         .map((step) => `${step.node_id}: ${step.output_json!.slice(0, 1500)}`).join("\n");
       const options = humanOptions(node).map((value) => value.replace(/_/g, " "));
@@ -457,7 +457,7 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
           // Words that name no option and fit no text kind decide nothing: the step keeps waiting and the owner is asked again, with the options listed.
           // The notice goes before the step's own question once, not once per wrong answer (it stacked up, live 2026-10-25).
           const listed = options.map((value) => value.replace(/_/g, " ")).join(" / ");
-          if (!output) { await ask(rt, runId, stepKey, node, `${(await ownerLocale(rt.ctx.bb).catch(() => "ru")) === "ru" ? `Ответ не выбрал вариант (${listed}).` : `Your answer did not choose an option (${listed}).`} ${base}`, deadline, base); return; }
+          if (!output) { await ask(rt, runId, stepKey, node, `${(await bestEffort(rt.ctx.log, "workflow owner locale", ownerLocale(rt.ctx.bb), "ru")) === "ru" ? `Ответ не выбрал вариант (${listed}).` : `Your answer did not choose an option (${listed}).`} ${base}`, deadline, base); return; }
           // The form opens while the step is being recorded as waiting: an answer that arrives first is retried until the step can take it.
           for (let tries = 0; tries < 50; tries += 1) {
             if (await engine.resolve(runId, stepKey, output)) return;
@@ -519,7 +519,7 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
       const valid = validateTaskV2(task);
       if (!valid.ok) return { output: failedTask("failed", `task-v2 invalid: ${valid.errors.join("; ")}`) };
       const hostId = getRunWriterHost(db, rt.runId) ?? "";
-      const lint = await lintTask(rt.projectId, rt.runId, valid.task, run.writer_workspace_path, hostId).catch(() => null);
+      const lint = await bestEffort(rt.ctx.log, "workflow task lint", lintTask(rt.projectId, rt.runId, valid.task, run.writer_workspace_path, hostId), null);
       if (lint?.errors.length) return { output: failedTask("failed", `contract lint: ${lint.errors.map((error) => error.message).join("; ").slice(0, 600)}`) };
       const reply = await services.dispatchWriter({ threadId: rt.pmThreadId, projectId: rt.projectId, task: valid.task, plan: valid.task.objective, birth: "workflow", criticCodeDefault: shortPathCriticDefault(c.workflow.id, picked.mode) });
       if (reply.state === "rejected" || reply.ok === false) return { output: failedTask("blocked", String(reply.reason ?? reply.hint ?? "the dispatch was rejected")) };
@@ -572,7 +572,7 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
     const run = getRun(db, rt.runId);
     const hostId = getRunWriterHost(db, rt.runId);
     if (!run?.writer_workspace_path || !hostId) return { commit: "", files: [] };
-    const ran = await runOnHost(host, { hostId, cwd: run.writer_workspace_path, command: `c=$(git log --all -1 --format=%H --grep=${quote(`Lane-Pilot-Attempt: ${attemptId}`)}) && echo "$c" && git show --name-only --format= "$c"`, timeoutSec: 30, timeoutMs: 45_000 }).catch(() => null);
+    const ran = await bestEffort(rt.ctx.log, "workflow attempt commit probe", runOnHost(host, { hostId, cwd: run.writer_workspace_path, command: `c=$(git log --all -1 --format=%H --grep=${quote(`Lane-Pilot-Attempt: ${attemptId}`)}) && echo "$c" && git show --name-only --format= "$c"`, timeoutSec: 30, timeoutMs: 45_000 }), null);
     if (!ran || ran.exitCode !== 0) return { commit: "", files: [] };
     const [commit = "", ...files] = ran.stdout.split("\n").map((line) => line.trim()).filter(Boolean);
     return { commit, files };
@@ -644,10 +644,10 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
   });
 
   action("lp.state_probe", async (_c, rt) => {
-    const checkout = await pmCheckout(rt).catch(() => null);
+    const checkout = await bestEffort(ctx.log, "workflow PM checkout", pmCheckout(rt), null);
     let hasPassport = false, hasUi = false;
     if (checkout) {
-      const ran = await runOnHost(ctx.host, { hostId: checkout.hostId, cwd: checkout.path, command: "ls .agents/PASSPORT.md .agents/passport.md PROJECT.md 2>/dev/null | head -1; echo ---; ls package.json src/ui app components 2>/dev/null | head -3", timeoutSec: 20, timeoutMs: 30_000 }).catch(() => null);
+      const ran = await bestEffort(ctx.log, "workflow state probe", runOnHost(ctx.host, { hostId: checkout.hostId, cwd: checkout.path, command: "ls .agents/PASSPORT.md .agents/passport.md PROJECT.md 2>/dev/null | head -1; echo ---; ls package.json src/ui app components 2>/dev/null | head -3", timeoutSec: 20, timeoutMs: 30_000 }), null);
       const [passport = "", ui = ""] = (ran?.stdout ?? "").split("---");
       hasPassport = passport.trim().length > 0; hasUi = /app|components|ui/.test(ui);
     }
@@ -686,7 +686,7 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
     const validator = String(node.validator ?? inputs.validator ?? c.resolve("$inputs.validator") ?? "artifact");
     const hostId = String(node.host ?? inputs.hostId ?? c.resolve("$inputs.hostId") ?? "");
     const brief = (node.brief ?? inputs.brief ?? c.resolve("$inputs.brief")) as Record<string, unknown> | undefined;
-    const settings = await rt.ctx.effectiveProjectSettings?.(rt.projectId).then((r) => r.values as Record<string, unknown>).catch(() => ({})) ?? {};
+    const settings = await bestEffort(rt.ctx.log, "workflow settings", rt.ctx.effectiveProjectSettings?.(rt.projectId).then((r) => r.values as Record<string, unknown>), {}) ?? {};
     const verdict = await validateDeliverable(validator, path, {
       host: { run: (id, cwd, command, timeoutSec) => runOnHost(rt.ctx.host, { hostId: id, cwd, command, timeoutSec }) as never },
       ...(hostId ? { hostId } : {}), ...(brief ? { brief } : {}),
@@ -708,7 +708,7 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
       if (!valid.ok) { errors.push(`task #${at + 1} (${str(rec(raw).id) || "no id"}): ${valid.errors.join("; ")}`); continue; }
       parsed.push(valid.task);
       if (run?.writer_workspace_path) {
-        const lint = await lintTask(rt.projectId, rt.runId, valid.task, run.writer_workspace_path, hostId).catch(() => null);
+        const lint = await bestEffort(rt.ctx.log, "workflow task lint", lintTask(rt.projectId, rt.runId, valid.task, run.writer_workspace_path, hostId), null);
         for (const error of lint?.errors ?? []) errors.push(`${valid.task.id}: ${error.message}`);
       }
     }

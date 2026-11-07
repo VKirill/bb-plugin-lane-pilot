@@ -10,6 +10,7 @@ import { join, relative, resolve } from "node:path";
 import type { TaskV2 } from "../../contracts";
 
 import type { ServerCore } from "../../contracts/server";
+import { bestEffort } from "@lane-pilot/kit";
 
 import type { BaselineApi } from "../../baseline/server/baseline";
 import type { LeadRoadApi } from "../../contracts";
@@ -118,8 +119,8 @@ export function mountVerificationAttemptFinished(ctx: ServerCore, services: Serv
     let flaky: string[] = [];
     if (toRerun.length) {
       const names = new Set(toRerun.map((check) => check.command));
-      const again = await services.runVerification(input.config, { ...onMain, verification: onMain.verification.filter((command) => names.has(command.command)) }, input.runId, undefined,
-        { background: true, jobKey: `post-merge:${input.attemptId ?? input.task.id}:${input.mergeCommit ?? ""}:rerun` }).catch(() => null);
+      const again = await bestEffort(ctx.log, "post-merge check rerun", services.runVerification(input.config, { ...onMain, verification: onMain.verification.filter((command) => names.has(command.command)) }, input.runId, undefined,
+        { background: true, jobKey: `post-merge:${input.attemptId ?? input.task.id}:${input.mergeCommit ?? ""}:rerun` }), null);
       // Only a re-run that is a product red again reproduces the defect (readCheckRun, the reading replay and the gate share). One the
       // machine or the host broke, that threw, or that ran no test says nothing: the first red stays recorded, no writer is sent.
       const readings = new Map((again ?? []).map((check) => [check.command, readCheckRun(check, { command: check.command })] as const));
@@ -137,8 +138,8 @@ export function mountVerificationAttemptFinished(ctx: ServerCore, services: Serv
     const { fix, plan, logs } = postMergeRepair(onMain, confirmed);
     // The writer reads the failure from its task folder; a full log per failing check, best-effort.
     for (const log of logs) {
-      await ctx.bb.sdk.files.write({ hostId: input.config.hostId, rootPath: input.basePath, path: `${input.basePath}/${log.path}`,
-        content: log.content, contentEncoding: "utf8", createParents: true, expectedSha256: null }).catch(() => undefined);
+      await bestEffort(ctx.log, "post-merge check log write", ctx.bb.sdk.files.write({ hostId: input.config.hostId, rootPath: input.basePath, path: `${input.basePath}/${log.path}`,
+        content: log.content, contentEncoding: "utf8", createParents: true, expectedSha256: null }), undefined);
     }
     const sent = await services.dispatchWriter({ threadId: input.pmThreadId, projectId: input.projectId, task: fix, plan }).catch((cause: unknown) => ({ state: "rejected", reason: cause instanceof Error ? cause.message : String(cause) }));
     const notStarted = String(sent.state) === "rejected" || String(sent.state) === "blocked" || (sent as { ok?: unknown }).ok === false;

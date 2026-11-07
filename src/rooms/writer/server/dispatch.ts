@@ -32,7 +32,7 @@ import { isAbsolute, relative, resolve } from "node:path";
 import type { ServerCore } from "../../contracts/server";
 
 import { runOnHost } from "@lane-pilot/host-calls";
-import { pollPause } from "@lane-pilot/kit";
+import { pollPause, bestEffort, parseJsonOr } from "@lane-pilot/kit";
 import { pmRulesOf } from "../../learning";
 import { logRulesShown } from "@lane-pilot/run-insights";
 
@@ -178,7 +178,7 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
    * moves into it (paths relative to it) and gets a worktree, a git diff and a merge there instead of the live folder.
    */
   async function placeTask(runId:string, hostId:string, runFolder:string, task:TaskV2, plan:string):Promise<{ task:TaskV2; plan:string; movedInto?:string } | { rejected:string }> {
-    const repoOf = async (folder:string) => parseRepoTop(await runOnHost(host, { hostId, cwd:runFolder, command:repoTopCommand(folder, runFolder), timeoutSec:20, timeoutMs:25_000 }).catch(() => null));
+    const repoOf = async (folder:string) => parseRepoTop(await bestEffort(ctx.log, "writer repo top probe", runOnHost(host, { hostId, cwd:runFolder, command:repoTopCommand(folder, runFolder), timeoutSec:20, timeoutMs:25_000 }), null));
     if (resolve(task.project_cwd) !== resolve(runFolder)) {
       const named = relative(resolve(runFolder), resolve(task.project_cwd)).split("\\").join("/");
       if (isTaskBase(runFolder, task.project_cwd) && await repoOf(task.project_cwd) === named) return { task:{ ...task, project_cwd:resolve(task.project_cwd) }, plan };
@@ -321,15 +321,15 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
     const testHintPromise = (async (): Promise<string> => {
       try {
         // No repo, no ls-files: a live folder gets no git call at all (the probe's answer is cached).
-        if (await services.isLiveFolder(runId, config.hostId, taskBase).catch(() => false)) return "";
-        const ls = await runOnHost(host, { hostId:config.hostId, cwd:task.project_cwd, command:"git ls-files", timeoutSec:20, timeoutMs:25_000 }).catch(() => null);
+        if (await bestEffort(ctx.log, "writer live folder probe", services.isLiveFolder(runId, config.hostId, taskBase), false)) return "";
+        const ls = await bestEffort(ctx.log, "writer git ls-files probe", runOnHost(host, { hostId:config.hostId, cwd:task.project_cwd, command:"git ls-files", timeoutSec:20, timeoutMs:25_000 }), null);
         if (!ls || ls.exitCode !== 0 || typeof ls.stdout !== "string") return "";
         const readFile = async (path:string): Promise<string | null> => {
-          const file = await host.call("readBoundedFile", { requestedHostId:config.hostId, projectCwd:task.project_cwd, relativePath:path, offset:0, maxLines:80 }, { hostId:config.hostId, timeoutMs:10_000 }).catch(() => null);
+          const file = await bestEffort(ctx.log, "writer test-hint file read", host.call("readBoundedFile", { requestedHostId:config.hostId, projectCwd:task.project_cwd, relativePath:path, offset:0, maxLines:80 }, { hostId:config.hostId, timeoutMs:10_000 }), null);
           return typeof file?.content === "string" ? file.content : null;
         };
         return testHintLine(await suggestTests(jev(), { changedFiles:task.owns_paths, repoFiles:ls.stdout.split("\n").filter(Boolean), readFile }, { projectId:args.projectId, runId, subject:taskId }));
-      } catch { return ""; }
+      } catch (cause) { ctx.log(`writer ${taskId}: test hint skipped: ${cause instanceof Error ? cause.message : String(cause)}`); return ""; }
     })();
     const pendingReply = (): Record<string,unknown> => ({ runId, taskId, attemptId, writerThreadId:null, state:"queued", stagesPending:true, stages:listStageReceipts(db, runId, taskId),
       note:"pm-read and plan critique are still running; the writer starts by itself once they pass. Poll lane_pilot_wait_writer or end your turn; Lane Pilot sends you the results. Do not send the task again: the same id and contract returns this task." });
@@ -353,7 +353,7 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const early = await Promise.race([work, new Promise<null>((done) => { timer = setTimeout(() => done(null), dispatchAnswerMs()); })]);
     clearTimeout(timer);
-    const testHint = await testHintPromise.catch(() => "");
+    const testHint = await bestEffort(ctx.log, "writer test hint", testHintPromise, "");
     const replyWithHint = (reply:Record<string,unknown>): Record<string,unknown> => testHint ? { ...reply, testHint } : reply;
     if (early) return replyWithHint(withAdvice(early));
     return replyWithHint(withAdvice(pendingReply()));
@@ -398,8 +398,8 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
     const hostId = getRunWriterHost(db, runId);
     const basePath = taskBasePath(db, runId, taskId);
     if (!hostId || !basePath) return { line:"none configured", pending:false, failed:false };
-    const gate = await gateResolverFor(ctx)({ runId, hostId, basePath,
-      gate:parseIntegrationGateSettings(loadProjectSettings(db, projectId, getRunSettingsScopes(db, runId))) }).catch(() => null);
+    const gate = await bestEffort(ctx.log, "writer integration gate", gateResolverFor(ctx)({ runId, hostId, basePath,
+      gate:parseIntegrationGateSettings(loadProjectSettings(db, projectId, getRunSettingsScopes(db, runId))) }), null);
     return gate ? { line:"running", pending:true, failed:false } : { line:"none configured", pending:false, failed:false };
   }
 
@@ -588,7 +588,7 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
     const config = run ? await configForRun(run.project_id, run) : null;
     if (!run?.pm_thread_id || !run.writer_workspace_path || !parsed?.success || !plan || !config) return { resumed:false, why:"its run or task can no longer be read" };
     let inputs: Record<string, unknown> = {};
-    try { inputs = JSON.parse(pipelines.at(-1)!.inputs_json || "{}") as Record<string, unknown>; } catch { /* no baseRef */ }
+    inputs = parseJsonOr(pipelines.at(-1)!.inputs_json || "{}", {}) as Record<string, unknown>;
     const task = parsed.data;
     const taskConfig = { ...config, writerWorkspacePath:task.project_cwd };
     await resetHelperStages(db, (threadId) => bb.sdk.threads.stop({ threadId }), { runId:run.id, taskId:attempt.task_id });

@@ -196,6 +196,7 @@ export function getSkillSwitchStats(
       highSwitchFailRate,
     };
   } catch {
+    // The stats cannot be read: the caller reads no metrics rather than a false zero.
     return null;
   }
 }

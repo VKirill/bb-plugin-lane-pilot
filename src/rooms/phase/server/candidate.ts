@@ -1,4 +1,5 @@
 import { runOnHost } from "@lane-pilot/host-calls";
+import { bestEffort, type BestEffortLog } from "@lane-pilot/kit";
 
 /**
  * The phase candidate (SMA p6_prepared → p6_authorized → p6_merge → p6_file_closed): the phase's pieces merge into its own branch
@@ -29,7 +30,7 @@ export function candidateCommand(phaseId: string): string {
   ].join("\n");
 }
 
-export function createCandidates(host: Host, hostId: string) {
+export function createCandidates(host: Host, hostId: string, log: BestEffortLog) {
   const run = (cwd: string, command: string, timeoutSec = 60) => runOnHost(host as never, { hostId, cwd, command, timeoutSec }).catch((cause: unknown) => ({ exitCode: -1, stdout: "", stderr: cause instanceof Error ? cause.message : String(cause) }));
 
   /** The candidate of a base checkout, made when missing and given the base's dependencies; a reason when the base cannot have one. */
@@ -41,7 +42,7 @@ export function createCandidates(host: Host, hostId: string) {
     if (made.exitCode !== 0 || !/^[a-f0-9]{40,64}$/.test(sha)) return { off: (made.stderr || made.stdout || `exit ${made.exitCode}`).trim().slice(-300), permanent: made.exitCode === 3 };
     const path = candidatePath(base, phaseId);
     // The writers' worktrees take their node_modules from their base, which is now this tree: it gets the checkout's first.
-    await host.call("gitPrepareWorktree", { requestedHostId: hostId, basePath: base, worktreePath: path }, { hostId, timeoutMs: 600_000 }).catch(() => undefined);
+    await bestEffort(log, "phase candidate worktree prepare", host.call("gitPrepareWorktree", { requestedHostId: hostId, basePath: base, worktreePath: path }, { hostId, timeoutMs: 600_000 }), undefined);
     return { path, startSha: sha };
   }
 
@@ -76,7 +77,7 @@ export function createCandidates(host: Host, hostId: string) {
 
   /** The worktree goes once the branch landed; the branch phase/<id> stays as the record of the package. */
   async function drop(base: string, tree: CandidateTree): Promise<void> {
-    await host.call("gitRemoveWorktree", { requestedHostId: hostId, basePath: base, worktreePath: tree.path }, { hostId, timeoutMs: 60_000 }).catch(() => undefined);
+    await bestEffort(log, "phase candidate worktree drop", host.call("gitRemoveWorktree", { requestedHostId: hostId, basePath: base, worktreePath: tree.path }, { hostId, timeoutMs: 60_000 }), undefined);
   }
 
   return { ensure, head, land, drop };

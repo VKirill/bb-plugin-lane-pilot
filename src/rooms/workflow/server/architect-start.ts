@@ -11,7 +11,7 @@ import type { ServerCore } from "../../contracts/server";
 import { storeNativeSelection } from "../../native-agent/server";
 import { fullAccessSpawn, modelCatalogOf, resolveSpawnModel, spawnUsageOf, warmSpawnUsage } from "../../platform/server";
 import type { LaneProjectNotice } from "../../contracts";
-import { stringAt, orMiss, isNotFound } from "@lane-pilot/kit";
+import { stringAt, orMiss, isNotFound, bestEffort } from "@lane-pilot/kit";
 
 import type { DocsNightlyApi } from "../../docs/server/docs-nightly";
 
@@ -23,7 +23,7 @@ interface Services {
 
 /** The architect runs on the `workflow-architect` row of the role table (Claude Opus 5.5, high, unless the owner changed it), whatever the owner's remembered chat choice says. */
 const architectExecution = async (ctx: ServerCore, projectId: string) => {
-  const settings = (await ctx.effectiveProjectSettings(projectId).catch(() => ({ values: {} }))).values;
+  const settings = (await bestEffort(ctx.log, "architect settings", ctx.effectiveProjectSettings(projectId), null))?.values ?? {};
   const spawnUsage=spawnUsageOf(ctx);
   await warmSpawnUsage(spawnUsage,null);
   const picked = resolveSpawnModel({ role: "workflow-architect", settings, catalog: modelCatalogOf(ctx).peek(), usage: spawnUsage });
@@ -82,7 +82,7 @@ export function architectStarter(ctx: ServerCore, services: Pick<Services, "docs
   const keyOf = (projectId: string, draftId: string | null) => `architect-thread:${projectId}:${draftId ?? "-"}`;
 
   async function liveThread(key: string, projectId: string): Promise<string | null> {
-    const threadId = await bb.storage.kv.get<string>(key).catch(() => null);
+    const threadId = await bb.storage.kv.get<string>(key);
     if (typeof threadId !== "string" || !threadId) return null;
     const thread = await orMiss(bb.sdk.threads.get({ threadId }), null, isNotFound) as { archivedAt?: unknown } | null;
     if (!thread || thread.archivedAt) return null;
@@ -113,7 +113,7 @@ export function architectStarter(ctx: ServerCore, services: Pick<Services, "docs
     const reusedId = await liveThread(key, projectId);
     if (reusedId) return { threadId: reusedId, projectId, reused: true };
 
-    const places = await services.docsPlaces(projectId).catch(() => []);
+    const places = await bestEffort(ctx.log, "architect project places", services.docsPlaces(projectId), []);
     const root = places.find((place) => place.scopes.length === 0) ?? places[0];
     if (!root) throw new Error(`project ${projectId} has no source folder on a machine: add one to the project in BB, then press the button again`);
 

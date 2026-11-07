@@ -137,7 +137,7 @@ function evalWith(client: JevClient, legacy: RouterModel | null, settings: Recor
   const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
   const db = openDatabase(bb);
   const jev = createJev({ client, db });
-  const model = createJevRouterModel({ jev: () => jev, settings: async () => settings, legacy, projectId: "p", runId: "r" });
+  const model = createJevRouterModel({ jev: () => jev, settings: async () => settings, legacy, projectId: "p", runId: "r" , log: () => {} });
   return { db, run: async (phrase: string) => (await routeIntent({ intent: phrase, workflows: publishedCatalog(), model })).workflowId ?? "clarify" };
 }
 
@@ -184,7 +184,7 @@ describe("the Jev router model", () => {
     const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
     const db = openDatabase(bb);
     const jev = createJev({ client, db });
-    return { client, db, model: createJevRouterModel({ jev: () => jev, settings: async () => settings, legacy, projectId: "p", runId: "r" }) };
+    return { client, db, model: createJevRouterModel({ jev: () => jev, settings: async () => settings, legacy, projectId: "p", runId: "r" , log: () => {} }) };
   };
   const ask = (model: RouterModel) => model({ intent: "something", candidates: cards });
   const active = { "jev.modes": "route.workflow=active" };
@@ -224,7 +224,7 @@ describe("the Jev router model", () => {
     const down: JevClient = { breaker: () => ({ open: false, failures: 0 }), call: async () => ({ ok: false, status: "disabled", error: "no key", latencyMs: 1, attempts: 0 }) };
     const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
     const jev = createJev({ client: down, db: openDatabase(bb) });
-    const model = createJevRouterModel({ jev: () => jev, settings: async () => active, legacy: never, projectId: "p", runId: "r" });
+    const model = createJevRouterModel({ jev: () => jev, settings: async () => active, legacy: never, projectId: "p", runId: "r" , log: () => {} });
     await expect(ask(model)).rejects.toThrow("Jev gave no answer (disabled)");
     const decision = await routeIntent({ intent: "Add pagination to the orders list and cover it with tests", workflows: publishedCatalog(), model });
     expect(decision.evidence.model).toBe("deterministic");

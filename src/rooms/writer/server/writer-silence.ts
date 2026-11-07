@@ -1,6 +1,7 @@
 import { listThreadEventsRaw } from "@lane-pilot/thread-observe";
 import { pluginStopped } from "../../runs/server";
 import { sendServiceMessage } from "../../relay/server";
+import { bestEffort } from "@lane-pilot/kit";
 
 /** A writer thread that is active with no event for this long is nudged (setting writer.silence_nudge_min). */
 export const DEFAULT_SILENCE_NUDGE_MIN = 20;
@@ -116,8 +117,8 @@ export async function sweepWriterSilence(deps:SilenceDeps, now = Date.now()):Pro
       const silentMs = now - Math.max(last, record?.at ?? 0);
       if (silentMs < Math.min(limitMs, LIMIT_PROBE_MIN * 60_000)) continue;
       // A form open for the owner (on the writer's thread, or the PM's question that its answer may hang on) is a wait, not silence.
-      if (await deps.waitingForOwner?.(attempt.thread_id).catch(() => false)) continue;
-      if (attempt.pm_thread_id && await deps.waitingForOwner?.(attempt.pm_thread_id).catch(() => false)) continue;
+      if (await bestEffort(deps.log, "writer owner wait probe", deps.waitingForOwner?.(attempt.thread_id) ?? Promise.resolve(false), false)) continue;
+      if (attempt.pm_thread_id && await bestEffort(deps.log, "writer owner wait probe", deps.waitingForOwner?.(attempt.pm_thread_id) ?? Promise.resolve(false), false)) continue;
       const count = record?.count ?? 0;
       const minutes = Math.round((now - last) / 60_000);
       // A silent writer whose session names a provider limit ends now, uncharged, and its breaker holds to the reset time: no nudge.

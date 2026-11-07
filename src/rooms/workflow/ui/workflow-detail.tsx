@@ -144,6 +144,7 @@ export function WorkflowDetail({ id, projectId, locale, onBack, renderNodePanel,
       let changed = false;
       for (const [key, entry] of expandedRef.current) {
         if (!entry.snapshot) { next.set(key, entry); continue; }
+        // a snapshot read that fails keeps the cached one; the next signal repairs it
         const fresh = await rpc.call("workflow_run_snapshot", { runId: entry.snapshot.run.id }).then((value) => value.snapshot).catch(() => null);
         next.set(key, fresh ? { graph: fresh.graph, snapshot: fresh } : entry);
         changed = changed || Boolean(fresh);

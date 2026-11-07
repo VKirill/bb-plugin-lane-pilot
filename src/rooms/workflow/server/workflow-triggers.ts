@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
+import { orMiss, isNotFound } from "@lane-pilot/kit";
 import { getActivation, getRun } from "../../storage";
 import { cronProblem, localTimezone, timezoneProblem } from "@lane-pilot/workflow-engine/ui";
 import { sha256 } from "../../storage";
@@ -115,7 +116,7 @@ export function createWorkflowTriggers(ctx: ServerCore, services: Pick<Services,
     // A workflow architect's chat has an open run and the role pm too (its tools need it), marked by architectProjectId: a scheduled
     // report sent there was read as someone else's (live, 2026-10-25). Only the owner's PM chat takes a run.
     for (const row of rows) {
-      const metadata = await ctx.bb.sdk.threads.getPluginMetadata({ threadId: row.pm_thread_id }).catch(() => null) as Record<string, unknown> | null;
+      const metadata = await orMiss(ctx.bb.sdk.threads.getPluginMetadata({ threadId: row.pm_thread_id }), null, isNotFound) as Record<string, unknown> | null;
       // A chat that runs a specialist has a run and the role pm as well (its tools need them) but does not lead the project.
       if (metadata?.role === "pm" && !metadata.architectProjectId && await isPmChat(ctx, row.pm_thread_id)) return { pmThreadId: row.pm_thread_id, runId: row.id };
     }

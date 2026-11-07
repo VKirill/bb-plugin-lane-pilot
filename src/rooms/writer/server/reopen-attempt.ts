@@ -3,7 +3,7 @@ import type { PrototypeConfig, TaskV2 } from "../../contracts";
 import { countAttempts, getAttempt, getRun, getTaskPlan, transitionAttempt } from "../../storage";
 import { taskFolderRel } from "../../verification";
 import { closeWriterStages, reopenWriterStages } from "../../runs/server";
-import { stringAt } from "@lane-pilot/kit";
+import { stringAt, isNotFound, orMiss } from "@lane-pilot/kit";
 import { NEEDS_HUMAN_MARKER } from "./writer-task";
 import type { ServerCore } from "../../contracts/server";
 
@@ -138,9 +138,7 @@ export function createAttemptReopen(ctx: ServerCore, services: Services) {
     if (!rel) return;
     const path = resolve(input.workspacePath, rel, "QA.md");
     try {
-      const existing = await Promise.resolve()
-        .then(() => bb.sdk.files.read({ hostId: input.hostId, rootPath: input.workspacePath, path }))
-        .catch(() => null);
+      const existing = await orMiss(Promise.resolve().then(() => bb.sdk.files.read({ hostId: input.hostId, rootPath: input.workspacePath, path })), null, isNotFound);
       const prior = existing && typeof existing === "object" && typeof (existing as { content?: unknown }).content === "string"
         ? (existing as { content: string }).content : null;
       const entry = `## ${new Date().toISOString()}\nQ (writer): ${input.question}\nA (PM): ${input.answer.trim().slice(0, 4000)}\n`;

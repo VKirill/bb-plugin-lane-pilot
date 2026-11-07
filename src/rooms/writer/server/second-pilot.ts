@@ -5,7 +5,7 @@ import { getRun, getTask, getTaskPlan } from "../../storage";
 
 import type { ServerCore } from "../../contracts/server";
 import { fullAccessSpawn, sendPmNotice } from "../../platform/server";
-import { id, stringAt } from "@lane-pilot/kit";
+import { id, stringAt, bestEffort } from "@lane-pilot/kit";
 import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server";
 import { roleSelection, sdkCriticCatalog } from "../../critique/critic-pair";
 import { taskMemoryContext } from "../../memory/server";
@@ -164,7 +164,7 @@ export function createSecondPilot(ctx: ServerCore, services: Services, consult: 
 
   async function excerptsFor(task: TaskV2, projectId: string, runId: string): Promise<string> {
     const run = getRun(db, runId);
-    const config = run ? await ctx.configForRun(projectId, run).catch(() => null) : null;
+    const config = run ? await bestEffort(ctx.log, "second pilot config", ctx.configForRun(projectId, run), null) : null;
     if (!config || !task.read_first.length) return "";
     try {
       const packet = await buildExecutionPacket(task.read_first, async (path) => {
@@ -205,7 +205,7 @@ export function createSecondPilot(ctx: ServerCore, services: Services, consult: 
     const grounds = decision.grounds || "no grounds given";
     if (decision.outcome === "answer") {
       // finish.ts ends a second question after this one the way it ends one after the safe default.
-      await markAnsweredByDefault(bb.storage.kv as never, row.run_id, row.task_id, now);
+      await markAnsweredByDefault(bb.storage.kv as never, row.run_id, row.task_id, now, bb.log);
       const answered = await doors.answerWriter(`The second pilot answers in the PM's place (nobody answered in time; grounds: ${grounds}).\n\n${decision.answer}\n\nThe contract stays as written: do not widen owns_paths or the checks. This is an answer, not a new question: do not start your report with NEEDS_HUMAN.`);
       if (answered) return done("answer", true, grounds);
       await doors.end("the second pilot answered but the writer's thread cannot take it");

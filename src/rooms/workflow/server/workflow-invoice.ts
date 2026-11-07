@@ -1,5 +1,6 @@
 import { hardProblems, invoiceCheck, type InvoiceCheckDecision, type InvoiceCheckInput } from "@lane-pilot/jev/judgments/invoice-check";
 import { jev } from "@lane-pilot/jev";
+import { bestEffort } from "@lane-pilot/kit";
 import type { NodeExecutor, WorkflowEngine } from "@lane-pilot/workflow-engine";
 import type { ServerCore } from "../../contracts/server";
 import { checkInvoicePdf } from "./invoice-pdf";
@@ -45,7 +46,7 @@ export function registerInvoiceActions(engine: WorkflowEngine, ctx: ServerCore):
       }
       const instance = jev();
       const project = c.runtime?.projectId;
-      const settings = project ? (await ctx.effectiveProjectSettings(project).catch(() => null))?.values : undefined;
+      const settings = project ? (await bestEffort(ctx.log, "invoice settings", ctx.effectiveProjectSettings(project), null))?.values : undefined;
       const verdict = instance
         ? await instance.judge(invoiceCheck, input, { projectId: project ?? null, runId: c.runId, subject: "invoice", settings, signal: c.signal })
         : { by: "fallback" as const, decision: invoiceCheck.fallback(input), status: "off" as const, receiptId: null };

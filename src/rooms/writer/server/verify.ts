@@ -23,7 +23,7 @@ import type { FlakyEvidence, MachineReading } from "../../verification";
 import { hollowRerun, noTestRanReason, testSummaries } from "../../tasks/server";
 import { recordGateEvaluation } from "../../runs/server";
 import { listThreadEventsRaw } from "@lane-pilot/thread-observe";
-import { stringAt } from "@lane-pilot/kit";
+import { stringAt, bestEffort, isNotFound, orMiss } from "@lane-pilot/kit";
 import {writerPatchFromOutput} from "./writer-task";
 import type { ServerCore } from "../../contracts/server";
 import type { FailureCode } from "../../platform/server";
@@ -118,7 +118,7 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
     if (!terminals?.create) return null;
     // Every machine variable of the project (BB's global ones and the project's own) reaches the check; BB puts
     // them into the terminal, and only their names travel here.
-    const machineEnv=await Promise.resolve().then(()=>bb.sdk.projects.machineEnvironment({projectId:input.config.projectId})).catch(()=>null);
+    const machineEnv=await bestEffort(ctx.log, "verification machine environment", Promise.resolve().then(()=>bb.sdk.projects.machineEnvironment({projectId:input.config.projectId})), null);
     const passEnv=(machineEnv?.variables??[]).map((variable)=>variable.name);
     const prepared=await host.call("sandboxCommandLine",{requestedHostId:input.config.hostId,workspacePath:input.workspacePath,cwd:input.cwd,
       command:input.command,backend:input.backend,passEnv},{hostId:input.config.hostId,timeoutMs:30_000});
@@ -138,10 +138,10 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
         await new Promise((resolve)=>setTimeout(resolve,pollPause(1_500)));
         session=await terminals.get({terminalId:session.id});
       }
-      const read=await terminals.output({terminalId:session.id,tailBytes:200_000}).catch(()=>({chunks:[] as Array<{dataBase64:string}>}));
+      const read=await terminals.output({terminalId:session.id,tailBytes:200_000}).catch((cause: unknown) => { ctx.log(`verification terminal output unreadable: ${cause instanceof Error?cause.message:String(cause)}`); return {chunks:[] as Array<{dataBase64:string}>}; });
       const text=read.chunks.map((chunk)=>Buffer.from(chunk.dataBase64,"base64").toString("utf8")).join("");
       if (session.status!=="exited") {
-        await terminals.close({terminalId:session.id,mode:"force"}).catch(()=>undefined);
+        await bestEffort(ctx.log, "verification terminal close", terminals.close({terminalId:session.id,mode:"force"}), undefined);
         return {exitCode:124,stdout:text,stderr:session.status==="disconnected"?"verification terminal disconnected":`verification timed out after ${input.timeoutSec}s`,
           backend:prepared.backend,policySha256:prepared.policySha256,workspacePath:prepared.workspacePath,terminalId:session.id};
       }
@@ -149,7 +149,7 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
       return {exitCode:session.exitCode??1,stdout:text,stderr:"",backend:prepared.backend,policySha256:prepared.policySha256,
         workspacePath:prepared.workspacePath,terminalId:session.id};
     } finally {
-      await host.call("sandboxRelease",{requestedHostId:input.config.hostId,...prepared.cleanup},{hostId:input.config.hostId,timeoutMs:30_000}).catch(()=>undefined);
+      await bestEffort(ctx.log, "verification sandbox release", host.call("sandboxRelease",{requestedHostId:input.config.hostId,...prepared.cleanup},{hostId:input.config.hostId,timeoutMs:30_000}), undefined);
     }
   }
 
@@ -173,8 +173,8 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
     // Which revision was checked, and how dirty the copy was (Matvey: «can you name its base without opening the workspace»):
     // on the hub this says how many checks ran in a copy with loose files, so whether a clean copy is needed is read from data.
     // A probe that read nothing (no git, the host did not answer) names no revision: the row goes without one.
-    const revision=await Promise.resolve().then(()=>runOnHost(host,{hostId:config.hostId,cwd:task.project_cwd,command:REVISION_PROBE,timeoutSec:15}))
-      .then((row)=>parseRevisionProbe(row?.stdout??"")).catch(()=>({head:null,dirty:null}));
+    const revision=await bestEffort(ctx.log, "verification revision probe", Promise.resolve().then(()=>runOnHost(host,{hostId:config.hostId,cwd:task.project_cwd,command:REVISION_PROBE,timeoutSec:15}))
+      .then((row)=>parseRevisionProbe(row?.stdout??"")), {head:null,dirty:null});
     const pool=`verification:${runId??config.projectId}`;
     // The watcher reads this: the attempt stays «running» with its writer idle while its checks wait or run (self-repair.ts).
     const endChecks=writerThreadId?beginChecks(writerThreadId,pool):()=>undefined;
@@ -329,7 +329,7 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
 
   /** What the writer's own thread did (file edits, commands, tool calls), as one text; null when its events cannot be read. */
   async function writerTrace(threadId:string):Promise<string|null> {
-    const listed = await listThreadEventsRaw(bb, { threadId, order:"desc", limit:"500" } as never).catch(() => null);
+    const listed = await bestEffort(bb.log, "verification writer trace", listThreadEventsRaw(bb, { threadId, order:"desc", limit:"500" } as never), null);
     if (!listed || !listed.ok) return null;
     return listed.events.map((event) => {
       // Only what the writer did: edited paths, command text and tool arguments. A command's output is no touch —
@@ -375,7 +375,7 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
     if (!liveFolder) for (const row of db.prepare("SELECT id, task_id FROM lane_pilot_attempt WHERE run_id=? AND id<>?")
       .all(input.runId, input.attemptId) as Array<{ id:string; task_id:string }>) {
       if (taskFamily(row.task_id) !== taskFamily(input.taskId)) continue;
-      const saved = await bb.storage.kv.get(`writer-produced:${row.id}`).catch(() => null);
+      const saved = await bestEffort(bb.log, "verification produced files read", bb.storage.kv.get(`writer-produced:${row.id}`), null);
       if (Array.isArray(saved)) for (const path of saved) if (typeof path === "string") familyProduced.add(path);
     }
     const comparable = familyDirtBaseline(input.task, input.dirtBefore, familyProduced);
@@ -421,7 +421,7 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
     const diffKey = sha256(produced.map((path) => `${path}:${dirt.snapshots.find((row) => row.path === path)?.sha256 ?? ""}`).join("\n"));
     // The files this attempt's changes produced, for the next attempt of the task family: only these may later
     // leave a redispatch's dirt baseline.
-    void bb.storage.kv.set(`writer-produced:${input.attemptId}`, produced as never).catch(() => undefined);
+    void bestEffort(bb.log, "verification produced files record", bb.storage.kv.set(`writer-produced:${input.attemptId}`, produced as never), undefined);
     // A task rejected before it ever ran (preflight, plan critique) claims no files; its contract may even be unsafe
     // («../other-repo/» in owns_paths), and kept in the scope it failed every later task of the run (BB-сервис 2026-10-05).
     const attempted = new Set((db.prepare("SELECT DISTINCT task_id FROM lane_pilot_attempt WHERE run_id=?").all(input.runId) as Array<{ task_id:string }>).map((row) => row.task_id));
@@ -438,11 +438,11 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
     // The task's own checkout: the run's folder, or the repository inside it the task works in.
     const basePath = taskBasePath(db, input.runId, input.taskId);
     if (basePath && resolve(basePath) !== resolve(input.task.project_cwd)) {
-      const base = await host.call("gitOwnershipBase",{requestedHostId:input.config.hostId,projectCwd:basePath},
-        {hostId:input.config.hostId,timeoutMs:30_000}).catch(()=>null);
-      const committed = base?.status==="ready" && base.headSha ? await host.call("gitOwnershipChanges",{
+      const base = await bestEffort(ctx.log, "verification ownership base", host.call("gitOwnershipBase",{requestedHostId:input.config.hostId,projectCwd:basePath},
+        {hostId:input.config.hostId,timeoutMs:30_000}), null);
+      const committed = base?.status==="ready" && base.headSha ? await bestEffort(ctx.log, "verification ownership changes", host.call("gitOwnershipChanges",{
         requestedHostId:input.config.hostId,projectCwd:input.task.project_cwd,baseSha:base.headSha,compareCommitted:true,bookkeeping,
-      },{hostId:input.config.hostId,timeoutMs:30_000}).catch(()=>null) : null;
+      },{hostId:input.config.hostId,timeoutMs:30_000}), null) : null;
       if (committed?.status==="ready" && committed.paths.length) produced = [...new Set([...produced,...committed.paths])].sort();
     }
     // Task-v2 contracts stay bound to the run's configured project workspace. A
@@ -502,11 +502,11 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
     const contents: Record<string, string | null> = {};
     for (const rel of new Set([...input.task.expected_outputs.filter(isOutputPath), ...produced])) {
       const absolute = rel.startsWith("/") ? rel : `${input.task.project_cwd}/${rel}`;
-      const read = await bb.sdk.files.read({
+      const read = await orMiss(bb.sdk.files.read({
         hostId:input.config.hostId,
         rootPath:input.task.project_cwd,
         path:absolute,
-      }).catch(() => null);
+      }), null, isNotFound);
       contents[rel] = read ? stringAt(read, "content") : null;
     }
     let verifies:Awaited<ReturnType<typeof runVerification>>;
@@ -525,9 +525,9 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
     // attempt's `git add -A` merged it into main. Only in the attempt's own worktree, and only files that were clean
     // before the checks, so HEAD is exactly their state before them; a shared checkout may hold others' work.
     if (verifies.length && basePath && resolve(basePath) !== resolve(input.task.project_cwd) && !liveFolder) {
-      const undone = await host.call("gitUndoCheckWrites", { requestedHostId:input.config.hostId, projectCwd:input.task.project_cwd,
+      const undone = await bestEffort(ctx.log, "verification undo check writes", host.call("gitUndoCheckWrites", { requestedHostId:input.config.hostId, projectCwd:input.task.project_cwd,
         keep:dirt.snapshots.map((row) => row.path), ownsPaths:input.task.owns_paths, neverTouch:input.task.never_touch, bookkeeping },
-      { hostId:input.config.hostId, timeoutMs:120_000 }).catch(() => null);
+      { hostId:input.config.hostId, timeoutMs:120_000 }), null);
       if (undone && (undone.reverted.length || undone.failed.length)) {
         ctx.log(`Lane Pilot: the checks of ${input.taskId} wrote outside owns_paths; put back ${undone.reverted.join(", ") || "nothing"}${undone.failed.length ? `, could not: ${undone.failed.join(", ")}` : ""}`);
       }
@@ -538,9 +538,9 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
     if (failedVerify) {
       const slug = failedVerify.command.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60) || "check";
       checkLogPath = `.agents/plans/items/${input.taskId}/logs/${slug}.log`;
-      const saved = await bb.sdk.files.write({ hostId:input.config.hostId, rootPath:input.task.project_cwd, path:`${input.task.project_cwd}/${checkLogPath}`,
+      const saved = await bestEffort(ctx.log, "verification check log write", bb.sdk.files.write({ hostId:input.config.hostId, rootPath:input.task.project_cwd, path:`${input.task.project_cwd}/${checkLogPath}`,
         content:`$ ${failedVerify.command}\nexit ${failedVerify.exitCode}\n\n${cleanCheckOutput(failedVerify.stdout)}\n${cleanCheckOutput(failedVerify.stderr)}`.trim() + "\n",
-        contentEncoding:"utf8", createParents:true, expectedSha256:null }).catch(() => null);
+        contentEncoding:"utf8", createParents:true, expectedSha256:null }), null);
       if (!saved) checkLogPath = undefined;
     }
     // Same attribution as the run-scope gate: Lane Pilot's own receipt from a pass a reload cut off (.agents/runs/…)

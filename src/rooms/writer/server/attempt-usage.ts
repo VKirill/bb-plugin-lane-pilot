@@ -4,6 +4,7 @@ import { findThreadsByMetadata } from "../../platform/server";
 import { withUsage } from "../../usage/server";
 import { pipelineWriterStep } from "./pipeline-tag";
 import { markerOf } from "./attempt-marker";
+import { bestEffort } from "@lane-pilot/kit";
 
 /**
  * What the threads of one task spent, charged by the turns the task caused (Astra's review of 2026-10-27, F5), never by a thread's total:
@@ -41,12 +42,12 @@ export async function taskThreadWindows(kv: Kv, db: LanePilotDatabase, runId: st
  * writer step started inside it (the code critic of every round: they carry the step's metadata), each counted whole. Never throws.
  */
 export async function taskUsage(bb: BbPluginApi, db: LanePilotDatabase, runId: string, taskId: string): Promise<ReturnType<typeof withUsage> extends Promise<infer R> ? R : never> {
-  const windows = await taskThreadWindows(bb.storage.kv, db, runId, taskId).catch(() => [] as ThreadWindow[]);
+  const windows = await bestEffort(bb.log, "writer task thread windows", taskThreadWindows(bb.storage.kv, db, runId, taskId), [] as ThreadWindow[]);
   const known = new Set((db.prepare("SELECT thread_id, holder_thread_id FROM lane_pilot_attempt WHERE run_id=?").all(runId) as Array<{ thread_id: string | null; holder_thread_id: string | null }>)
     .flatMap((row) => [row.thread_id, row.holder_thread_id]).filter((id): id is string => Boolean(id)));
   const step = pipelineWriterStep(db, runId, taskId);
   const nested = step?.stepKey
-    ? ((await findThreadsByMetadata(bb as never, { lanePilotWorkflowRunId: step.runId, lanePilotWorkflowStep: step.stepKey }).catch(() => null)) ?? []).map((row) => row.id).filter((id) => !known.has(id))
+    ? ((await bestEffort(bb.log, "writer step threads", findThreadsByMetadata(bb as never, { lanePilotWorkflowRunId: step.runId, lanePilotWorkflowStep: step.stepKey }), null)) ?? []).map((row) => row.id).filter((id) => !known.has(id))
     : [];
   return withUsage(bb, [...windows, ...nested]);
 }

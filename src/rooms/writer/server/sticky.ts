@@ -3,7 +3,7 @@ import { isLiveDecision } from "../live-folder";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
 import { getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, loadProjectSettings, saveReasoningTrace, setAttemptDirtBefore, setAttemptWorkspace, transitionAttempt, taskBasePath } from "../../storage";
 import { SESSION_MAX_TURNS, failureClass } from "../../runs";
-import { stringAt, orMiss, isNotFound } from "@lane-pilot/kit";
+import { stringAt, orMiss, isNotFound, bestEffort } from "@lane-pilot/kit";
 import { sleepUntilThreadSignal, threadWatchMark } from "@lane-pilot/thread-observe";
 import { resolve } from "node:path";
 import type { ServerCore } from "../../contracts/server";
@@ -166,6 +166,7 @@ export function createWriterSticky(ctx: ServerCore, services: Services) {
       const providerId = stringAt(options, "providerId"), model = stringAt(options, "model");
       return Boolean(providerId && model && (providerId !== wanted.providerId || model !== wanted.model));
     } catch {
+      // The pair cannot be read: the writer is not reported as a different one.
       return false;
     }
   }
@@ -216,7 +217,7 @@ export function createWriterSticky(ctx: ServerCore, services: Services) {
 
   /** Compacts a thread whose context is mostly used, then waits for the compaction to finish. */
   async function compactIfFull(threadId: string): Promise<boolean> {
-    const context = await bb.sdk.threads.context({ threadId }).catch(() => null) as { usage?: { usedTokens?: number; modelContextWindow?: number } | null } | null;
+    const context = await orMiss(bb.sdk.threads.context({ threadId }), null, isNotFound) as { usage?: { usedTokens?: number; modelContextWindow?: number } | null } | null;
     const used = context?.usage?.usedTokens ?? 0;
     const window = context?.usage?.modelContextWindow ?? 0;
     if (!window || used / window < STICKY_COMPACT_SHARE) return false;
@@ -257,8 +258,8 @@ export function createWriterSticky(ctx: ServerCore, services: Services) {
         conflicts = synced.conflicts ?? [];
         const usable = synced.status === "synced" || synced.status === "up-to-date" || (input.kind === "merge" && synced.status === "conflict");
         if (!usable) return { ok:false, reason:`worktree_sync_${synced.status}:${synced.reason ?? ""}`, bound:false };
-        await host.call("gitPrepareWorktree", { requestedHostId:input.config.hostId, basePath:base, worktreePath:writer.workspacePath },
-          { hostId:input.config.hostId, timeoutMs:600_000 }).catch(() => undefined);
+        await bestEffort(ctx.log, "sticky worktree prepare", host.call("gitPrepareWorktree", { requestedHostId:input.config.hostId, basePath:base, worktreePath:writer.workspacePath },
+          { hostId:input.config.hostId, timeoutMs:600_000 }), undefined);
         mergedMain = true;
       }
       // A sync starts from a worktree without uncommitted edits (the earlier work is committed), and a conflicted merge
@@ -277,8 +278,8 @@ export function createWriterSticky(ctx: ServerCore, services: Services) {
       if (compacted) {
         const events = await listThreadEventsRaw(bb, { threadId:writer.threadId, order:"desc", limit:"300" } as never)
           .then((listed) => (listed?.ok ? listed.events : []), () => [] as never[]);
-        digest = await judgeSessionDigest(jev(), { goal:input.taskId, events: events as Array<Record<string, unknown>> },
-          { projectId:input.config.projectId, runId:input.runId, subject:input.taskId, settings:loadProjectSettings(db, input.config.projectId, getRunSettingsScopes(db, input.runId)) }).catch(() => null) ?? "";
+        digest = await bestEffort(ctx.log, "sticky session digest", judgeSessionDigest(jev(), { goal:input.taskId, events: events as Array<Record<string, unknown>> },
+          { projectId:input.config.projectId, runId:input.runId, subject:input.taskId, settings:loadProjectSettings(db, input.config.projectId, getRunSettingsScopes(db, input.runId)) }), null) ?? "";
       }
       if (!setAttemptWorkspace(db, input.attemptId, { path:writer.workspacePath, environmentId:writer.environmentId, decision:writer.decision })) {
         return { ok:false, reason:"attempt_workspace_cas_conflict", bound:false };
@@ -294,21 +295,21 @@ export function createWriterSticky(ctx: ServerCore, services: Services) {
       let area:string|null = null;
       try { area = (JSON.parse(contract?.contract_json ?? "{}") as { area?:unknown }).area as string | null ?? null; } catch { area = null; }
       const writerKey = previousDispatch?.writerKey ?? `${input.config.writerProviderId}/${input.config.writerModel}`;
-      const harness = projectId && services.harness ? await services.harness.forAttempt({ projectId, area, writerKey, attemptId:input.attemptId }).catch(() => null) : null;
+      const harness = projectId && services.harness ? await bestEffort(ctx.log, "sticky harness for attempt", services.harness.forAttempt({ projectId, area, writerKey, attemptId:input.attemptId }), null) : null;
       const harnessFiles = harness && (harness.skillNames.length || harness.checkNames.length || "hooks.json" in harness.tree)
-        ? await services.harness.materialize({ attemptId:input.attemptId, hostId:input.config.hostId, workspacePath:writer.workspacePath, live:resolve(writer.workspacePath) === resolve(base), providerId:writerKey.split("/")[0], parts:harness }).catch(() => ({ written:[] as string[], reason:"error" }))
+        ? await bestEffort(ctx.log, "sticky harness materialize", services.harness.materialize({ attemptId:input.attemptId, hostId:input.config.hostId, workspacePath:writer.workspacePath, live:resolve(writer.workspacePath) === resolve(base), providerId:writerKey.split("/")[0], parts:harness }), ({ written:[] as string[], reason:"error" }))
         : { written:[] as string[], reason:null as string|null };
       const harnessLines = harness && (harness.alwaysOn || harness.memory)
         ? ["The area's harness for this task (data from earlier tasks of the area; the contract and owns_paths win):", ...[harness.alwaysOn, harness.memory].filter(Boolean)]
         : [];
       if (trace) saveReasoningTrace(db, { ...trace, attemptId:input.attemptId, runId:input.runId, threadId:writer.threadId,
         dispatchContext:{ ...(trace.dispatchContext ?? {}), writerKey, harness:harness ? { id:harness.harnessId, arm:harness.arm, alwaysOnChars:harness.alwaysOn.length, skills:harnessFiles.written.length ? harness.skillNames : [], checks:harnessFiles.written.length ? harness.checkNames : [], materialize:harnessFiles.reason } : null } as typeof trace.dispatchContext });
-      await bb.sdk.threads.updatePluginMetadata({ threadId:writer.threadId, pluginId:"lane-pilot",
-        set:{ lanePilotRunId:input.runId, lanePilotTaskId:input.taskId, attemptId:input.attemptId } } as never).catch(() => undefined);
+      await bestEffort(ctx.log, "sticky writer metadata", bb.sdk.threads.updatePluginMetadata({ threadId:writer.threadId, pluginId:"lane-pilot",
+        set:{ lanePilotRunId:input.runId, lanePilotTaskId:input.taskId, attemptId:input.attemptId } } as never), undefined);
       const since = Date.now();
       await saveFollowUp(bb.storage.kv, input.attemptId, since);
       // Where this attempt's own turns begin in a thread that already has a history: the task is charged from here (attempt-usage.ts).
-      await markAttemptStart(bb.storage.kv, input.attemptId, since);
+      await markAttemptStart(bb.storage.kv, input.attemptId, since, bb.log);
       try {
         const turn = typeof input.prompt === "function" ? input.prompt(conflicts) : input.prompt;
         const lead = compacted ? capsuleRestored(buildCapsule({ asks: [turn.slice(0, 300)], files: [], claims: [] })) : "";
@@ -316,7 +317,7 @@ export function createWriterSticky(ctx: ServerCore, services: Services) {
         await sendServiceMessage(bb, { threadId:writer.threadId, text, senderThreadId:getRun(db, input.runId)?.pm_thread_id });
       } catch (cause) {
         // The task went round on the same thread before (live 2026-10-25: «sticky_send_failed: HTTP 409 … section is archived or moving»).
-        await bb.storage.kv.set(deadKey(writer.threadId), Date.now() as never).catch(() => undefined);
+        await bestEffort(ctx.log, "sticky dead thread record", bb.storage.kv.set(deadKey(writer.threadId), Date.now() as never), undefined);
         return { ok:false, reason:`sticky_send_failed:${cause instanceof Error ? cause.message : String(cause)}`, bound:true };
       }
       transitionAttempt(db, input.attemptId, "running", { threadId:writer.threadId });

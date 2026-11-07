@@ -2,7 +2,7 @@ import type { RouterModel, RouterModelOutput } from "@lane-pilot/workflow-engine
 import { filterByPolicy, routePolicyOf } from "./route-policy";
 import { NONE, routeRecheck, routeWorkflow } from "./route-workflow";
 import { isMachineMessage } from "../phase";
-import { redactKnown } from "@lane-pilot/kit";
+import { redactKnown, bestEffort } from "@lane-pilot/kit";
 import { looksSensitive } from "@lane-pilot/jev";
 import { choiceOf } from "@lane-pilot/jev";
 import type { Answers } from "@lane-pilot/jev";
@@ -21,6 +21,7 @@ import type { JevSettings } from "@lane-pilot/jev";
 export type RouteModelDeps = {
   jev(): Jev | null;
   settings(): Promise<JevSettings>;
+  log: (message: string) => void;
   /** The helper thread of this PM chat; null when the chat has no run (then nothing can be escalated to). */
   legacy: RouterModel | null;
   projectId: string;
@@ -39,7 +40,7 @@ export function createJevRouterModel(deps: RouteModelDeps): RouterModel {
       return await deps.legacy(input);
     };
     const jev = deps.jev();
-    const settings = await deps.settings().catch(() => ({} as JevSettings));
+    const settings = await bestEffort(deps.log, "workflow route settings", deps.settings(), {} as JevSettings);
     if (!jev || !jev.enabled(settings)) return await escalate();
     // A machine text (a Lane Pilot notice, a relay line, a task summary, another thread's words) is never the owner's
     // request — it goes nowhere near Jev; the helper thread or the scorer answers instead (0.1.333's intake filter).

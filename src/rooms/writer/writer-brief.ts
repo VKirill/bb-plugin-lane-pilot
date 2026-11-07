@@ -1,13 +1,14 @@
 import type { TaskV2 } from "../contracts";
+import { parseJsonOr } from "@lane-pilot/kit";
 
 /** The PM read stage's key facts for the writer; its overview repeats the task and its open questions are the PM's. */
 export function pmReadBrief(pmReadContext:string):{ facts:string; openQuestions:string[] } {
-  try {
-    const parsed = JSON.parse(pmReadContext) as { keyFacts?:unknown; openQuestions?:unknown };
-    const facts = Array.isArray(parsed.keyFacts) ? parsed.keyFacts.filter((fact):fact is string => typeof fact === "string") : null;
-    const openQuestions = Array.isArray(parsed.openQuestions) ? parsed.openQuestions.filter((item):item is string => typeof item === "string") : [];
-    if (facts) return { facts:facts.map((fact) => `- ${fact}`).join("\n"), openQuestions };
-  } catch { /* plain text summary */ }
+  const parsed = parseJsonOr(pmReadContext, null) as { keyFacts?:unknown; openQuestions?:unknown } | null;
+  const keyFacts = parsed?.keyFacts;
+  const openQs = parsed?.openQuestions;
+  const facts = Array.isArray(keyFacts) ? keyFacts.filter((fact):fact is string => typeof fact === "string") : null;
+  const openQuestions = Array.isArray(openQs) ? openQs.filter((item):item is string => typeof item === "string") : [];
+  if (facts) return { facts:facts.map((fact) => `- ${fact}`).join("\n"), openQuestions };
   return { facts:pmReadContext.trim(), openQuestions:[] };
 }
 

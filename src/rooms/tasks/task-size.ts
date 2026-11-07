@@ -4,6 +4,7 @@
  * for the median the plan warnings compare new work against: a plan that slices work far below the project's median
  * accepted task is the over-decomposition the owner calls a defect.
  */
+import { parseJsonOr } from "@lane-pilot/kit";
 export type TaskSize = { files: number; lines: number; minutes: number; attempts: number };
 export type TaskSizeMedian = TaskSize & { n: number };
 
@@ -33,7 +34,7 @@ export function medianTaskSize(db: SizeDb, projectId: string): TaskSizeMedian | 
   const files: number[] = [], minutes: number[] = [], attempts: number[] = [];
   for (const row of rows) {
     let changed: Array<{ path: string }> = [];
-    try { changed = JSON.parse(row.changed) as Array<{ path: string }>; } catch { /* counted as zero */ }
+    changed = parseJsonOr(row.changed, []) as Array<{ path: string }>;
     files.push(changed.length);
     attempts.push(Math.max(1, row.attempts));
     if (row.created != null) minutes.push(Math.max(0, Math.round((row.finished - row.created) / 60_000)));

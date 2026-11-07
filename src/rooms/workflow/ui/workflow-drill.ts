@@ -54,6 +54,7 @@ export function useDrill(options: { projectId: string | null; parentSnapshot: Ru
     const next: DrillStep[] = [];
     for (const step of trail) {
       if (!step.snapshot) { next.push(step); continue; }
+      // a snapshot read that fails keeps the step as it is
       const fresh = ((await rpc.call("workflow_run_snapshot", { runId: step.snapshot.run.id }).catch(() => ({ snapshot: null }))) as { snapshot: RunSnapshot | null }).snapshot;
       next.push(fresh ? { ...step, graph: fresh.graph, snapshot: fresh } : step);
     }

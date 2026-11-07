@@ -5,7 +5,7 @@ import type { DraftStore } from "../../storage";
 import type { ModelCatalog } from "@lane-pilot/models";
 import { CATALOG_WAIT_MS, createModelCatalog, modelCatalogOf, pmHostOf, spawnUsageOf, within, type ModelCatalogReader } from "../../platform/server";
 import type { ServerCore } from "../../contracts/server";
-import { stringAt } from "@lane-pilot/kit";
+import { stringAt, bestEffort, orMiss, isNotFound } from "@lane-pilot/kit";
 import { resolveStepExecutors, type PmPair, type WorkflowShape } from "./workflow-step-executors";
 
 type Output<K extends keyof typeof rpcContract> = z.infer<(typeof rpcContract)[K]["output"]>;
@@ -18,7 +18,7 @@ const pmThreadOfProject = (ctx: ServerCore, projectId: string): string | null =>
 async function pmPairOf(ctx: ServerCore, projectId: string): Promise<PmPair | null> {
   const thread = pmThreadOfProject(ctx, projectId);
   if (!thread) return null;
-  const options = await ctx.bb.sdk.threads.defaultExecutionOptions({ threadId: thread }).catch(() => null);
+  const options = await orMiss(ctx.bb.sdk.threads.defaultExecutionOptions({ threadId: thread }), null, isNotFound);
   const providerId = stringAt(options, "providerId"), model = stringAt(options, "model");
   return providerId && model ? { providerId, model } : null;
 }
@@ -29,7 +29,7 @@ export function createWorkflowModels(ctx: ServerCore, deps: { drafts: Pick<Draft
   /** The catalog with the machine the project's helpers run on (the PM chat's environment), so a model is judged against that machine. */
   const catalogFor = async (projectId: string | undefined, read: ModelCatalog): Promise<ModelCatalog> => {
     const thread = projectId ? (() => { try { return pmThreadOfProject(ctx, projectId); } catch { return null; } })() : null;
-    const runHostId = thread ? await pmHostOf(ctx.bb, thread).catch(() => null) : null;
+    const runHostId = thread ? await bestEffort(ctx.log, "workflow models PM host", pmHostOf(ctx.bb, thread), null) : null;
     return { ...read, runHostId };
   };
   return {
@@ -56,7 +56,7 @@ export function createWorkflowModels(ctx: ServerCore, deps: { drafts: Pick<Draft
         for (const node of from.nodes) {
           const callee = typeof node === "object" && node !== null && (node as { type?: unknown }).type === "subworkflow" ? (node as { workflow?: unknown }).workflow : null;
           if (typeof callee !== "string" || !callee || fragments.has(callee) || depth > 3) continue;
-          const found = await deps.source({ id: callee, ...(projectId ? { projectId } : {}) }).catch(() => null);
+          const found = await bestEffort(ctx.log, "workflow models subworkflow source", deps.source({ id: callee, ...(projectId ? { projectId } : {}) }), null);
           if (!found) continue;
           fragments.set(callee, found.workflow);
           await collect(found.workflow, depth + 1);
@@ -66,8 +66,8 @@ export function createWorkflowModels(ctx: ServerCore, deps: { drafts: Pick<Draft
       const scope = projectId ?? GLOBAL_SETTINGS_PROJECT_ID;
       const [settings, pm, read] = await Promise.all([
         ctx.effectiveProjectSettings(scope).then((row) => row.values),
-        projectId ? pmPairOf(ctx, projectId).catch(() => null) : Promise.resolve(null),
-        within(catalog.get(), CATALOG_WAIT_MS).catch(() => null),
+        projectId ? bestEffort(ctx.log, "workflow models PM pair", pmPairOf(ctx, projectId), null) : Promise.resolve(null),
+        await bestEffort(ctx.log, "workflow models catalog", within(catalog.get(), CATALOG_WAIT_MS), null),
       ]);
       const offered = read ? await catalogFor(projectId, read) : null;
       // A catalog that lists nothing (no machine answered) is no evidence that a model is missing.

@@ -5,7 +5,7 @@ import type { ServerCore } from "../../contracts/server";
 import { withUsage } from "../../usage/server";
 ;
 import type { ChainRuntime } from "../../contracts/server";
-import {outputText} from "@lane-pilot/kit";
+import {outputText, bestEffort} from "@lane-pilot/kit";
 
 /**
  * One helper thread of a graph step, for the executors that wrap a night job (rules scan, wall hunt, harness edit): the spawn is a journal
@@ -49,16 +49,16 @@ export async function runGraphHelper(ctx: ServerCore, c: StepContext<ChainRuntim
     // A reload is no cancel (RECHECK-341 F2): the thread goes on running and the next instance finds it again through the spawn effect. Only a
     // real abort, or a wait that failed here (deadline, thread error), stops it.
     if (c.signal.aborted || !ctx.isDisposed()) {
-      await bb.sdk.threads.stop({ threadId: started.threadId }).catch(() => undefined);
+      await bestEffort(ctx.log, "workflow helper thread stop", bb.sdk.threads.stop({ threadId: started.threadId }), undefined);
       // A helper that failed or was cut off still spent: the error carries what, and the engine charges the run for it. Not on a reload:
       // the step holds and the next instance reads the same thread, so charging here would count it twice.
-      const spent = await withUsage(bb, started.threadId).catch(() => ({} as Awaited<ReturnType<typeof withUsage>>));
+      const spent = await bestEffort(ctx.log, "workflow helper usage", withUsage(bb, started.threadId), {} as Awaited<ReturnType<typeof withUsage>>);
       if (spent.usage && cause instanceof Error) (cause as Error & { usage?: unknown }).usage = spent.usage;
     }
     throw cause;
   } finally {
     // A reload ends the step where it stands and the next instance reads the thread again: only a step that ends here archives it.
-    if (input.archive && !ctx.isDisposed()) await bb.sdk.threads.archive({ threadId: started.threadId }).catch(() => undefined);
+    if (input.archive && !ctx.isDisposed()) await bestEffort(ctx.log, "workflow helper thread archive", bb.sdk.threads.archive({ threadId: started.threadId }), undefined);
   }
 }
 

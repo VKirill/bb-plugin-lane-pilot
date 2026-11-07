@@ -7,7 +7,7 @@ import { appendPart, getPhase, listParts, savePhase as savePhaseRow } from "../s
 import { createCandidates } from "./candidate";
 import { PhaseRefusal, type DriverBase } from "./driver-tools";
 import type { Phase, PhaseRecord, PhaseStage, TaskFact } from "../logic";
-import { sha256Hex, isNotFound, orMiss } from "@lane-pilot/kit";
+import { sha256Hex, isNotFound, orMiss, bestEffort } from "@lane-pilot/kit";
 import { phaseFolder, renderBook } from "../logic";
 
 /**
@@ -57,7 +57,7 @@ export function installDocs(base: DriverBase) {
     const run = phase.runId ? getRun(db, phase.runId) : null;
     const hostId = phase.runId ? getRunWriterHost(db, phase.runId) : null;
     if (!command || !run?.writer_workspace_path || !hostId) return null;
-    const ran = await runOnHost(bb.hosts.experimental_client({ contract: hostContract }), { hostId, cwd: run.writer_workspace_path, command, timeoutSec: 30 }).catch(() => null);
+    const ran = await bestEffort(bb.log, "phase binary fingerprint", runOnHost(bb.hosts.experimental_client({ contract: hostContract }), { hostId, cwd: run.writer_workspace_path, command, timeoutSec: 30 }), null);
     return ran && ran.exitCode === 0 ? binaryFileFingerprint(ran.stdout) : null;
   }
 
@@ -83,7 +83,7 @@ export function installDocs(base: DriverBase) {
     const result = await host.call("writePhaseBook", { requestedHostId: hostId, projectCwd: run.writer_workspace_path, previewSha256: sha256Hex(JSON.stringify(edits)), edits }, { hostId, timeoutMs: 30_000 });
     const written = result.writes.filter((row) => row.status === "applied").map((row) => row.path);
     if (!written.length) return { written, commit: null };
-    const committed = await host.call("gitCommitDocs", { requestedHostId: hostId, projectCwd: run.writer_workspace_path, paths: written, message }, { hostId, timeoutMs: 60_000 }).catch(() => null);
+    const committed = await bestEffort(bb.log, "phase docs commit", host.call("gitCommitDocs", { requestedHostId: hostId, projectCwd: run.writer_workspace_path, paths: written, message }, { hostId, timeoutMs: 60_000 }), null);
     return { written, commit: committed?.commit ?? null };
   }
 
@@ -143,7 +143,7 @@ export function installDocs(base: DriverBase) {
 
   function candidates(phase: Phase) {
     const hostId = phase.runId ? getRunWriterHost(db, phase.runId) : null;
-    return hostId ? createCandidates(bb.hosts.experimental_client({ contract: hostContract }) as never, hostId) : null;
+    return hostId ? createCandidates(bb.hosts.experimental_client({ contract: hostContract }) as never, hostId, bb.log) : null;
   }
 
   return { mustGet, savePhase, book, move, facts, readFile, readText, writeDocs, writeBook, redoId, pmCheckoutPath, candidates };

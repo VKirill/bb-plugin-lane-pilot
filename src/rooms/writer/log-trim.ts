@@ -1,4 +1,4 @@
-import { cleanCheckOutput } from "@lane-pilot/kit";
+import { cleanCheckOutput, bestEffort, BestEffortLog} from "@lane-pilot/kit";
 import type { Jev, JudgeContext } from "@lane-pilot/jev";
 import { defineJudgment, noul, noulOf } from "@lane-pilot/jev";
 
@@ -105,12 +105,13 @@ export async function trimCheckLogsIn<T extends Record<string, unknown> | null |
   last: T,
   task: string,
   ctx: JudgeContext = {},
+  log?: BestEffortLog,
 ): Promise<T> {
   if (!last) return last;
   const checks = Array.isArray(last.verification) ? last.verification as Array<{ command?: string; exitCode?: number; stdout?: string; stderr?: string }> : null;
   const failed = checks?.find((check) => typeof check.exitCode === "number" && check.exitCode !== 0);
   if (!failed || !checks) return last;
-  const trimmed = await trimFailedCheckLog(jev, { command: failed.command ?? "", output: `${failed.stderr ?? ""}\n${failed.stdout ?? ""}`, task }, ctx).catch(() => null);
+  const trimmed = await bestEffort(log ?? ((message: string) => {}), "writer check log trim", trimFailedCheckLog(jev, { command: failed.command ?? "", output: `${failed.stderr ?? ""}\n${failed.stdout ?? ""}`, task }, ctx), null);
   if (!trimmed?.trimmed) return last;
   return { ...last, verification: checks.map((check) => check === failed ? { ...check, stdout: trimmed.text, stderr: "" } : check) };
 }

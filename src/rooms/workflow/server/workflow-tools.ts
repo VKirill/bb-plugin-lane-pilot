@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { findOpenNativeRun, getRun, listTaskTerminalStates } from "../../storage";
 import type { LanePilotDatabase } from "../../storage";
-import { redactKnown, sha256Hex } from "@lane-pilot/kit";
+import { redactKnown, sha256Hex, parseJsonOr } from "@lane-pilot/kit";
 import type { WorkflowEngine } from "@lane-pilot/workflow-engine";
 import { isOffered, isPipeline, routeIntent } from "@lane-pilot/workflow-engine";
 import type { RouteDecision, RouterModel, RouterState, RunRecord } from "@lane-pilot/workflow-engine";
@@ -190,7 +190,7 @@ export async function workflowStatusTool(deps: WorkflowToolDeps, params: { runId
 /** K7: what the run is for, how the last audit judged it, and how the goals were changed. */
 function goalsView(engine: ReturnType<WorkflowToolDeps["engine"]>, runId: string, goalsJson: string | null | undefined): Record<string, unknown> {
   let goals: RunGoal[] = [];
-  try { goals = goalsSchema.parse(JSON.parse(goalsJson ?? "[]")); } catch { /* a run without readable goals has none */ }
+  const parsedGoals = goalsSchema.safeParse(parseJsonOr(goalsJson ?? "[]", [])); goals = parsedGoals.success ? parsedGoals.data : [];
   const audit = engine.lastAudit?.(runId) ?? null;
   const changes = (engine.goalJournal?.(runId) ?? []).slice(1).slice(-5).map((entry) => ({ at: entry.at, by: entry.by, reason: redactKnown(entry.reason) }));
   if (!goals.length && !audit && !changes.length) return {};
@@ -260,7 +260,7 @@ export function mountWorkflowTools(ctx: ServerCore, services: Services): void {
     stats: () => runRecords(db),
     // Jev decides a clear case; the helper thread (needs a run) is the escalation. A chat without a run and without Jev has no model.
     model: ({ pmThreadId, projectId, runId }) => (runId || jev()
-      ? createJevRouterModel({ jev, settings: async () => (await ctx.effectiveProjectSettings(projectId)).values, projectId, runId,
+      ? createJevRouterModel({ jev, settings: async () => (await ctx.effectiveProjectSettings(projectId)).values, projectId, runId, log: ctx.log,
         legacy: runId ? createRouterModel({ ctx, services, pmThreadId, projectId, runId }, services.workflowEngine) : null })
       : undefined),
     warn: (message) => bb.log.warn(message),

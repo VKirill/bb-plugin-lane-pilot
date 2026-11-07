@@ -12,6 +12,7 @@
  * It checks that the code did not move under the proof, not that the proof was sufficient. Only the history the checkout has is seen
  * (a change that was made and fully reverted in between is not reported), and ignored files are outside git status.
  */
+import { parseJsonOr } from "@lane-pilot/kit";
 export type ProofVerdict = "current" | "still about these paths" | "stale" | "not on this history" | "unknown commit";
 
 /** One proof: «at `commit` this was shown to hold for `paths`». No paths, or `.`, means every path. */
@@ -124,7 +125,7 @@ export function phaseProofRecords(db: ProofDb, phase: { runId: string | null; re
   const files = new Set<string>();
   for (const row of rows) {
     let changed: Array<{ path?: unknown }> = [];
-    try { changed = JSON.parse(row.changed_json) as typeof changed; } catch { /* no files recorded */ }
+    changed = parseJsonOr(row.changed_json, []) as typeof changed;
     const paths = changed.map((file) => file.path).filter((path): path is string => typeof path === "string" && path.length > 0);
     if (!paths.length) continue;
     for (const path of paths) files.add(path);

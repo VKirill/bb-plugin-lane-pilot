@@ -153,13 +153,13 @@ export async function writerPickOverlay(deps: { kv: { get(key: string): Promise<
   if (picked === null && offered.length > 1 && deps.jev?.enabled(settings as never)) {
     const task = input.task;
     const load = deps.load ? await bestEffort(deps.log, "writer provider load", deps.load(offered), undefined) : undefined;
-    const verdict = await deps.jev.judge(writerModelJudgment, { task: { title: task.display_title ?? task.title, objective: task.objective ?? "", kind: task.kind ?? null, area: task.area ?? null,
+    const verdict = await bestEffort(deps.log, "writer model judgment", deps.jev.judge(writerModelJudgment, { task: { title: task.display_title ?? task.title, objective: task.objective ?? "", kind: task.kind ?? null, area: task.area ?? null,
       risk: task.risk ?? null, owns_paths: task.owns_paths, expected_outputs: task.expected_outputs, acceptance: task.acceptance ?? [] }, candidates: offered, ...(load ? { load } : {}) },
-      { projectId: input.projectId, runId: input.runId, subject: input.taskId, settings: settings as never }).catch(() => null);
+      { projectId: input.projectId, runId: input.runId, subject: input.taskId, settings: settings as never }), null);
     // Only a writer that was offered can be the answer (a held ZCode was not).
     picked = verdict?.by === "jev" && verdict.decision.key && offered.some((row) => row.key === verdict.decision.key) ? verdict.decision.key : "";
     by = "jev";
-    await deps.kv.set(key, picked).catch(() => undefined);
+    await bestEffort(deps.log, "writer pick record", deps.kv.set(key, picked), undefined);
     deps.log(`Lane Pilot writer pick: ${input.taskId} → ${picked || "the project's writer"}`);
   }
   const route: WriterRouteDecision = {
@@ -170,7 +170,7 @@ export async function writerPickOverlay(deps: { kv: { get(key: string): Promise<
     by: heldReasons.size === candidates.length ? "no_room" : by,
   };
   if (settings["writer.route_record"] !== false && settings["writer.route_record"] !== "off") {
-    await deps.kv.set(writerRouteKey(input.runId, input.taskId), route).catch(() => undefined);
+    await bestEffort(deps.log, "writer route record", deps.kv.set(writerRouteKey(input.runId, input.taskId), route), undefined);
   }
   const profile = picked ? candidates.find((row) => row.key === picked) : undefined;
   return profile ? pickedWriterOverlay(settings, profile) : null;

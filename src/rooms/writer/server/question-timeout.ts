@@ -130,7 +130,7 @@ export function createWriterQuestionTimeout(ctx: ServerCore, services: Services,
         done.push({ taskId: row.task_id, action: "ended" });
         continue;
       }
-      await markAnsweredByDefault(bb.storage.kv as never, row.run_id, row.task_id, now);
+      await markAnsweredByDefault(bb.storage.kv as never, row.run_id, row.task_id, now, bb.log);
       const answered = await answerWriter({ projectId: row.project_id, runId: row.run_id, pmThreadId: run.pm_thread_id, taskId: row.task_id, answer: SAFE_DEFAULT_ANSWER });
       if (answered.ok) {
         ctx.log(`writer ${row.task_id}: its question stood unanswered for the wait; the machine answered with the safe default`);

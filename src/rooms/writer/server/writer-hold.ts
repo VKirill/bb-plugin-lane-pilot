@@ -1,4 +1,5 @@
 import { breakerKey } from "@lane-pilot/resilience";
+import { bestEffort, BestEffortLog} from "@lane-pilot/kit";
 import { PRESENCE_WINDOW_MS } from "../../owner-presence";
 import { usageHoldReason, usageSkipPercent } from "../../usage/server";
 import type { UsageHold } from "../../usage/server";
@@ -19,6 +20,7 @@ export type WriterHoldDeps = {
   usage: { hold(input: { providerId: string; model: string; hostId: string; threshold: number; settings?: Record<string, unknown> }): Promise<UsageHold | null> };
   /** The core's allowlist (coreHostsRequiredProvider): false when this core cannot run the provider at all. */
   coreHosts: (providerId: string) => boolean;
+  log?: BestEffortLog;
 };
 
 export type WriterCandidate = { providerId: string; model: string; reasoningLevel?: string };
@@ -54,8 +56,8 @@ export async function writerHold(
   if (!deps.coreHosts(input.providerId)) {
     return { reason: `writer_provider_unavailable:core_unsupported:${input.providerId}`, until: null };
   }
-  const spent = await deps.usage.hold({ providerId: input.providerId, model: input.model, hostId: input.hostId,
-    threshold: usageSkipPercent(input.settings), settings: input.settings }).catch(() => null);
+  const spent = await bestEffort(deps.log ?? ((message: string) => {}), "writer usage hold", deps.usage.hold({ providerId: input.providerId, model: input.model, hostId: input.hostId,
+    threshold: usageSkipPercent(input.settings), settings: input.settings }), null);
   if (spent) {
     const reset = spent.resetsAt ? Date.parse(spent.resetsAt) : NaN;
     return { reason: usageHoldReason(input.providerId, input.model, spent), until: Number.isFinite(reset) ? reset : now + USAGE_UNKNOWN_RESET_MS };

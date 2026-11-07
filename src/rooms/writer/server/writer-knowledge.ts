@@ -6,6 +6,7 @@ import { mixWriterMemory, snapshotFileRead, writerCandidates, writerMemoryPaths 
 import { getRunSettingsScopes, loadProjectSettings, taskBasePath, type LanePilotDatabase } from "../../storage";
 import type { ServerCore } from "../../contracts/server";
 import { runOnHost } from "@lane-pilot/host-calls";
+import { bestEffort } from "@lane-pilot/kit";
 import { effectiveGroup, parseHelperContextSettings } from "../../native-agent";
 import { registerWriterBriefContext } from "../../brief";
 import { stickyTurnPrompt } from "./writer-task";
@@ -15,7 +16,7 @@ import { stickyTurnPrompt } from "./writer-task";
  * project. Rules for the PM never reach a writer; rules marked for every task skip the question. Without an
  * answer every rule of that chunk goes in: a missing rule costs more than an extra one.
  */
-export async function relevantWriterRules<T extends { rule:string; audience:string; always:boolean }>(host:ServerCore["host"], rules:T[], task:Record<string,unknown>, hostId:string):Promise<T[]> {
+export async function relevantWriterRules<T extends { rule:string; audience:string; always:boolean }>(host:ServerCore["host"], rules:T[], task:Record<string,unknown>, hostId:string, log?: (line:string)=>void):Promise<T[]> {
   const forWriter=rules.filter((rule)=>rule.audience!=="pm");
   const asked=forWriter.filter((rule)=>!rule.always);
   const chunks:T[][]=[];
@@ -23,7 +24,7 @@ export async function relevantWriterRules<T extends { rule:string; audience:stri
   const state=JSON.stringify(ruleRelevanceState(task)).slice(0,60_000);
   // Chunks are independent questions; asking them together keeps the wait at one answer (~0.5–1 s).
   const answered=await Promise.all(chunks.map(async(chunk)=>{
-    const judged=await host.call("councilJudge",{requestedHostId:hostId,state,questions:ruleRelevanceQuestions(chunk)},{hostId,timeoutMs:10_000}).catch(()=>null);
+    const judged=await bestEffort(log ?? ((message: string) => {}), "writer rule relevance", host.call("councilJudge",{requestedHostId:hostId,state,questions:ruleRelevanceQuestions(chunk)},{hostId,timeoutMs:10_000}), null);
     return judged?.status==="ok"?pickRelevantRules(chunk,judged.answers,judged.confidence??{},undefined,judged.probabilities??{}):chunk;
   }));
   const picked=new Set([...forWriter.filter((rule)=>rule.always),...answered.flat()]);
@@ -36,7 +37,7 @@ export async function relevantWriterRules<T extends { rule:string; audience:stri
  * core conventions. The ONE place the first brief (`spawnWriterAttempt`), the turn that continues a writer thread
  * (`stickyTurnPrompt`) and the memory probe (`memory-probe`) take it from: a path that builds its own copy can stop delivering unseen.
  */
-export type KnowledgeDeps={ db:LanePilotDatabase; host:ServerCore["host"]; chainForRun:(runId:string)=>Promise<readonly string[]> };
+export type KnowledgeDeps={ db:LanePilotDatabase; host:ServerCore["host"]; chainForRun:(runId:string)=>Promise<readonly string[]>; log?: (line:string)=>void };
 export type KnowledgeInput={ projectId:string; runId:string; hostId:string; task:TaskV2; memorySettings:MemorySettings;
   /** Current bytes of a repo-relative path. A note about a file that changed since the note was stored is left out of the brief. */
   readBytes?:(path:string)=>Promise<Uint8Array|null> };
@@ -46,7 +47,7 @@ export async function writerRules(deps:KnowledgeDeps, input:KnowledgeInput) {
   const memoryOn=input.memorySettings.enabled&&input.memorySettings.inject;
   // Confirmed rules reach every writer; retrieval skips their records so they are not repeated as memory.
   const allRules=memoryOn?acceptedRules(deps.db,input.projectId,await deps.chainForRun(input.runId),[...input.task.owns_paths,...input.task.read_first]):[];
-  const rules=await relevantWriterRules(deps.host,allRules,input.task as unknown as Record<string,unknown>,input.hostId);
+  const rules=await relevantWriterRules(deps.host,allRules,input.task as unknown as Record<string,unknown>,input.hostId,deps.log);
   return { allRules, rules, rulesText:rules.map((rule)=>`- ${rule.rule}`).join("\n") };
 }
 
@@ -63,7 +64,7 @@ export async function writerKnowledge(deps:KnowledgeDeps & { log?: (line:string)
     const mcpGroup=mode==="roles"?effectiveGroup("writer","mcpServers",access):{names:null};
     const gitnexusTools=mcpGroup.names===null||mcpGroup.names.includes("gitnexus");
     const memoryRoot=taskBasePath(deps.db,input.runId,input.task.id)??input.task.project_cwd;
-    const gitnexusIndex=gitnexusTools&&(await runOnHost(deps.host,{hostId:input.hostId,cwd:memoryRoot,command:"test -d .gitnexus",timeoutSec:10}).catch(()=>null))?.exitCode===0;
+    const gitnexusIndex=gitnexusTools&&(await bestEffort(deps.log ?? ((message: string) => {}), "writer gitnexus index probe", runOnHost(deps.host,{hostId:input.hostId,cwd:memoryRoot,command:"test -d .gitnexus",timeoutSec:10}), null))?.exitCode===0;
     registerWriterBriefContext(input.task.id,{broadSkills:mode!=="roles"||skillsGroup.names===null,gitnexusTools,metamcpTools:mcpGroup.names===null||mcpGroup.names.includes("metamcp"),gitnexusIndex});
   }
   const { allRules, rules, rulesText }=await writerRules(deps,input);

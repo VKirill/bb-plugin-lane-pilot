@@ -7,7 +7,7 @@ import { resolveWriterBinding } from "../../native-agent";
 import type { ProjectSourceBinding } from "../../native-agent";
 import { mapListedQaHosts } from "../../platform/server";
 import { CATALOG_WAIT_MS, modelCatalogOf, within } from "../../platform/server";
-import { stringAt, orMiss, isNotFound } from "@lane-pilot/kit";
+import { stringAt, orMiss, isNotFound, bestEffort } from "@lane-pilot/kit";
 import type { ServerCore } from "../../contracts/server";
 
 export function createWriterHost(ctx: ServerCore) {
@@ -22,13 +22,13 @@ export function createWriterHost(ctx: ServerCore) {
       // Global settings are not tied to a folder; the pickers show one machine's catalog. A machine named by the caller wins,
       // then the one offering the most providers and models: the first connected one was the MacBook, without OpenCode and with
       // Devin listing only «Agent default» (2026-10-30/31).
-      const hosts = mapListedQaHosts(await (bb.sdk as { hosts?: { list?: () => Promise<unknown> } }).hosts?.list?.().catch(() => []) ?? []);
+      const hosts = mapListedQaHosts(await bestEffort(bb.log, "writer host list", (bb.sdk as { hosts?: { list?: () => Promise<unknown> } }).hosts?.list?.() ?? Promise.resolve([]), []) ?? []);
       const preferred = parseLanePilotDefaults(await bb.storage.kv.get(LP_DEFAULTS_KEY)).qaHostId;
       // A read that does not answer in time falls back to the last snapshot, so the screen and a save made a minute later name the
       // same machine; with no snapshot at all the first connected one answers (a save judged on another machine's thinner Devin
       // catalog refused SWE-2 while the row showed it, 2026-10-31).
       const reader = modelCatalogOf(ctx);
-      const catalog = await within(reader.get(), CATALOG_WAIT_MS).catch(() => reader.peek());
+      const catalog = await bestEffort(bb.log, "writer host catalog", within(reader.get(), CATALOG_WAIT_MS), reader.peek());
       const offered = (hostId: string) => (catalog?.providers ?? []).reduce((sum, provider) => sum
         + (provider.hostIds.includes(hostId) ? 1000 : 0) + provider.models.filter((model) => model.hostIds.includes(hostId)).length, 0);
       const richest = hosts.filter((row) => row.connected).sort((a, b) => offered(b.id) - offered(a.id) || Number(b.id === preferred) - Number(a.id === preferred))[0];
@@ -136,7 +136,7 @@ export function createWriterHost(ctx: ServerCore) {
       return Promise.all([bb.sdk.providers.list({ hostId }), bb.sdk.providers.models({ providerId, hostId })]);
     }
     const reader = modelCatalogOf(ctx);
-    const merged = await within(reader.get(), CATALOG_WAIT_MS).catch(() => reader.peek());
+    const merged = await bestEffort(bb.log, "writer host catalog", within(reader.get(), CATALOG_WAIT_MS), reader.peek());
     if (!merged) throw new Error("model catalog unavailable");
     const providers = merged.providers.map((provider) => ({
       id: provider.id, displayName: provider.displayName, available: provider.hostIds.length > 0,

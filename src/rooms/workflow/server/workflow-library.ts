@@ -4,7 +4,7 @@ import type { z } from "zod";
 import type { rpcContract } from "../../contracts";
 ;
 import type { Field, Workflow } from "@lane-pilot/workflow-engine";
-import { sha256Hex } from "@lane-pilot/kit";
+import { sha256Hex, bestEffort, orMiss, isNotFound } from "@lane-pilot/kit";
 import { parseGoals } from "@lane-pilot/workflow-engine";
 import { createStatusResolver } from "../../storage";
 import { globalWorkflowDir, loadWorkflowStore, nodeFileSource, projectWorkflowDir, type StoredWorkflow, type WorkflowFileSource, type WorkflowStore, HARNESS_VERSION } from "../../storage";
@@ -55,7 +55,7 @@ export function createWorkflowLibrary(ctx: ServerCore, services: Pick<Services, 
 
   /** The project's workflow files, read once on its machine and served from memory to the store. */
   async function readProjectFiles(projectId: string): Promise<{ files: Map<string, string>; dir: string | null; state: ProjectState }> {
-    const places = await services.docsPlaces(projectId).catch(() => []);
+    const places = await bestEffort(ctx.log, "workflow library project places", services.docsPlaces(projectId), []);
     const root = places.find((place) => place.scopes.length === 0) ?? places[0];
     if (!root) return { files: new Map(), dir: null, state: "no_machine" };
     try {
@@ -120,7 +120,7 @@ export function createWorkflowLibrary(ctx: ServerCore, services: Pick<Services, 
       const { store, files } = await loadStore(input.projectId);
       const item = store.get(input.id);
       if (!item) return null;
-      const text = item.origin === "builtin" ? null : await files.read(item.source).catch(() => null);
+      const text = item.origin === "builtin" ? null : await orMiss(files.read(item.source), null, isNotFound);
       return { workflow: item.workflow, origin: item.origin, path: item.source, fileSha256: text === null ? null : sha256Hex(text), ids: store.list().map((other) => other.workflow.id) };
     },
 
