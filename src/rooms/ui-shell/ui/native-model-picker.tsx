@@ -1,6 +1,6 @@
 import { experimental_ProviderModelPicker as ProviderModelPicker, type ExperimentalProviderModelPickerProps, type ExperimentalProviderModelPickerValue } from "@get-bb/plugin-sdk/app";
 import { findModel, findProvider, nodeEffortsFor, type ModelCatalog } from "@lane-pilot/models";
-import type { ModelChoice } from "./workflow-model-ops";
+import type { ModelChoice } from "./model-choice";
 
 /**
  * BB's own provider/model window (the composer's: provider tabs, model search, «Reasoning», «Fast mode»), used for every place a

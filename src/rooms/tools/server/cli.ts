@@ -85,12 +85,9 @@ import type { ProbesApi } from "../../stability/server/probes";
 import type { ReconcileApi } from "../../stability/server/reconcile";
 import type { StageReturnApi } from "../../stage-return/server/stage-return";
 import type { WallApi } from "../../wall/service";
-import type { WorkflowEngineApi } from "../../workflow/server/workflow";
-import type { WorkflowTriggersApi } from "../../workflow/server/workflow-triggers-live";
 import type { WriterDispatchApi } from "../../writer/server/dispatch";
 import type { WriterStateApi } from "../../writer/server/state";
 import type { WriterVerifyApi } from "../../writer/server/verify";
-import type { WriterHostApi } from "../../writer/server/writer-host";
 
 import type { BaselineApi } from "../../baseline/server/baseline";
 import type { ScheduleService } from "../../schedule/server/schedule-service";
@@ -155,6 +152,8 @@ interface Services {
 
 const MEMORY_CLI_USAGE = 'bb lane-pilot memory search "<question>" [--project P] | memory write "<fact>" [--project P]   (the project memory on the hub; inside a BB thread the project is the thread\'s own)';
 import type { CodeCriticDefault } from "../../contracts/task-enums";
+
+import type { WorkflowEngineApi, WorkflowTriggersApi, WriterHostApi } from "../../platform/server";
 
 function requireCriticCodeDefault(value: string): CodeCriticDefault {
   if (!isCodeCriticDefault(value)) throw new Error(`critic.code.default_for_risk must be one of ${CODE_CRITIC_DEFAULTS.join(", ")}`);

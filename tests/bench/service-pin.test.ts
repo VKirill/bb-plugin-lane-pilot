@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { recheckServiceModels, type ServiceRecheckBench } from "../../src/rooms/bench/server/service-pin";
-import { SERVICE_JOBS, servicePair, serviceRole } from "../../src/rooms/workflow/service-models";
+import { SERVICE_JOBS, servicePair, serviceRole } from "../../src/rooms/contracts/service-models";
 
 const bench = (verdict: "pass" | "fail" | "inconclusive"): ServiceRecheckBench & { arms: string[] } => {
   const arms: string[] = [];

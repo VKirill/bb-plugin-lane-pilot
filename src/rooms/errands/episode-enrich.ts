@@ -3,7 +3,7 @@ import { checkBrief, renderBrief } from "../brief";
 import { redactKnown } from "@lane-pilot/kit";
 import { maskPii, scrubQuote } from "../anamnesis";
 import { pmSkillName } from "../native-agent";
-import { extractSkillSequence } from "../writer";
+import { extractSkillSequence } from "../contracts";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
 import { loadProjectSettings, type LanePilotDatabase } from "../storage";
 import { recordErrandEpisode } from "./episodes";

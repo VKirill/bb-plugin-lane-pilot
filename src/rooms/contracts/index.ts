@@ -1,3 +1,5 @@
+import type { z } from "zod";
+import { stepExecutorSchema } from "@lane-pilot/contracts";
 import { defineRpcContract } from "@get-bb/plugin-sdk";
 import { rpcShell } from "./rpc-shell";
 import { rpcNative } from "./rpc-native";
@@ -14,6 +16,7 @@ import { rpcWorld } from "./rpc-world";
 // screens in the rpc-*.ts parts; this file assembles them and is the only public file of the room.
 export { HOST_JOB_KINDS, WORKFLOW_NODE_TONES, installReceiptSchema, modelCatalogSchema, prototypeConfigSchema, secretNameSchema, settingValidationSchema, stepExecutorSchema, TASK_KINDS, TASK_V2_OPTIONAL, taskV2Schema, workflowDraftCheckSchema, workflowDraftPatchResultSchema, workflowDraftPublishResultSchema, workflowDraftSummarySchema, workflowDraftTestResultSchema, workflowStatsSchema, workflowTrialCaseSchema, workflowViewEdgeSchema, workflowViewNodeSchema, workflowViewSchema } from "@lane-pilot/contracts";
 export type { HostJobKind, PrototypeConfig, TaskV2 } from "@lane-pilot/contracts";
+export type StepExecutor = z.infer<typeof stepExecutorSchema>;
 export { hostContract, hostMethods } from "./host";
 export { BIRTH_KINDS, isCodeCriticDefault } from "./task-enums"
 export { CODE_CRITIC_DEFAULTS } from "./task-enums";
@@ -36,6 +39,9 @@ export const rpcMethods = {
 export const rpcContract = defineRpcContract(rpcMethods);
 export * from "./gate-vocabulary";
 export * from "./workflow-ids";
+export * from "./service-models";
+export * from "./skill-sequence";
+export * from "./brief-mode";
 export { default as bundledAgents } from "./bundled-agents.json";
 export { LEAD_ID, LEAD_LAUNCH, LEAD_NAME, LEAD_SESSION, LEAD_SUMMARY, LEAD_TICK, LEAD_TOOLS } from "./lead-agent";
 export { taskWordItemPrefix, type TaskWordDb, type TaskWordPort, type WordTask } from "./task-word";

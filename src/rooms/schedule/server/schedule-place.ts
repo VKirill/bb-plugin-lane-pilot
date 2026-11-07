@@ -4,7 +4,7 @@ import type { WhereView } from "../views";
 import type { ServerCore } from "../../contracts/server";
 import { stringAt, orMiss, isNotFound } from "@lane-pilot/kit";
 
-import type { WorkflowTriggersApi } from "../../workflow/server/workflow-triggers-live";
+import type { WorkflowTriggersApi } from "../../platform/server";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {

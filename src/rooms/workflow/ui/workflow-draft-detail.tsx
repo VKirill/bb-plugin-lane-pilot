@@ -18,7 +18,8 @@ import {
 import { say } from "./workflow-edit-fields";
 import { AddNodeMenu, EdgeForm, NodeForm, TestResults, VersionsList, WorkflowForm } from "./workflow-edit-panels";
 import { useCatalog, useDraftEditing } from "./workflow-edit-state";
-import { ModelsPanel, providerMap, useModelCatalog, useStepExecutors } from "./workflow-models";
+import { ModelsPanel, providerMap, useStepExecutors } from "./workflow-models";
+import { useModelCatalog } from "../../ui-shell/ui";
 import { useLatestRun, type NodeDataProps } from "./workflow-node-data";
 import { useDrill } from "./workflow-drill";
 

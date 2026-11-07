@@ -11,7 +11,6 @@ import {
   type CouncilMessage, type CouncilMessageKind, type CouncilSeat, type CouncilSession, type Impulse, type Moderator,
 } from "@lane-pilot/council";
 
-import type { WorkflowEngineApi } from "../../workflow/server/workflow";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {
@@ -33,6 +32,8 @@ import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from ".
 import { councilDecisionText, sendCouncilNotice } from "./pm-notice";
 import { askOwnerToJoin, configuredSeatPair, councilMemoryBlock, selectionPairs, seatsFor } from "./council";
 import type { CouncilApi } from "./council";
+
+import type { WorkflowEngineApi } from "../../platform/server";
 
 /**
  * The council as a graph (workflows/council.json): `open` (the session, its seats, the chair, the project place) -> `agenda` (the chair's agenda)

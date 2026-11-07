@@ -3,8 +3,7 @@ import { isOffered, routeIntent, type NodeExecutor, type StepContext, type Workf
 import { bestEffort, redactKnown } from "@lane-pilot/kit";
 import { z } from "zod";
 
-import { createWorkflowLibrary, SCHEDULE_RUN_KEY_PREFIX } from "../../workflow/server";
-import { builtinWorkflows } from "../../workflow";
+import { SCHEDULE_RUN_KEY_PREFIX } from "../../contracts";
 import type { ChainRuntime } from "../../contracts/server";
 import { withUsage } from "../../usage/server";
 import { fenceOutside, findThreadsByMetadata, keyedSpawnSupported, registerObservedTool, spawnTextId } from "../../platform/server";
@@ -16,7 +15,7 @@ import { loadProjectSettings } from "../../storage";
 import { errandSpawnOf, pendingErrandEpisode } from "../../errands";
 import { ERRAND_KINDS, classifyErrand } from "../../schedule";
 
-import type { WorkflowEngineApi } from "../../workflow/server/workflow";
+import type { WorkflowEngineApi, WorkflowLibraryApi } from "../../platform/server";
 
 import type { DocsNightlyPort } from "../../contracts/docs-nightly-api";
 
@@ -25,6 +24,7 @@ interface Services {
   docsPlaces: DocsNightlyPort["docsPlaces"];
   workflowCatalog: WorkflowEngineApi["workflowCatalog"];
   workflowEngine: WorkflowEngineApi["workflowEngine"];
+  workflowLibrary: WorkflowLibraryApi;
 }
 
 /**
@@ -151,12 +151,12 @@ export function mountErrandGraph(ctx: ServerCore, services: Services, core: Erra
   } as NodeExecutor<ChainRuntime>);
 
   /** The offered catalog the PM's router sees (the project's own graphs included), else the shipped ones when the store cannot be read here. */
-  const library = createWorkflowLibrary(ctx, services);
+  const library = services.workflowLibrary;
   async function offeredCatalog(projectId: string): Promise<Workflow[]> {
     try { return (await library.loadStore(projectId)).store.list().map((item) => item.workflow); }
     catch {
       const catalog = services.workflowCatalog;
-      if (!catalog?.store) return catalog?.builtins() ?? builtinWorkflows();
+      if (!catalog?.store) return catalog?.builtins() ?? [];
       const store = await bestEffort(ctx.log, `workflow catalog ${projectId}`, catalog.store(), null);
       if (!store) return catalog.builtins();
       const listed = await bestEffort(ctx.log, `workflow catalog list ${projectId}`, Promise.resolve().then(() => store.list().map((item) => item.workflow)), null);

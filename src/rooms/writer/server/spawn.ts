@@ -1,5 +1,5 @@
 import { breakerKey, RunBudgetExceeded } from "@lane-pilot/resilience";
-import { briefMode, briefParts } from "../../hypotheses";
+import { briefMode, briefParts } from "../../contracts";
 import { estimateTokens, recordMemoryMixed, recordMemoryReceipt } from "@lane-pilot/memory-core";
 import { writerKnowledge } from "./writer-knowledge";
 import { parseDirtSnapshots } from "../cli-outcome";
@@ -506,7 +506,7 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
         ? await bestEffort(bb.log, "writer harness materialize", services.harness.materialize({ attemptId:input.attemptId, hostId:input.config.hostId, workspacePath, live, providerId:writerProviderId, parts:harness }), { written:[] as string[], reason:"error" })
         : { written:[] as string[], reason:null as string|null };
       const harnessSkills=harnessFiles.written.length?harness!.skillNames:[];
-      // `writer.brief_mode=narrow` (src/rooms/hypotheses/brief-mode.ts): the contract and the plan only, no memory, rules or PM read summary.
+      // `writer.brief_mode=narrow` (src/rooms/contracts/brief-mode.ts): the contract and the plan only, no memory, rules or PM read summary.
       const brief=briefParts(briefMode(settings),{ rules:[rulesText, harness?.alwaysOn ?? ""].filter(Boolean).join("\n"),
         memory:[relevantMemory.text, harness?.memory ?? ""].filter(Boolean).join("\n"), pmRead:input.pmReadContext ?? "" });
       const briefRulesText=brief.rules;

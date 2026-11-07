@@ -6,7 +6,8 @@ import { type ServerCore } from "../../contracts/server";
 
 import type { ChainRuntime } from "../../contracts/server";
 
-import type { WorkflowEngineApi } from "../../workflow/server/workflow";
+import type { WorkflowEngineApi } from "../../platform/server";
+
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {

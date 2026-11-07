@@ -6,7 +6,8 @@ import { candidateNames, readSkillTreeText, skillTreeCached, type SkillTree } fr
 import type { ServerCore } from "../../contracts/server";
 import type { ProcessForm } from "./tick";
 
-import type { WorkflowEngineApi } from "../../workflow/server/workflow";
+import type { WorkflowEngineApi } from "../../platform/server";
+
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {

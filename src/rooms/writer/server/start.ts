@@ -14,7 +14,7 @@ import { bestEffort, ownsPathsOverlap, parseJsonOr, pollPause } from "@lane-pilo
 import { reconcile, reconcileCursor } from "../../stability";
 import { listRegressions, type RegressionRecord } from "../../baseline";
 import { quarantineFileSet } from "../../baseline";
-import { emergencyFallbackDecision } from "../../night";
+import { emergencyFallbackDecision } from "../emergency-writer";
 ;
 import { resolveBestOf, roundSeedBrief, roundSurvivors } from "../best-of";
 import { QUALITY_MODE_SETTING, resolveQualityMode } from "../../contracts/quality-mode";
@@ -59,7 +59,6 @@ import type { WriterStateApi } from "./state";
 import type { WriterVerifyApi } from "./verify";
 
 import type { HarnessApi } from "../../harness/server/harness";
-import type { WorkflowEngineApi } from "../../workflow/server/workflow";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {
@@ -109,6 +108,8 @@ import { emitAttemptFinished } from "./attempt-finished";
 import { mountWriterTaskFinished } from "./attempt-reactions";
 import { mountStabilityAttemptFinished } from "./stability";
 import { mountWorkflowAttemptFinished } from "./workflow";
+
+import type { WorkflowEngineApi } from "../../platform/server";
 
 /** Where a new attempt of the task starts: the run's workspace, whatever worktree a resumed attempt was bound to. */
 export function freshAttemptStart(task:TaskV2, config:PrototypeConfig, runWorkspace:string|null):{task:TaskV2;config:PrototypeConfig} {

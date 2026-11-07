@@ -118,7 +118,7 @@ import type { WriterVerifyApi } from "./src/rooms/writer/server/verify";
 import type { WriterFinishApi } from "./src/rooms/writer/server/finish";
 import type { WriterStartApi } from "./src/rooms/writer/server/start";
 import type { WriterDispatchApi } from "./src/rooms/writer/server/dispatch";
-import type { ArchitectApi, AttemptReopenApi, BuildCliInvocation, RecheckPlanFact, RunVerification, SkillSwitchMorningLine, StageHelperSettings, TaskUsage, WallGraphApi, WorkflowEngineApi, WorkflowLibraryApi, WriterHostApi as WriterHostPort, WriterReassignApi, WriterStateApi as WriterStatePort } from "./src/rooms/platform/server";
+import type { ArchitectApi, AttemptReopenApi, BuildCliInvocation, RecheckPlanFact, RunVerification, SkillSwitchMorningLine, StageHelperSettings, TaskUsage, WallGraphApi, WorkflowEngineApi, WorkflowLibraryApi, WorkflowTriggersApi as WorkflowTriggersPort, WriterDispatchApi as WriterDispatchPort, WriterHostApi as WriterHostPort, WriterReassignApi, WriterStartApi as WriterStartPort, WriterStateApi as WriterStatePort } from "./src/rooms/platform/server";
 import type { WorkflowTriggersApi } from "./src/rooms/workflow/server/workflow-triggers-live";
 import type { MemoryProbeApi } from "./src/rooms/memory-probe/server/memory-probe";
 import type { CouncilApi } from "./src/rooms/council/server";
@@ -346,13 +346,13 @@ export default async function plugin(bb: BbPluginApi) {
     } satisfies AgentOpsApi & { resolveIntegrationGate: VerificationGatePort },
     { isTaskSatisfied } satisfies { isTaskSatisfied: IsTaskSatisfied },
     createWriterState(ctx) satisfies WriterStatePort,
-    createWorkflowEngine(ctx, services),
-    createWorkflowTriggersService(ctx, services),
+    createWorkflowEngine(ctx, services) satisfies WorkflowEngineApi,
+    createWorkflowTriggersService(ctx, services) satisfies WorkflowTriggersPort,
     createWriterSpawn(ctx, services),
     createWriterVerify(ctx, services) satisfies { runVerification: RunVerification },
     createWriterFinish(ctx, services),
-    createWriterStart(ctx, services),
-    createWriterDispatch(ctx, services),
+    createWriterStart(ctx, services) satisfies WriterStartPort,
+    createWriterDispatch(ctx, services) satisfies WriterDispatchPort,
     createQaStages(ctx),
     createStageChildren(ctx),
     createDocsStage(ctx, services),

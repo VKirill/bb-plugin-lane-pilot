@@ -9,7 +9,7 @@ import { useOpenThreadPanel } from "../../ui-shell/ui";
 import { Surface, SurfaceBody, SurfaceHeader } from "@lane-pilot/ui-kit";
 import { RunPill, errorText, fill, fmtTime } from "./schedule-parts";
 import { usdText } from "./schedule-who";
-import { modelShort, providerShort } from "../../workflow/ui";
+import { modelShort, providerShort } from "../../ui-shell/ui";
 
 const PAGE = 20;
 const LIVE = new Set<RunView["status"]>(["queued", "running", "waiting"]);

@@ -17,7 +17,6 @@ export type { BestOfCandidate, BestOfPlan, WriterPair } from "./best-of";
 export { writerModelJudgment } from "./writer-model-pick";
 export {
   calculateSkillSwitches,
-  extractSkillSequence,
   getSkillSwitchStats,
   recordSkillSwitchMetric,
   skillSwitchMorningLine,

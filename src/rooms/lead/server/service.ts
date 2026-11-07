@@ -28,10 +28,10 @@ import { closeTick, getTick, listTicks, openTick, patchTick, sweepStaleTicks, ty
 
 import type { DocsNightlyApi } from "../../docs/server/docs-nightly";
 import type { PhaseIntake } from "../../phase/server/intake";
-import type { WorkflowEngineApi } from "../../workflow/server/workflow";
-import type { WorkflowTriggersApi } from "../../workflow/server/workflow-triggers-live";
 
 import type { ScheduleService } from "../../schedule/server/schedule-service";
+
+import type { WorkflowEngineApi, WorkflowTriggersApi } from "../../platform/server";
 
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */

@@ -1,7 +1,7 @@
 import { secretShaped } from "../../tasks";
 import type { VerificationGatePort } from "../../contracts/integration-gate";
 import type { IsTaskSatisfied } from "../../contracts";
-import type { StageHelperSettings } from "../../platform/server";
+import type { StageHelperSettings, WorkflowEngineApi, WorkflowTriggersApi } from "../../platform/server";
 import { gateVocabularyLines } from "../../contracts";
 import { registerBrowserExecutors, runBrowserQaGraph } from "../../qa/server";
 import { cancelAttemptById, cleanupFinishedAttemptEnvironments, cleanupStickyLaneWorktrees } from "../../runs/server";
@@ -42,14 +42,12 @@ import type { PhaseIntake } from "../../phase/server/intake";
 import type { QaStagesApi } from "../../qa/server/qa";
 import type { RollbackApi } from "../../rollback/server/rollback";
 import type { StabilityApi } from "../../stability/server/stability";
-import type { WorkflowEngineApi } from "../../workflow/server/workflow";
 import type { WriterDispatchApi } from "../../writer/server/dispatch";
 
 import type { DocsNightlyApi } from "../../docs/server/docs-nightly";
 import type { LeadApi } from "../../lead/server/service";
 import type { PhaseApi } from "../../phase/server/driver";
 import type { ScheduleService } from "../../schedule/server/schedule-service";
-import type { WorkflowTriggersApi } from "../../workflow/server/workflow-triggers-live";
 import type { WriterStateApi } from "../../writer/server/state";
 
 import type { BaselineApi } from "../../baseline/server/baseline";

@@ -9,8 +9,9 @@ import type { AnalyzerSelection, JobResult, ScanJob } from "../../self-repair/se
 ;
 
 import type { RuleScanApi } from "../../self-repair/server/rule-scan";
-import type { WorkflowEngineApi } from "../../workflow/server/workflow";
 import {providerLimitNotice} from "@lane-pilot/models";
+
+import type { WorkflowEngineApi } from "../../platform/server";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {

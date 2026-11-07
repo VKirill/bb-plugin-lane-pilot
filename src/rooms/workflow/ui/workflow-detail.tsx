@@ -15,7 +15,8 @@ import { dataTabs, SidePanel, useLatestRun } from "./workflow-node-data";
 import { useDrill } from "./workflow-drill";
 import { nodeTitle } from "./workflow-titles";
 import { pickRun, runView, type NodeRun, type RunSnapshot } from "./workflow-run";
-import { ModelsPanel, StepModelBlock, executorFor, providerMap, type GraphModels, useModelCatalog, useStepExecutors } from "./workflow-models";
+import { ModelsPanel, StepModelBlock, executorFor, providerMap, type GraphModels, useStepExecutors } from "./workflow-models";
+import { useModelCatalog } from "../../ui-shell/ui";
 import type { Expansions } from "./workflow-layout";
 import { GoalsPanel, RunHistory, WorkflowTrials } from "./workflow-actions";
 

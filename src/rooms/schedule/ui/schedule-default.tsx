@@ -11,8 +11,8 @@ import { PRESET_SLUGS } from "@lane-pilot/models";
 import { Surface, SurfaceBody } from "@lane-pilot/ui-kit";
 import { errorText, fill } from "./schedule-parts";
 import { defaultSeed, modelLine } from "./schedule-who";
-import { useModelCatalog } from "../../workflow/ui";
-import { NativeModelPicker } from "../../workflow/ui";
+import { useModelCatalog } from "../../ui-shell/ui";
+import { NativeModelPicker } from "../../ui-shell/ui";
 
 /**
  * «Default executor»: the model scheduled errands run on when the task names none. Collapsible, at the top of the schedule area. At the

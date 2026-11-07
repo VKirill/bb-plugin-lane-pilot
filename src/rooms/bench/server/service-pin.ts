@@ -2,7 +2,7 @@ import { scheduleIsolated, SCHEDULE_TIMEOUT_CAP_MS } from "../../platform/server
 import { type ServerCore } from "../../contracts/server";
 import { loadProjectSettings, saveProjectSetting } from "../../storage";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
-import { SERVICE_JOBS, servicePair, servicePinKey } from "../../workflow";
+import { SERVICE_JOBS, servicePair, servicePinKey } from "../../contracts";
 import type { BenchApi } from "../service";
 
 /** What the monthly recheck needs of the bench: one series per arm, then the paired compare. */

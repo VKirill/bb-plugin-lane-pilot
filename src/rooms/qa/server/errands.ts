@@ -26,7 +26,7 @@ import { errandRoleFor } from "../../schedule";
 import type { ErrandRunStart } from "./errand-graph";
 import type { ExtraAccess } from "../../contracts/helper-context";
 
-import type { WorkflowEngineApi } from "../../workflow/server/workflow";
+import type { WorkflowEngineApi, WorkflowLibraryApi } from "../../platform/server";
 
 import type { DocsNightlyPort } from "../../contracts/docs-nightly-api";
 
@@ -35,6 +35,7 @@ interface Services {
   docsPlaces: DocsNightlyPort["docsPlaces"];
   workflowCatalog: WorkflowEngineApi["workflowCatalog"];
   workflowEngine: WorkflowEngineApi["workflowEngine"];
+  workflowLibrary: WorkflowLibraryApi;
 }
 
 const WAIT_STEP_MS = 5_000;

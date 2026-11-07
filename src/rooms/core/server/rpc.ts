@@ -80,10 +80,7 @@ import type { ActivationApi, AgentOpsApi } from "../../contracts/agent-ops";
 import type { ScheduleService } from "../../schedule/server/schedule-service";
 import type { RuleScanApi } from "../../self-repair/server/rule-scan";
 import type { ReconcileApi } from "../../stability/server/reconcile";
-import type { BuildCliInvocation } from "../../platform/server";
-import type { WorkflowEngineApi } from "../../workflow/server/workflow";
-import type { WorkflowTriggersApi } from "../../workflow/server/workflow-triggers-live";
-import type { WriterHostApi } from "../../writer/server/writer-host";
+import type { BuildCliInvocation, WorkflowEngineApi, WorkflowTriggersApi, WriterHostApi } from "../../platform/server";
 
 import type { StabilityApi } from "../../stability/server/stability";
 

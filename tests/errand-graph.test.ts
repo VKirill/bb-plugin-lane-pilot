@@ -2,10 +2,10 @@ import { describe, expect, it } from "vitest";
 import { stageHelperSettings } from "../src/rooms/settings/server/stage-settings";
 import { readFileSync } from "node:fs";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { WorkflowEngine, registerPureActions } from "@lane-pilot/workflow-engine";
+import { WorkflowEngine, loadWorkflowStore, registerPureActions } from "@lane-pilot/workflow-engine";
 import { createRun, openDatabase, setRunThread } from "../src/rooms/plugin-db";
 import { mountErrands } from "../src/rooms/qa/server/errands";
-import {builtinWorkflow} from "../src/rooms/workflow/builtin";
+import {BUILTIN_SOURCES, builtinWorkflow} from "../src/rooms/workflow/builtin";
 import { validateWorkflow } from "@lane-pilot/workflow-engine";
 import { coreRequiredSessionAdvertisement } from "../src/rooms/contracts/helper-context";
 
@@ -55,7 +55,7 @@ function world(options: { pm?: boolean; output?: string; gate?: (names: string[]
     // The api-recon graph's helper step (an agent node): started, never answering; the tests only read where the errand went.
     engine.register("agent", { reentrant: true, run: () => new Promise(() => undefined) } as never);
     const ctx = ctxFor(instanceBb);
-    const services = { workflowEngine: engine, stageHelperSettings } as never;
+    const services = { workflowEngine: engine, stageHelperSettings, workflowLibrary: { loadStore: async () => ({ store: await loadWorkflowStore({ builtin: BUILTIN_SOURCES }) }) } } as never;
     const errands = mountErrands(ctx, services);
     const call = async (name: string, params: Record<string, unknown>) =>
       JSON.parse(String(await instanceHarness.behavior.callAgentTool(name, params, { threadId: PM, projectId: PROJECT }))) as Record<string, any>;

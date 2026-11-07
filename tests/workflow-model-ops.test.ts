@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { effortFor, firstChoice } from "../src/rooms/workflow/ui/workflow-model-ops";
+import { effortFor, firstChoice } from "../src/rooms/ui-shell/ui/model-choice";
 import type { ModelCatalog } from "@lane-pilot/models";
 
 const catalog: ModelCatalog = {

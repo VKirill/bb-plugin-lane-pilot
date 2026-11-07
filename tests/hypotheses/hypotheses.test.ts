@@ -1,6 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { briefMode, briefParts } from "../../src/rooms/hypotheses";
+import { briefMode, briefParts } from "../../src/rooms/contracts";
 import { createHypotheses, runHypothesisCli } from "../../src/rooms/hypotheses/server";
 import { loadProjectSettings, openDatabase } from "../../src/rooms/plugin-db";
 

@@ -7,7 +7,7 @@ import { Button, Segments, Surface, SurfaceBody, SurfaceHeader, usePanelLayout }
 import type { rpcContract } from "../../contracts";
 import { HELPER_PANEL_ACTION } from "../../contracts/agent-picker";
 import { Pill, useOpenThreadPanel } from "../../ui-shell/ui";
-import { NativeModelPicker, useModelCatalog, type ModelChoice } from "../../workflow/ui";
+import { NativeModelPicker, useModelCatalog, type ModelChoice } from "../../ui-shell/ui";
 import type { ErrandKindOrNone, ErrandRow, KindSummary } from "../logic";
 import type { ErrandOutcome } from "../../contracts/server";
 import type { ErrandsDiagnosis } from "../diagnosis";

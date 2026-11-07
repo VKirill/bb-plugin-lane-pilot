@@ -1,6 +1,6 @@
 import type { AgentKind, AgentListItem } from "../../contracts/agent-picker";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
-import type { WorkflowEngine, WorkflowStore } from "@lane-pilot/workflow-engine";
+import type { PreflightResult, WorkflowEngine, WorkflowStore } from "@lane-pilot/workflow-engine";
 import type { createWorkflowCatalog } from "@lane-pilot/workflow-engine";
 import type { RunBudget, createProviderBreaker } from "@lane-pilot/resilience";
 import type { CliBinary } from "@lane-pilot/settings-catalog";
@@ -156,6 +156,42 @@ export interface WallGraphApi {
     judge(wallKey: string, pack: unknown, runs: ReadonlyArray<{ angle: string; text: string | null; tokens: number }>): { outcome: { state: "usable" | "unknown"; usable: readonly unknown[] }; tokens: number };
     recordAnalysis(wallKey: string, text: string): void;
   };
+}
+
+/** workflow/server/workflow-triggers.ts — who may start a workflow and what it answers. */
+export type WorkflowTriggerSource = "manual" | "schedule" | "telegram";
+export type WorkflowTriggerResult =
+  | { ok: true; runId: string; created: boolean; status: string; notChecked: string[] }
+  | { ok: false; reason: string; message: string; issues?: PreflightResult["issues"]; envRequests?: PreflightResult["envRequests"]; missing?: string[] };
+
+/** workflow/server/workflow-triggers-live.ts — starts a workflow for a schedule, the board or a hook; syncSoon/scheduledProjects serve the hourly sweep. */
+export interface WorkflowTriggersApi {
+  workflowTriggers: {
+    start(input: {
+      projectId: string; workflowId: string; inputs: Record<string, unknown>; source: WorkflowTriggerSource;
+      key?: string | undefined; liveTrial?: boolean | undefined; origin?: "schedule" | undefined;
+      /** A run that is nobody's business but the project's (the lead's tick): no PM chat, no run link, hidden helpers. */
+      detached?: boolean | undefined;
+    }): Promise<WorkflowTriggerResult>;
+    sync(projectId: string): Promise<{ created: number; updated: number; removed: number; failed: string[]; complete: boolean }>;
+    pmOf(projectId: string): Promise<{ pmThreadId: string; runId: string } | null>;
+    pmOfOrUnknown(projectId: string): Promise<{ pmThreadId: string; runId: string } | null | "unknown">;
+    syncSoon(projectId: string): void;
+    scheduledProjects(): string[];
+  };
+}
+
+/** writer/server/dispatch.ts — the writer dispatch surface (PM tools, resume after a reload). */
+export interface WriterDispatchApi {
+  readWriterWorkspaceFile: ReadWriterWorkspaceFile;
+  dispatchWriter: DispatchWriter;
+  waitWriter: WaitWriter;
+  resumeDispatch: ResumeDispatch;
+}
+
+/** writer/server/start.ts — starts the first writer attempt of a task. */
+export interface WriterStartApi {
+  startWriterTask: StartWriterTask;
 }
 
 /** writer/skill-switch.ts — the skill-switch line of the wall's morning summary, injected into the wall so it does not import writer. */

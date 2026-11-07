@@ -10,8 +10,7 @@ import { errandModelForRun } from "./schedule-default";
 import { allowedSecretNames, secretFixLines, secretProblem } from "../../secrets/server";
 
 import type { ErrandsApi } from "../../contracts";
-import type { WorkflowEngineApi } from "../../workflow/server/workflow";
-import type { WorkflowTriggersApi } from "../../workflow/server/workflow-triggers-live";
+import type { WorkflowEngineApi, WorkflowTriggersApi } from "../../platform/server";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {

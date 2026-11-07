@@ -1,7 +1,7 @@
 import { relative, resolve } from "node:path";
 import type { VerificationGatePort } from "../../contracts/integration-gate";
 import type { IsTaskSatisfied } from "../../contracts";
-import type { StageHelperSettings } from "../../platform/server";
+import type { StageHelperSettings, WorkflowEngineApi } from "../../platform/server";
 import { isDeepStrictEqual } from "node:util";
 import { DISPATCH_STAGES_PENDING } from "../../runs";
 import { taskV2Schema } from "../../contracts";
@@ -19,7 +19,6 @@ import {
   updateTaskContract,
 } from "../../storage";
 
-import type { WorkflowEngineApi } from "../../workflow/server/workflow";
 
 import type { BaselineApi } from "../../baseline/server/baseline";
 import type { StabilityApi } from "../../stability/server/stability";
