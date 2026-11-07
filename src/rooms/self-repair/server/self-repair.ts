@@ -15,7 +15,8 @@ import type { RepairDeps } from "./deps";
 import { waitThreadIdle } from "@lane-pilot/thread-observe";
 import { withUsage } from "../../usage/server";
 import type { StepContext, WorkflowEngine } from "../../workflow";
-import { BREAKERS_KEY, DRILL_KEY, DRILL_SANDBOX_PROJECT_IDS, HOOK_TIMEOUTS_KEY, type DrillOutcome, type HookTimeoutRecord } from "../../stability/server"
+import { BREAKERS_KEY, DRILL_KEY, HOOK_TIMEOUTS_KEY, type DrillOutcome, type HookTimeoutRecord } from "../../stability/server"
+import { DRILL_SANDBOX_PROJECT_IDS } from "../../contracts"
 import { PARKED_KEY, type ParkedTask } from "../../contracts/stability-api";
 import { tableRowAt, writerExecutionSelection } from "@lane-pilot/models";
 import { criticStats, FAILURE_TRIAGE_METHOD, SCIENTIFIC_DEBUG_METHOD } from "../../critique";
@@ -26,7 +27,7 @@ import { jev } from "@lane-pilot/jev";
 import { MAX_CANDIDATES, repairGroup } from "@lane-pilot/jev/judgments/repair-group";
 import { GUARD_BLOCKED_KEY, type GuardBlock } from "@lane-pilot/jev";
 import { DEPENDENCY_REDO_WAIT_MS, latestTaskAttempt } from "../../storage";
-import { isOpenAttemptState, OPEN_ATTEMPT_STATES } from "../../contracts/state-machine";
+import { FAILED_ATTEMPT_STATES, isOpenAttemptState, OPEN_ATTEMPT_STATES } from "../../contracts/state-machine";
 import { getRepairHooks, type NightAssignment } from "./hooks";
 import { CONFIG_KEY, lanePilotProjectOrNotice, resolveLanePilotProject } from "./project";
 import { LOADED_AT, LOG_TAIL_BYTES, VERSION, isDue, lastPmOwnerMessageAt, logIncidents, pointsAtEngine, reasonSignature, repairPriority, writerRedCheck, writerStrayFiles } from "./episodes";
@@ -73,7 +74,7 @@ const STAGE_MS = 3_600_000;
 const REPEAT_TASKS = 3;
 /** An attempt at work for the queued-attempt check: every holding state but a queued one. */
 const WORKING_ATTEMPT_STATES = OPEN_ATTEMPT_STATES.filter((state) => state !== "queued").map((state) => `'${state}'`).join(",");
-const FAILED_STATES = "'blocked','validation_failed','spawn_rejected','provider_error','empty_output'";
+const FAILED_STATES = FAILED_ATTEMPT_STATES.map((state) => `'${state}'`).join(",");
 /** Stops by design: a question for the PM, a dependency that ended blocked, or a turn the provider cut off (writer_stream_error). */
 const NOT_A_FAULT = /needs_human|depends_on|workspace_not_repo_root|writer_stream_error/i;
 /**

@@ -12,12 +12,6 @@ export const BENCH_PROJECTS: readonly BenchProject[] = [
   { projectId: "proj_a35nni238u", name: "cakekeeper", cwdPrefixes: ["/Users/vechkasov/Documents/Клиенты/cakekeeper.ru"] },
 ];
 
-/** Where a project's repository lives, by its path. A host is a BB machine id. */
-export const HOST_BY_PATH_PREFIX: ReadonlyArray<readonly [string, string]> = [
-  ["/home/ubuntu/", "host_rwrxyi39aw"],
-  ["/Users/vechkasov/", "host_7sea4qaad8"],
-];
-
 export type Risk = "low" | "medium" | "high" | "critical";
 
 /** A past task that could enter a set: accepted, with its first accepted attempt. */

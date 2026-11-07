@@ -9,6 +9,7 @@ export const CRITIC_SCREEN_ID = "critique.screen";
 
 export const criticScreenJudgment = defineJudgment<{ packet: string }, { call: "pass" | "fail" }>({
   id: CRITIC_SCREEN_ID,
+  title: "Стоит ли показывать изменение коду-критику",
   version: 1,
   defaultMode: "active",
   timeoutMs: 8_000,

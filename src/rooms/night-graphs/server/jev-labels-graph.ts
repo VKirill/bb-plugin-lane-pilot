@@ -1,5 +1,5 @@
 import type { NodeExecutor, StepContext } from "@lane-pilot/workflow-engine";
-import { applyOutcomeLabels } from "@lane-pilot/jev";
+import { applyOutcomeLabels, outcomeSweepFor } from "@lane-pilot/jev";
 import { planModelLabels, modelLabelPrompt, compareModelDecision, modelLabelable } from "@lane-pilot/jev";
 import { recordOutcome } from "@lane-pilot/jev";
 import { listJudgments } from "@lane-pilot/jev";
@@ -8,7 +8,7 @@ import { type ServerCore } from "../../contracts/server";
 
 import type { ChainRuntime } from "../../contracts/server";
 import { runGraphHelper } from "../../workflow/server";
-import { sweepFailureClassOutcomes, sweepInvoiceCheckOutcomes, sweepPlanFactOutcomes, sweepRouteWorkflowOutcomes, sweepWriterModelOutcomes } from "../../runs";
+import "../../runs";
 
 import type { RuleScanApi } from "../../self-repair/server/rule-scan";
 import type { WorkflowEngineApi, WriterHostApi } from "../../platform/server";
@@ -39,14 +39,11 @@ export function mountJevLabelsGraph(ctx: ServerCore, services: Services): void {
   engine.register<ChainRuntime>("lp.jev_labels_outcome", {
     reentrant: true,
     run: async () => {
-      const counts: Record<string, number> = {
-        "failure.class": sweepFailureClassOutcomes(ctx.db as never),
-        "invoice.check": sweepInvoiceCheckOutcomes(ctx.db as never),
-        "route.workflow": sweepRouteWorkflowOutcomes(ctx.db as never),
-        "plan.fact": sweepPlanFactOutcomes(ctx.db as never),
-        "writer.model": sweepWriterModelOutcomes(ctx.db as never).length,
-        ...applyOutcomeLabels(ctx.db as never),
-      };
+      const counts: Record<string, number> = { ...applyOutcomeLabels(ctx.db as never) };
+      for (const judgment of listJudgments()) {
+        const sweep = outcomeSweepFor(judgment.id);
+        if (sweep) counts[judgment.id] = sweep(ctx.db as never);
+      }
       return { output: { status: "done", counts, labeled: Object.values(counts).reduce((a, b) => a + b, 0) } };
     },
   } as NodeExecutor<ChainRuntime>);

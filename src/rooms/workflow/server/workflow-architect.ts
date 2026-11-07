@@ -28,7 +28,7 @@ import {modelCatalogOf} from "../../platform/server";
 import {registerObservedTool} from "../../platform/server";
 import { ToolError } from "../../contracts/server";
 import { stringAt, orMiss, isNotFound } from "@lane-pilot/kit";
-import { DRILL_SANDBOX_PROJECT_IDS, isSandboxProjectName } from "../../stability/server";
+import { DRILL_SANDBOX_PROJECT_IDS, isSandboxProjectName } from "../../contracts";
 import type { ServerCore } from "../../contracts/server";
 
 import type { DocsNightlyApi } from "../../docs/server/docs-nightly";

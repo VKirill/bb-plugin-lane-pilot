@@ -16,6 +16,7 @@ const clip = (text: string, max: number) => (text.length > max ? `${text.slice(0
 
 export const leadPredictJudgment = defineJudgment<PredictInput, PredictDecision>({
   id: LEAD_PREDICT_ID,
+  title: "Какой ответ даст владелец",
   version: 1,
   defaultMode: "shadow",
   timeoutMs: 8_000,
@@ -51,6 +52,7 @@ export type JudgeDecision = { verdict: "partial" | "miss" };
 
 export const leadJudgeJudgment = defineJudgment<JudgeInput, JudgeDecision>({
   id: LEAD_JUDGE_ID,
+  title: "Было ли предсказание в направлении ответа",
   version: 1,
   defaultMode: "shadow",
   timeoutMs: 8_000,

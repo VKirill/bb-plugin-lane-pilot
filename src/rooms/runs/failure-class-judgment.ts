@@ -22,6 +22,7 @@ const clip = (text: string, max: number): string => (text.length > max ? `${text
 
 export const failureClassJudgment = defineJudgment<FailureClassInput, FailureClassDecision>({
   id: FAILURE_CLASS_ID,
+  title: "На чьей стороне сбой попытки",
   version: 1,
   defaultMode: "shadow",
   timeoutMs: 5_000,

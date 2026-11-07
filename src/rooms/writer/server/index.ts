@@ -9,7 +9,6 @@ export { taskThreadWindows, taskUsage } from "./attempt-usage";
 export type { DispatchRuntime } from "./dispatch-workflow";
 export { createWriterDispatch } from "./dispatch";
 export { createWriterFinish } from "./finish";
-export { OPENCODE_WRITER_PROVIDER } from "./skill-materialize";
 export { createWriterSpawn } from "./spawn";
 export { walkWriterChain, waitingWriterReason, waitingWriterText, WAITING_WRITER_PREFIX, providerDisplayName } from "./writer-hold";
 export type { ChainWalk, WriterCandidate, WriterHold, WriterHoldDeps } from "./writer-hold";

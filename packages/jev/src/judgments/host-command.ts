@@ -15,6 +15,7 @@ const clip = (text: string, max: number): string => (text.length > max ? `${text
 
 export const hostCommandJudgment = defineJudgment<HostCommandInput, HostCommandDecision>({
   id: HOST_COMMAND_ID,
+  title: "Безопасна ли команда на машине",
   version: 1,
   defaultMode: "shadow",
   timeoutMs: 8_000,

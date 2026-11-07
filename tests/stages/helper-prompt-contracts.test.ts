@@ -10,7 +10,8 @@ import { analyzerPrompt } from "../../src/rooms/self-repair/server/rule-scan";
 import { repairPrompt } from "../../src/rooms/self-repair/server/self-repair";
 import { specialistPrompt } from "../../src/rooms/critique/server/specialists";
 import { qaThreadPrompt } from "../../src/rooms/qa/server/qa-thread";
-import { WRITER_SETUP_LINES, buildTask, writerContextBlocks, writerPrompt } from "../../src/rooms/writer/server/writer-task";
+import { WRITER_SETUP_LINES, writerContextBlocks, writerPrompt } from "../../src/rooms/writer/server/writer-task";
+import { buildTask } from "../fixtures/hello-task";
 import { actionableFindings, buildCandidateEvidence, codeCritiquePrompt, codeRepairPrompt, parseCodeCritique, parseWriterRepairReply, writerRepairReplySchema, sameUnresolvedFindings, shouldRequestRepair, parseCodeCritiqueSettings } from "../../src/rooms/critique/code-critique";
 import { critiquePrompt, parseCritique } from "../../src/rooms/critique/critique";
 import { STAGE_IDS } from "@lane-pilot/contracts";
@@ -173,7 +174,7 @@ describe("a prompt names every literal its parser accepts", () => {
   it("night review, gate triage, the writer repair reply and the council chair", () => {
     expect(unnamed(nightReviewResultSchema, nightReviewPrompt({ agent: "n", task: {}, acceptedResult: {}, workspace: "/w", maxFindings: 5 }))).toEqual([]);
     expect(unnamed(gateTriageResultSchema, gateTriagePrompt(report))).toEqual([]);
-    const task = buildTask({ writerWorkspacePath: "/tmp/w" } as never, "T-1");
+    const task = buildTask("/tmp/w", "T-1");
     const repair = codeRepairPrompt({ task, findings: [], agent: "Lane Pilot writer", setupLines: WRITER_SETUP_LINES, contextBlocks: writerContextBlocks(task, "", "", "", "") });
     expect(unnamed(writerRepairReplySchema, repair)).toEqual([]);
     const session = { question: "q", agenda: ["a"], criteria: ["c"], seats: [{ id: "s", title: "S" }] } as never;
@@ -220,7 +221,7 @@ describe("code critique and its repair round", () => {
   });
 
   it("the repair brief has one role and one final answer in the parser's format, and no artifact hash", () => {
-    const task = buildTask({ writerWorkspacePath: "/tmp/w" } as never, "T-1");
+    const task = buildTask("/tmp/w", "T-1");
     const prompt = codeRepairPrompt({
       task, findings: [blocking], agent: "Lane Pilot writer", setupLines: WRITER_SETUP_LINES,
       contextBlocks: writerContextBlocks(task, "- a note", "PACKET", "", "- rule one"),
@@ -241,7 +242,7 @@ describe("code critique and its repair round", () => {
 });
 
 describe("writer brief", () => {
-  const task = buildTask({ writerWorkspacePath: "/tmp/w" } as never, "T-1");
+  const task = buildTask("/tmp/w", "T-1");
 
   it("calls the rules project rules, some on trial, and lets the contract win", () => {
     const brief = writerPrompt(task, "", "", undefined, "Lane Pilot writer", "", "- Always run lint");
@@ -393,7 +394,7 @@ describe("other helper prompts", () => {
 describe("retry brief", () => {
   it("tells the next writer why the last attempt failed, as data", async () => {
     const { previousAttemptBrief, writerPrompt } = await import("../../src/rooms/writer/server/writer-task");
-    const task = buildTask({ writerWorkspacePath: "/tmp/w" } as never, "T-1");
+    const task = buildTask("/tmp/w", "T-1");
     const brief = previousAttemptBrief({ status:"validation_failed", reason:"verification failed", produced:["src/a.ts"],
       verification:[{ command:"npm test", exitCode:0 }, { command:"npx vitest run a", exitCode:1, stderr:"Expected 3, got 4" }] });
     // Result: line first, then one what-failed → what-to-do bullet per problem.

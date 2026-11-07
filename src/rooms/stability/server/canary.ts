@@ -1,6 +1,7 @@
 import packageJson from "../../../../package.json";
 import { setSandboxProjects } from "../../owner-waiting";
 import { failureClass } from "../../contracts/failure-class";
+import { DRILL_SANDBOX_PROJECT_IDS, FAILED_ATTEMPT_STATES, isDrillTask, isSandboxProjectName } from "../../contracts";
 import type { LanePilotDatabase } from "../../storage";
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import type { rpcContract } from "../../contracts";
@@ -31,18 +32,6 @@ export const BUDGET_MIN_ATTEMPTS = 20;
 const SINCE_KEY = (version: string) => `canary:since:${version}`;
 const ALERTED_KEY = (version: string) => `canary:alerted:${version}`;
 
-/**
- * Sandbox and drill traffic is not the product's: the drill's sandbox project, every project named «LP sandbox …», «LP native …» or «LP bench …» (src/rooms/bench: the fixed task set replayed on purpose) and
- * the drill's tasks (`drill-*`, scripts/lp-drill.sh) fail on purpose and would spend the budget of the real projects (audit 2026-10-08
- * round 4, P1-12). The same rule as scripts/lp-metrics-views.sql (`scope`), which tests/lp-metrics.test.ts keeps in step.
- */
-export const SANDBOX_PROJECT_ID = "proj_3tb652jpsi";
-/** Every drill sandbox: the Mac mini's and, since 2026-10-28, OVH's («LP sandbox OVH (drill)», where deploys from OVH run the drill). */
-export const DRILL_SANDBOX_PROJECT_IDS: readonly string[] = [SANDBOX_PROJECT_ID, "proj_ibu6v9g64j"];
-export const isSandboxProjectName = (name: string | null | undefined): boolean => typeof name === "string" && (name.startsWith("LP sandbox") || name.startsWith("LP native") || name.startsWith("LP bench"));
-export const isDrillTask = (taskId: string): boolean => taskId.startsWith("drill-");
-
-const FAILED_STATES = ["blocked", "provider_error", "timeout", "empty_output", "validation_failed", "spawn_rejected"];
 type Row = { id: string; run_id: string; task_id: string; state: string; reason: string | null; project_id: string; pm_thread_id: string | null };
 
 export type CanaryFault = { projectId: string; runId: string; taskId: string; pmThreadId: string | null; reason: string };
@@ -75,8 +64,8 @@ export const REASON_SCAN_CHARS = 4000;
 
 function selectFinished(db: LanePilotDatabase, where: string, args: unknown[], sandboxProjects: ReadonlySet<string> = new Set()): Row[] {
   return (db.prepare(`SELECT a.id, a.run_id, a.task_id, a.state, substr(a.reason, 1, ${REASON_SCAN_CHARS}) AS reason, r.project_id, r.pm_thread_id FROM lane_pilot_attempt a
-    JOIN lane_pilot_run r ON r.id=a.run_id WHERE a.state IN ('accepted',${FAILED_STATES.map(() => "?").join(",")}) AND ${where} ORDER BY a.created_at`)
-    .all(...FAILED_STATES, ...args) as Row[])
+    JOIN lane_pilot_run r ON r.id=a.run_id WHERE a.state IN ('accepted',${FAILED_ATTEMPT_STATES.map(() => "?").join(",")}) AND ${where} ORDER BY a.created_at`)
+    .all(...FAILED_ATTEMPT_STATES, ...args) as Row[])
     .filter((row) => !DRILL_SANDBOX_PROJECT_IDS.includes(row.project_id) && !sandboxProjects.has(row.project_id) && !isDrillTask(row.task_id));
 }
 

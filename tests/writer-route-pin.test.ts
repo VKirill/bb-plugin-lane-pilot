@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { failureClassCooldownMs } from "../src/rooms/contracts/failure-class";
 import { loadWriterPin, noteWriterPair, writerPinKey } from "../src/rooms/writer/writer-model-pin";
-import { writerRouteKey, type WriterRouteDecision } from "../src/rooms/writer/writer-model-pick";
+import { writerRouteKey } from "../src/rooms/contracts/judgment-ids";
+import type { WriterRouteDecision } from "../src/rooms/writer/writer-model-pick";
 
 const fakeKv = () => {
   const map = new Map<string, unknown>();

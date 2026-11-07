@@ -11,7 +11,7 @@ import { bestEffort } from "@lane-pilot/kit";
  * one. An unclear pick (below `min_p`) keeps the project's own writer. The picked model writes the task; the project's writer becomes
  * its first fallback, the configured fallbacks follow.
  */
-export const WRITER_MODEL_JUDGMENT_ID = "writer.model";
+import { WRITER_MODEL_JUDGMENT_ID, writerRouteKey } from "../contracts";
 
 export type WriterPickTask = {
   title: string; objective: string; kind?: string | null; area?: string | null; risk?: string | null;
@@ -43,6 +43,7 @@ const TIER_RANK = { light: 0, standard: 1, strong: 2 } as const;
 
 export const writerModelJudgment = defineJudgment<WriterPickInput, { key: string | null }>({
   id: WRITER_MODEL_JUDGMENT_ID,
+  title: "Какой моделью писать задачу",
   // v3: composite scoring — the Choice no longer hides «how hard is the task» and «what breaks» inside its criteria, and the
   // provider load moved out of the question into the decision code (weights we control).
   version: 3,
@@ -126,7 +127,6 @@ export type WriterRouteDecision = {
   outcomeAt?: number;
 };
 
-export const writerRouteKey = (runId: string, taskId: string) => `writer-route:${runId}:${taskId}`;
 
 /** The KV key of the model Jev picked for a task's writer (the writer's load spread reads the kept picks). */
 export const WRITER_PICK_PREFIX = "writer-pick:";

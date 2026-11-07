@@ -91,6 +91,13 @@ export function isOpenAttemptState(state: string): boolean {
   return (OPEN_ATTEMPT_STATES as readonly string[]).includes(state);
 }
 
+/** Attempt states that ended in failure: every state minus the open ones, `accepted` and `canceled`. The canary, the wall, self-repair and the live rate all read this one set — a report that needs a different membership is a bug to name, not a list to fork. */
+export const FAILED_ATTEMPT_STATES: readonly AttemptState[] = ATTEMPT_STATES.filter((state) => !isOpenAttemptState(state) && state !== "accepted" && state !== "canceled");
+
+export function isFailedAttemptState(state: string): boolean {
+  return (FAILED_ATTEMPT_STATES as readonly string[]).includes(state);
+}
+
 export function resolveTransition(from: AttemptState | null, event: TransitionEvent): AttemptState | "stay" {
   const row = TRANSITION_TABLE.find((item) => item.from === from && item.event === event);
   if (!row) throw new Error(`illegal transition ${from ?? "∅"} + ${event}`);

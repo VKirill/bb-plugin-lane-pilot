@@ -2,7 +2,7 @@ import { runOnHost } from "@lane-pilot/host-calls";
 import { bestEffort } from "@lane-pilot/kit";
 import { loadCandidates, findSolutionCommit, type Candidate, type HostPort } from "../../bench/server";
 import type { ServerCore } from "../../contracts/server";
-import { isSandboxProjectName } from "../../stability/server";
+import { isSandboxProjectName } from "../../contracts";
 import { createCheckers, type CheckersApi } from "../api";
 import { guardShellPort } from "../workspace";
 import { loadHistory } from "../history";

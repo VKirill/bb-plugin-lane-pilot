@@ -2,6 +2,7 @@ import { chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
 import { isFsAbsent, orMiss } from "@lane-pilot/kit";
+import { HUB_ADDRESS_INTS, HUB_ADDRESSES, HUB_NAMES } from "../contracts";
 
 /**
  * The shell guard of Codex, OpenCode and Cursor helpers and writers (audit 2026-10-08 round 3, P0-2), cut down to protection from
@@ -80,11 +81,11 @@ v6num() {
 hub_candidate() {
   _h=$(printf '%s' "$1" | tr 'A-Z' 'a-z')
   case "$_h" in
-    ovh-main|ovh-vps|vechkasov-ovh|selfystudio-work|claude-dev-key|rescue-vps) return 0 ;;
+    ${HUB_NAMES.join("|")}) return 0 ;;
     *:*) v6num "$_h" || return 1 ;;
     *) ipnum "$_h" || return 1 ;;
   esac
-  [ "$IPNUM" = 168296449 ] || [ "$IPNUM" = 908427673 ]
+  ${HUB_ADDRESS_INTS.map((num) => `[ "$IPNUM" = ${num} ]`).join(" || ")}
 }
 # One word of a command line: user@host, host:path, ssh://user@host:port/, [v6]:path, -oHostName=host, a,b (ProxyJump).
 hub_word() {
@@ -119,7 +120,7 @@ case "$self" in
   ssh|scp|sftp)
     for a in "$@"; do
       case "$a" in
-        *ovh-main*|*ovh-vps*|*vechkasov-ovh*|*selfystudio-work*|*claude-dev-key*|*rescue-vps*|*10.8.0.1*|*54.37.129.153*) deny "$self to the hub" ;;
+        ${[...HUB_NAMES, ...HUB_ADDRESSES].map((host) => `*${host}*`).join("|")}) deny "$self to the hub" ;;
       esac
       for word in $a; do
         word=@{word#[\'\"]}

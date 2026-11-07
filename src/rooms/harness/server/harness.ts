@@ -18,7 +18,7 @@ import { stringAt, orMiss, isNotFound } from "@lane-pilot/kit";
 import { type ServerCore } from "../../contracts/server";
 import { projectRoleField } from "../../runs/server";
 import { HELPER_ROLES, type HelperRole } from "../../contracts/helper-context";
-import { SANDBOX_PROJECT_ID, isSandboxProjectName } from "../../stability/server";
+import { SANDBOX_PROJECT_ID, isSandboxProjectName } from "../../contracts";
 import { ensureExcludeLinesCommand, EXCLUDE_NOT_GIT } from "../../verification";
 import { getAttempt, getTaskGitBase } from "../../storage";
 import { hubFields } from "../../platform/server";

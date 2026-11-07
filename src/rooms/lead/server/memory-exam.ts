@@ -1,5 +1,5 @@
 import { jev, type JevSettings } from "@lane-pilot/jev";
-import { SANDBOX_PROJECT_ID, isDrillTask } from "../../stability/server";
+import { SANDBOX_PROJECT_ID, isDrillTask } from "../../contracts";
 import type { MemoryEvalRunner } from "../../contracts";
 import { OWNER_ANSWERERS } from "../logic";
 import { leadPredictJudgment, type PredictDecision, type PredictHistory } from "../predict";

@@ -5,7 +5,7 @@ import { openDatabase, saveProjectSetting } from "../../src/rooms/plugin-db";
 import { MEMORY_PATHS } from "../../src/rooms/memory";
 import { createMemoryProbe, judge } from "../../src/rooms/memory-probe/server/memory-probe";
 import { memoryProbeRpc } from "../../src/rooms/core/server/rpc-memory-probe";
-import { SANDBOX_PROJECT_ID } from "../../src/rooms/stability/server/canary";
+import { SANDBOX_PROJECT_ID } from "../../src/rooms/contracts";
 import { memoryUnanswered } from "../../src/rooms/learning/unanswered";
 import { stickyTurnPromptWithRules } from "../../src/rooms/writer/server/writer-knowledge";
 import { taskV2Schema } from "../../src/rooms/contracts";

@@ -14,7 +14,7 @@ import { memorySettingsFor } from "../../memory/server";
 import type { InsightsApi } from "../../contracts/server";
 import { HARNESS_VERSION, loadPrototypeConfig } from "../../storage";
 import { loadProjectSettings } from "../../storage";
-import { DRILL_SANDBOX_PROJECT_IDS } from "../../stability/server";
+import { DRILL_SANDBOX_PROJECT_IDS } from "../../contracts";
 import type { ServerCore } from "../../contracts/server";
 
 

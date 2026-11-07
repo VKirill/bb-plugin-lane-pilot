@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import type { NodeExecutor, StepContext } from "@lane-pilot/workflow-engine";
 import { getRuleProposal, logRuleEvent, setRuleTrial } from "@lane-pilot/run-insights";
 import { adoptRuleProposal, lanePilotProjectOrNotice } from "../self-repair/server";
-import { isSandboxProjectName } from "../stability/server";
+import { isSandboxProjectName } from "../contracts";
 import { postOwnerItem } from "../owner-waiting";
 import { registeredTools, scheduleIsolated } from "../platform/server";
 import { type ServerCore } from "../contracts/server";

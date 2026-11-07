@@ -7,7 +7,7 @@ import { bestEffort, stringAt, orMiss, isNotFound } from "@lane-pilot/kit";
 import { type ServerCore } from "../../contracts/server";
 import { cancelAttemptById, finishRunSafely } from "../../runs/server";
 import { createRun, createTask, getActivation, getRun, getTask, listOpenAttempts, loadProjectSettings, loadPrototypeConfig, saveProjectSetting, savePrototypeConfig } from "../../storage";
-import { isSandboxProjectName } from "../../stability/server";
+import { isSandboxProjectName } from "../../contracts";
 import { attemptMetrics, syncTokenUsage } from "../../usage/server";
 import { DEFAULT_BENCH_WRITER } from "../runner";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";

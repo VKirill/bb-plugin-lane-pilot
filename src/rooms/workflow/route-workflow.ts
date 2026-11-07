@@ -11,7 +11,7 @@ import { choice, choiceOf, defineJudgment, noul, noulOf, type Answers } from "@l
  * broad». A case that is not clear enough is escalated to the helper thread that decided every route before.
  */
 export const NONE = "none_of_these";
-export const ROUTE_WORKFLOW_ID = "route.workflow";
+import { ROUTE_WORKFLOW_ID } from "../contracts";
 
 export type RouteWorkflowInput = RouterModelInput;
 export type RouteWorkflowDecision = RouterModelOutput;
@@ -93,6 +93,7 @@ function statedInputs(answers: Answers, input: RouteWorkflowInput, index: number
 
 export const routeWorkflow = defineJudgment<RouteWorkflowInput, RouteWorkflowDecision>({
   id: ROUTE_WORKFLOW_ID,
+  title: "Какой граф подходит запросу",
   // v3: the top-to-second ratio is an alternative acceptance to the absolute margin — a close pair where one option
   // dominates the other reads cleaner as p1/p2 than as a percentage point lead (TypeSafe confidence docs).
   version: 3,

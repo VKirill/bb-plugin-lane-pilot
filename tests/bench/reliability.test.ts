@@ -8,7 +8,7 @@ import { DEFAULT_BUDGET_HOURS, DEFAULT_BUDGET_TOKENS, nightArm, runSeries } from
 import { createBench } from "../../src/rooms/bench/service";
 import { getRun, getSet, latestNoise, listResults, startRunRow, verifySet } from "../../src/rooms/bench/store";
 import type { BenchResult } from "../../src/rooms/bench/store";
-import { isSandboxProjectName } from "../../src/rooms/stability/server";
+import { isSandboxProjectName } from "../../src/rooms/contracts";
 import type { AttemptMetrics } from "../../src/rooms/usage/server/attempt-metrics";
 import type { BenchProject, Candidate } from "../../src/rooms/bench/types";
 import { benchWorld, localHost, makeContract, makeRepo, tmp } from "./helpers";

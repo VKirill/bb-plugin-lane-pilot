@@ -14,6 +14,7 @@ import {
   transitionAttempt,
 } from "../src/rooms/plugin-db";
 import { TARGET_SHA } from "../src/rooms/runs/constants";
+import { buildTask } from "./fixtures/hello-task";
 
 const projectId = "project-test";
 const pmThreadId = "pm-thread";
@@ -238,7 +239,7 @@ describe("production spawn_unknown reconciliation", () => {
 
     const dispatched = JSON.parse(String(await harness.behavior.callAgentTool(
       "lane_pilot_dispatch_writer",
-      { confirm:true, plan:"Canonical live reconciliation plan", objective:"Сверка записанных писателей" },
+      { confirm:true, plan:"Canonical live reconciliation plan", objective:"Сверка записанных писателей", task:buildTask(config.writerWorkspacePath, "reconcile.1") },
       { threadId:pmThreadId, projectId },
     )));
     const waiting = JSON.parse(String(await harness.behavior.callAgentTool(

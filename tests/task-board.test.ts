@@ -44,6 +44,15 @@ describe("buildTaskBoard", () => {
     expect(later).toEqual(expect.arrayContaining(["q", "w", "c"]));
   });
 
+  it("files a running plan-fact or post-acceptance stage under «checking» too", () => {
+    const w = world();
+    w.task("pf"); w.attempt("apf", "pf", "run", "spawn_requested", "running"); w.stage("pf", "writer-agent", "passed"); w.stage("pf", "plan-fact", "running");
+    w.task("ml"); w.attempt("aml", "ml", "run", "spawn_requested", "running"); w.stage("ml", "writer-agent", "passed"); w.stage("ml", "memory-maintenance", "running");
+    const board = Object.fromEntries(buildTaskBoard(w.db, { doneSince:0 }).map((item) => [item.taskId, item]));
+    expect(board.pf).toMatchObject({ column:"checking", phase:"checking", stage:"plan-fact" });
+    expect(board.ml).toMatchObject({ column:"checking", phase:"checking" });
+  });
+
   it("drops a version the PM replaced with a renumbered redo (vf-s1-xp.3 blocked beside its accepted xp.4)", async () => {
     const w = world();
     w.task("vf-s1-xp.3"); w.attempt("x3", "vf-s1-xp.3", "run", "spawn_requested", "running", "blocked");

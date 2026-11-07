@@ -564,19 +564,6 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
       .map((row) => row.path);
     const classified = classifyWriterOutput({ task:input.task, produced:attributed, contents, verifies,
       answered:answerText.trim().length > 0, preexisting });
-    if (input.task.expected_outputs.includes("hello.txt") && input.task.expected_outputs.includes("tests/hello.test.txt")) {
-      const helloOk = contents["hello.txt"] === "hello from native BB writer\n";
-      const testOk = contents["tests/hello.test.txt"] === "hello from native BB writer\n";
-      if (!helloOk || !testOk) {
-        recordGateEvaluation(db,{...input,gate:"validate",status:"rejected",input:JSON.stringify(input.task),summary:{reason:"fixture_output_mismatch"}});
-        return {
-          status: contents["hello.txt"] == null && contents["tests/hello.test.txt"] == null ? "empty_output" : "validation_failed",
-          reason:"fixture output content mismatch",
-          output:outputText(output),
-          produced:checkedPaths, verification:verifies,
-        };
-      }
-    }
     if (!classified.ok) {
       recordGateEvaluation(db,{...input,gate:"validate",status:"rejected",input:JSON.stringify(input.task),summary:{reason:"writer_output_not_accepted"}});
       return { status:classified.state, reason:classified.reason, output:answerText, produced:checkedPaths, verification:verifies, diffKey,

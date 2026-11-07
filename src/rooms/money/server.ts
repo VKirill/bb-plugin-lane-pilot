@@ -1,4 +1,5 @@
 import { hostContract } from "../contracts";
+import { PROVIDER_CAPABILITIES } from "@lane-pilot/models";
 import { loadProjectSettings } from "../storage";
 import type { ServerCore } from "../contracts/server";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
@@ -19,7 +20,7 @@ export function createMoney(ctx: Pick<ServerCore, "db" | "bb">) {
   async function holds(providerId: string, model: string, hostId: string): Promise<string | null> {
     const money = moneyHold(providerId, status().monthUsd, capOf(settings()["money.monthly_cap_usd"]));
     if (money) return money;
-    if (providerId !== "claude-code") return null;
+    if (!PROVIDER_CAPABILITIES[providerId]?.publishesUsageWindows) return null;
     try {
       const host = ctx.bb.hosts.experimental_client({ contract: hostContract });
       const answer = await host.call("readUsageWindows", { requestedHostId: hostId }, { hostId, timeoutMs: 5_000 });
