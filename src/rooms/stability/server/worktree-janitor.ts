@@ -5,7 +5,7 @@ import { configuredSetting } from "../../contracts/server";
 import type { ServerCore } from "../../contracts/server";
 import { loadProjectSettings, registerWorktree } from "../../storage";
 import { OPEN_ATTEMPT_STATES, RETRY_ELIGIBLE, isOpenAttemptState } from "../../state-machine";
-import { STICKY_WINDOW_MS } from "../../writer";
+import { STICKY_WINDOW_MS } from "../../platform/server";
 
 /**
  * The hourly safety net over ~/.lane-pilot/worktrees on every connected machine (WT1, 2026-10-30): copies of docs,
