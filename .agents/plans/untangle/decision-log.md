@@ -131,3 +131,6 @@ F3 66e0fc30, R8 7961622a, R6+R9 ef504db7, R4a 43d4c51e, G5 50d5865b, R8c (this).
 - Taken: all of special cases and surplus; hidden links groups 1–8, 10; needless links 1–15, 19, 20, 24, 25, 40.
 - Rejected: hidden-links group 9 (new thread-registry table, out of scope); needless links 16–18, 21–39 (pass functions instead of a narrow per-file Services — contradicts stream S convention, removes no edge).
 - Streams: W-surplus (LongCat), W-special (SWE-2 high), W-hidden (SWE-2 high); needless 1, 2, 5, 6, 7, 11, 14 folded into G8a because they hold the last SCC.
+
+## Wave FS — foreign SQL to owner functions (2026-11-07, after 0.1.485)
+- Owner: "Делай раз считаешь что надо". 387 sites; split by importing room into fs-a (runs/writer/workflow/…), fs-b (self-repair/wall/bench/…), fs-c (memory*/native-agent/usage/… + packages). Target 0 per room, kept sites named; ratchet lowered; graph stays acyclic.
