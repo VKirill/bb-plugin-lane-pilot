@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { validateWorkflow } from "@lane-pilot/workflow-engine";
 import { createRuleScan } from "../../src/rooms/self-repair/server/rule-scan";
+import { selfRepairDeps } from "../../src/rooms/core/server";
 import { mountNightGraphs } from "../../src/rooms/night-graphs/server";
 import { builtinWorkflow } from "../../src/rooms/workflow/builtin";
 import { listRuleProposals } from "@lane-pilot/run-insights";
@@ -15,7 +16,7 @@ const RULE = JSON.stringify({ rules: [{ rule: "Run the spec next to the file bef
 
 function setup(answers: Array<string | Error> = []) {
   const w = nightWorld({ answers });
-  w.services.ruleScan = createRuleScan(w.ctx, w.services);
+  w.services.ruleScan = createRuleScan(w.ctx, w.services, selfRepairDeps());
   mountNightGraphs(w.ctx, w.services);
   const scan = w.services.ruleScan as ReturnType<typeof createRuleScan>;
   /** Replaces the planning step by a fixed plan (the real one reads the failures of the project; its output is what the steps below consume). */

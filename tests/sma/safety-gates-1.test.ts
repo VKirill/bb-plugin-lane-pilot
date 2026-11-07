@@ -10,7 +10,7 @@ import { internalIds, parityGaps, UNSHOWN_FIELDS } from "../../src/rooms/guard-t
 import { capOf, moneyHold, spendBook } from "../../src/rooms/money";
 import { createCore } from "../../src/rooms/core/server/core";
 import type { Services } from "../../src/rooms/core/server/services";
-import { createPhaseDriver } from "../../src/rooms/phase/server/driver";
+import { createPhaseDriver } from "../phase-driver";
 import { planSignature, type PlanItem } from "../../src/rooms/phase/logic";
 import { savePhase } from "../../src/rooms/phase/store";
 import { isHeld } from "../../src/rooms/runs/server/runs-pause";

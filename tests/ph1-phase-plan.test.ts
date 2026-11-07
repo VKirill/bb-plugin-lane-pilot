@@ -1,7 +1,7 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import { createCore } from "../src/rooms/core/server/core";
-import { createPhaseDriver } from "../src/rooms/phase/server/driver";
+import { createPhaseDriver } from "./phase-driver";
 import { type Phase, type PhaseRecord } from "../src/rooms/phase/logic";
 import { autoDue, autoInputs, createAutoStages } from "../src/rooms/phase/server/auto-stages";
 import { phaseToolParams } from "../src/rooms/phase/server/tool";

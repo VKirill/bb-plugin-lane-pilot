@@ -6,8 +6,9 @@ import { checksInFlight, failureClass, taskFamily } from "../../runs";
 import { projectRoleField } from "../../runs/server";
 import { OWNER_WORD_WAIT_MS } from "../../tasks";
 import { taskWordItemPrefix } from "../../lead";
-import { clearSpawnMarker, fullAccessSpawn, graphStepMetadata, keyedSpawnSupported, modelCatalogOf, resolveSpawnModel, scheduleIsolated, stringAt } from "../../core/server";
-import type { ServerCore, Services } from "../../core/server";
+import { stringAt } from "@lane-pilot/kit";
+import type { ServerCore } from "../../contracts/server";
+import type { RepairDeps } from "./deps";
 import { waitThreadIdle } from "@lane-pilot/thread-observe";
 import { withUsage } from "../../usage/server";
 import { SELF_REPAIR, builtinWorkflow } from "../../workflow";
@@ -171,8 +172,9 @@ export function repairPrompt(
   return brief.text;
 }
 
-export function createSelfRepair(ctx: ServerCore, engineOf?: () => WorkflowEngine | undefined) {
+export function createSelfRepair(ctx: ServerCore, deps: RepairDeps, engineOf?: () => WorkflowEngine | undefined) {
   const { bb, db, host } = ctx;
+  const { clearSpawnMarker, fullAccessSpawn, graphStepMetadata, keyedSpawnSupported, modelCatalogOf, resolveSpawnModel } = deps;
 
   async function config(): Promise<SelfRepairConfig> {
     const raw = await bb.storage.kv.get(CONFIG_KEY).catch(() => null);
@@ -815,8 +817,8 @@ export function createSelfRepair(ctx: ServerCore, engineOf?: () => WorkflowEngin
   return { config, setConfig, state, collect, tick, status, registerGraph };
 }
 
-export function selfRepairRpc(ctx: ServerCore, services?: Pick<Services, "workflowEngine">) {
-  const repair = createSelfRepair(ctx, () => services?.workflowEngine);
+export function selfRepairRpc(ctx: ServerCore, services: { workflowEngine: WorkflowEngine } | undefined, deps: RepairDeps) {
+  const repair = createSelfRepair(ctx, deps, () => services?.workflowEngine);
   return {
     critic_stats: async ({ projectId, days }) => ({ days, stats:criticStats(ctx.db, projectId, Date.now() - days * 86400_000) }),
     writer_reuse_stats: async ({ projectId, days }) => ({ days, stats:writerReuseStats(ctx.db, projectId, Date.now() - days * 86400_000) }),
@@ -831,12 +833,12 @@ export function selfRepairRpc(ctx: ServerCore, services?: Pick<Services, "workfl
 
 export type SelfRepair = ReturnType<typeof createSelfRepair>;
 
-export function mountSelfRepair(ctx: ServerCore, services?: Pick<Services, "workflowEngine">): SelfRepair {
-  const repair = createSelfRepair(ctx, () => services?.workflowEngine);
+export function mountSelfRepair(ctx: ServerCore, services: { workflowEngine: WorkflowEngine } | undefined, deps: RepairDeps): SelfRepair {
+  const repair = createSelfRepair(ctx, deps, () => services?.workflowEngine);
   // The steps of the graph `lp.self-repair` (worktree, repair thread, verdict) run on the workflow engine.
   if (services?.workflowEngine) repair.registerGraph(services.workflowEngine);
   // Isolated where the core allows: a long schedule of its own or of another plugin must not hold the watcher back.
-  scheduleIsolated(ctx.bb, "self-repair", "*/15 * * * *", async (signal) => {
+  deps.scheduleIsolated(ctx.bb, "self-repair", "*/15 * * * *", async (signal) => {
     if (ctx.isDisposed()) return;
     const result = await repair.tick({ signal }).catch((cause) => {
       if (!ctx.isDisposed()) ctx.log(`self-repair tick failed: ${cause instanceof Error ? cause.message : String(cause)}`);

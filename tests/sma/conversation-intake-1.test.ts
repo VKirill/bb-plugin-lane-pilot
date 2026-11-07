@@ -7,7 +7,7 @@ import { backlogBoard, issueMessage, parseTodoMeta } from "../../src/rooms/backl
 import { createCore } from "../../src/rooms/core/server/core";
 import type { Services } from "../../src/rooms/core/server/services";
 import { ToolError, registeredTools } from "../../src/rooms/core/server";
-import { createPhaseDriver } from "../../src/rooms/phase/server/driver";
+import { createPhaseDriver } from "../phase-driver";
 import { planSignature, type PlanItem } from "../../src/rooms/phase/logic";
 import { failureClass } from "../../src/rooms/runs";
 import { createAttempt, createRun, createTask, openDatabase } from "../../src/rooms/plugin-db";

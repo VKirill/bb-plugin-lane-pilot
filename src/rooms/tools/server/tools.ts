@@ -22,7 +22,7 @@ import { mountWorkflowArchitect } from "../../workflow/server";
 import { mountLeadTool } from "../../lead/server";
 import { mountScheduleTools } from "../../schedule/server";
 import { mountToolFamilies } from "./tool-families";
-import { callerPluginMetadata, registerObservedTool, ToolError } from "../../core/server";
+import { callerPluginMetadata, registerObservedTool, selfRepairDeps, ToolError } from "../../core/server";
 import { compactDispatchReply, compactReceipt, stageDetail } from "../../runs/server";
 import { createWriterAnswer } from "../../writer/server";
 import { createWriterReassign, createWriterUpdateTask } from "../../writer/server";
@@ -316,7 +316,7 @@ export function registerTools(ctx: ServerCore, services: Services, familyContrib
 
   // Modules register their tools after the core ones so the PM tool order follows NATIVE_LP_BRIDGE_TOOLS.
   mountHandoff(ctx);
-  mountInsights(ctx);
+  mountInsights(ctx, selfRepairDeps());
   mountHealth(ctx, services);
   mountCouncilTools(ctx, services.council, (threadId) => services.phaseIntake.launchRefusal(threadId));
   // ponytail: specialists.ts is owned by the critics branch. Push until that file lists the new ids.
@@ -327,7 +327,7 @@ export function registerTools(ctx: ServerCore, services: Services, familyContrib
   registerBrowserExecutors(services.workflowEngine, ctx, services);
   mountRelay(ctx);
   mountWorkflowTools(ctx, services);
-  mountSelfRepair(ctx, services);
+  mountSelfRepair(ctx, services, selfRepairDeps());
   mountHookTimeoutWatch(ctx);
   mountServiceProjects(ctx);
   mountWorktreeJanitor(ctx, { cleanupStickyLaneWorktrees, cleanupFinishedAttemptEnvironments });

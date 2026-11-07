@@ -3,7 +3,7 @@ import { listPhases, listParts } from "../store";
 import { acceptanceKey, designGate, discussionGate, nextAction, openQuestions, planGate, planSignature, renderBook, wordOf, type Phase } from "../logic";
 import { createPhaseIntake } from "./intake";
 import { recoverStopped } from "./auto-stages";
-import { createPhaseReactions, DESIGN_JOURNAL, ROLE_LINES, type PhaseReactions } from "./reactions";
+import type { PhaseReactions } from "./reactions";
 import { installDocs } from "./driver-docs";
 import { installJournal } from "./driver-journal";
 import { installMethods } from "./driver-methods";
@@ -11,7 +11,7 @@ import { installSteps } from "./driver-steps";
 import { installWiring } from "./driver-wiring";
 import { PhaseRefusal, type DriverBase } from "./driver-tools";
 
-export { PhaseRefusal, DESIGN_JOURNAL, ROLE_LINES };
+export { PhaseRefusal };
 export type { PhaseReactions } from "./reactions";
 
 /**
@@ -25,7 +25,7 @@ export type { PhaseReactions } from "./reactions";
  * journal and the learning door in `driver-journal.ts`, the phase's own reads and book in `driver-docs.ts`, the machine around it in
  * `driver-wiring.ts`. The side effects on other rooms (learning, notices, metrics) are handed in as `reactions`.
  */
-export function createPhaseDriver(ctx: ServerCore, services: Services, reactions: PhaseReactions = createPhaseReactions(ctx.db, ctx.bb)) {
+export function createPhaseDriver(ctx: ServerCore, services: Services, reactions: PhaseReactions) {
   const { db, bb } = ctx;
   const now = () => Date.now();
   const base: DriverBase = { ctx, services, db, bb, now, reactions };

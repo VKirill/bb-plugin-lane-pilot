@@ -23,6 +23,7 @@ export type { ProjectFolder } from "./standalone-place";
 export { stageHelperSettings } from "./stage-settings";
 export type { Services } from "./services";
 export { clearSpawnMarker, findThreadsByMetadata, keyedSpawnSupported, spawnTextId } from "./thread-keys";
+export { selfRepairDeps } from "./self-repair-deps";
 export { ToolError } from "../../contracts/server";
 export { fenceOutside, registerObservedTool, registeredTools } from "./tool-result";
 export type { ObservedTool } from "./tool-result";

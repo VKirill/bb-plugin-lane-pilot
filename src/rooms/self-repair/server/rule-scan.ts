@@ -18,15 +18,12 @@ import { postOwnerItem } from "../../owner-waiting";
  * version 1 until 0.1.458 (Astra F-008: the classifier and the executor described two different rules of admission). Read at use, so a
  * policy that moves `rule_trial_apply` back to `night_decides` turns the trials on again without a code change.
  */
-import { fullAccessSpawn, modelCatalogOf, readProviderFolderBlock, resolveSpawnModel, spawnUsageOf, warmSpawnUsage } from "../../core/server";
-import { spawnTextId } from "../../core/server";
-import { builtinWorkflow } from "../../workflow";
-import type { ChainRuntime } from "../../workflow/server";
-import { scheduleIsolated } from "../../core/server";
-import { stringAt } from "../../core/server";
+import { builtinWorkflow, type WorkflowEngine } from "../../workflow";
+import type { createWriterHost } from "../../writer/server";
+import { stringAt } from "@lane-pilot/kit";
 import { SANDBOX_PROJECT_ID, isSandboxProjectName } from "../../stability/server";
-import type { ServerCore } from "../../core/server";
-import type { Services } from "../../core/server";
+import type { ServerCore } from "../../contracts/server";
+import type { RuleScanDeps } from "./deps";
 
 /** How far back a rescan looks. */
 export const RULE_SCAN_WINDOW_MS = 30 * 24 * 3_600_000;
@@ -143,8 +140,15 @@ export function analyzerThreadTitle(input: { kind: "analyze" | "rewrite"; locale
   return [what, input.place, shown].filter(Boolean).join(" · ").slice(0, 160);
 }
 
-export function createRuleScan(ctx: ServerCore, services: Services) {
+/** The two services-bag members the scan uses, named structurally so the room imports no `Services` type from core. */
+export type RuleScanServices = {
+  resolveProjectWriterHost: ReturnType<typeof createWriterHost>["resolveProjectWriterHost"];
+  workflowEngine: WorkflowEngine;
+};
+
+export function createRuleScan(ctx: ServerCore, services: RuleScanServices, deps: RuleScanDeps) {
   const { bb, db, host } = ctx;
+  const { fullAccessSpawn, modelCatalogOf, readProviderFolderBlock, resolveSpawnModel, scheduleIsolated, spawnTextId, spawnUsageOf, warmSpawnUsage } = deps;
   const running = new Set<string>();
 
   /** `avoidProvider`: a provider that just hit its limit; the owner's pick on it is skipped and the role's next provider answers. */
@@ -554,7 +558,7 @@ export function createRuleScan(ctx: ServerCore, services: Services) {
     try {
       await bb.storage.kv.set(LOCALE_KEY(projectId), locale);
       const scan = await setScan(projectId, { state: "running", startedAt: Date.now(), finishedAt: null, triaged: 0, groups: 0, proposals: 0, reason: null });
-      const runtime: ChainRuntime = { ctx, services, pmThreadId: null, projectId, runId: null };
+      const runtime = { ctx, services, pmThreadId: null, projectId, runId: null };
       const started = services.workflowEngine.start({ workflow, key, runtime, link: { projectId }, inputs: { project_id: projectId, locale } });
       void started.done.then(async (summary) => {
         // A run that ended without its apply step saying so (a step failed, a budget stopped it) leaves the scan failed with the run's own reason.
@@ -576,7 +580,7 @@ export function createRuleScan(ctx: ServerCore, services: Services) {
   async function runAnalyzer(projectId: string, title: string, prompt: string, place: { hostId: string; path: string }, analyzer: AnalyzerSelection, metadata: Record<string, unknown>, role?: HelperRole): Promise<string> {
     const workflow = builtinWorkflow(RULES_ASK_WORKFLOW);
     if (!workflow) throw new Error(`built-in workflow ${RULES_ASK_WORKFLOW} is not loaded`);
-    const runtime: ChainRuntime = { ctx, services, pmThreadId: null, projectId, runId: null };
+    const runtime = { ctx, services, pmThreadId: null, projectId, runId: null };
     // The key is the question itself (project, day, title and prompt): a reload or a repeat finds the run it already made. A run that ended
     // badly is closed for good under its key, so the retry of the same question takes the next numbered key.
     const base = `rules-ask:${projectId}:${new Date().toISOString().slice(0, 10)}:${spawnTextId(`${title}\n${prompt}`)}`;

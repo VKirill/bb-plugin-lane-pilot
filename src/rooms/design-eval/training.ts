@@ -4,15 +4,10 @@
  * Four ratios come out of the journal; four conditions say when the designer counts as trained; the readiness words say it to a person;
  * a lesson from a review becomes one dated line added to the designer's role, which its next brief carries.
  */
-export const CRITIQUE_AXES = ["hierarchy", "spacing", "contrast", "states", "brand", "motion"] as const;
-export type CritiqueAxis = (typeof CRITIQUE_AXES)[number];
-/** The drawing critique form: 0–3 on each axis, a verdict and what to change. */
-export type DrawingCritique = { scores: Partial<Record<CritiqueAxis, number>>; verdict: "pass" | "rework"; notes: string };
+import { CRITIQUE_AXES, type DesignJournalLine, type DrawingCritique } from "@lane-pilot/contracts";
 
-export type DesignJournalLine = {
-  at: number; projectId: string; phaseId: string; designer: string; reviewer: string | null; drawingSha: string;
-  firstPass: boolean; critique: DrawingCritique | null; codeScore: number | null; ownerWord: "yes" | "no" | null;
-};
+export { CRITIQUE_AXES } from "@lane-pilot/contracts";
+export type { CritiqueAxis, DesignJournalLine, DrawingCritique } from "@lane-pilot/contracts";
 
 export function critiqueProblems(form: DrawingCritique): string[] {
   const why: string[] = [];

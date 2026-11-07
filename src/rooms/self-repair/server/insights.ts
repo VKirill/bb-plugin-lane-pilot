@@ -6,9 +6,10 @@ import {
   upsertLessonProposal, ruleTrialStats,
 } from "@lane-pilot/run-insights";
 import { loadProjectSettings, type LanePilotDatabase } from "../../storage";
-import { configuredSetting, requirePmRun, type ServerContext } from "../../core/server";
-import { registerObservedTool } from "../../core/server";
-import { scheduleIsolated } from "../../core/server";
+import { configuredSetting } from "../../contracts/server";
+import type { InsightsDeps } from "./deps";
+import type { BbPluginApi } from "@get-bb/plugin-sdk";
+import type { LpRealtimeKind } from "@lane-pilot/ui-kit/realtime-channel";
 import { poolHasRoom, poolTokens, ruleBudget } from "../../learning/rule-budget";
 import { sha256Hex } from "@lane-pilot/kit";
 import { authorize } from "../../policy";
@@ -236,7 +237,16 @@ export function deleteMemoryRecord(db: LanePilotDatabase, projectId: string, mem
  * tried together; when the corpus budget refuses them, they are added one at a time, newest first,
  * until the budget is reached.
  */
-export async function sweepLessons(ctx: ServerContext, projectId: string, now = Date.now()): Promise<LessonsSweepResult> {
+/** What the insights tools and their sweep need of the plugin context; `realtime` is absent in a bare test context. */
+export type InsightContext = {
+  bb: BbPluginApi;
+  db: LanePilotDatabase;
+  log: (message: string) => void;
+  isDisposed: () => boolean;
+  realtime?: { notify(projectId: string, kind: LpRealtimeKind, threadId?: string, id?: string): void };
+};
+
+export async function sweepLessons(ctx: InsightContext, projectId: string, now = Date.now()): Promise<LessonsSweepResult> {
   const { bb, db } = ctx;
   const since = (await bb.storage.kv.get(LESSONS_SINCE_KEY(projectId)) as number | undefined) ?? now - FIRST_SWEEP_WINDOW_MS;
   const base = { projectId, since, until: now, sources: 0, candidates: 0, stored: 0 };
@@ -263,8 +273,9 @@ function activeProjects(db: LanePilotDatabase, since: number): string[] {
   return rows.map((row) => row.project_id);
 }
 
-export function mountInsights(ctx: ServerContext): void {
+export function mountInsights(ctx: InsightContext, deps: InsightsDeps): void {
   const { bb, db } = ctx;
+  const { registerObservedTool, requirePmRun, scheduleIsolated } = deps;
 
   registerObservedTool(bb.agents, {
     name: "lane_pilot_routing_stats",

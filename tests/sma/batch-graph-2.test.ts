@@ -1,7 +1,8 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import { createCore } from "../../src/rooms/core/server/core";
-import { PhaseRefusal, createPhaseDriver } from "../../src/rooms/phase/server/driver";
+import { PhaseRefusal } from "../../src/rooms/phase/server/driver";
+import { createPhaseDriver } from "../phase-driver";
 import { contextSignature, designDecision, executionGate, issuable, pieceProblems, pieceSha, planSignature, type PhaseRecord, type PlanItem, type TaskFact } from "../../src/rooms/phase/logic";
 import { getPhase, listParts, savePhase } from "../../src/rooms/phase/store";
 import { pauseRun } from "../../src/rooms/runs/server/runs-pause";

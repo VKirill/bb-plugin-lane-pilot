@@ -45,6 +45,7 @@ import { improvementRpc } from "../../improvement/server";
 import { sessionMemoryRpc } from "../../memory/server";
 import { createWorkflowArchitect } from "../../workflow/server";
 import { architectStartRpc } from "../../workflow/server";
+import { selfRepairDeps } from "./self-repair-deps";
 import { journalRpcHandlers, timeRpcHandlers } from "./rpc-timing";
 import { anamnesisFor } from "../../anamnesis";
 import { learningFor } from "../../learning";
@@ -71,7 +72,7 @@ export function registerRpc(ctx: ServerCore, services: Services) {
     ...workflowOpsRpc(ctx, services),
     ...schedulesRpc(ctx, services),
     ...councilRpc(ctx.db, services.council),
-    ...selfRepairRpc(ctx, services),
+    ...selfRepairRpc(ctx, services, selfRepairDeps()),
     ...canaryRpc(services.canary),
     ...memoryProbeRpc(services),
     ...harnessRpc(services.harness),

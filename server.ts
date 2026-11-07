@@ -29,6 +29,8 @@ import { createRunGoal, mountRunGoal } from "./src/rooms/run-goal/server";
 import { createProfileCheck, mountProfileCheck } from "./src/rooms/native-agent/server";
 import { createLeadService, mountLead } from "./src/rooms/lead/server";
 import { createPhaseDriver, mountPhaseDriver, mountPhaseIntake, registerPhaseTool } from "./src/rooms/phase/server";
+import { createPhaseReactions } from "./src/rooms/wiring";
+import { selfRepairDeps } from "./src/rooms/core/server";
 import { registerConversationTools, registerQueueTool } from "./src/rooms/tasks/server";
 import { mountOutbound } from "./src/rooms/outbound";
 import { createMoney } from "./src/rooms/money";
@@ -120,7 +122,7 @@ export default async function plugin(bb: BbPluginApi) {
     // providerBreaker is another field of this bag: the canary reads it at call time through the thunk.
     { canary: createCanary(ctx, () => services.providerBreaker) },
     { memoryProbe: createMemoryProbe(ctx, services) },
-    { ruleScan: createRuleScan(ctx, services) },
+    { ruleScan: createRuleScan(ctx, services, selfRepairDeps()) },
     { promotions: createPromotionService(ctx, services) },
     { harness: createHarness(ctx, services) },
     { deferrals },
@@ -131,7 +133,7 @@ export default async function plugin(bb: BbPluginApi) {
     createStageReturn(ctx, services),
     createRunGoal(ctx, services),
     createProfileCheck(ctx),
-    createPhaseDriver(ctx, services),
+    createPhaseDriver(ctx, services, createPhaseReactions(ctx.db, ctx.bb)),
     createMoney(ctx),
     createFront(ctx),
     createCapabilities(ctx, services),
