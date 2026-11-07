@@ -502,12 +502,19 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
     const contents: Record<string, string | null> = {};
     for (const rel of new Set([...input.task.expected_outputs.filter(isOutputPath), ...produced])) {
       const absolute = rel.startsWith("/") ? rel : `${input.task.project_cwd}/${rel}`;
-      const read = await orMiss(bb.sdk.files.read({
-        hostId:input.config.hostId,
-        rootPath:input.task.project_cwd,
-        path:absolute,
-      }), null, isNotFound);
-      contents[rel] = read ? stringAt(read, "content") : null;
+      let content: string | null = null;
+      try {
+        const read = await orMiss(bb.sdk.files.read({
+          hostId:input.config.hostId,
+          rootPath:input.task.project_cwd,
+          path:absolute,
+        }), null, isNotFound);
+        content = read ? stringAt(read, "content") : null;
+      } catch (cause) {
+        // One unreadable file is left unknown, named; the rest of the verification still runs.
+        ctx.log(`verification ${input.taskId}: the file ${rel} could not be read (${cause instanceof Error ? cause.message : String(cause)}); its content is left unknown`);
+      }
+      contents[rel] = content;
     }
     let verifies:Awaited<ReturnType<typeof runVerification>>;
     try { verifies = await runVerification(input.config, input.task, input.runId, input.writerThreadId); }

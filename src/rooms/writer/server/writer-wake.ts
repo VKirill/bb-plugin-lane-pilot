@@ -15,6 +15,8 @@ interface Services {
 
 /** A failed config read re-wakes the attempt this long after the failed tick, so a transient store error cannot strand it. */
 const WAKE_RETRY_MS = 60_000;
+/** Attempts whose config read is currently failing: the failure is logged once per streak, not every tick. */
+const wakeConfigFailing = new Set<string>();
 
 /**
  * The waker of H2: every minute the attempts parked `waiting_writer:` whose earliest hold ended are taken up again —
@@ -40,10 +42,14 @@ export async function sweepWriterWakes(ctx: ServerCore, services: Services, now 
       // The claim cleared wake_at: without a fresh one the attempt would sit queued forever (listDueWakes needs it,
       // and the reconcile never restarts a queued attempt). Re-wake it and name the real cause.
       const why = cause instanceof Error ? cause.message : String(cause);
-      ctx.log(`writer wake ${attempt.id}: the prototype config of ${run.project_id} is unreadable (${why}); re-waking in ${WAKE_RETRY_MS / 1000} s`);
+      if (!wakeConfigFailing.has(attempt.id)) {
+        wakeConfigFailing.add(attempt.id);
+        ctx.log(`writer wake ${attempt.id}: the prototype config of ${run.project_id} is unreadable (${why}); re-waking in ${WAKE_RETRY_MS / 1000} s`);
+      }
       parkAttemptWake(db, attempt.id, `wake_config_unreadable: ${why.slice(0, 160)}`, now + WAKE_RETRY_MS);
       continue;
     }
+    wakeConfigFailing.delete(attempt.id);
     if (!config) continue;
     woken += 1;
     services.startWriterTask({

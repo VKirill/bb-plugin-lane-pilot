@@ -82,7 +82,10 @@ export function createWriterSkillPick(ctx: Pick<ServerCore, "bb" | "host">, opti
       const row = skill as { name: string; description?: unknown; filePath?: unknown };
       const filePath = typeof row.filePath === "string" && row.filePath ? row.filePath : null;
       const description = typeof row.description === "string" && row.description.trim() ? row.description
-        : filePath ? await frontmatterDescription(bb, hostId, join(skillFolder(filePath), "SKILL.md")) : null;
+        : filePath ? await frontmatterDescription(bb, hostId, join(skillFolder(filePath), "SKILL.md")).catch((cause: unknown) => {
+            log(`Lane Pilot skill pick: the description of ${row.name} could not be read (${cause instanceof Error ? cause.message : String(cause)}); the skill keeps its list entry`);
+            return null;
+          }) : null;
       return { name: row.name, description, filePath };
     }));
     const folders = new Map(rows.flatMap((row) => (row.filePath ? [[row.name, skillFolder(row.filePath)] as const] : [])));

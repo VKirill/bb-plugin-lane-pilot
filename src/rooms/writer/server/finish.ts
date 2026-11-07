@@ -380,10 +380,17 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
         const hashes = Object.fromEntries((candidate.produced ?? []).map((path) => [path, byPath.get(path) ?? null]));
         const files:Array<{ path:string; content:string|null }> = [];
         for (const path of candidate.produced ?? []) {
-          const file = await orMiss(bb.sdk.files.read({
-            hostId:input.config.hostId, rootPath:input.task.project_cwd, path:resolve(input.task.project_cwd, path),
-          }), null, isNotFound);
-          files.push({ path, content:typeof file?.content === "string" ? file.content : null });
+          let content: string | null = null;
+          try {
+            const file = await orMiss(bb.sdk.files.read({
+              hostId:input.config.hostId, rootPath:input.task.project_cwd, path:resolve(input.task.project_cwd, path),
+            }), null, isNotFound);
+            content = typeof file?.content === "string" ? file.content : null;
+          } catch (cause) {
+            // One unreadable produced file is left out of the evidence, named; the rest still count.
+            ctx.log(`writer ${input.taskId}: the produced file ${path} could not be read (${cause instanceof Error ? cause.message : String(cause)}); its evidence is left out`);
+          }
+          files.push({ path, content });
         }
         lastPatches = await candidatePatches(bb, db, { runId:input.runId, taskId:input.taskId, hostId:input.config.hostId, cwd:input.task.project_cwd, paths:candidate.produced ?? [] });
         return buildCandidateEvidence({

@@ -116,7 +116,10 @@ export function createWorkflowTriggers(ctx: ServerCore, services: Pick<Services,
     // A workflow architect's chat has an open run and the role pm too (its tools need it), marked by architectProjectId: a scheduled
     // report sent there was read as someone else's (live, 2026-10-25). Only the owner's PM chat takes a run.
     for (const row of rows) {
-      const metadata = await orMiss(ctx.bb.sdk.threads.getPluginMetadata({ threadId: row.pm_thread_id }), null, isNotFound) as Record<string, unknown> | null;
+      // One unreadable chat is skipped, named; the rest of the rows still answer.
+      let metadata: Record<string, unknown> | null = null;
+      try { metadata = await orMiss(ctx.bb.sdk.threads.getPluginMetadata({ threadId: row.pm_thread_id }), null, isNotFound) as Record<string, unknown> | null; }
+      catch (cause) { ctx.log(`Lane Pilot workflow trigger: the metadata of ${row.pm_thread_id} could not be read (${cause instanceof Error ? cause.message : String(cause)}); the row is skipped`); continue; }
       // A chat that runs a specialist has a run and the role pm as well (its tools need them) but does not lead the project.
       if (metadata?.role === "pm" && !metadata.architectProjectId && await isPmChat(ctx, row.pm_thread_id)) return { pmThreadId: row.pm_thread_id, runId: row.id };
     }
