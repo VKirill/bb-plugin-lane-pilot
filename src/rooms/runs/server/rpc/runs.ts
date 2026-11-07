@@ -29,7 +29,7 @@ import type { ServerCore } from "../../../contracts/server";
 import type { ActivationApi } from "../../../native-agent/server/activation";
 import type { RollbackApi } from "../../../rollback/server/rollback";
 import type { ReconcileApi } from "../../../stability/server/reconcile";
-import type { WriterHostApi } from "../../../writer/server/writer-host";
+import type { WriterHostApi } from "../../../platform/server";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {

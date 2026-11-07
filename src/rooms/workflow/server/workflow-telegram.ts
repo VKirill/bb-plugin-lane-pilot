@@ -1,7 +1,7 @@
 import { runOnHost } from "@lane-pilot/host-calls";
 import type { NodeExecutor, WorkflowEngine } from "@lane-pilot/workflow-engine";
 import type { ServerCore } from "../../contracts/server";
-import type { ChainRuntime } from "./workflow-runtime";
+import type { ChainRuntime } from "../../contracts/server";
 
 /**
  * The action `telegram.send_file` of the graph `telegram-send`: one file goes to a chat by the owner's Telegram client on the

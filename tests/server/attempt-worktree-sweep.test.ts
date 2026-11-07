@@ -67,7 +67,7 @@ it.each([
 
 it("keeps an area's last accepted worktree for the sticky window, then releases it", async () => {
   const { createTask } = await import("../../src/rooms/plugin-db");
-  const { STICKY_WINDOW_MS } = await import("../../src/rooms/writer/server/sticky");
+  const { STICKY_WINDOW_MS } = await import("../../src/rooms/platform/server");
   const deleted: string[] = [];
   const { bb } = createFakePluginHost({ pluginId:"lane-pilot", sdk:{
     environments:{
@@ -94,7 +94,7 @@ it("keeps an area's last accepted worktree for the sticky window, then releases 
 
 it("removes Lane Pilot's own area worktrees after the sticky window, once, and never while an attempt works there", async () => {
   const { createTask } = await import("../../src/rooms/plugin-db");
-  const { STICKY_WINDOW_MS } = await import("../../src/rooms/writer/server/sticky");
+  const { STICKY_WINDOW_MS } = await import("../../src/rooms/platform/server");
   const { cleanupStickyLaneWorktrees } = await import("../../src/rooms/runs/server/run-finish");
   const { bb } = createFakePluginHost({ pluginId:"lane-pilot" });
   const db = openDatabase(bb);

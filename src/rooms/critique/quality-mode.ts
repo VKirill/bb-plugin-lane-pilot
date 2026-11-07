@@ -1,3 +1,5 @@
+import { isCodeCriticDefault } from "../contracts";
+import type { CodeCriticDefault } from "../contracts";
 import { ownsPathsOverlap } from "@lane-pilot/kit";
 
 /**
@@ -49,11 +51,10 @@ export function taskQaPlan(task: { qa_cases?: readonly string[]; qa_url?: string
  * and quality_mode quick or full decide before this does.
  */
 export const CODE_CRITIC_DEFAULT_SETTING = "critic.code.default_for_risk";
-export const CODE_CRITIC_DEFAULTS = ["off", "medium", "high"] as const;
-export type CodeCriticDefault = (typeof CODE_CRITIC_DEFAULTS)[number];
+export { CODE_CRITIC_DEFAULTS } from "../contracts";
+export type { CodeCriticDefault } from "../contracts";
 const RISK_RANK: Record<string, number> = { low: 0, medium: 1, high: 2, critical: 3 };
 
-export const isCodeCriticDefault = (value: unknown): value is CodeCriticDefault => (CODE_CRITIC_DEFAULTS as readonly unknown[]).includes(value);
 
 /** The dispatch's override, else the project's value, else medium. An unknown value reads as medium. The model is the code-critic role row. */
 export function resolveCodeCriticDefault(projectValue: unknown, override?: unknown): CodeCriticDefault {

@@ -29,7 +29,7 @@ import { chromeIsCompact, contentStacksControls, useObservedWidth } from "@lane-
 import { userVisibleProjects } from "../native-agent/project-scope";
 import { DOCS_DEFAULT_SELECTION } from "../docs/docs-defaults";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
-import { writerFallbackKeys, type WriterFallbackSlot } from "../writer/writer-fallbacks";
+import { writerFallbackKeys, type WriterFallbackSlot } from "../platform/ui";
 import { COUNCIL_SEATS, JEV_KEYS, ScreenPayload } from "../ui-shell/ui";
 import { BASIC_SETTING_KEYS, CODE_CRITIQUE_EFFORT, CODE_CRITIQUE_MODEL, CODE_CRITIQUE_PROVIDER, CODE_CRITIQUE_SERVICE_TIER, CouncilDetail, CouncilRow, DOCS_EFFORT, DOCS_MODEL, DOCS_PROVIDER, DOCS_SERVICE_TIER, MEMORY_EFFORT, MEMORY_MODEL, MEMORY_PROVIDER, MEMORY_SERVICE_TIER, NIGHT_EFFORT, NIGHT_MODEL, NIGHT_PROVIDER, NIGHT_SERVICE_TIER, ONBOARDING_EFFORT, ONBOARDING_MODEL, ONBOARDING_PROVIDER, ONBOARDING_SERVICE_TIER, PLAN_CRITIQUE_EFFORT, PLAN_CRITIQUE_MODEL, PLAN_CRITIQUE_PROVIDER, PLAN_CRITIQUE_SERVICE_TIER, PM_READ_EFFORT, PM_READ_MODEL, PM_READ_PROVIDER, PM_READ_SERVICE_TIER, PROJECT_LIFE_EFFORT, PROJECT_LIFE_MODEL, PROJECT_LIFE_PROVIDER, PROJECT_LIFE_SERVICE_TIER, RoutingStats, SPECIALIST_EFFORT, SPECIALIST_MODEL, SPECIALIST_PROVIDER, SPECIALIST_SERVICE_TIER, StackDetectResult, WRITER_EFFORT, WRITER_MODEL, WRITER_PROVIDER, WRITER_SERVICE_TIER, diagnosticRows, extraSettingRows } from "./page-model";
 import { useLpPoll } from "../ui-shell/ui";

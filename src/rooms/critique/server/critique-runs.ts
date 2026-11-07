@@ -7,7 +7,7 @@ import { criticStats } from "../critic-stats";
 import { bbServiceTier, listedServiceTier, writerExecutionSelection, writerServiceTier, findModelIn, modelFamily, type SpentProbe } from "@lane-pilot/models";
 import { qaSpawnClaimed } from "../../qa";
 import { reconcileCritic } from "../../stability";
-import { resolveStageWriterSelection } from "../../writer";
+import { resolveStageWriterSelection } from "../../platform/server";
 import { MAX_FILE_EXCERPT_BYTES } from "../code-critique";
 import { codeCritiquePrompt, codeCritiqueSource, codeCritiqueStops, criticPersonas, critiqueFromStageResult, critiquePolicyFromResult, freezeCritiquePolicy, parseCodeCritique, parseCodeCritiqueSettings, persistLedgerFields, settingsFromFrozenPolicy, unionCriticFails } from "../code-critique";
 import { critiqueFromScreen, screenCodeCritique } from "../critic-screen";
@@ -37,7 +37,7 @@ import { CRITIC_OUTCOME_UNKNOWN, criticReconcilePort, helperChildPlacement, requ
 import { recordStage } from "../../runs/server";
 import { settingOff, settingOn } from "@lane-pilot/models";
 import { stringAt, orMiss, isNotFound } from "@lane-pilot/kit";
-import { dependsOnTask } from "../../writer/server/start";
+import { dependsOnTask } from "../../tasks";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { waitThreadIdle } from "@lane-pilot/thread-observe";
 import { resolve } from "node:path";

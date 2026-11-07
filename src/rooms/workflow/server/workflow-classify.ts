@@ -1,6 +1,6 @@
 import type { NodeExecutor, GraphNode, WorkflowEngine } from "@lane-pilot/workflow-engine";
 import { agentRequest, withResolvedModel, type WorkflowAgents } from "./workflow-agent";
-import type { ChainRuntime } from "./workflow-runtime";
+import type { ChainRuntime } from "../../contracts/server";
 import type { ServerCore } from "../../contracts/server";
 import { jev, type JevSettings, type Verdict, choiceOf } from "@lane-pilot/jev";
 import { failureClassJudgment, type FailureClassDecision, type FailureClassInput } from "../../runs";

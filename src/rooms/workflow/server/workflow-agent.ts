@@ -4,7 +4,7 @@ import { getRunSettingsScopes } from "../../storage";
 import { writerExecutionSelection, findModelIn, isZcodeProvider, zcodeEnvironmentError } from "@lane-pilot/models";
 import { jev } from "@lane-pilot/jev";
 import { stepTrivialJudgment } from "@lane-pilot/jev/judgments/step-trivial";
-import { providerLimitNotice } from "../../writer/server";
+import { providerLimitNotice } from "../../platform/server";
 import { MAIN_AGENT_ID, ROLE_PROFILES, compileEffectiveMainAgent, employeeView, isCustomAgentId, isEmployeeSpecialist, mentionContext, placeEmployeeOn } from "../../native-agent";
 import type { ExtraAccess, HelperRole } from "../../native-agent";
 import { storeNativeSelection } from "../../native-agent/server";
@@ -33,9 +33,9 @@ import { modelTier, ROLE_IDS, ROLE_MODEL_OPTIONS, roleRowOf } from "@lane-pilot/
 import { threadUsage } from "../../usage/server";
 import { stringAt } from "@lane-pilot/kit";
 import { AUTHOR_ROWS, AUTHOR_ROW_IDS, DEFAULT_MODEL, pmAuthorOf, DEFAULT_PROVIDER, DEFAULT_REASONING } from "./workflow-agent-model";
-import { outputText } from "../../writer/server";
+import { outputText } from "../../platform/server";
 import type { ServerCore } from "../../contracts/server";
-import type { ChainRuntime } from "./workflow-runtime";
+import type { ChainRuntime } from "../../contracts/server";
 
 /**
  * The generic agent step of a workflow chain: a helper thread of the PM chat with the profile of the node's role (and the

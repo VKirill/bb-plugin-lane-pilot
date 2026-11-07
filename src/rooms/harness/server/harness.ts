@@ -33,9 +33,10 @@ import { getBenchProject, verdictForHarness } from "../../bench";
 import type { HostPort } from "../../bench/server";
 import { graphEditProblems } from "./graph-edit";
 import { formatProbeReplays, runHarnessProbe } from "./probe-run";
-import { builtinWorkflow } from "../../workflow";
+import { builtinWorkflow } from "../../platform/server";
 import type { StepContext } from "../../workflow";
-import type { ChainRuntime, GraphHelperRun } from "../../workflow/server";
+import type { ChainRuntime } from "../../contracts/server";
+import type { GraphHelperRun } from "../../workflow/server";
 import { checkBrief, renderBrief } from "../../brief";
 
 /** Every helper mission of the harness graphs renders through the shared brief (evidence lives on disk under context/, so the brief is instructions only). */

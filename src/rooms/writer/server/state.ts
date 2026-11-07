@@ -6,7 +6,7 @@ import { createProviderRetryGuard } from "../../stability/server";
 import { createConcurrencyLimit } from "./concurrency-limit";
 import { CATALOG_WAIT_MS, modelCatalogOf, noteProviderLimit, registerSpawnUsage, SEEN_LIMIT_HOLD_MS, threadModelOf, within, zcodeBusy, zcodeBusyPeek } from "../../platform/server";
 import { onThreadFailure } from "@lane-pilot/thread-observe";
-import { providerLimitNotice } from "./writer-task";
+import { providerLimitNotice } from "../../platform/server";
 import type { ServerCore } from "../../contracts/server";
 
 /** State shared by the writer modules: the live task set, the provider pool, the provider breaker and one budget per run. */

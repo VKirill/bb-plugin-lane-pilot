@@ -19,7 +19,7 @@ import { DEFAULT_NATIVE_AGENT } from "../native-agent-id";
 import { selectionHostId } from "../composer-selection";
 import { noteChatAgentChanged, setPendingNativeAgent } from "./pending-native-agent";
 import { useNativeComposerSelection } from "./composer-selection-hook";
-import { takeArchitectLaunch } from "../../workflow/ui";
+import { takeArchitectLaunch } from "../architect-launch";
 
 /** The «Без агента» row of the agent dropdown (a Select item cannot have an empty value). */
 const NO_AGENT = "__none__";

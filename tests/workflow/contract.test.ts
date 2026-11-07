@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BUILTIN_SOURCES } from "../../src/rooms/workflow/builtin";
+import { BUILTIN_SOURCES } from "../../src/rooms/platform/server";
 import { contractProblems, contractRepairPrompt, contractSample, describeProblems } from "@lane-pilot/workflow-engine";
 import { lowerWorkflow } from "@lane-pilot/workflow-engine";
 import { parseWorkflowObject } from "@lane-pilot/workflow-engine";

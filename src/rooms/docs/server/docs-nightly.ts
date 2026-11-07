@@ -12,7 +12,7 @@ import { graphStepMetadata, modelCatalogOf, resolveSpawnModel, spawnUsageOf } fr
 import { configuredSetting } from "../../contracts/server";
 import { fullAccessSpawn } from "../../platform/server";
 import { withUsage } from "../../usage/server";
-import { DOCS_MAINTENANCE, DOCS_NIGHT, builtinWorkflow } from "../../workflow";
+import { DOCS_MAINTENANCE, DOCS_NIGHT, builtinWorkflow } from "../../platform/server";
 import type { StepContext, WorkflowEngine } from "../../workflow";
 import { requireGreen } from "../../workflow/server";
 import { stringAt, valueAt, orMiss, isNotFound } from "@lane-pilot/kit";

@@ -11,9 +11,10 @@ import { modelCatalogOf } from "../../src/rooms/platform/server/model-catalog-re
 import type { Services } from "../../server";
 import { createWorkflowAgents } from "../../src/rooms/workflow/server/workflow-agent";
 import { chainRuntimeFor, humanOptions, humanOutput, registerChainExecutors } from "../../src/rooms/workflow/server/workflow-executors";
+import { registerDispatchExecutors, taskUsage } from "../../src/rooms/writer/server";
 import { answerWorkflowQuestion } from "../../src/rooms/workflow/server/workflow-answer";
 import { reportEndToOwner } from "../../src/rooms/workflow/server/pm-notice";
-import type { ChainRuntime } from "../../src/rooms/workflow/server/workflow-runtime";
+import type { ChainRuntime } from "../../src/rooms/contracts/server";
 import { registerPureActions } from "@lane-pilot/workflow-engine";
 import { WorkflowEngine } from "@lane-pilot/workflow-engine";
 import { registerReducers } from "@lane-pilot/workflow-engine";
@@ -106,10 +107,11 @@ async function setup(script: Script, options: { pmEvents?: () => Row[]; dirty?: 
   }
   const ctx = createCore(bb, db);
   const dispatched: Row[] = [];
-  const services = { dispatchWriter: vi.fn(async (args: Row) => { dispatched.push(args); return { runId: RUN, taskId: (args.task as Row).id, state: "queued" }; }), stability: { loadParked: async () => [] } } as unknown as Services;
+  const services = { dispatchWriter: vi.fn(async (args: Row) => { dispatched.push(args); return { runId: RUN, taskId: (args.task as Row).id, state: "queued" }; }), stability: { loadParked: async () => [] }, taskUsage } as unknown as Services;
   const engine = new WorkflowEngine({ db, harnessVersion: "test", runtimeFor: chainRuntimeFor(ctx, services) });
   registerPureActions(engine);
   registerReducers(engine);
+  registerDispatchExecutors(engine, ctx.bb);
   registerChainExecutors(engine, ctx, services, createWorkflowAgents());
   const rt: ChainRuntime = { ctx, services, pmThreadId: options.noPm ? null : PM, projectId: PROJECT, runId: options.noPm ? null : RUN };
   const start = (workflow: Workflow, inputs: Row = {}) => engine.start({ workflow, inputs, runtime: rt, link: options.noPm ? { projectId: PROJECT } : { projectId: PROJECT, runId: RUN } });

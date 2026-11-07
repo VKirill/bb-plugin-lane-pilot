@@ -3,8 +3,8 @@ import type Database from "better-sqlite3";
 import type { NodeExecutor, StepContext } from "@lane-pilot/workflow-engine";
 import { scheduleIsolated } from "../../platform/server";
 import { type ServerCore } from "../../contracts/server";
-import { builtinWorkflow } from "../../workflow";
-import type { ChainRuntime } from "../../workflow/server";
+import { builtinWorkflow } from "../../platform/server";
+import type { ChainRuntime } from "../../contracts/server";
 
 import type { WorkflowEngineApi } from "../../workflow/server/workflow";
 

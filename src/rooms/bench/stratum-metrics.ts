@@ -1,4 +1,4 @@
-import { issueQuickModelCalls } from "../workflow";
+import { issueQuickModelCalls } from "../platform/server";
 
 export type StratumRow = {
   taskId: string;

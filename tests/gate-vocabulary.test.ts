@@ -6,9 +6,9 @@ import { literalCoverage } from "@lane-pilot/kit";
 import { EXISTENCE_ONLY_WORDS, isExistenceOnly } from "../src/rooms/baseline/logic";
 import plugin from "../server";
 import { taskV2Schema } from "../src/rooms/contracts";
-import { GATE_CODES, gateVocabularyLines } from "../src/rooms/tasks/gate-vocabulary";
+import { GATE_CODES, gateVocabularyLines } from "../src/rooms/platform/server";
 import { INVARIANT_ITEM, INVARIANT_WORDS } from "../src/rooms/tasks/plan-fact";
-import { builtinWorkflow } from "../src/rooms/workflow/builtin";
+import { builtinWorkflow } from "../src/rooms/platform/server";
 import { writerBriefSegments, writerPrompt } from "../src/rooms/writer/server/writer-task";
 
 const task = taskV2Schema.parse({

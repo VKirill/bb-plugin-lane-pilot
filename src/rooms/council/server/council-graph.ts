@@ -19,8 +19,8 @@ interface Services {
 }
 import { checkBrief, renderBrief } from "../../brief";
 import { getRun, getRunSettingsScopes } from "../../storage";
-import { builtinWorkflow } from "../../workflow";
-import type { ChainRuntime } from "../../workflow/server";
+import { builtinWorkflow } from "../../platform/server";
+import type { ChainRuntime } from "../../contracts/server";
 import { withUsage } from "../../usage/server";
 import { fullAccessSpawn, graphStepMetadata, findThreadsByMetadata, keyedSpawnSupported, modelCatalogOf, resolveSpawnModel, spawnUsageOf, warmSpawnUsage } from "../../platform/server";
 import { stringAt } from "@lane-pilot/kit";

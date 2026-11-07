@@ -3,13 +3,13 @@ import { getAttempt, getRunSettingsScopes, getTask, listAttemptsForTask, listSta
 import { taskV2Schema } from "../../contracts";
 import { taskQaPlan } from "../../critique";
 import { QA_HOST_KEY } from "../qa-host";
-import { builtinWorkflow } from "../../workflow";
+import { builtinWorkflow } from "../../platform/server";
 import { fenceOutside } from "../../platform/server";
 import { configuredSetting } from "../../contracts/server";
 
 import type { ServerCore } from "../../contracts/server";
 import { requireGreen } from "../../workflow/server";
-import type { ChainRuntime } from "../../workflow/server";
+import type { ChainRuntime } from "../../contracts/server";
 import { withUsage } from "../../usage/server";
 
 import type { QaStagesApi } from "./qa";

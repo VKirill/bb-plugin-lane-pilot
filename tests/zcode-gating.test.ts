@@ -8,7 +8,7 @@ import { createProviderUsage, usageHoldReason } from "../src/rooms/usage/server/
 import { writerPickOverlay } from "../src/rooms/writer/writer-model-pick";
 import { roleSelection, type CriticCatalog } from "../src/rooms/critique/critic-pair";
 import { failureClass } from "../src/rooms/runs/failure-class";
-import { WRITER_FALLBACK_SLOTS } from "../src/rooms/writer/writer-fallbacks";
+import { WRITER_FALLBACK_SLOTS } from "../src/rooms/platform";
 
 /** Lane Pilot never picks the ZCode app where it cannot work: its machine, its free hours, one task at a time. */
 const IN_WINDOW = Date.UTC(2026, 9, 27, 18, 0);

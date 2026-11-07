@@ -3,8 +3,8 @@ import { CRITIC_EDIT_TRIAL_KEY, criticEditGate, criticEditTrialOn, criticEditTri
 import { judgeSharedTrial, TRIAL_DEFAULTS } from "../../harness/server";
 import { scheduleIsolated } from "../../platform/server";
 import { type ServerCore } from "../../contracts/server";
-import { builtinWorkflow } from "../../workflow";
-import type { ChainRuntime } from "../../workflow/server";
+import { builtinWorkflow } from "../../platform/server";
+import type { ChainRuntime } from "../../contracts/server";
 
 import type { BenchApi } from "../../bench/service";
 import type { WorkflowEngineApi } from "../../workflow/server/workflow";

@@ -1,7 +1,7 @@
 import { dirname } from "node:path";
 import type { z } from "zod";
 import type { rpcContract } from "../../contracts";
-import { BUILTIN_SOURCES } from "../builtin";
+import { BUILTIN_SOURCES } from "../../platform/server";
 import type { Field, Workflow } from "@lane-pilot/workflow-engine";
 import { sha256Hex } from "@lane-pilot/kit";
 import { parseGoals } from "@lane-pilot/workflow-engine";

@@ -1,4 +1,5 @@
-import { gateVocabularyLines, secretShaped } from "../../tasks";
+import { secretShaped } from "../../tasks";
+import { gateVocabularyLines } from "../../platform/server";
 import { registerBrowserExecutors, runBrowserQaGraph } from "../../qa/server";
 import { cancelAttemptById, cleanupFinishedAttemptEnvironments, cleanupStickyLaneWorktrees } from "../../runs/server";
 import { LANE_PILOT_READ_NAME } from "@lane-pilot/kit";

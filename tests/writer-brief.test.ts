@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { taskV2Schema } from "../src/rooms/contracts";
-import { compactContract, pathAnchors, pmReadBrief, writerMemory } from "../src/rooms/writer/writer-brief";
+import { compactContract, pmReadBrief } from "../src/rooms/writer/writer-brief";
+import { pathAnchors, writerMemory } from "../src/rooms/memory/server";
 import { renderThreadEvents } from "@lane-pilot/harness-core";
 import { needsHumanQuestion, stickyTurnPrompt, writerPrompt, previousAttemptBrief, attemptFeedback } from "../src/rooms/writer/server/writer-task";
 

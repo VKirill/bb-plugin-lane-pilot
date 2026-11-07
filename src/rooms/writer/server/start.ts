@@ -14,7 +14,7 @@ import { reconcile, reconcileCursor } from "../../stability";
 import { listRegressions, type RegressionRecord } from "../../baseline";
 import { quarantineFileSet } from "../../baseline";
 import { emergencyFallbackDecision } from "../../night";
-import { rotatedWriterSettings, writerFallbackChain, writerFallbacks } from "../writer-fallbacks";
+import { rotatedWriterSettings, writerFallbackChain, writerFallbacks } from "../../platform/server";
 import { resolveBestOf, roundSeedBrief, roundSurvivors } from "../best-of";
 import { QUALITY_MODE_SETTING, resolveQualityMode } from "../../critique";
 import { runOnHost } from "@lane-pilot/host-calls";
@@ -33,6 +33,7 @@ import { trimCheckLogsIn } from "../log-trim";
 import { stickyTurnPromptWithRules } from "./writer-knowledge";
 import { parseMemorySettings } from "../../memory";
 import { checkoutOwnsOverlap, isMainfixTask, retargetTask , priorityRank, HOLD_FOREVER, laneCap, laneQueueOf } from "../../tasks";
+import { dependsOnTask } from "../../tasks";
 import { openDatabase } from "../../storage";
 import { createWriterSticky } from "./sticky";
 import { WRITER_QUESTION_WAIT_TEXT } from "./question-default";
@@ -1642,10 +1643,7 @@ export function sameArea(a:string | undefined, b:string | undefined):boolean {
   return Boolean(a && b && a.trim().toLowerCase() === b.trim().toLowerCase());
 }
 
-/** Whether `dependsOn` names `taskId`, either exactly or by its base id («P1» names a redispatched «P1.2»). */
-export function dependsOnTask(dependsOn:readonly string[] | undefined, taskId:string):boolean {
-  return (dependsOn ?? []).some((dep) => dep === taskId || (taskId.startsWith(`${dep}.`) && /^\d+$/.test(taskId.slice(dep.length + 1))));
-}
+
 
 
 export type WriterStartApi = ReturnType<typeof createWriterStart>;

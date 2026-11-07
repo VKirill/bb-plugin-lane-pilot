@@ -2,9 +2,9 @@ import { observeStageChild, waitThreadIdle } from "@lane-pilot/thread-observe";
 import { isOffered, routeIntent, type NodeExecutor, type StepContext, type Workflow } from "@lane-pilot/workflow-engine";
 import { redactKnown } from "@lane-pilot/kit";
 import { z } from "zod";
-import { builtinWorkflow, builtinWorkflows } from "../../workflow";
+import { builtinWorkflow, builtinWorkflows } from "../../platform/server";
 import { createWorkflowLibrary, SCHEDULE_RUN_KEY_PREFIX } from "../../workflow/server";
-import type { ChainRuntime } from "../../workflow/server";
+import type { ChainRuntime } from "../../contracts/server";
 import { withUsage } from "../../usage/server";
 import { fenceOutside, findThreadsByMetadata, keyedSpawnSupported, registerObservedTool, spawnTextId } from "../../platform/server";
 

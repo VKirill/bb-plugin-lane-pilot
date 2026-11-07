@@ -3,8 +3,8 @@ import { jev, type JevSettings } from "@lane-pilot/jev";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
 import { modelCatalogOf, readProviderFolderBlock, resolveSpawnModel, scheduleIsolated, spawnUsageOf, warmSpawnUsage } from "../../platform/server";
 import { type ServerCore } from "../../contracts/server";
-import { builtinWorkflow } from "../../workflow";
-import type { ChainRuntime } from "../../workflow/server";
+import { builtinWorkflow } from "../../platform/server";
+import type { ChainRuntime } from "../../contracts/server";
 import {
   chooseProcessKey, errandFailureJudgment, sweepErrandEpisodes,
   ERRAND_EPISODE_TABLE, ERRAND_EPISODE_TRACE_EVENTS, type EpisodeEnrichDeps,

@@ -34,8 +34,7 @@ interface Services {
  * resumes a subagent with its history; a fresh thread re-reads the project and forgets why it wrote what it wrote.
  */
 
-import { STICKY_WINDOW_MS } from "../sticky-window";
-export { STICKY_WINDOW_MS };
+import { STICKY_WINDOW_MS } from "../../platform/server";
 /** Tasks one writer thread takes; past that its context is more noise than help and a fresh writer starts. */
 export const STICKY_MAX_TURNS = 6;
 /** Share of the context window above which the thread is compacted before the next turn. */

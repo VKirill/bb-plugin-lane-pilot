@@ -1,6 +1,6 @@
 import { routeIntent, stems, type Workflow } from "@lane-pilot/workflow-engine";
 import { skillCatalog, type ListedSkill } from "@lane-pilot/jev/judgments/skill-pick";
-import { builtinWorkflows } from "../../workflow";
+import { builtinWorkflows } from "../../platform/server";
 import { candidateNames, readSkillTreeText, skillTreeCached, type SkillTree } from "../../writer/server";
 
 import type { ServerCore } from "../../contracts/server";

@@ -1,6 +1,6 @@
 import type { ExperimentalProviderModelPickerValue } from "@get-bb/plugin-sdk/app";
 import { t, validationMessage, type I18nKey } from "@lane-pilot/i18n";
-import { WRITER_FALLBACK_DEFAULTS, WRITER_FALLBACK_SLOTS, writerFallbackKeys, writerFallbackSeed, writerFallbackSlots, type WriterFallbackSlot } from "../writer/writer-fallbacks";
+import { WRITER_FALLBACK_DEFAULTS, WRITER_FALLBACK_SLOTS, writerFallbackKeys, writerFallbackSeed, writerFallbackSlots, type WriterFallbackSlot } from "../platform/ui";
 import { QA_HOST_KEY, QA_WORKSPACE_KEY } from "../qa/qa-host";
 import { Button } from "@lane-pilot/ui-kit";
 import { Input } from "@lane-pilot/ui-kit";

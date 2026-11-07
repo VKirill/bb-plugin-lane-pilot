@@ -1,5 +1,6 @@
-import { builtinWorkflow, issueQuickWorkflowId } from "../../workflow";
-import { architectStarter, createWorkflowLibrary } from "../../workflow/server";
+import { builtinWorkflow } from "../../platform/server";
+import { issueQuickWorkflowId } from "../../platform/server";
+import type { ArchitectApi, WorkflowLibraryApi } from "../../platform/server";
 import { routeIntent } from "@lane-pilot/workflow-engine";
 import { loadProjectSettings } from "../../storage";
 import { medianTaskSize, taskSizeText } from "../../tasks";
@@ -38,8 +39,8 @@ export function installWiring(tools: WiringTools) {
     runStopped: async (phase) => !!phase.runId && (await isRunHalted(bb.storage.kv as never, phase.runId) || await isRunPaused(bb.storage.kv as never, phase.runId)),
     proofCurrency: tools.proofCurrency,
   });
-  const architect = architectStarter(ctx, services);
-  const library = createWorkflowLibrary(ctx, services);
+  const architect = services.architect;
+  const library = services.workflowLibrary;
   // The small-task graph for a small job or a batch of fixes: started by the machine, not chosen by the PM.
   const train = {
     start: (input: { projectId: string; pmThreadId: string; runId: string; requestId: string; text: string; kind: "small" | "batch" | "heavy" | "full"; path?: { size: string; risk: string } }) => {

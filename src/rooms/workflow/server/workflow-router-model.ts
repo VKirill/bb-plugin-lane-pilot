@@ -2,9 +2,9 @@ import { outputContract, agentPrompt } from "@lane-pilot/workflow-engine";
 import type { NodeExecutor, RouterModel, RouterModelOutput, WorkflowEngine } from "@lane-pilot/workflow-engine";
 import type { Field } from "@lane-pilot/workflow-engine";
 import type { WorkflowAgents } from "./workflow-agent";
-import type { ChainRuntime } from "./workflow-runtime";
+import type { ChainRuntime } from "../../contracts/server";
 import { sha256Hex } from "@lane-pilot/kit";
-import { ROUTE_WORKFLOW, builtinWorkflow } from "../builtin";
+import { ROUTE_WORKFLOW, builtinWorkflow } from "../../platform/server";
 import { serviceRole } from "../service-models";
 
 /**

@@ -20,11 +20,11 @@ import type { ServerCore } from "../../contracts/server";
 import { jev } from "@lane-pilot/jev";
 import { createJevRouterModel } from "../route-model";
 import { createRouterModel } from "./workflow-router-model";
-import { builtinWorkflows } from "../builtin";
+import { builtinWorkflows } from "../../platform/server";
 import { realDeps } from "./workflow-architect";
 import { createWorkflowLibrary } from "./workflow-library";
 import { createWorkflowPreflight } from "./workflow-preflight";
-import type { ChainRuntime } from "./workflow-runtime";
+import type { ChainRuntime } from "../../contracts/server";
 
 import type { PhaseIntake } from "../../phase/server/intake";
 import type { WorkflowEngineApi } from "./workflow";

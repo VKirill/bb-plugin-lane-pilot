@@ -1,11 +1,11 @@
-import { builtinWorkflow } from "../../workflow";
+import { builtinWorkflow } from "../../platform/server";
 
 import type { ServerCore } from "../../contracts/server";
 import { threatGap } from "../stages";
 import { PLAN_WORD_GAP, INDEPENDENCE_GAP, phaseFolder, planGate, type Phase, type PhaseRecord, type PlanItem, type RiskKey, candidateOn } from "../logic";
 import packageJson from "../../../../package.json";
 
-import type { WorkflowEngineApi } from "../../workflow/server/workflow";
+import type { WorkflowEngineApi } from "../../platform/server";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {

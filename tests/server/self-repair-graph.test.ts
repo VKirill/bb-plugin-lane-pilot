@@ -4,7 +4,7 @@ import { WorkflowEngine } from "@lane-pilot/workflow-engine";
 import { openDatabase } from "../../src/rooms/plugin-db";
 import { pointsAtEngine } from "../../src/rooms/self-repair/server/self-repair";
 import { createSelfRepair } from "../helpers/self-repair";
-import { SELF_REPAIR, builtinWorkflow } from "../../src/rooms/workflow/builtin";
+import { SELF_REPAIR, builtinWorkflow } from "../../src/rooms/platform/server";
 import { maybeNotifyWorkflowRun } from "../../src/rooms/workflow/server/pm-notice";
 import type { ServerCore } from "../../src/rooms/contracts/server";
 

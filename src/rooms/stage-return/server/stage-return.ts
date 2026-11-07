@@ -3,7 +3,7 @@ import { RETURN_STAGES, returnAffected, type ReturnStage } from "@lane-pilot/con
 import { taskV2Schema } from "../../contracts";
 import { createAttempt, getAttempt, getRun, getTask, getTaskPlan, listAttemptsForTask, listOpenAttempts, listStageReceipts } from "../../storage";
 import { cancelAttemptById, recordStage, reopenWriterStages } from "../../runs/server";
-import { createAttemptReopen, createWriterReassign } from "../../writer/server";
+import type { AttemptReopenApi, StartWriterTask, WriterReassignApi, WriterStateApi } from "../../platform/server";
 import { id } from "@lane-pilot/kit";
 
 import type { ServerCore } from "../../contracts/server";
@@ -12,20 +12,22 @@ import { finishReturn, getReturn, insertReturn, listReturns, type StageReturnRec
 
 import type { RollbackApi } from "../../rollback/server/rollback";
 import type { ReconcileApi } from "../../stability/server/reconcile";
-import type { WriterStateApi } from "../../writer/server/state";
+
 
 import type { BaselineApi } from "../../baseline/server/baseline";
 import type { RegressionApi } from "../../baseline/server/regress";
-import type { WriterStartApi } from "../../writer/server/start";
+
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {
+  attemptReopen: AttemptReopenApi;
   activeWriterTasks: WriterStateApi["activeWriterTasks"];
   baseline: BaselineApi;
   enqueueResumedWriter: ReconcileApi["enqueueResumedWriter"];
   regression: RegressionApi;
   rollback: RollbackApi;
-  startWriterTask: WriterStartApi["startWriterTask"];
+  startWriterTask: StartWriterTask;
+  writerReassign: WriterReassignApi;
 }
 
 /**
@@ -68,8 +70,8 @@ export type ReturnResult = {
 
 export function createStageReturn(ctx: ServerCore, services: Services) {
   const { bb, db } = ctx;
-  const reassign = createWriterReassign(ctx);
-  const reopen = createAttemptReopen(ctx, services);
+  const reassign = services.writerReassign;
+  const reopen = services.attemptReopen;
   const inFlight = new Set<string>();
 
   const refuse = (taskId: string, reason: string, next: string): ReturnResult => ({ ok: false, taskId, state: "refused", reason, next });

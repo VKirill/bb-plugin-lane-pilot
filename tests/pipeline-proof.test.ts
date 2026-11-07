@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { fileContaining } from "./support/source-text";
 import { STAGE_IDS, STAGE_PROOF, acceptanceProofGap, isAdvisoryProof, stageProofSchema } from "@lane-pilot/contracts";
 import type { StageId } from "@lane-pilot/contracts";
-import { LP_TASK_PIPELINE, builtinWorkflow } from "../src/rooms/workflow/builtin";
+import { LP_TASK_PIPELINE, builtinWorkflow } from "../src/rooms/platform/server";
 import { candidateCitations, demoteUncited, inputCitations } from "../src/rooms/critique/citations";
 import { parseCritique } from "../src/rooms/critique/critique";
 import { parseCodeCritique } from "../src/rooms/critique/code-critique";

@@ -158,7 +158,7 @@ const FOLDED = Object.values(PM_TOOL_FAMILIES).flatMap((family) => Object.values
 it("names no folded tool by its old name in a text the PM or the architect reads (a next step, a notice, a hint)", () => {
   // Skipped: the tools' own description and instructions (the family rewrites them when it mounts), the architect's session text (rewritten
   // the same way when it is exported), the allow-lists and the presentation table.
-  const skip = /(native-session-hooks|tool-presentation|pm-tool-families|native-hook-sources|sma-map\/|workflow\/workflow-architect\.ts)/;
+  const skip = /(native-session-hooks|tool-presentation|pm-tool-families|native-hook-sources|sma-map\/|native-agent\/workflow-architect\.ts)/;
   const wrong: string[] = [];
   for (const file of sources(join(root, "src"))) {
     if (skip.test(file)) continue;

@@ -8,7 +8,7 @@ import {
   buildFailureInput,
 } from "../../src/rooms/workflow/server/workflow-classify";
 import type { WorkflowAgents } from "../../src/rooms/workflow/server/workflow-agent";
-import type { ChainRuntime } from "../../src/rooms/workflow/server/workflow-runtime";
+import type { ChainRuntime } from "../../src/rooms/contracts/server";
 import { FAILURE_CLASS_ID } from "../../src/rooms/runs/failure-class-judgment";
 
 function setupClassifyTest(topClass: string, p: number, mode: "shadow" | "active" = "shadow") {

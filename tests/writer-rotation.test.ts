@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { WRITER_ROTATION_SHARE_DEFAULT, rotatedWriterSettings, rotationBucket } from "../src/rooms/writer/writer-fallbacks";
+import { WRITER_ROTATION_SHARE_DEFAULT, rotatedWriterSettings, rotationBucket } from "../src/rooms/platform";
 
 const base = {
   "writer.provider": "acp-cursor", "writer.model": "composer-2.5", "writer.reasoning_effort": "medium",

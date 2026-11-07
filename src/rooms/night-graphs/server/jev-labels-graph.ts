@@ -5,8 +5,8 @@ import { recordOutcome } from "@lane-pilot/jev";
 import { listJudgments } from "@lane-pilot/jev";
 import { scheduleIsolated } from "../../platform/server";
 import { type ServerCore } from "../../contracts/server";
-import { builtinWorkflow } from "../../workflow";
-import type { ChainRuntime } from "../../workflow/server";
+import { builtinWorkflow } from "../../platform/server";
+import type { ChainRuntime } from "../../contracts/server";
 import { runGraphHelper } from "../../workflow/server";
 import { sweepFailureClassOutcomes, sweepInvoiceCheckOutcomes, sweepPlanFactOutcomes, sweepRouteWorkflowOutcomes, sweepWriterModelOutcomes } from "../../runs";
 

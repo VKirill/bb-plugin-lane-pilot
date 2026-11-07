@@ -2,7 +2,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import { WorkflowEngine } from "@lane-pilot/workflow-engine";
 import { createAfterAcceptStarter, registerAfterAcceptExecutors, afterAcceptKey } from "../../src/rooms/workflow/server/after-accept";
-import { AFTER_ACCEPT, builtinWorkflow } from "../../src/rooms/workflow/builtin";
+import { AFTER_ACCEPT, builtinWorkflow } from "../../src/rooms/platform/server";
 import { maybeNotifyWorkflowRun } from "../../src/rooms/workflow/server/pm-notice";
 import { createAttempt, createRun, listStageReceipts, openDatabase, setRunThread } from "../../src/rooms/plugin-db";
 import { recordStage } from "../../src/rooms/runs/server";

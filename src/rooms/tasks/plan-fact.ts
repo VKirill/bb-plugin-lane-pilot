@@ -120,9 +120,7 @@ const normalize = (text: string) => text.replace(/\s+/g, " ").trim();
  * The words above, one example of each alternative, for the briefs of everyone who writes or does an acceptance item (gate-vocabulary.ts):
  * the gate decides by them, so the judged agent is told them. A test holds every one of them against the pattern.
  */
-export const INVARIANT_WORDS: readonly string[] = ["unchanged", "not changed", "untouched", "stays the same", "still works", "still returns", "still passes", "still serves",
-  "no changes", "no other changes", "as now", "as before", "as today", "as it is", "as it was", "remains as", "remains the same", "remains unchanged",
-  "не меняется", "не трогать", "не изменяется", "без изменений", "по-прежнему", "как раньше", "как сейчас"];
+export { INVARIANT_WORDS } from "../platform/server";
 export const INVARIANT_ITEM = /\b(unchanged|not changed|untouched|stays? the same|still (?:works?|returns?|passes|serves?)|no (?:other )?changes?|as (?:now|before|today|it (?:is|was))|remains? (?:as|the same|unchanged))\b|не (?:меня|трога|измен)|без изменений|по-прежнему|как раньше|как сейчас/i;
 const relativePath = (path: string, root?: string) => {
   let clean = path.trim().replace(/^\.\//, "");

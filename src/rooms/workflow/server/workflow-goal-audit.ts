@@ -12,15 +12,16 @@ import { chainRuntimeFor } from "./workflow-executors";
 
 import type { DocsNightlyApi } from "../../docs/server/docs-nightly";
 import type { WorkflowTriggersApi } from "./workflow-triggers-live";
-import type { WriterDispatchApi } from "../../writer/server/dispatch";
+import type { DispatchWriter, TaskUsage } from "../../platform/server";
 
 import type { StabilityApi } from "../../stability/server/stability";
 
-import type { WorkflowEngineApi } from "./workflow";
+import type { WorkflowEngineApi } from "../../platform/server";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {
-  dispatchWriter: WriterDispatchApi["dispatchWriter"];
+  dispatchWriter: DispatchWriter;
+  taskUsage: TaskUsage;
   docsPlaces: DocsNightlyApi["docsPlaces"];
   stability: StabilityApi;
   workflowEngine: WorkflowEngineApi["workflowEngine"];

@@ -1,4 +1,4 @@
-import { builtinWorkflows } from "../../src/rooms/workflow/builtin";
+import { builtinWorkflows } from "../../src/rooms/platform/server";
 import type { Workflow } from "@lane-pilot/workflow-engine";
 
 /** The real catalog with every non-internal workflow published: the chains are drafts until the engine author flips them. */

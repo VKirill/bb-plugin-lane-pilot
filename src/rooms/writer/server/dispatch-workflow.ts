@@ -4,8 +4,9 @@ import { QUALITY_MODE_SETTING, resolveQualityMode, worthOutcome } from "../../cr
 import { jev } from "@lane-pilot/jev";
 import { appendExcludeCommand, persistTaskFolder } from "../../verification";
 import { pmReadBrief } from "../writer-brief";
-import { LP_TASK_PIPELINE, builtinWorkflow } from "../../workflow";
+import { LP_TASK_PIPELINE, builtinWorkflow } from "../../platform/server";
 import type { NodeExecutor, RunSummary, StepContext, WorkflowEngine } from "../../workflow";
+import { provideLpTaskPipeline } from "../../workflow/server";
 import { runPlanCritique, runPmRead, runSpecialistReview } from "../../critique/server";
 import { closeWriterStages, recordStage } from "../../runs/server";
 import { isMainfixTask } from "../../tasks";
@@ -261,6 +262,7 @@ export function registerDispatchExecutors(engine: WorkflowEngine, bb?: BbPluginA
   });
 
   engine.register<DispatchRuntime>("lp-task", lpTaskPipelineExecutor(engine, bb));
+  provideLpTaskPipeline(lpTaskPipelineExecutor(engine, bb));
 }
 
 /**

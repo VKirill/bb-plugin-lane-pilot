@@ -4,7 +4,7 @@ import { WorkflowEngine, parseWorkflow } from "@lane-pilot/workflow-engine";
 import { HARNESS_VERSION } from "../src/rooms/plugin-db";
 import { createAttempt, createRun, openDatabase, saveProjectSetting } from "../src/rooms/plugin-db";
 import { QA_HOST_KEY } from "../src/rooms/qa/qa-host";
-import { builtinWorkflow } from "../src/rooms/workflow/builtin";
+import { builtinWorkflow } from "../src/rooms/platform/server";
 import { recordStage } from "../src/rooms/runs/server";
 import { registerBrowserExecutors, runBrowserQaGraph, runBrowserStep } from "../src/rooms/qa/server/browser-graphs";
 import { registerPureActions } from "@lane-pilot/workflow-engine";

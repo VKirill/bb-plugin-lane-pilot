@@ -3,7 +3,7 @@ import { jev } from "@lane-pilot/jev";
 import type { NodeExecutor, WorkflowEngine } from "@lane-pilot/workflow-engine";
 import type { ServerCore } from "../../contracts/server";
 import { checkInvoicePdf } from "./invoice-pdf";
-import type { ChainRuntime } from "./workflow-runtime";
+import type { ChainRuntime } from "../../contracts/server";
 
 /**
  * The action `invoice.check` of the chain `invoice-send`: the invoice that was made is compared with the request. The amount, the INN

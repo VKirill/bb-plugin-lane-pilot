@@ -5,12 +5,12 @@ export { attemptProduced, parseDirtSnapshots } from "./cli-outcome";
 export type { DirtSnapshot } from "./cli-outcome";
 export { runCommandOnHost, writePmSettingsOnHost } from "./cli-run";
 export { materializeAgentTrash, ownedAgentTrashPath, AGENT_TRASH_RELATIVE } from "./agent-trash";
-export { resolveStageWriterSelection } from "./stage-writer-selection";
+export { resolveStageWriterSelection } from "../platform/server";
 export { attachStreamRetry, droppedStreamDetail } from "./stream-retry";
-export { memoryLine, pathAnchors, reviewerMemoryPicks, writerBriefStats, writerMemory, writerMemoryPicks } from "./writer-brief";
+export { writerBriefStats } from "./writer-brief";
 export { WRITER_FINISH_SCAN_ID, writerFinishScanJudgment, type FinishScanDecision, type FinishScanInput } from "./finish-scan";
-export { WRITER_FALLBACK_DEFAULTS, WRITER_FALLBACK_SLOTS, writerFallbackChain, writerFallbackKeys, writerFallbackSeed, writerFallbackSlots, writerFallbacks } from "./writer-fallbacks";
-export type { WriterFallback, WriterFallbackSlot } from "./writer-fallbacks";
+export { WRITER_FALLBACK_DEFAULTS, WRITER_FALLBACK_SLOTS, writerFallbackChain, writerFallbackKeys, writerFallbackSeed, writerFallbackSlots, writerFallbacks } from "../platform/server";
+export type { WriterFallback, WriterFallbackSlot } from "../platform/server";
 export { BEST_OF_COUNT, BEST_OF_ROUNDS_DEFAULT, BEST_OF_ROUNDS_MAX, BEST_OF_ROUNDS_SETTING, BEST_OF_SETTING, BEST_OF_SLOT_CAP_SETTING, BEST_OF_TOKEN_BUDGET_SETTING, BEST_OF_VALUES, ROUND_SEED_MAX_CHARS, bestOfBudgetAllows, bestOfPicks, pickBestAttempt, reserveAppetite, resolveBestOf, roundSeedBrief, roundSurvivors } from "./best-of";
 export type { RoundCandidate } from "./best-of";
 export type { BestOfCandidate, BestOfPlan, WriterPair } from "./best-of";
@@ -25,5 +25,5 @@ export {
   type SkillSwitchRecord,
   type SkillSwitchStats,
 } from "./skill-switch";
-export { STICKY_WINDOW_MS } from "./sticky-window";
+export { STICKY_WINDOW_MS } from "../platform/server";
 export { LIVE_FOLDER_FILE_CAP } from "./live-folder";

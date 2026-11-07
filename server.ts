@@ -69,7 +69,9 @@ import { createWriterVerify } from "./src/rooms/writer/server";
 import { createWriterFinish } from "./src/rooms/writer/server";
 import { createWriterStart } from "./src/rooms/writer/server";
 import { createWriterDispatch } from "./src/rooms/writer/server";
+import { createAttemptReopen, createWriterReassign, recheckPlanFact, registerDispatchExecutors, taskUsage } from "./src/rooms/writer/server";
 import { createWorkflowEngine } from "./src/rooms/workflow/server";
+import { architectStarter, createWorkflowLibrary } from "./src/rooms/workflow/server";
 import { createWorkflowTriggersService } from "./src/rooms/workflow/server";
 import { createScheduleService, registerAgentRoutineActions } from "./src/rooms/schedule/server";
 import { registerSpecialistActions } from "./src/rooms/critique/server";
@@ -97,7 +99,7 @@ import type { WriterVerifyApi } from "./src/rooms/writer/server/verify";
 import type { WriterFinishApi } from "./src/rooms/writer/server/finish";
 import type { WriterStartApi } from "./src/rooms/writer/server/start";
 import type { WriterDispatchApi } from "./src/rooms/writer/server/dispatch";
-import type { WorkflowEngineApi } from "./src/rooms/workflow/server/workflow";
+import type { ArchitectApi, AttemptReopenApi, RecheckPlanFact, TaskUsage, WorkflowEngineApi, WorkflowLibraryApi, WriterReassignApi } from "./src/rooms/platform/server";
 import type { WorkflowTriggersApi } from "./src/rooms/workflow/server/workflow-triggers-live";
 import type { MemoryProbeApi } from "./src/rooms/memory-probe/server/memory-probe";
 import type { CouncilApi } from "./src/rooms/council/server";
@@ -226,6 +228,13 @@ export interface Services {
   validateWriterResult: WriterVerifyApi["validateWriterResult"];
   waitWriter: WriterDispatchApi["waitWriter"];
   workspaceDirt: WriterSpawnApi["workspaceDirt"];
+  /** The writer's executor registry of `lp.*` steps (reopen/reassign) and helper accounting, wired here for the rooms that call them. */
+  architect: ArchitectApi;
+  workflowLibrary: WorkflowLibraryApi;
+  recheckPlanFact: RecheckPlanFact;
+  taskUsage: TaskUsage;
+  attemptReopen: AttemptReopenApi;
+  writerReassign: WriterReassignApi;
   workflowEngine: WorkflowEngineApi["workflowEngine"];
   workflowCatalog: WorkflowEngineApi["workflowCatalog"];
   startAfterAcceptance: WorkflowEngineApi["startAfterAcceptance"];
@@ -295,6 +304,12 @@ export default async function plugin(bb: BbPluginApi) {
     { memoryConflicts: createMemoryConflicts({ db, deferrals: () => services.deferrals, log: ctx.log }) },
     createRollback(ctx, services),
     createBaselineRoom(ctx, services),
+    { architect: architectStarter(ctx, services) },
+    { workflowLibrary: createWorkflowLibrary(ctx, services) },
+    { recheckPlanFact: (input: { projectId: string; runId: string; taskId: string; hostId: string }) => recheckPlanFact(ctx, input) },
+    { taskUsage },
+    { attemptReopen: createAttemptReopen(ctx, services) },
+    { writerReassign: createWriterReassign(ctx) },
     createStageReturn(ctx, services),
     createRunGoal(ctx, services),
     createProfileCheck(ctx),
@@ -312,6 +327,8 @@ export default async function plugin(bb: BbPluginApi) {
     createScheduleService(ctx, services),
     { lead: createLeadService(ctx, services, lanePilotMigrations) },
   );
+  // The writer's `lp.*` executors (the task pipeline and its steps): writer registers them on the shared engine; workflow only mounts the delegates.
+  registerDispatchExecutors(services.workflowEngine, ctx.bb);
   // The two code steps of `agent-routine`, the graph a schedule of kind agent runs (registered here: the schedule room imports the workflow room, not the other way).
   registerAgentRoutineActions(services.workflowEngine, ctx, services);
   // The brief step of `specialist`, the graph behind lane_pilot_specialist.

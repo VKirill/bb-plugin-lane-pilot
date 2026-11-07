@@ -3,7 +3,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, describe, expect, it } from "vitest";
 import plugin from "../../server";
 import { localDateKey } from "../../src/rooms/docs/docs";
-import { DOCS_MAINTENANCE, DOCS_NIGHT, builtinWorkflow } from "../../src/rooms/workflow/builtin";
+import { DOCS_MAINTENANCE, DOCS_NIGHT, builtinWorkflow } from "../../src/rooms/platform/server";
 import { claimActivation, createAttempt, createRun, openDatabase, saveProjectSetting, savePrototypeConfig, setRunThread } from "../../src/rooms/plugin-db";
 import { recordStage } from "../../src/rooms/runs/server";
 import { maybeNotifyWorkflowRun } from "../../src/rooms/workflow/server/pm-notice";

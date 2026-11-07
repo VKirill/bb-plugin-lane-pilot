@@ -16,7 +16,7 @@
  *    runs the three in turn — best-of keeps working, just slower).
  * All three are catalog settings; `writer.best_of` off is the behaviour before this existed.
  */
-import { writerFallbackChain, type WriterFallback } from "./writer-fallbacks";
+import { writerFallbackChain, type WriterFallback } from "../platform/server";
 import type { QualityMode } from "../critique";
 
 export const BEST_OF_SETTING = "writer.best_of";

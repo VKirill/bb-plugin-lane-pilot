@@ -12,7 +12,7 @@ import type { WriterHostApi } from "../../writer/server/writer-host";
 import { getRun, getRunSettingsScopes } from "../../storage";
 import { fileAllowedByOwns, fileBlockedByNeverTouch, orMiss, isNotFound } from "@lane-pilot/kit";
 import { bbServiceTier, writerExecutionSelection } from "@lane-pilot/models";
-import { outputText } from "../../writer/server/writer-task";
+import { outputText } from "../../platform/server";
 import { adoptRuleProposal, nightMayAdopt, refreshRuleProposals, retireAdoptedRule, rewordAdoptedRule } from "./insights";
 import { postOwnerItem } from "../../owner-waiting";
 
@@ -22,7 +22,7 @@ import { postOwnerItem } from "../../owner-waiting";
  * version 1 until 0.1.458 (Astra F-008: the classifier and the executor described two different rules of admission). Read at use, so a
  * policy that moves `rule_trial_apply` back to `night_decides` turns the trials on again without a code change.
  */
-import { builtinWorkflow } from "../../workflow";
+import { builtinWorkflow } from "../../platform/server";
 import { stringAt } from "@lane-pilot/kit";
 import { SANDBOX_PROJECT_ID, isSandboxProjectName } from "../../stability/server";
 import type { ServerCore } from "../../contracts/server";

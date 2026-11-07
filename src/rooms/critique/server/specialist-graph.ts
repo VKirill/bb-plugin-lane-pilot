@@ -1,12 +1,12 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { runOnHost } from "@lane-pilot/host-calls";
-import { builtinWorkflow } from "../../workflow";
+import { builtinWorkflow } from "../../platform/server";
 import { fenceOutside, spawnTextId } from "../../platform/server";
 import { getRun } from "../../storage";
 
 import type { ServerCore } from "../../contracts/server";
 
-import type { WorkflowEngineApi } from "../../workflow/server/workflow";
+import type { WorkflowEngineApi } from "../../platform/server";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {

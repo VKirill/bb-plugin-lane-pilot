@@ -1,5 +1,5 @@
-import issueQuick from "../../../workflows/issue-quick.json";
-import issueQuickLegacy from "../../../workflows/issue-quick-legacy.json";
+import issueQuick from "../../../../workflows/issue-quick.json";
+import issueQuickLegacy from "../../../../workflows/issue-quick-legacy.json";
 
 /** Off keeps the previous issue-quick graph (triage, plan, build). Anything else, including a missing row, is the short path. */
 export const ISSUE_QUICK_SHORT_PATH = "issue_quick.short_path";

@@ -1,7 +1,7 @@
 import { closeRun, getAttempt, getRun, listOpenAttempts, openDatabase, releaseActivation } from "../../storage";
 import { stringAt, valueAt, orMiss, isNotFound } from "@lane-pilot/kit";
 import { RETRY_ELIGIBLE } from "../state-machine";
-import { STICKY_WINDOW_MS } from "../../writer/server/sticky";
+import { STICKY_WINDOW_MS } from "../../platform/server";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 export function cancelRejection(db: ReturnType<typeof openDatabase>, attempt: NonNullable<ReturnType<typeof getAttempt>>): string | null {
   const run = getRun(db, attempt.run_id);

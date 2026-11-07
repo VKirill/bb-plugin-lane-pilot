@@ -11,7 +11,7 @@ import type { ServerCore } from "../../contracts/server";
 import type { RepairDeps } from "./deps";
 import { waitThreadIdle } from "@lane-pilot/thread-observe";
 import { withUsage } from "../../usage/server";
-import { SELF_REPAIR, builtinWorkflow } from "../../workflow";
+import { SELF_REPAIR, builtinWorkflow } from "../../platform/server";
 import type { StepContext, WorkflowEngine } from "../../workflow";
 import { BREAKERS_KEY, DRILL_KEY, DRILL_SANDBOX_PROJECT_IDS, HOOK_TIMEOUTS_KEY, PARKED_KEY, type DrillOutcome, type HookTimeoutRecord, type ParkedTask } from "../../stability/server";
 import { tableRowAt, writerExecutionSelection } from "@lane-pilot/models";
