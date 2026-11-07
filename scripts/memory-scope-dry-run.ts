@@ -26,7 +26,9 @@ if (process.argv[1]?.endsWith("memory-scope-dry-run.ts")) {
   }
   const db = new Database(dbPath, { readonly: !apply && !revert, fileMustExist: true });
   if (revert) {
-    const { reverted } = revertRuleScopeRebind(db, revert);
+    const journal = JSON.parse(readFileSync(revert, "utf8")) as { reverted: boolean; rows: Array<{ id: string; projectId: string; before: string[]; after: string[] }> };
+    const { reverted } = revertRuleScopeRebind(db, journal);
+    if (reverted) writeFileSync(revert, `${JSON.stringify({ ...journal, reverted: true }, null, 2)}\n`);
     db.close();
     console.log(`reverted=${reverted}`);
     process.exit(0);
@@ -35,7 +37,9 @@ if (process.argv[1]?.endsWith("memory-scope-dry-run.ts")) {
   if (apply) {
     if (!mapPath) { console.error("--apply needs --map <labels.json> ({label: [\"section:<uuid>\"]})"); process.exit(1); }
     const map = JSON.parse(readFileSync(mapPath, "utf8")) as Record<string, string[]>;
-    const { applied, journal } = applyRuleScopeRebind(db, map, arg("--journal") ?? out);
+    const { applied, journal } = applyRuleScopeRebind(db, map);
+    const journalPath = arg("--journal") ?? out;
+    if (journalPath && journal.length) writeFileSync(journalPath, `${JSON.stringify({ reverted: false, rows: journal }, null, 2)}\n`);
     db.close();
     for (const row of journal) console.log(`${row.id} ${JSON.stringify(row.before)} -> ${JSON.stringify(row.after)}`);
     console.log(`applied=${applied}`);

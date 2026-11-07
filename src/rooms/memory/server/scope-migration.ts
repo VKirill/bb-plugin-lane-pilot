@@ -4,7 +4,6 @@
  * room because createMemoryStage applies it on start; the CLI in
  * scripts/memory-scope-dry-run.ts is a thin caller.
  */
-import { readFileSync, writeFileSync } from "node:fs";
 import { splitRuleScope } from "@lane-pilot/run-insights";
 import { pathsNamed } from "@lane-pilot/memory-core";
 
@@ -64,7 +63,7 @@ type RuleJournalRow = { id: string; projectId: string; before: string[]; after: 
  * for a PM task, which owns no paths. The label names a section; the map (same shape as `memory.scope_map`) hands it
  * that section's chain. Every rewrite is journaled so `--revert` restores the stored scope verbatim.
  */
-export function applyRuleScopeRebind(db: ApplyDb, map: Readonly<Record<string, readonly string[]>>, journalPath?: string): { applied: number; journal: RuleJournalRow[] } {
+export function applyRuleScopeRebind(db: ApplyDb, map: Readonly<Record<string, readonly string[]>>): { applied: number; journal: RuleJournalRow[] } {
   const rules = db.prepare("SELECT id, project_id, scope_json FROM lane_pilot_rule_proposal WHERE state='accepted'").all() as Array<{ id: string; project_id: string; scope_json: string }>;
   const journal: RuleJournalRow[] = [];
   const update = db.prepare("UPDATE lane_pilot_rule_proposal SET scope_json=? WHERE project_id=? AND id=?");
@@ -81,17 +80,14 @@ export function applyRuleScopeRebind(db: ApplyDb, map: Readonly<Record<string, r
     update.run(JSON.stringify(chain), row.project_id, row.id);
     journal.push({ id: row.id, projectId: row.project_id, before: scope, after: [...chain] });
   }
-  if (journalPath && journal.length) writeFileSync(journalPath, `${JSON.stringify({ reverted: false, rows: journal }, null, 2)}\n`);
   return { applied: journal.length, journal };
 }
 
-/** Restores the scopes a journal recorded. Marks the journal reverted so it is not applied twice. */
-export function revertRuleScopeRebind(db: ApplyDb, journalPath: string): { reverted: number } {
-  const journal = JSON.parse(readFileSync(journalPath, "utf8")) as { reverted: boolean; rows: RuleJournalRow[] };
+/** Restores the scopes a journal recorded. The caller owns the journal file (rooms never touch fs). */
+export function revertRuleScopeRebind(db: ApplyDb, journal: { reverted: boolean; rows: RuleJournalRow[] }): { reverted: number } {
   let reverted = 0;
   const update = db.prepare("UPDATE lane_pilot_rule_proposal SET scope_json=? WHERE project_id=? AND id=?");
   for (const row of journal.rows) { update.run(JSON.stringify(row.before), row.projectId, row.id); reverted++; }
-  if (reverted) writeFileSync(journalPath, `${JSON.stringify({ ...journal, reverted: true }, null, 2)}\n`);
   return { reverted };
 }
 

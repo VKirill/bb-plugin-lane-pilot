@@ -1,5 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { tmpdir } from "node:os";
+import { readFileSync, writeFileSync } from "node:fs";
 import { applyRuleScopeRebind, applyScopeMigration, planScopeMigration, revertRuleScopeRebind } from "../src/rooms/memory/server/scope-migration";
 import { describe, expect, it } from "vitest";
 import { searchMemoryAllSections, searchMemoryRecords, storeMemoryRecords } from "../packages/memory-core/src";
@@ -267,9 +268,10 @@ describe("F04-3 --apply: a bare-label scope is rebound to the section it names",
     db.prepare(`INSERT INTO lane_pilot_rule_proposal (id,project_id,signature,rule,author,state,occurrences,task_count,examples_json,memory_id,first_seen_at,last_seen_at,updated_at,decided_at,scope_json,audience)
       VALUES ('r-pm','P','s','verify before merge','model','accepted',3,3,'[]','${m1}',1,1,1,1,'["verification"]','pm')`).run();
     const journalPath = `${tmpdir()}/scope-journal-${Date.now()}.json`;
-    applyRuleScopeRebind(db, { verification: ["section:lane-pilot"] }, journalPath);
+    const { journal } = applyRuleScopeRebind(db, { verification: ["section:lane-pilot"] });
+    writeFileSync(journalPath, JSON.stringify({ reverted: false, rows: journal }, null, 2));
     expect(acceptedRules(db, "P", ["section:lane-pilot"])).toHaveLength(1);
-    expect(revertRuleScopeRebind(db, journalPath).reverted).toBe(1);
+    expect(revertRuleScopeRebind(db, JSON.parse(readFileSync(journalPath, "utf8"))).reverted).toBe(1);
     expect(acceptedRules(db, "P", ["section:lane-pilot"])).toEqual([]);
     expect(db.prepare("SELECT scope_json FROM lane_pilot_rule_proposal WHERE id='r-pm'").get()).toEqual({ scope_json: '["verification"]' });
   });
