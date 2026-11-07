@@ -1,0 +1,102 @@
+[
+  {
+    "ts": 1793998551494,
+    "level": "warn",
+    "message": "writer drill-20261106-235213-c: codex/gpt-6-luna is held (writer_provider_unavailable:owner_present:codex used by the owner 3 min ago on OVH); spawning acp-cursor/grok-4.6 in the same attempt"
+  },
+  {
+    "ts": 1794000294490,
+    "level": "warn",
+    "message": "writer drill-20261107-002050-c: codex/gpt-6-luna is held (writer_provider_unavailable:owner_present:codex used by the owner 4 min ago on OVH); spawning devin/swe-2-flash-medium in the same attempt"
+  },
+  {
+    "ts": 1794000309520,
+    "level": "warn",
+    "message": "writer drill-20261107-002050-c: codex/gpt-6-luna is held (writer_provider_unavailable:owner_present:codex used by the owner 4 min ago on OVH); spawning devin/swe-2-flash-medium in the same attempt"
+  },
+  {
+    "ts": 1794003630624,
+    "level": "warn",
+    "message": "writer drill-20261107-011833-memory: claude-code/claude-haiku-5-5 is held (writer_provider_unavailable:owner_present:claude-code used by the owner 4 min ago on OVH); spawning acp-cursor/grok-4.6 in the same attempt"
+  },
+  {
+    "ts": 1794003660946,
+    "level": "warn",
+    "message": "writer drill-note-3c6a: claude-code/claude-haiku-5-5 is held (writer_provider_unavailable:owner_present:claude-code used by the owner 5 min ago on OVH); spawning acp-cursor/grok-4.6 in the same attempt"
+  },
+  {
+    "ts": 1794003796234,
+    "level": "warn",
+    "message": "writer drill-20261107-011833-b: claude-code/claude-haiku-5-5 is held (writer_provider_unavailable:owner_present:claude-code used by the owner 2 min ago on OVH); spawning acp-cursor/grok-4.6 in the same attempt"
+  },
+  {
+    "ts": 1794003805981,
+    "level": "warn",
+    "message": "writer drill-20261107-011833-c: claude-code/claude-haiku-5-5 is held (writer_provider_unavailable:owner_present:claude-code used by the owner 2 min ago on OVH); spawning acp-cursor/grok-4.6 in the same attempt"
+  },
+  {
+    "ts": 1794003834923,
+    "level": "warn",
+    "message": "writer drill-20261107-011833-a: claude-code/claude-haiku-5-5 is held (writer_provider_unavailable:owner_present:claude-code used by the owner 0 min ago on OVH); spawning acp-cursor/grok-4.6 in the same attempt"
+  },
+  {
+    "ts": 1794006329528,
+    "level": "warn",
+    "message": "writer stripe-test-mode-admin-only-2: devin/swe-2-flash-medium is held (writer_provider_unavailable:owner_present:acp-cursor used by the owner 6 min ago on OVH); spawning acp-antigravity/gemini-3.8-flash in the same attempt"
+  },
+  {
+    "ts": 1794006334805,
+    "level": "warn",
+    "message": "writer stripe-test-mode-admin-only-2: devin/swe-2-flash-medium is held (writer_provider_unavailable:owner_present:acp-cursor used by the owner 6 min ago on OVH); spawning acp-antigravity/gemini-3.8-flash in the same attempt"
+  },
+  {
+    "ts": 1794006560163,
+    "level": "warn",
+    "message": "writer stripe-test-mode-admin-only-3: acp-cursor/grok-4.6 is held (writer_provider_unavailable:owner_present:acp-cursor used by the owner 9 min ago on OVH); spawning acp-antigravity/gemini-3.8-flash in the same attempt"
+  },
+  {
+    "ts": 1794006563744,
+    "level": "warn",
+    "message": "writer stripe-test-mode-admin-only-3: acp-cursor/grok-4.6 is held (writer_provider_unavailable:owner_present:acp-cursor used by the owner 10 min ago on OVH); spawning acp-antigravity/gemini-3.8-flash in the same attempt"
+  },
+  {
+    "ts": 1794007268672,
+    "level": "warn",
+    "message": "writer drill-note-1.39: claude-code/claude-haiku-5-5 is held (writer_provider_unavailable:owner_present:claude-code used by the owner 3 min ago on OVH); spawning devin/swe-2-flash-medium in the same attempt"
+  },
+  {
+    "ts": 1794007279420,
+    "level": "warn",
+    "message": "writer drill-20261107-021815-b: claude-code/claude-haiku-5-5 is held (writer_provider_unavailable:owner_present:claude-code used by the owner 3 min ago on OVH); spawning devin/swe-2-flash-medium in the same attempt"
+  },
+  {
+    "ts": 1794007286167,
+    "level": "warn",
+    "message": "writer drill-20261107-021815-a: claude-code/claude-haiku-5-5 is held (writer_provider_unavailable:owner_present:claude-code used by the owner 4 min ago on OVH); spawning devin/swe-2-flash-medium in the same attempt"
+  },
+  {
+    "ts": 1794007292999,
+    "level": "warn",
+    "message": "writer drill-note-1.39: claude-code/claude-haiku-5-5 is held (writer_provider_unavailable:owner_present:claude-code used by the owner 4 min ago on OVH); spawning devin/swe-2-flash-medium in the same attempt"
+  },
+  {
+    "ts": 1794007293379,
+    "level": "warn",
+    "message": "writer drill-20261107-021815-c: codex/gpt-6-luna is held (writer_provider_unavailable:owner_present:claude-code used by the owner 4 min ago on OVH); spawning devin/swe-2-flash-medium in the same attempt"
+  },
+  {
+    "ts": 1794007298296,
+    "level": "warn",
+    "message": "writer drill-20261107-021815-b: claude-code/claude-haiku-5-5 is held (writer_provider_unavailable:owner_present:claude-code used by the owner 4 min ago on OVH); spawning devin/swe-2-flash-medium in the same attempt"
+  },
+  {
+    "ts": 1794007303433,
+    "level": "warn",
+    "message": "writer drill-20261107-021815-a: claude-code/claude-haiku-5-5 is held (writer_provider_unavailable:breaker_open:devin/swe-2-flash-medium: 3 provider failures); spawning acp-cursor/grok-4.6 in the same attempt"
+  },
+  {
+    "ts": 1794007314900,
+    "level": "warn",
+    "message": "writer drill-20261107-021815-c: codex/gpt-6-luna is held (writer_provider_unavailable:breaker_open:devin/swe-2-flash-medium: 5 provider failures); spawning acp-cursor/grok-4.6 in the same attempt"
+  }
+]

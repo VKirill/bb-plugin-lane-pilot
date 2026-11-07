@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **A writer moving to a free fallback is routing status.** The wall log reader matched `unavailable` inside a held primary's reason and opened repairs for normal same-attempt fallback selection (class `log:a10ac833ef2c`). It now ignores the complete routing clause when scanning warning text, preserving appended failures, separate spawn failures, error-level lines and holds without a selected fallback. `tests/wall/writer-fallback-log.test.ts` replays 20 original hub log rows, including both samples of this class, across the wall and self-repair readers.
+
 ## 0.1.483
 
 - **Claude Code helpers start without the orchestration built-ins.** Background helpers launch with `--disallowedTools Workflow,ScheduleWakeup,AskUserQuestion,Agent` (~40 KB of tool definitions per first request); a `--disallowedTools` from BB core adds to it. PM chats keep them.
