@@ -1,9 +1,5 @@
 import { vi } from "vitest";
 
-// Storage's casUpsertSetting(s) validates through the contract in src/rooms/setting-validation.ts; importing the
-// settings room's module registers its implementation for every test file in this worker.
-import "../src/rooms/settings/setting-validation";
-
 // A worker that keeps its module cache between files (isolate: false) runs the next file on the modules the last one left. Page
 // files (jsdom) start from an empty module registry: plugin modules keep state at module level (a registered settings backend, hooks
 // registered by a shared helper) and a page must not see another's. Node files keep the plugin modules loaded: re-evaluating the

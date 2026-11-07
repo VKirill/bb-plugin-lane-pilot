@@ -12,7 +12,7 @@ import { jevSettingProblem } from "@lane-pilot/jev";
 import { HUB_KEYS, PROJECT_DEFAULT_KEYS, hubSettingProblem } from "../improvement";
 import { UI_CATALOG, WRITER_EFFORT_CHOICES_BY_PROVIDER } from "@lane-pilot/settings-catalog";
 
-import { registerSettingValidator, type SettingValidationError, type SettingsValidator } from "../setting-validation";
+import type { SettingValidationError } from "../setting-validation";
 
 export type { SettingValidationError } from "../setting-validation";
 
@@ -161,6 +161,3 @@ export function invalidChoiceReason(key: string, value: unknown): string | null 
   const error = validateSettingValue(key, value);
   return error ? validationErrorText(error) : null;
 }
-
-// Storage validates setting writes through the contract in ../setting-validation; register this room's rules on load.
-registerSettingValidator({ validateSettingValue, validateSettingsObject } satisfies SettingsValidator);

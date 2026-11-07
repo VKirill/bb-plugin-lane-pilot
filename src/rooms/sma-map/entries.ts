@@ -462,7 +462,7 @@ export const SMA_ENTRIES: Readonly<Record<string, SmaEntry>> = {
   n452: ["have", "таймер тика", "core:apps/server/src/services/plugins/vk-schedule-options.ts#VK_SCHEDULE_CEILING_RETRY_MS"],
   n453: ["have", "порядок загрузки", "server.ts#registerRpc(ctx, services);"],
   n454: ["have", "свои папки до записи: миграции", "src/rooms/storage/database.ts#export function openDatabase("],
-  n455: ["have", "очередь поднимается первой", "server.ts#const db = openDatabase(bb, lanePilotMigrations);"],
+  n455: ["have", "очередь поднимается первой", "server.ts#const db = openDatabase(bb, { migrations: lanePilotMigrations,"],
   n456: ["have", "дверь открывается до проходов", "server.ts#registerRpc(ctx, services);"],
   n457: ["have", "запись процесса", "src/rooms/outage/server/outage.ts#export const PROCESS_KEY"],
   n458: ["have", "старые пробы памяти чистятся при старте", "src/rooms/outage/server/outage.ts#Prune foreign memory previews"],

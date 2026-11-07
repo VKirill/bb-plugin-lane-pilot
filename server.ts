@@ -1,5 +1,6 @@
 import { getReasoningTrace, getRunSettingsScopes, listOpenAttempts, listUnfinishedStages, loadPrototypeConfig, loadProjectSettings, openDatabase } from "./src/rooms/storage";
 import { migrations as lanePilotMigrations } from "./src/rooms/migrations";
+import { validateSettingValue, validateSettingsObject } from "./src/rooms/settings";
 import { createTaskReconcile } from "./src/rooms/runs/server";
 import { createActivation } from "./src/rooms/native-agent/server";
 import { registerCli } from "./src/rooms/tools/server/cli";
@@ -82,7 +83,7 @@ export { rpcContract } from "./src/rooms/contracts";
 
 /** Entry only: storage, the shared core, every module on one services bag, then the registrations. */
 export default async function plugin(bb: BbPluginApi) {
-  const db = openDatabase(bb, lanePilotMigrations);
+  const db = openDatabase(bb, { migrations: lanePilotMigrations, validateSetting: { validateSettingValue, validateSettingsObject } });
   // BB's thread events wake the watchers of writers and helper threads; without them they poll as before.
   installThreadSignals(bb);
   const ctx = createCore(bb, db);
