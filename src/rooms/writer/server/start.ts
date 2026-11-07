@@ -6,8 +6,8 @@ import type { DirtSnapshot } from "../cli-outcome";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
 import { providerPoolCap } from "@lane-pilot/settings-catalog";
 import { isZcodeProvider, WRITER_PROFILES, type WriterProfile } from "@lane-pilot/models";
-import { DEPENDENCY_REDO_WAIT_MS, countAttempts, countChargedAttempts, countThreadTurns, createAttempt, endSpawnFailure, failureFieldsOf, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getTask, getTaskPlan, latestTaskAttemptState, listAttemptsForTask, listOpenAttempts, listStageReceipts, listUnansweredWriterQuestions, loadProjectSettings, noteToldPmDirectly, parkAttemptWake, trailingQueuedParks, transitionAttempt, taskBasePath } from "../../storage";
-import { postOwnerItem } from "../../owner-waiting";
+import { DEPENDENCY_REDO_WAIT_MS, blockedReasonCount, countAttempts, countChargedAttempts, countThreadTurns, createAttempt, endSpawnFailure, failureFieldsOf, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getTask, getTaskPlan, latestTaskAttemptState, listAttemptsForTask, listOpenAttempts, listStageReceipts, listUnansweredWriterQuestions, loadProjectSettings, noteCleanAdmission, noteToldPmDirectly, onAttemptChanged, parkAttemptWake, trailingQueuedParks, transitionAttempt, taskBasePath } from "../../storage";
+import { closeOwnerItem, closeOwnerItemsByPrefix, postOwnerItem } from "../../owner-waiting";
 import { taskV2Schema } from "../../contracts";
 import { ownsPathsOverlap, pollPause } from "@lane-pilot/kit";
 import { reconcile, reconcileCursor } from "../../stability";
@@ -176,6 +176,12 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
   mountStabilityAttemptFinished(ctx, services);
   mountWriterTaskFinished(ctx, services, sticky);
   mountWorkflowAttemptFinished(ctx, services);
+  // A store-read block's owner item describes a blocked attempt: when the attempt leaves blocked (requeue,
+  // accepted, canceled) the item closes; the next block posts under a fresh sequence key.
+  bb.onDispose(onAttemptChanged((changedId) => {
+    const attempt = getAttempt(db, changedId);
+    if (attempt && attempt.state !== "blocked") closeOwnerItemsByPrefix(db, `store-read:${changedId}:`, "attempt left blocked");
+  }));
   const admitted = admittedByCore.get(ctx) ?? new Map<string, { runId:string; taskId:string; projectId:string }>();
   admittedByCore.set(ctx, admitted);
 
@@ -604,31 +610,32 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
     let sessionStartedAt = Date.now();
     let previousTurn:{ failure:string; diff:string|null; streamError?:boolean } | null = null;
 
-    /** Settings, writer pick, budget, the live-folder flag and its backup: everything a later step needs in place. False = parked for a transient store read. */
     const STORE_READ_PARK_LIMIT = 5;
+    /** A plugin-store read that fails is "state unknown", not a task failure: park the attempt for the wake sweep; after the bound it blocks with an owner item. Shared by prepareRun and the pause-read bound. */
+    const parkForStoreRead = (cause: unknown): false => {
+      const message = cause instanceof Error ? cause.message : String(cause);
+      // Bounded: a store that stays unreadable is not transient. After the park limit the attempt blocks with a
+      // clear reason and the owner gets one item per block (the sequence key reopens after the last one was closed).
+      if (trailingQueuedParks(db, attemptId, "store_read:") + 1 >= STORE_READ_PARK_LIMIT) {
+        const reason = `store_read: plugin store unreadable after ${STORE_READ_PARK_LIMIT} attempts: ${message.slice(0, 160)}`;
+        blockBeforeWriter(reason);
+        postOwnerItem(db, { key: `store-read:${attemptId}:${blockedReasonCount(db, attemptId, "store_read:")}`, source: "writer", kind: "store_read", projectId: input.projectId, wake: true,
+          what: "Запись остановлена: хранилище плагина не читается",
+          why: `${STORE_READ_PARK_LIMIT} попыток подряд не смогли прочитать настройки перед запуском писателя — это постоянный сбой хранилища, а не разовый.`,
+          evidence: [{ kind: "run", ref: input.runId }, { kind: "task", ref: input.taskId }] });
+        return false;
+      }
+      const reason = `store_read: ${message.slice(0, 200)}`;
+      parkAttemptWake(db, attemptId, reason, Date.now() + 30_000);
+      ctx.log(`writer ${input.taskId}: plugin store unreadable before spawn (${reason}); the attempt retries in 30 s`);
+      last = { status:"queued", reason, attemptId };
+      return false;
+    };
+    /** Settings, writer pick, budget, the live-folder flag and its backup: everything a later step needs in place. False = parked for a transient store read. */
     const prepareRun = async ():Promise<boolean> => {
       policy=runPolicyFor(input.runId);
       // The pick, the pin, the live backup and the settings scopes live in the plugin store: a read that fails is
       // transient — park the attempt for the wake sweep instead of blocking it on a storage hiccup.
-      const parkForStoreRead = (cause: unknown): false => {
-        const message = cause instanceof Error ? cause.message : String(cause);
-        // Bounded: a store that stays unreadable is not transient. After the park limit the attempt blocks with a
-        // clear reason and the owner gets one item, instead of re-waking every half minute forever.
-        if (trailingQueuedParks(db, attemptId, "store_read:") + 1 >= STORE_READ_PARK_LIMIT) {
-          const reason = `store_read: plugin store unreadable after ${STORE_READ_PARK_LIMIT} attempts: ${message.slice(0, 160)}`;
-          blockBeforeWriter(reason);
-          postOwnerItem(db, { key: `store-read:${attemptId}`, source: "writer", kind: "store_read", projectId: input.projectId, wake: true,
-            what: "Запись остановлена: хранилище плагина не читается",
-            why: `${STORE_READ_PARK_LIMIT} попыток подряд не смогли прочитать настройки перед запуском писателя — это постоянный сбой хранилища, а не разовый.`,
-            evidence: [{ kind: "run", ref: input.runId }, { kind: "task", ref: input.taskId }] });
-          return false;
-        }
-        const reason = `store_read: ${message.slice(0, 200)}`;
-        parkAttemptWake(db, attemptId, reason, Date.now() + 30_000);
-        ctx.log(`writer ${input.taskId}: plugin store unreadable before spawn (${reason}); the attempt retries in 30 s`);
-        last = { status:"queued", reason, attemptId };
-        return false;
-      };
       try {
         baseSettings=(await effectiveProjectSettings(input.projectId,getRunSettingsScopes(db,input.runId))).values;
         writerOverlay=await pickWriter(baseSettings, input);
@@ -652,6 +659,9 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
           if (typeof saved === "string") liveBackupId = saved;
         } catch (cause) { return parkForStoreRead(cause); }
       }
+      // A clean read after parks resets the streak: without the marker the journal still ends in store_read rows
+      // and one more failure much later would count them all and block a recovered store.
+      if (trailingQueuedParks(db, attemptId, "store_read:") > 0) noteCleanAdmission(db, attemptId);
       return true;
     };
     const wallOrTokenStop = () => runningWriterBudgetStop(budget.check());
@@ -698,7 +708,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
           ctx.log(`writer ${input.taskId} waits: run ${input.runId} is paused`);
           recordStage(db, { runId:input.runId, taskId:input.taskId, stageId:"writer-agent", state:"pending", input:input.plan,
             reason:"waiting: the run is paused; starts by itself once it is resumed" });
-        } })) return false;
+        }, onReadBound: (cause) => { parkForStoreRead(cause); return false; } })) return false;
         // Held until a date (2999 = until released): the task stays queued and takes no slot (lane_pilot_queue {action:"hold"}).
         for (let noted = false; !ctx.isDisposed();) {
           const held = (db.prepare("SELECT held_until FROM lane_pilot_task WHERE id=?").get(input.taskId) as { held_until: number | null } | undefined)?.held_until ?? null;
@@ -900,10 +910,23 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
       };
       /** The writer session: spawn or continue → finish → judge the failure → retry in thread, respawn, or hand to the chain. */
       const attemptLoop = async ():Promise<"done"|"stop"> => {
+      let pauseReadItemPosted = false;
       while (attemptsLeft()) {
         if (last.status === "accepted") break;
         // The stage that just ended is the safe boundary of a pause: the next attempt or turn waits for the resume.
-        if (!await waitWhileRunPaused(bb.storage.kv as never, input.runId, { isDisposed: ctx.isDisposed, onError: (message) => bb.log.warn(message), onFirstWait: () => ctx.log(`writer ${input.taskId} waits at a stage boundary: run ${input.runId} is paused`) })) return "stop";
+        // An unreadable pause flag is never a resume: the writer keeps its slot and waits, and the owner hears once.
+        const pauseWait = await waitWhileRunPaused(bb.storage.kv as never, input.runId, { isDisposed: ctx.isDisposed, onError: (message) => bb.log.warn(message), onFirstWait: () => ctx.log(`writer ${input.taskId} waits at a stage boundary: run ${input.runId} is paused`), onReadBound: () => {
+          if (!pauseReadItemPosted) {
+            pauseReadItemPosted = true;
+            postOwnerItem(db, { key: `pause-read:${attemptId}`, source: "writer", kind: "pause_read", projectId: input.projectId, wake: true,
+              what: "Запись ждёт: состояние паузы не читается",
+              why: "Хранилище плагина не отвечает на чтение флага паузы уже много раз подряд; писатель держит слот на границе стадии и ждёт чистого чтения — это не возобновление.",
+              evidence: [{ kind: "run", ref: input.runId }, { kind: "task", ref: input.taskId }] });
+          }
+          return true;
+        } });
+        if (pauseReadItemPosted) { closeOwnerItem(db, `pause-read:${attemptId}`, "pause state readable again"); pauseReadItemPosted = false; }
+        if (!pauseWait) return "stop";
         if (!inSession) { attemptsHere += 1; sessionStartedAt = Date.now(); previousTurn = null; }
         const budgetCheck=budget.check();
         if (!budgetCheck.ok) {

@@ -157,12 +157,20 @@ it("a sibling of an area with three tasks of one kind waits for the pilot, the f
 import { waitWhileRunPaused } from "../src/rooms/runs/server/runs-pause";
 import { sweepWriterWakes } from "../src/rooms/writer/server/writer-wake";
 
-it("a pause-state read that keeps failing releases the wait after the bound instead of holding the slot", async () => {
+it("a pause-state read that keeps failing is never 'resumed': the caller's bound decides", async () => {
   const kv = { get: async () => { throw new Error("kv down"); }, set: async () => undefined };
   const errors: string[] = [];
-  const held = await waitWhileRunPaused(kv, "run1", { isDisposed: () => false, pollMs: 1, maxReadErrors: 3, onError: (message) => errors.push(message) });
-  expect(held).toBe(true);
-  expect(errors.some((message) => message.includes("releasing the wait"))).toBe(true);
+  // onReadBound says "the caller took over" → the wait stops with false, not a resume.
+  const taken = await waitWhileRunPaused(kv, "run1", { isDisposed: () => false, pollMs: 1, maxReadErrors: 3, onError: (message) => errors.push(message), onReadBound: () => false });
+  expect(taken).toBe(false);
+  expect(errors.some((message) => message.includes("the caller took over"))).toBe(true);
+  // No bound callback → keeps waiting past the error bound; only dispose or a clean read ends it.
+  let disposed = false;
+  const pending = waitWhileRunPaused(kv, "run1", { isDisposed: () => disposed, pollMs: 1, maxReadErrors: 3, onError: () => undefined });
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  expect(disposed).toBe(false);
+  disposed = true;
+  expect(await pending).toBe(false);
 });
 
 it("a single pause-state read failure keeps waiting, and the next clean read resumes", async () => {
@@ -218,7 +226,111 @@ it("a plugin store that stays unreadable blocks the attempt after the park bound
   expect(attempt.state).toBe("blocked");
   expect(attempt.reason).toContain("store_read:");
   expect(spawned).toEqual([]);
-  const items = env.db.prepare("SELECT key FROM lane_pilot_owner_item WHERE key='store-read:T1-a1'").all();
-  expect(items).toHaveLength(1);
+  const items = () => env.db.prepare("SELECT key, state, closed_by FROM lane_pilot_owner_item WHERE key LIKE 'store-read:T1-a1:%' ORDER BY key").all() as Array<{ key: string; state: string; closed_by: string | null }>;
+  expect(items()).toEqual([expect.objectContaining({ key: "store-read:T1-a1:1", state: "open" })]);
+  // The attempt leaves blocked (requeue) → the item closes; a later block posts under a fresh sequence key.
+  transitionAttempt(env.db, "T1-a1", "queued", { reason: "retry after store read" });
+  expect(items()).toEqual([expect.objectContaining({ key: "store-read:T1-a1:1", state: "closed" })]);
+  for (let i = 0; i < 8 && getAttempt(env.db, "T1-a1")?.state !== "blocked"; i += 1) {
+    env.db.prepare("UPDATE lane_pilot_attempt SET wake_at=0 WHERE id='T1-a1' AND state='queued'").run();
+    await sweepWriterWakes(env.ctx, all as never);
+    await new Promise((resolve) => setTimeout(resolve, 30));
+  }
+  expect(getAttempt(env.db, "T1-a1")?.state).toBe("blocked");
+  expect(items()).toEqual([
+    expect.objectContaining({ key: "store-read:T1-a1:1", state: "closed" }),
+    expect.objectContaining({ key: "store-read:T1-a1:2", state: "open" }),
+  ]);
+  await env.harness.lifecycle.dispose();
+});
+
+it("a clean read after store_read parks resets the streak: the next failure parks, not blocks", async () => {
+  const env = setup();
+  const kv = env.bb.storage.kv as unknown as { get: (key: string) => Promise<unknown> };
+  const realGet = kv.get.bind(kv);
+  let down = true;
+  kv.get = async (key: string) => {
+    if (down && !PAUSE_READ_KEYS.has(key)) throw new Error("store down");
+    return realGet(key);
+  };
+  const { all, spawned } = services(env);
+  // The clean-read-then-reload window: prepareRun succeeds but the spawn never lands, so the attempt stays
+  // queued and the journal still ends in the store_read parks — only the clean-admission marker resets them.
+  let hangSpawn = false;
+  const realSpawn = all.spawnWriterAttempt;
+  all.spawnWriterAttempt = ((input: Parameters<typeof realSpawn>[0]) => hangSpawn ? new Promise<never>(() => {}) : realSpawn(input)) as typeof all.spawnWriterAttempt;
+  start(env, all);
+  await vi.waitFor(() => expect(getAttempt(env.db, "T1-a1")?.reason ?? "").toContain("store_read:"));
+  for (let i = 0; i < 3; i += 1) {
+    env.db.prepare("UPDATE lane_pilot_attempt SET wake_at=0 WHERE id='T1-a1' AND state='queued'").run();
+    await sweepWriterWakes(env.ctx, all as never);
+    await new Promise((resolve) => setTimeout(resolve, 30));
+  }
+  expect(getAttempt(env.db, "T1-a1")?.state).toBe("queued"); // 4 parks, still under the bound
+  down = false; hangSpawn = true;
+  env.db.prepare("UPDATE lane_pilot_attempt SET wake_at=0 WHERE id='T1-a1' AND state='queued'").run();
+  await sweepWriterWakes(env.ctx, all as never);
+  await new Promise((resolve) => setTimeout(resolve, 100)); // the clean prepareRun finishes; the spawn hangs
+  down = true; hangSpawn = false;
+  // "Reload": the first pipeline is still hung in spawn, so free the dedup slot the way a restart would.
+  all.activeWriterTasks.delete("run1:T1");
+  all.startWriterTask({ projectId: "proj1", runId: "run1", taskId: "T1", firstAttemptId: "T1-a1", pmThreadId: "thr_pm", config, task: contract("T1"), plan: "Plan for T1" });
+  const parkRows = () => (env.db.prepare("SELECT COUNT(*) AS n FROM lane_pilot_attempt_transition WHERE attempt_id='T1-a1' AND to_state='queued' AND substr(reason,1,11)='store_read:'").get() as { n: number }).n;
+  await vi.waitFor(() => expect(parkRows()).toBe(5), { timeout: 5_000 }); // the fifth park after the clean read
+  const attempt = getAttempt(env.db, "T1-a1")!;
+  expect(attempt.state).toBe("queued"); // one failure after the clean read parks — without the reset it would block here
+  expect(spawned).toEqual([]);
+  await env.harness.lifecycle.dispose();
+});
+
+it("a paused run whose pause flag is unreadable parks the attempt at admission instead of spawning", async () => {
+  const env = setup();
+  await setRunPaused(env.bb.storage.kv as never, "run1", true);
+  const kv = env.bb.storage.kv as unknown as { get: (key: string) => Promise<unknown> };
+  const realGet = kv.get.bind(kv);
+  kv.get = async (key: string) => {
+    if (PAUSE_READ_KEYS.has(key)) throw new Error("pause store down");
+    return realGet(key);
+  };
+  const scale = process.env.LANE_PILOT_POLL_SCALE;
+  process.env.LANE_PILOT_POLL_SCALE = "0.01";
+  try {
+    const { all, spawned } = services(env);
+    start(env, all);
+    await vi.waitFor(() => expect(getAttempt(env.db, "T1-a1")?.reason ?? "").toContain("store_read:"), { timeout: 10_000 });
+    const attempt = getAttempt(env.db, "T1-a1")!;
+    expect(attempt.state).toBe("queued"); // unreadable is not resumed: parked through the store_read path, no spawn
+    expect(spawned).toEqual([]);
+  } finally {
+    if (scale === undefined) delete process.env.LANE_PILOT_POLL_SCALE; else process.env.LANE_PILOT_POLL_SCALE = scale;
+  }
+  await env.harness.lifecycle.dispose();
+});
+
+it("a running attempt whose pause flag turns unreadable waits at the boundary, posts one owner item, and never starts the next turn", async () => {
+  const env = setup();
+  const kv = env.bb.storage.kv as unknown as { get: (key: string) => Promise<unknown> };
+  const realGet = kv.get.bind(kv);
+  let pauseDown = false;
+  kv.get = async (key: string) => {
+    if (pauseDown && PAUSE_READ_KEYS.has(key)) throw new Error("pause store down");
+    return realGet(key);
+  };
+  const scale = process.env.LANE_PILOT_POLL_SCALE;
+  process.env.LANE_PILOT_POLL_SCALE = "0.01";
+  try {
+    const { all, finished } = services(env, async (turn) => { if (turn === 1) pauseDown = true; });
+    start(env, all);
+    await vi.waitFor(() => expect(finished).toEqual([1]));
+    const itemRows = () => env.db.prepare("SELECT key, state FROM lane_pilot_owner_item WHERE key LIKE 'pause-read:%'").all() as Array<{ key: string; state: string }>;
+    await vi.waitFor(() => expect(itemRows().filter((row) => row.state === "open")).toHaveLength(1), { timeout: 10_000 });
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    expect(finished).toEqual([1]); // still waiting — unreadable is not resumed
+    pauseDown = false;
+    await vi.waitFor(() => expect(finished).toEqual([1, 2]), { timeout: 15_000 });
+    expect(itemRows().filter((row) => row.state === "open")).toHaveLength(0); // the item closes once a clean read lets the wait end
+  } finally {
+    if (scale === undefined) delete process.env.LANE_PILOT_POLL_SCALE; else process.env.LANE_PILOT_POLL_SCALE = scale;
+  }
   await env.harness.lifecycle.dispose();
 });

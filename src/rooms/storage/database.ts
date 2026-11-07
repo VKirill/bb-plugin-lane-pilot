@@ -476,6 +476,19 @@ export function trailingQueuedParks(db: LanePilotDatabase, attemptId: string, re
   return count;
 }
 
+/** Journals that a pre-spawn store read succeeded after parks, so a later `store_read:` streak counts only what followed it. */
+export function noteCleanAdmission(db: LanePilotDatabase, attemptId: string): void {
+  const state = (db.prepare("SELECT state FROM lane_pilot_attempt WHERE id=?").get(attemptId) as { state: string } | undefined)?.state ?? "queued";
+  db.prepare(`INSERT INTO lane_pilot_attempt_transition(attempt_id,from_state,to_state,reason,refused,at) VALUES(?,?,?,?,0,?)`)
+    .run(attemptId, state, state, "admission: store reads clean", Date.now());
+}
+
+/** How many times the attempt's journal blocked it under a reason prefix — the next such block's sequence number. */
+export function blockedReasonCount(db: LanePilotDatabase, attemptId: string, reasonPrefix: string): number {
+  return (db.prepare("SELECT COUNT(*) AS n FROM lane_pilot_attempt_transition WHERE attempt_id=? AND to_state='blocked' AND refused=0 AND substr(reason,1,?)=?")
+    .get(attemptId, reasonPrefix.length, reasonPrefix) as { n: number }).n;
+}
+
 /** Queued attempts whose writer hold ended (or should be re-checked): the minute waker picks them up. */
 export function listDueWakes(db: LanePilotDatabase, now: number): Array<{ id: string; run_id: string; task_id: string; reason: string | null }> {
   return db.prepare("SELECT id,run_id,task_id,reason FROM lane_pilot_attempt WHERE state='queued' AND wake_at IS NOT NULL AND wake_at<=? ORDER BY wake_at")
