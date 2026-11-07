@@ -1,5 +1,5 @@
 import { hostContract, rpcContract } from "../contracts";
-import type { Services } from "../core/server";
+import type { Services } from "../platform/server";
 import type { ServerCore } from "../contracts/server";
 import { getRun } from "../storage";
 import { listReceipts } from "../capability";

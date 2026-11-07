@@ -1,7 +1,7 @@
 import type { NodeExecutor, StepContext } from "@lane-pilot/workflow-engine";
 import { CRITIC_EDIT_TRIAL_KEY, criticEditGate, criticEditTrialOn, criticEditTrialSettle, criticPromptProposal, criticStats } from "../../critique";
 import { judgeSharedTrial, TRIAL_DEFAULTS } from "../../harness/server";
-import { scheduleIsolated, type Services } from "../../core/server";
+import { scheduleIsolated, type Services } from "../../platform/server";
 import { type ServerCore } from "../../contracts/server";
 import { builtinWorkflow } from "../../workflow";
 import type { ChainRuntime } from "../../workflow/server";

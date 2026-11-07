@@ -1,7 +1,7 @@
 import { hostContract } from "../../contracts";
-import { scheduleIsolated } from "../../core/server";
+import { scheduleIsolated } from "../../platform/server";
 import { type ServerCore } from "../../contracts/server";
-import { mapListedQaHosts } from "../../qa";
+import { mapListedQaHosts } from "../../platform/server";
 import { getRun, getRunWriterHost, loadProjectSettings, saveProjectSetting } from "../../storage";
 import { runOnHost } from "@lane-pilot/host-calls";
 import { FIRST_RUN_STEPS, MUTATING_RPC, answerFirstRun, firstRunNeeded, firstRunSettings, helperDraft, parseHelper, peerLine, type FirstRunDraft, type FirstRunStep, type PeerSnapshot } from "../logic";

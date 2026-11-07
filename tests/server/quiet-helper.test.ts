@@ -1,6 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { bindGraphStepLookup, fullAccessSpawn, quietHelper } from "../../src/rooms/core/server/pm-spawn";
+import { bindGraphStepLookup, fullAccessSpawn, quietHelper } from "../../src/rooms/platform/server/pm-spawn";
 
 describe("quietHelper", () => {
   it("marks helpers Lane Pilot watches, not the PM, errands, specialists or root threads", () => {

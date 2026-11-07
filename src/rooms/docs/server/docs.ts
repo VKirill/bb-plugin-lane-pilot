@@ -7,15 +7,15 @@ import { docsInputHash, docsMaintenancePrompt, docsSelection, parseDocsSettings,
 import type { DocsPage } from "../docs";
 import { boundedAgentName } from "../../critique";
 import { DocsChildSnapshot, docsChildSnapshot, docsResultObject, resolveDocsSnapshotPageCap } from "../../runs/server";
-import { modelCatalogOf, resolveSpawnModel, spawnUsageOf, warmSpawnUsage, stageHelperSettings } from "../../core/server";
+import { modelCatalogOf, resolveSpawnModel, spawnUsageOf, warmSpawnUsage, stageHelperSettings } from "../../platform/server";
 import { configuredSetting } from "../../contracts/server";
-import { fullAccessSpawn, graphStepMetadata } from "../../core/server";
+import { fullAccessSpawn, graphStepMetadata } from "../../platform/server";
 import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server";
 import { recordStage } from "../../runs/server";
 import { stringAt, valueAt } from "@lane-pilot/kit";
 import { observeStageChild } from "@lane-pilot/thread-observe";
 import type { ServerCore } from "../../contracts/server";
-import type { Services } from "../../core/server";
+import type { Services } from "../../platform/server";
 
 export function createDocsStage(ctx: ServerCore, services: Services) {
   const { acceptedTaskWorkspace, bb, configForRun, db, host, workspaceExecutionEnvironment } = ctx;

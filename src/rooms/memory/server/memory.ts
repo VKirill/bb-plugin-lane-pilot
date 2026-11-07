@@ -19,16 +19,16 @@ import { pmMemoryContext, pmShortlist, snapshotFileRead } from "./memory-mix";
 import { boundedAgentName } from "../../critique";
 import { MemoryChildSnapshot, childResultObject, memoryChildSnapshot, spawnRefused } from "../../runs/server";
 import { compactAcceptedResult } from "../../tasks/server";
-import { modelCatalogOf, resolveSpawnModel, spawnUsageOf, warmSpawnUsage, stageHelperSettings } from "../../core/server";
+import { modelCatalogOf, resolveSpawnModel, spawnUsageOf, warmSpawnUsage, stageHelperSettings } from "../../platform/server";
 import { configuredSetting } from "../../contracts/server";
-import { fullAccessSpawn, graphStepMetadata } from "../../core/server";
+import { fullAccessSpawn, graphStepMetadata } from "../../platform/server";
 import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server";
 import { recordStage } from "../../runs/server";
 import { stringAt, valueAt } from "@lane-pilot/kit";
 import { observeStageChild } from "@lane-pilot/thread-observe";
 import type Database from "better-sqlite3";
 import type { ServerCore } from "../../contracts/server";
-import type { Services } from "../../core/server";
+import type { Services } from "../../platform/server";
 
 export function createMemoryStage(ctx: ServerCore, services: Services) {
   const { acceptedTaskWorkspace, bb, configForRun, db, workspaceExecutionEnvironment } = ctx;

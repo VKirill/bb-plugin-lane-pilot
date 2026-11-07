@@ -4,7 +4,7 @@ import { HEAVY_WITHOUT_JEV, intakeByRules, intakeRunGoals, isMachineMessage } fr
 import { createPhaseIntake, type IntakePhases, type IntakeTrain } from "../src/rooms/phase/server/intake";
 import type { Phase } from "../src/rooms/phase/logic";
 import { createRun, openDatabase } from "../src/rooms/plugin-db";
-import { pmPrompt } from "../src/rooms/core/server/pm-spawn";
+import { pmPrompt } from "../src/rooms/platform/server/pm-spawn";
 import type { PrototypeConfig } from "../src/rooms/contracts";
 import bootstrapEvents from "./fixtures/phase-intake-pm-bootstrap-2026-10-29.json";
 

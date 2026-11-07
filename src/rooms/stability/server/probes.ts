@@ -1,9 +1,9 @@
 import { createAttempt, createRun, getAttempt, loadPrototypeConfig, setRunThread, transitionAttempt } from "../../storage";
-import { fullAccessSpawn } from "../../core/server";
+import { fullAccessSpawn } from "../../platform/server";
 import { id, stringAt, valueAt } from "@lane-pilot/kit";
 import { createHelperProbe } from "../../native-agent/server/helper-probe";
 import type { ServerCore } from "../../contracts/server";
-import type { Services } from "../../core/server";
+import type { Services } from "../../platform/server";
 
 export function createProbes(ctx: ServerCore, services: Services) {
   const { bb, db } = ctx;

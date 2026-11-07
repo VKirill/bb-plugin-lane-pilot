@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { modelCatalogOf } from "../../src/rooms/core/server/model-catalog-reader";
+import { modelCatalogOf } from "../../src/rooms/platform/server/model-catalog-reader";
 import { withResolvedModel, type HelperRequest } from "../../src/rooms/workflow/server/workflow-agent";
 import { resolveAgentModel } from "../../src/rooms/workflow/server/workflow-agent-model";
 import { createWorkflowModels } from "../../src/rooms/workflow/server/workflow-models";

@@ -19,7 +19,7 @@ import { lintReply } from "../../tasks/server";
 import { createTaskLinter } from "../../tasks/server";
 import { markTaskSatisfied, reopenWriterStages } from "../../runs/server";
 import type { ServerCore } from "../../contracts/server";
-import type { Services } from "../../core/server";
+import type { Services } from "../../platform/server";
 import { validateTaskV2 } from "../../tasks/task-v2";
 import { applyTrustedTooling } from "../../tasks";
 import { planWithOutsideReads, rerootTask } from "../../tasks";

@@ -2,10 +2,10 @@ import { isCustomAgentId, parseOwnedAgents } from "../../native-agent";
 import { redactKnown } from "@lane-pilot/kit";
 import { createSecrets } from "../../secrets/server";
 import { bindDrainTarget, createDeployDrain } from "../../stability/server";
-import { currentScheduleSignal } from "./schedules";
+import { currentScheduleSignal } from "../../platform/server";
 import { createHostJobs, isHostJobKind } from "@lane-pilot/host-calls";
 import { createOwnerAsk } from "../../relay/server";
-import { createRealtime, mountHelperSignals } from "./realtime";
+import { createRealtime, mountHelperSignals } from "../../platform/server";
 import { aggregateRun } from "../../runs";
 import { TARGET_SHA } from "../../runs";
 import { hostContract } from "../../contracts";
@@ -29,7 +29,7 @@ import { createOutputGuard } from "@lane-pilot/jev";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type { LanePilotDatabase } from "../../storage";
 import { ownerTurnGate } from "./owner-turn";
-import { setWorkStartGate } from "./tool-result";
+import { setWorkStartGate } from "../../platform/server";
 
 /** Everything every server module shares: the SDK, storage, the host client and the small helpers used across modules. */
 export function createCore(bb: BbPluginApi, db: LanePilotDatabase): ServerCore {

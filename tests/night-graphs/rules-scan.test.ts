@@ -1,14 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { validateWorkflow } from "@lane-pilot/workflow-engine";
 import { createRuleScan } from "../../src/rooms/self-repair/server/rule-scan";
-import { selfRepairDeps } from "../../src/rooms/core/server";
+import { selfRepairDeps } from "../../src/rooms/self-repair/server";
 import { mountNightGraphs } from "../../src/rooms/night-graphs/server";
 import { builtinWorkflow } from "../../src/rooms/workflow/builtin";
 import { listRuleProposals } from "@lane-pilot/run-insights";
 import { nightWorld } from "./world";
 import { createWriterHost } from "../../src/rooms/writer/server/writer-host";
 import { savePrototypeConfig } from "../../src/rooms/plugin-db";
-import { noteProviderStartFailure } from "../../src/rooms/core/server/spawn-model";
+import { noteProviderStartFailure } from "../../src/rooms/platform/server/spawn-model";
 import incident from "../fixtures/learning-stale-binding-2026-10-30.json";
 
 const PROJECT = "proj-1";

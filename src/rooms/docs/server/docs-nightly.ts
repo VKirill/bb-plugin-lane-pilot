@@ -8,9 +8,9 @@ import type { DocsUnit } from "../docs";
 import { cadenceAllowsToday, codeDocsVerdict, docsCadence, docsFactsKey, docsWorthinessState, DOCS_WORTHINESS_QUESTION, fallbackDocsVerdict } from "../docs-worthiness";
 import type { DocsCadence, DocsVerdict, DocsWorthinessFacts } from "../docs-worthiness";
 import { blockingDocsFindings, buildBacklinks, buildDocsIndex, citedFiles, docsCompletenessGaps, isDesignCanon, isDocsIndex, lintCitationClaims, lintDocsPages, oversizedPageFindings, pagesToRefresh, uncataloguedPages, withCitedSources, withVerifiedConfidence } from "../docs-lint";
-import { graphStepMetadata, modelCatalogOf, resolveSpawnModel, spawnUsageOf } from "../../core/server";
+import { graphStepMetadata, modelCatalogOf, resolveSpawnModel, spawnUsageOf } from "../../platform/server";
 import { configuredSetting } from "../../contracts/server";
-import { fullAccessSpawn } from "../../core/server";
+import { fullAccessSpawn } from "../../platform/server";
 import { withUsage } from "../../usage/server";
 import { DOCS_MAINTENANCE, DOCS_NIGHT, builtinWorkflow } from "../../workflow";
 import type { StepContext, WorkflowEngine } from "../../workflow";
@@ -19,9 +19,9 @@ import { stringAt, valueAt } from "@lane-pilot/kit";
 import { recordStage } from "../../runs/server";
 import { sleepUntilThreadSignal, threadWatchMark, waitThreadIdle } from "@lane-pilot/thread-observe";
 import { basename, resolve } from "node:path";
-import { abortable, scheduleIsolated } from "../../core/server";
+import { abortable, scheduleIsolated } from "../../platform/server";
 import type { ServerCore } from "../../contracts/server";
-import type { Services } from "../../core/server";
+import type { Services } from "../../platform/server";
 
 /** Runs the work it is given one after another, in the order it was given; a failure does not stop the queue. */
 export function createSerialQueue():<T>(work:()=>Promise<T>)=>Promise<T> {

@@ -7,7 +7,7 @@ import { IntegrationGateRunner } from "../../src/rooms/verification/server/integ
 import { createAttempt, createTask, openDatabase, transitionAttempt } from "../../src/rooms/plugin-db";
 import * as hostHandlers from "../../src/rooms/host-worker/host-handlers";
 import type { ServerCore } from "../../src/rooms/contracts/server";
-import type { Services } from "../../src/rooms/core/server/services";
+import type { Services } from "../../src/rooms/platform/server";
 
 /**
  * Owner rule: a red gate with no culprit is one row on the owner's list per episode (the same gate command, the same failing test

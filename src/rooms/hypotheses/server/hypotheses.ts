@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
 import { authorize } from "../../policy";
 import { saveProjectSetting } from "../../storage";
-import type { Services } from "../../core/server";
+import type { Services } from "../../platform/server";
 import type { ServerCore } from "../../contracts/server";
 import { armsOf, SEEDED, type HypothesisState } from "../logic";
 

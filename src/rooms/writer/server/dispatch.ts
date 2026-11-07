@@ -28,7 +28,7 @@ import { reviveCanceledTask } from "./revive";
 import { countRunNudges } from "./writer-silence";
 import { isAbsolute, relative, resolve } from "node:path";
 import type { ServerCore } from "../../contracts/server";
-import type { Services } from "../../core/server";
+import type { Services } from "../../platform/server";
 import { runOnHost } from "@lane-pilot/host-calls";
 import { pollPause } from "@lane-pilot/kit";
 import { pmRulesOf } from "../../learning";

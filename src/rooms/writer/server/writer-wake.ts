@@ -3,7 +3,7 @@ import { taskV2Schema } from "../../contracts";
 import { sendServiceMessage } from "../../relay/server";
 import { providerDisplayName } from "./writer-hold";
 import type { ServerCore } from "../../contracts/server";
-import type { Services } from "../../core/server";
+import type { Services } from "../../platform/server";
 
 /**
  * The waker of H2: every minute the attempts parked `waiting_writer:` whose earliest hold ended are taken up again —

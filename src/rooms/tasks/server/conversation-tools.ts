@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { callerPluginMetadata, registerObservedTool } from "../../core/server";
+import { callerPluginMetadata, registerObservedTool } from "../../platform/server";
 import { ToolError, type ServerCore } from "../../contracts/server";
 import { hostContract } from "../../contracts";
 import { failureClass, wayOut } from "../../runs";

@@ -17,7 +17,7 @@ import {
 import { openDatabase, createTask, saveStageReceipt, saveProjectSetting } from "../src/rooms/plugin-db";
 import * as hostHandlers from "../src/rooms/host-worker/host-handlers";
 import type { ServerCore } from "../src/rooms/contracts/server";
-import type { Services } from "../src/rooms/core/server/services";
+import type { Services } from "../src/rooms/platform/server";
 
 describe("integration-gate settings parsing", () => {
   it("defaults to null command, queue_drained, every 5", () => {

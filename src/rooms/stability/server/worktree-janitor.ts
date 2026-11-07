@@ -1,6 +1,6 @@
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
-import { mapListedQaHosts } from "../../qa";
-import { scheduleIsolated } from "../../core/server";
+import { mapListedQaHosts } from "../../platform/server";
+import { scheduleIsolated } from "../../platform/server";
 import { configuredSetting } from "../../contracts/server";
 import type { ServerCore } from "../../contracts/server";
 import { loadProjectSettings } from "../../storage";

@@ -1,5 +1,5 @@
 import type { LanePilotDatabase } from "../../storage";
-import { graphStepMetadata } from "../../core/server";
+import { graphStepMetadata } from "../../platform/server";
 
 /**
  * The graph step a writer thread belongs to: the `writer` node of the task's `lp-task-pipeline` run (the run is linked to the Lane Pilot run and

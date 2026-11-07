@@ -22,9 +22,9 @@ import { createSkillMaterializer } from "./skill-materialize";
 import { parseWorkspaceMode, requireManagedWorktreeProvider, resolveAttemptWorkspace, resolveManagedWorkspace, waitManagedWorktreeReady } from "../../verification";
 import { createProviderGate, providerListed, providerSwitchOn, waitProviderEnvironment } from "../../verification";
 import { LANE_WORKTREE_PROVIDER_ID } from "../../native-agent/server";
-import { fullAccessSpawn } from "../../core/server";
+import { fullAccessSpawn } from "../../platform/server";
 import { WriterSelectionError, coreHostsRequiredProvider, helperChildPlacement, projectRoleField, requireHelperSpawn, requiredPolicyField } from "../../runs/server";
-import { holderSpawnKey } from "../../core/server";
+import { holderSpawnKey } from "../../platform/server";
 import { stringAt } from "@lane-pilot/kit";
 import { configuredSetting } from "../../contracts/server";
 import { planDigest, writerBriefInput, writerBriefSegments, type TaskFolderBrief } from "./writer-task";
@@ -33,7 +33,7 @@ import { taskFolderRel } from "../../verification";
 import { resolve } from "node:path";
 import { listReturns, renderReturnNotes } from "../../stage-return";
 import type { ServerCore } from "../../contracts/server";
-import type { Services } from "../../core/server";
+import type { Services } from "../../platform/server";
 import { runOnHost } from "@lane-pilot/host-calls";
 
 /** True when the run works in the project's own checkout on that machine, which BB's managed worktree can fork. */

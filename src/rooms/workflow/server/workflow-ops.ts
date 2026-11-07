@@ -5,7 +5,7 @@ import { runDraftTest, testCasesOf } from "@lane-pilot/workflow-engine";
 import type { DraftTestResult } from "@lane-pilot/workflow-engine";
 import { createStatusResolver } from "../../storage";
 import type { ServerCore } from "../../contracts/server";
-import type { Services } from "../../core/server";
+import type { Services } from "../../platform/server";
 import type { createWorkflowLibrary } from "./workflow-library";
 import type { WorkflowPreflight } from "./workflow-preflight";
 

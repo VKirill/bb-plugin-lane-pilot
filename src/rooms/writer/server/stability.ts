@@ -1,4 +1,4 @@
-import type { Services } from "../../core/server";
+import type { Services } from "../../platform/server";
 import type { ServerCore } from "../../contracts/server";
 import type { FailureClass } from "../../runs";
 import { onAttemptFinished } from "./attempt-finished";

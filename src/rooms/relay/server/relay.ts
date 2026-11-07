@@ -5,9 +5,9 @@ import { calibrationLine } from "../../forecast";
 import { forecastReport } from "../../forecast/server";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import type { ServerContext } from "../../core/server";
+import type { ServerContext } from "../../platform/server";
 import { sendServiceMessage } from "./service-message";
-import { registerObservedTool } from "../../core/server";
+import { registerObservedTool } from "../../platform/server";
 import { gateRunVerdict, latestGateRun, latestGateRunForTask, parseIntegrationGateSettings } from "../../verification/server";
 
 /**

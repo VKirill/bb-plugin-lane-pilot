@@ -4,7 +4,7 @@ import { compatibleReasoningLevel, compatibleServiceTier, findModelIn, PAIR_ROLE
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import { rpcContract } from "../../../contracts";
 import type { ServerCore } from "../../../contracts/server";
-import type { Services } from "../../../core/server";
+import type { Services } from "../../../platform/server";
 
 type ValidationCode = "invalid_choice" | "incompatible_setting" | "setup_required" | "writer_binding_ambiguous" | "writer_host_offline" | "catalog_unavailable";
 type SelectionOutput = {

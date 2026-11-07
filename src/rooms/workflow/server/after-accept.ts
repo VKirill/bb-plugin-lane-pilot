@@ -5,7 +5,7 @@ import { AFTER_ACCEPT, builtinWorkflow } from "../builtin";
 import { requireGreen } from "./require-green";
 import type { NodeExecutor, StepContext, WorkflowEngine } from "@lane-pilot/workflow-engine";
 import type { ServerCore } from "../../contracts/server";
-import type { Services } from "../../core/server";
+import type { Services } from "../../platform/server";
 
 /**
  * The graph `lp.after-accept` (workflows/lp.after-accept.json): once a task is accepted, the memory maintainer and the project-life

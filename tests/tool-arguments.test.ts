@@ -2,8 +2,8 @@ import { afterEach, expect, it } from "vitest";
 import { z } from "zod";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import plugin from "../server";
-import { registeredTools } from "../src/rooms/core/server";
-import { PM_TOOL_FAMILIES } from "../src/rooms/tools/pm-tool-families";
+import { registeredTools } from "../src/rooms/platform/server";
+import { PM_TOOL_FAMILIES } from "../src/rooms/platform/server/pm-tool-families";
 
 // Live phase ph_86fd9d3fab, 2026-10-27: the PM called lane_pilot_phase revise twice before it learned the call takes goal and note.
 // BB shows a model only `type: object` of a top-level union, so the instructions must say what each action takes, and a refusal must too.

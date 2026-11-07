@@ -2,7 +2,7 @@ import { resolve } from "node:path";
 import type { ScheduleTask } from "../model";
 import type { WhereView } from "../views";
 import type { ServerCore } from "../../contracts/server";
-import type { Services } from "../../core/server";
+import type { Services } from "../../platform/server";
 import { stringAt } from "@lane-pilot/kit";
 
 /**

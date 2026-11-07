@@ -1,5 +1,5 @@
 // Public API of baseline/server: what other rooms import. Everything else in this room is private.
-import type { Services } from "../../core/server";
+import type { Services } from "../../platform/server";
 import type { ServerCore } from "../../contracts/server";
 import { createBaseline } from "./baseline";
 import { createRegression } from "./regress";

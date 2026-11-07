@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { createAttempt, createRun, getAttempt, listStageReceipts, openDatabase, saveTaskPlan, transitionAttempt } from "../../src/rooms/plugin-db";
 import { recordStage } from "../../src/rooms/runs/server/stage-records";
 import { createStability } from "../../src/rooms/stability/server/stability";
-import type { Services } from "../../src/rooms/core/server/services";
+import type { Services } from "../../src/rooms/platform/server";
 import { createTaskReconcile } from "../../src/rooms/runs/server/task-reconcile";
 
 /** A run with one task whose failed attempt waits for a retry that died with a reload (live: bot-preset-catalog-style-fallback-r3). */

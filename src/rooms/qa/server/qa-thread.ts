@@ -1,7 +1,7 @@
 import { observeStageChild } from "@lane-pilot/thread-observe";
 import { writerExecutionSelection } from "@lane-pilot/models";
-import { fullAccessSpawn } from "../../core/server";
-import { spawnTextId } from "../../core/server";
+import { fullAccessSpawn } from "../../platform/server";
+import { spawnTextId } from "../../platform/server";
 import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server";
 import { redactKnownDeep } from "@lane-pilot/kit";
 import { stringAt } from "@lane-pilot/kit";

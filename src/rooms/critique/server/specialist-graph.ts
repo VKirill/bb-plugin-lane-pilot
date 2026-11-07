@@ -1,9 +1,9 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { runOnHost } from "@lane-pilot/host-calls";
 import { builtinWorkflow } from "../../workflow";
-import { fenceOutside, spawnTextId } from "../../core/server";
+import { fenceOutside, spawnTextId } from "../../platform/server";
 import { getRun } from "../../storage";
-import type { Services } from "../../core/server";
+import type { Services } from "../../platform/server";
 import type { ServerCore } from "../../contracts/server";
 
 /**

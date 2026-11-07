@@ -1,7 +1,7 @@
 import { runOnHost } from "@lane-pilot/host-calls";
 import { waitThreadIdle } from "@lane-pilot/thread-observe";
 import { taskV2Schema } from "../../contracts";
-import { fullAccessSpawn, type Services } from "../../core/server";
+import { fullAccessSpawn, type Services } from "../../platform/server";
 import { stringAt } from "@lane-pilot/kit";
 import { type ServerCore } from "../../contracts/server";
 import { cancelAttemptById, finishRunSafely } from "../../runs/server";

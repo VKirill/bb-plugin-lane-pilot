@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setJevForTests } from "@lane-pilot/jev";
 import { createCore } from "../../src/rooms/core/server/core";
-import type { Services } from "../../src/rooms/core/server";
+import type { Services } from "../../src/rooms/platform/server";
 import { answerDecision, getDecision, labelDecision, openDecision } from "../../src/rooms/lead/server/journal";
 import { addRoad, getRoad, proposeRoad } from "../../src/rooms/lead/server/road";
 import { createLeadService } from "../../src/rooms/lead/server/service";

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { noteProviderStartFailure, noteProviderStartSuccess, providerBlockedForFolder, PROVIDER_FOLDER_BLOCK_TTL_MS, readProviderFolderBlock, resolveSpawnModel } from "../src/rooms/core/server/spawn-model";
+import { noteProviderStartFailure, noteProviderStartSuccess, providerBlockedForFolder, PROVIDER_FOLDER_BLOCK_TTL_MS, readProviderFolderBlock, resolveSpawnModel } from "../src/rooms/platform/server/spawn-model";
 
 // Mac mini 2026-10-30: opencode2's serve had no Documents access and its start EPERM'd; the owner re-granted it and the
 // static path rule outlived the cause. Now only an observed refusal holds the provider out of ~/Documents, for a TTL.

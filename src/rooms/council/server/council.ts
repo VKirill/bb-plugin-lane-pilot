@@ -15,12 +15,12 @@ import {
   type CouncilSession,
 } from "@lane-pilot/council";
 import { loadPrototypeConfig, type LanePilotDatabase } from "../../storage";
-import { requirePmRun } from "../../core/server";
+import { requirePmRun } from "../../platform/server";
 import { configuredSetting, ToolError } from "../../contracts/server";
 import type { ServerCore } from "../../contracts/server";
 import { memorySettingsFor } from "../../self-repair/server";
 import type { OwnerAsk } from "../../relay/server";
-import { fenceOutside, registerObservedTool } from "../../core/server";
+import { fenceOutside, registerObservedTool } from "../../platform/server";
 import type { CouncilGraph, CouncilStart } from "./council-graph";
 
 export const COUNCIL_TOOLS = ["lane_pilot_council_start", "lane_pilot_council_status", "lane_pilot_council_stop"] as const;

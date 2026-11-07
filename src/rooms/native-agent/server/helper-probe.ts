@@ -1,7 +1,7 @@
 import { waitThreadIdle } from "@lane-pilot/thread-observe";
 import { getRun, loadPrototypeConfig } from "../../storage";
 import { writerExecutionSelection, findModelIn } from "@lane-pilot/models";
-import { fullAccessSpawn } from "../../core/server";
+import { fullAccessSpawn } from "../../platform/server";
 import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server/run-routing";
 import { stringAt } from "@lane-pilot/kit";
 import type { ServerCore } from "../../contracts/server";

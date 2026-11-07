@@ -26,7 +26,7 @@ import { listThreadEventsRaw } from "@lane-pilot/thread-observe";
 import { stringAt } from "@lane-pilot/kit";
 import { outputText, writerPatchFromOutput } from "./writer-task";
 import type { ServerCore } from "../../contracts/server";
-import type { Services } from "../../core/server";
+import type { Services } from "../../platform/server";
 
 /** A sandbox that refused the runner its own files: macOS python3 shim «couldn't create cache file … Operation not permitted». */
 

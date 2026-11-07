@@ -1,5 +1,5 @@
 import type { ServerCore } from "../../contracts/server";
-import type { Services } from "../../core/server";
+import type { Services } from "../../platform/server";
 import { realDeps } from "./workflow-architect";
 import { createWorkflowLibrary } from "./workflow-library";
 import { createWorkflowPreflight } from "./workflow-preflight";

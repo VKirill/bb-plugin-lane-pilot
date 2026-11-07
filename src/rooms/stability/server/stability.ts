@@ -7,7 +7,7 @@ import { reopenWriterStages } from "../../runs/server/stage-records";
 import { isRunHalted, isRunPaused } from "../../runs/server/runs-halt";
 import { conveyorState } from "../../conveyor";
 import type { ServerCore } from "../../contracts/server";
-import type { Services } from "../../core/server";
+import type { Services } from "../../platform/server";
 
 const VERSION: string = packageJson.version;
 export const PARKED_KEY = "stability:parked";

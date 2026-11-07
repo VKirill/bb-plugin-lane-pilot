@@ -73,7 +73,7 @@ export const COVERAGE: readonly CoverageEntry[] = [
   { kind: "gate", ids: ["verification"], tests: ["tests/dispatch-verification-check.test.ts", "tests/check-timing.test.ts"], reason: "drill tasks carry verification: [], so the gate is skipped (3 of 4 tasks in the 2026-10-22 quick drill) or passes with nothing to run" },
 
   // ── rooms (src/rooms/<room>) ─────────────────────────────────────────────────────────────────────────────────────────────────────
-  { kind: "room", ids: ["writer", "runs", "storage", "core", "contracts", "host-worker", "tasks", "verification", "tools"], live: ["parallel3"], via: "the code path of every drill task: dispatch-bb, contract lint, the writer, the gates, the state machine, the host calls", tests: ["tests/pipeline.test.ts"] },
+  { kind: "room", ids: ["writer", "runs", "storage", "core", "contracts", "host-worker", "tasks", "verification", "tools", "platform"], live: ["parallel3"], via: "the code path of every drill task: dispatch-bb, contract lint, the writer, the gates, the state machine, the host calls", tests: ["tests/pipeline.test.ts"] },
   { kind: "room", ids: ["deferral"], live: ["deferrals"], via: "the scenario reads the register over RPC and fails on an overdue entry or a bad skip citation", tests: ["tests/deferral-register.test.ts"] },
   { kind: "room", ids: ["memory", "memory-probe"], live: ["memory_paths"], via: "the probe plants a token through the write door and checks every delivery path, then the real writer brief and PM prompt", tests: ["tests/memory-paths.test.ts"] },
   { kind: "room", ids: ["native-agent"], live: ["helper_providers", "provider"], via: "one helper per provider in use, and the worktree provider of the writer", tests: ["tests/native-run.test.ts"] },

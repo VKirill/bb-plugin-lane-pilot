@@ -30,7 +30,7 @@ import { createProfileCheck, mountProfileCheck } from "./src/rooms/native-agent/
 import { createLeadService, mountLead } from "./src/rooms/lead/server";
 import { createPhaseDriver, mountPhaseDriver, mountPhaseIntake, registerPhaseTool } from "./src/rooms/phase/server";
 import { createPhaseReactions } from "./src/rooms/wiring";
-import { selfRepairDeps } from "./src/rooms/core/server";
+import { selfRepairDeps } from "./src/rooms/self-repair/server";
 import { registerConversationTools, registerQueueTool } from "./src/rooms/tasks/server";
 import { mountOutbound } from "./src/rooms/outbound";
 import { createMoney } from "./src/rooms/money";
@@ -50,11 +50,10 @@ import { registerRpc } from "./src/rooms/core/server/rpc";
 import { mountAnamnesis } from "./src/rooms/anamnesis";
 import { mountWorldAssets } from "./src/rooms/world-assets/server";
 import { registerLaneWorktreeProvider } from "./src/rooms/native-agent/server";
-import { scheduleIsolated } from "./src/rooms/core/server";
+import { scheduleIsolated } from "./src/rooms/platform/server";
 import { DRAIN_SNAPSHOT_KEY, skipRedundantStartupScans } from "./src/rooms/stability/server";
 import { createWriterQuestionTimeout, DEFAULT_SILENCE_NUDGE_MIN, OPENCODE_WRITER_PROVIDER, sweepWriterSilence, sweepWriterWakes } from "./src/rooms/writer/server";
 import { threadPendingInteractions } from "./src/rooms/relay/server";
-import type { Services } from "./src/rooms/core/server";
 import { createStageChildren, mountErrands } from "./src/rooms/qa/server";
 import { createDocsStage } from "./src/rooms/docs/server";
 import { createMemoryStage, mountMemoryEmbeddings, mountThreadBlock } from "./src/rooms/memory/server";
@@ -62,7 +61,7 @@ import { createNightStages } from "./src/rooms/night/server";
 import { createProjectLifeStage } from "./src/rooms/project-life/server";
 import { createQaStages } from "./src/rooms/qa/server";
 import { registerTools } from "./src/rooms/tools/server/tools";
-import { bindToolLocale, toolLocale } from "./src/rooms/tools/server";
+import { bindToolLocale, toolLocale } from "./src/rooms/platform/server";
 import { createWriterHost } from "./src/rooms/writer/server";
 import { createWriterState } from "./src/rooms/writer/server";
 import { createWriterSpawn } from "./src/rooms/writer/server";
@@ -79,6 +78,170 @@ import { mountLearning } from "./src/rooms/learning";
 import { installThreadSignals } from "@lane-pilot/thread-observe";
 import { mountLifecycleEvents } from "./src/rooms/core/server/lifecycle-events";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
+
+import type { CouncilApi } from "./src/rooms/council/server";
+import type { ErrandsApi } from "./src/rooms/qa/server";
+import type { ScheduleService } from "./src/rooms/schedule/server";
+import type { RuleScanApi } from "./src/rooms/self-repair/server";
+import type { HarnessApi } from "./src/rooms/harness/server";
+import type { DeferralApi } from "./src/rooms/deferral/server";
+import type { RollbackApi } from "./src/rooms/rollback/server";
+import type { BenchApi } from "./src/rooms/bench/server";
+import type { BaselineApi, RegressionApi } from "./src/rooms/baseline/server";
+import type { RunGoalApi } from "./src/rooms/run-goal/server";
+import type { LeadApi } from "./src/rooms/lead/server";
+import type { PhaseApi, PhaseIntake } from "./src/rooms/phase/server";
+import type { MoneyApi } from "./src/rooms/money";
+import type { FrontApi } from "./src/rooms/front";
+import type { CapabilitiesApi } from "./src/rooms/capability/server";
+import type { BacklogApi } from "./src/rooms/backlog/server";
+import type { HypothesesApi } from "./src/rooms/hypotheses/server";
+import type { OwnerPresenceApi } from "./src/rooms/owner-presence/server";
+import type { WallApi } from "./src/rooms/wall/server";
+import type { CheckersApi } from "./src/rooms/checkers/server";
+import type { ProfileCheckApi } from "./src/rooms/native-agent/server";
+import type { StageReturnApi } from "./src/rooms/stage-return/server";
+import type { WorldApi } from "./src/rooms/world/server";
+import type { Canary } from "./src/rooms/stability/server";
+import type { MemoryConflictsApi } from "./src/rooms/memory/server";
+import type { PromotionServiceApi } from "./src/rooms/rule-forms";
+
+type ActivationApi = ReturnType<typeof createActivation>;
+type DocsNightlyApi = ReturnType<typeof createDocsNightly>;
+type ProbesApi = ReturnType<typeof createProbes>;
+type ReconcileApi = ReturnType<typeof createReconcile>;
+type StageChildrenApi = ReturnType<typeof createStageChildren>;
+type DocsStageApi = ReturnType<typeof createDocsStage>;
+type MemoryStageApi = ReturnType<typeof createMemoryStage>;
+type NightStagesApi = ReturnType<typeof createNightStages>;
+type ProjectLifeStageApi = ReturnType<typeof createProjectLifeStage>;
+type QaStagesApi = ReturnType<typeof createQaStages>;
+type WriterHostApi = ReturnType<typeof createWriterHost>;
+type WriterStateApi = ReturnType<typeof createWriterState>;
+type WriterSpawnApi = ReturnType<typeof createWriterSpawn>;
+type WriterVerifyApi = ReturnType<typeof createWriterVerify>;
+type WriterFinishApi = ReturnType<typeof createWriterFinish>;
+type WriterStartApi = ReturnType<typeof createWriterStart>;
+type WriterDispatchApi = ReturnType<typeof createWriterDispatch>;
+type WorkflowEngineApi = ReturnType<typeof createWorkflowEngine>;
+type WorkflowTriggersApi = ReturnType<typeof createWorkflowTriggersService>;
+
+/** Every function one server module offers another; filled once all modules exist, read at call time. */
+export interface Services {
+  council: CouncilApi;
+  /** The Pixel World tick service (src/rooms/world). */
+  world: WorldApi;
+  canary: Canary;
+  ruleScan: RuleScanApi;
+  promotions: PromotionServiceApi;
+  harness: HarnessApi;
+  /** The register of deferrals with the owner's terms (src/rooms/deferral). */
+  deferrals: DeferralApi;
+  /** The record of every attempt's base and change, and reverify / revert of accepted work (src/rooms/rollback). */
+  rollback: RollbackApi;
+  /** LP-Bench: the fixed task set and its comparisons (src/rooms/bench). */
+  bench: BenchApi;
+  /** The task's checks on its base before a writer, and what turned red after the merge (src/rooms/baseline). */
+  baseline: BaselineApi;
+  /** Sends a task back to an earlier stage with a note (src/rooms/stage-return). */
+  stageReturn: StageReturnApi;
+  /** The regression pass: accepted tasks' checks on current main, bisect of the ones that went red (src/rooms/baseline). */
+  regression: RegressionApi;
+  /** The wall journal and the night loop: classes of failures, the night's repairs, the wall ladder (src/rooms/wall). */
+  wall: WallApi;
+  /** Every accepted task's checks together on the final main once a run is done (src/rooms/run-goal). */
+  runGoal: RunGoalApi;
+  /** Phases on rails: the driver that moves a phase through its stages by gates in code and wakes the PM at each turn (src/rooms/phase). */
+  phases: PhaseApi;
+  /** Rails by default: the owner's newest message in a PM chat read before the PM acts; a heavy goal goes into a phase (src/rooms/phase/server/intake.ts). */
+  phaseIntake: PhaseIntake;
+  /** The spend book, the money cap of paid lanes and the subscription windows (src/rooms/money). */
+  money: MoneyApi;
+  /** The front outside the graphs: first run, own helpers, peers, coordination, the door, the action journal (src/rooms/front). */
+  front: FrontApi;
+  /** The capability table: each provider's adapter version probed once, a failing one held off by the breaker (src/rooms/capability). */
+  capabilities: CapabilitiesApi;
+  /** The backlog scanner: ready todos with an estimate issued to the project's PM in queue order (src/rooms/backlog). */
+  backlog: BacklogApi;
+  /** Ideas checked on the bench set: two arms, the verdict, adoption through the night policy (src/rooms/hypotheses). */
+  hypotheses: HypothesesApi;
+  /** The owner's presence on a provider in the last minutes: writers keep off it (src/rooms/owner-presence). */
+  ownerPresence: OwnerPresenceApi;
+  /** Checking the checkers: planted defects in accepted candidates, the checker scorecard and the drill (src/rooms/checkers). */
+  checkers: CheckersApi;
+  docsVerdict: DocsNightlyApi["docsVerdict"];
+  docsPlaces: DocsNightlyApi["docsPlaces"];
+  docsPlaceStatus: DocsNightlyApi["docsPlaceStatus"];
+  docsLastRead: DocsNightlyApi["docsLastRead"];
+  activate: ActivationApi["activate"];
+  activeWriterTasks: WriterStateApi["activeWriterTasks"];
+  providerBreaker: WriterStateApi["providerBreaker"];
+  providerUsage: WriterStateApi["providerUsage"];
+  providerRetry: WriterStateApi["providerRetry"];
+  concurrencyLimit: WriterStateApi["concurrencyLimit"];
+  runBudgets: WriterStateApi["runBudgets"];
+  runBudgetFor: WriterStateApi["runBudgetFor"];
+  dispatchWriter: WriterDispatchApi["dispatchWriter"];
+  resumeDispatch: WriterDispatchApi["resumeDispatch"];
+  registerDocsGraphs: DocsNightlyApi["registerDocsGraphs"];
+  enqueueResumedWriter: ReconcileApi["enqueueResumedWriter"];
+  finishWriterAttempt: WriterFinishApi["finishWriterAttempt"];
+  ingestOpenCodeTelemetry: QaStagesApi["ingestOpenCodeTelemetry"];
+  listedAgentProfiles: WriterHostApi["listedAgentProfiles"];
+  persistWriterAcceptance: WriterVerifyApi["persistWriterAcceptance"];
+  projectLifeTaskSummary: StageChildrenApi["projectLifeTaskSummary"];
+  readWriterWorkspaceFile: WriterDispatchApi["readWriterWorkspaceFile"];
+  reconcileAttemptThread: ReconcileApi["reconcileAttemptThread"];
+  reconcileDocsChild: StageChildrenApi["reconcileDocsChild"];
+  reconcileProjectLifeChild: StageChildrenApi["reconcileProjectLifeChild"];
+  reconcileStageChild: StageChildrenApi["reconcileStageChild"];
+  recoverLostHolderThread: ReconcileApi["recoverLostHolderThread"];
+  resolveProjectWriterHost: WriterHostApi["resolveProjectWriterHost"];
+  resumeOrphans: ReconcileApi["resumeOrphans"];
+  runBrowserQa: QaStagesApi["runBrowserQa"];
+  resumeBrowserQaThreads: QaStagesApi["resumeBrowserQaThreads"];
+  runDocsMaintenance: DocsStageApi["runDocsMaintenance"];
+  runMemoryContext: MemoryStageApi["runMemoryContext"];
+  runMemoryMaintenance: MemoryStageApi["runMemoryMaintenance"];
+  runNightlyDocs: DocsNightlyApi["runNightlyDocs"];
+  runProjectLifeMaintenance: ProjectLifeStageApi["runProjectLifeMaintenance"];
+  runVerification: WriterVerifyApi["runVerification"];
+  runWorkspaceStatus: NightStagesApi["runWorkspaceStatus"];
+  runWriterPool: WriterStateApi["runWriterPool"];
+  selectionCatalogHost: WriterHostApi["selectionCatalogHost"];
+  selectionCatalog: WriterHostApi["selectionCatalog"];
+  spawnWriterAttempt: WriterSpawnApi["spawnWriterAttempt"];
+  isLiveFolder: WriterSpawnApi["isLiveFolder"];
+  restoreLiveFolder: WriterSpawnApi["restoreLiveFolder"];
+  startAmbiguousProbe: ProbesApi["startAmbiguousProbe"];
+  startCancelProbe: ProbesApi["startCancelProbe"];
+  startProviderErrorProbe: ProbesApi["startProviderErrorProbe"];
+  startHelperProbe: ProbesApi["startHelperProbe"];
+  memoryProbe: ReturnType<typeof createMemoryProbe>;
+  /** Memory notes that disagree: held out of every brief until a person settles them (src/rooms/memory/server/memory-conflicts.ts). */
+  memoryConflicts: MemoryConflictsApi;
+  startWriterTask: WriterStartApi["startWriterTask"];
+  stability: ReturnType<typeof createStability>["stability"];
+  validateWriterResult: WriterVerifyApi["validateWriterResult"];
+  waitWriter: WriterDispatchApi["waitWriter"];
+  workspaceDirt: WriterSpawnApi["workspaceDirt"];
+  workflowEngine: WorkflowEngineApi["workflowEngine"];
+  workflowCatalog: WorkflowEngineApi["workflowCatalog"];
+  startAfterAcceptance: WorkflowEngineApi["startAfterAcceptance"];
+  workflowTriggers: WorkflowTriggersApi["workflowTriggers"];
+  /** The errand starter of the PM tools (also used by scheduled errands); set in server.ts before the tools mount. */
+  errands: ErrandsApi;
+  /** Starts a named agent for a scheduled `agent` run and reads its report; set when the tools are mounted. */
+  /** The schedule board: scheduler, definitions, previews (src/server/schedule-service.ts). */
+  schedules: ScheduleService;
+  /** The lead («Штурман»): the road tree, the decision journal, the ticks and the rights (src/rooms/lead/server/service.ts). */
+  lead: LeadApi;
+  /** The PM replay set: harvest, replay runs, the staged A/B decision (src/rooms/pm-replay). Set when it is mounted. */
+  pmReplay?: import("./src/rooms/pm-replay").PmReplay;
+  /** The daily read-back of role profiles: per role, the helpers with/without a stored required policy (src/rooms/native-agent). */
+  profileCheck: ProfileCheckApi;
+}
+
 export { experimental_vkLifecycle } from "./src/rooms/native-install";
 
 export { rpcContract } from "./src/rooms/contracts";

@@ -7,12 +7,12 @@ import { reconcile, reconcileCursor, reconcileHolder } from "../reconcile";
 import type { IdempotencyTriple } from "../reconcile";
 import { shouldReconcileAttemptThread, shouldResumeWorktreeHolder, shouldScanLostWorktreeHolder } from "../../tasks";
 import { WriterSelectionError } from "../../runs/server/run-routing";
-import { holderSpawnKey } from "../../core/server";
+import { holderSpawnKey } from "../../platform/server";
 import { stringAt } from "@lane-pilot/kit";
-import { findThreadsByMetadata } from "../../core/server";
+import { findThreadsByMetadata } from "../../platform/server";
 import type { ServerCore } from "../../contracts/server";
 import type { ReconcilePort } from "../reconcile";
-import type { Services } from "../../core/server";
+import type { Services } from "../../platform/server";
 
 export function createReconcile(ctx: ServerCore, services: Services) {
   const { acceptedTaskWorkspace, bb, configForRun, db, refreshRun } = ctx;

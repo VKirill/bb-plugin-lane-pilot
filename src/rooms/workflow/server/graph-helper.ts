@@ -1,6 +1,6 @@
 import { waitThreadIdle } from "@lane-pilot/thread-observe";
 import type { StepContext } from "@lane-pilot/workflow-engine";
-import { findThreadsByMetadata, graphStepMetadata, keyedSpawnSupported } from "../../core/server";
+import { findThreadsByMetadata, graphStepMetadata, keyedSpawnSupported } from "../../platform/server";
 import type { ServerCore } from "../../contracts/server";
 import { withUsage } from "../../usage/server";
 import { outputText } from "../../writer/server";

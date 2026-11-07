@@ -7,7 +7,7 @@ import { agentBrief } from "./schedule-agent-brief";
 import { parseMoment, wallClock } from "../time";
 import type { ChainRuntime } from "../../workflow/server";
 import type { ServerCore } from "../../contracts/server";
-import type { Services } from "../../core/server";
+import type { Services } from "../../platform/server";
 
 /**
  * The two code steps of the graph `workflows/agent-routine.json`, the body of a schedule of kind agent. `lp.agent_brief` writes the agent's first

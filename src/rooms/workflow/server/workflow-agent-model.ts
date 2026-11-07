@@ -1,6 +1,6 @@
 /**
  * Which model a generic workflow agent step runs on: the function moved to packages/models (agent-model.ts) so that every wrapper that
- * spawns a model thread (memory, docs, QA, errand, repair, council...) asks the same one (core/server/spawn-model.ts). Re-exported here
+ * spawns a model thread (memory, docs, QA, errand, repair, council...) asks the same one (platform/server/spawn-model.ts). Re-exported here
  * for the callers that always imported it from the workflow room.
  */
 export {

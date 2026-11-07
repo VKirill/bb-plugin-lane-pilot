@@ -1,4 +1,4 @@
-import { scheduleIsolated } from "../../core/server";
+import { scheduleIsolated } from "../../platform/server";
 import { type ServerCore } from "../../contracts/server";
 import { BEAT_KEY, gapOutage } from "../logic";
 import { insertOutage, listOutages } from "../store";

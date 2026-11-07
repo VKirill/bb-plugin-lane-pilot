@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { PrototypeConfig } from "../src/rooms/contracts";
-import { pmHasGuard, pmPrompt } from "../src/rooms/core/server/pm-spawn";
+import { pmHasGuard, pmPrompt } from "../src/rooms/platform/server/pm-spawn";
 
 const config = { writerWorkspacePath: "/tmp/fixture" } as PrototypeConfig;
 

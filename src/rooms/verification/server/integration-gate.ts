@@ -4,7 +4,7 @@ import { getRun, getRunSettingsScopes, getTask, listStageReceipts, loadProjectSe
 import { recordGateEvaluation } from "../../runs/server/stage-records";
 import { stringAt } from "@lane-pilot/kit";
 import type { ServerCore } from "../../contracts/server";
-import type { Services } from "../../core/server";
+import type { Services } from "../../platform/server";
 import { isEnvironmentCheckFailure } from "../../runs";
 import { isMainfixTask, readCheckRun } from "../../tasks";
 import { gateLabel, gateResolverFor, type ResolvedGate } from "./gate-detect";

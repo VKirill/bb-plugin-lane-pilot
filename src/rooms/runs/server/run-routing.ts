@@ -7,7 +7,7 @@ import { LP_DEFAULTS_KEY, inheritProjectValues, parseHelperPlacement, parseLaneP
 import type { HelperPlacementMode } from "@lane-pilot/settings-catalog";
 import { roleSpec } from "@lane-pilot/models";
 import { stringAt } from "@lane-pilot/kit";
-import { findThreadsByMetadata } from "../../core/server";
+import { findThreadsByMetadata } from "../../platform/server";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 export class WriterSelectionError extends Error {}
 

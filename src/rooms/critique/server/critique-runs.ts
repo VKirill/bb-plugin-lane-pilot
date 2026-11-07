@@ -27,12 +27,12 @@ import { CODE_CRITIC_DEFAULT_SETTING, QUALITY_MODE_SETTING, applyCodeCriticDefau
 import type { CodeCriticDefault } from "../quality-mode";
 import type { Verdict, VerdictStatus } from "@lane-pilot/workflow-engine";
 import { MAIN_ATTEMPT_LIMIT } from "../../runs";
-import { GIT_PLUGIN_ID, gitCallRpc, gitFilesReplySchema, gitPatchKey, gitPatchesReplySchema, spawnUsageOf, stageHelperSettings, warmSpawnUsage, zcodeBusyPeek } from "../../core/server";
+import { GIT_PLUGIN_ID, gitCallRpc, gitFilesReplySchema, gitPatchKey, gitPatchesReplySchema, spawnUsageOf, stageHelperSettings, warmSpawnUsage, zcodeBusyPeek } from "../../platform/server";
 import { configuredSetting } from "../../contracts/server";
-import type { PluginCallRpc } from "../../core/server";
-import { fullAccessSpawn, graphStepMetadata } from "../../core/server";
+import type { PluginCallRpc } from "../../platform/server";
+import { fullAccessSpawn, graphStepMetadata } from "../../platform/server";
 import { reviewerMemoryFor } from "../../memory/server";
-import { clearSpawnMarker } from "../../core/server";
+import { clearSpawnMarker } from "../../platform/server";
 import { CRITIC_OUTCOME_UNKNOWN, criticReconcilePort, helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server";
 import { recordStage } from "../../runs/server";
 import { stringAt } from "@lane-pilot/kit";

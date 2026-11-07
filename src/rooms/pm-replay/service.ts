@@ -4,7 +4,7 @@ import { getRuleProposal, logRuleEvent, setRuleTrial } from "@lane-pilot/run-ins
 import { adoptRuleProposal, lanePilotProjectOrNotice } from "../self-repair/server";
 import { isSandboxProjectName } from "../stability/server";
 import { postOwnerItem } from "../owner-waiting";
-import { registeredTools, scheduleIsolated, type Services } from "../core/server";
+import { registeredTools, scheduleIsolated, type Services } from "../platform/server";
 import { type ServerCore } from "../contracts/server";
 import { builtinWorkflow } from "../workflow";
 import type { ChainRuntime } from "../workflow/server";

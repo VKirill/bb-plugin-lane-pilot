@@ -11,11 +11,11 @@ import { writerExecutionSelection } from "@lane-pilot/models";
 import { buildRunPolicy } from "../../tasks";
 import { parseWorkspaceMode, resolveManagedWorkspace, usesManagedWorktree } from "../../verification";
 import { excludeBookkeeping } from "../../verification/server";
-import { fullAccessSpawn, pmHasGuard, pmPrompt } from "../../core/server";
+import { fullAccessSpawn, pmHasGuard, pmPrompt } from "../../platform/server";
 import { requireHelperSpawn, requiredPolicyField } from "../../runs/server";
 import { id, stringAt, valueAt } from "@lane-pilot/kit";
 import type { ServerCore } from "../../contracts/server";
-import type { Services } from "../../core/server";
+import type { Services } from "../../platform/server";
 
 export function createActivation(ctx: ServerCore, services: Services) {
   const { bb, db, effectiveProjectSettings, host, ownedAgents, refreshRun } = ctx;

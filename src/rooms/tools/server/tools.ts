@@ -22,14 +22,15 @@ import { mountWorkflowArchitect } from "../../workflow/server";
 import { mountLeadTool } from "../../lead/server";
 import { mountScheduleTools } from "../../schedule/server";
 import { mountToolFamilies } from "./tool-families";
-import { callerPluginMetadata, registerObservedTool, selfRepairDeps } from "../../core/server";
+import { callerPluginMetadata, registerObservedTool } from "../../platform/server";
+import { selfRepairDeps } from "../../self-repair/server";
 import { ToolError } from "../../contracts/server";
 import { compactDispatchReply, compactReceipt, stageDetail } from "../../runs/server";
 import { createWriterAnswer } from "../../writer/server";
 import { createWriterReassign, createWriterUpdateTask } from "../../writer/server";
 import { z } from "zod";
 import type { ServerCore } from "../../contracts/server";
-import type { Services } from "../../core/server";
+import type { Services } from "../../platform/server";
 
 /**
  * What the PM gets back from lane_pilot_wait_writer: per stage only task, stage, state and reason, and strings cut

@@ -4,7 +4,7 @@ import { failureClass } from "../../runs";
 import type { LanePilotDatabase } from "../../storage";
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import type { rpcContract } from "../../contracts";
-import { scheduleIsolated } from "../../core/server";
+import { scheduleIsolated } from "../../platform/server";
 import type { ServerCore } from "../../contracts/server";
 
 /**

@@ -5,7 +5,7 @@ import type { PrototypeConfig, TaskV2 } from "../src/rooms/contracts";
 import { countChargedAttempts, createAttempt, createRun, createTask, getAttempt, latestTaskAttemptState, listStageReceipts, openDatabase, savePrototypeConfig, saveTaskPlan, setAttemptWorkspace, setRunThread, transitionAttempt } from "../src/rooms/plugin-db";
 import { SESSION_MAX_MS, SESSION_MAX_TURNS, failureClass } from "../src/rooms/runs/failure-class";
 import { createCore } from "../src/rooms/core/server/core";
-import type { Services } from "../src/rooms/core/server/services";
+import type { Services } from "../src/rooms/platform/server";
 import { recordStage } from "../src/rooms/runs/server/stage-records";
 import { createWriterDispatch } from "../src/rooms/writer/server/dispatch";
 import { retryInSameThread } from "../src/rooms/writer/server/sticky";

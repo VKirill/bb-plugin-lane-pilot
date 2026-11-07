@@ -4,11 +4,11 @@ import { detectRequiredSessionPolicyCapability } from "../../../native-agent";
 import { LP_AGENT_OVERRIDES_KEY, LP_DEFAULTS_KEY, packStoredDefaults, parseDefaultsRevision, parseLanePilotDefaults } from "@lane-pilot/settings-catalog";
 import { isCustomAgentId, isReservedAgentId, isStockProfileId, userVisibleProjects } from "../../../native-agent";
 import { agentRegistry } from "../../../native-agent/server";
-import { mapListedQaHosts } from "../../../qa";
+import { mapListedQaHosts } from "../../../platform/server";
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import { rpcContract } from "../../../contracts";
 import type { ServerCore } from "../../../contracts/server";
-import type { Services } from "../../../core/server";
+import type { Services } from "../../../platform/server";
 import { recordResolvedLocale } from "../../../relay/server";
 
 export function preferencesRpc(ctx: ServerCore, services: Services) {

@@ -1,6 +1,6 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { getAttempt, listAttemptsForTask, type LanePilotDatabase } from "../../storage";
-import { findThreadsByMetadata } from "../../core/server";
+import { findThreadsByMetadata } from "../../platform/server";
 import { withUsage } from "../../usage/server";
 import { pipelineWriterStep } from "./pipeline-tag";
 import { markerOf } from "./attempt-marker";

@@ -1,7 +1,7 @@
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import type { rpcContract } from "../../../contracts";
 import type { ServerCore } from "../../../contracts/server";
-import type { Services } from "../../../core/server";
+import type { Services } from "../../../platform/server";
 import { BUILTIN_SOURCES } from "../../builtin";
 import { buildWorkflowExport, type WorkflowExportEntry } from "../../workflow-export";
 import { createWorkflowLibrary } from "../workflow-library";

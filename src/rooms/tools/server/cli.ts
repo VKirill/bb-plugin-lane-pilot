@@ -13,7 +13,7 @@ import { getCouncilSession } from "@lane-pilot/council";
 import { SCHEDULE_USAGE, runScheduleCli } from "../../schedule/server";
 import { answerWorkflowQuestion } from "../../workflow/server";
 import { AGENTS_USAGE, agentRegistry, PM_SKILLS_USAGE, runAgentsCli, runPmSkillsCli, runPmSkillUseCli } from "../../native-agent/server";
-import type { Services } from "../../core/server";
+import type { Services } from "../../platform/server";
 import { ANAMNESIS_USAGE } from "../../anamnesis";
 import { anamnesisFor } from "../../anamnesis";
 import { LEARNING_USAGE, runLearningCli } from "../../learning";

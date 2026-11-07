@@ -8,7 +8,7 @@ import { postOwnerItem } from "../../owner-waiting";
 import { isRunHalted } from "../../runs/server";
 import { join, relative, resolve } from "node:path";
 import type { TaskV2 } from "../../contracts";
-import type { Services } from "../../core/server";
+import type { Services } from "../../platform/server";
 import type { ServerCore } from "../../contracts/server";
 
 /**

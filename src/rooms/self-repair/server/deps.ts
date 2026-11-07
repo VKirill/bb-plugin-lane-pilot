@@ -2,10 +2,11 @@ import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type { z } from "zod";
 import type { AgentModel, AgentModelInput, ModelCatalog } from "@lane-pilot/models";
 import type { LanePilotDatabase } from "../../storage";
+import { clearSpawnMarker, fullAccessSpawn, graphStepMetadata, keyedSpawnSupported, modelCatalogOf, readProviderFolderBlock, registerObservedTool, requirePmRun, resolveSpawnModel, scheduleIsolated, spawnTextId, spawnUsageOf, warmSpawnUsage } from "../../platform/server";
 
 /**
  * The core pieces self-repair is handed by the composition root, so the room imports nothing from core. The shapes are
- * the ones the core functions already have (core/server/spawn-model.ts, thread-keys.ts, pm-spawn.ts, schedules.ts,
+ * the ones the core functions already have (platform/server/spawn-model.ts, thread-keys.ts, pm-spawn.ts, schedules.ts,
  * context.ts, tool-result.ts); they are restated here because naming them through `core` would keep the room edge.
  */
 
@@ -66,3 +67,12 @@ export type RepairDeps = Pick<SelfRepairDeps, "clearSpawnMarker" | "fullAccessSp
 export type RuleScanDeps = Pick<SelfRepairDeps, "fullAccessSpawn" | "modelCatalogOf" | "readProviderFolderBlock" | "resolveSpawnModel" | "scheduleIsolated" | "spawnTextId" | "spawnUsageOf" | "warmSpawnUsage">;
 /** What the insights tools and their sweep need. */
 export type InsightsDeps = Pick<SelfRepairDeps, "registerObservedTool" | "requirePmRun" | "scheduleIsolated">;
+
+/** The platform helpers this room is handed, assembled once; the composition root and the mount sites call this. */
+export function selfRepairDeps(): SelfRepairDeps {
+  return {
+    clearSpawnMarker, fullAccessSpawn, graphStepMetadata, keyedSpawnSupported, modelCatalogOf,
+    readProviderFolderBlock, registerObservedTool, requirePmRun, resolveSpawnModel, scheduleIsolated,
+    spawnTextId, spawnUsageOf, warmSpawnUsage,
+  };
+}

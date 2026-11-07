@@ -7,7 +7,7 @@ import { createAttempt, createRun, createTask, openDatabase } from "../src/rooms
 import { createCore } from "../src/rooms/core/server/core";
 import { runsRpc } from "../src/rooms/runs/server/rpc/runs";
 import { registerCli } from "../src/rooms/tools/server/cli";
-import type { Services } from "../src/rooms/core/server/services";
+import type { Services } from "../src/rooms/platform/server";
 import { setLocaleOverride } from "@lane-pilot/i18n";
 
 vi.setConfig({ testTimeout: 60_000 });

@@ -2,8 +2,6 @@ import { findModelIn } from "@lane-pilot/models";
 export const QA_HOST_KEY = "browser_qa.host_id";
 export const QA_WORKSPACE_KEY = "browser_qa.workspace_path";
 
-export type QaHostOption = { id: string; name: string; status: string; connected: boolean };
-
 export function resolveBrowserQaTarget(args: {
   writerHostId: string;
   configuredHostId: unknown;
@@ -97,21 +95,3 @@ export function qaHostUnreachableReason(hostId: string, cause: unknown): string 
   return `browser_qa_host_unreachable:${hostId}:${detail}`;
 }
 
-export function mapListedQaHosts(listed: unknown): QaHostOption[] {
-  if (!Array.isArray(listed)) return [];
-  const hosts: QaHostOption[] = [];
-  for (const item of listed) {
-    if (!item || typeof item !== "object") continue;
-    const rec = item as Record<string, unknown>;
-    const id = typeof rec.id === "string" ? rec.id : "";
-    if (!id) continue;
-    const status = typeof rec.status === "string" ? rec.status : "unknown";
-    hosts.push({
-      id,
-      name: typeof rec.name === "string" && rec.name.trim() ? rec.name : id,
-      status,
-      connected: status === "connected",
-    });
-  }
-  return hosts;
-}

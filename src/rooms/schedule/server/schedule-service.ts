@@ -1,5 +1,6 @@
 import { loadProjectSettings } from "../../storage";
-import { QA_HOST_KEY, mapListedQaHosts } from "../../qa";
+import { QA_HOST_KEY } from "../../qa";
+import { mapListedQaHosts } from "../../platform/server";
 import { fireList, findConflicts, runView, scheduleView } from "../board";
 import { PRESET_SLUGS, presetSlug } from "@lane-pilot/models";
 import { normalizeSchedule, type NormalizedWhen, type ScheduleDefinition, type ScheduleTask } from "../model";
@@ -17,7 +18,7 @@ import { errandModelView, readErrandDefault } from "./schedule-default";
 import { createThreadHosts, projectPlaces, whereOf, type ProjectPlace } from "./schedule-place";
 import { NO_USAGE, errandRunThread, scheduleCost, threadUsage } from "./schedule-usage";
 import { createScheduleExecutors } from "./schedule-executors";
-import type { Services } from "../../core/server";
+import type { Services } from "../../platform/server";
 import { createWorkflowLibrary } from "../../workflow/server";
 
 /**

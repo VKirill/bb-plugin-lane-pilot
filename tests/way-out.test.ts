@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import { wayOut, NO_WAY_OUT } from "../src/rooms/runs/way-out";
-import { PM_CORE_TOOLS, PM_FAMILY_TOOLS, PM_TOOL_FAMILIES } from "../src/rooms/tools/pm-tool-families";
+import { PM_CORE_TOOLS, PM_FAMILY_TOOLS, PM_TOOL_FAMILIES } from "../src/rooms/platform/server/pm-tool-families";
 
 /**
  * The digest says a blocked line must name its way out. Every reason the pipeline actually writes into an

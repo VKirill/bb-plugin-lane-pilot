@@ -1,10 +1,10 @@
 import { join } from "node:path";
 import { writerExecutionSelection } from "@lane-pilot/models";
-import { fullAccessSpawn, modelCatalogOf, resolveSpawnModel, scheduleIsolated } from "../../core/server";
+import { fullAccessSpawn, modelCatalogOf, resolveSpawnModel, scheduleIsolated } from "../../platform/server";
 import { stringAt } from "@lane-pilot/kit";
 import { pickHunter, type WallConfig } from "../config";
 import { conveyorState } from "../../conveyor";
-import type { Services } from "../../core/server";
+import type { Services } from "../../platform/server";
 import type { ServerCore } from "../../contracts/server";
 import { createAttempt, getAttempt } from "../../storage";
 import { projectRoleField, reopenWriterStages } from "../../runs/server";

@@ -7,7 +7,7 @@ import { stringAt } from "@lane-pilot/kit";
 import { sleepUntilThreadSignal, threadWatchMark } from "@lane-pilot/thread-observe";
 import { resolve } from "node:path";
 import type { ServerCore } from "../../contracts/server";
-import type { Services } from "../../core/server";
+import type { Services } from "../../platform/server";
 import { sendServiceMessage } from "../../relay/server";
 import { isWriterStreamError } from "./writer-task";
 import { markAttemptStart } from "./attempt-marker";

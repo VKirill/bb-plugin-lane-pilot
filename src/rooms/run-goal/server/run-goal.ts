@@ -1,5 +1,5 @@
 import { getRun } from "../../storage";
-import { scheduleIsolated, type Services } from "../../core/server";
+import { scheduleIsolated, type Services } from "../../platform/server";
 import { type ServerCore } from "../../contracts/server";
 import { closeOwnerItem, postOwnerItem } from "../../owner-waiting";
 import { goalFailedText, goalVerdict, runReady, type TaskState } from "../logic";

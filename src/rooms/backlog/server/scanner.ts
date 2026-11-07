@@ -1,5 +1,5 @@
 import { loadPrototypeConfig } from "../../storage";
-import { scheduleIsolated } from "../../core/server";
+import { scheduleIsolated } from "../../platform/server";
 import { type ServerCore } from "../../contracts/server";
 import { isPmChat } from "../../native-agent/server";
 import { closeOwnerItem, postOwnerItem, rpcLine } from "../../owner-waiting";

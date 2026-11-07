@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 // Audit 2026-10-08 round 3, P0-7: `bb lane-pilot helper-probe` starts a helper the way the pm-read stage does and checks it answered.
 const spawn = vi.fn();
 const waitIdle = vi.fn();
-vi.mock("../../src/rooms/core/server/pm-spawn", () => ({ fullAccessSpawn: (bb: unknown, args: unknown) => spawn(bb, args) }));
+vi.mock("../../src/rooms/platform/server/pm-spawn", () => ({ fullAccessSpawn: (bb: unknown, args: unknown) => spawn(bb, args) }));
 vi.mock("@lane-pilot/thread-observe", () => ({ waitThreadIdle: (...args: unknown[]) => waitIdle(...args) }));
 vi.mock("../../src/rooms/runs/server/run-routing", () => ({
   requireHelperSpawn: () => ({ mode: "roles", policy: { required: true } }),
