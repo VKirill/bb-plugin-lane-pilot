@@ -104,6 +104,8 @@ export async function startHostJob(
   return await startKeyedJob({ ...request, key: request.key }, options);
 }
 
+const EMPTY_CLAIM_STALE_MS = 60_000;
+
 const keyFile = (key: string, options: JobOptions) => join(jobsRoot(options), "keys", `${sha256Hex(key).slice(0, 32)}.id`);
 
 /**
@@ -112,14 +114,44 @@ const keyFile = (key: string, options: JobOptions) => join(jobsRoot(options), "k
  * it still holds the same id a rival could not have claimed in the meantime — never a rival's fresh claim.
  */
 async function keyedJobId(file: string, options: JobOptions): Promise<string | null> {
+  // An empty file is a claim still staging; under load staging can take seconds, so it is waited out until it is
+  // older than EMPTY_CLAIM_STALE_MS (a crashed claimant) — never removed just because the wait ran out.
   let content = "";
-  for (let wait = 0; wait < 20 && !content; wait += 1) {
+  for (;;) {
     content = (await readFile(file, "utf8").catch(() => "")).trim();
-    if (!content) await new Promise((wake) => setTimeout(wake, 100));
+    if (content) break;
+    const age = await stat(file).then((info) => Date.now() - info.mtimeMs, () => Infinity);
+    if (age >= EMPTY_CLAIM_STALE_MS) break;
+    await new Promise((wake) => setTimeout(wake, 100));
   }
   if (JOB_ID.test(content) && await stat(jobDir(content, options)).then(() => true, () => false)) return content;
-  if ((await readFile(file, "utf8").catch(() => "")).trim() === content) await rm(file, { force: true });
+  await removeIfStill(file, content);
   return null;
+}
+
+const STALE_LOCK_MS = 30_000;
+
+/**
+ * Removes the key file only while it still holds `stale`. Removal happens under a per-key lock directory: a fresh
+ * claim can only appear after the stale file is gone, and only a lock holder removes it, so the re-read under the
+ * lock cannot be overtaken by a rival's claim between the read and the rm. Without the lock two racers that both
+ * read the stale id let the slower one delete the faster one's fresh claim (drill race test, 2026-11-07).
+ */
+async function removeIfStill(file: string, stale: string): Promise<void> {
+  const lock = `${file}.lock`;
+  for (;;) {
+    try { await mkdir(lock); break; } catch (cause) {
+      if ((cause as NodeJS.ErrnoException).code !== "EEXIST") throw cause;
+      const age = await stat(lock).then((info) => Date.now() - info.mtimeMs, () => 0);
+      if (age >= STALE_LOCK_MS) await rm(lock, { recursive: true, force: true });
+      else await new Promise((wake) => setTimeout(wake, 20));
+    }
+  }
+  try {
+    if ((await readFile(file, "utf8").catch(() => null))?.trim() === stale) await rm(file, { force: true });
+  } finally {
+    await rm(lock, { recursive: true, force: true });
+  }
 }
 
 /**

@@ -159,6 +159,30 @@ describe("host background jobs", () => {
     expect(winners.size).toBe(20);
   }, 120_000);
 
+  it("waits out an empty key file still being staged and frees one left by a crashed claimant", async () => {
+    const { utimes } = await import("node:fs/promises");
+    const keysDir = join(options.root!, "keys");
+    await mkdir(keysDir, { recursive: true });
+    const slowKey = "slow-claimant";
+    const slowFile = join(keysDir, `${sha256Hex(slowKey).slice(0, 32)}.id`);
+    const live = await startHostJob(request("/ok"), options);
+    // A rival took the key and is still staging after the old 2 s grace: the caller must wait, not take the key.
+    await writeFile(slowFile, "");
+    const waiting = startHostJob({ ...request("/ok"), key: slowKey }, options);
+    await new Promise((wake) => setTimeout(wake, 2_500));
+    await writeFile(slowFile, live);
+    expect(await waiting).toBe(live);
+    // An empty key file older than a minute names no live claimant: it is freed and a new job starts.
+    const deadKey = "dead-claimant";
+    const deadFile = join(keysDir, `${sha256Hex(deadKey).slice(0, 32)}.id`);
+    await writeFile(deadFile, "");
+    const old = new Date(Date.now() - 120_000);
+    await utimes(deadFile, old, old);
+    const fresh = await startHostJob({ ...request("/ok"), key: deadKey }, options);
+    expect(fresh).toMatch(/^job_[a-z0-9]+$/);
+    expect(fresh).not.toBe(live);
+  }, 30_000);
+
   it("answers an unknown job as lost and refuses a malformed id or input", async () => {
     expect(await hostJobStatus("job_doesnotexist0", options)).toMatchObject({ state: "lost", error: "no such job" });
     await expect(hostJobStatus("../etc", options)).rejects.toThrow(/invalid job id/);
