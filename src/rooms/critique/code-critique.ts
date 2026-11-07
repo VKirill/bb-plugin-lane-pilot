@@ -533,10 +533,6 @@ export function actionableFindings(result: CodeCritiqueResult): CodeCritiqueFind
   return result.findings.filter((row) => row.severity === "blocking");
 }
 
-export function findingFingerprint(findings: readonly CodeCritiqueFinding[]): string {
-  return sha256Hex(JSON.stringify(findings.map((row) => row.id).sort()));
-}
-
 const CODE_RUBRIC = new Set<string>(CRITIC_RUBRIC.code);
 
 /**

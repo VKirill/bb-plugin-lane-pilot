@@ -1,6 +1,5 @@
 import { stockEmployee } from "../contracts/employee-manifest";
 import { SKILL_CATALOG_BLOCK, SKILL_CATALOG_LINE } from "./skill-catalog";
-import bundledAgents from "../contracts/bundled-agents.json";
 import { BB_BRIDGE_MCP_SERVER, NATIVE_LP_BRIDGE_ARCHITECT_TOOLS, NATIVE_LP_BRIDGE_LEAD_TOOLS, NATIVE_LP_BRIDGE_PM_TOOLS, NATIVE_LP_BRIDGE_SPECIALIST_TOOLS, unionLpBridgeTools, withoutLpBridgeTools } from "./native-session-hooks";
 import { WORKFLOW_ARCHITECT_ID, WORKFLOW_ARCHITECT_SUMMARY } from "../contracts/server";
 import { WORKFLOW_ARCHITECT_SESSION } from "./workflow-architect";
@@ -174,14 +173,6 @@ const BB_PM_STRIPPED_SUBAGENTS = new Set([
   "seo-specialist", "lane-stack:seo-specialist",
   "tavily", "lane-stack:tavily",
 ]);
-
-export const BB_SPECIALIST_COMPANION_IDS = [
-  "copy-lead",
-  "seo-specialist",
-  "design-lead",
-  "tavily",
-] as const;
-
 
 /** Sessions Lane Pilot runs itself for its own work: the owner does not pick them and they never schedule anything. The lead («Штурман») is one since 0.1.463: the panel opens its chat, the tick runs it. */
 const INTERNAL_AGENT_IDS = new Set(["project-onboarder", "browser-qa", LEAD_ID]);
@@ -554,29 +545,6 @@ export function overlaySessionTools(agentId: string, tools: string[]): string[] 
   return withBridge.includes(DEFERRED_MCP_LOADER) ? withBridge : [...withBridge, DEFERRED_MCP_LOADER];
 }
 
-type BundledRow = { displayName?: string; tools?: string[]; skills?: string[] };
-
-export function bbSpecialistAgentDefinitions(): Record<string, Record<string, unknown>> {
-  const catalog = bundledAgents as Record<string, BundledRow>;
-  const out: Record<string, Record<string, unknown>> = {};
-  for (const id of BB_SPECIALIST_COMPANION_IDS) {
-    const bundled = catalog[id];
-    const tools = dropCliSessionTools(bundled?.tools ?? ["Read", "Write", "Edit", "Grep", "Glob", "WebFetch", "WebSearch"]);
-    out[id] = {
-      description: bundled?.displayName ?? id,
-      prompt: laneSessionOverlayPrompt(id),
-      tools: overlaySessionTools(id, tools.length ? tools : ["Read", "Write", "Grep", "Glob"]),
-      ...(bundled?.skills?.length ? { skills: bundled.skills } : {}),
-    };
-  }
-  return out;
-}
-
-// Specialists are their own threads now (lane_pilot_helpers, action specialist), so the PM session carries no companion definitions.
-function withPmCompanions(_agentId: string, overlay: Record<string, unknown>): Record<string, unknown> {
-  return overlay;
-}
-
 export function stockAgentsOverlayFromInstalled(input: {
   agentId: string;
   source: string;
@@ -607,7 +575,7 @@ export function stockAgentsOverlayFromInstalled(input: {
   }
   const disallowed = overlayDisallowedTools(input.agentId, definition.disallowedTools as string[] | undefined);
   if (disallowed) definition.disallowedTools = disallowed;
-  return withPmCompanions(input.agentId, { [input.agentId]: definition });
+  return { [input.agentId]: definition };
 }
 
 export function unionLpBridgeToolsOnAgentsJson(agentId: string, agentsJson: string): Record<string, unknown> {
@@ -626,5 +594,5 @@ export function unionLpBridgeToolsOnAgentsJson(agentId: string, agentsJson: stri
     const disallowed = overlayDisallowedTools(agentId, Array.isArray(denied) && denied.every((item) => typeof item === "string") ? denied : undefined);
     if (disallowed) definition.disallowedTools = disallowed;
   }
-  return withPmCompanions(agentId, { [agentId]: definition });
+  return { [agentId]: definition };
 }

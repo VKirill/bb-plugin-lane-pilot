@@ -19,3 +19,4 @@ export { TEST_FILE_RE, suggestTests, testHintLine } from "./test-hint";
 export { cachedReplayVerdicts, recordedReplayFailure, recordReplayVerdict, replayCacheLocation, replayKey } from "./replay-cache";
 export type { ReplayCacheEntry } from "./replay-cache";
 export { PRESSURE_LIMITS, flakyEvidence, outputTail, pressureOf, readingFrom, readingNote } from "./machine-pressure";
+export { DEFAULT_WORKER } from "./worker-user";

@@ -28,8 +28,6 @@ import { registerObservedTool } from "../../platform/server";
 import { scheduleIsolated } from "../../platform/server";
 import { sendServiceMessage } from "./service-message";
 
-export const HANDOFF_TOOLS = ["lane_pilot_handoff_create", "lane_pilot_handoff_receipt", "lane_pilot_handoff_list"] as const;
-
 type BundledAgent = { displayName?: string; prompt?: string; skills?: string[]; tools?: string[] };
 
 export function bundledAgentDefinitions(): AgentDefinition[] {

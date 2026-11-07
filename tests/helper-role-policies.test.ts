@@ -47,7 +47,7 @@ function boundPolicy(providerId: string, role: HelperRole) {
 }
 
 const PROMPT_ONLY: HelperRole[] = [
-  "plan-critic", "critic-tiebreak", "pm-reader", "memory-maintainer", "council-seat",
+  "plan-critic", "pm-reader", "memory-maintainer", "council-seat",
   "rules-analyzer", "episode-analyst", "wall-hunter", "specialist:lead", "workspace-provisioner",
 ];
 

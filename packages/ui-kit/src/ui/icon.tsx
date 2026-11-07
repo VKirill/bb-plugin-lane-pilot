@@ -1,10 +1,4 @@
-import {
-  Component,
-  createContext,
-  useContext,
-  type CSSProperties,
-  type ReactNode,
-} from "react";
+import type { CSSProperties } from "react";
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
 import {
   Alert02Icon,
@@ -57,8 +51,6 @@ import { useSyncExternalStore } from "react";
 import { cn } from "../lib/utils";
 import {
   EXTENDED_ICON_NAMES,
-  getAppIcon,
-  subscribeAppIcons,
   type ExtendedIconName,
   getExtendedIcons,
   subscribeExtendedIcons,
@@ -201,72 +193,13 @@ export interface IconProps {
 }
 
 const ICON_NAME_SET: ReadonlySet<string> = new Set(ICON_NAMES);
-const IconAncestors = createContext<readonly string[]>([]);
 
 export function isBuiltinIconName(name: string): name is BuiltinIconName {
   return ICON_NAME_SET.has(name);
 }
 
-class IconErrorBoundary extends Component<
-  { children: ReactNode; fallback: ReactNode },
-  { failed: boolean }
-> {
-  state = { failed: false };
-
-  static getDerivedStateFromError() {
-    return { failed: true };
-  }
-
-  render() {
-    return this.state.failed ? this.props.fallback : this.props.children;
-  }
-}
-
 export function Icon({ name, fallback = "Zap", ...props }: IconProps) {
-  const ancestors = useContext(IconAncestors);
-  const custom = useSyncExternalStore(
-    subscribeAppIcons,
-    () => getAppIcon(name),
-    () => getAppIcon(name),
-  );
-  const fallbackCustom = useSyncExternalStore(
-    subscribeAppIcons,
-    () => getAppIcon(fallback),
-    () => getAppIcon(fallback),
-  );
-  const requestedExists = custom !== undefined || isBuiltinIconName(name);
-  const resolved = requestedExists ? name : fallback;
-  const definition = requestedExists ? custom : fallbackCustom;
-  const CustomIcon = definition?.component;
-  if (ancestors.includes(resolved)) {
-    return (
-      <BuiltinIcon
-        name={isBuiltinIconName(resolved) ? resolved : "Zap"}
-        {...props}
-      />
-    );
-  }
-  if (CustomIcon !== undefined && definition !== undefined) {
-    return (
-      <IconAncestors.Provider value={[...ancestors, resolved]}>
-        <IconErrorBoundary
-          key={definition.key}
-          fallback={<BuiltinIcon name="Zap" {...props} />}
-        >
-          <span
-            className={cn("inline-flex size-6 shrink-0", props.className)}
-            style={props.style}
-            aria-hidden={props["aria-hidden"]}
-            aria-label={props["aria-label"]}
-            role={props["aria-label"] ? "img" : undefined}
-            data-icon={resolved}
-          >
-            <CustomIcon className="size-full" />
-          </span>
-        </IconErrorBoundary>
-      </IconAncestors.Provider>
-    );
-  }
+  const resolved = isBuiltinIconName(name) ? name : fallback;
   return (
     <BuiltinIcon
       name={isBuiltinIconName(resolved) ? resolved : "Zap"}

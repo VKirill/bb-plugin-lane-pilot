@@ -10,8 +10,6 @@ export type { CriticEditRow, CriticEditStore, CriticEditTrialOutcome } from "./c
 export { critiquePrompt, parseCritique } from "./critique";
 export { scanCritiqueCoverage } from "./critique-coverage"
 export { resolveRetryEffort } from "./retry-effort";
-export { CRITIC_TIEBREAK_ROLE, majorityRubric, parseTiebreakVotes, resolveRubricTiebreak, rubricDisagreements, tiebreakPrompt } from "./tiebreak";
-export type { TiebreakVote } from "./tiebreak";
 export { FAILURE_TRIAGE_METHOD, SCIENTIFIC_DEBUG_METHOD, roleMethod } from "./role-method"
 export { taskBrief } from "./task-brief";
 export type { TaskBriefField } from "./task-brief";

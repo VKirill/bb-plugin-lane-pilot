@@ -15,8 +15,6 @@ interface Services {
   runBudgets: WriterStateApi["runBudgets"];
 }
 
-export const HEALTH_TOOLS = ["lane_pilot_run_health"] as const;
-
 export const RUN_BUDGET_SETTINGS = ["run.max_attempts", "run.max_wall_minutes", "run.max_tokens", "run.max_children"] as const;
 
 /** What the breaker and the budget of a run say right now; the PM reads it before dispatching more work. */

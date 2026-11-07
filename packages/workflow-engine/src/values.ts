@@ -56,10 +56,3 @@ export function slugOf(inputs: Record<string, unknown>): string {
   }
   return "run";
 }
-
-export function renderTemplate(template: string, lookup: (ref: string) => unknown): string {
-  return template.replace(/\{\{\s*([A-Za-z0-9_.-]+)\s*\}\}/g, (_match, ref: string) => {
-    const value = lookup(ref);
-    return value === undefined || value === null ? "" : typeof value === "string" ? value : JSON.stringify(value);
-  });
-}
