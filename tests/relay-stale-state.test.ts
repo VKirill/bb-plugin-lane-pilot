@@ -6,7 +6,7 @@ import { createRelay, type RelayItem } from "../src/rooms/relay/server/relay";
  * the PM had answered the writer, when the task was running again. The sweep read the state while the task was blocked, the
  * PM's thread was in a turn, and the text waited in BB's queue behind that turn with the state it was written with.
  */
-function harness(options: { busy?: (threadId: string) => boolean } = {}) {
+function harness(options: { busy?: (threadId: string) => boolean; taskStates?: () => Promise<Record<string, string | null>> } = {}) {
   let items: RelayItem[] = [];
   const sent: Array<{ threadId: string; text: string }> = [];
   const reads: Array<Record<string, string | null>> = [];
@@ -18,7 +18,7 @@ function harness(options: { busy?: (threadId: string) => boolean } = {}) {
     settled: async () => false,
     output: async () => "",
     // Each read takes the next scripted answer; the last one repeats.
-    taskStates: async () => { const next = states.length > 1 ? states.shift()! : states[0]!; reads.push(next); return next; },
+    taskStates: options.taskStates ?? (async () => { const next = states.length > 1 ? states.shift()! : states[0]!; reads.push(next); return next; }),
     ...(options.busy ? { busy: async (threadId: string) => options.busy!(threadId) } : {}),
     now: () => 1_000_000,
     log: () => undefined,
@@ -72,5 +72,27 @@ describe("a reminder on tasks does not report a state that no longer holds", () 
     h.script({ "fix.2": "blocked" });
     expect((await h.relay.sweep()).fired).toBe(1);
     expect(h.sent.at(-1)!.text).toContain("fix.2 — blocked");
+  });
+
+  it("a busy check that cannot be read skips the reminder: unreadable is not «not busy»", async () => {
+    const h = harness({ busy: () => { throw new Error("sdk gone"); } });
+    await h.relay.remind({ projectId: "P", threadId: "pm", note: "ship when accepted", inMinutes: 180, taskIds: ["fix.2"] });
+    h.script({ "fix.2": "blocked" });
+
+    expect((await h.relay.sweep()).fired).toBe(0);
+
+    expect(h.sent).toEqual([]);
+    expect(open(h)).toHaveLength(1);
+  });
+
+  it("a task-state re-read that fails does not fire on the last snapshot", async () => {
+    let calls = 0;
+    const h = harness({ taskStates: async () => { if (++calls === 2) throw new Error("read lost"); return { "fix.2": "blocked" }; } });
+    await h.relay.remind({ projectId: "P", threadId: "pm", note: "ship when accepted", inMinutes: 180, taskIds: ["fix.2"] });
+
+    expect((await h.relay.sweep()).fired).toBe(0);
+
+    expect(h.sent).toEqual([]);
+    expect(open(h)).toHaveLength(1);
   });
 });

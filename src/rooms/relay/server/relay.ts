@@ -314,8 +314,10 @@ export function createRelay(deps:RelayDeps) {
    */
   async function liveTaskStates(item:RelayReminder, seen:Record<string, string|null>|undefined):Promise<Record<string, string|null>|null> {
     const ids = item.taskIds ?? [];
-    if (await deps.busy?.(item.threadId).catch((cause: unknown) => { deps.log(`relay: busy check unreadable: ${cause instanceof Error ? cause.message : String(cause)}`); return false; })) return null;
-    const live = await deps.taskStates(item.projectId, ids).catch((cause: unknown) => { deps.log(`relay: task states unreadable, last seen kept: ${cause instanceof Error ? cause.message : String(cause)}`); return seen; });
+    // An unreadable check is not a pass: busy() failing skips like the sweep's busy guard, and a failed
+    // re-read must not fire on the last snapshot — both return null so the next sweep decides again.
+    if (await deps.busy?.(item.threadId).catch((cause: unknown) => { deps.log(`relay: busy check unreadable, reminder skipped: ${cause instanceof Error ? cause.message : String(cause)}`); return true; })) return null;
+    const live = await deps.taskStates(item.projectId, ids).catch((cause: unknown) => { deps.log(`relay: task states unreadable, reminder skipped: ${cause instanceof Error ? cause.message : String(cause)}`); return null; });
     if (!live || !ids.every((task) => TASK_DONE.has(live[task] ?? ""))) return null;
     return live;
   }

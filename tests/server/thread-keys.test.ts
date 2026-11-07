@@ -167,6 +167,13 @@ describe("reconcile through the metadata lookup", () => {
     await expect(reconcileHolder(port(core), { lanePilotRunId: "run", lanePilotTaskId: "task", workspaceAttemptId: "att1" })).resolves.toEqual({ kind: "found", threadId: "thr_1" });
   });
 
+  it("an unreadable key lookup stops the spawn: «cannot check» is not «no thread holds the key»", async () => {
+    const core = keyedBb();
+    (core.bb as { sdk: { threads: Record<string, unknown> } }).sdk.threads.experimental_vkFindByKey = async () => { throw new Error("find lost"); };
+    await expect(fullAccessSpawn(core.bb, writer("att1"))).rejects.toThrow("find lost");
+    expect(core.rows).toHaveLength(0);
+  });
+
   it("falls back to the list scan without the function or on its failure", async () => {
     const core = keyedBb();
     await fullAccessSpawn(core.bb, writer("att1"));

@@ -305,8 +305,11 @@ export function createStability(ctx:ServerCore, services:Services) {
    * Whether the writer host has too little free disk for another worktree (≈2 GB each on SelfyStudio): a full OVH disk
    * stopped its BB host daemon on 2026-10-03. Null when there is room or the host cannot say.
    */
+  // A failed probe is logged once per streak, not every poll: the waiting-writer loop calls this every 30 s.
+  const diskProbeFailing = new Set<string>();
   async function diskHolds(hostId:string, path:string):Promise<string | null> {
-    const free = await ctx.host.call("diskFree", { requestedHostId:hostId, path }, { hostId, timeoutMs:15_000 }).catch((cause: unknown) => { ctx.log(`Lane Pilot disk probe on ${hostId} failed: ${cause instanceof Error ? cause.message : String(cause)}`); return null; });
+    const free = await ctx.host.call("diskFree", { requestedHostId:hostId, path }, { hostId, timeoutMs:15_000 }).catch((cause: unknown) => { if (!diskProbeFailing.has(hostId)) { diskProbeFailing.add(hostId); ctx.log(`Lane Pilot disk probe on ${hostId} failed: ${cause instanceof Error ? cause.message : String(cause)}`); } return null; });
+    if (free) diskProbeFailing.delete(hostId);
     if (!free || !free.totalBytes) return null;
     const low = free.freeBytes < Math.max(DISK_FLOOR_BYTES, Math.min(DISK_MIN_FREE_BYTES, free.totalBytes * DISK_MIN_FREE_SHARE));
     // `disk_low` is the token every reader of a reason takes for the machine's fault (runs/failure-class.ts, the night journal's logOrigin,

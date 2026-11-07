@@ -269,7 +269,7 @@ export async function scanCritiqueCoverage(input:{workspacePath:string;plan:stri
   }
   if(dirs.length){truncated=true;workspaceTruncated=true;}
   files.sort();
-  const existing=new Set(files),findings:CoverageFinding[]=[];
+  const existing=new Set(files),findings:CoverageFinding[]=[],unreadable:string[]=[];
   const owns=input.tasks.flatMap((task)=>task.owns_paths??[]).map((path)=>path.replace(/\\/g,"/").replace(/^\.\//,""));
   if(owns.length>8) {
     truncated=true;
@@ -355,14 +355,18 @@ export async function scanCritiqueCoverage(input:{workspacePath:string;plan:stri
       if(findings.length>=10)break;
       if(path===normalized||owns.some((pattern)=>covered(pattern,path))||!TEXT.has(extname(path).toLowerCase()))continue;
       const absolute=join(root,...path.split("/"));
-      const handle=await orMiss(open(absolute,constants.O_RDONLY|constants.O_NOFOLLOW),null,isFsAbsent);
-      if(!handle)continue;
+      // One unreadable file (EACCES, a locked file) is a named skip, not a dead scan: it is listed once in the result.
+      let handle;
+      try { handle=await open(absolute,constants.O_RDONLY|constants.O_NOFOLLOW); }
+      catch(cause){ if(isFsAbsent(cause))continue; unreadable.push(path); continue; }
       let body=textCache.get(path);
       try {
         const info=await handle.stat();if(!info.isFile())continue;
         if(info.size>65_536||readFiles>=300||readBytes+info.size>4*1024*1024){truncated=true;workspaceTruncated=true;continue;}
         if(body===undefined){body=await handle.readFile("utf8");textCache.set(path,body);readFiles++;readBytes+=info.size;}
-      } finally { await handle.close(); }
+      } catch(cause){ if(!isFsAbsent(cause))unreadable.push(path); }
+      finally { await handle.close(); }
+      if(body===undefined)continue;
       if(CODE.has(extname(path).toLowerCase())&&callNames.some((name)=>new RegExp(`\\b${name.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")}\\s*\\(`).test(body)))
         add(findings,"caller_unowned",path,`Code in ${path} calls an exported function from ${normalized}, but no TaskV2 lane owns this caller`);
       if(needles.some((needle)=>needle.length>=4&&body.includes(needle)))
@@ -374,6 +378,7 @@ export async function scanCritiqueCoverage(input:{workspacePath:string;plan:stri
     add(findings,"caller_unowned",path,`GitNexus reports a direct caller in ${path}, but no TaskV2 lane owns this caller`);
   if(!graph.complete){truncated=true;add(findings,"coverage_scan_truncated",".gitnexus","Full upstream caller traversal was unavailable, stale, or exceeded its bounded query budget; lexical coverage is only an approximation","warning");}
   if(workspaceTruncated)add(findings,"coverage_scan_truncated",".","Workspace path/read limits were reached; structural ownership coverage is partial");
+  if(unreadable.length){truncated=true;add(findings,"coverage_scan_truncated",".",`${unreadable.length} file(s) could not be read and were skipped: ${unreadable.slice(0,10).join(", ")}${unreadable.length>10?", …":""}`,"warning");}
   if(findings.some((finding)=>finding.code==="coverage_scan_truncated"))truncated=true;
   return {status:truncated?"truncated":"complete",pathCount:files.length,findings};
 }

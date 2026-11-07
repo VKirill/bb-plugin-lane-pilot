@@ -298,21 +298,34 @@ export async function runSeries(deps: RunnerDeps, input: SeriesInput): Promise<S
         if (sent.taskId) benchTaskId = sent.taskId;
         let outcome = { latestState: null as string | null, attempts: 0 };
         let reason: string | null = null;
+        let confirmed = false;
         if (!sent.ok) { reason = `dispatch refused: ${sent.detail.slice(0, 600)}`; log(`bench ${input.arm} r${repeat}: ${benchTaskId} ${reason.slice(0, 300)}`); }
         else {
           const deadline = clock.now() + (input.taskTimeoutMin ?? DEFAULT_TASK_TIMEOUT_MIN) * 60_000;
-          let settled = 0;
+          let settled = 0, readsFailing = false;
           while (clock.now() < deadline) {
-            outcome = await deps.pipeline.outcome(lp.runId, benchTaskId).catch((cause: unknown) => { log(`bench ${input.arm} r${repeat}: ${benchTaskId} outcome unreadable: ${cause instanceof Error ? cause.message : String(cause)}`); return outcome; });
+            try {
+              outcome = await deps.pipeline.outcome(lp.runId, benchTaskId);
+              readsFailing = false;
+            } catch (cause) {
+              // A thrown read is not a confirmation: the streak restarts and the failure is logged once per streak.
+              if (!readsFailing) log(`bench ${input.arm} r${repeat}: ${benchTaskId} outcome unreadable: ${cause instanceof Error ? cause.message : String(cause)}`);
+              readsFailing = true;
+              settled = 0;
+              await clock.sleep(input.pollMs ?? 20_000);
+              continue;
+            }
             const terminal = outcome.latestState === "accepted" || outcome.latestState === "blocked" || outcome.latestState === "canceled";
             settled = terminal ? settled + 1 : 0;
             if (settled >= 2) break;
             await clock.sleep(input.pollMs ?? 20_000);
           }
+          // Only a settled streak confirms the end state; a stale last-good read after failed polls does not.
+          confirmed = settled >= 2;
           if (settled < 2) { reason = `no end after ${input.taskTimeoutMin ?? DEFAULT_TASK_TIMEOUT_MIN} min; cancelled`; await bestEffort(log, "bench task cancel", deps.pipeline.cancel(lp.runId, benchTaskId), undefined); }
         }
         const attempts = sent.ok ? await bestEffort(log, "bench task metrics", deps.pipeline.metrics(placed, lp.runId, benchTaskId), [] as AttemptMetrics[]) : [];
-        const accepted = outcome.latestState === "accepted";
+        const accepted = confirmed && outcome.latestState === "accepted";
         const sums = aggregateAttempts(attempts);
         saveResult(deps.db, {
           runId: run.id, taskId: task.taskId, position: task.position, state: reason && !sent.ok ? "error" : accepted ? "accepted" : "not_accepted", accepted,
