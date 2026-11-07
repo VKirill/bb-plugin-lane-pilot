@@ -31,9 +31,9 @@ grow over time: the «Errands» page of the scope rail (`src/rooms/errands`).
 **Where it sits.** The rail groups the system pages for a person reading top-down (0.1.469, the owner: «systematise the pages so I am not
 lost»): «Today» holds what the machines are doing and what waits for the owner's word (Waiting for you, Tasks, Errands, Schedule); then the
 projects; then «Setup» (General settings, Agent profiles, Workflows, Tokens, Self-improvement). The phone select has the same three groups
-(`src/rooms/ui-shell/ui/project-nav.tsx:15-30`). The work area is the full width of the plugin's pane since 0.1.469 (`src/rooms/ui-shell/ui/page.tsx:53`).
+(`src/rooms/pages/project-nav.tsx:15-30`). The work area is the full width of the plugin's pane since 0.1.469 (`src/rooms/pages/page.tsx:53`).
 The rule since 0.1.470: a rail page shows a thing across all projects, a project's tab shows the same thing for that project under the same
-name. So the project's «Tasks» tab is the rail's board locked to the project (`TaskBoard lockedProjectId`, `src/rooms/ui-shell/ui/tab-runs.tsx`),
+name. So the project's «Tasks» tab is the rail's board locked to the project (`TaskBoard lockedProjectId`, `src/rooms/pages/tab-runs.tsx`),
 the rail's «Schedule» and «Workflows» are what the project's «Automation» tab shows for one project, and «Agent profiles» (who the agents are)
 is kept apart from a project's «Team» (who works there).
 

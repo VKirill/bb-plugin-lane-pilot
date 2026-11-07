@@ -1,9 +1,10 @@
 import { t, type I18nKey } from "@lane-pilot/i18n";
 import { Button } from "@lane-pilot/ui-kit";
-import { AcceptanceStats, ServiceSegment, TaskBoard } from "../../runs/ui";
-import { CriticValue } from "../../critique/ui";
-import { WriterReuse } from "../../writer/ui";
-import { Pill } from "./pill";
+import { AcceptanceStats, TaskBoard } from "../runs/ui";
+import { ServiceSegment } from "./service-segment";
+import { CriticValue } from "../critique/ui";
+import { WriterReuse } from "../writer/ui";
+import { Pill } from "../ui-shell/ui";
 import { Segments } from "./segments";
 import { SEGMENT_LABELS, segmentsFor } from "./tabs-model";
 import type { LpPage } from "./use-lp-page";

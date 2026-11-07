@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { casUpsertSettings, getSettingVersions, listSettingRows, loadProjectSettings, openDatabase, saveProjectSetting, sectionBindingId } from "../src/rooms/plugin-db";
 import { isModelSettingKey, isRoleOverrideKey } from "../src/rooms/settings/model-keys";
-import { PICKER_KEYS } from "../src/rooms/ui-shell/ui/page-model";
+import { PICKER_KEYS } from "../src/rooms/pages/page-model";
 import { writerFallbackKeys } from "../src/rooms/writer/writer-fallbacks";
 import plugin from "../server";
 

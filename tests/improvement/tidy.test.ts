@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { en, ru, setLocaleOverride } from "@lane-pilot/i18n";
 import { SECTION_ORDER, VISIBLE_CATALOG } from "@lane-pilot/settings-catalog";
-import { JEV_KEYS, PICKER_KEYS, compatibilityAliasRows, extraSettingRows } from "../../src/rooms/ui-shell/ui/page-model";
-import { settingLabel } from "../../src/rooms/settings/setting-copy";
+import { JEV_KEYS, compatibilityAliasRows } from "../../src/rooms/ui-shell/ui";
+import { PICKER_KEYS, extraSettingRows } from "../../src/rooms/pages/page-model";
+import { settingLabel } from "../../src/rooms/ui-shell/ui";
 
 afterEach(() => setLocaleOverride("en"));
 
@@ -47,7 +48,7 @@ describe("the settings copy after the tidy-up", () => {
   });
 
   it("an empty number stays empty: «no limit» is not shown as 0", async () => {
-    const { FieldControl } = await import("../../src/rooms/settings/ui/setting-controls");
+    const { FieldControl } = await import("../../src/rooms/ui-shell/ui/setting-controls");
     const { createElement } = await import("react");
     const { renderToStaticMarkup } = await import("react-dom/server");
     const row = VISIBLE_CATALOG.find((item) => item.storageKey === "run.max_attempts")!;

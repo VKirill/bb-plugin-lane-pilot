@@ -1,6 +1,6 @@
 import { readHiddenProjects, splitProjects, writeHiddenProjects } from "./service-projects";
 import { resolveTab, SEGMENTS, type SegmentedTab, type TabId } from "./tabs-model";
-import { selectionKeys, selectionValue, SELECTION_SPECS, type SelectionId } from "../../settings/ui";
+import { selectionKeys, selectionValue, SELECTION_SPECS, type SelectionId } from "./picker-selections";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   experimental_ProviderModelPicker as ProviderModelPicker,
@@ -10,7 +10,7 @@ import {
   type ExperimentalProviderModelPickerValue,
 } from "@get-bb/plugin-sdk/app";
 import { toast } from "sonner";
-import type { rpcContract } from "../../contracts";
+import type { rpcContract } from "../contracts";
 import { SECTION_ORDER, VISIBLE_CATALOG, type CatalogRow } from "@lane-pilot/settings-catalog";
 import {
   t,
@@ -23,15 +23,16 @@ import {
   type LocalePreference,
 } from "@lane-pilot/i18n";
 import { Button } from "@lane-pilot/ui-kit";
-import { useLpRealtime } from "./use-lp-realtime";
-import { readRunsWindow } from "../../runs/ui";
+import { useLpRealtime } from "../ui-shell/ui";
+import { readRunsWindow } from "../runs/ui";
 import { chromeIsCompact, contentStacksControls, useObservedWidth } from "@lane-pilot/ui-kit";
-import { userVisibleProjects } from "../../native-agent/project-scope";
-import { DOCS_DEFAULT_SELECTION } from "../../docs/docs-defaults";
+import { userVisibleProjects } from "../native-agent/project-scope";
+import { DOCS_DEFAULT_SELECTION } from "../docs/docs-defaults";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
-import { writerFallbackKeys, type WriterFallbackSlot } from "../../writer/writer-fallbacks";
-import { BASIC_SETTING_KEYS, CODE_CRITIQUE_EFFORT, CODE_CRITIQUE_MODEL, CODE_CRITIQUE_PROVIDER, CODE_CRITIQUE_SERVICE_TIER, COUNCIL_SEATS, CouncilDetail, CouncilRow, DOCS_EFFORT, DOCS_MODEL, DOCS_PROVIDER, DOCS_SERVICE_TIER, JEV_KEYS, MEMORY_EFFORT, MEMORY_MODEL, MEMORY_PROVIDER, MEMORY_SERVICE_TIER, NIGHT_EFFORT, NIGHT_MODEL, NIGHT_PROVIDER, NIGHT_SERVICE_TIER, ONBOARDING_EFFORT, ONBOARDING_MODEL, ONBOARDING_PROVIDER, ONBOARDING_SERVICE_TIER, PLAN_CRITIQUE_EFFORT, PLAN_CRITIQUE_MODEL, PLAN_CRITIQUE_PROVIDER, PLAN_CRITIQUE_SERVICE_TIER, PM_READ_EFFORT, PM_READ_MODEL, PM_READ_PROVIDER, PM_READ_SERVICE_TIER, PROJECT_LIFE_EFFORT, PROJECT_LIFE_MODEL, PROJECT_LIFE_PROVIDER, PROJECT_LIFE_SERVICE_TIER, RoutingStats, SPECIALIST_EFFORT, SPECIALIST_MODEL, SPECIALIST_PROVIDER, SPECIALIST_SERVICE_TIER, ScreenPayload, StackDetectResult, WRITER_EFFORT, WRITER_MODEL, WRITER_PROVIDER, WRITER_SERVICE_TIER, diagnosticRows, extraSettingRows } from "./page-model";
-import { useLpPoll } from "./use-lp-rpc-query";
+import { writerFallbackKeys, type WriterFallbackSlot } from "../writer/writer-fallbacks";
+import { COUNCIL_SEATS, JEV_KEYS, ScreenPayload } from "../ui-shell/ui";
+import { BASIC_SETTING_KEYS, CODE_CRITIQUE_EFFORT, CODE_CRITIQUE_MODEL, CODE_CRITIQUE_PROVIDER, CODE_CRITIQUE_SERVICE_TIER, CouncilDetail, CouncilRow, DOCS_EFFORT, DOCS_MODEL, DOCS_PROVIDER, DOCS_SERVICE_TIER, MEMORY_EFFORT, MEMORY_MODEL, MEMORY_PROVIDER, MEMORY_SERVICE_TIER, NIGHT_EFFORT, NIGHT_MODEL, NIGHT_PROVIDER, NIGHT_SERVICE_TIER, ONBOARDING_EFFORT, ONBOARDING_MODEL, ONBOARDING_PROVIDER, ONBOARDING_SERVICE_TIER, PLAN_CRITIQUE_EFFORT, PLAN_CRITIQUE_MODEL, PLAN_CRITIQUE_PROVIDER, PLAN_CRITIQUE_SERVICE_TIER, PM_READ_EFFORT, PM_READ_MODEL, PM_READ_PROVIDER, PM_READ_SERVICE_TIER, PROJECT_LIFE_EFFORT, PROJECT_LIFE_MODEL, PROJECT_LIFE_PROVIDER, PROJECT_LIFE_SERVICE_TIER, RoutingStats, SPECIALIST_EFFORT, SPECIALIST_MODEL, SPECIALIST_PROVIDER, SPECIALIST_SERVICE_TIER, StackDetectResult, WRITER_EFFORT, WRITER_MODEL, WRITER_PROVIDER, WRITER_SERVICE_TIER, diagnosticRows, extraSettingRows } from "./page-model";
+import { useLpPoll } from "../ui-shell/ui";
 
 export function useLanePilotPage({ subPath = "", scope = "projects" }: { subPath?: string; scope?: "projects" | "globals" | "agents" | "tokens" | "workflows" | "schedule" | "tasks" | "waiting" | "improvement" | "errands" }) {
   const rpc = useRpc<typeof rpcContract>();

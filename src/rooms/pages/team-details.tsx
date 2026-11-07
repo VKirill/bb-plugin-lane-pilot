@@ -1,16 +1,14 @@
 import type { ExperimentalProviderModelPickerValue } from "@get-bb/plugin-sdk/app";
 import { t, validationMessage, type I18nKey } from "@lane-pilot/i18n";
-import { WRITER_FALLBACK_DEFAULTS, WRITER_FALLBACK_SLOTS, writerFallbackKeys, writerFallbackSeed, writerFallbackSlots, type WriterFallbackSlot } from "../../writer/writer-fallbacks";
-import { QA_HOST_KEY, QA_WORKSPACE_KEY } from "../../qa/qa-host";
+import { WRITER_FALLBACK_DEFAULTS, WRITER_FALLBACK_SLOTS, writerFallbackKeys, writerFallbackSeed, writerFallbackSlots, type WriterFallbackSlot } from "../writer/writer-fallbacks";
+import { QA_HOST_KEY, QA_WORKSPACE_KEY } from "../qa/qa-host";
 import { Button } from "@lane-pilot/ui-kit";
 import { Input } from "@lane-pilot/ui-kit";
 import { Label } from "@lane-pilot/ui-kit";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@lane-pilot/ui-kit";
 import { Switch } from "@lane-pilot/ui-kit";
-import { AdvancedRows } from "../../settings/ui";
-import { CatalogField } from "../../settings/ui";
-import { asBoolean, COUNCIL_SEATS } from "../../ui-shell/ui";
-import type { LpPage } from "../../ui-shell/ui";
+import { AdvancedRows, CatalogField, asBoolean, COUNCIL_SEATS } from "../ui-shell/ui";
+import type { LpPage } from "./use-lp-page";
 
 const FALLBACK_TITLES: Record<WriterFallbackSlot, I18nKey> = { 1: "writerFallback1", 2: "writerFallback2", 3: "writerFallback3" };
 

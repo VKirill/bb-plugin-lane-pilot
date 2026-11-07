@@ -16,8 +16,8 @@ sources:
   - src/rooms/settings/server/rpc/settings.ts
   - src/rooms/settings/model-keys.ts
   - src/rooms/contracts/rpc-settings.ts
-  - src/rooms/ui-shell/ui/tab-team.tsx
-  - src/rooms/settings/ui/role-models.tsx
+  - src/rooms/pages/tab-team.tsx
+  - src/rooms/pages/role-models.tsx
   - src/rooms/writer/server/start.ts
   - src/rooms/writer/writer-model-pick.ts
   - packages/models/src/model-tiers.ts
@@ -69,7 +69,7 @@ The `zcode` provider serves one option, `glm-5.3-flash-free` («ZCode · GLM-5.3
 
 - The model belongs to the role, not to the step: no per-step override and no node-level model exists (`packages/models/src/role-models.ts:1-4`).
 - The specialist, the workflow architect and eleven helper roles run as Claude Code agent profiles and take only Claude models of their pool (`packages/models/src/agent-model.ts:6`, `:130-135`).
-- Saving the row keeps the pool: the settings panel and the team roster both send the remaining pool entries with every change of the main model (`src/rooms/settings/ui/role-models.tsx:88-91`, `src/rooms/ui-shell/ui/tab-team.tsx:240-247`).
+- Saving the row keeps the pool: the settings panel and the team roster both send the remaining pool entries with every change of the main model (`src/rooms/pages/role-models.tsx:88-91`, `src/rooms/pages/tab-team.tsx:240-247`).
 - «Reset everywhere» takes back a project's or section's model rows and its `<role>.agent` keys, but never the pinned models of LP bench and sandbox projects: the bench compares models on purpose (`src/rooms/settings/model-keys.ts:4-13`, `src/rooms/settings/server/rpc/settings.ts:333-350`).
 
 ## Public API or commands
@@ -81,7 +81,7 @@ The `zcode` provider serves one option, `glm-5.3-flash-free` («ZCode · GLM-5.3
 
 ## Gotchas
 
-- The team roster's model column reads the same table: a row of it replaces an older stage picker on screen, `code-repair` and `night-fixer` show "the task writer's model", and the writer, rules analyzer and onboarder keep pickers of their own (`src/rooms/ui-shell/ui/tab-team.tsx:27-29`, `:104-115`).
+- The team roster's model column reads the same table: a row of it replaces an older stage picker on screen, `code-repair` and `night-fixer` show "the task writer's model", and the writer, rules analyzer and onboarder keep pickers of their own (`src/rooms/pages/tab-team.tsx:27-29`, `:104-115`).
 - The ten-percent band means two providers within a few percentage points of spent stay in the owner's order (`packages/models/src/agent-model.ts:74-78`).
 - A pool is read only when the row's source is the table: a legacy stage selection has no pool (`src/rooms/settings/server/rpc/role-models.ts:34`, `packages/models/src/agent-model.ts:130-134`).
 - Repairer's built-in default is GPT-6.1 Sol: the owner moved the repairs off Claude's window (`packages/models/src/role-models.ts:117-118`); Grok 4.6 (Cursor) is one of Jev's writer candidates (`packages/models/src/model-profiles.ts:31-33`).

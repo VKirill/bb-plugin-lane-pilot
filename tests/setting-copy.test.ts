@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { en, ru } from "@lane-pilot/i18n";
-import { SETTING_META, settingLabelIsRaw } from "../src/rooms/settings/setting-copy";
+import { SETTING_META, settingLabelIsRaw } from "../src/rooms/ui-shell/ui/setting-copy";
 import { VISIBLE_CATALOG } from "@lane-pilot/settings-catalog";
 import { estimateTokens } from "../src/rooms/memory/memory";
 

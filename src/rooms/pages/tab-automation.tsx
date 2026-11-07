@@ -1,11 +1,11 @@
 import { t } from "@lane-pilot/i18n";
-import { CatalogField } from "../../settings/ui";
+import { CatalogField } from "../ui-shell/ui";
 import { extraSettingTab } from "./placement";
-import { ScheduleBoard } from "../../schedule/ui";
+import { ScheduleBoard } from "../schedule/ui";
 import { Segments } from "./segments";
 import { SEGMENT_LABELS, segmentsFor } from "./tabs-model";
-import { SettingsGroup } from "../../settings/ui";
-import { WorkflowsScreen } from "../../workflow/ui/workflows";
+import { SettingsGroup } from "../ui-shell/ui";
+import { WorkflowsScreen } from "../workflow/ui/workflows";
 import type { LpPage } from "./use-lp-page";
 
 /** Workflows (the library of chains the project manager picks from) and the schedule board with its calendar. */

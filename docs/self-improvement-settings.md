@@ -21,8 +21,8 @@ sources:
   - tests/improvement/hub.test.ts
   - tests/improvement/improvement-ui.test.tsx
   - tests/improvement/tidy.test.ts
-  - src/rooms/ui-shell/ui/project-nav.tsx
-  - src/rooms/ui-shell/ui/page.tsx
+  - src/rooms/pages/project-nav.tsx
+  - src/rooms/pages/page.tsx
   - src/rooms/owner-waiting/items.ts
   - src/rooms/baseline/logic.ts
   - src/rooms/wall/config.ts
@@ -30,8 +30,8 @@ sources:
   - src/rooms/writer/server/plan-fact.ts
   - src/rooms/critique/quality-mode.ts
   - packages/memory-core/src/settings.ts
-  - src/rooms/runs/ui/runs-service.tsx
-  - src/rooms/settings/ui/setting-controls.tsx
+  - src/rooms/pages/service-segment.tsx
+  - src/rooms/ui-shell/ui/setting-controls.tsx
   - src/rooms/core/server/core.ts
 ---
 
@@ -41,7 +41,7 @@ TL;DR: every control of the loop that learns from failures (the night loop, the 
 
 ## Where it is
 
-The screen is a system page of the rail's «Setup» group (`src/rooms/ui-shell/ui/project-nav.tsx:27`), mounted by the page shell (`src/rooms/ui-shell/ui/page.tsx:59`). It reads once with `improvement_view` (`src/rooms/improvement/server/rpc.ts:43`) and saves each field with `save_setting` on project id `*` (`src/rooms/improvement/ui/use-improvement.ts:78`).
+The screen is a system page of the rail's «Setup» group (`src/rooms/pages/project-nav.tsx:27`), mounted by the page shell (`src/rooms/pages/page.tsx:59`). It reads once with `improvement_view` (`src/rooms/improvement/server/rpc.ts:43`) and saves each field with `save_setting` on project id `*` (`src/rooms/improvement/ui/use-improvement.ts:78`).
 
 Above the sections a status strip shows four numbers from the same read: the last and the next night (`03:00`, `src/rooms/improvement/server/rpc.ts:19`), the size of the newest bench set, the policy exam progress (`N of 20` unseen owner decisions), and the count of what waits for the owner.
 
@@ -118,8 +118,8 @@ Ranges are the readers' own: ``src/rooms/improvement/keys.ts:61`` repeats what `
 - The generator `scripts/generate-ui-catalog.py` had drifted from the checked-in catalog (four rows and three defaults edited by hand in the generated files). `scripts/ui-catalog-hand.json` now reproduces the checked-in catalog byte for byte, and every change below went through it. `LP_UI_CATALOG_PROJECT` and `LP_UI_CATALOG_UPSTREAM` point it at the main checkout when it runs from a linked worktree.
 - Raw keys as labels (`plan_critique.agent`, `night_review.agent`, `specialist.agent`, `memory.agent`, `docs.agent`, `onboarding.agent`) now read «Роль агента …». «Раздел памяти» is «Память одного бота», «Порог N строк выдержек» is «Минимум строк для сжатия выдержек», «Провайдер окружения для worktree» is «Откуда берётся рабочая копия»; the code critic by risk is «Критика кода по риску» like its group; the workflow rows say «граф», not «воркфлоу» or «цепочка», like the tab; the Insights presets carry the stage names.
 - The extra rows of «Work» had one heading «Run operations» for unrelated things. They are now «Лимиты запуска» (`run.max_*`), «Интеграционные ворота» (`integration.gate_*`), «Служебные файлы проекта» (`bookkeeping.paths`) and «Jev» (`jev.*`).
-- In the service tab the flags of the old command-line runner (run operations, install folders) sit in one fold, «Только для CLI-прогонов Lane Stack» (`src/rooms/runs/ui/runs-service.tsx:193`).
-- An empty number is shown empty: «Попыток на запуск» with no limit showed `0`, which reads as zero attempts (`src/rooms/settings/ui/setting-controls.tsx:126`).
+- In the service tab the flags of the old command-line runner (run operations, install folders) sit in one fold, «Только для CLI-прогонов Lane Stack» (`src/rooms/pages/service-segment.tsx:193`).
+- An empty number is shown empty: «Попыток на запуск» with no limit showed `0`, which reads as zero attempts (`src/rooms/ui-shell/ui/setting-controls.tsx:126`).
 - Long enum labels that cut off in a select («Выключено (только если ревью кода включено или качество full)») are short.
 - The baseline and re-check settings, which could be set only by a hand-written `save_setting`, are in the catalog, on the Self-improvement page and in the project's «Work» tab.
 

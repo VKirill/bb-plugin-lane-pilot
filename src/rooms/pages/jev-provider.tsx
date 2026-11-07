@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { t } from "@lane-pilot/i18n";
 import { Button, CONTROL_H, Input, usePanelLayout } from "@lane-pilot/ui-kit";
-import { Pill, type LpPage } from "../../ui-shell/ui";
-import { SettingsGroup } from "./setting-controls";
+import { Pill } from "../ui-shell/ui";
+import type { LpPage } from "./use-lp-page";
+import { SettingsGroup } from "../ui-shell/ui";
 
 type ProviderId = "openlux" | "typesafe";
 type Status = { chosen: ProviderId; effective: ProviderId | null; catalog: "ok" | "unavailable"; providers: Array<{ id: ProviderId; keyName: string; model: string; hasKey: boolean }> };
