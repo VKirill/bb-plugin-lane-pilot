@@ -32,10 +32,17 @@ describe("check timeout from history", () => {
     const db = openDatabase(bb);
     createRun(db, "runA", "A");
     createRun(db, "runB", "B");
+    // The producer passes the structured facts; the helper fills them the way validateWriterResult does.
+    const failureOf = (reason:string) => {
+      const timedOut = /verification failed \((.+?)\): verification timed out after (\d+)s/.exec(reason);
+      if (timedOut) return { failureCode: "verification_timeout" as const, checkName: timedOut[1]!, timeoutSec: Number(timedOut[2]) };
+      const failed = /verification failed \((.+?)\):/.exec(reason);
+      return failed ? { failureCode: "verification_failed" as const, checkName: failed[1]! } : {};
+    };
     const attempt = (run:string, id:string, reason:string, verification:Array<{ command:string; cwd:string }> = [{ command:STUDIO, cwd:ROOT }]) => {
       createTask(db, { id, runId:run, kind:"cli", contract:{ project_cwd:ROOT, verification } });
       createAttempt(db, { id, runId:run, taskId:id });
-      transitionAttempt(db, id, "blocked", { reason });
+      transitionAttempt(db, id, "blocked", { reason, ...failureOf(reason) });
     };
     attempt("runA", "a1", `verification failed (${STUDIO}): verification timed out after 120s`);
     attempt("runA", "a2", `turn limit 5 reached: verification failed (${STUDIO}): verification timed out after 600s`);
@@ -53,7 +60,7 @@ describe("check timeout from history", () => {
     await harness.lifecycle.dispose();
   });
 
-  it("stores the failure fields a producer passes at the source, and derives them from a bare reason for a legacy caller", async () => {
+  it("stores the failure fields a producer passes at the source", async () => {
     const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
     const db = openDatabase(bb);
     createRun(db, "runA", "A");
@@ -62,10 +69,14 @@ describe("check timeout from history", () => {
     createAttempt(db, { id: "a1", runId: "runA", taskId: "t1" });
     transitionAttempt(db, "a1", "blocked", { reason: `verification failed (${STUDIO}): exit 1`, failureCode: "verification_failed", checkName: STUDIO });
     expect(fields("a1")).toEqual({ failure_code: "verification_failed", check_name: STUDIO, timeout_sec: null });
-    // A caller that passes only the reason (a wrapped reason, a test) still gets the fields from the text.
+    // A wrapped reason carries the same facts: the caller passes them with the wrapped text.
     createAttempt(db, { id: "a2", runId: "runA", taskId: "t1" });
-    transitionAttempt(db, "a2", "blocked", { reason: `retry limit 2 exhausted: verification failed (${STUDIO}): verification timed out after 120s` });
+    transitionAttempt(db, "a2", "blocked", { reason: `retry limit 2 exhausted: verification failed (${STUDIO}): verification timed out after 120s`, failureCode: "verification_timeout", checkName: STUDIO, timeoutSec: 120 });
     expect(fields("a2")).toEqual({ failure_code: "verification_timeout", check_name: STUDIO, timeout_sec: 120 });
+    // A caller that passes no facts writes NULL (the migration backfilled the rows written before the fields existed).
+    createAttempt(db, { id: "a3", runId: "runA", taskId: "t1" });
+    transitionAttempt(db, "a3", "blocked", { reason: `verification failed (${STUDIO}): exit 1` });
+    expect(fields("a3")).toEqual({ failure_code: null, check_name: null, timeout_sec: null });
     await harness.lifecycle.dispose();
   });
 
@@ -76,7 +87,7 @@ describe("check timeout from history", () => {
     const attempt = (id:string, command:string, cwd:string, sec:number, extra:Array<{ command:string; cwd:string }> = []) => {
       createTask(db, { id, runId:"runA", kind:"cli", contract:{ project_cwd:ROOT, verification:[{ command, cwd }, ...extra] } });
       createAttempt(db, { id, runId:"runA", taskId:id });
-      transitionAttempt(db, id, "blocked", { reason:`verification failed (${command}): verification timed out after ${sec}s` });
+      transitionAttempt(db, id, "blocked", { reason:`verification failed (${command}): verification timed out after ${sec}s`, failureCode:"verification_timeout", checkName:command, timeoutSec:sec });
     };
     attempt("t1", "cd appA && npm test", ROOT, 120);
     attempt("t2", STUDIO, `${ROOT}/game`, 300);

@@ -6,8 +6,6 @@ import { sha12 } from "./types";
  * and the project are not in it: they are the journal's dimensions, so one class can be followed across releases.
  */
 const RETRY_WRAPPER = /^retry limit \d+ exhausted:\s*/i;
-/** A red check keeps only that it was a check: its command and output are the task's, and 13 red checks are one class, not 13. */
-const CHECK_RED = /^(verification failed) \([^)]*\):.*$/s;
 /** The failure codes that name a red check (an attempt's own `failure_code`). */
 const RED_CHECK_CODES: ReadonlySet<string> = new Set(["verification_failed", "verification_timeout"]);
 /** Several paths in a row («owns_paths rejected a, b, c») are one: the count of stray files is not a different problem. */
@@ -28,11 +26,11 @@ export function pathKind(path: string): "test" | "locale" | "lockfile" | "src" {
 
 export function normaliseReason(reason: string | null | undefined, failureCode?: string | null): string {
   const text = (reason ?? "").replace(RETRY_WRAPPER, "").trim();
-  // The structured code answers it; the text is the fallback for a log line, a graph run and a legacy row.
+  // A red check keeps only that it was a check: its command and output are the task's, and 13 red checks are one class,
+  // not 13. The structured code answers it; a log line and a graph run carry none and keep their text.
   const redCheck = RED_CHECK_CODES.has(failureCode ?? "");
-  const check = redCheck ? null : CHECK_RED.exec(text);
-  let base = redCheck || check ? `verification failed (<check>)` : text;
-  if (!check && OWNERSHIP.test(text)) {
+  let base = redCheck ? `verification failed (<check>)` : text;
+  if (!redCheck && OWNERSHIP.test(text)) {
     // The list of rejected files after the keyword becomes one token that names the kinds of files in it.
     const start = text.search(OWNERSHIP);
     const kinds = new Set<string>();

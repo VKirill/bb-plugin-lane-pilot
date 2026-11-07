@@ -12,10 +12,10 @@ export function freshDb() {
   db.prepare("INSERT INTO lane_pilot_run (id,project_id,pm_thread_id,state,created_at,updated_at) VALUES ('run_real','proj_real','thr_pm','running',?,?)").run(NOW - 40 * DAY, NOW);
   db.prepare("INSERT INTO lane_pilot_run (id,project_id,pm_thread_id,state,created_at,updated_at) VALUES ('run_sand','proj_sand','thr_pm2','running',?,?)").run(NOW - 40 * DAY, NOW);
   let n = 0;
-  const attempt = (state: string, reason: string | null, at: number, options: { run?: string; task?: string; version?: string | null; id?: string } = {}) => {
+  const attempt = (state: string, reason: string | null, at: number, options: { run?: string; task?: string; version?: string | null; id?: string; failureCode?: string | null } = {}) => {
     const id = options.id ?? `lpattempt_${String(++n).padStart(4, "0")}`;
-    db.prepare("INSERT INTO lane_pilot_attempt (id,run_id,task_id,state,reason,created_at,updated_at,harness_version) VALUES (?,?,?,?,?,?,?,?)")
-      .run(id, options.run ?? "run_real", options.task ?? `task-${id}`, state, reason, at, at, options.version === undefined ? "0.1.268" : options.version);
+    db.prepare("INSERT INTO lane_pilot_attempt (id,run_id,task_id,state,reason,failure_code,created_at,updated_at,harness_version) VALUES (?,?,?,?,?,?,?,?,?)")
+      .run(id, options.run ?? "run_real", options.task ?? `task-${id}`, state, reason, options.failureCode ?? null, at, at, options.version === undefined ? "0.1.268" : options.version);
     return id;
   };
   const triage = (attemptId: string, origin: string, at: number, run = "run_real", project = "proj_real") =>

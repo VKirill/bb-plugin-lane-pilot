@@ -1,5 +1,5 @@
 import type Database from "better-sqlite3";
-import type { FailureCode } from "../storage";
+import type { FailureCode } from "../platform";
 import type { GoalCoverage, GoalVerdict, RedCheck } from "./logic";
 
 type Db = Pick<Database.Database, "prepare">;

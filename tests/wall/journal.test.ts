@@ -16,8 +16,8 @@ describe("the signature of a failure", () => {
     expect(new Set([one.classKey, locale.classKey, lock.classKey, source.classKey]).size).toBe(4);
     expect([locale.reasonNorm, lock.reasonNorm, source.reasonNorm]).toEqual(["owns_paths rejected <paths:locale>", "owns_paths rejected <paths:lockfile>", "owns_paths rejected <paths:src>"]);
     expect(pathKind("tests/a.spec.ts")).toBe("test");
-    const red1 = wallSignature("validation_failed", "verification failed (npx vitest run a): 3 failed");
-    const red2 = wallSignature("validation_failed", "verification failed (node scripts/check.mjs --x 5): boom 12");
+    const red1 = wallSignature("validation_failed", "verification failed (npx vitest run a): 3 failed", "verification_failed");
+    const red2 = wallSignature("validation_failed", "verification failed (node scripts/check.mjs --x 5): boom 12", "verification_failed");
     expect(red1.classKey).toBe(red2.classKey);
     expect(red1.classKey).not.toBe(one.classKey);
   });
@@ -63,8 +63,8 @@ describe("the journal", () => {
     h.attempt("blocked", "retry limit 2 exhausted: internal_error: another writer integration holds the base checkout lpattempt_ccc", t + 2000, { version: "0.1.268" });
     h.attempt("blocked", "internal_error: another writer integration holds the base checkout lpattempt_ddd", t + 3000, { version: "0.1.268", run: "run_sand" });
     // The writers' own: red checks.
-    h.attempt("validation_failed", "verification failed (npx vitest run x): 2 failed", t + 4000);
-    h.attempt("validation_failed", "verification failed (npx vitest run y): 1 failed", t + 5000);
+    h.attempt("validation_failed", "verification failed (npx vitest run x): 2 failed", t + 4000, { failureCode: "verification_failed" });
+    h.attempt("validation_failed", "verification failed (npx vitest run y): 1 failed", t + 5000, { failureCode: "verification_failed" });
     // Accepted attempts and one outside the window.
     for (let i = 0; i < 20; i++) h.attempt("accepted", null, t - HOUR * 20 + i);
     h.attempt("blocked", "internal_error: old", NOW - 3 * DAY);

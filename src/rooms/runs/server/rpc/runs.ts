@@ -4,7 +4,7 @@ import { setRunHalted } from "../runs-halt";
 import { PARKED_KEY } from "../../../stability/server";
 import { agentPickerLabel, employeeView, pickableAgent, placeEmployeeOn } from "../../../native-agent";
 import { compileEffectiveMainAgent, detectCompiledMainAgentCapability } from "../../../native-agent";
-import { countAttempts, createAttempt, getActivation, getAttempt, transitionAttempt } from "../../../storage";
+import { countAttempts, createAttempt, failureFieldsOf, getActivation, getAttempt, transitionAttempt } from "../../../storage";
 import { detectRequiredSessionPolicyCapability } from "../../../native-agent";
 import { storeNativeSelection } from "../../../native-agent/server/native-profile";
 import { DEFAULT_NATIVE_AGENT, nativeAgentCliId, nativeSelectionSchema } from "../../../native-agent";
@@ -378,7 +378,7 @@ export function runsRpc(ctx: ServerCore, services: Services) {
       }
       if (used >= MAIN_ATTEMPT_LIMIT) {
         const exhausted = `retry limit 2 exhausted${attempt.reason ? `: ${attempt.reason}` : ""}`;
-        transitionAttempt(db, attempt.id, "blocked", { reason: exhausted });
+        transitionAttempt(db, attempt.id, "blocked", { reason: exhausted, ...failureFieldsOf({ failureCode: attempt.failure_code, checkName: attempt.check_name, timeoutSec: attempt.timeout_sec }) });
         return { ok: false, state: "blocked", attemptId, reason: exhausted };
       }
       const nextId = id("lpattempt");

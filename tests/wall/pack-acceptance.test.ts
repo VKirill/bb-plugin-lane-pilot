@@ -229,7 +229,7 @@ describe("the brief a night repair gets", () => {
 describe("red checks split by side", () => {
   it("Lane Pilot's share of a task class is a class of its own; the writers' keep the old key", async () => {
     const { classKeyOf, wallSignature } = await import("../../src/rooms/wall/signature");
-    const sig = wallSignature("validation_failed", "verification failed (cd game && python3 scripts/studio_test.py --filter Par037): exit 1");
+    const sig = wallSignature("validation_failed", "verification failed (cd game && python3 scripts/studio_test.py --filter Par037): exit 1", "verification_failed");
     expect(classKeyOf(sig, "writer")).toBe(sig.classKey);
     expect(classKeyOf(sig, "orchestrator")).not.toBe(sig.classKey);
     expect(classKeyOf(sig, "infra")).toBe(classKeyOf(sig, "orchestrator"));

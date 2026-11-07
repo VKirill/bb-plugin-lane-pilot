@@ -830,18 +830,16 @@ function attemptChanged(attemptId:string):void {
 /** The structured facts of a verification failure; the human reason text keeps its wording. */
 export type AttemptFailureFields = { failureCode?: FailureCode; checkName?: string; timeoutSec?: number };
 
-/**
- * The failure a reason text names, for the columns readers use instead of parsing it. The writer of an attempt row is this
- * one function, so the text is read once here; `listCheckTimeouts` and the other readers get the fields.
- * Legacy fallback: producers now pass the fields at the source (writer/server/verify.ts, tasks/validate-output.ts), so this
- * only fires for a caller that still passes a bare reason (a wrapped reason, a test). The migration backfills old rows.
- */
-function failureFieldsFromReason(reason: string | null | undefined): AttemptFailureFields {
-  if (!reason) return {};
-  const timedOut = /verification failed \((.+?)\): verification timed out after (\d+)s/.exec(reason);
-  if (timedOut) return { failureCode: "verification_timeout", checkName: timedOut[1]!, timeoutSec: Number(timedOut[2]) };
-  const failed = /verification failed \((.+?)\):/.exec(reason);
-  return failed ? { failureCode: "verification_failed", checkName: failed[1]! } : {};
+/** The structured failure facts of a validateWriterResult-like record, for a caller that passes them to `transitionAttempt`. */
+export function failureFieldsOf(row: { failureCode?: unknown; checkName?: unknown; timeoutSec?: unknown }): AttemptFailureFields {
+  const failureCode = typeof row.failureCode === "string" ? row.failureCode as FailureCode : undefined;
+  const checkName = typeof row.checkName === "string" ? row.checkName : undefined;
+  const timeoutSec = typeof row.timeoutSec === "number" ? row.timeoutSec : undefined;
+  return {
+    ...(failureCode ? { failureCode } : {}),
+    ...(checkName ? { checkName } : {}),
+    ...(timeoutSec !== undefined ? { timeoutSec } : {}),
+  };
 }
 
 /**
@@ -852,6 +850,9 @@ function failureFieldsFromReason(reason: string | null | undefined): AttemptFail
  * Every other move must be a row of the state machine's table (src/state-machine.ts) or one of its documented operational
  * moves. An illegal one is logged, journaled as refused and thrown as `IllegalTransitionError`: a caller that did it is
  * wrong, and the writer loop's catch ends the attempt as `internal_error` (a Lane Pilot fault, parked and restarted).
+ *
+ * The structured failure facts come from the caller (the producer that knows them); the migration backfilled the rows
+ * written before the fields existed. A caller that does not pass them writes NULL.
  */
 export function transitionAttempt(
   db: LanePilotDatabase,
@@ -870,12 +871,11 @@ export function transitionAttempt(
     illegalTransitionLog(`Lane Pilot refused ${error.message}${fields.reason ? `: ${fields.reason.slice(0, 200)}` : ""}`);
     throw error;
   }
-  const derived = failureFieldsFromReason(fields.reason);
   const changed = db.prepare(`UPDATE lane_pilot_attempt SET state=?, thread_id=COALESCE(?,thread_id), reason=?, failure_code=?, check_name=?, timeout_sec=?, updated_at=?,
     wake_at=CASE WHEN ?<>'queued' THEN NULL ELSE wake_at END
     WHERE id=? AND (state NOT IN (${FINAL_ATTEMPT_STATES.map(() => "?").join(",")}) OR state=?)`)
-    .run(state, fields.threadId ?? null, fields.reason ?? null, fields.failureCode ?? derived.failureCode ?? null,
-      fields.checkName ?? derived.checkName ?? null, fields.timeoutSec ?? derived.timeoutSec ?? null,
+    .run(state, fields.threadId ?? null, fields.reason ?? null, fields.failureCode ?? null,
+      fields.checkName ?? null, fields.timeoutSec ?? null,
       now, state, attemptId, ...FINAL_ATTEMPT_STATES, state).changes === 1;
   db.prepare(`INSERT INTO lane_pilot_attempt_transition(attempt_id,from_state,to_state,reason,refused,at) VALUES(?,?,?,?,?,?)`)
     .run(attemptId, before.state, state, fields.reason ?? null, changed ? 0 : 1, now);
@@ -979,16 +979,18 @@ export function inspectAttempt(db: LanePilotDatabase, projectId: string, attempt
 }
 
 export function getAttempt(db: LanePilotDatabase, attemptId: string): {
-  id:string; run_id:string; task_id:string; thread_id:string|null; holder_thread_id:string|null; state:string; reason:string|null; attempt_no:number; dirt_before:DirtSnapshot[];
+  id:string; run_id:string; task_id:string; thread_id:string|null; holder_thread_id:string|null; state:string; reason:string|null;
+  failure_code:string|null; check_name:string|null; timeout_sec:number|null; attempt_no:number; dirt_before:DirtSnapshot[];
   workspace_path:string|null;environment_id:string|null;workspace_decision:unknown|null;harness_version:string|null;
 }|undefined {
-  const row = db.prepare("SELECT id,run_id,task_id,thread_id,holder_thread_id,state,reason,attempt_no,dirt_before_json,workspace_path,environment_id,workspace_decision_json,harness_version FROM lane_pilot_attempt WHERE id=?").get(attemptId) as
-    {id:string; run_id:string; task_id:string; thread_id:string|null; holder_thread_id:string|null; state:string; reason:string|null; attempt_no:number; dirt_before_json?:string;workspace_path:string|null;environment_id:string|null;workspace_decision_json:string|null;harness_version:string|null}|undefined;
+  const row = db.prepare("SELECT id,run_id,task_id,thread_id,holder_thread_id,state,reason,failure_code,check_name,timeout_sec,attempt_no,dirt_before_json,workspace_path,environment_id,workspace_decision_json,harness_version FROM lane_pilot_attempt WHERE id=?").get(attemptId) as
+    {id:string; run_id:string; task_id:string; thread_id:string|null; holder_thread_id:string|null; state:string; reason:string|null; failure_code:string|null; check_name:string|null; timeout_sec:number|null; attempt_no:number; dirt_before_json?:string;workspace_path:string|null;environment_id:string|null;workspace_decision_json:string|null;harness_version:string|null}|undefined;
   if (!row) return undefined;
   const dirt_before = parseDirtSnapshots(row.dirt_before_json ?? "[]");
   let workspace_decision:unknown|null=null;
   if(row.workspace_decision_json){try{workspace_decision=JSON.parse(row.workspace_decision_json);}catch{workspace_decision={invalidStoredDecision:true};}}
-  return { id:row.id, run_id:row.run_id, task_id:row.task_id, thread_id:row.thread_id, holder_thread_id:row.holder_thread_id, state:row.state, reason:row.reason ?? null, attempt_no:row.attempt_no, dirt_before,
+  return { id:row.id, run_id:row.run_id, task_id:row.task_id, thread_id:row.thread_id, holder_thread_id:row.holder_thread_id, state:row.state, reason:row.reason ?? null,
+    failure_code:row.failure_code ?? null, check_name:row.check_name ?? null, timeout_sec:row.timeout_sec ?? null, attempt_no:row.attempt_no, dirt_before,
     workspace_path:row.workspace_path,environment_id:row.environment_id,workspace_decision,harness_version:row.harness_version ?? null };
 }
 

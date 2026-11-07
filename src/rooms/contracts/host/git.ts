@@ -71,6 +71,8 @@ export const gitHostMethods = {
         commands:z.array(z.object({ command:z.string().min(1).max(32_000), cwd:z.string().startsWith("/"), timeoutSec:z.number().int().min(1).max(7200).optional() }).strict()).min(1).max(20) }).strict().optional() }).strict(),
     output: z.object({ hostId:z.string(), status:z.enum(["merged","up-to-date","conflict","failed","busy"]), commit:z.string().nullable(), conflicts:z.array(z.string()), reason:z.string().nullable(), holder:z.string().nullable().optional(), rebased:z.boolean().optional(),
       checks:z.array(z.object({ command:z.string(), exitCode:z.number().int(), stdout:z.string(), stderr:z.string() }).strict()).optional(),
+      // With a replay red: the structured failure facts of the check that failed (additive; an older host omits them).
+      failureCode:z.enum(["verification_failed","verification_timeout"]).optional(), checkName:z.string().optional(),
       rebuilt:z.array(z.object({ dir:z.string(), ok:z.boolean(), detail:z.string().nullable() }).strict()).optional(),
       // With «merged»: main before the merge and what the merge changed there, deletions included (additive; an older host omits them).
       base:z.string().nullable().optional(), changed:z.array(changedFile).max(5000).optional() }).strict(),

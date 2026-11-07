@@ -1,5 +1,6 @@
 import { fileAllowedByOwns, fileBlockedByNeverTouch } from "@lane-pilot/kit";
-import { ENVIRONMENT_REASON, NO_ANSWER_REASON, isEnvironmentCheckFailure, type FailureCode } from "../runs";
+import { ENVIRONMENT_REASON, NO_ANSWER_REASON, isEnvironmentCheckFailure } from "../runs";
+import type { FailureCode } from "../platform";
 import { cleanCheckOutput } from "@lane-pilot/kit";
 import type { TaskV2 } from "../contracts";
 import type { FlakyEvidence } from "../verification";

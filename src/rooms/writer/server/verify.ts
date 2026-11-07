@@ -16,7 +16,7 @@ import { SecretsNotReadyError, allowedSecretNames, secretProblem } from "../../s
 import type { VerifyResult } from "../../tasks";
 import { fileAllowedByOwns, fileBlockedByNeverTouch } from "@lane-pilot/kit";
 import { isLiveDecision, LIVE_FOLDER_RECEIPT } from "../live-folder";
-import { beginChecks, checksMoved, taskFamily, type FailureCode } from "../../runs";
+import { beginChecks, checksMoved, taskFamily } from "../../runs";
 import { bookkeepingSetting, filterOwnershipNoise } from "@lane-pilot/settings-catalog";
 import { dropSatellites, findUnownedChanges, findUnownedRunChanges, flakyEvidence as machineEvidence, outputTail, readingFrom, resolveRunOwnershipScope } from "../../verification";
 import type { FlakyEvidence, MachineReading } from "../../verification";
@@ -26,6 +26,7 @@ import { listThreadEventsRaw } from "@lane-pilot/thread-observe";
 import { stringAt } from "@lane-pilot/kit";
 import { outputText, writerPatchFromOutput } from "./writer-task";
 import type { ServerCore } from "../../contracts/server";
+import type { FailureCode } from "../../platform/server";
 
 import type { HarnessApi } from "../../harness/server/harness";
 import type { PromotionServiceApi } from "../../rule-forms/promotion-service";
@@ -39,7 +40,6 @@ interface Services {
   runWriterPool: WriterStateApi["runWriterPool"];
   workspaceDirt: WriterSpawnApi["workspaceDirt"];
 }
-
 
 /** A sandbox that refused the runner its own files: macOS python3 shim «couldn't create cache file … Operation not permitted». */
 
