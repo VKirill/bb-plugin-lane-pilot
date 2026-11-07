@@ -41,7 +41,7 @@ function cliCommands(): Set<string> {
   return new Set([...text.matchAll(/\{ name:"([a-z0-9-]+)"/g)].map((m) => m[1]!));
 }
 
-function docAudit(): number {
+export function docAudit(): number {
   const findings: string[] = [];
   const commands = cliCommands();
   const map = smaRows();
@@ -57,7 +57,7 @@ function docAudit(): number {
 
 function lastTag(): string | null { try { return git("describe", "--tags", "--abbrev=0"); } catch { return null; } }
 
-function vendor(args: string[]): number {
+export function vendor(args: string[]): number {
   const ledgerPath = join(ROOT, ".agents/ship/vendor.json");
   const ledger = (existsSync(ledgerPath) ? JSON.parse(readFileSync(ledgerPath, "utf8")) : {}) as Record<string, { from: string | null; to: string; note?: string }>;
   if (args[0] === "triage" && args[1] && args[2]) {
@@ -100,7 +100,7 @@ function licenses(): number {
   return out(findings, `license ledger: ${rows.length} production dependencies, all named`);
 }
 
-function badge(args: string[]): number {
+export function badge(args: string[]): number {
   const path = args[0] ?? (() => { const dir = join(ROOT, ".agents/runs/drills"); const files = existsSync(dir) ? readdirSync(dir).filter((f) => f.endsWith(".json")).sort() : []; return files.length ? join(dir, files.at(-1)!) : null; })();
   if (!path || !existsSync(path)) { console.log("no receipt to make a badge from"); return 2; }
   const data = JSON.parse(readFileSync(path, "utf8")) as { numPassedTests?: number; numFailedTests?: number; numTotalTests?: number; result?: string; scenarios?: Array<{ result: string }> };
@@ -114,7 +114,7 @@ function badge(args: string[]): number {
 const vkey = (v: string) => v.replace(/^v/, "").split(".").map(Number);
 const newer = (a: string, b: string) => { const x = vkey(a), y = vkey(b); for (let i = 0; i < 3; i += 1) if ((x[i] ?? 0) !== (y[i] ?? 0)) return (x[i] ?? 0) > (y[i] ?? 0); return false; };
 
-function publishable(): number {
+export function publishable(): number {
   const findings: string[] = [];
   const tag = lastTag();
   if (tag && !newer(pkg.version, tag)) findings.push(`version ${pkg.version} is not above the last tag ${tag}`);
@@ -125,7 +125,7 @@ function publishable(): number {
   return out(findings, `publishable: ${pkg.version}`);
 }
 
-function predictLint(): number {
+export function predictLint(): number {
   const text = read("CHANGELOG.md");
   const section = text.split(`## ${pkg.version}`)[1]?.split(/\n## /)[0] ?? "";
   const promise = /\b(faster|fewer|less|no longer|never again|быстрее|меньше|больше не|реже)\b/i;
@@ -134,7 +134,7 @@ function predictLint(): number {
   return out(findings, `prediction lint: the ${pkg.version} notes measure what they promise`);
 }
 
-function explain(): number {
+export function explain(): number {
   const rows = new Map(smaRows().map((row) => [row.id, row]));
   const roots = defaultProofRoots(ROOT);
   const findings: string[] = [];
@@ -150,7 +150,7 @@ function explain(): number {
   return out(findings, `explainers: every node they explain is proven (map ${smaDonePercent(smaRows())}%)`);
 }
 
-function lane(args: string[]): number {
+export function lane(args: string[]): number {
   const base = args[0] ?? lastTag() ?? "HEAD~1";
   const files = git("diff", "--name-only", `${base}...HEAD`).split("\n").filter(Boolean);
   const full = files.filter((file) => /^(src\/rooms\/(contracts|storage|core)\/|packages\/contracts\/|host\.ts|server\.ts|.*migrations?\.ts)/.test(file));
@@ -160,7 +160,7 @@ function lane(args: string[]): number {
   return 0;
 }
 
-function freshness(): number {
+export function freshness(): number {
   let served: string | null = null;
   try { served = (JSON.parse(execFileSync("bb", ["plugin", "list", "--json"], { encoding: "utf8", env: { ...process.env, BB_CLI: "" } })) as Array<{ id: string; version?: string }>).find((p) => p.id === "lane-pilot")?.version ?? null; } catch { served = null; }
   const bundle = join(ROOT, "dist", "app.js");
