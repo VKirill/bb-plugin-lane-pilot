@@ -1,7 +1,8 @@
 import { getRunSettingsScopes } from "../../storage";
 import { sha256 } from "../logic";
 import { savePhase } from "../store";
-import { PhaseRefusal, type DriverTools } from "./driver-tools";
+import { PhaseRefusal, type DriverBase } from "./driver-tools";
+import type { Docs } from "./driver-docs";
 import type { Phase } from "../logic";
 
 /**
@@ -9,8 +10,9 @@ import type { Phase } from "../logic";
  * lesson itself as it goes through the memory door. The door is a reaction (`tools.reactions`), so this piece decides what the
  * phase learned and does not import the room that keeps the memory.
  */
-export function installJournal(tools: DriverTools): Pick<DriverTools,
-  "journalSteps" | "checkerRunBinding" | "reviewerRead" | "writeLesson" | "settleLesson"> {
+export type JournalTools = DriverBase & Docs;
+export type Journal = ReturnType<typeof installJournal>;
+export function installJournal(tools: JournalTools) {
   const { db, now, reactions } = tools;
 
   /** The journal of a workflow run as the independence check reads it: each step's role from the run's own stored definition. */

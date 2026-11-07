@@ -6,7 +6,11 @@ import { medianTaskSize, taskSizeText } from "../../tasks";
 import { isRunHalted, isRunPaused } from "../../runs/server";
 import { intakeRunGoals } from "../intake";
 import { createAutoStages } from "./auto-stages";
-import type { DriverTools } from "./driver-tools";
+import type { DriverBase } from "./driver-tools";
+import type { Docs } from "./driver-docs";
+import type { Journal } from "./driver-journal";
+import type { Methods } from "./driver-methods";
+import type { Steps } from "./driver-steps";
 
 /** A sure route only: the hint takes a request away from the architect (the errand's api-recon bar, 0.1.412). */
 const PUBLISHED_HINT_CONFIDENCE = 85;
@@ -16,7 +20,8 @@ const PUBLISHED_HINT_CONFIDENCE = 85;
  * itself and reports through the gates) and the small-task train (issue-quick / issue-batch / full-lifecycle, the workflow architect,
  * the published-graph router). It is orchestration's own assembly, kept apart from the state machine and the steps.
  */
-export function installWiring(tools: DriverTools) {
+export type WiringTools = DriverBase & Docs & Journal & Methods & Steps;
+export function installWiring(tools: WiringTools) {
   const { ctx, services, db, bb, now } = tools;
   const auto = createAutoStages(ctx, services, {
     exhausted: tools.exhaust,

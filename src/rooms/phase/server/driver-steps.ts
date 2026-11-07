@@ -13,7 +13,9 @@ import { buildsScreens, conclusionText, issuedContract, markRoadmap, nextRoadmap
 import { getPhase, listParts, notePoked, savePhase } from "../store";
 import { checkProofs, hostGit, phaseProofRecords, renderProofCurrency } from "./proof-currency";
 import { candidateBranch } from "./candidate";
-import { PhaseRefusal, STAGE_RU, type DriverTools } from "./driver-tools";
+import { PhaseRefusal, STAGE_RU, type DriverBase } from "./driver-tools";
+import type { Docs } from "./driver-docs";
+import type { Methods } from "./driver-methods";
 import type { Phase, PhaseCandidate, PhaseRecord } from "../logic";
 
 /**
@@ -21,9 +23,9 @@ import type { Phase, PhaseCandidate, PhaseRecord } from "../logic";
  * verify, land the accepted package, write the closing documents, poke the PM, and close out a spent loop. It reads the phase,
  * moves it through its stages and reaches the other rooms only through `tools`.
  */
-export function installSteps(tools: DriverTools): Pick<DriverTools,
-  "issue" | "candidateTree" | "candidateGoal" | "candidateHeads" | "landCandidate" | "recheckStale" |
-  "drive" | "finishClosed" | "poke" | "proofCurrency" | "exhaust"> {
+export type StepsTools = DriverBase & Docs & Methods;
+export type Steps = ReturnType<typeof installSteps>;
+export function installSteps(tools: StepsTools) {
   const { ctx, services, db, bb, now, reactions } = tools;
   const { mustGet, book, move, facts, readText, writeDocs, writeBook, pmCheckoutPath, candidates } = tools;
 

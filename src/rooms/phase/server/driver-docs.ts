@@ -5,7 +5,7 @@ import { runOnHost } from "@lane-pilot/host-calls";
 import { binaryFileCommand, binaryFileFingerprint } from "../stages";
 import { appendPart, getPhase, listParts, savePhase as savePhaseRow } from "../store";
 import { createCandidates } from "./candidate";
-import { PhaseRefusal, type DriverTools } from "./driver-tools";
+import { PhaseRefusal, type DriverBase } from "./driver-tools";
 import type { Phase, PhaseRecord, PhaseStage, TaskFact } from "../logic";
 import { phaseFolder, renderBook, sha256 } from "../logic";
 
@@ -14,9 +14,9 @@ import { phaseFolder, renderBook, sha256 } from "../logic";
  * book parts and the phase's facts. Everything here is about the phase's state and its workspace, so it changes with the state
  * machine and lives with it.
  */
-export function installDocs(tools: DriverTools): Pick<DriverTools,
-  "mustGet" | "savePhase" | "book" | "move" | "facts" | "readFile" | "readText" | "writeDocs" | "writeBook" | "redoId" | "pmCheckoutPath" | "candidates"> {
-  const { services, db, bb, now } = tools;
+export type Docs = ReturnType<typeof installDocs>;
+export function installDocs(base: DriverBase) {
+  const { services, db, bb, now } = base;
 
   function mustGet(id: string) {
     const phase = getPhase(db, id);

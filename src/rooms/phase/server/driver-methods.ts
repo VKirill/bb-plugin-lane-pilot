@@ -7,17 +7,40 @@ import { critiqueProblems, roleLine, type DrawingCritique } from "../../design-e
 import { PHASE_STAGES, RETURN_STAGES, RISK_KINDS, acceptanceKey, checkerIndependence, contextSignature, designDecision, designGate, discussionGate, executionGate, phaseFolder, planGate, planGate as planGateOf, planSignature, sha256, staleAfterReturn } from "../logic";
 import { archiveDrawing, uatState } from "../stages";
 import { insertPhase, listParts, savePhase } from "../store";
-import { PhaseRefusal, type DriverTools } from "./driver-tools";
-import type { ContextDoc, Phase, PhaseRecord, PhaseStage, RiskKey } from "../logic";
+import { PhaseRefusal, type DriverBase } from "./driver-tools";
+import type { Docs } from "./driver-docs";
+import type { Journal } from "./driver-journal";
+import type { ContextDoc, Phase, PhaseRecord, PhaseStage, PlanItem, RiskKey, WordTurn } from "../logic";
+
+type Reported = { phaseId: string; by?: string };
+export type OpenInput = { projectId: string; pmThreadId: string; title: string; goal: string; legacy?: boolean; roadmapRow?: string; rails?: boolean };
+export type ContextInput = Reported & { docs: string[]; risks?: Partial<Record<RiskKey, string>>; requirements?: string[]; decisions?: string[]; appetite?: string; noGos?: string[] };
+export type PlanInput = Reported & { items: PlanItem[]; design?: boolean; alreadyMet?: string; fromRun?: string };
+export type PlanCheckInput = Reported & { decision: "approve" | "changes_requested"; by: string; summary?: string; wfRunId?: string };
+export type DrawingInput = Reported & { paths: string[]; designer: string; feasible: boolean; contradiction?: string; reviewer?: string; critique?: DrawingCritique; lesson?: string };
+export type GoalAuditInput = Reported & { state: "met" | "unmet"; by: string; summary: string };
+export type LessonsInput = Reported & { analysis: string; reviewRun: string; reviewerNode?: string };
+export type QuestionInput = Reported & { text: string; blocking: boolean };
+export type AnswerInput = Reported & { questionId: string; answer: string };
+export type WordInput = Reported & { turn: WordTurn; decision: "yes" | "no"; text: string; wave?: number; useful?: boolean; limits?: boolean; key?: string };
+export type WaveReviewInput = Reported & { wave: number; state: "passed" | "failed"; by: string; summary: string };
+export type WithdrawInput = Reported & { pieces: string[]; note: string };
+export type ReviseInput = Reported & { goal: string; note: string };
+export type CorrectInput = Reported & { note: string; pieces?: string[] };
+export type ReturnToInput = Reported & { to: PhaseStage; note: string };
+export type SetStateInput = Reported & { state: "pause" | "resume" | "stop" | "close"; words?: string };
+export type StopInput = Reported & { words?: string };
+export type StopWaveInput = Reported;
+export type CompensateInput = Reported & { note: string };
 
 /**
  * The phase's state transitions: every method the PM, the owner or the machine calls to move a phase between its stages, and the
  * gates that admit a plan. Each one reads the phase, checks its gate in code, records the decision in the book and returns the
  * phase as it now is. The side effects on other rooms go through `tools.reactions`.
  */
-export function installMethods(tools: DriverTools): Pick<DriverTools,
-  "open" | "context" | "plan" | "planCheck" | "drawing" | "goalAudit" | "lessons" | "question" | "answer" | "word" |
-  "waveReview" | "withdraw" | "revise" | "correct" | "returnTo" | "setState" | "stop" | "stopWave" | "compensate" | "admitIfReady"> {
+export type MethodsTools = DriverBase & Docs & Journal;
+export type Methods = ReturnType<typeof installMethods>;
+export function installMethods(tools: MethodsTools) {
   const { ctx, services, db, bb, now, reactions } = tools;
   const { mustGet, book, move, facts, readFile, readText, writeDocs } = tools;
 
@@ -45,7 +68,7 @@ export function installMethods(tools: DriverTools): Pick<DriverTools,
     return phase;
   }
 
-  async function context(input: Parameters<DriverTools["context"]>[0]): Promise<Phase> {
+  async function context(input: ContextInput): Promise<Phase> {
     const phase = mustGet(input.phaseId);
     if (phase.stage !== "discussion") throw new PhaseRefusal(`phase ${phase.id} is at ${phase.stage}: return it to discussion first to change its context`);
     const docs: ContextDoc[] = [];
@@ -79,7 +102,7 @@ export function installMethods(tools: DriverTools): Pick<DriverTools,
     return mustGet(phase.id);
   }
 
-  function plan(input: Parameters<DriverTools["plan"]>[0]): Phase {
+  function plan(input: PlanInput): Phase {
     const phase = mustGet(input.phaseId);
     // No replanning of a closed phase: its book is final; a new goal is a new phase.
     if (phase.stage === "closed" || phase.state === "closed") throw new PhaseRefusal(`phase ${phase.id} is closed: open a new phase for new work`);
@@ -96,7 +119,7 @@ export function installMethods(tools: DriverTools): Pick<DriverTools,
     return mustGet(phase.id);
   }
 
-  async function planCheck(input: Parameters<DriverTools["planCheck"]>[0]): Promise<Phase> {
+  async function planCheck(input: PlanCheckInput): Promise<Phase> {
     const phase = mustGet(input.phaseId);
     if (phase.stage !== "planning" || !phase.record.plan) throw new PhaseRefusal("no plan at planning to check");
     // Context files unchanged: the documents the plan stands on are read again; an edit after the signature sends the phase back.
@@ -122,10 +145,10 @@ export function installMethods(tools: DriverTools): Pick<DriverTools,
       if (waitsForWord) return mustGet(phase.id);
       throw new PhaseRefusal("the plan is not admitted", check.why);
     }
-    return tools.admitIfReady(mustGet(phase.id));
+    return admitIfReady(mustGet(phase.id));
   }
 
-  async function drawing(input: Parameters<DriverTools["drawing"]>[0]): Promise<Phase> {
+  async function drawing(input: DrawingInput): Promise<Phase> {
     const phase = mustGet(input.phaseId);
     if (phase.stage !== "design") throw new PhaseRefusal(`phase ${phase.id} is at ${phase.stage}, not design`);
     const folder = `${phaseFolder(phase.id)}/design/`;
@@ -152,7 +175,7 @@ export function installMethods(tools: DriverTools): Pick<DriverTools,
     book(phase, "design", "drawing", `${input.paths.join(", ")} by ${input.designer}; ${input.feasible ? "feasible" : `contradiction: ${input.contradiction ?? "?"}`}${input.reviewer ? `; reviewed by ${input.reviewer}` : ""}`);
     if (!input.feasible) {
       savePhase(db, phase.id, { record, at: now() });
-      return tools.returnTo({ phaseId: phase.id, to: "planning", note: `the drawing contradicts the plan: ${input.contradiction ?? "no reason given"}`, by: input.designer });
+      return returnTo({ phaseId: phase.id, to: "planning", note: `the drawing contradicts the plan: ${input.contradiction ?? "no reason given"}`, by: input.designer });
     }
     const check = designGate(record);
     if (!check.ok) {
@@ -165,7 +188,7 @@ export function installMethods(tools: DriverTools): Pick<DriverTools,
     return mustGet(phase.id);
   }
 
-  function goalAudit(input: Parameters<DriverTools["goalAudit"]>[0]): Phase {
+  function goalAudit(input: GoalAuditInput): Phase {
     const phase = mustGet(input.phaseId);
     if (phase.stage !== "verification" || !phase.record.verification?.verdict) throw new PhaseRefusal("no blind verdict to audit yet");
     const record: PhaseRecord = { ...phase.record, verification: { ...phase.record.verification, model: { state: input.state, by: input.by, summary: input.summary.slice(0, 2000), at: now() } } };
@@ -174,7 +197,7 @@ export function installMethods(tools: DriverTools): Pick<DriverTools,
     return mustGet(phase.id);
   }
 
-  function lessons(input: Parameters<DriverTools["lessons"]>[0]): Phase {
+  function lessons(input: LessonsInput): Phase {
     const phase = mustGet(input.phaseId);
     if (phase.stage !== "lessons") throw new PhaseRefusal(`phase ${phase.id} is at ${phase.stage}, not lessons`);
     const analysis = input.analysis.slice(0, 4000);
@@ -196,7 +219,7 @@ export function installMethods(tools: DriverTools): Pick<DriverTools,
     return mustGet(phase.id);
   }
 
-  function question(input: Parameters<DriverTools["question"]>[0]): Phase {
+  function question(input: QuestionInput): Phase {
     const phase = mustGet(input.phaseId);
     const id = `q${(phase.record.questions?.length ?? 0) + 1}`;
     const record: PhaseRecord = { ...phase.record, questions: [...(phase.record.questions ?? []), { id, stage: phase.stage, text: input.text.slice(0, 1000), blocking: input.blocking, askedAt: now() }] };
@@ -205,7 +228,7 @@ export function installMethods(tools: DriverTools): Pick<DriverTools,
     return mustGet(phase.id);
   }
 
-  function answer(input: Parameters<DriverTools["answer"]>[0]): Phase {
+  function answer(input: AnswerInput): Phase {
     const phase = mustGet(input.phaseId);
     const questions = phase.record.questions ?? [];
     if (!questions.some((row) => row.id === input.questionId)) throw new PhaseRefusal(`no question ${input.questionId}`);
@@ -216,7 +239,7 @@ export function installMethods(tools: DriverTools): Pick<DriverTools,
   }
 
   /** The owner's word at a turn (owner.words on). «no» sends the phase back: from planning or design to planning, from acceptance to execution. */
-  async function word(input: Parameters<DriverTools["word"]>[0]): Promise<Phase> {
+  async function word(input: WordInput): Promise<Phase> {
     const phase = mustGet(input.phaseId);
     // Keyed decision on the phase (SMA p6_decide): two decisions under the key of the shown package.
     if (input.turn === "acceptance" && input.decision === "yes" && !(input.useful === true && input.limits === true))
@@ -252,14 +275,14 @@ export function installMethods(tools: DriverTools): Pick<DriverTools,
     }
     if (input.decision === "no") {
       const to: PhaseStage = input.turn === "acceptance" || input.turn === "uat" ? "execution" : "planning";
-      if (PHASE_STAGES.indexOf(to) < PHASE_STAGES.indexOf(phase.stage)) return tools.returnTo({ phaseId: phase.id, to, note: `the owner said no at ${input.turn}: ${input.text}`, by: input.by ?? "owner" });
+      if (PHASE_STAGES.indexOf(to) < PHASE_STAGES.indexOf(phase.stage)) return returnTo({ phaseId: phase.id, to, note: `the owner said no at ${input.turn}: ${input.text}`, by: input.by ?? "owner" });
     }
-    if (input.decision === "yes" && phase.stage === "planning" && input.turn === "planning") return tools.admitIfReady(mustGet(phase.id));
+    if (input.decision === "yes" && phase.stage === "planning" && input.turn === "planning") return admitIfReady(mustGet(phase.id));
     return mustGet(phase.id);
   }
 
   /** Wave verified by another model: the PM reports the review of a finished wave; a failed one returns the phase to execution's fixes. */
-  function waveReview(input: Parameters<DriverTools["waveReview"]>[0]): Phase {
+  function waveReview(input: WaveReviewInput): Phase {
     const phase = mustGet(input.phaseId);
     const waves = { ...(phase.record.execution?.waves ?? {}) };
     const done = waves[String(input.wave)];
@@ -271,7 +294,7 @@ export function installMethods(tools: DriverTools): Pick<DriverTools,
   }
 
   /** Scope withdrawal agreed: pieces not yet issued leave the plan with a note; the plan is admitted again as it now is. */
-  function withdraw(input: Parameters<DriverTools["withdraw"]>[0]): Phase {
+  function withdraw(input: WithdrawInput): Phase {
     const phase = mustGet(input.phaseId);
     const plan = phase.record.plan;
     if (!plan) throw new PhaseRefusal("no plan to withdraw from");
@@ -288,7 +311,7 @@ export function installMethods(tools: DriverTools): Pick<DriverTools,
   }
 
   /** Phase scope revision: the goal changes in discussion or planning; the plan built on the old goal is checked again. */
-  function revise(input: Parameters<DriverTools["revise"]>[0]): Phase {
+  function revise(input: ReviseInput): Phase {
     const phase = mustGet(input.phaseId);
     if (!["discussion", "planning"].includes(phase.stage)) throw new PhaseRefusal("the goal is revised in discussion or planning: return the phase there first");
     db.prepare("UPDATE lane_pilot_phase SET goal=? WHERE id=?").run(input.goal.slice(0, 4000), phase.id);
@@ -300,7 +323,7 @@ export function installMethods(tools: DriverTools): Pick<DriverTools,
   }
 
   /** Correct a live stage: the note goes to the writers of the pieces at work as their next turn (the same thread continues). */
-  async function correct(input: Parameters<DriverTools["correct"]>[0]): Promise<{ phase: Phase; sent: string[] }> {
+  async function correct(input: CorrectInput): Promise<{ phase: Phase; sent: string[] }> {
     const phase = mustGet(input.phaseId);
     const issued = phase.record.execution?.issued ?? {};
     const wanted = new Set((input.pieces?.length ? input.pieces : Object.keys(issued)).map((id) => taskFamily(issued[id] ?? id)));
@@ -312,7 +335,7 @@ export function installMethods(tools: DriverTools): Pick<DriverTools,
     return { phase: mustGet(phase.id), sent };
   }
 
-  function returnTo(input: Parameters<DriverTools["returnTo"]>[0]): Phase {
+  function returnTo(input: ReturnToInput): Phase {
     // The question of the turn being left is obsolete: its row goes (the new turn posts its own; Gemini F-006.1 remainder).
     reactions.closeOwnerItemsByPrefix(`phase-word:${input.phaseId}:`, "janitor:phase returned");
     const phase = mustGet(input.phaseId);
@@ -325,7 +348,7 @@ export function installMethods(tools: DriverTools): Pick<DriverTools,
     return mustGet(phase.id);
   }
 
-  function setState(input: Parameters<DriverTools["setState"]>[0]): Phase {
+  function setState(input: SetStateInput): Phase {
     const phase = mustGet(input.phaseId);
     const next = input.state === "pause" ? "paused" : input.state === "resume" ? "active" : input.state === "stop" ? "stopped" : "closed";
     if (input.state === "close" && !input.words?.trim()) throw new PhaseRefusal("closing in words carries the words: why the phase ends here");
@@ -349,7 +372,7 @@ export function installMethods(tools: DriverTools): Pick<DriverTools,
    * The phase turns stopped only once every stop is observed (SMA audit N-01: a failed stop published a stopped phase over a live
    * writer); until then it keeps `stopping`, issues nothing, and each pass asks for the open stops again.
    */
-  async function stop(input: Parameters<DriverTools["stop"]>[0]): Promise<{ phase: Phase; canceled: string[]; unconfirmed: string[] }> {
+  async function stop(input: StopInput): Promise<{ phase: Phase; canceled: string[]; unconfirmed: string[] }> {
     const phase = mustGet(input.phaseId);
     const families = new Set(Object.values(phase.record.execution?.issued ?? {}).map(taskFamily));
     const canceled: string[] = [];
@@ -384,7 +407,7 @@ export function installMethods(tools: DriverTools): Pick<DriverTools,
   }
 
   /** Stops the current wave: the pieces issued but not started are canceled; running writers finish their current stage. */
-  async function stopWave(input: Parameters<DriverTools["stopWave"]>[0]): Promise<{ phase: Phase; canceled: string[] }> {
+  async function stopWave(input: StopWaveInput): Promise<{ phase: Phase; canceled: string[] }> {
     const phase = mustGet(input.phaseId);
     const issued = new Set(Object.values(phase.record.execution?.issued ?? {}).map(taskFamily));
     const canceled: string[] = [];
@@ -398,7 +421,7 @@ export function installMethods(tools: DriverTools): Pick<DriverTools,
   }
 
   /** Compensates the phase's own effects: each accepted piece is reverted (git revert through the merge lock), newest first. */
-  async function compensate(input: Parameters<DriverTools["compensate"]>[0]): Promise<{ phase: Phase; results: Array<{ taskId: string; state: string; detail?: string }> }> {
+  async function compensate(input: CompensateInput): Promise<{ phase: Phase; results: Array<{ taskId: string; state: string; detail?: string }> }> {
     const phase = mustGet(input.phaseId);
     const f = facts(phase);
     const accepted = [...f.values()].filter((fact) => fact.state === "accepted").reverse();

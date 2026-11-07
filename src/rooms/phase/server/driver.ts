@@ -9,7 +9,7 @@ import { installJournal } from "./driver-journal";
 import { installMethods } from "./driver-methods";
 import { installSteps } from "./driver-steps";
 import { installWiring } from "./driver-wiring";
-import { PhaseRefusal, type DriverTools } from "./driver-tools";
+import { PhaseRefusal, type DriverBase } from "./driver-tools";
 
 export { PhaseRefusal, DESIGN_JOURNAL, ROLE_LINES };
 export type { PhaseReactions } from "./reactions";
@@ -28,12 +28,12 @@ export type { PhaseReactions } from "./reactions";
 export function createPhaseDriver(ctx: ServerCore, services: Services, reactions: PhaseReactions = createPhaseReactions(ctx.db, ctx.bb)) {
   const { db, bb } = ctx;
   const now = () => Date.now();
-  const tools = { ctx, services, db, bb, now, reactions } as DriverTools;
-  Object.assign(tools, installDocs(tools));
-  Object.assign(tools, installJournal(tools));
-  Object.assign(tools, installMethods(tools));
-  Object.assign(tools, installSteps(tools));
-  const { auto, train } = installWiring(tools);
+  const base: DriverBase = { ctx, services, db, bb, now, reactions };
+  const docs = installDocs(base);
+  const journal = installJournal({ ...base, ...docs });
+  const methods = installMethods({ ...base, ...docs, ...journal });
+  const steps = installSteps({ ...base, ...docs, ...journal, ...methods });
+  const { auto, train } = installWiring({ ...base, ...docs, ...journal, ...methods, ...steps });
 
   async function tick(signal?: AbortSignal): Promise<number> {
     let moved = 0;
@@ -41,23 +41,23 @@ export function createPhaseDriver(ctx: ServerCore, services: Services, reactions
     for (const row of listPhases(db, { limit: 200 }).filter((candidate) => candidate.state === "stopped")) {
       const back = recoverStopped(row);
       if (!back) continue;
-      tools.savePhase(row.id, { state: "active", record: back.record, at: now() });
-      tools.book(row, "decisions", "resume_after_fix", back.note);
+      docs.savePhase(row.id, { state: "active", record: back.record, at: now() });
+      docs.book(row, "decisions", "resume_after_fix", back.note);
       moved += 1;
     }
     // Finish an accepted analysis (SMA p7_recover): a lesson the owner applied whose memory write did not land is written again, no new worker.
     for (const row of listPhases(db, { limit: 200 }).filter((candidate) => candidate.record.lessons?.draft?.state === "staged" && candidate.record.lessons.draft.error
-      && wordOf(candidate.record, "lesson")?.decision === "yes")) tools.settleLesson(row, "yes");
+      && wordOf(candidate.record, "lesson")?.decision === "yes")) journal.settleLesson(row, "yes");
     // Closed phases that have not finished their paperwork yet are driven once more.
     const unfinished = listPhases(db, { limit: 200 }).filter((row) => row.stage === "closed" && !row.record.closedDocs && Date.now() - row.updatedAt < 7 * 86_400_000);
     for (const phase of [...listPhases(db, { live: true, limit: 100 }), ...unfinished]) {
       if (signal?.aborted || ctx.isDisposed()) break;
       try {
-        const after = await tools.finishClosed(await tools.drive(phase));
+        const after = await steps.finishClosed(await steps.drive(phase));
         if (after.stage !== phase.stage || after.state !== phase.state) moved += 1;
         // The machine drives the train: a stage it can run is not poked to the PM.
-        if (!(await auto.step(tools.mustGet(after.id)))) await tools.poke(tools.mustGet(after.id));
-        await tools.writeBook(tools.mustGet(after.id)).catch((cause: unknown) => ctx.log(`phase ${phase.id}: book not written: ${cause instanceof Error ? cause.message : String(cause)}`));
+        if (!(await auto.step(docs.mustGet(after.id)))) await steps.poke(docs.mustGet(after.id));
+        await docs.writeBook(docs.mustGet(after.id)).catch((cause: unknown) => ctx.log(`phase ${phase.id}: book not written: ${cause instanceof Error ? cause.message : String(cause)}`));
       } catch (cause) {
         ctx.log(`phase ${phase.id}: ${cause instanceof Error ? cause.message : String(cause)}`);
       }
@@ -66,15 +66,15 @@ export function createPhaseDriver(ctx: ServerCore, services: Services, reactions
   }
 
   function status(phaseId: string) {
-    const phase = tools.mustGet(phaseId);
+    const phase = docs.mustGet(phaseId);
     const parts = listParts(db, phase.id);
-    return { phase, next: nextAction(phase, tools.facts(phase)), gates: { discussion: discussionGate(phase.record), plan: planGate(phase.record), design: designGate(phase.record) }, book: renderBook(phase, parts), bookHead: parts.at(-1)?.hash ?? null, openQuestions: openQuestions(phase.record, phase.stage), ownerWord: { asked: !!phase.record.ownerWords, context: wordOf(phase.record, "context") ?? null, planning: wordOf(phase.record, "planning") ?? null, design: wordOf(phase.record, "design") ?? null, acceptance: wordOf(phase.record, "acceptance") ?? null, acceptanceKey: acceptanceKey(phase.record) }, facts: Object.fromEntries(tools.facts(phase)) };
+    return { phase, next: nextAction(phase, docs.facts(phase)), gates: { discussion: discussionGate(phase.record), plan: planGate(phase.record), design: designGate(phase.record) }, book: renderBook(phase, parts), bookHead: parts.at(-1)?.hash ?? null, openQuestions: openQuestions(phase.record, phase.stage), ownerWord: { asked: !!phase.record.ownerWords, context: wordOf(phase.record, "context") ?? null, planning: wordOf(phase.record, "planning") ?? null, design: wordOf(phase.record, "design") ?? null, acceptance: wordOf(phase.record, "acceptance") ?? null, acceptanceKey: acceptanceKey(phase.record) }, facts: Object.fromEntries(docs.facts(phase)) };
   }
 
   /** Did the plan stay the admitted one (Plan unchanged since checking). */
   const planUnchanged = (phase: Phase) => !!phase.record.plan?.admittedSha && phase.record.plan.admittedSha === planSignature(phase.record.plan.items, phase.record.plan.contextSha);
 
-  const phases = { open: tools.open, context: tools.context, plan: tools.plan, planCheck: tools.planCheck, drawing: tools.drawing, goalAudit: tools.goalAudit, lessons: tools.lessons, question: tools.question, answer: tools.answer, word: tools.word, waveReview: tools.waveReview, withdraw: tools.withdraw, revise: tools.revise, correct: tools.correct, returnTo: tools.returnTo, setState: tools.setState, stop: tools.stop, stopWave: tools.stopWave, compensate: tools.compensate, tick, drive: tools.drive, status, facts: tools.facts, planUnchanged, writeBook: tools.writeBook,
+  const phases = { open: methods.open, context: methods.context, plan: methods.plan, planCheck: methods.planCheck, drawing: methods.drawing, goalAudit: methods.goalAudit, lessons: methods.lessons, question: methods.question, answer: methods.answer, word: methods.word, waveReview: methods.waveReview, withdraw: methods.withdraw, revise: methods.revise, correct: methods.correct, returnTo: methods.returnTo, setState: methods.setState, stop: methods.stop, stopWave: methods.stopWave, compensate: methods.compensate, tick, drive: steps.drive, status, facts: docs.facts, planUnchanged, writeBook: docs.writeBook,
     list: (filter: Parameters<typeof listPhases>[1]) => listPhases(db, filter) };
   return { phases, phaseIntake: createPhaseIntake(ctx, phases, train) };
 }
