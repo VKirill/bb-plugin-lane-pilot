@@ -92,7 +92,18 @@ beforeAll(async () => {
   ]);
   options = { root: join(dir, "jobs"), entryFile: join(dir, "host.mjs") };
 });
-afterAll(async () => { await rm(dir, { recursive: true, force: true }); });
+async function rmSettled(path: string): Promise<void> {
+  for (let attempt = 0; ; attempt++) {
+    try { await rm(path, { recursive: true, force: true }); return; }
+    catch (cause) {
+      const code = (cause as NodeJS.ErrnoException).code;
+      if ((code !== "ENOTEMPTY" && code !== "EBUSY") || attempt >= 50) throw cause;
+      await new Promise((wake) => setTimeout(wake, 100));
+    }
+  }
+}
+
+afterAll(async () => { await rmSettled(dir); });
 
 describe("host background jobs", () => {
   it("returns its id at once and runs the handler in a process of its own", async () => {
@@ -197,7 +208,7 @@ describe("host background jobs", () => {
       await writeFile(file, "");
       await removeIfStill(file, "", { mtimeMs: before.mtimeMs, ino: before.ino });
       expect(await readFile(file, "utf8")).toBe("");
-    } finally { await rm(dir, { recursive: true, force: true }); }
+    } finally { await rmSettled(dir); }
   });
 
   it("answers an unknown job as lost and refuses a malformed id or input", async () => {
