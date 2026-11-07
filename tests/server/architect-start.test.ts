@@ -82,7 +82,10 @@ describe("workflow_architect_start", () => {
   it("a docsPlaces outage surfaces instead of 'the project has no source folder'", async () => {
     const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
     const db = openDatabase(bb);
-    const rpc = architectStartRpc({ bb, db, log: () => undefined } as never, { docsPlaces: async () => { throw new Error("docs down"); } });
+    const rpc = architectStartRpc({ bb, db, log: () => undefined } as never, {
+      docsPlaces: async () => { throw new Error("docs down"); },
+      laneProject: async () => { throw new Error("unused"); },
+    });
     await expect(rpc.workflow_architect_start({ projectId })).rejects.toThrow("docs down");
   });
 
