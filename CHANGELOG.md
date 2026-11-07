@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.1.489
+
+- **A writer whose provider has no fast tier runs on its default tier** instead of being refused (`writer_service_tier_unavailable`). On 2026-11-07 a fallback to Antigravity was refused for «fast» twice and the lead's skill task («Навык для: живая проверка плагина BB») ended blocked; 5 such refusals in a week. 0.1.488 was not deployed (its build stopped on a dirty tree); this release carries it.
+
 ## 0.1.488
 
 - **The specialist risk reviewer reads the code.** Told to open no files, it passed 389 of 389 reviews in 30 days, judging security, data-loss and migration risks from the plan's words. It now opens the files the plan changes and greps what touches the same data, secrets, sign-in or migrations, read-only (`REVIEW_READ_ONLY_LINE`, shared with the plan critic); its evidence is the quoted line. The cited path is no longer required to appear in its prompt. Global `plan_critique.min_score` is 7 since 2026-11-08 (high and critical risk, or 3+ write tasks).

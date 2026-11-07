@@ -245,9 +245,8 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
       const model = findModelIn(catalog.models, writerModel);
       if (!model) throw new WriterSelectionError(`writer_model_unavailable:${writerProviderId}/${writerModel}`);
       const tierIds = new Set(provider.serviceTiers?.map((tier) => tier.id) ?? []);
-      if (requestedServiceTier === "fast" && !tierIds.has("fast")) {
-        throw new WriterSelectionError(`writer_service_tier_unavailable:${writerProviderId}/fast`);
-      }
+      // «fast» is a speed wish, not a condition: a writer whose provider has no fast tier runs on its default tier
+      // (2026-11-07: a fallback to Antigravity was refused for «fast» and the lead's skill task was blocked).
       const effectiveServiceTier = tierIds.has(requestedServiceTier) ? requestedServiceTier : null;
       const manual = input.emergency
         ? (input.emergency.reasoningLevel && model.supportedReasoningEfforts.some((item) => item.reasoningEffort === input.emergency!.reasoningLevel) ? input.emergency.reasoningLevel
