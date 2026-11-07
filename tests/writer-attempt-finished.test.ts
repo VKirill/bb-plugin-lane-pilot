@@ -4,7 +4,7 @@ import { attemptFinishedSubscriberCount, attemptFinishedSubscriberNames, emitAtt
 import { createWriterFinish } from "../src/rooms/writer/server/finish";
 import { mountStabilityAttemptFinished } from "../src/rooms/writer/server/stability";
 import { mountWriterTaskFinished } from "../src/rooms/writer/server/attempt-reactions";
-import { mountWorkflowAttemptFinished } from "../src/rooms/writer/server/workflow";
+import { mountWorkflowAttemptFinished } from "../src/rooms/workflow/server/after-accept";
 
 const ctx = () => ({ log: vi.fn(), state: { disposed: false }, isDisposed: () => false }) as never;
 
@@ -71,7 +71,7 @@ describe("attempt-finished bus", () => {
     const startCore = { log: vi.fn(), state: { disposed: false } };
     mountStabilityAttemptFinished(startCore as never, { stability: {} } as never);
     mountWriterTaskFinished(startCore as never, {} as never, { noteAccepted: vi.fn() } as never);
-    mountWorkflowAttemptFinished(startCore as never, {} as never);
+    mountWorkflowAttemptFinished(startCore as never, { onAttemptFinished, startAfterAcceptance: vi.fn() } as never);
     expect(attemptFinishedSubscriberNames(startCore as never)).toEqual([
       "stability:task-failed",
       "writer:area-accepted",

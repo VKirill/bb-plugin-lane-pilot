@@ -11,7 +11,6 @@ export { createProviderRetryGuard } from "./provider-retry";
 export { hideServiceProjects, mountServiceProjects } from "./service-projects";
 export { createReconcile } from "./reconcile";
 export { BREAKERS_KEY, DRILL_KEY, createStability } from "./stability"
-export type { DrillOutcome } from "./stability"
 export { mountWorktreeJanitor, protectedWorktreePaths, runWorktreeJanitor } from "./worktree-janitor";
 export { reconcileScanOpen } from "../reconcile";
 export { clearDrainSnapshot, readDrainSnapshot, type DrainSnapshot } from "./deploy-drain";

@@ -7,3 +7,4 @@ export { createScheduleService } from "./schedule-service";
 export { scheduleAgentApi } from "../store";
 export type { ScheduleService } from "./schedule-service";
 export { mountScheduleTools } from "./schedule-tools";
+export { scheduleFailureItemKey, scheduleFailureSweep } from "./failure-item";

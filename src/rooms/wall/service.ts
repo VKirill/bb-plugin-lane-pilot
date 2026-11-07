@@ -4,7 +4,7 @@ import { extractModelJson } from "@lane-pilot/workflow-engine";
 import type { ChangeDescriptor } from "../policy";
 import { EVIDENCE_WAIT_MS, closeExpiredRepair, decideAcceptance, gateRepair, laterReleaseTouches, repairChange, type Acceptance, type AcceptanceEvidence, type GateDecision, type RepairFile } from "./acceptance";
 import { analysisPrompt, hunterPrompt, parseNightReport, parsePrediction, predictionHeld, repairBrief, taskWallMessage, PREDICTION_METRICS } from "./brief";
-import { nightArm } from "../bench/server";
+import { nightArm, SEALED_GAP_KEY, type SealedGapRecord } from "../bench/server";
 import { statsEpochMs, statsEpochLine, STATS_EPOCH_SETTING } from "../storage";
 import { loadProjectSettings } from "../storage";
 import { hubFields, writeHubFields } from "../platform";
@@ -788,7 +788,7 @@ export function createWall(deps: WallDeps) {
     }
     const recurrence = recurrenceOn(row.classKey, evidence, deployedAt);
     const requireBench = (row.policy as { requireBench?: boolean } | null)?.requireBench === true;
-    const sealedFlag = await kv.get("bench:sealed_gap") as { gapPp?: number; thresholdPp?: number; at?: number } | null;
+    const sealedFlag = await kv.get(SEALED_GAP_KEY) as SealedGapRecord | null;
     const sealedGap = Boolean(sealedFlag && typeof sealedFlag.gapPp === "number" && typeof sealedFlag.thresholdPp === "number" && sealedFlag.gapPp > sealedFlag.thresholdPp
       // The flag speaks for the week it was measured in; a stale flag (older than 9 days) no longer holds new fixes.
       && sealedFlag.at !== undefined && now - sealedFlag.at < 9 * 86_400_000);

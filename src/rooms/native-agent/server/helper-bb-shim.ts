@@ -1,3 +1,4 @@
+import { SETTING_WORKER_STRICT_USER } from "@lane-pilot/settings-catalog";
 import { loadProjectSettings } from "../../storage";
 import type { ExperimentalPluginProviderEnvEntry } from "@get-bb/plugin-sdk";
 import { PROVIDER_CAPABILITIES } from "@lane-pilot/models";
@@ -93,7 +94,7 @@ export function createBbShimEnv(ctx: Pick<ServerCore, "bb" | "host"> & { db?: Se
     const taskId = stringAt(metadata, "taskId") ?? stringAt(metadata, "attemptId");
     if (!runId || !taskId || !ctx.db) return null;
     const projectId = (ctx.db.prepare("SELECT project_id FROM lane_pilot_run WHERE id=?").get(runId) as { project_id?: string } | undefined)?.project_id;
-    if (!projectId || String(loadProjectSettings(ctx.db as never, projectId)["worker.strict_user"] ?? "off") !== "on") return null;
+    if (!projectId || String(loadProjectSettings(ctx.db as never, projectId)[SETTING_WORKER_STRICT_USER] ?? "off") !== "on") return null;
     const key = taskId.replace(/[^A-Za-z0-9._-]/g, "_").slice(0, 120);
     const made = await within(CALL_MS, "prepareWorkerHome", Promise.resolve(host.call("prepareWorkerHome", { requestedHostId: hostId, key }, { hostId, timeoutMs: CALL_MS }))).catch((cause: unknown) => { bb.log.warn(`Lane Pilot: prepareWorkerHome on ${hostId} failed (${reasonOf(cause)}); helpers start without a worker home`); return null; });
     return made?.codexHome ?? null;

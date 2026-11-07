@@ -1,3 +1,4 @@
+import { SETTING_JEV_PROVIDER } from "@lane-pilot/settings-catalog";
 import type { ReactNode } from "react";
 import { t } from "@lane-pilot/i18n";
 import { Label } from "@lane-pilot/ui-kit";
@@ -89,7 +90,7 @@ export function WorkTab({ page }: { page: LpPage }) {
         .map(({ section, rows }) => (
           <section key={section} className="space-y-2" data-testid={`settings-group-${section}`}>
             <h3 className="text-sm font-medium">{t(sectionKey(section))}</h3>
-            <div className="space-y-2">{rows.map((row) => row.storageKey === "jev.provider"
+            <div className="space-y-2">{rows.map((row) => row.storageKey === SETTING_JEV_PROVIDER
               ? (isGlobal ? null : <JevProviderNote key={row.storageKey} page={page} />)
               : <CatalogField key={row.storageKey} page={page} keyName={row.storageKey} />)}</div>
           </section>

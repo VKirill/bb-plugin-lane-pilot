@@ -4,11 +4,11 @@ import { bestEffort } from "@lane-pilot/kit";
 import type { FailureClass } from "../../contracts/failure-class";
 import { onAttemptFinished } from "./attempt-finished";
 
-import type { StabilityApi } from "../../stability/server/stability";
+import type { StabilityPort } from "../../contracts";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {
-  stability: StabilityApi;
+  stability: StabilityPort;
 }
 
 /**

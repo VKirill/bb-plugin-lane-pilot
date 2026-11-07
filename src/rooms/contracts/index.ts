@@ -88,3 +88,4 @@ export * from "./agent-ops";
 export { NO_WAY_OUT, WAY_OUT, wayOut } from "./way-out";
 export { spawnClaimed } from "./spawn-claim";
 export type { IsTaskSatisfied } from "./runs-api";
+export * from "./worktrees";

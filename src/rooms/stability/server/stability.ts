@@ -1,3 +1,4 @@
+import { SETTING_WRITER_CAPACITY_WAIT_MAX_MIN } from "@lane-pilot/settings-catalog";
 import { PARKED_KEY } from "../../contracts/stability-api";
 import type { ParkedTask } from "../../contracts/stability-api";
 import packageJson from "../../../../package.json";
@@ -26,7 +27,7 @@ export const BREAKERS_KEY = "stability:breakers";
 export const DRILL_KEY = "stability:drill";
 /** The version of a task parked at start-up that no build is known for (an attempt from before harness_version): it restarts at once. */
 const ADOPTED_VERSION = "before-adoption";
-export type DrillOutcome = { at:number; version:string; checks:Array<{ name:string; ok:boolean; detail:string | null }> };
+import type { DrillOutcome } from "../../contracts/stability-api";
 /** Same harness fingerprint this many times in the window opens the project's breaker (Mergify pause, circuit breaker). */
 const BREAKER_THRESHOLD = 3;
 const BREAKER_WINDOW_MS = 15 * 60_000;
@@ -240,7 +241,7 @@ export function createStability(ctx:ServerCore, services:Services) {
   /** The most a task may wait on a spent writer window, from its first parking: writer.capacity_wait_max_min or the default. */
   function capacityWaitMaxMs(row:ParkedTask):number {
     const settings = loadProjectSettings(db, row.projectId, getRunSettingsScopes(db, row.runId));
-    const maxMin = Number(settings["writer.capacity_wait_max_min"]);
+    const maxMin = Number(settings[SETTING_WRITER_CAPACITY_WAIT_MAX_MIN]);
     return (Number.isFinite(maxMin) && maxMin > 0 ? maxMin : CAPACITY_WAIT_DEFAULT_MIN) * 60_000;
   }
 

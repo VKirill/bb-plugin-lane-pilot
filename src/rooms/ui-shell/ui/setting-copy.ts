@@ -1,3 +1,4 @@
+import { SETTING_EPISODES_PROCESS_KEY, SETTING_JEV_PROVIDER, SETTING_WRITER_CAPACITY_WAIT_MAX_MIN, SETTING_WRITER_SILENCE_NUDGE_MIN } from "@lane-pilot/settings-catalog";
 import { t, type I18nKey } from "@lane-pilot/i18n";
 import type { CatalogRow } from "@lane-pilot/settings-catalog";
 
@@ -116,7 +117,7 @@ export const SETTING_META: Record<string, SettingMeta> = {
   "ops.events_limit": { label: "settingOpsEventsLimit", help: "settingOpsCliHelp", unit: "fieldUnitTasks" },
   "ops.verify_pool_size": { label: "settingOpsVerifyPool", help: "settingOpsPoolHelp", unit: "fieldUnitTasks" },
   "ops.command_timeout": { label: "settingOpsCommandTimeout", help: "settingOpsCliHelp", unit: "fieldUnitSeconds" },
-  "writer.silence_nudge_min": { label: "field_s413", help: "reason_s413", unit: "fieldUnitMinutes" },
+  [SETTING_WRITER_SILENCE_NUDGE_MIN]: { label: "field_s413", help: "reason_s413", unit: "fieldUnitMinutes" },
   "bookkeeping.paths": { label: "field_s414", help: "reason_s414" },
   "integration.gate_command": { label: "field_s415", help: "reason_s415" },
   "integration.gate_when": { label: "field_s416", help: "reason_s416" },
@@ -151,7 +152,7 @@ export const SETTING_META: Record<string, SettingMeta> = {
   "workflow.preset.ins-digest.model": { label: "field_s472", help: "reason_s472" },
   "workflow.preset.ins-digest.reasoning_effort": { label: "field_s473", help: "reason_s473" },
   "jev.modes": { label: "field_s442", help: "reason_s442" },
-  "jev.provider": { label: "field_s475", help: "reason_s475" },
+  [SETTING_JEV_PROVIDER]: { label: "field_s475", help: "reason_s475" },
   "quality_mode": { label: "field_s423", help: "reason_s423" },
   "critic.code.default_for_risk": { label: "field_s476", help: "reason_s476" },
   "plan_fact.mode": { label: "field_s477", help: "reason_s477" },
@@ -190,7 +191,7 @@ export const SETTING_META: Record<string, SettingMeta> = {
   "writer.question_wait_min": { label: "field_s586", help: "reason_s586", unit: "fieldUnitMinutes" },
   "writer.route_record": { label: "field_s532", help: "reason_s532" },
   "writer.capacity_wait": { label: "field_s533", help: "reason_s533" },
-  "writer.capacity_wait_max_min": { label: "field_s539", help: "reason_s539", unit: "fieldUnitMinutes" },
+  [SETTING_WRITER_CAPACITY_WAIT_MAX_MIN]: { label: "field_s539", help: "reason_s539", unit: "fieldUnitMinutes" },
   "writer.pick_refusal_penalty": { label: "field_s550", help: "reason_s550" },
   "checks.fail_fast": { label: "field_s545", help: "reason_s545" },
   "writer.class_cooldowns": { label: "field_s534", help: "reason_s534" },
@@ -230,7 +231,7 @@ export const SETTING_META: Record<string, SettingMeta> = {
   "checkers.diff_hidden_limit": { label: "field_s526", help: "reason_s526", unit: "fieldUnitTasks" },
   "bench.model_rebench": { label: "field_s527", help: "reason_s527" },
   "episodes.collect": { label: "field_s611", help: "reason_s611" },
-  "episodes.process_key": { label: "field_s612", help: "reason_s612" },
+  [SETTING_EPISODES_PROCESS_KEY]: { label: "field_s612", help: "reason_s612" },
 };
 
 export function settingMeta(storageKey: string): SettingMeta | undefined {

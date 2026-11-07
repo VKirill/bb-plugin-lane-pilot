@@ -1,7 +1,7 @@
 import { getRun } from "../../storage";
 import { scheduleIsolated } from "../../platform/server";
 import { type ServerCore } from "../../contracts/server";
-import { closeOwnerItem, postOwnerItem } from "../../owner-waiting";
+import { closeOwnerItem, postOwnerItem, tableExists, type OwnerItemSweep } from "../../owner-waiting";
 import { goalFailedText, goalVerdict, runReady, type TaskState } from "../logic";
 import { getRunGoal, saveRunGoal, type RunGoalRecord } from "../store";
 
@@ -20,6 +20,18 @@ interface Services {
  * run, is set aside (logic.ts goalVerdict) and stays in the regression list; the verdict is kept per run.
  */
 const WEEK = 7 * 86_400_000;
+
+const RUN_GOAL_ITEM_PREFIX = "run-goal:";
+
+/** The owner-item key of a red run goal: `run-goal:<run>`. */
+export const runGoalItemKey = (runId: string) => `${RUN_GOAL_ITEM_PREFIX}${runId}`;
+
+/** The run is closed (a later green verdict closes it in check()): the goal's row goes. */
+export const runGoalSweep: OwnerItemSweep = (db, item) => {
+  if (!item.key.startsWith(RUN_GOAL_ITEM_PREFIX) || !tableExists(db, "lane_pilot_run")) return null;
+  const run = db.prepare("SELECT closed_at FROM lane_pilot_run WHERE id=?").get(item.key.slice(RUN_GOAL_ITEM_PREFIX.length)) as { closed_at: number | null } | undefined;
+  return !run || run.closed_at !== null ? "janitor:run closed" : null;
+};
 
 export function createRunGoal(ctx: ServerCore, services: Services) {
   const { db, bb } = ctx;
@@ -40,9 +52,9 @@ export function createRunGoal(ctx: ServerCore, services: Services) {
     saveRunGoal(db, record);
     if (verdict.state === "failed" && run.closed_at !== null) ctx.log(`run-goal: ${runId} is closed: the red stays in the record, no row for the owner`);
     else if (verdict.state === "failed") {
-      postOwnerItem(db as never, { key: `run-goal:${runId}`, source: "run-goal", kind: "goal_failed", projectId: run.project_id, wake: false,
+      postOwnerItem(db as never, { key: runGoalItemKey(runId), source: "run-goal", kind: "goal_failed", projectId: run.project_id, wake: false,
         what: `После слияния всех задач в main упало проверок: ${verdict.red.length}`, why: goalFailedText(runId, verdict.red), evidence: [{ kind: "run", ref: runId }] });
-    } else closeOwnerItem(db as never, `run-goal:${runId}`, `run-goal:${verdict.state}`); // the fix landed, or the run has nothing red: the row leaves the list (SWE-2 F-006)
+    } else closeOwnerItem(db as never, runGoalItemKey(runId), `run-goal:${verdict.state}`); // the fix landed, or the run has nothing red: the row leaves the list (SWE-2 F-006)
     // A partial or inconclusive verdict is not a pass either; the log and the verdict say what did not run.
     ctx.log(`run-goal: ${runId} ${verdict.state}${verdict.red.length ? ` (${verdict.red.length} red)` : ""}${verdict.detail ? `: ${verdict.detail}` : ""}`);
     return record;

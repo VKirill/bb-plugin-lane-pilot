@@ -4,7 +4,8 @@ import type { Incident, SelfRepairConfig, SelfRepairState, SignatureRecord, Verd
 import { firstSeenOnRunningVersion, isDue, repairPriority, VERSION } from "./episodes";
 import { repairStatus } from "./verdict";
 
-export const STATE_KEY = "self-repair:state";
+import { SELF_REPAIR_STATE_KEY as STATE_KEY } from "../../contracts/worktrees";
+export { SELF_REPAIR_STATE_KEY as STATE_KEY } from "../../contracts/worktrees";
 
 /** What the watcher's state holds about one repair signature (read-only; the night loop follows its repairs with it). */
 export async function readRepairRecord(bb: ServerCore["bb"], signature: string): Promise<{ threadId: string | null; verdict: Verdict | null; outcome: string | null; branch: string | null; worktreePath: string | null; spawnedAt: number | null } | null> {

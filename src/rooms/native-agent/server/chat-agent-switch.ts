@@ -3,6 +3,7 @@ import { compileEffectiveMainAgent } from "../agent-profile"
 import { agentKind } from "../agent-profile";
 import { nativeSwitchKey, pendingSwitch } from "../native-session"
 import { nativeAgentCliId } from "../../contracts/native-agent-id"
+import { nativeAgentTypeKey, nativeEnvKey, nativeThreadKey } from "../../contracts/agent-ops";
 import { nativeSelectionSchema, type NativeSelection } from "../../contracts/native-selection";
 import { storeNativeSelection } from "./native-profile";
 import { isNotFound, orMiss, stringAt, valueAt } from "@lane-pilot/kit";
@@ -39,7 +40,7 @@ const isPmAgent = (agentId: string): boolean => agentKind(nativeAgentCliId(agent
  * specialist has a run of its own (its tools need one) but leads nothing, so the readers of «the PM chat» (a scheduled report, the backlog) skip it.
  */
 export async function isPmChat(ctx: Pick<ServerCore, "bb">, threadId: string): Promise<boolean> {
-  const bound = await readSelection(ctx, `native-thread:${threadId}`);
+  const bound = await readSelection(ctx, nativeThreadKey(threadId));
   return !bound || isPmAgent(bound.agentId);
 }
 
@@ -70,7 +71,7 @@ export async function chatAgentState(ctx: Pick<ServerCore, "bb" | "ownedAgents">
   const thread = await bb.sdk.threads.get({ threadId });
   const projectId = stringAt(thread, "projectId") ?? "";
   const role = valueAt(await orMiss(bb.sdk.threads.getPluginMetadata({ threadId }), null, isNotFound), "role");
-  const bound = await readSelection(ctx, `native-thread:${threadId}`);
+  const bound = await readSelection(ctx, nativeThreadKey(threadId));
   const pending = await pendingSwitch(bb.storage.kv, threadId);
   let reason: ChatAgentReason | null = null;
   if (typeof role === "string" && role && role !== "pm") reason = "helper";
@@ -110,7 +111,7 @@ export async function switchChatAgent(
   const state = await chatAgentState(ctx, threadId);
   if (!state.eligible) throw new Error(REASON_TEXT[state.reason!]);
   if (LIVE_STATUSES.has(state.status ?? "")) throw new Error("Wait until the reply ends: the agent changes between messages.");
-  const bound = await readSelection(ctx, `native-thread:${threadId}`);
+  const bound = await readSelection(ctx, nativeThreadKey(threadId));
   const leavesPm = Boolean(bound) && isPmAgent(bound!.agentId) && (input.agentId === null || !isPmAgent(input.agentId));
 
   /** Hands the lead back: nothing is erased before the run has gone through, so a refusal leaves the chat as it was (the pending pick, the binding and the run stay). */
@@ -124,7 +125,7 @@ export async function switchChatAgent(
     } else await bb.sdk.threads.stop({ threadId });
     await bb.storage.kv.delete(nativeSwitchKey(threadId));
     await bb.sdk.threads.updatePluginMetadata({ threadId, remove: ["role", "lanePilotRunId"] });
-    for (const key of ["native-thread", "native-env", "native-agent-type"]) await bb.storage.kv.delete(`${key}:${threadId}`);
+    for (const key of [nativeThreadKey(threadId), nativeEnvKey(threadId), nativeAgentTypeKey(threadId)]) await bb.storage.kv.delete(key);
   };
 
   if (input.agentId === null) {

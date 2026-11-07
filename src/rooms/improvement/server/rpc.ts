@@ -3,7 +3,7 @@ import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
 import type { rpcContract } from "../../contracts";
 import type { LanePilotDatabase } from "../../storage";
 import { getSettingVersions } from "../../storage";
-import { collectOwnerWaiting } from "../../owner-waiting";
+import { collectOwnerWaiting, type OwnerItemSweep } from "../../owner-waiting";
 import { loadPushConfig } from "../../owner-waiting/server";
 import { EXAM_RESULT_KEY, POLICY, TIERS, loadLiveExam, runLiveExam, type StoredExam } from "../../policy";
 import type { WallConfigStatus } from "../../contracts";
@@ -48,6 +48,7 @@ export type ImprovementDeps = {
   wall: WallConfigStatus;
   bench: Pick<BenchApi, "status" | "settings">;
   deferrals: Pick<DeferralApi, "list">;
+  ownerSweeps?: readonly OwnerItemSweep[];
   now?: () => number;
 };
 
@@ -82,7 +83,7 @@ export function improvementRpc(deps: ImprovementDeps) {
 
       const exam = runLiveExam(POLICY, await loadLiveExam(kv as never));
       const stored = (await kv.get(EXAM_RESULT_KEY)) as StoredExam | null;
-      const waiting = collectOwnerWaiting(db, now);
+      const waiting = collectOwnerWaiting(db, now, deps.ownerSweeps ?? []);
       const deferrals = deps.deferrals.list({});
 
       return {

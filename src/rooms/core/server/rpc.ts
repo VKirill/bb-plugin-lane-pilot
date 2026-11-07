@@ -28,6 +28,10 @@ import { rollbackRpc } from "../../rollback/server";
 import { acceptanceRpc } from "../../acceptance/server";
 import { benchRpc } from "../../bench/server";
 import { ownerWaitingRpc } from "../../owner-waiting/server";
+import { writerQuestionSweep } from "../../writer/server";
+import { runGoalSweep } from "../../run-goal/server";
+import { phaseWordSweep } from "../../phase/server";
+import { scheduleFailureSweep } from "../../schedule/server";
 import { backlogRpc } from "../../backlog/server";
 import { leadRpc } from "../../lead/server";
 import { errandsRpc } from "../../errands/server";
@@ -82,7 +86,7 @@ import type { RuleScanApi } from "../../self-repair/server/rule-scan";
 import type { ReconcileApi } from "../../stability/server/reconcile";
 import type { BuildCliInvocation, WorkflowEngineApi, WorkflowTriggersApi, WriterHostApi } from "../../platform/server";
 
-import type { StabilityApi } from "../../stability/server/stability";
+import type { StabilityPort } from "../../contracts";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {
@@ -125,7 +129,7 @@ interface Services {
   schedules: ScheduleService;
   selectionCatalog: WriterHostApi["selectionCatalog"];
   selectionCatalogHost: WriterHostApi["selectionCatalogHost"];
-  stability: StabilityApi;
+  stability: StabilityPort;
   stageReturn: StageReturnApi;
   wall: WallApi;
   workflowCatalog: WorkflowEngineApi["workflowCatalog"];
@@ -135,6 +139,8 @@ interface Services {
 }
 
 /** One handler object from the five groups; each group carries the exact contract keys it implements. */
+const OWNER_ITEM_SWEEPS = [writerQuestionSweep, runGoalSweep, phaseWordSweep, scheduleFailureSweep];
+
 export function registerRpc(ctx: ServerCore, services: Services, contract: typeof rpcContract) {
   // Every call is timed (rpc-timing.ts). No caller check: every machine and every caller is the owner's (owner decision 2026-10-08).
   ctx.bb.rpc.register(contract, journalRpcHandlers(timeRpcHandlers({
@@ -163,7 +169,7 @@ export function registerRpc(ctx: ServerCore, services: Services, contract: typeo
     ...rollbackRpc(services.rollback),
     ...acceptanceRpc(ctx.db),
     ...benchRpc(services.bench),
-    ...ownerWaitingRpc(ctx.db),
+    ...ownerWaitingRpc(ctx.db, OWNER_ITEM_SWEEPS),
     ...backlogRpc(services.backlog),
     ...leadRpc(ctx.db, services.lead),
     ...errandsRpc(ctx, services),
@@ -204,7 +210,7 @@ export function registerRpc(ctx: ServerCore, services: Services, contract: typeo
     ...capabilityRpc(services.capabilities),
     conveyor: async ({ set, reason }: { set?: "on" | "off"; reason?: string }) => set ? await setConveyor(ctx.bb.storage.kv as never, set === "on", reason) : await conveyorState(ctx.bb.storage.kv as never),
     ...wallRpc(services.wall),
-    ...improvementRpc({ db: ctx.db, kv: ctx.bb.storage.kv, wall: services.wall, bench: services.bench, deferrals: services.deferrals }),
+    ...improvementRpc({ db: ctx.db, kv: ctx.bb.storage.kv, wall: services.wall, bench: services.bench, deferrals: services.deferrals, ownerSweeps: OWNER_ITEM_SWEEPS }),
     ...sessionMemoryRpc(ctx, services),
     ...createWorkflowArchitect(ctx, services).rpc,
     ...architectStartRpc(ctx, services),

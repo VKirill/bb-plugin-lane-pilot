@@ -1,3 +1,4 @@
+import { SETTING_EPISODES_PROCESS_KEY } from "@lane-pilot/settings-catalog";
 import type { Jev } from "@lane-pilot/jev";
 import goldFile from "../../../tests/fixtures/errand-gold.json";
 import { chooseProcessKey, pairwiseF1, type KnownProcessKey, type ProcessKeyDecision, type ProcessKeyInput } from "./process-key";
@@ -60,7 +61,7 @@ export async function processKeyEval(rows: GoldRow[], judge?: Jev | null): Promi
     const known: KnownProcessKey[] = [...byKey].map(([key, list]) => ({ key, titles: list.filter((entry) => entry.id !== row.id).map((entry) => entry.title) }));
     // The eval measures the judge's picks, so the feature switch stands on active; without it every pick is shadowed
     // and the candidate (= the gold key) would make the F1 trivially 1.0.
-    const pick = await chooseProcessKey({ candidate: row.process_key, title: row.title, known, judge, ctx: { settings: { "episodes.process_key": "active" } } });
+    const pick = await chooseProcessKey({ candidate: row.process_key, title: row.title, known, judge, ctx: { settings: { [SETTING_EPISODES_PROCESS_KEY]: "active" } } });
     predicted.push({ id: row.id, key: pick.key });
     how[pick.how] = (how[pick.how] ?? 0) + 1;
   }

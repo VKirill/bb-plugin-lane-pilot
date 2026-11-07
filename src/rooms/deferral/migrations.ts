@@ -29,15 +29,17 @@ export const deferralMigrations: readonly string[] = [
 ];
 
 /**
- * `memory_conflict` joins the kinds (two memory notes that disagree are held until a person settles them: packages/memory-core/src/conflict-store.ts).
- * SQLite cannot change a CHECK, so the table is rebuilt with its rows and its index.
+ * A kind joins the register (two memory notes that disagree are held until a person settles them:
+ * packages/memory-core/src/conflict-store.ts; `wall`: a repeating failure the ladder ended in the backlog, waiting for
+ * a person's term). SQLite cannot change a CHECK, so the table is rebuilt with its rows and its index. The emitted
+ * statements are byte-identical with the locked chain — tests/fixtures/migrations.lock.json.
  */
-export const deferralKindMigrations: readonly string[] = [
+const deferralKindRebuild = (kinds: string): readonly string[] => [
   `CREATE TABLE lane_pilot_deferral_next (
     id TEXT PRIMARY KEY,
     project_id TEXT,
     what TEXT NOT NULL,
-    kind TEXT NOT NULL CHECK(kind IN ('drill_scenario','skipped_test','gate','plan_decision','memory_conflict')),
+    kind TEXT NOT NULL CHECK(kind IN (${kinds})),
     area TEXT NOT NULL DEFAULT '',
     due_at INTEGER,
     due_source TEXT,
@@ -56,3 +58,6 @@ export const deferralKindMigrations: readonly string[] = [
   `ALTER TABLE lane_pilot_deferral_next RENAME TO lane_pilot_deferral`,
   `CREATE INDEX lane_pilot_deferral_state ON lane_pilot_deferral(state, due_at)`,
 ];
+
+export const deferralKindMigrations: readonly string[] = deferralKindRebuild("'drill_scenario','skipped_test','gate','plan_decision','memory_conflict'");
+export const wallDeferralKindMigrations: readonly string[] = deferralKindRebuild("'drill_scenario','skipped_test','gate','plan_decision','memory_conflict','wall'");

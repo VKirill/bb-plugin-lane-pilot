@@ -5,7 +5,6 @@ import {
   type CliBinary,
   type SettingSpec,
 } from "@lane-pilot/settings-catalog";
-import { validateSettingsObject, validationErrorText } from "../settings";
 
 export type UnappliedSetting = {
   key: string;
@@ -67,6 +66,8 @@ export function buildCliInvocation(input: {
   subcommand: string;
   settings: Record<string, unknown>;
   required?: Record<string, string>;
+  /** Setting key → why it cannot apply; the settings room's validator, injected so this file stays settings-free. */
+  validate: (settings: Record<string, unknown>) => ReadonlyMap<string, string>;
 }): CliInvocation {
   const settings = canonicalWriterSettings(input.settings);
   const argv = [input.subcommand];
@@ -74,8 +75,7 @@ export function buildCliInvocation(input: {
   const applied: string[] = [];
   const unapplied: UnappliedSetting[] = [];
   const usedFlags = new Set<string>();
-  const validationErrors = validateSettingsObject(settings);
-  const validationByKey = new Map(validationErrors.map((error) => [error.key, validationErrorText(error)]));
+  const validationByKey = input.validate(settings);
 
   for (const [flag, value] of Object.entries(input.required ?? {})) {
     const token = flag.startsWith("--") ? flag : `--${flag}`;

@@ -175,15 +175,3 @@ export type WriterBriefContext = {
   gitnexusIndex?: boolean;
 };
 
-const briefContexts = new Map<string, WriterBriefContext>();
-const BRIEF_CONTEXT_LIMIT = 200;
-
-export function registerWriterBriefContext(taskId: string, context: WriterBriefContext): void {
-  if (briefContexts.size >= BRIEF_CONTEXT_LIMIT) briefContexts.delete(briefContexts.keys().next().value!);
-  briefContexts.set(taskId, context);
-}
-
-/** The context registered for a task, or the narrowed defaults (no catalog browsing, no tools it lacks). */
-export function writerBriefContextFor(taskId: string): WriterBriefContext {
-  return briefContexts.get(taskId) ?? {};
-}

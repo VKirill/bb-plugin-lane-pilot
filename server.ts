@@ -1,3 +1,4 @@
+import { SETTING_WRITER_SILENCE_NUDGE_MIN } from "@lane-pilot/settings-catalog";
 import { getReasoningTrace, getRunSettingsScopes, listOpenAttempts, listUnfinishedStages, loadPrototypeConfig, loadProjectSettings, openDatabase } from "./src/rooms/storage";
 import { PROVIDER_CAPABILITIES } from "@lane-pilot/models";
 import { migrations as lanePilotMigrations } from "./src/rooms/migrations";
@@ -54,6 +55,7 @@ import { createOwnerPresence, mountOwnerPresence } from "./src/rooms/owner-prese
 import { mountOutage } from "./src/rooms/outage/server";
 import { createPluginWall } from "./src/rooms/wall/server";
 import { buildCliInvocation, skillSwitchMorningLine } from "./src/rooms/writer";
+import { argvValidationMap } from "./src/rooms/settings";
 import { createPluginCheckers } from "./src/rooms/checkers/server";
 import { createStageReturn } from "./src/rooms/stage-return/server";
 import { cleanupFinishedAttemptEnvironments, cleanupStickyLaneWorktrees, closeAbandonedRuns, closeStaleRuns, isTaskSatisfied } from "./src/rooms/runs/server"
@@ -66,7 +68,7 @@ import { scheduleIsolated } from "./src/rooms/platform/server";
 import { clearDrainSnapshot, readDrainSnapshot, skipRedundantStartupScans } from "./src/rooms/stability/server";
 import { tokenCursorRow, tokenDailyByModel } from "./src/rooms/usage/server";
 import type { TokenCursorReader } from "./src/rooms/work-graph/server";
-import { createWriterQuestionTimeout, DEFAULT_SILENCE_NUDGE_MIN, sweepWriterSilence, sweepWriterWakes } from "./src/rooms/writer/server";
+import { onAttemptFinished, createWriterQuestionTimeout, DEFAULT_SILENCE_NUDGE_MIN, sweepWriterSilence, sweepWriterWakes } from "./src/rooms/writer/server";
 import { threadPendingInteractions } from "./src/rooms/relay/server";
 import { createStageChildren, mountErrands } from "./src/rooms/qa/server";
 import { createDocsStage } from "./src/rooms/docs/server";
@@ -121,6 +123,7 @@ import type { WriterStartApi } from "./src/rooms/writer/server/start";
 import type { WriterDispatchApi } from "./src/rooms/writer/server/dispatch";
 import type { ArchitectApi, AttemptReopenApi, BuildCliInvocation, RecheckPlanFact, RunVerification, SkillSwitchMorningLine, StageHelperSettings, TaskUsage, WallGraphApi, WorkflowEngineApi, WorkflowLibraryApi, WorkflowTriggersApi as WorkflowTriggersPort, WriterDispatchApi as WriterDispatchPort, WriterHostApi as WriterHostPort, WriterReassignApi, WriterStartApi as WriterStartPort, WriterStateApi as WriterStatePort } from "./src/rooms/platform/server";
 import type { WorkflowTriggersApi } from "./src/rooms/workflow/server/workflow-triggers-live";
+import type { OnAttemptFinished } from "./src/rooms/workflow/server";
 import type { MemoryProbeApi } from "./src/rooms/memory-probe/server/memory-probe";
 import type { CouncilApi } from "./src/rooms/council/server";
 import type { ErrandsApi } from "./src/rooms/qa/server";
@@ -272,6 +275,7 @@ export interface Services {
   workflowCatalog: WorkflowEngineApi["workflowCatalog"];
   stageHelperSettings: StageHelperSettings;
   startAfterAcceptance: WorkflowEngineApi["startAfterAcceptance"];
+  onAttemptFinished: OnAttemptFinished;
   workflowTriggers: WorkflowTriggersApi["workflowTriggers"];
   /** The errand starter of the PM tools (also used by scheduled errands); set in server.ts before the tools mount. */
   errands: ErrandsApi;
@@ -320,7 +324,7 @@ export default async function plugin(bb: BbPluginApi) {
   const services = {} as Services;
   Object.assign(services, {
     skillSwitchMorningLine,
-    buildCliInvocation,
+    buildCliInvocation: (input) => buildCliInvocation({ ...input, validate: argvValidationMap }),
     taskWords: taskWordPort,
     laneProject: lanePilotProjectOrNotice,
     leadRoad: { addRoad, doneRoad, getRoad, listRoad, reopenRoad },
@@ -329,7 +333,8 @@ export default async function plugin(bb: BbPluginApi) {
     errandEpisodes: { recordErrandEpisode, errandSpawnOf },
     scheduleAgents: scheduleAgentApi(),
     memoryEval: { load: loadEvalData, run: runMemoryEval },
-  } satisfies Pick<Services, "skillSwitchMorningLine" | "buildCliInvocation" | "taskWords" | "laneProject" | "leadRoad" | "insights" | "memorySettings" | "errandEpisodes" | "scheduleAgents" | "memoryEval">);
+    onAttemptFinished,
+  } satisfies Pick<Services, "skillSwitchMorningLine" | "buildCliInvocation" | "taskWords" | "laneProject" | "leadRoad" | "insights" | "memorySettings" | "errandEpisodes" | "scheduleAgents" | "memoryEval" | "onAttemptFinished">);
   mountNativeWiring(ctx);
   services.tokenCursorRow = tokenCursorRow;
   Object.assign(
@@ -394,8 +399,8 @@ export default async function plugin(bb: BbPluginApi) {
     createHypotheses(ctx, services),
     createOwnerPresence(ctx),
     { bench: createPluginBench(ctx, services) },
-    { wall: createPluginWall(ctx, services) satisfies WallGraphApi },
     { checkers: createPluginCheckers(ctx) },
+    { wall: createPluginWall(ctx, services) satisfies WallGraphApi },
     createStability(ctx, services),
     createScheduleService(ctx, services),
     { lead: createLeadService(ctx, services, services.memoryEval, lanePilotMigrations) },
@@ -519,7 +524,7 @@ export default async function plugin(bb: BbPluginApi) {
       return probe.status === "limit" ? probe : null;
     },
     silenceMinutes:(projectId, runId) => {
-      const minutes = Number(loadProjectSettings(db, projectId, getRunSettingsScopes(db, runId))["writer.silence_nudge_min"]);
+      const minutes = Number(loadProjectSettings(db, projectId, getRunSettingsScopes(db, runId))[SETTING_WRITER_SILENCE_NUDGE_MIN]);
       return Number.isFinite(minutes) && minutes >= 1 ? minutes : DEFAULT_SILENCE_NUDGE_MIN;
     },
   }).then(() => undefined, (cause) => pluginStopped(cause) ? undefined : bb.log.warn(`Lane Pilot writer silence sweep skipped: ${cause instanceof Error ? cause.message : String(cause)}`));

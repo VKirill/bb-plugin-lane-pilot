@@ -9,6 +9,7 @@ import { pickableAgent } from "../../../contracts/agent-picker";
 import { countAttempts, createAttempt, failureFieldsOf, getActivation, getAttempt, transitionAttempt } from "../../../storage";
 import { detectRequiredSessionPolicyCapability } from "../../../contracts/helper-context";
 import { DEFAULT_NATIVE_AGENT, nativeAgentCliId } from "../../../contracts/native-agent-id"
+import { nativeAgentTypeKey, nativeThreadKey } from "../../../contracts/agent-ops"
 import { nativeSelectionSchema } from "../../../contracts/native-selection";
 import { userVisibleProjects } from "../../../contracts/project-scope";
 import { MAIN_ATTEMPT_LIMIT, RETRY_ELIGIBLE } from "../../../contracts/state-machine";
@@ -293,10 +294,10 @@ export function runsRpc(ctx: ServerCore, services: Services) {
     native_thread: async ({ threadId }) => {
       // An agent the chat was switched to counts from the moment it is chosen; its next message binds it.
       const pending = await services.pendingSwitch(threadId);
-      const selected = pending ?? await bb.storage.kv.get(`native-thread:${threadId}`);
+      const selected = pending ?? await bb.storage.kv.get(nativeThreadKey(threadId));
       if (!selected) return null;
       const parsed = nativeSelectionSchema.parse(selected);
-      const agentType = (pending ? null : await bb.storage.kv.get<string>(`native-agent-type:${threadId}`)) ?? parsed.agentId;
+      const agentType = (pending ? null : await bb.storage.kv.get<string>(nativeAgentTypeKey(threadId))) ?? parsed.agentId;
       let shortId = parsed.agentId;
       try { shortId = nativeAgentCliId(agentType); } catch { shortId = parsed.agentId; }
       const stored = (await ownedAgents())[shortId];

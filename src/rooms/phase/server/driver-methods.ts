@@ -1,3 +1,4 @@
+import { phaseWordItemKey, phaseWordItemPrefix } from "./word-item";
 import { randomUUID } from "node:crypto";
 import { cancelAttemptById } from "../../runs/server";
 import { taskFamily } from "@lane-pilot/contracts";
@@ -211,7 +212,7 @@ export function installMethods(tools: MethodsTools) {
     if (phase.record.ownerWords) {
       // Lesson is a draft (SMA p7_staged): it waits for the person's word in drafts; the phase does not wait for it.
       book(phase, "lessons", "staged", "the lesson waits as a draft for the owner's word «lesson»");
-      reactions.postOwnerItem({ key: `phase-word:${phase.id}:lesson`, source: "phase", kind: "word", projectId: phase.projectId,
+      reactions.postOwnerItem({ key: phaseWordItemKey(phase.id, "lesson"), source: "phase", kind: "word", projectId: phase.projectId,
         what: `Этап «${phase.title}» завершён: записать его урок в память проекта?`, why: text.slice(0, 600) });
       reactions.askPhaseWord(phase, "lesson", undefined, text);
     } else tools.writeLesson(phase, text);
@@ -262,7 +263,7 @@ export function installMethods(tools: MethodsTools) {
     const record: PhaseRecord = { ...phase.record, words: [...(phase.record.words ?? []), { turn: input.turn, decision: input.decision, by: input.by ?? "owner", text: input.text.slice(0, 2000), at: now(), ...(input.wave !== undefined ? { wave: input.wave } : {}),
       ...(input.turn === "acceptance" ? { useful: input.useful === true, limits: input.limits === true, key: shownKey } : {}) }] };
     reactions.answerPhaseWord(phase.id, input.turn, input.wave, input.decision, input.text, input.by ?? "owner");
-    reactions.closeOwnerItem(`phase-word:${phase.id}:${input.turn}${input.wave !== undefined ? `:${input.wave}` : ""}`, input.by ?? "owner");
+    reactions.closeOwnerItem(phaseWordItemKey(phase.id, input.turn, input.wave), input.by ?? "owner");
     book(phase, "decisions", `word_${input.turn}`, `${input.by ?? "owner"}: ${input.decision} — ${input.text}`);
     if (input.turn === "design") await reactions.noteDesignWord(phase.id, input.decision);
     savePhase(db, phase.id, { record, at: now() });
@@ -338,7 +339,7 @@ export function installMethods(tools: MethodsTools) {
 
   function returnTo(input: ReturnToInput): Phase {
     // The question of the turn being left is obsolete: its row goes (the new turn posts its own; Gemini F-006.1 remainder).
-    reactions.closeOwnerItemsByPrefix(`phase-word:${input.phaseId}:`, "janitor:phase returned");
+    reactions.closeOwnerItemsByPrefix(phaseWordItemPrefix(input.phaseId), "janitor:phase returned");
     const phase = mustGet(input.phaseId);
     if (!RETURN_STAGES.includes(input.to)) throw new PhaseRefusal(`a phase returns to ${RETURN_STAGES.join(", ")}`);
     if (PHASE_STAGES.indexOf(input.to) >= PHASE_STAGES.indexOf(phase.stage)) throw new PhaseRefusal(`a return goes to an earlier stage: the phase is at ${phase.stage}`);

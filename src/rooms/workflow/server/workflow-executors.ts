@@ -34,7 +34,7 @@ import { pageReviewByAgent } from "../../critique/server";
 
 import type { DispatchWriter } from "../../platform/server";
 
-import type { StabilityApi } from "../../stability/server/stability";
+import type { StabilityPort } from "../../contracts";
 import type { WorkflowEngineApi } from "../../platform/server";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
@@ -42,7 +42,7 @@ interface Services {
   dispatchWriter: DispatchWriter;
   isTaskSatisfied: IsTaskSatisfied;
   taskUsage: TaskUsage;
-  stability: StabilityApi;
+  stability: StabilityPort;
   resolveIntegrationGate: VerificationGatePort;
   workflowEngine: WorkflowEngineApi["workflowEngine"];
 }

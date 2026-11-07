@@ -12,7 +12,7 @@ import type { ServerCore } from "../../contracts/server";
 import { RUN_BUDGET_SETTINGS, runHealth } from "../../stability/server";
 import { configuredSetting } from "../../contracts/server";
 import { getCouncilSession } from "@lane-pilot/council";
-import { SCHEDULE_USAGE, runScheduleCli } from "../../schedule/server";
+import { SCHEDULE_USAGE, runScheduleCli, scheduleFailureSweep } from "../../schedule/server";
 import { answerWorkflowQuestion } from "../../workflow/server";
 import { AGENTS_USAGE, agentRegistry, PM_SKILLS_USAGE, runAgentsCli, runPmSkillsCli, runPmSkillUseCli } from "../../native-agent/server";
 
@@ -29,7 +29,7 @@ import { BENCH_USAGE, runBenchCli } from "../../bench/server";
 import { BASELINE_USAGE, runBaselineCli } from "../../baseline/server";
 import { RETURN_USAGE, runReturnCli } from "../../stage-return/server";
 import { FORECAST_USAGE, runForecastCli } from "../../forecast/server";
-import { RUN_GOAL_USAGE, runRunGoalCli } from "../../run-goal/server";
+import { RUN_GOAL_USAGE, runGoalSweep, runRunGoalCli } from "../../run-goal/server";
 import { CAPABILITY_USAGE, runCapabilityCli } from "../../capability/server";
 import { OUTAGE_USAGE, runOutageCli } from "../../outage/server";
 import { BACKLOG_USAGE, runBacklogCli } from "../../backlog/server";
@@ -44,7 +44,7 @@ import { LEAD_USAGE, runLeadCli } from "../../lead/server";
 import { COVERAGE_USAGE, runCoverageCli } from "../../coverage";
 import { SMA_MAP_USAGE, runSmaLiveCli, runSmaMapCli } from "../../sma-map";
 import { designJournalLines, readinessWords, trainedConditions, trainingRatios } from "../../design-eval";
-import { PHASE_USAGE, runPhaseCli } from "../../phase/server";
+import { PHASE_USAGE, phaseWordSweep, runPhaseCli } from "../../phase/server";
 import { unknownReasons } from "../../runs";
 import { manifest, passport, preship, prPassport, receiptChain, verifyChain } from "./receipts";
 import { EXCAVATE_LOG_ARGS, approvalSuggestions, costPerVerified, excavate, htmlReport, missCurriculum } from "./self-improve";
@@ -86,6 +86,7 @@ import type { ProbesApi } from "../../stability/server/probes";
 import type { ReconcileApi } from "../../stability/server/reconcile";
 import type { StageReturnApi } from "../../stage-return/server/stage-return";
 import type { WallApi } from "../../wall/service";
+import { writerQuestionSweep } from "../../writer/server";
 import type { WriterDispatchApi } from "../../writer/server/dispatch";
 import type { WriterStateApi } from "../../writer/server/state";
 import type { WriterVerifyApi } from "../../writer/server/verify";
@@ -152,6 +153,8 @@ interface Services {
 }
 
 const MEMORY_CLI_USAGE = 'bb lane-pilot memory search "<question>" [--project P] | memory write "<fact>" [--project P]   (the project memory on the hub; inside a BB thread the project is the thread\'s own)';
+
+const OWNER_ITEM_SWEEPS = [writerQuestionSweep, runGoalSweep, phaseWordSweep, scheduleFailureSweep];
 import type { CodeCriticDefault } from "../../contracts/task-enums";
 
 import type { WorkflowEngineApi, WorkflowTriggersApi, WriterHostApi } from "../../platform/server";
@@ -364,7 +367,7 @@ ${ERRANDS_USAGE}` },
           return learning ? await runLearningCli(learning, args) : { exitCode:1, stderr:"learning is not mounted" };
         }
         if (command === "policy-exam" || command === "policy") {
-          return await runPolicyCli({ db, kv:bb.storage.kv as never }, command, args);
+          return await runPolicyCli({ db, kv:bb.storage.kv as never, ownerSweeps: OWNER_ITEM_SWEEPS }, command, args);
         }
         if (command === "coverage") {
           return runCoverageCli(args);
@@ -437,7 +440,7 @@ ${ERRANDS_USAGE}` },
           return args.includes("--live") ? runSmaLiveCli(db as never, args) : runSmaMapCli(args);
         }
         if (command === "waiting") {
-          return runWaitingCli(db, args);
+          return runWaitingCli(db, args, Date.now(), OWNER_ITEM_SWEEPS);
         }
         if (command === "lead") return await runLeadCli({ db, kv: bb.storage.kv as never, lead: services.lead }, args);
         if (command === "jev") return runJevCli({ db, saveProjectSetting: (p, k, v) => saveProjectSetting(db, p, k, v), settings: async (p) => (await effectiveProjectSettings(p)).values as Record<string, unknown> }, args);

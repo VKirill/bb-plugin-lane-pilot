@@ -16,7 +16,7 @@ import type { DocsNightlyApi } from "../../docs/server/docs-nightly";
 import type { WorkflowTriggersApi } from "./workflow-triggers-live";
 import type { DispatchWriter, TaskUsage } from "../../platform/server";
 
-import type { StabilityApi } from "../../stability/server/stability";
+import type { StabilityPort } from "../../contracts";
 
 import type { WorkflowEngineApi } from "../../platform/server";
 
@@ -26,7 +26,7 @@ interface Services {
   isTaskSatisfied: IsTaskSatisfied;
   taskUsage: TaskUsage;
   docsPlaces: DocsNightlyApi["docsPlaces"];
-  stability: StabilityApi;
+  stability: StabilityPort;
   resolveIntegrationGate: VerificationGatePort;
   workflowEngine: WorkflowEngineApi["workflowEngine"];
   workflowTriggers: WorkflowTriggersApi["workflowTriggers"];

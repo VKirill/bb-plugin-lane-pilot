@@ -14,7 +14,7 @@ import type { PrototypeConfig, TaskV2 } from "../../contracts";
 import type { ServerCore } from "../../contracts/server";
 import { getAttempt, getRun, getRunSettingsScopes, declaredWorktreeOwner, registerWorktree, releaseWorktree, getRunWriterHost, getTask, getTaskPlan, listAttemptsForTask, listStageReceipts, listTaskTerminalStates, loadProjectSettings, loadPrototypeConfig, sectionBindingId, markCancelCode, setIllegalTransitionLog, setRunSettingsScopes, setRunState, transitionAttempt } from "../../storage";
 import type { CancelCode, WorktreeOwner } from "../../storage";
-import { GLOBAL_SETTINGS_PROJECT_ID, LP_AGENT_OVERRIDES_KEY, LP_DEFAULTS_KEY, inheritProjectValues, parseLanePilotDefaults } from "@lane-pilot/settings-catalog";
+import { GLOBAL_SETTINGS_PROJECT_ID, LP_AGENT_OVERRIDES_KEY, LP_DEFAULTS_KEY, SETTING_JEV_PROVIDER, inheritProjectValues, parseLanePilotDefaults } from "@lane-pilot/settings-catalog";
 import { createNativeInstaller } from "../../native-install";
 import type { WriterBindingResolution } from "../../native-agent";
 import { isTaskBase, parseRunPolicy, retargetTask } from "../../tasks";
@@ -80,7 +80,7 @@ export function createCore(bb: BbPluginApi, db: LanePilotDatabase): ServerCore {
   let jevServing = "";
   // The provider the owner chose and its key; TypeSafe's own key when the chosen provider has none, so Jev does not go dark over a missing record.
   async function jevEndpoint(): Promise<JevEndpoint> {
-    const wanted = resolveJevProvider(loadProjectSettings(db, GLOBAL_SETTINGS_PROJECT_ID)["jev.provider"]);
+    const wanted = resolveJevProvider(loadProjectSettings(db, GLOBAL_SETTINGS_PROJECT_ID)[SETTING_JEV_PROVIDER]);
     let endpoint: JevEndpoint = { provider: wanted, apiKey: await catalogKey(wanted.keyName) };
     if (!endpoint.apiKey) {
       const other = JEV_PROVIDERS[wanted.id === "typesafe" ? "openlux" : "typesafe"];

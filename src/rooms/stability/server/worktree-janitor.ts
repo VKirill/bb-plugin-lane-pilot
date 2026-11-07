@@ -6,6 +6,7 @@ import type { ServerCore } from "../../contracts/server";
 import { loadProjectSettings, registerWorktree } from "../../storage";
 import { OPEN_ATTEMPT_STATES, RETRY_ELIGIBLE, isOpenAttemptState } from "../../contracts/state-machine";
 import { STICKY_WINDOW_MS } from "../../platform/server";
+import { DOCS_WORKTREE_PREFIX, docsWorktreeKey, REGRESS_MARKER_TTL_MS, REGRESS_WORKTREE_PREFIX, regressWorktreeKey, regressWorktreePath, SELF_REPAIR_STATE_KEY, selfRepairWorktrees } from "../../contracts/worktrees";
 import { bestEffort } from "@lane-pilot/kit";
 
 /**
@@ -103,15 +104,6 @@ function attemptHoldsWorktree(db: ServerCore["db"], attempts: AttemptLivenessRow
     || (attempt.state === "accepted" && Boolean(attempt.area) && now - attempt.updated_at <= STICKY_WINDOW_MS));
 }
 
-// The passes' own liveness records, read as legacy-migration facts: stability cannot import the owning rooms
-// (self-repair imports stability, which would close a module cycle), so the key shapes live here once.
-const DOCS_WORKTREE_PREFIX = "docs-worktree:";
-const REGRESS_WORKTREE_PREFIX = "regress-worktree:";
-const SELF_REPAIR_STATE_KEY = "self-repair:state";
-/** A bounded regress pass's in-flight marker is live for six hours — the same window its own sweep applies. */
-const REGRESS_MARKER_TTL_MS = 6 * 3_600_000;
-type SelfRepairState = { signatures?: Record<string, { worktree?: { hostId?: string; path?: string; branch?: string } | null; pending?: { worktree?: { hostId?: string; path?: string; branch?: string } | null } | null }> } | null;
-
 /**
  * Whether a registry row's owning process is still alive. Each self-managed pass keeps the same liveness fact the
  * deployed build read — a docs reuse marker naming the copy, a fresh regress in-flight marker, a self-repair
@@ -124,17 +116,16 @@ async function ownerAlive(ctx: Pick<ServerCore, "bb" | "db">, row: { owner_kind:
   const { bb, db } = ctx;
   if (row.owner_kind === "docs") {
     if (!row.owner_id) return false;
-    const record = await bb.storage.kv.get(`${DOCS_WORKTREE_PREFIX}${row.host}:${row.owner_id}`) as { path?: string } | null;
+    const record = await bb.storage.kv.get(docsWorktreeKey(row.host, row.owner_id)) as { path?: string } | null;
     return record?.path === row.path;
   }
   if (row.owner_kind === "regress") {
-    const entry = await bb.storage.kv.get(`${REGRESS_WORKTREE_PREFIX}${row.path}`) as { hostId?: string; at?: number } | null;
+    const entry = await bb.storage.kv.get(regressWorktreeKey(row.path)) as { hostId?: string; at?: number } | null;
     return entry?.hostId === row.host && typeof entry.at === "number" && now - entry.at < REGRESS_MARKER_TTL_MS;
   }
   if (row.owner_kind === "self-repair") {
-    const repair = await bb.storage.kv.get(SELF_REPAIR_STATE_KEY) as SelfRepairState;
-    return Object.values(repair?.signatures ?? {}).some((record) =>
-      [record?.worktree, record?.pending?.worktree].some((worktree) => worktree?.hostId === row.host && worktree.path === row.path));
+    const repair = await bb.storage.kv.get(SELF_REPAIR_STATE_KEY);
+    return selfRepairWorktrees(repair).some(({ worktree }) => worktree.hostId === row.host && worktree.path === row.path);
   }
   if (row.owner_kind !== "attempt") return false;
   // Sticky turns and retries borrow the original attempt's copy; the registry's creator is not its only owner.
@@ -170,16 +161,14 @@ export async function adoptLegacyWorktrees(ctx: Pick<ServerCore, "bb" | "db">, n
   }
   // regress: a bounded pass's in-flight copies; its own sweep drops markers older than six hours, so only fresh ones are live.
   for (const key of await bb.storage.kv.list(REGRESS_WORKTREE_PREFIX)) {
-    const path = key.slice(REGRESS_WORKTREE_PREFIX.length);
+    const path = regressWorktreePath(key);
     const entry = await bb.storage.kv.get(key) as { hostId?: string; at?: number } | null;
     if (entry?.hostId && now - (entry.at ?? 0) < REGRESS_MARKER_TTL_MS) adopt(entry.hostId, path, "regress", path);
   }
   // self-repair: worktrees its state record still holds, pending respawns included.
-  const repair = await bb.storage.kv.get(SELF_REPAIR_STATE_KEY) as SelfRepairState;
-  for (const [signature, record] of Object.entries(repair?.signatures ?? {})) {
-    for (const worktree of [record?.worktree, record?.pending?.worktree]) {
-      if (worktree?.hostId && worktree.path) adopt(worktree.hostId, worktree.path, "self-repair", signature, worktree.branch ?? null);
-    }
+  const repair = await bb.storage.kv.get(SELF_REPAIR_STATE_KEY);
+  for (const { signature, worktree } of selfRepairWorktrees(repair)) {
+    if (worktree.hostId && worktree.path) adopt(worktree.hostId, worktree.path, "self-repair", signature, worktree.branch ?? null);
   }
   return adopted;
 }

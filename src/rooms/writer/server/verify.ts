@@ -1,3 +1,4 @@
+import { SETTING_WORKER_STRICT_USER, SETTING_WORKER_USER } from "@lane-pilot/settings-catalog";
 import { runOnHost } from "@lane-pilot/host-calls";
 import { isAbsolute, relative, resolve } from "node:path";
 import { acceptanceArtifactDir, bbWriterReportMarkdown, buildAcceptanceV2, validateAcceptanceV2 } from "../../tasks";
@@ -222,7 +223,7 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
       }
       // The strict worker (worker.strict_user on): the check runs as worker.user through the host call, never in the owner's terminal.
       const checkSettings=loadProjectSettings(db,config.projectId,verificationScopes);
-      const asUser=String(checkSettings["worker.strict_user"] ?? "off")==="on" ? String(checkSettings["worker.user"] ?? DEFAULT_WORKER) : null;
+      const asUser=String(checkSettings[SETTING_WORKER_STRICT_USER] ?? "off")==="on" ? String(checkSettings[SETTING_WORKER_USER] ?? DEFAULT_WORKER) : null;
       const inTerminal=writerThreadId&&!hasSecrets&&!asUser ? await runInWriterTerminal({config,writerThreadId,workspacePath:task.project_cwd,cwd:command.cwd,
         command:command.command,backend,timeoutSec}).catch((cause:unknown)=>{
           bb.log.warn(`verification terminal failed, running on the host: ${cause instanceof Error?cause.message:String(cause)}`);

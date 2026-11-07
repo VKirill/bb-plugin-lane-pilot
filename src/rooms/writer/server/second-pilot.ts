@@ -11,6 +11,7 @@ import { roleSelection, sdkCriticCatalog } from "../../critique/critic-pair";
 import { taskMemoryContext } from "../../memory/server";
 import { buildExecutionPacket, renderPacketExcerpts } from "../../tasks/execution-packet";
 import { postOwnerItem } from "../../owner-waiting";
+import { writerQuestionKey } from "./writer-question-item";
 import { finishReturn, insertReturn, listReturns } from "../../stage-return";
 import { NO_TOOLS_LINE, extractModelJson } from "@lane-pilot/workflow-engine";
 import { writerExecutionSelection } from "@lane-pilot/models";
@@ -239,7 +240,7 @@ export function createSecondPilot(ctx: ServerCore, services: Services, consult: 
   async function leaveToOwner(row: { run_id:string; task_id:string; project_id:string; id:string }, pmThreadId: string | null, question: string, grounds: string, now: number): Promise<void> {
     const text = `Lane Pilot: ${row.task_id} waits on the owner. Its writer asked: ${question.slice(0, 400)}\nThe second pilot could not settle it (${grounds.slice(0, 300)}). Answer it in the task's objective and send the task again (the attempt ended uncharged).`;
     if (pmThreadId && await sendPmNotice(bb, pmThreadId, text, now)) return;
-    postOwnerItem(db as never, { key:`writer-question:${row.run_id}:${row.task_id}`, source:"writer", kind:"product_decision", projectId:row.project_id, wake:false,
+    postOwnerItem(db as never, { key:writerQuestionKey(row.run_id, row.task_id), source:"writer", kind:"product_decision", projectId:row.project_id, wake:false,
       what:`Исполнитель задачи спрашивает: ${question.slice(0, 400)}`, why:`Исполнитель спросил, никто не ответил, и второй пилот не смог решить сам (${grounds.slice(0, 300)}). Ответьте в описании задачи и отправьте её снова.`,
       evidence:[{ kind:"attempt", ref:row.id }, { kind:"task", ref:row.task_id }] }, now);
   }

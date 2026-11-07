@@ -51,7 +51,7 @@ import type { OwnerPresenceApi } from "../../owner-presence/server/presence";
 import type { RollbackApi } from "../../rollback/server/rollback";
 import type { RuleScanApi } from "../../self-repair/server/rule-scan";
 import type { ReconcileApi } from "../../stability/server/reconcile";
-import type { StabilityApi } from "../../stability/server/stability";
+import type { StabilityPort } from "../../contracts";
 import type { WallApi } from "../../wall/service";
 import type { WriterFinishApi } from "./finish";
 import type { WriterSpawnApi } from "./spawn";
@@ -81,7 +81,7 @@ interface Services {
   runVerification: WriterVerifyApi["runVerification"];
   runWriterPool: WriterStateApi["runWriterPool"];
   spawnWriterAttempt: WriterSpawnApi["spawnWriterAttempt"];
-  stability: StabilityApi;
+  stability: StabilityPort;
   startAfterAcceptance: WorkflowEngineApi["startAfterAcceptance"];
   wall: WallApi;
   workspaceDirt: WriterSpawnApi["workspaceDirt"];
@@ -107,7 +107,6 @@ import { sendServiceMessage } from "../../relay/server";
 import { emitAttemptFinished } from "./attempt-finished";
 import { mountWriterTaskFinished } from "./attempt-reactions";
 import { mountStabilityAttemptFinished } from "./stability";
-import { mountWorkflowAttemptFinished } from "./workflow";
 
 import type { WorkflowEngineApi } from "../../platform/server";
 
@@ -176,7 +175,6 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
   // the after-acceptance graph (attempt-reactions.ts; the room-named mounts move to their owners).
   mountStabilityAttemptFinished(ctx, services);
   mountWriterTaskFinished(ctx, services, sticky);
-  mountWorkflowAttemptFinished(ctx, services);
   // A store-read block's owner item describes a blocked attempt: when the attempt leaves blocked (requeue,
   // accepted, canceled) the item closes; the next block posts under a fresh sequence key.
   bb.onDispose(onAttemptChanged(db, (changedId) => {

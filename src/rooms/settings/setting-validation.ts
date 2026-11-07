@@ -1,4 +1,4 @@
-import { PROVIDER_POOL_KEY, providerPoolProblem } from "@lane-pilot/settings-catalog";
+import { PROVIDER_POOL_KEY, SETTING_WRITER_SILENCE_NUDGE_MIN, providerPoolProblem } from "@lane-pilot/settings-catalog";
 import { leadSettingProblem } from "../lead";
 import { ROLE_MODEL_KEY_PREFIX, ZCODE_BACKGROUND_KEY, ZCODE_WINDOW_KEY, roleModelProblem, zcodeWindowProblem } from "@lane-pilot/models";
 import { SCHEDULE_ERRAND_DEFAULT_KEY, errandDefaultProblem } from "../schedule";
@@ -58,7 +58,7 @@ export function validateSettingValue(key: string, value: unknown): SettingValida
     : key === "plan_critique.min_write_tasks" ? 1
     : key === "code_critique.max_rounds" ? 1
     : key.startsWith("run.max_") ? 1
-    : key === "writer.silence_nudge_min" || key === "integration.gate_every" ? 1
+    : key === SETTING_WRITER_SILENCE_NUDGE_MIN || key === "integration.gate_every" ? 1
     : key === "council.max_rounds" ? 1 : null;
   if (key === "code_critique.max_rounds" && value !== undefined && value !== null && value !== "") {
     const parsed = typeof value === "string" && /^\d+$/.test(value) ? Number(value) : value;
@@ -162,6 +162,11 @@ export function validateSettingsObject(settings: Record<string, unknown>): Setti
     }
   }
   return errors;
+}
+
+/** The shape writer/argv-builder asks for: setting key → why it cannot apply. */
+export function argvValidationMap(settings: Record<string, unknown>): ReadonlyMap<string, string> {
+  return new Map(validateSettingsObject(settings).map((error) => [error.key, validationErrorText(error)]));
 }
 
 /** Keep the provider/effort group valid when its leading key changes. */

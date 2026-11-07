@@ -1,3 +1,4 @@
+import { SETTING_JEV_PROVIDER } from "@lane-pilot/settings-catalog";
 import { useEffect, useState } from "react";
 import { t } from "@lane-pilot/i18n";
 import { Button, CONTROL_H, Input, usePanelLayout } from "@lane-pilot/ui-kit";
@@ -16,7 +17,7 @@ const message = (cause: unknown) => cause instanceof Error ? cause.message : Str
 
 /** The provider the page shows as chosen: the stored value, the catalog default when it is unset or unknown. */
 function chosenOf(page: LpPage): ProviderId {
-  const raw = page.displayedValue("jev.provider") ?? page.catalogRow("jev.provider")?.defaultValue;
+  const raw = page.displayedValue(SETTING_JEV_PROVIDER) ?? page.catalogRow(SETTING_JEV_PROVIDER)?.defaultValue;
   return raw === "typesafe" ? "typesafe" : "openlux";
 }
 
@@ -42,7 +43,7 @@ export function JevProviderPanel({ page }: { page: LpPage }) {
   useEffect(() => { void load(); }, [rpc]);
 
   const choose = async (next: ProviderId) => {
-    const row = catalogRow("jev.provider");
+    const row = catalogRow(SETTING_JEV_PROVIDER);
     if (!row || next === chosen) return;
     setTest(null);
     await applySetting(row, next);
@@ -79,7 +80,7 @@ export function JevProviderPanel({ page }: { page: LpPage }) {
     : null;
 
   return (
-    <div data-storage-key="jev.provider">
+    <div data-storage-key={SETTING_JEV_PROVIDER}>
       <SettingsGroup testId="jev-provider" title={t("jevTitle")}>
         <p className="max-w-xl text-xs text-muted-foreground">{t("jevHelp")}</p>
         {warning ? <p role="alert" data-testid="jev-warning" className="lp-pill-warning break-words rounded-xl px-3 py-2 text-xs">{warning}</p> : null}
@@ -131,7 +132,7 @@ export function JevProviderPanel({ page }: { page: LpPage }) {
 /** At a project or section level the provider is not set: the value is the global one, so the page says where to change it. */
 export function JevProviderNote({ page }: { page: LpPage }) {
   return (
-    <p className="max-w-xl text-xs text-muted-foreground" data-storage-key="jev.provider" data-testid="jev-provider-note">
+    <p className="max-w-xl text-xs text-muted-foreground" data-storage-key={SETTING_JEV_PROVIDER} data-testid="jev-provider-note">
       {fill(t("jevProjectNote"), { provider: NAME[chosenOf(page)] })}
     </p>
   );

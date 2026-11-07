@@ -1,3 +1,4 @@
+import { nativeSelectionKey } from "../../contracts/agent-ops";
 import { MAIN_AGENT_PROFILE_IDS } from "../../contracts/server";
 import { compileEffectiveMainAgent, compileMainAgentProfile, type CustomAgentMeta } from "../agent-profile";
 import { sessionOverrideAgentsJson } from "../native-agent-definition";
@@ -36,6 +37,6 @@ export async function storeNativeSelection(ctx: Pick<ServerCore, "bb" | "ownedAg
     sourceHash: compiled?.sourceHash ?? null,
     ...(input.parentRunId ? { parentRunId: input.parentRunId } : {}),
   });
-  await ctx.bb.storage.kv.set(`native-selection:${record.token}`, record);
+  await ctx.bb.storage.kv.set(nativeSelectionKey(record.token), record);
   return { selection: record, description: compiled?.description ?? shortId, ...(stored?.meta ? { meta: stored.meta } : {}) };
 }

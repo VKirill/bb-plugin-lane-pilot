@@ -10,6 +10,7 @@ export { createWorkflowLibrary } from "./workflow-library";
 export type { ChainRuntime } from "../../contracts/server";
 export { mountWorkflowTools } from "./workflow-tools";
 export { createWorkflowTriggersService } from "./workflow-triggers-live";
+export type { OnAttemptFinished } from "./after-accept";
 export { createWorkflowEngine } from "./workflow";
 export { runGraphHelper, sumUsage } from "./graph-helper";
 export type { GraphHelperRun } from "./graph-helper";

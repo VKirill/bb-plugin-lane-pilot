@@ -1,3 +1,4 @@
+import { SETTING_INSTALL_LAST_RECEIPT } from "@lane-pilot/settings-catalog";
 import { loadProjectSettings, loadPrototypeConfig, saveProjectSetting } from "../../../storage";
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import { rpcContract } from "../../../contracts";
@@ -24,7 +25,7 @@ export function stackRpc(ctx: ServerCore) {
       if (!confirmExternalOps) return { schemaVersion:1, action:"install", status:"blocked", reason:"Explicit installation confirmation is required; no operation was run." };
       const result = await nativeInstaller.install(config.hostId);
       const receipt = { schemaVersion: 1, action: "install", status: "ok", native: result };
-      saveProjectSetting(db, projectId, "install.lastReceipt", JSON.stringify(receipt));
+      saveProjectSetting(db, projectId, SETTING_INSTALL_LAST_RECEIPT, JSON.stringify(receipt));
       return receipt;
     },
     stack_connect: async ({ projectId, confirmExternalOps }) => {
@@ -43,7 +44,7 @@ export function stackRpc(ctx: ServerCore) {
       operations.push(installed);
       if (!(installed.status === "ok" || installed.status === "skipped")) {
         const receipt = { schemaVersion:1, action:"connect", status:installed.status, coexistenceOperations:operations };
-        saveProjectSetting(db, projectId, "install.lastReceipt", JSON.stringify(receipt));
+        saveProjectSetting(db, projectId, SETTING_INSTALL_LAST_RECEIPT, JSON.stringify(receipt));
         return receipt;
       }
       const current = await coexistenceInventory(projectId, config.hostId);
@@ -55,13 +56,13 @@ export function stackRpc(ctx: ServerCore) {
       });
       operations.push(connected);
       const receipt = { schemaVersion:1, action:"connect", status:connected.status, coexistenceOperations:operations };
-      saveProjectSetting(db, projectId, "install.lastReceipt", JSON.stringify(receipt));
+      saveProjectSetting(db, projectId, SETTING_INSTALL_LAST_RECEIPT, JSON.stringify(receipt));
       return receipt;
     },
     stack_rollback: async ({ projectId, snapshotPath }) => {
       const config = loadPrototypeConfig(db, projectId);
       if (!config) throw new Error("Lane Pilot prototype is not configured for this project");
-      const saved = loadProjectSettings(db, projectId)["install.lastReceipt"];
+      const saved = loadProjectSettings(db, projectId)[SETTING_INSTALL_LAST_RECEIPT];
       let parsed: Record<string, unknown> | null = null;
       try {
         const value: unknown = JSON.parse(typeof saved === "string" ? saved : "");
@@ -88,8 +89,8 @@ export function stackRpc(ctx: ServerCore) {
           if (!(receipt.status === "ok" || receipt.status === "rolled_back" || receipt.status === "skipped")) break;
         }
         const receipt = { schemaVersion:1, action:"rollback", status:rolledBack.every((item) => Boolean(item && typeof item === "object" && "status" in item && ["ok", "rolled_back", "skipped"].includes(String(item.status)))) ? "rolled_back" : "conflict", results:rolledBack };
-        if (receipt.status === "rolled_back") saveProjectSetting(db, projectId, "install.lastReceipt", JSON.stringify(receipt));
-        else saveProjectSetting(db, projectId, "install.lastReceipt", JSON.stringify({ ...parsed, lastRollbackAttempt:receipt }));
+        if (receipt.status === "rolled_back") saveProjectSetting(db, projectId, SETTING_INSTALL_LAST_RECEIPT, JSON.stringify(receipt));
+        else saveProjectSetting(db, projectId, SETTING_INSTALL_LAST_RECEIPT, JSON.stringify({ ...parsed, lastRollbackAttempt:receipt }));
         return receipt;
       }
       if (!snapshotPath) throw new Error("No Lane Pilot coexistence snapshot is available and no legacy snapshot path was supplied.");
@@ -97,7 +98,7 @@ export function stackRpc(ctx: ServerCore) {
         requestedHostId: config.hostId,
         snapshotPath,
       }, { hostId: config.hostId, timeoutMs: 180_000 });
-      saveProjectSetting(db, projectId, "install.lastReceipt", JSON.stringify(receipt));
+      saveProjectSetting(db, projectId, SETTING_INSTALL_LAST_RECEIPT, JSON.stringify(receipt));
       return receipt;
     },
   } satisfies Pick<PluginRpcHandlers<typeof rpcContract>, "remove_claude_lane_leftovers" | "stack_detect" | "stack_install" | "stack_connect" | "stack_rollback">;

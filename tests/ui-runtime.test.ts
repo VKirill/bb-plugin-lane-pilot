@@ -3,6 +3,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { SETTING_CATALOG, CONSUMER_KEYS, specFor, UNAPPLIED_REASON, type SettingSpec } from "@lane-pilot/settings-catalog";
 import { UI_CATALOG, WRITER_EFFORT_CHOICES_BY_PROVIDER, type CatalogRow } from "@lane-pilot/settings-catalog";
 import { buildCliInvocation, isFlagOff, isFlagOn } from "../src/rooms/writer/argv-builder";
+import { argvValidationMap } from "../src/rooms/settings/setting-validation";
 import { installEnv } from "../src/rooms/native-install/install-runner";
 import plugin from "../server";
 import { NO_UPSTREAM } from "./upstream-fixture";
@@ -38,7 +39,8 @@ function representativeValues(row: CatalogRow, spec: SettingSpec): unknown[] {
 function assertChannelValue(spec: SettingSpec, value: unknown): void {
   const label = `${spec.key}=${JSON.stringify(value)}`;
   if (spec.channel === "OWN") {
-    const cli = buildCliInvocation({ binary: "run-controller", subcommand: "run", settings: { [spec.key]: value } });
+    const cli = buildCliInvocation({
+        validate: argvValidationMap, binary: "run-controller", subcommand: "run", settings: { [spec.key]: value } });
     expect(cli.applied, label).not.toContain(spec.key);
     expect(cli.unapplied.find((row) => row.key === spec.key)?.reason, label).toMatch(/native Lane Pilot/i);
     return;
@@ -60,12 +62,14 @@ function assertChannelValue(spec: SettingSpec, value: unknown): void {
     if (isFlagOn(value)) expect(result.env[envName], label).toBe("1");
     else if (isFlagOff(value)) expect(result.env[envName], label).toBe("0");
     else expect(result.env[envName], label).toBe(String(value));
-    const cli = buildCliInvocation({ binary: "run-controller", subcommand: "run", settings: { [spec.key]: value } });
+    const cli = buildCliInvocation({
+        validate: argvValidationMap, binary: "run-controller", subcommand: "run", settings: { [spec.key]: value } });
     expect(cli.unapplied.some((row) => row.key === spec.key), `${label} CLI`).toBe(true);
     return;
   }
   const target = requiredFor(spec);
   const built = buildCliInvocation({
+        validate: argvValidationMap,
     binary: target.binary,
     subcommand: target.subcommand,
     settings: { [spec.key]: value },
@@ -207,6 +211,7 @@ describe("UI storage keys feed runtime channels", () => {
           });
         }
         const built = buildCliInvocation({
+        validate: argvValidationMap,
           binary: "run-controller", subcommand: "run",
           settings: { "writer.provider": provider, "writer.reasoning_effort": effort },
         });
@@ -230,6 +235,7 @@ describe("UI storage keys feed runtime channels", () => {
 
   it("migrates writer.fast_mode=false to standard service tier and keeps the legacy key diagnostic", () => {
     const built = buildCliInvocation({
+        validate: argvValidationMap,
       binary: "run-controller",
       subcommand: "run",
       settings: { "writer.fast_mode": false },
@@ -247,6 +253,7 @@ describe("UI storage keys feed runtime channels", () => {
 
   it("AG-215: an invalid provider is unapplied and never enters argv", () => {
     const built = buildCliInvocation({
+        validate: argvValidationMap,
       binary: "run-controller",
       subcommand: "run",
       settings: { "writer.provider": "not-a-provider" },
@@ -263,6 +270,7 @@ describe("UI storage keys feed runtime channels", () => {
 
   it("reports stored adoc keys without a consumer as unapplied", () => {
     const built = buildCliInvocation({
+        validate: argvValidationMap,
       binary: "run-controller",
       subcommand: "run",
       settings: { "adoc.005": true, "writer.provider": "codex" },

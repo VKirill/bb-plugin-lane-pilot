@@ -1,6 +1,6 @@
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import { JEV_PROVIDERS, JEV_PROVIDER_IDS, createJevClient, resolveJevProvider } from "@lane-pilot/jev";
-import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
+import { GLOBAL_SETTINGS_PROJECT_ID, SETTING_JEV_PROVIDER } from "@lane-pilot/settings-catalog";
 import { rpcContract } from "../../../contracts";
 import { loadProjectSettings } from "../../../storage";
 import type { ServerCore } from "../../../contracts/server";
@@ -14,7 +14,7 @@ const TEST_TIMEOUT_MS = 15_000;
  * answer and never returned), saving a key into Env Catalog, and one real request through the chosen provider.
  */
 export function jevProviderRpc(ctx: ServerCore) {
-  const chosen = () => resolveJevProvider(loadProjectSettings(ctx.db, GLOBAL_SETTINGS_PROJECT_ID)["jev.provider"]);
+  const chosen = () => resolveJevProvider(loadProjectSettings(ctx.db, GLOBAL_SETTINGS_PROJECT_ID)[SETTING_JEV_PROVIDER]);
 
   async function status() {
     const wanted = chosen();

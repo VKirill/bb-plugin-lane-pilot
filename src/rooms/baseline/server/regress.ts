@@ -3,6 +3,7 @@ import { getAttempt, getTask, listCheckDurations, listStageReceipts, taskBasePat
 import type { RollbackApi, RollbackItem, RollbackTarget } from "../../rollback/server";
 import { scheduleIsolated } from "../../platform/server";
 import { bestEffort } from "@lane-pilot/kit";
+import { REGRESS_MARKER_TTL_MS, REGRESS_WORKTREE_PREFIX, regressWorktreeKey, regressWorktreePath } from "../../contracts/worktrees";
 import { type ServerCore } from "../../contracts/server";
 import { readingFrom, readingNote } from "../../verification";
 import {
@@ -93,23 +94,21 @@ export function createRegression(ctx: ServerCore, services: Services) {
    * The pass's worktrees, kept in KV while they live. A plugin reload in the middle of a pass skips its `finally`, and the worktree
    * stayed (regress-mvkeq7xe of cakekeeper.ru, 1.3 GB, left on 2026-10-23 and found four days later while the Mac mini's disk ran out).
    */
-  const WORKTREE_KEY = "regress-worktree:";
-  const LEFTOVER_AFTER_MS = 6 * 3_600_000;
   async function madeWorktree(t: RollbackTarget, name: string, commit: string): Promise<{ path: string } | { error: string }> {
     const result = await kit().makeWorktree(t, name, commit, "regress");
-    if ("path" in result) await bestEffort(log, `regress worktree record ${result.path}`, ctx.bb.storage.kv.set(`${WORKTREE_KEY}${result.path}`, { hostId: t.hostId, basePath: t.basePath, at: Date.now() }), undefined);
+    if ("path" in result) await bestEffort(log, `regress worktree record ${result.path}`, ctx.bb.storage.kv.set(regressWorktreeKey(result.path), { hostId: t.hostId, basePath: t.basePath, at: Date.now() }), undefined);
     return result;
   }
   async function dropped(t: RollbackTarget, path: string): Promise<void> {
     await kit().dropWorktree(t, path);
-    await bestEffort(log, `regress worktree record ${path}`, ctx.bb.storage.kv.delete(`${WORKTREE_KEY}${path}`), undefined);
+    await bestEffort(log, `regress worktree record ${path}`, ctx.bb.storage.kv.delete(regressWorktreeKey(path)), undefined);
   }
   /** Removes the worktrees a stopped pass left; a pass is bounded by four hours, so one older than six is nobody's. */
   async function sweepLeftovers(now: number): Promise<void> {
-    for (const key of await ctx.bb.storage.kv.list(WORKTREE_KEY)) {
+    for (const key of await ctx.bb.storage.kv.list(REGRESS_WORKTREE_PREFIX)) {
       const entry = await ctx.bb.storage.kv.get(key) as { hostId?: string; basePath?: string; at?: number } | null;
-      if (!entry?.hostId || !entry.basePath || now - (entry.at ?? 0) < LEFTOVER_AFTER_MS) continue;
-      const path = key.slice(WORKTREE_KEY.length);
+      if (!entry?.hostId || !entry.basePath || now - (entry.at ?? 0) < REGRESS_MARKER_TTL_MS) continue;
+      const path = regressWorktreePath(key);
       await dropped({ hostId: entry.hostId, basePath: entry.basePath } as RollbackTarget, path);
       log(`regress: removed a worktree a stopped pass left: ${path}`);
     }

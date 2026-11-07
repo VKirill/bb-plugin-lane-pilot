@@ -41,7 +41,7 @@ import type { NightStagesApi } from "../../night/server/night";
 import type { PhaseIntake } from "../../phase/server/intake";
 import type { QaStagesApi } from "../../qa/server/qa";
 import type { RollbackApi } from "../../rollback/server/rollback";
-import type { StabilityApi } from "../../stability/server/stability";
+import type { StabilityPort } from "../../contracts";
 import type { WriterDispatchApi } from "../../writer/server/dispatch";
 
 import type { DocsNightlyApi } from "../../docs/server/docs-nightly";
@@ -78,7 +78,7 @@ interface Services {
   runMemoryContext: MemoryStageApi["runMemoryContext"];
   runWorkspaceStatus: NightStagesApi["runWorkspaceStatus"];
   schedules: ScheduleService;
-  stability: StabilityApi;
+  stability: StabilityPort;
   resolveIntegrationGate: VerificationGatePort;
   startWriterTask: WriterStartApi["startWriterTask"];
   waitWriter: WriterDispatchApi["waitWriter"];

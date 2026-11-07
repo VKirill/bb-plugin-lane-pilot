@@ -5,7 +5,7 @@ import { writerExecutionSelection } from "@lane-pilot/models";
 import type { ServerCore } from "../../contracts/server";
 import { fullAccessSpawn, modelCatalogOf, resolveSpawnModel, scheduleIsolated, spawnUsageOf, warmSpawnUsage } from "../../platform/server";
 import { stringAt, orMiss, isNotFound } from "@lane-pilot/kit";
-import { closeOwnerItem, closeOwnerItemsByPrefix, loadPushConfig, postOwnerItem } from "../../owner-waiting";
+import { closeOwnerItem, closeOwnerItemsByPrefix, countOpenOwnerItems, loadPushConfig, postOwnerItem } from "../../owner-waiting";
 import { loadProjectSettings, saveProjectSetting } from "../../storage";
 import { mentionContext } from "../../native-agent";
 import { projectRoleField } from "../../runs/server";
@@ -192,7 +192,7 @@ export function createLeadService(ctx: ServerCore, services: Services, runEval: 
       nextTickAt: current.enabled ? nextTickAt(now) : null,
       running: ticks.find((row) => row.status === "running") ?? null, ticks,
       road: roadCounts(db),
-      proposalsOpen: (db.prepare("SELECT COUNT(*) AS n FROM lane_pilot_owner_item WHERE source='lead' AND kind='proposal' AND state='open'").get() as { n: number }).n,
+      proposalsOpen: countOpenOwnerItems(db, { source: "lead", kind: "proposal" }),
       rights: rightsView(db), exam: examAll(examRows(db)),
       journal: { total: listDecisions(db, { limit: 100_000 }).length, exam: counts("exam"), backtest: counts("backtest") },
       lastExam,

@@ -3,3 +3,4 @@ export { createRunGoal, mountRunGoal } from "./run-goal";
 export type { RunGoalApi } from "./run-goal";
 export { RUN_GOAL_USAGE, runRunGoalCli } from "./cli";
 export { runGoalRpc } from "./rpc";
+export { runGoalItemKey, runGoalSweep } from "./run-goal";

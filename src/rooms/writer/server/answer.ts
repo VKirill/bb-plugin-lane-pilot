@@ -6,7 +6,6 @@ import { answerTurnPrompt } from "./writer-task";
 import { awaitsWriterAnswer, createAttemptReopen } from "./reopen-attempt";
 
 
-import type { BaselineApi } from "../../baseline/server/baseline";
 import type { WriterStateApi } from "./state";
 
 import type { WriterStartApi } from "./start";
@@ -14,7 +13,6 @@ import type { WriterStartApi } from "./start";
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {
   activeWriterTasks: WriterStateApi["activeWriterTasks"];
-  baseline: BaselineApi;
   startWriterTask: WriterStartApi["startWriterTask"];
 }
 

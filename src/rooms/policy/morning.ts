@@ -1,5 +1,5 @@
 import type Database from "better-sqlite3";
-import { ownerWaitingCounts } from "../owner-waiting";
+import { ownerWaitingCounts, type OwnerItemSweep } from "../owner-waiting";
 
 /**
  * The morning list: four lines of a report the owner may read; nothing in it asks him for anything (since 2026-10-22 the loop runs
@@ -16,14 +16,14 @@ export const MORNING_WINDOW_MS = 24 * 3_600_000;
 
 const count = (db: Db, sql: string, ...params: unknown[]): number => (db.prepare(sql).get(...params) as { n: number }).n;
 
-export function composeMorningList(db: Db, now: number = Date.now(), windowMs: number = MORNING_WINDOW_MS): [string, string, string, string] {
+export function composeMorningList(db: Db, now: number = Date.now(), windowMs: number = MORNING_WINDOW_MS, sweeps: readonly OwnerItemSweep[] = []): [string, string, string, string] {
   const since = now - windowMs;
   const waitingRules = count(db, "SELECT count(*) AS n FROM lane_pilot_rule_proposal WHERE state='proposed'");
   const red = db.prepare("SELECT state, count(*) AS n FROM lane_pilot_attempt WHERE updated_at>=? AND (state LIKE '%failed%' OR state IN ('blocked','provider_error')) GROUP BY state ORDER BY state").all(since) as Array<{ state: string; n: number }>;
   const accepted = count(db, "SELECT count(*) AS n FROM lane_pilot_attempt WHERE state='accepted' AND updated_at>=?", since);
   const adopted = count(db, "SELECT count(*) AS n FROM lane_pilot_rule_event WHERE action='adopted' AND at>=?", since);
   const confirmed = count(db, "SELECT count(*) AS n FROM lane_pilot_rule_event WHERE action='confirmed' AND at>=?", since);
-  const waiting = ownerWaitingCounts(db, now);
+  const waiting = ownerWaitingCounts(db, now, sweeps);
   const broken = db.prepare("SELECT task_id, culprit_commit, culprit_task FROM lane_pilot_regression WHERE state='open' AND kind='regression' ORDER BY id LIMIT 3").all() as Array<{ task_id: string; culprit_commit: string | null; culprit_task: string | null }>;
   const brokenTotal = count(db, "SELECT count(*) AS n FROM lane_pilot_regression WHERE state='open' AND kind='regression'");
   const regressed = brokenTotal ? ` Сломано после приёмки: ${brokenTotal} (${broken.map((row) => `${row.task_id} ← ${row.culprit_commit ? row.culprit_commit.slice(0, 8) : "?"}${row.culprit_task && row.culprit_task !== row.task_id ? ` (виновник ${row.culprit_task})` : ""}`).join(", ")}).` : "";
