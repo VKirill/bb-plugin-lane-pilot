@@ -51,7 +51,7 @@ export type SelfRepairDeps = {
   graphStepMetadata: (step: { runId: string; stepKey?: string | undefined; nodeId?: string | undefined } | null | undefined) => Record<string, string>;
   keyedSpawnSupported: (bb: BbPluginApi) => boolean;
   modelCatalogOf: (ctx: { bb: BbPluginApi; log: (message: string) => void }) => { peek(): ModelCatalog | null };
-  readProviderFolderBlock: (kv: { get(key: string): Promise<unknown> }, hostId: string | null, ttlMs?: number) => Promise<ProviderFolderBlock | null>;
+  readProviderFolderBlock: (kv: { get(key: string): Promise<unknown>; set?(key: string, value: never): Promise<unknown> }, hostId: string | null, ttlMs?: number) => Promise<ProviderFolderBlock | null>;
   registerObservedTool: <S extends z.ZodType>(agents: Pick<BbPluginApi["agents"], "registerTool">, tool: ObservedTool<S>) => void;
   requirePmRun: (db: LanePilotDatabase, input: { runId: string; threadId: string; projectId: string }) => { id: string; project_id: string };
   resolveSpawnModel: (input: SpawnModelInput) => AgentModel;

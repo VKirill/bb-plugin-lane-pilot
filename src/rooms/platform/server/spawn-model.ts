@@ -74,17 +74,49 @@ const DOCUMENTS_FOLDER = /^\/Users\/[^/]+\/Documents(\/|$)/;
 
 /** The provider whose start observedly failed in a ~/Documents folder on one machine, the reason and when it was seen. */
 export type ProviderFolderBlock = { providerId: string; reason: string; at: number };
+/** The row written before the key became host-only: the same reason and time, without the provider (the key named it). */
+type StoredFolderBlock = { reason: string; at: number };
 
 /** How long an observed refusal holds (`provider.folder_block_ttl_ms` setting; 6 h default) — then the provider is offered again. */
 export const PROVIDER_FOLDER_BLOCK_TTL_MS = 6 * 60 * 60_000;
 
 // ponytail: one block per machine, not per machine+provider; a second documents-sensitive provider would need the key widened again.
 const providerFolderBlockKey = (hostId: string | null) => `provider-folder-block:${hostId ?? "?"}`;
+const legacyProviderFolderBlockKey = (hostId: string | null, providerId: string) => `provider-folder-block:${hostId ?? "?"}:${providerId}`;
 
-/** The live block this machine recorded, or null when none was or it expired. */
-export async function readProviderFolderBlock(kv: { get(key: string): Promise<unknown> }, hostId: string | null, ttlMs = PROVIDER_FOLDER_BLOCK_TTL_MS): Promise<ProviderFolderBlock | null> {
-  const block = await kv.get(providerFolderBlockKey(hostId)).catch(() => null) as ProviderFolderBlock | null;
-  return block && Date.now() - block.at < ttlMs ? block : null;
+/** The providers a machine's folder protection can refuse, from the capability table (they are the only legacy keys worth reading). */
+function documentsSensitiveProviders(): string[] {
+  return Object.keys(PROVIDER_CAPABILITIES).filter((providerId) => PROVIDER_CAPABILITIES[providerId]?.documentsFolderSensitive);
+}
+
+const liveBlock = (value: unknown, ttlMs: number): StoredFolderBlock | null => {
+  if (!value || typeof value !== "object") return null;
+  const row = value as { reason?: unknown; at?: unknown };
+  if (typeof row.at !== "number" || Date.now() - row.at >= ttlMs) return null;
+  return { reason: typeof row.reason === "string" ? row.reason : "", at: row.at };
+};
+
+type FolderBlockKv = { get(key: string): Promise<unknown>; set?(key: string, value: never): Promise<unknown> };
+
+/**
+ * The live block this machine recorded, or null when none was or it expired. A block standing at deploy time was written
+ * under the old per-provider key (`provider-folder-block:<host>:<provider>`, no provider in the row) and is migrated on
+ * first read, so it is not ignored for its remaining TTL.
+ */
+export async function readProviderFolderBlock(kv: FolderBlockKv, hostId: string | null, ttlMs = PROVIDER_FOLDER_BLOCK_TTL_MS): Promise<ProviderFolderBlock | null> {
+  const current = await kv.get(providerFolderBlockKey(hostId)).catch(() => null);
+  const live = liveBlock(current, ttlMs);
+  if (live && typeof (current as { providerId?: unknown }).providerId === "string") {
+    return { providerId: (current as { providerId: string }).providerId, ...live };
+  }
+  for (const providerId of documentsSensitiveProviders()) {
+    const legacy = liveBlock(await kv.get(legacyProviderFolderBlockKey(hostId, providerId)).catch(() => null), ttlMs);
+    if (!legacy) continue;
+    const migrated: ProviderFolderBlock = { providerId, ...legacy };
+    await kv.set?.(providerFolderBlockKey(hostId), migrated as never).catch(() => undefined);
+    return migrated;
+  }
+  return null;
 }
 
 /**
@@ -98,10 +130,11 @@ export async function noteProviderStartFailure(kv: { set(key: string, value: nev
   await kv.set(providerFolderBlockKey(hostId), { providerId, reason, at: Date.now() } as never).catch(() => undefined);
 }
 
-/** A start that went through in the folder: clears this machine's observed block. */
+/** A start that went through in the folder: clears this machine's observed block, the current key and any legacy row. */
 export async function noteProviderStartSuccess(kv: { set(key: string, value: never): Promise<unknown> }, hostId: string | null, providerId: string, envPath: string | null | undefined): Promise<void> {
   if (!PROVIDER_CAPABILITIES[providerId]?.documentsFolderSensitive || !envPath || !DOCUMENTS_FOLDER.test(envPath)) return;
   await kv.set(providerFolderBlockKey(hostId), null as never).catch(() => undefined);
+  await kv.set(legacyProviderFolderBlockKey(hostId, providerId), null as never).catch(() => undefined);
 }
 
 /** A provider that cannot work in this folder on this machine, by an observed cause (not a guessed one): the reason for the record, or null. */

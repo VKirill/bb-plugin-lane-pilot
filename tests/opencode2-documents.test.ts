@@ -52,6 +52,17 @@ describe("an observed provider refusal in a ~/Documents folder", () => {
     expect(old).toBeNull();
   });
 
+  it("reads a block written under the old per-provider key, and a success clears it", async () => {
+    const kv = fakeKv();
+    await kv.set("provider-folder-block:macmini:opencode2", { reason: EPERM, at: Date.now() } as never);
+    const block = await readProviderFolderBlock(kv, "macmini");
+    expect(block).toMatchObject({ providerId: "opencode2", reason: EPERM });
+    expect(providerBlockedForFolder("opencode2", DOCUMENTS, block)).toBe(EPERM);
+    // Migrated onto the current key, so the success below clears the block and not only the new key.
+    await noteProviderStartSuccess(kv, "macmini", "opencode2", DOCUMENTS);
+    expect(await readProviderFolderBlock(kv, "macmini")).toBeNull();
+  });
+
   it("the resolver takes the role's next provider only while a block stands", async () => {
     const kv = fakeKv();
     const base = { role: "analyst", settings: {}, envPath: DOCUMENTS, hostId: "macmini" };
