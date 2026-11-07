@@ -28,6 +28,7 @@ import { rollbackRpc } from "../../rollback/server";
 import { acceptanceRpc } from "../../acceptance/server";
 import { benchRpc } from "../../bench/server";
 import { ownerWaitingRpc } from "../../owner-waiting/server";
+import type { LearningItemsReader } from "../../owner-waiting";
 import { writerQuestionSweep } from "../../writer/server";
 import { runGoalSweep } from "../../run-goal/server";
 import { phaseWordSweep } from "../../phase/server";
@@ -48,7 +49,7 @@ import { capabilityRpc } from "../../capability/server";
 import { conveyorState, setConveyor } from "../../runs";
 import { wallRpc } from "../../wall/server";
 import { improvementRpc } from "../../improvement/server";
-import { sessionMemoryRpc } from "../../memory/server";
+import { sessionMemoryRpc, type WallThreadReader } from "../../memory/server";
 import { createWorkflowArchitect } from "../../workflow/server";
 import { architectStartRpc } from "../../workflow/server";
 import { selfRepairDeps } from "../../self-repair/server";
@@ -114,6 +115,8 @@ interface Services {
   listedAgentProfiles: WriterHostApi["listedAgentProfiles"];
   memoryConflicts: MemoryConflictsApi;
   memoryProbe: MemoryProbeApi;
+  ownerLearningItems: LearningItemsReader;
+  wallThreadReader: WallThreadReader;
   money: MoneyApi;
   phases: PhaseApi;
   regression: RegressionApi;
@@ -169,7 +172,7 @@ export function registerRpc(ctx: ServerCore, services: Services, contract: typeo
     ...rollbackRpc(services.rollback),
     ...acceptanceRpc(ctx.db),
     ...benchRpc(services.bench),
-    ...ownerWaitingRpc(ctx.db, OWNER_ITEM_SWEEPS),
+    ...ownerWaitingRpc(ctx.db, OWNER_ITEM_SWEEPS, services.ownerLearningItems),
     ...backlogRpc(services.backlog),
     ...leadRpc(ctx.db, services.lead),
     ...errandsRpc(ctx, services),
@@ -210,7 +213,7 @@ export function registerRpc(ctx: ServerCore, services: Services, contract: typeo
     ...capabilityRpc(services.capabilities),
     conveyor: async ({ set, reason }: { set?: "on" | "off"; reason?: string }) => set ? await setConveyor(ctx.bb.storage.kv as never, set === "on", reason) : await conveyorState(ctx.bb.storage.kv as never),
     ...wallRpc(services.wall),
-    ...improvementRpc({ db: ctx.db, kv: ctx.bb.storage.kv, wall: services.wall, bench: services.bench, deferrals: services.deferrals, ownerSweeps: OWNER_ITEM_SWEEPS }),
+    ...improvementRpc({ db: ctx.db, kv: ctx.bb.storage.kv, wall: services.wall, bench: services.bench, deferrals: services.deferrals, ownerSweeps: OWNER_ITEM_SWEEPS, ownerLearningItems: services.ownerLearningItems }),
     ...sessionMemoryRpc(ctx, services),
     ...createWorkflowArchitect(ctx, services).rpc,
     ...architectStartRpc(ctx, services),

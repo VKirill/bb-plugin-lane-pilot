@@ -1,6 +1,6 @@
 import type Database from "better-sqlite3";
 import { hubFields, writeHubFields } from "../platform";
-import { callReason, collectOwnerWaiting, type OwnerItem, type OwnerItemSweep } from "./items";
+import { callReason, collectOwnerWaiting, type LearningItemsReader, type OwnerItem, type OwnerItemSweep } from "./items";
 export { CALL_REASONS, callReason, type CallReason } from "./items";
 
 /**
@@ -82,14 +82,14 @@ export const REPEAT_AFTER_MS = 6 * 3_600_000;
 export type Digest = { send: boolean; reason: "disabled" | "quiet_hours" | "nothing_new" | null; text: string; keys: string[]; shown: number; more: number };
 
 /** What to send now. `keys` are all the new wake items, also the ones only counted: the caller acknowledges them after a successful send. */
-export function planDigest(db: Db, now: number = Date.now(), sweeps: readonly OwnerItemSweep[] = []): Digest {
+export function planDigest(db: Db, now: number = Date.now(), sweeps: readonly OwnerItemSweep[] = [], learningReader?: LearningItemsReader): Digest {
   const config = loadPushConfig(db);
   const none = (reason: Digest["reason"]): Digest => ({ send: false, reason, text: "", keys: [], shown: 0, more: 0 });
   if (!config.enabled) return none("disabled");
   if (inQuietHours(now, config.quiet, config.timezone)) return none("quiet_hours");
   const pushedAt = new Map((db.prepare("SELECT key, pushed_at FROM lane_pilot_owner_push").all() as Array<{ key: string; pushed_at: number }>).map((row) => [row.key, row.pushed_at]));
   // Only a «now» row may push: a «later» one waits its turn on the screen (NOW_CAP, items.ts).
-  const open = collectOwnerWaiting(db, now, sweeps).items.filter((item) => item.wake && item.tier === "now");
+  const open = collectOwnerWaiting(db, now, sweeps, undefined, learningReader).items.filter((item) => item.wake && item.tier === "now");
   // Repeat after six hours: an item still open six hours after its push is said once more (key «…#again»), never a third time.
   const again = open.filter((item) => (pushedAt.get(item.key) ?? now) <= now - REPEAT_AFTER_MS && !pushedAt.has(`${item.key}#again`));
   const fresh = [...open.filter((item) => !pushedAt.has(item.key)), ...again.map((item) => ({ ...item, key: `${item.key}#again`, what: `(ещё ждёт, 6 ч) ${item.what}` }))];

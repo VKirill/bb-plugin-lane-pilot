@@ -27,12 +27,13 @@ const FACT_CHARS = 160;
  * points at lane-memory, it carries no facts of its own); the upgrade path is a thread registry at spawn time or a
  * pluginMetadata check once contributeInstructions can see it.
  */
-export function pluginThread(db: LanePilotDatabase, threadId: string): boolean {
-  // lane_pilot_wall_repair is the wall room's table and wall reaches memory through self-repair, so the owner-side
-  // reader cannot be imported here without a cycle; this one EXISTS stays until the Services port lands.
-  const wallRepair = db.prepare("SELECT 1 FROM lane_pilot_wall_repair WHERE thread_id=? LIMIT 1").get(threadId) !== undefined;
+/** The wall room's half of the thread gate, handed over through Services: memory cannot import wall (wall reaches memory). */
+export type WallThreadReader = (db: LanePilotDatabase, threadId: string) => boolean;
+const NO_WALL_THREAD: WallThreadReader = () => false;
+
+export function pluginThread(db: LanePilotDatabase, threadId: string, wallReader: WallThreadReader = NO_WALL_THREAD): boolean {
   return pluginThreadInStoreTables(db, threadId)
-    || wallRepair
+    || wallReader(db, threadId)
     || learningThreadRecorded(db, threadId)
     || wfEffectMentionsThread(db, threadId);
 }
@@ -94,18 +95,18 @@ function silentThread(db: LanePilotDatabase, threadId: string): boolean {
  * that record it, and a spawn records its id after the thread starts, so a just-spawned analyzer can still get the rule;
  * its own prompt forbids tools. Upgrade: pluginMetadata in contributeInstructions.
  */
-export function threadMemoryBlock(db: LanePilotDatabase, input: { projectId: string; threadId: string }): string | null {
+export function threadMemoryBlock(db: LanePilotDatabase, input: { projectId: string; threadId: string }, wallReader: WallThreadReader = NO_WALL_THREAD): string | null {
   if (silentThread(db, input.threadId)) return null;
   const settings = memorySettingsFor(loadProjectSettings(db, input.projectId));
   if (!settings.enabled) return null;
-  if (pluginThread(db, input.threadId)) return THREAD_MEMORY_RULE.join("\n");
+  if (pluginThread(db, input.threadId, wallReader)) return THREAD_MEMORY_RULE.join("\n");
   return renderBlock(l1Facts(db, input.projectId, settings.personalBot));
 }
 
 /** The second contributeInstructions contributor: the memory rule (and for an ordinary thread the facts) on every machine. */
-export function mountThreadBlock(ctx: ServerCore): void {
+export function mountThreadBlock(ctx: ServerCore, wallReader: WallThreadReader): void {
   const { bb, db } = ctx;
   try {
-    bb.agents.contributeInstructions(({ threadId, projectId }) => threadMemoryBlock(db, { projectId, threadId }));
+    bb.agents.contributeInstructions(({ threadId, projectId }) => threadMemoryBlock(db, { projectId, threadId }, wallReader));
   } catch (cause) { bb.log.info(`Lane Pilot memory cannot contribute instructions: ${cause instanceof Error ? cause.message : String(cause)}`); }
 }

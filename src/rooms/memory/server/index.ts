@@ -4,7 +4,7 @@ export { mixReviewerMemory, mixWriterMemory, pmMemoryContext, reviewerMemoryFor,
 export { createMemoryStage } from "./memory";
 export { memorySettingsFor } from "./memory-settings";
 export { sessionMemoryRpc } from "./session-memory";
-export { mountThreadBlock, threadMemoryBlock } from "./thread-block";
+export { mountThreadBlock, threadMemoryBlock, type WallThreadReader } from "./thread-block";
 export { embedPending, embedQuery, mountMemoryEmbeddings } from "./embeddings";
 export { MAX_SETTLED_PER_RUN, createMemoryConflicts } from "./memory-conflicts";
 export type { MemoryConflictsApi } from "./memory-conflicts";

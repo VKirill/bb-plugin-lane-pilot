@@ -4,7 +4,7 @@ import { latestMemoryProbeRows, listMemoryIdsByOrigin, otherMemoryProjectId, rec
 import { sha256Hex } from "@lane-pilot/kit";
 import { taskV2Schema, type TaskV2 } from "../../contracts";
 import { MEMORY_PATHS, pathById, type MemoryPath, type ProbeKind } from "../../memory";
-import { pmMemoryContext, reviewerMemoryFor, taskMemoryContext, threadMemoryBlock } from "../../memory/server";
+import { pmMemoryContext, reviewerMemoryFor, taskMemoryContext, threadMemoryBlock, type WallThreadReader } from "../../memory/server";
 import { stickyTurnPromptWithRules, writerBriefSegments, writerContextBlocks, writerKnowledge } from "../../writer/server";
 import { memoryUnanswered, pmResumeInstructions, pmRulesOf, pmRulesPromptBlock, ruleBudget, type MemoryUnanswered } from "../../learning";
 import { codeCritiquePrompt, codeRepairPrompt } from "../../critique";
@@ -21,7 +21,7 @@ import type { ServerCore } from "../../contracts/server";
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {
   insights: InsightsApi;
-
+  wallThreadReader: WallThreadReader;
 }
 
 
@@ -112,8 +112,8 @@ const PROBES: Record<string, (c: Context) => Promise<Probe> | Probe> = {
   // A thread id no plugin table recorded is an ordinary thread; the negative asks the same thread id of another project.
   "bb.thread": (c) => {
     const other = otherMemoryProjectId(c.db, c.projectId) ?? "memory-probe-none";
-    return { delivered: threadMemoryBlock(c.db, { projectId: c.projectId, threadId: "memory-probe-thread" }) ?? "",
-      negative: threadMemoryBlock(c.db, { projectId: other, threadId: "memory-probe-thread" }) ?? "" };
+    return { delivered: threadMemoryBlock(c.db, { projectId: c.projectId, threadId: "memory-probe-thread" }, c.services.wallThreadReader) ?? "",
+      negative: threadMemoryBlock(c.db, { projectId: other, threadId: "memory-probe-thread" }, c.services.wallThreadReader) ?? "" };
   },
   "pm.rules_tool": (c) => {
     const text = lines(pmRulesOf(c.db, c.projectId).map((rule) => rule.rule));

@@ -10,7 +10,7 @@ import type { InsightsApi } from "../../contracts/server";
 import type { ServerCore } from "../../contracts/server";
 
 import {sha256Hex, bestEffort} from "@lane-pilot/kit";
-import { threadMemoryBlock } from "./thread-block";
+import { threadMemoryBlock, type WallThreadReader } from "./thread-block";
 import { rerankRecords } from "./rerank";
 import { loadProjectSettings, projectHasScopedRun } from "../../storage";
 
@@ -22,6 +22,7 @@ interface Services {
   insights: InsightsApi;
   docsPlaces: DocsNightlyApi["docsPlaces"];
   memoryConflicts: MemoryConflictsApi;
+  wallThreadReader: WallThreadReader;
 }
 
 /**
@@ -98,7 +99,7 @@ export function sessionMemoryRpc(ctx: ServerCore, services: Services) {
       return { records: rows };
     },
     // The same block contributeInstructions gives an ordinary thread (M2); the drill reads it for a thread id.
-    memory_thread_block: async ({ projectId, threadId }) => ({ block: threadMemoryBlock(db, { projectId, threadId }) }),
+    memory_thread_block: async ({ projectId, threadId }) => ({ block: threadMemoryBlock(db, { projectId, threadId }, services.wallThreadReader) }),
     // A lesson is a rule proposal: a repeat of a live rule counts towards it, a new one goes on trial within the cap.
     session_lesson: async ({ projectId, rule, evidence, scope, audience, always }) => {
       // audience may be `specialist:<id>` (wider than RuleAudience — the column is TEXT); the employee's slice reads it back.

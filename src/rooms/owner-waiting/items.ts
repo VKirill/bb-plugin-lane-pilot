@@ -93,12 +93,14 @@ export const tableExists = (db: Db, name: string): boolean => Boolean(db.prepare
 const parse = <T>(text: string | null | undefined, fallback: T): T => { try { return text ? JSON.parse(text) as T : fallback; } catch { return fallback; } };
 export const rpcLine = (method: string, input: Record<string, unknown>) => `echo '${JSON.stringify(input)}' > /tmp/owner-action.json && bb plugin rpc call lane-pilot ${method} --input-file /tmp/owner-action.json --json`;
 
-function learningItems(db: Db): OwnerItem[] {
+/** One pending_owner learning item row, as the learning room's reader returns it. */
+export type PendingLearningItem = { id: string; project_id: string; kind: string; text: string; evidence: string; created_at: number };
+/** The learning room's half of the morning list, handed over through Services: learning already imports this room. */
+export type LearningItemsReader = (db: Db) => PendingLearningItem[];
+
+function learningItems(db: Db, reader?: LearningItemsReader): OwnerItem[] {
   if (!tableExists(db, "lane_pilot_learning_item")) return [];
-  // lane_pilot_learning_item is learning's table and learning already imports this room (postOwnerItem), so the
-  // owner-side reader cannot be imported here without a cycle; the query stays until the Services port lands.
-  const rows = db.prepare("SELECT id, project_id, kind, text, evidence, created_at FROM lane_pilot_learning_item WHERE state='pending_owner' ORDER BY created_at DESC").all() as
-    Array<{ id: string; project_id: string; kind: string; text: string; evidence: string; created_at: number }>;
+  const rows = reader?.(db) ?? [];
   return rows.map((row) => ({
     key: `learning:${row.id}`, source: "learning", kind: `learning_${row.kind}`, projectId: row.project_id,
     what: clip(row.text, 300), why: "Вы сказали это в чате. Если принять, все проекты будут так делать; если отклонить, это забудется. Решить можете только вы.",
@@ -245,9 +247,9 @@ export function overnight(db: Db, now: number = Date.now(), windowMs: number = O
   };
 }
 
-export function collectOwnerWaiting(db: Db, now: number = Date.now(), sweeps: readonly OwnerItemSweep[] = [], windowMs: number = OVERNIGHT_WINDOW_MS): OwnerWaiting {
+export function collectOwnerWaiting(db: Db, now: number = Date.now(), sweeps: readonly OwnerItemSweep[] = [], windowMs: number = OVERNIGHT_WINDOW_MS, learningReader?: LearningItemsReader): OwnerWaiting {
   sweepOwnerItems(db, now, sweeps);
-  const items = [...learningItems(db), ...inbox(db)];
+  const items = [...learningItems(db, learningReader), ...inbox(db)];
   const rank = (item: OwnerItem) => { const at = SOURCE_ORDER.indexOf(item.source); return at < 0 ? SOURCE_ORDER.indexOf("night") : at; };
   // The cost of putting a row off first, a row that would push before one that would not, then the sources' order and age; the first NOW_CAP are «now».
   items.sort((a, b) => REASON_RANK[callReason(a.kind)] - REASON_RANK[callReason(b.kind)] || Number(b.wake) - Number(a.wake) || rank(a) - rank(b) || a.since - b.since || a.key.localeCompare(b.key));

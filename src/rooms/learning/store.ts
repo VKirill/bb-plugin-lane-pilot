@@ -240,3 +240,9 @@ export function learningThreadRecorded(db: Db, threadId: string): boolean {
   ) AS hit`).get(threadId, threadId) as { hit: number };
   return row.hit === 1;
 }
+
+/** Items waiting on the owner's decision, newest first (the owner-waiting morning list, handed over as a Services reader). */
+export function pendingOwnerLearningItems(db: Db): Array<{ id: string; project_id: string; kind: string; text: string; evidence: string; created_at: number }> {
+  return db.prepare("SELECT id, project_id, kind, text, evidence, created_at FROM lane_pilot_learning_item WHERE state='pending_owner' ORDER BY created_at DESC").all() as
+    Array<{ id: string; project_id: string; kind: string; text: string; evidence: string; created_at: number }>;
+}
