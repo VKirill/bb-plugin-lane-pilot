@@ -2,7 +2,6 @@
 export const NATIVE_MENTION_PROVIDER = "lane-pilot";
 export const CLI_AGENTS_PLUGIN_ID = "cli-agents";
 export const DEFAULT_NATIVE_AGENT = "dev-orchestrator";
-export const GUARD_PM_AGENTS = ["dev-orchestrator", "frontend-orchestrator", "marketing-orchestrator"] as const;
 
 /** Claude `--agent` flag: short id. Runtime agentSetting is `plugin:short` (see live transcript). */
 export function nativeAgentCliId(agentId: string): string {

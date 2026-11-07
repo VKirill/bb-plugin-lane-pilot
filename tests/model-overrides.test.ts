@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { casUpsertSettings, getSettingVersions, listSettingRows, loadProjectSettings, openDatabase, saveProjectSetting, sectionBindingId } from "../src/rooms/plugin-db";
 import { isModelSettingKey, isRoleOverrideKey } from "../src/rooms/settings/model-keys";
+import { validateSettingValue } from "../src/rooms/settings/setting-validation";
 import { PICKER_KEYS } from "../src/rooms/pages/page-model";
 ;
 import plugin from "../server";
@@ -110,6 +111,20 @@ describe("giving every project and section the global role models back", () => {
     expect(done.removed).toBe(2);
     expect(listSettingRows(db, "p1").map((row) => row.key)).toContain("writer.provider");
     expect(listSettingRows(db, GLOBAL).map((row) => row.key)).toContain("writer.provider");
+    await harness.lifecycle.dispose();
+  });
+
+  it("a stored row for a role the table no longer has loads and does not block saving another setting", async () => {
+    const { db, harness } = await mount();
+    // A hub row left by the removed `critic-tiebreak` role: the settings load must tolerate it, not throw or drop the save.
+    saveProjectSetting(db, "p1", "role_model.critic-tiebreak", { model: "router9/ag/gemini-3.8-flash-high" });
+    saveProjectSetting(db, "p1", "helper.access.critic-tiebreak", { bbPlugins: { mode: "all" } });
+    expect(loadProjectSettings(db, "p1")["role_model.critic-tiebreak"]).toEqual({ model: "router9/ag/gemini-3.8-flash-high" });
+    expect(casUpsertSettings(db, { projectId: "p1", changes: [{ key: "writer.provider", value: "codex", expectedVersion: 0 }] })).toMatchObject({ ok: true });
+    // The stale key is named when it is the one being saved, never a throw and never a reason to refuse another key.
+    expect(validateSettingValue("role_model.critic-tiebreak", { model: "router9/ag/gemini-3.8-flash-high" })).toMatchObject({ code: "invalid_choice", key: "role_model.critic-tiebreak" });
+    const screen = await harness.behavior.callRpc("get_screen", { projectId: "p1" }) as { values: Record<string, unknown> };
+    expect(screen.values["writer.provider"]).toBe("codex");
     await harness.lifecycle.dispose();
   });
 

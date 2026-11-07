@@ -24,8 +24,6 @@ import type { OwnerAsk } from "../../relay/server";
 import { fenceOutside, registerObservedTool } from "../../platform/server";
 import type { CouncilGraph, CouncilStart } from "./council-graph";
 
-export const COUNCIL_TOOLS = ["lane_pilot_council_start", "lane_pilot_council_status", "lane_pilot_council_stop"] as const;
-
 /** Stage selections that already exist in settings; seats take distinct provider/model pairs from them in this order. */
 const SEAT_SELECTION_KEYS: ReadonlyArray<readonly [string, string]> = [
   ["writer.provider", "writer.model"],

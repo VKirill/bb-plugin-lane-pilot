@@ -180,6 +180,3 @@ export function diagnosticRows(): CatalogRow[] {
     return true;
   }));
 }
-
-/** Tabs the Basic/Advanced switch applies to. */
-export const SETTINGS_TABS = new Set(["settings", "checks", "council", "memory"]);

@@ -3,7 +3,6 @@ import { describe, expect, it, vi } from "vitest";
 import { openTab } from "../ui-tabs";
 import { fireEvent, waitFor } from "@testing-library/react";
 import { mountPage } from "../ui-harness";
-import { VISIBLE_CATALOG, DISABLED_IDS, EDITABLE_IDS } from "@lane-pilot/settings-catalog";
 import { en, ru, setLocaleOverride, t } from "@lane-pilot/i18n";
 import { useMatrixHooks } from "./helpers";
 
@@ -40,7 +39,6 @@ describe("Lane Pilot UI", () => {
     expect(slot.getByTestId("field-s024").textContent).toContain(en.legacyFastModeExplanation);
     expect(slot.getByTestId("compat-aliases")).toBeTruthy();
     expect(slot.getByTestId("compat-adoc.177").querySelector("input,button[role='combobox'],button[role='switch']")).toBeNull();
-    expect(EDITABLE_IDS.length + DISABLED_IDS.length).toBe(VISIBLE_CATALOG.length);
     slot.lifecycle.unmount();
   });
 

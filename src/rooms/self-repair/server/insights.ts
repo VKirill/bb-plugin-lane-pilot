@@ -15,8 +15,6 @@ import { poolHasRoom, poolTokens, ruleBudget } from "../../learning";
 import { sha256Hex } from "@lane-pilot/kit";
 import { authorize } from "../../policy";
 
-export const INSIGHTS_TOOLS = ["lane_pilot_routing_stats", "lane_pilot_lessons_sweep", "lane_pilot_rule_propose", "lane_pilot_lesson", "lane_pilot_memory_golden"] as const;
-
 const LESSONS_SINCE_KEY = (projectId: string) => `lessons:since:${projectId}`;
 /** The first sweep of a project looks this far back. */
 const FIRST_SWEEP_WINDOW_MS = 30 * 24 * 3_600_000;

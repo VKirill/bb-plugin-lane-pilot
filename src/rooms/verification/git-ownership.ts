@@ -75,18 +75,6 @@ async function resolveCommit(cwd:string,ref:string) {
 
 export { TOOL_CACHE_DIRS, filterOwnershipNoise } from "@lane-pilot/settings-catalog";
 
-/**
- * One normalisation before every ownership decision: dirt outside the workspace dropped, the rest made
- * workspace-relative (dirtInsideWorkspace), then bookkeeping and tool caches filtered (filterOwnershipNoise).
- * A snapshot may arrive repo-relative with paths of other agents (a workspace nested in a larger repo,
- * OVH 2026-10-06); no check below may ever see those.
- */
-export function workspaceRelativeDirt<T extends {path:string}>(snapshots:T[], prefix:string, extra:readonly string[]=[]):T[] {
-  const inside=dirtInsideWorkspace(snapshots, prefix);
-  const clean=new Set(filterOwnershipNoise(inside.map((row)=>row.path),extra));
-  return inside.filter((row)=>clean.has(row.path));
-}
-
 export async function resolveGitOwnershipBase(input:{projectCwd:string;baseRef?:string}):Promise<GitOwnershipBase> {
   const cwd=await checkedRoot(input.projectCwd);
   if(!cwd) return {status:"not-git",branch:null,headSha:null,baseRef:null,baseSha:null,compareCommitted:false,reason:"ownership base requires a real git worktree root"};

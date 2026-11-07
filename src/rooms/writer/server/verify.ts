@@ -19,7 +19,7 @@ import { isLiveDecision, LIVE_FOLDER_RECEIPT } from "../live-folder";
 import { beginChecks, checksMoved } from "../../runs"
 import { taskFamily } from "@lane-pilot/contracts";
 import { bookkeepingSetting, filterOwnershipNoise } from "@lane-pilot/settings-catalog";
-import { flakyEvidence as machineEvidence, outputTail, readingFrom } from "../../verification"
+import { DEFAULT_WORKER, flakyEvidence as machineEvidence, outputTail, readingFrom } from "../../verification"
 import { dropSatellites, findUnownedChanges, findUnownedRunChanges, resolveRunOwnershipScope } from "../../contracts/ownership";
 import type { FlakyEvidence, MachineReading } from "../../contracts/machine-pressure";
 import { hollowRerun, noTestRanReason, testSummaries } from "../../tasks/server";
@@ -222,7 +222,7 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
       }
       // The strict worker (worker.strict_user on): the check runs as worker.user through the host call, never in the owner's terminal.
       const checkSettings=loadProjectSettings(db,config.projectId,verificationScopes);
-      const asUser=String(checkSettings["worker.strict_user"] ?? "off")==="on" ? String(checkSettings["worker.user"] ?? "lp-worker") : null;
+      const asUser=String(checkSettings["worker.strict_user"] ?? "off")==="on" ? String(checkSettings["worker.user"] ?? DEFAULT_WORKER) : null;
       const inTerminal=writerThreadId&&!hasSecrets&&!asUser ? await runInWriterTerminal({config,writerThreadId,workspacePath:task.project_cwd,cwd:command.cwd,
         command:command.command,backend,timeoutSec}).catch((cause:unknown)=>{
           bb.log.warn(`verification terminal failed, running on the host: ${cause instanceof Error?cause.message:String(cause)}`);

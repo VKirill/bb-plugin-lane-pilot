@@ -77,7 +77,7 @@ function routineModel(inputs: Record<string, unknown>): Pick<HelperRequest, "mod
 /** What a node's `role` means here: the profile of the helper, the role in its metadata, and which repository files it may touch (none, except the notes of its own chat). */
 const TIER_RANK: Record<string, number> = { light: 0, standard: 1, strong: 2 };
 /** Roles Jev may never cheapen: judges, critics, the planner/PM chair (a code writer is not a table row at all, so it is never touched). */
-const NO_DOWNGRADE = new Set(["plan-critic", "specialist-reviewer", "code-critic", "critic-tiebreak", "auditor", "council", "debugger", "triager", "rules-analyzer", "planner", "pm", "dev-orchestrator", "writer", "analyst", "worker"]);
+const NO_DOWNGRADE = new Set(["plan-critic", "specialist-reviewer", "code-critic", "auditor", "council", "debugger", "triager", "rules-analyzer", "planner", "pm", "dev-orchestrator", "writer", "analyst", "worker"]);
 export function downgradableRole(role: string): boolean {
   const row = roleRowOf(role);
   return !NO_DOWNGRADE.has(role) && ROLE_IDS.includes(row) && !NO_DOWNGRADE.has(row);

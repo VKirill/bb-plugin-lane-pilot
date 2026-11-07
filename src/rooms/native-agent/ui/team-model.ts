@@ -35,7 +35,6 @@ export const ROLE_GROUPS: Array<{ id: RoleGroupId; roles: RoleSpec[] }> = [
   { id: "check", roles: [
     { id: "plan-critic", testId: "plan-critique-settings", model: selectionIdOf("plan-critic"), enabled: { key: "plan_critique.enabled", fallback: true, label: "stagePlanCritique" }, keys: ["plan_critique.enabled", ...selectionKeysOf("plan-critic")] },
     { id: "code-critic", testId: "code-critique-settings", model: selectionIdOf("code-critic"), enabled: { key: "code_critique.enabled", fallback: false, label: "stageCodeCritique" }, keys: ["code_critique.enabled", ...selectionKeysOf("code-critic")] },
-    { id: "critic-tiebreak", keys: [] },
     { id: "specialist-reviewer", testId: "specialist-settings", model: selectionIdOf("specialist-reviewer"), enabled: { key: "specialist.enabled", fallback: false, label: "specialistReview" }, keys: ["specialist.enabled", ...selectionKeysOf("specialist-reviewer")] },
     { id: "gate-triage", keys: [] },
     { id: "pm-reader", testId: "pm-read-settings", model: selectionIdOf("pm-reader"), enabled: { key: "pm_read.enabled", fallback: false, label: "largeFileRead" }, keys: ["pm_read.enabled", ...selectionKeysOf("pm-reader")] },

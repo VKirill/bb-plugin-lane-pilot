@@ -3,21 +3,6 @@ import { join } from "node:path";
 import { pluginRootFromModule, sha256Hex } from "@lane-pilot/kit";
 import type { TaskV2 } from "../contracts";
 
-export const ACCEPTANCE_V2_REQUIRED = [
-  "schema_version",
-  "task_id",
-  "task_sha256",
-  "attempt",
-  "provider_exit",
-  "report",
-  "report_sha256",
-  "owns_check",
-  "verification",
-  "review",
-  "accepted",
-  "accepted_at",
-] as const;
-
 const CLI_PROVIDERS = new Set(["agy", "grok", "codex", "qwen", "kimi", "cursor", "opencode"]);
 
 export function loadAcceptanceV2Schema(): Record<string, unknown> {

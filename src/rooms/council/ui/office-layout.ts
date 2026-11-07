@@ -103,9 +103,6 @@ export type WallSegment = {
   isInterior?: boolean;
 };
 
-export const GRID_W = 40;
-export const GRID_H = 20;
-
 /** Floor in world units: x −20…20, z −10…10 (grid 40×20). */
 export const FLOOR_BOUNDS = {
   minX: -20,
