@@ -105,3 +105,5 @@ Audit B: the 64-room SCC holds by three causes (core barrel imported by 43 rooms
 - G4+G7a contracts + migrations leaves → thr_tzqp8jncww (SWE-2 Flash high)
 - G7b shared constants down → thr_bjt4ue7sg5 (LongCat 2.5)
 - G5 (writer/workflow ports) and G7c (runs split, critique/tasks/verification owner APIs) wait for F3 (writer failure fields) to merge — they touch the same files.
+- G1+G2 merged 40d604d5 (review Grok: parity holds; one hidden link). Hidden link: platform re-exported `Services` type-only from server.ts, invisible to the graph. Fix in two parts: (a) room-graph counts code files outside src/rooms as ^nodes (c9d36c99) — honest numbers base 64/94 → now 70/56 (^server.ts in the SCC); (b) stream S thr_grk9acdh47 replaces the 87-field bag with per-function narrow deps typed by owner rooms.
+- G4+G7a (plugin-contracts.ts at repo root) has the same shape; its review (Gemini) checks it with the new graph.
