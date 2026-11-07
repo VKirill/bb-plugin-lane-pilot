@@ -396,7 +396,7 @@ export function createWorkflowAgents() {
     if (limit && !request.intoThread && (request.role.startsWith("specialist") || request.role === "workflow-architect")) throw new HelperFailure("provider_limit", `the ${request.role} helper hit Claude's limit (${limit}); a specialist runs only on Claude Code, so it waits for the window to reset`);
     if (limit && !request.intoThread) {
       const failed = request.provider ?? DEFAULT_PROVIDER;
-      noteProviderLimit(failed, request.model ?? null, limit);
+      noteProviderLimit(bb, failed, request.model ?? null, limit);
       const again = await withResolvedModel({ ...request, provider: undefined as never, model: undefined as never, reasoning: undefined as never, resolved: undefined as never }, { avoidProvider: failed }).catch(() => null);
       // Nothing else on offer (the answer is the failed provider again): the step fails with the limit notice, it does not run the same pair twice.
       if (!again || again.provider === failed) throw new HelperFailure("provider_limit", `${failed}/${request.model ?? ""} hit a provider limit (${limit}) and no other model family is on offer on this machine`);

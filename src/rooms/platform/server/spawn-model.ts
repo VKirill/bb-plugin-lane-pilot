@@ -24,40 +24,53 @@ export type SpawnUsage = {
 const registered = new WeakMap<object, SpawnUsage>();
 
 /**
- * Limits seen in a real answer, for every role's pick: a helper that hit «Usage limit reached for 5 hour» (opencode2 GLM, docs-night 157
- * failed units and six PM-replay harvests on 2026-11-02..04) takes that provider off the offer of every later pick, writers' chain aside,
- * instead of each next call failing the same way. Keyed by provider and the model's own sub-provider (`zai-coding-plan/…` vs `router9/…`
- * on opencode2), so a spent GLM plan does not take the free Gemini with it.
+ * Limits seen in a real answer and the provider/model of each helper thread, scoped to the plugin instance (`bb`) that
+ * saw them: a helper that hit «Usage limit reached for 5 hour» (opencode2 GLM, docs-night 157 failed units and six
+ * PM-replay harvests on 2026-11-02..04) takes that provider off the offer of every later pick of THIS instance,
+ * writers' chain aside, instead of each next call failing the same way — another instance's limits are not its.
+ * Keyed by provider and the model's own sub-provider (`zai-coding-plan/…` vs `router9/…` on opencode2), so a spent GLM
+ * plan does not take the free Gemini with it.
  * ponytail: a fixed hold, not the notice's reset time — the notices name it in the provider's local time; parse it if an hour proves wrong.
  */
 export const SEEN_LIMIT_HOLD_MS = 60 * 60_000;
-const seenLimits = new Map<string, { until: number; notice: string }>();
-const limitKey = (providerId: string, model: string | null | undefined) => `${providerId}|${model?.includes("/") ? model.split("/")[0] : ""}`;
-export function noteProviderLimit(providerId: string, model: string | null | undefined, notice: string, now = Date.now()): void {
-  if (providerId) seenLimits.set(limitKey(providerId, model), { until: now + SEEN_LIMIT_HOLD_MS, notice: notice.slice(0, 160) });
+type SpawnInstanceState = {
+  seenLimits: Map<string, { until: number; notice: string }>;
+  threadModels: Map<string, { providerId: string; model: string }>;
+};
+const instances = new WeakMap<object, SpawnInstanceState>();
+function instanceOf(owner: object): SpawnInstanceState {
+  let state = instances.get(owner);
+  if (!state) { state = { seenLimits: new Map(), threadModels: new Map() }; instances.set(owner, state); }
+  return state;
 }
-export function seenProviderLimit(providerId: string, model: string | null | undefined, now = Date.now()): { percent: number; window: string } | null {
-  const seen = seenLimits.get(limitKey(providerId, model));
+const limitKey = (providerId: string, model: string | null | undefined) => `${providerId}|${model?.includes("/") ? model.split("/")[0] : ""}`;
+export function noteProviderLimit(owner: object, providerId: string, model: string | null | undefined, notice: string, now = Date.now()): void {
+  if (providerId) instanceOf(owner).seenLimits.set(limitKey(providerId, model), { until: now + SEEN_LIMIT_HOLD_MS, notice: notice.slice(0, 160) });
+}
+export function seenProviderLimit(owner: object, providerId: string, model: string | null | undefined, now = Date.now()): { percent: number; window: string } | null {
+  const seen = instanceOf(owner).seenLimits.get(limitKey(providerId, model));
   return seen && seen.until > now ? { percent: 100, window: `limit seen: ${seen.notice}` } : null;
 }
 /** The provider and model each helper thread was spawned on, so a failure seen later is charged to the right pair. */
-const threadModels = new Map<string, { providerId: string; model: string }>();
-export function rememberThreadModel(threadId: string, providerId: string, model: string): void {
+export function rememberThreadModel(owner: object, threadId: string, providerId: string, model: string): void {
+  const threadModels = instanceOf(owner).threadModels;
   threadModels.set(threadId, { providerId, model });
   if (threadModels.size > 1_000) threadModels.delete(threadModels.keys().next().value as string);
 }
-export function threadModelOf(threadId: string): { providerId: string; model: string } | null { return threadModels.get(threadId) ?? null; }
-/** Test hook. */
-export function resetSeenLimits(): void { seenLimits.clear(); threadModels.clear(); }
+export function threadModelOf(owner: object, threadId: string): { providerId: string; model: string } | null { return instanceOf(owner).threadModels.get(threadId) ?? null; }
 export function registerSpawnUsage(bb: object, usage: SpawnUsage): void { registered.set(bb, usage); }
 /** The providers a helper table pick can come from (Claude, GPT, and Gemini through 9router on OpenCode v2); a spent window of one moves the pick to its peer in another family. */
 export const TABLE_PROVIDERS = ["claude-code", "codex", "opencode2"] as const;
 
 /** What a caller passes as `usage`: the registered reader of the plugin instance, with the log the moves are written to. Undefined without one (no move). */
-export type SpawnUsageUse = SpawnUsage & { log?: ((line: string) => void) | undefined };
+export type SpawnUsageUse = SpawnUsage & {
+  log?: ((line: string) => void) | undefined;
+  /** A limit this instance saw in a real answer (`noteProviderLimit`), read before the usage cache; `spawnUsageOf` fills it. */
+  seenLimit?: (providerId: string, model: string | null | undefined) => { percent: number; window: string } | null;
+};
 export function spawnUsageOf(owner: { bb: object; log?: ((line: string) => void) | undefined }): SpawnUsageUse | undefined {
   const usage = registered.get(owner.bb);
-  return usage ? { ...usage, peek: (query) => seenProviderLimit(query.providerId, query.model) ?? usage.peek(query), log: owner.log } : undefined;
+  return usage ? { ...usage, peek: (query) => seenProviderLimit(owner.bb, query.providerId, query.model) ?? usage.peek(query), seenLimit: (providerId, model) => seenProviderLimit(owner.bb, providerId, model), log: owner.log } : undefined;
 }
 /** Reads the usage of both table providers before a decision (bounded; never throws), for callers that are asynchronous anyway. */
 /**
@@ -169,7 +182,7 @@ export function resolveSpawnModel(input: SpawnModelInput): AgentModel {
     if (isZcodeProvider(providerId)) return !zcodeBlock({ settings: rest.settings, catalog: catalog ?? null, hostId: hostId ?? null, now: Date.now(), busy: usage?.zcodeBusy?.() ?? false });
     return catalog && hostId ? offeredForRole(catalog, providerId, model, hostId) : null;
   };
-  const usageSpent: SpentProbe = (providerId, model) => seenProviderLimit(providerId, model) ?? usage?.peek({ providerId, model, hostId: hostId ?? null, settings: rest.settings }) ?? null;
+  const usageSpent: SpentProbe = (providerId, model) => usage?.seenLimit?.(providerId, model) ?? usage?.peek({ providerId, model, hostId: hostId ?? null, settings: rest.settings }) ?? null;
   const resolve = (avoided: boolean, spent: SpentProbe | undefined): AgentModel => resolveAgentModel({
     ...rest, pm: pm ?? null, offered: offeredAt(avoided),
     ...(catalog ? { providerOf: (model: string) => catalogProviderOf(catalog, model) } : {}), ...(spent ? { spent } : {}),

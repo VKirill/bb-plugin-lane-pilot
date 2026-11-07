@@ -71,7 +71,7 @@ export function registerLaneWorktreeProvider(ctx: ServerCore): boolean {
           if (!path || !await isLaneWorktree(hostId, path, inputs.name, context.signal)) {
             context.report.step("Creating the worktree");
             const created = await host.call("gitCreateWorktree", { requestedHostId: hostId, basePath: inputs.basePath, name: inputs.name },
-              { hostId, timeoutMs: 120_000, signal: context.signal });
+              { hostId, timeoutMs: 120_000, signal: context.signal, worktreeOwner: { kind: "attempt", id: inputs.name } });
             if (created.status !== "ready" || !created.path) return { status: "failed", message: `attempt_worktree_failed:${created.reason ?? "unknown"}` };
             path = created.path;
             context.report.step("Linking dependencies");

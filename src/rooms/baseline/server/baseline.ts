@@ -114,7 +114,7 @@ export function createBaseline(ctx: ServerCore, services: Services) {
           const release = await services.runWriterPool.acquire(`baseline:${input.projectId}`, 1);
           let path: string | null = null;
           try {
-            const made = await kit.makeWorktree(target, `baseline-${input.taskId}-${Date.now().toString(36)}`, baseSha);
+            const made = await kit.makeWorktree(target, `baseline-${input.taskId}-${Date.now().toString(36)}`, baseSha, "baseline");
             if ("error" in made) { for (const entry of toRun) mark(checks, plan, entry.item.command, { status: "unknown", note: made.error }); return; }
             path = made.path;
             const ran = await kit.runChecks(target, made.path, toRun.map((entry) => ({ ...entry.item, timeout_sec: Math.min(entry.item.timeout_sec ?? 120, settings.timeCapSec) })));
@@ -157,7 +157,7 @@ export function createBaseline(ctx: ServerCore, services: Services) {
         log(`baseline ${input.taskId}: ${summary} (${detail}); the attempt does not start`);
         const text = unrunnable.length ? unrunnableMessage(input.taskId, unrunnable, baseSha) : redOutsideMessage(input.taskId, outside, baseSha);
         if (input.pmThreadId) {
-          noteToldPmDirectly(input.pmThreadId, input.taskId);
+          noteToldPmDirectly(db, input.pmThreadId, input.taskId);
           await bb.sdk.threads.send({ threadId: input.pmThreadId, mode: "queue-if-active", input: [{ type: "text", text: `Lane Pilot: задача ${input.taskId} не запущена: ${text}`, mentions: [] }] } as never).catch(() => undefined);
         }
         return { stop: `verdict_block: ${code}: ${detail.slice(0, 600)}. ${unrunnable.length ? "Fix the command or cwd, or drop the check" : "Narrow the check to the task's files or widen owns_paths"}; nothing was started and no attempt was spent`, record: getBaseline(db, input.runId, input.taskId) ?? null };
@@ -210,7 +210,7 @@ export function createBaseline(ctx: ServerCore, services: Services) {
     const text = stopped
       ? `Lane Pilot: задача ${input.taskId} не запущена: ${fact} (baseline.already_built=stop).\n${list}\nЕсли задача действительно не нужна, ничего делать не надо. Если проверки слабые и работа не сделана, усильте acceptance/verification и отправьте задачу снова.`
       : `Lane Pilot: ${fact}: задача, возможно, уже сделана. Писатель всё равно стартует (baseline.already_built=notify); карточка приёмки покажет эти проверки.\n${list}\nЕсли работа уже сделана, остановите задачу (lane_pilot_cancel); если проверки слабые, усильте их.`;
-    if (stopped) noteToldPmDirectly(input.pmThreadId, input.taskId);
+    if (stopped) noteToldPmDirectly(db, input.pmThreadId, input.taskId);
     await bb.sdk.threads.send({ threadId: input.pmThreadId, mode: "queue-if-active", input: [{ type: "text", text, mentions: [] }] } as never).catch(() => undefined);
   }
 
@@ -218,21 +218,21 @@ export function createBaseline(ctx: ServerCore, services: Services) {
     if (!input.pmThreadId) return;
     const list = checks.map((check) => `- ${check.command}`).join("\n");
     const text = `Lane Pilot: задача ${input.taskId} закрыта принятой без писателя — все ${checks.length} проверок(и) уже зелёные на базе${baseSha ? ` ${baseSha.slice(0, 10)}` : ""}, до писателя.\n${list}\nЕсли баг на самом деле не исправлен, переоткрой задачу с проверкой, которая его воспроизводит.`;
-    noteToldPmDirectly(input.pmThreadId, input.taskId);
+    noteToldPmDirectly(db, input.pmThreadId, input.taskId);
     await bb.sdk.threads.send({ threadId: input.pmThreadId, mode: "queue-if-active", input: [{ type: "text", text, mentions: [] }] } as never).catch(() => undefined);
   }
 
   async function tellPmGreenProvesNothing(input: BaselineInput, checks: BaselineCheck[], sentence: string): Promise<void> {
     if (!input.pmThreadId) return;
     const list = checks.map((check) => `- ${check.command}`).join("\n");
-    noteToldPmDirectly(input.pmThreadId, input.taskId);
+    noteToldPmDirectly(db, input.pmThreadId, input.taskId);
     await bb.sdk.threads.send({ threadId: input.pmThreadId, mode: "queue-if-active", input: [{ type: "text", text: `Lane Pilot: задача ${input.taskId} не запущена: ${sentence}.\n${list}`, mentions: [] }] } as never).catch(() => undefined);
   }
 
   async function tellPmVacuous(input: BaselineInput, vacuous: BaselineCheck[], baseSha: string | null): Promise<void> {
     if (!input.pmThreadId) return;
     const text = `Lane Pilot: задача ${input.taskId} не запущена: ${vacuousMessage(input.taskId, vacuous, input.task.risk, baseSha, input.task.kind)}`;
-    noteToldPmDirectly(input.pmThreadId, input.taskId);
+    noteToldPmDirectly(db, input.pmThreadId, input.taskId);
     await bb.sdk.threads.send({ threadId: input.pmThreadId, mode: "queue-if-active", input: [{ type: "text", text, mentions: [] }] } as never).catch(() => undefined);
   }
 

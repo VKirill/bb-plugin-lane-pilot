@@ -337,7 +337,7 @@ export function createWorldService(ctx: { bb: BbPluginApi; db: LanePilotDatabase
 
   /** Registers the loop, the socket and the listeners; the world starts when BB starts the service. */
   function mount(): void {
-    bb.onDispose(onAttemptChanged((attemptId) => { dirty.add(attemptId); }));
+    bb.onDispose(onAttemptChanged(db, (attemptId) => { dirty.add(attemptId); }));
     mountThreadEvents();
     mountSocket();
     bb.background.service("world-tick", { start: loop });

@@ -68,7 +68,7 @@ export function mountHelperSignals(bb: BbPluginApi, db: LanePilotDatabase, realt
       if (parent && thread?.projectId && isPmThread(parent)) realtime.notify(thread.projectId, "helpers", parent);
     });
   }
-  return onAttemptChanged((attemptId) => {
+  return onAttemptChanged(db, (attemptId) => {
     const row = db.prepare("SELECT r.project_id, r.pm_thread_id FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id WHERE a.id=?")
       .get(attemptId) as { project_id: string; pm_thread_id: string | null } | undefined;
     if (row) realtime.notify(row.project_id, "helpers", row.pm_thread_id ?? undefined);

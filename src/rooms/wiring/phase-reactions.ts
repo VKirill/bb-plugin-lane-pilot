@@ -2,7 +2,7 @@ import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { bestEffort } from "@lane-pilot/kit";
 import type { DesignJournalLine } from "@lane-pilot/contracts";
 import type { LanePilotDatabase } from "../storage";
-import { storeMemoryRecords } from "../storage";
+import { storeMemoryRecords } from "@lane-pilot/memory-core";
 import { closeOwnerItem, closeOwnerItemsByPrefix, postOwnerItem } from "../owner-waiting";
 import { answerPhaseWord, askPhaseWord } from "../lead";
 import { critiqueProblems, roleLine } from "../design-eval";

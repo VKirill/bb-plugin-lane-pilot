@@ -23,7 +23,7 @@ describe("transitionAttempt enforces the state machine", () => {
   it("refuses a move that is in no table: typed error, state kept, journaled as refused, logged", () => {
     const { db, attemptIn } = setup();
     const log = vi.fn();
-    setIllegalTransitionLog(log);
+    setIllegalTransitionLog(db, log);
     try {
       const id = attemptIn("queued");
       expect(() => transitionAttempt(db, id, "running", { threadId:"thr", reason:"shortcut" })).toThrow(IllegalTransitionError);
@@ -36,18 +36,18 @@ describe("transitionAttempt enforces the state machine", () => {
         expect(error).toMatchObject({ name:"IllegalTransitionError", from:"queued", to:"validation_failed", attemptId:id });
         expect(failureClass("blocked", `internal_error: ${(error as Error).message}`)).toBe("harness");
       }
-    } finally { setIllegalTransitionLog((message) => console.warn(message)); }
+    } finally { setIllegalTransitionLog(db, (message) => console.warn(message)); }
   });
 
   it("never lets a stop be undone: cancel_requested does not go back to running or to a failure", () => {
     const { db, attemptIn } = setup();
-    setIllegalTransitionLog(() => undefined);
+    setIllegalTransitionLog(db, () => undefined);
     try {
       for (const to of ["running", "provider_error", "validation_failed", "spawn_unknown"]) {
         expect(() => transitionAttempt(db, attemptIn("cancel_requested"), to)).toThrow(IllegalTransitionError);
       }
       expect(transitionAttempt(db, attemptIn("cancel_requested"), "canceled")).toBe(true);
-    } finally { setIllegalTransitionLog((message) => console.warn(message)); }
+    } finally { setIllegalTransitionLog(db, (message) => console.warn(message)); }
   });
 
   it("accepts every row of the spec table", () => {

@@ -162,7 +162,7 @@ it("lets every project inherit the global level and override it per project or s
   const writer = (projectId: string, model: string, bindingId = "") => casUpsertSettings(db, { projectId, bindingId, changes: [
     { key: "writer.provider", value: "codex", expectedVersion: 0 },
     { key: "writer.model", value: model, expectedVersion: 0 },
-  ] }, { nativeWriterSelection: true }).ok;
+  ] }).ok;
   expect(writer(GLOBAL_SETTINGS_PROJECT_ID, "gpt-6-luna")).toBe(true);
   expect(casUpsertSettings(db, { projectId: GLOBAL_SETTINGS_PROJECT_ID, changes: [{ key: "docs.enabled", value: true, expectedVersion: 0 }] }).ok).toBe(true);
   expect(loadProjectSettings(db, "a")).toMatchObject({ "writer.model": "gpt-6-luna", "docs.enabled": true });

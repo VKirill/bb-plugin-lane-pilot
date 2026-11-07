@@ -120,6 +120,29 @@ export function validateSettingValue(key: string, value: unknown): SettingValida
   return { code: "invalid_choice", key, params: [key, allowed.join(", ")] };
 }
 
+/** Setting keys judged as one group: changing the provider can invalidate the effort and the reverse. */
+const COUPLED_SETTING_KEYS: Record<string, readonly string[]> = {
+  "writer.provider": ["writer.reasoning_effort"],
+  "writer.reasoning_effort": ["writer.provider"],
+};
+
+export function coupledSettingKeys(key: string): readonly string[] {
+  return COUPLED_SETTING_KEYS[key] ?? [];
+}
+
+/**
+ * The first error a save of `changedKeys` would break: the changed keys and the keys coupled to them, judged on the
+ * merged settings. `skipKeys` are keys the caller already validated itself (a role selection RPC checks its group
+ * against the live provider catalog); an unrelated stored value that an older catalog no longer lists must not refuse
+ * the save either.
+ */
+export function validateSettingChanges(changedKeys: readonly string[], settings: Record<string, unknown>, skipKeys: readonly string[] = []): SettingValidationError | null {
+  const relevant = new Set(changedKeys);
+  for (const key of changedKeys) for (const coupled of coupledSettingKeys(key)) relevant.add(coupled);
+  for (const key of skipKeys) relevant.delete(key);
+  return validateSettingsObject(settings).find((error) => relevant.has(error.key)) ?? null;
+}
+
 export function validateSettingsObject(settings: Record<string, unknown>): SettingValidationError[] {
   const errors: SettingValidationError[] = [];
   for (const [key, value] of Object.entries(settings)) {

@@ -17,6 +17,13 @@ describe("failure classes", () => {
     expect(nextStep("validation_failed", "verification_timeout_budget: the check timed out twice")).toMatch(/timeout/);
   });
 
+  it("reads an attempt still stopping or finding its thread again as work in flight", () => {
+    // OPEN_ATTEMPT_STATES (state-machine.ts): cancel_requested and spawn_unknown are open, so the PM waits.
+    expect(nextStep("cancel_requested", "owner asked to stop")).toBe("wait: the writer is still on it");
+    expect(nextStep("spawn_unknown", null)).toBe("wait: the writer is still on it");
+    expect(nextStep("running", null)).toBe("wait: the writer is still on it");
+  });
+
   it("keeps provider, limit and catalog faults on the provider path for the writer chain", () => {
     expect(failureClass("provider_error", "thread status error")).toBe("provider");
     expect(failureClass("spawn_rejected", "writer_provider_unavailable: catalog down")).toBe("provider");

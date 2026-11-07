@@ -2,7 +2,7 @@ import { resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { bookkeepingSetting } from "@lane-pilot/settings-catalog";
 import { taskV2Schema, type PrototypeConfig, type TaskV2 } from "../../contracts";
-import { getAttempt, getRun, getRunSettingsScopes, getRunWriterHost, getTask, loadProjectSettings, taskBasePath } from "../../storage";
+import { getAttempt, getRun, getRunSettingsScopes, getRunWriterHost, getTask, loadProjectSettings, taskBasePath, type WorktreeOwnerKind } from "../../storage";
 import { retargetTask } from "../../tasks";
 import { gateResolverFor, parseIntegrationGateSettings } from "../../verification/server";
 
@@ -190,9 +190,9 @@ export function createRollback(ctx: ServerCore, services: Services) {
 
   // ---- worktrees on the project's host ----
 
-  async function makeWorktree(t: RollbackTarget, name: string, commit?: string): Promise<{ path: string } | { error: string }> {
+  async function makeWorktree(t: RollbackTarget, name: string, commit: string | undefined, owner: WorktreeOwnerKind): Promise<{ path: string } | { error: string }> {
     const created = await host.call("gitCreateWorktree", { requestedHostId: t.hostId, basePath: t.basePath, name: safeName(name), ...(commit ? { commit } : {}) },
-      { hostId: t.hostId, timeoutMs: 120_000 }).catch((cause: unknown) => ({ status: "failed" as const, path: null, reason: cause instanceof Error ? cause.message : String(cause) }));
+      { hostId: t.hostId, timeoutMs: 120_000, worktreeOwner: { kind: owner, id: name } }).catch((cause: unknown) => ({ status: "failed" as const, path: null, reason: cause instanceof Error ? cause.message : String(cause) }));
     if (created.status !== "ready" || !created.path) return { error: `could not make a worktree: ${created.reason ?? "unknown"}` };
     // Dependencies linked like a writer's worktree; a host that cannot still gets a clean tree.
     await host.call("gitPrepareWorktree", { requestedHostId: t.hostId, basePath: t.basePath, worktreePath: created.path }, { hostId: t.hostId, timeoutMs: 600_000 }).catch(() => undefined);
@@ -246,7 +246,7 @@ export function createRollback(ctx: ServerCore, services: Services) {
     if (!t.task.verification.length) return refuse(t, "reverify", ref, `task ${t.taskId} has no verification[] to run`, `nothing to do; the contract named no checks`, { attemptId });
     const change = await changeOf(t, attemptId);
     if ("refused" in change) return refuse(t, "reverify", ref, change.refused, `check the task's result with \`bb lane-pilot state\`; a task accepted in place has no commit to check out`, { attemptId });
-    const made = await makeWorktree(t, `reverify-${safeName(t.taskId)}-${nonce()}`, change.mergeCommit);
+    const made = await makeWorktree(t, `reverify-${safeName(t.taskId)}-${nonce()}`, change.mergeCommit, "rollback");
     if ("error" in made) {
       const id = receipt(t, "reverify", "error", made.error, { attemptId, baseSha: change.mergeParent, changeSha: change.mergeCommit });
       return { ok: false, state: "error", taskId: t.taskId, attemptId, base: change.mergeParent, change: change.mergeCommit, summary: made.error, next: "check the disk and the project host, then run it again", receiptId: id };
@@ -313,7 +313,7 @@ export function createRollback(ctx: ServerCore, services: Services) {
     const files = [...new Map(changes.flatMap((change) => change.changed).map((file) => [file.path, file])).values()];
     const attemptId = changes[0]!.attemptId;
 
-    const scratch = await makeWorktree(t, `revert-${safeName(t.taskId)}-${nonce()}`);
+    const scratch = await makeWorktree(t, `revert-${safeName(t.taskId)}-${nonce()}`, undefined, "rollback");
     if ("error" in scratch) {
       const id = receipt(t, "revert", "error", scratch.error, { attemptId, baseSha: oldest.mergeParent, changeSha });
       return { ok: false, state: "error", taskId: t.taskId, attemptId, base: oldest.mergeParent, change: changeSha, summary: scratch.error, next: "check the disk and the project host, then run it again", receiptId: id };
@@ -346,7 +346,7 @@ export function createRollback(ctx: ServerCore, services: Services) {
       const red = verification.ran.filter((row) => !row.ok);
       if (red.length) {
         const baseCommit = oldest.mergeParent;
-        const made = baseCommit ? await makeWorktree(t, `revert-base-${safeName(t.taskId)}-${nonce()}`, baseCommit) : null;
+        const made = baseCommit ? await makeWorktree(t, `revert-base-${safeName(t.taskId)}-${nonce()}`, baseCommit, "rollback") : null;
         if (made && "path" in made) {
           baseline = made;
           const wanted = t.task.verification.filter((command) => red.some((row) => row.command === command.command));

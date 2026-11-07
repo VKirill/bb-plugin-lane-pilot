@@ -9,4 +9,8 @@ export type SettingValidationError = {
 export interface SettingsValidator {
   validateSettingValue(key: string, value: unknown): SettingValidationError | null;
   validateSettingsObject(settings: Record<string, unknown>): SettingValidationError[];
+  /** The keys whose validity is judged together with `key` (the writer provider/effort pair); absent: the key stands alone. */
+  coupledSettingKeys?(key: string): readonly string[];
+  /** The first validation error a save of `changedKeys` would break, or null; `skipKeys` are keys the caller already validated. Absent: every stored value is judged. */
+  validateSettingChanges?(changedKeys: readonly string[], settings: Record<string, unknown>, skipKeys?: readonly string[]): SettingValidationError | null;
 }

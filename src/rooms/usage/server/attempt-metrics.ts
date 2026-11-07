@@ -3,6 +3,7 @@ import { costUsd, priceFor, modelTier, WRITER_PROFILES } from "@lane-pilot/model
 import type { ModelTier } from "@lane-pilot/models";
 import { STAGE_PROOF } from "../../tasks";
 import { billedFrom, parseBreakdown } from "../token-math";
+import { isOpenAttemptState } from "../../state-machine";
 
 /**
  * What an attempt cost and how far it got, per attempt, with an honest «not measured» (P0-2 of the SMA plan).
@@ -167,7 +168,7 @@ export function attemptMetrics(db: Database.Database, input: { projectId: string
       }
       rows.push({
         taskId: attempt.task_id, attemptId: attempt.id, attemptNo: attempt.attempt_no, state: attempt.state, createdAt: attempt.created_at,
-        seconds: TERMINAL_ATTEMPT.has(attempt.state) ? Math.max(0, Math.round((attempt.updated_at - attempt.created_at) / 1000)) : null,
+        seconds: attemptEnded(attempt.state) ? Math.max(0, Math.round((attempt.updated_at - attempt.created_at) / 1000)) : null,
         queueWaitMs: (() => { const ms = queueWaitMs(transitionsByAttempt.get(attempt.id) ?? [], attempt); return ms >= 0 ? ms : null; })(),
         stages, stagesPassed: stages.filter((row) => row.state === "passed").length,
         stagesFailed: stages.filter((row) => row.state === "failed" || row.state === "blocked").length,
@@ -224,7 +225,7 @@ function firstByTier(rows: AttemptMetrics[]): AttemptMetricsReport["summary"]["f
   return out;
 }
 
-const TERMINAL_ATTEMPT = new Set(["accepted", "blocked", "canceled", "validation_failed", "empty_output", "provider_error", "spawn_rejected"]);
+const attemptEnded = (state: string) => !isOpenAttemptState(state);
 
 /** The report as the lines `bb lane-pilot metrics` prints: a measured share first, then each attempt, «not measured» spelled out. */
 export function renderAttemptMetrics(report: AttemptMetricsReport): string {

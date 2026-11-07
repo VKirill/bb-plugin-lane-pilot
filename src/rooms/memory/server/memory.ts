@@ -5,9 +5,10 @@ import { jev } from "@lane-pilot/jev";
 import { memoryRerankJudgment } from "@lane-pilot/jev/judgments/memory-rerank";
 import { rerankRecords } from "./rerank";
 import { demoteUnusedPromotions, enrichMemoryContext, episodeCandidates } from "../../memory-tiers/server";
-import { appendAcceptedFact, claimStageSpawn, getRun, getRunSettingsScopes, getTask, listAcceptedFacts, listOpenAttempts, listPendingAcceptedFacts, listStageReceipts, markAcceptedFactsSummarized, searchMemoryRecords } from "../../storage";
+import { appendAcceptedFact, claimStageSpawn, getRun, getRunSettingsScopes, getTask, listAcceptedFacts, listOpenAttempts, listPendingAcceptedFacts, listStageReceipts, markAcceptedFactsSummarized } from "../../storage";
+import { wireMemoryAttemptEffects } from "./attempt-effects";
 import { shouldTriggerProjectLife } from "../../project-life";
-import { coreShelf, dropMemoryIndexes, memoryEntrySupported, pathsNamed, retireStaleCuratorClaims, storeMemoryRecordsKeepingOverflow, memoryEntrySalience } from "@lane-pilot/memory-core";
+import { coreShelf, dropMemoryIndexes, memoryEntrySupported, pathsNamed, retireStaleCuratorClaims, searchMemoryRecords, storeMemoryRecordsKeepingOverflow, memoryEntrySalience } from "@lane-pilot/memory-core";
 import { applyScopeMigration } from "./scope-migration";
 import { projectUsesSections, resolveProjectKind, sharedScope } from "@lane-pilot/memory-core";
 import { bbServiceTier, listedServiceTier, writerExecutionSelection } from "@lane-pilot/models";
@@ -41,6 +42,7 @@ interface Services {
 
 export function createMemoryStage(ctx: ServerCore, services: Services) {
   const { acceptedTaskWorkspace, bb, configForRun, db, workspaceExecutionEnvironment } = ctx;
+  wireMemoryAttemptEffects(db);
 
   async function runMemoryMaintenance(args:{threadId:string;projectId:string;runId:string;taskId:string;timeoutSec?:number;workflow?:{runId:string;stepKey?:string;nodeId?:string}}):Promise<Record<string,unknown>> {
     const metadata=await bb.sdk.threads.getPluginMetadata({threadId:args.threadId});

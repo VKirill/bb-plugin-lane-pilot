@@ -178,7 +178,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
   mountWorkflowAttemptFinished(ctx, services);
   // A store-read block's owner item describes a blocked attempt: when the attempt leaves blocked (requeue,
   // accepted, canceled) the item closes; the next block posts under a fresh sequence key.
-  bb.onDispose(onAttemptChanged((changedId) => {
+  bb.onDispose(onAttemptChanged(db, (changedId) => {
     const attempt = getAttempt(db, changedId);
     if (attempt && attempt.state !== "blocked") closeOwnerItemsByPrefix(db, `store-read:${changedId}:`, "attempt left blocked");
   }));
@@ -1511,7 +1511,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
       const reason = accepted ? undefined : String(last.reason ?? last.status ?? "writer_failed");
       // A writer's question would wait unseen: writers are quiet children and do not wake the PM.
       if (!accepted && reason && failureClass(String(last.status), reason) === "judgment" && input.pmThreadId) {
-        noteToldPmDirectly(input.pmThreadId, input.taskId);
+        noteToldPmDirectly(db, input.pmThreadId, input.taskId);
         void sendServiceMessage(bb, { threadId:input.pmThreadId, senderThreadId:writerThreadId || undefined,
           text:`Lane Pilot: ${input.taskId} stopped with a question from its writer. Answer it with lane_pilot_answer_writer (taskId, answer) — from the code or docs if they settle it, else ask the owner once; the writer continues in its own thread and no attempt is spent. ${WRITER_QUESTION_WAIT_TEXT} Send the task again only when the contract itself must change; tasks that depend on it wait for that.${liveFolder ? " This folder has no git, so the writer's files stay where they are and the folder stays locked: other tasks for it queue until this question is answered (or the task is sent again)." : ""}\n${reason.slice(0, 1200)}` }).catch(() => undefined);
       }

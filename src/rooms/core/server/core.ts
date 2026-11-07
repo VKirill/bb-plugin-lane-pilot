@@ -11,7 +11,7 @@ import { TARGET_SHA } from "../../runs";
 import { hostContract } from "./plugin-contracts";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
 import type { ServerCore } from "../../contracts/server";
-import { getAttempt, getRun, getRunSettingsScopes, declaredWorktreeOwner, ownerKindOfName, registerWorktree, releaseWorktree, getRunWriterHost, getTask, getTaskPlan, listAttemptsForTask, listStageReceipts, listTaskTerminalStates, loadProjectSettings, loadPrototypeConfig, sectionBindingId, setIllegalTransitionLog, setRunSettingsScopes, setRunState, transitionAttempt } from "../../storage";
+import { getAttempt, getRun, getRunSettingsScopes, declaredWorktreeOwner, registerWorktree, releaseWorktree, getRunWriterHost, getTask, getTaskPlan, listAttemptsForTask, listStageReceipts, listTaskTerminalStates, loadProjectSettings, loadPrototypeConfig, sectionBindingId, setIllegalTransitionLog, setRunSettingsScopes, setRunState, transitionAttempt } from "../../storage";
 import type { WorktreeOwner } from "../../storage";
 import { GLOBAL_SETTINGS_PROJECT_ID, LP_AGENT_OVERRIDES_KEY, LP_DEFAULTS_KEY, inheritProjectValues, parseLanePilotDefaults } from "@lane-pilot/settings-catalog";
 import { createNativeInstaller } from "../../native-install";
@@ -42,7 +42,7 @@ export function createCore(bb: BbPluginApi, db: LanePilotDatabase): ServerCore {
     const original = bb.log[level]?.bind(bb.log);
     if (original) try { bb.log[level] = (message:string) => original(redactKnown(String(message))); } catch { /* a frozen logger stays as it is */ }
   }
-  setIllegalTransitionLog((message) => bb.log.warn(message));
+  setIllegalTransitionLog(db, (message) => bb.log.warn(message));
   // Open screens re-read on a signal instead of polling; a council or the rules call `ctx.realtime.notify` where they write.
   const realtime = createRealtime(bb, (message) => bb.log.warn(message));
   const stopHelperSignals = mountHelperSignals(bb, db, realtime);
@@ -143,8 +143,8 @@ export function createCore(bb: BbPluginApi, db: LanePilotDatabase): ServerCore {
       const inp = (input ?? {}) as { name?: string; taskId?: string; worktreePath?: string; removeWorktree?: boolean };
       const out = (result ?? {}) as { status?: string; path?: string | null; branch?: string | null; removed?: boolean };
       if (method === "gitCreateWorktree" && out.status === "ready" && out.path && typeof opt.hostId === "string") {
-        // The caller declares the owner in `worktreeOwner`; the name-prefix guess is the fallback for callers that don't.
-        const owner = declaredWorktreeOwner(declared) ?? ownerKindOfName(typeof inp.name === "string" ? inp.name : "", typeof inp.taskId === "string" ? inp.taskId : null);
+        // The caller declares the owner in `worktreeOwner`; a creation that declares none is registered as unknown.
+        const owner = declaredWorktreeOwner(declared) ?? ({ kind: "unknown", id: null } satisfies WorktreeOwner);
         registerWorktree(db, { host: opt.hostId, path: out.path, branch: out.branch ?? null, owner_kind: owner.kind, owner_id: owner.id });
         return;
       }

@@ -1,4 +1,4 @@
-import type { BbPluginApi, ExperimentalHostClient, PluginRpcResult } from "@get-bb/plugin-sdk";
+import type { BbPluginApi, ExperimentalHostCallOptions, ExperimentalHostClient, PluginRpcResult, StandardSchemaV1InferInput } from "@get-bb/plugin-sdk";
 import type Database from "better-sqlite3";
 import type { z } from "zod";
 import type { PrototypeConfig, TaskV2 } from "@lane-pilot/contracts";
@@ -23,7 +23,7 @@ export interface ServerCore {
   outputGuard: OutputGuard;
   isDisposed: () => boolean;
   log: (message: string) => void;
-  host: ExperimentalHostClient<typeof hostContract>;
+  host: ServerHost;
   deployDrain: DeployDrain;
   nativeInstaller: NativeInstaller;
   nativeHost: { call(method: string, input: unknown, options: { hostId: string }): Promise<unknown> };
@@ -60,6 +60,23 @@ type Realtime = {
 };
 
 type HostResult<Method extends keyof typeof hostContract & string> = PluginRpcResult<(typeof hostContract)[Method]>;
+
+/**
+ * The options the composition root's host wrapper understands beyond the SDK's: `job`/`jobKey` name a background host
+ * job, `worktreeOwner` is the worktree registry owner a `gitCreateWorktree` declares (the host never sees any of them).
+ */
+type HostCallOptions = ExperimentalHostCallOptions & {
+  readonly job?: boolean;
+  readonly jobKey?: string;
+  readonly worktreeOwner?: { readonly kind: string; readonly id: string | null };
+};
+type ServerHost = Omit<ExperimentalHostClient<typeof hostContract>, "call"> & {
+  call: <MethodName extends keyof typeof hostContract & string>(
+    method: MethodName,
+    input: StandardSchemaV1InferInput<(typeof hostContract)[MethodName]["input"]>,
+    options: HostCallOptions,
+  ) => Promise<PluginRpcResult<(typeof hostContract)[MethodName]>>;
+};
 
 type OwnerChoice = { id: string; label: string } | null;
 type OwnerAnswer =

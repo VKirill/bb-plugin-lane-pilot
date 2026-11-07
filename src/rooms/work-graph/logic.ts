@@ -7,6 +7,8 @@
  * several attempts share carries its tokens on the last of them, the others are `partial`. A code stage (checks, plan against fact,
  * acceptance) runs no model: its row is `code`, with time only.
  */
+import { isOpenAttemptState } from "../state-machine";
+
 export const GRAPH_STAGES = [
   "pm-read", "plan-critique", "specialist-review", "run-gate", "writer-agent", "verification", "code-critique", "plan-fact", "browser-qa",
   "acceptance-receipt", "docs-maintenance", "memory-maintenance", "project-life",
@@ -34,7 +36,6 @@ export type UsageIn = { providerId: string | null; model: string | null; billed:
 export type PriceFn = (model: string, billed: Tokens) => number | null;
 
 const TERMINAL = new Set(["passed", "failed", "blocked", "skipped", "canceled"]);
-const ENDED_ATTEMPT = new Set(["accepted", "succeeded", "failed", "blocked", "canceled", "rejected", "error"]);
 const order = (stageId: string) => { const index = (GRAPH_STAGES as readonly string[]).indexOf(stageId); return index < 0 ? GRAPH_STAGES.length : index; };
 const cellState = (state: string): CellState => (state === "blocked" ? "failed" : (["passed", "failed", "running", "pending", "skipped", "canceled"] as const).find((value) => value === state) ?? "pending");
 export const roleOf = (stageId: string): Role => (stageId === "writer-agent" ? "writer" : REVIEWER_STAGES.has(stageId) ? "reviewer" : CODE_STAGES.has(stageId) ? "code" : "agent");
@@ -93,7 +94,7 @@ export function taskGraph(input: {
         return {
           stageId: cell.stageId, role, round: attempt.no, threadId: attempt.threadId, ...cost,
           providerId: cost.providerId ?? receipt?.providerId ?? null, model: cost.model ?? receipt?.model ?? null,
-          seconds: ENDED_ATTEMPT.has(attempt.state) ? Math.max(0, Math.round((attempt.updatedAt - attempt.createdAt) / 1000)) : null,
+          seconds: isOpenAttemptState(attempt.state) ? null : Math.max(0, Math.round((attempt.updatedAt - attempt.createdAt) / 1000)),
           turns: shared ? null : turns(attempt.threadId),
         };
       });

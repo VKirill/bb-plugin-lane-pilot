@@ -645,7 +645,7 @@ export function relayFor(ctx:ServerContext):Relay {
       return pmHasTasksAtWork(ctx.db, pmThreadId).map((taskId) => waiting.has(taskId) ? { taskId, reason: waiting.get(taskId)! } : taskId);
     },
     bookkeeping:async (rows) => pmBookkeepingPending(ctx.db, rows, Date.now()),
-    toldDirectly:(row) => toldPmDirectly(row.pmThreadId, row.taskId, row.at),
+    toldDirectly:(row) => toldPmDirectly(ctx.db, row.pmThreadId, row.taskId, row.at),
     markReported:async (rows) => markTaskOutcomesReported(ctx.db, rows, Date.now()),
     // What a PM reads before it promises a date (SMA rule 6): the register of deferrals and how its forecasts held (src/rooms/forecast).
     deferralLines:(projectId) => {

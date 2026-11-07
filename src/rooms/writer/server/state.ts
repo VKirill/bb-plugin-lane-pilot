@@ -45,9 +45,9 @@ export function createWriterState(ctx: ServerCore) {
   // Any helper thread Lane Pilot waits for that fails on its provider's limit takes that provider off every later pick for a while (spawn-model.ts).
   onThreadFailure(ctx.bb, (threadId, detail) => {
     const notice = providerLimitNotice(detail.replace(/^provider_error:/, "").slice(0, 400));
-    const pair = notice ? threadModelOf(threadId) : null;
+    const pair = notice ? threadModelOf(ctx.bb, threadId) : null;
     if (!notice || !pair) return;
-    noteProviderLimit(pair.providerId, pair.model, notice);
+    noteProviderLimit(ctx.bb, pair.providerId, pair.model, notice);
     ctx.bb.log.warn(`Lane Pilot: ${pair.providerId}/${pair.model} hit a provider limit (${notice}); helper picks skip it for ${SEEN_LIMIT_HOLD_MS / 60_000} min`);
   });
 
