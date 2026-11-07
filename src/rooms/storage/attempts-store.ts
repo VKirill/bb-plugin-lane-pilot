@@ -947,6 +947,8 @@ export function countThreadAttempts(db: LanePilotDatabase, threadId: string): nu
 /** Attempts of one task that ran on the thread (a feedback session's turn count). */
 export function countThreadTaskAttempts(db: LanePilotDatabase, threadId: string, taskId: string): number {
   return (db.prepare("SELECT COUNT(*) count FROM lane_pilot_attempt WHERE thread_id=? AND task_id=?").get(threadId, taskId) as { count: number }).count;
+}
+
 /** The trace context a memory effect reads for an attempt: its run's project and reasoning trace. */
 export function attemptTraceContext(db: LanePilotDatabase, attemptId: string): { projectId: string; trace: string } | undefined {
   return db.prepare(`SELECT r.project_id AS projectId, t.trace_json AS trace FROM lane_pilot_attempt a

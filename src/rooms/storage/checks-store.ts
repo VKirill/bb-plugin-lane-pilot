@@ -153,6 +153,8 @@ export function listSkillMetrics(db: LanePilotDatabase, sinceMs: number, untilMs
 /** How many lane_pilot_* tables the database carries (the manifest's table count). */
 export function countLanePilotTables(db: LanePilotDatabase): number {
   return (db.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE type='table' AND name LIKE 'lane_pilot_%'").get() as { n: number }).n;
+}
+
 /** One profile-check report row (the native agent's daily verdict). */
 export function saveProfileCheckReport(db: LanePilotDatabase, at: number, reportJson: string): void {
   db.prepare("INSERT INTO lane_pilot_profile_check(at, report_json) VALUES (?, ?)").run(at, reportJson);

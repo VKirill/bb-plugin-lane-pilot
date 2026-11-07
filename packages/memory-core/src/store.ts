@@ -492,10 +492,14 @@ export function countMemoryPromotions(db: MemoryDatabase, projectId?: string): n
   return (db.prepare(`SELECT count(DISTINCT project_id||memory_id) AS n FROM lane_pilot_memory_promotion WHERE 1=1 ${projectId ? "AND project_id=?" : ""}`).get(...(projectId ? [projectId] : [])) as { n: number }).n;
 }
 
-/** Latest misses since a time (the tier report). */
-export function listMemoryMisses(db: MemoryDatabase, sinceMs: number, projectId?: string): Array<{ projectId: string; query: string; at: number }> {
-  return db.prepare(`SELECT project_id AS projectId, query, at FROM lane_pilot_memory_miss WHERE at>=? ${projectId ? "AND project_id=?" : ""} ORDER BY at DESC LIMIT 50`)
-    .all(sinceMs, ...(projectId ? [projectId] : [])) as Array<{ projectId: string; query: string; at: number }>;
+/** Latest misses since a time, newest first (the tier report pages at 50; the self-improve curriculum reads the whole window). */
+export function listMemoryMisses(db: Pick<Database.Database, "prepare">, sinceMs: number, projectId?: string, limit = 50): Array<{ projectId: string; query: string; at: number }> {
+  const args: unknown[] = [sinceMs];
+  let sql = "SELECT project_id AS projectId, query, at FROM lane_pilot_memory_miss WHERE at>=?";
+  if (projectId) { sql += " AND project_id=?"; args.push(projectId); }
+  sql += " ORDER BY at DESC LIMIT ?";
+  args.push(limit);
+  return db.prepare(sql).all(...args) as Array<{ projectId: string; query: string; at: number }>;
 }
 
 /** One memory row written the way the eval corpus seeds it (direct INSERT, no write-door side effects). */

@@ -219,6 +219,8 @@ export function finishedIntakeTaskRows(db: LanePilotDatabase, runId: string, ope
 export function openIntakeAttemptRows(db: LanePilotDatabase, runId: string, openStates: readonly string[]): Array<{ attempt_id: string; contract_json: string }> {
   return db.prepare(`SELECT a.id AS attempt_id, t.contract_json FROM lane_pilot_task t JOIN lane_pilot_attempt a ON a.task_id=t.id AND a.run_id=t.run_id WHERE t.run_id=? AND a.state IN (${openStates.map(() => "?").join(",")})`)
     .all(runId, ...openStates) as Array<{ attempt_id: string; contract_json: string }>;
+}
+
 /** A run's tasks with their newest attempt's state (the run-goal board). */
 export function listTaskLatestAttemptStates(db: LanePilotDatabase, runId: string): Array<{ task_id: string; state: string | null }> {
   return db.prepare(`SELECT t.id AS task_id, (SELECT a.state FROM lane_pilot_attempt a WHERE a.run_id=t.run_id AND a.task_id=t.id ORDER BY a.attempt_no DESC, a.updated_at DESC LIMIT 1) AS state

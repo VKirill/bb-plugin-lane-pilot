@@ -270,6 +270,8 @@ export function activeRunForWorkspacePath(db: LanePilotDatabase, path: string, s
     WHERE r.closed_at IS NULL AND r.writer_workspace_path=? AND EXISTS(
       SELECT 1 FROM lane_pilot_attempt a WHERE a.run_id=r.id AND a.updated_at > ?)
     ORDER BY r.updated_at DESC LIMIT 1`).get(path, since) as { id: string; pmThreadId: string | null } | undefined;
+}
+
 /** Every run's id, project and creation time — the wiring sweeps scan the whole table. */
 export function listAllRunRefs(db: LanePilotDatabase): Array<{ id: string; project_id: string; created_at: number }> {
   return db.prepare("SELECT id, project_id, created_at FROM lane_pilot_run").all() as Array<{ id: string; project_id: string; created_at: number }>;

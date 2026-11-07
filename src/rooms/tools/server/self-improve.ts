@@ -1,7 +1,7 @@
 import type Database from "better-sqlite3";
 import { acceptedTaskCountsByProject } from "../../storage";
 import { projectTokenTotalsSince } from "../../usage";
-import { listMemoryMisses } from "../../memory-tiers";
+import { listMemoryMisses } from "@lane-pilot/memory-core";
 
 /**
  * Self-improvement and measurement (SMA map: Self-improvement and measurement):
@@ -14,7 +14,8 @@ import { listMemoryMisses } from "../../memory-tiers";
 type Db = Pick<Database.Database, "prepare">;
 
 export function missCurriculum(db: Db, days = 30, now = Date.now()) {
-  const rows = listMemoryMisses(db, now - days * 86_400_000);
+  // The curriculum counts the whole window; the owner reader's default page is the tier report's 50.
+  const rows = listMemoryMisses(db, now - days * 86_400_000, undefined, 1_000_000_000);
   const by = new Map<string, { projectId: string; query: string; count: number }>();
   for (const row of rows) {
     const key = `${row.projectId}\n${row.query.toLowerCase().replace(/\s+/g, " ").trim()}`;

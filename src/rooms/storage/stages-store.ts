@@ -248,6 +248,8 @@ export function stageReceiptStates(db: LanePilotDatabase, runId: string, taskId:
 export function stageReceiptAttemptState(db: LanePilotDatabase, runId: string, taskId: string, stageId: string): { state: string; attempt: number } | undefined {
   return db.prepare("SELECT state, attempt FROM lane_pilot_stage_receipt WHERE run_id=? AND task_id=? AND stage_id=?")
     .get(runId, taskId, stageId) as { state: string; attempt: number } | undefined;
+}
+
 /** A task's gate evaluations in order (the acceptance card). */
 export function listGateEventsForTask(db: LanePilotDatabase, runId: string, taskId: string): Array<{ gate: string; status: string; attempt: number; occurred_at: number }> {
   return db.prepare("SELECT gate, status, attempt, occurred_at FROM lane_pilot_gate_event WHERE run_id=? AND task_id=? ORDER BY id").all(runId, taskId) as

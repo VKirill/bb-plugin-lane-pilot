@@ -398,6 +398,8 @@ export function putGlobalSettingValue(db: LanePilotDatabase, projectId: string, 
   db.prepare(`INSERT INTO lane_pilot_setting_generation(project_id,binding_id,key,version) VALUES (?,?,?,?)
     ON CONFLICT(project_id,binding_id,key) DO UPDATE SET version=excluded.version`).run(projectId, "", key, next);
   return true;
+}
+
 /** Provider/model setting rows of every project (the capability inventory). */
 export function listProviderSettingRows(db: LanePilotDatabase): Array<{ project_id: string; key: string; value: string }> {
   return db.prepare(`SELECT project_id, key, value FROM lane_pilot_project_settings WHERE binding_id='' AND (key LIKE '%.provider' OR key LIKE '%.model' OR key IN ('pmProviderId','pmModel','writerProviderId','writerModel'))`).all() as

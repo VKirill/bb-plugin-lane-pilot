@@ -419,6 +419,8 @@ export function wfRunExists(db: WfReadDb, runId: string): boolean {
 /** Whether the step exists in the run. */
 export function wfStepExists(db: WfReadDb, runId: string, stepKey: string): boolean {
   return Boolean(db.prepare("SELECT 1 FROM lane_pilot_wf_step WHERE run_id=? AND step_key=?").get(runId, stepKey));
+}
+
 /** A run's status by its idempotency key, or null (the replay's once-a-day guard). */
 export function wfRunStatusByIdem(db: WfReadDb, idemKey: string): string | null {
   return (db.prepare("SELECT status FROM lane_pilot_wf_run WHERE idem_key=?").get(idemKey) as { status: string } | undefined)?.status ?? null;
