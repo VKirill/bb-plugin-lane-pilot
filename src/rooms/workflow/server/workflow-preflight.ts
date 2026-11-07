@@ -1,4 +1,5 @@
 import { checkRequires, effectiveRequires } from "@lane-pilot/workflow-engine";
+import { bestEffort } from "@lane-pilot/kit";
 import type { PreflightResult, RequirePorts } from "@lane-pilot/workflow-engine";
 import type { Workflow } from "@lane-pilot/workflow-engine";
 import type { ArchitectDeps } from "./workflow-architect";
@@ -32,8 +33,8 @@ export function createWorkflowPreflight(ctx: ServerCore, deps: Pick<ArchitectDep
   const { host } = ctx;
 
   async function placeFor(input: { projectId: string; threadId?: string | null | undefined }): Promise<Place | null> {
-    if (input.threadId) { const place = await deps.projectPlace(input.threadId).catch(() => null); if (place) return place; }
-    return (await deps.projectPlaceOf?.(input.projectId).catch(() => null)) ?? null;
+    if (input.threadId) { const place = await bestEffort(ctx.log, "workflow preflight thread place", deps.projectPlace(input.threadId), null); if (place) return place; }
+    return (await (deps.projectPlaceOf ? bestEffort(ctx.log, "workflow preflight project place", deps.projectPlaceOf(input.projectId), null) : null)) ?? null;
   }
 
   async function ask(place: Place, command: string): Promise<string | null> {

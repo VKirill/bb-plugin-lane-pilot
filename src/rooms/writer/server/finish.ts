@@ -18,7 +18,7 @@ import { candidatePatches, runCodeCritique } from "../../critique/server";
 import { fullAccessSpawn } from "../../platform/server";
 import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server";
 import { closeWriterStages, recordGateEvaluation, recordStage } from "../../runs/server";
-import {isNotFound, orMiss, outputText, stringAt} from "@lane-pilot/kit";
+import {bestEffort, isNotFound, orMiss, outputText, stringAt} from "@lane-pilot/kit";
 import { wasAnsweredByDefault } from "./question-default";
 import {needsHumanQuestion, providerStreamError, WRITER_STREAM_ERROR, writerContextBlocks, writerSetupLines} from "./writer-task";
 import { isLiveDecision } from "../live-folder";
@@ -180,9 +180,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
           const usageListed = await bb.sdk.threads.events.list({ threadId:input.writerThreadId, types:["thread/tokenUsage/updated"], order:"desc", limit:"50" });
           const usage = Array.isArray(usageListed) ? tokenUsageFromEvent(usageListed[0]) : null;
           if (usage) { writerTokens = usage.totalTokens; budget.noteTokens(usage.threadId, usage.totalTokens); }
-        } catch {
-          // Usage is informational; a host that cannot list events does not fail the attempt.
-        }
+        } catch (cause) { ctx.log(`writer ${input.taskId}: usage events unreadable: ${cause instanceof Error ? cause.message : String(cause)}`); }
       };
       // Stage budget question: at four fifths of the task's appetite minutes the PM is asked once whether to extend them (lane_pilot_update_task)
       // or let the writer stop. The appetite's tokens are a forecast only (packages/resilience/src/appetite.ts): no question, no stop.
@@ -192,13 +190,13 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
         const timeUsed = (Date.now() - attemptStartedAt) / (appetite.minutes * 60_000);
         if (timeUsed < 0.8) return;
         budgetAsked = true;
-        void Promise.resolve().then(() => bb.sdk.threads.send({ threadId:input.pmThreadId!, mode:"queue-if-active", input:[{ type:"text", mentions:[], text:`[Lane Pilot] Task ${input.taskId} has spent ${Math.round(timeUsed * 100)}% of its appetite (${Math.round((Date.now() - attemptStartedAt) / 60_000)}/${appetite.minutes} min). Its writer stops at the appetite: raise it with lane_pilot_update_task now if the work is worth more, or let it stop.` }] } as never)).catch(() => undefined);
+        void bestEffort(ctx.log, "writer budget note", Promise.resolve().then(() => bb.sdk.threads.send({ threadId:input.pmThreadId!, mode:"queue-if-active", input:[{ type:"text", mentions:[], text:`[Lane Pilot] Task ${input.taskId} has spent ${Math.round(timeUsed * 100)}% of its appetite (${Math.round((Date.now() - attemptStartedAt) / 60_000)}/${appetite.minutes} min). Its writer stops at the appetite: raise it with lane_pilot_update_task now if the work is worth more, or let it stop.` }] } as never)), undefined);
       };
       const overBudget = () => { askBudgetOnce(); return runningWriterBudgetStop(budget.check()) ?? appetiteStop(appetite, { tokens:writerTokens, elapsedMs:Date.now() - attemptStartedAt }); };
       const stopRunningWriter = async (reason:string) => {
-        const current = await getThreadBounded(input.writerThreadId).catch(() => null);
+        const current = await bestEffort(ctx.log, "writer thread status", getThreadBounded(input.writerThreadId), null);
         const status = stringAt(current, "status");
-        if (["active", "starting"].includes(status ?? "")) await bb.sdk.threads.stop({ threadId:input.writerThreadId }).catch(() => undefined);
+        if (["active", "starting"].includes(status ?? "")) await bestEffort(ctx.log, "writer thread stop", bb.sdk.threads.stop({ threadId:input.writerThreadId }), undefined);
         transitionAttempt(db, input.attemptId, "blocked", { reason });
         closeWriterStages(db, {
           runId:input.runId, taskId:input.taskId, plan:getTaskPlan(db, input.taskId) ?? "",
@@ -220,7 +218,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
             const idle = waitThreadIdle(bb, input.writerThreadId, "writer_follow_up", undefined, followUpSince, deleted)
               .finally(() => { waiting = false; });
             // A budget stop returns before this wait ends; its later rejection (thread_interrupted) must not go unhandled, which kills the BB server.
-            idle.catch(() => undefined);
+            void bestEffort(ctx.log, "writer idle wait", idle, undefined);
             while (waiting) {
               await noteWriterTokens();
               const budgetStop = overBudget();
@@ -252,7 +250,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
           const reason = nudge.reason ?? `${WRITER_SILENT_REASON}: no activity after ${nudge.count} nudges`;
           if (nudge.reason) holdProviderLimit(nudge.until);
           const ended = providerFailed(reason);
-          if (["active", "starting"].includes(currentStatus ?? "")) await bb.sdk.threads.stop({ threadId:input.writerThreadId }).catch(() => undefined);
+          if (["active", "starting"].includes(currentStatus ?? "")) await bestEffort(ctx.log, "writer thread stop", bb.sdk.threads.stop({ threadId:input.writerThreadId }), undefined);
           return ended;
         }
         const listed = currentStatus === "idle" ? null : await listThreadEventsRaw(bb, { threadId:input.writerThreadId, types:THREAD_WATCH_EVENT_TYPES, order:"desc", limit:"50" });
@@ -261,7 +259,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
         const failure = await startLimitWaiting(bb, input.writerThreadId, rawFailure) ? null : rawFailure;
         if (failure) {
           const ended = providerFailed(failure);
-          if (["active", "starting"].includes(currentStatus ?? "")) await bb.sdk.threads.stop({ threadId:input.writerThreadId }).catch(() => undefined);
+          if (["active", "starting"].includes(currentStatus ?? "")) await bestEffort(ctx.log, "writer thread stop", bb.sdk.threads.stop({ threadId:input.writerThreadId }), undefined);
           return ended;
         }
         if (currentStatus === "idle") {
@@ -294,7 +292,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
         return { status:"blocked", reason, attemptId:input.attemptId, writerThreadId:input.writerThreadId };
       }
       // A writer that stopped to ask the owner is not a failed attempt: no retry, no fallback, the question goes to the PM.
-      const answer = outputText(await bb.sdk.threads.output({ threadId:input.writerThreadId }).catch(() => ""));
+      const answer = outputText(await bb.sdk.threads.output({ threadId:input.writerThreadId }).catch((cause: unknown) => { ctx.log(`writer ${input.taskId}: thread output unreadable: ${cause instanceof Error ? cause.message : String(cause)}`); return ""; }));
       // The provider's own limit notice instead of a report: the task never ran, so another model takes it, uncharged.
       const limit = providerLimitNotice(answer);
       if (limit) {
@@ -380,12 +378,21 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
         const dirt = await services.workspaceDirt(input.config, input.task.project_cwd, input.runId);
         const byPath = new Map((dirt.ok ? dirt.snapshots : []).map((row) => [row.path, row.sha256 || null]));
         const hashes = Object.fromEntries((candidate.produced ?? []).map((path) => [path, byPath.get(path) ?? null]));
-        const files:Array<{ path:string; content:string|null }> = [];
+        const files:Array<{ path:string; content:string|null|undefined }> = [];
         for (const path of candidate.produced ?? []) {
-          const file = await bb.sdk.files.read({
-            hostId:input.config.hostId, rootPath:input.task.project_cwd, path:resolve(input.task.project_cwd, path),
-          }).catch(() => ({ content:null }));
-          files.push({ path, content:typeof file.content === "string" ? file.content : null });
+          let content: string | null | undefined;
+          try {
+            const file = await orMiss(bb.sdk.files.read({
+              hostId:input.config.hostId, rootPath:input.task.project_cwd, path:resolve(input.task.project_cwd, path),
+            }), null, isNotFound);
+            content = typeof file?.content === "string" ? file.content : null;
+          } catch (cause) {
+            // One unreadable produced file is a named hold, not a silent pass; the rest still count.
+            // undefined is the read-outage outcome, distinct from null (absent).
+            ctx.log(`writer ${input.taskId}: the produced file ${path} could not be read (${cause instanceof Error ? cause.message : String(cause)}); its evidence is left out`);
+            content = undefined;
+          }
+          files.push({ path, content });
         }
         lastPatches = await candidatePatches(bb, db, { runId:input.runId, taskId:input.taskId, hostId:input.config.hostId, cwd:input.task.project_cwd, paths:candidate.produced ?? [] });
         return buildCandidateEvidence({
@@ -418,9 +425,9 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
         const evidence = await captureEvidence();
         // abide-style: the accepted writer rules against this diff, before the critic. A break is a remark on the
         // writer's repair turn, never a block; shadow (the default) only records what it would have said.
-        const ruleRemark = ruleViolationRemark(await judgeRulesOnDiff(jev(), db, input.projectId,
+        const ruleRemark = ruleViolationRemark(await bestEffort(ctx.log, "writer rules on diff", judgeRulesOnDiff(jev(), db, input.projectId,
           Object.values(lastPatches ?? {}).join("\n"),
-          { projectId:input.projectId, runId:input.runId, subject:input.taskId, settings:projectSettings }).catch(() => []));
+          { projectId:input.projectId, runId:input.runId, subject:input.taskId, settings:projectSettings }), []));
         const ledger = repairLedgerFromResult(listStageReceipts(db, input.runId, input.taskId).find((row) => row.stageId === "code-critique")?.result);
         if (ledger?.policy) frozenPolicy = ledger.policy;
         if (ledger?.repairRound) repairRound = Math.max(repairRound, ledger.repairRound);
@@ -777,11 +784,11 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
       ];
       if (criticNotes) {
         markerWarnings.push(criticNotes);
-        void sendServiceMessage(bb, { threadId: writerThreadId, senderThreadId: input.pmThreadId, text: criticNotes }).catch(() => undefined);
+        void bestEffort(ctx.log, "writer critic notes notice", sendServiceMessage(bb, { threadId: writerThreadId, senderThreadId: input.pmThreadId, text: criticNotes }), undefined);
       }
       if (markerWarnings.length) candidate.warnings = [...(candidate.warnings ?? []), ...markerWarnings];
       // The approach note the window's task screen shows (the gate keeps only the hash of its summary).
-      await recordTaskApproach(bb.storage.kv, input.runId, input.taskId, { approach:markers.approach, lesson:markers.lesson, noLessonReason:markers.noLessonReason, referenceTestEdits:testEdits, at:Date.now() }).catch(() => undefined);
+      await bestEffort(ctx.log, "writer approach record", recordTaskApproach(bb.storage.kv, input.runId, input.taskId, { approach:markers.approach, lesson:markers.lesson, noLessonReason:markers.noLessonReason, referenceTestEdits:testEdits, at:Date.now() }), undefined);
       // Stage questions from files and the execution checkpoint: the task folder's QUESTIONS.md and CHECKPOINT.md, read from the attempt's copy.
       const attemptRow = fitAttempt;
       const folderOf = (name:string) => `.agents/plans/items/${input.taskId}/${name}`;
@@ -790,7 +797,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
       const checkpoint = await readTaskFile("CHECKPOINT.md");
       const fileQuestions = questionsText ? questionsFromFile(questionsText) : [];
       if (fileQuestions.length || checkpoint) {
-        await recordTaskQuestions(bb.storage.kv, input.runId, input.taskId, { questions:fileQuestions, checkpoint:checkpoint?.slice(0, 2000) ?? null, at:Date.now() }).catch(() => undefined);
+        await bestEffort(ctx.log, "writer questions record", recordTaskQuestions(bb.storage.kv, input.runId, input.taskId, { questions:fileQuestions, checkpoint:checkpoint?.slice(0, 2000) ?? null, at:Date.now() }), undefined);
         if (fileQuestions.length) candidate.warnings = [...(candidate.warnings ?? []), `the writer left ${fileQuestions.length} question(s) in QUESTIONS.md: ${fileQuestions.map((row) => `[${row.kind}] ${row.question}`).join("; ").slice(0, 600)}`];
       }
       // Drawing unchanged: the drawing a task follows is its input, not its output; a writer that edited it changed the yardstick.
@@ -829,7 +836,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
       // in place and with its worktree, for the owner's yes the PM records (lane_pilot_queue word); a no or six silent hours block it.
       // On owner.words=risky (the default) only a task of risk high waits; a low or medium one lands by itself.
       const ownerWords = landingWordAsked(loadProjectSettings(db, input.projectId, getRunSettingsScopes(db, input.runId)), input.task.risk);
-      const wordsOf = async () => ((await bb.storage.kv.get(TASK_WORDS_KEY).catch(() => null)) as Record<string, TaskWord[]> | null)?.[taskWordKey(input.runId, taskFamily(input.taskId))];
+      const wordsOf = async () => ((await bb.storage.kv.get(TASK_WORDS_KEY)) as Record<string, TaskWord[]> | null)?.[taskWordKey(input.runId, taskFamily(input.taskId))];
       { const stopped = stoppedMeanwhile("the plan-fact check", writerThreadId); if (stopped) return stopped; }
       let wordGap = landingWordGap(ownerWords, await wordsOf());
       if (wordGap && !wordGap.includes("said no")) {
@@ -846,8 +853,8 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
             actions:[{ id:"yes", label:"Да, сливать", cli:rpcLine("task_word", wordInput("yes")), rpc:{ method:"task_word", input:wordInput("yes") } },
               { id:"no", label:"Нет", cli:rpcLine("task_word", wordInput("no")), rpc:{ method:"task_word", input:wordInput("no") } }] });
         } catch { /* the list is a mirror; the wait itself goes on */ }
-        void sendServiceMessage(bb, { threadId:input.pmThreadId, senderThreadId:writerThreadId,
-          text:`Lane Pilot: task ${input.taskId} passed its checks and waits for the owner's word before it lands on main (owner.words asks it for this task: risk ${input.task.risk}). Ask him with lane_pilot_ask_owner, then record his answer with lane_pilot_queue {action:"word", taskId:"${input.taskId}", decision:"yes"|"no", text}. It waits up to 6 hours; no need to resend it.` }).catch(() => undefined);
+        void bestEffort(ctx.log, "writer owner word notice", sendServiceMessage(bb, { threadId:input.pmThreadId, senderThreadId:writerThreadId,
+          text:`Lane Pilot: task ${input.taskId} passed its checks and waits for the owner's word before it lands on main (owner.words asks it for this task: risk ${input.task.risk}). Ask him with lane_pilot_ask_owner, then record his answer with lane_pilot_queue {action:"word", taskId:"${input.taskId}", decision:"yes"|"no", text}. It waits up to 6 hours; no need to resend it.` }), undefined);
         // Up to six hours of waiting held a writer seat of the pool for nothing (Gemini F-008.2): the seat goes back now; `admitted` and the
         // live key stay, they protect the task's files until the word lands or the wait ends.
         input.releaseSlot?.();
@@ -952,11 +959,11 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
           const files = merged.conflicts.join(", ");
           ctx.log(`writer ${input.taskId} waits for uncommitted edits in ${basePath} to be committed: ${files}`);
           // The chats that work in this folder are asked by name; the PM hears who was asked, or that nobody is known.
-          const asked = await askGuestsToCommit(bb, basePath, merged.conflicts, input.taskId, input.pmThreadId).catch(() => [] as string[]);
-          void sendServiceMessage(bb, { threadId:input.pmThreadId, senderThreadId:writerThreadId,
+          const asked = await bestEffort(ctx.log, "writer guests commit ask", askGuestsToCommit(bb, basePath, merged.conflicts, input.taskId, input.pmThreadId), [] as string[]);
+          void bestEffort(ctx.log, "writer guests notice", sendServiceMessage(bb, { threadId:input.pmThreadId, senderThreadId:writerThreadId,
             text:asked.length
               ? `Lane Pilot: task ${input.taskId} is ready, but main checkout ${basePath} has uncommitted changes in the same files: ${files}. Lane Pilot asked threads working in this folder to commit them: ${asked.map((thread) => `@thread:${thread}`).join(", ")}. The task will merge automatically once files are committed (waits up to 2 hours); no need to resend it.`
-              : `Lane Pilot: task ${input.taskId} is ready, but main checkout ${basePath} has uncommitted changes in the same files: ${files}. Lane Pilot does not know whose chat it is: ask the owner to commit or put them away (or do it yourself if this chat made them). The task will merge automatically once the directory is clean (waits up to 2 hours); no need to resend it.` }).catch(() => undefined);
+              : `Lane Pilot: task ${input.taskId} is ready, but main checkout ${basePath} has uncommitted changes in the same files: ${files}. Lane Pilot does not know whose chat it is: ask the owner to commit or put them away (or do it yourself if this chat made them). The task will merge automatically once the directory is clean (waits up to 2 hours); no need to resend it.` }), undefined);
           const since = Date.now();
           // Another task's merge may hold the checkout meanwhile: that is a wait too, never an acceptance without a merge.
           while ((dirtyBase(merged) || merged.status === "busy") && Date.now() - since < DIRTY_BASE_WAIT_MS && !ctx.isDisposed()) {
@@ -1007,7 +1014,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
       // the project's median over these rows is what plan warnings measure new slices against.
       let sizeLines = 0;
       if (integration?.commit) {
-        const stat = await runOnHost(host, { hostId:input.config.hostId, cwd:basePath!, command:`git diff --shortstat ${integration.commit}^ ${integration.commit}`, timeoutSec:15, timeoutMs:15_000 }).catch(() => null);
+        const stat = await bestEffort(ctx.log, "writer task size probe", runOnHost(host, { hostId:input.config.hostId, cwd:basePath!, command:`git diff --shortstat ${integration.commit}^ ${integration.commit}`, timeoutSec:15, timeoutMs:15_000 }), null);
         if (stat && stat.exitCode === 0) for (const m of stat.stdout.matchAll(/(\d+) insertions?|(\d+) deletions?/g)) sizeLines += Number(m[1] ?? m[2] ?? 0);
       }
       const firstAttempt = firstAttemptAt(db, input.taskId);

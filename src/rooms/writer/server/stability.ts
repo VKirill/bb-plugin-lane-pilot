@@ -1,5 +1,6 @@
 
 import type { ServerCore } from "../../contracts/server";
+import { bestEffort } from "@lane-pilot/kit";
 import type { FailureClass } from "../../runs";
 import { onAttemptFinished } from "./attempt-finished";
 
@@ -21,8 +22,8 @@ interface Services {
 export function mountStabilityAttemptFinished(ctx: ServerCore, services: Services): void {
   onAttemptFinished(ctx, (event) => {
     if (event.scope !== "task" || event.status === "accepted" || event.status === "canceled") return;
-    void services.stability.onTaskFailed({ projectId: event.projectId, runId: event.runId, taskId: event.taskId,
+    void bestEffort(ctx.log, "writer stability failure record", services.stability.onTaskFailed({ projectId: event.projectId, runId: event.runId, taskId: event.taskId,
       pmThreadId: event.pmThreadId, state: event.status, reason: event.reason ?? "",
-      ...(event.judged ? { klass: event.judged.failureClass as FailureClass, mast: event.judged.mast, intervention: event.judged.intervention } : {}) }).catch(() => false);
+      ...(event.judged ? { klass: event.judged.failureClass as FailureClass, mast: event.judged.mast, intervention: event.judged.intervention } : {}) }), false);
   }, "stability:task-failed");
 }

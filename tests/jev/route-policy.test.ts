@@ -56,7 +56,7 @@ describe("route policy in the router model", () => {
       jev: () => jevOf(seen),
       settings: async () => ({ "secrets.allow": "OTHER" }) as never,
       legacy: async () => ({ choice: "legacy", confidence: 1, pattern: "l", rejected: [], questions: [] }),
-      projectId: "p", runId: "r",
+      projectId: "p", runId: "r", log: () => {},
     });
     const out = await model(input([card("stripe", { secrets: ["STRIPE_KEY"] }), card("ok")]));
     expect(seen.candidates).toEqual(["ok"]);
@@ -70,7 +70,7 @@ describe("route policy in the router model", () => {
       jev: () => ({ enabled: () => true, async judge() { asked = true; throw new Error("must not be called"); } }) as unknown as Jev,
       settings: async () => ({ "route.max_risk": "low" }) as never,
       legacy: async (i) => ({ choice: i.candidates[0]!.id, confidence: 1, pattern: "l", rejected: [], questions: [] }),
-      projectId: "p", runId: "r",
+      projectId: "p", runId: "r", log: () => {},
     });
     const out = await model(input([card("stripe", { secrets: ["STRIPE_KEY"] })]));
     expect(asked).toBe(false);

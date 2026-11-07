@@ -18,7 +18,7 @@ function setup() {
   const { bb } = createFakePluginHost({ pluginId: "lane-pilot", sdk: { projects: { list: async () => [] } } as never });
   const db = openDatabase(bb);
   const host = { call: async () => { throw new Error("no host in this test"); } };
-  const ctx = { bb, db, host } as unknown as ServerCore;
+  const ctx = { bb, db, host, log: () => undefined } as unknown as ServerCore;
   const services = { docsPlaces: async () => [], insights: { acceptRuleProposal, adoptRuleProposal, deleteMemoryRecord, rejectRuleProposal, retireAdoptedRule } } as unknown as Services;
   return { db, host, ctx, services, probe: createMemoryProbe(ctx, services) };
 }
@@ -105,7 +105,7 @@ describe("the turn that continues a writer thread", () => {
     const lesson = upsertLessonProposal(db, "P", { rule: "Run npm ci in a writer worktree, never npm install, lockfile stays untouched", audience: "writer", always: true });
     upsertLessonProposal(db, "P", { rule: "Run npm ci in a writer worktree, never npm install, lockfile stays untouched", audience: "writer", always: true });
     adoptRuleProposal(db, "P", lesson.id);
-    const deps = { db, host: host as never, chainForRun: async () => [] as string[] };
+    const deps = { db, host: host as never, chainForRun: async () => [] as string[], log: () => undefined };
     const know = { projectId: "P", runId: "r1", hostId: "h", task, memorySettings: parseMemorySettings({}) };
     expect((await stickyTurnPromptWithRules(deps, know, { kind: "next-task", task }))([])).toContain("never npm install");
     expect((await stickyTurnPromptWithRules(deps, know, { kind: "retry", task }))([])).not.toContain("never npm install");

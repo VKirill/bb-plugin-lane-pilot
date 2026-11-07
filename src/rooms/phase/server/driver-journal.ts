@@ -1,6 +1,6 @@
 import { createJournal, receiptThreadId, wfLatestSucceededStep, wfRunProjectId } from "@lane-pilot/workflow-engine";
 import { getRunSettingsScopes } from "../../storage";
-import { sha256Hex } from "@lane-pilot/kit";
+import { sha256Hex, parseJsonOr } from "@lane-pilot/kit";
 import { savePhase } from "../store";
 import { PhaseRefusal, type DriverBase } from "./driver-tools";
 import type { Docs } from "./driver-docs";
@@ -22,7 +22,7 @@ export function installJournal(tools: JournalTools) {
     const run = journal.getRun(wfRunId);
     if (!run) return null;
     let roles = new Map<string, string>();
-    try { roles = new Map(((JSON.parse(run.definition_json) as { nodes?: Array<{ id: string; role?: string }> }).nodes ?? []).filter((node) => node.role).map((node) => [node.id, node.role!])); } catch { /* no roles: no critic */ }
+    roles = new Map(((parseJsonOr(run.definition_json, {}) as { nodes?: Array<{ id: string; role?: string }> }).nodes ?? []).filter((node) => node.role).map((node) => [node.id, node.role!]));
     return journal.steps(wfRunId).map((row) => {
       const threadId = receiptThreadId(row.receipt_json);
       return { nodeId: row.node_id, role: roles.get(row.node_id) ?? null, state: row.state, threadId, startedAt: row.started_at, endedAt: row.ended_at };
@@ -43,12 +43,12 @@ export function installJournal(tools: JournalTools) {
     // The plan the run checked is this plan: the run whose planner made it, or a run handed its signature (plan_sha) after it was
     // submitted. A fresh run of the same project that checked another plan does not admit this one (SMA audit R-02).
     let handed: { plan_sha?: unknown } = {};
-    try { handed = JSON.parse(run.inputs_json ?? "{}") ?? {}; } catch { /* no inputs: no plan handed */ }
+    handed = parseJsonOr(run.inputs_json ?? "{}", {}) ?? {};
     if (plan.fromRun ? plan.fromRun !== wfRunId : handed.plan_sha !== plan.sha || run.created_at < (plan.submittedAt ?? 0))
       return `workflow run ${wfRunId} did not check this plan (${plan.fromRun ? `the plan came from ${plan.fromRun}` : `it was not handed plan_sha ${plan.sha.slice(0, 12)} after the plan was submitted`})`;
     if (decision === "approve") {
       let output: { status?: unknown; plan_verdict?: unknown } = {};
-      try { output = JSON.parse(run.output_json ?? "{}") ?? {}; } catch { /* no output: no approval in it */ }
+      output = parseJsonOr(run.output_json ?? "{}", {}) ?? {};
       if (output.plan_verdict !== "pass" || (output.status !== undefined && output.status !== "ok")) return `the critic of ${wfRunId} did not approve: its output says ${String(output.plan_verdict ?? output.status ?? "nothing").slice(0, 120)}`;
     }
     return null;
@@ -67,7 +67,7 @@ export function installJournal(tools: JournalTools) {
     if (!step) return { why: `no finished reviewer step «${node}» in workflow run ${runId}` };
     let receipt: { inputSha256?: string; threadId?: string | null } = {};
     let input: { with?: unknown; via?: { fromThreadId?: string; handoff?: string } } = {};
-    try { receipt = JSON.parse(step.receipt_json ?? "{}") ?? {}; input = JSON.parse(step.input_json) ?? {}; } catch { /* unreadable: no proof */ }
+    receipt = parseJsonOr(step.receipt_json ?? "{}", {}) ?? {}; input = parseJsonOr(step.input_json, {}) ?? {};
     if (!receipt.threadId) return { why: `the reviewer step «${node}» of ${runId} ran in no session of its own` };
     if (receipt.inputSha256 !== sha256Hex(step.input_json)) return { why: `the journal's measurement of the reviewer's input does not match its bytes in ${runId}` };
     const author = input.via?.fromThreadId ?? null;

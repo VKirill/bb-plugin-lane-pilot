@@ -2,6 +2,7 @@
 
 import type { ServerCore } from "../../contracts/server";
 import { threatGap } from "../stages";
+import { bestEffort, parseJsonOr } from "@lane-pilot/kit";
 import { PLAN_WORD_GAP, INDEPENDENCE_GAP, phaseFolder, planGate, type Phase, type PhaseRecord, type PlanItem, type RiskKey, candidateOn } from "../logic";
 import packageJson from "../../../../package.json";
 
@@ -354,7 +355,7 @@ export function createAutoStages(ctx: Pick<ServerCore, "log">, services: Pick<Se
       // handed (its journal input), so the read is the engine's own measurement, not a hash this code computes (SMA p7_saw_bytes, audit N-04).
       const step = services.workflowEngine.snapshot?.(auto.wfRunId)?.steps.filter((row) => row.node_id === "stage" && row.state === "succeeded").at(-1);
       let handoff = "";
-      try { handoff = text((JSON.parse(step?.input_json ?? "{}") as { via?: { handoff?: unknown } }).via?.handoff, 4000); } catch { /* no input: refused below */ }
+      handoff = text((parseJsonOr(step?.input_json ?? "{}", {}) as { via?: { handoff?: unknown } }).via?.handoff, 4000);
       if (!handoff) throw new Error("output_invalid: the retrospective's «stage» step received no analysis to read");
       deps.api.lessons({ phaseId: phase.id, analysis: handoff, reviewRun: auto.wfRunId, by });
     } else {
@@ -487,7 +488,7 @@ export function createAutoStages(ctx: Pick<ServerCore, "log">, services: Pick<Se
     if (!workflow || !runtime) return false;
     try {
       // The goal audit is told from git which recorded proofs are stale, so it does not work currency out by hand; a failed lookup only leaves the facts out.
-      const currency = due.kind === "close" && deps.proofCurrency ? await deps.proofCurrency(phase).catch(() => null) : null;
+      const currency = due.kind === "close" && deps.proofCurrency ? await bestEffort(ctx.log, "phase proof currency", deps.proofCurrency(phase), null) : null;
       // The plan runs in full mode: lp.plan's critic otherwise skips a plan below three tasks, and SMA checks every plan (p2_checker).
       const started = services.workflowEngine.start({ workflow, inputs: { ...autoInputs(phase, due, deps.medianTask?.(phase) ?? undefined), ...(currency ? { proof_currency: currency } : {}) }, key: `phase:${phase.id}:${due.kind}:${phase.edition}:${deps.now()}`, runtime,
         ...(due.kind === "plan" ? { mode: "full" as const } : {}),

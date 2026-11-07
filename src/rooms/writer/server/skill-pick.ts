@@ -1,5 +1,6 @@
 import { basename, dirname, join } from "node:path";
 import { pickWriterSkills, skillCatalog, type CatalogEntry, type KindCache, type ListedSkill, type SkillAsk, type SkillPick, type PickTaskInput } from "@lane-pilot/jev/judgments/skill-pick";
+import { isNotFound, orMiss } from "@lane-pilot/kit";
 import { candidateNames, readSkillTreeText, skillTreeCached } from "../../platform/server";
 import type { TaskV2 } from "../../contracts";
 import type { ServerCore } from "../../contracts/server";
@@ -51,7 +52,7 @@ const noPick = (enabled: boolean, reason: string): WriterSkillPick => ({ enabled
 
 /** The description of a skill in its SKILL.md frontmatter, for a skill the BB list gives without one. */
 async function frontmatterDescription(bb: ServerCore["bb"], hostId: string, skillFile: string): Promise<string | null> {
-  const file = await bb.sdk.files.read({ hostId, rootPath: dirname(skillFile), path: skillFile }).catch(() => null);
+  const file = await orMiss(bb.sdk.files.read({ hostId, rootPath: dirname(skillFile), path: skillFile }), null, isNotFound);
   const content = file && typeof file === "object" ? (file as { content?: unknown }).content : null;
   if (typeof content !== "string") return null;
   const frontmatter = content.split(/^---\s*$/m)[1] ?? "";
@@ -81,7 +82,10 @@ export function createWriterSkillPick(ctx: Pick<ServerCore, "bb" | "host">, opti
       const row = skill as { name: string; description?: unknown; filePath?: unknown };
       const filePath = typeof row.filePath === "string" && row.filePath ? row.filePath : null;
       const description = typeof row.description === "string" && row.description.trim() ? row.description
-        : filePath ? await frontmatterDescription(bb, hostId, join(skillFolder(filePath), "SKILL.md")) : null;
+        : filePath ? await frontmatterDescription(bb, hostId, join(skillFolder(filePath), "SKILL.md")).catch((cause: unknown) => {
+            log(`Lane Pilot skill pick: the description of ${row.name} could not be read (${cause instanceof Error ? cause.message : String(cause)}); the skill keeps its list entry`);
+            return null;
+          }) : null;
       return { name: row.name, description, filePath };
     }));
     const folders = new Map(rows.flatMap((row) => (row.filePath ? [[row.name, skillFolder(row.filePath)] as const] : [])));

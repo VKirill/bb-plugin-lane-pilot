@@ -37,7 +37,7 @@ const confident = { pick: choiceA({ a: 0.9, b: 0.1, [NONE]: 0.0 }), clear: { typ
 const database = () => openDatabase(createFakePluginHost({ pluginId: "lane-pilot" }).bb);
 const ACTIVE = { "jev.modes": "route.recheck=active" };
 const model = (jev: ReturnType<typeof createJev>, legacy: RouterModel | null = async () => ({ choice: "b", confidence: 90, pattern: "thread", rejected: [], questions: [] }), settings: Record<string, unknown> = ACTIVE) =>
-  createJevRouterModel({ jev: () => jev, settings: async () => settings, legacy, projectId: "p", runId: "r" });
+  createJevRouterModel({ jev: () => jev, settings: async () => settings, legacy, projectId: "p", runId: "r" , log: () => {} });
 
 describe("route.recheck as the second System One pass", () => {
   it("a confident recheck decides without the helper thread", async () => {

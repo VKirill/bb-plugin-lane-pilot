@@ -13,7 +13,7 @@ import { runDraftTest, testCasesOf } from "@lane-pilot/workflow-engine";
 import type { DraftTestResult } from "@lane-pilot/workflow-engine";
 import { builtinWorkflow } from "../builtin";
 import { casWriteWorkflowFile } from "../../storage";
-import { sha256Hex } from "@lane-pilot/kit";
+import { sha256Hex, bestEffort } from "@lane-pilot/kit";
 import { executorKey, lowerWorkflow } from "@lane-pilot/workflow-engine";
 import type { Workflow } from "@lane-pilot/workflow-engine";
 import { createStatusResolver } from "../../storage";
@@ -88,7 +88,7 @@ export function realDeps(ctx: ServerCore, services: Services): ArchitectDeps {
     },
     projectPlace: place,
     projectPlaceOf: async (projectId) => {
-      const places = await services.docsPlaces(projectId).catch(() => []);
+      const places = await bestEffort(ctx.log, "architect project places", services.docsPlaces(projectId), []);
       const root = places.find((item) => item.scopes.length === 0) ?? places[0];
       return root ? { hostId: root.hostId, path: root.path } : null;
     },
@@ -309,7 +309,7 @@ export function createWorkflowArchitect(ctx: ServerCore, services: Pick<Services
     services.workflowTriggers?.syncSoon(draft.projectId);
     const missing = unregisteredExecutors(final);
     // Names the chain asks for that this machine does not have: said at publish, not refused (the project's machine may differ from the one that runs it).
-    const capabilityWarnings = await unavailableCapabilities(final, draft.projectId, input.threadId ?? "").catch(() => []);
+    const capabilityWarnings = await bestEffort(ctx.log, "architect capability warnings", unavailableCapabilities(final, draft.projectId, input.threadId ?? ""), []);
     return {
       draftId: draft.id, published: true, workflowId: id, workflowVersion: version, scope: draft.scope, path: written.path,
       ...(capabilityWarnings.length ? { capabilityWarnings } : {}),

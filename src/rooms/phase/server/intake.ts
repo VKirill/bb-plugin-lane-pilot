@@ -1,4 +1,4 @@
-import { withoutCredentials, withoutSelectionMarkers } from "@lane-pilot/kit";
+import { withoutCredentials, withoutSelectionMarkers, bestEffort, isNotFound, orMiss, parseJsonOr } from "@lane-pilot/kit";
 import { choiceOf, jev, resolveThresholds, type JevSettings } from "@lane-pilot/jev";
 import { getRun, getRunSettingsScopes } from "../../storage";
 import { stringAt } from "@lane-pilot/kit";
@@ -79,11 +79,11 @@ export function createPhaseIntake(ctx: Deps, phases: IntakePhases, train?: Intak
     const instance = jev();
     try {
       if (instance?.enabled(settings as JevSettings)) {
-        const ctx = { projectId, runId, subject: "intake", settings: settings as JevSettings };
+        const jevCtx = { projectId, runId, subject: "intake", settings: settings as JevSettings };
         // The bundle is one API call; a Jev without judgeBundle (a test fake, an older runtime) asks the two one by one.
         const [weight, cls] = typeof instance.judgeBundle === "function"
-          ? await instance.judgeBundle([{ judgment: intakeJudgment, input: { text, previous } }, { judgment: pathClassJudgment, input: { text, previous } }], ctx)
-          : await Promise.all([instance.judge(intakeJudgment, { text, previous }, ctx), instance.judge(pathClassJudgment, { text, previous }, ctx)]);
+          ? await instance.judgeBundle([{ judgment: intakeJudgment, input: { text, previous } }, { judgment: pathClassJudgment, input: { text, previous } }], jevCtx)
+          : await Promise.all([instance.judge(intakeJudgment, { text, previous }, jevCtx), instance.judge(pathClassJudgment, { text, previous }, jevCtx)]);
         const kind = kindRules.confident ? kindRules.kind : weight.by === "jev" ? weight.decision.kind : kindRules.kind;
         if (!pathRules.confident && cls.by === "jev") { path.size = cls.decision.size; path.risk = cls.decision.risk; }
         if (weight.by === "jev") {
@@ -92,7 +92,7 @@ export function createPhaseIntake(ctx: Deps, phases: IntakePhases, train?: Intak
           const pick = choiceOf(weight.answers ?? {}, "weight");
           const minP = resolveThresholds(intakeJudgment, settings as JevSettings, null).min_p!;
           if (pick && kind !== "reply" && (pick.p < minP + 0.15 || pick.margin < 0.1)) {
-            const again = await instance.judge(intakeJudgment, { text, previous, reverse: true }, ctx).catch(() => null);
+            const again = await bestEffort(ctx.log, "phase intake second judgment", instance.judge(intakeJudgment, { text, previous, reverse: true }, jevCtx), null);
             const second = again?.by === "jev" ? choiceOf(again.answers, "weight") : undefined;
             if (second && second.top !== pick.top) return { kind: "reply", path, by: "jev" };
           }
@@ -105,8 +105,8 @@ export function createPhaseIntake(ctx: Deps, phases: IntakePhases, train?: Intak
 
   /** The PM's last message in the chat, or null: the judgment reads the owner's message against it. */
   async function lastPmMessage(threadId: string): Promise<string | null> {
-    const events = await bb.sdk.threads.events.list({ threadId, types: ["item/completed"], order: "desc", limit: "40" }).catch(() => []);
-    for (const event of Array.isArray(events) ? events as Array<Record<string, unknown>> : []) {
+    const events = await bestEffort(ctx.log, "phase intake PM events", bb.sdk.threads.events.list({ threadId, types: ["item/completed"], order: "desc", limit: "40" }), []);
+    for (const event of Array.isArray(events) ? events as unknown as Array<Record<string, unknown>> : []) {
       const item = ((event.data as Record<string, unknown> | undefined)?.item ?? (event as Record<string, unknown>).item) as { type?: string; text?: string } | undefined;
       if (item?.type === "agentMessage" && typeof item.text === "string" && item.text.trim()) return item.text;
     }
@@ -114,7 +114,7 @@ export function createPhaseIntake(ctx: Deps, phases: IntakePhases, train?: Intak
   }
 
   async function read(threadId: string): Promise<IntakeRecord | null> {
-    const metadata = await bb.sdk.threads.getPluginMetadata({ threadId }).catch(() => null) as Record<string, unknown> | null;
+    const metadata = await orMiss(bb.sdk.threads.getPluginMetadata({ threadId }), null, isNotFound) as Record<string, unknown> | null;
     if (metadata?.role !== "pm" || typeof metadata.lanePilotRunId !== "string") return null;
     const run = getRun(db, metadata.lanePilotRunId);
     if (!run) return null;
@@ -122,7 +122,7 @@ export function createPhaseIntake(ctx: Deps, phases: IntakePhases, train?: Intak
     // Off by default: the PM reads the owner's message itself and starts the graph it needs (owner, 2026-10-31: «I ask the agent a
     // question; the agent must understand what text it gets»). A machine reading in front of it opened a ten-hour phase for a question.
     if (!railsOn(settings)) return null;
-    const listed = await bb.sdk.threads.events.list({ threadId, types: ["client/turn/requested"], order: "desc", limit: "1" }).catch(() => []);
+    const listed = await bestEffort(ctx.log, "phase intake turn request", bb.sdk.threads.events.list({ threadId, types: ["client/turn/requested"], order: "desc", limit: "1" }), []);
     const event = (Array.isArray(listed) ? listed[0] : null) as { data?: Record<string, unknown> } & Record<string, unknown> | null;
     const data = (event?.data ?? event ?? {}) as Record<string, unknown>;
     const requestId = typeof data.requestId === "string" ? data.requestId : null;
@@ -144,7 +144,7 @@ export function createPhaseIntake(ctx: Deps, phases: IntakePhases, train?: Intak
     if (kind === "service" && by === "jev" && !stopped) {
       const answered = await serviceAnswer({ run, threadId, text, service: (classified as { service?: ServiceKind }).service ?? null });
       if (answered !== null) {
-        await bb.sdk.threads.send({ threadId, mode: "queue-if-active", input: [{ type: "text", text: answered, mentions: [] }] } as never).catch(() => undefined);
+        await bestEffort(ctx.log, "phase intake service answer", bb.sdk.threads.send({ threadId, mode: "queue-if-active", input: [{ type: "text", text: answered, mentions: [] }] } as never), undefined);
         const rec: IntakeRecord = { requestId, kind: "service", by, phaseId: null, at: Date.now() };
         await bb.storage.kv.set(KEY(threadId), rec);
         return rec;
@@ -164,7 +164,7 @@ export function createPhaseIntake(ctx: Deps, phases: IntakePhases, train?: Intak
         phaseId = phase.id;
         ctx.log(`phase intake: ${threadId} — the owner's request is heavy (${by}); phase ${phase.id} opened`);
         // The phase is booked now; the PM gets the discussion's step once its turn ends (the driver pokes an idle PM only).
-        await phases.tick().catch(() => 0);
+        await bestEffort(ctx.log, "phase intake tick", phases.tick(), 0);
       }
     }
     // A small job goes down the small-task graph (issue-quick), a batch of fixes down issue-batch, started by the machine:
@@ -181,15 +181,15 @@ export function createPhaseIntake(ctx: Deps, phases: IntakePhases, train?: Intak
     // (hub, 2026-10-24..28) without a look at the published graphs. The PM decides; the hint is a signal (Matvey: the model picks from the registry).
     let hint: IntakeRecord["hint"];
     if (kind === "process" && by === "jev" && train?.findPublished && !stopped) {
-      const found = await train.findPublished({ projectId: run.project_id, text }).catch(() => null);
+      const found = await bestEffort(ctx.log, "phase intake published graph", train.findPublished({ projectId: run.project_id, text }), null);
       if (found) {
         hint = { graphId: found.graphId, confidence: found.confidence };
         ctx.log(`phase intake: ${threadId} — the owner's process matches the published graph ${found.graphId} (${found.confidence}); no architect`);
-        await sendServiceMessage(bb as never, { threadId, mode: "steer-if-active", text: publishedHint(found) }).catch(() => undefined);
+        await bestEffort(ctx.log, "phase intake published hint", sendServiceMessage(bb as never, { threadId, mode: "steer-if-active", text: publishedHint(found) }), undefined);
       }
     }
     if (kind === "process" && !hint && by === "jev" && train?.startProcess && !stopped && String(settings["phase.train"] ?? "on") !== "off") {
-      architectThreadId = await train.startProcess({ projectId: run.project_id, pmThreadId: threadId, text }).catch(() => null) ?? undefined;
+      architectThreadId = await bestEffort(ctx.log, "phase intake process architect", train.startProcess({ projectId: run.project_id, pmThreadId: threadId, text }), null) ?? undefined;
       if (architectThreadId) ctx.log(`phase intake: ${threadId} — the owner's request is a process; the workflow architect builds it in ${architectThreadId}`);
     }
     const record: IntakeRecord = { requestId, kind, by, phaseId, at: Date.now(), ...((wfRunId ?? heavyRunId) ? { wfRunId: wfRunId ?? heavyRunId } : {}), ...(architectThreadId ? { architectThreadId } : {}), ...(hint ? { hint, hinted: true } : {}) };
@@ -210,7 +210,7 @@ export function createPhaseIntake(ctx: Deps, phases: IntakePhases, train?: Intak
     if (service === "results") {
       const rows = db.prepare(`SELECT t.contract_json, a.state, a.reason, a.thread_id FROM lane_pilot_task t JOIN lane_pilot_attempt a ON a.task_id=t.id AND a.run_id=t.run_id WHERE t.run_id=? AND a.state NOT IN (${OPEN_STATES_SQL}) ORDER BY a.updated_at DESC LIMIT 3`).all(run.id, ...OPEN_ATTEMPT_STATES) as Array<{ contract_json: string; state: string; reason: string | null; thread_id: string | null }>;
       if (!rows.length) return "Завершённых задач пока нет.";
-      return `Последние результаты: ${rows.map((row) => { let t = "?"; try { const c = JSON.parse(row.contract_json) as { title?: unknown; display_title?: unknown }; t = String(c.display_title || c.title || "?"); } catch { /* keep */ } const link = row.thread_id ? ` @thread:${row.thread_id}` : ""; return `${t} — ${row.state}${link}`; }).join("; ")}`;
+      return `Последние результаты: ${rows.map((row) => { const c = parseJsonOr(row.contract_json, null) as { title?: unknown; display_title?: unknown } | null; const t = String(c?.display_title || c?.title || "?"); const link = row.thread_id ? ` @thread:${row.thread_id}` : ""; return `${t} — ${row.state}${link}`; }).join("; ")}`;
     }
     if (service === "cancel") {
       // Only an unambiguous object: the task's id or title must match exactly one open task; else the PM reads the message.
@@ -280,7 +280,7 @@ export function createPhaseIntake(ctx: Deps, phases: IntakePhases, train?: Intak
       }
       const phase = await phases.open({ projectId: run.project_id, pmThreadId: input.pmThreadId, title: intakeTitle(input.text), goal: text, rails: true });
       ctx.log(`phase intake: hand-over (${input.origin.slice(0, 80)}) is heavy (${by}); phase ${phase.id} opened`);
-      await phases.tick().catch(() => 0);
+      await bestEffort(ctx.log, "phase handover tick", phases.tick(), 0);
       return { started: true, via: "phase", id: phase.id };
     }
     if ((kind === "small" || kind === "batch") && train && String(settings["phase.train"] ?? "on") !== "off") {

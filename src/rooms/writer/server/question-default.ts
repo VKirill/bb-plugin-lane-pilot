@@ -1,4 +1,5 @@
 import { questionKind } from "../../tasks";
+import { bestEffort, BestEffortLog} from "@lane-pilot/kit";
 
 /**
  * A writer's question nobody answers must not hold the task (and its folder) forever. After `writer.question_wait_min` (catalog s586; this
@@ -37,8 +38,8 @@ export const SAFE_DEFAULT_ANSWER = [
 type Kv = { get(key: string): Promise<unknown>; set(key: string, value: never): Promise<unknown> };
 const key = (runId: string, taskId: string) => `writer-question-default:${runId}:${taskId}`;
 
-export async function markAnsweredByDefault(kv: Kv, runId: string, taskId: string, at: number): Promise<void> {
-  await kv.set(key(runId, taskId), at as never).catch(() => undefined);
+export async function markAnsweredByDefault(kv: Kv, runId: string, taskId: string, at: number, log?: BestEffortLog): Promise<void> {
+  await bestEffort(log ?? ((message: string) => {}), "writer question default mark", kv.set(key(runId, taskId), at as never), undefined);
 }
 
 export async function wasAnsweredByDefault(kv: Kv, runId: string, taskId: string): Promise<boolean> {

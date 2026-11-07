@@ -3,7 +3,7 @@ import type { EngineOptions } from "@lane-pilot/workflow-engine";
 import { goalsSha } from "@lane-pilot/workflow-engine";
 import type { GoalAudit } from "@lane-pilot/workflow-engine";
 import type { Field } from "@lane-pilot/workflow-engine";
-import { redactKnown } from "@lane-pilot/kit";
+import { redactKnown, parseJsonOr } from "@lane-pilot/kit";
 import type { ServerCore } from "../../contracts/server";
 
 import type { WorkflowAgents } from "./workflow-agent";
@@ -43,7 +43,7 @@ const TASK = [
 /** What the auditor sees of a step: its node, state and the handoff it wrote. */
 const stepLine = (step: { node_id: string; state: string; output_json: string | null }): { node: string; state: string; handoff?: string } => {
   let handoff: string | undefined;
-  try { const output = JSON.parse(step.output_json ?? "null") as { handoff?: unknown } | null; if (typeof output?.handoff === "string") handoff = output.handoff.slice(0, 1200); } catch { /* an output that is not JSON has no handoff */ }
+  const output = parseJsonOr(step.output_json ?? "null", null) as { handoff?: unknown } | null; if (typeof output?.handoff === "string") handoff = output.handoff.slice(0, 1200);
   return { node: step.node_id, state: step.state, ...(handoff ? { handoff } : {}) };
 };
 

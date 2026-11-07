@@ -3,7 +3,7 @@ import { getActivation, getAttempt, getRun, getRunWriterHost, getTask, importSet
 import { cancelRejection, confirmWriterStopped, finishRunSafely, pauseRun } from "../../runs/server";
 import { markCancelCode } from "../../storage";
 import { renderTimeline, taskTimeline } from "../../runs";
-import {isNotFound, orMiss, outputText, stringAt, valueAt} from "@lane-pilot/kit";
+import {bestEffort, isNotFound, orMiss, outputText, stringAt, valueAt} from "@lane-pilot/kit";
 import {runSkillsCli, SKILLS_USAGE} from "../../platform/server";
 import { THREAD_WATCH_EVENT_TYPES, decideThreadCompletion, eventsListQueryLabel, listThreadEventsRaw, waitThreadIdle } from "@lane-pilot/thread-observe";
 import type { InsightsApi, ScheduleAgentApi } from "../../contracts";
@@ -394,8 +394,8 @@ ${ERRANDS_USAGE}` },
         if (command === "curriculum") return { exitCode:0, stdout:JSON.stringify(missCurriculum(db, args[0] === "--days" ? Number(args[1]) || 30 : 30), null, 2) };
         if (command === "cost") return { exitCode:0, stdout:JSON.stringify(costPerVerified(db, args[0] === "--days" ? Number(args[1]) || 30 : 30), null, 2) };
         if (command === "approvals-suggest") {
-          const live = await loadLiveExam(bb.storage.kv as never).catch(() => ({ items: [] as never[] }));
-          return { exitCode:0, stdout:JSON.stringify(approvalSuggestions((live as { items?: never[] }).items ?? []), null, 2) };
+          const live = await bestEffort(bb.log, "approvals-suggest live exam", loadLiveExam(bb.storage.kv as never), null);
+          return { exitCode:0, stdout:JSON.stringify(approvalSuggestions(live?.items ?? []), null, 2) };
         }
         if (command === "excavate" && args[0]) {
           const run = getRun(db, args[0]);
@@ -600,7 +600,7 @@ ${ERRANDS_USAGE}` },
           const wait = args.includes("wait=1");
           const plain = args.filter((arg) => arg !== "wait=1");
           const run = services.harness.runEditor({ projectId:plain[0]!, area:plain[1] ?? "", writerKey:plain[2] ?? "*", reason:"cli" });
-          if (!wait) { void run.catch(() => undefined); return { exitCode:0, stdout:JSON.stringify({ status:"started", detail:"running in the background; bb lane-pilot harness <project-id> shows the trial when it lands" }, null, 2) }; }
+          if (!wait) { void bestEffort(bb.log, "harness editor background run", run, undefined); return { exitCode:0, stdout:JSON.stringify({ status:"started", detail:"running in the background; bb lane-pilot harness <project-id> shows the trial when it lands" }, null, 2) }; }
           return { exitCode:0, stdout:JSON.stringify(await run, null, 2) };
         }
         if (command === "harness-trajectory" && (args.length === 1 || args.length === 2)) {
@@ -670,7 +670,7 @@ ${ERRANDS_USAGE}` },
           const confirmed = await confirmWriterStopped(bb, attempt.thread_id);
           const status = confirmed.status;
           if (!confirmed.stopped) throw new Error(`writer stop was not independently observed (status=${status ?? "unknown"}, waited ${Math.round(confirmed.waitedMs / 1000)}s)`);
-          await services.rollback.noteStopped(attempt.id).catch(() => undefined);
+          await bestEffort(bb.log, "rollback note stopped", services.rollback.noteStopped(attempt.id), undefined);
           transitionAttempt(db, attempt.id, "canceled", { threadId:attempt.thread_id, reason:"canceled from the CLI" });
           markCancelCode(db, attempt.id, "owner_cancel");
           return { exitCode:0, stdout:JSON.stringify({

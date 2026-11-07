@@ -1,5 +1,6 @@
 import { taskFamily } from "../../runs";
 import { runOnHost } from "@lane-pilot/host-calls";
+import { bestEffort, isNotFound, orMiss, parseJsonOr } from "@lane-pilot/kit";
 import { readWires, wiresCommand } from "../../wires";
 import type { TaskV2 } from "../../contracts";
 import type { ServerCore } from "../../contracts/server";
@@ -54,7 +55,7 @@ function familyPaths(db: ServerCore["db"], runId: string, taskId: string): strin
   const paths = new Set<string>();
   for (const row of rows) {
     if (row.task_id === taskId || taskFamily(row.task_id) !== family) continue;
-    try { for (const entry of JSON.parse(row.changed_json) as Array<{ path?: unknown }>) if (typeof entry?.path === "string") paths.add(entry.path); } catch { /* an unreadable row adds nothing */ }
+    for (const entry of parseJsonOr(row.changed_json, []) as Array<{ path?: unknown }>) if (typeof entry?.path === "string") paths.add(entry.path);
   }
   return [...paths];
 }
@@ -75,6 +76,7 @@ export async function runPlanFactStage(ctx: ServerCore, input: {
   // ph_ae0a8de9db: the redo's evidence in scripts/notes.js was «not in a changed hunk»).
   const gitBase = gitBaseFamily ?? getTaskGitBase(db, input.taskId);
   const base = gitBase ? gitBase.base_sha ?? gitBase.initial_head_sha : null;
+  const unreadable: Record<string, boolean> = {};
   if (table.status === "ok" && base && produced.length > 0 && produced.length <= MAX_DIFF_PATHS) {
     try {
       const out = await runOnHost(host, { hostId: input.hostId, cwd: input.task.project_cwd, command: diffHunksCommand(base, produced), timeoutSec: 30 });
@@ -83,22 +85,29 @@ export async function runPlanFactStage(ctx: ServerCore, input: {
     const cited = new Set(table.rows.flatMap((row) => row.evidence ?? []).map((entry) => /^(.+?)(?::\d+(?:-\d+)?)?$/.exec(entry.trim())?.[1] ?? ""));
     for (const [path, ranges] of Object.entries(hunks.changed)) {
       if (ranges !== "all" || !cited.has(path)) continue;
-      const file = await bb.sdk.files.read({ hostId: input.hostId, rootPath: input.task.project_cwd, path: `${input.task.project_cwd}/${path}` }).catch(() => null);
-      if (file && typeof file.content === "string") lineCount[path] = file.content.split("\n").length;
+      try {
+        const file = await orMiss(bb.sdk.files.read({ hostId: input.hostId, rootPath: input.task.project_cwd, path: `${input.task.project_cwd}/${path}` }), null, isNotFound);
+        if (file && typeof file.content === "string") lineCount[path] = file.content.split("\n").length;
+      } catch (cause) {
+        // An unreadable cited file is a named hold, not a silent pass; the rest of the gate still runs.
+        unreadable[path] = true;
+        ctx.log(`plan-fact: ${path} of ${input.taskId} could not be read (${cause instanceof Error ? cause.message : String(cause)}); its cited lines are not checked`);
+      }
     }
   }
   // A file the table cites but the candidate did not change is shown to exist before an "unchanged" item may rest on it; unread, nothing is known.
   let exists: Record<string, boolean> | undefined;
   const cited = table.status === "ok" ? untouchedCitations(table.rows, produced, input.task.project_cwd) : [];
   if (cited.length) {
-    try { exists = existsFromCommandOutput((await runOnHost(host, { hostId: input.hostId, cwd: input.task.project_cwd, command: existsCommand(cited), timeoutSec: 30 })).stdout, cited); } catch { /* unknown: the report says so */ }
+    const existsRan = await bestEffort(ctx.log, "plan-fact exists probe", runOnHost(host, { hostId: input.hostId, cwd: input.task.project_cwd, command: existsCommand(cited), timeoutSec: 30 }), null);
+    if (existsRan) exists = existsFromCommandOutput(existsRan.stdout, cited);
   }
   const check = blindPlanFact(input.task.acceptance, table, {
-    produced, ...hunks, lineCount, ...(exists ? { exists } : {}), root: input.task.project_cwd,
+    produced, ...hunks, lineCount, ...(exists ? { exists } : {}), ...(Object.keys(unreadable).length ? { unreadable } : {}), root: input.task.project_cwd,
     contractCommands: input.task.verification.map((row) => row.command), ran: input.verification,
   });
   if (input.task.wires?.length) {
-    const ran = await runOnHost(host, { hostId: input.hostId, cwd: input.task.project_cwd, command: wiresCommand(input.task.wires), timeoutSec: 60 }).catch(() => null);
+    const ran = await bestEffort(ctx.log, "plan-fact wires probe", runOnHost(host, { hostId: input.hostId, cwd: input.task.project_cwd, command: wiresCommand(input.task.wires), timeoutSec: 60 }), null);
     if (ran) check.wires = readWires(input.task.wires, ran.stdout);
     else check.notChecked.push("wires: the search in the worktree could not run, so the declared wires were not checked");
   }
@@ -112,7 +121,7 @@ export async function runPlanFactStage(ctx: ServerCore, input: {
   if (instance?.enabled(settings as never) && input.task.acceptance.length && base && produced.length) {
     try {
       const paths = produced.map((path) => `'${path.replace(/'/g, `'\''`)}'`).join(" ");
-      const diff = (await runOnHost(host, { hostId: input.hostId, cwd: input.task.project_cwd, command: `git -c core.quotepath=off diff --no-color --no-ext-diff ${base} -- ${paths}`, timeoutSec: 30 }).catch(() => null))?.stdout ?? "";
+      const diff = (await bestEffort(ctx.log, "plan-fact diff probe", runOnHost(host, { hostId: input.hostId, cwd: input.task.project_cwd, command: `git -c core.quotepath=off diff --no-color --no-ext-diff ${base} -- ${paths}`, timeoutSec: 30 }), null))?.stdout ?? "";
       const verdict = await instance.judge(planFactJudgment, { acceptance: input.task.acceptance, diff: clipDiff(diff), checks: input.verification },
         { projectId: input.projectId, runId: input.runId, subject: input.taskId, settings: settings as never });
       const shadowDecision = verdict.by === "fallback" ? verdict.shadow?.decision : undefined;

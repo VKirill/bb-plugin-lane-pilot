@@ -1,5 +1,6 @@
 import { listThreadEventsRaw } from "@lane-pilot/thread-observe";
 import { runOnHost } from "@lane-pilot/host-calls";
+import { bestEffort } from "@lane-pilot/kit";
 
 /** The brief rides in the fallback writer's first message, next to the contract: it stays small. */
 export const HANDOFF_BRIEF_MAX_CHARS = 12_000;
@@ -87,9 +88,9 @@ export async function collectHandoffBrief(input: {
   bb: Parameters<typeof listThreadEventsRaw>[0]; host: Parameters<typeof runOnHost>[0];
   hostId: string; threadId: string; workspacePath: string; stopReason: string;
 }): Promise<string> {
-  const listed = await listThreadEventsRaw(input.bb, { threadId:input.threadId, order:"desc", limit:"300" } as never).catch(() => null);
-  const ran = await runOnHost(input.host, { hostId:input.hostId, cwd:input.workspacePath, command:"git status --short; git diff --stat",
-    timeoutSec:30, timeoutMs:30_000 }).catch(() => null);
+  const listed = await bestEffort(input.bb.log, "writer handoff events", listThreadEventsRaw(input.bb, { threadId:input.threadId, order:"desc", limit:"300" } as never), null);
+  const ran = await bestEffort(input.bb.log, "writer handoff git status", runOnHost(input.host, { hostId:input.hostId, cwd:input.workspacePath, command:"git status --short; git diff --stat",
+    timeoutSec:30, timeoutMs:30_000 }), null);
   const gitStatus = ran && ran.exitCode === 0 ? ran.stdout : `(git status did not answer${ran ? `: exit ${ran.exitCode}` : ""})`;
   return buildHandoffBrief({ stopReason:input.stopReason, events:listed?.ok ? listed.events : [], gitStatus });
 }

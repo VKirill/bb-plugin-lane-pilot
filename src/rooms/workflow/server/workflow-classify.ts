@@ -4,7 +4,7 @@ import type { ChainRuntime } from "../../contracts/server";
 import type { ServerCore } from "../../contracts/server";
 import { jev, type JevSettings, type Verdict, choiceOf } from "@lane-pilot/jev";
 import { failureClassJudgment, type FailureClassDecision, type FailureClassInput } from "../../runs";
-import { redactKnown } from "@lane-pilot/kit";
+import { redactKnown, bestEffort } from "@lane-pilot/kit";
 
 const clip = (text: string, max: number): string => (text.length > max ? `${text.slice(0, max - 1)}…` : text);
 
@@ -73,7 +73,7 @@ export function registerQualityLoopClassifyExecutor(
       const instance = jev();
       const project = c.runtime?.projectId;
       const settings = project
-        ? ((await ctx.effectiveProjectSettings(project).catch(() => null))?.values as JevSettings)
+        ? ((await bestEffort(ctx.log, "workflow classify settings", ctx.effectiveProjectSettings(project), null))?.values as JevSettings)
         : undefined;
 
       if (!instance || !instance.enabled(settings)) {

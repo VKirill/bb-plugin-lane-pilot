@@ -8,6 +8,7 @@ import { CATALOG_WAIT_MS, modelCatalogOf, noteProviderLimit, registerSpawnUsage,
 import { onThreadFailure } from "@lane-pilot/thread-observe";
 ;
 import type { ServerCore } from "../../contracts/server";
+import { bestEffort } from "@lane-pilot/kit";
 
 /** State shared by the writer modules: the live task set, the provider pool, the provider breaker and one budget per run. */
 export function createWriterState(ctx: ServerCore) {
@@ -22,7 +23,7 @@ export function createWriterState(ctx: ServerCore) {
   // ZCode (the Mac mini's app) has no usage window: it is held when the machine has no zcode provider, outside its free hours, or while one of our threads works on it.
   const providerUsage = createProviderUsage(ctx.bb, Date.now, async ({ hostId, settings }) => zcodeBlock({
     settings, hostId, now: Date.now(), busy: await zcodeBusy(ctx.bb),
-    catalog: await within(modelCatalogOf(ctx).get(), CATALOG_WAIT_MS).catch(() => null),
+    catalog: await bestEffort(ctx.log, "writer model catalog", within(modelCatalogOf(ctx).get(), CATALOG_WAIT_MS), null),
   }));
   // The helpers' resolver (resolveSpawnModel) reads the same cache, under the same threshold, to move a table pick off a nearly spent provider.
   // A usage source may list a provider's quota under a router's own id (Gemini through 9router on OpenCode v2), so both are read.

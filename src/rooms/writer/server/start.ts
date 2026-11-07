@@ -10,7 +10,7 @@ import {WRITER_PROFILES, isZcodeProvider, rotatedWriterSettings, type WriterProf
 import { DEPENDENCY_REDO_WAIT_MS, blockedReasonCount, countAttempts, countChargedAttempts, countThreadTurns, createAttempt, endSpawnFailure, failureFieldsOf, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getTask, getTaskPlan, latestTaskAttemptState, attemptReasonsForTask, canceledLatestTaskIds, listAttemptsForTask, listAttemptsInStates, listOpenAttempts, listStageReceipts, listRunTaskRows, listTaskAttemptRows, listTracedAttemptsSince, listUnansweredWriterQuestions, loadProjectSettings, priorAttemptStates, taskHeldUntil, noteCleanAdmission, noteToldPmDirectly, onAttemptChanged, parkAttemptWake, trailingQueuedParks, transitionAttempt, taskBasePath } from "../../storage";
 import { closeOwnerItem, closeOwnerItemsByPrefix, ownerItemPrefixCount, postOwnerItem } from "../../owner-waiting";
 import { taskV2Schema } from "../../contracts";
-import { ownsPathsOverlap, pollPause } from "@lane-pilot/kit";
+import { bestEffort, ownsPathsOverlap, parseJsonOr, pollPause } from "@lane-pilot/kit";
 import { reconcile, reconcileCursor } from "../../stability";
 import { listRegressions, type RegressionRecord } from "../../baseline";
 import { quarantineFileSet } from "../../baseline";
@@ -240,7 +240,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
     const out = new Map<string, { attempts:number; refused:number }>();
     for (const row of rows) {
       let trace:{ providerId?:string; model?:string } | null = null;
-      try { trace = JSON.parse(row.trace_json) as { providerId?:string; model?:string }; } catch { /* unreadable */ }
+      trace = parseJsonOr(row.trace_json, null) as { providerId?:string; model?:string } | null;
       if (!trace?.providerId || !trace.model) continue;
       const pair = `${trace.providerId}/${trace.model}`;
       const cell = out.get(pair) ?? { attempts:0, refused:0 };
@@ -264,7 +264,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
     const out:Record<string, WriterLoad> = {};
     await Promise.all(profiles.map(async (profile) => {
       const spent = isZcodeProvider(profile.providerId) ? null
-        : await services.providerUsage.hold({ providerId:profile.providerId, model:profile.model, hostId, threshold:1, settings }).catch(() => null);
+        : await bestEffort(ctx.log, "writer provider usage hold", services.providerUsage.hold({ providerId:profile.providerId, model:profile.model, hostId, threshold:1, settings }), null);
       const pair = refusals.get(`${profile.providerId}/${profile.model}`);
       out[profile.key] = { percent:spent?.percent ?? null, running:running.get(profile.providerId) ?? 0,
         refuseShare: pair && pair.attempts >= REFUSAL_MIN_ATTEMPTS ? pair.refused / pair.attempts : null };
@@ -339,7 +339,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
     /** The backup an attempt works under, kept so an attempt resumed later (the PM's answer, a reload) finds it. */
     const liveBackupKey = (forAttemptId:string) => `live-backup:${forAttemptId}`;
     const bindLiveBackup = async ():Promise<void> => {
-      if (liveBackupId) await bb.storage.kv.set(liveBackupKey(attemptId), liveBackupId as never).catch(() => undefined);
+      if (liveBackupId) await bestEffort(ctx.log, "writer live backup bind", bb.storage.kv.set(liveBackupKey(attemptId), liveBackupId as never), undefined);
     };
     /** Puts the owned files back after a failed attempt and takes out what the writer created there; once per backup. */
     const rollbackLive = async ():Promise<void> => {
@@ -357,8 +357,8 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
       }
       const why = rolled.ok ? `could not put back ${rolled.failed.join("; ")}` : rolled.reason;
       ctx.log(`writer ${input.taskId}: rollback of ${backupId} incomplete: ${why}`);
-      if (input.pmThreadId) void bb.sdk.threads.send({ threadId:input.pmThreadId, mode:"queue-if-active", input:[{ type:"text", mentions:[],
-        text:`Lane Pilot: task ${input.taskId} was not accepted and its files in ${folder} could not be put back automatically (${why.slice(0, 600)}). The originals are in ~/.lane-pilot/live-backups/${backupId}/files on the folder's machine; tell the owner before another task runs there.` }] } as never).catch(() => undefined);
+      if (input.pmThreadId) void bestEffort(ctx.log, "writer rollback notice", bb.sdk.threads.send({ threadId:input.pmThreadId, mode:"queue-if-active", input:[{ type:"text", mentions:[],
+        text:`Lane Pilot: task ${input.taskId} was not accepted and its files in ${folder} could not be put back automatically (${why.slice(0, 600)}). The originals are in ~/.lane-pilot/live-backups/${backupId}/files on the folder's machine; tell the owner before another task runs there.` }] } as never), undefined);
     };
     /**
      * depends_on: the task starts only once every task it names is accepted (its work is in main). A blocked
@@ -370,7 +370,8 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
       // The pilot of this task's siblings (src/rooms/pilot): waited for like a dependency, except that a canceled pilot holds no one.
       const waveTasks = runTasks(listRunTaskRows(db, input.runId), canceledLatestTaskIds(db, input.runId));
       let taskWalls: TaskWallRow[] = [];
-      try { taskWalls = listWalls(db, { kind: "task", states: ["stopped","hunting","hunted","backlog"] }); } catch { /* a database without the wall tables holds no pilot */ }
+      try { taskWalls = listWalls(db, { kind: "task", states: ["stopped","hunting","hunted","backlog"] }); }
+      catch (cause) { ctx.log(`writer ${input.taskId}: the wall ladder is unreadable: ${cause instanceof Error ? cause.message : String(cause)}`); }
       const pilot = pilotOf(input.taskId, waveTasks);
       // A blocked pilot that nothing will redo soon (its own attempts are spent, or the wall ladder holds its family or a hunt runs on its
       // files) holds no one: the wave goes on in its own order, each task still serialised by owns_paths overlap. Only the PM's own depends_on keeps the 6-hour wait.
@@ -448,7 +449,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
           noted = reason;
           ctx.log(`writer ${input.taskId} waits: ${reason}`);
           recordStage(db, { runId:input.runId, taskId:input.taskId, stageId:"writer-agent", state:"pending", input:input.plan, reason });
-          if (input.pmThreadId) void bb.sdk.threads.send({ threadId:input.pmThreadId, mode:"queue-if-active", input:[{ type:"text", mentions:[], text:waitingSecretNote(input.taskId, gate) }] } as never).catch(() => undefined);
+          if (input.pmThreadId) void bestEffort(ctx.log, "writer secret wait notice", bb.sdk.threads.send({ threadId:input.pmThreadId, mode:"queue-if-active", input:[{ type:"text", mentions:[], text:waitingSecretNote(input.taskId, gate) }] } as never), undefined);
         }
         if (Date.now() - since > SECRET_WAIT_MS) return `${reason}: not provided within 12 hours; send the task again once it is saved`;
         await new Promise((wake) => setTimeout(wake, secretPollMs()));
@@ -674,7 +675,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
       // H2: the spawn gate's availability sources (breaker, owner presence, core allowlist, usage window) answer
       // before an attempt is spent on a writer that cannot start (writer-hold.ts).
       const holdDeps = { breaker:services.providerBreaker, presence:services.ownerPresence, usage:services.providerUsage,
-        coreHosts:(providerId:string) => coreHostsRequiredProvider(bb, providerId) };
+        coreHosts:(providerId:string) => coreHostsRequiredProvider(bb, providerId), log:ctx.log };
       /**
        * Every writer of the chain is held: the attempt stays `queued` with `waiting_writer:` + wake_at, the board
        * line says what it waits for, and the PM hears it once per attempt. A chain of nothing but
@@ -848,12 +849,12 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         // The third turn of this thread gets the digest of what it already did, not the raw trajectory.
         let feedback = previousAttempt;
         if (kind === "retry" && writer.turns >= 2) {
-          const listed = await listThreadEventsRaw(bb, { threadId: writer.threadId, order: "desc", limit: "50" }).catch(() => null);
+          const listed = await bestEffort(ctx.log, "writer attempt feedback events", listThreadEventsRaw(bb, { threadId: writer.threadId, order: "desc", limit: "50" }), null);
           feedback = attemptFeedback(writer.turns + 1, listed?.ok ? listed.events as Parameters<typeof attemptFeedback>[1] : [], previousAttempt);
         }
         // The next task of an area is a different contract: its rules come with it (writer-knowledge.ts); a retry or a merge keeps the brief's.
-        const memorySettings = parseMemorySettings((await effectiveProjectSettings(input.projectId, getRunSettingsScopes(db, input.runId)).catch(() => ({ values:{} }))).values);
-        const turnPrompt = await stickyTurnPromptWithRules({ db, host, chainForRun:(runId) => services.ruleScan.chainForRun(runId) },
+        const memorySettings = parseMemorySettings((await bestEffort(ctx.log, "writer memory settings", effectiveProjectSettings(input.projectId, getRunSettingsScopes(db, input.runId)), null))?.values ?? {});
+        const turnPrompt = await stickyTurnPromptWithRules({ db, host, chainForRun:(runId) => services.ruleScan.chainForRun(runId), log:ctx.log },
           { projectId:input.projectId, runId:input.runId, hostId:freshConfig.hostId, task:bound, memorySettings },
           { kind, task:bound, previousAttempt:kind === "merge" && !previousAttempt.includes(REPLAY_CHECK_FAILED) ? "" : feedback, liveFolder });
         // A task a person sent back to an earlier stage with a note (src/rooms/stage-return) takes the note into the area writer's next-task turn.
@@ -945,15 +946,15 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         // A mainfix runs only while main is still red: when its failing checks already pass on current main (another
         // task fixed it), it closes as accepted without a writer and the PM hears why.
         if (attemptsHere === 1 && !writerThreadId && isMainfixTask(input.task.id) && freshTask.verification.length > 0) {
-          const checks = await services.runVerification(freshConfig, freshTask, input.runId).catch(() => null);
+          const checks = await bestEffort(ctx.log, "writer mainfix checks", services.runVerification(freshConfig, freshTask, input.runId), null);
           if (checks && checks.length > 0 && checks.every((check) => check.exitCode === 0)) {
             ctx.log(`mainfix ${input.taskId}: its checks already pass on main; closing accepted without a writer`);
             transitionAttempt(db, attemptId, "accepted");
             last = { status:"accepted", attemptId, produced:[], verification:checks,
               mainfixPreflight:"the failing checks already pass on current main" };
-            if (input.pmThreadId) void bb.sdk.threads.send({ threadId:input.pmThreadId, mode:"queue-if-active",
+            if (input.pmThreadId) void bestEffort(ctx.log, "writer mainfix notice", bb.sdk.threads.send({ threadId:input.pmThreadId, mode:"queue-if-active",
               input:[{ type:"text", mentions:[],
-                text:`Lane Pilot: задача ${input.taskId} закрыта принятой без писателя — её проверки уже проходят на текущем main, main починила другая задача. Действий не нужно.` }] } as never).catch(() => undefined);
+                text:`Lane Pilot: задача ${input.taskId} закрыта принятой без писателя — её проверки уже проходят на текущем main, main починила другая задача. Действий не нужно.` }] } as never), undefined);
           }
         }
         if (!writerThreadId && !halfBound && last.status !== "accepted") {
@@ -1017,7 +1018,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
                 const attempt = getAttempt(db, row.id);
                 let diffStat: string | null = null;
                 if (attempt?.workspace_path) {
-                  const ran = await runOnHost(host, { hostId: input.config.hostId, cwd: attempt.workspace_path, command: "git diff --stat HEAD", timeoutSec:15, timeoutMs:15_000 }).catch(() => null);
+                  const ran = await bestEffort(ctx.log, "writer attempt diff stat", runOnHost(host, { hostId: input.config.hostId, cwd: attempt.workspace_path, command: "git diff --stat HEAD", timeoutSec:15, timeoutMs:15_000 }), null);
                   if (ran && ran.exitCode === 0 && ran.stdout.trim()) diffStat = ran.stdout.trim();
                 }
                 return { attemptId: row.id, state: row.state, reason: attempt?.reason ?? null, diffStat };
@@ -1025,12 +1026,12 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
               roundSeed = roundSeedBrief(doneRounds + 1, bestOf.rounds, roundSurvivors(candidates));
             }
           }
-          const prevBrief = previousAttemptBrief(await trimCheckLogsIn(jev(), last.status && isOwnFailure(last) ? last : own.failure ?? (last.status ? last : null), freshTask.title, { projectId:input.projectId, runId:input.runId, subject:input.taskId, settings:runSettings }), freshTask, undefined, liveFolder);
+          const prevBrief = previousAttemptBrief(await trimCheckLogsIn(jev(), last.status && isOwnFailure(last) ? last : own.failure ?? (last.status ? last : null), freshTask.title, { projectId:input.projectId, runId:input.runId, subject:input.taskId, settings:runSettings }, ctx.log), freshTask, undefined, liveFolder);
           // A fresh thread has none of the failed attempt's context: from the second attempt on it gets the
           // digest of that attempt's thread (what it did, what failed), not only the failure line (rank 5).
           const failedThreadId=(typeof last.attemptId==="string" ? getAttempt(db,last.attemptId)?.thread_id : null) ?? null;
           const listedPrev=failedThreadId&&countAttempts(db,input.runId,input.taskId)>=2&&typeof (bb.sdk.threads as {events?:{list?:unknown}}|undefined)?.events?.list==="function"
-            ? await listThreadEventsRaw(bb,{threadId:failedThreadId,order:"desc",limit:"50"}).catch(()=>null) : null;
+            ? await bestEffort(ctx.log, "writer previous attempt events", listThreadEventsRaw(bb,{threadId:failedThreadId,order:"desc",limit:"50"}), null) : null;
           const prevEvents=listedPrev?.ok ? listedPrev.events as Parameters<typeof attemptFeedback>[1] : [];
           const prevFeedback=attemptFeedback(countAttempts(db,input.runId,input.taskId),prevEvents,prevBrief,true);
           const spawned = await services.spawnWriterAttempt({
@@ -1052,7 +1053,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
               reasoningLevel:spawned.reasoningLevel,serviceTier:spawned.serviceTier,selectionSource:spawned.selectionSource,
             }:undefined;
             if (writerSelection) await noteWriterPair(bb.storage.kv as never, input.runId, input.taskId,
-              { providerId:writerSelection.providerId, model:writerSelection.model }, "initial");
+              { providerId:writerSelection.providerId, model:writerSelection.model }, "initial", bb.log);
             activeConfig = freshConfig;
             activeTask = retargetTask(freshTask,spawned.workspacePath);
             // In a folder without git every attempt of the task starts from the same state (the owned files are rolled
@@ -1134,7 +1135,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         if (!RETRY_ELIGIBLE.includes(failed)) break;
         const attempt = getAttempt(db, attemptId);
         if (attempt?.state === "spawn_unknown" || attempt?.state === "spawn_requested") {
-          writerThreadId = await services.reconcileAttemptThread(input.projectId, attempt).catch(() => "");
+          writerThreadId = await bestEffort(ctx.log, "writer reconcile attempt thread", services.reconcileAttemptThread(input.projectId, attempt), "");
         } else if (attempt && !attempt.thread_id) {
           // An attempt whose writer thread is stored needs no scan; scanning every thread of the project here blocked
           // retries with reconcile_page_cap once SelfyStudio passed 1000 threads (live 2026-10-04).
@@ -1205,7 +1206,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         // The retry-safety gate (writer.retry_safety): an automatic retry stops when the failed attempt's work area was
         // touched after it ended (owner edits, rewritten check evidence, a catalog secret in the diff).
         if (configuredSetting(runSettings, "writer.retry_safety") !== "off") {
-          const safety = await retrySafetyStop({ db, host, hostId:input.config.hostId, task:freshTask, attemptId, liveFolder });
+          const safety = await retrySafetyStop({ db, host, hostId:input.config.hostId, task:freshTask, attemptId, liveFolder, log:ctx.log });
           if (safety) {
             const latest = getAttempt(db, attemptId);
             if (latest && RETRY_ELIGIBLE.includes(latest.state as AttemptState)) transitionAttempt(db, latest.id, "blocked", { reason:safety });
@@ -1310,7 +1311,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         activeTask = freshTask;
         dirtBefore = [];
         executionPacketSha256 = null;
-        if (redo && !await continueWith(redo, redo.kind, previousAttemptBrief(await trimCheckLogsIn(jev(), { ...failedLast, produced:[] }, freshTask.title, { projectId:input.projectId, runId:input.runId, subject:input.taskId, settings:runSettings }), freshTask, failedBinding?.dirt_before ?? [], liveFolder), failedBinding?.dirt_before)) {
+        if (redo && !await continueWith(redo, redo.kind, previousAttemptBrief(await trimCheckLogsIn(jev(), { ...failedLast, produced:[] }, freshTask.title, { projectId:input.projectId, runId:input.runId, subject:input.taskId, settings:runSettings }, ctx.log), freshTask, failedBinding?.dirt_before ?? [], liveFolder), failedBinding?.dirt_before)) {
           await removeFailedWorktree();
           await rollbackLive();
         }
@@ -1424,7 +1425,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
               continuation,
               // The handoff names only the provider's stop; a stray file or a red check of an earlier turn would be redone
               // (vf-s4-items 2026-10-24: the fallback rewrote Buffs.luau, which the first turn had been rejected for).
-              ...(own.failure ? { previousAttempt:previousAttemptBrief(await trimCheckLogsIn(jev(), { ...own.failure, produced:[] }, freshTask.title, { projectId:input.projectId, runId:input.runId, subject:input.taskId, settings:runSettings }), freshTask, undefined, liveFolder) } : {}),
+              ...(own.failure ? { previousAttempt:previousAttemptBrief(await trimCheckLogsIn(jev(), { ...own.failure, produced:[] }, freshTask.title, { projectId:input.projectId, runId:input.runId, subject:input.taskId, settings:runSettings }, ctx.log), freshTask, undefined, liveFolder) } : {}),
             });
             if (!spawned.ok) {
               // The owner's stop landed while this fallback was being made: its spawn ends canceled (endSpawnFailure), and the task
@@ -1454,7 +1455,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
               reasoningLevel:spawned.reasoningLevel,serviceTier:spawned.serviceTier,selectionSource:spawned.selectionSource,
             }:undefined;
               if (writerSelection) await noteWriterPair(bb.storage.kv as never, input.runId, input.taskId,
-                { providerId:writerSelection.providerId, model:writerSelection.model }, `failure_class:${primaryClass}`);
+                { providerId:writerSelection.providerId, model:writerSelection.model }, `failure_class:${primaryClass}`, bb.log);
               activeConfig=freshConfig;
               activeTask=retargetTask(freshTask,spawned.workspacePath);
               executionPacketSha256=spawned.executionPacketSha256 ?? null;
@@ -1511,8 +1512,8 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
       // A writer's question would wait unseen: writers are quiet children and do not wake the PM.
       if (!accepted && reason && failureClass(String(last.status), reason) === "judgment" && input.pmThreadId) {
         noteToldPmDirectly(db, input.pmThreadId, input.taskId);
-        void sendServiceMessage(bb, { threadId:input.pmThreadId, senderThreadId:writerThreadId || undefined,
-          text:`Lane Pilot: ${input.taskId} stopped with a question from its writer. Answer it with lane_pilot_answer_writer (taskId, answer) — from the code or docs if they settle it, else ask the owner once; the writer continues in its own thread and no attempt is spent. ${WRITER_QUESTION_WAIT_TEXT} Send the task again only when the contract itself must change; tasks that depend on it wait for that.${liveFolder ? " This folder has no git, so the writer's files stay where they are and the folder stays locked: other tasks for it queue until this question is answered (or the task is sent again)." : ""}\n${reason.slice(0, 1200)}` }).catch(() => undefined);
+        void bestEffort(ctx.log, "writer question notice", sendServiceMessage(bb, { threadId:input.pmThreadId, senderThreadId:writerThreadId || undefined,
+          text:`Lane Pilot: ${input.taskId} stopped with a question from its writer. Answer it with lane_pilot_answer_writer (taskId, answer) — from the code or docs if they settle it, else ask the owner once; the writer continues in its own thread and no attempt is spent. ${WRITER_QUESTION_WAIT_TEXT} Send the task again only when the contract itself must change; tasks that depend on it wait for that.${liveFolder ? " This folder has no git, so the writer's files stay where they are and the folder stays locked: other tasks for it queue until this question is answered (or the task is sent again)." : ""}\n${reason.slice(0, 1200)}` }), undefined);
       }
       // A failed task is told to stability before the receipts close the run: its record reads the run still running
       // (the harness breaker's noteHarnessFailure skips a run that is already blocked). Accepted work emits after the
@@ -1605,9 +1606,9 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
           transitionAttempt(db, attemptId, "blocked", { threadId:writerThreadId, reason });
         }
         // Stability hears the failure while the run is still running — its record before the receipts, as before.
-        await emitAttemptFinished(ctx, { scope:"task", projectId:input.projectId, runId:input.runId, taskId:input.taskId,
+        await bestEffort(ctx.log, "writer attempt finished emit", emitAttemptFinished(ctx, { scope:"task", projectId:input.projectId, runId:input.runId, taskId:input.taskId,
           attemptId, pmThreadId:input.pmThreadId, writerThreadId:writerThreadId ?? null, task:input.task, config:activeConfig,
-          status:"blocked", reason, result:last, acceptedAttemptId:null }).catch(() => undefined);
+          status:"blocked", reason, result:last, acceptedAttemptId:null }), undefined);
         for (const stageId of ["writer-agent", "verification", "acceptance-receipt"] as const) {
           const current = listStageReceipts(db, input.runId, input.taskId).find((row) => row.stageId === stageId);
           if (!current || current.state === "passed" || current.state === "failed" || current.state === "skipped") continue;

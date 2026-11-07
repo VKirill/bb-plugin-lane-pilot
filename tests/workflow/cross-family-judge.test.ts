@@ -38,6 +38,7 @@ describe("the judge is of another family than the author, for every judge whose 
       pmThreadId: "pm", projectId: "p", runId,
       ctx: {
         db: { prepare: () => ({ get: () => undefined }) },
+        log: () => undefined,
         effectiveProjectSettings: async () => ({ values: settings }), ownedAgents: async () => ({}),
         bb: { storage: { kv: { get: async (key: string) => kv.get(key) ?? null, set: async (key: string, value: unknown) => { kv.set(key, value); } } },
           sdk: { threads: { defaultExecutionOptions: async () => opus } } },

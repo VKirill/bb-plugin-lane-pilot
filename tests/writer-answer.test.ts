@@ -47,7 +47,7 @@ function harnessFor() {
   harness.sdk.stub("threads.get", async (args:{ threadId:string }) => args.threadId === "thr_w" ? { id:args.threadId, status:"idle" } : null);
   harness.sdk.stub("threads.send", async (args:unknown) => { sends.push(args as Send); return undefined; });
   harness.sdk.stub("threads.events.list", async () => []);
-  harness.sdk.stub("files.read", async () => { throw new Error("file does not exist"); });
+  harness.sdk.stub("files.read", async () => { throw Object.assign(new Error("file does not exist"), { code: "not_found" }); });
   harness.sdk.stub("files.write", async (args:unknown) => { writes.push(args as Write); return undefined; });
   const db = openDatabase(bb);
   const ctx = createCore(bb, db);

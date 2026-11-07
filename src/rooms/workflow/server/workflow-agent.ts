@@ -10,7 +10,7 @@ import { ROLE_PROFILES, compileEffectiveMainAgent, employeeView, isEmployeeSpeci
 import type { ExtraAccess, HelperRole } from "../../native-agent";
 import { storeNativeSelection } from "../../native-agent/server";
 import { LEAD_ID } from "../../contracts";
-import {isNotFound, orMiss, outputText, redactKnown} from "@lane-pilot/kit";
+import {bestEffort, isNotFound, orMiss, outputText, redactKnown} from "@lane-pilot/kit";
 import { READ_ONLY_LINE, agentPrompt, outputContract, parseAgentOutput } from "@lane-pilot/workflow-engine";
 import { contractProblems, contractRepairPrompt, describeProblems, hasContractProblems } from "@lane-pilot/workflow-engine";
 import type { ContractNode, ContractProblems } from "@lane-pilot/workflow-engine";
@@ -220,7 +220,7 @@ type TrackedThread = { id: string; since?: number; model?: string };
  * that reports none, marks the sum `unknown` (the engine then holds the run to a time and step limit instead of counting the step free).
  */
 async function spentBy(bb: ServerCore["bb"], threads: readonly TrackedThread[]): Promise<{ tokens: number; costUsd: number; unknown?: true }> {
-  const rows = await Promise.all(threads.map((thread) => threadUsage(bb, thread.id, { ...(thread.since !== undefined ? { since: thread.since } : {}), ...(thread.model ? { fallbackModel: thread.model } : {}) }).catch(() => null)));
+  const rows = await Promise.all(threads.map((thread) => bestEffort(bb.log, "workflow helper usage", threadUsage(bb, thread.id, { ...(thread.since !== undefined ? { since: thread.since } : {}), ...(thread.model ? { fallbackModel: thread.model } : {}) }), null)));
   const blind = rows.some((row) => !row || !row.known);
   return { tokens: rows.reduce((sum, row) => sum + (row?.tokens ?? 0), 0), costUsd: rows.reduce((sum, row) => sum + (row?.costUsd ?? 0), 0), ...(blind ? { unknown: true as const } : {}) };
 }
@@ -334,7 +334,7 @@ export function createWorkflowAgents() {
       // A re-run of the step after a reload must not send the task a second time: the send is recorded by the step key before it is made,
       // and a record whose follow-up BB shows as requested means it already went; a record without one (the process died in between) sends again.
       const sentKey = `workflow-send:${request.workflowRunId}:${request.stepKey}:${request.spawnKey}`;
-      const earlier = await bb.storage.kv.get<{ at: number }>(sentKey).catch(() => null);
+      const earlier = await bb.storage.kv.get<{ at: number }>(sentKey);
       if (earlier && await followUpRequested(bb, threadId, earlier.at)) sentAt = earlier.at;
       else {
         sentAt = Date.now();
@@ -342,7 +342,7 @@ export function createWorkflowAgents() {
         await bb.sdk.threads.send({ threadId, mode: "queue-if-active", input: [{ type: "text", text: request.prompt, mentions: [] }] } as never);
       }
     } else {
-      const startFolder = await projectFolder(rt.ctx.bb, rt.projectId).catch(() => null);
+      const startFolder = await bestEffort(rt.ctx.bb.log, "workflow helper start folder", projectFolder(rt.ctx.bb, rt.projectId), null);
       const blockStore = bb.storage?.kv ?? { set: async () => undefined };
       try {
         threadId = await lookup(rt, request) ?? await spawn(request);
@@ -356,7 +356,7 @@ export function createWorkflowAgents() {
         // An observed refusal in a ~/Documents folder on this machine is remembered: the pick stops offering it there
         // until a success or the block's TTL (provider.folder_block_ttl_ms, 6 h).
         await noteProviderStartFailure(blockStore, startFolder?.hostId ?? null, failed, startFolder?.path ?? null, cause instanceof Error ? cause.message : String(cause));
-        const again = await withResolvedModel({ ...request, provider: undefined as never, model: undefined as never, reasoning: undefined as never, resolved: undefined as never }, { avoidProvider: failed }).catch(() => null);
+        const again = await bestEffort(bb.log, "workflow helper model resolve", withResolvedModel({ ...request, provider: undefined as never, model: undefined as never, reasoning: undefined as never, resolved: undefined as never }, { avoidProvider: failed }), null);
         if (!again || again.provider === failed) throw cause;
         bb.log.warn(`workflow step ${request.stepKey}: ${failed} could not start (${cause instanceof Error ? cause.message.slice(0, 160) : String(cause)}); rerunning on ${again.provider}/${again.model}`);
         const fallback = { ...request, provider: again.provider, model: again.model, reasoning: again.reasoning, serviceTier: undefined, spawnKey: `${request.spawnKey}:start` };
@@ -371,7 +371,7 @@ export function createWorkflowAgents() {
       try {
         await waitThreadIdle(bb, threadId!, `workflow_${request.nodeId}`, undefined, since, () => (rt.ctx.isDisposed() ? "plugin_stopped" : request.signal?.aborted ? "aborted" : null));
       } catch (cause) {
-        if (request.signal?.aborted) await bb.sdk.threads.stop({ threadId: threadId! }).catch(() => undefined);
+        if (request.signal?.aborted) await bestEffort(bb.log, "workflow helper thread stop", bb.sdk.threads.stop({ threadId: threadId! }), undefined);
         throw new HelperFailure("thread_failed", cause instanceof Error ? cause.message : String(cause));
       }
     };
@@ -398,7 +398,7 @@ export function createWorkflowAgents() {
     if (limit && !request.intoThread) {
       const failed = request.provider ?? DEFAULT_PROVIDER;
       noteProviderLimit(bb, failed, request.model ?? null, limit);
-      const again = await withResolvedModel({ ...request, provider: undefined as never, model: undefined as never, reasoning: undefined as never, resolved: undefined as never }, { avoidProvider: failed }).catch(() => null);
+      const again = await bestEffort(bb.log, "workflow helper model resolve", withResolvedModel({ ...request, provider: undefined as never, model: undefined as never, reasoning: undefined as never, resolved: undefined as never }, { avoidProvider: failed }), null);
       // Nothing else on offer (the answer is the failed provider again): the step fails with the limit notice, it does not run the same pair twice.
       if (!again || again.provider === failed) throw new HelperFailure("provider_limit", `${failed}/${request.model ?? ""} hit a provider limit (${limit}) and no other model family is on offer on this machine`);
       const fallback = { ...request, provider: again.provider, model: again.model, reasoning: again.reasoning, serviceTier: undefined, spawnKey: `${request.spawnKey}:limit` };
@@ -539,7 +539,7 @@ async function authorOf(rt: ChainRuntime, workflowRunId: string, row: string, pm
   const rows = AUTHOR_ROWS[row];
   if (!rows) return null;
   for (const author of rows) {
-    const kept = await rt.ctx.bb.storage?.kv.get<Pair>(authorKey(rt, workflowRunId, author)).catch(() => null);
+    const kept = await bestEffort(rt.ctx.bb.log, "workflow author pair read", rt.ctx.bb.storage?.kv.get<Pair>(authorKey(rt, workflowRunId, author)), null);
     if (kept?.providerId && kept.model) return { providerId: kept.providerId, model: kept.model };
   }
   return pmAuthorOf(row, pm);
@@ -547,7 +547,7 @@ async function authorOf(rt: ChainRuntime, workflowRunId: string, row: string, pm
 
 /** Keeps the model an author row runs on for the judges of the same run (the same value each time the step is resolved again after a reload). */
 async function rememberAuthor(rt: ChainRuntime, workflowRunId: string, row: string, chosen: Pair): Promise<void> {
-  await rt.ctx.bb.storage?.kv.set(authorKey(rt, workflowRunId, row), { providerId: chosen.providerId, model: chosen.model }).catch(() => undefined);
+  await bestEffort(rt.ctx.bb.log, "workflow author pair write", rt.ctx.bb.storage?.kv.set(authorKey(rt, workflowRunId, row), { providerId: chosen.providerId, model: chosen.model }), undefined);
 }
 
 /**
@@ -559,27 +559,27 @@ async function rememberAuthor(rt: ChainRuntime, workflowRunId: string, row: stri
 export async function withResolvedModel(request: HelperRequest, options: { avoidProvider?: string | null } = {}): Promise<HelperRequest> {
   const { rt } = request;
   const avoid = options.avoidProvider ?? null;
-  const settings = (await Promise.resolve().then(() => rt.ctx.effectiveProjectSettings(rt.projectId, rt.runId ? getRunSettingsScopes(rt.ctx.db, rt.runId) : [])).catch(() => ({ values: {} as Record<string, unknown> }))).values;
+  const settings = (await bestEffort(rt.ctx.log, "workflow helper settings", Promise.resolve().then(() => rt.ctx.effectiveProjectSettings(rt.projectId, rt.runId ? getRunSettingsScopes(rt.ctx.db, rt.runId) : [])), null))?.values ?? {};
   const pm = rt.pmThreadId ? await pmPairOfThread(rt.ctx.bb, rt.pmThreadId) : null;
   // The helper starts in the PM chat's environment, on one machine: a model that machine does not offer is passed over (the table's row)
   // or, when the run pins it itself, refused here with the machines that do have it, instead of failing inside the spawn.
-  const hostId = rt.pmThreadId ? await pmHostOf(rt.ctx.bb, rt.pmThreadId).catch(() => null) : (await projectFolder(rt.ctx.bb, rt.projectId).catch(() => null))?.hostId ?? null;
+  const hostId = rt.pmThreadId ? await bestEffort(rt.ctx.log, "workflow helper PM host", pmHostOf(rt.ctx.bb, rt.pmThreadId), null) : (await bestEffort(rt.ctx.log, "workflow helper project folder", projectFolder(rt.ctx.bb, rt.projectId), null))?.hostId ?? null;
   // The folder the thread starts in: a provider that cannot work there (opencode2 under ~/Documents on macOS: its
   // /api/mcp 500s EPERM) is out of the offer like a failed one (`providerBlockedForFolder` in spawn-model).
   const pmEnvPath = rt.pmThreadId
-    ? await Promise.resolve().then(async () => {
+    ? await bestEffort(rt.ctx.log, "workflow helper PM environment", Promise.resolve().then(async () => {
         const pm = await rt.ctx.bb.sdk.threads.get({ threadId: rt.pmThreadId! });
         const environmentId = stringAt(pm, "environmentId");
         return environmentId ? stringAt(await rt.ctx.bb.sdk.environments.get({ environmentId }), "path") : null;
-      }).catch(() => null)
+      }), null)
     : null;
   // Reading the PM thread's folder must never break the pick: when it is unavailable the project folder answers,
   // as in a run without a PM chat.
-  const envPath = pmEnvPath ?? (await projectFolder(rt.ctx.bb, rt.projectId).catch(() => null))?.path ?? null;
+  const envPath = pmEnvPath ?? (await bestEffort(rt.ctx.log, "workflow helper project folder", projectFolder(rt.ctx.bb, rt.projectId), null))?.path ?? null;
   const read = (() => { try { return modelCatalogOf(rt.ctx).peek(); } catch { return null; } })();
   // An agent the owner created may name its own model and effort: they pin the run unless the schedule named one.
   const specialist = request.role.startsWith("specialist:") ? request.role.slice("specialist:".length) : "";
-  const agentMeta = !avoid && specialist && !isBundledSpecialist(specialist) ? (await Promise.resolve().then(() => rt.ctx.ownedAgents()).catch(() => ({} as Awaited<ReturnType<typeof rt.ctx.ownedAgents>>)))[specialist]?.meta : undefined;
+  const agentMeta = !avoid && specialist && !isBundledSpecialist(specialist) ? (await bestEffort(rt.ctx.log, "workflow helper owned agents", Promise.resolve().then(() => rt.ctx.ownedAgents()), {} as Awaited<ReturnType<typeof rt.ctx.ownedAgents>>))[specialist]?.meta : undefined;
   // The only models a run may pin: the one a scheduled agent names, and the one an owner-created agent names. The graph's node names none.
   const pinned = { provider: request.provider, model: request.model ?? agentMeta?.model, reasoning: request.reasoning ?? agentMeta?.effort, service_tier: request.serviceTier };
   const row = roleRowOf(request.role);
@@ -598,7 +598,7 @@ export async function withResolvedModel(request: HelperRequest, options: { avoid
   if (!pinned.model) {
     const judge = jev();
     if (judge?.enabled(settings as never) && downgradableRole(request.role) && request.risk !== "high" && request.risk !== "critical") {
-      const verdict = await judge.judge(stepTrivialJudgment, { nodeType: "agent", role: roleRowOf(request.role), inputChars: request.prompt.length, ...(request.risk ? { risk: request.risk } : {}) }, { projectId: rt.projectId, runId: rt.runId, subject: `spawn:${request.nodeId}`, settings: settings as never }).catch(() => null);
+      const verdict = await bestEffort(rt.ctx.log, "workflow helper trivial judgment", judge.judge(stepTrivialJudgment, { nodeType: "agent", role: roleRowOf(request.role), inputChars: request.prompt.length, ...(request.risk ? { risk: request.risk } : {}) }, { projectId: rt.projectId, runId: rt.runId, subject: `spawn:${request.nodeId}`, settings: settings as never }), null);
       if (verdict?.by === "jev" && verdict.decision.trivial) {
         const cheaper = ROLE_MODEL_OPTIONS.find((o) => o.providerId === chosen.providerId && TIER_RANK[o.tier] === (TIER_RANK[modelTier(chosen.model) ?? "strong"] - 1));
         if (cheaper && cheaper.id !== chosen.model) {
@@ -626,7 +626,7 @@ export { ROLE_PROFILES };
 
 /** The PM chat's events since `since`, as text (the newest 200; none when they cannot be read or carry no time, so nothing is excused). */
 async function chatTextSince(bb: ChainRuntime["ctx"]["bb"], threadId: string, since: number): Promise<string[]> {
-  const listed = await bb.sdk.threads.events.list({ threadId, order: "desc", limit: "200" } as never).catch(() => []) as unknown[];
+  const listed = await bestEffort(bb.log, "workflow helper chat events", bb.sdk.threads.events.list({ threadId, order: "desc", limit: "200" } as never), []) as unknown[];
   const at = (event: unknown): number => {
     const raw = (event as { createdAt?: unknown })?.createdAt;
     return typeof raw === "number" ? raw : typeof raw === "string" ? Date.parse(raw) : NaN;

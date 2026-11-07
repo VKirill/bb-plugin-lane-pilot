@@ -3,7 +3,7 @@ import type { StageHelperSettings } from "../../platform/server";
 import { gateVocabularyLines } from "../../contracts";
 import { registerBrowserExecutors, runBrowserQaGraph } from "../../qa/server";
 import { cancelAttemptById, cleanupFinishedAttemptEnvironments, cleanupStickyLaneWorktrees } from "../../runs/server";
-import { LANE_PILOT_READ_NAME } from "@lane-pilot/kit";
+import { bestEffort, LANE_PILOT_READ_NAME } from "@lane-pilot/kit";
 import { taskV2Schema } from "../../contracts";
 import { getRun, getRunSettingsScopes, listEndedTaskIds, listOpenAttempts, listStageReceipts, loadProjectSettings, loadPrototypeConfig, noteToldPmDirectly, setTaskClosedWords } from "../../storage";
 import { finalizeNativeLaneBinding, nativeRunReady, ownedNativePmRun, writerWorkspaceForPmInstructions } from "../../native-agent";
@@ -288,7 +288,7 @@ export function registerTools(ctx: ServerCore, services: Services, familyContrib
         throw new ToolError(`owner_question_unavailable: ${answer.reason}`, { code:"owner_question_unavailable", retryable:false, sideEffects:"none", next:"ask the owner in your reply text" });
       }
       // Readable text, not JSON: BB shows a delivered result to the owner as markdown (owner-answer-text.ts).
-      const locale = await ownerLocale(bb).catch(() => "ru" as const);
+      const locale = await bestEffort(bb.log, "owner question locale", ownerLocale(bb), "ru" as const);
       if (answer.outcome === "cancelled") return ownerAnswerText({ answered:false, reason:answer.reason }, locale);
       return ownerAnswerText({ answered:true, choice:answer.choice?.label ?? null, text:answer.text }, locale);
     },

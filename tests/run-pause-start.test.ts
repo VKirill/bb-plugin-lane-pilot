@@ -206,6 +206,36 @@ it("a plugin-store read failure before spawn parks the attempt for a retry inste
   await env.harness.lifecycle.dispose();
 });
 
+it("a config read that fails on the wake re-wakes the attempt instead of stranding it", async () => {
+  const env = setup();
+  const kv = env.bb.storage.kv as unknown as { get: (key: string) => Promise<unknown> };
+  const realGet = kv.get.bind(kv);
+  let failed = false;
+  kv.get = async (key: string) => {
+    if (!failed && !PAUSE_READ_KEYS.has(key)) { failed = true; throw new Error("store blink"); }
+    return realGet(key);
+  };
+  const { all, spawned } = services(env);
+  start(env, all);
+  await vi.waitFor(() => expect(getAttempt(env.db, "T1-a1")?.reason ?? "").toContain("store_read:"));
+  // The config read of the wake throws: the attempt must be re-waked, not left queued with no wake.
+  const realConfigForRun = env.ctx.configForRun.bind(env.ctx);
+  (env.ctx as { configForRun: typeof realConfigForRun }).configForRun = async () => { throw new Error("config down"); };
+  env.db.prepare("UPDATE lane_pilot_attempt SET wake_at=0 WHERE id='T1-a1'").run();
+  await sweepWriterWakes(env.ctx, all as never);
+  const rewaked = env.db.prepare("SELECT state, wake_at FROM lane_pilot_attempt WHERE id='T1-a1'").get() as { state: string; wake_at: number | null };
+  expect(rewaked.state).toBe("queued");
+  expect(rewaked.wake_at).not.toBeNull();
+  expect(spawned).toEqual([]);
+  // The next tick, with the config readable again, starts the writer.
+  (env.ctx as { configForRun: typeof realConfigForRun }).configForRun = realConfigForRun;
+  env.db.prepare("UPDATE lane_pilot_attempt SET wake_at=0 WHERE id='T1-a1'").run();
+  await sweepWriterWakes(env.ctx, all as never);
+  await vi.waitFor(() => expect(writerStage(env.db).state).toBe("passed"), { timeout: 15_000 });
+  expect(spawned).toEqual(["T1-a1"]);
+  await env.harness.lifecycle.dispose();
+});
+
 it("a plugin store that stays unreadable blocks the attempt after the park bound and posts one owner item", async () => {
   const env = setup();
   const kv = env.bb.storage.kv as unknown as { get: (key: string) => Promise<unknown> };

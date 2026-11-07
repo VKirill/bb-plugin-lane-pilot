@@ -118,6 +118,49 @@ describe("finish-scan: a stop during it still cancels the merge", () => {
 });
 
 /**
+ * Regression 4: the owner-word check reads the plugin store. A read that fails must surface, not read
+ * as "no word yet" and hold a verified task for six hours (or block it on the owner's missing yes).
+ */
+describe("owner-word wait: a plugin-store read failure surfaces", () => {
+  it("a kv read failure in the owner-word check rejects instead of waiting for the word", async () => {
+    const { bb } = createFakePluginHost({ pluginId:"lane-pilot" });
+    const db = openDatabase(bb);
+    createRun(db, "run", "P", "cli", "/repo");
+    const highRisk = { ...task("t1"), risk: "high" as const };
+    createTask(db, { id:"t1", runId:"run", kind:"bb", contract:highRisk });
+    createAttempt(db, { id:"a-t1", runId:"run", taskId:"t1" });
+    transitionAttempt(db, "a-t1", "spawn_requested");
+    transitionAttempt(db, "a-t1", "running", { threadId:"writer-t1" });
+    const ctx = {
+      state:{ disposed:false }, db, isDisposed:() => false, log:() => undefined,
+      getThreadBounded:async () => ({ status:"idle" }), host:{ call:async () => ({}) },
+      bb:{ storage:bb.storage, log:{ warn() {}, error() {}, info() {} },
+        sdk:{ threads:{ stop:async () => undefined, events:{ list:async () => [] }, get:async () => ({ status:"idle" }),
+            output:async () => ({ text:"done" }) },
+          files:{ read:async () => ({ content:"note" }) },
+          plugins:{ callRpc:async ({ method }:{ method:string }) => method === "files"
+            ? { outcome:"available", files:[{ path:"note.txt", revision:"r1" }], initialPatches:[{ path:"note.txt", patch:"@@\n+note\n", truncated:false }] }
+            : { outcome:"available", patches:{ "note.txt":{ outcome:"available", patch:{ path:"note.txt", patch:"@@\n+note\n", truncated:false } } } } },
+          environments:{ list:async () => [{ id:"env-1" }] } } },
+    };
+    const finish = createWriterFinish(ctx as never, {
+      validateWriterResult:async () => ({ status:"accepted", output:"done", produced:["note.txt"], verification:[] }),
+      persistWriterAcceptance:async () => ({ state:"passed" }),
+      workspaceDirt:async () => ({ ok:true, snapshots:[] }),
+      stageHelperSettings:async () => ({}),
+      runBudgetFor:() => ({ snapshot:() => ({ limits:{} }) }),
+    } as never);
+    const get = vi.spyOn(bb.storage.kv, "get").mockImplementation(async (key: string) => {
+      if (key === "lp.task.words") throw new Error("store down");
+      return null;
+    });
+    await expect(finish.finishWriterAttempt({ projectId:"P", config, task:highRisk, runId:"run", taskId:"t1",
+      attemptId:"a-t1", pmThreadId:"pm", writerThreadId:"writer-t1", dirtBefore:[] })).rejects.toThrow("store down");
+    get.mockRestore();
+  });
+});
+
+/**
  * Regression 3: the landed reactions launch at the merge point — before the merge intent is cleared —
  * with failures logged. A dead settings load must surface on the log, not reject unhandled.
  */

@@ -1,4 +1,5 @@
 import { getRun } from "../../storage";
+import { bestEffort } from "@lane-pilot/kit";
 import { postOwnerItem } from "../../owner-waiting";
 import type { LanePilotDatabase } from "../../storage";
 import type { RunRow } from "../../storage";
@@ -88,7 +89,7 @@ export async function maybeNotifyWorkflowRun(input: {
   if (input.startedBySchedule && !delivered) return false;
   const key = workflowNoticeKey(run.id, run.status);
   if (await input.bb.storage.kv.get(key)) return false;
-  await input.bb.storage.kv.set(key, Date.now() as never).catch(() => undefined);
+  await bestEffort(input.log, "workflow notice record", input.bb.storage.kv.set(key, Date.now() as never), undefined);
   const text = delivered
     ? `Lane Pilot: the scheduled run ${run.id} of ${run.workflow_id} finished. Show the owner this result in this chat as it is (no summary, nothing to act on; its helper's own completion may follow: it is the same result, say nothing about it):\n\n${delivered}`
     : workflowEndedText({

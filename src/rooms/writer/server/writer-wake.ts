@@ -1,8 +1,9 @@
-import { claimAttemptWake, getRun, getTask, getTaskPlan, listDueWakes } from "../../storage";
-import { taskV2Schema } from "../../contracts";
+import { claimAttemptWake, getRun, getTask, getTaskPlan, listDueWakes, parkAttemptWake } from "../../storage";
+import { taskV2Schema, type PrototypeConfig } from "../../contracts";
 import { sendServiceMessage } from "../../relay/server";
 import { providerDisplayName } from "./writer-hold";
 import type { ServerCore } from "../../contracts/server";
+import { bestEffort } from "@lane-pilot/kit";
 
 import type { WriterStartApi } from "./start";
 
@@ -11,6 +12,11 @@ interface Services {
   startWriterTask: WriterStartApi["startWriterTask"];
 }
 
+
+/** A failed config read re-wakes the attempt this long after the failed tick, so a transient store error cannot strand it. */
+const WAKE_RETRY_MS = 60_000;
+/** Attempts whose config read is currently failing: the failure is logged once per streak, not every tick. */
+const wakeConfigFailing = new Set<string>();
 
 /**
  * The waker of H2: every minute the attempts parked `waiting_writer:` whose earliest hold ended are taken up again —
@@ -30,11 +36,21 @@ export async function sweepWriterWakes(ctx: ServerCore, services: Services, now 
       ctx.log(`writer wake ${attempt.id}: the run or task of the parked attempt is gone; leaving it queued for the reconcile`);
       continue;
     }
-    const config = await ctx.configForRun(run.project_id, run).catch(() => null);
-    if (!config) {
-      ctx.log(`writer wake ${attempt.id}: no prototype config for ${run.project_id}; leaving it queued for the reconcile`);
+    let config: PrototypeConfig | null = null;
+    try { config = await ctx.configForRun(run.project_id, run); }
+    catch (cause) {
+      // The claim cleared wake_at: without a fresh one the attempt would sit queued forever (listDueWakes needs it,
+      // and the reconcile never restarts a queued attempt). Re-wake it and name the real cause.
+      const why = cause instanceof Error ? cause.message : String(cause);
+      if (!wakeConfigFailing.has(attempt.id)) {
+        wakeConfigFailing.add(attempt.id);
+        ctx.log(`writer wake ${attempt.id}: the prototype config of ${run.project_id} is unreadable (${why}); re-waking in ${WAKE_RETRY_MS / 1000} s`);
+      }
+      parkAttemptWake(db, attempt.id, `wake_config_unreadable: ${why.slice(0, 160)}`, now + WAKE_RETRY_MS);
       continue;
     }
+    wakeConfigFailing.delete(attempt.id);
+    if (!config) continue;
     woken += 1;
     services.startWriterTask({
       projectId: run.project_id, runId: run.id, taskId: attempt.task_id, firstAttemptId: attempt.id,
@@ -56,14 +72,14 @@ export async function noteUnsupportedProvider(ctx: ServerCore, input: {
   const key = unsupportedKey(input.providerId);
   const told = await ctx.bb.storage.kv.get(key);
   if (told) return false;
-  await ctx.bb.storage.kv.set(key, String(Date.now())).catch(() => undefined);
+  await bestEffort(ctx.log, "writer unsupported note", ctx.bb.storage.kv.set(key, String(Date.now())), undefined);
   ctx.log(`writer ${input.taskId}: provider ${input.providerId} is not supported by this core; the task is blocked`);
   if (!input.pmThreadId) return true;
-  await sendServiceMessage(ctx.bb, {
+  await bestEffort(ctx.log, "writer unsupported notice", sendServiceMessage(ctx.bb, {
     threadId: input.pmThreadId,
     text: `Lane Pilot: задача ${input.taskId} остановлена — писатель ${providerDisplayName(input.providerId)} не поддерживается этим ядром (core_unsupported). ` +
       `Смените writer.provider (или включите поддержку провайдера в настройках ядра) и отправьте задачу ещё раз. Это сообщение приходит один раз на провайдера, не на каждую задачу.`,
-  }).catch(() => undefined);
+  }), undefined);
   return true;
 }
 
@@ -77,11 +93,11 @@ export async function noteWriterWait(ctx: ServerCore, input: { attemptId: string
   const key = waitToldKey(input.attemptId);
   const told = await ctx.bb.storage.kv.get(key);
   if (told) return false;
-  await ctx.bb.storage.kv.set(key, "1").catch(() => undefined);
+  await bestEffort(ctx.log, "writer wait note", ctx.bb.storage.kv.set(key, "1"), undefined);
   if (!input.pmThreadId) return true;
-  await sendServiceMessage(ctx.bb, {
+  await bestEffort(ctx.log, "writer wait notice", sendServiceMessage(ctx.bb, {
     threadId: input.pmThreadId,
     text: `Lane Pilot: задача ${input.taskId} ждёт свободного писателя (${input.text}). Проверяю сам, ничего делать не нужно.`,
-  }).catch(() => undefined);
+  }), undefined);
   return true;
 }

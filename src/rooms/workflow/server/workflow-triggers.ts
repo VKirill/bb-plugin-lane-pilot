@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
+import { orMiss, isNotFound } from "@lane-pilot/kit";
 import { getActivation, getRun } from "../../storage";
 import { cronProblem, localTimezone, timezoneProblem } from "@lane-pilot/workflow-engine/ui";
 import { sha256 } from "../../storage";
@@ -102,24 +103,50 @@ export type TriggerDeps = {
   now?: () => number;
 };
 
+/** Projects whose PM-chat metadata is currently unreadable: the failure is logged once per streak, not every tick. */
+const pmMetadataFailing = new Set<string>();
+
 export function createWorkflowTriggers(ctx: ServerCore, services: Pick<Services, "workflowEngine"> & Partial<Pick<Services, "workflowCatalog">>, deps: TriggerDeps) {
   const { db } = ctx;
   const now = deps.now ?? Date.now;
 
-  /** The PM chat that gives a run its helper threads: the project's active one, else the newest open run that has a chat. */
-  async function pmOf(projectId: string): Promise<{ pmThreadId: string; runId: string } | null> {
+  /** The PM chat that gives a run its helper threads, with the unknown outcome named. */
+  async function pmOfResolved(projectId: string): Promise<{ pmThreadId: string; runId: string } | null | "unknown"> {
     const activation = getActivation(db, projectId);
     const active = activation ? getRun(db, activation.run_id) : undefined;
     if (active && !active.closed_at && active.pm_thread_id) return { pmThreadId: active.pm_thread_id, runId: active.id };
     const rows = db.prepare("SELECT id, pm_thread_id FROM lane_pilot_run WHERE kind='cli' AND project_id=? AND closed_at IS NULL AND pm_thread_id IS NOT NULL ORDER BY created_at DESC LIMIT 20").all(projectId) as Array<{ id: string; pm_thread_id: string }>;
     // A workflow architect's chat has an open run and the role pm too (its tools need it), marked by architectProjectId: a scheduled
     // report sent there was read as someone else's (live, 2026-10-25). Only the owner's PM chat takes a run.
+    let unknown = false;
     for (const row of rows) {
-      const metadata = await ctx.bb.sdk.threads.getPluginMetadata({ threadId: row.pm_thread_id }).catch(() => null) as Record<string, unknown> | null;
+      // One unreadable chat is unknown, not "no PM": the tick waits for a clean read instead of starting without a PM chat.
+      let metadata: Record<string, unknown> | null = null;
+      try { metadata = await orMiss(ctx.bb.sdk.threads.getPluginMetadata({ threadId: row.pm_thread_id }), null, isNotFound) as Record<string, unknown> | null; }
+      catch (cause) {
+        unknown = true;
+        if (!pmMetadataFailing.has(projectId)) {
+          pmMetadataFailing.add(projectId);
+          ctx.log(`Lane Pilot workflow trigger: the metadata of ${row.pm_thread_id} could not be read (${cause instanceof Error ? cause.message : String(cause)}); the tick waits for a clean read`);
+        }
+        continue;
+      }
+      pmMetadataFailing.delete(projectId);
       // A chat that runs a specialist has a run and the role pm as well (its tools need them) but does not lead the project.
       if (metadata?.role === "pm" && !metadata.architectProjectId && await isPmChat(ctx, row.pm_thread_id)) return { pmThreadId: row.pm_thread_id, runId: row.id };
     }
-    return null;
+    return unknown ? "unknown" : null;
+  }
+
+  /** The PM chat for the callers that only need a chat: unknown reads as none. */
+  async function pmOf(projectId: string): Promise<{ pmThreadId: string; runId: string } | null> {
+    const resolved = await pmOfResolved(projectId);
+    return resolved === "unknown" ? null : resolved;
+  }
+
+  /** The same, with the unknown outcome named: a tick that must not start without a PM chat reads it. */
+  async function pmOfOrUnknown(projectId: string): Promise<{ pmThreadId: string; runId: string } | null | "unknown"> {
+    return await pmOfResolved(projectId);
   }
 
   const refuse = (reason: string, message: string, extra: Partial<Extract<TriggerResult, { ok: false }>> = {}): TriggerResult => ({ ok: false, reason, message, ...extra });
@@ -148,7 +175,8 @@ export function createWorkflowTriggers(ctx: ServerCore, services: Pick<Services,
     // A project that does not use Lane Pilot has no PM chat: the run then works on its own (hidden helper threads of the project, the owner's
     // questions and the end on his list). Steps that build code say so when they are reached.
     // The lead's tick (0.1.447 live): bound to the PM chat of a blocked run it inherited that chat's environment on a machine that was off and failed to start.
-    const pm = input.detached ? null : await pmOf(input.projectId);
+    const pm = input.detached ? null : await pmOfOrUnknown(input.projectId);
+    if (pm === "unknown") return refuse("pm_chat_unknown", "the owner's PM chat could not be read; the run is not started this tick");
 
     let notChecked: string[] = [];
     if (deps.preflight) {
@@ -224,6 +252,6 @@ export function createWorkflowTriggers(ctx: ServerCore, services: Pick<Services,
     return result;
   }
 
-  return { start, sync, pmOf };
+  return { start, sync, pmOf, pmOfOrUnknown };
 }
 export type WorkflowTriggers = ReturnType<typeof createWorkflowTriggers>;

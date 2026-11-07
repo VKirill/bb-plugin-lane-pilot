@@ -55,7 +55,7 @@ export { NO_ANSWER_REASON };
 export function classifyWriterOutput(input: {
   task: TaskV2;
   produced: string[];
-  contents: Record<string, string | null>;
+  contents: Record<string, string | null | undefined>;
   verifies?: VerifyResult[];
   /** Whether the writer's answer carried any text; without it an empty_output reads as a provider fault. */
   answered?: boolean;
@@ -97,6 +97,14 @@ export function classifyWriterOutput(input: {
   // A folder («…/greeting-cards», «…/greeting-cards/», «…/greeting-cards/**») is met by any changed file under it:
   // SelfyStudio cards-preview-lightbox-fullscreen (2026-10-05) was blocked twice with three changed files in the folder.
   const folder = (entry: string) => `${entry.replace(/\/\*\*$/, "").replace(/\/+$/, "")}/`;
+  // An expected output whose read threw is unknown, not missing: a read outage must never read as «met» with green
+  // checks. It is its own outcome, distinct from not-found.
+  const unreadable = fileOutputs.filter((entry) => {
+    if (produced.some((file) => file.startsWith(folder(entry)))) return false;
+    const path = resolveOutput(entry);
+    return input.contents[path] === undefined && Object.prototype.hasOwnProperty.call(input.contents, path);
+  });
+  if (unreadable.length > 0) return { ok:false, state:"validation_failed", reason:`expected output unreadable: ${unreadable.join(", ")}` };
   const missing = fileOutputs.filter((entry) => {
     if (produced.some((file) => file.startsWith(folder(entry)))) return false;
     const path = resolveOutput(entry);

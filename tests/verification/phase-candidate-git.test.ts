@@ -116,7 +116,7 @@ describe("the phase candidate on a real repository", () => {
       if (method === "gitIntegrate") { await commit(tree, "unreviewed.txt", "not in the approved commit\n"); return integrateWorktree(input); }
       throw new Error(`unexpected ${method}`);
     } };
-    const result = await createCandidates(host, "h").land(base, { path: tree, startSha: mainBefore }, verified, "land phase", []);
+    const result = await createCandidates(host, "h", () => {}).land(base, { path: tree, startSha: mainBefore }, verified, "land phase", []);
     expect(result.state).toBe("moved");
     expect(git(base, "rev-parse", "HEAD")).toBe(mainBefore);
     expect(sh(base, "test -f unreviewed.txt").status).not.toBe(0);

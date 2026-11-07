@@ -82,7 +82,7 @@ const PROBES: Record<string, (c: Context) => Promise<Probe> | Probe> = {
       coreBudget: c.settings.coreBudget, noteBudget: c.settings.noteBudget, indexBudget: c.settings.indexBudget, scope: ["section:other"],
     });
     const build = async (task: TaskV2) => {
-      const known = await writerKnowledge({ db: c.db, host: c.host, chainForRun: async () => ["section:probe"] }, { projectId: c.projectId, runId: "memory-probe", hostId: c.hostId, task, memorySettings: c.settings });
+      const known = await writerKnowledge({ db: c.db, host: c.host, chainForRun: async () => ["section:probe"], log: c.ctx.log }, { projectId: c.projectId, runId: "memory-probe", hostId: c.hostId, task, memorySettings: c.settings });
       return writerBriefSegments(task, known.mixed.text, "", undefined, "Lane Pilot writer", "", known.rulesText).map((segment) => segment.text).join("\n\n");
     };
     const delivered = await build(c.positive);
@@ -90,13 +90,13 @@ const PROBES: Record<string, (c: Context) => Promise<Probe> | Probe> = {
     return { delivered, negative: await build(c.unrelated) };
   },
   "writer.turn": async (c) => {
-    const build = async (task: TaskV2) => (await stickyTurnPromptWithRules({ db: c.db, host: c.host, chainForRun: async () => ["section:probe"] },
+    const build = async (task: TaskV2) => (await stickyTurnPromptWithRules({ db: c.db, host: c.host, chainForRun: async () => ["section:probe"], log: c.ctx.log },
       { projectId: c.projectId, runId: "memory-probe", hostId: c.hostId, task, memorySettings: c.settings }, { kind: "next-task", task }))([]);
     return { delivered: await build(c.positive), negative: await build(c.unrelated) };
   },
   "writer.repair": async (c) => {
     const build = async (task: TaskV2) => {
-      const known = await writerKnowledge({ db: c.db, host: c.host, chainForRun: async () => ["section:probe"] }, { projectId: c.projectId, runId: "memory-probe", hostId: c.hostId, task, memorySettings: c.settings });
+      const known = await writerKnowledge({ db: c.db, host: c.host, chainForRun: async () => ["section:probe"], log: c.ctx.log }, { projectId: c.projectId, runId: "memory-probe", hostId: c.hostId, task, memorySettings: c.settings });
       return codeRepairPrompt({ task, findings: [], contextBlocks: writerContextBlocks(task, known.mixed.text, "", "", known.rulesText) });
     };
     return { delivered: await build(c.positive), negative: await build(c.unrelated) };

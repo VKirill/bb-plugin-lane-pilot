@@ -25,7 +25,7 @@ import { LANE_WORKTREE_PROVIDER_ID } from "../../native-agent/server";
 import { fullAccessSpawn } from "../../platform/server";
 import { WriterSelectionError, coreHostsRequiredProvider, helperChildPlacement, projectRoleField, requireHelperSpawn, requiredPolicyField } from "../../runs/server";
 import { holderSpawnKey } from "../../platform/server";
-import { stringAt } from "@lane-pilot/kit";
+import { stringAt, bestEffort, isNotFound, orMiss, BestEffortLog} from "@lane-pilot/kit";
 import { configuredSetting } from "../../contracts/server";
 import { planDigest, writerBriefInput, writerBriefSegments, type TaskFolderBrief } from "./writer-task";
 import { areaHistoryText, loadArea } from "./sticky";
@@ -54,13 +54,13 @@ interface Services {
   ruleScan: RuleScanApi;
 }
 
-/** A projects.get probe: any lookup failure answers null — callers take their old path (hasOtherRootSource keeps BB's managed worktree). */
-const projectOrNull = (bb: { sdk: { projects: { get(args: { projectId: string }): Promise<unknown> } } }, projectId: string) =>
-  Promise.resolve().then(() => bb.sdk.projects.get({ projectId })).catch(() => null) as Promise<{ sources?: Array<{ hostId?: string; path?: string }> } | null>;
+/** A projects.get probe: a lookup that cannot answer null — callers take their old path (hasOtherRootSource keeps BB's managed worktree). */
+const projectOrNull = (bb: { sdk: { projects: { get(args: { projectId: string }): Promise<unknown> } } }, projectId: string, log?: BestEffortLog) =>
+  bestEffort(log ?? ((message: string) => {}), "writer project probe", Promise.resolve().then(() => bb.sdk.projects.get({ projectId })), null) as Promise<{ sources?: Array<{ hostId?: string; path?: string }> } | null>;
 
 /** True when the run works in the project's own checkout on that machine, which BB's managed worktree can fork. */
-export async function isProjectRootCheckout(bb: { sdk: { projects: { get(args: { projectId: string }): Promise<unknown> } } }, projectId: string, hostId: string, path: string): Promise<boolean> {
-  const project = await projectOrNull(bb, projectId);
+export async function isProjectRootCheckout(bb: { sdk: { projects: { get(args: { projectId: string }): Promise<unknown> } } }, projectId: string, hostId: string, path: string, log?: BestEffortLog): Promise<boolean> {
+  const project = await projectOrNull(bb, projectId, log);
   return (project?.sources ?? []).some((source) => source.hostId === hostId && typeof source.path === "string" && resolve(source.path) === resolve(path));
 }
 
@@ -69,8 +69,8 @@ export function worktreeCreateError(reason: string | null): string {
 }
 
 /** The project has a root source on this host and the run folder is not it: BB's managed worktree would fork that root. */
-async function hasOtherRootSource(bb:ServerCore["bb"], projectId:string, hostId:string, path:string):Promise<boolean> {
-  const project = await projectOrNull(bb, projectId);
+async function hasOtherRootSource(bb:ServerCore["bb"], projectId:string, hostId:string, path:string, log?: BestEffortLog):Promise<boolean> {
+  const project = await projectOrNull(bb, projectId, log);
   const roots = (project?.sources ?? []).filter((source) => source.hostId === hostId && typeof source.path === "string");
   return roots.length > 0 && !roots.some((source) => resolve(source.path!) === resolve(path));
 }
@@ -99,13 +99,13 @@ async function listTaskFolder(bb:{sdk:{files:{read(args:{hostId:string;rootPath:
   hostId:string, workspacePath:string, taskId:string):Promise<TaskFolderBrief|null> {
   const rel = taskFolderRel(taskId);
   if (!rel) return null;
-  const file = await bb.sdk.files.read({ hostId, rootPath:workspacePath, path:resolve(workspacePath, rel, "PLAN.md") }).catch(() => null);
+  const file = await orMiss(bb.sdk.files.read({ hostId, rootPath:workspacePath, path:resolve(workspacePath, rel, "PLAN.md") }), null, isNotFound);
   const content = file && typeof file === "object" ? (file as { content?:unknown }).content : null;
   if (typeof content !== "string") return null;
   const files = new Set<string>(["PLAN.md"]);
-  const listed = await bb.sdk.files.listPaths({
+  const listed = await orMiss(bb.sdk.files.listPaths({
     hostId, path:resolve(workspacePath, rel), includeFiles:true, includeDirectories:false, includeHidden:true, limit:100,
-  }).catch(() => null);
+  }), null, isNotFound);
   for (const entry of listed?.paths ?? []) {
     if (entry.kind !== "file") continue;
     const name = typeof entry.name === "string" && entry.name ? entry.name
@@ -193,12 +193,12 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
       const memoryRoot=taskBasePath(db,input.runId,input.taskId)??input.task.project_cwd;
       const readBytes=async(relativePath:string)=>{
         if(relativePath.split("/").includes("..")) return null;
-        const file=await bb.sdk.files.read({hostId:input.config.hostId,rootPath:memoryRoot,path:resolve(memoryRoot,relativePath)}).catch(()=>null);
+        const file=await orMiss(bb.sdk.files.read({hostId:input.config.hostId,rootPath:memoryRoot,path:resolve(memoryRoot,relativePath)}), null, isNotFound);
         const content=file&&typeof file==="object"?(file as {content?:unknown}).content:null;
         return typeof content==="string"?new TextEncoder().encode(content):null;
       };
       at("knowledge");
-      const { allRules, rules, rulesText, mixed }=await writerKnowledge({db,host,chainForRun:(runId)=>services.ruleScan.chainForRun(runId)},
+      const { allRules, rules, rulesText, mixed }=await writerKnowledge({db,host,chainForRun:(runId)=>services.ruleScan.chainForRun(runId),log:(line)=>bb.log.warn(line)},
         {projectId:input.projectId,runId:input.runId,hostId:input.config.hostId,task:input.task,memorySettings,readBytes});
       // A fresh writer of an area hears what its earlier tasks decided, in place of the thread that remembered it.
       const areaHistory=input.task.area?areaHistoryText(await loadArea(bb.storage.kv,input.projectId,input.task.area)):"";
@@ -355,8 +355,8 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
           environment=inPlaceEnvironment(input.config.hostId,workspacePath,null);
         // BB's managed worktree forks the project's root source; a run folder that is not it (a section with its own
         // repo inside a non-git project, live sandbox 2026-10-07: «no usable git branch») needs Lane Pilot's own.
-        } else if (nestedBase || (nativeRun ? !await isProjectRootCheckout(bb, input.projectId, input.config.hostId, run.writer_workspace_path)
-            : await hasOtherRootSource(bb, input.projectId, input.config.hostId, run.writer_workspace_path))
+        } else if (nestedBase || (nativeRun ? !await isProjectRootCheckout(bb, input.projectId, input.config.hostId, run.writer_workspace_path, bb.log)
+            : await hasOtherRootSource(bb, input.projectId, input.config.hostId, run.writer_workspace_path, bb.log))
           // BB's managed worktree starts the writer at the repo root; a folder nested in a larger repo needs the same
           // subfolder inside the worktree, which only Lane Pilot's own worktree gives (OVH live check 2026-10-07).
           || await nestedInRepo(input.config.hostId, run.writer_workspace_path)) {
@@ -371,9 +371,9 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
               {hostId:input.config.hostId,timeoutMs:60_000,worktreeOwner:{kind:"attempt",id:input.attemptId}});
             if(created.status==="ready"&&created.path) {
               workspacePath=created.path;
-              await host.call("gitPrepareWorktree",{requestedHostId:input.config.hostId,basePath:base,worktreePath:workspacePath,
+              await bestEffort(bb.log, "writer worktree prepare", host.call("gitPrepareWorktree",{requestedHostId:input.config.hostId,basePath:base,worktreePath:workspacePath,
                 ownsBarrier,ownsPaths:input.task.owns_paths,neverTouch:input.task.never_touch},
-                {hostId:input.config.hostId,timeoutMs:600_000}).catch(()=>undefined);
+                {hostId:input.config.hostId,timeoutMs:600_000}), undefined);
               const prepared=await workspaceDirt(input.config,workspacePath,input.runId);
               if(!prepared.ok) throw new WriterSelectionError(`attempt_worktree_baseline_failed:${prepared.reason}`);
               dirtBefore=prepared.snapshots;
@@ -418,12 +418,12 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
           spawnEnvironmentId=stringAt(holder,"environmentId");
           if(!holderThreadId) throw new WriterSelectionError("attempt_worktree_provision_missing_thread");
           const recorded=setAttemptHolderThread(db,input.attemptId,holderThreadId);
-          if(recorded) await bb.storage.kv.delete(holderSpawnKey(input.attemptId)).catch(()=>undefined);
+          if(recorded) await bestEffort(bb.log, "writer holder spawn key clear", bb.storage.kv.delete(holderSpawnKey(input.attemptId)), undefined);
           if(!recorded) {
             const persisted=getAttempt(db,input.attemptId)?.holder_thread_id;
             if(!persisted) throw new WriterSelectionError("attempt_worktree_holder_cas_conflict");
             if(persisted!==holderThreadId) {
-              await bb.sdk.threads.stop({threadId:holderThreadId}).catch(()=>undefined);
+              await bestEffort(bb.log, "writer holder thread stop", bb.sdk.threads.stop({threadId:holderThreadId}), undefined);
               holderThreadId=persisted;
               spawnEnvironmentId=null;
             }
@@ -439,7 +439,7 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
             getEnvironment:(id)=>bb.sdk.environments.get({environmentId:id}),
           })).environmentId;
         } catch (cause) {
-          await bb.sdk.threads.stop({threadId:holderThreadId}).catch(()=>undefined);
+          await bestEffort(bb.log, "writer holder thread stop", bb.sdk.threads.stop({threadId:holderThreadId}), undefined);
           throw new WriterSelectionError(cause instanceof Error ? cause.message : String(cause));
         }
         await bb.sdk.threads.stop({threadId:holderThreadId});
@@ -449,9 +449,9 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
         const managed=resolveManagedWorkspace(await bb.sdk.environments.get({environmentId}),input.config.hostId);
         workspacePath=managed.path;
         // Linking dependencies helps the writer's checks; a host without it still gets a clean worktree.
-        await host.call("gitPrepareWorktree",{requestedHostId:input.config.hostId,basePath:base,worktreePath:workspacePath,
+        await bestEffort(bb.log, "writer worktree prepare", host.call("gitPrepareWorktree",{requestedHostId:input.config.hostId,basePath:base,worktreePath:workspacePath,
           ownsBarrier,ownsPaths:input.task.owns_paths,neverTouch:input.task.never_touch},
-          {hostId:input.config.hostId,timeoutMs:600_000}).catch(()=>undefined);
+          {hostId:input.config.hostId,timeoutMs:600_000}), undefined);
         const prepared=await workspaceDirt(input.config,workspacePath,input.runId);
         if(!prepared.ok) throw new WriterSelectionError(`attempt_worktree_baseline_failed:${prepared.reason}`);
         if(prepared.snapshots.length) throw new WriterSelectionError(`attempt_worktree_not_clean:${prepared.snapshots.map(row=>row.path).join(",")}`);
@@ -503,7 +503,7 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
       const harness=await services.harness?.forAttempt({ projectId:input.projectId, area:input.task.area, writerKey, attemptId:input.attemptId }).catch((cause:unknown)=>{
         bb.log.warn(`Lane Pilot harness for ${input.attemptId} skipped: ${cause instanceof Error?cause.message:String(cause)}`); return null; }) ?? null;
       const harnessFiles=harness&&(harness.skillNames.length||harness.checkNames.length||"hooks.json" in harness.tree)
-        ? await services.harness.materialize({ attemptId:input.attemptId, hostId:input.config.hostId, workspacePath, live, providerId:writerProviderId, parts:harness }).catch(()=>({ written:[] as string[], reason:"error" }))
+        ? await bestEffort(bb.log, "writer harness materialize", services.harness.materialize({ attemptId:input.attemptId, hostId:input.config.hostId, workspacePath, live, providerId:writerProviderId, parts:harness }), { written:[] as string[], reason:"error" })
         : { written:[] as string[], reason:null as string|null };
       const harnessSkills=harnessFiles.written.length?harness!.skillNames:[];
       // `writer.brief_mode=narrow` (src/rooms/hypotheses/brief-mode.ts): the contract and the plan only, no memory, rules or PM read summary.
@@ -582,12 +582,12 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
       if (!writerThreadId) throw new Error("threads.spawn returned no writer thread id");
       // Canceled while its thread was being made: stop the thread it got and end here.
       if (getAttempt(db, input.attemptId)?.state === "cancel_requested") {
-        await bb.sdk.threads.stop({ threadId:writerThreadId }).catch(() => undefined);
+        await bestEffort(bb.log, "writer thread stop", bb.sdk.threads.stop({ threadId:writerThreadId }), undefined);
         transitionAttempt(db, input.attemptId, "canceled", { threadId:writerThreadId, reason:"canceled while its writer was starting" });
         return { ok:false, status:"canceled", reason:"canceled while its writer was starting", attemptId:input.attemptId };
       }
       if (getAttempt(db, input.attemptId)?.state !== "spawn_requested") {
-        await bb.sdk.threads.stop({ threadId:writerThreadId }).catch(() => undefined);
+        await bestEffort(bb.log, "writer thread stop", bb.sdk.threads.stop({ threadId:writerThreadId }), undefined);
         return { ok:false, status:"spawn_rejected", reason:"the writer thread came after its start had ended", attemptId:input.attemptId };
       }
       transitionAttempt(db, input.attemptId, "running", { threadId:writerThreadId });
@@ -680,14 +680,14 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
     const hostId=input.config.hostId;
     if (await providerSkipReason(input.projectId,hostId,input.attemptId,settings)) return null;
     if (bound?.workspace_path) return {path:bound.workspace_path,dirtBefore:null};
-    const created=await host.call("gitCreateWorktree",{requestedHostId:hostId,basePath,name:input.attemptId,taskId:input.taskId},{hostId,timeoutMs:60_000,worktreeOwner:{kind:"attempt",id:input.attemptId}}).catch(()=>null);
+    const created=await bestEffort(bb.log, "writer worktree create", host.call("gitCreateWorktree",{requestedHostId:hostId,basePath,name:input.attemptId,taskId:input.taskId},{hostId,timeoutMs:60_000,worktreeOwner:{kind:"attempt",id:input.attemptId}}), null);
     if(!created||created.status!=="ready"||!created.path) {
       bb.log.info(`Lane Pilot writer ${input.attemptId}: no worktree for the provider (${created?.reason ?? "no answer"}); the old worktree path`);
       return null;
     }
-    await host.call("gitPrepareWorktree",{requestedHostId:hostId,basePath,worktreePath:created.path,
+    await bestEffort(bb.log, "writer worktree prepare", host.call("gitPrepareWorktree",{requestedHostId:hostId,basePath,worktreePath:created.path,
       ownsBarrier:configuredSetting(settings,"writer.owns_barrier")!=="off",ownsPaths:input.task.owns_paths,neverTouch:input.task.never_touch},
-      {hostId,timeoutMs:600_000}).catch(()=>undefined);
+      {hostId,timeoutMs:600_000}), undefined);
     // Until the attempt row holds the path no sweep knows the worktree (about 2 GB each): a refusal below removes it here.
     const dropWorktree=async (reason:string) => {
       if (getAttempt(db,input.attemptId)?.workspace_path===created.path) return;
@@ -727,8 +727,8 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
       getThread:async (id)=>bb.sdk.threads.get({threadId:id}),getEnvironment:async (id)=>bb.sdk.environments.get({environmentId:id})});
     if (!ready.ok) {
       // The thread never started a turn (its first message waits for the environment): it goes, the worktree stays.
-      await bb.sdk.threads.stop({threadId}).catch(()=>undefined);
-      await bb.sdk.threads.archive({threadId}).catch(()=>undefined);
+      await bestEffort(bb.log, "writer thread stop", bb.sdk.threads.stop({threadId}), undefined);
+      await bestEffort(bb.log, "writer thread archive", bb.sdk.threads.archive({threadId}), undefined);
       return await fallBack(ready.reason);
     }
     setAttemptEnvironment(db,input.attemptId,ready.environmentId);
@@ -738,7 +738,7 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
 
   /** Whether the folder is a subfolder of a larger git repo, asked on its own host (the hub may not see the folder). */
   async function nestedInRepo(hostId:string, folder:string):Promise<boolean> {
-    const ran = await runOnHost(host, { hostId, cwd: folder, command: "git rev-parse --show-prefix", timeoutSec: 15 }).catch(() => null);
+    const ran = await bestEffort(bb.log, "writer nested repo probe", runOnHost(host, { hostId, cwd: folder, command: "git rev-parse --show-prefix", timeoutSec: 15 }), null);
     return Boolean(ran && ran.exitCode === 0 && /^[^\n]+\/\s*$/.test(ran.stdout));
   }
 

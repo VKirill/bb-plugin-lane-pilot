@@ -8,7 +8,7 @@ import type { RecheckPlanFact } from "../../platform/server";
 import { hostContract } from "../../contracts";
 import { runOnHost } from "@lane-pilot/host-calls";
 import { bookkeepingSetting } from "@lane-pilot/settings-catalog";
-import { sha256Hex } from "@lane-pilot/kit";
+import { sha256Hex, bestEffort } from "@lane-pilot/kit";
 import { acceptanceLines, alreadyMetVerdict, blindVerdict, candidateOn, canonical, executionGate, issuable, lessonsNeeded, nextAction, piecesOfWave, phaseFolder, pieceSha, provenPieces, renderBook, waveCleared, waveLines, wavePackage, wavesOf, wordOf } from "../logic";
 import { buildsScreens, conclusionText, issuedContract, markRoadmap, nextRoadmapRow, stateText, waveTable, piecePlan, uatText } from "../stages";
 import { getPhase, listParts, notePoked, savePhase } from "../store";
@@ -57,7 +57,7 @@ export function installSteps(tools: StepsTools) {
     const candidate = phase.record.candidate!;
     if (!phase.runId) return null;
     const trees = Object.values(candidate.trees);
-    const result = await services.regression.run({ projectId: phase.projectId, runId: phase.runId, force: true, mode: "full", basePaths: trees.map((tree) => tree.path) }).catch(() => null);
+    const result = await bestEffort(ctx.log, "phase regression run", services.regression.run({ projectId: phase.projectId, runId: phase.runId, force: true, mode: "full", basePaths: trees.map((tree) => tree.path) }), null);
     const pass = result?.projects[0];
     if (!pass) return null;
     const ids = Object.values(phase.record.execution?.issued ?? {});
@@ -275,7 +275,7 @@ export function installSteps(tools: StepsTools) {
         if (goal) { savePhase(db, current.id, { record: { ...current.record, candidate: { ...current.record.candidate!, goal } }, at: now() }); current = mustGet(current.id); }
       }
       const runId = current.runId!;
-      const goal = onCandidate ? current.record.candidate!.goal ?? null : getRunGoal(db, runId) ?? await services.runGoal.check(runId).catch(() => null);
+      const goal = onCandidate ? current.record.candidate!.goal ?? null : getRunGoal(db, runId) ?? await bestEffort(ctx.log, "phase goal check", services.runGoal.check(runId), null);
       if (goal) {
         const verdict = blindVerdict(current.record.plan?.items ?? [], facts(current), goal as never, now());
         // The goal check is still running: nothing is frozen, the next pass asks again.
@@ -298,7 +298,7 @@ export function installSteps(tools: StepsTools) {
       // Create UAT.md: with owner.words on, the plan's promises become the lines the owner tests and answers.
       const path = `${phaseFolder(current.id)}/UAT.md`;
       const content = uatText(current);
-      const out = await writeDocs(current, [{ path, content }], `phase ${current.id}: UAT.md for the owner`).catch(() => ({ written: [] as string[], commit: null }));
+      const out = await bestEffort(ctx.log, "phase UAT doc", writeDocs(current, [{ path, content }], `phase ${current.id}: UAT.md for the owner`), { written: [] as string[], commit: null });
       if (out.written.includes(path)) {
         book(current, "acceptance", "uat_written", `${path}: ${(current.record.plan?.items ?? []).length} line(s) for the owner`);
         savePhase(db, current.id, { record: { ...current.record, uat: { path, sha256: sha256Hex(content), at: now() } }, at: now() });
@@ -366,7 +366,7 @@ export function installSteps(tools: StepsTools) {
       const hostId = getRunWriterHost(db, phase.runId);
       if (run?.writer_workspace_path && hostId) {
         const host = bb.hosts.experimental_client({ contract: hostContract });
-        const made = await runOnHost(host, { hostId, cwd: run.writer_workspace_path, command: `git branch -f phase/${phase.id} HEAD`, timeoutSec: 30 }).catch(() => null);
+        const made = await bestEffort(ctx.log, "phase marker branch", runOnHost(host, { hostId, cwd: run.writer_workspace_path, command: `git branch -f phase/${phase.id} HEAD`, timeoutSec: 30 }), null);
         book(phase, "decisions", "branch", made && made.exitCode === 0 ? `marker branch phase/${phase.id} at the accepted main` : "the marker branch could not be made");
       }
     }
@@ -377,11 +377,10 @@ export function installSteps(tools: StepsTools) {
       const opened = await tools.open({ projectId: phase.projectId, pmThreadId: phase.pmThreadId, title: next.name, goal: next.goal || next.name, roadmapRow: next.n });
       book(phase, "decisions", "transition", `autonomous: the next phase ${opened.id} «${next.name}» (roadmap ${next.n}) is open`);
     } else if (next) {
-      await bb.sdk.threads.send({ threadId: phase.pmThreadId, mode: "queue-if-active", input: [{ type: "text", mentions: [], text:
-        `[Lane Pilot phase] Phase ${phase.id} «${phase.title}» is closed. Next on the roadmap: ${next.n} «${next.name}»${next.goal ? ` — ${next.goal}` : ""}. Open it with lane_pilot_phase {action:"open", title, goal, roadmapRow:"${next.n}"} when it is time.` }] } as never).catch(() => undefined);
+      await bestEffort(ctx.log, "phase next-roadmap notice", bb.sdk.threads.send({ threadId: phase.pmThreadId, mode: "queue-if-active", input: [{ type: "text", mentions: [], text:
+        `[Lane Pilot phase] Phase ${phase.id} «${phase.title}» is closed. Next on the roadmap: ${next.n} «${next.name}»${next.goal ? ` — ${next.goal}` : ""}. Open it with lane_pilot_phase {action:"open", title, goal, roadmapRow:"${next.n}"} when it is time.` }] } as never), undefined);
     }
-    return mustGet(phase.id);
-  }
+    return mustGet(phase.id);  }
 
   /** Sends the PM the one instruction the phase needs now, once per instruction key. */
   async function poke(phase: Phase & { pokedKey?: string | null }): Promise<void> {
@@ -409,7 +408,7 @@ export function installSteps(tools: StepsTools) {
     // discussion's step arrived after the phase was closed). The next pass, two minutes on, pokes it once it is idle.
     const thread = await orMiss(bb.sdk.threads.get({ threadId: phase.pmThreadId }), null, isNotFound) as { status?: unknown } | null;
     if (thread?.status !== "idle") return;
-    await bb.sdk.threads.send({ threadId: phase.pmThreadId, mode: "queue-if-active", input: [{ type: "text", text: `[Lane Pilot phase] ${action.text}`, mentions: [] }] } as never).catch(() => undefined);
+    await bestEffort(ctx.log, "phase poke notice", bb.sdk.threads.send({ threadId: phase.pmThreadId, mode: "queue-if-active", input: [{ type: "text", text: `[Lane Pilot phase] ${action.text}`, mentions: [] }] } as never), undefined);
     notePoked(db, phase.id, action.key, now());
   }
 
@@ -464,7 +463,7 @@ export function installSteps(tools: StepsTools) {
     const partial = { at: now(), kept: proven.map((item) => item.id), unproven: unproven.map(({ item, why }) => ({ id: item.id, why: why.slice(0, 300) })), unmet };
     book(phase, "decisions", proven.length ? "exhausted_partial" : "exhausted_stop", outcome);
     // A stopped unlanded phase keeps nothing: the candidate's trees go now, not at the next janitor pass (WT2 A2).
-    if (candidateOn(phase.record) && !phase.record.candidate!.landedAt) { const kit = candidates(phase); if (kit) for (const [base, tree] of Object.entries(phase.record.candidate!.trees)) await kit.drop(base, tree).catch(() => undefined); }
+    if (candidateOn(phase.record) && !phase.record.candidate!.landedAt) { const kit = candidates(phase); if (kit) for (const [base, tree] of Object.entries(phase.record.candidate!.trees)) await bestEffort(ctx.log, "phase candidate drop", kit.drop(base, tree), undefined); }
     savePhase(db, phase.id, { state: "stopped", at: now(), record: { ...phase.record, scope, auto: undefined, partial, closing: { by: "Lane Pilot (loop exhausted)", words: done.slice(0, 1000), at: now() },
       lessons: { needed: true, why: "the loop ran out of tries; the phase stopped without its goal met, the analysis of the cut is in the backlog" } } });
     await services.wall?.loopExhausted({

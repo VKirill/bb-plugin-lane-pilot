@@ -50,6 +50,7 @@ export function useDraftEditing(doc: DraftDoc, read: () => Promise<unknown>) {
   const enqueue = useCallback(<T,>(job: () => Promise<T>): Promise<T> => {
     setPending((count) => count + 1);
     const run = chain.current.then(job, job).finally(() => setPending((count) => count - 1));
+    // the chain keeps going; a failed job is surfaced by its own caller
     chain.current = run.catch(() => undefined);
     return run;
   }, []);
@@ -145,6 +146,7 @@ export function useCatalog(projectId: string | null, draftId: string, active: bo
     if (!active || !projectId) return;
     let live = true;
     void (async () => {
+      // a failed read leaves the panel empty; the next signal reads again
       const [capabilities, listing] = await Promise.all([
         rpc.call("workflow_capabilities", { projectId, draftId }).catch(() => null) as Promise<{ capabilities?: Record<string, unknown> } | null>,
         rpc.call("workflow_list", { projectId }).catch(() => null) as Promise<Output<"workflow_list"> | null>,

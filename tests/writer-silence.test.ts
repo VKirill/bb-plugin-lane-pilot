@@ -55,6 +55,20 @@ describe("writer silence sweep", () => {
     expect(await sweepWriterSilence(deps, T0 + 71 * MIN)).toEqual([{ attemptId:"a1", action:"nudged", count:1 }]);
   });
 
+  it("a throwing owner-form probe skips the writer this sweep and logs the failure once per streak", async () => {
+    const { deps, sent, logs } = setup();
+    deps.waitingForOwner = async () => { throw new Error("owner probe down"); };
+    expect(await sweepWriterSilence(deps, T0 + 25 * MIN)).toEqual([]);
+    expect(await sweepWriterSilence(deps, T0 + 40 * MIN)).toEqual([]);
+    expect(sent).toEqual([]);
+    expect(logs).toHaveLength(1);
+    expect(logs[0]).toContain("owner probe down");
+    // Once the probe answers again, the streak clears and the writer is nudged.
+    deps.waitingForOwner = async () => false;
+    expect(await sweepWriterSilence(deps, T0 + 70 * MIN)).toEqual([{ attemptId:"a1", action:"nudged", count:1 }]);
+    expect(logs).toHaveLength(2);
+  });
+
   it("steers a silent active writer once, records it and reads only that thread's events", async () => {
     const { deps, sent, logs, store, listed } = setup();
     expect(await sweepWriterSilence(deps, T0 + 25 * MIN)).toEqual([{ attemptId:"a1", action:"nudged", count:1 }]);

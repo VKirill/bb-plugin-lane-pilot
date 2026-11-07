@@ -1,6 +1,6 @@
 import type { LanePilotDatabase } from "../../storage";
 import { runOnHost } from "@lane-pilot/host-calls";
-import { redactKnown } from "@lane-pilot/kit";
+import { redactKnown, bestEffort, BestEffortLog} from "@lane-pilot/kit";
 import type { TaskV2 } from "../../contracts";
 
 /**
@@ -15,7 +15,7 @@ import type { TaskV2 } from "../../contracts";
  */
 export async function retrySafetyStop(input: {
   db: LanePilotDatabase; host: Parameters<typeof runOnHost>[0]; hostId: string;
-  task: TaskV2; attemptId: string; liveFolder: boolean; now?: number;
+  task: TaskV2; attemptId: string; liveFolder: boolean; now?: number; log?: BestEffortLog;
 }): Promise<string | null> {
   const { db, host, hostId, task, attemptId, liveFolder } = input;
   const row = db.prepare("SELECT workspace_path, updated_at FROM lane_pilot_attempt WHERE id=?").get(attemptId) as
@@ -24,10 +24,10 @@ export async function retrySafetyStop(input: {
   if (!workspace || liveFolder) return null;
   const endedAt = row!.updated_at;
   const epoch = Math.floor(endedAt / 1000);
-  const scan = await runOnHost(host, {
+  const scan = await bestEffort(input.log ?? ((message: string) => {}), "retry safety scan", runOnHost(host, {
     hostId, cwd: workspace, timeoutSec: 30, timeoutMs: 35_000,
     command: `git log --since=@${epoch} --oneline -10 2>/dev/null; find . -path ./.git -prune -o -type f -newermt @${epoch} -print 2>/dev/null | head -80`,
-  }).catch(() => null);
+  }), null);
   if (scan && scan.exitCode === 0) {
     const lines = scan.stdout.split("\n").map((line) => line.trim()).filter(Boolean);
     // `git log --oneline` rows are abbreviated sha plus subject; `find` rows are ./-relative. Anything else is ignored,
@@ -53,10 +53,10 @@ export async function retrySafetyStop(input: {
   const usedSecrets = task.verification.some((check) => check.secrets?.length)
     || !!db.prepare("SELECT 1 FROM lane_pilot_secret_issuance WHERE task_id=? LIMIT 1").get(task.id);
   if (usedSecrets) {
-    const diff = await runOnHost(host, {
+    const diff = await bestEffort(input.log ?? ((message: string) => {}), "retry safety diff", runOnHost(host, {
       hostId, cwd: workspace, timeoutSec: 30, timeoutMs: 35_000,
       command: "git diff HEAD -- . ':(exclude).agents' | head -c 200000",
-    }).catch(() => null);
+    }), null);
     if (diff && diff.exitCode === 0 && diff.stdout && redactKnown(diff.stdout) !== diff.stdout) {
       return `retry_safety: a catalog secret value is present in the worktree diff of attempt ${attemptId}; ` +
         "remove the leaked value from the files and dispatch again manually — an automatic retry would carry it into new output";

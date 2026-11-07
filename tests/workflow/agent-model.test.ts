@@ -294,6 +294,7 @@ const rtFor = (settings: Record<string, unknown>, pair: typeof pm | null) => ({
   pmThreadId: "pm-thread", projectId: "p", runId: "r",
   ctx: {
     db: { prepare: () => ({ get: () => undefined }) },
+    log: () => undefined,
     effectiveProjectSettings: async () => ({ values: settings }),
     ownedAgents: async () => ({}),
     bb: { sdk: { threads: { defaultExecutionOptions: async () => (pair ? { providerId: pair.providerId, model: pair.model } : {}) } } },
