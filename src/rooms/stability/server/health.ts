@@ -32,7 +32,7 @@ export function runHealth(services: Services, runId: string) {
       childThreads: { used: snapshot.children, limit: snapshot.limits.maxChildren ?? null },
       check,
     },
-    ...(!check.ok ? { next: wayOut(`run_budget_exceeded:${check.exceeded}`) ?? undefined } : {}),
+    ...(!check.ok ? { next: wayOut("blocked", `run_budget_exceeded:${check.exceeded}`) ?? undefined } : {}),
     providers: services.providerBreaker.snapshot(),
   };
 }

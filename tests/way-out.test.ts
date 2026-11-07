@@ -50,7 +50,7 @@ const OCCURRING_REASONS: Array<{ reason: string; note: string }> = [
 it("every occurring reason has a way out or is named in NO_WAY_OUT", () => {
   const missing: string[] = [];
   for (const { reason } of OCCURRING_REASONS) {
-    const out = wayOut(reason);
+    const out = wayOut("blocked", reason);
     const namedNoWay = NO_WAY_OUT.some((row) => row.pattern.test(reason));
     if (!out && !namedNoWay) missing.push(reason);
   }
@@ -58,17 +58,17 @@ it("every occurring reason has a way out or is named in NO_WAY_OUT", () => {
 });
 
 it("names the specific ways out the digest must carry", () => {
-  expect(wayOut("plan_critique_blocked")).toMatch(/plan critique refused the contract/);
-  expect(wayOut("verdict_block:x: finding | src/a.ts:1")).toMatch(/do not send the same task again/);
-  expect(wayOut("needs_human: which port?")).toMatch(/lane_pilot_answer_writer/);
-  expect(wayOut("quarantine: open regression P1 `npm test` blamed on P1 shares files")).toMatch(/lane_pilot_regression/);
-  expect(wayOut("waiting_writer:owner_present:codex")).toMatch(/resumes by itself/);
-  expect(wayOut("run_budget_exceeded:tokens")).toMatch(/lane_pilot_workflow_status/);
-  expect(wayOut("budget_exceeded:cost")).toMatch(/step receipts/);
-  expect(wayOut("owns_paths rejected a.ts")).toMatch(/owns_paths/);
-  expect(wayOut("provider_error: HTTP 502")).toMatch(/starts the next writer/);
-  expect(wayOut("needs_human: q")).toMatch(/lane_pilot_ask_owner/);
-  expect(wayOut("unknown_reason_string")).toBeNull();
+  expect(wayOut("blocked", "plan_critique_blocked")).toMatch(/plan critique refused the contract/);
+  expect(wayOut("blocked", "verdict_block:x: finding | src/a.ts:1")).toMatch(/do not send the same task again/);
+  expect(wayOut("blocked", "needs_human: which port?")).toMatch(/lane_pilot_answer_writer/);
+  expect(wayOut("pending", "quarantine: open regression P1 `npm test` blamed on P1 shares files")).toMatch(/lane_pilot_regression/);
+  expect(wayOut("pending", "waiting_writer:owner_present:codex")).toMatch(/resumes by itself/);
+  expect(wayOut("blocked", "run_budget_exceeded:tokens")).toMatch(/lane_pilot_workflow_status/);
+  expect(wayOut("blocked", "budget_exceeded:cost")).toMatch(/step receipts/);
+  expect(wayOut("blocked", "owns_paths rejected a.ts")).toMatch(/owns_paths/);
+  expect(wayOut("blocked", "provider_error: HTTP 502")).toMatch(/starts the next writer/);
+  expect(wayOut("blocked", "needs_human: q")).toMatch(/lane_pilot_ask_owner/);
+  expect(wayOut("blocked", "unknown_reason_string")).toBeNull();
 });
 
 /** Tools already in the PM's set, plus names another stream adds (listed as pending until they merge). */
@@ -81,7 +81,7 @@ it("every lane_pilot tool named in a way-out string exists in the PM's tool set"
   for (const family of Object.values(PM_TOOL_FAMILIES)) for (const folded of Object.values(family.actions)) known.add(folded);
   const mentioned = new Set<string>();
   for (const { reason } of OCCURRING_REASONS) {
-    const out = wayOut(reason);
+    const out = wayOut("blocked", reason);
     if (!out) continue;
     for (const match of out.matchAll(/lane_pilot_\w+/g)) mentioned.add(match[0]);
   }
