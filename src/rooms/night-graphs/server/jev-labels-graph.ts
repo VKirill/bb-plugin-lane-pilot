@@ -11,8 +11,7 @@ import { runGraphHelper } from "../../workflow/server";
 import { sweepFailureClassOutcomes, sweepInvoiceCheckOutcomes, sweepPlanFactOutcomes, sweepRouteWorkflowOutcomes, sweepWriterModelOutcomes } from "../../runs";
 
 import type { RuleScanApi } from "../../self-repair/server/rule-scan";
-import type { WorkflowEngineApi } from "../../workflow/server/workflow";
-import type { WriterHostApi } from "../../platform/server";
+import type { WorkflowEngineApi, WriterHostApi } from "../../platform/server";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {

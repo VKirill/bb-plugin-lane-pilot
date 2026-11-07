@@ -346,7 +346,7 @@ export default async function plugin(bb: BbPluginApi) {
     } satisfies AgentOpsApi & { resolveIntegrationGate: VerificationGatePort },
     { isTaskSatisfied } satisfies { isTaskSatisfied: IsTaskSatisfied },
     createWriterState(ctx) satisfies WriterStatePort,
-    createWorkflowEngine(ctx, services),
+    createWorkflowEngine(ctx, services) satisfies WorkflowEngineApi,
     createWorkflowTriggersService(ctx, services) satisfies WorkflowTriggersPort,
     createWriterSpawn(ctx, services),
     createWriterVerify(ctx, services) satisfies { runVerification: RunVerification },

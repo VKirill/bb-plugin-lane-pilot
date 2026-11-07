@@ -41,6 +41,7 @@ export * from "./gate-vocabulary";
 export * from "./workflow-ids";
 export * from "./service-models";
 export * from "./skill-sequence";
+export * from "./brief-mode";
 export { default as bundledAgents } from "./bundled-agents.json";
 export { LEAD_ID, LEAD_LAUNCH, LEAD_NAME, LEAD_SESSION, LEAD_SUMMARY, LEAD_TICK, LEAD_TOOLS } from "./lead-agent";
 export { taskWordItemPrefix, type TaskWordDb, type TaskWordPort, type WordTask } from "./task-word";

@@ -1,7 +1,7 @@
 import { isTaskSatisfied, loadBlockedBy } from "../../runs/server";
 import type { VerificationGatePort } from "../../contracts/integration-gate";
 import type { IsTaskSatisfied } from "../../contracts";
-import type { StageHelperSettings } from "../../platform/server";
+import type { StageHelperSettings, WorkflowEngineApi } from "../../platform/server";
 import { setRunHalted } from "../../runs/server";
 import { isLiveDecision } from "../live-folder";
 import { DISPATCH_IDEMPOTENT_WINDOW_MS, DISPATCH_STAGES_PENDING } from "../../runs";
@@ -42,7 +42,6 @@ import { logRulesShown } from "@lane-pilot/run-insights";
 
 import type { StabilityApi } from "../../stability/server/stability";
 import type { WallApi } from "../../wall/service";
-import type { WorkflowEngineApi } from "../../workflow/server/workflow";
 import type { WriterSpawnApi } from "./spawn";
 import type { WriterStartApi } from "./start";
 import type { WriterStateApi } from "./state";
