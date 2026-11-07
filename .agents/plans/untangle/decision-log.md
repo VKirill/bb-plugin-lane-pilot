@@ -119,3 +119,9 @@ G7b started moving the errand episode recorder, memory-eval SQL loader and lead-
 
 ## 2026-11-07 — S and G3+G6 merged
 main 12fe55a4: largestScc 45, mutualPairs 59, edges 719 (from 46/72/723). G5 (writer/workflow ports) started on swe-2-high from this base.
+
+## 2026-11-07 — generated files at release
+Streams never commit README.md / docs/atlas.md / docs/map/index.html; the merge regenerates them only to run the suite, so main's committed copies go stale and tests/atlas.test.ts is red on a clean checkout until regenerated. The global release commit regenerates and commits them once.
+
+## 2026-11-07 — merges so far today
+F3 66e0fc30, R8 7961622a, R6+R9 ef504db7, R4a 43d4c51e, G5 50d5865b, R8c (this). Graph 43/46/712. A stream's own "main" graph numbers are not trusted: the merger runs room-graph on main and on the branch (G7b's first rebase silently reverted G4 and S and reported SCC 70 as "main").
