@@ -8,25 +8,24 @@ import { attemptPercent } from "../src/rooms/world/server/signals";
 
 const roots = { lanePilot: process.cwd() };
 
-describe("sma-map proofs name exports, not source text", () => {
-  it("an exported symbol resolves", () => {
+describe("sma-map proofs name declared units, not source text", () => {
+  it("a declared symbol resolves — exported or not", () => {
     expect(brokenProof("src/rooms/sma-map/entries.ts#SMA_ENTRIES", roots)).toBeNull();
     expect(brokenProof("src/rooms/sma-map/model.ts#smaRows", roots)).toBeNull();
+    // percent is module-private in model.ts: a private declaration is still the unit a proof may name.
+    expect(brokenProof("src/rooms/sma-map/model.ts#percent", roots)).toBeNull();
   });
 
-  it("a declaration-style anchor resolves to the export it names", () => {
+  it("a declaration-style anchor resolves to the unit it names", () => {
     expect(brokenProof("src/rooms/sma-map/entries.ts#export const SMA_ENTRIES", roots)).toBeNull();
     expect(brokenProof("src/rooms/sma-map/model.ts#export function smaRows(", roots)).toBeNull();
   });
 
-  it("body text and prose are not proofs in a module", () => {
-    expect(brokenProof("src/rooms/sma-map/entries.ts#this text is not an export q7z", roots)).toMatch(/not an export/);
-    expect(brokenProof("src/rooms/sma-map/entries.ts#export", roots)).toMatch(/not an export/);
-  });
-
-  it("a private name is not a proof even when the file carries it", () => {
-    // percent is module-private in model.ts: the file contains the word, no export does.
-    expect(brokenProof("src/rooms/sma-map/model.ts#percent", roots)).toMatch(/not an export/);
+  it("body text, prose and mere usages are not proofs in a module", () => {
+    expect(brokenProof("src/rooms/sma-map/entries.ts#this text is not an export q7z", roots)).toMatch(/not declared/);
+    expect(brokenProof("src/rooms/sma-map/entries.ts#export", roots)).toMatch(/not declared/);
+    // SMA_ENTRIES is imported into model.ts, never declared there: the unit lives in entries.ts.
+    expect(brokenProof("src/rooms/sma-map/model.ts#SMA_ENTRIES", roots)).toMatch(/not declared/);
   });
 
   it("data files keep their literal check — they have no export surface", () => {
@@ -38,7 +37,7 @@ describe("sma-map proofs name exports, not source text", () => {
     expect(brokenProof("src/rooms/nowhere/gone.ts#anything", roots)).toMatch(/no such file/);
   });
 
-  it("every proof in the registry resolves under the export rule", async () => {
+  it("every proof in the registry resolves under the declared-name rule", async () => {
     const { smaRows } = await import("../src/rooms/sma-map");
     const broken = smaRows().flatMap((row) => (row.proof ? [brokenProof(row.proof, roots)] : [])).filter((x): x is string => !!x);
     expect(broken).toEqual([]);

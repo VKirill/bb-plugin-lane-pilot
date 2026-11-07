@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { exportedOf, relocateAnchor } from "./exports";
+import { declaredNames, relocateAnchor } from "./exports";
 import { SMA_CONTRACT_TESTS } from "./contracts";
 import { SMA_CONTRACT_GAPS } from "./gaps";
 import { SMA_ENTRIES, type SmaStatus } from "./entries";
@@ -103,23 +103,29 @@ export function unjudgedProof(proof: string, roots: ProofRoots): boolean {
   return !!prefix && !(prefix[1] === "lane-stack" ? roots.laneStack : prefix[1] === "telegram" ? roots.telegram : roots.core);
 }
 
-/** Extensions whose file is a module: a `#anchor` must name a symbol the module exports, never body text. */
+/** Extensions whose file is a module: a `#anchor` must name a declared unit in the file — a function, const, class,
+ * method, property key or case label at any depth — never body text. Exported or not: the anchor names what implements
+ * the claim, and renaming that unit must break the proof. */
 const MODULE_FILE = /\.(?:[cm]?[jt]sx?)$/;
-/** `export function foo(`, `export const FOO`, `export type T`, `export async function f(` → the exported name. */
-const DECLARED = /^export\s+(?:declare\s+)?(?:default\s+)?(?:abstract\s+)?(?:async\s+)?(?:function\*?|class|const|let|var|interface|type|enum)\s+([A-Za-z_$][\w$]*)/;
-
-/** The exported symbol an anchor names, or null when the anchor is not an export of the module. */
-function exportedAnchor(text: string, symbol: string): string | null {
-  const name = DECLARED.exec(symbol)?.[1] ?? (IDENTIFIERISH.test(symbol) ? symbol : null);
-  return name && exportedOf(text).includes(name) ? name : null;
-}
+/** `export function foo(`, `export const FOO`, `function foo(`, `const FOO` → the declared name. */
+const DECLARED = /(?:export\s+)?(?:declare\s+)?(?:default\s+)?(?:abstract\s+)?(?:async\s+)?function\*?\s+([A-Za-z_$][\w$]*)|(?:export\s+)?(?:declare\s+)?class\s+([A-Za-z_$][\w$]*)|(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)/;
 const IDENTIFIERISH = /^[A-Za-z_$][\w$]*$/;
+const declCache = new Map<string, Set<string>>();
+
+/** The declared unit an anchor names, or null when the file declares no such name. */
+function declaredAnchor(file: string, text: string, symbol: string): string | null {
+  const name = DECLARED.exec(symbol)?.slice(1).find(Boolean) ?? (IDENTIFIERISH.test(symbol) ? symbol : null);
+  if (!name) return null;
+  let names = declCache.get(file);
+  if (!names) { names = declaredNames(text, file.endsWith("x")); declCache.set(file, names); }
+  return names.has(name) ? name : null;
+}
 
 /** A proof that does not resolve: the file is missing, or the anchor is not what it claims. Strict — a moved anchor
  * is a broken proof (see proofDrift for where it went and `sma-map --fix-proofs` to repair the path). In a module the
- * anchor must be a public export — checked against the module's export surface, so body text cannot pose as proof.
- * Data files (json, sh, py, md, …) have no exports; there the anchor is a literal the file must carry. Proofs into an
- * absent sibling repository are not judged. */
+ * anchor must name a declared unit — checked against the file's declarations at any depth, so body text cannot pose
+ * as proof but a private handler can. Data files (json, sh, py, md, …) have no declarations; there the anchor is a
+ * literal the file must carry. Proofs into an absent sibling repository are not judged. */
 export function brokenProof(proof: string, roots: ProofRoots): string | null {
   const [where, symbol] = proof.split("#", 2) as [string, string | undefined];
   const prefix = where.match(/^(lane-stack|core|telegram):(.*)$/);
@@ -131,7 +137,7 @@ export function brokenProof(proof: string, roots: ProofRoots): string | null {
   if (!symbol) return null;
   const text = readFileSync(file, "utf8");
   if (MODULE_FILE.test(path)) {
-    if (!exportedAnchor(text, symbol)) return `${proof}: ${symbol} is not an export of the module`;
+    if (!declaredAnchor(file, text, symbol)) return `${proof}: ${symbol} is not declared in the module`;
     return null;
   }
   if (!text.includes(symbol)) return `${proof}: ${symbol} is not in the file`;
