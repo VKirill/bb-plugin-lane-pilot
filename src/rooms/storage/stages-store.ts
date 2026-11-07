@@ -237,3 +237,15 @@ export function countVerificationGateFailures(db: LanePilotDatabase, runId: stri
     "SELECT COUNT(*) AS n FROM lane_pilot_gate_event WHERE run_id=? AND task_id=? AND gate='verification' AND status IN ('failed','rejected')",
   ).get(runId, taskId) as { n: number }).n;
 }
+
+/** Stage/state pairs of a task's receipts (the PM status phase guess needs no result bodies). */
+export function stageReceiptStates(db: LanePilotDatabase, runId: string, taskId: string): Array<{ stage_id: string; state: string }> {
+  return db.prepare("SELECT stage_id, state FROM lane_pilot_stage_receipt WHERE run_id=? AND task_id=?")
+    .all(runId, taskId) as Array<{ stage_id: string; state: string }>;
+}
+
+/** One receipt's state and attempt (a recheck decides from those alone). */
+export function stageReceiptAttemptState(db: LanePilotDatabase, runId: string, taskId: string, stageId: string): { state: string; attempt: number } | undefined {
+  return db.prepare("SELECT state, attempt FROM lane_pilot_stage_receipt WHERE run_id=? AND task_id=? AND stage_id=?")
+    .get(runId, taskId, stageId) as { state: string; attempt: number } | undefined;
+}

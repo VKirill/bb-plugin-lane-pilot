@@ -1,5 +1,5 @@
 import { MACHINE_AFFINITY_ANY } from "@lane-pilot/contracts";
-import { countAttempts, createAttempt, failedBackgroundStageRows, failureFieldsOf, getActivation, getAttempt, getRunCard, latestAttemptsPerTask, listStageReceipts, openAttemptIdsOfRun, openRunOfPmThread, runTaskCardRows, taskCheckLogRows, transitionAttempt } from "../../../storage";
+import { countAttempts, createAttempt, failedBackgroundStageRows, failureFieldsOf, getActivation, getAttempt, getRunCard, latestAttemptsPerTask, stageReceiptStates, openAttemptIdsOfRun, openRunOfPmThread, runTaskCardRows, taskCheckLogRows, transitionAttempt } from "../../../storage";
 import { t } from "@lane-pilot/i18n";
 import { resolveRoleModel } from "@lane-pilot/models";
 import { setRunHalted } from "../runs-halt";
@@ -170,7 +170,7 @@ export function runsRpc(ctx: ServerCore, services: Services) {
         } else {
           const attempt = openAttemptsByThread.get(threadIdStr);
           if (attempt && openRun) {
-            const receipts = (listStageReceipts(db, openRun.id, attempt.task_id).map((row) => ({ stage_id: row.stageId, state: row.state as string })) as Array<{ stage_id: string; state: string }>);
+            const receipts = stageReceiptStates(db, openRun.id, attempt.task_id);
 
             const verification = receipts.find((r) => r.stage_id === "verification");
             const acceptance = receipts.find((r) => r.stage_id === "acceptance-receipt");

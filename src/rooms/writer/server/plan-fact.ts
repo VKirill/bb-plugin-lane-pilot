@@ -5,7 +5,7 @@ import { bestEffort, isNotFound, orMiss, parseJsonOr } from "@lane-pilot/kit";
 import { readWires, wiresCommand } from "../../wires";
 import type { TaskV2 } from "../../contracts";
 import type { ServerCore } from "../../contracts/server";
-import { deleteStageReceipt, getRunSettingsScopes, getStageReceiptResult, getTask, getTaskGitBase, loadProjectSettings, acceptedTaskIdsOfRun, listStageReceipts } from "../../storage";
+import { deleteStageReceipt, getRunSettingsScopes, getStageReceiptResult, getTask, getTaskGitBase, loadProjectSettings, acceptedTaskIdsOfRun, stageReceiptAttemptState } from "../../storage";
 import { recordStage } from "../../runs/server";
 import { NO_CODE_KINDS, PLAN_FACT_RULES, blindPlanFact, clipDiff, planFactJudgment, diffHunksCommand, existsCommand, existsFromCommandOutput, hunksFromCommandOutput, parsePlanFact, planFactOutcome, sha256, untouchedCitations } from "../../tasks";
 import type { ItemVerdict, PlanFactCheck, PlanFactFacts, PlanFactTable } from "../../tasks";
@@ -154,7 +154,7 @@ export function tableFromItems(items: ReadonlyArray<Pick<ItemVerdict, "item" | "
  * the new one carries the current rules. Null when there is nothing to weigh again.
  */
 export async function recheckPlanFact(ctx: ServerCore, input: { projectId: string; runId: string; taskId: string; hostId: string }): Promise<"passed" | "failed" | "skipped" | null> {
-  const row = listStageReceipts(ctx.db, input.runId, input.taskId).find((receipt) => receipt.stageId === "plan-fact") as { state: string; attempt: number } | undefined;
+  const row = stageReceiptAttemptState(ctx.db, input.runId, input.taskId, "plan-fact");
   if (row?.state !== "failed") return null;
   const old = getStageReceiptResult(ctx.db, input.runId, input.taskId, "plan-fact").result as { rules?: number; table?: string; items?: ItemVerdict[] } | null;
   if (!old || (old.rules ?? 1) >= PLAN_FACT_RULES || old.table !== "ok" || !old.items?.length) return null;

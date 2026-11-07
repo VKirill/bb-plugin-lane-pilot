@@ -90,8 +90,9 @@ export function sweepPlanFactOutcomes(db: Database.Database): number {
     if (!receipt.run_id || !receipt.subject) continue;
     const accepted = hasAcceptedAttempt(db, receipt.run_id, receipt.subject);
     if (!accepted) continue;
-    const stage = getStageReceiptResult(db, receipt.run_id, receipt.subject, "plan-fact");
-    const result = stage.result as { items?: Array<{ item: number; verdict: string }>; jev?: Record<string, string> } | null;
+    let result: { items?: Array<{ item: number; verdict: string }>; jev?: Record<string, string> } | null = null;
+    try { result = getStageReceiptResult(db, receipt.run_id, receipt.subject, "plan-fact").result as { items?: Array<{ item: number; verdict: string }>; jev?: Record<string, string> } | null; }
+    catch { /* unreadable result_json: this receipt stays unlabeled */ }
     if (!result?.jev || !result.items?.length) continue;
     const code = Object.fromEntries(result.items.map((item) => [String(item.item), item.verdict === "proven" ? "done" : "not_done"]));
     const agreed = Object.entries(result.jev).filter(([item, verdict]) => verdict !== "unseen" && code[item] !== undefined).every(([item, verdict]) => verdict === code[item]);

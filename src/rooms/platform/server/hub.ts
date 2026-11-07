@@ -18,9 +18,7 @@ export function readHubRows(db: ReadDb, keys?: readonly string[]): Map<string, {
     const stored = listSettingRows(db as never, GLOBAL_SETTINGS_PROJECT_ID);
     for (const row of stored) {
       if (!wanted.has(row.key)) continue;
-      let value: unknown = row.value;
-      try { value = JSON.parse(row.value as string); } catch { /* keep the text */ }
-      rows.set(row.key, { value, version: row.version });
+      rows.set(row.key, { value: row.value, version: row.version });
     }
   } catch { /* no settings table yet */ }
   return rows;
