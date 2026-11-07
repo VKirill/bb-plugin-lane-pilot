@@ -22,7 +22,7 @@ export async function isHeld(kv: Kv, runId: string): Promise<boolean> {
  * Holds the caller while the run is paused. Returns once it is resumed (true) or the plugin is being reloaded (false: the
  * new instance asks again). `onFirstWait` is called once, when the wait begins.
  */
-export async function waitWhileRunPaused(kv: Kv, runId: string, options: { isDisposed: () => boolean; pollMs?: number; onFirstWait?: () => void; onError?: (message: string) => void; maxReadErrors?: number; onReadBound?: (cause: unknown) => boolean | void }): Promise<boolean> {
+export async function waitWhileRunPaused(kv: Kv, runId: string, options: { isDisposed: () => boolean; pollMs?: number; onFirstWait?: () => void; onError?: (message: string) => void; maxReadErrors?: number; onReadBound?: (cause: unknown) => boolean | void; shouldStop?: () => boolean }): Promise<boolean> {
   let waited = false, readErrorLogged = false, boundLogged = false, readErrors = 0;
   // An unreadable pause/conveyor flag is "state unknown", never "resumed": after maxReadErrors the caller's
   // onReadBound decides — false stops the wait (the caller parks or blocks), true/absent keeps holding the slot.
@@ -42,12 +42,12 @@ export async function waitWhileRunPaused(kv: Kv, runId: string, options: { isDis
         }
         if (!boundLogged) { boundLogged = true; options.onError?.(`run ${runId} pause/conveyor state unreadable ${readErrors} reads in a row; still waiting — an unreadable flag is not a resume: ${detail}`); }
       } else if (!readErrorLogged) { readErrorLogged = true; options.onError?.(`run ${runId} pause/conveyor state unreadable, staying held: ${detail}`); }
-      if (options.isDisposed()) return false;
+      if (options.isDisposed() || options.shouldStop?.()) return false;
       await sleep(options.pollMs ?? pollPause(5_000));
       continue;
     }
     if (!held) return true;
-    if (options.isDisposed()) return false;
+    if (options.isDisposed() || options.shouldStop?.()) return false;
     if (!waited) { waited = true; options.onFirstWait?.(); }
     await sleep(options.pollMs ?? pollPause(5_000));
   }

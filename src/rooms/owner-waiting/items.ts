@@ -157,6 +157,11 @@ export function closeOwnerItemsByPrefix(db: Db, prefix: string, by: string, now:
   return db.prepare("UPDATE lane_pilot_owner_item SET state='closed', closed_at=?, closed_by=? WHERE state='open' AND substr(key, 1, ?)=?").run(now, clip(by, 500), prefix.length, prefix).changes;
 }
 
+/** How many rows already exist under a key prefix — the next episode's sequence number, so a repost after a close is a fresh row. */
+export function ownerItemPrefixCount(db: Db, prefix: string): number {
+  return (db.prepare("SELECT COUNT(*) AS n FROM lane_pilot_owner_item WHERE substr(key, 1, ?)=?").get(prefix.length, prefix) as { n: number }).n;
+}
+
 /** How long a row that asks nothing (no actions: a fact, a notice) stays on the list before the janitor takes it. */
 export const OWNER_FACT_TTL_MS = 3 * 24 * 60 * 60_000;
 /** How long a row without buttons that still describes something to do (a writer's question, a red gate) stays. */

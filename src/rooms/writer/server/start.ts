@@ -7,7 +7,7 @@ import type { PrototypeConfig, TaskV2 } from "../../contracts";
 import { providerPoolCap } from "@lane-pilot/settings-catalog";
 import { isZcodeProvider, WRITER_PROFILES, type WriterProfile } from "@lane-pilot/models";
 import { DEPENDENCY_REDO_WAIT_MS, blockedReasonCount, countAttempts, countChargedAttempts, countThreadTurns, createAttempt, endSpawnFailure, failureFieldsOf, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getTask, getTaskPlan, latestTaskAttemptState, listAttemptsForTask, listOpenAttempts, listStageReceipts, listUnansweredWriterQuestions, loadProjectSettings, noteCleanAdmission, noteToldPmDirectly, onAttemptChanged, parkAttemptWake, trailingQueuedParks, transitionAttempt, taskBasePath } from "../../storage";
-import { closeOwnerItem, closeOwnerItemsByPrefix, postOwnerItem } from "../../owner-waiting";
+import { closeOwnerItem, closeOwnerItemsByPrefix, ownerItemPrefixCount, postOwnerItem } from "../../owner-waiting";
 import { taskV2Schema } from "../../contracts";
 import { ownsPathsOverlap, pollPause } from "@lane-pilot/kit";
 import { reconcile, reconcileCursor } from "../../stability";
@@ -910,22 +910,30 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
       };
       /** The writer session: spawn or continue → finish → judge the failure → retry in thread, respawn, or hand to the chain. */
       const attemptLoop = async ():Promise<"done"|"stop"> => {
-      let pauseReadItemPosted = false;
+      let pauseReadItemKey: string | null = null;
+      // The attempt's state decides whether this wait is still its business: a cancel, an accept, a block or a
+      // vanished row ends it even while the pause flag itself cannot be read. `queued` stays — the first
+      // stage-boundary wait runs before the spawn, while the attempt is still queued by design.
+      const pauseWaitShouldStop = () => {
+        const state = getAttempt(db, attemptId)?.state;
+        return state === undefined || state === "cancel_requested" || state === "canceled" || state === "accepted" || state === "blocked";
+      };
       while (attemptsLeft()) {
         if (last.status === "accepted") break;
         // The stage that just ended is the safe boundary of a pause: the next attempt or turn waits for the resume.
-        // An unreadable pause flag is never a resume: the writer keeps its slot and waits, and the owner hears once.
-        const pauseWait = await waitWhileRunPaused(bb.storage.kv as never, input.runId, { isDisposed: ctx.isDisposed, onError: (message) => bb.log.warn(message), onFirstWait: () => ctx.log(`writer ${input.taskId} waits at a stage boundary: run ${input.runId} is paused`), onReadBound: () => {
-          if (!pauseReadItemPosted) {
-            pauseReadItemPosted = true;
-            postOwnerItem(db, { key: `pause-read:${attemptId}`, source: "writer", kind: "pause_read", projectId: input.projectId, wake: true,
+        // An unreadable pause flag is never a resume: the writer keeps its slot and waits, and the owner hears once
+        // per episode — the sequence key reposts after the last row was closed (resume, reload, next blip).
+        const pauseWait = await waitWhileRunPaused(bb.storage.kv as never, input.runId, { isDisposed: ctx.isDisposed, shouldStop: pauseWaitShouldStop, onError: (message) => bb.log.warn(message), onFirstWait: () => ctx.log(`writer ${input.taskId} waits at a stage boundary: run ${input.runId} is paused`), onReadBound: () => {
+          if (!pauseReadItemKey) {
+            pauseReadItemKey = `pause-read:${attemptId}:${ownerItemPrefixCount(db, `pause-read:${attemptId}:`)}`;
+            postOwnerItem(db, { key: pauseReadItemKey, source: "writer", kind: "pause_read", projectId: input.projectId, wake: true,
               what: "Запись ждёт: состояние паузы не читается",
               why: "Хранилище плагина не отвечает на чтение флага паузы уже много раз подряд; писатель держит слот на границе стадии и ждёт чистого чтения — это не возобновление.",
               evidence: [{ kind: "run", ref: input.runId }, { kind: "task", ref: input.taskId }] });
           }
           return true;
         } });
-        if (pauseReadItemPosted) { closeOwnerItem(db, `pause-read:${attemptId}`, "pause state readable again"); pauseReadItemPosted = false; }
+        if (pauseReadItemKey) { closeOwnerItem(db, pauseReadItemKey, pauseWait ? "pause state readable again" : "the pause wait ended"); pauseReadItemKey = null; }
         if (!pauseWait) return "stop";
         if (!inSession) { attemptsHere += 1; sessionStartedAt = Date.now(); previousTurn = null; }
         const budgetCheck=budget.check();
