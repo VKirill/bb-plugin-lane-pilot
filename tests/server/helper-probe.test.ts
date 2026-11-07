@@ -10,8 +10,10 @@ vi.mock("../../src/rooms/runs/server/run-routing", () => ({
   requiredPolicyField: (_bb: unknown, _snapshot: unknown, providerId: string, role: string) => ({ sessionPolicy: `${providerId}:${role}` }),
   helperChildPlacement: async () => ({ parentThreadId: "thr_pm", projectId: "proj_1" }),
 }));
-vi.mock("../../src/rooms/storage/database", () => ({
+vi.mock("../../src/rooms/storage/settings-store", () => ({
   loadPrototypeConfig: (_db: unknown, projectId: string) => projectId === "proj_1" ? { hostId: "host_1", writerWorkspacePath: "/work/p" } : null,
+}));
+vi.mock("../../src/rooms/storage/runs-store", () => ({
   getRun: (_db: unknown, runId: string) => runId === "lprun_1" ? { id: "lprun_1", project_id: "proj_1", pm_thread_id: "thr_pm" } : undefined,
 }));
 

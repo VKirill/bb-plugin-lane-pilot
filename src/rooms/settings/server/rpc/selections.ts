@@ -102,6 +102,7 @@ export function selectionsRpc(ctx: ServerCore, services: Services) {
       ? Boolean(serviceTier && supportedTiers.length > 0 && !selectedTier)
       : selectedTier === "fast" && !supportedTiers.includes("fast");
     if (tierRefused) return reject(spec, input, "invalid_choice", `${prefix}.service_tier`, `provider supports: ${supportedTiers.join(", ") || "no service tiers"}`);
+    // The writer pair's static catalog still lists the old adoc CLI enum; the live catalog check above is the real one.
     return casUpsertSettings(db, {
       projectId,
       bindingId: sectionId ? sectionBindingId(sectionId) : "",
@@ -111,7 +112,7 @@ export function selectionsRpc(ctx: ServerCore, services: Services) {
         { key: `${prefix}.reasoning_effort`, value: selectedEffort, expectedVersion: expectedVersions[`${prefix}.reasoning_effort`] },
         { key: `${prefix}.service_tier`, value: selectedTier === "fast" ? "fast" : "standard", expectedVersion: expectedVersions[`${prefix}.service_tier`] },
       ],
-    }, { nativeWriterSelection: true });
+    }, { skipValidationKeys: spec.id === "writer" ? spec.keys : [] });
   };
 
   const councilHandler = (spec: RoleSpec): SelectionHandler => async (raw) => {
@@ -139,7 +140,7 @@ export function selectionsRpc(ctx: ServerCore, services: Services) {
         { key: keys.model, value: modelId, expectedVersion: expectedVersions[keys.model] ?? 0 },
         { key: keys.effort, value: reasoningLevel, expectedVersion: expectedVersions[keys.effort] ?? 0 },
       ],
-    }, { nativeWriterSelection: true });
+    });
   };
 
   const fallbackHandler = (spec: RoleSpec): SelectionHandler => async (raw) => {
@@ -153,7 +154,7 @@ export function selectionsRpc(ctx: ServerCore, services: Services) {
         { key: keys.model, value: model, expectedVersion: expectedVersions[keys.model] ?? 0 },
         { key: keys.effort, value: effort, expectedVersion: expectedVersions[keys.effort] ?? 0 },
       ],
-    }, { nativeWriterSelection: true });
+    });
     const refuse = (code: ValidationCode, key: string, message: string) => reject(spec, { projectId, sectionId, providerId, model: modelId, reasoningLevel }, code, key, message);
     if (off) return store("", "", "");
     if (!providerId || !modelId || !reasoningLevel) return refuse("invalid_choice", keys.provider, "provider, model and reasoning level are required");

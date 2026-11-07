@@ -163,7 +163,7 @@ export function registerTools(ctx: ServerCore, services: Services, familyContrib
         const why = params.words?.trim() ? `PM canceled: ${params.words.trim()}` : "PM canceled the task";
         for (const attempt of attempts) results.push({ taskId, attemptId:attempt.id, ...await cancelAttemptById(ctx, attempt.id, services.rollback, why, "owner_cancel") });
         // The PM canceled it: its «canceled» is no news for the batched results.
-        noteToldPmDirectly(context.threadId, taskId, Date.now() + 5 * 60_000);
+        noteToldPmDirectly(db, context.threadId, taskId, Date.now() + 5 * 60_000);
         if (params.words) db.prepare("UPDATE lane_pilot_task SET closed_words=? WHERE id=?").run(params.words, taskId);
       }
       return JSON.stringify({ runId, results });
@@ -237,7 +237,7 @@ export function registerTools(ctx: ServerCore, services: Services, familyContrib
       // The receipt shows the PM every task's state: those already ended are no news for the batched results.
       const ended = db.prepare(`SELECT DISTINCT task_id AS taskId FROM lane_pilot_attempt a WHERE run_id=? AND state IN ('accepted','blocked','canceled')
         AND attempt_no=(SELECT MAX(b.attempt_no) FROM lane_pilot_attempt b WHERE b.run_id=a.run_id AND b.task_id=a.task_id)`).all(params.runId) as Array<{ taskId:string }>;
-      for (const row of ended) noteToldPmDirectly(context.threadId, row.taskId);
+      for (const row of ended) noteToldPmDirectly(db, context.threadId, row.taskId);
       return JSON.stringify(compactWaitResult(waited));
     },
   });

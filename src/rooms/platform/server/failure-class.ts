@@ -28,6 +28,7 @@ export type FailureCode = (typeof FAILURE_CODES)[number];
 
 import { cleanCheckOutput } from "@lane-pilot/kit";
 import { zcodeEnvironmentError } from "@lane-pilot/models";
+import { isOpenAttemptState } from "../../state-machine";
 
 /** The reason recorded when the writer gave no answer at all; the only empty_output that reads as a provider fault. */
 export const NO_ANSWER_REASON = "writer returned no output";
@@ -208,7 +209,7 @@ export const isEnvironmentCheckFailure = (check:{ stdout?:string; stderr?:string
 export const FREE_CLASSES:ReadonlySet<FailureClass> = new Set(["merge", "dirty_base", "harness", "infra", "budget", "limit", "reassign", "verification_timeout"]);
 /** What the PM does next about a task that did not end accepted, by its failure class; shown in wait receipts. */
 export function nextStep(state:string, reason:string | null | undefined):string {
-  if (["queued", "running", "spawn_requested", "validating"].includes(state)) return "wait: the writer is still on it";
+  if (isOpenAttemptState(state)) return "wait: the writer is still on it";
   if (VERDICT_BLOCK.test(reason ?? "")) return "stopped by a block verdict (the reason names the stage, the finding and its file:line): do not send the same task again; settle what the finding says, by a different approach or by asking the owner, then dispatch a new task";
   if (NO_GIT.test(reason ?? "")) return "the folder has no git and does not fit the no-git mode (too many files or owned bytes): put it under git, or narrow owns_paths, then dispatch again";
   if (RETRY_BUDGET.test(reason ?? "")) return "the task spent its overall retry budget: read the failures, fix the plan or contract and dispatch it again as a new task";

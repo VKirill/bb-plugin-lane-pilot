@@ -368,7 +368,7 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
             environment=inPlaceEnvironment(input.config.hostId,workspacePath,bound.environment_id);
           } else {
             const created=await host.call("gitCreateWorktree",{requestedHostId:input.config.hostId,basePath:base,name:input.attemptId,taskId:input.taskId},
-              {hostId:input.config.hostId,timeoutMs:60_000});
+              {hostId:input.config.hostId,timeoutMs:60_000,worktreeOwner:{kind:"attempt",id:input.attemptId}});
             if(created.status==="ready"&&created.path) {
               workspacePath=created.path;
               await host.call("gitPrepareWorktree",{requestedHostId:input.config.hostId,basePath:base,worktreePath:workspacePath,
@@ -680,7 +680,7 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
     const hostId=input.config.hostId;
     if (await providerSkipReason(input.projectId,hostId,input.attemptId,settings)) return null;
     if (bound?.workspace_path) return {path:bound.workspace_path,dirtBefore:null};
-    const created=await host.call("gitCreateWorktree",{requestedHostId:hostId,basePath,name:input.attemptId,taskId:input.taskId},{hostId,timeoutMs:60_000}).catch(()=>null);
+    const created=await host.call("gitCreateWorktree",{requestedHostId:hostId,basePath,name:input.attemptId,taskId:input.taskId},{hostId,timeoutMs:60_000,worktreeOwner:{kind:"attempt",id:input.attemptId}}).catch(()=>null);
     if(!created||created.status!=="ready"||!created.path) {
       bb.log.info(`Lane Pilot writer ${input.attemptId}: no worktree for the provider (${created?.reason ?? "no answer"}); the old worktree path`);
       return null;

@@ -78,6 +78,17 @@ describe("lp_attempt_metrics", () => {
     expect(report.summary.notMeasuredByProvider).toEqual({ "no writer thread":1, "no usage row":1 });
   });
 
+  it("reports seconds for an attempt that ended in failure, none while its cancel is still requested", () => {
+    const w = world();
+    const at = NOW - 100_000;
+    w.task("t1"); w.task("t2");
+    w.attempt("a1", "t1", 1, "timeout", "thr_1", at, at + 45_000);
+    w.attempt("a2", "t2", 1, "cancel_requested", "thr_2", at, at + 45_000);
+    const rows = new Map(attemptMetrics(w.db as never, { projectId:"proj", days:1, now:NOW }).attempts.map((row) => [row.attemptId, row]));
+    expect(rows.get("a1")!.seconds).toBe(45);
+    expect(rows.get("a2")!.seconds).toBeNull();
+  });
+
   it("is partial when the model has no price, and when a later attempt of the task shares the thread (its tokens are counted there)", () => {
     const w = world();
     const at = NOW - 100_000;

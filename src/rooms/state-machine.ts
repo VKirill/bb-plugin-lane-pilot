@@ -84,6 +84,13 @@ export const RETRY_ELIGIBLE: AttemptState[] = [
   "validation_failed",
 ];
 
+/** Attempt states still at work: queued, being spawned, running or being canceled. Every other state ended the attempt. */
+export const OPEN_ATTEMPT_STATES: readonly AttemptState[] = ["queued", "spawn_requested", "spawn_unknown", "running", "cancel_requested"];
+
+export function isOpenAttemptState(state: string): boolean {
+  return (OPEN_ATTEMPT_STATES as readonly string[]).includes(state);
+}
+
 export function resolveTransition(from: AttemptState | null, event: TransitionEvent): AttemptState | "stay" {
   const row = TRANSITION_TABLE.find((item) => item.from === from && item.event === event);
   if (!row) throw new Error(`illegal transition ${from ?? "∅"} + ${event}`);
@@ -121,6 +128,7 @@ export const OPERATIONAL_MOVES: ReadonlyArray<{ from:AttemptState; to:AttemptSta
   { from:"blocked", to:"queued", why:"the PM fixed in place a contract a pre-writer gate refused (plan critique, validation): the dispatch stages run again, no attempt spent" },
   { from:"queued", to:"accepted", why:"a mainfix whose failing checks already pass on main closes without a writer" },
   { from:"queued", to:"canceled", why:"canceled before any writer was asked for" },
+  { from:"canceled", to:"queued", why:"the PM sent the same task again before its canceled attempt's writer started: the attempt is reused instead of adding a row" },
   { from:"queued", to:"cancel_requested", why:"canceled while its dispatch stages run" },
   { from:"spawn_requested", to:"cancel_requested", why:"canceled while its writer was starting" },
   { from:"spawn_unknown", to:"cancel_requested", why:"canceled while its writer's thread is being found again" },

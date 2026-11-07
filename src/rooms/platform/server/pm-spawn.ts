@@ -175,7 +175,7 @@ export function fullAccessSpawn(bb: BbPluginApi, args: Parameters<BbPluginApi["s
       const spawned = await spawnKeyed(bb, full, () => bb.sdk.threads.spawn(full));
       if (isZcodeProvider(args.providerId)) noteZcodeThread(bb, stringAt(spawned, "id"));
       const model = typeof (full as Record<string, unknown>).model === "string" ? (full as Record<string, unknown>).model as string : "";
-      if (stringAt(spawned, "id") && args.providerId) rememberThreadModel(stringAt(spawned, "id")!, args.providerId, model);
+      if (stringAt(spawned, "id") && args.providerId) rememberThreadModel(bb, stringAt(spawned, "id")!, args.providerId, model);
       return spawned as Awaited<ReturnType<BbPluginApi["sdk"]["threads"]["spawn"]>>;
     } finally { release(); }
   })();

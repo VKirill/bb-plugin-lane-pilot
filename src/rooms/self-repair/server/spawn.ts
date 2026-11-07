@@ -37,7 +37,7 @@ async function createRepairWorktree(bb: ServerCore["bb"], host: ServerCore["host
   const hostId = stringAt(environment, "hostId"), basePath = stringAt(environment, "path");
   if (!hostId || !basePath) throw new Error(`environment ${cfg.environmentId} has no host path`);
   const name = `self-repair-${sha256Hex(signature).slice(0, 8)}-${now.toString(36)}`;
-  const created = await host.call("gitCreateWorktree", { requestedHostId: hostId, basePath, name }, { hostId, timeoutMs: 120_000 });
+  const created = await host.call("gitCreateWorktree", { requestedHostId: hostId, basePath, name }, { hostId, timeoutMs: 120_000, worktreeOwner: { kind: "self-repair", id: name } });
   if (created.status !== "ready" || !created.path || !created.branch) throw new Error(`worktree not created: ${created.reason ?? "unknown"}`);
   // node_modules and built output are linked in so the suite runs there at once; without them the repair reinstalls.
   await host.call("gitPrepareWorktree", { requestedHostId: hostId, basePath, worktreePath: created.path }, { hostId, timeoutMs: 600_000 }).catch(() => undefined);

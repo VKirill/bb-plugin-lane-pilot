@@ -95,7 +95,7 @@ export function createRegression(ctx: ServerCore, services: Services) {
   const WORKTREE_KEY = "regress-worktree:";
   const LEFTOVER_AFTER_MS = 6 * 3_600_000;
   async function madeWorktree(t: RollbackTarget, name: string, commit: string): Promise<{ path: string } | { error: string }> {
-    const result = await kit().makeWorktree(t, name, commit);
+    const result = await kit().makeWorktree(t, name, commit, "regress");
     if ("path" in result) await ctx.bb.storage.kv.set(`${WORKTREE_KEY}${result.path}`, { hostId: t.hostId, basePath: t.basePath, at: Date.now() }).catch(() => undefined);
     return result;
   }

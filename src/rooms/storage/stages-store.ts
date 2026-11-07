@@ -1,0 +1,158 @@
+import type { StageId, StageState } from "@lane-pilot/contracts";
+import type { LanePilotDatabase } from "./database";
+
+export type StageReceiptRow = {
+  runId:string; taskId:string; stageId:StageId; contractVersion:1;
+  state:StageState;
+  inputSha256:string; outputSha256:string|null; attempt:number;
+  providerId:string|null; model:string|null; threadId:string|null;
+  result:unknown|null; reason:string|null; updatedAt:number;
+};
+
+/** One caller may spawn the child; others observe. Crash after this flag is reconcile-only. */
+export function claimStageSpawn(db: LanePilotDatabase, runId:string, taskId:string, stageId:StageId): boolean {
+  return db.transaction(() => {
+    const row = db.prepare(`SELECT state,thread_id,result_json FROM lane_pilot_stage_receipt
+      WHERE run_id=? AND task_id=? AND stage_id=?`).get(runId, taskId, stageId) as
+      {state:StageState;thread_id:string|null;result_json:string|null}|undefined;
+    if (!row || row.state !== "running" || row.thread_id) return false;
+    let result: Record<string, unknown> = {};
+    if (row.result_json) {
+      const parsed = JSON.parse(row.result_json) as unknown;
+      if (parsed && typeof parsed === "object") result = parsed as Record<string, unknown>;
+    }
+    if (result.spawnAttempted === true) return false;
+    const next = JSON.stringify({ ...result, spawnAttempted:true });
+    return db.prepare(`UPDATE lane_pilot_stage_receipt SET result_json=?, updated_at=?
+      WHERE run_id=? AND task_id=? AND stage_id=? AND state='running' AND thread_id IS NULL
+        AND (result_json IS NULL OR json_extract(result_json,'$.spawnAttempted') IS NOT 1)`)
+      .run(next, Date.now(), runId, taskId, stageId).changes === 1;
+  }).immediate();
+}
+
+export function claimDocsSpawn(db: LanePilotDatabase, runId:string, taskId:string): boolean {
+  return claimStageSpawn(db, runId, taskId, "docs-maintenance");
+}
+
+export function saveStageReceipt(db: LanePilotDatabase, row:StageReceiptRow): void {
+  const { result, ...fields } = row;
+  db.transaction(() => {
+    const previous = db.prepare("SELECT state,input_sha256,output_sha256,attempt FROM lane_pilot_stage_receipt WHERE run_id=? AND task_id=? AND stage_id=?")
+      .get(row.runId,row.taskId,row.stageId) as {state:StageState;input_sha256:string;output_sha256:string|null;attempt:number}|undefined;
+    // input_sha256 follows the latest record: a stage replaced on a new input is compared with that input, not with its first one.
+    db.prepare(`INSERT INTO lane_pilot_stage_receipt
+    (run_id,task_id,stage_id,contract_version,state,input_sha256,output_sha256,attempt,provider_id,model,thread_id,result_json,reason,updated_at)
+    VALUES (@runId,@taskId,@stageId,@contractVersion,@state,@inputSha256,@outputSha256,@attempt,@providerId,@model,@threadId,@resultJson,@reason,@updatedAt)
+    ON CONFLICT(run_id,task_id,stage_id) DO UPDATE SET state=excluded.state,input_sha256=excluded.input_sha256,
+      output_sha256=excluded.output_sha256,attempt=excluded.attempt,provider_id=excluded.provider_id,
+      model=excluded.model,thread_id=excluded.thread_id,result_json=excluded.result_json,
+      reason=excluded.reason,updated_at=excluded.updated_at`).run({
+        ...fields, resultJson:result === null ? null : JSON.stringify(result),
+      });
+    if (!previous || previous.state !== row.state || previous.input_sha256 !== row.inputSha256 ||
+        previous.output_sha256 !== row.outputSha256 || previous.attempt !== row.attempt) {
+      const run = db.prepare("SELECT project_id FROM lane_pilot_run WHERE id=?").get(row.runId) as {project_id:string}|undefined;
+      if (!run) throw new Error("stage event run is missing");
+      db.prepare(`INSERT INTO lane_pilot_stage_event
+        (project_id,run_id,task_id,stage_id,state,input_sha256,output_sha256,attempt,occurred_at)
+        VALUES (?,?,?,?,?,?,?,?,?)`).run(run.project_id,row.runId,row.taskId,row.stageId,row.state,
+          row.inputSha256,row.outputSha256,row.attempt,row.updatedAt);
+    }
+  }).immediate();
+}
+
+/** Removes a stage's current receipt so the stage runs again from nothing; its events stay in lane_pilot_stage_event. */
+export function deleteStageReceipt(db: LanePilotDatabase, runId:string, taskId:string, stageId:StageId): boolean {
+  return db.prepare("DELETE FROM lane_pilot_stage_receipt WHERE run_id=? AND task_id=? AND stage_id=?").run(runId, taskId, stageId).changes > 0;
+}
+
+export type StageEventRow = {
+  id:number; projectId:string; runId:string; taskId:string; stageId:StageId; state:StageState;
+  inputSha256:string; outputSha256:string|null; attempt:number; occurredAt:number;
+};
+
+export const GATE_CATEGORIES = ["owns-paths","validate","accept","verification"] as const;
+export type GateCategory = (typeof GATE_CATEGORIES)[number];
+export type GateEventStatus = "passed"|"rejected"|"failed"|"skipped";
+export type GateEventRow = {
+  id:number; projectId:string; runId:string; taskId:string; gate:GateCategory; status:GateEventStatus;
+  inputSha256:string; outputSha256:string|null; attempt:number; occurredAt:number;
+};
+
+export function appendGateEvaluation(db:LanePilotDatabase,row:Omit<GateEventRow,"id">):void {
+  db.prepare(`INSERT INTO lane_pilot_gate_event
+    (project_id,run_id,task_id,gate,status,input_sha256,output_sha256,attempt,occurred_at)
+    VALUES (?,?,?,?,?,?,?,?,?)`).run(row.projectId,row.runId,row.taskId,row.gate,row.status,
+      row.inputSha256,row.outputSha256,row.attempt,row.occurredAt);
+}
+
+export function listGateEvents(db:LanePilotDatabase,input:{projectId:string;since:number;gate?:GateCategory}):GateEventRow[] {
+  const rows=input.gate
+    ? db.prepare("SELECT * FROM lane_pilot_gate_event WHERE project_id=? AND occurred_at>=? AND gate=? ORDER BY occurred_at,id").all(input.projectId,input.since,input.gate)
+    : db.prepare("SELECT * FROM lane_pilot_gate_event WHERE project_id=? AND occurred_at>=? ORDER BY occurred_at,id").all(input.projectId,input.since);
+  return (rows as Array<Record<string,unknown>>).map((row)=>({
+    id:row.id as number,projectId:row.project_id as string,runId:row.run_id as string,taskId:row.task_id as string,
+    gate:row.gate as GateCategory,status:row.status as GateEventStatus,inputSha256:row.input_sha256 as string,
+    outputSha256:row.output_sha256 as string|null,attempt:row.attempt as number,occurredAt:row.occurred_at as number,
+  }));
+}
+
+export function listStageEvents(db:LanePilotDatabase,input:{projectId:string;since:number;stageId?:StageId}):StageEventRow[] {
+  const rows = input.stageId
+    ? db.prepare(`SELECT * FROM lane_pilot_stage_event WHERE project_id=? AND occurred_at>=? AND stage_id=? ORDER BY occurred_at,id`)
+      .all(input.projectId,input.since,input.stageId)
+    : db.prepare(`SELECT * FROM lane_pilot_stage_event WHERE project_id=? AND occurred_at>=? ORDER BY occurred_at,id`)
+      .all(input.projectId,input.since);
+  return (rows as Array<Record<string,unknown>>).map((row)=>({
+    id:row.id as number,projectId:row.project_id as string,runId:row.run_id as string,taskId:row.task_id as string,
+    stageId:row.stage_id as StageId,state:row.state as StageState,inputSha256:row.input_sha256 as string,
+    outputSha256:row.output_sha256 as string|null,attempt:row.attempt as number,occurredAt:row.occurred_at as number,
+  }));
+}
+
+export function listStageReceipts(db:LanePilotDatabase, runId:string, taskId?:string): StageReceiptRow[] {
+  const rows = taskId
+    ? db.prepare("SELECT * FROM lane_pilot_stage_receipt WHERE run_id=? AND task_id=? ORDER BY stage_id").all(runId, taskId)
+    : db.prepare("SELECT * FROM lane_pilot_stage_receipt WHERE run_id=? ORDER BY task_id,stage_id").all(runId);
+  return (rows as Array<Record<string, unknown>>).map((row) => ({
+    runId:row.run_id as string, taskId:row.task_id as string, stageId:row.stage_id as StageId,
+    contractVersion:row.contract_version as 1, state:row.state as StageState,
+    inputSha256:row.input_sha256 as string, outputSha256:row.output_sha256 as string|null,
+    attempt:row.attempt as number, providerId:row.provider_id as string|null, model:row.model as string|null,
+    threadId:row.thread_id as string|null, result:row.result_json == null ? null : JSON.parse(row.result_json as string),
+    reason:row.reason as string|null, updatedAt:row.updated_at as number,
+  }));
+}
+
+/** The stage rows of a run without their result bodies: the screen lists these and loads one body only when it is opened. */
+export function listStageReceiptSummaries(db:LanePilotDatabase, runId:string): Array<Omit<StageReceiptRow,"result"> & {hasResult:boolean}> {
+  const rows = db.prepare(`SELECT run_id,task_id,stage_id,contract_version,state,input_sha256,output_sha256,attempt,provider_id,model,thread_id,
+    (result_json IS NOT NULL) AS has_result,reason,updated_at FROM lane_pilot_stage_receipt WHERE run_id=? ORDER BY task_id,stage_id`).all(runId);
+  return (rows as Array<Record<string, unknown>>).map((row) => ({
+    runId:row.run_id as string, taskId:row.task_id as string, stageId:row.stage_id as StageId,
+    contractVersion:row.contract_version as 1, state:row.state as StageState,
+    inputSha256:row.input_sha256 as string, outputSha256:row.output_sha256 as string|null,
+    attempt:row.attempt as number, providerId:row.provider_id as string|null, model:row.model as string|null,
+    threadId:row.thread_id as string|null, hasResult:Boolean(row.has_result),
+    reason:row.reason as string|null, updatedAt:row.updated_at as number,
+  }));
+}
+
+export function countStageReceipts(db:LanePilotDatabase, runId:string): number {
+  return (db.prepare("SELECT COUNT(*) AS n FROM lane_pilot_stage_receipt WHERE run_id=?").get(runId) as {n:number}).n;
+}
+
+/** One stage's result body, parsed; `found` tells a missing row from a row without a result. */
+export function getStageReceiptResult(db:LanePilotDatabase, runId:string, taskId:string, stageId:string): {found:boolean; result:unknown|null} {
+  const row = db.prepare("SELECT result_json FROM lane_pilot_stage_receipt WHERE run_id=? AND task_id=? AND stage_id=?").get(runId, taskId, stageId) as {result_json:string|null}|undefined;
+  if (!row) return { found:false, result:null };
+  return { found:true, result:row.result_json == null ? null : JSON.parse(row.result_json) };
+}
+
+/** Background stages a reload interrupted: still pending or running, with the PM thread that owns them. */
+export function listUnfinishedStages(db:LanePilotDatabase, stageIds:StageId[]): Array<{runId:string;taskId:string;stageId:StageId;projectId:string;pmThreadId:string}> {
+  if(!stageIds.length) return [];
+  const rows=db.prepare(`SELECT s.run_id,s.task_id,s.stage_id,r.project_id,r.pm_thread_id FROM lane_pilot_stage_receipt s JOIN lane_pilot_run r ON r.id=s.run_id
+    WHERE s.state IN ('pending','running') AND r.pm_thread_id IS NOT NULL AND s.stage_id IN (${stageIds.map(()=>"?").join(",")}) ORDER BY s.updated_at`).all(...stageIds) as Array<Record<string,string>>;
+  return rows.map((row)=>({runId:row.run_id!,taskId:row.task_id!,stageId:row.stage_id as StageId,projectId:row.project_id!,pmThreadId:row.pm_thread_id!}));
+}

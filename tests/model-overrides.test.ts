@@ -54,7 +54,7 @@ describe("giving every project and section the global role models back", () => {
     casUpsertSettings(db, { projectId: "p1", bindingId: sectionBindingId("s1"), changes: [
       { key: "docs.provider", value: "qwen", expectedVersion: 0 },
       { key: "docs.model", value: "qwen-test", expectedVersion: 0 },
-    ] }, { nativeWriterSelection: true });
+    ] });
     saveProjectSetting(db, "gone", "memory.model", "qwen-test"); // a project the host no longer lists
     saveProjectSetting(db, "pb", "writer.model", "gpt-6-luna"); // the bench pins its models on purpose
     return { db, harness };

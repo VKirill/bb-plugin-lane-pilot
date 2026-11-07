@@ -44,6 +44,20 @@ describe("who ran each stage", () => {
     expect(checks).toMatchObject({ role: "code", model: null, threadId: null, costState: null, seconds: 5 });
   });
 
+  it("an ended attempt reports its seconds; one still canceling does not", () => {
+    const ended = taskGraph({
+      events: [ev("writer-agent", "running", 0), ev("writer-agent", "failed", 30_000)],
+      receipts: [rc("writer-agent", "failed", { threadId: "thr_e" })],
+      attempts: [
+        { id: "a1", no: 1, state: "provider_error", threadId: "thr_e", createdAt: 0, updatedAt: 30_000 },
+        { id: "a2", no: 2, state: "cancel_requested", threadId: "thr_e", createdAt: 30_000, updatedAt: 60_000 },
+      ],
+      usage: () => undefined, price, turns: () => 1,
+    });
+    const rows = ended.stages.find((stage) => stage.cell.stageId === "writer-agent")!.rows;
+    expect(rows.map((row) => row.seconds)).toEqual([30, null]);
+  });
+
   it("the summary adds the measured cost, says it is partial, and counts returns", () => {
     expect(graph.summary).toMatchObject({ returns: 0, costState: "partial", seconds: 215, models: ["composer-2.5", "claude-sonnet-5-5"] });
     expect(graph.summary.costUsd).toBeCloseTo(0.003);

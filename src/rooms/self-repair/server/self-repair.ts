@@ -22,7 +22,8 @@ import { FRUSTRATION_KEY, frustrationReason, type FrustrationRecord } from "../.
 import { jev } from "@lane-pilot/jev";
 import { MAX_CANDIDATES, repairGroup } from "@lane-pilot/jev/judgments/repair-group";
 import { GUARD_BLOCKED_KEY, type GuardBlock } from "@lane-pilot/jev";
-import { DEPENDENCY_REDO_WAIT_MS, HOLDING_ATTEMPT_STATES, latestTaskAttempt } from "../../storage";
+import { DEPENDENCY_REDO_WAIT_MS, latestTaskAttempt } from "../../storage";
+import { isOpenAttemptState, OPEN_ATTEMPT_STATES } from "../../state-machine";
 import { getRepairHooks, type NightAssignment } from "./hooks";
 import { CONFIG_KEY, lanePilotProjectOrNotice, resolveLanePilotProject } from "./project";
 import { LOADED_AT, LOG_TAIL_BYTES, VERSION, isDue, lastPmOwnerMessageAt, logIncidents, pointsAtEngine, reasonSignature, repairPriority, writerRedCheck, writerStrayFiles } from "./episodes";
@@ -67,7 +68,7 @@ const PM_TELL_RULE = "Tell a PM thread only when that PM has to do something now
 const STAGE_MS = 3_600_000;
 const REPEAT_TASKS = 3;
 /** An attempt at work for the queued-attempt check: every holding state but a queued one. */
-const WORKING_ATTEMPT_STATES = HOLDING_ATTEMPT_STATES.filter((state) => state !== "queued").map((state) => `'${state}'`).join(",");
+const WORKING_ATTEMPT_STATES = OPEN_ATTEMPT_STATES.filter((state) => state !== "queued").map((state) => `'${state}'`).join(",");
 const FAILED_STATES = "'blocked','validation_failed','spawn_rejected','provider_error','empty_output'";
 /** Stops by design: a question for the PM, a dependency that ended blocked, or a turn the provider cut off (writer_stream_error). */
 const NOT_A_FAULT = /needs_human|depends_on|workspace_not_repo_root|writer_stream_error/i;
@@ -273,7 +274,7 @@ export function createSelfRepair(ctx: ServerCore, deps: RepairDeps, engineOf?: (
       if (typeof dep !== "string" || !dep || dep === taskId) return false;
       const latest = latestTaskAttempt(db, projectId, dep);
       if (!latest) return false;
-      return HOLDING_ATTEMPT_STATES.includes(latest.state) || (latest.state === "blocked" && now - latest.updated_at < DEPENDENCY_REDO_WAIT_MS + QUEUED_MS);
+      return isOpenAttemptState(latest.state) || (latest.state === "blocked" && now - latest.updated_at < DEPENDENCY_REDO_WAIT_MS + QUEUED_MS);
     });
   }
 
@@ -343,7 +344,7 @@ export function createSelfRepair(ctx: ServerCore, deps: RepairDeps, engineOf?: (
     // being spawned or canceled has not ended: its stages waited in the queue with it.
     const stages = db.prepare(`SELECT s.run_id, s.task_id, s.stage_id, s.state, s.updated_at, r.project_id FROM lane_pilot_stage_receipt s JOIN lane_pilot_run r ON r.id=s.run_id
       WHERE s.state IN ('pending','running') AND s.updated_at < ? AND r.state='running'
-        AND NOT EXISTS (SELECT 1 FROM lane_pilot_attempt a WHERE a.run_id=s.run_id AND a.task_id=s.task_id AND a.state IN (${HOLDING_ATTEMPT_STATES.map((state) => `'${state}'`).join(",")}))
+        AND NOT EXISTS (SELECT 1 FROM lane_pilot_attempt a WHERE a.run_id=s.run_id AND a.task_id=s.task_id AND a.state IN (${OPEN_ATTEMPT_STATES.map((state) => `'${state}'`).join(",")}))
         AND EXISTS (SELECT 1 FROM lane_pilot_attempt a WHERE a.run_id=s.run_id AND a.task_id=s.task_id)`).all(now - STAGE_MS) as Array<{ run_id: string; task_id: string; stage_id: string; state: string; updated_at: number; project_id: string }>;
     for (const row of stages) {
       if (ignored.has(row.project_id)) continue;

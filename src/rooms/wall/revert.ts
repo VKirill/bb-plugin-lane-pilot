@@ -5,7 +5,7 @@
 export const FULL_COMMIT = /^[a-f0-9]{40,64}$/;
 const ABBREVIATED_COMMIT = /^[a-f0-9]{7,39}$/;
 
-export type RevertHost = { call(method: string, input: unknown, options: { hostId: string; timeoutMs: number }): Promise<unknown> };
+export type RevertHost = { call(method: string, input: unknown, options: { hostId: string; timeoutMs: number; worktreeOwner?: { kind: string; id: string | null } }): Promise<unknown> };
 export type RevertEnvironment = { hostId: string; basePath: string };
 
 /**
@@ -25,7 +25,7 @@ export async function revertMerge(host: RevertHost, env: RevertEnvironment, comm
   const { hostId, basePath } = env;
   const full = await fullCommit(host, env, commit);
   if (!full) return { ok: false, detail: `commit ${commit.slice(0, 40)} is not a commit of ${basePath}` };
-  const created = await host.call("gitCreateWorktree", { requestedHostId: hostId, basePath, name: `night-revert-${full.slice(0, 8)}-${Date.now().toString(36)}` }, { hostId, timeoutMs: 120_000 }) as { status: string; path?: string | null; reason?: string | null };
+  const created = await host.call("gitCreateWorktree", { requestedHostId: hostId, basePath, name: `night-revert-${full.slice(0, 8)}-${Date.now().toString(36)}` }, { hostId, timeoutMs: 120_000, worktreeOwner: { kind: "rollback", id: null } }) as { status: string; path?: string | null; reason?: string | null };
   if (created.status !== "ready" || !created.path) return { ok: false, detail: `worktree not created: ${created.reason ?? "unknown"}` };
   // The worktree goes away on every way out but a merged revert (which removes it itself): a revert refused by the host's input check left three of them
   // behind (night-revert-29754b58, -52dabb10, -8dd355f4 under ~/.lane-pilot/worktrees), and every retry would add one.

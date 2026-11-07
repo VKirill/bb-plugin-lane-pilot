@@ -284,7 +284,7 @@ export function settingsRpc(ctx: ServerCore, services: Services) {
         if (message && spec.keys.includes(key)) return {ok:false,conflict:false,version:expectedVersion,value,validation:{code:"incompatible_setting" as const,key,params:[key,message]}};
       }
       if (!NATIVE_WRITER_KEYS.has(key)) {
-        const result = casUpsertSettings(db, { projectId, bindingId, changes:[{ key, value, expectedVersion }] }, { nativeWriterSelection:true });
+        const result = casUpsertSettings(db, { projectId, bindingId, changes:[{ key, value, expectedVersion }] });
         const current = { version:result.versions[key] ?? 0, value:result.values[key] ?? null };
         if (!result.ok) {
           if (result.validation) return { ok:false, conflict:false, ...current, validation:result.validation };
@@ -363,7 +363,7 @@ export function settingsRpc(ctx: ServerCore, services: Services) {
         const found = changes.find(({ key }) => spec.keys.includes(key))?.key;
         if (found) return {ok:false,conflict:false,values:{},versions:{},validation:{code:"incompatible_setting" as const,key:found,params:[found,message]}};
       }
-      return casUpsertSettings(db,{projectId,bindingId,changes},{nativeWriterSelection:changes.every(({key})=>!NATIVE_WRITER_KEYS.has(key))});
+      return casUpsertSettings(db,{projectId,bindingId,changes});
     },
     save_writer_binding: async ({ projectId, hostId, path }) => {
       const binding = await services.resolveProjectWriterHost({ projectId, selected: { hostId, path } });

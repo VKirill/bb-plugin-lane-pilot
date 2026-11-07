@@ -242,7 +242,7 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
         await bb.storage.kv.delete(key).catch(()=>undefined);
       }
     }
-    const created=await host.call("gitCreateWorktree",{requestedHostId:place.hostId,basePath:place.path,name},{hostId:place.hostId,timeoutMs:120_000}).catch((cause)=>({status:"failed" as const,path:null,reason:cause instanceof Error?cause.message:String(cause)}));
+    const created=await host.call("gitCreateWorktree",{requestedHostId:place.hostId,basePath:place.path,name},{hostId:place.hostId,timeoutMs:120_000,worktreeOwner:{kind:"docs",id:name}}).catch((cause)=>({status:"failed" as const,path:null,reason:cause instanceof Error?cause.message:String(cause)}));
     if(created.status!=="ready"||!created.path){
       if(missing) throw new Error(`docs_worktree_recovery_failed: ${created.reason}`);
       bb.log.warn(`Lane Pilot docs worktree for ${place.path} not created (${created.reason}); the pass works in the checkout`);

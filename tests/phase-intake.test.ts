@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { HEAVY_WITHOUT_JEV, intakeByRules, intakeRunGoals, isMachineMessage } from "../src/rooms/phase/intake";
 import { createPhaseIntake, type IntakePhases, type IntakeTrain } from "../src/rooms/phase/server/intake";
 import type { Phase } from "../src/rooms/phase/logic";
-import { createRun, openDatabase } from "../src/rooms/plugin-db";
+import { createAttempt, createRun, createTask, openDatabase, transitionAttempt } from "../src/rooms/plugin-db";
 import { pmPrompt } from "../src/rooms/platform/server/pm-spawn";
 import type { PrototypeConfig } from "../src/rooms/contracts";
 import bootstrapEvents from "./fixtures/phase-intake-pm-bootstrap-2026-10-29.json";
@@ -15,7 +15,8 @@ function world(options: { settings?: Record<string, unknown>; role?: string; tra
   let request = options.request ?? { requestId: "creq_1", initiator: "user", input: [{ type: "text", text: goal }] } as Record<string, unknown>;
   const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
   harness.sdk.stub("threads.getPluginMetadata", async () => ({ role: options.role ?? "pm", lanePilotRunId: "run1" }));
-  harness.sdk.stub("threads.send", async () => ({}));
+  const sent: string[] = [];
+  harness.sdk.stub("threads.send", async (args: unknown) => { sent.push(JSON.stringify(args)); return {}; });
   harness.sdk.stub("threads.events.list", async () => [{ type: "client/turn/requested", data: request }]);
   const db = openDatabase(bb);
   createRun(db, "run1", "projA");
@@ -37,7 +38,7 @@ function world(options: { settings?: Record<string, unknown>; role?: string; tra
   const intake = createPhaseIntake(deps, phases, options.train);
   /** The plugin after a reload: a new intake over the same store and the same phases. */
   const reloaded = () => createPhaseIntake(deps, phases, options.train);
-  return { intake, reloaded, opened, say: (text: string, id: string, initiator = "user") => { request = { requestId: id, initiator, input: [{ type: "text", text }] }; } };
+  return { intake, reloaded, opened, db, sent, say: (text: string, id: string, initiator = "user") => { request = { requestId: id, initiator, input: [{ type: "text", text }] }; } };
 }
 
 describe("phase intake rules", () => {
@@ -231,6 +232,22 @@ describe("a stopped or paused run", () => {
       await setRunPaused(bb.storage.kv as never, "run1", true);
       expect(await intake.take("thr_pm")).toMatchObject({ kind: "small", by: "jev" });
       expect(started).toEqual([]);
+    } finally { setJevForTests(null); }
+  });
+});
+
+describe("the service answers", () => {
+  it("a cancel_requested attempt still counts as open work (OPEN_ATTEMPT_STATES, not the old four-state list)", async () => {
+    const { setJevForTests } = await import("@lane-pilot/jev");
+    const { intake, db, sent, say } = world();
+    createTask(db, { id: "T1", runId: "run1", kind: "bb", contract: { title: "Fix the hero" } });
+    createAttempt(db, { id: "a1", runId: "run1", taskId: "T1" });
+    transitionAttempt(db, "a1", "cancel_requested", { reason: "owner asked to stop" });
+    setJevForTests({ enabled: () => true, judge: async () => ({ by: "jev", decision: { kind: "service", service: "status" } }) } as never);
+    try {
+      say("x".repeat(HEAVY_WITHOUT_JEV + 1), "creq_svc");
+      expect(await intake.take(PM)).toMatchObject({ kind: "service" });
+      expect(sent.some((s) => s.includes("Fix the hero"))).toBe(true);
     } finally { setJevForTests(null); }
   });
 });

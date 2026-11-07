@@ -3,8 +3,8 @@ import { listQaHosts } from "../../platform/server";
 import { scheduleIsolated } from "../../platform/server";
 import { configuredSetting } from "../../contracts/server";
 import type { ServerCore } from "../../contracts/server";
-import { loadProjectSettings } from "../../storage";
-import { DOCS_WORKTREE_PREFIX, docsWorktreeName, REGRESS_WORKTREE_PREFIX, regressWorktreePath, SELF_REPAIR_STATE_KEY, type SelfRepairWorktreeState } from "../../storage";
+import { loadProjectSettings, registerWorktree } from "../../storage";
+import { OPEN_ATTEMPT_STATES, RETRY_ELIGIBLE, isOpenAttemptState } from "../../state-machine";
 import { STICKY_WINDOW_MS } from "../../writer";
 
 /**
@@ -22,14 +22,14 @@ type JanitorOutcome = {
   tmpRemoved?: string[]; tmpFreedBytes?: number; errors?: string[];
 };
 
-export const JANITOR_OPEN_STATES = ["queued", "spawn_requested", "spawn_unknown", "running", "cancel_requested"];
+export const JANITOR_OPEN_STATES: readonly string[] = OPEN_ATTEMPT_STATES;
 /**
- * Ended attempts that can still go on in their own worktree: a writer question answered or a contract fixed in place
- * reopens a blocked one, a retry continues a failed one. Their copy waits out the grace: magicseo T3.3 (2026-10-30)
- * blocked on a question at 18:13:58, the hourly reconcile removed its worktree at 18:14:02, and the reopened writer
- * found no folder (spawn /bin/bash ENOENT) and moved itself to the main checkout.
+ * Ended attempts that can still go on in their own worktree: a writer question answered, a contract fixed in place or
+ * a retry continues one. Their copy waits out the grace: magicseo T3.3 (2026-10-30) blocked on a question at
+ * 18:13:58, the hourly reconcile removed its worktree at 18:14:02, and the reopened writer found no folder
+ * (spawn /bin/bash ENOENT) and moved itself to the main checkout.
  */
-export const JANITOR_REOPENABLE_STATES = ["blocked", "spawn_rejected", "provider_error", "timeout", "empty_output", "validation_failed"];
+export const JANITOR_REOPENABLE_STATES: readonly string[] = [...RETRY_ELIGIBLE, "blocked"];
 
 /** cleanup.worktree_grace_hours in milliseconds (default 2 h). */
 function worktreeGraceMs(db: ServerCore["db"]): number {
@@ -37,30 +37,17 @@ function worktreeGraceMs(db: ServerCore["db"]): number {
   return Math.max(0, (typeof raw === "number" ? raw : Number(raw) || 2) * 3_600_000);
 }
 
-/** The worktree paths live work still holds: open attempts, the docs pass's KV record, regress's, self-repair's. */
+/** The worktree paths live work still holds: open attempts and the copies the registry says are open. */
 export async function protectedWorktreePaths(ctx: Pick<ServerCore, "bb" | "db">, now = Date.now()): Promise<Set<string>> {
-  const { bb, db } = ctx;
+  const { db } = ctx;
   const paths = new Set<string>();
   const placeholders = JANITOR_OPEN_STATES.map(() => "?").join(",");
   for (const row of db.prepare(`SELECT workspace_path AS p FROM lane_pilot_attempt WHERE workspace_path IS NOT NULL AND state IN (${placeholders})`).all(...JANITOR_OPEN_STATES) as Array<{ p: string }>) paths.add(row.p);
   const reopenable = JANITOR_REOPENABLE_STATES.map(() => "?").join(",");
   for (const row of db.prepare(`SELECT workspace_path AS p FROM lane_pilot_attempt WHERE workspace_path IS NOT NULL AND state IN (${reopenable}) AND updated_at>=?`).all(...JANITOR_REOPENABLE_STATES, now - worktreeGraceMs(db)) as Array<{ p: string }>) paths.add(row.p);
-  for (const key of await bb.storage.kv.list(DOCS_WORKTREE_PREFIX)) {
-    const record = await bb.storage.kv.get(key) as { path?: string } | null;
-    if (record?.path) paths.add(record.path);
-  }
-  // A regress pass is bounded by four hours; its KV marker older than six is a leftover the pass itself would drop (regress.ts LEFTOVER_AFTER_MS).
-  for (const key of await bb.storage.kv.list(REGRESS_WORKTREE_PREFIX)) {
-    const entry = await bb.storage.kv.get(key) as { at?: number } | null;
-    if (Date.now() - (entry?.at ?? 0) < 6 * 3_600_000) paths.add(regressWorktreePath(key));
-  }
-  // The registry is the primary source: every open row is a copy its process still owns.
+  // The registry is the primary source: every open row is a copy its process still owns. Copies the deployed build
+  // made before the registry are adopted into it once at boot (adoptLegacyWorktrees), so no KV read lives here.
   for (const row of db.prepare("SELECT path FROM lane_pilot_worktree WHERE released_at IS NULL").all() as Array<{ path: string }>) paths.add(row.path);
-  const repair = await bb.storage.kv.get(SELF_REPAIR_STATE_KEY) as SelfRepairWorktreeState | null;
-  for (const record of Object.values(repair?.signatures ?? {})) {
-    if (record?.worktree?.path) paths.add(record.worktree.path);
-    if (record?.pending?.worktree?.path) paths.add(record.pending.worktree.path);
-  }
   return paths;
 }
 
@@ -102,29 +89,81 @@ export async function runWorktreeJanitor(ctx: Pick<ServerCore, "bb" | "db" | "lo
   return { removed: removed + swept.length + envSwept.length, freedBytes, kept };
 }
 
-/** Whether a registry row's owning process is still alive: the attempt runs, or the pass's KV marker stands. */
-async function ownerAlive(ctx: Pick<ServerCore, "bb" | "db">, row: { owner_kind: string; owner_id: string | null; created_at: number; host: string; path: string }, now = Date.now()): Promise<boolean> {
+type AttemptLivenessRow = { state: string; updated_at: number; area: string | null };
+const ATTEMPT_LIVENESS_SQL = `SELECT a.state, a.updated_at, json_extract(t.contract_json,'$.area') AS area
+  FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
+  LEFT JOIN lane_pilot_task t ON t.id=a.task_id AND t.run_id=a.run_id`;
+
+/** Whether one of these attempts still needs its worktree: at work, reopenable inside the grace, or a fresh sticky accept. */
+function attemptHoldsWorktree(db: ServerCore["db"], attempts: AttemptLivenessRow[], now: number): boolean {
+  return attempts.some((attempt) => isOpenAttemptState(attempt.state)
+    || (JANITOR_REOPENABLE_STATES.includes(attempt.state) && now - attempt.updated_at < worktreeGraceMs(db))
+    || (attempt.state === "accepted" && Boolean(attempt.area) && now - attempt.updated_at <= STICKY_WINDOW_MS));
+}
+
+/**
+ * Owners whose pass manages its own worktree lifecycle: an open row means the copy is still wanted — the docs pass
+ * reuses its copy across nights, a self-repair record and a regress pass keep theirs until their own settle/sweep
+ * drops it (each releases the row through the host.call wrapper). Reconciling them here would reap a live pass's
+ * copy or the docs copy the next night builds on.
+ */
+const SELF_MANAGED_OWNERS: ReadonlySet<string> = new Set(["docs", "self-repair", "regress"]);
+
+/**
+ * Whether a registry row's owning process is still alive, read from the tables alone: a self-managed pass keeps its
+ * copy until its own settle or sweep releases the row; an attempt is alive while it is at work, can still reopen
+ * inside the grace, or just accepted into a sticky area. A copy any such attempt works in is alive whatever owner
+ * the row names; every other owner is a bounded pass with no liveness record, so its copy goes.
+ */
+function ownerAlive(ctx: Pick<ServerCore, "bb" | "db">, row: { owner_kind: string; owner_id: string | null; created_at: number; host: string; path: string }, now = Date.now()): boolean {
+  const { db } = ctx;
+  if (SELF_MANAGED_OWNERS.has(row.owner_kind)) return true;
+  if (row.owner_kind !== "attempt") return false;
+  // Sticky turns and retries borrow the original attempt's copy; the registry's creator is not its only owner.
+  // Keep the creator too: its path may not be bound yet when a reload interrupts provisioning.
+  const attempts = db.prepare(`${ATTEMPT_LIVENESS_SQL}
+    WHERE a.id=? OR (a.workspace_path=? AND r.writer_host_id=?)`).all(row.owner_id, row.path, row.host) as AttemptLivenessRow[];
+  return attemptHoldsWorktree(db, attempts, now);
+}
+
+/**
+ * One-time adoption at boot: the deployed build kept pass worktrees only in the passes' own KV markers — docs reuse
+ * keys (`docs-worktree:<host>:<name>`), in-flight regress keys (`regress-worktree:<path>`), the self-repair state
+ * record (`self-repair:state`) — while the registry learned owners by worktree-name prefix. A copy made before the
+ * registry (or whose row was lost) has no row, so the janitor could not protect or reconcile it. Each live marker
+ * becomes an open registry row here; the passes keep owning their KV keys afterwards, and ownerAlive reads the row.
+ */
+export async function adoptLegacyWorktrees(ctx: Pick<ServerCore, "bb" | "db">, now = Date.now()): Promise<number> {
   const { bb, db } = ctx;
-  if (row.owner_kind === "attempt") {
-    // Sticky turns and retries borrow the original attempt's copy; the registry's creator is not its only owner.
-    // Keep the creator too: its path may not be bound yet when a reload interrupts provisioning.
-    const attempts = db.prepare(`SELECT a.state, a.updated_at, json_extract(t.contract_json,'$.area') AS area
-      FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
-      LEFT JOIN lane_pilot_task t ON t.id=a.task_id AND t.run_id=a.run_id
-      WHERE a.id=? OR (a.workspace_path=? AND r.writer_host_id=?)`).all(row.owner_id, row.path, row.host) as Array<{ state: string; updated_at: number; area: string | null }>;
-    return attempts.some((attempt) => JANITOR_OPEN_STATES.includes(attempt.state)
-      || (JANITOR_REOPENABLE_STATES.includes(attempt.state) && now - attempt.updated_at < worktreeGraceMs(db))
-      || (attempt.state === "accepted" && Boolean(attempt.area) && now - attempt.updated_at <= STICKY_WINDOW_MS));
+  const open = new Set((db.prepare("SELECT host, path FROM lane_pilot_worktree WHERE released_at IS NULL").all() as Array<{ host: string; path: string }>)
+    .map((row) => JSON.stringify([row.host, row.path])));
+  let adopted = 0;
+  const adopt = (host: string | undefined, path: string | undefined, ownerKind: string, ownerId: string | null, branch: string | null = null, at?: number) => {
+    if (!host || !path || open.has(JSON.stringify([host, path]))) return;
+    registerWorktree(db, { host, path, branch, owner_kind: ownerKind, owner_id: ownerId }, at ?? now);
+    open.add(JSON.stringify([host, path]));
+    adopted += 1;
+  };
+  // docs: the durable reuse marker; host and name are the key's two segments (neither carries a colon).
+  for (const key of await bb.storage.kv.list("docs-worktree:")) {
+    const record = await bb.storage.kv.get(key) as { path?: string } | null;
+    const [host, name] = key.slice("docs-worktree:".length).split(":");
+    adopt(host, record?.path, "docs", name ?? null);
   }
-  if (row.owner_kind === "docs" && row.owner_id) return (await bb.storage.kv.list(DOCS_WORKTREE_PREFIX)).some((key) => docsWorktreeName(key) === row.owner_id);
-  if (row.owner_kind === "regress" && row.owner_id) return (await bb.storage.kv.list(REGRESS_WORKTREE_PREFIX)).some((key) => regressWorktreePath(key) === row.owner_id);
-  if (row.owner_kind === "self-repair") {
-    const repair = await bb.storage.kv.get(SELF_REPAIR_STATE_KEY) as SelfRepairWorktreeState | null;
-    return Object.values(repair?.signatures ?? {}).some((record) => record?.worktree);
+  // regress: a bounded pass's in-flight copies; its own sweep drops markers older than six hours, so only fresh ones are live.
+  for (const key of await bb.storage.kv.list("regress-worktree:")) {
+    const path = key.slice("regress-worktree:".length);
+    const entry = await bb.storage.kv.get(key) as { hostId?: string; at?: number } | null;
+    if (entry?.hostId && now - (entry.at ?? 0) < 6 * 3_600_000) adopt(entry.hostId, path, "regress", path);
   }
-  // rollback/baseline/phase/unknown: no liveness marker exists — a pass is bounded, so age is the only doubt;
-  // anything this old is dead, and gitRemoveWorktree release:true snapshots the work before the copy goes regardless.
-  return false;
+  // self-repair: worktrees its state record still holds, pending respawns included.
+  const repair = await bb.storage.kv.get("self-repair:state") as { signatures?: Record<string, { worktree?: { hostId?: string; path?: string; branch?: string } | null; pending?: { worktree?: { hostId?: string; path?: string; branch?: string } | null } | null }> } | null;
+  for (const [signature, record] of Object.entries(repair?.signatures ?? {})) {
+    for (const worktree of [record?.worktree, record?.pending?.worktree]) {
+      if (worktree?.hostId && worktree.path) adopt(worktree.hostId, worktree.path, "self-repair", signature, worktree.branch ?? null);
+    }
+  }
+  return adopted;
 }
 
 /** At plugin start (after a reload that killed every pass's finally): copies whose owner is dead go now, not hourly. */
@@ -134,7 +173,7 @@ export async function reconcileWorktreeRegistry(ctx: Pick<ServerCore, "bb" | "db
   let removed = 0;
   for (const row of dead) {
     if (ctx.isDisposed()) break;
-    if (await ownerAlive(ctx, row, now)) continue;
+    if (ownerAlive(ctx, row, now)) continue;
     // The host call needs the base checkout the copy came from; the attempt's run knows it, others take it from the worktree itself.
     const known = db.prepare("SELECT writer_workspace_path AS p FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id WHERE a.workspace_path=? LIMIT 1").get(row.path) as { p?: string } | undefined;
     const basePath = known?.p ?? row.path;
@@ -148,7 +187,7 @@ export async function reconcileWorktreeRegistry(ctx: Pick<ServerCore, "bb" | "db
 export function mountWorktreeJanitor(ctx: ServerCore, sweeps: AttemptSweeps): void {
   const { bb } = ctx;
   // After a reload: the copies a dead pass left go at once, with the same rules the hourly pass has (grace 0 for dead owners).
-  const boot = setTimeout(() => { void reconcileWorktreeRegistry(ctx).catch((cause: unknown) => bb.log.info(`Lane Pilot reconcile failed: ${cause instanceof Error ? cause.message : String(cause)}`)); }, 45_000);
+  const boot = setTimeout(() => { void (async () => { await adoptLegacyWorktrees(ctx); await reconcileWorktreeRegistry(ctx); })().catch((cause: unknown) => bb.log.info(`Lane Pilot reconcile failed: ${cause instanceof Error ? cause.message : String(cause)}`)); }, 45_000);
   bb.onDispose(() => clearTimeout(boot));
   scheduleIsolated(bb, "worktree-janitor", "14 * * * *", async (signal) => {
     if (ctx.isDisposed() || signal?.aborted) return;

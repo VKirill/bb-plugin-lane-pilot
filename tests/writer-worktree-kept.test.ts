@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { createRun, openDatabase, registerWorktree } from "../src/rooms/plugin-db";
-import { reconcileWorktreeRegistry } from "../src/rooms/stability/server/worktree-janitor";
+import { createRun, listOpenWorktrees, openDatabase, registerWorktree } from "../src/rooms/plugin-db";
+import { adoptLegacyWorktrees, reconcileWorktreeRegistry } from "../src/rooms/stability/server/worktree-janitor";
 import { writerLeftWorktree } from "../src/rooms/writer/server/left-worktree";
 
 // magicseo T3.3 (2026-10-30): the writer blocked on a question, the reconcile removed its worktree 4 s later,
@@ -43,6 +43,34 @@ describe("a blocked writer keeps its worktree", () => {
   it("an accepted attempt's copy goes at once", async () => {
     const { ctx, now } = setup("accepted", 4_000);
     expect(await reconcileWorktreeRegistry(ctx, now)).toBe(1);
+  });
+});
+
+describe("the deployed build's KV-marked worktrees", () => {
+  it("are adopted into the registry at boot, and the reconcile keeps them", async () => {
+    const bb = createFakePluginHost({ pluginId: "lane-pilot" }).bb;
+    const db = openDatabase(bb);
+    const now = Date.now();
+    // Old-shape markers with no registry rows: docs reuse key, in-flight regress key, self-repair state record.
+    await bb.storage.kv.set("docs-worktree:mini:docs-abc123", { path: "/wt/docs/magicseo" });
+    await bb.storage.kv.set("regress-worktree:/wt/regress/magicseo", { hostId: "ovh", basePath: "/repo", at: now - 60_000 });
+    await bb.storage.kv.set("regress-worktree:/wt/regress/stale", { hostId: "ovh", basePath: "/repo", at: now - 7 * 3_600_000 });
+    await bb.storage.kv.set("self-repair:state", { signatures: { sig1: { worktree: { hostId: "mini", basePath: "/repo", path: "/wt/sr/fix", branch: "lane/self-repair-x" } } } });
+    expect(await adoptLegacyWorktrees({ bb, db } as never, now)).toBe(3);
+    const rows = listOpenWorktrees(db);
+    expect(rows).toEqual(expect.arrayContaining([
+      expect.objectContaining({ host: "mini", path: "/wt/docs/magicseo", owner_kind: "docs", owner_id: "docs-abc123" }),
+      expect.objectContaining({ host: "ovh", path: "/wt/regress/magicseo", owner_kind: "regress" }),
+      expect.objectContaining({ host: "mini", path: "/wt/sr/fix", owner_kind: "self-repair", owner_id: "sig1", branch: "lane/self-repair-x" }),
+    ]));
+    expect(rows.some((row) => row.path === "/wt/regress/stale")).toBe(false);
+    // A second boot adopts nothing: the registry already knows them.
+    expect(await adoptLegacyWorktrees({ bb, db } as never, now)).toBe(0);
+    const removed: string[] = [];
+    const ctx = { bb, db, log: () => undefined, isDisposed: () => false,
+      host: { call: async (_name: string, input: { worktreePath: string }) => { removed.push(input.worktreePath); return { removed: true }; } } } as never;
+    expect(await reconcileWorktreeRegistry(ctx, now)).toBe(0);
+    expect(removed).toEqual([]);
   });
 });
 

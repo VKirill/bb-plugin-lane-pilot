@@ -13,6 +13,7 @@ import type { PreflightResult } from "@lane-pilot/workflow-engine";
 import type { Workflow } from "@lane-pilot/workflow-engine";
 import type { WorkflowStore } from "../../storage";
 import { bindGraphStepLookup, fenceOutside, registerObservedTool } from "../../platform/server";
+import { isOpenAttemptState } from "../../state-machine";
 import { ToolError } from "../../contracts/server";
 import type { ServerCore } from "../../contracts/server";
 
@@ -64,7 +65,6 @@ export type WorkflowToolDeps = {
 
 type ToolContext = { threadId?: string | null; projectId?: string | null };
 
-const OPEN_ATTEMPT_STATES = new Set(["queued", "spawn_requested", "spawn_unknown", "running", "cancel_requested"]);
 const refused = (reason: string, extra: Record<string, unknown> = {}): string => JSON.stringify({ status: "refused", ...extra, reason }, null, 2);
 const sha16 = (text: string): string => sha256Hex(text).slice(0, 16);
 
@@ -253,7 +253,7 @@ export function mountWorkflowTools(ctx: ServerCore, services: Services): void {
     runtime: ({ pmThreadId, projectId, runId }) => ({ ctx, services, pmThreadId, projectId, runId }),
     state: ({ runId }) => ({
       // Only what is read from the database here; skills, plugins and secrets stay unknown (available) until a probe is plugged in.
-      openTasks: () => (runId ? listTaskTerminalStates(db, runId).filter((state) => OPEN_ATTEMPT_STATES.has(state)).length : undefined),
+      openTasks: () => (runId ? listTaskTerminalStates(db, runId).filter(isOpenAttemptState).length : undefined),
     }),
     preflight: (workflow, input) => preflight.check(workflow, input),
     stats: () => runRecords(db),
