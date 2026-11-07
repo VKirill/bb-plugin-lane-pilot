@@ -10,6 +10,7 @@ const PLUGIN_PROJECT = "proj-bb";
 
 function setup(options: { answerFor?: (args: Record<string, any>) => string | Error | undefined } = {}) {
   const w = nightWorld({ answerFor: options.answerFor ?? ((args) => (args.pluginMetadata?.role === "wall-analysis" ? "# analysis\nnext step: one owner for the runner" : FINDING)) });
+  void w.ctx.bb.storage.kv.set("self-repair:config", { projectId: "proj_lp", environmentId: "env_lp" } as never);
   w.services.wall = createPluginWall(w.ctx, w.services);
   mountNightGraphs(w.ctx, w.services);
   const wall = w.services.wall as ReturnType<typeof createPluginWall>;

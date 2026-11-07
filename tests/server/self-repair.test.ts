@@ -52,7 +52,7 @@ function setup(threadStatus: Record<string, string> = {}, outputs: Record<string
       if (method in hostResults) {
         const result = hostResults[method];
         if (result instanceof Error) throw result;
-        return result;
+        return typeof result === "function" ? (result as (input: unknown) => unknown)(input) : result;
       }
       if (method === "gitCreateWorktree") return { status: "ready", path: `/wt/${String(input.name)}/lane-pilot`, branch: `lane/${String(input.name)}`, reason: null };
       if (method === "gitIntegrate") return { status: "merged", commit: "abcdef1234567890", conflicts: [], reason: null };
@@ -130,7 +130,8 @@ describe("self-repair", () => {
   });
 
   it("posts lane-pilot:no-project when neither the stored config nor a matching source names the project", async () => {
-    const env = setup({}, {}, { runCommand: { exitCode: 0, stdout: "https://github.com/other/repo.git\n" } }, {}, {
+    const remote = execFileSync("git", ["remote", "get-url", "origin"], { encoding: "utf8" }).trim();
+    const env = setup({}, {}, { runCommand: (input: { cwd?: string }) => ({ exitCode: 0, stdout: input.cwd === "/elsewhere" ? "https://github.com/other/repo.git\n" : `${remote}\n` }) }, {}, {
       projects: { list: async () => [{ id: "proj_other" }], get: async () => ({ id: "proj_other", sources: [{ hostId: "host_hub", path: "/elsewhere" }] }) },
     });
     await env.ctx.bb.storage.kv.set("self-repair:config", {} as never);

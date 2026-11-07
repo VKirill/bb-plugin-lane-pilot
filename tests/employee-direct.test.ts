@@ -40,6 +40,7 @@ describe("direct employee call (section 3.6): owner picks a specialist in the co
   it("a pinned employee gets its machine's environment when the project has a folder there", async () => {
     const { rpc } = await host({
       hosts: {
+        list: async () => [{ id: "host_7sea4qaad8", name: "Mac mini" }],
         directory: async ({ hostId }: { hostId: string }) => ({ directory: hostId === "host_7sea4qaad8" ? "/Users/kir" : null }),
       },
       files: { mkdir: async () => ({}) },
