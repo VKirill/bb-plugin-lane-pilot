@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { laneOwnedMetadata, presenceHold, readPresence } from "../../src/rooms/owner-presence";
 import { createOwnerPresence, observeOwnerDispatch } from "../../src/rooms/owner-presence/server";
-import { failureClass } from "../../src/rooms/runs/failure-class";
+import { failureClass } from "../../src/rooms/contracts/failure-class";
 
 const NOW = Date.parse("2026-10-23T10:00:00Z");
 

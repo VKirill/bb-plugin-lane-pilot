@@ -3,7 +3,7 @@ import type { TaskV2 } from "../../src/rooms/contracts";
 import {
   baselineVerdict, planChecks, redBeforeAndAfter, requiresRedOnBase, turnedRed, vacuousChecks, type BaselineCheck,
 } from "../../src/rooms/baseline/logic";
-import { FREE_CLASSES, failureClass, isEnvironmentCheckFailure, nextStep } from "../../src/rooms/runs/failure-class";
+import { FREE_CLASSES, failureClass, isEnvironmentCheckFailure, nextStep } from "../../src/rooms/contracts/failure-class";
 import { classifyWriterOutput, referenceTestEdits } from "../../src/rooms/tasks";
 
 const root = "/tmp/sma-task";

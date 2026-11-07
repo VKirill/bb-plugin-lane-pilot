@@ -1,7 +1,7 @@
 import { explicitOwnerLocale } from "../../relay/server";
 import { checkBrief, renderBrief } from "../../brief";
 import { projectRoleField } from "../../runs/server";
-import { HELPER_ROLES, type HelperRole } from "../../native-agent";
+import { HELPER_ROLES, type HelperRole } from "../../contracts/helper-context";
 import {
   classifyUnformed, codeVerdict, decideRuleTrial, scopeApplies, getRuleProposal, listRuleProposals, logRuleEvent, ruleTrialStats, saveTriage, setRuleTrial, splitRejectedPaths, triageQuestions, triageState, triageSummary, untriagedAttempts, upsertModelProposal, writerGroups,
   type FailedAttempt, type RuleEvidence, type TriageSummary, type WriterGroup,

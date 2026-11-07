@@ -4,7 +4,8 @@ import { repairPrompt } from "../../src/rooms/self-repair/server/self-repair";
 import { qaThreadPrompt } from "../../src/rooms/qa/server/qa-thread";
 import { buildCandidateEvidence, codeCritiquePrompt } from "../../src/rooms/critique/code-critique";
 import { critiquePrompt } from "../../src/rooms/critique/critique";
-import { CODE_CRITIC_METHOD, FAILURE_TRIAGE_METHOD, FRONTEND_VERIFY_METHOD, PLAN_CRITIC_METHOD, SCIENTIFIC_DEBUG_METHOD } from "../../src/rooms/critique/role-method";
+import { CODE_CRITIC_METHOD, FAILURE_TRIAGE_METHOD, PLAN_CRITIC_METHOD, SCIENTIFIC_DEBUG_METHOD } from "../../src/rooms/critique/role-method"
+import { FRONTEND_VERIFY_METHOD } from "../../src/rooms/contracts/review-vocabulary";
 
 const evidence = buildCandidateEvidence({ produced: [], hashes: {}, verification: [], output: "", ownsPaths: [], neverTouch: [], dirtOk: true });
 const workspace = { path: "/wt/r/lane-pilot", branch: "lane/r", basePath: "/repo/lane-pilot" };

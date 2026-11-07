@@ -1,3 +1,4 @@
+import type { DocsPage } from "../contracts/docs-page";
 
 export const DOCS_SINCE_CHOICES = ["yesterday", "24 hours ago", "7 days ago"] as const;
 export type DocsSince = (typeof DOCS_SINCE_CHOICES)[number];
@@ -34,7 +35,7 @@ export type DocsMaintenanceSettings = {
   hour: number;
 };
 
-export type DocsPage = { path:string; modifiedAt:number; sha256:string; content:string };
+
 export type DocsEdit = { path:string; expectedSha256:string; content:string };
 
 const DOC_ROOTS = ["docs/", "apps/"] as const;

@@ -1,5 +1,5 @@
 import type Database from "better-sqlite3";
-import { classifyFailure, type FailureClass } from "./failure-class";
+import { classifyFailure, type FailureClass } from "../contracts/failure-class";
 import { failureClassJudgment, FAILURE_CLASS_ID, type FailureClassDecision } from "./failure-class-judgment";
 import { logFindJudgment } from "@lane-pilot/jev/judgments/log-find";
 import { recordOutcome, type Jev, type JevSettings } from "@lane-pilot/jev";

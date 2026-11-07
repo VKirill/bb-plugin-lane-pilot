@@ -1,6 +1,6 @@
 import { MAIN_AGENT_PROFILE_IDS } from "../../contracts/server";
 import { UNLISTED_STOCK_IDS, agentListItem } from "../../native-agent";
-import type { AgentListItem } from "../../native-agent";
+import type { AgentListItem } from "../../contracts/agent-picker";
 import { loadPrototypeConfig } from "../../storage";
 import { GLOBAL_SETTINGS_PROJECT_ID, LP_DEFAULTS_KEY, parseLanePilotDefaults } from "@lane-pilot/settings-catalog";
 import { resolveWriterBinding } from "../../native-agent";

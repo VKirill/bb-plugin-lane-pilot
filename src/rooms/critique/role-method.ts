@@ -1,3 +1,4 @@
+import { SUBJECTIVE_WORDS, FRONTEND_VERIFY_METHOD } from "../contracts/review-vocabulary";
 /**
  * The working method of Lane Pilot's reviewing and diagnosing roles, as lines the prompt builders put into their briefs.
  * The thresholds, layers and checklists are adapted from catlog22/maestro-flow (MIT; see THIRD_PARTY_NOTICES.md):
@@ -8,8 +9,6 @@
  */
 
 /** Words that make a criterion unverifiable; the plan critic reports a criterion that rests on them. */
-export const SUBJECTIVE_WORDS = ["looks correct", "properly", "correctly configured", "consistent with", "clean", "nice", "robust", "works well", "as expected", "appropriate", "корректно", "аккуратно", "нормально", "удобно"] as const;
-
 export const PLAN_CRITIC_METHOD: readonly string[] = [
   "Method. Go through the contract and the plan along these dimensions and report only what you can anchor: requirements coverage (every `acceptance` line has a step that delivers it, and the file it is read from is in `expected_outputs` or `owns_paths`; a file `owns_paths` already names that a step rebuilds or regenerates — a built page, a bundle — is not a missing expected output, at most a low note), feasibility, dependency correctness (every `depends_on` names a real task, no cycle), convergence quality, read_first completeness, action specificity (a step that says «update the handler» without naming the file or the function is vague), collision safety (files the plan changes that another open task also owns), completeness (no step without a purpose in the objective).",
   "Convergence criteria are the `acceptance` lines and the `verification` commands. Each must be checkable by a command, a grep or a file read, and name the exact string, pattern, value or exit code that decides it («src/auth.ts contains export function verifyToken(», «the command exits 0», «.env.example contains DATABASE_URL=»). A criterion that rests on subjective words (" + SUBJECTIVE_WORDS.slice(0, 8).map((word) => `«${word}»`).join(", ") + ", and the like) cannot be checked: report it as unverifiable and give the checkable wording.",
@@ -43,11 +42,6 @@ export const FAILURE_TRIAGE_METHOD: readonly string[] = [
   "Failing checks: classify each one before you decide whose fault it is. test_defect: the check itself is wrong (a bad import, endpoint, fixture or assertion). code_defect: the code under test breaks a rule of the task or the product (actual differs from expected). env_issue: the environment broke it (a service down, a missing config or binary, a full disk, a permission or network error). A test that correctly catches a real bug is a code_defect, not a test_defect. When you cannot tell, call it a code_defect and say what is missing. A test_defect is a fix to the test; a code_defect is confirmed and is not retried until the code changes; an env_issue is blocked on the environment and is no fault of the code.",
 ];
 
-export const FRONTEND_VERIFY_METHOD: readonly string[] = [
-  "Assert, do not look. For each user-visible feature in a case, check three layers one by one and keep what you saw as evidence: (1) the entry point: the control that triggers the feature exists and can be reached (name the element); (2) the write: the action sends the expected write request (POST, PUT, PATCH or DELETE) with the right payload, when the browser tool lets you read network requests or the console; (3) the result: the DOM or state change you expect happens after the action (read the resulting text or element).",
-  "Every write the case depends on needs a control that reaches it: a write with no reachable control in the page is a defect to report, not an untested item. A failed layer of something the user can see fails the case. If a layer cannot be observed with the tools you have (no network view, no way to read the DOM state), say so in the case note: that case is blocked, never passed.",
-  "Silence is never a pass. A case you did not run, a layer you did not assert, or a check you could not complete is blocked or failed. Every claim in a note is backed by what you observed (the element found, the request captured, the DOM text read), not by «looks fine».",
-];
 
 /**
  * The roles a workflow chain adds (W3): analyst, planner, auditor. Adapted from catlog22/maestro-flow (MIT; THIRD_PARTY_NOTICES.md):

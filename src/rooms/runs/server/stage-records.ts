@@ -1,9 +1,10 @@
 import { wfLiveRunWithIdem } from "@lane-pilot/workflow-engine";
 import { appendGateEvaluation, countAttempts, deleteStageReceipt, failureFieldsOf, getTaskPlan, latestAttemptRow, listIdleAttemptsInStates, listOpenStageTasks, listStageReceipts, newestAttemptState, openDatabase, saveStageReceipt, stageReceiptState, transitionAttempt } from "../../storage";
-import { RETRY_ELIGIBLE } from "../state-machine";
-import type { AttemptState } from "../state-machine";
-import { sha256, stageTransition, validateStageReceipt } from "../../tasks";
-import type { StageId, StageState } from "../../tasks";
+import { RETRY_ELIGIBLE } from "../../contracts/state-machine";
+import type { AttemptState } from "../../contracts/state-machine";
+import { sha256Hex as sha256 } from "@lane-pilot/kit";
+import { stageTransition, validateStageReceipt } from "@lane-pilot/contracts";
+import type { StageId, StageState } from "@lane-pilot/contracts";
 export function recordStage(db:ReturnType<typeof openDatabase>, input:{runId:string;taskId:string;stageId:StageId;state:StageState;input:string;attempt?:number;
   providerId?:string|null;model?:string|null;threadId?:string|null;result?:unknown|null;reason?:string|null;replaceOnNewInput?:boolean;
   /** Starts a stage over from blocked or skipped; only for a stage whose work never ran, so no verdict is lost. */

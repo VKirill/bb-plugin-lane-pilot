@@ -2,7 +2,6 @@
 // live above contracts/storage/kit but below every domain room — a domain room imports this, never core.
 export * from "./action-schema";
 export * from "./context";
-export * from "./failure-class";
 export * from "./git-reads";
 export * from "./model-catalog-reader";
 export * from "./pm-notice";

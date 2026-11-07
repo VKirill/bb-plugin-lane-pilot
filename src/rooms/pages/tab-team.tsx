@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { t, type I18nKey } from "@lane-pilot/i18n";
-import { agentPickerLabel } from "../native-agent/agent-display";
+import { agentPickerLabel } from "../contracts/agent-display";
 import { Badge } from "@lane-pilot/ui-kit";
 import { Icon } from "@lane-pilot/ui-kit";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@lane-pilot/ui-kit";

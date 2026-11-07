@@ -1,7 +1,7 @@
 import { describe, expect, it, afterEach } from "vitest";
 import { roleSpec } from "../src/rooms/workflow/server/workflow-agent";
 import { setLocaleOverride, t } from "@lane-pilot/i18n";
-import { agentPickerLabel } from "../src/rooms/native-agent/agent-display";
+import { agentPickerLabel } from "../src/rooms/contracts/agent-display";
 import { MAIN_AGENT_PROFILE_IDS } from "../src/rooms/contracts/server";
 import { compileMainAgentProfile } from "../src/rooms/native-agent/agent-profile";
 import { BB_AGENT_SUMMARIES } from "../src/rooms/contracts/server";

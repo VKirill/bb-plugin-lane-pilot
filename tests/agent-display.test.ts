@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { MAIN_AGENT_PROFILE_IDS } from "../src/rooms/contracts/server";
 import { compileMainAgentProfile } from "../src/rooms/native-agent/agent-profile";
-import { agentBadgeChart, agentKind, agentPickerLabel, composerAgentLabel, STOCK_AGENT_SEED_DESCRIPTIONS } from "../src/rooms/native-agent/agent-display";
+import { agentBadgeChart, agentKind, agentPickerLabel, composerAgentLabel, STOCK_AGENT_SEED_DESCRIPTIONS } from "../src/rooms/contracts/agent-display";
 import { t, setLocaleOverride } from "@lane-pilot/i18n";
 
 describe("agent picker display labels", () => {

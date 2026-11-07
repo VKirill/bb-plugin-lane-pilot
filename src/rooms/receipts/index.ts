@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
 import type Database from "better-sqlite3";
 import packageJson from "../../../package.json";
-import { gateRunVerdict, latestGateRun, parseIntegrationGateSettings } from "../verification/server";
+import { gateRunVerdict, latestGateRun } from "../verification/server"
+import { parseIntegrationGateSettings } from "../contracts/integration-gate";
 import { loadProjectSettings } from "../storage";
 
 /**

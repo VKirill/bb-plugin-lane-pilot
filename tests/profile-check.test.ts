@@ -11,7 +11,7 @@ import {
   profileCheckMorningLine,
   saveProfileCheck,
 } from "../src/rooms/native-agent";
-import { coreRequiredSessionAdvertisement, type RequiredSessionAdvertisement } from "../src/rooms/native-agent/helper-context";
+import { coreRequiredSessionAdvertisement, type RequiredSessionAdvertisement } from "../src/rooms/contracts/helper-context";
 import { createProfileCheck, PROFILE_CHECK_OWNER_KEY } from "../src/rooms/native-agent/server/profile-check";
 import { openDatabase } from "../src/rooms/plugin-db";
 

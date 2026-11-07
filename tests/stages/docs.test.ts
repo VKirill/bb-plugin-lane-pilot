@@ -3,12 +3,8 @@ import { mkdtemp, mkdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { listDocsPages } from "../../src/rooms/host-worker/host-handlers";
-import {
-  docsInputHash, docsScheduleDue, docsSinceEpoch, parseDocsSettings,
-  selectDocsPages, validateDocsEdits,
-  type DocsPage,
-  docsSelection, docsRepairPrompt, nightlyDocsPrompt,
-} from "../../src/rooms/docs/docs";
+import { docsInputHash, docsScheduleDue, docsSinceEpoch, parseDocsSettings, selectDocsPages, validateDocsEdits, docsSelection, docsRepairPrompt, nightlyDocsPrompt } from "../../src/rooms/docs/docs"
+import { type DocsPage } from "../../src/rooms/contracts/docs-page";
 import { lintDocsPages } from "../../src/rooms/docs/docs-lint";
 
 const now = new Date(2026, 8, 23, 5, 0, 0);

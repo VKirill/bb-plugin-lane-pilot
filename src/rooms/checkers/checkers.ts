@@ -4,7 +4,7 @@ import { MAX_FILE_EXCERPT_BYTES, buildCandidateEvidence, codeCritiquePrompt, cri
 import { blindPlanFact } from "../tasks";
 import type { PlanFactFacts, PlanFactTable } from "../tasks";
 import { lintContract } from "../tasks/server";
-import { findUnownedChanges } from "../verification";
+import { findUnownedChanges } from "../contracts/ownership";
 import { changedRanges, linesOf } from "./linediff";
 import { sha256, type CheckerId, type CheckerResult, type FileChange, type PlanFactClaim, type PlantedDefect } from "./types";
 

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useComposer, useRpc } from "@get-bb/plugin-sdk/app";
 import type { rpcContract } from "../../contracts";
 import { t, detectLocale, setLocaleOverride, type I18nKey } from "@lane-pilot/i18n";
-import { agentKind, composerAgentLabel, type PickableAgent } from "../agent-display";
+import { agentKind, composerAgentLabel, type PickableAgent } from "../../contracts/agent-display";
 import { Button } from "@lane-pilot/ui-kit";
 import { Label } from "@lane-pilot/ui-kit";
 import { Popover, PopoverContent, PopoverTrigger } from "@lane-pilot/ui-kit";
@@ -15,8 +15,8 @@ import {
   startBlocked,
   type ActivationBlock,
 } from "../activation";
-import { DEFAULT_NATIVE_AGENT } from "../native-agent-id";
-import { selectionHostId } from "../composer-selection";
+import { DEFAULT_NATIVE_AGENT } from "../../contracts/native-agent-id";
+import { selectionHostId } from "../../contracts/composer-selection";
 import { noteChatAgentChanged, setPendingNativeAgent } from "./pending-native-agent";
 import { useNativeComposerSelection } from "./composer-selection-hook";
 import { takeArchitectLaunch } from "../architect-launch";

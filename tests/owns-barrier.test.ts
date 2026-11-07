@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { isOwnershipNoise } from "@lane-pilot/settings-catalog";
 import { applyOwnsBarrier, liftOwnsBarrier } from "../src/rooms/verification/git-integrate";
-import { dropSatellites, satelliteOf } from "../src/rooms/verification/ownership";
+import { dropSatellites, satelliteOf } from "../src/rooms/contracts/ownership";
 
 const git = (cwd: string, ...args: string[]) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", ...args], { cwd, encoding: "utf8" });
 

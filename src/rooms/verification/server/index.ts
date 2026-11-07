@@ -2,9 +2,9 @@
 // Add a name here to make it public; scripts/refactor/barrels.ts wrote the first version from the existing imports.
 export { excludeBookkeeping } from "./bookkeeping-exclude";
 export { gateResolverFor } from "./gate-detect";
-export { IntegrationGateRunner, parseIntegrationGateSettings, finishGateRun, gateRunVerdict, latestGateRun, latestGateRunForTask, noteGateRunStart } from "./integration-gate";
-export type { GateRunRow, GateRunState } from "./integration-gate";
 export { attemptMergeMessage, clearMergeIntent, createMergeIntentRecovery, recordMergeIntent } from "./merge-intent";
 export { detectRepoEdits, gitRepoStatus, namedByChat } from "./repo-edits";
-export { gluedCheckCommand, glueReplayCommands } from "./replay-checks";
+export { glueReplayCommands } from "./replay-checks"
 export { activeRunFor, listGuests, noteCheckoutGuest } from "./checkout-guests";
+export { IntegrationGateRunner, finishGateRun, gateRunVerdict, latestGateRun, latestGateRunForTask, noteGateRunStart } from "./integration-gate";
+export { GateRunRow, GateRunState } from "./integration-gate";

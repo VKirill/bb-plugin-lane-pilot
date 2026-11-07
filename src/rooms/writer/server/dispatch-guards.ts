@@ -2,7 +2,7 @@ import { taskV2Schema } from "../../contracts";
 import type { TaskV2 } from "../../contracts";
 import { batchShapeAdvice, checkoutOwnsOverlap, medianTaskSize, topicHold, topicLoop, topicLoopMessage } from "../../tasks";
 import type { LoopTask, OpenShape } from "../../tasks";
-import { taskFamily } from "../../runs";
+import { taskFamily } from "@lane-pilot/contracts";
 import { checkoutBase, getRun, getTask, listOpenAttempts, taskBasePath } from "../../storage";
 import type { LanePilotDatabase } from "../../storage";
 

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { resolveRoleModel } from "@lane-pilot/models";
 import { resolveTaskQualityMode } from "@lane-pilot/workflow-engine";
-import { applyCodeCriticDefault } from "../../src/rooms/critique/quality-mode";
+import { applyCodeCriticDefault } from "../../src/rooms/contracts/quality-mode";
 import { shortPathCriticDefault } from "../../src/rooms/workflow/server/workflow-executors";
 import { finding, firstInput, modeOf, out, pathOf, task } from "./chain-helpers";
 import { chainStore, runSim } from "./chain-harness";

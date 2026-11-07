@@ -4,15 +4,16 @@ import { describe, expect, it } from "vitest";
 import { settleVerdict, verdictSchema } from "@lane-pilot/workflow-engine";
 import { acceptanceProofGap } from "@lane-pilot/contracts";
 import { taskV2Schema, type TaskV2 } from "../../src/rooms/contracts";
-import { validateDocsEdits, type DocsPage } from "../../src/rooms/docs/docs";
+import { validateDocsEdits } from "../../src/rooms/docs/docs"
+import { type DocsPage } from "../../src/rooms/contracts/docs-page";
 import { acceptanceLines, designGate, nextAction, type Phase, type PhaseRecord } from "../../src/rooms/phase";
 import { acceptanceKey } from "../../src/rooms/phase/logic";
 import { CAPABILITIES, capabilityTable, dueProbes } from "../../src/rooms/capability";
 import { conveyorState, setConveyor } from "../../src/rooms/conveyor";
 import { pairApartFromWriter } from "../../src/rooms/critique/critic-pair";
 import { pilotOf, type RunTask } from "../../src/rooms/pilot/logic";
-import { failureClass, failureFingerprint, FREE_CLASSES, repeatedFailureReason, SESSION_MAX_TURNS } from "../../src/rooms/runs/failure-class";
-import { MAIN_ATTEMPT_LIMIT, nextAttemptState, retryAction } from "../../src/rooms/runs/state-machine";
+import { failureClass, failureFingerprint, FREE_CLASSES, repeatedFailureReason, SESSION_MAX_TURNS } from "../../src/rooms/contracts/failure-class";
+import { MAIN_ATTEMPT_LIMIT, nextAttemptState, retryAction } from "../../src/rooms/contracts/state-machine";
 import { budgetStopReason, createRunBudget } from "@lane-pilot/resilience";
 import {
   createAttempt, createRun, createTask, getAttempt, openDatabase, transitionAttempt,

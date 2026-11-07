@@ -1,6 +1,6 @@
-import type { DocsPage } from "../../docs";
-import type { MemorySettings } from "../../memory";
-import type { ProjectLifeTaskSummary } from "../../project-life";
+import type { DocsPage } from "../../contracts/docs-page";
+import type { MemorySettings } from "@lane-pilot/memory-core";
+import type { ProjectLifeTaskSummary } from "../../contracts/project-life";
 export type DocsChildSnapshot = { pages:DocsPage[]; since:string; truncated:boolean; inputSha256:string; pageCap?:number; dispatchInput?:unknown };
 
 export function docsResultObject(result:unknown): Record<string, unknown> {

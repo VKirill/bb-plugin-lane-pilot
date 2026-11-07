@@ -1,3 +1,4 @@
+import type { AgentKind, AgentListItem } from "../../contracts/agent-picker";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type { WorkflowEngine, WorkflowStore } from "@lane-pilot/workflow-engine";
 import type { createWorkflowCatalog } from "@lane-pilot/workflow-engine";
@@ -100,38 +101,15 @@ export type ReassignResult =
   | ReassignRefusal;
 
 /** writer/server/reassign.ts — the PM reassigns a task to another model. */
+export type ListedAgentProfile = AgentListItem;
+
 export interface WriterReassignApi {
   requestReassign(input: ReassignInput): Promise<ReassignRequested | ReassignRefusal>;
   reassignTask(input: ReassignInput): Promise<ReassignResult>;
   awaitReassignedThread(runId: string, taskId: string, oldAttemptNo: number): Promise<string | null>;
 }
 
-/** native-agent/custom-agent.ts `AgentListItem`, mirrored so the listing RPC types it without the room (checked both ways at wiring). */
-export type AgentKind = "coordinator" | "specialist" | "internal";
-export type ListedAgentProfile = {
-  id: string;
-  description: string;
-  displayName: string;
-  summary?: string;
-  kind: AgentKind;
-  custom: boolean;
-  prompt: string;
-  sourceHash: string;
-  sourceVersion: string;
-  edited: boolean;
-  tools?: string[];
-  disallowedTools?: string[];
-  skills?: string[];
-  mcpServers?: string[];
-  model?: string;
-  effort?: string;
-  domain?: string;
-  machineAffinity?: string;
-  coreSkills?: string[];
-  skillSections?: string[];
-  deliverables?: string[];
-  validator?: string;
-};
+/** native-agent/custom-agent.ts `AgentListItem` in contracts/agent-picker — the listing RPC types it without the room (checked both ways at wiring). */
 
 /** writer/server/writer-host.ts — the binding verdict of a project, mirrored (native-agent/project-binding.ts plus writer-host's own `catalog_unavailable`). */
 export type WriterHostResolution =

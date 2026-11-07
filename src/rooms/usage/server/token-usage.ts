@@ -1,6 +1,6 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type { LanePilotDatabase } from "../../storage";
-import { pluginStopped } from "../../runs/server";
+import { pluginStopped } from "../../contracts/errors";
 import { stringAt, valueAt } from "@lane-pilot/kit";
 import { MODEL_PRICES, costUsd } from "@lane-pilot/models";
 import type { ServerCore } from "../../contracts/server";

@@ -9,10 +9,6 @@ export { gitOwnershipChangedPaths, resolveGitOwnershipBase, undoCheckWrites } fr
 export { attributeGateOnHost, bisectGateOnHost, runGateOnHost } from "./integration-gate-host";
 export { darwinAvailableBytes, readMachineFacts } from "./machine-reading";
 export type { HostMachineFacts } from "./machine-reading";
-export { PRESSURE_LIMITS, flakyEvidence, outputTail, pressureOf, readingFrom, readingNote } from "./machine-pressure";
-export type { FlakyEvidence, MachineReading } from "./machine-pressure";
-export { dropSatellites, findUnownedChanges, findUnownedRunChanges, resolveRunOwnershipScope, safeRelative, satelliteOf, validateOwnershipContract } from "./ownership";
-export type { OwnershipTask } from "./ownership";
 export { createProviderGate, providerListed, providerSwitchOn, waitProviderEnvironment } from "./provider-gate";
 export { parseWorkspaceMode, requireManagedWorktreeProvider, resolveAttemptWorkspace, resolveManagedWorkspace, usesManagedWorktree, waitManagedWorktreeReady } from "./routing";
 export { prepareSandboxedCommandLine, releaseSandboxedCommandLine, runSandboxedCommandOnHost, userToolBins } from "./sandbox";
@@ -22,3 +18,4 @@ export type { MergeInfo, RevertResult, WorktreeState } from "./git-rollback";
 export { TEST_FILE_RE, suggestTests, testHintLine } from "./test-hint";
 export { cachedReplayVerdicts, recordedReplayFailure, recordReplayVerdict, replayCacheLocation, replayKey } from "./replay-cache";
 export type { ReplayCacheEntry } from "./replay-cache";
+export { PRESSURE_LIMITS, flakyEvidence, outputTail, pressureOf, readingFrom, readingNote } from "./machine-pressure";

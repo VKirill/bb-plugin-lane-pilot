@@ -11,7 +11,7 @@ import type { ScheduleConflict, ScheduleView } from "../views";
 import { configuredSetting } from "../../contracts/server";
 import type { ServerCore } from "../../contracts/server";
 import { allowedSecretNames } from "../../secrets/server";
-import { agentPickerLabel } from "../../native-agent";
+import { agentPickerLabel } from "../../contracts/agent-display";
 import { t } from "@lane-pilot/i18n";
 import { loadPushConfig, postOwnerItem, rpcLine } from "../../owner-waiting";
 import { errandModelView, readErrandDefault } from "./schedule-default";

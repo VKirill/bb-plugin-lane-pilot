@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   HELPER_ROLES, ROLE_PROFILES, parseRequiredSessionPolicyCapability, requiredSessionPolicySpawnBinding, roleProfilePolicy,
   type HelperPolicySnapshot, type HelperRole,
-} from "../src/rooms/native-agent/helper-context";
+} from "../src/rooms/contracts/helper-context";
 
 // The hub's core as it advertises today (0.48.1-vk.4 + acp-antigravity): the five CLI providers, devin, zcode and
 // acp-antigravity on the ACP subset. Mirrors tests/core-advertisement.test.ts.

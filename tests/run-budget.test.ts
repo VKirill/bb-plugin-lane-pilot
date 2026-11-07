@@ -7,7 +7,7 @@ import {
   RunBudgetExceeded,
   runningWriterBudgetStop,
 } from "@lane-pilot/resilience";
-import { FREE_CLASSES, PARKED_CLASSES, failureClass } from "../src/rooms/runs/failure-class";
+import { FREE_CLASSES, PARKED_CLASSES, failureClass } from "../src/rooms/contracts/failure-class";
 import {
   countChargedAttempts,
   createAttempt,

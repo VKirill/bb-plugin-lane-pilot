@@ -1,5 +1,5 @@
 import { filterOwnershipNoise } from "@lane-pilot/settings-catalog";
-import { findUnownedChanges } from "../verification";
+import { findUnownedChanges } from "../contracts/ownership";
 import { addedLineNumbers, changedRanges, linesOf } from "./linediff";
 import {
   DEFECT_CLASSES, EXPECTED_CATCHERS, defectId,

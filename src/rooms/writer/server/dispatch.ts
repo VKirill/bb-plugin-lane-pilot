@@ -1,18 +1,20 @@
 import { isTaskSatisfied, loadBlockedBy } from "../../runs/server";
+import type { VerificationGatePort } from "../../contracts/integration-gate";
 import type { StageHelperSettings } from "../../platform/server";
 import { setRunHalted } from "../../runs/server";
 import { isLiveDecision } from "../live-folder";
 import { DISPATCH_IDEMPOTENT_WINDOW_MS, DISPATCH_STAGES_PENDING } from "../../runs";
 import { taskV2Schema } from "../../contracts";
 import type { TaskV2 } from "../../contracts";
-import { QUALITY_MODE_SETTING, browserQaRequired, resolveQualityMode, taskQaPlan } from "../../critique";
+import { QUALITY_MODE_SETTING, browserQaRequired, resolveQualityMode, taskQaPlan } from "../../contracts/quality-mode";
 import { reserveAppetite, resolveBestOf } from "../best-of";
-import type { CodeCriticDefault } from "../../critique";
+import type { CodeCriticDefault } from "../../contracts/task-enums";
 import { saveCriticCodeDefault } from "./critic-override";
 import { wfLivePipelineRun, wfRunInputsByKey } from "@lane-pilot/workflow-engine";
 import { getRunObjective, setRunObjective, createAttempt, createTask, freeTaskId, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getRunWriterHost, getTask, getTaskGitBase, getTaskPlan, latestTaskAttemptState, getTaskRow, hasFailedStageReceipt, listAttemptsForTask, listAttemptsUpdatedSince, listOpenAttempts, listRunsWithAttempts, listRunTaskRows, listStageReceipts, listTaskKinds, listTaskTerminalStates, loadProjectSettings, saveTaskPlan, setRunState, taskBasePath, transitionAttempt } from "../../storage";
 import { sha256 , spendReserve, type BirthKind } from "../../tasks";
-import { liveFolderLockNote, nextStep, taskFamily } from "../../runs";
+import { liveFolderLockNote, nextStep } from "../../contracts/failure-class"
+import { taskFamily } from "@lane-pilot/contracts";
 import { commonTaskFolder, isMainfixTask, isTaskBase, parseRepoTop, planWithOutsideReads, repoTopCommand, rerootTask } from "../../tasks";
 import { validateTaskV2 } from "../../tasks/task-v2";
 import { lintReply } from "../../tasks/server";
@@ -23,7 +25,8 @@ import { id, stringAt, valueAt } from "@lane-pilot/kit";
 import { buildTask } from "./writer-task";
 import { dispatchReply, dispatchRunKey, startDispatchRun, pipelineUnavailable } from "./dispatch-workflow";
 import { suggestTests, testHintLine } from "../../verification";
-import { gateResolverFor, gateRunVerdict, latestGateRunForTask, parseIntegrationGateSettings } from "../../verification/server";
+import { gateResolverFor, gateRunVerdict, latestGateRunForTask } from "../../verification/server"
+import { parseIntegrationGateSettings } from "../../contracts/integration-gate";
 import { jev } from "@lane-pilot/jev";
 import { batchAdviceFor, topicLoopGuard } from "./dispatch-guards";
 import { reviveCanceledTask } from "./revive";
@@ -53,6 +56,7 @@ interface Services {
   isLiveFolder: WriterSpawnApi["isLiveFolder"];
   runBudgets: WriterStateApi["runBudgets"];
   stability: StabilityApi;
+  resolveIntegrationGate: VerificationGatePort;
   startWriterTask: WriterStartApi["startWriterTask"];
   wall: WallApi;
   workflowEngine: WorkflowEngineApi["workflowEngine"];

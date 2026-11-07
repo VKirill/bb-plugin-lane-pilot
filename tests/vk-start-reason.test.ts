@@ -2,7 +2,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { expect, it, vi } from "vitest";
 import plugin from "../server";
 import { DRAIN_SNAPSHOT_KEY, skipRedundantStartupScans } from "../src/rooms/stability/server/deploy-drain";
-import { PARKED_KEY } from "../src/rooms/stability/server/stability";
+import { PARKED_KEY } from "../src/rooms/contracts/stability-api";
 
 const host = () => createFakePluginHost({ pluginId: "lane-pilot", sdk: { threads: { list: async () => [] } }, hostCall: async () => ({}) } as never);
 

@@ -10,7 +10,7 @@ import {registeredTools} from "../../src/rooms/platform/server";
 import { ToolError } from "../../src/rooms/contracts/server";
 import { createPhaseDriver } from "../phase-driver";
 import { planSignature, type PlanItem } from "../../src/rooms/phase/logic";
-import { failureClass } from "../../src/rooms/runs";
+import { failureClass } from "../../src/rooms/contracts/failure-class";
 import { createAttempt, createRun, createTask, openDatabase } from "../../src/rooms/plugin-db";
 import { registerConversationTools } from "../../src/rooms/tasks/server/conversation-tools";
 import { tokenDailyByModel } from "../../src/rooms/usage/server";

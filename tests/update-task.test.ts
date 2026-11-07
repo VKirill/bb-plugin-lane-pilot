@@ -5,6 +5,7 @@ import { openDatabase, createRun, createTask, createAttempt, countAttempts, getA
   savePrototypeConfig, listStageReceipts, saveProjectSetting, transitionAttempt } from "../src/rooms/plugin-db";
 import { recordStage } from "../src/rooms/runs/server/stage-records";
 import { createWriterUpdateTask } from "../src/rooms/writer/server/update-task";
+import { gateResolverFor } from "../src/rooms/verification/server";
 import { registerDispatchExecutors, startDispatchRun } from "../src/rooms/writer/server/dispatch-workflow";
 import {builtinWorkflow} from "../src/rooms/workflow/builtin";
 import { WorkflowEngine } from "@lane-pilot/workflow-engine";
@@ -121,6 +122,7 @@ describe("lane_pilot_update_task", () => {
     } as unknown as ServerCore;
 
     const services = {
+      resolveIntegrationGate: gateResolverFor(ctx),
       activeWriterTasks: new Set<string>(),
       stability: { loadParked: async () => [] },
     } as unknown as Services;
@@ -187,7 +189,8 @@ describe("lane_pilot_update_task", () => {
     const ctx = { bb: fakeBb as never, db, state: { disposed: false }, configForRun: async (id: string) => loadPrototypeConfig(db, id), log: () => {},
       host: { call: async (method: string) => (method === "gitOwnershipBase"
         ? { status: "ready", baseRef: "main", baseSha: sha, headSha: sha, branch: "main", compareCommitted: true } : { status: "ready", entries: [] }) } } as unknown as ServerCore;
-    const services = { activeWriterTasks: new Set<string>(), stability: { loadParked: async () => [] } } as unknown as Services;
+    const services = {
+      resolveIntegrationGate: gateResolverFor(ctx), activeWriterTasks: new Set<string>(), stability: { loadParked: async () => [] } } as unknown as Services;
     const { engine, pipelineRunId } = await dispatched(ctx, services);
     expect(getTaskGitBase(db, taskId)).toMatchObject({ base_sha: sha });
     const res = await createWriterUpdateTask(ctx, services).updateTask({ projectId, runId, pmThreadId, taskId, task: { ...baseTask, title: "Updated title" }, plan: "New plan" });
@@ -201,7 +204,7 @@ describe("lane_pilot_update_task", () => {
     createAttempt(db, { id: "att-1", runId, taskId });
     const ctx = { bb: fakeBb as never, db, state: { disposed: false }, configForRun: async (id: string) => loadPrototypeConfig(db, id), log: () => {} } as unknown as ServerCore;
     const engine = new WorkflowEngine({ db, harnessVersion: "1.0.0" });
-    const { updateTask } = createWriterUpdateTask(ctx, { activeWriterTasks: new Set<string>(), stability: { loadParked: async () => [] }, workflowEngine: engine, stageHelperSettings } as unknown as Services);
+    const { updateTask } = createWriterUpdateTask(ctx, { activeWriterTasks: new Set<string>(), stability: { loadParked: async () => [] }, resolveIntegrationGate: gateResolverFor(ctx), workflowEngine: engine, stageHelperSettings } as unknown as Services);
     const res = await updateTask({ projectId, runId, pmThreadId, taskId, task: { ...baseTask, title: "Updated title" }, plan: "New plan" });
     expect(res).toMatchObject({ ok: false, error: { code: "pipeline_run_missing", sideEffects: "none" } });
     expect((getTask(db, taskId)?.contract as TaskV2).title).toBe("Original title");
@@ -214,7 +217,8 @@ describe("lane_pilot_update_task", () => {
     const asked: string[] = [];
     const ctx = { bb: fakeBb as never, db, state: { disposed: false }, log: () => {},
       configForRun: async (id: string) => { asked.push(id); return runConfig; } } as unknown as ServerCore;
-    const services = { activeWriterTasks: new Set<string>(), stability: { loadParked: async () => [] } } as unknown as Services;
+    const services = {
+      resolveIntegrationGate: gateResolverFor(ctx), activeWriterTasks: new Set<string>(), stability: { loadParked: async () => [] } } as unknown as Services;
     await dispatched(ctx, services);
     db.prepare("DELETE FROM lane_pilot_project_settings WHERE project_id=? AND key=?").run(projectId, "hostId");
     expect(loadPrototypeConfig(db, projectId)).toBeNull();
@@ -231,7 +235,8 @@ describe("lane_pilot_update_task", () => {
     createTask(db, { id: taskId, runId, kind: "bb", contract: moved });
     createAttempt(db, { id: "att-1", runId, taskId });
     const ctx = { bb: fakeBb as never, db, state: { disposed: false }, configForRun: async (id: string) => loadPrototypeConfig(db, id), log: () => {} } as unknown as ServerCore;
-    const services = { activeWriterTasks: new Set<string>(), stability: { loadParked: async () => [] } } as unknown as Services;
+    const services = {
+      resolveIntegrationGate: gateResolverFor(ctx), activeWriterTasks: new Set<string>(), stability: { loadParked: async () => [] } } as unknown as Services;
     await dispatched(ctx, services, moved);
     const { updateTask } = createWriterUpdateTask(ctx, services);
     // The PM sends it as it wrote it: from the run folder, with a reference file of another plugin.
@@ -260,6 +265,7 @@ describe("lane_pilot_update_task", () => {
     } as unknown as ServerCore;
 
     const services = {
+      resolveIntegrationGate: gateResolverFor(ctx),
       activeWriterTasks: new Set<string>(),
     } as unknown as Services;
 
@@ -303,7 +309,8 @@ describe("lane_pilot_update_task", () => {
       configForRun: async (id: string) => loadPrototypeConfig(db, id),
         log: () => {},
       } as unknown as ServerCore;
-      const services = { activeWriterTasks: new Set<string>(), stability: { loadParked: async () => [] } } as unknown as Services;
+      const services = {
+      resolveIntegrationGate: gateResolverFor(ctx), activeWriterTasks: new Set<string>(), stability: { loadParked: async () => [] } } as unknown as Services;
       return { updateTask: createWriterUpdateTask(ctx, services).updateTask, calls, ctx, services };
     };
     const update = (updateTask: ReturnType<typeof setup>["updateTask"], task: Partial<TaskV2>) =>
@@ -425,6 +432,7 @@ describe("lane_pilot_update_task", () => {
           ({ task: contract, path: "/ws/worktrees/att-1", environmentId: null }),
       } as unknown as ServerCore;
       const services = {
+      resolveIntegrationGate: gateResolverFor(ctx),
         activeWriterTasks: new Set<string>(options.busy ? [`${runId}:${taskId}`] : []),
         stability: { loadParked: async () => [] },
         startWriterTask: (input: (typeof started)[number]) => { started.push(input); },
@@ -587,7 +595,8 @@ describe("a task blocked by the plan critique before any writer", () => {
     createTask(db, { id: taskId, runId, kind: "bb", contract: refusedTask });
     createAttempt(db, { id: "att-1", runId, taskId });
     const ctx = baseCtx();
-    const services = { activeWriterTasks: new Set<string>(), stability: { loadParked: async () => [] } } as unknown as Services;
+    const services = {
+      resolveIntegrationGate: gateResolverFor(ctx), activeWriterTasks: new Set<string>(), stability: { loadParked: async () => [] } } as unknown as Services;
     const { engine, started, pipelineRunId } = await blockedByCritique(ctx, services);
     expect(getAttempt(db, "att-1")).toMatchObject({ state: "blocked", thread_id: null, reason: "structural_plan_critique_blocked" });
     const writerStage = () => listStageReceipts(db, runId, taskId).find((row) => row.stageId === "writer-agent")?.state;
@@ -619,7 +628,8 @@ describe("a task blocked by the plan critique before any writer", () => {
     createAttempt(db, { id: "att-1", runId, taskId });
     db.prepare("UPDATE lane_pilot_attempt SET state='blocked', reason='structural_plan_critique_blocked', thread_id='thr-w' WHERE id='att-1'").run();
     const ctx = baseCtx();
-    const services = { activeWriterTasks: new Set<string>(), stability: { loadParked: async () => [] } } as unknown as Services;
+    const services = {
+      resolveIntegrationGate: gateResolverFor(ctx), activeWriterTasks: new Set<string>(), stability: { loadParked: async () => [] } } as unknown as Services;
     const res = await createWriterUpdateTask(ctx, services).updateTask({ projectId, runId, pmThreadId, taskId, task: { ...refusedTask, title: "Fixed title" }, plan: "Fixed plan" });
     expect(res).toMatchObject({ ok: false, error: { code: "task_started" } });
     expect((getTask(db, taskId)?.contract as TaskV2).title).toBe("Original title");
@@ -630,7 +640,8 @@ describe("a task blocked by the plan critique before any writer", () => {
     createAttempt(db, { id: "att-1", runId, taskId });
     db.prepare("UPDATE lane_pilot_attempt SET state='blocked', reason='verdict_block:specialist-review: stopped' WHERE id='att-1'").run();
     const ctx = baseCtx();
-    const services = { activeWriterTasks: new Set<string>(), stability: { loadParked: async () => [] } } as unknown as Services;
+    const services = {
+      resolveIntegrationGate: gateResolverFor(ctx), activeWriterTasks: new Set<string>(), stability: { loadParked: async () => [] } } as unknown as Services;
     const res = await createWriterUpdateTask(ctx, services).updateTask({ projectId, runId, pmThreadId, taskId, task: { ...refusedTask, title: "Fixed title" }, plan: "Fixed plan" });
     expect(res).toMatchObject({ ok: false, error: { code: "task_started" } });
   });

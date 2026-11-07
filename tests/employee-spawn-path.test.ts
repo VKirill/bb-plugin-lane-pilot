@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { EMPLOYEES } from "../src/rooms/contracts/server";
-import { employeeView } from "../src/rooms/native-agent/employee-manifest";
+import { employeeView } from "../src/rooms/contracts/employee-manifest";
 import { placeEmployeeOn, affinityHostId } from "../src/rooms/native-agent/employee-place";
 import { roleRowOf, roleRow } from "@lane-pilot/models";
 import { laneSessionOverlayPrompt } from "../src/rooms/native-agent/native-agent-overlay";
 import { roleSpec } from "../src/rooms/workflow/server/workflow-agent";
 import { compileEffectiveMainAgent } from "../src/rooms/native-agent/agent-profile";
-import type { MachineAffinity } from "../src/rooms/native-agent/employee-manifest";
+import type { MachineAffinity } from "../src/rooms/contracts/employee-manifest";
 
 // bb SDK stub: the enrolled hosts are named like the affinities, every host answers a home directory, mkdir always succeeds.
 const HOSTS = [

@@ -7,7 +7,7 @@ import {
 } from "@lane-pilot/run-insights";
 import { taskV2Schema, type TaskV2 } from "../src/rooms/contracts";
 import { lintContract, type PathKind } from "../src/rooms/tasks/server/contract-lint";
-import { ROLE_PROFILES } from "../src/rooms/native-agent/helper-context";
+import { ROLE_PROFILES } from "../src/rooms/contracts/helper-context";
 import { MECHANISMS, applyJevForms, buildMechanismTask, jevPickForms, lintBlockedCommand, lintMigrationOrder, lintPathRule, lintVerificationRule, listPromotions, mechanismFor, promotionRoute, promotionWhy, proposePromotions, ruleMechanismPlan, runRulesCli } from "../src/rooms/rule-forms";
 
 const repo = "/tmp/lane-pilot-repo";

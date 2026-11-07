@@ -121,7 +121,7 @@ type Secrets = {
   save(name: string, value: string, note?: { service?: string; description?: string }): Promise<void>;
 };
 
-type CompiledMainAgent = {
+export type CompiledMainAgent = {
   id: string;
   sourceVersion: string;
   sourceHash: string;
@@ -132,7 +132,7 @@ type CompiledMainAgent = {
   skills?: string[];
   mcpServers?: string[];
 };
-type CustomAgentMeta = {
+export type CustomAgentMeta = {
   displayName?: string;
   summary?: string;
   model?: string;
@@ -146,7 +146,7 @@ type CustomAgentMeta = {
   coreSkills?: string[];
   skillSections?: string[];
 };
-type StoredAgentRow = {
+export type StoredAgentRow = {
   prompt?: string;
   description?: string;
   compiled?: CompiledMainAgent;

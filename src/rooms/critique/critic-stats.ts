@@ -1,4 +1,4 @@
-import { failureClass } from "../runs";
+import { failureClass } from "../contracts/failure-class";
 import { statsEpochMs, STATS_EPOCH_SETTING } from "../storage";
 import { taskStem } from "../tasks";
 

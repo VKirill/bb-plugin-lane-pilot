@@ -1,3 +1,4 @@
+import type { ProjectLifeTaskSummary } from "../contracts/project-life";
 import { PROVIDER_CAPABILITIES, resolveRoleModel } from "@lane-pilot/models";
 import { checkBrief, renderBrief } from "../brief";
 
@@ -19,8 +20,6 @@ export function projectLifeWriterSelection(settings: Record<string, unknown>): {
 
 const ALLOWED_EXACT_PATHS = new Set([".agents/PROGRESS.md", ".agents/CHANGELOG.md"]);
 const ALLOWED_PATH_PREFIXES = [".agents/plans/", ".agents/todos/"];
-
-export type ProjectLifeTaskSummary = { id: string; title: string; objective: string; acceptanceSummary: string };
 
 export type ProjectLifeFinalMessage = { status: "updated" | "no_change"; commit: string | null; files: string[] };
 

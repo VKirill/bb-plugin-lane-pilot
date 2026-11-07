@@ -1,7 +1,8 @@
 import { getRun, getRunWriterHost, listOpenAttempts } from "../../storage";
 import { threadSignalHub } from "@lane-pilot/thread-observe";
 import { loadBlockedBy, saveBlockedBy, type BlockedBy } from "../../runs/server";
-import { closeAbandonedRuns, pluginStopped } from "../../runs/server";
+import { closeAbandonedRuns } from "../../runs/server"
+import { pluginStopped } from "../../contracts/errors";
 import type { ServerCore } from "../../contracts/server";
 import { loadFollowUp, markFollowUpCancelled } from "../../writer/server";
 import { valueAt } from "@lane-pilot/kit";

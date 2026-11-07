@@ -1,3 +1,4 @@
+import type { ReconcileResult } from "../contracts/stability-api";
 export type IdempotencyTriple = { lanePilotRunId:string; lanePilotTaskId:string; attemptId:string };
 export type HolderIdentity = { lanePilotRunId:string; lanePilotTaskId:string; workspaceAttemptId:string };
 export type ThreadSummary = { id:string };
@@ -34,11 +35,6 @@ export function reconcileCursor(db: CursorDb, attemptId: string, kind: "writer" 
 
 type ScanOptions = { limit?:number; maxPages?:number; cursor?:ReconcileCursor };
 
-export type ReconcileResult =
-  | { kind:"found"; threadId:string }
-  | { kind:"not_found" }
-  | { kind:"blocked"; reason:"ambiguous"|"page_cap" }
-  | { kind:"error"; message:string };
 
 function matches(value: Record<string,unknown>, key: IdempotencyTriple): boolean {
   return value.lanePilotRunId === key.lanePilotRunId

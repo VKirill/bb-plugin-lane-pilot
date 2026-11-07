@@ -8,7 +8,7 @@ import { pathClassByRules } from "@lane-pilot/workflow-engine";
 import type { PathRisk, PathSize } from "@lane-pilot/workflow-engine";
 import { intakeByRules, intakeJudgment, intakeTitle, isMachineMessage, pathClassJudgment, processHint, publishedHint, railsRefusal, type IntakeKind, type ServiceKind } from "../intake";
 import { cancelAttemptById } from "../../runs/server";
-import { OPEN_ATTEMPT_STATES } from "../../state-machine";
+import { OPEN_ATTEMPT_STATES } from "../../contracts/state-machine";
 import { sendServiceMessage } from "../../relay/server";
 import type { Phase } from "../logic";
 

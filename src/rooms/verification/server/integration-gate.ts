@@ -1,3 +1,5 @@
+import { parseIntegrationGateSettings } from "../../contracts/integration-gate";
+import type { IntegrationGateSettings, GateWhen } from "../../contracts/integration-gate";
 import type { TaskV2, PrototypeConfig } from "../../contracts";
 import type { LanePilotDatabase, StageReceiptRow } from "../../storage";
 import { getRun, getRunSettingsScopes, getTask, listStageReceipts, loadProjectSettings, transitionAttempt } from "../../storage";
@@ -5,9 +7,10 @@ import { recordGateEvaluation } from "../../runs/server/stage-records";
 import { bestEffort, stringAt, stripAnsi } from "@lane-pilot/kit";
 import type { ServerCore } from "../../contracts/server";
 
-import { isEnvironmentCheckFailure } from "../../runs";
+import { isEnvironmentCheckFailure } from "../../contracts/failure-class";
 import { isMainfixTask, readCheckRun } from "../../tasks";
-import { gateLabel, gateResolverFor, type ResolvedGate } from "./gate-detect";
+import { gateLabel, gateResolverFor } from "./gate-detect"
+import { type ResolvedGate } from "../../contracts/integration-gate";
 import { continuesEpisode, type GateEpisode } from "./gate-episode";
 import { closeOwnerItemsByPrefix, postOwnerItem } from "../../owner-waiting";
 import type { LeadRoadApi } from "../../contracts";
@@ -25,27 +28,7 @@ interface Services {
   dispatchWriter: DispatchWriter;
 }
 
-export type GateWhen = "queue_drained" | "every_n";
 
-export type IntegrationGateSettings = {
-  /** The explicit command; null when empty (the gate is then detected) or `off`. */
-  gateCommand: string | null;
-  /** `integration.gate_command` is `off`: no gate for the project, detected or not. */
-  gateOff: boolean;
-  gateWhen: GateWhen;
-  gateEvery: number;
-};
-
-export function parseIntegrationGateSettings(settings: Record<string, unknown>): IntegrationGateSettings {
-  const rawCommand = typeof settings["integration.gate_command"] === "string" ? settings["integration.gate_command"].trim() : "";
-  const gateOff = rawCommand.toLowerCase() === "off";
-  const gateCommand = rawCommand && !gateOff ? rawCommand : null;
-  const gateWhenRaw = settings["integration.gate_when"];
-  const gateWhen: GateWhen = gateWhenRaw === "every_n" ? "every_n" : "queue_drained";
-  const gateEveryRaw = Number(settings["integration.gate_every"]);
-  const gateEvery = Number.isFinite(gateEveryRaw) && gateEveryRaw > 0 ? Math.floor(gateEveryRaw) : 5;
-  return { gateCommand, gateOff, gateWhen, gateEvery };
-}
 
 export type FailingGateCheck = {
   command: string;

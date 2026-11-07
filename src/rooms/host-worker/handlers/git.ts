@@ -2,7 +2,7 @@ import { homedir } from "node:os";
 import { basename, join } from "node:path";
 import type { ExperimentalHostRpcHandlers } from "@get-bb/plugin-sdk";
 import { hostContract } from "../../contracts";
-import { ENVIRONMENT_REASON } from "../../runs";
+import { ENVIRONMENT_REASON } from "../../contracts/failure-class";
 import { readCheckRun } from "../../tasks/server";
 import { sweepLaneWorktrees } from "../../verification";
 import { createWorktree, integrateWorktree, mergeInfo, prepareWorktree, removeLaneWorktree, revertCommitsInWorktree, syncWorktree, snapshotWorktree, worktreeState, type ReplayCheck, type ReplayCheckOutcome } from "../../verification";

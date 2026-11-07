@@ -1,20 +1,21 @@
-import { createMergeIntentRecovery } from "../../verification/server";
 import { closeOrphanWriterStages } from "./stage-records";
 import type { ServerCore } from "../../contracts/server";
 
-import type { ReconcileApi } from "../../stability/server/reconcile";
-import type { StabilityApi } from "../../stability/server/stability";
+import type { ResumeOrphansPort } from "../../contracts/stability-api";
+import type { StabilityPort } from "../../contracts/stability-api";
 import type { WorkflowEngineApi } from "../../platform/server";
 import type { WriterStateApi } from "../../platform/server";
 
-import type { DocsNightlyApi } from "../../docs/server/docs-nightly";
+import type { DocsNightlyPort } from "../../contracts/docs-nightly-api";
+import type { MergeIntentsApi } from "../../contracts/merge-intents";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {
   activeWriterTasks: WriterStateApi["activeWriterTasks"];
-  docsPlaces: DocsNightlyApi["docsPlaces"];
-  resumeOrphans: ReconcileApi["resumeOrphans"];
-  stability: StabilityApi;
+  docsPlaces: DocsNightlyPort["docsPlaces"];
+  resumeOrphans: ResumeOrphansPort["resumeOrphans"];
+  stability: StabilityPort;
+  recoverMergeIntents: MergeIntentsApi["recoverMergeIntents"];
   startAfterAcceptance: WorkflowEngineApi["startAfterAcceptance"];
   workflowEngine: WorkflowEngineApi["workflowEngine"];
 }
@@ -43,15 +44,14 @@ type StepRunner = (name:string, work:() => Promise<unknown> | unknown) => Promis
  */
 export function createTaskReconcile(ctx:ServerCore, services:Services) {
   const { bb, db } = ctx;
-  const intents = createMergeIntentRecovery(ctx, services);
-
+  
   async function reconcileTasks(options:{ phase:ReconcilePhase; step?:StepRunner; afterResume?:() => Promise<unknown> | unknown; now?:number }):Promise<void> {
     const startup = options.phase === "startup";
     const step:StepRunner = options.step ?? (async (name, work) => {
       if (ctx.isDisposed()) return;
       try { await work(); } catch (cause) { bb.log.warn(`Lane Pilot ${name} skipped: ${cause instanceof Error ? cause.message : String(cause)}`); }
     });
-    await step("merge intents", () => intents.recoverMergeIntents({ now:options.now, graceMs:startup ? 0 : PERIODIC_INTENT_GRACE_MS }));
+    await step("merge intents", () => services.recoverMergeIntents({ now:options.now, graceMs:startup ? 0 : PERIODIC_INTENT_GRACE_MS }));
     if (startup) {
       await step("resume on start", () => services.resumeOrphans());
       if (options.afterResume) await step("start-up sweeps", options.afterResume);
@@ -68,7 +68,7 @@ export function createTaskReconcile(ctx:ServerCore, services:Services) {
     });
   }
 
-  return { reconcileTasks, recoverMergeIntents:intents.recoverMergeIntents };
+  return { reconcileTasks, recoverMergeIntents:services.recoverMergeIntents };
 }
 
 export type TaskReconcile = ReturnType<typeof createTaskReconcile>;

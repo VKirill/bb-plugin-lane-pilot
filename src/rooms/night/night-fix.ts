@@ -1,5 +1,5 @@
 import { posix } from "node:path";
-import { findUnownedChanges, type OwnershipTask } from "../verification";
+import { findUnownedChanges, type OwnershipTask } from "../contracts/ownership";
 import type { NightReviewResult } from "./night";
 
 export type NightFixPlan = { findings:NightReviewResult["findings"]; paths:string[] };

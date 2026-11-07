@@ -1,4 +1,4 @@
-import { taskFamily } from "../../runs";
+import { taskFamily } from "@lane-pilot/contracts";
 import { runOnHost } from "@lane-pilot/host-calls";
 import { bestEffort, isNotFound, orMiss, parseJsonOr } from "@lane-pilot/kit";
 import { readWires, wiresCommand } from "../../wires";

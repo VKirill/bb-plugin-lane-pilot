@@ -1,6 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it, vi } from "vitest";
-import { failureClass, failureFingerprint } from "../src/rooms/runs/failure-class";
+import { failureClass, failureFingerprint } from "../src/rooms/contracts/failure-class";
 import { countAttempts, countChargedAttempts, createAttempt, createRun, openDatabase, setRunState, transitionAttempt } from "../src/rooms/plugin-db";
 import { createStability } from "../src/rooms/stability/server/stability";
 
@@ -255,7 +255,7 @@ describe("an owner's stop of a run", () => {
 });
 
 it("never redoes a task whose finished work only waits for uncommitted edits in main", async () => {
-  const { failureClass } = await import("../src/rooms/runs/failure-class");
+  const { failureClass } = await import("../src/rooms/contracts/failure-class");
   expect(failureClass("blocked", "merge_blocked: base checkout has uncommitted changes in files this task changes: host/rpc.ts")).toBe("contract");
 });
 

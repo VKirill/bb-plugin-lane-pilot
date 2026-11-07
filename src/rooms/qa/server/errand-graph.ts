@@ -11,18 +11,18 @@ import { fenceOutside, findThreadsByMetadata, keyedSpawnSupported, registerObser
 
 import type { ServerCore } from "../../contracts/server";
 import type { ErrandCore, ErrandSnapshot } from "./errands";
-import type { ExtraAccess } from "../../native-agent";
+import type { ExtraAccess } from "../../contracts/helper-context";
 import { loadProjectSettings } from "../../storage";
 import { errandSpawnOf, pendingErrandEpisode } from "../../errands";
 import { ERRAND_KINDS, classifyErrand } from "../../schedule";
 
 import type { WorkflowEngineApi } from "../../workflow/server/workflow";
 
-import type { DocsNightlyApi } from "../../docs/server/docs-nightly";
+import type { DocsNightlyPort } from "../../contracts/docs-nightly-api";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {
-  docsPlaces: DocsNightlyApi["docsPlaces"];
+  docsPlaces: DocsNightlyPort["docsPlaces"];
   workflowCatalog: WorkflowEngineApi["workflowCatalog"];
   workflowEngine: WorkflowEngineApi["workflowEngine"];
 }

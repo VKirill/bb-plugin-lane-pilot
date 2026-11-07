@@ -1,6 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { failureIntervention, MAST_OF_FAILURE } from "../src/rooms/runs/failure-class";
+import { failureIntervention, MAST_OF_FAILURE } from "../src/rooms/contracts/failure-class";
 import { failureClassLive, failureClassReport } from "../src/rooms/runs/failure-class-model";
 import { insertReceipt } from "@lane-pilot/jev";
 import { migrations, openDatabase } from "../src/rooms/plugin-db";

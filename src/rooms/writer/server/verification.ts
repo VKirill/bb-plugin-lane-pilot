@@ -1,7 +1,7 @@
 import { IntegrationGateRunner } from "../../verification/server";
 import { gateResolverFor } from "../../verification/server";
 import { getRunSettingsScopes, listOpenAttempts, loadProjectSettings } from "../../storage";
-import { failureFingerprint, isEnvironmentCheckFailure } from "../../runs";
+import { failureFingerprint, isEnvironmentCheckFailure } from "../../contracts/failure-class";
 import { isMainfixTask } from "../../tasks";
 import { readCheckRun } from "../../tasks/server";
 import { postOwnerItem } from "../../owner-waiting";
@@ -175,7 +175,7 @@ export function mountVerificationAttemptFinished(ctx: ServerCore, services: Serv
 }
 
 // parseIntegrationGateSettings is re-exported here under a short alias to keep `gateFor` readable.
-import { parseIntegrationGateSettings as parseGate } from "../../verification/server";
+import { parseIntegrationGateSettings as parseGate } from "../../contracts/integration-gate";
 
 /**
  * The follow-up task that makes main green after a merge. It keeps the merged task's scope and checks but not its

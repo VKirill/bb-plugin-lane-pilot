@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { parseRequiredSessionPolicyCapability, requiredSessionPolicySpawnBinding, type HelperPolicySnapshot } from "../src/rooms/native-agent/helper-context";
+import { parseRequiredSessionPolicyCapability, requiredSessionPolicySpawnBinding, type HelperPolicySnapshot } from "../src/rooms/contracts/helper-context";
 import { coreHostsRequiredProvider } from "../src/rooms/runs/server";
-import { classifyFailure } from "../src/rooms/runs/failure-class";
+import { warnAdvertisementDiff } from "../src/rooms/runs/server/run-routing";
+import { classifyFailure } from "../src/rooms/contracts/failure-class";
 
 const ROLES_SNAPSHOT: HelperPolicySnapshot = {
   schemaVersion: 1, mode: "roles",
@@ -69,7 +70,7 @@ describe("the VK core required-policy advertisement", () => {
   });
 
   it("a drifted provider row is flagged once per process, and only that provider loses narrowing", async () => {
-    const { requiredSessionPolicySpawnBinding, providerPolicyRows } = await import("../src/rooms/native-agent/helper-context");
+    const { requiredSessionPolicySpawnBinding, providerPolicyRows } = await import("../src/rooms/contracts/helper-context");
     const drifted = acpRow({ codex: ["bbPlugins"] }, {}, ["devin", "zcode", "acp-antigravity"]);
     const advertised = parseRequiredSessionPolicyCapability({ experimental_vkRequiredSessionPolicy: () => drifted })!;
     expect(advertised).not.toBeNull();
@@ -77,7 +78,7 @@ describe("the VK core required-policy advertisement", () => {
     expect(rows.ok).toBe(false);
     if (!rows.ok) expect(rows.reason).toContain("providerGroups");
     const warnings: string[] = [];
-    const bind = () => requiredSessionPolicySpawnBinding({ capability: "required", advertised, snapshot: ROLES_SNAPSHOT, providerId: "codex", role: "auditor", log: (line) => warnings.push(line) });
+    const bind = () => requiredSessionPolicySpawnBinding({ capability: "required", advertised, snapshot: ROLES_SNAPSHOT, providerId: "codex", role: "auditor", warn: (id, reason) => warnAdvertisementDiff(id, reason, (line) => warnings.push(line)) });
     expect(bind()).toEqual({});
     expect(bind()).toEqual({}); // the same provider warns once, not per spawn
     expect(warnings).toEqual(["core advertisement for codex differs: providerGroups [\"bbPlugins\"]"]);
@@ -87,7 +88,7 @@ describe("the VK core required-policy advertisement", () => {
   });
 
   it("binds the role profile of a helper on Antigravity once the core lists it", async () => {
-    const { requiredSessionPolicySpawnBinding } = await import("../src/rooms/native-agent/helper-context");
+    const { requiredSessionPolicySpawnBinding } = await import("../src/rooms/contracts/helper-context");
     const snapshot = { schemaVersion: 1 as const, mode: "roles" as const, settings: { mode: "roles" as const, skills: [], mcpServers: [], bbPlugins: [], nativePlugins: [] }, parentRequired: false, parentPolicy: null, policy: null };
     const bind = (core: unknown) => requiredSessionPolicySpawnBinding({ capability: "required", advertised: parseRequiredSessionPolicyCapability({ experimental_vkRequiredSessionPolicy: () => core }), snapshot, providerId: "acp-antigravity", role: "auditor" });
     expect(bind(VK_CORE_HUB)).toEqual({});

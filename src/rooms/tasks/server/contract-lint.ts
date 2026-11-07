@@ -2,18 +2,19 @@ import { birthFindings, blockingClass, checkProgram, ownerWordFindings } from ".
 import { dirname, resolve } from "node:path";
 import { TASK_KINDS, type TaskV2 } from "../../contracts";
 import { fileAllowedByOwns, fileBlockedByNeverTouch, matchOwnsPath, ownsPathsOverlap } from "@lane-pilot/kit";
-import { findSandboxUnsafeMissingExcludes, runnerFilterArgs, runsWholeSuite } from "../../critique";
+import { findSandboxUnsafeMissingExcludes, runnerFilterArgs, runsWholeSuite } from "../../contracts/check-commands";
 import { NO_RED_KINDS } from "../../contracts";
 import { parseReadFirstHints } from "../read-first";
 import { maskedExitReason, passWithNoTestsReason } from "./lint-exit-status";
-import { SUBJECTIVE_WORDS, browserQaRequired } from "../../critique";
-import type { QualityMode } from "../../critique";
+import { SUBJECTIVE_WORDS } from "../../contracts/review-vocabulary"
+import { browserQaRequired } from "../../contracts/quality-mode";
+import type { QualityMode } from "../../contracts/quality-mode";
 import { isMainfixTask, isOutputPath, unownedExpectedOutputs } from "../validate-output";
 import { mapVerificationCwd } from "../verification-cwd";
 import { SANDBOX_OWN_ENV } from "../../contracts";
-import { gluedCheckCommand } from "../../verification/server";
+import { gluedCheckCommand } from "../../contracts/check-commands";
 import type { CatalogEntry, SecretCheck } from "../../secrets/server";
-import { safeRelative, validateOwnershipContract } from "../../verification";
+import { safeRelative, validateOwnershipContract } from "../../contracts/ownership";
 import { CHECK_HISTORY_MIN_RUNS, p95 } from "../check-history";
 
 /** One problem in a task contract, with the concrete fix; `data` rides along in the answer to the PM. */

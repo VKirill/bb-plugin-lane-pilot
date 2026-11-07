@@ -5,8 +5,8 @@ import { bbServiceTier, listedServiceTier, writerExecutionSelection } from "@lan
 import { sha256 } from "../../tasks";
 import { extractModelJson } from "../../critique";
 import { docsInputHash, docsMaintenancePrompt, docsSelection, parseDocsSettings, selectDocsPages, validateDocsEdits } from "../docs";
-import type { DocsPage } from "../docs";
-import { boundedAgentName } from "../../critique";
+import type { DocsPage } from "../../contracts/docs-page";
+import { boundedAgentName } from "../../contracts/review-vocabulary";
 import { DocsChildSnapshot, docsChildSnapshot, docsResultObject, resolveDocsSnapshotPageCap } from "../../runs/server";
 import { modelCatalogOf, resolveSpawnModel, spawnUsageOf, warmSpawnUsage } from "../../platform/server";
 import { configuredSetting } from "../../contracts/server";
@@ -18,13 +18,13 @@ import { observeStageChild } from "@lane-pilot/thread-observe";
 import type { ServerCore } from "../../contracts/server";
 
 import type { DocsNightlyApi } from "./docs-nightly";
-import type { StageChildrenApi } from "../../qa/server/children";
+import type { StageChildrenPort } from "../../contracts/stage-children-api";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {
   stageHelperSettings: StageHelperSettings;
   docsVerdict: DocsNightlyApi["docsVerdict"];
-  reconcileDocsChild: StageChildrenApi["reconcileDocsChild"];
+  reconcileDocsChild: StageChildrenPort["reconcileDocsChild"];
 }
 
 

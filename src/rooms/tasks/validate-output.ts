@@ -1,10 +1,10 @@
 import { fileAllowedByOwns, fileBlockedByNeverTouch } from "@lane-pilot/kit";
-import { ENVIRONMENT_REASON, NO_ANSWER_REASON, isEnvironmentCheckFailure } from "../runs";
-import type { FailureCode } from "../platform";
+import { ENVIRONMENT_REASON, NO_ANSWER_REASON, isEnvironmentCheckFailure } from "../contracts/failure-class";
+import type { FailureCode } from "../contracts/failure-class";
 import { cleanCheckOutput } from "@lane-pilot/kit";
 import type { TaskV2 } from "../contracts";
-import type { FlakyEvidence } from "../verification";
-import { dropSatellites } from "../verification/ownership";
+import type { FlakyEvidence } from "../contracts/machine-pressure";
+import { dropSatellites } from "../contracts/ownership";
 import { trustedToolingHint } from "./trusted-tooling";
 
 export function isTaskFolderFile(path:string):boolean {

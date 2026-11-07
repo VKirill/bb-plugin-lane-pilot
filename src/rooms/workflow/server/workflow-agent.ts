@@ -6,8 +6,10 @@ import { jev } from "@lane-pilot/jev";
 import { stepTrivialJudgment } from "@lane-pilot/jev/judgments/step-trivial";
 ;
 import { MAIN_AGENT_ID, isCustomAgentId } from "../../contracts/server";
-import { ROLE_PROFILES, compileEffectiveMainAgent, employeeView, isEmployeeSpecialist, mentionContext, placeEmployeeOn } from "../../native-agent";
-import type { ExtraAccess, HelperRole } from "../../native-agent";
+import { compileEffectiveMainAgent, mentionContext, placeEmployeeOn } from "../../native-agent"
+import { ROLE_PROFILES } from "../../contracts/helper-context"
+import { employeeView, isEmployeeSpecialist } from "../../contracts/employee-manifest";
+import type { ExtraAccess, HelperRole } from "../../contracts/helper-context";
 import { storeNativeSelection } from "../../native-agent/server";
 import { LEAD_ID } from "../../contracts";
 import {bestEffort, isNotFound, orMiss, outputText, redactKnown} from "@lane-pilot/kit";

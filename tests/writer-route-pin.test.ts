@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { failureClassCooldownMs } from "../src/rooms/runs/failure-class";
+import { failureClassCooldownMs } from "../src/rooms/contracts/failure-class";
 import { loadWriterPin, noteWriterPair, writerPinKey } from "../src/rooms/writer/writer-model-pin";
 import { writerRouteKey, type WriterRouteDecision } from "../src/rooms/writer/writer-model-pick";
 

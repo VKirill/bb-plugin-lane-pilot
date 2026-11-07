@@ -1,15 +1,12 @@
+import { pickableAgent } from "../contracts/agent-picker";
+import type { AgentListItem } from "../contracts/agent-picker";
 import { z } from "zod";
-import {
-  agentKind,
-  compileEffectiveMainAgent,
-  compileMainAgentProfile,
-  type AgentKind,
-  type CustomAgentMeta,
-  type StoredAgentRow,
-} from "./agent-profile";
+import { compileEffectiveMainAgent, compileMainAgentProfile, type CustomAgentMeta, type StoredAgentRow } from "./agent-profile"
+import { agentKind } from "./agent-profile"
+import { type AgentKind } from "../contracts/agent-picker";
 import { machineAffinitySchema } from "@lane-pilot/contracts";
 import { isCustomAgentId, isLanePmAgent, isReservedAgentId, isStockProfileId, MAIN_AGENT_ID } from "../contracts/server";
-import { employeeView } from "./employee-manifest";
+import { employeeView } from "../contracts/employee-manifest";
 import { parseAgentMarkdown, splitClaudeToolList } from "./native-agent-overlay";
 
 /**
@@ -62,37 +59,8 @@ export const updateAgentInputSchema = z.object({
 }).strict();
 export type UpdateAgentInput = z.infer<typeof updateAgentInputSchema>;
 
-export type AgentListItem = {
-  id: string;
-  /** The label pickers show (for a bundled agent, English; the screens translate it by id). Same value as `displayName`. */
-  description: string;
-  displayName: string;
-  /** What the agent is for, when its owner wrote it. */
-  summary?: string;
-  kind: AgentKind;
-  custom: boolean;
-  prompt: string;
-  sourceHash: string;
-  sourceVersion: string;
-  edited: boolean;
-  tools?: string[];
-  disallowedTools?: string[];
-  skills?: string[];
-  mcpServers?: string[];
-  model?: string;
-  effort?: string;
-  domain?: string;
-  machineAffinity?: string;
-  coreSkills?: string[];
-  skillSections?: string[];
-  deliverables?: string[];
-  validator?: string;
-};
 
 /** The part of a list item a picker needs (the composer popover, the PM's team tab): no prompt, no resources. */
-export function pickableAgent(row: AgentListItem): Pick<AgentListItem, "id" | "description" | "displayName" | "summary" | "kind" | "custom" | "domain"> {
-  return { id: row.id, description: row.description, displayName: row.displayName, ...(row.summary ? { summary: row.summary } : {}), kind: row.kind, custom: row.custom, ...(row.domain ? { domain: row.domain } : {}) };
-}
 
 export type AgentFailure =
   | "invalid_agent"

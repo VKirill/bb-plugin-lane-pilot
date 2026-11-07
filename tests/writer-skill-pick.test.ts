@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { TaskV2 } from "../src/rooms/contracts";
-import { roleProfilePolicy } from "../src/rooms/native-agent/helper-context";
+import { roleProfilePolicy } from "../src/rooms/contracts/helper-context";
 import { createWriterSkillPick, recordedWriterSkills, skillPickOn } from "../src/rooms/writer/server/skill-pick";
 
 const LISTED = [

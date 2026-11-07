@@ -6,7 +6,7 @@ import {
   nativeSelectionReady,
   spawnEnvironmentFromSelection,
   type ComposerSelectionSnapshot,
-} from "../src/rooms/native-agent/composer-selection";
+} from "../src/rooms/contracts/composer-selection";
 import { useNativeComposerSelection } from "../src/rooms/native-agent/ui/composer-selection-hook";
 
 const request = { type: "reuse" as const, environmentId: "env_1" };

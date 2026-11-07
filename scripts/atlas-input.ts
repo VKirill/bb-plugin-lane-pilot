@@ -4,7 +4,7 @@ import { STAGE_PROOF } from "@lane-pilot/contracts";
 import { COVERAGE } from "../src/rooms/coverage/registry";
 import { rpcContract } from "../src/rooms/contracts";
 import { MEMORY_PATHS } from "../src/rooms/memory/memory-paths";
-import { TRANSITION_TABLE } from "../src/rooms/runs/state-machine";
+import { TRANSITION_TABLE } from "../src/rooms/contracts/state-machine";
 import { SETTING_CATALOG } from "../packages/settings-catalog/src/channels";
 import type { AtlasInput } from "../src/rooms/atlas";
 

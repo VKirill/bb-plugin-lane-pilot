@@ -1,6 +1,8 @@
 import { getAttempt } from "../../storage";
 import { handleNativeDispatch, mentionContext, nativeContributedEnv } from "../../native-agent";
-import { NATIVE_MENTION_PROVIDER, nativeSelectionKey, nativeSelectionSchema, nativeThreadKey } from "../../native-agent";
+import { nativeSelectionKey, nativeThreadKey } from "../../native-agent"
+import { NATIVE_MENTION_PROVIDER } from "../../contracts/native-agent-id"
+import { nativeSelectionSchema } from "../../contracts/native-selection";
 import { createClaudeGuardEnv } from "../../native-agent";
 import { attachStreamRetry, droppedStreamDetail } from "../../writer";
 import { createPmSkillTraceEnv, createRoleMarkerEnv, mountBbShim } from "../../native-agent/server";

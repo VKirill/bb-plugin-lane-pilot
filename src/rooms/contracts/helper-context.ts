@@ -384,15 +384,6 @@ export function providerPolicyRows(advertised: RequiredSessionAdvertisement, pro
   return { ok: true, groups, switches };
 }
 
-/** One warning per provider per process (the spawn path is hit for every helper start). */
-const advertisedDiffLogged = new Set<string>();
-
-function warnAdvertisementDiff(providerId: string, reason: string, log: ((line: string) => void) | undefined): void {
-  if (!log || advertisedDiffLogged.has(providerId)) return;
-  advertisedDiffLogged.add(providerId);
-  log(`core advertisement for ${providerId} differs: ${reason}`);
-}
-
 export function parseRequiredSessionPolicyCapability(agents: {
   experimental_vkRequiredSessionPolicy?: unknown;
 }): RequiredSessionAdvertisement | null {
@@ -452,7 +443,7 @@ export function requiredSessionPolicySpawnBinding(input: {
   providerId?: string;
   role?: HelperRole;
   extra?: ExtraAccess;
-  log?: (line: string) => void;
+  warn?: (providerId: string, reason: string) => void;
 }): { experimental_vkRequiredSessionPolicy: RequiredSessionPolicySpawn } | Record<string, never> {
   if (input.snapshot.mode === "inherit") return {};
   if (input.snapshot.mode === "roles") {
@@ -461,7 +452,7 @@ export function requiredSessionPolicySpawnBinding(input: {
     if (!input.role || input.capability !== "required" || !input.advertised || !input.providerId) return {};
     const rows = providerPolicyRows(input.advertised, input.providerId);
     if (!rows.ok) {
-      if (rows.advertised) warnAdvertisementDiff(input.providerId, rows.reason, input.log);
+      if (rows.advertised) input.warn?.(input.providerId, rows.reason);
       return {};
     }
     return { experimental_vkRequiredSessionPolicy: { version: 1, policy: spawnPolicyForProvider(roleProfilePolicy(input.role, input.snapshot.settings.roleAccess?.[input.role], input.extra), rows.groups, rows.switches, true) } };
@@ -472,7 +463,7 @@ export function requiredSessionPolicySpawnBinding(input: {
   if (!input.providerId) throw new Error("helper_context_provider_required");
   const rows = providerPolicyRows(input.advertised, input.providerId);
   if (!rows.ok) {
-    if (rows.advertised) warnAdvertisementDiff(input.providerId, rows.reason, input.log);
+    if (rows.advertised) input.warn?.(input.providerId, rows.reason);
     throw new Error(`helper_context_unsupported_provider:${input.providerId}`);
   }
   const policy = spawnPolicyForProvider(input.snapshot.policy ?? {}, rows.groups, rows.switches);

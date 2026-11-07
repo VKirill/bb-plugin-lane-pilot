@@ -3,7 +3,7 @@ import { costUsd, priceFor, modelTier, WRITER_PROFILES } from "@lane-pilot/model
 import type { ModelTier } from "@lane-pilot/models";
 import { STAGE_PROOF } from "../../tasks";
 import { billedFrom, parseBreakdown } from "../token-math";
-import { isOpenAttemptState } from "../../state-machine";
+import { isOpenAttemptState } from "../../contracts/state-machine";
 
 /**
  * What an attempt cost and how far it got, per attempt, with an honest «not measured» (P0-2 of the SMA plan).

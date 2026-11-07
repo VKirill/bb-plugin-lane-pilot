@@ -1,7 +1,9 @@
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
 import { SCHEDULE_ERRAND_DEFAULT_KEY } from "../../../schedule";
-import { ACCESS_GROUPS, ACCESS_SWITCHES, CORE_PROVIDER_GROUPS, HELPER_ROLES, MANDATORY_BB_PLUGINS, MANDATORY_MCP_SERVERS, effectiveGroup, effectiveSwitch, parseHelperContextSettings, parseRoleAccess, roleAccessKey } from "../../../native-agent";
-import { detectCompiledMainAgentCapability, pickableAgent } from "../../../native-agent";
+import { ACCESS_GROUPS, ACCESS_SWITCHES, CORE_PROVIDER_GROUPS, HELPER_ROLES, MANDATORY_BB_PLUGINS, MANDATORY_MCP_SERVERS, effectiveGroup, effectiveSwitch, parseHelperContextSettings, parseRoleAccess, roleAccessKey } from "../../../contracts/helper-context";
+import { detectCompiledMainAgentCapability } from "../../../native-agent";
+import { pickableAgent } from "../../../contracts/agent-picker";
+import { buildCliInvocation } from "../../../writer";
 import type { BuildCliInvocation } from "../../../platform/server";
 import { cliReceiptAttemptKey, cliReceiptRunKey } from "../../../runs";
 import { casResetSettings, casUpsertSetting, casUpsertSettings, getReasoningTrace, countStageReceipts, getSettingVersions, getStageReceiptResult, listOwnSettingLevels, listRunsPage, listSettingRows, listStageReceiptSummaries, loadProjectSettings, loadPrototypeConfig, removeOwnSettings, sectionBindingId } from "../../../storage";

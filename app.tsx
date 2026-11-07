@@ -9,7 +9,8 @@ import { CouncilPage } from "./src/rooms/council/ui";
 import { CockpitPage } from "./src/rooms/cockpit/ui";
 import { ComposerAgentBadge } from "./src/rooms/native-agent/ui";
 import { EnableLanePilotAction } from "./src/rooms/native-agent/ui";
-import { HELPER_PANEL_ACTION, HelperThreadPanel, useHelperThreadIndex } from "./src/rooms/native-agent/ui";
+import { HelperThreadPanel, useHelperThreadIndex } from "./src/rooms/native-agent/ui";
+import { HELPER_PANEL_ACTION } from "./src/rooms/contracts/agent-picker";
 import { RUN_CARD_DIRECTIVE, RunCardDirective, ThreadLive } from "./src/rooms/runs/ui";
 import { bindThreadRowStatus } from "./src/rooms/runs/ui";
 

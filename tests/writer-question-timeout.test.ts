@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { PrototypeConfig, TaskV2 } from "../src/rooms/contracts";
 import { createCore } from "../src/rooms/core/server/core";
 import type { Services } from "../server";
-import { classifyFailure } from "../src/rooms/runs/failure-class";
+import { classifyFailure } from "../src/rooms/contracts/failure-class";
 import { recordStage } from "../src/rooms/runs/server/stage-records";
 import { countChargedAttempts, createAttempt, createRun, createTask, getAttempt, listUnansweredWriterQuestions, openDatabase, savePrototypeConfig, saveProjectSetting, saveTaskPlan, setRunThread, transitionAttempt } from "../src/rooms/plugin-db";
 import { createWriterFinish } from "../src/rooms/writer/server/finish";

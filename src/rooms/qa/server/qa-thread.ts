@@ -5,10 +5,10 @@ import { spawnTextId } from "../../platform/server";
 import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server";
 import { bestEffort, outputText, redactKnownDeep } from "@lane-pilot/kit";
 import { stringAt } from "@lane-pilot/kit";
-import { FRONTEND_VERIFY_METHOD } from "../../critique";
-import { qaStateToStatus, settleVerdict, verdictSchema, verdictSummary } from "../../critique";
+import { FRONTEND_VERIFY_METHOD } from "../../contracts/review-vocabulary";
+import { qaStateToStatus, settleVerdict, verdictSchema, verdictSummary } from "@lane-pilot/workflow-engine";
 import { checkBrief, renderBrief } from "../../brief";
-import type { VerdictFinding, VerdictStatus } from "../../critique";
+import type { VerdictFinding, VerdictStatus } from "@lane-pilot/workflow-engine";
 import type { ServerCore } from "../../contracts/server";
 
 export type QaVerdict = {

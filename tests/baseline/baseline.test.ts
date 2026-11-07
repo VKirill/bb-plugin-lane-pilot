@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { buildAcceptanceCard } from "../../src/rooms/acceptance/card";
 import { getBaseline } from "../../src/rooms/baseline";
 import { recordCheckDuration } from "../../src/rooms/plugin-db";
-import { classifyFailure } from "../../src/rooms/runs/failure-class";
+import { classifyFailure } from "../../src/rooms/contracts/failure-class";
 import { git } from "../verification/git-integrate-helpers";
 import { world } from "./world";
 

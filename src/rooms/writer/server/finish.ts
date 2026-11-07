@@ -7,11 +7,11 @@ import { writerLeftWorktree } from "./left-worktree";
 import { countAttempts, countOtherLiveAttemptsInArea, countThreadTurns, firstAttemptAt, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getTask, getTaskPlan, listOpenAttempts, listStageReceipts, loadProjectSettings, transitionAttempt, taskBasePath, failureFieldsOf } from "../../storage";
 import { saveBlockedBy, type BlockedBy } from "../../runs/server";
 import { relayFor } from "../../relay/server";
-import type { HelperPolicySnapshot } from "../../native-agent";
+import type { HelperPolicySnapshot } from "../../contracts/helper-context";
 import {providerLimitNotice, writerExecutionSelection} from "@lane-pilot/models";
 import { actionableFindings, advisoryFeedback, buildCandidateEvidence, codeCritiqueSource, codeRepairPrompt, findingsHash, nextRepairAction, parseCodeCritiqueSettings, parseWriterRepairReply, repairLedgerFromResult, sameUnresolvedFindings, sameWriterIdentity, settingsFromFrozenPolicy, shouldRequestRepair } from "../../critique";
 import type { WriterIdentity } from "../../critique";
-import { CODE_CRITIC_DEFAULT_SETTING, QUALITY_MODE_SETTING, applyCodeCriticDefault, applyQualityMode, critiqueRepeatSkip, patchChangedLines, resolveCodeCriticDefault, resolveQualityMode, withReferenceTestCritic } from "../../critique";
+import { CODE_CRITIC_DEFAULT_SETTING, QUALITY_MODE_SETTING, applyCodeCriticDefault, applyQualityMode, critiqueRepeatSkip, patchChangedLines, resolveCodeCriticDefault, resolveQualityMode, withReferenceTestCritic } from "../../contracts/quality-mode";
 import { loadCriticCodeDefault } from "./critic-override";
 import { runPlanFactStage } from "./plan-fact";
 import { candidatePatches, runCodeCritique } from "../../critique/server";
@@ -34,7 +34,9 @@ import { askGuestsToCommit } from "./checkout-guests";
 import { shouldMergeAttemptWorktree } from "./spawn";
 import { loadWriterNudge } from "./writer-silence";
 import { recordedWriterSkills } from "./skill-pick";
-import { REPLAY_CHECK_FAILED, WRITER_SILENT_REASON, beginChecks, checksMoved, taskFamily } from "../../runs";
+import { beginChecks, checksMoved } from "../../runs"
+import { REPLAY_CHECK_FAILED, WRITER_SILENT_REASON } from "../../contracts/failure-class"
+import { taskFamily } from "@lane-pilot/contracts";
 import { bookkeepingSetting } from "@lane-pilot/settings-catalog";
 import { attemptMergeMessage, clearMergeIntent, recordMergeIntent } from "../../verification/server";
 import { sendServiceMessage } from "../../relay/server";
@@ -503,7 +505,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
             ? critiqueRepeatSkip({
                 risk:input.task.risk, referenceTestEdits:yardstick,
                 changedLines:producedPaths.length === 0 ? 0 : Object.keys(patchMap).length === 0 ? null : patchChangedLines(patchMap),
-                ownsPaths:input.task.owns_paths, priorApprovals:priorCriticApprovals,
+                ownsPaths:input.task.owns_paths, priorApprovals:priorCriticApprovals, now: Date.now(),
               })
             : null;
           if (skip) {

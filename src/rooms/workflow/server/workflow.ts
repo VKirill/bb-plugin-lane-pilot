@@ -1,4 +1,5 @@
 import { HARNESS_VERSION } from "../../storage";
+import type { VerificationGatePort } from "../../contracts/integration-gate";
 import { LP_ALL_PROJECTS } from "@lane-pilot/ui-kit/realtime-channel";
 ;
 import { createWorkflowCatalog } from "@lane-pilot/workflow-engine";
@@ -9,7 +10,7 @@ import { registerPureActions } from "@lane-pilot/workflow-engine";
 import { registerReducers } from "@lane-pilot/workflow-engine";
 import { createWorkflowAgents } from "./workflow-agent";
 import { SPECIALIST_ROLES } from "../../critique/server";
-import { isEmployeeSpecialist } from "../../native-agent";
+import { isEmployeeSpecialist } from "../../contracts/employee-manifest";
 import { createGoalAuditor } from "./workflow-goal-audit";
 import { chainRuntimeFor, registerChainExecutors } from "./workflow-executors";
 import { notifyWorkflowIfEnded } from "./pm-notice";
@@ -48,6 +49,7 @@ interface Services {
   runMemoryMaintenance: MemoryStageApi["runMemoryMaintenance"];
   runProjectLifeMaintenance: ProjectLifeStageApi["runProjectLifeMaintenance"];
   stability: StabilityApi;
+  resolveIntegrationGate: VerificationGatePort;
   startWriterTask: StartWriterTask;
   workflowEngine: WorkflowEngineApi["workflowEngine"];
   workflowTriggers: WorkflowTriggersApi["workflowTriggers"];

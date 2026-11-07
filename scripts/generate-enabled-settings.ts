@@ -10,9 +10,9 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { SETTING_CATALOG } from "../packages/settings-catalog/src/channels";
 import { UI_CATALOG } from "../packages/settings-catalog/src/ui-catalog";
-import { DEFAULT_QUALITY_MODE } from "../src/rooms/critique/quality-mode";
+import { DEFAULT_QUALITY_MODE } from "../src/rooms/contracts/quality-mode";
 import { TASK_ATTEMPT_BUDGET } from "../src/rooms/writer/retry-budget";
-import { MAIN_ATTEMPT_LIMIT } from "../src/rooms/runs/state-machine";
+import { MAIN_ATTEMPT_LIMIT } from "../src/rooms/contracts/state-machine";
 import { parseMemorySettings } from "../packages/memory-core/src/settings";
 
 const root = join(import.meta.dirname, "..");

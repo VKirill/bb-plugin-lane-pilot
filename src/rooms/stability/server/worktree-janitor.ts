@@ -4,7 +4,7 @@ import { scheduleIsolated } from "../../platform/server";
 import { configuredSetting } from "../../contracts/server";
 import type { ServerCore } from "../../contracts/server";
 import { loadProjectSettings, registerWorktree } from "../../storage";
-import { OPEN_ATTEMPT_STATES, RETRY_ELIGIBLE, isOpenAttemptState } from "../../state-machine";
+import { OPEN_ATTEMPT_STATES, RETRY_ELIGIBLE, isOpenAttemptState } from "../../contracts/state-machine";
 import { STICKY_WINDOW_MS } from "../../platform/server";
 import { bestEffort } from "@lane-pilot/kit";
 

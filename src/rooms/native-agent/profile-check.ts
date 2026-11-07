@@ -5,7 +5,7 @@ import {
   parseRequiredSessionPolicyCapability,
   providerPolicyRows,
   type RequiredSessionAdvertisement,
-} from "./helper-context";
+} from "../contracts/helper-context";
 
 /**
  * The daily profile check (2026-11-06): around 2026-11-01 the core's advertisement drifted, the plugin's strict parse

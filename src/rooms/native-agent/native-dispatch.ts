@@ -3,18 +3,9 @@ import { noteCheckoutGuest } from "../verification/server";
 import type { BbPluginApi, ExperimentalPluginProviderEnvEntry } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import type { LanePilotDatabase } from "../storage";
-import {
-  CLI_AGENTS_PLUGIN_ID,
-  classifyCliAgentsCollision,
-  cliAgentsSelectionNullableSchema,
-  collisionMessage,
-  isMissingPluginRpc,
-  nativeSelectionMarker,
-  nativeSelectionSchema,
-  nativeSwitchKey,
-  tokensFrom,
-  type NativeSelection,
-} from "./native-session";
+import { classifyCliAgentsCollision, cliAgentsSelectionNullableSchema, collisionMessage, isMissingPluginRpc, nativeSelectionMarker, nativeSwitchKey, tokensFrom } from "./native-session"
+import { CLI_AGENTS_PLUGIN_ID } from "../contracts/native-agent-id"
+import { nativeSelectionSchema, type NativeSelection } from "../contracts/native-selection";
 import { nativeAgentTypeKey, nativeEnvKey, nativeSelectionKey, nativeThreadKey } from "./native-kv";
 import {
   projectCheckoutIntentPath,

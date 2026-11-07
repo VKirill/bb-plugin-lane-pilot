@@ -10,7 +10,7 @@ import type { ServerCore } from "../../src/rooms/contracts/server";
 import { beginChecks, checksMoved } from "../../src/rooms/runs";
 import { postOwnerItem, closeOwnerItem } from "../../src/rooms/owner-waiting";
 import { taskWordItemPrefix } from "../../src/rooms/contracts";
-import { taskFamily } from "../../src/rooms/runs";
+import { taskFamily } from "@lane-pilot/contracts";
 import ownerWordCases from "../fixtures/idle-writer-owner-word/cases.json";
 import { execFileSync } from "node:child_process";
 

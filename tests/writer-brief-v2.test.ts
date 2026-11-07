@@ -6,7 +6,7 @@ import { taskV2Schema } from "../src/rooms/contracts";
 import { compactContract } from "../src/rooms/writer/writer-brief";
 import { writerMemory } from "../src/rooms/memory/server";
 import { contractSections, stickyTurnPrompt, writerPrompt } from "../src/rooms/writer/server/writer-task";
-import { THREAD_MEMORY_RULE } from "../src/rooms/memory";
+import { THREAD_MEMORY_RULE } from "../src/rooms/contracts/thread-rule";
 import { errandPrompt } from "../src/rooms/qa/server/errands";
 import { taskBrief } from "../src/rooms/critique/task-brief";
 import { codeCritiquePrompt } from "../src/rooms/critique/code-critique";

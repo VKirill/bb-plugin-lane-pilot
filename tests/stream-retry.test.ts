@@ -3,7 +3,7 @@ import { createFakePluginHost, makeTurnFailedEvent } from "@get-bb/plugin-sdk/te
 import plugin from "../server";
 import { createAttempt, createRun, openDatabase, transitionAttempt } from "../src/rooms/plugin-db";
 import { MAX_STREAM_RETRY_ATTEMPTS, streamRetryDecision } from "../src/rooms/writer/stream-retry";
-import { nativeSelectionSchema } from "../src/rooms/native-agent/native-session";
+import { nativeSelectionSchema } from "../src/rooms/contracts/native-selection";
 
 const streamError = {
   category: "stream-disconnected" as const,

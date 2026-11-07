@@ -3,8 +3,8 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { TASK_ATTEMPT_BUDGET } from "../src/rooms/writer/retry-budget";
-import { MAIN_ATTEMPT_LIMIT } from "../src/rooms/runs/state-machine";
-import { DEFAULT_QUALITY_MODE } from "../src/rooms/critique/quality-mode";
+import { MAIN_ATTEMPT_LIMIT } from "../src/rooms/contracts/state-machine";
+import { DEFAULT_QUALITY_MODE } from "../src/rooms/contracts/quality-mode";
 import { parseMemorySettings } from "../packages/memory-core/src/settings";
 
 const root = join(import.meta.dirname, "..");

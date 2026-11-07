@@ -1,4 +1,4 @@
-import { OPEN_ATTEMPT_STATES } from "../state-machine";
+import { OPEN_ATTEMPT_STATES } from "../contracts/state-machine";
 import type { LanePilotDatabase } from "./database";
 
 export function createRun(db: LanePilotDatabase, id: string, projectId: string, kind: "bb"|"cli" = "bb", writerWorkspacePath: string | null = null, runGate: "none"|"pre-merge" = "none", runPolicy:unknown = {schemaVersion:1,pools:{provider:5,verification:2}}, writerHostId: string | null = null): void {

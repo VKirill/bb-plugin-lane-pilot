@@ -28,7 +28,7 @@ export type FailureCode = (typeof FAILURE_CODES)[number];
 
 import { cleanCheckOutput } from "@lane-pilot/kit";
 import { zcodeEnvironmentError } from "@lane-pilot/models";
-import { isOpenAttemptState } from "../../state-machine";
+import { isOpenAttemptState } from "./state-machine";
 
 /** The reason recorded when the writer gave no answer at all; the only empty_output that reads as a provider fault. */
 export const NO_ANSWER_REASON = "writer returned no output";

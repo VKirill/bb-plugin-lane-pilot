@@ -1,9 +1,9 @@
 import { applyResourceMode, collectAgentInventory } from "../../../native-agent";
 import { compileEffectiveMainAgent, compileMainAgentProfile } from "../../../native-agent";
-import { detectRequiredSessionPolicyCapability } from "../../../native-agent";
+import { detectRequiredSessionPolicyCapability } from "../../../contracts/helper-context";
 import { LP_AGENT_OVERRIDES_KEY, LP_DEFAULTS_KEY, packStoredDefaults, parseDefaultsRevision, parseLanePilotDefaults } from "@lane-pilot/settings-catalog";
 import { isCustomAgentId, isReservedAgentId, isStockProfileId } from "../../../contracts/server";
-import { userVisibleProjects } from "../../../native-agent";
+import { userVisibleProjects } from "../../../contracts/project-scope";
 import { agentRegistry } from "../../../native-agent/server";
 import { mapListedQaHosts } from "../../../platform/server";
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";

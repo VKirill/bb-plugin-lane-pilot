@@ -2,7 +2,8 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import { createAttempt, createRun, openDatabase } from "../src/rooms/plugin-db";
 import { familyFailureRecord } from "../src/rooms/writer/server/start";
-import { repeatedFailureReason, taskFamily } from "../src/rooms/runs/failure-class";
+import { repeatedFailureReason } from "../src/rooms/contracts/failure-class"
+import { taskFamily } from "@lane-pilot/contracts";
 
 describe("a task family's earlier failure stops a redispatch that fails the same way", () => {
   it("seeds the repeated-failure check from the family's earlier attempts", () => {

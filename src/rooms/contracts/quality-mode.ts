@@ -1,5 +1,5 @@
-import { isCodeCriticDefault } from "../contracts";
-import type { CodeCriticDefault } from "../contracts";
+import { isCodeCriticDefault } from "./task-enums";
+import type { CodeCriticDefault } from "./task-enums";
 import { ownsPathsOverlap } from "@lane-pilot/kit";
 
 /**
@@ -51,8 +51,6 @@ export function taskQaPlan(task: { qa_cases?: readonly string[]; qa_url?: string
  * and quality_mode quick or full decide before this does.
  */
 export const CODE_CRITIC_DEFAULT_SETTING = "critic.code.default_for_risk";
-export { CODE_CRITIC_DEFAULTS } from "../contracts";
-export type { CodeCriticDefault } from "../contracts";
 const RISK_RANK: Record<string, number> = { low: 0, medium: 1, high: 2, critical: 3 };
 
 
@@ -120,13 +118,13 @@ export function critiqueRepeatSkip(input: {
   changedLines: number | null;
   ownsPaths: readonly string[];
   priorApprovals: readonly CritiqueRepeatApproval[];
-  now?: number;
+  now: number;
 }): { reason: "repeat"; priorTaskId: string } | null {
   const rank = RISK_RANK[input.risk ?? ""];
   if (rank === undefined || rank > RISK_RANK.medium!) return null;
   if (input.referenceTestEdits?.length) return null;
   if (input.changedLines === null || input.changedLines > CRITIQUE_REPEAT_MAX_LINES) return null;
-  const now = input.now ?? Date.now();
+  const now = input.now;
   const prior = input.priorApprovals.find((row) =>
     row.state === "passed" && row.decision === "approve"
     && now - row.updatedAt >= 0 && now - row.updatedAt < CRITIQUE_REPEAT_WINDOW_MS

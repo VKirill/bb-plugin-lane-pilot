@@ -2,7 +2,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { noOptionalPlugins } from "./optional-plugin-stubs";
 import type { PrototypeConfig, TaskV2 } from "../src/rooms/contracts";
-import { classifyFailure } from "../src/rooms/runs/failure-class";
+import { classifyFailure } from "../src/rooms/contracts/failure-class";
 import { countChargedAttempts, createAttempt, createRun, createTask, getAttempt, listStageReceipts, openDatabase, savePrototypeConfig, saveTaskPlan,
   setAttemptDirtBefore, setAttemptWorkspace, setRunThread, transitionAttempt } from "../src/rooms/plugin-db";
 import { createCore } from "../src/rooms/core/server/core";

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { cancelAttemptById } from "../../runs/server";
-import { taskFamily } from "../../runs";
+import { taskFamily } from "@lane-pilot/contracts";
 import { latestRunForPmThread, listOpenAttempts } from "../../storage";
 import { isWholeConsent, ownerWordsOn } from "../../tasks";
 import type { DrawingCritique } from "@lane-pilot/contracts";

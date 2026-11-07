@@ -2,7 +2,7 @@ import type { DirtSnapshot } from "../cli-outcome";
 import { isLiveDecision } from "../live-folder";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
 import { getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, loadProjectSettings, saveReasoningTrace, setAttemptDirtBefore, setAttemptWorkspace, transitionAttempt, taskBasePath } from "../../storage";
-import { SESSION_MAX_TURNS, failureClass } from "../../runs";
+import { SESSION_MAX_TURNS, failureClass } from "../../contracts/failure-class";
 import { stringAt, orMiss, isNotFound, bestEffort } from "@lane-pilot/kit";
 import { sleepUntilThreadSignal, threadWatchMark } from "@lane-pilot/thread-observe";
 import { resolve } from "node:path";

@@ -7,7 +7,7 @@ import { getRunSettingsScopes, loadProjectSettings, taskBasePath, type LanePilot
 import type { ServerCore } from "../../contracts/server";
 import { runOnHost } from "@lane-pilot/host-calls";
 import { bestEffort } from "@lane-pilot/kit";
-import { effectiveGroup, parseHelperContextSettings } from "../../native-agent";
+import { effectiveGroup, parseHelperContextSettings } from "../../contracts/helper-context";
 import { registerWriterBriefContext } from "../../brief";
 import { stickyTurnPrompt } from "./writer-task";
 

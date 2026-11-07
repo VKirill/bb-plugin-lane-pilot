@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { mkdtempSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { ROLE_PROFILES, HelperRole, requiredSessionPolicySpawnBinding, coreRequiredSessionAdvertisement } from "../src/rooms/native-agent/helper-context";
+import { ROLE_PROFILES, HelperRole, requiredSessionPolicySpawnBinding, coreRequiredSessionAdvertisement } from "../src/rooms/contracts/helper-context";
 import { writerToolLine } from "../src/rooms/writer/server/writer-task";
 import { critiquePrompt } from "../src/rooms/critique/critique";
 import { codeCritiquePrompt, buildCandidateEvidence } from "../src/rooms/critique/code-critique";

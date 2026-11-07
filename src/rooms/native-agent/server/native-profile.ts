@@ -3,7 +3,8 @@ import { compileEffectiveMainAgent, compileMainAgentProfile, type CustomAgentMet
 import { sessionOverrideAgentsJson } from "../native-agent-definition";
 import { employeeRoleLines, withRoleLines } from "../employee-lessons";
 import { prepareNativeSessionRecord } from "../native-dispatch";
-import { nativeAgentCliId, type NativeSelection } from "../native-session";
+import { nativeAgentCliId } from "../../contracts/native-agent-id"
+import { type NativeSelection } from "../../contracts/native-selection";
 import type { ServerCore } from "../../contracts/server";
 
 /**

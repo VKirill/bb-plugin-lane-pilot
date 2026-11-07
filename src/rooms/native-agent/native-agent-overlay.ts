@@ -1,4 +1,4 @@
-import { stockEmployee } from "./employee-manifest";
+import { stockEmployee } from "../contracts/employee-manifest";
 import { SKILL_CATALOG_BLOCK, SKILL_CATALOG_LINE } from "./skill-catalog";
 import bundledAgents from "../contracts/bundled-agents.json";
 import { BB_BRIDGE_MCP_SERVER, NATIVE_LP_BRIDGE_ARCHITECT_TOOLS, NATIVE_LP_BRIDGE_LEAD_TOOLS, NATIVE_LP_BRIDGE_PM_TOOLS, NATIVE_LP_BRIDGE_SPECIALIST_TOOLS, unionLpBridgeTools, withoutLpBridgeTools } from "./native-session-hooks";
@@ -7,7 +7,7 @@ import { WORKFLOW_ARCHITECT_SESSION } from "./workflow-architect";
 import { LEAD_ID, LEAD_SESSION, LEAD_SUMMARY } from "../contracts";
 import { BB_AGENT_SUMMARIES, isLanePmAgent, nativeAgentName } from "../contracts/server";
 import { rewriteFoldedToolNames } from "../platform/server";
-import { SESSION_MAX_MS, SESSION_MAX_TURNS } from "../runs";
+import { SESSION_MAX_MS, SESSION_MAX_TURNS } from "../contracts/failure-class";
 import { DEPENDENCY_REDO_WAIT_MS } from "../storage";
 import { LIVE_FOLDER_FILE_CAP } from "../platform/server";
 import { STICKY_WINDOW_MS } from "../platform/server";

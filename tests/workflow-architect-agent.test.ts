@@ -2,7 +2,7 @@ import { rewriteFoldedToolNames } from "../src/rooms/platform/server/pm-tool-fam
 import { afterEach, describe, expect, it } from "vitest";
 import { createFakePluginHost, makePluginAgentConfigurationContext } from "@get-bb/plugin-sdk/testing";
 import plugin from "../server";
-import { agentPickerLabel } from "../src/rooms/native-agent/agent-display";
+import { agentPickerLabel } from "../src/rooms/contracts/agent-display";
 import { MAIN_AGENT_PROFILE_IDS } from "../src/rooms/contracts/server";
 import { compileMainAgentProfile } from "../src/rooms/native-agent/agent-profile";
 import { createRun, openDatabase, savePrototypeConfig, setRunThread } from "../src/rooms/plugin-db";

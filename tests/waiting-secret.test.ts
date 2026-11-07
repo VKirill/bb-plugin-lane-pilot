@@ -6,7 +6,7 @@ import type { TaskV2 } from "../src/rooms/contracts";
 import {
   countChargedAttempts, createAttempt, createRun, openDatabase, saveProjectSetting, savePrototypeConfig, setRunThread, transitionAttempt,
 } from "../src/rooms/plugin-db";
-import { failureClass, isWaitingSecret, nextStep } from "../src/rooms/runs/failure-class";
+import { failureClass, isWaitingSecret, nextStep } from "../src/rooms/contracts/failure-class";
 import { forgetSecrets } from "@lane-pilot/kit";
 import { createSecrets } from "../src/rooms/secrets/server/secrets";
 import { createStability } from "../src/rooms/stability/server/stability";

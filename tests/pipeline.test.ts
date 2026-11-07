@@ -30,7 +30,7 @@ import {
   nextAttemptState,
   retryAction,
   TRANSITION_TABLE,
-} from "../src/rooms/runs/state-machine";
+} from "../src/rooms/contracts/state-machine";
 import { loadTaskV2Schema, TASK_V2_REQUIRED, validateTaskV2 } from "../src/rooms/tasks/task-v2";
 
 const config = {

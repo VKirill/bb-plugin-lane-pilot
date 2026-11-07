@@ -10,7 +10,7 @@
  *  - not_run: it exited 0 but ran no test, or its re-run printed no summary the first run printed.
  */
 
-import { isEnvironmentCheckFailure } from "../../runs";
+import { isEnvironmentCheckFailure } from "../../contracts/failure-class";
 import { hollowRerun, noTestRanReason } from "./tests-ran";
 
 export type CheckVerdict = "pass" | "product_fail" | "environment_error" | "not_run";

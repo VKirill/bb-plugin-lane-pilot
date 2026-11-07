@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { classifyFailure } from "../../src/rooms/runs/failure-class";
+import { classifyFailure } from "../../src/rooms/contracts/failure-class";
 import { testFitFindings } from "../../src/rooms/tasks";
 
 const testFile = (before: string, after: string | null) => ({ path: "tests/money.test.ts", before, after });
