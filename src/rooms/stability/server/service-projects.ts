@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { scheduleIsolated } from "../../core/server";
-import type { ServerCore } from "../../core/server";
+import type { ServerCore } from "../../contracts/server";
 import { isSandboxProjectName } from "./canary";
 
 /**

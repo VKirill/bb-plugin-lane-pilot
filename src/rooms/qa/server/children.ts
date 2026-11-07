@@ -5,7 +5,7 @@ import type { ReconcileResult } from "../../stability";
 import type { StageId } from "../../tasks";
 import type { ProjectLifeTaskSummary } from "../../project-life";
 import { clearSpawnMarker, findThreadsByMetadata } from "../../core/server";
-import type { ServerCore } from "../../core/server";
+import type { ServerCore } from "../../contracts/server";
 
 export function createStageChildren(ctx: ServerCore) {
   const { bb, db } = ctx;

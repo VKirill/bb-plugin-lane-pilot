@@ -1,7 +1,8 @@
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
 import { mapListedQaHosts } from "../../qa";
-import { scheduleIsolated, configuredSetting } from "../../core/server";
-import type { ServerCore } from "../../core/server";
+import { scheduleIsolated } from "../../core/server";
+import { configuredSetting } from "../../contracts/server";
+import type { ServerCore } from "../../contracts/server";
 import { loadProjectSettings } from "../../storage";
 import { DOCS_WORKTREE_PREFIX, docsWorktreeName, REGRESS_WORKTREE_PREFIX, regressWorktreePath, SELF_REPAIR_STATE_KEY, type SelfRepairWorktreeState } from "../../storage";
 import { STICKY_WINDOW_MS } from "../../writer";

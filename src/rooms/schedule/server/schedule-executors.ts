@@ -5,7 +5,7 @@ import { createScheduleStore } from "../store";
 import { taskMemoryContext } from "../../memory/server";
 import type { Executor, ExecutorInput, PollResult } from "../scheduler";
 import type { ScheduleKind, ScheduleTask } from "../model";
-import type { ServerCore } from "../../core/server";
+import type { ServerCore } from "../../contracts/server";
 import { errandModelForRun } from "./schedule-default";
 import { allowedSecretNames, secretFixLines, secretProblem } from "../../secrets/server";
 import type { Services } from "../../core/server";

@@ -3,12 +3,12 @@ import { getActivation, getAttempt, getRun, getTask, importSettingsOnce, inspect
 import { cancelRejection, confirmWriterStopped, finishRunSafely, pauseRun } from "../../runs/server";
 import { markCancelCode } from "../../storage";
 import { renderTimeline, taskTimeline } from "../../runs";
-import { stringAt, valueAt } from "../../core/server";
+import { stringAt, valueAt } from "@lane-pilot/kit";
 import { outputText, runSkillsCli, SKILLS_USAGE } from "../../writer/server";
 import { THREAD_WATCH_EVENT_TYPES, decideThreadCompletion, eventsListQueryLabel, listThreadEventsRaw, waitThreadIdle } from "@lane-pilot/thread-observe";
-import type { ServerCore } from "../../core/server";
+import type { ServerCore } from "../../contracts/server";
 import { RUN_BUDGET_SETTINGS, runHealth } from "../../stability/server";
-import { configuredSetting } from "../../core/server";
+import { configuredSetting } from "../../contracts/server";
 import { getCouncilSession } from "@lane-pilot/council";
 import { SCHEDULE_USAGE, runScheduleCli } from "../../schedule/server";
 import { answerWorkflowQuestion } from "../../workflow/server";

@@ -10,7 +10,7 @@ import { runPlanCritique, runPmRead, runSpecialistReview } from "../../critique/
 import { closeWriterStages, recordStage } from "../../runs/server";
 import { isMainfixTask } from "../../tasks";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
-import type { ServerCore } from "../../core/server";
+import type { ServerCore } from "../../contracts/server";
 import type { Services } from "../../core/server";
 import { runOnHost } from "@lane-pilot/host-calls";
 import { withUsage } from "../../usage/server";

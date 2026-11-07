@@ -1,4 +1,4 @@
-import type { ServerCore } from "./core";
+import type { ServerCore } from "../../contracts/server";
 
 /**
  * Where a helper runs in a project that has no Lane Pilot PM chat: the project's own first folder on a machine, as a thread started from BB

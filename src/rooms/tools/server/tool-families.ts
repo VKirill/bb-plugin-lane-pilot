@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { LANE_PILOT_TOOL_SEARCH_NAME, PM_CORE_TOOLS, PM_TOOL_FAMILIES, rewriteFoldedToolNames, type ToolFamily } from "../pm-tool-families";
-import type { ServerCore } from "../../core/server";
+import type { ServerCore } from "../../contracts/server";
 import { checkArguments, flatParameters, memberOf as actionMemberOf, registerObservedTool, registeredTools, signature, type ActionMember, type ObservedTool } from "../../core/server";
 
 /** The shared lead of every "Use from the active Lane Pilot PM thread." that the family says once. */

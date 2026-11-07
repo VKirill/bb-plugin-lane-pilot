@@ -1,7 +1,8 @@
 import { withoutCredentials, withoutSelectionMarkers } from "@lane-pilot/kit";
 import { choiceOf, jev, resolveThresholds, type JevSettings } from "@lane-pilot/jev";
 import { getRun, getRunSettingsScopes } from "../../storage";
-import { stringAt, type ServerCore } from "../../core/server";
+import { stringAt } from "@lane-pilot/kit";
+import { type ServerCore } from "../../contracts/server";
 import { isRunHalted, isRunPaused } from "../../runs/server";
 import { pathClassByRules } from "@lane-pilot/workflow-engine";
 import type { PathRisk, PathSize } from "@lane-pilot/workflow-engine";

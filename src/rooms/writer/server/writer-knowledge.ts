@@ -4,7 +4,7 @@ import { DEFAULT_RELEVANCE_FLOOR, buildContextPack, clearsFloor, filesDrifted, m
 import type { TaskV2 } from "../../contracts";
 import { mixWriterMemory, snapshotFileRead, writerCandidates, writerMemoryPaths } from "../../memory/server";
 import { getRunSettingsScopes, loadProjectSettings, taskBasePath, type LanePilotDatabase } from "../../storage";
-import type { ServerCore } from "../../core/server";
+import type { ServerCore } from "../../contracts/server";
 import { runOnHost } from "@lane-pilot/host-calls";
 import { effectiveGroup, parseHelperContextSettings } from "../../native-agent";
 import { registerWriterBriefContext } from "../../brief";

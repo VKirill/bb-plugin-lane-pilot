@@ -1,4 +1,4 @@
-import type { ServerCore } from "../../core/server";
+import type { ServerCore } from "../../contracts/server";
 import type { Services } from "../../core/server";
 import { realDeps } from "./workflow-architect";
 import { createWorkflowLibrary } from "./workflow-library";

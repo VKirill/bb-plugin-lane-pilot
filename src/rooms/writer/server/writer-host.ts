@@ -5,8 +5,9 @@ import { GLOBAL_SETTINGS_PROJECT_ID, LP_DEFAULTS_KEY, parseLanePilotDefaults } f
 import { resolveWriterBinding } from "../../native-agent";
 import type { ProjectSourceBinding } from "../../native-agent";
 import { mapListedQaHosts } from "../../qa";
-import { CATALOG_WAIT_MS, modelCatalogOf, stringAt, within } from "../../core/server";
-import type { ServerCore } from "../../core/server";
+import { CATALOG_WAIT_MS, modelCatalogOf, within } from "../../core/server";
+import { stringAt } from "@lane-pilot/kit";
+import type { ServerCore } from "../../contracts/server";
 
 export function createWriterHost(ctx: ServerCore) {
   const { bb, db, host, ownedAgents, writerBindingKey } = ctx;

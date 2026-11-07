@@ -1,6 +1,6 @@
 import { runOnHost } from "@lane-pilot/host-calls";
 import type { NodeExecutor, WorkflowEngine } from "@lane-pilot/workflow-engine";
-import type { ServerCore } from "../../core/server";
+import type { ServerCore } from "../../contracts/server";
 import type { ChainRuntime } from "./workflow-runtime";
 
 /**

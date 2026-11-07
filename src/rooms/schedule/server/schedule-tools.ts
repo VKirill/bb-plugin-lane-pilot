@@ -3,9 +3,10 @@ import { z } from "zod";
 import { normalizeSchedule, scheduleInputSchema } from "../model";
 import { loadPushConfig } from "../../owner-waiting";
 import type { ScheduleView } from "../views";
-import type { ServerCore } from "../../core/server";
+import type { ServerCore } from "../../contracts/server";
 import type { Services } from "../../core/server";
-import { registerObservedTool, ToolError } from "../../core/server";
+import { registerObservedTool } from "../../core/server";
+import { ToolError } from "../../contracts/server";
 
 /**
  * The PM's door to the schedule board: every action goes straight through, no owner form (owner decision 2026-10-08). The one

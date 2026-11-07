@@ -2,7 +2,8 @@ import { randomBytes } from "node:crypto";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
 import { authorize } from "../../policy";
 import { saveProjectSetting } from "../../storage";
-import type { ServerCore, Services } from "../../core/server";
+import type { Services } from "../../core/server";
+import type { ServerCore } from "../../contracts/server";
 import { armsOf, SEEDED, type HypothesisState } from "../logic";
 
 type Row = { id: string; title: string; source: string; settings_json: string; state: HypothesisState; set_version: string | null; verdict_json: string | null; previous_json: string | null; created_at: number; updated_at: number };

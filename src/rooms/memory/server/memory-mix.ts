@@ -2,7 +2,7 @@ import { DEFAULT_RELEVANCE_FLOOR, MEMORY_SETTING_KEYS, projectUsesSections, rele
 import type { TaskV2 } from "../../contracts";
 import { getRunSettingsScopes, loadProjectSettings, type LanePilotDatabase } from "../../storage";
 import { memoryLine, reviewerMemoryPicks, writerMemory, writerMemoryPicks } from "../../writer";
-import { configuredSetting } from "../../core/server";
+import { configuredSetting } from "../../contracts/server";
 
 type TaskPaths = Pick<TaskV2, "owns_paths" | "read_first">;
 

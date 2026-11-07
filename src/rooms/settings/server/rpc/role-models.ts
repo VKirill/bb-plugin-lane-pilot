@@ -3,7 +3,7 @@ import type { rpcContract } from "../../../contracts";
 import { findModel, findProvider, offeredOnHost, resolveRoleModel, tablePoolAt, roleDefaultModel, roleModelKey, ROLE_MODEL_EFFORTS, ROLE_MODEL_OPTIONS, ROLE_TABLE, type ModelCatalog } from "@lane-pilot/models";
 import { getSettingVersions, listSettingRows, sectionBindingId } from "../../../storage";
 import { CATALOG_WAIT_MS, modelCatalogOf, within } from "../../../core/server";
-import type { ServerCore } from "../../../core/server";
+import type { ServerCore } from "../../../contracts/server";
 
 /**
  * `get_role_models`: the table «role -> model» as the settings page shows it for a place (global, a project, a section of it): for each

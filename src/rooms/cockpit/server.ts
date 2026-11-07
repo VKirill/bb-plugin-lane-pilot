@@ -1,5 +1,6 @@
 import { hostContract, rpcContract } from "../contracts";
-import type { ServerCore, Services } from "../core/server";
+import type { Services } from "../core/server";
+import type { ServerCore } from "../contracts/server";
 import { getRun } from "../storage";
 import { listReceipts } from "../capability";
 import { readinessWords, trainedConditions, trainingRatios, type DesignJournalLine } from "../design-eval";

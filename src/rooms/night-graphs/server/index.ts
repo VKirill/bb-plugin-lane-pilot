@@ -1,6 +1,7 @@
 // Public API of night-graphs/server: the night jobs of Lane Pilot as graph steps. Each job keeps its planning and its judging in its own room;
 // this room wires the model work of them onto the workflow engine (one mount per graph), so a plugin start registers every executor before a run resumes.
-import type { ServerCore, Services } from "../../core/server";
+import type { Services } from "../../core/server";
+import type { ServerCore } from "../../contracts/server";
 import { mountCriticEditGraph } from "./critic-edit-graph";
 import { mountEpisodesGraph } from "./episodes-graph";
 export { analystPlace, episodeSweepDeps } from "./episodes-graph";

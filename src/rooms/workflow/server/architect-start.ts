@@ -6,12 +6,12 @@ import { mentionContext } from "../../native-agent";
 import { projectRoleField } from "../../runs/server";
 import { WORKFLOW_ARCHITECT_ID, WORKFLOW_ARCHITECT_NAME } from "../workflow-architect";
 import { createDraftStore } from "../../storage";
-import type { ServerCore } from "../../core/server";
+import type { ServerCore } from "../../contracts/server";
 import { storeNativeSelection } from "../../native-agent/server";
 import { fullAccessSpawn, modelCatalogOf, resolveSpawnModel, spawnUsageOf, warmSpawnUsage } from "../../core/server";
 import { lanePilotProjectOrNotice } from "../../self-repair/server";
 import type { Services } from "../../core/server";
-import { stringAt } from "../../core/server";
+import { stringAt } from "@lane-pilot/kit";
 
 /** The architect runs on the `workflow-architect` row of the role table (Claude Opus 5.5, high, unless the owner changed it), whatever the owner's remembered chat choice says. */
 const architectExecution = async (ctx: ServerCore, projectId: string) => {

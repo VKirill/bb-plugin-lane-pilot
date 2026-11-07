@@ -6,7 +6,7 @@ import type { MemoryCandidate, MemoryDatabase } from "../packages/memory-core/sr
 import { pmMemoryContext } from "../src/rooms/memory/server/memory-mix";
 import { sessionMemoryRpc } from "../src/rooms/memory/server/session-memory";
 import { parseMemorySettings } from "../packages/memory-core/src";
-import type { ServerCore } from "../src/rooms/core/server/core";
+import type { ServerCore } from "../src/rooms/contracts/server";
 import type { Services } from "../src/rooms/core/server/services";
 
 // SMA block 4 (P2-7 finding): the query paths returned something for 80-90 % of the questions memory cannot answer.

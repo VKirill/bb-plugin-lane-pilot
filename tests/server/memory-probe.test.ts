@@ -11,7 +11,7 @@ import { taskV2Schema } from "../../src/rooms/contracts";
 import { upsertLessonProposal } from "@lane-pilot/run-insights";
 import { adoptRuleProposal } from "../../src/rooms/self-repair/server";
 import { parseMemorySettings } from "../../src/rooms/memory";
-import type { ServerCore } from "../../src/rooms/core/server/core";
+import type { ServerCore } from "../../src/rooms/contracts/server";
 import type { Services } from "../../src/rooms/core/server/services";
 
 function setup() {

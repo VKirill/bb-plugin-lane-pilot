@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { callerPluginMetadata, ToolError, registerObservedTool, type ServerCore } from "../../core/server";
+import { callerPluginMetadata, registerObservedTool } from "../../core/server";
+import { ToolError, type ServerCore } from "../../contracts/server";
 import { deadLetters, HOLD_FOREVER } from "../rails";
 import { recordTaskWord } from "../words";
 import { answerTaskWord } from "../../lead";

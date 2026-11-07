@@ -2,7 +2,7 @@ import { basename, dirname, join } from "node:path";
 import { pickWriterSkills, skillCatalog, type CatalogEntry, type KindCache, type ListedSkill, type SkillAsk, type SkillPick, type PickTaskInput } from "@lane-pilot/jev/judgments/skill-pick";
 import { candidateNames, readSkillTreeText, skillTreeCached } from "./skill-tree";
 import type { TaskV2 } from "../../contracts";
-import type { ServerCore } from "../../core/server";
+import type { ServerCore } from "../../contracts/server";
 
 /**
  * A writer spawn never waits longer than this for the pick; a pick that runs out gives the writer its role skills only.

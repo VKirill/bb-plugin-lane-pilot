@@ -1,5 +1,6 @@
 import { builtinWorkflow } from "../../workflow";
-import type { ServerCore, Services } from "../../core/server";
+import type { Services } from "../../core/server";
+import type { ServerCore } from "../../contracts/server";
 import { threatGap } from "../stages";
 import { PLAN_WORD_GAP, INDEPENDENCE_GAP, phaseFolder, planGate, sha256, type Phase, type PhaseRecord, type PlanItem, type RiskKey, candidateOn } from "../logic";
 import packageJson from "../../../../package.json";

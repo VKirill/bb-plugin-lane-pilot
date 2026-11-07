@@ -2,7 +2,7 @@ import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import { rpcContract } from "../../../contracts";
 import { HARNESS_VERSION } from "../../../storage";
 import { createProviderGate } from "../../../verification";
-import type { ServerCore } from "../../../core/server";
+import type { ServerCore } from "../../../contracts/server";
 
 /** The per-machine switch-off of the worktree provider (state lives in the plugin's KV, so a gate of its own reads the same record). */
 export function workspaceProviderRpc(ctx: ServerCore) {

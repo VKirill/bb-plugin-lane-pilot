@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { ToolError, registerObservedTool, type ServerCore, type Services } from "../../core/server";
+import { registerObservedTool, type Services } from "../../core/server";
+import { ToolError, type ServerCore } from "../../contracts/server";
 import { taskV2Schema } from "../../contracts";
 import { PhaseRefusal } from "./driver";
 import { autoDue } from "./auto-stages";

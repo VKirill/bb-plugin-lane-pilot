@@ -3,8 +3,8 @@ import { listPhases } from "../../phase";
 import { agentKind, compileEffectiveMainAgent } from "../agent-profile";
 import { nativeAgentCliId, nativeSelectionSchema, nativeSwitchKey, pendingSwitch, type NativeSelection } from "../native-session";
 import { storeNativeSelection } from "./native-profile";
-import { stringAt, valueAt } from "../../core/server";
-import type { ServerCore } from "../../core/server";
+import { stringAt, valueAt } from "@lane-pilot/kit";
+import type { ServerCore } from "../../contracts/server";
 
 /** A chat whose reply is running (or starting or stopping) keeps its agent until the reply ends. */
 const LIVE_STATUSES = new Set(["starting", "active", "stopping"]);

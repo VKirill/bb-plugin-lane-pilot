@@ -2,7 +2,7 @@ import { taskFamily } from "../../runs";
 import { runOnHost } from "@lane-pilot/host-calls";
 import { readWires, wiresCommand } from "../../wires";
 import type { TaskV2 } from "../../contracts";
-import type { ServerCore } from "../../core/server";
+import type { ServerCore } from "../../contracts/server";
 import { deleteStageReceipt, getRunSettingsScopes, getStageReceiptResult, getTask, getTaskGitBase, loadProjectSettings } from "../../storage";
 import { recordStage } from "../../runs/server";
 import { NO_CODE_KINDS, PLAN_FACT_RULES, blindPlanFact, clipDiff, planFactJudgment, diffHunksCommand, existsCommand, existsFromCommandOutput, hunksFromCommandOutput, parsePlanFact, planFactOutcome, sha256, untouchedCitations } from "../../tasks";

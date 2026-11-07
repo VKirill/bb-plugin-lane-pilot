@@ -3,7 +3,8 @@ import { runOnHost } from "@lane-pilot/host-calls";
 import { builtinWorkflow } from "../../workflow";
 import { fenceOutside, spawnTextId } from "../../core/server";
 import { getRun } from "../../storage";
-import type { ServerCore, Services } from "../../core/server";
+import type { Services } from "../../core/server";
+import type { ServerCore } from "../../contracts/server";
 
 /**
  * A specialist's work is a run of the built-in graph `specialist` (workflows/specialist.json): the PM's `lane_pilot_specialist` starts it and

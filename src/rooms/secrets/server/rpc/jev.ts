@@ -3,7 +3,7 @@ import { JEV_PROVIDERS, JEV_PROVIDER_IDS, createJevClient, resolveJevProvider } 
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
 import { rpcContract } from "../../../contracts";
 import { loadProjectSettings } from "../../../storage";
-import type { ServerCore } from "../../../core/server";
+import type { ServerCore } from "../../../contracts/server";
 
 /** The one question of the test request: a statement Jev answers with a probability, nothing about the plugin in it. */
 const TEST_REQUEST = { state: { statement: "Two plus two equals four." }, questions: { check: { type: "noul" as const, instructions: "Is the statement in the state true?" } } };

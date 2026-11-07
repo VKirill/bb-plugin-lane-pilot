@@ -1,4 +1,5 @@
-import type { ServerCore, Services } from "../../core/server";
+import type { Services } from "../../core/server";
+import type { ServerCore } from "../../contracts/server";
 import { onAttemptFinished } from "./attempt-finished";
 
 /**

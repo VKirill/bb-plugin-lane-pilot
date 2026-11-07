@@ -1,6 +1,6 @@
 import { taskV2Schema } from "../../contracts";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
-import { valueAt } from "../../core/server";
+import { valueAt } from "@lane-pilot/kit";
 import { compactContract, pmReadBrief } from "../writer-brief";
 import { summarizeThreadEvents, type ThreadEventLike } from "@lane-pilot/harness-core";
 import { cleanCheckOutput, failureExcerpt, sha256Hex } from "@lane-pilot/kit";

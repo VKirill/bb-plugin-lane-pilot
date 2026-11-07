@@ -23,9 +23,9 @@ import type { FlakyEvidence, MachineReading } from "../../verification";
 import { hollowRerun, noTestRanReason, testSummaries } from "../../tasks/server";
 import { recordGateEvaluation } from "../../runs/server";
 import { listThreadEventsRaw } from "@lane-pilot/thread-observe";
-import { stringAt } from "../../core/server";
+import { stringAt } from "@lane-pilot/kit";
 import { outputText, writerPatchFromOutput } from "./writer-task";
-import type { ServerCore } from "../../core/server";
+import type { ServerCore } from "../../contracts/server";
 import type { Services } from "../../core/server";
 
 /** A sandbox that refused the runner its own files: macOS python3 shim «couldn't create cache file … Operation not permitted». */

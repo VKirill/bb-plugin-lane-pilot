@@ -1,5 +1,5 @@
 import { closeRun, getAttempt, getRun, listOpenAttempts, openDatabase, releaseActivation } from "../../storage";
-import { stringAt, valueAt } from "../../core/server";
+import { stringAt, valueAt } from "@lane-pilot/kit";
 import { RETRY_ELIGIBLE } from "../state-machine";
 import { STICKY_WINDOW_MS } from "../../writer/server/sticky";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";

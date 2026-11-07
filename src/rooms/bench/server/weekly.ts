@@ -1,5 +1,6 @@
 import packageJson from "../../../../package.json";
-import { scheduleIsolated, SCHEDULE_TIMEOUT_CAP_MS, type ServerCore } from "../../core/server";
+import { scheduleIsolated, SCHEDULE_TIMEOUT_CAP_MS } from "../../core/server";
+import { type ServerCore } from "../../contracts/server";
 import { loadProjectSettings } from "../../storage";
 import { isSealedVersion } from "../store";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";

@@ -1,6 +1,6 @@
 import type { GraphNode, Workflow } from "@lane-pilot/workflow-engine";
 import { closeOwnerItem } from "../../owner-waiting";
-import type { ServerCore } from "../../core/server";
+import type { ServerCore } from "../../contracts/server";
 import type { Services } from "../../core/server";
 import { humanOptions, humanOutput, workflowQuestionKey } from "./workflow-executors";
 

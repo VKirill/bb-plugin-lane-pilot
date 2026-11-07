@@ -20,7 +20,7 @@ import { registerInvoiceActions } from "./workflow-invoice";
 import { registerTelegramActions } from "./workflow-telegram";
 import { registerAnamnesisActions } from "../../anamnesis";
 import { anamnesisFor } from "../../anamnesis";
-import type { ServerCore } from "../../core/server";
+import type { ServerCore } from "../../contracts/server";
 import type { Services } from "../../core/server";
 
 /**

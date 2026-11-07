@@ -1,6 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { configuredSetting } from "../src/rooms/core/server";
+import { configuredSetting } from "../src/rooms/contracts/server";
 import { failureIntervention } from "../src/rooms/runs";
 import { loadProjectSettings, openDatabase, saveProjectSetting } from "../src/rooms/plugin-db";
 

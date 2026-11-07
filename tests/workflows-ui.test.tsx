@@ -7,7 +7,7 @@ import { cleanup, configure, fireEvent, waitFor } from "@testing-library/react";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { setLocaleOverride } from "@lane-pilot/i18n";
 import { createWorkflowLibrary } from "../src/rooms/workflow/server/workflow-library";
-import type { ServerCore } from "../src/rooms/core/server/core";
+import type { ServerCore } from "../src/rooms/contracts/server";
 import type { Services } from "../src/rooms/core/server/services";
 import { engineOn, journalDb, trust, wf } from "./workflow/engine-helpers";
 import { workflow } from "./workflow/fixtures";

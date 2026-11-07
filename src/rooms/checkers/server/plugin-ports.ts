@@ -1,6 +1,6 @@
 import { runOnHost } from "@lane-pilot/host-calls";
 import { loadCandidates, findSolutionCommit, type Candidate, type HostPort } from "../../bench/server";
-import type { ServerCore } from "../../core/server";
+import type { ServerCore } from "../../contracts/server";
 import { isSandboxProjectName } from "../../stability/server";
 import { createCheckers, type CheckersApi } from "../api";
 import { guardShellPort } from "../workspace";

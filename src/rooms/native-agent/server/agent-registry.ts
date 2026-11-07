@@ -9,7 +9,7 @@ import {
 } from "../custom-agent";
 import { clearSettingValue } from "../../storage";
 import { createScheduleStore, taskOf } from "../../schedule";
-import type { ServerCore } from "../../core/server";
+import type { ServerCore } from "../../contracts/server";
 
 type Registry = Pick<ServerCore, "db" | "ownedAgents" | "saveOwnedAgents" | "serializedKv">;
 export type RegistryResult = { ok: true; id: string } | { ok: false; id: string; error: AgentFailure; detail?: string };

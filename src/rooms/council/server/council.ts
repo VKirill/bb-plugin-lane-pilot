@@ -15,8 +15,9 @@ import {
   type CouncilSession,
 } from "@lane-pilot/council";
 import { loadPrototypeConfig, type LanePilotDatabase } from "../../storage";
-import { configuredSetting, requirePmRun, ToolError } from "../../core/server";
-import type { ServerCore } from "../../core/server";
+import { requirePmRun } from "../../core/server";
+import { configuredSetting, ToolError } from "../../contracts/server";
+import type { ServerCore } from "../../contracts/server";
 import { memorySettingsFor } from "../../self-repair/server";
 import type { OwnerAsk } from "../../relay/server";
 import { fenceOutside, registerObservedTool } from "../../core/server";

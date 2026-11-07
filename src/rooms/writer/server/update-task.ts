@@ -18,7 +18,7 @@ import {
 import { lintReply } from "../../tasks/server";
 import { createTaskLinter } from "../../tasks/server";
 import { markTaskSatisfied, reopenWriterStages } from "../../runs/server";
-import type { ServerCore } from "../../core/server";
+import type { ServerCore } from "../../contracts/server";
 import type { Services } from "../../core/server";
 import { validateTaskV2 } from "../../tasks/task-v2";
 import { applyTrustedTooling } from "../../tasks";

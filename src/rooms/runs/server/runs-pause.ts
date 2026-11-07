@@ -3,7 +3,7 @@ import { pollPause } from "@lane-pilot/kit";
 import { getRun } from "../../storage";
 import { isRunPaused, runPausedSince, setRunPaused } from "./runs-halt";
 import { conveyorState } from "../../conveyor";
-import type { ServerCore } from "../../core/server";
+import type { ServerCore } from "../../contracts/server";
 
 /**
  * Pause a run at a safe boundary (SMA assess question 16, P2-8). Unlike a halt (`runs-halt.ts`: stop everything now), a

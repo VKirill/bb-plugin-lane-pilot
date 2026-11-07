@@ -19,10 +19,11 @@ import { readThreadLive } from "../thread-live";
 import { cancelAttemptById } from "../cancel";
 import { queueWaitPercentiles, runQueueWaits } from "../../../usage/server/attempt-metrics";
 import { pauseRun } from "../runs-pause";
-import { folderEnvironment, id, projectSources, stringAt, valueAt } from "../../../core/server";
+import { folderEnvironment, projectSources } from "../../../core/server";
+import { id, stringAt, valueAt } from "@lane-pilot/kit";
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import { rpcContract } from "../../../contracts";
-import type { ServerCore } from "../../../core/server";
+import type { ServerCore } from "../../../contracts/server";
 import type { Services } from "../../../core/server";
 
 export function runsRpc(ctx: ServerCore, services: Services) {

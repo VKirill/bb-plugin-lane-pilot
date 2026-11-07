@@ -1,5 +1,5 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
-import { stringAt } from "./values";
+import { stringAt } from "@lane-pilot/kit";
 
 /**
  * The ZCode slots. The ZCode app runs several tasks at once (bb-plugin-zcode 0.3.0: six overlapped without an error, each about twice as slow);

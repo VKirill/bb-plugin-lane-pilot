@@ -2,9 +2,9 @@ import { getAttempt, getTask, getTaskPlan, listStageReceipts, markCancelCode, tr
 export { CANCEL_CODES, markCancelCode, type CancelCode } from "../../storage";
 import { cancelRejection } from "./run-finish";
 import { closeHelperStages, recordStage } from "./stage-records";
-import { valueAt } from "../../core/server";
+import { valueAt } from "@lane-pilot/kit";
 import { confirmWriterStopped } from "./writer-stop";
-import type { ServerCore } from "../../core/server";
+import type { ServerCore } from "../../contracts/server";
 
 /** Stops the task's helper threads still running and closes their receipts canceled, so a canceled task leaves no helper running. */
 async function cancelStageHelpers(ctx: Pick<ServerCore, "bb" | "db">, attempt: NonNullable<ReturnType<typeof getAttempt>>): Promise<void> {

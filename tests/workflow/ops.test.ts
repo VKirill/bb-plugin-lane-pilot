@@ -2,7 +2,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import type { ServerCore } from "../../src/rooms/core/server/core";
+import type { ServerCore } from "../../src/rooms/contracts/server";
 import type { Services } from "../../src/rooms/core/server/services";
 import { createWorkflowLibrary } from "../../src/rooms/workflow/server/workflow-library";
 import { createWorkflowOps } from "../../src/rooms/workflow/server/workflow-ops";

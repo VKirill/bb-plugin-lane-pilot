@@ -1,7 +1,9 @@
 import { runOnHost } from "@lane-pilot/host-calls";
 import { waitThreadIdle } from "@lane-pilot/thread-observe";
 import { taskV2Schema } from "../../contracts";
-import { fullAccessSpawn, stringAt, type ServerCore, type Services } from "../../core/server";
+import { fullAccessSpawn, type Services } from "../../core/server";
+import { stringAt } from "@lane-pilot/kit";
+import { type ServerCore } from "../../contracts/server";
 import { cancelAttemptById, finishRunSafely } from "../../runs/server";
 import { createRun, createTask, getActivation, getRun, getTask, listOpenAttempts, loadProjectSettings, loadPrototypeConfig, saveProjectSetting, savePrototypeConfig } from "../../storage";
 import { isSandboxProjectName } from "../../stability/server";

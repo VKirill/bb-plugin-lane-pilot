@@ -1,7 +1,8 @@
 import { relative } from "node:path";
 import { getAttempt, getTask, listCheckDurations, listStageReceipts, taskBasePath } from "../../storage";
 import type { RollbackApi, RollbackItem, RollbackTarget } from "../../rollback/server";
-import { scheduleIsolated, type ServerCore, type Services } from "../../core/server";
+import { scheduleIsolated, type Services } from "../../core/server";
+import { type ServerCore } from "../../contracts/server";
 import { readingFrom, readingNote } from "../../verification";
 import {
   bisectCommand, bisectStepsFor, estimateSec, messageOwner, parseRegressSettings, planChecks,

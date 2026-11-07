@@ -6,7 +6,7 @@ import { pointsAtEngine } from "../../src/rooms/self-repair/server/self-repair";
 import { createSelfRepair } from "../helpers/self-repair";
 import { SELF_REPAIR, builtinWorkflow } from "../../src/rooms/workflow/builtin";
 import { maybeNotifyWorkflowRun } from "../../src/rooms/workflow/server/pm-notice";
-import type { ServerCore } from "../../src/rooms/core/server/core";
+import type { ServerCore } from "../../src/rooms/contracts/server";
 
 const turn = (seq: number, type: string, data: Record<string, unknown> = {}) => ({ seq, type, createdAt: 1_000 + seq, threadId: "thr_repair1", data });
 const finished = [turn(3, "turn/completed", { status: "completed" }), turn(2, "turn/started"), turn(1, "client/turn/requested")];

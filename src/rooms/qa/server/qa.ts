@@ -4,14 +4,15 @@ import { QA_HOST_KEY, QA_WORKSPACE_KEY, qaCodexPreflight, qaHostUnreachableReaso
 import { sha256 } from "../../tasks";
 import { parseOpenCodeToolTelemetry } from "../../stability";
 import { MAIN_ATTEMPT_LIMIT } from "../../runs";
-import { configuredSetting, modelCatalogOf, resolveSpawnModel, spawnUsageOf, warmSpawnUsage } from "../../core/server";
+import { modelCatalogOf, resolveSpawnModel, spawnUsageOf, warmSpawnUsage } from "../../core/server";
+import { configuredSetting } from "../../contracts/server";
 import { freezeRunRouting, inheritedProjectSettings } from "../../runs/server";
 import { recordStage } from "../../runs/server";
 import { qaStateToStatus } from "../../critique";
 import { allowedSecretNames, secretFixLines, secretProblem, waitingSecretReason } from "../../secrets/server";
 import { awaitQaVerdict, parseQaCases, runQaThread } from "./qa-thread";
-import { stringAt, valueAt } from "../../core/server";
-import type { ServerCore } from "../../core/server";
+import { stringAt, valueAt } from "@lane-pilot/kit";
+import type { ServerCore } from "../../contracts/server";
 
 export function createQaStages(ctx: ServerCore) {
   const { acceptedTaskWorkspace, bb, configForRun, db, host } = ctx;
