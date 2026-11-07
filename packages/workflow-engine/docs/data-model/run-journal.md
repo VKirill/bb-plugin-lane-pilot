@@ -2,9 +2,9 @@
 title: Workflow Run Journal Data
 type: data-model
 created: 2026-10-10
-updated: 2026-11-06
+updated: 2026-11-07
 status: active
-confidence: medium
+confidence: high
 tags: [workflow-engine, data-model, journal]
 sources:
   - packages/workflow-engine/src/journal.ts
@@ -65,10 +65,10 @@ Status lifecycle:
 | `running` or `waiting` | `not_verified` | `closeAfterAudit` (`packages/workflow-engine/src/engine.ts:448`) | A `goal_audit: required` workflow closed with no goals, or the audit could not be made (`packages/workflow-engine/src/engine.ts:451-461`, `packages/workflow-engine/src/engine.ts:484-490`). |
 | `running` or `waiting` | `failed` | Driver/failure handler (`packages/workflow-engine/src/engine.ts:407`, `packages/workflow-engine/src/engine.ts:606`) | No step remains before the exit, or a step fails. |
 | `running` or `waiting` | `blocked` | Goal audit or budget check (`packages/workflow-engine/src/engine.ts:453`, `packages/workflow-engine/src/engine.ts:853`) | Goals remain unmet or a run limit is reached. |
-| `running` | `interrupted` | Reload handler (`packages/workflow-engine/src/engine.ts:1327`) | Reload policy or changed executor compatibility interrupts active work. |
-| `waiting` | `running` | Poll settlement (`packages/workflow-engine/src/engine.ts:1406`) | A waiting step settles and driving resumes. |
+| `running` | `interrupted` | Reload handler (`packages/workflow-engine/src/engine.ts:1400-1416`) | Reload policy or changed executor compatibility interrupts active work. |
+| `waiting` | `running` | Poll settlement (`packages/workflow-engine/src/engine.ts:1497-1498`) | A waiting step settles and driving resumes. |
 | `blocked` | `running` | Goal amendment/resume (`packages/workflow-engine/src/engine.ts:498-504`) | The blocked reason is a goal audit and the resume condition is met. |
-| `running` or `waiting` | `canceled` | `cancel` (`packages/workflow-engine/src/engine.ts:1413-1416`) | Caller cancels an active run; the cancel recurses into the run's child runs (`packages/workflow-engine/src/engine.ts:1415`). |
+| `running` or `waiting` | `canceled` | `cancel` (`packages/workflow-engine/src/engine.ts:1503-1509`) | Caller cancels an active run; the cancel recurses into the run's child runs (`packages/workflow-engine/src/engine.ts:1507-1508`). |
 
 `setRunStatus` applies each transition conditionally against the expected source state; `succeeded`, `failed`, `blocked`, `interrupted`, `canceled`, and `not_verified` are listed as terminal statuses (`packages/workflow-engine/src/journal.ts:108-110`, `packages/workflow-engine/src/journal.ts:182-188`).
 

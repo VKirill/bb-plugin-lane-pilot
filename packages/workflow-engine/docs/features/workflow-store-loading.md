@@ -2,9 +2,9 @@
 title: Workflow Store Loading and Validation
 type: component
 created: 2026-10-24
-updated: 2026-11-06
+updated: 2026-11-07
 status: active
-confidence: medium
+confidence: high
 tags: [workflow-engine, workflow-store, validation]
 sources:
   - packages/workflow-engine/src/store.ts
@@ -37,11 +37,11 @@ TL;DR: The store reads built-ins and workflow files, filters parse and local val
 |---|---|---|
 | Authoring form | Reserved/duplicate node IDs, missing or conflicting entry declarations, duplicate input/output/node fields, schedule cron/timezone, emit map requirements, output status values, emit outgoing edges, and parallel child/join/for_each combinations (`packages/workflow-engine/src/validate.ts:81-122`). | Structural inconsistencies add errors; invalid schedule details add warnings. |
 | Lowered graph | Lower shorthand, index runnable nodes, validate edge endpoints and note edges, require exactly one unconditional start edge and an exit edge (`packages/workflow-engine/src/validate.ts:124-141`). | Unknown endpoints, illegal sentinel edges, missing/multiple/conditional entries, or missing exits add errors. |
-| Routing shape | For each runnable node, check outgoing edges. Parallel edges cannot be conditional; `for_each` parallel nodes need one outgoing edge; ordinary nodes cannot have multiple unconditional edges. | Dead ends and invalid branch shape add errors; conditional routes without fallback add a warning (`packages/workflow-engine/src/validate.ts:183`). |
+| Routing shape | For each runnable node, check outgoing edges. Parallel edges cannot be conditional; `for_each` parallel nodes need one outgoing edge; ordinary nodes cannot have multiple unconditional edges. | Dead ends and invalid branch shape add errors; conditional routes without `no_fallback` add a warning (`packages/workflow-engine/src/validate.ts:189-200`). |
 | Expressions and references | Parse edge conditions, mappings, templates, value specs, `skip_when`, `reads`, and mode tables. Then check reference scope, node order, field paths and expression types (`packages/workflow-engine/src/validate.ts:170-256`, `packages/workflow-engine/src/validate.ts:258-279`). | Syntax problems become `bad_expr`; reference/type issues become structured error codes; invalid `by_mode` keys or missing mode/default entries add errors. |
-| Cycles and skips | Inspect strongly connected components; require `maxVisits` or an in-loop `visits()` bound. For nodes that can skip, verify declared readers are supplied by `skip_out` (`packages/workflow-engine/src/validate.ts:281-305`). | Unbounded cycles or missing skip values add errors. |
+| Cycles and skips | Inspect strongly connected components; require `maxVisits` or an in-loop `visits()` bound. For nodes that can skip, verify declared readers are supplied by `skip_out` (`packages/workflow-engine/src/validate.ts:314-337`). | Unbounded cycles or missing skip values add errors. |
 | Step contracts | Check artifact registry entries, produced fields, `each` list shape, consumed source and producer ordering, and gate expression references (`packages/workflow-engine/src/validate.ts:307-346`). | Contract inconsistencies add errors; missing `produces` on agent/lp-task nodes adds a warning. |
-| Node-specific rules | Check executor availability when configured, presets, agent settings and outputs, human timeout defaults, decision source/order/field compatibility, and parallel list/filter/child rules (`packages/workflow-engine/src/validate.ts:351-453`). | Invalid configuration adds errors; unknown presets/models, ignored agent environment settings, and empty prompts add warnings. A supplied specialist lookup rejects unknown literal `specialist:<id>` roles; produced-artifact enum values missing from both the prompt and generated output contract produce a warning (`packages/workflow-engine/src/validate.ts:357-374`, `packages/workflow-engine/src/prompt-coverage.ts:17-31`). |
+| Node-specific rules | Check executor availability when configured, presets, agent settings and outputs, human timeout defaults, decision source/order/field compatibility, and parallel list/filter/child rules (`packages/workflow-engine/src/validate.ts:351-453`). | Invalid configuration adds errors; unknown presets/models, ignored agent environment settings, and empty prompts add warnings. A supplied specialist lookup rejects unknown literal `specialist:<id>` roles (`packages/workflow-engine/src/validate.ts:395-397`); produced-artifact enum values missing from both the prompt and generated output contract produce a warning (`packages/workflow-engine/src/validate.ts:402-404`, `packages/workflow-engine/src/prompt-coverage.ts:21-31`). |
 | Subworkflow closure | When a resolver is supplied, calculate nested depth and detect recursive calls (`packages/workflow-engine/src/validate.ts:488-492`). | Recursive calls or depth beyond the lower of workflow and schema limits add errors. |
 
 ## Modes and outcomes
