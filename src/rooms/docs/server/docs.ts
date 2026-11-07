@@ -3,7 +3,7 @@ import type { StageHelperSettings } from "../../platform/server";
 import { claimDocsSpawn, getRun, getTask, listStageReceipts } from "../../storage";
 import { bbServiceTier, listedServiceTier, writerExecutionSelection } from "@lane-pilot/models";
 import { sha256 } from "../../tasks";
-import { extractModelJson } from "../../critique";
+import { extractModelJson } from "@lane-pilot/workflow-engine";
 import { docsInputHash, docsMaintenancePrompt, docsSelection, parseDocsSettings, selectDocsPages, validateDocsEdits } from "../docs";
 import type { DocsPage } from "../../contracts/docs-page";
 import { boundedAgentName } from "../../contracts/review-vocabulary";

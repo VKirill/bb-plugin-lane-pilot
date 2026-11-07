@@ -1,6 +1,6 @@
 {
   "rooms": 77,
-  "largestScc": 35,
+  "largestScc": 14,
   "mutualPairs": 0,
-  "edges": 624
+  "edges": 612
 }

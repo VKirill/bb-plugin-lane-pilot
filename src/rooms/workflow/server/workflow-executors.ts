@@ -1,5 +1,6 @@
 import type { TaskV2 } from "../../contracts";
 import type { VerificationGatePort } from "../../contracts/integration-gate";
+import type { IsTaskSatisfied } from "../../contracts";
 import { getAttempt, getRun, getRunWriterHost, listAttemptsForTask, listOpenAttempts } from "../../storage";
 import { redactKnown, sha256Hex, orMiss, isNotFound, bestEffort } from "@lane-pilot/kit";
 import { validateTaskV2 } from "../../tasks/task-v2";
@@ -39,6 +40,7 @@ import type { WorkflowEngineApi } from "../../platform/server";
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {
   dispatchWriter: DispatchWriter;
+  isTaskSatisfied: IsTaskSatisfied;
   taskUsage: TaskUsage;
   stability: StabilityApi;
   resolveIntegrationGate: VerificationGatePort;

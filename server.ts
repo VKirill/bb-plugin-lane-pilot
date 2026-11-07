@@ -55,7 +55,7 @@ import { createPluginWall } from "./src/rooms/wall/server";
 import { buildCliInvocation, skillSwitchMorningLine } from "./src/rooms/writer";
 import { createPluginCheckers } from "./src/rooms/checkers/server";
 import { createStageReturn } from "./src/rooms/stage-return/server";
-import { cleanupFinishedAttemptEnvironments, cleanupStickyLaneWorktrees, closeAbandonedRuns, closeStaleRuns } from "./src/rooms/runs/server"
+import { cleanupFinishedAttemptEnvironments, cleanupStickyLaneWorktrees, closeAbandonedRuns, closeStaleRuns, isTaskSatisfied } from "./src/rooms/runs/server"
 import { pluginStopped } from "./src/rooms/contracts/errors";
 import { registerRpc } from "./src/rooms/core/server/rpc";
 import { mountAnamnesis } from "./src/rooms/anamnesis";
@@ -100,6 +100,7 @@ import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type { ActivationApi, AgentOpsApi } from "./src/rooms/contracts/agent-ops";
 import type { MergeIntentsApi } from "./src/rooms/contracts/merge-intents";
 import type { VerificationGatePort } from "./src/rooms/contracts/integration-gate";
+import type { IsTaskSatisfied } from "./src/rooms/contracts";
 import type { DocsNightlyApi } from "./src/rooms/docs/server/docs-nightly";
 import type { ProbesApi } from "./src/rooms/stability/server/probes";
 import type { ReconcileApi } from "./src/rooms/stability/server/reconcile";
@@ -206,6 +207,7 @@ export interface Services {
   detectCompiledMainAgentCapability: AgentOpsApi["detectCompiledMainAgentCapability"];
   pendingSwitch: AgentOpsApi["pendingSwitch"];
   resolveIntegrationGate: VerificationGatePort;
+  isTaskSatisfied: IsTaskSatisfied;
   recoverMergeIntents: MergeIntentsApi["recoverMergeIntents"];
   activeWriterTasks: WriterStateApi["activeWriterTasks"];
   providerBreaker: WriterStateApi["providerBreaker"];
@@ -342,6 +344,7 @@ export default async function plugin(bb: BbPluginApi) {
       detectCompiledMainAgentCapability,
       pendingSwitch: (threadId: string) => pendingSwitch(ctx.bb.storage.kv, threadId),
     } satisfies AgentOpsApi & { resolveIntegrationGate: VerificationGatePort },
+    { isTaskSatisfied } satisfies { isTaskSatisfied: IsTaskSatisfied },
     createWriterState(ctx) satisfies WriterStatePort,
     createWorkflowEngine(ctx, services),
     createWorkflowTriggersService(ctx, services),

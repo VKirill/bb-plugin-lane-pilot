@@ -11,6 +11,7 @@ import { createAttempt, createRun, createTask, openDatabase, saveProjectSetting 
 import { createWorktree, integrateWorktree, removeLaneWorktree } from "../src/rooms/verification/git-integrate";
 import { mergeInfo, revertCommitsInWorktree, worktreeState } from "../src/rooms/verification/git-rollback";
 import { runGateOnHost } from "../src/rooms/verification/integration-gate-host";
+import { gateResolverFor } from "../src/rooms/verification/server";
 import { resolveGitOwnershipBase } from "../src/rooms/verification/git-ownership";
 import { git } from "./verification/git-integrate-helpers";
 
@@ -56,6 +57,7 @@ async function world(options: { gate?: string } = {}) {
     configForRun: async (projectId: string) => ({ projectId, hostId: HOST, writerWorkspacePath: base }),
   };
   const services = {
+    resolveIntegrationGate: gateResolverFor(ctx as never),
     runVerification: async (_config: unknown, task: { verification: Array<{ command: string; cwd: string }> }) => task.verification.map((check) => {
       const ran = spawnSync("bash", ["-lc", check.command], { cwd: check.cwd, encoding: "utf8" });
       return { command: check.command, exitCode: ran.status ?? 1, stdout: ran.stdout ?? "", stderr: ran.stderr ?? "" };

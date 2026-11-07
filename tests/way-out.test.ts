@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { wayOut, NO_WAY_OUT } from "../src/rooms/runs/way-out";
+import { wayOut, NO_WAY_OUT } from "../src/rooms/contracts/way-out";
 import { PM_CORE_TOOLS, PM_FAMILY_TOOLS, PM_TOOL_FAMILIES } from "../src/rooms/platform/server/pm-tool-families";
 
 /**

@@ -4,7 +4,7 @@ import { ToolError, type ServerCore } from "../../contracts/server";
 import { deadLetters, HOLD_FOREVER } from "../rails";
 import { recordTaskWord } from "../words";
 import type { TaskWordPort } from "../../contracts";
-import { wayOut } from "../../runs"
+import { wayOut } from "../../contracts"
 import { taskFamily } from "@lane-pilot/contracts";
 import { hostContract } from "../../contracts";
 import { getRun, getRunWriterHost, latestAttemptsForProject, latestTaskAttemptState, setTaskHeldUntil } from "../../storage";

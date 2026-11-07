@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { clipped, extractModelJson, NO_TOOLS_LINE } from "../critique";
+import { clipped, extractModelJson, NO_TOOLS_LINE } from "@lane-pilot/workflow-engine";
 import { STAGE_IDS } from "../tasks";
 import type { GateReport } from "../tasks";
 

@@ -5,7 +5,6 @@ import { taskFamily } from "@lane-pilot/contracts";
 import { checkoutOwnsOverlap } from "../task-base";
 import { QUALITY_MODE_SETTING, resolveQualityMode } from "../../contracts/quality-mode"
 import { parseSandboxUnsafePatterns } from "../../contracts/check-commands";
-import { isTaskSatisfied } from "../../runs/server";
 import { lintContract, lintProbePaths, siblingTestFolders } from "./contract-lint";
 import { checkProgram } from "../rails";
 import { ownerWordsOn } from "../words";
@@ -15,10 +14,12 @@ import type { LintOpenTask, PathKind } from "./contract-lint";
 import type { ServerCore } from "../../contracts/server";
 
 import type { StabilityPort } from "../../contracts/stability-api";
+import type { IsTaskSatisfied } from "../../contracts";
 import type { VerificationGatePort } from "../../contracts/integration-gate";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {
+  isTaskSatisfied: IsTaskSatisfied;
   stability: StabilityPort;
   resolveIntegrationGate: VerificationGatePort;
 }
@@ -66,7 +67,7 @@ export function createTaskLinter(ctx: ServerCore, services: Services) {
       if (state !== "blocked" && state !== "canceled") continue;
       // Parked for a machinery fault, vouched for by the PM, or restarted under another member of its family: not dead.
       if (parked.some((row) => row.projectId === projectId && taskFamily(row.taskId) === taskFamily(dep))) continue;
-      if (state === "blocked" && await isTaskSatisfied(bb.storage.kv as never, projectId, dep)) continue;
+      if (state === "blocked" && await services.isTaskSatisfied(bb.storage.kv as never, projectId, dep)) continue;
       deadDependencies.push({ id:dep, state });
     }
     const settings = loadProjectSettings(db, projectId, getRunSettingsScopes(db, runId));

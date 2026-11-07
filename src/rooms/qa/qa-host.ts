@@ -1,4 +1,5 @@
 import { findModelIn } from "@lane-pilot/models";
+import { spawnClaimed } from "../contracts";
 
 
 export function resolveBrowserQaTarget(args: {
@@ -52,10 +53,6 @@ export function qaCodexPreflightReason(args: Parameters<typeof qaCodexPreflight>
   return result.ok ? null : result.reason;
 }
 
-export function qaSpawnClaimed(result: unknown): boolean {
-  return Boolean(result && typeof result === "object" && (result as { spawnAttempted?: unknown }).spawnAttempted === true);
-}
-
 export function resolveStaleBrowserQaReceipt(input: {
   state: string;
   result: unknown;
@@ -71,10 +68,10 @@ export function resolveStaleBrowserQaReceipt(input: {
     // «blocked» means the check could not be made (no Browser QA machine yet, machine offline, the port not
     // reachable) and «skipped» that it was off; both may run again once the cause is fixed. Only a verdict on the
     // product, passed or failed, is final.
-    const ran = qaSpawnClaimed(input.result) || Boolean(input.result && typeof input.result === "object" && (input.result as { threadId?: unknown }).threadId);
+    const ran = spawnClaimed(input.result) || Boolean(input.result && typeof input.result === "object" && (input.result as { threadId?: unknown }).threadId);
     return input.state === "blocked" || (input.state === "skipped" && !ran) ? { kind: "retry" } : { kind: "terminal" };
   }
-  if (!qaSpawnClaimed(input.result)) return { kind: "retry" };
+  if (!spawnClaimed(input.result)) return { kind: "retry" };
   const frozen = input.result && typeof input.result === "object" ? { ...(input.result as Record<string, unknown>) } : {};
   const staleMs = input.staleMs ?? QA_STALE_MS;
   const age = (input.now ?? Date.now()) - input.updatedAt;

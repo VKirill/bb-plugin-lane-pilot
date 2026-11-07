@@ -2,7 +2,7 @@ import { jev } from "@lane-pilot/jev";
 import { GUARD_BLOCKED_KEY, type GuardBlock } from "@lane-pilot/jev";
 import { bestEffort, isNotFound, orMiss } from "@lane-pilot/kit";
 import { englishSelfRepairChoice, ownerLocale, selfRepairOwnerForm, type OwnerAnswer, type OwnerAsk } from "../../relay/server";
-import type { VerdictStatus } from "../../critique";
+import type { VerdictStatus } from "@lane-pilot/workflow-engine";
 import type { ServerCore } from "../../contracts/server";
 import { reasonSignature } from "./episodes";
 import { VERDICTS, type SelfRepairState, type SignatureRecord, type Verdict } from "./types";

@@ -1,5 +1,6 @@
 import { HARNESS_VERSION } from "../../storage";
 import type { VerificationGatePort } from "../../contracts/integration-gate";
+import type { IsTaskSatisfied } from "../../contracts";
 import { LP_ALL_PROJECTS } from "@lane-pilot/ui-kit/realtime-channel";
 ;
 import { createWorkflowCatalog } from "@lane-pilot/workflow-engine";
@@ -46,6 +47,7 @@ interface Services {
   docsPlaces: DocsNightlyApi["docsPlaces"];
   harness: HarnessApi;
   isLiveFolder: IsLiveFolder;
+  isTaskSatisfied: IsTaskSatisfied;
   runMemoryMaintenance: MemoryStageApi["runMemoryMaintenance"];
   runProjectLifeMaintenance: ProjectLifeStageApi["runProjectLifeMaintenance"];
   stability: StabilityApi;

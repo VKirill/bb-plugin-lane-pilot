@@ -1,6 +1,7 @@
 import { t, type I18nKey } from "@lane-pilot/i18n";
 import { Button } from "@lane-pilot/ui-kit";
 import { AcceptanceStats, TaskBoard } from "../runs/ui";
+import { AcceptanceCard } from "../acceptance/ui";
 import { ServiceSegment } from "./service-segment";
 import { CriticValue } from "../critique/ui";
 import { WriterReuse } from "../writer/ui";
@@ -24,7 +25,7 @@ export function RunsTab({ page }: { page: LpPage }) {
         items={ids.map((id) => ({ id, label: t(SEGMENT_LABELS[id]!) }))} badge={{ active: activeRuns }} />
       {isGlobal ? <p className="text-sm text-muted-foreground" data-testid="runs-global-empty">{t("runsGlobalEmpty")}</p> : (
         <>
-          {segment === "board" && projectId ? <TaskBoard projects={projects} lockedProjectId={projectId} locale={locale} /> : null}
+          {segment === "board" && projectId ? <TaskBoard projects={projects} lockedProjectId={projectId} locale={locale} AcceptanceCard={AcceptanceCard} /> : null}
           {segment === "analytics" ? <Analytics page={page} /> : null}
           {segment === "council" ? <CouncilSessions page={page} /> : null}
           {segment === "service" ? <div className="space-y-5" data-testid="service-panel"><ServiceSegment page={page} /></div> : null}

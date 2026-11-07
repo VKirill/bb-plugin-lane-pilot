@@ -1,5 +1,6 @@
 import { secretShaped } from "../../tasks";
 import type { VerificationGatePort } from "../../contracts/integration-gate";
+import type { IsTaskSatisfied } from "../../contracts";
 import type { StageHelperSettings } from "../../platform/server";
 import { gateVocabularyLines } from "../../contracts";
 import { registerBrowserExecutors, runBrowserQaGraph } from "../../qa/server";
@@ -66,6 +67,7 @@ interface Services {
   docsPlaces: DocsNightlyApi["docsPlaces"];
   ingestOpenCodeTelemetry: QaStagesApi["ingestOpenCodeTelemetry"];
   isLiveFolder: WriterSpawnApi["isLiveFolder"];
+  isTaskSatisfied: IsTaskSatisfied;
   lead: LeadApi;
   phaseIntake: PhaseIntake;
   phases: PhaseApi;

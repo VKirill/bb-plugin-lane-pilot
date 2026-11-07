@@ -1,5 +1,6 @@
 import { wfFailedStepOfRun, wfRunRow } from "@lane-pilot/workflow-engine";
 import { z } from "zod";
+import type { LoopEvidence } from "../contracts";
 import type { WallDb } from "./journal";
 
 /**
@@ -171,16 +172,6 @@ export function buildTaskPack(db: WallDb, input: { runId: string; taskId: string
     attempts: attempts.map(attemptView), receipts: receiptsOf(db, attempts), files, checkOutputs: attempts.map((row) => row.reason ?? ""), queries,
   };
 }
-
-/** What a loop that ran out of tries is made of: the attempts of the tasks that tried, the facts the caller knows, and texts the hunters may cite (the phase book, the verdict). */
-export type LoopEvidence = {
-  subject: string;
-  runId?: string | null;
-  /** Task ids or families (`P1` also reads `P1.2`): their attempts, failed receipts and contracts are the evidence. */
-  taskIds?: readonly string[];
-  facts: readonly string[];
-  texts?: ReadonlyArray<{ path: string; text: string }>;
-};
 
 /** The pack of an exhausted loop (a phase stage, the replans of a failed verification, a topic of a run). */
 export function buildLoopPack(db: WallDb, input: LoopEvidence): EvidencePack {

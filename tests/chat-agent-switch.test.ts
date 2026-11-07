@@ -288,7 +288,7 @@ it("turning Lane Pilot off in a chat whose tasks are at work refuses and changes
   expect(await t.call("chat_agent_state", { threadId: "thr_busy" })).toMatchObject({ current: { agentId: "design-lead", pending: true } });
 
   const ctx = { bb: t.fake.bb, db, ownedAgents: async () => ({}) } as never;
-  await expect(switchChatAgent(ctx, { threadId: "thr_busy", agentId: null }, async () => { throw new Error("tasks are at work"); })).rejects.toThrow(/tasks are at work/);
+  await expect(switchChatAgent(ctx, { threadId: "thr_busy", agentId: null }, async () => { throw new Error("tasks are at work"); }, () => [])).rejects.toThrow(/tasks are at work/);
   expect(await t.call("chat_agent_state", { threadId: "thr_busy" })).toMatchObject({ current: { agentId: "design-lead", pending: true } });
   expect(await t.call("native_thread", { threadId: "thr_busy" })).not.toBeNull();
   expect(findOpenNativeRun(db, "project_a", "thr_busy")).toBe(runId);

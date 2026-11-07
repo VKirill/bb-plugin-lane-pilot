@@ -1,5 +1,6 @@
 import { relative, resolve } from "node:path";
 import type { VerificationGatePort } from "../../contracts/integration-gate";
+import type { IsTaskSatisfied } from "../../contracts";
 import type { StageHelperSettings } from "../../platform/server";
 import { isDeepStrictEqual } from "node:util";
 import { DISPATCH_STAGES_PENDING } from "../../runs";
@@ -32,6 +33,7 @@ interface Services {
   activeWriterTasks: WriterStateApi["activeWriterTasks"];
   baseline: BaselineApi;
   isLiveFolder: WriterSpawnApi["isLiveFolder"];
+  isTaskSatisfied: IsTaskSatisfied;
   stability: StabilityApi;
   resolveIntegrationGate: VerificationGatePort;
   startWriterTask: WriterStartApi["startWriterTask"];

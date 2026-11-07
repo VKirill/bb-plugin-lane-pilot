@@ -3,6 +3,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { cleanup, configure, fireEvent, waitFor } from "@testing-library/react";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { setLocaleOverride } from "@lane-pilot/i18n";
+import { AcceptanceCard } from "../src/rooms/acceptance/ui";
 
 configure({ asyncUtilTimeout: 5_000 });
 vi.setConfig({ testTimeout: 20_000 });
@@ -20,7 +21,7 @@ async function mount() {
   const app = await loadPluginApp(() => import("../app"));
   void app;
   const { TaskBoard } = await import("../src/rooms/runs/ui/task-board");
-  return renderSlot({ component: () => <TaskBoard projects={[{ id: "proj_a", name: "Alpha" }, { id: "proj_sb", name: "LP sandbox" }]} serviceProjectIds={["proj_sb"]} locale="en" /> }, {}, {
+  return renderSlot({ component: () => <TaskBoard projects={[{ id: "proj_a", name: "Alpha" }, { id: "proj_sb", name: "LP sandbox" }]} serviceProjectIds={["proj_sb"]} locale="en" AcceptanceCard={AcceptanceCard} /> }, {}, {
     context: { projectId: null, threadId: null },
     rpc: {
       task_board: () => ({ items: [

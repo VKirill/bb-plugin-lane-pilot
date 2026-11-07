@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { clipped, extractModelJson, NO_TOOLS_LINE } from "../critique";
+import { clipped, extractModelJson, NO_TOOLS_LINE } from "@lane-pilot/workflow-engine";
 
 export const nightReviewResultSchema = z.object({
   decision:z.enum(["clear","findings"]),
