@@ -13,9 +13,26 @@ export const isFsAbsent = (cause: unknown): boolean => {
   return code === "ENOENT" || code === "ENOTDIR";
 };
 
-/** Plugin/RPC "no such entity": PluginRpcCallError and PluginRpcRefusal carry code "not_found". */
-export const isNotFound = (cause: unknown): boolean =>
-  typeof cause === "object" && cause !== null && (cause as { code?: unknown }).code === "not_found";
+const isNotFoundCode = (value: unknown): boolean =>
+  typeof value === "string" && (value === "not_found" || value.endsWith("_not_found"));
+
+const isHttp404 = (err: { status?: unknown; statusCode?: unknown; message?: unknown }): boolean => {
+  if (err.status === 404 || err.status === "404" || err.statusCode === 404 || err.statusCode === "404") return true;
+  const message = typeof err.message === "string" ? err.message : "";
+  return /\bHTTP(?:\/\S+)?\s+404\b/.test(message);
+};
+
+/**
+ * Plugin/RPC "no such entity". The SDK's PluginRpcCallError carries `code` "not_found" or, for a server
+ * code it does not know ("thread_not_found", "project_not_found", …), `code` "unknown_error" + `serverCode`;
+ * a BbHttpError arrives as code "<entity>_not_found" with message "HTTP 404: …". A 500 or transport
+ * failure is not absence and must not pass.
+ */
+export const isNotFound = (cause: unknown): boolean => {
+  if (typeof cause !== "object" || cause === null) return false;
+  const err = cause as { code?: unknown; serverCode?: unknown; status?: unknown; statusCode?: unknown; message?: unknown };
+  return isNotFoundCode(err.code) || isNotFoundCode(err.serverCode) || isHttp404(err);
+};
 
 /** Text of a file that may not exist; null only when the path is absent — other failures throw. */
 export async function readTextOrNull(path: string): Promise<string | null> {

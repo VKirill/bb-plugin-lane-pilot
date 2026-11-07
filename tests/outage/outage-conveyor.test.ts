@@ -55,3 +55,17 @@ describe("the conveyor switch", () => {
     expect(await isHeld(kv, "run1")).toBe(false);
   });
 });
+
+it("the heartbeat is still scheduled when the first store reads fail", async () => {
+  const { createFakePluginHost } = await import("@get-bb/plugin-sdk/testing");
+  const { mountOutage } = await import("../../src/rooms/outage/server");
+  const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
+  const scheduled: string[] = [];
+  (bb.background as unknown as { schedule: (name: string, cron: string, fn: () => Promise<void>) => void }).schedule = (name) => { scheduled.push(name); };
+  const kv = bb.storage.kv as unknown as { get: (key: string) => Promise<unknown> };
+  kv.get = async () => { throw new Error("store down"); };
+  const db = openDatabase(bb);
+  await mountOutage({ bb, db, log: () => undefined, isDisposed: () => false } as never);
+  expect(scheduled).toContain("outage-beat");
+  await harness.lifecycle.dispose();
+});

@@ -464,6 +464,18 @@ export function parkAttemptWake(db: LanePilotDatabase, attemptId: string, reason
   db.prepare("UPDATE lane_pilot_attempt SET wake_at=? WHERE id=?").run(wakeAt, attemptId);
 }
 
+/** Consecutive `queued` parks of an attempt whose journal reason starts with `reasonPrefix`, counted back until a different row. */
+export function trailingQueuedParks(db: LanePilotDatabase, attemptId: string, reasonPrefix: string): number {
+  const rows = db.prepare("SELECT to_state, reason FROM lane_pilot_attempt_transition WHERE attempt_id=? AND refused=0 ORDER BY at DESC, rowid DESC LIMIT 100")
+    .all(attemptId) as Array<{ to_state: string; reason: string | null }>;
+  let count = 0;
+  for (const row of rows) {
+    if (row.to_state !== "queued" || !(row.reason ?? "").startsWith(reasonPrefix)) break;
+    count += 1;
+  }
+  return count;
+}
+
 /** Queued attempts whose writer hold ended (or should be re-checked): the minute waker picks them up. */
 export function listDueWakes(db: LanePilotDatabase, now: number): Array<{ id: string; run_id: string; task_id: string; reason: string | null }> {
   return db.prepare("SELECT id,run_id,task_id,reason FROM lane_pilot_attempt WHERE state='queued' AND wake_at IS NOT NULL AND wake_at<=? ORDER BY wake_at")

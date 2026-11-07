@@ -974,7 +974,7 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
       if(!taskId) continue;
       // The PM chat of the run is gone (deleted or archived): maintenance reads it first and would throw "Thread not found"
       // every hour, leaving the receipt running for good (hub, 2026-10-08, layout-A3). The open receipts end canceled.
-      const pm=await bb.sdk.threads.get({threadId:activation.pm_thread_id}).then((value)=>value as unknown,(cause:unknown)=>/\b404\b|not.?found/i.test(cause instanceof Error?cause.message:String(cause))?null:undefined);
+      const pm=await bb.sdk.threads.get({threadId:activation.pm_thread_id}).then((value)=>value as unknown,(cause:unknown)=>isNotFound(cause)?null:undefined);
       if(pm===null||(pm!==undefined&&valueAt(pm,"archivedAt")!=null)){
         for(const candidate of new Set(runHistory?.attempts.map((item)=>item.task_id))){
           const open=listStageReceipts(db,run.id,candidate).find((receipt)=>receipt.stageId==="docs-maintenance"&&(receipt.state==="pending"||receipt.state==="running"));

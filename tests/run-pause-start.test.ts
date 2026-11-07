@@ -153,3 +153,72 @@ it("a sibling of an area with three tasks of one kind waits for the pilot, the f
   expect(spawned).toEqual(["T1-a1"]);
   await env.harness.lifecycle.dispose();
 });
+
+import { waitWhileRunPaused } from "../src/rooms/runs/server/runs-pause";
+import { sweepWriterWakes } from "../src/rooms/writer/server/writer-wake";
+
+it("a pause-state read that keeps failing releases the wait after the bound instead of holding the slot", async () => {
+  const kv = { get: async () => { throw new Error("kv down"); }, set: async () => undefined };
+  const errors: string[] = [];
+  const held = await waitWhileRunPaused(kv, "run1", { isDisposed: () => false, pollMs: 1, maxReadErrors: 3, onError: (message) => errors.push(message) });
+  expect(held).toBe(true);
+  expect(errors.some((message) => message.includes("releasing the wait"))).toBe(true);
+});
+
+it("a single pause-state read failure keeps waiting, and the next clean read resumes", async () => {
+  let calls = 0;
+  const kv = { get: async () => { calls += 1; if (calls === 1) throw new Error("blip"); return undefined; }, set: async () => undefined };
+  const errors: string[] = [];
+  const held = await waitWhileRunPaused(kv, "run1", { isDisposed: () => false, pollMs: 1, maxReadErrors: 5, onError: (message) => errors.push(message) });
+  expect(held).toBe(true);
+  expect(errors.some((message) => message.includes("staying held"))).toBe(true);
+});
+
+const PAUSE_READ_KEYS = new Set(["run-paused:run1", "run-halted:run1", "conveyor:off"]);
+
+it("a plugin-store read failure before spawn parks the attempt for a retry instead of blocking it", async () => {
+  const env = setup();
+  const kv = env.bb.storage.kv as unknown as { get: (key: string) => Promise<unknown> };
+  const realGet = kv.get.bind(kv);
+  let failed = false;
+  kv.get = async (key: string) => {
+    if (!failed && !PAUSE_READ_KEYS.has(key)) { failed = true; throw new Error("store blink"); }
+    return realGet(key);
+  };
+  const { all, spawned } = services(env);
+  start(env, all);
+  await vi.waitFor(() => expect(getAttempt(env.db, "T1-a1")?.reason ?? "").toContain("store_read:"));
+  const parked = getAttempt(env.db, "T1-a1")!;
+  expect(parked.state).toBe("queued");
+  expect(spawned).toEqual([]);
+  env.db.prepare("UPDATE lane_pilot_attempt SET wake_at=0 WHERE id='T1-a1'").run();
+  await sweepWriterWakes(env.ctx, all as never);
+  await vi.waitFor(() => expect(writerStage(env.db).state).toBe("passed"), { timeout: 15_000 });
+  expect(spawned).toEqual(["T1-a1"]);
+  await env.harness.lifecycle.dispose();
+});
+
+it("a plugin store that stays unreadable blocks the attempt after the park bound and posts one owner item", async () => {
+  const env = setup();
+  const kv = env.bb.storage.kv as unknown as { get: (key: string) => Promise<unknown> };
+  const realGet = kv.get.bind(kv);
+  kv.get = async (key: string) => {
+    if (!PAUSE_READ_KEYS.has(key)) throw new Error("store down");
+    return realGet(key);
+  };
+  const { all, spawned } = services(env);
+  start(env, all);
+  await vi.waitFor(() => expect(getAttempt(env.db, "T1-a1")?.reason ?? "").toContain("store_read:"));
+  for (let i = 0; i < 8 && getAttempt(env.db, "T1-a1")?.state !== "blocked"; i += 1) {
+    env.db.prepare("UPDATE lane_pilot_attempt SET wake_at=0 WHERE id='T1-a1' AND state='queued'").run();
+    await sweepWriterWakes(env.ctx, all as never);
+    await new Promise((resolve) => setTimeout(resolve, 30));
+  }
+  const attempt = getAttempt(env.db, "T1-a1")!;
+  expect(attempt.state).toBe("blocked");
+  expect(attempt.reason).toContain("store_read:");
+  expect(spawned).toEqual([]);
+  const items = env.db.prepare("SELECT key FROM lane_pilot_owner_item WHERE key='store-read:T1-a1'").all();
+  expect(items).toHaveLength(1);
+  await env.harness.lifecycle.dispose();
+});

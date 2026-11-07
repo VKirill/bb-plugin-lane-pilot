@@ -21,7 +21,7 @@ beforeEach(() => { dir = mkdtempSync(join(tmpdir(), "lead-svc-")); process.env.L
 afterEach(() => { rmSync(dir, { recursive: true, force: true }); delete process.env.LANE_PILOT_LEAD_DIR; });
 
 function world(start: () => Promise<unknown> = async () => ({ ok: true, runId: "wf_1" }), runs: Record<string, { status: string; error?: string | null; failedNode?: string | null; reason?: string | null }> = {}) {
-  const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
+  const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
   const db = openDatabase(bb);
   void bb.storage.kv.set("self-repair:config", { projectId: "proj_lp", environmentId: "env_lp" } as never);
   const starts: unknown[] = [];
@@ -31,7 +31,7 @@ function world(start: () => Promise<unknown> = async () => ({ ok: true, runId: "
     workflowEngine: { register: () => undefined, get: (runId: string) => runs[runId] ? { runId, output: null, reason: null, error: null, failedNode: null, waiting: [], stopped: false, ...runs[runId] } : null },
   } as unknown as Services;
   const lead = createLeadService(createCore(bb, db), services, migrations);
-  return { bb, db, lead, starts, services };
+  return { bb, db, lead, starts, services, harness };
 }
 const ownerItem = (db: ReturnType<typeof openDatabase>, key: string) => db.prepare("SELECT key, kind, state FROM lane_pilot_owner_item WHERE key=?").get(key) as { key: string; kind: string; state: string } | undefined;
 
@@ -314,4 +314,15 @@ describe("the memory exam through the service", () => {
     expect((await runLeadCli({ db, kv: bb.storage.kv as never, lead }, ["status"], 4_000)).stdout).toContain("memory exam: recall: not measured; decisions (jev)");
     expect((await runLeadCli({ db, kv: bb.storage.kv as never, lead }, ["memory-exam", "--limit", "zero"], 5_000)).exitCode).toBe(2);
   });
+});
+
+
+it("the lead chat whose stored thread is gone (HTTP 404) starts a new one instead of throwing", async () => {
+  const { bb, db, lead, services, harness } = world();
+  (services as { docsPlaces: unknown }).docsPlaces = async () => [{ scopes: [], hostId: "h1", path: "/tmp/lp" }];
+  harness.sdk.stub("threads.get", async ({ threadId }: { threadId: string }) => { throw new Error(`HTTP 404: thread ${threadId} not found`); });
+  harness.sdk.stub("threads.spawn", async () => ({ id: "thr_new_chat" }));
+  await bb.storage.kv.set("lead-chat-thread:proj_lp", "thr_dead");
+  const started = await lead.chatStart({});
+  expect(started).toMatchObject({ threadId: "thr_new_chat", reused: false });
 });

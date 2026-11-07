@@ -22,15 +22,24 @@ export async function isHeld(kv: Kv, runId: string): Promise<boolean> {
  * Holds the caller while the run is paused. Returns once it is resumed (true) or the plugin is being reloaded (false: the
  * new instance asks again). `onFirstWait` is called once, when the wait begins.
  */
-export async function waitWhileRunPaused(kv: Kv, runId: string, options: { isDisposed: () => boolean; pollMs?: number; onFirstWait?: () => void; onError?: (message: string) => void }): Promise<boolean> {
-  let waited = false, readErrorLogged = false;
+export async function waitWhileRunPaused(kv: Kv, runId: string, options: { isDisposed: () => boolean; pollMs?: number; onFirstWait?: () => void; onError?: (message: string) => void; maxReadErrors?: number }): Promise<boolean> {
+  let waited = false, readErrorLogged = false, readErrors = 0;
+  // A permanently unreadable flag must not hold the writer slot until reload: after the bound the wait is
+  // released and the attempt's own store-read boundary (park, then block) decides.
+  const maxReadErrors = options.maxReadErrors ?? 5;
   // The conveyor switch (conveyor.ts) holds every run the same way.
   for (;;) {
     let held: boolean;
-    try { held = await isHeld(kv, runId); }
+    try { held = await isHeld(kv, runId); readErrors = 0; }
     catch (cause) {
       // A failed flag read is "state unknown", not "resumed": stay held and keep polling until a clean read.
-      if (!readErrorLogged) { readErrorLogged = true; options.onError?.(`run ${runId} pause/conveyor state unreadable, staying held: ${cause instanceof Error ? cause.message : String(cause)}`); }
+      readErrors += 1;
+      const detail = cause instanceof Error ? cause.message : String(cause);
+      if (readErrors >= maxReadErrors) {
+        options.onError?.(`run ${runId} pause/conveyor state unreadable ${readErrors} reads in a row; releasing the wait so the slot is not held forever: ${detail}`);
+        return true;
+      }
+      if (!readErrorLogged) { readErrorLogged = true; options.onError?.(`run ${runId} pause/conveyor state unreadable, staying held: ${detail}`); }
       if (options.isDisposed()) return false;
       await sleep(options.pollMs ?? pollPause(5_000));
       continue;

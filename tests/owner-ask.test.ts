@@ -301,3 +301,20 @@ describe("a question lost to a reload (H8, audit B3)", () => {
     expect(await ownerAsk.pending("thr_pm")).toBe(false);
   });
 });
+
+it("recoverLost skips an unreadable record and still tells the chat of the next one", async () => {
+  const sent: Array<{ threadId: string; text: string }> = [];
+  const send = async (args: { threadId: string; input: Array<{ text: string }> }) => { sent.push({ threadId: args.threadId, text: args.input[0]!.text }); return {}; };
+  const made = createFakePluginHost({ pluginId: "lane-pilot", sdk: { threads: { send } } as never });
+  (made.bb as unknown as { ui: unknown }).ui = { requestInput: async () => ({ outcome: "cancelled", reason: "plugin-disposed" }) };
+  const ownerAsk = createOwnerAsk(made.bb, () => undefined);
+  await ownerAsk.ask("thr_a", { source: "pm", question: "first?" });
+  await ownerAsk.ask("thr_b", { source: "pm", question: "second?" });
+  const kv = made.bb.storage.kv as never as { get: (key: string) => Promise<unknown> };
+  const realGet = kv.get.bind(kv);
+  kv.get = async (key: string) => { if (key === "owner-ask:pending:thr_a") throw new Error("corrupt record"); return realGet(key); };
+  const next = createOwnerAsk(made.bb, () => undefined);
+  const told = await next.recoverLost();
+  expect(told).toEqual(["thr_b"]);
+  expect(sent.map((line) => line.threadId)).toEqual(["thr_b"]);
+});

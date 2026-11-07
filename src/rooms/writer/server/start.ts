@@ -6,7 +6,8 @@ import type { DirtSnapshot } from "../cli-outcome";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
 import { providerPoolCap } from "@lane-pilot/settings-catalog";
 import { isZcodeProvider, WRITER_PROFILES, type WriterProfile } from "@lane-pilot/models";
-import { DEPENDENCY_REDO_WAIT_MS, countAttempts, countChargedAttempts, countThreadTurns, createAttempt, endSpawnFailure, failureFieldsOf, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getTask, getTaskPlan, latestTaskAttemptState, listAttemptsForTask, listOpenAttempts, listStageReceipts, listUnansweredWriterQuestions, loadProjectSettings, noteToldPmDirectly, parkAttemptWake, transitionAttempt, taskBasePath } from "../../storage";
+import { DEPENDENCY_REDO_WAIT_MS, countAttempts, countChargedAttempts, countThreadTurns, createAttempt, endSpawnFailure, failureFieldsOf, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getTask, getTaskPlan, latestTaskAttemptState, listAttemptsForTask, listOpenAttempts, listStageReceipts, listUnansweredWriterQuestions, loadProjectSettings, noteToldPmDirectly, parkAttemptWake, trailingQueuedParks, transitionAttempt, taskBasePath } from "../../storage";
+import { postOwnerItem } from "../../owner-waiting";
 import { taskV2Schema } from "../../contracts";
 import { ownsPathsOverlap, pollPause } from "@lane-pilot/kit";
 import { reconcile, reconcileCursor } from "../../stability";
@@ -604,15 +605,24 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
     let previousTurn:{ failure:string; diff:string|null; streamError?:boolean } | null = null;
 
     /** Settings, writer pick, budget, the live-folder flag and its backup: everything a later step needs in place. False = parked for a transient store read. */
+    const STORE_READ_PARK_LIMIT = 5;
     const prepareRun = async ():Promise<boolean> => {
       policy=runPolicyFor(input.runId);
-      // The writer for this task: Jev's pick from the writers' anamnesis, else the rotation's share, else the project's writer; every
-      // attempt of the task sees the same pair (the pick is kept per task).
-      baseSettings=(await effectiveProjectSettings(input.projectId,getRunSettingsScopes(db,input.runId))).values;
-      // The pick, the pin and the live backup live in the plugin store: a read that fails is transient — park the
-      // attempt for the wake sweep instead of blocking it on a storage hiccup.
+      // The pick, the pin, the live backup and the settings scopes live in the plugin store: a read that fails is
+      // transient — park the attempt for the wake sweep instead of blocking it on a storage hiccup.
       const parkForStoreRead = (cause: unknown): false => {
         const message = cause instanceof Error ? cause.message : String(cause);
+        // Bounded: a store that stays unreadable is not transient. After the park limit the attempt blocks with a
+        // clear reason and the owner gets one item, instead of re-waking every half minute forever.
+        if (trailingQueuedParks(db, attemptId, "store_read:") + 1 >= STORE_READ_PARK_LIMIT) {
+          const reason = `store_read: plugin store unreadable after ${STORE_READ_PARK_LIMIT} attempts: ${message.slice(0, 160)}`;
+          blockBeforeWriter(reason);
+          postOwnerItem(db, { key: `store-read:${attemptId}`, source: "writer", kind: "store_read", projectId: input.projectId, wake: true,
+            what: "Запись остановлена: хранилище плагина не читается",
+            why: `${STORE_READ_PARK_LIMIT} попыток подряд не смогли прочитать настройки перед запуском писателя — это постоянный сбой хранилища, а не разовый.`,
+            evidence: [{ kind: "run", ref: input.runId }, { kind: "task", ref: input.taskId }] });
+          return false;
+        }
         const reason = `store_read: ${message.slice(0, 200)}`;
         parkAttemptWake(db, attemptId, reason, Date.now() + 30_000);
         ctx.log(`writer ${input.taskId}: plugin store unreadable before spawn (${reason}); the attempt retries in 30 s`);
@@ -620,6 +630,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         return false;
       };
       try {
+        baseSettings=(await effectiveProjectSettings(input.projectId,getRunSettingsScopes(db,input.runId))).values;
         writerOverlay=await pickWriter(baseSettings, input);
         runSettings=writerOverlay ? { ...baseSettings, ...writerOverlay } : rotatedWriterSettings(baseSettings, input.taskId);
         // The task's writer pair, pinned across restarts and re-dispatches (hive H-01): a kept pin wins over a fresh

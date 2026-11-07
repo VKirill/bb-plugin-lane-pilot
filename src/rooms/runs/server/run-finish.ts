@@ -17,7 +17,6 @@ export function cancelRejection(db: ReturnType<typeof openDatabase>, attempt: No
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-const isGone = (cause: unknown) => /\b404\b|not found/i.test(cause instanceof Error ? cause.message : String(cause));
 
 /**
  * Closes open runs nobody can come back to: the PM chat was deleted or archived, or a run never got a PM chat in a
@@ -36,7 +35,7 @@ export async function closeAbandonedRuns(bb: BbPluginApi, db: ReturnType<typeof 
     let abandoned: boolean;
     if (!row.pm_thread_id) abandoned = now - row.created_at > DAY_MS;
     else {
-      const thread = await bb.sdk.threads.get({ threadId: row.pm_thread_id }).then((value) => value as unknown, (cause: unknown) => (isGone(cause) ? null : undefined));
+      const thread = await bb.sdk.threads.get({ threadId: row.pm_thread_id }).then((value) => value as unknown, (cause: unknown) => (isNotFound(cause) ? null : undefined));
       if (thread === undefined) continue;
       abandoned = thread === null || valueAt(thread, "archivedAt") != null;
     }
@@ -143,7 +142,7 @@ export async function cleanupFinishedAttemptEnvironments(bb: BbPluginApi, db: Re
     signal?.throwIfAborted();
     if (!attempts.every(done) || Math.max(...attempts.map((row) => row.updatedAt)) >= now - ENVIRONMENT_GRACE_MS) continue;
     if (attempts.some((row) => row.state === "accepted" && row.area && row.updatedAt >= now - STICKY_WINDOW_MS)) continue;
-    const environment = await bb.sdk.environments.get({ environmentId }).then((value) => value as unknown, (cause: unknown) => (isGone(cause) ? null : undefined));
+    const environment = await bb.sdk.environments.get({ environmentId }).then((value) => value as unknown, (cause: unknown) => (isNotFound(cause) ? null : undefined));
     if (environment === null || environment === undefined) continue;
     const phase = stringAt(valueAt(environment, "lifecycle"), "phase");
     if (phase && phase !== "active") continue;
@@ -223,7 +222,7 @@ export async function finishRunSafely(
     };
     if (typeof threads.listRunning !== "function") throw new Error("cannot verify PM status: threads.listRunning is unavailable");
     // A PM thread the user deleted has nothing left to observe; the run must still be closable.
-    const existing = await threads.get({ threadId: run.pm_thread_id }).catch((cause: unknown) => { if (isGone(cause)) return null; throw cause; });
+    const existing = await threads.get({ threadId: run.pm_thread_id }).catch((cause: unknown) => { if (isNotFound(cause)) return null; throw cause; });
     if (existing !== null) {
       await threads.stop({ threadId: run.pm_thread_id });
       const info = await threads.get({ threadId: run.pm_thread_id });
