@@ -2,9 +2,10 @@
 // Add a name here to make it public; scripts/refactor/barrels.ts wrote the first version from the existing imports.
 export { checkArguments, flatParameters, memberOf, signature, unionMembers, withSignatures } from "./action-schema";
 export type { ActionMember } from "./action-schema";
-export { callerPluginMetadata, configuredSetting, requirePmRun } from "./context";
+export { callerPluginMetadata, requirePmRun } from "./context";
 export type { ServerContext } from "./context";
-export type { ServerCore } from "./core";
+export { configuredSetting } from "../../contracts/server";
+export type { ServerCore } from "../../contracts/server";
 export { CATALOG_WAIT_MS, createModelCatalog, modelCatalogOf, pmHostOf, within } from "./model-catalog-reader";
 export type { ModelCatalogReader } from "./model-catalog-reader";
 export { bindGraphStepLookup, bindRunChildBudget, fullAccessSpawn, graphStepMetadata, pmHasGuard, pmPrompt, providerSupportsServiceTier } from "./pm-spawn";
@@ -22,6 +23,7 @@ export type { ProjectFolder } from "./standalone-place";
 export { stageHelperSettings } from "./stage-settings";
 export type { Services } from "./services";
 export { clearSpawnMarker, findThreadsByMetadata, keyedSpawnSupported, spawnTextId } from "./thread-keys";
-export { ToolError, fenceOutside, registerObservedTool, registeredTools } from "./tool-result";
+export { ToolError } from "../../contracts/server";
+export { fenceOutside, registerObservedTool, registeredTools } from "./tool-result";
 export type { ObservedTool } from "./tool-result";
 export { holderSpawnKey, id, stringAt, valueAt } from "./values";
