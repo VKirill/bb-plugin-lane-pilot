@@ -1,6 +1,6 @@
 import type { ExperimentalHostClient, PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import { z } from "zod";
-import { mapListedQaHosts } from "../platform/server";
+import { listQaHosts } from "../platform/server";
 import type { ServerCore } from "../contracts/server";
 import type { AnamnesisRpcRequest, anamnesisHostMethods, anamnesisRpcMethods } from "./contract";
 import { runAnamnesisCli, type CliResult } from "./cli";
@@ -37,7 +37,7 @@ function build(ctx: ServerCore) {
   });
   const innerHub: Hub = createHub({
     hostCall: async (hostId, request, timeoutMs) => (await (host as unknown as ExperimentalHostClient<typeof anamnesisHostMethods>).call("anamnesis", { requestedHostId: hostId, request }, { hostId, timeoutMs })).response,
-    listHosts: async () => mapListedQaHosts(await (bb.sdk as unknown as { hosts: { list: () => Promise<unknown> } }).hosts.list()),
+    listHosts: async () => listQaHosts(bb),
     kv: bb.storage.kv as never,
     store,
     log: (message) => bb.log.warn(message),

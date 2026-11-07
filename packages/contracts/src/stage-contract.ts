@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { sha256Hex } from "@lane-pilot/kit";
 
 export const STAGE_CONTRACT_VERSION = 1 as const;
 export const STAGE_IDS = ["pm-read", "plan-critique", "run-gate", "specialist-review", "writer-agent", "verification", "code-critique", "plan-fact", "acceptance-receipt", "browser-qa", "docs-maintenance", "onboarding-preview", "onboarding-apply", "memory-maintenance", "project-life", "night-review", "night-fix", "workspace-status", "opencode-telemetry", "gate-triage", "critic-tiebreak"] as const;
@@ -25,10 +24,6 @@ export const stageReceiptSchema = z.object({
 }).strict();
 
 export type StageReceipt = z.infer<typeof stageReceiptSchema>;
-
-export function sha256(value: string): string {
-  return sha256Hex(value);
-}
 
 export function stageTransition(from: StageState, to: StageState): boolean {
   if (from === to) return true;

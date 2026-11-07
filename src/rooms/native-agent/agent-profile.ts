@@ -1,6 +1,7 @@
 import { z } from "zod";
 import bundledAgents from "./bundled-agents.json";
-import { EMPLOYEES, machineAffinitySchema, stockEmployee } from "./employee-manifest";
+import { machineAffinitySchema } from "@lane-pilot/contracts";
+import { EMPLOYEES, stockEmployee } from "./employee-manifest";
 import { isCliLaneAgentPrompt, isInternalAgent, isLanePmAgent, laneSessionOverlayPrompt, overlayDisallowedTools, overlaySessionTools } from "./native-agent-overlay";
 import { WORKFLOW_ARCHITECT_ID, WORKFLOW_ARCHITECT_NAME, WORKFLOW_ARCHITECT_TOOLS } from "../workflow";
 import { LEAD_ID, LEAD_NAME, LEAD_TOOLS } from "../lead";

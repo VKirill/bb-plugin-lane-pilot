@@ -1,8 +1,8 @@
 import { z } from "zod";
 import { settingValidationSchema } from "@lane-pilot/contracts";
-import { PAIR_ROLE_SPECS, roleSpec, type PairRoleSelectionRpc, type RoleSpec } from "@lane-pilot/models";
+import { PAIR_ROLE_SPECS, REASONING_LEVELS, roleSpec, type PairRoleSelectionRpc, type RoleSpec } from "@lane-pilot/models";
 
-const REASONING_LEVEL = z.enum(["none", "low", "medium", "high", "xhigh", "ultracode", "max", "ultra"]);
+const REASONING_LEVEL = z.enum(REASONING_LEVELS);
 const SELECTION_OUTPUT = z.object({
   ok: z.boolean(),
   conflict: z.boolean(),

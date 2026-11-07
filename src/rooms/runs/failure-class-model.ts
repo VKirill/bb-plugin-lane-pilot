@@ -99,7 +99,6 @@ export function sweepPlanFactOutcomes(db: Database.Database): number {
     try { result = stage?.result_json ? JSON.parse(stage.result_json) : null; } catch { /* unreadable */ }
     if (!result?.jev || !result.items?.length) continue;
     const code = Object.fromEntries(result.items.map((item) => [String(item.item), item.verdict === "proven" ? "done" : "not_done"]));
-    const compared = Object.entries(result.jev).filter(([, verdict]) => verdict !== "unseen" && code[verdict === "done" ? "1" : ""] !== undefined && code);
     const agreed = Object.entries(result.jev).filter(([item, verdict]) => verdict !== "unseen" && code[item] !== undefined).every(([item, verdict]) => verdict === code[item]);
     if (Object.values(code).length) { recordOutcome(db, receipt.id, agreed ? "agree" : "disagree"); labeled += 1; }
   }

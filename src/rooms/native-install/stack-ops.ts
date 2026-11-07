@@ -7,7 +7,7 @@ import { readImportConfig } from "../settings";
 import type { InstallPhase } from "./install-runner";
 import { connectOpencode } from "./opencode-connect";
 import { inventoryCoexistenceAtHome, runCoexistenceOperationAtHome } from "./coexistence";
-import { agentsDir, defaultLocalFallback, resolveHome } from "@lane-pilot/kit";
+import { agentsDir, resolveHome } from "@lane-pilot/kit";
 import { spawnAsync } from "@lane-pilot/kit";
 import { skippedOpsReceipt, writeReceipt, type FileChange, type InstallReceipt } from "./receipt";
 import {
@@ -80,7 +80,7 @@ export async function detectStack(ctx: HostContext) {
   }, home);
   const engineRows = inventory.managers.filter((row) => ["agents-marker", "managed-checkout", "claude-cache"].includes(row.manager));
   const compatibleRows = engineRows.filter((row) => row.compatible === true);
-  const fallbackRoot = ctx.localFallbackPath ?? (ctx.moduleUrl ? defaultLocalFallback(ctx.moduleUrl) : null);
+  const fallbackRoot = ctx.localFallbackPath;
   let fallbackAssessment: ReturnType<typeof assessEngineCapabilities> | null = null;
   if (fallbackRoot) {
     try {
@@ -283,7 +283,7 @@ export async function installStack(ctx: HostContext): Promise<InstallReceipt> {
       path: managed.path,
       expectedSha256: managed.sha256,
       targetSha: TARGET_SHA,
-    }, home, { localFallbackPath: ctx.localFallbackPath, moduleUrl: ctx.moduleUrl });
+    }, home, { localFallbackPath: ctx.localFallbackPath });
   } catch (error) {
     return writeReceipt({
       action: "install",

@@ -163,7 +163,7 @@ export function createRuleScan(ctx: ServerCore, services: RuleScanServices, deps
     await warmSpawnUsage(spawnUsage,null);
     // The folder the analyzer starts in is known here (collectScan, runModel): a provider this machine refused there (opencode2 under
     // ~/Documents, 2026-10-30: two of the night's seven failures) is out of the offer, as on the workflow-agent path.
-    const folderBlock = place ? await readProviderFolderBlock(bb.storage.kv, place.hostId, "opencode2") : null;
+    const folderBlock = place ? await readProviderFolderBlock(bb.storage.kv, place.hostId) : null;
     const role = resolveSpawnModel({ role: "rules-analyzer", settings, catalog: modelCatalogOf(ctx).peek(), usage: spawnUsage, hostId: place?.hostId ?? null, envPath: place?.path ?? null, folderBlock, avoidProvider: options.avoidProvider ?? null });
     return { providerId: role.providerId, model: role.model, reasoningLevel: role.reasoningEffort, serviceTier: DEFAULT_ANALYZER.serviceTier };
   }

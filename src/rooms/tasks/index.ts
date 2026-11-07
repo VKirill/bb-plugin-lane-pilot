@@ -1,7 +1,9 @@
 // Public API of tasks: what other rooms import. Everything else in this room is private.
 // Add a name here to make it public; scripts/refactor/barrels.ts wrote the first version from the existing imports.
 export { acceptanceArtifactDir, bbWriterReportMarkdown, buildAcceptanceV2, validateAcceptanceV2 } from "./acceptance-v2";
-export { STAGE_IDS, STAGE_PROOF, acceptanceProofGap, isAdvisoryProof, sha256, stageReceiptSchema, stageTransition, validateStageReceipt } from "@lane-pilot/contracts";
+export { STAGE_IDS, STAGE_PROOF, acceptanceProofGap, isAdvisoryProof, stageReceiptSchema, stageTransition, validateStageReceipt } from "@lane-pilot/contracts";
+/** The writer's `sha256` import (writer/server/verify.ts) keeps its name; the hash itself is kit's. */
+export { sha256Hex as sha256 } from "@lane-pilot/kit";
 export type { StageId, StageProof, StageReceipt, StageState } from "@lane-pilot/contracts";
 export type { GateReport } from "./gate-report";
 export { RunWriterPool, buildRunExecutionProfile, buildRunPolicy, mapBounded, parseRunPolicy, shouldReconcileAttemptThread, shouldResumeWorktreeHolder, shouldScanLostWorktreeHolder } from "./run-policy";

@@ -1,12 +1,12 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { isAbsolute, relative, resolve } from "node:path";
 import type Database from "better-sqlite3";
-import type { PrototypeConfig, StageId, StageState } from "@lane-pilot/contracts";
+import { taskFamily, taskRedispatchBase, type PrototypeConfig, type StageId, type StageState } from "@lane-pilot/contracts";
 import { parseDirtSnapshots, type DirtSnapshot } from "../dirt-snapshot";
-import { FREE_CLASSES, failureClass, isOwnerDecision, isPreStartStop, isWaitingSecret, isWriterSilent, taskFamily, type FailureCode } from "../platform";
+import { FREE_CLASSES, failureClass, isOwnerDecision, isPreStartStop, isWaitingSecret, isWriterSilent, type FailureCode } from "../platform";
 import { IllegalTransitionError, isLegalMove } from "../state-machine";
 import type { SettingValidationError, SettingsValidator } from "../setting-validation";
-import { sha256Buffer } from "@lane-pilot/kit";
+import { sha256Hex } from "@lane-pilot/kit";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
 import { dropMemoryIndexes, hideRecord, noteRefutedByCheck, recordMemoryAccepted } from "@lane-pilot/memory-core";
 import packageJson from "../../../package.json";
@@ -598,8 +598,7 @@ export function listAttemptsForTask(db: LanePilotDatabase, runId: string, taskId
  */
 export function listTaskTerminalStates(db: LanePilotDatabase, runId: string): string[] {
   const latest = new Map<string, string>();
-  const family = (id:string) => { for (let next = id;;) { const up = next.replace(/(\.\d+)+$/, "").replace(/-mainfix$/, ""); if (up === next) return next; next = up; } };
-  for (const row of db.prepare("SELECT id FROM lane_pilot_task WHERE run_id=? ORDER BY created_at, rowid").all(runId) as Array<{id:string}>) latest.set(family(row.id), row.id);
+  for (const row of db.prepare("SELECT id FROM lane_pilot_task WHERE run_id=? ORDER BY created_at, rowid").all(runId) as Array<{id:string}>) latest.set(taskFamily(row.id), row.id);
   const tasks = [...latest.values()].map((id) => ({ id }));
   return tasks.map((task) => {
     const latest = db.prepare("SELECT state FROM lane_pilot_attempt WHERE run_id=? AND task_id=? ORDER BY attempt_no DESC LIMIT 1")
@@ -623,8 +622,8 @@ export const DEPENDENCY_REDO_WAIT_MS = 6 * 3_600_000;
 
 /** The latest attempt of a task or of its redispatches, with when it got its state. */
 export function latestTaskAttempt(db: LanePilotDatabase, projectId: string, taskId: string): { state:string; updated_at:number } | null {
-  // Naming «P1.2» also follows its later redispatches («P1.3», «P1.2.2»): the family is the id without its numeric suffixes.
-  const base = taskId.replace(/(\.\d+)+$/, "") || taskId;
+  // Naming «P1.2» also follows its later redispatches («P1.3», «P1.2.2»): the base is the id without its numeric suffixes.
+  const base = taskRedispatchBase(taskId);
   const rows = db.prepare(`SELECT a.task_id, a.state, a.updated_at FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
     WHERE r.project_id=? AND (a.task_id=? OR a.task_id LIKE ? ESCAPE '\\')
     ORDER BY a.created_at DESC, a.attempt_no DESC`).all(projectId, taskId, `${base.replace(/[\\%_]/g, "\\$&")}.%`) as Array<{ task_id:string; state:string; updated_at:number }>;
@@ -1453,11 +1452,11 @@ export function checkIdentity(ref: CheckRef): { cwd: string; command: string } {
 export const checkHistoryKey = (ref: CheckRef): string => { const { cwd, command } = checkIdentity(ref); return JSON.stringify([cwd, command]); };
 
 /** Rows written before the folder joined the key were keyed by the trimmed command alone: still read, for that exact command string. */
-const legacyCheckKey = (command: string): string => sha256Buffer(command.trim());
+const legacyCheckKey = (command: string): string => sha256Hex(command.trim());
 
 /** One finished verification command run. The command is keyed by its hash: it can be long and may carry a secret name. */
 export function recordCheckDuration(db: LanePilotDatabase, input: CheckRef & { projectId: string; durationMs: number; exitCode: number; now?: number }): void {
-  const key = sha256Buffer(checkHistoryKey(input));
+  const key = sha256Hex(checkHistoryKey(input));
   db.prepare("INSERT INTO lane_pilot_check_duration(project_id,command_key,duration_ms,exit_code,at) VALUES (?,?,?,?,?)")
     .run(input.projectId, key, Math.max(0, Math.round(input.durationMs)), input.exitCode, input.now ?? Date.now());
   db.prepare(`DELETE FROM lane_pilot_check_duration WHERE project_id=? AND command_key=? AND rowid NOT IN
@@ -1502,14 +1501,14 @@ export function listCheckTimeouts(db: LanePilotDatabase, projectId: string, chec
  */
 export function listCheckRuns(db: LanePilotDatabase, projectId: string, check: CheckRef, limit = 20): Array<{ durationMs: number; exitCode: number }> {
   return (db.prepare("SELECT duration_ms, exit_code FROM lane_pilot_check_duration WHERE project_id=? AND command_key IN (?,?) ORDER BY at DESC, rowid DESC LIMIT ?")
-    .all(projectId, sha256Buffer(checkHistoryKey(check)), legacyCheckKey(check.command), limit) as Array<{ duration_ms: number; exit_code: number }>)
+    .all(projectId, sha256Hex(checkHistoryKey(check)), legacyCheckKey(check.command), limit) as Array<{ duration_ms: number; exit_code: number }>)
     .map((row) => ({ durationMs: row.duration_ms, exitCode: row.exit_code }));
 }
 
 /** Durations (ms) of the last green runs of one check in one project, newest first (rows of the old command-only key included). */
 export function listCheckDurations(db: LanePilotDatabase, projectId: string, check: CheckRef, limit = 20): number[] {
   return (db.prepare("SELECT duration_ms FROM lane_pilot_check_duration WHERE project_id=? AND command_key IN (?,?) AND exit_code=0 ORDER BY at DESC, rowid DESC LIMIT ?")
-    .all(projectId, sha256Buffer(checkHistoryKey(check)), legacyCheckKey(check.command), limit) as Array<{ duration_ms: number }>).map((row) => row.duration_ms);
+    .all(projectId, sha256Hex(checkHistoryKey(check)), legacyCheckKey(check.command), limit) as Array<{ duration_ms: number }>).map((row) => row.duration_ms);
 }
 
 export type AcceptedFactRow = { taskId: string; runId: string; fact: unknown; summarizedAt: number | null; createdAt: number };

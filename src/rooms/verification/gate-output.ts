@@ -3,8 +3,7 @@
  * Pure text functions, shared by the hub (the culprit search) and the host (the baseline run of the failing files).
  */
 
-const ANSI = /\u001b\[[0-9;?]*[A-Za-z]/g;
-export const stripAnsi = (text: string): string => text.replace(ANSI, "");
+import { stripAnsi } from "@lane-pilot/kit";
 
 /** `@scope/pkg:test: ` or `pkg:test:unit: ` in front of a line turbo relays from a package's task. */
 const TURBO_PREFIX = /^((?:@[\w.-]+\/)?[\w.-]+):([\w.-]+(?::[\w.-]+)*): ?/;

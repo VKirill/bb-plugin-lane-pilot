@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { inventoryGroupSchema } from "@lane-pilot/contracts";
+import { inventoryGroupSchema, machineAffinitySchema } from "@lane-pilot/contracts";
 
 /**
  * One agent of the pickable list (`listedAgentProfiles`): `id` and `description` (the label) were there first; the rest only adds.
@@ -13,7 +13,7 @@ export const pickableAgentSchema = z.object({
   kind: z.enum(["coordinator", "specialist", "internal"]).optional(),
   custom: z.boolean().optional(),
   domain: z.string().optional(),
-  machineAffinity: z.enum(["mac-mini", "ovh", "windows", "any"]).optional(),
+  machineAffinity: machineAffinitySchema.optional(),
 }).strict();
 
 /** The settings view of an agent: the pickable fields plus the whole profile. */
@@ -146,7 +146,7 @@ export const rpcShell = {
       coreSkills: agentNames.max(3).optional(),
       skillSections: agentNames.max(24).optional(),
       domain: z.string().min(1).max(40).optional(),
-      machineAffinity: z.enum(["mac-mini", "ovh", "windows", "any"]).optional(),
+      machineAffinity: machineAffinitySchema.optional(),
       deliverables: agentNames.max(16).optional(),
       validator: z.string().min(1).max(40).optional(),
       mcpServers: agentNames.optional(),
@@ -167,7 +167,7 @@ export const rpcShell = {
       coreSkills: agentNames.max(3).optional(),
       skillSections: agentNames.max(24).optional(),
       domain: z.string().min(1).max(40).optional(),
-      machineAffinity: z.enum(["mac-mini", "ovh", "windows", "any"]).optional(),
+      machineAffinity: machineAffinitySchema.optional(),
       deliverables: agentNames.max(16).optional(),
       validator: z.string().min(1).max(40).optional(),
       mcpServers: agentNames.optional(),

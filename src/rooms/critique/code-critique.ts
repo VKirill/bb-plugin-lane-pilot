@@ -7,10 +7,9 @@ import { demoteUncited } from "./citations";
 import type { Citation } from "./citations";
 import { CRITIC_RUBRIC, VERDICT_STATUSES, applyRubric, isVerdictShape, legacyOutputToVerdict, normalizeVerdictInput, rubricPromptLine, settleVerdict, verdictSchema, verdictSeverityToLegacy, verdictSummary, withoutDecision } from "@lane-pilot/workflow-engine";
 import type { Verdict, VerdictFinding, VerdictStatus } from "@lane-pilot/workflow-engine";
-import { sha256Hex } from "@lane-pilot/kit";
+import { settingOff } from "@lane-pilot/models";
+import { sha256Hex, stripAnsi } from "@lane-pilot/kit";
 import { taskBrief } from "./task-brief";
-/** Terminal colour codes out of check output (the same regex as verification/gate-output; a cross-room import would cycle). */
-const stripAnsi = (text: string): string => text.replace(/\u001b\[[0-9;?]*[A-Za-z]/g, "");
 
 export const CODE_CRITIQUE_STAGE = "code-critique" as const;
 export const CODE_CRITIQUE_MAX_ROUNDS = 3;
@@ -162,11 +161,6 @@ export type CodeCritiqueSettings = {
 
 export function sha256Text(value: string): string {
   return sha256Hex(value);
-}
-
-export function settingOff(value: unknown): boolean {
-  return value === false || value === 0
-    || (typeof value === "string" && ["0", "off", "false", "no"].includes(value.trim().toLowerCase()));
 }
 
 export function parseCodeCritiqueSettings(settings: Record<string, unknown>): CodeCritiqueSettings {

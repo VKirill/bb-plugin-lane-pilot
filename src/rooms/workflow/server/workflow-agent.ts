@@ -1,3 +1,4 @@
+import { MACHINE_AFFINITY_ANY } from "@lane-pilot/contracts";
 import { THREAD_WATCH_EVENT_TYPES, listThreadEventsRaw, waitThreadIdle } from "@lane-pilot/thread-observe";
 import { getRunSettingsScopes } from "../../storage";
 import { writerExecutionSelection, findModelIn, isZcodeProvider, zcodeEnvironmentError } from "@lane-pilot/models";
@@ -276,7 +277,7 @@ export function createWorkflowAgents() {
       checkoutHostId = folder.hostId;
       environment = folderEnvironment(folder);
     }
-    if (spec.specialist && employeeView(spec.specialist).machineAffinity !== "any") {
+    if (spec.specialist && employeeView(spec.specialist).machineAffinity !== MACHINE_AFFINITY_ANY) {
       const place = await placeEmployeeOn(bb, spec.specialist, await projectSources(bb, rt.projectId));
       if (place.mode === "folder") {
         environment = folderEnvironment({ hostId: place.hostId, path: place.path });
@@ -588,7 +589,7 @@ export async function withResolvedModel(request: HelperRequest, options: { avoid
   // Only an observed refusal holds a provider out of the folder: the block this machine recorded on a real failed start.
   const folderBlockTtl = Number(settings["provider.folder_block_ttl_ms"]) || PROVIDER_FOLDER_BLOCK_TTL_MS;
   const blockStore = rt.ctx.bb.storage?.kv ?? { get: async () => null };
-  const folderBlock = await readProviderFolderBlock(blockStore, hostId, "opencode2", folderBlockTtl);
+  const folderBlock = await readProviderFolderBlock(blockStore, hostId, folderBlockTtl);
   const chosen = resolveSpawnModel({ role: request.role, pinned, settings, pm, author, catalog: read, hostId, envPath, avoidProvider: avoid, usage, folderBlock });
   if (request.provider && providerBlockedForFolder(request.provider, envPath, folderBlock)) rt.ctx.log?.(`Lane Pilot: ${request.role} cannot run on ${request.provider} in ${envPath}: ${providerBlockedForFolder(request.provider, envPath, folderBlock)}; the role's next provider takes the step`);
   // №9: a trivial step may run one model tier cheaper — only unpinned picks of a downgradable table role (a code

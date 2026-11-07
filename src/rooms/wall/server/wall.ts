@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { writerExecutionSelection } from "@lane-pilot/models";
+import { providerForwardsAgentOnly, writerExecutionSelection } from "@lane-pilot/models";
 import { fullAccessSpawn, modelCatalogOf, resolveSpawnModel, scheduleIsolated } from "../../platform/server";
 import { stringAt, orMiss, isNotFound } from "@lane-pilot/kit";
 import { pickHunter, type WallConfig } from "../config";
@@ -197,7 +197,7 @@ export function createPluginWall(ctx: ServerCore, services: Services): WallApi {
       try {
         const { cfg, hostId, basePath } = await environmentOf();
         const hunter = await hunterModelOf(await wallRef.current.config(), cfg.projectId, hostId, basePath);
-        return hunter.providerId === "claude-code" || hunter.providerId === "codex" || hunter.providerId === "opencode2" || hunter.providerId === "devin" || hunter.providerId.startsWith("acp-");
+        return providerForwardsAgentOnly(hunter.providerId);
       } catch { return false; }
     },
     graph: {

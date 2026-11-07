@@ -1,6 +1,7 @@
 import type { PrototypeConfig } from "../../contracts";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { RunBudgetExceeded, type RunBudget } from "@lane-pilot/resilience";
+import { PROVIDER_CAPABILITIES } from "@lane-pilot/models";
 import { isZcodeProvider } from "@lane-pilot/models";
 import { spawnKeyed } from "./thread-keys";
 import { stringAt } from "@lane-pilot/kit";
@@ -100,7 +101,7 @@ const laneAgentByApi = new WeakMap<BbPluginApi, Map<string, { at: number; models
  * the model does not list) or a catalog that cannot be read: the thread then runs on OpenCode's default agent, and the log says so.
  */
 async function laneAgentOption(bb: BbPluginApi, args: { providerId?: string; model?: string; environment?: { environmentId?: unknown } } & Record<string, unknown>, hostId: string | undefined): Promise<{ sessionOptions?: Record<string, string> }> {
-  if (args.providerId !== "opencode2" || args.sessionOptions !== undefined) return {};
+  if (!args.providerId || !PROVIDER_CAPABILITIES[args.providerId]?.usesLaneAgent || args.sessionOptions !== undefined) return {};
   let cache = laneAgentByApi.get(bb);
   if (!cache) { cache = new Map(); laneAgentByApi.set(bb, cache); }
   // OpenCode reads its agents from the thread's folder: an existing environment names it, otherwise the host's catalog stands in.
@@ -109,7 +110,7 @@ async function laneAgentOption(bb: BbPluginApi, args: { providerId?: string; mod
   let entry = cache.get(key);
   try {
     if (!entry || Date.now() - entry.at > PROVIDER_LIST_TTL_MS) {
-      const listed = await bb.sdk.providers.models(hostId ? { providerId: "opencode2", hostId } : environmentId ? { providerId: "opencode2", environmentId } : { providerId: "opencode2" });
+      const listed = await bb.sdk.providers.models(hostId ? { providerId: args.providerId, hostId } : environmentId ? { providerId: args.providerId, environmentId } : { providerId: args.providerId });
       entry = { at: Date.now(), models: Array.isArray(listed?.models) ? listed.models : [] };
       cache.set(key, entry);
     }

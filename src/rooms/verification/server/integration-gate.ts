@@ -2,7 +2,7 @@ import type { TaskV2, PrototypeConfig } from "../../contracts";
 import type { LanePilotDatabase, StageReceiptRow } from "../../storage";
 import { getRun, getRunSettingsScopes, getTask, listStageReceipts, loadProjectSettings, transitionAttempt } from "../../storage";
 import { recordGateEvaluation } from "../../runs/server/stage-records";
-import { stringAt } from "@lane-pilot/kit";
+import { stringAt, stripAnsi } from "@lane-pilot/kit";
 import type { ServerCore } from "../../contracts/server";
 
 import { isEnvironmentCheckFailure } from "../../runs";
@@ -886,7 +886,4 @@ export class IntegrationGateRunner {
   }
 }
 
-/** Terminal colour codes from the test runner, with or without the ESC byte (`\u001b[31m`, `[31m`). */
-function stripAnsi(text: string): string {
-  return text.replace(/\u001b\[[0-9;]*m/g, "").replace(/\[\d{1,2}(?:;\d{1,2})*m/g, "");
-}
+

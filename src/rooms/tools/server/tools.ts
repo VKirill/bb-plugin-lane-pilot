@@ -22,7 +22,7 @@ import { mountWorkflowArchitect } from "../../workflow/server";
 import { mountLeadTool } from "../../lead/server";
 import { mountScheduleTools } from "../../schedule/server";
 import { mountToolFamilies } from "./tool-families";
-import { callerPluginMetadata, registerObservedTool } from "../../platform/server";
+import { registerObservedTool, requirePmThread, requirePmThreadRun } from "../../platform/server";
 import { selfRepairDeps } from "../../self-repair/server";
 import { ToolError } from "../../contracts/server";
 import { compactDispatchReply, compactReceipt, stageDetail } from "../../runs/server";
@@ -148,11 +148,7 @@ export function registerTools(ctx: ServerCore, services: Services, familyContrib
     instructions:"Use only from a Lane Pilot PM thread, for tasks a newer task supersedes or the owner dropped. Name the task ids you sent; tasks that depend on a canceled one stop waiting for it, and a canceled task frees its area. Cancel does not undo work already merged into main. To replan queued tasks do not cancel and resend them: hold them (lane_pilot_queue hold), correct with lane_pilot_update_task, then release; a canceled queued task sent again unchanged gets its task and attempt back.",
     parameters:z.object({ taskIds:z.array(z.string().min(1)).min(1).max(50), words:z.string().trim().min(1).max(1000).describe("Closed in words: why these tasks end here; kept on the task.").optional() }).strict(),
     execute: async (params, context) => {
-      const metadata = await callerPluginMetadata(bb, context);
-      const runId = typeof (metadata as Record<string, unknown> | null)?.lanePilotRunId === "string" ? String((metadata as Record<string, unknown>).lanePilotRunId) : null;
-      if ((metadata as Record<string, unknown> | null)?.role !== "pm" || !runId) {
-        throw new ToolError("caller is not a Lane Pilot PM thread", { code: "not_pm_thread", retryable: false, sideEffects: "none" });
-      }
+      const runId = await requirePmThreadRun(bb, context);
       const open = listOpenAttempts(db).filter((row) => row.run_id === runId);
       const results = [];
       for (const taskId of params.taskIds) {
@@ -186,11 +182,7 @@ export function registerTools(ctx: ServerCore, services: Services, familyContrib
       satisfied:z.boolean().optional(),
     }).strict(),
     execute: async (params, context) => {
-      const metadata = await callerPluginMetadata(bb, context);
-      const runId = typeof (metadata as Record<string, unknown> | null)?.lanePilotRunId === "string" ? String((metadata as Record<string, unknown>).lanePilotRunId) : null;
-      if ((metadata as Record<string, unknown> | null)?.role !== "pm" || !runId) {
-        throw new ToolError("caller is not a Lane Pilot PM thread", { code: "not_pm_thread", retryable: false, sideEffects: "none" });
-      }
+      const runId = await requirePmThreadRun(bb, context);
       return JSON.stringify(
         await updateTask({
           projectId:context.projectId,
@@ -220,11 +212,7 @@ export function registerTools(ctx: ServerCore, services: Services, familyContrib
       reason:z.string().min(1).max(300).optional(),
     }).strict(),
     execute: async (params, context) => {
-      const metadata = await callerPluginMetadata(bb, context);
-      const runId = typeof (metadata as Record<string, unknown> | null)?.lanePilotRunId === "string" ? String((metadata as Record<string, unknown>).lanePilotRunId) : null;
-      if ((metadata as Record<string, unknown> | null)?.role !== "pm" || !runId) {
-        throw new ToolError("caller is not a Lane Pilot PM thread", { code: "not_pm_thread", retryable: false, sideEffects: "none" });
-      }
+      const runId = await requirePmThreadRun(bb, context);
       return JSON.stringify(await reassignTask({ projectId:context.projectId, runId, taskId:params.taskId, providerId:params.providerId,
         model:params.model, reasoningEffort:params.reasoningEffort, reason:params.reason }), null, 2);
     },
@@ -262,11 +250,7 @@ export function registerTools(ctx: ServerCore, services: Services, familyContrib
     instructions:"Use only from the matching Lane Pilot PM thread, and only when the task's latest attempt is blocked with needs_human. The answer is delivered into the writer's own thread and its normal wait → validate → accept cycle follows: poll lane_pilot_wait_writer with the same runId. Any other case returns not_answerable — redispatch the task instead. It never changes the contract: lane_pilot_update_task does that under the same id.",
     parameters:z.object({ taskId:z.string().min(1), answer:z.string().min(1).max(8000) }).strict(),
     execute: async (params, context) => {
-      const metadata = await callerPluginMetadata(bb, context);
-      const runId = typeof (metadata as Record<string, unknown> | null)?.lanePilotRunId === "string" ? String((metadata as Record<string, unknown>).lanePilotRunId) : null;
-      if ((metadata as Record<string, unknown> | null)?.role !== "pm" || !runId) {
-        throw new ToolError("caller is not a Lane Pilot PM thread", { code: "not_pm_thread", retryable: false, sideEffects: "none" });
-      }
+      const runId = await requirePmThreadRun(bb, context);
       // Secret-shaped answer refused: a key or a password never goes into a writer's thread; the check gets it from Env Catalog by name.
       if (secretShaped(params.answer)) throw new ToolError("the answer looks like it carries a secret (a key, a token or a password); never send a secret to a writer: save it in Env Catalog (env_set) and name it in the check's secrets", { code:"secret_shaped_answer", retryable:false, sideEffects:"none" });
       return JSON.stringify(
@@ -296,10 +280,7 @@ export function registerTools(ctx: ServerCore, services: Services, familyContrib
       timeoutMin:z.number().int().min(1).max(60).default(30),
     }).strict(),
     execute: async (params, context) => {
-      const metadata = await callerPluginMetadata(bb, context);
-      if ((metadata as Record<string, unknown> | null)?.role !== "pm") {
-        throw new ToolError("caller is not a Lane Pilot PM thread", { code: "not_pm_thread", retryable: false, sideEffects: "none" });
-      }
+      await requirePmThread(bb, context);
       const answer = await ctx.ownerAsk.ask(context.threadId, { source:"pm", question:params.question, detail:params.detail, options:params.options, allowText:params.allowText },
         { timeoutMs:params.timeoutMin * 60_000, signal:context.signal });
       if (answer.outcome === "unavailable") {

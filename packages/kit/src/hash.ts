@@ -4,16 +4,17 @@ import { lstat, readdir, readFile, readlink } from "node:fs/promises";
 import { join } from "node:path";
 import { isFsAbsent } from "./miss";
 
-/** SHA-256 of a string (UTF-8) or bytes, as lower-case hex. The one place the plugin calls createHash("sha256"). */
-export function sha256Hex(data: BinaryLike): string {
-  return createHash("sha256").update(data).digest("hex");
-}
+/** The one SHA-256 hasher of the plugin: `sha256Hex` for a whole value, this for a stream read in chunks. */
+export const createSha256 = () => createHash("sha256");
 
-export const sha256Buffer = sha256Hex;
+/** SHA-256 of a string (UTF-8) or bytes, as lower-case hex. */
+export function sha256Hex(data: BinaryLike): string {
+  return createSha256().update(data).digest("hex");
+}
 
 export async function sha256File(path: string): Promise<string> {
   return new Promise((resolve, reject) => {
-    const hash = createHash("sha256");
+    const hash = createSha256();
     const stream = createReadStream(path);
     stream.on("data", (chunk) => hash.update(chunk));
     stream.on("error", reject);
@@ -51,7 +52,7 @@ export async function hashPath(path: string): Promise<{
   const info = await lstat(path);
   if (info.isSymbolicLink()) {
     const target = await readlink(path);
-    return { kind: "symlink", sha256: sha256Buffer(target), symlinkTarget: target };
+    return { kind: "symlink", sha256: sha256Hex(target), symlinkTarget: target };
   }
   if (info.isFile()) return { kind: "file", sha256: await sha256File(path), symlinkTarget: null };
   if (info.isDirectory()) return { kind: "directory", sha256: await sha256Tree(path), symlinkTarget: null };
@@ -60,7 +61,7 @@ export async function hashPath(path: string): Promise<{
 
 export async function sha256FileOrNull(path: string): Promise<string | null> {
   try {
-    return sha256Buffer(await readFile(path));
+    return sha256Hex(await readFile(path));
   } catch (cause) {
     if (isFsAbsent(cause)) return null;
     throw cause;

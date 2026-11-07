@@ -38,13 +38,6 @@ export function pluginRootFromModule(moduleUrl: string): string {
   }
 }
 
-export function defaultLocalFallback(moduleUrl: string): string {
-  return join(
-    pluginRootFromModule(moduleUrl),
-    ".bb/chats/thr_2spsxrsutt/tmp/claude-lane-stack",
-  );
-}
-
 export function defaultGuardSource(moduleUrl: string): string {
   return join(pluginRootFromModule(moduleUrl), "lane-stack/hooks/guard_shell.py");
 }

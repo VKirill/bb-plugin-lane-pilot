@@ -4,7 +4,8 @@ import { taskFamily } from "../../runs";
 import { listOpenAttempts } from "../../storage";
 import { isWholeConsent, ownerWordsOn } from "../../tasks";
 import type { DrawingCritique } from "@lane-pilot/contracts";
-import { PHASE_STAGES, RETURN_STAGES, RISK_KINDS, acceptanceKey, checkerIndependence, contextSignature, designDecision, designGate, discussionGate, executionGate, phaseFolder, planGate, planGate as planGateOf, planSignature, sha256, staleAfterReturn } from "../logic";
+import { sha256Hex } from "@lane-pilot/kit";
+import { PHASE_STAGES, RETURN_STAGES, RISK_KINDS, acceptanceKey, checkerIndependence, contextSignature, designDecision, designGate, discussionGate, executionGate, phaseFolder, planGate, planGate as planGateOf, planSignature, staleAfterReturn } from "../logic";
 import { archiveDrawing, uatState } from "../stages";
 import { insertPhase, listParts, savePhase } from "../store";
 import { PhaseRefusal, type DriverBase } from "./driver-tools";
@@ -61,7 +62,7 @@ export function installMethods(tools: MethodsTools) {
       ...(String(settings["phase.train"] ?? "on") === "off" ? { train: false } : {}) };
     if (input.legacy) {
       // Legacy mode without signature: a plan written before the phase existed is admitted on its own; the book says so.
-      record.context = { docs: [], sha: sha256(`legacy:${id}`), signedAt: now(), legacy: true };
+      record.context = { docs: [], sha: sha256Hex(`legacy:${id}`), signedAt: now(), legacy: true };
       move(phase, "planning", record, "legacy mode: the plan exists already, there is no signed discussion");
     } else savePhase(db, phase.id, { record, at: now() });
     phase = mustGet(id);
@@ -159,7 +160,7 @@ export function installMethods(tools: MethodsTools) {
       const file = await readFile(phase, path);
       hashes.push(`${path}:${file.sha256}`);
     }
-    const drawn = { paths: input.paths, sha256: sha256(hashes.join("\n")), designer: input.designer, feasible: input.feasible, ...(input.contradiction ? { contradiction: input.contradiction } : {}), ...(input.reviewer ? { reviewer: input.reviewer } : {}) };
+    const drawn = { paths: input.paths, sha256: sha256Hex(hashes.join("\n")), designer: input.designer, feasible: input.feasible, ...(input.contradiction ? { contradiction: input.contradiction } : {}), ...(input.reviewer ? { reviewer: input.reviewer } : {}) };
     // The previous contract to the archive: a replaced drawing stays in the record with its hash.
     const archived = archiveDrawing(phase.record, drawn);
     if (archived.length > (phase.record.design?.archived?.length ?? 0)) book(phase, "design", "archived", `previous drawing ${phase.record.design!.drawing!.sha256.slice(0, 12)} (${phase.record.design!.drawing!.paths.join(", ")}) archived`);

@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { sha256Hex } from "@lane-pilot/kit";
 import { NO_CODE_KINDS } from "../tasks";
 import { ANIMATOR_LAW, PLAN_ROUNDS_MAX, coverageGaps, designMode, motionRows, rubricLine, stageInit, threatGap, uiContractGap, validationGaps } from "./stages";
 
@@ -159,8 +159,6 @@ export type Phase = {
   stage: PhaseStage; state: PhaseState; record: PhaseRecord; edition: number; createdAt: number; updatedAt: number;
 };
 
-export const sha256 = (text: string) => createHash("sha256").update(text).digest("hex");
-
 /** Stable JSON (sorted keys) so the same plan always has the same hash. */
 export function canonical(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
@@ -169,8 +167,8 @@ export function canonical(value: unknown): string {
 }
 
 /** The signature of the discussion: the documents' paths and hashes, in path order. */
-export const contextSignature = (docs: readonly ContextDoc[]) => sha256(canonical([...docs].sort((a, b) => a.path.localeCompare(b.path)).map((doc) => [doc.path, doc.sha256])));
-export const planSignature = (items: readonly PlanItem[], contextSha: string) => sha256(canonical({ contextSha, items }));
+export const contextSignature = (docs: readonly ContextDoc[]) => sha256Hex(canonical([...docs].sort((a, b) => a.path.localeCompare(b.path)).map((doc) => [doc.path, doc.sha256])));
+export const planSignature = (items: readonly PlanItem[], contextSha: string) => sha256Hex(canonical({ contextSha, items }));
 
 // ---------------------------------------------------------------- gates
 
@@ -309,7 +307,7 @@ export type TaskFact = { taskId: string; state: string | null; planFact: "passed
 
 /** The pieces that may be issued now: wave by wave, the next wave only once every piece of the earlier waves is accepted. */
 /** What a piece's work is: its contract and its promise. A changed one after a return to planning is new work. */
-export const pieceSha = (item: PlanItem) => sha256(canonical({ task: item.task, promise: item.promise }));
+export const pieceSha = (item: PlanItem) => sha256Hex(canonical({ task: item.task, promise: item.promise }));
 
 export function issuable(items: readonly PlanItem[], issued: Readonly<Record<string, string>>, facts: ReadonlyMap<string, TaskFact>, cleared: (wave: number) => boolean = () => true,
   issuedSha: Readonly<Record<string, string>> = {}): PlanItem[] {
@@ -331,7 +329,7 @@ export const wavesOf = (items: readonly PlanItem[]) => [...new Set(items.map((it
 
 /** The wave's package: its pieces, their tasks and states, hashed — the same wave has the same package. */
 export const wavePackage = (pieces: readonly PlanItem[], facts: ReadonlyMap<string, TaskFact>) =>
-  sha256(canonical(pieces.map((item) => [item.id, facts.get(item.id)?.taskId ?? null, facts.get(item.id)?.state ?? null, facts.get(item.id)?.planFact ?? null])));
+  sha256Hex(canonical(pieces.map((item) => [item.id, facts.get(item.id)?.taskId ?? null, facts.get(item.id)?.state ?? null, facts.get(item.id)?.planFact ?? null])));
 
 /** The wave's acceptance lines, decided by code from what its pieces left. */
 export function waveLines(pieces: readonly PlanItem[], facts: ReadonlyMap<string, TaskFact>): WaveRecord["lines"] {
@@ -415,20 +413,20 @@ export function blindVerdict(items: readonly PlanItem[], facts: ReadonlyMap<stri
   if (!runGoal) problems.push("the run's goal check has not run yet");
   else if (runGoal.state === "failed") problems.push(`the run's goal check failed${runGoal.detail ? `: ${runGoal.detail}` : ""}`);
   else if (runGoal.state === "partial" || runGoal.state === "inconclusive") problems.push(`the run's goal check is ${runGoal.state}, not a full pass${runGoal.detail ? `: ${runGoal.detail}` : ""}`);
-  const inputSha = sha256(canonical({ items: items.map((item) => item.id), facts: items.map((item) => facts.get(item.id) ?? null), runGoal }));
+  const inputSha = sha256Hex(canonical({ items: items.map((item) => item.id), facts: items.map((item) => facts.get(item.id) ?? null), runGoal }));
   const state = problems.length ? "failed" : waiting ? "pending" : "passed";
   return { state, detail: problems.join("; ") || (waiting ? "the run's goal check is still running" : "every piece accepted and proved; the composition passes on main"), mainSha: runGoal?.headSha ?? null, at: now, inputSha } as FrozenVerdict | PendingVerdict;
 }
 
 /** The verdict of a plan that found the goal already met: nothing was built, so nothing is composed; the goal audit weighs the evidence next. */
 export function alreadyMetVerdict(alreadyMet: { evidence: string }, now: number): FrozenVerdict {
-  return { state: "passed", detail: `already met, nothing to build: ${alreadyMet.evidence}`.slice(0, 1000), mainSha: null, at: now, inputSha: sha256(canonical({ alreadyMet })) };
+  return { state: "passed", detail: `already met, nothing to build: ${alreadyMet.evidence}`.slice(0, 1000), mainSha: null, at: now, inputSha: sha256Hex(canonical({ alreadyMet })) };
 }
 
 export const ACCEPTANCE_LINES = ["contract_current", "promises_proved", "checks_passed", "independent_check", "landed", "composition_verified", "main_unmoved", "qa_read", "goal_met", "limits_acknowledged", "result_useful"] as const;
 
 /** The key of the package a person decides on (SMA p6_decide): the plan, the verdict's input and the tree it saw. A new verdict or tree is a new key. */
-export const acceptanceKey = (record: PhaseRecord) => sha256(canonical({ plan: record.plan?.sha ?? null, verdict: record.verification?.verdict?.inputSha ?? null, tree: record.verification?.verdict?.mainSha ?? null })).slice(0, 16);
+export const acceptanceKey = (record: PhaseRecord) => sha256Hex(canonical({ plan: record.plan?.sha ?? null, verdict: record.verification?.verdict?.inputSha ?? null, tree: record.verification?.verdict?.mainSha ?? null })).slice(0, 16);
 export type AcceptanceLineId = (typeof ACCEPTANCE_LINES)[number];
 
 /** The phase acceptance calculation: each line decided by code; the phase is accepted only when every line holds. */
@@ -623,7 +621,7 @@ export type BookPart = { seq: number; at: number; section: BookSection; kind: st
 
 export const GENESIS = "0".repeat(64);
 export const partHash = (prevHash: string, part: { seq: number; at: number; section: string; kind: string; text: string }) =>
-  sha256(`${prevHash}\n${part.seq}\n${part.at}\n${part.section}\n${part.kind}\n${part.text}`);
+  sha256Hex(`${prevHash}\n${part.seq}\n${part.at}\n${part.section}\n${part.kind}\n${part.text}`);
 
 /** The first part whose hash or link does not hold, or null when the whole chain is intact. */
 export function brokenLink(parts: readonly BookPart[]): number | null {

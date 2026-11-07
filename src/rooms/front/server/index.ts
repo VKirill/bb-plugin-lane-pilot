@@ -1,7 +1,7 @@
 import { hostContract } from "../../contracts";
 import { scheduleIsolated } from "../../platform/server";
 import { type ServerCore } from "../../contracts/server";
-import { mapListedQaHosts } from "../../platform/server";
+import { listQaHosts } from "../../platform/server";
 import { getRun, getRunWriterHost, loadProjectSettings, saveProjectSetting } from "../../storage";
 import { runOnHost } from "@lane-pilot/host-calls";
 import { FIRST_RUN_STEPS, MUTATING_RPC, answerFirstRun, firstRunNeeded, firstRunSettings, helperDraft, parseHelper, peerLine, type FirstRunDraft, type FirstRunStep, type PeerSnapshot } from "../logic";
@@ -69,7 +69,7 @@ export function createFront(ctx: ServerCore) {
 
   /** Peers polled with every board: the hosts BB knows, each with its last snapshot (Last snapshot of a peer). */
   async function pollPeers(now = Date.now()) {
-    const listed = mapListedQaHosts(await (bb.sdk as unknown as { hosts: { list: () => Promise<unknown> } }).hosts.list());
+    const listed = await listQaHosts(bb);
     const before = ((await kv.get(PEERS)) as Record<string, PeerSnapshot> | undefined) ?? {};
     const next: Record<string, PeerSnapshot> = { ...before };
     for (const row of listed) {

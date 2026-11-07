@@ -1,3 +1,4 @@
+import { MACHINE_AFFINITY_ANY } from "@lane-pilot/contracts";
 import { t } from "@lane-pilot/i18n";
 import { resolveRoleModel } from "@lane-pilot/models";
 import { setRunHalted } from "../runs-halt";
@@ -61,7 +62,7 @@ export function runsRpc(ctx: ServerCore, services: Services) {
       const settings = (await effectiveProjectSettings(projectId)).values;
       const { selection: record, description } = await storeNativeSelection(ctx, { projectId, agentId: agentId || DEFAULT_NATIVE_AGENT });
       const label = agentPickerLabel({ id: record.agentId, description }, t);
-      const pinned = employeeView(record.agentId).machineAffinity !== "any";
+      const pinned = employeeView(record.agentId).machineAffinity !== MACHINE_AFFINITY_ANY;
       const place = pinned ? await placeEmployeeOn(bb, record.agentId, await projectSources(bb, projectId)) : { mode: "inherit" as const };
       const environment = place.mode === "folder" ? folderEnvironment({ hostId: place.hostId, path: place.path }) : null;
       const placementNote = place.mode === "fallback" ? place.reason : null;

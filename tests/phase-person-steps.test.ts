@@ -2,7 +2,8 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, describe, expect, it } from "vitest";
 import { createCore } from "../src/rooms/core/server/core";
 import { createPhaseDriver } from "./phase-driver";
-import { acceptanceKey, acceptanceLines, nextAction, sha256, type Phase, type PhaseRecord } from "../src/rooms/phase/logic";
+import { sha256Hex } from "@lane-pilot/kit";
+import { acceptanceKey, acceptanceLines, nextAction, type Phase, type PhaseRecord } from "../src/rooms/phase/logic";
 import { listParts, savePhase } from "../src/rooms/phase/store";
 import { createRun, openDatabase } from "../src/rooms/plugin-db";
 import { phaseDecisionId } from "../src/rooms/lead/server/surfaces";
@@ -22,7 +23,7 @@ async function fixture(ownerWords: boolean) {
   const db = openDatabase(bb);
   createRun(db, "run1", "projA");
   db.prepare("UPDATE lane_pilot_run SET pm_thread_id=? WHERE id=?").run("thr_pm", "run1");
-  const services = { runBudgets: { get: () => undefined }, readWriterWorkspaceFile: async ({ path }: { path: string }) => ({ sha256: sha256(path), sizeBytes: 120, content: `# ${path}` }) };
+  const services = { runBudgets: { get: () => undefined }, readWriterWorkspaceFile: async ({ path }: { path: string }) => ({ sha256: sha256Hex(path), sizeBytes: 120, content: `# ${path}` }) };
   const { phases } = createPhaseDriver(createCore(bb, db), services as never);
   const phase = await phases.open({ projectId: "projA", pmThreadId: "thr_pm", title: "Sums", goal: "sums skip empty cells" });
   return { db, phases, id: phase.id };
@@ -135,10 +136,10 @@ describe("the lessons", () => {
     db.prepare("INSERT INTO lane_pilot_wf_run(id,workflow_id,workflow_version,workflow_sha256,definition_json,project_id,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)")
       .run(runId, "retrospective", 1, "sha", "{}", opts.project ?? "projA", "succeeded", 1, 1);
     const input = JSON.stringify({ with: {}, via: { mode: "artifact", fromStep: "retro#1", fromThreadId: opts.author ?? "thr_retro", handoff: opts.handoff ?? analysis } });
-    const receipt = JSON.stringify({ executor: "agent", inputSha256: opts.badHash ? sha256("other") : sha256(input), threadId: opts.reviewer ?? "thr_stage" });
+    const receipt = JSON.stringify({ executor: "agent", inputSha256: opts.badHash ? sha256Hex("other") : sha256Hex(input), threadId: opts.reviewer ?? "thr_stage" });
     db.prepare("INSERT INTO lane_pilot_wf_step(run_id,step_key,origin,node_id,visit,state,input_json,receipt_json,started_at,ended_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)")
       .run(runId, "stage#1", "stage#1", "stage", 1, "succeeded", input, receipt, 1, 2, 2);
-    return sha256(input);
+    return sha256Hex(input);
   }
 
   // SMA audit N-04: a caller's own hash and an invented reviewer's name closed the phase with no reviewer run at all.

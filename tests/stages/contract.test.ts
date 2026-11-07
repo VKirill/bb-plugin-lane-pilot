@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { critiquePrompt, parseCritique } from "../../src/rooms/critique/critique";
-import { sha256, stageTransition, validateStageReceipt } from "@lane-pilot/contracts";
+import { sha256Hex } from "@lane-pilot/kit";
+import { stageTransition, validateStageReceipt } from "@lane-pilot/contracts";
 
 describe("versioned stage contract", () => {
   it("requires typed critic output and rejects prose or malformed JSON", () => {
@@ -19,7 +20,7 @@ describe("versioned stage contract", () => {
   it("validates exact contract version, identities, and hashes", () => {
     const input = {
       contractVersion:1 as const, runId:"run_1", taskId:"task_1", stageId:"plan-critique" as const,
-      state:"passed" as const, inputSha256:sha256("plan"), outputSha256:sha256("receipt"), attempt:1,
+      state:"passed" as const, inputSha256:sha256Hex("plan"), outputSha256:sha256Hex("receipt"), attempt:1,
       providerId:"codex", model:"gpt-6-luna", threadId:"thread_1", result:{decision:"approve"},
       reason:null, updatedAt:1,
     };

@@ -1,3 +1,5 @@
+import { taskRedispatchBase } from "@lane-pilot/contracts";
+
 /**
  * Why a task is blocked, as data the PM can act on: who holds what, since when, and when to look again.
  * Text reasons stay for people; this is for the agent and the dispatcher.
@@ -29,7 +31,7 @@ export async function loadBlockedBy(kv: Kv, attemptId: string): Promise<BlockedB
  * A blocked task the PM verified by hand (its work is in main or was checked another way): dependents that name it, or
  * any redispatch of it, stop waiting. Keyed by the id without its numeric suffixes, like a dependency's family.
  */
-const satisfiedKey = (projectId: string, taskId: string) => `task-satisfied:${projectId}:${taskId.replace(/(\.\d+)+$/, "") || taskId}`;
+const satisfiedKey = (projectId: string, taskId: string) => `task-satisfied:${projectId}:${taskRedispatchBase(taskId)}`;
 
 export async function markTaskSatisfied(kv: Kv, projectId: string, taskId: string, note: string): Promise<void> {
   await kv.set(satisfiedKey(projectId, taskId), { taskId, note, at: Date.now() } as never);

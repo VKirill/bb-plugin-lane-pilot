@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { TASK_KINDS } from "@lane-pilot/contracts";
 import type { BookPart, Drawing, Phase, PhaseRecord, PhaseStage, PlanItem, TaskFact } from "./logic";
 
@@ -234,8 +233,6 @@ export function stateText(previous: string | null, marks: Record<string, string>
   for (const [key, value] of Object.entries({ ...marks, updated: today })) keys.set(key, JSON.stringify(value));
   return `---\n${[...keys].map(([key, value]) => `${key}: ${value}`).join("\n")}\n---\n${body.startsWith("\n") ? body : `\n${body}`}`;
 }
-
-export const sha = (text: string) => createHash("sha256").update(text).digest("hex");
 
 /**
  * The fingerprint of a file the text reader refuses (a PNG of the drawing, a font): read with the host's own tools, since only its hash

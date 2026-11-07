@@ -1,3 +1,4 @@
+import { taskRedispatchBase } from "@lane-pilot/contracts";
 import { ownsPathsOverlap } from "@lane-pilot/kit";
 
 /**
@@ -23,9 +24,6 @@ export type RunTask = { id: string; area: string | null; kind: string | null; cr
  * depends_on (then its own order holds and no pilot is added, so the two can never wait for each other). The pilot is the earliest sibling
  * that depends on nothing.
  */
-/** `vf-t0-test-infra.3` and `vf-t0-test-infra` are one task sent again: the family is the id without its redo suffix. */
-export const taskFamilyOf = (id: string): string => id.replace(/\.\d+$/, "");
-
 export function pilotOf(taskId: string, tasks: readonly RunTask[], min = PILOT_MIN_SIBLINGS): string | null {
   const own = tasks.find((task) => task.id === taskId);
   if (!own || own.dependsOn.length) return null;
@@ -41,11 +39,11 @@ function sharedResourcePilotOf(own: RunTask, tasks: readonly RunTask[], min = PI
   const families = new Map<string, RunTask>();
   for (const task of tasks) {
     if (task.canceled || task.dependsOn.length || !task.ownsPaths?.length) continue;
-    const family = taskFamilyOf(task.id), first = families.get(family);
+    const family = taskRedispatchBase(task.id), first = families.get(family);
     if (!first || task.createdAt < first.createdAt || (task.createdAt === first.createdAt && task.id < first.id)) families.set(family, task);
   }
   const wave = [...families.values()].sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id));
-  const mine = wave.findIndex((task) => taskFamilyOf(task.id) === taskFamilyOf(own.id));
+  const mine = wave.findIndex((task) => taskRedispatchBase(task.id) === taskRedispatchBase(own.id));
   if (mine < 0) return null;
   const group = new Set([mine]);
   for (const queue = [mine]; queue.length;) {
@@ -58,7 +56,7 @@ function sharedResourcePilotOf(own: RunTask, tasks: readonly RunTask[], min = PI
   }
   if (group.size < min) return null;
   const pilot = wave[Math.min(...group)]!;
-  return taskFamilyOf(pilot.id) === taskFamilyOf(own.id) ? null : pilot.id;
+  return taskRedispatchBase(pilot.id) === taskRedispatchBase(own.id) ? null : pilot.id;
 }
 
 function areaPilotOf(own: RunTask, tasks: readonly RunTask[], min: number): string | null {
@@ -68,10 +66,10 @@ function areaPilotOf(own: RunTask, tasks: readonly RunTask[], min: number): stri
   const families = new Map<string, RunTask>();
   for (const task of tasks) {
     if (task.area !== own.area || task.kind !== own.kind) continue;
-    const family = taskFamilyOf(task.id), first = families.get(family);
+    const family = taskRedispatchBase(task.id), first = families.get(family);
     if (!first || task.createdAt < first.createdAt) families.set(family, task);
   }
   if (families.size < min) return null;
   const pilot = [...families.values()].filter((task) => !task.dependsOn.length).sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id))[0];
-  return pilot && taskFamilyOf(pilot.id) !== taskFamilyOf(own.id) ? pilot.id : null;
+  return pilot && taskRedispatchBase(pilot.id) !== taskRedispatchBase(own.id) ? pilot.id : null;
 }

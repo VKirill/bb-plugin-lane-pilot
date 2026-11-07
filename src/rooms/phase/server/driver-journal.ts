@@ -1,5 +1,5 @@
 import { getRunSettingsScopes } from "../../storage";
-import { sha256 } from "../logic";
+import { sha256Hex } from "@lane-pilot/kit";
 import { savePhase } from "../store";
 import { PhaseRefusal, type DriverBase } from "./driver-tools";
 import type { Docs } from "./driver-docs";
@@ -70,7 +70,7 @@ export function installJournal(tools: JournalTools) {
     let input: { with?: unknown; via?: { fromThreadId?: string; handoff?: string } } = {};
     try { receipt = JSON.parse(step.receipt_json ?? "{}") ?? {}; input = JSON.parse(step.input_json) ?? {}; } catch { /* unreadable: no proof */ }
     if (!receipt.threadId) return { why: `the reviewer step «${node}» of ${runId} ran in no session of its own` };
-    if (receipt.inputSha256 !== sha256(step.input_json)) return { why: `the journal's measurement of the reviewer's input does not match its bytes in ${runId}` };
+    if (receipt.inputSha256 !== sha256Hex(step.input_json)) return { why: `the journal's measurement of the reviewer's input does not match its bytes in ${runId}` };
     const author = input.via?.fromThreadId ?? null;
     if (!author || author === receipt.threadId) return { why: `the reviewer of ${runId} is not a session other than the analysis's author` };
     const carried = `${input.via?.handoff ?? ""}\n${JSON.stringify(input.with ?? {})}`;
@@ -81,7 +81,7 @@ export function installJournal(tools: JournalTools) {
   /** Lesson written by the pipeline: the analysis goes through the memory door as a note of the project (refused text stays only in the book). */
   function writeLesson(phase: Phase, text: string): string | null {
     try {
-      reactions.storeMemoryRecord({ projectId: phase.projectId, audience: "subagent", sourceSha256: sha256(`${phase.id}:${text}`), origin: "phase-lessons",
+      reactions.storeMemoryRecord({ projectId: phase.projectId, audience: "subagent", sourceSha256: sha256Hex(`${phase.id}:${text}`), origin: "phase-lessons",
         scope: phase.runId ? getRunSettingsScopes(db, phase.runId) : [], coreBudget: 3072, noteBudget: 200_000, indexBudget: 65536,
         entries: [{ kind: "note", content: text, concepts: ["phase", "lessons"] }] });
       return null;

@@ -2,7 +2,8 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import { createCore } from "../../src/rooms/core/server/core";
 import { createPhaseDriver } from "../phase-driver";
-import { contextSignature, planSignature, sha256, type PlanItem } from "../../src/rooms/phase/logic";
+import { sha256Hex } from "@lane-pilot/kit";
+import { contextSignature, planSignature, type PlanItem } from "../../src/rooms/phase/logic";
 import { listParts, savePhase } from "../../src/rooms/phase/store";
 import { issuedContract, piecePlan } from "../../src/rooms/phase/stages";
 import { createAttempt, createRun, createTask, openDatabase } from "../../src/rooms/plugin-db";
@@ -29,7 +30,7 @@ async function host() {
     runBudgets: { get: () => undefined },
     workflowEngine: { cancel: () => true, get: () => null, start: () => ({ runId: "wf", done: Promise.resolve() }) },
     dispatchWriter: async (input: { plan?: string }) => { plans.push(input.plan ?? ""); return { ok: true, taskId: "task-piece", runId: "run1" }; },
-    readWriterWorkspaceFile: async ({ path }: { path: string }) => ({ sha256: files.get(path) ?? sha256("missing"), sizeBytes: 4, content: "x" }),
+    readWriterWorkspaceFile: async ({ path }: { path: string }) => ({ sha256: files.get(path) ?? sha256Hex("missing"), sizeBytes: 4, content: "x" }),
   } as never).phases;
   const phase = await phases.open({ projectId: "projA", pmThreadId: "thr_pm", title: "controls", goal: "one piece" });
   return { db, phases, id: phase.id, phase, plans, files, sent };
@@ -41,7 +42,7 @@ function seedRetro(db: ReturnType<typeof openDatabase>, runId: string) {
   db.prepare("INSERT INTO lane_pilot_wf_run(id,workflow_id,workflow_version,workflow_sha256,definition_json,project_id,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)")
     .run(runId, "retrospective", 1, "sha", "{}", "projA", "succeeded", 1, 1);
   const input = JSON.stringify({ with: {}, via: { mode: "artifact", fromStep: "retro#1", fromThreadId: "thr_retro", handoff: analysis } });
-  const receipt = JSON.stringify({ executor: "agent", inputSha256: sha256(input), threadId: "thr_stage" });
+  const receipt = JSON.stringify({ executor: "agent", inputSha256: sha256Hex(input), threadId: "thr_stage" });
   db.prepare("INSERT INTO lane_pilot_wf_step(run_id,step_key,origin,node_id,visit,state,input_json,receipt_json,started_at,ended_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)")
     .run(runId, "stage#1", "stage#1", "stage", 1, "succeeded", input, receipt, 1, 2, 2);
 }

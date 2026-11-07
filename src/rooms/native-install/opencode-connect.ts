@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { compareAndSwapText, readTextState } from "./cas";
-import { ensureOpenCodePluginEntry } from "@lane-pilot/kit";
+import { ensureOpenCodePluginEntry } from "./opencode-jsonc";
 import { resolveHome } from "@lane-pilot/kit";
 import { spawnAsync } from "@lane-pilot/kit";
 

@@ -83,7 +83,7 @@ export function episodeSweepDeps(ctx: ServerCore, services: Services, stopped: (
       const settings = (await ctx.effectiveProjectSettings(projectId ?? GLOBAL_SETTINGS_PROJECT_ID).catch(() => null))?.values ?? {};
       const spawnUsage = spawnUsageOf(ctx);
       await warmSpawnUsage(spawnUsage, host.hostId);
-      const folderBlock = await readProviderFolderBlock(ctx.bb.storage.kv, host.hostId, "opencode2");
+      const folderBlock = await readProviderFolderBlock(ctx.bb.storage.kv, host.hostId);
       const role = resolveSpawnModel({
         role: "episode-analyst", settings, catalog: modelCatalogOf(ctx).peek(), usage: spawnUsage,
         hostId: host.hostId, envPath: host.path, folderBlock,

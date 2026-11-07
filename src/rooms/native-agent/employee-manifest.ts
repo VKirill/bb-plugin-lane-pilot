@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { MACHINE_AFFINITY_ANY, machineAffinitySchema } from "@lane-pilot/contracts";
 
 /** The only check this package ships. Later packages add the real ones. */
 export const RESULT_EXISTS = "result-exists";
@@ -7,8 +7,8 @@ export function resultExists(files: readonly string[]): { ok: true } | { ok: fal
   return files.length ? { ok: true } : { ok: false, reason: "no result files" };
 }
 
-export const machineAffinitySchema = z.enum(["mac-mini", "ovh", "windows", "any"]);
-export type MachineAffinity = z.infer<typeof machineAffinitySchema>;
+export { machineAffinitySchema } from "@lane-pilot/contracts";
+export type MachineAffinity = string;
 
 export type EmployeeManifest = {
   domain: string;
@@ -175,7 +175,7 @@ export function employeeView(id: string, meta?: EmployeeMeta, compiledSkills?: s
   const stock = stockEmployee(id);
   return {
     domain: meta?.domain ?? stock?.domain ?? STOCK_DOMAIN.get(id) ?? "general",
-    machineAffinity: meta?.machineAffinity ?? stock?.machineAffinity ?? "any",
+    machineAffinity: meta?.machineAffinity ?? stock?.machineAffinity ?? MACHINE_AFFINITY_ANY,
     deliverables: meta?.deliverables ?? stock?.deliverables ?? [],
     validator: meta?.validator ?? stock?.validator ?? RESULT_EXISTS,
     coreSkills: meta?.coreSkills ?? stock?.coreSkills ?? compiledSkills ?? [],

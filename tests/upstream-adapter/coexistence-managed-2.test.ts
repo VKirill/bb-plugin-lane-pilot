@@ -1,7 +1,7 @@
 import { readFile, readdir, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { sha256Buffer } from "@lane-pilot/kit";
+import { sha256Hex } from "@lane-pilot/kit";
 import { registerHomeCleanup, makeHome, treeHash, exactTargetFixture, incompatibleFallback, managedInstall } from "./coexistence-helpers";
 
 registerHomeCleanup();
@@ -29,7 +29,7 @@ describe.skipIf(!exactTargetFixture)("managed install transaction failure integr
     expect(failed.snapshotId).toBeTruthy();
     expect(editedBytes).not.toBeNull();
     expect(await readFile(snapshotFile)).toEqual(editedBytes);
-    const snapshotHash = sha256Buffer(editedBytes!);
+    const snapshotHash = sha256Hex(editedBytes!);
     expect(failed.evidence.some((item) => item.kind === "rollback-residual" && item.path === snapshotFile && item.sha256 === snapshotHash)).toBe(true);
 
     const retainedEngine = failed.path;
@@ -64,7 +64,7 @@ describe.skipIf(!exactTargetFixture)("managed install transaction failure integr
     expect(failed.reason).toContain("replaced between the byte check and atomic claim");
     expect(changedBytes).not.toBeNull();
     expect(await readFile(snapshotFile)).toEqual(changedBytes);
-    const changedHash = sha256Buffer(changedBytes!);
+    const changedHash = sha256Hex(changedBytes!);
     expect(failed.evidence.some((item) => item.kind === "rollback-residual" && item.path === snapshotFile && item.sha256 === changedHash)).toBe(true);
     const snapshotsDir = join(home, ".agents/lane-pilot/coexistence/snapshots");
     expect(await readdir(snapshotsDir)).toEqual([`${failed.snapshotId}.json`]);

@@ -172,16 +172,6 @@ export function repeatedFailureReason(
   return `repeated_failure: ${String(current.reason ?? current.state).slice(0, 600)}`;
 }
 
-/** A task and its redispatches and mainfixes share one family: «P1», «P1.2», «x-mainfix.2» are of «P1» / «x». */
-export function taskFamily(taskId:string):string {
-  let family = taskId;
-  for (;;) {
-    const next = family.replace(/(\.\d+)+$/, "").replace(/-mainfix$/, "");
-    if (next === family) return family;
-    family = next;
-  }
-}
-
 // The machine, not the merged code: root-owned files left by a deploy (OVH `rmSync …/.output`), a stale output folder.
 // An error line that names a path or a system call (`EACCES: permission denied, rmSync '/x/.output'`, `npm error code EACCES`),
 // or the shell refusing the command itself (`sh: 1: vitest: Permission denied`).

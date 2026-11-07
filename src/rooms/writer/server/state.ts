@@ -1,4 +1,4 @@
-import { zcodeBlock } from "@lane-pilot/models";
+import { PROVIDER_CAPABILITIES, usageProviderOf, zcodeBlock } from "@lane-pilot/models";
 import { createProviderBreaker, createRunBudget, parseRunBudgetLimits, type RunBudget } from "@lane-pilot/resilience";
 import { RunWriterPool } from "../../tasks";
 import { createProviderUsage, usageSkipPercent } from "../../usage/server";
@@ -25,15 +25,21 @@ export function createWriterState(ctx: ServerCore) {
     catalog: await within(modelCatalogOf(ctx).get(), CATALOG_WAIT_MS).catch(() => null),
   }));
   // The helpers' resolver (resolveSpawnModel) reads the same cache, under the same threshold, to move a table pick off a nearly spent provider.
-  // Gemini through 9router runs on OpenCode v2 (`opencode2`); a usage source may list its quota under the router's own id (`router9`), so both are read.
-  const viaRouter = (providerId: string, model: string) => providerId === "opencode2" && model.startsWith("router9/");
+  // A usage source may list a provider's quota under a router's own id (Gemini through 9router on OpenCode v2), so both are read.
   registerSpawnUsage(ctx.bb, {
     peek: (query) => {
       const base = { model: query.model, hostId: query.hostId ?? "", threshold: usageSkipPercent(query.settings) };
-      return providerUsage.peek({ ...base, providerId: query.providerId }) ?? (viaRouter(query.providerId, query.model) ? providerUsage.peek({ ...base, providerId: "router9" }) : null);
+      const router = usageProviderOf(query.providerId, query.model);
+      return providerUsage.peek({ ...base, providerId: query.providerId }) ?? (router ? providerUsage.peek({ ...base, providerId: router }) : null);
     },
     zcodeBusy: () => zcodeBusyPeek(ctx.bb),
-    warm: (query) => providerUsage.warm({ providerIds: query.providerIds.includes("opencode2") ? [...query.providerIds, "router9"] : query.providerIds, hostId: query.hostId ?? "" }),
+    warm: (query) => providerUsage.warm({
+      providerIds: [...new Set([...query.providerIds, ...query.providerIds.flatMap((id) => {
+        const router = PROVIDER_CAPABILITIES[id]?.usageProviderId;
+        return router ? [router] : [];
+      })])],
+      hostId: query.hostId ?? "",
+    }),
   });
 
   // Any helper thread Lane Pilot waits for that fails on its provider's limit takes that provider off every later pick for a while (spawn-model.ts).

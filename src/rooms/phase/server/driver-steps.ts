@@ -8,7 +8,8 @@ import { recheckPlanFact } from "../../writer/server";
 import { hostContract } from "../../contracts";
 import { runOnHost } from "@lane-pilot/host-calls";
 import { bookkeepingSetting } from "@lane-pilot/settings-catalog";
-import { acceptanceLines, alreadyMetVerdict, blindVerdict, candidateOn, canonical, executionGate, issuable, lessonsNeeded, nextAction, piecesOfWave, phaseFolder, pieceSha, provenPieces, renderBook, sha256, waveCleared, waveLines, wavePackage, wavesOf, wordOf } from "../logic";
+import { sha256Hex } from "@lane-pilot/kit";
+import { acceptanceLines, alreadyMetVerdict, blindVerdict, candidateOn, canonical, executionGate, issuable, lessonsNeeded, nextAction, piecesOfWave, phaseFolder, pieceSha, provenPieces, renderBook, waveCleared, waveLines, wavePackage, wavesOf, wordOf } from "../logic";
 import { buildsScreens, conclusionText, issuedContract, markRoadmap, nextRoadmapRow, stateText, waveTable, piecePlan, uatText } from "../stages";
 import { getPhase, listParts, notePoked, savePhase } from "../store";
 import { checkProofs, hostGit, phaseProofRecords, renderProofCurrency } from "./proof-currency";
@@ -97,8 +98,8 @@ export function installSteps(tools: StepsTools) {
         return "held";
       }
       const record: PhaseRecord = { ...mustGet(phase.id).record, candidate: { ...candidate, verified: undefined, goal: undefined }, acceptance: undefined,
-        verification: out.state === "conflict" ? { verdict: { state: "failed", detail: `the candidate ${candidate.branch} does not merge with main: ${out.why}`, mainSha: verified ?? null, at: now(), inputSha: sha256(out.why) } } : undefined };
-      if (out.state === "conflict") book(phase, "verification", "blind_verdict", `failed: ${out.why} (input ${sha256(out.why).slice(0, 12)})`);
+        verification: out.state === "conflict" ? { verdict: { state: "failed", detail: `the candidate ${candidate.branch} does not merge with main: ${out.why}`, mainSha: verified ?? null, at: now(), inputSha: sha256Hex(out.why) } } : undefined };
+      if (out.state === "conflict") book(phase, "verification", "blind_verdict", `failed: ${out.why} (input ${sha256Hex(out.why).slice(0, 12)})`);
       move(mustGet(phase.id), "verification", record, out.state === "conflict" ? `the landing found a conflict: ${out.why}` : `not the verified package: ${out.why}`);
       return "held";
     }
@@ -300,7 +301,7 @@ export function installSteps(tools: StepsTools) {
       const out = await writeDocs(current, [{ path, content }], `phase ${current.id}: UAT.md for the owner`).catch(() => ({ written: [] as string[], commit: null }));
       if (out.written.includes(path)) {
         book(current, "acceptance", "uat_written", `${path}: ${(current.record.plan?.items ?? []).length} line(s) for the owner`);
-        savePhase(db, current.id, { record: { ...current.record, uat: { path, sha256: sha256(content), at: now() } }, at: now() });
+        savePhase(db, current.id, { record: { ...current.record, uat: { path, sha256: sha256Hex(content), at: now() } }, at: now() });
         current = mustGet(current.id);
       }
     }

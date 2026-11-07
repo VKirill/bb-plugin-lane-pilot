@@ -1,5 +1,5 @@
 import { runOnHost } from "@lane-pilot/host-calls";
-import { writerExecutionSelection } from "@lane-pilot/models";
+import { PROVIDER_CAPABILITIES, writerExecutionSelection } from "@lane-pilot/models";
 import { upsertLessonProposal, type RuleForm } from "@lane-pilot/run-insights";
 import {
   HarnessValidationError, LANE_PILOT_SURFACE, PROBE_DEFAULTS, alwaysOnText, checkNames, composePrompt, experienceIsSupported, experiencePrompt, fingerprint, inventory, isBase, missionPointer,
@@ -316,7 +316,7 @@ export function createHarness(ctx: ServerCore, services: Services) {
     // hooks.json fires only where the writer's runtime reads Claude Code hooks: a Claude Code writer gets it as the
     // worktree's .claude/settings.local.json (git-excluded); other runtimes ignore the file, as the surface table says.
     const hooks = tree[LANE_PILOT_SURFACE.hooksFile];
-    const hookLines = hooks && input.providerId === "claude-code" ? [`mkdir -p .claude && printf '%s' ${shellQuote(hooksSettings(hooks))} > .claude/settings.local.json`] : [];
+    const hookLines = hooks && PROVIDER_CAPABILITIES[input.providerId ?? ""]?.supportsHookSettings ? [`mkdir -p .claude && printf '%s' ${shellQuote(hooksSettings(hooks))} > .claude/settings.local.json`] : [];
     if (links.length || chmod.length || hookLines.length) await runOnHost(host, { hostId: input.hostId, cwd: input.workspacePath, command: [...links, ...chmod, ...hookLines, "true"].join("\n"), timeoutSec: 30 }).catch(() => undefined);
     return { written: [...Object.keys(files), ...(hookLines.length ? [LANE_PILOT_SURFACE.hooksFile] : [])], reason: null };
   }

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { settingOff, settingOn } from "@lane-pilot/models";
 import type { CoverageFinding } from "./critique-coverage";
 import { clipped, extractModelJson, NO_TOOLS_LINE } from "@lane-pilot/workflow-engine";
 import { PLAN_CRITIC_METHOD } from "./role-method";
@@ -70,8 +71,8 @@ function policyInteger(value: unknown, fallback: number, minimum: number, key: s
 
 function policyBoolean(value: unknown, fallback: boolean, key: string): boolean {
   if (value === undefined || value === null || value === "") return fallback;
-  if (value === true || value === 1 || (typeof value === "string" && ["1", "true", "on", "yes"].includes(value.trim().toLowerCase()))) return true;
-  if (value === false || value === 0 || (typeof value === "string" && ["0", "false", "off", "no"].includes(value.trim().toLowerCase()))) return false;
+  if (settingOn(value)) return true;
+  if (settingOff(value)) return false;
   throw new Error(`${key} must be a boolean`);
 }
 

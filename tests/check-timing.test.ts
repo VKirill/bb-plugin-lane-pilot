@@ -1,6 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { sha256Buffer } from "@lane-pilot/kit";
+import { sha256Hex } from "@lane-pilot/kit";
 import { checkHistoryKey, createAttempt, createRun, createTask, listCheckDurations, listCheckTimeouts, openDatabase, recordCheckDuration, transitionAttempt } from "../src/rooms/plugin-db";
 import { CHECK_TIMEOUT_CAP_SEC, checkTimeoutSec, historyTimeoutSec, orderChecksForFailFast, p95 } from "../src/rooms/writer/check-timing";
 
@@ -143,7 +143,7 @@ describe("check timeout from history", () => {
   it("still reads the rows written before the folder joined the key, for the exact same command string only", async () => {
     const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
     const db = openDatabase(bb);
-    const legacy = (projectId:string, command:string, ms:number, at:number) => db.prepare("INSERT INTO lane_pilot_check_duration(project_id,command_key,duration_ms,exit_code,at) VALUES (?,?,?,?,?)").run(projectId, sha256Buffer(command.trim()), ms, 0, at);
+    const legacy = (projectId:string, command:string, ms:number, at:number) => db.prepare("INSERT INTO lane_pilot_check_duration(project_id,command_key,duration_ms,exit_code,at) VALUES (?,?,?,?,?)").run(projectId, sha256Hex(command.trim()), ms, 0, at);
     legacy("A", "npm test", 40_000, 1);
     legacy("A", "  npm test ", 41_000, 2);
     legacy("A", "npm  test", 99_000, 3);

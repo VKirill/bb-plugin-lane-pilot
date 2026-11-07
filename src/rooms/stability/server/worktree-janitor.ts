@@ -1,5 +1,5 @@
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
-import { mapListedQaHosts } from "../../platform/server";
+import { listQaHosts } from "../../platform/server";
 import { scheduleIsolated } from "../../platform/server";
 import { configuredSetting } from "../../contracts/server";
 import type { ServerCore } from "../../contracts/server";
@@ -85,7 +85,7 @@ export async function runWorktreeJanitor(ctx: Pick<ServerCore, "bb" | "db" | "lo
   const snapshot = async (hostId: string, worktreePath: string, name: string) =>
     (await ctx.host.call("gitWorktreeSnapshot", { requestedHostId: hostId, worktreePath, name }, { hostId, timeoutMs: 120_000 })) as { status: "clean" | "saved" | "missing" | "failed"; path: string | null; reason: string | null };
   const envSwept = await cleanupFinishedAttemptEnvironments(bb, db, snapshot, now, signal).catch(() => [] as string[]);
-  const hosts = mapListedQaHosts(await (bb.sdk as unknown as { hosts: { list: () => Promise<unknown> } }).hosts.list().catch(() => []));
+  const hosts = await listQaHosts(bb);
   let removed = 0, freedBytes = 0, kept = 0;
   for (const machine of hosts.filter((row) => row.connected)) {
     if (ctx.isDisposed()) break;

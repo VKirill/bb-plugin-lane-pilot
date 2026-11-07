@@ -35,6 +35,7 @@ import { reviewerMemoryFor } from "../../memory/server";
 import { clearSpawnMarker } from "../../platform/server";
 import { CRITIC_OUTCOME_UNKNOWN, criticReconcilePort, helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server";
 import { recordStage } from "../../runs/server";
+import { settingOff, settingOn } from "@lane-pilot/models";
 import { stringAt, orMiss, isNotFound } from "@lane-pilot/kit";
 import { dependsOnTask } from "../../writer/server/start";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
@@ -47,10 +48,7 @@ async function limitProbe(bb: BbPluginApi, hostId: string, settings: Record<stri
   await warmSpawnUsage(usage, hostId);
   return (providerId, model) => usage.peek({ providerId, model, hostId, settings });
 }
-const settingOff = (value: unknown) => value === false || value === 0
-  || (typeof value === "string" && ["0", "off", "false", "no"].includes(value.trim().toLowerCase()));
-const settingOn = (value: unknown) => value === true || value === 1
-  || (typeof value === "string" && ["1", "true", "on", "yes"].includes(value.trim().toLowerCase()));
+
 
 /** One log line per limit move of a stage's model. */
 const logLimitMove = (bb: BbPluginApi, what: string, issues: readonly string[] | undefined) => {
@@ -198,9 +196,7 @@ export async function runPlanCritique(input:{bb:BbPluginApi;db:ReturnType<typeof
   const agent = boundedAgentName(settings["plan_critique.agent"],"plan-critic");
   // quick and a disabled critique are decided first: the model pick asks the provider catalog and the coverage scan takes up
   // to 30 s, both for a critic that will not run (2026-10-29 audit).
-  const enabled = settings["plan_critique.enabled"];
-  const disabled = enabled === false || enabled === 0
-    || (typeof enabled === "string" && ["0", "off", "false", "no"].includes(enabled.trim().toLowerCase()));
+  const disabled = settingOff(settings["plan_critique.enabled"]);
   if (qualityMode === "quick" || disabled) {
     const skip = { runId:input.runId, taskId:input.taskId, stageId:"plan-critique" as const, input:`${input.plan}\n\n${JSON.stringify(input.task)}\n\nagent=${agent}\n\npm_read=${input.pmReadContext ?? ""}` };
     recordStage(input.db, { ...skip, state:"pending", replaceOnNewInput:true, restart:true });
