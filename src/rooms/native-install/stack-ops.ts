@@ -195,6 +195,7 @@ async function configureOwnedPmGuard(ctx: HostContext, home: string): Promise<{
       note: `PM guard installed in its Lane Pilot-owned namespace and added to ${applied.settingsPath} with CAS`,
     };
   } catch (error) {
+    // snapshot finalize/rollback are best-effort; the original error still propagates
     await finalizeSnapshotAfter(snapshot, home).catch(() => undefined);
     await rollbackSnapshot(snapshot.snapshotPath).catch(() => undefined);
     throw error;

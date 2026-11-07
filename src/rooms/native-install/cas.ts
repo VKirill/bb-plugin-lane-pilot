@@ -55,6 +55,7 @@ async function acquireLock(lockPath: string): Promise<void> {
     } catch (error) {
       const code = error && typeof error === "object" && "code" in error ? error.code : null;
       if (code !== "EEXIST") throw error;
+      // a stale lock is removed best-effort; the loop re-checks either way
       if (await lockIsStale(lockPath)) { await rm(lockPath, { force: true }).catch(() => undefined); continue; }
       if (Date.now() > deadline) throw new Error("timed out waiting for the CAS lock");
       await new Promise((resolve) => setTimeout(resolve, 10));
@@ -75,6 +76,7 @@ function withTargetLock<T>(path: string, body: () => Promise<T>): Promise<T> {
     await mkdir(dirname(key), { recursive: true });
     await acquireLock(lockPath);
     try { return await body(); }
+    // lock release is best-effort; a leftover lock is reclaimed by the stale check
     finally { await rm(lockPath, { force: true }).catch(() => undefined); }
   });
   const settled = run.then(() => undefined, () => undefined);
@@ -156,6 +158,7 @@ async function swapText(path: string, expectedSha256: string | null, nextText: s
     const after = await readTextState(path);
     return { status: "ok", beforeSha256: before.sha256, afterSha256: after.sha256, changed: true, reason: null };
   } catch (error) {
+    // temp-file cleanup is best-effort
     await rm(temporary, { force: true }).catch(() => undefined);
     return { status: "failed", beforeSha256: before.sha256, afterSha256: before.sha256, changed: false, reason: error instanceof Error ? error.message : String(error) };
   }

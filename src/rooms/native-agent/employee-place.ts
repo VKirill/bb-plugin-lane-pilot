@@ -61,13 +61,16 @@ export async function placeEmployeeOn(
 ): Promise<EmployeePlace> {
   const affinity = employeeView(agentId).machineAffinity;
   if (!affinity || affinity === MACHINE_AFFINITY_ANY) return { mode: "inherit" };
-  const listed = ((await bb.sdk.hosts.list?.()) ?? []) as Array<{ id?: unknown; name?: unknown }>;
+  // hosts.list is an optional probe: absent or failing means no affinity hint, so placement is inherited.
+  const listed = await Promise.resolve().then(() => bb.sdk.hosts.list?.() ?? []).then((rows) => rows ?? []).catch(() => []) as Array<{ id?: unknown; name?: unknown }>;
   const hosts: ListedHost[] = listed.flatMap((row) => typeof row?.id === "string" ? [{ id: row.id, name: typeof row.name === "string" ? row.name : null }] : []);
   const hostId = affinityHostId(affinity, hosts);
   if (!hostId) return { mode: "inherit" };
   const home = await Promise.resolve()
     .then(() => bb.sdk.hosts.directory({ hostId }))
-    .then((row) => row.directory || null);
+    .then((row) => row.directory || null)
+    // the home lookup is best-effort: unknown home falls back to the placer's own default
+    .catch(() => null);
   const place = chooseEmployeePlace({ affinity, hosts, sources, hostHome: home, agentId });
   if (place.mode !== "folder" || !place.created) return place;
   try {

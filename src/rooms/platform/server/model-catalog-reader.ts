@@ -26,7 +26,7 @@ export function createModelCatalog(ctx: Pick<ServerCore, "bb" | "log">, now: () 
     const hosts = await listQaHosts(bb);
     const providers = new Map<string, CatalogProvider>();
     await Promise.all(hosts.filter((host) => host.connected).map(async (host) => {
-      const listed = await within(Promise.resolve(bb.sdk.providers.list({ hostId: host.id })), CALL_TIMEOUT_MS).catch((cause: unknown) => { bb.log.warn(`Lane Pilot: provider list on ${host.id} unreadable: ${cause instanceof Error ? cause.message : String(cause)}`); return []; });
+      const listed = await within(Promise.resolve(bb.sdk.providers.list({ hostId: host.id })), CALL_TIMEOUT_MS).catch((cause: unknown) => { (bb.log as { warn?: (message: string) => void } | undefined)?.warn?.(`Lane Pilot: provider list on ${host.id} unreadable: ${cause instanceof Error ? cause.message : String(cause)}`); return []; });
       await Promise.all(listed.map(async (info) => {
         const entry = providers.get(info.id) ?? {
           id: info.id, displayName: info.displayName || info.id, logoUrl: info.logoUrl ?? null, family: info.family ?? null,
@@ -62,7 +62,7 @@ export function createModelCatalog(ctx: Pick<ServerCore, "bb" | "log">, now: () 
 
   /** The catalog as last read, without waiting (null before the first read); a stale or missing one is refreshed in the background. */
   function peek(): ModelCatalog | null {
-    if (!cached || now() - cached.at >= CATALOG_TTL_MS) void get().catch((cause: unknown) => bb.log.warn(`Lane Pilot: model catalog refresh failed: ${cause instanceof Error ? cause.message : String(cause)}`));
+    if (!cached || now() - cached.at >= CATALOG_TTL_MS) void get().catch((cause: unknown) => (bb.log as { warn?: (message: string) => void } | undefined)?.warn?.(`Lane Pilot: model catalog refresh failed: ${cause instanceof Error ? cause.message : String(cause)}`));
     return cached?.value ?? null;
   }
 

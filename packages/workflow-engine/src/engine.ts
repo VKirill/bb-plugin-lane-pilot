@@ -1464,6 +1464,7 @@ export class WorkflowEngine {
    */
   private async kick(runId: string): Promise<RunSummary> {
     const running = this.drives.get(runId);
+    // the in-flight drive's own error path already recorded its failure; here we only wait for it to settle
     if (running) await running.catch(() => undefined);
     return this.drive(runId);
   }

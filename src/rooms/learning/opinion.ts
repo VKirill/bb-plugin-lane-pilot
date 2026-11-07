@@ -80,6 +80,7 @@ export function createDecisionsClient(deps: DecisionsDeps) {
         if (response.status === 429 || response.status >= 500) breaker();
         return fail("error", `http ${response.status}`);
       }
+      // an unreadable body parses as no verdict
       const parsed = responseSchema.safeParse(await response.json().catch(() => null));
       const signals = parsed.success ? signalsFromDecisions(parsed.data.answers) : null;
       if (!parsed.success || !signals) { breaker(); return fail("invalid", "unreadable answer"); }

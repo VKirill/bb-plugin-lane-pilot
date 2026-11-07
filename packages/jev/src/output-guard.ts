@@ -101,6 +101,7 @@ export function createOutputGuard(deps: {
     if (!instance) return { blocked: false, text };
     if (text.trim().length < MIN_CHARS) return { blocked: false, text };
     try {
+      // settings are advisory; empty settings fall back to the guard defaults
       const settings = await deps.settings(input.projectId).catch(() => ({} as JevSettings));
       if (!instance.enabled(settings)) return { blocked: false, text };
       const kindsRaw = settings[GUARD_KINDS_KEY];

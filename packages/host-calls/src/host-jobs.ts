@@ -95,6 +95,7 @@ export function createHostJobs(deps: {
           throw new Error(reply.state === "failed" ? reply.error ?? `host ${kind} failed` : `host ${kind} job ${reply.state}: ${reply.error ?? "no detail"}`);
         }
         if (now() > deadline) {
+          // the cancel is best-effort; the timeout error below is what propagates
           await deps.call("jobCancel", { requestedHostId: hostId, jobId: entry.jobId }, { hostId, timeoutMs: 20_000 }).catch(() => undefined);
           await deps.kv.delete(key);
           throw new Error(`host ${kind} timed out after ${Math.round(waitMs / 1000)} s (job ${entry.jobId} cancelled)`);

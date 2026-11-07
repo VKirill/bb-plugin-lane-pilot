@@ -363,6 +363,7 @@ export function runsRpc(ctx: ServerCore, services: Services) {
       const open = db.prepare(`SELECT id FROM lane_pilot_attempt WHERE run_id=? AND state IN ('queued','spawn_requested','spawn_unknown','running','cancel_requested')`).all(runId) as Array<{ id:string }>;
       const canceled:string[] = [], left:string[] = [];
       for (const { id } of open) {
+        // a failed cancel lands in `left`, not silently dropped
         const result = await handlers.cancel_attempt({ attemptId:id, code:"run_closed" }).catch(() => ({ ok:false }));
         (result.ok ? canceled : left).push(id);
       }

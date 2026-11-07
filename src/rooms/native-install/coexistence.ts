@@ -394,6 +394,7 @@ async function quarantineInvalidLedger(home: string): Promise<void> {
   if (!state.text) return;
   try { JSON.parse(state.text); return; }
   catch { /* not JSON */ }
+  // quarantine rename is best-effort; the invalid file simply stays in place
   await rename(path, join(dirname(path), `.ownership-invalid-${randomUUID()}.json`)).catch(() => undefined);
 }
 
@@ -571,6 +572,7 @@ export async function runCoexistenceOperationAtHome(
       return resultOf(input, { status: "ok", owner: "lane-pilot", path: installed.path, beforeSha256: null, afterSha256: after, snapshotId, evidence: [{ kind: "installed", path: installed.path, sha256: after, detail: `Immutable managed engine ${installed.sha} installed; adapted capabilities: ${installed.adaptedCapabilities.join(", ") || "none"}.` }], reason: null });
     } catch (error) {
       if (installed && installed.source !== "reuse" && sourceOptions.beforeCompensation) {
+        // the compensation hook is best-effort; the residuals below still report what remains
         await sourceOptions.beforeCompensation(installed.path, snapshotPath(home, snapshotId)).catch(() => undefined);
       }
       const residuals: CoexistenceEvidence[] = [];

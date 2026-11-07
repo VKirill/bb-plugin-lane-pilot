@@ -79,6 +79,7 @@ export function spawnUsageOf(owner: { bb: object; log?: ((line: string) => void)
  * nothing this once, the next spawn sees the refreshed numbers.
  */
 export async function warmSpawnUsage(usage: SpawnUsageUse | undefined, hostId: string | null): Promise<void> {
+  // cache warm is best-effort: a failure only means the next read pays the fetch
   void usage?.warm({ providerIds: TABLE_PROVIDERS, hostId }).catch(() => undefined);
 }
 
@@ -126,6 +127,7 @@ export async function readProviderFolderBlock(kv: FolderBlockKv, hostId: string 
     const legacy = liveBlock(await kv.get(legacyProviderFolderBlockKey(hostId, providerId)), ttlMs);
     if (!legacy) continue;
     const migrated: ProviderFolderBlock = { providerId, ...legacy };
+    // the migrated marker is advisory; a lost write just re-reads the legacy row next time
     await kv.set?.(providerFolderBlockKey(hostId), migrated as never).catch(() => undefined);
     return migrated;
   }
@@ -140,12 +142,14 @@ export async function readProviderFolderBlock(kv: FolderBlockKv, hostId: string 
 export async function noteProviderStartFailure(kv: { set(key: string, value: never): Promise<unknown> }, hostId: string | null, providerId: string, envPath: string | null | undefined, reason: string): Promise<void> {
   if (!PROVIDER_CAPABILITIES[providerId]?.documentsFolderSensitive || !envPath || !DOCUMENTS_FOLDER.test(envPath)) return;
   if (!/EPERM|unenforceable|\b500\b.*mcp|mcp.*\b500\b/i.test(reason)) return;
+  // advisory TTL'd marker; a lost write only re-offers the provider once more
   await kv.set(providerFolderBlockKey(hostId), { providerId, reason, at: Date.now() } as never).catch(() => undefined);
 }
 
 /** A start that went through in the folder: clears this machine's observed block, the current key and any legacy row. */
 export async function noteProviderStartSuccess(kv: { set(key: string, value: never): Promise<unknown> }, hostId: string | null, providerId: string, envPath: string | null | undefined): Promise<void> {
   if (!PROVIDER_CAPABILITIES[providerId]?.documentsFolderSensitive || !envPath || !DOCUMENTS_FOLDER.test(envPath)) return;
+  // advisory marker clear; a stale marker expires by TTL anyway
   await kv.set(providerFolderBlockKey(hostId), null as never).catch(() => undefined);
   await kv.set(legacyProviderFolderBlockKey(hostId, providerId), null as never).catch(() => undefined);
 }

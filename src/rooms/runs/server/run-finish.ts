@@ -194,6 +194,7 @@ export async function cleanupStickyLaneWorktrees(db: ReturnType<typeof openDatab
       : attempts.every((row) => FINAL.has(row.state) || ((RETRY_ELIGIBLE as string[]).includes(row.state) && row.superseded === 1));
     const quiet = Math.max(...attempts.map((row) => row.updatedAt)) < now - (area ? STICKY_WINDOW_MS : ENVIRONMENT_GRACE_MS);
     if (released.has(path) || !idle || !quiet || !first.base || !first.hostId) continue;
+    // removal is best-effort: a failure just leaves the worktree for a later sweep
     if (await remove(first.hostId, first.base, path).catch(() => false)) removed.push(path);
     released.add(path);
   }

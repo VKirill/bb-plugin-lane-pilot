@@ -143,6 +143,7 @@ export async function judgedFailureClass(deps: JudgedFailureDeps, state: string,
   const instance = deps.jev();
   if (!instance) return rules.cls;
   try {
+    // settings are advisory for the judge; empty settings still allow the judgment
     const settings = await deps.settings().catch(() => ({} as JevSettings));
     if (!instance.enabled(settings)) return rules.cls;
     // At most once a minute: the labels of earlier judgments ride along, so the calibration set fills itself.
@@ -153,6 +154,7 @@ export async function judgedFailureClass(deps: JudgedFailureDeps, state: string,
       if (deps.kv) for (const row of labeled) {
         const key = `writer-route:${row.runId}:${row.taskId}`;
         const route = await deps.kv.get(key);
+        // outcome backfill is best-effort; the labeled row is already durable in the sweep
         if (route && typeof route === "object") await deps.kv.set(key, { ...(route as Record<string, unknown>), outcome: row.outcome, outcomeAt: Date.now() }).catch(() => undefined);
       }
     }
@@ -160,6 +162,7 @@ export async function judgedFailureClass(deps: JudgedFailureDeps, state: string,
     const lines = reason.split("\n").map((line) => line.trim()).filter(Boolean);
     let pointed: string | null = null;
     if (lines.length > 12) {
+      // the log-find pass is advisory; null just means no pointed line
       const found = await instance.judge(logFindJudgment, { task: subject ?? "attempt", command: state.slice(0, 200), lines }, { projectId: deps.projectId, runId: deps.runId, subject: subject ?? "attempt", settings }).catch(() => null);
       const pick = found?.by === "jev" ? found.decision.line : found?.by === "fallback" ? (found.shadow?.decision?.line ?? null) : null;
       if (pick !== null && pick !== undefined) pointed = lines[pick] ?? null;

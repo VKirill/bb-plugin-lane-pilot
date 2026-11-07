@@ -334,6 +334,7 @@ export function createMemoryStage(ctx: ServerCore, services: Services) {
     if(judge){
       const candidates=episodeCandidates(db,args.projectId,args.query,8,{chain});
       if(candidates.length){
+        // the rerank judge is advisory; null keeps the unranked order
         const verdict=await judge.judge(memoryRerankJudgment,{query:args.query,passages:candidates.map((e)=>`${e.title}: ${e.state}${e.reason?` — ${e.reason}`:""}`)},{projectId:args.projectId,runId:args.runId,settings:settings as Record<string,unknown>}).catch(()=>null);
         if(verdict?.by==="jev") episodesList=verdict.decision.keep.slice(0,3).map((i)=>candidates[i]!);
       }

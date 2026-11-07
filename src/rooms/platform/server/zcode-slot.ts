@@ -71,6 +71,7 @@ export function reserveZcodeSlot(bb: object): (() => void) | null {
 /** Whether ZCode's slots are all taken by Lane Pilot threads, as last known; stale entries are read again in the background. Never waits, never throws. */
 export function zcodeBusyPeek(bb: BbPluginApi, now = Date.now()): boolean {
   try {
+    // background re-read; a failure keeps the last known slot state (GIVE_UP_MS bounds staleness)
     for (const id of stale(bb, now)) void read(bb, id, now).catch(() => undefined);
   } catch { /* the slot is a hint: the bridge's lock is the guard */ }
   return anyBusy(bb);
