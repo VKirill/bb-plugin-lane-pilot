@@ -29,7 +29,7 @@ Every agent step in Lane Pilot names a role, and the role names the model. One t
 | Plan critic (`plan-critic`) | Judges the planner's plan before work starts. `plan_critique.enabled` defaults to true, mode `gate`. | Role table. |
 | Specialist reviewer (`specialist-reviewer`) | A second, domain-minded look at the plan. `specialist.enabled` defaults to false; `specialist.when` defaults to `high_risk`. | Role table. |
 | Code critic (`code-critic`) | Judges the writer's diff and every dimension of a wave review (`lp.review`). Runs on a model of another family than the writer. `quality_mode` (quick, standard, full) decides which review stages a task goes through; `full` puts both critics on every task. | Role table; never the writer's own model. |
-| `critic-tiebreak`, `triager` | The third voice when two critics disagree on a rubric item; the sorter of a failed gate into its class. | Role table. |
+| `triager` | The sorter of a failed gate into its class. | Role table. |
 | PM reader (`pm-reader`) | Reads long files and returns what the PM asked for. Off by default (`pm_read.enabled`, threshold `pm_read.min_lines` = 350). | Role table. |
 | Auditor, debugger | Audit finished work against the goal; find the cause of a failure from logs and code. | Role table (GPT-6.1 Sol high). |
 
@@ -85,7 +85,7 @@ Built-in defaults from `ROLE_TABLE` in `packages/models/src/role-models.ts`. Aut
 | `specialist` | Claude Opus 5.5 | high | An owner-created agent without a row of its own. |
 | `copy-lead`, `seo-specialist`, `design-lead`, `video-lead`, `tavily`, `3d-artist`, `game-dev`, `visual-artist` | Claude Sonnet 5.5 | high | Judgment plus tool use; Opus stays for planning. |
 | `social-manager`, `billing-assistant`, `macos-operator` | Claude Sonnet 5.5 | medium | Routines with tools and checklists. |
-| `plan-critic`, `specialist-reviewer`, `code-critic`, `critic-tiebreak`, `triager` | Gemini 3.8 Flash high (9router) | medium | Another family than the Claude authors, on a near-free subscription so Claude and GPT limits go to authors. Fallback: GPT-6.1 Sol high (tiebreak and triager: GPT-6 Luna high). |
+| `plan-critic`, `specialist-reviewer`, `code-critic`, `triager` | Gemini 3.8 Flash high (9router) | medium | Another family than the Claude authors, on a near-free subscription so Claude and GPT limits go to authors. Fallback: GPT-6.1 Sol high (triager: GPT-6 Luna high). |
 | `auditor`, `debugger`, `council` (chair) | GPT-6.1 Sol | high | Strongest model of the other family; judges, not authors. |
 | `pm-reader` | Claude Haiku 5.5 | low | Cheap, fast extraction. |
 | `memory`, `project-life` | Claude Haiku 5.5 | medium | Short, careful text jobs. |
