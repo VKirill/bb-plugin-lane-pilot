@@ -2,7 +2,7 @@
 title: Typed judgments
 type: component
 created: 2026-11-05
-updated: 2026-11-06
+updated: 2026-11-07
 status: active
 confidence: high
 tags: [jev, judgments, registry]
@@ -61,7 +61,7 @@ Registered judgments default to `shadow` unless the mode column says otherwise. 
 | `invoice.check`: compare invoice text and hard numeric checks | Requested and found invoice data → match/mismatch/unsure | Hard checks validate amounts, INN, BIK and bank-account checksums; only names/services are sent as state; default active; fallback returns mismatch for hard failures, otherwise a lexical match or unsure | `packages/jev/src/judgments/invoice-check.ts:12-119` |
 | `invoice.scan`: compare supplied invoice fields against page image | Expected INN/BIK/amount/number and image → field probabilities, failed fields, ok | Only supplied fields asked; image-backed; failure fallback is `ok: false` | `packages/jev/src/judgments/invoice-scan.ts:10-47` |
 | `logs.error_find`: point to the log line containing the failure | Task, command and lines → selected index and has-answer flag | At most 48 lines, 400 chars per line; fallback has no pointed line | `packages/jev/src/judgments/log-find.ts:8-42` |
-| `memory.rerank`: filter a lexical memory shortlist | Query and passages → scores and retained indexes | At most eight passages; fallback retains every supplied passage | `packages/jev/src/judgments/memory-rerank.ts:8-38` |
+| `memory.rerank`: filter a lexical memory shortlist | Query and passages → scores and retained indexes | At most eight passages; threshold keep_p defaults to 0.8 (min 0.2, max 0.9); fallback retains every supplied passage | `packages/jev/src/judgments/memory-rerank.ts:8-40` |
 | `output.guard`: classify output for screening | Output kind and text → a guard decision | Capped prompt text and per-kind thresholds; fallback is defined in the judgment | `packages/jev/src/judgments/output-guard.ts:13-56` |
 | `d.render_match`: compare 3D render to concept | Brief and two images → match and defect probabilities | Image-backed; separate match and defect thresholds; fallback matches | `packages/jev/src/judgments/render-match.ts:10-47` |
 | `selfrepair.group`: group an incident with a known cause | Incident kind/reason and candidate groups → known signature or null | At most ten candidates; low probability or margin returns a new group; fallback is null | `packages/jev/src/judgments/repair-group.ts:13-55` |

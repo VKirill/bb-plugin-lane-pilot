@@ -2,7 +2,7 @@
 title: Jev client and runtime
 type: component
 created: 2026-11-05
-updated: 2026-11-05
+updated: 2026-11-07
 status: active
 confidence: medium
 tags: [jev, client, runtime]
@@ -26,14 +26,14 @@ TL;DR: The runtime validates typed answers, resolves project settings, uses dete
 
 ## Purpose
 
-`createJevClient` implements the System One HTTP request contract; `createJev` applies a registered judgment and returns a typed verdict; `installJev` creates the process instance used by `jev()` (`packages/jev/src/client.ts:49-59`, `packages/jev/src/run.ts:79-91`, `packages/jev/src/runtime.ts:13-20`).
+`createJevClient` implements the System One HTTP request contract; `createJev` applies a registered judgment and returns a typed verdict; `installJev` creates the process instance used by `jev()` (`packages/jev/src/client.ts:49-59`, `packages/jev/src/run.ts:79-91`, `packages/jev/src/runtime.ts:14-20`).
 
 ## How it works
 
-1. The caller supplies an endpoint reader, optional database, and optional log callback to `installJev`; the server invokes it during plugin startup (`packages/jev/src/runtime.ts:13-20`, `src/rooms/core/server/core.ts:101`).
+1. The caller supplies an endpoint reader, optional database, and optional log callback to `installJev`; the server invokes it during plugin startup (`packages/jev/src/runtime.ts:14-20`, `src/rooms/core/server/core.ts:103`).
 2. A judgment builds a redacted state and typed questions. The runner enforces the 48-question per-judgment limit and resolves mode and thresholds from context settings (`packages/jev/src/run.ts:93-107`, `packages/jev/src/registry.ts:11`).
 3. The runner groups entries sharing a state and model, splits requests at the question/state limits, and submits through the client (`packages/jev/src/run.ts:145-180`, `packages/jev/src/client.ts:12-23`).
-4. The client requires an endpoint and non-empty key, enforces a run budget and 16 in-flight call ceiling, retries eligible errors once, and validates each answer against its question type (`packages/jev/src/client.ts:65-138`, `packages/jev/src/client.ts:141-154`).
+4. The client requires an endpoint and non-empty key, enforces a run budget and 16 in-flight call ceiling, retries eligible errors once, retries dead or 429-saturated providers once on a configured standby provider, and validates each answer against its question type (`packages/jev/src/client.ts:85-138`, `packages/jev/src/client.ts:142-155`).
 5. The runner returns `jev`, `escalate` or `fallback`; shadow mode records the computed answer but returns the judgment's fallback (`packages/jev/src/run.ts:34-46`, `packages/jev/src/run.ts:130-142`).
 
 ## Modes, providers and limits
@@ -46,9 +46,11 @@ TL;DR: The runtime validates typed answers, resolves project settings, uses dete
 | TypeSafe | Default provider; pinned model `jev-1.14.0` | Provider URL and model are defined in the provider catalog | `packages/jev/src/provider.ts:1-18` |
 | OpenLux | Explicit provider selection; pinned route model `jev-1.14.0:stable`; adds 1,500 ms timeout headroom | Provider URL and model are defined in the provider catalog | `packages/jev/src/provider.ts:1-18` |
 
-The client sends HTTP `POST` requests with bearer authorization (`packages/jev/src/client.ts:63-68`).
+The client sends HTTP `POST` requests with bearer authorization (`packages/jev/src/client.ts:63-70`).
 
-The request body is capped at 80,000 state characters plus 200,000 serialized characters; the client permits 16 in-flight calls, applies a 4,000 ms default timeout plus provider headroom, retries at most once, and opens a five-minute breaker after five qualifying failures in one minute (`packages/jev/src/client.ts:14-23`, `packages/jev/src/client.ts:65-110`). Each judgment is capped at 48 questions (`packages/jev/src/registry.ts:11`, `packages/jev/src/run.ts:102-106`).
+The request body is capped at 80,000 state characters plus 200,000 serialized characters; the client permits 16 in-flight calls, applies a 4,000 ms default timeout plus provider headroom, retries at most once, and opens a five-minute breaker after five qualifying failures in one minute (`packages/jev/src/client.ts:14-23`, `packages/jev/src/client.ts:85-114`). Each judgment is capped at 48 questions (`packages/jev/src/registry.ts:11`, `packages/jev/src/run.ts:102-106`).
+
+When a dead or saturated provider response occurs (status 0, 429, 5xx, timeout, or no answer) and a standby fallback provider with an API key is configured, the client retries once on the standby endpoint; a successful standby response prefixes the model with the standby provider ID (`packages/jev/src/client.ts:115-127`).
 
 The result exposes input and output token counts; this package has no monetary price field in its usage contract (`packages/jev/src/types.ts:23-30`).
 
@@ -58,10 +60,10 @@ The result exposes input and output token counts; this package has no monetary p
 |---|---|---|
 | No endpoint or API key | Client returns `disabled` | `packages/jev/src/client.ts:88-91` |
 | Provider call failure or invalid answers | Runner returns judgment fallback with the failure status | `packages/jev/src/run.ts:129-137` |
-| Timeout, provider error, open breaker, budget exhaustion or invalid response | Typed failure status is returned and the judgment fallback runs | `packages/jev/src/types.ts:25-30`; `packages/jev/src/run.ts:120-127` |
+| Timeout, provider error, 429 saturation, open breaker, budget exhaustion or invalid response | Typed failure status is returned and the judgment fallback runs; dead or 429-saturated providers attempt the standby provider once before failing | `packages/jev/src/client.ts:115-128`; `packages/jev/src/run.ts:120-127` |
 | `decide` throws | Logs a decision failure and returns fallback with `invalid` status | `packages/jev/src/run.ts:139-142` |
 | Receipt write fails | Logs the storage failure and returns a null receipt ID; judgment result remains available | `packages/jev/src/run.ts:109-127` |
-| Caller aborts | No retry or standby request after abort; the call returns a failure result | `packages/jev/src/client.ts:100-126` |
+| Caller aborts | No retry or standby request after abort; the call returns a failure result | `packages/jev/src/client.ts:109-127` |
 
 ## Business rules
 
