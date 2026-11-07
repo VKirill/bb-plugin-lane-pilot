@@ -19,3 +19,10 @@ export {
   AdvancedRows, CheckGroup, FieldControl, InheritanceContext, LocaleControls, OverviewLoading, SettingField, SettingHelp,
   SettingsGroup, StatusBadge, StatusRow, inheritanceSummary, settingHelpText,
 } from "./setting-controls";
+export { modelShort, providerShort } from "./model-names";
+export { executorLine, sourceText } from "./executor-text";
+export { useModelCatalog } from "./model-catalog";
+export { NativeModelPicker, choiceFromPicker, pickerRouting, pickerValue } from "./native-model-picker";
+export type { PickerSeed } from "./native-model-picker";
+export { effortFor, firstChoice } from "./model-choice";
+export type { ModelChoice } from "./model-choice";

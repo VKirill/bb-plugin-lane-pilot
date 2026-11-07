@@ -7,7 +7,6 @@ export { workflowExportRpc } from "./rpc/workflow-export";
 export { createWorkflowArchitect, mountWorkflowArchitect } from "./workflow-architect";
 export { answerWorkflowQuestion } from "./workflow-answer";
 export { createWorkflowLibrary } from "./workflow-library";
-export { SCHEDULE_RUN_KEY_PREFIX } from "./workflow-runtime";
 export type { ChainRuntime } from "../../contracts/server";
 export { mountWorkflowTools } from "./workflow-tools";
 export { createWorkflowTriggersService } from "./workflow-triggers-live";

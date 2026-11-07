@@ -15,3 +15,6 @@ export const ANALYZE_PLAN_EXECUTE = "analyze-plan-execute";
 
 /** Off keeps the previous issue-quick graph (triage, plan, build). Anything else, including a missing row, is the short path. */
 export const ISSUE_QUICK_SHORT_PATH = "issue_quick.short_path";
+
+/** The idempotency key prefix of a run a schedule started; the origin is read back from it (and from the parent run) after a reload. */
+export const SCHEDULE_RUN_KEY_PREFIX = "wf-schedule:";

@@ -3,11 +3,11 @@ import { describe, expect, it } from "vitest";
 import { openDatabase } from "../../src/rooms/plugin-db";
 import {
   calculateSkillSwitches,
-  extractSkillSequence,
   getSkillSwitchStats,
   recordSkillSwitchMetric,
   skillSwitchMorningLine,
 } from "../../src/rooms/writer/skill-switch";
+import { extractSkillSequence } from "../../src/rooms/contracts";
 
 describe("skill-switch metric (Item 3)", () => {
   it("extractSkillSequence extracts skills from tool events and falls back to provided skills", () => {

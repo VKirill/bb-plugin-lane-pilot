@@ -13,7 +13,8 @@ import {
   type Clause, type ConditionOp, type ModelError, type NodeType, type Raw, type WhenModel,
 } from "./workflow-edit-model";
 import type { Catalog, DraftEditing } from "./workflow-edit-state";
-import { executorLine, type StepExecutor } from "./workflow-models";
+import { executorLine } from "../../ui-shell/ui";
+import type { StepExecutor } from "../../contracts";
 import { dataTabs, SidePanel, type NodeDataProps } from "./workflow-node-data";
 import type { DraftCaseResult, DraftDoc } from "./workflow-drafts";
 

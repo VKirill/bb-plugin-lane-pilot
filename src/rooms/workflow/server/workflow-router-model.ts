@@ -5,7 +5,7 @@ import type { WorkflowAgents } from "./workflow-agent";
 import type { ChainRuntime } from "../../contracts/server";
 import { sha256Hex } from "@lane-pilot/kit";
 ;
-import { serviceRole } from "../service-models";
+import { serviceRole } from "../../contracts";
 import {ROUTE_WORKFLOW} from "../../contracts";
 import {builtinWorkflow} from "../builtin";
 

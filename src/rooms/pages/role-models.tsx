@@ -4,7 +4,7 @@ import { belowTier, modelTier, roleModelKey, roleRow, type ModelTier } from "@la
 import { Button, Surface, SurfaceBody, SurfaceHeader } from "@lane-pilot/ui-kit";
 import type { ModelCatalog } from "@lane-pilot/models";
 import type { LpPage } from "./use-lp-page";
-import { NativeModelPicker, useModelCatalog, type ModelChoice } from "../workflow/ui";
+import { NativeModelPicker, useModelCatalog, type ModelChoice } from "../ui-shell/ui";
 
 type PoolEntry = { providerId: string; model: string; effort: string | null };
 type Row = {

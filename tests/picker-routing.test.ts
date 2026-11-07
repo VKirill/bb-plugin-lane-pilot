@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { pickerRouting } from "../src/rooms/workflow/ui/workflow-native-picker";
+import { pickerRouting } from "../src/rooms/ui-shell/ui/native-model-picker";
 import type { ModelCatalog } from "@lane-pilot/models";
 
 // 2026-10-31: the role picker asked the MacBook for Devin's models — Devin is not signed in there and lists one placeholder

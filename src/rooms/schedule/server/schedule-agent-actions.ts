@@ -10,7 +10,7 @@ import type { ServerCore } from "../../contracts/server";
 
 import type { PhaseIntake } from "../../phase/server/intake";
 import type { ScheduleService } from "./schedule-service";
-import type { WorkflowTriggersApi } from "../../workflow/server/workflow-triggers-live";
+import type { WorkflowTriggersApi } from "../../platform/server";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {

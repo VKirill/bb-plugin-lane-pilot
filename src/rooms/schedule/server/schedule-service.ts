@@ -19,23 +19,19 @@ import { createThreadHosts, projectPlaces, whereOf, type ProjectPlace } from "./
 import { NO_USAGE, errandRunThread, scheduleCost, threadUsage } from "./schedule-usage";
 import { createScheduleExecutors } from "./schedule-executors";
 
-import { createWorkflowLibrary } from "../../workflow/server";
+import type { WorkflowEngineApi, WorkflowLibraryApi, WorkflowTriggersApi, WriterHostApi, WriterStartApi } from "../../platform/server";
 
-import type { WorkflowTriggersApi } from "../../workflow/server/workflow-triggers-live";
-import type { WriterHostApi } from "../../writer/server/writer-host";
-
-import type { DocsNightlyApi } from "../../docs/server/docs-nightly";
+import type { DocsNightlyPort } from "../../contracts/docs-nightly-api";
 import type { ErrandsApi } from "../../contracts";
-import type { WorkflowEngineApi } from "../../workflow/server/workflow";
-import type { WriterStartApi } from "../../writer/server/start";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {
-  docsPlaces: DocsNightlyApi["docsPlaces"];
+  docsPlaces: DocsNightlyPort["docsPlaces"];
   errands: ErrandsApi;
   listedAgentProfiles: WriterHostApi["listedAgentProfiles"];
   startWriterTask: WriterStartApi["startWriterTask"];
   workflowEngine: WorkflowEngineApi["workflowEngine"];
+  workflowLibrary: WorkflowLibraryApi;
   workflowTriggers: WorkflowTriggersApi["workflowTriggers"];
 }
 
@@ -55,7 +51,7 @@ export function createScheduleService(ctx: ServerCore, services: Services) {
   const { bb, db } = ctx;
   // A cron without a time zone runs in the owner's, not in the hub's (UTC).
   const ownerZone = () => loadPushConfig(db).timezone;
-  const library = createWorkflowLibrary(ctx, services);
+  const library = services.workflowLibrary;
   const scheduler = createScheduler({
     db, executors: createScheduleExecutors(ctx, services), isDisposed: ctx.isDisposed,
     log: (message) => bb.log.warn(`Lane Pilot schedule: ${message}`),

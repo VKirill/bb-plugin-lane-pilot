@@ -1,35 +1,21 @@
 import { Fragment, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useRpc } from "@get-bb/plugin-sdk/app";
-import type { z } from "zod";
-import type { rpcContract, stepExecutorSchema } from "../../contracts";
+import type { rpcContract, StepExecutor } from "../../contracts";
 import { t, type I18nKey, type Locale } from "@lane-pilot/i18n";
 import type { CatalogProvider, ModelCatalog } from "@lane-pilot/models";
 import type { ViewNode, WorkflowView } from "@lane-pilot/workflow-engine/ui";
 import { Surface, SurfaceBody, SurfaceHeader } from "@lane-pilot/ui-kit";
 import { nodeTitle } from "./workflow-titles";
+import { executorLine, modelShort, providerShort, sourceText } from "../../ui-shell/ui";
 
 /**
  * The model view of a graph: a badge on each card (who works, on which provider and model, how hard), a table of every step, and the
  * data both read from the server (`workflow_step_executors`, `workflow_model_catalog`). READ-ONLY: the model belongs to the step's
  * role (the table «role -> model» in Settings), and nothing on a step changes it.
  */
-export type StepExecutor = z.infer<typeof stepExecutorSchema>;
 type Call = (method: string, input: unknown) => Promise<unknown>;
 
 // ------------------------------------------------------------------ data
-
-/** The hub's providers and models; null while it is read, or when no machine answered. */
-export function useModelCatalog(projectId?: string | null): ModelCatalog | null {
-  const rpc = useRpc<typeof rpcContract>() as unknown as { call: Call };
-  const [catalog, setCatalog] = useState<ModelCatalog | null>(null);
-  useEffect(() => {
-    let live = true;
-    // With the project the answer says which machine its helpers run on: the pickers list and check that machine's models.
-    void Promise.resolve(rpc.call("workflow_model_catalog", projectId ? { projectId } : {})).then((value) => { if (live && value) setCatalog(value as ModelCatalog); }, () => undefined);
-    return () => { live = false; };
-  }, [rpc, projectId]);
-  return catalog;
-}
 
 /** Who works on each step of a workflow or a draft; read again when `revision` changes (a draft's version) or the settings it reads change. */
 export function useStepExecutors(target: { workflowId?: string; draftId?: string; projectId: string | null; revision?: string | number | null }): { loaded: boolean; list: StepExecutor[]; byNode: ReadonlyMap<string, StepExecutor>; reload: () => void } {
@@ -83,27 +69,6 @@ export function executorFor(executors: ReadonlyMap<string, StepExecutor>, view: 
   return executors.get(view.id) ?? (view.kind === "parallel" && !view.id.endsWith(":fan") ? executors.get(`${view.id}:child`) : undefined);
 }
 
-// ------------------------------------------------------------------ names
-
-/** `acp-cursor` is shown as `cursor`. */
-export const providerShort = (id: string | null): string => (id ? id.replace(/^acp-/, "") : "");
-/** `router9/ag/gemini-3.8-flash-high` is shown as `gemini-3.8-flash-high`. */
-export const modelShort = (model: string | null): string => (model ? model.slice(model.lastIndexOf("/") + 1) : "");
-
-export function sourceText(executor: Pick<StepExecutor, "source" | "sourceKey" | "settingsKey">): string {
-  switch (executor.source) {
-    case "table": return t("wfModelSrc_table");
-    case "pinned": return t("wfModelSrc_pinned");
-    case "stage": return t("wfModelSrc_stage").replace("{key}", executor.sourceKey ?? executor.settingsKey ?? "");
-    case "pm": return t("wfModelSrc_pm");
-    case "role-default": return t("wfModelSrc_role_default");
-    case "writer": return `${t("wfModelSrc_writer")}${executor.sourceKey ? ` (${executor.sourceKey})` : ""}`;
-    case "helper": return t("wfModelSrc_helper");
-    case "session": return t("wfModelSrc_session").replace("{step}", executor.sourceKey ?? "");
-    default: return t("wfModelSrc_none");
-  }
-}
-
 const COST_PILL: Record<StepExecutor["costTier"], string> = { none: "lp-pill-muted", low: "lp-pill-success", medium: "lp-pill-neutral", high: "lp-pill-warning", unknown: "lp-pill-muted" };
 const ISSUE_INFO = new Set(["effort_auto"]);
 /** A note, not a problem: the effort routing, and a move to the other family because the provider's limit is nearly spent (`usage_moved: claude-code weekly 93% → codex/gpt-6.1-sol`). */
@@ -115,10 +80,6 @@ export const issueText = (code: string): string => {
 };
 
 // ------------------------------------------------------------------ the badge on a card
-
-/** «codex · gpt-6-luna · high · fast», the badge text and the read-only cell. */
-export const executorLine = (executor: StepExecutor): string =>
-  [providerShort(executor.providerId), modelShort(executor.model), executor.reasoningEffort, executor.serviceTier === "fast" ? t("wfModelFast") : null].filter(Boolean).join(" · ") || t("wfModelSrc_none");
 
 export function ProviderMark({ id, logoUrl }: { id: string | null; logoUrl?: string | null }) {
   // The logo is drawn as a mask in the text colour (as BB does); a provider without one gets its first letter, written by CSS so it is not read as text.

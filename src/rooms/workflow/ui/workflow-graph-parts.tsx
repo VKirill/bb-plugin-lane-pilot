@@ -6,7 +6,8 @@ import type { NodeTone, ViewEdge, ViewNode } from "@lane-pilot/workflow-engine";
 import { PORT_STEP, type Direction } from "./workflow-layout";
 import { nodeTitle } from "./workflow-titles";
 import type { NodeRun, NodeStatus } from "./workflow-run";
-import { CardModel, type GraphModels, type StepExecutor } from "./workflow-models";
+import { CardModel, type GraphModels } from "./workflow-models";
+import type { StepExecutor } from "../../contracts";
 
 /**
  * The pieces of the canvas, drawn the way n8n draws a workflow: a compact card with an icon tile in the colour of what the step does,

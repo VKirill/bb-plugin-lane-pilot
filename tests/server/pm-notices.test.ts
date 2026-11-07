@@ -4,7 +4,7 @@ import plugin from "../../server";
 import { createRun, openDatabase, savePrototypeConfig, setRunThread } from "../../src/rooms/plugin-db";
 import { councilDecisionText, councilEndedText, sendCouncilNotice } from "../../src/rooms/council/server/pm-notice";
 import { maybeNotifyWorkflowRun, notifyWorkflowIfEnded, workflowEndedText } from "../../src/rooms/workflow/server/pm-notice";
-import { SCHEDULE_RUN_KEY_PREFIX } from "../../src/rooms/workflow/server/workflow-runtime";
+import { SCHEDULE_RUN_KEY_PREFIX } from "../../src/rooms/contracts";
 import type { RunRow } from "../../src/rooms/plugin-db";
 import { engineOn, ok, wf } from "../workflow/engine-helpers";
 
