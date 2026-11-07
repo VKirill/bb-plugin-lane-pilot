@@ -47,7 +47,7 @@ const rows = SETTING_CATALOG.filter((spec) => spec.channel === "OWN")
 const constants = [
   ["quality_mode (no task/project value)", `\`${DEFAULT_QUALITY_MODE}\``, "resolveQualityMode, src/rooms/critique/quality-mode.ts:10"],
   ["TASK_ATTEMPT_BUDGET", `\`${TASK_ATTEMPT_BUDGET}\``, "src/rooms/writer/retry-budget.ts:8"],
-  ["MAIN_ATTEMPT_LIMIT", `\`${MAIN_ATTEMPT_LIMIT}\``, "src/rooms/runs/state-machine.ts:77"],
+  ["MAIN_ATTEMPT_LIMIT", `\`${MAIN_ATTEMPT_LIMIT}\``, "src/rooms/state-machine.ts:77"],
   ["memory.note_budget", `\`${parseMemorySettings({}).noteBudget}\``, "packages/memory-core/src/settings.ts:53"],
 ] as const;
 

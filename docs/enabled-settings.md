@@ -14,7 +14,7 @@ sources:
   - docs/enabled-settings.snapshot.json
 ---
 
-<!-- enabled-settings:structure 3dce50f33a090d39 -->
+<!-- enabled-settings:structure 4b1a8f8955cfb7c5 -->
 
 # Enabled settings (generated)
 
@@ -280,5 +280,5 @@ switches: `quick` disables both critiques, `full` enables them (`src/rooms/criti
 |---|---|---|
 | `quality_mode (no task/project value)` | `standard` | resolveQualityMode, src/rooms/critique/quality-mode.ts:10 |
 | `TASK_ATTEMPT_BUDGET` | `12` | src/rooms/writer/retry-budget.ts:8 |
-| `MAIN_ATTEMPT_LIMIT` | `2` | src/rooms/runs/state-machine.ts:77 |
+| `MAIN_ATTEMPT_LIMIT` | `2` | src/rooms/state-machine.ts:77 |
 | `memory.note_budget` | `24000` | packages/memory-core/src/settings.ts:53 |
