@@ -1,7 +1,10 @@
 import { consistentProvider } from "./role-models";
+import { settingOff } from "./setting-value";
 
 export type JevStatus = "ok"|"disabled"|"timeout"|"error";
-const SDK_REASONING_LEVELS = new Set(["none", "low", "medium", "high", "xhigh", "ultracode", "max", "ultra"]);
+/** The reasoning efforts the SDK accepts: the settings enum and the Jev resolver read this one list. */
+export const REASONING_LEVELS = ["none", "low", "medium", "high", "xhigh", "ultracode", "max", "ultra"] as const;
+const SDK_REASONING_LEVELS: ReadonlySet<string> = new Set(REASONING_LEVELS);
 
 export function resolveJevReasoning(input:{
   status:JevStatus;
@@ -31,9 +34,7 @@ export type BbServiceTier = "default" | "fast";
 export type ExecutionFieldSource = "explicit" | "client-preference";
 
 export function automaticEffortRoutingEnabled(settings: Readonly<Record<string, unknown>>): boolean {
-  const flag = settings["jev.LANE_JEV_EFFORT"];
-  return !(flag === false || flag === 0
-    || (typeof flag === "string" && ["0", "off", "false", "no"].includes(flag.trim().toLowerCase())));
+  return !settingOff(settings["jev.LANE_JEV_EFFORT"]);
 }
 
 export function writerServiceTier(settings: Readonly<Record<string, unknown>>): WriterServiceTier {

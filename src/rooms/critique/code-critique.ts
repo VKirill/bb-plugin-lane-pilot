@@ -7,10 +7,9 @@ import { demoteUncited } from "./citations";
 import type { Citation } from "./citations";
 import { CRITIC_RUBRIC, VERDICT_STATUSES, applyRubric, isVerdictShape, legacyOutputToVerdict, normalizeVerdictInput, rubricPromptLine, settleVerdict, verdictSchema, verdictSeverityToLegacy, verdictSummary, withoutDecision } from "@lane-pilot/workflow-engine";
 import type { Verdict, VerdictFinding, VerdictStatus } from "@lane-pilot/workflow-engine";
-import { sha256Hex } from "@lane-pilot/kit";
+import { settingOff } from "@lane-pilot/models";
+import { sha256Hex, stripAnsi } from "@lane-pilot/kit";
 import { taskBrief } from "./task-brief";
-/** Terminal colour codes out of check output (the same regex as verification/gate-output; a cross-room import would cycle). */
-const stripAnsi = (text: string): string => text.replace(/\u001b\[[0-9;?]*[A-Za-z]/g, "");
 
 export const CODE_CRITIQUE_STAGE = "code-critique" as const;
 export const CODE_CRITIQUE_MAX_ROUNDS = 3;
@@ -160,14 +159,6 @@ export type CodeCritiqueSettings = {
   agent: string;
 };
 
-export function sha256Text(value: string): string {
-  return sha256Hex(value);
-}
-
-export function settingOff(value: unknown): boolean {
-  return value === false || value === 0
-    || (typeof value === "string" && ["0", "off", "false", "no"].includes(value.trim().toLowerCase()));
-}
 
 export function parseCodeCritiqueSettings(settings: Record<string, unknown>): CodeCritiqueSettings {
   const maxRaw = settings["code_critique.max_rounds"];
@@ -248,7 +239,7 @@ export function buildCandidateEvidence(input: {
     const raw = filesByPath.get(path);
     if (typeof raw !== "string") continue;
     const captured = input.hashes[path];
-    if (captured && sha256Text(raw) !== captured) hashMismatches.push(path);
+    if (captured && sha256Hex(raw) !== captured) hashMismatches.push(path);
     const patch = input.patches?.[path];
     const small = Buffer.byteLength(raw, "utf8") <= MAX_FILE_EXCERPT_BYTES;
     // A large file without a diff cannot be shown whole: that alone is unknown evidence. With its diff the change is complete.
@@ -285,8 +276,8 @@ export function buildCandidateEvidence(input: {
       stderr: bound(row.stderr),
     };
   });
-  const outputSha256 = sha256Text(input.output);
-  const packetSha256 = sha256Text(JSON.stringify({ files, verification }));
+  const outputSha256 = sha256Hex(input.output);
+  const packetSha256 = sha256Hex(JSON.stringify({ files, verification }));
   const reasons: string[] = [];
   if (!input.dirtOk) reasons.push(input.dirtReason ?? "workspace_snapshot_unavailable");
   if (missingHash.length) reasons.push(`missing_hash:${missingHash.join(",")}`);
@@ -305,17 +296,17 @@ export function buildCandidateEvidence(input: {
     ownsPaths: [...input.ownsPaths].sort(),
     neverTouch: [...input.neverTouch].sort(),
   };
-  const artifactRevisionSha256 = sha256Text(JSON.stringify(artifactBody));
+  const artifactRevisionSha256 = sha256Hex(JSON.stringify(artifactBody));
   const evidenceBody = {
     artifactRevisionSha256,
     outputSha256,
     packetSha256,
     verification: verification.map((row) => ({
       command: row.command, exitCode: row.exitCode,
-      stdoutSha256: sha256Text(row.stdout), stderrSha256: sha256Text(row.stderr),
+      stdoutSha256: sha256Hex(row.stdout), stderrSha256: sha256Hex(row.stderr),
     })),
   };
-  const evidenceSha256 = sha256Text(JSON.stringify(evidenceBody));
+  const evidenceSha256 = sha256Hex(JSON.stringify(evidenceBody));
   return {
     ...(input.referenceTestEdits?.length ? { referenceTestEdits: [...input.referenceTestEdits] } : {}),
     artifactRevisionSha256,
@@ -539,7 +530,7 @@ export function actionableFindings(result: CodeCritiqueResult): CodeCritiqueFind
 }
 
 export function findingFingerprint(findings: readonly CodeCritiqueFinding[]): string {
-  return sha256Text(JSON.stringify(findings.map((row) => row.id).sort()));
+  return sha256Hex(JSON.stringify(findings.map((row) => row.id).sort()));
 }
 
 const CODE_RUBRIC = new Set<string>(CRITIC_RUBRIC.code);
@@ -641,7 +632,7 @@ export function critiqueFromStageResult(result: unknown): CodeCritiqueResult | u
 }
 
 export function findingsHash(findings: readonly CodeCritiqueFinding[]): string {
-  return sha256Text(JSON.stringify(findings.map((row) => ({
+  return sha256Hex(JSON.stringify(findings.map((row) => ({
     id: row.id, severity: row.severity, finding: row.finding, criterion: row.criterion, path: row.path ?? null,
   }))));
 }

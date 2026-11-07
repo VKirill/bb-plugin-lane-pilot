@@ -76,6 +76,30 @@ export const secretNameSchema = z.string().regex(/^[A-Za-z_][A-Za-z0-9_]{0,127}$
 /** The kinds of work a task standard names; the task board shows one badge per kind. */
 export const TASK_KINDS = ["feature", "fix", "check", "docs", "refactor", "research", "chore"] as const;
 
+/** A task and its redispatches and mainfixes share one family: «P1», «P1.2», «x-mainfix.2» are of «P1» / «x». */
+export function taskFamily(taskId: string): string {
+  let family = taskId;
+  for (;;) {
+    const next = family.replace(/(\.\d+)+$/, "").replace(/-mainfix$/, "");
+    if (next === family) return family;
+    family = next;
+  }
+}
+
+/** The task a dependency name stands for: «P1» and its redispatches «P1.2», «P1.2.2» share the numeric base. A mainfix
+ * («x-mainfix») is its own task, not a redispatch of «x», so it is not folded in. */
+export function taskRedispatchBase(taskId: string): string {
+  return taskId.replace(/(\.\d+)+$/, "") || taskId;
+}
+
+/** The closed list of cancel codes (W31 rank 6): every cancel names one, a caller that names none records `unknown`. */
+export const CANCEL_CODES = ["owner_cancel", "superseded", "run_closed", "wrong_contract", "stuck", "duplicate", "reassign", "unknown"] as const;
+export type CancelCode = (typeof CANCEL_CODES)[number];
+
+/** An employee's machine affinity: the name of an enrolled host («Mac mini»), resolved by the host registry, or `any`. */
+export const MACHINE_AFFINITY_ANY = "any";
+export const machineAffinitySchema = z.string().min(1);
+
 export const taskV2Schema = z.object({
   schema_version: z.literal(2),
   id: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/),

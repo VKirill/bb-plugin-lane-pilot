@@ -1,5 +1,6 @@
+import { sha256Hex } from "@lane-pilot/kit";
 import { failureClass, failureFingerprint } from "../runs";
-import { sha12 } from "./types";
+
 
 /**
  * The signature of a failure: its failure class and its reason with the ids, hashes, numbers and paths taken out. The Lane Pilot version
@@ -48,13 +49,13 @@ export type Signature = { failureClass: string; reasonNorm: string; classKey: st
 export function wallSignature(state: string, reason: string | null | undefined, failureCode?: string | null): Signature {
   const cls = failureClass(state, (reason ?? "").replace(RETRY_WRAPPER, ""));
   const reasonNorm = normaliseReason(reason, failureCode);
-  return { failureClass: cls, reasonNorm, classKey: `${cls}:${sha12(`${cls}|${reasonNorm}`)}` };
+  return { failureClass: cls, reasonNorm, classKey: `${cls}:${sha256Hex(`${cls}|${reasonNorm}`).slice(0, 12)}` };
 }
 
 /** A plugin log line is its own class: Lane Pilot's failure line, with its ids, numbers and paths blanked. */
 export function logSignature(message: string): Signature {
   const reasonNorm = normaliseReason(message);
-  return { failureClass: "log", reasonNorm, classKey: `log:${sha12(`log|${reasonNorm}`)}` };
+  return { failureClass: "log", reasonNorm, classKey: `log:${sha256Hex(`log|${reasonNorm}`).slice(0, 12)}` };
 }
 
 /**
@@ -64,7 +65,7 @@ export function logSignature(message: string): Signature {
 export function wfSignature(workflowId: string, status: string, reason: string | null | undefined): Signature {
   const head = (reason ?? "").trim().split(/[\s(]/)[0]!.replace(/[0-9a-f]{12,}/gi, "<id>").slice(0, 80) || status;
   const reasonNorm = `${workflowId} ${status}: ${head}`;
-  return { failureClass: "workflow", reasonNorm, classKey: `workflow:${sha12(`workflow|${reasonNorm}`)}` };
+  return { failureClass: "workflow", reasonNorm, classKey: `workflow:${sha256Hex(`workflow|${reasonNorm}`).slice(0, 12)}` };
 }
 
 /**
@@ -88,10 +89,10 @@ export function originOf(cls: string, triageOrigin: string | null | undefined): 
  * task:3a88e7517c7a; the engineer named it). The writers' side keeps the old key, so its history stays.
  */
 export function classKeyOf(sig: Signature, origin: string): string {
-  return sig.failureClass === "task" && LANE_SIDE.includes(origin) ? `task:${sha12(`task|${sig.reasonNorm}|lane`)}` : sig.classKey;
+  return sig.failureClass === "task" && LANE_SIDE.includes(origin) ? `task:${sha256Hex(`task|${sig.reasonNorm}|lane`).slice(0, 12)}` : sig.classKey;
 }
 const LANE_SIDE: readonly string[] = ["orchestrator", "harness", "infra"];
 
 /** The key of a night repair in the self-repair watcher's state, in its `kind:hash:text` shape: `night:<hash of the class>:<class and reason>`. */
 export const repairSignature = (cls: { classKey: string; failureClass: string; reasonNorm: string }): string =>
-  `night:${sha12(cls.classKey)}:${cls.failureClass}: ${cls.reasonNorm}`.slice(0, 200);
+  `night:${sha256Hex(cls.classKey).slice(0, 12)}:${cls.failureClass}: ${cls.reasonNorm}`.slice(0, 200);

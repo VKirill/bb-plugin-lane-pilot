@@ -1,3 +1,4 @@
+import { taskFamily } from "@lane-pilot/contracts";
 import { failureClass } from "./failure-class";
 
 type Db = { prepare(sql:string):{ all(...args:unknown[]):unknown[] } };
@@ -109,7 +110,7 @@ export function acceptanceStats(db:Db, days:number, projectId?:string):Acceptanc
       firstTry:attempts[0]!.state === "accepted",
       accepted:attempts.some((row) => row.state === "accepted"),
       redispatched:/\.\d+$/.test(taskId),
-      stem:taskId.replace(/\.\d+$/, ""),
+      stem:taskFamily(taskId),
       attempts:attempts.filter((row) => !OPEN_STATES.has(row.state)).length,
       held:attempts.filter((row) => row.held === 1 && !OPEN_STATES.has(row.state)).length,
       failed:attempts.filter((row) => row.state !== "accepted" && !OPEN_STATES.has(row.state))

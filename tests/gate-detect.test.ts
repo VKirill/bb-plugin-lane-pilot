@@ -135,12 +135,18 @@ describe("gate resolver: explicit setting, off, detection and its cache", () => 
   });
 });
 
-describe("the owner's Roblox Studio runner", () => {
+describe("a Python test runner in the project's own scripts folder", () => {
   it("is the project's gate when no other runner is there (Vampirism Fire had none, 2026-10-26)", async () => {
     const { detectGateCommand } = await import("../src/rooms/verification/server/gate-detect");
-    expect(detectGateCommand("@@studio game/scripts/studio_test.py\n")).toMatchObject({ command:"cd game && python3 -I scripts/studio_test.py" });
-    expect(detectGateCommand("@@studio scripts/studio_test.py\n")).toMatchObject({ command:"python3 -I scripts/studio_test.py" });
-    expect(detectGateCommand("@@pytest\n@@studio scripts/studio_test.py\n")).toMatchObject({ command:"pytest -q" });
+    expect(detectGateCommand("@@pyscript game/scripts/studio_test.py\n")).toMatchObject({ command:"cd game && python3 -I scripts/studio_test.py" });
+    expect(detectGateCommand("@@pyscript scripts/studio_test.py\n")).toMatchObject({ command:"python3 -I scripts/studio_test.py" });
+    expect(detectGateCommand("@@pytest\n@@pyscript scripts/studio_test.py\n")).toMatchObject({ command:"pytest -q" });
+  });
+
+  it("detects any Python runner by convention, not one project's file name", async () => {
+    const { detectGateCommand } = await import("../src/rooms/verification/server/gate-detect");
+    expect(detectGateCommand("@@pyscript scripts/check_gates_test.py\n")).toMatchObject({ command:"python3 -I scripts/check_gates_test.py" });
+    expect(detectGateCommand("@@pyscript game/scripts/e2e_test.py\n")).toMatchObject({ command:"cd game && python3 -I scripts/e2e_test.py" });
   });
 });
 

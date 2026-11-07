@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { pluginRootFromModule, sha256Buffer } from "@lane-pilot/kit";
+import { pluginRootFromModule, sha256Hex } from "@lane-pilot/kit";
 import type { TaskV2 } from "../contracts";
 
 export const ACCEPTANCE_V2_REQUIRED = [
@@ -53,11 +53,11 @@ export function buildAcceptanceV2(input: {
   const receipt: Record<string, unknown> = {
     schema_version: 2,
     task_id: input.task.id,
-    task_sha256: sha256Buffer(JSON.stringify(input.task)),
+    task_sha256: sha256Hex(JSON.stringify(input.task)),
     attempt: input.attempt,
     provider_exit: 0,
     report: "complete",
-    report_sha256: sha256Buffer(input.reportText),
+    report_sha256: sha256Hex(input.reportText),
     owns_check: "passed",
     verification: "passed",
     review: input.review ?? "not_required",

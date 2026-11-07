@@ -2,7 +2,8 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import { createCore } from "../../src/rooms/core/server/core";
 import { createPhaseDriver } from "../phase-driver";
-import { nextAction, phaseFolder, planSignature, sha256, type PlanItem } from "../../src/rooms/phase/logic";
+import { sha256Hex } from "@lane-pilot/kit";
+import { nextAction, phaseFolder, planSignature, type PlanItem } from "../../src/rooms/phase/logic";
 import { listParts, savePhase } from "../../src/rooms/phase/store";
 import { createAttempt, createRun, createTask, openDatabase } from "../../src/rooms/plugin-db";
 import { postOwnerItem } from "../../src/rooms/owner-waiting";
@@ -29,7 +30,7 @@ async function host() {
     runGoal: { check: async () => null },
     workflowEngine: { cancel: () => true, get: () => null, start: () => ({ runId: "wf", done: Promise.resolve() }) },
     dispatchWriter: async () => ({ ok: true, taskId: "task-new", runId: "run1" }),
-    readWriterWorkspaceFile: async ({ path }: { path: string }) => ({ sha256: sha256(path), sizeBytes: 40, content: `# ${path}` }),
+    readWriterWorkspaceFile: async ({ path }: { path: string }) => ({ sha256: sha256Hex(path), sizeBytes: 40, content: `# ${path}` }),
   } as never).phases;
   const restore = () => { if (previous === undefined) delete process.env.LANE_PILOT_OWNER_WORDS_DEFAULT; else process.env.LANE_PILOT_OWNER_WORDS_DEFAULT = previous; };
   return { db, phases, restore };

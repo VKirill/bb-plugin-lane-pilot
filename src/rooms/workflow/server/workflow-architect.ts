@@ -12,7 +12,8 @@ import type { DraftRow, DraftStore } from "../../storage";
 import { runDraftTest, testCasesOf } from "@lane-pilot/workflow-engine";
 import type { DraftTestResult } from "@lane-pilot/workflow-engine";
 import { builtinWorkflow } from "../builtin";
-import { casWriteWorkflowFile, sha256Text } from "../../storage";
+import { casWriteWorkflowFile } from "../../storage";
+import { sha256Hex } from "@lane-pilot/kit";
 import { executorKey, lowerWorkflow } from "@lane-pilot/workflow-engine";
 import type { Workflow } from "@lane-pilot/workflow-engine";
 import { createStatusResolver } from "../../storage";
@@ -298,7 +299,7 @@ export function createWorkflowArchitect(ctx: ServerCore, services: Pick<Services
       written = await casWriteWorkflowFile(deps.globalDir(), id, content, expected);
     }
     if (written.status === "conflict") return refuse("file_conflict", `${written.reason}; choose another id with set_meta {id} or ask the owner`, { path: written.path });
-    const sha256 = written.afterSha256 ?? sha256Text(content);
+    const sha256 = written.afterSha256 ?? sha256Hex(content);
     // The file is only as good as its tests: the receipt says this exact definition passed them, which the library asks for before it counts the file as published.
     createStatusResolver(db).recordTest(id, definitionSha256(reloaded.workflow), true, draft.tests.results.map((row) => ({ caseId: row.caseId, green: row.green, path: row.path })));
     const published = drafts.markPublished(draft.id, { version: draft.version, path: written.path, sha256, workflowVersion: version }) ?? draft;

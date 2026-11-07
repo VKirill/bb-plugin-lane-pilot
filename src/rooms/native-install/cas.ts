@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { link, lstat, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
-import { sha256Buffer } from "@lane-pilot/kit";
+import { sha256Hex } from "@lane-pilot/kit";
 
 export type FileState = { text: string | null; sha256: string | null; mode: number | null };
 export type FileCasResult = {
@@ -21,7 +21,7 @@ export async function readTextState(path: string): Promise<FileState> {
     const info = await lstat(path);
     if (info.isSymbolicLink() || !info.isFile()) return { text: null, sha256: null, mode: null };
     const text = await readFile(path, "utf8");
-    return { text, sha256: sha256Buffer(text), mode: info.mode & 0o777 };
+    return { text, sha256: sha256Hex(text), mode: info.mode & 0o777 };
   } catch (error) {
     if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") return { text: null, sha256: null, mode: null };
     throw error;

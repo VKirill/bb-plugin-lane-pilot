@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { bestEffort } from "@lane-pilot/kit";
+import { bestEffort, sha256Hex } from "@lane-pilot/kit";
 import {
   collectScanResponseSchema, notesReadResponseSchema, notesWriteResponseSchema, responseSchemas,
   type AnamnesisRequest, type HostRequest, type HostSource, type NotesReadResponse, type OpName, type ResponseOf,
@@ -7,7 +7,7 @@ import {
 import type { AnamnesisRpcRequest } from "./contract";
 import { executeRequest, writesNotes } from "./host";
 import { storeCollectResults, type CollectRequest, type SourceScanResult } from "./collect";
-import { planNotes, sha, type Applied } from "./notes";
+import { planNotes, type Applied } from "./notes";
 import type { Store } from "./store";
 
 /**
@@ -123,7 +123,7 @@ export function createHub(deps: HubDeps) {
         for (const file of result.files) if (file.wrote) wrote.add(file.name);
       }
       store.transaction(() => {
-        for (const file of plan.files) if (!file.changed || wrote.has(file.name)) store.saveNotesState(file.name, sha(file.stored), file.lines, Date.now());
+        for (const file of plan.files) if (!file.changed || wrote.has(file.name)) store.saveNotesState(file.name, sha256Hex(file.stored), file.lines, Date.now());
       });
       // The answer describes the folder after the writes, not the snapshot the plan ran on.
       const after = await askHost({ op: "notes_read" }, (raw) => notesReadResponseSchema.parse(raw), timeoutMs);

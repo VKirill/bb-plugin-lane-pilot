@@ -1,6 +1,5 @@
-import { createHash } from "node:crypto";
 import { chmodSync, mkdirSync, renameSync, writeFileSync } from "node:fs";
-import { readTextOrNullSync } from "@lane-pilot/kit";
+import { readTextOrNullSync, sha256Hex } from "@lane-pilot/kit";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import type { NotesResponse } from "./ops";
@@ -46,7 +45,6 @@ const ALL_FILES: readonly NoteFile[] = [...NOTE_FILES, REVIEW_FILE];
 const KIND_RU: Record<Kind, string> = { self: "обо мне", fact: "факт", knowledge: "знание", skill: "умение", person: "близкие", hobby: "хобби", interest: "интерес", event: "событие", preference: "предпочтение", project: "проект", tool: "инструмент" };
 const SOURCE_RU: Record<string, string> = { "bb-message": "чат", git: "git", journal: "журнал", registry: "реестр", "claude-memory": "память Claude", "bb-memory": "память BB", "lp-runs": "прогоны", telegram: "Telegram", elba: "Эльба", manual: "вручную" };
 
-export const sha = (text: string): string => createHash("sha256").update(text).digest("hex");
 const MARKER = /<!--\s*a:(\S+?)\s*-->/;
 const BULLET = /^\s*[-*]\s+(?:\[( |x|X)\]\s+)?(.*)$/;
 const NOTE_TAIL = /\s+_\([^()]*\)_\s*$/;
@@ -119,7 +117,7 @@ function readBack(store: Store, files: ReadonlyMap<string, string | null>, now: 
     const content = files.get(file.name) ?? null;
     // A missing or empty file is a lost file, not a decision to reject everything in it: it is written again.
     if (content === null || !content.trim()) continue;
-    if (state.files.get(file.name) === sha(content)) continue;
+    if (state.files.get(file.name) === sha256Hex(content)) continue;
     const lines = content.split("\n");
     lines.forEach((line, index) => {
       const bullet = parseBullet(line);
@@ -148,7 +146,7 @@ function readBack(store: Store, files: ReadonlyMap<string, string | null>, now: 
       const text = bullet.body.slice(0, 600);
       try {
         const result = store.upsert({
-          kind: file.addKind, key: `note-${sha(text).slice(0, 12)}`, title: text.slice(0, 160), statement: text, firstSeen: now, lastSeen: now,
+          kind: file.addKind, key: `note-${sha256Hex(text).slice(0, 12)}`, title: text.slice(0, 160), statement: text, firstSeen: now, lastSeen: now,
           ...(file.sensitive ? { sensitivity: "sensitive" as Sensitivity, attributes: { relation: "family" } } : {}),
         }, { actor: "owner", reason: "written in the notes file", now });
         if (!result.id || result.action === "invalid" || result.action === "ignored") { applied.skipped += 1; return; }
@@ -162,7 +160,7 @@ function readBack(store: Store, files: ReadonlyMap<string, string | null>, now: 
   // A line that was written and is now gone from a file that still has content: the owner took it out.
   for (const [id, { file, line }] of state.lines) {
     const content = files.get(file) ?? null;
-    if (content === null || !content.trim() || state.files.get(file) === sha(content) || found.has(id) || failed.has(id)) continue;
+    if (content === null || !content.trim() || state.files.get(file) === sha256Hex(content) || found.has(id) || failed.has(id)) continue;
     const record = store.get(id, { includeSensitive: true });
     if (!record || record.status === "rejected" || !line) continue;
     try { store.edit(id, { status: "rejected" }, "removed from the notes file", now); applied.rejected += 1; } catch { applied.skipped += 1; }
@@ -313,7 +311,7 @@ export function syncNotes(store: Store, dir: string, now: number = Date.now()): 
     written = result.written;
     const wrote = new Set(result.wrote);
     store.transaction(() => {
-      for (const file of plan.files) if (!file.changed || wrote.has(file.name)) store.saveNotesState(file.name, sha(file.stored), file.lines, now);
+      for (const file of plan.files) if (!file.changed || wrote.has(file.name)) store.saveNotesState(file.name, sha256Hex(file.stored), file.lines, now);
     });
     return statusOf(dir, applied, written);
   } catch (cause) {

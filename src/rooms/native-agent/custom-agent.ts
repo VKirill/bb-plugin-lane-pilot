@@ -9,7 +9,8 @@ import {
   type CustomAgentMeta,
   type StoredAgentRow,
 } from "./agent-profile";
-import { employeeView, machineAffinitySchema } from "./employee-manifest";
+import { machineAffinitySchema } from "@lane-pilot/contracts";
+import { employeeView } from "./employee-manifest";
 import { isLanePmAgent, parseAgentMarkdown, splitClaudeToolList } from "./native-agent-overlay";
 
 /**
@@ -82,7 +83,7 @@ export type AgentListItem = {
   model?: string;
   effort?: string;
   domain?: string;
-  machineAffinity?: "mac-mini" | "ovh" | "windows" | "any";
+  machineAffinity?: string;
   coreSkills?: string[];
   skillSections?: string[];
   deliverables?: string[];

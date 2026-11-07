@@ -1,6 +1,7 @@
 import { z } from "zod";
 import bundledAgents from "./bundled-agents.json";
-import { EMPLOYEES, machineAffinitySchema, stockEmployee } from "./employee-manifest";
+import { machineAffinitySchema } from "@lane-pilot/contracts";
+import { EMPLOYEES, stockEmployee } from "./employee-manifest";
 import { isCliLaneAgentPrompt, isInternalAgent, isLanePmAgent, laneSessionOverlayPrompt, overlayDisallowedTools, overlaySessionTools } from "./native-agent-overlay";
 import { WORKFLOW_ARCHITECT_ID, WORKFLOW_ARCHITECT_NAME, WORKFLOW_ARCHITECT_TOOLS } from "../workflow";
 import { LEAD_ID, LEAD_NAME, LEAD_TOOLS } from "../lead";
@@ -87,10 +88,6 @@ export type StoredAgentRow = {
   meta?: CustomAgentMeta;
 };
 
-function sha256(text: string): string {
-  return sha256Hex(text);
-}
-
 function canonicalizeJson(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(canonicalizeJson);
   if (value !== null && typeof value === "object") {
@@ -115,7 +112,7 @@ export function compiledMainAgentDigest(body: Omit<CompiledMainAgent, "sourceHas
     ...(body.mcpServers ? { mcpServers: body.mcpServers } : {}),
   };
   const canonical = body.sourceVersion === "lp-owned-1" ? ordered : canonicalizeJson(ordered);
-  return sha256(JSON.stringify(canonical));
+  return sha256Hex(JSON.stringify(canonical));
 }
 
 export function validateCompiledMainAgent(raw: unknown): CompiledMainAgent {

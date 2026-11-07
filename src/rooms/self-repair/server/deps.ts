@@ -10,7 +10,7 @@ import { clearSpawnMarker, fullAccessSpawn, graphStepMetadata, keyedSpawnSupport
  * context.ts, tool-result.ts); they are restated here because naming them through `core` would keep the room edge.
  */
 
-export type ProviderFolderBlock = { reason: string; at: number };
+export type ProviderFolderBlock = { providerId: string; reason: string; at: number };
 export type SpawnUsage = {
   peek(query: { providerId: string; model: string; hostId: string | null; settings: Record<string, unknown> }): { percent: number; window: string } | null;
   warm(query: { providerIds: readonly string[]; hostId: string | null }): Promise<void>;
@@ -51,7 +51,7 @@ export type SelfRepairDeps = {
   graphStepMetadata: (step: { runId: string; stepKey?: string | undefined; nodeId?: string | undefined } | null | undefined) => Record<string, string>;
   keyedSpawnSupported: (bb: BbPluginApi) => boolean;
   modelCatalogOf: (ctx: { bb: BbPluginApi; log: (message: string) => void }) => { peek(): ModelCatalog | null };
-  readProviderFolderBlock: (kv: { get(key: string): Promise<unknown> }, hostId: string | null, providerId: string, ttlMs?: number) => Promise<ProviderFolderBlock | null>;
+  readProviderFolderBlock: (kv: { get(key: string): Promise<unknown>; set?(key: string, value: never): Promise<unknown> }, hostId: string | null, ttlMs?: number) => Promise<ProviderFolderBlock | null>;
   registerObservedTool: <S extends z.ZodType>(agents: Pick<BbPluginApi["agents"], "registerTool">, tool: ObservedTool<S>) => void;
   requirePmRun: (db: LanePilotDatabase, input: { runId: string; threadId: string; projectId: string }) => { id: string; project_id: string };
   resolveSpawnModel: (input: SpawnModelInput) => AgentModel;

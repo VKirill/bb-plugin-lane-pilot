@@ -1,11 +1,11 @@
-import { resolveRoleModel } from "@lane-pilot/models";
+import { PROVIDER_CAPABILITIES, resolveRoleModel } from "@lane-pilot/models";
 import { checkBrief, renderBrief } from "../brief";
 
 export type ProjectLifeSettings = { enabled: boolean };
 
-/** The fast tier is asked only of codex (its small models take it); `project_life.service_tier = standard` turns it off there too. */
+/** The fast tier is asked only of a provider whose small models take it; `project_life.service_tier = standard` turns it off too. */
 export function projectLifeServiceTier(settings: Record<string, unknown>, providerId: string): "fast" | "standard" {
-  return providerId === "codex" && settings["project_life.service_tier"] !== "standard" ? "fast" : "standard";
+  return PROVIDER_CAPABILITIES[providerId]?.supportsFastTier && settings["project_life.service_tier"] !== "standard" ? "fast" : "standard";
 }
 
 /**

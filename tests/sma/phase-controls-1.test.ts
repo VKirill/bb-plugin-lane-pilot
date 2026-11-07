@@ -3,7 +3,8 @@ import { describe, expect, it } from "vitest";
 import { createCore } from "../../src/rooms/core/server/core";
 import { PhaseRefusal } from "../../src/rooms/phase/server/driver";
 import { createPhaseDriver } from "../phase-driver";
-import { planSignature, sha256 } from "../../src/rooms/phase/logic";
+import { sha256Hex } from "@lane-pilot/kit";
+import { planSignature } from "../../src/rooms/phase/logic";
 import { listParts, savePhase } from "../../src/rooms/phase/store";
 import { createAttempt, createRun, createTask, openDatabase } from "../../src/rooms/plugin-db";
 
@@ -30,7 +31,7 @@ async function host(extra: Record<string, unknown> = {}) {
     workflowEngine: { cancel: () => true, get: () => ({ status: "running" }), start: () => ({ runId: "wf", done: Promise.resolve() }) },
     dispatchWriter: async () => { dispatched.push("dispatch"); return { ok: true, taskId: "piece", runId: "run1" }; },
     rollback: { revert: async (taskId: string) => { reverted.push(taskId); return { state: "merged", ok: true }; } },
-    readWriterWorkspaceFile: async () => ({ sha256: sha256("drawing"), sizeBytes: 7, content: "screens" }),
+    readWriterWorkspaceFile: async () => ({ sha256: sha256Hex("drawing"), sizeBytes: 7, content: "screens" }),
     ...extra,
   } as never).phases;
   const phase = await phases.open({ projectId: "projA", pmThreadId: "thr_pm", title: "controls", goal: "one piece" });

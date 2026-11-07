@@ -6,7 +6,6 @@ export * from "./spawn-async";
 export * from "./output-capture";
 export * from "./output-excerpt";
 export * from "./bounded-read";
-export * from "./jsonc";
 export * from "./paths";
 export * from "./owns-paths";
 export * from "./pace";

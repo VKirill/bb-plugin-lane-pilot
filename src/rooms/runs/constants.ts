@@ -1,8 +1,6 @@
 /** The managed Lane Stack engine: 1.66.2, the OpenCode v2 opencode-lane plugin with the lane-pilot agent and the SMA rule mechanisms (1.65 and older are v1-only). */
 export const TARGET_SHA = "6acbe4a3030750e5d10bfe71233653dc1c99a333";
 export const UPSTREAM_REPO = "https://github.com/VKirill/claude-lane-stack";
-export const OPENCODE_PLUGIN = "./plugins/opencode-lane.ts";
-export const OPENCODE_OLD_PLUGIN = "./plugins/lane-context.ts";
 
 export const S8_RELATIVE_PATHS = [
   ".agents/routing.profile.yaml",
@@ -31,10 +29,6 @@ export function cliReceiptRunKey(runId: string): string {
 export function cliReceiptAttemptKey(attemptId: string): string {
   return `cli.receipt.attempt.${attemptId}`;
 }
-
-export const PLUGIN_ID = "lane-pilot";
-export const INSTALLED_GUARD = "~/.agents/lane-pilot/pm/guard_shell.py";
-export const MAIN_ATTEMPT_LIMIT = 2;
 
 /** Reason of a queued attempt whose dispatch still waits for pm-read and plan critique; a reload ends such an attempt. */
 export const DISPATCH_STAGES_PENDING = "dispatch_stages_pending: pm-read and plan critique are still running";

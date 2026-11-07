@@ -1,4 +1,4 @@
-import { sha256 } from "@lane-pilot/contracts";
+import { sha256Hex } from "@lane-pilot/kit";
 import { parseReadFirstHints, type ReadFirstHint } from "./read-first";
 
 export type ReadFirstFile = {
@@ -65,7 +65,7 @@ export async function buildExecutionPacket(
     }
     const source = decodeFile(file, hint.path);
     const selections = selectLines(hint, source);
-    const sourceSha256 = file.sha256 && /^[a-f0-9]{64}$/.test(file.sha256) ? file.sha256 : sha256(source);
+    const sourceSha256 = file.sha256 && /^[a-f0-9]{64}$/.test(file.sha256) ? file.sha256 : sha256Hex(source);
     const included:Array<{ startLine:number; endLine:number; excerpt:string }> = [];
     for (const selection of selections) {
       const header = `${hint.path} L${selection.startLine}-L${selection.endLine}\n`;
@@ -82,7 +82,7 @@ export async function buildExecutionPacket(
     if (truncated) break;
   }
   const packetCore = { schemaVersion: 1 as const, entries, truncated };
-  return { ...packetCore, sha256: sha256(JSON.stringify(packetCore)) };
+  return { ...packetCore, sha256: sha256Hex(JSON.stringify(packetCore)) };
 }
 
 /**

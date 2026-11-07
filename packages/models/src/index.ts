@@ -8,5 +8,6 @@ export * from "./model-profiles";
 export * from "./role-models";
 export * from "./role-specs";
 export * from "./providers";
+export * from "./setting-value";
 export * from "./agent-model";
 export * from "./zcode";

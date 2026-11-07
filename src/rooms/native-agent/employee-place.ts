@@ -1,3 +1,4 @@
+import { MACHINE_AFFINITY_ANY } from "@lane-pilot/contracts";
 import { employeeView } from "./employee-manifest";
 
 /**
@@ -28,8 +29,8 @@ export function chooseEmployeePlace(input: {
   hostHome?: string | null;
   agentId: string;
 }): EmployeePlace {
-  const affinity = input.affinity || "any";
-  if (affinity === "any") return { mode: "inherit" };
+  const affinity = input.affinity || MACHINE_AFFINITY_ANY;
+  if (affinity === MACHINE_AFFINITY_ANY) return { mode: "inherit" };
   const hostId = affinityHostId(affinity, input.hosts);
   if (!hostId) return { mode: "inherit" };
   const source = input.sources.find((row) => row.hostId === hostId && row.path);
@@ -59,7 +60,7 @@ export async function placeEmployeeOn(
   sources: ReadonlyArray<{ hostId?: string | undefined; path?: string | undefined }>,
 ): Promise<EmployeePlace> {
   const affinity = employeeView(agentId).machineAffinity;
-  if (!affinity || affinity === "any") return { mode: "inherit" };
+  if (!affinity || affinity === MACHINE_AFFINITY_ANY) return { mode: "inherit" };
   const listed = await Promise.resolve().then(() => bb.sdk.hosts.list?.() ?? []).then((rows) => rows ?? []).catch(() => []) as Array<{ id?: unknown; name?: unknown }>;
   const hosts: ListedHost[] = listed.flatMap((row) => typeof row?.id === "string" ? [{ id: row.id, name: typeof row.name === "string" ? row.name : null }] : []);
   const hostId = affinityHostId(affinity, hosts);

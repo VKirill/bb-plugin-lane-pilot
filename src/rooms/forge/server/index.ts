@@ -4,7 +4,8 @@ import { ToolError, type ServerCore } from "../../contracts/server";
 import { hostContract } from "../../contracts";
 import { getRun, getRunWriterHost, loadProjectSettings } from "../../storage";
 import { isWholeConsent, ownerWordsOn } from "../../tasks";
-import { FORGE_KINDS, NAME, creatorBrief, draftFile, draftFolder, enabledPath, lintDraft, sha256, type ForgeKind, type ForgeReceipt } from "../logic";
+import { FORGE_KINDS, NAME, creatorBrief, draftFile, draftFolder, enabledPath, lintDraft, type ForgeKind, type ForgeReceipt } from "../logic";
+import { sha256Hex } from "@lane-pilot/kit";
 
 import type { WriterDispatchApi } from "../../writer/server/dispatch";
 
@@ -75,7 +76,7 @@ export function mountForge(ctx: ServerCore, services: Services): void {
       if (input.action === "lint") {
         const findings = lintDraft(input.kind, input.name, text);
         // The forge receipt: the bytes that passed (or failed) the lint; enabling checks the same bytes are still there.
-        const receipt: ForgeReceipt = { kind: input.kind, name: input.name, path, sha256: sha256(text), ok: findings.length === 0, findings, at: Date.now() };
+        const receipt: ForgeReceipt = { kind: input.kind, name: input.name, path, sha256: sha256Hex(text), ok: findings.length === 0, findings, at: Date.now() };
         all[key] = receipt;
         await bb.storage.kv.set(RECEIPTS, all as never);
         return JSON.stringify(receipt);
@@ -83,7 +84,7 @@ export function mountForge(ctx: ServerCore, services: Services): void {
       const receipt = all[key];
       if (!receipt) throw refuse(`no forge receipt for ${input.kind} ${input.name}: lint it first`, "no_receipt");
       if (!receipt.ok) throw refuse(`the draft failed the lint: ${receipt.findings.map((row) => row.message).join("; ")} — fix it (lane_pilot_update_task on the forge task) and lint again`, "lint_failed");
-      if (sha256(text) !== receipt.sha256) throw refuse("the draft changed since its receipt: lint it again", "changed");
+      if (sha256Hex(text) !== receipt.sha256) throw refuse("the draft changed since its receipt: lint it again", "changed");
       if (input.step === "request") {
         all[key] = { ...receipt, requestedAt: Date.now() };
         await bb.storage.kv.set(RECEIPTS, all as never);
@@ -98,7 +99,7 @@ export function mountForge(ctx: ServerCore, services: Services): void {
         if (written.status !== "applied") throw refuse(`the workflow was not written: ${written.reason ?? written.status}`, "not_written");
       } else {
         const edits = [{ path: target, expectedSha256: null, content: text }];
-        const written = await host().call("writeForgeEnabled", { requestedHostId: run.hostId, projectCwd: run.cwd, previewSha256: sha256(JSON.stringify(edits)), edits }, { hostId: run.hostId, timeoutMs: 30_000 });
+        const written = await host().call("writeForgeEnabled", { requestedHostId: run.hostId, projectCwd: run.cwd, previewSha256: sha256Hex(JSON.stringify(edits)), edits }, { hostId: run.hostId, timeoutMs: 30_000 });
         if (written.status !== "applied") throw refuse(`the draft was not enabled: ${written.reason ?? written.status}`, "not_written");
       }
       all[key] = { ...receipt, enabledAt: Date.now(), enabledBy: ownerWords ? "owner" : "pm" };

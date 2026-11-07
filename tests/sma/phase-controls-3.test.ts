@@ -3,7 +3,8 @@ import { describe, expect, it } from "vitest";
 import { createCore } from "../../src/rooms/core/server/core";
 import { costPerVerified } from "../../src/rooms/self-improve";
 import { createPhaseDriver } from "../phase-driver";
-import { contextSignature, nextAction, phaseFolder, planSignature, sha256, type PlanItem } from "../../src/rooms/phase/logic";
+import { sha256Hex } from "@lane-pilot/kit";
+import { contextSignature, nextAction, phaseFolder, planSignature, type PlanItem } from "../../src/rooms/phase/logic";
 import { listParts, savePhase } from "../../src/rooms/phase/store";
 import { createAttempt, createRun, createTask, openDatabase } from "../../src/rooms/plugin-db";
 
@@ -30,7 +31,7 @@ async function host(ownerWords: "on" | "off" = "off") {
     runBudgets: { get: () => undefined },
     workflowEngine: { cancel: () => true, get: () => null, start: () => ({ runId: "wf", done: Promise.resolve() }) },
     dispatchWriter: async (input: { plan?: string }) => { plans.push(input.plan ?? ""); return { ok: true, taskId: "task-new", runId: "run1" }; },
-    readWriterWorkspaceFile: async ({ path }: { path: string }) => files.get(path) ?? { sha256: sha256(path), sizeBytes: 40, content: `# ${path}` },
+    readWriterWorkspaceFile: async ({ path }: { path: string }) => files.get(path) ?? { sha256: sha256Hex(path), sizeBytes: 40, content: `# ${path}` },
   } as never).phases;
   const restore = () => { if (previous === undefined) delete process.env.LANE_PILOT_OWNER_WORDS_DEFAULT; else process.env.LANE_PILOT_OWNER_WORDS_DEFAULT = previous; };
   return { db, phases, plans, files, restore };
@@ -103,7 +104,7 @@ describe("phase controls", () => {
     const f = await host();
     try {
       const screen = await f.phases.open({ projectId: "projA", pmThreadId: "thr_pm", title: "Screens", goal: "a screen" });
-      const docs = [{ path: "docs/CONTEXT.md", sha256: sha256("docs/CONTEXT.md"), bytes: 40 }];
+      const docs = [{ path: "docs/CONTEXT.md", sha256: sha256Hex("docs/CONTEXT.md"), bytes: 40 }];
       savePhase(f.db, screen.id, { stage: "planning", record: { ...screen.record, context: { docs, sha: contextSignature(docs), signedAt: 1, risks } }, at: 2 });
       f.phases.plan({ phaseId: screen.id, items: [piece("ui", ["src/App.tsx"])], by: "planner" });
       const sha = f.phases.status(screen.id).phase.record.plan!.sha;

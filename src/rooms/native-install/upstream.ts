@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, mkdtemp, rename, rm, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { TARGET_SHA, UPSTREAM_REPO } from "../runs";
-import { defaultLocalFallback, managedEngineDir, resolveHome } from "@lane-pilot/kit";
+import { managedEngineDir, resolveHome } from "@lane-pilot/kit";
 import { spawnAsync } from "@lane-pilot/kit";
 import { assessEngineCapabilities, inspectEngineCapabilities } from "./capabilities";
 
@@ -61,13 +61,11 @@ async function clone(source: string, destination: string): Promise<void> {
 export async function ensureUpstream(input: {
   homeDir?: string;
   localFallbackPath?: string;
-  moduleUrl?: string;
   preferredRoot?: string;
   forceFreshManaged?: boolean;
 }): Promise<UpstreamReady> {
   const home = resolveHome(input.homeDir);
-  const fallback = input.localFallbackPath
-    ?? (input.moduleUrl ? defaultLocalFallback(input.moduleUrl) : "");
+  const fallback = input.localFallbackPath ?? "";
   const candidates = [input.preferredRoot, fallback].filter((path): path is string => Boolean(path));
   for (const candidate of candidates) {
     const reusable = await inspectReusable(candidate);

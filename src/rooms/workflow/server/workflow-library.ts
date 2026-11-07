@@ -3,7 +3,7 @@ import type { z } from "zod";
 import type { rpcContract } from "../../contracts";
 import { BUILTIN_SOURCES } from "../builtin";
 import type { Field, Workflow } from "@lane-pilot/workflow-engine";
-import { sha256Text } from "../../storage";
+import { sha256Hex } from "@lane-pilot/kit";
 import { parseGoals } from "@lane-pilot/workflow-engine";
 import { createStatusResolver } from "../../storage";
 import { globalWorkflowDir, loadWorkflowStore, nodeFileSource, projectWorkflowDir, type StoredWorkflow, type WorkflowFileSource, type WorkflowStore, HARNESS_VERSION } from "../../storage";
@@ -119,7 +119,7 @@ export function createWorkflowLibrary(ctx: ServerCore, services: Pick<Services, 
       const item = store.get(input.id);
       if (!item) return null;
       const text = item.origin === "builtin" ? null : await files.read(item.source).catch(() => null);
-      return { workflow: item.workflow, origin: item.origin, path: item.source, fileSha256: text === null ? null : sha256Text(text), ids: store.list().map((other) => other.workflow.id) };
+      return { workflow: item.workflow, origin: item.origin, path: item.source, fileSha256: text === null ? null : sha256Hex(text), ids: store.list().map((other) => other.workflow.id) };
     },
 
     async get(input: { id: string; projectId?: string }): Promise<Output<"workflow_get">> {

@@ -7,7 +7,7 @@ export { createDraftStore } from "@lane-pilot/workflow-engine";
 export { DOCS_WORKTREE_PREFIX, docsWorktreeKey, docsWorktreeName, REGRESS_WORKTREE_PREFIX, regressWorktreeKey, regressWorktreePath, SELF_REPAIR_STATE_KEY } from "./worktree-keys";
 export type { SelfRepairWorktreeState } from "./worktree-keys";
 export type { DraftRow, DraftStore } from "@lane-pilot/workflow-engine";
-export { casWriteWorkflowFile, sha256Text } from "@lane-pilot/workflow-engine";
+export { casWriteWorkflowFile } from "@lane-pilot/workflow-engine";
 export { TERMINAL_RUN, createJournal, sha256, stableId } from "@lane-pilot/workflow-engine";
 export type { EffectRow, Journal, RunRow, RunStatus, StepRow } from "@lane-pilot/workflow-engine";
 export { createStatusResolver } from "@lane-pilot/workflow-engine";

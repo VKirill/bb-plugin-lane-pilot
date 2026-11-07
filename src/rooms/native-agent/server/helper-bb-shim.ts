@@ -1,5 +1,6 @@
 import { loadProjectSettings } from "../../storage";
 import type { ExperimentalPluginProviderEnvEntry } from "@get-bb/plugin-sdk";
+import { PROVIDER_CAPABILITIES } from "@lane-pilot/models";
 import { stringAt, orMiss, isNotFound } from "@lane-pilot/kit";
 import type { ServerCore } from "../../contracts/server";
 
@@ -80,7 +81,7 @@ export function createBbShimEnv(ctx: Pick<ServerCore, "bb" | "host"> & { db?: Se
     // The marker the machine's lane plugins and hooks (opencode-lane guard) check: without it they leave the owner's own sessions alone.
     const mark = { name: "LANE_PILOT_ROLE", value: role, reason: `Lane Pilot: ${role} thread; lane plugins and hooks on the machine act only where this is set`.slice(0, 500) };
     const shim = await prepare(context.hostId);
-    const home = providerId === "codex" && role === "writer" ? await workerHome(metadata, context.hostId) : null;
+    const home = PROVIDER_CAPABILITIES[providerId ?? ""]?.requiresWorkerHome && role === "writer" ? await workerHome(metadata, context.hostId) : null;
     const extra = home ? [{ name: "CODEX_HOME", value: home, reason: "Lane Pilot strict worker: a fresh codex home for this task (worker.strict_user on)" }] : [];
     if (!shim) return [mark, ...extra];
     return [mark, { name: "PATH", value: shim.path, reason: `Lane Pilot: ${role} thread runs bb, ssh, scp and sftp through the guard wrappers in ${shim.dir}`.slice(0, 500) }, ...extra];

@@ -1,5 +1,6 @@
 import { taskV2Schema } from "../../contracts";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
+import { providerForwardsAgentOnly } from "@lane-pilot/models";
 import { valueAt } from "@lane-pilot/kit";
 import { compactContract, pmReadBrief } from "../writer-brief";
 import { summarizeThreadEvents, type ThreadEventLike } from "@lane-pilot/harness-core";
@@ -446,9 +447,6 @@ export function writerBriefSegments(task: TaskV2, memoryText="", executionPacket
 export function writerPrompt(...args: Parameters<typeof writerBriefSegments>): string {
   return writerBriefSegments(...args).map((segment) => segment.text).join("\n\n");
 }
-
-/** Providers whose bridge forwards every text part of a message, agent-only ones included (claude-code, codex, opencode2, every ACP agent). */
-export const providerForwardsAgentOnly = (providerId: string): boolean => providerId === "claude-code" || providerId === "codex" || providerId === "opencode2" || providerId.startsWith("acp-");
 
 /**
  * The writer's first message as BB input parts: a one-line task header and the contract stay in the chat, the rest is

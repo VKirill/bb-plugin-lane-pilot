@@ -9,7 +9,7 @@ import { assessEngineCapabilities, IMPACTED_FUNCTIONS, inspectEngineCapabilities
 import { createOpenCodePluginShim, isManagedOpenCodePlugin } from "./opencode-plugin";
 import { ensureUpstream } from "./upstream";
 import { spawnAsync } from "@lane-pilot/kit";
-import { ensureOpenCodePluginEntry, removeOpenCodePluginEntry } from "@lane-pilot/kit";
+import { OPENCODE_PLUGIN_ENTRY, ensureOpenCodePluginEntry, removeOpenCodePluginEntry } from "./opencode-jsonc";
 import { compareAndSwapText, readTextState } from "./cas";
 import { addOwnershipEntry, newSnapshotId, ownershipLedgerPath, readOwnershipLedger, readOwnershipLedgerStrict, readSnapshot, removeOwnershipEntry, removeOwnershipEntryIfMatches, removeSnapshotIfMatches, restoreOwnershipLedgerWrite, saveSnapshot, snapshotPath } from "./ownership";
 import type {
@@ -433,7 +433,7 @@ async function snapshotOfWrite(input: {
   return snapshotId;
 }
 
-const OPENCODE_PLUGIN_REF = "./plugins/opencode-lane.ts";
+
 
 export async function runCoexistenceOperation(input: CoexistenceOperationInput): Promise<CoexistenceOperationResult> {
   return runCoexistenceOperationAtHome(input, resolveHome());
@@ -444,7 +444,6 @@ export async function runCoexistenceOperationAtHome(
   homeDir: string,
   sourceOptions: {
     localFallbackPath?: string;
-    moduleUrl?: string;
     faultAt?: "after-rename" | "after-snapshot" | "after-ledger-commit" | "rollback-conflict";
     beforeCompensation?: (managedPath: string, snapshotFile: string) => Promise<void>;
     beforeSnapshotClaim?: (snapshotFile: string) => Promise<void>;
@@ -526,7 +525,6 @@ export async function runCoexistenceOperationAtHome(
         preferredRoot: needsFreshManaged ? undefined : selected.root ?? undefined,
         forceFreshManaged: needsFreshManaged,
         localFallbackPath: sourceOptions.localFallbackPath,
-        moduleUrl: sourceOptions.moduleUrl,
       });
       if (installed.source === "reuse") {
         return resultOf(input, {
@@ -725,35 +723,35 @@ export async function runCoexistenceOperationAtHome(
       const oldPath = oldRef.startsWith("/") ? oldRef : join(home, ".config/opencode", oldRef.replace(/^\.\//, ""));
       if (await exists(oldPath)) return resultOf(input, { status: "conflict", owner: row.owner, beforeSha256: config.sha256, afterSha256: config.sha256, reason: `Existing legacy plugin ${oldRef} is present and not recorded as Lane Pilot-owned; removing it could duplicate or overwrite a user plugin.` });
     }
-    const patched = ensureOpenCodePluginEntry(configText, OPENCODE_PLUGIN_REF);
+    const patched = ensureOpenCodePluginEntry(configText, OPENCODE_PLUGIN_ENTRY);
     if (!patched.ok) return resultOf(input, { status: "blocked", owner: row.owner, beforeSha256: config.sha256, afterSha256: config.sha256, reason: patched.message });
     const write = await compareAndSwapText(input.path, config.sha256, patched.text);
     if (write.status !== "ok") return resultOf(input, { status: write.status, owner: row.owner, beforeSha256: write.beforeSha256, afterSha256: write.afterSha256, reason: write.reason });
     if (!write.changed || !write.afterSha256) return resultOf(input, { status: "skipped", owner: row.owner, beforeSha256: write.beforeSha256, afterSha256: write.afterSha256, reason: "OpenCode plugin entry is already present; no write was made." });
     let snapshotId: string;
     try {
-      snapshotId = await snapshotOfWrite({ home, manager: input.manager, path: input.path, operation: "connect", beforeSha256: write.beforeSha256, afterSha256: write.afterSha256, ownedValue: OPENCODE_PLUGIN_REF, sourceSha: pluginRow.sourceSha });
+      snapshotId = await snapshotOfWrite({ home, manager: input.manager, path: input.path, operation: "connect", beforeSha256: write.beforeSha256, afterSha256: write.afterSha256, ownedValue: OPENCODE_PLUGIN_ENTRY, sourceSha: pluginRow.sourceSha });
     } catch (error) {
-      const reverted = removeOpenCodePluginEntry(patched.text, OPENCODE_PLUGIN_REF);
+      const reverted = removeOpenCodePluginEntry(patched.text, OPENCODE_PLUGIN_ENTRY);
       if (reverted.ok) await compareAndSwapText(input.path, write.afterSha256, reverted.text);
       return resultOf(input, { status: "failed", owner: row.owner, beforeSha256: write.beforeSha256, afterSha256: await anyPathHash(input.path), reason: `Ownership record failed; attempted CAS rollback. ${error instanceof Error ? error.message : String(error)}` });
     }
-    return resultOf(input, { status: "ok", owner: "lane-pilot", beforeSha256: write.beforeSha256, afterSha256: write.afterSha256, snapshotId, evidence: [{ kind: "connected", path: input.path, sha256: write.afterSha256, detail: `Added only ${OPENCODE_PLUGIN_REF}; other plugin entries and JSONC trivia were preserved.` }], reason: null });
+    return resultOf(input, { status: "ok", owner: "lane-pilot", beforeSha256: write.beforeSha256, afterSha256: write.afterSha256, snapshotId, evidence: [{ kind: "connected", path: input.path, sha256: write.afterSha256, detail: `Added only ${OPENCODE_PLUGIN_ENTRY}; other plugin entries and JSONC trivia were preserved.` }], reason: null });
   }
 
   if (input.operation === "disconnect" && input.manager === "opencode-config") {
-    const owned = (await readOwnershipLedger(home)).entries.find((item) => item.manager === input.manager && item.path === input.path && item.ownedValue === OPENCODE_PLUGIN_REF);
+    const owned = (await readOwnershipLedger(home)).entries.find((item) => item.manager === input.manager && item.path === input.path && item.ownedValue === OPENCODE_PLUGIN_ENTRY);
     if (!owned) return resultOf(input, { status: "skipped", owner: row.owner, beforeSha256: currentHash, afterSha256: currentHash, reason: "No Lane Pilot-owned OpenCode config entry is recorded; user config was not changed." });
     const config = await readTextState(input.path);
     if (!config.text) return resultOf(input, { status: "conflict", owner: row.owner, beforeSha256: config.sha256, afterSha256: config.sha256, reason: "Owned config path is absent or unreadable; no write was made." });
-    const patched = removeOpenCodePluginEntry(config.text, OPENCODE_PLUGIN_REF);
+    const patched = removeOpenCodePluginEntry(config.text, OPENCODE_PLUGIN_ENTRY);
     if (!patched.ok) return resultOf(input, { status: "blocked", owner: row.owner, beforeSha256: config.sha256, afterSha256: config.sha256, reason: patched.message });
     if (!patched.changed) return resultOf(input, { status: "skipped", owner: row.owner, beforeSha256: config.sha256, afterSha256: config.sha256, reason: "Owned plugin entry is already absent; no write was made." });
     const write = await compareAndSwapText(input.path, config.sha256, patched.text);
     if (write.status !== "ok") return resultOf(input, { status: write.status, owner: row.owner, beforeSha256: write.beforeSha256, afterSha256: write.afterSha256, reason: write.reason });
-    const snapshotId = await snapshotOfWrite({ home, manager: input.manager, path: input.path, operation: "disconnect", beforeSha256: write.beforeSha256, afterSha256: write.afterSha256 ?? config.sha256!, ownedValue: OPENCODE_PLUGIN_REF, sourceSha: owned.sourceSha });
+    const snapshotId = await snapshotOfWrite({ home, manager: input.manager, path: input.path, operation: "disconnect", beforeSha256: write.beforeSha256, afterSha256: write.afterSha256 ?? config.sha256!, ownedValue: OPENCODE_PLUGIN_ENTRY, sourceSha: owned.sourceSha });
     await removeOwnershipEntry(home, input.manager, input.path);
-    return resultOf(input, { status: "ok", owner: "lane-pilot", beforeSha256: write.beforeSha256, afterSha256: write.afterSha256, snapshotId, evidence: [{ kind: "disconnected", path: input.path, sha256: write.afterSha256, detail: `Removed only owned plugin entry ${OPENCODE_PLUGIN_REF}; later user fields and foreign entries were retained.` }], reason: null });
+    return resultOf(input, { status: "ok", owner: "lane-pilot", beforeSha256: write.beforeSha256, afterSha256: write.afterSha256, snapshotId, evidence: [{ kind: "disconnected", path: input.path, sha256: write.afterSha256, detail: `Removed only owned plugin entry ${OPENCODE_PLUGIN_ENTRY}; later user fields and foreign entries were retained.` }], reason: null });
   }
 
   if (input.operation === "rollback") {

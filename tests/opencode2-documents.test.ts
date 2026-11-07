@@ -18,7 +18,7 @@ const EPERM = "Command thread.start failed: vk_required_session_policy_unenforce
 describe("an observed provider refusal in a ~/Documents folder", () => {
   it("without a recorded failure the provider is offered as usual", async () => {
     const kv = fakeKv();
-    expect(await readProviderFolderBlock(kv, "macmini", "opencode2")).toBeNull();
+    expect(await readProviderFolderBlock(kv, "macmini")).toBeNull();
     expect(providerBlockedForFolder("opencode2", DOCUMENTS, null)).toBeNull();
     expect(providerBlockedForFolder("opencode2", DOCUMENTS)).toBeNull();
   });
@@ -26,30 +26,41 @@ describe("an observed provider refusal in a ~/Documents folder", () => {
   it("a recorded EPERM refusal blocks it on that machine in that folder, only", async () => {
     const kv = fakeKv();
     await noteProviderStartFailure(kv, "macmini", "opencode2", DOCUMENTS, EPERM);
-    const block = await readProviderFolderBlock(kv, "macmini", "opencode2");
+    const block = await readProviderFolderBlock(kv, "macmini");
     expect(block?.reason).toBe(EPERM);
     expect(providerBlockedForFolder("opencode2", DOCUMENTS, block)).toBe(EPERM);
     // Other folder, other provider, other machine: free.
-    expect(await readProviderFolderBlock(kv, "macmini", "claude-code")).toBeNull();
-    expect(await readProviderFolderBlock(kv, "macbook", "opencode2")).toBeNull();
+    expect(providerBlockedForFolder("claude-code", DOCUMENTS, block)).toBeNull();
+    expect(await readProviderFolderBlock(kv, "macbook")).toBeNull();
     expect(providerBlockedForFolder("opencode2", "/Users/vechkasov/Work/x", block)).toBeNull();
   });
 
   it("a non-folder failure is not recorded; a successful start clears the block; an expired block is gone", async () => {
     const kv = fakeKv();
     await noteProviderStartFailure(kv, "macmini", "opencode2", DOCUMENTS, "some unrelated error");
-    expect(await readProviderFolderBlock(kv, "macmini", "opencode2")).toBeNull();
+    expect(await readProviderFolderBlock(kv, "macmini")).toBeNull();
     await noteProviderStartFailure(kv, "macmini", "opencode2", "/Users/vechkasov/Work/x", EPERM);
-    expect(await readProviderFolderBlock(kv, "macmini", "opencode2")).toBeNull();
+    expect(await readProviderFolderBlock(kv, "macmini")).toBeNull();
 
     await noteProviderStartFailure(kv, "macmini", "opencode2", DOCUMENTS, EPERM);
-    expect(await readProviderFolderBlock(kv, "macmini", "opencode2")).not.toBeNull();
+    expect(await readProviderFolderBlock(kv, "macmini")).not.toBeNull();
     await noteProviderStartSuccess(kv, "macmini", "opencode2", DOCUMENTS);
-    expect(await readProviderFolderBlock(kv, "macmini", "opencode2")).toBeNull();
+    expect(await readProviderFolderBlock(kv, "macmini")).toBeNull();
 
     await noteProviderStartFailure(kv, "macmini", "opencode2", DOCUMENTS, EPERM);
-    const old = await readProviderFolderBlock(kv, "macmini", "opencode2", -1);
+    const old = await readProviderFolderBlock(kv, "macmini", -1);
     expect(old).toBeNull();
+  });
+
+  it("reads a block written under the old per-provider key, and a success clears it", async () => {
+    const kv = fakeKv();
+    await kv.set("provider-folder-block:macmini:opencode2", { reason: EPERM, at: Date.now() } as never);
+    const block = await readProviderFolderBlock(kv, "macmini");
+    expect(block).toMatchObject({ providerId: "opencode2", reason: EPERM });
+    expect(providerBlockedForFolder("opencode2", DOCUMENTS, block)).toBe(EPERM);
+    // Migrated onto the current key, so the success below clears the block and not only the new key.
+    await noteProviderStartSuccess(kv, "macmini", "opencode2", DOCUMENTS);
+    expect(await readProviderFolderBlock(kv, "macmini")).toBeNull();
   });
 
   it("the resolver takes the role's next provider only while a block stands", async () => {
@@ -57,7 +68,7 @@ describe("an observed provider refusal in a ~/Documents folder", () => {
     const base = { role: "analyst", settings: {}, envPath: DOCUMENTS, hostId: "macmini" };
     const unblocked = resolveSpawnModel(base as never);
     await noteProviderStartFailure(kv, "macmini", "opencode2", DOCUMENTS, EPERM);
-    const folderBlock = await readProviderFolderBlock(kv, "macmini", "opencode2");
+    const folderBlock = await readProviderFolderBlock(kv, "macmini");
     const blocked = resolveSpawnModel({ ...base, folderBlock } as never);
     if (unblocked.providerId === "opencode2") expect(blocked.providerId).not.toBe("opencode2");
     else expect(blocked.providerId).toBe(unblocked.providerId);

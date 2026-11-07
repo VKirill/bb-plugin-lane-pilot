@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { sha256Buffer } from "@lane-pilot/kit";
+import { sha256Hex } from "@lane-pilot/kit";
 import { resolveHome } from "@lane-pilot/kit";
 
 export type ImportedConfig = {
@@ -11,7 +11,7 @@ export type ImportedConfig = {
 async function readOptional(path: string): Promise<{ path: string; text: string; sha256: string } | null> {
   try {
     const text = await readFile(path, "utf8");
-    return { path, text, sha256: sha256Buffer(text) };
+    return { path, text, sha256: sha256Hex(text) };
   } catch {
     return null;
   }

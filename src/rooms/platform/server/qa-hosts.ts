@@ -1,5 +1,11 @@
 export type QaHostOption = { id: string; name: string; status: string; connected: boolean };
 
+/** The hosts BB knows, as the pickers list them. */
+export async function listQaHosts(bb: { sdk: object }): Promise<QaHostOption[]> {
+  const listed = await (bb.sdk as unknown as { hosts?: { list?: () => Promise<unknown> } }).hosts?.list?.() ?? [];
+  return mapListedQaHosts(listed);
+}
+
 export function mapListedQaHosts(listed: unknown): QaHostOption[] {
   if (!Array.isArray(listed)) return [];
   const hosts: QaHostOption[] = [];

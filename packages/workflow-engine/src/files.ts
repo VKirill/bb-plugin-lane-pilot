@@ -4,7 +4,6 @@ import { join } from "node:path";
 import { sha256Hex } from "@lane-pilot/kit";
 
 export const WORKFLOW_FILE_ID = /^[a-z0-9][a-z0-9.-]{0,47}$/;
-export const sha256Text = (text: string): string => sha256Hex(text);
 
 export type WorkflowWrite = {
   status: "applied" | "conflict";
@@ -21,7 +20,7 @@ export type WorkflowWrite = {
 export async function casWriteWorkflowFile(dir: string, id: string, content: string, expectedSha256: string | null): Promise<WorkflowWrite> {
   if (!WORKFLOW_FILE_ID.test(id)) throw new Error(`workflow id is not a file name: ${id}`);
   const path = join(dir, `${id}.json`);
-  const before = await readFile(path, "utf8").then(sha256Text, (cause: NodeJS.ErrnoException) => { if (cause.code === "ENOENT") return null; throw cause; });
+  const before = await readFile(path, "utf8").then(sha256Hex, (cause: NodeJS.ErrnoException) => { if (cause.code === "ENOENT") return null; throw cause; });
   if (before !== expectedSha256) {
     return {
       status: "conflict", path, beforeSha256: before, afterSha256: null,
@@ -36,5 +35,5 @@ export async function casWriteWorkflowFile(dir: string, id: string, content: str
   } finally {
     await rm(temp, { force: true });
   }
-  return { status: "applied", path, beforeSha256: before, afterSha256: sha256Text(content), reason: null };
+  return { status: "applied", path, beforeSha256: before, afterSha256: sha256Hex(content), reason: null };
 }

@@ -1,6 +1,6 @@
 import { loadProjectSettings } from "../../storage";
 import { QA_HOST_KEY } from "../../qa";
-import { mapListedQaHosts } from "../../platform/server";
+import { listQaHosts } from "../../platform/server";
 import { fireList, findConflicts, runView, scheduleView } from "../board";
 import { PRESET_SLUGS, presetSlug } from "@lane-pilot/models";
 import { normalizeSchedule, type NormalizedWhen, type ScheduleDefinition, type ScheduleTask } from "../model";
@@ -86,8 +86,7 @@ export function createScheduleService(ctx: ServerCore, services: Services) {
   const { store } = scheduler;
 
   async function hostOptions() {
-    const listed = await (bb.sdk as unknown as { hosts?: { list?: () => Promise<unknown> } }).hosts?.list?.().catch(() => []) ?? [];
-    return mapListedQaHosts(listed).map((host) => ({ id: host.id, name: host.name, connected: host.connected }));
+    return (await listQaHosts(bb)).map((host) => ({ id: host.id, name: host.name, connected: host.connected }));
   }
 
   function machineOf(projectId: string, task: ScheduleTask): string | null {

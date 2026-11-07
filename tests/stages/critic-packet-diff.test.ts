@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { buildCandidateEvidence, codeCritiquePrompt, MAX_FILE_EXCERPT_BYTES, NEW_FILE_DIFF, sha256Text } from "../../src/rooms/critique/code-critique";
+import { sha256Hex } from "@lane-pilot/kit";
+import { buildCandidateEvidence, codeCritiquePrompt, MAX_FILE_EXCERPT_BYTES, NEW_FILE_DIFF } from "../../src/rooms/critique/code-critique";
 import { candidateCitations } from "../../src/rooms/critique/citations";
 import { candidatePatches } from "../../src/rooms/critique/server";
 import { createAttempt, createRun, createTask, openDatabase } from "../../src/rooms/plugin-db";
@@ -9,7 +10,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 // with code_critique_evidence_unknown:packet_truncated (13 of 14 critiques that week). The packet now carries BB's diff of the change.
 const big = `${"export const filler = 1;\n".repeat(800)}export const changed = 2;\n`;
 const patch = "diff --git a/src/big.ts b/src/big.ts\n@@ -801 +801 @@\n-export const changed = 1;\n+export const changed = 2;\n";
-const base = { produced:["src/big.ts"], hashes:{ "src/big.ts": sha256Text(big) }, baselineHashes:{ "src/big.ts": "old" },
+const base = { produced:["src/big.ts"], hashes:{ "src/big.ts": sha256Hex(big) }, baselineHashes:{ "src/big.ts": "old" },
   verification:[{ command:"npm test", exitCode:0, stdout:"ok", stderr:"" }], output:"done", ownsPaths:["src/**"], neverTouch:[], dirtOk:true };
 
 describe("code critic packet", () => {
@@ -29,7 +30,7 @@ describe("code critic packet", () => {
 
   it("keeps a small file whole next to its diff", () => {
     const small = "export const a = 1;\n";
-    const evidence = buildCandidateEvidence({ ...base, hashes:{ "src/big.ts": sha256Text(small) }, files:[{ path:"src/big.ts", content:small }], patches:{ "src/big.ts": patch } });
+    const evidence = buildCandidateEvidence({ ...base, hashes:{ "src/big.ts": sha256Hex(small) }, files:[{ path:"src/big.ts", content:small }], patches:{ "src/big.ts": patch } });
     expect(evidence.truncated).toBe(false);
     expect(evidence.files[0]?.content).toBe(small);
   });
@@ -38,7 +39,7 @@ describe("code critic packet", () => {
   it("sends a new small file once and the check output without terminal codes", () => {
     const fresh = "export const a = 1;\nexport const b = 2;\n";
     const freshPatch = "diff --git a/src/new.ts b/src/new.ts\nnew file mode 100644\n--- /dev/null\n+++ b/src/new.ts\n@@ -0,0 +1,2 @@\n+export const a = 1;\n+export const b = 2;\n";
-    const evidence = buildCandidateEvidence({ ...base, produced:["src/new.ts"], hashes:{ "src/new.ts": sha256Text(fresh) },
+    const evidence = buildCandidateEvidence({ ...base, produced:["src/new.ts"], hashes:{ "src/new.ts": sha256Hex(fresh) },
       verification:[{ command:"npx vitest run", exitCode:0, stdout:"\u001b[?25l\u001b[32m✓\u001b[39m queued\r ✓ a.test.ts\r\n\n\n\n Tests 2 passed", stderr:"" }],
       files:[{ path:"src/new.ts", content:fresh }], patches:{ "src/new.ts": freshPatch } });
     expect(evidence.files[0]).toMatchObject({ content:fresh, diff:NEW_FILE_DIFF });

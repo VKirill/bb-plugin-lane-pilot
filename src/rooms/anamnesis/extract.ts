@@ -53,7 +53,6 @@ export type ExtractReport = {
 const emptyReport = (live: boolean): ExtractReport => ({ live, considered: 0, tooShort: 0, infrastructure: 0, alreadySeen: 0, overCeiling: 0,
   asked: 0, masked: 0, nothing: 0, unavailable: 0, kept: 0, created: 0, merged: 0, contradictions: 0, duplicates: 0, stored: null, complete: true });
 
-const sha = (text: string): string => sha256Hex(text).slice(0, 12);
 
 /** The day the ceiling counts in: Madrid, where the owner's day and the 04:00 pass are. */
 export const madridDay = (at: number): string => new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Madrid" }).format(at);
@@ -64,7 +63,7 @@ export function candidateRecord(message: OwnerMessage, decision: FragmentDecisio
   // Personal data (phones, cards, documents, addresses, e-mails) never enters the portrait; the owner's own words around it do.
   const text = maskPii(scrubQuote(message.text, 240)).text;
   return {
-    kind: decision.kind, key: `msg-${sha(message.id)}`, title: text.slice(0, 80), statement: text, status,
+    kind: decision.kind, key: `msg-${sha256Hex(message.id).slice(0, 12)}`, title: text.slice(0, 80), statement: text, status,
     ...(isSensitive(decision, text) ? { sensitivity: "sensitive" } : {}),
     attributes: { origin: "jev-fragment", kindP: Math.round(decision.kindP * 100) / 100, aboutOwner: Math.round(decision.aboutOwner * 100) / 100, sensitiveP: Math.round(decision.sensitive * 100) / 100, ...extraAttributes },
     confidence: Math.min(decision.kindP, decision.aboutOwner), evidence: [messageEvidence(message, text)],
@@ -126,7 +125,7 @@ async function extractNow(deps: ExtractDeps, messages: readonly OwnerMessage[], 
     const text = message.text.trim();
     if (text.length < MIN_FRAGMENT_CHARS) { report.tooShort += 1; continue; }
     if (infrastructureReason(text)) { report.infrastructure += 1; continue; }
-    if (seen.has(sha(message.id))) { report.alreadySeen += 1; continue; }
+    if (seen.has(sha256Hex(message.id).slice(0, 12))) { report.alreadySeen += 1; continue; }
     eligible.push(message);
   }
   if (!eligible.length) return report;
@@ -151,7 +150,7 @@ async function extractNow(deps: ExtractDeps, messages: readonly OwnerMessage[], 
       report.asked += 1;
       const decision = decisions[j];
       if (!decision) { report.unavailable += 1; report.complete = false; return; }
-      settled.push(sha(message.id));
+      settled.push(sha256Hex(message.id).slice(0, 12));
       if (decision.kind === "nothing") { report.nothing += 1; return; }
       report.kept += 1;
       kept.push({ message, masked: outgoing[j]!.text, decision: decision as Kept["decision"] });

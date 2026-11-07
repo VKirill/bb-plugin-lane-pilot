@@ -1,3 +1,4 @@
+import { taskRedispatchBase } from "@lane-pilot/contracts";
 import type { LanePilotDatabase } from "../../storage";
 
 /** Why a task waits for another: its depends_on, the same files (owns_paths or area), one writer per folder without git, an unanswered question. */
@@ -29,12 +30,11 @@ export function buildTaskGraph(db: LanePilotDatabase, runId: string): TaskGraph 
   const contract = (json: string): { title?: unknown; depends_on?: unknown } => { try { return JSON.parse(json) as never; } catch { return {}; } };
   const open = rows.filter((row) => row.state === "queued" || WORKING.has(row.state));
   const blocked = new Map(rows.filter((row) => row.state === "blocked").map((row) => [row.id, row]));
-  // The same family rule as the writer's wait (latestTaskAttemptState): `P1`, `P1.2`, `P1.2.2` are one task sent again.
-  const taskFamily = (id: string) => id.replace(/(\.\d+)+$/, "") || id;
+  // The same redispatch rule as the writer's wait (latestTaskAttemptState): `P1`, `P1.2`, `P1.2.2` are one task sent again.
   const byFamily = new Map<string, string>();
-  for (const row of rows) byFamily.set(taskFamily(row.id), row.id);
+  for (const row of rows) byFamily.set(taskRedispatchBase(row.id), row.id);
   /** A depends_on name means its latest redispatch (`P1` → `P1.2`), as the writer's wait reads it. */
-  const resolve = (name: string) => byFamily.get(taskFamily(name)) ?? name;
+  const resolve = (name: string) => byFamily.get(taskRedispatchBase(name)) ?? name;
 
   const nodes = new Map<string, TaskGraphNode>();
   const edges = new Map<string, TaskGraph["edges"][number]>();

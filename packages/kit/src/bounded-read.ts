@@ -1,7 +1,7 @@
-import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { lstat, realpath } from "node:fs/promises";
 import { isAbsolute, join, relative } from "node:path";
+import { createSha256 } from "./hash";
 
 export const LANE_PILOT_READ_NAME = "lane_pilot_read";
 export const LANE_PILOT_READ_SCHEMA_VERSION = 1 as const;
@@ -67,7 +67,7 @@ export async function readBoundedWorkspaceFile(input: {
     throw new Error(`lane_pilot_read_file_exceeds_${BOUNDED_READ_MAX_FILE_BYTES}_bytes`);
   }
 
-  const hash = createHash("sha256");
+  const hash = createSha256();
   const decoder = new TextDecoder("utf-8", { fatal: true });
   let carry = "";
   let endedWithNewline = false;

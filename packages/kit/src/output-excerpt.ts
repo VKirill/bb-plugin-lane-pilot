@@ -6,6 +6,10 @@
 
 import { redactKnown } from "./redact";
 
+/** Terminal colour codes from a check's output, with or without the ESC byte (`\u001b[31m`, `[31m`), and other CSI sequences. */
+export const stripAnsi = (text: string): string =>
+  text.replace(/\u001b\[[0-9;?]*[A-Za-z]/g, "").replace(/\[\d{1,2}(?:;\d{1,2})*m/g, "");
+
 /** A check's own complaint: the FAIL header, an assertion or diff, a compiler error, or any error/fail line. */
 const FAILURE_MARK = /\bFAIL\b|\bAssertionError\b|\bError:|\bExpected\b|\bReceived\b|error TS|error|fail/i;
 

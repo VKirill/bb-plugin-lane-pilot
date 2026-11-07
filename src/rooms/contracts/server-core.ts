@@ -123,7 +123,7 @@ type CustomAgentMeta = {
   createdAt?: number;
   updatedAt?: number;
   domain?: string;
-  machineAffinity?: "mac-mini" | "ovh" | "windows" | "any";
+  machineAffinity?: string;
   deliverables?: string[];
   validator?: string;
   coreSkills?: string[];

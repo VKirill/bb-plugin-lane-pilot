@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { lstat, mkdir, readFile, rename, rmdir, unlink, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { hashPath, sha256Buffer } from "@lane-pilot/kit";
+import { hashPath, sha256Hex } from "@lane-pilot/kit";
 import type { CoexistenceManager, CoexistenceOwner } from "./coexistence-contracts";
 import { compareAndSwapText, readTextState } from "./cas";
 
@@ -256,7 +256,7 @@ export async function saveSnapshot(home: string, snapshot: Omit<CoexistenceSnaps
   await mkdir(join(coexistenceRoot(home), "snapshots"), { recursive: true });
   const bytes = Buffer.from(`${JSON.stringify({ schemaVersion: 1, createdAt: new Date().toISOString(), ...snapshot }, null, 2)}\n`, "utf8");
   await writeFile(path, bytes, { flag: "wx", mode: 0o600 });
-  return { snapshotId: snapshot.snapshotId, bytes, sha256: sha256Buffer(bytes) };
+  return { snapshotId: snapshot.snapshotId, bytes, sha256: sha256Hex(bytes) };
 }
 
 async function residualFor(path: string, detail: string): Promise<SnapshotResidual | null> {
@@ -316,14 +316,14 @@ export async function removeSnapshotIfMatches(
     if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") return { status: "absent", residuals: [] };
     throw error;
   }
-  const expectedHash = sha256Buffer(expected.bytes);
+  const expectedHash = sha256Hex(expected.bytes);
   if (info.isSymbolicLink() || !info.isFile() || expectedHash !== expected.sha256) {
     const residual = await residualFor(path, "Snapshot was not removed because it is not the exact file written by this transaction.");
     return { status: "conflict", residuals: residual ? [residual] : [] };
   }
 
   const currentBytes = await readFile(path);
-  if (!currentBytes.equals(expected.bytes) || sha256Buffer(currentBytes) !== expected.sha256) {
+  if (!currentBytes.equals(expected.bytes) || sha256Hex(currentBytes) !== expected.sha256) {
     const residual = await residualFor(path, "Snapshot bytes changed after this transaction wrote them; the changed file was preserved.");
     return { status: "conflict", residuals: residual ? [residual] : [] };
   }
@@ -360,7 +360,7 @@ export async function removeSnapshotIfMatches(
   }
 
   const claimedBytes = await readFile(claimedPath);
-  if (!claimedBytes.equals(expected.bytes) || sha256Buffer(claimedBytes) !== expected.sha256) {
+  if (!claimedBytes.equals(expected.bytes) || sha256Hex(claimedBytes) !== expected.sha256) {
     return preserveClaimedSnapshot(
       path,
       claimedPath,

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { buildCandidateEvidence, codeCritiquePrompt, sha256Text } from "../../src/rooms/critique/code-critique";
+import { sha256Hex } from "@lane-pilot/kit";
+import { buildCandidateEvidence, codeCritiquePrompt } from "../../src/rooms/critique/code-critique";
 
 // SWE-2 stream C1 (2026-11-03): the critic's prompt carries pointers, not the whole change — a 57 KB muse-image-mode packet
 // was 44 KB of pasted code. Past ~6 KB the prompt lists paths with +/- counts and the git commands; the critic reads itself.
@@ -20,7 +21,7 @@ describe("a big change hands the critic pointers, not bytes", () => {
   const evidence = buildCandidateEvidence({
     produced: ["src/a.ts", "src/b.ts", "fixtures/expect.json"],
     hashes: {
-      "src/a.ts": sha256Text(big), "src/b.ts": sha256Text(big), "fixtures/expect.json": sha256Text(fixture),
+      "src/a.ts": sha256Hex(big), "src/b.ts": sha256Hex(big), "fixtures/expect.json": sha256Hex(fixture),
     },
     baselineHashes: { "src/a.ts": "old", "src/b.ts": "old", "fixtures/expect.json": "old" },
     verification: [{ command: "npx vitest run", exitCode: 0, stdout: "pass", stderr: "" }],
@@ -60,7 +61,7 @@ describe("a big change hands the critic pointers, not bytes", () => {
 describe("a small change still arrives inlined", () => {
   const small = "export const a = 1;\n";
   const evidence = buildCandidateEvidence({
-    produced: ["src/small.ts"], hashes: { "src/small.ts": sha256Text(small) },
+    produced: ["src/small.ts"], hashes: { "src/small.ts": sha256Hex(small) },
     verification: [{ command: "npm test", exitCode: 1, stdout: "1 failed", stderr: "" }],
     files: [{ path: "src/small.ts", content: small }],
     output: "done", ownsPaths: ["src/**"], neverTouch: [], dirtOk: true, workspace: "/wt/t1",
@@ -79,7 +80,7 @@ describe("a green check keeps only its last lines", () => {
   it("cuts a long passing log to its tail; a failing one stays whole", () => {
     const long = Array.from({ length: 40 }, (_, i) => `line ${i}`).join("\n");
     const evidence = buildCandidateEvidence({
-      produced: ["src/s.ts"], hashes: { "src/s.ts": sha256Text("x") },
+      produced: ["src/s.ts"], hashes: { "src/s.ts": sha256Hex("x") },
       verification: [
         { command: "ok", exitCode: 0, stdout: long, stderr: "" },
         { command: "bad", exitCode: 2, stdout: long, stderr: "" },

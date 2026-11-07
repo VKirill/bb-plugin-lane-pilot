@@ -1,5 +1,5 @@
 import type { ModelCatalog, CatalogProvider } from "@lane-pilot/models";
-import { mapListedQaHosts } from "./qa-hosts";
+import { listQaHosts } from "./qa-hosts";
 import type { ServerCore } from "../../contracts/server";
 import { stringAt, orMiss, isNotFound } from "@lane-pilot/kit";
 
@@ -23,7 +23,7 @@ export function createModelCatalog(ctx: Pick<ServerCore, "bb" | "log">, now: () 
   let inflight: Promise<ModelCatalog> | null = null;
 
   async function read(): Promise<ModelCatalog> {
-    const hosts = mapListedQaHosts(await (bb.sdk as unknown as { hosts: { list: () => Promise<unknown> } }).hosts.list().catch(() => []));
+    const hosts = await listQaHosts(bb);
     const providers = new Map<string, CatalogProvider>();
     await Promise.all(hosts.filter((host) => host.connected).map(async (host) => {
       const listed = await within(Promise.resolve(bb.sdk.providers.list({ hostId: host.id })), CALL_TIMEOUT_MS).catch(() => []);
