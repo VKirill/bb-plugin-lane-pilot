@@ -567,3 +567,26 @@ export function attachTokenUsage(ctx: ServerCore): {
   start(90);
   return { start, rebuild };
 }
+
+/** Today's spend of a project per provider+model (the lane_pilot_facts limit answer). */
+export function tokenDailyByModel(db: LanePilotDatabase, projectId: string, day: string): Array<{ provider: string; model: string; tokens: number }> {
+  return db.prepare("SELECT provider_id AS provider, model, SUM(total_tokens) AS tokens FROM lane_pilot_token_daily WHERE project_id=? AND day=? GROUP BY provider_id, model ORDER BY tokens DESC")
+    .all(projectId, day) as Array<{ provider: string; model: string; tokens: number }>;
+}
+
+/** A project's daily spend per provider+model+day since a day (the workers' 30-day bars). */
+export function tokenDailySeries(db: LanePilotDatabase, projectId: string, sinceDay: string): Array<{ providerId: string; model: string; day: string; tokens: number }> {
+  return db.prepare("SELECT provider_id AS providerId, model, day, SUM(total_tokens) AS tokens FROM lane_pilot_token_daily WHERE project_id=? AND day>=? GROUP BY provider_id, model, day ORDER BY day")
+    .all(projectId, sinceDay) as Array<{ providerId: string; model: string; day: string; tokens: number }>;
+}
+
+/** A project's whole spend of one day. */
+export function tokenDailyTotal(db: LanePilotDatabase, projectId: string, day: string): number {
+  return (db.prepare("SELECT COALESCE(SUM(total_tokens),0) AS n FROM lane_pilot_token_daily WHERE project_id=? AND day=?").get(projectId, day) as { n: number }).n;
+}
+
+/** A thread's token cursor: provider, last provider/model and the stored totals JSON. */
+export function tokenCursorRow(db: LanePilotDatabase, threadId: string): { provider_id: string; last_provider: string; last_model: string; total_json: string } | undefined {
+  return db.prepare("SELECT provider_id, last_provider, last_model, total_json FROM lane_pilot_token_cursor WHERE thread_id = ?")
+    .get(threadId) as { provider_id: string; last_provider: string; last_model: string; total_json: string } | undefined;
+}

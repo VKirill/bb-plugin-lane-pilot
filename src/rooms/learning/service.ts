@@ -4,7 +4,7 @@ import { TURN_REQUESTED, type EventLike, type OwnerMessage } from "../anamnesis"
 import { getRunSettingsScopes, loadProjectSettings } from "../storage";
 import { ownerWordsOn } from "../tasks";
 import { jev } from "@lane-pilot/jev";
-import { relayFor } from "../relay/server";
+import { explicitOwnerLocale, relayFor } from "../relay/server";
 import { scheduleIsolated } from "../platform/server";
 import { memorySettingsFor } from "../self-repair/server/insights";
 import { registerObservedTool } from "../platform/server";
@@ -126,8 +126,8 @@ export function createLearning(ctx: ServerCore, services: Services) {
   const extractor = createExtractor({
     db, jev, rules, notes, globalPreferences, runModel, scopeOf,
     locale: async (projectId) => {
-      const stored = await bb.storage.kv.get<string>(`rules-locale:${projectId}`), preferred = await bb.storage.kv.get<string>("preferences:locale");
-      return stored === "ru" || stored === "en" ? stored : preferred === "ru" ? "ru" : "en";
+      const stored = await bb.storage.kv.get<string>(`rules-locale:${projectId}`);
+      return stored === "ru" || stored === "en" ? stored : (await explicitOwnerLocale(bb) ?? "en");
     },
     log,
   });

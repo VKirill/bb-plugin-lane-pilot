@@ -1,5 +1,5 @@
 import { prototypeConfigSchema, taskV2Schema } from "../../contracts";
-import { getActivation, getAttempt, getRun, getTask, importSettingsOnce, inspectAttempt, inspectState, listRunsWithAttempts, loadProjectSettings, loadPrototypeConfig, savePrototypeConfig, saveProjectSetting, transitionAttempt, failureFieldsOf } from "../../storage";
+import { getActivation, getAttempt, getRun, getRunWriterHost, getTask, importSettingsOnce, inspectAttempt, inspectState, listAttemptReasonsSince, listRunsWithAttempts, loadProjectSettings, loadPrototypeConfig, savePrototypeConfig, saveProjectSetting, transitionAttempt, failureFieldsOf } from "../../storage";
 import { cancelRejection, confirmWriterStopped, finishRunSafely, pauseRun } from "../../runs/server";
 import { markCancelCode } from "../../storage";
 import { renderTimeline, taskTimeline } from "../../runs";
@@ -41,7 +41,7 @@ import { WAITING_USAGE, runWaitingCli } from "../../owner-waiting/server";
 import { LEAD_USAGE, runLeadCli } from "../../lead/server";
 import { COVERAGE_USAGE, runCoverageCli } from "../../coverage";
 import { SMA_MAP_USAGE, runSmaLiveCli, runSmaMapCli } from "../../sma-map";
-import { readinessWords, trainedConditions, trainingRatios, type DesignJournalLine } from "../../design-eval";
+import { designJournalLines, readinessWords, trainedConditions, trainingRatios } from "../../design-eval";
 import { PHASE_USAGE, runPhaseCli } from "../../phase/server";
 import { unknownReasons } from "../../runs";
 import { manifest, passport, preship, prPassport, receiptChain, verifyChain } from "../../receipts";
@@ -395,10 +395,11 @@ ${ERRANDS_USAGE}` },
           return { exitCode:0, stdout:JSON.stringify(approvalSuggestions((live as { items?: never[] }).items ?? []), null, 2) };
         }
         if (command === "excavate" && args[0]) {
-          const run = db.prepare("SELECT writer_workspace_path AS path, writer_host_id AS hostId FROM lane_pilot_run WHERE id=?").get(args[0]) as { path?: string; hostId?: string } | undefined;
-          if (!run?.path || !run.hostId) return { exitCode:1, stderr:"the run has no checkout on a machine" };
-          const cwd = args[1] ? `${run.path}/${args[1].replace(/^\.?\//, "")}` : run.path;
-          const out = await host.call("runCommand", { requestedHostId:run.hostId, command:`git ${EXCAVATE_LOG_ARGS.map((arg) => `'${arg}'`).join(" ")}`, cwd, timeoutSec:60 }, { hostId:run.hostId, timeoutMs:90_000 }) as { stdout?: string };
+          const run = getRun(db, args[0]);
+          const hostId = run && getRunWriterHost(db, run.id);
+          if (!run?.writer_workspace_path || !hostId) return { exitCode:1, stderr:"the run has no checkout on a machine" };
+          const cwd = args[1] ? `${run.writer_workspace_path}/${args[1].replace(/^\.?\//, "")}` : run.writer_workspace_path;
+          const out = await host.call("runCommand", { requestedHostId:hostId, command:`git ${EXCAVATE_LOG_ARGS.map((arg) => `'${arg}'`).join(" ")}`, cwd, timeoutSec:60 }, { hostId, timeoutMs:90_000 }) as { stdout?: string };
           return { exitCode:0, stdout:JSON.stringify(excavate(out.stdout ?? ""), null, 2) };
         }
         if (command === "report") {
@@ -415,14 +416,14 @@ ${ERRANDS_USAGE}` },
         }
         if (command === "unknown-codes") {
           const days = args[0] === "--days" && Number(args[1]) > 0 ? Number(args[1]) : 14;
-          const rows = db.prepare("SELECT reason, updated_at AS at FROM lane_pilot_attempt WHERE updated_at >= ? AND reason IS NOT NULL").all(Date.now() - days * 86_400_000) as Array<{ reason: string | null; at: number }>;
+          const rows = listAttemptReasonsSince(db, Date.now() - days * 86_400_000);
           return { exitCode:0, stdout:JSON.stringify(unknownReasons(rows).slice(0, 50), null, 2) };
         }
         if (command === "phase") {
           return await runPhaseCli(services.phases, args);
         }
         if (command === "design-metrics") {
-          const all = ((await ctx.bb.storage.kv.get("lp.design.journal")) as DesignJournalLine[] | null) ?? [];
+          const all = await designJournalLines(ctx.bb.storage.kv);
           const project = args.includes("--project") ? args[args.indexOf("--project") + 1] : null;
           const lines = project ? all.filter((line) => line.projectId === project) : all;
           const report = { ratios:trainingRatios(lines), conditions:trainedConditions(lines), readiness:readinessWords(lines) };

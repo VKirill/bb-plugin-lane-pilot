@@ -1,3 +1,4 @@
+import { explicitOwnerLocale } from "../../relay/server";
 import { checkBrief, renderBrief } from "../../brief";
 import { projectRoleField } from "../../runs/server";
 import { HELPER_ROLES, type HelperRole } from "../../native-agent";
@@ -612,8 +613,7 @@ export function createRuleScan(ctx: ServerCore, services: RuleScanServices, deps
       // A project with no machine to scan from (three sandbox and bench projects on 2026-10-30) is skipped, not a failed run the wall sees.
       if (!(await projectPlace(projectId))) { bb.log.info(`Lane Pilot rules nightly: ${projectId} has no machine, skipped`); continue; }
       const stored = await bb.storage.kv.get<string>(LOCALE_KEY(projectId));
-      const preferred = await bb.storage.kv.get<string>("preferences:locale");
-      const locale = stored === "ru" || stored === "en" ? stored : preferred === "ru" ? "ru" : "en";
+      const locale = stored === "ru" || stored === "en" ? stored : (await explicitOwnerLocale(bb) ?? "en");
       await startScan(projectId, locale, { night: new Date().toISOString().slice(0, 10) });
       for (let i = 0; i < 180 && running.has(projectId) && !ctx.isDisposed() && !signal?.aborted; i++) await new Promise((resolve) => setTimeout(resolve, 10_000));
       // SMA block 6: a rule the night just proposed or adopted gets its form (check, hook, skill, memory, always) from the heuristics.

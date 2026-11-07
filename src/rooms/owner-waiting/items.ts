@@ -1,4 +1,5 @@
 import type Database from "better-sqlite3";
+import { countTermedDeferrals } from "../deferral/server";
 
 /**
  * «Waiting for the owner» (SMA D0-3). Since 2026-10-22 the owner takes no part in the loop: rules go on trial by themselves, a deferral
@@ -260,8 +261,8 @@ export function ownerWaitingCounts(db: Db, now: number = Date.now()): { overdue:
   const count = (sql: string, ...params: unknown[]) => (db.prepare(sql).get(...params) as { n: number }).n;
   return {
     // Only a human term can be overdue (deferral/store.ts HUMAN_TERM_SQL): an entry with the code's or an agent's term is «open, no term».
-    overdue: count("SELECT count(*) AS n FROM lane_pilot_deferral WHERE state IN ('open','overdue') AND due_at < ? AND owner_ref IS NOT NULL AND due_source IN ('explicit','relative','weekday')", now),
-    open: count("SELECT count(*) AS n FROM lane_pilot_deferral WHERE state = 'open' AND due_at >= ? AND owner_ref IS NOT NULL AND due_source IN ('explicit','relative','weekday')", now),
+    overdue: countTermedDeferrals(db, { states: ["open","overdue"], dueBefore: now }),
+    open: countTermedDeferrals(db, { states: ["open"], dueAtLeast: now }),
     inbox: count("SELECT count(*) AS n FROM lane_pilot_owner_item WHERE state='open'") + count("SELECT count(*) AS n FROM lane_pilot_learning_item WHERE state='pending_owner'"),
   };
 }

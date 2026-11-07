@@ -8,6 +8,7 @@ import { isRunHalted, isRunPaused } from "../../runs/server/runs-halt";
 import { conveyorState } from "../../conveyor";
 import type { ServerCore } from "../../contracts/server";
 
+import { reconcileScanOpen } from "../reconcile";
 import type { ReconcileApi } from "./reconcile";
 import type { WriterStateApi } from "../../platform/server";
 
@@ -371,7 +372,7 @@ export function createStability(ctx:ServerCore, services:Services) {
     return outcome;
   }
 
-  return { stability:{ drill, onTaskFailed, breakerHolds, diskHolds, sweep, loadParked, dropParked, adoptBlockedByFaults, restoreBreakers } };
+  return { stability:{ drill, onTaskFailed, breakerHolds, diskHolds, sweep, loadParked, dropParked, adoptBlockedByFaults, restoreBreakers, reconcileScanOpen:(attemptId:string) => reconcileScanOpen(db, attemptId) } };
 }
 
 export type StabilityApi = ReturnType<typeof createStability>["stability"];

@@ -4,8 +4,10 @@ export { mountHandoff } from "./handoff";
 export { createOwnerAsk, threadPendingInteractions } from "./owner-ask";
 export type { OwnerAsk, OwnerAnswer } from "./owner-ask";
 export {
+  OWNER_LOCALE_PREFERENCE_KEY,
   councilOwnerForm,
   englishSelfRepairChoice,
+  explicitOwnerLocale,
   knownOwnerLocale,
   ownerLocale,
   recordResolvedLocale,

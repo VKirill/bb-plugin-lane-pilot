@@ -1,4 +1,4 @@
-import { onAttemptChanged } from "../../storage";
+import { attemptRunRef, hasRunForPmThread, onAttemptChanged } from "../../storage";
 import { lpChannel, type LpRealtimeKind } from "@lane-pilot/ui-kit/realtime-channel";
 import type { LanePilotDatabase } from "../../storage";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
@@ -57,7 +57,7 @@ export function mountHelperSignals(bb: BbPluginApi, db: LanePilotDatabase, realt
   const pmThreads = new Set<string>();
   const isPmThread = (threadId: string) => {
     if (pmThreads.has(threadId)) return true;
-    const known = Boolean(db.prepare("SELECT 1 FROM lane_pilot_run WHERE pm_thread_id=? LIMIT 1").get(threadId));
+    const known = hasRunForPmThread(db, threadId);
     if (known) pmThreads.add(threadId);
     return known;
   };
@@ -69,8 +69,7 @@ export function mountHelperSignals(bb: BbPluginApi, db: LanePilotDatabase, realt
     });
   }
   return onAttemptChanged(db, (attemptId) => {
-    const row = db.prepare("SELECT r.project_id, r.pm_thread_id FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id WHERE a.id=?")
-      .get(attemptId) as { project_id: string; pm_thread_id: string | null } | undefined;
+    const row = attemptRunRef(db, attemptId);
     if (row) realtime.notify(row.project_id, "helpers", row.pm_thread_id ?? undefined);
   });
 }

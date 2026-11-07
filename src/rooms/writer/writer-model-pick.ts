@@ -128,6 +128,10 @@ export type WriterRouteDecision = {
 
 export const writerRouteKey = (runId: string, taskId: string) => `writer-route:${runId}:${taskId}`;
 
+/** The KV key of the model Jev picked for a task's writer (the writer's load spread reads the kept picks). */
+export const WRITER_PICK_PREFIX = "writer-pick:";
+export const writerPickKey = (runId: string, taskId: string) => `${WRITER_PICK_PREFIX}${runId}:${taskId}`;
+
 export async function writerPickOverlay(deps: { kv: { get(key: string): Promise<unknown>; set(key: string, value: unknown): Promise<void> }; jev: Pick<Jev, "judge" | "enabled"> | null; log(line: string): void;
   /** Whether a writer cannot work where this task runs now (ZCode: other machine, outside its free hours, busy); such a writer is not offered to Jev. A pick already kept for the task stands. */
   held?(profile: WriterProfile): Promise<boolean>;
@@ -135,7 +139,7 @@ export async function writerPickOverlay(deps: { kv: { get(key: string): Promise<
   load?(profiles: readonly WriterProfile[]): Promise<Record<string, WriterLoad>> },
   settings: Record<string, unknown>, input: { projectId: string; runId: string; taskId: string; task: PickTaskContract }): Promise<Record<string, unknown> | null> {
   if (settings["writer.pick"] === false || settings["writer.pick"] === "off") return null;
-  const key = `writer-pick:${input.runId}:${input.taskId}`;
+  const key = writerPickKey(input.runId, input.taskId);
   const candidates = writerCandidates(settings);
   const heldReasons = new Map<string, string>();
   const offered = deps.held ? (await Promise.all(candidates.map(async (profile) => {

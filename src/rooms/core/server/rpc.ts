@@ -35,6 +35,8 @@ import { baselineRpc } from "../../baseline/server";
 import { stageReturnRpc } from "../../stage-return/server";
 import { forecastRpc } from "../../forecast/server";
 import { workGraphRpc } from "../../work-graph/server";
+import { tokenCursorRow } from "../../usage/server";
+import type { TokenCursorReader } from "../../work-graph/server";
 import { runGoalRpc } from "../../run-goal/server";
 import { phaseRpc } from "../../phase/server";
 import { worldVersion } from "../../outbound";
@@ -85,6 +87,7 @@ import type { StabilityApi } from "../../stability/server/stability";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {
+  tokenCursorRow: TokenCursorReader;
   activate: ActivationApi["activate"];
   backlog: BacklogApi;
   baseline: BaselineApi;
@@ -158,7 +161,7 @@ export function registerRpc(ctx: ServerCore, services: Services, contract: typeo
     ...baselineRpc(services.baseline, services.regression),
     ...stageReturnRpc(services.stageReturn),
     ...forecastRpc(ctx.db),
-    ...workGraphRpc(ctx),
+    ...workGraphRpc(ctx, { tokenCursorRow }),
     ...runGoalRpc(services.runGoal),
     ...phaseRpc(services.phases),
     first_run_get: async ({ projectId }: { projectId: string }) => services.front.firstRun(projectId),

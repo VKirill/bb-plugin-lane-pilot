@@ -57,7 +57,7 @@ export function createTaskReconcile(ctx:ServerCore, services:Services) {
       if (options.afterResume) await step("start-up sweeps", options.afterResume);
     }
     await step("stage cleanup", () => {
-      const closed = closeOrphanWriterStages(db, services.activeWriterTasks, startup ? 0 : PERIODIC_IDLE_MS, options.now);
+      const closed = closeOrphanWriterStages(db, services.activeWriterTasks, startup ? 0 : PERIODIC_IDLE_MS, options.now, services.stability.reconcileScanOpen);
       if (closed) bb.log.info(`Lane Pilot closed ${closed} writer stage(s) left open after their task ended`);
     });
     await step("parking of blocked tasks", () => services.stability.adoptBlockedByFaults(options.now));

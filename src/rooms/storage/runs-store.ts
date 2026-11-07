@@ -184,3 +184,31 @@ export function listRunsPage(db: LanePilotDatabase, projectId: string, page: { l
     runs: picked.map((run) => ({ ...run, attempts: attempts.all(run.id) as RunHistoryRow["attempts"] })),
   };
 }
+
+/** The run a PM thread drives, latest first (a PM thread has at most one open run). */
+export function latestRunForPmThread(db: LanePilotDatabase, threadId: string): { id: string } | undefined {
+  return db.prepare("SELECT id FROM lane_pilot_run WHERE pm_thread_id=? ORDER BY created_at DESC LIMIT 1").get(threadId) as { id: string } | undefined;
+}
+
+/** Whether any Lane Pilot run belongs to this PM thread (how a PM chat is recognized without a kept list). */
+export function hasRunForPmThread(db: LanePilotDatabase, threadId: string): boolean {
+  return Boolean(db.prepare("SELECT 1 FROM lane_pilot_run WHERE pm_thread_id=? LIMIT 1").get(threadId));
+}
+
+/** The run an attempt belongs to: the project and PM thread a signal about the attempt is for. */
+export function attemptRunRef(db: LanePilotDatabase, attemptId: string): { project_id: string; pm_thread_id: string | null } | undefined {
+  return db.prepare("SELECT r.project_id, r.pm_thread_id FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id WHERE a.id=?")
+    .get(attemptId) as { project_id: string; pm_thread_id: string | null } | undefined;
+}
+
+/** The project's open run (pending or running), newest first. */
+export function activeRunForProject(db: LanePilotDatabase, projectId: string): { id: string; pm_thread_id: string | null } | undefined {
+  return db.prepare("SELECT id, pm_thread_id FROM lane_pilot_run WHERE project_id=? AND state IN ('pending','running') ORDER BY created_at DESC LIMIT 1")
+    .get(projectId) as { id: string; pm_thread_id: string | null } | undefined;
+}
+
+/** Runs of a PM thread, most recently touched first. */
+export function listRunsForPmThread(db: LanePilotDatabase, threadId: string, limit = 30): Array<{ id: string; project_id: string }> {
+  return db.prepare("SELECT id, project_id FROM lane_pilot_run WHERE pm_thread_id=? ORDER BY updated_at DESC LIMIT ?")
+    .all(threadId, limit) as Array<{ id: string; project_id: string }>;
+}

@@ -156,3 +156,41 @@ export function listUnfinishedStages(db:LanePilotDatabase, stageIds:StageId[]): 
     WHERE s.state IN ('pending','running') AND r.pm_thread_id IS NOT NULL AND s.stage_id IN (${stageIds.map(()=>"?").join(",")}) ORDER BY s.updated_at`).all(...stageIds) as Array<Record<string,string>>;
   return rows.map((row)=>({runId:row.run_id!,taskId:row.task_id!,stageId:row.stage_id as StageId,projectId:row.project_id!,pmThreadId:row.pm_thread_id!}));
 }
+
+/** A stage receipt that ended rejected (blocked or failed) for the task of a run. */
+export function hasFailedStageReceipt(db: LanePilotDatabase, runId: string, taskId: string): boolean {
+  return Boolean(db.prepare("SELECT 1 FROM lane_pilot_stage_receipt WHERE run_id=? AND task_id=? AND state IN ('blocked','failed') LIMIT 1").get(runId, taskId));
+}
+
+/** The task's stage events in order. */
+export function stageEventsForTask(db: LanePilotDatabase, runId: string, taskId: string): Array<{ stage_id: string; state: string; occurred_at: number }> {
+  return db.prepare("SELECT stage_id, state, occurred_at FROM lane_pilot_stage_event WHERE run_id=? AND task_id=? ORDER BY id")
+    .all(runId, taskId) as Array<{ stage_id: string; state: string; occurred_at: number }>;
+}
+
+/** Run/task keys that had a stage event since a time, newest activity first. */
+export function stageEventKeysSince(db: LanePilotDatabase, sinceMs: number, projectId?: string): Array<{ run_id: string; task_id: string; project_id: string; at: number }> {
+  return db.prepare(`SELECT run_id, task_id, project_id, max(occurred_at) AS at FROM lane_pilot_stage_event
+    WHERE occurred_at >= ? ${projectId ? "AND project_id = ?" : ""} GROUP BY run_id, task_id ORDER BY at DESC`)
+    .all(sinceMs, ...(projectId ? [projectId] : [])) as Array<{ run_id: string; task_id: string; project_id: string; at: number }>;
+}
+
+/** Run/task pairs with a receipt in the given stage/state sets (the orphan-stage sweep). */
+export function listOpenStageTasks(db: LanePilotDatabase, stageIds: readonly string[], states: readonly string[]): Array<{ run_id: string; task_id: string }> {
+  return db.prepare(`SELECT DISTINCT s.run_id, s.task_id FROM lane_pilot_stage_receipt s
+    WHERE s.stage_id IN (${stageIds.map(() => "?").join(",")}) AND s.state IN (${states.map(() => "?").join(",")})`)
+    .all(...stageIds, ...states) as Array<{ run_id: string; task_id: string }>;
+}
+
+/** One stage receipt's state, thread and last touch. */
+export function stageReceiptState(db: LanePilotDatabase, runId: string, taskId: string, stageId: string): { state: string; thread_id: string | null; updated_at: number } | undefined {
+  return db.prepare("SELECT state, thread_id, updated_at FROM lane_pilot_stage_receipt WHERE run_id=? AND task_id=? AND stage_id=?")
+    .get(runId, taskId, stageId) as { state: string; thread_id: string | null; updated_at: number } | undefined;
+}
+
+/** The work a thread last ran as a stage worker, with its run's project and PM thread (the info panel's helper card). */
+export function latestStageWorkForThread(db: LanePilotDatabase, threadId: string): { run_id: string; task_id: string; project_id: string; pm_thread_id: string | null } | undefined {
+  return db.prepare(`SELECT s.run_id, s.task_id, r.project_id, r.pm_thread_id FROM lane_pilot_stage_receipt s JOIN lane_pilot_run r ON r.id=s.run_id
+    WHERE s.thread_id=? ORDER BY s.updated_at DESC LIMIT 1`).get(threadId) as
+    { run_id: string; task_id: string; project_id: string; pm_thread_id: string | null } | undefined;
+}

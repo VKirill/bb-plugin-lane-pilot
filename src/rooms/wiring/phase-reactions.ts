@@ -5,34 +5,22 @@ import type { LanePilotDatabase } from "../storage";
 import { storeMemoryRecords } from "@lane-pilot/memory-core";
 import { closeOwnerItem, closeOwnerItemsByPrefix, postOwnerItem } from "../owner-waiting";
 import { answerPhaseWord, askPhaseWord } from "../lead";
-import { critiqueProblems, roleLine } from "../design-eval";
+import { appendDesignJournalLine, critiqueProblems, noteDesignJournalWord, roleLine } from "../design-eval";
+import { roleLinesKey } from "../native-agent";
 import type { PhaseReactions } from "../phase/server";
-
-export const DESIGN_JOURNAL = "lp.design.journal";
-export const ROLE_LINES = "lp.role.lines";
 
 /** The default bindings: the plugin's own rooms. Moved to the composition root, the phase room imports none of them. */
 export function createPhaseReactions(db: LanePilotDatabase, bb: BbPluginApi): PhaseReactions {
   // The journal is a best-effort side effect: a KV failure is logged and the line is dropped,
   // never turned into a read of «empty» that the following set would write back over the history.
   const journalDrawing = async (line: DesignJournalLine): Promise<void> => {
-    await bestEffort(bb.log, "design journal append", (async () => {
-      const lines = ((await bb.storage.kv.get(DESIGN_JOURNAL)) as DesignJournalLine[] | undefined) ?? [];
-      await bb.storage.kv.set(DESIGN_JOURNAL, [...lines, line].slice(-2000) as never);
-    })(), undefined);
+    await bestEffort(bb.log, "design journal append", appendDesignJournalLine(bb.storage.kv, line), undefined);
   };
   const noteDesignWord = async (phaseId: string, decision: "yes" | "no"): Promise<void> => {
-    await bestEffort(bb.log, "design journal word", (async () => {
-      const lines = ((await bb.storage.kv.get(DESIGN_JOURNAL)) as DesignJournalLine[] | undefined) ?? [];
-      const last = [...lines].reverse().find((line) => line.phaseId === phaseId);
-      if (!last) return;
-      last.ownerWord = decision;
-      if (decision === "no") last.firstPass = false;
-      await bb.storage.kv.set(DESIGN_JOURNAL, lines as never);
-    })(), undefined);
+    await bestEffort(bb.log, "design journal word", noteDesignJournalWord(bb.storage.kv, phaseId, decision), undefined);
   };
   const addRoleLine = async (projectId: string, role: string, line: string): Promise<void> => {
-    const key = `${ROLE_LINES}:${projectId}:${role}`;
+    const key = roleLinesKey(projectId, role);
     await bestEffort(bb.log, "role lines append", (async () => {
       const lines = ((await bb.storage.kv.get(key)) as string[] | undefined) ?? [];
       if (!lines.includes(line)) await bb.storage.kv.set(key, [...lines, line].slice(-30) as never);

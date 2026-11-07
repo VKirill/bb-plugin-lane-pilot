@@ -1,4 +1,5 @@
 import type { LanePilotDatabase } from "../../storage";
+import { wfLatestPipelineRunId, wfPipelineWriterStepKey } from "@lane-pilot/workflow-engine";
 import { graphStepMetadata } from "../../platform/server";
 
 /**
@@ -7,10 +8,10 @@ import { graphStepMetadata } from "../../platform/server";
  */
 export function pipelineWriterStep(db: LanePilotDatabase, runId: string, taskId: string): { runId: string; nodeId: string; stepKey?: string } | null {
   try {
-    const run = db.prepare("SELECT id FROM lane_pilot_wf_run WHERE workflow_id='lp-task-pipeline' AND link_run_id=? AND link_task_id=? ORDER BY created_at DESC, rowid DESC LIMIT 1").get(runId, taskId) as { id: string } | undefined;
+    const run = wfLatestPipelineRunId(db, runId, taskId);
     if (!run) return null;
-    const step = db.prepare("SELECT step_key FROM lane_pilot_wf_step WHERE run_id=? AND node_id='writer' ORDER BY visit DESC LIMIT 1").get(run.id) as { step_key: string } | undefined;
-    return { runId: run.id, nodeId: "writer", ...(step ? { stepKey: step.step_key } : {}) };
+    const stepKey = wfPipelineWriterStepKey(db, run);
+    return { runId: run, nodeId: "writer", ...(stepKey ? { stepKey } : {}) };
   } catch {
     return null;
   }

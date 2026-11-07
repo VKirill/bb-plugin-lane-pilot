@@ -1,3 +1,4 @@
+import { wfRunsByIdemPrefix } from "@lane-pilot/workflow-engine";
 import { projectRoleField } from "../../runs/server";
 import { claimDailySchedule, getActivation, getRun, listRunsWithAttempts, listStageReceipts, loadProjectSettings, loadPrototypeConfig } from "../../storage";
 import {bbServiceTier, providerLimitNotice, writerExecutionSelection} from "@lane-pilot/models";
@@ -943,7 +944,7 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
     const workflow=services.workflowEngine.resolveWorkflow(DOCS_MAINTENANCE);
     if(!workflow) throw new Error(`built-in workflow ${DOCS_MAINTENANCE} is not loaded`);
     const prefix=`docs-maintenance:${args.runId}:${args.taskId}:`;
-    const runs=db.prepare("SELECT idem_key, status FROM lane_pilot_wf_run WHERE idem_key LIKE ? ORDER BY created_at DESC").all(`${prefix}%`) as Array<{idem_key:string;status:string}>;
+    const runs=wfRunsByIdemPrefix(db, `${prefix}%`);
     const live=runs.find((row)=>row.status==="running"||row.status==="waiting");
     const key=live?.idem_key??`${prefix}${runs.length}`;
     const started=engine.start({workflow,key,link:{projectId:args.projectId,runId:args.runId,taskId:args.taskId},inputs:{run_id:args.runId,task_id:args.taskId,pm_thread_id:args.threadId}});

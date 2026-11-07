@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { cancelAttemptById } from "../../runs/server";
 import { taskFamily } from "../../runs";
-import { listOpenAttempts } from "../../storage";
+import { latestRunForPmThread, listOpenAttempts } from "../../storage";
 import { isWholeConsent, ownerWordsOn } from "../../tasks";
 import type { DrawingCritique } from "@lane-pilot/contracts";
 import { sha256Hex } from "@lane-pilot/kit";
@@ -47,7 +47,7 @@ export function installMethods(tools: MethodsTools) {
 
   async function open(input: { projectId: string; pmThreadId: string; title: string; goal: string; legacy?: boolean; roadmapRow?: string; rails?: boolean }): Promise<Phase> {
     const id = `ph_${randomUUID().replace(/-/g, "").slice(0, 10)}`;
-    const runId = (db.prepare("SELECT id FROM lane_pilot_run WHERE pm_thread_id=? ORDER BY created_at DESC LIMIT 1").get(input.pmThreadId) as { id: string } | undefined)?.id ?? null;
+    const runId = latestRunForPmThread(db, input.pmThreadId)?.id ?? null;
     insertPhase(db, { id, projectId: input.projectId, pmThreadId: input.pmThreadId, runId, title: input.title.slice(0, 200), goal: input.goal.slice(0, 4000), at: now() });
     const settings = await ctx.effectiveProjectSettings(input.projectId).then((result) => result.values as Record<string, unknown>, () => ({} as Record<string, unknown>));
     const ownerWords = ownerWordsOn(settings);

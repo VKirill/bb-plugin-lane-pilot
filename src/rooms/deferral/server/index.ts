@@ -5,3 +5,4 @@ export type { DeferInput, DeferralApi, DeferralList, DeferralView } from "../ser
 export { noTermDeferralsOf } from "../store";
 export { sdkOwnerMessagePort } from "../verify";
 export { deferralRpc } from "./rpc";
+export { countOpenDeferrals, countTermedDeferrals, listOpenDeferralBriefs } from "../store";

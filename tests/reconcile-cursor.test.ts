@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { reconcile, reconcileCursor } from "../src/rooms/stability";
 import type { IdempotencyTriple, ReconcilePort } from "../src/rooms/stability/reconcile";
 import { closeOrphanWriterStages, recordStage } from "../src/rooms/runs/server/stage-records";
+import { reconcileScanOpen } from "../src/rooms/stability/reconcile";
 import { createAttempt, createRun, getAttempt, openDatabase, saveTaskPlan, transitionAttempt } from "../src/rooms/plugin-db";
 
 const key: IdempotencyTriple = { lanePilotRunId: "run", lanePilotTaskId: "T1", attemptId: "a1" };
@@ -49,7 +50,7 @@ describe("reconcile cursor", () => {
     expect(saved).toBeGreaterThan(0);
 
     const db2 = new Database(db.name, { readonly: false });
-    expect(closeOrphanWriterStages(db2 as never, new Set())).toBe(0);
+    expect(closeOrphanWriterStages(db2 as never, new Set(), 0, Date.now(), (attemptId) => reconcileScanOpen(db2 as never, attemptId))).toBe(0);
     expect(getAttempt(db, "a1")?.state).toBe("empty_output");
     expect(getAttempt(db, "a1")?.reason ?? "").not.toContain("lost in a plugin reload");
 

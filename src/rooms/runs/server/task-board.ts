@@ -1,4 +1,5 @@
-import type { LanePilotDatabase } from "../../storage";
+import { createJournal, receiptThreadId, wfBoardRuns, wfCurrentNodeId } from "@lane-pilot/workflow-engine";
+import { getRun, getRunObjective, getTaskContractJson, getTaskPlan, laterFamilyAttemptTaskIds, listAttemptHistory, listBoardAttemptRows, listStageReceipts, type LanePilotDatabase } from "../../storage";
 import { taskFamily } from "../failure-class";
 
 /**
@@ -63,34 +64,18 @@ function waitsFor(reason: string | null): string[] {
 
 export function buildTaskBoard(db: LanePilotDatabase, input: { projectId?: string | null; doneSince: number; limit?: number; runIds?: readonly string[] }): BoardItem[] {
   const limit = input.limit ?? 400;
-  const runs = input.runIds?.length ? `AND a.run_id IN (${input.runIds.map(() => "?").join(",")})` : "";
-  const scope = `${input.projectId ? "AND r.project_id=?" : ""} ${runs}`;
-  const args = [...(input.projectId ? [input.projectId] : []), ...(input.runIds?.length ? input.runIds : [])];
-  const rawTasks = db.prepare(`SELECT a.id AS attempt_id, a.run_id, a.task_id, a.state, a.reason, a.thread_id, a.attempt_no, a.updated_at, a.created_at,
-      t.contract_json, r.project_id, r.pm_thread_id, r.closed_at, r.objective
-    FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
-    LEFT JOIN lane_pilot_task t ON t.id=a.task_id
-    WHERE a.attempt_no=(SELECT MAX(b.attempt_no) FROM lane_pilot_attempt b WHERE b.run_id=a.run_id AND b.task_id=a.task_id)
-      AND ((a.state IN ('queued','spawn_requested','spawn_unknown','running','cancel_requested') AND r.closed_at IS NULL) OR a.updated_at>=?) ${scope}
-      AND NOT EXISTS (SELECT 1 FROM lane_pilot_attempt c JOIN lane_pilot_run rc ON rc.id=c.run_id
-        WHERE rc.project_id=r.project_id AND c.created_at>=a.created_at AND substr(c.task_id,1,length(a.task_id)+1)=a.task_id || '.')
-    ORDER BY a.updated_at DESC LIMIT ?`).all(input.doneSince, ...args, limit) as Array<{
-    attempt_id: string; run_id: string; task_id: string; state: string; reason: string | null; thread_id: string | null; attempt_no: number;
-    updated_at: number; created_at: number; contract_json: string | null; project_id: string; pm_thread_id: string | null; closed_at: number | null; objective: string | null;
-  }>;
+  const rawTasks = listBoardAttemptRows(db, { projectId: input.projectId, runIds: input.runIds, doneSince: input.doneSince, limit });
   // A version the PM replaced is not on the board: the check above finds only `x.3.1`, and PMs number redos `x.4`, so a blocked
   // `vf-s1-xp.3` stayed «blocked» next to its accepted `vf-s1-xp.4` (Vampirism Fire, 2026-10-23).
-  const laterOfFamily = db.prepare(`SELECT c.task_id AS taskId FROM lane_pilot_attempt c JOIN lane_pilot_run rc ON rc.id=c.run_id
-    WHERE rc.project_id=? AND c.created_at>? AND c.task_id<>? AND c.task_id LIKE ? ESCAPE '\\'`);
   const tasks = rawTasks.filter((row) => {
     const family = taskFamily(row.task_id);
     const like = `${family.replace(/[\\%_]/g, (char) => `\\${char}`)}%`;
-    return !(laterOfFamily.all(row.project_id, row.created_at, row.task_id, like) as Array<{ taskId: string }>).some((other) => taskFamily(other.taskId) === family);
+    return !laterFamilyAttemptTaskIds(db, { projectId: row.project_id, createdAfter: row.created_at, excludeTaskId: row.task_id, taskIdLike: like })
+      .some((other) => taskFamily(other) === family);
   });
   const now = Date.now();
-  const stagesOf = db.prepare("SELECT stage_id, state, reason, model, updated_at FROM lane_pilot_stage_receipt WHERE run_id=? AND task_id=?");
   const items: BoardItem[] = tasks.map((row) => {
-    const stages = stagesOf.all(row.run_id, row.task_id) as Array<{ stage_id: string; state: string; reason: string | null; model: string | null; updated_at: number }>;
+    const stages = listStageReceipts(db, row.run_id, row.task_id).map((stage) => ({ stage_id: stage.stageId, state: stage.state, reason: stage.reason, model: stage.model, updated_at: stage.updatedAt }));
     const writer = stages.find((stage) => stage.stage_id === "writer-agent");
     const checking = stages.find((stage) => CHECK_STAGES.has(stage.stage_id) && stage.state === "running");
     const planning = stages.find((stage) => PLAN_STAGES.has(stage.stage_id) && stage.state === "running");
@@ -135,17 +120,12 @@ export function buildTaskBoard(db: LanePilotDatabase, input: { projectId?: strin
   });
   // Workflow runs the owner or a PM started (insights, research, reels...); a task's own pipeline run is part of the task above.
   // A board narrowed to some task runs has none.
-  const flows = input.runIds?.length ? [] : db.prepare(`SELECT id, workflow_id, definition_json, project_id, status, reason, created_at, updated_at FROM lane_pilot_wf_run
-    WHERE depth=0 AND link_task_id IS NULL AND (status NOT IN ('succeeded','canceled') OR updated_at>=?) ${input.projectId ? "AND project_id=?" : ""}
-    ORDER BY updated_at DESC LIMIT ?`).all(input.doneSince, ...(input.projectId ? [input.projectId] : []), limit) as Array<{
-    id: string; workflow_id: string; definition_json: string; project_id: string | null; status: string; reason: string | null; created_at: number; updated_at: number;
-  }>;
-  const currentStep = db.prepare("SELECT node_id FROM lane_pilot_wf_step WHERE run_id=? AND state IN ('running','waiting') ORDER BY rowid DESC LIMIT 1");
+  const flows = input.runIds?.length ? [] : wfBoardRuns(db, { projectId: input.projectId, doneSince: input.doneSince, limit });
   for (const row of flows) {
     const column: BoardColumn = row.status === "running" ? "running" : row.status === "waiting" ? "queued"
       : row.status === "succeeded" || row.status === "canceled" ? "done" : "blocked";
     const definition = parse(row.definition_json);
-    const step = column === "running" || column === "queued" ? (currentStep.get(row.id) as { node_id: string } | undefined)?.node_id ?? null : null;
+    const step = column === "running" || column === "queued" ? wfCurrentNodeId(db, row.id) : null;
     items.push({
       kind: "workflow", key: `workflow:${row.id}`, runId: row.id, taskId: null, title: nameOf(definition.name ?? definition.title, row.workflow_id), techTitle: row.workflow_id,
       taskKind: null, area: null, objective: null, projectId: row.project_id, pmThreadId: null, column, state: row.status, phase: "chain",
@@ -172,13 +152,10 @@ const strings = (value: unknown): string[] => (Array.isArray(value) ? value.filt
 /** What a card shows from the database; the thread tree is filled by the caller, which can ask BB for child threads. */
 export function readTaskCard(db: LanePilotDatabase, input: { runId: string; taskId: string | null }): (TaskCard & { roots: Array<{ id: string; role: string }> }) | null {
   if (input.taskId === null) {
-    const run = db.prepare("SELECT id, workflow_id, definition_json, project_id, status, reason FROM lane_pilot_wf_run WHERE id=?").get(input.runId) as
-      { id: string; workflow_id: string; definition_json: string; project_id: string | null; status: string; reason: string | null } | undefined;
+    const journal = createJournal(db);
+    const run = journal.getRun(input.runId);
     if (!run) return null;
-    const steps = db.prepare("SELECT step_key, node_id, state, error, receipt_json, rowid FROM lane_pilot_wf_step WHERE run_id=? ORDER BY rowid").all(run.id) as
-      Array<{ step_key: string; node_id: string; state: string; error: string | null; receipt_json: string | null }>;
-    const threadOf = (json: string | null) => { const found = /"threadId"\s*:\s*"(thr_[A-Za-z0-9]+)"/.exec(json ?? ""); return found?.[1] ?? null; };
-    const stageRows = steps.map((step) => ({ id: step.node_id, state: step.state, reason: clip(step.error), threadId: threadOf(step.receipt_json), model: null, updatedAt: 0 }));
+    const stageRows = journal.steps(run.id).map((step) => ({ id: step.node_id, state: step.state, reason: clip(step.error), threadId: receiptThreadId(step.receipt_json), model: null, updatedAt: 0 }));
     return {
       kind: "workflow", title: nameOf(parse(run.definition_json).name, run.workflow_id), techTitle: run.workflow_id, taskKind: null, area: null, objective: null,
       id: run.workflow_id, projectId: run.project_id, state: run.status, reason: clip(run.reason, 1000),
@@ -186,19 +163,18 @@ export function readTaskCard(db: LanePilotDatabase, input: { runId: string; task
       roots: stageRows.filter((row) => row.threadId).map((row) => ({ id: row.threadId!, role: row.id })),
     };
   }
-  const run = db.prepare("SELECT project_id, pm_thread_id, objective FROM lane_pilot_run WHERE id=?").get(input.runId) as { project_id: string; pm_thread_id: string | null; objective: string | null } | undefined;
-  const task = db.prepare("SELECT contract_json FROM lane_pilot_task WHERE id=?").get(input.taskId) as { contract_json: string } | undefined;
-  if (!run || !task) return null;
+  const run = getRun(db, input.runId);
+  const contractJson = input.taskId ? getTaskContractJson(db, input.taskId) : null;
+  if (!run || !contractJson) return null;
   let contract: Record<string, unknown> = {};
-  try { contract = JSON.parse(task.contract_json) as Record<string, unknown>; } catch { /* a broken contract still shows its stages */ }
-  const plan = db.prepare("SELECT plan FROM lane_pilot_task_plan WHERE task_id=?").get(input.taskId) as { plan?: string } | undefined;
-  const stages = (db.prepare("SELECT stage_id, state, reason, thread_id, model, updated_at FROM lane_pilot_stage_receipt WHERE run_id=? AND task_id=? ORDER BY updated_at").all(input.runId, input.taskId) as
-    Array<{ stage_id: string; state: string; reason: string | null; thread_id: string | null; model: string | null; updated_at: number }>)
+  try { contract = JSON.parse(contractJson) as Record<string, unknown>; } catch { /* a broken contract still shows its stages */ }
+  const plan = getTaskPlan(db, input.taskId);
+  const stages = listStageReceipts(db, input.runId, input.taskId)
+    .map((row) => ({ stage_id: row.stageId, state: row.state, reason: row.reason, thread_id: row.threadId, model: row.model, updated_at: row.updatedAt }))
     .map((row) => ({ id: row.stage_id, state: row.state, reason: clip(row.reason, 600), threadId: row.thread_id, model: row.model, updatedAt: row.updated_at }))
     // The pipeline's order (pm-read … acceptance-receipt), not the order of their last change: a reopened check is not «after» the writer.
     .sort((a, b) => stageOrder(a.id) - stageOrder(b.id));
-  const attempts = (db.prepare("SELECT id, attempt_no, state, reason, thread_id, created_at, updated_at FROM lane_pilot_attempt WHERE run_id=? AND task_id=? ORDER BY attempt_no").all(input.runId, input.taskId) as
-    Array<{ id: string; attempt_no: number; state: string; reason: string | null; thread_id: string | null; created_at: number; updated_at: number }>)
+  const attempts = listAttemptHistory(db, input.runId, input.taskId)
     .map((row) => ({ id: row.id, no: row.attempt_no, state: row.state, reason: clip(row.reason, 600), threadId: row.thread_id, createdAt: row.created_at, updatedAt: row.updated_at }));
   const last = attempts.at(-1);
   const roots = new Map<string, string>();
@@ -212,11 +188,11 @@ export function readTaskCard(db: LanePilotDatabase, input: { runId: string; task
       const kindValue = text(contract.kind) as TaskKind | null;
       return { title: display ?? tech, techTitle: display ? tech : null, taskKind: kindValue && KINDS.has(kindValue) ? kindValue : inferTaskKind(input.taskId!, tech) };
     })(),
-    area: text(contract.area), objective: clip(run.objective, 400), id: input.taskId, projectId: run.project_id,
+    area: text(contract.area), objective: clip(getRunObjective(db, input.runId), 400), id: input.taskId, projectId: run.project_id,
     state: last?.state ?? "queued", reason: last?.reason ?? null,
     contract: { objective: typeof contract.objective === "string" ? contract.objective : null, acceptance: strings(contract.acceptance), ownsPaths: strings(contract.owns_paths),
       expectedOutputs: strings(contract.expected_outputs), dependsOn: strings(contract.depends_on), checks },
-    plan: plan?.plan ?? null, stages, attempts, threads: null, pmThreadId: run.pm_thread_id,
+    plan, stages, attempts, threads: null, pmThreadId: run.pm_thread_id,
     roots: [...roots].map(([id, role]) => ({ id, role })),
   };
 }

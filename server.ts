@@ -51,7 +51,9 @@ import { mountAnamnesis } from "./src/rooms/anamnesis";
 import { mountWorldAssets } from "./src/rooms/world-assets/server";
 import { registerLaneWorktreeProvider } from "./src/rooms/native-agent/server";
 import { scheduleIsolated } from "./src/rooms/platform/server";
-import { DRAIN_SNAPSHOT_KEY, skipRedundantStartupScans } from "./src/rooms/stability/server";
+import { clearDrainSnapshot, readDrainSnapshot, skipRedundantStartupScans } from "./src/rooms/stability/server";
+import { tokenCursorRow, tokenDailyByModel } from "./src/rooms/usage/server";
+import type { TokenCursorReader } from "./src/rooms/work-graph/server";
 import { createWriterQuestionTimeout, DEFAULT_SILENCE_NUDGE_MIN, OPENCODE_WRITER_PROVIDER, sweepWriterSilence, sweepWriterWakes } from "./src/rooms/writer/server";
 import { threadPendingInteractions } from "./src/rooms/relay/server";
 import { createStageChildren, mountErrands } from "./src/rooms/qa/server";
@@ -147,6 +149,8 @@ export interface Services {
   bench: BenchApi;
   /** The task's checks on its base before a writer, and what turned red after the merge (src/rooms/baseline). */
   baseline: BaselineApi;
+  /** The usage room's token-cursor read (src/rooms/usage); rooms that cannot import usage get it here. */
+  tokenCursorRow: TokenCursorReader;
   /** Sends a task back to an earlier stage with a note (src/rooms/stage-return). */
   stageReturn: StageReturnApi;
   /** The regression pass: accepted tasks' checks on current main, bisect of the ones that went red (src/rooms/baseline). */
@@ -272,6 +276,7 @@ export default async function plugin(bb: BbPluginApi) {
   try { deferrals.seed(); } catch (cause) { bb.log.warn(`Lane Pilot: deferral seed skipped: ${cause instanceof Error ? cause.message : String(cause)}`); }
   const services = {} as Services;
   mountNativeWiring(ctx);
+  services.tokenCursorRow = tokenCursorRow;
   Object.assign(
     services,
     createReconcile(ctx, services),
@@ -382,7 +387,7 @@ export default async function plugin(bb: BbPluginApi) {
   mountMemoryEmbeddings(ctx);
   registerPhaseTool(ctx, services);
   registerQueueTool(ctx);
-  registerConversationTools(ctx);
+  registerConversationTools(ctx, { spendByModel: (projectId, day) => tokenDailyByModel(ctx.db, projectId, day) });
   mountPermits(ctx);
   mountForge(ctx, services);
   mountFront(ctx, services.front);
@@ -488,11 +493,11 @@ export default async function plugin(bb: BbPluginApi) {
         if (vk?.startReason) {
           bb.log.info(`Lane Pilot startup recovery: ${vk.startReason}${vk.afterDrain ? ", after a clean drain" : ""}`);
           await step("drain snapshot", async () => {
-            const snapshot = await bb.storage.kv.get<{ action?: string; clean?: boolean; inFlight?: unknown[] }>(DRAIN_SNAPSHOT_KEY);
+            const snapshot = await readDrainSnapshot(bb.storage.kv);
             if (snapshot) {
               bb.log.info(`Lane Pilot drain before this start: ${snapshot.action ?? "?"}, ${snapshot.clean ? "nothing in flight" : `${snapshot.inFlight?.length ?? 0} call(s) cut`}`);
               skipScans = skipRedundantStartupScans(vk, snapshot);
-              await bb.storage.kv.delete(DRAIN_SNAPSHOT_KEY);
+              await clearDrainSnapshot(bb.storage.kv);
             }
           });
           if (skipScans) bb.log.info("Lane Pilot startup recovery: run, worktree and parked-task scans left to their schedules after a clean drain");

@@ -49,3 +49,21 @@ export async function recordTaskWord(kv: Kv, runId: string, family: string, deci
   all[key] = [...(all[key] ?? []), { turn: "land" as const, decision, text, at: now }].slice(-10);
   await kv.set(TASK_WORDS_KEY, all as never);
 }
+
+/** The writer's approach note for a task (written when its attempt finishes; the cockpit's task card reads it). */
+export const taskApproachKey = (runId: string, taskId: string) => `lp.task.approach:${runId}:${taskId}`;
+export const taskQuestionsKey = (runId: string, taskId: string) => `lp.task.questions:${runId}:${taskId}`;
+
+export type TaskApproachNote = { approach: unknown; lesson: unknown; noLessonReason: unknown; referenceTestEdits: unknown; at: number };
+
+export async function recordTaskApproach(kv: Kv, runId: string, taskId: string, note: TaskApproachNote): Promise<void> {
+  await kv.set(taskApproachKey(runId, taskId), note as never);
+}
+
+export async function readTaskApproach(kv: { get(key: string): Promise<unknown> }, runId: string, taskId: string): Promise<unknown> {
+  return kv.get(taskApproachKey(runId, taskId));
+}
+
+export async function recordTaskQuestions(kv: Kv, runId: string, taskId: string, note: { questions: unknown; checkpoint: string | null; at: number }): Promise<void> {
+  await kv.set(taskQuestionsKey(runId, taskId), note as never);
+}

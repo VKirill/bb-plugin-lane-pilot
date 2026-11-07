@@ -1,4 +1,5 @@
-import { appendGateEvaluation, deleteStageReceipt, failureFieldsOf, getTaskPlan, listStageReceipts, openDatabase, saveStageReceipt, transitionAttempt } from "../../storage";
+import { wfLiveRunWithIdem } from "@lane-pilot/workflow-engine";
+import { appendGateEvaluation, countAttempts, deleteStageReceipt, failureFieldsOf, getTaskPlan, latestAttemptRow, listIdleAttemptsInStates, listOpenStageTasks, listStageReceipts, newestAttemptState, openDatabase, saveStageReceipt, stageReceiptState, transitionAttempt } from "../../storage";
 import { RETRY_ELIGIBLE } from "../state-machine";
 import type { AttemptState } from "../state-machine";
 import { sha256, stageTransition, validateStageReceipt } from "../../tasks";
@@ -118,32 +119,26 @@ export async function resetHelperStages(db:ReturnType<typeof openDatabase>, stop
  * before the parking of faulted tasks (task-reconcile.ts), so a lost retry is parked in the same pass. `idleMs` keeps
  * an attempt that moved more recently than that alone: the periodic pass must not meet a loop between two attempts.
  */
-export function closeOrphanWriterStages(db:ReturnType<typeof openDatabase>, active:ReadonlySet<string>, idleMs = 0, now = Date.now()): number {
+export function closeOrphanWriterStages(db:ReturnType<typeof openDatabase>, active:ReadonlySet<string>, idleMs = 0, now = Date.now(), scanOpen:(attemptId:string)=>boolean = () => false): number {
   // A retry-eligible attempt whose loop died before its stage receipts exist (a failed spawn, a reload in the gap)
   // is visible to no receipt row: close it or nothing ever will (seed 14, fault-injection).
-  for (const stray of db.prepare(`SELECT id, run_id, task_id, state, reason, failure_code, check_name, timeout_sec, updated_at FROM lane_pilot_attempt
-      WHERE state IN ('spawn_rejected','provider_error','timeout','empty_output','validation_failed')
-        AND updated_at < ?`).all(now - idleMs) as Array<{ id:string; run_id:string; task_id:string; state:string; reason:string|null; failure_code:string|null; check_name:string|null; timeout_sec:number|null; updated_at:number }>) {
+  for (const stray of listIdleAttemptsInStates(db, ["spawn_rejected","provider_error","timeout","empty_output","validation_failed"], now - idleMs)) {
     if (active.has(`${stray.run_id}:${stray.task_id}`)) continue;
-    const scanning = db.prepare("SELECT 1 AS n FROM lane_pilot_reconcile_cursor WHERE attempt_id=? LIMIT 1").get(stray.id) as { n:number } | undefined;
-    if (scanning) continue;
-    const newer = db.prepare(`SELECT state FROM lane_pilot_attempt WHERE run_id=? AND task_id=? ORDER BY rowid DESC LIMIT 1`).get(stray.run_id, stray.task_id) as { state:string } | undefined;
-    if (newer && ["accepted","blocked","canceled","queued","spawn_requested","spawn_unknown","running","cancel_requested"].includes(newer.state)) continue;
+    if (scanOpen(stray.id)) continue;
+    const newer = newestAttemptState(db, stray.run_id, stray.task_id);
+    if (newer && ["accepted","blocked","canceled","queued","spawn_requested","spawn_unknown","running","cancel_requested"].includes(newer)) continue;
     transitionAttempt(db, stray.id, "blocked", { reason:`${stray.reason ?? stray.state}; its retry was lost in a plugin reload`, ...failureFieldsOf({ failureCode: stray.failure_code, checkName: stray.check_name, timeoutSec: stray.timeout_sec }) });
   }
-  const rows = db.prepare(`SELECT DISTINCT s.run_id, s.task_id FROM lane_pilot_stage_receipt s
-    WHERE s.stage_id IN ('writer-agent','verification','acceptance-receipt','docs-maintenance') AND s.state IN ('pending','running')`).all() as Array<{ run_id:string; task_id:string }>;
+  const rows = listOpenStageTasks(db, ["writer-agent","verification","acceptance-receipt","docs-maintenance"], ["pending","running"]);
   let closed = 0;
   for (const row of rows) {
     if (active.has(`${row.run_id}:${row.task_id}`)) continue;
-    const latest = db.prepare(`SELECT id, state, reason, failure_code, check_name, timeout_sec, thread_id, updated_at FROM lane_pilot_attempt WHERE run_id=? AND task_id=? ORDER BY created_at DESC, attempt_no DESC LIMIT 1`)
-      .get(row.run_id, row.task_id) as { id:string; state:string; reason:string|null; failure_code:string|null; check_name:string|null; timeout_sec:number|null; thread_id:string|null; updated_at:number } | undefined;
+    const latest = latestAttemptRow(db, row.run_id, row.task_id);
     if (!latest || now - latest.updated_at < idleMs) continue;
     // A failed attempt waiting for its retry: the loop that would retry it died with a reload, and start-up recovery
     // resumes only attempts in flight. Nobody retries it, so it ends here and the PM decides.
     // A scan that died mid-page left its cursor. The next process continues it; ending the attempt here drops that retry.
-    const scanning = db.prepare("SELECT 1 AS n FROM lane_pilot_reconcile_cursor WHERE attempt_id=? LIMIT 1").get(latest.id) as { n:number } | undefined;
-    if (RETRY_ELIGIBLE.includes(latest.state as AttemptState) && !scanning) {
+    if (RETRY_ELIGIBLE.includes(latest.state as AttemptState) && !scanOpen(latest.id)) {
       const reason = `${latest.reason ?? latest.state}; its retry was lost in a plugin reload`;
       transitionAttempt(db, latest.id, "blocked", { reason, ...failureFieldsOf({ failureCode: latest.failure_code, checkName: latest.check_name, timeoutSec: latest.timeout_sec }) });
       latest.state = "blocked";
@@ -151,17 +146,15 @@ export function closeOrphanWriterStages(db:ReturnType<typeof openDatabase>, acti
     }
     if (!["accepted", "blocked", "canceled"].includes(latest.state)) continue;
     const terminal = latest.state === "accepted" ? "passed" : latest.state === "canceled" ? "canceled" : "failed";
-    const attempts = (db.prepare("SELECT count(*) AS n FROM lane_pilot_attempt WHERE run_id=? AND task_id=?").get(row.run_id, row.task_id) as { n:number }).n;
+    const attempts = countAttempts(db, row.run_id, row.task_id);
     closed += closeWriterStages(db, { runId:row.run_id, taskId:row.task_id, plan:getTaskPlan(db, row.task_id) ?? "", terminal, attempt:attempts,
       reason:latest.reason ?? `attempt ${latest.state}`, threadId:latest.thread_id });
     // A docs-maintenance receipt left open when its upkeep was lost (a reload mid-run, or a project whose schedule no
     // longer runs) ends, never as a success: pending -> canceled, running -> failed. A live lp.docs-maintenance graph
     // for the same run/task is joined by the hourly pass, so it is left alone.
-    const docs = db.prepare(`SELECT state, thread_id, updated_at FROM lane_pilot_stage_receipt WHERE run_id=? AND task_id=? AND stage_id='docs-maintenance'`).get(row.run_id, row.task_id) as { state:string; thread_id:string|null; updated_at:number } | undefined;
+    const docs = stageReceiptState(db, row.run_id, row.task_id, "docs-maintenance");
     if (docs && (docs.state === "pending" || docs.state === "running") && now - docs.updated_at >= idleMs) {
-      const live = db.prepare(`SELECT 1 AS live FROM lane_pilot_wf_run WHERE idem_key LIKE ? AND status IN ('running','waiting') LIMIT 1`)
-        .get(`docs-maintenance:${row.run_id}:${row.task_id}:%`);
-      if (!live) {
+      if (!wfLiveRunWithIdem(db, `docs-maintenance:${row.run_id}:${row.task_id}:%`)) {
         const state = docs.state === "pending" ? "canceled" : "failed";
         recordStage(db, { runId:row.run_id, taskId:row.task_id, stageId:"docs-maintenance", state, input:state, threadId:docs.thread_id,
           reason:"the docs upkeep was lost in a plugin reload; the hourly pass resumes it" });

@@ -107,3 +107,24 @@ export function countDeferrals(rows: readonly Deferral[]): Counts {
   for (const row of rows) counts[row.state] += 1;
   return counts;
 }
+
+/** Deferrals of a project still open (not closed). */
+export function countOpenDeferrals(db: DeferralDb, projectId: string): number {
+  return (db.prepare("SELECT COUNT(*) AS n FROM lane_pilot_deferral WHERE project_id=? AND closed_at IS NULL").get(projectId) as { n: number }).n;
+}
+
+/** Open deferrals' id/kind/title for a receipt (optionally of one project). */
+export function listOpenDeferralBriefs(db: DeferralDb, projectId?: string): Array<{ id: string; kind: string; title: string }> {
+  return db.prepare(`SELECT id, kind, what AS title FROM lane_pilot_deferral WHERE closed_at IS NULL ${projectId ? "AND project_id=?" : ""} LIMIT 50`)
+    .all(...(projectId ? [projectId] : [])) as Array<{ id: string; kind: string; title: string }>;
+}
+
+/** Deferrals with a human-given term, counted by due window and states. */
+export function countTermedDeferrals(db: DeferralDb, input: { dueBefore?: number; dueAtLeast?: number; states?: readonly string[] }): number {
+  const where = [`${HUMAN_TERM_SQL}`];
+  const args: unknown[] = [];
+  if (input.states?.length) { where.push(`state IN (${input.states.map(() => "?").join(",")})`); args.push(...input.states); }
+  if (input.dueBefore !== undefined) { where.push("due_at < ?"); args.push(input.dueBefore); }
+  if (input.dueAtLeast !== undefined) { where.push("due_at >= ?"); args.push(input.dueAtLeast); }
+  return (db.prepare(`SELECT count(*) AS n FROM lane_pilot_deferral WHERE ${where.join(" AND ")}`).get(...args) as { n: number }).n;
+}

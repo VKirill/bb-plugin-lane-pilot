@@ -1,4 +1,5 @@
 import type Database from "better-sqlite3";
+import { wfRunsOfWorkflow } from "@lane-pilot/workflow-engine";
 import { classKeyOf, logOrigin, logSignature, originOf, wallSignature, wfSignature } from "./signature";
 import { EMPTY_SOURCES, RUNGS, type Sources, type WallClass } from "./types";
 
@@ -149,7 +150,7 @@ export function graphRecurrence(db: WallDb, classKey: string, version: string, s
   const graph = db.prepare("SELECT reason_norm FROM lane_pilot_wall_class WHERE class_key=? AND failure_class='workflow'").get(classKey) as { reason_norm: string } | undefined;
   if (!graph) return undefined;
   const workflowId = graph.reason_norm.split(" ")[0]!;
-  const runs = db.prepare("SELECT status, reason FROM lane_pilot_wf_run WHERE workflow_id=? AND harness_version=? AND created_at>=? AND status NOT IN ('running','waiting','canceled')").all(workflowId, version, since) as Array<{ status: string; reason: string | null }>;
+  const runs = wfRunsOfWorkflow(db, workflowId, { harnessVersion: version, since });
   if (!runs.length) return null;
   return { attempts: runs.length, failures: runs.filter((run) => wfSignature(workflowId, run.status, run.reason).classKey === classKey).length, exposed: true };
 }

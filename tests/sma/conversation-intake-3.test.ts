@@ -7,6 +7,7 @@ import { createCore } from "../../src/rooms/core/server/core";
 import { mountLifecycleEvents } from "../../src/rooms/core/server/lifecycle-events";
 import { closeBacklogItem } from "../../src/rooms/host-worker/host-handlers";
 import { readThreadLive } from "../../src/rooms/runs/server/thread-live";
+import { tokenCursorRow } from "../../src/rooms/usage/server";
 import { createAttempt, createRun, createTask, openDatabase, setRunThread, transitionAttempt } from "../../src/rooms/plugin-db";
 import { createWriterDispatch } from "../../src/rooms/writer/server/dispatch";
 
@@ -20,11 +21,11 @@ describe("thread live and the granted reader", () => {
     createAttempt(db, { id: "attempt_live", runId: "run_live", taskId: "task_live" });
     transitionAttempt(db, "attempt_live", "spawn_requested");
     transitionAttempt(db, "attempt_live", "running", { threadId: "thr_writer" });
-    const pm = readThreadLive(db, "thr_pm");
+    const pm = readThreadLive(db, "thr_pm", tokenCursorRow);
     expect(pm?.items.map((item) => item.title)).toEqual(["Fix the door"]);
     expect(pm?.items[0]).toMatchObject({ column: "running", state: "running" });
     expect(JSON.stringify(pm)).not.toContain("hello from the chat");
-    expect(readThreadLive(db, "thr_unknown")).toBeNull();
+    expect(readThreadLive(db, "thr_unknown", tokenCursorRow)).toBeNull();
   });
 
   it("[sma:m_cf_tools] an absolute path or a .. path is refused before any host read", async () => {

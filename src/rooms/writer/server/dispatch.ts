@@ -9,7 +9,8 @@ import { QUALITY_MODE_SETTING, browserQaRequired, resolveQualityMode, taskQaPlan
 import { reserveAppetite, resolveBestOf } from "../best-of";
 import type { CodeCriticDefault } from "../../critique";
 import { saveCriticCodeDefault } from "./critic-override";
-import { getRunObjective, setRunObjective, createAttempt, createTask, freeTaskId, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getRunWriterHost, getTask, getTaskGitBase, getTaskPlan, latestTaskAttemptState, listAttemptsForTask, listOpenAttempts, listRunsWithAttempts, listStageReceipts, listTaskKinds, listTaskTerminalStates, loadProjectSettings, saveTaskPlan, setRunState, taskBasePath, transitionAttempt } from "../../storage";
+import { wfLivePipelineRun, wfRunInputsByKey } from "@lane-pilot/workflow-engine";
+import { getRunObjective, setRunObjective, createAttempt, createTask, freeTaskId, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getRunWriterHost, getTask, getTaskGitBase, getTaskPlan, latestTaskAttemptState, getTaskRow, hasFailedStageReceipt, listAttemptsForTask, listAttemptsUpdatedSince, listOpenAttempts, listRunsWithAttempts, listRunTaskRows, listStageReceipts, listTaskKinds, listTaskTerminalStates, loadProjectSettings, saveTaskPlan, setRunState, taskBasePath, transitionAttempt } from "../../storage";
 import { sha256 , spendReserve, type BirthKind } from "../../tasks";
 import { liveFolderLockNote, nextStep, taskFamily } from "../../runs";
 import { commonTaskFolder, isMainfixTask, isTaskBase, parseRepoTop, planWithOutsideReads, repoTopCommand, rerootTask } from "../../tasks";
@@ -122,15 +123,14 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
 
   /** An open or accepted task of this run with the same id, contract and plan, created in the last 30 minutes. */
   function findLiveDuplicate(runId:string, requestedId:string, contract:TaskV2, plan:string): Record<string,unknown>|null {
-    const row = db.prepare("SELECT contract_json, created_at FROM lane_pilot_task WHERE id=? AND run_id=?").get(requestedId, runId) as
-      {contract_json:string; created_at:number}|undefined;
+    const row = getTaskRow(db, requestedId, runId);
     if (!row || Date.now() - row.created_at > DISPATCH_IDEMPOTENT_WINDOW_MS) return null;
     if (canonicalJson(JSON.parse(row.contract_json)) !== canonicalJson({ ...contract, id:requestedId })) return null;
     if (sha256(getTaskPlan(db, requestedId) ?? "") !== sha256(plan)) return null;
     const latest = listAttemptsForTask(db, runId, requestedId).at(-1);
     // A task that ended blocked or canceled is dispatched again under a new id, as before. One without an attempt yet is still in preflight.
     if (latest ? ["blocked", "canceled"].includes(latest.state)
-      : db.prepare("SELECT 1 FROM lane_pilot_stage_receipt WHERE run_id=? AND task_id=? AND state IN ('blocked','failed') LIMIT 1").get(runId, requestedId)) return null;
+      : hasFailedStageReceipt(db, runId, requestedId)) return null;
     return { runId, taskId:requestedId, attemptId:latest?.id ?? null, writerThreadId:latest?.thread_id ?? null, state:latest?.state ?? "queued", deduplicated:true,
       stages:listStageReceipts(db, runId, requestedId),
       note:"This task id with the same contract and plan was already dispatched in the last 30 minutes; this is that task, nothing new was created. Poll lane_pilot_wait_writer or end your turn; Lane Pilot sends you the results." };
@@ -141,15 +141,14 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
    * task's id substituted) and the same plan hash inside the idempotent window; terminal blocked/canceled tasks are
    * dispatched again as new work, as in findLiveDuplicate. */
   function findContentDuplicate(runId:string, requestedId:string, contract:TaskV2, plan:string): Record<string,unknown>|null {
-    const rows = db.prepare("SELECT id, contract_json, created_at FROM lane_pilot_task WHERE run_id=?").all(runId) as
-      Array<{id:string; contract_json:string; created_at:number}>;
+    const rows = listRunTaskRows(db, runId);
     for (const row of rows) {
       if (row.id === requestedId || Date.now() - row.created_at > DISPATCH_IDEMPOTENT_WINDOW_MS) continue;
       if (canonicalJson(JSON.parse(row.contract_json)) !== canonicalJson({ ...contract, id:row.id })) continue;
       if (sha256(getTaskPlan(db, row.id) ?? "") !== sha256(plan)) continue;
       const latest = listAttemptsForTask(db, runId, row.id).at(-1);
       if (latest ? ["blocked", "canceled"].includes(latest.state)
-        : db.prepare("SELECT 1 FROM lane_pilot_stage_receipt WHERE run_id=? AND task_id=? AND state IN ('blocked','failed') LIMIT 1").get(runId, row.id)) continue;
+        : hasFailedStageReceipt(db, runId, row.id)) continue;
       return { runId, taskId:row.id, attemptId:latest?.id ?? null, writerThreadId:latest?.thread_id ?? null, state:latest?.state ?? "queued", deduplicated:true,
         stages:listStageReceipts(db, runId, row.id),
         note:`The same contract and plan is already task ${row.id}, dispatched in the last 30 minutes under that id; this is that task, nothing new was created. Poll lane_pilot_wait_writer or end your turn; Lane Pilot sends you the results.` };
@@ -367,8 +366,7 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
    */
   function recentTaskSummary(runId:string) {
     const since = Date.now() - 3 * 3600_000;
-    const rows = db.prepare(`SELECT task_id, state, reason, updated_at, created_at FROM lane_pilot_attempt WHERE run_id=? AND updated_at>=? ORDER BY created_at`)
-      .all(runId, since) as Array<{ task_id:string; state:string; reason:string|null; updated_at:number; created_at:number }>;
+    const rows = listAttemptsUpdatedSince(db, runId, since);
     const latest = new Map(rows.map((row) => [row.task_id, row]));
     const tasks = [...latest.values()].filter((row) => row.updated_at >= since).sort((a, b) => b.updated_at - a.updated_at).slice(0, 40).map((row) => {
       const writer = listStageReceipts(db, runId, row.task_id).find((stage) => stage.stageId === "writer-agent");
@@ -386,7 +384,7 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
   const qaRunsInGraph = (runId:string, taskId:string):boolean => {
     if (!taskQaPlan(taskV2Schema.safeParse(getTask(db, taskId)?.contract).data)) return false;
     if (listStageReceipts(db, runId, taskId).some((row) => row.stageId === "browser-qa" && ["passed", "failed", "blocked", "skipped"].includes(row.state))) return false;
-    return Boolean(db.prepare("SELECT 1 FROM lane_pilot_wf_run WHERE workflow_id='lp-task-pipeline' AND link_run_id=? AND link_task_id=? AND status IN ('running','waiting')").get(runId, taskId));
+    return wfLivePipelineRun(db, runId, taskId);
   };
 
   /**
@@ -578,8 +576,7 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
     const attempt = getAttempt(db, attemptId);
     if (!attempt || attempt.state !== "queued" || attempt.thread_id || attempt.reason !== DISPATCH_STAGES_PENDING) return { resumed:false, why:"the attempt no longer waits for its stages" };
     const key = dispatchRunKey(attemptId);
-    const pipelines = db.prepare("SELECT inputs_json FROM lane_pilot_wf_run WHERE idem_key=? OR idem_key LIKE ? ORDER BY created_at")
-      .all(key, `${key}:resume-%`) as Array<{ inputs_json:string }>;
+    const pipelines = wfRunInputsByKey(db, key, `${key}:resume-%`).map((inputs_json) => ({ inputs_json }));
     if (!pipelines.length) return { resumed:false, why:"its dispatch left no pipeline record" };
     if (pipelines.length > MAX_DISPATCH_RESUMES) return { resumed:false, why:`reloads interrupted it ${pipelines.length} times` };
     // The base is taken once per task; one already taken means the stages were past it, a moment before the writer.

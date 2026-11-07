@@ -1,6 +1,7 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import { readThreadLive } from "../src/rooms/runs/server/thread-live";
+import { tokenCursorRow } from "../src/rooms/usage/server";
 import { createAttempt, createRun, createTask, openDatabase, setRunThread } from "../src/rooms/plugin-db";
 
 /** The thread's info panel asks what Lane Pilot does for a chat: a PM sees its tasks, a writer its own task, any other thread nothing. */
@@ -17,16 +18,16 @@ describe("what Lane Pilot does for a thread", () => {
   db.prepare("INSERT INTO lane_pilot_stage_event(project_id,run_id,task_id,stage_id,state,input_sha256,attempt,occurred_at) VALUES ('P','run','a','writer-agent','running','x',0,?)").run(Date.now());
 
   it("a PM chat sees the tasks of its own runs, with their stage cells", () => {
-    const live = readThreadLive(db, "thr_pm")!;
+    const live = readThreadLive(db, "thr_pm", tokenCursorRow)!;
     expect(live.role).toBe("pm");
     expect(live.items.map((item) => item.taskId).sort()).toEqual(["a", "b"]);
     expect(live.strips["run:a"]!.cells.map((cell) => `${cell.stageId}:${cell.state}`)).toEqual(["writer-agent:running"]);
   });
 
   it("a writer thread sees only its task; a thread Lane Pilot has no part in gets null", () => {
-    const live = readThreadLive(db, "thr_writer_a")!;
+    const live = readThreadLive(db, "thr_writer_a", tokenCursorRow)!;
     expect(live).toMatchObject({ role: "writer", pmThreadId: "thr_pm" });
     expect(live.items.map((item) => item.taskId)).toEqual(["a"]);
-    expect(readThreadLive(db, "thr_owner_chat")).toBeNull();
+    expect(readThreadLive(db, "thr_owner_chat", tokenCursorRow)).toBeNull();
   });
 });

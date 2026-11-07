@@ -100,3 +100,56 @@ export function listTaskKinds(db: LanePilotDatabase, runId: string): Array<"bb"|
   return (db.prepare("SELECT kind FROM lane_pilot_task WHERE run_id=?").all(runId) as Array<{kind:"bb"|"cli"}>)
     .map((row) => row.kind);
 }
+
+/** The PM's closing words on a canceled task (lane_pilot_cancel_task words). */
+export function setTaskClosedWords(db: LanePilotDatabase, taskId: string, words: string): void {
+  db.prepare("UPDATE lane_pilot_task SET closed_words=? WHERE id=?").run(words, taskId);
+}
+
+/** The date a queued task is held until (HOLD_FOREVER = until released); null when it is not held. */
+export function taskHeldUntil(db: LanePilotDatabase, taskId: string): number | null {
+  return (db.prepare("SELECT held_until FROM lane_pilot_task WHERE id=?").get(taskId) as { held_until: number | null } | undefined)?.held_until ?? null;
+}
+
+/** Hold or release a task of a run; false when the task is not of this run. */
+export function setTaskHeldUntil(db: LanePilotDatabase, taskId: string, runId: string, until: number | null): boolean {
+  return Boolean(db.prepare("UPDATE lane_pilot_task SET held_until=? WHERE id=? AND run_id=?").run(until, taskId, runId).changes);
+}
+
+/** The stored contract JSON of a task, optionally checked against its run. */
+export function getTaskContractJson(db: LanePilotDatabase, taskId: string, runId?: string): string | null {
+  const row = (runId === undefined
+    ? db.prepare("SELECT contract_json FROM lane_pilot_task WHERE id=?").get(taskId)
+    : db.prepare("SELECT contract_json FROM lane_pilot_task WHERE id=? AND run_id=?").get(taskId, runId)) as { contract_json: string } | undefined;
+  return row?.contract_json ?? null;
+}
+
+/** Rewrite a task's stored contract JSON in place. */
+export function updateTaskContractJson(db: LanePilotDatabase, taskId: string, runId: string, contractJson: string): void {
+  db.prepare("UPDATE lane_pilot_task SET contract_json=? WHERE id=? AND run_id=?").run(contractJson, taskId, runId);
+}
+
+/** A task's row under its run (the PM's dispatch dedupe reads it). */
+export function getTaskRow(db: LanePilotDatabase, taskId: string, runId: string): { contract_json: string; created_at: number } | undefined {
+  return db.prepare("SELECT contract_json, created_at FROM lane_pilot_task WHERE id=? AND run_id=?").get(taskId, runId) as
+    { contract_json: string; created_at: number } | undefined;
+}
+
+/** Every task row of a run with its stored contract, birth and dispatch time. */
+export function listRunTaskRows(db: LanePilotDatabase, runId: string): Array<{ id: string; contract_json: string; created_at: number; birth: string | null }> {
+  return db.prepare("SELECT id, contract_json, created_at, birth FROM lane_pilot_task WHERE run_id=?").all(runId) as
+    Array<{ id: string; contract_json: string; created_at: number; birth: string | null }>;
+}
+
+/** The task ids of a run. */
+export function listTaskIdsForRun(db: LanePilotDatabase, runId: string): string[] {
+  return (db.prepare("SELECT id FROM lane_pilot_task WHERE run_id=?").all(runId) as Array<{ id: string }>).map((row) => row.id);
+}
+
+/** The run's board: each task with its display or technical title and its latest attempt's state. */
+export function listRunTaskSummaries(db: LanePilotDatabase, runId: string, limit = 60): Array<{ taskId: string; title: string; state: string | null }> {
+  return db.prepare(`SELECT t.id AS taskId, COALESCE(json_extract(t.contract_json,'$.display_title'), json_extract(t.contract_json,'$.title')) AS title,
+    (SELECT a.state FROM lane_pilot_attempt a WHERE a.task_id=t.id ORDER BY a.created_at DESC LIMIT 1) AS state
+    FROM lane_pilot_task t WHERE t.run_id=? ORDER BY t.created_at DESC LIMIT ?`).all(runId, limit) as
+    Array<{ taskId: string; title: string; state: string | null }>;
+}

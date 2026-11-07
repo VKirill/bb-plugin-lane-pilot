@@ -5,7 +5,7 @@ import { registerBrowserExecutors, runBrowserQaGraph } from "../../qa/server";
 import { cancelAttemptById, cleanupFinishedAttemptEnvironments, cleanupStickyLaneWorktrees } from "../../runs/server";
 import { LANE_PILOT_READ_NAME } from "@lane-pilot/kit";
 import { taskV2Schema } from "../../contracts";
-import { getRun, getRunSettingsScopes, listOpenAttempts, listStageReceipts, loadProjectSettings, loadPrototypeConfig, noteToldPmDirectly } from "../../storage";
+import { getRun, getRunSettingsScopes, listEndedTaskIds, listOpenAttempts, listStageReceipts, loadProjectSettings, loadPrototypeConfig, noteToldPmDirectly, setTaskClosedWords } from "../../storage";
 import { finalizeNativeLaneBinding, nativeRunReady, ownedNativePmRun, writerWorkspaceForPmInstructions } from "../../native-agent";
 import { NATIVE_LP_BRIDGE_PM_TOOLS } from "../../native-agent";
 import { readGateReport } from "../../tasks/gate-report";
@@ -167,7 +167,7 @@ export function registerTools(ctx: ServerCore, services: Services, familyContrib
         for (const attempt of attempts) results.push({ taskId, attemptId:attempt.id, ...await cancelAttemptById(ctx, attempt.id, services.rollback, why, "owner_cancel") });
         // The PM canceled it: its «canceled» is no news for the batched results.
         noteToldPmDirectly(db, context.threadId, taskId, Date.now() + 5 * 60_000);
-        if (params.words) db.prepare("UPDATE lane_pilot_task SET closed_words=? WHERE id=?").run(params.words, taskId);
+        if (params.words) setTaskClosedWords(db, taskId, params.words);
       }
       return JSON.stringify({ runId, results });
     },
@@ -238,9 +238,7 @@ export function registerTools(ctx: ServerCore, services: Services, familyContrib
       }
       const waited = await services.waitWriter({ threadId:context.threadId, projectId:context.projectId, runId:params.runId, timeoutSec:params.timeoutSec });
       // The receipt shows the PM every task's state: those already ended are no news for the batched results.
-      const ended = db.prepare(`SELECT DISTINCT task_id AS taskId FROM lane_pilot_attempt a WHERE run_id=? AND state IN ('accepted','blocked','canceled')
-        AND attempt_no=(SELECT MAX(b.attempt_no) FROM lane_pilot_attempt b WHERE b.run_id=a.run_id AND b.task_id=a.task_id)`).all(params.runId) as Array<{ taskId:string }>;
-      for (const row of ended) noteToldPmDirectly(db, context.threadId, row.taskId);
+      for (const taskId of listEndedTaskIds(db, params.runId)) noteToldPmDirectly(db, context.threadId, taskId);
       return JSON.stringify(compactWaitResult(waited));
     },
   });
