@@ -1,6 +1,31 @@
 import type { ServerCore } from "../../contracts/server";
-import type { Services } from "../../platform/server";
+
 import type { PhaseReactions } from "./reactions";
+
+
+import type { RegressionApi } from "../../baseline/server/regress";
+import type { RollbackApi } from "../../rollback/server/rollback";
+import type { RunGoalApi } from "../../run-goal/server/run-goal";
+import type { WallApi } from "../../wall/service";
+import type { WorkflowEngineApi } from "../../workflow/server/workflow";
+import type { WriterDispatchApi } from "../../writer/server/dispatch";
+import type { WriterStateApi } from "../../writer/server/state";
+
+import type { DocsNightlyApi } from "../../docs/server/docs-nightly";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  dispatchWriter: WriterDispatchApi["dispatchWriter"];
+  docsPlaces: DocsNightlyApi["docsPlaces"];
+  readWriterWorkspaceFile: WriterDispatchApi["readWriterWorkspaceFile"];
+  regression: RegressionApi;
+  rollback: RollbackApi;
+  runBudgets: WriterStateApi["runBudgets"];
+  runGoal: RunGoalApi;
+  wall: WallApi;
+  workflowCatalog: WorkflowEngineApi["workflowCatalog"];
+  workflowEngine: WorkflowEngineApi["workflowEngine"];
+}
 
 export class PhaseRefusal extends Error {
   constructor(message: string, readonly why: string[] = []) { super(message); }

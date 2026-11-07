@@ -15,11 +15,29 @@ import {
   saveTaskPlan,
   updateTaskContract,
 } from "../../storage";
+
+import type { WorkflowEngineApi } from "../../workflow/server/workflow";
+
+import type { BaselineApi } from "../../baseline/server/baseline";
+import type { StabilityApi } from "../../stability/server/stability";
+import type { WriterSpawnApi } from "./spawn";
+import type { WriterStartApi } from "./start";
+import type { WriterStateApi } from "./state";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  activeWriterTasks: WriterStateApi["activeWriterTasks"];
+  baseline: BaselineApi;
+  isLiveFolder: WriterSpawnApi["isLiveFolder"];
+  stability: StabilityApi;
+  startWriterTask: WriterStartApi["startWriterTask"];
+  workflowEngine: WorkflowEngineApi["workflowEngine"];
+}
 import { lintReply } from "../../tasks/server";
 import { createTaskLinter } from "../../tasks/server";
 import { markTaskSatisfied, reopenWriterStages } from "../../runs/server";
 import type { ServerCore } from "../../contracts/server";
-import type { Services } from "../../platform/server";
+
 import { validateTaskV2 } from "../../tasks/task-v2";
 import { applyTrustedTooling } from "../../tasks";
 import { planWithOutsideReads, rerootTask } from "../../tasks";

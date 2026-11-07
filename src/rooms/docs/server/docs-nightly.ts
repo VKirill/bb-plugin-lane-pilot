@@ -21,7 +21,18 @@ import { sleepUntilThreadSignal, threadWatchMark, waitThreadIdle } from "@lane-p
 import { basename, resolve } from "node:path";
 import { abortable, scheduleIsolated } from "../../platform/server";
 import type { ServerCore } from "../../contracts/server";
-import type { Services } from "../../platform/server";
+
+import type { DocsStageApi } from "./docs";
+import type { WorkflowEngineApi } from "../../workflow/server/workflow";
+import type { WriterHostApi } from "../../writer/server/writer-host";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  resolveProjectWriterHost: WriterHostApi["resolveProjectWriterHost"];
+  runDocsMaintenance: DocsStageApi["runDocsMaintenance"];
+  workflowEngine: WorkflowEngineApi["workflowEngine"];
+}
+
 
 /** Runs the work it is given one after another, in the order it was given; a failure does not stop the queue. */
 export function createSerialQueue():<T>(work:()=>Promise<T>)=>Promise<T> {
@@ -1050,3 +1061,5 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
 
   return { registerDocsGraphs, docsPlaces, docsVerdict, docsPlaceStatus, docsLastRead, runNightlyDocs };
 }
+
+export type DocsNightlyApi = ReturnType<typeof createDocsNightly>;

@@ -30,7 +30,58 @@ import { createWriterAnswer } from "../../writer/server";
 import { createWriterReassign, createWriterUpdateTask } from "../../writer/server";
 import { z } from "zod";
 import type { ServerCore } from "../../contracts/server";
-import type { Services } from "../../platform/server";
+
+import type { CouncilApi } from "../../council/server/council";
+import type { MemoryStageApi } from "../../memory/server/memory";
+import type { NightStagesApi } from "../../night/server/night";
+import type { PhaseIntake } from "../../phase/server/intake";
+import type { QaStagesApi } from "../../qa/server/qa";
+import type { RollbackApi } from "../../rollback/server/rollback";
+import type { StabilityApi } from "../../stability/server/stability";
+import type { WorkflowEngineApi } from "../../workflow/server/workflow";
+import type { WriterDispatchApi } from "../../writer/server/dispatch";
+
+import type { DocsNightlyApi } from "../../docs/server/docs-nightly";
+import type { LeadApi } from "../../lead/server/service";
+import type { PhaseApi } from "../../phase/server/driver";
+import type { ScheduleService } from "../../schedule/server/schedule-service";
+import type { WorkflowTriggersApi } from "../../workflow/server/workflow-triggers-live";
+import type { WriterStateApi } from "../../writer/server/state";
+
+import type { BaselineApi } from "../../baseline/server/baseline";
+import type { WriterSpawnApi } from "../../writer/server/spawn";
+
+import type { WriterStartApi } from "../../writer/server/start";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  activeWriterTasks: WriterStateApi["activeWriterTasks"];
+  baseline: BaselineApi;
+  council: CouncilApi;
+  dispatchWriter: WriterDispatchApi["dispatchWriter"];
+  docsPlaces: DocsNightlyApi["docsPlaces"];
+  ingestOpenCodeTelemetry: QaStagesApi["ingestOpenCodeTelemetry"];
+  isLiveFolder: WriterSpawnApi["isLiveFolder"];
+  lead: LeadApi;
+  phaseIntake: PhaseIntake;
+  phases: PhaseApi;
+  providerBreaker: WriterStateApi["providerBreaker"];
+  readWriterWorkspaceFile: WriterDispatchApi["readWriterWorkspaceFile"];
+  rollback: RollbackApi;
+  runBrowserQa: QaStagesApi["runBrowserQa"];
+  runBudgetFor: WriterStateApi["runBudgetFor"];
+  runBudgets: WriterStateApi["runBudgets"];
+  runMemoryContext: MemoryStageApi["runMemoryContext"];
+  runWorkspaceStatus: NightStagesApi["runWorkspaceStatus"];
+  schedules: ScheduleService;
+  stability: StabilityApi;
+  startWriterTask: WriterStartApi["startWriterTask"];
+  waitWriter: WriterDispatchApi["waitWriter"];
+  workflowCatalog: WorkflowEngineApi["workflowCatalog"];
+  workflowEngine: WorkflowEngineApi["workflowEngine"];
+  workflowTriggers: WorkflowTriggersApi["workflowTriggers"];
+}
+
 
 /**
  * What the PM gets back from lane_pilot_wait_writer: per stage only task, stage, state and reason, and strings cut

@@ -1,7 +1,7 @@
 import type { NodeExecutor } from "@lane-pilot/workflow-engine";
 import { jev, type JevSettings } from "@lane-pilot/jev";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
-import { modelCatalogOf, readProviderFolderBlock, resolveSpawnModel, scheduleIsolated, spawnUsageOf, warmSpawnUsage, type Services } from "../../platform/server";
+import { modelCatalogOf, readProviderFolderBlock, resolveSpawnModel, scheduleIsolated, spawnUsageOf, warmSpawnUsage } from "../../platform/server";
 import { type ServerCore } from "../../contracts/server";
 import { builtinWorkflow } from "../../workflow";
 import type { ChainRuntime } from "../../workflow/server";
@@ -9,6 +9,19 @@ import {
   chooseProcessKey, errandFailureJudgment, sweepErrandEpisodes,
   ERRAND_EPISODE_TABLE, ERRAND_EPISODE_TRACE_EVENTS, type EpisodeEnrichDeps,
 } from "../../errands";
+
+import type { HarnessApi } from "../../harness/server/harness";
+import type { RuleScanApi } from "../../self-repair/server/rule-scan";
+import type { WorkflowEngineApi } from "../../workflow/server/workflow";
+import type { WriterHostApi } from "../../writer/server/writer-host";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  harness: HarnessApi;
+  resolveProjectWriterHost: WriterHostApi["resolveProjectWriterHost"];
+  ruleScan: RuleScanApi;
+  workflowEngine: WorkflowEngineApi["workflowEngine"];
+}
 
 export const EPISODES_WORKFLOW = "lp.episodes";
 export const EPISODES_SCHEDULE = "episodes-hourly";

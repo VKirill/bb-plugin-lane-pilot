@@ -60,3 +60,5 @@ export function createStageChildren(ctx: ServerCore) {
 
   return { reconcileStageChild, reconcileDocsChild, reconcileProjectLifeChild, projectLifeTaskSummary };
 }
+
+export type StageChildrenApi = ReturnType<typeof createStageChildren>;

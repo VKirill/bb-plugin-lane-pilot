@@ -1,7 +1,14 @@
-import type { Services } from "../../platform/server";
+
 import type { ServerCore } from "../../contracts/server";
 import type { FailureClass } from "../../runs";
 import { onAttemptFinished } from "./attempt-finished";
+
+import type { StabilityApi } from "../../stability/server/stability";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  stability: StabilityApi;
+}
 
 /**
  * MERGER: this file belongs to src/rooms/stability. Move it there and call

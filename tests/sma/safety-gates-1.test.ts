@@ -9,7 +9,7 @@ import { setConveyor } from "../../src/rooms/conveyor";
 import { internalIds, parityGaps, UNSHOWN_FIELDS } from "../../src/rooms/guard-tools";
 import { capOf, moneyHold, spendBook } from "../../src/rooms/money";
 import { createCore } from "../../src/rooms/core/server/core";
-import type { Services } from "../../src/rooms/platform/server";
+import type { Services } from "../../server";
 import { createPhaseDriver } from "../phase-driver";
 import { planSignature, type PlanItem } from "../../src/rooms/phase/logic";
 import { savePhase } from "../../src/rooms/phase/store";

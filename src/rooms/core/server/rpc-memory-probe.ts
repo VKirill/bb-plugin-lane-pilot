@@ -1,6 +1,13 @@
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import type { rpcContract } from "../../contracts";
-import type { Services } from "../../platform/server";
+
+import type { MemoryProbeApi } from "../../memory-probe/server/memory-probe";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  memoryProbe: MemoryProbeApi;
+}
+
 
 /** `bb plugin rpc call lane-pilot memory_probe`: the memory probe (src/rooms/memory-probe/server/memory-probe.ts) for callers that have no CLI. */
 export function memoryProbeRpc(services: Services) {

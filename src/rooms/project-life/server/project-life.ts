@@ -12,7 +12,15 @@ import { recordStage } from "../../runs/server";
 import { stringAt, valueAt } from "@lane-pilot/kit";
 import { observeStageChild } from "@lane-pilot/thread-observe";
 import type { ServerCore } from "../../contracts/server";
-import type { Services } from "../../platform/server";
+
+import type { StageChildrenApi } from "../../qa/server/children";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  projectLifeTaskSummary: StageChildrenApi["projectLifeTaskSummary"];
+  reconcileProjectLifeChild: StageChildrenApi["reconcileProjectLifeChild"];
+}
+
 
 export function createProjectLifeStage(ctx: ServerCore, services: Services) {
   const { acceptedTaskWorkspace, bb, configForRun, db, host, workspaceExecutionEnvironment } = ctx;
@@ -242,3 +250,5 @@ export function createProjectLifeStage(ctx: ServerCore, services: Services) {
 
   return { runProjectLifeMaintenance };
 }
+
+export type ProjectLifeStageApi = ReturnType<typeof createProjectLifeStage>;

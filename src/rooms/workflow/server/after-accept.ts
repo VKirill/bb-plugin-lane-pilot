@@ -5,7 +5,18 @@ import { AFTER_ACCEPT, builtinWorkflow } from "../builtin";
 import { requireGreen } from "./require-green";
 import type { NodeExecutor, StepContext, WorkflowEngine } from "@lane-pilot/workflow-engine";
 import type { ServerCore } from "../../contracts/server";
-import type { Services } from "../../platform/server";
+
+import type { MemoryStageApi } from "../../memory/server/memory";
+import type { ProjectLifeStageApi } from "../../project-life/server/project-life";
+import type { WriterSpawnApi } from "../../writer/server/spawn";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  isLiveFolder: WriterSpawnApi["isLiveFolder"];
+  runMemoryMaintenance: MemoryStageApi["runMemoryMaintenance"];
+  runProjectLifeMaintenance: ProjectLifeStageApi["runProjectLifeMaintenance"];
+}
+
 
 /**
  * The graph `lp.after-accept` (workflows/lp.after-accept.json): once a task is accepted, the memory maintainer and the project-life

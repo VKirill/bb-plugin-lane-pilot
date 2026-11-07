@@ -1,4 +1,11 @@
-import type { Services } from "../../platform/server";
+
+import type { ScheduleService } from "../../schedule/server/schedule-service";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  schedules: ScheduleService;
+}
+
 
 /**
  * Acting through schedules (roadmap §2.5, class `schedule`, `acts_via: schedule` in policy/lead-policy.json). A proposal of that class

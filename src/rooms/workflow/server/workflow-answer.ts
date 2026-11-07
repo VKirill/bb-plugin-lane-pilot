@@ -1,8 +1,15 @@
 import type { GraphNode, Workflow } from "@lane-pilot/workflow-engine";
 import { closeOwnerItem } from "../../owner-waiting";
 import type { ServerCore } from "../../contracts/server";
-import type { Services } from "../../platform/server";
+
 import { humanOptions, humanOutput, workflowQuestionKey } from "./workflow-executors";
+
+import type { WorkflowEngineApi } from "./workflow";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  workflowEngine: WorkflowEngineApi["workflowEngine"];
+}
 
 /**
  * The owner's answer to a question of a workflow run that has no PM chat to show a form in (the question is a line of his list:

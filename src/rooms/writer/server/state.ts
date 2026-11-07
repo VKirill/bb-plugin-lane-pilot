@@ -67,3 +67,5 @@ export function createWriterState(ctx: ServerCore) {
 
   return { activeWriterTasks, runWriterPool, providerBreaker, providerUsage, providerRetry, concurrencyLimit, runBudgets, runBudgetFor };
 }
+
+export type WriterStateApi = ReturnType<typeof createWriterState>;

@@ -24,7 +24,21 @@ import { id, stringAt, valueAt } from "@lane-pilot/kit";
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import { rpcContract } from "../../../contracts";
 import type { ServerCore } from "../../../contracts/server";
-import type { Services } from "../../../platform/server";
+
+import type { ActivationApi } from "../../../native-agent/server/activation";
+import type { RollbackApi } from "../../../rollback/server/rollback";
+import type { ReconcileApi } from "../../../stability/server/reconcile";
+import type { WriterHostApi } from "../../../writer/server/writer-host";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  activate: ActivationApi["activate"];
+  listedAgentProfiles: WriterHostApi["listedAgentProfiles"];
+  resolveProjectWriterHost: WriterHostApi["resolveProjectWriterHost"];
+  resumeOrphans: ReconcileApi["resumeOrphans"];
+  rollback: RollbackApi;
+}
+
 
 export function runsRpc(ctx: ServerCore, services: Services) {
   const { bb, cancelQueuedAttempt, db, effectiveProjectSettings, nativeInstaller, ownedAgents } = ctx;

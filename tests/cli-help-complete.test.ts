@@ -3,7 +3,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { migrations, openDatabase } from "../src/rooms/plugin-db";
 import { createCore } from "../src/rooms/core/server/core";
 import { registerCli } from "../src/rooms/tools/server/cli";
-import type { Services } from "../src/rooms/platform/server";
+import type { Services } from "../server";
 
 // 2026-11-02: regress-close was missing from the help, and a PM told the owner a quarantine could not be lifted.
 it("the help of an unknown command names every registered command", async () => {

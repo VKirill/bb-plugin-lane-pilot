@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { createRun, openDatabase, setRunThread } from "../../src/rooms/plugin-db";
 import type { LanePilotDatabase } from "../../src/rooms/plugin-db";
 import type { ServerCore } from "../../src/rooms/contracts/server";
-import type { Services } from "../../src/rooms/platform/server";
+import type { Services } from "../../server";
 import { automationsOverRpc, createWorkflowTriggers, desiredSchedules, triggerScript } from "../../src/rooms/workflow/server/workflow-triggers";
 import type { AutomationsPort, TriggerDeps } from "../../src/rooms/workflow/server/workflow-triggers";
 import { cronProblem, timezoneProblem } from "@lane-pilot/workflow-engine/ui";

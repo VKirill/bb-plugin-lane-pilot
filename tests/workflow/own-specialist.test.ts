@@ -7,7 +7,7 @@ import { collectCapabilities, parseWorkflow, validateWorkflow } from "@lane-pilo
 import { roleSpec } from "../../src/rooms/workflow/server/workflow-agent";
 import { createWorkflowArchitect } from "../../src/rooms/workflow/server/workflow-architect";
 import type { ArchitectDeps } from "../../src/rooms/workflow/server/workflow-architect";
-import type { Services } from "../../src/rooms/platform/server";
+import type { Services } from "../../server";
 import { migrations } from "../../src/rooms/plugin-db";
 
 /** A node `role: "specialist:<id>"` names any bundled specialist or agent the owner created; one that does not exist fails validation. */

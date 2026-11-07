@@ -2,9 +2,16 @@ import { routeIntent, stems, type Workflow } from "@lane-pilot/workflow-engine";
 import { skillCatalog, type ListedSkill } from "@lane-pilot/jev/judgments/skill-pick";
 import { builtinWorkflows } from "../../workflow";
 import { candidateNames, readSkillTreeText, skillTreeCached, type SkillTree } from "../../writer/server";
-import type { Services } from "../../platform/server";
+
 import type { ServerCore } from "../../contracts/server";
 import type { ProcessForm } from "./tick";
+
+import type { WorkflowEngineApi } from "../../workflow/server/workflow";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  workflowCatalog: WorkflowEngineApi["workflowCatalog"];
+}
 
 /**
  * Stream G/R8: the nearest catalog units of a graphless group and the form hypothesis. The graphs come from the same

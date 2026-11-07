@@ -11,8 +11,16 @@ import type { Workflow } from "@lane-pilot/workflow-engine";
 import type { StoredWorkflow, WorkflowStore } from "../../storage";
 import type { ServerCore } from "../../contracts/server";
 import { isPmChat } from "../../native-agent/server";
-import type { Services } from "../../platform/server";
+
 import { SCHEDULE_RUN_KEY_PREFIX, type ChainRuntime } from "./workflow-runtime";
+
+import type { WorkflowEngineApi } from "./workflow";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  workflowCatalog: WorkflowEngineApi["workflowCatalog"];
+  workflowEngine: WorkflowEngineApi["workflowEngine"];
+}
 
 /**
  * Starting a workflow other than through the router (W9): the Run button of the tab, a schedule (a BB automation that calls

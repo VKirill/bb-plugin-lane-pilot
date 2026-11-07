@@ -1,10 +1,19 @@
 import type { NodeExecutor, StepContext } from "@lane-pilot/workflow-engine";
 import { CRITIC_EDIT_TRIAL_KEY, criticEditGate, criticEditTrialOn, criticEditTrialSettle, criticPromptProposal, criticStats } from "../../critique";
 import { judgeSharedTrial, TRIAL_DEFAULTS } from "../../harness/server";
-import { scheduleIsolated, type Services } from "../../platform/server";
+import { scheduleIsolated } from "../../platform/server";
 import { type ServerCore } from "../../contracts/server";
 import { builtinWorkflow } from "../../workflow";
 import type { ChainRuntime } from "../../workflow/server";
+
+import type { BenchApi } from "../../bench/service";
+import type { WorkflowEngineApi } from "../../workflow/server/workflow";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  bench: BenchApi;
+  workflowEngine: WorkflowEngineApi["workflowEngine"];
+}
 
 /**
  * `lp.critic-edit` (workflows/lp.critic-edit.json): once a month, a proposal from critic calibration. The trial flag

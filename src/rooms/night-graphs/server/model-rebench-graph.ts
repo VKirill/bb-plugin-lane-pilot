@@ -1,10 +1,17 @@
 import { randomUUID } from "node:crypto";
 import type Database from "better-sqlite3";
 import type { NodeExecutor, StepContext } from "@lane-pilot/workflow-engine";
-import { scheduleIsolated, type Services } from "../../platform/server";
+import { scheduleIsolated } from "../../platform/server";
 import { type ServerCore } from "../../contracts/server";
 import { builtinWorkflow } from "../../workflow";
 import type { ChainRuntime } from "../../workflow/server";
+
+import type { WorkflowEngineApi } from "../../workflow/server/workflow";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  workflowEngine: WorkflowEngineApi["workflowEngine"];
+}
 
 export const MODEL_REBENCH_WORKFLOW = "lp.model-rebench";
 export const MODEL_REBENCH_SCHEDULE = "model-rebench-monthly";

@@ -3,8 +3,15 @@ import { runOnHost } from "@lane-pilot/host-calls";
 import { builtinWorkflow } from "../../workflow";
 import { fenceOutside, spawnTextId } from "../../platform/server";
 import { getRun } from "../../storage";
-import type { Services } from "../../platform/server";
+
 import type { ServerCore } from "../../contracts/server";
+
+import type { WorkflowEngineApi } from "../../workflow/server/workflow";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  workflowEngine: WorkflowEngineApi["workflowEngine"];
+}
 
 /**
  * A specialist's work is a run of the built-in graph `specialist` (workflows/specialist.json): the PM's `lane_pilot_specialist` starts it and

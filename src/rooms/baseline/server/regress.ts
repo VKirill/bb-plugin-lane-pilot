@@ -1,13 +1,19 @@
 import { relative } from "node:path";
 import { getAttempt, getTask, listCheckDurations, listStageReceipts, taskBasePath } from "../../storage";
 import type { RollbackApi, RollbackItem, RollbackTarget } from "../../rollback/server";
-import { scheduleIsolated, type Services } from "../../platform/server";
+import { scheduleIsolated } from "../../platform/server";
 import { type ServerCore } from "../../contracts/server";
 import { readingFrom, readingNote } from "../../verification";
 import {
   bisectCommand, bisectStepsFor, estimateSec, messageOwner, parseRegressSettings, planChecks,
   type RegressSettings, type VerificationItem,
 } from "../logic";
+
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  rollback: RollbackApi;
+}
 import {
   closeRegression, getRegression, insertPass, insertRegression, lastPass, listRegressions, openRegression, releaseSettlement, settledByHand, touchRegression,
   type RegressionRecord,

@@ -5,9 +5,27 @@ import type { GoalAudit } from "@lane-pilot/workflow-engine";
 import type { Field } from "@lane-pilot/workflow-engine";
 import { redactKnown } from "@lane-pilot/kit";
 import type { ServerCore } from "../../contracts/server";
-import type { Services } from "../../platform/server";
+
 import type { WorkflowAgents } from "./workflow-agent";
 import { chainRuntimeFor } from "./workflow-executors";
+
+
+import type { DocsNightlyApi } from "../../docs/server/docs-nightly";
+import type { WorkflowTriggersApi } from "./workflow-triggers-live";
+import type { WriterDispatchApi } from "../../writer/server/dispatch";
+
+import type { StabilityApi } from "../../stability/server/stability";
+
+import type { WorkflowEngineApi } from "./workflow";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  dispatchWriter: WriterDispatchApi["dispatchWriter"];
+  docsPlaces: DocsNightlyApi["docsPlaces"];
+  stability: StabilityApi;
+  workflowEngine: WorkflowEngineApi["workflowEngine"];
+  workflowTriggers: WorkflowTriggersApi["workflowTriggers"];
+}
 
 const FIELDS: Field[] = [
   { name: "verdicts", type: "array", required: true, ref: "GoalVerdict", description: "one entry per goal: { id, met (true or false), evidence (what in the run's results shows it, quoted or named), gap (what is missing when met is false) }" },

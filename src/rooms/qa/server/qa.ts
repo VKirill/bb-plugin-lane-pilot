@@ -368,3 +368,5 @@ export function createQaStages(ctx: ServerCore) {
 
   return { runBrowserQa, resumeBrowserQaThreads, ingestOpenCodeTelemetry };
 }
+
+export type QaStagesApi = ReturnType<typeof createQaStages>;

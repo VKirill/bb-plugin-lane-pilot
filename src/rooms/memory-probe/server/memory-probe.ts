@@ -14,7 +14,13 @@ import { adoptRuleProposal, deleteMemoryRecord, memorySettingsFor, retireAdopted
 import { HARNESS_VERSION, loadPrototypeConfig } from "../../storage";
 import { DRILL_SANDBOX_PROJECT_IDS } from "../../stability/server";
 import type { ServerCore } from "../../contracts/server";
-import type { Services } from "../../platform/server";
+
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+
+}
+
 
 /**
  * The memory probe (SMA block 4, P0-3): does the memory the project holds reach the agent of each delivery path?
@@ -224,3 +230,5 @@ export function judge(entry: MemoryPath, probe: Probe, tokens: Record<ProbeKind,
   return { path: entry.id, found: missing.length === 0, negativeOk, latencyMs, detail };
 }
 
+
+export type MemoryProbeApi = ReturnType<typeof createMemoryProbe>;

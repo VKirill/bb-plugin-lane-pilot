@@ -1,7 +1,7 @@
 import { runOnHost } from "@lane-pilot/host-calls";
 import { waitThreadIdle } from "@lane-pilot/thread-observe";
 import { taskV2Schema } from "../../contracts";
-import { fullAccessSpawn, type Services } from "../../platform/server";
+import { fullAccessSpawn } from "../../platform/server";
 import { stringAt } from "@lane-pilot/kit";
 import { type ServerCore } from "../../contracts/server";
 import { cancelAttemptById, finishRunSafely } from "../../runs/server";
@@ -17,6 +17,20 @@ import { pageReviewByAgent } from "../../critique/server";
 import { judgeTrace } from "../jevals";
 import { ensureSealedSets } from "../critique-set";
 import { jev } from "@lane-pilot/jev";
+
+import type { ActivationApi } from "../../native-agent/server/activation";
+import type { WriterDispatchApi } from "../../writer/server/dispatch";
+
+import type { WorkflowEngineApi } from "../../workflow/server/workflow";
+import type { WriterHostApi } from "../../writer/server/writer-host";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  activate: ActivationApi["activate"];
+  dispatchWriter: WriterDispatchApi["dispatchWriter"];
+  listedAgentProfiles: WriterHostApi["listedAgentProfiles"];
+  workflowEngine: WorkflowEngineApi["workflowEngine"];
+}
 
 /** The bench inside the plugin: the machines through `runCommand`, the pipeline through the plugin's own services. */
 const listProjects = async (bb: ServerCore["bb"]): Promise<Array<{ id: string; name: string }>> => {

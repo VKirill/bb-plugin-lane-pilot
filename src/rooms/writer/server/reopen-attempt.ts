@@ -6,11 +6,20 @@ import { closeWriterStages, reopenWriterStages } from "../../runs/server";
 import { stringAt } from "@lane-pilot/kit";
 import { NEEDS_HUMAN_MARKER } from "./writer-task";
 import type { ServerCore } from "../../contracts/server";
-import type { Services } from "../../platform/server";
+
 import { saveFollowUp } from "./sticky";
 import { writerLeftWorktree } from "./left-worktree";
 import { runOnHost } from "@lane-pilot/host-calls";
 import { sendServiceMessage } from "../../relay/server";
+
+import type { WriterStartApi } from "./start";
+import type { WriterStateApi } from "./state";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  activeWriterTasks: WriterStateApi["activeWriterTasks"];
+  startWriterTask: WriterStartApi["startWriterTask"];
+}
 
 /** A blocked attempt whose reason is the writer's own question, not a fault. */
 const NEEDS_HUMAN_REASON = /^needs_human:/i;

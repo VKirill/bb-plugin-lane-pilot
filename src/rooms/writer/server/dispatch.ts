@@ -28,11 +28,32 @@ import { reviveCanceledTask } from "./revive";
 import { countRunNudges } from "./writer-silence";
 import { isAbsolute, relative, resolve } from "node:path";
 import type { ServerCore } from "../../contracts/server";
-import type { Services } from "../../platform/server";
+
 import { runOnHost } from "@lane-pilot/host-calls";
 import { pollPause } from "@lane-pilot/kit";
 import { pmRulesOf } from "../../learning";
 import { logRulesShown } from "@lane-pilot/run-insights";
+
+import type { StabilityApi } from "../../stability/server/stability";
+import type { WallApi } from "../../wall/service";
+import type { WorkflowEngineApi } from "../../workflow/server/workflow";
+import type { WriterSpawnApi } from "./spawn";
+import type { WriterStartApi } from "./start";
+import type { WriterStateApi } from "./state";
+
+import type { BaselineApi } from "../../baseline/server/baseline";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  activeWriterTasks: WriterStateApi["activeWriterTasks"];
+  baseline: BaselineApi;
+  isLiveFolder: WriterSpawnApi["isLiveFolder"];
+  runBudgets: WriterStateApi["runBudgets"];
+  stability: StabilityApi;
+  startWriterTask: WriterStartApi["startWriterTask"];
+  wall: WallApi;
+  workflowEngine: WorkflowEngineApi["workflowEngine"];
+}
 
 /** How long a dispatch waits for its stages before it answers «queued» and lets them go on in the background. */
 const dispatchAnswerMs = () => {
@@ -590,3 +611,5 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
 
   return { readWriterWorkspaceFile, dispatchWriter, waitWriter, resumeDispatch };
 }
+
+export type WriterDispatchApi = ReturnType<typeof createWriterDispatch>;

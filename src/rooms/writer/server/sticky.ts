@@ -7,7 +7,7 @@ import { stringAt } from "@lane-pilot/kit";
 import { sleepUntilThreadSignal, threadWatchMark } from "@lane-pilot/thread-observe";
 import { resolve } from "node:path";
 import type { ServerCore } from "../../contracts/server";
-import type { Services } from "../../platform/server";
+
 import { sendServiceMessage } from "../../relay/server";
 import { isWriterStreamError } from "./writer-task";
 import { markAttemptStart } from "./attempt-marker";
@@ -16,6 +16,17 @@ import { buildCapsule, capsuleRestored } from "../../session-hooks";
 import { judgeSessionDigest } from "../session-digest";
 import { jev } from "@lane-pilot/jev";
 import { listThreadEventsRaw } from "@lane-pilot/thread-observe";
+
+import type { HarnessApi } from "../../harness/server/harness";
+import type { RollbackApi } from "../../rollback/server/rollback";
+import type { WriterSpawnApi } from "./spawn";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  harness: HarnessApi;
+  rollback: RollbackApi;
+  workspaceDirt: WriterSpawnApi["workspaceDirt"];
+}
 
 /**
  * Sticky writers: an area's writer thread takes the area's next task, and a task-side failure is redone in the thread

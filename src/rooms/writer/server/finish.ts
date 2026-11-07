@@ -27,7 +27,7 @@ import type { StageId } from "../../tasks";
 import { THREAD_WATCH_EVENT_TYPES, listThreadEventsRaw, sleepUntilThreadSignal, startLimitWaiting, threadFailure, threadWatchMark, waitThreadIdle } from "@lane-pilot/thread-observe";
 import { resolve } from "node:path";
 import type { ServerCore } from "../../contracts/server";
-import type { Services } from "../../platform/server";
+
 import { clearFollowUpCancelled, followUpCancelled, loadFollowUp } from "./sticky";
 import { askGuestsToCommit } from "./checkout-guests";
 import { shouldMergeAttemptWorktree } from "./spawn";
@@ -48,6 +48,29 @@ import { emitAttemptFinished, type AttemptFinished } from "./attempt-finished";
 import { mountWriterAttemptFinished } from "./attempt-reactions";
 import { mountVerificationAttemptFinished } from "./verification";
 import { mountRuleFormsAttemptFinished } from "./rule-forms";
+
+import type { RollbackApi } from "../../rollback/server/rollback";
+import type { WriterSpawnApi } from "./spawn";
+import type { WriterStateApi } from "./state";
+import type { WriterVerifyApi } from "./verify";
+
+import type { BaselineApi } from "../../baseline/server/baseline";
+import type { PromotionServiceApi } from "../../rule-forms/promotion-service";
+import type { WriterDispatchApi } from "./dispatch";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  baseline: BaselineApi;
+  dispatchWriter: WriterDispatchApi["dispatchWriter"];
+  persistWriterAcceptance: WriterVerifyApi["persistWriterAcceptance"];
+  promotions: PromotionServiceApi;
+  providerBreaker: WriterStateApi["providerBreaker"];
+  rollback: RollbackApi;
+  runBudgetFor: WriterStateApi["runBudgetFor"];
+  runVerification: WriterVerifyApi["runVerification"];
+  validateWriterResult: WriterVerifyApi["validateWriterResult"];
+  workspaceDirt: WriterSpawnApi["workspaceDirt"];
+}
 
 export { postMergeRepair } from "./verification";
 
@@ -1005,3 +1028,5 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
 
   return { finishWriterAttempt, ...verification };
 }
+
+export type WriterFinishApi = ReturnType<typeof createWriterFinish>;

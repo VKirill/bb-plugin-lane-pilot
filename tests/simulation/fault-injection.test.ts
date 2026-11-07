@@ -5,7 +5,7 @@ import type { PrototypeConfig, TaskV2 } from "../../src/rooms/contracts";
 import { createAttempt, createRun, createTask, getAttempt, listOpenAttempts, openDatabase, savePrototypeConfig, saveTaskPlan, setAttemptWorkspace, setRunThread, transitionAttempt } from "../../src/rooms/plugin-db";
 import { createCore } from "../../src/rooms/core/server/core";
 import { attemptMergeMessage, clearMergeIntent, recordMergeIntent, type RunOnHost } from "../../src/rooms/verification/server/merge-intent";
-import type { Services } from "../../src/rooms/platform/server";
+import type { Services } from "../../server";
 import { createStability } from "../../src/rooms/stability/server/stability";
 import { recordStage } from "../../src/rooms/runs/server/stage-records";
 import { createTaskReconcile } from "../../src/rooms/runs/server/task-reconcile";

@@ -7,7 +7,16 @@ import { reopenWriterStages } from "../../runs/server/stage-records";
 import { isRunHalted, isRunPaused } from "../../runs/server/runs-halt";
 import { conveyorState } from "../../conveyor";
 import type { ServerCore } from "../../contracts/server";
-import type { Services } from "../../platform/server";
+
+import type { ReconcileApi } from "./reconcile";
+import type { WriterStateApi } from "../../writer/server/state";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  activeWriterTasks: WriterStateApi["activeWriterTasks"];
+  enqueueResumedWriter: ReconcileApi["enqueueResumedWriter"];
+}
+
 
 const VERSION: string = packageJson.version;
 export const PARKED_KEY = "stability:parked";
@@ -361,3 +370,5 @@ export function createStability(ctx:ServerCore, services:Services) {
 
   return { stability:{ drill, onTaskFailed, breakerHolds, diskHolds, sweep, loadParked, dropParked, adoptBlockedByFaults, restoreBreakers } };
 }
+
+export type StabilityApi = ReturnType<typeof createStability>["stability"];

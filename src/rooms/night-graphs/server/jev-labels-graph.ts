@@ -3,12 +3,23 @@ import { applyOutcomeLabels } from "@lane-pilot/jev";
 import { planModelLabels, modelLabelPrompt, compareModelDecision, modelLabelable } from "@lane-pilot/jev";
 import { recordOutcome } from "@lane-pilot/jev";
 import { listJudgments } from "@lane-pilot/jev";
-import { scheduleIsolated, type Services } from "../../platform/server";
+import { scheduleIsolated } from "../../platform/server";
 import { type ServerCore } from "../../contracts/server";
 import { builtinWorkflow } from "../../workflow";
 import type { ChainRuntime } from "../../workflow/server";
 import { runGraphHelper } from "../../workflow/server";
 import { sweepFailureClassOutcomes, sweepInvoiceCheckOutcomes, sweepPlanFactOutcomes, sweepRouteWorkflowOutcomes, sweepWriterModelOutcomes } from "../../runs";
+
+import type { RuleScanApi } from "../../self-repair/server/rule-scan";
+import type { WorkflowEngineApi } from "../../workflow/server/workflow";
+import type { WriterHostApi } from "../../writer/server/writer-host";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  resolveProjectWriterHost: WriterHostApi["resolveProjectWriterHost"];
+  ruleScan: RuleScanApi;
+  workflowEngine: WorkflowEngineApi["workflowEngine"];
+}
 
 export const JEV_LABELS_WORKFLOW = "lp.jev-labels";
 export const JEV_LABELS_SCHEDULE = "jev-labels-nightly";

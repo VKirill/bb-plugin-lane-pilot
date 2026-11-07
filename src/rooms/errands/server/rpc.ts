@@ -1,10 +1,17 @@
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
 import type { rpcContract } from "../../contracts";
-import type { Services } from "../../platform/server";
+
 import type { ServerCore } from "../../contracts/server";
 import { errandsDiagnosis } from "../diagnosis";
 import { kindsOverview, listErrands } from "../logic";
+
+import type { WorkflowEngineApi } from "../../workflow/server/workflow";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  workflowCatalog: WorkflowEngineApi["workflowCatalog"];
+}
 
 /** The «Errands» page reads one call: the kinds (model in force at the global level, the period's counts) and the period's errand runs. */
 export function errandsRpc(ctx: ServerCore, services: Services) {

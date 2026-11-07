@@ -1,11 +1,18 @@
 import { z } from "zod";
-import { registerObservedTool, type Services } from "../../platform/server";
+import { registerObservedTool } from "../../platform/server";
 import { ToolError, type ServerCore } from "../../contracts/server";
 import { taskV2Schema } from "../../contracts";
 import { PhaseRefusal } from "./driver";
 import { autoDue } from "./auto-stages";
 import { STAGE_RUBRICS } from "../stages";
 import { WORD_TURNS } from "../logic";
+
+import type { PhaseApi } from "./driver";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  phases: PhaseApi;
+}
 
 /**
  * A PM often sends a list, an object, a number or a yes/no as JSON text ("[\"a.md\"]"), mostly when the tool's schema came

@@ -66,3 +66,5 @@ export function createNightStages(ctx: ServerCore) {
 
   return { runWorkspaceStatus };
 }
+
+export type NightStagesApi = ReturnType<typeof createNightStages>;

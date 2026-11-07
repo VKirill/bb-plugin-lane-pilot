@@ -2,8 +2,15 @@ import { createHash } from "node:crypto";
 import { markMechanized, ruleProposalId, LESSON_SAME_RULE } from "@lane-pilot/run-insights";
 import { getActivation } from "../storage";
 import { scheduleIsolated } from "../platform/server";
-import type { Services } from "../platform/server";
+
 import type { ServerCore } from "../contracts/server";
+
+import type { WriterDispatchApi } from "../writer/server/dispatch";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  dispatchWriter: WriterDispatchApi["dispatchWriter"];
+}
 export type PromotionServiceApi = ReturnType<typeof createPromotionService>;
 import { acceptPromotion, dismissPromotion, listPromotions, type PromotionRow } from "./promotion";
 import type { LanePilotDatabase } from "../storage";

@@ -4,7 +4,7 @@ import { getRuleProposal, logRuleEvent, setRuleTrial } from "@lane-pilot/run-ins
 import { adoptRuleProposal, lanePilotProjectOrNotice } from "../self-repair/server";
 import { isSandboxProjectName } from "../stability/server";
 import { postOwnerItem } from "../owner-waiting";
-import { registeredTools, scheduleIsolated, type Services } from "../platform/server";
+import { registeredTools, scheduleIsolated } from "../platform/server";
 import { type ServerCore } from "../contracts/server";
 import { builtinWorkflow } from "../workflow";
 import type { ChainRuntime } from "../workflow/server";
@@ -14,6 +14,17 @@ import { decideReplay, replayLine, type ArmVerdict } from "./decide";
 import { armId, armPrompt, pmSurfaceTools } from "./surface";
 import { stageBundle, runScenario } from "./runner";
 import { getScenario, insertResult, insertScenario, latestVerdicts, linkScenariosToRule, listScenarios, replayStats, retireScenario } from "./store";
+
+import type { RuleScanApi } from "../self-repair/server/rule-scan";
+import type { WorkflowEngineApi } from "../workflow/server/workflow";
+import type { WriterHostApi } from "../writer/server/writer-host";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  resolveProjectWriterHost: WriterHostApi["resolveProjectWriterHost"];
+  ruleScan: RuleScanApi;
+  workflowEngine: WorkflowEngineApi["workflowEngine"];
+}
 
 export const PM_REPLAY_WORKFLOW = "lp.pm-replay";
 export const PM_REPLAY_SCHEDULE = "pm-replay-nightly";

@@ -1,10 +1,19 @@
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
-import type { Services } from "../../platform/server";
+
 import type { ServerCore } from "../../contracts/server";
 import { taskFamily } from "../../runs";
 import { deleteStageReceipt, getAttempt, getTaskGitBase, listAttemptsForTask, listStageReceipts, reviveCanceledAttempt } from "../../storage";
 import { isMainfixTask } from "../../tasks";
 import { recordStage } from "../../runs/server";
+
+import type { WriterStartApi } from "./start";
+import type { WriterStateApi } from "./state";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  activeWriterTasks: WriterStateApi["activeWriterTasks"];
+  startWriterTask: WriterStartApi["startWriterTask"];
+}
 
 /**
  * A replan used to cancel the queue and send every task again as `<id>.N`: a new task, a new attempt row and a new pm-read and plan critique

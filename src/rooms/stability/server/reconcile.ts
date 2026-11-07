@@ -12,7 +12,18 @@ import { stringAt } from "@lane-pilot/kit";
 import { findThreadsByMetadata } from "../../platform/server";
 import type { ServerCore } from "../../contracts/server";
 import type { ReconcilePort } from "../reconcile";
-import type { Services } from "../../platform/server";
+
+import type { RollbackApi } from "../../rollback/server/rollback";
+import type { WriterDispatchApi } from "../../writer/server/dispatch";
+import type { WriterStartApi } from "../../writer/server/start";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  resumeDispatch: WriterDispatchApi["resumeDispatch"];
+  rollback: RollbackApi;
+  startWriterTask: WriterStartApi["startWriterTask"];
+}
+
 
 export function createReconcile(ctx: ServerCore, services: Services) {
   const { acceptedTaskWorkspace, bb, configForRun, db, refreshRun } = ctx;
@@ -270,3 +281,5 @@ export function createReconcile(ctx: ServerCore, services: Services) {
 
   return { recoverLostHolderThread, enqueueResumedWriter, reconcileAttemptThread, resumeOrphans };
 }
+
+export type ReconcileApi = ReturnType<typeof createReconcile>;

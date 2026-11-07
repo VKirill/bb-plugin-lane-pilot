@@ -4,7 +4,7 @@ import { fullAccessSpawn, modelCatalogOf, resolveSpawnModel, scheduleIsolated } 
 import { stringAt } from "@lane-pilot/kit";
 import { pickHunter, type WallConfig } from "../config";
 import { conveyorState } from "../../conveyor";
-import type { Services } from "../../platform/server";
+
 import type { ServerCore } from "../../contracts/server";
 import { createAttempt, getAttempt } from "../../storage";
 import { projectRoleField, reopenWriterStages } from "../../runs/server";
@@ -27,6 +27,23 @@ import type { HuntOutcome } from "../pack";
 import { WALL_HUNT_WORKFLOW, createWall, type RepairView, type Scope, type ThreadRun, type WallApi, type WallPorts } from "../service";
 import { jev } from "@lane-pilot/jev";
 import { withoutSelectionMarkers } from "@lane-pilot/kit";
+
+import type { BenchApi } from "../../bench/service";
+import type { DeferralApi } from "../../deferral/service";
+import type { Canary } from "../../stability/server/canary";
+import type { ReconcileApi } from "../../stability/server/reconcile";
+import type { WorkflowEngineApi } from "../../workflow/server/workflow";
+import type { WriterStateApi } from "../../writer/server/state";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  activeWriterTasks: WriterStateApi["activeWriterTasks"];
+  bench: BenchApi;
+  canary: Canary;
+  deferrals: DeferralApi;
+  enqueueResumedWriter: ReconcileApi["enqueueResumedWriter"];
+  workflowEngine: WorkflowEngineApi["workflowEngine"];
+}
 
 const LOG_TAIL_BYTES = 1_000_000;
 

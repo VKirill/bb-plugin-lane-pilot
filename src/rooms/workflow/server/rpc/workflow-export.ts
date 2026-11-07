@@ -1,11 +1,24 @@
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import type { rpcContract } from "../../../contracts";
 import type { ServerCore } from "../../../contracts/server";
-import type { Services } from "../../../platform/server";
+
 import { BUILTIN_SOURCES } from "../../builtin";
 import { buildWorkflowExport, type WorkflowExportEntry } from "../../workflow-export";
 import { createWorkflowLibrary } from "../workflow-library";
 import packageJson from "../../../../../package.json";
+
+
+import type { DocsNightlyApi } from "../../../docs/server/docs-nightly";
+import type { WorkflowEngineApi } from "../workflow";
+import type { WorkflowTriggersApi } from "../workflow-triggers-live";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  docsPlaces: DocsNightlyApi["docsPlaces"];
+  workflowCatalog: WorkflowEngineApi["workflowCatalog"];
+  workflowEngine: WorkflowEngineApi["workflowEngine"];
+  workflowTriggers: WorkflowTriggersApi["workflowTriggers"];
+}
 
 /** «Выгрузить графы»: the same definitions the library loads, packed for a zip or a markdown sheet. */
 export function workflowExportRpc(ctx: ServerCore, services: Services) {

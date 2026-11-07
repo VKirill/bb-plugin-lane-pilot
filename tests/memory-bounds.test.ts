@@ -1,6 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { tmpdir } from "node:os";
-import { applyRuleScopeRebind, applyScopeMigration, planScopeMigration, revertRuleScopeRebind } from "../scripts/memory-scope-dry-run";
+import { applyRuleScopeRebind, applyScopeMigration, planScopeMigration, revertRuleScopeRebind } from "../src/rooms/memory/server/scope-migration";
 import { describe, expect, it } from "vitest";
 import { searchMemoryAllSections, searchMemoryRecords, storeMemoryRecords } from "../packages/memory-core/src";
 import { acceptedRules, assertRuleScope, scopeApplies, upsertLessonProposal } from "@lane-pilot/run-insights";
@@ -9,7 +9,7 @@ import { createMemoryConflicts } from "../src/rooms/memory/server/memory-conflic
 import { sessionMemoryRpc } from "../src/rooms/memory/server/session-memory";
 import { createAttempt, createRun, createTask, openDatabase, transitionAttempt } from "../src/rooms/plugin-db";
 import type { ServerCore } from "../src/rooms/contracts/server";
-import type { Services } from "../src/rooms/platform/server";
+import type { Services } from "../server";
 
 const limits = { sourceSha256: "a".repeat(64), audience: "subagent" as const, coreBudget: 99_999, noteBudget: 99_999, indexBudget: 999_999 };
 const PORT_A = "Service deployment uses port 3000 for the API gateway.";

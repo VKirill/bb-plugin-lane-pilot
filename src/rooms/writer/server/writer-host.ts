@@ -150,3 +150,5 @@ export function createWriterHost(ctx: ServerCore) {
 
   return { resolveProjectWriterHost, selectionCatalogHost, selectionCatalog, listedAgentProfiles };
 }
+
+export type WriterHostApi = ReturnType<typeof createWriterHost>;

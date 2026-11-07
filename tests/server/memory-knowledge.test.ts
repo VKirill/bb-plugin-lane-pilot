@@ -5,7 +5,7 @@ import { searchMemoryRecords, storeMemoryRecords } from "../../packages/memory-c
 import { OBSERVED_QUARANTINE_MS } from "../../packages/memory-core/src/lifecycle";
 import { sessionMemoryRpc } from "../../src/rooms/memory/server/session-memory";
 import type { ServerCore } from "../../src/rooms/contracts/server";
-import type { Services } from "../../src/rooms/platform/server";
+import type { Services } from "../../server";
 
 type Db = ReturnType<typeof openDatabase>;
 const newDb = (): Db => openDatabase(createFakePluginHost({ pluginId: "lane-pilot" }).bb);

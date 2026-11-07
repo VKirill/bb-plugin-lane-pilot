@@ -33,8 +33,26 @@ import { taskFolderRel } from "../../verification";
 import { resolve } from "node:path";
 import { listReturns, renderReturnNotes } from "../../stage-return";
 import type { ServerCore } from "../../contracts/server";
-import type { Services } from "../../platform/server";
+
 import { runOnHost } from "@lane-pilot/host-calls";
+
+import type { HarnessApi } from "../../harness/server/harness";
+import type { OwnerPresenceApi } from "../../owner-presence/server/presence";
+import type { RollbackApi } from "../../rollback/server/rollback";
+import type { RuleScanApi } from "../../self-repair/server/rule-scan";
+import type { ReconcileApi } from "../../stability/server/reconcile";
+import type { WriterStateApi } from "./state";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  harness: HarnessApi;
+  ownerPresence: OwnerPresenceApi;
+  providerBreaker: WriterStateApi["providerBreaker"];
+  reconcileAttemptThread: ReconcileApi["reconcileAttemptThread"];
+  recoverLostHolderThread: ReconcileApi["recoverLostHolderThread"];
+  rollback: RollbackApi;
+  ruleScan: RuleScanApi;
+}
 
 /** True when the run works in the project's own checkout on that machine, which BB's managed worktree can fork. */
 export async function isProjectRootCheckout(bb: { sdk: { projects: { get(args: { projectId: string }): Promise<unknown> } } }, projectId: string, hostId: string, path: string): Promise<boolean> {
@@ -751,3 +769,5 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
 
   return { spawnWriterAttempt, workspaceDirt, isLiveFolder:liveFolder.isLiveFolder, backupLiveFolder:liveFolder.backupLiveFolder, restoreLiveFolder:liveFolder.restoreLiveFolder };
 }
+
+export type WriterSpawnApi = ReturnType<typeof createWriterSpawn>;

@@ -8,11 +8,23 @@ import { findOpenNativeRun, getRun } from "../../storage";
 import { outputText } from "../../writer/server/writer-task";
 import { fenceOutside, registerObservedTool } from "../../platform/server";
 import { ToolError } from "../../contracts/server";
-import type { Services } from "../../platform/server";
+
 import type { ServerCore } from "../../contracts/server";
 import type { ChainRuntime } from "../../workflow/server";
 import type { StepContext, WorkflowEngine } from "../../workflow";
 import { specialistRunOfThread, startSpecialistRun, waitSpecialistRun } from "./specialist-graph";
+
+import type { PhaseApi } from "../../phase/server/driver";
+
+import type { ScheduleService } from "../../schedule/server/schedule-service";
+import type { WorkflowEngineApi } from "../../workflow/server/workflow";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  phases: PhaseApi;
+  schedules: ScheduleService;
+  workflowEngine: WorkflowEngineApi["workflowEngine"];
+}
 
 /** The specialists a PM may hand work to; Explore and Plan stay Claude Code subagents inside the PM session. */
 export const SPECIALIST_ROLES = ["design-lead", "copy-lead", "seo-specialist", "tavily", "video-lead"] as const;

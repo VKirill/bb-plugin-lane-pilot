@@ -1,10 +1,25 @@
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import type { rpcContract } from "../../../contracts";
 import type { ServerCore } from "../../../contracts/server";
-import type { Services } from "../../../platform/server";
+
 import { createWorkflowLibrary } from "../workflow-library";
 import { createWorkflowArchitect } from "../workflow-architect";
 import { createWorkflowModels } from "../workflow-models";
+
+
+import type { DocsNightlyApi } from "../../../docs/server/docs-nightly";
+import type { StabilityApi } from "../../../stability/server/stability";
+import type { WorkflowEngineApi } from "../workflow";
+import type { WorkflowTriggersApi } from "../workflow-triggers-live";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  docsPlaces: DocsNightlyApi["docsPlaces"];
+  stability: StabilityApi;
+  workflowCatalog: WorkflowEngineApi["workflowCatalog"];
+  workflowEngine: WorkflowEngineApi["workflowEngine"];
+  workflowTriggers: WorkflowTriggersApi["workflowTriggers"];
+}
 
 /** The Workflows screens' reads: the library, one workflow with its graph, one run as a live view; and the start of an edit (a draft of a library workflow). */
 export function workflowsRpc(ctx: ServerCore, services: Services) {

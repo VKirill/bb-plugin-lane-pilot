@@ -19,7 +19,17 @@ import { PAIR_ROLE_SPECS, PROVIDER_CAPABILITIES, roleAtomicMessage } from "@lane
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import { rpcContract } from "../../../contracts";
 import type { ServerCore } from "../../../contracts/server";
-import type { Services } from "../../../platform/server";
+
+import type { WriterHostApi } from "../../../writer/server/writer-host";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  listedAgentProfiles: WriterHostApi["listedAgentProfiles"];
+  resolveProjectWriterHost: WriterHostApi["resolveProjectWriterHost"];
+  selectionCatalog: WriterHostApi["selectionCatalog"];
+  selectionCatalogHost: WriterHostApi["selectionCatalogHost"];
+}
+
 
 /** Runs the screen carries up front (plus every open one); older history comes page by page from `list_runs`. */
 const SCREEN_RUNS_LIMIT = 10;

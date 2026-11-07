@@ -1,6 +1,13 @@
-import type { Services } from "../../platform/server";
+
 import type { ServerCore } from "../../contracts/server";
 import { onAttemptFinished } from "./attempt-finished";
+
+import type { WorkflowEngineApi } from "../../workflow/server/workflow";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  startAfterAcceptance: WorkflowEngineApi["startAfterAcceptance"];
+}
 
 /**
  * MERGER: this file belongs to src/rooms/workflow. Move it there and call

@@ -12,6 +12,18 @@ import type { Journal } from "./driver-journal";
 import type { Methods } from "./driver-methods";
 import type { Steps } from "./driver-steps";
 
+import type { DocsNightlyApi } from "../../docs/server/docs-nightly";
+import type { WorkflowEngineApi } from "../../workflow/server/workflow";
+
+import type { BaselineApi } from "../../baseline/server/baseline";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  baseline: BaselineApi;
+  docsPlaces: DocsNightlyApi["docsPlaces"];
+  workflowEngine: WorkflowEngineApi["workflowEngine"];
+}
+
 /** A sure route only: the hint takes a request away from the architect (the errand's api-recon bar, 0.1.412). */
 const PUBLISHED_HINT_CONFIDENCE = 85;
 

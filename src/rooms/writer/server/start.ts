@@ -41,6 +41,49 @@ import { judgedFailureClass } from "../../runs";
 import { isRunHalted, isRunPaused, waitWhileRunPaused } from "../../runs/server";
 import { allowedSecretNames, secretProblem, waitingSecretNote, waitingSecretReason } from "../../secrets/server";
 
+import type { BaselineApi } from "../../baseline/server/baseline";
+import type { MoneyApi } from "../../money/server";
+import type { OwnerPresenceApi } from "../../owner-presence/server/presence";
+import type { RollbackApi } from "../../rollback/server/rollback";
+import type { RuleScanApi } from "../../self-repair/server/rule-scan";
+import type { ReconcileApi } from "../../stability/server/reconcile";
+import type { StabilityApi } from "../../stability/server/stability";
+import type { WallApi } from "../../wall/service";
+import type { WriterFinishApi } from "./finish";
+import type { WriterSpawnApi } from "./spawn";
+import type { WriterStateApi } from "./state";
+import type { WriterVerifyApi } from "./verify";
+
+import type { HarnessApi } from "../../harness/server/harness";
+import type { WorkflowEngineApi } from "../../workflow/server/workflow";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  activeWriterTasks: WriterStateApi["activeWriterTasks"];
+  baseline: BaselineApi;
+  concurrencyLimit: WriterStateApi["concurrencyLimit"];
+  finishWriterAttempt: WriterFinishApi["finishWriterAttempt"];
+  harness: HarnessApi;
+  isLiveFolder: WriterSpawnApi["isLiveFolder"];
+  money: MoneyApi;
+  ownerPresence: OwnerPresenceApi;
+  providerBreaker: WriterStateApi["providerBreaker"];
+  providerRetry: WriterStateApi["providerRetry"];
+  providerUsage: WriterStateApi["providerUsage"];
+  reconcileAttemptThread: ReconcileApi["reconcileAttemptThread"];
+  restoreLiveFolder: WriterSpawnApi["restoreLiveFolder"];
+  rollback: RollbackApi;
+  ruleScan: RuleScanApi;
+  runBudgetFor: WriterStateApi["runBudgetFor"];
+  runVerification: WriterVerifyApi["runVerification"];
+  runWriterPool: WriterStateApi["runWriterPool"];
+  spawnWriterAttempt: WriterSpawnApi["spawnWriterAttempt"];
+  stability: StabilityApi;
+  startAfterAcceptance: WorkflowEngineApi["startAfterAcceptance"];
+  wall: WallApi;
+  workspaceDirt: WriterSpawnApi["workspaceDirt"];
+}
+
 /** How long a task waits for a blocked dependency to be sent again and accepted. */
 /** How long a task waits for an Env Catalog secret, and how often it asks the catalog (BB sends no server-side event when it changes). */
 const SECRET_WAIT_MS = 12 * 3600_000;
@@ -56,7 +99,7 @@ import { isLiveDecision, LIVE_FOLDER_RECEIPT } from "../live-folder";
 import { resolve } from "node:path";
 import { findThreadsByMetadata } from "../../platform/server";
 import type { ServerCore } from "../../contracts/server";
-import type { Services } from "../../platform/server";
+
 import { sendServiceMessage } from "../../relay/server";
 import { emitAttemptFinished } from "./attempt-finished";
 import { mountWriterTaskFinished } from "./attempt-reactions";
@@ -1537,3 +1580,5 @@ export function dependsOnTask(dependsOn:readonly string[] | undefined, taskId:st
   return (dependsOn ?? []).some((dep) => dep === taskId || (taskId.startsWith(`${dep}.`) && /^\d+$/.test(taskId.slice(dep.length + 1))));
 }
 
+
+export type WriterStartApi = ReturnType<typeof createWriterStart>;

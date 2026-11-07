@@ -1,6 +1,6 @@
 import type { rpcContract } from "./plugin-contracts";
 import type { ServerCore } from "../../contracts/server";
-import type { Services } from "../../platform/server";
+
 import { preferencesRpc } from "../../settings/server";
 import { runsRpc } from "../../runs/server";
 import { settingsRpc } from "../../settings/server";
@@ -50,6 +50,77 @@ import { journalRpcHandlers, timeRpcHandlers } from "./rpc-timing";
 import { anamnesisFor } from "../../anamnesis";
 import { learningFor } from "../../learning";
 import { worldRpc } from "../../world/server";
+
+import type { BacklogApi } from "../../backlog/server/scanner";
+import type { BaselineApi } from "../../baseline/server/baseline";
+import type { RegressionApi } from "../../baseline/server/regress";
+import type { BenchApi } from "../../bench/service";
+import type { CapabilitiesApi } from "../../capability/server/capability";
+import type { CouncilApi } from "../../council/server/council";
+import type { DeferralApi } from "../../deferral/service";
+import type { FrontApi } from "../../front/server/index";
+import type { HarnessApi } from "../../harness/server/harness";
+import type { LeadApi } from "../../lead/server/service";
+import type { MoneyApi } from "../../money/server";
+import type { PhaseApi } from "../../phase/server/driver";
+import type { RollbackApi } from "../../rollback/server/rollback";
+import type { RunGoalApi } from "../../run-goal/server/run-goal";
+import type { Canary } from "../../stability/server/canary";
+import type { StageReturnApi } from "../../stage-return/server/stage-return";
+import type { WallApi } from "../../wall/service";
+import type { WorldApi } from "../../world/server/service";
+
+import type { DocsNightlyApi } from "../../docs/server/docs-nightly";
+import type { MemoryProbeApi } from "../../memory-probe/server/memory-probe";
+import type { MemoryConflictsApi } from "../../memory/server/memory-conflicts";
+import type { ActivationApi } from "../../native-agent/server/activation";
+import type { ScheduleService } from "../../schedule/server/schedule-service";
+import type { RuleScanApi } from "../../self-repair/server/rule-scan";
+import type { ReconcileApi } from "../../stability/server/reconcile";
+import type { WorkflowEngineApi } from "../../workflow/server/workflow";
+import type { WorkflowTriggersApi } from "../../workflow/server/workflow-triggers-live";
+import type { WriterHostApi } from "../../writer/server/writer-host";
+
+import type { StabilityApi } from "../../stability/server/stability";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  activate: ActivationApi["activate"];
+  backlog: BacklogApi;
+  baseline: BaselineApi;
+  bench: BenchApi;
+  canary: Canary;
+  capabilities: CapabilitiesApi;
+  council: CouncilApi;
+  deferrals: DeferralApi;
+  docsLastRead: DocsNightlyApi["docsLastRead"];
+  docsPlaceStatus: DocsNightlyApi["docsPlaceStatus"];
+  docsPlaces: DocsNightlyApi["docsPlaces"];
+  front: FrontApi;
+  harness: HarnessApi;
+  lead: LeadApi;
+  listedAgentProfiles: WriterHostApi["listedAgentProfiles"];
+  memoryConflicts: MemoryConflictsApi;
+  memoryProbe: MemoryProbeApi;
+  money: MoneyApi;
+  phases: PhaseApi;
+  regression: RegressionApi;
+  resolveProjectWriterHost: WriterHostApi["resolveProjectWriterHost"];
+  resumeOrphans: ReconcileApi["resumeOrphans"];
+  rollback: RollbackApi;
+  ruleScan: RuleScanApi;
+  runGoal: RunGoalApi;
+  schedules: ScheduleService;
+  selectionCatalog: WriterHostApi["selectionCatalog"];
+  selectionCatalogHost: WriterHostApi["selectionCatalogHost"];
+  stability: StabilityApi;
+  stageReturn: StageReturnApi;
+  wall: WallApi;
+  workflowCatalog: WorkflowEngineApi["workflowCatalog"];
+  workflowEngine: WorkflowEngineApi["workflowEngine"];
+  workflowTriggers: WorkflowTriggersApi["workflowTriggers"];
+  world: WorldApi;
+}
 
 /** One handler object from the five groups; each group carries the exact contract keys it implements. */
 export function registerRpc(ctx: ServerCore, services: Services, contract: typeof rpcContract) {

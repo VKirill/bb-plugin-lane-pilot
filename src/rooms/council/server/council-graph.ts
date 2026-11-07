@@ -10,6 +10,13 @@ import {
   setCouncilAgenda, setCouncilRun, setCouncilState, verdictWritten,
   type CouncilMessage, type CouncilMessageKind, type CouncilSeat, type CouncilSession, type Impulse, type Moderator,
 } from "@lane-pilot/council";
+
+import type { WorkflowEngineApi } from "../../workflow/server/workflow";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  workflowEngine: WorkflowEngineApi["workflowEngine"];
+}
 import { checkBrief, renderBrief } from "../../brief";
 import { getRun, getRunSettingsScopes } from "../../storage";
 import { builtinWorkflow } from "../../workflow";
@@ -18,7 +25,7 @@ import { withUsage } from "../../usage/server";
 import { fullAccessSpawn, graphStepMetadata, findThreadsByMetadata, keyedSpawnSupported, modelCatalogOf, resolveSpawnModel, spawnUsageOf, warmSpawnUsage } from "../../platform/server";
 import { stringAt } from "@lane-pilot/kit";
 import { configuredSetting } from "../../contracts/server";
-import type { Services } from "../../platform/server";
+
 import type { ServerCore } from "../../contracts/server";
 import { councilOwnerForm, ownerLocale } from "../../relay/server";
 import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server";

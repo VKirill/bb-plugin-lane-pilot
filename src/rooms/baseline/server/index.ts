@@ -1,8 +1,24 @@
 // Public API of baseline/server: what other rooms import. Everything else in this room is private.
-import type { Services } from "../../platform/server";
+
 import type { ServerCore } from "../../contracts/server";
 import { createBaseline } from "./baseline";
 import { createRegression } from "./regress";
+
+
+import type { RollbackApi } from "../../rollback/server/rollback";
+import type { WorkflowEngineApi } from "../../workflow/server/workflow";
+
+import type { DocsNightlyApi } from "../../docs/server/docs-nightly";
+import type { WriterStateApi } from "../../writer/server/state";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  docsLastRead: DocsNightlyApi["docsLastRead"];
+  docsPlaceStatus: DocsNightlyApi["docsPlaceStatus"];
+  rollback: RollbackApi;
+  runWriterPool: WriterStateApi["runWriterPool"];
+  workflowEngine: WorkflowEngineApi["workflowEngine"];
+}
 
 export { BASELINE_USAGE, runBaselineCli } from "./cli";
 export type { BaselineApi } from "./baseline";

@@ -1,9 +1,16 @@
 import { getRun } from "../../storage";
-import { scheduleIsolated, type Services } from "../../platform/server";
+import { scheduleIsolated } from "../../platform/server";
 import { type ServerCore } from "../../contracts/server";
 import { closeOwnerItem, postOwnerItem } from "../../owner-waiting";
 import { goalFailedText, goalVerdict, runReady, type TaskState } from "../logic";
 import { getRunGoal, saveRunGoal, type RunGoalRecord } from "../store";
+
+import type { RegressionApi } from "../../baseline/server/regress";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  regression: RegressionApi;
+}
 
 /**
  * The run-goal service (SMA atlas D2-3). A sweep every 20 minutes finds the runs of the last week that are done (every task accepted or

@@ -2,10 +2,19 @@ import type { NodeExecutor, StepContext } from "@lane-pilot/workflow-engine";
 import { runGraphHelper, sumUsage } from "../../workflow/server";
 import type { ChainRuntime, GraphHelperRun } from "../../workflow/server";
 import { noteProviderLimit } from "../../platform/server";
-import type { Services } from "../../platform/server";
+
 import type { ServerCore } from "../../contracts/server";
 import type { AnalyzerSelection, JobResult, ScanJob } from "../../self-repair/server";
 import { providerLimitNotice } from "../../writer/server";
+
+import type { RuleScanApi } from "../../self-repair/server/rule-scan";
+import type { WorkflowEngineApi } from "../../workflow/server/workflow";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  ruleScan: RuleScanApi;
+  workflowEngine: WorkflowEngineApi["workflowEngine"];
+}
 
 /**
  * The night rules scan as graphs (workflows/lp.rules-scan.json, workflows/lp.rules-ask.json). Planning and judging stay code: `collect` triages

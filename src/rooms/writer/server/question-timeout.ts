@@ -1,7 +1,7 @@
 import { getRun, getRunSettingsScopes, listUnansweredWriterQuestions, loadProjectSettings, markCancelCode, transitionAttempt } from "../../storage";
 import { isRunHalted, isRunPaused } from "../../runs/server";
 import type { ServerCore } from "../../contracts/server";
-import type { Services } from "../../platform/server";
+
 import { configuredSetting } from "../../contracts/server";
 import { postOwnerItem } from "../../owner-waiting";
 import { createWriterAnswer } from "./answer";
@@ -9,6 +9,27 @@ import { DEFAULT_QUESTION_WAIT_MIN, isProductDecision, markAnsweredByDefault, SA
 import { createSecondPilot } from "./second-pilot";
 import type { Consult } from "./second-pilot";
 import { writerQuestion } from "./reopen-attempt";
+
+import type { WriterStateApi } from "./state";
+
+import type { HarnessApi } from "../../harness/server/harness";
+import type { WriterDispatchApi } from "./dispatch";
+import type { WriterSpawnApi } from "./spawn";
+
+import type { BaselineApi } from "../../baseline/server/baseline";
+
+import type { WriterStartApi } from "./start";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  activeWriterTasks: WriterStateApi["activeWriterTasks"];
+  baseline: BaselineApi;
+  dispatchWriter: WriterDispatchApi["dispatchWriter"];
+  harness: HarnessApi;
+  providerRetry: WriterStateApi["providerRetry"];
+  startWriterTask: WriterStartApi["startWriterTask"];
+  workspaceDirt: WriterSpawnApi["workspaceDirt"];
+}
 
 export type QuestionSweepAction = { taskId: string; action: "answered_by_default" | "ended" | "left_to_owner" | "pilot_answer" | "pilot_narrow" | "pilot_owner" };
 

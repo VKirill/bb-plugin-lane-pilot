@@ -1,10 +1,19 @@
 import { z } from "zod";
-import { callerPluginMetadata, registerObservedTool, type Services } from "../../platform/server";
+import { callerPluginMetadata, registerObservedTool } from "../../platform/server";
 import { ToolError, type ServerCore } from "../../contracts/server";
 import { getTask, listOpenAttempts, taskBasePath } from "../../storage";
 import { ownsPathsOverlap } from "@lane-pilot/kit";
 import { quarantineFileSet } from "../regress-files";
 import { getRegression, listRegressions, type RegressionRecord } from "../store";
+
+import type { RegressionApi } from "./regress";
+import type { RollbackApi } from "../../rollback/server/rollback";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  regression: RegressionApi;
+  rollback: RollbackApi;
+}
 
 /**
  * The PM's view of the regression findings (`lane_pilot_regression`, folded): the open rows of its project — which check

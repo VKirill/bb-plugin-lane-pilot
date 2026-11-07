@@ -21,7 +21,38 @@ import { registerTelegramActions } from "./workflow-telegram";
 import { registerAnamnesisActions } from "../../anamnesis";
 import { anamnesisFor } from "../../anamnesis";
 import type { ServerCore } from "../../contracts/server";
-import type { Services } from "../../platform/server";
+
+import type { HarnessApi } from "../../harness/server/harness";
+
+import type { MemoryStageApi } from "../../memory/server/memory";
+import type { ProjectLifeStageApi } from "../../project-life/server/project-life";
+import type { WriterDispatchApi } from "../../writer/server/dispatch";
+import type { WriterSpawnApi } from "../../writer/server/spawn";
+import type { WriterStartApi } from "../../writer/server/start";
+import type { WriterStateApi } from "../../writer/server/state";
+
+import type { DocsNightlyApi } from "../../docs/server/docs-nightly";
+import type { StabilityApi } from "../../stability/server/stability";
+
+import type { BaselineApi } from "../../baseline/server/baseline";
+import type { WorkflowTriggersApi } from "./workflow-triggers-live";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  activeWriterTasks: WriterStateApi["activeWriterTasks"];
+  baseline: BaselineApi;
+  dispatchWriter: WriterDispatchApi["dispatchWriter"];
+  docsPlaces: DocsNightlyApi["docsPlaces"];
+  harness: HarnessApi;
+  isLiveFolder: WriterSpawnApi["isLiveFolder"];
+  runMemoryMaintenance: MemoryStageApi["runMemoryMaintenance"];
+  runProjectLifeMaintenance: ProjectLifeStageApi["runProjectLifeMaintenance"];
+  stability: StabilityApi;
+  startWriterTask: WriterStartApi["startWriterTask"];
+  workflowEngine: WorkflowEngineApi["workflowEngine"];
+  workflowTriggers: WorkflowTriggersApi["workflowTriggers"];
+}
+
 
 /**
  * The one workflow engine of this plugin instance, with the executors of the built-in workflows. It stops at a step
@@ -58,7 +89,7 @@ export function createWorkflowEngine(ctx: ServerCore, services: Services) {
   const statuses = createStatusResolver(db);
   const workflowCatalog = createWorkflowCatalog({ builtin: BUILTIN_SOURCES, log: (message) => bb.log.warn(`Lane Pilot ${message}`), resolveStatus: statuses.resolve });
   const workflowAgents = createWorkflowAgents();
-  const engine = new WorkflowEngine({
+  const engine: WorkflowEngine = new WorkflowEngine({
     db, harnessVersion: HARNESS_VERSION, compatVersion: ENGINE_COMPAT_VERSION,
     instanceId: bb.vk?.instanceId,
     log: (message) => bb.log.info(`Lane Pilot ${message}`),
@@ -90,3 +121,5 @@ export function createWorkflowEngine(ctx: ServerCore, services: Services) {
   bb.onDispose(() => engine.dispose());
   return { workflowEngine: engine, workflowCatalog, startAfterAcceptance: createAfterAcceptStarter(engine, ctx) };
 }
+
+export type WorkflowEngineApi = ReturnType<typeof createWorkflowEngine>;

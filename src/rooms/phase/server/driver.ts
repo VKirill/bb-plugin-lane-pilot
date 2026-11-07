@@ -1,4 +1,4 @@
-import { scheduleIsolated, type Services } from "../../platform/server";
+import { scheduleIsolated } from "../../platform/server";
 import { type ServerCore } from "../../contracts/server";
 import { listPhases, listParts } from "../store";
 import { acceptanceKey, designGate, discussionGate, nextAction, openQuestions, planGate, planSignature, renderBook, wordOf, type Phase } from "../logic";
@@ -11,6 +11,31 @@ import { installMethods } from "./driver-methods";
 import { installSteps } from "./driver-steps";
 import { installWiring } from "./driver-wiring";
 import { PhaseRefusal, type DriverBase } from "./driver-tools";
+
+
+import type { RegressionApi } from "../../baseline/server/regress";
+import type { RollbackApi } from "../../rollback/server/rollback";
+import type { RunGoalApi } from "../../run-goal/server/run-goal";
+import type { WallApi } from "../../wall/service";
+import type { WorkflowEngineApi } from "../../workflow/server/workflow";
+import type { WriterDispatchApi } from "../../writer/server/dispatch";
+import type { WriterStateApi } from "../../writer/server/state";
+
+import type { DocsNightlyApi } from "../../docs/server/docs-nightly";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  dispatchWriter: WriterDispatchApi["dispatchWriter"];
+  docsPlaces: DocsNightlyApi["docsPlaces"];
+  readWriterWorkspaceFile: WriterDispatchApi["readWriterWorkspaceFile"];
+  regression: RegressionApi;
+  rollback: RollbackApi;
+  runBudgets: WriterStateApi["runBudgets"];
+  runGoal: RunGoalApi;
+  wall: WallApi;
+  workflowCatalog: WorkflowEngineApi["workflowCatalog"];
+  workflowEngine: WorkflowEngineApi["workflowEngine"];
+}
 
 export { PhaseRefusal };
 export type { PhaseReactions } from "./reactions";

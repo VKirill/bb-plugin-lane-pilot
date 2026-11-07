@@ -8,7 +8,7 @@ import { demoteUnusedPromotions, enrichMemoryContext, episodeCandidates } from "
 import { appendAcceptedFact, claimStageSpawn, getRun, getRunSettingsScopes, getTask, listAcceptedFacts, listOpenAttempts, listPendingAcceptedFacts, listStageReceipts, markAcceptedFactsSummarized, searchMemoryRecords } from "../../storage";
 import { shouldTriggerProjectLife } from "../../project-life";
 import { coreShelf, dropMemoryIndexes, memoryEntrySupported, pathsNamed, retireStaleCuratorClaims, storeMemoryRecordsKeepingOverflow, memoryEntrySalience } from "@lane-pilot/memory-core";
-import { applyScopeMigration } from "../../../../scripts/memory-scope-dry-run";
+import { applyScopeMigration } from "./scope-migration";
 import { projectUsesSections, resolveProjectKind, sharedScope } from "@lane-pilot/memory-core";
 import { bbServiceTier, listedServiceTier, writerExecutionSelection } from "@lane-pilot/models";
 import { sha256 } from "../../tasks";
@@ -28,7 +28,16 @@ import { stringAt, valueAt } from "@lane-pilot/kit";
 import { observeStageChild } from "@lane-pilot/thread-observe";
 import type Database from "better-sqlite3";
 import type { ServerCore } from "../../contracts/server";
-import type { Services } from "../../platform/server";
+
+import type { MemoryConflictsApi } from "./memory-conflicts";
+import type { StageChildrenApi } from "../../qa/server/children";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  memoryConflicts: MemoryConflictsApi;
+  reconcileStageChild: StageChildrenApi["reconcileStageChild"];
+}
+
 
 export function createMemoryStage(ctx: ServerCore, services: Services) {
   const { acceptedTaskWorkspace, bb, configForRun, db, workspaceExecutionEnvironment } = ctx;
@@ -342,3 +351,5 @@ export function memoryRecurrenceDue(db: Database.Database, projectId: string, ev
     WHERE r.project_id=? AND s.stage_id='acceptance-receipt' AND s.state='passed' AND s.updated_at>?`).get(projectId, lastRun) as { n: number }).n;
   return { due: acceptedSince >= every, acceptedSince };
 }
+
+export type MemoryStageApi = ReturnType<typeof createMemoryStage>;

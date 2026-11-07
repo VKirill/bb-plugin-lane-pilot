@@ -8,8 +8,15 @@ import { mapListedQaHosts } from "../../../platform/server";
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import { rpcContract } from "../../../contracts";
 import type { ServerCore } from "../../../contracts/server";
-import type { Services } from "../../../platform/server";
+
 import { recordResolvedLocale } from "../../../relay/server";
+
+import type { WriterHostApi } from "../../../writer/server/writer-host";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  listedAgentProfiles: WriterHostApi["listedAgentProfiles"];
+}
 
 export function preferencesRpc(ctx: ServerCore, services: Services) {
   const { bb, host, listProjectSections, ownedAgents, serializedKv } = ctx;

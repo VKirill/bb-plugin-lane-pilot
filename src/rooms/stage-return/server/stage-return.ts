@@ -5,10 +5,28 @@ import { createAttempt, getAttempt, getRun, getTask, getTaskPlan, listAttemptsFo
 import { cancelAttemptById, recordStage, reopenWriterStages } from "../../runs/server";
 import { createAttemptReopen, createWriterReassign } from "../../writer/server";
 import { id } from "@lane-pilot/kit";
-import type { Services } from "../../platform/server";
+
 import type { ServerCore } from "../../contracts/server";
 import { checkNote, pmReturnMessage, pmWriterLine, returnTurnPrompt } from "../logic";
 import { finishReturn, getReturn, insertReturn, listReturns, type StageReturnRecord } from "../store";
+
+import type { RollbackApi } from "../../rollback/server/rollback";
+import type { ReconcileApi } from "../../stability/server/reconcile";
+import type { WriterStateApi } from "../../writer/server/state";
+
+import type { BaselineApi } from "../../baseline/server/baseline";
+import type { RegressionApi } from "../../baseline/server/regress";
+import type { WriterStartApi } from "../../writer/server/start";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  activeWriterTasks: WriterStateApi["activeWriterTasks"];
+  baseline: BaselineApi;
+  enqueueResumedWriter: ReconcileApi["enqueueResumedWriter"];
+  regression: RegressionApi;
+  rollback: RollbackApi;
+  startWriterTask: WriterStartApi["startWriterTask"];
+}
 
 /**
  * Return a task to an earlier stage with added context (SMA atlas delta D0-2; owner 2026-10-22: «из 4 вернуться в 1, из 5 во 2»).

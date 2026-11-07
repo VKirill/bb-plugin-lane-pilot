@@ -10,7 +10,16 @@ import { globalWorkflowDir, loadWorkflowStore, nodeFileSource, projectWorkflowDi
 import { legacyDefinitionSha256, tallyOutcomes, workDoneRate, workflowView, type WorkflowView } from "@lane-pilot/workflow-engine";
 import { buildWorkflowMap } from "./workflow-map";
 import type { ServerCore } from "../../contracts/server";
-import type { Services } from "../../platform/server";
+
+import type { DocsNightlyApi } from "../../docs/server/docs-nightly";
+import type { WorkflowEngineApi } from "./workflow";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  docsPlaces: DocsNightlyApi["docsPlaces"];
+  workflowEngine: WorkflowEngineApi["workflowEngine"];
+}
+
 
 type Output<K extends keyof typeof rpcContract> = z.infer<(typeof rpcContract)[K]["output"]>;
 export type WorkflowSummary = Output<"workflow_list">["workflows"][number];

@@ -2,8 +2,15 @@ import { resolve } from "node:path";
 import type { ScheduleTask } from "../model";
 import type { WhereView } from "../views";
 import type { ServerCore } from "../../contracts/server";
-import type { Services } from "../../platform/server";
+
 import { stringAt } from "@lane-pilot/kit";
+
+import type { WorkflowTriggersApi } from "../../workflow/server/workflow-triggers-live";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  workflowTriggers: WorkflowTriggersApi["workflowTriggers"];
+}
 
 /**
  * Where scheduled work runs, read from BB: the project's name, the Project Folders section the project's PM chat is filed in (the thread's

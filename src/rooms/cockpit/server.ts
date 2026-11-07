@@ -1,10 +1,17 @@
 import { hostContract, rpcContract } from "../contracts";
-import type { Services } from "../platform/server";
+
 import type { ServerCore } from "../contracts/server";
 import { getRun } from "../storage";
 import { listReceipts } from "../capability";
 import { readinessWords, trainedConditions, trainingRatios, type DesignJournalLine } from "../design-eval";
 import { runOnHost } from "@lane-pilot/host-calls";
+
+import type { FrontApi } from "../front/server/index";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  front: FrontApi;
+}
 
 const SEEN = "lp.cockpit.seen";
 const FAULTS = "lp.cockpit.faults";

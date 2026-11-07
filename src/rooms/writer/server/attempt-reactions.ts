@@ -2,10 +2,16 @@ import { getAttempt, getReasoningTrace } from "../../storage";
 import { recordSkillSwitchMetric } from "../skill-switch";
 import { createSkillMaterializer, recordedMaterializedSkills } from "./skill-materialize";
 import { recordedWriterSkills } from "./skill-pick";
-import type { Services } from "../../platform/server";
+
 import type { ServerCore } from "../../contracts/server";
 import { onAttemptFinished, type AttemptFinished } from "./attempt-finished";
 import type { createWriterSticky } from "./sticky";
+
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+
+}
 
 /**
  * The writer's own reactions to an attempt's end: the skill-switch metric, the materialized-skill

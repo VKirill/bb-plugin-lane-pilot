@@ -1,4 +1,11 @@
-import type { Services } from "../../platform/server";
+
+import type { ScheduleService } from "./schedule-service";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  schedules: ScheduleService;
+}
+
 
 /**
  * `bb lane-pilot schedule <list|show|create|update|pause|resume|run-now|delete|history|preview>`: the schedule board from a terminal.

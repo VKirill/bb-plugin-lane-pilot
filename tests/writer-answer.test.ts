@@ -5,7 +5,7 @@ import { countAttempts, countChargedAttempts, createAttempt, createRun, createTa
 import { LANE_PILOT_PM_SESSION } from "../src/rooms/native-agent/native-agent-overlay";
 import { NATIVE_LP_BRIDGE_PM_TOOLS, NATIVE_LP_BRIDGE_TOOLS } from "../src/rooms/native-agent/native-session-hooks";
 import { createCore } from "../src/rooms/core/server/core";
-import type { Services } from "../src/rooms/platform/server";
+import type { Services } from "../server";
 import { recordStage } from "../src/rooms/runs/server/stage-records";
 import { createWriterAnswer } from "../src/rooms/writer/server/answer";
 import { createWriterStart } from "../src/rooms/writer/server/start";
