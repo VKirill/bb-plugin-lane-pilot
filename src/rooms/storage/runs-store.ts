@@ -270,6 +270,90 @@ export function activeRunForWorkspacePath(db: LanePilotDatabase, path: string, s
     WHERE r.closed_at IS NULL AND r.writer_workspace_path=? AND EXISTS(
       SELECT 1 FROM lane_pilot_attempt a WHERE a.run_id=r.id AND a.updated_at > ?)
     ORDER BY r.updated_at DESC LIMIT 1`).get(path, since) as { id: string; pmThreadId: string | null } | undefined;
+/** Every run's id, project and creation time — the wiring sweeps scan the whole table. */
+export function listAllRunRefs(db: LanePilotDatabase): Array<{ id: string; project_id: string; created_at: number }> {
+  return db.prepare("SELECT id, project_id, created_at FROM lane_pilot_run").all() as Array<{ id: string; project_id: string; created_at: number }>;
+}
+
+/** A project's newest CLI PM chats touched since a time (the backlog scanner's PM lookup). */
+export function listCliPmThreads(db: LanePilotDatabase, projectId: string, sinceMs: number): Array<{ pm_thread_id: string }> {
+  return db.prepare("SELECT pm_thread_id FROM lane_pilot_run WHERE project_id=? AND kind='cli' AND pm_thread_id IS NOT NULL AND updated_at>=? ORDER BY updated_at DESC LIMIT 20")
+    .all(projectId, sinceMs) as Array<{ pm_thread_id: string }>;
+}
+
+/** Projects with a CLI PM chat touched since a time (the backlog scanner's project list). */
+export function listCliPmProjects(db: LanePilotDatabase, sinceMs: number): Array<{ project_id: string }> {
+  return db.prepare("SELECT DISTINCT project_id FROM lane_pilot_run WHERE kind='cli' AND pm_thread_id IS NOT NULL AND updated_at>=?").all(sinceMs) as Array<{ project_id: string }>;
+}
+
+/** A project's runs that have a PM chat, newest first (the capability probe). */
+export function listRunsWithPmThread(db: LanePilotDatabase, projectId: string): Array<{ id: string; pm_thread_id: string }> {
+  return db.prepare("SELECT id, pm_thread_id FROM lane_pilot_run WHERE project_id=? AND pm_thread_id IS NOT NULL ORDER BY created_at DESC LIMIT 20").all(projectId) as Array<{ id: string; pm_thread_id: string }>;
+}
+
+/** PM thread ids of runs touched since a time (the replay harvest). */
+export function listPmThreadIdsSince(db: LanePilotDatabase, sinceMs: number): string[] {
+  return (db.prepare("SELECT pm_thread_id AS t FROM lane_pilot_run WHERE pm_thread_id IS NOT NULL AND updated_at>=?").all(sinceMs) as Array<{ t: string }>).map((row) => row.t);
+}
+
+/** PM thread ids the notice table names since a time (the replay harvest). */
+export function listPmNoticeThreadIdsSince(db: LanePilotDatabase, sinceMs: number): string[] {
+  return (db.prepare("SELECT DISTINCT pm_thread_id AS t FROM lane_pilot_pm_notice WHERE sent_at>=?").all(sinceMs) as Array<{ t: string }>).map((row) => row.t);
+}
+
+/** The first free placement claim on a run: host, workspace and environment land only on an unbound live run. */
+export function claimRunPlacement(db: LanePilotDatabase, input: { hostId: string; workspacePath: string; environmentId: string; runId: string }): boolean {
+  return db.prepare(`UPDATE lane_pilot_run
+    SET writer_host_id=?, writer_workspace_path=?, writer_environment_id=?, updated_at=?
+    WHERE id=? AND writer_host_id IS NULL AND writer_workspace_path IS NULL AND writer_environment_id IS NULL
+      AND state IN ('pending','running')`)
+    .run(input.hostId, input.workspacePath, input.environmentId, Date.now(), input.runId).changes === 1;
+}
+
+/** Every run's id, project, close time and last touch — cross-run sweeps (run goals) compare close order. */
+export function listRunCloseRows(db: LanePilotDatabase): Array<{ id: string; project_id: string; closed_at: number | null; updated_at: number }> {
+  return db.prepare("SELECT id, project_id, closed_at, updated_at FROM lane_pilot_run ORDER BY updated_at").all() as Array<{ id: string; project_id: string; closed_at: number | null; updated_at: number }>;
+}
+
+/** PM skill-use rows since a time (the skill-usage count). */
+export function listPmSkillUsesSince(db: LanePilotDatabase, sinceMs: number): Array<{ skill: string; thread_id: string }> {
+  return db.prepare("SELECT skill, thread_id FROM lane_pilot_pm_skill_use WHERE used_at>=?").all(sinceMs) as Array<{ skill: string; thread_id: string }>;
+}
+
+/** One PM skill-use row. */
+export function recordPmSkillUse(db: LanePilotDatabase, row: { threadId: string; projectId: string; skill: string; at?: number }): void {
+  db.prepare("INSERT INTO lane_pilot_pm_skill_use(thread_id,project_id,skill,used_at) VALUES(?,?,?,?)")
+    .run(row.threadId, row.projectId, row.skill, row.at ?? Date.now());
+}
+
+/** The storage-owned half of the memory thread gate: does the thread appear in a run-table the plugin owns. */
+export function pluginThreadInStoreTables(db: LanePilotDatabase, threadId: string): boolean {
+  const row = db.prepare(`SELECT (
+    EXISTS(SELECT 1 FROM lane_pilot_run WHERE pm_thread_id=?)
+    OR EXISTS(SELECT 1 FROM lane_pilot_activation WHERE pm_thread_id=?)
+    OR EXISTS(SELECT 1 FROM lane_pilot_attempt WHERE thread_id=? OR holder_thread_id=?)
+    OR EXISTS(SELECT 1 FROM lane_pilot_stage_receipt WHERE thread_id=?)
+    OR EXISTS(SELECT 1 FROM lane_pilot_pm_notice WHERE pm_thread_id=?)
+    OR EXISTS(SELECT 1 FROM lane_pilot_pm_skill_use WHERE thread_id=?)
+    OR EXISTS(SELECT 1 FROM lane_pilot_secret_issuance WHERE thread_id=?)
+    OR EXISTS(SELECT 1 FROM lane_pilot_errand_episode WHERE thread_id=?)
+  ) AS plugin`).get(threadId, threadId, threadId, threadId, threadId, threadId, threadId, threadId, threadId) as { plugin: number };
+  return row.plugin === 1;
+}
+
+/** Whether any run of the project carries section scopes (the memory package's umbrella check, injected as a reader). */
+export function projectHasScopedRun(db: { prepare: LanePilotDatabase["prepare"] }, projectId: string): boolean {
+  return Boolean(db.prepare("SELECT 1 FROM lane_pilot_run WHERE project_id=? AND settings_scopes_json LIKE '%section:%' LIMIT 1").get(projectId));
+}
+
+/** The storage-owned half of the silent-thread check (PM chat, activation, notice). */
+export function silentThreadInStoreTables(db: LanePilotDatabase, threadId: string): boolean {
+  const row = db.prepare(`SELECT (
+    EXISTS(SELECT 1 FROM lane_pilot_run WHERE pm_thread_id=?)
+    OR EXISTS(SELECT 1 FROM lane_pilot_activation WHERE pm_thread_id=?)
+    OR EXISTS(SELECT 1 FROM lane_pilot_pm_notice WHERE pm_thread_id=?)
+  ) AS silent`).get(threadId, threadId, threadId) as { silent: number };
+  return row.silent === 1;
 }
 
 export function listActiveProjectIds(db: LanePilotDatabase, since: number): string[] {

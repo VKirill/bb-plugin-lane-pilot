@@ -398,6 +398,25 @@ export function putGlobalSettingValue(db: LanePilotDatabase, projectId: string, 
   db.prepare(`INSERT INTO lane_pilot_setting_generation(project_id,binding_id,key,version) VALUES (?,?,?,?)
     ON CONFLICT(project_id,binding_id,key) DO UPDATE SET version=excluded.version`).run(projectId, "", key, next);
   return true;
+/** Provider/model setting rows of every project (the capability inventory). */
+export function listProviderSettingRows(db: LanePilotDatabase): Array<{ project_id: string; key: string; value: string }> {
+  return db.prepare(`SELECT project_id, key, value FROM lane_pilot_project_settings WHERE binding_id='' AND (key LIKE '%.provider' OR key LIKE '%.model' OR key IN ('pmProviderId','pmModel','writerProviderId','writerModel'))`).all() as
+    Array<{ project_id: string; key: string; value: string }>;
+}
+
+/** A project's raw setting value by key across bindings (the sandbox hostId lookup). */
+export function projectSettingValue(db: LanePilotDatabase, projectId: string, key: string): string | undefined {
+  return (db.prepare("SELECT value FROM lane_pilot_project_settings WHERE project_id=? AND key=?").get(projectId, key) as { value: string } | undefined)?.value;
+}
+
+/** A binding-less setting's raw value (the schedule errand default). */
+export function bindingSettingValue(db: LanePilotDatabase, projectId: string, key: string): string | undefined {
+  return (db.prepare("SELECT value FROM lane_pilot_project_settings WHERE project_id=? AND binding_id='' AND key=?").get(projectId, key) as { value: string } | undefined)?.value;
+}
+
+/** Projects that have any binding-less setting row (the docs nightly sweep). */
+export function listProjectsWithBindingSettings(db: LanePilotDatabase): string[] {
+  return (db.prepare("SELECT DISTINCT project_id FROM lane_pilot_project_settings WHERE binding_id=''").all() as Array<{ project_id: string }>).map((row) => row.project_id);
 }
 
 export function boundSettingValue(db: LanePilotDatabase, projectId: string, key: string): string | null {

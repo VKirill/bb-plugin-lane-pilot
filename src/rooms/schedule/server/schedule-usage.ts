@@ -1,7 +1,8 @@
 import type Database from "better-sqlite3";
 import { costUsd, priceFor } from "@lane-pilot/models";
 import type { CostView } from "../views";
-import { billedFrom, parseBreakdown } from "../../usage/server";
+import { billedFrom, parseBreakdown, tokenCursorRow } from "../../usage/server";
+import { wfErrandSpawnThreadId, wfErrandSpawnThreadIds } from "@lane-pilot/workflow-engine";
 
 /**
  * What a scheduled run cost, from the token usage Lane Pilot syncs per thread (`lane_pilot_token_cursor`, cumulative per thread).
@@ -24,7 +25,7 @@ export function usageOfCursor(row: CursorRow | undefined): ThreadUsage {
 
 export function threadUsage(db: Database.Database, threadId: string): ThreadUsage {
   try {
-    return usageOfCursor(db.prepare("SELECT total_json, last_model, last_provider, provider_id FROM lane_pilot_token_cursor WHERE thread_id=?").get(threadId) as CursorRow | undefined);
+    return usageOfCursor(tokenCursorRow(db, threadId));
   } catch { return NO_USAGE; }
 }
 
@@ -45,8 +46,7 @@ const COST_WINDOW = 20;
 /** The helper thread of a scheduled errand's run: a schedule of kind errand is a run of the `errand` graph, and the graph step noted the thread it spawned. */
 export function errandRunThread(db: Database.Database, workflowRunId: string): string | null {
   try {
-    const row = db.prepare("SELECT json_extract(result_json,'$.threadId') AS thread FROM lane_pilot_wf_effect WHERE run_id=? AND kind='errand.spawn' AND state='done'").get(workflowRunId) as { thread: string | null } | undefined;
-    return row?.thread ?? null;
+    return wfErrandSpawnThreadId(db, workflowRunId);
   } catch { return null; }
 }
 
@@ -54,16 +54,26 @@ export function errandRunThread(db: Database.Database, workflowRunId: string): s
 export function scheduleCost(db: Database.Database, scheduleId: string, model: string | null): CostView {
   let costs: Array<number | null> = [];
   try {
-    const rows = db.prepare(`SELECT c.total_json, c.last_model, c.last_provider, c.provider_id FROM lane_pilot_schedule_run r
-      JOIN lane_pilot_token_cursor c ON c.thread_id=r.ref_id
-      WHERE r.schedule_id=? AND r.ref_kind='thread' AND r.status IN ('succeeded','failed','timed_out') ORDER BY r.scheduled_at DESC LIMIT ?`).all(scheduleId, COST_WINDOW) as CursorRow[];
+    const runs = db.prepare(`SELECT ref_id FROM lane_pilot_schedule_run
+      WHERE schedule_id=? AND ref_kind='thread' AND status IN ('succeeded','failed','timed_out') ORDER BY scheduled_at DESC`).all(scheduleId) as Array<{ ref_id: string }>;
+    const rows: CursorRow[] = [];
+    for (const run of runs) {
+      const cursor = tokenCursorRow(db, run.ref_id);
+      if (cursor) { rows.push(cursor); if (rows.length === COST_WINDOW) break; }
+    }
     costs = rows.map((row) => usageOfCursor(row).costUsd);
   } catch { costs = []; }
   try {
-    const rows = db.prepare(`SELECT c.total_json, c.last_model, c.last_provider, c.provider_id FROM lane_pilot_schedule_run r
-      JOIN lane_pilot_wf_effect e ON e.run_id=r.ref_id AND e.kind='errand.spawn' AND e.state='done'
-      JOIN lane_pilot_token_cursor c ON c.thread_id=json_extract(e.result_json,'$.threadId')
-      WHERE r.schedule_id=? AND r.ref_kind='workflow_run' AND r.status IN ('succeeded','failed','timed_out') ORDER BY r.scheduled_at DESC LIMIT ?`).all(scheduleId, COST_WINDOW) as CursorRow[];
+    const runs = db.prepare(`SELECT ref_id FROM lane_pilot_schedule_run
+      WHERE schedule_id=? AND ref_kind='workflow_run' AND status IN ('succeeded','failed','timed_out') ORDER BY scheduled_at DESC`).all(scheduleId) as Array<{ ref_id: string }>;
+    const rows: CursorRow[] = [];
+    for (const run of runs) {
+      for (const thread of wfErrandSpawnThreadIds(db, run.ref_id)) {
+        const cursor = tokenCursorRow(db, thread);
+        if (cursor) { rows.push(cursor); if (rows.length === COST_WINDOW) break; }
+      }
+      if (rows.length === COST_WINDOW) break;
+    }
     costs = [...costs, ...rows.map((row) => usageOfCursor(row).costUsd)].slice(0, COST_WINDOW);
   } catch { /* no graph runs yet */ }
   return { ...averageCost(costs), ...priceView(model) };

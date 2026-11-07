@@ -6,7 +6,7 @@ import { jev } from "@lane-pilot/jev";
 import { memoryRerankJudgment } from "@lane-pilot/jev/judgments/memory-rerank";
 import { rerankRecords } from "./rerank";
 import { demoteUnusedPromotions, enrichMemoryContext, episodeCandidates } from "../../memory-tiers/server";
-import { appendAcceptedFact, claimStageSpawn, getRun, getRunSettingsScopes, getTask, listAcceptedFacts, listOpenAttempts, listPendingAcceptedFacts, listStageReceipts, markAcceptedFactsSummarized } from "../../storage";
+import { appendAcceptedFact, claimStageSpawn, countStageReceiptsSince, getRun, getRunSettingsScopes, getTask, lastStageReceiptAt, listAcceptedFacts, listOpenAttempts, listPendingAcceptedFacts, listStageReceipts, markAcceptedFactsSummarized, projectHasScopedRun } from "../../storage";
 import { wireMemoryAttemptEffects } from "./attempt-effects";
 import { shouldTriggerProjectLife } from "../../project-life";
 import { coreShelf, dropMemoryIndexes, memoryEntrySupported, pathsNamed, retireStaleCuratorClaims, searchMemoryRecords, storeMemoryRecordsKeepingOverflow, memoryEntrySalience } from "@lane-pilot/memory-core";
@@ -181,9 +181,9 @@ export function createMemoryStage(ctx: ServerCore, services: Services) {
       const entries=admitted.filter((entry)=>memoryEntrySalience(entry)>=(snapshot.settings.salienceMin??40));
       const salienceDropped=admitted.length-entries.length;
       // M7: in an umbrella a project-level write is not global; a batch fully marked shared keeps a project scope with the reason inside.
-      if(!scope.length&&resolveProjectKind(snapshot.settings.projectKind,projectUsesSections(db,args.projectId))==="umbrella"&&entries.length&&entries.every((entry)=>entry.concepts.some((concept)=>/^shared/.test(concept))))
+      if(!scope.length&&resolveProjectKind(snapshot.settings.projectKind,projectUsesSections(db,args.projectId,projectHasScopedRun))==="umbrella"&&entries.length&&entries.every((entry)=>entry.concepts.some((concept)=>/^shared/.test(concept))))
         scope=sharedScope(entries.flatMap((entry)=>entry.concepts).find((concept)=>/^shared:/.test(concept))?.split(":")[1]);
-      else if(!scope.length&&entries.length&&resolveProjectKind(snapshot.settings.projectKind,projectUsesSections(db,args.projectId))==="umbrella") scope=sharedScope("root");
+      else if(!scope.length&&entries.length&&resolveProjectKind(snapshot.settings.projectKind,projectUsesSections(db,args.projectId,projectHasScopedRun))==="umbrella") scope=sharedScope("root");
       const records=storeMemoryRecordsKeepingOverflow(db,{projectId:args.projectId,personalBot:snapshot.settings.personalBot,audience:snapshot.settings.audience,sourceSha256:snapshot.acceptanceSha256,
         entries,coreBudget:snapshot.settings.coreBudget,noteBudget:snapshot.settings.noteBudget,indexBudget:snapshot.settings.indexBudget,scope,readFile,originTaskId:args.taskId});
       // Notes that now disagree with an active one are held, both, until a person settles it (memory-conflicts.ts); a failure here never loses the write.
@@ -350,10 +350,8 @@ export function createMemoryStage(ctx: ServerCore, services: Services) {
 
 /** True once `every` accepted tasks have piled up since the last real (non-skipped) memory maintenance for the project. */
 export function memoryRecurrenceDue(db: Database.Database, projectId: string, every: number): { due: boolean; acceptedSince: number } {
-  const lastRun = (db.prepare(`SELECT MAX(s.updated_at) AS at FROM lane_pilot_stage_receipt s JOIN lane_pilot_run r ON r.id=s.run_id
-    WHERE r.project_id=? AND s.stage_id='memory-maintenance' AND s.state<>'skipped'`).get(projectId) as { at: number | null }).at ?? 0;
-  const acceptedSince = (db.prepare(`SELECT count(*) AS n FROM lane_pilot_stage_receipt s JOIN lane_pilot_run r ON r.id=s.run_id
-    WHERE r.project_id=? AND s.stage_id='acceptance-receipt' AND s.state='passed' AND s.updated_at>?`).get(projectId, lastRun) as { n: number }).n;
+  const lastRun = lastStageReceiptAt(db, projectId, "memory-maintenance", "skipped");
+  const acceptedSince = countStageReceiptsSince(db, projectId, "acceptance-receipt", "passed", lastRun);
   return { due: acceptedSince >= every, acceptedSince };
 }
 

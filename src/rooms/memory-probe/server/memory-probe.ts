@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
-import { getRuleProposal, upsertLessonProposal } from "@lane-pilot/run-insights";
-import { storeMemoryRecords, type MemoryKind, type MemorySettings } from "@lane-pilot/memory-core";
+import { acceptedRuleIdsLike, getRuleProposal, upsertLessonProposal } from "@lane-pilot/run-insights";
+import { latestMemoryProbeRows, listMemoryIdsByOrigin, otherMemoryProjectId, recordMemoryProbe, storeMemoryRecords, type MemoryKind, type MemorySettings } from "@lane-pilot/memory-core";
 import { sha256Hex } from "@lane-pilot/kit";
 import { taskV2Schema, type TaskV2 } from "../../contracts";
 import { MEMORY_PATHS, pathById, type MemoryPath, type ProbeKind } from "../../memory";
@@ -111,7 +111,7 @@ const PROBES: Record<string, (c: Context) => Promise<Probe> | Probe> = {
   },
   // A thread id no plugin table recorded is an ordinary thread; the negative asks the same thread id of another project.
   "bb.thread": (c) => {
-    const other = (c.db.prepare("SELECT project_id FROM lane_pilot_memory WHERE project_id != ? LIMIT 1").get(c.projectId) as { project_id: string } | undefined)?.project_id ?? "memory-probe-none";
+    const other = otherMemoryProjectId(c.db, c.projectId) ?? "memory-probe-none";
     return { delivered: threadMemoryBlock(c.db, { projectId: c.projectId, threadId: "memory-probe-thread" }) ?? "",
       negative: threadMemoryBlock(c.db, { projectId: other, threadId: "memory-probe-thread" }) ?? "" };
   },
@@ -144,8 +144,8 @@ export function createMemoryProbe(ctx: ServerCore, services: Services) {
   /** Removes what an earlier probe left (a crashed run, a `--keep`): the records of origin `probe` and the probe's rules. */
   function clean(projectId: string): number {
     let removed = 0;
-    for (const row of db.prepare("SELECT id FROM lane_pilot_memory WHERE project_id=? AND origin='probe'").all(projectId) as Array<{ id: string }>) { services.insights.deleteMemoryRecord(db, projectId, row.id); removed++; }
-    for (const row of db.prepare("SELECT id FROM lane_pilot_rule_proposal WHERE project_id=? AND state='accepted' AND rule LIKE 'Probe rule lpprobe%'").all(projectId) as Array<{ id: string }>) { services.insights.retireAdoptedRule(db, projectId, row.id, "memory probe finished"); removed++; }
+    for (const id of listMemoryIdsByOrigin(db, projectId, "probe")) { services.insights.deleteMemoryRecord(db, projectId, id); removed++; }
+    for (const id of acceptedRuleIdsLike(db, projectId, "Probe rule lpprobe%")) { services.insights.retireAdoptedRule(db, projectId, id, "memory probe finished"); removed++; }
     return removed;
   }
 
@@ -203,8 +203,7 @@ export function createMemoryProbe(ctx: ServerCore, services: Services) {
     } finally {
       if (!input.keep) clean(projectId);
     }
-    const insert = db.prepare("INSERT INTO lane_pilot_memory_probe(at,project_id,token,path,found,negative_ok,latency_ms,lp_version,detail) VALUES(?,?,?,?,?,?,?,?,?)");
-    for (const row of results) insert.run(at, projectId, hex, row.path, row.found ? 1 : 0, row.negativeOk === null ? null : row.negativeOk ? 1 : 0, row.latencyMs, HARNESS_VERSION, row.detail);
+    for (const row of results) recordMemoryProbe(db, { at, projectId, token: hex, path: row.path, found: row.found, negativeOk: row.negativeOk, latencyMs: row.latencyMs, lpVersion: HARNESS_VERSION, detail: row.detail });
     const ok = problems.length === 0 && results.length > 0 && results.every((row) => row.found && row.negativeOk !== false);
     return { ok, projectId, token: hex, anchor: PROBE_ANCHOR, lpVersion: HARNESS_VERSION, at, kept: Boolean(input.keep), tokens, planted, results, skipped, problems,
       unanswered: memoryUnanswered(db, projectId) };
@@ -212,8 +211,7 @@ export function createMemoryProbe(ctx: ServerCore, services: Services) {
 
   /** The last run per path, with the unanswered-questions counts: what `memory-probe <project> --report` prints. */
   function report(projectId: string) {
-    const rows = db.prepare(`SELECT path, found, negative_ok AS negativeOk, latency_ms AS latencyMs, lp_version AS lpVersion, at, detail FROM lane_pilot_memory_probe
-      WHERE project_id=? AND at=(SELECT max(at) FROM lane_pilot_memory_probe WHERE project_id=?) ORDER BY path`).all(projectId, projectId) as Array<{ path: string; found: number; negativeOk: number | null; latencyMs: number; lpVersion: string; at: number; detail: string }>;
+    const rows = latestMemoryProbeRows(db, projectId);
     return { projectId, results: rows.map((row) => ({ ...row, found: row.found === 1, negativeOk: row.negativeOk === null ? null : row.negativeOk === 1 })), unanswered: memoryUnanswered(db, projectId) };
   }
 

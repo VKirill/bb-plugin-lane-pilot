@@ -1,4 +1,5 @@
 import { findOpenNativeRun, listOpenAttempts } from "../../storage";
+import { wfLiveRunsForLink } from "@lane-pilot/workflow-engine";
 import { compileEffectiveMainAgent } from "../agent-profile"
 import { agentKind } from "../agent-profile";
 import { nativeSwitchKey, pendingSwitch } from "../native-session"
@@ -53,7 +54,7 @@ function liveWork(db: ServerCore["db"], projectId: string, runId: string, thread
   const writers = listOpenAttempts(db).filter((attempt) => attempt.run_id === runId);
   if (writers.length) parts.push(`${writers.length} task${writers.length === 1 ? " is" : "s are"} at work`);
   for (const phase of livePhases(db, { pmThreadId: threadId, projectId })) parts.push(`phase «${phase.title}» is live`);
-  const graphs = (db.prepare("SELECT count(*) AS n FROM lane_pilot_wf_run WHERE link_run_id=? AND parent_run_id IS NULL AND status IN ('running','waiting')").get(runId) as { n: number }).n;
+  const graphs = wfLiveRunsForLink(db, runId);
   if (graphs) parts.push(`${graphs} workflow run${graphs === 1 ? " is" : "s are"} going`);
   return parts.length ? `Lane Pilot still works for this chat: ${parts.join("; ")}. Wait until they end or cancel them, then change the agent.` : null;
 }

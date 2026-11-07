@@ -6,7 +6,7 @@ import { modelFamily, writerExecutionSelection, findModelIn } from "@lane-pilot/
 import {
   CHAIR_SEAT_ID, IMPULSE_SCORES, MODERATOR_SEAT_ID,
   addCouncilMessage, agendaBrief, chairBrief, chooseSpeaker, createCouncilSession, decideRequestedIn, decisionFileName, decisionMarkdown, getCouncilSession,
-  lastSeqOf, listCouncilMessages, maxTurnsOf, moderate, parseAgenda, parseDecisionRecord, roomPlan, roundNovelty, roundsPlan, ruleImpulse, seatBrief, seenBySeat,
+  lastSeqOf, listCouncilMessages, listLiveCouncilIds, maxTurnsOf, moderate, parseAgenda, parseDecisionRecord, roomPlan, roundNovelty, roundsPlan, ruleImpulse, seatBrief, seenBySeat,
   setCouncilAgenda, setCouncilRun, setCouncilState, verdictWritten,
   type CouncilMessage, type CouncilMessageKind, type CouncilSeat, type CouncilSession, type Impulse, type Moderator,
 } from "@lane-pilot/council";
@@ -554,9 +554,9 @@ export function mountCouncilGraph(ctx: ServerCore, services: Services, council: 
   }
 
   // A session an earlier version was driving in memory (no graph run) died with that version's process: it says so instead of looking alive.
-  for (const row of db.prepare("SELECT id FROM lane_pilot_council WHERE state IN ('agenda','discussion','synthesis') AND wf_run_id IS NULL").all() as Array<{ id: string }>) {
-    const session = sessionOf(row.id);
-    setCouncilState(db, row.id, { state: "failed", reason: "interrupted by a plugin reload; convene the council again" });
+  for (const id of listLiveCouncilIds(db)) {
+    const session = sessionOf(id);
+    setCouncilState(db, id, { state: "failed", reason: "interrupted by a plugin reload; convene the council again" });
     note(session, MODERATOR_SEAT_ID, session.round, "status", "Interrupted by a plugin reload. Convene the council again.");
   }
 

@@ -105,3 +105,14 @@ export function listCouncilMessages(db: CouncilDatabase, councilId: string, afte
   const rows = db.prepare("SELECT seq,council_id,seat_id,round,kind,text,at FROM lane_pilot_council_message WHERE council_id=? AND seq>? ORDER BY seq ASC").all(councilId, afterSeq) as Array<{ seq: number; council_id: string; seat_id: string; round: number; kind: CouncilMessageKind; text: string; at: number }>;
   return rows.map((row) => ({ seq: row.seq, councilId: row.council_id, seatId: row.seat_id, round: row.round, kind: row.kind, text: row.text, at: row.at }));
 }
+
+/** Active councils (agenda/discussion/synthesis) touched since a time, oldest first — the world signal source. */
+export function listActiveCouncilRefs(db: CouncilDatabase, sinceMs: number): Array<{ id: string; project_id: string; seats_json: string }> {
+  return db.prepare("SELECT id, project_id, seats_json FROM lane_pilot_council WHERE state IN ('agenda','discussion','synthesis') AND updated_at>? ORDER BY created_at").all(sinceMs) as
+    Array<{ id: string; project_id: string; seats_json: string }>;
+}
+
+/** Ids of live councils no graph run is driving (the reload sweep). */
+export function listLiveCouncilIds(db: CouncilDatabase): string[] {
+  return (db.prepare("SELECT id FROM lane_pilot_council WHERE state IN ('agenda','discussion','synthesis') AND wf_run_id IS NULL").all() as Array<{ id: string }>).map((row) => row.id);
+}

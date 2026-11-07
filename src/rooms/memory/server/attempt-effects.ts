@@ -1,11 +1,10 @@
 import { dropMemoryIndexes, hideRecord, noteRefutedByCheck, recordMemoryAccepted } from "@lane-pilot/memory-core";
-import { onAttemptChanged, type LanePilotDatabase, type ReasoningTrace } from "../../storage";
+import { attemptTraceContext, onAttemptChanged, type LanePilotDatabase, type ReasoningTrace } from "../../storage";
 
 /** A check that quotes a note from this attempt's brief expires that note. A note the brief did not carry, and a failure that does not quote the note, stay. Never fails the transition. */
 function refuteMemoryOfAttempt(db: LanePilotDatabase, attemptId: string, failureText: string): void {
   try {
-    const row = db.prepare(`SELECT r.project_id AS projectId, t.trace_json AS trace FROM lane_pilot_attempt a
-      JOIN lane_pilot_run r ON r.id=a.run_id JOIN lane_pilot_attempt_reasoning t ON t.attempt_id=a.id WHERE a.id=?`).get(attemptId) as { projectId: string; trace: string } | undefined;
+    const row = attemptTraceContext(db, attemptId);
     const picked = row ? (JSON.parse(row.trace) as ReasoningTrace).dispatchContext?.memoryPicked : undefined;
     if (!row || !Array.isArray(picked)) return;
     for (const id of picked) {
@@ -19,8 +18,7 @@ function refuteMemoryOfAttempt(db: LanePilotDatabase, attemptId: string, failure
 /** An accepted attempt credits the memory notes its brief carried, so the notes that serve briefs well rank higher. Never fails the transition. */
 function creditMemoryOfAttempt(db: LanePilotDatabase, attemptId: string): void {
   try {
-    const row = db.prepare(`SELECT r.project_id AS projectId, t.trace_json AS trace FROM lane_pilot_attempt a
-      JOIN lane_pilot_run r ON r.id=a.run_id JOIN lane_pilot_attempt_reasoning t ON t.attempt_id=a.id WHERE a.id=?`).get(attemptId) as { projectId: string; trace: string } | undefined;
+    const row = attemptTraceContext(db, attemptId);
     const picked = row ? (JSON.parse(row.trace) as ReasoningTrace).dispatchContext?.memoryPicked : undefined;
     if (row && Array.isArray(picked) && picked.length) recordMemoryAccepted(db, row.projectId, picked.filter((id): id is string => typeof id === "string"));
   } catch { /* the counters are a ranking hint, not a gate */ }

@@ -73,6 +73,8 @@ export function foreignSql(root) {
       const end = text.slice(start, start + 4000).search(/\)\s*\.\s*(?:get|all|run|pluck|iterate)|\)\s*;/);
       const sql = text.slice(start, end === -1 ? start + 4000 : start + end);
       if (sql.length > 4000) continue;
+      // DROP INDEX names an index, never a table; index names that look like lane_pilot_* are not foreign SQL.
+      if (/\.prepare\(\s*["'`]?\s*DROP\s+INDEX\b/i.test(sql)) continue;
       const tables = [...sql.matchAll(TABLE_RE)].map((t) => t[0]);
       const foreign = [...new Set(tables)].filter((table) => !owner.get(table)?.has(room));
       if (foreign.length) {

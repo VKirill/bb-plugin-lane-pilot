@@ -1,6 +1,6 @@
 import { wfRunsByIdemPrefix } from "@lane-pilot/workflow-engine";
 import { projectRoleField } from "../../runs/server";
-import { claimDailySchedule, getActivation, getRun, listRunsWithAttempts, listStageReceipts, loadProjectSettings, loadPrototypeConfig } from "../../storage";
+import { claimDailySchedule, getActivation, getRun, latestDocsTaskAt, listProjectsWithBindingSettings, listRunsWithAttempts, listStageReceipts, loadProjectSettings, loadPrototypeConfig } from "../../storage";
 import {bbServiceTier, providerLimitNotice, writerExecutionSelection} from "@lane-pilot/models";
 ;
 import { sha256 } from "../../tasks";
@@ -102,12 +102,7 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
   /** The last time a writer task in this folder was pointed at its docs: read_first or the execution packet named a docs page. */
   function docsLastRead(place:DocsPlace):number|null {
     const root=resolve(place.path);
-    const row=db.prepare(`SELECT max(t.created_at) AS at FROM lane_pilot_task t JOIN lane_pilot_run r ON r.id=t.run_id
-      LEFT JOIN lane_pilot_attempt a ON a.task_id=t.id LEFT JOIN lane_pilot_attempt_reasoning x ON x.attempt_id=a.id
-      WHERE (r.writer_workspace_path=? OR r.writer_workspace_path LIKE ?) AND (r.writer_host_id IS NULL OR r.writer_host_id=?)
-        AND (json_extract(t.contract_json,'$.read_first') LIKE '%docs/%' OR json_extract(x.trace_json,'$.dispatchContext.executionPacket') LIKE '%docs/%')`)
-      .get(root,`${root}/%`,place.hostId) as {at:number|null}|undefined;
-    return row?.at??null;
+    return latestDocsTaskAt(db, { root, hostId: place.hostId });
   }
 
   /** Where a folder in auto mode stands: verdict, and for kept docs how often they are refreshed. */
@@ -954,7 +949,7 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
   }
 
   async function runScheduledDocsMaintenance(signal?:AbortSignal):Promise<void> {
-    const projectIds=(db.prepare("SELECT DISTINCT project_id FROM lane_pilot_project_settings WHERE binding_id=''").all() as Array<{project_id:string}>).map((row)=>row.project_id);
+    const projectIds=listProjectsWithBindingSettings(db);
     const now=new Date(), today=localDateKey(now);
     for(const projectId of projectIds){
       signal?.throwIfAborted();

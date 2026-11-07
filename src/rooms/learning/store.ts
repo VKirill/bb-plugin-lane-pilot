@@ -224,3 +224,19 @@ export function listReviewedObservations(db: Db, since: number): Array<{ id: str
   return db.prepare("SELECT id, review, reviewed_at, kind, final_route, excerpt FROM lane_pilot_learning_obs WHERE review IN ('ok','wrong') AND sensitive=0 AND reviewed_at>? ORDER BY reviewed_at")
     .all(since) as Array<{ id: string; review: "ok" | "wrong"; reviewed_at: number; kind: string | null; final_route: string | null; excerpt: string | null }>;
 }
+
+/** Correction/frustration observations judged since a time, oldest first (the replay harvest reads the raw columns). */
+export function judgedCorrectionRows(db: Db, sinceMs: number, limit: number): Array<{ id: string; thread_id: string; project_id: string; at: number; excerpt: string | null; body: string | null; prev: string | null; kind: string; frustration: number | null }> {
+  return db.prepare(`SELECT id, thread_id, project_id, at, excerpt, body, prev, kind, frustration FROM lane_pilot_learning_obs
+    WHERE judged_at>=? AND (kind='correction' OR frustration>=0.5) ORDER BY at LIMIT ?`).all(sinceMs, limit) as
+    Array<{ id: string; thread_id: string; project_id: string; at: number; excerpt: string | null; body: string | null; prev: string | null; kind: string; frustration: number | null }>;
+}
+
+/** Whether the thread is recorded in the learning observations or items (the memory thread gate's learning half). */
+export function learningThreadRecorded(db: Db, threadId: string): boolean {
+  const row = db.prepare(`SELECT (
+    EXISTS(SELECT 1 FROM lane_pilot_learning_obs WHERE thread_id=?)
+    OR EXISTS(SELECT 1 FROM lane_pilot_learning_item WHERE thread_id=?)
+  ) AS hit`).get(threadId, threadId) as { hit: number };
+  return row.hit === 1;
+}

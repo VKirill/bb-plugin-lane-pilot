@@ -1,5 +1,6 @@
 import { z } from "zod";
-import type { Db } from "../learning";
+import { judgedCorrectionRows, type Db } from "../learning";
+import { listPmNoticeThreadIdsSince, listPmThreadIdsSince } from "../storage";
 import { scenarioId, type Scenario } from "./store";
 
 /**
@@ -21,8 +22,7 @@ export type CorrectionObs = {
 
 /** Observations judged `correction` (or clearly frustrated) in PM threads of the window, oldest first. */
 export function correctionObservations(db: Db, pmThreads: ReadonlySet<string>, since: number, limit: number): CorrectionObs[] {
-  const rows = db.prepare(`SELECT id, thread_id, project_id, at, excerpt, body, prev, kind, frustration FROM lane_pilot_learning_obs
-    WHERE judged_at>=? AND (kind='correction' OR frustration>=0.5) ORDER BY at LIMIT ?`).all(since, limit * 4) as Array<Record<string, unknown>>;
+  const rows = judgedCorrectionRows(db, since, limit * 4);
   return rows
     .filter((row) => pmThreads.has(row.thread_id as string))
     .slice(0, limit)
@@ -36,9 +36,7 @@ export function correctionObservations(db: Db, pmThreads: ReadonlySet<string>, s
 
 /** Threads that are a PM chat of a live run (lane_pilot_run.pm_thread_id) or that the notice table names. */
 export function pmThreadIds(db: Db, since: number): Set<string> {
-  const a = db.prepare("SELECT pm_thread_id AS t FROM lane_pilot_run WHERE pm_thread_id IS NOT NULL AND updated_at>=?").all(since) as Array<{ t: string }>;
-  const b = db.prepare("SELECT DISTINCT pm_thread_id AS t FROM lane_pilot_pm_notice WHERE sent_at>=?").all(since) as Array<{ t: string }>;
-  return new Set([...a, ...b].map((row) => row.t));
+  return new Set([...listPmThreadIdsSince(db as never, since), ...listPmNoticeThreadIdsSince(db as never, since)]);
 }
 
 const scenarioSchema = z.object({

@@ -1,5 +1,5 @@
 import type { AcceptanceCard } from "../contracts";
-import { getTask, getTaskGitBase, listStageReceipts } from "../storage";
+import { getRun, getTask, getTaskGitBase, listGateEventsForTask, listStageReceipts } from "../storage";
 import type { LanePilotDatabase } from "../storage";
 import { STAGE_PROOF, isAdvisoryProof } from "../tasks";
 import { CARD_STAGE_ORDER, type StageId } from "@lane-pilot/contracts";
@@ -25,7 +25,7 @@ const strings = (value: unknown): string[] => (Array.isArray(value) ? value.filt
 
 export function buildAcceptanceCard(db: LanePilotDatabase, input: { runId: string; taskId: string }): AcceptanceCard | null {
   const task = getTask(db, input.taskId);
-  const run = db.prepare("SELECT project_id FROM lane_pilot_run WHERE id=?").get(input.runId) as { project_id: string } | undefined;
+  const run = getRun(db, input.runId);
   if (!task || !run) return null;
   const contract = asObject(task.contract);
   const receipts = listStageReceipts(db, input.runId, input.taskId);
@@ -54,8 +54,7 @@ export function buildAcceptanceCard(db: LanePilotDatabase, input: { runId: strin
   }
   for (const line of planFact?.notChecked ?? []) notRun.push({ stageId: "plan-fact", why: line });
 
-  const gates = (db.prepare("SELECT gate, status, attempt, occurred_at FROM lane_pilot_gate_event WHERE run_id=? AND task_id=? ORDER BY id").all(input.runId, input.taskId) as
-    Array<{ gate: string; status: string; attempt: number; occurred_at: number }>).map((row) => ({ gate: row.gate, status: row.status, attempt: row.attempt, at: row.occurred_at }));
+  const gates = listGateEventsForTask(db, input.runId, input.taskId).map((row) => ({ gate: row.gate, status: row.status, attempt: row.attempt, at: row.occurred_at }));
 
   const base = getTaskGitBase(db, input.taskId);
   const metrics = attemptMetrics(db, { projectId: run.project_id, days: 365, taskId: input.taskId }).attempts;

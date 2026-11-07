@@ -13,6 +13,7 @@ import { loadAnamnesis, type LoadDeps, type LoadOptions } from "./load";
 import { createOwnerMessageHub, isOwnerThread, sdkThreadsPort, type ThreadLike } from "./owner-messages";
 import { createExtractConsumer, type ExtractDeps } from "./extract";
 import { bestEffort } from "@lane-pilot/kit";
+import { listAllRunRefs } from "../storage";
 import { dailyDue, dailyPass, markDailyDone, type DailyDeps } from "./daily";
 import { scheduleIsolated } from "../platform/server";
 
@@ -88,8 +89,7 @@ function build(ctx: ServerCore) {
   const dailyDeps = (): DailyDeps => ({
     hub, threads, owner: ownerMessages, consumer, now: Date.now, log: (message) => bb.log.warn(message),
     projectNames: async () => new Map(((await bb.sdk.projects.list({ includePersonal: true } as never)) as unknown as Array<{ id: string; name?: string }>).map((project) => [project.id, project.name ?? project.id])),
-    lpRuns: () => (db.prepare("SELECT id, project_id, created_at FROM lane_pilot_run").all() as Array<{ id: string; project_id: string; created_at: number }>)
-      .map((row) => ({ id: row.id, projectId: row.project_id, createdAt: row.created_at })),
+    lpRuns: () => listAllRunRefs(db).map((row) => ({ id: row.id, projectId: row.project_id, createdAt: row.created_at })),
   });
   const runPass = async (signal?: AbortSignal) => {
     const report = await dailyPass(dailyDeps(), { signal });
@@ -117,8 +117,7 @@ function build(ctx: ServerCore) {
     return {
       hub, threads, now: Date.now, log: (message) => bb.log.warn(message),
       projectNames: async () => new Map(((await bb.sdk.projects.list({ includePersonal: true } as never)) as unknown as Array<{ id: string; name?: string }>).map((project) => [project.id, project.name ?? project.id])),
-      lpRuns: () => (db.prepare("SELECT id, project_id, created_at FROM lane_pilot_run").all() as Array<{ id: string; project_id: string; created_at: number }>)
-        .map((row) => ({ id: row.id, projectId: row.project_id, createdAt: row.created_at })),
+      lpRuns: () => listAllRunRefs(db).map((row) => ({ id: row.id, projectId: row.project_id, createdAt: row.created_at })),
       ...(instance && instance.enabled() ? { judge: judgeFragments } : {}),
     };
   };

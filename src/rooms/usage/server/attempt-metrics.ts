@@ -4,6 +4,7 @@ import type { ModelTier } from "@lane-pilot/models";
 import { STAGE_PROOF } from "@lane-pilot/contracts";
 import { billedFrom, parseBreakdown } from "../token-math";
 import { isOpenAttemptState } from "../../contracts/state-machine";
+import { listProjectAttemptsSince, listProjectGateEventsSince, listProjectStageEventsSince, listProjectTransitionsSince, listRunQueueAttempts, listRunTransitions, stageReceiptProviderModel } from "../../storage";
 
 /**
  * What an attempt cost and how far it got, per attempt, with an honest «not measured» (P0-2 of the SMA plan).
@@ -92,9 +93,8 @@ const percentile = (sorted: readonly number[], p: number): number | null =>
 
 /** Queue waits of one run's attempts, settled only — the run card's p50/p99. */
 export function runQueueWaits(db: Database.Database, runId: string): number[] {
-  const attempts = db.prepare("SELECT id, state, created_at FROM lane_pilot_attempt WHERE run_id=?").all(runId) as Array<{ id: string; state: string; created_at: number }>;
-  const transitions = db.prepare(`SELECT t.attempt_id, t.from_state, t.to_state, t.at FROM lane_pilot_attempt_transition t
-    JOIN lane_pilot_attempt a ON a.id=t.attempt_id WHERE a.run_id=? AND t.refused=0 ORDER BY t.attempt_id, t.at, t.rowid`).all(runId) as TransitionRow[];
+  const attempts = listRunQueueAttempts(db, runId);
+  const transitions = listRunTransitions(db, runId);
   const byAttempt = new Map<string, TransitionRow[]>();
   for (const row of transitions) byAttempt.set(row.attempt_id, [...(byAttempt.get(row.attempt_id) ?? []), row]);
   return attempts.map((attempt) => queueWaitMs(byAttempt.get(attempt.id) ?? [], attempt)).filter((ms) => ms >= 0).sort((a, b) => a - b);
@@ -107,18 +107,11 @@ export const queueWaitPercentiles = (waits: readonly number[]): { samples: numbe
 export function attemptMetrics(db: Database.Database, input: { projectId: string; days: number; now?: number; taskId?: string }): AttemptMetricsReport {
   const now = input.now ?? Date.now();
   const since = now - input.days * DAY_MS;
-  const attempts = db.prepare(`SELECT a.id, a.run_id, a.task_id, a.attempt_no, a.state, a.thread_id, a.created_at, a.updated_at
-    FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id = a.run_id
-    WHERE r.project_id = ? AND a.created_at >= ? ${input.taskId ? "AND a.task_id = ?" : ""} ORDER BY a.run_id, a.task_id, a.created_at, a.attempt_no`).all(input.projectId, since, ...(input.taskId ? [input.taskId] : [])) as AttemptRow[];
+  const attempts = listProjectAttemptsSince(db, { projectId: input.projectId, sinceMs: since, taskId: input.taskId });
   // Helper stages run before the first attempt of a task exists: read events from a day earlier.
-  const stageEvents = db.prepare(`SELECT run_id, task_id, stage_id, state, occurred_at FROM lane_pilot_stage_event
-    WHERE project_id = ? AND occurred_at >= ? ${input.taskId ? "AND task_id = ?" : ""} ORDER BY id`).all(input.projectId, since - DAY_MS, ...(input.taskId ? [input.taskId] : [])) as StageEventRow[];
-  const gateEvents = db.prepare(`SELECT run_id, task_id, status, occurred_at FROM lane_pilot_gate_event
-    WHERE project_id = ? AND occurred_at >= ? ${input.taskId ? "AND task_id = ?" : ""} ORDER BY id`).all(input.projectId, since - DAY_MS, ...(input.taskId ? [input.taskId] : [])) as GateEventRow[];
-  const transitions = db.prepare(`SELECT t.attempt_id, t.from_state, t.to_state, t.at, t.reason FROM lane_pilot_attempt_transition t
-    JOIN lane_pilot_attempt a ON a.id = t.attempt_id JOIN lane_pilot_run r ON r.id = a.run_id
-    WHERE r.project_id = ? AND a.created_at >= ? AND t.refused = 0 ${input.taskId ? "AND a.task_id = ?" : ""} ORDER BY t.attempt_id, t.at, t.rowid`)
-    .all(input.projectId, since, ...(input.taskId ? [input.taskId] : [])) as TransitionRow[];
+  const stageEvents = listProjectStageEventsSince(db, { projectId: input.projectId, sinceMs: since - DAY_MS, taskId: input.taskId });
+  const gateEvents = listProjectGateEventsSince(db, { projectId: input.projectId, sinceMs: since - DAY_MS, taskId: input.taskId });
+  const transitions = listProjectTransitionsSince(db, { projectId: input.projectId, sinceMs: since, taskId: input.taskId });
   const transitionsByAttempt = new Map<string, TransitionRow[]>();
   for (const row of transitions) transitionsByAttempt.set(row.attempt_id, [...(transitionsByAttempt.get(row.attempt_id) ?? []), row]);
   const threadIds = [...new Set(attempts.flatMap((row) => row.thread_id ? [row.thread_id] : []))];
@@ -128,7 +121,7 @@ export function attemptMetrics(db: Database.Database, input: { projectId: string
     const row = cursorQuery.get(id) as CursorRow | undefined;
     if (row) cursors.set(id, row);
   }
-  const writerReceipt = db.prepare("SELECT provider_id, model FROM lane_pilot_stage_receipt WHERE run_id = ? AND task_id = ? AND stage_id = 'writer-agent'");
+  const writerReceipt = { get: (runId: string, taskId: string) => stageReceiptProviderModel(db, runId, taskId, "writer-agent") };
 
   const byTask = new Map<string, AttemptRow[]>();
   for (const row of attempts) byTask.set(`${row.run_id}\u0000${row.task_id}`, [...(byTask.get(`${row.run_id}\u0000${row.task_id}`) ?? []), row]);

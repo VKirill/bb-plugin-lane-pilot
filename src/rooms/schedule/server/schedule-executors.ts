@@ -1,4 +1,5 @@
 import { loadProjectSettings, recordSecretIssuance } from "../../storage";
+import { wfRunDefinitionJson } from "@lane-pilot/workflow-engine";
 import {redactKnown} from "@lane-pilot/kit";
 import { agentHistoryBlock, finalRuleOf, workflowFinish } from "../outcome";
 import { createScheduleStore } from "../store";
@@ -45,7 +46,7 @@ export function createScheduleExecutors(ctx: ServerCore, services: Services): Re
       switch (summary.status) {
         case "succeeded": {
           // The run succeeded, but its last node may be «aborted» or «send_failed»: that is a failed scheduled run (audit r4 item 16).
-          const rule = (() => { try { return finalRuleOf((db.prepare("SELECT definition_json FROM lane_pilot_wf_run WHERE id=?").get(run.ref_id!) as { definition_json?: string } | undefined)?.definition_json); } catch { return null; } })();
+          const rule = (() => { try { return finalRuleOf(wfRunDefinitionJson(db, run.ref_id!)); } catch { return null; } })();
           const finish = workflowFinish(summary.output, rule);
           const output = summary.output ? clip(JSON.stringify(summary.output, null, 2), 16_000) : "";
           // A correct escalation or unfinished work is not a schedule failure (that would pause the schedule) and not completed work.

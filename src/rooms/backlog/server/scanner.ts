@@ -1,4 +1,4 @@
-import { loadPrototypeConfig } from "../../storage";
+import { listCliPmProjects, listCliPmThreads, loadPrototypeConfig } from "../../storage";
 import { scheduleIsolated } from "../../platform/server";
 import { type ServerCore } from "../../contracts/server";
 import { isPmChat } from "../../native-agent/server";
@@ -21,8 +21,7 @@ export function createBacklog(ctx: ServerCore) {
 
   /** The project's newest owner PM chat active in the last two weeks, or null. */
   async function pmOf(projectId: string, now: number): Promise<string | null> {
-    const rows = db.prepare("SELECT pm_thread_id FROM lane_pilot_run WHERE project_id=? AND kind='cli' AND pm_thread_id IS NOT NULL AND updated_at>=? ORDER BY updated_at DESC LIMIT 20")
-      .all(projectId, now - 14 * DAY) as Array<{ pm_thread_id: string }>;
+    const rows = listCliPmThreads(db, projectId, now - 14 * DAY);
     // A workflow architect's chat has a run and the role pm too, marked by architectProjectId; the backlog's task goes to the owner's PM chat only.
     for (const row of rows) {
       const metadata = await bb.sdk.threads.getPluginMetadata({ threadId: row.pm_thread_id }).catch(() => null) as Record<string, unknown> | null;
@@ -43,7 +42,7 @@ export function createBacklog(ctx: ServerCore) {
 
   async function scan(now = Date.now()) {
     const issuedToday = () => (db.prepare("SELECT count(*) AS n FROM lane_pilot_backlog_issue WHERE issued_at>=?").get(now - DAY) as { n: number }).n;
-    const projects = db.prepare("SELECT DISTINCT project_id FROM lane_pilot_run WHERE kind='cli' AND pm_thread_id IS NOT NULL AND updated_at>=?").all(now - 14 * DAY) as Array<{ project_id: string }>;
+    const projects = listCliPmProjects(db, now - 14 * DAY);
     const out: Array<{ projectId: string; offered: string | null; board: { issuable: number; needsEstimate: number; decompose: number; blocked: number } }> = [];
     for (const { project_id: projectId } of projects) {
       if (ctx.isDisposed()) break;

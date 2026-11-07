@@ -1,5 +1,5 @@
 import Database from "better-sqlite3";
-import { addToIndexes, memoryRecordId, trigramReady } from "@lane-pilot/memory-core";
+import { addToIndexes, insertMemoryRecord, memoryRecordId, trigramReady } from "@lane-pilot/memory-core";
 import { OFFTOPIC, candidateQuestions, classify, folderKey, fileKey, notesNaming, queryOf, type EvalQuestion } from "./questions";
 import type { EvalData, RawNote } from "../../contracts/memory-eval";
 
@@ -146,11 +146,9 @@ export function buildEvalDb(plan: SizePlan, migrations: readonly string[]): Data
   const db = new Database(":memory:");
   for (const statement of migrations) db.exec(statement);
   trigramReady(db);
-  const insert = db.prepare(`INSERT INTO lane_pilot_memory(id,project_id,personal_bot,kind,audience,content,concepts_json,source_sha256,created_at,trust,origin)
-    VALUES(?,?,'',?,'subagent',?,?,?,?,'confirmed',?)`);
   db.transaction(() => {
     for (const note of plan.notes) {
-      insert.run(note.id, note.scope, note.kind, note.content, JSON.stringify(note.concepts), "eval", note.createdAt, note.origin);
+      insertMemoryRecord(db, { id: note.id, projectId: note.scope, kind: note.kind, content: note.content, conceptsJson: JSON.stringify(note.concepts), sourceSha256: "eval", createdAt: note.createdAt, origin: note.origin });
       addToIndexes(db, note.scope, note.id, note.content, note.concepts);
     }
   })();

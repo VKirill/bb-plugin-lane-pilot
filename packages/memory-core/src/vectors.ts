@@ -23,7 +23,8 @@ export function vectorsReady(db: MemoryDatabase): boolean {
   try {
     db.prepare(`CREATE TABLE IF NOT EXISTS lane_pilot_memory_vec (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, model TEXT NOT NULL,
       content_sha TEXT NOT NULL, vec BLOB NOT NULL, created_at INTEGER NOT NULL)`).run();
-    db.prepare("CREATE INDEX IF NOT EXISTS lane_pilot_memory_vec_project ON lane_pilot_memory_vec(project_id, model)").run();
+    db.prepare("DROP INDEX IF EXISTS lane_pilot_memory_vec_project").run();
+    db.prepare("CREATE INDEX IF NOT EXISTS memory_vec_project ON lane_pilot_memory_vec(project_id, model)").run();
     ok = true;
   } catch { ok = false; }
   ready.set(db, ok);

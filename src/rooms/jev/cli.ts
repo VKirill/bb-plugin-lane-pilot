@@ -1,9 +1,10 @@
 import type Database from "better-sqlite3";
-import { autoresearchThresholds, calibrationRecord, jevWatch, judgmentFingerprint, listJudgments, renderCalibration, renderWatch, AUTORESEARCH_MIN_LABELED, CALIBRATION_EPOCH_FALLBACK, JEV_CALIBRATED_KEY } from "@lane-pilot/jev";
+import { autoresearchThresholds, calibrationRecord, jevWatch, judgmentFingerprint, listJudgments, listPlanFactJevReceipts, renderCalibration, renderWatch, AUTORESEARCH_MIN_LABELED, CALIBRATION_EPOCH_FALLBACK, JEV_CALIBRATED_KEY } from "@lane-pilot/jev";
 // The worktree's calibrate carries `bySource` (H1); the package path keeps the main checkout's older copy out of this build.
 import { calibrateReceipts } from "@lane-pilot/jev";
 import "./judgments";
 import { failureClassReport } from "../runs";
+import { stageReceiptStateResultJson } from "../storage";
 
 /**
  * `bb lane-pilot jev calibrate [project] [--since <iso-date>] [--save] [--json]`: the calibration report over the receipts
@@ -53,11 +54,11 @@ export function runJevCli(deps: { db: Database.Database; saveProjectSetting?: (p
   }
   if (sub === "planfact") {
     // Jev's blind read is measured only where it decided itself; shadow/fallback receipts say nothing about accuracy.
-    const rows = deps.db.prepare(`SELECT r.id, r.run_id, r.subject, r.decision, s.state, s.result_json FROM lane_pilot_jev_receipt r
-      JOIN lane_pilot_stage_receipt s ON s.run_id = r.run_id AND s.task_id = r.subject AND s.stage_id = 'plan-fact'
-      WHERE r.judgment = 'plan.fact' AND r.status = 'ok' AND r.decided_by = 'jev'`).all() as Array<{ id: number; run_id: string; subject: string; decision: string | null; state: string; result_json: string | null }>;
     const items: Array<{ runId: string; taskId: string; jev: Record<string, string>; code: Record<string, string>; state: string }> = [];
-    for (const row of rows) {
+    for (const receipt of listPlanFactJevReceipts(deps.db)) {
+      const stage = stageReceiptStateResultJson(deps.db, receipt.run_id, receipt.subject, "plan-fact");
+      if (!stage) continue;
+      const row = { id: receipt.id, run_id: receipt.run_id, subject: receipt.subject, decision: receipt.decision, state: stage.state, result_json: stage.result_json };
       let result: { items?: Array<{ item: number; verdict: string }>; jev?: Record<string, string> } | null = null;
       try { result = row.result_json ? JSON.parse(row.result_json) : null; } catch { /* unreadable */ }
       if (!result?.jev) continue;

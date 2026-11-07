@@ -140,6 +140,10 @@ export function labeledOutcomes(db: Database.Database, judgment: string): string
 /** How many receipts a judgment has written (the report's call count). */
 export function countJudgmentReceipts(db: Database.Database, judgment: string): number {
   return (db.prepare(`SELECT COUNT(*) AS n FROM lane_pilot_jev_receipt WHERE judgment=?`).get(judgment) as { n: number }).n;
+/** plan.fact receipts Jev decided itself (the CLI's blind-read comparison reads the stage side itself). */
+export function listPlanFactJevReceipts(db: Database.Database): Array<{ id: number; run_id: string; subject: string; decision: string | null }> {
+  return db.prepare(`SELECT id, run_id, subject, decision FROM lane_pilot_jev_receipt
+    WHERE judgment = 'plan.fact' AND status = 'ok' AND decided_by = 'jev'`).all() as Array<{ id: number; run_id: string; subject: string; decision: string | null }>;
 }
 
 export function jevDecisionCounts(db: Database.Database, judgment: string, since: number): Array<{ decision: string; n: number }> {

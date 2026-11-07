@@ -1,4 +1,4 @@
-import { getAttempt, getRunSettingsScopes, latestTaskAttemptState, listUnreportedTaskOutcomes, loadProjectSettings, markTaskOutcomesReported, pmBookkeepingPending, pmHasTasksAtWork, pmTasksWaiting, toldPmDirectly, type TaskOutcome } from "../../storage";
+import { getAttempt, getRunSettingsScopes, latestTaskAttemptState, listProjectAttemptStates, listUnreportedTaskOutcomes, loadProjectSettings, markTaskOutcomesReported, pmBookkeepingPending, pmHasTasksAtWork, pmTasksWaiting, toldPmDirectly, type TaskOutcome } from "../../storage";
 import { wayOut } from "../../contracts"
 import { taskFamily } from "@lane-pilot/contracts";
 import { pmDeferralLines } from "../../deferral/server";
@@ -608,8 +608,7 @@ export function relayFor(ctx:ServerContext):Relay {
     taskStates:async (projectId, taskIds) => Object.fromEntries(taskIds.map((task) => [task, latestTaskAttemptState(ctx.db, projectId, task)])),
     latestFamilyMember:async (projectId, taskId) => {
       const family = taskFamily(taskId);
-      const rows = ctx.db.prepare(`SELECT a.task_id, a.state FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
-        WHERE r.project_id=? ORDER BY a.created_at DESC, a.attempt_no DESC`).all(projectId) as Array<{ task_id:string; state:string }>;
+      const rows = listProjectAttemptStates(ctx.db, projectId);
       const member = rows.find((row) => taskFamily(row.task_id) === family);
       return member ? { taskId:member.task_id, state:member.state } : null;
     },

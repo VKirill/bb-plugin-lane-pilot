@@ -1,4 +1,4 @@
-import type { LanePilotDatabase } from "../../storage";
+import { listPmSkillUsesSince, recordPmSkillUse as recordPmSkillUseRow, type LanePilotDatabase } from "../../storage";
 
 /**
  * Which skills a PM session opens (audit Fable 5.1, finding 8). The bundled PostToolUse hook sees the
@@ -9,8 +9,7 @@ import type { LanePilotDatabase } from "../../storage";
 export const PM_SKILLS_USAGE = "bb lane-pilot pm-skills [--days N] [--json]";
 
 export function recordPmSkillUse(db: LanePilotDatabase, row: { threadId: string; projectId: string; skill: string; at?: number }): void {
-  db.prepare("INSERT INTO lane_pilot_pm_skill_use(thread_id,project_id,skill,used_at) VALUES(?,?,?,?)")
-    .run(row.threadId, row.projectId, row.skill, row.at ?? Date.now());
+  recordPmSkillUseRow(db, row);
 }
 
 export type PmSkillCount = { skill: string; uses: number; threads: number };
@@ -25,7 +24,7 @@ export function pmSkillName(name: string): string {
 export function pmSkillUseCounts(db: LanePilotDatabase, options: { days?: number; now?: number } = {}): PmSkillCount[] {
   const days = options.days && options.days > 0 ? Math.floor(options.days) : 14;
   const since = (options.now ?? Date.now()) - days * 86_400_000;
-  const rows = db.prepare("SELECT skill, thread_id FROM lane_pilot_pm_skill_use WHERE used_at>=?").all(since) as Array<{ skill: string; thread_id: string }>;
+  const rows = listPmSkillUsesSince(db, since);
   const groups = new Map<string, { uses: number; threads: Set<string> }>();
   for (const row of rows) {
     const name = pmSkillName(row.skill) || row.skill;

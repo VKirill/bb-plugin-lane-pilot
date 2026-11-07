@@ -1,4 +1,4 @@
-import { getSettingVersions, loadProjectSettings, type LanePilotDatabase } from "../../storage";
+import { bindingSettingValue, getSettingVersions, loadProjectSettings, type LanePilotDatabase } from "../../storage";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
 import { SCHEDULE_ERRAND_DEFAULT_KEY, parseErrandDefault, resolveErrandModel, type ErrandModelTask } from "../errand-model";
 import type { ErrandDefaultView, ModelView } from "../views";
@@ -10,9 +10,9 @@ import { stringAt } from "@lane-pilot/kit";
  * resolves now. Both read the same settings rows the executor reads (the project's own row over the global one), so the card and the run agree.
  */
 const ownRow = (db: LanePilotDatabase, projectId: string): unknown => {
-  const row = db.prepare("SELECT value FROM lane_pilot_project_settings WHERE project_id=? AND binding_id='' AND key=?").get(projectId, SCHEDULE_ERRAND_DEFAULT_KEY) as { value: string } | undefined;
-  if (!row) return null;
-  try { return JSON.parse(row.value); } catch { return null; }
+  const value = bindingSettingValue(db, projectId, SCHEDULE_ERRAND_DEFAULT_KEY);
+  if (value === undefined) return null;
+  try { return JSON.parse(value); } catch { return null; }
 };
 
 /** The default at the project level, at the global level and the one in force; `projectId` null reads the global level only. */

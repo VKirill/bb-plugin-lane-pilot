@@ -12,7 +12,7 @@ import type { ServerCore } from "../../contracts/server";
 import {sha256Hex, bestEffort} from "@lane-pilot/kit";
 import { threadMemoryBlock } from "./thread-block";
 import { rerankRecords } from "./rerank";
-import { loadProjectSettings } from "../../storage";
+import { loadProjectSettings, projectHasScopedRun } from "../../storage";
 
 import type { DocsNightlyApi } from "../../docs/server/docs-nightly";
 import type { MemoryConflictsApi } from "./memory-conflicts";
@@ -63,7 +63,7 @@ export function sessionMemoryRpc(ctx: ServerCore, services: Services) {
       try {
         const result = storeMemoryRecordsKeepingOverflow(db, { projectId, personalBot: settings.personalBot, audience: "subagent",
           sourceSha256: sha256Hex(`session:${source ?? ""}`), entries, scope: chain?.length ? chain
-            : resolveProjectKind(settings.projectKind, projectUsesSections(db, projectId)) === "umbrella"
+            : resolveProjectKind(settings.projectKind, projectUsesSections(db, projectId, projectHasScopedRun)) === "umbrella"
               // Root work of an umbrella is project work: shared as project:root; only an undefined source is unassigned.
               ? concepts?.some((concept) => /^shared/.test(concept)) ? sharedScope(concepts.find((concept) => /^shared:/.test(concept))?.split(":")[1])
                 : source ? sharedScope("root") : [...UNASSIGNED_SCOPE]
@@ -84,7 +84,7 @@ export function sessionMemoryRpc(ctx: ServerCore, services: Services) {
       const wanted = limit ?? 8;
       // The floor drops records, so the search looks further than the limit to fill it; a query nothing clears gets the explicit «nothing» next to the empty list.
       await embedQuery(query);
-      const found = searchMemoryRecords(db, projectId, query, Math.min(100, Math.max(40, wanted * 4)), settings.searchEngine, "subagent", settings.personalBot, { includeObserved: true, chain: chain ?? [], umbrella: resolveProjectKind(settings.projectKind, projectUsesSections(db, projectId)) === "umbrella" });
+      const found = searchMemoryRecords(db, projectId, query, Math.min(100, Math.max(40, wanted * 4)), settings.searchEngine, "subagent", settings.personalBot, { includeObserved: true, chain: chain ?? [], umbrella: resolveProjectKind(settings.projectKind, projectUsesSections(db, projectId, projectHasScopedRun)) === "umbrella" });
       const floored = relevantRecords(db, projectId, query, found, { audience: "subagent", personalBot: settings.personalBot, floor: settings.queryFloor === false ? null : DEFAULT_RELEVANCE_FLOOR });
       const records = (await rerankRecords(floored, query, { projectId, settings: loadProjectSettings(db, projectId, chain ?? []) })).slice(0, wanted)
         .map((record) => ({ id: record.id, kind: record.kind, content: record.content, concepts: record.concepts }));

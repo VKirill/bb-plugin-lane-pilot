@@ -1,6 +1,7 @@
 import type Database from "better-sqlite3";
 import { DRILL_SANDBOX_PROJECT_IDS } from "../contracts";
 import { countTermedDeferrals } from "../deferral/server";
+import { listFailedAttemptsSince } from "../storage";
 
 /**
  * «Waiting for the owner» (SMA D0-3). Since 2026-10-22 the owner takes no part in the loop: rules go on trial by themselves, a deferral
@@ -94,6 +95,8 @@ export const rpcLine = (method: string, input: Record<string, unknown>) => `echo
 
 function learningItems(db: Db): OwnerItem[] {
   if (!tableExists(db, "lane_pilot_learning_item")) return [];
+  // lane_pilot_learning_item is learning's table and learning already imports this room (postOwnerItem), so the
+  // owner-side reader cannot be imported here without a cycle; the query stays until the Services port lands.
   const rows = db.prepare("SELECT id, project_id, kind, text, evidence, created_at FROM lane_pilot_learning_item WHERE state='pending_owner' ORDER BY created_at DESC").all() as
     Array<{ id: string; project_id: string; kind: string; text: string; evidence: string; created_at: number }>;
   return rows.map((row) => ({
@@ -227,7 +230,7 @@ export function sweepOwnerItems(db: Db, now: number = Date.now(), sweeps: readon
 export function overnight(db: Db, now: number = Date.now(), windowMs: number = OVERNIGHT_WINDOW_MS): Overnight {
   const since = now - windowMs;
   const count = (sql: string, ...params: unknown[]) => (db.prepare(sql).get(...params) as { n: number }).n;
-  const red = (db.prepare("SELECT state, id FROM lane_pilot_attempt WHERE updated_at>=? AND (state LIKE '%failed%' OR state IN ('blocked','provider_error')) ORDER BY state, updated_at DESC").all(since) as Array<{ state: string; id: string }>)
+  const red = listFailedAttemptsSince(db as Database.Database, since)
     .reduce<Overnight["red"]>((groups, row) => {
       const group = groups.find((item) => item.state === row.state) ?? groups[groups.push({ state: row.state, count: 0, attempts: [] }) - 1]!;
       group.count += 1;

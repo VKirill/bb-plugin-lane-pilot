@@ -1,6 +1,8 @@
 import { coreShelf, isSharedScope } from "@lane-pilot/memory-core";
+import { wfEffectMentionsThread, wfNightSpawnMentionsThread } from "@lane-pilot/workflow-engine";
 import { memorySettingsFor } from "./memory-settings";
-import { loadProjectSettings, type LanePilotDatabase } from "../../storage";
+import { loadProjectSettings, pluginThreadInStoreTables, silentThreadInStoreTables, type LanePilotDatabase } from "../../storage";
+import { learningThreadRecorded } from "../../learning";
 import type { ServerCore } from "../../contracts/server";
 
 /**
@@ -26,21 +28,13 @@ const FACT_CHARS = 160;
  * pluginMetadata check once contributeInstructions can see it.
  */
 export function pluginThread(db: LanePilotDatabase, threadId: string): boolean {
-  const row = db.prepare(`SELECT (
-    EXISTS(SELECT 1 FROM lane_pilot_run WHERE pm_thread_id=?)
-    OR EXISTS(SELECT 1 FROM lane_pilot_activation WHERE pm_thread_id=?)
-    OR EXISTS(SELECT 1 FROM lane_pilot_attempt WHERE thread_id=? OR holder_thread_id=?)
-    OR EXISTS(SELECT 1 FROM lane_pilot_stage_receipt WHERE thread_id=?)
-    OR EXISTS(SELECT 1 FROM lane_pilot_pm_notice WHERE pm_thread_id=?)
-    OR EXISTS(SELECT 1 FROM lane_pilot_pm_skill_use WHERE thread_id=?)
-    OR EXISTS(SELECT 1 FROM lane_pilot_secret_issuance WHERE thread_id=?)
-    OR EXISTS(SELECT 1 FROM lane_pilot_errand_episode WHERE thread_id=?)
-    OR EXISTS(SELECT 1 FROM lane_pilot_wall_repair WHERE thread_id=?)
-    OR EXISTS(SELECT 1 FROM lane_pilot_learning_obs WHERE thread_id=?)
-    OR EXISTS(SELECT 1 FROM lane_pilot_learning_item WHERE thread_id=?)
-    OR EXISTS(SELECT 1 FROM lane_pilot_wf_effect WHERE result_json LIKE '%' || ? || '%')
-  ) AS plugin`).get(threadId, threadId, threadId, threadId, threadId, threadId, threadId, threadId, threadId, threadId, threadId, threadId, threadId) as { plugin: number };
-  return row.plugin === 1;
+  // lane_pilot_wall_repair is the wall room's table and wall reaches memory through self-repair, so the owner-side
+  // reader cannot be imported here without a cycle; this one EXISTS stays until the Services port lands.
+  const wallRepair = db.prepare("SELECT 1 FROM lane_pilot_wall_repair WHERE thread_id=? LIMIT 1").get(threadId) !== undefined;
+  return pluginThreadInStoreTables(db, threadId)
+    || wallRepair
+    || learningThreadRecorded(db, threadId)
+    || wfEffectMentionsThread(db, threadId);
 }
 
 const parseScope = (json: string | null): string[] => {
@@ -91,13 +85,7 @@ function renderBlock(facts: readonly string[]): string {
 
 /** A PM thread (its own memory block and tool) or a hidden analyzer (no tools): both get no block. */
 function silentThread(db: LanePilotDatabase, threadId: string): boolean {
-  const row = db.prepare(`SELECT (
-    EXISTS(SELECT 1 FROM lane_pilot_run WHERE pm_thread_id=?)
-    OR EXISTS(SELECT 1 FROM lane_pilot_activation WHERE pm_thread_id=?)
-    OR EXISTS(SELECT 1 FROM lane_pilot_pm_notice WHERE pm_thread_id=?)
-    OR EXISTS(SELECT 1 FROM lane_pilot_wf_effect WHERE kind='night.spawn' AND result_json LIKE '%' || ? || '%')
-  ) AS silent`).get(threadId, threadId, threadId, threadId) as { silent: number };
-  return row.silent === 1;
+  return silentThreadInStoreTables(db, threadId) || wfNightSpawnMentionsThread(db, threadId);
 }
 
 /**
