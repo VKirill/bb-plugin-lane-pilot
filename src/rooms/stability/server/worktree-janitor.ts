@@ -60,6 +60,7 @@ export async function runWorktreeJanitor(ctx: Pick<ServerCore, "bb" | "db" | "lo
   if (configuredSetting(settings, "cleanup.worktrees") === "off") return { removed: 0, freedBytes: 0, kept: 0 };
   const graceRaw = configuredSetting(settings, "cleanup.worktree_grace_hours");
   const graceMs = Math.max(0, (typeof graceRaw === "number" ? graceRaw : Number(graceRaw) || 2) * 3_600_000);
+  await ensureLegacyWorktreesAdopted(ctx);
   const protectedPaths = await protectedWorktreePaths(ctx, now);
   // The finished-attempt sweeps were never wired anywhere (found 2026-10-30: both exported, zero callers), which is why
   // lpattempt_* copies piled up; they run here, inside the janitor. `release` snapshots the work before the copy goes.
@@ -101,23 +102,39 @@ function attemptHoldsWorktree(db: ServerCore["db"], attempts: AttemptLivenessRow
     || (attempt.state === "accepted" && Boolean(attempt.area) && now - attempt.updated_at <= STICKY_WINDOW_MS));
 }
 
-/**
- * Owners whose pass manages its own worktree lifecycle: an open row means the copy is still wanted — the docs pass
- * reuses its copy across nights, a self-repair record and a regress pass keep theirs until their own settle/sweep
- * drops it (each releases the row through the host.call wrapper). Reconciling them here would reap a live pass's
- * copy or the docs copy the next night builds on.
- */
-const SELF_MANAGED_OWNERS: ReadonlySet<string> = new Set(["docs", "self-repair", "regress"]);
+// The passes' own liveness records, read as legacy-migration facts: stability cannot import the owning rooms
+// (self-repair imports stability, which would close a module cycle), so the key shapes live here once.
+const DOCS_WORKTREE_PREFIX = "docs-worktree:";
+const REGRESS_WORKTREE_PREFIX = "regress-worktree:";
+const SELF_REPAIR_STATE_KEY = "self-repair:state";
+/** A bounded regress pass's in-flight marker is live for six hours — the same window its own sweep applies. */
+const REGRESS_MARKER_TTL_MS = 6 * 3_600_000;
+type SelfRepairState = { signatures?: Record<string, { worktree?: { hostId?: string; path?: string; branch?: string } | null; pending?: { worktree?: { hostId?: string; path?: string; branch?: string } | null } | null }> } | null;
 
 /**
- * Whether a registry row's owning process is still alive, read from the tables alone: a self-managed pass keeps its
- * copy until its own settle or sweep releases the row; an attempt is alive while it is at work, can still reopen
- * inside the grace, or just accepted into a sticky area. A copy any such attempt works in is alive whatever owner
- * the row names; every other owner is a bounded pass with no liveness record, so its copy goes.
+ * Whether a registry row's owning process is still alive. Each self-managed pass keeps the same liveness fact the
+ * deployed build read — a docs reuse marker naming the copy, a fresh regress in-flight marker, a self-repair
+ * record still holding it — so a pass that crashed before its release leaves a dead row the reconcile can reap.
+ * An attempt is alive while it is at work, can still reopen inside the grace, or just accepted into a sticky
+ * area; a copy any such attempt works in is alive whatever owner the row names. Every other owner is a bounded
+ * pass with no liveness record, so its copy goes.
  */
-function ownerAlive(ctx: Pick<ServerCore, "bb" | "db">, row: { owner_kind: string; owner_id: string | null; created_at: number; host: string; path: string }, now = Date.now()): boolean {
-  const { db } = ctx;
-  if (SELF_MANAGED_OWNERS.has(row.owner_kind)) return true;
+async function ownerAlive(ctx: Pick<ServerCore, "bb" | "db">, row: { owner_kind: string; owner_id: string | null; created_at: number; host: string; path: string }, now = Date.now()): Promise<boolean> {
+  const { bb, db } = ctx;
+  if (row.owner_kind === "docs") {
+    if (!row.owner_id) return false;
+    const record = await bb.storage.kv.get(`${DOCS_WORKTREE_PREFIX}${row.host}:${row.owner_id}`) as { path?: string } | null;
+    return record?.path === row.path;
+  }
+  if (row.owner_kind === "regress") {
+    const entry = await bb.storage.kv.get(`${REGRESS_WORKTREE_PREFIX}${row.path}`) as { hostId?: string; at?: number } | null;
+    return entry?.hostId === row.host && typeof entry.at === "number" && now - entry.at < REGRESS_MARKER_TTL_MS;
+  }
+  if (row.owner_kind === "self-repair") {
+    const repair = await bb.storage.kv.get(SELF_REPAIR_STATE_KEY) as SelfRepairState;
+    return Object.values(repair?.signatures ?? {}).some((record) =>
+      [record?.worktree, record?.pending?.worktree].some((worktree) => worktree?.hostId === row.host && worktree.path === row.path));
+  }
   if (row.owner_kind !== "attempt") return false;
   // Sticky turns and retries borrow the original attempt's copy; the registry's creator is not its only owner.
   // Keep the creator too: its path may not be bound yet when a reload interrupts provisioning.
@@ -145,25 +162,37 @@ export async function adoptLegacyWorktrees(ctx: Pick<ServerCore, "bb" | "db">, n
     adopted += 1;
   };
   // docs: the durable reuse marker; host and name are the key's two segments (neither carries a colon).
-  for (const key of await bb.storage.kv.list("docs-worktree:")) {
+  for (const key of await bb.storage.kv.list(DOCS_WORKTREE_PREFIX)) {
     const record = await bb.storage.kv.get(key) as { path?: string } | null;
-    const [host, name] = key.slice("docs-worktree:".length).split(":");
+    const [host, name] = key.slice(DOCS_WORKTREE_PREFIX.length).split(":");
     adopt(host, record?.path, "docs", name ?? null);
   }
   // regress: a bounded pass's in-flight copies; its own sweep drops markers older than six hours, so only fresh ones are live.
-  for (const key of await bb.storage.kv.list("regress-worktree:")) {
-    const path = key.slice("regress-worktree:".length);
+  for (const key of await bb.storage.kv.list(REGRESS_WORKTREE_PREFIX)) {
+    const path = key.slice(REGRESS_WORKTREE_PREFIX.length);
     const entry = await bb.storage.kv.get(key) as { hostId?: string; at?: number } | null;
-    if (entry?.hostId && now - (entry.at ?? 0) < 6 * 3_600_000) adopt(entry.hostId, path, "regress", path);
+    if (entry?.hostId && now - (entry.at ?? 0) < REGRESS_MARKER_TTL_MS) adopt(entry.hostId, path, "regress", path);
   }
   // self-repair: worktrees its state record still holds, pending respawns included.
-  const repair = await bb.storage.kv.get("self-repair:state") as { signatures?: Record<string, { worktree?: { hostId?: string; path?: string; branch?: string } | null; pending?: { worktree?: { hostId?: string; path?: string; branch?: string } | null } | null }> } | null;
+  const repair = await bb.storage.kv.get(SELF_REPAIR_STATE_KEY) as SelfRepairState;
   for (const [signature, record] of Object.entries(repair?.signatures ?? {})) {
     for (const worktree of [record?.worktree, record?.pending?.worktree]) {
       if (worktree?.hostId && worktree.path) adopt(worktree.hostId, worktree.path, "self-repair", signature, worktree.branch ?? null);
     }
   }
   return adopted;
+}
+
+const adoptedDatabases = new WeakSet<ServerCore["db"]>();
+/**
+ * Runs the one-time adoption once per database. The boot reconcile calls it after a short delay, but the hourly
+ * janitor can fire first — and protectedWorktreePaths reads only the registry, so a legacy docs/regress/self-repair
+ * copy would look unprotected and be deleted. The janitor run awaits this before computing protected paths.
+ */
+export async function ensureLegacyWorktreesAdopted(ctx: Pick<ServerCore, "bb" | "db">): Promise<void> {
+  if (adoptedDatabases.has(ctx.db)) return;
+  await adoptLegacyWorktrees(ctx);
+  adoptedDatabases.add(ctx.db);
 }
 
 /** At plugin start (after a reload that killed every pass's finally): copies whose owner is dead go now, not hourly. */
@@ -173,7 +202,7 @@ export async function reconcileWorktreeRegistry(ctx: Pick<ServerCore, "bb" | "db
   let removed = 0;
   for (const row of dead) {
     if (ctx.isDisposed()) break;
-    if (ownerAlive(ctx, row, now)) continue;
+    if (await ownerAlive(ctx, row, now)) continue;
     // The host call needs the base checkout the copy came from; the attempt's run knows it, others take it from the worktree itself.
     const known = db.prepare("SELECT writer_workspace_path AS p FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id WHERE a.workspace_path=? LIMIT 1").get(row.path) as { p?: string } | undefined;
     const basePath = known?.p ?? row.path;
@@ -187,7 +216,7 @@ export async function reconcileWorktreeRegistry(ctx: Pick<ServerCore, "bb" | "db
 export function mountWorktreeJanitor(ctx: ServerCore, sweeps: AttemptSweeps): void {
   const { bb } = ctx;
   // After a reload: the copies a dead pass left go at once, with the same rules the hourly pass has (grace 0 for dead owners).
-  const boot = setTimeout(() => { void (async () => { await adoptLegacyWorktrees(ctx); await reconcileWorktreeRegistry(ctx); })().catch((cause: unknown) => bb.log.info(`Lane Pilot reconcile failed: ${cause instanceof Error ? cause.message : String(cause)}`)); }, 45_000);
+  const boot = setTimeout(() => { void (async () => { await ensureLegacyWorktreesAdopted(ctx); await reconcileWorktreeRegistry(ctx); })().catch((cause: unknown) => bb.log.info(`Lane Pilot reconcile failed: ${cause instanceof Error ? cause.message : String(cause)}`)); }, 45_000);
   bb.onDispose(() => clearTimeout(boot));
   scheduleIsolated(bb, "worktree-janitor", "14 * * * *", async (signal) => {
     if (ctx.isDisposed() || signal?.aborted) return;
