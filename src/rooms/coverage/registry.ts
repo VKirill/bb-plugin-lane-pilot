@@ -46,7 +46,6 @@ export const COVERAGE: readonly CoverageEntry[] = [
   { kind: "stage", ids: ["night-review", "night-fix", "workspace-status"], tests: ["tests/stages/night.test.ts", "tests/stages/night-fix.test.ts", ...STAGE_SUITE], reason: "the night stages run after the day's accepted tasks and are off in the sandbox" },
   { kind: "stage", ids: ["opencode-telemetry"], tests: ["tests/stages/opencode-telemetry.test.ts"], reason: "runs only for an OpenCode writer; the drill's writers are claude-code and codex" },
   { kind: "stage", ids: ["gate-triage"], tests: ["tests/stages/gate-triage.test.ts"], reason: "a helper triages a gate failure; no drill task fails a gate on purpose" },
-  { kind: "stage", ids: ["critic-tiebreak"], tests: ["tests/critic-tiebreak.test.ts"], reason: "runs only when two critics disagree on the same pass; no drill scenario provokes that" },
 
   // ── attempt transitions (TRANSITION_TABLE) ───────────────────────────────────────────────────────────────────────────────────────
   { kind: "transition", ids: ["∅+form_task", "queued+spawn_called", "spawn_requested+spawn_ok", "running+checks_passed"], live: ["parallel3"], via: "the happy path of every drill task", tests: ["tests/state-machine-enforce.test.ts", "tests/pipeline.test.ts"] },

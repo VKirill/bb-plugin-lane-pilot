@@ -60,7 +60,7 @@
  "memory > contracts": 4,
  "memory > docs": 1,
  "memory-eval > contracts": 7,
- "native-agent > contracts": 36,
+ "native-agent > contracts": 35,
  "native-agent > learning": 1,
  "native-agent > runs": 1,
  "night > contracts": 1,
