@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-// Room-level import graph of src/rooms: largest strongly connected component,
-// mutual room pairs, fan-in/out. `node scripts/room-graph.mjs [--json] [--room x]`.
-// The computation is exported for tests/architecture/room-graph.test.ts (the ratchet).
+// Granularity: room-level. Room-level import graph of src/rooms: largest strongly connected component,
+// mutual room pairs, fan-in/out. Used by tests/architecture/room-graph.test.ts (the ratchet).
+// `node scripts/room-graph.mjs [--json] [--room x]`. The computation is exported for that test.
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
