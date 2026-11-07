@@ -8,7 +8,7 @@ import { MACHINE_STAGE_FAILURE, autoDue, contextDoc, createAutoStages, recoverSt
 import { planGate, type Phase, type PhaseRecord } from "../src/rooms/phase/logic";
 import { threatGap } from "../src/rooms/phase/stages";
 import { listParts, savePhase } from "../src/rooms/phase/store";
-import { createRun, openDatabase, setRunThread } from "../src/rooms/storage";
+import { createRun, openDatabase, setRunThread } from "../src/rooms/plugin-db";
 
 /**
  * Fable's recheck of 0.1.341 (R1), built from the real data of the drill phase ph_5cd09d1c7a (hub, 2026-10-27 00:06 UTC, Lane Pilot 0.1.336):

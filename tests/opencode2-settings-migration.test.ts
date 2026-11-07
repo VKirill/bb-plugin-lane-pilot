@@ -1,6 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { migrations } from "../src/rooms/storage/database";
+import { migrations } from "../src/rooms/plugin-db";
 
 describe("the OpenCode v2 settings migration", () => {
   it("moves saved acp-opencode choices to opencode2 and leaves past results alone", () => {

@@ -1,7 +1,7 @@
 /**
  * Rolling work back (SMA wall 4: every job rolls back to the state before it, and the record names that state; the
  * record of a failed attempt included). Two tables, created by these statements and spread at the END of `migrations` in
- * storage/database.ts.
+ * rooms/migrations.ts.
  *
  * lane_pilot_attempt_change: one row per attempt, filled as the attempt goes. `base_sha` is the commit its worktree started
  * from, `merge_parent` main's HEAD right before its merge, `merge_commit` the merge, `changed_json` the files it changed

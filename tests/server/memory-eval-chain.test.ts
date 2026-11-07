@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { openDatabase } from "../../src/rooms/storage/database";
+import { openDatabase } from "../../src/rooms/plugin-db";
 import { storeMemoryRecords } from "../../packages/memory-core/src";
 import type { CorpusNote } from "../../src/rooms/memory-eval/server/corpus";
 import { createRetrievers } from "../../src/rooms/memory-eval/server/retrievers";

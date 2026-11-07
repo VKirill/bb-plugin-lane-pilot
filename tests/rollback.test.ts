@@ -7,7 +7,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it, vi } from "vitest";
 import { createRollback, runRollbackCli } from "../src/rooms/rollback/server";
 import { getAttemptChange, listTaskReceipts } from "../src/rooms/rollback/store";
-import { createAttempt, createRun, createTask, openDatabase, saveProjectSetting } from "../src/rooms/storage/database";
+import { createAttempt, createRun, createTask, openDatabase, saveProjectSetting } from "../src/rooms/plugin-db";
 import { createWorktree, integrateWorktree, removeLaneWorktree } from "../src/rooms/verification/git-integrate";
 import { mergeInfo, revertCommitsInWorktree, worktreeState } from "../src/rooms/verification/git-rollback";
 import { runGateOnHost } from "../src/rooms/verification/integration-gate-host";

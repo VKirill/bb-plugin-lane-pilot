@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { getBaseline } from "../../src/rooms/baseline";
 import { redOutsideTaskFiles, unrunnableReason, type BaselineCheck } from "../../src/rooms/baseline/logic";
 import { classifyFailure } from "../../src/rooms/runs/failure-class";
-import { countChargedAttempts, transitionAttempt } from "../../src/rooms/storage";
+import { countChargedAttempts, transitionAttempt } from "../../src/rooms/plugin-db";
 import { world } from "./world";
 
 vi.setConfig({ testTimeout: 180_000 });

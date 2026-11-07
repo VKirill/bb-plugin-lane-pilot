@@ -5,7 +5,7 @@ import { execFileSync } from "node:child_process";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { expect, it } from "vitest";
 import type { PrototypeConfig, TaskV2 } from "../src/rooms/contracts";
-import { createAttempt, createRun, createTask, getAttempt, openDatabase, setAttemptWorkspace, setRunThread } from "../src/rooms/storage/database";
+import { createAttempt, createRun, createTask, getAttempt, openDatabase, setAttemptWorkspace, setRunThread } from "../src/rooms/plugin-db";
 import { createWriterSpawn, shouldMergeAttemptWorktree } from "../src/rooms/writer/server/spawn";
 import { dirtInsideWorkspace } from "../src/rooms/verification/git-ownership";
 

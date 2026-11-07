@@ -1,7 +1,7 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import { addRoad, decideRoad, doneRoad, getRoad, listRoad, proposeRoad, rejectRoad, renderRoadTree, roadCounts, roadMarkdown, roadTree } from "../../src/rooms/lead/server/road";
-import { openDatabase } from "../../src/rooms/storage/database";
+import { openDatabase } from "../../src/rooms/plugin-db";
 
 // The migration that owns this table lands in a sibling change; the test cannot wait for it, so the fixture applies the same DDL.
 const world = () => {

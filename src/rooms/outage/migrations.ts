@@ -1,5 +1,5 @@
 /**
- * Outages of Lane Pilot (src/rooms/outage). One table, spread at the END of `migrations` in storage/database.ts.
+ * Outages of Lane Pilot (src/rooms/outage). One table, spread at the END of `migrations` in rooms/migrations.ts.
  *
  * lane_pilot_outage: one row per gap in the plugin's heartbeat longer than the threshold: when the last beat was, when the plugin was
  * running again, how many minutes, and what was known (`cause`: a deploy on record in that window, or unknown).

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { ROLE_TABLE, roleModelKey } from "@lane-pilot/models";
-import { getSettingVersions, listSettingRows, openDatabase, saveProjectSetting, sectionBindingId } from "../src/rooms/storage/database";
+import { getSettingVersions, listSettingRows, openDatabase, saveProjectSetting, sectionBindingId } from "../src/rooms/plugin-db";
 import { isModelSettingKey } from "../src/rooms/settings/model-keys";
 import plugin from "../server";
 

@@ -2,7 +2,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import plugin from "../server";
 import type { TaskV2 } from "../src/rooms/contracts";
-import { createAttempt, createRun, createTask, openDatabase, saveProjectSetting, savePrototypeConfig, setRunThread } from "../src/rooms/storage/database";
+import { createAttempt, createRun, createTask, openDatabase, saveProjectSetting, savePrototypeConfig, setRunThread } from "../src/rooms/plugin-db";
 
 const projectId = "project-test";
 const pmThreadId = "pm-thread";

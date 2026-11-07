@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { listRegressions } from "../../src/rooms/baseline";
 import { runBaselineCli } from "../../src/rooms/baseline/server";
 import { composeMorningList } from "../../src/rooms/policy/morning";
-import { recordCheckDuration, saveStageReceipt } from "../../src/rooms/storage";
+import { recordCheckDuration, saveStageReceipt } from "../../src/rooms/plugin-db";
 import { git } from "../verification/git-integrate-helpers";
 import { world } from "./world";
 

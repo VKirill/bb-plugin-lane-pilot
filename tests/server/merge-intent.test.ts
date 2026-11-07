@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it, vi } from "vitest";
 import { runCommandOnHost } from "../../src/rooms/writer/cli-run";
-import { createAttempt, createRun, getAttempt, listStageReceipts, openDatabase, saveTaskPlan, transitionAttempt } from "../../src/rooms/storage/database";
+import { createAttempt, createRun, getAttempt, listStageReceipts, openDatabase, saveTaskPlan, transitionAttempt } from "../../src/rooms/plugin-db";
 import { attemptMergeMessage, clearMergeIntent, createMergeIntentRecovery, mergeIntentKey, mergeLanded, recordMergeIntent, type MergeIntent, type RunOnHost } from "../../src/rooms/verification/server/merge-intent";
 import { recordStage } from "../../src/rooms/runs/server/stage-records";
 import { integrateWorktree } from "../../src/rooms/verification/git-integrate";

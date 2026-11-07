@@ -1,6 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { openDatabase } from "../../src/rooms/storage/database";
+import { openDatabase } from "../../src/rooms/plugin-db";
 import { choice, defineJudgment, insertReceipt, judgmentFingerprint, listJudgments, noul, noulOf, resolveThresholds, calibrateReceipts, JEV_CALIBRATED_KEY, type JevQuestion } from "@lane-pilot/jev";
 import "../../src/rooms/jev/judgments";
 

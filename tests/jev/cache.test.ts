@@ -1,6 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { openDatabase } from "../../src/rooms/storage/database";
+import { openDatabase } from "../../src/rooms/plugin-db";
 import { choice, createJev, defineJudgment, noul, noulOf, type JevAnswer, type JevClient, type JevQuestion } from "@lane-pilot/jev";
 
 const urgent = defineJudgment<{ text: string }, "urgent" | "calm">({

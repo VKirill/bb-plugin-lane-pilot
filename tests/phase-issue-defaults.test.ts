@@ -5,7 +5,7 @@ import type { Services } from "../src/rooms/core/server/services";
 import { createPhaseDriver } from "../src/rooms/phase/server/driver";
 import { planSignature, type PlanItem } from "../src/rooms/phase/logic";
 import { savePhase } from "../src/rooms/phase/store";
-import { createRun, openDatabase } from "../src/rooms/storage";
+import { createRun, openDatabase } from "../src/rooms/plugin-db";
 
 // Live ph_86fd9d3fab (2026-10-27): the planner's pieces had no project_cwd and no objective; task-v2 refused every one and the PM had
 // to return the phase to planning to add them by hand. The machine knows both: the PM's checkout and the piece's own promise.

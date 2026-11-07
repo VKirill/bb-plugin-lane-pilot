@@ -1,6 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { expect, it, vi } from "vitest";
-import { createAttempt, createRun, openDatabase } from "../../src/rooms/storage/database";
+import { createAttempt, createRun, openDatabase } from "../../src/rooms/plugin-db";
 import { askGuestsToCommit, listGuests, noteCheckoutGuest } from "../../src/rooms/writer/server/checkout-guests";
 
 function setup(metadata: Record<string, unknown> = {}, archived: string[] = []) {

@@ -2,7 +2,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, describe, expect, it } from "vitest";
 import { createJev, setJevForTests, type JevClient } from "@lane-pilot/jev";
 import { ROLE_IDS } from "@lane-pilot/models";
-import { openDatabase } from "../../src/rooms/storage/database";
+import { openDatabase } from "../../src/rooms/plugin-db";
 import { ERRAND_KINDS, errandKindRole, hintedErrandKind } from "../../src/rooms/schedule/errand-kinds";
 import { ERRAND_KIND_ID, classifyErrand, errandKindJudgment } from "../../src/rooms/schedule/errand-kind-judgment";
 

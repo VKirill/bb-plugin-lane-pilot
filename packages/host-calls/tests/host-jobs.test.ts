@@ -1,6 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { openDatabase } from "../../../src/rooms/storage/database";
+import { openDatabase } from "../../../src/rooms/plugin-db";
 import { createCore } from "../../../src/rooms/core/server/core";
 import { createHostJobs } from "@lane-pilot/host-calls";
 import { hostContract } from "../../../src/rooms/contracts/host";

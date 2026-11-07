@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { WorkflowEngine, loadWorkflowStore, registerPureActions, setRouterModel } from "@lane-pilot/workflow-engine";
-import { createRun, openDatabase, setRunThread } from "../src/rooms/storage/database";
+import { createRun, openDatabase, setRunThread } from "../src/rooms/plugin-db";
 import { mountErrands } from "../src/rooms/qa/server/errands";
 
 /**

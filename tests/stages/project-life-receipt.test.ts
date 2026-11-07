@@ -6,7 +6,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { validateStageReceipt } from "@lane-pilot/contracts";
 import { describe, expect, it } from "vitest";
 import { createProjectLifeStage } from "../../src/rooms/project-life/server/project-life";
-import { createRun, createTask, listStageReceipts, openDatabase, saveStageReceipt, setRunThread, setRunWorkspace } from "../../src/rooms/storage/database";
+import { createRun, createTask, listStageReceipts, openDatabase, saveStageReceipt, setRunThread, setRunWorkspace } from "../../src/rooms/plugin-db";
 import { recordStage } from "../../src/rooms/runs/server/stage-records";
 import type { ServerCore, Services } from "../../src/rooms/core/server";
 import receipt from "../fixtures/stage-left-open/muse-session-sync.json";

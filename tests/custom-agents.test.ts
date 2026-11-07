@@ -7,7 +7,7 @@ import { BB_AGENT_SESSIONS, laneSessionOverlayPrompt, unionLpBridgeToolsOnAgents
 import { NATIVE_LP_BRIDGE_SPECIALIST_TOOLS } from "../src/rooms/native-agent/native-session-hooks";
 import { roleProfilePolicy, type HelperRole } from "../src/rooms/native-agent/helper-context";
 import { LP_AGENT_OVERRIDES_KEY } from "@lane-pilot/settings-catalog";
-import { listSettingRows, openDatabase } from "../src/rooms/storage/database";
+import { listSettingRows, openDatabase } from "../src/rooms/plugin-db";
 
 const cleanup: Array<() => Promise<void>> = [];
 afterEach(async () => { for (const fn of cleanup.splice(0)) await fn(); });

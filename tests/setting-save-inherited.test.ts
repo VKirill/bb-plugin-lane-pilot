@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { casUpsertSetting, openDatabase } from "../src/rooms/storage/database";
+import { casUpsertSetting, openDatabase } from "../src/rooms/plugin-db";
 
 // Live 2026-10-27 (full drill, provider_limit): the global writer.provider is «acp-cursor», which the older catalog's choices do not list;
 // every project save of another key was refused on that inherited value.

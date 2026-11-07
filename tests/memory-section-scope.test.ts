@@ -1,7 +1,7 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import { listMemory, scopeValuesFor, searchMemoryRecords, storeMemoryRecords } from "../packages/memory-core/src";
-import { openDatabase } from "../src/rooms/storage/database";
+import { openDatabase } from "../src/rooms/plugin-db";
 import { createDigest } from "../src/rooms/learning/digest";
 import { insertItem, type Item } from "../src/rooms/learning/store";
 

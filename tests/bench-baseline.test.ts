@@ -1,7 +1,7 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import { baselineMetrics, renderBaseline } from "../src/rooms/bench/baseline";
-import { createAttempt, createRun, createTask, openDatabase } from "../src/rooms/storage";
+import { createAttempt, createRun, createTask, openDatabase } from "../src/rooms/plugin-db";
 
 // SMA conformance audit C-07: the map pointed «baseline metric bench» (k_lib_bench) at the weekly model bench (weekArm), which measures none
 // of the card's three numbers. They are now read from the pipeline's own records, with no model.

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { openDatabase } from "../../src/rooms/storage/database";
+import { openDatabase } from "../../src/rooms/plugin-db";
 import { coreShelf, memoryMaintainerTools, memoryMaintenancePrompt, memoryRecordId, parseMemoryCandidates, parseMemorySettings, storeMemoryRecords, storeMemoryRecordsKeepingOverflow } from "../../packages/memory-core/src";
 
 /**

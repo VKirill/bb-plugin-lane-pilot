@@ -16,7 +16,7 @@ import { MAIN_ATTEMPT_LIMIT, nextAttemptState, retryAction } from "../../src/roo
 import { budgetStopReason, createRunBudget } from "@lane-pilot/resilience";
 import {
   createAttempt, createRun, createTask, getAttempt, openDatabase, transitionAttempt,
-} from "../../src/rooms/storage/database";
+} from "../../src/rooms/plugin-db";
 import { lintContract, lintReply, type LintInput } from "../../src/rooms/tasks/server/contract-lint";
 import {
   HOLD_FOREVER, LANE_QUEUES, WORKER_ENVELOPE, birthFindings, deadLetters, laneQueueOf, ownerWordFindings, spendReserve, writerMarkers,

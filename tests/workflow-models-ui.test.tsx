@@ -7,7 +7,7 @@ import { cleanup, configure, fireEvent, waitFor, within } from "@testing-library
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { installTestPluginRuntime, loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { setLocaleOverride } from "@lane-pilot/i18n";
-import { loadProjectSettings, migrations } from "../src/rooms/storage/database";
+import { loadProjectSettings, migrations } from "../src/rooms/plugin-db";
 import { createWorkflowArchitect } from "../src/rooms/workflow/server/workflow-architect";
 import type { ArchitectDeps } from "../src/rooms/workflow/server/workflow-architect";
 import { createWorkflowLibrary } from "../src/rooms/workflow/server/workflow-library";

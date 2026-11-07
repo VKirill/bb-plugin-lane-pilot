@@ -4,7 +4,7 @@ import plugin from "../../server";
 import { runCommand } from "../../src/rooms/host-worker/host-handlers";
 import { normalizeSchedule } from "../../src/rooms/schedule/model";
 import { createScheduleStore, scheduleAgentMigrations } from "../../src/rooms/schedule/store";
-import { createRun, migrations, openDatabase, setRunThread } from "../../src/rooms/storage/database";
+import { createRun, migrations, openDatabase, setRunThread } from "../../src/rooms/plugin-db";
 
 /**
  * A scheduled agent through the whole plugin: the schedule is made through the PM tool, the tick starts the agent's own profile in a

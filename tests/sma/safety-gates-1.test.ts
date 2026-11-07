@@ -14,7 +14,7 @@ import { createPhaseDriver } from "../../src/rooms/phase/server/driver";
 import { planSignature, type PlanItem } from "../../src/rooms/phase/logic";
 import { savePhase } from "../../src/rooms/phase/store";
 import { isHeld } from "../../src/rooms/runs/server/runs-pause";
-import { createAttempt, createRun, createTask, openDatabase } from "../../src/rooms/storage";
+import { createAttempt, createRun, createTask, openDatabase } from "../../src/rooms/plugin-db";
 
 describe("daemon tick gates", () => {
   it("[sma:dt_timer] a pass is registered isolated, so a tick still running is skipped instead of waited for", () => {

@@ -2,7 +2,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import { SMA_NODES, SMA_REGIONS } from "../src/rooms/sma-map";
 import { SMA_LIVE, TABLE_CLOCKS, darkClockExpr, darkTableNames, darkTables, readSmaLive } from "../src/rooms/sma-map/live";
-import { openDatabase } from "../src/rooms/storage";
+import { openDatabase } from "../src/rooms/plugin-db";
 
 const groups = () => {
   const seen = new Map<string, { region: string; group: string; nodes: number }>();

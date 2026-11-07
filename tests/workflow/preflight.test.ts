@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { createRun, openDatabase, setRunThread } from "../../src/rooms/storage/database";
+import { createRun, openDatabase, setRunThread } from "../../src/rooms/plugin-db";
 import { commandsScript, createWorkflowPreflight, parseCommandAnswers } from "../../src/rooms/workflow/server/workflow-preflight";
 import { runWorkflowTool } from "../../src/rooms/workflow/server/workflow-tools";
 import type { WorkflowToolDeps } from "../../src/rooms/workflow/server/workflow-tools";

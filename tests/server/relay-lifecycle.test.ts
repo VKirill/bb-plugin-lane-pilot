@@ -1,7 +1,7 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it, vi } from "vitest";
 import { mountRelay } from "../../src/rooms/relay/server/relay";
-import { openDatabase } from "../../src/rooms/storage/database";
+import { openDatabase } from "../../src/rooms/plugin-db";
 import incident from "../fixtures/relay-reload-2026-10-29.json";
 
 const failure = incident.logs.find((row) => row.message.startsWith("relay sweep failed:"))!.message;

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { rpcContract } from "../src/rooms/contracts";
-import { openDatabase } from "../src/rooms/storage/database";
+import { openDatabase } from "../src/rooms/plugin-db";
 import { closeOwnerItem, collectOwnerWaiting, postOwnerItem } from "../src/rooms/owner-waiting";
 import { runWaitingCli } from "../src/rooms/owner-waiting/cli";
 import { ackDigest, inQuietHours, loadPushConfig, planDigest, savePushConfig } from "../src/rooms/owner-waiting/push";

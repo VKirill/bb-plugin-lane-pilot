@@ -1,6 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { createRun, openDatabase, setRunThread } from "../../src/rooms/storage/database";
+import { createRun, openDatabase, setRunThread } from "../../src/rooms/plugin-db";
 import { errandOutcome, errandTitle, kindsOverview, listErrands } from "../../src/rooms/errands/logic";
 
 const NOW = Date.now();

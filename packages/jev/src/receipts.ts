@@ -36,7 +36,7 @@ export const jevMigrations: string[] = [
   `CREATE INDEX lane_pilot_jev_receipt_j ON lane_pilot_jev_receipt(judgment, at)`,
   `CREATE INDEX lane_pilot_jev_receipt_p ON lane_pilot_jev_receipt(project_id, at)`,
   `CREATE INDEX lane_pilot_jev_receipt_r ON lane_pilot_jev_receipt(run_id)`,
-  // NOTE: appended statements belong at the END of `migrations` in src/rooms/storage/database.ts (index-locked), not here.
+  // NOTE: appended statements belong at the END of `migrations` in src/rooms/migrations.ts (index-locked), not here.
 ];
 
 export type JevReceipt = {

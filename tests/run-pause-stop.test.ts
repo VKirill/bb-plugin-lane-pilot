@@ -5,7 +5,7 @@ import { cancelAttemptById } from "../src/rooms/runs/server/cancel";
 import { isRunHalted, isRunPaused, setRunHalted, setRunPaused } from "../src/rooms/runs/server/runs-halt";
 import { pauseRun, waitWhileRunPaused } from "../src/rooms/runs/server/runs-pause";
 import { confirmWriterStopped } from "../src/rooms/runs/server/writer-stop";
-import { createAttempt, createRun, createTask, getAttempt, openDatabase, transitionAttempt } from "../src/rooms/storage/database";
+import { createAttempt, createRun, createTask, getAttempt, openDatabase, transitionAttempt } from "../src/rooms/plugin-db";
 
 const task: TaskV2 = {
   schema_version: 2, id: "t1", title: "Write", risk: "low", lane: "writer", project_cwd: "/repo", read_first: [], interfaces: [], invariants: [],

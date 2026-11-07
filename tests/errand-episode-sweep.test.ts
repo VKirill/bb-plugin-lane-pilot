@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { openDatabase, saveProjectSetting, type LanePilotDatabase } from "../src/rooms/storage/database";
+import { openDatabase, saveProjectSetting, type LanePilotDatabase } from "../src/rooms/plugin-db";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
 import {
   ERRAND_EPISODE_TABLE, codeFailureClass, enrichEpisode, episodeSkills, episodesBackfill,

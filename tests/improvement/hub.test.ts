@@ -11,7 +11,7 @@ import { HARNESS_DEFAULTS, createHarness } from "../../src/rooms/harness/server/
 import { HUB_SPECS, PROJECT_DEFAULT_KEYS, hubFields, readHubRows, writeHubFields, writeHubSettings } from "../../src/rooms/improvement";
 import { nextNightRun } from "../../src/rooms/improvement/server";
 import { DEFAULT_PUSH_CONFIG, loadPushConfig, savePushConfig } from "../../src/rooms/owner-waiting/push";
-import { casUpsertSetting, openDatabase } from "../../src/rooms/storage/database";
+import { casUpsertSetting, openDatabase } from "../../src/rooms/plugin-db";
 import { WALL_CONFIG_KEY, WALL_DEFAULTS } from "../../src/rooms/wall/config";
 import { createWall } from "../../src/rooms/wall/service";
 

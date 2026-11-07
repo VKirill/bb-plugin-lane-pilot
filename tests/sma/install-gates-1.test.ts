@@ -10,7 +10,7 @@ import { applyInstalledGuard } from "../../src/rooms/native-install/guard-apply"
 import { removeClaudeLaneLeftovers } from "../../src/rooms/native-install/claude-lane-leftovers";
 import { nativeInstallOperation } from "../../src/rooms/native-install/native-install-host";
 import { hashBytes, planJson, safeTarget, transitionOwned, type NativeInstallManifest } from "../../src/rooms/native-install/native-install-owned";
-import { loadProjectSettings, openDatabase, savePrototypeConfig } from "../../src/rooms/storage/database";
+import { loadProjectSettings, openDatabase, savePrototypeConfig } from "../../src/rooms/plugin-db";
 
 const GUARD = join(process.cwd(), "lane-stack/hooks/guard_shell.py");
 const roots: string[] = [];

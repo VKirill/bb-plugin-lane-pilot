@@ -4,7 +4,7 @@ import { act, waitFor } from "@testing-library/react";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { installTestPluginRuntime, loadPluginApp, renderSlot, type RenderedSlot } from "@get-bb/plugin-sdk/testing/app";
 import React from "react";
-import { saveProjectSetting, savePrototypeConfig, openDatabase } from "../../src/rooms/storage/database";
+import { saveProjectSetting, savePrototypeConfig, openDatabase } from "../../src/rooms/plugin-db";
 import plugin from "../../server";
 
 

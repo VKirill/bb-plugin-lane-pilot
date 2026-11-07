@@ -4,7 +4,7 @@ import { noOptionalPlugins } from "./optional-plugin-stubs";
 import type { PrototypeConfig, TaskV2 } from "../src/rooms/contracts";
 import { classifyFailure } from "../src/rooms/runs/failure-class";
 import { countChargedAttempts, createAttempt, createRun, createTask, getAttempt, listStageReceipts, openDatabase, savePrototypeConfig, saveTaskPlan,
-  setAttemptDirtBefore, setAttemptWorkspace, setRunThread, transitionAttempt } from "../src/rooms/storage/database";
+  setAttemptDirtBefore, setAttemptWorkspace, setRunThread, transitionAttempt } from "../src/rooms/plugin-db";
 import { createCore } from "../src/rooms/core/server/core";
 import type { Services } from "../src/rooms/core/server/services";
 import { recordStage } from "../src/rooms/runs/server/stage-records";

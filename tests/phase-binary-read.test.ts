@@ -11,7 +11,7 @@ import { runCommand } from "../src/rooms/host-worker/host-handlers";
 import { createPhaseDriver } from "../src/rooms/phase/server/driver";
 import { binaryFileCommand, binaryFileFingerprint } from "../src/rooms/phase/stages";
 import { getPhase, savePhase } from "../src/rooms/phase/store";
-import { createRun, openDatabase, setRunThread } from "../src/rooms/storage";
+import { createRun, openDatabase, setRunThread } from "../src/rooms/plugin-db";
 
 // Live ph_26f65b142d: lp.draw failed with «cannot read …/design/00-kit.png: lane_pilot_read_binary_rejected» although the PNG was the stage's own product.
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52, 0x00, 0xff]);

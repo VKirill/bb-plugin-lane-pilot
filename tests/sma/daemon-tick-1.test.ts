@@ -5,7 +5,7 @@ import type { Services } from "../../src/rooms/core/server/services";
 import { createPhaseDriver } from "../../src/rooms/phase/server/driver";
 import { planSignature, type PlanItem } from "../../src/rooms/phase/logic";
 import { listParts, savePhase } from "../../src/rooms/phase/store";
-import { createAttempt, createRun, createTask, openDatabase } from "../../src/rooms/storage";
+import { createAttempt, createRun, createTask, openDatabase } from "../../src/rooms/plugin-db";
 import { createStability } from "../../src/rooms/stability/server/stability";
 
 function driver(status = "idle") {

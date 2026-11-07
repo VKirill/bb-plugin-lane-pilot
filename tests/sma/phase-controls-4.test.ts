@@ -4,7 +4,7 @@ import { createCore } from "../../src/rooms/core/server/core";
 import { createPhaseDriver } from "../../src/rooms/phase/server/driver";
 import { nextAction, phaseFolder, planSignature, sha256, type PlanItem } from "../../src/rooms/phase/logic";
 import { listParts, savePhase } from "../../src/rooms/phase/store";
-import { createAttempt, createRun, createTask, openDatabase } from "../../src/rooms/storage";
+import { createAttempt, createRun, createTask, openDatabase } from "../../src/rooms/plugin-db";
 import { postOwnerItem } from "../../src/rooms/owner-waiting";
 
 const piece = (id: string): PlanItem => ({

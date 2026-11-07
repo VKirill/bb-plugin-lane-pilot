@@ -1,7 +1,7 @@
 /**
  * The owner anamnesis tables of the plugin base (stream M1b): the same columns as the Mac-mini file store in store.ts,
  * under the `lane_pilot_owner_` prefix so they live next to the rest of Lane Pilot's data in `data.db`. Append-only:
- * these statements go at the end of `migrations` in src/rooms/storage/database.ts and their hashes into
+ * these statements go at the end of `migrations` in src/rooms/migrations.ts and their hashes into
  * tests/fixtures/migrations.lock.json; tests/sma-live.test.ts watches them through TABLE_CLOCKS and lp-wall-morning.sql.
  * The file store keeps its unprefixed names; a test in tests/anamnesis-hub-store.test.ts pins that the columns match.
  */

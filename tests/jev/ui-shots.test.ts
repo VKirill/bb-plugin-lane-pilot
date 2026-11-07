@@ -1,6 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { openDatabase } from "../../src/rooms/storage/database";
+import { openDatabase } from "../../src/rooms/plugin-db";
 import { createJev, type JevAnswer, type JevClient, type JevQuestion, type JevRequest } from "@lane-pilot/jev";
 import { uiShotsJudgment } from "@lane-pilot/jev/judgments/ui-shots";
 import { validateDeliverable } from "../../src/rooms/validators/deliverable";

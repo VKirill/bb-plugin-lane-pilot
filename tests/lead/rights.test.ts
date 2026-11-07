@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { examAll, type ExamRow } from "../../src/rooms/lead/logic";
 import { openDecision } from "../../src/rooms/lead/server/journal";
 import { actsVia, applyExam, LEAD_CLASSES, LEAD_POLICY, mayAct, policyTier, readRights, rightsView, tierOf } from "../../src/rooms/lead/server/rights";
-import { openDatabase } from "../../src/rooms/storage/database";
+import { openDatabase } from "../../src/rooms/plugin-db";
 
 const world = () => { const { bb } = createFakePluginHost({ pluginId: "lane-pilot" }); return openDatabase(bb); };
 /** Eligible rows of one class: predicted before answered, split exam, judged. */

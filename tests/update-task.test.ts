@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { openDatabase, createRun, createTask, createAttempt, countAttempts, getAttempt, getTask, getTaskGitBase, getTaskPlan, loadPrototypeConfig,
-  savePrototypeConfig, listStageReceipts, saveProjectSetting, transitionAttempt } from "../src/rooms/storage/database";
+  savePrototypeConfig, listStageReceipts, saveProjectSetting, transitionAttempt } from "../src/rooms/plugin-db";
 import { recordStage } from "../src/rooms/runs/server/stage-records";
 import { createWriterUpdateTask } from "../src/rooms/writer/server/update-task";
 import { registerDispatchExecutors, startDispatchRun } from "../src/rooms/writer/server/dispatch-workflow";

@@ -1,7 +1,7 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { expect, it } from "vitest";
 import { mountPermits } from "../src/rooms/permits";
-import { createAttempt, createRun, createTask, openDatabase, transitionAttempt } from "../src/rooms/storage/database";
+import { createAttempt, createRun, createTask, openDatabase, transitionAttempt } from "../src/rooms/plugin-db";
 
 async function fixture() {
   const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });

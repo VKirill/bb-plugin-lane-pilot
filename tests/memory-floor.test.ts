@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { openDatabase } from "../src/rooms/storage/database";
+import { openDatabase } from "../src/rooms/plugin-db";
 import { DEFAULT_RELEVANCE_FLOOR, NOTHING_RELEVANT, floorThreshold, pathAnchorsOf, questionWords, relevantRecords, searchMemoryRecords, storeMemoryRecords } from "../packages/memory-core/src";
 import type { MemoryCandidate, MemoryDatabase } from "../packages/memory-core/src";
 import { pmMemoryContext } from "../src/rooms/memory/server/memory-mix";

@@ -2,7 +2,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import { roleMethod } from "../../src/rooms/critique/role-method";
 import { cancelAttemptById } from "../../src/rooms/runs/server/cancel";
-import { createAttempt, createRun, createTask, openDatabase } from "../../src/rooms/storage/database";
+import { createAttempt, createRun, createTask, openDatabase } from "../../src/rooms/plugin-db";
 
 describe("role methods the brief actually gets", () => {
   it("[sma:k_ag_debugger] [sma:k_d_ref_debug] a debugger is told no fix without a cause and at most three hypotheses; a writer is not", () => {

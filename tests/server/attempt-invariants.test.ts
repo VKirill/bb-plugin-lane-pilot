@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { createAttempt, createRun, createTask, listStageReceipts, openDatabase, saveTaskPlan, transitionAttempt } from "../../src/rooms/storage/database";
+import { createAttempt, createRun, createTask, listStageReceipts, openDatabase, saveTaskPlan, transitionAttempt } from "../../src/rooms/plugin-db";
 import { closeOrphanWriterStages, recordStage } from "../../src/rooms/runs/server/stage-records";
 
 function setup() {

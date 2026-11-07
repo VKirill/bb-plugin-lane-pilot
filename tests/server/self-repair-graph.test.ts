@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { WorkflowEngine } from "@lane-pilot/workflow-engine";
-import { openDatabase } from "../../src/rooms/storage/database";
+import { openDatabase } from "../../src/rooms/plugin-db";
 import { createSelfRepair, pointsAtEngine } from "../../src/rooms/self-repair/server/self-repair";
 import { SELF_REPAIR, builtinWorkflow } from "../../src/rooms/workflow/builtin";
 import { maybeNotifyWorkflowRun } from "../../src/rooms/workflow/server/pm-notice";

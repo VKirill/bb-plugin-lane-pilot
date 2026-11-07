@@ -4,7 +4,7 @@ import { createHarness, HARNESS_TUNING } from "../../src/rooms/harness/server/ha
 import { getHarness, insertHarness, listHarnesses, setHarnessState } from "../../src/rooms/harness/server/store";
 import { mountNightGraphs } from "../../src/rooms/night-graphs/server";
 import { builtinWorkflow } from "../../src/rooms/workflow/builtin";
-import { createRun, createTask } from "../../src/rooms/storage/database";
+import { createRun, createTask } from "../../src/rooms/plugin-db";
 import { nightWorld } from "./world";
 
 const TREE_FILE = "Run the spec next to the file.";

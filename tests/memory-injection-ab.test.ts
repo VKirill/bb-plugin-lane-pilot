@@ -1,7 +1,7 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import { acceptancePerInjectedToken, injectedTokensOf, MEMORY_INJECTION_ARMS } from "../src/rooms/bench/memory-injection";
-import { createAttempt, createRun, openDatabase } from "../src/rooms/storage/database";
+import { createAttempt, createRun, openDatabase } from "../src/rooms/plugin-db";
 
 // arXiv #18: paired arms differ only in memory injection, and the gain is priced per injected token.
 describe("memory injection A/B", () => {

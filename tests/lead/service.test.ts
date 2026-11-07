@@ -14,7 +14,7 @@ import { MEMORY_EXAM_KEY } from "../../src/rooms/lead/server/memory-exam";
 import { getTick, openTick, patchTick } from "../../src/rooms/lead/server/tick-store";
 import { proposalDecisionId, proposalItemKey } from "../../src/rooms/lead/server/tick";
 import { postOwnerItem } from "../../src/rooms/owner-waiting";
-import { loadProjectSettings, openDatabase, saveProjectSetting } from "../../src/rooms/storage/database";
+import { loadProjectSettings, openDatabase, saveProjectSetting } from "../../src/rooms/plugin-db";
 
 let dir = "";
 beforeEach(() => { dir = mkdtempSync(join(tmpdir(), "lead-svc-")); process.env.LANE_PILOT_LEAD_DIR = dir; });

@@ -25,7 +25,6 @@
  "settings > workflow": 1,
  "stability > native-agent": 1,
  "stability > runs": 4,
- "storage > learning": 1,
  "tasks > verification": 1,
  "tools > tasks": 1,
  "ui-shell > contracts": 1,

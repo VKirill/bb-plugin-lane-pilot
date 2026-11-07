@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { openDatabase } from "../src/rooms/storage/database";
+import { openDatabase } from "../src/rooms/plugin-db";
 import { collectOwnerWaiting, postOwnerItem, setSandboxProjects } from "../src/rooms/owner-waiting";
 
 // Live 2026-10-27: the drill's sandbox posted «Drill route … loop ran out of tries» and a drill writer's colour question to the owner, with a push.

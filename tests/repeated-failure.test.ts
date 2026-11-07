@@ -1,6 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { createAttempt, createRun, openDatabase } from "../src/rooms/storage/database";
+import { createAttempt, createRun, openDatabase } from "../src/rooms/plugin-db";
 import { familyFailureRecord } from "../src/rooms/writer/server/start";
 import { repeatedFailureReason, taskFamily } from "../src/rooms/runs/failure-class";
 

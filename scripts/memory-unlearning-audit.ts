@@ -9,7 +9,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { searchMemoryAllSections, storeMemoryRecords } from "../packages/memory-core/src";
 import { coldMatches } from "../src/rooms/memory-tiers/server/tiers";
 import { deleteMemoryRecord } from "../src/rooms/self-repair/server/insights";
-import { openDatabase } from "../src/rooms/storage/database";
+import { openDatabase } from "../src/rooms/plugin-db";
 
 /** Where the deleted record's id or content can still be found. */
 export function unlearningResiduals(db: ReturnType<typeof openDatabase>, projectId: string, id: string, content: string): string[] {

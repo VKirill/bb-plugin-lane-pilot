@@ -1,5 +1,5 @@
 /**
- * The capability table (src/rooms/capability). One table, spread at the END of `migrations` in storage/database.ts.
+ * The capability table (src/rooms/capability). One table, spread at the END of `migrations` in rooms/migrations.ts.
  *
  * lane_pilot_capability: one receipt per provider, adapter version and capability: supported or not_supported, the model probed and why.
  * A new adapter version has no row until it is probed, which is what «unproven» means.

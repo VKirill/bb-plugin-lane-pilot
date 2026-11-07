@@ -2,7 +2,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import type { PrototypeConfig, TaskV2 } from "../src/rooms/contracts";
 import { CRITIQUE_REPEAT_MAX_LINES, CRITIQUE_REPEAT_WINDOW_MS, critiqueRepeatSkip, patchChangedLines } from "../src/rooms/critique/quality-mode";
-import { createAttempt, createRun, createTask, listStageReceipts, openDatabase, saveProjectSetting, saveStageReceipt, transitionAttempt } from "../src/rooms/storage/database";
+import { createAttempt, createRun, createTask, listStageReceipts, openDatabase, saveProjectSetting, saveStageReceipt, transitionAttempt } from "../src/rooms/plugin-db";
 import { sha256Text } from "../src/rooms/critique/code-critique";
 import { createWriterFinish } from "../src/rooms/writer/server/finish";
 

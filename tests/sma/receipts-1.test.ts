@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { calibrate, scoreForecast } from "../../src/rooms/forecast/logic";
 import { preship, receiptChain, verifyChain } from "../../src/rooms/receipts";
 import { recordStage } from "../../src/rooms/runs/server/stage-records";
-import { createAttempt, createRun, createTask, openDatabase } from "../../src/rooms/storage";
+import { createAttempt, createRun, createTask, openDatabase } from "../../src/rooms/plugin-db";
 
 describe("receipts", () => {
   it("[sma:k_v_chain] a changed stage receipt moves the chain tip, and the old tip no longer verifies", () => {

@@ -1,7 +1,7 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PrototypeConfig, TaskV2 } from "../src/rooms/contracts";
-import { createAttempt, createRun, createTask, getAttempt, getRun, openDatabase, transitionAttempt } from "../src/rooms/storage/database";
+import { createAttempt, createRun, createTask, getAttempt, getRun, openDatabase, transitionAttempt } from "../src/rooms/plugin-db";
 import { createWriterFinish } from "../src/rooms/writer/server/finish";
 import { createWriterStart } from "../src/rooms/writer/server/start";
 import { setJevForTests } from "@lane-pilot/jev";

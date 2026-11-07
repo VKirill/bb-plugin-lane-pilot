@@ -1,7 +1,7 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import { retrySafetyStop, taskLimitStop, TASK_WALL_CLOCK_MIN, VERIFY_MAX_PASSES } from "../src/rooms/writer/server/retry-safety";
-import { createAttempt, createRun, createTask, openDatabase, appendGateEvaluation, recordSecretIssuance } from "../src/rooms/storage/database";
+import { createAttempt, createRun, createTask, openDatabase, appendGateEvaluation, recordSecretIssuance } from "../src/rooms/plugin-db";
 import { registerSecrets, forgetSecrets } from "@lane-pilot/kit";
 import type { TaskV2 } from "../src/rooms/contracts";
 

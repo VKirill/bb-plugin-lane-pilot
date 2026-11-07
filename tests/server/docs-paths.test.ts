@@ -1,7 +1,7 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, describe, expect, it } from "vitest";
 import plugin from "../../server";
-import { openDatabase, saveProjectSetting } from "../../src/rooms/storage/database";
+import { openDatabase, saveProjectSetting } from "../../src/rooms/plugin-db";
 
 let dispose: (() => Promise<void> | void) | null = null;
 afterEach(async () => { await dispose?.(); dispose = null; });

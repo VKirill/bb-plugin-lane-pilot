@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { IntegrationGateRunner } from "../../src/rooms/verification/server/integration-gate";
-import { createAttempt, createTask, openDatabase, transitionAttempt } from "../../src/rooms/storage/database";
+import { createAttempt, createTask, openDatabase, transitionAttempt } from "../../src/rooms/plugin-db";
 import * as hostHandlers from "../../src/rooms/host-worker/host-handlers";
 import type { ServerCore } from "../../src/rooms/core/server/core";
 import type { Services } from "../../src/rooms/core/server/services";

@@ -10,7 +10,7 @@ import { ToolError, registeredTools } from "../../src/rooms/core/server";
 import { createPhaseDriver } from "../../src/rooms/phase/server/driver";
 import { planSignature, type PlanItem } from "../../src/rooms/phase/logic";
 import { failureClass } from "../../src/rooms/runs";
-import { createAttempt, createRun, createTask, openDatabase } from "../../src/rooms/storage";
+import { createAttempt, createRun, createTask, openDatabase } from "../../src/rooms/plugin-db";
 import { registerConversationTools } from "../../src/rooms/tasks/server/conversation-tools";
 import { CHECK_RECIPES, checkRecipe, factKind, isWholeConsent, questionKind, questionsFromFile } from "../../src/rooms/tasks";
 import { registerTools } from "../../src/rooms/tools/server/tools";

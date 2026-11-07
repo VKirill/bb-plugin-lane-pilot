@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { openDatabase } from "../../src/rooms/storage/database";
+import { openDatabase } from "../../src/rooms/plugin-db";
 import { EXAM_LIVE, authorize, runLiveExam } from "../../src/rooms/policy/exam";
 import { LIVE_EXAM_KEY, LIVE_STORE_LIMIT_BYTES, STANDING_DAYS, appendLiveItems, collectAndAppend, collectOwnerDecisions, loadLiveExam, recordOwnerDecision } from "../../src/rooms/policy/live-exam";
 import { POLICY } from "../../src/rooms/policy/policy";

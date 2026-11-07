@@ -1,6 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { createAttempt, createRun, createTask, getRun, openDatabase, setRunThread, transitionAttempt } from "../src/rooms/storage/database";
+import { createAttempt, createRun, createTask, getRun, openDatabase, setRunThread, transitionAttempt } from "../src/rooms/plugin-db";
 import { cleanupRunEnvironments, closeAbandonedRuns, closeStaleRuns } from "../src/rooms/runs/server/run-finish";
 import { isProjectRootCheckout } from "../src/rooms/writer/server/spawn";
 

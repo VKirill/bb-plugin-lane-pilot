@@ -4,7 +4,7 @@ import { createCouncilSession, setCouncilState, type CouncilSeat } from "@lane-p
 import { WORLD_CHANNEL, createWorld, parseWorldBatch, step, type WorldBatch, type WorldServerMessage } from "@lane-pilot/world-sim";
 import { describe, expect, it } from "vitest";
 import { rpcWorld } from "../../src/rooms/contracts/rpc-world";
-import { createAttempt, createRun, createTask, openDatabase, saveStageReceipt, transitionAttempt } from "../../src/rooms/storage";
+import { createAttempt, createRun, createTask, openDatabase, saveStageReceipt, transitionAttempt } from "../../src/rooms/plugin-db";
 import { createWorldService, worldRpc, type WorldServiceOptions } from "../../src/rooms/world/server";
 import { loadWorld, saveWorld } from "../../src/rooms/world/server/store";
 

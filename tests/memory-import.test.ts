@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import { storeMemoryRecords, type MemorySettings } from "../packages/memory-core/src";
-import { openDatabase } from "../src/rooms/storage/database";
+import { openDatabase } from "../src/rooms/plugin-db";
 import { evalMemoryImport, formatImportSummary, maskImportContent, pmTopIds, runMemoryImport, type ImportReport } from "../src/rooms/memory/server/import";
 
 const PROJECT = "proj_import_test";

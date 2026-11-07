@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { failureIntervention, MAST_OF_FAILURE } from "../src/rooms/runs/failure-class";
 import { failureClassLive, failureClassReport } from "../src/rooms/runs/failure-class-model";
 import { insertReceipt } from "@lane-pilot/jev";
-import { migrations, openDatabase } from "../src/rooms/storage/database";
+import { migrations, openDatabase } from "../src/rooms/plugin-db";
 
 const receiptRow = (decision = "task") => ({
   judgment: "failure.class", version: 1, model: "jev-1", mode: "shadow" as const, projectId: "p", runId: "r",

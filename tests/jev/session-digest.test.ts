@@ -1,6 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { openDatabase } from "../../src/rooms/storage/database";
+import { openDatabase } from "../../src/rooms/plugin-db";
 import { createJev, type JevClient } from "@lane-pilot/jev";
 import { DIGEST_KEEP_TAIL, judgeSessionDigest, sessionDigestJudgment, sessionDigestText, toolPairsOf, type ToolPair } from "../../src/rooms/writer/session-digest";
 

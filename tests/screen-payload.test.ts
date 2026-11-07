@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import plugin from "../server";
-import { createAttempt, createRun, createTask, openDatabase, saveStageReceipt, transitionAttempt } from "../src/rooms/storage/database";
+import { createAttempt, createRun, createTask, openDatabase, saveStageReceipt, transitionAttempt } from "../src/rooms/plugin-db";
 
 const SHA = "a".repeat(64);
 

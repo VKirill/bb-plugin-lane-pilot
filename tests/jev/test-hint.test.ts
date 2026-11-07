@@ -1,6 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { openDatabase } from "../../src/rooms/storage/database";
+import { openDatabase } from "../../src/rooms/plugin-db";
 import { createJev, type JevClient } from "@lane-pilot/jev";
 import { directTestMatches, importLinkedTests, suggestTests, testHintLine, testPickJudgment, testSignature } from "../../src/rooms/verification/test-hint";
 

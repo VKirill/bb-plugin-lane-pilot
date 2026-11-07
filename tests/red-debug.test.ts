@@ -1,6 +1,6 @@
 import { it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { migrations } from "../src/rooms/storage/database";
+import { migrations } from "../src/rooms/plugin-db";
 import { runDraftTest, testCasesOf } from "@lane-pilot/workflow-engine";
 it("dump red", async () => {
   const { chainStore } = await import("./workflow/chain-harness");

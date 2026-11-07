@@ -1,6 +1,6 @@
 /**
  * The baseline before a writer and the regression pass after acceptance (SMA atlas delta D1-3 and D1-2). Three tables, created by
- * these statements and spread at the END of `migrations` in storage/database.ts.
+ * these statements and spread at the END of `migrations` in rooms/migrations.ts.
  *
  * lane_pilot_baseline: one row per task start. The task's verification[] on the base the attempt starts from: which checks were already
  * green, which red, which were skipped (too slow, carry secrets). `verdict` already_built means every check ran and passed;

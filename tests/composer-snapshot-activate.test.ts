@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import plugin from "../server";
 import { TARGET_SHA } from "../src/rooms/runs/constants";
-import { getRun, getRunWriterHost, openDatabase, savePrototypeConfig } from "../src/rooms/storage/database";
+import { getRun, getRunWriterHost, openDatabase, savePrototypeConfig } from "../src/rooms/plugin-db";
 
 const projectId = "proj_qphej4juxc";
 const request = {

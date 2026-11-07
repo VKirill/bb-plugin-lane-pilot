@@ -2,7 +2,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import { configuredSetting } from "../src/rooms/core/server";
 import { failureIntervention } from "../src/rooms/runs";
-import { loadProjectSettings, openDatabase, saveProjectSetting } from "../src/rooms/storage/database";
+import { loadProjectSettings, openDatabase, saveProjectSetting } from "../src/rooms/plugin-db";
 
 const PROJECT = "P";
 

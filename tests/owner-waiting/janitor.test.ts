@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { closeRun, createAttempt, createRun, createTask, openDatabase, transitionAttempt } from "../../src/rooms/storage/database";
+import { closeRun, createAttempt, createRun, createTask, openDatabase, transitionAttempt } from "../../src/rooms/plugin-db";
 import {
   closeOwnerItem, collectOwnerWaiting, OWNER_FACT_TTL_MS, OWNER_NOTE_TTL_MS, ownerWaitingCounts, postOwnerItem, sweepOwnerItems,
 } from "../../src/rooms/owner-waiting";

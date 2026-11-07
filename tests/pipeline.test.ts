@@ -21,7 +21,7 @@ import {
   saveStageReceipt,
   setRunThread,
   transitionAttempt,
-} from "../src/rooms/storage/database";
+} from "../src/rooms/plugin-db";
 import { fileAllowedByOwns, fnmatch, matchOwnsPath } from "@lane-pilot/kit";
 import { NATIVE_LP_BRIDGE_PM_TOOLS } from "../src/rooms/native-agent/native-session-hooks";
 import plugin from "../server";

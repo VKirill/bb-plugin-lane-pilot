@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it, vi } from "vitest";
-import { createAttempt, createRun, createTask, getAttempt, openDatabase, setAttemptWorkspace, transitionAttempt } from "../../src/rooms/storage/database";
+import { createAttempt, createRun, createTask, getAttempt, openDatabase, setAttemptWorkspace, transitionAttempt } from "../../src/rooms/plugin-db";
 import { classifyWriterOutput } from "../../src/rooms/tasks/validate-output";
 import { syncWorktree } from "../../src/rooms/verification/git-integrate";
 import { WORKSPACE_DIRT_COMMAND } from "../../src/rooms/verification/workspace-dirt";

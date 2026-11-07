@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createRun, createTask, createAttempt, openDatabase, saveProjectSetting, setRunThread, transitionAttempt } from "../../src/rooms/storage/database";
+import { createRun, createTask, createAttempt, openDatabase, saveProjectSetting, setRunThread, transitionAttempt } from "../../src/rooms/plugin-db";
 import { runCommand } from "../../src/rooms/host-worker/host-handlers";
 import { createCore } from "../../src/rooms/core/server/core";
 import { modelCatalogOf } from "../../src/rooms/core/server/model-catalog-reader";

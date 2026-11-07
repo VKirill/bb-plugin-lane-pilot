@@ -1,6 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { migrations, openDatabase } from "../../src/rooms/storage/database";
+import { migrations, openDatabase } from "../../src/rooms/plugin-db";
 import { routeWorkflow } from "../../src/rooms/workflow/route-workflow";
 import { listJudgments } from "@lane-pilot/jev";
 import { jevMigrations } from "@lane-pilot/jev";

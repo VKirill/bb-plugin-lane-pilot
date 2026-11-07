@@ -13,7 +13,7 @@ import {
 } from "../src/rooms/native-agent";
 import { coreRequiredSessionAdvertisement, type RequiredSessionAdvertisement } from "../src/rooms/native-agent/helper-context";
 import { createProfileCheck, PROFILE_CHECK_OWNER_KEY } from "../src/rooms/native-agent/server/profile-check";
-import { openDatabase } from "../src/rooms/storage/database";
+import { openDatabase } from "../src/rooms/plugin-db";
 
 const NOW = Date.UTC(2026, 10, 6, 9, 0, 0);
 const HOUR = 3_600_000;

@@ -12,6 +12,10 @@ import { jevSettingProblem } from "@lane-pilot/jev";
 import { HUB_KEYS, PROJECT_DEFAULT_KEYS, hubSettingProblem } from "../improvement";
 import { UI_CATALOG, WRITER_EFFORT_CHOICES_BY_PROVIDER } from "@lane-pilot/settings-catalog";
 
+import type { SettingValidationError } from "../setting-validation";
+
+export type { SettingValidationError } from "../setting-validation";
+
 /**
  * The judgments the settings validation names explicitly, so their modules are loaded whatever else the entry point imports: the
  * registry (`listJudgments`) holds only what some module has already registered, and the list must not depend on import order.
@@ -21,12 +25,6 @@ const SETTING_JUDGMENTS = [routeWorkflow, routeRecheck, repairGroup, failureClas
 function settingJudgments(): ReadonlyArray<Pick<Judgment<unknown, unknown>, "id" | "defaultMode" | "thresholds">> {
   return [...new Map([...listJudgments(), ...SETTING_JUDGMENTS].map((judgment) => [judgment.id, judgment])).values()];
 }
-
-export type SettingValidationError = {
-  code: "invalid_choice" | "incompatible_setting";
-  key: string;
-  params: string[];
-};
 
 /** Choices generated from the pinned upstream consumers and shared by every row for a storage key. */
 export function allowedSettingChoices(key: string): string[] | null {

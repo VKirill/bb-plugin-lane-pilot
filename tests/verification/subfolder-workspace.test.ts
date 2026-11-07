@@ -11,7 +11,7 @@ import { expect, it, vi } from "vitest";
 vi.setConfig({ testTimeout: 120_000 });
 import type { DirtSnapshot } from "../../src/rooms/writer/cli-outcome";
 import type { PrototypeConfig, TaskV2 } from "../../src/rooms/contracts";
-import { createAttempt, createRun, createTask, openDatabase, setAttemptWorkspace } from "../../src/rooms/storage/database";
+import { createAttempt, createRun, createTask, openDatabase, setAttemptWorkspace } from "../../src/rooms/plugin-db";
 import { createWriterVerify } from "../../src/rooms/writer/server/verify";
 import { buildRunPolicy } from "../../src/rooms/tasks/run-policy";
 import { appendExcludeCommand, persistTaskFolder, TASK_FOLDER_EXCLUDE } from "../../src/rooms/verification/git-integrate";

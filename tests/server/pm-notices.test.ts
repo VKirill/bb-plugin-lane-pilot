@@ -1,11 +1,11 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, describe, expect, it } from "vitest";
 import plugin from "../../server";
-import { createRun, openDatabase, savePrototypeConfig, setRunThread } from "../../src/rooms/storage/database";
+import { createRun, openDatabase, savePrototypeConfig, setRunThread } from "../../src/rooms/plugin-db";
 import { councilDecisionText, councilEndedText, sendCouncilNotice } from "../../src/rooms/council/server/pm-notice";
 import { maybeNotifyWorkflowRun, notifyWorkflowIfEnded, workflowEndedText } from "../../src/rooms/workflow/server/pm-notice";
 import { SCHEDULE_RUN_KEY_PREFIX } from "../../src/rooms/workflow/server/workflow-runtime";
-import type { RunRow } from "../../src/rooms/storage";
+import type { RunRow } from "../../src/rooms/plugin-db";
 import { engineOn, ok, wf } from "../workflow/engine-helpers";
 
 const projectId = "notice-project";

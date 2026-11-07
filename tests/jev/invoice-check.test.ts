@@ -1,6 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, describe, expect, it } from "vitest";
-import { openDatabase } from "../../src/rooms/storage/database";
+import { openDatabase } from "../../src/rooms/plugin-db";
 import type { JevClient } from "@lane-pilot/jev";
 import { hardProblems, invoiceCheck, overlap, validAccount, validCorrAccount, validInn, type InvoiceCheckInput } from "@lane-pilot/jev/judgments/invoice-check";
 import { createJev } from "@lane-pilot/jev";

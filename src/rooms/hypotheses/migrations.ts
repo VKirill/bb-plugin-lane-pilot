@@ -1,5 +1,5 @@
 /**
- * The register of hypotheses (src/rooms/hypotheses). One table, spread at the END of `migrations` in storage/database.ts.
+ * The register of hypotheses (src/rooms/hypotheses). One table, spread at the END of `migrations` in rooms/migrations.ts.
  *
  * lane_pilot_hypothesis: an idea to make the system better (found outside — a repository, a post, a talk — or inside), written as the settings
  * that would carry it; its bench arms (the baseline and the idea, on one set version) and the verdict. `state`: proposed, benching,

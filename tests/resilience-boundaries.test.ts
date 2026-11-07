@@ -2,7 +2,7 @@ import { expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { breakerKey, createProviderBreaker, createRunBudget, runningWriterBudgetStop } from "@lane-pilot/resilience";
 import { createWriterSpawn } from "../src/rooms/writer/server/spawn";
-import { createAttempt, createRun, createTask, openDatabase, setRunThread } from "../src/rooms/storage/database";
+import { createAttempt, createRun, createTask, openDatabase, setRunThread } from "../src/rooms/plugin-db";
 
 it("A-034 owner presence refusal releases an unused half-open provider trial", async () => {
   const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });

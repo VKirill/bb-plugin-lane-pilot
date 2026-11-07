@@ -1,12 +1,12 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import type { PrototypeConfig, TaskV2 } from "../src/rooms/contracts";
-import { countChargedAttempts, createAttempt, createRun, createTask, getAttempt, openDatabase, transitionAttempt } from "../src/rooms/storage/database";
+import { countChargedAttempts, createAttempt, createRun, createTask, getAttempt, openDatabase, transitionAttempt } from "../src/rooms/plugin-db";
 import { createWriterFinish } from "../src/rooms/writer/server/finish";
 import { failureClass, isWriterSilent } from "../src/rooms/runs/failure-class";
 import { countRunNudges, loadWriterNudge, NO_ANSWER_HOLD_MS, openCodeSessionOf, unansweredSince, sweepWriterSilence, type OpenCodeLimit, type SilenceDeps } from "../src/rooms/writer/server/writer-silence";
 import { createProviderBreaker } from "@lane-pilot/resilience";
-import { saveReasoningTrace } from "../src/rooms/storage/database";
+import { saveReasoningTrace } from "../src/rooms/plugin-db";
 
 const MIN = 60_000;
 const T0 = 1_800_000_000_000;

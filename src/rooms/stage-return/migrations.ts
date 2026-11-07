@@ -1,6 +1,6 @@
 /**
  * Return to an earlier stage with added context (SMA atlas delta D0-2: the non-linear graph, «из 4 вернуться в 1, из 5 во 2»). One table,
- * spread at the END of `migrations` in storage/database.ts.
+ * spread at the END of `migrations` in rooms/migrations.ts.
  *
  * lane_pilot_stage_return: one row per return. `to_stage` is where the person sent the task (discussion, planning, writer), `from_stage` the
  * earliest task stage that is stale because of it, `reused_json` / `stale_json` the receipts kept and the receipts reset (with why), `note` the

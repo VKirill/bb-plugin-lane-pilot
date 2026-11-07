@@ -1,6 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { createAttempt, createRun, createTask, openDatabase, setRunThread, transitionAttempt } from "../src/rooms/storage/database";
+import { createAttempt, createRun, createTask, openDatabase, setRunThread, transitionAttempt } from "../src/rooms/plugin-db";
 import { recordStage } from "../src/rooms/runs/server/stage-records";
 import { buildTaskBoard, inferTaskKind, readTaskCard } from "../src/rooms/runs/server/task-board";
 

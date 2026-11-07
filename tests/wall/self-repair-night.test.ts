@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { openDatabase } from "../../src/rooms/storage/database";
+import { openDatabase } from "../../src/rooms/plugin-db";
 import { createSelfRepair, readRepairRecord } from "../../src/rooms/self-repair/server/self-repair";
 import { setRepairHooks, type NightAssignment, type RepairHooks } from "../../src/rooms/self-repair/server/hooks";
 import type { ServerCore } from "../../src/rooms/core/server/core";

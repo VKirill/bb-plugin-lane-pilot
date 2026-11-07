@@ -5,7 +5,7 @@ import { createCore } from "../src/rooms/core/server/core";
 import type { Services } from "../src/rooms/core/server/services";
 import { classifyFailure } from "../src/rooms/runs/failure-class";
 import { recordStage } from "../src/rooms/runs/server/stage-records";
-import { countChargedAttempts, createAttempt, createRun, createTask, getAttempt, listUnansweredWriterQuestions, openDatabase, savePrototypeConfig, saveProjectSetting, saveTaskPlan, setRunThread, transitionAttempt } from "../src/rooms/storage/database";
+import { countChargedAttempts, createAttempt, createRun, createTask, getAttempt, listUnansweredWriterQuestions, openDatabase, savePrototypeConfig, saveProjectSetting, saveTaskPlan, setRunThread, transitionAttempt } from "../src/rooms/plugin-db";
 import { createWriterFinish } from "../src/rooms/writer/server/finish";
 import { collectOwnerWaiting } from "../src/rooms/owner-waiting";
 import { isProductDecision, markAnsweredByDefault, SAFE_DEFAULT_ANSWER, WRITER_QUESTION_WAIT_MS } from "../src/rooms/writer/server/question-default";

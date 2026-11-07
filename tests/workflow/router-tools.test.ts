@@ -1,8 +1,8 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import plugin from "../../server";
-import { createRun, openDatabase, setRunThread } from "../../src/rooms/storage/database";
-import type { LanePilotDatabase } from "../../src/rooms/storage/database";
+import { createRun, openDatabase, setRunThread } from "../../src/rooms/plugin-db";
+import type { LanePilotDatabase } from "../../src/rooms/plugin-db";
 import { routeTool, runWorkflowTool, workflowStatusTool } from "../../src/rooms/workflow/server/workflow-tools";
 import type { WorkflowToolDeps } from "../../src/rooms/workflow/server/workflow-tools";
 import { BUILTIN_SOURCES } from "../../src/rooms/workflow/builtin";

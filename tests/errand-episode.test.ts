@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
-import { openDatabase, saveProjectSetting, type LanePilotDatabase } from "../src/rooms/storage/database";
+import { openDatabase, saveProjectSetting, type LanePilotDatabase } from "../src/rooms/plugin-db";
 import { ERRAND_EPISODE_EXTRACTOR_VERSION, listEpisodes, pendingErrandEpisode, recordErrandEpisode } from "../src/rooms/errands";
 
 /**

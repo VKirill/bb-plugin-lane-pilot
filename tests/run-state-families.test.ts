@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { createRun, listTaskTerminalStates, openDatabase } from "../src/rooms/storage/database";
+import { createRun, listTaskTerminalStates, openDatabase } from "../src/rooms/plugin-db";
 import { aggregateRun } from "../src/rooms/runs/aggregation";
 import type { AttemptState } from "../src/rooms/runs/state-machine";
 

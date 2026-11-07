@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { benchPipeline } from "../../src/rooms/bench/server/plugin-ports";
-import { claimActivation, createRun, getRun, openDatabase, loadPrototypeConfig, savePrototypeConfig } from "../../src/rooms/storage/database";
+import { claimActivation, createRun, getRun, openDatabase, loadPrototypeConfig, savePrototypeConfig } from "../../src/rooms/plugin-db";
 import { DEFAULT_BENCH_WRITER } from "../../src/rooms/bench/runner";
 import type { BenchProjectRef } from "../../src/rooms/bench/ports";
 

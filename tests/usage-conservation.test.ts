@@ -1,7 +1,7 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import type { NodeExecutor } from "@lane-pilot/workflow-engine";
-import { openDatabase } from "../src/rooms/storage/database";
+import { openDatabase } from "../src/rooms/plugin-db";
 import { threadUsage } from "../src/rooms/usage/server/token-usage";
 import { withUsage } from "../src/rooms/usage/server/step-usage";
 import { markAttemptStart } from "../src/rooms/writer/server/attempt-marker";

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { buildCandidateEvidence, codeCritiquePrompt, MAX_FILE_EXCERPT_BYTES, NEW_FILE_DIFF, sha256Text } from "../../src/rooms/critique/code-critique";
 import { candidateCitations } from "../../src/rooms/critique/citations";
 import { candidatePatches } from "../../src/rooms/critique/server";
-import { createAttempt, createRun, createTask, openDatabase } from "../../src/rooms/storage";
+import { createAttempt, createRun, createTask, openDatabase } from "../../src/rooms/plugin-db";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 
 // selfystudio 2026-10-29: a 30-line edit in a large file cut the file to its first 8 KB and the gated code critic blocked every task

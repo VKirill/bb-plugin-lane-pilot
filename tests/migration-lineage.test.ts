@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { migrations, openDatabase } from "../src/rooms/storage/database";
+import { migrations, openDatabase } from "../src/rooms/plugin-db";
 import migrationLock from "./fixtures/migrations.lock.json";
 
 const installed011MigrationHashes = [
@@ -37,7 +37,7 @@ describe("the migration lock", () => {
   it("keeps every locked statement at its index; a new one is appended at the end and its hash added to tests/fixtures/migrations.lock.json", () => {
     const hashes = migrations.map((statement) => createHash("sha256").update(statement).digest("hex"));
     const moved = (migrationLock as string[]).flatMap((hash, index) => (hashes[index] === hash ? [] : [`${index}: ${(migrations[index] ?? "(gone)").trim().split("\n")[0]!.slice(0, 90)}`]));
-    expect(moved, "a locked migration changed or moved: append new statements at the end of src/rooms/storage/database.ts migrations instead").toEqual([]);
+    expect(moved, "a locked migration changed or moved: append new statements at the end of src/rooms/migrations.ts migrations instead").toEqual([]);
     expect(hashes.length, "a new migration is not in tests/fixtures/migrations.lock.json: append its hash").toBe((migrationLock as string[]).length);
   });
 });

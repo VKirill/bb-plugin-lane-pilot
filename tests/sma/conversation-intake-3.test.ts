@@ -7,7 +7,7 @@ import { createCore } from "../../src/rooms/core/server/core";
 import { mountLifecycleEvents } from "../../src/rooms/core/server/lifecycle-events";
 import { closeBacklogItem } from "../../src/rooms/host-worker/host-handlers";
 import { readThreadLive } from "../../src/rooms/runs/server/thread-live";
-import { createAttempt, createRun, createTask, openDatabase, setRunThread, transitionAttempt } from "../../src/rooms/storage/database";
+import { createAttempt, createRun, createTask, openDatabase, setRunThread, transitionAttempt } from "../../src/rooms/plugin-db";
 import { createWriterDispatch } from "../../src/rooms/writer/server/dispatch";
 
 describe("thread live and the granted reader", () => {

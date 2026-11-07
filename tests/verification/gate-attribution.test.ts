@@ -7,7 +7,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { IntegrationGateRunner, type MergedTaskInfo } from "../../src/rooms/verification/server/integration-gate";
 import { attributeFailures } from "../../src/rooms/verification/server/gate-attribution";
 import { attributeGateOnHost } from "../../src/rooms/verification/integration-gate-host";
-import { createTask, openDatabase, saveProjectSetting } from "../../src/rooms/storage/database";
+import { createTask, openDatabase, saveProjectSetting } from "../../src/rooms/plugin-db";
 import * as hostHandlers from "../../src/rooms/host-worker/host-handlers";
 import type { ServerCore } from "../../src/rooms/core/server/core";
 import type { Services } from "../../src/rooms/core/server/services";

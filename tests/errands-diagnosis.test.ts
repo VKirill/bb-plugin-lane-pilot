@@ -2,7 +2,7 @@ import Database from "better-sqlite3";
 import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import type { StoredWorkflow } from "@lane-pilot/workflow-engine";
-import { openDatabase, type LanePilotDatabase } from "../src/rooms/storage/database";
+import { openDatabase, type LanePilotDatabase } from "../src/rooms/plugin-db";
 import { diagnosisLines, errandsDiagnosis, errandsDiagnosisMorningLine } from "../src/rooms/errands/diagnosis";
 
 /**

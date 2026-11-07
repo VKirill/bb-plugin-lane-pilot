@@ -4,7 +4,7 @@ import { graphStepMetadata } from "../../src/rooms/core/server";
 import { withUsage } from "../../src/rooms/usage/server";
 import { lpTaskPipelineExecutor } from "../../src/rooms/writer/server/dispatch-workflow";
 import { pipelineWriterTag } from "../../src/rooms/writer/server/pipeline-tag";
-import { createAttempt, createRun, openDatabase } from "../../src/rooms/storage/database";
+import { createAttempt, createRun, openDatabase } from "../../src/rooms/plugin-db";
 
 const spent = (total: number) => [{ type: "turn/started", seq: 1 }, { type: "thread/tokenUsage/updated", seq: 2, createdAt: 2, data: { turnId: "t1", tokenUsage: { last: { inputTokens: total, outputTokens: 0, totalTokens: total }, total: { inputTokens: total, outputTokens: 0, totalTokens: total } } } }];
 

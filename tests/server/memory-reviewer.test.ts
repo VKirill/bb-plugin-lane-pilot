@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { openDatabase, saveProjectSetting } from "../../src/rooms/storage/database";
+import { openDatabase, saveProjectSetting } from "../../src/rooms/plugin-db";
 import { memoryUsefulness, storeMemoryRecords } from "../../packages/memory-core/src";
 import type { MemoryCandidate } from "../../packages/memory-core/src";
 import { mixReviewerMemory, reviewerMemoryFor } from "../../src/rooms/memory/server/memory-mix";
@@ -119,10 +119,10 @@ describe("a new core convention reaches the reviewers", () => {
 describe("stale fingerprints in the brief", () => {
   it("a note whose named file drifted is kept but marked needs_review; a fresh one is not", () => {
     const db = newDb();
-    const [staleId] = put(db, [note("Migrations in src/rooms/storage/database.ts must be idempotent", ["review", "migrations"])]);
+    const [staleId] = put(db, [note("Migrations in src/rooms/migrations.ts must be idempotent", ["review", "migrations"])]);
     db.prepare("UPDATE lane_pilot_memory SET file_fingerprint=? WHERE id=?").run("stalehash12345678", staleId);
     const marked = mixReviewerMemory(db, { projectId: "P", task, searchEngine: "fts5", personalBot: "", ruleMemoryIds: new Set(), budget: 2500,
-      readFile: (path) => path === "src/rooms/storage/database.ts" ? Buffer.from("new content") : null });
+      readFile: (path) => path === "src/rooms/migrations.ts" ? Buffer.from("new content") : null });
     expect(marked.text).toContain("[needs_review]");
     const fresh = mixReviewerMemory(db, { projectId: "P", task, searchEngine: "fts5", personalBot: "", ruleMemoryIds: new Set(), budget: 2500 });
     expect(fresh.text).not.toContain("[needs_review]"); // no readFile → nothing can be proven stale

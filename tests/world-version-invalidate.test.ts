@@ -1,7 +1,7 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it, vi } from "vitest";
 import { mountOutbound, worldVersion } from "../src/rooms/outbound";
-import { createAttempt, createRun, openDatabase, transitionAttempt } from "../src/rooms/storage";
+import { createAttempt, createRun, openDatabase, transitionAttempt } from "../src/rooms/plugin-db";
 
 describe("world_version invalidation (B-9)", () => {
   it("an attempt change bumps the version and invalidates the watched read", async () => {
