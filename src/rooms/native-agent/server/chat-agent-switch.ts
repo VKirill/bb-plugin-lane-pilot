@@ -1,5 +1,4 @@
 import { findOpenNativeRun, listOpenAttempts } from "../../storage";
-import { listPhases } from "../../phase";
 import { compileEffectiveMainAgent } from "../agent-profile"
 import { agentKind } from "../agent-profile";
 import { nativeSwitchKey, pendingSwitch } from "../native-session"
@@ -44,12 +43,15 @@ export async function isPmChat(ctx: Pick<ServerCore, "bb">, threadId: string): P
   return !bound || isPmAgent(bound.agentId);
 }
 
+/** The live phases of a PM chat, read by the room that owns them (phase) and handed in from the composition root. */
+export type LivePhases = (db: ServerCore["db"], filter: { pmThreadId: string; projectId: string }) => Array<{ title: string }>;
+
 /** What still works for the PM chat's run, in words; null when nothing does. The move away from the PM waits for it instead of orphaning it. */
-function liveWork(db: ServerCore["db"], projectId: string, runId: string, threadId: string): string | null {
+function liveWork(db: ServerCore["db"], projectId: string, runId: string, threadId: string, livePhases: LivePhases): string | null {
   const parts: string[] = [];
   const writers = listOpenAttempts(db).filter((attempt) => attempt.run_id === runId);
   if (writers.length) parts.push(`${writers.length} task${writers.length === 1 ? " is" : "s are"} at work`);
-  for (const phase of listPhases(db, { pmThreadId: threadId, projectId, live: true })) parts.push(`phase «${phase.title}» is live`);
+  for (const phase of livePhases(db, { pmThreadId: threadId, projectId })) parts.push(`phase «${phase.title}» is live`);
   const graphs = (db.prepare("SELECT count(*) AS n FROM lane_pilot_wf_run WHERE link_run_id=? AND parent_run_id IS NULL AND status IN ('running','waiting')").get(runId) as { n: number }).n;
   if (graphs) parts.push(`${graphs} workflow run${graphs === 1 ? " is" : "s are"} going`);
   return parts.length ? `Lane Pilot still works for this chat: ${parts.join("; ")}. Wait until they end or cancel them, then change the agent.` : null;
@@ -101,6 +103,7 @@ export async function switchChatAgent(
   ctx: Pick<ServerCore, "bb" | "db" | "ownedAgents">,
   input: { threadId: string; agentId: string | null },
   finishRun: (projectId: string, runId: string) => Promise<void>,
+  livePhases: LivePhases,
 ): Promise<{ agentId: string | null; description: string | null }> {
   const { bb, db } = ctx;
   const { threadId } = input;
@@ -114,7 +117,7 @@ export async function switchChatAgent(
   const leavePm = async () => {
     const runId = findOpenNativeRun(db, state.projectId, threadId);
     if (runId) {
-      const busy = liveWork(db, state.projectId, runId, threadId);
+      const busy = liveWork(db, state.projectId, runId, threadId, livePhases);
       if (busy) throw new Error(busy);
       // Finishing the run also stops the chat and refuses while its tasks are at work.
       await finishRun(state.projectId, runId);

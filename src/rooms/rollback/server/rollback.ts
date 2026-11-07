@@ -4,8 +4,7 @@ import { bookkeepingSetting } from "@lane-pilot/settings-catalog";
 import { taskV2Schema, type PrototypeConfig, type TaskV2 } from "../../contracts";
 import { getAttempt, getRun, getRunSettingsScopes, getRunWriterHost, getTask, loadProjectSettings, taskBasePath, type WorktreeOwnerKind } from "../../storage";
 import { retargetTask } from "../../tasks";
-import { gateResolverFor } from "../../verification/server"
-import { parseIntegrationGateSettings } from "../../contracts/integration-gate";
+import { parseIntegrationGateSettings, type VerificationGatePort } from "../../contracts/integration-gate";
 
 import type { ServerCore } from "../../contracts/server";
 import {
@@ -17,6 +16,7 @@ import type { RunVerification } from "../../platform/server";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {
+  resolveIntegrationGate: VerificationGatePort;
   runVerification: RunVerification;
 }
 
@@ -361,7 +361,7 @@ export function createRollback(ctx: ServerCore, services: Services) {
       // The project's own checks (the integration gate command, explicit or detected), on the reverted tree.
       let gate: { command: string; exitCode: number; baselineRed: boolean; tail: string } | null = null;
       if (!options.skipGate) {
-        const resolved = await gateResolverFor(ctx)({ runId: t.runId, hostId: t.hostId, basePath: t.basePath,
+        const resolved = await services.resolveIntegrationGate({ runId: t.runId, hostId: t.hostId, basePath: t.basePath,
           gate: parseIntegrationGateSettings(loadProjectSettings(db, t.projectId, getRunSettingsScopes(db, t.runId))) }).catch(() => null);
         if (resolved) {
           const ran = await host.call("gateRun", { requestedHostId: t.hostId, basePath: scratch.path, command: resolved.command, timeoutSec: GATE_TIMEOUT_SEC },

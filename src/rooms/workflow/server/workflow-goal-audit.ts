@@ -1,5 +1,6 @@
 import { agentPrompt, dataBlock, outputContract } from "@lane-pilot/workflow-engine";
 import type { VerificationGatePort } from "../../contracts/integration-gate";
+import type { IsTaskSatisfied } from "../../contracts";
 import type { EngineOptions } from "@lane-pilot/workflow-engine";
 import { goalsSha } from "@lane-pilot/workflow-engine";
 import type { GoalAudit } from "@lane-pilot/workflow-engine";
@@ -22,6 +23,7 @@ import type { WorkflowEngineApi } from "../../platform/server";
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {
   dispatchWriter: DispatchWriter;
+  isTaskSatisfied: IsTaskSatisfied;
   taskUsage: TaskUsage;
   docsPlaces: DocsNightlyApi["docsPlaces"];
   stability: StabilityApi;

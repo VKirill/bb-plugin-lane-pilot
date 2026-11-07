@@ -5,7 +5,7 @@ import { claimStageSpawn, countAttempts, getRun, getTask, getTaskPlan, listLiveT
 import { criticAcrossFamilies, criticOffSpent, criticPairCandidates, effortAfterMove, latestWriterPair, pairApartFromWriter, pickCriticByAccuracy, roleSelection, sdkCriticCatalog, usable } from "../critic-pair";
 import { criticStats } from "../critic-stats";
 import {bbServiceTier, findModelIn, listedServiceTier, modelFamily, resolveStageWriterSelection, type SpentProbe, writerExecutionSelection, writerServiceTier} from "@lane-pilot/models";
-import { qaSpawnClaimed } from "../../qa";
+import { spawnClaimed } from "../../contracts";
 import { reconcileCritic } from "../../stability";
 ;
 import { MAX_FILE_EXCERPT_BYTES } from "../code-critique";
@@ -540,8 +540,8 @@ export async function runCodeCritique(input:{
           return { allowed:false, reason:`code_critique_failed:${reason}`, review:"not_required", settings:parsed };
         }
       }
-      if (recovered.kind !== "not_found" || qaSpawnClaimed(existing.result) || existing.state === "running") {
-        const claimed = qaSpawnClaimed(existing.result);
+      if (recovered.kind !== "not_found" || spawnClaimed(existing.result) || existing.state === "running") {
+        const claimed = spawnClaimed(existing.result);
         if (recovered.kind !== "not_found" || claimed) {
           const reason = recovered.kind === "error"
             ? `${CRITIC_OUTCOME_UNKNOWN}:${recovered.message}`

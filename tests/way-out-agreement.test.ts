@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import { readFileSync } from "node:fs";
-import { WAY_OUT } from "../src/rooms/runs/way-out";
+import { WAY_OUT } from "../src/rooms/contracts/way-out";
 
 /**
  * WAY_OUT is the one source for «what to do when the reason is X»; the lane-pilot-ops runbook quotes it

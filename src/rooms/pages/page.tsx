@@ -12,6 +12,7 @@ import { TokenUsage } from "../usage/ui";
 import { WorkflowsScreen } from "../workflow/ui/workflows";
 import { ScheduleBoard } from "../schedule/ui";
 import { TaskBoard } from "../runs/ui";
+import { AcceptanceCard } from "../acceptance/ui";
 import { OwnerWaitingBoard } from "../owner-waiting/ui";
 import { ImprovementScreen } from "../improvement/ui";
 import { ErrandsScreen } from "../errands/ui";
@@ -64,7 +65,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
               ) : null}
               {activeScope === "workflows" ? <WorkflowsScreen locale={locale} projectId={null} architectProjectId={selectedProjectId ?? routeProjectId ?? (subPath || null)} /> : null}
               {activeScope === "schedule" ? <ScheduleBoard projectId={null} projects={projects} locale={locale} /> : null}
-              {activeScope === "tasks" ? <TaskBoard projects={projects} serviceProjectIds={page.projectGroups.service.map((project) => project.id)} initialProjectId={selectedProjectId ?? null} locale={locale} /> : null}
+              {activeScope === "tasks" ? <TaskBoard projects={projects} serviceProjectIds={page.projectGroups.service.map((project) => project.id)} initialProjectId={selectedProjectId ?? null} locale={locale} AcceptanceCard={AcceptanceCard} /> : null}
               {activeScope === "waiting" ? <OwnerWaitingBoard projects={projects} /> : null}
               {activeScope === "improvement" ? <ImprovementScreen locale={locale} /> : null}
               {activeScope === "errands" ? <ErrandsScreen projects={projects} locale={locale} /> : null}

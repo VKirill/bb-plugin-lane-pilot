@@ -2,7 +2,7 @@ import { z } from "zod";
 import { callerPluginMetadata, registerObservedTool } from "../../platform/server";
 import { ToolError, type ServerCore } from "../../contracts/server";
 import { hostContract } from "../../contracts";
-import { wayOut } from "../../runs"
+import { wayOut } from "../../contracts"
 import { failureClass } from "../../contracts/failure-class";
 import { getRun, getRunWriterHost, listAttemptRowsForProject, listRunTaskSummaries } from "../../storage";
 import { checkRecipe, factKind, type CheckMeasure } from "../rails";

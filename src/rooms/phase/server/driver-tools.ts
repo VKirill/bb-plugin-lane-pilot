@@ -6,7 +6,7 @@ import type { PhaseReactions } from "./reactions";
 import type { RegressionApi } from "../../baseline/server/regress";
 import type { RollbackApi } from "../../rollback/server/rollback";
 import type { RunGoalApi } from "../../run-goal/server/run-goal";
-import type { WallApi } from "../../wall/service";
+import type { WallLoopPort } from "../../contracts";
 import type { ArchitectApi, DispatchWriter, ReadWriterWorkspaceFile, RecheckPlanFact, WorkflowEngineApi, WorkflowLibraryApi, WriterStateApi } from "../../platform/server";
 
 
@@ -24,7 +24,7 @@ interface Services {
   recheckPlanFact: RecheckPlanFact;
   runBudgets: WriterStateApi["runBudgets"];
   runGoal: RunGoalApi;
-  wall: WallApi;
+  wall: WallLoopPort;
   workflowCatalog: WorkflowEngineApi["workflowCatalog"];
   workflowLibrary: WorkflowLibraryApi;
   workflowEngine: WorkflowEngineApi["workflowEngine"];

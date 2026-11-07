@@ -11,7 +11,6 @@ import { checkNote, pmReturnMessage, pmWriterLine, returnTurnPrompt } from "../l
 import { finishReturn, getReturn, insertReturn, listReturns, type StageReturnRecord } from "../store";
 
 import type { RollbackApi } from "../../rollback/server/rollback";
-import type { ReconcileApi } from "../../stability/server/reconcile";
 
 
 import type { BaselineApi } from "../../baseline/server/baseline";
@@ -23,7 +22,7 @@ interface Services {
   attemptReopen: AttemptReopenApi;
   activeWriterTasks: WriterStateApi["activeWriterTasks"];
   baseline: BaselineApi;
-  enqueueResumedWriter: ReconcileApi["enqueueResumedWriter"];
+  enqueueResumedWriter: (projectId: string, attempt: NonNullable<ReturnType<typeof getAttempt>>, writerThreadId?: string) => Promise<boolean>;
   regression: RegressionApi;
   rollback: RollbackApi;
   startWriterTask: StartWriterTask;

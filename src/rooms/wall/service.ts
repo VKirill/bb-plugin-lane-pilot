@@ -19,7 +19,8 @@ import { modelRebenchMorningLine } from "../night-graphs";
 import { errandsDiagnosisMorningLine } from "../errands";
 import { profileCheckMorningLine } from "../native-agent";
 import { watchMorningLine } from "@lane-pilot/jev";
-import { HUNT_ANGLES, buildClassPack, buildLoopPack, buildTaskPack, judgeHunt, parseFinding, type CheckedFinding, type EvidencePack, type HuntOutcome, type LoopEvidence, type PackFile } from "./pack";
+import { HUNT_ANGLES, buildClassPack, buildLoopPack, buildTaskPack, judgeHunt, parseFinding, type CheckedFinding, type EvidencePack, type HuntOutcome, type PackFile } from "./pack";
+import type { LoopEvidence, LoopSubject } from "../contracts";
 import { executable, headPartsOf, planClassRerun, recordRerun, type RerunPlan, type RerunScope } from "./rerun";
 import { cycleScoresOf, selectClasses } from "./select";
 import { repairSignature, wallSignature } from "./signature";
@@ -127,23 +128,6 @@ export const classWallKey = (classKey: string): string => `class:${classKey}`;
 /** Loop walls (a phase stage, a failed verification, a topic) are walls of kind task whose key starts with this. */
 export const LOOP_PREFIX = "loop:";
 export const loopWallKey = (kind: LoopSubject["kind"], id: string): string => `${LOOP_PREFIX}${kind}:${sha256Hex(id).slice(0, 12)}`;
-
-/** A loop of tries that ended (see `loopExhausted`). */
-export type LoopSubject = Omit<LoopEvidence, "subject"> & {
-  /** A phase stage's workflow that failed, the machine's replans after a failed verification, or a topic of a run the stopper refused. */
-  kind: "stage" | "replan" | "topic";
-  /** Names the subject within its kind; one id, one wall, one hunt, one backlog item. */
-  id: string;
-  title: string;
-  projectId: string;
-  /** What the caller already did about it (a scope cut, a stop), for the morning-list line and the backlog item. */
-  done: string;
-  /** The topic stopper's key (a file or a test), read back by `loopTopics`. */
-  topic?: string;
-  pmThreadId?: string | null;
-  /** The one notice for the PM chat, sent at once; omitted when the caller's own answer already is that notice. */
-  notice?: string;
-};
 
 export function createWall(deps: WallDeps) {
   const { db, kv, ports, log } = deps;

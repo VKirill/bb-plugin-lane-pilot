@@ -4,7 +4,11 @@ import { t, type I18nKey } from "@lane-pilot/i18n";
 import { Button, Disclosure, Icon, Input, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Switch } from "@lane-pilot/ui-kit";
 import type { z } from "zod";
 import type { rpcContract } from "../../contracts";
-import { AcceptanceCard } from "../../acceptance/ui";
+/** The acceptance card the task page shows, implemented by src/rooms/acceptance and handed in from the page shell. */
+export type AcceptanceCardView = (props: {
+  runId: string; taskId: string; refreshKey: unknown; finished: boolean;
+  fallback: { objective: string | null; acceptance: string[] } | null;
+}) => ReactNode;
 import { StageModelStats, StageStrip, WorkBreakdown, useStageStrips } from "../../work-graph/ui";
 import { useLpRpcQuery } from "../../ui-shell/ui";
 import { RunStages } from "./run-parts";
@@ -121,10 +125,11 @@ function groupOf(item: Item, by: GroupBy, projectName: (id: string | null) => st
   return { key: "all", title: "" };
 }
 
-export function TaskBoard({ projects = [], serviceProjectIds = [], initialProjectId = null, lockedProjectId = null, locale }: {
+export function TaskBoard({ projects = [], serviceProjectIds = [], initialProjectId = null, lockedProjectId = null, locale, AcceptanceCard }: {
   projects?: ReadonlyArray<{ id: string; name: string }>; serviceProjectIds?: readonly string[]; initialProjectId?: string | null;
   /** The project's own tab: the board of this project only, without the project switch and the title the tab already carries. */
   lockedProjectId?: string | null; locale: string;
+  AcceptanceCard: AcceptanceCardView;
 }) {
   const rpc = useRpc<typeof rpcContract>();
   const locked = lockedProjectId != null;
@@ -147,7 +152,7 @@ export function TaskBoard({ projects = [], serviceProjectIds = [], initialProjec
     && (drills || projectId !== "all" || !item.projectId || !service.has(item.projectId))
     && (!needle || [item.title, item.techTitle ?? "", item.taskId ?? "", item.area ?? ""].some((value) => value.toLowerCase().includes(needle))));
 
-  if (open) return <TaskPage item={open} locale={locale} projectName={projectName(open.projectId)} onBack={() => setOpen(null)} />;
+  if (open) return <TaskPage item={open} locale={locale} projectName={projectName(open.projectId)} onBack={() => setOpen(null)} AcceptanceCard={AcceptanceCard} />;
   const showProject = projectId === "all";
   const tile = (item: Item) => <TaskCardTile key={item.key} item={item} showProject={showProject} projectName={projectName(item.projectId)} locale={locale} onOpen={() => setOpen(item)} />;
   return (
@@ -332,7 +337,7 @@ function RailRow({ label, children }: { label: string; children: ReactNode }) {
   return <div className="py-1"><div className="text-[11px] font-semibold text-muted-foreground">{label}</div><div className="mt-0.5 min-w-0 break-words text-sm">{children}</div></div>;
 }
 
-function TaskPage({ item, locale, projectName, onBack }: { item: Item; locale: string; projectName: string; onBack: () => void }) {
+function TaskPage({ item, locale, projectName, onBack, AcceptanceCard }: { item: Item; locale: string; projectName: string; onBack: () => void; AcceptanceCard: AcceptanceCardView }) {
   const rpc = useRpc<typeof rpcContract>();
   const navigate = useBbNavigate();
   const [card, setCard] = useState<Card | null | "gone">(null);

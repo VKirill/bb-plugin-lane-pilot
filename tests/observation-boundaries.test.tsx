@@ -9,6 +9,7 @@ import { runsRpc } from "../src/rooms/runs/server/rpc/runs";
 import { registerCli } from "../src/rooms/tools/server/cli";
 import type { Services } from "../server";
 import { setLocaleOverride } from "@lane-pilot/i18n";
+import { AcceptanceCard } from "../src/rooms/acceptance/ui";
 
 vi.setConfig({ testTimeout: 60_000 });
 afterEach(() => { cleanup(); vi.useRealTimers(); });
@@ -115,7 +116,7 @@ it("shows a board read error, recovers, marks stale data and recovers again", as
   const { TaskBoard } = await import("../src/rooms/runs/ui/task-board");
   vi.useFakeTimers({ shouldAdvanceTime: true });
   let fail = true;
-  const slot = renderSlot({ component: () => <TaskBoard locale="en" /> }, {}, { rpc: {
+  const slot = renderSlot({ component: () => <TaskBoard locale="en" AcceptanceCard={AcceptanceCard} /> }, {}, { rpc: {
     task_board: () => { if (fail) throw new Error("fixture_offline"); return { items: [] }; },
     work_graph_strips: () => ({}),
   } as never });
@@ -141,7 +142,7 @@ it("does not hide the 121st board card behind a count of 121", async () => {
     kind: "task", key: `k${i}`, runId: "r", taskId: `t${i}`, title: `Task ${i}`, projectId: "p", column: "queued",
     state: "queued", phase: "queued", waitingFor: [], taskKind: "feature", updatedAt: 1, attemptNo: 1,
   }));
-  const slot = renderSlot({ component: () => <TaskBoard locale="en" /> }, {}, { rpc: { task_board: () => ({ items }), work_graph_strips: () => ({}) } as never });
+  const slot = renderSlot({ component: () => <TaskBoard locale="en" AcceptanceCard={AcceptanceCard} /> }, {}, { rpc: { task_board: () => ({ items }), work_graph_strips: () => ({}) } as never });
   await slot.findByTestId("board-card-k120");
   expect(slot.getByTestId("board-col-queued").querySelectorAll("button")).toHaveLength(121);
 });

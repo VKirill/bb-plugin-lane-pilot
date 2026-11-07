@@ -1,5 +1,6 @@
 import { isTaskSatisfied, loadBlockedBy } from "../../runs/server";
 import type { VerificationGatePort } from "../../contracts/integration-gate";
+import type { IsTaskSatisfied } from "../../contracts";
 import type { StageHelperSettings } from "../../platform/server";
 import { setRunHalted } from "../../runs/server";
 import { isLiveDecision } from "../live-folder";
@@ -54,6 +55,7 @@ interface Services {
   activeWriterTasks: WriterStateApi["activeWriterTasks"];
   baseline: BaselineApi;
   isLiveFolder: WriterSpawnApi["isLiveFolder"];
+  isTaskSatisfied: IsTaskSatisfied;
   runBudgets: WriterStateApi["runBudgets"];
   stability: StabilityApi;
   resolveIntegrationGate: VerificationGatePort;

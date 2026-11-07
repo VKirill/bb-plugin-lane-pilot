@@ -42,7 +42,7 @@ export { taskWordItemPrefix, type TaskWordDb, type TaskWordPort, type WordTask }
 export type { LaneProjectNotice } from "./lane-project";
 export type { InsightsApi, AnalyzerSelection, RuleScanSurface } from "./insights";
 export type { ErrandEpisodesApi, ErrandOutcome, ErrandVerifiedOutcome } from "./errand-episodes";
-export type { WallConfigStatus } from "./wall-api";
+export type { LoopEvidence, LoopSubject, WallConfigStatus, WallLoopPort } from "./wall-api";
 export { SANDBOX_OWN_ENV } from "./sandbox-own-env";
 export { NO_RED_KINDS } from "./baseline-vocabulary";
 export { parseExecutionLineWindows, type LineWindow, type PathWindows } from "./execution-line-windows";
@@ -77,3 +77,6 @@ export * from "./docs-nightly-api";
 export * from "./stage-children-api";
 export * from "./merge-intents";
 export * from "./agent-ops";
+export { NO_WAY_OUT, WAY_OUT, wayOut } from "./way-out";
+export { spawnClaimed } from "./spawn-claim";
+export type { IsTaskSatisfied } from "./runs-api";

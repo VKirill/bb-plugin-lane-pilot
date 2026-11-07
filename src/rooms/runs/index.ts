@@ -7,7 +7,6 @@ export { DISPATCH_IDEMPOTENT_WINDOW_MS, DISPATCH_STAGES_PENDING, EXTERNAL_OPS, E
 export { failureClassLive, failureClassReport, judgedFailureClass, sweepFailureClassOutcomes, sweepInvoiceCheckOutcomes, sweepRouteWorkflowOutcomes, sweepPlanFactOutcomes, sweepWriterModelOutcomes } from "./failure-class-model";
 export { isKnownReason, unknownReasons } from "./unknown-codes";
 export { renderTimeline, taskTimeline } from "./timeline";
-export { NO_WAY_OUT, wayOut } from "./way-out";
 export type { TaskTimeline, TimelineEntry } from "./timeline";
 export { failureClassJudgment } from "./failure-class-judgment";
 export type { FailureClassDecision, FailureClassInput } from "./failure-class-judgment";

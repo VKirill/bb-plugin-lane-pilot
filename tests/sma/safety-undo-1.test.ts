@@ -9,6 +9,7 @@ import { createAttempt, createRun, createTask, openDatabase } from "../../src/ro
 import { createWorktree, integrateWorktree, removeLaneWorktree } from "../../src/rooms/verification/git-integrate";
 import { mergeInfo, revertCommitsInWorktree, worktreeState } from "../../src/rooms/verification/git-rollback";
 import { resolveGitOwnershipBase } from "../../src/rooms/verification/git-ownership";
+import { gateResolverFor } from "../../src/rooms/verification/server";
 import { git } from "../verification/git-integrate-helpers";
 
 const HOST = "host-1";
@@ -43,6 +44,7 @@ async function world() {
     bb, db, host, log: () => undefined, isDisposed: () => false,
     configForRun: async () => ({ projectId: "projA", hostId: HOST, writerWorkspacePath: base }),
   } as never, {
+    resolveIntegrationGate: gateResolverFor({ host, db, log: () => undefined } as never),
     runVerification: async (_config: unknown, task: { verification: Array<{ command: string; cwd: string }> }) => task.verification.map((check) => {
       const ran = spawnSync("bash", ["-lc", check.command], { cwd: check.cwd, encoding: "utf8" });
       return { command: check.command, exitCode: ran.status ?? 1, stdout: ran.stdout ?? "", stderr: ran.stderr ?? "" };

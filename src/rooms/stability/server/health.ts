@@ -4,7 +4,7 @@ import { registerObservedTool } from "../../platform/server";
 
 import { bindRunChildBudget } from "../../platform/server";
 import { getRun, getRunSettingsScopes, loadProjectSettings } from "../../storage";
-import { wayOut } from "../../runs";
+import { wayOut } from "../../contracts";
 
 import type { WriterStateApi } from "../../platform/server";
 
