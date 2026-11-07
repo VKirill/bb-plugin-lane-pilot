@@ -1,6 +1,5 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type { LanePilotDatabase } from "../../storage";
-import { VISIBLE_CATALOG } from "@lane-pilot/settings-catalog";
 import type { Realtime } from "./realtime";
 
 /** What every server module gets instead of reaching into the closure of `plugin()`. */
@@ -11,13 +10,6 @@ export type ServerContext = {
   isDisposed: () => boolean;
   /** Tells open screens to re-read; absent in a bare context built by a test. */
   realtime?: Realtime;
-};
-
-/** A setting by its catalog name, whether stored under that name or under its storage key. */
-export function configuredSetting(settings: Record<string, unknown>, setting: string): unknown {
-  if (Object.hasOwn(settings, setting)) return settings[setting];
-  const row = VISIBLE_CATALOG.find((item) => item.setting === setting);
-  return row ? settings[row.storageKey] : undefined;
 }
 
 /**

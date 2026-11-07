@@ -10,6 +10,8 @@ import { aggregateRun } from "../../runs";
 import { TARGET_SHA } from "../../runs";
 import { hostContract } from "../../contracts";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
+import type { ServerCore } from "../../contracts/server";
+export type { ServerCore } from "../../contracts/server";
 import { getAttempt, getRun, getRunSettingsScopes, ownerKindOfName, registerWorktree, releaseWorktree, getRunWriterHost, getTask, getTaskPlan, listAttemptsForTask, listStageReceipts, listTaskTerminalStates, loadProjectSettings, loadPrototypeConfig, sectionBindingId, setIllegalTransitionLog, setRunSettingsScopes, setRunState, transitionAttempt } from "../../storage";
 import { GLOBAL_SETTINGS_PROJECT_ID, LP_AGENT_OVERRIDES_KEY, LP_DEFAULTS_KEY, inheritProjectValues, parseLanePilotDefaults } from "@lane-pilot/settings-catalog";
 import { createNativeInstaller } from "../../native-install";
@@ -30,7 +32,7 @@ import { ownerTurnGate } from "./owner-turn";
 import { setWorkStartGate } from "./tool-result";
 
 /** Everything every server module shares: the SDK, storage, the host client and the small helpers used across modules. */
-export function createCore(bb: BbPluginApi, db: LanePilotDatabase) {
+export function createCore(bb: BbPluginApi, db: LanePilotDatabase): ServerCore {
   // Set before the database closes on reload (dispose hooks run LIFO); detached writer tasks check it.
   const state = { disposed: false };
   bb.onDispose(() => { state.disposed = true; });
@@ -417,8 +419,6 @@ export function createCore(bb: BbPluginApi, db: LanePilotDatabase) {
 
   return { bb, db, state, realtime, ownerAsk, secrets, catalogKey, forgetCatalogKey, outputGuard, isDisposed: () => state.disposed, log: (message: string) => bb.log.warn(message), host, deployDrain, nativeInstaller, nativeHost, serializedKv, ownedAgents, saveOwnedAgents, knownCustomAgentIds: () => customAgentIds, effectiveProjectSettings, screenWriterBinding, coexistenceInventory, coexistenceOperation, getThreadBounded, acceptedTaskWorkspace, workspaceExecutionEnvironment, refreshRun, markCanceledWriterStages, cancelQueuedAttempt, isRuntimeSettingKey, runPolicyFor, nativeRunConfig, sectionRowSchema, listProjectSections, sectionChain, settingsAbove, scopesForWorkspace, ensureRunScopes, configForRun, writerBindingKey };
 }
-
-export type ServerCore = ReturnType<typeof createCore>;
 
 /** No Jev key at all is the one silent degradation `bb plugin list` can show (B-4): the needs-configuration mark resets on the next load. */
 export async function flagMissingJevKey(bb: { status?: { needsConfiguration?: (message: string) => void } }, hasJevKey: () => Promise<boolean | null>): Promise<void> {

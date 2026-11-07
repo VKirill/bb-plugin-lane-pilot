@@ -1,26 +1,10 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type { z } from "zod";
+import { ToolError, type SideEffects } from "../../contracts/server";
+export { ToolError } from "../../contracts/server";
 import { failureClass } from "../../runs";
 import { boundPresentation } from "../../tools/server";
 import { checkArguments, flatParameters, unionMembers, withSignatures } from "./action-schema";
-
-export type SideEffects = "none" | "unknown";
-
-export class ToolError extends Error {
-  readonly code: string;
-  readonly retryable: boolean;
-  readonly sideEffects: SideEffects;
-  readonly next?: string;
-
-  constructor(message: string, fields: { code: string; retryable: boolean; sideEffects: SideEffects; next?: string }) {
-    super(message);
-    this.name = "ToolError";
-    this.code = fields.code;
-    this.retryable = fields.retryable;
-    this.sideEffects = fields.sideEffects;
-    if (fields.next !== undefined) this.next = fields.next;
-  }
-}
 
 function isZodError(error: unknown): boolean {
   return Boolean(error && typeof error === "object" && "name" in error && (error as { name: string }).name === "ZodError");
