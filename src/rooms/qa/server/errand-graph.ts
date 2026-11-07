@@ -1,6 +1,6 @@
 import { observeStageChild, waitThreadIdle } from "@lane-pilot/thread-observe";
 import { isOffered, routeIntent, type NodeExecutor, type StepContext, type Workflow } from "@lane-pilot/workflow-engine";
-import { redactKnown } from "@lane-pilot/kit";
+import { bestEffort, redactKnown } from "@lane-pilot/kit";
 import { z } from "zod";
 
 import { createWorkflowLibrary, SCHEDULE_RUN_KEY_PREFIX } from "../../workflow/server";
@@ -135,7 +135,7 @@ export function mountErrandGraph(ctx: ServerCore, services: Services, core: Erra
       try {
         await waitThreadIdle(bb, started.threadId, "errand", undefined, undefined, () => (ctx.isDisposed() ? "plugin_stopped" : c.signal.aborted ? "aborted" : null));
       } catch (cause) {
-        if (c.signal.aborted) await bb.sdk.threads.stop({ threadId: started.threadId }).catch(() => undefined);
+        if (c.signal.aborted) await bestEffort(ctx.log, `errand thread stop ${started.threadId}`, bb.sdk.threads.stop({ threadId: started.threadId }), undefined);
         throw cause;
       }
       const report = await core.completedReport(started.threadId, rt.projectId, snapshot);
@@ -154,7 +154,14 @@ export function mountErrandGraph(ctx: ServerCore, services: Services, core: Erra
   const library = createWorkflowLibrary(ctx, services);
   async function offeredCatalog(projectId: string): Promise<Workflow[]> {
     try { return (await library.loadStore(projectId)).store.list().map((item) => item.workflow); }
-    catch { return services.workflowCatalog?.store ? await services.workflowCatalog.store().then((store) => store.list().map((item) => item.workflow)).catch(() => services.workflowCatalog!.builtins()) : (services.workflowCatalog?.builtins() ?? builtinWorkflows()); }
+    catch {
+      const catalog = services.workflowCatalog;
+      if (!catalog?.store) return catalog?.builtins() ?? builtinWorkflows();
+      const store = await bestEffort(ctx.log, `workflow catalog ${projectId}`, catalog.store(), null);
+      if (!store) return catalog.builtins();
+      const listed = await bestEffort(ctx.log, `workflow catalog list ${projectId}`, Promise.resolve().then(() => store.list().map((item) => item.workflow)), null);
+      return listed ?? catalog.builtins();
+    }
   }
 
   /**
@@ -165,7 +172,7 @@ export function mountErrandGraph(ctx: ServerCore, services: Services, core: Erra
    */
   async function routedGraph(input: { task: string; authorized: boolean; accounts: readonly string[]; projectId: string }): Promise<{ match: { workflow: Workflow; inputs: Record<string, unknown>; confidence: number } } | { top: string; why: string }> {
     const catalog = await offeredCatalog(input.projectId);
-    const routed = await routeIntent({ intent: input.task, workflows: catalog }).catch(() => null);
+    const routed = await bestEffort(ctx.log, "errand route intent", routeIntent({ intent: input.task, workflows: catalog }), null);
     if (!routed) return { top: "", why: "none" };
     if (routed.decision !== "route" || !routed.workflowId) return { top: routed.suggested ? `${routed.suggested}:${routed.confidence}` : "", why: routed.suggested ? "below_confidence" : "none" };
     const top = `${routed.workflowId}:${routed.confidence}`;

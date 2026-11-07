@@ -3,9 +3,8 @@ import { writerExecutionSelection } from "@lane-pilot/models";
 import { fullAccessSpawn } from "../../platform/server";
 import { spawnTextId } from "../../platform/server";
 import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server";
-import {outputText, redactKnownDeep} from "@lane-pilot/kit";
+import { bestEffort, outputText, redactKnownDeep } from "@lane-pilot/kit";
 import { stringAt } from "@lane-pilot/kit";
-;
 import { FRONTEND_VERIFY_METHOD } from "../../critique";
 import { qaStateToStatus, settleVerdict, verdictSchema, verdictSummary } from "../../critique";
 import { checkBrief, renderBrief } from "../../brief";
@@ -174,6 +173,6 @@ export async function awaitQaVerdict(ctx: Pick<ServerCore, "bb" | "isDisposed"> 
   // Past the deadline (also when adopted after a long outage): a finished thread still has its verdict.
   const last = await observeStageChild(bb, threadId, 1);
   if (last.kind === "completed") return await read();
-  await bb.sdk.threads.stop({ threadId }).catch(() => undefined);
+  await bestEffort(ctx.bb.log, `browser qa thread stop ${threadId}`, bb.sdk.threads.stop({ threadId }), undefined);
   return { verdict: "blocked", status: "block", summary: `browser_qa_thread_timeout_${timeoutSec}s`, cases: [], threadId, link };
 }

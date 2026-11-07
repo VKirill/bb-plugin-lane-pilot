@@ -2,6 +2,7 @@ import { relative } from "node:path";
 import { getAttempt, getTask, listCheckDurations, listStageReceipts, taskBasePath } from "../../storage";
 import type { RollbackApi, RollbackItem, RollbackTarget } from "../../rollback/server";
 import { scheduleIsolated } from "../../platform/server";
+import { bestEffort } from "@lane-pilot/kit";
 import { type ServerCore } from "../../contracts/server";
 import { readingFrom, readingNote } from "../../verification";
 import {
@@ -96,12 +97,12 @@ export function createRegression(ctx: ServerCore, services: Services) {
   const LEFTOVER_AFTER_MS = 6 * 3_600_000;
   async function madeWorktree(t: RollbackTarget, name: string, commit: string): Promise<{ path: string } | { error: string }> {
     const result = await kit().makeWorktree(t, name, commit, "regress");
-    if ("path" in result) await ctx.bb.storage.kv.set(`${WORKTREE_KEY}${result.path}`, { hostId: t.hostId, basePath: t.basePath, at: Date.now() }).catch(() => undefined);
+    if ("path" in result) await bestEffort(log, `regress worktree record ${result.path}`, ctx.bb.storage.kv.set(`${WORKTREE_KEY}${result.path}`, { hostId: t.hostId, basePath: t.basePath, at: Date.now() }), undefined);
     return result;
   }
   async function dropped(t: RollbackTarget, path: string): Promise<void> {
     await kit().dropWorktree(t, path);
-    await ctx.bb.storage.kv.delete(`${WORKTREE_KEY}${path}`).catch(() => undefined);
+    await bestEffort(log, `regress worktree record ${path}`, ctx.bb.storage.kv.delete(`${WORKTREE_KEY}${path}`), undefined);
   }
   /** Removes the worktrees a stopped pass left; a pass is bounded by four hours, so one older than six is nobody's. */
   async function sweepLeftovers(now: number): Promise<void> {
@@ -115,7 +116,7 @@ export function createRegression(ctx: ServerCore, services: Services) {
   }
 
   async function head(hostId: string, basePath: string): Promise<string | null> {
-    const base = await host.call("gitOwnershipBase", { requestedHostId: hostId, projectCwd: basePath }, { hostId, timeoutMs: 30_000 }).catch(() => null);
+    const base = await bestEffort(log, `regress ownership base on ${hostId}`, host.call("gitOwnershipBase", { requestedHostId: hostId, projectCwd: basePath }, { hostId, timeoutMs: 30_000 }), null);
     return base?.status === "ready" ? base.headSha : null;
   }
 
@@ -180,7 +181,7 @@ export function createRegression(ctx: ServerCore, services: Services) {
   /** The first bad commit between the task's merge and main, and whose it is. */
   async function bisect(c: Candidate, item: VerificationItem, headSha: string, settings: RegressSettings): Promise<{ status: RegressionRecord["bisectStatus"]; commit: string | null; task: string | null; subject: string | null; note: string | null }> {
     const t = c.target;
-    const range = await ask(t, `git merge-base --is-ancestor ${c.mergeCommit} ${headSha} && git rev-list --count ${c.mergeCommit}..${headSha}`).catch(() => null);
+    const range = await bestEffort(log, `regress bisect range ${c.target.taskId}`, ask(t, `git merge-base --is-ancestor ${c.mergeCommit} ${headSha} && git rev-list --count ${c.mergeCommit}..${headSha}`), null);
     if (!range || range.exitCode !== 0) return { status: "skipped", commit: null, task: null, subject: null, note: "the task's merge commit is not in the history of main any more (history was rewritten), so there is no range to bisect" };
     const commits = Number(range.stdout.trim());
     if (!Number.isFinite(commits) || commits < 1) return { status: "skipped", commit: null, task: null, subject: null, note: "main is still at the task's own merge commit" };
@@ -193,7 +194,7 @@ export function createRegression(ctx: ServerCore, services: Services) {
       { hostId: t.hostId, timeoutMs: (timeoutSec + 120) * 1000 }).catch((cause: unknown) => ({ status: "failed" as const, commit: null, reason: cause instanceof Error ? cause.message : String(cause) }));
     if (found.status === "failed") return { status: "failed", commit: null, task: null, subject: null, note: found.reason ?? "the bisect could not run" };
     if (found.status === "none" || !found.commit || !/^[a-f0-9]{7,64}$/.test(found.commit)) return { status: "none", commit: null, task: null, subject: null, note: `git bisect found no first bad commit in ${commits} commit(s): the check is flaky or depends on the machine` };
-    const message = await ask(t, `git log -1 --format=%s ${found.commit}; echo '@@LP@@'; git log -1 --format=%B ${found.commit}; echo '@@LP@@'; m=$(git rev-list --merges --ancestry-path --reverse ${found.commit}..${headSha} | head -1); if [ -n "$m" ]; then git log -1 --format=%B "$m"; fi`).catch(() => null);
+    const message = await bestEffort(log, `regress culprit message ${found.commit}`, ask(t, `git log -1 --format=%s ${found.commit}; echo '@@LP@@'; git log -1 --format=%B ${found.commit}; echo '@@LP@@'; m=$(git rev-list --merges --ancestry-path --reverse ${found.commit}..${headSha} | head -1); if [ -n "$m" ]; then git log -1 --format=%B "$m"; fi`), null);
     const [subject = "", own = "", merge = ""] = (message?.stdout ?? "").split("@@LP@@\n");
     let owner = messageOwner(own);
     if (!owner.attemptId && !(owner.taskId && getTask(db, owner.taskId))) owner = messageOwner(merge);
@@ -232,7 +233,7 @@ export function createRegression(ctx: ServerCore, services: Services) {
     if ("path" in made) {
       try {
         // «Flaky or the machine» was a guess: the project's host says how loaded it is right before this run (not during it).
-        const reading = readingFrom(await host.call("diskFree", { requestedHostId: c.target.hostId, path: c.target.basePath, machine: true }, { hostId: c.target.hostId, timeoutMs: 5_000 }).catch(() => null));
+        const reading = readingFrom(await bestEffort(log, `regress disk free ${c.target.taskId}`, host.call("diskFree", { requestedHostId: c.target.hostId, path: c.target.basePath, machine: true }, { hostId: c.target.hostId, timeoutMs: 5_000 }), null));
         const [again] = await kit().runChecks(c.target, made.path, [item]);
         if (again && !again.ok && !again.hostError) { kind = "unstable"; note = `red at its own merge commit ${c.mergeCommit.slice(0, 10)} as well: flaky or the machine, not later work; ${readingNote(reading)}`; }
       } finally { await dropped(c.target, made.path); }
@@ -267,6 +268,7 @@ export function createRegression(ctx: ServerCore, services: Services) {
     const verdict = await judgeMeant(
       { objective: text(original?.objective), command: open.command, output: text(evidence.output), culpritContract: [text(culprit.objective), text(culprit.acceptance)].filter(Boolean).join("\n") },
       { projectId, runId: open.runId, subject: `regression ${open.id}` },
+      log,
     );
     if (!verdict) return false;
     const phrase = ([text(culprit.objective), text(culprit.acceptance)].filter(Boolean).join("\n").split("\n").find((line) => line.trim()) ?? "").trim().slice(0, 120);
@@ -282,7 +284,7 @@ export function createRegression(ctx: ServerCore, services: Services) {
   async function passFor(projectId: string, options: RegressOptions, deadline: number): Promise<ProjectPass> {
     const started = Date.now();
     const now = options.now ?? started;
-    const values = (await ctx.effectiveProjectSettings(projectId).catch(() => ({ values: {} as Record<string, unknown> }))).values;
+    const values = (await ctx.effectiveProjectSettings(projectId)).values;
     const base = parseRegressSettings(values);
     const settings: RegressSettings = { ...base, ...(options.lastN ? { lastN: options.lastN } : {}), ...(options.days ? { days: options.days } : {}) };
     const dry = options.dryRun === true;
@@ -318,7 +320,7 @@ export function createRegression(ctx: ServerCore, services: Services) {
       if (!dry) {
         for (const open of listRegressions(db, { projectId })) {
           if (!open.greenAt || taskBasePath(db, open.runId, open.taskId) !== first.basePath) continue;
-          const ancestor = await ask(first, `git merge-base --is-ancestor ${open.greenAt} ${headSha}`).catch(() => null);
+          const ancestor = await bestEffort(log, `regress ancestor ${open.greenAt}`, ask(first, `git merge-base --is-ancestor ${open.greenAt} ${headSha}`), null);
           if (ancestor && ancestor.exitCode !== 0 && closeRegression(db, open.id, `the merge commit is not in the history of main any more (${headSha.slice(0, 10)})`)) report.closed.push(open.id);
         }
       }
@@ -407,11 +409,15 @@ export function createRegression(ctx: ServerCore, services: Services) {
     const ids = (db.prepare("SELECT DISTINCT r.project_id AS id FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id WHERE a.state='accepted' AND a.updated_at>=? ORDER BY r.project_id").all(now - 60 * DAY) as Array<{ id: string }>).map((row) => row.id);
     for (const projectId of ids) {
       if (signal?.aborted || ctx.isDisposed()) return;
-      const values = (await ctx.effectiveProjectSettings(projectId).catch(() => ({ values: {} as Record<string, unknown> }))).values;
-      if (!parseRegressSettings(values).nightly) continue;
-      const result = await run({ projectId, ...(signal ? { signal } : {}) });
-      const pass = result.projects[0];
-      if (pass) log(`regress nightly ${projectId}: ${pass.skipped ?? `${pass.tasks.length} task(s), ${pass.commandsRun} command(s) run, ${pass.findings.length} red, ${pass.closed.length} closed`}`);
+      try {
+        const values = (await ctx.effectiveProjectSettings(projectId)).values;
+        if (!parseRegressSettings(values).nightly) continue;
+        const result = await run({ projectId, ...(signal ? { signal } : {}) });
+        const pass = result.projects[0];
+        if (pass) log(`regress nightly ${projectId}: ${pass.skipped ?? `${pass.tasks.length} task(s), ${pass.commandsRun} command(s) run, ${pass.findings.length} red, ${pass.closed.length} closed`}`);
+      } catch (cause) {
+        log(`regress nightly ${projectId} skipped: ${cause instanceof Error ? cause.message : String(cause)}`);
+      }
     }
   }
 

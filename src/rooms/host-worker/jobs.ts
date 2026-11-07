@@ -6,7 +6,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { HOST_JOB_KINDS, hostContract, type HostJobKind } from "../contracts";
-import { sha256Hex } from "@lane-pilot/kit";
+import { bestEffort, isFsAbsent, orMiss, readTextOrNull, sha256Hex, statOrNull } from "@lane-pilot/kit";
 import { HOST_JOB_ARG } from "./job-runner";
 
 /**
@@ -68,7 +68,7 @@ function alive(pid: number): boolean {
 }
 
 async function lastLine(path: string): Promise<string> {
-  const handle = await open(path, "r").catch(() => null);
+  const handle = await orMiss(open(path, "r"), null, isFsAbsent);
   if (!handle) return "";
   try {
     const size = (await handle.stat()).size;
@@ -81,12 +81,16 @@ async function lastLine(path: string): Promise<string> {
 
 /** Removes the folders of jobs that ended days ago; a running job's folder is never touched. */
 async function pruneJobs(options: JobOptions): Promise<void> {
-  for (const name of await readdir(jobsRoot(options)).catch(() => [] as string[])) {
+  for (const name of await orMiss(readdir(jobsRoot(options)), [] as string[], isFsAbsent)) {
     if (!JOB_ID.test(name)) continue;
     const dir = join(jobsRoot(options), name);
-    const meta = await readJson<JobMeta>(join(dir, "job.json"));
-    const started = meta?.startedAt ?? (await stat(dir).catch(() => null))?.mtimeMs ?? Date.now();
-    if (Date.now() - started > KEEP_FINISHED_MS && !(meta?.pid && alive(meta.pid))) await rm(dir, { recursive: true, force: true });
+    try {
+      const meta = await readJson<JobMeta>(join(dir, "job.json"));
+      const started = meta?.startedAt ?? (await statOrNull(dir))?.mtimeMs ?? Date.now();
+      if (Date.now() - started > KEEP_FINISHED_MS && !(meta?.pid && alive(meta.pid))) await rm(dir, { recursive: true, force: true });
+    } catch (cause) {
+      console.warn(`lane-pilot: job prune skipped ${dir}: ${cause instanceof Error ? cause.message : String(cause)}`);
+    }
   }
 }
 
@@ -117,27 +121,34 @@ async function keyedJobId(file: string, options: JobOptions): Promise<string | n
   // An empty file is a claim still staging; under load staging can take seconds, so it is waited out until it is
   // older than EMPTY_CLAIM_STALE_MS (a crashed claimant) — never removed just because the wait ran out.
   let content = "";
+  let seen: FileId | null = null;
   for (;;) {
-    content = (await readFile(file, "utf8").catch(() => "")).trim();
+    content = (await readTextOrNull(file) ?? "").trim();
+    const info = await statOrNull(file);
+    if (info) seen = { mtimeMs: info.mtimeMs, ino: info.ino };
     if (content) break;
-    const age = await stat(file).then((info) => Date.now() - info.mtimeMs, () => Infinity);
+    const age = info ? Date.now() - info.mtimeMs : Infinity;
+    // Absent: a rival removed the stale file and the next `open` claims it. Removing "the empty file" here would
+    // race that rival's fresh empty claim (it can appear between the read and the remove) and lose its job.
+    if (age === Infinity) return null;
     if (age >= EMPTY_CLAIM_STALE_MS) break;
     await new Promise((wake) => setTimeout(wake, 100));
   }
   if (JOB_ID.test(content) && await stat(jobDir(content, options)).then(() => true, () => false)) return content;
-  await removeIfStill(file, content);
+  await removeIfStill(file, content, seen);
   return null;
 }
 
 const STALE_LOCK_MS = 30_000;
+/** Which file a removal decision was made about: content alone cannot tell a stale empty claim from a rival's fresh one. */
+type FileId = { mtimeMs: number; ino: number };
 
 /**
- * Removes the key file only while it still holds `stale`. Removal happens under a per-key lock directory: a fresh
- * claim can only appear after the stale file is gone, and only a lock holder removes it, so the re-read under the
- * lock cannot be overtaken by a rival's claim between the read and the rm. Without the lock two racers that both
- * read the stale id let the slower one delete the faster one's fresh claim (drill race test, 2026-11-07).
+ * Removes the key file only while it is still the file `seen` (same mtime and inode) and still holds `stale`.
+ * Removal happens under a per-key lock directory, so no other remover can swap the file between the check and the
+ * rm; the identity check is what tells a stale empty claim from a rival's fresh empty claim that replaced it.
  */
-async function removeIfStill(file: string, stale: string): Promise<void> {
+export async function removeIfStill(file: string, stale: string, seen: FileId | null): Promise<void> {
   const lock = `${file}.lock`;
   for (;;) {
     try { await mkdir(lock); break; } catch (cause) {
@@ -148,7 +159,9 @@ async function removeIfStill(file: string, stale: string): Promise<void> {
     }
   }
   try {
-    if ((await readFile(file, "utf8").catch(() => null))?.trim() === stale) await rm(file, { force: true });
+    const info = await statOrNull(file);
+    const same = seen !== null && info !== null && info.mtimeMs === seen.mtimeMs && info.ino === seen.ino;
+    if (same && (await readTextOrNull(file))?.trim() === stale) await rm(file, { force: true });
   } finally {
     await rm(lock, { recursive: true, force: true });
   }
@@ -193,7 +206,7 @@ async function stageJob(
   options: JobOptions,
 ): Promise<string> {
   const input = hostContract[request.kind].input.parse(request.input);
-  await pruneJobs(options).catch(() => undefined);
+  await bestEffort(console.warn, "host job prune", pruneJobs(options), undefined);
   const jobId = `job_${Date.now().toString(36)}${randomBytes(5).toString("hex")}`;
   const dir = jobDir(jobId, options);
   await mkdir(dir, { recursive: true });
@@ -230,7 +243,7 @@ export async function hostJobStatus(jobId: string, options: JobOptions = {}): Pr
   const progress = (updatedAt: number) => ({ startedAt: meta.startedAt, updatedAt, elapsedSec: Math.max(0, Math.round((updatedAt - meta.startedAt) / 1000)), lastLine: line });
   const result = await readJson<JobResult>(join(dir, "result.json"));
   if (result) {
-    const finished = (await stat(join(dir, "result.json")).catch(() => null))?.mtimeMs ?? now;
+    const finished = (await statOrNull(join(dir, "result.json")))?.mtimeMs ?? now;
     if (!result.ok) return { state: "failed", progress: progress(finished), error: result.error };
     // The daemon checks a direct call's output against the contract; a job's output gets the same check.
     const output = hostContract[meta.kind].output.safeParse(result.value);
@@ -238,8 +251,8 @@ export async function hostJobStatus(jobId: string, options: JobOptions = {}): Pr
       ? { state: "succeeded", progress: progress(finished), result: output.data, error: null }
       : { state: "failed", progress: progress(finished), error: `host output for ${meta.kind} is invalid: ${output.error.message.slice(0, 300)}` };
   }
-  const beat = (await stat(join(dir, "heartbeat")).catch(() => null))?.mtimeMs ?? meta.startedAt;
-  if (await stat(join(dir, "cancelled")).catch(() => null)) return { state: "cancelled", progress: progress(beat), error: "cancelled" };
+  const beat = (await statOrNull(join(dir, "heartbeat")))?.mtimeMs ?? meta.startedAt;
+  if (await statOrNull(join(dir, "cancelled"))) return { state: "cancelled", progress: progress(beat), error: "cancelled" };
   const running = meta.pid ? alive(meta.pid) : now - meta.startedAt < 10_000;
   if (running && now - beat < HEARTBEAT_STALE_MS) return { state: "running", progress: { ...progress(now), updatedAt: beat }, error: null };
   return { state: "lost", progress: progress(beat), error: "the job process is gone without a result" };

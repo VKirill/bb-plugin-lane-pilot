@@ -2,7 +2,7 @@ import { accessSync, constants as fsConstants, existsSync } from "node:fs";
 import { access, lstat, mkdir, mkdtemp, readdir, realpath, rm, rmdir, symlink } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { delimiter, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { createCapture, redactSecrets, sha256Hex } from "@lane-pilot/kit";
+import { bestEffort, createCapture, lstatOrNull, redactSecrets, sha256Hex } from "@lane-pilot/kit";
 import { spawnAsync } from "@lane-pilot/kit";
 import { asWorker, grantRunFolders, workerReachable } from "./worker-user";
 
@@ -191,7 +191,7 @@ let guardLock:Promise<unknown>=Promise.resolve();
 
 function underGuardLock<T>(work:()=>Promise<T>):Promise<T> {
   const turn=guardLock.then(work);
-  guardLock=turn.catch(()=>undefined);
+  guardLock=bestEffort(console.warn, "sandbox guard lock", turn, undefined);
   return turn;
 }
 
@@ -209,7 +209,7 @@ export function prepareGuardPaths(workspacePath:string):Promise<{guardPaths:stri
         createdGuardUsers.set(guardPath,users+1);
         created.push(guardPath);
       } else {
-        const info=await lstat(guardPath).catch(()=>null);
+        const info=await lstatOrNull(guardPath);
         if (info?.isSymbolicLink()) throw new Error(`sandbox_guard_path_symlink: ${name}; refusing to expose it writable`);
         if (!info) {
           await mkdir(guardPath);
@@ -230,7 +230,7 @@ export function releaseGuardPaths(created:string[]):Promise<void> {
       const users=(createdGuardUsers.get(path) ?? 1)-1;
       if (users>0) { createdGuardUsers.set(path,users); continue; }
       createdGuardUsers.delete(path);
-      await rmdir(path).catch(()=>undefined);
+      await bestEffort(console.warn, `sandbox guard cleanup ${path}`, rmdir(path), undefined);
     }
   });
 }

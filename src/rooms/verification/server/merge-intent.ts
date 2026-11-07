@@ -1,6 +1,7 @@
 import { countAttempts, getAttempt, getRun, getTask, getTaskPlan, transitionAttempt } from "../../storage";
 import { closeWriterStages, recordGateEvaluation } from "../../runs/server/stage-records";
 import type { ServerCore } from "../../contracts/server";
+import { bestEffort } from "@lane-pilot/kit";
 
 import { runOnHost } from "@lane-pilot/host-calls";
 
@@ -47,16 +48,16 @@ type Kv = { get(key:string):Promise<unknown>; set(key:string, value:never):Promi
 const quote = (text:string) => `'${text.replace(/'/g, "'\\''")}'`;
 
 /** Writes the intent. A machine that cannot tell the heads still gets one (the attempt's trailer in the merge commit identifies the merge); a KV failure never blocks the merge. */
-export async function recordMergeIntent(kv:Kv, run:RunOnHost, input:Omit<MergeIntent, "branch" | "sha" | "baseHead" | "at">):Promise<void> {
-  const heads = await run(input.hostId, input.basePath,
-    `git rev-parse HEAD; git -C ${quote(input.worktreePath)} rev-parse HEAD; git -C ${quote(input.worktreePath)} rev-parse --abbrev-ref HEAD`).catch(() => null);
+export async function recordMergeIntent(kv:Kv, run:RunOnHost, input:Omit<MergeIntent, "branch" | "sha" | "baseHead" | "at">, log:(message:string)=>void = console.warn):Promise<void> {
+  const heads = await bestEffort(log, `merge intent heads ${input.attemptId}`, run(input.hostId, input.basePath,
+    `git rev-parse HEAD; git -C ${quote(input.worktreePath)} rev-parse HEAD; git -C ${quote(input.worktreePath)} rev-parse --abbrev-ref HEAD`), null);
   const [baseHead, sha, branch] = heads && heads.exitCode === 0 ? heads.stdout.split("\n").map((line) => line.trim()) : [];
   const intent:MergeIntent = { ...input, baseHead:baseHead || null, sha:sha || null, branch:branch || null, at:Date.now() };
-  await kv.set(mergeIntentKey(input.attemptId), intent as never).catch(() => undefined);
+  await bestEffort(log, `merge intent write ${input.attemptId}`, kv.set(mergeIntentKey(input.attemptId), intent as never), undefined);
 }
 
-export async function clearMergeIntent(kv:Pick<Kv, "delete">, attemptId:string):Promise<void> {
-  await kv.delete(mergeIntentKey(attemptId)).catch(() => undefined);
+export async function clearMergeIntent(kv:Pick<Kv, "delete">, attemptId:string, log:(message:string)=>void = console.warn):Promise<void> {
+  await bestEffort(log, `merge intent clear ${attemptId}`, kv.delete(mergeIntentKey(attemptId)), undefined);
 }
 
 export type MergeVerdict = { landed:true; how:string; commit:string | null } | { landed:false } | { unknown:true };
@@ -70,8 +71,8 @@ export type MergeVerdict = { landed:true; how:string; commit:string | null } | {
  * its fork point (the HEAD of an attempt with only loose edits, or of a clean worktree) is an ancestor of a main that
  * moved on whether or not the merge ever ran. `unknown` when the machine did not answer.
  */
-export async function mergeLanded(intent:MergeIntent, run:RunOnHost):Promise<MergeVerdict> {
-  const ask = (cwd:string, command:string) => run(intent.hostId, cwd, command).catch(() => ({ exitCode:-1, stdout:"", stderr:"unreachable" }));
+export async function mergeLanded(intent:MergeIntent, run:RunOnHost, log:(message:string)=>void = console.warn):Promise<MergeVerdict> {
+  const ask = (cwd:string, command:string) => bestEffort(log, `merge intent ask ${intent.attemptId} ${command.slice(0, 80)}`, run(intent.hostId, cwd, command), { exitCode:-1, stdout:"", stderr:"unreachable" });
   const head = await ask(intent.basePath, "git rev-parse HEAD");
   if (head.exitCode !== 0 || !head.stdout.trim()) return { unknown:true };
   const main = head.stdout.trim();
@@ -124,7 +125,7 @@ export function createMergeIntentRecovery(ctx:ServerCore, services:Services) {
       let intent: MergeIntent | null;
       try { intent = await kv.get(key) as MergeIntent | null; }
       catch (cause) { bb.log.warn(`merge intent ${key} unreadable, skipped this pass: ${cause instanceof Error ? cause.message : String(cause)}`); continue; }
-      if (!intent || typeof intent !== "object" || !intent.attemptId) { await kv.delete(key).catch(() => undefined); continue; }
+      if (!intent || typeof intent !== "object" || !intent.attemptId) { await bestEffort(bb.log, `merge intent delete ${key}`, kv.delete(key), undefined); continue; }
       try {
         const attempt = getAttempt(db, intent.attemptId);
         if (!attempt || ["accepted", "canceled"].includes(attempt.state)) { await clearMergeIntent(kv, intent.attemptId); continue; }
@@ -132,7 +133,7 @@ export function createMergeIntentRecovery(ctx:ServerCore, services:Services) {
         if (services.activeWriterTasks.has(`${intent.runId}:${intent.taskId}`)) continue;
         // A merge cut off a moment ago may still be running on the machine; the next pass decides.
         if (now - intent.at < (options.graceMs ?? 0)) continue;
-        const verdict = await mergeLanded(intent, run);
+        const verdict = await mergeLanded(intent, run, (message) => bb.log.warn(message));
         if ("unknown" in verdict) continue;
         if (!verdict.landed) { await clearMergeIntent(kv, intent.attemptId); continue; }
         const stored = getTask(db, intent.taskId);

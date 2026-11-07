@@ -1,3 +1,5 @@
+import { bestEffort } from "@lane-pilot/kit";
+
 /**
  * Deterministic checks for docs written by the nightly docs agent, after the docs-methodology
  * skill (claude-lane): frontmatter contract, file:line evidence that points at real lines,
@@ -164,7 +166,7 @@ export async function lintCitationClaims(pages:DocPage[], readRange:(file:string
   const cache = new Map<string, Promise<string | null>>();
   const read = (file:string, start:number, end:number) => {
     const key = `${file}:${start}:${end}`;
-    if (!cache.has(key)) cache.set(key, readRange(file, start, end).catch(() => null));
+    if (!cache.has(key)) cache.set(key, bestEffort(console.warn, `docs citation read ${file}:${start}-${end}`, readRange(file, start, end), null));
     return cache.get(key)!;
   };
   for (const page of pages) {

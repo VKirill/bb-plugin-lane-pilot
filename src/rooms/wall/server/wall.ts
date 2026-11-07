@@ -1,7 +1,7 @@
 import { join } from "node:path";
 import { providerForwardsAgentOnly, writerExecutionSelection } from "@lane-pilot/models";
 import { fullAccessSpawn, modelCatalogOf, resolveSpawnModel, scheduleIsolated } from "../../platform/server";
-import { stringAt, orMiss, isNotFound } from "@lane-pilot/kit";
+import { stringAt, orMiss, isNotFound, bestEffort } from "@lane-pilot/kit";
 import { pickHunter, type WallConfig } from "../config";
 import { conveyorState } from "../../conveyor";
 
@@ -73,7 +73,7 @@ export function createPluginWall(ctx: ServerCore, services: Services): WallApi {
 
   /** The hunters' model: the wall config the owner changed, else the `wall-hunter` row of the role table (pickHunter). */
   const hunterModelOf = async (wcfg: WallConfig, projectId: string, hostId: string, envPath: string) => {
-    const settings = (await ctx.effectiveProjectSettings(projectId).catch(() => null))?.values ?? {};
+    const settings = (await bestEffort(ctx.log, `wall hunter settings ${projectId}`, ctx.effectiveProjectSettings(projectId), null))?.values ?? {};
     return pickHunter(wcfg, () => resolveSpawnModel({ role: "wall-hunter", settings, catalog: modelCatalogOf(ctx).peek(), hostId, envPath }));
   };
 
@@ -84,7 +84,7 @@ export function createPluginWall(ctx: ServerCore, services: Services): WallApi {
     if (!sandbox || now - sandbox.at > 60_000) {
       let ids = new Set<string>(sandbox?.ids);
       try {
-        const rows = [...await bb.sdk.projects.list({ includePersonal: true } as never), ...await bb.sdk.projects.list({ includePersonal: true, archived: true } as never).catch(() => [])] as Array<{ id: string; name?: string }>;
+        const rows = [...await bb.sdk.projects.list({ includePersonal: true } as never), ...await bestEffort(ctx.log, "wall archived projects", bb.sdk.projects.list({ includePersonal: true, archived: true } as never), [])] as Array<{ id: string; name?: string }>;
         ids = new Set(rows.filter((row) => isSandboxProjectName(row.name)).map((row) => row.id));
         const bench = new Set(rows.filter((row) => typeof row.name === "string" && row.name.startsWith("LP bench")).map((row) => row.id));
         sandbox = { at: now, ids };
@@ -181,7 +181,7 @@ export function createPluginWall(ctx: ServerCore, services: Services): WallApi {
       try {
         const { hostId, basePath } = await environmentOf();
         const abs = join(basePath, relPath);
-        const written = await bb.sdk.files.write({ hostId, rootPath: basePath, path: abs, content, contentEncoding: "utf8", createParents: true } as Parameters<typeof bb.sdk.files.write>[0]).then(() => true).catch(() => false);
+        const written = await bestEffort(ctx.log, `wall pack write ${relPath}`, bb.sdk.files.write({ hostId, rootPath: basePath, path: abs, content, contentEncoding: "utf8", createParents: true } as Parameters<typeof bb.sdk.files.write>[0]).then(() => true), false);
         return written ? abs : null;
       } catch { return null; }
     },
@@ -254,7 +254,7 @@ export function createPluginWall(ctx: ServerCore, services: Services): WallApi {
       available: async () => {
         const version = benchSetVersion();
         if (!version) return false;
-        const needed = await services.bench.prepare(version).catch(() => []);
+        const needed = await bestEffort(ctx.log, `wall bench prepare ${version}`, services.bench.prepare(version), []);
         return needed.length > 0 && needed.every((row) => row.exists);
       },
       armSet: async (arm) => {
@@ -301,7 +301,7 @@ export function createPluginWall(ctx: ServerCore, services: Services): WallApi {
       const attemptId = newId("lpattempt");
       createAttempt(db, { id: attemptId, runId: plan.runId, taskId: plan.taskId });
       const attempt = getAttempt(db, attemptId);
-      const ok = attempt ? await services.enqueueResumedWriter(plan.projectId, attempt).catch(() => false) : false;
+      const ok = attempt ? await bestEffort(ctx.log, `wall rerun enqueue ${plan.runId}`, services.enqueueResumedWriter(plan.projectId, attempt), false) : false;
       return { ok, note: ok ? `restarted from ${plan.affected.from}; reused ${plan.affected.reused.join(", ") || "nothing"}` : "the writer could not be queued" };
     },
     deferrals: {

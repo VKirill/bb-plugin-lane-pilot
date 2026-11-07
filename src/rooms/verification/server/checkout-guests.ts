@@ -1,4 +1,5 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
+import { isNotFound, orMiss } from "@lane-pilot/kit";
 import type { LanePilotDatabase } from "../../storage";
 import { resolve } from "node:path";
 
@@ -37,7 +38,7 @@ export async function noteCheckoutGuest(bb: BbPluginApi, db: LanePilotDatabase, 
   if (!path) return;
   const run = activeRunFor(db, path);
   if (!run || run.pmThreadId === threadId) return;
-  const metadata = await bb.sdk.threads.getPluginMetadata({ threadId }).catch(() => null) as Record<string, unknown> | null;
+  const metadata = await orMiss(bb.sdk.threads.getPluginMetadata({ threadId }), null, isNotFound) as Record<string, unknown> | null;
   if (metadata && typeof metadata.role === "string") return;
   const now = Date.now();
   const guests = (await listGuests(bb.storage.kv, path, now)).filter((row) => row.threadId !== threadId);

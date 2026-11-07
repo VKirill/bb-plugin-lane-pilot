@@ -129,6 +129,16 @@ describe("the baseline before a writer (D1-3)", () => {
     expect(getBaseline(w.db, "run1", "t1")!.checks[0]).toMatchObject({ status: "unknown", note: "disk gone" });
     await w.dispose();
   });
+
+  it("starts the attempt without a baseline when the settings cannot be read, instead of running on defaults", async () => {
+    const w = await world({ settingsError: new Error("store_read_failed") });
+    const result = await w.services.baseline.preflight(w.pendingTask("t1", ["test -f keep.txt"]));
+    expect(result.stop).toBeNull();
+    expect(result.record).toBeNull();
+    expect(getBaseline(w.db, "run1", "t1")).toBeUndefined();
+    expect(w.ran).toEqual([]);
+    await w.dispose();
+  });
 });
 
 describe("red before green (checks.require_red_on_base)", () => {

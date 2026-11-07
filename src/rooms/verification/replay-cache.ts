@@ -1,6 +1,6 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
-import { spawnAsync, sha256Hex } from "@lane-pilot/kit";
+import { spawnAsync, sha256Hex, bestEffort, parseJsonOr, readTextOrNull } from "@lane-pilot/kit";
 
 /**
  * The verdicts a worktree's replay checks settled, per worktree revision (`lp-replay-checks.json` in the worktree's git
@@ -33,7 +33,7 @@ export async function replayCacheLocation(worktreePath: string): Promise<{ head:
 }
 
 async function load(path: string): Promise<ReplayCacheFile> {
-  return readFile(path, "utf8").then((text) => JSON.parse(text) as ReplayCacheFile).catch(() => ({}));
+  return parseJsonOr(await readTextOrNull(path) ?? "", {});
 }
 
 /** What the cache already settled for these checks on this revision, in command order (missing keys stay out). */
@@ -57,7 +57,7 @@ export async function recordReplayVerdict(worktreePath: string, command: string,
   const file = await load(at.path);
   const perHead = file[at.head] ?? (file[at.head] = {});
   perHead[replayKey(command, cwd)] = { command, cwd, exitCode: entry.exitCode, stdout: entry.stdout.slice(-TAIL), stderr: entry.stderr.slice(-TAIL) };
-  await writeFile(at.path, JSON.stringify(file)).catch(() => {});
+  await bestEffort(console.warn, `replay cache write ${at.path}`, writeFile(at.path, JSON.stringify(file)), undefined);
 }
 
 /** The recorded red of this worktree's current head, or null: lets a merge that skips the replay still see its verdict. */

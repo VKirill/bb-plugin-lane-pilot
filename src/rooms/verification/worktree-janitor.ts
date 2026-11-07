@@ -1,7 +1,7 @@
 import { lstat, readdir, readFile, realpath, rename, rm, rmdir, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
-import { spawnAsync } from "@lane-pilot/kit";
+import { bestEffort, isFsAbsent, lstatOrNull, orMiss, readTextOrNull, spawnAsync } from "@lane-pilot/kit";
 import { git, orphanedWorktree } from "./git-integrate";
 
 /** One worktree the sweep left: it holds work nobody else has (edits or commits on no other ref), or it is too young. */
@@ -30,12 +30,12 @@ async function dirBytes(path: string): Promise<number> {
 async function lastTouched(top: string): Promise<number> {
   let newest = 0;
   for (const entry of [top, join(top, ".git")]) {
-    const info = await lstat(entry).catch(() => null);
+    const info = await lstatOrNull(entry);
     if (info) newest = Math.max(newest, info.mtimeMs);
   }
   // Files written inside (a check's log) age the copy too: a shallow scan two levels down, cheap on a dead worktree.
-  for (const name of await readdir(top).catch(() => [] as string[])) {
-    const info = await lstat(join(top, name)).catch(() => null);
+  for (const name of await orMiss(readdir(top), [] as string[], isFsAbsent)) {
+    const info = await lstatOrNull(join(top, name));
     if (info) newest = Math.max(newest, info.mtimeMs);
   }
   return newest;
@@ -60,17 +60,17 @@ async function hasEdits(top: string): Promise<boolean | null> {
 /** Removes the worktree folder, its admin dir and its lane/* branch in the base repo it came from. */
 async function removeCopy(top: string): Promise<boolean> {
   // The base's real git dir through the worktree pointer: <top>/.git says gitdir, <gitdir>/commondir says the shared dir.
-  const pointer = (await readFile(join(top, ".git"), "utf8").catch(() => "")).match(/^gitdir:\s*(.+)$/m)?.[1]?.trim();
-  let common = pointer ? (await readFile(join(pointer, "commondir"), "utf8").catch(() => "")).trim() : "";
+  const pointer = (await readTextOrNull(join(top, ".git")) ?? "").match(/^gitdir:\s*(.+)$/m)?.[1]?.trim();
+  let common = pointer ? (await readTextOrNull(join(pointer, "commondir")) ?? "").trim() : "";
   if (common && !common.startsWith("/") && pointer) common = join(dirname(pointer), common);
   const branch = common ? (await git(top, ["rev-parse", "--abbrev-ref", "HEAD"])).stdout.trim() : "";
   const removed = common ? (await git(common, ["worktree", "remove", "--force", top])).ok : false;
-  if (!removed) await rm(top, { recursive: true, force: true }).catch(() => undefined);
+  if (!removed) await bestEffort(console.warn, `janitor remove ${top}`, rm(top, { recursive: true, force: true }), undefined);
   if (common) {
     if (!removed) await git(common, ["worktree", "prune"]);
     if (branch.startsWith("lane/")) await git(common, ["branch", "-D", branch]);
   }
-  await rmdir(dirname(top)).catch(() => undefined);
+  await bestEffort(console.warn, `janitor rmdir ${dirname(top)}`, rmdir(dirname(top)), undefined);
   return true;
 }
 
@@ -91,62 +91,76 @@ export async function sweepLaneWorktrees(input: {
   const now = input.now ?? Date.now();
   const receipt: JanitorReceipt = { removed: [], freedBytes: 0, kept: [], tmpRemoved: [], tmpFreedBytes: 0, errors: [] };
   const protectedReal = new Set<string>();
-  for (const path of input.protectedPaths) protectedReal.add(await realpath(path).catch(() => path));
+  for (const path of input.protectedPaths) protectedReal.add(await bestEffort(console.warn, `janitor protected ${path}`, orMiss(realpath(path), path, isFsAbsent), path));
   const holds = async (top: string): Promise<boolean> => {
-    const real = await realpath(top).catch(() => top);
+    const real = await orMiss(realpath(top), top, isFsAbsent);
     for (const path of protectedReal) if (path === real || path.startsWith(`${real}/`) || real.startsWith(`${path}/`)) return true;
     return false;
   };
 
-  for (const group of await readdir(input.root).catch(() => [] as string[])) {
+  for (const group of await orMiss(readdir(input.root), [] as string[], isFsAbsent)) {
     const groupDir = join(input.root, group);
-    if (!(await lstat(groupDir).catch(() => null))?.isDirectory()) continue;
-    for (const name of await readdir(groupDir).catch(() => [] as string[])) {
+    const groupInfo = await bestEffort(console.warn, `janitor group ${groupDir}`, lstatOrNull(groupDir), null);
+    if (!groupInfo?.isDirectory()) continue;
+    for (const name of await bestEffort(console.warn, `janitor scan ${groupDir}`, orMiss(readdir(groupDir), [] as string[], isFsAbsent), [] as string[])) {
       const top = join(groupDir, name);
-      const info = await lstat(top).catch(() => null);
-      if (!info?.isDirectory() || info.isSymbolicLink()) continue;
-      if (await holds(top)) continue;
-      const bytes = await dirBytes(top);
-      const ageMs = now - (await lastTouched(top));
-      const retire = async (reason?: string): Promise<void> => {
-        if (reason) receipt.kept.push({ path: top, reason, ageMs, bytes });
-        else { receipt.removed.push(top); receipt.freedBytes += bytes; }
-      };
-      // A folder cut off from git (its .git names an admin dir git gave away, or has none) is retired, never asked git.
-      const gitMarker = await lstat(join(top, ".git")).catch(() => null);
-      if (!gitMarker) { await rm(top, { recursive: true, force: true }).catch(() => undefined); await rmdir(groupDir).catch(() => undefined); await retire(); continue; }
-      const orphan = await orphanedWorktree(top);
-      if (orphan) {
-        await rename(join(orphan.top, ".git"), join(orphan.top, ".git.orphaned")).catch(() => undefined);
-        await rm(orphan.top, { recursive: true, force: true }).catch(() => undefined);
-        await rmdir(groupDir).catch(() => undefined);
+      try {
+        const info = await lstatOrNull(top);
+        if (!info?.isDirectory() || info.isSymbolicLink()) continue;
+        if (await holds(top)) continue;
+        const bytes = await dirBytes(top);
+        const ageMs = now - (await lastTouched(top));
+        const retire = async (reason?: string): Promise<void> => {
+          if (reason) receipt.kept.push({ path: top, reason, ageMs, bytes });
+          else { receipt.removed.push(top); receipt.freedBytes += bytes; }
+        };
+        // A folder cut off from git (its .git names an admin dir git gave away, or has none) is retired, never asked git.
+        const gitMarker = await lstatOrNull(join(top, ".git"));
+        if (!gitMarker) { await bestEffort(console.warn, `janitor remove ${top}`, rm(top, { recursive: true, force: true }), undefined); await bestEffort(console.warn, `janitor rmdir ${groupDir}`, rmdir(groupDir), undefined); await retire(); continue; }
+        const orphan = await orphanedWorktree(top);
+        if (orphan) {
+          await bestEffort(console.warn, `janitor orphan rename ${orphan.top}`, rename(join(orphan.top, ".git"), join(orphan.top, ".git.orphaned")), undefined);
+          await bestEffort(console.warn, `janitor orphan remove ${orphan.top}`, rm(orphan.top, { recursive: true, force: true }), undefined);
+          await bestEffort(console.warn, `janitor rmdir ${groupDir}`, rmdir(groupDir), undefined);
+          await retire();
+          continue;
+        }
+        if (ageMs < input.graceMs) continue;
+        const dirty = await hasEdits(top);
+        if (dirty === null) { receipt.errors.push(`${top}: git status failed`); continue; }
+        if (dirty) { await retire("uncommitted edits"); continue; }
+        if (await uniqueCommits(top)) { await retire("commits no other branch or remote has"); continue; }
+        await removeCopy(top);
         await retire();
-        continue;
+      } catch (cause) {
+        // One unreadable folder (a chmod-000 checkout, a dangling mount) is a named skip, never the end of the sweep.
+        const message = cause instanceof Error ? cause.message : String(cause);
+        receipt.errors.push(`${top}: ${message}`);
+        console.warn(`lane-pilot: worktree sweep skipped ${top}: ${message}`);
       }
-      if (ageMs < input.graceMs) continue;
-      const dirty = await hasEdits(top);
-      if (dirty === null) { receipt.errors.push(`${top}: git status failed`); continue; }
-      if (dirty) { await retire("uncommitted edits"); continue; }
-      if (await uniqueCommits(top)) { await retire("commits no other branch or remote has"); continue; }
-      await removeCopy(top);
-      await retire();
     }
-    await rmdir(groupDir).catch(() => undefined);
+    await bestEffort(console.warn, `janitor rmdir ${groupDir}`, rmdir(groupDir), undefined);
   }
 
   // Lane Pilot's own check/drill tmp folders older than a day go the same way, by prefix only.
   const tmpRoot = input.tmpDir ?? tmpdir();
   const prefixes = input.tmpPrefixes ?? JANITOR_TMP_PREFIXES;
   const tmpMaxAge = input.tmpMaxAgeMs ?? TMP_MAX_AGE_MS;
-  for (const name of await readdir(tmpRoot).catch(() => [] as string[])) {
+  for (const name of await orMiss(readdir(tmpRoot), [] as string[], isFsAbsent)) {
     if (!prefixes.some((prefix) => name.startsWith(prefix))) continue;
     const path = join(tmpRoot, name);
-    const info = await lstat(path).catch(() => null);
-    if (!info || now - info.mtimeMs < tmpMaxAge) continue;
-    const bytes = await dirBytes(path);
-    await rm(path, { recursive: true, force: true }).catch((cause: unknown) => { receipt.errors.push(`${path}: ${cause instanceof Error ? cause.message : String(cause)}`); });
-    receipt.tmpRemoved.push(path);
-    receipt.tmpFreedBytes += bytes;
+    try {
+      const info = await lstatOrNull(path);
+      if (!info || now - info.mtimeMs < tmpMaxAge) continue;
+      const bytes = await dirBytes(path);
+      await bestEffort(console.warn, `janitor tmp remove ${path}`, rm(path, { recursive: true, force: true }), undefined);
+      receipt.tmpRemoved.push(path);
+      receipt.tmpFreedBytes += bytes;
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : String(cause);
+      receipt.errors.push(`${path}: ${message}`);
+      console.warn(`lane-pilot: worktree sweep skipped ${path}: ${message}`);
+    }
   }
   return receipt;
 }

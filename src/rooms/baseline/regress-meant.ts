@@ -1,4 +1,5 @@
 import { defineJudgment, jev, noul, noulOf, type JudgeContext } from "@lane-pilot/jev";
+import { bestEffort } from "@lane-pilot/kit";
 
 /**
  * `regress.meant`: did the task bisect blamed deliberately remove or change what the red check pins? Asked in the stale
@@ -51,9 +52,9 @@ export const meantJudgment = defineJudgment<MeantInput, MeantVerdict>({
  * The verdict on one open regression row, or null when Jev cannot be asked (not installed, off, a failure) — the caller
  * leaves the row open and never guesses. A shadow verdict is not a verdict: it is only recorded, not acted on.
  */
-export async function judgeMeant(input: MeantInput, ctx: JudgeContext = {}): Promise<MeantVerdict | null> {
+export async function judgeMeant(input: MeantInput, ctx: JudgeContext = {}, log: (message: string) => void = console.warn): Promise<MeantVerdict | null> {
   const instance = jev();
   if (!instance?.enabled(ctx.settings)) return null;
-  const verdict = await instance.judge(meantJudgment, input, ctx).catch(() => null);
+  const verdict = await bestEffort(log, `regress meant ${input.command.slice(0, 120)}`, instance.judge(meantJudgment, input, ctx), null);
   return verdict?.by === "jev" ? verdict.decision : null;
 }

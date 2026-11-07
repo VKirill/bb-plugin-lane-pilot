@@ -15,7 +15,7 @@ import {fullAccessSpawn} from "../../platform/server";
 import { withUsage } from "../../usage/server";
 import type { StepContext, WorkflowEngine } from "../../workflow";
 import { requireGreen } from "../../workflow/server";
-import { stringAt, valueAt, orMiss, isNotFound } from "@lane-pilot/kit";
+import { stringAt, valueAt, orMiss, isNotFound, bestEffort } from "@lane-pilot/kit";
 import { recordStage } from "../../runs/server";
 import { sleepUntilThreadSignal, threadWatchMark, waitThreadIdle } from "@lane-pilot/thread-observe";
 import { basename, resolve } from "node:path";
@@ -39,7 +39,7 @@ export function createSerialQueue():<T>(work:()=>Promise<T>)=>Promise<T> {
   let tail:Promise<unknown>=Promise.resolve();
   return <T>(work:()=>Promise<T>):Promise<T>=>{
     const turn=tail.then(work);
-    tail=turn.catch(()=>undefined);
+    tail=bestEffort(console.warn, "serial queue step", turn, undefined);
     return turn;
   };
 }
@@ -79,15 +79,15 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
   async function docsVerdict(projectId:string, place:DocsPlace, opts:{force?:boolean;now?:number}={}):Promise<StoredDocsVerdict|null> {
     const now=opts.now??Date.now();
     const stored=await bb.storage.kv.get(WORTH_KEY(place)) as StoredDocsVerdict|null;
-    const facts=await host.call("docsWorthinessFacts",{requestedHostId:place.hostId,projectCwd:place.path},{hostId:place.hostId,timeoutMs:60_000}).catch(()=>null);
+    const facts=await bestEffort(bb.log, `docs worthiness facts ${place.path}`, host.call("docsWorthinessFacts",{requestedHostId:place.hostId,projectCwd:place.path},{hostId:place.hostId,timeoutMs:60_000}), null);
     if(!facts) return stored;
     const factsKey=docsFactsKey(facts);
     const docsSince=stored?.docsSince??(facts.docsPages>0?now:null);
     if(stored&&!opts.force&&stored.factsKey===factsKey&&now-stored.at<VERDICT_TTL_MS) return {...stored,facts,docsSince};
     let verdict=codeDocsVerdict(facts);
     if(!verdict){
-      const judged=await host.call("councilJudge",{requestedHostId:place.hostId,state:JSON.stringify(docsWorthinessState(facts,place)),
-        questions:{worth:{instructions:DOCS_WORTHINESS_QUESTION.instructions,criteria:{...DOCS_WORTHINESS_QUESTION.criteria}}}},{hostId:place.hostId,timeoutMs:10_000}).catch(()=>null);
+      const judged=await bestEffort(bb.log, `docs worthiness judge ${place.path}`, host.call("councilJudge",{requestedHostId:place.hostId,state:JSON.stringify(docsWorthinessState(facts,place)),
+        questions:{worth:{instructions:DOCS_WORTHINESS_QUESTION.instructions,criteria:{...DOCS_WORTHINESS_QUESTION.criteria}}}},{hostId:place.hostId,timeoutMs:10_000}), null);
       const choice=judged?.status==="ok"?judged.answers.worth:undefined;
       const sure=judged?.confidence?.worth??0.5;
       verdict=choice==="needed"||choice==="not_needed"
@@ -166,7 +166,7 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
       }
       return threadId;
     });
-    docsSpawnGate=turn.catch(()=>undefined);
+    docsSpawnGate=bestEffort(bb.log, "docs spawn gate", turn, undefined);
     return turn;
   }
 
@@ -238,8 +238,8 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
         // Its committed pages reach main before it goes; a busy main waits for the next tick.
         const merged=await mergeDocs(place.path,{hostId:place.hostId,path:known.path},"docs: earlier pass",true);
         if(merged==="busy") throw new Error("docs_worktree_merge_busy: main is merging other work; the pass retries");
-        await host.call("gitRemoveWorktree",{requestedHostId:place.hostId,basePath:place.path,worktreePath:known.path},{hostId:place.hostId,timeoutMs:120_000}).catch(()=>null);
-        await bb.storage.kv.delete(key).catch(()=>undefined);
+        await bestEffort(bb.log, `docs worktree cleanup ${known.path}`, host.call("gitRemoveWorktree",{requestedHostId:place.hostId,basePath:place.path,worktreePath:known.path},{hostId:place.hostId,timeoutMs:120_000}), null);
+        await bestEffort(bb.log, `docs worktree record ${key}`, bb.storage.kv.delete(key), undefined);
       }
     }
     const created=await host.call("gitCreateWorktree",{requestedHostId:place.hostId,basePath:place.path,name},{hostId:place.hostId,timeoutMs:120_000,worktreeOwner:{kind:"docs",id:name}}).catch((cause)=>({status:"failed" as const,path:null,reason:cause instanceof Error?cause.message:String(cause)}));
@@ -264,11 +264,11 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
 
   async function runNightlyDocs(opts:{force?:boolean;projectId?:string;path?:string;base?:string;catchUp?:boolean;signal?:AbortSignal}={}):Promise<Array<Record<string,unknown>>> {
     const results:Array<Record<string,unknown>>=[];
-    const projects=opts.projectId?[{id:opts.projectId}]:await bb.sdk.projects.list({includePersonal:true}).catch(()=>[] as Array<{id:string}>);
+    const projects=opts.projectId?[{id:opts.projectId}]:await bestEffort(bb.log, "docs projects", bb.sdk.projects.list({includePersonal:true}), [] as Array<{id:string}>);
     for(const project of projects){
       opts.signal?.throwIfAborted();
       const places:Array<{scopes:string[];hostId:string;path:string}>=[];
-      const root=await services.resolveProjectWriterHost({projectId:project.id}).catch(()=>null);
+      const root=await bestEffort(bb.log, `docs writer host ${project.id}`, services.resolveProjectWriterHost({projectId:project.id}), null);
       if(root?.status==="resolved"&&root.path) places.push({scopes:[],hostId:root.hostId,path:root.path});
       // Every source of the project is a place too: a project may keep its code repository on another machine.
       const described=await orMiss(bb.sdk.projects.get({projectId:project.id}), null, isNotFound) as {sources?:Array<{hostId?:string;path?:string}>}|null;
@@ -331,10 +331,10 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
           // Scan first: every unit with work gets its code map built now, all at once, and the flows are traced beside
           // them, so each agent starts on a finished map instead of waiting for Jev in turn.
           const prefetch=new Map<string,Promise<unknown>>();
-          const titled=(await host.call("listDocsPages",{requestedHostId:work.hostId,projectCwd:work.path,roots:units.map((unit)=>unit.docsDir),skipOversized:true},{hostId:work.hostId,timeoutMs:120_000}).catch(()=>null))?.pages??[];
+          const titled=(await bestEffort(bb.log, `docs pages ${work.path}`, host.call("listDocsPages",{requestedHostId:work.hostId,projectCwd:work.path,roots:units.map((unit)=>unit.docsDir),skipOversized:true},{hostId:work.hostId,timeoutMs:120_000}), null))?.pages??[];
           await Promise.all(units.map(async(unit)=>{
             const workspace=unit.workspace;
-            const unitScope=await host.call("gitDocsScope",{requestedHostId:work.hostId,projectCwd:work.path,sinceEpochMs,docsDir:unit.docsDir,...(opts.base?{base:opts.base}:{})},{hostId:work.hostId,timeoutMs:120_000}).catch(()=>null);
+            const unitScope=await bestEffort(bb.log, `docs scope ${work.path} ${unit.docsDir}`, host.call("gitDocsScope",{requestedHostId:work.hostId,projectCwd:work.path,sinceEpochMs,docsDir:unit.docsDir,...(opts.base?{base:opts.base}:{})},{hostId:work.hostId,timeoutMs:120_000}), null);
             if(!unitScope||unitScope.status!=="ready") return;
             const changed=unitScope.changed.filter((path)=>workspace?path.startsWith(`${workspace.path}/`):true);
             if(unitScope.hasDocs&&!changed.length&&!unitScope.dirty.some(unitWritable(unit))) return;
@@ -342,8 +342,8 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
             if(await bb.storage.kv.get(docsUnitRecordKey(project.id,work.path,unit.docsDir))) return;
             const pages=titled.filter((page)=>page.path.startsWith(`${unit.docsDir}/`)&&!isDocsIndex(page.path))
               .map((page)=>({path:page.path,title:/^title:\s*(.+)$/m.exec(page.content)?.[1]?.trim()??page.path}));
-            prefetch.set(unit.docsDir,host.call("docsAnchors",{requestedHostId:work.hostId,projectCwd:work.path,prefix:workspace?`${workspace.path}/`:"",
-              ...(workspace?{}:{exclude:own.map((item)=>item.path),...(workspaces.length?{workspaces}:{})}),pages:pages.slice(0,500)},{hostId:work.hostId,timeoutMs:1_800_000}).catch(()=>null));
+            prefetch.set(unit.docsDir,bestEffort(bb.log, `docs anchors ${work.path} ${unit.docsDir}`, host.call("docsAnchors",{requestedHostId:work.hostId,projectCwd:work.path,prefix:workspace?`${workspace.path}/`:"",
+              ...(workspace?{}:{exclude:own.map((item)=>item.path),...(workspaces.length?{workspaces}:{})}),pages:pages.slice(0,500)},{hostId:work.hostId,timeoutMs:1_800_000}), null));
           }));
           const flowPagesAtStart=titled.filter((page)=>page.path.startsWith("docs/flows/"));
           const tracing=host.call("docsFlows",{requestedHostId:work.hostId,projectCwd:work.path,workspaces:workspaces.map((workspace)=>({path:workspace.path,name:workspace.name})),
@@ -380,8 +380,8 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
           await bb.storage.kv.set(stateKey,{date:scope.localDate,attempts,finished:true,failed:results.slice(firstResult).filter((row)=>row.state==="failed").length});
           // The place's next pass diffs from where this one ended, not from the last docs-touching commit: a commit
           // carrying both code and a docs line used to hide all of its code changes (bb-plugin-project-folders 0.7.10).
-          const headNow=(await host.call("gateRun",{requestedHostId:place.hostId,basePath:place.path,command:"git rev-parse HEAD",timeoutSec:15},{hostId:place.hostId,timeoutMs:30_000}).catch(()=>null));
-          if(headNow?.exitCode===0&&/^[a-f0-9]{40}$/.test(headNow.stdout.trim())) await bb.storage.kv.set(baseKey,{head:headNow.stdout.trim()}).catch(()=>undefined);
+          const headNow=(await bestEffort(bb.log, `docs head ${place.path}`, host.call("gateRun",{requestedHostId:place.hostId,basePath:place.path,command:"git rev-parse HEAD",timeoutSec:15},{hostId:place.hostId,timeoutMs:30_000}), null));
+          if(headNow?.exitCode===0&&/^[a-f0-9]{40}$/.test(headNow.stdout.trim())) await bestEffort(bb.log, `docs base ${place.path}`, bb.storage.kv.set(baseKey,{head:headNow.stdout.trim()}), undefined);
           // The pass is done: its worktree goes now, unless a unit left open progress in it (WT2: create → merge → remove).
           if(resolve(work.path)!==resolve(place.path)){
             const openUnits=(await bb.storage.kv.get(DOCS_UNITS_OPEN_KEY) as Record<string,true>|null)??{};
@@ -391,8 +391,8 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
               if(record?.place.path===work.path){ progress=true; break; }
             }
             if(!progress){
-              await host.call("gitRemoveWorktree",{requestedHostId:place.hostId,basePath:place.path,worktreePath:work.path},{hostId:place.hostId,timeoutMs:120_000}).catch(()=>null);
-              await bb.storage.kv.delete(`docs-worktree:${place.hostId}:${`docs-${sha256(place.path).slice(0,12)}`}`).catch(()=>undefined);
+              await bestEffort(bb.log, `docs worktree cleanup ${work.path}`, host.call("gitRemoveWorktree",{requestedHostId:place.hostId,basePath:place.path,worktreePath:work.path},{hostId:place.hostId,timeoutMs:120_000}), null);
+              await bestEffort(bb.log, `docs worktree record ${place.path}`, bb.storage.kv.delete(`docs-worktree:${place.hostId}:${`docs-${sha256(place.path).slice(0,12)}`}`), undefined);
             }
           }
           } finally { docsPassesRunning.delete(place.path); }
@@ -464,7 +464,7 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
     const pending=before.dirty.some(writable);
     // The root turns the decision drafts agents recorded into ADRs; a draft its decisions page does not name is work.
     const decisionDrafts=unit.workspace||flow?[]:await (async()=>{
-      const drafts=(await host.call("listDocsPages",{requestedHostId:place.hostId,projectCwd:place.path,roots:[".agents/decisions"],skipOversized:true},{hostId:place.hostId,timeoutMs:60_000}).catch(()=>null))?.pages??[];
+      const drafts=(await bestEffort(bb.log, `docs decision drafts ${place.path}`, host.call("listDocsPages",{requestedHostId:place.hostId,projectCwd:place.path,roots:[".agents/decisions"],skipOversized:true},{hostId:place.hostId,timeoutMs:60_000}), null))?.pages??[];
       if(!drafts.length) return [];
       const decisions=(await allPages()).find((page)=>page.path===`${d}/decisions.md`)?.content??"";
       return drafts.map((page)=>page.path).filter((path)=>!decisions.includes(path)).sort();
@@ -473,24 +473,24 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
     const existing=hasDocs?mine(await allPages()):[];
     // The root README.md and PROJECT.md describe the code too, so they are checked for staleness with the root docs.
     const readRootPages=async()=>unit.workspace||flow?[]:(await Promise.all(["README.md","PROJECT.md"].map(async(path)=>{
-      const file=await bb.sdk.files.read({hostId:place.hostId,rootPath:place.path,path:resolve(place.path,path)}).catch(()=>null);
+      const file=await bestEffort(bb.log, `docs root page ${path}`, bb.sdk.files.read({hostId:place.hostId,rootPath:place.path,path:resolve(place.path,path)}), null);
       return file&&typeof file.content==="string"?{path,content:file.content}:null;
     }))).filter((page):page is {path:string;content:string}=>page!==null);
     const rootPages=hasDocs?await readRootPages():[];
     const pageInput=existing.filter((page)=>!isDocsIndex(page.path)).map((page)=>({path:page.path,content:page.content}));
     // Jev judges which sections the day's diff made wrong; without it, pages whose sources changed.
     const prefetched=flow?undefined:unitExtras.get(recordKey)?.prefetch.get(d) as Promise<Awaited<ReturnType<typeof host.call<"docsAnchors">>>|null>|undefined;
-    const anchors=flow?null:prefetched?await prefetched:await host.call("docsAnchors",{requestedHostId:place.hostId,projectCwd:place.path,prefix,
+    const anchors=flow?null:prefetched?await prefetched:await bestEffort(bb.log, `docs anchors ${place.path} ${d}`, host.call("docsAnchors",{requestedHostId:place.hostId,projectCwd:place.path,prefix,
       ...(unit.workspace?{}:{exclude:i.exclude,...(i.workspaces.length?{workspaces:i.workspaces}:{})}),
-      pages:pageInput.map((page)=>({path:page.path,title:/^title:\s*(.+)$/m.exec(page.content)?.[1]?.trim()??page.path}))},{hostId:place.hostId,timeoutMs:1_800_000}).catch(()=>null);
+      pages:pageInput.map((page)=>({path:page.path,title:/^title:\s*(.+)$/m.exec(page.content)?.[1]?.trim()??page.path}))},{hostId:place.hostId,timeoutMs:1_800_000}), null);
     const gaps=hasDocs&&!flow?docsCompletenessGaps(existing,{tables:anchors?.tables??[],deploy:anchors?.deploy??false,core:anchors?.core??[],docsDir:d,workspace:Boolean(unit.workspace),
       flows:unit.flows}):{missingPages:[],uncoveredCore:[]};
     // What the depth check holds the pages to: the core code of the folder, or what the flow's entries call.
     const core=anchors?.core??flow?.calls??[];
     let refresh=hasDocs?pagesToRefresh(existing,changed):[];
     if(hasDocs){
-      const stale=await host.call("docsStaleness",{requestedHostId:place.hostId,projectCwd:place.path,base:before.base??"HEAD",
-        changed,pages:[...pageInput,...rootPages]},{hostId:place.hostId,timeoutMs:600_000}).catch(()=>null);
+      const stale=await bestEffort(bb.log, `docs staleness ${place.path}`, host.call("docsStaleness",{requestedHostId:place.hostId,projectCwd:place.path,base:before.base??"HEAD",
+        changed,pages:[...pageInput,...rootPages]},{hostId:place.hostId,timeoutMs:600_000}), null);
       if(stale&&stale.jev!=="disabled"){
         const cited=new Set(existing.flatMap((page)=>citedFiles([page])));
         const product=new Set(anchors&&anchors.jev!=="disabled"?anchors.productFiles:changed);
@@ -546,7 +546,7 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
           ...plan.doubts.length?["## Claims the analyzer doubted; recheck each in the code",...plan.doubts.map((d)=>`- ${d.path}: ${d.detail}`),""]:[],
           ...plan.decisionDrafts.length?["## Decision drafts to fold into docs/decisions.md as ADRs",...plan.decisionDrafts.map((p)=>`- ${p}`),""]:[],
         ].join("\n");
-        const written=await bb.sdk.files.write({hostId:place.hostId,rootPath:place.path,path:resolve(place.path,rel),content:material,contentEncoding:"utf8",createParents:true}).then(()=>true).catch(()=>false);
+        const written=await bestEffort(bb.log, `docs material ${rel}`, bb.sdk.files.write({hostId:place.hostId,rootPath:place.path,path:resolve(place.path,rel),content:material,contentEncoding:"utf8",createParents:true}).then(()=>true), false);
         if(written) materialPath=rel;
       }
       const threadId=await spawnDocsThread({projectId:i.projectId,visibility:"hidden",title:`Lane Pilot docs: ${basename(place.path)}${unit.workspace?` · ${unit.workspace.path}`:unit.flow?` · flow ${unit.flow.slug}`:""}`,
@@ -567,7 +567,7 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
       try{ await waitThreadIdle(bb,record.threadId,"docs_nightly",undefined,undefined,stop); }
       catch(cause){
         // The agent's thread failed: the unit is done for tonight, its pages stay pending. A reload keeps the progress for the next instance.
-        if(!pluginStopped(cause)&&!ctx.isDisposed()) await dropDocsUnitRecord(record).catch(()=>undefined);
+        if(!pluginStopped(cause)&&!ctx.isDisposed()) await bestEffort(bb.log, "docs unit record drop", dropDocsUnitRecord(record), undefined);
         // The model's plan ran out before the work: the unit goes to the next model at once (the failure took the spent plan off the
         // pick, spawn-model.ts), not to the next night. Once: a second refusal is a real failure.
         const limit=!retry&&plan&&!pluginStopped(cause)&&!ctx.isDisposed()?providerLimitNotice((cause instanceof Error?cause.message:String(cause)).replace(/^.*?provider_error:/,"").slice(0,400)):null;
@@ -634,7 +634,7 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
       change(open);
       await bb.storage.kv.set(DOCS_UNITS_OPEN_KEY,open);
     });
-    docsUnitsIndexChain=next.catch(()=>undefined);
+    docsUnitsIndexChain=bestEffort(bb.log, "docs units index", next, undefined);
     return next;
   }
 
@@ -646,7 +646,7 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
 
   async function dropDocsUnitRecord(record:DocsUnitRecord):Promise<void> {
     const key=docsUnitRecordKey(record.projectId,record.place.path,record.label);
-    await bb.storage.kv.delete(key).catch(()=>undefined);
+    await bestEffort(bb.log, `docs unit record ${key}`, bb.storage.kv.delete(key), undefined);
     await updateDocsUnitsIndex((open)=>{ delete open[key]; });
   }
 
@@ -695,7 +695,7 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
       };
       const mine=(pages:Array<{path:string;sha256:string;content:string}>)=>pages.filter((page)=>flow?writable(page.path):page.path.startsWith(`${d}/`));
       const readRootPages=async()=>unit.workspace||flow?[]:(await Promise.all(["README.md","PROJECT.md"].map(async(path)=>{
-        const file=await bb.sdk.files.read({hostId:place.hostId,rootPath:place.path,path:resolve(place.path,path)}).catch(()=>null);
+        const file=await bestEffort(bb.log, `docs root page ${path}`, bb.sdk.files.read({hostId:place.hostId,rootPath:place.path,path:resolve(place.path,path)}), null);
         return file&&typeof file.content==="string"?{path,content:file.content}:null;
       }))).filter((page):page is {path:string;content:string}=>page!==null);
       const core=record.core;
@@ -739,15 +739,15 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
         if(!findings.length){
           const all=[...pages.filter((page)=>!isDocsIndex(page.path)).map((page)=>({path:page.path,content:page.content})),...await readRootPages()];
           const written=all.filter((page)=>docsDirty.includes(page.path));
-          const cited=written.length?await host.call("docsVerifyCitations",{requestedHostId:place.hostId,projectCwd:place.path,
-            pages:written.slice(0,500),related:all.filter((page)=>!docsDirty.includes(page.path)).slice(0,500)},{hostId:place.hostId,timeoutMs:1_800_000}).catch(()=>null):null;
+          const cited=written.length?await bestEffort(bb.log, `docs citations ${place.path}`, host.call("docsVerifyCitations",{requestedHostId:place.hostId,projectCwd:place.path,
+            pages:written.slice(0,500),related:all.filter((page)=>!docsDirty.includes(page.path)).slice(0,500)},{hostId:place.hostId,timeoutMs:1_800_000}), null):null;
           findings.push(...(cited?.findings??[]));
           pageStats=cited?.pageStats??[];
           // And whether the written pages explain the core code well enough that nobody has to open it.
           // Only pages meant to explain behaviour are held to it; summaries and references link down instead.
           const explaining=written.filter((page)=>/^type:\s*(component|flow)\s*$/m.test(page.content));
-          const depth=explaining.length&&core.length?await host.call("docsDepth",{requestedHostId:place.hostId,projectCwd:place.path,
-            pages:explaining.slice(0,500),core:core.slice(0,2000)},{hostId:place.hostId,timeoutMs:900_000}).catch(()=>null):null;
+          const depth=explaining.length&&core.length?await bestEffort(bb.log, `docs depth ${place.path}`, host.call("docsDepth",{requestedHostId:place.hostId,projectCwd:place.path,
+            pages:explaining.slice(0,500),core:core.slice(0,2000)},{hostId:place.hostId,timeoutMs:900_000}), null):null;
           findings.push(...(depth?.findings??[]));
         }
         return {touched,docsDirty,pageStats,findings,kept:blockingDocsFindings(sized.kept,docsDirty)};
@@ -769,7 +769,7 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
       return {state:"ok",verified:{checked,warnings,reverted},threadId};
     }catch(cause){
       // The agent's thread failed or its work cannot be checked: the unit is done for tonight, its pages stay pending.
-      if(!pluginStopped(cause)&&!ctx.isDisposed()) await dropDocsUnitRecord(record).catch(()=>undefined);
+      if(!pluginStopped(cause)&&!ctx.isDisposed()) await bestEffort(bb.log, "docs unit record drop", dropDocsUnitRecord(record), undefined);
       docsUnitsFinishing.delete(key);
       throw cause;
     }
@@ -837,7 +837,7 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
       bb.log.info(`Lane Pilot nightly docs ${row.state} for ${record.basePath??place.path} ${label}${merged?` (merge ${merged})`:""}${failure?`: ${failure}`:""}`);
       return row;
     }catch(cause){
-      if(!pluginStopped(cause)&&!ctx.isDisposed()) await dropDocsUnitRecord(record).catch(()=>undefined);
+      if(!pluginStopped(cause)&&!ctx.isDisposed()) await bestEffort(bb.log, "docs unit record drop", dropDocsUnitRecord(record), undefined);
       throw cause;
     }finally{ docsUnitsFinishing.delete(key); }
   }

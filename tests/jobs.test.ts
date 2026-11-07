@@ -1,12 +1,12 @@
 import { execFile } from "node:child_process";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, rm, stat, readFile, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { sha256Hex } from "@lane-pilot/kit";
-import { cancelHostJob, hostJobStatus, startHostJob, type JobOptions, type JobStatus } from "../src/rooms/host-worker/jobs";
+import { cancelHostJob, hostJobStatus, removeIfStill, startHostJob, type JobOptions, type JobStatus } from "../src/rooms/host-worker/jobs";
 
 const execFileAsync = promisify(execFile);
 
@@ -182,6 +182,23 @@ describe("host background jobs", () => {
     expect(fresh).toMatch(/^job_[a-z0-9]+$/);
     expect(fresh).not.toBe(live);
   }, 30_000);
+
+  it("does not delete a rival's fresh empty claim that replaced the stale file", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "lp-jobs-claim-"));
+    try {
+      const file = join(dir, "key.id");
+      await writeFile(file, "job_0000000000\n");
+      // The stale file the sweep observed was old (the claim grace had run out).
+      const old = new Date(Date.now() - 120_000);
+      await utimes(file, old, old);
+      const before = await stat(file);
+      // A deletes the stale file; C creates a fresh empty claim in its place.
+      await rm(file);
+      await writeFile(file, "");
+      await removeIfStill(file, "", { mtimeMs: before.mtimeMs, ino: before.ino });
+      expect(await readFile(file, "utf8")).toBe("");
+    } finally { await rm(dir, { recursive: true, force: true }); }
+  });
 
   it("answers an unknown job as lost and refuses a malformed id or input", async () => {
     expect(await hostJobStatus("job_doesnotexist0", options)).toMatchObject({ state: "lost", error: "no such job" });

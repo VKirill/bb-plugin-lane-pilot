@@ -1,4 +1,5 @@
 import { resolve } from "node:path";
+import { bestEffort } from "@lane-pilot/kit";
 
 /** `workspace.provider`: «auto» (the default) gives writer attempts Lane Pilot's own environment provider; «off» is the emergency switch. */
 export function providerSwitchOn(value: unknown): boolean {
@@ -31,7 +32,7 @@ export function createProviderGate(input: {
 }) {
   const now = input.now ?? Date.now, probeAfterMs = input.probeAfterMs ?? PROVIDER_PROBE_AFTER_MS;
   const read = async (hostId: string): Promise<HostRecord> => {
-    const row = await input.kv.get<HostRecord>(hostKey(hostId)).catch(() => null);
+    const row = await input.kv.get<HostRecord>(hostKey(hostId));
     return row && row.version === input.version ? row : { version: input.version, failures: 0, disabled: false };
   };
   const write = (hostId: string, row: HostRecord) => input.kv.set(hostKey(hostId), row as never).then(() => undefined, () => undefined);
@@ -73,7 +74,7 @@ export function createProviderGate(input: {
     }),
     /** Lifts the switch-off now, on one machine or (no id) on every machine this plugin has a record for. Returns the machines cleared. */
     reset: (hostId?: string) => input.serialized(async () => {
-      const hosts = hostId ? [hostId] : (await (input.kv.list?.(HOST_PREFIX) ?? Promise.resolve([] as string[])).catch(() => [] as string[])).map((key) => key.slice(HOST_PREFIX.length));
+      const hosts = hostId ? [hostId] : (await (input.kv.list?.(HOST_PREFIX) ?? Promise.resolve([] as string[]))).map((key) => key.slice(HOST_PREFIX.length));
       const cleared: string[] = [];
       for (const host of hosts) {
         const row = await read(host);
@@ -85,7 +86,7 @@ export function createProviderGate(input: {
     }),
     /** What the gate knows per machine, for the status RPC. */
     hosts: async (): Promise<ProviderHostStatus[]> => {
-      const keys = await (input.kv.list?.(HOST_PREFIX) ?? Promise.resolve([] as string[])).catch(() => [] as string[]);
+      const keys = await (input.kv.list?.(HOST_PREFIX) ?? Promise.resolve([] as string[]));
       return await Promise.all(keys.map(async (key) => { const hostId = key.slice(HOST_PREFIX.length); return status(hostId, await read(hostId)); }));
     },
   };
@@ -97,7 +98,7 @@ export async function providerListed(
   listProviders: (args: { projectId: string; hostId: string }) => Promise<unknown>,
   providerId: string, projectId: string, hostId: string,
 ): Promise<boolean> {
-  const rows = await Promise.resolve().then(() => listProviders({ projectId, hostId })).catch(() => null);
+  const rows = await bestEffort(console.warn, "provider list", Promise.resolve().then(() => listProviders({ projectId, hostId })), null);
   if (!Array.isArray(rows)) return false;
   const found = rows.find((row) => row && typeof row === "object" && (row as { id?: unknown }).id === providerId) as { availability?: { status?: string } | null } | undefined;
   return Boolean(found) && found?.availability?.status !== "unavailable";
@@ -123,21 +124,38 @@ export async function waitProviderEnvironment(input: {
   };
   let environmentId = input.spawnEnvironmentId?.trim() || "";
   let last = environmentId ? "bound" : "unbound";
+  let firstFailure: string | null = null;
+  // A probe that fails every 500 ms tick is one incident, not 240: the first failure is logged
+  // here and the outcome once at the end.
+  const probe = async <T>(work: Promise<T>): Promise<T | null> => {
+    try { return await work; }
+    catch (cause) {
+      if (firstFailure === null) {
+        firstFailure = cause instanceof Error ? cause.message : String(cause);
+        console.warn(`provider wait ${input.threadId}: ${firstFailure}`);
+      }
+      return null;
+    }
+  };
+  let outcome: { ok: true; environmentId: string } | { ok: false; reason: string } | null = null;
   while (now() < deadline) {
-    const thread = await input.getThread(input.threadId).catch(() => null);
+    const thread = await probe(input.getThread(input.threadId));
     environmentId = text(thread, "environmentId") ?? environmentId;
     if (environmentId) {
-      const environment = await input.getEnvironment(environmentId).catch(() => null);
+      const environment = await probe(input.getEnvironment(environmentId));
       const status = text(environment, "status") ?? "unknown";
       last = status;
-      if (status === "error" || status === "destroyed") return { ok: false, reason: `environment_${status}:${text(environment, "statusMessage") ?? ""}` };
+      if (status === "error" || status === "destroyed") { outcome = { ok: false, reason: `environment_${status}:${text(environment, "statusMessage") ?? ""}` }; break; }
       if (status === "ready") {
         const path = text(environment, "path");
-        if (path && resolve(path) !== resolve(input.expectedPath)) return { ok: false, reason: `environment_path_mismatch:${path}` };
-        return { ok: true, environmentId };
+        if (path && resolve(path) !== resolve(input.expectedPath)) { outcome = { ok: false, reason: `environment_path_mismatch:${path}` }; break; }
+        outcome = { ok: true, environmentId };
+        break;
       }
-    } else if (text(thread, "status") === "error") return { ok: false, reason: "thread_error_before_environment" };
+    } else if (text(thread, "status") === "error") { outcome = { ok: false, reason: "thread_error_before_environment" }; break; }
     await sleep(input.intervalMs ?? 500);
   }
-  return { ok: false, reason: `environment_timeout:${last}` };
+  const result = outcome ?? { ok: false, reason: `environment_timeout:${last}` };
+  if (firstFailure !== null) console.warn(`provider wait ${input.threadId}: ended ${result.ok ? "ready" : result.reason} (first failure: ${firstFailure})`);
+  return result;
 }

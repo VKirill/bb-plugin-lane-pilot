@@ -1,7 +1,7 @@
 import { appendFile, mkdir } from "node:fs/promises";
 import { homedir, userInfo } from "node:os";
 import { join } from "node:path";
-import { spawnAsync } from "@lane-pilot/kit";
+import { bestEffort, spawnAsync } from "@lane-pilot/kit";
 
 /**
  * The strict worker (SMA map: Separate worker user, Checks as the worker, Folder rights for the worker, List of granted rights,
@@ -49,7 +49,7 @@ export async function grantRunFolders(user: string, dirs: readonly string[], pla
   }
   const ledger = join(homedir(), ".lane-pilot", "worker-grants.jsonl");
   await mkdir(join(homedir(), ".lane-pilot"), { recursive: true });
-  await appendFile(ledger, granted.map((dir) => JSON.stringify({ at: Date.now(), user, owner, path: dir })).join("\n") + (granted.length ? "\n" : "")).catch(() => undefined);
+  await bestEffort(console.warn, `worker grants ledger ${ledger}`, appendFile(ledger, granted.map((dir) => JSON.stringify({ at: Date.now(), user, owner, path: dir })).join("\n") + (granted.length ? "\n" : "")), undefined);
   return granted;
 }
 

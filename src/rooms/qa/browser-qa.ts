@@ -2,7 +2,7 @@ import { access, lstat, readFile, readdir, realpath } from "node:fs/promises";
 import { homedir } from "node:os";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { z } from "zod";
-import { spawnAsync, sha256Hex } from "@lane-pilot/kit";
+import { spawnAsync, sha256Hex, orMiss, isFsAbsent } from "@lane-pilot/kit";
 
 export const browserQaInputSchema = z.object({
   requestedHostId:z.string().min(1), projectCwd:z.string().startsWith("/"), url:z.string().url(),
@@ -102,7 +102,7 @@ export async function runBrowserQaOnHost(raw:BrowserQaInput):Promise<BrowserQaRe
   }
   const runner = input.provider === "jev" ? "browser-qa-jev" : "browser-qa-codex";
   const binary = join(homedir(), ".agents", "bin", runner);
-  await access(binary).catch(() => { throw new Error(`browser_qa_runner_unavailable:${runner}`); });
+  if (!await orMiss(access(binary).then(() => true), false, isFsAbsent)) throw new Error(`browser_qa_runner_unavailable:${runner}`);
   const argv = ["--project-cwd", project, "--url", input.url, "--slug", input.slug,
     "--env-class", input.envClass, "--viewports", input.viewports, "--backend", input.backend];
   for (const item of input.cases) argv.push("--case", item);

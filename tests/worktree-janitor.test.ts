@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readdirSync, writeFileSync, existsSync } from "node:fs";
-import { lstat, mkdir, mkdtemp, readdir, realpath, rm, utimes, writeFile } from "node:fs/promises";
+import { lstat, chmod, mkdir, mkdtemp, readdir, realpath, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
@@ -78,6 +78,19 @@ describe("the worktree janitor", () => {
     const out = await sweepLaneWorktrees({ root, protectedPaths: new Set(), graceMs: 0 });
     expect(out.removed).toContain(orphan);
     expect(existsSync(orphan)).toBe(false);
+  });
+
+  it("skips an unreadable folder by name and sweeps the rest", async () => {
+    const { root, top } = await fixture("fine-x");
+    const blocked = join(root, "blocked-x", "repo");
+    await mkdir(blocked, { recursive: true });
+    await chmod(blocked, 0o000);
+    let out: Awaited<ReturnType<typeof sweepLaneWorktrees>>;
+    try { out = await sweepLaneWorktrees({ root, protectedPaths: new Set(), graceMs: 0 }); }
+    finally { await chmod(blocked, 0o755); }
+    expect(out.removed).toEqual([top]);
+    expect(out.errors.some((line) => line.includes("blocked-x"))).toBe(true);
+    expect(existsSync(blocked)).toBe(true);
   });
 
   it("sweeps only Lane Pilot's tmp prefixes older than a day", async () => {

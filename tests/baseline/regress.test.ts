@@ -4,9 +4,9 @@ import { describe, expect, it, vi } from "vitest";
 import { listRegressions } from "../../src/rooms/baseline";
 import { runBaselineCli } from "../../src/rooms/baseline/server";
 import { composeMorningList } from "../../src/rooms/policy/morning";
-import { recordCheckDuration, saveStageReceipt } from "../../src/rooms/plugin-db";
+import { recordCheckDuration, saveStageReceipt, createAttempt, createRun } from "../../src/rooms/plugin-db";
 import { git } from "../verification/git-integrate-helpers";
-import { world } from "./world";
+import { world, HOST } from "./world";
 
 vi.setConfig({ testTimeout: 240_000 });
 
@@ -199,6 +199,30 @@ describe("the regression pass over accepted tasks (D1-2)", () => {
     expect(result.projects[0]!.findings[0]).toMatchObject({ taskId: "A", kind: "regression", bisect: "skipped", culpritCommit: null });
     expect(result.projects[0]!.findings[0]!.note).toContain("regress.bisect_steps");
     expect(composeMorningList(w.db)[1]).toContain("Сломано после приёмки: 1 (A ← ?)");
+    await w.dispose();
+  });
+
+  it("fails the pass for a project whose settings cannot be read, instead of running on defaults", async () => {
+    const w = await world({ settingsError: new Error("store_read_failed") });
+    await history(w);
+    const result = await w.services.regression.run({ projectId: "projA" });
+    expect(result.projects[0]!.head).toBeNull();
+    expect(result.projects[0]!.skipped).toContain("store_read_failed");
+    expect(result.projects[0]!.findings).toHaveLength(0);
+    expect(w.ran).toEqual([]);
+    await w.dispose();
+  });
+
+  it("nightly continues past a project whose settings cannot be read", async () => {
+    const w = await world({ settingsErrorFor: (id) => id === "projA" ? new Error("store_read_failed") : undefined });
+    createAttempt(w.db, { id: "att_T1", runId: "run1", taskId: "T1" });
+    w.db.prepare("UPDATE lane_pilot_attempt SET state='accepted', updated_at=? WHERE id='att_T1'").run(Date.now());
+    createRun(w.db, "run2", "projB", "bb", w.base, "none", undefined, HOST);
+    createAttempt(w.db, { id: "att_T2", runId: "run2", taskId: "T2" });
+    w.db.prepare("UPDATE lane_pilot_attempt SET state='accepted', updated_at=? WHERE id='att_T2'").run(Date.now());
+    await w.services.regression.nightly();
+    expect(w.logs.some((line) => line.includes("projA") && line.includes("store_read_failed"))).toBe(true);
+    expect(w.logs.some((line) => line.includes("projB"))).toBe(true);
     await w.dispose();
   });
 });

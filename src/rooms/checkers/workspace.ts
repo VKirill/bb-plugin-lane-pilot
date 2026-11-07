@@ -1,5 +1,6 @@
 import { jev, type JevSettings, type JudgeContext } from "@lane-pilot/jev";
 import { hostCommandJudgment } from "@lane-pilot/jev/judgments/host-command";
+import { bestEffort } from "@lane-pilot/kit";
 import { mapVerificationCwd } from "../tasks";
 import type { CommandRun, Subject, VerificationSession } from "./checkers";
 
@@ -21,14 +22,14 @@ const MAX_FILE_BYTES = 200_000;
  * from mistakes, not a ban on the agent. Shadow by default (the receipt records what Jev would have done); active, a
  * `stop` decision returns exit 78 and a readable reason instead of running. `review` runs and only marks the receipt.
  */
-export function guardShellPort(shell: ShellPort, ctx: () => JudgeContext | undefined): ShellPort {
+export function guardShellPort(shell: ShellPort, ctx: () => JudgeContext | undefined, log: (message: string) => void = console.warn): ShellPort {
   return {
     async run(cwd, command, timeoutSec) {
       const judge = jev();
       if (judge) {
         const c = ctx() ?? {};
         const settings = (c as { settings?: JevSettings }).settings;
-        const verdict = await judge.judge(hostCommandJudgment, { command, cwd, workspaceRoots: [cwd], task: "" }, c).catch(() => null);
+        const verdict = await bestEffort(log, `jev host_command ${command.slice(0, 120)}`, judge.judge(hostCommandJudgment, { command, cwd, workspaceRoots: [cwd], task: "" }, c), null);
         if (verdict?.by === "jev" && verdict.decision.action === "stop") {
           return { exitCode: 78, stdout: "", stderr: `stopped by jev guard.host_command: ${verdict.decision.reason}` };
         }
@@ -68,7 +69,7 @@ export async function openClone(shell: ShellPort, options: CloneOptions): Promis
   const work = `${options.scratch}/${options.name.replace(/[^A-Za-z0-9._-]/g, "_").slice(0, 60)}-${Date.now().toString(36)}`, dir = `${work}/clone`;
   const made = await shell.run("/", `mkdir -p ${quote(work)} && git clone -q --local --no-checkout ${quote(options.repo)} ${quote(dir)} && git -C ${quote(dir)} checkout -q --detach ${quote(options.baseSha)} && ${linkDependencies(options.repo, dir)}`, 900);
   if (made.exitCode !== 0) {
-    await shell.run("/", `rm -rf ${quote(work)}`, 120).catch(() => undefined);
+    await bestEffort(console.warn, `clone cleanup ${work}`, shell.run("/", `rm -rf ${quote(work)}`, 120), undefined);
     throw new Error(`clone failed: ${`${made.stdout}\n${made.stderr}`.trim().slice(-300)}`);
   }
   return {
@@ -91,6 +92,6 @@ export async function openClone(shell: ShellPort, options: CloneOptions): Promis
       }
       return runs;
     },
-    async close() { await shell.run("/", `rm -rf ${quote(work)}`, 300).catch(() => undefined); },
+    async close() { await bestEffort(console.warn, `clone cleanup ${work}`, shell.run("/", `rm -rf ${quote(work)}`, 300), undefined); },
   };
 }

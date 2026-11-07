@@ -2,6 +2,7 @@ import {
   judge, judgeModel, lintFindings, ownershipFindings, planFactFindings, planCriticPrompt, codeCriticPrompt, readCodeCritic, readPlanCritic, verificationFindings,
   type CommandRun, type ModelPort, type Subject, type VerificationSession, type Where,
 } from "./checkers";
+import { bestEffort } from "@lane-pilot/kit";
 import { plantAll, honestClaim } from "./mutators";
 import { buildScorecard, renderScorecard, type ResultRow, type Scorecard } from "./score";
 import { finishRun, saveRow, startRun, type CheckerDb, type StoredRow } from "./store";
@@ -153,7 +154,7 @@ export async function runScore(deps: ScoreDeps, options: ScoreOptions): Promise<
         log(`${defect.id}: ${[...caught].join(", ") || "no code checker caught it"}`);
       }
     } finally {
-      await session?.close().catch(() => undefined);
+      await bestEffort(log, "checker session close", session ? session.close() : Promise.resolve(), undefined);
     }
   }
   const state = stopped ? "stopped_budget" : "done";

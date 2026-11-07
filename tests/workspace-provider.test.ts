@@ -1,5 +1,5 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { PrototypeConfig, TaskV2 } from "../src/rooms/contracts";
 import { HARNESS_VERSION, createAttempt, createRun, createTask, getAttempt, openDatabase, setRunThread } from "../src/rooms/plugin-db";
 import { LANE_WORKTREE_PROVIDER_ID, LANE_WORKTREE_RETIRE_GRACE_MS, laneWorktreeInputs, registerLaneWorktreeProvider } from "../src/rooms/native-agent/server/environment-provider";
@@ -213,6 +213,12 @@ describe("the provider gate", () => {
     expect(await gate.usable("h2")).toBe(true);
   });
 
+  it("lets a store read failure propagate instead of reading it as a clean record", async () => {
+    const kv = { get: async () => { throw new Error("store_read_failed"); }, set: async () => undefined };
+    const gate = createProviderGate({ kv: kv as never, serialized: (work) => work(), version: "1", warn: () => undefined });
+    await expect(gate.usable("h")).rejects.toThrow("store_read_failed");
+  });
+
   it("lists the provider only where this BB offers it", async () => {
     const rows = [{ id: "git-worktree" }, { id: LANE_WORKTREE_PROVIDER_ID, availability: { status: "available" } }];
     expect(await providerListed(async () => rows, LANE_WORKTREE_PROVIDER_ID, "P", "h")).toBe(true);
@@ -249,6 +255,16 @@ describe("waiting for the provider's environment", () => {
       getEnvironment: async () => (++asks < 3 ? { status: "provisioning" } : { status: "ready", path: worktree }), ...clock() });
     expect(result).toEqual({ ok: true, environmentId: "env-1" });
     expect(asks).toBe(3);
+  });
+  it("logs a probe that fails every tick once per wait, not once per tick", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      const result = await waitProviderEnvironment({ threadId: "thr", expectedPath: worktree,
+        getThread: async () => { throw new Error("host offline"); }, getEnvironment: async () => ({}),
+        ...clock(), timeoutMs: 5_000, intervalMs: 500 });
+      expect(result).toEqual({ ok: false, reason: "environment_timeout:unbound" });
+      expect(warn).toHaveBeenCalledTimes(2);
+    } finally { warn.mockRestore(); }
   });
 });
 
