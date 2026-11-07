@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { WorkflowEngine, loadWorkflowStore, registerPureActions, setRouterModel } from "@lane-pilot/workflow-engine";
 import { createRun, openDatabase, setRunThread } from "../src/rooms/plugin-db";
+import { builtinWorkflow } from "../src/rooms/workflow/builtin";
 import { mountErrands } from "../src/rooms/qa/server/errands";
 
 /**
@@ -54,7 +55,7 @@ function world(catalog: Array<Record<string, unknown>> = [stub({ id: "invoice-se
   setRunThread(db, RUN, PM);
   const host = { call: async () => ({ hostId: "host-1", exitCode: 0, stdout: "", stderr: "" }) };
   const secrets = { check: async () => ({ missing: [], denied: [], wrongKind: [], unavailable: false, catalog: [] }), record: async () => undefined };
-  const engine = new WorkflowEngine({ db, harnessVersion: "test", resolveWorkflow: () => null });
+  const engine = new WorkflowEngine({ db, harnessVersion: "test", resolveWorkflow: (id) => builtinWorkflow(id) });
   registerPureActions(engine);
   // The stub graph's one action, like the api-recon "agent" executor of the errand tests: started, never answering.
   engine.register("noop", { reentrant: true, run: () => new Promise(() => undefined) } as never);

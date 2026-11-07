@@ -123,7 +123,7 @@ export type ListedAgentProfile = {
   model?: string;
   effort?: string;
   domain?: string;
-  machineAffinity?: "mac-mini" | "ovh" | "windows" | "any";
+  machineAffinity?: string;
   coreSkills?: string[];
   skillSections?: string[];
   deliverables?: string[];

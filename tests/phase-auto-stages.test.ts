@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { builtinWorkflow } from "../src/rooms/workflow/builtin";
 import { MACHINE_STAGE_FAILURE, AUTO_LIFETIME_TRIES, AUTO_TRIES, autoDue, contextDoc, createAutoStages, planItems } from "../src/rooms/phase/server/auto-stages";
 import type { Phase, PhaseRecord } from "../src/rooms/phase/logic";
 
@@ -50,7 +51,7 @@ describe("the machine's pass", () => {
     const booked: string[] = [];
     const calls: string[] = [];
     const runs = new Map<string, { status: string; output: Record<string, unknown> | null }>();
-    const engine: Record<string, unknown> = {};
+    const engine: Record<string, unknown> = { resolveWorkflow: (id: string) => builtinWorkflow(id) };
     const auto = createAutoStages({ log: () => undefined }, {
       workflowEngine: Object.assign(engine, { start: (input: { workflow: { id: string }; mode?: string }) => { const runId = `wfrun_${runs.size + 1}`; calls.push(`start ${input.workflow.id}${input.mode ? ` mode ${input.mode}` : ""}`); runs.set(runId, { status: "running", output: null }); return { runId, created: true, done: new Promise(() => undefined) }; },
         get: (runId: string) => ({ runId, reason: null, error: null, failedNode: null, waiting: [], stopped: false, ...runs.get(runId)! }) }) as never,
@@ -340,7 +341,7 @@ describe("a replan merges into the pieces that were", () => {
     let planned: Array<{ id: string; wave: number; covers?: string[]; task: Record<string, unknown> }> = [];
     const runs = new Map<string, { status: string; output: Record<string, unknown> | null }>();
     const auto = createAutoStages({ log: () => undefined }, {
-      workflowEngine: { start: () => { runs.set("wfrun_1", { status: "running", output: null }); return { runId: "wfrun_1", created: true, done: new Promise(() => undefined) }; },
+      workflowEngine: { resolveWorkflow: (id: string) => builtinWorkflow(id), start: () => { runs.set("wfrun_1", { status: "running", output: null }); return { runId: "wfrun_1", created: true, done: new Promise(() => undefined) }; },
         get: (runId: string) => ({ runId, reason: null, error: null, failedNode: null, waiting: [], stopped: false, ...runs.get(runId)! }) } as never,
     }, {
       exhausted: async () => undefined,
@@ -361,7 +362,7 @@ describe("the machine's return after a failed verdict", () => {
   it("returns the phase to planning through the gates and notes what to plan", async () => {
     let phase = phaseAt("verification", { context: { docs: [], sha: "c", signedAt: 1 }, verification: { verdict: { state: "failed", detail: "goal audit: unmet: [p1]", inputSha: "x", at: 1, mainSha: null } } } as never);
     const returns: string[] = [];
-    const auto = createAutoStages({ log: () => undefined }, { workflowEngine: {} as never }, {
+    const auto = createAutoStages({ log: () => undefined }, { workflowEngine: { resolveWorkflow: (id: string) => builtinWorkflow(id) } as never }, {
       exhausted: async () => undefined,
       api: { context: async () => phase, plan: () => phase, planCheck: async () => phase, question: () => phase, waveReview: () => phase, goalAudit: () => phase, lessons: () => phase, drawing: async () => phase,
         returnTo: (input) => { returns.push(`${input.to}: ${input.note}`); phase = { ...phase, stage: input.to } as Phase; return phase; } },
@@ -380,7 +381,7 @@ describe("signing again after a return", () => {
     let phase = phaseAt("discussion", { signedBefore: { docs: ["CONTEXT.md"], risks: { feasibility: "t" } } });
     const signed: string[][] = [];
     let idle = false;
-    const auto = create({ log: () => undefined }, { workflowEngine: {} as never }, {
+    const auto = create({ log: () => undefined }, { workflowEngine: { resolveWorkflow: (id: string) => builtinWorkflow(id) } as never }, {
       exhausted: async () => undefined,
       api: { context: async (input) => { signed.push(input.docs); phase = phaseAt("planning", { ...phase.record, context: { docs: [], sha: "c", signedAt: 1 } }); return phase; },
         plan: () => phase, planCheck: async () => phase, question: () => phase, waveReview: () => phase, goalAudit: () => phase, lessons: () => phase, drawing: async () => phase, returnTo: () => phase },

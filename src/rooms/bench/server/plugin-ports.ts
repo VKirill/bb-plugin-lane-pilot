@@ -27,7 +27,7 @@ import type { WriterHostApi } from "../../writer/server/writer-host";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {
-  workflowLibrary: import("../../platform/server").WorkflowLibraryApi;
+  workflowLibrary?: import("../../platform/server").WorkflowLibraryApi;
   stageHelperSettings: StageHelperSettings;
   activate: ActivationApi["activate"];
   dispatchWriter: WriterDispatchApi["dispatchWriter"];
@@ -158,7 +158,7 @@ export function createPluginBench(ctx: ServerCore, services: Services): BenchApi
     },
   };
   return createBench({
-    issueQuickModelCalls: services.workflowLibrary.issueQuickModelCalls,
+    issueQuickModelCalls: services.workflowLibrary?.issueQuickModelCalls,
     db: db as never, kv: bb.storage.kv as never, host: hostPort, pipeline: benchPipeline(ctx, services),
     projectNames: async () => new Map((await listProjects(bb)).map((row) => [row.id, row.name])),
     isSandboxName: isSandboxProjectName, log: ctx.log,

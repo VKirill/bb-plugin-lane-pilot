@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { stageHelperSettings } from "../src/rooms/settings/server/stage-settings";
 import { readFileSync } from "node:fs";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { WorkflowEngine, registerPureActions } from "@lane-pilot/workflow-engine";
@@ -54,7 +55,7 @@ function world(options: { pm?: boolean; output?: string; gate?: (names: string[]
     // The api-recon graph's helper step (an agent node): started, never answering; the tests only read where the errand went.
     engine.register("agent", { reentrant: true, run: () => new Promise(() => undefined) } as never);
     const ctx = ctxFor(instanceBb);
-    const services = { workflowEngine: engine } as never;
+    const services = { workflowEngine: engine, stageHelperSettings } as never;
     const errands = mountErrands(ctx, services);
     const call = async (name: string, params: Record<string, unknown>) =>
       JSON.parse(String(await instanceHarness.behavior.callAgentTool(name, params, { threadId: PM, projectId: PROJECT }))) as Record<string, any>;

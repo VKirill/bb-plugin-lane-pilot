@@ -11,14 +11,9 @@ import { createDraftStore } from "../../storage";
 import type { DraftRow, DraftStore } from "../../storage";
 import { runDraftTest, testCasesOf } from "@lane-pilot/workflow-engine";
 import type { DraftTestResult } from "@lane-pilot/workflow-engine";
-<<<<<<< HEAD
 import { builtinWorkflow } from "../builtin";
 import { casWriteWorkflowFile } from "../../storage";
 import { sha256Hex } from "@lane-pilot/kit";
-=======
-;
-import { casWriteWorkflowFile, sha256Text } from "../../storage";
->>>>>>> f99e1d3f (untangle G5 (review fixes): engine-scoped lp-task provider, platform de-dumped)
 import { executorKey, lowerWorkflow } from "@lane-pilot/workflow-engine";
 import type { Workflow } from "@lane-pilot/workflow-engine";
 import { createStatusResolver } from "../../storage";
@@ -38,7 +33,6 @@ import type { ServerCore } from "../../contracts/server";
 import type { DocsNightlyApi } from "../../docs/server/docs-nightly";
 import type { WorkflowEngineApi } from "./workflow";
 import type { WorkflowTriggersApi } from "./workflow-triggers-live";
-import {builtinWorkflow} from "../builtin";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {

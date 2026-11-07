@@ -4,6 +4,7 @@ import { redactKnown } from "@lane-pilot/kit";
 import { z } from "zod";
 
 import { createWorkflowLibrary, SCHEDULE_RUN_KEY_PREFIX } from "../../workflow/server";
+import { builtinWorkflows } from "../../workflow";
 import type { ChainRuntime } from "../../contracts/server";
 import { withUsage } from "../../usage/server";
 import { fenceOutside, findThreadsByMetadata, keyedSpawnSupported, registerObservedTool, spawnTextId } from "../../platform/server";
@@ -153,7 +154,7 @@ export function mountErrandGraph(ctx: ServerCore, services: Services, core: Erra
   const library = createWorkflowLibrary(ctx, services);
   async function offeredCatalog(projectId: string): Promise<Workflow[]> {
     try { return (await library.loadStore(projectId)).store.list().map((item) => item.workflow); }
-    catch { return services.workflowCatalog?.store ? await services.workflowCatalog.store().then((store) => store.list().map((item) => item.workflow)).catch(() => services.workflowCatalog.builtins()) : services.workflowCatalog.builtins(); }
+    catch { return services.workflowCatalog?.store ? await services.workflowCatalog.store().then((store) => store.list().map((item) => item.workflow)).catch(() => services.workflowCatalog!.builtins()) : (services.workflowCatalog?.builtins() ?? builtinWorkflows()); }
   }
 
   /**
