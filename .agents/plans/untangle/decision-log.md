@@ -113,3 +113,9 @@ R1≈G1/G4 (done / in review), R2≈G5/G7c (after F3), R3≈G3+G6 (running), R5�
 New streams: R6+R9 hardcodes + duplicates → thr_pv7gnv9vqy (LongCat 2.5); R8 swallowed errors → thr_kzf5nymycm (SWE-2 Flash high).
 Queued: R4 table ownership + database.ts split (after F3/G47 — same file), R7 micro-room merge (last: moves directories), R10 substring tests + 423 todos (last: tests are the safety net).
 - G4+G7a merged ad57129d (review Gemini: 225 RPC + 79 host methods, schemas identical; contracts out 0 honest incl. type edges). Kept: anamnesis casts host.call to its own slice — tsc still rejects a wrong method name; the typed alternative (generic ServerCore<THost>) would ripple through every ServerCore user for one call site. Graph 90/68/54/721.
+
+## 2026-11-07 — contracts holds no behaviour (G7b correction)
+G7b started moving the errand episode recorder, memory-eval SQL loader and lead-road IO into `contracts`. Rejected: `contracts` keeps types, constants and pure value helpers only. Code with SQL, fs, `node:` modules, host calls, settings reads or state stays with its owner and reaches callers through narrow `Services` (owner `*Api` type, wired in core), or goes to `platform` when it has no domain owner. Check: no `node:`/`better-sqlite3`/`fs` import under src/rooms/contracts beyond base.
+
+## 2026-11-07 — S and G3+G6 merged
+main 12fe55a4: largestScc 45, mutualPairs 59, edges 719 (from 46/72/723). G5 (writer/workflow ports) started on swe-2-high from this base.
