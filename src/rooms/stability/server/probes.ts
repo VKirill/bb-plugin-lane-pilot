@@ -3,7 +3,14 @@ import { fullAccessSpawn } from "../../platform/server";
 import { id, stringAt, valueAt } from "@lane-pilot/kit";
 import { createHelperProbe } from "../../native-agent/server/helper-probe";
 import type { ServerCore } from "../../contracts/server";
-import type { Services } from "../../platform/server";
+
+import type { ReconcileApi } from "./reconcile";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  reconcileAttemptThread: ReconcileApi["reconcileAttemptThread"];
+}
+
 
 export function createProbes(ctx: ServerCore, services: Services) {
   const { bb, db } = ctx;
@@ -139,3 +146,5 @@ export function createProbes(ctx: ServerCore, services: Services) {
 
   return { startCancelProbe, startProviderErrorProbe, startAmbiguousProbe, ...createHelperProbe(ctx) };
 }
+
+export type ProbesApi = ReturnType<typeof createProbes>;

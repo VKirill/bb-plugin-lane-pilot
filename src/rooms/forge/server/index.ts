@@ -1,10 +1,18 @@
 import { z } from "zod";
-import { registerObservedTool, type Services } from "../../platform/server";
+import { registerObservedTool } from "../../platform/server";
 import { ToolError, type ServerCore } from "../../contracts/server";
 import { hostContract } from "../../contracts";
 import { getRun, getRunWriterHost, loadProjectSettings } from "../../storage";
 import { isWholeConsent, ownerWordsOn } from "../../tasks";
 import { FORGE_KINDS, NAME, creatorBrief, draftFile, draftFolder, enabledPath, lintDraft, sha256, type ForgeKind, type ForgeReceipt } from "../logic";
+
+import type { WriterDispatchApi } from "../../writer/server/dispatch";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  dispatchWriter: WriterDispatchApi["dispatchWriter"];
+  readWriterWorkspaceFile: WriterDispatchApi["readWriterWorkspaceFile"];
+}
 
 const RECEIPTS = "lp.forge.receipts";
 

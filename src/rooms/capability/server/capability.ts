@@ -1,10 +1,19 @@
 import { breakerKey } from "@lane-pilot/resilience";
 import { claimDailySchedule } from "../../storage";
-import { scheduleIsolated, type Services } from "../../platform/server";
+import { scheduleIsolated } from "../../platform/server";
 import { type ServerCore } from "../../contracts/server";
 import { SANDBOX_PROJECT_ID } from "../../stability/server";
 import { CAPABILITIES, adapterVersions, capabilityTable, dueProbes, probeSetupFailed, providersInUse } from "../logic";
 import { listReceipts, saveReceipt } from "../store";
+
+import type { ProbesApi } from "../../stability/server/probes";
+import type { WriterStateApi } from "../../writer/server/state";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  providerBreaker: WriterStateApi["providerBreaker"];
+  startHelperProbe: ProbesApi["startHelperProbe"];
+}
 
 /**
  * The probing service of the capability table (SMA D2-7). Every hour it lists the providers in use (all projects' settings and the three

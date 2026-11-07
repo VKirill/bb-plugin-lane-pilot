@@ -6,7 +6,7 @@ import plugin from "../server";
 import { createRun, createTask, openDatabase, saveProjectSetting, setRunThread } from "../src/rooms/plugin-db";
 import { IntegrationGateRunner } from "../src/rooms/verification/server/integration-gate";
 import type { ServerCore } from "../src/rooms/contracts/server";
-import type { Services } from "../src/rooms/platform/server";
+import type { Services } from "../server";
 import { roomFaceFiles } from "./support/room-files";
 
 // B2 / bug 2 (review 2026-10-07): the integration gate ran its command, `git bisect` and file reads on the HUB at the

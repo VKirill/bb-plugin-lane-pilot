@@ -15,7 +15,7 @@ import type { WorkflowStore } from "../../storage";
 import { bindGraphStepLookup, fenceOutside, registerObservedTool } from "../../platform/server";
 import { ToolError } from "../../contracts/server";
 import type { ServerCore } from "../../contracts/server";
-import type { Services } from "../../platform/server";
+
 import { jev } from "@lane-pilot/jev";
 import { createJevRouterModel } from "../route-model";
 import { createRouterModel } from "./workflow-router-model";
@@ -24,6 +24,22 @@ import { realDeps } from "./workflow-architect";
 import { createWorkflowLibrary } from "./workflow-library";
 import { createWorkflowPreflight } from "./workflow-preflight";
 import type { ChainRuntime } from "./workflow-runtime";
+
+import type { PhaseIntake } from "../../phase/server/intake";
+import type { WorkflowEngineApi } from "./workflow";
+
+import type { DocsNightlyApi } from "../../docs/server/docs-nightly";
+
+import type { WorkflowTriggersApi } from "./workflow-triggers-live";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  docsPlaces: DocsNightlyApi["docsPlaces"];
+  phaseIntake: PhaseIntake;
+  workflowCatalog: WorkflowEngineApi["workflowCatalog"];
+  workflowEngine: WorkflowEngineApi["workflowEngine"];
+  workflowTriggers: WorkflowTriggersApi["workflowTriggers"];
+}
 
 /**
  * The PM's three workflow tools: route a request to a ready workflow (W4), start it, read its progress. The handlers take

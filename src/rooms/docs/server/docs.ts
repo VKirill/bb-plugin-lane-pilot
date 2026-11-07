@@ -15,7 +15,16 @@ import { recordStage } from "../../runs/server";
 import { stringAt, valueAt } from "@lane-pilot/kit";
 import { observeStageChild } from "@lane-pilot/thread-observe";
 import type { ServerCore } from "../../contracts/server";
-import type { Services } from "../../platform/server";
+
+import type { DocsNightlyApi } from "./docs-nightly";
+import type { StageChildrenApi } from "../../qa/server/children";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  docsVerdict: DocsNightlyApi["docsVerdict"];
+  reconcileDocsChild: StageChildrenApi["reconcileDocsChild"];
+}
+
 
 export function createDocsStage(ctx: ServerCore, services: Services) {
   const { acceptedTaskWorkspace, bb, configForRun, db, host, workspaceExecutionEnvironment } = ctx;
@@ -215,3 +224,5 @@ export function createDocsStage(ctx: ServerCore, services: Services) {
 
   return { runDocsMaintenance };
 }
+
+export type DocsStageApi = ReturnType<typeof createDocsStage>;

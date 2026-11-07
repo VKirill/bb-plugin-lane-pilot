@@ -5,7 +5,14 @@ import type { LoopTask, OpenShape } from "../../tasks";
 import { taskFamily } from "../../runs";
 import { checkoutBase, getRun, getTask, listOpenAttempts, taskBasePath } from "../../storage";
 import type { LanePilotDatabase } from "../../storage";
-import type { Services } from "../../platform/server";
+
+import type { WallApi } from "../../wall/service";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  wall: WallApi;
+}
+
 
 /** The shape the loop stopper reads of a task contract; null for a contract that does not parse. */
 export function loopTaskOf(id: string, createdAt: number, contract: unknown, attempts: LoopTask["attempts"]): LoopTask | null {

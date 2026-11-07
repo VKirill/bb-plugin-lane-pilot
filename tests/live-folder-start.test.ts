@@ -4,7 +4,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import type { PrototypeConfig, TaskV2 } from "../src/rooms/contracts";
 import { createAttempt, createRun, createTask, listStageReceipts, openDatabase, saveProjectSetting, savePrototypeConfig, saveTaskPlan, setAttemptWorkspace, setRunThread, transitionAttempt } from "../src/rooms/plugin-db";
 import { createCore } from "../src/rooms/core/server/core";
-import type { Services } from "../src/rooms/platform/server";
+import type { Services } from "../server";
 import { recordStage, reopenWriterStages } from "../src/rooms/runs/server/stage-records";
 import { createWriterStart } from "../src/rooms/writer/server/start";
 import { LIVE_FOLDER_REASON } from "../src/rooms/writer/live-folder";

@@ -1,9 +1,16 @@
 import { builtinWorkflow } from "../../workflow";
-import type { Services } from "../../platform/server";
+
 import type { ServerCore } from "../../contracts/server";
 import { threatGap } from "../stages";
 import { PLAN_WORD_GAP, INDEPENDENCE_GAP, phaseFolder, planGate, sha256, type Phase, type PhaseRecord, type PlanItem, type RiskKey, candidateOn } from "../logic";
 import packageJson from "../../../../package.json";
+
+import type { WorkflowEngineApi } from "../../workflow/server/workflow";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  workflowEngine: WorkflowEngineApi["workflowEngine"];
+}
 
 /**
  * The machine drives the train (Matvey #31766, #31782): at a stage that needs work, the driver starts that stage's workflow itself —

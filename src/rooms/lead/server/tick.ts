@@ -4,7 +4,7 @@ import type { ThreadToolTraceEntry } from "@lane-pilot/harness-core";
 import type { JevSettings } from "@lane-pilot/jev";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
 import type { ChainRuntime } from "../../workflow/server";
-import type { Services } from "../../platform/server";
+
 import type { ServerCore } from "../../contracts/server";
 import { closeOwnerItem, collectOwnerWaiting, isSandboxProject, loadPushConfig, postOwnerItem, rpcLine, type OwnerAction, type OwnerEvidence } from "../../owner-waiting";
 import { errandStem, errandTitle, routeConfidence } from "../../errands";
@@ -21,6 +21,23 @@ import { createLeadSchedule, schedulePayloadProblem } from "./lead-schedule";
 import { addRoad, decideRoad, getRoad, listRoad, proposeRoad, roadCounts, roadPayload, syncRoadProposal, type RoadEvidence, type RoadRow } from "./road";
 import { closeTick as closeTickRow, dayStart, listTicks, patchTick, spentSince } from "./tick-store";
 import { attachNearest, type FormHint, type GroupSignals, type NearestUnit } from "./nearest";
+
+import type { PhaseIntake } from "../../phase/server/intake";
+import type { WorkflowEngineApi } from "../../workflow/server/workflow";
+import type { WorkflowTriggersApi } from "../../workflow/server/workflow-triggers-live";
+
+import type { ScheduleService } from "../../schedule/server/schedule-service";
+import type { RuleScanApi } from "../../self-repair/server/rule-scan";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  phaseIntake: PhaseIntake;
+  ruleScan: RuleScanApi;
+  schedules: ScheduleService;
+  workflowCatalog: WorkflowEngineApi["workflowCatalog"];
+  workflowEngine: WorkflowEngineApi["workflowEngine"];
+  workflowTriggers: WorkflowTriggersApi["workflowTriggers"];
+}
 
 /**
  * The code steps of the lead's tick (workflows/lead-tick.json, roadmap §2.3). `lp.lead_state` reads the hub and writes the agent's brief:

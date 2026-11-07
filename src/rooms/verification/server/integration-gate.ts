@@ -4,7 +4,7 @@ import { getRun, getRunSettingsScopes, getTask, listStageReceipts, loadProjectSe
 import { recordGateEvaluation } from "../../runs/server/stage-records";
 import { stringAt } from "@lane-pilot/kit";
 import type { ServerCore } from "../../contracts/server";
-import type { Services } from "../../platform/server";
+
 import { isEnvironmentCheckFailure } from "../../runs";
 import { isMainfixTask, readCheckRun } from "../../tasks";
 import { gateLabel, gateResolverFor, type ResolvedGate } from "./gate-detect";
@@ -16,6 +16,13 @@ import { cacheHitsNote, extractCacheHits, extractFailingFiles, extractFailingTes
 import { flakyEvidence, outputTail, readingFrom } from "../machine-pressure";
 import type { GateAttributeResult } from "../integration-gate-host";
 import { join } from "node:path";
+
+import type { WriterDispatchApi } from "../../writer/server/dispatch";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  dispatchWriter: WriterDispatchApi["dispatchWriter"];
+}
 
 export type GateWhen = "queue_drained" | "every_n";
 

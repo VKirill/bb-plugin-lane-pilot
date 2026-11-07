@@ -1,7 +1,13 @@
 import type { LanePilotDatabase } from "../../storage";
 import type { RunRow } from "../../storage";
 import type { ServerCore } from "../../contracts/server";
-import type { Services } from "../../platform/server";
+
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+
+}
+
 
 /**
  * What the node executors of a chain run (agent, action, human, lp-task) need from the PM chat that started it. It is the

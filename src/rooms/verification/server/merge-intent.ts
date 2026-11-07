@@ -1,8 +1,17 @@
 import { countAttempts, getAttempt, getRun, getTask, getTaskPlan, transitionAttempt } from "../../storage";
 import { closeWriterStages, recordGateEvaluation } from "../../runs/server/stage-records";
 import type { ServerCore } from "../../contracts/server";
-import type { Services } from "../../platform/server";
+
 import { runOnHost } from "@lane-pilot/host-calls";
+
+import type { WorkflowEngineApi } from "../../workflow/server/workflow";
+import type { WriterStateApi } from "../../writer/server/state";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  activeWriterTasks: WriterStateApi["activeWriterTasks"];
+  startAfterAcceptance: WorkflowEngineApi["startAfterAcceptance"];
+}
 
 /**
  * The delivery record of a merge (Firstmate's delivery registry, the write-ahead log of a database). The merge, the

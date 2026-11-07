@@ -8,7 +8,7 @@ import { createRun, createTask, createAttempt, openDatabase, saveProjectSetting,
 import { runCommand } from "../../src/rooms/host-worker/host-handlers";
 import { createCore } from "../../src/rooms/core/server/core";
 import { modelCatalogOf } from "../../src/rooms/platform/server/model-catalog-reader";
-import type { Services } from "../../src/rooms/platform/server";
+import type { Services } from "../../server";
 import { createWorkflowAgents } from "../../src/rooms/workflow/server/workflow-agent";
 import { chainRuntimeFor, humanOptions, humanOutput, registerChainExecutors } from "../../src/rooms/workflow/server/workflow-executors";
 import { answerWorkflowQuestion } from "../../src/rooms/workflow/server/workflow-answer";

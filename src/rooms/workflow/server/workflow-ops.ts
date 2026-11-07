@@ -5,9 +5,19 @@ import { runDraftTest, testCasesOf } from "@lane-pilot/workflow-engine";
 import type { DraftTestResult } from "@lane-pilot/workflow-engine";
 import { createStatusResolver } from "../../storage";
 import type { ServerCore } from "../../contracts/server";
-import type { Services } from "../../platform/server";
+
 import type { createWorkflowLibrary } from "./workflow-library";
 import type { WorkflowPreflight } from "./workflow-preflight";
+
+import type { WorkflowEngineApi } from "./workflow";
+import type { WorkflowTriggersApi } from "./workflow-triggers-live";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  workflowCatalog: WorkflowEngineApi["workflowCatalog"];
+  workflowEngine: WorkflowEngineApi["workflowEngine"];
+  workflowTriggers: WorkflowTriggersApi["workflowTriggers"];
+}
 
 type Output<K extends keyof typeof rpcContract> = z.infer<(typeof rpcContract)[K]["output"]>;
 type TrialCase = z.infer<typeof workflowTrialCaseSchema>;

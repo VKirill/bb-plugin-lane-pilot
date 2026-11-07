@@ -10,7 +10,7 @@ import { attributeGateOnHost } from "../../src/rooms/verification/integration-ga
 import { createTask, openDatabase, saveProjectSetting } from "../../src/rooms/plugin-db";
 import * as hostHandlers from "../../src/rooms/host-worker/host-handlers";
 import type { ServerCore } from "../../src/rooms/contracts/server";
-import type { Services } from "../../src/rooms/platform/server";
+import type { Services } from "../../server";
 
 /**
  * Live 2026-10-09 (SelfyStudio): the gate blamed tasks whose diff lay in other packages (scene-compile-route-log-child-sanitize

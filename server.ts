@@ -79,6 +79,27 @@ import { installThreadSignals } from "@lane-pilot/thread-observe";
 import { mountLifecycleEvents } from "./src/rooms/core/server/lifecycle-events";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 
+import type { ActivationApi } from "./src/rooms/native-agent/server/activation";
+import type { DocsNightlyApi } from "./src/rooms/docs/server/docs-nightly";
+import type { ProbesApi } from "./src/rooms/stability/server/probes";
+import type { ReconcileApi } from "./src/rooms/stability/server/reconcile";
+import type { StabilityApi } from "./src/rooms/stability/server/stability";
+import type { StageChildrenApi } from "./src/rooms/qa/server/children";
+import type { DocsStageApi } from "./src/rooms/docs/server/docs";
+import type { MemoryStageApi } from "./src/rooms/memory/server/memory";
+import type { NightStagesApi } from "./src/rooms/night/server/night";
+import type { ProjectLifeStageApi } from "./src/rooms/project-life/server/project-life";
+import type { QaStagesApi } from "./src/rooms/qa/server/qa";
+import type { WriterHostApi } from "./src/rooms/writer/server/writer-host";
+import type { WriterStateApi } from "./src/rooms/writer/server/state";
+import type { WriterSpawnApi } from "./src/rooms/writer/server/spawn";
+import type { WriterVerifyApi } from "./src/rooms/writer/server/verify";
+import type { WriterFinishApi } from "./src/rooms/writer/server/finish";
+import type { WriterStartApi } from "./src/rooms/writer/server/start";
+import type { WriterDispatchApi } from "./src/rooms/writer/server/dispatch";
+import type { WorkflowEngineApi } from "./src/rooms/workflow/server/workflow";
+import type { WorkflowTriggersApi } from "./src/rooms/workflow/server/workflow-triggers-live";
+import type { MemoryProbeApi } from "./src/rooms/memory-probe/server/memory-probe";
 import type { CouncilApi } from "./src/rooms/council/server";
 import type { ErrandsApi } from "./src/rooms/qa/server";
 import type { ScheduleService } from "./src/rooms/schedule/server";
@@ -105,26 +126,6 @@ import type { WorldApi } from "./src/rooms/world/server";
 import type { Canary } from "./src/rooms/stability/server";
 import type { MemoryConflictsApi } from "./src/rooms/memory/server";
 import type { PromotionServiceApi } from "./src/rooms/rule-forms";
-
-type ActivationApi = ReturnType<typeof createActivation>;
-type DocsNightlyApi = ReturnType<typeof createDocsNightly>;
-type ProbesApi = ReturnType<typeof createProbes>;
-type ReconcileApi = ReturnType<typeof createReconcile>;
-type StageChildrenApi = ReturnType<typeof createStageChildren>;
-type DocsStageApi = ReturnType<typeof createDocsStage>;
-type MemoryStageApi = ReturnType<typeof createMemoryStage>;
-type NightStagesApi = ReturnType<typeof createNightStages>;
-type ProjectLifeStageApi = ReturnType<typeof createProjectLifeStage>;
-type QaStagesApi = ReturnType<typeof createQaStages>;
-type WriterHostApi = ReturnType<typeof createWriterHost>;
-type WriterStateApi = ReturnType<typeof createWriterState>;
-type WriterSpawnApi = ReturnType<typeof createWriterSpawn>;
-type WriterVerifyApi = ReturnType<typeof createWriterVerify>;
-type WriterFinishApi = ReturnType<typeof createWriterFinish>;
-type WriterStartApi = ReturnType<typeof createWriterStart>;
-type WriterDispatchApi = ReturnType<typeof createWriterDispatch>;
-type WorkflowEngineApi = ReturnType<typeof createWorkflowEngine>;
-type WorkflowTriggersApi = ReturnType<typeof createWorkflowTriggersService>;
 
 /** Every function one server module offers another; filled once all modules exist, read at call time. */
 export interface Services {
@@ -217,11 +218,11 @@ export interface Services {
   startCancelProbe: ProbesApi["startCancelProbe"];
   startProviderErrorProbe: ProbesApi["startProviderErrorProbe"];
   startHelperProbe: ProbesApi["startHelperProbe"];
-  memoryProbe: ReturnType<typeof createMemoryProbe>;
+  memoryProbe: MemoryProbeApi;
   /** Memory notes that disagree: held out of every brief until a person settles them (src/rooms/memory/server/memory-conflicts.ts). */
   memoryConflicts: MemoryConflictsApi;
   startWriterTask: WriterStartApi["startWriterTask"];
-  stability: ReturnType<typeof createStability>["stability"];
+  stability: StabilityApi;
   validateWriterResult: WriterVerifyApi["validateWriterResult"];
   waitWriter: WriterDispatchApi["waitWriter"];
   workspaceDirt: WriterSpawnApi["workspaceDirt"];

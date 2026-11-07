@@ -20,11 +20,29 @@ import type { CatalogEntry } from "../../secrets/server";
 import { detectRepoEdits, gitRepoStatus } from "../../verification/server";
 import type { ServerCore } from "../../contracts/server";
 import { runBrowserStep } from "./browser-graphs";
-import type { Services } from "../../platform/server";
+
 import { mountErrandGraph } from "./errand-graph";
 import { errandRoleFor } from "../../schedule";
 import type { ErrandRunStart } from "./errand-graph";
 import type { ExtraAccess } from "../../native-agent";
+
+
+import type { WorkflowEngineApi } from "../../workflow/server/workflow";
+
+import type { RegressionApi } from "../../baseline/server/regress";
+import type { DocsNightlyApi } from "../../docs/server/docs-nightly";
+
+import type { WriterStartApi } from "../../writer/server/start";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  docsPlaces: DocsNightlyApi["docsPlaces"];
+  regression: RegressionApi;
+  startAfterAcceptance: WorkflowEngineApi["startAfterAcceptance"];
+  startWriterTask: WriterStartApi["startWriterTask"];
+  workflowCatalog: WorkflowEngineApi["workflowCatalog"];
+  workflowEngine: WorkflowEngineApi["workflowEngine"];
+}
 
 const WAIT_STEP_MS = 5_000;
 

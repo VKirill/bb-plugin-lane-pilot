@@ -3,7 +3,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { createRun, openDatabase } from "../src/rooms/plugin-db";
 import { sessionMemoryRpc } from "../src/rooms/memory/server/session-memory";
 import type { ServerCore } from "../src/rooms/contracts/server";
-import type { Services } from "../src/rooms/platform/server";
+import type { Services } from "../server";
 import { isSharedScope, resolveProjectKind, searchMemoryRecords, sharedScope, storeMemoryRecords } from "../packages/memory-core/src";
 
 const setup = (scope: string[], content: string) => {

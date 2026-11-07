@@ -10,8 +10,15 @@ import type { ServerCore } from "../../contracts/server";
 import { storeNativeSelection } from "../../native-agent/server";
 import { fullAccessSpawn, modelCatalogOf, resolveSpawnModel, spawnUsageOf, warmSpawnUsage } from "../../platform/server";
 import { lanePilotProjectOrNotice } from "../../self-repair/server";
-import type { Services } from "../../platform/server";
+
 import { stringAt } from "@lane-pilot/kit";
+
+import type { DocsNightlyApi } from "../../docs/server/docs-nightly";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  docsPlaces: DocsNightlyApi["docsPlaces"];
+}
 
 /** The architect runs on the `workflow-architect` row of the role table (Claude Opus 5.5, high, unless the owner changed it), whatever the owner's remembered chat choice says. */
 const architectExecution = async (ctx: ServerCore, projectId: string) => {

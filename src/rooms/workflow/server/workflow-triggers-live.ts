@@ -1,9 +1,23 @@
 import type { ServerCore } from "../../contracts/server";
-import type { Services } from "../../platform/server";
+
 import { realDeps } from "./workflow-architect";
 import { createWorkflowLibrary } from "./workflow-library";
 import { createWorkflowPreflight } from "./workflow-preflight";
 import { automationsOverRpc, createWorkflowTriggers } from "./workflow-triggers";
+
+
+import type { DocsNightlyApi } from "../../docs/server/docs-nightly";
+import type { WorkflowEngineApi } from "./workflow";
+import type { WriterDispatchApi } from "../../writer/server/dispatch";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  dispatchWriter: WriterDispatchApi["dispatchWriter"];
+  docsPlaces: DocsNightlyApi["docsPlaces"];
+  workflowCatalog: WorkflowEngineApi["workflowCatalog"];
+  workflowEngine: WorkflowEngineApi["workflowEngine"];
+  workflowTriggers: WorkflowTriggersApi["workflowTriggers"];
+}
 
 /**
  * The triggers of this plugin instance, wired to its library, its requirements check and BB's automations. A service of the bag
@@ -33,3 +47,5 @@ export function createWorkflowTriggersService(ctx: ServerCore, services: Service
 
   return { workflowTriggers: { ...triggers, syncSoon, scheduledProjects } };
 }
+
+export type WorkflowTriggersApi = ReturnType<typeof createWorkflowTriggersService>;

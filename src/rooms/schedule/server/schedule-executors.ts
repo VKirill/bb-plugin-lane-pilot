@@ -8,7 +8,18 @@ import type { ScheduleKind, ScheduleTask } from "../model";
 import type { ServerCore } from "../../contracts/server";
 import { errandModelForRun } from "./schedule-default";
 import { allowedSecretNames, secretFixLines, secretProblem } from "../../secrets/server";
-import type { Services } from "../../platform/server";
+
+import type { ErrandsApi } from "../../qa/server/errands";
+import type { WorkflowEngineApi } from "../../workflow/server/workflow";
+import type { WorkflowTriggersApi } from "../../workflow/server/workflow-triggers-live";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  errands: ErrandsApi;
+  workflowEngine: WorkflowEngineApi["workflowEngine"];
+  workflowTriggers: WorkflowTriggersApi["workflowTriggers"];
+}
+
 
 /**
  * The three kinds of scheduled work, each behind the scheduler's `start / poll / cancel`. `start` is idempotent on the run key, so

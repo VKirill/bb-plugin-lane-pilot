@@ -1,10 +1,19 @@
 import { z } from "zod";
 import { requirePmRun, type ServerContext } from "../../platform/server";
 import { registerObservedTool } from "../../platform/server";
-import type { Services } from "../../platform/server";
+
 import { bindRunChildBudget } from "../../platform/server";
 import { getRun, getRunSettingsScopes, loadProjectSettings } from "../../storage";
 import { wayOut } from "../../runs";
+
+import type { WriterStateApi } from "../../writer/server/state";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  providerBreaker: WriterStateApi["providerBreaker"];
+  runBudgetFor: WriterStateApi["runBudgetFor"];
+  runBudgets: WriterStateApi["runBudgets"];
+}
 
 export const HEALTH_TOOLS = ["lane_pilot_run_health"] as const;
 

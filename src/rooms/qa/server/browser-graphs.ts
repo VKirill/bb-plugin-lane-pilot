@@ -6,11 +6,18 @@ import { QA_HOST_KEY } from "../qa-host";
 import { builtinWorkflow } from "../../workflow";
 import { fenceOutside } from "../../platform/server";
 import { configuredSetting } from "../../contracts/server";
-import type { Services } from "../../platform/server";
+
 import type { ServerCore } from "../../contracts/server";
 import { requireGreen } from "../../workflow/server";
 import type { ChainRuntime } from "../../workflow/server";
 import { withUsage } from "../../usage/server";
+
+import type { QaStagesApi } from "./qa";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  runBrowserQa: QaStagesApi["runBrowserQa"];
+}
 
 /**
  * Browser work as graphs (graph unification S4). Two built-in starter graphs, both started by a PM tool:
@@ -153,7 +160,7 @@ export function registerBrowserExecutors(engine: WorkflowEngine, ctx: ServerCore
       let reply: Row;
       const since = Date.now();
       try {
-        reply = await rt.services.runBrowserQa({
+        reply = await services.runBrowserQa({
           threadId: rt.pmThreadId, projectId: rt.projectId, runId, taskId, url: str(params.url),
           cases: Array.isArray(params.cases) ? params.cases.map(String) : [], envClass: str(params.env_class) as never,
           viewports: str(params.viewports) || "375,768,1280", authorized: params.authorized === true,

@@ -11,7 +11,7 @@ import { noOptionalPlugins } from "../optional-plugin-stubs";
 import type { PrototypeConfig, TaskV2 } from "../../src/rooms/contracts";
 import { createAttempt, createRun, createTask, listStageReceipts, openDatabase, savePrototypeConfig, saveTaskPlan, setAttemptWorkspace, setRunThread, transitionAttempt } from "../../src/rooms/plugin-db";
 import { createCore } from "../../src/rooms/core/server/core";
-import type { Services } from "../../src/rooms/platform/server";
+import type { Services } from "../../server";
 import { recordStage } from "../../src/rooms/runs/server/stage-records";
 import { createReconcile } from "../../src/rooms/stability/server/reconcile";
 import { createWriterStart } from "../../src/rooms/writer/server/start";

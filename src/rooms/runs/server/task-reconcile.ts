@@ -1,7 +1,24 @@
 import { createMergeIntentRecovery } from "../../verification/server";
 import { closeOrphanWriterStages } from "./stage-records";
 import type { ServerCore } from "../../contracts/server";
-import type { Services } from "../../platform/server";
+
+import type { ReconcileApi } from "../../stability/server/reconcile";
+import type { StabilityApi } from "../../stability/server/stability";
+import type { WorkflowEngineApi } from "../../workflow/server/workflow";
+import type { WriterStateApi } from "../../writer/server/state";
+
+import type { DocsNightlyApi } from "../../docs/server/docs-nightly";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  activeWriterTasks: WriterStateApi["activeWriterTasks"];
+  docsPlaces: DocsNightlyApi["docsPlaces"];
+  resumeOrphans: ReconcileApi["resumeOrphans"];
+  stability: StabilityApi;
+  startAfterAcceptance: WorkflowEngineApi["startAfterAcceptance"];
+  workflowEngine: WorkflowEngineApi["workflowEngine"];
+}
+
 
 /** A periodic pass leaves an attempt that moved this recently alone: a loop between two attempts is not an orphan. */
 const PERIODIC_IDLE_MS = 3 * 60_000;

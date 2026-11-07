@@ -13,7 +13,14 @@ import { gateResolverFor } from "../../verification/server";
 import { parseIntegrationGateSettings } from "../../verification/server";
 import type { LintOpenTask, PathKind } from "./contract-lint";
 import type { ServerCore } from "../../contracts/server";
-import type { Services } from "../../platform/server";
+
+import type { StabilityApi } from "../../stability/server/stability";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  stability: StabilityApi;
+}
+
 
 /** Gathers the contract lint's inputs for a task; dispatch and lane_pilot_update_task lint a contract with the same rules. */
 export function createTaskLinter(ctx: ServerCore, services: Services) {

@@ -12,7 +12,7 @@ import { upsertLessonProposal } from "@lane-pilot/run-insights";
 import { adoptRuleProposal } from "../../src/rooms/self-repair/server";
 import { parseMemorySettings } from "../../src/rooms/memory";
 import type { ServerCore } from "../../src/rooms/contracts/server";
-import type { Services } from "../../src/rooms/platform/server";
+import type { Services } from "../../server";
 
 function setup() {
   const { bb } = createFakePluginHost({ pluginId: "lane-pilot", sdk: { projects: { list: async () => [] } } as never });

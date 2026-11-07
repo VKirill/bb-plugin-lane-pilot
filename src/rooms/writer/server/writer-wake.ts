@@ -3,7 +3,14 @@ import { taskV2Schema } from "../../contracts";
 import { sendServiceMessage } from "../../relay/server";
 import { providerDisplayName } from "./writer-hold";
 import type { ServerCore } from "../../contracts/server";
-import type { Services } from "../../platform/server";
+
+import type { WriterStartApi } from "./start";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  startWriterTask: WriterStartApi["startWriterTask"];
+}
+
 
 /**
  * The waker of H2: every minute the attempts parked `waiting_writer:` whose earliest hold ended are taken up again —

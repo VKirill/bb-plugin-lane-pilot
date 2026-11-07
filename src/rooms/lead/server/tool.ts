@@ -1,9 +1,16 @@
 import { z } from "zod";
-import { registerObservedTool, type Services } from "../../platform/server";
+import { registerObservedTool } from "../../platform/server";
 import { ToolError, type ServerCore } from "../../contracts/server";
 import { listDecisions } from "./journal";
 import { LEAD_CLASSES } from "./rights";
 import { addRoad, getRoad, renderRoadTree, roadTree } from "./road";
+
+import type { LeadApi } from "./service";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  lead: LeadApi;
+}
 
 /**
  * `lane_pilot_lead`: the one tool of the lead's chat (src/rooms/lead/lead-agent.ts). It reads the state and the journal, keeps the road tree

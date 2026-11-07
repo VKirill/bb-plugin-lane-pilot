@@ -1,9 +1,18 @@
 import type { NodeExecutor, StepContext } from "@lane-pilot/workflow-engine";
 import { runGraphHelper, sumUsage } from "../../workflow/server";
 import type { ChainRuntime } from "../../workflow/server";
-import type { Services } from "../../platform/server";
+
 import type { ServerCore } from "../../contracts/server";
 import type { HarnessStep } from "../../harness/server";
+
+import type { HarnessApi } from "../../harness/server/harness";
+import type { WorkflowEngineApi } from "../../workflow/server/workflow";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  harness: HarnessApi;
+  workflowEngine: WorkflowEngineApi["workflowEngine"];
+}
 
 /**
  * The harness editor as graphs. `lp.harness-edit` (workflows/lp.harness-edit.json) is one improvement round for a key (project, area, writer):

@@ -1,7 +1,7 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it, vi } from "vitest";
 import { createCore } from "../src/rooms/core/server/core";
-import type { Services } from "../src/rooms/platform/server";
+import type { Services } from "../server";
 import { createPhaseDriver } from "./phase-driver";
 import { phaseToolParams } from "../src/rooms/phase/server/tool";
 import { contextSignature, acceptanceLines, planSignature, type PlanItem } from "../src/rooms/phase/logic";

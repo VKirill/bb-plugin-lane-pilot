@@ -15,7 +15,14 @@ import { fullAccessSpawn, pmHasGuard, pmPrompt } from "../../platform/server";
 import { requireHelperSpawn, requiredPolicyField } from "../../runs/server";
 import { id, stringAt, valueAt } from "@lane-pilot/kit";
 import type { ServerCore } from "../../contracts/server";
-import type { Services } from "../../platform/server";
+
+import type { ReconcileApi } from "../../stability/server/reconcile";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  resumeOrphans: ReconcileApi["resumeOrphans"];
+}
+
 
 export function createActivation(ctx: ServerCore, services: Services) {
   const { bb, db, effectiveProjectSettings, host, ownedAgents, refreshRun } = ctx;
@@ -204,3 +211,5 @@ export function createActivation(ctx: ServerCore, services: Services) {
 
   return { activate };
 }
+
+export type ActivationApi = ReturnType<typeof createActivation>;

@@ -7,7 +7,18 @@ import { agentBrief } from "./schedule-agent-brief";
 import { parseMoment, wallClock } from "../time";
 import type { ChainRuntime } from "../../workflow/server";
 import type { ServerCore } from "../../contracts/server";
-import type { Services } from "../../platform/server";
+
+import type { PhaseIntake } from "../../phase/server/intake";
+import type { ScheduleService } from "./schedule-service";
+import type { WorkflowTriggersApi } from "../../workflow/server/workflow-triggers-live";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  phaseIntake: PhaseIntake;
+  schedules: ScheduleService;
+  workflowTriggers: WorkflowTriggersApi["workflowTriggers"];
+}
+
 
 /**
  * The two code steps of the graph `workflows/agent-routine.json`, the body of a schedule of kind agent. `lp.agent_brief` writes the agent's first

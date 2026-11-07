@@ -9,7 +9,7 @@ import { scheduleIsolated } from "../platform/server";
 import { memorySettingsFor } from "../self-repair/server/insights";
 import { registerObservedTool } from "../platform/server";
 import type { ServerCore } from "../contracts/server";
-import type { Services } from "../platform/server";
+
 import { createAutonomy } from "./autonomy";
 import { DEFAULT_CONFIG, loadConfig, type LearningConfig } from "./config";
 import { execFile } from "node:child_process";
@@ -29,6 +29,17 @@ import { setRuleBudgets } from "./rule-budget";
 import { lpNotesPort, lpRulesPort } from "./rules-port";
 import { complexityReport, noteOwnerQuestion, scanComplexity, scanPromises } from "./signals";
 import { DAY_MS, projectsWithCandidates, purgeStaleBodies, startOfDay, type ItemKind, type ItemState } from "./store";
+
+import type { PromotionServiceApi } from "../rule-forms/promotion-service";
+import type { RuleScanApi } from "../self-repair/server/rule-scan";
+import type { WriterHostApi } from "../writer/server/writer-host";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  promotions: PromotionServiceApi;
+  resolveProjectWriterHost: WriterHostApi["resolveProjectWriterHost"];
+  ruleScan: RuleScanApi;
+}
 
 /**
  * The learning room, wired (src/learning). `createLearning` builds the pieces on the plugin's database and key-value store;

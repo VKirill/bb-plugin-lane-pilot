@@ -2,9 +2,16 @@ import { randomBytes } from "node:crypto";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
 import { authorize } from "../../policy";
 import { saveProjectSetting } from "../../storage";
-import type { Services } from "../../platform/server";
+
 import type { ServerCore } from "../../contracts/server";
 import { armsOf, SEEDED, type HypothesisState } from "../logic";
+
+import type { BenchApi } from "../../bench/service";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  bench: BenchApi;
+}
 
 type Row = { id: string; title: string; source: string; settings_json: string; state: HypothesisState; set_version: string | null; verdict_json: string | null; previous_json: string | null; created_at: number; updated_at: number };
 export type Hypothesis = { id: string; title: string; source: string; settings: Record<string, unknown>; state: HypothesisState; setVersion: string | null; verdict: unknown; arms: { base: string; test: string } };

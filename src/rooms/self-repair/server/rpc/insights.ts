@@ -6,10 +6,18 @@ import { loadProjectSettings } from "../../../storage";
 import { parseDocsSettings } from "../../../docs";
 import { configuredSetting, type ServerCore } from "../../../contracts/server";
 import { acceptRuleProposal, deleteMemoryRecord, memorySettingsFor, rejectRuleProposal, revokeRule } from "../insights";
-import type { createDocsNightly } from "../../../docs/server";
 import type { RuleScanApi } from "../rule-scan";
 
-type DocsNightlyApi = ReturnType<typeof createDocsNightly>;
+import type { DocsNightlyApi } from "../../../docs/server/docs-nightly";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  docsLastRead: DocsNightlyApi["docsLastRead"];
+  docsPlaceStatus: DocsNightlyApi["docsPlaceStatus"];
+  docsPlaces: DocsNightlyApi["docsPlaces"];
+  ruleScan: RuleScanApi;
+}
+
 /** The services-bag members the insights RPC reads, named structurally so the room imports no `Services` type from core. */
 type InsightsServices = { ruleScan: RuleScanApi } & Pick<DocsNightlyApi, "docsPlaces" | "docsPlaceStatus" | "docsLastRead">;
 type DocsStatus = Awaited<ReturnType<InsightsServices["docsPlaceStatus"]>>;

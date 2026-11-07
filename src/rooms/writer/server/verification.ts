@@ -8,8 +8,19 @@ import { postOwnerItem } from "../../owner-waiting";
 import { isRunHalted } from "../../runs/server";
 import { join, relative, resolve } from "node:path";
 import type { TaskV2 } from "../../contracts";
-import type { Services } from "../../platform/server";
+
 import type { ServerCore } from "../../contracts/server";
+
+import type { BaselineApi } from "../../baseline/server/baseline";
+import type { WriterDispatchApi } from "./dispatch";
+import type { WriterVerifyApi } from "./verify";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  baseline: BaselineApi;
+  dispatchWriter: WriterDispatchApi["dispatchWriter"];
+  runVerification: WriterVerifyApi["runVerification"];
+}
 
 /**
  * MERGER: this file belongs to src/rooms/verification. Move it there and call

@@ -1,13 +1,21 @@
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
 import { getRunSettingsScopes, listCheckDurations, noteToldPmDirectly, taskBasePath } from "../../storage";
 import type { RollbackApi, RollbackTarget } from "../../rollback/server";
-import type { Services } from "../../platform/server";
+
 import type { ServerCore } from "../../contracts/server";
 import {
   baselineSummary, baselineVerdict, CHECK_NOTE_TAIL, estimateSec, parseBaselineSettings, planChecks, RED_OUTSIDE_KINDS, redBeforeAndAfter, redOutsideMessage, redOutsideTaskFiles,
   closesWhenAlreadyGreen, requiresRedOnBase, turnedRed, unrunnableMessage, unrunnableReason, vacuousChecks, vacuousMessage,
   type BaselineCheck, type BaselineSettings,
 } from "../logic";
+
+import type { WriterStateApi } from "../../writer/server/state";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  rollback: RollbackApi;
+  runWriterPool: WriterStateApi["runWriterPool"];
+}
 import { cachedChecks, checkKey, getBaseline, insertBaseline, listBaselines, setBaselineAfter, type BaselineRecord } from "../store";
 
 /**

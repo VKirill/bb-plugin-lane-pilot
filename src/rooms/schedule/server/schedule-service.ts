@@ -18,8 +18,26 @@ import { errandModelView, readErrandDefault } from "./schedule-default";
 import { createThreadHosts, projectPlaces, whereOf, type ProjectPlace } from "./schedule-place";
 import { NO_USAGE, errandRunThread, scheduleCost, threadUsage } from "./schedule-usage";
 import { createScheduleExecutors } from "./schedule-executors";
-import type { Services } from "../../platform/server";
+
 import { createWorkflowLibrary } from "../../workflow/server";
+
+import type { WorkflowTriggersApi } from "../../workflow/server/workflow-triggers-live";
+import type { WriterHostApi } from "../../writer/server/writer-host";
+
+import type { DocsNightlyApi } from "../../docs/server/docs-nightly";
+import type { ErrandsApi } from "../../qa/server/errands";
+import type { WorkflowEngineApi } from "../../workflow/server/workflow";
+import type { WriterStartApi } from "../../writer/server/start";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  docsPlaces: DocsNightlyApi["docsPlaces"];
+  errands: ErrandsApi;
+  listedAgentProfiles: WriterHostApi["listedAgentProfiles"];
+  startWriterTask: WriterStartApi["startWriterTask"];
+  workflowEngine: WorkflowEngineApi["workflowEngine"];
+  workflowTriggers: WorkflowTriggersApi["workflowTriggers"];
+}
 
 /**
  * The schedule board's server side: the scheduler with its three executors, and what the screens, the CLI and the PM tools ask of it

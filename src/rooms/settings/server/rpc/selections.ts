@@ -4,7 +4,16 @@ import { compatibleReasoningLevel, compatibleServiceTier, findModelIn, PAIR_ROLE
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import { rpcContract } from "../../../contracts";
 import type { ServerCore } from "../../../contracts/server";
-import type { Services } from "../../../platform/server";
+
+import type { WriterHostApi } from "../../../writer/server/writer-host";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  resolveProjectWriterHost: WriterHostApi["resolveProjectWriterHost"];
+  selectionCatalog: WriterHostApi["selectionCatalog"];
+  selectionCatalogHost: WriterHostApi["selectionCatalogHost"];
+}
+
 
 type ValidationCode = "invalid_choice" | "incompatible_setting" | "setup_required" | "writer_binding_ambiguous" | "writer_host_offline" | "catalog_unavailable";
 type SelectionOutput = {

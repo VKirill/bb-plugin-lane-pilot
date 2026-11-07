@@ -5,6 +5,10 @@ import {
   classifyUnformed, codeVerdict, decideRuleTrial, scopeApplies, getRuleProposal, listRuleProposals, logRuleEvent, ruleTrialStats, saveTriage, setRuleTrial, splitRejectedPaths, triageQuestions, triageState, triageSummary, untriagedAttempts, upsertModelProposal, writerGroups,
   type FailedAttempt, type RuleEvidence, type TriageSummary, type WriterGroup,
 } from "@lane-pilot/run-insights";
+
+import type { WorkflowEngineApi } from "../../workflow/server/workflow";
+import type { WriterHostApi } from "../../writer/server/writer-host";
+
 import { getRun, getRunSettingsScopes } from "../../storage";
 import { fileAllowedByOwns, fileBlockedByNeverTouch } from "@lane-pilot/kit";
 import { bbServiceTier, writerExecutionSelection } from "@lane-pilot/models";
@@ -18,8 +22,7 @@ import { postOwnerItem } from "../../owner-waiting";
  * version 1 until 0.1.458 (Astra F-008: the classifier and the executor described two different rules of admission). Read at use, so a
  * policy that moves `rule_trial_apply` back to `night_decides` turns the trials on again without a code change.
  */
-import { builtinWorkflow, type WorkflowEngine } from "../../workflow";
-import type { createWriterHost } from "../../writer/server";
+import { builtinWorkflow } from "../../workflow";
 import { stringAt } from "@lane-pilot/kit";
 import { SANDBOX_PROJECT_ID, isSandboxProjectName } from "../../stability/server";
 import type { ServerCore } from "../../contracts/server";
@@ -140,11 +143,8 @@ export function analyzerThreadTitle(input: { kind: "analyze" | "rewrite"; locale
   return [what, input.place, shown].filter(Boolean).join(" · ").slice(0, 160);
 }
 
-/** The two services-bag members the scan uses, named structurally so the room imports no `Services` type from core. */
-export type RuleScanServices = {
-  resolveProjectWriterHost: ReturnType<typeof createWriterHost>["resolveProjectWriterHost"];
-  workflowEngine: WorkflowEngine;
-};
+/** The two services-bag members the scan uses, typed by the rooms that own them. */
+export type RuleScanServices = Pick<WriterHostApi, "resolveProjectWriterHost"> & Pick<WorkflowEngineApi, "workflowEngine">;
 
 export function createRuleScan(ctx: ServerCore, services: RuleScanServices, deps: RuleScanDeps) {
   const { bb, db, host } = ctx;

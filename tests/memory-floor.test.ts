@@ -7,7 +7,7 @@ import { pmMemoryContext } from "../src/rooms/memory/server/memory-mix";
 import { sessionMemoryRpc } from "../src/rooms/memory/server/session-memory";
 import { parseMemorySettings } from "../packages/memory-core/src";
 import type { ServerCore } from "../src/rooms/contracts/server";
-import type { Services } from "../src/rooms/platform/server";
+import type { Services } from "../server";
 
 // SMA block 4 (P2-7 finding): the query paths returned something for 80-90 % of the questions memory cannot answer.
 const newHost = () => createFakePluginHost({ pluginId: "lane-pilot" });

@@ -3,7 +3,7 @@ import { expect, it, vi } from "vitest";
 import { noOptionalPlugins } from "../optional-plugin-stubs";
 import type { PrototypeConfig, TaskV2 } from "../../src/rooms/contracts";
 import { createCore } from "../../src/rooms/core/server/core";
-import type { Services } from "../../src/rooms/platform/server";
+import type { Services } from "../../server";
 import { recordStage } from "../../src/rooms/runs/server/stage-records";
 import { createAttempt, createRun, createTask, listStageReceipts, openDatabase, savePrototypeConfig, saveTaskPlan, setAttemptWorkspace, setRunThread, transitionAttempt } from "../../src/rooms/plugin-db";
 import { createWriterStart } from "../../src/rooms/writer/server/start";

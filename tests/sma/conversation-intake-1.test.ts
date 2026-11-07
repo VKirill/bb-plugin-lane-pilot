@@ -5,7 +5,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import { backlogBoard, issueMessage, parseTodoMeta } from "../../src/rooms/backlog";
 import { createCore } from "../../src/rooms/core/server/core";
-import type { Services } from "../../src/rooms/platform/server";
+import type { Services } from "../../server";
 import { registeredTools } from "../../src/rooms/platform/server";
 import { ToolError } from "../../src/rooms/contracts/server";
 import { createPhaseDriver } from "../phase-driver";

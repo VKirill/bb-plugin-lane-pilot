@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
 import { writerExecutionSelection } from "@lane-pilot/models";
-import type { Services } from "../../platform/server";
+
 import type { ServerCore } from "../../contracts/server";
 import { fullAccessSpawn, modelCatalogOf, resolveSpawnModel, scheduleIsolated, spawnUsageOf, warmSpawnUsage } from "../../platform/server";
 import { stringAt } from "@lane-pilot/kit";
@@ -24,6 +24,27 @@ import { decideRoad, doneRoad, getRoad, rejectRoad, roadCounts, roadMarkdown, ro
 import { architectPrompt, architectSeedOf, postArchitectHand, registerLeadTickActions, proposalDecisionId, proposalItemKey, seedForm, type ProposalDecision } from "./tick";
 import { WORKFLOW_ARCHITECT_ID } from "../../workflow";
 import { closeTick, getTick, listTicks, openTick, patchTick, sweepStaleTicks, type TickRow } from "./tick-store";
+
+import type { DocsNightlyApi } from "../../docs/server/docs-nightly";
+import type { PhaseIntake } from "../../phase/server/intake";
+import type { WorkflowEngineApi } from "../../workflow/server/workflow";
+import type { WorkflowTriggersApi } from "../../workflow/server/workflow-triggers-live";
+
+import type { ScheduleService } from "../../schedule/server/schedule-service";
+
+import type { RuleScanApi } from "../../self-repair/server/rule-scan";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  docsPlaces: DocsNightlyApi["docsPlaces"];
+  lead: LeadApi;
+  phaseIntake: PhaseIntake;
+  ruleScan: RuleScanApi;
+  schedules: ScheduleService;
+  workflowCatalog: WorkflowEngineApi["workflowCatalog"];
+  workflowEngine: WorkflowEngineApi["workflowEngine"];
+  workflowTriggers: WorkflowTriggersApi["workflowTriggers"];
+}
 
 /**
  * The lead's service (roadmap §2.3, §2.5): the tick on its cron, the nightly exam of the rights, the daily export of ROAD.md, the owner's

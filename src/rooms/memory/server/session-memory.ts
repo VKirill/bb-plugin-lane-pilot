@@ -7,11 +7,20 @@ import { DEFAULT_RELEVANCE_FLOOR, NOTHING_RELEVANT, projectUsesSections, resolve
 import type { rpcContract } from "../../contracts";
 import { adoptRuleProposal, memorySettingsFor } from "../../self-repair/server";
 import type { ServerCore } from "../../contracts/server";
-import type { Services } from "../../platform/server";
+
 import { sha256Hex } from "@lane-pilot/kit";
 import { threadMemoryBlock } from "./thread-block";
 import { rerankRecords } from "./rerank";
 import { loadProjectSettings } from "../../storage";
+
+import type { DocsNightlyApi } from "../../docs/server/docs-nightly";
+import type { MemoryConflictsApi } from "./memory-conflicts";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  docsPlaces: DocsNightlyApi["docsPlaces"];
+  memoryConflicts: MemoryConflictsApi;
+}
 
 /**
  * Project memory on the hub, for any machine. (2026-10-29) Claude Lane's lane-memory no longer calls these.

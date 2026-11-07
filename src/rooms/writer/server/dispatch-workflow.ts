@@ -11,10 +11,21 @@ import { closeWriterStages, recordStage } from "../../runs/server";
 import { isMainfixTask } from "../../tasks";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type { ServerCore } from "../../contracts/server";
-import type { Services } from "../../platform/server";
+
 import { runOnHost } from "@lane-pilot/host-calls";
 import { withUsage } from "../../usage/server";
 import { taskUsage } from "./attempt-usage";
+
+import type { BaselineApi } from "../../baseline/server/baseline";
+import type { WriterSpawnApi } from "./spawn";
+import type { WriterStartApi } from "./start";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  baseline: BaselineApi;
+  isLiveFolder: WriterSpawnApi["isLiveFolder"];
+  startWriterTask: WriterStartApi["startWriterTask"];
+}
 
 /**
  * The built-in workflow `lp-task-pipeline` (workflows/lp-task-pipeline.json) executed by the workflow engine.

@@ -23,10 +23,22 @@ import { keyedSpawnSupported, projectFolder } from "../../platform/server";
 import { stringAt } from "@lane-pilot/kit";
 import { startedBySchedule, type ChainRuntime } from "./workflow-runtime";
 import type { ServerCore } from "../../contracts/server";
-import type { Services } from "../../platform/server";
+
 import { ownerLocale, workflowHumanDetail } from "../../relay/server";
 import { runOnHost } from "@lane-pilot/host-calls";
 import { pageReviewByAgent } from "../../critique/server";
+
+import type { WriterDispatchApi } from "../../writer/server/dispatch";
+
+import type { StabilityApi } from "../../stability/server/stability";
+import type { WorkflowEngineApi } from "./workflow";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  dispatchWriter: WriterDispatchApi["dispatchWriter"];
+  stability: StabilityApi;
+  workflowEngine: WorkflowEngineApi["workflowEngine"];
+}
 
 /**
  * The executors that run a chain on the host: the generic agent step, the owner's question, the code task of a chain, the actions

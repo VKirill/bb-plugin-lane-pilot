@@ -11,7 +11,7 @@ import { migrations } from "../src/rooms/plugin-db";
 import { createWorkflowArchitect } from "../src/rooms/workflow/server/workflow-architect";
 import type { ArchitectDeps } from "../src/rooms/workflow/server/workflow-architect";
 import type { ServerCore } from "../src/rooms/contracts/server";
-import type { Services } from "../src/rooms/platform/server";
+import type { Services } from "../server";
 import { connectOps, insertAfterOps, newNode, problemMaps, readWhen, viewEdgeIndexes, writeWhen, whenError, expressionError, uniqueId } from "../src/rooms/workflow/ui/workflow-edit-model";
 import { draftView } from "@lane-pilot/workflow-engine/ui";
 import { BROWSER_DIGEST_STEPS } from "./workflow/architect-fixture";

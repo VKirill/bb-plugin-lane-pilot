@@ -1,7 +1,7 @@
 import { taskV2Schema } from "../../contracts";
 import type { TaskV2 } from "../../contracts";
 import { getRun, getTask, getTaskPlan } from "../../storage";
-import type { Services } from "../../platform/server";
+
 import type { ServerCore } from "../../contracts/server";
 import { fullAccessSpawn, sendPmNotice, stageHelperSettings } from "../../platform/server";
 import { id, stringAt } from "@lane-pilot/kit";
@@ -16,6 +16,13 @@ import { writerExecutionSelection } from "@lane-pilot/models";
 import { waitThreadIdle } from "@lane-pilot/thread-observe";
 import { isProductDecision, markAnsweredByDefault, SAFE_DEFAULT_ANSWER } from "./question-default";
 import { resolve } from "node:path";
+
+import type { WriterDispatchApi } from "./dispatch";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  dispatchWriter: WriterDispatchApi["dispatchWriter"];
+}
 
 /**
  * The second pilot (W34, REL-03/REL-07): a writer's question to a human that nobody answered within `writer.question_wait_min` goes to a

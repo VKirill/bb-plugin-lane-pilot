@@ -6,7 +6,16 @@ import {
   parseEdits, parseExperience, parseNotes, proposePrompt, renderExperienceMarkdown, renderThreadEvents, screenRejected, skillNames, validate,
   type ProbeBudget, type RejectedEdit, type ThreadEventLike, type Tree,
 } from "@lane-pilot/harness-core";
-import { fullAccessSpawn, scheduleIsolated, type Services } from "../../platform/server";
+
+import type { WorkflowEngineApi } from "../../workflow/server/workflow";
+import type { WriterHostApi } from "../../writer/server/writer-host";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  resolveProjectWriterHost: WriterHostApi["resolveProjectWriterHost"];
+  workflowEngine: WorkflowEngineApi["workflowEngine"];
+}
+import { fullAccessSpawn, scheduleIsolated } from "../../platform/server";
 import { stringAt } from "@lane-pilot/kit";
 import { type ServerCore } from "../../contracts/server";
 import { projectRoleField } from "../../runs/server";

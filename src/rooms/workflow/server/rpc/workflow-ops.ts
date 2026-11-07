@@ -1,12 +1,25 @@
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import type { rpcContract } from "../../../contracts";
 import type { ServerCore } from "../../../contracts/server";
-import type { Services } from "../../../platform/server";
+
 import { createWorkflowLibrary } from "../workflow-library";
 import { realDeps } from "../workflow-architect";
 import { createWorkflowOps } from "../workflow-ops";
 import { createWorkflowPreflight } from "../workflow-preflight";
 import { answerWorkflowQuestion } from "../workflow-answer";
+
+import type { WorkflowTriggersApi } from "../workflow-triggers-live";
+
+import type { DocsNightlyApi } from "../../../docs/server/docs-nightly";
+import type { WorkflowEngineApi } from "../workflow";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  docsPlaces: DocsNightlyApi["docsPlaces"];
+  workflowCatalog: WorkflowEngineApi["workflowCatalog"];
+  workflowEngine: WorkflowEngineApi["workflowEngine"];
+  workflowTriggers: WorkflowTriggersApi["workflowTriggers"];
+}
 
 /** The Workflows tab's actions on a workflow: its run history, re-running one node, a dry run, the tests of a file. */
 export function workflowOpsRpc(ctx: ServerCore, services: Services) {

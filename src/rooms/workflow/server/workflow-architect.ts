@@ -28,7 +28,19 @@ import { ToolError } from "../../contracts/server";
 import { stringAt } from "@lane-pilot/kit";
 import { DRILL_SANDBOX_PROJECT_IDS, isSandboxProjectName } from "../../stability/server";
 import type { ServerCore } from "../../contracts/server";
-import type { Services } from "../../platform/server";
+
+import type { DocsNightlyApi } from "../../docs/server/docs-nightly";
+import type { WorkflowEngineApi } from "./workflow";
+import type { WorkflowTriggersApi } from "./workflow-triggers-live";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  docsPlaces: DocsNightlyApi["docsPlaces"];
+  workflowCatalog: WorkflowEngineApi["workflowCatalog"];
+  workflowEngine: WorkflowEngineApi["workflowEngine"];
+  workflowTriggers: WorkflowTriggersApi["workflowTriggers"];
+}
+
 
 const bilingual = z.union([z.string().trim().min(1).max(2000), z.object({ en: z.string().trim().min(1).max(2000), ru: z.string().trim().min(1).max(2000) }).strict()]);
 const MAX_SHOWN_PROBLEMS = 30;

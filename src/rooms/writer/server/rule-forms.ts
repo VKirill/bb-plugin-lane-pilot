@@ -1,6 +1,13 @@
-import type { Services } from "../../platform/server";
+
 import type { ServerCore } from "../../contracts/server";
 import { onAttemptFinished } from "./attempt-finished";
+
+import type { PromotionServiceApi } from "../../rule-forms/promotion-service";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  promotions: PromotionServiceApi;
+}
 
 /**
  * MERGER: this file belongs to src/rooms/rule-forms (the promotion ledger). Move it there and call

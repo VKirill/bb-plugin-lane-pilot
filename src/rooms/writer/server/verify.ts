@@ -26,7 +26,20 @@ import { listThreadEventsRaw } from "@lane-pilot/thread-observe";
 import { stringAt } from "@lane-pilot/kit";
 import { outputText, writerPatchFromOutput } from "./writer-task";
 import type { ServerCore } from "../../contracts/server";
-import type { Services } from "../../platform/server";
+
+import type { HarnessApi } from "../../harness/server/harness";
+import type { PromotionServiceApi } from "../../rule-forms/promotion-service";
+import type { WriterSpawnApi } from "./spawn";
+import type { WriterStateApi } from "./state";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  harness: HarnessApi;
+  promotions: PromotionServiceApi;
+  runWriterPool: WriterStateApi["runWriterPool"];
+  workspaceDirt: WriterSpawnApi["workspaceDirt"];
+}
+
 
 /** A sandbox that refused the runner its own files: macOS python3 shim «couldn't create cache file … Operation not permitted». */
 
@@ -565,3 +578,5 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
 
   return { runVerification, persistWriterAcceptance, validateWriterResult };
 }
+
+export type WriterVerifyApi = ReturnType<typeof createWriterVerify>;

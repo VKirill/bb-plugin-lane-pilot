@@ -4,9 +4,18 @@ import { normalizeSchedule, scheduleInputSchema } from "../model";
 import { loadPushConfig } from "../../owner-waiting";
 import type { ScheduleView } from "../views";
 import type { ServerCore } from "../../contracts/server";
-import type { Services } from "../../platform/server";
+
 import { registerObservedTool } from "../../platform/server";
 import { ToolError } from "../../contracts/server";
+
+import type { PhaseIntake } from "../../phase/server/intake";
+import type { ScheduleService } from "./schedule-service";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  phaseIntake: PhaseIntake;
+  schedules: ScheduleService;
+}
 
 /**
  * The PM's door to the schedule board: every action goes straight through, no owner form (owner decision 2026-10-08). The one

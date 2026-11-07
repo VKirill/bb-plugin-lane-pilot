@@ -5,12 +5,19 @@ import { taskV2Schema, type PrototypeConfig, type TaskV2 } from "../../contracts
 import { getAttempt, getRun, getRunSettingsScopes, getRunWriterHost, getTask, loadProjectSettings, taskBasePath } from "../../storage";
 import { retargetTask } from "../../tasks";
 import { gateResolverFor, parseIntegrationGateSettings } from "../../verification/server";
-import type { Services } from "../../platform/server";
+
 import type { ServerCore } from "../../contracts/server";
 import {
   appendTaskReceipt, getAttemptChange, listTaskReceipts, upsertAttemptChange,
   type ChangedFile, type TaskReceipt, type TaskReceiptKind, type TaskReceiptState,
 } from "../store";
+
+import type { WriterVerifyApi } from "../../writer/server/verify";
+
+/** The fields of the services bag this file reads, typed by the rooms that own them. */
+interface Services {
+  runVerification: WriterVerifyApi["runVerification"];
+}
 
 /**
  * Rolling accepted work back, and proving it still holds (SMA wall 4 and rule 9; gap analysis P2-1, P2-2).
