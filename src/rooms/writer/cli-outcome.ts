@@ -1,26 +1,11 @@
 // (2026-10-29) classifyCliOutcome went with the CLI conveyor. Dirt snapshots stay for writer verification.
-
-export type DirtSnapshot = { path: string; sha256: string };
+// DirtSnapshot/parseDirtSnapshots live in the rooms-level dirt module (storage owns the lane_pilot_attempt dirt_before_json column); re-exported for writer callers.
+import type { DirtSnapshot } from "../dirt-snapshot";
+export { parseDirtSnapshots } from "../dirt-snapshot";
+export type { DirtSnapshot } from "../dirt-snapshot";
 
 function asSnapshots(rows: DirtSnapshot[] | string[]): DirtSnapshot[] {
   return rows.map((row) => typeof row === "string" ? { path:row, sha256:"" } : row);
-}
-
-export function parseDirtSnapshots(raw: string): DirtSnapshot[] {
-  try {
-    const value = JSON.parse(raw) as unknown;
-    if (!Array.isArray(value)) return [];
-    return value.flatMap((item) => {
-      if (typeof item === "string" && item.length > 0) return [{ path:item, sha256:"" }];
-      if (item && typeof item === "object" && typeof (item as DirtSnapshot).path === "string") {
-        const sha256 = typeof (item as DirtSnapshot).sha256 === "string" ? (item as DirtSnapshot).sha256 : "";
-        return [{ path:(item as DirtSnapshot).path, sha256 }];
-      }
-      return [];
-    });
-  } catch {
-    return [];
-  }
 }
 
 export function attemptProduced(after: DirtSnapshot[] | string[], before: DirtSnapshot[] | string[]): string[] {
