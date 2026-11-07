@@ -12,11 +12,11 @@ import {
   type ChangedFile, type TaskReceipt, type TaskReceiptKind, type TaskReceiptState,
 } from "../store";
 
-import type { WriterVerifyApi } from "../../writer/server/verify";
+import type { RunVerification } from "../../platform/server";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {
-  runVerification: WriterVerifyApi["runVerification"];
+  runVerification: RunVerification;
 }
 
 /**

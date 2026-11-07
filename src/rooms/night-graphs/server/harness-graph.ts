@@ -6,6 +6,7 @@ import type { ServerCore } from "../../contracts/server";
 import type { HarnessStep } from "../../harness/server";
 
 import type { HarnessApi } from "../../harness/server/harness";
+import type { GraphHelperRun } from "../../platform/server";
 import type { WorkflowEngineApi } from "../../workflow/server/workflow";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
@@ -29,7 +30,7 @@ export function mountHarnessGraph(ctx: ServerCore, services: Services): void {
   const harness = services.harness;
   const input = (c: StepContext<ChainRuntime>, name: string): string => text(c.resolve(`$inputs.${name}`));
   const key = (c: StepContext<ChainRuntime>) => ({ projectId: input(c, "project_id"), area: input(c, "area"), writerKey: input(c, "writer_key") });
-  const stepOf = (c: StepContext<ChainRuntime>): HarnessStep => ({ c, helper: (helper) => runGraphHelper(ctx, c, helper), runs: [] });
+  const stepOf = (c: StepContext<ChainRuntime>): HarnessStep => ({ c, helper: (helper) => runGraphHelper(ctx, c, helper) satisfies Promise<GraphHelperRun>, runs: [] });
 
   engine.register<ChainRuntime>("lp.harness_prepare", {
     reentrant: true,

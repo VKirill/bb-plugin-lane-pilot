@@ -14,12 +14,6 @@ import { PLAN_FACT_BRIEF_LINE , MARKER_BRIEF_LINE } from "../../tasks";
 import { gateVocabularyLines } from "../../contracts";
 import {providerLimitNotice} from "@lane-pilot/models";
 ;
-export function asJsonText(value: unknown): string | null {
-  if (value == null) return null;
-  if (typeof value === "string") return value;
-  return JSON.stringify(value, null, 2);
-}
-
 export function writerPatchFromOutput(output: string): string | null {
   const text = output.trim();
   if (!text) return null;

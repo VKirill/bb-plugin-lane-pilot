@@ -33,7 +33,7 @@ function world() {
     deferrals: { open: (input: { id: string; what: string }) => { state.deferrals.set(input.id, input.what); }, close: () => undefined },
   } as unknown as WallPorts;
   const kv = new Map<string, unknown>();
-  const wall = createWall({ db, kv: { get: async (key: string) => kv.get(key) ?? null, set: async (key: string, value: unknown) => { kv.set(key, value); } } as never, ports, log: () => undefined });
+  const wall = createWall({ db, kv: { get: async (key: string) => kv.get(key) ?? null, set: async (key: string, value: unknown) => { kv.set(key, value); } } as never, ports, log: () => undefined, skillSwitchMorningLine: () => null });
   const services = {
     wall, rollback: {},
     workflowEngine: {

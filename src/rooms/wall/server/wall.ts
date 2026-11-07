@@ -32,8 +32,7 @@ import type { BenchApi } from "../../bench/service";
 import type { DeferralApi } from "../../deferral/service";
 import type { Canary } from "../../stability/server/canary";
 import type { ReconcileApi } from "../../stability/server/reconcile";
-import type { WorkflowEngineApi } from "../../workflow/server/workflow";
-import type { WriterStateApi } from "../../writer/server/state";
+import type { SkillSwitchMorningLine, WorkflowEngineApi, WriterStateApi } from "../../platform/server";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {
@@ -42,6 +41,7 @@ interface Services {
   canary: Canary;
   deferrals: DeferralApi;
   enqueueResumedWriter: ReconcileApi["enqueueResumedWriter"];
+  skillSwitchMorningLine: SkillSwitchMorningLine;
   workflowEngine: WorkflowEngineApi["workflowEngine"];
 }
 
@@ -317,6 +317,7 @@ export function createPluginWall(ctx: ServerCore, services: Services): WallApi {
     kv: bb.storage.kv as never,
     ports,
     log: (line) => ctx.log(line),
+    skillSwitchMorningLine: services.skillSwitchMorningLine,
     hubDb: db.name,
     jev: () => jev(),
     settings: () => ctx.effectiveProjectSettings("*").then((r) => r.values),

@@ -10,7 +10,7 @@ import {
   type BaselineCheck, type BaselineSettings,
 } from "../logic";
 
-import type { WriterStateApi } from "../../writer/server/state";
+import type { WriterStateApi } from "../../platform/server";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {

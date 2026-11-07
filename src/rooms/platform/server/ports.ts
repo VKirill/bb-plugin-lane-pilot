@@ -2,6 +2,7 @@ import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type { WorkflowEngine, WorkflowStore } from "@lane-pilot/workflow-engine";
 import type { createWorkflowCatalog } from "@lane-pilot/workflow-engine";
 import type { RunBudget, createProviderBreaker } from "@lane-pilot/resilience";
+import type { CliBinary } from "@lane-pilot/settings-catalog";
 import type { PrototypeConfig, TaskV2, BirthKind, CodeCriticDefault } from "../../contracts";
 import type { DirtSnapshot } from "../../dirt-snapshot";
 import type { LanePilotDatabase, getAttempt, getRun } from "../../storage";
@@ -53,6 +54,8 @@ export type IsLiveFolder = (runId: string | undefined, hostId: string, folder: s
 export interface WriterStateApi {
   activeWriterTasks: Set<string>;
   providerBreaker: ReturnType<typeof createProviderBreaker>;
+  /** The keyed writer pool (tasks/run-policy.ts RunWriterPool): one semaphore per run, mirrored structurally. */
+  runWriterPool: { acquire(runId: string, limit: number, rank?: number): Promise<() => void> };
   runBudgets: Map<string, RunBudget>;
   runBudgetFor(runId: string, settings: Record<string, unknown>): RunBudget;
 }
@@ -130,13 +133,55 @@ export type ListedAgentProfile = {
   validator?: string;
 };
 
+/** writer/server/writer-host.ts — the binding verdict of a project, mirrored (native-agent/project-binding.ts plus writer-host's own `catalog_unavailable`). */
+export type WriterHostResolution =
+  | { status: "resolved"; hostId: string; path: string; source: "session" | "unique_source" | "explicit_override"; bindingId?: string }
+  | { status: "ambiguous"; bindings: Array<{ id?: string; hostId: string; path: string; isDefault?: boolean; projectId?: string }> }
+  | { status: "setup_required" }
+  | { status: "offline"; hostId: string; path: string }
+  | { status: "catalog_unavailable"; reason: string };
+
+type ProvidersList = Awaited<ReturnType<BbPluginApi["sdk"]["providers"]["list"]>>;
+type ProviderModels = Awaited<ReturnType<BbPluginApi["sdk"]["providers"]["models"]>>;
+
 /** writer/server/writer-host.ts — the host pickers and the agent listing the runs RPC answers with. */
 export interface WriterHostApi {
   resolveProjectWriterHost(args: {
     projectId: string; threadId?: string | null; selected?: { hostId: string; path: string } | null;
-  }): Promise<{ status: "offline" | "resolved" | "setup_required" | "catalog_unavailable" | "ambiguous"; [key: string]: unknown }>;
+  }): Promise<WriterHostResolution>;
+  selectionCatalogHost(projectId: string, threadId?: string | null, selected?: { hostId: string; path: string } | null): Promise<
+    | { ok: true; hostId: string }
+    | { ok: false; validation: { code: "setup_required" | "writer_binding_ambiguous" | "writer_host_offline" | "catalog_unavailable"; key: string; params: string[] } }
+  >;
+  selectionCatalog(projectId: string, hostId: string, providerId: string): Promise<[ProvidersList, ProviderModels]>;
   listedAgentProfiles(opts?: { pickable?: boolean }): Promise<ListedAgentProfile[]>;
 }
+
+/** writer/argv-builder.ts — the settings rendered as one CLI invocation for the preview the settings screen shows. */
+export type BuildCliInvocation = (input: {
+  binary: CliBinary; subcommand: string; settings: Record<string, unknown>; required?: Record<string, string>;
+}) => { argv: string[]; env: Record<string, string>; applied: string[]; unapplied: Array<{ key: string; value: unknown; channel: "NONE"; reason: string }> };
+
+/** writer/server/verify.ts — a task's verification[] run on a prepared tree, per check. */
+export type RunVerification = (config: PrototypeConfig, task: TaskV2, runId?: string) => Promise<Array<{
+  command: string; exitCode: number; stdout: string; stderr: string; hostError?: true;
+}>>;
+
+/** workflow/server/graph-helper.ts — one helper thread of a graph step: its id, answer text and spend. */
+export type GraphHelperRun = { threadId: string; text: string; usage: { usage?: { tokens: number; costUsd: number; unknown?: true }; threadId?: string } };
+
+/** wall/service.ts `graphSteps` — the wall row's hunt steps the wall-hunt graph drives (the pack stays wall-typed and passes through opaquely). */
+export interface WallGraphApi {
+  graph: {
+    spawnReader(input: { who: "hunter" | "analysis"; prompt: string; graph: { spawnId: string; metadata: Record<string, unknown> } }): Promise<string>;
+    hunterPrompt(angle: string, pack: unknown): string;
+    judge(wallKey: string, pack: unknown, runs: ReadonlyArray<{ angle: string; text: string | null; tokens: number }>): { outcome: { state: "usable" | "unknown"; usable: readonly unknown[] }; tokens: number };
+    recordAnalysis(wallKey: string, text: string): void;
+  };
+}
+
+/** writer/skill-switch.ts — the skill-switch line of the wall's morning summary, injected into the wall so it does not import writer. */
+export type SkillSwitchMorningLine = (db: Pick<import("better-sqlite3").Database, "prepare" | "transaction">, now: number) => string | null;
 
 /** The settings a stage's helpers see (project + run scopes merged): owned by the settings room, injected so critique,
  * writer, memory, docs and project-life do not import the high settings room. */

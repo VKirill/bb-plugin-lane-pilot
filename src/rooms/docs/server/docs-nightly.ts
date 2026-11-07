@@ -13,8 +13,8 @@ import {graphStepMetadata, modelCatalogOf, resolveSpawnModel, spawnUsageOf} from
 import { configuredSetting } from "../../contracts/server";
 import {fullAccessSpawn} from "../../platform/server";
 import { withUsage } from "../../usage/server";
-import type { StepContext, WorkflowEngine } from "../../workflow";
-import { requireGreen } from "../../workflow/server";
+import type { StepContext, WorkflowEngine } from "@lane-pilot/workflow-engine";
+import { requireGreen } from "@lane-pilot/workflow-engine";
 import { stringAt, valueAt, orMiss, isNotFound, bestEffort } from "@lane-pilot/kit";
 import { recordStage } from "../../runs/server";
 import { sleepUntilThreadSignal, threadWatchMark, waitThreadIdle } from "@lane-pilot/thread-observe";
@@ -23,8 +23,7 @@ import {abortable, scheduleIsolated} from "../../platform/server";
 import type { ServerCore } from "../../contracts/server";
 
 import type { DocsStageApi } from "./docs";
-import type { WorkflowEngineApi } from "../../workflow/server/workflow";
-import type { WriterHostApi } from "../../writer/server/writer-host";
+import type { WorkflowEngineApi, WriterHostApi } from "../../platform/server";
 import {DOCS_MAINTENANCE, DOCS_NIGHT} from "../../contracts";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */

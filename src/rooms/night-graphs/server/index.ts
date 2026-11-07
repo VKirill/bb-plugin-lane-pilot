@@ -10,9 +10,7 @@ import type { BenchApi } from "../../bench/service";
 import type { DocsNightlyApi } from "../../docs/server/docs-nightly";
 import type { HarnessApi } from "../../harness/server/harness";
 import type { RuleScanApi } from "../../self-repair/server/rule-scan";
-import type { WallApi } from "../../wall/service";
-import type { WorkflowEngineApi } from "../../workflow/server/workflow";
-import type { WriterHostApi } from "../../writer/server/writer-host";
+import type { WallGraphApi, WorkflowEngineApi, WriterHostApi } from "../../platform/server";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {
@@ -21,7 +19,7 @@ interface Services {
   harness: HarnessApi;
   resolveProjectWriterHost: WriterHostApi["resolveProjectWriterHost"];
   ruleScan: RuleScanApi;
-  wall: WallApi;
+  wall: WallGraphApi;
   workflowEngine: WorkflowEngineApi["workflowEngine"];
 }
 export { analystPlace, episodeSweepDeps } from "./episodes-graph";

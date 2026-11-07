@@ -2,7 +2,7 @@ import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
 import { SCHEDULE_ERRAND_DEFAULT_KEY } from "../../../schedule";
 import { ACCESS_GROUPS, ACCESS_SWITCHES, CORE_PROVIDER_GROUPS, HELPER_ROLES, MANDATORY_BB_PLUGINS, MANDATORY_MCP_SERVERS, effectiveGroup, effectiveSwitch, parseHelperContextSettings, parseRoleAccess, roleAccessKey } from "../../../native-agent";
 import { detectCompiledMainAgentCapability, pickableAgent } from "../../../native-agent";
-import { buildCliInvocation } from "../../../writer";
+import type { BuildCliInvocation } from "../../../platform/server";
 import { cliReceiptAttemptKey, cliReceiptRunKey } from "../../../runs";
 import { casResetSettings, casUpsertSetting, casUpsertSettings, getReasoningTrace, countStageReceipts, getSettingVersions, getStageReceiptResult, listOwnSettingLevels, listRunsPage, listSettingRows, listStageReceiptSummaries, loadProjectSettings, loadPrototypeConfig, removeOwnSettings, sectionBindingId } from "../../../storage";
 import { isModelSettingKey, isRoleOverrideKey } from "../../model-keys";
@@ -13,17 +13,18 @@ import { LP_DEFAULTS_KEY, inheritProjectValues, parseLanePilotDefaults } from "@
 import { mapListedQaHosts } from "../../../platform/server";
 import { VISIBLE_CATALOG } from "@lane-pilot/settings-catalog";
 import { NATIVE_WRITER_KEYS } from "../../../runs/server";
-import { asJsonText } from "../../../writer/server";
+import { asJsonText } from "../../../contracts";
 import { stringAt } from "@lane-pilot/kit";
 import { PAIR_ROLE_SPECS, PROVIDER_CAPABILITIES, roleAtomicMessage } from "@lane-pilot/models";
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import { rpcContract } from "../../../contracts";
 import type { ServerCore } from "../../../contracts/server";
 
-import type { WriterHostApi } from "../../../writer/server/writer-host";
+import type { WriterHostApi } from "../../../platform/server";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {
+  buildCliInvocation: BuildCliInvocation;
   listedAgentProfiles: WriterHostApi["listedAgentProfiles"];
   resolveProjectWriterHost: WriterHostApi["resolveProjectWriterHost"];
   selectionCatalog: WriterHostApi["selectionCatalog"];
@@ -182,7 +183,7 @@ export function settingsRpc(ctx: ServerCore, services: Services) {
       const completed = values["import.completed"];
       const routing = values["import.routing_profile"];
       const night = values["import.night_shift"];
-      const invocation = buildCliInvocation({
+      const invocation = services.buildCliInvocation({
         binary: "run-controller",
         subcommand: "run",
         settings,

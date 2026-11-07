@@ -5,11 +5,11 @@ import { scheduleIsolated } from "../platform/server";
 
 import type { ServerCore } from "../contracts/server";
 
-import type { WriterDispatchApi } from "../writer/server/dispatch";
+import type { DispatchWriter } from "../platform/server";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {
-  dispatchWriter: WriterDispatchApi["dispatchWriter"];
+  dispatchWriter: DispatchWriter;
 }
 export type PromotionServiceApi = ReturnType<typeof createPromotionService>;
 import { acceptPromotion, dismissPromotion, listPromotions, type PromotionRow } from "./promotion";

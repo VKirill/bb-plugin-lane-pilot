@@ -13,7 +13,7 @@ import type { ScheduleAgentApi } from "../../../contracts";
 
 import { OWNER_LOCALE_PREFERENCE_KEY, recordResolvedLocale } from "../../../relay/server";
 
-import type { WriterHostApi } from "../../../writer/server/writer-host";
+import type { WriterHostApi } from "../../../platform/server";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 const LAST_PROJECT_KEY = "preferences:lastProjectId";

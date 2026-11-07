@@ -46,7 +46,7 @@ function world(patch: { changed?: unknown; seed?: boolean; releaseFiles?: string
     deferrals: { open: () => undefined, close: () => undefined },
   };
   const kv = new Map<string, unknown>();
-  const wall = createWall({ db: h.db, kv: { get: async (key) => kv.get(key) ?? null, set: async (key, value) => { kv.set(key, value); } }, ports, log: () => undefined, hubDb: "/hub/data.db" });
+  const wall = createWall({ db: h.db, kv: { get: async (key) => kv.get(key) ?? null, set: async (key, value) => { kv.set(key, value); } }, ports, log: () => undefined, skillSwitchMorningLine: () => null, hubDb: "/hub/data.db" });
   return { h, wall, state };
 }
 

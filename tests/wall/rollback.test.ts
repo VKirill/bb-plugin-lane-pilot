@@ -99,7 +99,7 @@ function mergedWall(reverts: Array<{ ok: boolean; detail: string }>, commit = FU
     deferrals: { open: (input) => { state.deferrals.set(input.id, input.what); }, close: () => undefined },
   };
   const kv = new Map<string, unknown>();
-  const wall = createWall({ db: h.db, kv: { get: async (key) => kv.get(key) ?? null, set: async (key, value) => { kv.set(key, value); } }, ports, log: () => undefined, hubDb: "/hub/data.db" });
+  const wall = createWall({ db: h.db, kv: { get: async (key) => kv.get(key) ?? null, set: async (key, value) => { kv.set(key, value); } }, ports, log: () => undefined, skillSwitchMorningLine: () => null, hubDb: "/hub/data.db" });
   return { h, wall, state, commit };
 }
 

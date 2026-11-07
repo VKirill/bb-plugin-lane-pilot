@@ -80,6 +80,7 @@ import type { ActivationApi } from "../../native-agent/server/activation";
 import type { ScheduleService } from "../../schedule/server/schedule-service";
 import type { RuleScanApi } from "../../self-repair/server/rule-scan";
 import type { ReconcileApi } from "../../stability/server/reconcile";
+import type { BuildCliInvocation } from "../../platform/server";
 import type { WorkflowEngineApi } from "../../workflow/server/workflow";
 import type { WorkflowTriggersApi } from "../../workflow/server/workflow-triggers-live";
 import type { WriterHostApi } from "../../writer/server/writer-host";
@@ -97,6 +98,7 @@ interface Services {
   capabilities: CapabilitiesApi;
   council: CouncilApi;
   deferrals: DeferralApi;
+  buildCliInvocation: BuildCliInvocation;
   docsLastRead: DocsNightlyApi["docsLastRead"];
   docsPlaceStatus: DocsNightlyApi["docsPlaceStatus"];
   docsPlaces: DocsNightlyApi["docsPlaces"];
