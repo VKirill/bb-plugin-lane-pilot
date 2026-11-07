@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.1.486
+
+- **Rooms read other rooms' tables only through the owner.** Room SQL on another room's table 394 → 0: every such query moved into a function of the table's owner room (stores in `storage/`, `wall/store.ts`, `learning/store.ts`, the workflow journal), joins kept as one SQL in the owner with the other table's name imported (`ATTEMPT_TABLE`, `RUN_TABLE`, `WF_RUN_TABLE`). 18 sites remain in the `jev` and `run-insights` packages, which cannot import rooms. Review fixes kept the old behaviour: a hub setting stored as the string "1" stays a string, one unreadable receipt no longer stops the failure-class sweep or the PM stage status, a 7-day errand diagnosis no longer counts older episodes, episode batches and lists skip episodes without a run inside the limit. `tests/architecture/foreign-sql.test.ts` now holds 18.
+
 ## 0.1.485
 
 - **No deploy limits.** The once-a-day rule, the 7-day error budget, the incident lane (`Lane-Pilot-Incident` trailer) and the bench gate are gone from the deploy script, `canary_status`, self-repair, the deploy workflow and the docs. Deploys keep the clean tree, pushed HEAD, tests, build from HEAD, dist hash, drill after reload and rollback.
