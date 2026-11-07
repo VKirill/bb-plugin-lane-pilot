@@ -1584,7 +1584,7 @@ describe("stage → native writer → receipt", () => {
     expect((result.stages as typeof receipts).filter((row) => row.taskId === task.id && !backgroundStages.has(row.stageId))).toEqual(receipts.map((row) => ({ taskId:row.taskId, stageId:row.stageId, state:row.state, ...(row.reason ? { reason:row.reason.slice(0, 400) } : {}) })));
     expect(receipts.find((row) => row.stageId === "verification")?.result).toEqual({
       produced:["note.txt"], verification:[{ command:"test -f note.txt", exitCode:0, stdout:"", stderr:"",
-        sandboxBackend:"macos-seatbelt",policySha256:"c".repeat(64),workspacePath:attemptWorktree }],
+        sandboxBackend:"macos-seatbelt",policySha256:"c".repeat(64),workspacePath:attemptWorktree,timeoutSec:30 }],
       runV2:{schemaVersion:1,pools:{provider:15,verification:2},score:2,risk:"low",sourceRisk:"low",scoreAdapter:"task-risk-v1"},
     });
     // The check runs in the attempt worktree, then once more on the run folder after the merge.

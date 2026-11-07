@@ -362,9 +362,9 @@ export function createWall(deps: WallDeps) {
    * Called when a task family was stopped by `repeated_failure:` (two attempts failing the same way = the two normal moves). First sight opens
    * the wall (the hunt follows); the same wall stopped again after the hunters' message means the informed move failed too: the backlog.
    */
-  async function noteTaskStop(input: { projectId: string; runId: string; taskId: string; family: string; reason: string; state: string; pmThreadId: string | null; task: unknown; plan: string }): Promise<{ key: string; step: string }> {
+  async function noteTaskStop(input: { projectId: string; runId: string; taskId: string; family: string; reason: string; state: string; failureCode?: string | null; pmThreadId: string | null; task: unknown; plan: string }): Promise<{ key: string; step: string }> {
     const now = ports.now();
-    const sig = wallSignature(input.state, input.reason);
+    const sig = wallSignature(input.state, input.reason, input.failureCode);
     const key = taskWallKey(input.family, input.runId, sig.classKey);
     const wall = getWall(db, key);
     if (!wall) {
@@ -823,10 +823,10 @@ export function createWall(deps: WallDeps) {
   function recurrenceOn(classKey: string, version: string, since: number): { failures: number; attempts: number; exposed: boolean } | null {
     const graph = graphRecurrence(db, classKey, version, since);
     if (graph !== undefined) return graph;
-    const rows = db.prepare(`SELECT a.state, a.reason, r.project_id FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id WHERE a.harness_version=? AND a.created_at>=? AND a.state NOT IN ('queued','spawn_requested','spawn_unknown','running','cancel_requested','canceled')`)
-      .all(version, since) as Array<{ state: string; reason: string | null; project_id: string }>;
+    const rows = db.prepare(`SELECT a.state, a.reason, a.failure_code, r.project_id FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id WHERE a.harness_version=? AND a.created_at>=? AND a.state NOT IN ('queued','spawn_requested','spawn_unknown','running','cancel_requested','canceled')`)
+      .all(version, since) as Array<{ state: string; reason: string | null; failure_code: string | null; project_id: string }>;
     const projects = new Set((db.prepare("SELECT DISTINCT project_id FROM lane_pilot_wall_entry WHERE class_key=?").all(classKey) as Array<{ project_id: string }>).map((row) => row.project_id));
-    const failed = (row: { state: string; reason: string | null }) => row.state !== "accepted" && wallSignature(row.state, row.reason).classKey === classKey;
+    const failed = (row: { state: string; reason: string | null; failure_code: string | null }) => row.state !== "accepted" && wallSignature(row.state, row.reason, row.failure_code).classKey === classKey;
     const scope = projects.size ? rows.filter((row) => projects.has(row.project_id) || failed(row)) : rows;
     if (!scope.length) return null;
     return { attempts: scope.length, failures: scope.filter(failed).length, exposed: projects.size > 0 };

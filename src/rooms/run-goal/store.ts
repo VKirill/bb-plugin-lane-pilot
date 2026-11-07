@@ -1,9 +1,10 @@
 import type Database from "better-sqlite3";
+import type { FailureCode } from "../storage";
 import type { GoalCoverage, GoalVerdict, RedCheck } from "./logic";
 
 type Db = Pick<Database.Database, "prepare">;
 export type RunGoalRecord = {
-  runId: string; projectId: string; state: GoalVerdict["state"]; tasks: number; headSha: string | null; red: RedCheck[]; detail: string | null; failureCode: string | null; at: number;
+  runId: string; projectId: string; state: GoalVerdict["state"]; tasks: number; headSha: string | null; red: RedCheck[]; detail: string | null; failureCode: FailureCode | null; at: number;
   coverage: GoalCoverage;
 };
 
@@ -17,5 +18,5 @@ export function saveRunGoal(db: Db, row: RunGoalRecord): void {
 export function getRunGoal(db: Db, runId: string): RunGoalRecord | null {
   const row = db.prepare("SELECT * FROM lane_pilot_run_goal WHERE run_id=?").get(runId) as
     { run_id: string; project_id: string; state: GoalVerdict["state"]; tasks: number; head_sha: string | null; red_json: string; detail: string | null; failure_code: string | null; at: number; planned: number; ran: number; skipped_checks: number } | undefined;
-  return row ? { runId: row.run_id, projectId: row.project_id, state: row.state, tasks: row.tasks, headSha: row.head_sha, red: JSON.parse(row.red_json) as RedCheck[], detail: row.detail, failureCode: row.failure_code, at: row.at, coverage: { planned: row.planned, ran: row.ran, skipped: row.skipped_checks } } : null;
+  return row ? { runId: row.run_id, projectId: row.project_id, state: row.state, tasks: row.tasks, headSha: row.head_sha, red: JSON.parse(row.red_json) as RedCheck[], detail: row.detail, failureCode: row.failure_code as FailureCode | null, at: row.at, coverage: { planned: row.planned, ran: row.ran, skipped: row.skipped_checks } } : null;
 }

@@ -3,7 +3,7 @@ import { checkTimeoutSec } from "../check-timing";
 import { pipelineWriterStep, pipelineWriterTag } from "./pipeline-tag";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
 import { writerLeftWorktree } from "./left-worktree";
-import { countAttempts, countThreadTurns, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getTask, getTaskPlan, listOpenAttempts, listStageReceipts, loadProjectSettings, transitionAttempt, taskBasePath } from "../../storage";
+import { countAttempts, countThreadTurns, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getTask, getTaskPlan, listOpenAttempts, listStageReceipts, loadProjectSettings, transitionAttempt, taskBasePath, type AttemptFailureFields } from "../../storage";
 import { saveBlockedBy, type BlockedBy } from "../../runs/server";
 import { relayFor } from "../../relay/server";
 import type { HelperPolicySnapshot } from "../../native-agent";
@@ -90,6 +90,13 @@ const MERGE_QUEUE_MS = 15 * 60_000;
 /** How long finished work waits for someone's uncommitted edits in the base checkout to be committed or put away. */
 const DIRTY_BASE_WAIT_MS = 2 * 3600_000;
 const dirtyBase = (merged:{ status:string; reason?:string|null }) => merged.status === "conflict" && Boolean(merged.reason?.startsWith("base checkout has uncommitted changes"));
+
+/** The structured failure facts of a validateWriterResult, for transitionAttempt: a red check's code, name and limit. */
+const failureFields = (row: { failureCode?: string; checkName?: string; timeoutSec?: number }): AttemptFailureFields => ({
+  ...(row.failureCode ? { failureCode: row.failureCode as AttemptFailureFields["failureCode"] } : {}),
+  ...(row.checkName ? { checkName: row.checkName } : {}),
+  ...(row.timeoutSec !== undefined ? { timeoutSec: row.timeoutSec } : {}),
+});
 
 export function createWriterFinish(ctx: ServerCore, services: Services) {
   const { bb, db, getThreadBounded, host } = ctx;
@@ -324,7 +331,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
           attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{writerStatus:checked.status}});
         const stopped = endedByStop(checked.reason ?? checked.status);
         if (stopped) return stopped;
-        transitionAttempt(db, input.attemptId, checked.status, { reason:checked.reason });
+        transitionAttempt(db, input.attemptId, checked.status, { reason:checked.reason, ...failureFields(checked) });
         return { ...checked, attemptId:input.attemptId, writerThreadId:input.writerThreadId };
       }
       { const stopped = stoppedMeanwhile("validation"); if (stopped) return stopped; }
@@ -464,7 +471,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
               attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{writerStatus:candidate.status}});
             const stopped = endedByStop(candidate.reason ?? candidate.status, writerThreadId);
             if (stopped) return stopped;
-            transitionAttempt(db, input.attemptId, candidate.status, { reason:candidate.reason });
+            transitionAttempt(db, input.attemptId, candidate.status, { reason:candidate.reason, ...failureFields(candidate) });
             return { ...candidate, attemptId:input.attemptId, writerThreadId };
           }
           recordStage(db, {
@@ -717,7 +724,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
             attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{writerStatus:candidate.status}});
           const stopped = endedByStop(candidate.reason ?? candidate.status, writerThreadId);
           if (stopped) return stopped;
-          transitionAttempt(db, input.attemptId, candidate.status, { reason:candidate.reason });
+          transitionAttempt(db, input.attemptId, candidate.status, { reason:candidate.reason, ...failureFields(candidate) });
           return { ...candidate, attemptId:input.attemptId, writerThreadId };
         }
         recordStage(db, {

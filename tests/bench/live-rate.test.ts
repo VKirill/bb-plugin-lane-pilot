@@ -24,12 +24,12 @@ describe("live stability", () => {
       row({ taskId: "flip", state: "validation_failed", reason: "verification failed (1)", updatedAt: 1 }),
       row({ taskId: "flip", state: "accepted", updatedAt: 2 }),
       row({ taskId: "flip", state: "running", reason: null, updatedAt: 3 }),
-      row({ taskId: "red", state: "validation_failed", reason: "verification failed (2): exit 1" }),
+      row({ taskId: "red", state: "validation_failed", reason: "verification failed (2): exit 1", failureCode: "verification_failed" }),
       row({ taskId: "scope", state: "blocked", reason: "outside owns_paths: src/x.ts" }),
       row({ taskId: "lp", state: "blocked", reason: "reconcile_lost" }),
       row({ taskId: "lp2", state: "blocked", reason: "internal_error: critic broken" }),
       row({ taskId: "wait", state: "blocked", reason: "writer_provider_unavailable:owner_present" }),
-      row({ taskId: "check", state: "blocked", reason: "verification failed (1): critic broken" }),
+      row({ taskId: "check", state: "blocked", reason: "verification failed (1): critic broken", failureCode: "verification_failed" }),
     ], { floorVersion: "0.1.389" });
 
     expect(report.accepted).toBe(1);

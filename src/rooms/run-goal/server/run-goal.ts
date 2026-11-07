@@ -56,10 +56,10 @@ export function createRunGoal(ctx: ServerCore, services: Services) {
     // itself could not run (a crashed regression call): it is retried on the next sweep. A `skipped` verdict of the goal logic
     // ("nothing to check") is final and is not retried.
     const runs = db.prepare(`SELECT r.id FROM lane_pilot_run r WHERE r.updated_at >= ?
-      AND NOT EXISTS (SELECT 1 FROM lane_pilot_run_goal g WHERE g.run_id = r.id AND NOT (g.state = 'skipped' AND COALESCE(g.failure_code, '') = 'check_failed')
+      AND NOT EXISTS (SELECT 1 FROM lane_pilot_run_goal g WHERE g.run_id = r.id AND NOT (g.state = 'skipped' AND COALESCE(g.failure_code, '') = ?)
         AND NOT (g.state = 'failed' AND r.closed_at IS NULL AND EXISTS (SELECT 1 FROM lane_pilot_run r2 WHERE r2.project_id = r.project_id AND r2.id <> r.id AND r2.closed_at IS NOT NULL AND r2.closed_at > g.at)))
       ORDER BY r.updated_at`)
-      .all(now - WEEK) as Array<{ id: string }>;
+      .all(now - WEEK, "check_failed") as Array<{ id: string }>;
     const out: RunGoalRecord[] = [];
     for (const { id } of runs) {
       if (signal?.aborted || ctx.isDisposed()) break;

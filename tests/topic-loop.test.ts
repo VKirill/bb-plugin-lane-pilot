@@ -93,7 +93,7 @@ describe("topicLoop", () => {
   it("stops a test that three other families could not get green, from their red reasons or their checks", () => {
     const red = (id: string, hours: number, extra: Partial<LoopTask>) => task(id, hours, { files: [`src/${id}.ts`], attempts: [{ state: "validation_failed", reason: null }], ...extra });
     const earlier = [
-      red("a", 1, { attempts: [{ state: "validation_failed", reason: "verification failed (npx runner --filter Flaky1 && npx runner --filter Other): exit 1" }] }),
+      red("a", 1, { attempts: [{ state: "validation_failed", reason: "verification failed (npx runner --filter Flaky1 && npx runner --filter Other): exit 1", failureCode: "verification_failed" }] }),
       red("b", 2, { commands: ["npx runner --filter flaky1"] }),
       red("c", 3, { commands: ["for m in One Flaky1; do npx runner --filter $m || exit 1; done"] }),
     ];

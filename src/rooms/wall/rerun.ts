@@ -70,7 +70,7 @@ export function failedStageOf(receipts: readonly ReceiptSummary[]): string | nul
   return null;
 }
 
-type FailedAttempt = { id: string; run_id: string; task_id: string; state: string; reason: string | null; project_id: string; updated_at: number };
+type FailedAttempt = { id: string; run_id: string; task_id: string; state: string; reason: string | null; failure_code: string | null; project_id: string; updated_at: number };
 
 /**
  * The tasks that still wait on a class: the newest attempt of each task that failed with the class since `since`, for tasks whose newest attempt
@@ -78,7 +78,7 @@ type FailedAttempt = { id: string; run_id: string; task_id: string; state: strin
  * bench / real for a project.
  */
 export function planClassRerun(db: WallDb, input: { classKey: string; since: number; head: readonly HeadPart[]; scopeOf: (projectId: string) => RerunScope; limit?: number }): RerunPlan[] {
-  const rows = db.prepare(`SELECT a.id, a.run_id, a.task_id, a.state, a.reason, a.updated_at, r.project_id FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
+  const rows = db.prepare(`SELECT a.id, a.run_id, a.task_id, a.state, a.reason, a.failure_code, a.updated_at, r.project_id FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
     WHERE a.updated_at>=? AND a.state IN (${FAILED_STATES.map((state) => `'${state}'`).join(",")})
     ORDER BY a.updated_at DESC LIMIT 3000`).all(input.since) as FailedAttempt[];
   const newest = db.prepare("SELECT state FROM lane_pilot_attempt WHERE run_id=? AND task_id=? ORDER BY created_at DESC LIMIT 1");
@@ -88,7 +88,7 @@ export function planClassRerun(db: WallDb, input: { classKey: string; since: num
   const plans: RerunPlan[] = [];
   for (const row of rows) {
     const key = `${row.run_id}:${row.task_id}`;
-    if (seen.has(key) || wallSignature(row.state, row.reason).classKey !== input.classKey) continue;
+    if (seen.has(key) || wallSignature(row.state, row.reason, row.failure_code).classKey !== input.classKey) continue;
     seen.add(key);
     if (done.has((newest.get(row.run_id, row.task_id) as { state: string } | undefined)?.state ?? "")) continue;
     const receipts = (receiptsOf.all(row.run_id, row.task_id) as Array<{ stage_id: string; state: string; input_sha256: string }>)

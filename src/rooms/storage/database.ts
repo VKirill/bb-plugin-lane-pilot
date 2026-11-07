@@ -3,7 +3,7 @@ import { isAbsolute, relative, resolve } from "node:path";
 import type Database from "better-sqlite3";
 import type { PrototypeConfig, StageId, StageState } from "@lane-pilot/contracts";
 import { parseDirtSnapshots, type DirtSnapshot } from "../dirt-snapshot";
-import { FREE_CLASSES, failureClass, isOwnerDecision, isPreStartStop, isWaitingSecret, isWriterSilent, taskFamily } from "../platform";
+import { FREE_CLASSES, failureClass, isOwnerDecision, isPreStartStop, isWaitingSecret, isWriterSilent, taskFamily, type FailureCode } from "../platform";
 import { IllegalTransitionError, isLegalMove } from "../state-machine";
 import type { SettingValidationError, SettingsValidator } from "../setting-validation";
 import { sha256Buffer } from "@lane-pilot/kit";
@@ -609,7 +609,7 @@ export function latestTaskAttempt(db: LanePilotDatabase, projectId: string, task
 }
 
 /** A task result the PM has not been told: the latest attempt of a task of a PM's run ended accepted, blocked or canceled. A closed run tells no one: its PM chat has handed the lead back or the run is over. */
-export type TaskOutcome = { transitionId:number; attemptId:string; projectId:string; pmThreadId:string; taskId:string; state:string; reason:string|null; at:number };
+export type TaskOutcome = { transitionId:number; attemptId:string; projectId:string; pmThreadId:string; taskId:string; state:string; reason:string|null; failureCode?:string|null; at:number };
 
 /**
  * Task results not yet told to their PM, ended at `since` or later. Only the latest attempt of a task counts (an attempt
@@ -618,7 +618,7 @@ export type TaskOutcome = { transitionId:number; attemptId:string; projectId:str
  */
 export function listUnreportedTaskOutcomes(db: LanePilotDatabase, since: number): TaskOutcome[] {
   const rows = db.prepare(`SELECT t.rowid AS transitionId, a.id AS attemptId, r.project_id AS projectId, r.pm_thread_id AS pmThreadId,
-      a.task_id AS taskId, a.state, a.reason, t.at, a.created_at AS createdAt
+      a.task_id AS taskId, a.state, a.reason, a.failure_code AS failureCode, t.at, a.created_at AS createdAt
     FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
     JOIN lane_pilot_attempt_transition t ON t.rowid=(SELECT t2.rowid FROM lane_pilot_attempt_transition t2
       WHERE t2.attempt_id=a.id AND t2.refused=0 AND t2.to_state=a.state ORDER BY t2.at DESC, t2.rowid DESC LIMIT 1)
@@ -828,11 +828,13 @@ function attemptChanged(attemptId:string):void {
 }
 
 /** The structured facts of a verification failure; the human reason text keeps its wording. */
-export type AttemptFailureFields = { failureCode?: string; checkName?: string; timeoutSec?: number };
+export type AttemptFailureFields = { failureCode?: FailureCode; checkName?: string; timeoutSec?: number };
 
 /**
  * The failure a reason text names, for the columns readers use instead of parsing it. The writer of an attempt row is this
  * one function, so the text is read once here; `listCheckTimeouts` and the other readers get the fields.
+ * Legacy fallback: producers now pass the fields at the source (writer/server/verify.ts, tasks/validate-output.ts), so this
+ * only fires for a caller that still passes a bare reason (a wrapped reason, a test). The migration backfills old rows.
  */
 function failureFieldsFromReason(reason: string | null | undefined): AttemptFailureFields {
   if (!reason) return {};
@@ -1449,8 +1451,8 @@ export function listCheckTimeouts(db: LanePilotDatabase, projectId: string, chec
   const want = checkHistoryKey(check);
   const rows = db.prepare(`SELECT a.check_name AS checkName, a.timeout_sec AS timeoutSec, t.contract_json AS contract FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
       LEFT JOIN lane_pilot_task t ON t.id=a.task_id AND t.run_id=a.run_id
-      WHERE r.project_id=? AND a.failure_code='verification_timeout' ORDER BY a.created_at DESC, a.attempt_no DESC LIMIT ?`)
-    .all(projectId, limit * 10) as Array<{ checkName: string | null; timeoutSec: number | null; contract: string | null }>;
+      WHERE r.project_id=? AND a.failure_code=? ORDER BY a.created_at DESC, a.attempt_no DESC LIMIT ?`)
+    .all(projectId, "verification_timeout", limit * 10) as Array<{ checkName: string | null; timeoutSec: number | null; contract: string | null }>;
   return rows.flatMap((row) => {
     const checkName = row.checkName;
     const timeoutSec = row.timeoutSec;

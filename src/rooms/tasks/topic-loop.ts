@@ -27,7 +27,7 @@ export interface LoopTask {
   commands: string[];
   /** What the task says (title, objective, files, commands): a research task counts as looking at a topic when this names it. */
   text: string;
-  attempts: Array<{ state: string; reason: string | null }>;
+  attempts: Array<{ state: string; reason: string | null; failureCode?: string | null }>;
 }
 
 export const TOPIC_LOOP = {
@@ -113,9 +113,9 @@ function focusFiles(task: LoopTask, ignored: ReadonlySet<string>): string[] {
 }
 
 const RED = new Set(["validation_failed", "blocked", "empty_output"]);
-/** The tests a family could not get green: named in the reason of a red check, or in the checks of a family that ended an attempt red. */
+/** The tests a family could not get green: named in the reason of a red check (its failure_code), or in the checks of a family that ended an attempt red. */
 const failedNames = (family: Family) => new Set(family.members.flatMap((task) => [
-  ...task.attempts.filter((attempt) => attempt.reason && /verification failed|checks red/.test(attempt.reason)).flatMap((attempt) => testNames(attempt.reason!)),
+  ...task.attempts.filter((attempt) => attempt.failureCode === "verification_failed" || attempt.failureCode === "verification_timeout").flatMap((attempt) => testNames(attempt.reason ?? "")),
   ...(task.attempts.some((attempt) => RED.has(attempt.state)) ? task.commands.flatMap(testNames) : []),
 ]));
 

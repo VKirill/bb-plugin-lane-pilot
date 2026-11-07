@@ -8,6 +8,8 @@ import { sha12 } from "./types";
 const RETRY_WRAPPER = /^retry limit \d+ exhausted:\s*/i;
 /** A red check keeps only that it was a check: its command and output are the task's, and 13 red checks are one class, not 13. */
 const CHECK_RED = /^(verification failed) \([^)]*\):.*$/s;
+/** The failure codes that name a red check (an attempt's own `failure_code`). */
+const RED_CHECK_CODES: ReadonlySet<string> = new Set(["verification_failed", "verification_timeout"]);
 /** Several paths in a row («owns_paths rejected a, b, c») are one: the count of stray files is not a different problem. */
 const PATH_LIST = /(?:[\w.@-]*<path>)(?:[,;]\s*[\w.@-]*<path>)*/g;
 
@@ -24,10 +26,12 @@ export function pathKind(path: string): "test" | "locale" | "lockfile" | "src" {
   return "src";
 }
 
-export function normaliseReason(reason: string | null | undefined): string {
+export function normaliseReason(reason: string | null | undefined, failureCode?: string | null): string {
   const text = (reason ?? "").replace(RETRY_WRAPPER, "").trim();
-  const check = CHECK_RED.exec(text);
-  let base = check ? `${check[1]} (<check>)` : text;
+  // The structured code answers it; the text is the fallback for a log line, a graph run and a legacy row.
+  const redCheck = RED_CHECK_CODES.has(failureCode ?? "");
+  const check = redCheck ? null : CHECK_RED.exec(text);
+  let base = redCheck || check ? `verification failed (<check>)` : text;
   if (!check && OWNERSHIP.test(text)) {
     // The list of rejected files after the keyword becomes one token that names the kinds of files in it.
     const start = text.search(OWNERSHIP);
@@ -43,9 +47,9 @@ export const logOrigin = (message: string): "infra" | "harness" => (/Host is not
 
 export type Signature = { failureClass: string; reasonNorm: string; classKey: string };
 
-export function wallSignature(state: string, reason: string | null | undefined): Signature {
+export function wallSignature(state: string, reason: string | null | undefined, failureCode?: string | null): Signature {
   const cls = failureClass(state, (reason ?? "").replace(RETRY_WRAPPER, ""));
-  const reasonNorm = normaliseReason(reason);
+  const reasonNorm = normaliseReason(reason, failureCode);
   return { failureClass: cls, reasonNorm, classKey: `${cls}:${sha12(`${cls}|${reasonNorm}`)}` };
 }
 

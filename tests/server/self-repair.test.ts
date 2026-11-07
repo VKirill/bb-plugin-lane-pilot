@@ -540,6 +540,9 @@ describe("self-repair", () => {
     expect(writerRedCheck("verification failed (x): exit 1", "writer")).toBe(true);
     expect(writerRedCheck("verification failed (x): exit 1", "orchestrator")).toBe(false);
     expect(writerRedCheck("merge_conflict: main changed since this attempt started: checks red after the replay on main: verification failed (x)", null)).toBe(false);
+    // The structured code answers it; a merge-conflict replay that names a failed check is still not the writer's own red check.
+    expect(writerRedCheck("verification failed (x): exit 1", "writer", "verification_failed")).toBe(true);
+    expect(writerRedCheck("merge_conflict: main changed since this attempt started: checks red after the replay on main: verification failed (x)", null, "verification_failed")).toBe(false);
   });
 
   it("sees a task queued for hours while nothing runs, and a stage nobody will finish", async () => {

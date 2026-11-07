@@ -430,17 +430,15 @@ export function createRuleScan(ctx: ServerCore, services: RuleScanServices, deps
    */
   /**
    * Offline mining of the check-failure log (arXiv #20): verification commands that failed across the window, most
-   * failed first. The command string lives in the attempt's reason («verification failed (cmd): …»); the same command
-   * failing in several tasks is evidence the analyzer reads with the group, at no extra model call.
+   * failed first. The command string is the attempt's `check_name` (its `failure_code` names the red check); the same
+   * command failing in several tasks is evidence the analyzer reads with the group, at no extra model call.
    */
   function minedCheckFailures(projectId: string, since: number, limit = 10): Array<{ command: string; failures: number; tasks: number }> {
-    const rows = db.prepare(`SELECT a.task_id AS taskId, a.reason AS reason FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
-      WHERE r.project_id=? AND a.created_at>=? AND a.reason LIKE 'verification failed (%'`).all(projectId, since) as Array<{ taskId: string; reason: string | null }>;
+    const rows = db.prepare(`SELECT a.task_id AS taskId, a.check_name AS checkName FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
+      WHERE r.project_id=? AND a.created_at>=? AND a.failure_code IN ('verification_failed','verification_timeout') AND a.check_name IS NOT NULL`).all(projectId, since) as Array<{ taskId: string; checkName: string }>;
     const counts = new Map<string, { failures: number; tasks: Set<string> }>();
     for (const row of rows) {
-      const match = /^verification failed \((.+?)\):/.exec(row.reason ?? "");
-      if (!match) continue;
-      const command = match[1]!.slice(0, 200);
+      const command = row.checkName.slice(0, 200);
       const entry = counts.get(command) ?? { failures: 0, tasks: new Set<string>() };
       entry.failures += 1;
       entry.tasks.add(row.taskId);

@@ -226,7 +226,7 @@ export function previousAttemptBrief(last:Record<string, unknown> | null | undef
   const checks = Array.isArray(last.verification) ? last.verification as Array<{ command?:string; exitCode?:number; stdout?:string; stderr?:string }> : [];
   const failed = checks.find((check) => typeof check.exitCode === "number" && check.exitCode !== 0);
   const tail = failed ? failureExcerpt(`${failed.stderr ?? ""}\n${failed.stdout ?? ""}`) : "";
-  const commands = /verification failed \((.+?)\)/.exec(reason)?.[1] ?? (failed?.command ?? "");
+  const commands = (typeof last.checkName === "string" && last.checkName ? last.checkName : "") || (failed?.command ?? "") || (/verification failed \((.+?)\)/.exec(reason)?.[1] ?? "");
   const bullets:string[] = [];
   if (commands) {
     bullets.push(`the check \`${commands}\` failed${failed ? ` (exit ${failed.exitCode})` : ""} → run \`${commands}\` yourself, read its output, fix what it names inside owns_paths${logPath ? `; full log: ${logPath}` : ""}`);

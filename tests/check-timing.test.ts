@@ -53,6 +53,22 @@ describe("check timeout from history", () => {
     await harness.lifecycle.dispose();
   });
 
+  it("stores the failure fields a producer passes at the source, and derives them from a bare reason for a legacy caller", async () => {
+    const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
+    const db = openDatabase(bb);
+    createRun(db, "runA", "A");
+    createTask(db, { id: "t1", runId: "runA", kind: "cli", contract: { project_cwd: ROOT, verification: [{ command: STUDIO, cwd: ROOT }] } });
+    const fields = (id: string) => db.prepare("SELECT failure_code, check_name, timeout_sec FROM lane_pilot_attempt WHERE id=?").get(id) as { failure_code: string | null; check_name: string | null; timeout_sec: number | null };
+    createAttempt(db, { id: "a1", runId: "runA", taskId: "t1" });
+    transitionAttempt(db, "a1", "blocked", { reason: `verification failed (${STUDIO}): exit 1`, failureCode: "verification_failed", checkName: STUDIO });
+    expect(fields("a1")).toEqual({ failure_code: "verification_failed", check_name: STUDIO, timeout_sec: null });
+    // A caller that passes only the reason (a wrapped reason, a test) still gets the fields from the text.
+    createAttempt(db, { id: "a2", runId: "runA", taskId: "t1" });
+    transitionAttempt(db, "a2", "blocked", { reason: `retry limit 2 exhausted: verification failed (${STUDIO}): verification timed out after 120s` });
+    expect(fields("a2")).toEqual({ failure_code: "verification_timeout", check_name: STUDIO, timeout_sec: 120 });
+    await harness.lifecycle.dispose();
+  });
+
   it("places a timeout by the folder its task contract gave the command: appA and appB do not share it, root and game/ do", async () => {
     const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
     const db = openDatabase(bb);

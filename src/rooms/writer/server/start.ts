@@ -141,6 +141,10 @@ export function familyFailureRecord(db:ReturnType<typeof openDatabase>, runId:st
 const isOwnFailure = (outcome:Record<string, unknown>) =>
   ["task", "contract"].includes(failureClass(String(outcome.status), typeof outcome.reason === "string" ? outcome.reason : null));
 
+/** The attempt's own check failed (its structured failure_code), as opposed to a merge, a stray file or a provider fault. */
+const verificationFailure = (outcome:Record<string, unknown>):boolean =>
+  outcome.failureCode === "verification_failed" || outcome.failureCode === "verification_timeout";
+
 /**
  * The task's last own failure before this start (a retry from the board, a restart of a parked task, a reload): a writer
  * that starts fresh was told nothing of it and redid it (vf-s4-items 2026-10-24, «owns_paths rejected …/Buffs.luau» twice).
@@ -1166,7 +1170,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         // the same diff twice) does not: the next attempt goes to the next writer in the chain, not this one again.
         if (sessionEnd) {
           const ended = `${sessionEnd}: ${String(last.reason ?? last.status)}`;
-          if (sessionEnd.startsWith("no progress:") && failedClass !== "verification_timeout" && /^verification failed\b/.test(String(last.reason ?? ""))) {
+          if (sessionEnd.startsWith("no progress:") && failedClass !== "verification_timeout" && verificationFailure(last)) {
             checkEscalation = ended;
             break;
           }
@@ -1189,7 +1193,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         // would only repeat them. A repeated red check is the exception: the next attempt is the next writer in the
         // chain. A turn in the same thread is not stopped here: the session's own early stop is above.
         const repeated = redo ? null : repeatedFailureReason(familyFailure, { state:String(last.status), reason:typeof last.reason === "string" ? last.reason : null });
-        if (repeated && failedClass !== "verification_timeout" && /^verification failed\b/.test(String(last.reason ?? ""))) {
+        if (repeated && failedClass !== "verification_timeout" && verificationFailure(last)) {
           checkEscalation = repeated;
           primaryFailure = { ...last };
           break;
@@ -1197,7 +1201,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         // Cascade retry (arXiv #25/26, writer.retry_escalate): with the setting on, the first red check already goes to
         // the next writer in the fallback chain — a cheaper writer failing the task's check is reason enough to try
         // the next one, inside the same attempt budget. Off by default: a single failure retries the same writer.
-        if (!repeated && failedClass === "task" && /^verification failed\b/.test(String(last.reason ?? "")) && runSettings["writer.retry_escalate"] === true) {
+        if (!repeated && failedClass === "task" && verificationFailure(last) && runSettings["writer.retry_escalate"] === true) {
           checkEscalation = `retry_escalate: ${String(last.reason ?? "")}`;
           primaryFailure = { ...last };
           break;
@@ -1209,7 +1213,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
           primaryFailure = { ...last };
           // The two normal moves are spent: the wall ladder opens (hunters from other sides, then the backlog), see src/rooms/wall.
           services.wall?.noteTaskStop({ projectId:input.projectId, runId:input.runId, taskId:input.taskId, family:taskFamily(input.taskId), state:familyFailure?.state ?? "validation_failed",
-            reason:repeated.replace(/^repeated_failure:\s*/, ""), pmThreadId:input.pmThreadId ?? null, task:input.task, plan:input.plan })
+            reason:repeated.replace(/^repeated_failure:\s*/, ""), failureCode:typeof last.failureCode === "string" ? last.failureCode : null, pmThreadId:input.pmThreadId ?? null, task:input.task, plan:input.plan })
             .catch((cause:unknown) => ctx.log(`wall: could not note the stop of ${input.taskId}: ${cause instanceof Error ? cause.message : String(cause)}`));
           break;
         }
@@ -1320,6 +1324,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
           const decision=emergencyFallbackDecision({
             state:String(failure.status ?? "unknown"),
             reason:typeof failure.reason === "string" ? failure.reason : null,
+            failureCode:typeof failure.failureCode === "string" ? failure.failureCode : null,
             stopConfirmed:failure.stopConfirmed === true,
             checkEscalation:failure.checkEscalation === true,
           });

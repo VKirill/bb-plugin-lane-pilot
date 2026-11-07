@@ -406,14 +406,14 @@ export function createSelfRepair(ctx: ServerCore, deps: RepairDeps, engineOf?: (
     // moved down the writer chain by design (proj_acpiaqf4wq 2026-10-11: three grok-4.6 «Plan usage at 100%» hand-offs,
     // each followed by an accepted fallback attempt, raised a repair).
     // A writer's own stray files and its own red checks are its work, told in its thread (writerStrayFiles, writerRedCheck).
-    const recent = db.prepare(`SELECT a.id, a.run_id, a.task_id, a.thread_id, a.reason, a.updated_at, r.project_id, t.contract_json, ft.origin AS triage_origin FROM lane_pilot_attempt a
+    const recent = db.prepare(`SELECT a.id, a.run_id, a.task_id, a.thread_id, a.reason, a.failure_code, a.updated_at, r.project_id, t.contract_json, ft.origin AS triage_origin FROM lane_pilot_attempt a
       JOIN lane_pilot_run r ON r.id=a.run_id LEFT JOIN lane_pilot_task t ON t.id=a.task_id
       LEFT JOIN lane_pilot_failure_triage ft ON ft.attempt_id=a.id AND ft.project_id=r.project_id AND ft.status='ok'
-      WHERE a.state IN (${FAILED_STATES}) AND a.updated_at > ?`).all(now - 86_400_000) as Array<{ id: string; run_id: string; task_id: string; thread_id: string | null; reason: string | null; updated_at: number; project_id: string; contract_json: string | null; triage_origin: string | null }>;
+      WHERE a.state IN (${FAILED_STATES}) AND a.updated_at > ?`).all(now - 86_400_000) as Array<{ id: string; run_id: string; task_id: string; thread_id: string | null; reason: string | null; failure_code: string | null; updated_at: number; project_id: string; contract_json: string | null; triage_origin: string | null }>;
     const patterns = new Map<string, typeof recent>();
     for (const row of recent) {
       if (ignored.has(row.project_id) || !row.reason || SYSTEM_REASON.test(row.reason) || NOT_A_FAULT.test(row.reason)
-        || failureClass("blocked", row.reason) === "limit" || writerStrayFiles(row.reason, row.contract_json) || writerRedCheck(row.reason, row.triage_origin)) continue;
+        || failureClass("blocked", row.reason) === "limit" || writerStrayFiles(row.reason, row.contract_json) || writerRedCheck(row.reason, row.triage_origin, row.failure_code)) continue;
       const key = reasonSignature("repeat", row.reason);
       patterns.set(key, [...(patterns.get(key) ?? []), row]);
     }
