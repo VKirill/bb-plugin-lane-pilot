@@ -1,6 +1,6 @@
 import type { HeadPart } from "@lane-pilot/contracts";
 import { bestEffort, sha256Hex } from "@lane-pilot/kit";
-import { extractModelJson } from "../critique";
+import { extractModelJson } from "@lane-pilot/workflow-engine";
 import type { ChangeDescriptor } from "../policy";
 import { EVIDENCE_WAIT_MS, closeExpiredRepair, decideAcceptance, gateRepair, laterReleaseTouches, repairChange, type Acceptance, type AcceptanceEvidence, type GateDecision, type RepairFile } from "./acceptance";
 import { analysisPrompt, hunterPrompt, parseNightReport, parsePrediction, predictionHeld, repairBrief, taskWallMessage, PREDICTION_METRICS } from "./brief";

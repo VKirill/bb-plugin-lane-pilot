@@ -344,7 +344,7 @@ export default async function plugin(bb: BbPluginApi) {
       detectCompiledMainAgentCapability,
       pendingSwitch: (threadId: string) => pendingSwitch(ctx.bb.storage.kv, threadId),
     } satisfies AgentOpsApi & { resolveIntegrationGate: VerificationGatePort },
-    { isTaskSatisfied },
+    { isTaskSatisfied } satisfies { isTaskSatisfied: IsTaskSatisfied },
     createWriterState(ctx) satisfies WriterStatePort,
     createWorkflowEngine(ctx, services),
     createWorkflowTriggersService(ctx, services),
