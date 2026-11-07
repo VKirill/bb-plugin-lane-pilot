@@ -111,8 +111,3 @@ Outcomes and failures: the statements are plain `CREATE TABLE`/`INDEX`/`TRIGGER`
 
 - [Workflow Execution Engine](execution-engine.md)
 - [Run journal data model](../data-model/run-journal.md)
-
-<!-- lane-pilot:backlinks -->
-## Referenced by
-
-- [Workflow Execution Engine](execution-engine.md)

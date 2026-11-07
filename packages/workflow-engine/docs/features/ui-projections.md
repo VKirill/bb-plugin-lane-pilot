@@ -2,7 +2,7 @@
 title: Workflow UI Projections and Schedule Helpers
 type: component
 created: 2026-10-10
-updated: 2026-11-06
+updated: 2026-11-07
 status: active
 confidence: high
 tags: [workflow-engine, ui, schedules]
@@ -71,7 +71,7 @@ The complete view deliberately follows the lowered graph rather than the source 
 
 1. Lower the validated workflow with the optional resolver; the resulting graph is the graph used for display, including generated parallel node IDs (`packages/workflow-engine/src/view.ts:47-50`).
 2. Convert each lowered node to a plain view node. Notes get a 400-character text excerpt; agents and humans get flattened/clipped prompt or question excerpts; lp-task, action, decision, parallel, join, and subworkflow nodes expose corresponding stages, action, source, loop, or called-workflow data (`packages/workflow-engine/src/view.ts:14-34`).
-3. Add `$start` and `$end` display nodes only if an edge references those sentinels. Preserve edge indexes and pass modes, turn conditions into display text, and list carried field names (`packages/workflow-engine/src/view.ts:54`, `packages/workflow-engine/src/view.ts:48-55`).
+3. Add `$start` and `$end` display nodes via `sentinel` only if an edge references those sentinels (`packages/workflow-engine/src/view.ts:51-53`). In `viewEdge`, preserve edge indexes and pass modes, turn conditions into display text with `conditionText`, and list carried field names (`packages/workflow-engine/src/view.ts:42-45`).
 4. Copy `ui.positions`, converting position keys `start` and `end` to `$start` and `$end`; include positions only when the resulting object has keys (`packages/workflow-engine/src/view.ts:53-55`).
 
 The function assumes a parsed `Workflow` and catches neither lowering nor resolver errors; those exceptions propagate to the caller (`packages/workflow-engine/src/view.ts:47-55`, `packages/workflow-engine/src/lower.ts:17-19`).

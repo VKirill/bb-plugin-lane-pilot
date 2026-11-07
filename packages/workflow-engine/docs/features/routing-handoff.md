@@ -2,7 +2,7 @@
 title: Workflow Routing and Handoff
 type: component
 created: 2026-10-10
-updated: 2026-11-06
+updated: 2026-11-07
 status: active
 confidence: medium
 tags: [workflow-engine, routing, handoff]
@@ -29,7 +29,7 @@ Routing scores eligible workflow cards against a request, filters candidates aga
 1. `routeIntent` trims the request, extracts signals, and handles a continuation request as run-state guidance instead of workflow selection (`packages/workflow-engine/src/router.ts:522`).
 2. It indexes only offered workflows using bilingual names, tags, descriptions, and examples; it scores text and example similarity, applies rule boosts and `not_for` penalties, and adds run-history ordering where records exist (`packages/workflow-engine/src/router.ts:415`, `packages/workflow-engine/src/router.ts:415`, `packages/workflow-engine/src/router.ts:553`).
 3. It excludes workflows whose required plugins, skills, secrets, machines, or project properties are known to be unavailable, then gives the best candidates to the configured router model (`packages/workflow-engine/src/router.ts:322-335`, `packages/workflow-engine/src/router.ts:546-568`).
-4. A model response is bounded and checked against the candidate list; model failure or an off-list choice falls back to the deterministic scorer (`packages/workflow-engine/src/router.ts:558-566`).
+4. A model response is bounded and checked against the candidate list; model failure or an off-list choice falls back to `deterministicRouterModel` (`packages/workflow-engine/src/router.ts:580-591`).
 5. The decision builder returns a route or clarification result with confidence, evidence, questions, boundary contract, goals, inferred inputs, warnings, and live-trial state (`packages/workflow-engine/src/router.ts:362-384`, `packages/workflow-engine/src/router.ts:568-603`).
 6. Callers can run `checkRequires` for detailed preflight against installed skills/plugins/MCP servers, secrets, tools, and platform sessions. Missing requirements produce refusal text and secret requests; unavailable checks are reported as unverified (`packages/workflow-engine/src/preflight.ts:73-127`, `packages/workflow-engine/src/preflight.ts:73`).
 7. `planPacket` converts large or structured input into inline content or references according to packet constraints (`packages/workflow-engine/src/handoff.ts:97-154`).
@@ -50,12 +50,12 @@ Routing scores eligible workflow cards against a request, filters candidates aga
 
 - Only published or tested, non-internal workflows without `startedBy` are offered; `startedBy` identifies a starter graph initiated by Lane Pilot and excludes it from PM/router choices (`packages/workflow-engine/src/router.ts:299`, `packages/workflow-engine/src/schema.ts:280`). A tested workflow is marked as needing an owner-authorized live trial (`packages/workflow-engine/src/router.ts:299`).
 - State filtering treats a secret as optional when its requirement text signals optionality; machine checks apply to `host_...` machine identifiers (`packages/workflow-engine/src/router.ts:353`).
-- The default router model is deterministic; an injected model can only choose from candidate cards, and an invalid choice/failure falls back to scoring (`packages/workflow-engine/src/router.ts:346-358`, `packages/workflow-engine/src/router.ts:558-566`).
+- The default router model is deterministic; an injected model can only choose from candidate cards, and an invalid choice or failure falls back to `deterministicRouterModel` (`packages/workflow-engine/src/router.ts:379`, `packages/workflow-engine/src/router.ts:580-591`).
 - Requests to map/reverse-engineer a website service API are classified as `api-recon` when both API-mapping language and a site/service/account signal are present. That rule suppresses the security-audit rule for the same request; the reference role is read-only and uses browser-automation and Env Catalog (`packages/workflow-engine/src/router.ts:229-233`, `packages/workflow-engine/src/capabilities.ts:101-107`).
 - Requests over 80 words route only when the selected workflow has at least one matching rule and its base text-fit score is at least 0.12; otherwise it remains a suggestion and the router asks for clarification (`packages/workflow-engine/src/router.ts:16-21`, `packages/workflow-engine/src/router.ts:607-617`).
 - Goal IDs start with a letter, allow letters/digits/underscore/hyphen, and are at most 40 characters; `done_when` and `evidence` are trimmed strings of 3–600 characters (`packages/workflow-engine/src/goals.ts:9-15`).
 - Run goals are limited by `MAX_GOALS`; goals can be re-grounded on a due interval determined by `regroundDue` (`packages/workflow-engine/src/goals.ts:17`, `packages/workflow-engine/src/goals.ts:55`).
-- The run-history tiebreaker counts business outcomes, not engine statuses: `RunRecord.succeeded` is completed work (`workDone`), a correct refusal counts as not completed, and an escalation is recorded apart and moves neither side (`packages/workflow-engine/src/router.ts:493`, `packages/workflow-engine/src/router.ts:492-498`). `runRecords` builds each record from the shared outcome tally over the run journal (`packages/workflow-engine/src/run-stats.ts:6-32`; the outcome classes in the [run journal data model](../data-model/run-journal.md)).
+- The run-history tiebreaker counts business outcomes, not engine statuses: `RunRecord` treats `workDone` as completed work, while `refused` counts as not completed and `escalated` moves neither side (`packages/workflow-engine/src/router.ts:503-506`). `runRecords` builds each record from the shared outcome tally over the run journal (`packages/workflow-engine/src/run-stats.ts:6-14`; the outcome classes in the [run journal data model](../data-model/run-journal.md)).
 
 ## Public API
 

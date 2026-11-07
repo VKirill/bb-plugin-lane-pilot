@@ -2,14 +2,13 @@
 title: Workflow Engine — Overview
 type: overview
 created: 2026-10-10
-updated: 2026-10-30
+updated: 2026-11-07
 status: active
 confidence: medium
 tags: [workflow-engine, package, overview]
 sources:
   - packages/workflow-engine/src/index.ts
   - packages/workflow-engine/src/catalog.ts
-  - packages/workflow-engine/src/db.ts
   - packages/workflow-engine/src/draft-store.ts
   - packages/workflow-engine/src/engine.ts
   - packages/workflow-engine/src/files.ts
@@ -22,6 +21,10 @@ sources:
   - src/rooms/storage/database.ts
   - src/rooms/critique/critique.ts
   - src/rooms/schedule/time.ts
+  - packages/workflow-engine/src/validate.ts
+  - packages/workflow-engine/src/ops-store.ts
+  - packages/workflow-engine/src/business-outcome.ts
+  - packages/workflow-engine/src/quality-mode.ts
 ---
 # Workflow Engine — Overview
 TL;DR: `@lane-pilot/workflow-engine` defines, validates, routes, executes, and stores graph-based workflows for Lane Pilot’s host application.
@@ -34,21 +37,26 @@ Built-in workflow definitions are supplied by the caller to the catalog; they ar
 
 ## Stack
 
-- TypeScript ESM package; package exports point directly at TypeScript source (`packages/workflow-engine/package.json:2-14`).
-- SQLite access uses a `better-sqlite3` database handle (`packages/workflow-engine/src/db.ts:1-4`).
+- Private ESM package; package `exports` point directly at TypeScript source (`packages/workflow-engine/package.json:10-13`).
+- SQLite access uses a `better-sqlite3` database handle (`packages/workflow-engine/src/engine.ts:1`, `packages/workflow-engine/src/engine.ts:126-127`).
 - Workflow schemas and domain validation use Zod (`packages/workflow-engine/src/schema.ts:1-2`).
 - Package code imports `@lane-pilot/kit` for hashing and the host application supplies model and contract integrations (for example `packages/workflow-engine/src/journal.ts:1-4`, `packages/workflow-engine/src/store.ts:1-7`).
 
 ## How it starts or is used
 
 1. The host passes built-in definitions and optional file sources to `createWorkflowCatalog`; it loads and validates those definitions into a `WorkflowStore` (`packages/workflow-engine/src/catalog.ts:17-25`, `packages/workflow-engine/src/store.ts:50-58`).
-2. The host creates `WorkflowEngine` with a SQLite handle and `harnessVersion`, registers node executors, and starts validated workflows with inputs (`packages/workflow-engine/src/engine.ts:124-150`, `packages/workflow-engine/src/engine.ts:208-217`).
-3. The engine records run and step state through its journal and resolves subworkflows with the configured `resolveWorkflow` callback (`packages/workflow-engine/src/engine.ts:208-213`, `packages/workflow-engine/src/journal.ts:151-191`).
+2. The host creates `WorkflowEngine` (`packages/workflow-engine/src/engine.ts:192-216`) with a SQLite handle and `harnessVersion` (`packages/workflow-engine/src/engine.ts:126-130`), registers node executors with `register` (`packages/workflow-engine/src/engine.ts:218`), and starts validated workflows with `start` (`packages/workflow-engine/src/engine.ts:268`).
+3. The engine records run and step state through its `createJournal` handle (`packages/workflow-engine/src/journal.ts:148-152`) and resolves subworkflows with the configured `resolveWorkflow` callback (`packages/workflow-engine/src/engine.ts:135`, `packages/workflow-engine/src/engine.ts:1313-1317`).
 4. The host can use draft-store operations to edit and test definitions, then publish through the file writer with compare-and-swap protection (`packages/workflow-engine/src/draft-store.ts:81-109`, `packages/workflow-engine/src/files.ts:17-39`).
 
 ## Public API and configuration
 
-The default export surface re-exports workflow modules from `src/index.ts`; notable entry points include `WorkflowEngine`, `loadWorkflowStore`, `createWorkflowCatalog`, `loadWorkflow`/`parseWorkflow`, `createDraftStore`, `createJournal`, `createStatusResolver`, the run business-outcome helpers (`tallyOutcomes`, `workDoneRate`, `workflowFinish`), and `resolveTaskQualityMode` (`packages/workflow-engine/src/index.ts:1-33`, `packages/workflow-engine/src/index.ts:2`, `packages/workflow-engine/src/index.ts:23`). Engine configuration is passed to `EngineOptions`; `db` and `harnessVersion` are required, while resume policy, compatibility version, runtime construction, admission, lease duration, goal auditing, and event notification are optional (`packages/workflow-engine/src/engine.ts:124-150`).
+The default package export re-exports the workflow engine, journal, stores, lowering, and validation modules (`packages/workflow-engine/src/index.ts:1-34`):
+- The execution engine: `WorkflowEngine` (`packages/workflow-engine/src/engine.ts:192-218`).
+- Catalog and stores: `createWorkflowCatalog` (`packages/workflow-engine/src/catalog.ts:17-25`), `loadWorkflowStore` (`packages/workflow-engine/src/store.ts:50-58`), `createDraftStore` (`packages/workflow-engine/src/draft-store.ts:78-81`), and `createJournal` (`packages/workflow-engine/src/journal.ts:148-152`).
+- Definitions and validation: `loadWorkflow` and `parseWorkflow` (`packages/workflow-engine/src/validate.ts:499-520`).
+- Status and outcome helpers: `createStatusResolver` (`packages/workflow-engine/src/ops-store.ts:91-94`), `workflowFinish` (`packages/workflow-engine/src/business-outcome.ts:25-30`), and `resolveTaskQualityMode` (`packages/workflow-engine/src/quality-mode.ts:16-20`).
+- Configuration is passed to `EngineOptions`; `db` and `harnessVersion` are required, while resume policy, compatibility version, runtime construction, admission, lease duration, goal auditing, and event notification are optional (`packages/workflow-engine/src/engine.ts:126-150`).
 
 ## Consumers
 
