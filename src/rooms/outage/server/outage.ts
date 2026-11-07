@@ -23,9 +23,9 @@ export async function recordStartGap(ctx: Pick<ServerCore, "bb" | "db" | "log">,
     // holds only what asks him (2026-11-02: «Ждут владельца» carried a «не работал 5 мин» row that wanted nothing).
     ctx.log(`outage: Lane Pilot was not running for ${outage.minutes} min (last beat ${new Date(outage.fromAt).toISOString()}): ${cause}`);
   }
-  await kv.set(BEAT_KEY, now as never).catch(() => undefined);
-  await kv.set(STOP_KEY, null as never).catch(() => undefined);
-  await kv.set(PROCESS_KEY, { startedAt: now, pid: process.pid, node: process.version } as never).catch(() => undefined);
+  await bestEffort(ctx.log, "outage beat write", kv.set(BEAT_KEY, now as never), undefined);
+  await bestEffort(ctx.log, "outage stop-marker clear", kv.set(STOP_KEY, null as never), undefined);
+  await bestEffort(ctx.log, "outage process record", kv.set(PROCESS_KEY, { startedAt: now, pid: process.pid, node: process.version } as never), undefined);
   // Prune foreign memory previews: probe rows older than 30 days (planted tokens and their answers) leave at boot.
   try { ctx.db.prepare("DELETE FROM lane_pilot_memory_probe WHERE at < ?").run(now - 30 * 86_400_000); } catch { /* no probe table in a test database */ }
   return outage;
@@ -35,10 +35,10 @@ export async function recordStartGap(ctx: Pick<ServerCore, "bb" | "db" | "log">,
 export async function mountOutage(ctx: ServerCore): Promise<void> {
   await recordStartGap(ctx);
   // The last words of this run: a reload or a deploy names itself, so the next start does not count it as a death.
-  ctx.bb.onDispose(() => { void ctx.bb.storage.kv.set(STOP_KEY, { reason: "the plugin was reloaded (a deploy or a settings change)", at: Date.now() } as never).catch(() => undefined); });
+  ctx.bb.onDispose(() => { void bestEffort(ctx.log, "outage stop marker", ctx.bb.storage.kv.set(STOP_KEY, { reason: "the plugin was reloaded (a deploy or a settings change)", at: Date.now() } as never), undefined); });
   scheduleIsolated(ctx.bb, "outage-beat", "* * * * *", async () => {
     if (ctx.isDisposed()) return;
-    await ctx.bb.storage.kv.set(BEAT_KEY, Date.now() as never).catch(() => undefined);
+    await bestEffort(ctx.log, "outage heartbeat", ctx.bb.storage.kv.set(BEAT_KEY, Date.now() as never), undefined);
   }, { timeoutMs: 30_000 });
 }
 

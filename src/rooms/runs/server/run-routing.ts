@@ -173,7 +173,7 @@ export async function helperChildPlacement(input:{
   const parentThread = await Promise.race([
     input.bb.sdk.threads.get({ threadId:parentId }),
     new Promise<null>((resolve) => { timer = setTimeout(() => resolve(null), 2_000); }),
-  ]).finally(() => { if (timer) clearTimeout(timer); }).catch(() => null);
+  ]).finally(() => { if (timer) clearTimeout(timer); });
   if (!parentThread) throw new Error("helper_parent_thread_unresolved");
   const threadProject = stringAt(parentThread, "projectId");
   if (!threadProject) throw new Error("helper_parent_identity_unresolved");

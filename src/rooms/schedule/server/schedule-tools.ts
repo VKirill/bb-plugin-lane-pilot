@@ -29,7 +29,7 @@ const MAX_PARENT_HOPS = 4;
 export async function startedBySchedule(bb: BbPluginApi, threadId: string): Promise<boolean> {
   let current: string | null = threadId;
   for (let hop = 0; current && hop <= MAX_PARENT_HOPS; hop += 1) {
-    const metadata = await bb.sdk.threads.getPluginMetadata({ threadId: current }).catch(() => null) as Record<string, unknown> | null;
+    const metadata = await orMiss(bb.sdk.threads.getPluginMetadata({ threadId: current }), null, isNotFound) as Record<string, unknown> | null;
     if (metadata?.origin === "schedule") return true;
     const thread = await orMiss(bb.sdk.threads.get({ threadId: current }), null, isNotFound) as { parentThreadId?: unknown } | null;
     current = typeof thread?.parentThreadId === "string" ? thread.parentThreadId : null;

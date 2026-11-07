@@ -54,7 +54,7 @@ export function mountRulesScanGraph(ctx: ServerCore, services: Services): void {
     }
     if (!limit) { if (first) return first; throw error; }
     noteProviderLimit(ctx.bb, analyzer.providerId, analyzer.model, limit);
-    const next = await scan.analyzerFor(job.projectId, place, { avoidProvider: analyzer.providerId }).catch(() => null);
+    const next = await scan.analyzerFor(job.projectId, place, { avoidProvider: analyzer.providerId }).catch((cause: unknown) => { ctx.log(`rules-scan: fallback analyzer unreadable: ${cause instanceof Error ? cause.message : String(cause)}`); return null; });
     if (!next || next.providerId === analyzer.providerId) throw new Error(`${analyzer.providerId}/${analyzer.model} hit a provider limit (${limit}) and no other provider is on offer`);
     ctx.bb.log.warn(`rules analyzer ${job.key}: ${analyzer.providerId}/${analyzer.model} hit a provider limit (${limit}); rerunning on ${next.providerId}/${next.model}`);
     return await runOnce(c, { ...job, key: `${job.key}:limit` }, place, next);

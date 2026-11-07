@@ -59,13 +59,13 @@ export function episodeSweepDeps(ctx: ServerCore, services: Services, stopped: (
     log: (message) => ctx.log(message),
     warn: (message) => ctx.log(message),
     readOutline: async (threadId) => {
-      const outline = await ctx.bb.sdk.threads.conversationOutline({ threadId }).catch(() => null);
+      const outline = await ctx.bb.sdk.threads.conversationOutline({ threadId }).catch((cause: unknown) => { ctx.log(`episodes: conversation outline of ${threadId} unreadable: ${cause instanceof Error ? cause.message : String(cause)}`); return null; });
       const text = (outline?.items ?? []).map((item) => `${item.role === "user" ? "User" : "Assistant"}: ${item.preview}`).join("\n");
       return text || null;
     },
     readEvents: (threadId) => services.harness.threadEvents(threadId, ERRAND_EPISODE_TRACE_EVENTS),
     runModel: async (prompt, projectId, runId) => {
-      const { place, projectId: threadProject } = await analystPlace(ctx.db, projectId ?? null, (id) => services.resolveProjectWriterHost({ projectId: id } as never).catch(() => null));
+      const { place, projectId: threadProject } = await analystPlace(ctx.db, projectId ?? null, (id) => services.resolveProjectWriterHost({ projectId: id } as never).catch((cause: unknown) => { ctx.log(`episodes: writer host of ${id} unreadable: ${cause instanceof Error ? cause.message : String(cause)}`); return null; }));
       if (!place || (place as { status?: string }).status !== "resolved") throw new Error("episode_enrich_no_host");
       const project = place as { hostId: string; path: string };
       // The analyzer is a full-access agent: in the project folder it read other threads' unmasked histories
@@ -80,7 +80,7 @@ export function episodeSweepDeps(ctx: ServerCore, services: Services, stopped: (
         analystRooms.set(project.hostId, room);
       }
       const host = { hostId: project.hostId, path: room };
-      const settings = (await ctx.effectiveProjectSettings(projectId ?? GLOBAL_SETTINGS_PROJECT_ID).catch(() => null))?.values ?? {};
+      const settings = (await ctx.effectiveProjectSettings(projectId ?? GLOBAL_SETTINGS_PROJECT_ID).catch((cause: unknown) => { ctx.log(`episodes: project settings unreadable: ${cause instanceof Error ? cause.message : String(cause)}`); return null; }))?.values ?? {};
       const spawnUsage = spawnUsageOf(ctx);
       await warmSpawnUsage(spawnUsage, host.hostId);
       const folderBlock = await readProviderFolderBlock(ctx.bb.storage.kv, host.hostId);
@@ -93,13 +93,13 @@ export function episodeSweepDeps(ctx: ServerCore, services: Services, stopped: (
       return { text, model: `${analyzer.providerId}/${analyzer.model}` };
     },
     chooseKey: async (input, { runId, projectId }) => {
-      const settings = ((await ctx.effectiveProjectSettings(projectId ?? GLOBAL_SETTINGS_PROJECT_ID).catch(() => null))?.values ?? {}) as JevSettings;
+      const settings = ((await ctx.effectiveProjectSettings(projectId ?? GLOBAL_SETTINGS_PROJECT_ID).catch((cause: unknown) => { ctx.log(`episodes: project settings unreadable: ${cause instanceof Error ? cause.message : String(cause)}`); return null; }))?.values ?? {}) as JevSettings;
       return (await chooseProcessKey({ ...input, ctx: { projectId: projectId ?? "*", runId, subject: runId, settings } })).key;
     },
     judge: async (input, { runId, projectId }) => {
       const instance = jev();
       if (!instance) return;
-      const settings = ((await ctx.effectiveProjectSettings(projectId ?? GLOBAL_SETTINGS_PROJECT_ID).catch(() => null))?.values ?? {}) as JevSettings;
+      const settings = ((await ctx.effectiveProjectSettings(projectId ?? GLOBAL_SETTINGS_PROJECT_ID).catch((cause: unknown) => { ctx.log(`episodes: project settings unreadable: ${cause instanceof Error ? cause.message : String(cause)}`); return null; }))?.values ?? {}) as JevSettings;
       if (!instance.enabled(settings)) return;
       await instance.judge(errandFailureJudgment, input, { projectId: projectId ?? "*", runId, subject: runId, settings });
     },

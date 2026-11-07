@@ -8,7 +8,7 @@ import type { rpcContract } from "../../contracts";
 import { adoptRuleProposal, memorySettingsFor } from "../../self-repair/server";
 import type { ServerCore } from "../../contracts/server";
 
-import { sha256Hex } from "@lane-pilot/kit";
+import {sha256Hex, bestEffort} from "@lane-pilot/kit";
 import { threadMemoryBlock } from "./thread-block";
 import { rerankRecords } from "./rerank";
 import { loadProjectSettings } from "../../storage";
@@ -31,10 +31,10 @@ export function sessionMemoryRpc(ctx: ServerCore, services: Services) {
     // The project and section chain a folder on a machine belongs to: the deepest place that contains it.
     session_memory_project: async ({ hostId, path }) => {
       const target = resolve(path);
-      const projects = await bb.sdk.projects.list({ includePersonal: true } as never).catch(() => [] as Array<{ id: string }>) as Array<{ id: string }>;
+      const projects = await bb.sdk.projects.list({ includePersonal: true } as never) as Array<{ id: string }>;
       let best: { projectId: string; scopes: string[]; length: number } | null = null;
       for (const project of projects) {
-        for (const place of await services.docsPlaces(project.id).catch(() => [])) {
+        for (const place of await services.docsPlaces(project.id).catch((cause: unknown) => { ctx.log(`session memory: docs places of ${project.id} unreadable: ${cause instanceof Error ? cause.message : String(cause)}`); return []; })) {
           const base = resolve(place.path);
           if (place.hostId !== hostId || !(target === base || target.startsWith(`${base}/`))) continue;
           if (!best || base.length > best.length) best = { projectId: project.id, scopes: place.scopes, length: base.length };
@@ -105,7 +105,7 @@ export function sessionMemoryRpc(ctx: ServerCore, services: Services) {
       const employee = /^specialist:([\w-]{1,60})$/.exec(audience ?? "")?.[1];
       if (employee) {
         const { recordRoleLine } = await import("../../native-agent");
-        await recordRoleLine(ctx.bb.storage.kv, projectId, employee, rule).catch(() => undefined);
+        await bestEffort(ctx.bb.log, "session memory role line", recordRoleLine(ctx.bb.storage.kv, projectId, employee, rule), undefined);
       }
       const adopted = result.created ? Boolean(adoptRuleProposal(db, projectId, result.id)) : false;
       const proposal = getRuleProposal(db, projectId, result.id);

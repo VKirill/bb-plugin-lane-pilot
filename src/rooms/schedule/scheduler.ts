@@ -2,7 +2,7 @@ import type Database from "better-sqlite3";
 import { WAITING_LIMIT_MS, type ScheduleKind, type ScheduleTask } from "./model";
 import { ACTIVE_RUN_STATUSES, createScheduleStore, taskOf, whenOf, type RunRow, type ScheduleRow, type ScheduleStore } from "./store";
 import { fireTimes } from "./time";
-import { pollPause } from "@lane-pilot/kit";
+import {pollPause} from "@lane-pilot/kit";
 
 /**
  * The scheduler of the schedule board. A tick (every minute, from an isolated schedule of the core) does two things:
@@ -220,7 +220,7 @@ export function createScheduler(deps: SchedulerDeps) {
         const polled = await executor.poll({ ...input, run: fresh });
         // Late is not lost: work that finished while nobody was looking (the hub was off) is taken as it ended. Only work still going past its deadline is stopped.
         if (polled.state !== "done" && fresh.deadline_at !== null && now() > fresh.deadline_at) {
-          await executor.cancel({ ...input, run: fresh }).catch(() => undefined);
+          await executor.cancel({ ...input, run: fresh }).catch((cause: unknown) => log(`schedule cancel of ${fresh.id} after timeout failed: ${cause instanceof Error ? cause.message : String(cause)}`));
           end(fresh, "timed_out", { error: fresh.status === "waiting" ? "nobody answered in time" : `did not finish within ${input.schedule.timeout_sec} s`, reason: "timeout" });
           ended += 1;
           continue;
@@ -295,7 +295,7 @@ export function createScheduler(deps: SchedulerDeps) {
     if (run.status === "queued") { end(run, "canceled", { reason: "canceled by the owner" }); return true; }
     if (run.status !== "running" && run.status !== "waiting") return false;
     const input = inputFor(run);
-    if (input && run.ref_id) await deps.executors[input.schedule.kind].cancel(input).catch(() => undefined);
+    if (input && run.ref_id) await deps.executors[input.schedule.kind].cancel(input).catch((cause: unknown) => log(`schedule cancel of ${run.id} failed: ${cause instanceof Error ? cause.message : String(cause)}`));
     end(run, "canceled", { reason: "canceled by the owner" });
     return true;
   }

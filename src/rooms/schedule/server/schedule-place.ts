@@ -34,7 +34,7 @@ async function placeOf(ctx: ServerCore, services: Services, projectId: string): 
   const environment = environmentId ? await orMiss(bb.sdk.environments.get({ environmentId }), null, isNotFound) : null;
   const folderPath = stringAt(environment, "path") ?? project?.sources?.[0]?.path ?? null;
   const hostId = stringAt(environment, "hostId") ?? project?.sources?.[0]?.hostId ?? null;
-  const sections = await ctx.listProjectSections(projectId).catch(() => []);
+  const sections = await ctx.listProjectSections(projectId).catch((cause: unknown) => { ctx.log(`schedule: project sections of ${projectId} unreadable: ${cause instanceof Error ? cause.message : String(cause)}`); return []; });
   const own = stringAt(thread, "sectionId");
   const copies = sections.filter((row) => row.kind === "folder").flatMap((row) => row.paths.filter(({ path }) => path).map(({ path }) => ({ row, path })));
   const matched = folderPath ? copies.filter(({ path }) => within(folderPath, path)).sort((a, b) => b.path.length - a.path.length)[0] : undefined;
@@ -50,7 +50,7 @@ async function placeOf(ctx: ServerCore, services: Services, projectId: string): 
 /** The places of the given projects, read once each. */
 export async function projectPlaces(ctx: ServerCore, services: Services, projectIds: readonly string[]): Promise<Map<string, ProjectPlace>> {
   const ids = [...new Set(projectIds)];
-  return new Map(await Promise.all(ids.map(async (id) => [id, await placeOf(ctx, services, id).catch(() => EMPTY_PLACE)] as const)));
+  return new Map(await Promise.all(ids.map(async (id) => [id, await placeOf(ctx, services, id).catch((cause: unknown) => { ctx.log(`schedule: place of ${id} unreadable: ${cause instanceof Error ? cause.message : String(cause)}`); return EMPTY_PLACE; })] as const)));
 }
 
 /** The `where` of a schedule: a script's own machine and folder, else the PM chat's; the folder of a chain is the project's. */

@@ -268,7 +268,7 @@ export function mountModelRebenchGraph(ctx: ServerCore, services: Services): voi
   // Monthly cron on the 1st of each month at 05:30 UTC
   scheduleIsolated(ctx.bb, MODEL_REBENCH_SCHEDULE, "30 5 1 * *", async (signal) => {
     if (ctx.isDisposed() || signal?.aborted) return;
-    const settings = (await Promise.resolve().then(() => ctx.effectiveProjectSettings("*")).catch(() => null))?.values ?? {};
+    const settings = (await Promise.resolve().then(() => ctx.effectiveProjectSettings("*")).catch((cause: unknown) => { ctx.log(`model-rebench: settings unreadable: ${cause instanceof Error ? cause.message : String(cause)}`); return null; }))?.values ?? {};
     if (String(settings["bench.model_rebench"] ?? "on") !== "on") return;
     const workflow = services.workflowEngine.resolveWorkflow(MODEL_REBENCH_WORKFLOW);
     if (!workflow) return;
