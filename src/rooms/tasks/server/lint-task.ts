@@ -1,24 +1,26 @@
 import { taskV2Schema } from "../../contracts";
 import type { TaskV2 } from "../../contracts";
 import { checkoutBase, getRun, getRunSettingsScopes, getTask, taskBasePath, latestTaskAttemptState, listCheckDurations, listCheckTimeouts, listOpenAttempts, loadProjectSettings } from "../../storage";
-import { taskFamily } from "../../runs";
+import { taskFamily } from "@lane-pilot/contracts";
 import { checkoutOwnsOverlap } from "../task-base";
-import { QUALITY_MODE_SETTING, parseSandboxUnsafePatterns, resolveQualityMode } from "../../critique";
+import { QUALITY_MODE_SETTING, resolveQualityMode } from "../../contracts/quality-mode"
+import { parseSandboxUnsafePatterns } from "../../contracts/check-commands";
 import { isTaskSatisfied } from "../../runs/server";
 import { lintContract, lintProbePaths, siblingTestFolders } from "./contract-lint";
 import { checkProgram } from "../rails";
 import { ownerWordsOn } from "../words";
 import { allowedSecretNames } from "../../secrets/server";
-import { gateResolverFor } from "../../verification/server";
-import { parseIntegrationGateSettings } from "../../verification/server";
+import { parseIntegrationGateSettings } from "../../contracts/integration-gate";
 import type { LintOpenTask, PathKind } from "./contract-lint";
 import type { ServerCore } from "../../contracts/server";
 
-import type { StabilityApi } from "../../stability/server/stability";
+import type { StabilityPort } from "../../contracts/stability-api";
+import type { VerificationGatePort } from "../../contracts/integration-gate";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {
-  stability: StabilityApi;
+  stability: StabilityPort;
+  resolveIntegrationGate: VerificationGatePort;
 }
 
 
@@ -73,7 +75,7 @@ export function createTaskLinter(ctx: ServerCore, services: Services) {
     // Names only: the lint never reads a value.
     const secrets = declared.length ? await ctx.secrets.check({ declared, allowed:allowedSecretNames(settings) }, { fresh:true }) : undefined;
     // The gate runs in the run's base checkout; its explicit or detected command makes a whole-suite check a contract error.
-    const gate = await gateResolverFor(ctx)({ runId, hostId, basePath:workspacePath, gate:parseIntegrationGateSettings(settings) });
+    const gate = await services.resolveIntegrationGate({ runId, hostId, basePath:workspacePath, gate:parseIntegrationGateSettings(settings) });
     // Is the check command runnable: the bare programs the checks start, looked up on the writer's machine (best-effort; silent when it cannot be asked).
     let programs:Map<string, boolean> | null = null;
     const wanted = [...new Set(task.verification.map((check) => checkProgram(check.command)).filter((program): program is string => !!program && /^[A-Za-z0-9._+-]{1,80}$/.test(program)))];

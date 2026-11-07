@@ -1,5 +1,5 @@
 import { cancelAttemptById } from "../../runs/server";
-import { taskFamily } from "../../runs";
+import { taskFamily } from "@lane-pilot/contracts";
 import { countOpenDeferrals, noTermDeferralsOf } from "../../deferral/server";
 import { getRunGoal, goalVerdict } from "../../run-goal";
 import { countAttemptsInStates, getRun, getRunSettingsScopes, getRunWriterHost, getTask, getTaskGitBase, listOpenAttempts, loadProjectSettings } from "../../storage";

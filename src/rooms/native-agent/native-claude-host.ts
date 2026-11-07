@@ -6,7 +6,7 @@ import { promisify } from "node:util";
 import { homedir } from "node:os";
 import { basename, delimiter, isAbsolute, join, relative, resolve } from "node:path";
 import { unionLpBridgeToolsOnAgentsJson } from "./native-agent-overlay";
-import { nativeAgentCliId, nativeAgentSettingId } from "./native-session";
+import { nativeAgentCliId, nativeAgentSettingId } from "../contracts/native-agent-id";
 import { materializeNativeHookSession } from "./native-session-hooks";
 import { sha256Hex } from "@lane-pilot/kit";
 

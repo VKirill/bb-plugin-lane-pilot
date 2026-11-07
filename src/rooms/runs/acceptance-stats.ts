@@ -1,5 +1,5 @@
 import { taskFamily } from "@lane-pilot/contracts";
-import { failureClass } from "./failure-class";
+import { failureClass } from "../contracts/failure-class";
 
 type Db = { prepare(sql:string):{ all(...args:unknown[]):unknown[] } };
 

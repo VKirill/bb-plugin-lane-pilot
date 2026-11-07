@@ -1,4 +1,5 @@
 import { secretShaped } from "../../tasks";
+import type { VerificationGatePort } from "../../contracts/integration-gate";
 import type { StageHelperSettings } from "../../platform/server";
 import { gateVocabularyLines } from "../../contracts";
 import { registerBrowserExecutors, runBrowserQaGraph } from "../../qa/server";
@@ -14,7 +15,7 @@ import { mountInsights } from "../../self-repair/server";
 import { mountHealth } from "../../stability/server";
 import { mountCouncilTools } from "../../council/server";
 import { mountSpecialists, SPECIALIST_ROLES } from "../../critique/server";
-import { installEmployeeSpecialists } from "../../native-agent";
+import { installEmployeeSpecialists } from "../../contracts/employee-manifest";
 import { mountRelay, ownerLocale } from "../../relay/server";
 import { ownerAnswerText } from "../owner-answer-text";
 import { mountWorkflowTools } from "../../workflow/server";
@@ -78,6 +79,7 @@ interface Services {
   runWorkspaceStatus: NightStagesApi["runWorkspaceStatus"];
   schedules: ScheduleService;
   stability: StabilityApi;
+  resolveIntegrationGate: VerificationGatePort;
   startWriterTask: WriterStartApi["startWriterTask"];
   waitWriter: WriterDispatchApi["waitWriter"];
   workflowCatalog: WorkflowEngineApi["workflowCatalog"];

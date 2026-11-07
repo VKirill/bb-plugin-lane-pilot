@@ -15,3 +15,6 @@ export class ToolError extends Error {
     if (fields.next !== undefined) this.next = fields.next;
   }
 }
+
+/** A failure of the BB plugin machinery itself (a reload, a retired handle), never a task's own error. */
+export const pluginStopped = (cause: unknown) => /stale API handle|generation .* is retired|plugin .* (reloaded|disabled)/i.test(cause instanceof Error ? cause.message : String(cause));

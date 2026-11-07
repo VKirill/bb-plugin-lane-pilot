@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { createRun, listTaskTerminalStates, openDatabase } from "../src/rooms/plugin-db";
 import { aggregateRun } from "../src/rooms/runs/aggregation";
-import type { AttemptState } from "../src/rooms/runs/state-machine";
+import type { AttemptState } from "../src/rooms/contracts/state-machine";
 
 // magicseo (2026-10-30): every family accepted, the run still ended «blocked» on the replaced T1.3, T3.2, T5…
 describe("a run's state counts task families", () => {

@@ -1,4 +1,5 @@
 import { relative, resolve } from "node:path";
+import type { VerificationGatePort } from "../../contracts/integration-gate";
 import type { StageHelperSettings } from "../../platform/server";
 import { isDeepStrictEqual } from "node:util";
 import { DISPATCH_STAGES_PENDING } from "../../runs";
@@ -32,6 +33,7 @@ interface Services {
   baseline: BaselineApi;
   isLiveFolder: WriterSpawnApi["isLiveFolder"];
   stability: StabilityApi;
+  resolveIntegrationGate: VerificationGatePort;
   startWriterTask: WriterStartApi["startWriterTask"];
   workflowEngine: WorkflowEngineApi["workflowEngine"];
 }

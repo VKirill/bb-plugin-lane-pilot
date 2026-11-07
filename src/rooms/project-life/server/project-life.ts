@@ -14,13 +14,13 @@ import { stringAt, valueAt } from "@lane-pilot/kit";
 import { observeStageChild } from "@lane-pilot/thread-observe";
 import type { ServerCore } from "../../contracts/server";
 
-import type { StageChildrenApi } from "../../qa/server/children";
+import type { StageChildrenPort } from "../../contracts/stage-children-api";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {
   stageHelperSettings: StageHelperSettings;
-  projectLifeTaskSummary: StageChildrenApi["projectLifeTaskSummary"];
-  reconcileProjectLifeChild: StageChildrenApi["reconcileProjectLifeChild"];
+  projectLifeTaskSummary: StageChildrenPort["projectLifeTaskSummary"];
+  reconcileProjectLifeChild: StageChildrenPort["reconcileProjectLifeChild"];
 }
 
 

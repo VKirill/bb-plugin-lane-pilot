@@ -1,5 +1,5 @@
 import { isAbsolute, relative, resolve } from "node:path";
-import { OPEN_ATTEMPT_STATES } from "../state-machine";
+import { OPEN_ATTEMPT_STATES } from "../contracts/state-machine";
 import type { LanePilotDatabase } from "./database";
 import { getRun } from "./runs-store";
 

@@ -18,7 +18,7 @@ import { checkBrief, renderBrief } from "../../brief";
 import { memoryMaintenanceBrief, memoryRecordId, parseMemoryCandidates, parseMemorySettings } from "../memory";
 import { NOTHING_RELEVANT } from "@lane-pilot/memory-core";
 import { pmMemoryContext, pmShortlist, snapshotFileRead } from "./memory-mix";
-import { boundedAgentName } from "../../critique";
+import { boundedAgentName } from "../../contracts/review-vocabulary";
 import { MemoryChildSnapshot, childResultObject, memoryChildSnapshot, spawnRefused } from "../../runs/server";
 import { compactAcceptedResult } from "../../tasks/server";
 import { modelCatalogOf, resolveSpawnModel, spawnUsageOf, warmSpawnUsage } from "../../platform/server";
@@ -32,13 +32,13 @@ import type Database from "better-sqlite3";
 import type { ServerCore } from "../../contracts/server";
 
 import type { MemoryConflictsApi } from "./memory-conflicts";
-import type { StageChildrenApi } from "../../qa/server/children";
+import type { StageChildrenPort } from "../../contracts/stage-children-api";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {
   stageHelperSettings: StageHelperSettings;
   memoryConflicts: MemoryConflictsApi;
-  reconcileStageChild: StageChildrenApi["reconcileStageChild"];
+  reconcileStageChild: StageChildrenPort["reconcileStageChild"];
 }
 
 

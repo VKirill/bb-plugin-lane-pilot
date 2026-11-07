@@ -1,5 +1,5 @@
 import type { CompiledMainAgent } from "./agent-profile";
-import { nativeAgentCliId } from "./native-session";
+import { nativeAgentCliId } from "../contracts/native-agent-id";
 
 /** Claude CLI `--agents` AgentDefinition keys from claude-agent-sdk `$e7`. */
 export const CLI_AGENT_DEFINITION_FIELDS = [

@@ -8,7 +8,7 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { STAGE_PROOF } from "@lane-pilot/contracts";
-import { TRANSITION_TABLE } from "../src/rooms/runs/state-machine";
+import { TRANSITION_TABLE } from "../src/rooms/contracts/state-machine";
 
 type Node = { id: string; label: string; type: string; parent?: string; file?: string; info?: string; x?: number; y?: number };
 type Edge = { source: string; target: string; type: string };

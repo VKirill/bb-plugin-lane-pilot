@@ -1,6 +1,6 @@
 import { getRun } from "../../storage";
 import type { ServerCore } from "../../contracts/server";
-import type { IntegrationGateSettings } from "./integration-gate";
+import type { IntegrationGateSettings } from "../../contracts/integration-gate";
 import { runOnHost } from "@lane-pilot/host-calls";
 
 /**

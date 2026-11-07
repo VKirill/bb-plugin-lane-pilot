@@ -1,5 +1,6 @@
 import { getAttempt, getRunSettingsScopes, latestTaskAttemptState, listUnreportedTaskOutcomes, loadProjectSettings, markTaskOutcomesReported, pmBookkeepingPending, pmHasTasksAtWork, pmTasksWaiting, toldPmDirectly, type TaskOutcome } from "../../storage";
-import { taskFamily, wayOut } from "../../runs";
+import { wayOut } from "../../runs"
+import { taskFamily } from "@lane-pilot/contracts";
 import { pmDeferralLines } from "../../deferral/server";
 import { calibrationLine } from "../../forecast";
 import { forecastReport } from "../../forecast/server";
@@ -8,7 +9,8 @@ import { z } from "zod";
 import type { ServerContext } from "../../platform/server";
 import { sendServiceMessage } from "./service-message";
 import { registerObservedTool } from "../../platform/server";
-import { gateRunVerdict, latestGateRun, latestGateRunForTask, parseIntegrationGateSettings } from "../../verification/server";
+import { gateRunVerdict, latestGateRun, latestGateRunForTask } from "../../verification/server"
+import { parseIntegrationGateSettings } from "../../contracts/integration-gate";
 
 /**
  * Lane Pilot's relay: agents ask other threads and answer back; the plugin server also wakes a PM with internal

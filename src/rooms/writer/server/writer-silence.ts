@@ -1,5 +1,5 @@
 import { listThreadEventsRaw } from "@lane-pilot/thread-observe";
-import { pluginStopped } from "../../runs/server";
+import { pluginStopped } from "../../contracts/errors";
 import { sendServiceMessage } from "../../relay/server";
 
 /** A writer thread that is active with no event for this long is nudged (setting writer.silence_nudge_min). */

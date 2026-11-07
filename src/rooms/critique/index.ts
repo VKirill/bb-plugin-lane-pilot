@@ -8,17 +8,13 @@ export { REVIEW_CONFIRM_SCREEN_ID, reviewConfirmScreenJudgment, type ConfirmScre
 export { CRITIC_EDIT_TRIAL_KEY, criticEditGate, criticEditTrialOn, criticEditTrialSettle, criticEditWasRejected, criticPromptOf, criticPromptProposal, criticPromptRollback } from "./critic-edit";
 export type { CriticEditRow, CriticEditStore, CriticEditTrialOutcome } from "./critic-edit";
 export { critiquePrompt, parseCritique } from "./critique";
-export { findSandboxUnsafeMissingExcludes, parseSandboxUnsafePatterns, runnerFilterArgs, runsWholeSuite, scanCritiqueCoverage } from "./critique-coverage";
+export { scanCritiqueCoverage } from "./critique-coverage"
 export { NO_TOOLS_LINE, clipped, extractModelJson } from "@lane-pilot/workflow-engine";
-export { isCodeCriticDefault } from "../contracts/task-enums";
-export { CODE_CRITIC_DEFAULTS, CODE_CRITIC_DEFAULT_SETTING, CRITIQUE_REPEAT_MAX_LINES, CRITIQUE_REPEAT_WINDOW_MS, QUALITY_MODE_SETTING, applyCodeCriticDefault, applyQualityMode, browserQaRequired, critiqueRepeatSkip, patchChangedLines, resolveCodeCriticDefault, resolveQualityMode, taskQaPlan, withReferenceTestCritic } from "./quality-mode";
-export type { CodeCriticDefault, CritiqueRepeatApproval, QualityMode, TaskQaPlan } from "./quality-mode";
 export { resolveRetryEffort } from "./retry-effort";
 export { CRITIC_TIEBREAK_ROLE, majorityRubric, parseTiebreakVotes, resolveRubricTiebreak, rubricDisagreements, tiebreakPrompt } from "./tiebreak";
 export type { TiebreakVote } from "./tiebreak";
-export { FAILURE_TRIAGE_METHOD, FRONTEND_VERIFY_METHOD, SCIENTIFIC_DEBUG_METHOD, SUBJECTIVE_WORDS, roleMethod } from "./role-method";
+export { FAILURE_TRIAGE_METHOD, SCIENTIFIC_DEBUG_METHOD, roleMethod } from "./role-method"
 export { taskBrief } from "./task-brief";
 export type { TaskBriefField } from "./task-brief";
-export { boundedAgentName } from "./role";
 export { qaStateToStatus, settleVerdict, verdictSchema, verdictSummary } from "@lane-pilot/workflow-engine";
 export type { Verdict, VerdictFinding, VerdictStatus } from "@lane-pilot/workflow-engine";

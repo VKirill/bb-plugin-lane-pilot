@@ -1,5 +1,7 @@
+import { PARKED_KEY } from "../../contracts/stability-api";
+import type { ParkedTask } from "../../contracts/stability-api";
 import packageJson from "../../../../package.json";
-import { PARKED_CLASSES, failureClass, failureFingerprint, isCapacitySaturated, isWaitingSecret, type FailureClass } from "../../runs";
+import { PARKED_CLASSES, failureClass, failureFingerprint, isCapacitySaturated, isWaitingSecret, type FailureClass } from "../../contracts/failure-class";
 import { allowedSecretNames, secretProblem, waitingSecretNote, WAITING_SECRET_PREFIX } from "../../secrets/server";
 import { createAttempt, getAttempt, getRun, getRunSettingsScopes, listOpenAttempts, loadProjectSettings, transitionAttempt } from "../../storage";
 import { bestEffort, id } from "@lane-pilot/kit";
@@ -20,7 +22,6 @@ interface Services {
 
 
 const VERSION: string = packageJson.version;
-export const PARKED_KEY = "stability:parked";
 export const BREAKERS_KEY = "stability:breakers";
 export const DRILL_KEY = "stability:drill";
 /** The version of a task parked at start-up that no build is known for (an attempt from before harness_version): it restarts at once. */
@@ -52,12 +53,6 @@ const DISK_MIN_FREE_BYTES = 5 * 2 ** 30;
 const DISK_MIN_FREE_SHARE = 0.05;
 const DISK_FLOOR_BYTES = 3 * 2 ** 30;
 
-export type ParkedTask = {
-  projectId:string; runId:string; taskId:string; pmThreadId:string; klass:FailureClass;
-  reason:string; fingerprint:string; version:string; at:number; redrives:number;
-  /** When the failed attempt started; a sibling dispatched after it took the task over. */
-  since?:number;
-};
 
 export { taskStem } from "../../tasks";
 import { taskStem } from "../../tasks";

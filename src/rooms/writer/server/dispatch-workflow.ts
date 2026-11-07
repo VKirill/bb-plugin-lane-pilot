@@ -2,7 +2,8 @@ import { wfLatestPipelineRunId, wfRunInputsJson } from "@lane-pilot/workflow-eng
 import { countAttempts, getAttempt, getRunSettingsScopes, getTaskGitBase, listAttemptsForTask, listStageReceipts, loadProjectSettings, saveTaskGitBase, setRunState, transitionAttempt } from "../../storage";
 import type {StageHelperSettings} from "../../platform/server";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
-import { QUALITY_MODE_SETTING, resolveQualityMode, worthOutcome } from "../../critique";
+import { worthOutcome } from "../../critique"
+import { QUALITY_MODE_SETTING, resolveQualityMode } from "../../contracts/quality-mode";
 import { jev } from "@lane-pilot/jev";
 import { appendExcludeCommand, persistTaskFolder } from "../../verification";
 import { pmReadBrief } from "../writer-brief";

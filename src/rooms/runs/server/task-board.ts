@@ -1,6 +1,6 @@
 import { createJournal, receiptThreadId, wfBoardRuns, wfCurrentNodeId } from "@lane-pilot/workflow-engine";
 import { getRun, getRunObjective, getTaskContractJson, getTaskPlan, laterFamilyAttemptTaskIds, listAttemptHistory, listBoardAttemptRows, listStageReceipts, type LanePilotDatabase } from "../../storage";
-import { taskFamily } from "../failure-class";
+import { taskFamily } from "@lane-pilot/contracts";
 
 /**
  * The «Tasks» board: every Lane Pilot task and workflow run of one project or of all of them, in the columns the BB Tasks

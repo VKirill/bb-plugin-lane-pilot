@@ -1,5 +1,5 @@
 import { sha256Hex } from "@lane-pilot/kit";
-import { failureClass, failureFingerprint } from "../runs";
+import { failureClass, failureFingerprint } from "../contracts/failure-class";
 
 
 /**

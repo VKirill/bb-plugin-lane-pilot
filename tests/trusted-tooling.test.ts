@@ -3,7 +3,7 @@ import { validateTaskV2 } from "../src/rooms/tasks/task-v2";
 import { rerootTask } from "../src/rooms/tasks/task-base";
 import { classifyWriterOutput } from "../src/rooms/tasks/validate-output";
 import { TRUSTED_TOOLING_PATTERNS, applyTrustedTooling, verificationScriptPaths } from "../src/rooms/tasks/trusted-tooling";
-import { findUnownedChanges } from "../src/rooms/verification/ownership";
+import { findUnownedChanges } from "../src/rooms/contracts/ownership";
 
 const base = {
   schema_version: 2, id: "T-1", title: "Add a check", risk: "low", lane: "server", project_cwd: "/tmp/project",

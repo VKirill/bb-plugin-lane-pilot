@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { checkScriptEdits } from "../src/rooms/tasks";
-import { applyCodeCriticDefault, applyQualityMode, buildCandidateEvidence, codeCritiquePrompt, parseCodeCritiqueSettings, withReferenceTestCritic } from "../src/rooms/critique";
+import { buildCandidateEvidence, codeCritiquePrompt, parseCodeCritiqueSettings } from "../src/rooms/critique"
+import { applyCodeCriticDefault, applyQualityMode, withReferenceTestCritic } from "../src/rooms/contracts/quality-mode";
 
 const evidence = (referenceTestEdits?: string[]) => buildCandidateEvidence({
   produced: ["src/money.ts", "tests/money.test.ts"], hashes: { "src/money.ts": "a", "tests/money.test.ts": "b" },

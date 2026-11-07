@@ -1,5 +1,15 @@
 import { fileBlockedByNeverTouch, matchOwnsPath } from "@lane-pilot/kit";
-import { posix } from "node:path";
+
+/** posix.normalize for a relative path already checked to have no "\\", no leading "/" and no drive letter. */
+function normalizeRelative(value:string):string {
+  const out:string[] = [];
+  for (const part of value.split("/")) {
+    if (!part || part === ".") continue;
+    if (part === "..") { if (out.length && out[out.length - 1] !== "..") out.pop(); else out.push(".."); }
+    else out.push(part);
+  }
+  return out.join("/") || ".";
+}
 
 export type OwnershipTask = {
   project_cwd:string;
@@ -16,7 +26,7 @@ export type RunOwnershipScope =
 
 export function safeRelative(value:string):string|null {
   if (!value || value.includes("\\") || value.startsWith("/") || /^[A-Za-z]:/.test(value)) return null;
-  const normalized = posix.normalize(value);
+  const normalized = normalizeRelative(value);
   if (normalized === "." || normalized === ".." || normalized.startsWith("../")) return null;
   if (normalized.split("/").includes("..")) return null;
   return normalized;

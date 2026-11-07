@@ -1,4 +1,5 @@
-import { parseAgentFile, type AgentListItem } from "../custom-agent";
+import { parseAgentFile } from "../custom-agent";
+import { type AgentListItem } from "../../contracts/agent-picker";
 import type { AgentRegistry } from "./agent-registry";
 
 /**

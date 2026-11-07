@@ -4,7 +4,7 @@ import type { ScheduleBoardContract } from "../contract";
 import { t, type I18nKey } from "@lane-pilot/i18n";
 import { Button } from "@lane-pilot/ui-kit";
 import type { RunView, ScheduleView } from "../views";
-import { HELPER_PANEL_ACTION } from "../../native-agent/ui";
+import { HELPER_PANEL_ACTION } from "../../contracts/agent-picker";
 import { useOpenThreadPanel } from "../../ui-shell/ui";
 import { Surface, SurfaceBody, SurfaceHeader } from "@lane-pilot/ui-kit";
 import { RunPill, errorText, fill, fmtTime } from "./schedule-parts";

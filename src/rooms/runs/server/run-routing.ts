@@ -1,8 +1,8 @@
 import { getRun, getRunSettingsScopes, loadProjectSettings, loadRunHelperPolicyJson, openDatabase, persistRunHelperPolicyJson } from "../../storage";
-import type { ExtraAccess } from "../../native-agent";
-import { decideHelperDispatch, detectVkCapability, parseHelperContextSettings, parseRequiredSessionPolicyCapability, requiredSessionPolicySpawnBinding } from "../../native-agent/helper-context";
-import type { HelperPolicySnapshot, HelperRole } from "../../native-agent";
-import { helperSpawnFields, resolveHelperPlacement } from "../../native-agent/helper-placement";
+import type { ExtraAccess } from "../../contracts/helper-context";
+import { decideHelperDispatch, detectVkCapability, parseHelperContextSettings, parseRequiredSessionPolicyCapability, requiredSessionPolicySpawnBinding } from "../../contracts/helper-context";
+import type { HelperPolicySnapshot, HelperRole } from "../../contracts/helper-context";
+import { helperSpawnFields, resolveHelperPlacement } from "../../contracts/helper-placement";
 import { LP_DEFAULTS_KEY, inheritProjectValues, parseHelperPlacement, parseLanePilotDefaults } from "@lane-pilot/settings-catalog";
 import type { HelperPlacementMode } from "@lane-pilot/settings-catalog";
 import { roleSpec } from "@lane-pilot/models";
@@ -138,6 +138,15 @@ export function requireHelperSpawn(input:{bb:BbPluginApi;db:ReturnType<typeof op
   return decision.snapshot;
 }
 
+/** One warning per provider per process (the spawn path is hit for every helper start). */
+const advertisedDiffLogged = new Set<string>();
+
+export function warnAdvertisementDiff(providerId: string, reason: string, log: ((line: string) => void) | undefined): void {
+  if (!log || advertisedDiffLogged.has(providerId)) return;
+  advertisedDiffLogged.add(providerId);
+  log(`core advertisement for ${providerId} differs: ${reason}`);
+}
+
 export function requiredPolicyField(bb: BbPluginApi, snapshot: HelperPolicySnapshot, providerId?: string, role?: HelperRole, extra?: ExtraAccess) {
   const agents = (bb as { agents?: { experimental_vkSessionPolicy?: unknown; experimental_vkRequiredSessionPolicy?: unknown } }).agents ?? {};
   return requiredSessionPolicySpawnBinding({
@@ -147,7 +156,7 @@ export function requiredPolicyField(bb: BbPluginApi, snapshot: HelperPolicySnaps
     providerId,
     role,
     extra,
-    log: (line) => bb.log.warn(`Lane Pilot: ${line}`),
+    warn: (id, reason) => warnAdvertisementDiff(id, reason, (line) => bb.log.warn(`Lane Pilot: ${line}`)),
   });
 }
 

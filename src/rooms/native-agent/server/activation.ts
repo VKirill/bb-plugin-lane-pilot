@@ -1,7 +1,7 @@
 import { compiledMainAgentSpawnBinding, detectCompiledMainAgentCapability, resolveSelectedMainAgentProfile } from "../agent-profile";
 import type { CompiledMainAgent } from "../agent-profile";
-import { readyComposerSnapshot, spawnEnvironmentFromSelection } from "../composer-selection";
-import type { ComposerSelectionSnapshot } from "../composer-selection";
+import { readyComposerSnapshot, spawnEnvironmentFromSelection } from "../../contracts/composer-selection";
+import type { ComposerSelectionSnapshot } from "../../contracts/composer-selection";
 import { claimActivation, createRun, freezeRunBinding, getActivation, getRunSettingsScopes, importSettingsOnce, loadPrototypeConfig, releaseActivation, setRunState, setRunThread, setRunWorkspace } from "../../storage";
 import { ownerCardBlock } from "../../anamnesis";
 import { anamnesisFor } from "../../anamnesis";
@@ -16,11 +16,11 @@ import { requireHelperSpawn, requiredPolicyField } from "../../runs/server";
 import {id, stringAt, valueAt, orMiss, isNotFound, bestEffort} from "@lane-pilot/kit";
 import type { ServerCore } from "../../contracts/server";
 
-import type { ReconcileApi } from "../../stability/server/reconcile";
+import type { ResumeOrphansPort } from "../../contracts/stability-api";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {
-  resumeOrphans: ReconcileApi["resumeOrphans"];
+  resumeOrphans: ResumeOrphansPort["resumeOrphans"];
 }
 
 

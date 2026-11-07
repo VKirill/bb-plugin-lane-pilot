@@ -1,3 +1,4 @@
+import type { MachineReading, FlakyEvidence } from "../contracts/machine-pressure";
 /**
  * A check that fails once and passes on the re-run is called flaky, and «load» used to be the usual guess. Matvey Maslov's
  * flaky-evidence (MIT, agent-dev-tools) keeps what the guess needs: the first failure itself (the re-run's pass used to replace it),
@@ -7,33 +8,10 @@
  */
 
 /** What the host that runs the check says about itself right before an attempt; null where it cannot tell (never a made-up zero). */
-export type MachineReading = {
-  /** The machine the numbers describe. */
-  hostId: string;
-  at: number;
-  /** 1-minute load average and the CPU count: load per CPU above 1 means runnable work was queueing. Null on Windows (no load average). */
-  load1: number | null;
-  cpuCount: number | null;
-  /** Memory a new program can get without swapping: free + cache on Linux, free + inactive + speculative on macOS (its `freemem` is always near zero). */
-  memFreeBytes: number | null;
-  memTotalBytes: number | null;
-  /** The volume of the check's workspace: a full disk made checks fail (OVH 2026-10-03, the Mac mini). */
-  diskFreeBytes: number | null;
-  diskTotalBytes: number | null;
-};
 
 /** Where a reading counts as pressure; the same numbers are written into the verdict. */
 export const PRESSURE_LIMITS = { loadPerCpu: 1.5, memFreeShare: 0.05, memFreeBytes: 1024 ** 3, diskFreeBytes: 3 * 1024 ** 3, diskFreeShare: 0.02 } as const;
 
-export type FlakyEvidence = {
-  /** The first failure: the exit code and the end of its output; the re-run's pass no longer hides it. */
-  firstFailure: { exitCode: number; outputTail: string };
-  classification: "machine_pressure" | "unexplained";
-  /** Why, in numbers, and what the reading can and cannot show. */
-  basis: string;
-  /** Taken just before the failing attempt and just before the re-run; null when the host could not say. */
-  readings: { beforeFirst: MachineReading | null; beforeRerun: MachineReading | null };
-};
 
 const gb = (bytes: number) => `${(bytes / 1024 ** 3).toFixed(1)} GB`;
 const SAMPLING_NOTE = "readings are one sample just before each attempt, not during it";

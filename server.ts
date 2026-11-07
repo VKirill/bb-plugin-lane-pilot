@@ -3,6 +3,9 @@ import { migrations as lanePilotMigrations } from "./src/rooms/migrations";
 import { coupledSettingKeys, validateSettingChanges, validateSettingValue, validateSettingsObject } from "./src/rooms/settings";
 import { createTaskReconcile } from "./src/rooms/runs/server";
 import { createActivation } from "./src/rooms/native-agent/server";
+import { placeEmployeeOn, compileEffectiveMainAgent, detectCompiledMainAgentCapability, pendingSwitch } from "./src/rooms/native-agent";
+import { storeNativeSelection } from "./src/rooms/native-agent/server/native-profile";
+import { createMergeIntentRecovery, gateResolverFor } from "./src/rooms/verification/server";
 import { registerCli } from "./src/rooms/tools/server/cli";
 import { createCore } from "./src/rooms/core/server/core";
 import { createCanary, mountCanary } from "./src/rooms/stability/server";
@@ -52,7 +55,8 @@ import { createPluginWall } from "./src/rooms/wall/server";
 import { buildCliInvocation, skillSwitchMorningLine } from "./src/rooms/writer";
 import { createPluginCheckers } from "./src/rooms/checkers/server";
 import { createStageReturn } from "./src/rooms/stage-return/server";
-import { cleanupFinishedAttemptEnvironments, cleanupStickyLaneWorktrees, closeAbandonedRuns, closeStaleRuns, pluginStopped } from "./src/rooms/runs/server";
+import { cleanupFinishedAttemptEnvironments, cleanupStickyLaneWorktrees, closeAbandonedRuns, closeStaleRuns } from "./src/rooms/runs/server"
+import { pluginStopped } from "./src/rooms/contracts/errors";
 import { registerRpc } from "./src/rooms/core/server/rpc";
 import { mountAnamnesis } from "./src/rooms/anamnesis";
 import { mountWorldAssets } from "./src/rooms/world-assets/server";
@@ -93,7 +97,9 @@ import { installThreadSignals } from "@lane-pilot/thread-observe";
 import { mountLifecycleEvents } from "./src/rooms/core/server/lifecycle-events";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 
-import type { ActivationApi } from "./src/rooms/native-agent/server/activation";
+import type { ActivationApi, AgentOpsApi } from "./src/rooms/contracts/agent-ops";
+import type { MergeIntentsApi } from "./src/rooms/contracts/merge-intents";
+import type { VerificationGatePort } from "./src/rooms/contracts/integration-gate";
 import type { DocsNightlyApi } from "./src/rooms/docs/server/docs-nightly";
 import type { ProbesApi } from "./src/rooms/stability/server/probes";
 import type { ReconcileApi } from "./src/rooms/stability/server/reconcile";
@@ -194,6 +200,13 @@ export interface Services {
   docsPlaceStatus: DocsNightlyApi["docsPlaceStatus"];
   docsLastRead: DocsNightlyApi["docsLastRead"];
   activate: ActivationApi["activate"];
+  placeEmployeeOn: AgentOpsApi["placeEmployeeOn"];
+  storeNativeSelection: AgentOpsApi["storeNativeSelection"];
+  compileEffectiveMainAgent: AgentOpsApi["compileEffectiveMainAgent"];
+  detectCompiledMainAgentCapability: AgentOpsApi["detectCompiledMainAgentCapability"];
+  pendingSwitch: AgentOpsApi["pendingSwitch"];
+  resolveIntegrationGate: VerificationGatePort;
+  recoverMergeIntents: MergeIntentsApi["recoverMergeIntents"];
   activeWriterTasks: WriterStateApi["activeWriterTasks"];
   providerBreaker: WriterStateApi["providerBreaker"];
   providerUsage: WriterStateApi["providerUsage"];
@@ -318,8 +331,17 @@ export default async function plugin(bb: BbPluginApi) {
   services.tokenCursorRow = tokenCursorRow;
   Object.assign(
     services,
-    createReconcile(ctx, services),
-    createActivation(ctx, services),
+    createReconcile(ctx, services) satisfies ReconcileApi,
+    createActivation(ctx, services) satisfies ActivationApi,
+    createMergeIntentRecovery(ctx, services) satisfies MergeIntentsApi,
+    {
+      resolveIntegrationGate: gateResolverFor(ctx),
+      placeEmployeeOn: (agentId: string, sources: Parameters<AgentOpsApi["placeEmployeeOn"]>[1]) => placeEmployeeOn(ctx.bb, agentId, sources),
+      storeNativeSelection: (input: { projectId: string; agentId: string; parentRunId?: string }) => storeNativeSelection(ctx, input),
+      compileEffectiveMainAgent,
+      detectCompiledMainAgentCapability,
+      pendingSwitch: (threadId: string) => pendingSwitch(ctx.bb.storage.kv, threadId),
+    } satisfies AgentOpsApi & { resolveIntegrationGate: VerificationGatePort },
     createWriterState(ctx) satisfies WriterStatePort,
     createWorkflowEngine(ctx, services),
     createWorkflowTriggersService(ctx, services),

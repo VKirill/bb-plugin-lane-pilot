@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { CAPABILITIES, capabilityTable, dueProbes, type CapabilityReceipt } from "../../src/rooms/capability/logic";
-import { FREE_CLASSES, failureClass, nextStep } from "../../src/rooms/runs/failure-class";
+import { FREE_CLASSES, failureClass, nextStep } from "../../src/rooms/contracts/failure-class";
 import { WORKER_ENVELOPE } from "../../src/rooms/tasks/rails";
 import { WORKER_USER, asWorker, grantCommands, workerReachable } from "../../src/rooms/verification/worker-user";
 

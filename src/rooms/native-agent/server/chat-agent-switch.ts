@@ -1,7 +1,10 @@
 import { findOpenNativeRun, listOpenAttempts } from "../../storage";
 import { listPhases } from "../../phase";
-import { agentKind, compileEffectiveMainAgent } from "../agent-profile";
-import { nativeAgentCliId, nativeSelectionSchema, nativeSwitchKey, pendingSwitch, type NativeSelection } from "../native-session";
+import { compileEffectiveMainAgent } from "../agent-profile"
+import { agentKind } from "../agent-profile";
+import { nativeSwitchKey, pendingSwitch } from "../native-session"
+import { nativeAgentCliId } from "../../contracts/native-agent-id"
+import { nativeSelectionSchema, type NativeSelection } from "../../contracts/native-selection";
 import { storeNativeSelection } from "./native-profile";
 import { isNotFound, orMiss, stringAt, valueAt } from "@lane-pilot/kit";
 import type { ServerCore } from "../../contracts/server";

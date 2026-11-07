@@ -4,7 +4,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PrototypeConfig, TaskV2 } from "../../src/rooms/contracts";
 import { createAttempt, createRun, createTask, getAttempt, listOpenAttempts, openDatabase, savePrototypeConfig, saveTaskPlan, setAttemptWorkspace, setRunThread, transitionAttempt } from "../../src/rooms/plugin-db";
 import { createCore } from "../../src/rooms/core/server/core";
-import { attemptMergeMessage, clearMergeIntent, recordMergeIntent, type RunOnHost } from "../../src/rooms/verification/server/merge-intent";
+import { attemptMergeMessage, clearMergeIntent, createMergeIntentRecovery, recordMergeIntent, type RunOnHost } from "../../src/rooms/verification/server/merge-intent";
+import { gateResolverFor } from "../../src/rooms/verification/server";
 import type { Services } from "../../server";
 import { createStability } from "../../src/rooms/stability/server/stability";
 import { recordStage } from "../../src/rooms/runs/server/stage-records";
@@ -224,6 +225,7 @@ async function simulate(seed:number):Promise<{ violations:string[]; summary:stri
     Object.assign(services, createStability(ctx, services));
     // Task reconcile asks the machine through the host: here, the model.
     const hostCtx = { ...ctx, host:{ call:async (_method:string, input:{ cwd:string; command:string }) => model.answer(input.cwd, input.command) } } as never;
+    Object.assign(services, createMergeIntentRecovery(hostCtx, services), { resolveIntegrationGate: gateResolverFor(hostCtx) });
     self.reconcile = createTaskReconcile(hostCtx, services);
     Object.assign(services, createWriterStart(ctx, services));
     return self;

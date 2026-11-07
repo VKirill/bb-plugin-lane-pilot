@@ -3,4 +3,3 @@
 export { acceptedOnboardingEvidence } from "./onboarding";
 export type { OnboardingAcceptedEvidence, OnboardingInputPage } from "./onboarding";
 export { isAllowedProjectLifePath, shouldTriggerProjectLife } from "./project-life";
-export type { ProjectLifeTaskSummary } from "./project-life";

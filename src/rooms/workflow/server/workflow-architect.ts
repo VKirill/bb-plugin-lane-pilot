@@ -23,7 +23,7 @@ import { loadWorkflow } from "@lane-pilot/workflow-engine";
 import { configuredSetting } from "../../contracts/server";
 import { SPECIALIST_ROLES } from "../../critique/server";
 import { isCustomAgentId } from "../../contracts/server";
-import { EMPLOYEE_IDS, isEmployeeSpecialist } from "../../native-agent";
+import { EMPLOYEE_IDS, isEmployeeSpecialist } from "../../contracts/employee-manifest";
 import {modelCatalogOf} from "../../platform/server";
 import {registerObservedTool} from "../../platform/server";
 import { ToolError } from "../../contracts/server";

@@ -7,9 +7,9 @@ import { summarizeThreadEvents, type ThreadEventLike } from "@lane-pilot/harness
 import { cleanCheckOutput, failureExcerpt, sha256Hex } from "@lane-pilot/kit";
 import { fileAllowedByOwns, matchOwnsPath } from "@lane-pilot/kit";
 import { SKILL_CATALOG_BLOCK } from "../../native-agent";
-import { ROLE_PROFILES } from "../../native-agent";
+import { ROLE_PROFILES } from "../../contracts/helper-context";
 import { checkBrief, renderBrief, tagSection, writerBriefContextFor, type WriterBriefContext } from "../../brief";
-import { THREAD_MEMORY_RULE } from "../../memory";
+import { THREAD_MEMORY_RULE } from "../../contracts/thread-rule";
 import { PLAN_FACT_BRIEF_LINE , MARKER_BRIEF_LINE } from "../../tasks";
 import { gateVocabularyLines } from "../../contracts";
 import {providerLimitNotice} from "@lane-pilot/models";

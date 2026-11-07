@@ -1,5 +1,5 @@
 import { MACHINE_AFFINITY_ANY, machineAffinitySchema } from "@lane-pilot/contracts";
-import { EMPLOYEES, RESULT_EXISTS, resultExists, type EmployeeManifest } from "../contracts/server";
+import { EMPLOYEES, RESULT_EXISTS, resultExists, type EmployeeManifest } from "./server";
 
 export { machineAffinitySchema } from "@lane-pilot/contracts";
 export type MachineAffinity = string;

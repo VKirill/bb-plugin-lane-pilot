@@ -1,6 +1,6 @@
 import { STAGE_IDS } from "@lane-pilot/contracts";
 import { MEMORY_PATHS } from "../memory";
-import { TRANSITION_TABLE } from "../runs";
+import { TRANSITION_TABLE } from "../contracts/state-machine";
 import { GATE_CATEGORIES } from "../storage";
 import { COVERAGE, type CoverageEntry, type NodeKind } from "./registry";
 

@@ -7,7 +7,7 @@ import { createWriterState } from "../src/rooms/writer/server/state";
 import { createProviderUsage, usageHoldReason } from "../src/rooms/usage/server/provider-usage";
 import { writerPickOverlay } from "../src/rooms/writer/writer-model-pick";
 import { roleSelection, type CriticCatalog } from "../src/rooms/critique/critic-pair";
-import { failureClass } from "../src/rooms/runs/failure-class";
+import { failureClass } from "../src/rooms/contracts/failure-class";
 ;
 
 /** Lane Pilot never picks the ZCode app where it cannot work: its machine, its free hours, one task at a time. */

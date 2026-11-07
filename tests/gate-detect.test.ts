@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { runCommandOnHost } from "../src/rooms/writer/cli-run";
 import { createGateResolver, detectGateCommand, GATE_PROBE, gateLabel } from "../src/rooms/verification/server/gate-detect";
-import { parseIntegrationGateSettings } from "../src/rooms/verification/server/integration-gate";
+import { parseIntegrationGateSettings } from "../src/rooms/contracts/integration-gate";
 import type { ServerCore } from "../src/rooms/contracts/server";
 
 const pkg = (body: Record<string, unknown>) => `@@package.json\n${JSON.stringify(body, null, 2)}\n`;

@@ -7,7 +7,7 @@
  * several attempts share carries its tokens on the last of them, the others are `partial`. A code stage (checks, plan against fact,
  * acceptance) runs no model: its row is `code`, with time only.
  */
-import { isOpenAttemptState } from "../state-machine";
+import { isOpenAttemptState } from "../contracts/state-machine";
 
 export const GRAPH_STAGES = [
   "pm-read", "plan-critique", "specialist-review", "run-gate", "writer-agent", "verification", "code-critique", "plan-fact", "browser-qa",

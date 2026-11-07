@@ -7,7 +7,7 @@ import { recheckPlanFact, runPlanFactStage, planFactMode, tableFromAnswers } fro
 import { recordStage } from "../src/rooms/runs/server";
 import { getStageReceiptResult } from "../src/rooms/plugin-db";
 import { buildAcceptanceCard } from "../src/rooms/acceptance/card";
-import { applyCodeCriticDefault, resolveCodeCriticDefault } from "../src/rooms/critique/quality-mode";
+import { applyCodeCriticDefault, resolveCodeCriticDefault } from "../src/rooms/contracts/quality-mode";
 import { createAttempt, createRun, createTask, openDatabase, saveTaskGitBase } from "../src/rooms/plugin-db";
 import { taskV2Schema } from "../src/rooms/contracts";
 import { upsertAttemptChange } from "../src/rooms/rollback/store";

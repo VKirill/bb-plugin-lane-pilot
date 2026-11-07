@@ -13,7 +13,7 @@ import { Label } from "@lane-pilot/ui-kit";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@lane-pilot/ui-kit";
 import type { Locale } from "@lane-pilot/i18n";
 import { t } from "@lane-pilot/i18n";
-import { agentPickerLabel } from "../../native-agent/agent-display";
+import { agentPickerLabel } from "../../contracts/agent-display";
 import type { LanePilotDefaults } from "@lane-pilot/settings-catalog";
 import { CONTROL_H } from "@lane-pilot/ui-kit";
 import { Disclosure } from "@lane-pilot/ui-kit";

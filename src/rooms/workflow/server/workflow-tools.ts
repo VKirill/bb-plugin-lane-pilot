@@ -13,7 +13,7 @@ import type { PreflightResult } from "@lane-pilot/workflow-engine";
 import type { Workflow } from "@lane-pilot/workflow-engine";
 import type { WorkflowStore } from "../../storage";
 import { bindGraphStepLookup, fenceOutside, registerObservedTool } from "../../platform/server";
-import { isOpenAttemptState } from "../../state-machine";
+import { isOpenAttemptState } from "../../contracts/state-machine";
 import { ToolError } from "../../contracts/server";
 import type { ServerCore } from "../../contracts/server";
 

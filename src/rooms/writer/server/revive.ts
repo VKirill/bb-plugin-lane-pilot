@@ -1,7 +1,7 @@
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
 
 import type { ServerCore } from "../../contracts/server";
-import { taskFamily } from "../../runs";
+import { taskFamily } from "@lane-pilot/contracts";
 import { deleteStageReceipt, getAttempt, getTaskGitBase, listAttemptsForTask, listStageReceipts, reviveCanceledAttempt } from "../../storage";
 import { isMainfixTask } from "../../tasks";
 import { recordStage } from "../../runs/server";

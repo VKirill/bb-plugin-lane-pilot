@@ -6,7 +6,8 @@ import {
   createAttempt, createRun, createTask, listAttemptsForTask, openDatabase, recordCheckDuration, saveProjectSetting, savePrototypeConfig, setRunThread, transitionAttempt,
 } from "../src/rooms/plugin-db";
 import { postMergeRepair } from "../src/rooms/writer/server/finish";
-import { lintContract, lintProbePaths, lintReply, runnerFilterArgs, siblingTestFolders, type LintInput, type PathKind } from "../src/rooms/tasks/server/contract-lint";
+import { lintContract, lintProbePaths, lintReply, siblingTestFolders, type LintInput, type PathKind } from "../src/rooms/tasks/server/contract-lint"
+import { runnerFilterArgs } from "../src/rooms/contracts/check-commands";
 
 const root = "/tmp/writer";
 const baseTask: TaskV2 = {

@@ -7,7 +7,7 @@ import { cleanup, configure, fireEvent, waitFor } from "@testing-library/react";
 import { VISIBLE_CATALOG } from "@lane-pilot/settings-catalog";
 import { SEGMENTS, TAB_IDS, resolveTab, segmentsFor } from "../src/rooms/pages/tabs-model";
 import { setLocaleOverride, en, ru } from "@lane-pilot/i18n";
-import { HELPER_ROLES } from "../src/rooms/native-agent/helper-context";
+import { HELPER_ROLES } from "../src/rooms/contracts/helper-context";
 import { ROLE_GROUPS } from "../src/rooms/native-agent/ui/team-model";
 import { screenFixture, mountPage } from "./ui-harness";
 import { openTab } from "./ui-tabs";

@@ -1,5 +1,5 @@
 import type { RouterCard } from "@lane-pilot/workflow-engine";
-import { parseSandboxUnsafePatterns } from "../critique";
+import { parseSandboxUnsafePatterns } from "../contracts/check-commands";
 
 /**
  * The policy manifest of one route candidate (JevRouter's permissions/risk/availability): what the workflow needs to run

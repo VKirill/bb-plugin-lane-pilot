@@ -1,4 +1,5 @@
 import type { TaskV2 } from "../../contracts";
+import type { VerificationGatePort } from "../../contracts/integration-gate";
 import { getAttempt, getRun, getRunWriterHost, listAttemptsForTask, listOpenAttempts } from "../../storage";
 import { redactKnown, sha256Hex, orMiss, isNotFound, bestEffort } from "@lane-pilot/kit";
 import { validateTaskV2 } from "../../tasks/task-v2";
@@ -40,6 +41,7 @@ interface Services {
   dispatchWriter: DispatchWriter;
   taskUsage: TaskUsage;
   stability: StabilityApi;
+  resolveIntegrationGate: VerificationGatePort;
   workflowEngine: WorkflowEngineApi["workflowEngine"];
 }
 

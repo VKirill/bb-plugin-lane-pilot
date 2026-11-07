@@ -19,7 +19,7 @@ import { judgeTrace } from "../jevals";
 import { ensureSealedSets } from "../critique-set";
 import { jev } from "@lane-pilot/jev";
 
-import type { ActivationApi } from "../../native-agent/server/activation";
+import type { ActivationApi } from "../../contracts/agent-ops";
 import type { WriterDispatchApi } from "../../writer/server/dispatch";
 
 import type { WorkflowEngineApi } from "../../workflow/server/workflow";

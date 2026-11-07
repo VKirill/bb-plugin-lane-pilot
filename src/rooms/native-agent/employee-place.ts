@@ -1,5 +1,6 @@
+import type { EmployeePlace } from "../contracts/agent-ops";
 import { MACHINE_AFFINITY_ANY } from "@lane-pilot/contracts";
-import { employeeView } from "./employee-manifest";
+import { employeeView } from "../contracts/employee-manifest";
 
 /**
  * Where an employee thread starts. `threads.spawn` already takes `{ type: "host", hostId, workspace: { type: "unmanaged", path } }`,
@@ -17,10 +18,6 @@ export function affinityHostId(affinity: string, hosts: readonly ListedHost[]): 
   return hosts.find((host) => typeof host.name === "string" && normalized(host.name) === wanted)?.id ?? null;
 }
 
-export type EmployeePlace =
-  | { mode: "inherit" }
-  | { mode: "folder"; hostId: string; path: string; created: boolean }
-  | { mode: "fallback"; hostId: string; reason: string };
 
 export function chooseEmployeePlace(input: {
   affinity?: string | null;

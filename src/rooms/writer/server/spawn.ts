@@ -13,7 +13,7 @@ import { buildExecutionPacket, renderExecutionPacket } from "../../tasks/executi
 import { retargetTask } from "../../tasks";
 import { parseMemorySettings } from "../../memory";
 import { resolveRetryEffort } from "../../critique";
-import { boundedAgentName } from "../../critique";
+import { boundedAgentName } from "../../contracts/review-vocabulary";
 import { WORKSPACE_DIRT_COMMAND } from "../../verification";
 import { LIVE_FOLDER_REASON, isLiveDecision } from "../live-folder";
 import { createLiveFolder } from "./live-folder";

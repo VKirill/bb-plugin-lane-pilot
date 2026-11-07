@@ -17,14 +17,15 @@ import { quarantineFileSet } from "../../baseline";
 import { emergencyFallbackDecision } from "../../night";
 ;
 import { resolveBestOf, roundSeedBrief, roundSurvivors } from "../best-of";
-import { QUALITY_MODE_SETTING, resolveQualityMode } from "../../critique";
+import { QUALITY_MODE_SETTING, resolveQualityMode } from "../../contracts/quality-mode";
 import { runOnHost } from "@lane-pilot/host-calls";
 import { WRITER_PICK_PREFIX, writerPickOverlay, type WriterLoad } from "../writer-model-pick";
 import { loadWriterPin, noteWriterPair } from "../writer-model-pin";
 import { reassignedReason, takeReassignRequest, type ReassignRequest } from "./reassign";
 import { usageHoldReason, usageSkipPercent } from "../../usage/server";
-import { MAIN_ATTEMPT_LIMIT, RETRY_ELIGIBLE } from "../../runs";
-import { FREE_RETRY_LIMIT, PARKED_CLASSES, REPLAY_CHECK_FAILED, SESSION_MAX_MS, VERIFICATION_TIMEOUT_RETRIES, failureClassCooldownMs, isWaitingSecret, isWriterSilent, repeatedFailureReason, taskFamily, turnFailureKey, verificationTimeoutOverBudget } from "../../runs";
+import { MAIN_ATTEMPT_LIMIT, RETRY_ELIGIBLE } from "../../contracts/state-machine";
+import { FREE_RETRY_LIMIT, PARKED_CLASSES, REPLAY_CHECK_FAILED, SESSION_MAX_MS, VERIFICATION_TIMEOUT_RETRIES, failureClassCooldownMs, isWaitingSecret, isWriterSilent, repeatedFailureReason, turnFailureKey, verificationTimeoutOverBudget } from "../../contracts/failure-class"
+import { taskFamily } from "@lane-pilot/contracts";
 import { coreHostsRequiredProvider, isTaskSatisfied } from "../../runs/server";
 import { walkWriterChain, waitingWriterReason, waitingWriterText, type ChainWalk } from "./writer-hold";
 import { noteUnsupportedProvider, noteWriterWait } from "./writer-wake";
@@ -38,7 +39,7 @@ import { dependsOnTask } from "../../tasks";
 import { openDatabase } from "../../storage";
 import { createWriterSticky } from "./sticky";
 import { WRITER_QUESTION_WAIT_TEXT } from "./question-default";
-import { failureClass, failureIntervention, MAST_OF_FAILURE, type FailureClass } from "../../runs";
+import { failureClass, failureIntervention, MAST_OF_FAILURE, type FailureClass } from "../../contracts/failure-class";
 import { jev } from "@lane-pilot/jev";
 import { judgedFailureClass } from "../../runs";
 import { isRunHalted, isRunPaused, waitWhileRunPaused } from "../../runs/server";
@@ -91,7 +92,7 @@ interface Services {
 /** How long a task waits for an Env Catalog secret, and how often it asks the catalog (BB sends no server-side event when it changes). */
 const SECRET_WAIT_MS = 12 * 3600_000;
 const secretPollMs = () => Number(process.env.LANE_PILOT_SECRET_POLL_MS) || 20_000;
-import type { AttemptState } from "../../runs";
+import type { AttemptState } from "../../contracts/state-machine";
 import { closeWriterStages, recordStage } from "../../runs/server";
 import { id, stringAt } from "@lane-pilot/kit";
 import { configuredSetting } from "../../contracts/server";

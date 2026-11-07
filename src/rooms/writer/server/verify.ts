@@ -16,17 +16,19 @@ import { SecretsNotReadyError, allowedSecretNames, secretProblem } from "../../s
 import type { VerifyResult } from "../../tasks";
 import { fileAllowedByOwns, fileBlockedByNeverTouch } from "@lane-pilot/kit";
 import { isLiveDecision, LIVE_FOLDER_RECEIPT } from "../live-folder";
-import { beginChecks, checksMoved, taskFamily } from "../../runs";
+import { beginChecks, checksMoved } from "../../runs"
+import { taskFamily } from "@lane-pilot/contracts";
 import { bookkeepingSetting, filterOwnershipNoise } from "@lane-pilot/settings-catalog";
-import { dropSatellites, findUnownedChanges, findUnownedRunChanges, flakyEvidence as machineEvidence, outputTail, readingFrom, resolveRunOwnershipScope } from "../../verification";
-import type { FlakyEvidence, MachineReading } from "../../verification";
+import { flakyEvidence as machineEvidence, outputTail, readingFrom } from "../../verification"
+import { dropSatellites, findUnownedChanges, findUnownedRunChanges, resolveRunOwnershipScope } from "../../contracts/ownership";
+import type { FlakyEvidence, MachineReading } from "../../contracts/machine-pressure";
 import { hollowRerun, noTestRanReason, testSummaries } from "../../tasks/server";
 import { recordGateEvaluation } from "../../runs/server";
 import { listThreadEventsRaw } from "@lane-pilot/thread-observe";
 import { stringAt, bestEffort, isNotFound, orMiss } from "@lane-pilot/kit";
 import {writerPatchFromOutput} from "./writer-task";
 import type { ServerCore } from "../../contracts/server";
-import type { FailureCode } from "../../platform/server";
+import type { FailureCode } from "../../contracts/failure-class";
 
 import type { HarnessApi } from "../../harness/server/harness";
 import type { PromotionServiceApi } from "../../rule-forms/promotion-service";

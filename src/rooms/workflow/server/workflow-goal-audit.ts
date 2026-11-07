@@ -1,4 +1,5 @@
 import { agentPrompt, dataBlock, outputContract } from "@lane-pilot/workflow-engine";
+import type { VerificationGatePort } from "../../contracts/integration-gate";
 import type { EngineOptions } from "@lane-pilot/workflow-engine";
 import { goalsSha } from "@lane-pilot/workflow-engine";
 import type { GoalAudit } from "@lane-pilot/workflow-engine";
@@ -24,6 +25,7 @@ interface Services {
   taskUsage: TaskUsage;
   docsPlaces: DocsNightlyApi["docsPlaces"];
   stability: StabilityApi;
+  resolveIntegrationGate: VerificationGatePort;
   workflowEngine: WorkflowEngineApi["workflowEngine"];
   workflowTriggers: WorkflowTriggersApi["workflowTriggers"];
 }

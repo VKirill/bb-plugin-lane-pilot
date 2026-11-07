@@ -13,7 +13,7 @@ const drillScenarios = (): string[] => {
   const all = /^ALL = \[([^\]]+)\]/m.exec(read("scripts/lp-drill.py"))![1]!;
   return [...all.matchAll(/"(\w+)"/g)].map((match) => match[1]!);
 };
-const failureClasses = (): string[] => /export type FailureClass = ([^;]+);/.exec(read("src/rooms/platform/server/failure-class.ts"))![1]!.split("|").map((part) => part.trim().replace(/"/g, ""));
+const failureClasses = (): string[] => /export type FailureClass = ([^;]+);/.exec(read("src/rooms/contracts/failure-class.ts"))![1]!.split("|").map((part) => part.trim().replace(/"/g, ""));
 const rooms = (): string[] => readdirSync(join(ROOT, "src/rooms")).filter((name) => statSync(join(ROOT, "src/rooms", name)).isDirectory()).sort();
 
 describe("the coverage registry (graph ↔ drill)", () => {

@@ -6,8 +6,8 @@ import { basename, dirname, isAbsolute, join, relative, resolve } from "node:pat
 import { bestEffort, spawnAsync, isFsAbsent, lstatOrNull, orMiss, parseJsonOr, readTextOrNull, statOrNull } from "@lane-pilot/kit";
 import { isBookkeepingPath, isOwnershipNoise } from "@lane-pilot/settings-catalog";
 import { fileAllowedByOwns, fileBlockedByNeverTouch, matchOwnsPath } from "@lane-pilot/kit";
-import { satelliteOf } from "./ownership";
-import { ENVIRONMENT_REASON, REPLAY_CHECK_FAILED } from "../runs";
+import { satelliteOf } from "../contracts/ownership";
+import { ENVIRONMENT_REASON, REPLAY_CHECK_FAILED } from "../contracts/failure-class";
 import { recordedReplayFailure } from "./replay-cache";
 import { isAllowedProjectLifePath } from "../project-life";
 

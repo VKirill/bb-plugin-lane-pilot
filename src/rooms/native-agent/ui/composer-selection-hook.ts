@@ -1,5 +1,5 @@
 import * as pluginApp from "@get-bb/plugin-sdk/app";
-import type { ComposerSelectionSnapshot } from "../composer-selection";
+import type { ComposerSelectionSnapshot } from "../../contracts/composer-selection";
 
 function missingHookSnapshot(): ComposerSelectionSnapshot {
   return {

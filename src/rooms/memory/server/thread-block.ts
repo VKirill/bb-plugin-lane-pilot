@@ -12,8 +12,8 @@ import type { ServerCore } from "../../contracts/server";
  */
 
 /** The exact rule the block ends with (and the line AGENTS.md carries); the constant itself lives in the leaf `../thread-rule`. */
-export { THREAD_MEMORY_RULE } from "../thread-rule";
-import { THREAD_MEMORY_RULE } from "../thread-rule";
+export { THREAD_MEMORY_RULE } from "../../contracts/thread-rule";
+import { THREAD_MEMORY_RULE } from "../../contracts/thread-rule";
 
 const BLOCK_LIMIT = 1200;
 const FACT_LIMIT = 8;

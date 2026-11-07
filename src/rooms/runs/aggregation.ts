@@ -1,4 +1,4 @@
-import type { AttemptState, RunState } from "./state-machine";
+import type { AttemptState, RunState } from "../contracts/state-machine";
 
 const TERMINAL = new Set<AttemptState>(["accepted", "blocked", "canceled"]);
 const OPEN = new Set<AttemptState>([

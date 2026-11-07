@@ -17,7 +17,7 @@
  * All three are catalog settings; `writer.best_of` off is the behaviour before this existed.
  */
 ;
-import type { QualityMode } from "../critique";
+import type { QualityMode } from "../contracts/quality-mode";
 import {type WriterFallback, writerFallbackChain} from "@lane-pilot/models";
 
 export const BEST_OF_SETTING = "writer.best_of";

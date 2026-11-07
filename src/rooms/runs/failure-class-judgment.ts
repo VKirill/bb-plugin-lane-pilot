@@ -1,5 +1,5 @@
-import type { FailureClass } from "./failure-class";
-import { MAST_OF_FAILURE } from "./failure-class";
+import type { FailureClass } from "../contracts/failure-class";
+import { MAST_OF_FAILURE } from "../contracts/failure-class";
 import { choice, choiceOf, defineJudgment } from "@lane-pilot/jev";
 
 /**

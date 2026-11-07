@@ -1,5 +1,5 @@
 import { getRun, getRunWriterHost, getTask, listRunAttemptStates, listStageReceipts, listTaskIdsForRun } from "../../storage";
-import { taskFamily } from "../../runs";
+import { taskFamily } from "@lane-pilot/contracts";
 import { hostContract } from "../../contracts";
 import { runOnHost } from "@lane-pilot/host-calls";
 import { binaryFileCommand, binaryFileFingerprint } from "../stages";

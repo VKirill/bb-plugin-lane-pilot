@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { dueProbes, type CapabilityReceipt } from "../../src/rooms/capability/logic";
 import { creatorBrief, lintDraft } from "../../src/rooms/forge/logic";
-import { CORE_PROVIDER_GROUPS, ROLE_PROFILES } from "../../src/rooms/native-agent/helper-context";
+import { CORE_PROVIDER_GROUPS, ROLE_PROFILES } from "../../src/rooms/contracts/helper-context";
 import { buildBubblewrapArgs } from "../../src/rooms/verification/sandbox";
 
 const skill = (name: string, extra = "") => `---

@@ -1,4 +1,4 @@
-import { taskFamily } from "../runs";
+import { taskFamily } from "@lane-pilot/contracts";
 import { isMainfixTask } from "./validate-output";
 
 /**

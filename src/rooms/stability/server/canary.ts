@@ -1,6 +1,6 @@
 import packageJson from "../../../../package.json";
 import { setSandboxProjects } from "../../owner-waiting";
-import { failureClass } from "../../runs";
+import { failureClass } from "../../contracts/failure-class";
 import type { LanePilotDatabase } from "../../storage";
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import type { rpcContract } from "../../contracts";

@@ -2,17 +2,17 @@ import { MACHINE_AFFINITY_ANY } from "@lane-pilot/contracts";
 import { t } from "@lane-pilot/i18n";
 import { resolveRoleModel } from "@lane-pilot/models";
 import { setRunHalted } from "../runs-halt";
-import { PARKED_KEY } from "../../../stability/server";
-import { agentPickerLabel, employeeView, pickableAgent, placeEmployeeOn } from "../../../native-agent";
-import { compileEffectiveMainAgent, detectCompiledMainAgentCapability } from "../../../native-agent";
+import { PARKED_KEY } from "../../../contracts/stability-api";
+import { agentPickerLabel } from "../../../contracts/agent-display"
+import { employeeView } from "../../../contracts/employee-manifest"
+import { pickableAgent } from "../../../contracts/agent-picker";
 import { countAttempts, createAttempt, failureFieldsOf, getActivation, getAttempt, transitionAttempt } from "../../../storage";
-import { detectRequiredSessionPolicyCapability } from "../../../native-agent";
-import { storeNativeSelection } from "../../../native-agent/server/native-profile";
-import { DEFAULT_NATIVE_AGENT, nativeAgentCliId, nativeSelectionSchema } from "../../../native-agent";
-import { userVisibleProjects } from "../../../native-agent";
-import { pendingSwitch } from "../../../native-agent";
-import { MAIN_ATTEMPT_LIMIT, RETRY_ELIGIBLE } from "../../state-machine";
-import type { AttemptState } from "../../state-machine";
+import { detectRequiredSessionPolicyCapability } from "../../../contracts/helper-context";
+import { DEFAULT_NATIVE_AGENT, nativeAgentCliId } from "../../../contracts/native-agent-id"
+import { nativeSelectionSchema } from "../../../contracts/native-selection";
+import { userVisibleProjects } from "../../../contracts/project-scope";
+import { MAIN_ATTEMPT_LIMIT, RETRY_ELIGIBLE } from "../../../contracts/state-machine";
+import type { AttemptState } from "../../../contracts/state-machine";
 import { finishRunSafely } from "../run-finish";
 import { buildTaskGraph } from "../task-graph";
 import { buildTaskBoard, readTaskCard, type CardThread } from "../task-board";
@@ -27,17 +27,22 @@ import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import { rpcContract } from "../../../contracts";
 import type { ServerCore } from "../../../contracts/server";
 
-import type { ActivationApi } from "../../../native-agent/server/activation";
+import type { ActivationApi, AgentOpsApi } from "../../../contracts/agent-ops";
 import type { RollbackApi } from "../../../rollback/server/rollback";
-import type { ReconcileApi } from "../../../stability/server/reconcile";
+import type { ResumeOrphansPort } from "../../../contracts/stability-api";
 import type { WriterHostApi } from "../../../platform/server";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {
   activate: ActivationApi["activate"];
+  placeEmployeeOn: AgentOpsApi["placeEmployeeOn"];
+  storeNativeSelection: AgentOpsApi["storeNativeSelection"];
+  compileEffectiveMainAgent: AgentOpsApi["compileEffectiveMainAgent"];
+  detectCompiledMainAgentCapability: AgentOpsApi["detectCompiledMainAgentCapability"];
+  pendingSwitch: AgentOpsApi["pendingSwitch"];
   listedAgentProfiles: WriterHostApi["listedAgentProfiles"];
   resolveProjectWriterHost: WriterHostApi["resolveProjectWriterHost"];
-  resumeOrphans: ReconcileApi["resumeOrphans"];
+  resumeOrphans: ResumeOrphansPort["resumeOrphans"];
   rollback: RollbackApi;
   tokenCursorRow: TokenCursorReader;
 }
@@ -62,10 +67,10 @@ export function runsRpc(ctx: ServerCore, services: Services) {
     native_install_status: ({ hostId }) => nativeInstaller.status(hostId),
     prepare_native_session: async ({ projectId, agentId }) => {
       const settings = (await effectiveProjectSettings(projectId)).values;
-      const { selection: record, description } = await storeNativeSelection(ctx, { projectId, agentId: agentId || DEFAULT_NATIVE_AGENT });
+      const { selection: record, description } = await services.storeNativeSelection({ projectId, agentId: agentId || DEFAULT_NATIVE_AGENT });
       const label = agentPickerLabel({ id: record.agentId, description }, t);
       const pinned = employeeView(record.agentId).machineAffinity !== MACHINE_AFFINITY_ANY;
-      const place = pinned ? await placeEmployeeOn(bb, record.agentId, await projectSources(bb, projectId)) : { mode: "inherit" as const };
+      const place = pinned ? await services.placeEmployeeOn(record.agentId, await projectSources(bb, projectId)) : { mode: "inherit" as const };
       const environment = place.mode === "folder" ? folderEnvironment({ hostId: place.hostId, path: place.path }) : null;
       const placementNote = place.mode === "fallback" ? place.reason : null;
       // A specialist runs its role's model (the owner's table or the row default); the coordinator stays on Opus.
@@ -287,7 +292,7 @@ export function runsRpc(ctx: ServerCore, services: Services) {
     },
     native_thread: async ({ threadId }) => {
       // An agent the chat was switched to counts from the moment it is chosen; its next message binds it.
-      const pending = await pendingSwitch(bb.storage.kv, threadId);
+      const pending = await services.pendingSwitch(threadId);
       const selected = pending ?? await bb.storage.kv.get(`native-thread:${threadId}`);
       if (!selected) return null;
       const parsed = nativeSelectionSchema.parse(selected);
@@ -296,7 +301,7 @@ export function runsRpc(ctx: ServerCore, services: Services) {
       try { shortId = nativeAgentCliId(agentType); } catch { shortId = parsed.agentId; }
       const stored = (await ownedAgents())[shortId];
       let compiled = null;
-      try { compiled = compileEffectiveMainAgent(shortId, stored); } catch { compiled = null; }
+      try { compiled = services.compileEffectiveMainAgent(shortId, stored); } catch { compiled = null; }
       return {
         token: parsed.token,
         agentId: parsed.agentId,
@@ -345,7 +350,7 @@ export function runsRpc(ctx: ServerCore, services: Services) {
         projectId,
         projects,
         bindingStatus,
-        compiledMainAgent: detectCompiledMainAgentCapability(
+        compiledMainAgent: services.detectCompiledMainAgentCapability(
           (bb as { agents?: { experimental_vkCompiledMainAgent?: unknown } }).agents ?? {},
         ),
         mainAgents,

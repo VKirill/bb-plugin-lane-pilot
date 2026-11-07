@@ -65,107 +65,16 @@ function heavyVerification(command:string):boolean {
   return true;
 }
 
-export function parseSandboxUnsafePatterns(settingValue: unknown): string[] {
-  if (Array.isArray(settingValue)) {
-    return settingValue.map((item) => String(item).trim()).filter(Boolean);
-  }
-  if (typeof settingValue === "string") {
-    const trimmed = settingValue.trim();
-    if (!trimmed) return [];
-    if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
-      const parsed = parseJsonOr<unknown>(trimmed, null);
-      if (Array.isArray(parsed)) return parsed.map((item) => String(item).trim()).filter(Boolean);
-    }
-    return trimmed.split(/[,\n]/).map((item) => item.trim()).filter(Boolean);
-  }
-  return [];
-}
 
 /** Flags of vitest/jest that take a value: that value is not a test filter. */
-const VALUE_FLAGS = new Set(["--exclude", "-x", "--config", "-c", "--root", "-r", "--reporter", "--project", "--dir", "--environment", "--testNamePattern", "-t", "--outputFile", "--shard",
-  "--pool", "--retry", "--testTimeout", "--hookTimeout", "--bail", "--maxWorkers", "--minWorkers", "--maxConcurrency", "--workspace", "--mode"]);
 
 /** Positional arguments a vitest/jest run, or an npm/pnpm/yarn script after «--», receives. */
-export function runnerFilterArgs(command:string):string[] {
-  const found:string[] = [];
-  for (const part of command.split(/&&|;|\|\|/)) {
-    const tokens = part.trim().split(/\s+/);
-    let from = tokens.findIndex((token) => /(?:^|\/)(?:vitest|jest)$/.test(token));
-    if (from < 0 && /^(?:npm|pnpm|yarn)$/.test(tokens[0] ?? "")) from = tokens.indexOf("--");
-    if (from < 0) continue;
-    for (let i = from + 1; i < tokens.length; i++) {
-      const token = tokens[i]!.replace(/^["']|["']$/g, "");
-      if (VALUE_FLAGS.has(token)) { i++; continue; }
-      if (/^[\w@.][\w@./-]*$/.test(token) && !token.startsWith("--")) found.push(token);
-    }
-  }
-  return found;
-}
 
-export function findSandboxUnsafeMissingExcludes(command: string, patterns: readonly string[]): string[] {
-  if (!patterns.length) return [];
-  const value = command.trim();
-  if (!value) return [];
-  const isVitestCommand = /(?:^|[;&|]\s*)(?:npx\s+)?vitest(?:\s+run)?(?:\s+|$)/i.test(value);
-  if (!isVitestCommand) return [];
-  // A positional filter outside --exclude/-x makes it a focused check
-  const strippedOfExcludes = value.replace(/(?:--exclude(?:=|\s+)|-x\s+)(?:'[^']+'|"[^"]+"|\S+)/g, "");
-  // A file, a folder («tests/server/») or any word after the subcommand narrows the run; value flags (--pool forks, --retry 2) do not.
-  if (runnerFilterArgs(strippedOfExcludes).some((arg) => !/^(?:run|watch|dev|bench|list|\.|\.\/)$/.test(arg))) return [];
-
-  // Parse existing --exclude flags
-  // Flags can be --exclude <val>, --exclude=<val>, or -x <val>
-  const excludeMatches = [...value.matchAll(/(?:--exclude(?:=|\s+)|-x\s+)(?:'([^']+)'|"([^"]+)"|(\S+))/g)];
-  const existingExcludes = new Set<string>();
-  for (const match of excludeMatches) {
-    const glob = match[1] ?? match[2] ?? match[3];
-    if (glob) existingExcludes.add(glob.trim());
-  }
-  return patterns.filter((pattern) => !existingExcludes.has(pattern));
-}
 /** Flags that narrow a pytest run without a path: by name, marker or changed files. */
-const PYTEST_VALUE_FLAGS=new Set(["-k","-m","-c","-p","-o","--rootdir","--tb","--junitxml","--durations","--maxfail","--ignore","--deselect","--confcutdir","--basetemp","-n"]);
-
 /**
  * Whether one check runs a project's whole test suite: a bare `vitest run` / `npx jest` / `pytest` / `npm test` with
  * nothing that names files, tests or a workspace. A run narrowed by a path, `related`, `-t`, `-k` or `-- <args>` is a focused check.
  */
-export function runsWholeSuite(command:string):boolean {
-  for(const part of command.split(/&&|;|\|\||\|/)) {
-    const value=part.trim();
-    if(!value)continue;
-    const tokens=value.split(/\s+/);
-    const bin=tokens.findIndex((token)=>/(?:^|\/)(?:vitest|jest)$/.test(token));
-    if(bin>=0) {
-      const rest=tokens.slice(bin+1);
-      if(rest.some((token)=>/^(?:-t|--testNamePattern(?:=.*)?|--changed(?:=.*)?|--related|--onlyChanged|--findRelatedTests)$/.test(token)))continue;
-      if(runnerFilterArgs(part).some((arg)=>!/^(?:run|watch|dev|bench|list|\.|\.\/)$/.test(arg)))continue;
-      return true;
-    }
-    const py=tokens.findIndex((token,index)=>/(?:^|\/)(?:pytest|py\.test)$/.test(token)||(token==="-m"&&tokens[index+1]==="pytest"));
-    if(py>=0) {
-      const rest=tokens.slice(tokens[py]==="-m"?py+2:py+1);
-      let focused=false;
-      for(let i=0;i<rest.length;i++) {
-        const token=rest[i]!;
-        if(/^(?:-k|-m)$/.test(token)||/^(?:-k|-m)\S/.test(token)||/^--(?:lf|last-failed|sw|stepwise)$/.test(token)){focused=true;break;}
-        if(PYTEST_VALUE_FLAGS.has(token)){i++;continue;}
-        if(!token.startsWith("-")){focused=true;break;}
-      }
-      if(!focused)return true;
-      continue;
-    }
-    // `npm test`, `npm run test`, `pnpm test`, `yarn test`, `bun run test`: the whole script unless it gets arguments or names a workspace.
-    const script=/^(?:npm|pnpm|yarn|bun)\s+(?:run(?:-script)?\s+)?(?:test|t)(?:\s|$)/.exec(value);
-    if(script) {
-      const rest=value.slice(script[0].length).trim().split(/\s+/).filter(Boolean);
-      if(rest.includes("--")&&rest.indexOf("--")<rest.length-1)continue;
-      if(rest.some((token)=>!token.startsWith("-")||/^(?:-w|-C|-F|--workspaces?|--prefix|--filter)(?:=|$)/.test(token)))continue;
-      return true;
-    }
-  }
-  return false;
-}
 const BINARY=/\.(?:woff2?|ttf|otf|eot|png|jpe?g|gif|webp|avif|ico|pdf|zip|gz|mp3|mp4|mov|wasm)$/i;
 /** Expected outputs a model cannot author (fonts, images, archives, media, wasm). */
 export function binaryOutputs(outputs:readonly string[]):string[] {return outputs.filter((entry)=>BINARY.test(entry.trim()));}

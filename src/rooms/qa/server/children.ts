@@ -1,9 +1,9 @@
 import { taskV2Schema } from "../../contracts";
 import { getTask, listStageReceipts } from "../../storage";
 import { reconcile } from "../../stability";
-import type { ReconcileResult } from "../../stability";
+import type { ReconcileResult } from "../../contracts/stability-api";
 import type { StageId } from "../../tasks";
-import type { ProjectLifeTaskSummary } from "../../project-life";
+import type { ProjectLifeTaskSummary } from "../../contracts/project-life";
 import { clearSpawnMarker, findThreadsByMetadata } from "../../platform/server";
 import type { ServerCore } from "../../contracts/server";
 

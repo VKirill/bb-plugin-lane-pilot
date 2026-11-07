@@ -29,7 +29,7 @@ it("matches wildcards inside names and double stars inside segments (SelfyStudio
 });
 
 it("uses the same matcher for the run's ownership check", async () => {
-  const { findUnownedChanges } = await import("../src/rooms/verification/ownership");
+  const { findUnownedChanges } = await import("../src/rooms/contracts/ownership");
   const task = { project_cwd: "/p", owns_paths: ["apps/api/src/**greeting-card*", "packages/db/prisma/migrations/*_greeting_cards_core/**"], never_touch: [], verification: [] } as never;
   expect(findUnownedChanges(["apps/api/src/routes/greeting-cards.ts", "packages/db/prisma/migrations/20261002_greeting_cards_core/migration.sql"], task)).toEqual([]);
   expect(findUnownedChanges(["apps/api/src/routes/other.ts"], task)).toEqual(["apps/api/src/routes/other.ts"]);
@@ -38,7 +38,7 @@ it("uses the same matcher for the run's ownership check", async () => {
 it("gives a wildcard pattern that names a folder what is in that folder, as a plain path and the overlap check do", async () => {
   const { matchOwnsPath: m, ownsPathsOverlap: overlap } = await import("@lane-pilot/kit");
   const { classifyWriterOutput } = await import("../src/rooms/tasks/validate-output");
-  const { findUnownedChanges } = await import("../src/rooms/verification/ownership");
+  const { findUnownedChanges } = await import("../src/rooms/contracts/ownership");
   // SelfyStudio drop-fotosessii-theme-v1 (2026-10-13): «cocoon-write*» was meant for the executor's test folder; the
   // writer's needed edit there was rejected, and the retry put back a test that still expects the removed scenario.
   const cocoon = "apps/scenario-runner/src/__tests__/executors/cocoon-write*";

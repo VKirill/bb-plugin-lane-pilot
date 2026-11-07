@@ -54,7 +54,8 @@ import { JEV_USAGE, runJevCli } from "../../jev";
 import { ERRANDS_USAGE, runErrandsCli } from "../../errands";
 import { retireAdoptedRule } from "../../self-repair/server";
 import { ROLLBACK_USAGE, runRollbackCli } from "../../rollback/server";
-import { CODE_CRITIC_DEFAULTS, isCodeCriticDefault } from "../../critique";
+import { isCodeCriticDefault } from "../../contracts/task-enums"
+import { CODE_CRITIC_DEFAULTS } from "../../contracts/task-enums";
 import { runSkillLintCli } from "../../forge";
 import { ERRAND_EPISODE_TRACE_EVENTS } from "../../contracts/server";
 import { EPISODES_USAGE, runEpisodesCli } from "../../errands/server";
@@ -73,7 +74,7 @@ import type { LeadApi } from "../../lead/server/service";
 import type { MemoryProbeApi } from "../../memory-probe/server/memory-probe";
 import type { MemoryConflictsApi } from "../../memory/server/memory-conflicts";
 import type { MoneyApi } from "../../money/server";
-import type { ActivationApi } from "../../native-agent/server/activation";
+import type { ActivationApi } from "../../contracts/agent-ops";
 import type { OwnerPresenceApi } from "../../owner-presence/server/presence";
 import type { PhaseApi } from "../../phase/server/driver";
 import type { PhaseIntake } from "../../phase/server/intake";
@@ -153,7 +154,7 @@ interface Services {
 }
 
 const MEMORY_CLI_USAGE = 'bb lane-pilot memory search "<question>" [--project P] | memory write "<fact>" [--project P]   (the project memory on the hub; inside a BB thread the project is the thread\'s own)';
-import type { CodeCriticDefault } from "../../critique";
+import type { CodeCriticDefault } from "../../contracts/task-enums";
 
 function requireCriticCodeDefault(value: string): CodeCriticDefault {
   if (!isCodeCriticDefault(value)) throw new Error(`critic.code.default_for_risk must be one of ${CODE_CRITIC_DEFAULTS.join(", ")}`);

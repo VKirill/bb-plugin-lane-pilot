@@ -1,7 +1,8 @@
+import type { AgentKind } from "../contracts/agent-picker";
 import { z } from "zod";
 import bundledAgents from "../contracts/bundled-agents.json";
 import { machineAffinitySchema } from "@lane-pilot/contracts";
-import { stockEmployee } from "./employee-manifest";
+import { stockEmployee } from "../contracts/employee-manifest";
 import { EMPLOYEES } from "../contracts/server";
 import { isLanePmAgent } from "../contracts/server";
 import { isCliLaneAgentPrompt, isInternalAgent, laneSessionOverlayPrompt, overlayDisallowedTools, overlaySessionTools } from "./native-agent-overlay";
@@ -218,8 +219,6 @@ function bundledTemplate(id: string): { description: string; prompt: string } & 
 
 
 /** coordinator: the Lane Pilot PM; internal: a session Lane Pilot runs itself (the owner does not pick it); specialist: every other agent, the owner's own included. */
-export type AgentKind = "coordinator" | "specialist" | "internal";
-
 export function agentKind(id: string): AgentKind {
   if (isLanePmAgent(id)) return "coordinator";
   return isInternalAgent(id) ? "internal" : "specialist";

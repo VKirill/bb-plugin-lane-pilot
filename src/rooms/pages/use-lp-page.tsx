@@ -26,7 +26,7 @@ import { Button } from "@lane-pilot/ui-kit";
 import { useLpRealtime } from "../ui-shell/ui";
 import { readRunsWindow } from "../runs/ui";
 import { chromeIsCompact, contentStacksControls, useObservedWidth } from "@lane-pilot/ui-kit";
-import { userVisibleProjects } from "../native-agent/project-scope";
+import { userVisibleProjects } from "../contracts/project-scope";
 import { DOCS_DEFAULT_SELECTION } from "../docs/docs-defaults";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
 ;

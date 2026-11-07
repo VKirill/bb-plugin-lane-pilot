@@ -17,7 +17,7 @@ import { fullAccessSpawn, scheduleIsolated } from "../../platform/server";
 import { stringAt, orMiss, isNotFound } from "@lane-pilot/kit";
 import { type ServerCore } from "../../contracts/server";
 import { projectRoleField } from "../../runs/server";
-import { HELPER_ROLES, type HelperRole } from "../../native-agent";
+import { HELPER_ROLES, type HelperRole } from "../../contracts/helper-context";
 import { SANDBOX_PROJECT_ID, isSandboxProjectName } from "../../stability/server";
 import { ensureExcludeLinesCommand, EXCLUDE_NOT_GIT } from "../../verification";
 import { getAttempt, getTaskGitBase } from "../../storage";

@@ -1,5 +1,5 @@
 import { listPhases } from "../../phase";
-import { taskFamily } from "../../runs";
+import { taskFamily } from "@lane-pilot/contracts";
 import { listTasksForRun, type LanePilotDatabase } from "../../storage";
 import { TASK_WORDS_KEY, type TaskWord } from "../../tasks";
 import { answerDecision, listDecisions, openDecision, predictDecision } from "./journal";

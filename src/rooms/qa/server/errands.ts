@@ -6,9 +6,9 @@ import { modelCatalogOf, resolveSpawnModel, spawnUsageOf, warmSpawnUsage } from 
 import { configuredSetting } from "../../contracts/server";
 import { fullAccessSpawn, folderEnvironment, hiddenPlacement, projectFolder, projectSources } from "../../platform/server";
 import { SKILL_CATALOG_BLOCK, placeEmployeeOn } from "../../native-agent";
-import { ROLE_PROFILES, effectiveGroup, parseHelperContextSettings } from "../../native-agent";
+import { ROLE_PROFILES, effectiveGroup, parseHelperContextSettings } from "../../contracts/helper-context";
 import { checkBrief, renderBrief, tagSection } from "../../brief";
-import { THREAD_MEMORY_RULE } from "../../memory";
+import { THREAD_MEMORY_RULE } from "../../contracts/thread-rule";
 import { spawnTextId } from "../../platform/server";
 import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server";
 import {isNotFound, orMiss, outputText, stringAt} from "@lane-pilot/kit";
@@ -24,15 +24,15 @@ import { runBrowserStep } from "./browser-graphs";
 import { mountErrandGraph } from "./errand-graph";
 import { errandRoleFor } from "../../schedule";
 import type { ErrandRunStart } from "./errand-graph";
-import type { ExtraAccess } from "../../native-agent";
+import type { ExtraAccess } from "../../contracts/helper-context";
 
 import type { WorkflowEngineApi } from "../../workflow/server/workflow";
 
-import type { DocsNightlyApi } from "../../docs/server/docs-nightly";
+import type { DocsNightlyPort } from "../../contracts/docs-nightly-api";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {
-  docsPlaces: DocsNightlyApi["docsPlaces"];
+  docsPlaces: DocsNightlyPort["docsPlaces"];
   workflowCatalog: WorkflowEngineApi["workflowCatalog"];
   workflowEngine: WorkflowEngineApi["workflowEngine"];
 }

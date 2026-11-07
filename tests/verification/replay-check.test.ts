@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { REPLAY_CHECK_FAILED, failureClass } from "../../src/rooms/runs/failure-class";
+import { REPLAY_CHECK_FAILED, failureClass } from "../../src/rooms/contracts/failure-class";
 import { previousAttemptBrief, stickyTurnPrompt } from "../../src/rooms/writer/server/writer-task";
 import { resolveInSameThread } from "../../src/rooms/writer/server/sticky";
 import { integrateWorktree, type ReplayCheckOutcome } from "../../src/rooms/verification/git-integrate";

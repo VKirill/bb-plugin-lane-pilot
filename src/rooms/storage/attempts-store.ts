@@ -1,7 +1,7 @@
 import { parseDirtSnapshots, type DirtSnapshot } from "../dirt-snapshot";
 import { taskFamily, taskRedispatchBase } from "@lane-pilot/contracts";
-import { FREE_CLASSES, failureClass, isOwnerDecision, isPreStartStop, isWaitingSecret, isWriterSilent, type FailureCode } from "../platform";
-import { IllegalTransitionError, isLegalMove, OPEN_ATTEMPT_STATES, RETRY_ELIGIBLE } from "../state-machine";
+import { FREE_CLASSES, failureClass, isOwnerDecision, isPreStartStop, isWaitingSecret, isWriterSilent, type FailureCode } from "../contracts/failure-class";
+import { IllegalTransitionError, isLegalMove, OPEN_ATTEMPT_STATES, RETRY_ELIGIBLE } from "../contracts/state-machine";
 import { HARNESS_VERSION, type LanePilotDatabase } from "./database";
 
 /**

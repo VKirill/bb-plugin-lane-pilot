@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { taskV2Schema } from "../../src/rooms/contracts";
 import { shouldRunPlanCritique } from "../../src/rooms/critique/critique";
 import { advisoryFeedback, codeCritiqueStops, parseCodeCritiqueSettings } from "../../src/rooms/critique/code-critique";
-import { applyQualityMode, browserQaRequired, resolveQualityMode, taskQaPlan } from "../../src/rooms/critique/quality-mode";
+import { applyQualityMode, browserQaRequired, resolveQualityMode, taskQaPlan } from "../../src/rooms/contracts/quality-mode";
 import { validateTaskV2 } from "../../src/rooms/tasks/task-v2";
 
 const base = {

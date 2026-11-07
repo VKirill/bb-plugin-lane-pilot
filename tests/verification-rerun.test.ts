@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { failIfNoTestRan, runWithFlakyRerun } from "../src/rooms/writer/server/verify";
-import type { MachineReading } from "../src/rooms/verification";
+import type { MachineReading } from "../src/rooms/contracts/machine-pressure";
 
 const sequence = (...codes: number[]) => { let n = 0; const calls = () => n; return { run: async () => ({ exitCode: codes[Math.min(n++, codes.length - 1)]!, stdout: `out ${n}`, stderr: `err ${n}` }), calls }; };
 const GB = 1024 ** 3;

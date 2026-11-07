@@ -8,7 +8,7 @@ import type { Services } from "../server";
 import { recordStage } from "../src/rooms/runs/server/stage-records";
 import { createWriterStart } from "../src/rooms/writer/server/start";
 import { createStability } from "../src/rooms/stability/server/stability";
-import { failureClass } from "../src/rooms/runs/failure-class";
+import { failureClass } from "../src/rooms/contracts/failure-class";
 import { logOrigin } from "../src/rooms/wall/signature";
 
 // log:4b8289a2c542 and its siblings (hub plugin.log, 2026-10-27): the Mac mini had 5–11 GB free, below the then 15 GB disk hold (5 GB since 0.1.341), and

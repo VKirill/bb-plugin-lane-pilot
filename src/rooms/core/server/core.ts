@@ -18,7 +18,7 @@ import { GLOBAL_SETTINGS_PROJECT_ID, LP_AGENT_OVERRIDES_KEY, LP_DEFAULTS_KEY, in
 import { createNativeInstaller } from "../../native-install";
 import type { WriterBindingResolution } from "../../native-agent";
 import { isTaskBase, parseRunPolicy, retargetTask } from "../../tasks";
-import type { AttemptState } from "../../runs";
+import type { AttemptState } from "../../contracts/state-machine";
 import { cancelRejection } from "../../runs/server";
 import { recordStage } from "../../runs/server";
 import { stringAt, valueAt } from "@lane-pilot/kit";

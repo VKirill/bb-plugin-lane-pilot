@@ -7,7 +7,7 @@ import { createRun, openDatabase, setRunThread } from "../src/rooms/plugin-db";
 import { mountErrands } from "../src/rooms/qa/server/errands";
 import {builtinWorkflow} from "../src/rooms/workflow/builtin";
 import { validateWorkflow } from "@lane-pilot/workflow-engine";
-import { coreRequiredSessionAdvertisement } from "../src/rooms/native-agent/helper-context";
+import { coreRequiredSessionAdvertisement } from "../src/rooms/contracts/helper-context";
 
 /**
  * The errand as a graph (workflows/errand.json): the account check, the helper's step wrapping the errand core, and the PM tools that start and read the run.

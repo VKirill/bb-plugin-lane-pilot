@@ -1,8 +1,8 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it, vi } from "vitest";
 import { createAttempt, createRun, getAttempt, openDatabase, recordFinishedAttempt, setIllegalTransitionLog, transitionAttempt } from "../src/rooms/plugin-db";
-import { ATTEMPT_STATES, IllegalTransitionError, OPERATIONAL_MOVES, TRANSITION_TABLE, isLegalMove } from "../src/rooms/runs/state-machine";
-import { failureClass } from "../src/rooms/runs/failure-class";
+import { ATTEMPT_STATES, IllegalTransitionError, OPERATIONAL_MOVES, TRANSITION_TABLE, isLegalMove } from "../src/rooms/contracts/state-machine";
+import { failureClass } from "../src/rooms/contracts/failure-class";
 
 function setup() {
   const db = openDatabase(createFakePluginHost({ pluginId:"lane-pilot" }).bb);

@@ -1,5 +1,5 @@
-import { isCodeCriticDefault } from "../../critique";
-import type { CodeCriticDefault } from "../../critique";
+import { isCodeCriticDefault } from "../../contracts/task-enums";
+import type { CodeCriticDefault } from "../../contracts/task-enums";
 
 /**
  * The per-task value of `critic.code.default_for_risk` that a dispatch carries (`dispatchWriter({ criticCodeDefault })`, CLI

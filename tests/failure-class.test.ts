@@ -1,6 +1,7 @@
 import { createProviderBreaker } from "@lane-pilot/resilience";
 import { describe, expect, it } from "vitest";
-import { FREE_CLASSES, PARKED_CLASSES, failureClass, isEnvironmentCheckFailure, nextStep, repeatedFailureReason, taskFamily, verificationTimeoutOverBudget } from "../src/rooms/runs/failure-class";
+import { FREE_CLASSES, PARKED_CLASSES, failureClass, isEnvironmentCheckFailure, nextStep, repeatedFailureReason, verificationTimeoutOverBudget } from "../src/rooms/contracts/failure-class"
+import { taskFamily } from "@lane-pilot/contracts";
 import { classifyWriterOutput } from "../src/rooms/tasks/validate-output";
 import type { TaskV2 } from "../src/rooms/contracts";
 import {providerStreamError} from "../src/rooms/writer/server/writer-task";

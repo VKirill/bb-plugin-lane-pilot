@@ -12,7 +12,7 @@ import {
   type AccessGroup,
   type AccessSwitch,
   type RoleAccess,
-} from "../../native-agent/helper-context";
+} from "../../contracts/helper-context";
 import { Button } from "@lane-pilot/ui-kit";
 import { Icon } from "@lane-pilot/ui-kit";
 import { Input } from "@lane-pilot/ui-kit";

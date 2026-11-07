@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { gluedCheckCommand, glueReplayCommands } from "../../src/rooms/verification/server";
+import { glueReplayCommands } from "../../src/rooms/verification/server"
+import { gluedCheckCommand } from "../../src/rooms/contracts/check-commands";
 import { lintContract, type LintInput } from "../../src/rooms/tasks/server/contract-lint";
 import type { TaskV2 } from "../../src/rooms/contracts";
 

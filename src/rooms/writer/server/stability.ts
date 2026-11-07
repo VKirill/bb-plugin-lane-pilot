@@ -1,7 +1,7 @@
 
 import type { ServerCore } from "../../contracts/server";
 import { bestEffort } from "@lane-pilot/kit";
-import type { FailureClass } from "../../runs";
+import type { FailureClass } from "../../contracts/failure-class";
 import { onAttemptFinished } from "./attempt-finished";
 
 import type { StabilityApi } from "../../stability/server/stability";

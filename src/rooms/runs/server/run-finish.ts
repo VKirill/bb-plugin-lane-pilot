@@ -1,6 +1,7 @@
+import { pluginStopped } from "../../contracts/errors";
 import { closeRun, getAttempt, getRun, listOpenAttempts, openDatabase, releaseActivation } from "../../storage";
 import { stringAt, valueAt, orMiss, isNotFound } from "@lane-pilot/kit";
-import { RETRY_ELIGIBLE } from "../state-machine";
+import { RETRY_ELIGIBLE } from "../../contracts/state-machine";
 import { STICKY_WINDOW_MS } from "../../platform/server";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 export function cancelRejection(db: ReturnType<typeof openDatabase>, attempt: NonNullable<ReturnType<typeof getAttempt>>): string | null {
@@ -104,8 +105,6 @@ const ENVIRONMENT_GRACE_MS = 30 * 60 * 1000;
 const FINAL = new Set(["accepted", "blocked", "canceled"]);
 
 /** A reload or a disabled plugin ended this instance: its host and API calls fail from now on, the next instance goes on. */
-export const pluginStopped = (cause: unknown) => /stale API handle|generation .* is retired|plugin .* (reloaded|disabled)/i.test(cause instanceof Error ? cause.message : String(cause));
-
 export type WorktreeSnapshot = (hostId:string, worktreePath:string, name:string) => Promise<{ status:"clean"|"saved"|"missing"|"failed"; path:string|null; reason:string|null }>;
 
 /**

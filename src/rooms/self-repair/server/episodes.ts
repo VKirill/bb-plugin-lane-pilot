@@ -1,5 +1,5 @@
 import packageJson from "../../../../package.json";
-import { failureClass } from "../../runs";
+import { failureClass } from "../../contracts/failure-class";
 import { fileAllowedByOwns, fileBlockedByNeverTouch, sha256Hex } from "@lane-pilot/kit";
 import { codeVerdict, splitRejectedPaths } from "@lane-pilot/run-insights";
 import type { Incident, SignatureRecord } from "./types";

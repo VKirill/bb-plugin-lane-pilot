@@ -4,7 +4,8 @@ import { bookkeepingSetting } from "@lane-pilot/settings-catalog";
 import { taskV2Schema, type PrototypeConfig, type TaskV2 } from "../../contracts";
 import { getAttempt, getRun, getRunSettingsScopes, getRunWriterHost, getTask, loadProjectSettings, taskBasePath, type WorktreeOwnerKind } from "../../storage";
 import { retargetTask } from "../../tasks";
-import { gateResolverFor, parseIntegrationGateSettings } from "../../verification/server";
+import { gateResolverFor } from "../../verification/server"
+import { parseIntegrationGateSettings } from "../../contracts/integration-gate";
 
 import type { ServerCore } from "../../contracts/server";
 import {
