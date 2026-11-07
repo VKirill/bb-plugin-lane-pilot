@@ -4,7 +4,7 @@ import { writerExecutionSelection } from "@lane-pilot/models";
 
 import type { ServerCore } from "../../contracts/server";
 import { fullAccessSpawn, modelCatalogOf, resolveSpawnModel, scheduleIsolated, spawnUsageOf, warmSpawnUsage } from "../../platform/server";
-import { stringAt } from "@lane-pilot/kit";
+import { stringAt, orMiss, isNotFound } from "@lane-pilot/kit";
 import { closeOwnerItem, closeOwnerItemsByPrefix, loadPushConfig, postOwnerItem } from "../../owner-waiting";
 import { loadProjectSettings, saveProjectSetting } from "../../storage";
 import { mentionContext } from "../../native-agent";
@@ -154,7 +154,7 @@ export function createLeadService(ctx: ServerCore, services: Services, migration
     if (settings().enabled && due(now)) { const result = await runTick("cron", now); started = result.ok ? result.tickId : null; }
     const day = new Date(now).toISOString().slice(0, 10);
     let exported = false;
-    const last = await bb.storage.kv.get(ROAD_EXPORT_KEY).catch(() => null);
+    const last = await bb.storage.kv.get(ROAD_EXPORT_KEY);
     if (last !== day) {
       try { writeRoadExport(roadMarkdown(db, now)); await bb.storage.kv.set(ROAD_EXPORT_KEY, day); exported = true; } catch (cause) { ctx.log(`lead: ROAD.md not exported: ${cause instanceof Error ? cause.message : String(cause)}`); }
     }
@@ -184,8 +184,8 @@ export function createLeadService(ctx: ServerCore, services: Services, migration
     const ticks = listTicks(db, 10);
     const counts = (split: string) => (db.prepare("SELECT COUNT(*) AS n FROM lane_pilot_decision WHERE split=?").get(split) as { n: number }).n;
     // The hub kv answers `undefined` for a key never written, and the RPC layer refuses undefined anywhere in a result (lead_shadow, 0.1.448: HTTP 500 until the first exam).
-    const lastExam = ((await bb.storage.kv.get(EXAM_KEY).catch(() => null)) ?? null) as { at: number; changes: TierChange[] } | null;
-    const memoryExam = ((await bb.storage.kv.get(MEMORY_EXAM_KEY).catch(() => null)) ?? null) as MemoryExam | null;
+    const lastExam = ((await bb.storage.kv.get(EXAM_KEY)) ?? null) as { at: number; changes: TierChange[] } | null;
+    const memoryExam = ((await bb.storage.kv.get(MEMORY_EXAM_KEY)) ?? null) as MemoryExam | null;
     return {
       generatedAt: now, settings: current, homeProjectId: await homeProjectId(),
       identity: { sha: identity.sha, path: identity.path, bytes: identity.bytes, seeded: identity.seeded },
@@ -334,9 +334,9 @@ export function createLeadService(ctx: ServerCore, services: Services, migration
   // --- the lead's chat (the architect's pattern: a visible thread in the home project's folder, the profile marker in a hidden part) ---
   const chatKey = (projectId: string) => `lead-chat-thread:${projectId}`;
   async function liveThread(projectId: string): Promise<string | null> {
-    const threadId = await bb.storage.kv.get<string>(chatKey(projectId)).catch(() => null);
+    const threadId = await bb.storage.kv.get<string>(chatKey(projectId));
     if (typeof threadId !== "string" || !threadId) return null;
-    const thread = await bb.sdk.threads.get({ threadId }).catch(() => null) as { archivedAt?: unknown } | null;
+    const thread = await orMiss(bb.sdk.threads.get({ threadId }), null, isNotFound) as { archivedAt?: unknown } | null;
     if (!thread || thread.archivedAt || stringAt(thread, "projectId") !== projectId || DEAD_STATUSES.has(stringAt(thread, "status") ?? "")) return null;
     return threadId;
   }

@@ -87,7 +87,7 @@ export function createOwnerAsk(bb: BbPluginApi, log: (message: string) => void) 
   /** Whether the owner has a question open in this chat (in this instance, or left by one a reload ended). */
   async function pending(threadId: string): Promise<boolean> {
     if (open.has(threadId)) return true;
-    return Boolean(await bb.storage.kv.get(`${PENDING_PREFIX}${threadId}`).catch(() => null));
+    return Boolean(await bb.storage.kv.get(`${PENDING_PREFIX}${threadId}`));
   }
 
   /**
@@ -96,9 +96,12 @@ export function createOwnerAsk(bb: BbPluginApi, log: (message: string) => void) 
    */
   async function recoverLost(): Promise<string[]> {
     const told: string[] = [];
-    for (const key of await bb.storage.kv.list(PENDING_PREFIX).catch(() => [] as string[])) {
-      const record = await bb.storage.kv.get<PendingRecord>(key).catch(() => null);
-      await bb.storage.kv.delete(key).catch(() => undefined);
+    for (const key of await bb.storage.kv.list(PENDING_PREFIX)) {
+      let record: PendingRecord | undefined;
+      try {
+        record = await bb.storage.kv.get<PendingRecord>(key);
+        await bb.storage.kv.delete(key).catch(() => undefined);
+      } catch (cause) { log(`owner question record ${key} unreadable, skipped: ${cause instanceof Error ? cause.message : String(cause)}`); continue; }
       if (!record?.threadId || open.has(record.threadId)) continue;
       try {
         await sendToThread(record.threadId, `Lane Pilot: the owner's question «${clip(record.question.split("\n", 1)[0]!, 120)}» was lost when Lane Pilot reloaded before the owner answered, so no answer will come. If it still matters, ask it again.`);

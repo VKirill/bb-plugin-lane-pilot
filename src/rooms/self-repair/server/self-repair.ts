@@ -6,7 +6,7 @@ import { checksInFlight, failureClass, taskFamily } from "../../runs";
 import { projectRoleField } from "../../runs/server";
 import { OWNER_WORD_WAIT_MS } from "../../tasks";
 import { taskWordItemPrefix } from "../../lead";
-import { stringAt } from "@lane-pilot/kit";
+import { stringAt, orMiss, isNotFound } from "@lane-pilot/kit";
 import type { ServerCore } from "../../contracts/server";
 import type { RepairDeps } from "./deps";
 import { waitThreadIdle } from "@lane-pilot/thread-observe";
@@ -177,7 +177,7 @@ export function createSelfRepair(ctx: ServerCore, deps: RepairDeps, engineOf?: (
   const { clearSpawnMarker, fullAccessSpawn, graphStepMetadata, keyedSpawnSupported, modelCatalogOf, resolveSpawnModel } = deps;
 
   async function config(): Promise<SelfRepairConfig> {
-    const raw = await bb.storage.kv.get(CONFIG_KEY).catch(() => null);
+    const raw = await bb.storage.kv.get(CONFIG_KEY);
     const stored = raw && typeof raw === "object" ? raw as Partial<SelfRepairConfig> : {};
     const merged = { ...SELF_REPAIR_DEFAULTS, ...stored };
     if (!merged.projectId || !merged.environmentId) {
@@ -202,7 +202,7 @@ export function createSelfRepair(ctx: ServerCore, deps: RepairDeps, engineOf?: (
     return next;
   }
   async function state(): Promise<SelfRepairState> {
-    const raw = await bb.storage.kv.get(STATE_KEY).catch(() => null);
+    const raw = await bb.storage.kv.get(STATE_KEY);
     const row = raw && typeof raw === "object" ? raw as Partial<SelfRepairState> : {};
     const signatures = Object.fromEntries(Object.entries(row.signatures ?? {}).map(([key, record]) => [key, { ...record, samples: (record.samples ?? []).map((sample) => ({ ...sample, reason: String(sample.reason ?? "").slice(0, SAMPLE_REASON_CHARS) })) }]));
     return { cursor: row.cursor ?? Date.now() - 3_600_000, lastTickAt: row.lastTickAt ?? null, signatures, spawned: row.spawned ?? [], aliases: row.aliases ?? {}, mergeSuggestions: row.mergeSuggestions ?? {} };
@@ -301,7 +301,7 @@ export function createSelfRepair(ctx: ServerCore, deps: RepairDeps, engineOf?: (
     const now = Date.now();
     for (const row of running) {
       if (ignored.has(row.project_id) || !row.thread_id) continue;
-      const thread = await bb.sdk.threads.get({ threadId: row.thread_id }).catch(() => null);
+      const thread = await orMiss(bb.sdk.threads.get({ threadId: row.thread_id }), null, isNotFound);
       const status = thread ? stringAt(thread, "status") : "missing";
       if (status !== "idle" && status !== "error" && status !== "stopped" && status !== "missing") continue;
       // finish.ts deliberately keeps a verified attempt running while its landing decision is open (hub 2026-10-31/11-03).
@@ -353,14 +353,14 @@ export function createSelfRepair(ctx: ServerCore, deps: RepairDeps, engineOf?: (
     }
     // A task parked on a Lane Pilot fault for an hour: the fix has not shipped. A breaker open for 30 minutes: the
     // project's writers wait on it. Both are the watcher's to fix, not the owner's.
-    const parked = await bb.storage.kv.get(PARKED_KEY).catch(() => null);
+    const parked = await bb.storage.kv.get(PARKED_KEY);
     for (const row of (Array.isArray(parked) ? parked : []) as ParkedTask[]) {
       if (ignored.has(row.projectId) || row.klass !== "harness" || now - row.at < 60 * 60_000) continue;
       out.push({ signature: reasonSignature("parked", row.reason), kind: "parked", projectId: row.projectId, runId: row.runId, taskId: row.taskId,
         attemptId: `parked:${row.runId}:${row.taskId}`, pmThreadId: row.pmThreadId, writerThreadId: null, version: VERSION,
         reason: `task parked ${Math.round((now - row.at) / 60_000)} min on a Lane Pilot fault with no fix shipped: ${row.reason}`, at: now });
     }
-    const breakers = await bb.storage.kv.get(BREAKERS_KEY).catch(() => null);
+    const breakers = await bb.storage.kv.get(BREAKERS_KEY);
     for (const [projectId, open] of Object.entries((breakers && typeof breakers === "object" ? breakers : {}) as Record<string, { fingerprint:string; openedAt:number; version:string }>)) {
       if (ignored.has(projectId) || open.version !== VERSION || now - open.openedAt < 30 * 60_000) continue;
       out.push({ signature: reasonSignature("breaker", open.fingerprint), kind: "breaker", projectId, runId: "-", taskId: "-",
@@ -368,7 +368,7 @@ export function createSelfRepair(ctx: ServerCore, deps: RepairDeps, engineOf?: (
         reason: `the project's writers have been held ${Math.round((now - open.openedAt) / 60_000)} min: several tasks failed on «${open.fingerprint}»`, at: now });
     }
     // J-11: an output the guard withheld (a secret value, instructions for the reader) is raised once, whatever its project.
-    const guarded = await bb.storage.kv.get(GUARD_BLOCKED_KEY).catch(() => null);
+    const guarded = await bb.storage.kv.get(GUARD_BLOCKED_KEY);
     for (const row of (Array.isArray(guarded) ? guarded : []) as GuardBlock[]) {
       if (row.at <= since || ignored.has(row.projectId)) continue;
       out.push({ signature: reasonSignature("guard", `${row.kind} output withheld by the output guard: ${row.reason}`), kind: "guard", projectId: row.projectId, runId: row.runId ?? "-", taskId: row.subject ?? "-",
@@ -376,13 +376,13 @@ export function createSelfRepair(ctx: ServerCore, deps: RepairDeps, engineOf?: (
         reason: `a ${row.kind} output was withheld by the output guard (${row.reason}); it was neither stored nor shown. Find where the ${row.reason === "secret" ? "value came from and why it was not masked" : "instructions came from and what let them reach the output"}.`, at: row.at });
     }
     // T6 (src/learning): the owner was clearly frustrated in a chat. The incident carries the thread and what the agent had just said.
-    const annoyed = await bb.storage.kv.get(FRUSTRATION_KEY).catch(() => null);
+    const annoyed = await bb.storage.kv.get(FRUSTRATION_KEY);
     for (const row of (Array.isArray(annoyed) ? annoyed : []) as FrustrationRecord[]) {
       if (row.at <= since || ignored.has(row.projectId)) continue;
       out.push({ signature: reasonSignature("owner", "the owner was clearly frustrated in a chat"), kind: "owner", projectId: row.projectId, runId: row.runId ?? "-", taskId: "-",
         attemptId: `owner:${row.messageId}`, pmThreadId: row.pmThreadId, writerThreadId: row.pmThreadId ? null : row.threadId, version: VERSION, reason: frustrationReason(row), at: row.at });
     }
-    const drill = await bb.storage.kv.get(DRILL_KEY).catch(() => null);
+    const drill = await bb.storage.kv.get(DRILL_KEY);
     for (const [hostId, row] of Object.entries((drill && typeof drill === "object" ? drill : {}) as Record<string, DrillOutcome>)) {
       if (row.version !== VERSION || row.at <= since) continue;
       for (const check of row.checks.filter((item) => !item.ok)) {
@@ -393,7 +393,7 @@ export function createSelfRepair(ctx: ServerCore, deps: RepairDeps, engineOf?: (
     }
     // A hook of the plugin that did not answer in its time (VK hook policy): the turn went on without Lane Pilot's env or
     // dispatch decision. A reload's own window is not a fault.
-    const hookRows = await bb.storage.kv.get(HOOK_TIMEOUTS_KEY).catch(() => null);
+    const hookRows = await bb.storage.kv.get(HOOK_TIMEOUTS_KEY);
     for (const row of (Array.isArray(hookRows) ? hookRows : []) as HookTimeoutRecord[]) {
       if (row.quiet || row.at <= since) continue;
       const effect = row.hook === "contributeEnv" ? (row.required ? "env required, turn not started" : "env not applied") : row.hook === "messageDispatch" ? "dispatch hook not applied" : "mention not resolved";

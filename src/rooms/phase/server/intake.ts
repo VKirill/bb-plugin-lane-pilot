@@ -127,7 +127,7 @@ export function createPhaseIntake(ctx: Deps, phases: IntakePhases, train?: Intak
     // No credential leaves the PM chat: not to the classifier, not to a phase (its goal goes into files of the repository and helper prompts).
     const text = withoutCredentials(withoutSelectionMarkers(input.filter((part) => part.type === "text" && typeof part.text === "string").map((part) => part.text).join("\n")));
     if (!requestId || !text || data.initiator === "agent" || isMachineMessage(text)) return null;
-    const known = await bb.storage.kv.get(KEY(threadId)).catch(() => null) as IntakeRecord | null;
+    const known = await bb.storage.kv.get(KEY(threadId)) as IntakeRecord | null;
     if (known?.requestId === requestId) return known;
     const classified = await classifyBundle(text, await lastPmMessage(threadId), run.project_id, run.id, settings);
     const { kind, by, path } = classified;
@@ -241,7 +241,7 @@ export function createPhaseIntake(ctx: Deps, phases: IntakePhases, train?: Intak
     const running = handingOver.get(slot);
     if (running) return running;
     const job = (async (): Promise<HandOverResult> => {
-      const known = await bb.storage.kv.get(slot).catch(() => null) as Partial<HandOverStarted> | null;
+      const known = await bb.storage.kv.get(slot) as Partial<HandOverStarted> | null;
       if (known && typeof known.id === "string" && (known.via === "phase" || known.via === "issue-quick" || known.via === "issue-batch" || known.via === "issue-full" || known.via === "full-lifecycle")) return { started: true, via: known.via, id: known.id };
       const result = await startHandOver(input);
       if (result.started) await bb.storage.kv.set(slot, { via: result.via, id: result.id, at: Date.now() });
@@ -309,7 +309,7 @@ export function createPhaseIntake(ctx: Deps, phases: IntakePhases, train?: Intak
    * Why the PM may not dispatch by hand now, or null: the owner's newest request was heavy and its phase is not closed. The reading of the newest message is finished first, so a quick dispatch cannot slip past it.
    */
   async function dispatchRefusal(threadId: string, options: { hint?: boolean } = {}): Promise<string | null> {
-    const record = await take(threadId) ?? await bb.storage.kv.get(KEY(threadId)).catch(() => null) as IntakeRecord | null;
+    const record = await take(threadId) ?? await bb.storage.kv.get(KEY(threadId)) as IntakeRecord | null;
     // A route or a run waits only while the architect builds: the chain it publishes is then run with lane_pilot_route.
     const building = record?.kind === "process" && record.architectThreadId && (options.hint !== false
       || await bb.sdk.threads.get({ threadId: record.architectThreadId }).then((info) => stringAt(info, "status") === "running", () => false));

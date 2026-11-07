@@ -12,6 +12,7 @@ import { fragmentJudgment, matchJudgment } from "./judgment";
 import { loadAnamnesis, type LoadDeps, type LoadOptions } from "./load";
 import { createOwnerMessageHub, isOwnerThread, sdkThreadsPort, type ThreadLike } from "./owner-messages";
 import { createExtractConsumer, type ExtractDeps } from "./extract";
+import { bestEffort } from "@lane-pilot/kit";
 import { dailyDue, dailyPass, markDailyDone, type DailyDeps } from "./daily";
 import { scheduleIsolated } from "../platform/server";
 
@@ -26,7 +27,7 @@ function build(ctx: ServerCore) {
   let ownerKey: Buffer | null = null;
   const refreshOwnerKey = async (): Promise<void> => {
     try { ownerKey = parseOwnerKey((await secrets.record(OWNER_KEY_NAME))?.value ?? null); }
-    catch { ownerKey = null; }
+    catch (cause) { bb.log.warn(`anamnesis owner key refresh failed: ${cause instanceof Error ? cause.message : String(cause)}`); ownerKey = null; }
   };
   const store = openOwnerStore(db as unknown as StoreDb, {
     crypto: {
@@ -36,19 +37,20 @@ function build(ctx: ServerCore) {
   });
   const innerHub: Hub = createHub({
     hostCall: async (hostId, request, timeoutMs) => (await (host as unknown as ExperimentalHostClient<typeof anamnesisHostMethods>).call("anamnesis", { requestedHostId: hostId, request }, { hostId, timeoutMs })).response,
-    listHosts: async () => mapListedQaHosts(await (bb.sdk as unknown as { hosts: { list: () => Promise<unknown> } }).hosts.list().catch(() => [])),
+    listHosts: async () => mapListedQaHosts(await (bb.sdk as unknown as { hosts: { list: () => Promise<unknown> } }).hosts.list()),
     kv: bb.storage.kv as never,
     store,
+    log: (message) => bb.log.warn(message),
   });
   /** The hub-side memory catalog for a collect request (A-b2): the memory plugin's RPC answers it; absent, the host's `bb` CLI is the fallback. */
   const callRpc = (bb.sdk as unknown as { plugins?: { callRpc?: (args: { pluginId: string; method: string; input: unknown; outputSchema: { parse(input: unknown): unknown } }) => Promise<unknown> } }).plugins?.callRpc;
   const bbMemories = async () => {
     if (!callRpc) return undefined;
-    try {
-      const output = z.object({ memories: z.array(z.object({ id: z.string().optional(), name: z.string().optional(), summary: z.string().optional(), kind: z.string().optional(), scope: z.string().optional(), tags: z.array(z.string()).optional(), importance: z.number().optional(), version: z.number().optional(), updatedAt: z.number().optional() }).strict()) });
-      const reply = output.parse(await callRpc({ pluginId: "memory", method: "listMemories", input: null, outputSchema: output }));
-      return reply.memories.filter((memory) => memory.scope !== "project").slice(0, 200);
-    } catch { return undefined; }
+    const output = z.object({ memories: z.array(z.object({ id: z.string().optional(), name: z.string().optional(), summary: z.string().optional(), kind: z.string().optional(), scope: z.string().optional(), tags: z.array(z.string()).optional(), importance: z.number().optional(), version: z.number().optional(), updatedAt: z.number().optional() }).strict()) });
+    // The memory plugin is optional: its absence or failure leaves the host's `bb` CLI fallback in place.
+    return bestEffort((message) => bb.log.warn(message), "anamnesis bb-memory catalog", callRpc({ pluginId: "memory", method: "listMemories", input: null, outputSchema: output })
+      .then((raw) => output.parse(raw))
+      .then((reply) => reply.memories.filter((memory) => memory.scope !== "project").slice(0, 200)), undefined);
   };
   const hub: Hub = {
     ...innerHub,
@@ -84,7 +86,7 @@ function build(ctx: ServerCore) {
   ownerMessages.subscribe(consumer);
 
   const dailyDeps = (): DailyDeps => ({
-    hub, threads, owner: ownerMessages, consumer, now: Date.now,
+    hub, threads, owner: ownerMessages, consumer, now: Date.now, log: (message) => bb.log.warn(message),
     projectNames: async () => new Map(((await bb.sdk.projects.list({ includePersonal: true } as never)) as unknown as Array<{ id: string; name?: string }>).map((project) => [project.id, project.name ?? project.id])),
     lpRuns: () => (db.prepare("SELECT id, project_id, created_at FROM lane_pilot_run").all() as Array<{ id: string; project_id: string; created_at: number }>)
       .map((row) => ({ id: row.id, projectId: row.project_id, createdAt: row.created_at })),
@@ -113,7 +115,7 @@ function build(ctx: ServerCore) {
   const loadDeps = (): LoadDeps => {
     const instance = jev();
     return {
-      hub, threads, now: Date.now,
+      hub, threads, now: Date.now, log: (message) => bb.log.warn(message),
       projectNames: async () => new Map(((await bb.sdk.projects.list({ includePersonal: true } as never)) as unknown as Array<{ id: string; name?: string }>).map((project) => [project.id, project.name ?? project.id])),
       lpRuns: () => (db.prepare("SELECT id, project_id, created_at FROM lane_pilot_run").all() as Array<{ id: string; project_id: string; created_at: number }>)
         .map((row) => ({ id: row.id, projectId: row.project_id, createdAt: row.created_at })),

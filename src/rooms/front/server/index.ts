@@ -28,7 +28,7 @@ export function createFront(ctx: ServerCore) {
   };
 
   async function firstRun(projectId: string) {
-    const draft = ((await kv.get(draftKey(projectId)).catch(() => null)) as FirstRunDraft | null) ?? { projectId, answers: {}, at: Date.now() };
+    const draft = ((await kv.get(draftKey(projectId))) as FirstRunDraft | undefined) ?? { projectId, answers: {}, at: Date.now() };
     return { needed: firstRunNeeded(loadProjectSettings(db, projectId), draft), steps: FIRST_RUN_STEPS, draft };
   }
   async function firstRunAnswer(projectId: string, step: FirstRunStep, answer: string) {
@@ -69,8 +69,8 @@ export function createFront(ctx: ServerCore) {
 
   /** Peers polled with every board: the hosts BB knows, each with its last snapshot (Last snapshot of a peer). */
   async function pollPeers(now = Date.now()) {
-    const listed = mapListedQaHosts(await (bb.sdk as unknown as { hosts: { list: () => Promise<unknown> } }).hosts.list().catch(() => []));
-    const before = ((await kv.get(PEERS).catch(() => null)) as Record<string, PeerSnapshot> | null) ?? {};
+    const listed = mapListedQaHosts(await (bb.sdk as unknown as { hosts: { list: () => Promise<unknown> } }).hosts.list());
+    const before = ((await kv.get(PEERS)) as Record<string, PeerSnapshot> | undefined) ?? {};
     const next: Record<string, PeerSnapshot> = { ...before };
     for (const row of listed) {
       const online = row.connected === true;
@@ -80,7 +80,7 @@ export function createFront(ctx: ServerCore) {
     return Object.values(next);
   }
   async function peers() {
-    const known = Object.values(((await kv.get(PEERS).catch(() => null)) as Record<string, PeerSnapshot> | null) ?? {});
+    const known = Object.values(((await kv.get(PEERS)) as Record<string, PeerSnapshot> | undefined) ?? {});
     return known.map((peer) => ({ ...peer, line: peerLine(peer) }));
   }
 
@@ -100,11 +100,11 @@ export function createFront(ctx: ServerCore) {
   /** One action — one line: every RPC call that changes something leaves its name, its argument keys and the time. */
   async function journal(name: string, input: unknown) {
     if (!MUTATING_RPC.test(name)) return;
-    const lines = ((await kv.get(ACTIONS).catch(() => null)) as Array<{ at: number; action: string; keys: string[] }> | null) ?? [];
+    const lines = ((await kv.get(ACTIONS)) as Array<{ at: number; action: string; keys: string[] }> | undefined) ?? [];
     lines.push({ at: Date.now(), action: name, keys: input && typeof input === "object" ? Object.keys(input as object).slice(0, 12) : [] });
     await kv.set(ACTIONS, lines.slice(-1000) as never);
   }
-  const actions = async (limit = 100) => (((await kv.get(ACTIONS).catch(() => null)) as unknown[] | null) ?? []).slice(-limit);
+  const actions = async (limit = 100) => (((await kv.get(ACTIONS)) as unknown[] | undefined) ?? []).slice(-limit);
 
   return { front: { firstRun, firstRunAnswer, firstRunFinish, helpers, importHelpers, pollPeers, peers, coord, doorAudience, journal, actions } };
 }

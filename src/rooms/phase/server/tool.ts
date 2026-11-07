@@ -6,6 +6,7 @@ import { PhaseRefusal } from "./driver";
 import { autoDue } from "./auto-stages";
 import { STAGE_RUBRICS } from "../stages";
 import { WORD_TURNS } from "../logic";
+import { isNotFound, orMiss } from "@lane-pilot/kit";
 
 import type { PhaseApi } from "./driver";
 
@@ -124,8 +125,8 @@ export function registerPhaseTool(ctx: ServerCore, services: Services): void {
             // either way — task.covers is lifted to item.covers. project_cwd falls back to the PM chat's checkout: the phase knows
             // its project, the planner does not have to repeat it on every piece.
             const phase = api.status(input.phaseId).phase;
-            const pm = await ctx.bb.sdk.threads.get({ threadId: phase.pmThreadId }).catch(() => null) as { environmentId?: string } | null;
-            const env = pm?.environmentId ? await ctx.bb.sdk.environments.get({ environmentId: pm.environmentId }).catch(() => null) as { path?: string } | null : null;
+            const pm = await orMiss(ctx.bb.sdk.threads.get({ threadId: phase.pmThreadId }), null, isNotFound) as { environmentId?: string } | null;
+            const env = pm?.environmentId ? await orMiss(ctx.bb.sdk.environments.get({ environmentId: pm.environmentId }), null, isNotFound) as { path?: string } | null : null;
             const cwd = typeof env?.path === "string" && env.path ? env.path : null;
             const items = (input.items as Array<{ covers?: string[]; task: { covers?: string[]; project_cwd?: string } & Record<string, unknown> }>).map((row) => {
               const { covers: taskCovers, ...task } = row.task;

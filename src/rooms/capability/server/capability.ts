@@ -5,6 +5,7 @@ import { type ServerCore } from "../../contracts/server";
 import { SANDBOX_PROJECT_ID } from "../../stability/server";
 import { CAPABILITIES, adapterVersions, capabilityTable, dueProbes, probeSetupFailed, providersInUse } from "../logic";
 import { listReceipts, saveReceipt } from "../store";
+import { isNotFound, orMiss } from "@lane-pilot/kit";
 
 import type { ProbesApi } from "../../stability/server/probes";
 import type { WriterStateApi } from "../../writer/server/state";
@@ -47,7 +48,7 @@ export function createCapabilities(ctx: ServerCore, services: Services) {
   async function probeRun(): Promise<string | null> {
     const runs = db.prepare("SELECT id, pm_thread_id FROM lane_pilot_run WHERE project_id=? AND pm_thread_id IS NOT NULL ORDER BY created_at DESC LIMIT 20").all(SANDBOX_PROJECT_ID) as Array<{ id: string; pm_thread_id: string }>;
     for (const run of runs) {
-      const thread = await bb.sdk.threads.get({ threadId: run.pm_thread_id }).catch(() => null) as { archivedAt?: unknown; deletedAt?: unknown } | null;
+      const thread = await orMiss(bb.sdk.threads.get({ threadId: run.pm_thread_id }), null, isNotFound) as { archivedAt?: unknown; deletedAt?: unknown } | null;
       if (thread && !thread.archivedAt && !thread.deletedAt) return run.id;
     }
     return null;

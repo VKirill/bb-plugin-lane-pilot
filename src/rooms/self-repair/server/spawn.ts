@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { sha256Hex } from "@lane-pilot/kit";
+import { sha256Hex, orMiss, isNotFound } from "@lane-pilot/kit";
 import type { ServerCore } from "../../contracts/server";
 import type { stringAt as stringAtOf } from "@lane-pilot/kit";
 import type { RepairWorktree, SelfRepairConfig, SelfRepairState, SignatureRecord } from "./types";
@@ -20,7 +20,7 @@ async function placeThread(bb: ServerCore["bb"], log: (message: string) => void,
 }
 
 async function threadBusy(bb: ServerCore["bb"], stringAt: typeof stringAtOf, threadId: string): Promise<boolean> {
-  const thread = await bb.sdk.threads.get({ threadId }).catch(() => null);
+  const thread = await orMiss(bb.sdk.threads.get({ threadId }), null, isNotFound);
   const status = stringAt(thread, "status");
   return status !== null && status !== "idle" && status !== "error" && status !== "stopped";
 }

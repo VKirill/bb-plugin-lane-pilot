@@ -2,7 +2,7 @@ import { runOnHost } from "@lane-pilot/host-calls";
 import { waitThreadIdle } from "@lane-pilot/thread-observe";
 import { taskV2Schema } from "../../contracts";
 import { fullAccessSpawn } from "../../platform/server";
-import { stringAt } from "@lane-pilot/kit";
+import { stringAt, orMiss, isNotFound } from "@lane-pilot/kit";
 import { type ServerCore } from "../../contracts/server";
 import { cancelAttemptById, finishRunSafely } from "../../runs/server";
 import { createRun, createTask, getActivation, getRun, getTask, listOpenAttempts, loadProjectSettings, loadPrototypeConfig, saveProjectSetting, savePrototypeConfig } from "../../storage";
@@ -54,7 +54,7 @@ export function benchPipeline(ctx: Pick<ServerCore, "bb" | "db" | "host" | "canc
     async findProject(name) {
       const found = (await listProjects(bb)).find((row) => row.name === name);
       if (!found) return null;
-      const project = await bb.sdk.projects.get({ projectId: found.id }).catch(() => null) as { sources?: Array<{ hostId?: string; path?: string }> } | null;
+      const project = await orMiss(bb.sdk.projects.get({ projectId: found.id }), null, isNotFound) as { sources?: Array<{ hostId?: string; path?: string }> } | null;
       const source = project?.sources?.[0];
       return source?.hostId && source.path ? { projectId: found.id, name, hostId: source.hostId, path: source.path } : null;
     },
@@ -72,7 +72,7 @@ export function benchPipeline(ctx: Pick<ServerCore, "bb" | "db" | "host" | "canc
         pmWorkspacePath: stored?.pmWorkspacePath ?? project.path, writerWorkspacePath: stored?.writerWorkspacePath ?? project.path,
         pmProviderId: writerProviderId, pmModel: writerModel, writerProviderId: stored?.writerProviderId ?? writerProviderId, writerModel: stored?.writerModel ?? writerModel });
       // A key an earlier arm set and this one does not is dropped: an arm is what it names, not what the last arm left behind.
-      const before = await bb.storage.kv.get(keysKey(project.projectId)).catch(() => null) as string[] | null;
+      const before = await bb.storage.kv.get(keysKey(project.projectId)) as string[] | null;
       for (const key of before ?? []) if (!(key in input.settings)) db.prepare("DELETE FROM lane_pilot_project_settings WHERE project_id=? AND binding_id='' AND key=?").run(project.projectId, key);
       for (const [key, value] of Object.entries(input.settings)) saveProjectSetting(db, project.projectId, key, value);
       await bb.storage.kv.set(keysKey(project.projectId), Object.keys(input.settings) as never);

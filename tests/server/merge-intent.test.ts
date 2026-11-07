@@ -230,3 +230,24 @@ describe("recovery of a merge whose reply was lost", () => {
     expect(await bb.storage.kv.get(mergeIntentKey("a1"))).toBeFalsy();
   });
 });
+
+it("one unreadable intent key is skipped and the rest of the pass still runs", async () => {
+  const { createFakePluginHost } = await import("@get-bb/plugin-sdk/testing");
+  const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
+  const db = openDatabase(bb);
+  const { createCore } = await import("../../src/rooms/core/server/core");
+  const ctx = createCore(bb, db);
+  const kv = bb.storage.kv as never as { get: (key: string) => Promise<unknown>; set: (k: string, v: unknown) => Promise<void>; delete: (k: string) => Promise<void>; list: (p?: string) => Promise<string[]> };
+  const bad = mergeIntentKey("bad-attempt");
+  const good = mergeIntentKey("gone-attempt");
+  await kv.set(bad, JSON.stringify({ attemptId: "bad-attempt", runId: "r", taskId: "T", projectId: "p", hostId: "h", basePath: "/b", worktreePath: "/w", message: "m", at: 0 }));
+  await kv.set(good, JSON.stringify({ attemptId: "gone-attempt", runId: "r", taskId: "T2", projectId: "p", hostId: "h", basePath: "/b", worktreePath: "/w", message: "m", at: 0 }));
+  const realGet = kv.get.bind(kv);
+  kv.get = async (key: string) => { if (key === bad) throw new Error("corrupt record"); return realGet(key); };
+  const recovery = createMergeIntentRecovery(ctx as never, { activeWriterTasks: new Set(), startAfterAcceptance: () => undefined } as never);
+  await recovery.recoverMergeIntents({ graceMs: 0 });
+  // The bad key threw and was skipped; the good key's attempt does not exist, so its intent was cleared.
+  expect(await realGet(bad)).toBeTruthy();
+  expect(await realGet(good)).toBeFalsy();
+  await harness.lifecycle.dispose();
+});

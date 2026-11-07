@@ -17,7 +17,7 @@ import { candidatePatches, runCodeCritique } from "../../critique/server";
 import { fullAccessSpawn } from "../../platform/server";
 import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server";
 import { closeWriterStages, recordGateEvaluation, recordStage } from "../../runs/server";
-import { stringAt } from "@lane-pilot/kit";
+import { stringAt, orMiss, isNotFound } from "@lane-pilot/kit";
 import { wasAnsweredByDefault } from "./question-default";
 import { needsHumanQuestion, outputText, providerLimitNotice, providerStreamError, WRITER_STREAM_ERROR, writerContextBlocks, writerSetupLines } from "./writer-task";
 import { isLiveDecision } from "../live-folder";
@@ -641,7 +641,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
           });
           // The writer that wrote the code fixes the findings in its own thread, with its context; a new thread only
           // when that one is gone or busy.
-          const writerIdle = stringAt(await bb.sdk.threads.get({ threadId:writerThreadId }).catch(() => null), "status") === "idle";
+          const writerIdle = stringAt(await orMiss(bb.sdk.threads.get({ threadId:writerThreadId }), null, isNotFound), "status") === "idle";
           if (writerIdle) {
             const sentAt = Date.now();
             recordStage(db, {

@@ -150,7 +150,7 @@ export function createWall(deps: WallDeps) {
 
   /** The settings of the global level (`wall.*`) over what the old key-value store holds: a field with no row reads the old value. */
   async function config(): Promise<WallConfig> {
-    const old = await kv.get(WALL_CONFIG_KEY).catch(() => null);
+    const old = await kv.get(WALL_CONFIG_KEY);
     return parseWallConfig({ ...(old && typeof old === "object" ? old : {}), ...hubFields(db, "wall") });
   }
   async function setConfig(patch: Partial<WallConfig>): Promise<WallConfig> {
@@ -804,7 +804,7 @@ export function createWall(deps: WallDeps) {
     }
     const recurrence = recurrenceOn(row.classKey, evidence, deployedAt);
     const requireBench = (row.policy as { requireBench?: boolean } | null)?.requireBench === true;
-    const sealedFlag = await kv.get("bench:sealed_gap").catch(() => null) as { gapPp?: number; thresholdPp?: number; at?: number } | null;
+    const sealedFlag = await kv.get("bench:sealed_gap") as { gapPp?: number; thresholdPp?: number; at?: number } | null;
     const sealedGap = Boolean(sealedFlag && typeof sealedFlag.gapPp === "number" && typeof sealedFlag.thresholdPp === "number" && sealedFlag.gapPp > sealedFlag.thresholdPp
       // The flag speaks for the week it was measured in; a stale flag (older than 9 days) no longer holds new fixes.
       && sealedFlag.at !== undefined && now - sealedFlag.at < 9 * 86_400_000);

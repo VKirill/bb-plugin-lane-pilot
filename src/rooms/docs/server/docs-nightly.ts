@@ -15,7 +15,7 @@ import { withUsage } from "../../usage/server";
 import { DOCS_MAINTENANCE, DOCS_NIGHT, builtinWorkflow } from "../../workflow";
 import type { StepContext, WorkflowEngine } from "../../workflow";
 import { requireGreen } from "../../workflow/server";
-import { stringAt, valueAt } from "@lane-pilot/kit";
+import { stringAt, valueAt, orMiss, isNotFound } from "@lane-pilot/kit";
 import { recordStage } from "../../runs/server";
 import { sleepUntilThreadSignal, threadWatchMark, waitThreadIdle } from "@lane-pilot/thread-observe";
 import { basename, resolve } from "node:path";
@@ -78,7 +78,7 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
    */
   async function docsVerdict(projectId:string, place:DocsPlace, opts:{force?:boolean;now?:number}={}):Promise<StoredDocsVerdict|null> {
     const now=opts.now??Date.now();
-    const stored=await bb.storage.kv.get(WORTH_KEY(place)).catch(()=>null) as StoredDocsVerdict|null;
+    const stored=await bb.storage.kv.get(WORTH_KEY(place)) as StoredDocsVerdict|null;
     const facts=await host.call("docsWorthinessFacts",{requestedHostId:place.hostId,projectCwd:place.path},{hostId:place.hostId,timeoutMs:60_000}).catch(()=>null);
     if(!facts) return stored;
     const factsKey=docsFactsKey(facts);
@@ -122,7 +122,7 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
   /** Every folder of a project on every machine: its sources and its section folders, as the nightly pass sees them. */
   async function docsPlaces(projectId:string):Promise<Array<DocsPlace & {scopes:string[];name:string}>> {
     const places:Array<DocsPlace & {scopes:string[];name:string}>=[];
-    const described=await bb.sdk.projects.get({projectId}).catch(()=>null) as {name?:string;sources?:Array<{hostId?:string;path?:string}>}|null;
+    const described=await orMiss(bb.sdk.projects.get({projectId}), null, isNotFound) as {name?:string;sources?:Array<{hostId?:string;path?:string}>}|null;
     for(const source of described?.sources??[]){
       if(source.hostId&&source.path&&!places.some((place)=>place.hostId===source.hostId&&place.path===source.path)) places.push({scopes:[],hostId:source.hostId,path:source.path,name:described?.name??basename(source.path)});
     }
@@ -161,7 +161,7 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
       const threadId=stringAt(spawned,"id"); if(!threadId) throw new Error("docs thread id missing");
       for(;;){
         const mark=threadWatchMark(bb);
-        if(stringAt(await bb.sdk.threads.get({threadId}).catch(()=>null),"status")!=="starting") break;
+        if(stringAt(await orMiss(bb.sdk.threads.get({threadId}), null, isNotFound),"status")!=="starting") break;
         await sleepUntilThreadSignal(bb,threadId,mark,2_000);
       }
       return threadId;
@@ -221,7 +221,7 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
    */
   async function docsWorktree(place:{hostId:string;path:string}):Promise<{hostId:string;path:string}> {
     const name=`docs-${sha256(place.path).slice(0,12)}`, key=`docs-worktree:${place.hostId}:${name}`;
-    const known=await bb.storage.kv.get(key).catch(()=>null) as {path?:string}|null;
+    const known=await bb.storage.kv.get(key) as {path?:string}|null;
     let missing=false;
     if(known?.path){
       // A durable marker can outlive its folder. Recreate a missing copy through gitCreateWorktree, which keeps
@@ -230,9 +230,9 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
       if(state.status==="failed") throw new Error(`docs_worktree_inspection_failed: ${state.reason}`);
       missing=state.status==="missing";
       if(state.status==="ready"){
-        const open=(await bb.storage.kv.get(DOCS_UNITS_OPEN_KEY).catch(()=>null) as Record<string,true>|null)??{};
+        const open=(await bb.storage.kv.get(DOCS_UNITS_OPEN_KEY) as Record<string,true>|null)??{};
         for(const unitKey of Object.keys(open)){
-          const record=await bb.storage.kv.get(unitKey).catch(()=>null) as DocsUnitRecord|null;
+          const record=await bb.storage.kv.get(unitKey) as DocsUnitRecord|null;
           if(record?.place.path===known.path) return {hostId:place.hostId,path:known.path};
         }
         // Its committed pages reach main before it goes; a busy main waits for the next tick.
@@ -271,7 +271,7 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
       const root=await services.resolveProjectWriterHost({projectId:project.id}).catch(()=>null);
       if(root?.status==="resolved"&&root.path) places.push({scopes:[],hostId:root.hostId,path:root.path});
       // Every source of the project is a place too: a project may keep its code repository on another machine.
-      const described=await bb.sdk.projects.get({projectId:project.id}).catch(()=>null) as {sources?:Array<{hostId?:string;path?:string}>}|null;
+      const described=await orMiss(bb.sdk.projects.get({projectId:project.id}), null, isNotFound) as {sources?:Array<{hostId?:string;path?:string}>}|null;
       for(const source of described?.sources??[]){
         if(source.hostId&&source.path&&!places.some((place)=>place.hostId===source.hostId&&place.path===source.path)) places.push({scopes:[],hostId:source.hostId,path:source.path});
       }
@@ -290,13 +290,13 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
             continue;
           }
           const baseKey=`docs-base:${place.hostId}:${sha256(place.path).slice(0,12)}`;
-          const storedBase=await bb.storage.kv.get(baseKey).catch(()=>null) as {head?:string}|null;
+          const storedBase=await bb.storage.kv.get(baseKey) as {head?:string}|null;
           const scope=await host.call("gitDocsScope",{requestedHostId:place.hostId,projectCwd:place.path,sinceEpochMs:docsSinceEpoch(docs.since,new Date()),...(storedBase?.head?{base:storedBase.head}:{})},{hostId:place.hostId,timeoutMs:120_000});
           if(scope.status!=="ready"||!scope.isRepoRoot) continue;
           // A pass that broke off (a reload, a crash) or left units failed is picked up at the next hours of the same
           // night; units already done have no changes left and skip at once.
           const stateKey=`docs-nightly-state:${project.id}:${sha256(place.path).slice(0,12)}`;
-          const night=await bb.storage.kv.get(stateKey).catch(()=>null) as {date?:string;attempts?:number;finished?:boolean;failed?:number}|null;
+          const night=await bb.storage.kv.get(stateKey) as {date?:string;attempts?:number;finished?:boolean;failed?:number}|null;
           const unsettled=night?.date===scope.localDate&&(!night.finished||(night.failed??0)>0)&&(night.attempts??0)<DOCS_NIGHT_ATTEMPTS;
           const catchUp=Boolean(opts.catchUp)&&!opts.force&&unsettled&&!docsPassesRunning.has(place.path);
           if(opts.catchUp&&!catchUp) continue;
@@ -315,7 +315,7 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
           const firstResult=results.length;
           const attempts=(catchUp?night?.attempts??0:0)+1;
           await bb.storage.kv.set(stateKey,{date:scope.localDate,attempts,finished:false,failed:0});
-          const open=(await bb.storage.kv.get(DOCS_OPEN_KEY).catch(()=>null) as DocsOpenPasses|null)??{};
+          const open=(await bb.storage.kv.get(DOCS_OPEN_KEY) as DocsOpenPasses|null)??{};
           await bb.storage.kv.set(DOCS_OPEN_KEY,{...open,[stateKey]:{projectId:project.id,path:place.path,date:scope.localDate}});
           try{
           // The agents write, check and commit in the place's docs worktree; main sees only merged commits.
@@ -339,7 +339,7 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
             const changed=unitScope.changed.filter((path)=>workspace?path.startsWith(`${workspace.path}/`):true);
             if(unitScope.hasDocs&&!changed.length&&!unitScope.dirty.some(unitWritable(unit))) return;
             // A unit resuming from saved progress already has its map.
-            if(await bb.storage.kv.get(docsUnitRecordKey(project.id,work.path,unit.docsDir)).catch(()=>null)) return;
+            if(await bb.storage.kv.get(docsUnitRecordKey(project.id,work.path,unit.docsDir))) return;
             const pages=titled.filter((page)=>page.path.startsWith(`${unit.docsDir}/`)&&!isDocsIndex(page.path))
               .map((page)=>({path:page.path,title:/^title:\s*(.+)$/m.exec(page.content)?.[1]?.trim()??page.path}));
             prefetch.set(unit.docsDir,host.call("docsAnchors",{requestedHostId:work.hostId,projectCwd:work.path,prefix:workspace?`${workspace.path}/`:"",
@@ -384,10 +384,10 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
           if(headNow?.exitCode===0&&/^[a-f0-9]{40}$/.test(headNow.stdout.trim())) await bb.storage.kv.set(baseKey,{head:headNow.stdout.trim()}).catch(()=>undefined);
           // The pass is done: its worktree goes now, unless a unit left open progress in it (WT2: create → merge → remove).
           if(resolve(work.path)!==resolve(place.path)){
-            const openUnits=(await bb.storage.kv.get(DOCS_UNITS_OPEN_KEY).catch(()=>null) as Record<string,true>|null)??{};
+            const openUnits=(await bb.storage.kv.get(DOCS_UNITS_OPEN_KEY) as Record<string,true>|null)??{};
             let progress=false;
             for(const unitKey of Object.keys(openUnits)){
-              const record=await bb.storage.kv.get(unitKey).catch(()=>null) as DocsUnitRecord|null;
+              const record=await bb.storage.kv.get(unitKey) as DocsUnitRecord|null;
               if(record?.place.path===work.path){ progress=true; break; }
             }
             if(!progress){
@@ -426,7 +426,7 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
     return {settings,docs};
   }
   async function readUnitRecord(key:string):Promise<DocsUnitRecord|null> {
-    return await bb.storage.kv.get(key).catch(()=>null) as DocsUnitRecord|null;
+    return await bb.storage.kv.get(key) as DocsUnitRecord|null;
   }
 
   /** The first half of a unit: its git scope, the pages to refresh, the gaps, what Jev doubted last time. Nothing to do, or saved progress, is said in the state. */
@@ -501,7 +501,7 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
     }
     // What Jev still doubted after this unit's last pass goes back to the agent to recheck, while the page exists.
     const kvKey=`docs-nightly:${i.projectId}:${sha256(`${place.path}\n${label}`).slice(0,12)}`;
-    const last=hasDocs?await bb.storage.kv.get(kvKey).catch(()=>null) as {warnings?:Array<{path:string;rule:string;detail:string}>}|null:null;
+    const last=hasDocs?await bb.storage.kv.get(kvKey) as {warnings?:Array<{path:string;rule:string;detail:string}>}|null:null;
     const pagePaths=new Set(existing.map((page)=>page.path));
     const doubts=(last?.warnings??[]).filter((warning)=>(warning.rule==="evidence-check"||warning.rule==="contradiction")&&pagePaths.has(warning.path));
     return {state:"ready",plan:{label,hasDocs,changed,changedCount:changed.length,refresh,gaps,
@@ -630,7 +630,7 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
   /** Index writes go one at a time: units of a pass save their progress side by side. */
   function updateDocsUnitsIndex(change:(open:Record<string,true>)=>void):Promise<void> {
     const next=docsUnitsIndexChain.then(async()=>{
-      const open=(await bb.storage.kv.get(DOCS_UNITS_OPEN_KEY).catch(()=>null) as Record<string,true>|null)??{};
+      const open=(await bb.storage.kv.get(DOCS_UNITS_OPEN_KEY) as Record<string,true>|null)??{};
       change(open);
       await bb.storage.kv.set(DOCS_UNITS_OPEN_KEY,open);
     });
@@ -974,7 +974,7 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
       if(!taskId) continue;
       // The PM chat of the run is gone (deleted or archived): maintenance reads it first and would throw "Thread not found"
       // every hour, leaving the receipt running for good (hub, 2026-10-08, layout-A3). The open receipts end canceled.
-      const pm=await bb.sdk.threads.get({threadId:activation.pm_thread_id}).then((value)=>value as unknown,(cause:unknown)=>/\b404\b|not.?found/i.test(cause instanceof Error?cause.message:String(cause))?null:undefined);
+      const pm=await bb.sdk.threads.get({threadId:activation.pm_thread_id}).then((value)=>value as unknown,(cause:unknown)=>isNotFound(cause)?null:undefined);
       if(pm===null||(pm!==undefined&&valueAt(pm,"archivedAt")!=null)){
         for(const candidate of new Set(runHistory?.attempts.map((item)=>item.task_id))){
           const open=listStageReceipts(db,run.id,candidate).find((receipt)=>receipt.stageId==="docs-maintenance"&&(receipt.state==="pending"||receipt.state==="running"));
@@ -1031,21 +1031,25 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
    */
   async function runDocsCatchUps(signal?:AbortSignal):Promise<void> {
     // First the units whose agent a stopped plugin instance left running or finished: same thread, from the saved step.
-    const units=(await bb.storage.kv.get(DOCS_UNITS_OPEN_KEY).catch(()=>null) as Record<string,true>|null)??{};
+    const units=(await bb.storage.kv.get(DOCS_UNITS_OPEN_KEY) as Record<string,true>|null)??{};
     for(const unitKey of Object.keys(units)){
       signal?.throwIfAborted();
       if(docsUnitsFinishing.has(unitKey)) continue;
-      const record=await bb.storage.kv.get(unitKey).catch(()=>null) as DocsUnitRecord|null;
+      let record:DocsUnitRecord|null;
+      try { record=await bb.storage.kv.get(unitKey) as DocsUnitRecord|null; }
+      catch(cause){ bb.log.warn(`Lane Pilot docs unit ${unitKey} unreadable, skipped: ${cause instanceof Error?cause.message:String(cause)}`); continue; }
       if(!record){ await updateDocsUnitsIndex((index)=>{ delete index[unitKey]; }); continue; }
       void finishDocsUnit(record,(path,self)=>[...docsUnitsFinishing.values()].some((unit)=>unit!==self&&unitWritable(unit)(path)))
         // A reload stopping this instance is not a failure: the next instance resumes the unit.
         .catch((cause)=>pluginStopped(cause)?undefined:bb.log.warn(`Lane Pilot docs resume failed for ${record.place.path} ${record.label}: ${cause instanceof Error?cause.message:String(cause)}`));
     }
-    const open=(await bb.storage.kv.get(DOCS_OPEN_KEY).catch(()=>null) as DocsOpenPasses|null)??{};
+    const open=(await bb.storage.kv.get(DOCS_OPEN_KEY) as DocsOpenPasses|null)??{};
     const keep:DocsOpenPasses={};
     for(const [key,entry] of Object.entries(open)){
       signal?.throwIfAborted();
-      const night=await bb.storage.kv.get(key).catch(()=>null) as {date?:string;attempts?:number;finished?:boolean;failed?:number}|null;
+      let night:{date?:string;attempts?:number;finished?:boolean;failed?:number}|null;
+      try { night=await bb.storage.kv.get(key) as typeof night; }
+      catch(cause){ bb.log.warn(`Lane Pilot docs night ${key} unreadable, kept for the next pass: ${cause instanceof Error?cause.message:String(cause)}`); keep[key]=entry; continue; }
       const unsettled=night?.date===entry.date&&(!night.finished||(night.failed??0)>0)&&(night.attempts??0)<DOCS_NIGHT_ATTEMPTS;
       if(!unsettled) continue;
       keep[key]=entry;
@@ -1053,7 +1057,7 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
       // Units still finishing from saved progress are waited for inside the pass, not started again.
       await runNightlyDocs({projectId:entry.projectId,path:entry.path,catchUp:true,signal});
     }
-    const latest=(await bb.storage.kv.get(DOCS_OPEN_KEY).catch(()=>null) as DocsOpenPasses|null)??{};
+    const latest=(await bb.storage.kv.get(DOCS_OPEN_KEY) as DocsOpenPasses|null)??{};
     await bb.storage.kv.set(DOCS_OPEN_KEY,Object.fromEntries(Object.entries(latest).filter(([key])=>key in keep||!(key in open))));
   }
 

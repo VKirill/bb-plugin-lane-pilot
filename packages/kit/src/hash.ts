@@ -2,6 +2,7 @@ import { createHash, type BinaryLike } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { lstat, readdir, readFile, readlink } from "node:fs/promises";
 import { join } from "node:path";
+import { isFsAbsent } from "./miss";
 
 /** SHA-256 of a string (UTF-8) or bytes, as lower-case hex. The one place the plugin calls createHash("sha256"). */
 export function sha256Hex(data: BinaryLike): string {
@@ -60,7 +61,8 @@ export async function hashPath(path: string): Promise<{
 export async function sha256FileOrNull(path: string): Promise<string | null> {
   try {
     return sha256Buffer(await readFile(path));
-  } catch {
-    return null;
+  } catch (cause) {
+    if (isFsAbsent(cause)) return null;
+    throw cause;
   }
 }

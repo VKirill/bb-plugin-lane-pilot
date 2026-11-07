@@ -1,4 +1,4 @@
-import { retryBudgetReason, spendRetryBudget } from "../retry-budget";
+import { TASK_ATTEMPT_BUDGET, retryBudgetReason, spendRetryBudget } from "../retry-budget";
 import { retrySafetyStop, taskLimitStop, TASK_WALL_CLOCK_MIN, VERIFY_MAX_PASSES } from "./retry-safety";
 import { pilotOf, pilotUnderWall, runTasks } from "../../pilot";
 import { breakerKey, budgetStopReason, classifyFailure, runningWriterBudgetStop, tokenUsageFromEvent, type RunBudget } from "@lane-pilot/resilience";
@@ -6,7 +6,8 @@ import type { DirtSnapshot } from "../cli-outcome";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
 import { providerPoolCap } from "@lane-pilot/settings-catalog";
 import { isZcodeProvider, WRITER_PROFILES, type WriterProfile } from "@lane-pilot/models";
-import { DEPENDENCY_REDO_WAIT_MS, countAttempts, countChargedAttempts, countThreadTurns, createAttempt, endSpawnFailure, failureFieldsOf, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getTask, getTaskPlan, latestTaskAttemptState, listAttemptsForTask, listOpenAttempts, listStageReceipts, listUnansweredWriterQuestions, loadProjectSettings, noteToldPmDirectly, parkAttemptWake, transitionAttempt, taskBasePath } from "../../storage";
+import { DEPENDENCY_REDO_WAIT_MS, blockedReasonCount, countAttempts, countChargedAttempts, countThreadTurns, createAttempt, endSpawnFailure, failureFieldsOf, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getTask, getTaskPlan, latestTaskAttemptState, listAttemptsForTask, listOpenAttempts, listStageReceipts, listUnansweredWriterQuestions, loadProjectSettings, noteCleanAdmission, noteToldPmDirectly, onAttemptChanged, parkAttemptWake, trailingQueuedParks, transitionAttempt, taskBasePath } from "../../storage";
+import { closeOwnerItem, closeOwnerItemsByPrefix, ownerItemPrefixCount, postOwnerItem } from "../../owner-waiting";
 import { taskV2Schema } from "../../contracts";
 import { ownsPathsOverlap, pollPause } from "@lane-pilot/kit";
 import { reconcile, reconcileCursor } from "../../stability";
@@ -175,6 +176,12 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
   mountStabilityAttemptFinished(ctx, services);
   mountWriterTaskFinished(ctx, services, sticky);
   mountWorkflowAttemptFinished(ctx, services);
+  // A store-read block's owner item describes a blocked attempt: when the attempt leaves blocked (requeue,
+  // accepted, canceled) the item closes; the next block posts under a fresh sequence key.
+  bb.onDispose(onAttemptChanged((changedId) => {
+    const attempt = getAttempt(db, changedId);
+    if (attempt && attempt.state !== "blocked") closeOwnerItemsByPrefix(db, `store-read:${changedId}:`, "attempt left blocked");
+  }));
   const admitted = admittedByCore.get(ctx) ?? new Map<string, { runId:string; taskId:string; projectId:string }>();
   admittedByCore.set(ctx, admitted);
 
@@ -250,7 +257,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
   async function writerLoad(profiles:readonly WriterProfile[], hostId:string, settings:Record<string, unknown>, projectId:string):Promise<Record<string, WriterLoad>> {
     // ponytail: counts only tasks whose writer Jev picked (a task on the project's own writer has no kept pick); count attempts by writer pair if that skews the spread.
     const running = new Map<string, number>();
-    const picks = await Promise.all([...services.activeWriterTasks].map((key) => bb.storage.kv.get(`writer-pick:${key}`).catch(() => null)));
+    const picks = await Promise.all([...services.activeWriterTasks].map((key) => bb.storage.kv.get(`writer-pick:${key}`)));
     for (const picked of picks) {
       const provider = typeof picked === "string" && picked ? WRITER_PROFILES.find((row) => row.key === picked)?.providerId : undefined;
       if (provider) running.set(provider, (running.get(provider) ?? 0) + 1);
@@ -488,10 +495,15 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
       const base = taskBasePath(db, input.runId, input.taskId);
       /** Another task of this folder that ended with a question nobody has answered; a halted run (the owner stopped it) holds nothing. */
       const unansweredQuestionHolder = async () => {
+        let haltReadLogged = false;
         for (const row of listUnansweredWriterQuestions(db)) {
           if (row.task_id === input.taskId || row.project_id !== input.projectId) continue;
           if (base && taskBasePath(db, row.run_id, row.task_id) !== base) continue;
-          if (await isRunHalted(bb.storage.kv as never, row.run_id)) continue;
+          try { if (await isRunHalted(bb.storage.kv as never, row.run_id)) continue; }
+          catch (cause) {
+            // A failed halt read is "state unknown": count the question as a blocker so the outer poll retries the read.
+            if (!haltReadLogged) { haltReadLogged = true; bb.log.warn(`writer ${input.taskId}: run ${row.run_id} halt state unreadable, treating its question as unanswered: ${cause instanceof Error ? cause.message : String(cause)}`); }
+          }
           return row;
         }
         return undefined;
@@ -598,18 +610,41 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
     let sessionStartedAt = Date.now();
     let previousTurn:{ failure:string; diff:string|null; streamError?:boolean } | null = null;
 
-    /** Settings, writer pick, budget, the live-folder flag and its backup: everything a later step needs in place. */
-    const prepareRun = async ():Promise<void> => {
+    const STORE_READ_PARK_LIMIT = 5;
+    /** A plugin-store read that fails is "state unknown", not a task failure: park the attempt for the wake sweep; after the bound it blocks with an owner item. Shared by prepareRun and the pause-read bound. */
+    const parkForStoreRead = (cause: unknown): false => {
+      const message = cause instanceof Error ? cause.message : String(cause);
+      // Bounded: a store that stays unreadable is not transient. After the park limit the attempt blocks with a
+      // clear reason and the owner gets one item per block (the sequence key reopens after the last one was closed).
+      if (trailingQueuedParks(db, attemptId, "store_read:") + 1 >= STORE_READ_PARK_LIMIT) {
+        const reason = `store_read: plugin store unreadable after ${STORE_READ_PARK_LIMIT} attempts: ${message.slice(0, 160)}`;
+        blockBeforeWriter(reason);
+        postOwnerItem(db, { key: `store-read:${attemptId}:${blockedReasonCount(db, attemptId, "store_read:")}`, source: "writer", kind: "store_read", projectId: input.projectId, wake: true,
+          what: "Запись остановлена: хранилище плагина не читается",
+          why: `${STORE_READ_PARK_LIMIT} попыток подряд не смогли прочитать настройки перед запуском писателя — это постоянный сбой хранилища, а не разовый.`,
+          evidence: [{ kind: "run", ref: input.runId }, { kind: "task", ref: input.taskId }] });
+        return false;
+      }
+      const reason = `store_read: ${message.slice(0, 200)}`;
+      parkAttemptWake(db, attemptId, reason, Date.now() + 30_000);
+      ctx.log(`writer ${input.taskId}: plugin store unreadable before spawn (${reason}); the attempt retries in 30 s`);
+      last = { status:"queued", reason, attemptId };
+      return false;
+    };
+    /** Settings, writer pick, budget, the live-folder flag and its backup: everything a later step needs in place. False = parked for a transient store read. */
+    const prepareRun = async ():Promise<boolean> => {
       policy=runPolicyFor(input.runId);
-      // The writer for this task: Jev's pick from the writers' anamnesis, else the rotation's share, else the project's writer; every
-      // attempt of the task sees the same pair (the pick is kept per task).
-      baseSettings=(await effectiveProjectSettings(input.projectId,getRunSettingsScopes(db,input.runId))).values;
-      writerOverlay=await pickWriter(baseSettings, input);
-      runSettings=writerOverlay ? { ...baseSettings, ...writerOverlay } : rotatedWriterSettings(baseSettings, input.taskId);
-      // The task's writer pair, pinned across restarts and re-dispatches (hive H-01): a kept pin wins over a fresh
-      // rotation; the pair moves only on a provider failure or a failure-class intervention, and the move's reason is kept.
-      const pairPin = configuredSetting(runSettings, "writer.pair_pin") === "off" ? null : await loadWriterPin(bb.storage.kv as never, input.runId, input.taskId);
-      if (pairPin) runSettings = { ...runSettings, "writer.provider": pairPin.providerId, "writer.model": pairPin.model };
+      // The pick, the pin, the live backup and the settings scopes live in the plugin store: a read that fails is
+      // transient — park the attempt for the wake sweep instead of blocking it on a storage hiccup.
+      try {
+        baseSettings=(await effectiveProjectSettings(input.projectId,getRunSettingsScopes(db,input.runId))).values;
+        writerOverlay=await pickWriter(baseSettings, input);
+        runSettings=writerOverlay ? { ...baseSettings, ...writerOverlay } : rotatedWriterSettings(baseSettings, input.taskId);
+        // The task's writer pair, pinned across restarts and re-dispatches (hive H-01): a kept pin wins over a fresh
+        // rotation; the pair moves only on a provider failure or a failure-class intervention, and the move's reason is kept.
+        const pairPin = configuredSetting(runSettings, "writer.pair_pin") === "off" ? null : await loadWriterPin(bb.storage.kv as never, input.runId, input.taskId);
+        if (pairPin) runSettings = { ...runSettings, "writer.provider": pairPin.providerId, "writer.model": pairPin.model };
+      } catch (cause) { return parkForStoreRead(cause); }
       // Only the writer keys travel to the spawn: the spawn reads the stored settings again, and must see this choice, not the project's.
       writerChoice=Object.fromEntries(Object.entries(runSettings).filter(([key, value]) => key.startsWith("writer.") && value !== baseSettings[key]));
       budget=services.runBudgetFor(input.runId,runSettings);
@@ -619,9 +654,15 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
       liveFolder = await services.isLiveFolder(input.runId, input.config.hostId, runFolder);
       // An attempt resumed on its writer's thread (the PM's answer, a reload) goes on under the backup it began with.
       if (liveFolder && writerThreadId) {
-        const saved = await bb.storage.kv.get(liveBackupKey(attemptId)).catch(() => null);
-        if (typeof saved === "string") liveBackupId = saved;
+        try {
+          const saved = await bb.storage.kv.get(liveBackupKey(attemptId));
+          if (typeof saved === "string") liveBackupId = saved;
+        } catch (cause) { return parkForStoreRead(cause); }
       }
+      // A clean read after parks resets the streak: without the marker the journal still ends in store_read rows
+      // and one more failure much later would count them all and block a recovered store.
+      if (trailingQueuedParks(db, attemptId, "store_read:") > 0) noteCleanAdmission(db, attemptId);
+      return true;
     };
     const wallOrTokenStop = () => runningWriterBudgetStop(budget.check());
       const blockBeforeWriter = (reason:string) => {
@@ -663,11 +704,11 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
       /** The waits a task passes before its writer gets a turn: depends_on, overlapping tasks, secrets, the breaker and the pools. */
       const waitForAdmission = async (): Promise<boolean> => {
         // A paused run lets nothing new start (bb lane-pilot pause): the task waits here, before it takes any slot, and goes on by itself on resume.
-        if (!await waitWhileRunPaused(bb.storage.kv as never, input.runId, { isDisposed: ctx.isDisposed, onFirstWait: () => {
+        if (!await waitWhileRunPaused(bb.storage.kv as never, input.runId, { isDisposed: ctx.isDisposed, onError: (message) => bb.log.warn(message), onFirstWait: () => {
           ctx.log(`writer ${input.taskId} waits: run ${input.runId} is paused`);
           recordStage(db, { runId:input.runId, taskId:input.taskId, stageId:"writer-agent", state:"pending", input:input.plan,
             reason:"waiting: the run is paused; starts by itself once it is resumed" });
-        } })) return false;
+        }, onReadBound: (cause) => { parkForStoreRead(cause); return false; } })) return false;
         // Held until a date (2999 = until released): the task stays queued and takes no slot (lane_pilot_queue {action:"hold"}).
         for (let noted = false; !ctx.isDisposed();) {
           const held = (db.prepare("SELECT held_until FROM lane_pilot_task WHERE id=?").get(input.taskId) as { held_until: number | null } | undefined)?.held_until ?? null;
@@ -869,10 +910,31 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
       };
       /** The writer session: spawn or continue → finish → judge the failure → retry in thread, respawn, or hand to the chain. */
       const attemptLoop = async ():Promise<"done"|"stop"> => {
+      let pauseReadItemKey: string | null = null;
+      // The attempt's state decides whether this wait is still its business: a cancel, an accept, a block or a
+      // vanished row ends it even while the pause flag itself cannot be read. `queued` stays — the first
+      // stage-boundary wait runs before the spawn, while the attempt is still queued by design.
+      const pauseWaitShouldStop = () => {
+        const state = getAttempt(db, attemptId)?.state;
+        return state === undefined || state === "cancel_requested" || state === "canceled" || state === "accepted" || state === "blocked";
+      };
       while (attemptsLeft()) {
         if (last.status === "accepted") break;
         // The stage that just ended is the safe boundary of a pause: the next attempt or turn waits for the resume.
-        if (!await waitWhileRunPaused(bb.storage.kv as never, input.runId, { isDisposed: ctx.isDisposed, onFirstWait: () => ctx.log(`writer ${input.taskId} waits at a stage boundary: run ${input.runId} is paused`) })) return "stop";
+        // An unreadable pause flag is never a resume: the writer keeps its slot and waits, and the owner hears once
+        // per episode — the sequence key reposts after the last row was closed (resume, reload, next blip).
+        const pauseWait = await waitWhileRunPaused(bb.storage.kv as never, input.runId, { isDisposed: ctx.isDisposed, shouldStop: pauseWaitShouldStop, onError: (message) => bb.log.warn(message), onFirstWait: () => ctx.log(`writer ${input.taskId} waits at a stage boundary: run ${input.runId} is paused`), onReadBound: () => {
+          if (!pauseReadItemKey) {
+            pauseReadItemKey = `pause-read:${attemptId}:${ownerItemPrefixCount(db, `pause-read:${attemptId}:`)}`;
+            postOwnerItem(db, { key: pauseReadItemKey, source: "writer", kind: "pause_read", projectId: input.projectId, wake: true,
+              what: "Запись ждёт: состояние паузы не читается",
+              why: "Хранилище плагина не отвечает на чтение флага паузы уже много раз подряд; писатель держит слот на границе стадии и ждёт чистого чтения — это не возобновление.",
+              evidence: [{ kind: "run", ref: input.runId }, { kind: "task", ref: input.taskId }] });
+          }
+          return true;
+        } });
+        if (pauseReadItemKey) { closeOwnerItem(db, pauseReadItemKey, pauseWait ? "pause state readable again" : "the pause wait ended"); pauseReadItemKey = null; }
+        if (!pauseWait) return "stop";
         if (!inSession) { attemptsHere += 1; sessionStartedAt = Date.now(); previousTurn = null; }
         const budgetCheck=budget.check();
         if (!budgetCheck.ok) {
@@ -920,7 +982,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
           if (classCooldown > 0) await new Promise((resolve) => setTimeout(resolve, classCooldown));
           // The task's overall budget of writers, kept across reloads and restarts (retry-budget.ts).
           // A reassigned task's new writer spends no attempt of the task's budget (the PM asked for it).
-          const spent = reassigned ? null : await spendRetryBudget(bb.storage.kv as never, input.runId, input.taskId, "attempt");
+          const spent = reassigned ? null : await spendRetryBudget(bb.storage.kv as never, input.runId, input.taskId, "attempt", Date.now(), TASK_ATTEMPT_BUDGET, ctx.log);
           if (spent && !spent.ok) {
             const reason = retryBudgetReason(input.taskId, spent.record);
             transitionAttempt(db, attemptId, "blocked", { reason });
@@ -1336,7 +1398,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
           // A file the contract expects and the writer did not make is the task's problem, not the model's limit:
           // another model meets the same contract (GLM spent 138 min per such task on 2026-10-03).
           if (typeof failure.reason === "string" && failure.reason.startsWith("missing expected_outputs")) break;
-          const fallbackSpent = await spendRetryBudget(bb.storage.kv as never, input.runId, input.taskId, "fallback");
+          const fallbackSpent = await spendRetryBudget(bb.storage.kv as never, input.runId, input.taskId, "fallback", Date.now(), TASK_ATTEMPT_BUDGET, ctx.log);
           if (!fallbackSpent.ok) {
             // The attempt that started the chain keeps the failure it ended with; the budget's reason goes to the log.
             ctx.log(`writer ${input.taskId}: ${retryBudgetReason(input.taskId, fallbackSpent.record)}`);
@@ -1510,7 +1572,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
       };
       void (async () => {
       // The writer pipeline: prepare → admit → baseline → session → fallback chain → record.
-      await prepareRun();
+      if (!await prepareRun()) return;
       // An attempt the PM reopened (an answer to the writer's question, a contract fix) passed these waits when it first
       // started, and its turn is already in the writer's thread: the writer works whatever Lane Pilot waits for here.
       // Waiting again only held back its checks: a reopened attempt is created as a retry, later than the siblings queued

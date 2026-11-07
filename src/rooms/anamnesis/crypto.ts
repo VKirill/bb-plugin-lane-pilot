@@ -15,10 +15,9 @@ export class OwnerKeyError extends Error {
 /** The catalog value as a 32-byte key, or null when it is absent or malformed (never a partial key). */
 export function parseOwnerKey(value: string | null | undefined): Buffer | null {
   if (!value) return null;
-  try {
-    const key = Buffer.from(value.trim(), "base64");
-    return key.length === 32 ? key : null;
-  } catch { return null; }
+  // Buffer.from(base64) never throws on bad input — it decodes what it can; the length check is the whole validation.
+  const key = Buffer.from(value.trim(), "base64");
+  return key.length === 32 ? key : null;
 }
 
 export function encryptOwnerField(key: Buffer, plain: string): string {

@@ -7,6 +7,7 @@ import type { ServerCore } from "../../contracts/server";
 
 import { registerObservedTool } from "../../platform/server";
 import { ToolError } from "../../contracts/server";
+import { isNotFound, orMiss } from "@lane-pilot/kit";
 
 import type { PhaseIntake } from "../../phase/server/intake";
 import type { ScheduleService } from "./schedule-service";
@@ -30,7 +31,7 @@ export async function startedBySchedule(bb: BbPluginApi, threadId: string): Prom
   for (let hop = 0; current && hop <= MAX_PARENT_HOPS; hop += 1) {
     const metadata = await bb.sdk.threads.getPluginMetadata({ threadId: current }).catch(() => null) as Record<string, unknown> | null;
     if (metadata?.origin === "schedule") return true;
-    const thread = await bb.sdk.threads.get({ threadId: current }).catch(() => null) as { parentThreadId?: unknown } | null;
+    const thread = await orMiss(bb.sdk.threads.get({ threadId: current }), null, isNotFound) as { parentThreadId?: unknown } | null;
     current = typeof thread?.parentThreadId === "string" ? thread.parentThreadId : null;
   }
   return false;

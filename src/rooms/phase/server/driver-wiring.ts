@@ -11,6 +11,7 @@ import type { Docs } from "./driver-docs";
 import type { Journal } from "./driver-journal";
 import type { Methods } from "./driver-methods";
 import type { Steps } from "./driver-steps";
+import { isNotFound, orMiss } from "@lane-pilot/kit";
 
 /** A sure route only: the hint takes a request away from the architect (the errand's api-recon bar, 0.1.412). */
 const PUBLISHED_HINT_CONFIDENCE = 85;
@@ -31,7 +32,7 @@ export function installWiring(tools: WiringTools) {
     book: (phase, section, kind, text) => tools.book(phase, section as never, kind, text),
     writeDocs: tools.writeDocs,
     runtime: (phase) => (phase.runId ? { ctx, services, pmThreadId: phase.pmThreadId, projectId: phase.projectId, runId: phase.runId } : null),
-    pmIdle: async (phase) => ((await bb.sdk.threads.get({ threadId: phase.pmThreadId }).catch(() => null)) as { status?: unknown } | null)?.status === "idle",
+    pmIdle: async (phase) => ((await orMiss(bb.sdk.threads.get({ threadId: phase.pmThreadId }), null, isNotFound)) as { status?: unknown } | null)?.status === "idle",
     now,
     medianTask: (phase) => { const m = medianTaskSize(db, phase.projectId); return m ? taskSizeText(m) : null; },
     runStopped: async (phase) => !!phase.runId && (await isRunHalted(bb.storage.kv as never, phase.runId) || await isRunPaused(bb.storage.kv as never, phase.runId)),

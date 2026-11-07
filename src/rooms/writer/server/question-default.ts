@@ -42,5 +42,5 @@ export async function markAnsweredByDefault(kv: Kv, runId: string, taskId: strin
 }
 
 export async function wasAnsweredByDefault(kv: Kv, runId: string, taskId: string): Promise<boolean> {
-  return typeof await kv.get(key(runId, taskId)).catch(() => null) === "number";
+  return typeof await kv.get(key(runId, taskId)) === "number";
 }

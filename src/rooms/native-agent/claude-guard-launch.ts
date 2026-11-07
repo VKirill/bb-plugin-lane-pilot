@@ -121,7 +121,7 @@ export function createClaudeGuardEnv(ctx: { bb: BbPluginApi; nativeHost: HostCal
   const cache = new Map<string, { at: number; env: EnvEntry[] }>();
   return async (thread: { threadId: string | null; hostId: string }): Promise<EnvEntry[]> => {
     if (!thread.threadId) return [];
-    const native = await ctx.bb.storage.kv.get(`native-thread:${thread.threadId}`).catch(() => null);
+    const native = await ctx.bb.storage.kv.get(`native-thread:${thread.threadId}`);
     if (native) return [];
     let metadata: unknown = null;
     try {

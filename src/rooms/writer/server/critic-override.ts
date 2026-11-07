@@ -14,6 +14,6 @@ export async function saveCriticCodeDefault(kv: Kv, taskId: string, value: CodeC
 }
 
 export async function loadCriticCodeDefault(kv: Kv, taskId: string): Promise<CodeCriticDefault | undefined> {
-  const value = await kv.get(key(taskId)).catch(() => undefined);
+  const value = await kv.get(key(taskId));
   return isCodeCriticDefault(value) ? value : undefined;
 }

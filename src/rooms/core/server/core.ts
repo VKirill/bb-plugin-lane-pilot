@@ -1,5 +1,5 @@
 import { isCustomAgentId, parseOwnedAgents } from "../../native-agent";
-import { redactKnown } from "@lane-pilot/kit";
+import { redactKnown, orMiss, isNotFound } from "@lane-pilot/kit";
 import { createSecrets } from "../../secrets/server";
 import { bindDrainTarget, createDeployDrain } from "../../stability/server";
 import { currentScheduleSignal } from "../../platform/server";
@@ -237,7 +237,7 @@ export function createCore(bb: BbPluginApi, db: LanePilotDatabase): ServerCore {
   async function getThreadBounded(threadId:string, timeoutMs = 2_000): Promise<unknown> {
     let timer: ReturnType<typeof setTimeout> | undefined;
     return await Promise.race([
-      bb.sdk.threads.get({ threadId }).catch(() => null),
+      orMiss(bb.sdk.threads.get({ threadId }), null, isNotFound),
       new Promise<null>((resolve) => { timer = setTimeout(() => resolve(null), timeoutMs); }),
     ]).finally(() => { if (timer) clearTimeout(timer); });
   }

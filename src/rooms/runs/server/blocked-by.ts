@@ -21,7 +21,7 @@ export async function saveBlockedBy(kv: Kv, attemptId: string, blockedBy: Blocke
 }
 
 export async function loadBlockedBy(kv: Kv, attemptId: string): Promise<BlockedBy | null> {
-  const value = await kv.get(key(attemptId)).catch(() => null);
+  const value = await kv.get(key(attemptId));
   return value && typeof value === "object" ? value as BlockedBy : null;
 }
 
@@ -36,5 +36,5 @@ export async function markTaskSatisfied(kv: Kv, projectId: string, taskId: strin
 }
 
 export async function isTaskSatisfied(kv: Kv, projectId: string, taskId: string): Promise<boolean> {
-  return Boolean(await kv.get(satisfiedKey(projectId, taskId)).catch(() => null));
+  return Boolean(await kv.get(satisfiedKey(projectId, taskId)));
 }

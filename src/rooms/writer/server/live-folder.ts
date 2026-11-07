@@ -32,7 +32,7 @@ export function createLiveFolder(ctx: ServerCore) {
     const key = runId ? `live-folder:${runId}` : null;
     const kv = bb.storage?.kv;
     if (key && kv) {
-      const saved = await kv.get(key).catch(() => null);
+      const saved = await kv.get(key);
       if (saved === "no-git") return true;
       if (saved === "git") return false;
     }

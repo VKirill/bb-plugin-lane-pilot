@@ -25,7 +25,7 @@ import { EMPLOYEE_IDS, isCustomAgentId, isEmployeeSpecialist } from "../../nativ
 import { modelCatalogOf } from "../../platform/server";
 import { registerObservedTool } from "../../platform/server";
 import { ToolError } from "../../contracts/server";
-import { stringAt } from "@lane-pilot/kit";
+import { stringAt, orMiss, isNotFound } from "@lane-pilot/kit";
 import { DRILL_SANDBOX_PROJECT_IDS, isSandboxProjectName } from "../../stability/server";
 import type { ServerCore } from "../../contracts/server";
 
@@ -70,16 +70,16 @@ export function realDeps(ctx: ServerCore, services: Services): ArchitectDeps {
   const { bb, db, host } = ctx;
   const hostsList = async () => mapListedQaHosts(await (bb.sdk as { hosts?: { list?: () => Promise<unknown> } }).hosts?.list?.() ?? []);
   const place = async (threadId: string): Promise<Place | null> => {
-    const thread = await bb.sdk.threads.get({ threadId }).catch(() => null);
+    const thread = await orMiss(bb.sdk.threads.get({ threadId }), null, isNotFound);
     const environmentId = stringAt(thread, "environmentId");
-    const environment = environmentId ? await bb.sdk.environments.get({ environmentId }).catch(() => null) : null;
+    const environment = environmentId ? await orMiss(bb.sdk.environments.get({ environmentId }), null, isNotFound) : null;
     const path = stringAt(environment, "path"), hostId = stringAt(environment, "hostId");
     return path?.startsWith("/") && hostId ? { hostId, path } : null;
   };
   const catalog = modelCatalogOf(ctx);
   return {
     globalDir: () => globalWorkflowDir(),
-    projectName: async (projectId) => stringAt(await bb.sdk.projects.get({ projectId }).catch(() => null), "name"),
+    projectName: async (projectId) => stringAt(await orMiss(bb.sdk.projects.get({ projectId }), null, isNotFound), "name"),
     specialistKnown: (id) => {
       if (SPECIALIST_ROLES.includes(id as never) || isEmployeeSpecialist(id)) return true;
       const own = ctx.knownCustomAgentIds();

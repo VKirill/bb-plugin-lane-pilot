@@ -8,7 +8,7 @@ export const roleLinesKey = (projectId: string, role: string) => `lp.role.lines:
 export async function recordRoleLine(kv: BbPluginApi["storage"]["kv"], projectId: string, role: string, line: string): Promise<string> {
   const dated = /^\d{4}-\d{2}-\d{2}:/.test(line) ? line.trim().slice(0, 500) : `${new Date().toISOString().slice(0, 10)}: ${line.trim().slice(0, 500)}`;
   const key = roleLinesKey(projectId, role);
-  const lines = ((await kv.get(key).catch(() => null)) as string[] | null) ?? [];
+  const lines = ((await kv.get(key)) as string[] | null) ?? [];
   if (!lines.includes(dated)) await kv.set(key, [...lines, dated].slice(-30) as never);
   return dated;
 }
@@ -19,7 +19,7 @@ export async function recordRoleLine(kv: BbPluginApi["storage"]["kv"], projectId
  * opens with an employee carries the same rules a PM-delegated run does.
  */
 export async function employeeRoleLines(bb: Pick<BbPluginApi, "storage">, projectId: string, agentId: string): Promise<string[]> {
-  return ((await bb.storage.kv.get(roleLinesKey(projectId, agentId)).catch(() => null)) as string[] | null) ?? [];
+  return ((await bb.storage.kv.get(roleLinesKey(projectId, agentId))) as string[] | null) ?? [];
 }
 
 /** The compiled profile with its role lessons appended, in the same dated-lines block a PM-spawned specialist gets. */

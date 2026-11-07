@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import { readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
+import { isFsAbsent } from "@lane-pilot/kit";
 import type { Kind, Sensitivity, Source } from "../model";
 
 /** What a host-side source hands back: records for the store, and how many things it looked at. */
@@ -14,10 +15,10 @@ export type SourceScan = { source: Source; items: number; records: SourceRecord[
 export const SKIP_DIRS = new Set(["node_modules", ".git", ".claude", ".bb", ".cache", "dist", "build", ".venv", "venv", "__pycache__", ".next", ".turbo", "Library", ".Trash", "coverage", ".gitnexus", ".agents"]);
 
 export async function isDir(path: string): Promise<boolean> {
-  try { return (await stat(path)).isDirectory(); } catch { return false; }
+  try { return (await stat(path)).isDirectory(); } catch (cause) { if (isFsAbsent(cause)) return false; throw cause; }
 }
 export async function exists(path: string): Promise<boolean> {
-  try { await stat(path); return true; } catch { return false; }
+  try { await stat(path); return true; } catch (cause) { if (isFsAbsent(cause)) return false; throw cause; }
 }
 
 /** Git repositories under the roots (a `.git` folder; a `.git` file is a worktree and is left to its main repository). */
@@ -27,7 +28,7 @@ export async function discoverRepos(roots: readonly string[], maxDepth = 5): Pro
     if (await isDir(join(dir, ".git"))) { found.add(dir); return; }
     if (depth >= maxDepth) return;
     let entries;
-    try { entries = await readdir(dir, { withFileTypes: true }); } catch { return; }
+    try { entries = await readdir(dir, { withFileTypes: true }); } catch (cause) { if (isFsAbsent(cause)) return; throw cause; }
     for (const entry of entries) {
       if (!entry.isDirectory() || entry.isSymbolicLink() || SKIP_DIRS.has(entry.name)) continue;
       await walk(join(dir, entry.name), depth + 1);

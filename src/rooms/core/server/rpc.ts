@@ -198,5 +198,5 @@ export function registerRpc(ctx: ServerCore, services: Services, contract: typeo
     ...architectStartRpc(ctx, services),
     ...anamnesisFor(ctx).rpc,
     ...worldRpc(services.world),
-  }, (message) => ctx.bb.log.debug(message)), (name, input) => services.front?.journal(name, input)));
+  }, (message) => ctx.bb.log.debug(message)), (name, input) => services.front?.journal(name, input), (message) => ctx.log(message)));
 }

@@ -1,5 +1,6 @@
 import { DatabaseSync } from "node:sqlite";
 import { chmodSync, mkdirSync } from "node:fs";
+import { parseJsonOr } from "@lane-pilot/kit";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { decryptOwnerField, encryptOwnerField, OwnerKeyError } from "./crypto";
@@ -72,7 +73,7 @@ export type OwnerCrypto = { key(): Buffer | null; missing(): void };
 
 type Row = Record<string, unknown>;
 const num = (value: unknown): number => Number(value ?? 0);
-const json = (value: unknown): Record<string, unknown> => { try { const parsed = JSON.parse(String(value ?? "{}")) as unknown; return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {}; } catch { return {}; } };
+const json = (value: unknown): Record<string, unknown> => { const parsed = parseJsonOr<unknown>(String(value ?? "{}"), {}); return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {}; };
 const str = (value: unknown): string => (value === null || value === undefined ? "" : String(value));
 
 const SCHEMA = `

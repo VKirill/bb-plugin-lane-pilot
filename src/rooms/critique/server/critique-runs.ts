@@ -35,7 +35,7 @@ import { reviewerMemoryFor } from "../../memory/server";
 import { clearSpawnMarker } from "../../platform/server";
 import { CRITIC_OUTCOME_UNKNOWN, criticReconcilePort, helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server";
 import { recordStage } from "../../runs/server";
-import { stringAt } from "@lane-pilot/kit";
+import { stringAt, orMiss, isNotFound } from "@lane-pilot/kit";
 import { dependsOnTask } from "../../writer/server/start";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { waitThreadIdle } from "@lane-pilot/thread-observe";
@@ -149,7 +149,7 @@ export async function runPmRead(input:{bb:BbPluginApi;db:ReturnType<typeof openD
   } catch(cause) {
     const reason=cause instanceof Error?cause.message:String(cause);
     if(threadId) {
-      const thread=await input.bb.sdk.threads.get({threadId}).catch(()=>null);
+      const thread=await orMiss(input.bb.sdk.threads.get({threadId}), null, isNotFound);
       if(["active","starting"].includes(stringAt(thread,"status")??"")) await input.bb.sdk.threads.stop({threadId}).catch(()=>undefined);
     }
     if(!started) recordStage(input.db,{...base,state:"running",providerId,model:modelId});
@@ -358,7 +358,7 @@ export async function runPlanCritique(input:{bb:BbPluginApi;db:ReturnType<typeof
       } catch (cause) {
         const message = cause instanceof Error ? cause.message : String(cause);
         if (threadId) {
-          const thread = await input.bb.sdk.threads.get({ threadId }).catch(() => null);
+          const thread = await orMiss(input.bb.sdk.threads.get({ threadId }), null, isNotFound);
           if (stringAt(thread, "status") === "active" || stringAt(thread, "status") === "starting") {
             await input.bb.sdk.threads.stop({ threadId }).catch(() => undefined);
           }
@@ -377,7 +377,7 @@ export async function runPlanCritique(input:{bb:BbPluginApi;db:ReturnType<typeof
   } catch (cause) {
     const reason = cause instanceof Error ? cause.message : String(cause);
     if (threadId) {
-      const thread = await input.bb.sdk.threads.get({ threadId }).catch(() => null);
+      const thread = await orMiss(input.bb.sdk.threads.get({ threadId }), null, isNotFound);
       if (stringAt(thread, "status") === "active" || stringAt(thread, "status") === "starting") {
         await input.bb.sdk.threads.stop({ threadId }).catch(() => undefined);
       }
@@ -768,7 +768,7 @@ export async function runCodeCritique(input:{
       } catch (cause) {
         const message = cause instanceof Error ? cause.message : String(cause);
         if (threadId) {
-          const thread = await input.bb.sdk.threads.get({ threadId }).catch(() => null);
+          const thread = await orMiss(input.bb.sdk.threads.get({ threadId }), null, isNotFound);
           if (stringAt(thread, "status") === "active" || stringAt(thread, "status") === "starting") {
             await input.bb.sdk.threads.stop({ threadId }).catch(() => undefined);
           }
@@ -789,7 +789,7 @@ export async function runCodeCritique(input:{
   } catch (cause) {
     const reason = cause instanceof Error ? cause.message : String(cause);
     if (threadId) {
-      const thread = await input.bb.sdk.threads.get({ threadId }).catch(() => null);
+      const thread = await orMiss(input.bb.sdk.threads.get({ threadId }), null, isNotFound);
       if (stringAt(thread, "status") === "active" || stringAt(thread, "status") === "starting") {
         await input.bb.sdk.threads.stop({ threadId }).catch(() => undefined);
       }
@@ -888,7 +888,7 @@ export async function runSpecialistReview(input:{bb:BbPluginApi;db:ReturnType<ty
   } catch (cause) {
     const reason = cause instanceof Error ? cause.message : String(cause);
     if (threadId) {
-      const thread = await input.bb.sdk.threads.get({threadId}).catch(() => null);
+      const thread = await orMiss(input.bb.sdk.threads.get({threadId}), null, isNotFound);
       if (stringAt(thread,"status") === "active" || stringAt(thread,"status") === "starting") {
         await input.bb.sdk.threads.stop({threadId}).catch(() => undefined);
       }
@@ -960,7 +960,7 @@ export async function criticTiebreakVote(input: {
     } catch (cause) {
       const reason = cause instanceof Error ? cause.message : String(cause);
       if (threadId) {
-        const thread = await input.bb.sdk.threads.get({ threadId }).catch(() => null);
+        const thread = await orMiss(input.bb.sdk.threads.get({ threadId }), null, isNotFound);
         if (["active", "starting"].includes(stringAt(thread, "status") ?? "")) await input.bb.sdk.threads.stop({ threadId }).catch(() => undefined);
       }
       recordStage(input.db, { ...base, state: "failed", providerId, model: modelId, threadId, reason, result: { error: reason } });

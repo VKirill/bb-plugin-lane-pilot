@@ -153,7 +153,7 @@ export async function judgedFailureClass(deps: JudgedFailureDeps, state: string,
       const labeled = sweepWriterModelOutcomes(deps.db);
       if (deps.kv) for (const row of labeled) {
         const key = `writer-route:${row.runId}:${row.taskId}`;
-        const route = await deps.kv.get(key).catch(() => null);
+        const route = await deps.kv.get(key);
         if (route && typeof route === "object") await deps.kv.set(key, { ...(route as Record<string, unknown>), outcome: row.outcome, outcomeAt: Date.now() }).catch(() => undefined);
       }
     }

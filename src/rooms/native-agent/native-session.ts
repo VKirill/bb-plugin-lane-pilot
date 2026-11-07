@@ -91,9 +91,9 @@ export function collisionMessage(kind: CliAgentsCollision): string {
 
 /** The profile the chat was switched to and has not yet sent a message with; null when no switch waits. */
 export async function pendingSwitch(kv: { get<T>(key: string): Promise<T | undefined> }, threadId: string): Promise<NativeSelection | null> {
-  const token = await kv.get<string>(nativeSwitchKey(threadId)).catch(() => undefined);
+  const token = await kv.get<string>(nativeSwitchKey(threadId));
   if (typeof token !== "string") return null;
-  const raw = await kv.get(`native-selection:${token}`).catch(() => undefined);
+  const raw = await kv.get(`native-selection:${token}`);
   const parsed = raw ? nativeSelectionSchema.safeParse(raw) : null;
   return parsed?.success ? parsed.data : null;
 }

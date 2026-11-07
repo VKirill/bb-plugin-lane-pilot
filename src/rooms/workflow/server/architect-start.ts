@@ -10,8 +10,7 @@ import type { ServerCore } from "../../contracts/server";
 import { storeNativeSelection } from "../../native-agent/server";
 import { fullAccessSpawn, modelCatalogOf, resolveSpawnModel, spawnUsageOf, warmSpawnUsage } from "../../platform/server";
 import { lanePilotProjectOrNotice } from "../../self-repair/server";
-
-import { stringAt } from "@lane-pilot/kit";
+import { stringAt, orMiss, isNotFound } from "@lane-pilot/kit";
 
 import type { DocsNightlyApi } from "../../docs/server/docs-nightly";
 
@@ -83,7 +82,7 @@ export function architectStarter(ctx: ServerCore, services: Pick<Services, "docs
   async function liveThread(key: string, projectId: string): Promise<string | null> {
     const threadId = await bb.storage.kv.get<string>(key).catch(() => null);
     if (typeof threadId !== "string" || !threadId) return null;
-    const thread = await bb.sdk.threads.get({ threadId }).catch(() => null) as { archivedAt?: unknown } | null;
+    const thread = await orMiss(bb.sdk.threads.get({ threadId }), null, isNotFound) as { archivedAt?: unknown } | null;
     if (!thread || thread.archivedAt) return null;
     if (stringAt(thread, "projectId") !== projectId || DEAD_STATUSES.has(stringAt(thread, "status") ?? "")) return null;
     return threadId;
@@ -117,7 +116,7 @@ export function architectStarter(ctx: ServerCore, services: Pick<Services, "docs
     if (!root) throw new Error(`project ${projectId} has no source folder on a machine: add one to the project in BB, then press the button again`);
 
     const { selection } = await storeNativeSelection(ctx, { projectId, agentId: WORKFLOW_ARCHITECT_ID });
-    const described = await bb.sdk.projects.get({ projectId }).catch(() => null) as { name?: unknown } | null;
+    const described = await orMiss(bb.sdk.projects.get({ projectId }), null, isNotFound) as { name?: unknown } | null;
     const execution = await architectExecution(ctx, projectId);
     const spawned = await fullAccessSpawn(bb, {
       projectId,

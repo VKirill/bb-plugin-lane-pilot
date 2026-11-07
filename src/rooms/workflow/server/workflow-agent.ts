@@ -8,7 +8,7 @@ import { MAIN_AGENT_ID, ROLE_PROFILES, compileEffectiveMainAgent, employeeView, 
 import type { ExtraAccess, HelperRole } from "../../native-agent";
 import { storeNativeSelection } from "../../native-agent/server";
 import { LEAD_ID } from "../../lead";
-import { redactKnown } from "@lane-pilot/kit";
+import { redactKnown, orMiss, isNotFound } from "@lane-pilot/kit";
 import { READ_ONLY_LINE, agentPrompt, outputContract, parseAgentOutput } from "@lane-pilot/workflow-engine";
 import { contractProblems, contractRepairPrompt, describeProblems, hasContractProblems } from "@lane-pilot/workflow-engine";
 import type { ContractNode, ContractProblems } from "@lane-pilot/workflow-engine";
@@ -265,7 +265,7 @@ export function createWorkflowAgents() {
       chatSection = stringAt(pm, "sectionId");
       const environmentId = stringAt(pm, "environmentId");
       if (!environmentId) throw new HelperFailure("no_pm_environment", "the PM chat has no environment to run the helper in");
-      const envObj = await bb.sdk.environments.get({ environmentId }).catch(() => null);
+      const envObj = await orMiss(bb.sdk.environments.get({ environmentId }), null, isNotFound);
       checkoutPath = stringAt(envObj, "path") ?? "";
       checkoutHostId = stringAt(envObj, "hostId") ?? "";
       environment = { type: "reuse", environmentId };

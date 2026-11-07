@@ -11,7 +11,7 @@ import { checkBrief, renderBrief, tagSection } from "../../brief";
 import { THREAD_MEMORY_RULE } from "../../memory";
 import { spawnTextId } from "../../platform/server";
 import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server";
-import { stringAt } from "@lane-pilot/kit";
+import { stringAt, orMiss, isNotFound } from "@lane-pilot/kit";
 import { outputText } from "../../writer/server";
 import { fenceOutside, registerObservedTool } from "../../platform/server";
 import { redactKnown } from "@lane-pilot/kit";
@@ -230,7 +230,7 @@ function mountErrandCore(ctx: ServerCore) {
       const pm = await bb.sdk.threads.get({ threadId: input.pmThreadId });
       const environmentId = stringAt(pm, "environmentId");
       if (!environmentId) throw new Error("errand_needs_pm_environment");
-      const envObj = await bb.sdk.environments.get({ environmentId }).catch(() => null);
+      const envObj = await orMiss(bb.sdk.environments.get({ environmentId }), null, isNotFound);
       return { environment: { type: "reuse" as const, environmentId }, section: stringAt(pm, "sectionId"), cwd: stringAt(envObj, "path") ?? "", hostId: stringAt(envObj, "hostId") ?? "" };
     }
     const folder = await projectFolder(bb, input.projectId);

@@ -126,7 +126,7 @@ export function createCanary(ctx: ServerCore, breaker?: () => { snapshot(now?: n
   const { bb, db } = ctx;
 
   async function since(version = VERSION, now = Date.now()): Promise<number> {
-    const stored = await bb.storage.kv.get<number>(SINCE_KEY(version)).catch(() => null);
+    const stored = await bb.storage.kv.get<number>(SINCE_KEY(version));
     if (typeof stored === "number") return stored;
     await bb.storage.kv.set(SINCE_KEY(version), now as never);
     return now;
@@ -155,7 +155,7 @@ export function createCanary(ctx: ServerCore, breaker?: () => { snapshot(now?: n
   async function status(now = Date.now()): Promise<CanaryReport & { alerted: boolean; pool: { works: boolean; held: string[] }; green: boolean }> {
     const report = canaryReport(db, { version: VERSION, since: await since(VERSION, now), now, sandboxProjects: await sandboxProjects(now) });
     const pool = poolHealth(breaker?.()?.snapshot(now) ?? []);
-    return { ...report, pool, green: !report.tripped && pool.works, alerted: Boolean(await bb.storage.kv.get(ALERTED_KEY(VERSION)).catch(() => null)) };
+    return { ...report, pool, green: !report.tripped && pool.works, alerted: Boolean(await bb.storage.kv.get(ALERTED_KEY(VERSION))) };
   }
 
   /** Tells the PMs of the faulting tasks once per version when the canary has tripped. Returns whether it did. */

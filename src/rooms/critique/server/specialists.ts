@@ -56,7 +56,7 @@ export function registerSpecialistActions(engine: WorkflowEngine, ctx: ServerCor
     reentrant: true,
     run: async (c: StepContext<ChainRuntime>) => {
       const role = String(c.resolve("$inputs.role") ?? ""), task = String(c.resolve("$inputs.task") ?? "");
-      const lines = ((await ctx.bb.storage.kv.get(`lp.role.lines:${c.runtime?.projectId ?? ""}:${role}`).catch(() => null)) as string[] | null) ?? [];
+      const lines = ((await ctx.bb.storage.kv.get(`lp.role.lines:${c.runtime?.projectId ?? ""}:${role}`)) as string[] | null) ?? [];
       // The step's own <task> wraps this text, so the PM's task stands in <request>.
       const answer = "In this run your final message ends with the JSON block described below: its report field carries your whole answer to the PM (what you produced, the paths, open questions).";
       return { output: { text: `${specialistPrompt("", role, task, lines, "request").replace(/^\n+/, "")}\n\n${answer}` } };

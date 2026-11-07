@@ -1,5 +1,6 @@
 import { readFile, readdir, stat } from "node:fs/promises";
 import { basename, join, relative } from "node:path";
+import { isFsAbsent } from "@lane-pilot/kit";
 import { discoverRepos, exists, isClientPath, isDir, type SourceRecord, type SourceScan } from "./common";
 
 /**
@@ -14,7 +15,7 @@ export async function docRoots(roots: readonly string[]): Promise<string[]> {
   const out = new Set<string>();
   for (const root of roots) {
     out.add(root);
-    try { for (const entry of await readdir(root, { withFileTypes: true })) if (entry.isDirectory() && !entry.name.startsWith(".")) out.add(join(root, entry.name)); } catch { /* unreadable root */ }
+    try { for (const entry of await readdir(root, { withFileTypes: true })) if (entry.isDirectory() && !entry.name.startsWith(".")) out.add(join(root, entry.name)); } catch (cause) { if (!isFsAbsent(cause)) throw cause; }
   }
   for (const repo of await discoverRepos(roots)) out.add(repo);
   return [...out].sort();
@@ -24,7 +25,7 @@ async function markdownFiles(dir: string, depth = 0): Promise<string[]> {
   if (depth > 2) return [];
   const out: string[] = [];
   let entries;
-  try { entries = await readdir(dir, { withFileTypes: true }); } catch { return out; }
+  try { entries = await readdir(dir, { withFileTypes: true }); } catch (cause) { if (isFsAbsent(cause)) return out; throw cause; }
   for (const entry of entries) {
     const path = join(dir, entry.name);
     if (entry.isSymbolicLink()) continue;

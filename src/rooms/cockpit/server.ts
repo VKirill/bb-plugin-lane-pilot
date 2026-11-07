@@ -77,7 +77,7 @@ export function cockpitRpc(ctx: ServerCore, services: Services) {
     },
     /** The designer's statistics: ratios, the conditions of «trained», the readiness words. */
     cockpit_designer: async ({ projectId }: { projectId?: string }) => {
-      const all = ((await kv.get("lp.design.journal").catch(() => null)) as DesignJournalLine[] | null) ?? [];
+      const all = ((await kv.get("lp.design.journal")) as DesignJournalLine[] | null) ?? [];
       const lines = projectId ? all.filter((line) => line.projectId === projectId) : all;
       return { ratios: trainingRatios(lines), conditions: trainedConditions(lines), readiness: readinessWords(lines), recent: lines.slice(-20).reverse() };
     },
@@ -85,14 +85,14 @@ export function cockpitRpc(ctx: ServerCore, services: Services) {
     cockpit_windows: async ({ hostId }: { hostId: string }) => host().call("readUsageWindows", { requestedHostId: hostId }, { hostId, timeoutMs: 5_000 }),
     /** Time the card was visible: how long a screen stayed in view, for the screens nobody opens. */
     cockpit_seen: async ({ screen, ms }: { screen: string; ms: number }) => {
-      const seen = ((await kv.get(SEEN).catch(() => null)) as Record<string, { views: number; ms: number; last: number }> | null) ?? {};
+      const seen = ((await kv.get(SEEN)) as Record<string, { views: number; ms: number; last: number }> | null) ?? {};
       const row = seen[screen] ?? { views: 0, ms: 0, last: 0 };
       seen[screen] = { views: row.views + 1, ms: row.ms + Math.min(ms, 3_600_000), last: Date.now() };
       await kv.set(SEEN, seen as never);
       return { ok: true as const };
     },
     /** The screens' view counts, and the contract's RPC names for the «reads no screen calls» check. */
-    cockpit_seen_list: async () => ({ seen: ((await kv.get(SEEN).catch(() => null)) as Record<string, unknown> | null) ?? {}, rpcs: Object.keys(rpcContract) }),
+    cockpit_seen_list: async () => ({ seen: ((await kv.get(SEEN)) as Record<string, unknown> | null) ?? {}, rpcs: Object.keys(rpcContract) }),
     /** New task form, new batch form, promote a backlog item, ship: the person's request goes to the project's PM, who runs it with its tools. */
     cockpit_request: async ({ projectId, kind, text }: { projectId: string; kind: "task" | "batch" | "promote" | "ship"; text: string }) => {
       const run = activeRun(projectId);
@@ -126,11 +126,11 @@ export function cockpitRpc(ctx: ServerCore, services: Services) {
       if (!row?.contract) return null;
       const contract = JSON.parse(row.contract) as { display_title?: string; clarify?: unknown; drawing?: string[]; priority?: string; area?: string; objective?: string };
       return { displayTitle: contract.display_title ?? null, objective: contract.objective ?? null, area: contract.area ?? null, clarify: contract.clarify ?? null, drawing: contract.drawing ?? [],
-        priority: contract.priority ?? "normal", heldUntil: row.heldUntil ?? null, approach: await kv.get(`lp.task.approach:${runId}:${taskId}`).catch(() => null) };
+        priority: contract.priority ?? "normal", heldUntil: row.heldUntil ?? null, approach: await kv.get(`lp.task.approach:${runId}:${taskId}`) };
     },
     /** Report a fault: what a person saw goes to the self-repair queue with the screen it was on. */
     cockpit_fault: async ({ screen, text }: { screen: string; text: string }) => {
-      const faults = ((await kv.get(FAULTS).catch(() => null)) as Array<{ at: number; screen: string; text: string }> | null) ?? [];
+      const faults = ((await kv.get(FAULTS)) as Array<{ at: number; screen: string; text: string }> | null) ?? [];
       await kv.set(FAULTS, [...faults, { at: Date.now(), screen, text: text.slice(0, 2000) }].slice(-200) as never);
       ctx.log(`fault reported from the window (${screen}): ${text.slice(0, 300)}`);
       return { ok: true as const };

@@ -40,8 +40,8 @@ export function mountCriticEditGraph(ctx: ServerCore, services: Services): void 
     reentrant: true,
     run: async (c) => {
       const projectId = input(c, "project_id");
-      const stored = await ctx.bb.storage.kv.get(CRITIC_EDIT_TRIAL_KEY).catch(() => null);
-      const bag = await ctx.bb.storage.kv.get(PROPOSAL_KEY(projectId)).catch(() => null);
+      const stored = await ctx.bb.storage.kv.get(CRITIC_EDIT_TRIAL_KEY);
+      const bag = await ctx.bb.storage.kv.get(PROPOSAL_KEY(projectId));
       const startedAt = bag && typeof bag === "object" && typeof (bag as { at?: unknown }).at === "number" ? (bag as { at: number }).at : Date.now();
       const proposal = text(c.resolve("prepare.proposal")) || null;
       // The two bench arms (base critic vs the proposal) produce the comparison row judgeSharedTrial decides on.
