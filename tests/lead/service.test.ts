@@ -23,6 +23,7 @@ afterEach(() => { rmSync(dir, { recursive: true, force: true }); delete process.
 function world(start: () => Promise<unknown> = async () => ({ ok: true, runId: "wf_1" }), runs: Record<string, { status: string; error?: string | null; failedNode?: string | null; reason?: string | null }> = {}) {
   const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
   const db = openDatabase(bb);
+  void bb.storage.kv.set("self-repair:config", { projectId: "proj_lp", environmentId: "env_lp" } as never);
   const starts: unknown[] = [];
   const services = {
     workflowTriggers: { start: vi.fn(async (input: unknown) => { starts.push(input); return start(); }), pmOf: async () => null },
@@ -123,7 +124,7 @@ describe("the nightly exam of the rights", () => {
 describe("the state for the panel and the CLI", () => {
   it("is a JSON value before the first exam too: the hub kv answers undefined for a key never written (lead_shadow drill, 0.1.448: HTTP 500)", async () => {
     const { bb, lead } = world();
-    vi.spyOn(bb.storage.kv, "get").mockImplementation(async () => undefined as never);
+    vi.spyOn(bb.storage.kv, "get").mockImplementation(async (key) => (key === "self-repair:config" ? { projectId: "proj_lp", environmentId: "env_lp" } : undefined) as never);
     const state = await lead.state(1_000);
     expect(state.lastExam).toBeNull();
     expect(JSON.parse(JSON.stringify(state))).toStrictEqual(state);

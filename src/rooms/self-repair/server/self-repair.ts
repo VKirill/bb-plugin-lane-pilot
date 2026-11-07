@@ -5,8 +5,6 @@ import { projectRoleField } from "../../runs/server";
 import { OWNER_WORD_WAIT_MS } from "../../tasks";
 import { taskWordItemPrefix } from "../../lead";
 import { closeSync, fstatSync, openSync, readSync } from "node:fs";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
 import { join } from "node:path";
 import { z } from "zod";
 import packageJson from "../../../../package.json";
@@ -469,12 +467,13 @@ type LpProjectBb = { sdk?: { projects?: { list?: (query: unknown) => Promise<unk
 type LpProjectHost = { call?: (method: string, input: Record<string, unknown>, options?: Record<string, unknown>) => Promise<unknown> } | null;
 
 const lpProjectByBb = new WeakMap<object, { projectId: string; environmentId: string }>();
-const runGit = promisify(execFile);
 
-/** The origin remote of the checkout a path sits in, or null when it is not a git checkout (a deployed copy). */
-async function repoRemote(path: string): Promise<string | null> {
-  return runGit("git", ["-C", path, "remote", "get-url", "origin"], { timeout: 10_000 })
-    .then((result) => String(result.stdout).trim() || null).catch(() => null);
+/** The origin remote of the checkout a path sits in on the given host (git runs on that host, never in the plugin
+ *  server), or null when it is not a git checkout — a deployed copy has none. */
+async function repoRemote(host: LpProjectHost, hostId: string | undefined, path: string): Promise<string | null> {
+  if (!host?.call) return null;
+  return await Promise.resolve(host.call("runCommand", { requestedHostId: hostId, cwd: path, timeoutSec: 15, command: "git remote get-url origin" }, { hostId, timeoutMs: 20_000 }))
+    .then((out) => stringAt(out, "stdout")?.trim() || null).catch(() => null);
 }
 
 const NO_LP_PROJECT_KEY = "lane-pilot:no-project";
@@ -505,16 +504,15 @@ export async function resolveLanePilotProject(bb: unknown, host: unknown): Promi
 }
 
 async function discoverLanePilotProject(bb: LpProjectBb, host: LpProjectHost): Promise<{ projectId: string; environmentId: string } | null> {
-  const remote = await repoRemote(pluginRootFromModule(import.meta.url));
-  if (!remote || !host?.call) return null;
+  const remote = await repoRemote(host, process.env.BB_HOST_ID, pluginRootFromModule(import.meta.url));
+  if (!remote) return null;
   const rows = await Promise.resolve(bb.sdk?.projects?.list?.({ includePersonal: true }) ?? []).catch(() => []) as Array<{ id?: unknown }>;
   for (const row of rows) {
     if (typeof row?.id !== "string") continue;
     const project = await Promise.resolve(bb.sdk?.projects?.get?.({ projectId: row.id }) ?? null).catch(() => null) as { sources?: Array<{ hostId?: unknown; path?: unknown }> } | null;
     for (const source of project?.sources ?? []) {
       if (typeof source?.hostId !== "string" || typeof source?.path !== "string") continue;
-      const theirs = await Promise.resolve(host.call("runCommand", { requestedHostId: source.hostId, cwd: source.path, timeoutSec: 15, command: "git remote get-url origin" }, { hostId: source.hostId, timeoutMs: 20_000 }))
-        .then((out) => stringAt(out, "stdout")?.trim() || null).catch(() => null);
+      const theirs = await repoRemote(host, source.hostId, source.path);
       if (theirs !== remote) continue;
       const envs = await Promise.resolve(bb.sdk?.environments?.list?.({ hostId: source.hostId, path: source.path }) ?? []).catch(() => []) as Array<{ id?: unknown }>;
       return { projectId: row.id, environmentId: typeof envs?.[0]?.id === "string" ? envs[0].id : "" };

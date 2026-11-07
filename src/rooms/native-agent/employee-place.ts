@@ -60,7 +60,7 @@ export async function placeEmployeeOn(
 ): Promise<EmployeePlace> {
   const affinity = employeeView(agentId).machineAffinity;
   if (!affinity || affinity === "any") return { mode: "inherit" };
-  const listed = await Promise.resolve(bb.sdk.hosts.list?.()).then((rows) => rows ?? []).catch(() => []) as Array<{ id?: unknown; name?: unknown }>;
+  const listed = await Promise.resolve().then(() => bb.sdk.hosts.list?.() ?? []).then((rows) => rows ?? []).catch(() => []) as Array<{ id?: unknown; name?: unknown }>;
   const hosts: ListedHost[] = listed.flatMap((row) => typeof row?.id === "string" ? [{ id: row.id, name: typeof row.name === "string" ? row.name : null }] : []);
   const hostId = affinityHostId(affinity, hosts);
   if (!hostId) return { mode: "inherit" };

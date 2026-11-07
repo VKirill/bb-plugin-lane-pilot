@@ -40,6 +40,7 @@ describe("isolated schedules", () => {
       pluginId: "lane-pilot",
       sdk: { projects: { list: () => { listed++; return new Promise(() => {}); } } } as never,
     });
+    void bb.storage.kv.set("self-repair:config", { projectId: "proj_lp", environmentId: "env_lp" } as never);
     const registered = new Map<string, Registration>();
     (bb.background as unknown as Record<string, unknown>).experimental_vkSchedule = (name: string, cron: string, fn: Registration["fn"], options: Registration["options"]) => { registered.set(name, { cron, fn, options }); };
     await plugin(bb);
