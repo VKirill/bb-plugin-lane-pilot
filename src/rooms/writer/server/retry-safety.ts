@@ -1,4 +1,5 @@
 import type { LanePilotDatabase } from "../../storage";
+import { attemptWorkspaceRow, secretIssuedForTask, taskCreatedAt, countVerificationGateFailures } from "../../storage";
 import { runOnHost } from "@lane-pilot/host-calls";
 import { redactKnown, bestEffort, BestEffortLog} from "@lane-pilot/kit";
 import type { TaskV2 } from "../../contracts";
@@ -18,8 +19,7 @@ export async function retrySafetyStop(input: {
   task: TaskV2; attemptId: string; liveFolder: boolean; now?: number; log?: BestEffortLog;
 }): Promise<string | null> {
   const { db, host, hostId, task, attemptId, liveFolder } = input;
-  const row = db.prepare("SELECT workspace_path, updated_at FROM lane_pilot_attempt WHERE id=?").get(attemptId) as
-    { workspace_path: string | null; updated_at: number } | undefined;
+  const row = attemptWorkspaceRow(db, attemptId);
   const workspace = row?.workspace_path;
   if (!workspace || liveFolder) return null;
   const endedAt = row!.updated_at;
@@ -51,7 +51,7 @@ export async function retrySafetyStop(input: {
     }
   }
   const usedSecrets = task.verification.some((check) => check.secrets?.length)
-    || !!db.prepare("SELECT 1 FROM lane_pilot_secret_issuance WHERE task_id=? LIMIT 1").get(task.id);
+    || secretIssuedForTask(db, task.id);
   if (usedSecrets) {
     const diff = await bestEffort(input.log ?? ((message: string) => {}), "retry safety diff", runOnHost(host, {
       hostId, cwd: workspace, timeoutSec: 30, timeoutMs: 35_000,
@@ -81,8 +81,7 @@ export function taskLimitStop(input: {
   const { db, runId, taskId, wallClockMin, verifyMaxPasses } = input;
   const now = input.now ?? Date.now();
   if (wallClockMin > 0) {
-    const row = db.prepare("SELECT created_at FROM lane_pilot_task WHERE id=?").get(taskId) as { created_at: number } | undefined;
-    const createdAt = typeof row?.created_at === "number" ? row.created_at : null;
+    const createdAt = taskCreatedAt(db, taskId);
     if (createdAt && now - createdAt > wallClockMin * 60_000) {
       const ageMin = Math.round((now - createdAt) / 60_000);
       return `task_wall_clock: ${taskId} is ${ageMin} min old, over the writer.task_wall_clock_min cap of ${wallClockMin}; ` +
@@ -90,9 +89,7 @@ export function taskLimitStop(input: {
     }
   }
   if (verifyMaxPasses > 0) {
-    const failed = (db.prepare(
-      "SELECT COUNT(*) AS n FROM lane_pilot_gate_event WHERE run_id=? AND task_id=? AND gate='verification' AND status IN ('failed','rejected')",
-    ).get(runId, taskId) as { n: number }).n;
+    const failed = countVerificationGateFailures(db, runId, taskId);
     if (failed >= verifyMaxPasses) {
       return `verify_passes_exhausted: ${taskId} failed or was rejected by ${failed} verification passes, at the writer.verify_max_passes cap of ${verifyMaxPasses}; ` +
         "fix the check or the contract, then dispatch again";

@@ -1,14 +1,11 @@
 import { z } from "zod";
-import { findOpenNativeRun, getRun, listTaskTerminalStates } from "../../storage";
+import { findOpenNativeRun, getRun, listTaskTerminalStates, latestRunForProjectThread } from "../../storage";
 import type { LanePilotDatabase } from "../../storage";
 import { redactKnown, sha256Hex, parseJsonOr } from "@lane-pilot/kit";
 import type { WorkflowEngine } from "@lane-pilot/workflow-engine";
-import { isOffered, isPipeline, routeIntent } from "@lane-pilot/workflow-engine";
+import { goalsSchema, isOffered, isPipeline, preflightRefusal, routeIntent, runRecords, wfRunExists, wfStepExists } from "@lane-pilot/workflow-engine";
 import type { RouteDecision, RouterModel, RouterState, RunRecord } from "@lane-pilot/workflow-engine";
-import { runRecords } from "@lane-pilot/workflow-engine";
-import { goalsSchema } from "@lane-pilot/workflow-engine";
 import type { RunGoal } from "@lane-pilot/workflow-engine";
-import { preflightRefusal } from "@lane-pilot/workflow-engine";
 import type { PreflightResult } from "@lane-pilot/workflow-engine";
 import type { Workflow } from "@lane-pilot/workflow-engine";
 import type { WorkflowStore } from "../../storage";
@@ -79,7 +76,7 @@ const canonical = (value: unknown): string => {
 /** The Lane Pilot run of this PM chat: the open one, else the latest, so a sandbox PM whose run closed right after a writer still works. */
 function pmRunId(db: LanePilotDatabase, projectId: string, pmThreadId: string): string | null {
   const open = findOpenNativeRun(db, projectId, pmThreadId);
-  const runId = open ?? (db.prepare("SELECT id FROM lane_pilot_run WHERE project_id=? AND pm_thread_id=? ORDER BY created_at DESC LIMIT 1").get(projectId, pmThreadId) as { id: string } | undefined)?.id;
+  const runId = open ?? latestRunForProjectThread(db, projectId, pmThreadId)?.id;
   return runId && getRun(db, runId) ? runId : null;
 }
 
@@ -237,8 +234,8 @@ export function mountWorkflowTools(ctx: ServerCore, services: Services): void {
   bindGraphStepLookup(bb, (runId, stepKey) => {
     try {
       return stepKey === undefined
-        ? Boolean(db.prepare("SELECT 1 FROM lane_pilot_wf_run WHERE id=?").get(runId))
-        : Boolean(db.prepare("SELECT 1 FROM lane_pilot_wf_step WHERE run_id=? AND step_key=?").get(runId, stepKey));
+        ? wfRunExists(db, runId)
+        : wfStepExists(db, runId, stepKey);
     } catch { return true; }
   });
   const preflight = createWorkflowPreflight(ctx, realDeps(ctx, services));

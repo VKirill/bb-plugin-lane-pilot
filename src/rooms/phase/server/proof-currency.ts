@@ -13,6 +13,7 @@
  * (a change that was made and fully reverted in between is not reported), and ignored files are outside git status.
  */
 import { parseJsonOr } from "@lane-pilot/kit";
+import { acceptedChangeProofRows } from "../../rollback/server";
 export type ProofVerdict = "current" | "still about these paths" | "stale" | "not on this history" | "unknown commit";
 
 /** One proof: «at `commit` this was shown to hold for `paths`». No paths, or `.`, means every path. */
@@ -119,8 +120,7 @@ type ProofDb = { prepare(sql: string): { all(...params: unknown[]): unknown[] } 
  */
 export function phaseProofRecords(db: ProofDb, phase: { runId: string | null; record: { verification?: { verdict?: { mainSha?: string | null } } } }, goal: { headSha: string | null } | null): ProofRecord[] {
   if (!phase.runId) return [];
-  const rows = db.prepare(`SELECT c.task_id AS task_id, c.merge_commit AS merge_commit, c.changed_json AS changed_json FROM lane_pilot_attempt_change c
-    JOIN lane_pilot_attempt a ON a.id=c.attempt_id WHERE c.run_id=? AND a.state='accepted' AND c.merge_commit IS NOT NULL ORDER BY a.updated_at, a.rowid`).all(phase.runId) as Array<{ task_id: string; merge_commit: string; changed_json: string }>;
+  const rows = acceptedChangeProofRows(db as never, phase.runId);
   const records: ProofRecord[] = [];
   const files = new Set<string>();
   for (const row of rows) {

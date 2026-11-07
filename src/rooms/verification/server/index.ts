@@ -6,5 +6,4 @@ export { attemptMergeMessage, clearMergeIntent, createMergeIntentRecovery, recor
 export { detectRepoEdits, gitRepoStatus, namedByChat } from "./repo-edits";
 export { glueReplayCommands } from "./replay-checks"
 export { activeRunFor, listGuests, noteCheckoutGuest } from "./checkout-guests";
-export { IntegrationGateRunner, finishGateRun, gateRunVerdict, latestGateRun, latestGateRunForTask, noteGateRunStart } from "./integration-gate";
-export type { GateRunRow, GateRunState } from "./integration-gate";
+export { IntegrationGateRunner, gateRunVerdict } from "./integration-gate";

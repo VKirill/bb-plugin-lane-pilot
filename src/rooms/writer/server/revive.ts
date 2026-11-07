@@ -2,7 +2,7 @@ import type { PrototypeConfig, TaskV2 } from "../../contracts";
 
 import type { ServerCore } from "../../contracts/server";
 import { taskFamily } from "@lane-pilot/contracts";
-import { deleteStageReceipt, getAttempt, getTaskGitBase, listAttemptsForTask, listStageReceipts, reviveCanceledAttempt } from "../../storage";
+import { deleteStageReceipt, getAttempt, getTaskGitBase, listAttemptsForTask, listStageReceipts, reviveCanceledAttempt, listBbTaskRowsForRun, clearTaskClosedWords } from "../../storage";
 import { isMainfixTask } from "../../tasks";
 import { recordStage } from "../../runs/server";
 
@@ -26,7 +26,7 @@ export function reviveCanceledTask(deps: { ctx: ServerCore; services: Services; 
   args: { projectId: string; runId: string; requestedId: string; pmThreadId: string; config: PrototypeConfig; task: TaskV2; plan: string }): Record<string, unknown> | null {
   const { db, refreshRun } = deps.ctx;
   const family = taskFamily(args.requestedId);
-  const row = (db.prepare("SELECT id, contract_json FROM lane_pilot_task WHERE run_id=? AND kind='bb' ORDER BY created_at DESC, rowid DESC").all(args.runId) as Array<{ id: string; contract_json: string }>)
+  const row = listBbTaskRowsForRun(db, args.runId)
     .find((item) => !isMainfixTask(item.id) && taskFamily(item.id) === family);
   if (!row) return null;
   let stored: unknown;
@@ -44,7 +44,7 @@ export function reviveCanceledTask(deps: { ctx: ServerCore; services: Services; 
     if (listStageReceipts(db, args.runId, row.id).some((receipt) => receipt.stageId === stageId)) deleteStageReceipt(db, args.runId, row.id, stageId);
     recordStage(db, { runId: args.runId, taskId: row.id, stageId, state: "pending", input: args.plan });
   }
-  db.prepare("UPDATE lane_pilot_task SET closed_words=NULL WHERE id=?").run(row.id);
+  clearTaskClosedWords(db, row.id);
   refreshRun(args.runId);
   // A start loop still waiting goes on with the revived attempt by itself; one that is gone is started again (it is idempotent per task).
   if (!looping) deps.services.startWriterTask({ projectId: args.projectId, runId: args.runId, taskId: row.id, firstAttemptId: attempt.id, pmThreadId: args.pmThreadId, config: args.config, task: { ...args.task, id: row.id }, plan: args.plan });

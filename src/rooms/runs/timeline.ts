@@ -1,4 +1,5 @@
 import type { LanePilotDatabase } from "../storage";
+import { taskTimelineRow, attemptTimelineRows, attemptTransitionsForTask, stageEventsForTimeline, gateEventsForTask, stageReceiptsForTimeline } from "../storage";
 
 /**
  * One task's record in time order, from the tables that write it while it runs (the owner's post-mortem of the cab-unslop run,
@@ -21,36 +22,35 @@ export type TaskTimeline = {
 
 const KIND_ORDER:Record<TimelineEntry["kind"], number> = { task:0, baseline:1, attempt:2, move:3, stage:4, gate:5 };
 
-export function taskTimeline(db:LanePilotDatabase, taskId:string, runId?:string):TaskTimeline {
+export function taskTimeline(db:LanePilotDatabase, taskId:string, runId?:string,
+  readBaselines:(db:LanePilotDatabase, runId:string, taskId:string)=>Array<{ at:number; attempt_id:string|null; verdict:string; action:string; summary:string }> = () => []):TaskTimeline {
   const task = (runId
-    ? db.prepare("SELECT run_id, birth, created_at, closed_words FROM lane_pilot_task WHERE id=? AND run_id=?").get(taskId, runId)
-    : db.prepare("SELECT run_id, birth, created_at, closed_words FROM lane_pilot_task WHERE id=? ORDER BY created_at DESC LIMIT 1").get(taskId)
+    ? taskTimelineRow(db, taskId, runId)
+    : taskTimelineRow(db, taskId)
   ) as { run_id:string; birth:string|null; created_at:number; closed_words:string|null } | undefined;
   if (!task) return { taskId, runId:null, birth:null, closedWords:null, entries:[], receipts:[] };
   const run = task.run_id;
   const entries:TimelineEntry[] = [{ at:task.created_at, kind:"task", attemptId:null, text:`task arrived (${task.birth ?? "pm"})` }];
-  const attempts = db.prepare("SELECT id, attempt_no, created_at FROM lane_pilot_attempt WHERE run_id=? AND task_id=? ORDER BY created_at").all(run, taskId) as
+  const attempts = attemptTimelineRows(db, run, taskId) as
     Array<{ id:string; attempt_no:number; created_at:number }>;
   const numberOf = new Map(attempts.map((row) => [row.id, row.attempt_no]));
   for (const row of attempts) entries.push({ at:row.created_at, kind:"attempt", attemptId:row.id, text:`attempt ${row.attempt_no} created` });
-  const moves = db.prepare(`SELECT t.attempt_id, t.from_state, t.to_state, t.reason, t.refused, t.at FROM lane_pilot_attempt_transition t
-    JOIN lane_pilot_attempt a ON a.id=t.attempt_id WHERE a.run_id=? AND a.task_id=? ORDER BY t.at, t.rowid`).all(run, taskId) as
+  const moves = attemptTransitionsForTask(db, run, taskId) as
     Array<{ attempt_id:string; from_state:string; to_state:string; reason:string|null; refused:number; at:number }>;
   for (const row of moves) {
     entries.push({ at:row.at, kind:"move", attemptId:row.attempt_id,
       text:`attempt ${numberOf.get(row.attempt_id) ?? "?"}: ${row.from_state} → ${row.to_state}${row.refused ? " (refused)" : ""}${row.reason ? `: ${row.reason}` : ""}` });
   }
-  const stages = db.prepare("SELECT stage_id, state, attempt, occurred_at FROM lane_pilot_stage_event WHERE run_id=? AND task_id=? ORDER BY occurred_at, id").all(run, taskId) as
+  const stages = stageEventsForTimeline(db, run, taskId) as
     Array<{ stage_id:string; state:string; attempt:number; occurred_at:number }>;
   for (const row of stages) entries.push({ at:row.occurred_at, kind:"stage", attemptId:null, text:`stage ${row.stage_id} ${row.state}${row.attempt ? ` (attempt ${row.attempt})` : ""}` });
-  const gates = db.prepare("SELECT gate, status, attempt, occurred_at FROM lane_pilot_gate_event WHERE run_id=? AND task_id=? ORDER BY occurred_at, id").all(run, taskId) as
+  const gates = gateEventsForTask(db, run, taskId) as
     Array<{ gate:string; status:string; attempt:number; occurred_at:number }>;
   for (const row of gates) entries.push({ at:row.occurred_at, kind:"gate", attemptId:null, text:`gate ${row.gate} ${row.status}${row.attempt ? ` (attempt ${row.attempt})` : ""}` });
-  const baselines = db.prepare("SELECT at, attempt_id, verdict, action, summary FROM lane_pilot_baseline WHERE run_id=? AND task_id=? ORDER BY at").all(run, taskId) as
-    Array<{ at:number; attempt_id:string|null; verdict:string; action:string; summary:string }>;
+  const baselines = readBaselines(db, run, taskId);
   for (const row of baselines) entries.push({ at:row.at, kind:"baseline", attemptId:row.attempt_id, text:`baseline ${row.verdict} → ${row.action}: ${row.summary}` });
   entries.sort((a, b) => a.at - b.at || KIND_ORDER[a.kind] - KIND_ORDER[b.kind]);
-  const receipts = (db.prepare("SELECT stage_id, state, attempt, reason, updated_at FROM lane_pilot_stage_receipt WHERE run_id=? AND task_id=? ORDER BY updated_at").all(run, taskId) as
+  const receipts = (stageReceiptsForTimeline(db, run, taskId) as
     Array<{ stage_id:string; state:string; attempt:number; reason:string|null; updated_at:number }>)
     .map((row) => ({ stageId:row.stage_id, state:row.state, attempt:row.attempt, reason:row.reason, updatedAt:row.updated_at }));
   return { taskId, runId:run, birth:task.birth, closedWords:task.closed_words, entries, receipts };

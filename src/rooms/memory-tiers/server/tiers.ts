@@ -137,3 +137,11 @@ export function tierReport(db: Db, projectId?: string, now = Date.now()) {
   const misses = db.prepare(`SELECT project_id AS projectId, query, at FROM lane_pilot_memory_miss WHERE at>=? ${where} ORDER BY at DESC LIMIT 50`).all(now - 30 * 86_400_000, ...args);
   return { cold, promoted, neededAgainShare: cold + promoted ? Math.round((promoted / (cold + promoted)) * 1000) / 1000 : null, misses };
 }
+
+// ---- cross-room readers ----
+
+/** Memory misses since a time (the self-improve curriculum reads which queries found nothing). */
+export function listMemoryMisses(db: { prepare(sql: string): { all(...args: unknown[]): unknown[] } }, since: number): Array<{ projectId: string; query: string }> {
+  return db.prepare("SELECT project_id AS projectId, query FROM lane_pilot_memory_miss WHERE at >= ?")
+    .all(since) as Array<{ projectId: string; query: string }>;
+}

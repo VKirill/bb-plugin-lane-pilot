@@ -3,7 +3,8 @@
 import type { ArchitectApi, WorkflowLibraryApi } from "../../platform/server";
 import { routeIntent } from "@lane-pilot/workflow-engine";
 import { loadProjectSettings } from "../../storage";
-import { medianTaskSize, taskSizeText } from "../../tasks";
+import { taskSizeText } from "../../tasks";
+import { medianTaskSize } from "../../rollback/server";
 import { isRunHalted, isRunPaused } from "../../runs/server";
 import { intakeRunGoals } from "../intake";
 import { createAutoStages } from "./auto-stages";

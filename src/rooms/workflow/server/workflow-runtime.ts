@@ -1,4 +1,5 @@
 import type { LanePilotDatabase } from "../../storage";
+import { wfRunIdemParent } from "@lane-pilot/workflow-engine";
 import type { RunRow } from "../../storage";
 import type { ServerCore } from "../../contracts/server";
 import { SCHEDULE_RUN_KEY_PREFIX } from "../../contracts";
@@ -9,7 +10,7 @@ export function startedBySchedule(db: LanePilotDatabase, run: Pick<RunRow, "idem
   for (let hop = 0; current && hop < 8; hop += 1) {
     if (current.idem_key?.startsWith(SCHEDULE_RUN_KEY_PREFIX)) return true;
     current = current.parent_run_id
-      ? db.prepare("SELECT idem_key, parent_run_id FROM lane_pilot_wf_run WHERE id=?").get(current.parent_run_id) as Pick<RunRow, "idem_key" | "parent_run_id"> | undefined
+      ? wfRunIdemParent(db, current.parent_run_id) as Pick<RunRow, "idem_key" | "parent_run_id"> | undefined
       : undefined;
   }
   return false;

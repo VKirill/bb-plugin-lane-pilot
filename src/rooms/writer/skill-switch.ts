@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { extractSkillSequence } from "../contracts";
 import type Database from "better-sqlite3";
+import { listSkillMetrics, recordSkillMetric } from "../storage";
 
 export type Db = Pick<Database.Database, "prepare" | "transaction">;
 
@@ -80,22 +81,7 @@ export function recordSkillSwitchMetric(
   };
 
   try {
-    db.prepare(`
-      INSERT OR REPLACE INTO lane_pilot_skill_metric
-        (id, attempt_id, task_id, run_id, project_id, skill_count, switch_count, skills_json, outcome, recorded_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      record.id,
-      record.attemptId,
-      record.taskId,
-      record.runId,
-      record.projectId,
-      record.skillCount,
-      record.switchCount,
-      record.skillsJson,
-      record.outcome,
-      record.recordedAt,
-    );
+    recordSkillMetric(db as never, record);
   } catch {
     // Non-blocking in case of DB lock or schema delay
   }
@@ -109,11 +95,7 @@ export function getSkillSwitchStats(
   now: number = Date.now(),
 ): SkillSwitchStats | null {
   try {
-    const rows = db.prepare(`
-      SELECT switch_count, outcome
-      FROM lane_pilot_skill_metric
-      WHERE recorded_at >= ? AND recorded_at <= ?
-    `).all(sinceMs, now) as Array<{ switch_count: number; outcome: string }>;
+    const rows = listSkillMetrics(db as never, sinceMs, now);
 
     if (!rows.length) return null;
 

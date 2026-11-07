@@ -56,7 +56,7 @@ A control is a row of `lane_pilot_project_settings` under project `*` (the globa
 | per-project `harness:config:<id>` | `harness.adopt_by` (the default of every project) | `src/rooms/harness/server/harness.ts:226` | `harness configure`, the screen |
 | project settings, CLI only | `baseline.*`, `checks.require_red_on_base`, `regress.*` in the catalog | `src/rooms/baseline/logic.ts:35` | the screen (default), the project's «Work» tab (own value) |
 
-Rules: a field with a row reads the row; a field without one reads the old store, so nothing set before is lost; a write goes to the row only and leaves the old store alone (`src/rooms/wall/service.ts:158`); the CLI commands keep their syntax and their clamping (a value over the limit is stored as the limit). A write from the CLI moves the setting's version, so a page that read before sees the next save as a conflict and reloads (`src/rooms/platform/server/hub.ts:72`). A project record of `harness.adopt_by` that was saved before keeps winning over the default.
+Rules: a field with a row reads the row; a field without one reads the old store, so nothing set before is lost; a write goes to the row only and leaves the old store alone (`src/rooms/wall/service.ts:158`); the CLI commands keep their syntax and their clamping (a value over the limit is stored as the limit). A write from the CLI moves the setting's version, so a page that read before sees the next save as a conflict and reloads (`src/rooms/platform/server/hub.ts:63`). A project record of `harness.adopt_by` that was saved before keeps winning over the default.
 
 ## The controls
 

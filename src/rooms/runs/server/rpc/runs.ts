@@ -1,4 +1,5 @@
 import { MACHINE_AFFINITY_ANY } from "@lane-pilot/contracts";
+import { countAttempts, createAttempt, failedBackgroundStageRows, failureFieldsOf, getActivation, getAttempt, getRunCard, latestAttemptsPerTask, stageReceiptStates, openAttemptIdsOfRun, openRunOfPmThread, runTaskCardRows, taskCheckLogRows, transitionAttempt } from "../../../storage";
 import { t } from "@lane-pilot/i18n";
 import { resolveRoleModel } from "@lane-pilot/models";
 import { setRunHalted } from "../runs-halt";
@@ -6,7 +7,6 @@ import { PARKED_KEY } from "../../../contracts/stability-api";
 import { agentPickerLabel } from "../../../contracts/agent-display"
 import { employeeView } from "../../../contracts/employee-manifest"
 import { pickableAgent } from "../../../contracts/agent-picker";
-import { countAttempts, createAttempt, failureFieldsOf, getActivation, getAttempt, transitionAttempt } from "../../../storage";
 import { detectRequiredSessionPolicyCapability } from "../../../contracts/helper-context";
 import { DEFAULT_NATIVE_AGENT, nativeAgentCliId } from "../../../contracts/native-agent-id"
 import { nativeAgentTypeKey, nativeThreadKey } from "../../../contracts"
@@ -114,9 +114,7 @@ export function runsRpc(ctx: ServerCore, services: Services) {
       }
 
       // Find the open run for this PM thread (if any)
-      const openRun = db.prepare(
-        "SELECT id, project_id FROM lane_pilot_run WHERE pm_thread_id=? AND closed_at IS NULL ORDER BY created_at DESC LIMIT 1",
-      ).get(threadId) as { id: string; project_id: string } | undefined;
+      const openRun = openRunOfPmThread(db, threadId) as { id: string; project_id: string } | undefined;
 
       // Find tasks in this run with open attempts, their latest attempt and stages
       type OpenAttemptRow = {
@@ -132,12 +130,7 @@ export function runsRpc(ctx: ServerCore, services: Services) {
 
       if (openRun) {
         // Find latest attempt for each task in this run
-        const attempts = db.prepare(`
-          SELECT a.id, a.run_id, a.task_id, a.thread_id, a.state, a.reason
-          FROM lane_pilot_attempt a
-          WHERE a.run_id=?
-            AND a.created_at=(SELECT MAX(b.created_at) FROM lane_pilot_attempt b WHERE b.run_id=a.run_id AND b.task_id=a.task_id)
-        `).all(openRun.id) as OpenAttemptRow[];
+        const attempts = latestAttemptsPerTask(db, openRun.id) as OpenAttemptRow[];
 
         const TERMINAL_ATTEMPTS = new Set(["accepted", "blocked", "canceled", "failed"]);
         for (const att of attempts) {
@@ -177,9 +170,7 @@ export function runsRpc(ctx: ServerCore, services: Services) {
         } else {
           const attempt = openAttemptsByThread.get(threadIdStr);
           if (attempt && openRun) {
-            const receipts = (db.prepare(
-              "SELECT stage_id, state FROM lane_pilot_stage_receipt WHERE run_id=? AND task_id=?",
-            ).all(openRun.id, attempt.task_id) as Array<{ stage_id: string; state: string }>);
+            const receipts = stageReceiptStates(db, openRun.id, attempt.task_id);
 
             const verification = receipts.find((r) => r.stage_id === "verification");
             const acceptance = receipts.find((r) => r.stage_id === "acceptance-receipt");
@@ -251,27 +242,17 @@ export function runsRpc(ctx: ServerCore, services: Services) {
       return { ...rest, threads };
     },
     get_run_card: ({ runId }) => {
-      const run = db.prepare("SELECT id, state, closed_at, writer_host_id FROM lane_pilot_run WHERE id=?")
-        .get(runId) as { id: string; state: string; closed_at: number | null; writer_host_id: string | null } | undefined;
+      const run = getRunCard(db, runId) as { id: string; state: string; closed_at: number | null; writer_host_id: string | null } | undefined;
       if (!run) return null;
-      const rows = db.prepare(`
-        SELECT t.id, t.contract_json, a.state, a.thread_id, a.workspace_path
-        FROM lane_pilot_task t
-        LEFT JOIN lane_pilot_attempt a ON a.run_id=t.run_id AND a.task_id=t.id
-          AND a.id=(SELECT b.id FROM lane_pilot_attempt b WHERE b.run_id=t.run_id AND b.task_id=t.id
-            ORDER BY b.attempt_no DESC, b.created_at DESC, b.id DESC LIMIT 1)
-        WHERE t.run_id=? ORDER BY t.created_at, t.id
-      `).all(runId) as Array<{ id: string; contract_json: string; state: string | null; thread_id: string | null; workspace_path: string | null }>;
+      const rows = runTaskCardRows(db, runId) as Array<{ id: string; contract_json: string; state: string | null; thread_id: string | null; workspace_path: string | null }>;
       const logs = new Map<string, string>();
-      for (const row of db.prepare("SELECT task_id, result_json FROM lane_pilot_stage_receipt WHERE run_id=? AND result_json LIKE '%checkLogPath%'")
-        .all(runId) as Array<{ task_id: string; result_json: string | null }>) {
+      for (const row of taskCheckLogRows(db, runId) as Array<{ task_id: string; result_json: string | null }>) {
         const found = /"checkLogPath"\s*:\s*"([^"]+)"/.exec(row.result_json ?? "");
         if (found) logs.set(row.task_id, found[1]!);
       }
       // Accepted code and the background work after it are two results: a failed memory write is shown, not hidden behind «Accepted».
       const background = new Map<string, string[]>();
-      for (const row of db.prepare(`SELECT task_id, stage_id FROM lane_pilot_stage_receipt WHERE run_id=? AND state IN ('failed','blocked')
-        AND stage_id IN ('memory-maintenance','project-life','docs-maintenance') ORDER BY stage_id`).all(runId) as Array<{ task_id: string; stage_id: string }>) {
+      for (const row of failedBackgroundStageRows(db, runId) as Array<{ task_id: string; stage_id: string }>) {
         background.set(row.task_id, [...(background.get(row.task_id) ?? []), row.stage_id]);
       }
       const titleOf = (json: string, fallback: string) => {
@@ -368,7 +349,7 @@ export function runsRpc(ctx: ServerCore, services: Services) {
     resume_run: async ({ runId }) => await pauseRun(ctx, runId, "resume"),
     halt_run: async ({ runId }) => {
       await setRunHalted(bb.storage.kv as never, runId, true);
-      const open = db.prepare(`SELECT id FROM lane_pilot_attempt WHERE run_id=? AND state IN ('queued','spawn_requested','spawn_unknown','running','cancel_requested')`).all(runId) as Array<{ id:string }>;
+      const open = openAttemptIdsOfRun(db, runId).map((id) => ({ id }));
       const canceled:string[] = [], left:string[] = [];
       for (const { id } of open) {
         // a failed cancel lands in `left`, not silently dropped

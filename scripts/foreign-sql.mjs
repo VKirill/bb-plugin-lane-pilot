@@ -59,7 +59,6 @@ export function foreignSql(root) {
   // packages/memory-core own (the package is the table's engine, the room its service).
   for (const table of [...owner.keys()]) {
     if (table === "lane_pilot_token_daily" || table === "lane_pilot_token_cursor") owner.set(table, new Set(["usage"]));
-    else if (table === "lane_pilot_reconcile_cursor") owner.set(table, new Set(["stability"]));
     else if (table.startsWith("lane_pilot_memory")) owner.set(table, new Set(["memory", "pkg:memory-core"]));
     else if (!(owner.get(table) instanceof Set)) owner.set(table, new Set([owner.get(table)]));
   }

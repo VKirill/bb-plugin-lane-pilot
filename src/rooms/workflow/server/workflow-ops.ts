@@ -1,9 +1,8 @@
 import type { z } from "zod";
 import type { rpcContract, workflowTrialCaseSchema } from "../../contracts";
-import { HARNESS_VERSION } from "../../storage";
-import { runDraftTest, testCasesOf } from "@lane-pilot/workflow-engine";
+import { HARNESS_VERSION, createStatusResolver } from "../../storage";
+import { runDraftTest, testCasesOf, wfRunPage } from "@lane-pilot/workflow-engine";
 import type { DraftTestResult } from "@lane-pilot/workflow-engine";
-import { createStatusResolver } from "../../storage";
 import type { ServerCore } from "../../contracts/server";
 
 import type { createWorkflowLibrary } from "./workflow-library";
@@ -39,13 +38,7 @@ export function createWorkflowOps(ctx: ServerCore, services: Pick<Services, "wor
 
   return {
     runs(input: { id: string; projectId?: string | undefined; limit: number; before?: number | undefined }): Output<"workflow_runs"> {
-      const args: unknown[] = [input.id];
-      let where = "workflow_id=?";
-      if (input.projectId) { where += " AND project_id=?"; args.push(input.projectId); }
-      if (input.before !== undefined) { where += " AND created_at<?"; args.push(input.before); }
-      const rows = db.prepare(`SELECT id, status, reason, mode, created_at, updated_at, tokens_used, cost_micro_usd, parent_run_id, steps_used FROM lane_pilot_wf_run
-        WHERE ${where} ORDER BY created_at DESC, rowid DESC LIMIT ?`).all(...args, input.limit + 1) as Array<{ id: string; status: string; reason: string | null; mode: string | null; created_at: number;
-        updated_at: number; tokens_used: number; cost_micro_usd: number; parent_run_id: string | null; steps_used: number }>;
+      const rows = wfRunPage(db, { workflowId: input.id, projectId: input.projectId, before: input.before, limit: input.limit });
       return {
         runs: rows.slice(0, input.limit).map((row) => ({ id: row.id, status: row.status, reason: row.reason, mode: row.mode, createdAt: row.created_at, updatedAt: row.updated_at,
           tokens: row.tokens_used, costUsd: row.cost_micro_usd / 1_000_000, parentRunId: row.parent_run_id, stepsUsed: row.steps_used })),

@@ -1,5 +1,5 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
-import { getAttempt, listAttemptsForTask, type LanePilotDatabase } from "../../storage";
+import { attemptIdsOfThread, attemptThreadsOfRun, getAttempt, listAttemptsForTask, type LanePilotDatabase } from "../../storage";
 import { findThreadsByMetadata } from "../../platform/server";
 import { withUsage } from "../../usage/server";
 import { pipelineWriterStep } from "./pipeline-tag";
@@ -24,7 +24,7 @@ export async function taskThreadWindows(kv: Kv, db: LanePilotDatabase, runId: st
   const mine = listAttemptsForTask(db, runId, taskId).map((row) => getAttempt(db, row.id)).filter((row): row is NonNullable<typeof row> => Boolean(row?.thread_id));
   const windows = new Map<string, ThreadWindow>();
   for (const threadId of new Set(mine.map((row) => row.thread_id!))) {
-    const onThread = (db.prepare("SELECT id FROM lane_pilot_attempt WHERE thread_id=?").all(threadId) as Array<{ id: string }>).map((row) => row.id);
+    const onThread = attemptIdsOfThread(db, threadId);
     const marks = new Map<string, number>(await Promise.all(onThread.map(async (id) => [id, await markerOf(kv, id)] as const)));
     const starts = [...new Set(marks.values())].sort((a, b) => a - b);
     for (const attempt of mine.filter((row) => row.thread_id === threadId)) {
@@ -43,8 +43,7 @@ export async function taskThreadWindows(kv: Kv, db: LanePilotDatabase, runId: st
  */
 export async function taskUsage(bb: BbPluginApi, db: LanePilotDatabase, runId: string, taskId: string): Promise<ReturnType<typeof withUsage> extends Promise<infer R> ? R : never> {
   const windows = await bestEffort(bb.log, "writer task thread windows", taskThreadWindows(bb.storage.kv, db, runId, taskId), [] as ThreadWindow[]);
-  const known = new Set((db.prepare("SELECT thread_id, holder_thread_id FROM lane_pilot_attempt WHERE run_id=?").all(runId) as Array<{ thread_id: string | null; holder_thread_id: string | null }>)
-    .flatMap((row) => [row.thread_id, row.holder_thread_id]).filter((id): id is string => Boolean(id)));
+  const known = new Set(attemptThreadsOfRun(db, runId));
   const step = pipelineWriterStep(db, runId, taskId);
   const nested = step?.stepKey
     ? ((await bestEffort(bb.log, "writer step threads", findThreadsByMetadata(bb as never, { lanePilotWorkflowRunId: step.runId, lanePilotWorkflowStep: step.stepKey }), null)) ?? []).map((row) => row.id).filter((id) => !known.has(id))

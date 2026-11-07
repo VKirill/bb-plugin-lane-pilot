@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import Database from "better-sqlite3";
 import { batchShapeAdvice } from "../src/rooms/tasks/batch-shape";
-import { medianTaskSize, taskSizeOf, taskSizeText } from "../src/rooms/tasks/task-size";
+import { taskSizeOf, taskSizeText } from "../src/rooms/tasks/task-size";
+import { medianTaskSize } from "../src/rooms/rollback/server";
 import { isLongCandidate, longStratum } from "../src/rooms/bench/stratify";
 
 function db() {

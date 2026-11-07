@@ -1,5 +1,5 @@
 import { taskV2Schema } from "../../contracts";
-import { claimStageSpawn, countAttempts, recordSecretIssuance, getRun, getRunSettingsScopes, getTask, listStageReceipts, loadProjectSettings } from "../../storage";
+import { claimStageSpawn, countAttempts, recordSecretIssuance, getRun, getRunSettingsScopes, getTask, listStageReceipts, loadProjectSettings, staleStageReceipts } from "../../storage";
 import { QA_HOST_KEY, QA_WORKSPACE_KEY } from "@lane-pilot/settings-catalog";
 import { qaCodexPreflight, qaHostUnreachableReason, resolveBrowserQaTarget, resolveStaleBrowserQaReceipt } from "../qa-host";
 import { sha256 } from "../../tasks";
@@ -7,8 +7,7 @@ import { parseOpenCodeToolTelemetry } from "../../stability";
 import { MAIN_ATTEMPT_LIMIT } from "../../contracts/state-machine";
 import { modelCatalogOf, resolveSpawnModel, spawnUsageOf, warmSpawnUsage } from "../../platform/server";
 import { configuredSetting } from "../../contracts/server";
-import { freezeRunRouting, inheritedProjectSettings } from "../../runs/server";
-import { recordStage } from "../../runs/server";
+import { freezeRunRouting, inheritedProjectSettings, recordStage } from "../../runs/server";
 import { qaStateToStatus } from "@lane-pilot/workflow-engine";
 import { allowedSecretNames, secretFixLines, secretProblem, waitingSecretReason } from "../../secrets/server";
 import { awaitQaVerdict, parseQaCases, runQaThread } from "./qa-thread";
@@ -295,8 +294,7 @@ export function createQaStages(ctx: ServerCore) {
    * Before, such a stage stayed «running» for good and the verdict was lost.
    */
   function resumeBrowserQaThreads(): number {
-    const rows = db.prepare(`SELECT run_id, task_id FROM lane_pilot_stage_receipt WHERE stage_id='browser-qa' AND state='running' AND updated_at < ?`)
-      .all(loadedAt) as Array<{ run_id:string; task_id:string }>;
+    const rows = staleStageReceipts(db, "browser-qa", loadedAt);
     for (const row of rows) {
       const stage = listStageReceipts(db, row.run_id, row.task_id).find((item) => item.stageId === "browser-qa");
       if (!stage) continue;

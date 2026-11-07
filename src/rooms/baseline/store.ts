@@ -154,3 +154,17 @@ export function lastPass(db: BaselineDb, projectId: string): { at: number; headS
     { at: number; head_sha: string | null; summary_json: string } | undefined;
   return row ? { at: row.at, headSha: row.head_sha, summary: parse<unknown>(row.summary_json, {}) } : undefined;
 }
+
+// ---- cross-room readers ----
+
+/** The task's baseline entries, oldest first (the task timeline's baseline lines). */
+export function taskBaselineEntries(db: BaselineDb, runId: string, taskId: string): Array<{ at: number; attempt_id: string | null; verdict: string; action: string; summary: string }> {
+  return db.prepare("SELECT at, attempt_id, verdict, action, summary FROM lane_pilot_baseline WHERE run_id=? AND task_id=? ORDER BY at")
+    .all(runId, taskId) as Array<{ at: number; attempt_id: string | null; verdict: string; action: string; summary: string }>;
+}
+
+/** Open regressions (not closed, not fixed) as task/state rows for the receipts list. */
+export function openRegressionBriefs(db: BaselineDb, projectId?: string): Array<{ taskId: string; state: string }> {
+  return db.prepare(`SELECT task_id AS taskId, state FROM lane_pilot_regression WHERE state NOT IN ('closed','fixed') ${projectId ? "AND project_id=?" : ""} LIMIT 50`)
+    .all(...(projectId ? [projectId] : [])) as Array<{ taskId: string; state: string }>;
+}

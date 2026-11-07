@@ -1,6 +1,6 @@
 import type Database from "better-sqlite3";
-import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
-import { HUB_SPECS, fieldValue, hubSettingProblem, settingValue, specOf, type HubArea } from "@lane-pilot/settings-catalog";
+import { listSettingRows, putGlobalSettingValue } from "../../storage";
+import { GLOBAL_SETTINGS_PROJECT_ID, HUB_SPECS, fieldValue, hubSettingProblem, settingValue, specOf, type HubArea } from "@lane-pilot/settings-catalog";
 
 /**
  * The global-level rows behind the self-improvement controls, read and written with plain SQL so the rooms that own the old stores (wall,
@@ -15,14 +15,10 @@ export function readHubRows(db: ReadDb, keys?: readonly string[]): Map<string, {
   const wanted = new Set(keys ?? HUB_SPECS.map((spec) => spec.key));
   const rows = new Map<string, { value: unknown; version: number }>();
   try {
-    const stored = db.prepare(`SELECT s.key AS key, s.value AS value, COALESCE(g.version, s.version) AS version FROM lane_pilot_project_settings s
-      LEFT JOIN lane_pilot_setting_generation g ON g.project_id=s.project_id AND g.binding_id=s.binding_id AND g.key=s.key
-      WHERE s.project_id=? AND s.binding_id=''`).all(GLOBAL_SETTINGS_PROJECT_ID) as Array<{ key: string; value: string; version: number }>;
+    const stored = listSettingRows(db as never, GLOBAL_SETTINGS_PROJECT_ID);
     for (const row of stored) {
       if (!wanted.has(row.key)) continue;
-      let value: unknown = row.value;
-      try { value = JSON.parse(row.value); } catch { /* keep the text */ }
-      rows.set(row.key, { value, version: row.version });
+      rows.set(row.key, { value: row.value, version: row.version });
     }
   } catch { /* no settings table yet */ }
   return rows;
@@ -62,16 +58,7 @@ export function writeHubSettings(db: HubDb, changes: ReadonlyArray<readonly [str
   const write = db.transaction((): string[] => {
     const written: string[] = [];
     for (const [key, value] of changes) {
-      const text = JSON.stringify(value);
-      const current = db.prepare("SELECT value, version FROM lane_pilot_project_settings WHERE project_id=? AND binding_id='' AND key=?").get(GLOBAL_SETTINGS_PROJECT_ID, key) as { value: string; version: number } | undefined;
-      if (current?.value === text) continue;
-      const generation = db.prepare("SELECT version FROM lane_pilot_setting_generation WHERE project_id=? AND binding_id='' AND key=?").get(GLOBAL_SETTINGS_PROJECT_ID, key) as { version: number } | undefined;
-      const next = (generation?.version ?? current?.version ?? 0) + 1;
-      if (current) db.prepare("UPDATE lane_pilot_project_settings SET value=?, version=?, updated_at=? WHERE project_id=? AND binding_id='' AND key=?").run(text, next, now, GLOBAL_SETTINGS_PROJECT_ID, key);
-      else db.prepare("INSERT INTO lane_pilot_project_settings(project_id,binding_id,key,value,version,updated_at) VALUES (?,?,?,?,?,?)").run(GLOBAL_SETTINGS_PROJECT_ID, "", key, text, next, now);
-      db.prepare(`INSERT INTO lane_pilot_setting_generation(project_id,binding_id,key,version) VALUES (?,?,?,?)
-        ON CONFLICT(project_id,binding_id,key) DO UPDATE SET version=excluded.version`).run(GLOBAL_SETTINGS_PROJECT_ID, "", key, next);
-      written.push(key);
+      if (putGlobalSettingValue(db as never, GLOBAL_SETTINGS_PROJECT_ID, key, JSON.stringify(value), now)) written.push(key);
     }
     return written;
   });

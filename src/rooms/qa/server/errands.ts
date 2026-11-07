@@ -1,19 +1,16 @@
 import { z } from "zod";
-import { findOpenNativeRun, recordSecretIssuance, getRun, getRunSettingsScopes, loadProjectSettings } from "../../storage";
+import { findOpenNativeRun, recordSecretIssuance, getRun, getRunSettingsScopes, loadProjectSettings, latestRunForProjectThread } from "../../storage";
 import { writerExecutionSelection } from "@lane-pilot/models";
 import { QA_HOST_KEY } from "@lane-pilot/settings-catalog";
-import { modelCatalogOf, resolveSpawnModel, spawnUsageOf, warmSpawnUsage } from "../../platform/server";
+import { fenceOutside, folderEnvironment, fullAccessSpawn, hiddenPlacement, modelCatalogOf, projectFolder, projectSources, registerObservedTool, resolveSpawnModel, spawnTextId, spawnUsageOf, warmSpawnUsage } from "../../platform/server";
 import { configuredSetting } from "../../contracts/server";
-import { fullAccessSpawn, folderEnvironment, hiddenPlacement, projectFolder, projectSources } from "../../platform/server";
 import { SKILL_CATALOG_BLOCK, placeEmployeeOn } from "../../native-agent";
 import { ROLE_PROFILES, effectiveGroup, parseHelperContextSettings } from "../../contracts/helper-context";
 import { checkBrief, renderBrief, tagSection } from "../../brief";
 import { THREAD_MEMORY_RULE } from "../../contracts/thread-rule";
-import { spawnTextId } from "../../platform/server";
 import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server";
 import {isNotFound, orMiss, outputText, stringAt} from "@lane-pilot/kit";
 ;
-import { fenceOutside, registerObservedTool } from "../../platform/server";
 import { redactKnown } from "@lane-pilot/kit";
 import { allowedSecretNames, secretFixLines, secretProblem, waitingSecretReason } from "../../secrets/server";
 import type { CatalogEntry } from "../../secrets/server";
@@ -163,8 +160,7 @@ function mountErrandCore(ctx: ServerCore) {
   // chat's latest run serves even after it closed (a sandbox PM closes its run right after the accepted writer).
   function openRun(projectId: string, pmThreadId: string): string {
     const open = findOpenNativeRun(db, projectId, pmThreadId);
-    const runId = open ?? (db.prepare("SELECT id FROM lane_pilot_run WHERE project_id=? AND pm_thread_id=? ORDER BY created_at DESC LIMIT 1")
-      .get(projectId, pmThreadId) as { id: string } | undefined)?.id;
+    const runId = open ?? latestRunForProjectThread(db, projectId, pmThreadId)?.id;
     if (!runId || !getRun(db, runId)) throw new Error("errand_needs_pm_chat: call this from a Lane Pilot PM chat");
     return runId;
   }

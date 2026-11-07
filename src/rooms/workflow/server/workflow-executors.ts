@@ -1,16 +1,15 @@
 import type { TaskV2 } from "../../contracts";
 import type { VerificationGatePort } from "../../contracts/integration-gate";
 import type { IsTaskSatisfied } from "../../contracts";
-import { getAttempt, getRun, getRunWriterHost, listAttemptsForTask, listOpenAttempts } from "../../storage";
-import { redactKnown, sha256Hex, orMiss, isNotFound, bestEffort } from "@lane-pilot/kit";
+import { getAttempt, getRun, getRunWriterHost, listAttemptsForTask, listOpenAttempts, listTaskIdsForRun } from "../../storage";
+import { bestEffort, isNotFound, orMiss, redactKnown, sha256Hex, stringAt } from "@lane-pilot/kit";
 import { validateTaskV2 } from "../../tasks/task-v2";
-import { agentPrompt, outputContract, parseAgentOutput, resolveTaskQualityMode } from "@lane-pilot/workflow-engine";
+import { agentPrompt, outputContract, outputFields, parseAgentOutput, resolveTaskQualityMode } from "@lane-pilot/workflow-engine";
 import type { NodeExecutor, PollResult, StepContext, WorkflowEngine } from "@lane-pilot/workflow-engine";
 import type { RunRow } from "../../storage";
 import { getJudgment, jev } from "@lane-pilot/jev";
 import { citationCheckJudgment } from "@lane-pilot/jev/judgments/citation-check";
 import { postOwnerItem } from "../../owner-waiting";
-import { outputFields } from "@lane-pilot/workflow-engine";
 import { BUILTIN_PRESETS } from "@lane-pilot/models";
 import type { Field, GraphNode } from "@lane-pilot/workflow-engine";
 import { createTaskLinter } from "../../tasks/server";
@@ -21,10 +20,8 @@ import type { Judgment } from "@lane-pilot/jev";
 import { registerQualityLoopClassifyExecutor } from "./workflow-classify";
 import type { TaskUsage } from "../../platform/server";
 
-import { keyedSpawnSupported, projectFolder } from "../../platform/server";
-import { stringAt } from "@lane-pilot/kit";
+import { keyedSpawnSupported, pickSkillTree, projectFolder, readSkillTreeText, skillTreeCached } from "../../platform/server";
 import { startedBySchedule } from "./workflow-runtime";
-import { pickSkillTree, readSkillTreeText, skillTreeCached } from "../../platform/server";
 import type { ChainRuntime } from "../../contracts/server";
 import type { ServerCore } from "../../contracts/server";
 
@@ -663,8 +660,8 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
     const rt = needLanePilot(lane, "lp.run_status");
     const runId = str(c.resolve("$inputs.run_id")) || rt.runId;
     const open = listOpenAttempts(db).filter((row) => row.run_id === runId);
-    const tasks = db.prepare("SELECT id FROM lane_pilot_task WHERE run_id=?").all(runId) as Array<{ id: string }>;
-    const latest = tasks.map((task) => listAttemptsForTask(db, runId, task.id).at(-1)).filter(Boolean) as Array<{ state: string }>;
+    const tasks = listTaskIdsForRun(db, runId);
+    const latest = tasks.map((taskId) => listAttemptsForTask(db, runId, taskId).at(-1)).filter(Boolean) as Array<{ state: string }>;
     const failed = latest.filter((attempt) => ["blocked", "canceled", "validation_failed"].includes(attempt.state)).length;
     return { open_tasks: tasks.length - latest.filter((attempt) => attempt.state === "accepted").length - failed, failed_tasks: failed, unmerged: 0, gate_ok: failed === 0, running_attempts: open.length, merged_commits: list(c.resolve("ctx.merged_commits")).map(String) };
   });

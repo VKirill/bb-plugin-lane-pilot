@@ -382,3 +382,20 @@ export function clearSettingValue(db: LanePilotDatabase, key: string, value: str
     return [...projects];
   })();
 }
+
+/**
+ * A global (binding_id='') setting write with generation bump: skip when the stored JSON is already `text`,
+ * else version = max(row version, generation version) + 1 on both the row and its generation. Returns whether it wrote.
+ * Meant to run inside the caller's transaction (the hub writes a whole map at once).
+ */
+export function putGlobalSettingValue(db: LanePilotDatabase, projectId: string, key: string, text: string, now: number): boolean {
+  const current = db.prepare("SELECT value, version FROM lane_pilot_project_settings WHERE project_id=? AND binding_id='' AND key=?").get(projectId, key) as { value: string; version: number } | undefined;
+  if (current?.value === text) return false;
+  const generation = db.prepare("SELECT version FROM lane_pilot_setting_generation WHERE project_id=? AND binding_id='' AND key=?").get(projectId, key) as { version: number } | undefined;
+  const next = (generation?.version ?? current?.version ?? 0) + 1;
+  if (current) db.prepare("UPDATE lane_pilot_project_settings SET value=?, version=?, updated_at=? WHERE project_id=? AND binding_id='' AND key=?").run(text, next, now, projectId, key);
+  else db.prepare("INSERT INTO lane_pilot_project_settings(project_id,binding_id,key,value,version,updated_at) VALUES (?,?,?,?,?,?)").run(projectId, "", key, text, next, now);
+  db.prepare(`INSERT INTO lane_pilot_setting_generation(project_id,binding_id,key,version) VALUES (?,?,?,?)
+    ON CONFLICT(project_id,binding_id,key) DO UPDATE SET version=excluded.version`).run(projectId, "", key, next);
+  return true;
+}

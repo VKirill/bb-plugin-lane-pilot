@@ -25,3 +25,13 @@ export { definitionSha256, globalWorkflowDir, loadWorkflowStore, nodeFileSource,
 export type { StoredWorkflow, WorkflowFileSource, WorkflowStore } from "@lane-pilot/workflow-engine";
 export { CANCEL_CODES, markCancelCode, type CancelCode } from "./cancel-code";
 export { STATS_EPOCH_DEFAULT, STATS_EPOCH_SETTING, statsEpochLine, statsEpochMs } from "./epoch";
+export { openRunOfPmThread, latestRunForProjectThread, listOpenLaneRuns, listLiveRuns, recentWriterHostIds, getRunCard, pmThreadOfCliRun, listOpenCliRuns, activeRunForWorkspacePath } from "./runs-store";
+export { acceptedAttemptTaskRefs, acceptedAttemptProjectIds, acceptedTaskCountsByProject, hasAcceptedAttempt, hasLiveAttempt, latestAttemptByRowid, stemAttemptRows, adoptableBlockedAttempts, attemptTimelineRows, attemptTransitionsForTask, acceptanceAttemptRows, canaryAttemptRows, previousHarnessVersion, attemptWorkspacePaths, writerBaseForWorkspace, openAttemptIdsOfRun, openAttemptsForPause, latestAttemptsPerTask, runEnvironmentIds, attemptEnvironmentRows, stickyWorktreeAttemptRows, attemptIdsOfThread, attemptThreadsOfRun, runAttemptOutcomeRows, acceptedTaskIdsOfRun, attemptWorkspaceRow, otherAttemptsOfRun, attemptedTaskIdsOfRun, latestTaskAttemptRow, countThreadAttempts, countThreadTaskAttempts } from "./attempts-store";
+export { taskTimelineRow, listBbTaskRowsForRun, clearTaskClosedWords, taskCreatedAt, runTaskCardRows, taskGraphRows, openIntakeTaskRows, finishedIntakeTaskRows, openIntakeAttemptRows } from "./tasks-store";
+export { staleStageReceipts, taskCheckLogRows, failedBackgroundStageRows, stageEventsForTimeline, gateEventsForTask, stageReceiptsForTimeline, countVerificationGateFailures, stageReceiptStates, stageReceiptAttemptState } from "./stages-store";
+export { putGlobalSettingValue } from "./settings-store";
+export { secretIssuedForTask, recordSkillMetric, listSkillMetrics, countLanePilotTables } from "./checks-store";
+export { recordJanitorSweep, releaseWorktreeById } from "./worktrees-store";
+export { noteGateRunStart, finishGateRun, latestGateRun, latestGateRunForTask, gateRunRow } from "./gate-runs-store";
+export type { GateRunRow, GateRunState } from "./gate-runs-store";
+export { reconcileCursorPage, saveReconcileCursor, clearReconcileCursor, hasReconcileCursor } from "./reconcile-store";

@@ -9,7 +9,8 @@ import { z } from "zod";
 import type { ServerContext } from "../../platform/server";
 import { sendServiceMessage } from "./service-message";
 import { registerObservedTool } from "../../platform/server";
-import { gateRunVerdict, latestGateRun, latestGateRunForTask } from "../../verification/server"
+import { gateRunVerdict } from "../../verification/server"
+import { latestGateRun, latestGateRunForTask } from "../../storage"
 import { parseIntegrationGateSettings } from "../../contracts/integration-gate";
 
 /**

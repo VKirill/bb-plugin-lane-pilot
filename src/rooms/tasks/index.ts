@@ -25,7 +25,7 @@ export { OWNER_WORD_WAIT_MS, TASK_WORDS_KEY, landingWordAsked, landingWordGap, o
 export type { TaskWord } from "./words";
 export { SHARED_PATH_TASKS, batchShapeAdvice } from "./batch-shape";
 export type { OpenShape } from "./batch-shape";
-export { TASK_SIZE_MIN_SAMPLE, medianTaskSize, taskSizeOf, taskSizeText } from "./task-size";
+export { TASK_SIZE_MIN_SAMPLE, taskSizeOf, taskSizeText } from "./task-size";
 export type { TaskSize, TaskSizeMedian } from "./task-size";
 export { TOPIC_LOOP, testNames, topicHold, topicLoop, topicLoopMessage } from "./topic-loop";
 export type { LoopTask, TopicLoop, TopicWall } from "./topic-loop";

@@ -5,10 +5,8 @@ import type { rpcContract } from "../../contracts";
 ;
 import type { Field, Workflow } from "@lane-pilot/workflow-engine";
 import { sha256Hex, bestEffort, orMiss, isNotFound } from "@lane-pilot/kit";
-import { parseGoals } from "@lane-pilot/workflow-engine";
-import { createStatusResolver } from "../../storage";
-import { globalWorkflowDir, loadWorkflowStore, nodeFileSource, projectWorkflowDir, type StoredWorkflow, type WorkflowFileSource, type WorkflowStore, HARNESS_VERSION } from "../../storage";
-import { legacyDefinitionSha256, tallyOutcomes, workDoneRate, workflowView, type WorkflowView } from "@lane-pilot/workflow-engine";
+import { legacyDefinitionSha256, parseGoals, tallyOutcomes, type WorkflowView, wfChildRuns, wfLastRun, wfRecentRuns, wfRunOutcomeRows, wfTriggersOfWorkflow, workDoneRate, workflowView } from "@lane-pilot/workflow-engine";
+import { HARNESS_VERSION, createStatusResolver, globalWorkflowDir, loadWorkflowStore, nodeFileSource, projectWorkflowDir, type StoredWorkflow, type WorkflowFileSource, type WorkflowStore } from "../../storage";
 import { buildWorkflowMap } from "./workflow-map";
 import type { ServerCore } from "../../contracts/server";
 
@@ -78,13 +76,11 @@ export function createWorkflowLibrary(ctx: ServerCore, services: Pick<Services, 
   }
 
   function statsFor(workflowId: string, projectId?: string): WorkflowStats {
-    const where = projectId ? "workflow_id=? AND project_id=?" : "workflow_id=?";
-    const args = projectId ? [workflowId, projectId] : [workflowId];
     // ponytail: the same full scan as runRecords. Ceiling: a workflow with a very long history. Upgrade: a stored outcome column.
-    const rows = db.prepare(`SELECT status, output_json, definition_json, created_at FROM lane_pilot_wf_run WHERE ${where}`).all(...args) as Array<{ status: string; output_json: string | null; definition_json: string | null; created_at: number }>;
+    const rows = wfRunOutcomeRows(db, workflowId, projectId);
     const since30d = Date.now() - 30 * 86_400_000;
     const tally = tallyOutcomes(rows);
-    const last = db.prepare(`SELECT id, status, created_at FROM lane_pilot_wf_run WHERE ${where} ORDER BY created_at DESC, rowid DESC LIMIT 1`).get(...args) as { id: string; status: string; created_at: number } | undefined;
+    const last = wfLastRun(db, workflowId, projectId);
     return { runs: tally.runs, runs30d: rows.filter((row) => row.created_at >= since30d).length, succeeded: tally.executed, failed: tally.engineBad, active: tally.active, successRate: workDoneRate(tally),
       executed: tally.executed, workDone: tally.workDone, refused: tally.refused, escalated: tally.escalated,
       lastRunAt: last?.created_at ?? null, lastStatus: last?.status ?? null, lastRunId: last?.id ?? null };
@@ -129,9 +125,7 @@ export function createWorkflowLibrary(ctx: ServerCore, services: Pick<Services, 
       const item = store.get(input.id);
       if (!item) return { workflow: null };
       const { workflow } = item;
-      const runs = db.prepare(`SELECT id, status, reason, mode, created_at, updated_at, tokens_used, cost_micro_usd, parent_run_id FROM lane_pilot_wf_run
-        WHERE workflow_id=?${input.projectId ? " AND project_id=?" : ""} ORDER BY created_at DESC, rowid DESC LIMIT ${RECENT_RUNS}`)
-        .all(...(input.projectId ? [workflow.id, input.projectId] : [workflow.id])) as Array<{ id: string; status: string; reason: string | null; mode: string | null; created_at: number; updated_at: number; tokens_used: number; cost_micro_usd: number; parent_run_id: string | null }>;
+      const runs = wfRecentRuns(db, workflow.id, input.projectId, RECENT_RUNS);
       const requires = workflow.requires;
       return {
         workflow: {
@@ -142,7 +136,7 @@ export function createWorkflowLibrary(ctx: ServerCore, services: Pick<Services, 
           budget: { maxTokens: workflow.budget.maxTokens ?? null, maxCostUsd: workflow.budget.maxCostUsd ?? null, maxWallSeconds: workflow.budget.maxWallSeconds ?? null },
           qualityMode: workflow.quality_mode?.default ?? null, source: item.source, sha256: item.sha256,
           startedBy: workflow.startedBy ?? null,
-          schedules: (db.prepare("SELECT project_id, slot, automation_id FROM lane_pilot_wf_trigger WHERE workflow_id=? ORDER BY project_id, slot").all(workflow.id) as Array<{ project_id: string; slot: number; automation_id: string }>)
+          schedules: wfTriggersOfWorkflow(db, workflow.id)
             .map((row) => ({ projectId: row.project_id, slot: row.slot, automationId: row.automation_id })),
           proven: (() => { const live = statuses.liveSuccess(workflow.id, workflow.version, workflow.live_success, { current: item.sha256, legacy: legacyDefinitionSha256(workflow) }); return live ? { runId: live.id, at: live.updated_at } : null; })(),
           warningMessages: item.warnings.map((warning) => warning.message),
@@ -158,7 +152,7 @@ export function createWorkflowLibrary(ctx: ServerCore, services: Pick<Services, 
       const snapshot = services.workflowEngine.snapshot(input.runId);
       if (!snapshot) return { snapshot: null };
       const { run } = snapshot;
-      const children = db.prepare("SELECT id, parent_step_key, workflow_id, status FROM lane_pilot_wf_run WHERE parent_run_id=? ORDER BY created_at, rowid").all(run.id) as Array<{ id: string; parent_step_key: string; workflow_id: string; status: string }>;
+      const children = wfChildRuns(db, run.id);
       const events = (snapshot.events as Array<{ seq: number; step_key: string | null; kind: string; from_state: string | null; to_state: string | null; detail: string | null; at: number }>).slice(-EVENT_TAIL);
       return {
         snapshot: {

@@ -1,4 +1,5 @@
 import type { z } from "zod";
+import { pmThreadOfCliRun } from "../../storage";
 import type { rpcContract } from "../../contracts";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
 import type { DraftStore } from "../../storage";
@@ -13,7 +14,7 @@ type Output<K extends keyof typeof rpcContract> = z.infer<(typeof rpcContract)[K
 
 /** The model the project's PM chat runs on: the last model of a writer chain. Unknown when no PM chat of the project is open. */
 const pmThreadOfProject = (ctx: ServerCore, projectId: string): string | null =>
-  (ctx.db.prepare("SELECT pm_thread_id FROM lane_pilot_run WHERE kind='cli' AND project_id=? AND closed_at IS NULL AND pm_thread_id IS NOT NULL ORDER BY created_at DESC LIMIT 1").get(projectId) as { pm_thread_id: string } | undefined)?.pm_thread_id ?? null;
+  pmThreadOfCliRun(ctx.db, projectId);
 
 async function pmPairOf(ctx: ServerCore, projectId: string): Promise<PmPair | null> {
   const thread = pmThreadOfProject(ctx, projectId);

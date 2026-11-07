@@ -1,4 +1,5 @@
 import { tableExists, type OwnerItemSweep } from "../../owner-waiting";
+import { latestTaskAttemptRow } from "../../storage";
 
 const WRITER_QUESTION_PREFIX = "writer-question:";
 
@@ -9,6 +10,6 @@ export const writerQuestionKey = (runId: string, taskId: string) => `${WRITER_QU
 export const writerQuestionSweep: OwnerItemSweep = (db, item) => {
   if (!item.key.startsWith(WRITER_QUESTION_PREFIX) || !tableExists(db, "lane_pilot_attempt")) return null;
   const [, runId, ...task] = item.key.split(":");
-  const latest = db.prepare("SELECT state, created_at FROM lane_pilot_attempt WHERE run_id=? AND task_id=? ORDER BY created_at DESC, attempt_no DESC LIMIT 1").get(runId, task.join(":")) as { state: string; created_at: number } | undefined;
+  const latest = latestTaskAttemptRow(db as never, runId, task.join(":"));
   return latest && (latest.created_at > item.created_at || latest.state !== "blocked") ? "janitor:task moved on" : null;
 };

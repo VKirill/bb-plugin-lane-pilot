@@ -212,3 +212,60 @@ export function listRunsForPmThread(db: LanePilotDatabase, threadId: string, lim
   return db.prepare("SELECT id, project_id FROM lane_pilot_run WHERE pm_thread_id=? ORDER BY updated_at DESC LIMIT ?")
     .all(threadId, limit) as Array<{ id: string; project_id: string }>;
 }
+
+/** The unclosed run a PM thread drives, newest first (the PM status bar's lookup). */
+export function openRunOfPmThread(db: LanePilotDatabase, threadId: string): { id: string; project_id: string } | undefined {
+  return db.prepare(
+    "SELECT id, project_id FROM lane_pilot_run WHERE pm_thread_id=? AND closed_at IS NULL ORDER BY created_at DESC LIMIT 1",
+  ).get(threadId) as { id: string; project_id: string } | undefined;
+}
+
+/** The project's latest run on a PM thread, open or closed (a tool's "which run am I in" fallback). */
+export function latestRunForProjectThread(db: LanePilotDatabase, projectId: string, pmThreadId: string): { id: string } | undefined {
+  return db.prepare("SELECT id FROM lane_pilot_run WHERE project_id=? AND pm_thread_id=? ORDER BY created_at DESC LIMIT 1")
+    .get(projectId, pmThreadId) as { id: string } | undefined;
+}
+
+/** Unclosed runs still pending or running (the abandoned-run sweep). */
+export function listOpenLaneRuns(db: LanePilotDatabase): Array<{ id: string; project_id: string; pm_thread_id: string | null; created_at: number }> {
+  return db.prepare("SELECT id,project_id,pm_thread_id,created_at FROM lane_pilot_run WHERE closed_at IS NULL AND state IN ('pending','running')")
+    .all() as Array<{ id: string; project_id: string; pm_thread_id: string | null; created_at: number }>;
+}
+
+/** Unclosed runs marked running or blocked (the stale-run TTL sweep). */
+export function listLiveRuns(db: LanePilotDatabase): Array<{ id: string; project_id: string; state: string; pm_thread_id: string | null; updated_at: number }> {
+  return db.prepare("SELECT id, project_id, state, pm_thread_id, updated_at FROM lane_pilot_run WHERE closed_at IS NULL AND state IN ('running', 'blocked')")
+    .all() as Array<{ id: string; project_id: string; state: string; pm_thread_id: string | null; updated_at: number }>;
+}
+
+/** Hosts that wrote a run recently (the fire drill calls each one). */
+export function recentWriterHostIds(db: LanePilotDatabase, since: number): string[] {
+  return (db.prepare("SELECT DISTINCT writer_host_id FROM lane_pilot_run WHERE writer_host_id IS NOT NULL AND created_at > ?")
+    .all(since) as Array<{ writer_host_id: string }>).map((row) => row.writer_host_id);
+}
+
+/** The run card header: state, close time and the writer host a check log path resolves on. */
+export function getRunCard(db: LanePilotDatabase, runId: string): { id: string; state: string; closed_at: number | null; writer_host_id: string | null } | undefined {
+  return db.prepare("SELECT id, state, closed_at, writer_host_id FROM lane_pilot_run WHERE id=?")
+    .get(runId) as { id: string; state: string; closed_at: number | null; writer_host_id: string | null } | undefined;
+}
+
+/** The PM thread of the project's newest open cli run, if one is open (a helper looks up the PM's model through it). */
+export function pmThreadOfCliRun(db: LanePilotDatabase, projectId: string): string | null {
+  return (db.prepare("SELECT pm_thread_id FROM lane_pilot_run WHERE kind='cli' AND project_id=? AND closed_at IS NULL AND pm_thread_id IS NOT NULL ORDER BY created_at DESC LIMIT 1")
+    .get(projectId) as { pm_thread_id: string } | undefined)?.pm_thread_id ?? null;
+}
+
+/** The project's open cli runs that have a PM thread, newest first (a trigger finds the PM chat to report to). */
+export function listOpenCliRuns(db: LanePilotDatabase, projectId: string): Array<{ id: string; pm_thread_id: string }> {
+  return db.prepare("SELECT id, pm_thread_id FROM lane_pilot_run WHERE kind='cli' AND project_id=? AND closed_at IS NULL AND pm_thread_id IS NOT NULL ORDER BY created_at DESC LIMIT 20")
+    .all(projectId) as Array<{ id: string; pm_thread_id: string }>;
+}
+
+/** The open run that merges into this folder, touched in the last day (a checkout guest is counted only under one). */
+export function activeRunForWorkspacePath(db: LanePilotDatabase, path: string, since: number): { id: string; pmThreadId: string | null } | undefined {
+  return db.prepare(`SELECT r.id, r.pm_thread_id AS pmThreadId FROM lane_pilot_run r
+    WHERE r.closed_at IS NULL AND r.writer_workspace_path=? AND EXISTS(
+      SELECT 1 FROM lane_pilot_attempt a WHERE a.run_id=r.id AND a.updated_at > ?)
+    ORDER BY r.updated_at DESC LIMIT 1`).get(path, since) as { id: string; pmThreadId: string | null } | undefined;
+}

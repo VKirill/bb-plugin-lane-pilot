@@ -1,13 +1,11 @@
-import { withoutCredentials, withoutSelectionMarkers, bestEffort, isNotFound, orMiss, parseJsonOr } from "@lane-pilot/kit";
+import { bestEffort, isNotFound, orMiss, parseJsonOr, stringAt, withoutCredentials, withoutSelectionMarkers } from "@lane-pilot/kit";
 import { choiceOf, jev, resolveThresholds, type JevSettings } from "@lane-pilot/jev";
-import { getRun, getRunSettingsScopes } from "../../storage";
-import { stringAt } from "@lane-pilot/kit";
+import { getRun, getRunSettingsScopes, openIntakeTaskRows, finishedIntakeTaskRows, openIntakeAttemptRows } from "../../storage";
 import { type ServerCore } from "../../contracts/server";
-import { isRunHalted, isRunPaused } from "../../runs/server";
+import { cancelAttemptById, isRunHalted, isRunPaused } from "../../runs/server";
 import { pathClassByRules } from "@lane-pilot/workflow-engine";
 import type { PathRisk, PathSize } from "@lane-pilot/workflow-engine";
 import { intakeByRules, intakeJudgment, intakeTitle, isMachineMessage, pathClassJudgment, processHint, publishedHint, railsRefusal, type IntakeKind, type ServiceKind } from "../intake";
-import { cancelAttemptById } from "../../runs/server";
 import { OPEN_ATTEMPT_STATES } from "../../contracts/state-machine";
 import { sendServiceMessage } from "../../relay/server";
 import type { Phase } from "../logic";
@@ -59,7 +57,6 @@ type Deps = Pick<ServerCore, "bb" | "db" | "effectiveProjectSettings" | "log" | 
  * hand out that request's work by hand. Small jobs, batches, questions and consents keep their own roads. `phase.rails off`
  * turns it off for a project.
  */
-const OPEN_STATES_SQL = OPEN_ATTEMPT_STATES.map(() => "?").join(",");
 
 export function createPhaseIntake(ctx: Deps, phases: IntakePhases, train?: IntakeTrain) {
   const { bb, db } = ctx;
@@ -202,19 +199,19 @@ export function createPhaseIntake(ctx: Deps, phases: IntakePhases, train?: Intak
     const { run, text, service } = input;
     if (!service) return null;
     if (service === "status" || service === "current") {
-      const rows = db.prepare(`SELECT t.id AS task_id, t.contract_json, a.state FROM lane_pilot_task t JOIN lane_pilot_attempt a ON a.task_id=t.id AND a.run_id=t.run_id WHERE t.run_id=? AND a.state IN (${OPEN_STATES_SQL}) ORDER BY a.attempt_no DESC LIMIT 10`).all(run.id, ...OPEN_ATTEMPT_STATES) as Array<{ task_id: string; contract_json: string; state: string }>;
+      const rows = openIntakeTaskRows(db, run.id, OPEN_ATTEMPT_STATES);
       if (!rows.length) return service === "current" ? "Сейчас ничего не идёт: открытых задач нет." : `Ран ${run.id}: открытых задач нет.`;
       const titles = rows.map((row) => { try { const c = JSON.parse(row.contract_json) as { title?: unknown; display_title?: unknown }; return String(c.display_title || c.title || row.task_id); } catch { return row.task_id; } });
       return service === "current" ? `Сейчас идёт: ${titles.slice(0, 3).join("; ")}${titles.length > 3 ? ` и ещё ${titles.length - 3}` : ""}.` : `Ран ${run.id}: ${titles.length} задач(и) в работе — ${titles.slice(0, 3).join("; ")}.`;
     }
     if (service === "results") {
-      const rows = db.prepare(`SELECT t.contract_json, a.state, a.reason, a.thread_id FROM lane_pilot_task t JOIN lane_pilot_attempt a ON a.task_id=t.id AND a.run_id=t.run_id WHERE t.run_id=? AND a.state NOT IN (${OPEN_STATES_SQL}) ORDER BY a.updated_at DESC LIMIT 3`).all(run.id, ...OPEN_ATTEMPT_STATES) as Array<{ contract_json: string; state: string; reason: string | null; thread_id: string | null }>;
+      const rows = finishedIntakeTaskRows(db, run.id, OPEN_ATTEMPT_STATES);
       if (!rows.length) return "Завершённых задач пока нет.";
       return `Последние результаты: ${rows.map((row) => { const c = parseJsonOr(row.contract_json, null) as { title?: unknown; display_title?: unknown } | null; const t = String(c?.display_title || c?.title || "?"); const link = row.thread_id ? ` @thread:${row.thread_id}` : ""; return `${t} — ${row.state}${link}`; }).join("; ")}`;
     }
     if (service === "cancel") {
       // Only an unambiguous object: the task's id or title must match exactly one open task; else the PM reads the message.
-      const open = db.prepare(`SELECT a.id AS attempt_id, t.contract_json FROM lane_pilot_task t JOIN lane_pilot_attempt a ON a.task_id=t.id AND a.run_id=t.run_id WHERE t.run_id=? AND a.state IN (${OPEN_STATES_SQL})`).all(run.id, ...OPEN_ATTEMPT_STATES) as Array<{ attempt_id: string; contract_json: string }>;
+      const open = openIntakeAttemptRows(db, run.id, OPEN_ATTEMPT_STATES);
       const idHit = /\b(\w+-T\d+)\b/.exec(text)?.[1];
       const hits = idHit ? open.filter((row) => row.contract_json.includes(idHit))
         : open.filter((row) => { try { const c = JSON.parse(row.contract_json) as { title?: unknown; display_title?: unknown }; const title = String(c.display_title || c.title || ""); return title && text.toLowerCase().includes(title.toLowerCase()); } catch { return false; } });

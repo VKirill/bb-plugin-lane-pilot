@@ -99,3 +99,45 @@ export function summarizeReceipts(db: Database.Database, sinceMs = 0): JevReceip
   return db.prepare(`SELECT judgment, mode, status, decided_by, count(*) AS n, round(avg(latency_ms)) AS avg_latency_ms, round(avg(tokens_in)) AS avg_tokens_in
     FROM lane_pilot_jev_receipt WHERE at >= ? GROUP BY 1,2,3,4 ORDER BY 1,2,3,4`).all(sinceMs) as JevReceiptSummary[];
 }
+
+// ---- outcome-sweep reads: the unlabeled receipts a judgment's sweep labels, and the labeled sample a gate counts ----
+
+/** Unlabeled decided receipts of a judgment made by Jev itself (the route workflow sweep). */
+export function unlabeledJevReceipts(db: Database.Database, judgment: string): Array<{ id: number; run_id: string | null; decision: string; at: number }> {
+  return db.prepare(`SELECT id, run_id, decision, at FROM lane_pilot_jev_receipt
+    WHERE judgment = ? AND outcome IS NULL AND status = 'ok' AND decided_by = 'jev' AND decision IS NOT NULL`)
+    .all(judgment) as Array<{ id: number; run_id: string | null; decision: string; at: number }>;
+}
+
+/** Unlabeled decided receipts of a judgment that carry a subject (the plan-fact sweep). */
+export function unlabeledSubjectReceipts(db: Database.Database, judgment: string): Array<{ id: number; run_id: string | null; subject: string | null }> {
+  return db.prepare(`SELECT r.id, r.run_id, r.subject FROM lane_pilot_jev_receipt r
+    WHERE r.judgment = ? AND r.outcome IS NULL AND r.status = 'ok' AND r.decision IS NOT NULL`)
+    .all(judgment) as Array<{ id: number; run_id: string | null; subject: string | null }>;
+}
+
+/** Unlabeled receipts a Jev-decided judgment pinned to a run and a subject (the writer-model sweep). */
+export function unlabeledJevSubjectReceipts(db: Database.Database, judgment: string): Array<{ id: number; run_id: string; subject: string }> {
+  return db.prepare(`SELECT id, run_id, subject FROM lane_pilot_jev_receipt
+    WHERE judgment = ? AND outcome IS NULL AND status = 'ok' AND decided_by = 'jev' AND decision IS NOT NULL
+      AND run_id IS NOT NULL AND subject IS NOT NULL`)
+    .all(judgment) as Array<{ id: number; run_id: string; subject: string }>;
+}
+
+/** Unlabeled decided receipts of a judgment with their run ids (the caller filters by the run's own state). */
+export function unlabeledRunReceipts(db: Database.Database, judgment: string): Array<{ id: number; run_id: string | null; decision: string }> {
+  return db.prepare(`SELECT id, run_id, decision FROM lane_pilot_jev_receipt
+    WHERE judgment = ? AND outcome IS NULL AND status = 'ok' AND decision IS NOT NULL`)
+    .all(judgment) as Array<{ id: number; run_id: string | null; decision: string }>;
+}
+
+/** The labeled outcomes of a judgment (the live gate's agree/disagree sample). */
+export function labeledOutcomes(db: Database.Database, judgment: string): string[] {
+  return (db.prepare(`SELECT outcome FROM lane_pilot_jev_receipt WHERE judgment=? AND status='ok' AND outcome IS NOT NULL AND decision IS NOT NULL`)
+    .all(judgment) as Array<{ outcome: string }>).map((row) => row.outcome);
+}
+
+/** How many receipts a judgment has written (the report's call count). */
+export function countJudgmentReceipts(db: Database.Database, judgment: string): number {
+  return (db.prepare(`SELECT COUNT(*) AS n FROM lane_pilot_jev_receipt WHERE judgment=?`).get(judgment) as { n: number }).n;
+}
