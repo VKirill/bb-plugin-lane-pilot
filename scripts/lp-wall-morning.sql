@@ -63,6 +63,8 @@ with dark(name) as (
   union all
   select 'lane_pilot_council_message' as name where (select count(*) from lane_pilot_council_message where at >= (select since from lp_morning_30)) = 0
   union all
+  select 'lane_pilot_decision' as name where (select count(*) from lane_pilot_decision where created_at >= (select since from lp_morning_30)) = 0
+  union all
   select 'lane_pilot_deferral' as name where (select count(*) from lane_pilot_deferral where created_at >= (select since from lp_morning_30)) = 0
   union all
   select 'lane_pilot_diff_hidden_audit' as name where (select count(*) from lane_pilot_diff_hidden_audit where recorded_at >= (select since from lp_morning_30)) = 0
@@ -72,6 +74,8 @@ with dark(name) as (
   select 'lane_pilot_failure_triage' as name where (select count(*) from lane_pilot_failure_triage where triaged_at >= (select since from lp_morning_30)) = 0
   union all
   select 'lane_pilot_gate_event' as name where (select count(*) from lane_pilot_gate_event where occurred_at >= (select since from lp_morning_30)) = 0
+  union all
+  select 'lane_pilot_gate_run' as name where (select count(*) from lane_pilot_gate_run where updated_at >= (select since from lp_morning_30)) = 0
   union all
   select 'lane_pilot_handoff' as name where (select count(*) from lane_pilot_handoff where created_at >= (select since from lp_morning_30)) = 0
   union all
@@ -86,6 +90,12 @@ with dark(name) as (
   select 'lane_pilot_janitor' as name where (select count(*) from lane_pilot_janitor where at >= (select since from lp_morning_30)) = 0
   union all
   select 'lane_pilot_jev_receipt' as name where (select count(*) from lane_pilot_jev_receipt where at >= (select since from lp_morning_30)) = 0
+  union all
+  select 'lane_pilot_lead_right' as name where (select count(*) from lane_pilot_lead_right) = 0
+  union all
+  select 'lane_pilot_lead_road' as name where (select count(*) from lane_pilot_lead_road where created_at >= (select since from lp_morning_30)) = 0
+  union all
+  select 'lane_pilot_lead_tick' as name where (select count(*) from lane_pilot_lead_tick where started_at >= (select since from lp_morning_30)) = 0
   union all
   select 'lane_pilot_learning_item' as name where (select count(*) from lane_pilot_learning_item where created_at >= (select since from lp_morning_30)) = 0
   union all
@@ -111,31 +121,15 @@ with dark(name) as (
   union all
   select 'lane_pilot_outage' as name where (select count(*) from lane_pilot_outage where noticed_at >= (select since from lp_morning_30)) = 0
   union all
+  select 'lane_pilot_owner_checkpoints' as name where (select count(*) from lane_pilot_owner_checkpoints where updated_at >= (select since from lp_morning_30)) = 0
+  union all
   select 'lane_pilot_owner_config' as name where (select count(*) from lane_pilot_owner_config where updated_at >= (select since from lp_morning_30)) = 0
-  union all
-  select 'lane_pilot_owner_item' as name where (select count(*) from lane_pilot_owner_item where created_at >= (select since from lp_morning_30)) = 0
-  union all
-  select 'lane_pilot_decision' as name where (select count(*) from lane_pilot_decision where created_at >= (select since from lp_morning_30)) = 0
-  union all
-  select 'lane_pilot_lead_road' as name where (select count(*) from lane_pilot_lead_road where created_at >= (select since from lp_morning_30)) = 0
-  union all
-  select 'lane_pilot_lead_tick' as name where (select count(*) from lane_pilot_lead_tick where started_at >= (select since from lp_morning_30)) = 0
-  union all
-  select 'lane_pilot_lead_right' as name where (select count(*) from lane_pilot_lead_right) = 0
-  union all
-  select 'lane_pilot_owner_push' as name where (select count(*) from lane_pilot_owner_push) = 0
-  union all
-  select 'lane_pilot_owner_records' as name where (select count(*) from lane_pilot_owner_records where updated_at >= (select since from lp_morning_30)) = 0
   union all
   select 'lane_pilot_owner_evidence' as name where (select count(*) from lane_pilot_owner_evidence where at >= (select since from lp_morning_30)) = 0
   union all
   select 'lane_pilot_owner_history' as name where (select count(*) from lane_pilot_owner_history where at >= (select since from lp_morning_30)) = 0
   union all
-  select 'lane_pilot_owner_tombstones' as name where (select count(*) from lane_pilot_owner_tombstones where cutoff >= (select since from lp_morning_30)) = 0
-  union all
-  select 'lane_pilot_owner_checkpoints' as name where (select count(*) from lane_pilot_owner_checkpoints where updated_at >= (select since from lp_morning_30)) = 0
-  union all
-  select 'lane_pilot_owner_sources' as name where (select count(*) from lane_pilot_owner_sources where changed_at >= (select since from lp_morning_30)) = 0
+  select 'lane_pilot_owner_item' as name where (select count(*) from lane_pilot_owner_item where created_at >= (select since from lp_morning_30)) = 0
   union all
   select 'lane_pilot_owner_loads' as name where (select count(*) from lane_pilot_owner_loads where at >= (select since from lp_morning_30)) = 0
   union all
@@ -143,11 +137,17 @@ with dark(name) as (
   union all
   select 'lane_pilot_owner_notes_lines' as name where (select count(*) from lane_pilot_owner_notes_lines) = 0
   union all
+  select 'lane_pilot_owner_push' as name where (select count(*) from lane_pilot_owner_push) = 0
+  union all
+  select 'lane_pilot_owner_records' as name where (select count(*) from lane_pilot_owner_records where updated_at >= (select since from lp_morning_30)) = 0
+  union all
+  select 'lane_pilot_owner_sources' as name where (select count(*) from lane_pilot_owner_sources where changed_at >= (select since from lp_morning_30)) = 0
+  union all
+  select 'lane_pilot_owner_tombstones' as name where (select count(*) from lane_pilot_owner_tombstones where cutoff >= (select since from lp_morning_30)) = 0
+  union all
   select 'lane_pilot_phase' as name where (select count(*) from lane_pilot_phase where created_at >= (select since from lp_morning_30)) = 0
   union all
   select 'lane_pilot_phase_part' as name where (select count(*) from lane_pilot_phase_part where at >= (select since from lp_morning_30)) = 0
-  union all
-  select 'lane_pilot_profile_check' as name where (select count(*) from lane_pilot_profile_check where at >= (select since from lp_morning_30)) = 0
   union all
   select 'lane_pilot_pm_notice' as name where (select count(*) from lane_pilot_pm_notice where sent_at >= (select since from lp_morning_30)) = 0
   union all
@@ -157,7 +157,7 @@ with dark(name) as (
   union all
   select 'lane_pilot_pm_skill_use' as name where (select count(*) from lane_pilot_pm_skill_use where used_at >= (select since from lp_morning_30)) = 0
   union all
-  select 'lane_pilot_gate_run' as name where (select count(*) from lane_pilot_gate_run where updated_at >= (select since from lp_morning_30)) = 0
+  select 'lane_pilot_profile_check' as name where (select count(*) from lane_pilot_profile_check where at >= (select since from lp_morning_30)) = 0
   union all
   select 'lane_pilot_project_settings' as name where (select count(*) from lane_pilot_project_settings where updated_at >= (select since from lp_morning_30)) = 0
   union all

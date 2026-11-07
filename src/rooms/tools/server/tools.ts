@@ -114,6 +114,17 @@ export function compactWaitResult(result: unknown): unknown {
   });
 }
 
+/** The per-run instructions a PM session gets from `bb.agents.configure`, as text — exported so tests check the
+ * words the PM actually sees instead of scanning this file. */
+export function pmRunInstructions(args: { runId: string; writerLabel: string | null; writerWorkspace: string | null; waiting: boolean }): string {
+  const { runId, writerLabel, writerWorkspace, waiting } = args;
+  return waiting
+    ? `Lane Pilot PM ${runId} is waiting for the native environment to attach. Lane Pilot tools are already bound to this chat; do not dispatch writers until the workspace is frozen.`
+    : writerLabel && writerWorkspace
+    ? `Lane Pilot PM ${runId}. Writer=${writerLabel}; writer workspace=${writerWorkspace}. Every task-v2 project_cwd must equal this writer workspace; a mismatch is rejected before dispatch. The workspace is fixed for this run even if project settings change later. The writer tool is available only in this PM thread; never put wrapper or system instructions into plan. If pm_read is enabled, task.read_first is read by the bounded PM-read stage before critique and its summary goes to critique and writer. Report each stage's state and reason to the owner, not the raw receipts. When you report the run's progress, add the line ::lane-run{id="${runId}"} on its own; the owner sees it as a live card of the run's tasks.`
+    : `Lane Pilot PM ${runId}, but project configuration is missing.`;
+}
+
 export function registerTools(ctx: ServerCore, services: Services, familyContributors: readonly (() => void)[] = []) {
   const { bb, db } = ctx;
 
@@ -407,11 +418,7 @@ export function registerTools(ctx: ServerCore, services: Services, familyContrib
     return {
       tools: [...NATIVE_LP_BRIDGE_PM_TOOLS],
       skills:[],
-      instructions: waiting
-        ? `Lane Pilot PM ${resolvedRunId} is waiting for the native environment to attach. Lane Pilot tools are already bound to this chat; do not dispatch writers until the workspace is frozen.`
-        : writerLabel && writerWorkspace
-        ? `Lane Pilot PM ${resolvedRunId}. Writer=${writerLabel}; writer workspace=${writerWorkspace}. Every task-v2 project_cwd must equal this writer workspace; a mismatch is rejected before dispatch. The workspace is fixed for this run even if project settings change later. The writer tool is available only in this PM thread; never put wrapper or system instructions into plan. If pm_read is enabled, task.read_first is read by the bounded PM-read stage before critique and its summary goes to critique and writer. Report each stage's state and reason to the owner, not the raw receipts. When you report the run's progress, add the line ::lane-run{id="${resolvedRunId}"} on its own; the owner sees it as a live card of the run's tasks.`
-        : `Lane Pilot PM ${resolvedRunId}, but project configuration is missing.`,
+      instructions: pmRunInstructions({ runId: resolvedRunId, writerLabel, writerWorkspace, waiting }),
     };
   });
 }

@@ -1,7 +1,7 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import { SMA_NODES, SMA_REGIONS } from "../src/rooms/sma-map";
-import { SMA_LIVE, TABLE_CLOCKS, darkClockExpr, darkTableNames, darkTables, readSmaLive } from "../src/rooms/sma-map/live";
+import { SMA_LIVE, darkClockExpr, darkTableNames, darkTables, readSmaLive, tableClocks } from "../src/rooms/sma-map/live";
 import { openDatabase } from "../src/rooms/plugin-db";
 
 const groups = () => {
@@ -29,8 +29,8 @@ describe("live evidence of the SMA map", () => {
 });
 
 describe("dark tables (W32 rank 9)", () => {
-  // Every table a migration creates must be a watched instrument: a key of TABLE_CLOCKS naming the column its
-  // recency is read on ("" when it has none), and a row in the SQL twin of the morning report.
+  // Every table a migration creates must be a watched instrument: tableClocks reads the live schema, so coverage is
+  // derived, not listed — and the clock it names must be a real column ("" counts the table in full).
   it("names every lane_pilot_* table the migrations create", async () => {
     const fs = await import("node:fs"), path = await import("node:path");
     const root = path.join(import.meta.dirname, "..");
@@ -38,10 +38,11 @@ describe("dark tables (W32 rank 9)", () => {
     const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
     const dbc = openDatabase(bb) as unknown as { prepare(sql: string): { all(...args: unknown[]): unknown[] } };
     const seen = new Set<string>((dbc.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'lane_pilot_%'").all() as Array<{ name: string }>).map((row) => row.name));
-    const missing = [...seen].filter((name) => !/_next$|_nv$|_v$|_fts/.test(name) && !(name in TABLE_CLOCKS));
+    const clocks = tableClocks(dbc as never);
+    const missing = [...seen].filter((name) => !/_next$|_nv$|_v$|_fts/.test(name) && !(name in clocks));
     expect(missing).toEqual([]);
     // The clock a map row names must be a real column ("" counts the table in full).
-    const wrongClock = Object.entries(TABLE_CLOCKS).filter(([table, clock]) => {
+    const wrongClock = Object.entries(clocks).filter(([table, clock]) => {
       if (!clock || !seen.has(table)) return false;
       const cols = (dbc.prepare("SELECT name FROM pragma_table_info(?)").all(table) as Array<{ name: string }>).map((row) => row.name);
       return !cols.includes(clock);

@@ -1,12 +1,15 @@
 import { expect, it } from "vitest";
 import { LANE_PILOT_PM_SESSION } from "../src/rooms/native-agent/native-agent-overlay";
 import { NATIVE_LP_BRIDGE_PM_TOOLS } from "../src/rooms/native-agent/native-session-hooks";
-import { fileContaining } from "./support/source-text";
+import { pmRunInstructions } from "../src/rooms/tools/server/tools";
 
 // The PM spent turns hunting tools its text named but it did not have (instructions audit, 2026-10-03).
 it("names only tools the PM actually has, in its prompt and its per-run instructions", () => {
-  const configure = fileContaining("bb.agents.configure").text;
-  const perRun = configure.slice(configure.indexOf("bb.agents.configure"), configure.indexOf("bb.agents.configure") + 4000);
+  const perRun = [
+    pmRunInstructions({ runId: "lprun_x", writerLabel: "codex/gpt-5", writerWorkspace: "/w", waiting: false }),
+    pmRunInstructions({ runId: "lprun_x", writerLabel: null, writerWorkspace: null, waiting: true }),
+    pmRunInstructions({ runId: "lprun_x", writerLabel: null, writerWorkspace: null, waiting: false }),
+  ].join("\n");
   const mentioned = new Set([...`${LANE_PILOT_PM_SESSION}\n${perRun}`.matchAll(/\blane_pilot_[a-z_]+/g)].map((match) => match[0]));
   const missing = [...mentioned].filter((name) => !(NATIVE_LP_BRIDGE_PM_TOOLS as readonly string[]).includes(name));
   expect(missing).toEqual([]);

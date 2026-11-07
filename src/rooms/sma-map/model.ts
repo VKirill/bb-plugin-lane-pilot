@@ -1,7 +1,8 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { relocateAnchor } from "./exports";
-import { SMA_CONTRACT_GAPS, SMA_CONTRACT_TESTS } from "./contracts";
+import { declaredNames, relocateAnchor } from "./exports";
+import { SMA_CONTRACT_TESTS } from "./contracts";
+import { SMA_CONTRACT_GAPS } from "./gaps";
 import { SMA_ENTRIES, type SmaStatus } from "./entries";
 import { SMA_CARDS, SMA_NODES, SMA_REGIONS, type SmaKind } from "./graph";
 
@@ -102,9 +103,29 @@ export function unjudgedProof(proof: string, roots: ProofRoots): boolean {
   return !!prefix && !(prefix[1] === "lane-stack" ? roots.laneStack : prefix[1] === "telegram" ? roots.telegram : roots.core);
 }
 
-/** A proof that does not resolve: the file is missing, or the anchor is not in it. Strict — a moved anchor is a
- * broken proof (see proofDrift for where it went and `sma-map --fix-proofs` to repair the path). Proofs into an
- * absent sibling repository are not judged. */
+/** Extensions whose file is a module: a `#anchor` must name a declared unit in the file — a function, const, class,
+ * method, property key or case label at any depth — never body text. Exported or not: the anchor names what implements
+ * the claim, and renaming that unit must break the proof. */
+const MODULE_FILE = /\.(?:[cm]?[jt]sx?)$/;
+/** `export function foo(`, `export const FOO`, `function foo(`, `const FOO` → the declared name. */
+const DECLARED = /(?:export\s+)?(?:declare\s+)?(?:default\s+)?(?:abstract\s+)?(?:async\s+)?function\*?\s+([A-Za-z_$][\w$]*)|(?:export\s+)?(?:declare\s+)?class\s+([A-Za-z_$][\w$]*)|(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)/;
+const IDENTIFIERISH = /^[A-Za-z_$][\w$]*$/;
+const declCache = new Map<string, Set<string>>();
+
+/** The declared unit an anchor names, or null when the file declares no such name. */
+function declaredAnchor(file: string, text: string, symbol: string): string | null {
+  const name = DECLARED.exec(symbol)?.slice(1).find(Boolean) ?? (IDENTIFIERISH.test(symbol) ? symbol : null);
+  if (!name) return null;
+  let names = declCache.get(file);
+  if (!names) { names = declaredNames(text, file.endsWith("x")); declCache.set(file, names); }
+  return names.has(name) ? name : null;
+}
+
+/** A proof that does not resolve: the file is missing, or the anchor is not what it claims. Strict — a moved anchor
+ * is a broken proof (see proofDrift for where it went and `sma-map --fix-proofs` to repair the path). In a module the
+ * anchor must name a declared unit — checked against the file's declarations at any depth, so body text cannot pose
+ * as proof but a private handler can. Data files (json, sh, py, md, …) have no declarations; there the anchor is a
+ * literal the file must carry. Proofs into an absent sibling repository are not judged. */
 export function brokenProof(proof: string, roots: ProofRoots): string | null {
   const [where, symbol] = proof.split("#", 2) as [string, string | undefined];
   const prefix = where.match(/^(lane-stack|core|telegram):(.*)$/);
@@ -113,7 +134,13 @@ export function brokenProof(proof: string, roots: ProofRoots): string | null {
   if (!root) return null;
   const file = resolve(join(root, path));
   if (!existsSync(file)) return `${proof}: no such file`;
-  if (symbol && !readFileSync(file, "utf8").includes(symbol)) return `${proof}: ${symbol} is not in the file`;
+  if (!symbol) return null;
+  const text = readFileSync(file, "utf8");
+  if (MODULE_FILE.test(path)) {
+    if (!declaredAnchor(file, text, symbol)) return `${proof}: ${symbol} is not declared in the module`;
+    return null;
+  }
+  if (!text.includes(symbol)) return `${proof}: ${symbol} is not in the file`;
   return null;
 }
 

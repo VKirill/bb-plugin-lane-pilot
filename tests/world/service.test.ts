@@ -8,14 +8,14 @@ import { createAttempt, createRun, createTask, openDatabase, saveStageReceipt, t
 import { createWorldService, worldRpc, type WorldServiceOptions } from "../../src/rooms/world/server";
 import { loadWorld, saveWorld } from "../../src/rooms/world/server/store";
 
-/** The database stamps attempts with the real clock, so the fake one starts there. */
+/** The database stamps attempts with the real clock, so each setup's fake one starts at the real now of that test. */
 const T0 = Date.now();
 
 function setup(options: WorldServiceOptions = {}) {
   const host = createFakePluginHost({ pluginId: "lane-pilot" });
   const db = openDatabase(host.bb);
   const logs: string[] = [];
-  let t = T0;
+  let t = Date.now();
   const service = createWorldService({ bb: host.bb, db, log: (m) => logs.push(m), isDisposed: () => false }, { now: () => t, citizens: 24, flushMs: 0, pollMs: 1000, saveMs: 10_000, ...options });
   const advance = (ms: number) => { t += ms; service.tickAt(t); };
   return { host, db, service, logs, advance, clock: () => t, setClock: (v: number) => { t = v; } };

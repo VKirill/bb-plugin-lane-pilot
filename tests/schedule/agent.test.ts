@@ -278,9 +278,6 @@ describe("PhaseIntake.handOver", () => {
 
 describe("create by text", () => {
   it("teaches the project manager (tool instructions) and the owner (examples) that «the SEO specialist checks positions every Monday at 9» is an agent task", async () => {
-    const { fileContaining } = await import("../support/source-text");
-    const tool = fileContaining("{kind:'agent', agentId, task, authorized, accounts, historyRuns?").text;
-    expect(tool).toContain("{kind:'agent', agentId, task, authorized, accounts, historyRuns?");
     const { en, ru } = await import("@lane-pilot/i18n");
     expect(en.schTextExamples).toContain("SEO specialist checks positions every Monday at 9:00");
     expect(ru.schTextExamples).toContain("SEO-специалист каждый понедельник в 9:00 проверяет позиции и решает, что улучшить");

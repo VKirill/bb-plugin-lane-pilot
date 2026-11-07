@@ -4,9 +4,9 @@
 
 export type LiveSource = { sql: string } | { outside: string };
 
-// Table names come from the one list below (TABLE_CLOCKS, kept honest against the live schema by tests/sma-live.test.ts):
-// a table no migration created is a compile error here, not a silent `no live source`.
-const t = (table: keyof typeof TABLE_CLOCKS, at: string, where = "1=1"): LiveSource => ({ sql: `SELECT COUNT(*) AS n, MAX(${at}) AS last FROM ${table} WHERE ${at} >= :since AND (${where})` });
+// Table names below name real `lane_pilot_*` tables; tests/sma-live.test.ts runs every query on the live schema, so a
+// table no migration created is a test failure here, not a silent `no live source`.
+const t = (table: string, at: string, where = "1=1"): LiveSource => ({ sql: `SELECT COUNT(*) AS n, MAX(${at}) AS last FROM ${table} WHERE ${at} >= :since AND (${where})` });
 const wf = (...ids: string[]): LiveSource => t("lane_pilot_wf_run", "created_at", `workflow_id IN (${ids.map((id) => `'${id}'`).join(",")})`);
 const part = (where: string): LiveSource => t("lane_pilot_phase_part", "at", where);
 const stage = (...ids: string[]): LiveSource => t("lane_pilot_stage_event", "occurred_at", `stage_id IN (${ids.map((id) => `'${id}'`).join(",")})`);
@@ -183,68 +183,68 @@ export function renderSmaLive(rows: readonly LiveRow[], days: number, now = Date
 
 // ---- dark tables (W32 rank 9) ----
 
-/** A table nobody counts is a silent instrument: 7 tables wrote nothing for 30 days without a single report naming them
- * (stage_return, checker_run, checker_result, harness_experience, memory_miss, outage, bench_noise on 2026-10-31). Every
- * `lane_pilot_*` table a migration creates is named here with the column its recency is read on (`""`: no clock, counted in
- * full — a dimension/cursor store). tests/sma-live.test.ts fails on a new migration table missing from this map, and on one
- * missing from scripts/lp-wall-morning.sql, so no table goes silently dark again. */
-export const TABLE_CLOCKS: Record<string, string> = {
-  lane_pilot_accepted_fact: "created_at", lane_pilot_activation: "claimed_at", lane_pilot_attempt: "created_at",
-  lane_pilot_attempt_change: "updated_at", lane_pilot_attempt_reasoning: "",
-  lane_pilot_attempt_transition: "at", lane_pilot_backlog_issue: "issued_at", lane_pilot_baseline: "at",
-  lane_pilot_bench_mark: "", lane_pilot_bench_noise: "created_at", lane_pilot_bench_project: "updated_at",
-  lane_pilot_bench_result: "recorded_at", lane_pilot_bench_run: "started_at", lane_pilot_bench_set: "created_at",
-  lane_pilot_bench_task: "", lane_pilot_bench_verdict: "created_at", lane_pilot_capability: "at",
-  lane_pilot_check_duration: "at", lane_pilot_checker_result: "recorded_at", lane_pilot_checker_run: "started_at",
-  lane_pilot_council: "created_at", lane_pilot_council_message: "at", lane_pilot_deferral: "created_at",
-  lane_pilot_diff_hidden_audit: "recorded_at", lane_pilot_errand_episode: "updated_at", lane_pilot_failure_triage: "triaged_at", lane_pilot_gate_event: "occurred_at",
-  lane_pilot_handoff: "created_at", lane_pilot_handoff_event: "occurred_at", lane_pilot_harness: "created_at",
-  lane_pilot_harness_experience: "created_at", lane_pilot_hypothesis: "created_at", lane_pilot_janitor: "at", lane_pilot_jev_receipt: "at",
-  lane_pilot_learning_item: "created_at", lane_pilot_learning_obs: "at", lane_pilot_learning_signal: "at",
-  lane_pilot_memory: "created_at", lane_pilot_memory_conflict: "", lane_pilot_memory_miss: "at",
-  lane_pilot_memory_probe: "at", lane_pilot_memory_promotion: "at", lane_pilot_memory_receipt: "created_at", lane_pilot_memory_vec: "created_at",
-  lane_pilot_model_rebench: "recorded_at", lane_pilot_outage: "noticed_at", lane_pilot_owner_config: "updated_at", lane_pilot_owner_item: "created_at", lane_pilot_decision: "created_at",
-  lane_pilot_lead_road: "created_at", lane_pilot_lead_tick: "started_at", lane_pilot_lead_right: "",
-  lane_pilot_owner_push: "", lane_pilot_owner_records: "updated_at", lane_pilot_owner_evidence: "at",
-  lane_pilot_owner_history: "at", lane_pilot_owner_tombstones: "cutoff", lane_pilot_owner_checkpoints: "updated_at",
-  lane_pilot_owner_sources: "changed_at", lane_pilot_owner_loads: "at", lane_pilot_owner_notes_files: "written_at",
-  lane_pilot_owner_notes_lines: "",
-  lane_pilot_phase: "created_at", lane_pilot_phase_part: "at", lane_pilot_profile_check: "at",
-  lane_pilot_pm_notice: "sent_at", lane_pilot_pm_replay: "at", lane_pilot_pm_scenario: "created_at", lane_pilot_pm_skill_use: "used_at", lane_pilot_gate_run: "updated_at", lane_pilot_project_settings: "updated_at", lane_pilot_reconcile_cursor: "updated_at",
-  lane_pilot_regress_pass: "at", lane_pilot_regression: "found_at", lane_pilot_rule_event: "at",
-  lane_pilot_rule_promotion: "created_at", lane_pilot_rule_proposal: "updated_at",
-  lane_pilot_run: "created_at", lane_pilot_run_goal: "at", lane_pilot_schedule: "created_at",
-  lane_pilot_schedule_run: "started_at", lane_pilot_secret_issuance: "at",
-  lane_pilot_setting_generation: "", lane_pilot_skill_metric: "recorded_at", lane_pilot_stage_event: "occurred_at", lane_pilot_stage_receipt: "updated_at",
-  lane_pilot_stage_return: "at", lane_pilot_task: "created_at", lane_pilot_task_git_base: "",
-  lane_pilot_task_plan: "", lane_pilot_task_receipt: "at",
-  lane_pilot_token_cursor: "updated_at", lane_pilot_token_daily: "day", lane_pilot_wall: "created_at",
-  lane_pilot_wall_class: "updated_at", lane_pilot_wall_entry: "recorded_at", lane_pilot_wall_night: "started_at",
-  lane_pilot_wall_repair: "created_at", lane_pilot_wall_rerun: "created_at", lane_pilot_wf_arrival: "at",
-  lane_pilot_wf_draft: "created_at", lane_pilot_wf_draft_version: "at", lane_pilot_wf_effect: "created_at",
-  lane_pilot_wf_event: "at", lane_pilot_wf_run: "created_at",
-  lane_pilot_wf_step: "updated_at", lane_pilot_wf_test: "at", lane_pilot_wf_trigger: "created_at", lane_pilot_worktree: "created_at", lane_pilot_world: "",
+/** Tables skipped on purpose: `*_next`/`_nv`/`_v` are rename-squash intermediates, `lane_pilot_memory_fts*` are FTS5
+ * plumbing behind lane_pilot_memory — neither is an instrument. */
+export const TABLE_SKIP_RE = /lane_pilot_(memory_fts|.*_next|.*_nv|.*_v)$/;
+
+/** Clocks the generic convention cannot pick: the domain's activity column is not the created/updated pair, so the
+ * choice stays manual — each entry says why. `day` is `lane_pilot_token_daily`'s TEXT date, read through strftime. */
+const CLOCK_OVERRIDES: Record<string, string> = {
+  lane_pilot_errand_episode: "updated_at", // episodes are enriched after insert; created_at would call a live table dark
+  lane_pilot_owner_records: "updated_at", // owner records are edited in place; created_at would call a live table dark
+  lane_pilot_regression: "found_at", // the finding's own time, not the last bookkeeping write
+  lane_pilot_token_daily: "day", // TEXT 'YYYY-MM-DD', not a ms epoch — darkClockExpr reads it through strftime
 };
+
+/** Event-time columns, tried when a table has neither created_at nor updated_at (logs and receipts). */
+const EVENT_CLOCKS = ["at", "occurred_at", "recorded_at", "noticed_at", "sent_at", "claimed_at", "issued_at", "triaged_at", "found_at", "used_at", "changed_at", "written_at", "cutoff", "started_at", "ended_at", "last_used_at"] as const;
+
+/** The column a table's recency is read on, derived from its real columns (`""`: no clock — counted in full, a
+ * dimension/cursor store). Only CLOCK_OVERRIDES names a clock by hand. */
+export const clockForColumns = (table: string, cols: ReadonlySet<string>): string =>
+  CLOCK_OVERRIDES[table]
+  ?? (cols.has("created_at") ? "created_at"
+    : cols.has("updated_at") ? "updated_at"
+    : EVENT_CLOCKS.find((clock) => cols.has(clock)) ?? "");
+
+const clockExpr = (clock: string): string | null =>
+  clock === "day" ? "CAST(strftime('%s', day) AS INTEGER) * 1000" : clock || null;
 
 export type DarkTableRow = { table: string; clock: string | null; n: number; last: number | null };
 
 type DarkDb = { prepare(sql: string): { all(...args: unknown[]): unknown[]; get(...args: unknown[]): unknown } };
 
-/** The SQL a table's recency is counted on: a column name, or the day-as-ms expression `lane_pilot_token_daily` uses. */
-export const darkClockExpr = (table: string): string | null => {
-  const clock = TABLE_CLOCKS[table];
-  return clock === undefined ? null : clock === "day" ? "CAST(strftime('%s', day) AS INTEGER) * 1000" : clock || null;
-};
+/** The lane_pilot_* tables this database actually has, with their columns — read off the live schema, so a new
+ * migration table is watched the day it lands and a dropped one is not. */
+function schemaOf(db: DarkDb): Map<string, Set<string>> {
+  const tables = new Map<string, Set<string>>();
+  const names = (db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'lane_pilot_%' AND name NOT LIKE 'lane_pilot_memory_fts%'").all() as Array<{ name: string }>).map((row) => row.name).sort();
+  for (const name of names) {
+    if (TABLE_SKIP_RE.test(name)) continue;
+    tables.set(name, new Set((db.prepare("SELECT name FROM pragma_table_info(?)").all(name) as Array<{ name: string }>).map((row) => row.name)));
+  }
+  return tables;
+}
 
-/** Tables skipped on purpose: `*_next`/`_nv`/`_v` are rename-squash intermediates, `lane_pilot_memory_fts*` are FTS5
- * plumbing behind lane_pilot_memory — neither is an instrument. */
-export const TABLE_SKIP_RE = /lane_pilot_(memory_fts|.*_next|.*_nv|.*_v)$/;
+/** Every `lane_pilot_*` table in this database, with the column its recency is read on. tests/sma-live.test.ts fails
+ * on a table missing from scripts/lp-wall-morning.sql, so no table goes silently dark again. */
+export function tableClocks(db: DarkDb): Record<string, string> {
+  const clocks: Record<string, string> = {};
+  for (const [table, cols] of schemaOf(db)) clocks[table] = clockForColumns(table, cols);
+  return clocks;
+}
+
+/** The SQL a table's recency is counted on: a column name, or the day-as-ms expression `lane_pilot_token_daily` uses.
+ * Pass the table's columns to derive the clock; without them only CLOCK_OVERRIDES can answer. */
+export const darkClockExpr = (table: string, cols?: ReadonlySet<string>): string | null => {
+  const clock = cols ? clockForColumns(table, cols) : CLOCK_OVERRIDES[table];
+  return clock === undefined ? null : clockExpr(clock);
+};
 
 /** Every named table with the rows it took in the window — all rows when it has no clock. Absent tables are skipped. */
 export function darkTables(db: DarkDb, since: number): DarkTableRow[] {
-  const present = new Set((db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'lane_pilot_%' AND name NOT LIKE 'lane_pilot_memory_fts%'").all() as Array<{ name: string }>).map((row) => row.name));
-  return Object.keys(TABLE_CLOCKS).filter((table) => present.has(table)).map((table) => {
-    const clock = darkClockExpr(table);
+  return [...schemaOf(db)].map(([table, cols]) => {
+    const clock = darkClockExpr(table, cols);
     const row = (clock
       ? db.prepare(`SELECT COUNT(*) AS n, MAX(${clock}) AS last FROM ${table} WHERE ${clock} >= ?`).get(since)
       : db.prepare(`SELECT COUNT(*) AS n, NULL AS last FROM ${table}`).get()) as { n: number; last: number | null };

@@ -1,5 +1,6 @@
-// Import graph of the plugin, built with the TypeScript API. Used by the codemod (scripts/refactor/move.ts)
-// and by the boundary test (tests/architecture/boundaries.test.ts). No other dependency than typescript.
+// Granularity: file-level. Import graph of the plugin, built with the TypeScript API — per-file import
+// edges with resolved targets. Used by the codemod (scripts/refactor/move.ts) and the boundary test
+// (tests/architecture/boundaries.test.ts). No other dependency than typescript.
 import ts from "typescript";
 import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";

@@ -35,12 +35,12 @@ describe("the SMA map registry", () => {
     expect(broken).toEqual([]);
   });
 
-  it("is mapped: every node has a proof link, or SMA itself leaves it unwired, or a test names the gap", () => {
-    const notDone = smaRows().filter((row) => !isDone(row) && !row.gaps.length).map((row) => `${row.id} ${row.status} ${row.label}`);
-    expect(notDone).toEqual([]);
+  it("is mapped: every node has an entry — a proof link, SMA leaving it unwired, or an honest missing", () => {
+    const unmapped = smaRows().filter((row) => !row.ours).map((row) => `${row.id} ${row.status} ${row.label}`);
+    expect(unmapped).toEqual([]);
   });
 
-  it("counts a card whose behaviour test names a gap (a todo test) as partial, not have", () => {
+  it("counts a card whose gap register names a missing behaviour as partial, not have", () => {
     const gapped = smaRows().filter((row) => row.gaps.length);
     expect(gapped.length).toBeGreaterThan(0);
     for (const row of gapped) expect(row.status).not.toBe("have");

@@ -53,9 +53,9 @@ export function fixProofsInFile(entriesFile: string, proofs: readonly string[], 
     const [where, anchor] = proof.split("#", 2) as [string, string];
     if (!brokenProof(proof, roots)) continue;
     const at = relocateAnchor(root, anchor);
-    if (!at || at === where) { unfixable.push(proof); continue; }
-    text = text.split(JSON.stringify(proof)).join(JSON.stringify(`${at}#${anchor}`));
-    fixed.push({ from: proof, to: `${at}#${anchor}` });
+    if (!at || at === where || at === proof) { unfixable.push(proof); continue; }
+    text = text.split(JSON.stringify(proof)).join(JSON.stringify(at));
+    fixed.push({ from: proof, to: at });
   }
   if (fixed.length) writeFileSync(entriesFile, text);
   return { fixed, unfixable };
