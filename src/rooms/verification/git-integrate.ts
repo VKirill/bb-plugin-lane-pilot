@@ -282,6 +282,37 @@ export async function withBaseLock<T>(basePath:string,work:()=>T|Promise<T>,labe
 }
 
 /**
+ * Puts back files a pass changed outside what it may write: a tracked file returns to HEAD, a file it created is removed.
+ * Only paths that were clean before the pass reach here. A created file may be staged with other content (`git mv`), so its
+ * index entry is dropped by force. Created files go first: on a case-insensitive disk `git mv DECISIONS.md decisions.md` leaves
+ * one file, and removing decisions.md after DECISIONS.md came back from HEAD would delete it again.
+ */
+export async function revertPaths(input:{ projectCwd:string; paths:string[] }):Promise<{ reverted:string[]; failed:string[] }> {
+  const reverted:string[] = [], failed:string[] = [];
+  await withBaseLock(input.projectCwd, async () => {
+    const created:string[] = [], tracked:string[] = [];
+    for (const path of input.paths) {
+      if (path.startsWith("/") || path.split("/").includes("..")) { failed.push(path); continue; }
+      ((await git(input.projectCwd, ["cat-file", "-e", `HEAD:${path}`])).ok ? tracked : created).push(path);
+    }
+    for (const path of created) {
+      try {
+        const removed = await git(input.projectCwd, ["rm", "-q", "-f", "--cached", "--ignore-unmatch", "--", path]);
+        if (!removed.ok) throw new Error(removed.reason);
+        await rm(join(input.projectCwd, path), { recursive:true, force:true });
+        reverted.push(path);
+      } catch { failed.push(path); }
+    }
+    for (const path of tracked) {
+      const checked = await git(input.projectCwd, ["checkout", "HEAD", "--", path]);
+      if (checked.ok) reverted.push(path); else failed.push(path);
+    }
+  });
+  const order = (paths:string[]) => input.paths.filter((path) => paths.includes(path));
+  return { reverted:order(reverted), failed:order(failed) };
+}
+
+/**
  * Replays the attempt's commits on the base checkout's current HEAD, in the attempt's own worktree. Returns the new tip,
  * or null when there was nothing to replay or a commit conflicts: the rebase is then undone, the branch is as it was.
  */

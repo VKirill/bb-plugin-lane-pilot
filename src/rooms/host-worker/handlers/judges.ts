@@ -1,6 +1,6 @@
 import type { ExperimentalHostRpcHandlers } from "@get-bb/plugin-sdk";
 import { hostContract } from "../../contracts";
-import { jevCallFor } from "../../verification";
+import { jevCallFor } from "../../docs";
 import { sha256Hex } from "@lane-pilot/kit";
 import { JEV_PROVIDERS } from "@lane-pilot/jev/provider";
 

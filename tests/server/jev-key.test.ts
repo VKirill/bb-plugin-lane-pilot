@@ -76,7 +76,7 @@ describe("Jev key from Env Catalog", () => {
 
 describe("Jev key on the machine", () => {
   it("prefers the key the server sent over the machine's env, and knows whose key it is", async () => {
-    const { jevCallFor } = await import("../../src/rooms/verification/docs-jev");
+    const { jevCallFor } = await import("../../src/rooms/docs/docs-jev");
     const before = process.env.TYPESAFE_API_KEY;
     process.env.TYPESAFE_API_KEY = "machine-key";
     try {

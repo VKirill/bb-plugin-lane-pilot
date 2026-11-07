@@ -3,3 +3,5 @@
 export { parseOpenCodeToolTelemetry } from "./opencode-telemetry";
 export { reconcile, reconcileCritic, reconcileCursor } from "./reconcile";
 export type { ReconcileCursor, ReconcileResult } from "./reconcile";
+export { runStabilityDrill } from "./stability-drill";
+export type { DrillCheck } from "./stability-drill";

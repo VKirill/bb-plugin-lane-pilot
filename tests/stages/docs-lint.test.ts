@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it } from "vitest";
 import { BACKLINKS_MARK, blockingDocsFindings, parseFrontmatter, buildBacklinks, expandCitationLists, pageCitations, uncataloguedPages, unlinkedPages, buildDocsIndex, docsCompletenessGaps, lintDocsPages, pagesToRefresh, withCitedSources, withVerifiedConfidence } from "../../src/rooms/docs/docs-lint";
-import { commitDocs } from "../../src/rooms/verification/git-docs";
+import { commitDocs } from "../../src/rooms/docs/git-docs";
 
 const page = (fields: Record<string, string>, body: string) => [
   "---",

@@ -827,6 +827,21 @@ function attemptChanged(attemptId:string):void {
   for (const listener of attemptListeners) { try { listener(attemptId); } catch { /* a screen update is never worth a failed write */ } }
 }
 
+/** The structured facts of a verification failure; the human reason text keeps its wording. */
+export type AttemptFailureFields = { failureCode?: string; checkName?: string; timeoutSec?: number };
+
+/**
+ * The failure a reason text names, for the columns readers use instead of parsing it. The writer of an attempt row is this
+ * one function, so the text is read once here; `listCheckTimeouts` and the other readers get the fields.
+ */
+function failureFieldsFromReason(reason: string | null | undefined): AttemptFailureFields {
+  if (!reason) return {};
+  const timedOut = /verification failed \((.+?)\): verification timed out after (\d+)s/.exec(reason);
+  if (timedOut) return { failureCode: "verification_timeout", checkName: timedOut[1]!, timeoutSec: Number(timedOut[2]) };
+  const failed = /verification failed \((.+?)\):/.exec(reason);
+  return failed ? { failureCode: "verification_failed", checkName: failed[1]! } : {};
+}
+
 /**
  * Moves an attempt to a new state and journals it. An accepted or canceled attempt keeps its state: before,
  * a cancel during verification could be overwritten with «accepted» after the merge (fleet invariants audit,
@@ -840,7 +855,7 @@ export function transitionAttempt(
   db: LanePilotDatabase,
   attemptId: string,
   state: string,
-  fields: { threadId?: string; reason?: string } = {},
+  fields: { threadId?: string; reason?: string } & AttemptFailureFields = {},
 ): boolean {
   const now = Date.now();
   const before = db.prepare("SELECT state FROM lane_pilot_attempt WHERE id=?").get(attemptId) as { state: string } | undefined;
@@ -853,10 +868,13 @@ export function transitionAttempt(
     illegalTransitionLog(`Lane Pilot refused ${error.message}${fields.reason ? `: ${fields.reason.slice(0, 200)}` : ""}`);
     throw error;
   }
-  const changed = db.prepare(`UPDATE lane_pilot_attempt SET state=?, thread_id=COALESCE(?,thread_id), reason=?, updated_at=?,
+  const derived = failureFieldsFromReason(fields.reason);
+  const changed = db.prepare(`UPDATE lane_pilot_attempt SET state=?, thread_id=COALESCE(?,thread_id), reason=?, failure_code=?, check_name=?, timeout_sec=?, updated_at=?,
     wake_at=CASE WHEN ?<>'queued' THEN NULL ELSE wake_at END
     WHERE id=? AND (state NOT IN (${FINAL_ATTEMPT_STATES.map(() => "?").join(",")}) OR state=?)`)
-    .run(state, fields.threadId ?? null, fields.reason ?? null, now, state, attemptId, ...FINAL_ATTEMPT_STATES, state).changes === 1;
+    .run(state, fields.threadId ?? null, fields.reason ?? null, fields.failureCode ?? derived.failureCode ?? null,
+      fields.checkName ?? derived.checkName ?? null, fields.timeoutSec ?? derived.timeoutSec ?? null,
+      now, state, attemptId, ...FINAL_ATTEMPT_STATES, state).changes === 1;
   db.prepare(`INSERT INTO lane_pilot_attempt_transition(attempt_id,from_state,to_state,reason,refused,at) VALUES(?,?,?,?,?,?)`)
     .run(attemptId, before.state, state, fields.reason ?? null, changed ? 0 : 1, now);
   if (changed && before.state !== state) attemptChanged(attemptId);
@@ -1420,29 +1438,31 @@ export function recordCheckDuration(db: LanePilotDatabase, input: CheckRef & { p
 
 /**
  * The limits (seconds) one check timed out at in one project, newest first. A timeout is not kept in lane_pilot_check_duration
- * (it says nothing about how long the check takes), so its trace is the attempt's final reason «verification failed (cmd): verification
- * timed out after 120s» (live 2026-10-26, Vampirism Fire: the whole Studio suite, no timeout_sec, killed five times at 120 s).
- * The reason carries no folder, so it is joined to the attempt's task contract: the contract's check with that command string gives the folder
- * (task level: two checks of one task with the same command at different folders count for neither); a command the contract does not list is a
- * harness check, which runs at the task root; an attempt whose task is gone cannot be placed and is left out.
+ * (it says nothing about how long the check takes), so its trace is the attempt's `failure_code`/`check_name`/`timeout_sec`
+ * (live 2026-10-26, Vampirism Fire: the whole Studio suite, no timeout_sec, killed five times at 120 s).
+ * The fields carry no folder, so the command is joined to the attempt's task contract: the contract's check with that command
+ * string gives the folder (task level: two checks of one task with the same command at different folders count for neither);
+ * a command the contract does not list is a harness check, which runs at the task root; an attempt whose task is gone cannot be
+ * placed and is left out.
  */
 export function listCheckTimeouts(db: LanePilotDatabase, projectId: string, check: CheckRef, limit = 20): number[] {
   const want = checkHistoryKey(check);
-  const rows = db.prepare(`SELECT a.reason AS reason, t.contract_json AS contract FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
+  const rows = db.prepare(`SELECT a.check_name AS checkName, a.timeout_sec AS timeoutSec, t.contract_json AS contract FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
       LEFT JOIN lane_pilot_task t ON t.id=a.task_id AND t.run_id=a.run_id
-      WHERE r.project_id=? AND instr(a.reason, '): verification timed out after ') > 0 ORDER BY a.created_at DESC, a.attempt_no DESC LIMIT ?`)
-    .all(projectId, limit * 10) as Array<{ reason: string; contract: string | null }>;
+      WHERE r.project_id=? AND a.failure_code='verification_timeout' ORDER BY a.created_at DESC, a.attempt_no DESC LIMIT ?`)
+    .all(projectId, limit * 10) as Array<{ checkName: string | null; timeoutSec: number | null; contract: string | null }>;
   return rows.flatMap((row) => {
-    const found = /verification failed \((.+?)\): verification timed out after (\d+)s/.exec(row.reason);
-    if (!found || !row.contract) return [];
+    const checkName = row.checkName;
+    const timeoutSec = row.timeoutSec;
+    if (!checkName || timeoutSec === null || !row.contract) return [];
     let task: { project_cwd?: unknown; verification?: unknown };
     try { task = JSON.parse(row.contract) as typeof task; } catch { return []; }
     if (typeof task.project_cwd !== "string") return [];
     const root = task.project_cwd;
     const listed = (Array.isArray(task.verification) ? task.verification : [])
-      .filter((entry): entry is { command: string; cwd: string } => typeof entry?.command === "string" && typeof entry?.cwd === "string" && entry.command.trim() === found[1]!.trim());
-    const keys = new Set((listed.length ? listed : [{ command: found[1]!, cwd: root }]).map((entry) => checkHistoryKey({ command: entry.command, cwd: entry.cwd, root })));
-    return keys.size === 1 && keys.has(want) ? [Number(found[2])] : [];
+      .filter((entry): entry is { command: string; cwd: string } => typeof entry?.command === "string" && typeof entry?.cwd === "string" && entry.command.trim() === checkName.trim());
+    const keys = new Set((listed.length ? listed : [{ command: checkName, cwd: root }]).map((entry) => checkHistoryKey({ command: entry.command, cwd: entry.cwd, root })));
+    return keys.size === 1 && keys.has(want) ? [timeoutSec] : [];
   }).slice(0, limit);
 }
 

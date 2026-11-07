@@ -1,9 +1,9 @@
 import { execFile } from "node:child_process";
-import { readFile, realpath, rm, stat } from "node:fs/promises";
+import { readFile, realpath, stat } from "node:fs/promises";
 import { join, posix } from "node:path";
 import { promisify } from "node:util";
 import { CODE_FILE, TEST_PATH } from "./docs-jev";
-import { withBaseLock } from "./git-integrate";
+import { withBaseLock } from "../verification";
 
 const run = promisify(execFile);
 /** git's empty tree: the base when the repository has no history before the window. */
@@ -135,38 +135,6 @@ export async function commitDocs(input:{ projectCwd:string; paths:string[]; mess
   } catch (cause) {
     return { status:"failed", commit:null, reason:cause instanceof Error ? cause.message : String(cause) };
   }
-}
-
-/**
- * Puts back files the docs agent changed outside the docs it may write: a tracked file returns to HEAD,
- * a file it created is removed. Only paths that were clean before the pass reach here.
- * A created file may be staged with other content (`git mv`), so its index entry is dropped by force. Created files go
- * first: on a case-insensitive disk `git mv DECISIONS.md decisions.md` leaves one file, and removing decisions.md after
- * DECISIONS.md came back from HEAD would delete it again.
- */
-export async function revertPaths(input:{ projectCwd:string; paths:string[] }):Promise<{ reverted:string[]; failed:string[] }> {
-  const git = (...args:string[]) => run("git", ["-C", input.projectCwd, ...args], { maxBuffer: 8 << 20 });
-  const reverted:string[] = [], failed:string[] = [];
-  await withBaseLock(input.projectCwd, async () => {
-    const created:string[] = [], tracked:string[] = [];
-    for (const path of input.paths) {
-      if (path.startsWith("/") || path.split("/").includes("..")) { failed.push(path); continue; }
-      (await git("cat-file", "-e", `HEAD:${path}`).then(() => true, () => false) ? tracked : created).push(path);
-    }
-    for (const path of created) {
-      try {
-        await git("rm", "-q", "-f", "--cached", "--ignore-unmatch", "--", path);
-        await rm(join(input.projectCwd, path), { recursive:true, force:true });
-        reverted.push(path);
-      } catch { failed.push(path); }
-    }
-    for (const path of tracked) {
-      try { await git("checkout", "HEAD", "--", path); reverted.push(path); }
-      catch { failed.push(path); }
-    }
-  });
-  const order = (paths:string[]) => input.paths.filter((path) => paths.includes(path));
-  return { reverted:order(reverted), failed:order(failed) };
 }
 
 /** What a folder is made of, for deciding whether keeping docs for it is worth anything. */

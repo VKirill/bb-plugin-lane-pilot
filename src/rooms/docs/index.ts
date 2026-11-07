@@ -3,3 +3,7 @@
 export { CITATION_SOURCE, expandCitationLists, parseFrontmatter } from "./docs-lint";
 export { parseDocsSettings } from "./docs";
 export type { DocsPage } from "./docs";
+export { buildDocsFlows } from "./docs-flows";
+export { buildDocsAnchors, docsDepth, docsStaleness, jevApiKey, jevCallFor, verifyDocsCitations } from "./docs-jev";
+export type { Anchor, JevCallAuth, JevCallSource, JevStatus } from "./docs-jev";
+export { commitDocs, docsLineCounts, docsWorthinessFacts, gitDocsScope } from "./git-docs";

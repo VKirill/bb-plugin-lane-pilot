@@ -127,7 +127,7 @@ describe("the worktree janitor", () => {
   });
 });
 
-import { gitDocsScope } from "../src/rooms/verification/git-docs";
+import { gitDocsScope } from "../src/rooms/docs/git-docs";
 
 describe("the docs base (WT2 B)", () => {
   it("a commit carrying code AND a docs line still shows its code to the next pass", async () => {

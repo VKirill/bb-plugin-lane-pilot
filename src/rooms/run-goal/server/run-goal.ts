@@ -28,7 +28,7 @@ export function createRunGoal(ctx: ServerCore, services: Services) {
     const result = await services.regression.run({ projectId: run.project_id, runId, force: true, mode: "full" });
     const pass = result.projects[0] ?? { skipped: "the regression pass returned nothing", tasks: [], findings: [], head: null };
     const verdict = goalVerdict(pass, tasks.map((task) => task.taskId));
-    const record: RunGoalRecord = { runId, projectId: run.project_id, state: verdict.state, tasks: tasks.filter((task) => task.state === "accepted").length, headSha: pass.head ?? null, red: verdict.red, detail: verdict.detail, at: Date.now(), coverage: verdict.coverage };
+    const record: RunGoalRecord = { runId, projectId: run.project_id, state: verdict.state, tasks: tasks.filter((task) => task.state === "accepted").length, headSha: pass.head ?? null, red: verdict.red, detail: verdict.detail, failureCode: verdict.detail?.startsWith("the check failed:") ? "check_failed" : null, at: Date.now(), coverage: verdict.coverage };
     saveRunGoal(db, record);
     if (verdict.state === "failed" && run.closed_at !== null) ctx.log(`run-goal: ${runId} is closed: the red stays in the record, no row for the owner`);
     else if (verdict.state === "failed") {
@@ -44,11 +44,11 @@ export function createRunGoal(ctx: ServerCore, services: Services) {
   async function sweep(now = Date.now(), signal?: AbortSignal): Promise<RunGoalRecord[]> {
     // A `failed` record is checked again once a later run of the project closed after it: that is when a fix could have landed, and
     // the red row then leaves the list by itself instead of waiting for a manual check or its seven-day term (SWE-2 F-006 remainder).
-    // A run without a record is checked once. A `skipped` record whose detail is our own failure note means the check itself
-    // could not run (a crashed regression call): it is retried on the next sweep. A `skipped` verdict of the goal logic
+    // A run without a record is checked once. A `skipped` record whose failure_code is our own failure note means the check
+    // itself could not run (a crashed regression call): it is retried on the next sweep. A `skipped` verdict of the goal logic
     // ("nothing to check") is final and is not retried.
     const runs = db.prepare(`SELECT r.id FROM lane_pilot_run r WHERE r.updated_at >= ?
-      AND NOT EXISTS (SELECT 1 FROM lane_pilot_run_goal g WHERE g.run_id = r.id AND NOT (g.state = 'skipped' AND g.detail LIKE 'the check failed:%')
+      AND NOT EXISTS (SELECT 1 FROM lane_pilot_run_goal g WHERE g.run_id = r.id AND NOT (g.state = 'skipped' AND COALESCE(g.failure_code, '') = 'check_failed')
         AND NOT (g.state = 'failed' AND r.closed_at IS NULL AND EXISTS (SELECT 1 FROM lane_pilot_run r2 WHERE r2.project_id = r.project_id AND r2.id <> r.id AND r2.closed_at IS NOT NULL AND r2.closed_at > g.at)))
       ORDER BY r.updated_at`)
       .all(now - WEEK) as Array<{ id: string }>;
@@ -58,7 +58,7 @@ export function createRunGoal(ctx: ServerCore, services: Services) {
       if (!runReady(taskStates(id))) continue;
       out.push(await check(id).catch((cause: unknown) => {
         ctx.log(`run-goal: ${id} not checked: ${cause instanceof Error ? cause.message : String(cause)}`);
-        const record: RunGoalRecord = { runId: id, projectId: getRun(db, id)?.project_id ?? "", state: "skipped", tasks: 0, headSha: null, red: [], detail: `the check failed: ${cause instanceof Error ? cause.message : String(cause)}`.slice(0, 500), at: Date.now(), coverage: { planned: 0, ran: 0, skipped: 0 } };
+        const record: RunGoalRecord = { runId: id, projectId: getRun(db, id)?.project_id ?? "", state: "skipped", tasks: 0, headSha: null, red: [], detail: `the check failed: ${cause instanceof Error ? cause.message : String(cause)}`.slice(0, 500), failureCode: "check_failed", at: Date.now(), coverage: { planned: 0, ran: 0, skipped: 0 } };
         saveRunGoal(db, record);
         return record;
       }));
