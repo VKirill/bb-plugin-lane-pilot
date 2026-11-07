@@ -4,7 +4,7 @@ import { checkTimeoutSec } from "../check-timing";
 import { pipelineWriterStep, pipelineWriterTag } from "./pipeline-tag";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
 import { writerLeftWorktree } from "./left-worktree";
-import { countAttempts, countThreadTurns, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getTask, getTaskPlan, listOpenAttempts, listStageReceipts, loadProjectSettings, transitionAttempt, taskBasePath, failureFieldsOf } from "../../storage";
+import { countAttempts, countOtherLiveAttemptsInArea, countThreadTurns, firstAttemptAt, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getTask, getTaskPlan, listOpenAttempts, listStageReceipts, loadProjectSettings, transitionAttempt, taskBasePath, failureFieldsOf } from "../../storage";
 import { saveBlockedBy, type BlockedBy } from "../../runs/server";
 import { relayFor } from "../../relay/server";
 import type { HelperPolicySnapshot } from "../../native-agent";
@@ -22,7 +22,7 @@ import {isNotFound, orMiss, outputText, stringAt} from "@lane-pilot/kit";
 import { wasAnsweredByDefault } from "./question-default";
 import {needsHumanQuestion, providerStreamError, WRITER_STREAM_ERROR, writerContextBlocks, writerSetupLines} from "./writer-task";
 import { isLiveDecision } from "../live-folder";
-import { OWNER_WORD_WAIT_MS, TASK_WORDS_KEY, acceptanceProofGap, taskSizeOf, landingWordGap, landingWordAsked, questionsFromFile, checkScriptEdits, referenceTestEdits, taskWordKey, testFitFindings, writerMarkers } from "../../tasks";
+import { OWNER_WORD_WAIT_MS, TASK_WORDS_KEY, acceptanceProofGap, taskSizeOf, landingWordGap, landingWordAsked, questionsFromFile, checkScriptEdits, recordTaskApproach, recordTaskQuestions, referenceTestEdits, taskWordKey, testFitFindings, writerMarkers } from "../../tasks";
 import type { TaskWord } from "../../tasks";
 import type { StageId } from "../../tasks";
 import { THREAD_WATCH_EVENT_TYPES, listThreadEventsRaw, sleepUntilThreadSignal, startLimitWaiting, threadFailure, threadWatchMark, waitThreadIdle } from "@lane-pilot/thread-observe";
@@ -77,12 +77,8 @@ interface Services {
 export { postMergeRepair } from "./verification";
 
 /** The area's copy stays while it holds queued or running work; with none, the merge removes it now, not at the sweep (WT2 A2). */
-function areaHasLiveWork(db: { prepare(sql: string): { get(...args: unknown[]): { n: number } | undefined } }, input: { projectId: string; taskId: string }): boolean {
-  const row = db.prepare(`SELECT count(*) AS n FROM lane_pilot_attempt a JOIN lane_pilot_task t ON t.id=a.task_id
-    WHERE a.state IN ('queued','spawn_requested','spawn_unknown','running','cancel_requested')
-      AND a.task_id<>? AND json_extract(t.contract_json,'$.area')=(SELECT json_extract(contract_json,'$.area') FROM lane_pilot_task WHERE id=?)`)
-    .get(input.taskId, input.taskId) as { n: number };
-  return row.n > 0;
+function areaHasLiveWork(db: Parameters<typeof countOtherLiveAttemptsInArea>[0], input: { projectId: string; taskId: string }): boolean {
+  return countOtherLiveAttemptsInArea(db, input.taskId) > 0;
 }
 
 const FOLLOW_UP_DELETED = "the owner deleted the queued instruction for this writer";
@@ -783,7 +779,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
       }
       if (markerWarnings.length) candidate.warnings = [...(candidate.warnings ?? []), ...markerWarnings];
       // The approach note the window's task screen shows (the gate keeps only the hash of its summary).
-      await bb.storage.kv.set(`lp.task.approach:${input.runId}:${input.taskId}`, { approach:markers.approach, lesson:markers.lesson, noLessonReason:markers.noLessonReason, referenceTestEdits:testEdits, at:Date.now() } as never).catch(() => undefined);
+      await recordTaskApproach(bb.storage.kv, input.runId, input.taskId, { approach:markers.approach, lesson:markers.lesson, noLessonReason:markers.noLessonReason, referenceTestEdits:testEdits, at:Date.now() }).catch(() => undefined);
       // Stage questions from files and the execution checkpoint: the task folder's QUESTIONS.md and CHECKPOINT.md, read from the attempt's copy.
       const attemptRow = fitAttempt;
       const folderOf = (name:string) => `.agents/plans/items/${input.taskId}/${name}`;
@@ -792,7 +788,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
       const checkpoint = await readTaskFile("CHECKPOINT.md");
       const fileQuestions = questionsText ? questionsFromFile(questionsText) : [];
       if (fileQuestions.length || checkpoint) {
-        await bb.storage.kv.set(`lp.task.questions:${input.runId}:${input.taskId}`, { questions:fileQuestions, checkpoint:checkpoint?.slice(0, 2000) ?? null, at:Date.now() } as never).catch(() => undefined);
+        await recordTaskQuestions(bb.storage.kv, input.runId, input.taskId, { questions:fileQuestions, checkpoint:checkpoint?.slice(0, 2000) ?? null, at:Date.now() }).catch(() => undefined);
         if (fileQuestions.length) candidate.warnings = [...(candidate.warnings ?? []), `the writer left ${fileQuestions.length} question(s) in QUESTIONS.md: ${fileQuestions.map((row) => `[${row.kind}] ${row.question}`).join("; ").slice(0, 600)}`];
       }
       // Drawing unchanged: the drawing a task follows is its input, not its output; a writer that edited it changed the yardstick.
@@ -1012,7 +1008,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
         const stat = await runOnHost(host, { hostId:input.config.hostId, cwd:basePath!, command:`git diff --shortstat ${integration.commit}^ ${integration.commit}`, timeoutSec:15, timeoutMs:15_000 }).catch(() => null);
         if (stat && stat.exitCode === 0) for (const m of stat.stdout.matchAll(/(\d+) insertions?|(\d+) deletions?/g)) sizeLines += Number(m[1] ?? m[2] ?? 0);
       }
-      const firstAttempt = (db.prepare("SELECT MIN(created_at) AS c FROM lane_pilot_attempt WHERE task_id=?").get(input.taskId) as { c?: number } | undefined)?.c ?? null;
+      const firstAttempt = firstAttemptAt(db, input.taskId);
       const size = taskSizeOf({ files:(candidate.produced ?? []).length, lines:sizeLines, createdAt:firstAttempt, finishedAt:Date.now(), attempts:countAttempts(db,input.runId,input.taskId) });
       recordGateEvaluation(db,{projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"passed",
         attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{acceptanceReceiptPersisted:true,integration,size}});

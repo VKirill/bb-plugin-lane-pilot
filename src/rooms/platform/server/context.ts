@@ -1,5 +1,5 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
-import type { LanePilotDatabase } from "../../storage";
+import { getRun, type LanePilotDatabase } from "../../storage";
 import { ToolError } from "../../contracts/server";
 import type { Realtime } from "./realtime";
 
@@ -61,8 +61,7 @@ export async function requirePmThreadRun(
 
 /** The PM thread of an open run of this project; anything else is refused before any work starts. */
 export function requirePmRun(db: LanePilotDatabase, input: { runId: string; threadId: string; projectId: string }): { id: string; project_id: string } {
-  const run = db.prepare("SELECT id, project_id, pm_thread_id, closed_at FROM lane_pilot_run WHERE id=?").get(input.runId) as
-    { id: string; project_id: string; pm_thread_id: string | null; closed_at: number | null } | undefined;
+  const run = getRun(db, input.runId);
   if (!run || run.project_id !== input.projectId || run.pm_thread_id !== input.threadId || run.closed_at) {
     throw new Error("runId does not belong to this active Lane Pilot PM thread and project");
   }

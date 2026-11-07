@@ -89,3 +89,15 @@ export async function drainForLifecycle(ctx:DrainContext, pollMs = 500, now = ()
 export function skipRedundantStartupScans(vk:{ startReason?:string; afterDrain?:boolean }, snapshot:{ action?:string; clean?:boolean } | undefined):boolean {
   return vk.startReason === "reload" && vk.afterDrain === true && snapshot?.action === "reload" && snapshot.clean === true;
 }
+
+export type DrainSnapshot = { action?: string; clean?: boolean; inFlight?: unknown[] };
+
+/** The snapshot the last drain left (a crash mid-drain resumes the wait), null when none is stored. */
+export async function readDrainSnapshot(kv: { get(key: string): Promise<unknown> }): Promise<DrainSnapshot | null> {
+  return (await kv.get(DRAIN_SNAPSHOT_KEY)) as DrainSnapshot | null;
+}
+
+/** Drop the stored drain snapshot once the resumed wait is over. */
+export async function clearDrainSnapshot(kv: { delete(key: string): Promise<unknown> }): Promise<void> {
+  await kv.delete(DRAIN_SNAPSHOT_KEY);
+}

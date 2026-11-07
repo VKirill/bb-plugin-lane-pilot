@@ -1,3 +1,4 @@
+import { wfRunStatus } from "@lane-pilot/workflow-engine";
 import { z } from "zod";
 import { bestEffort, sha256Hex, orMiss, isNotFound } from "@lane-pilot/kit";
 import type { ServerCore } from "../../contracts/server";
@@ -96,8 +97,8 @@ async function waitForSpawn(db: ServerCore["db"], getState: () => Promise<SelfRe
     signal?.throwIfAborted();
     const record = (await getState()).signatures[signature];
     if (record?.threadId && record.spawnedAt === at) return "spawned";
-    const row = db.prepare("SELECT status FROM lane_pilot_wf_run WHERE id=?").get(runId) as { status: string } | undefined;
-    if (row && row.status !== "running" && row.status !== "waiting") return row.status === "succeeded" ? "pending" : "failed";
+    const status = wfRunStatus(db, runId);
+    if (status && status !== "running" && status !== "waiting") return status === "succeeded" ? "pending" : "failed";
     if (Date.now() >= deadline || isDisposed()) return "pending";
     await new Promise((done) => setTimeout(done, 200));
   }

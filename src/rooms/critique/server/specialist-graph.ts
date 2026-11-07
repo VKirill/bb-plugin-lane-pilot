@@ -1,6 +1,7 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { bestEffort } from "@lane-pilot/kit";
 import { runOnHost } from "@lane-pilot/host-calls";
+import { wfRunInputsJson, wfRunProjectId } from "@lane-pilot/workflow-engine";
 
 import { fenceOutside, spawnTextId } from "../../platform/server";
 import { getRun } from "../../storage";
@@ -68,8 +69,8 @@ export async function startSpecialistRun(ctx: ServerCore, services: Services, in
 
 /** The answer of `lane_pilot_wait_specialist` for a run: done with the report, failed, blocked on a repo edit, or still running. */
 export async function waitSpecialistRun(ctx: ServerCore, services: Services, input: { projectId: string; runId: string; timeoutSec: number }): Promise<Record<string, unknown>> {
-  const owner = ctx.db.prepare("SELECT project_id FROM lane_pilot_wf_run WHERE id=? AND workflow_id=?").get(input.runId, SPECIALIST_GRAPH) as { project_id: string | null } | undefined;
-  if (!owner || owner.project_id !== input.projectId) throw new Error(`not_found: no specialist run "${input.runId}" in this project`);
+  const owner = wfRunProjectId(ctx.db, input.runId, SPECIALIST_GRAPH);
+  if (owner !== input.projectId) throw new Error(`not_found: no specialist run "${input.runId}" in this project`);
   const deadline = Date.now() + input.timeoutSec * 1000;
   for (;;) {
     const summary = services.workflowEngine.get(input.runId);
@@ -80,7 +81,7 @@ export async function waitSpecialistRun(ctx: ServerCore, services: Services, inp
       // as a revision remark instead of being accepted. The validator/deliverable fields arrive with the employee
       // manifest (grok/employees); a run that names none is accepted as before.
       let inputs: Record<string, unknown> = {};
-      try { inputs = JSON.parse((ctx.db.prepare("SELECT inputs_json FROM lane_pilot_wf_run WHERE id=?").get(input.runId) as { inputs_json?: string } | undefined)?.inputs_json ?? "{}") as Record<string, unknown>; } catch { inputs = {}; }
+      try { inputs = JSON.parse(wfRunInputsJson(ctx.db, input.runId) ?? "{}") as Record<string, unknown>; } catch { inputs = {}; }
       const validator = typeof inputs.validator === "string" ? inputs.validator : null;
       const deliverable = typeof inputs.deliverable === "string" ? inputs.deliverable : null;
       if (validator && deliverable && threadId) {
@@ -88,14 +89,14 @@ export async function waitSpecialistRun(ctx: ServerCore, services: Services, inp
           const { validateDeliverable } = await import("../../validators");
           const hostId = typeof inputs.hostId === "string" ? inputs.hostId : "";
           const brief = inputs.brief as Record<string, unknown> | undefined;
-          const settings = (await bestEffort(ctx.log, "specialist deliverable settings", ctx.effectiveProjectSettings(owner.project_id), { values: {}, inherited: [], explicitKeys: [] })).values as Record<string, unknown>;
+          const settings = (await bestEffort(ctx.log, "specialist deliverable settings", ctx.effectiveProjectSettings(owner), { values: {}, inherited: [], explicitKeys: [] })).values as Record<string, unknown>;
           const run = getRun(ctx.db, input.runId);
           const verdict = await validateDeliverable(validator, deliverable, {
             host: { run: (id, cwd, command, timeoutSec) => runOnHost(ctx.host, { hostId: id, cwd, command, timeoutSec }) as never },
             hostId,
             brief,
-            jevCtx: { projectId: owner.project_id, runId: input.runId, settings },
-            review: async (req) => pageReviewByAgent(ctx, services, { pmThreadId: run?.pm_thread_id ?? threadId, projectId: owner.project_id!, parentRunId: input.runId, design: Boolean(brief?.design), request: req }),
+            jevCtx: { projectId: owner, runId: input.runId, settings },
+            review: async (req) => pageReviewByAgent(ctx, services, { pmThreadId: run?.pm_thread_id ?? threadId, projectId: owner, parentRunId: input.runId, design: Boolean(brief?.design), request: req }),
           });
           if (!verdict.ok) {
             const remark = `Revision needed: ${validator} validator rejected ${deliverable} — ${verdict.reason}`;

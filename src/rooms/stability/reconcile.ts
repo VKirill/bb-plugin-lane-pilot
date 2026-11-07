@@ -126,3 +126,8 @@ export async function reconcileCritic(
     && metadata.stageId === key.stageId
   ), options, { role:key.role, lanePilotRunId:key.lanePilotRunId, lanePilotTaskId:key.lanePilotTaskId, stageId:key.stageId });
 }
+
+/** Whether a reconcile scan is still in flight for the attempt (its cursor is saved mid-page). */
+export function reconcileScanOpen(db: CursorDb, attemptId: string): boolean {
+  return Boolean(db.prepare("SELECT 1 AS n FROM lane_pilot_reconcile_cursor WHERE attempt_id=? LIMIT 1").get(attemptId));
+}

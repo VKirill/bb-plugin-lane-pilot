@@ -191,3 +191,106 @@ export function createJournal(db: Database.Database, now: () => number = Date.no
 }
 
 export type Journal = ReturnType<typeof createJournal>;
+
+/** The thread a step's receipt names (its worker thread), null when the receipt has none or does not parse. */
+type WfReadDb = Pick<Database.Database, "prepare">;
+
+/** A run row by id. */
+export function wfRunRow(db: WfReadDb, id: string): RunRow | undefined {
+  return db.prepare("SELECT * FROM lane_pilot_wf_run WHERE id=?").get(id) as RunRow | undefined;
+}
+
+export function receiptThreadId(receiptJson: string | null | undefined): string | null {
+  if (!receiptJson) return null;
+  try {
+    const id = (JSON.parse(receiptJson) as { threadId?: unknown }).threadId;
+    return typeof id === "string" ? id : null;
+  } catch { return null; }
+}
+
+/** The node a run is on: its running or waiting step's node, latest first. */
+export function wfCurrentNodeId(db: WfReadDb, runId: string): string | null {
+  return (db.prepare("SELECT node_id FROM lane_pilot_wf_step WHERE run_id=? AND state IN ('running','waiting') ORDER BY rowid DESC LIMIT 1")
+    .get(runId) as { node_id: string } | undefined)?.node_id ?? null;
+}
+
+/** A live (running or waiting) run exists under this idempotency-key LIKE. */
+export function wfLiveRunWithIdem(db: WfReadDb, idemLike: string): boolean {
+  return Boolean(db.prepare("SELECT 1 AS live FROM lane_pilot_wf_run WHERE idem_key LIKE ? AND status IN ('running','waiting') LIMIT 1").get(idemLike));
+}
+
+/** A task's lp-task-pipeline run is still open (running or waiting). */
+export function wfLivePipelineRun(db: WfReadDb, linkRunId: string, linkTaskId: string): boolean {
+  return Boolean(db.prepare("SELECT 1 FROM lane_pilot_wf_run WHERE workflow_id='lp-task-pipeline' AND link_run_id=? AND link_task_id=? AND status IN ('running','waiting')").get(linkRunId, linkTaskId));
+}
+
+/** The newest lp-task-pipeline run id of a task (linked to the Lane Pilot run and the task), or null. */
+export function wfLatestPipelineRunId(db: WfReadDb, linkRunId: string, linkTaskId: string): string | null {
+  return (db.prepare("SELECT id FROM lane_pilot_wf_run WHERE workflow_id='lp-task-pipeline' AND link_run_id=? AND link_task_id=? ORDER BY created_at DESC, rowid DESC LIMIT 1")
+    .get(linkRunId, linkTaskId) as { id: string } | undefined)?.id ?? null;
+}
+
+/** The step key of a run's `writer` node, newest visit first. */
+export function wfPipelineWriterStepKey(db: WfReadDb, runId: string): string | null {
+  return (db.prepare("SELECT step_key FROM lane_pilot_wf_step WHERE run_id=? AND node_id='writer' ORDER BY visit DESC LIMIT 1")
+    .get(runId) as { step_key: string } | undefined)?.step_key ?? null;
+}
+
+/** A run's stored inputs JSON. */
+export function wfRunInputsJson(db: WfReadDb, runId: string): string | null {
+  return (db.prepare("SELECT inputs_json FROM lane_pilot_wf_run WHERE id=?").get(runId) as { inputs_json: string } | undefined)?.inputs_json ?? null;
+}
+
+/** Inputs JSON of every run under an exact idem key or a LIKE pattern, oldest first. */
+export function wfRunInputsByKey(db: WfReadDb, idemKey: string, idemLike: string): string[] {
+  return (db.prepare("SELECT inputs_json FROM lane_pilot_wf_run WHERE idem_key=? OR idem_key LIKE ? ORDER BY created_at")
+    .all(idemKey, idemLike) as Array<{ inputs_json: string }>).map((row) => row.inputs_json);
+}
+
+/** Idem key and status of every run under an idem-key LIKE, newest first. */
+export function wfRunsByIdemPrefix(db: WfReadDb, idemLike: string): Array<{ idem_key: string; status: string }> {
+  return db.prepare("SELECT idem_key, status FROM lane_pilot_wf_run WHERE idem_key LIKE ? ORDER BY created_at DESC")
+    .all(idemLike) as Array<{ idem_key: string; status: string }>;
+}
+
+/** A run's project, optionally checked against its workflow. */
+export function wfRunProjectId(db: WfReadDb, runId: string, workflowId?: string): string | null {
+  const row = (workflowId === undefined
+    ? db.prepare("SELECT project_id FROM lane_pilot_wf_run WHERE id=?").get(runId)
+    : db.prepare("SELECT project_id FROM lane_pilot_wf_run WHERE id=? AND workflow_id=?").get(runId, workflowId)) as { project_id: string | null } | undefined;
+  return row?.project_id ?? null;
+}
+
+/** A run's status, or null. */
+export function wfRunStatus(db: WfReadDb, runId: string): string | null {
+  return (db.prepare("SELECT status FROM lane_pilot_wf_run WHERE id=?").get(runId) as { status: string } | undefined)?.status ?? null;
+}
+
+/** The newest succeeded step of a node in a run. */
+export function wfLatestSucceededStep(db: WfReadDb, runId: string, nodeId: string): { input_json: string; receipt_json: string | null } | undefined {
+  return db.prepare("SELECT input_json, receipt_json FROM lane_pilot_wf_step WHERE run_id=? AND node_id=? AND state='succeeded' ORDER BY rowid DESC LIMIT 1")
+    .get(runId, nodeId) as { input_json: string; receipt_json: string | null } | undefined;
+}
+
+/** Top-level workflow runs a board lists: own work (no task link) still live or touched since a time, newest first. */
+export function wfBoardRuns(db: WfReadDb, input: { projectId?: string | null; doneSince: number; limit: number }): Array<{
+  id: string; workflow_id: string; definition_json: string; project_id: string | null; status: string; reason: string | null; created_at: number; updated_at: number;
+}> {
+  return db.prepare(`SELECT id, workflow_id, definition_json, project_id, status, reason, created_at, updated_at FROM lane_pilot_wf_run
+    WHERE depth=0 AND link_task_id IS NULL AND (status NOT IN ('succeeded','canceled') OR updated_at>=?) ${input.projectId ? "AND project_id=?" : ""}
+    ORDER BY updated_at DESC LIMIT ?`).all(input.doneSince, ...(input.projectId ? [input.projectId] : []), input.limit) as Array<{
+    id: string; workflow_id: string; definition_json: string; project_id: string | null; status: string; reason: string | null; created_at: number; updated_at: number;
+  }>;
+}
+
+/** Runs of a workflow under a shipped version since a time, finished or running (the wall's graph-class recurrence). */
+export function wfRunsOfWorkflow(db: WfReadDb, workflowId: string, input: { harnessVersion: string; since: number }): Array<{ status: string; reason: string | null }> {
+  return db.prepare("SELECT status, reason FROM lane_pilot_wf_run WHERE workflow_id=? AND harness_version=? AND created_at>=? AND status NOT IN ('running','waiting','canceled')")
+    .all(workflowId, input.harnessVersion, input.since) as Array<{ status: string; reason: string | null }>;
+}
+
+/** The latest failed or interrupted step of a run. */
+export function wfFailedStepOfRun(db: WfReadDb, runId: string): { node_id: string; error: string | null } | undefined {
+  return db.prepare("SELECT node_id, error FROM lane_pilot_wf_step WHERE run_id=? AND state IN ('failed','interrupted') ORDER BY updated_at DESC LIMIT 1")
+    .get(runId) as { node_id: string; error: string | null } | undefined;
+}

@@ -13,6 +13,7 @@ import { planSignature, type PlanItem } from "../../src/rooms/phase/logic";
 import { failureClass } from "../../src/rooms/runs";
 import { createAttempt, createRun, createTask, openDatabase } from "../../src/rooms/plugin-db";
 import { registerConversationTools } from "../../src/rooms/tasks/server/conversation-tools";
+import { tokenDailyByModel } from "../../src/rooms/usage/server";
 import { CHECK_RECIPES, checkRecipe, factKind, isWholeConsent, questionKind, questionsFromFile } from "../../src/rooms/tasks";
 import { registerTools } from "../../src/rooms/tools/server/tools";
 import { buildBubblewrapArgs, prepareGuardPaths, releaseGuardPaths } from "../../src/rooms/verification/sandbox";
@@ -72,7 +73,7 @@ describe("conversation gates", () => {
       .run(day, "proj", "anthropic", "claude", 3, 4, 0, 7);
     db.prepare("INSERT INTO lane_pilot_token_daily(day,project_id,provider_id,model,input_tokens,output_tokens,cached_tokens,total_tokens) VALUES (?,?,?,?,?,?,?,?)")
       .run(day, "proj", "openai", "gpt", 10, 1, 0, 11);
-    registerConversationTools({ db, bb } as never);
+    registerConversationTools({ db, bb } as never, { spendByModel: (projectId: string, day: string) => tokenDailyByModel(db, projectId, day) });
     const facts = registeredTools(bb.agents).get("lane_pilot_facts")!;
     const ctx = { threadId: "thr", projectId: "proj", signal: new AbortController().signal };
     const ask = async (question: string) => JSON.parse(String(await facts.execute({ question }, ctx)));
@@ -106,7 +107,7 @@ describe("conversation gates", () => {
     })) as never;
     const db = openDatabase(bb);
     createRun(db, "run1", "proj", "bb", "/ws", "none", { schemaVersion: 1, pools: { provider: 5, verification: 2 } }, "host1");
-    registerConversationTools({ db, bb } as never);
+    registerConversationTools({ db, bb } as never, { spendByModel: (projectId: string, day: string) => tokenDailyByModel(db, projectId, day) });
     const check = registeredTools(bb.agents).get("lane_pilot_check")!;
     const ctx = { threadId: "thr", projectId: "proj", signal: new AbortController().signal };
     const receipt = JSON.parse(String(await check.execute({

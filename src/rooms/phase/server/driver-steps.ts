@@ -1,8 +1,8 @@
 import { cancelAttemptById } from "../../runs/server";
 import { taskFamily } from "../../runs";
-import { noTermDeferralsOf } from "../../deferral/server";
+import { countOpenDeferrals, noTermDeferralsOf } from "../../deferral/server";
 import { getRunGoal, goalVerdict } from "../../run-goal";
-import { getRun, getRunSettingsScopes, getRunWriterHost, getTask, listOpenAttempts, loadProjectSettings } from "../../storage";
+import { countAttemptsInStates, getRun, getRunSettingsScopes, getRunWriterHost, getTask, getTaskGitBase, listOpenAttempts, loadProjectSettings } from "../../storage";
 import { spendReserve } from "../../tasks";
 import type { RecheckPlanFact } from "../../platform/server";
 import { hostContract } from "../../contracts";
@@ -185,7 +185,7 @@ export function installSteps(tools: StepsTools) {
     }
     // Phase base at start: the commit the first piece was cut from.
     const firstTask = Object.values(execution.issued)[0];
-    const baseSha = phase.record.execution?.baseSha ?? (firstTask ? (db.prepare("SELECT base_sha FROM lane_pilot_task_git_base WHERE task_id=? LIMIT 1").get(firstTask) as { base_sha?: string } | undefined)?.base_sha ?? null : null);
+    const baseSha = phase.record.execution?.baseSha ?? (firstTask ? getTaskGitBase(db, firstTask)?.base_sha ?? null : null);
     // The waves' records stay (they were dropped here before), and a new issue clears the «nothing changed» stop.
     savePhase(db, phase.id, { record: { ...phase.record, candidate, execution: { ...execution, baseSha, acceptedNoted: phase.record.execution?.acceptedNoted ?? [], ...(phase.record.execution?.waves ? { waves: phase.record.execution.waves } : {}),
       ...(phase.record.execution?.unchanged && !next.some((item) => execution.issued[item.id])) ? { unchanged: phase.record.execution.unchanged } : {} } }, runId, at: now() });
@@ -310,7 +310,7 @@ export function installSteps(tools: StepsTools) {
       const lastGoal = current.runId ? getRunGoal(db, current.runId) : null;
       const firstTree = onCandidate ? Object.values(current.record.candidate!.trees)[0]! : null;
       const headNow = firstTree ? await candidates(current)?.head(firstTree.path) ?? null : lastGoal?.headSha ?? null;
-      const openDeferrals = (db.prepare("SELECT COUNT(*) AS n FROM lane_pilot_deferral WHERE project_id=? AND closed_at IS NULL").get(current.projectId) as { n: number } | undefined)?.n ?? 0;
+      const openDeferrals = countOpenDeferrals(db, current.projectId);
       const lines = acceptanceLines(current, facts(current), { mainSha: headNow, openDeferrals, noTerm: noTermDeferralsOf(db, current.projectId) });
       // Main moved — a new word: the verdict saw another main; verify again on the main that is there now.
       if (lines.find((line) => line.id === "main_unmoved")?.ok === false) {
@@ -332,7 +332,7 @@ export function installSteps(tools: StepsTools) {
       }
       if (accepted) {
         const returns = listParts(db, current.id).filter((part) => part.kind === "return").length;
-        const failedAttempts = current.runId ? ((db.prepare("SELECT COUNT(*) AS n FROM lane_pilot_attempt WHERE run_id=? AND state IN ('validation_failed','blocked','provider_error','timeout','empty_output')").get(current.runId) as { n: number }).n) : 0;
+        const failedAttempts = current.runId ? countAttemptsInStates(db, current.runId, ["validation_failed","blocked","provider_error","timeout","empty_output"]) : 0;
         const verdictFailures = listParts(db, current.id).filter((part) => part.kind === "blind_verdict" && part.text.startsWith("failed")).length;
         record.lessons = lessonsNeeded({ returns, failedAttempts, verdictFailures });
         move(current, record.lessons.needed ? "lessons" : "closed", record, "every acceptance line holds");
@@ -452,7 +452,7 @@ export function installSteps(tools: StepsTools) {
     const verdict = phase.record.verification?.model?.state === "unmet" ? `the goal audit: ${phase.record.verification.model.summary}` : phase.record.verification?.verdict?.state === "failed" ? `the verification: ${phase.record.verification.verdict.detail}` : "";
     // The obligations the acceptance does not hold: the same lines the normal path reads (the owner's decisions are not a machine obligation).
     const lastGoal = phase.runId ? getRunGoal(db, phase.runId) : null;
-    const openDeferrals = (db.prepare("SELECT COUNT(*) AS n FROM lane_pilot_deferral WHERE project_id=? AND closed_at IS NULL").get(phase.projectId) as { n: number } | undefined)?.n ?? 0;
+    const openDeferrals = countOpenDeferrals(db, phase.projectId);
     const noTerm = noTermDeferralsOf(db, phase.projectId);
     const unmet = acceptanceLines(phase, f, { mainSha: lastGoal?.headSha ?? null, openDeferrals, noTerm })
       .filter((line) => !line.ok && line.id !== "result_useful" && (line.id !== "limits_acknowledged" || noTerm.length > 0)).map((line) => `${line.id}: ${line.detail}`.slice(0, 300));

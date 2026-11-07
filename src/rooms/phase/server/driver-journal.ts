@@ -1,3 +1,4 @@
+import { createJournal, receiptThreadId, wfLatestSucceededStep, wfRunProjectId } from "@lane-pilot/workflow-engine";
 import { getRunSettingsScopes } from "../../storage";
 import { sha256Hex } from "@lane-pilot/kit";
 import { savePhase } from "../store";
@@ -17,14 +18,13 @@ export function installJournal(tools: JournalTools) {
 
   /** The journal of a workflow run as the independence check reads it: each step's role from the run's own stored definition. */
   function journalSteps(wfRunId: string) {
-    const run = db.prepare("SELECT definition_json FROM lane_pilot_wf_run WHERE id=?").get(wfRunId) as { definition_json: string } | undefined;
+    const journal = createJournal(db);
+    const run = journal.getRun(wfRunId);
     if (!run) return null;
     let roles = new Map<string, string>();
     try { roles = new Map(((JSON.parse(run.definition_json) as { nodes?: Array<{ id: string; role?: string }> }).nodes ?? []).filter((node) => node.role).map((node) => [node.id, node.role!])); } catch { /* no roles: no critic */ }
-    const rows = db.prepare("SELECT node_id, state, receipt_json, started_at, ended_at FROM lane_pilot_wf_step WHERE run_id=? ORDER BY rowid").all(wfRunId) as Array<{ node_id: string; state: string; receipt_json: string | null; started_at: number | null; ended_at: number | null }>;
-    return rows.map((row) => {
-      let threadId: string | null = null;
-      try { threadId = (JSON.parse(row.receipt_json ?? "null") as { threadId?: string | null } | null)?.threadId ?? null; } catch { /* no receipt */ }
+    return journal.steps(wfRunId).map((row) => {
+      const threadId = receiptThreadId(row.receipt_json);
       return { nodeId: row.node_id, role: roles.get(row.node_id) ?? null, state: row.state, threadId, startedAt: row.started_at, endedAt: row.ended_at };
     });
   }
@@ -35,8 +35,7 @@ export function installJournal(tools: JournalTools) {
    * output gives (plan_verdict pass), not one the caller says over a «changes requested». The reason it is not; null when it is.
    */
   function checkerRunBinding(phase: Phase, wfRunId: string, decision: "approve" | "changes_requested"): string | null {
-    const run = db.prepare("SELECT project_id, link_run_id, created_at, inputs_json, output_json FROM lane_pilot_wf_run WHERE id=?").get(wfRunId) as
-      { project_id: string | null; link_run_id: string | null; created_at: number; inputs_json: string | null; output_json: string | null } | undefined;
+    const run = createJournal(db).getRun(wfRunId);
     if (!run) return `workflow run ${wfRunId} is not in the journal`;
     if (run.project_id !== phase.projectId) return `workflow run ${wfRunId} belongs to project ${run.project_id ?? "none"}, not to this phase's ${phase.projectId}`;
     if (run.link_run_id && run.link_run_id !== phase.runId) return `workflow run ${wfRunId} belongs to run ${run.link_run_id}, not to this phase's ${phase.runId ?? "(none yet)"}`;
@@ -61,10 +60,10 @@ export function installJournal(tools: JournalTools) {
    * Before (SMA audit N-04) a caller's own hash and a reviewer's name were enough, with no run at all.
    */
   function reviewerRead(phase: Phase, runId: string, node: string, analysis: string): { author: string; reviewer: string; inputSha: string } | { why: string } {
-    const run = db.prepare("SELECT project_id FROM lane_pilot_wf_run WHERE id=?").get(runId) as { project_id: string | null } | undefined;
-    if (!run) return { why: `workflow run ${runId} is not in the journal: the lessons name the run whose reviewer read them` };
-    if (run.project_id !== phase.projectId) return { why: `workflow run ${runId} belongs to project ${run.project_id ?? "none"}, not to this phase's ${phase.projectId}` };
-    const step = db.prepare("SELECT input_json, receipt_json FROM lane_pilot_wf_step WHERE run_id=? AND node_id=? AND state='succeeded' ORDER BY rowid DESC LIMIT 1").get(runId, node) as { input_json: string; receipt_json: string | null } | undefined;
+    const projectId = wfRunProjectId(db, runId);
+    if (projectId === null) return { why: `workflow run ${runId} is not in the journal: the lessons name the run whose reviewer read them` };
+    if (projectId !== phase.projectId) return { why: `workflow run ${runId} belongs to project ${projectId ?? "none"}, not to this phase's ${phase.projectId}` };
+    const step = wfLatestSucceededStep(db, runId, node);
     if (!step) return { why: `no finished reviewer step «${node}» in workflow run ${runId}` };
     let receipt: { inputSha256?: string; threadId?: string | null } = {};
     let input: { with?: unknown; via?: { fromThreadId?: string; handoff?: string } } = {};

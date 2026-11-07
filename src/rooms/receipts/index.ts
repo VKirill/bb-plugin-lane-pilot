@@ -12,16 +12,21 @@ import { loadProjectSettings } from "../storage";
  * - preship: what is still open before a release — unmerged work, open regressions, open deferrals — each with its disposition;
  * - PR passport: the body of a pull request assembled from the task's receipts (PR passport assembler).
  */
-type Db = Pick<Database.Database, "prepare">;
+import { getAttempt, getReasoningTraceJson, getTaskContractJson, listStageReceipts, openAttemptBriefs } from "../storage";
+import { listOpenDeferralBriefs } from "../deferral/server";
+
+type Db = Database.Database;
 const sha = (text: string) => createHash("sha256").update(text).digest("hex");
 
 export function passport(db: Db, attemptId: string) {
-  const attempt = db.prepare("SELECT id, run_id, task_id, state, attempt_no, harness_version, created_at FROM lane_pilot_attempt WHERE id=?").get(attemptId) as Record<string, unknown> | undefined;
-  if (!attempt) return null;
-  const trace = db.prepare("SELECT trace_json FROM lane_pilot_attempt_reasoning WHERE attempt_id=?").get(attemptId) as { trace_json?: string } | undefined;
+  const row = getAttempt(db, attemptId);
+  if (!row) return null;
+  const attempt = { id: row.id, run_id: row.run_id, task_id: row.task_id, state: row.state, attempt_no: row.attempt_no, harness_version: row.harness_version, created_at: row.created_at };
+  const trace = getReasoningTraceJson(db, attemptId);
   let model: Record<string, unknown> = {};
-  try { const parsed = JSON.parse(trace?.trace_json ?? "{}") as Record<string, unknown>; model = { providerId: parsed.providerId ?? null, model: parsed.model ?? null, reasoning: parsed.reasoningLevel ?? null }; } catch { /* no trace */ }
-  const stages = db.prepare("SELECT stage_id AS stage, state, input_sha256 AS input, output_sha256 AS output, provider_id AS provider, model FROM lane_pilot_stage_receipt WHERE run_id=? AND task_id=?").all(attempt.run_id, attempt.task_id);
+  try { const parsed = JSON.parse(trace ?? "{}") as Record<string, unknown>; model = { providerId: parsed.providerId ?? null, model: parsed.model ?? null, reasoning: parsed.reasoningLevel ?? null }; } catch { /* no trace */ }
+  const stages = listStageReceipts(db, row.run_id, row.task_id)
+    .map((stage) => ({ stage: stage.stageId, state: stage.state, input: stage.inputSha256, output: stage.outputSha256, provider: stage.providerId, model: stage.model }));
   return { attempt, ...model, lanePilot: packageJson.version, stages };
 }
 
@@ -32,9 +37,9 @@ export function manifest(db: Db) {
 
 /** The chain of a task's stage receipts: each link the hash of the previous link and the receipt; the tip names the whole chain. */
 export function receiptChain(db: Db, runId: string, taskId: string) {
-  const rows = db.prepare("SELECT stage_id, state, input_sha256, output_sha256, updated_at FROM lane_pilot_stage_receipt WHERE run_id=? AND task_id=? ORDER BY updated_at, stage_id").all(runId, taskId) as Array<Record<string, unknown>>;
+  const rows = listStageReceipts(db, runId, taskId).slice().sort((a, b) => a.updatedAt - b.updatedAt || a.stageId.localeCompare(b.stageId));
   let tip = "0".repeat(64);
-  const links = rows.map((row) => { tip = sha(`${tip}\n${row.stage_id}\n${row.state}\n${row.input_sha256 ?? ""}\n${row.output_sha256 ?? ""}`); return { stage: row.stage_id, state: row.state, link: tip }; });
+  const links = rows.map((row) => { tip = sha(`${tip}\n${row.stageId}\n${row.state}\n${row.inputSha256 ?? ""}\n${row.outputSha256 ?? ""}`); return { stage: row.stageId, state: row.state, link: tip }; });
   return { runId, taskId, tip, links };
 }
 /** Verify a chain against a tip recorded earlier: the same receipts give the same tip. */
@@ -44,13 +49,13 @@ export const verifyChain = (db: Db, runId: string, taskId: string, tip: string) 
 export function preship(db: Db, projectId?: string) {
   const where = projectId ? "AND r.project_id=?" : "";
   const args = projectId ? [projectId] : [];
-  const open = db.prepare(`SELECT a.task_id AS taskId, a.state FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id WHERE a.state IN ('queued','running','validation_failed','spawn_unknown') ${where} ORDER BY a.updated_at DESC LIMIT 50`).all(...args);
+  const open = openAttemptBriefs(db, { projectId: projectId ?? null });
   const regressions = db.prepare(`SELECT task_id AS taskId, state FROM lane_pilot_regression WHERE state NOT IN ('closed','fixed') ${projectId ? "AND project_id=?" : ""} LIMIT 50`).all(...args);
-  const deferrals = db.prepare(`SELECT id, kind, what AS title FROM lane_pilot_deferral WHERE closed_at IS NULL ${projectId ? "AND project_id=?" : ""} LIMIT 50`).all(...args);
+  const deferrals = listOpenDeferralBriefs(db, projectId);
   const items = [
     ...(open as Array<{ taskId: string; state: string }>).map((row) => ({ what: `task ${row.taskId} is ${row.state}`, disposition: row.state === "validation_failed" ? "fix or cancel" : "let it finish or cancel" })),
     ...(regressions as Array<{ taskId: string; state: string }>).map((row) => ({ what: `regression of ${row.taskId} (${row.state})`, disposition: "fix, or revert the task" })),
-    ...(deferrals as Array<{ id: string; title: string }>).map((row) => ({ what: `deferred: ${row.title ?? row.id}`, disposition: "keep with its term" })),
+    ...(deferrals).map((row) => ({ what: `deferred: ${row.title ?? row.id}`, disposition: "keep with its term" })),
   ];
   // The ship gate (Astra F1): «all tasks accepted» says nothing about the post-merge check on main. Its latest run
   // still out, red or never run stops the ship; a project without a gate passes as before.
@@ -77,9 +82,9 @@ export function preship(db: Db, projectId?: string) {
 
 /** PR passport assembler: a pull request body from the task's receipts — what, the checks that prove it, the critic, the plan-fact rows. */
 export function prPassport(db: Db, runId: string, taskId: string): string {
-  const task = db.prepare("SELECT contract_json FROM lane_pilot_task WHERE id=? AND run_id=?").get(taskId, runId) as { contract_json?: string } | undefined;
-  const contract = JSON.parse(task?.contract_json ?? "{}") as { title?: string; display_title?: string; objective?: string; acceptance?: string[]; verification?: Array<{ command: string }> };
-  const stages = db.prepare("SELECT stage_id, state FROM lane_pilot_stage_receipt WHERE run_id=? AND task_id=?").all(runId, taskId) as Array<{ stage_id: string; state: string }>;
+  const task = getTaskContractJson(db, taskId, runId);
+  const contract = JSON.parse(task ?? "{}") as { title?: string; display_title?: string; objective?: string; acceptance?: string[]; verification?: Array<{ command: string }> };
+  const stages = listStageReceipts(db, runId, taskId).map((row) => ({ stage_id: row.stageId, state: row.state }));
   const chain = receiptChain(db, runId, taskId);
   return [
     `## ${contract.display_title ?? contract.title ?? taskId}`, "", contract.objective ?? "", "",

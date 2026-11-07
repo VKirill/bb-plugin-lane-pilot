@@ -1,9 +1,11 @@
 import { hostContract, rpcContract } from "../contracts";
 
 import type { ServerCore } from "../contracts/server";
-import { getRun } from "../storage";
+import { activeRunForProject, getRun, getTaskContractJson, listAttemptRowsForProject, setTaskHeldUntil, taskHeldUntil, updateTaskContractJson } from "../storage";
 import { listReceipts } from "../capability";
-import { readinessWords, trainedConditions, trainingRatios, type DesignJournalLine } from "../design-eval";
+import { tokenDailySeries, tokenDailyTotal } from "../usage/server";
+import { readTaskApproach } from "../tasks";
+import { designJournalLines, readinessWords, trainedConditions, trainingRatios } from "../design-eval";
 import { runOnHost } from "@lane-pilot/host-calls";
 
 import type { FrontApi } from "../front/server/index";
@@ -26,14 +28,14 @@ export function cockpitRpc(ctx: ServerCore, services: Services) {
   const { db, bb } = ctx;
   const kv = bb.storage.kv;
   const host = () => bb.hosts.experimental_client({ contract: hostContract });
-  const activeRun = (projectId: string) => db.prepare("SELECT id, pm_thread_id FROM lane_pilot_run WHERE project_id=? AND state IN ('pending','running') ORDER BY created_at DESC LIMIT 1").get(projectId) as { id: string; pm_thread_id: string | null } | undefined;
+  const activeRun = (projectId: string) => activeRunForProject(db, projectId);
 
   return {
     /** Today: the day's KPI strip and its feed (accepted, blocked, phase parts, actions). */
     cockpit_today: async ({ projectId }: { projectId: string }) => {
       const since = Date.now() - DAY_MS;
-      const rows = db.prepare("SELECT a.task_id AS taskId, a.state, a.updated_at AS at, a.reason FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id WHERE r.project_id=? AND a.updated_at>=? ORDER BY a.updated_at DESC LIMIT 300").all(projectId, since) as Array<{ taskId: string; state: string; at: number; reason: string | null }>;
-      const tokens = (db.prepare("SELECT COALESCE(SUM(total_tokens),0) AS n FROM lane_pilot_token_daily WHERE project_id=? AND day=?").get(projectId, new Date().toISOString().slice(0, 10)) as { n: number }).n;
+      const rows = listAttemptRowsForProject(db, { projectId, updatedSince: since, limit: 300 });
+      const tokens = tokenDailyTotal(db, projectId, new Date().toISOString().slice(0, 10));
       const parts = db.prepare("SELECT p.phase_id AS phaseId, p.section, p.kind, p.text, p.at FROM lane_pilot_phase_part p JOIN lane_pilot_phase f ON f.id=p.phase_id WHERE f.project_id=? AND p.at>=? ORDER BY p.at DESC LIMIT 100").all(projectId, since) as Array<Record<string, unknown>>;
       const actions = (await services.front.actions(200)).filter((row) => (row as { at: number }).at >= since);
       return {
@@ -45,7 +47,7 @@ export function cockpitRpc(ctx: ServerCore, services: Services) {
     /** Workers over 30 days (tokens by provider and model) with their capability cells: the worker cards and their history. */
     cockpit_workers: async ({ projectId }: { projectId: string }) => {
       const since = new Date(Date.now() - 30 * DAY_MS).toISOString().slice(0, 10);
-      const usage = db.prepare("SELECT provider_id AS providerId, model, day, SUM(total_tokens) AS tokens FROM lane_pilot_token_daily WHERE project_id=? AND day>=? GROUP BY provider_id, model, day ORDER BY day").all(projectId, since) as Array<{ providerId: string; model: string; day: string; tokens: number }>;
+      const usage = tokenDailySeries(db, projectId, since);
       const cells = listReceipts(db);
       const byWorker = new Map<string, { providerId: string; model: string; tokens: number; days: Array<{ day: string; tokens: number }> }>();
       for (const row of usage) {
@@ -77,7 +79,7 @@ export function cockpitRpc(ctx: ServerCore, services: Services) {
     },
     /** The designer's statistics: ratios, the conditions of «trained», the readiness words. */
     cockpit_designer: async ({ projectId }: { projectId?: string }) => {
-      const all = ((await kv.get("lp.design.journal")) as DesignJournalLine[] | null) ?? [];
+      const all = await designJournalLines(kv);
       const lines = projectId ? all.filter((line) => line.projectId === projectId) : all;
       return { ratios: trainingRatios(lines), conditions: trainedConditions(lines), readiness: readinessWords(lines), recent: lines.slice(-20).reverse() };
     },
@@ -106,11 +108,11 @@ export function cockpitRpc(ctx: ServerCore, services: Services) {
       const changed: string[] = [];
       for (const taskId of taskIds) {
         if (action === "priority") {
-          const row = db.prepare("SELECT contract_json AS contract FROM lane_pilot_task WHERE id=? AND run_id=?").get(taskId, runId) as { contract?: string } | undefined;
-          if (!row?.contract) continue;
-          const contract = { ...(JSON.parse(row.contract) as Record<string, unknown>), priority: priority ?? "normal" };
-          db.prepare("UPDATE lane_pilot_task SET contract_json=? WHERE id=? AND run_id=?").run(JSON.stringify(contract), taskId, runId);
-        } else db.prepare("UPDATE lane_pilot_task SET held_until=? WHERE id=? AND run_id=?").run(action === "hold" ? Date.UTC(2999, 0, 1) : null, taskId, runId);
+          const stored = getTaskContractJson(db, taskId, runId);
+          if (!stored) continue;
+          const contract = { ...(JSON.parse(stored) as Record<string, unknown>), priority: priority ?? "normal" };
+          updateTaskContractJson(db, taskId, runId, JSON.stringify(contract));
+        } else setTaskHeldUntil(db, taskId, runId, action === "hold" ? Date.UTC(2999, 0, 1) : null);
         changed.push(taskId);
       }
       return { changed };
@@ -122,11 +124,11 @@ export function cockpitRpc(ctx: ServerCore, services: Services) {
     },
     /** A task for the window: its clarification, drawing, priority and hold from the contract, and the writer's approach note. */
     cockpit_task: async ({ runId, taskId }: { runId: string; taskId: string }) => {
-      const row = db.prepare("SELECT contract_json AS contract, held_until AS heldUntil FROM lane_pilot_task WHERE id=? AND run_id=?").get(taskId, runId) as { contract?: string; heldUntil?: number | null } | undefined;
-      if (!row?.contract) return null;
-      const contract = JSON.parse(row.contract) as { display_title?: string; clarify?: unknown; drawing?: string[]; priority?: string; area?: string; objective?: string };
+      const stored = getTaskContractJson(db, taskId, runId);
+      if (!stored) return null;
+      const contract = JSON.parse(stored) as { display_title?: string; clarify?: unknown; drawing?: string[]; priority?: string; area?: string; objective?: string };
       return { displayTitle: contract.display_title ?? null, objective: contract.objective ?? null, area: contract.area ?? null, clarify: contract.clarify ?? null, drawing: contract.drawing ?? [],
-        priority: contract.priority ?? "normal", heldUntil: row.heldUntil ?? null, approach: await kv.get(`lp.task.approach:${runId}:${taskId}`) };
+        priority: contract.priority ?? "normal", heldUntil: taskHeldUntil(db, taskId), approach: await readTaskApproach(kv, runId, taskId) };
     },
     /** Report a fault: what a person saw goes to the self-repair queue with the screen it was on. */
     cockpit_fault: async ({ screen, text }: { screen: string; text: string }) => {

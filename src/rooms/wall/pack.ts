@@ -1,3 +1,4 @@
+import { wfFailedStepOfRun, wfRunRow } from "@lane-pilot/workflow-engine";
 import { z } from "zod";
 import type { WallDb } from "./journal";
 
@@ -131,9 +132,9 @@ export function buildClassPack(db: WallDb, classKey: string, extra: { files?: Pa
   for (const id of [...ids].filter((item) => item.startsWith("wf:")).slice(0, 8)) {
     ids.delete(id);
     try {
-      const run = db.prepare("SELECT workflow_id, status, reason, project_id, harness_version, updated_at FROM lane_pilot_wf_run WHERE id=?").get(id.slice(3)) as { workflow_id: string; status: string; reason: string | null; project_id: string | null; harness_version: string | null; updated_at: number } | undefined;
+      const run = wfRunRow(db, id.slice(3));
       if (!run) continue;
-      const step = db.prepare("SELECT node_id, error FROM lane_pilot_wf_step WHERE run_id=? AND state IN ('failed','interrupted') ORDER BY updated_at DESC LIMIT 1").get(id.slice(3)) as { node_id: string; error: string | null } | undefined;
+      const step = wfFailedStepOfRun(db, id.slice(3));
       wfFacts.push(`graph run ${id.slice(3)}: ${run.workflow_id} ${run.status}, reason ${(run.reason ?? "-").slice(0, 300)}${step ? `, step ${step.node_id}: ${(step.error ?? "").slice(0, 300)}` : ""} (project ${run.project_id ?? "-"}, version ${run.harness_version ?? "-"}, at ${run.updated_at})`);
     } catch { /* a database without the engine's tables has no graph runs */ }
   }

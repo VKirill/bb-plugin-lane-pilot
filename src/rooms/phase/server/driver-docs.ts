@@ -1,4 +1,4 @@
-import { getRun, getRunWriterHost, getTask } from "../../storage";
+import { getRun, getRunWriterHost, getTask, listRunAttemptStates, listStageReceipts, listTaskIdsForRun } from "../../storage";
 import { taskFamily } from "../../runs";
 import { hostContract } from "../../contracts";
 import { runOnHost } from "@lane-pilot/host-calls";
@@ -110,8 +110,10 @@ export function installDocs(base: DriverBase) {
     const out = new Map<string, TaskFact>();
     const issued = phase.record.execution?.issued ?? {};
     if (!phase.runId) return out;
-    const attempts = db.prepare("SELECT task_id, state FROM lane_pilot_attempt WHERE run_id=? ORDER BY created_at, attempt_no").all(phase.runId) as Array<{ task_id: string; state: string }>;
-    const receipts = db.prepare("SELECT task_id, stage_id, state FROM lane_pilot_stage_receipt WHERE run_id=? AND stage_id IN ('plan-fact','verification','code-critique','browser-qa')").all(phase.runId) as Array<{ task_id: string; stage_id: string; state: string }>;
+    const attempts = listRunAttemptStates(db, phase.runId);
+    const receipts = listStageReceipts(db, phase.runId)
+      .filter((row) => ["plan-fact","verification","code-critique","browser-qa"].includes(row.stageId))
+      .map((row) => ({ task_id: row.taskId, stage_id: row.stageId, state: row.state }));
     for (const [pieceId, taskId] of Object.entries(issued)) {
       const family = taskFamily(taskId);
       const mine = attempts.filter((row) => taskFamily(row.task_id) === family);
@@ -126,7 +128,7 @@ export function installDocs(base: DriverBase) {
 
   /** The next free redo id of a piece's family in the run: piece.2, piece.3, … */
   function redoId(pieceId: string, runId: string | null): string {
-    const taken = runId ? (db.prepare("SELECT id FROM lane_pilot_task WHERE run_id=?").all(runId) as Array<{ id: string }>).map((row) => row.id).filter((id) => taskFamily(id) === pieceId) : [];
+    const taken = runId ? listTaskIdsForRun(db, runId).filter((id) => taskFamily(id) === pieceId) : [];
     let n = 2;
     while (taken.includes(`${pieceId}.${n}`)) n += 1;
     return `${pieceId}.${n}`;

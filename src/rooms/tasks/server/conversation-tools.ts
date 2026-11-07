@@ -3,7 +3,7 @@ import { callerPluginMetadata, registerObservedTool } from "../../platform/serve
 import { ToolError, type ServerCore } from "../../contracts/server";
 import { hostContract } from "../../contracts";
 import { failureClass, wayOut } from "../../runs";
-import { getRun, getRunWriterHost } from "../../storage";
+import { getRun, getRunWriterHost, listAttemptRowsForProject, listRunTaskSummaries } from "../../storage";
 import { checkRecipe, factKind, type CheckMeasure } from "../rails";
 
 /**
@@ -12,7 +12,11 @@ import { checkRecipe, factKind, type CheckMeasure } from "../rails";
  * conversation — Whole request selects a recipe, Three check recipes, A check as an operation, Five required measures, Stop a check).
  * The PM asks code for the facts before it answers; the owner's «проверь …» runs as an operation with every measure on record.
  */
-export function registerConversationTools(ctx: ServerCore): void {
+interface Services {
+  spendByModel: (projectId: string, day: string) => Array<{ provider: string; model: string; tokens: number }>;
+}
+
+export function registerConversationTools(ctx: ServerCore, services: Services): void {
   const { db, bb } = ctx;
   const running = new Map<string, AbortController>();
 
@@ -30,26 +34,23 @@ export function registerConversationTools(ctx: ServerCore): void {
       const kind = factKind(input.question);
       const runId = await runOf(context);
       if (kind === "board") {
-        const rows = db.prepare(`SELECT t.id AS taskId, COALESCE(json_extract(t.contract_json,'$.display_title'), json_extract(t.contract_json,'$.title')) AS title,
-          (SELECT a.state FROM lane_pilot_attempt a WHERE a.task_id=t.id ORDER BY a.created_at DESC LIMIT 1) AS state
-          FROM lane_pilot_task t WHERE t.run_id=? ORDER BY t.created_at DESC LIMIT 60`).all(runId ?? "") as Array<{ taskId: string; title: string; state: string | null }>;
+        const rows = listRunTaskSummaries(db, runId ?? "");
         const counts: Record<string, number> = {};
         for (const row of rows) counts[row.state ?? "queued"] = (counts[row.state ?? "queued"] ?? 0) + 1;
         return JSON.stringify({ kind, runId, counts, tasks: rows, sources: [`the run board (lane_pilot_attempt, run ${runId})`] });
       }
       if (kind === "limit") {
         const day = new Date().toISOString().slice(0, 10);
-        const rows = db.prepare("SELECT provider_id AS provider, model, SUM(total_tokens) AS tokens FROM lane_pilot_token_daily WHERE project_id=? AND day=? GROUP BY provider_id, model ORDER BY tokens DESC").all(context.projectId, day);
+        const rows = services.spendByModel(context.projectId, day);
         return JSON.stringify({ kind, day, byModel: rows, sources: [`the spend book (lane_pilot_token_daily, ${day})`] });
       }
       if (kind === "history") {
-        const rows = db.prepare(`SELECT a.task_id AS taskId, a.state, a.updated_at AS at FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
-          WHERE r.project_id=? AND a.state IN ('accepted','blocked','canceled') ORDER BY a.updated_at DESC LIMIT 15`).all(context.projectId) as Array<{ taskId: string; state: string; at: number }>;
+        const rows = listAttemptRowsForProject(db, { projectId: context.projectId, states: ["accepted","blocked","canceled"], limit: 15 })
+          .map((row) => ({ taskId: row.taskId, state: row.state, at: row.at }));
         return JSON.stringify({ kind, finished: rows.map((row) => ({ ...row, at: new Date(row.at).toISOString() })), sources: ["the finished attempts (lane_pilot_attempt)"] });
       }
       if (kind === "failure") {
-        const rows = db.prepare(`SELECT a.task_id AS taskId, a.state, a.reason, a.failure_code AS failureCode, a.updated_at AS at FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
-          WHERE r.project_id=? AND a.state IN ('validation_failed','blocked','provider_error','timeout','empty_output') ORDER BY a.updated_at DESC LIMIT 10`).all(context.projectId) as Array<{ taskId: string; state: string; reason: string | null; failureCode: string | null; at: number }>;
+        const rows = listAttemptRowsForProject(db, { projectId: context.projectId, states: ["validation_failed","blocked","provider_error","timeout","empty_output"], limit: 10 });
         return JSON.stringify({ kind, failures: rows.map((row) => ({ ...row, class: failureClass(row.state, row.reason), reason: (row.reason ?? "").slice(0, 300), next: wayOut(row.state, row.reason, row.failureCode) ?? undefined, at: new Date(row.at).toISOString() })), sources: ["the failed attempts and their failure class (lane_pilot_attempt)"] });
       }
       return JSON.stringify({ kind, facts: null, note: "no code answer for this kind of question: answer from your reading" });

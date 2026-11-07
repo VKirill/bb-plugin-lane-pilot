@@ -68,3 +68,9 @@ export function englishSelfRepairChoice(choiceId: string): string | undefined {
 export function workflowHumanDetail(locale: OwnerLocale, runId: string, stepId: string): string {
   return locale === "en" ? `Workflow run ${runId}, step ${stepId}.` : `Запуск графа ${runId}, шаг ${stepId}.`;
 }
+
+/** The owner's explicit ru/en choice only (what the UI stored), null when nothing was chosen. */
+export async function explicitOwnerLocale(bb: { storage: { kv: { get: (key: string) => Promise<unknown> } } }): Promise<OwnerLocale | null> {
+  const stored = await bb.storage.kv.get(OWNER_LOCALE_PREFERENCE_KEY);
+  return isOwnerLocale(stored) ? stored : null;
+}

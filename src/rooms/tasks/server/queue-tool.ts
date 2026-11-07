@@ -6,7 +6,7 @@ import { recordTaskWord } from "../words";
 import { answerTaskWord } from "../../lead";
 import { taskFamily, wayOut } from "../../runs";
 import { hostContract } from "../../contracts";
-import { getRun, getRunWriterHost, latestTaskAttemptState } from "../../storage";
+import { getRun, getRunWriterHost, latestAttemptsForProject, latestTaskAttemptState, setTaskHeldUntil } from "../../storage";
 
 /**
  * The PM's queue controls (SMA map: Durable queue row): hold a task out of the queue until a date or until released (Held until year 2999),
@@ -33,8 +33,7 @@ export function registerQueueTool(ctx: ServerCore): void {
     ]),
     execute: async (input, context) => {
       if (input.action === "dead_letters") {
-        const rows = db.prepare(`SELECT a.task_id AS taskId, a.state, a.reason, a.failure_code AS failureCode, a.updated_at AS updatedAt FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
-          WHERE r.project_id=? AND a.created_at=(SELECT MAX(b.created_at) FROM lane_pilot_attempt b WHERE b.task_id=a.task_id) ORDER BY a.updated_at DESC LIMIT 500`).all(context.projectId) as Array<{ taskId: string; state: string; reason: string | null; failureCode: string | null; updatedAt: number }>;
+        const rows = latestAttemptsForProject(db, context.projectId);
         return JSON.stringify({ deadLetters: deadLetters(rows, Date.now()).slice(0, 50).map((row) => ({ ...row, next: wayOut(row.state, row.reason, row.failureCode) ?? undefined })) });
       }
       const runId = await runOf(context);
@@ -57,8 +56,7 @@ export function registerQueueTool(ctx: ServerCore): void {
       const until = input.action === "release" ? null : input.until ? Date.parse(input.until) : HOLD_FOREVER;
       const changed: string[] = [];
       for (const taskId of input.taskIds) {
-        const result = db.prepare("UPDATE lane_pilot_task SET held_until=? WHERE id=? AND run_id=?").run(until, taskId, runId);
-        if (result.changes) changed.push(taskId);
+        if (setTaskHeldUntil(db, taskId, runId, until)) changed.push(taskId);
       }
       // A hold stops a queued task only: one whose writer already works goes on, and the PM must stop it (cancel) if it is not wanted.
       const working = input.action === "hold" ? changed.filter((taskId) => ["spawn_requested", "running"].includes(latestTaskAttemptState(db, context.projectId, taskId) ?? "")) : [];

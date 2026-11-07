@@ -1,3 +1,4 @@
+import { wfLatestPipelineRunId, wfRunInputsJson } from "@lane-pilot/workflow-engine";
 import { countAttempts, getAttempt, getRunSettingsScopes, getTaskGitBase, listAttemptsForTask, listStageReceipts, loadProjectSettings, saveTaskGitBase, setRunState, transitionAttempt } from "../../storage";
 import type {StageHelperSettings} from "../../platform/server";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
@@ -348,9 +349,7 @@ export function dispatchReply(summary: RunSummary): Record<string, unknown> | nu
 
 /** The newest pipeline run of a task (`lp-task-pipeline`, linked to the Lane Pilot run and the task), or null. */
 export function dispatchRunOf(db: ServerCore["db"], runId: string, taskId: string): string | null {
-  const row = db.prepare("SELECT id FROM lane_pilot_wf_run WHERE workflow_id='lp-task-pipeline' AND link_run_id=? AND link_task_id=? ORDER BY created_at DESC, rowid DESC LIMIT 1")
-    .get(runId, taskId) as { id: string } | undefined;
-  return row?.id ?? null;
+  return wfLatestPipelineRunId(db, runId, taskId);
 }
 
 export type DispatchRerun =
@@ -368,8 +367,7 @@ export async function rerunDispatchStages(engine: WorkflowEngine, runtime: Dispa
   if (!pipelineRunId) return { ok: false, reason: "no_pipeline_run" };
   // The PM's baseRef is kept only in the pipeline run's inputs.
   try {
-    const row = runtime.ctx.db.prepare("SELECT inputs_json FROM lane_pilot_wf_run WHERE id=?").get(pipelineRunId) as { inputs_json: string } | undefined;
-    const baseRef = (JSON.parse(row?.inputs_json || "{}") as { baseRef?: unknown }).baseRef;
+    const baseRef = (JSON.parse(wfRunInputsJson(runtime.ctx.db, pipelineRunId) || "{}") as { baseRef?: unknown }).baseRef;
     if (typeof baseRef === "string") runtime.baseRef = baseRef;
   } catch { /* no baseRef */ }
   engine.cancel(pipelineRunId, "the task was updated");

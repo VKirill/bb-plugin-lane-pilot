@@ -13,3 +13,5 @@ export { createReconcile } from "./reconcile";
 export { BREAKERS_KEY, DRILL_KEY, PARKED_KEY, createStability } from "./stability";
 export type { DrillOutcome, ParkedTask } from "./stability";
 export { mountWorktreeJanitor, protectedWorktreePaths, runWorktreeJanitor } from "./worktree-janitor";
+export { reconcileScanOpen } from "../reconcile";
+export { clearDrainSnapshot, readDrainSnapshot, type DrainSnapshot } from "./deploy-drain";

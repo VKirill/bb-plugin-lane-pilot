@@ -16,6 +16,7 @@ import type { AttemptState } from "../../state-machine";
 import { finishRunSafely } from "../run-finish";
 import { buildTaskGraph } from "../task-graph";
 import { buildTaskBoard, readTaskCard, type CardThread } from "../task-board";
+import type { TokenCursorReader } from "../../../work-graph/server";
 import { readThreadLive } from "../thread-live";
 import { cancelAttemptById } from "../cancel";
 import { queueWaitPercentiles, runQueueWaits } from "../../../usage/server/attempt-metrics";
@@ -38,6 +39,7 @@ interface Services {
   resolveProjectWriterHost: WriterHostApi["resolveProjectWriterHost"];
   resumeOrphans: ReconcileApi["resumeOrphans"];
   rollback: RollbackApi;
+  tokenCursorRow: TokenCursorReader;
 }
 
 
@@ -220,7 +222,7 @@ export function runsRpc(ctx: ServerCore, services: Services) {
       }));
       return { items: items.map((item) => ({ ...item, pmThreadTitle: item.pmThreadId ? pmTitles.get(item.pmThreadId)?.title ?? null : null })) };
     },
-    thread_live: async ({ threadId }) => readThreadLive(db, threadId),
+    thread_live: async ({ threadId }) => readThreadLive(db, threadId, services.tokenCursorRow),
     task_card: async ({ runId, taskId }) => {
       const card = readTaskCard(db, { runId, taskId });
       if (!card) return null;

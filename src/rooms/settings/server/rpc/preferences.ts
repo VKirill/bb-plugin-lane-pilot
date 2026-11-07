@@ -9,11 +9,13 @@ import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import { rpcContract } from "../../../contracts";
 import type { ServerCore } from "../../../contracts/server";
 
-import { recordResolvedLocale } from "../../../relay/server";
+import { OWNER_LOCALE_PREFERENCE_KEY, recordResolvedLocale } from "../../../relay/server";
 
 import type { WriterHostApi } from "../../../writer/server/writer-host";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
+const LAST_PROJECT_KEY = "preferences:lastProjectId";
+
 interface Services {
   listedAgentProfiles: WriterHostApi["listedAgentProfiles"];
 }
@@ -23,22 +25,22 @@ export function preferencesRpc(ctx: ServerCore, services: Services) {
   const registry = agentRegistry(ctx);
   return {
     get_preferences: async ({ suggestedLocale }) => {
-      const storedLocale = await bb.storage.kv.get<string>("preferences:locale");
-      const lastProjectId = await bb.storage.kv.get<string>("preferences:lastProjectId");
+      const storedLocale = await bb.storage.kv.get<string>(OWNER_LOCALE_PREFERENCE_KEY);
+      const lastProjectId = await bb.storage.kv.get<string>(LAST_PROJECT_KEY);
       const preference: "auto" | "en" | "ru" = storedLocale === "ru" || storedLocale === "en" ? storedLocale : "auto";
       const resolvedLocale: "en" | "ru" = preference === "auto" ? suggestedLocale : preference;
-      if (storedLocale !== preference) await bb.storage.kv.set("preferences:locale", preference);
+      if (storedLocale !== preference) await bb.storage.kv.set(OWNER_LOCALE_PREFERENCE_KEY, preference);
       await recordResolvedLocale(bb, resolvedLocale);
       return { locale: resolvedLocale, preference, lastProjectId: lastProjectId ?? null };
     },
     set_locale: async ({ locale: preference, suggestedLocale }) => {
-      await bb.storage.kv.set("preferences:locale", preference);
+      await bb.storage.kv.set(OWNER_LOCALE_PREFERENCE_KEY, preference);
       const locale = preference === "auto" ? suggestedLocale : preference;
       await recordResolvedLocale(bb, locale);
       return { locale, preference };
     },
     remember_project: async ({ projectId }) => {
-      await bb.storage.kv.set("preferences:lastProjectId", projectId);
+      await bb.storage.kv.set(LAST_PROJECT_KEY, projectId);
       return { ok: true as const };
     },
     list_sections: async ({ projectId }) => ({
@@ -52,7 +54,7 @@ export function preferencesRpc(ctx: ServerCore, services: Services) {
           name: row.name,
           kind: row.kind === "personal" || row.kind === "standard" ? row.kind : undefined,
         })),
-        lastProjectId: await bb.storage.kv.get<string>("preferences:lastProjectId") ?? null,
+        lastProjectId: await bb.storage.kv.get<string>(LAST_PROJECT_KEY) ?? null,
       };
     },
     get_globals: async () => {
@@ -73,7 +75,7 @@ export function preferencesRpc(ctx: ServerCore, services: Services) {
       };
     },
     get_agent_inventory: async ({ projectId, hostId }) => {
-      let resolvedProject = projectId ?? await bb.storage.kv.get<string>("preferences:lastProjectId") ?? null;
+      let resolvedProject = projectId ?? await bb.storage.kv.get<string>(LAST_PROJECT_KEY) ?? null;
       if (!resolvedProject) {
         try {
           const listed = await bb.sdk.projects.list({ includePersonal: true });

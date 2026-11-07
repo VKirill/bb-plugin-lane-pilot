@@ -1,12 +1,13 @@
 import { TASK_ATTEMPT_BUDGET, retryBudgetReason, spendRetryBudget } from "../retry-budget";
 import { retrySafetyStop, taskLimitStop, TASK_WALL_CLOCK_MIN, VERIFY_MAX_PASSES } from "./retry-safety";
-import { pilotOf, pilotUnderWall, runTasks } from "../../pilot";
+import { pilotOf, pilotUnderWall, runTasks, type TaskWallRow } from "../../pilot";
+import { listWalls } from "../../wall";
 import { breakerKey, budgetStopReason, classifyFailure, runningWriterBudgetStop, tokenUsageFromEvent, type RunBudget } from "@lane-pilot/resilience";
 import type { DirtSnapshot } from "../cli-outcome";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
 import { providerPoolCap } from "@lane-pilot/settings-catalog";
 import {WRITER_PROFILES, isZcodeProvider, rotatedWriterSettings, type WriterProfile, writerFallbackChain, writerFallbacks} from "@lane-pilot/models";
-import { DEPENDENCY_REDO_WAIT_MS, blockedReasonCount, countAttempts, countChargedAttempts, countThreadTurns, createAttempt, endSpawnFailure, failureFieldsOf, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getTask, getTaskPlan, latestTaskAttemptState, listAttemptsForTask, listOpenAttempts, listStageReceipts, listUnansweredWriterQuestions, loadProjectSettings, noteCleanAdmission, noteToldPmDirectly, onAttemptChanged, parkAttemptWake, trailingQueuedParks, transitionAttempt, taskBasePath } from "../../storage";
+import { DEPENDENCY_REDO_WAIT_MS, blockedReasonCount, countAttempts, countChargedAttempts, countThreadTurns, createAttempt, endSpawnFailure, failureFieldsOf, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getTask, getTaskPlan, latestTaskAttemptState, attemptReasonsForTask, canceledLatestTaskIds, listAttemptsForTask, listAttemptsInStates, listOpenAttempts, listStageReceipts, listRunTaskRows, listTaskAttemptRows, listTracedAttemptsSince, listUnansweredWriterQuestions, loadProjectSettings, priorAttemptStates, taskHeldUntil, noteCleanAdmission, noteToldPmDirectly, onAttemptChanged, parkAttemptWake, trailingQueuedParks, transitionAttempt, taskBasePath } from "../../storage";
 import { closeOwnerItem, closeOwnerItemsByPrefix, ownerItemPrefixCount, postOwnerItem } from "../../owner-waiting";
 import { taskV2Schema } from "../../contracts";
 import { ownsPathsOverlap, pollPause } from "@lane-pilot/kit";
@@ -18,7 +19,7 @@ import { emergencyFallbackDecision } from "../../night";
 import { resolveBestOf, roundSeedBrief, roundSurvivors } from "../best-of";
 import { QUALITY_MODE_SETTING, resolveQualityMode } from "../../critique";
 import { runOnHost } from "@lane-pilot/host-calls";
-import { writerPickOverlay, type WriterLoad } from "../writer-model-pick";
+import { WRITER_PICK_PREFIX, writerPickOverlay, type WriterLoad } from "../writer-model-pick";
 import { loadWriterPin, noteWriterPair } from "../writer-model-pin";
 import { reassignedReason, takeReassignRequest, type ReassignRequest } from "./reassign";
 import { usageHoldReason, usageSkipPercent } from "../../usage/server";
@@ -131,9 +132,7 @@ export function quarantiningRegression(db:ReturnType<typeof openDatabase>, task:
 
 export function familyFailureRecord(db:ReturnType<typeof openDatabase>, runId:string, taskId:string):{ state:string; reason:string|null } | null {
   const family = taskFamily(taskId);
-  const rows = db.prepare(`SELECT task_id, state, reason FROM lane_pilot_attempt
-    WHERE run_id=? AND state IN ('provider_error','timeout','empty_output','validation_failed','spawn_rejected')
-    ORDER BY created_at`).all(runId) as Array<{ task_id:string; state:string; reason:string|null }>;
+  const rows = listAttemptsInStates(db, runId, ["provider_error","timeout","empty_output","validation_failed","spawn_rejected"]);
   const other = rows.filter((row) => row.task_id !== taskId && taskFamily(row.task_id) === family);
   const last = other.at(-1);
   return last ? { state:last.state, reason:last.reason } : null;
@@ -153,8 +152,7 @@ const verificationFailure = (outcome:Record<string, unknown>):boolean =>
  * An acceptance since then clears it.
  */
 function lastOwnFailure(db:ReturnType<typeof openDatabase>, runId:string, taskId:string, exceptAttemptId:string):Record<string, unknown>|null {
-  const rows = db.prepare("SELECT id, state, reason, check_name FROM lane_pilot_attempt WHERE run_id=? AND task_id=? ORDER BY created_at DESC, rowid DESC")
-    .all(runId, taskId) as Array<{ id:string; state:string; reason:string|null; check_name:string|null }>;
+  const rows = listTaskAttemptRows(db, runId, taskId);
   for (const row of rows) {
     if (row.id === exceptAttemptId) continue;
     if (row.state === "accepted") return null;
@@ -238,9 +236,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
   const REFUSAL_WINDOW_MS = 30 * 86_400_000;
   const REFUSAL_MIN_ATTEMPTS = 10;
   const refusalShares = (projectId:string):Map<string, { attempts:number; refused:number }> => {
-    const rows = db.prepare(`SELECT t.trace_json, a.state FROM lane_pilot_attempt a
-      JOIN lane_pilot_run r ON r.id=a.run_id JOIN lane_pilot_attempt_reasoning t ON t.attempt_id=a.id
-      WHERE r.project_id=? AND a.created_at>=?`).all(projectId, Date.now() - REFUSAL_WINDOW_MS) as Array<{ trace_json:string; state:string }>;
+    const rows = listTracedAttemptsSince(db, projectId, Date.now() - REFUSAL_WINDOW_MS);
     const out = new Map<string, { attempts:number; refused:number }>();
     for (const row of rows) {
       let trace:{ providerId?:string; model?:string } | null = null;
@@ -258,7 +254,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
   async function writerLoad(profiles:readonly WriterProfile[], hostId:string, settings:Record<string, unknown>, projectId:string):Promise<Record<string, WriterLoad>> {
     // ponytail: counts only tasks whose writer Jev picked (a task on the project's own writer has no kept pick); count attempts by writer pair if that skews the spread.
     const running = new Map<string, number>();
-    const picks = await Promise.all([...services.activeWriterTasks].map((key) => bb.storage.kv.get(`writer-pick:${key}`)));
+    const picks = await Promise.all([...services.activeWriterTasks].map((key) => bb.storage.kv.get(`${WRITER_PICK_PREFIX}${key}`)));
     for (const picked of picks) {
       const provider = typeof picked === "string" && picked ? WRITER_PROFILES.find((row) => row.key === picked)?.providerId : undefined;
       if (provider) running.set(provider, (running.get(provider) ?? 0) + 1);
@@ -372,12 +368,14 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
      */
     const waitForDependencies = async (shouldStop?:()=>string|null): Promise<string | null> => {
       // The pilot of this task's siblings (src/rooms/pilot): waited for like a dependency, except that a canceled pilot holds no one.
-      const waveTasks = runTasks(db, input.runId);
+      const waveTasks = runTasks(listRunTaskRows(db, input.runId), canceledLatestTaskIds(db, input.runId));
+      let taskWalls: TaskWallRow[] = [];
+      try { taskWalls = listWalls(db, { kind: "task", states: ["stopped","hunting","hunted","backlog"] }); } catch { /* a database without the wall tables holds no pilot */ }
       const pilot = pilotOf(input.taskId, waveTasks);
       // A blocked pilot that nothing will redo soon (its own attempts are spent, or the wall ladder holds its family or a hunt runs on its
       // files) holds no one: the wave goes on in its own order, each task still serialised by owns_paths overlap. Only the PM's own depends_on keeps the 6-hour wait.
       const pilotGivenUp = (dep:string) => countChargedAttempts(db, input.runId, dep) >= MAIN_ATTEMPT_LIMIT
-        || pilotUnderWall(db, input.runId, taskFamily(dep), waveTasks.find((task) => task.id === dep)?.ownsPaths ?? []);
+        || pilotUnderWall(taskWalls, input.runId, taskFamily(dep), waveTasks.find((task) => task.id === dep)?.ownsPaths ?? []);
       const deps = [...new Set([...(input.task.depends_on ?? []), ...(pilot ? [pilot] : [])].filter((dep) => dep && dep !== input.taskId))];
       let noted = "";
       const since = Date.now();
@@ -538,7 +536,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         const idle = new Set<string>();
         for (const row of ahead) {
           if (row.state !== "queued") continue;
-          const heldUntil = (db.prepare("SELECT held_until FROM lane_pilot_task WHERE id=?").get(row.task_id) as { held_until:number|null } | undefined)?.held_until ?? null;
+          const heldUntil = taskHeldUntil(db, row.task_id);
           if ((heldUntil !== null && heldUntil > Date.now()) || await isRunPaused(bb.storage.kv as never, row.run_id)) idle.add(row.id);
         }
         const blocker = ahead.find((row) => {
@@ -712,7 +710,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         }, onReadBound: (cause) => { parkForStoreRead(cause); return false; } })) return false;
         // Held until a date (2999 = until released): the task stays queued and takes no slot (lane_pilot_queue {action:"hold"}).
         for (let noted = false; !ctx.isDisposed();) {
-          const held = (db.prepare("SELECT held_until FROM lane_pilot_task WHERE id=?").get(input.taskId) as { held_until: number | null } | undefined)?.held_until ?? null;
+          const held = taskHeldUntil(db, input.taskId);
           if (!held || held <= Date.now()) break;
           if (!noted) {
             noted = true;
@@ -1165,14 +1163,14 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
           String(last.status), typeof last.reason === "string" ? last.reason : null, input.taskId);
         // C6: a class's own intervention instead of the same retry — the streak of consecutive same-class failures of
         // this task decides. `failure.interventions=off` keeps the old uniform retry (live setting).
-        const priorRows = db.prepare("SELECT state,reason FROM lane_pilot_attempt WHERE run_id=? AND task_id=? AND id!=? ORDER BY updated_at DESC").all(input.runId, input.taskId, attemptId) as Array<{ state: string; reason: string | null }>;
+        const priorRows = priorAttemptStates(db, input.runId, input.taskId, attemptId);
         let sameClassStreak = 1;
         for (const row of priorRows) { if (failureClass(row.state, row.reason) === failedClass) sameClassStreak++; else break; }
         const intervention = configuredSetting(runSettings, "failure.interventions") === "off" ? "same_retry_remark" : failureIntervention(failedClass, sameClassStreak);
         judged = { status: String(last.status), reason: typeof last.reason === "string" ? last.reason : null, klass: failedClass, mast: MAST_OF_FAILURE[failedClass] ?? "external:unknown", intervention, streak: sameClassStreak };
         // A check the host killed for time is not the task's red code: one retry, then it stops on its own budget.
         if (failedClass === "verification_timeout") {
-          const reasons = (db.prepare("SELECT reason FROM lane_pilot_attempt WHERE run_id=? AND task_id=?").all(input.runId, input.taskId) as Array<{ reason: string | null }>).map((row) => row.reason);
+          const reasons = attemptReasonsForTask(db, input.runId, input.taskId);
           if (verificationTimeoutOverBudget(reasons)) {
             const reason = `verification_timeout_budget: the check timed out again after its ${VERIFICATION_TIMEOUT_RETRIES} retry; this budget is separate from the task's attempts. Raise timeout_sec or narrow the command, then dispatch again`;
             const latest = getAttempt(db, attemptId);
