@@ -16,15 +16,15 @@ export type SystemMap = { nodes: Node[]; edges: Edge[] };
 
 /** Rooms by the part of the system they serve; a room not listed lands in «Other». */
 const AREAS: Record<string, string[]> = {
-  "Task pipeline": ["writer", "runs", "tasks", "acceptance", "baseline", "verification", "validators", "critique", "qa", "stage-return", "pilot", "phase", "run-goal", "rollback", "backlog", "receipts", "conveyor", "work-graph"],
+  "Task pipeline": ["writer", "runs", "tasks", "acceptance", "baseline", "verification", "validators", "critique", "qa", "stage-return", "phase", "run-goal", "rollback", "backlog", "work-graph"],
   "Graphs and schedule": ["workflow", "night-graphs", "schedule", "relay", "forge"],
-  "PM, agents and doors": ["native-agent", "native-install", "session-hooks", "guard-tools", "permits", "secrets", "tools", "front", "cockpit", "council", "outbound", "host-worker", "project-life"],
+  "PM, agents and doors": ["native-agent", "native-install", "session-hooks", "secrets", "tools", "front", "cockpit", "council", "host-worker", "project-life"],
   "Models, Jev, money": ["jev", "capability", "usage", "money"],
   "Memory and the owner": ["memory", "memory-eval", "memory-probe", "memory-tiers", "anamnesis", "learning", "rule-forms", "docs"],
-  "Self-improvement": ["wall", "night", "bench", "harness", "hypotheses", "improvement", "self-improve", "self-repair", "lead", "errands", "policy", "checkers", "coverage", "twins", "forecast", "design-eval", "pm-replay", "sma-map", "atlas", "wires"],
+  "Self-improvement": ["wall", "night", "bench", "harness", "hypotheses", "improvement", "self-repair", "lead", "errands", "policy", "checkers", "coverage", "forecast", "design-eval", "pm-replay", "sma-map", "wires"],
   "Stability and the owner's list": ["stability", "outage", "deferral", "owner-waiting", "owner-presence"],
   "Platform": ["core", "storage", "contracts", "settings", "ui-shell"],
-  "Pixel World": ["world", "world-assets"],
+  "Pixel World": ["world"],
 };
 
 export function collectSystemMap(root: string): SystemMap {
@@ -76,7 +76,7 @@ export function collectSystemMap(root: string): SystemMap {
 
   // Tables: the room whose migration creates it owns it; another room naming it reads it.
   // Rooms that describe the whole system (maps, registries) name every table and own none of them.
-  const describers = new Set(["room:sma-map", "room:wires", "room:atlas", "room:coverage"]);
+  const describers = new Set(["room:sma-map", "room:wires", "room:coverage"]);
   const rank = (path: string) => /migrations?\.ts$/.test(path) ? 0 : /(database|store|journal|schema)\.ts$/.test(path) ? 1 : 2;
   const declared = new Map<string, { owner: string; rank: number }>();
   for (const [path, text] of source) for (const hit of text.matchAll(/CREATE TABLE (?:IF NOT EXISTS )?(lane_pilot_[a-z0-9_]+)/g)) {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { approvalSuggestions, excavate, htmlReport } from "../../src/rooms/self-improve";
+import { approvalSuggestions, excavate, htmlReport } from "../../src/rooms/tools/server/self-improve";
 import {
   GENESIS, acceptanceLines, designGate, partHash, renderBook,
   type BookPart, type Phase, type PhaseRecord, type PlanItem, type TaskFact,

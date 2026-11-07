@@ -16,3 +16,5 @@ export {
 } from "./owner-locale";
 export { mountRelay, relayFor } from "./relay";
 export { sendServiceMessage } from "./service-message";
+export { EVENT_FIELDS, isOutboundState, mountOutbound, taskEventBody, worldVersion } from "./outbound";
+export type { TaskEvent } from "./outbound";

@@ -3,7 +3,7 @@ import { providerForwardsAgentOnly, writerExecutionSelection } from "@lane-pilot
 import { fullAccessSpawn, modelCatalogOf, resolveSpawnModel, scheduleIsolated } from "../../platform/server";
 import { stringAt, orMiss, isNotFound, bestEffort } from "@lane-pilot/kit";
 import { pickHunter, type WallConfig } from "../config";
-import { conveyorState } from "../../conveyor";
+import { conveyorState } from "../../runs";
 
 import type { ServerCore } from "../../contracts/server";
 import { createAttempt, getAttempt } from "../../storage";

@@ -1,9 +1,9 @@
 import { createHash } from "node:crypto";
 import type Database from "better-sqlite3";
-import packageJson from "../../../package.json";
-import { gateRunVerdict, latestGateRun } from "../verification/server"
-import { parseIntegrationGateSettings } from "../contracts/integration-gate";
-import { loadProjectSettings } from "../storage";
+import packageJson from "../../../../package.json";
+import { gateRunVerdict, latestGateRun } from "../../verification/server"
+import { parseIntegrationGateSettings } from "../../contracts";
+import { loadProjectSettings } from "../../storage";
 
 /**
  * Receipts and evidence (SMA map: Receipts and evidence). Read-only assemblies over what the stages left:
@@ -13,8 +13,8 @@ import { loadProjectSettings } from "../storage";
  * - preship: what is still open before a release — unmerged work, open regressions, open deferrals — each with its disposition;
  * - PR passport: the body of a pull request assembled from the task's receipts (PR passport assembler).
  */
-import { getAttempt, getReasoningTraceJson, getTaskContractJson, listStageReceipts, openAttemptBriefs } from "../storage";
-import { listOpenDeferralBriefs } from "../deferral/server";
+import { getAttempt, getReasoningTraceJson, getTaskContractJson, listStageReceipts, openAttemptBriefs } from "../../storage";
+import { listOpenDeferralBriefs } from "../../deferral/server";
 
 type Db = Database.Database;
 const sha = (text: string) => createHash("sha256").update(text).digest("hex");

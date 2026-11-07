@@ -2,7 +2,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import { BEAT_KEY, gapOutage, listOutages } from "../../src/rooms/outage";
 import { recordStartGap, runOutageCli } from "../../src/rooms/outage/server";
-import { conveyorState, setConveyor } from "../../src/rooms/conveyor";
+import { conveyorState, setConveyor } from "../../src/rooms/runs";
 import { isHeld } from "../../src/rooms/runs/server";
 import { setRunPaused } from "../../src/rooms/runs/server";
 import { waitWhileRunPaused } from "../../src/rooms/runs/server";

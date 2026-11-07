@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { shapeOf, twinDiffers } from "../src/rooms/twins";
+import { shapeOf, twinDiffers } from "./helpers/twins";
 import { sdkDouble, type DoubleEnvironment, type DoubleThread } from "./fixtures/sdk-double";
 
 const record = (name: string) => (JSON.parse(readFileSync(join(__dirname, "fixtures/real-shapes", `${name}.json`), "utf8")) as { shape: unknown }).shape;

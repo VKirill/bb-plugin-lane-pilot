@@ -7,10 +7,10 @@ import { critiqueProblems, readinessWords, roleLine, trainedConditions, training
 import { answerFirstRun, firstRunNeeded, firstRunSettings, helperDraft, MUTATING_RPC, parseHelper, peerLine } from "../src/rooms/front";
 import { FORBIDDEN_GRANTS, draftFile, enabledPath, lintDraft } from "../src/rooms/forge";
 import { capOf, moneyHold, spendBook, windowHold } from "../src/rooms/money";
-import { approvalSuggestions, excavate, htmlReport } from "../src/rooms/self-improve";
-import { taskEventBody } from "../src/rooms/outbound";
+import { approvalSuggestions, excavate, htmlReport } from "../src/rooms/tools/server/self-improve";
+import { taskEventBody } from "../src/rooms/relay/server";
 import { screenFor, unusedReads } from "../src/rooms/cockpit/ui/registry";
-import { manifest, preship, receiptChain, verifyChain } from "../src/rooms/receipts";
+import { manifest, preship, receiptChain, verifyChain } from "../src/rooms/tools/server/receipts";
 import { createRun, openDatabase } from "../src/rooms/plugin-db";
 
 const item = (id: string, extra: Partial<PlanItem> = {}, task: Record<string, unknown> = {}): PlanItem => ({
@@ -197,7 +197,7 @@ describe("permits: the ticket channel on a machine", () => {
 
 describe("permits: the PM's tool", () => {
   it("mounts the sweep and registers lane_pilot_permit", async () => {
-    const { mountPermits } = await import("../src/rooms/permits");
+    const { mountPermits } = await import("../src/rooms/writer/server");
     const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
     const db = openDatabase(bb);
     const names: string[] = [];

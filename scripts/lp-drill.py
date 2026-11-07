@@ -103,8 +103,8 @@ STANDALONE = ("guard_hash", "deferrals", "checkers", "watchdog", "nogit", "nogit
 # and every live scenario runs at least once a day (LIVE_MAX_AGE_SEC) whatever changed.
 LIVE = ("memory_paths", "helper_providers", "parallel3")
 LIVE_MAX_AGE_SEC = 24 * 3600
-NOT_LIVE = ["docs/**", "tests/**", ".agents/**", ".bb/**", "**/*.md", "src/**/ui/**", "src/**/*.tsx", "src/rooms/sma-map/**", "src/rooms/atlas/**",
-            "src/rooms/world/**", "src/rooms/world-assets/**", "src/rooms/ui-shell/**", "packages/i18n/**", "packages/ui-kit/**", "packages/pixel-world/**",
+NOT_LIVE = ["docs/**", "tests/**", ".agents/**", ".bb/**", "**/*.md", "src/**/ui/**", "src/**/*.tsx", "src/rooms/sma-map/**",
+            "src/rooms/world/**", "src/rooms/ui-shell/**", "packages/i18n/**", "packages/ui-kit/**", "packages/pixel-world/**",
             "packages/world-sim/**", "scripts/**", "vitest*", "tsconfig*", ".gitignore", ".gitnexus/**", "CLAUDE.md", "AGENTS.md"]
 FOUNDATION = ["scripts/lp-drill.py", "scripts/lp-drill.sh", "package-lock.json", "src/rooms/core/**", "src/rooms/storage/**", "src/rooms/contracts/**",
               "src/rooms/settings/**", "packages/contracts/**", "packages/kit/**", "packages/settings-catalog/**", "packages/host-calls/**", "packages/models/**"]

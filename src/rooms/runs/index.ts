@@ -11,3 +11,5 @@ export { NO_WAY_OUT, wayOut } from "./way-out";
 export type { TaskTimeline, TimelineEntry } from "./timeline";
 export { failureClassJudgment } from "./failure-class-judgment";
 export type { FailureClassDecision, FailureClassInput } from "./failure-class-judgment";
+export { CONVEYOR_KEY, conveyorState, setConveyor } from "./conveyor";
+export type { ConveyorState } from "./conveyor";

@@ -94,7 +94,6 @@
  "project-life > contracts": 2,
  "qa > contracts": 11,
  "qa > workflow": 2,
- "receipts > contracts": 1,
  "relay > contracts": 2,
  "rollback > contracts": 1,
  "run-goal > baseline": 1,

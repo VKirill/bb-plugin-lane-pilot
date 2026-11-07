@@ -6,7 +6,7 @@
 import { execFileSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { shapeOf } from "../src/rooms/twins";
+import { shapeOf } from "../tests/helpers/twins";
 
 const env = { ...process.env };
 delete env.BB_CLI;

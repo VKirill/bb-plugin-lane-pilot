@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { WORLD_ASSETS, mountWorldAssets, worldAssetResponse } from "../src/rooms/world-assets/server";
+import { WORLD_ASSETS, mountWorldAssets, worldAssetResponse } from "../src/rooms/world/server";
 
 describe("world assets over HTTP", () => {
   it("serves each whitelisted GLB byte for byte with its type and cache headers", async () => {

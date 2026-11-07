@@ -1,7 +1,7 @@
 import type { ServerCore } from "../src/rooms/contracts/server";
 import type { Services } from "../server";
 import { createPhaseDriver as createDriver } from "../src/rooms/phase/server/driver";
-import { createPhaseReactions } from "../src/rooms/wiring";
+import { createPhaseReactions } from "../src/rooms/core/server";
 import { builtinWorkflow } from "../src/rooms/workflow/builtin";
 import { issueQuickModelCalls, issueQuickShortPath, issueQuickWorkflowId } from "../src/rooms/workflow/short-path";
 import { stageHelperSettings } from "../src/rooms/settings/server/stage-settings";

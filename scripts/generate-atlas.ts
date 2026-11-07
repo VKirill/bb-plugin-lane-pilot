@@ -1,12 +1,12 @@
 /**
- * Writes docs/atlas.md, the generated map of Lane Pilot (src/rooms/atlas), and the numbers block of README.md. `npx tsx scripts/generate-atlas.ts [--check]`: --check exits 1
+ * Writes docs/atlas.md, the generated map of Lane Pilot (scripts/atlas), and the numbers block of README.md. `npx tsx scripts/generate-atlas.ts [--check]`: --check exits 1
  * when docs/atlas.md was generated from other registries than the code has now (tests/atlas.test.ts runs the same check).
  */
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { collectAtlasInput } from "./atlas-input";
 import { collectSystemMap, renderSystemMap } from "./system-map";
-import { atlasHash, renderAtlas, renderReadmeNumbers } from "../src/rooms/atlas";
+import { atlasHash, renderAtlas, renderReadmeNumbers } from "./atlas";
 
 const root = join(import.meta.dirname, "..");
 const input = collectAtlasInput(root);

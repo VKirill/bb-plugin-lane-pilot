@@ -6,7 +6,7 @@ import { createAttempt, createRun, createTask, getAttempt, listStageReceipts, op
 import { createCore } from "../src/rooms/core/server/core";
 import type { Services } from "../server";
 import { setRunPaused } from "../src/rooms/runs/server/runs-halt";
-import { setConveyor } from "../src/rooms/conveyor";
+import { setConveyor } from "../src/rooms/runs";
 import { recordStage } from "../src/rooms/runs/server/stage-records";
 import { createWriterStart } from "../src/rooms/writer/server/start";
 

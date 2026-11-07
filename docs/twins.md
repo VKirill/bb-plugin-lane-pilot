@@ -7,7 +7,7 @@ status: active
 confidence: medium
 tags: [sma, tests, doubles, q13]
 sources:
-  - src/rooms/twins/logic.ts
+  - tests/helpers/twins/logic.ts
   - scripts/record-real-shapes.ts
   - tests/twins.test.ts
 ---

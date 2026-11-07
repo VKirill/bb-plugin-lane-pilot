@@ -1,6 +1,6 @@
 import { TASK_ATTEMPT_BUDGET, retryBudgetReason, spendRetryBudget } from "../retry-budget";
 import { retrySafetyStop, taskLimitStop, TASK_WALL_CLOCK_MIN, VERIFY_MAX_PASSES } from "./retry-safety";
-import { pilotOf, pilotUnderWall, runTasks, type TaskWallRow } from "../../pilot";
+import { pilotOf, pilotUnderWall, runTasks, type TaskWallRow } from "./pilot";
 import { listWalls } from "../../wall";
 import { breakerKey, budgetStopReason, classifyFailure, runningWriterBudgetStop, tokenUsageFromEvent, type RunBudget } from "@lane-pilot/resilience";
 import type { DirtSnapshot } from "../cli-outcome";
@@ -368,7 +368,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
      * A canceled dependency, or a name no one dispatched, ends the wait at once.
      */
     const waitForDependencies = async (shouldStop?:()=>string|null): Promise<string | null> => {
-      // The pilot of this task's siblings (src/rooms/pilot): waited for like a dependency, except that a canceled pilot holds no one.
+      // The pilot of this task's siblings (src/rooms/writer/server/pilot): waited for like a dependency, except that a canceled pilot holds no one.
       const waveTasks = runTasks(listRunTaskRows(db, input.runId), canceledLatestTaskIds(db, input.runId));
       let taskWalls: TaskWallRow[] = [];
       try { taskWalls = listWalls(db, { kind: "task", states: ["stopped","hunting","hunted","backlog"] }); }

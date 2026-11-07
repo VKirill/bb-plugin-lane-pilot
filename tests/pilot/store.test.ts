@@ -1,6 +1,6 @@
 import Database from "better-sqlite3";
 import { describe, expect, it } from "vitest";
-import { pilotOf, pilotUnderWall, runTasks, type RunTask } from "../../src/rooms/pilot";
+import { pilotOf, pilotUnderWall, runTasks, type RunTask } from "../../src/rooms/writer/server/pilot";
 import { canceledLatestTaskIds, listRunTaskRows } from "../../src/rooms/storage";
 
 describe("runTasks reads the owned paths of the PM's tasks and which of them ended canceled", () => {

@@ -3,7 +3,7 @@ import { getPixelStyle } from "./pixel";
 
 type Three = typeof ThreeNS;
 
-/** Where the plugin serves the .glb files (src/rooms/world-assets/server); same origin as the BB app. */
+/** Where the plugin serves the .glb files (src/rooms/world/server); same origin as the BB app. */
 export const DEFAULT_ASSET_BASE = "/api/v1/plugins/lane-pilot/http/world/assets/";
 
 let assetBase = DEFAULT_ASSET_BASE;

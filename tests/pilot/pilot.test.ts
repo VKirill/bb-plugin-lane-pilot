@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import fixture from "../fixtures/vampirism-fire-run.json";
-import { pilotOf } from "../../src/rooms/pilot";
+import { pilotOf } from "../../src/rooms/writer/server/pilot";
 
 describe("the pilot of an area", () => {
   const task = (id: string, area: string | null, kind: string | null, createdAt: number, dependsOn: string[] = []) => ({ id, area, kind, createdAt, dependsOn });
