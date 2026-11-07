@@ -142,5 +142,11 @@ describe("a Python test runner in the project's own scripts folder", () => {
     expect(detectGateCommand("@@pyscript scripts/studio_test.py\n")).toMatchObject({ command:"python3 -I scripts/studio_test.py" });
     expect(detectGateCommand("@@pytest\n@@pyscript scripts/studio_test.py\n")).toMatchObject({ command:"pytest -q" });
   });
+
+  it("detects any Python runner by convention, not one project's file name", async () => {
+    const { detectGateCommand } = await import("../src/rooms/verification/server/gate-detect");
+    expect(detectGateCommand("@@pyscript scripts/check_gates_test.py\n")).toMatchObject({ command:"python3 -I scripts/check_gates_test.py" });
+    expect(detectGateCommand("@@pyscript game/scripts/e2e_test.py\n")).toMatchObject({ command:"cd game && python3 -I scripts/e2e_test.py" });
+  });
 });
 

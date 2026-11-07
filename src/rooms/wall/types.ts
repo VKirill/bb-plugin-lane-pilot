@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 
 /**
  * The wall journal and the night loop (SMA P1-1; Maslov #31448 «чинит не случай, а класс», the dialogue of 2026-10-22 «3 ходки … меняется
@@ -48,7 +47,6 @@ export type WallClass = {
   stage: LadderStage;
 };
 
-export const sha12 = (text: string): string => createHash("sha256").update(text).digest("hex").slice(0, 12);
 
 /**
  * Statuses of one repair row. `queued` waits for the self-repair tick, `merged` waits for a release, `deployed` for its acceptance.

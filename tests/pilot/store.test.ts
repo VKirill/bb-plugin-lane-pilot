@@ -1,6 +1,6 @@
 import Database from "better-sqlite3";
 import { describe, expect, it } from "vitest";
-import { pilotOf, pilotUnderWall, runTasks } from "../../src/rooms/pilot";
+import { pilotOf, pilotUnderWall, runTasks, type RunTask } from "../../src/rooms/pilot";
 
 describe("runTasks reads the owned paths of the PM's tasks and which of them ended canceled", () => {
   const db = new Database(":memory:");
@@ -22,6 +22,19 @@ describe("runTasks reads the owned paths of the PM's tasks and which of them end
     // «old» was canceled, so the wave is a, b, c and a is its pilot; the mainfix waits for no one.
     expect(pilotOf("c", tasks)).toBe("a");
     expect(pilotOf("c-mainfix", tasks)).toBeNull();
+  });
+});
+
+describe("a task sent again twice is one sibling of its base", () => {
+  const task = (id: string, at: number): RunTask => ({ id, area: "feature:x", kind: "fix", createdAt: at, dependsOn: [] });
+
+  it("does not count «P1.2.2» as a third sibling of «P1»", () => {
+    // Four tasks of two families are not four siblings: the pilot rule needs three families, so it chooses none.
+    expect(pilotOf("P2", [task("P1", 1), task("P1.2", 2), task("P1.2.2", 3), task("P2", 4)])).toBeNull();
+  });
+
+  it("still chooses the earliest task of a three-family wave as the pilot", () => {
+    expect(pilotOf("P3", [task("P1", 1), task("P1.2", 2), task("P2", 3), task("P3", 4)])).toBe("P1");
   });
 });
 

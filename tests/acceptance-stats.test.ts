@@ -68,3 +68,20 @@ it("aggregates first-try acceptance, redispatches and causes per project and ISO
   expect(all.totals.firstTryAccepted).toBe(3);
   expect(all.totals.causes).toEqual({ outputs_empty:1, ownership_dirt:1, provider_limit:1, needs_human:1 });
 });
+
+it("counts a task sent again twice as one family, not two", () => {
+  const { bb } = createFakePluginHost({ pluginId:"lane-pilot" });
+  const db = openDatabase(bb);
+  const at = Date.now() - 3_600_000;
+  createRun(db, "run", "proj", "cli", "/repo");
+  let id = 0;
+  const attempt = (taskId: string) =>
+    db.prepare("INSERT INTO lane_pilot_attempt(id,run_id,task_id,state,attempt_no,reason,created_at,updated_at) VALUES(?,?,?,?,1,NULL,?,?)")
+      .run(`a${id++}`, "run", taskId, "accepted", at, at);
+  attempt("B");
+  attempt("B.2");
+  attempt("B.2.2");
+  const stats = acceptanceStats(db as never, 28, "proj");
+  expect(stats.totals.redispatched).toBe(2);
+  expect(stats.totals.families).toBe(1);
+});

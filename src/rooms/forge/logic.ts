@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { sha256Hex } from "@lane-pilot/kit";
 import { parseFrontmatter } from "../docs";
 import { FORBIDDEN_GRANTS, SKILL_NAME, lintSkillFiles } from "./skill-lint";
 
@@ -58,7 +58,6 @@ export function lintDraft(kind: ForgeKind, name: string, text: string): LintFind
 }
 
 export type ForgeReceipt = { kind: ForgeKind; name: string; path: string; sha256: string; ok: boolean; findings: LintFinding[]; at: number; requestedAt?: number; enabledAt?: number; enabledBy?: string };
-export const sha256 = (text: string) => createHash("sha256").update(text).digest("hex");
 
 /** The Creator prompt: the brief of the writer who forges the one draft. */
 export function creatorBrief(kind: ForgeKind, name: string, brief: string): string {

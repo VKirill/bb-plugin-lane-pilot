@@ -88,10 +88,6 @@ export type StoredAgentRow = {
   meta?: CustomAgentMeta;
 };
 
-function sha256(text: string): string {
-  return sha256Hex(text);
-}
-
 function canonicalizeJson(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(canonicalizeJson);
   if (value !== null && typeof value === "object") {
@@ -116,7 +112,7 @@ export function compiledMainAgentDigest(body: Omit<CompiledMainAgent, "sourceHas
     ...(body.mcpServers ? { mcpServers: body.mcpServers } : {}),
   };
   const canonical = body.sourceVersion === "lp-owned-1" ? ordered : canonicalizeJson(ordered);
-  return sha256(JSON.stringify(canonical));
+  return sha256Hex(JSON.stringify(canonical));
 }
 
 export function validateCompiledMainAgent(raw: unknown): CompiledMainAgent {

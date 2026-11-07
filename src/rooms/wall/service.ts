@@ -1,5 +1,5 @@
-import { createHash } from "node:crypto";
 import type { HeadPart } from "@lane-pilot/contracts";
+import { sha256Hex } from "@lane-pilot/kit";
 import { extractModelJson } from "../critique";
 import type { ChangeDescriptor } from "../policy";
 import { EVIDENCE_WAIT_MS, closeExpiredRepair, decideAcceptance, gateRepair, laterReleaseTouches, repairChange, type Acceptance, type AcceptanceEvidence, type GateDecision, type RepairFile } from "./acceptance";
@@ -113,20 +113,19 @@ export type WallDeps = {
   diffHiddenAudit?: (limit: number) => Promise<unknown>;
 };
 
-const sha = (text: string) => createHash("sha256").update(text).digest("hex");
 /** The hash of what a task asks, without its id (a redispatch under «P1.2» is the same ask) and of its plan. */
 export function askSha(task: unknown, plan: string): string {
   const sorted = (item: unknown): unknown => Array.isArray(item) ? item.map(sorted)
     : item && typeof item === "object" ? Object.fromEntries(Object.entries(item as Record<string, unknown>).filter(([key]) => key !== "id").sort(([a], [b]) => (a < b ? -1 : 1)).map(([key, value]) => [key, sorted(value)]))
     : item;
-  return sha(`${JSON.stringify(sorted(task))}\n${plan}`).slice(0, 16);
+  return sha256Hex(`${JSON.stringify(sorted(task))}\n${plan}`).slice(0, 16);
 }
-export const taskWallKey = (family: string, runId: string, classKey: string): string => `task:${sha(`${runId}|${family}|${classKey}`).slice(0, 12)}`;
+export const taskWallKey = (family: string, runId: string, classKey: string): string => `task:${sha256Hex(`${runId}|${family}|${classKey}`).slice(0, 12)}`;
 export const classWallKey = (classKey: string): string => `class:${classKey}`;
 
 /** Loop walls (a phase stage, a failed verification, a topic) are walls of kind task whose key starts with this. */
 export const LOOP_PREFIX = "loop:";
-export const loopWallKey = (kind: LoopSubject["kind"], id: string): string => `${LOOP_PREFIX}${kind}:${sha(id).slice(0, 12)}`;
+export const loopWallKey = (kind: LoopSubject["kind"], id: string): string => `${LOOP_PREFIX}${kind}:${sha256Hex(id).slice(0, 12)}`;
 
 /** A loop of tries that ended (see `loopExhausted`). */
 export type LoopSubject = Omit<LoopEvidence, "subject"> & {
@@ -221,7 +220,7 @@ export function createWall(deps: WallDeps) {
   // tools otherwise — and the file is removed once the step that used it ends. The graph's steps get the pack
   // serialized, so the file is looked up by content hash.
   const packPathBySha = new Map<string, string>();
-  const packSha = (pack: EvidencePack): string => sha(JSON.stringify(pack));
+  const packSha = (pack: EvidencePack): string => sha256Hex(JSON.stringify(pack));
   const packPathOf = (pack: EvidencePack): string | undefined => packPathBySha.get(packSha(pack)) || undefined;
   const WALL_PACK_INLINE_CAP = 9_000;
   const packFileFor = async (pack: EvidencePack, name: string): Promise<string | undefined> => {
@@ -326,7 +325,7 @@ export function createWall(deps: WallDeps) {
     const cfg = await config();
     const existing = getWall(db, key);
     if (existing?.deferralId) return existing.deferralId;
-    const id = `dfr_wall_${sha(key).slice(0, 10)}`;
+    const id = `dfr_wall_${sha256Hex(key).slice(0, 10)}`;
     // The backlog item is the wall row (state backlog, `id` kept as its handle) and the owner's morning line below; no deferral is opened for it:
     // a term nobody sets would turn red by itself in a list nobody reads (Fable's recheck, E8).
     insertWall(db, { key, kind: key.startsWith("class:") ? "class" : "task", subject, projectId, state: "backlog", moves: 0, now });
