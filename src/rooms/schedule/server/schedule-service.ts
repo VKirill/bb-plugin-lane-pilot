@@ -52,7 +52,6 @@ export function createScheduleService(ctx: ServerCore, services: Services) {
   const { bb, db } = ctx;
   // A cron without a time zone runs in the owner's, not in the hub's (UTC).
   const ownerZone = () => loadPushConfig(db).timezone;
-  const library = services.workflowLibrary;
   const scheduler = createScheduler({
     db, executors: createScheduleExecutors(ctx, services), isDisposed: ctx.isDisposed,
     log: (message) => bb.log.warn(`Lane Pilot schedule: ${message}`),
@@ -149,7 +148,7 @@ export function createScheduleService(ctx: ServerCore, services: Services) {
     const problems: string[] = [], warnings: string[] = [];
     const { task } = definition;
     if (task.kind === "workflow") {
-      const { store: workflows } = await library.loadStore(definition.projectId);
+      const { store: workflows } = await services.workflowLibrary.loadStore(definition.projectId);
       const found = workflows.get(task.workflowId);
       if (!found) problems.push(`task.workflowId: there is no workflow "${task.workflowId}" in this project's library`);
       else {

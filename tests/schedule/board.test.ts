@@ -70,6 +70,12 @@ const script = (extra: Record<string, unknown> = {}) => ({
 });
 
 describe("the RPCs of the board", () => {
+  it("checks a workflow schedule against the library wired after the schedule service", async () => {
+    const { rpc } = await setup();
+    const preview = await rpc("schedule_preview", { definition: { ...script(), task: { kind: "workflow", workflowId: "no-such-graph", inputs: {} } } });
+    expect(preview.problems.join(" ")).toMatch(/no workflow "no-such-graph"/);
+  });
+
   it("registers the tick as an isolated schedule and previews, creates and lists with the next fire times", async () => {
     const { rpc, registered } = await setup();
     expect(registered.has("schedule-board-tick")).toBe(true);
