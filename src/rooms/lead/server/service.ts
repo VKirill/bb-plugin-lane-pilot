@@ -350,11 +350,11 @@ export function createLeadService(ctx: ServerCore, services: Services, migration
     const projectId = await homeProjectId();
     const reused = await liveThread(projectId);
     if (reused) return { threadId: reused, projectId, reused: true };
-    const places = await services.docsPlaces(projectId).catch(() => []);
+    const places = await services.docsPlaces(projectId);
     const root = places.find((place) => place.scopes.length === 0) ?? places[0];
     if (!root) throw new Error(`project ${projectId} has no source folder on a machine: set lead.project to a project that has one`);
     const { selection } = await storeNativeSelection(ctx, { projectId, agentId: LEAD_ID });
-    const values = (await ctx.effectiveProjectSettings(projectId).catch(() => ({ values: {} }))).values;
+    const values = (await ctx.effectiveProjectSettings(projectId).catch((cause: unknown) => { ctx.log(`lead: project settings of ${projectId} unreadable: ${cause instanceof Error ? cause.message : String(cause)}`); return { values: {} }; })).values;
     const usage = spawnUsageOf(ctx);
     await warmSpawnUsage(usage, null);
     const picked = resolveSpawnModel({ role: "lead", settings: values, catalog: modelCatalogOf(ctx).peek(), usage }); // the `lead` row of the role table (packages/models/src/role-models.ts)

@@ -8,6 +8,7 @@ import type { ChainRuntime } from "../../contracts/server";
 
 import type { BenchApi } from "../../bench/service";
 import type { WorkflowEngineApi } from "../../workflow/server/workflow";
+import { bestEffort } from "@lane-pilot/kit";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {
@@ -31,7 +32,7 @@ export function mountCriticEditGraph(ctx: ServerCore, services: Services): void 
     run: async (c) => {
       const projectId = input(c, "project_id");
       const proposal = criticPromptProposal(criticStats(ctx.db as never, projectId, Date.now() - 30 * 86_400_000));
-      if (proposal) await ctx.bb.storage.kv.set(PROPOSAL_KEY(projectId), { at: Date.now(), proposal } as never).catch(() => undefined);
+      if (proposal) await bestEffort(ctx.log, "critic edit proposal write", ctx.bb.storage.kv.set(PROPOSAL_KEY(projectId), { at: Date.now(), proposal } as never), undefined);
       return { output: { status: proposal ? "ready" : "skipped", detail: proposal ?? "no critic is below the calibration bar", proposal: proposal ?? "", handoff: proposal ? "ready" : "skipped" } };
     },
   } as NodeExecutor<ChainRuntime>);

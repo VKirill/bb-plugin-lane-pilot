@@ -30,7 +30,7 @@ export function mountHookTimeoutWatch(ctx: ServerCore, now = () => Date.now()): 
     };
     ctx.bb.log.info(`Lane Pilot hook ${record.hook} did not answer in ${record.timeoutMs} ms${record.threadId ? ` (thread ${record.threadId})` : ""}${record.quiet ? " (reload window)" : ""}`);
     await ctx.serializedKv(async () => {
-      const rows = (await ctx.bb.storage.kv.get<HookTimeoutRecord[]>(HOOK_TIMEOUTS_KEY).catch(() => null)) ?? [];
+      const rows = (await ctx.bb.storage.kv.get<HookTimeoutRecord[]>(HOOK_TIMEOUTS_KEY)) ?? [];
       await ctx.bb.storage.kv.set(HOOK_TIMEOUTS_KEY, [...(Array.isArray(rows) ? rows : []), record].slice(-KEEP) as never);
     });
   });

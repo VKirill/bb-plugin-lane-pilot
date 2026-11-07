@@ -27,6 +27,7 @@ export function fetchAsset(name: string): Promise<ArrayBuffer> {
       if (!response.ok) throw new Error(`asset ${name}: HTTP ${response.status}`);
       return response.arrayBuffer();
     });
+    // a failed fetch evicts the pending entry so the next call retries
     pending.catch(() => downloads.delete(name));
     downloads.set(name, pending);
   }

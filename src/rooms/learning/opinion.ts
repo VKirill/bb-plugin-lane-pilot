@@ -62,7 +62,9 @@ export function createDecisionsClient(deps: DecisionsDeps) {
     async ask(input: MessageInput, thresholds?: RouteThresholds): Promise<SecondOpinion> {
       const started = now();
       const fail = (status: Exclude<SecondOpinion, { ok: true }>["status"], error: string): SecondOpinion => ({ ok: false, status, error, latencyMs: now() - started });
-      const key = (await deps.apiKey().catch(() => undefined))?.trim();
+      let key: string | undefined;
+      try { key = (await deps.apiKey())?.trim(); }
+      catch (cause) { return fail("error", `api key unreadable: ${cause instanceof Error ? cause.message : String(cause)}`); }
       if (!key) return fail("disabled", `no ${KEY_NAME}`);
       if (now() < openUntil) return fail("breaker_open", "too many recent failures");
       const body = JSON.stringify({ model, input: `PREVIOUS AGENT REPLY (context):\n${input.prev || "(none)"}\n\nOWNER MESSAGE (judge this):\n${input.text}`, questions: QUESTIONS });
@@ -78,6 +80,7 @@ export function createDecisionsClient(deps: DecisionsDeps) {
         if (response.status === 429 || response.status >= 500) breaker();
         return fail("error", `http ${response.status}`);
       }
+      // an unreadable body parses as no verdict
       const parsed = responseSchema.safeParse(await response.json().catch(() => null));
       const signals = parsed.success ? signalsFromDecisions(parsed.data.answers) : null;
       if (!parsed.success || !signals) { breaker(); return fail("invalid", "unreadable answer"); }

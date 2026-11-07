@@ -46,6 +46,7 @@ export function graphSignalsOf(row: { samples: string[]; signals: GroupSignals }
 
 export async function nearestUnits(text: string, deps: CatalogDeps): Promise<NearestUnit[]> {
   const intent = text.trim();
+  // intent routing is advisory; null just means graph candidates come only from scores
   const routed = deps.workflows.length ? await routeIntent({ intent, workflows: deps.workflows, model: null }).catch(() => null) : null;
   const graphs = (routed?.candidates ?? []).map((candidate) => ({ kind: "graph" as const, id: candidate.id, score: candidate.score }));
   const query = stems(intent);
@@ -106,8 +107,9 @@ export async function attachNearest(input: {
   const { bb, rows } = input;
   if (!rows.length) return;
   const workflows = input.workflowCatalog
-    ? await input.workflowCatalog.store().then((store) => store.list().map((item) => item.workflow)).catch(() => input.workflowCatalog!.builtins())
+    ? await input.workflowCatalog.store().then((store) => store.list().map((item) => item.workflow)).catch(() => input.workflowCatalog!.builtins()) // an unreadable catalog falls back to the built-in workflows
     : [];
+  // an unreadable skill tree just means no tree-based candidates
   const tree = await (input.readTree ?? (() => skillTreeCached(readSkillTreeText)))().catch(() => null);
   const skillsCache = new Map<string, Promise<ListedSkill[] | null>>();
   const skillsOf = (projectId: string): Promise<ListedSkill[] | null> => {
@@ -117,6 +119,7 @@ export async function attachNearest(input: {
       pending = list
         ? list.call(bb.sdk.skills, { projectId, environmentId: null })
             .then((listed) => (listed?.skills ?? []).flatMap((skill) => (typeof skill?.name === "string" && skill.name ? [{ name: skill.name, description: typeof skill.description === "string" ? skill.description : null }] : [])))
+            // an unreadable skill list just means no skills for that project
             .catch(() => null)
         : Promise.resolve(null);
       skillsCache.set(projectId, pending);

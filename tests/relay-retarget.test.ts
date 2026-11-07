@@ -177,6 +177,7 @@ describe("relay retargeting and canceled task dropping", () => {
             return { delivery: "sent" as const, ok: true as const };
           }) as any,
           queuedMessages: { delete: async () => ({ ok: true }), list: async () => [{ id: "row-1" }] } as any,
+          get: async () => ({ status: "idle" }) as any,
         } as any,
       } as any,
     });

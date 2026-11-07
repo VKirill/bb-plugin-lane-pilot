@@ -10,6 +10,7 @@ import { advisoryCritiqueLine, critiqueRecallLine } from "./critique-set";
 import type { HostPort, PipelinePort } from "./ports";
 import { releaseGate, sweepStuckRuns } from "./reliability";
 import { isSealedVersion } from "./store";
+import { bestEffort } from "@lane-pilot/kit";
 import { BENCH_REPOS_ROOT_ENV } from "./repos";
 import { DEFAULT_BUDGET_HOURS, DEFAULT_BUDGET_TOKENS, defaultProjectName, runSeries, type BenchWriter, type SeriesInput, type SeriesReport } from "./runner";
 import {
@@ -117,7 +118,7 @@ export function createBench(deps: BenchDeps) {
         ...(input.dryRun ? { dryRun: true } : {}), ...(input.planOnly ? { planOnly: true } : {}), ...(input.minFreeGb ? { minFreeGb: input.minFreeGb } : {}), ...(input.checkTimeoutSec ? { checkTimeoutSec: input.checkTimeoutSec } : {}),
         ...(place.reposRoot ? { reposRoot: place.reposRoot } : {}), ...(place.hostId ? { hostId: place.hostId } : {}), statsEpochMs: epoch,
       });
-      await deps.kv.set(BUILD_KEY(input.version), report as never).catch(() => undefined);
+      await bestEffort(deps.log, "bench build report write", deps.kv.set(BUILD_KEY(input.version), report as never), undefined);
       return report;
     });
   }
@@ -272,7 +273,7 @@ export function createBench(deps: BenchDeps) {
   }
 
   /** The three model-free numbers of the baseline metric bench (SMA k_lib_bench), over the accepted attempts of the last `days`. */
-  const baseline = (opts: { days?: number; projectId?: string } = {}) => baselineMetrics(deps.db, deps.host, opts);
+  const baseline = (opts: { days?: number; projectId?: string } = {}) => baselineMetrics(deps.db, deps.host, { ...opts, log: deps.log });
 
   /** The deploy script asks this. A night that stopped on budget, failed, or never ran is not a pass. */
   function gate(maxAgeHours?: number, now = Date.now()) {

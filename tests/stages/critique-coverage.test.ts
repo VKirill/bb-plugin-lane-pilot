@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, mkdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -42,6 +42,23 @@ describe("bounded structural critique coverage scan",()=>{
     await writeFile(join(root,"SPEC.md"),"The adapter lives in `src/spec-reference.ts`.\n");
     const result=await scanCritiqueCoverage({workspacePath:root,plan:"Valid plan",tasks:[{id:"spec",lane:"writer",owns_paths:["src/owned.ts"],has_verification:true}]});
     expect(result.findings).toContainEqual(expect.objectContaining({code:"plan_path_unowned",path:"src/spec-reference.ts",severity:"warning",finding:expect.stringContaining("SPEC.md")}));
+  });
+
+  it("lists an unreadable file as a skipped gap and keeps scanning instead of aborting",async()=>{
+    const root=await workspace();
+    await mkdir(join(root,"src"),{recursive:true});
+    await writeFile(join(root,"src/owned.ts"),"export const owned = true;\n");
+    await writeFile(join(root,"src/locked.ts"),"export const locked = true;\n");
+    await writeFile(join(root,"src/open.ts"),"// mentions owned\n");
+    await chmod(join(root,"src/locked.ts"),0o000);
+    try {
+      const result=await scanCritiqueCoverage({workspacePath:root,plan:"",tasks:[{id:"t",lane:"writer",owns_paths:["src/owned.ts"],has_verification:true}]});
+      expect(result.status).toBe("truncated");
+      expect(result.findings).toEqual(expect.arrayContaining([
+        expect.objectContaining({code:"coverage_scan_truncated",path:".",severity:"warning",finding:expect.stringContaining("src/locked.ts")}),
+        expect.objectContaining({code:"owns_gap",path:"src/open.ts"}),
+      ]));
+    } finally { await chmod(join(root,"src/locked.ts"),0o600); }
   });
 
   it("fails closed for a symlink workspace root",async()=>{

@@ -314,8 +314,10 @@ export function createRelay(deps:RelayDeps) {
    */
   async function liveTaskStates(item:RelayReminder, seen:Record<string, string|null>|undefined):Promise<Record<string, string|null>|null> {
     const ids = item.taskIds ?? [];
-    if (await deps.busy?.(item.threadId).catch(() => false)) return null;
-    const live = await deps.taskStates(item.projectId, ids).catch(() => seen);
+    // An unreadable check is not a pass: busy() failing skips like the sweep's busy guard, and a failed
+    // re-read must not fire on the last snapshot — both return null so the next sweep decides again.
+    if (await deps.busy?.(item.threadId).catch((cause: unknown) => { deps.log(`relay: busy check unreadable, reminder skipped: ${cause instanceof Error ? cause.message : String(cause)}`); return true; })) return null;
+    const live = await deps.taskStates(item.projectId, ids).catch((cause: unknown) => { deps.log(`relay: task states unreadable, reminder skipped: ${cause instanceof Error ? cause.message : String(cause)}`); return null; });
     if (!live || !ids.every((task) => TASK_DONE.has(live[task] ?? ""))) return null;
     return live;
   }
@@ -369,12 +371,12 @@ export function createRelay(deps:RelayDeps) {
     return update(async (items) => {
       const waiting = items.some((row) => (row.kind === "remind" && !row.firedAt && row.watchThreadId === threadId)
         || (row.kind === "ask" && !row.answeredAt && row.toThreadId === threadId));
-      if (!waiting || !await deps.settled(threadId).catch(() => false)) return 0;
+      if (!waiting || !await deps.settled(threadId).catch((cause: unknown) => { deps.log(`relay: settled check unreadable, wake skipped: ${cause instanceof Error ? cause.message : String(cause)}`); return false; })) return 0;
       let woken = 0;
       // Answers first: whoever gets one now does not also need the reminder that waited on this thread.
       for (const item of items) {
         if (item.kind === "ask" && !item.answeredAt && item.toThreadId === threadId) {
-          const text = (await deps.output(threadId).catch(() => "")).trim().slice(-4000);
+          const text = (await deps.output(threadId).catch((cause: unknown) => { deps.log(`relay: thread output unreadable: ${cause instanceof Error ? cause.message : String(cause)}`); return ""; })).trim().slice(-4000);
           await deliver(item.fromThreadId, `Lane Pilot: @thread:${threadId} finished its turn without answering ${item.id}. Its last message:\n\n${text || "(empty)"}`, threadId);
           item.answeredAt = deps.now();
           await closeAnsweredWaits(items, item.fromThreadId, threadId);
@@ -396,7 +398,7 @@ export function createRelay(deps:RelayDeps) {
     const gates = new Map<string, string>();
     for (const row of rows) {
       if (row.state !== "accepted" || !deps.gateLine) continue;
-      const line = await deps.gateLine(row).catch(() => null);
+      const line = await deps.gateLine(row).catch((cause: unknown) => { deps.log(`relay: gate line unreadable for ${row.taskId}: ${cause instanceof Error ? cause.message : String(cause)}`); return null; });
       if (line) gates.set(row.taskId, line);
     }
     const lines = rows.filter((row) => row.state !== "canceled").map((row) => {
@@ -492,7 +494,7 @@ export function createRelay(deps:RelayDeps) {
           if (deps.latestFamilyMember) {
             const updatedTaskIds = new Set<string>();
             for (const task of item.taskIds) {
-              const newer = await deps.latestFamilyMember(item.projectId, task).catch(() => null);
+              const newer = await deps.latestFamilyMember(item.projectId, task).catch((cause: unknown) => { deps.log(`relay: family lookup unreadable for ${task}: ${cause instanceof Error ? cause.message : String(cause)}`); return null; });
               if (newer && newer.taskId !== task) {
                 updatedTaskIds.add(newer.taskId);
               } else {
@@ -502,7 +504,7 @@ export function createRelay(deps:RelayDeps) {
             item.taskIds = [...updatedTaskIds];
           }
 
-          const states = await deps.taskStates(item.projectId, item.taskIds).catch(() => ({} as Record<string, string|null>));
+          const states = await deps.taskStates(item.projectId, item.taskIds).catch((cause: unknown) => { deps.log(`relay: task states unreadable: ${cause instanceof Error ? cause.message : String(cause)}`); return {} as Record<string, string|null>; });
 
           // Drop canceled tasks from item.taskIds
           item.taskIds = item.taskIds.filter((task) => states[task] !== "canceled");
@@ -520,7 +522,7 @@ export function createRelay(deps:RelayDeps) {
             if (await fire(item, "tasks", states)) {
               // The reminder quoted these results: the PM is not told them a second time.
               const told = new Set(item.taskIds);
-              const rows = (await deps.taskOutcomes?.().catch(() => [] as TaskOutcome[]) ?? []).filter((row) => row.pmThreadId === item.threadId && told.has(row.taskId));
+              const rows = (await deps.taskOutcomes?.().catch((cause: unknown) => { deps.log(`relay: task outcomes unreadable: ${cause instanceof Error ? cause.message : String(cause)}`); return [] as TaskOutcome[]; }) ?? []).filter((row) => row.pmThreadId === item.threadId && told.has(row.taskId));
               if (rows.length) await deps.markReported?.(rows);
               fired++; continue;
             }
@@ -530,7 +532,7 @@ export function createRelay(deps:RelayDeps) {
           if (item.queuedMessageId && deps.queuedState) {
             // BB sends it at its time. A row that is gone was sent, or deleted by the owner (the event may have been
             // lost to a reload): either way nothing more to send. If BB cannot say, the next sweep asks again.
-            const queued = await deps.queuedState(item.threadId, item.queuedMessageId).catch(() => "unknown" as const);
+            const queued = await deps.queuedState(item.threadId, item.queuedMessageId).catch((cause: unknown) => { deps.log(`relay: queued state unreadable, asked again next sweep: ${cause instanceof Error ? cause.message : String(cause)}`); return "unknown" as const; });
             if (queued === "gone") { item.firedAt = deps.now(); item.firedBy = "time"; }
             continue;
           }
@@ -589,7 +591,7 @@ export function relayFor(ctx:ServerContext):Relay {
       // threads.get has no background command count; the thread list of its environment does.
       type Listed = { id:string; activity?:{ activeBackgroundCommandCount?:number } };
       const listed = thread.environmentId
-        ? await (bb.sdk.threads.list({ environmentId:thread.environmentId, includeHidden:true } as never) as Promise<unknown>).catch(() => null)
+        ? await (bb.sdk.threads.list({ environmentId:thread.environmentId, includeHidden:true } as never) as Promise<unknown>).catch((cause: unknown) => { ctx.log(`relay: thread list unreadable: ${cause instanceof Error ? cause.message : String(cause)}`); return null; })
         : null;
       const row = Array.isArray(listed) ? (listed as Listed[]).find((item) => item.id === threadId) : undefined;
       const commands = row?.activity?.activeBackgroundCommandCount ?? backgroundCommands.get(threadId) ?? 0;
@@ -682,7 +684,7 @@ export function mountRelay(ctx:ServerContext):Relay {
 
   // Event first: a watched thread that settles wakes its waiters at once. The sweep below catches what events miss.
   let watched = new Set<string>();
-  const refreshWatched = () => relay.watchedThreads().then((ids) => { watched = ids; }).catch(() => undefined);
+  const refreshWatched = () => relay.watchedThreads().then((ids) => { watched = ids; }).catch((cause: unknown) => ctx.log(`relay: watched threads unreadable: ${cause instanceof Error ? cause.message : String(cause)}`));
   void refreshWatched();
   // Without realtime (an older BB, a test host) the sweep alone wakes waiters, within 30 seconds.
   let unsubscribe:(() => void) | undefined;

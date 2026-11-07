@@ -3,7 +3,7 @@ import { getRun, loadPrototypeConfig } from "../../storage";
 import { writerExecutionSelection, findModelIn } from "@lane-pilot/models";
 import { fullAccessSpawn } from "../../platform/server";
 import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server/run-routing";
-import { stringAt } from "@lane-pilot/kit";
+import { bestEffort, stringAt } from "@lane-pilot/kit";
 import type { ServerCore } from "../../contracts/server";
 
 /**
@@ -80,8 +80,8 @@ export function createHelperProbe(ctx: Pick<ServerCore, "bb" | "db">) {
     } finally {
       if (threadId) {
         const id = threadId;
-        await bb.sdk.threads.stop({ threadId: id }).catch(() => undefined);
-        await bb.sdk.threads.archive({ threadId: id }).catch(() => undefined);
+        await bestEffort(bb.log, "helper probe thread cleanup", bb.sdk.threads.stop({ threadId: id }), undefined);
+        await bestEffort(bb.log, "helper probe thread cleanup", bb.sdk.threads.archive({ threadId: id }), undefined);
       }
     }
   }

@@ -1,3 +1,4 @@
+import { bestEffort } from "@lane-pilot/kit";
 /** Host calls that write to a git checkout; a reload must not cut one off midway. */
 export const CHECKOUT_WRITING_METHODS = new Set(["gitIntegrate", "gitCreateWorktree", "gitRemoveWorktree", "gitPrepareWorktree", "gitCommitDocs",
   "gitRevertPaths", "gitRevertCommits", "gitUndoCheckWrites", "gitWorktreeSnapshot", "snapshot", "rollback", "install", "applyOnboardingPages", "writeDocsPages", "writeWorkflowFile"]);
@@ -73,7 +74,7 @@ export async function drainForLifecycle(ctx:DrainContext, pollMs = 500, now = ()
   }
   const status = target.drain.status();
   const clean = status.inFlight.length === 0;
-  await ctx.kv.set(DRAIN_SNAPSHOT_KEY, { action:ctx.action, at:now(), clean, inFlight:status.inFlight }).catch(() => undefined);
+  await bestEffort(target.log, "deploy drain snapshot", ctx.kv.set(DRAIN_SNAPSHOT_KEY, { action:ctx.action, at:now(), clean, inFlight:status.inFlight }), undefined);
   target.log(clean
     ? `Lane Pilot drained for ${ctx.action}: no checkout write or check in flight`
     : `Lane Pilot drain for ${ctx.action} ended with ${status.inFlight.map((call) => `${call.method}(${call.ageSec}s)`).join(", ")} still running`);

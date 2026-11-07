@@ -77,7 +77,7 @@ export function runsRpc(ctx: ServerCore, services: Services) {
     helper_thread_labels: async ({ threadIds }) => {
       const labels: Record<string, string> = {};
       await Promise.all((threadIds as string[]).map(async (threadId) => {
-        const meta = await bb.sdk.threads.getPluginMetadata({ threadId }).catch(() => null);
+        const meta = await orMiss(bb.sdk.threads.getPluginMetadata({ threadId }), null, isNotFound);
         const role = meta && typeof meta === "object" ? (meta as Record<string, unknown>).role : null;
         if (typeof role === "string" && role) labels[threadId] = role;
       }));
@@ -160,7 +160,7 @@ export function runsRpc(ctx: ServerCore, services: Services) {
 
       const threads = await Promise.all(working.map(async (row) => {
         const threadIdStr = String(row.id);
-        const metadata = await bb.sdk.threads.getPluginMetadata({ threadId: threadIdStr }).catch(() => null);
+        const metadata = await orMiss(bb.sdk.threads.getPluginMetadata({ threadId: threadIdStr }), null, isNotFound);
         const statusStr = String(row.status);
 
         let phase: string | null = null;
@@ -233,7 +233,7 @@ export function runsRpc(ctx: ServerCore, services: Services) {
         return { id, role, title: stringAt(row, "title") ?? null, status: stringAt(row, "status") ?? null, children: [] };
       };
       const childrenOf = async (id: string): Promise<CardThread[]> => {
-        const listed = await (bb.sdk.threads.list({ parentThreadId: id, includeHidden: true, limit: 30 } as never) as Promise<unknown>).catch(() => []);
+        const listed = await (bb.sdk.threads.list({ parentThreadId: id, includeHidden: true, limit: 30 } as never) as Promise<unknown>).catch((cause: unknown) => { bb.log.warn(`Lane Pilot child threads of ${id} unreadable: ${cause instanceof Error ? cause.message : String(cause)}`); return []; });
         return (Array.isArray(listed) ? listed as Array<Record<string, unknown>> : []).filter((row) => typeof row.id === "string").map((row) => ({
           id: String(row.id), role: "sub-agent", title: stringAt(row, "title") ?? null, status: stringAt(row, "status") ?? null, children: [],
         }));
@@ -332,7 +332,7 @@ export function runsRpc(ctx: ServerCore, services: Services) {
       let pluginRole: string | null = null;
       let threadStatus: string | null = null;
       if (threadId) {
-        const metadata = await bb.sdk.threads.getPluginMetadata({ threadId }).catch(() => null);
+        const metadata = await orMiss(bb.sdk.threads.getPluginMetadata({ threadId }), null, isNotFound);
         const role = valueAt(metadata, "role");
         pluginRole = typeof role === "string" ? role : null;
         const thread = await orMiss(bb.sdk.threads.get({ threadId }), null, isNotFound);
@@ -363,6 +363,7 @@ export function runsRpc(ctx: ServerCore, services: Services) {
       const open = db.prepare(`SELECT id FROM lane_pilot_attempt WHERE run_id=? AND state IN ('queued','spawn_requested','spawn_unknown','running','cancel_requested')`).all(runId) as Array<{ id:string }>;
       const canceled:string[] = [], left:string[] = [];
       for (const { id } of open) {
+        // a failed cancel lands in `left`, not silently dropped
         const result = await handlers.cancel_attempt({ attemptId:id, code:"run_closed" }).catch(() => ({ ok:false }));
         (result.ok ? canceled : left).push(id);
       }

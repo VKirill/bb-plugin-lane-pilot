@@ -6,7 +6,7 @@ import { checksInFlight, failureClass, taskFamily } from "../../runs";
 import { projectRoleField } from "../../runs/server";
 import { OWNER_WORD_WAIT_MS } from "../../tasks";
 import { taskWordItemPrefix } from "../../lead";
-import { stringAt, orMiss, isNotFound } from "@lane-pilot/kit";
+import { bestEffort, stringAt, orMiss, isNotFound } from "@lane-pilot/kit";
 import type { ServerCore } from "../../contracts/server";
 import type { RepairDeps } from "./deps";
 import { waitThreadIdle } from "@lane-pilot/thread-observe";
@@ -192,7 +192,7 @@ export function createSelfRepair(ctx: ServerCore, deps: RepairDeps, engineOf?: (
     }
     // The repair engineer's model is the `repairer` row of the table «role -> model» when the owner set one and the watcher's own config names no model.
     if (merged.projectId && !stored.model && !stored.providerId && typeof ctx.effectiveProjectSettings === "function") {
-      const row = tableRowAt((await ctx.effectiveProjectSettings(merged.projectId).catch(() => null))?.values ?? {}, "repairer");
+      const row = tableRowAt((await bestEffort(ctx.log, "self-repair settings", ctx.effectiveProjectSettings(merged.projectId), { values: {}, inherited: [], explicitKeys: [] })).values, "repairer");
       if (row) return { ...merged, providerId: row.option.providerId, model: row.option.id, reasoningLevel: row.effort ?? merged.reasoningLevel };
     }
     return merged;
@@ -443,7 +443,7 @@ export function createSelfRepair(ctx: ServerCore, deps: RepairDeps, engineOf?: (
     // saved as a patch, the worktree goes, and a night repair's round counts as failed so its class is taken again on a fresh main.
     if ((record.worktree!.mergeTries ?? 0) >= MERGE_TRIES) {
       const last = record.outcome ?? "";
-      await releaseWorktree(host, record.worktree!);
+      await releaseWorktree(host, record.worktree!, ctx.log);
       record.worktree = null;
       record.outcome = `released after ${MERGE_TRIES} failed merges: ${last}`.slice(0, 400);
       ctx.log(`self-repair: ${signature} ${record.outcome}`);
@@ -452,17 +452,17 @@ export function createSelfRepair(ctx: ServerCore, deps: RepairDeps, engineOf?: (
     }
     if (night && record.verdict === "fixed") {
       // A night repair is merged only when the night policy lets the night do it alone; otherwise it waits on its branch (held) or is released.
-      const decision = await night.mergeGate(signature, { threadId: record.threadId!, worktree: record.worktree! }).catch(() => "hold" as const);
+      const decision = await bestEffort(ctx.log, "night merge gate", night.mergeGate(signature, { threadId: record.threadId!, worktree: record.worktree! }), "hold" as const);
       if (decision === "hold") return;
       if (decision === "release") {
-        await releaseWorktree(host, record.worktree!);
+        await releaseWorktree(host, record.worktree!, ctx.log);
         record.worktree = null;
         record.outcome = "released: held by the night policy";
         night.settled(signature, { outcome: record.outcome, verdict: record.verdict ?? null, commit: null });
         return;
       }
     }
-    await settleWorktree(host, ctx.log, (worktree) => releaseWorktree(host, worktree), record, signature, now);
+    await settleWorktree(host, ctx.log, (worktree) => releaseWorktree(host, worktree, ctx.log), record, signature, now);
     if (night && !record.worktree) {
       // The full SHA kept beside the outcome; the text is only the fallback for a merge recorded before it existed (the wall resolves a short one before it reverts).
       const merged = /^merged (\S+)/.exec(record.outcome ?? "")?.[1] ?? null;
@@ -522,7 +522,7 @@ export function createSelfRepair(ctx: ServerCore, deps: RepairDeps, engineOf?: (
     }
     if (!jobs.length) return 0;
     const settings = await ctx.effectiveProjectSettings(cfg.projectId).then((value) => value.values, () => ({} as Record<string, unknown>));
-    const verdicts = await instance.judgeMany(repairGroup, jobs.map((job) => job.input), { projectId: cfg.projectId, subject: "selfrepair", settings }).catch(() => []);
+    const verdicts = await bestEffort(ctx.log, "self-repair regroup judge", instance.judgeMany(repairGroup, jobs.map((job) => job.input), { projectId: cfg.projectId, subject: "selfrepair", settings }), []);
     let filed = 0;
     jobs.forEach((job, index) => {
       const verdict = verdicts[index];
@@ -568,7 +568,7 @@ export function createSelfRepair(ctx: ServerCore, deps: RepairDeps, engineOf?: (
       current.signatures[signature] = record;
     }
     for (const [signature, record] of Object.entries(current.signatures)) if (now - record.lastAt > FORGET_MS) {
-      if (record.pending && !options.dryRun) await releaseWorktree(host, record.pending.worktree);
+      if (record.pending && !options.dryRun) await releaseWorktree(host, record.pending.worktree, ctx.log);
       delete current.signatures[signature];
     }
     for (const [signature, record] of Object.entries(current.signatures)) {
@@ -665,7 +665,7 @@ export function createSelfRepair(ctx: ServerCore, deps: RepairDeps, engineOf?: (
         spawnCalled = true;
         spawned = await spawnRepairThread({ signature, samples: record.samples, worktree, cfg, spawnId, now, night });
         record.pending = null;
-        if (!spawned) await releaseWorktree(host, worktree);
+        if (!spawned) await releaseWorktree(host, worktree, ctx.log);
         if (spawned) {
           record.threadId = spawned;
           record.spawnedAt = now;
@@ -687,7 +687,7 @@ export function createSelfRepair(ctx: ServerCore, deps: RepairDeps, engineOf?: (
           if (spawnCalled && keyedSpawnSupported(bb) && now - (record.pending?.at ?? now) < PENDING_MS) {
             record.pending = { worktree, at: record.pending?.at ?? now };
           } else {
-            await releaseWorktree(host, worktree);
+            await releaseWorktree(host, worktree, ctx.log);
             record.pending = null;
             if (spawnCalled) await clearSpawnMarker(bb, { role: "self-repair", spawnId });
           }
@@ -760,7 +760,7 @@ export function createSelfRepair(ctx: ServerCore, deps: RepairDeps, engineOf?: (
           // the next try repeats the spawn and gets that thread back; without them, or after PENDING_MS, the spawn is taken as not made.
           const kept = keyedSpawnSupported(bb) && Date.now() - (record.pending?.at ?? Date.now()) < PENDING_MS;
           if (!kept) {
-            await releaseWorktree(host, worktree);
+            await releaseWorktree(host, worktree, ctx.log);
             await patchRecord(signature, (stored) => { stored.pending = null; });
             await clearSpawnMarker(bb, { role: "self-repair", spawnId });
           }
@@ -768,7 +768,7 @@ export function createSelfRepair(ctx: ServerCore, deps: RepairDeps, engineOf?: (
           throw cause;
         }
         if (!spawned) {
-          await releaseWorktree(host, worktree);
+          await releaseWorktree(host, worktree, ctx.log);
           await patchRecord(signature, (stored) => { stored.pending = null; });
           await failed("threads.spawn returned no repair thread id", false);
           throw new Error("threads.spawn returned no repair thread id");

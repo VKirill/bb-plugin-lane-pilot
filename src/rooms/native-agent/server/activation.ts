@@ -13,7 +13,7 @@ import { parseWorkspaceMode, resolveManagedWorkspace, usesManagedWorktree } from
 import { excludeBookkeeping } from "../../verification/server";
 import { fullAccessSpawn, pmHasGuard, pmPrompt } from "../../platform/server";
 import { requireHelperSpawn, requiredPolicyField } from "../../runs/server";
-import { id, stringAt, valueAt, orMiss, isNotFound } from "@lane-pilot/kit";
+import {id, stringAt, valueAt, orMiss, isNotFound, bestEffort} from "@lane-pilot/kit";
 import type { ServerCore } from "../../contracts/server";
 
 import type { ReconcileApi } from "../../stability/server/reconcile";
@@ -59,7 +59,7 @@ export function createActivation(ctx: ServerCore, services: Services) {
       if (hostId && sources.length && !sources.some((row) => row.hostId === hostId)) {
         throw new Error("composer_environment_host_not_in_project");
       }
-      const listed = await bb.sdk.environments.listProviders({ projectId, ...(hostId ? { hostId } : {}) }).catch(() => null);
+      const listed = await bb.sdk.environments.listProviders({ projectId, ...(hostId ? { hostId } : {}) });
       if (Array.isArray(listed) && !listed.some((row) => stringAt(row, "id") === env.environmentProviderId || stringAt(row, "environmentProviderId") === env.environmentProviderId)) {
         throw new Error(`composer_environment_provider_unknown:${env.environmentProviderId}`);
       }
@@ -195,7 +195,7 @@ export function createActivation(ctx: ServerCore, services: Services) {
       } catch (cause) {
         setRunState(db, runId, "blocked");
         releaseActivation(db, projectId, runId);
-        await bb.sdk.threads.stop({ threadId }).catch(() => undefined);
+        await bestEffort(bb.log, "activation cleanup thread stop", bb.sdk.threads.stop({ threadId }), undefined);
         throw new Error(`Lane Pilot failed closed while binding environment: ${cause instanceof Error ? cause.message : String(cause)}`);
       }
     }

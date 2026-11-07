@@ -1,5 +1,5 @@
 import { constants } from "node:fs";
-import { spawnAsync } from "@lane-pilot/kit";
+import { isFsAbsent, lstatOrNull, orMiss, parseJsonOr, spawnAsync } from "@lane-pilot/kit";
 import { lstat, open, readdir, realpath } from "node:fs/promises";
 import { basename, extname, isAbsolute, join, relative, sep } from "node:path";
 
@@ -73,10 +73,8 @@ export function parseSandboxUnsafePatterns(settingValue: unknown): string[] {
     const trimmed = settingValue.trim();
     if (!trimmed) return [];
     if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
-      try {
-        const parsed = JSON.parse(trimmed);
-        if (Array.isArray(parsed)) return parsed.map((item) => String(item).trim()).filter(Boolean);
-      } catch {}
+      const parsed = parseJsonOr<unknown>(trimmed, null);
+      if (Array.isArray(parsed)) return parsed.map((item) => String(item).trim()).filter(Boolean);
     }
     return trimmed.split(/[,\n]/).map((item) => item.trim()).filter(Boolean);
   }
@@ -218,7 +216,7 @@ export function collectGitNexusCallerPaths(payload:unknown,root:string):string[]
 }
 async function runGitNexusCallers(root:string,targets:readonly {filePath:string;symbol:string}[]):Promise<{paths:string[];complete:boolean}> {
   if(targets.length===0)return {paths:[],complete:true};
-  const info=await lstat(join(root,".gitnexus")).catch(()=>null);
+  const info=await lstatOrNull(join(root,".gitnexus"));
   if(!info?.isDirectory()||info.isSymbolicLink())return {paths:[],complete:false};
   const deadline=Date.now()+8_000,paths=new Set<string>();
   const status=await spawnAsync("gitnexus",["status","--json"],{cwd:root,timeout:1_500,maxBuffer:512*1024});
@@ -271,7 +269,7 @@ export async function scanCritiqueCoverage(input:{workspacePath:string;plan:stri
   }
   if(dirs.length){truncated=true;workspaceTruncated=true;}
   files.sort();
-  const existing=new Set(files),findings:CoverageFinding[]=[];
+  const existing=new Set(files),findings:CoverageFinding[]=[],unreadable:string[]=[];
   const owns=input.tasks.flatMap((task)=>task.owns_paths??[]).map((path)=>path.replace(/\\/g,"/").replace(/^\.\//,""));
   if(owns.length>8) {
     truncated=true;
@@ -294,7 +292,7 @@ export async function scanCritiqueCoverage(input:{workspacePath:string;plan:stri
     if(packageScripts.has(ws))return packageScripts.get(ws)!;
     const dir=ws.replace(/^\.\//,"").replace(/\/$/,"");let found:Record<string,unknown>|null=null;
     for(const file of files.filter((path)=>/^(?:[^/]+\/){0,4}package\.json$/.test(path)).slice(0,40)) {
-      const handle=await open(join(root,...file.split("/")),constants.O_RDONLY|constants.O_NOFOLLOW).catch(()=>null);
+      const handle=await orMiss(open(join(root,...file.split("/")),constants.O_RDONLY|constants.O_NOFOLLOW),null,isFsAbsent);
       if(!handle)continue;
       try {
         const info=await handle.stat();if(!info.isFile()||info.size>65_536)continue;
@@ -321,7 +319,7 @@ export async function scanCritiqueCoverage(input:{workspacePath:string;plan:stri
   let readFiles=0,readBytes=0;const textCache=new Map<string,string>();
   const mentionedTexts:Array<{source:string;text:string}>=[{source:"Plan",text:input.plan}];
   if(existing.has("SPEC.md")) {
-    const handle=await open(join(root,"SPEC.md"),constants.O_RDONLY|constants.O_NOFOLLOW).catch(()=>null);
+    const handle=await orMiss(open(join(root,"SPEC.md"),constants.O_RDONLY|constants.O_NOFOLLOW),null,isFsAbsent);
     if(handle)try {
       const info=await handle.stat();
       if(info.isFile()&&info.size<=65_536&&readFiles<300&&readBytes+info.size<=4*1024*1024) {
@@ -340,7 +338,7 @@ export async function scanCritiqueCoverage(input:{workspacePath:string;plan:stri
     const normalized=own.replace(/\/$/,""),stem=basename(normalized).replace(/\.[^.]+$/,"");if(GENERIC.has(stem.toLowerCase()))continue;
     let ownedSource=textCache.get(normalized);
     if(ownedSource===undefined&&existing.has(normalized)&&CODE.has(extname(normalized).toLowerCase())) {
-      const handle=await open(join(root,...normalized.split("/")),constants.O_RDONLY|constants.O_NOFOLLOW).catch(()=>null);
+      const handle=await orMiss(open(join(root,...normalized.split("/")),constants.O_RDONLY|constants.O_NOFOLLOW),null,isFsAbsent);
       if(handle)try {
         const info=await handle.stat();
         if(info.isFile()&&info.size<=65_536&&readFiles<300&&readBytes+info.size<=4*1024*1024) {
@@ -357,14 +355,18 @@ export async function scanCritiqueCoverage(input:{workspacePath:string;plan:stri
       if(findings.length>=10)break;
       if(path===normalized||owns.some((pattern)=>covered(pattern,path))||!TEXT.has(extname(path).toLowerCase()))continue;
       const absolute=join(root,...path.split("/"));
-      const handle=await open(absolute,constants.O_RDONLY|constants.O_NOFOLLOW).catch(()=>null);
-      if(!handle)continue;
+      // One unreadable file (EACCES, a locked file) is a named skip, not a dead scan: it is listed once in the result.
+      let handle;
+      try { handle=await open(absolute,constants.O_RDONLY|constants.O_NOFOLLOW); }
+      catch(cause){ if(isFsAbsent(cause))continue; unreadable.push(path); continue; }
       let body=textCache.get(path);
       try {
         const info=await handle.stat();if(!info.isFile())continue;
         if(info.size>65_536||readFiles>=300||readBytes+info.size>4*1024*1024){truncated=true;workspaceTruncated=true;continue;}
         if(body===undefined){body=await handle.readFile("utf8");textCache.set(path,body);readFiles++;readBytes+=info.size;}
-      } finally { await handle.close(); }
+      } catch(cause){ if(!isFsAbsent(cause))unreadable.push(path); }
+      finally { await handle.close(); }
+      if(body===undefined)continue;
       if(CODE.has(extname(path).toLowerCase())&&callNames.some((name)=>new RegExp(`\\b${name.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")}\\s*\\(`).test(body)))
         add(findings,"caller_unowned",path,`Code in ${path} calls an exported function from ${normalized}, but no TaskV2 lane owns this caller`);
       if(needles.some((needle)=>needle.length>=4&&body.includes(needle)))
@@ -376,6 +378,7 @@ export async function scanCritiqueCoverage(input:{workspacePath:string;plan:stri
     add(findings,"caller_unowned",path,`GitNexus reports a direct caller in ${path}, but no TaskV2 lane owns this caller`);
   if(!graph.complete){truncated=true;add(findings,"coverage_scan_truncated",".gitnexus","Full upstream caller traversal was unavailable, stale, or exceeded its bounded query budget; lexical coverage is only an approximation","warning");}
   if(workspaceTruncated)add(findings,"coverage_scan_truncated",".","Workspace path/read limits were reached; structural ownership coverage is partial");
+  if(unreadable.length){truncated=true;add(findings,"coverage_scan_truncated",".",`${unreadable.length} file(s) could not be read and were skipped: ${unreadable.slice(0,10).join(", ")}${unreadable.length>10?", …":""}`,"warning");}
   if(findings.some((finding)=>finding.code==="coverage_scan_truncated"))truncated=true;
   return {status:truncated?"truncated":"complete",pathCount:files.length,findings};
 }

@@ -6,6 +6,7 @@ import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import type { rpcContract } from "../../contracts";
 import { scheduleIsolated } from "../../platform/server";
 import type { ServerCore } from "../../contracts/server";
+import { bestEffort } from "@lane-pilot/kit";
 
 /**
  * Canary and error budget for Lane Pilot's own releases (G7). A new version is watched while its first attempts finish:
@@ -143,7 +144,7 @@ export function createCanary(ctx: ServerCore, breaker?: () => { snapshot(now?: n
     let ids = new Set<string>(sandboxCache?.ids);
     try {
       if (projects) {
-        const rows = [...await projects.list({ includePersonal: true }), ...await projects.list({ includePersonal: true, archived: true }).catch(() => [])];
+        const rows = [...await projects.list({ includePersonal: true }), ...await bestEffort(bb.log, "canary archived project list", projects.list({ includePersonal: true, archived: true }), [])];
         ids = new Set(rows.filter((row) => isSandboxProjectName(row.name)).map((row) => row.id));
       }
     } catch { /* keep the last answer: a project list that fails must not put the sandbox back into the budget */ }

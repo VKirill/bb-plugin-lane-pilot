@@ -23,6 +23,7 @@ export async function withUsage(bb: BbPluginApi, threads: string | UsageWindow |
     if (window && typeof window.id === "string" && window.id !== "") windows.set(`${window.id}|${window.since ?? ""}|${window.until ?? ""}`, window);
   }
   if (!windows.size) return {};
+  // a window that cannot be read marks the total unknown rather than silently zero
   const spent = await Promise.all([...windows.values()].map((window) => threadUsage(bb, window.id, { ...(window.since !== undefined ? { since: window.since } : {}), ...(window.until !== undefined ? { until: window.until } : {}) }).catch(() => null)));
   const blind = spent.some((row) => !row || !row.known || row.unknown);
   return {

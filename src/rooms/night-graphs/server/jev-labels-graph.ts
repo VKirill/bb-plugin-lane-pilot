@@ -63,8 +63,8 @@ export function mountJevLabelsGraph(ctx: ServerCore, services: Services): void {
       const jobs = planModelLabels(ctx.db as never, judgments);
       if (!jobs.length) return { output: { status: "done", results: [], labeled: 0, handoff: "no sampled receipts to relabel" } };
 
-      const place = await services.resolveProjectWriterHost({ projectId: projectId === "*" ? undefined : projectId } as never).catch(() => null);
-      const analyzer = await services.ruleScan.analyzerFor(projectId, place && (place as { status?: string }).status === "resolved" ? { hostId: (place as { hostId: string }).hostId, path: (place as { path: string }).path } : null).catch(() => null);
+      const place = await services.resolveProjectWriterHost({ projectId: projectId === "*" ? undefined : projectId } as never).catch((cause: unknown) => { ctx.log(`jev-labels: writer host unreadable: ${cause instanceof Error ? cause.message : String(cause)}`); return null; });
+      const analyzer = await services.ruleScan.analyzerFor(projectId, place && (place as { status?: string }).status === "resolved" ? { hostId: (place as { hostId: string }).hostId, path: (place as { path: string }).path } : null).catch((cause: unknown) => { ctx.log(`jev-labels: analyzer unreadable: ${cause instanceof Error ? cause.message : String(cause)}`); return null; });
       if (!analyzer || !place || (place as { status?: string }).status !== "resolved") {
         return { output: { status: "skipped", results: [], labeled: 0, handoff: "no analyzer or host for model labels" } };
       }

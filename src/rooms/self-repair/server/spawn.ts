@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { sha256Hex, orMiss, isNotFound } from "@lane-pilot/kit";
+import { bestEffort, sha256Hex, orMiss, isNotFound } from "@lane-pilot/kit";
 import type { ServerCore } from "../../contracts/server";
 import type { stringAt as stringAtOf } from "@lane-pilot/kit";
 import type { RepairWorktree, SelfRepairConfig, SelfRepairState, SignatureRecord } from "./types";
@@ -40,15 +40,15 @@ async function createRepairWorktree(bb: ServerCore["bb"], host: ServerCore["host
   const created = await host.call("gitCreateWorktree", { requestedHostId: hostId, basePath, name }, { hostId, timeoutMs: 120_000, worktreeOwner: { kind: "self-repair", id: name } });
   if (created.status !== "ready" || !created.path || !created.branch) throw new Error(`worktree not created: ${created.reason ?? "unknown"}`);
   // node_modules and built output are linked in so the suite runs there at once; without them the repair reinstalls.
-  await host.call("gitPrepareWorktree", { requestedHostId: hostId, basePath, worktreePath: created.path }, { hostId, timeoutMs: 600_000 }).catch(() => undefined);
+  await bestEffort(bb.log, "self-repair worktree prepare", host.call("gitPrepareWorktree", { requestedHostId: hostId, basePath, worktreePath: created.path }, { hostId, timeoutMs: 600_000 }), undefined);
   return { hostId, basePath, path: created.path, branch: created.branch };
 }
 
 /** The worktree goes away; whatever it still holds is first saved as a patch under ~/.lane-pilot/released. */
-async function releaseWorktree(host: ServerCore["host"], worktree: RepairWorktree): Promise<void> {
+async function releaseWorktree(host: ServerCore["host"], worktree: RepairWorktree, log: (message: string) => void): Promise<void> {
   const name = worktree.branch.replace(/^lane\//, "");
-  await host.call("gitWorktreeSnapshot", { requestedHostId: worktree.hostId, worktreePath: worktree.path, name }, { hostId: worktree.hostId, timeoutMs: 120_000 }).catch(() => null);
-  await host.call("gitRemoveWorktree", { requestedHostId: worktree.hostId, basePath: worktree.basePath, worktreePath: worktree.path }, { hostId: worktree.hostId, timeoutMs: 120_000 }).catch(() => null);
+  await bestEffort(log, "self-repair worktree snapshot", host.call("gitWorktreeSnapshot", { requestedHostId: worktree.hostId, worktreePath: worktree.path, name }, { hostId: worktree.hostId, timeoutMs: 120_000 }), null);
+  await bestEffort(log, "self-repair worktree remove", host.call("gitRemoveWorktree", { requestedHostId: worktree.hostId, basePath: worktree.basePath, worktreePath: worktree.path }, { hostId: worktree.hostId, timeoutMs: 120_000 }), null);
 }
 
 /**

@@ -108,9 +108,8 @@ export function insightsRpc(ctx: ServerCore, services: InsightsServices) {
             if (recheck) status = await pending;
             else {
               let timer: ReturnType<typeof setTimeout> | undefined;
-              const early = await Promise.race([pending.catch(() => null), new Promise<null>((done) => { timer = setTimeout(() => done(null), DOCS_STATUS_WAIT_MS); })]);
+              const early = await Promise.race([pending.catch((cause: unknown) => { ctx.log(`self-repair: docs status unreadable for ${place.name}: ${cause instanceof Error ? cause.message : String(cause)}`); return null; }), new Promise<null>((done) => { timer = setTimeout(() => done(null), DOCS_STATUS_WAIT_MS); })]);
               clearTimeout(timer);
-              pending.catch(() => undefined);
               status = early ?? hit?.status ?? { verdict: null, cadence: "nightly" as const, lastReadAt: services.docsLastRead(place) };
             }
           }

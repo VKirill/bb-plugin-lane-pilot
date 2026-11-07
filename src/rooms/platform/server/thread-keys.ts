@@ -105,10 +105,11 @@ export async function spawnKeyed(bb: BbPluginApi, args: Record<string, unknown>,
     // Held by an earlier spawn of the same identity that finished: the next number is a new spawn. Held after a spawn
     // whose answer was lost (the marker names this number): that thread is this spawn.
     const isResumed = resumed !== null && n === resumed;
-    if (!isResumed && typeof threads.experimental_vkFindByKey === "function" && await threads.experimental_vkFindByKey(key).catch(() => null)) continue;
+    if (!isResumed && typeof threads.experimental_vkFindByKey === "function" && await threads.experimental_vkFindByKey(key)) continue;
     try { await kv.set(markerKey(identity), { n, at: Date.now() }); } catch { return plain(); }
     const result = await keyedOrRecover(bb, args, key);
     if (result.reused && !result.recovered && !isResumed) continue;
+    // marker cleanup is best-effort; a stale marker only feeds the next same-identity spawn's resume hint
     await kv.delete(markerKey(identity)).catch(() => undefined);
     return result.thread;
   }
@@ -120,7 +121,8 @@ async function keyedOrRecover(bb: BbPluginApi, args: Record<string, unknown>, ke
   try {
     return await threads.experimental_vkSpawnKeyed!({ ...args, key });
   } catch (cause) {
-    // The answer may be lost although the thread exists: the key tells.
+    // The answer may be lost although the thread exists: the key tells. The probe is best-effort;
+    // on failure the original spawn error propagates.
     const held = typeof threads.experimental_vkFindByKey === "function" ? await threads.experimental_vkFindByKey(key).catch(() => null) : null;
     if (held) return { thread: held, reused: true, recovered: true };
     throw cause;

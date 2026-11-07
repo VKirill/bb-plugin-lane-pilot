@@ -20,6 +20,7 @@ export async function rerankRecords<T extends { content: string; similarity?: nu
   if ((records[0]!.similarity ?? 0) >= SURE_SIMILARITY) return [...records];
   const head = records.slice(0, MAX_PASSAGES);
   const verdict = await judge.judge(memoryRerankJudgment, { query, passages: head.map((record) => record.content) },
+    // the rerank judge is advisory; null keeps the unranked order
     { projectId: ctx.projectId, ...(ctx.runId ? { runId: ctx.runId } : {}), settings: ctx.settings as never }).catch(() => null);
   if (verdict?.by !== "jev") return [...records];
   return verdict.decision.keep.map((index) => head[index]!);

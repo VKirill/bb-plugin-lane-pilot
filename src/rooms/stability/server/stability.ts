@@ -2,7 +2,7 @@ import packageJson from "../../../../package.json";
 import { PARKED_CLASSES, failureClass, failureFingerprint, isCapacitySaturated, isWaitingSecret, type FailureClass } from "../../runs";
 import { allowedSecretNames, secretProblem, waitingSecretNote, WAITING_SECRET_PREFIX } from "../../secrets/server";
 import { createAttempt, getAttempt, getRun, getRunSettingsScopes, listOpenAttempts, loadProjectSettings, transitionAttempt } from "../../storage";
-import { id } from "@lane-pilot/kit";
+import { bestEffort, id } from "@lane-pilot/kit";
 import { reopenWriterStages } from "../../runs/server/stage-records";
 import { isRunHalted, isRunPaused } from "../../runs/server/runs-halt";
 import { conveyorState } from "../../conveyor";
@@ -77,7 +77,7 @@ export function createStability(ctx:ServerCore, services:Services) {
 
   /** Written at every change of a breaker, so a reload keeps the project's wait (and the self-repair watcher reads it). */
   function persistBreakers() {
-    void bb.storage.kv.set(BREAKERS_KEY, Object.fromEntries(breakers)).catch(() => undefined);
+    void bestEffort(bb.log, "breaker state write", bb.storage.kv.set(BREAKERS_KEY, Object.fromEntries(breakers)), undefined);
   }
 
   /**
@@ -289,7 +289,7 @@ export function createStability(ctx:ServerCore, services:Services) {
       reopenWriterStages(db, row.runId, row.taskId, `restarting after ${row.klass} fault`);
       createAttempt(db, { id:attemptId, runId:row.runId, taskId:row.taskId });
       const attempt = getAttempt(db, attemptId);
-      const ok = attempt ? await services.enqueueResumedWriter(row.projectId, attempt).catch(() => false) : false;
+      const ok = attempt ? await services.enqueueResumedWriter(row.projectId, attempt).catch((cause: unknown) => { bb.log.warn(`Lane Pilot could not resume parked task ${row.taskId}: ${cause instanceof Error ? cause.message : String(cause)}`); return false; }) : false;
       if (!ok) { keep.push({ ...row, redrives:row.klass === "limit" ? row.redrives : row.redrives + 1, at:now }); continue; }
       // A task waiting for a secret or a freed usage window is not counted against the redrive limit.
       await rememberRedrive(row, (waiting || row.klass === "limit") ? row.redrives : row.redrives + 1, now);
@@ -305,8 +305,11 @@ export function createStability(ctx:ServerCore, services:Services) {
    * Whether the writer host has too little free disk for another worktree (≈2 GB each on SelfyStudio): a full OVH disk
    * stopped its BB host daemon on 2026-10-03. Null when there is room or the host cannot say.
    */
+  // A failed probe is logged once per streak, not every poll: the waiting-writer loop calls this every 30 s.
+  const diskProbeFailing = new Set<string>();
   async function diskHolds(hostId:string, path:string):Promise<string | null> {
-    const free = await ctx.host.call("diskFree", { requestedHostId:hostId, path }, { hostId, timeoutMs:15_000 }).catch(() => null);
+    const free = await ctx.host.call("diskFree", { requestedHostId:hostId, path }, { hostId, timeoutMs:15_000 }).catch((cause: unknown) => { if (!diskProbeFailing.has(hostId)) { diskProbeFailing.add(hostId); ctx.log(`Lane Pilot disk probe on ${hostId} failed: ${cause instanceof Error ? cause.message : String(cause)}`); } return null; });
+    if (free) diskProbeFailing.delete(hostId);
     if (!free || !free.totalBytes) return null;
     const low = free.freeBytes < Math.max(DISK_FLOOR_BYTES, Math.min(DISK_MIN_FREE_BYTES, free.totalBytes * DISK_MIN_FREE_SHARE));
     // `disk_low` is the token every reader of a reason takes for the machine's fault (runs/failure-class.ts, the night journal's logOrigin,

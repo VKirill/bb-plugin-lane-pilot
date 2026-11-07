@@ -169,7 +169,7 @@ export function createMemoryStage(ctx: ServerCore, services: Services) {
       // What a task taught belongs to its section of a shared project (Мои проекты: several games and FeedGen in one project).
       let scope=getRunSettingsScopes(db,args.runId);
       const readFile=await snapshotFileRead(parsed.flatMap((entry)=>pathsNamed(entry.content)),async(relativePath)=>{
-        const file=await bb.sdk.files.read({hostId:config.hostId,rootPath:workspace.path,path:resolve(workspace.path,relativePath)}).catch(()=>null);
+        const file=await bb.sdk.files.read({hostId:config.hostId,rootPath:workspace.path,path:resolve(workspace.path,relativePath)}).catch((cause: unknown) => { bb.log.warn(`Lane Pilot memory: file read of ${relativePath} failed: ${cause instanceof Error ? cause.message : String(cause)}`); return null; });
         const content=file&&typeof file==="object"?(file as {content?:unknown}).content:null;
         return typeof content==="string"?new TextEncoder().encode(content):null;
       });
@@ -260,7 +260,7 @@ export function createMemoryStage(ctx: ServerCore, services: Services) {
       // A few files the notes name, read through the same file reader the writer uses. The model still gets no tools.
       const named=pathsNamed(existing.map((item)=>item.content).join("\n")).slice(0,4);
       const excerptRead=await snapshotFileRead(named,async(relativePath)=>{
-        const file=await bb.sdk.files.read({hostId:config.hostId,rootPath:workspace.path,path:resolve(workspace.path,relativePath)}).catch(()=>null);
+        const file=await bb.sdk.files.read({hostId:config.hostId,rootPath:workspace.path,path:resolve(workspace.path,relativePath)}).catch((cause: unknown) => { bb.log.warn(`Lane Pilot memory: file read of ${relativePath} failed: ${cause instanceof Error ? cause.message : String(cause)}`); return null; });
         const content=file&&typeof file==="object"?(file as {content?:unknown}).content:null;
         return typeof content==="string"?new TextEncoder().encode(content):null;
       });
@@ -334,6 +334,7 @@ export function createMemoryStage(ctx: ServerCore, services: Services) {
     if(judge){
       const candidates=episodeCandidates(db,args.projectId,args.query,8,{chain});
       if(candidates.length){
+        // the rerank judge is advisory; null keeps the unranked order
         const verdict=await judge.judge(memoryRerankJudgment,{query:args.query,passages:candidates.map((e)=>`${e.title}: ${e.state}${e.reason?` — ${e.reason}`:""}`)},{projectId:args.projectId,runId:args.runId,settings:settings as Record<string,unknown>}).catch(()=>null);
         if(verdict?.by==="jev") episodesList=verdict.decision.keep.slice(0,3).map((i)=>candidates[i]!);
       }

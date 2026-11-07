@@ -1,5 +1,5 @@
 import { loadProjectSettings, recordSecretIssuance } from "../../storage";
-import { redactKnown } from "@lane-pilot/kit";
+import {redactKnown} from "@lane-pilot/kit";
 import { agentHistoryBlock, finalRuleOf, workflowFinish } from "../outcome";
 import { createScheduleStore } from "../store";
 import { taskMemoryContext } from "../../memory/server";
@@ -135,7 +135,7 @@ export function createScheduleExecutors(ctx: ServerCore, services: Services): Re
         : { state: "done", status: "failed", exitCode: result.exitCode, output, truncated: result.truncated, error: result.timedOut ? "the script's own time limit" : `exit code ${result.exitCode}`, reason: result.timedOut ? "timeout" : "exit_code" };
     },
     async cancel({ task, run }: ExecutorInput) {
-      if (task.kind === "script" && run.ref_id) await ctx.host.call("jobCancel", { requestedHostId: task.hostId, jobId: run.ref_id }, { hostId: task.hostId, timeoutMs: 20_000 }).catch(() => undefined);
+      if (task.kind === "script" && run.ref_id) await ctx.host.call("jobCancel", { requestedHostId: task.hostId, jobId: run.ref_id }, { hostId: task.hostId, timeoutMs: 20_000 }).catch((cause: unknown) => ctx.log(`schedule job cancel of ${run.ref_id} failed: ${cause instanceof Error ? cause.message : String(cause)}`));
     },
   };
 

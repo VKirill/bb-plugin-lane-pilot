@@ -96,7 +96,7 @@ export function createObserver(deps: ObserveDeps) {
 
     const sensitive = sensitiveReason(trimmed) !== null;
     const text = clip(maskPii(trimmed).text);
-    const prev = maskPii(((await deps.prevReply?.(message).catch(() => "")) ?? "").trim()).text.slice(-PREV_CHARS);
+    const prev = maskPii(((await deps.prevReply?.(message).catch((cause: unknown) => { deps.log?.(`learning: previous reply of ${message.id} unreadable: ${cause instanceof Error ? cause.message : String(cause)}`); return ""; })) ?? "").trim()).text.slice(-PREV_CHARS);
 
     const jev = await askJev(deps.jev(), message, text, prev);
 

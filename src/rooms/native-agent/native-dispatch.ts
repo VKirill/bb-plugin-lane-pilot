@@ -161,7 +161,7 @@ export function handoffSourceThread(blocks: unknown): string | null {
 async function handoffSelection(bb: BbPluginApi, ctx: { project: { id: string }; input: { blocks?: unknown } }): Promise<NativeSelection | null> {
   const source = handoffSourceThread(ctx.input.blocks);
   if (!source) return null;
-  const raw = await bb.storage.kv.get<NativeSelection>(nativeThreadKey(source)).catch(() => null);
+  const raw = await bb.storage.kv.get<NativeSelection>(nativeThreadKey(source));
   const parsed = raw ? nativeSelectionSchema.safeParse(raw) : null;
   if (!parsed?.success || parsed.data.projectId !== ctx.project.id) return null;
   const { parentRunId: _specialistRun, ...profile } = parsed.data;
@@ -195,7 +195,7 @@ export async function handleNativeDispatch(
   ])];
   // An existing chat whose agent was switched in the composer: the switch waits here for the chat's next message.
   const switchKey = nativeSwitchKey(ctx.thread.id);
-  const switchToken = tokens.length ? null : await bb.storage.kv.get<string>(switchKey).catch(() => null);
+  const switchToken = tokens.length ? null : await bb.storage.kv.get<string>(switchKey);
   const switching = typeof switchToken === "string";
   if (switching) tokens.push(switchToken);
   const base = {
@@ -229,7 +229,7 @@ export async function handleNativeDispatch(
     if (!tokens.length && !bound && !inherited) {
       traceNativeDispatch(bb.log, "dispatch.skip", { ...base, reason: "no_token_or_bound" });
       // An ordinary chat in a folder where a Lane Pilot run merges: remembered, and told once to commit as it goes.
-      void noteCheckoutGuest(bb, db, ctx.thread.id, ctx.environment?.path ?? projectCheckoutIntentPath(ctx.environmentIntent)).catch(() => undefined);
+      void bestEffort(bb.log, "checkout guest note", noteCheckoutGuest(bb, db, ctx.thread.id, ctx.environment?.path ?? projectCheckoutIntentPath(ctx.environmentIntent)), undefined);
       return { action: "proceed" };
     }
     if (ctx.requestedExecution.providerId !== "claude-code") {
@@ -410,7 +410,7 @@ export async function nativeContributedEnv(
         if (!cached?.length) return await refresh;
         // BB drops this plugin's env after 5 s, and the PM would start without its agent: a slow host gets the
         // cached launcher now, and the refresh still lands in the cache for the next turn.
-        refresh.catch(() => undefined);
+        refresh.catch((cause: unknown) => bb.log.warn(`Lane Pilot: native launcher refresh failed: ${cause instanceof Error ? cause.message : String(cause)}`));
         let timer: ReturnType<typeof setTimeout> | undefined;
         const late = new Promise<null>((resolve) => { timer = setTimeout(() => resolve(null), NATIVE_ENV_REFRESH_BUDGET_MS); });
         const fresh = await Promise.race([refresh, late]).finally(() => clearTimeout(timer));

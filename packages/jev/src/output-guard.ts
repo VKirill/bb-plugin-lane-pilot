@@ -57,7 +57,7 @@ export function createOutputGuard(deps: {
   const count = async (field: "asked" | "notSampled" | "sensitive"): Promise<void> => {
     const day = new Date((deps.now ?? Date.now)()).toISOString().slice(0, 10);
     try {
-      const known = await deps.kv.get<GuardStats>(GUARD_STATS_KEY).catch(() => null);
+      const known = await deps.kv.get<GuardStats>(GUARD_STATS_KEY);
       const stats: GuardStats = known && typeof known === "object" ? { ...known } : {};
       const today = stats[day] ?? { asked: 0, notSampled: 0, sensitive: 0 };
       today[field] += 1;
@@ -74,7 +74,7 @@ export function createOutputGuard(deps: {
   const appendBlock = async (block: GuardBlock): Promise<void> => {
     pending.push(block);
     try {
-      const known = await deps.kv.get<GuardBlock[]>(GUARD_BLOCKED_KEY).catch(() => null);
+      const known = await deps.kv.get<GuardBlock[]>(GUARD_BLOCKED_KEY);
       const base = Array.isArray(known) ? known : [];
       const persisted = new Set(base.map(blockId));
       for (let index = pending.length - 1; index >= 0; index--) if (persisted.has(blockId(pending[index]!))) pending.splice(index, 1);
@@ -101,6 +101,7 @@ export function createOutputGuard(deps: {
     if (!instance) return { blocked: false, text };
     if (text.trim().length < MIN_CHARS) return { blocked: false, text };
     try {
+      // settings are advisory; empty settings fall back to the guard defaults
       const settings = await deps.settings(input.projectId).catch(() => ({} as JevSettings));
       if (!instance.enabled(settings)) return { blocked: false, text };
       const kindsRaw = settings[GUARD_KINDS_KEY];

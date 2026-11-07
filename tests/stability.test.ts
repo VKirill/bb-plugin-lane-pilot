@@ -336,6 +336,24 @@ describe("disk hold", () => {
     expect(await holds(4, 100)).toMatch(/GB free/);
     expect(await holds(2, 40)).toMatch(/GB free/);
   });
+
+  it("logs a failed disk probe once per failure streak, not every poll", async () => {
+    const { bb } = createFakePluginHost({ pluginId:"lane-pilot" });
+    const db = openDatabase(bb);
+    const logs: string[] = [];
+    let failing = true;
+    const host = { call:async () => { if (failing) throw new Error("host gone"); return { freeBytes:16 * GB, totalBytes:460 * GB }; } };
+    const { stability } = createStability({ bb, isDisposed:() => false, db, host, log:(line:string) => logs.push(line) } as never, { activeWriterTasks:new Set() } as never);
+    await stability.diskHolds("host_mini", "/srv/p");
+    await stability.diskHolds("host_mini", "/srv/p");
+    await stability.diskHolds("host_mini", "/srv/p");
+    expect(logs.filter((line) => line.includes("disk probe"))).toHaveLength(1);
+    failing = false;
+    expect(await stability.diskHolds("host_mini", "/srv/p")).toBeNull();
+    failing = true;
+    await stability.diskHolds("host_mini", "/srv/p");
+    expect(logs.filter((line) => line.includes("disk probe"))).toHaveLength(2);
+  });
 });
 
 describe("a spent writer window (writer.capacity_wait)", () => {

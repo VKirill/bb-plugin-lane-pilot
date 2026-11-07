@@ -34,6 +34,7 @@ import { isNotFound, orMiss } from "@lane-pilot/kit";
 import type { PromotionServiceApi } from "../rule-forms/promotion-service";
 import type { RuleScanApi } from "../self-repair/server/rule-scan";
 import type { WriterHostApi } from "../writer/server/writer-host";
+import { bestEffort } from "@lane-pilot/kit";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {
@@ -104,7 +105,7 @@ export function createLearning(ctx: ServerCore, services: Services) {
 
   /** One run of the short model on a prompt: the project's rule analyzer (a hidden thread of the model the owner chose for rules). */
   async function runModel(prompt: string, projectId: string, label: string): Promise<string> {
-    const place = await services.resolveProjectWriterHost({ projectId }).catch(() => null);
+    const place = await services.resolveProjectWriterHost({ projectId });
     if (!place || place.status !== "resolved" || !place.hostId) throw new Error("no_host");
     const analyzer = await services.ruleScan.analyzerFor(projectId, { hostId: place.hostId, path: place.path });
     if (!analyzer) throw new Error("no_analyzer_model");
@@ -170,7 +171,7 @@ export function createLearning(ctx: ServerCore, services: Services) {
   const signalDeps = {
     db, jev, log,
     finalAnswer: async (threadId: string) => {
-      const output = await bb.sdk.threads.output({ threadId }).catch(() => null);
+      const output = await bb.sdk.threads.output({ threadId });
       const text = output && typeof output === "object" ? (output as { text?: unknown; lastAssistantText?: unknown }).text ?? (output as { lastAssistantText?: unknown }).lastAssistantText : null;
       return typeof text === "string" ? text : null;
     },
@@ -182,7 +183,7 @@ export function createLearning(ctx: ServerCore, services: Services) {
   async function extractNow(projectId: string): Promise<ExtractResult> {
     const empty: ExtractResult = { state: "nothing", read: 0, items: 0, adopted: 0, waiting: 0, duplicates: 0, dropped: 0, noted: 0 };
     if (config.mode !== "active") return { ...empty, state: "observe_mode" };
-    const runs = (await kv.get<number>(runsKey()).catch(() => 0)) ?? 0;
+    const runs = (await kv.get<number>(runsKey())) ?? 0;
     if (runs >= config.extractorRunsPerDay) return { ...empty, reason: `the cap of ${config.extractorRunsPerDay} extractor runs a day is spent` };
     const result = await extractor.run(projectId, { batch: config.extractorBatch, active: true });
     if (result.state === "ran" || result.state === "no_model") await kv.set(runsKey(), (runs + 1) as never);
@@ -294,7 +295,7 @@ export function mountLearning(ctx: ServerCore, services: Services): Learning | n
     asking.ask = (threadId, request, options) => {
       if (request.source === "pm" && room.config().enabled) {
         const row = db.prepare("SELECT project_id FROM lane_pilot_run WHERE pm_thread_id=? LIMIT 1").get(threadId) as { project_id: string } | undefined;
-        if (row) void room.noteQuestion({ projectId: row.project_id, threadId, question: request.question, detail: request.detail }).catch(() => undefined);
+        if (row) void bestEffort(ctx.log, "learning question note", room.noteQuestion({ projectId: row.project_id, threadId, question: request.question, detail: request.detail }), undefined);
       }
       return originalAsk(threadId, request, options);
     };
@@ -309,8 +310,8 @@ export function mountLearning(ctx: ServerCore, services: Services): Learning | n
     }, { timeoutMs: 10 * 60_000 });
     scheduleIsolated(bb, "learning-signals", "40 4 * * *", async () => {
       if (ctx.isDisposed() || !room.config().enabled) return;
-      const promises = await scanPromises(room.signalDeps, 20).catch(() => ({ read: 0, found: 0 }));
-      const sizes = await scanComplexity(room.signalDeps, 20).catch(() => ({ read: 0 }));
+      const promises = await bestEffort(ctx.log, "learning promise scan", scanPromises(room.signalDeps, 20), { read: 0, found: 0 });
+      const sizes = await bestEffort(ctx.log, "learning complexity scan", scanComplexity(room.signalDeps, 20), { read: 0 });
       if (promises.read || sizes.read) bb.log.info(`Lane Pilot learning signals: ${promises.read} answers read (${promises.found} with an unkept promise), ${sizes.read} contracts sized`);
     }, { timeoutMs: 20 * 60_000 });
     mounted.set(ctx, room);

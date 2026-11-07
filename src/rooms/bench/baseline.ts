@@ -26,7 +26,7 @@ type Row = { attemptId: string; taskId: string; projectId: string; hostId: strin
 
 const rate = (count: number, of: number) => (of ? Math.round((count / of) * 1000) / 1000 : null);
 
-export async function baselineMetrics(db: BenchDb, host: HostPort | null, opts: { days?: number; projectId?: string; now?: number } = {}): Promise<BaselineMetrics> {
+export async function baselineMetrics(db: BenchDb, host: HostPort | null, opts: { days?: number; projectId?: string; now?: number; log?: (message: string) => void } = {}): Promise<BaselineMetrics> {
   const until = opts.now ?? Date.now();
   const since = until - (opts.days ?? 14) * 86_400_000;
   const rows = db.prepare(`SELECT a.id AS attemptId, a.task_id AS taskId, r.project_id AS projectId, r.writer_host_id AS hostId, r.writer_workspace_path AS workspace,
@@ -68,7 +68,7 @@ export async function baselineMetrics(db: BenchDb, host: HostPort | null, opts: 
       const [hostId, cwd] = key.split("\n") as [string, string];
       const shas = [...new Set(group.map((row) => row.mergeCommit!))].slice(0, 400);
       const ran = await host.run(hostId, cwd, `for s in ${shas.map(q).join(" ")}; do if git cat-file -e "$s^{commit}" 2>/dev/null; then echo "ok $s"; else echo "lost $s"; fi; done`, 120)
-        .catch(() => ({ exitCode: -1, stdout: "", stderr: "" }));
+        .catch((cause: unknown) => { opts.log?.(`bench baseline: git-object probe on ${hostId} failed: ${cause instanceof Error ? cause.message : String(cause)}`); return { exitCode: -1, stdout: "", stderr: "" }; });
       const seen = new Map(ran.stdout.split("\n").map((line) => line.trim().split(" ") as [string, string]).filter(([state, sha]) => sha && (state === "ok" || state === "lost")).map(([state, sha]) => [sha, state]));
       for (const sha of shas) {
         const state = seen.get(sha);

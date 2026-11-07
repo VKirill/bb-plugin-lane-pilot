@@ -192,6 +192,7 @@ const CRAFT_KIND: KindVerdict = { question: craftKindQuestion, criterion: "craft
 async function keptByKind(catalog: CatalogEntry[], ask: SkillAsk, cache: KindCache, verdict: KindVerdict = DOMAIN_KIND): Promise<{ kept: CatalogEntry[]; unanswered: number }> {
   const pOf = new Map<CatalogEntry, number>();
   const unknown: CatalogEntry[] = [];
+  // an unreadable cache entry just means that skill is asked again
   const cached = await Promise.all(catalog.map((entry) => cache.get(verdict.key(entry)).catch(() => undefined)));
   catalog.forEach((entry, index) => {
     const p = cached[index];

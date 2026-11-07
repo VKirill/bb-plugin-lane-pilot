@@ -67,12 +67,12 @@ export async function buildSet(input: BuildInput): Promise<{ report: BuildReport
   const loaded = loadCandidates(input.db, { projectNames: input.projectNames, isSandboxName: input.isSandboxName, ...(input.projects ? { projects: input.projects } : {}), ...(input.hostFor ? { hostFor: input.hostFor } : {}) });
   const rejected: Rejection[] = [...loaded.rejected];
   const scratch = input.scratch ?? "$HOME/lp-bench/warm";
-  const warmOptions: WarmOptions = { scratch, ...(input.checkTimeoutSec ? { checkTimeoutSec: input.checkTimeoutSec } : {}) };
+  const warmOptions: WarmOptions = { scratch, log, ...(input.checkTimeoutSec ? { checkTimeoutSec: input.checkTimeoutSec } : {}) };
   const homes = new Map<string, string>();
   /** `$HOME/...` written for any machine, expanded on the one that runs the warm-up (a quoted `$HOME` is not expanded by the shell). */
   const scratchOn = async (hostId: string): Promise<string> => {
     if (!scratch.startsWith("$HOME")) return scratch;
-    if (!homes.has(hostId)) homes.set(hostId, (await input.host.run(hostId, "/", "printf %s \"$HOME\"", 15).catch(() => ({ stdout: "" }))).stdout.trim() || "/tmp");
+    if (!homes.has(hostId)) homes.set(hostId, (await input.host.run(hostId, "/", "printf %s \"$HOME\"", 15).catch((cause: unknown) => { log(`bench: $HOME probe on ${hostId} failed: ${cause instanceof Error ? cause.message : String(cause)}`); return { stdout: "" }; })).stdout.trim() || "/tmp");
     return scratch.replace("$HOME", homes.get(hostId)!);
   };
   const minFree = input.minFreeGb ?? MIN_FREE_GB;
@@ -114,7 +114,7 @@ export async function buildSet(input: BuildInput): Promise<{ report: BuildReport
         if (lostHosts.includes(hostId)) { report.stoppedBecause = `host ${hostId} stopped answering`; break; }
         if (report.tried >= maxTries) { report.stoppedBecause = `tried ${maxTries} candidates`; break; }
         const touch = input.hostId ?? hostId;
-        const free = touch === "none" ? null : await freeGb(input.host, touch);
+        const free = touch === "none" ? null : await freeGb(input.host, touch, log);
         if (free !== null && free < minFree) { report.stoppedBecause = `host ${touch} has ${free} GB free, below ${minFree}`; log(`bench build: ${report.stoppedBecause}`); break; }
         report.tried++;
         warmed.add(candidate.taskId);
@@ -160,7 +160,7 @@ export async function buildSet(input: BuildInput): Promise<{ report: BuildReport
       if (survivors.length >= fresh.quota) { report.stoppedBecause = "quota filled"; break; }
       if (report.tried >= maxTries) { report.stoppedBecause = `tried ${maxTries} candidates`; break; }
       const touch = input.hostId ?? candidate.hostId;
-      const free = touch === "none" ? null : await freeGb(input.host, touch);
+      const free = touch === "none" ? null : await freeGb(input.host, touch, log);
       if (free !== null && free < minFree) { report.stoppedBecause = `host ${touch} has ${free} GB free, below ${minFree}`; break; }
       report.tried++;
       const result = await warmUp(input.host, candidate, { ...warmOptions, scratch: await scratchOn(touch), ...(input.reposRoot ? { reposRoot: input.reposRoot } : {}), ...(input.hostId ? { hostId: input.hostId } : {}) }).catch((cause: unknown) => ({ ok: false as const, reason: "host_error" as const, detail: cause instanceof Error ? cause.message : String(cause) }));

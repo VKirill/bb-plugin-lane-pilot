@@ -70,6 +70,7 @@ export async function waitThreadIdle(bb: BbPluginApi, threadId: string, timeoutM
     if (stop) throw new Error(`${timeoutMessage}:${stop}`);
     // BB's events say when to look again; the mark is taken before the read so a change during it is not missed.
     const mark = threadWatchMark(bb);
+    // an unreadable thread just yields no fresh status this poll
     const thread = await bb.sdk.threads.get({ threadId }).catch(() => null);
     const listed = await listThreadEventsRaw(bb, {
       threadId, types:THREAD_WATCH_EVENT_TYPES, order:"desc", limit:"50",
@@ -107,6 +108,7 @@ export async function observeStageChild(
   const deadline = Date.now() + Math.max(1, timeoutMs);
   while (Date.now() < deadline) {
     const mark = threadWatchMark(bb);
+    // an unreadable thread just yields no fresh status this poll
     const thread = await bb.sdk.threads.get({ threadId }).catch(() => null);
     const listed = await listThreadEventsRaw(bb, {
       threadId, types:THREAD_WATCH_EVENT_TYPES, order:"desc", limit:"50",

@@ -46,7 +46,7 @@ export function registerLaneWorktreeProvider(ctx: ServerCore): boolean {
   /** The attempt's worktree already stands on its machine: a lane/<name> checkout. */
   async function isLaneWorktree(hostId: string, path: string, name: string, signal: AbortSignal): Promise<boolean> {
     const ran = await host.call("runCommand", { requestedHostId: hostId, command: "git rev-parse --abbrev-ref HEAD", cwd: path, timeoutSec: 15 },
-      { hostId, timeoutMs: 20_000, signal }).catch(() => null);
+      { hostId, timeoutMs: 20_000, signal }).catch((cause: unknown) => { bb.log.warn(`Lane Pilot: lane-worktree probe on ${hostId} failed (${cause instanceof Error ? cause.message : String(cause)}); treating ${path} as a plain checkout`); return null; });
     return Boolean(ran && ran.exitCode === 0 && ran.stdout.trim() === `lane/${name}`);
   }
 
@@ -78,7 +78,7 @@ export function registerLaneWorktreeProvider(ctx: ServerCore): boolean {
             // Linking dependencies helps the writer's checks; a host without it still gets a clean worktree.
             await host.call("gitPrepareWorktree", { requestedHostId: hostId, basePath: inputs.basePath, worktreePath: path,
               ownsBarrier: inputs.ownsBarrier, ownsPaths: inputs.ownsPaths, neverTouch: inputs.neverTouch },
-              { hostId, timeoutMs: 600_000, signal: context.signal }).catch(() => undefined);
+              { hostId, timeoutMs: 600_000, signal: context.signal });
           }
           return { status: "created", path, ownsPath: true, resource: { basePath: inputs.basePath, name: inputs.name, path } };
         } catch (cause) {

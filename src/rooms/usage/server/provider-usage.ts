@@ -149,6 +149,7 @@ export function createProviderUsage(bb: BbPluginApi, now: () => number = Date.no
     const key = JSON.stringify([pluginId, resource.id]);
     const cached = measurements.get(key);
     if (cached && now() - cached.at < MEASUREMENT_TTL_MS) return cached.value;
+    // an unreadable measurement caches as null for the TTL
     const value = await call(pluginId, USAGE_FETCH_METHOD, { resourceId: resource.id, refresh: false }, measurementSchema).catch(() => null);
     measurements.set(key, { at: now(), value });
     return value;

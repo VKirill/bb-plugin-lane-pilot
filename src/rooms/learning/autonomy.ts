@@ -97,7 +97,7 @@ export function createAutonomy(deps: AutonomyDeps) {
     if (!config.enabled || config.mode !== "observe") return null;
     let status = await deps.status();
     if (status.review.reviewed < REVIEW_CASES) {
-      const runs = (await deps.kv.get<number>(runsKey()).catch(() => 0)) ?? 0;
+      const runs = (await deps.kv.get<number>(runsKey())) ?? 0;
       if (runs < MODEL_REVIEW_RUNS_PER_DAY) {
         const result = await review();
         if (result.state !== "nothing") await deps.kv.set(runsKey(), (runs + 1) as never);

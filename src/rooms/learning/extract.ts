@@ -173,14 +173,14 @@ export function createExtractor(deps: ExtractDeps) {
   async function known(projectId: string, global: boolean): Promise<Known[]> {
     const rules = deps.rules.list(projectId).map((rule): Known => ({ ref: `rule:${rule.id}`, text: rule.rule, sort: "rule" }));
     const items = listItems(deps.db, { projectId, states: ["adopted", "accepted", "noted", "pending_owner", "proposed"], limit: 200 }).map((item): Known => ({ ref: `item:${item.id}`, text: item.text, sort: "item" }));
-    const globals = global ? (await deps.globalPreferences?.().catch(() => []) ?? []).map((entry): Known => ({ ref: `bb-memory:${entry.id}`, text: entry.text, sort: "global" })) : [];
+    const globals = global ? (await deps.globalPreferences?.().catch((cause: unknown) => { deps.log?.(`learning: global preferences unreadable: ${cause instanceof Error ? cause.message : String(cause)}`); return []; }) ?? []).map((entry): Known => ({ ref: `bb-memory:${entry.id}`, text: entry.text, sort: "global" })) : [];
     return [...rules, ...items, ...globals];
   }
 
   async function route(extracted: Extracted, others: Known[]): Promise<Item["state"]> {
     const { observation, kind, text } = extracted;
     const at = now();
-    const scope = await deps.scopeOf?.(observation.threadId, observation.projectId).catch(() => [] as string[]) ?? [];
+    const scope = await deps.scopeOf?.(observation.threadId, observation.projectId).catch((cause: unknown) => { deps.log?.(`learning: scope of ${observation.threadId} unreadable: ${cause instanceof Error ? cause.message : String(cause)}`); return [] as string[]; }) ?? [];
     const base: Item = {
       id: itemId(observation.id, kind, text), obsId: observation.id, projectId: observation.projectId, threadId: observation.threadId, kind, text, audience: kind === "rule" || kind === "preference" ? extracted.audience : null,
       reach: extracted.reach, dueAt: extracted.dueAt, state: "dropped", target: null, evidence: evidenceOf(observation, extracted.quote), duplicateOf: null, confirmations: 0, note: null,
@@ -220,7 +220,7 @@ export function createExtractor(deps: ExtractDeps) {
     if (!options.active) return { ...result, state: "observe_mode" };
     const messages = candidatesOf(deps.db, projectId, options.batch);
     if (!messages.length) return result;
-    const locale = (await deps.locale?.(projectId).catch(() => "en" as const)) ?? "en";
+    const locale = (await deps.locale?.(projectId).catch((cause: unknown) => { deps.log?.(`learning: locale of ${projectId} unreadable: ${cause instanceof Error ? cause.message : String(cause)}`); return "en" as const; })) ?? "en";
     const rules = deps.rules.list(projectId).map((rule) => rule.rule);
     let answer: string;
     try { answer = await deps.runModel(extractorPrompt({ messages, rules, locale }), projectId, `${messages.length} owner message${messages.length === 1 ? "" : "s"}`); }

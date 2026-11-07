@@ -30,7 +30,8 @@ export function writerMemoryPaths(db: LanePilotDatabase, input: WriterMixInput):
 /** Reads each path once. A path the reader throws on is missing. */
 export async function snapshotFileRead(paths: readonly string[], readBytes: (path: string) => Promise<Uint8Array | null>): Promise<(path: string) => Uint8Array | null> {
   const cache = new Map<string, Uint8Array | null>();
-  for (const path of [...new Set(paths)]) cache.set(path, await readBytes(path).catch(() => null));
+  for (const path of [...new Set(paths)]) // an unreadable file just drops out of the mix
+    cache.set(path, await readBytes(path).catch(() => null));
   return (path) => cache.get(path) ?? null;
 }
 

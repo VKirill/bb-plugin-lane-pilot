@@ -87,7 +87,8 @@ export async function scanPromises(deps: SignalDeps, limit = 20): Promise<{ read
     ORDER BY a.updated_at DESC LIMIT ?`).all(now - 2 * DAY_MS, limit) as Array<{ id: string; threadId: string; projectId: string }>;
   let read = 0, found = 0;
   for (const row of rows) {
-    const answer = await deps.finalAnswer(row.threadId).catch(() => null);
+    const answer = await deps.finalAnswer(row.threadId).catch((cause: unknown) => { deps.log?.(`learning: final answer of ${row.threadId} unreadable, skipped: ${cause instanceof Error ? cause.message : String(cause)}`); return undefined; });
+    if (answer === undefined) continue;
     if (!answer || answer.trim().length < 40) { insertSignal(deps.db, { kind: "unkept_promise", projectId: row.projectId, ref: row.id, p: null, detail: "no answer", at: now }); continue; }
     const text = maskPii(clipTail(answer, 2_500)).text;
     const verdict = await jev.judge(unkeptPromise, { answer: text }, { projectId: row.projectId, subject: row.id });

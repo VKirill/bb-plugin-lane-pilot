@@ -85,7 +85,9 @@ export function createJevClient(deps: JevClientDeps): JevClient {
     async call(request, options = {}) {
       const started = now();
       const fail = (status: Exclude<JevCallResult, { ok: true }>["status"], error: string, attempts = 0): JevCallResult => ({ ok: false, status, error, latencyMs: now() - started, attempts });
-      const endpoint = await deps.endpoint().catch(() => undefined);
+      let endpoint: Awaited<ReturnType<typeof deps.endpoint>> | undefined;
+      try { endpoint = await deps.endpoint(); }
+      catch (cause) { return fail("error", `endpoint unreadable: ${cause instanceof Error ? cause.message : String(cause)}`); }
       if (!endpoint) return fail("disabled", "no Jev endpoint");
       const { provider } = endpoint, key = endpoint.apiKey?.trim();
       if (!key) return fail("disabled", `no ${provider.keyName}`);

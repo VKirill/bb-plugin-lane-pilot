@@ -9,6 +9,7 @@ export const PM_NOTICE_FRESH_MS = 30 * 60_000;
  * woke 44 PM chats idle for days). A cold chat gets nothing; the fact stays in the run records and logs.
  */
 export async function sendPmNotice(bb: Pick<BbPluginApi, "sdk">, threadId: string, text: string, now = Date.now(), freshMs = PM_NOTICE_FRESH_MS): Promise<boolean> {
+  // an unreadable thread counts as cold: no notice is sent
   const thread = await Promise.resolve().then(() => bb.sdk.threads.get({ threadId })).catch(() => null) as { updatedAt?: unknown } | null;
   const updatedAt = Number(thread?.updatedAt ?? 0);
   if (!thread || !Number.isFinite(updatedAt) || now - updatedAt > freshMs) return false;

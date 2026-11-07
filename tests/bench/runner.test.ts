@@ -124,6 +124,25 @@ describe("bench runner", () => {
     expect(cancelled).toBe(1);
   });
 
+  it("a thrown outcome read is not a confirmation: the settled streak restarts and the failure logs once", async () => {
+    const w = await builtSet();
+    const project: BenchProjectRef = { projectId: "proj_bench", name: "LP bench flaky", hostId: "local", path: w.projectPath };
+    const logs: string[] = [];
+    let polls = 0, cancelled = 0;
+    const flaky: PipelinePort = {
+      ...fakePipeline(project, () => ({ accepted: true })).pipeline,
+      // accepted once, two thrown reads, then accepted twice: only the real reads may confirm.
+      outcome: async () => { polls++; if (polls === 2 || polls === 3) throw new Error("rpc lost"); return { latestState: "accepted", attempts: 1 }; },
+      cancel: async () => { cancelled++; },
+    };
+    const out = await runSeries({ db: w.db as never, host: localHost, pipeline: flaky, clock: clock(), log: (line) => logs.push(line), projectNameFor: () => project.name },
+      { minFreeGb: 0, version: "v1", arm: "flaky", only: ["task-a"], taskTimeoutMin: 0.001, pollMs: 1 });
+    expect(out).toMatchObject({ accepted: 1, ran: 1 });
+    expect(polls).toBe(5); // accepted, throw, throw, accepted, accepted — the throws never counted
+    expect(cancelled).toBe(0);
+    expect(logs.filter((line) => line.includes("outcome unreadable"))).toHaveLength(1);
+  });
+
   it("refuses a set whose rows were changed after the build", async () => {
     const w = await builtSet();
     w.db.exec("DROP TRIGGER lane_pilot_bench_task_frozen_u");

@@ -148,7 +148,7 @@ async function listAllThreads(bb: BbPluginApi): Promise<ListedThread[]> {
     for (let offset = 0; offset < 50_000; offset += THREAD_PAGE) {
       const page = await bb.sdk.threads.list({
         includeHidden: true, archived, limit: THREAD_PAGE, offset,
-      } as never).catch(() => []) as unknown;
+      } as never) as unknown;
       const rows = Array.isArray(page) ? page : [];
       for (const row of rows) {
         const id = stringAt(row, "id");
@@ -287,8 +287,8 @@ async function projectNames(bb: BbPluginApi): Promise<Map<string, string>> {
       if (id && name) names.set(id, name);
     }
   };
-  add(await bb.sdk.projects.list({ includePersonal: true } as never).catch(() => []));
-  add(await bb.sdk.projects.list({ includePersonal: true, archived: true } as never).catch(() => []));
+  add(await bb.sdk.projects.list({ includePersonal: true } as never).catch((cause: unknown) => { bb.log.warn(`Lane Pilot usage: project list unreadable: ${cause instanceof Error ? cause.message : String(cause)}`); return []; }));
+  add(await bb.sdk.projects.list({ includePersonal: true, archived: true } as never).catch((cause: unknown) => { bb.log.warn(`Lane Pilot usage: archived project list unreadable: ${cause instanceof Error ? cause.message : String(cause)}`); return []; }));
   return names;
 }
 
