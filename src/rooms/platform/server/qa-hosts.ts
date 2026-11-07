@@ -1,8 +1,8 @@
 export type QaHostOption = { id: string; name: string; status: string; connected: boolean };
 
-/** The hosts BB knows, as the pickers list them; a host list that cannot be read is empty. */
+/** The hosts BB knows, as the pickers list them. */
 export async function listQaHosts(bb: { sdk: object }): Promise<QaHostOption[]> {
-  const listed = await (bb.sdk as unknown as { hosts?: { list?: () => Promise<unknown> } }).hosts?.list?.().catch(() => []) ?? [];
+  const listed = await (bb.sdk as unknown as { hosts?: { list?: () => Promise<unknown> } }).hosts?.list?.() ?? [];
   return mapListedQaHosts(listed);
 }
 

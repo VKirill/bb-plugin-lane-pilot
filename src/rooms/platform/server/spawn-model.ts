@@ -104,13 +104,13 @@ type FolderBlockKv = { get(key: string): Promise<unknown>; set?(key: string, val
  * first read, so it is not ignored for its remaining TTL.
  */
 export async function readProviderFolderBlock(kv: FolderBlockKv, hostId: string | null, ttlMs = PROVIDER_FOLDER_BLOCK_TTL_MS): Promise<ProviderFolderBlock | null> {
-  const current = await kv.get(providerFolderBlockKey(hostId)).catch(() => null);
+  const current = await kv.get(providerFolderBlockKey(hostId));
   const live = liveBlock(current, ttlMs);
   if (live && typeof (current as { providerId?: unknown }).providerId === "string") {
     return { providerId: (current as { providerId: string }).providerId, ...live };
   }
   for (const providerId of documentsSensitiveProviders()) {
-    const legacy = liveBlock(await kv.get(legacyProviderFolderBlockKey(hostId, providerId)).catch(() => null), ttlMs);
+    const legacy = liveBlock(await kv.get(legacyProviderFolderBlockKey(hostId, providerId)), ttlMs);
     if (!legacy) continue;
     const migrated: ProviderFolderBlock = { providerId, ...legacy };
     await kv.set?.(providerFolderBlockKey(hostId), migrated as never).catch(() => undefined);

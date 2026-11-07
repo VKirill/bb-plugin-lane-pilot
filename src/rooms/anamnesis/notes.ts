@@ -2,7 +2,6 @@ import { chmodSync, mkdirSync, renameSync, writeFileSync } from "node:fs";
 import { readTextOrNullSync, sha256Hex } from "@lane-pilot/kit";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import { sha256Hex } from "@lane-pilot/kit";
 import type { NotesResponse } from "./ops";
 import { anamnesisDir, type Store } from "./store";
 import type { AnamnesisRecord, Kind, Sensitivity } from "./model";
