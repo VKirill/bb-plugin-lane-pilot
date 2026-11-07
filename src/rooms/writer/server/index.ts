@@ -13,6 +13,8 @@ export { walkWriterChain, waitingWriterReason, waitingWriterText, WAITING_WRITER
 export type { ChainWalk, WriterCandidate, WriterHold, WriterHoldDeps } from "./writer-hold";
 export { noteUnsupportedProvider, noteWriterWait, sweepWriterWakes } from "./writer-wake";
 export { createWriterStart } from "./start";
+export { emitAttemptFinished, onAttemptFinished, attemptFinishedSubscriberCount } from "./attempt-finished";
+export type { AttemptFinished, AttemptFinishedSubscriber } from "./attempt-finished";
 export { recheckPlanFact } from "./plan-fact";
 export { createWriterState } from "./state";
 export { loadFollowUp, markFollowUpCancelled } from "./sticky";
