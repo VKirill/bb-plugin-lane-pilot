@@ -1,6 +1,7 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, describe, expect, it } from "vitest";
 import { runCodeCritique, runPlanCritique, runPmRead } from "../src/rooms/critique/server/critique-runs";
+import { buildCandidateEvidence } from "../src/rooms/critique/code-critique";
 import { stageHelperSettings } from "../src/rooms/settings/server/stage-settings";
 import { recordStage, resetHelperStages } from "../src/rooms/runs/server/stage-records";
 import { createJev, setJevForTests, type JevClient } from "@lane-pilot/jev";
@@ -33,6 +34,19 @@ function world() {
 }
 
 describe("helper stages decide before they prepare, and reuse only a receipt of the same input", () => {
+  it("an unreadable produced file blocks in gate mode instead of a silent not_required", async () => {
+    const w = world();
+    saveProjectSetting(w.db, "P", "code_critique.mode", "gate");
+    const evidence = buildCandidateEvidence({ produced: ["src/a.ts", "src/b.ts"], hashes: { "src/a.ts": "a".repeat(64), "src/b.ts": "b".repeat(64) },
+      verification: [{ command: "npm test", exitCode: 0, stdout: "1 passed" }],
+      files: [{ path: "src/a.ts", content: "export const a = 1;" }, { path: "src/b.ts", content: undefined }],
+      output: "done", ownsPaths: ["src/**"], neverTouch: [], dirtOk: true, workspace: "/repo" });
+    const result = await runCodeCritique({ stageHelperSettings, ...w, projectId:"P", runId:"r", taskId:"t1", config, task, evidence });
+    expect(result.allowed).toBe(false);
+    expect(result.reason).toContain("code_critique_evidence_unreadable");
+    expect(listStageReceipts(w.db, "r", "t1").find((row) => row.stageId === "code-critique")?.state).toBe("blocked");
+  });
+
   it("quick skips the plan critique without asking the provider catalog or scanning coverage", async () => {
     const w = world();
     const result = await runPlanCritique({ stageHelperSettings, ...w, projectId:"P", runId:"r", taskId:"t1", config, task:{ ...(task as object), quality_mode:"quick" } as never, plan:"write note" });

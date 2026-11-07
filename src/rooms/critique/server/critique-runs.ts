@@ -612,12 +612,20 @@ export async function runCodeCritique(input:{
     settings:parsed, providerId, model:modelId, reasoningEffort:configuredEffort,
     serviceTier:typeof savedTier === "string" && savedTier ? String(savedTier) : "standard",
   });
+  // An unreadable produced file is a named hold: the critic cannot read it either, so in gate mode it blocks
+  // acceptance; in advisory mode the critic still reviews the readable files.
+  if (input.evidence.unreadablePaths?.length && parsed.mode === "gate") {
+    const reason = `code_critique_evidence_unreadable:${input.evidence.unreadablePaths.join(",")}`;
+    recordStage(input.db, { ...base, state:"blocked", reason, result:{ ...ledgerCarry, ...hashFields, unreadable:true, policy } });
+    return { allowed:false, reason, review:"not_required", settings:parsed, policy };
+  }
   if (!parsed.enabled) {
     recordStage(input.db, { ...base, state:"skipped", reason:qualityMode === "quick" ? "quality_mode_quick" : "disabled_by_project_setting", result:{ ...ledgerCarry, ...hashFields, policy } });
     return { allowed:true, review:"not_required", settings:parsed, policy };
   }
-  // packet_truncated alone no longer blocks: the critic reads the listed paths itself (W33).
-  if (input.evidence.truncated && !(input.evidence.unreadPaths?.length && input.evidence.truncateReason === "packet_truncated")) {
+  // packet_truncated alone no longer blocks: the critic reads the listed paths itself (W33). An unreadable file
+  // (unreadablePaths) also lets the critic run: it reviews the readable files, and gate mode blocked above.
+  if (input.evidence.truncated && !(input.evidence.unreadPaths?.length || input.evidence.unreadablePaths?.length)) {
     const reason = `code_critique_evidence_unknown:${input.evidence.truncateReason ?? "truncated"}`;
     recordStage(input.db, { ...base, state:"skipped", reason, result:{ ...ledgerCarry, ...hashFields, truncated:true, policy } });
     return { allowed:true, reason, review:"not_required", settings:parsed, policy };

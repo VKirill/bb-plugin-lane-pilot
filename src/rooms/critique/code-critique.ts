@@ -88,6 +88,8 @@ export type CandidateEvidence = {
   workspace?: string;
   /** Absolute paths of produced files the packet could not carry; the critic reads them itself (W33). */
   unreadPaths?: string[];
+  /** Absolute paths of produced files whose read threw (EACCES, a host 500): unknown, never a silent pass. */
+  unreadablePaths?: string[];
   /** Tests that existed before the task and that the writer changed: the critic runs for them whatever the risk (withReferenceTestCritic). */
   referenceTestEdits?: string[];
 };
@@ -212,7 +214,7 @@ export function buildCandidateEvidence(input: {
   hashes: Record<string, string | null>;
   baselineHashes?: Record<string, string | null>;
   verification: Array<{ command: string; exitCode: number; stdout?: string; stderr?: string }>;
-  files?: Array<{ path: string; content: string | null }>;
+  files?: Array<{ path: string; content: string | null | undefined }>;
   /** Unified diff per produced path (BB bb--git patches, uncommitted); a path without one is shown as its whole file. */
   patches?: Record<string, string>;
   output: string;
@@ -235,6 +237,7 @@ export function buildCandidateEvidence(input: {
   let packetBytes = 0;
   let packetOver = false;
   const absolute = (path: string) => (path.startsWith("/") || !input.workspace ? path : `${input.workspace.replace(/\/+$/, "")}/${path}`);
+  const unreadablePaths = (input.files ?? []).filter((row) => row.content === undefined).map((row) => absolute(row.path));
   for (const path of [...input.produced].sort()) {
     const raw = filesByPath.get(path);
     if (typeof raw !== "string") continue;
@@ -325,6 +328,7 @@ export function buildCandidateEvidence(input: {
     truncated,
     ...(truncated ? { truncateReason: reasons.join(";") } : {}),
     ...(unreadPaths.length ? { unreadPaths } : {}),
+    ...(unreadablePaths.length ? { unreadablePaths } : {}),
   };
 }
 

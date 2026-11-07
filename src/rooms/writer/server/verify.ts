@@ -499,10 +499,10 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
         output:outputText(output), produced:checkedPaths, verification:[], diffKey };
     }
     recordGateEvaluation(db,{...input,gate:"owns-paths",status:"passed",input:JSON.stringify(input.task),summary:{changedPathCount:checkedPaths.length,branchChangedPathCount:branchChanges.length,satelliteCount:dropped.satellites.length||undefined,scope:"run",taskCount:ownershipScope.taskIds.length,gitBase:gitBase?{ref:gitBase.base_ref,sha:gitBase.base_sha,branch:gitBase.branch,compareCommitted:!!gitBase.compare_committed,pathsSha256:sha256(branchChanges.join("\0"))}:null}});
-    const contents: Record<string, string | null> = {};
+    const contents: Record<string, string | null | undefined> = {};
     for (const rel of new Set([...input.task.expected_outputs.filter(isOutputPath), ...produced])) {
       const absolute = rel.startsWith("/") ? rel : `${input.task.project_cwd}/${rel}`;
-      let content: string | null = null;
+      let content: string | null | undefined;
       try {
         const read = await orMiss(bb.sdk.files.read({
           hostId:input.config.hostId,
@@ -511,8 +511,10 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
         }), null, isNotFound);
         content = read ? stringAt(read, "content") : null;
       } catch (cause) {
-        // One unreadable file is left unknown, named; the rest of the verification still runs.
+        // One unreadable file is left unknown, named; the rest of the verification still runs. undefined is the
+        // read-outage outcome, distinct from null (absent) — the classifier holds the task on it.
         ctx.log(`verification ${input.taskId}: the file ${rel} could not be read (${cause instanceof Error ? cause.message : String(cause)}); its content is left unknown`);
+        content = undefined;
       }
       contents[rel] = content;
     }

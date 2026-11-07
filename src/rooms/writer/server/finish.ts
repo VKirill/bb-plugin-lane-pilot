@@ -378,17 +378,19 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
         const dirt = await services.workspaceDirt(input.config, input.task.project_cwd, input.runId);
         const byPath = new Map((dirt.ok ? dirt.snapshots : []).map((row) => [row.path, row.sha256 || null]));
         const hashes = Object.fromEntries((candidate.produced ?? []).map((path) => [path, byPath.get(path) ?? null]));
-        const files:Array<{ path:string; content:string|null }> = [];
+        const files:Array<{ path:string; content:string|null|undefined }> = [];
         for (const path of candidate.produced ?? []) {
-          let content: string | null = null;
+          let content: string | null | undefined;
           try {
             const file = await orMiss(bb.sdk.files.read({
               hostId:input.config.hostId, rootPath:input.task.project_cwd, path:resolve(input.task.project_cwd, path),
             }), null, isNotFound);
             content = typeof file?.content === "string" ? file.content : null;
           } catch (cause) {
-            // One unreadable produced file is left out of the evidence, named; the rest still count.
+            // One unreadable produced file is a named hold, not a silent pass; the rest still count.
+            // undefined is the read-outage outcome, distinct from null (absent).
             ctx.log(`writer ${input.taskId}: the produced file ${path} could not be read (${cause instanceof Error ? cause.message : String(cause)}); its evidence is left out`);
+            content = undefined;
           }
           files.push({ path, content });
         }

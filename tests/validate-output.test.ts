@@ -15,6 +15,13 @@ it("finds a bare expected file name under the folder the task owns", () => {
     .toEqual({ ok: true });
 });
 
+it("an unreadable expected output is a hold, not a pass: a read outage must not land the task", () => {
+  const produced = ["apps/marketing/app/components/greeting-cards/CardMockCard.vue"];
+  const contents = { [produced[0]!]: undefined };
+  expect(classifyWriterOutput({ task: task(["CardMockCard.vue"]), produced, contents, verifies: [{ command: "npm test", exitCode: 0, stdout: "1 passed", stderr: "" }] }))
+    .toMatchObject({ ok: false, state: "validation_failed", reason: "expected output unreadable: CardMockCard.vue" });
+});
+
 it("still reports a bare name the writer did not make, and a full path elsewhere", () => {
   const produced = ["apps/marketing/app/components/greeting-cards/Other.vue"];
   const contents = { [produced[0]!]: "x" };

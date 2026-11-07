@@ -102,7 +102,7 @@ function world(options: { items?: StoredWorkflow[]; project?: "ok" | "no_machine
     ...(options.preflight ? { preflight: options.preflight } : {}),
     ...(options.automations ? { automations: options.automations } : {}),
   });
-  return { db, engine, triggers, logs, setItems: (next: StoredWorkflow[]) => { items = next; }, setProject: (next: "ok" | "no_machine") => { project = next; } };
+  return { db, engine, triggers, logs, harness, setItems: (next: StoredWorkflow[]) => { items = next; }, setProject: (next: "ok" | "no_machine") => { project = next; } };
 }
 
 describe("the automations of schedules", () => {
@@ -201,6 +201,16 @@ describe("starting a workflow from the tab, a schedule or Telegram", () => {
     expect(manual).toMatchObject({ ok: true, created: true });
     expect((manual as { runId: string }).runId).not.toBe(runId);
     await engine.idle();
+  });
+
+  it("unknown PM metadata does not start the tick: it refuses and logs once per streak", async () => {
+    const { harness, triggers, logs } = world();
+    harness.sdk.stub("threads.getPluginMetadata", async () => { throw new Error("metadata down"); });
+    const first = await triggers.start({ projectId: PROJECT, workflowId: "daily-digest", inputs: { query: "dogs" }, source: "schedule" });
+    expect(first).toMatchObject({ ok: false, reason: "pm_chat_unknown" });
+    const second = await triggers.start({ projectId: PROJECT, workflowId: "daily-digest", inputs: { query: "dogs" }, source: "schedule" });
+    expect(second).toMatchObject({ ok: false, reason: "pm_chat_unknown" });
+    expect(logs.filter((line) => line.includes("metadata down"))).toHaveLength(1);
   });
 
   it("refuses with a reason: unknown workflow, draft, missing input, no telegram trigger", async () => {
