@@ -21,6 +21,8 @@ export type Decided<D> = { escalate: string; decision?: undefined } | { decision
 
 export type Judgment<I, D> = {
   id: string;
+  /** A short line for the owner («Судьи» screen): what it decides, in the language the owner writes in. The id shows when unset. */
+  title?: string;
   /** Raise it when the questions or the decision rule change: receipts of different versions are not comparable. */
   version: number;
   /** A pinned model for tuning thresholds; the provider's pinned model when not set. */

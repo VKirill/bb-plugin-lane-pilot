@@ -24,6 +24,7 @@
     "./phase/index.ts",
     "./phase/intake.ts",
     "./runs/failure-class-judgment.ts",
+    "./runs/failure-class-model.ts",
     "./runs/index.ts",
     "./schedule/errand-kind-judgment.ts",
     "./session-hooks/cli.ts",

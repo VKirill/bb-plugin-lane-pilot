@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { buildSet } from "../../src/rooms/bench/build";
 import type { BenchProjectRef, Clock, HostPort, PipelinePort } from "../../src/rooms/bench/ports";
 import { runSeries } from "../../src/rooms/bench/runner";
-import { isSandboxProjectName } from "../../src/rooms/stability/server";
+import { isSandboxProjectName } from "../../src/rooms/contracts";
 import type { AttemptMetrics } from "../../src/rooms/usage/server";
 import { benchWorld, localHost, makeContract, makeRepo, tmp } from "./helpers";
 

@@ -198,3 +198,15 @@ export function judgeAccuracy(db: Db, judgmentId: string): { labeled: number; ac
   const labeled = agree + disagree;
   return { labeled, accuracy: labeled ? agree / labeled : 0 };
 }
+
+/**
+ * The outcome sweeps that live with their owners: `runs` registers one per judgment it owns (the ids in
+ * src/rooms/contracts/judgment-ids.ts plus failure.class and invoice.check); the nightly labels graph walks
+ * `listJudgments()` and calls whatever registered — adding a sweep is one call here, not a second id list.
+ */
+type OutcomeSweep = (db: Database.Database) => number;
+const outcomeSweeps = new Map<string, OutcomeSweep>();
+export function registerOutcomeSweep(judgmentId: string, sweep: OutcomeSweep): void {
+  outcomeSweeps.set(judgmentId, sweep);
+}
+export const outcomeSweepFor = (judgmentId: string): OutcomeSweep | undefined => outcomeSweeps.get(judgmentId);

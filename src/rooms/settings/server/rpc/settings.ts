@@ -7,7 +7,7 @@ import type { BuildCliInvocation } from "../../../platform/server";
 import { cliReceiptAttemptKey, cliReceiptRunKey } from "../../../runs";
 import { casResetSettings, casUpsertSetting, casUpsertSettings, getReasoningTrace, countStageReceipts, getSettingVersions, getStageReceiptResult, listOwnSettingLevels, listRunsPage, listSettingRows, listStageReceiptSummaries, loadProjectSettings, loadPrototypeConfig, removeOwnSettings, sectionBindingId } from "../../../storage";
 import { isModelSettingKey, isRoleOverrideKey } from "../../model-keys";
-import { isSandboxProjectName } from "../../../stability/server";
+import { isSandboxProjectName } from "../../../contracts";
 import type { RunHistoryRow } from "../../../storage";
 import { writerServiceTier, findModelIn } from "@lane-pilot/models";
 import { LP_DEFAULTS_KEY, inheritProjectValues, parseLanePilotDefaults } from "@lane-pilot/settings-catalog";

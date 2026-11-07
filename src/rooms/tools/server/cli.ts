@@ -4,6 +4,7 @@ import { cancelRejection, confirmWriterStopped, finishRunSafely, pauseRun } from
 import { markCancelCode } from "../../storage";
 import { renderTimeline, taskTimeline } from "../../runs";
 import {bestEffort, isNotFound, orMiss, outputText, stringAt, valueAt} from "@lane-pilot/kit";
+import { PAIR_ROLE_SPECS } from "@lane-pilot/models";
 import {runSkillsCli, SKILLS_USAGE} from "../../platform/server";
 import { THREAD_WATCH_EVENT_TYPES, decideThreadCompletion, eventsListQueryLabel, listThreadEventsRaw, waitThreadIdle } from "@lane-pilot/thread-observe";
 import type { InsightsApi, ScheduleAgentApi } from "../../contracts";
@@ -585,7 +586,7 @@ ${ERRANDS_USAGE}` },
         }
         if (command === "council-seats" && args.length === 1) {
           const settings = (await effectiveProjectSettings(args[0]!)).values;
-          const keys = ["writer.provider","writer.model","plan_critique.provider","plan_critique.model","code_critique.provider","code_critique.model","specialist.provider","specialist.model","night_review.provider","night_review.model","memory.provider","memory.model","docs.provider","docs.model"];
+          const keys = PAIR_ROLE_SPECS.flatMap((spec) => [spec.keys[0], spec.keys[1]]);
           return { exitCode:0, stdout:JSON.stringify({ ...await services.council.seatDefaults(args[0]!), settings: Object.fromEntries(keys.map((key) => [key, configuredSetting(settings, key) ?? null])) }, null, 2) };
         }
         if (command === "council-status" && args.length >= 1) {

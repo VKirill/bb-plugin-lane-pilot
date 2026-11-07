@@ -2,7 +2,7 @@ import type { AcceptanceCard } from "../contracts";
 import { getTask, getTaskGitBase, listStageReceipts } from "../storage";
 import type { LanePilotDatabase } from "../storage";
 import { STAGE_PROOF, isAdvisoryProof } from "../tasks";
-import type { StageId } from "../tasks";
+import { CARD_STAGE_ORDER, type StageId } from "@lane-pilot/contracts";
 import { attemptMetrics } from "../usage/server";
 import { getBaseline } from "../baseline";
 
@@ -12,7 +12,7 @@ import { getBaseline } from "../baseline";
  * blind check's verdicts, the stages that did not run, the risk, the base commit and the cost. A stage with no receipt, or a skipped
  * one, is listed as not run: that is not «no findings».
  */
-const PIPELINE: StageId[] = ["pm-read", "plan-critique", "run-gate", "specialist-review", "writer-agent", "verification", "code-critique", "plan-fact", "acceptance-receipt"];
+const PIPELINE: readonly StageId[] = CARD_STAGE_ORDER;
 const NOT_RUN_HINT: Partial<Record<StageId, string>> = {
   "plan-critique": "no receipt: the plan critic did not run for this task",
   "specialist-review": "no receipt: no specialist review was asked for",

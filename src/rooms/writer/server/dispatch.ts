@@ -23,7 +23,6 @@ import type { LintFinding } from "../../tasks/server";
 import { createTaskLinter } from "../../tasks/server";
 import { closeWriterStages, recordStage, resetHelperStages } from "../../runs/server";
 import { id, stringAt, valueAt } from "@lane-pilot/kit";
-import { buildTask } from "./writer-task";
 import { dispatchReply, dispatchRunKey, startDispatchRun, pipelineUnavailable } from "./dispatch-workflow";
 import { suggestTests, testHintLine } from "../../verification";
 import { gateResolverFor, gateRunVerdict, latestGateRunForTask } from "../../verification/server"
@@ -227,8 +226,9 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
     if (listTaskKinds(db, runId).includes("cli")) {
       throw new Error("V1: BB writer cannot join a CLI run-controller run");
     }
-    const taskId = args.task ? freeTaskId(db, args.task.id) : id("lptask");
-    const prepared = args.task ? { ...args.task, id:taskId } : buildTask(runConfig, taskId);
+    if (!args.task) throw new Error("dispatch_writer needs a task contract (a task-v2 JSON); there is no default task");
+    const taskId = freeTaskId(db, args.task.id);
+    const prepared = { ...args.task, id:taskId };
     let canonicalPlan = args.plan ?? prepared.objective;
     if (canonicalPlan.trim().length === 0) throw new Error("canonical plan must be non-empty");
     const valid = validateTaskV2(prepared);

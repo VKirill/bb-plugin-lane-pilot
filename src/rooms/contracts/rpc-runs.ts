@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { pickableAgentSchema } from "./rpc-shell";
-import { runViewSchema, stageSummarySchema } from "@lane-pilot/contracts";
+import { runViewSchema, stageSummarySchema, TASK_KINDS } from "@lane-pilot/contracts";
 
 /** Run cards, stages, helper access and the screen snapshot. */
 const cardThreadSchema: z.ZodType<{ id: string; role: string; title: string | null; status: string | null; children: unknown[] }> = z.lazy(() =>
@@ -44,7 +44,7 @@ export const rpcRuns = {
     input: z.object({ projectId: z.string().min(1).optional(), doneHours: z.number().int().min(1).max(24 * 30).default(24) }).strict(),
     output: z.object({ items: z.array(z.object({
       kind: z.enum(["task", "workflow"]), key: z.string(), runId: z.string(), taskId: z.string().nullable(), title: z.string(), techTitle: z.string().nullable(),
-      taskKind: z.enum(["feature", "fix", "check", "docs", "refactor", "research", "chore"]).nullable(), area: z.string().nullable(), objective: z.string().nullable(),
+      taskKind: z.enum(TASK_KINDS).nullable(), area: z.string().nullable(), objective: z.string().nullable(),
       projectId: z.string().nullable(), pmThreadId: z.string().nullable(), pmThreadTitle: z.string().nullable(),
       column: z.enum(["queued", "running", "checking", "blocked", "done"]), state: z.string(),
       phase: z.enum(["queued", "planning", "waiting", "writing", "checking", "retrying", "blocked", "stuck", "closed", "accepted", "canceled", "chain"]),
@@ -62,7 +62,7 @@ export const rpcRuns = {
     input: z.object({ runId: z.string().min(1), taskId: z.string().min(1).nullable() }).strict(),
     output: z.object({
       kind: z.enum(["task", "workflow"]), title: z.string(), techTitle: z.string().nullable(),
-      taskKind: z.enum(["feature", "fix", "check", "docs", "refactor", "research", "chore"]).nullable(), area: z.string().nullable(), objective: z.string().nullable(),
+      taskKind: z.enum(TASK_KINDS).nullable(), area: z.string().nullable(), objective: z.string().nullable(),
       pmThreadId: z.string().nullable(), id: z.string(), projectId: z.string().nullable(), state: z.string(), reason: z.string().nullable(),
       contract: z.object({ objective: z.string().nullable(), acceptance: z.array(z.string()), ownsPaths: z.array(z.string()), expectedOutputs: z.array(z.string()),
         dependsOn: z.array(z.string()), checks: z.array(z.string()) }).strict().nullable(),

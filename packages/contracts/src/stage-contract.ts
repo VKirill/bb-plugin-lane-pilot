@@ -35,3 +35,11 @@ export function stageTransition(from: StageState, to: StageState): boolean {
 export function validateStageReceipt(value: unknown): StageReceipt {
   return stageReceiptSchema.parse(value);
 }
+
+/** Stage ids a task card or the tasks board shows, in pipeline order (a subset of STAGE_IDS; the rest are auxiliary passes that never land on a card). */
+export const CARD_STAGE_IDS = new Set<StageId>(["pm-read", "plan-critique", "run-gate", "specialist-review", "writer-agent", "verification", "code-critique", "plan-fact", "acceptance-receipt", "browser-qa", "docs-maintenance", "memory-maintenance", "project-life"]);
+/** The card stages in STAGE_IDS order — the order both screens sort receipts by. */
+export const CARD_STAGE_ORDER: readonly StageId[] = STAGE_IDS.filter((id) => CARD_STAGE_IDS.has(id));
+/** The writer's own stage: stages before it are planning, stages after it are checks. */
+export const PLAN_STAGE_IDS: ReadonlySet<StageId> = new Set(CARD_STAGE_ORDER.slice(0, CARD_STAGE_ORDER.indexOf("writer-agent")));
+export const CHECK_STAGE_IDS: ReadonlySet<StageId> = new Set(CARD_STAGE_ORDER.slice(CARD_STAGE_ORDER.indexOf("writer-agent") + 1));

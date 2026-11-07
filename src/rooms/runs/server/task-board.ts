@@ -1,6 +1,7 @@
 import { createJournal, receiptThreadId, wfBoardRuns, wfCurrentNodeId } from "@lane-pilot/workflow-engine";
 import { getRun, getRunObjective, getTaskContractJson, getTaskPlan, laterFamilyAttemptTaskIds, listAttemptHistory, listBoardAttemptRows, listStageReceipts, type LanePilotDatabase } from "../../storage";
-import { taskFamily } from "@lane-pilot/contracts";
+import { taskFamily, TASK_KINDS, CARD_STAGE_ORDER, CHECK_STAGE_IDS, PLAN_STAGE_IDS } from "@lane-pilot/contracts";
+import { OPEN_ATTEMPT_STATES } from "../../contracts";
 
 /**
  * The «Tasks» board: every Lane Pilot task and workflow run of one project or of all of them, in the columns the BB Tasks
@@ -9,7 +10,7 @@ import { taskFamily } from "@lane-pilot/contracts";
  * with weeks of tasks no one will send again (hub, 2026-10-12: 340 such latest attempts).
  */
 export type BoardColumn = "queued" | "running" | "checking" | "blocked" | "done";
-export type TaskKind = "feature" | "fix" | "check" | "docs" | "refactor" | "research" | "chore";
+export type TaskKind = (typeof TASK_KINDS)[number];
 /**
  * Where a card's work is, in one word the board translates: planning (a stage before the writer), waiting (depends_on or
  * the queue of a folder or files), writing, checking, retrying (a failed attempt whose retry may still come), blocked,
@@ -26,15 +27,11 @@ export type BoardItem = {
   waitingFor: string[]; detail: string | null; attemptNo: number; threadId: string | null; attemptId: string | null; updatedAt: number;
 };
 
-const LIVE = new Set(["queued", "spawn_requested", "spawn_unknown", "running", "cancel_requested"]);
+const LIVE = new Set<string>(OPEN_ATTEMPT_STATES);
 /** A failed attempt is followed by its retry within moments; one that stays the latest longer than this got none and is stuck. */
 const RETRY_GRACE_MS = 30 * 60_000;
-/** Stages after the writer: while one runs, or once the writer's stage passed, the task is in checks. */
-const CHECK_STAGES = new Set(["verification", "code-critique", "acceptance-receipt", "browser-qa", "docs-maintenance"]);
-const PLAN_STAGES = new Set(["pm-read", "plan-critique", "specialist-review", "run-gate"]);
-const PIPELINE = ["pm-read", "plan-critique", "run-gate", "specialist-review", "writer-agent", "verification", "code-critique", "acceptance-receipt", "browser-qa", "docs-maintenance", "project-life", "memory-maintenance"];
-const stageOrder = (id: string) => { const index = PIPELINE.indexOf(id); return index < 0 ? PIPELINE.length : index; };
-const KINDS = new Set<TaskKind>(["feature", "fix", "check", "docs", "refactor", "research", "chore"]);
+const stageOrder = (id: string) => { const index = CARD_STAGE_ORDER.indexOf(id as never); return index < 0 ? CARD_STAGE_ORDER.length : index; };
+const KINDS = new Set<string>(TASK_KINDS);
 
 const clip = (text: string | null | undefined, max = 240) => (text ? text.replace(/\s+/g, " ").trim().slice(0, max) : null);
 const parse = (json: string | null): Record<string, unknown> => { try { return json ? JSON.parse(json) as Record<string, unknown> : {}; } catch { return {}; } };
@@ -77,8 +74,8 @@ export function buildTaskBoard(db: LanePilotDatabase, input: { projectId?: strin
   const items: BoardItem[] = tasks.map((row) => {
     const stages = listStageReceipts(db, row.run_id, row.task_id).map((stage) => ({ stage_id: stage.stageId, state: stage.state, reason: stage.reason, model: stage.model, updated_at: stage.updatedAt }));
     const writer = stages.find((stage) => stage.stage_id === "writer-agent");
-    const checking = stages.find((stage) => CHECK_STAGES.has(stage.stage_id) && stage.state === "running");
-    const planning = stages.find((stage) => PLAN_STAGES.has(stage.stage_id) && stage.state === "running");
+    const checking = stages.find((stage) => CHECK_STAGE_IDS.has(stage.stage_id as never) && stage.state === "running");
+    const planning = stages.find((stage) => PLAN_STAGE_IDS.has(stage.stage_id as never) && stage.state === "running");
     const contract = parse(row.contract_json);
     const techTitle = text(contract.title) ?? row.task_id;
     const display = text(contract.display_title);

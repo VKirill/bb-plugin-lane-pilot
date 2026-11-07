@@ -44,6 +44,7 @@ const clip = (text: string, max: number) => (text.length > max ? `${text.slice(0
 
 export const intakeJudgment = defineJudgment<{ text: string; previous?: string | null; /** Ask the same question with the options in the reverse order (self-consistency on the border zone). */ reverse?: boolean }, { kind: IntakeKind; service?: ServiceKind; service_p?: number }>({
   id: INTAKE_JUDGMENT_ID,
+  title: "Насколько весома запись для обучения",
   version: 2,
   defaultMode: "active",
   timeoutMs: 8_000,

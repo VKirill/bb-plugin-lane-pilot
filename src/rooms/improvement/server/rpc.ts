@@ -30,27 +30,12 @@ export function nextNightRun(now: number): number {
   return next.getTime();
 }
 
-/** The judge's id as a plain Russian line for the «Судьи» table (H1): what it decides, for a non-programmer. */
-const JUDGE_RU: Record<string, string> = {
-  "critique.screen": "Стоит ли показывать изменение коду-критику",
-  "critique.worth": "Какие критики нужны задаче",
-  "failure.class": "На чьей стороне сбой попытки",
-  "route.workflow": "Какой граф подходит запросу",
-  "lead.predict": "Какой ответ даст владелец",
-  "lead.judge": "Было ли предсказание в направлении ответа",
-  "guard.host_command": "Безопасна ли команда на машине",
-  "plan.fact": "Что из плана уже сделано",
-  "writer.model": "Какой моделью писать задачу",
-  "invoice.check": "Совпадает ли счёт с работой",
-  "errand.kind": "Какого вида поручение",
-  "intake.weight": "Насколько весома запись для обучения",
-};
-
 /** The «Судьи» section's data: each judgment's labeled count, accuracy and fit, as `jev calibrate` computes them. */
 export function judgesReport(db: LanePilotDatabase, sinceMs = 0): Array<{ id: string; name: string; labeled: number; accuracy: number | null; verdict: string }> {
   try {
+    const titles = new Map(listJudgments().map((judgment) => [judgment.id, judgment.title]));
     return calibrateReceipts(db, { sinceMs, judgments: listJudgments() })
-      .map((row) => ({ id: row.judgment, name: JUDGE_RU[row.judgment] ?? row.judgment, labeled: row.labeled, accuracy: row.accuracy, verdict: row.verdict }));
+      .map((row) => ({ id: row.judgment, name: titles.get(row.judgment) ?? row.judgment, labeled: row.labeled, accuracy: row.accuracy, verdict: row.verdict }));
   } catch {
     return [];
   }

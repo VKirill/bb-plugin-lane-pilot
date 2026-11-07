@@ -23,7 +23,7 @@ import type { ModelPort } from "../src/rooms/checkers/checkers";
 import { quote } from "../src/rooms/checkers/workspace";
 import { loadCandidates } from "../src/rooms/bench/candidates";
 import { findSolutionCommit } from "../src/rooms/bench/warmup";
-import { isSandboxProjectName } from "../src/rooms/stability/server";
+import { isSandboxProjectName } from "../src/rooms/contracts";
 
 const HOME = process.env.LP_CHECKERS_HOME ?? join(homedir(), "lp-checkers");
 const BENCH_HOME = process.env.LP_BENCH_HOME ?? join(homedir(), "lp-bench");

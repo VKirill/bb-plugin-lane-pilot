@@ -17,6 +17,7 @@ const clip = (text: string, max: number) => (text.length > max ? `${text.slice(0
 
 export const critiqueWorthJudgment = defineJudgment<CritiqueWorthInput, CritiqueWorthDecision>({
   id: CRITIQUE_WORTH_ID,
+  title: "Какие критики нужны задаче",
   version: 1,
   defaultMode: "shadow",
   timeoutMs: 6_000,

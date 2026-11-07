@@ -1,14 +1,12 @@
-import type { ListedProject } from "../contracts/project-scope";
+import { DRILL_SANDBOX_PROJECT_IDS, isSandboxProjectName, type ListedProject } from "../contracts/project-scope";
 
-/** Test and sandbox projects of Lane Pilot's own checks: kept out of the way in the project list. */
-const SANDBOX_PROJECT_IDS = new Set(["proj_3tb652jpsi"]);
-const SERVICE_NAME = /^LP\s+(sandbox|native|test|bench)/i;
+const DRILL_IDS = new Set<string>(DRILL_SANDBOX_PROJECT_IDS);
 
 /** The owner's own «hide project» choices live in this browser (the hub keeps no per-device list). */
 export const HIDDEN_PROJECTS_KEY = "lane-pilot:hidden-projects";
 
 export function isTestProject(project: ListedProject): boolean {
-  return SANDBOX_PROJECT_IDS.has(project.id) || SERVICE_NAME.test(project.name);
+  return DRILL_IDS.has(project.id) || isSandboxProjectName(project.name);
 }
 
 export function readHiddenProjects(): string[] {

@@ -4,12 +4,8 @@ import { failureClassJudgment, FAILURE_CLASS_ID, type FailureClassDecision } fro
 import { logFindJudgment } from "@lane-pilot/jev/judgments/log-find";
 import { recordOutcome, type Jev, type JevSettings } from "@lane-pilot/jev";
 import { INVOICE_CHECK_ID } from "@lane-pilot/jev/judgments/invoice-check";
-// The route workflow's id, duplicated here so runs never imports the workflow room (import cycle).
-const ROUTE_WORKFLOW_ID = "route.workflow";
-// The plan.fact judgment id, spelled out so runs never pulls the tasks room (import cycle through validate-output).
-const PLAN_FACT_JEV_ID = "plan.fact";
-// The writer pick judgment id, spelled out so runs never pulls the writer room (writer-model-pick imports storage, not runs).
-const WRITER_MODEL_JEV_ID = "writer.model";
+import { PLAN_FACT_JEV_ID, ROUTE_WORKFLOW_ID, WRITER_MODEL_JUDGMENT_ID, writerRouteKey } from "../contracts";
+import { registerOutcomeSweep } from "@lane-pilot/jev";
 
 /**
  * The class of a failure with J-4 behind the rules: the rules first, and only a reason they have no confident match for goes to
@@ -116,7 +112,7 @@ export type LabeledOutcome = { receiptId: number; runId: string; taskId: string;
 export function sweepWriterModelOutcomes(db: Database.Database): LabeledOutcome[] {
   const receipts = db.prepare(`SELECT id, run_id, subject FROM lane_pilot_jev_receipt
     WHERE judgment = ? AND outcome IS NULL AND status = 'ok' AND decided_by = 'jev' AND decision IS NOT NULL
-      AND run_id IS NOT NULL AND subject IS NOT NULL`).all(WRITER_MODEL_JEV_ID) as Array<{ id: number; run_id: string; subject: string }>;
+      AND run_id IS NOT NULL AND subject IS NOT NULL`).all(WRITER_MODEL_JUDGMENT_ID) as Array<{ id: number; run_id: string; subject: string }>;
   const labeled: LabeledOutcome[] = [];
   for (const receipt of receipts) {
     let outcome: "agree" | "disagree" | null = null;
@@ -135,6 +131,12 @@ export function sweepWriterModelOutcomes(db: Database.Database): LabeledOutcome[
   return labeled;
 }
 
+registerOutcomeSweep(FAILURE_CLASS_ID, sweepFailureClassOutcomes);
+registerOutcomeSweep(INVOICE_CHECK_ID, sweepInvoiceCheckOutcomes);
+registerOutcomeSweep(ROUTE_WORKFLOW_ID, sweepRouteWorkflowOutcomes);
+registerOutcomeSweep(PLAN_FACT_JEV_ID, sweepPlanFactOutcomes);
+registerOutcomeSweep(WRITER_MODEL_JUDGMENT_ID, (db) => sweepWriterModelOutcomes(db).length);
+
 let lastSweep = 0;
 
 export async function judgedFailureClass(deps: JudgedFailureDeps, state: string, reason: string | null | undefined, subject?: string): Promise<FailureClass> {
@@ -152,7 +154,7 @@ export async function judgedFailureClass(deps: JudgedFailureDeps, state: string,
       sweepFailureClassOutcomes(deps.db); sweepInvoiceCheckOutcomes(deps.db); sweepRouteWorkflowOutcomes(deps.db); sweepPlanFactOutcomes(deps.db);
       const labeled = sweepWriterModelOutcomes(deps.db);
       if (deps.kv) for (const row of labeled) {
-        const key = `writer-route:${row.runId}:${row.taskId}`;
+        const key = writerRouteKey(row.runId, row.taskId);
         const route = await deps.kv.get(key);
         // outcome backfill is best-effort; the labeled row is already durable in the sweep
         if (route && typeof route === "object") await deps.kv.set(key, { ...(route as Record<string, unknown>), outcome: row.outcome, outcomeAt: Date.now() }).catch(() => undefined);

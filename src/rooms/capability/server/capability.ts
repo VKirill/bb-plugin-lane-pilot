@@ -2,7 +2,7 @@ import { breakerKey } from "@lane-pilot/resilience";
 import { claimDailySchedule } from "../../storage";
 import { scheduleIsolated } from "../../platform/server";
 import { type ServerCore } from "../../contracts/server";
-import { SANDBOX_PROJECT_ID } from "../../stability/server";
+import { SANDBOX_PROJECT_ID } from "../../contracts";
 import { CAPABILITIES, adapterVersions, capabilityTable, dueProbes, probeSetupFailed, providersInUse } from "../logic";
 import { listReceipts, saveReceipt } from "../store";
 import { isNotFound, orMiss } from "@lane-pilot/kit";

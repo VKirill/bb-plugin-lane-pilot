@@ -6,7 +6,7 @@ import { defineJudgment, noul, noulOf } from "@lane-pilot/jev";
  * answer the audit asked for is read from the probability: done / not done / not visible from the diff.
  * Mode `shadow` is the default; nothing it answers can fail or skip the task.
  */
-export const PLAN_FACT_JEV_ID = "plan.fact";
+import { PLAN_FACT_JEV_ID } from "../contracts";
 
 export type PlanFactJevInput = {
   acceptance: readonly string[];
@@ -24,6 +24,7 @@ export const clipDiff = (diff: string): string => (diff.length <= PLAN_FACT_DIFF
 
 export const planFactJudgment = defineJudgment<PlanFactJevInput, PlanFactJevDecision>({
   id: PLAN_FACT_JEV_ID,
+  title: "Что из плана уже сделано",
   version: 1,
   defaultMode: "shadow",
   timeoutMs: 8_000,

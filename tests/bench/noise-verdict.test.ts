@@ -5,7 +5,7 @@ import { latestNoise, saveNoise, saveVerdict, listRuns } from "../../src/rooms/b
 import { createBench } from "../../src/rooms/bench/service";
 import { runSeries } from "../../src/rooms/bench/runner";
 import { buildSet } from "../../src/rooms/bench/build";
-import { isSandboxProjectName } from "../../src/rooms/stability/server";
+import { isSandboxProjectName } from "../../src/rooms/contracts";
 import { benchWorld, localHost, makeContract, makeRepo, tmp } from "./helpers";
 import type { BenchProjectRef, Clock, HostPort, PipelinePort } from "../../src/rooms/bench/ports";
 

@@ -1,6 +1,7 @@
 import type Database from "better-sqlite3";
 import { emptyCheckReason } from "../tasks/server";
-import { BENCH_PROJECTS, HOST_BY_PATH_PREFIX, type BenchProject, type Candidate, type Rejection, type Risk, type VerificationItem } from "./types";
+import { getRunWriterHost } from "../storage";
+import { BENCH_PROJECTS, type BenchProject, type Candidate, type Rejection, type Risk, type VerificationItem } from "./types";
 
 type Db = Pick<Database.Database, "prepare">;
 
@@ -11,8 +12,6 @@ type Row = {
 
 /** A check that needs the network, a login or the machine outside the checkout cannot be replayed on a clone. */
 const OUTSIDE_WORLD = /\b(curl|wget|ssh|scp|rsync|nc|ncat|telnet|docker|docker-compose|kubectl|psql|mysql|redis-cli|mongosh|aws|gcloud|az|bb|pm2|systemctl|sudo)\b|https?:\/\/|\b(npm|pnpm|yarn|bun)\s+(i|install|ci|add|publish)\b|\bplaywright\b|\bcypress\b|\bchromium\b|\bsecrets?\./i;
-
-export const hostForPath = (path: string): string | null => HOST_BY_PATH_PREFIX.find(([prefix]) => path.startsWith(prefix))?.[1] ?? null;
 
 /** Why a stored contract cannot go into a set, or null. Pure: it reads the contract only. */
 export function contractRejection(contract: Record<string, unknown>): string | null {
@@ -34,7 +33,7 @@ export type CandidateInput = {
   /** Project id -> name, for the sandbox test and the label. A project missing here is skipped. */
   projectNames: ReadonlyMap<string, string>;
   isSandboxName: (name: string) => boolean;
-  /** The projects and folders the owner allows (default BENCH_PROJECTS) and the machine a folder lives on (default by path prefix). */
+  /** The projects and folders the owner allows (default BENCH_PROJECTS) and the machine a folder lives on (default: the run's writer host). */
   projects?: readonly BenchProject[];
   hostFor?: (path: string) => string | null;
 };
@@ -65,7 +64,7 @@ export function loadCandidates(db: Db, input: CandidateInput): { candidates: Can
     try { contract = JSON.parse(row.contract_json) as Record<string, unknown>; } catch { reject(row.task_id, "contract_unreadable"); continue; }
     const cwd = typeof contract.project_cwd === "string" ? contract.project_cwd : "";
     if (!project.cwdPrefixes.some((prefix) => cwd === prefix.replace(/\/$/, "") || cwd.startsWith(prefix))) { reject(row.task_id, "folder_not_allowed"); continue; }
-    const hostId = (input.hostFor ?? hostForPath)(cwd);
+    const hostId = input.hostFor ? input.hostFor(cwd) : getRunWriterHost(db as never, row.run_id);
     if (!hostId) { reject(row.task_id, "host_unknown"); continue; }
     const why = contractRejection(contract);
     if (why) { reject(row.task_id, why); continue; }

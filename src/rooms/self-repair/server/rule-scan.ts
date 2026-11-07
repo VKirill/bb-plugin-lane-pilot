@@ -24,7 +24,7 @@ import { postOwnerItem } from "../../owner-waiting";
  */
 
 import { stringAt } from "@lane-pilot/kit";
-import { SANDBOX_PROJECT_ID, isSandboxProjectName } from "../../stability/server";
+import { SANDBOX_PROJECT_ID, isSandboxProjectName } from "../../contracts";
 import type { ServerCore } from "../../contracts/server";
 import type { RuleScanDeps } from "./deps";
 

@@ -252,7 +252,17 @@ describe("the plan-fact stage and the acceptance card on a database", () => {
     expect(card.planFact).toMatchObject({ state: "skipped", table: "missing" });
     expect(card.notRun.map((row) => row.stageId)).toEqual(expect.arrayContaining(["plan-critique", "code-critique", "plan-fact"]));
     expect(card.notRun.find((row) => row.stageId === "plan-fact")!.why).toContain("plan-fact");
+    // The card follows STAGE_IDS: the post-acceptance stages are listed, not silently absent.
+    expect(card.notRun.map((row) => row.stageId)).toEqual(expect.arrayContaining(["browser-qa", "docs-maintenance", "memory-maintenance", "project-life"]));
     expect(card.cost).toMatchObject({ state: "not_measured", usd: null });
+  });
+
+  it("lists a browser-qa receipt on the card", async () => {
+    const w = world();
+    recordStage(w.db, { runId: "run", taskId: "t1", stageId: "browser-qa", state: "passed", attempt: 1, input: "qa", reason: "all cases passed" });
+    const card = buildAcceptanceCard(w.db, { runId: "run", taskId: "t1" })!;
+    expect(card.receipts.find((row) => row.stageId === "browser-qa")).toMatchObject({ state: "passed" });
+    expect(card.notRun.some((row) => row.stageId === "browser-qa")).toBe(false);
   });
 
   it("in gate mode a code task with acceptance items and no readable table fails and is sent back; a docs task does not", async () => {

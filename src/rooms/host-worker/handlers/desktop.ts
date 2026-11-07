@@ -54,7 +54,7 @@ export const probeBrowserQaTarget: ExperimentalHostRpcHandlers<typeof hostContra
 export const jevRunnerCandidates = (env: NodeJS.ProcessEnv, home: string): string[] =>
   env.LANE_PILOT_JEV_RUNNER
     ? [env.LANE_PILOT_JEV_RUNNER]
-    : [join(home, "toolkit", "computer-use", "bin", "run"), join(home, "Documents", "BB-сервис", "toolkit", "computer-use", "bin", "run")];
+    : [join(home, "toolkit", "computer-use", "bin", "run")];
 
 /**
  * One browser goal through the jev-ultrafast runner, without a shell: the goal is an argument, never shell text.

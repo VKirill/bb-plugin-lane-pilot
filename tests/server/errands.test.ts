@@ -18,11 +18,10 @@ describe("errands", () => {
 });
 
 describe("browserGoal", () => {
-  it("looks for the launcher in the env var first, then ~/toolkit, then the shared BB-сервис checkout", () => {
+  it("looks for the launcher in the env var first, then ~/toolkit", () => {
     expect(jevRunnerCandidates({ LANE_PILOT_JEV_RUNNER: "/custom/run" } as NodeJS.ProcessEnv, "/home/me")).toEqual(["/custom/run"]);
     expect(jevRunnerCandidates({} as NodeJS.ProcessEnv, "/home/me")).toEqual([
       "/home/me/toolkit/computer-use/bin/run",
-      "/home/me/Documents/BB-сервис/toolkit/computer-use/bin/run",
     ]);
   });
 

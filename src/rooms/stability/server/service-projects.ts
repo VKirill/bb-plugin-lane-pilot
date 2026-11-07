@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { scheduleIsolated } from "../../platform/server";
 import type { ServerCore } from "../../contracts/server";
-import { isSandboxProjectName } from "./canary";
+import { isSandboxProjectName } from "../../contracts";
 
 /**
  * Lane Pilot's own projects (the drill's sandbox «LP sandbox …», the fixed task set's «LP bench …») stay out of the owner's sidebar: they

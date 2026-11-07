@@ -1,11 +1,11 @@
 import { statsEpochLine } from "../storage";
-/** Task-level stability of live projects. One source for the daily summary and the wall.
- * Drill sandboxes are the two known project ids (stability/canary.ts `DRILL_SANDBOX_PROJECT_IDS`); named here so this file stays free of that room. */
+import { DRILL_SANDBOX_PROJECT_IDS, isDrillTask, isOpenAttemptState, isSandboxProjectName } from "../contracts";
 
 // critic-eval: the bench known-bugs set files its code-critique receipts under this project (bench/server/plugin-ports.ts).
-const DRILL_PROJECT_IDS = new Set(["proj_3tb652jpsi", "proj_ibu6v9g64j", "critic-eval"]);
+const DRILL_PROJECT_IDS = new Set([...DRILL_SANDBOX_PROJECT_IDS, "critic-eval"]);
 
-const IN_FLIGHT = new Set(["queued", "spawn_requested", "spawn_unknown", "running", "cancel_requested", "canceled"]);
+/** An attempt counts in the rate once it ended and was not canceled: accepted or failed. */
+const JUDGED = (state: string): boolean => !isOpenAttemptState(state) && state !== "canceled";
 
 export type LiveAttempt = {
   taskId: string;
@@ -30,9 +30,8 @@ export type LiveStability = {
 
 export function isLiveProject(projectId: string, projectName: string | null | undefined, taskId: string): boolean {
   if (DRILL_PROJECT_IDS.has(projectId)) return false;
-  if (taskId.startsWith("drill-")) return false;
-  const name = projectName ?? "";
-  return !(name.startsWith("LP sandbox") || name.startsWith("LP native") || name.startsWith("LP bench"));
+  if (isDrillTask(taskId)) return false;
+  return !isSandboxProjectName(projectName);
 }
 
 function triple(version: string | null): [number, number, number] | null {
@@ -79,7 +78,7 @@ export function liveStability(rows: readonly LiveAttempt[], input: { floorVersio
       report.excluded.oldVersionTasks++;
       continue;
     }
-    const judged = attempts.filter((row) => atLeast(row.harnessVersion, input.floorVersion) && !IN_FLIGHT.has(row.state));
+    const judged = attempts.filter((row) => atLeast(row.harnessVersion, input.floorVersion) && JUDGED(row.state));
     if (!judged.length) continue;
     report.tasks++;
     if (judged.some((row) => row.state === "accepted")) { report.accepted++; continue; }

@@ -24,16 +24,20 @@ export type ProviderCapabilities = {
   supportsFastTier?: boolean;
   /** Threads it starts carry Lane Pilot's own agent (the lane hooks act only in such a session). */
   usesLaneAgent?: boolean;
+  /** Its session keeps skills under `.opencode/skills` and compacts itself unless a folder config says off: the writer's links and compaction-off config are materialized in its worktree. */
+  usesOpenCodeLayout?: boolean;
+  /** It publishes a subscription usage-window cache on its machine (a statusline the host reads): a closed window holds its spawns. */
+  publishesUsageWindows?: boolean;
   /** A provider id a usage source may list its quota under (a router in front of it), for the models that name the router. */
   usageProviderId?: string;
 };
 
 export const PROVIDER_CAPABILITIES: Readonly<Record<string, ProviderCapabilities>> = {
-  "claude-code": { family: "claude", labelKey: "accessProviderClaudeCode", forwardsAgentOnly: true, supportsHookSettings: true },
+  "claude-code": { family: "claude", labelKey: "accessProviderClaudeCode", forwardsAgentOnly: true, supportsHookSettings: true, publishesUsageWindows: true },
   codex: { family: "gpt", labelKey: "accessProviderCodex", forwardsAgentOnly: true, requiresWorkerHome: true, supportsFastTier: true },
   // OpenCode v2 runs one shared service per machine: the bridge turns skills and MCP servers into the session's permission rules.
   // Its serve EPERM'd in ~/Documents on the Mac mini (2026-10-30, vk_required_session_policy_unenforceable_mcp_servers).
-  opencode2: { labelKey: "accessProviderOpencode", documentsFolderSensitive: true, forwardsAgentOnly: true, usesLaneAgent: true, usageProviderId: "router9" },
+  opencode2: { labelKey: "accessProviderOpencode", documentsFolderSensitive: true, forwardsAgentOnly: true, usesLaneAgent: true, usesOpenCodeLayout: true, usageProviderId: "router9" },
   devin: { forwardsAgentOnly: true },
   // The core still advertises OpenCode v1; Lane Pilot starts no thread on it (the match is exact, see CORE_PROVIDER_GROUPS).
   "acp-opencode": { notStarted: true },

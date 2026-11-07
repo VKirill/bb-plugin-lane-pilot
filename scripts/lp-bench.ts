@@ -23,7 +23,7 @@ import { benchMigrations } from "../src/rooms/bench/migrations";
 import { q, type BenchProjectRef, type ExecResult, type HostPort, type PipelinePort } from "../src/rooms/bench/ports";
 import { DEFAULT_BENCH_WRITER, defaultProjectName } from "../src/rooms/bench/runner";
 import { createBench } from "../src/rooms/bench/service";
-import { isSandboxProjectName } from "../src/rooms/stability/server";
+import { isSandboxProjectName } from "../src/rooms/contracts";
 import { attemptMetrics } from "../src/rooms/usage/server/attempt-metrics";
 import { openDatabase } from "../src/rooms/plugin-db";
 

@@ -1,7 +1,7 @@
 import { RESTARTABLE_STAGES, affectedFrom, type Affected, type HeadPart, type ReceiptSummary, type TaskStage } from "@lane-pilot/contracts";
 import { globMatch, type ChangeDescriptor } from "../policy";
 import type { WallDb } from "./journal";
-import { FAILED_STATES } from "./journal";
+import { FAILED_ATTEMPT_STATES } from "../contracts";
 import { wallSignature } from "./signature";
 
 /**
@@ -79,7 +79,7 @@ type FailedAttempt = { id: string; run_id: string; task_id: string; state: strin
  */
 export function planClassRerun(db: WallDb, input: { classKey: string; since: number; head: readonly HeadPart[]; scopeOf: (projectId: string) => RerunScope; limit?: number }): RerunPlan[] {
   const rows = db.prepare(`SELECT a.id, a.run_id, a.task_id, a.state, a.reason, a.failure_code, a.updated_at, r.project_id FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
-    WHERE a.updated_at>=? AND a.state IN (${FAILED_STATES.map((state) => `'${state}'`).join(",")})
+    WHERE a.updated_at>=? AND a.state IN (${FAILED_ATTEMPT_STATES.map((state) => `'${state}'`).join(",")})
     ORDER BY a.updated_at DESC LIMIT 3000`).all(input.since) as FailedAttempt[];
   const newest = db.prepare("SELECT state FROM lane_pilot_attempt WHERE run_id=? AND task_id=? ORDER BY created_at DESC LIMIT 1");
   const receiptsOf = db.prepare("SELECT stage_id, state, input_sha256 FROM lane_pilot_stage_receipt WHERE run_id=? AND task_id=?");

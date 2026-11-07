@@ -1,5 +1,5 @@
 import Database from "better-sqlite3";
-import { SANDBOX_PROJECT_ID, isDrillTask } from "../../stability/server";
+import { SANDBOX_PROJECT_ID, isDrillTask } from "../../contracts";
 import { formatFloorTuning, tuneFloor } from "./floor-tuning";
 import { formatEvalReport, runMemoryEval } from "./memory-eval";
 import { formatShelf, runShelfReplay } from "./shelf";

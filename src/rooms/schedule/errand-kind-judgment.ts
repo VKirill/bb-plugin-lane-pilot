@@ -20,6 +20,7 @@ const OPTIONS: Record<ErrandKindDecision, string> = {
 
 export const errandKindJudgment = defineJudgment<Input, ErrandKindDecision>({
   id: ERRAND_KIND_ID,
+  title: "Какого вида поручение",
   version: 1,
   defaultMode: "shadow",
   timeoutMs: 6_000,

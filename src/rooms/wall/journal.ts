@@ -1,14 +1,11 @@
 import type Database from "better-sqlite3";
 import { wfRunsOfWorkflow } from "@lane-pilot/workflow-engine";
+import { FAILED_ATTEMPT_STATES, OPEN_ATTEMPT_STATES } from "../contracts";
 import { classKeyOf, logOrigin, logSignature, originOf, wallSignature, wfSignature } from "./signature";
 import { EMPTY_SOURCES, RUNGS, type Sources, type WallClass } from "./types";
 
 export type WallDb = Pick<Database.Database, "prepare" | "transaction">;
 
-/** Attempt states that are a failure of the attempt (the canary's list plus the two older names). */
-export const FAILED_STATES = ["blocked", "provider_error", "timeout", "empty_output", "validation_failed", "spawn_rejected", "failed", "rejected"] as const;
-/** An attempt still in flight has neither succeeded nor failed (the same rule as scripts/lp-metrics-views.sql). */
-const IN_FLIGHT = ["queued", "spawn_requested", "spawn_unknown", "running", "cancel_requested"] as const;
 const quoted = (list: readonly string[]) => list.map((item) => `'${item}'`).join(",");
 
 /** Graph run statuses that are a failure of the run (the others are running, waiting, succeeded or canceled by the owner). */
@@ -51,7 +48,7 @@ export function collectEntries(db: WallDb, options: JournalOptions): Entry[] {
   const rows = db.prepare(`SELECT a.id, a.run_id, a.task_id, a.state, a.reason, a.failure_code, a.updated_at, a.harness_version, r.project_id, t.origin AS triage_origin
     FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
     LEFT JOIN lane_pilot_failure_triage t ON t.attempt_id=a.id AND t.project_id=r.project_id AND t.status='ok'
-    WHERE a.updated_at>=? AND a.updated_at<? AND a.state IN (${quoted(FAILED_STATES)})
+    WHERE a.updated_at>=? AND a.updated_at<? AND a.state IN (${quoted(FAILED_ATTEMPT_STATES)})
     ORDER BY a.updated_at`).all(options.since, options.until) as FailedRow[];
   const gates = db.prepare("SELECT gate, status, count(*) AS n FROM lane_pilot_gate_event WHERE run_id=? AND task_id=? AND status IN ('rejected','failed') GROUP BY gate, status");
   const stages = db.prepare("SELECT stage_id, count(*) AS n FROM lane_pilot_stage_receipt WHERE run_id=? AND task_id=? AND state IN ('failed','blocked') GROUP BY stage_id");
@@ -177,14 +174,14 @@ export function refreshClasses(db: WallDb, options: { now: number; isReal: Journ
   const finished = db.prepare(`SELECT a.id, a.run_id, a.task_id, a.state, a.reason, a.failure_code, a.updated_at, r.project_id, t.origin AS triage_origin
     FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
     LEFT JOIN lane_pilot_failure_triage t ON t.attempt_id=a.id AND t.project_id=r.project_id AND t.status='ok'
-    WHERE a.updated_at<=? AND a.state NOT IN (${quoted([...IN_FLIGHT, "canceled"])})
+    WHERE a.updated_at<=? AND a.state NOT IN (${quoted([...OPEN_ATTEMPT_STATES, "canceled"])})
     ORDER BY a.updated_at DESC LIMIT 4000`).all(now) as AttemptRow[];
   const real: Array<AttemptRow & { classKey: string | null; failureClass: string; reasonNorm: string; origin: string }> = [];
   for (const row of finished) {
     if (real.length >= RUNGS[2].window && row.updated_at < since) break;
     if (!options.isReal(row.project_id, row.task_id)) continue;
     if (real.length >= 2000) break;
-    const failed = (FAILED_STATES as readonly string[]).includes(row.state);
+    const failed = (FAILED_ATTEMPT_STATES as readonly string[]).includes(row.state);
     const sig = failed ? wallSignature(row.state, row.reason, row.failure_code) : null;
     const origin = sig ? originOf(sig.failureClass, row.triage_origin) : "";
     real.push({ ...row, classKey: sig ? classKeyOf(sig, origin) : null, failureClass: sig?.failureClass ?? "", reasonNorm: sig?.reasonNorm ?? "", origin });

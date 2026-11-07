@@ -1,4 +1,5 @@
 import { getReasoningTrace, getRunSettingsScopes, listOpenAttempts, listUnfinishedStages, loadPrototypeConfig, loadProjectSettings, openDatabase } from "./src/rooms/storage";
+import { PROVIDER_CAPABILITIES } from "@lane-pilot/models";
 import { migrations as lanePilotMigrations } from "./src/rooms/migrations";
 import { coupledSettingKeys, validateSettingChanges, validateSettingValue, validateSettingsObject } from "./src/rooms/settings";
 import { createTaskReconcile } from "./src/rooms/runs/server";
@@ -65,7 +66,7 @@ import { scheduleIsolated } from "./src/rooms/platform/server";
 import { clearDrainSnapshot, readDrainSnapshot, skipRedundantStartupScans } from "./src/rooms/stability/server";
 import { tokenCursorRow, tokenDailyByModel } from "./src/rooms/usage/server";
 import type { TokenCursorReader } from "./src/rooms/work-graph/server";
-import { createWriterQuestionTimeout, DEFAULT_SILENCE_NUDGE_MIN, OPENCODE_WRITER_PROVIDER, sweepWriterSilence, sweepWriterWakes } from "./src/rooms/writer/server";
+import { createWriterQuestionTimeout, DEFAULT_SILENCE_NUDGE_MIN, sweepWriterSilence, sweepWriterWakes } from "./src/rooms/writer/server";
 import { threadPendingInteractions } from "./src/rooms/relay/server";
 import { createStageChildren, mountErrands } from "./src/rooms/qa/server";
 import { createDocsStage } from "./src/rooms/docs/server";
@@ -318,8 +319,8 @@ export default async function plugin(bb: BbPluginApi) {
   try { deferrals.seed(); } catch (cause) { bb.log.warn(`Lane Pilot: deferral seed skipped: ${cause instanceof Error ? cause.message : String(cause)}`); }
   const services = {} as Services;
   Object.assign(services, {
-    skillSwitchMorningLine: skillSwitchMorningLine satisfies SkillSwitchMorningLine,
-    buildCliInvocation: buildCliInvocation satisfies BuildCliInvocation,
+    skillSwitchMorningLine,
+    buildCliInvocation,
     taskWords: taskWordPort,
     laneProject: lanePilotProjectOrNotice,
     leadRoad: { addRoad, doneRoad, getRoad, listRoad, reopenRoad },
@@ -328,7 +329,7 @@ export default async function plugin(bb: BbPluginApi) {
     errandEpisodes: { recordErrandEpisode, errandSpawnOf },
     scheduleAgents: scheduleAgentApi(),
     memoryEval: { load: loadEvalData, run: runMemoryEval },
-  });
+  } satisfies Pick<Services, "skillSwitchMorningLine" | "buildCliInvocation" | "taskWords" | "laneProject" | "leadRoad" | "insights" | "memorySettings" | "errandEpisodes" | "scheduleAgents" | "memoryEval">);
   mountNativeWiring(ctx);
   services.tokenCursorRow = tokenCursorRow;
   Object.assign(
@@ -513,7 +514,7 @@ export default async function plugin(bb: BbPluginApi) {
     // Only an opencode2 writer's session is read (from the OpenCode service on the host of its project); other writers are nudged as before.
     limitProbe:async (attempt, sessionId, sinceMs) => {
       const hostId = loadPrototypeConfig(db, attempt.project_id)?.hostId;
-      if (!hostId || getReasoningTrace(db, attempt.id)?.providerId !== OPENCODE_WRITER_PROVIDER) return null;
+      if (!hostId || !PROVIDER_CAPABILITIES[getReasoningTrace(db, attempt.id)?.providerId ?? ""]?.usesOpenCodeLayout) return null;
       const probe = await ctx.host.call("openCodeLimitProbe", { requestedHostId:hostId, sessionId, sinceMs }, { hostId, timeoutMs:60_000 });
       return probe.status === "limit" ? probe : null;
     },

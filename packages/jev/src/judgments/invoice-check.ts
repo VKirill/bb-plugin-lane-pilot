@@ -74,6 +74,7 @@ const clip = (text: string, max: number) => (text.length > max ? `${text.slice(0
 
 export const invoiceCheck = defineJudgment<InvoiceCheckInput, InvoiceCheckDecision>({
   id: INVOICE_CHECK_ID,
+  title: "Совпадает ли счёт с работой",
   version: 1,
   // Active: a wrong answer here costs a review, never a send. The deterministic fallback answers when Jev cannot be asked.
   defaultMode: "active",

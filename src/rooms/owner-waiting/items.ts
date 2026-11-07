@@ -1,4 +1,5 @@
 import type Database from "better-sqlite3";
+import { DRILL_SANDBOX_PROJECT_IDS } from "../contracts";
 import { countTermedDeferrals } from "../deferral/server";
 
 /**
@@ -106,9 +107,9 @@ function learningItems(db: Db): OwnerItem[] {
 /**
  * The drill's sandbox projects («LP sandbox …»): what their tasks and phases ask is the drill's, not the owner's — it never reaches the
  * morning list, the digest or a push (live 2026-10-27: «Drill route … loop ran out of tries» and a drill writer's colour question, with a
- * push). The stability canary keeps the set current; the drill's own sandbox id is in it from the start.
+ * push). The stability canary keeps the set current; every drill sandbox id is in it from the start.
  */
-const sandboxProjects = new Set<string>(["proj_3tb652jpsi"]);
+const sandboxProjects = new Set<string>(DRILL_SANDBOX_PROJECT_IDS);
 export function setSandboxProjects(ids: Iterable<string>): void {
   for (const id of ids) sandboxProjects.add(id);
 }

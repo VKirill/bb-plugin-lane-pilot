@@ -5,7 +5,7 @@ import type { BenchProjectRef, Clock, PipelinePort } from "../../src/rooms/bench
 import { aggregateAttempts, benchContract, prepareCheckoutCommand, runSeries } from "../../src/rooms/bench/runner";
 import { createBench } from "../../src/rooms/bench/service";
 import { getBenchProject, getRun, getSet, listResults, setBenchProject } from "../../src/rooms/bench/store";
-import { isSandboxProjectName } from "../../src/rooms/stability/server";
+import { isSandboxProjectName } from "../../src/rooms/contracts";
 import type { AttemptMetrics } from "../../src/rooms/usage/server/attempt-metrics";
 import { benchWorld, git, localHost, makeContract, makeRepo, tmp } from "./helpers";
 import type { BenchProject, Candidate } from "../../src/rooms/bench/types";
