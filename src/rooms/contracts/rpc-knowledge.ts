@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { anamnesisRpcMethods } from "../anamnesis";
 import { ruleProposalSchema, ruleScanSchema, rulesAnalyzerSchema } from "@lane-pilot/contracts";
 
 const jevProviderIdSchema = z.enum(["openlux", "typesafe"]);
@@ -59,7 +58,6 @@ export const rpcKnowledge = {
       events: z.array(z.object({ ruleId: z.string(), action: z.string(), detail: z.string().nullable(), at: z.number().int() }).strict()),
     }).strict(),
   },
-  ...anamnesisRpcMethods,
   // M1 one-door import: the client reads its JSONL export (`bb plugin rpc call lane-pilot memory_import --input-file x.json`), the hub
   // writes it through the agent write path and answers with the receipt; the plugin server reads and writes no file itself.
   memory_import: {

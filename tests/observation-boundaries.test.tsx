@@ -3,7 +3,7 @@ import { it, expect, afterEach, vi } from "vitest";
 import { cleanup, fireEvent, waitFor } from "@testing-library/react";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
-import { createAttempt, createRun, createTask, openDatabase } from "../src/rooms/plugin-db";
+import { createAttempt, createRun, createTask, migrations, openDatabase } from "../src/rooms/plugin-db";
 import { createCore } from "../src/rooms/core/server/core";
 import { runsRpc } from "../src/rooms/runs/server/rpc/runs";
 import { registerCli } from "../src/rooms/tools/server/cli";
@@ -16,7 +16,7 @@ function world() {
   const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
   const db = openDatabase(bb);
   const core = createCore(bb, db);
-  registerCli(core, {} as Services);
+  registerCli(core, {} as Services, migrations);
   return { db, harness, handlers: runsRpc(core, {} as Services) };
 }
 

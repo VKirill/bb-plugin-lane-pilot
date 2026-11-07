@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { hostContract } from "../src/rooms/contracts/host";
+import { hostContract } from "../src/rooms/core/server/plugin-contracts";
 import hostEntry from "../host";
 
 // The host RPC wire names are the protocol with machines that run older plugin builds: a rename or a drop

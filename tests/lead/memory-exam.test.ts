@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { setJevForTests } from "@lane-pilot/jev";
 import { answerDecision, openDecision } from "../../src/rooms/lead/server/journal";
 import { MEMORY_EXAM_MIN_PROBES, formatMemoryExam, runMemoryExam } from "../../src/rooms/lead/server/memory-exam";
-import { openDatabase } from "../../src/rooms/plugin-db";
+import { migrations, openDatabase } from "../../src/rooms/plugin-db";
 
 const world = () => { const { bb } = createFakePluginHost({ pluginId: "lane-pilot" }); return { bb, db: openDatabase(bb) }; };
 afterEach(() => setJevForTests(null));
@@ -23,7 +23,7 @@ describe("the memory exam (roadmap §6: recall probes and decisions with an empt
     const calls: Array<{ history: number; situations: string[] }> = [];
     historyJev(calls);
     for (let i = 0; i < 6; i += 1) seed(db, `d${i}`, "yes", 100 + i);
-    const exam = await runMemoryExam(db, { recall: false, now: 1_000 });
+    const exam = await runMemoryExam(db, { recall: false, now: 1_000, migrations });
     expect(exam.decisions).toEqual({ n: 6, withMemory: { decided: 5, exact: 5 }, control: { decided: 0, exact: 0 }, gain: 5, predictor: "jev" });
     // The newest row sees the five earlier answers, never its own or a later one; the control arm sees nothing.
     expect(Math.max(...calls.map((call) => call.history))).toBe(5);
@@ -35,19 +35,19 @@ describe("the memory exam (roadmap §6: recall probes and decisions with an empt
     expect(formatMemoryExam(exam)).toContain("with memory: decided 5/6, exact 5 (100 %); empty control: decided 0/6, exact 0; gain +5");
     // A memory that misleads shows as a negative gain, never hidden.
     seed(db, "turn", "no", 900);
-    const turned = await runMemoryExam(db, { recall: false, limit: 1, now: 2_000 });
+    const turned = await runMemoryExam(db, { recall: false, limit: 1, now: 2_000, migrations });
     expect(turned.decisions).toMatchObject({ n: 1, withMemory: { decided: 1, exact: 0 }, gain: 0 });
   });
 
   it("without Jev both arms defer and the exam says so; an empty journal and an empty hub are caveats, not errors", async () => {
     const { db } = world();
-    const empty = await runMemoryExam(db, { now: 1_000 });
+    const empty = await runMemoryExam(db, { now: 1_000, migrations });
     expect(empty.decisions).toMatchObject({ n: 0, predictor: "none", gain: 0 });
     expect(empty.caveats.some((line) => line.startsWith("decisions: the journal has no answered rows"))).toBe(true);
     expect(empty.recall === null || empty.recall.probes < MEMORY_EXAM_MIN_PROBES).toBe(true);
     expect(empty.recall === null || empty.recall.enough === false).toBe(true);
     seed(db, "cold", "yes", 100);
-    const cold = await runMemoryExam(db, { recall: false, now: 1_000 });
+    const cold = await runMemoryExam(db, { recall: false, now: 1_000, migrations });
     expect(cold.decisions).toMatchObject({ n: 1, predictor: "none", withMemory: { decided: 0, exact: 0 }, control: { decided: 0, exact: 0 } });
     expect(cold.caveats.some((line) => line.includes("Jev answered nothing"))).toBe(true);
     expect(formatMemoryExam(cold)).toContain("recall: not measured");

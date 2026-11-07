@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useRpc } from "@get-bb/plugin-sdk/app";
-import type { rpcContract } from "../../contracts";
+import type { ScheduleBoardContract } from "../contract";
 import { t, type I18nKey, type Locale } from "@lane-pilot/i18n";
 import { Button } from "@lane-pilot/ui-kit";
 import { Input } from "@lane-pilot/ui-kit";
@@ -33,7 +33,7 @@ export function ScheduleForm({ projectId, projects, hosts, existing, errandDefau
   /** A one-time task prefilled for this moment (a click on a calendar day). */
   initialRunAt?: number | null; locale: Locale; onSaved: () => void; onCancel: () => void;
 }) {
-  const rpc = useRpc<typeof rpcContract>();
+  const rpc = useRpc<ScheduleBoardContract>();
   const task = existing?.task;
   const [project, setProject] = useState(existing?.projectId ?? projectId ?? projects[0]?.id ?? "");
   const [name, setName] = useState(existing?.name ?? "");

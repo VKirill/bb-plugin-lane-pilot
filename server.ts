@@ -244,7 +244,8 @@ export interface Services {
 
 export { experimental_vkLifecycle } from "./src/rooms/native-install";
 
-export { rpcContract } from "./src/rooms/contracts";
+import { rpcContract } from "./src/rooms/core/server/plugin-contracts";
+export { rpcContract };
 
 /** Entry only: storage, the shared core, every module on one services bag, then the registrations. */
 export default async function plugin(bb: BbPluginApi) {
@@ -308,7 +309,7 @@ export default async function plugin(bb: BbPluginApi) {
     { checkers: createPluginCheckers(ctx) },
     createStability(ctx, services),
     createScheduleService(ctx, services),
-    { lead: createLeadService(ctx, services) },
+    { lead: createLeadService(ctx, services, lanePilotMigrations) },
   );
   // The two code steps of `agent-routine`, the graph a schedule of kind agent runs (registered here: the schedule room imports the workflow room, not the other way).
   registerAgentRoutineActions(services.workflowEngine, ctx, services);
@@ -327,7 +328,7 @@ export default async function plugin(bb: BbPluginApi) {
     const id = entry && typeof entry === "object" ? Reflect.get(entry, "id") : undefined;
     if (typeof id === "string") return relayFor(ctx).queueEvent(name, id).then(() => undefined);
   } });
-  registerRpc(ctx, services);
+  registerRpc(ctx, services, rpcContract);
   // The Pixel World: tick loop, WebSocket route and listeners; the world starts with the service.
   services.world.mount();
   mountCanary(ctx, services.canary);
@@ -381,7 +382,7 @@ export default async function plugin(bb: BbPluginApi) {
     () => mountLearning(ctx, services),
     () => mountRegressionTools(ctx, services),
   ]);
-  registerCli(ctx, services);
+  registerCli(ctx, services, lanePilotMigrations);
   // The pixel world's GLB files (council office people and cars) over HTTP, not inside app.js.
   mountWorldAssets(bb);
   // What Lane Pilot learns about its owner by itself (the daily pass and new messages); inert until the owner switches it on.

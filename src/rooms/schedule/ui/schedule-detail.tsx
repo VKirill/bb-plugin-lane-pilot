@@ -1,6 +1,6 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { useRpc } from "@get-bb/plugin-sdk/app";
-import type { rpcContract } from "../../contracts";
+import type { ScheduleBoardContract } from "../contract";
 import { t, type I18nKey } from "@lane-pilot/i18n";
 import { Button } from "@lane-pilot/ui-kit";
 import { Input } from "@lane-pilot/ui-kit";
@@ -45,7 +45,7 @@ function Section({ title, testId, children }: { title: string; testId: string; c
 export function ScheduleDetail({ schedule, hosts, errandDefault, onBack, onEdit, onHistory, onChanged }: {
   schedule: ScheduleView; hosts: Hosts; errandDefault: ErrandDefaultView | undefined; onBack: () => void; onEdit: () => void; onHistory: () => void; onChanged: () => void;
 }) {
-  const rpc = useRpc<typeof rpcContract>();
+  const rpc = useRpc<ScheduleBoardContract>();
   const base = useMemo(() => baseOf(schedule), [schedule]);
   const [edited, setEdited] = useState<Draft | null>(null);
   const [busy, setBusy] = useState(false);

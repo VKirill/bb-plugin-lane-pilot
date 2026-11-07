@@ -13,7 +13,7 @@ type Result = { exitCode: number; stdout?: string; stderr?: string };
  * `memory-eval`: reads the live database (or an extract) and prints the report. `--export` writes the extract file and stops, so the
  * run can happen anywhere without the hub's database. The live database is only read.
  */
-export async function runMemoryEvalCommand(live: Pick<Database.Database, "prepare"> | null, argv: readonly string[]): Promise<Result> {
+export async function runMemoryEvalCommand(live: Pick<Database.Database, "prepare"> | null, argv: readonly string[], migrations: readonly string[]): Promise<Result> {
   try {
     const flags: Record<string, string> = {};
     for (let index = 0; index < argv.length; index++) {
@@ -38,14 +38,14 @@ export async function runMemoryEvalCommand(live: Pick<Database.Database, "prepar
     if (!source) throw new Error(`no data: pass --source <extract.db> (made by --export)\n${MEMORY_EVAL_USAGE}`);
     try {
       if (flags.shelf) {
-        const results = await runShelfReplay(loadEvalData(source), { projects: new Set([SANDBOX_PROJECT_ID]), task: isDrillTask });
+        const results = await runShelfReplay(loadEvalData(source), migrations, { projects: new Set([SANDBOX_PROJECT_ID]), task: isDrillTask });
         return { exitCode: 0, stdout: flags.json ? JSON.stringify(results, null, 2) : formatShelf(results) };
       }
       if (flags.floor) {
-        const tuned = await tuneFloor(loadEvalData(source), { sizes, seed, scope, skipProjects: new Set([SANDBOX_PROJECT_ID]), skipTask: isDrillTask });
+        const tuned = await tuneFloor(loadEvalData(source), { sizes, seed, scope, skipProjects: new Set([SANDBOX_PROJECT_ID]), skipTask: isDrillTask, migrations });
         return { exitCode: 0, stdout: formatFloorTuning(tuned) };
       }
-      const report = await runMemoryEval(loadEvalData(source), { sizes, seed, scope, ...(flags["no-floor"] ? { floor: null } : {}), skipProjects: new Set([SANDBOX_PROJECT_ID]), skipTask: isDrillTask });
+      const report = await runMemoryEval(loadEvalData(source), { sizes, seed, scope, ...(flags["no-floor"] ? { floor: null } : {}), skipProjects: new Set([SANDBOX_PROJECT_ID]), skipTask: isDrillTask, migrations });
       return { exitCode: 0, stdout: flags.json ? JSON.stringify(report, null, 2) : formatEvalReport(report) };
     } finally { opened?.close(); }
   } catch (cause) {

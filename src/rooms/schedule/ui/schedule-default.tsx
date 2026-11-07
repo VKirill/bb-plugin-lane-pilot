@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useRpc } from "@get-bb/plugin-sdk/app";
-import type { rpcContract } from "../../contracts";
+import type { ScheduleBoardContract } from "../contract";
 import { t } from "@lane-pilot/i18n";
 import { Button } from "@lane-pilot/ui-kit";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@lane-pilot/ui-kit";
@@ -29,7 +29,7 @@ function summary(value: ErrandDefaultView["effective"]): string {
 }
 
 export function ScheduleDefaultBlock({ projectId, value, onChanged }: { projectId: string | null; value: ErrandDefaultView; onChanged: () => void }) {
-  const rpc = useRpc<typeof rpcContract>();
+  const rpc = useRpc<ScheduleBoardContract>();
   const catalog = useModelCatalog(projectId);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);

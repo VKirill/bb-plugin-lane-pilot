@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRpc } from "@get-bb/plugin-sdk/app";
-import type { rpcContract } from "../../contracts";
+import type { ScheduleBoardContract } from "../contract";
 import { t, type I18nKey, type Locale } from "@lane-pilot/i18n";
 import { Button } from "@lane-pilot/ui-kit";
 import { LP_ALL_PROJECTS } from "@lane-pilot/ui-kit/realtime-channel";
@@ -72,7 +72,7 @@ function Card({ schedule, projectName, busy, onRun, onTogglePause, onEdit, onHis
  * tasks; without one, every project's. Re-reads on the server's `schedule` signal, with a slow poll behind it.
  */
 export function ScheduleBoard({ projectId, projects = [], locale }: { projectId: string | null; projects?: ReadonlyArray<{ id: string; name: string }>; locale: Locale }) {
-  const rpc = useRpc<typeof rpcContract>();
+  const rpc = useRpc<ScheduleBoardContract>();
   const [listing, setListing] = useState<Listing | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);

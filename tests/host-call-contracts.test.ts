@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { hostContract } from "../src/rooms/contracts";
+import { hostContract } from "../src/rooms/core/server/plugin-contracts";
 import { roomFaceRelative } from "./support/room-files";
 
 // Every host.call("<method>", { … }) on the server must pass input its host contract accepts: a strict schema refused

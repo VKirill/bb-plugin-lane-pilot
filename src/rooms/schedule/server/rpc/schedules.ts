@@ -1,5 +1,5 @@
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
-import type { rpcContract } from "../../../contracts";
+import type { scheduleRpcContract } from "../../contract";
 import { runView } from "../../board";
 import type { ServerCore } from "../../../contracts/server";
 import type { Services } from "../../../platform/server";
@@ -38,5 +38,5 @@ export function schedulesRpc(_ctx: ServerCore, services: Services) {
     },
     schedule_cancel_run: async ({ runId }) => ({ ok: await board().cancelRun(runId) }),
     schedule_calendar: (input) => board().calendar(input),
-  } satisfies Pick<PluginRpcHandlers<typeof rpcContract>, "schedule_list" | "schedule_agents" | "schedule_get" | "schedule_runs" | "schedule_preview" | "schedule_upsert" | "schedule_delete" | "schedule_pause" | "schedule_resume" | "schedule_run_now" | "schedule_cancel_run" | "schedule_calendar">;
+  } satisfies Pick<PluginRpcHandlers<typeof scheduleRpcContract>, "schedule_list" | "schedule_agents" | "schedule_get" | "schedule_runs" | "schedule_preview" | "schedule_upsert" | "schedule_delete" | "schedule_pause" | "schedule_resume" | "schedule_run_now" | "schedule_cancel_run" | "schedule_calendar">;
 }

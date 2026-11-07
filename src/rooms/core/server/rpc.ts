@@ -1,4 +1,4 @@
-import { rpcContract } from "../../contracts";
+import type { rpcContract } from "./plugin-contracts";
 import type { ServerCore } from "../../contracts/server";
 import type { Services } from "../../platform/server";
 import { preferencesRpc } from "../../settings/server";
@@ -52,9 +52,9 @@ import { learningFor } from "../../learning";
 import { worldRpc } from "../../world/server";
 
 /** One handler object from the five groups; each group carries the exact contract keys it implements. */
-export function registerRpc(ctx: ServerCore, services: Services) {
+export function registerRpc(ctx: ServerCore, services: Services, contract: typeof rpcContract) {
   // Every call is timed (rpc-timing.ts). No caller check: every machine and every caller is the owner's (owner decision 2026-10-08).
-  ctx.bb.rpc.register(rpcContract, journalRpcHandlers(timeRpcHandlers({
+  ctx.bb.rpc.register(contract, journalRpcHandlers(timeRpcHandlers({
     ...preferencesRpc(ctx, services),
     ...runsRpc(ctx, services),
     ...settingsRpc(ctx, services),

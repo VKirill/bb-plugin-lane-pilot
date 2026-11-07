@@ -73,7 +73,7 @@ export function timelineArgs(args: string[]): { taskId: string | undefined; runI
   return { taskId: args.find((arg, index) => !arg.startsWith("--") && (runAt < 0 || index !== runAt + 1)), runId: runAt >= 0 ? args[runAt + 1] : undefined };
 }
 
-export function registerCli(ctx: ServerCore, services: Services) {
+export function registerCli(ctx: ServerCore, services: Services, migrations: readonly string[]) {
   const { bb, cancelQueuedAttempt, db, effectiveProjectSettings, host } = ctx;
 
   const usage = [
@@ -640,7 +640,7 @@ ${ERRANDS_USAGE}` },
           return { exitCode:probe.ok ? 0 : 1, stdout:JSON.stringify(probe, null, 2) };
         }
         if (command === "memory-eval") {
-          return await runMemoryEvalCommand(db, args);
+          return await runMemoryEvalCommand(db, args, migrations);
         }
         if (command === "memory-conflicts" || command === "memory-conflict-settle") {
           return runMemoryConflictCli(services.memoryConflicts, command, args);

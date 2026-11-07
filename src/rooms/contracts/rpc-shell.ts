@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { scheduleRpcContract } from "../schedule";
 import { inventoryGroupSchema } from "@lane-pilot/contracts";
 
 /**
@@ -40,7 +39,6 @@ const agentOutcome = z.object({ ok: z.boolean(), id: z.string(), error: z.string
 
 /** Preferences, projects and sections, global settings and agent profiles. */
 export const rpcShell = {
-  ...scheduleRpcContract,
   get_preferences: {
     input: z.object({ suggestedLocale: z.enum(["en", "ru"]) }).strict(),
     output: z.object({ locale: z.enum(["en", "ru"]), preference: z.enum(["auto", "en", "ru"]), lastProjectId: z.string().nullable() }).strict(),

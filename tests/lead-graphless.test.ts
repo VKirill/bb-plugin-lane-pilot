@@ -14,7 +14,7 @@ import { createLeadService } from "../src/rooms/lead/server/service";
 import { architectPrompt, graphlessErrands, hubSnapshot, processPartsOf, processStemOf, proposalDecisionId, proposalItemKey, registerLeadTickActions, seedForm, tickBrief } from "../src/rooms/lead/server/tick";
 import { errandStem } from "../src/rooms/errands";
 import { postOwnerItem } from "../src/rooms/owner-waiting";
-import { openDatabase, saveProjectSetting } from "../src/rooms/plugin-db";
+import { migrations, openDatabase, saveProjectSetting } from "../src/rooms/plugin-db";
 
 const NOW = Date.now();
 let dir = "";
@@ -135,7 +135,7 @@ describe("«да» on a seeded process proposal", () => {
       workflowEngine: { register: () => undefined, get: () => null },
       phaseIntake: { handOver: async () => { throw new Error("must not be called: a seeded process goes to the architect"); } },
     } as unknown as Services;
-    const lead = createLeadService(createCore(bb, db), services);
+    const lead = createLeadService(createCore(bb, db), services, migrations);
     const seed = { form: "graph", kind: "computer", stem: "партия моделей арендованной gpu", threadIds: ["thr_1", "thr_2"], samples: ["Тест: партия моделей"] };
     addRoad(db, { id: "d1", title: "Grow", kind: "direction", source: "lead", why: "growth" }, 1);
     addRoad(db, { id: "o1", parentId: "d1", projectId: "p_a", title: "Граф для: партия моделей арендованной gpu", kind: "option", source: "lead", why: "три поручения за месяц", class: "process", payload: { architectSeed: seed } }, 2);

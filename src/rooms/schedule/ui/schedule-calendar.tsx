@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRpc } from "@get-bb/plugin-sdk/app";
-import type { rpcContract } from "../../contracts";
+import type { ScheduleBoardContract } from "../contract";
 import { t, type I18nKey } from "@lane-pilot/i18n";
 import { Button } from "@lane-pilot/ui-kit";
 import type { RunView, ScheduleView } from "../views";
@@ -20,7 +20,7 @@ export function ScheduleCalendar({ projectId, schedules, refreshKey, now, onCrea
   projectId: string | null; schedules: readonly ScheduleView[]; refreshKey: number; now: number;
   onCreateDay: (day: number) => void; onOpenSchedule: (id: string) => void;
 }) {
-  const rpc = useRpc<typeof rpcContract>();
+  const rpc = useRpc<ScheduleBoardContract>();
   const [view, setView] = useState<CalendarView>("month");
   const [anchor, setAnchor] = useState(() => startOfDay(now));
   const [selected, setSelected] = useState<number | null>(null);

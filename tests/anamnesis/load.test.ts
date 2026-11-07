@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { runAnamnesisCli } from "../../src/rooms/anamnesis/cli";
-import { hostContract } from "../../src/rooms/contracts";
+import { hostContract } from "../../src/rooms/core/server/plugin-contracts";
 import { anamnesisHandler } from "../../src/rooms/anamnesis/host";
 import { createHub } from "../../src/rooms/anamnesis/hub";
 import { openStore } from "../../src/rooms/anamnesis/store";

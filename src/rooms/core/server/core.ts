@@ -8,7 +8,7 @@ import { createOwnerAsk } from "../../relay/server";
 import { createRealtime, mountHelperSignals } from "../../platform/server";
 import { aggregateRun } from "../../runs";
 import { TARGET_SHA } from "../../runs";
-import { hostContract } from "../../contracts";
+import { hostContract } from "./plugin-contracts";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
 import type { ServerCore } from "../../contracts/server";
 import { getAttempt, getRun, getRunSettingsScopes, declaredWorktreeOwner, ownerKindOfName, registerWorktree, releaseWorktree, getRunWriterHost, getTask, getTaskPlan, listAttemptsForTask, listStageReceipts, listTaskTerminalStates, loadProjectSettings, loadPrototypeConfig, sectionBindingId, setIllegalTransitionLog, setRunSettingsScopes, setRunState, transitionAttempt } from "../../storage";

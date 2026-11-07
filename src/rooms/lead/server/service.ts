@@ -63,7 +63,7 @@ export type LeadState = {
   memoryExam: MemoryExam | null;
 };
 
-export function createLeadService(ctx: ServerCore, services: Services) {
+export function createLeadService(ctx: ServerCore, services: Services, migrations: readonly string[]) {
   const { db, bb } = ctx;
 
   const settings = (): LeadSettings => parseLeadSettings(loadProjectSettings(db, GLOBAL_SETTINGS_PROJECT_ID));
@@ -182,7 +182,7 @@ export function createLeadService(ctx: ServerCore, services: Services) {
 
   /** The memory exam on demand or on its Sunday cron: two measurements with a control, stored under one key; nothing of it moves a right. */
   async function memoryExam(options: { limit?: number; recall?: boolean } = {}, now: number = Date.now()): Promise<MemoryExam> {
-    const exam = await runMemoryExam(db, { ...options, settings: loadProjectSettings(db, GLOBAL_SETTINGS_PROJECT_ID) as never, now });
+    const exam = await runMemoryExam(db, { ...options, settings: loadProjectSettings(db, GLOBAL_SETTINGS_PROJECT_ID) as never, now, migrations });
     await bb.storage.kv.set(MEMORY_EXAM_KEY, exam);
     bb.log.info(`lead memory exam: ${formatMemoryExam(exam).split("\n").slice(1, 3).join("; ")}`);
     return exam;

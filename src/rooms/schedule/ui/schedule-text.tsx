@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { ThreadChat, useBbNavigate, useRpc } from "@get-bb/plugin-sdk/app";
-import type { rpcContract } from "../../contracts";
+import type { ScheduleBoardContract } from "../contract";
 import { t } from "@lane-pilot/i18n";
 import { Button } from "@lane-pilot/ui-kit";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@lane-pilot/ui-kit";
@@ -12,7 +12,7 @@ import { Surface, SurfaceBody, SurfaceHeader } from "@lane-pilot/ui-kit";
  * a new chat opens with the start of the sentence in its composer.
  */
 export function ScheduleTextCreate({ projectId, projects, onClose }: { projectId: string | null; projects: ReadonlyArray<{ id: string; name: string }>; onClose: () => void }) {
-  const rpc = useRpc<typeof rpcContract>();
+  const rpc = useRpc<ScheduleBoardContract>();
   const navigate = useBbNavigate();
   const [project, setProject] = useState(projectId ?? projects[0]?.id ?? "");
   const [pmThread, setPmThread] = useState<string | null | undefined>(undefined);

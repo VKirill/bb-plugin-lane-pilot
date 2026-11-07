@@ -9,6 +9,7 @@ import { createRetrievers } from "../src/rooms/memory-eval/server/retrievers";
 import { formatEvalReport, runMemoryEval, score, stat } from "../src/rooms/memory-eval/server/memory-eval";
 import { exportEvalExtract, loadEvalData, type EvalData, type RawNote, type RawQuestion } from "../src/rooms/memory-eval/server/source";
 import { runMemoryEvalCommand } from "../src/rooms/memory-eval/server/command";
+import { migrations } from "../src/rooms/plugin-db";
 import { writerMemoryPicks } from "../src/rooms/writer/writer-brief";
 import { SHELF_CONFIGS, durabilityScore, formatShelf, pickThree, replayShelf, runShelfReplay } from "../src/rooms/memory-eval/server/shelf";
 
@@ -93,7 +94,7 @@ describe("the corpus", () => {
   it("indexes the corpus like the write door, in the project scope or one pile", () => {
     for (const scope of ["project", "pile"] as const) {
       const plan = planCorpus({ data: data(), size: 30, seed: 1, scope, ...options });
-      const db = buildEvalDb(plan);
+      const db = buildEvalDb(plan, migrations);
       const counted = db.prepare("SELECT count(*) n FROM lane_pilot_memory").get() as { n: number };
       expect(counted.n).toBe(30);
       expect((db.prepare("SELECT count(DISTINCT project_id) n FROM lane_pilot_memory").get() as { n: number }).n).toBe(scope === "pile" ? 1 : 1);
@@ -144,7 +145,7 @@ describe("scoring", () => {
 describe("a run", () => {
   it("reports every retriever at every size, and the plain baseline finds what the production writer path finds on a clean corpus", async () => {
     vi.setSystemTime(T0 + 200 * DAY);
-    const report = await runMemoryEval(data(), { sizes: [30, 60], seed: 1, scope: "pile", ...options });
+    const report = await runMemoryEval(data(), { sizes: [30, 60], seed: 1, scope: "pile", ...options, migrations });
     expect(report.sizes.map((size) => size.size)).toEqual([30, 60]);
     for (const size of report.sizes) {
       expect(size.scores.map((row) => row.id)).toEqual(["writer", "plain", "pm", "search", "pm-nofloor", "search-nofloor", "search+floor", "plain-keyword", "reviewer"]);
@@ -195,11 +196,11 @@ describe("the extract and the command", () => {
     const read = new Database(path, { readonly: true });
     expect(loadEvalData(read)).toMatchObject({ origin: "extract" });
     read.close();
-    const failed = await runMemoryEvalCommand(null, ["--sizes", "30"]);
+    const failed = await runMemoryEvalCommand(null, ["--sizes", "30"], migrations);
     expect(failed.exitCode).toBe(1);
     expect(failed.stderr).toMatch(/no data/);
-    expect((await runMemoryEvalCommand(null, ["--scope", "galaxy", "--source", path])).stderr).toMatch(/--scope/);
-    expect((await runMemoryEvalCommand(null, ["--sizes", "5", "--source", path])).stderr).toMatch(/--sizes/);
+    expect((await runMemoryEvalCommand(null, ["--scope", "galaxy", "--source", path], migrations)).stderr).toMatch(/--scope/);
+    expect((await runMemoryEvalCommand(null, ["--sizes", "5", "--source", path], migrations)).stderr).toMatch(/--sizes/);
   });
 });
 
@@ -212,7 +213,7 @@ describe("the shelf replay", () => {
   };
 
   it("replays the history through the write door and finds the answer on the shelf", async () => {
-    const result = await replayShelf(shelfData(), { name: "x", order: "relevance", noteBudget: 24000 }, { projects: new Set(), task: () => false });
+    const result = await replayShelf(shelfData(), { name: "x", order: "relevance", noteBudget: 24000 }, { projects: new Set(), task: () => false }, migrations);
     expect(result.questions).toBe(12);
     expect(result.goldOnShelf).toBe(1);
     expect(result.hit3).toBeGreaterThan(0.8);
@@ -221,15 +222,15 @@ describe("the shelf replay", () => {
 
   it("a cap writes fewer notes, and a small budget evicts", async () => {
     const skip = { projects: new Set<string>(), task: () => false };
-    const [open, capped] = [await replayShelf(shelfData(), { name: "a", order: "relevance", noteBudget: 24000 }, skip), await replayShelf(shelfData(), { name: "b", order: "relevance", noteBudget: 24000, cap: 1 }, skip)];
+    const [open, capped] = [await replayShelf(shelfData(), { name: "a", order: "relevance", noteBudget: 24000 }, skip, migrations), await replayShelf(shelfData(), { name: "b", order: "relevance", noteBudget: 24000, cap: 1 }, skip, migrations)];
     expect(capped.written).toBeLessThan(open.written);
-    const tiny = await replayShelf(shelfData(), { name: "c", order: "relevance", noteBudget: 40 }, skip);
+    const tiny = await replayShelf(shelfData(), { name: "c", order: "relevance", noteBudget: 40 }, skip, migrations);
     expect(tiny.evicted).toBeGreaterThan(0);
     expect(tiny.goldOnShelf).toBeLessThan(1);
   });
 
   it("reports every configuration as a table", async () => {
-    const results = await runShelfReplay(shelfData(), { projects: new Set(), task: () => false }, SHELF_CONFIGS.slice(0, 2));
+    const results = await runShelfReplay(shelfData(), migrations, { projects: new Set(), task: () => false }, SHELF_CONFIGS.slice(0, 2));
     expect(formatShelf(results)).toContain("legacy order, budget 8000 (before)");
     expect(durabilityScore({ content: "a/b.ts c/d.ts e/f.ts" })).toBeGreaterThan(durabilityScore({ content: "a/b.ts" }));
     expect(pickThree([], [], "legacy")).toEqual([]);
