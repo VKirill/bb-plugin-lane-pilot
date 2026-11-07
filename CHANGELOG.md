@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.1.490
+
+- **Another model turns Lane Pilot off instead of refusing the message.** A Lane Pilot chat handed to a new thread on another model («Передать в новый тред» after Opus refused the chat) inherited the profile and was refused with «native profile needs Claude Code», so the owner could not leave Lane Pilot. Now a message on any provider other than Claude Code starts an ordinary turn: a new chat is not bound, a bound chat keeps its binding and is the Lane Pilot chat again back on Claude Code.
+
 ## 0.1.489
 
 - **A writer whose provider has no fast tier runs on its default tier** instead of being refused (`writer_service_tier_unavailable`). On 2026-11-07 a fallback to Antigravity was refused for «fast» twice and the lead's skill task («Навык для: живая проверка плагина BB») ended blocked; 5 such refusals in a week. 0.1.488 was not deployed (its build stopped on a dirty tree); this release carries it.

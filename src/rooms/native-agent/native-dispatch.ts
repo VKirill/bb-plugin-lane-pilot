@@ -223,11 +223,12 @@ export async function handleNativeDispatch(
       void bestEffort(bb.log, "checkout guest note", noteCheckoutGuest(bb, db, ctx.thread.id, ctx.environment?.path ?? projectCheckoutIntentPath(ctx.environmentIntent)), undefined);
       return { action: "proceed" };
     }
+    // Another model chosen in the composer turns the profile off for this message instead of refusing it (owner 2026-11-08: a chat
+    // that Opus refused could not be handed to another model, «Передать в новый тред» inherited the profile and was blocked).
+    // The chat stays bound: back on Claude Code it is the Lane Pilot chat again. A pending profile switch waits for that.
     if (ctx.requestedExecution.providerId !== "claude-code") {
-      return reject(
-        "provider_not_claude_code",
-        "Lane Pilot native profile needs Claude Code. Switch the composer provider back, or start without the Lane mention.",
-      );
+      traceNativeDispatch(bb.log, "dispatch.skip", { ...base, reason: "provider_not_claude_code", inherited: !!inherited, bound: !!bound });
+      return { action: "proceed" };
     }
     if (tokens.length && bound && bound.token !== tokens[0] && !switching) {
       return reject(

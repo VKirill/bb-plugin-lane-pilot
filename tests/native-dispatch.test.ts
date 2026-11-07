@@ -296,7 +296,7 @@ it("rejects CLI Agents pending at send without clearing it or blocking prepare",
   expect(fake.rpcCalls.some((row) => row.method === "clearPending")).toBe(false);
 });
 
-it("rejects a Lane token or bound thread on a non-Claude provider and leaves ordinary Codex alone", async () => {
+it("another model turns the profile off: a Lane token or a bound thread on a non-Claude provider starts an ordinary turn", async () => {
   const fake = await setup();
   const { token } = await fake.harness.behavior.callRpc("prepare_native_session", {
     projectId: "project_a",
@@ -311,9 +311,9 @@ it("rejects a Lane token or bound thread on a non-Claude provider and leaves ord
     requestedExecution: { providerId: "codex" },
     input: { text: nativeSelectionMarker(token), blocks: [{ type: "text", text: nativeSelectionMarker(token), mentions: [] }] },
   });
-  const mentionedResult = await hook(mentioned);
-  expect(mentionedResult).toMatchObject({ action: "reject" });
-  expect((mentionedResult as { message: string }).message).toMatch(/Claude Code/);
+  expect(await hook(mentioned)).toEqual({ action: "proceed" });
+  // It was not bound: the Codex chat is an ordinary one.
+  expect(await fake.harness.behavior.callRpc("native_thread", { threadId: "thr_codex" })).not.toMatchObject({ agentType: "dev-orchestrator" });
   expect(await hook(makeMessageDispatchHookContext({
     thread: { id: "thr_plain_codex", projectId: "project_a", providerId: "codex" },
     project: { id: "project_a" },
@@ -331,8 +331,9 @@ it("rejects a Lane token or bound thread on a non-Claude provider and leaves ord
     requestedExecution: { providerId: "codex" },
     input: { text: "continue", blocks: [{ type: "text", text: "continue", mentions: [] }] },
   }));
-  expect(rebound).toMatchObject({ action: "reject" });
-  expect((rebound as { message: string }).message).toMatch(/Claude Code/);
+  expect(rebound).toEqual({ action: "proceed" });
+  // The binding stays: back on Claude Code the chat is the Lane Pilot chat again.
+  expect(await fake.harness.behavior.callRpc("native_thread", { threadId: "thr_bound" })).toMatchObject({ agentType: "dev-orchestrator" });
 });
 
 function coldStart(threadId: string, text: string) {
@@ -484,6 +485,11 @@ it("a handoff to a new thread keeps the Lane Pilot profile of the chat it contin
   };
   expect(await hook(handoff("thr_pmnext", "thr_pmsource"))).toEqual({ action: "proceed" });
   expect(await fake.harness.behavior.callRpc("native_thread", { threadId: "thr_pmnext" })).toMatchObject({ agentType: "dev-orchestrator" });
+  // A handoff to another model (Opus refused the chat, the owner moves on with GPT): an ordinary new chat, not a refusal.
+  const toCodex = handoff("thr_codexnext", "thr_pmsource");
+  (toCodex as unknown as { requestedExecution: { providerId: string } }).requestedExecution.providerId = "codex";
+  expect(await hook(toCodex)).toEqual({ action: "proceed" });
+  expect(await fake.harness.behavior.callRpc("native_thread", { threadId: "thr_codexnext" })).not.toMatchObject({ agentType: "dev-orchestrator" });
   // A handoff from an ordinary chat, or a plain mention of a Lane Pilot chat, stays ordinary.
   await hook(handoff("thr_plainnext", "thr_plainsource"));
   expect(await fake.harness.behavior.resolveProviderEnv("claude-code", { threadId: "thr_plainnext", hostId: "host_a", projectId: "project_a" })).toEqual([]);
