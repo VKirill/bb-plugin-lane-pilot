@@ -1,6 +1,6 @@
 import type Database from "better-sqlite3";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
-import { HUB_SPECS, fieldValue, hubSettingProblem, settingValue, specOf, type HubArea } from "./keys";
+import { HUB_SPECS, fieldValue, hubSettingProblem, settingValue, specOf, type HubArea } from "@lane-pilot/settings-catalog";
 
 /**
  * The global-level rows behind the self-improvement controls, read and written with plain SQL so the rooms that own the old stores (wall,

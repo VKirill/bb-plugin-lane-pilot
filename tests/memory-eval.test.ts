@@ -7,7 +7,8 @@ import { buildEvalDb, planCorpus, poisonCopy, syntheticCopy } from "../src/rooms
 import { classify, fileKey, folderKey } from "../src/rooms/memory-eval/server/questions";
 import { createRetrievers } from "../src/rooms/memory-eval/server/retrievers";
 import { formatEvalReport, runMemoryEval, score, stat } from "../src/rooms/memory-eval/server/memory-eval";
-import { exportEvalExtract, loadEvalData, type EvalData, type RawNote, type RawQuestion } from "../src/rooms/memory-eval/server/source";
+import { exportEvalExtract, loadEvalData } from "../src/rooms/memory-eval/server/source";
+import type { EvalData, RawNote, RawQuestion } from "../src/rooms/contracts/memory-eval";
 import { runMemoryEvalCommand } from "../src/rooms/memory-eval/server/command";
 import { migrations } from "../src/rooms/plugin-db";
 import { writerMemoryPicks } from "../src/rooms/memory/server";

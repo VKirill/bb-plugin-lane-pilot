@@ -7,8 +7,9 @@ import { type ServerCore } from "../../contracts/server";
 import type { ChainRuntime } from "../../contracts/server";
 import {
   chooseProcessKey, errandFailureJudgment, sweepErrandEpisodes,
-  ERRAND_EPISODE_TABLE, ERRAND_EPISODE_TRACE_EVENTS, type EpisodeEnrichDeps,
+  type EpisodeEnrichDeps,
 } from "../../errands";
+import { ERRAND_EPISODE_TABLE, ERRAND_EPISODE_TRACE_EVENTS } from "../../contracts/server";
 
 import type { HarnessApi } from "../../harness/server/harness";
 import type { RuleScanApi } from "../../self-repair/server/rule-scan";

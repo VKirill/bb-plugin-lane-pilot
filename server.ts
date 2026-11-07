@@ -27,7 +27,13 @@ import { createPluginBench, mountBenchNightly, mountBenchSweep, mountBenchWeekly
 import { createBaselineRoom, mountRegress, mountRegressionTools } from "./src/rooms/baseline/server";
 import { createRunGoal, mountRunGoal } from "./src/rooms/run-goal/server";
 import { createProfileCheck, mountProfileCheck } from "./src/rooms/native-agent/server";
-import { createLeadService, mountLead } from "./src/rooms/lead/server";
+import { createLeadService, mountLead, taskWordPort, type LeadApi } from "./src/rooms/lead/server";
+import { addRoad, doneRoad, getRoad, listRoad, reopenRoad } from "./src/rooms/lead/server";
+import { acceptRuleProposal, adoptRuleProposal, deleteMemoryRecord, rejectRuleProposal, retireAdoptedRule } from "./src/rooms/self-repair/server";
+import { lanePilotProjectOrNotice } from "./src/rooms/self-repair/server";
+import { recordErrandEpisode, errandSpawnOf } from "./src/rooms/errands";
+import { loadEvalData, runMemoryEval } from "./src/rooms/memory-eval/server";
+import type { ErrandEpisodesApi, InsightsApi, LaneProjectNotice, LeadRoadApi, MemoryEvalRunner, ScheduleAgentApi, TaskWordPort } from "./src/rooms/contracts";
 import { createPhaseDriver, mountPhaseDriver, mountPhaseIntake, registerPhaseTool } from "./src/rooms/phase/server";
 import { createPhaseReactions } from "./src/rooms/wiring";
 import { selfRepairDeps } from "./src/rooms/self-repair/server";
@@ -76,7 +82,7 @@ import { stageHelperSettings } from "./src/rooms/settings/server";
 import { createWorkflowEngine } from "./src/rooms/workflow/server";
 import { architectStarter, createWorkflowLibrary } from "./src/rooms/workflow/server";
 import { createWorkflowTriggersService } from "./src/rooms/workflow/server";
-import { createScheduleService, registerAgentRoutineActions } from "./src/rooms/schedule/server";
+import { createScheduleService, registerAgentRoutineActions, scheduleAgentApi } from "./src/rooms/schedule/server";
 import { registerSpecialistActions } from "./src/rooms/critique/server";
 import { knownOwnerLocale, relayFor } from "./src/rooms/relay/server";
 import { mountLearning } from "./src/rooms/learning";
@@ -115,7 +121,6 @@ import type { RollbackApi } from "./src/rooms/rollback/server";
 import type { BenchApi } from "./src/rooms/bench/server";
 import type { BaselineApi, RegressionApi } from "./src/rooms/baseline/server";
 import type { RunGoalApi } from "./src/rooms/run-goal/server";
-import type { LeadApi } from "./src/rooms/lead/server";
 import type { PhaseApi, PhaseIntake } from "./src/rooms/phase/server";
 import type { MoneyApi } from "./src/rooms/money";
 import type { FrontApi } from "./src/rooms/front";
@@ -252,6 +257,20 @@ export interface Services {
   schedules: ScheduleService;
   /** The lead («Штурман»): the road tree, the decision journal, the ticks and the rights (src/rooms/lead/server/service.ts). */
   lead: LeadApi;
+  /** The lead's task-word ask/answer, handed to the writer and the queue tool (src/rooms/lead). */
+  taskWords: TaskWordPort;
+  /** The Lane Pilot project resolve + notice, handed to lead and the workflow rooms (src/rooms/self-repair). */
+  laneProject: LaneProjectNotice;
+  /** The lead's road writes/reads, handed to workflow and verification (src/rooms/lead). */
+  leadRoad: LeadRoadApi;
+  /** The self-repair rule/insight writes, handed to learning and memory (src/rooms/self-repair). */
+  insights: InsightsApi;
+  /** The errand episode recorder and spawn read, handed to the workflow engine (src/rooms/errands). */
+  errandEpisodes: ErrandEpisodesApi;
+  /** The schedule board's active-agent read, handed to the native-agent registry (src/rooms/schedule). */
+  scheduleAgents: ScheduleAgentApi;
+  /** The memory evaluation runner, handed to the lead's nightly exam (src/rooms/memory-eval). */
+  memoryEval: MemoryEvalRunner;
   /** The PM replay set: harvest, replay runs, the staged A/B decision (src/rooms/pm-replay). Set when it is mounted. */
   pmReplay?: import("./src/rooms/pm-replay").PmReplay;
   /** The daily read-back of role profiles: per role, the helpers with/without a stored required policy (src/rooms/native-agent). */
@@ -275,6 +294,15 @@ export default async function plugin(bb: BbPluginApi) {
   // A failing seed must not keep the plugin from starting: the register only adds the morning list.
   try { deferrals.seed(); } catch (cause) { bb.log.warn(`Lane Pilot: deferral seed skipped: ${cause instanceof Error ? cause.message : String(cause)}`); }
   const services = {} as Services;
+  Object.assign(services, {
+    taskWords: taskWordPort,
+    laneProject: lanePilotProjectOrNotice,
+    leadRoad: { addRoad, doneRoad, getRoad, listRoad, reopenRoad },
+    insights: { acceptRuleProposal, adoptRuleProposal, deleteMemoryRecord, rejectRuleProposal, retireAdoptedRule },
+    errandEpisodes: { recordErrandEpisode, errandSpawnOf },
+    scheduleAgents: scheduleAgentApi(),
+    memoryEval: { load: loadEvalData, run: runMemoryEval },
+  });
   mountNativeWiring(ctx);
   services.tokenCursorRow = tokenCursorRow;
   Object.assign(
@@ -333,7 +361,7 @@ export default async function plugin(bb: BbPluginApi) {
     { checkers: createPluginCheckers(ctx) },
     createStability(ctx, services),
     createScheduleService(ctx, services),
-    { lead: createLeadService(ctx, services, lanePilotMigrations) },
+    { lead: createLeadService(ctx, services, services.memoryEval, lanePilotMigrations) },
   );
   // The writer's `lp.*` executors (the task pipeline and its steps): writer registers them on the shared engine; workflow only mounts the delegates.
   registerDispatchExecutors(services.workflowEngine, ctx.bb);
@@ -386,7 +414,7 @@ export default async function plugin(bb: BbPluginApi) {
   mountThreadBlock(ctx);
   mountMemoryEmbeddings(ctx);
   registerPhaseTool(ctx, services);
-  registerQueueTool(ctx);
+  registerQueueTool(ctx, services.taskWords);
   registerConversationTools(ctx, { spendByModel: (projectId, day) => tokenDailyByModel(ctx.db, projectId, day) });
   mountPermits(ctx);
   mountForge(ctx, services);

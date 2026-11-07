@@ -1,4 +1,5 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
+const evalRunner = { load: () => ({ notes: [], questions: [], origin: "live" as const }), run: async () => ({ sizes: [], caveats: [] }) };
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -8,6 +9,7 @@ import { createCore } from "../../src/rooms/core/server/core";
 import type { Services } from "../../server";
 import { answerDecision, getDecision, labelDecision, openDecision } from "../../src/rooms/lead/server/journal";
 import { addRoad, getRoad, proposeRoad } from "../../src/rooms/lead/server/road";
+import { lanePilotProjectOrNotice } from "../../src/rooms/self-repair/server";
 import { createLeadService } from "../../src/rooms/lead/server/service";
 import { runLeadCli } from "../../src/rooms/lead/cli";
 import { MEMORY_EXAM_KEY } from "../../src/rooms/lead/server/memory-exam";
@@ -28,9 +30,10 @@ function world(start: () => Promise<unknown> = async () => ({ ok: true, runId: "
   const services = {
     workflowTriggers: { start: vi.fn(async (input: unknown) => { starts.push(input); return start(); }), pmOf: async () => null },
     docsPlaces: async () => [],
+    laneProject: lanePilotProjectOrNotice,
     workflowEngine: { register: () => undefined, get: (runId: string) => runs[runId] ? { runId, output: null, reason: null, error: null, failedNode: null, waiting: [], stopped: false, ...runs[runId] } : null },
   } as unknown as Services;
-  const lead = createLeadService(createCore(bb, db), services, migrations);
+  const lead = createLeadService(createCore(bb, db), services, { load: () => ({ notes: [], questions: [], origin: "live" }), run: async () => ({ sizes: [], caveats: [] }) }, migrations);
   return { bb, db, lead, starts, services, harness };
 }
 const ownerItem = (db: ReturnType<typeof openDatabase>, key: string) => db.prepare("SELECT key, kind, state FROM lane_pilot_owner_item WHERE key=?").get(key) as { key: string; kind: string; state: string } | undefined;

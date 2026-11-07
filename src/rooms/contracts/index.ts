@@ -35,3 +35,18 @@ export const rpcMethods = {
 export const rpcContract = defineRpcContract(rpcMethods);
 export * from "./gate-vocabulary";
 export * from "./workflow-ids";
+export { default as bundledAgents } from "./bundled-agents.json";
+export { LEAD_ID, LEAD_LAUNCH, LEAD_NAME, LEAD_SESSION, LEAD_SUMMARY, LEAD_TICK, LEAD_TOOLS } from "./lead-agent";
+export { taskWordItemPrefix, type TaskWordDb, type TaskWordPort, type WordTask } from "./task-word";
+export type { LaneProjectNotice } from "./lane-project";
+export type { InsightsApi, AnalyzerSelection, RuleScanSurface } from "./insights";
+export type { ErrandEpisodesApi, ErrandOutcome, ErrandVerifiedOutcome } from "./errand-episodes";
+export type { WallConfigStatus } from "./wall-api";
+export { SANDBOX_OWN_ENV } from "./sandbox-own-env";
+export { NO_RED_KINDS } from "./baseline-vocabulary";
+export { parseExecutionLineWindows, type LineWindow, type PathWindows } from "./execution-line-windows";
+export { type EvalData, type MemoryEvalReport, type MemoryEvalRunner, type RawNote, type RawQuestion, type RawTask } from "./memory-eval";
+export type { AgentScheduleRef, ScheduleAgentApi } from "./schedule-agents";
+export type { ErrandRunStart, ErrandsApi } from "./errands-api";
+export type { LeadRoadApi, RoadDb, RoadEvidence, RoadKind, RoadRow, RoadSource, RoadState } from "./lead-road";
+export type { SqlDb } from "./sql-db";

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Regenerate src/rooms/native-agent/bundled-agents.json from a Claude Lane Stack revision.
+"""Regenerate src/rooms/contracts/bundled-agents.json from a Claude Lane Stack revision.
 
 Usage: bundle-lane-agents.py <claude-lane-stack checkout> <git revision>
 
@@ -9,7 +9,7 @@ with the BB session prompts of src/rooms/native-agent/native-agent-overlay.ts (a
 import hashlib, json, re, subprocess, sys
 import yaml
 
-OUT = "src/rooms/native-agent/bundled-agents.json"
+OUT = "src/rooms/contracts/bundled-agents.json"
 TOOL_SPLIT = re.compile(r",\s*(?![^()]*\))")
 OMITTED_ORDER = ["model", "effort", "permissionMode", "color", "background", "maxTurns"]
 

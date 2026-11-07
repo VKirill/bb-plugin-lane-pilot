@@ -1,6 +1,5 @@
 import { findModelIn } from "@lane-pilot/models";
-export const QA_HOST_KEY = "browser_qa.host_id";
-export const QA_WORKSPACE_KEY = "browser_qa.workspace_path";
+export { QA_HOST_KEY, QA_WORKSPACE_KEY } from "@lane-pilot/settings-catalog";
 
 export function resolveBrowserQaTarget(args: {
   writerHostId: string;

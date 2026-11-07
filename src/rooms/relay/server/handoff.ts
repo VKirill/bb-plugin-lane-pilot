@@ -21,8 +21,8 @@ import {
   type AgentDefinition,
   type StoredHandoff,
 } from "@lane-pilot/handoff";
-import bundledAgents from "../../native-agent/bundled-agents.json";
-import { BB_AGENT_SUMMARIES } from "../../native-agent/native-agent-overlay";
+import bundledAgents from "../../contracts/bundled-agents.json";
+import { BB_AGENT_SUMMARIES } from "../../contracts/server";
 import { requirePmRun, type ServerContext } from "../../platform/server";
 import { registerObservedTool } from "../../platform/server";
 import { scheduleIsolated } from "../../platform/server";

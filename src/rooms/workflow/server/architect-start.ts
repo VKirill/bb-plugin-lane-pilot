@@ -9,7 +9,7 @@ import { createDraftStore } from "../../storage";
 import type { ServerCore } from "../../contracts/server";
 import { storeNativeSelection } from "../../native-agent/server";
 import { fullAccessSpawn, modelCatalogOf, resolveSpawnModel, spawnUsageOf, warmSpawnUsage } from "../../platform/server";
-import { lanePilotProjectOrNotice } from "../../self-repair/server";
+import type { LaneProjectNotice } from "../../contracts";
 import { stringAt, orMiss, isNotFound } from "@lane-pilot/kit";
 
 import type { DocsNightlyApi } from "../../docs/server/docs-nightly";
@@ -17,6 +17,7 @@ import type { DocsNightlyApi } from "../../docs/server/docs-nightly";
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {
   docsPlaces: DocsNightlyApi["docsPlaces"];
+  laneProject: LaneProjectNotice;
 }
 
 /** The architect runs on the `workflow-architect` row of the role table (Claude Opus 5.5, high, unless the owner changed it), whatever the owner's remembered chat choice says. */
@@ -72,7 +73,7 @@ export function architectOpening(input: { marker: string; projectId: string; pro
  * being `projectId`, else the draft's, else the Lane Pilot project of the hub (self-repair's `projectId`, where Lane Pilot's
  * own repository lives), so the button works with no setting at all.
  */
-export function architectStarter(ctx: ServerCore, services: Pick<Services, "docsPlaces">) {
+export function architectStarter(ctx: ServerCore, services: Pick<Services, "docsPlaces" | "laneProject">) {
   const { bb, db } = ctx;
   const drafts = createDraftStore(db);
   const inflight = new Map<string, Promise<{ threadId: string; projectId: string; reused: boolean }>>();
@@ -89,7 +90,7 @@ export function architectStarter(ctx: ServerCore, services: Pick<Services, "docs
   }
 
   async function lanePilotProjectId(): Promise<string> {
-    const found = await lanePilotProjectOrNotice(db, bb, ctx.host);
+    const found = await services.laneProject(db, bb, ctx.host);
     if (!found) throw new Error("lane_pilot_project_unresolved: self-repair:config has no projectId and no project source shares this repository's remote");
     return found.projectId;
   }
@@ -146,7 +147,7 @@ export function architectStarter(ctx: ServerCore, services: Pick<Services, "docs
   };
 }
 
-export function architectStartRpc(ctx: ServerCore, services: Pick<Services, "docsPlaces">) {
+export function architectStartRpc(ctx: ServerCore, services: Pick<Services, "docsPlaces" | "laneProject">) {
   const { start, inflight } = architectStarter(ctx, services);
   return {
     // One start per project and draft at a time: a double click joins the call in flight instead of spawning a second chat.

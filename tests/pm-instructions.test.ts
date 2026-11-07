@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import bundledAgents from "../src/rooms/native-agent/bundled-agents.json";
+import bundledAgents from "../src/rooms/contracts/bundled-agents.json";
 import { buildCapabilityRegistry, chooseRecipient, describeRegistry } from "@lane-pilot/handoff";
 import { BB_AGENT_SESSIONS, LANE_PILOT_PM_SESSION, laneSessionOverlayPrompt } from "../src/rooms/native-agent/native-agent-overlay";
 import { bundledAgentDefinitions } from "../src/rooms/relay/server/handoff";

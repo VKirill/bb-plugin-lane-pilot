@@ -250,3 +250,14 @@ export function createScheduleStore(db: Db, now: () => number = Date.now) {
   return { get, getRun, insert, update, setState, remove, list, addRun, claim, finish, runsOf, finishedRuns, unfinishedRuns, lastRuns, prune };
 }
 export type ScheduleStore = ReturnType<typeof createScheduleStore>;
+
+/** The schedule board's active-agent read, typed in contracts so the native-agent registry needs no schedule import. */
+export function scheduleAgentApi(): import("../contracts/schedule-agents").ScheduleAgentApi {
+  return {
+    activeAgentSchedules: (db) =>
+      createScheduleStore(db as never)
+        .list({ states: ["active"] })
+        .filter((row) => row.kind === "agent")
+        .map((row) => ({ id: row.id, name: row.name, task: taskOf(row) as { agentId?: string } })),
+  };
+}

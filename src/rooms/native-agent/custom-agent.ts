@@ -1,17 +1,16 @@
 import { z } from "zod";
 import {
-  MAIN_AGENT_ID,
   agentKind,
   compileEffectiveMainAgent,
   compileMainAgentProfile,
-  isStockProfileId,
   type AgentKind,
   type CustomAgentMeta,
   type StoredAgentRow,
 } from "./agent-profile";
 import { machineAffinitySchema } from "@lane-pilot/contracts";
+import { isCustomAgentId, isLanePmAgent, isReservedAgentId, isStockProfileId, MAIN_AGENT_ID } from "../contracts/server";
 import { employeeView } from "./employee-manifest";
-import { isLanePmAgent, parseAgentMarkdown, splitClaudeToolList } from "./native-agent-overlay";
+import { parseAgentMarkdown, splitClaudeToolList } from "./native-agent-overlay";
 
 /**
  * The owner's own agents. An agent is data: a row of the same store as the edits of a bundled profile (`lp.agent.overrides`), under an id no bundled
@@ -103,16 +102,9 @@ export type AgentFailure =
   | "agent_not_custom"
   | "agent_in_use";
 
-const RESERVED_IDS = new Set(["browser-qa", "default", "general-purpose", "explore", "plan"]);
 
 /** A custom agent may not take the id of a bundled agent, of a Lane PM or of a name the Claude Code CLI reserves. */
-export function isReservedAgentId(id: string): boolean {
-  return isStockProfileId(id) || isLanePmAgent(id) || RESERVED_IDS.has(id);
-}
 
-export function isCustomAgentId(id: string): boolean {
-  return !isReservedAgentId(id);
-}
 
 /** One row of the agent list: a bundled agent as it stands now (stock or edited), or an owner's agent. */
 export function agentListItem(id: string, stored?: StoredAgentRow): AgentListItem {

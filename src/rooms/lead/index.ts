@@ -5,6 +5,6 @@ export { EXAM_RULES, cohenKappa, examAll, examClass, examEligible, wilsonLower, 
 export { LEAD_PREDICT_ID, leadPredictJudgment, type PredictDecision, type PredictInput } from "./predict";
 export { answerPhaseWord, answerTaskWord, askPhaseWord, askTaskWord, phaseDecisionId, taskWordItemPrefix, wordDecisionId } from "./server/surfaces";
 export { LEAD_DEFAULTS, LEAD_SETTING_KEYS, leadSettingProblem, parseLeadSettings, type LeadSettingKey, type LeadSettings } from "./settings";
-export { LEAD_ID, LEAD_LAUNCH, LEAD_NAME, LEAD_SESSION, LEAD_SUMMARY, LEAD_TICK, LEAD_TOOLS } from "./lead-agent";
+export { LEAD_ID, LEAD_LAUNCH, LEAD_NAME, LEAD_SESSION, LEAD_SUMMARY, LEAD_TICK, LEAD_TOOLS } from "../contracts/lead-agent";
 export { addRoad, doneRoad, getRoad, listRoad, reopenRoad } from "./server/road";
-export type { RoadEvidence, RoadRow } from "./server/road";
+export type { RoadEvidence, RoadRow } from "../contracts/lead-road";

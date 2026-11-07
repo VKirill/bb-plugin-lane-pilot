@@ -10,7 +10,7 @@ import { isMainfixTask, readCheckRun } from "../../tasks";
 import { gateLabel, gateResolverFor, type ResolvedGate } from "./gate-detect";
 import { continuesEpisode, type GateEpisode } from "./gate-episode";
 import { closeOwnerItemsByPrefix, postOwnerItem } from "../../owner-waiting";
-import { addRoad, getRoad, listRoad } from "../../lead";
+import type { LeadRoadApi } from "../../contracts";
 import { attributeFailures, testLabel } from "./gate-attribution";
 import { cacheHitsNote, extractCacheHits, extractFailingFiles, extractFailingTests, unhandledErrorBlock, type FailingTest } from "../gate-output";
 import { flakyEvidence, outputTail, readingFrom } from "../machine-pressure";
@@ -21,6 +21,7 @@ import type { WriterDispatchApi } from "../../writer/server/dispatch";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {
+  leadRoad: LeadRoadApi;
   dispatchWriter: WriterDispatchApi["dispatchWriter"];
 }
 
@@ -842,14 +843,14 @@ export class IntegrationGateRunner {
    */
   private fileWithLead(input: { runId: string; projectId: string }, tests: FailingTest[], logPath?: string): void {
     try {
-      const db = this.ctx.db as never as Parameters<typeof listRoad>[0];
+      const db = this.ctx.db as never as Parameters<LeadRoadApi["listRoad"]>[0];
       const names = tests.map(testLabel).slice(0, 3).join(", ");
       const title = `Починить ранее красный тест: ${names} (проект ${input.projectId})`.slice(0, 300);
-      const alive = listRoad(db, { projectId: input.projectId, state: ["open", "later", "proposed"], limit: 500 });
+      const alive = this.services.leadRoad.listRoad(db, { projectId: input.projectId, state: ["open", "later", "proposed"], limit: 500 });
       if (alive.some((row) => row.title === title)) return;
       const rootId = `dir:${input.projectId}`;
-      const root = getRoad(db, rootId) ?? addRoad(db, { id: rootId, projectId: input.projectId, title: `${input.projectId}: directions`, kind: "direction", source: "lead", why: "the root the lead files a project's branches under when a proposal names no parent" });
-      addRoad(db, {
+      const root = this.services.leadRoad.getRoad(db, rootId) ?? this.services.leadRoad.addRoad(db, { id: rootId, projectId: input.projectId, title: `${input.projectId}: directions`, kind: "direction", source: "lead", why: "the root the lead files a project's branches under when a proposal names no parent" });
+      this.services.leadRoad.addRoad(db, {
         parentId: root.id, projectId: input.projectId, title, kind: "option", source: "lead", class: "next_step",
         why: `Общая проверка после слияния красная, но все упавшие тесты падают и на базе до этой партии: ни одна слитая задача не виновата. Это работа, а не решение владельца: починить тест, который был сломан раньше.`,
         evidence: [

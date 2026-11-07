@@ -4,5 +4,6 @@ export { registerAgentRoutineActions } from "./schedule-agent-actions";
 export { schedulesRpc } from "./rpc/schedules";
 export { SCHEDULE_USAGE, runScheduleCli } from "./schedule-cli";
 export { createScheduleService } from "./schedule-service";
+export { scheduleAgentApi } from "../store";
 export type { ScheduleService } from "./schedule-service";
 export { mountScheduleTools } from "./schedule-tools";

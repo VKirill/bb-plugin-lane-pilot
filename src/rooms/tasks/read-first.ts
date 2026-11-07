@@ -1,4 +1,4 @@
-import { parseExecutionLineWindows, type PathWindows } from "../native-install";
+import { parseExecutionLineWindows, type PathWindows } from "../contracts";
 
 export type ReadFirstHint = PathWindows;
 

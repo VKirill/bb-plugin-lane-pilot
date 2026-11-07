@@ -18,7 +18,8 @@ import { loadPrototypeConfig, type LanePilotDatabase } from "../../storage";
 import { requirePmRun } from "../../platform/server";
 import { configuredSetting, ToolError } from "../../contracts/server";
 import type { ServerCore } from "../../contracts/server";
-import { memorySettingsFor } from "../../self-repair/server";
+import { memorySettingsFor } from "../../contracts/server";
+import { loadProjectSettings } from "../../storage";
 import type { OwnerAsk } from "../../relay/server";
 import { fenceOutside, registerObservedTool } from "../../platform/server";
 import type { CouncilGraph, CouncilStart } from "./council-graph";
@@ -88,7 +89,7 @@ export function askOwnerToJoin(ownerAsk: OwnerAsk | undefined, input: {
 /** The project memory a council gets as evidence for its question (empty when memory is off or cannot be read: it is optional evidence). Also what the memory probe reads. */
 export function councilMemoryBlock(db: LanePilotDatabase, projectId: string, question: string, chain?: readonly string[]): string {
   try {
-    const settings = memorySettingsFor(db, projectId);
+    const settings = memorySettingsFor(loadProjectSettings(db, projectId));
     if (!settings.enabled) return "";
     const records = relevantRecords(db, projectId, question, searchMemoryRecords(db, projectId, question, 50, settings.searchEngine, "subagent", settings.personalBot, { chain: chain ?? [], umbrella: resolveProjectKind(settings.projectKind, projectUsesSections(db, projectId)) === "umbrella" }), { audience: "subagent", personalBot: settings.personalBot, floor: settings.queryFloor === false ? null : DEFAULT_RELEVANCE_FLOOR });
     const packed = memoryContext(records, question, settings.contextBudget);

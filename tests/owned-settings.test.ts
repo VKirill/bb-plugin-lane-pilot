@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import plugin from "../server";
-import { resolveSelectedMainAgentProfile, compileMainAgentProfile, MAIN_AGENT_PROFILE_IDS } from "../src/rooms/native-agent/agent-profile";
+import { MAIN_AGENT_PROFILE_IDS } from "../src/rooms/contracts/server";
+import { resolveSelectedMainAgentProfile, compileMainAgentProfile } from "../src/rooms/native-agent/agent-profile";
 import { LP_AGENT_OVERRIDES_KEY, LP_DEFAULTS_KEY, parseLanePilotDefaults, inheritProjectValues } from "@lane-pilot/settings-catalog";
 
 describe("owned settings persistence and optimistic concurrency", () => {

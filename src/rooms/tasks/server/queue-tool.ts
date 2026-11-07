@@ -3,7 +3,7 @@ import { callerPluginMetadata, registerObservedTool } from "../../platform/serve
 import { ToolError, type ServerCore } from "../../contracts/server";
 import { deadLetters, HOLD_FOREVER } from "../rails";
 import { recordTaskWord } from "../words";
-import { answerTaskWord } from "../../lead";
+import type { TaskWordPort } from "../../contracts";
 import { taskFamily, wayOut } from "../../runs";
 import { hostContract } from "../../contracts";
 import { getRun, getRunWriterHost, latestAttemptsForProject, latestTaskAttemptState, setTaskHeldUntil } from "../../storage";
@@ -12,7 +12,7 @@ import { getRun, getRunWriterHost, latestAttemptsForProject, latestTaskAttemptSt
  * The PM's queue controls (SMA map: Durable queue row): hold a task out of the queue until a date or until released (Held until year 2999),
  * release it, and list the dead letters — tasks that ended blocked or rejected and nobody sent again within a day (Dead-letter queue).
  */
-export function registerQueueTool(ctx: ServerCore): void {
+export function registerQueueTool(ctx: ServerCore, taskWords: TaskWordPort): void {
   const { db, bb } = ctx;
   const runOf = async (context: { threadId: string | null; experimental_vkPluginMetadata?: unknown }) => {
     const metadata = await callerPluginMetadata(bb, context);
@@ -39,7 +39,7 @@ export function registerQueueTool(ctx: ServerCore): void {
       const runId = await runOf(context);
       if (input.action === "word") {
         await recordTaskWord(bb.storage.kv as never, runId, taskFamily(input.taskId), input.decision, input.text);
-        answerTaskWord(db, runId, taskFamily(input.taskId), input.decision, input.text, "pm");
+        taskWords.answer(db, runId, taskFamily(input.taskId), input.decision, input.text, "pm");
         // The attempt that waits for the word (finish.ts, up to six hours) picks it up within a minute: telling the PM to resend it made two
         // attempts of one task (Gemini F-008.3).
         const waiting = latestTaskAttemptState(db, context.projectId, input.taskId) === "running";

@@ -5,7 +5,7 @@ import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import { getRuleProposal, upsertLessonProposal } from "@lane-pilot/run-insights";
 import { DEFAULT_RELEVANCE_FLOOR, NOTHING_RELEVANT, projectUsesSections, resolveProjectKind, sharedScope, UNASSIGNED_SCOPE, memoryVisibilitySql, parseMemoryCandidates, relevantRecords, searchMemoryRecords, storeMemoryRecordsKeepingOverflow } from "@lane-pilot/memory-core";
 import type { rpcContract } from "../../contracts";
-import { adoptRuleProposal, memorySettingsFor } from "../../self-repair/server";
+import { memorySettingsFor, type InsightsApi } from "../../contracts/server";
 import type { ServerCore } from "../../contracts/server";
 
 import {sha256Hex, bestEffort} from "@lane-pilot/kit";
@@ -18,6 +18,7 @@ import type { MemoryConflictsApi } from "./memory-conflicts";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {
+  insights: InsightsApi;
   docsPlaces: DocsNightlyApi["docsPlaces"];
   memoryConflicts: MemoryConflictsApi;
 }
@@ -43,17 +44,17 @@ export function sessionMemoryRpc(ctx: ServerCore, services: Services) {
       return best ? { projectId: best.projectId, scopes: best.scopes } : { projectId: null, scopes: [] };
     },
     memory_import: async ({ source, projectId, jsonl, dryRun }) => {
-      const report = runMemoryImport({ db, projectId, source, jsonl, settings: memorySettingsFor(db, projectId), dryRun: dryRun === true });
+      const report = runMemoryImport({ db, projectId, source, jsonl, settings: memorySettingsFor(loadProjectSettings(db, projectId)), dryRun: dryRun === true });
       return { ...report, summary: formatImportSummary(report) };
     },
     memory_import_eval: async ({ report }) => {
       const typed = report as unknown as ImportReport;
-      const settings = memorySettingsFor(db, typed.projectId);
+      const settings = memorySettingsFor(loadProjectSettings(db, typed.projectId));
       const result = evalMemoryImport(typed, (query) => pmTopIds(db, typed.projectId, query, settings));
       return { ...result, summary: formatImportEval(result) };
     },
     session_memory_write: async ({ projectId, kind, content, concepts, source, chain }) => {
-      const settings = memorySettingsFor(db, projectId);
+      const settings = memorySettingsFor(loadProjectSettings(db, projectId));
       if (!settings.enabled) return { stored: false, id: null, reason: "memory_disabled" };
       let entries;
       try { entries = parseMemoryCandidates([{ kind, content, concepts }], { ...settings, coreBudget: Number.MAX_SAFE_INTEGER, noteBudget: Number.MAX_SAFE_INTEGER, indexBudget: Number.MAX_SAFE_INTEGER }); }
@@ -77,7 +78,7 @@ export function sessionMemoryRpc(ctx: ServerCore, services: Services) {
       }
     },
     session_memory_search: async ({ projectId, query, limit, chain }) => {
-      const settings = memorySettingsFor(db, projectId);
+      const settings = memorySettingsFor(loadProjectSettings(db, projectId));
       // The session sees its own fresh notes. A missing chain is the project root, not every section.
       const wanted = limit ?? 8;
       // The floor drops records, so the search looks further than the limit to fill it; a query nothing clears gets the explicit «nothing» next to the empty list.
@@ -90,7 +91,7 @@ export function sessionMemoryRpc(ctx: ServerCore, services: Services) {
     },
     // Proven facts first (accepted, then used, then newest). A missing chain is the project root. Observed notes still in quarantine stay out.
     session_memory_core: async ({ projectId, chain }) => {
-      const settings = memorySettingsFor(db, projectId);
+      const settings = memorySettingsFor(loadProjectSettings(db, projectId));
       const rows = db.prepare(`SELECT id, content FROM lane_pilot_memory m WHERE m.project_id=? AND m.kind='core' AND m.audience='subagent' AND m.personal_bot=? AND ${memoryVisibilitySql(db, "m", { chain: chain ?? [] })} ORDER BY m.accepted_count DESC, m.use_count DESC, m.created_at DESC`)
         .all(projectId, settings.personalBot) as Array<{ id: string; content: string }>;
       return { records: rows };
@@ -104,10 +105,10 @@ export function sessionMemoryRpc(ctx: ServerCore, services: Services) {
       // audience `specialist:<id>` also appends a dated line to `lp.role.lines` — the section the specialist's brief renders.
       const employee = /^specialist:([\w-]{1,60})$/.exec(audience ?? "")?.[1];
       if (employee) {
-        const { recordRoleLine } = await import("../../native-agent");
+        const { recordRoleLine } = await import("../../contracts/server");
         await bestEffort(ctx.bb.log, "session memory role line", recordRoleLine(ctx.bb.storage.kv, projectId, employee, rule), undefined);
       }
-      const adopted = result.created ? Boolean(adoptRuleProposal(db, projectId, result.id)) : false;
+      const adopted = result.created ? Boolean(services.insights.adoptRuleProposal(db, projectId, result.id)) : false;
       const proposal = getRuleProposal(db, projectId, result.id);
       return { proposalId: result.id, repeatOf: result.repeatOf, state: proposal?.state ?? "proposed", adopted };
     },

@@ -34,8 +34,8 @@ status: active
 confidence: medium
 tags: [settings, sma, night-loop, bench, policy, owner-waiting, ui]
 sources:
-  - src/rooms/improvement/keys.ts
-  - src/rooms/improvement/hub.ts
+  - packages/settings-catalog/src/hub-keys.ts
+  - src/rooms/platform/server/hub.ts
   - src/rooms/improvement/server/rpc.ts
   - src/rooms/improvement/ui/improvement-page.tsx
   - src/rooms/improvement/ui/use-improvement.ts
@@ -56,7 +56,7 @@ TL;DR: every control of the loop that learns from failures (the night loop, the 
 
 ## Where it is
 
-The screen is a system page next to «Waiting for you» ({at("src/rooms/ui-shell/ui/project-nav.tsx", 'scope: "improvement"')}), mounted by the page shell ({at("src/rooms/ui-shell/ui/page.tsx", "<ImprovementScreen")}). It reads once with `improvement_view` ({at("src/rooms/improvement/server/rpc.ts", "improvement_view: async")}) and saves each field with `save_setting` on project id `*` ({at("src/rooms/improvement/ui/use-improvement.ts", "GLOBAL_SETTINGS_PROJECT_ID, key, value")}).
+The screen is a system page next to «Waiting for you» ({at("src/rooms/pages/project-nav.tsx", 'scope: "improvement"')}), mounted by the page shell ({at("src/rooms/pages/page.tsx", "<ImprovementScreen")}). It reads once with `improvement_view` ({at("src/rooms/improvement/server/rpc.ts", "improvement_view: async")}) and saves each field with `save_setting` on project id `*` ({at("src/rooms/improvement/ui/use-improvement.ts", "GLOBAL_SETTINGS_PROJECT_ID, key, value")}).
 
 Above the sections a status strip shows four numbers from the same read: the last and the next night (`03:00`, {at("src/rooms/improvement/server/rpc.ts", "export const NIGHT_HOUR")}), the size of the newest bench set, the policy exam progress (`N of 20` unseen owner decisions), and the count of what waits for the owner.
 
@@ -73,7 +73,7 @@ The policy is read-only because it is the judge of the night: neither the night 
 
 ## One mechanism, the old stores as the fallback
 
-A control is a row of `lane_pilot_project_settings` under project `*` (the global level), with the version of `lane_pilot_setting_generation`, validated by `validateSettingValue` ({at("src/rooms/settings/setting-validation.ts", "HUB_KEYS.has(key)")}). The keys are listed once ({at("src/rooms/improvement/keys.ts", "export const HUB_SPECS")}) with the field of the old config object each stands for.
+A control is a row of `lane_pilot_project_settings` under project `*` (the global level), with the version of `lane_pilot_setting_generation`, validated by `validateSettingValue` ({at("src/rooms/settings/setting-validation.ts", "HUB_KEYS.has(key)")}). The keys are listed once ({at("packages/settings-catalog/src/hub-keys.ts", "export const HUB_SPECS")}) with the field of the old config object each stands for.
 
 | Was | Now | Read | Written by |
 |---|---|---|---|
@@ -83,7 +83,7 @@ A control is a row of `lane_pilot_project_settings` under project `*` (the globa
 | per-project `harness:config:<id>` | `harness.adopt_by` (the default of every project) | {at("src/rooms/harness/server/harness.ts", "hubFields(db, \"harness\")")} | `harness configure`, the screen |
 | project settings, CLI only | `baseline.*`, `checks.require_red_on_base`, `regress.*` in the catalog | {at("src/rooms/baseline/logic.ts", "parseBaselineSettings")} | the screen (default), the project's «Work» tab (own value) |
 
-Rules: a field with a row reads the row; a field without one reads the old store, so nothing set before is lost; a write goes to the row only and leaves the old store alone ({at("src/rooms/wall/service.ts", "writeHubFields(db, \"wall\"")}); the CLI commands keep their syntax and their clamping (a value over the limit is stored as the limit). A write from the CLI moves the setting's version, so a page that read before sees the next save as a conflict and reloads ({at("src/rooms/improvement/hub.ts", "INSERT INTO lane_pilot_setting_generation")}). A project record of `harness.adopt_by` that was saved before keeps winning over the default.
+Rules: a field with a row reads the row; a field without one reads the old store, so nothing set before is lost; a write goes to the row only and leaves the old store alone ({at("src/rooms/wall/service.ts", "writeHubFields(db, \"wall\"")}); the CLI commands keep their syntax and their clamping (a value over the limit is stored as the limit). A write from the CLI moves the setting's version, so a page that read before sees the next save as a conflict and reloads ({at("src/rooms/platform/server/hub.ts", "INSERT INTO lane_pilot_setting_generation")}). A project record of `harness.adopt_by` that was saved before keeps winning over the default.
 
 ## The controls
 
@@ -109,18 +109,18 @@ for key, path, needle in [
     doc += f"| `{key}` | {cite(path, needle)} |\n"
 
 doc += f"""
-Ranges are the readers' own: `{at("src/rooms/improvement/keys.ts", "const PROJECT_RANGES")}` repeats what `parseBaselineSettings` and `parseRegressSettings` clamp to, so a value the reader would silently change is refused when it is saved. `memory.note_budget` was saved unchecked and the memory reader threw on a value outside 1 to 1 000 000; it is now checked.
+Ranges are the readers' own: `{at("packages/settings-catalog/src/hub-keys.ts", "const PROJECT_RANGES")}` repeats what `parseBaselineSettings` and `parseRegressSettings` clamp to, so a value the reader would silently change is refused when it is saved. `memory.note_budget` was saved unchecked and the memory reader threw on a value outside 1 to 1 000 000; it is now checked.
 
 ## Tidy-up of the existing settings
 
 - The generator `scripts/generate-ui-catalog.py` had drifted from the checked-in catalog (four rows and three defaults edited by hand in the generated files). `scripts/ui-catalog-hand.json` now reproduces the checked-in catalog byte for byte, and every change below went through it. `LP_UI_CATALOG_PROJECT` and `LP_UI_CATALOG_UPSTREAM` point it at the main checkout when it runs from a linked worktree.
 - Raw keys as labels (`plan_critique.agent`, `night_review.agent`, `specialist.agent`, `memory.agent`, `docs.agent`, `onboarding.agent`) now read «Роль агента …». «Раздел памяти» is «Память одного бота», «Порог N строк выдержек» is «Минимум строк для сжатия выдержек», «Провайдер окружения для worktree» is «Откуда берётся рабочая копия»; the code critic by risk is «Критика кода по риску» like its group; the workflow rows say «граф», not «воркфлоу» or «цепочка», like the tab; the Insights presets carry the stage names.
 - The extra rows of «Work» had one heading «Run operations» for unrelated things. They are now «Лимиты запуска» (`run.max_*`), «Интеграционные ворота» (`integration.gate_*`), «Служебные файлы проекта» (`bookkeeping.paths`) and «Jev» (`jev.*`).
-- In the service tab the flags of the old command-line runner (run operations, install folders) sit in one fold, «Только для CLI-прогонов Lane Stack» ({at("src/rooms/runs/ui/runs-service.tsx", "cli-only-settings")}).
-- An empty number is shown empty: «Попыток на запуск» with no limit showed `0`, which reads as zero attempts ({at("src/rooms/settings/ui/setting-controls.tsx", "An empty value")}).
+- In the service tab the flags of the old command-line runner (run operations, install folders) sit in one fold, «Только для CLI-прогонов Lane Stack» ({at("src/rooms/pages/service-segment.tsx", "cli-only-settings")}).
+- An empty number is shown empty: «Попыток на запуск» with no limit showed `0`, which reads as zero attempts ({at("src/rooms/ui-shell/ui/setting-controls.tsx", "An empty value")}).
 - Long enum labels that cut off in a select («Выключено (только если ревью кода включено или качество full)») are short.
 - The baseline and re-check settings, which could be set only by a hand-written `save_setting`, are in the catalog, on the Self-improvement page and in the project's «Work» tab.
 
-Found, not changed: `ops.max_tasks` («Задач в сессии») is read only by the command-line flags of the old runner ({at("src/rooms/core/server/core.ts", '"ops.max_tasks": stored')}), so native writers never see it; its label now says so. `ui.language` is a stored row that the runtime excludes ({at("src/rooms/core/server/core.ts", 'if (key === "ui.language") return false;')}) and the language switch of the Overview does the work: the row looks orphaned. The owner push has a second editor on the «Waiting for you» board; it writes through the same RPC, so the two cannot disagree.
+Found, not changed: `ops.max_tasks` («Задач в сессии») is read only by the command-line flags of the old runner ({at("src/rooms/ui-shell/ui/setting-copy.ts", '"ops.max_tasks": {')}), so native writers never see it; its label now says so. `ui.language` is a stored row that the runtime excludes ({at("src/rooms/core/server/core.ts", 'if (key === "ui.language") return false;')}) and the language switch of the Overview does the work: the row looks orphaned. The owner push has a second editor on the «Waiting for you» board; it writes through the same RPC, so the two cannot disagree.
 """
 (ROOT / "docs/self-improvement-settings.md").write_text(doc)

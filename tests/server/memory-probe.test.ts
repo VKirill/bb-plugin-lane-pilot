@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
+import { acceptRuleProposal, adoptRuleProposal, deleteMemoryRecord, rejectRuleProposal, retireAdoptedRule } from "../../src/rooms/self-repair/server";
 import { openDatabase, saveProjectSetting } from "../../src/rooms/plugin-db";
 import { MEMORY_PATHS } from "../../src/rooms/memory";
 import { createMemoryProbe, judge } from "../../src/rooms/memory-probe/server/memory-probe";
@@ -9,7 +10,6 @@ import { memoryUnanswered } from "../../src/rooms/learning/unanswered";
 import { stickyTurnPromptWithRules } from "../../src/rooms/writer/server/writer-knowledge";
 import { taskV2Schema } from "../../src/rooms/contracts";
 import { upsertLessonProposal } from "@lane-pilot/run-insights";
-import { adoptRuleProposal } from "../../src/rooms/self-repair/server";
 import { parseMemorySettings } from "../../src/rooms/memory";
 import type { ServerCore } from "../../src/rooms/contracts/server";
 import type { Services } from "../../server";
@@ -19,7 +19,7 @@ function setup() {
   const db = openDatabase(bb);
   const host = { call: async () => { throw new Error("no host in this test"); } };
   const ctx = { bb, db, host } as unknown as ServerCore;
-  const services = { docsPlaces: async () => [] } as unknown as Services;
+  const services = { docsPlaces: async () => [], insights: { acceptRuleProposal, adoptRuleProposal, deleteMemoryRecord, rejectRuleProposal, retireAdoptedRule } } as unknown as Services;
   return { db, host, ctx, services, probe: createMemoryProbe(ctx, services) };
 }
 

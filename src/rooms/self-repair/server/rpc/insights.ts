@@ -5,7 +5,8 @@ import { rpcContract } from "../../../contracts";
 import { loadProjectSettings } from "../../../storage";
 import { parseDocsSettings } from "../../../docs";
 import { configuredSetting, type ServerCore } from "../../../contracts/server";
-import { acceptRuleProposal, deleteMemoryRecord, memorySettingsFor, rejectRuleProposal, revokeRule } from "../insights";
+import { acceptRuleProposal, deleteMemoryRecord, rejectRuleProposal, revokeRule } from "../insights";
+import { memorySettingsFor } from "../../../contracts/server";
 import type { RuleScanApi } from "../rule-scan";
 
 import type { DocsNightlyApi } from "../../../docs/server/docs-nightly";
@@ -50,7 +51,7 @@ export function insightsRpc(ctx: ServerCore, services: InsightsServices) {
       const sections = await ctx.listProjectSections(projectId);
       let memory = { enabled: false, inject: false };
       try {
-        const settings = memorySettingsFor(db, projectId);
+        const settings = memorySettingsFor(loadProjectSettings(db, projectId));
         memory = { enabled: settings.enabled, inject: settings.inject };
       } catch { /* invalid memory settings: rules are listed, injection is reported off */ }
       const rows = listRuleProposals(db, projectId);

@@ -6,7 +6,7 @@ import { storeMemoryRecords } from "@lane-pilot/memory-core";
 import { closeOwnerItem, closeOwnerItemsByPrefix, postOwnerItem } from "../owner-waiting";
 import { answerPhaseWord, askPhaseWord } from "../lead";
 import { appendDesignJournalLine, critiqueProblems, noteDesignJournalWord, roleLine } from "../design-eval";
-import { roleLinesKey } from "../native-agent";
+import { roleLinesKey } from "../contracts/server";
 import type { PhaseReactions } from "../phase/server";
 
 /** The default bindings: the plugin's own rooms. Moved to the composition root, the phase room imports none of them. */

@@ -1,4 +1,5 @@
-import { isCustomAgentId, parseOwnedAgents } from "../../native-agent";
+import { isCustomAgentId } from "../../contracts/server";
+import { parseOwnedAgents } from "../../native-agent";
 import { redactKnown, orMiss, isNotFound } from "@lane-pilot/kit";
 import { createSecrets } from "../../secrets/server";
 import { bindDrainTarget, createDeployDrain } from "../../stability/server";

@@ -22,7 +22,7 @@ import { harnessRpc } from "../../harness/server";
 import { deferralRpc } from "../../deferral/server";
 import { cockpitRpc } from "../../cockpit";
 import { recordTaskWord } from "../../tasks";
-import { answerTaskWord } from "../../lead";
+import type { TaskWordPort } from "../../contracts";
 import { taskFamily } from "../../runs";
 import { rollbackRpc } from "../../rollback/server";
 import { acceptanceRpc } from "../../acceptance/server";
@@ -72,6 +72,7 @@ import type { StageReturnApi } from "../../stage-return/server/stage-return";
 import type { WallApi } from "../../wall/service";
 import type { WorldApi } from "../../world/server/service";
 
+import type { InsightsApi, LaneProjectNotice, ScheduleAgentApi } from "../../contracts";
 import type { DocsNightlyApi } from "../../docs/server/docs-nightly";
 import type { MemoryProbeApi } from "../../memory-probe/server/memory-probe";
 import type { MemoryConflictsApi } from "../../memory/server/memory-conflicts";
@@ -112,6 +113,10 @@ interface Services {
   resumeOrphans: ReconcileApi["resumeOrphans"];
   rollback: RollbackApi;
   ruleScan: RuleScanApi;
+  taskWords: TaskWordPort;
+  insights: InsightsApi;
+  laneProject: LaneProjectNotice;
+  scheduleAgents: ScheduleAgentApi;
   runGoal: RunGoalApi;
   schedules: ScheduleService;
   selectionCatalog: WriterHostApi["selectionCatalog"];
@@ -176,7 +181,7 @@ export function registerRpc(ctx: ServerCore, services: Services, contract: typeo
     actions_recent: async ({ limit }: { limit?: number }) => services.front.actions(limit),
     task_word: async ({ runId, taskId, decision, text }: { runId: string; taskId: string; decision: "yes" | "no"; text: string }) => {
       await recordTaskWord(ctx.bb.storage.kv as never, runId, taskFamily(taskId), decision, text);
-      answerTaskWord(ctx.db, runId, taskFamily(taskId), decision, text, "screen");
+      services.taskWords.answer(ctx.db, runId, taskFamily(taskId), decision, text, "screen");
       return { ok: true as const };
     },
     learning_decide: async ({ id, action }: { id: string; action: "accept" | "reject" | "drop" }) => {

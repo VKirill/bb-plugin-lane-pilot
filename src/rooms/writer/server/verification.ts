@@ -12,6 +12,7 @@ import type { TaskV2 } from "../../contracts";
 import type { ServerCore } from "../../contracts/server";
 
 import type { BaselineApi } from "../../baseline/server/baseline";
+import type { LeadRoadApi } from "../../contracts";
 import type { WriterDispatchApi } from "./dispatch";
 import type { WriterVerifyApi } from "./verify";
 
@@ -20,6 +21,7 @@ interface Services {
   baseline: BaselineApi;
   dispatchWriter: WriterDispatchApi["dispatchWriter"];
   runVerification: WriterVerifyApi["runVerification"];
+  leadRoad: LeadRoadApi;
 }
 
 /**

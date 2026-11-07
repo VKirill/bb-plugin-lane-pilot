@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { HUB_KEYS } from "../src/rooms/improvement";
+import { HUB_KEYS } from "@lane-pilot/settings-catalog";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";

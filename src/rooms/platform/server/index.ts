@@ -22,3 +22,4 @@ export * from "./sticky-window";
 export * from "./live-folder";
 export * from "./skill-tree";
 export type * from "./ports";
+export * from "./hub";

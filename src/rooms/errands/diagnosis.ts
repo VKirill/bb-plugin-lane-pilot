@@ -1,7 +1,8 @@
 import { isOffered, type StoredWorkflow } from "@lane-pilot/workflow-engine";
 import type { LanePilotDatabase } from "../storage";
-import { ERRAND_EPISODE_TABLE } from "./episodes";
-import { errandOutcome, errandStem, errandTitle, kindOf, routeConfidence, type ErrandOutcome, type ErrandVerifiedOutcome } from "./logic";
+import { ERRAND_EPISODE_TABLE } from "../contracts/server";
+import { errandStem, errandTitle, kindOf, routeConfidence } from "./logic";
+import { errandOutcome, type ErrandOutcome, type ErrandVerifiedOutcome } from "../contracts/server";
 
 /**
  * The errand diagnosis (stage-1 stream F, plan R7): what the errands of a period came to, what they cost, where they

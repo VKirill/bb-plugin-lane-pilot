@@ -2,7 +2,7 @@ import { listRuleProposals, logRulesShown, scopeApplies, RULE_RELEVANCE_THRESHOL
 import type { Jev } from "@lane-pilot/jev";
 import { defineJudgment, noul, noulOf } from "@lane-pilot/jev";
 import type { Db } from "./store";
-import { ruleBudget, ruleTokens } from "./rule-budget";
+import { ruleBudget, ruleTokens } from "../contracts/rule-budget";
 
 /**
  * The rules for the PM reach the PM (T4). The map of 2026-10-08 found that rules the owner's corrections produced (`audience` pm or

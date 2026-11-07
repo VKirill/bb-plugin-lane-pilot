@@ -9,7 +9,7 @@ import { outputGuard } from "@lane-pilot/jev/judgments/output-guard";
 import { wallFilterJudgment } from "../wall";
 import { listJudgments, type Judgment } from "@lane-pilot/jev";
 import { jevSettingProblem } from "@lane-pilot/jev";
-import { HUB_KEYS, PROJECT_DEFAULT_KEYS, hubSettingProblem } from "../improvement";
+import { HUB_KEYS, PROJECT_DEFAULT_KEYS, hubSettingProblem } from "@lane-pilot/settings-catalog";
 import { UI_CATALOG, WRITER_EFFORT_CHOICES_BY_PROVIDER } from "@lane-pilot/settings-catalog";
 
 import type { SettingValidationError } from "../setting-validation";

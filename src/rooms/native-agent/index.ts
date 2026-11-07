@@ -1,16 +1,17 @@
 // Public API of native-agent: what other rooms import. Everything else in this room is private.
 // Add a name here to make it public; scripts/refactor/barrels.ts wrote the first version from the existing imports.
-export { EMPLOYEES, EMPLOYEE_IDS, RESULT_EXISTS, coreSkillsOf, employeeView, installEmployeeSpecialists, isEmployeeSpecialist, resultExists, stockEmployee } from "./employee-manifest";
-export type { EmployeeManifest, MachineAffinity } from "./employee-manifest";
+export { EMPLOYEE_IDS, coreSkillsOf, employeeView, installEmployeeSpecialists, isEmployeeSpecialist, stockEmployee } from "./employee-manifest";
+export type { MachineAffinity } from "./employee-manifest";
+export type { EmployeeManifest } from "../contracts/server";
 export { SKILL_CATALOG_BLOCK, SKILL_CATALOG_LINE, SKILL_CATALOG_LIMIT } from "./skill-catalog";
 export { affinityHostId, chooseEmployeePlace, placeEmployeeOn } from "./employee-place";
-export { employeeRoleLines, recordRoleLine, roleLinesKey, withRoleLines } from "./employee-lessons";
+export { withRoleLines } from "./employee-lessons";
 export type { EmployeePlace, ListedHost } from "./employee-place";
 export { agentPickerLabel } from "./agent-display";
 export { applyResourceMode, collectAgentInventory } from "./agent-inventory";
-export { MAIN_AGENT_ID, MAIN_AGENT_PROFILE_IDS, UNLISTED_STOCK_IDS, agentKind, isStockProfileId, compileEffectiveMainAgent, compileMainAgentProfile, detectCompiledMainAgentCapability, parseOwnedAgents } from "./agent-profile";
+export { UNLISTED_STOCK_IDS, agentKind, compileEffectiveMainAgent, compileMainAgentProfile, detectCompiledMainAgentCapability, parseOwnedAgents } from "./agent-profile";
 export type { AgentKind, CustomAgentMeta } from "./agent-profile";
-export { agentListItem, createAgentInputSchema, isCustomAgentId, isReservedAgentId, parseAgentFile, pickableAgent, updateAgentInputSchema } from "./custom-agent";
+export { agentListItem, createAgentInputSchema, parseAgentFile, pickableAgent, updateAgentInputSchema } from "./custom-agent";
 export type { AgentFailure, AgentListItem } from "./custom-agent";
 export { prepareBbShim } from "./bb-shim";
 export { ACCESS_GROUPS, ACCESS_SWITCHES, CORE_PROVIDER_GROUPS, HELPER_ROLES, MANDATORY_BB_PLUGINS, MANDATORY_MCP_SERVERS, ROLE_PROFILES, detectRequiredSessionPolicyCapability, effectiveGroup, effectiveSwitch, parseHelperContextSettings, parseRoleAccess, roleAccessKey } from "./helper-context";

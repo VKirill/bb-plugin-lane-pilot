@@ -1,5 +1,5 @@
-import type Database from "better-sqlite3";
 import { randomBytes } from "node:crypto";
+import type { RoadDb, RoadEvidence, RoadKind, RoadRow, RoadSource, RoadState } from "../../contracts/lead-road";
 
 /**
  * The road tree of the lead («Штурман», .agents/plans/2026-11-01-lead-agent-roadmap.md §2.1, §3.2): directions (where we are going,
@@ -7,18 +7,6 @@ import { randomBytes } from "node:crypto";
  * deleted — the reason stays in `why` and the tree can show it as history — so the roadmap remembers why a road was abandoned and
  * the lead never proposes it twice. State machine: open → proposed → accepted | later | rejected; done is set when a branch landed.
  */
-export type RoadDb = Pick<Database.Database, "prepare" | "transaction">;
-export type RoadKind = "direction" | "option";
-export type RoadSource = "owner" | "lead" | "pm" | "wall" | "bench";
-export type RoadState = "open" | "proposed" | "accepted" | "later" | "rejected" | "done";
-export type RoadEvidence = { kind: "run" | "task" | "file" | "note" | "url" | "metric"; ref: string; label?: string };
-export type RoadRow = {
-  id: string; parent_id: string | null; project_id: string | null; title: string; kind: RoadKind; source: RoadSource; why: string;
-  evidence_json: string; cost_estimate: string | null; class: string | null; state: RoadState;
-  proposed_at: number | null; decided_at: number | null; decision_id: string | null; created_at: number; updated_at: number;
-  /** What the branch carries to act with (a schedule proposal's schedule); JSON or null. */
-  payload_json: string | null;
-};
 export type RoadNode = { row: RoadRow; evidence: RoadEvidence[]; children: RoadNode[] };
 
 const MARKS: Record<RoadState, string> = { open: "·", proposed: "?", accepted: "✓", later: "…", rejected: "✗", done: "■" };

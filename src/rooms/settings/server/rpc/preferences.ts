@@ -2,12 +2,14 @@ import { applyResourceMode, collectAgentInventory } from "../../../native-agent"
 import { compileEffectiveMainAgent, compileMainAgentProfile } from "../../../native-agent";
 import { detectRequiredSessionPolicyCapability } from "../../../native-agent";
 import { LP_AGENT_OVERRIDES_KEY, LP_DEFAULTS_KEY, packStoredDefaults, parseDefaultsRevision, parseLanePilotDefaults } from "@lane-pilot/settings-catalog";
-import { isCustomAgentId, isReservedAgentId, isStockProfileId, userVisibleProjects } from "../../../native-agent";
+import { isCustomAgentId, isReservedAgentId, isStockProfileId } from "../../../contracts/server";
+import { userVisibleProjects } from "../../../native-agent";
 import { agentRegistry } from "../../../native-agent/server";
 import { mapListedQaHosts } from "../../../platform/server";
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import { rpcContract } from "../../../contracts";
 import type { ServerCore } from "../../../contracts/server";
+import type { ScheduleAgentApi } from "../../../contracts";
 
 import { OWNER_LOCALE_PREFERENCE_KEY, recordResolvedLocale } from "../../../relay/server";
 
@@ -18,11 +20,12 @@ const LAST_PROJECT_KEY = "preferences:lastProjectId";
 
 interface Services {
   listedAgentProfiles: WriterHostApi["listedAgentProfiles"];
+  scheduleAgents: ScheduleAgentApi;
 }
 
 export function preferencesRpc(ctx: ServerCore, services: Services) {
   const { bb, host, listProjectSections, ownedAgents, serializedKv } = ctx;
-  const registry = agentRegistry(ctx);
+  const registry = agentRegistry(ctx, services.scheduleAgents);
   return {
     get_preferences: async ({ suggestedLocale }) => {
       const storedLocale = await bb.storage.kv.get<string>(OWNER_LOCALE_PREFERENCE_KEY);

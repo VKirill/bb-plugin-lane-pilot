@@ -47,3 +47,6 @@ export const askPhaseWord = (db: Db, phase: WordPhase, turn: string, wave: numbe
 export const answerPhaseWord = (db: Db, phaseId: string, turn: string, wave: number | undefined, decision: "yes" | "no", text: string, by: string, now?: number) => {
   try { answerDecision(db, phaseDecisionId(phaseId, turn, wave), { option: decision, text }, by, now); void refineVerdict(db, phaseDecisionId(phaseId, turn, wave), undefined, now); } catch { /* journal only */ }
 };
+
+/** The task-word surface as one object, for the services bag. */
+export const taskWordPort = { ask: askTaskWord, answer: answerTaskWord } as const;

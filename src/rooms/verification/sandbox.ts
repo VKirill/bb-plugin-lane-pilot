@@ -19,7 +19,7 @@ export type SandboxedCommandResult = {
 };
 
 const SANDBOX_EXEC = "/usr/bin/sandbox-exec";
-export const SANDBOX_OWN_ENV=new Set(["PATH","HOME","TMPDIR","TMP","TEMP","LANG","LC_ALL"]);
+import { SANDBOX_OWN_ENV } from "../contracts";
 /**
  * What a check keeps of its output: the beginning and the end of each stream. The command is never stopped for printing
  * more: a 1 MB cap killed SelfyStudio's green API vitest (2.5 MB of request logs) and read the kill as exit 1, so every

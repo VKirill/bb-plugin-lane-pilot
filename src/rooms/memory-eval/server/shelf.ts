@@ -5,7 +5,7 @@ import {
 } from "@lane-pilot/memory-core";
 import { pathAnchors } from "../../memory/server";
 import { candidateQuestions, classify, queryOf, type Classified } from "./questions";
-import type { EvalData, RawNote } from "./source";
+import type { EvalData, RawNote } from "../../contracts/memory-eval";
 
 /**
  * The shelf replay (SMA block 4 «Next» and the P0-3 finding): notes live one to two days because about 2.5 are written per accepted task

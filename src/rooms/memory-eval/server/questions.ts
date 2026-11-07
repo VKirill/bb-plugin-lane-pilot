@@ -1,4 +1,4 @@
-import type { RawNote, RawQuestion } from "./source";
+import type { RawNote, RawQuestion } from "../../contracts/memory-eval";
 
 /**
  * The questions of the evaluation and their gold answers, made from what really happened.

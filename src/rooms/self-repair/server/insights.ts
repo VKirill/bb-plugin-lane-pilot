@@ -6,29 +6,19 @@ import {
   upsertLessonProposal, ruleTrialStats,
 } from "@lane-pilot/run-insights";
 import { loadProjectSettings, type LanePilotDatabase } from "../../storage";
-import { configuredSetting } from "../../contracts/server";
+import { configuredSetting, memorySettingsFor } from "../../contracts/server";
 import type { InsightsDeps } from "./deps";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type { LpRealtimeKind } from "@lane-pilot/ui-kit/realtime-channel";
-import { poolHasRoom, poolTokens, ruleBudget } from "../../learning/rule-budget";
+import { poolHasRoom, poolTokens, ruleBudget } from "../../contracts/rule-budget";
 import { sha256Hex } from "@lane-pilot/kit";
 import { authorize } from "../../policy";
 
 export const INSIGHTS_TOOLS = ["lane_pilot_routing_stats", "lane_pilot_lessons_sweep", "lane_pilot_rule_propose", "lane_pilot_lesson", "lane_pilot_memory_golden"] as const;
 
-const MEMORY_KEYS = [
-  "memory.enabled", "memory.maintain", "memory.inject", "memory.audience", "memory.personal_bot", "memory.search_engine",
-  "memory.core_budget", "memory.note_budget", "memory.index_budget", "memory.context_budget",
-];
-
 const LESSONS_SINCE_KEY = (projectId: string) => `lessons:since:${projectId}`;
 /** The first sweep of a project looks this far back. */
 const FIRST_SWEEP_WINDOW_MS = 30 * 24 * 3_600_000;
-
-export function memorySettingsFor(db: LanePilotDatabase, projectId: string): MemorySettings {
-  const settings = loadProjectSettings(db, projectId);
-  return parseMemorySettings(Object.fromEntries(MEMORY_KEYS.map((key) => [key, configuredSetting(settings, key)])));
-}
 
 export type LessonsSweepResult = {
   projectId: string; state: "counted" | "nothing_new" | "skipped"; reason?: string; sources: number; candidates: number; stored: number; since: number; until: number;
@@ -51,7 +41,7 @@ export function refreshRuleProposals(db: LanePilotDatabase, projectId: string, n
 export function acceptRuleProposal(db: LanePilotDatabase, projectId: string, id: string, rule: string, by: "owner" | "auto" = "owner", now = Date.now()): RuleProposal {
   const proposal = getRuleProposal(db, projectId, id);
   if (!proposal || proposal.state !== "proposed") throw new Error("rule proposal is not waiting for a decision");
-  const settings = memorySettingsFor(db, projectId);
+  const settings = memorySettingsFor(loadProjectSettings(db, projectId));
   const content = rule.trim();
   const memoryId = memoryRecordId(projectId, "core", content, settings.personalBot, "subagent", proposal.scope ?? []);
   storeMemoryRecords(db, {
@@ -183,7 +173,7 @@ export function retireAdoptedRule(db: LanePilotDatabase, projectId: string, id: 
 export function rewordAdoptedRule(db: LanePilotDatabase, projectId: string, id: string, rule: string, detail: string, now = Date.now()): boolean {
   const proposal = getRuleProposal(db, projectId, id);
   if (!proposal || proposal.state !== "accepted") return false;
-  const settings = memorySettingsFor(db, projectId);
+  const settings = memorySettingsFor(loadProjectSettings(db, projectId));
   const content = rule.replace(/\s+/g, " ").trim().slice(0, 600);
   const memoryId = memoryRecordId(projectId, "core", content, settings.personalBot, "subagent", proposal.scope ?? []);
   try {
@@ -252,7 +242,7 @@ export async function sweepLessons(ctx: InsightContext, projectId: string, now =
   const base = { projectId, since, until: now, sources: 0, candidates: 0, stored: 0 };
   let settings: MemorySettings;
   try {
-    settings = memorySettingsFor(db, projectId);
+    settings = memorySettingsFor(loadProjectSettings(db, projectId));
   } catch (cause) {
     return { ...base, state: "skipped", reason: cause instanceof Error ? cause.message : String(cause) };
   }
@@ -343,7 +333,7 @@ export function mountInsights(ctx: InsightContext, deps: InsightsDeps): void {
     parameters: z.object({ runId: z.string().min(1), cases: z.string().min(1).max(100_000), limit: z.number().int().min(1).max(100).default(20) }).strict(),
     execute: async (params, context) => {
       requirePmRun(db, { runId: params.runId, threadId: context.threadId, projectId: context.projectId });
-      const settings = memorySettingsFor(db, context.projectId);
+      const settings = memorySettingsFor(loadProjectSettings(db, context.projectId));
       const cases = parseGoldenCases(params.cases);
       const report = runGoldenEval(cases, (query) => searchMemoryRecords(db, context.projectId, query, params.limit, settings.searchEngine, settings.audience, settings.personalBot).map((record) => record.id));
       return JSON.stringify(report, null, 2);

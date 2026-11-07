@@ -1,5 +1,5 @@
-import { MAIN_AGENT_ID, employeeRoleLines, isCustomAgentId } from "../../native-agent";
-import { EMPLOYEES } from "../../native-agent";
+import { MAIN_AGENT_ID, employeeRoleLines, isCustomAgentId } from "../../contracts/server";
+import { EMPLOYEES } from "../../contracts/server";
 import { bestEffort } from "@lane-pilot/kit";
 import { jev } from "@lane-pilot/jev";
 import { judgeEmployeeRemark, recordEmployeeLesson } from "./employee-lessons";

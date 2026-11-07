@@ -1,14 +1,13 @@
 import {
   createAgentInputSchema,
-  isCustomAgentId,
-  isReservedAgentId,
   newCustomAgentRow,
   updatedCustomAgentRow,
   updateAgentInputSchema,
   type AgentFailure,
 } from "../custom-agent";
+import { isCustomAgentId, isReservedAgentId } from "../../contracts/server";
 import { clearSettingValue } from "../../storage";
-import { createScheduleStore, taskOf } from "../../schedule";
+import type { ScheduleAgentApi } from "../../contracts";
 import type { ServerCore } from "../../contracts/server";
 
 type Registry = Pick<ServerCore, "db" | "ownedAgents" | "saveOwnedAgents" | "serializedKv">;
@@ -18,7 +17,7 @@ export type RegistryResult = { ok: true; id: string } | { ok: false; id: string;
  * Create, change and delete the owner's agents (`bb lane-pilot agents …`, the settings screen). Bundled agents are edited with
  * `save_agent_profile` and cannot be deleted; an owner's agent never takes a bundled id.
  */
-export function agentRegistry(ctx: Registry) {
+export function agentRegistry(ctx: Registry, scheduleAgents: ScheduleAgentApi) {
   const { db, ownedAgents, saveOwnedAgents, serializedKv } = ctx;
   const idOf = (input: unknown) => (input && typeof input === "object" && typeof (input as { id?: unknown }).id === "string" ? (input as { id: string }).id : "");
 
@@ -65,7 +64,9 @@ export function agentRegistry(ctx: Registry) {
       const owned = await ownedAgents();
       if (!owned[id]) return { ok: false as const, id, error: "agent_not_found" as const };
       // A schedule that runs this agent would fail at its next run; the owner changes or removes it first.
-      const schedules = createScheduleStore(db).list({ states: ["active"] }).filter((row) => row.kind === "agent" && (taskOf(row) as { agentId?: string }).agentId === id);
+      const schedules = scheduleAgents
+        .activeAgentSchedules(db)
+        .filter((row) => row.task.agentId === id);
       if (schedules.length) return { ok: false as const, id, error: "agent_in_use" as const, detail: `active schedules run this agent: ${schedules.map((row) => `«${row.name}» (${row.id})`).join(", ")}; pause or delete them, or give them another agent, then delete it` };
       delete owned[id];
       await saveOwnedAgents(owned);

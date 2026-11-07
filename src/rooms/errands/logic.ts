@@ -1,3 +1,4 @@
+import { errandOutcome, type ErrandOutcome, type ErrandVerifiedOutcome } from "../contracts/server";
 import { resolveRoleModel } from "@lane-pilot/models";
 import { ERRAND_KINDS, ERRAND_KIND_ID, errandRoleFor, type ErrandKind } from "../schedule";
 
@@ -10,9 +11,7 @@ import { ERRAND_KINDS, ERRAND_KIND_ID, errandRoleFor, type ErrandKind } from "..
  */
 type Db = { prepare(sql: string): { all(...params: unknown[]): unknown[]; get(...params: unknown[]): unknown } };
 
-export type ErrandOutcome = "running" | "done" | "blocked" | "failed" | "canceled";
 /** What the code saw of a done (errandCheck): `unknown` for a run before CHECK lines, and for one that did not end in a report. */
-export type ErrandVerifiedOutcome = "done_checked" | "done_unchecked" | "blocked" | "unknown";
 export type ErrandKindOrNone = ErrandKind | "none";
 export const ERRAND_KINDS_WITH_NONE: readonly ErrandKindOrNone[] = [...ERRAND_KINDS, "none"];
 export type ErrandSource = { type: "schedule"; name: string } | { type: "pm"; threadId: string | null } | { type: "other" };
@@ -28,18 +27,6 @@ export type KindSummary = {
 const DAY_MS = 86_400_000;
 const parse = <T,>(text: string | null | undefined, fallback: T): T => { try { return text ? (JSON.parse(text) as T) : fallback; } catch { return fallback; } };
 
-/** What an errand run came to, in the owner's five words; a helper the owner stopped is «canceled», not a failure (schedule-service.ts says the same). */
-export function errandOutcome(status: string, output: { state?: unknown; reason?: unknown; verified?: unknown } | null, reason: string | null): { outcome: ErrandOutcome; reason: string; verified: ErrandVerifiedOutcome } {
-  const verified: ErrandVerifiedOutcome = status === "succeeded" && (output?.verified === "done_checked" || output?.verified === "done_unchecked" || output?.verified === "blocked") ? output.verified : "unknown";
-  if (status === "running" || status === "waiting") return { outcome: "running", reason: "", verified };
-  const why = typeof output?.reason === "string" && output.reason ? output.reason : reason ?? "";
-  if (status === "canceled") return { outcome: "canceled", reason: why, verified };
-  if (status === "succeeded") {
-    if (output?.state === "done") return { outcome: "done", reason: "", verified };
-    return /cancel/iu.test(why) ? { outcome: "canceled", reason: why, verified } : { outcome: "blocked", reason: why, verified };
-  }
-  return { outcome: "failed", reason: why, verified };
-}
 
 /** The errand's name on the page: the title it was given, else the first line of the brief after a schedule's standing preamble. */
 export function errandTitle(inputs: { title?: unknown; task?: unknown }): string {

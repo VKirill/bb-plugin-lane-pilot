@@ -44,7 +44,7 @@ export function parseBaselineSettings(values: Record<string, unknown>): Baseline
 // ---- red before green: a check that is green on the base proves nothing about the work ----
 
 /** Kinds of work that add no behaviour to test for (a refactor keeps the checks green, a docs or research task has nothing to run red). */
-export const NO_RED_KINDS: readonly string[] = ["refactor", "docs", "research", "check"];
+import { NO_RED_KINDS } from "../contracts";
 
 const RISK_RANK: Record<string, number> = { low: 0, medium: 1, high: 2, critical: 3 };
 

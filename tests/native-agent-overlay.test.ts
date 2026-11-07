@@ -2,7 +2,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it } from "vitest";
-import bundledAgents from "../src/rooms/native-agent/bundled-agents.json";
+import bundledAgents from "../src/rooms/contracts/bundled-agents.json";
 import { compileMainAgentProfile } from "../src/rooms/native-agent/agent-profile";
 import {
   splitClaudeToolList,

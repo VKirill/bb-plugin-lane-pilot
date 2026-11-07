@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { acceptRuleProposal, adoptRuleProposal, deleteMemoryRecord, rejectRuleProposal, retireAdoptedRule } from "../../src/rooms/self-repair/server";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { openDatabase } from "../../src/rooms/plugin-db";
 import { LESSON_PROPOSALS_MAX, listRuleProposals, upsertLessonProposal } from "@lane-pilot/run-insights";
@@ -9,7 +10,7 @@ import type { Services } from "../../server";
 function setup() {
   const { bb } = createFakePluginHost({ pluginId:"lane-pilot", sdk:{ projects:{ list:async () => [{ id:"P" }, { id:"Q" }] } } as never });
   const db = openDatabase(bb);
-  const services = { docsPlaces: async (projectId:string) => projectId === "P"
+  const services = { insights: { acceptRuleProposal, adoptRuleProposal, deleteMemoryRecord, rejectRuleProposal, retireAdoptedRule }, docsPlaces: async (projectId:string) => projectId === "P"
     ? [{ hostId:"ovh", path:"/home/u/apps/selfy", scopes:[] }, { hostId:"ovh", path:"/home/u/apps/selfy/apps/bot", scopes:["section:bot"] }]
     : [{ hostId:"mini", path:"/Users/k/Documents/BB", scopes:[] }] } as unknown as Services;
   return { db, rpc:sessionMemoryRpc({ bb, db } as unknown as ServerCore, services) };
