@@ -19,7 +19,7 @@ export const HOST = "host-1";
  * A real repository, real worktrees, a real `git bisect` and real shell checks stand in for the project host; only the host-call transport
  * is a function call. The runner is the checks run as shell commands in the cwd they are given (the sandbox is not under test here).
  */
-export async function world(options: { settings?: Record<string, unknown> } = {}) {
+export async function world(options: { settings?: Record<string, unknown>; settingsError?: Error; settingsErrorFor?: (projectId: string) => Error | undefined } = {}) {
   const root = await mkdtemp(join(tmpdir(), "lp-baseline-"));
   const base = join(root, "project");
   git(root, "init", "-q", "-b", "main", base);
@@ -33,6 +33,8 @@ export async function world(options: { settings?: Record<string, unknown> } = {}
   for (const [key, value] of Object.entries(options.settings ?? {})) saveProjectSetting(db, "projA", key, value);
 
   const calls: string[] = [];
+  const logs: string[] = [];
+  const log = (line: string) => { logs.push(line); };
   const host = {
     call: async (method: string, input: Record<string, any>) => {
       calls.push(method);
@@ -56,9 +58,13 @@ export async function world(options: { settings?: Record<string, unknown> } = {}
   const ran: string[] = [];
   const runs: Array<{ cwd: string; command: string }> = [];
   const ctx = {
-    bb: { sdk: { threads: { send } }, storage: bb.storage }, db, host, log: () => undefined, isDisposed: () => false,
+    bb: { sdk: { threads: { send } }, storage: bb.storage }, db, host, log, isDisposed: () => false,
     configForRun: async (projectId: string) => ({ projectId, hostId: HOST, writerWorkspacePath: base }),
-    effectiveProjectSettings: async (projectId: string, scopes: readonly string[] = []) => ({ values: loadProjectSettings(db, projectId, scopes) }),
+    effectiveProjectSettings: async (projectId: string, scopes: readonly string[] = []) => {
+      if (options.settingsError) throw options.settingsError;
+      if (options.settingsErrorFor) throw options.settingsErrorFor(projectId);
+      return { values: loadProjectSettings(db, projectId, scopes) };
+    },
   };
   const services: any = {
     runWriterPool: { acquire: async () => () => undefined },
@@ -103,7 +109,7 @@ export async function world(options: { settings?: Record<string, unknown> } = {}
 
   const worktrees = () => git(base, "worktree", "list").trim().split("\n").length;
   return {
-    root, base, db, bb, calls, send, ran, runs, services: services as { baseline: BaselineApi; regression: RegressionApi; rollback: RollbackApi }, acceptedTask, pendingTask, worktrees,
+    root, base, db, bb, calls, logs, send, ran, runs, services: services as { baseline: BaselineApi; regression: RegressionApi; rollback: RollbackApi }, acceptedTask, pendingTask, worktrees,
     dispose: async () => { await harness.lifecycle.dispose(); await rm(root, { recursive: true, force: true }); },
   };
 }

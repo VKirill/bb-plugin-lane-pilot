@@ -69,7 +69,7 @@ async function replay(incident: typeof fixture.incidents[number], state: "missin
       if (call.method === "gitDocsScope") return { hostId, status: "ready", isRepoRoot: true, hasDocs: true, changed: [], dirty: [], base: null, workspaces: [], localDate: "2026-11-02", localHour: 4, reason: null };
       if (call.method === "listDocsPages") return { hostId, pages: args.roots.includes(".agents/decisions") ? [] : [{ path: "docs/overview.md", modifiedAt: 1, sha256: "a".repeat(64), content: "base docs\n" }], oversized: [] };
       if (call.method === "docsFlows") return { hostId, flows: [], routes: 0, jev: "disabled", briefPath: "/tmp/flows.md" };
-      if (call.method === "gateRun") return { hostId, exitCode: 0, stdout: `${git(base, "rev-parse", "HEAD")}\n`, stderr: "" };
+      if (call.method === "gateRun") return { hostId, exitCode: 0, stdout: `${git(base, "rev-parse", "HEAD")}\n`, stderr: "", head: null };
       throw new Error(`unexpected host RPC ${call.method}`);
     },
   });

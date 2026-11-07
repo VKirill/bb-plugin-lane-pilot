@@ -3,7 +3,7 @@ import { existsSync, unlinkSync } from "node:fs";
 import { appendFile, chmod, cp, lstat, mkdir, readdir, readFile, realpath, rename, rm, rmdir, stat, symlink, unlink, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
-import { spawnAsync } from "@lane-pilot/kit";
+import { bestEffort, spawnAsync, isFsAbsent, lstatOrNull, orMiss, parseJsonOr, readTextOrNull, statOrNull } from "@lane-pilot/kit";
 import { isBookkeepingPath, isOwnershipNoise } from "@lane-pilot/settings-catalog";
 import { fileAllowedByOwns, fileBlockedByNeverTouch, matchOwnsPath } from "@lane-pilot/kit";
 import { satelliteOf } from "./ownership";
@@ -155,16 +155,16 @@ export async function git(cwd:string,args:string[]) {
 export async function orphanedWorktree(path:string):Promise<{top:string;adminDir:string}|null> {
   let top=path;
   for(;;) {
-    const entry=await lstat(join(top,".git")).catch(()=>null);
+    const entry=await lstatOrNull(join(top,".git"));
     if(entry) { if(!entry.isFile()) return null; break; }
     const up=dirname(top);
     if(up===top) return null;
     top=up;
   }
-  const adminDir=(await readFile(join(top,".git"),"utf8").catch(()=>"")).match(/^gitdir:\s*(.+)$/m)?.[1]?.trim();
+  const adminDir=(await readTextOrNull(join(top,".git")) ?? "").match(/^gitdir:\s*(.+)$/m)?.[1]?.trim();
   if(!adminDir) return null;
-  const back=(await readFile(join(adminDir,"gitdir"),"utf8").catch(()=>"")).trim();
-  const [mine,theirs]=await Promise.all([realpath(join(top,".git")).catch(()=>join(top,".git")),back?realpath(back).catch(()=>back):Promise.resolve("")]);
+  const back=(await readTextOrNull(join(adminDir,"gitdir")) ?? "").trim();
+  const [mine,theirs]=await Promise.all([orMiss(realpath(join(top,".git")),join(top,".git"),isFsAbsent),back?orMiss(realpath(back),back,isFsAbsent):Promise.resolve("")]);
   return mine===theirs?null:{top,adminDir};
 }
 
@@ -184,10 +184,10 @@ function laneWorktreeRootOf(path:string):string|null {
  * worktree's index through it, then removed: what is left is the rest of a removal that already started.
  */
 async function retireOrphanedWorktree(orphan:{top:string;adminDir:string}):Promise<boolean> {
-  await rename(join(orphan.top,".git"),join(orphan.top,".git.orphaned")).catch(()=>undefined);
+  await bestEffort(console.warn, `orphaned worktree rename ${orphan.top}`, rename(join(orphan.top,".git"),join(orphan.top,".git.orphaned")), undefined);
   if(!laneWorktreeRootOf(orphan.top)) return false;
   console.warn(`lane-pilot: removed the orphaned worktree folder ${orphan.top} (its .git named ${orphan.adminDir}, which git gave to another worktree)`);
-  await rm(orphan.top,{recursive:true,force:true}).catch(()=>undefined);
+  await bestEffort(console.warn, `orphaned worktree remove ${orphan.top}`, rm(orphan.top,{recursive:true,force:true}), undefined);
   await removeEmptyWorktreeParent(orphan.top);
   return true;
 }
@@ -196,13 +196,17 @@ async function retireOrphanedWorktree(orphan:{top:string;adminDir:string}):Promi
 async function retireCollidingWorktrees(targetPath:string):Promise<void> {
   const root=laneWorktreeRootOf(targetPath);
   if(!root) return;
-  const own=await realpath(targetPath).catch(()=>targetPath);
-  for(const attempt of await readdir(root).catch(()=>[] as string[])) {
-    for(const name of await readdir(join(root,attempt)).catch(()=>[] as string[])) {
-      const folder=join(root,attempt,name);
-      if((await realpath(folder).catch(()=>folder))===own) continue;
-      const orphan=await orphanedWorktree(folder);
-      if(orphan&&orphan.top===folder) await retireOrphanedWorktree(orphan);
+  const own=await orMiss(realpath(targetPath),targetPath,isFsAbsent);
+  for(const attempt of await orMiss(readdir(root),[] as string[],isFsAbsent)) {
+    try {
+      for(const name of await orMiss(readdir(join(root,attempt)),[] as string[],isFsAbsent)) {
+        const folder=join(root,attempt,name);
+        if((await orMiss(realpath(folder),folder,isFsAbsent))===own) continue;
+        const orphan=await orphanedWorktree(folder);
+        if(orphan&&orphan.top===folder) await retireOrphanedWorktree(orphan);
+      }
+    } catch (cause) {
+      console.warn(`lane-pilot: skipped colliding worktrees under ${join(root,attempt)}: ${cause instanceof Error ? cause.message : String(cause)}`);
     }
   }
 }
@@ -228,7 +232,7 @@ export async function recoverStaleGitLock(cwd:string):Promise<string|null> {
   const dir=await git(cwd,["rev-parse","--absolute-git-dir"]);
   if(!dir.ok||!dir.stdout.trim()) return null;
   const lock=join(dir.stdout.trim(),"index.lock");
-  const info=await stat(lock).catch(()=>null);
+  const info=await statOrNull(lock);
   const age=info?Date.now()-info.mtimeMs:0;
   if(!info||age<=60_000) return null;
   const held=await spawnAsync("lsof",[lock],{timeout:10_000});
@@ -247,7 +251,7 @@ export async function recoverStaleGitLock(cwd:string):Promise<string|null> {
 export async function abortStaleMerge(cwd:string):Promise<boolean> {
   const dir=await git(cwd,["rev-parse","--absolute-git-dir"]);
   if(!dir.ok||!dir.stdout.trim()) return false;
-  const info=await stat(join(dir.stdout.trim(),"MERGE_HEAD")).catch(()=>null);
+  const info=await statOrNull(join(dir.stdout.trim(),"MERGE_HEAD"));
   if(!info||Date.now()-info.mtimeMs<=600_000) return false;
   const aborted=(await git(cwd,["merge","--abort"])).ok;
   console.warn(`lane-pilot: ${aborted?"aborted":"could not abort"} a merge left unfinished in ${cwd} (${Math.round((Date.now()-info.mtimeMs)/60_000)} min old)`);
@@ -268,8 +272,8 @@ export async function withBaseLock<T>(basePath:string,work:()=>T|Promise<T>,labe
     try { await mkdir(lock); await writeFile(join(lock,"owner"),`${process.pid}\n${label.split("\n")[0]!.slice(0,300)}`); break; }
     catch(error) {
       if((error as NodeJS.ErrnoException).code!=="EEXIST") throw error;
-      const info=await stat(lock).catch(()=>null);
-      const ownerText=await readFile(join(lock,"owner"),"utf8").catch(()=>"");
+      const info=await statOrNull(lock);
+      const ownerText=await readTextOrNull(join(lock,"owner")) ?? "";
       const owner=Number.parseInt(ownerText,10);
       // A lock without a pid is either being created right now, or its process was stopped before writing
       // the pid (a plugin reload between mkdir and the write), or it was left by an older Lane Pilot.
@@ -353,7 +357,7 @@ export async function integrateWorktree(input:{basePath:string;worktreePath:stri
   stagedWaitMs?:number}):Promise<GitIntegration> {
   const fail=(reason:string):GitIntegration=>({status:"failed",commit:null,conflicts:[],reason});
   // The owns-paths barrier comes down before the merge: the integration writes where the writer could not (F-01).
-  await liftOwnsBarrier(input.worktreePath).catch(()=>({restored:0}));
+  await bestEffort(console.warn, `owns barrier lift ${input.worktreePath}`, liftOwnsBarrier(input.worktreePath), {restored:0});
   await recoverStaleGitLock(input.worktreePath);
   if(!input.committedOnly&&input.ownsPaths?.length) await stageOwnedBookkeeping(input.worktreePath,input.ownsPaths,input.bookkeeping??[]);
   const dirty=input.committedOnly?{ok:true as const,stdout:"",reason:""}:await git(input.worktreePath,["status","--porcelain","--untracked-files=all"]);
@@ -468,8 +472,8 @@ export async function workspaceGitLayout(workspacePath:string):Promise<
   if(!top.ok||!top.stdout.trim()) return {ok:false,reason:top.reason||"not a git checkout"};
   const repoTop=top.stdout.trim();
   const [workspaceReal,topReal]=await Promise.all([
-    realpath(workspacePath).catch(()=>workspacePath),
-    realpath(repoTop).catch(()=>repoTop),
+    orMiss(realpath(workspacePath),workspacePath,isFsAbsent),
+    orMiss(realpath(repoTop),repoTop,isFsAbsent),
   ]);
   const prefix=relative(topReal,workspaceReal).replace(/\\/g,"/");
   if(prefix.startsWith("..")) return {ok:false,reason:"workspace is outside its git checkout"};
@@ -656,7 +660,7 @@ async function resolveBookkeepingToMain(basePath:string, sha:string, extra:reado
     const commitTree = await git(basePath, [...await identity(basePath), "commit-tree", writeTree.stdout.trim(), "-p", sha, "-m", "resolve bookkeeping to main"]);
     return commitTree.ok && commitTree.stdout.trim() ? commitTree.stdout.trim() : sha;
   } finally {
-    try { unlinkSync(tempIndex); } catch {}
+    try { unlinkSync(tempIndex); } catch (cause) { if (!isFsAbsent(cause)) throw cause; }
   }
 }
 
@@ -730,8 +734,8 @@ async function withInstallLock(basePath:string,work:()=>Promise<void>):Promise<v
     try { await mkdir(lock); await writeFile(join(lock,"owner"),String(process.pid)); held=true; }
     catch(error) {
       if((error as NodeJS.ErrnoException).code!=="EEXIST") throw error;
-      const owner=Number.parseInt(await readFile(join(lock,"owner"),"utf8").catch(()=>""),10);
-      const info=await stat(lock).catch(()=>null);
+      const owner=Number.parseInt(await readTextOrNull(join(lock,"owner")) ?? "",10);
+      const info=await statOrNull(lock);
       if((Number.isInteger(owner)&&owner>0&&!ownerAlive(owner))||(info&&Date.now()-info.mtimeMs>900_000)) { await rm(lock,{recursive:true,force:true}); continue; }
       if(Date.now()>deadline) break;
       await new Promise((resolve)=>setTimeout(resolve,1_000));
@@ -746,8 +750,8 @@ async function withInstallLock(basePath:string,work:()=>Promise<void>):Promise<v
  * and the offline verification sandbox finds the packages already in place.
  */
 async function installBaseDependencies(basePath:string):Promise<void> {
-  const installed=async()=>(await stat(join(basePath,"node_modules")).catch(()=>null))?.isDirectory()??false;
-  if(!(await stat(join(basePath,"package-lock.json")).catch(()=>null))?.isFile()) return;
+  const installed=async()=>(await statOrNull(join(basePath,"node_modules")))?.isDirectory()??false;
+  if(!(await statOrNull(join(basePath,"package-lock.json")))?.isFile()) return;
   if(await installed()&&!await dependenciesStale(basePath)) return;
   const install=async()=>{
     if(await installed()) { await refreshStaleDependencies(basePath); return; }
@@ -766,7 +770,7 @@ async function installBaseDependencies(basePath:string):Promise<void> {
  * with TS2307 in a file it did not own (its writer then shimmed the modules); main had them only after someone installed by hand.
  */
 async function dependenciesStale(dir:string):Promise<boolean> {
-  const [lock,packages]=await Promise.all([stat(join(dir,"package-lock.json")).catch(()=>null),stat(join(dir,"node_modules",".package-lock.json")).catch(()=>null)]);
+  const [lock,packages]=await Promise.all([statOrNull(join(dir,"package-lock.json")),statOrNull(join(dir,"node_modules",".package-lock.json"))]);
   return Boolean(lock?.isFile()&&packages?.isFile()&&lock.mtimeMs>packages.mtimeMs);
 }
 
@@ -785,7 +789,7 @@ async function refreshStaleDependencies(dir:string):Promise<void> {
   if(run.status!==0) { failedInstalls.set(dir,lock); return; }
   // npm leaves its record as it was when nothing had to change; touched, the checkout reads as installed until the next lockfile.
   const now=new Date();
-  await utimes(join(dir,"node_modules",".package-lock.json"),now,now).catch(()=>undefined);
+  await bestEffort(console.warn, `dependencies utimes ${dir}`, utimes(join(dir,"node_modules",".package-lock.json"),now,now), undefined);
 }
 
 /**
@@ -802,8 +806,8 @@ async function rebuildChangedPackages(basePath:string,before:string,after:string
   for(const dir of await workspaceDirs(basePath)) {
     // Markdown is no build input: a docs merge must not rebuild every package whose docs/ it touched.
     if(!changed.some((file)=>file.startsWith(`${dir}/`)&&!file.startsWith(`${dir}/dist/`)&&!file.endsWith(".md"))) continue;
-    if(!(await stat(join(basePath,dir,"dist")).catch(()=>null))?.isDirectory()) continue;
-    const manifest=await readFile(join(basePath,dir,"package.json"),"utf8").then((text)=>JSON.parse(text) as {scripts?:Record<string,string>}).catch(()=>null);
+    if(!(await statOrNull(join(basePath,dir,"dist")))?.isDirectory()) continue;
+    const manifest=parseJsonOr(await readTextOrNull(join(basePath,dir,"package.json")) ?? "", null) as {scripts?:Record<string,string>}|null;
     if(!manifest?.scripts?.build) continue;
     const run=await spawnAsync("npm",["run","build"],{cwd:join(basePath,dir),timeout:300_000,maxBuffer:16<<20});
     const ok=run.status===0;
@@ -827,7 +831,7 @@ async function nestedPackageDirs(baseReal:string,worktreePath:string,workspaces:
   for(const file of listed.stdout.split("\0").filter(Boolean)) {
     const dir=dirname(file);
     if(dir==="."||taken.has(dir)||dir.split("/").length>3||dir.split("/").includes("node_modules")) continue;
-    if((await stat(join(baseReal,dir,"node_modules")).catch(()=>null))?.isDirectory()) dirs.push(dir);
+    if((await statOrNull(join(baseReal,dir,"node_modules")))?.isDirectory()) dirs.push(dir);
     if(dirs.length>=20) break;
   }
   return [...new Set(dirs)].sort();
@@ -835,17 +839,17 @@ async function nestedPackageDirs(baseReal:string,worktreePath:string,workspaces:
 
 /** The workspace folders of a monorepo (`apps/*`, a literal path), from the base package.json; [] when none. */
 async function workspaceDirs(basePath:string):Promise<string[]> {
-  const manifest=await readFile(join(basePath,"package.json"),"utf8").then((text)=>JSON.parse(text) as {workspaces?:string[]|{packages?:string[]}}).catch(()=>null);
+  const manifest=parseJsonOr(await readTextOrNull(join(basePath,"package.json")) ?? "", null) as {workspaces?:string[]|{packages?:string[]}}|null;
   const patterns=Array.isArray(manifest?.workspaces)?manifest.workspaces:manifest?.workspaces?.packages??[];
   const dirs:string[]=[];
   for(const pattern of patterns) {
     if(typeof pattern!=="string"||pattern.startsWith("/")||pattern.includes("..")) continue;
     if(pattern.endsWith("/*")) {
       const parent=pattern.slice(0,-2);
-      for(const name of await readdir(join(basePath,parent)).catch(()=>[] as string[])) {
-        if(!name.startsWith(".")&&(await stat(join(basePath,parent,name,"package.json")).catch(()=>null))?.isFile()) dirs.push(join(parent,name));
+      for(const name of await orMiss(readdir(join(basePath,parent)),[] as string[],isFsAbsent)) {
+        if(!name.startsWith(".")&&(await statOrNull(join(basePath,parent,name,"package.json")))?.isFile()) dirs.push(join(parent,name));
       }
-    } else if(!pattern.includes("*")&&(await stat(join(basePath,pattern,"package.json")).catch(()=>null))?.isFile()) dirs.push(pattern);
+    } else if(!pattern.includes("*")&&(await statOrNull(join(basePath,pattern,"package.json")))?.isFile()) dirs.push(pattern);
   }
   return [...new Set(dirs)].sort();
 }
@@ -881,15 +885,15 @@ const NODE_MODULES_NPM_STATE = new Set([".bin", ".package-lock.json"]);
  */
 async function mirrorNodeModules(input:{baseReal:string;worktreePath:string;dir:string;topUp?:boolean;clone?:boolean}):Promise<boolean> {
   const base=join(input.baseReal,input.dir,"node_modules"), target=join(input.worktreePath,input.dir,"node_modules");
-  if(!(await stat(base).catch(()=>null))?.isDirectory()) return false;
-  if(!(await stat(dirname(target)).catch(()=>null))?.isDirectory()) return false;
-  let existing=await lstat(target).catch(()=>null);
+  if(!(await statOrNull(base))?.isDirectory()) return false;
+  if(!(await statOrNull(dirname(target)))?.isDirectory()) return false;
+  let existing=await lstatOrNull(target);
   // A worktree made before the clone rule, or by hand, holds links into the protected checkout: they go, and the mirror is remade.
   if(input.clone&&existing?.isSymbolicLink()) { await rm(target,{force:true}); existing=null; }
   if(input.clone&&existing?.isDirectory()) await dropLinksInto(target,base);
   if(existing&&!(input.topUp&&existing.isDirectory())) return false;
   const inRepo=(path:string)=>(path===input.baseReal||path.startsWith(`${input.baseReal}/`))&&!path.startsWith(`${base}/`);
-  const has=async(rel:string[])=>Boolean(existing&&await lstat(join(target,...rel)).catch(()=>null));
+  const has=async(rel:string[])=>Boolean(existing&&await lstatOrNull(join(target,...rel)));
   if(!existing) await mkdir(target);
   const linkEntry=async(rel:string[])=>{
     const source=join(base,...rel), destination=join(target,...rel);
@@ -899,10 +903,10 @@ async function mirrorNodeModules(input:{baseReal:string;worktreePath:string;dir:
     }
     const info=await lstat(source);
     if(info.isSymbolicLink()) {
-      const real=await realpath(source).catch(()=>null);
+      const real=await orMiss(realpath(source),null,isFsAbsent);
       if(real&&inRepo(real)) { await symlink(join(input.worktreePath,relative(input.baseReal,real)),destination,"dir"); return; }
     }
-    const followed=await stat(source).catch(()=>null);
+    const followed=await statOrNull(source);
     if(input.clone) { await cloneEntry(source,destination); return; }
     await symlink(source,destination,followed?.isDirectory()?"dir":"file");
   };
@@ -937,9 +941,9 @@ export function protectedCheckout(path:string, home=process.env.HOME??"", platfo
 
 /** Removes the entries of a mirrored node_modules (and of its @scope folders) that link into the base checkout's own. */
 async function dropLinksInto(target:string, base:string):Promise<void> {
-  for(const name of await readdir(target).catch(()=>[] as string[])) {
-    const path=join(target,name), info=await lstat(path).catch(()=>null);
-    if(info?.isSymbolicLink()) { const real=await realpath(path).catch(()=>""); if(real===base||real.startsWith(`${base}/`)) await rm(path,{force:true}); }
+  for(const name of await orMiss(readdir(target),[] as string[],isFsAbsent)) {
+    const path=join(target,name), info=await lstatOrNull(path);
+    if(info?.isSymbolicLink()) { const real=await orMiss(realpath(path),"",isFsAbsent); if(real===base||real.startsWith(`${base}/`)) await rm(path,{force:true}); }
     else if(name.startsWith("@")&&info?.isDirectory()) await dropLinksInto(path,base);
   }
 }
@@ -961,7 +965,7 @@ async function infoExcludePath(checkoutPath:string):Promise<string|null> {
 async function ensureInfoExclude(checkoutPath:string, extraLines:string[]):Promise<void> {
   const exclude=await infoExcludePath(checkoutPath);
   if(!exclude) return;
-  const current=await readFile(exclude,"utf8").catch(()=>"");
+  const current=await readTextOrNull(exclude) ?? "";
   const missing=extraLines.filter((line)=>!current.split("\n").includes(line));
   if(!missing.length) return;
   await mkdir(join(exclude,".."),{recursive:true});
@@ -970,10 +974,10 @@ async function ensureInfoExclude(checkoutPath:string, extraLines:string[]):Promi
 
 async function copyTaskItems(basePath:string, worktreePath:string):Promise<void> {
   const src=join(basePath,".agents","plans","items");
-  if(!(await stat(src).catch(()=>null))?.isDirectory()) return;
+  if(!(await statOrNull(src))?.isDirectory()) return;
   const dest=join(worktreePath,".agents","plans","items");
-  const srcReal=await realpath(src).catch(()=>src);
-  const destReal=await realpath(dest).catch(()=>dest);
+  const srcReal=await orMiss(realpath(src),src,isFsAbsent);
+  const destReal=await orMiss(realpath(dest),dest,isFsAbsent);
   if(srcReal===destReal) return;
   await mkdir(join(dest,".."),{recursive:true});
   // A file the repository tracks (a project-life commit added it) already sits in the worktree as committed: the base's
@@ -1009,14 +1013,14 @@ export async function applyOwnsBarrier(input:{worktreePath:string;ownsPaths:stri
   const locked:{path:string;mode:number}[]=[];
   for (const path of files) {
     if (!fileBlockedByNeverTouch(path,input.neverTouch)&&(owned.has(path)||satelliteOf(path,anchors)||isOwnershipNoise(path))) continue;
-    const st=await lstat(join(input.worktreePath,path)).catch(()=>null);
+    const st=await lstatOrNull(join(input.worktreePath,path));
     if (!st?.isFile()||!(st.mode&0o222)) continue;
     locked.push({path,mode:st.mode&0o777});
   }
   if (!locked.length) return { locked: 0 };
-  for (const row of locked) await chmod(join(input.worktreePath,row.path),row.mode&~0o222).catch(()=>undefined);
-  await mkdir(dirname(statePath),{recursive:true}).catch(()=>undefined);
-  await writeFile(statePath,JSON.stringify(locked)).catch(()=>undefined);
+  for (const row of locked) await bestEffort(console.warn, `owns barrier chmod ${row.path}`, chmod(join(input.worktreePath,row.path),row.mode&~0o222), undefined);
+  await bestEffort(console.warn, `owns barrier state dir ${statePath}`, mkdir(dirname(statePath),{recursive:true}), undefined);
+  await bestEffort(console.warn, `owns barrier state ${statePath}`, writeFile(statePath,JSON.stringify(locked)), undefined);
   return { locked: locked.length };
 }
 
@@ -1025,17 +1029,17 @@ export async function liftOwnsBarrier(worktreePath:string):Promise<{restored:num
   const stateFile=await git(worktreePath,["rev-parse","--git-path",OWNS_BARRIER_STATE]);
   if (!stateFile.ok) return { restored: 0 };
   const statePath=resolve(worktreePath,stateFile.stdout.trim());
-  const raw=await readFile(statePath,"utf8").catch(()=>null);
+  const raw=await readTextOrNull(statePath);
   if (!raw) return { restored: 0 };
   let rows:{path:string;mode:number}[]=[];
   try { rows=JSON.parse(raw) as typeof rows; } catch { rows=[]; }
   let restored=0;
   for (const row of rows) {
     if (typeof row?.path!=="string"||typeof row?.mode!=="number") continue;
-    const ok=await chmod(join(worktreePath,row.path),row.mode).then(()=>true).catch(()=>false);
+    const ok=await bestEffort(console.warn, `owns barrier restore ${row.path}`, chmod(join(worktreePath,row.path),row.mode).then(()=>true), false);
     if (ok) restored+=1;
   }
-  await unlink(statePath).catch(()=>undefined);
+  await bestEffort(console.warn, `owns barrier state ${statePath}`, unlink(statePath), undefined);
   return { restored };
 }
 
@@ -1053,17 +1057,17 @@ async function linkWorktreeDependencies(input:{basePath:string;worktreePath:stri
   await ensureInfoExclude(input.worktreePath, [TASK_FOLDER_EXCLUDE]);
   await copyTaskItems(input.basePath, input.worktreePath);
   await installBaseDependencies(input.basePath);
-  const baseReal=await realpath(input.basePath).catch(()=>input.basePath);
+  const baseReal=await orMiss(realpath(input.basePath),input.basePath,isFsAbsent);
   const workspaces=await workspaceDirs(baseReal);
   const nested=await nestedPackageDirs(baseReal,input.worktreePath,workspaces);
   for(const dir of nested) {
     const path=join(baseReal,dir);
     if(await dependenciesStale(path)) await withInstallLock(path,()=>refreshStaleDependencies(path));
   }
-  const rootModules=(await stat(join(baseReal,"node_modules")).catch(()=>null))?.isDirectory()??false;
+  const rootModules=(await statOrNull(join(baseReal,"node_modules")))?.isDirectory()??false;
   const clone=protectedCheckout(baseReal);
-  if(await lstat(join(input.worktreePath,"node_modules")).catch(()=>null)) {
-    if(baseReal!==await realpath(input.worktreePath).catch(()=>input.worktreePath)) {
+  if(await lstatOrNull(join(input.worktreePath,"node_modules"))) {
+    if(baseReal!==await orMiss(realpath(input.worktreePath),input.worktreePath,isFsAbsent)) {
       for(const dir of ["",...workspaces,...nested]) await mirrorNodeModules({baseReal,worktreePath:input.worktreePath,dir,topUp:true,clone});
     }
     return {linked:[]};
@@ -1071,7 +1075,7 @@ async function linkWorktreeDependencies(input:{basePath:string;worktreePath:stri
   if(!rootModules&&!nested.length) return {linked:[]};
   const exclude=await infoExcludePath(input.worktreePath);
   if(!exclude) return {linked:[]};
-  const current=await readFile(exclude,"utf8").catch(()=>"");
+  const current=await readTextOrNull(exclude) ?? "";
   // Tool caches the checks write (vitest's .vite/ inside a package) stay out of the writer's commit and of main.
   const missing=["/node_modules","node_modules/",".vite/",".vitest/",".turbo/",".parcel-cache/"].filter((line)=>!current.split("\n").includes(line));
   if(missing.length) {
@@ -1089,7 +1093,7 @@ async function linkWorktreeDependencies(input:{basePath:string;worktreePath:stri
   // «Failed to load tsconfig '.nuxt/tsconfig.json'» in SelfyStudio's marketing app (2026-10-02).
   for(const workspace of workspaces) for(const generated of ["dist",".nuxt"]) {
     const dist=join(workspace,generated);
-    if(!(await stat(join(baseReal,dist)).catch(()=>null))?.isDirectory()||await lstat(join(input.worktreePath,dist)).catch(()=>null)) continue;
+    if(!(await statOrNull(join(baseReal,dist)))?.isDirectory()||await lstatOrNull(join(input.worktreePath,dist))) continue;
     if(!(await git(baseReal,["check-ignore","-q",dist])).ok) continue;
     await cp(join(baseReal,dist),join(input.worktreePath,dist),{recursive:true,dereference:false,errorOnExist:false,force:true});
     linked.push(dist);
@@ -1104,7 +1108,7 @@ async function linkWorktreeDependencies(input:{basePath:string;worktreePath:stri
 async function removeEmptyWorktreeParent(top:string):Promise<void> {
   const parent=dirname(top);
   if(basename(dirname(parent))!=="worktrees"||basename(dirname(dirname(parent)))!==".lane-pilot") return;
-  await rmdir(parent).catch(()=>undefined);
+  await bestEffort(console.warn, `worktree parent rmdir ${parent}`, rmdir(parent), undefined);
 }
 
 /** The worktree's own top folder: a subfolder workspace's path is not what `git worktree remove` takes. */
@@ -1141,7 +1145,7 @@ export async function removeLaneWorktree(input:{basePath:string;worktreePath:str
  * gone. «failed» keeps the worktree (the caller does not release it).
  */
 export async function snapshotWorktree(input:{worktreePath:string;name:string;dir:string}):Promise<{status:"clean"|"saved"|"missing"|"failed";path:string|null;dirty:number;ahead:number;reason:string|null}> {
-  if(!(await stat(input.worktreePath).catch(()=>null))?.isDirectory()) return {status:"missing",path:null,dirty:0,ahead:0,reason:null};
+  if(!(await statOrNull(input.worktreePath))?.isDirectory()) return {status:"missing",path:null,dirty:0,ahead:0,reason:null};
   if(await orphanedWorktree(input.worktreePath)) return {status:"missing",path:null,dirty:0,ahead:0,reason:"orphaned worktree folder: its git admin dir belongs to another worktree"};
   const status=await git(input.worktreePath,["status","--porcelain","--untracked-files=all"]);
   if(!status.ok) return {status:"failed",path:null,dirty:0,ahead:0,reason:status.reason};

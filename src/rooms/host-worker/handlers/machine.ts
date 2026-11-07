@@ -4,6 +4,7 @@ import { constants as fsConstants } from "node:fs";
 import { delimiter, join, relative } from "node:path";
 import { homedir, networkInterfaces } from "node:os";
 import type { ExperimentalHostRpcHandlers } from "@get-bb/plugin-sdk";
+import { isFsAbsent, orMiss, readTextOrNull } from "@lane-pilot/kit";
 import { hostContract } from "../../contracts";
 import { readMachineFacts, userToolBins } from "../../verification";
 import { runStabilityDrill } from "../../stability";
@@ -26,13 +27,17 @@ export const listPermitTickets: ExperimentalHostRpcHandlers<typeof hostContract>
   const hostId = process.env.BB_HOST_ID ?? input.requestedHostId;
   const root = join(homedir(), ".agents", "permits");
   const tickets: Array<{ session: string; ticket: string; category: string; command: string; cwd: string; at: number }> = [];
-  for (const session of await readdir(root).catch(() => [] as string[])) {
-    for (const name of await readdir(join(root, session)).catch(() => [] as string[])) {
-      if (!name.endsWith(".ticket.json")) continue;
-      const id = name.slice(0, -".ticket.json".length);
-      if (await stat(join(root, session, `${id}.answer.json`)).then(() => true, () => false)) continue;
-      const raw = await readFile(join(root, session, name), "utf8").then((text) => JSON.parse(text) as Record<string, unknown>, () => null);
-      if (raw) tickets.push({ session, ticket: id, category: String(raw.category ?? ""), command: String(raw.command ?? "").slice(0, 2000), cwd: String(raw.cwd ?? ""), at: Number(raw.at ?? 0) });
+  for (const session of await orMiss(readdir(root), [] as string[], isFsAbsent)) {
+    try {
+      for (const name of await orMiss(readdir(join(root, session)), [] as string[], isFsAbsent)) {
+        if (!name.endsWith(".ticket.json")) continue;
+        const id = name.slice(0, -".ticket.json".length);
+        if (await stat(join(root, session, `${id}.answer.json`)).then(() => true, () => false)) continue;
+        const raw = await readFile(join(root, session, name), "utf8").then((text) => JSON.parse(text) as Record<string, unknown>, () => null);
+        if (raw) tickets.push({ session, ticket: id, category: String(raw.category ?? ""), command: String(raw.command ?? "").slice(0, 2000), cwd: String(raw.cwd ?? ""), at: Number(raw.at ?? 0) });
+      }
+    } catch (cause) {
+      console.warn(`lane-pilot: permit tickets unreadable in ${join(root, session)}: ${cause instanceof Error ? cause.message : String(cause)}`);
     }
   }
   return { hostId, tickets: tickets.slice(0, 100) };
@@ -67,7 +72,7 @@ export const readUsageWindows: ExperimentalHostRpcHandlers<typeof hostContract>[
 export const closeBacklogItem: ExperimentalHostRpcHandlers<typeof hostContract>["closeBacklogItem"] = async (input) => {
   const hostId = process.env.BB_HOST_ID ?? input.requestedHostId;
   const file = join(await realpath(input.projectCwd), ".agents", "todos", "items", input.id, "meta.yaml");
-  const text = await readFile(file, "utf8").catch(() => null);
+  const text = await readTextOrNull(file);
   if (text === null) return { hostId, status: "refused", reason: `no ${relative(input.projectCwd, file)}` };
   const lines = text.split("\n");
   const at = lines.flatMap((line, index) => (/^status\s*:/.test(line) ? [index] : []));

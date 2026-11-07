@@ -1,4 +1,5 @@
 import { defineJudgment, noul, noulOf, type Jev, type JudgeContext } from "@lane-pilot/jev";
+import { bestEffort } from "@lane-pilot/kit";
 
 /**
  * jgrep --tests for the PM: when a task's contract names the files it will change, the test files that cover them are
@@ -98,7 +99,7 @@ export async function suggestTests(
     const candidates = [] as Array<{ file: string; signature: string }>;
     for (const file of picked) candidates.push({ file, signature: testSignature((await input.readFile(file)) ?? "") });
     if (candidates.length) {
-      const verdict = await jev.judge(testPickJudgment, { changedFiles: changed, diffHead: input.diffHead ?? "", tests: candidates }, ctx).catch(() => null);
+      const verdict = await bestEffort(console.warn, `test pick ${input.changedFiles.length}`, jev.judge(testPickJudgment, { changedFiles: changed, diffHead: input.diffHead ?? "", tests: candidates }, ctx), null);
       if (verdict?.by === "jev") candidates.forEach((test, index) => { if (verdict.decision[index] && !hint.has(test.file)) hint.set(test.file, { file: test.file, reason: "jev" }); });
     }
   }

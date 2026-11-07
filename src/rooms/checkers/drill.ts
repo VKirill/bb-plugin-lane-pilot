@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { spawnAsync } from "@lane-pilot/kit";
+import { spawnAsync, bestEffort } from "@lane-pilot/kit";
 import { buildFixture } from "./fixture";
 import { runScore, type ScoreReport } from "./service";
 import { CODE_CHECKERS, DEFECT_CLASSES, EXPECTED_CATCHERS, type CheckerId } from "./types";
@@ -57,7 +57,7 @@ export async function runDrill(options: { shell?: ShellPort; blind?: readonly Ch
     }
     return { ok: problems.length === 0, problems, checked, report };
   } finally {
-    await rm(root, { recursive: true, force: true }).catch(() => undefined);
+    await bestEffort(options.log ?? console.warn, `drill scratch cleanup ${root}`, rm(root, { recursive: true, force: true }), undefined);
   }
 }
 

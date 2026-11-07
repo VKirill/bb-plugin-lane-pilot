@@ -12,7 +12,7 @@ import { recordStage } from "../../runs/server";
 import { qaStateToStatus } from "../../critique";
 import { allowedSecretNames, secretFixLines, secretProblem, waitingSecretReason } from "../../secrets/server";
 import { awaitQaVerdict, parseQaCases, runQaThread } from "./qa-thread";
-import { stringAt, valueAt } from "@lane-pilot/kit";
+import { bestEffort, stringAt, valueAt } from "@lane-pilot/kit";
 import type { ServerCore } from "../../contracts/server";
 
 export function createQaStages(ctx: ServerCore) {
@@ -223,7 +223,7 @@ export function createQaStages(ctx: ServerCore) {
         const agent = { providerId:qaRole.providerId, model:qaRole.model, effort:qaRole.reasoningEffort };
         // A localhost target on another machine is reached over the private VPN when this machine has an address there.
         const vpn = qaTarget.hostId === config.hostId ? null
-          : await host.call("vpnAddress",{requestedHostId:config.hostId},{hostId:config.hostId,timeoutMs:15_000}).catch(()=>null);
+          : await bestEffort(ctx.log, `vpn address on ${config.hostId}`, host.call("vpnAddress",{requestedHostId:config.hostId},{hostId:config.hostId,timeoutMs:15_000}), null);
         const verdict = await runQaThread(ctx, {
           projectId:args.projectId, runId:args.runId, pmThreadId:args.threadId, taskTitle:task.title, qaHostId:qaTarget.hostId, timeoutSec,
           url:args.url, cases:args.cases, viewports:args.viewports, envClass:args.envClass, authorized:args.authorized, devServer:args.devServer, vpnAddress:vpn?.address ?? null, agent,

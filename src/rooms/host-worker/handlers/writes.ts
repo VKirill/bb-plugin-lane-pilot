@@ -2,8 +2,8 @@ import { randomUUID } from "node:crypto";
 import { chmod, lstat, mkdir, open, readFile, readdir, realpath, rename, unlink } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
 import type { ExperimentalHostRpcHandlers } from "@get-bb/plugin-sdk";
+import { bestEffort, sha256Hex } from "@lane-pilot/kit";
 import { hostContract } from "../../contracts";
-import { sha256Hex } from "@lane-pilot/kit";
 import { casWriteWorkflowFile } from "../../storage";
 
 export const listDocsPages: ExperimentalHostRpcHandlers<typeof hostContract>["listDocsPages"] = async (input) => {
@@ -163,7 +163,7 @@ async function casWriteMarkdown(input:MarkdownWrite, maxTotalBytes:number, inSco
       });
       const latestHash=latestInfo?sha256Hex(await readFile(target.fullPath)):null;
       if((latestInfo?.isSymbolicLink()??false)||latestHash!==target.expectedSha256){
-        await unlink(tempPath).catch(()=>undefined);tempPath=undefined;
+        await bestEffort(console.warn, `onboarding temp cleanup ${target.path}`, unlink(tempPath), undefined);tempPath=undefined;
         writes.push({path:target.path,beforeSha256:latestHash,afterSha256:latestHash,status:"conflict",reason:"target changed before atomic replacement"});
         return {hostId:process.env.BB_HOST_ID??input.requestedHostId,previewSha256:input.previewSha256,status:writes.length===1?"conflict":"blocked",writes,reason:"onboarding compare-and-swap changed during apply"};
       }
@@ -172,7 +172,7 @@ async function casWriteMarkdown(input:MarkdownWrite, maxTotalBytes:number, inSco
       if(afterSha256!==sha256Hex(bytes)) throw new Error("onboarding atomic-write readback hash mismatch");
       writes.push({path:target.path,beforeSha256:target.expectedSha256,afterSha256,status:"applied",reason:null});
     }catch(cause){
-      if(tempPath) await unlink(tempPath).catch(()=>undefined);
+      if(tempPath) await bestEffort(console.warn, `onboarding temp cleanup ${target.path}`, unlink(tempPath), undefined);
       const reason=cause instanceof Error?cause.message:String(cause);
       writes.push({path:target.path,beforeSha256:target.expectedSha256,afterSha256:null,status:"blocked",reason});
       return {hostId:process.env.BB_HOST_ID??input.requestedHostId,previewSha256:input.previewSha256,status:"blocked",writes,reason};

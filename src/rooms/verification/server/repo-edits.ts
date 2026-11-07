@@ -1,4 +1,5 @@
 import type { ServerCore } from "../../contracts/server";
+import { bestEffort } from "@lane-pilot/kit";
 import { runOnHost } from "@lane-pilot/host-calls";
 
 /**
@@ -7,8 +8,7 @@ import { runOnHost } from "@lane-pilot/host-calls";
  * false «helper edited files» from a half-read one.
  */
 export async function gitRepoStatus(host: ServerCore["host"], hostId: string, cwd: string): Promise<Set<string> | null> {
-  const ran = await runOnHost(host, { hostId, cwd, command: "git status --porcelain -uall", timeoutSec: 30, timeoutMs: 45_000 })
-    .catch(() => null);
+  const ran = await bestEffort(console.warn, `repo status ${hostId} ${cwd}`, runOnHost(host, { hostId, cwd, command: "git status --porcelain -uall", timeoutSec: 30, timeoutMs: 45_000 }), null);
   if (!ran || ran.exitCode !== 0) return null;
   const files = new Set<string>();
   for (const line of ran.stdout.split("\n")) {

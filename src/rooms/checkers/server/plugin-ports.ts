@@ -1,4 +1,5 @@
 import { runOnHost } from "@lane-pilot/host-calls";
+import { bestEffort } from "@lane-pilot/kit";
 import { loadCandidates, findSolutionCommit, type Candidate, type HostPort } from "../../bench/server";
 import type { ServerCore } from "../../contracts/server";
 import { isSandboxProjectName } from "../../stability/server";
@@ -17,7 +18,7 @@ export function createPluginCheckers(ctx: ServerCore): CheckersApi {
   };
 
   const projectNames = async (): Promise<ReadonlyMap<string, string>> => {
-    const rows = await bb.sdk.projects.list({ includePersonal: true } as never).catch(() => []) as Array<{ id?: unknown; name?: unknown }>;
+    const rows = await bestEffort(ctx.log, "checker project names", bb.sdk.projects.list({ includePersonal: true } as never), []) as Array<{ id?: unknown; name?: unknown }>;
     return new Map(rows.flatMap((row) => (typeof row.id === "string" && typeof row.name === "string" ? [[row.id, row.name] as const] : [])));
   };
 
@@ -30,7 +31,7 @@ export function createPluginCheckers(ctx: ServerCore): CheckersApi {
       const byTask = new Map(all.map((candidate) => [candidate.taskId, candidate]));
       const guarded: HostPort = {
         run: (hostId, cwd, command, timeoutSec = 120) =>
-          guardShellPort({ run: (_dir, cmd, t) => hostPort.run(hostId, cwd, cmd, t) }, () => ({})).run(cwd, command, timeoutSec),
+          guardShellPort({ run: (_dir, cmd, t) => hostPort.run(hostId, cwd, cmd, t) }, () => ({}), ctx.log).run(cwd, command, timeoutSec),
       };
       return await loadHistory({
         candidates: () => all, host: guarded, log: ctx.log,

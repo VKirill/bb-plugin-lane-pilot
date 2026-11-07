@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { readFile, realpath, stat } from "node:fs/promises";
 import { join, posix } from "node:path";
 import { promisify } from "node:util";
+import { bestEffort, readTextOrNull } from "@lane-pilot/kit";
 import { CODE_FILE, TEST_PATH } from "./docs-jev";
 import { withBaseLock } from "../verification";
 
@@ -43,7 +44,7 @@ function statusPaths(line: string): string[] {
 /** Workspace folders the root package.json or pnpm-workspace.yaml declares; `dir/*` and `dir/**` globs only. */
 async function listWorkspaces(projectCwd:string, tracked:string[]):Promise<DocsWorkspace[]> {
   const pkg = await readFile(join(projectCwd, "package.json"), "utf8").then((text) => JSON.parse(text) as { workspaces?:string[] | { packages?:string[] } }, () => null);
-  const pnpm = await readFile(join(projectCwd, "pnpm-workspace.yaml"), "utf8").catch(() => "");
+  const pnpm = await readTextOrNull(join(projectCwd, "pnpm-workspace.yaml")) ?? "";
   const pnpmBlock = /^packages:\s*\n((?:[ \t]+-[^\n]*\n?)+)/m.exec(pnpm)?.[1] ?? "";
   const patterns = [...(Array.isArray(pkg?.workspaces) ? pkg.workspaces : pkg?.workspaces?.packages ?? []),
     ...[...pnpmBlock.matchAll(/-\s*['"]?([^'"\n#]+?)['"]?\s*$/gm)].map((match) => match[1]!)]
@@ -105,7 +106,7 @@ export async function docsLineCounts(input:{ projectCwd:string; files:string[] }
   const counts:Record<string, number | null> = {};
   for (const file of input.files.slice(0, 2000)) {
     if (file.startsWith("/") || file.split("/").includes("..")) { counts[file] = null; continue; }
-    const text = await readFile(join(input.projectCwd, file), "utf8").catch(() => null);
+    const text = await readTextOrNull(join(input.projectCwd, file));
     counts[file] = text === null ? null : text.split("\n").length - (text.endsWith("\n") ? 1 : 0);
   }
   return counts;
@@ -165,7 +166,7 @@ export async function docsWorthinessFacts(input: { projectCwd: string }): Promis
   const empty = { trackedFiles: 0, codeFiles: 0, testFiles: 0, contentFiles: 0, languages: [], commits30d: 0, manifests: [], deploy: false, docsPages: 0 };
   const git = async (...args: string[]) => (await run("git", ["-C", input.projectCwd, ...args], { maxBuffer: 64 * 1024 * 1024 })).stdout;
   try {
-    const inside = (await git("rev-parse", "--is-inside-work-tree").catch(() => "")).trim();
+    const inside = (await bestEffort(console.warn, `docs git inside ${input.projectCwd}`, git("rev-parse", "--is-inside-work-tree"), "")).trim();
     if (inside !== "true") return { status: "not-git", ...empty, reason: null };
     const tracked = (await git("ls-files")).split("\n").filter(Boolean);
     const byExt = new Map<string, number>();
@@ -178,7 +179,7 @@ export async function docsWorthinessFacts(input: { projectCwd: string }): Promis
       } else if (CONTENT_FILE.test(path) && !NOT_CODE.test(path)) contentFiles++;
     }
     // Only commits that touched this folder: a section inside a busy monorepo is not busy by itself.
-    const commits30d = Number((await git("rev-list", "--count", "--since=30.days", "HEAD", "--", ".").catch(() => "0")).trim()) || 0;
+    const commits30d = Number((await bestEffort(console.warn, `docs git commits ${input.projectCwd}`, git("rev-list", "--count", "--since=30.days", "HEAD", "--", "."), "0")).trim()) || 0;
     return {
       status: "ready", trackedFiles: tracked.length, codeFiles, testFiles, contentFiles,
       languages: [...byExt].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([ext, files]) => ({ ext, files })),

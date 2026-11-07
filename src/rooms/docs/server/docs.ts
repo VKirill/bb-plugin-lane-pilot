@@ -13,7 +13,7 @@ import { configuredSetting } from "../../contracts/server";
 import { fullAccessSpawn, graphStepMetadata } from "../../platform/server";
 import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server";
 import { recordStage } from "../../runs/server";
-import { stringAt, valueAt } from "@lane-pilot/kit";
+import { bestEffort, stringAt, valueAt } from "@lane-pilot/kit";
 import { observeStageChild } from "@lane-pilot/thread-observe";
 import type { ServerCore } from "../../contracts/server";
 
@@ -63,7 +63,7 @@ export function createDocsStage(ctx: ServerCore, services: Services) {
       let skipReason:string|null = null;
       // Auto mode: a folder that is not a working codebase on this machine gets no docs after its tasks either.
       if (docsSettings.mode === "auto" && docsSettings.enabled && docsSettings.maintain) {
-        const verdict = await services.docsVerdict(args.projectId, { hostId:config.hostId, path:run.writer_workspace_path! }).catch(() => null);
+        const verdict = await bestEffort(ctx.log, `docs verdict ${args.projectId}`, services.docsVerdict(args.projectId, { hostId:config.hostId, path:run.writer_workspace_path! }), null);
         if (verdict && !verdict.need) skipReason = `docs_not_needed:${verdict.reason}`;
       }
       if (!skipReason && (!docsSettings.enabled || !docsSettings.maintain)) skipReason = !docsSettings.enabled?"disabled_by_project_setting":"docs_maintain_disabled";
@@ -206,7 +206,7 @@ export function createDocsStage(ctx: ServerCore, services: Services) {
       }
       const reason=cause instanceof Error?cause.message:String(cause);
       if (!threadId) {
-        const recovered = await services.reconcileDocsChild(args.projectId, args.runId, args.taskId).catch(() => ({ kind:"error" as const, message:reason }));
+        const recovered = await bestEffort(ctx.log, `docs child reconcile ${args.taskId}`, services.reconcileDocsChild(args.projectId, args.runId, args.taskId), { kind:"error" as const, message:reason });
         if (recovered.kind === "found") {
           persistRunning(recovered.threadId, { ...docsResultObject(receipt?.result), observing:reason });
           return {runId:args.runId,taskId:args.taskId,state:"running",threadId:recovered.threadId,reason:"observing",detail:reason};

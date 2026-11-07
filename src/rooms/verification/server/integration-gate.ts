@@ -2,7 +2,7 @@ import type { TaskV2, PrototypeConfig } from "../../contracts";
 import type { LanePilotDatabase, StageReceiptRow } from "../../storage";
 import { getRun, getRunSettingsScopes, getTask, listStageReceipts, loadProjectSettings, transitionAttempt } from "../../storage";
 import { recordGateEvaluation } from "../../runs/server/stage-records";
-import { stringAt, stripAnsi } from "@lane-pilot/kit";
+import { bestEffort, stringAt, stripAnsi } from "@lane-pilot/kit";
 import type { ServerCore } from "../../contracts/server";
 
 import { isEnvironmentCheckFailure } from "../../runs";
@@ -488,8 +488,7 @@ export class IntegrationGateRunner {
     // The gate, git and file reads run on the project's own host, never at the project's path on the hub.
     const GATE_TIMEOUT_SEC = 30 * 60;
     const readProjectFile: ProjectFileReader = async (relativePath) => {
-      const read = await host.call("readBoundedFile", { requestedHostId: configHostId, projectCwd: basePath, relativePath, offset: 0, maxLines: 2000 }, { hostId: configHostId, timeoutMs: 30_000 })
-        .catch(() => null);
+      const read = await bestEffort(this.ctx.log, `gate read ${relativePath}`, host.call("readBoundedFile", { requestedHostId: configHostId, projectCwd: basePath, relativePath, offset: 0, maxLines: 2000 }, { hostId: configHostId, timeoutMs: 30_000 }), null);
       return read ? read.content : null;
     };
 
@@ -740,7 +739,7 @@ export class IntegrationGateRunner {
     const logFullPath = join(basePath, logRelativePath);
     const logContent = `$ ${gateCommand}\nexit ${activeExitCode}\n\n${activeStdout}\n${activeStderr}`.trim() + "\n";
 
-    await bb.sdk.files.write({
+    await bestEffort(this.ctx.log, `gate log write ${logRelativePath}`, bb.sdk.files.write({
       hostId: configHostId,
       rootPath: basePath,
       path: logFullPath,
@@ -748,7 +747,7 @@ export class IntegrationGateRunner {
       contentEncoding: "utf8",
       createParents: true,
       expectedSha256: null,
-    }).catch(() => undefined);
+    }), undefined);
 
     if (culprit) {
       // The culprit's attempt is accepted and its worktree gone: a message into its old writer thread had no loop waiting for the turn, so

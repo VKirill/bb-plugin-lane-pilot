@@ -1,7 +1,7 @@
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { spawnAsync } from "@lane-pilot/kit";
+import { bestEffort, spawnAsync } from "@lane-pilot/kit";
 import { prepareWorktree } from "./git-integrate";
 import { extractFailingFiles } from "./gate-output";
 
@@ -40,17 +40,17 @@ export async function bisectGateOnHost(input:{basePath:string;command:string;goo
   try {
     const added=await git(["worktree","add","--detach",scratch,input.badSha],input.basePath);
     if(added.status!==0) return {status:"failed",commit:null,reason:`worktree add: ${(added.stderr||added.stdout||"").trim().slice(0,300)}`};
-    await prepareWorktree({basePath:input.basePath,worktreePath:scratch}).catch(()=>undefined);
+    await bestEffort(console.warn, `gate bisect prepare ${scratch}`, prepareWorktree({basePath:input.basePath,worktreePath:scratch}), undefined);
     const start=await git(["bisect","start",input.badSha,input.goodSha]);
     if(start.status!==0) return {status:"failed",commit:null,reason:`bisect start: ${(start.stderr||start.stdout||"").trim().slice(0,300)}`};
     const run=await git(["bisect","run","/bin/bash","-lc",input.command],scratch,input.timeoutSec*1000);
     const match=`${run.stdout}\n${run.stderr}`.match(/([0-9a-f]{7,40}) is the first bad commit/);
     return match?{status:"found",commit:match[1]!,reason:null}:{status:"none",commit:null,reason:null};
   } finally {
-    await git(["bisect","reset"]).catch(()=>undefined);
-    await git(["worktree","remove","--force",scratch],input.basePath).catch(()=>undefined);
-    await git(["worktree","prune"],input.basePath).catch(()=>undefined);
-    await rm(dir,{recursive:true,force:true}).catch(()=>undefined);
+    await bestEffort(console.warn, `gate bisect reset ${scratch}`, git(["bisect","reset"]), undefined);
+    await bestEffort(console.warn, `gate bisect worktree remove ${scratch}`, git(["worktree","remove","--force",scratch],input.basePath), undefined);
+    await bestEffort(console.warn, `gate bisect worktree prune ${input.basePath}`, git(["worktree","prune"],input.basePath), undefined);
+    await bestEffort(console.warn, `gate bisect scratch ${dir}`, rm(dir,{recursive:true,force:true}), undefined);
   }
 }
 
@@ -125,7 +125,7 @@ export async function attributeGateOnHost(input: {
   try {
     const added = await git(["worktree", "add", "--detach", scratch, input.baseSha]);
     if (added.status !== 0) return { commits, failing, baseline: { status: "failed", reason: `worktree add: ${(added.stderr || added.stdout || "").trim().slice(0, 300)}` } };
-    await prepareWorktree({ basePath: input.basePath, worktreePath: scratch }).catch(() => undefined);
+    await bestEffort(console.warn, `gate base prepare ${scratch}`, prepareWorktree({ basePath: input.basePath, worktreePath: scratch }), undefined);
     const groups = new Map<string, typeof eligible>();
     for (const entry of eligible) groups.set(entry.workspaceDir ?? "", [...(groups.get(entry.workspaceDir ?? "") ?? []), entry]);
     for (const [workspaceDir, entries] of groups) {
@@ -152,8 +152,8 @@ export async function attributeGateOnHost(input: {
   } catch (cause) {
     return { commits, failing, baseline: { status: "failed", reason: cause instanceof Error ? cause.message.slice(0, 300) : String(cause) } };
   } finally {
-    await git(["worktree", "remove", "--force", scratch]).catch(() => undefined);
-    await git(["worktree", "prune"]).catch(() => undefined);
-    await rm(dir, { recursive: true, force: true }).catch(() => undefined);
+    await bestEffort(console.warn, `gate base worktree remove ${scratch}`, git(["worktree", "remove", "--force", scratch]), undefined);
+    await bestEffort(console.warn, `gate base worktree prune ${input.basePath}`, git(["worktree", "prune"]), undefined);
+    await bestEffort(console.warn, `gate base scratch ${dir}`, rm(dir, { recursive: true, force: true }), undefined);
   }
 }

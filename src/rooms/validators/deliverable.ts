@@ -4,6 +4,7 @@ import { uiShotsJudgment } from "@lane-pilot/jev/judgments/ui-shots";
 import { invoiceScanJudgment, type ScanField } from "@lane-pilot/jev/judgments/invoice-scan";
 import { acceptCompositeJudgment, type AcceptAxis } from "@lane-pilot/jev/judgments/accept-composite";
 import { renderMatchJudgment } from "@lane-pilot/jev/judgments/render-match";
+import { bestEffort } from "@lane-pilot/kit";
 
 /**
  * Non-code QA (agents-design 3.5): the artifact checker a specialist's deliverable passes instead of a test run.
@@ -32,7 +33,7 @@ const shq = (value: string) => `'${value.replace(/'/g, `'\\''`)}'`;
 async function readText(path: string, deps: ValidatorDeps): Promise<string | null> {
   if (deps.readFile) return deps.readFile(path);
   if (!deps.host || !deps.hostId) return null;
-  const out = await deps.host.run(deps.hostId, "/", `cat -- ${shq(path)} 2>/dev/null || true`, 30).catch(() => null);
+  const out = await bestEffort(console.warn, `validator read ${path}`, deps.host.run(deps.hostId, "/", `cat -- ${shq(path)} 2>/dev/null || true`, 30), null);
   return out && out.exitCode === 0 && out.stdout ? out.stdout : null;
 }
 
@@ -46,7 +47,7 @@ async function validateText(path: string, deps: ValidatorDeps): Promise<Verdict>
   if (text == null) return { ok: false, reason: `cannot read ${path}` };
   if (!text.trim()) return { ok: false, reason: "text file is empty" };
   if (deps.host && deps.hostId) {
-    const probe = await deps.host.run(deps.hostId, "/", `command -v ru-check >/dev/null && ru-check ${shq(path)} || exit 3`, 60).catch(() => null);
+    const probe = await bestEffort(console.warn, `validator ru-check ${path}`, deps.host.run(deps.hostId, "/", `command -v ru-check >/dev/null && ru-check ${shq(path)} || exit 3`, 60), null);
     if (probe && probe.exitCode !== 3) return { ok: probe.exitCode === 0, reason: probe.exitCode === 0 ? "ru-check clean" : (probe.stdout || probe.stderr).trim().slice(0, 400) || "ru-check failed" };
   }
   const hits = SLOP.filter((re) => re.test(text)).map((re) => re.source);
@@ -80,14 +81,14 @@ export type PageReview = (request: { url: string; brief: string; shots: string[]
 
 async function validatePage(target: string, deps: ValidatorDeps): Promise<Verdict> {
   if (!deps.host || !deps.hostId) return { ok: false, reason: "no host to render the page on" };
-  const status = await deps.host.run(deps.hostId, "/", `curl -s -o /dev/null -w '%{http_code}' -L --max-time 20 ${shq(target)}`, 30).catch(() => null);
+  const status = await bestEffort(console.warn, `validator page status ${target}`, deps.host.run(deps.hostId, "/", `curl -s -o /dev/null -w '%{http_code}' -L --max-time 20 ${shq(target)}`, 30), null);
   if (!status || !/^2\d\d$/.test(status.stdout.trim())) return { ok: false, reason: `page did not answer 2xx (got ${status?.stdout.trim() || "no response"})` };
   // Unique shot paths: parallel checks on one host must not overwrite each other.
   const stamp = Math.random().toString(36).slice(2, 8);
   const shots = [`/tmp/lpv-${stamp}-375.png`, `/tmp/lpv-${stamp}-1280.png`];
-  const shot = await deps.host.run(deps.hostId, "/", `command -v bb >/dev/null && bb browser-automation open ${shq(target)} --width 375 --shot ${shots[0]} && bb browser-automation open ${shq(target)} --width 1280 --shot ${shots[1]} || exit 3`, 90).catch(() => null);
+  const shot = await bestEffort(console.warn, `validator screenshots ${target}`, deps.host.run(deps.hostId, "/", `command -v bb >/dev/null && bb browser-automation open ${shq(target)} --width 375 --shot ${shots[0]} && bb browser-automation open ${shq(target)} --width 1280 --shot ${shots[1]} || exit 3`, 90), null);
   if (shot && shot.exitCode !== 3 && shot.exitCode !== 0) return { ok: false, reason: `browser check failed: ${(shot.stderr || shot.stdout).trim().slice(0, 300)}` };
-  const probe = shot && shot.exitCode === 0 ? await deps.host.run(deps.hostId, "/", `bb browser-automation run --script ${shq(DOM_PROBE_JS)} 2>/dev/null | grep -o 'REPORT {.*}' | head -1 || exit 3`, 60).catch(() => null) : null;
+  const probe = shot && shot.exitCode === 0 ? await bestEffort(console.warn, `validator dom probe ${target}`, deps.host.run(deps.hostId, "/", `bb browser-automation run --script ${shq(DOM_PROBE_JS)} 2>/dev/null | grep -o 'REPORT {.*}' | head -1 || exit 3`, 60), null) : null;
   const match = /REPORT (\{.*\})/.exec(probe?.stdout ?? "");
   const dom = match ? JSON.parse(match[1]) as DomReport : null;
   const problems = dom ? domProblems(dom) : [];
@@ -103,13 +104,13 @@ async function judgeScreenshots(target: string, deps: ValidatorDeps, dom: DomRep
   let jevSeen: { verdict: string; worst: number; worstShot: string | null; box?: unknown } | null = null;
   if (judge && deps.host && deps.hostId) {
     const shots = await Promise.all(shotPaths.map(async (path, i) => {
-      const out = await deps.host!.run(deps.hostId!, "/", `base64 < ${shq(path)} 2>/dev/null | tr -d '\n'`, 60).catch(() => null);
+      const out = await bestEffort(console.warn, `validator screenshot ${path}`, deps.host!.run(deps.hostId!, "/", `base64 < ${shq(path)} 2>/dev/null | tr -d '\n'`, 60), null);
       const data = out?.stdout?.trim();
       return data && out!.exitCode === 0 ? { name: `${i === 0 ? 375 : 1280}px`, format: "png" as const, data_base64: data.slice(0, 6_000_000) } : null;
     }));
     const valid = shots.filter((shot) => shot !== null);
     if (valid.length) {
-      const verdict = await judge.judge(uiShotsJudgment, { url: target, shots: valid }, deps.jevCtx ?? {}).catch(() => null);
+      const verdict = await bestEffort(console.warn, `validator ui shots ${target}`, judge.judge(uiShotsJudgment, { url: target, shots: valid }, deps.jevCtx ?? {}), null);
       if (verdict?.by === "jev") {
         jevSeen = verdict.decision;
         if (verdict.decision.verdict === "cut") {
@@ -123,7 +124,7 @@ async function judgeScreenshots(target: string, deps: ValidatorDeps, dom: DomRep
   }
   const wantsReview = deps.review && (jevSeen?.verdict === "uncertain" || Boolean(deps.brief?.design));
   if (wantsReview) {
-    const reviewed = await deps.review!({ url: target, brief, shots: shotPaths, dom, jev: jevSeen }).catch(() => null);
+    const reviewed = await bestEffort(console.warn, `validator visual review ${target}`, deps.review!({ url: target, brief, shots: shotPaths, dom, jev: jevSeen }), null);
     if (reviewed) return { ...reviewed, details: { dom, jev: jevSeen } };
     return { ...base, reason: `${base.reason}; visual review unavailable${jevSeen ? `, jev: ${jevSeen.verdict} ${jevSeen.worst}` : ""}`, details: { dom, jev: jevSeen } };
   }
@@ -145,7 +146,7 @@ print('REPORT '+json.dumps({'ngons':bad_ngon,'flipped':flipped,'tris':tris}))`;
 async function validate3d(path: string, deps: ValidatorDeps): Promise<Verdict> {
   if (!deps.host || !deps.hostId) return { ok: false, reason: "no host for a Blender probe" };
   const script = `blender -b ${shq(path)} --python-expr ${shq(BLENDER_PROBE)} 2>/dev/null | grep '^REPORT '`;
-  const out = await deps.host.run(deps.hostId, "/", script, 300).catch(() => null);
+  const out = await bestEffort(console.warn, `validator blender ${path}`, deps.host.run(deps.hostId, "/", script, 300), null);
   const match = /REPORT (\{.*\})/.exec(out?.stdout ?? "");
   if (!match) return { ok: false, reason: "Blender produced no geometry report" };
   const report = JSON.parse(match[1]) as { ngons: number; flipped: number; tris: number };
@@ -162,10 +163,10 @@ async function validate3d(path: string, deps: ValidatorDeps): Promise<Verdict> {
   const renderPath = String(deps.brief?.render_path ?? deps.brief?.renderPath ?? deps.brief?.preview ?? "");
   const judge = jev();
   if (!judge || !conceptPath || !renderPath) return clean;
-  const read64 = async (p: string) => (await deps.host!.run(deps.hostId!, "/", `base64 < ${shq(p)} 2>/dev/null | tr -d '\n'`, 60).catch(() => null))?.stdout?.trim() ?? null;
+  const read64 = async (p: string) => (await bestEffort(console.warn, `validator base64 ${p}`, deps.host!.run(deps.hostId!, "/", `base64 < ${shq(p)} 2>/dev/null | tr -d '\n'`, 60), null))?.stdout?.trim() ?? null;
   const [concept, render] = await Promise.all([read64(conceptPath), read64(renderPath)]);
   if (!concept || !render) return clean;
-  const verdict = await judge.judge(renderMatchJudgment, { brief: String(deps.brief?.objective ?? deps.brief?.prompt ?? ""), concept: { format: "png", data_base64: concept.slice(0, 9_000_000) }, render: { format: "png", data_base64: render.slice(0, 9_000_000) } }, deps.jevCtx ?? {}).catch(() => null);
+  const verdict = await bestEffort(console.warn, `validator render match ${renderPath}`, judge.judge(renderMatchJudgment, { brief: String(deps.brief?.objective ?? deps.brief?.prompt ?? ""), concept: { format: "png", data_base64: concept.slice(0, 9_000_000) }, render: { format: "png", data_base64: render.slice(0, 9_000_000) } }, deps.jevCtx ?? {}), null);
   if (!verdict) return clean;
   if (verdict.by === "jev" && !verdict.decision.matches) {
     const d = verdict.decision;
@@ -179,7 +180,7 @@ async function validate3d(path: string, deps: ValidatorDeps): Promise<Verdict> {
 
 async function validateVideo(path: string, deps: ValidatorDeps): Promise<Verdict> {
   if (!deps.host || !deps.hostId) return { ok: false, reason: "no host for ffprobe" };
-  const probe = await deps.host.run(deps.hostId, "/", `ffprobe -v error -print_format json -show_streams -show_format ${shq(path)}`, 60).catch(() => null);
+  const probe = await bestEffort(console.warn, `validator ffprobe ${path}`, deps.host.run(deps.hostId, "/", `ffprobe -v error -print_format json -show_streams -show_format ${shq(path)}`, 60), null);
   let streams: Array<{ codec_type?: string }> = [], duration = 0;
   try {
     const parsed = JSON.parse(probe?.stdout ?? "{}") as { streams?: typeof streams; format?: { duration?: string } };
@@ -189,7 +190,7 @@ async function validateVideo(path: string, deps: ValidatorDeps): Promise<Verdict
   if (!streams.some((stream) => stream.codec_type === "video")) return { ok: false, reason: "no video stream" };
   if (!streams.some((stream) => stream.codec_type === "audio")) return { ok: false, reason: "no audio stream" };
   if (!(duration > 0)) return { ok: false, reason: "no duration" };
-  const loud = await deps.host.run(deps.hostId, "/", `ffmpeg -i ${shq(path)} -af loudnorm=I=-14:print_format=json -f null - 2>&1 | tail -20`, 180).catch(() => null);
+  const loud = await bestEffort(console.warn, `validator loudness ${path}`, deps.host.run(deps.hostId, "/", `ffmpeg -i ${shq(path)} -af loudnorm=I=-14:print_format=json -f null - 2>&1 | tail -20`, 180), null);
   const measured = /"input_i"\s*:\s*"(-?\d+(?:\.\d+)?)"/.exec(loud?.stdout ?? "") ?? /"input_i"\s*:\s*"(-?\d+(?:\.\d+)?)"/.exec(loud?.stderr ?? "");
   if (measured && Math.abs(Number(measured[1]) + 14) > 1) return { ok: false, reason: `loudness ${measured[1]} LUFS, expected about -14`, details: { lufs: Number(measured[1]) } };
   return { ok: true, reason: `streams ok, ${duration}s${measured ? `, ${measured[1]} LUFS` : ""}` };
@@ -202,7 +203,7 @@ const digits = (text: string) => text.replace(/\D/g, "");
 async function validateInvoice(path: string, deps: ValidatorDeps): Promise<Verdict> {
   let text = deps.readFile?.(path) ?? null;
   if (text == null && deps.host && deps.hostId) {
-    const out = await deps.host.run(deps.hostId, "/", `(pdftotext ${shq(path)} - 2>/dev/null || strings ${shq(path)}) | head -200`, 60).catch(() => null);
+    const out = await bestEffort(console.warn, `validator pdf text ${path}`, deps.host.run(deps.hostId, "/", `(pdftotext ${shq(path)} - 2>/dev/null || strings ${shq(path)}) | head -200`, 60), null);
     text = out?.stdout ?? null;
   }
   if (!text?.trim()) return judgeInvoiceScan(path, deps);
@@ -227,10 +228,10 @@ async function judgeInvoiceScan(path: string, deps: ValidatorDeps): Promise<Verd
   const brief = deps.brief ?? {};
   const expected = Object.fromEntries((["inn", "bik", "amount", "number"] as ScanField[]).filter((f) => brief[f] != null && String(brief[f]).trim() !== "").map((f) => [f, String(brief[f])]));
   if (!Object.keys(expected).length) return { ok: false, reason: "no text in the PDF and no expected fields in the brief" };
-  const shot = await deps.host.run(deps.hostId, "/", `(pdftoppm -f 1 -singlefile -png -r 150 ${shq(path)} /tmp/invoice-scan 2>/dev/null || magick -density 150 ${shq(`${path}[0]`)} /tmp/invoice-scan.png 2>/dev/null) && base64 < /tmp/invoice-scan.png | tr -d '\n'`, 120).catch(() => null);
+  const shot = await bestEffort(console.warn, `validator invoice scan ${path}`, deps.host.run(deps.hostId, "/", `(pdftoppm -f 1 -singlefile -png -r 150 ${shq(path)} /tmp/invoice-scan 2>/dev/null || magick -density 150 ${shq(`${path}[0]`)} /tmp/invoice-scan.png 2>/dev/null) && base64 < /tmp/invoice-scan.png | tr -d '\n'`, 120), null);
   const data = shot?.stdout?.trim();
   if (!data || shot!.exitCode !== 0) return { ok: false, reason: "no text in the PDF and the page could not be rendered" };
-  const verdict = await judge.judge(invoiceScanJudgment, { expected, page: { format: "png", data_base64: data.slice(0, 9_000_000) } }, deps.jevCtx ?? {}).catch(() => null);
+  const verdict = await bestEffort(console.warn, `validator invoice scan ${path}`, judge.judge(invoiceScanJudgment, { expected, page: { format: "png", data_base64: data.slice(0, 9_000_000) } }, deps.jevCtx ?? {}), null);
   if (!verdict) return { ok: false, reason: "no text in the PDF" };
   if (verdict.by === "jev") {
     const d = verdict.decision;
@@ -251,7 +252,7 @@ async function validateComposite(path: string, deps: ValidatorDeps): Promise<Ver
   if (!judge) return { ok: true, reason: "artifact exists (jev off)" };
   const brief = String(deps.brief?.objective ?? deps.brief?.prompt ?? deps.brief?.topic ?? "");
   const axes = Array.isArray(deps.brief?.axes) ? (deps.brief.axes as AcceptAxis[]) : undefined;
-  const verdict = await judge.judge(acceptCompositeJudgment, { kind: String(deps.brief?.kind ?? "artifact"), brief, artifact: text, axes }, deps.jevCtx ?? {}).catch(() => null);
+  const verdict = await bestEffort(console.warn, `validator composite ${path}`, judge.judge(acceptCompositeJudgment, { kind: String(deps.brief?.kind ?? "artifact"), brief, artifact: text, axes }, deps.jevCtx ?? {}), null);
   if (!verdict || verdict.by !== "jev") {
     const shadow = verdict?.by === "fallback" && verdict.shadow?.decision ? `; jev shadow: ${acceptCompositeJudgment.describe(verdict.shadow.decision)}` : "";
     return { ok: true, reason: `artifact exists${shadow}`, details: { jevAsked: Boolean(verdict?.answers) } };
@@ -278,7 +279,7 @@ export async function validateDeliverable(kind: string | null | undefined, path:
   const name = (kind?.trim() || "artifact") as ValidatorKind;
   if (name === "artifact") {
     const text = await readText(path, deps);
-    const exists = text != null ? text.length > 0 : Boolean(deps.host && deps.hostId && (await deps.host.run(deps.hostId, "/", `[ -s ${shq(path)} ] || [ -n "$(find ${shq(path)} -mindepth 1 -print -quit 2>/dev/null)" ]`, 30).then((r) => r.exitCode === 0).catch(() => false)));
+    const exists = text != null ? text.length > 0 : Boolean(deps.host && deps.hostId && await bestEffort(console.warn, `validator artifact exists ${path}`, deps.host.run(deps.hostId, "/", `[ -s ${shq(path)} ] || [ -n "$(find ${shq(path)} -mindepth 1 -print -quit 2>/dev/null)" ]`, 30).then((r) => r.exitCode === 0), false));
     return exists ? { ok: true, reason: "artifact exists and is not empty" } : { ok: false, reason: "artifact missing or empty" };
   }
   const run = VALIDATORS[name];

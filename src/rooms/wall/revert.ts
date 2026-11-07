@@ -8,6 +8,8 @@ const ABBREVIATED_COMMIT = /^[a-f0-9]{7,39}$/;
 export type RevertHost = { call(method: string, input: unknown, options: { hostId: string; timeoutMs: number; worktreeOwner?: { kind: string; id: string | null } }): Promise<unknown> };
 export type RevertEnvironment = { hostId: string; basePath: string };
 
+import { bestEffort } from "@lane-pilot/kit";
+
 /**
  * The full SHA of a commit the repair row knows. The gate used to keep the first 12 characters of the merge in prose and hand those to
  * `gitRevertCommits`, which takes 40-64 hex only; an abbreviated one found in a stored row is resolved with git in the repository.
@@ -29,7 +31,7 @@ export async function revertMerge(host: RevertHost, env: RevertEnvironment, comm
   if (created.status !== "ready" || !created.path) return { ok: false, detail: `worktree not created: ${created.reason ?? "unknown"}` };
   // The worktree goes away on every way out but a merged revert (which removes it itself): a revert refused by the host's input check left three of them
   // behind (night-revert-29754b58, -52dabb10, -8dd355f4 under ~/.lane-pilot/worktrees), and every retry would add one.
-  const drop = () => host.call("gitRemoveWorktree", { requestedHostId: hostId, basePath, worktreePath: created.path }, { hostId, timeoutMs: 120_000 }).catch(() => null);
+  const drop = () => bestEffort(console.warn, `wall revert worktree cleanup ${created.path}`, host.call("gitRemoveWorktree", { requestedHostId: hostId, basePath, worktreePath: created.path }, { hostId, timeoutMs: 120_000 }), null);
   try {
     const reverted = await host.call("gitRevertCommits", { requestedHostId: hostId, worktreePath: created.path, commits: [full] }, { hostId, timeoutMs: 120_000 }) as { status: string; reason?: string | null; conflicts: string[] };
     if (reverted.status !== "reverted") {

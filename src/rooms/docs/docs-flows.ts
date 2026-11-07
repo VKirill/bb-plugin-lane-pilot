@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, posix } from "node:path";
 import { promisify } from "node:util";
+import { readTextOrNull } from "@lane-pilot/kit";
 import { CODE_FILE, TEST_PATH, jevAsk, jevCallFor, jevPool, jevStatus, scanDeclarations, type JevCallSource, type JevStatus } from "./docs-jev";
 import { extractRoutes, type RouteRef } from "./docs-routes";
 
@@ -121,7 +122,7 @@ export async function buildDocsFlows(input:{ projectCwd:string; workspaces:FlowW
   const paths = listed.filter((path) => CODE_FILE.test(path) && !path.endsWith(".prisma") && !TEST_PATH.test(path) && !SKIP.test(path) && !/(^|\/)\.[^/]+\//.test(path));
   const files = new Map<string, string>();
   for (const path of paths) {
-    const text = await readFile(join(input.projectCwd, path), "utf8").catch(() => null);
+    const text = await readTextOrNull(join(input.projectCwd, path));
     if (text !== null && text.length < 400_000) files.set(path, text);
   }
   const workspaces = await Promise.all(input.workspaces.map(async (ws) => {

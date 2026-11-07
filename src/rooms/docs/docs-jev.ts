@@ -6,6 +6,7 @@ import { extractRoutes, type RouteRef } from "./docs-routes";
 import { parsePrisma, prismaAccess, renderDataMap } from "./docs-data";
 import { CITATION_SOURCE, expandCitationLists } from "./docs-lint";
 import { promisify } from "node:util";
+import { bestEffort, parseJsonOr, readTextOrNull, statOrNull } from "@lane-pilot/kit";
 import { JEV_PROVIDERS, jevProviderOfHostCall, type JevProvider } from "@lane-pilot/jev/provider";
 
 /**
@@ -38,7 +39,7 @@ export type JevCallSource = { jevApiKey?: string; jevProvider?: string };
 async function machineJevKey(): Promise<string> {
   const fromEnv = (process.env.TYPESAFE_API_KEY || process.env.JEV_API_KEY || "").trim();
   if (fromEnv) return fromEnv;
-  const text = await readFile(join(homedir(), "secrets", "typesafe.env"), "utf8").catch(() => "");
+  const text = await readTextOrNull(join(homedir(), "secrets", "typesafe.env")) ?? "";
   for (const line of text.split("\n")) {
     const match = /^\s*(TYPESAFE_API_KEY|JEV_API_KEY)\s*=\s*(.+?)\s*$/.exec(line);
     if (match) return match[2]!.replace(/^['"]|['"]$/g, "");
@@ -239,7 +240,7 @@ const ANCHOR_QUESTIONS = (pages:Array<{ path:string; title:string }>):Record<str
 });
 
 async function dependencies(projectCwd:string, prefix = ""):Promise<string[]> {
-  const pkg = await readFile(join(projectCwd, prefix, "package.json"), "utf8").then((text) => JSON.parse(text) as Record<string, Record<string, string>>).catch(() => null);
+  const pkg = parseJsonOr(await readTextOrNull(join(projectCwd, prefix, "package.json")) ?? "", null) as Record<string, Record<string, string>> | null;
   if (!pkg) return [];
   return [...Object.entries(pkg.dependencies ?? {}).map(([name, version]) => `${name}@${version}`),
     ...Object.entries(pkg.devDependencies ?? {}).map(([name, version]) => `${name}@${version} (dev)`)];
@@ -262,9 +263,9 @@ export async function buildDocsAnchors(input:{ projectCwd:string; pages:Array<{ 
   const routes:RouteRef[] = [];
   let anchors:Anchor[] = [];
   for (const file of files) {
-    const info = await stat(join(input.projectCwd, file)).catch(() => null);
+    const info = await statOrNull(join(input.projectCwd, file));
     if (!info?.isFile() || info.size > 400_000) continue;
-    const text = await readFile(join(input.projectCwd, file), "utf8").catch(() => "");
+    const text = await readTextOrNull(join(input.projectCwd, file)) ?? "";
     if (TEST_PATH.test(file)) { for (const match of text.matchAll(/\b(?:it|test)\(\s*["'`](.+?)["'`]/g)) tests.push(`${file}: ${match[1]}`); continue; }
     anchors.push(...scanDeclarations(file, text));
     routes.push(...extractRoutes(file, text));
@@ -295,12 +296,12 @@ export async function buildDocsAnchors(input:{ projectCwd:string; pages:Array<{ 
   const schemaFiles = files.filter((file) => file.endsWith(".prisma"));
   let dataMap:string[] = [];
   if (schemaFiles.length) {
-    const parsed = await Promise.all(schemaFiles.map(async (file) => parsePrisma(file, await readFile(join(input.projectCwd, file), "utf8").catch(() => ""))));
+    const parsed = await Promise.all(schemaFiles.map(async (file) => parsePrisma(file, await readTextOrNull(join(input.projectCwd, file)) ?? "")));
     const models = parsed.flatMap((item) => item.models), enums = parsed.flatMap((item) => item.enums);
     const code = new Map<string, string>();
     for (const file of await trackedCode(input.projectCwd)) {
       if (file.endsWith(".prisma") || TEST_PATH.test(file)) continue;
-      const text = await readFile(join(input.projectCwd, file), "utf8").catch(() => "");
+      const text = await readTextOrNull(join(input.projectCwd, file)) ?? "";
       if (text.length < 400_000) code.set(file, text);
     }
     const tables = new Map(models.flatMap((model) => model.table ? [[model.table.toLowerCase(), model.name] as [string, string]] : []));
@@ -324,7 +325,7 @@ export async function buildDocsAnchors(input:{ projectCwd:string; pages:Array<{ 
   const tables = [...new Set(anchors.filter((anchor) => anchor.kind === "table").map((anchor) => anchor.name))].sort();
   // A project with a build or install script needs a how-to page for building, installing and running it.
   // A monorepo is built and deployed from its root, so only the root docs get the page.
-  const scripts = prefix ? {} : await readFile(join(input.projectCwd, "package.json"), "utf8").then((text) => (JSON.parse(text) as { scripts?:Record<string, string> }).scripts ?? {}).catch(() => ({} as Record<string, string>));
+  const scripts = prefix ? {} : (parseJsonOr<{ scripts?: Record<string, string> }>(await readTextOrNull(join(input.projectCwd, "package.json")) ?? "", {})).scripts ?? {};
   const deploy = Boolean(scripts.build || scripts.install || scripts.start || scripts.deploy);
   return { briefPath, anchors:anchors.length, jev:auth ? status(asked, answered) : "disabled", productFiles, core, tables, deploy };
 }
@@ -342,7 +343,7 @@ async function renderWorkspaceMap(projectCwd:string, workspaces:DocsWorkspaceRef
   }
   // How the system is built and run: compose services and the task pipeline, for deployment and architecture.
   for (const name of ["docker-compose.yml", "docker-compose.yaml", "compose.yml", "compose.yaml"]) {
-    const text = await readFile(join(projectCwd, name), "utf8").catch(() => null);
+    const text = await readTextOrNull(join(projectCwd, name));
     if (text === null) continue;
     const services = /^services:\s*\n([\s\S]*?)(?=^\S|$(?![\s\S]))/m.exec(text)?.[1] ?? "";
     lines.push("", `## Services in ${name}`, "", ...[...services.matchAll(/^  ([A-Za-z0-9_.-]+):\s*$/gm)].map((match) => `- ${match[1]} - ${name}:${text.slice(0, text.indexOf(match[0])).split("\n").length}`));
@@ -429,7 +430,7 @@ export async function verifyDocsCitations(input:{ projectCwd:string; pages:Array
   }
   const files = new Map<string, string[] | null>();
   for (const ref of checks.flatMap((check) => check.refs)) if (!files.has(ref.file)) {
-    const text = ref.file.split("/").includes("..") ? null : await readFile(join(input.projectCwd, ref.file), "utf8").catch(() => null);
+    const text = ref.file.split("/").includes("..") ? null : await readTextOrNull(join(input.projectCwd, ref.file));
     files.set(ref.file, text === null ? null : text.split("\n"));
   }
   const findings:Array<{ path:string; rule:string; detail:string }> = [];
@@ -508,7 +509,7 @@ async function diffSince(projectCwd:string, base:string, files:string[]):Promise
   const git = (...args:string[]) => run("git", ["-c", "core.quotePath=false", "-C", projectCwd, ...args], { maxBuffer:32 << 20 });
   const diffs = new Map<string, string>();
   for (const file of files) {
-    const text = (await git("diff", base, "--", file).catch(() => ({ stdout:"" }))).stdout;
+    const text = (await bestEffort(console.warn, `docs diff ${file}`, git("diff", base, "--", file), { stdout: "", stderr: "" })).stdout;
     if (text) diffs.set(file, text.split("\n").slice(0, 300).join("\n"));
   }
   return diffs;
@@ -568,7 +569,7 @@ export async function docsDepth(input:{ projectCwd:string; pages:Array<{ path:st
   const findings:Array<{ path:string; rule:string; detail:string }> = [];
   let answered = 0;
   await pool(checks, async (check) => {
-    const lines = (await readFile(join(input.projectCwd, check.anchor.file), "utf8").catch(() => "")).split("\n");
+    const lines = (await readTextOrNull(join(input.projectCwd, check.anchor.file)) ?? "").split("\n");
     const code = lines.slice(check.anchor.line - 1, Math.min(check.anchor.endLine, check.anchor.line + 120)).join("\n");
     const answers = await jevAsk(auth.key, { code:{ file:check.anchor.file, symbol:check.anchor.name, code }, docs:{ page:check.page, text:check.text } }, {
       explains:{ type:"noul", instructions:"Do the sentences in `docs` explain what `code` does - its steps, the conditions and modes it branches on, and its outcomes and failures - well enough that a reader would not need to open the code to understand it?" },

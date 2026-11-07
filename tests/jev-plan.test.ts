@@ -6,7 +6,7 @@ const { missingCredentialFile } = vi.hoisted(() => ({ missingCredentialFile:{ va
 vi.mock("node:fs/promises", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs/promises")>();
   return { ...actual, readFile: (...args: Parameters<typeof actual.readFile>) =>
-    missingCredentialFile.value ? Promise.reject(new Error("ENOENT")) : actual.readFile(...args) };
+    missingCredentialFile.value ? Promise.reject(Object.assign(new Error("ENOENT"), { code: "ENOENT" })) : actual.readFile(...args) };
 });
 
 const priorFetch = globalThis.fetch;

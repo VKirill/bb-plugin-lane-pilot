@@ -1,5 +1,5 @@
 import type { HeadPart } from "@lane-pilot/contracts";
-import { sha256Hex } from "@lane-pilot/kit";
+import { bestEffort, sha256Hex } from "@lane-pilot/kit";
 import { extractModelJson } from "../critique";
 import type { ChangeDescriptor } from "../policy";
 import { EVIDENCE_WAIT_MS, closeExpiredRepair, decideAcceptance, gateRepair, laterReleaseTouches, repairChange, type Acceptance, type AcceptanceEvidence, type GateDecision, type RepairFile } from "./acceptance";
@@ -188,7 +188,7 @@ export function createWall(deps: WallDeps) {
     const fallback = wallFilterJudgment.fallback({ wallKey, subject: pack.subject, kind: pack.kind, facts: [], reasons: [] });
     if (!instance) return fallback;
     try {
-      const settings = deps.settings ? await deps.settings().catch(() => ({} as JevSettings)) : ((await config().catch(() => ({}))) as JevSettings);
+      const settings = deps.settings ? await deps.settings() : (await config()) as JevSettings;
       if (!instance.enabled(settings)) return fallback;
       const reasons = [
         ...pack.attempts.map((a) => a.reason),
@@ -227,14 +227,14 @@ export function createWall(deps: WallDeps) {
     const key = packSha(pack);
     if (packPathBySha.has(key)) return packPathOf(pack);
     const safe = name.replace(/[^A-Za-z0-9_.-]+/g, "-").slice(0, 80);
-    const path = await ports.writeText?.(`.bb/wall/${safe}-${key.slice(0, 8)}.json`, JSON.stringify(pack)).catch(() => null) ?? null;
+    const path = await bestEffort(log, `wall pack file ${safe}`, ports.writeText?.(`.bb/wall/${safe}-${key.slice(0, 8)}.json`, JSON.stringify(pack)) ?? Promise.resolve(null), null);
     packPathBySha.set(key, path ?? "");
     return path ?? undefined;
   };
   /** The pack path a step needs, or undefined for an inline pack: over the cap, only a file-reading provider gets one. */
   const packPathFor = async (pack: EvidencePack, name: string, who: "hunter" | "analysis"): Promise<string | undefined> => {
     if (JSON.stringify(pack).length <= WALL_PACK_INLINE_CAP) return undefined;
-    if (!(await ports.readerReadsFiles?.(who).catch(() => false))) return undefined;
+    if (!(await bestEffort(log, `wall reader files ${who}`, ports.readerReadsFiles?.(who) ?? Promise.resolve(false), false))) return undefined;
     return packFileFor(pack, name);
   };
   /** The material file of a finished step goes away, and the next step over the same pack writes its own. */
@@ -242,7 +242,7 @@ export function createWall(deps: WallDeps) {
     const key = packSha(pack);
     const path = packPathBySha.get(key);
     packPathBySha.delete(key);
-    if (path) await ports.deleteText?.(path).catch(() => undefined);
+    if (path) await bestEffort(log, `wall pack cleanup ${path}`, ports.deleteText?.(path) ?? Promise.resolve(undefined), undefined);
   };
 
   /**
@@ -270,7 +270,7 @@ export function createWall(deps: WallDeps) {
       return ran ?? judgeRuns(pack, angles.map((angle) => ({ angle, text: null, tokens: 0 })));
     }
     const runs = await Promise.all(angles.map(async (angle) => {
-      const run = await ports.reader!(hunterPrompt(angle, pack, packPath), "hunter").catch(() => ({ text: null, tokens: 0 } as ThreadRun));
+      const run = await bestEffort(log, `wall hunter ${angle} ${wallKey}`, ports.reader!(hunterPrompt(angle, pack, packPath), "hunter"), { text: null, tokens: 0 } as ThreadRun);
       return { angle, text: run.text, tokens: run.tokens };
     }));
     await dropPackFile(pack);
@@ -296,8 +296,8 @@ export function createWall(deps: WallDeps) {
 
   /** The full analysis: a strong reader in the wall's night budget (a graph run in the plugin). */
   async function readAnalysis(wallKey: string, prompt: string): Promise<ThreadRun> {
-    if (ports.graph) return await ports.graph.analysis({ wallKey, prompt }).catch(() => null) ?? { text: null, tokens: 0 };
-    return await ports.reader!(prompt, "analysis").catch(() => ({ text: null, tokens: 0 } as ThreadRun));
+    if (ports.graph) return await bestEffort(log, `wall analysis graph ${wallKey}`, ports.graph.analysis({ wallKey, prompt }), null) ?? { text: null, tokens: 0 };
+    return await bestEffort(log, `wall analysis ${wallKey}`, ports.reader!(prompt, "analysis"), { text: null, tokens: 0 } as ThreadRun);
   }
 
   const huntBudgetLeft = (cfg: WallConfig, now: number): number => {
@@ -311,7 +311,7 @@ export function createWall(deps: WallDeps) {
     const key = classWallKey(cls.classKey);
     insertWall(db, { key, kind: "class", subject: cls.classKey, projectId: "", state: "hunting", moves: cls.failedMoves, now });
     updateClassLadder(db, cls.classKey, { hunt: "running" }, now);
-    const files = await ports.codeFiles(cls.reasonNorm.split(/<[a-z]+>/).map((part) => part.trim()).filter((part) => part.length >= 12).slice(0, 3)).catch(() => []);
+    const files = await bestEffort(log, `wall code files ${cls.classKey}`, ports.codeFiles(cls.reasonNorm.split(/<[a-z]+>/).map((part) => part.trim()).filter((part) => part.length >= 12).slice(0, 3)), []);
     const pack = buildClassPack(db, cls.classKey, { files, facts: [`moves spent: ${cls.failedMoves}; the engineer's rounds did not end the class`] });
     const { outcome, tokens } = await hunt(pack, cfg, key);
     updateWall(db, key, { state: "hunted", hunt: outcome.state, pack, findings: recordHuntOutcome(outcome), tokensUsed: tokens }, ports.now());
@@ -403,7 +403,7 @@ export function createWall(deps: WallDeps) {
       if (outcome.state === "unknown") { await escalateBacklog(wall.key, wall.subject, wall.projectId, "every hunter ended unknown or without a citation that holds", now); notes.push(`${wall.key}: backlog`); continue; }
       const pm = pack.meta?.pmThreadId;
       const text = taskWallMessage({ family: family ?? wall.subject, findings: outcome.usable, budgetNote: `Hunt cost: ${tokens.toLocaleString("en-US")} tokens.` });
-      const sent = pm ? await ports.tellPm(pm, text).catch(() => false) : false;
+      const sent = pm ? await bestEffort(log, `wall pm notice ${pm}`, ports.tellPm(pm, text), false) : false;
       if (sent) updateWall(db, wall.key, { messageSentAt: ports.now() }, ports.now());
       notes.push(`${wall.key}: hunted, ${outcome.usable.length} usable${sent ? ", the PM was told" : ""}`);
     }
@@ -444,7 +444,7 @@ export function createWall(deps: WallDeps) {
     pack.meta = { loop: input.kind, subjectId: input.id, runId: input.runId ?? "", pmThreadId: input.pmThreadId ?? "", done: input.done.slice(0, 600), ...(input.topic ? { topic: input.topic } : {}) };
     updateWall(db, key, { pack }, now);
     if (input.notice && input.pmThreadId) {
-      const sent = await ports.tellPm(input.pmThreadId, input.notice).catch(() => false);
+      const sent = await bestEffort(log, `wall loop notice ${input.pmThreadId}`, ports.tellPm(input.pmThreadId, input.notice), false);
       if (sent) updateWall(db, key, { messageSentAt: ports.now() }, ports.now());
     }
     log(`wall: loop ${key} exhausted (${input.kind} ${input.id}); the hunters read it on the next pass`);
@@ -504,7 +504,7 @@ export function createWall(deps: WallDeps) {
     const night = nightOf(now);
     const scope = await ports.loadScope();
     const logLines = ports.logLines(now - DAY, now);
-    const benchOk = cfg.benchSubset > 0 && await ports.bench.available().catch(() => false);
+    const benchOk = cfg.benchSubset > 0 && await bestEffort(log, "wall bench available", ports.bench.available(), false);
     const summary: NightSummary = { night, startedAt: now, dryRun: Boolean(options.dryRun), classesSeen: 0, picked: [], morning: [], hunts: [], backlog: [], spendTokens: 0, capTokens: cfg.nightTokenCap, stoppedBy: null };
     if (!cfg.enabled) return { ...summary, stoppedBy: "the night loop is off (wall.enabled)" };
 
@@ -562,7 +562,7 @@ export function createWall(deps: WallDeps) {
     const selection = select(classes);
     summary.stoppedBy = selection.stoppedBy;
     summary.morning = selection.morning;
-    if (benchOk && selection.picked.length) await ports.bench.ensureArm(nightArm(ports.version)).catch(() => undefined);
+    if (benchOk && selection.picked.length) await bestEffort(log, `wall bench arm ${ports.version}`, ports.bench.ensureArm(nightArm(ports.version)), undefined);
     for (const pick of selection.picked) {
       const cls = getClass(db, pick.classKey)!;
       const pack = buildClassPack(db, cls.classKey);
@@ -580,7 +580,7 @@ export function createWall(deps: WallDeps) {
     log(`wall: night ${night}: ${summary.classesSeen} classes with a failure today, ${summary.picked.length} repairs queued, ${summary.hunts.length} hunts, ${summary.backlog.length} to the backlog, ~${summary.spendTokens} of ${summary.capTokens} tokens`);
     if (!options.dryRun && deps.diffHiddenAudit) {
       const projectSettings = loadProjectSettings(db as never, "*");
-      const rawLimit = projectSettings["checkers.diff_hidden_limit"] ?? (deps.settings ? (await deps.settings().catch(() => ({} as Record<string, unknown>)))["checkers.diff_hidden_limit"] : undefined);
+      const rawLimit = projectSettings["checkers.diff_hidden_limit"] ?? (deps.settings ? (await bestEffort(log, "wall diff-hidden settings", deps.settings(), {} as Record<string, unknown>))["checkers.diff_hidden_limit"] : undefined);
       const diffHiddenLimit = typeof rawLimit === "number" ? rawLimit : (rawLimit !== undefined && rawLimit !== null && rawLimit !== "" && !isNaN(Number(rawLimit)) ? Number(rawLimit) : 3);
       if (diffHiddenLimit > 0) {
         await deps.diffHiddenAudit(diffHiddenLimit).catch((cause: unknown) => {
@@ -623,11 +623,11 @@ export function createWall(deps: WallDeps) {
     if (stored?.decision === "merge") return "merge";
     if (stored?.decision === "reject") return "release";
     const view = await ports.repair.view(signature);
-    const files = view ? await ports.repair.changedFiles(view).catch(() => null) : null;
+    const files = view ? await bestEffort(log, `wall repair files ${signature}`, ports.repair.changedFiles(view), null) : null;
     // Unreadable files are asked again on the next watch pass; nothing is stored, so no decision is taken on no evidence.
     if (!files) return "hold";
     const cfg = await config();
-    const benchOk = cfg.benchSubset > 0 && await ports.bench.available().catch(() => false);
+    const benchOk = cfg.benchSubset > 0 && await bestEffort(log, "wall bench available", ports.bench.available(), false);
     const change: ChangeDescriptor = repairChange(files, { benchAvailable: benchOk, rollbackOk: rollbackPathOk(now) });
     const decision = gateRepair(change);
     // `requireBench`: a merge on the strict path is accepted later only on a passed bench subset of the shipped version (acceptance.ts).
@@ -693,20 +693,20 @@ export function createWall(deps: WallDeps) {
         continue;
       }
       if (row.threadId) {
-        const used = await ports.repair.tokens(row.threadId).catch(() => null);
+        const used = await bestEffort(log, `wall repair tokens ${row.threadId}`, ports.repair.tokens(row.threadId), null);
         if (used !== null && used !== row.tokensUsed) updateRepair(db, row.id, { tokensUsed: used }, now);
       }
       if (row.state === "running" && row.threadId) {
         const view = await ports.repair.view(row.signature);
         if (view?.verdict && !(await ports.repair.busy(row.threadId))) {
-          const report = await ports.repair.report(row.threadId).catch(() => "");
+          const report = await bestEffort(log, `wall repair report ${row.threadId}`, ports.repair.report(row.threadId), "");
           const night = parseNightReport(report);
           const prediction = parsePrediction(report);
           const prior = row.acceptance as Record<string, unknown> | null;
           // One retry when the prediction names nothing checkable: the metric must come from the list.
           if (prediction && !prediction.fixes_class && !prediction.must_not_move.length && prediction.unknown.length && !prior?.predictionRetried && row.threadId) {
             const names = PREDICTION_METRICS.join(", ");
-            await ports.tellPm(row.threadId, `Your prediction names no checkable metric (${prediction.unknown.join(", ") ?? "none"}); name a metric from the list: ${names} — one retry.`).catch(() => false);
+            await bestEffort(log, `wall prediction retry ${row.threadId}`, ports.tellPm(row.threadId, `Your prediction names no checkable metric (${prediction.unknown.join(", ") ?? "none"}); name a metric from the list: ${names} — one retry.`), false);
             updateRepair(db, row.id, { acceptance: { ...(prior ?? {}), prediction, predictionRetried: true, predictionUnknown: prediction.unknown } }, now);
             continue;
           }
@@ -734,9 +734,9 @@ export function createWall(deps: WallDeps) {
     const key = `${row.id}:${shipped}:${later}`;
     const known = voidCache.get(key);
     if (known !== undefined) return known;
-    const laterFiles = await ports.release.changedBetween?.(shipped, later).catch(() => null) ?? null;
+    const laterFiles = await bestEffort(log, `wall release changes ${shipped}..${later}`, ports.release.changedBetween?.(shipped, later) ?? Promise.resolve(null), null) ?? null;
     const cls = classOf(row);
-    const classFiles = laterFiles && cls ? (await ports.codeFiles(cls.reasonNorm.split(/<[a-z]+>/).map((part) => part.trim()).filter((part) => part.length >= 12).slice(0, 3)).catch(() => [])).map((file) => file.path) : [];
+    const classFiles = laterFiles && cls ? (await bestEffort(log, `wall class files ${cls.classKey}`, ports.codeFiles(cls.reasonNorm.split(/<[a-z]+>/).map((part) => part.trim()).filter((part) => part.length >= 12).slice(0, 3)), [])).map((file) => file.path) : [];
     const repairFiles = ((row.policy as { change?: { files?: string[] } } | null)?.change?.files ?? []);
     const voids = laterReleaseTouches({ repairFiles, classFiles, laterFiles });
     if (laterFiles) voidCache.set(key, voids);
@@ -782,9 +782,9 @@ export function createWall(deps: WallDeps) {
     let evidence = shipped;
     if (superseded && !(await laterReleaseVoids(row, shipped, superseded))) { evidence = superseded; superseded = null; }
     const deployedAt = acceptance.deployedAt ?? now;
-    const drill = await ports.release.drill().catch(() => null);
-    const canary = await ports.release.canary().catch(() => null);
-    const benchOk = cfg.benchSubset > 0 && !superseded && await ports.bench.available().catch(() => false);
+    const drill = await bestEffort(log, `wall release drill ${row.id}`, ports.release.drill(), null);
+    const canary = await bestEffort(log, `wall release canary ${row.id}`, ports.release.canary(), null);
+    const benchOk = cfg.benchSubset > 0 && !superseded && await bestEffort(log, "wall bench available", ports.bench.available(), false);
     let bench: AcceptanceEvidence["bench"] = "unavailable";
     let benchScore: number | undefined, baselineScore: number | undefined;
     let benchCompare: { base: string; arm: string } | undefined;
@@ -792,12 +792,12 @@ export function createWall(deps: WallDeps) {
       const base = nightArm(mergedAt), arm = nightArm(evidence);
       // S5: the repair is judged against the release on one base — the same set revision the baseline arm was measured on.
       // When that set is found the shipped arm runs it too; without a measured baseline the newest set is used (the compare is inconclusive).
-      const setVersion = await ports.bench.armSet(base).catch(() => null);
-      const state = await ports.bench.ensureArm(arm, setVersion ?? undefined).catch(() => "unavailable" as const);
-      bench = state === "done" ? await ports.bench.compare(base, arm, setVersion ?? undefined).catch(() => "unavailable" as const) : state === "running" ? "pending" : "unavailable";
+      const setVersion = await bestEffort(log, `wall bench arm set ${base}`, ports.bench.armSet(base), null);
+      const state = await bestEffort(log, `wall bench ensure ${arm}`, ports.bench.ensureArm(arm, setVersion ?? undefined), "unavailable" as const);
+      bench = state === "done" ? await bestEffort(log, `wall bench compare ${base} ${arm}`, ports.bench.compare(base, arm, setVersion ?? undefined), "unavailable" as const) : state === "running" ? "pending" : "unavailable";
       if (bench === "pass" || bench === "fail") {
-        benchScore = (await ports.bench.score(arm).catch(() => null)) ?? undefined;
-        baselineScore = (await ports.bench.score(base).catch(() => null)) ?? undefined;
+        benchScore = (await bestEffort(log, `wall bench score ${arm}`, ports.bench.score(arm), null)) ?? undefined;
+        baselineScore = (await bestEffort(log, `wall bench score ${base}`, ports.bench.score(base), null)) ?? undefined;
         benchCompare = { base, arm };
       }
     }

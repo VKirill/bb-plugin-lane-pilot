@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { bestEffort } from "@lane-pilot/kit";
 import { registerObservedTool, scheduleIsolated } from "../platform/server";
 import { ToolError, type ServerCore } from "../contracts/server";
 import { hostContract } from "../contracts";
@@ -43,6 +44,21 @@ export function mountPermits(ctx: ServerCore): void {
   const host = () => bb.hosts.experimental_client({ contract: hostContract });
   const sent = async () => new Set(((await bb.storage.kv.get(SENT)) as string[] | null) ?? []);
   const routes = async () => ((await bb.storage.kv.get(ROUTES)) as Record<string, string> | null) ?? {};
+  // The sweep runs every minute: a host that stays unreachable is one incident, logged once per streak.
+  const downLogged = new Set<string>();
+  const ticketsOn = async (hostId: string) => {
+    try {
+      const answer = await host().call("listPermitTickets", { requestedHostId: hostId }, { hostId, timeoutMs: 10_000 });
+      downLogged.delete(hostId);
+      return answer;
+    } catch (cause) {
+      if (!downLogged.has(hostId)) {
+        downLogged.add(hostId);
+        bb.log.warn(`permit tickets on ${hostId}: ${cause instanceof Error ? cause.message : String(cause)}`);
+      }
+      return null;
+    }
+  };
 
   scheduleIsolated(bb, "permit-sweep", "* * * * *", async (signal) => {
     if (ctx.isDisposed() || signal?.aborted) return;
@@ -52,7 +68,7 @@ export function mountPermits(ctx: ServerCore): void {
     const bound = await routes();
     let dirty = false;
     for (const hostId of hosts) {
-      const answer = await host().call("listPermitTickets", { requestedHostId: hostId }, { hostId, timeoutMs: 10_000 }).catch(() => null);
+      const answer = await ticketsOn(hostId);
       for (const ticket of (answer?.tickets ?? []) as Ticket[]) {
         const key = routeKey(hostId, ticket.session, ticket.ticket);
         // Same command hash in two sessions is two requests. (2026-10-29 audit A-025)
@@ -72,8 +88,8 @@ export function mountPermits(ctx: ServerCore): void {
       }
     }
     if (!dirty) return;
-    await bb.storage.kv.set(SENT, [...told].slice(-500) as never).catch(() => undefined);
-    await bb.storage.kv.set(ROUTES, Object.fromEntries(Object.entries(bound).slice(-500)) as never).catch(() => undefined);
+    await bestEffort(bb.log, "permit sent journal", bb.storage.kv.set(SENT, [...told].slice(-500) as never), undefined);
+    await bestEffort(bb.log, "permit routes journal", bb.storage.kv.set(ROUTES, Object.fromEntries(Object.entries(bound).slice(-500)) as never), undefined);
   }, { timeoutMs: 60_000 });
 
   registerObservedTool(bb.agents, {
@@ -87,14 +103,14 @@ export function mountPermits(ctx: ServerCore): void {
       const boundId = (await routes())[key];
       let attempt = boundId ? open.find((row) => row.id === boundId && row.state === "running" && getRunWriterHost(db, row.run_id) === input.hostId) : undefined;
       if (!attempt) {
-        const listed = await host().call("listPermitTickets", { requestedHostId: input.hostId }, { hostId: input.hostId, timeoutMs: 10_000 }).catch(() => null);
+        const listed = await ticketsOn(input.hostId);
         const ticket = ((listed?.tickets ?? []) as Ticket[]).find((item) => item.session === input.session && item.ticket === input.ticket);
         const matched = ticket ? attemptForCwd(db, input.hostId, ticket.cwd, open) : undefined;
         attempt = matched ? open.find((row) => row.id === matched.id) : undefined;
       }
       const written = await host().call("answerPermit", { requestedHostId: input.hostId, session: input.session, ticket: input.ticket, decision: input.decision, why: input.why }, { hostId: input.hostId, timeoutMs: 10_000 });
       if (!written.written) throw new ToolError(`no ticket ${input.ticket} on ${input.hostId}`, { code: "no_ticket", retryable: false, sideEffects: "none" });
-      if (attempt?.thread_id) await bb.sdk.threads.send({ threadId: attempt.thread_id, mode: "queue-if-active", input: [{ type: "text", mentions: [], text: `[Lane Pilot] Permit ${input.ticket}: ${input.decision === "allow" ? "granted — run the same command again, once" : `refused — ${input.why}`}.` }] } as never).catch(() => undefined);
+      if (attempt?.thread_id) await bestEffort(bb.log, "permit decision notice", bb.sdk.threads.send({ threadId: attempt.thread_id, mode: "queue-if-active", input: [{ type: "text", mentions: [], text: `[Lane Pilot] Permit ${input.ticket}: ${input.decision === "allow" ? "granted — run the same command again, once" : `refused — ${input.why}`}.` }] } as never), undefined);
       return JSON.stringify({ ticket: input.ticket, decision: input.decision, written: true });
     },
   });
