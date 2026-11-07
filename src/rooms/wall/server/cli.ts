@@ -5,7 +5,7 @@ import type { WallApi } from "../service";
 export const WALL_USAGE = [
   "bb lane-pilot wall status                       the classes with a recent failure, the repairs, the walls on the ladder, the last nights and what they spent",
   "bb lane-pilot wall night [--dry-run]            run the night now (03:00 by itself); --dry-run keeps nothing, calls no model and only says what it would pick and why",
-  "bb lane-pilot wall advance                      follow the repairs (verdicts, merges, the release train, acceptance) and the task walls once",
+  "bb lane-pilot wall advance                      follow the repairs (verdicts, merges, deploys, acceptance) and the task walls once",
   "bb lane-pilot wall show <class-key|wall-key>    one class or wall: its recurrence, repairs, hunt, backlog entry and re-runs",
   "bb lane-pilot wall close <wall-key> --evidence <text>   close a wall with what settles it (an accepted attempt, a commit, the owner's decision)",
   "bb lane-pilot wall rerun <class-key> [--head part,part] [--dry-run]   plan (and, for sandbox and bench projects, start) the re-run of the class's failed attempts from their earliest affected stage",

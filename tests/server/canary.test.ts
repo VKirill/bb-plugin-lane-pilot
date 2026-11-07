@@ -53,7 +53,7 @@ describe("canaryReport on reasons from the hub", () => {
     attempt("blocked", "retry limit 2 exhausted: verification failed (npm -w @selfystudio/marketing run test -- ArticleBody): Error: EROFS: read-only file system, open '/x/node_modules/.vite-temp/v.mjs'");
     attempt("blocked", "attempt_worktree_holder_ambiguous:page_cap");
     const report = canaryReport(db, { version: VERSION, since: Date.now() - 3600_000, now: Date.now() });
-    expect(report.budget).toMatchObject({ attempts: 20, faults: 1, exhausted: false });
+    expect(report.faults).toBe(1);
   });
 
   it("reads only the head of a reason: a 4.7 MB stray-path list stalled BB for 5 s every 10 min (hub 2026-10-12)", () => {
@@ -63,18 +63,19 @@ describe("canaryReport on reasons from the hub", () => {
     attempt("validation_failed", `writer changed paths outside owns_paths or inside never_touch: ${paths}`);
     attempt("blocked", `internal_error: ${"x".repeat(2 * REASON_SCAN_CHARS)}`);
     const report = canaryReport(db, { version: VERSION, since: Date.now() - 3600_000, now: Date.now() });
-    expect(report).toMatchObject({ faults: 1, budget: { attempts: 2, faults: 1 } });
+    expect(report).toMatchObject({ faults: 1 });
     expect(report.samples[0]!.reason.length).toBeLessThanOrEqual(200);
   });
 });
 
-describe("the sandbox and the drills are not in the error budget or the canary (audit 2026-10-08 round 4, P1-12)", () => {
-  it("leaves out the drill's sandbox project, projects named LP sandbox / LP native / LP bench and drill-* tasks, in the budget and in the canary", async () => {
-    const { db, attempt, attemptIn, projectRows, canary } = setup();
-    for (let i = 0; i < 20; i += 1) attempt("accepted");
-    // Deliberate failures of the sandbox and the drill: six of them would be 23% of the week.
-    for (let i = 0; i < 2; i += 1) attemptIn("proj_3tb652jpsi", "blocked", own);
+describe("the sandbox and the drills are not in the canary (audit 2026-10-08 round 4, P1-12)", () => {
+  it("leaves out the drill's sandbox project, projects named LP sandbox / LP native / LP bench and drill-* tasks", async () => {
+    const { attempt, attemptIn, projectRows, canary } = setup();
     projectRows.push({ id: "proj_named_sb", name: "LP sandbox 2026-10-08" }, { id: "proj_named_native", name: "LP native ab12" }, { id: "proj_named_bench", name: "LP bench SelfyStudio" }, { id: "proj_real", name: "SelfyStudio" });
+    await canary.status();
+    for (let i = 0; i < 10; i += 1) attempt("accepted");
+    // Deliberate failures of the sandbox and the drill.
+    for (let i = 0; i < 2; i += 1) attemptIn("proj_3tb652jpsi", "blocked", own);
     attemptIn("proj_named_bench", "blocked", own);
     attemptIn("proj_named_sb", "blocked", own);
     attemptIn("proj_named_native", "blocked", own);
@@ -82,48 +83,40 @@ describe("the sandbox and the drills are not in the error budget or the canary (
     attemptIn("proj", "blocked", own, "drill-parallel-2");
     // The sandbox's accepted attempts do not dilute the real rate either.
     for (let i = 0; i < 10; i += 1) attemptIn("proj_3tb652jpsi", "accepted");
-    const bare = canaryReport(db, { version: VERSION, since: Date.now() - 3600_000, now: Date.now() });
-    // Without the names only the project id and the drill tasks are known.
-    expect(bare.budget).toMatchObject({ attempts: 23, faults: 3 });
     const status = await canary.status();
-    expect(status.budget).toMatchObject({ attempts: 20, faults: 0, exhausted: false });
-    expect(status).toMatchObject({ faults: 0, tripped: false });
+    expect(status).toMatchObject({ faults: 0, tripped: false, window: { attempts: 10 } });
     // A real failure still counts.
     attemptIn("proj_real", "blocked", own);
     attemptIn("proj_real", "blocked", own);
     const again = await canary.status(Date.now() + 61_000);
-    expect(again.budget).toMatchObject({ attempts: 22, faults: 2 });
+    expect(again).toMatchObject({ faults: 2, window: { attempts: 12 } });
   });
 
-  it("keeps the last project list when BB cannot list projects, so the sandbox does not come back into the budget", async () => {
+  it("keeps the last project list when BB cannot list projects, so the sandbox does not come back into the canary", async () => {
     const { attemptIn, projectRows, listFails, canary } = setup();
     projectRows.push({ id: "proj_named_sb", name: "LP sandbox x" });
+    await canary.status();
     for (let i = 0; i < 20; i += 1) attemptIn("proj_real", "accepted");
     attemptIn("proj_named_sb", "blocked", own);
     const first = await canary.status();
-    expect(first.budget).toMatchObject({ attempts: 20, faults: 0 });
+    expect(first).toMatchObject({ faults: 0, window: { attempts: 20 } });
     listFails.on = true;
-    expect((await canary.status(Date.now() + 61_000)).budget.faults).toBe(0);
+    expect((await canary.status(Date.now() + 61_000)).faults).toBe(0);
   });
 });
 
 describe("a dirty base checkout (audit 2026-10-08 round 2, B5)", () => {
   const dirty = "merge_failed: git merge failed: error: Your local changes to the following files would be overwritten by merge:\n  .agents/PROGRESS.md";
-  it("is in the 7-day error budget, under its own count, but never trips the version's canary", () => {
+  it("is an environment fault, not the version's: it never trips the canary", () => {
     const { db, attempt } = setup();
     for (let i = 0; i < 14; i += 1) attempt("accepted");
     for (let i = 0; i < 4; i += 1) attempt("validation_failed", dirty);
-    const report = canaryReport(db, { version: VERSION, since: Date.now() - 3600_000, now: Date.now() });
-    expect(report.budget).toMatchObject({ attempts: 18, faults: 4, dirtyBase: 4 });
-    expect(report).toMatchObject({ faults: 0, tripped: false });
-    for (let i = 0; i < 2; i += 1) attempt("accepted");
-    const full = canaryReport(db, { version: VERSION, since: Date.now() - 3600_000, now: Date.now() });
-    expect(full.budget).toMatchObject({ attempts: 20, faults: 4, dirtyBase: 4, exhausted: true });
+    expect(canaryReport(db, { version: VERSION, since: Date.now() - 3600_000, now: Date.now() })).toMatchObject({ faults: 0, tripped: false });
   });
 });
 
 describe("canaryReport", () => {
-  it("counts the own faults of the version's first attempts and trips on three above the budget", () => {
+  it("counts the own faults of the version's first attempts and trips on three above the limit", () => {
     const { db, attempt } = setup();
     for (let i = 0; i < 6; i += 1) attempt("accepted");
     attempt("blocked", own); attempt("blocked", own);
@@ -154,18 +147,6 @@ describe("canaryReport", () => {
     expect(report.window).toMatchObject({ open: false, attempts: CANARY_MAX_ATTEMPTS });
     expect(report.faults).toBe(0);
     expect(canaryReport(db, { version: VERSION, since: Date.now() - 3 * 3600_000, now: Date.now() }).window.open).toBe(false);
-  });
-
-  it("keeps the 7-day budget over every version and spends it above 5% with enough attempts", () => {
-    const { db, attempt } = setup();
-    for (let i = 0; i < 18; i += 1) attempt("accepted", null, { version: "0.0.1", ageMs: 2 * DAY });
-    attempt("blocked", own, { version: "0.0.1", ageMs: 2 * DAY });
-    attempt("blocked", own, { version: "0.0.1", ageMs: 20 * DAY });
-    expect(canaryReport(db, { version: VERSION, since: Date.now(), now: Date.now() }).budget).toMatchObject({ attempts: 19, faults: 1, exhausted: false });
-    attempt("blocked", own, { version: "0.0.1", ageMs: DAY });
-    attempt("blocked", own, { version: "0.0.1", ageMs: DAY });
-    const budget = canaryReport(db, { version: VERSION, since: Date.now(), now: Date.now() }).budget;
-    expect(budget).toMatchObject({ attempts: 21, faults: 3, exhausted: true });
   });
 
   it("names the previous version and the rollback command", () => {
@@ -206,7 +187,7 @@ describe("canary check", () => {
 
   it("alert text carries the count, the rate and a sample", () => {
     const text = canaryAlertText({ version: "0.1.9", since: 0, window: { open: true, attempts: 10, minutes: 5, maxAttempts: 20, maxMinutes: 120 }, faults: 4, rate: 0.4, tripped: true,
-      samples: [{ projectId: "p", runId: "r", taskId: "T1", pmThreadId: "pm", reason: "merge_failed: x" }], budget: { days: 7, attempts: 10, faults: 4, dirtyBase: 0, rate: 0.4, limit: 0.05, exhausted: false },
+      samples: [{ projectId: "p", runId: "r", taskId: "T1", pmThreadId: "pm", reason: "merge_failed: x" }],
       previousVersion: null, rollback: null });
     expect(text).toContain("4 of the first 10 attempts");
     expect(text).toContain("40%");

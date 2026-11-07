@@ -10,25 +10,22 @@ import type { ServerCore } from "../../contracts/server";
 import { bestEffort } from "@lane-pilot/kit";
 
 /**
- * Canary and error budget for Lane Pilot's own releases (G7). A new version is watched while its first attempts finish:
- * if too many of them failed on Lane Pilot's own fault (failure class «harness»: `internal_error`, `merge_failed`, spawn
- * and reconcile errors, …), the PMs of the affected tasks and the log are told once, with the command that rolls back.
- * Separately a 7-day budget over all versions says whether a routine deploy is wise (`budget.exhausted`); only an incident
- * deploy goes out while it is. Sandbox projects and drill tasks are left out of both (`SANDBOX_PROJECT_ID`, `isSandboxProjectName`, `isDrillTask`). Both read the plugin's own database (`lane_pilot_attempt.harness_version`), never write to it.
+ * Canary for Lane Pilot's own releases (G7). A new version is watched while its first attempts finish: if too many of
+ * them failed on Lane Pilot's own fault (failure class «harness»: `internal_error`, `merge_failed`, spawn and reconcile
+ * errors, …), the PMs of the affected tasks and the log are told once, with the command that rolls back. Sandbox projects
+ * and drill tasks are left out (`SANDBOX_PROJECT_ID`, `isSandboxProjectName`, `isDrillTask`). It reads the plugin's own
+ * database (`lane_pilot_attempt.harness_version`), never writes to it.
  *
  * Nothing here changes how a task runs: a tripped canary does not stop the version, it makes a human decide. Run from the
- * Mac mini with `scripts/lp-canary.sh` (RPC `canary_status`), which exits 1 when the canary tripped or the budget is spent.
+ * Mac mini with `scripts/lp-canary.sh` (RPC `canary_status`), which exits 1 when the canary tripped.
  */
 const VERSION: string = packageJson.version;
 export const CANARY_MAX_ATTEMPTS = 20;
 export const CANARY_MAX_MINUTES = 120;
-/** Own-fault share of finished attempts above which the canary trips and the budget is spent. */
-export const ERROR_BUDGET = 0.05;
+/** Own-fault share of finished attempts above which the canary trips. */
+export const CANARY_FAULT_LIMIT = 0.05;
 /** A tripped canary needs this many faults: one bad attempt in three is noise, not a verdict. */
 export const CANARY_MIN_FAULTS = 3;
-export const BUDGET_DAYS = 7;
-/** Attempts a 7-day window needs before its rate means anything. */
-export const BUDGET_MIN_ATTEMPTS = 20;
 const SINCE_KEY = (version: string) => `canary:since:${version}`;
 const ALERTED_KEY = (version: string) => `canary:alerted:${version}`;
 
@@ -43,18 +40,11 @@ export type CanaryReport = {
   rate: number;
   tripped: boolean;
   samples: CanaryFault[];
-  /** `faults` are the harness faults and the dirty-base ones (`dirtyBase` says how many of them). */
-  budget: { days: number; attempts: number; faults: number; dirtyBase: number; rate: number; limit: number; exhausted: boolean };
   previousVersion: string | null;
   rollback: string | null;
 };
 
 const asFault = (row: Row): boolean => row.state !== "accepted" && failureClass(row.state, row.reason) === "harness";
-/**
- * A merge refused over uncommitted edits in the base checkout: the work did not land, so the 7-day budget counts it, but no
- * release caused it, so the version's canary does not (audit 2026-10-08 round 2, B5: as a free `merge` it was in neither).
- */
-const asBudgetFault = (row: Row): boolean => row.state !== "accepted" && ["harness", "dirty_base"].includes(failureClass(row.state, row.reason));
 
 /**
  * The head of a reason is all `failureClass` needs. Whole reasons ran up to 4.7 MB (a stray-path list of thousands of files) and
@@ -69,26 +59,21 @@ function selectFinished(db: LanePilotDatabase, where: string, args: unknown[], s
     .filter((row) => !DRILL_SANDBOX_PROJECT_IDS.includes(row.project_id) && !sandboxProjects.has(row.project_id) && !isDrillTask(row.task_id));
 }
 
-/** The canary of `version` since it first ran, and the 7-day budget over every version. */
+/** The canary of `version` since it first ran. */
 export function canaryReport(db: LanePilotDatabase, input: { version: string; since: number; now: number; sandboxProjects?: ReadonlySet<string> }): CanaryReport {
   const { version, since, now, sandboxProjects } = input;
   const own = selectFinished(db, "a.harness_version=? AND a.created_at>=?", [version, since], sandboxProjects).slice(0, CANARY_MAX_ATTEMPTS);
   const faultRows = own.filter(asFault);
   const minutes = Math.floor((now - since) / 60_000);
   const rate = own.length ? faultRows.length / own.length : 0;
-  const week = selectFinished(db, "a.created_at>=?", [now - BUDGET_DAYS * 86_400_000], sandboxProjects);
-  const weekFaults = week.filter(asBudgetFault).length;
-  const weekDirtyBase = week.filter((row) => row.state !== "accepted" && failureClass(row.state, row.reason) === "dirty_base").length;
-  const weekRate = week.length ? weekFaults / week.length : 0;
   const previous = db.prepare("SELECT harness_version FROM lane_pilot_attempt WHERE harness_version IS NOT NULL AND harness_version<>? AND created_at<? ORDER BY created_at DESC LIMIT 1")
     .get(version, since) as { harness_version: string } | undefined;
-  const tripped = faultRows.length >= CANARY_MIN_FAULTS && rate > ERROR_BUDGET;
+  const tripped = faultRows.length >= CANARY_MIN_FAULTS && rate > CANARY_FAULT_LIMIT;
   return {
     version, since,
     window: { open: own.length < CANARY_MAX_ATTEMPTS && minutes < CANARY_MAX_MINUTES, attempts: own.length, minutes, maxAttempts: CANARY_MAX_ATTEMPTS, maxMinutes: CANARY_MAX_MINUTES },
     faults: faultRows.length, rate, tripped,
     samples: faultRows.slice(0, 5).map((row) => ({ projectId: row.project_id, runId: row.run_id, taskId: row.task_id, pmThreadId: row.pm_thread_id, reason: (row.reason ?? row.state).slice(0, 200) })),
-    budget: { days: BUDGET_DAYS, attempts: week.length, faults: weekFaults, dirtyBase: weekDirtyBase, rate: weekRate, limit: ERROR_BUDGET, exhausted: week.length >= BUDGET_MIN_ATTEMPTS && weekRate > ERROR_BUDGET },
     previousVersion: previous?.harness_version ?? null,
     rollback: previous ? rollbackCommand(previous.harness_version) : null,
   };
@@ -99,7 +84,7 @@ export const rollbackCommand = (version: string): string => `bash scripts/lp-can
 
 export function canaryAlertText(report: CanaryReport): string {
   return `Lane Pilot ${report.version} canary: ${report.faults} of the first ${report.window.attempts} attempts since it started failed on Lane Pilot's own fault `
-    + `(${Math.round(report.rate * 100)}%, budget ${Math.round(ERROR_BUDGET * 100)}%): ${report.samples.slice(0, 3).map((row) => `${row.taskId}: ${row.reason.slice(0, 120)}`).join("; ")}. `
+    + `(${Math.round(report.rate * 100)}%, limit ${Math.round(CANARY_FAULT_LIMIT * 100)}%): ${report.samples.slice(0, 3).map((row) => `${row.taskId}: ${row.reason.slice(0, 120)}`).join("; ")}. `
     + `No action needed from you for these tasks (they are parked and restart once fixed); the owner decides on a rollback${report.rollback ? `: ${report.rollback} (in the lane-pilot checkout on the Mac mini)` : ""}.`;
 }
 
@@ -136,7 +121,7 @@ export function createCanary(ctx: ServerCore, breaker?: () => { snapshot(now?: n
         const rows = [...await projects.list({ includePersonal: true }), ...await bestEffort(bb.log, "canary archived project list", projects.list({ includePersonal: true, archived: true }), [])];
         ids = new Set(rows.filter((row) => isSandboxProjectName(row.name)).map((row) => row.id));
       }
-    } catch { /* keep the last answer: a project list that fails must not put the sandbox back into the budget */ }
+    } catch { /* keep the last answer: a project list that fails must not put the sandbox back into the canary */ }
     sandboxCache = { at: now, ids };
     setSandboxProjects([...DRILL_SANDBOX_PROJECT_IDS, ...ids]);
     return ids;

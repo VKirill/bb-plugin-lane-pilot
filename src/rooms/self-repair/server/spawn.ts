@@ -56,7 +56,7 @@ async function releaseWorktree(host: ServerCore["host"], worktree: RepairWorktre
  * A repair thread that stopped: verdict fixed — its branch is merged into the shared checkout the way a writer's work
  * is (under the base lock, rebased on the current HEAD, the worktree removed). A conflict or failure is retried on
  * later passes, then the branch is left for the owner. Any other verdict — nothing of it is merged, the worktree is
- * saved as a patch and released. Nothing here deploys: the release train does.
+ * saved as a patch and released. Nothing here deploys: bb-plugin-push does.
  */
 async function settleWorktree(host: ServerCore["host"], log: (message: string) => void, release: (worktree: RepairWorktree) => Promise<void>,
   record: SignatureRecord, signature: string, now: number): Promise<void> {

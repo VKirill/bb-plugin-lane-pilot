@@ -38,7 +38,7 @@ sources:
 
 TL;DR: every night at 03:00 Lane Pilot groups the last 24 hours of failures into classes, follows each class on the 3/10, 5/100, 6/500 recurrence
 ladder, sends at most three classes to the self-repair path with the proof, the whole-class sweep and a cap, merges a repair only when the night
-policy allows it, checks it after the release train shipped it, and never retries a wall forever: two moves, then the hunt, then one informed move,
+policy allows it, checks it after the deploy shipped it, and never retries a wall forever: two moves, then the hunt, then one informed move,
 then the backlog.
 
 Sources: Maslov #31448 («чинит не случай, а класс … гоняешь, пока условно не будет 3/10, 5/100, 6/500»; 1-3 recommendations a cycle, each with
@@ -97,7 +97,7 @@ change descriptor `{kind: lp_fault_repair, files, attrs: {bench_subset_passed, a
 not degrade `night_decides` (`src/rooms/policy/exam.ts:170-177`, `docs/night-policy.md`). The bench proof is claimed only when a runnable bench set
 exists, and it is enforced after the deploy, not before it (see below).
 
-After a merge the loop watches the release train (`acceptance.ts`, `decideAcceptance`): the train ran the whole suite and shipped a version; the
+After a merge the loop watches the deploy (`acceptance.ts`, `decideAcceptance`): the train ran the whole suite and shipped a version; the
 drill of that version is green (a red one rolls the deploy back: the plugin runs the old version again, state `rolled_back`; a version with no drill receipt of its own is not accepted, the repair waits for one and settles as `unproven` after 72 hours); the canary is quiet; the
 bench subset (`benchSubset` tasks of the newest set, arm `night-<version>-<model>` against `night-<version before>-<model>`, noise aware through `bench compare`; a pair with different writers is not compared)
 is not worse; the class stopped recurring on the new version, judged on attempts exposed to the class (the projects it was journaled in). A class that recurred in 10 or more of those attempts is not accepted: red, the merge is reverted. A tripped canary or a worse bench reverts the merge in code (a revert commit through the
@@ -140,7 +140,7 @@ a resumed writer, the way stability restarts a parked task); a real project, or 
 
 ## Schedule and commands
 
-`wall-night` at 03:00 (`runNight`), `wall-advance` at :05 :20 :35 :50 (`advance`: verdicts, merges, the release train, acceptance, task walls).
+`wall-night` at 03:00 (`runNight`), `wall-advance` at :05 :20 :35 :50 (`advance`: verdicts, merges, the deploy, acceptance, task walls).
 `bb lane-pilot wall status|night [--dry-run]|advance|show|close|rerun|config|morning`; RPC `wall_status`, `wall_show`, `wall_night`, `wall_config`.
 `--dry-run` works inside a savepoint that is rolled back and calls no model.
 
@@ -155,7 +155,7 @@ rolled back); the guard (hunts, backlog, re-runs).
   under their own names. A change of the judge or the graph merges only provisionally and is accepted only on a passed bench subset of the version it
   shipped in. Acceptance needs evidence (a passed bench or ten attempts of the new version); without it the repair waits 72 hours and ends `unproven`,
   as it does when a later release came in. A failed revert is `rollback_pending`, retried every ten minutes up to six times, then given up into the backlog.
-- Nothing ships a merged repair by itself: the release train (`bb-plugin-push`) runs where the checkout is. The loop merges, then waits for a release.
+- Nothing ships a merged repair by itself: the deploy (`bb-plugin-push`) runs where the checkout is. The loop merges, then waits for a release.
 - The hunters see only the pack. For a class the pack holds the source files that emit the failure's wording (`git grep`), not the whole repository.
 - Task walls start from `repeated_failure:` only; a task that ends `retry_budget_exhausted:` without it is not in the ladder.
 - A re-run of a stage before the writer needs the return-to-stage operation.

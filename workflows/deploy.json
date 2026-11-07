@@ -5,8 +5,8 @@
     "ru": "Выкат с проверкой и откатом"
   },
   "description": {
-    "en": "Preflight (clean pushed HEAD, green suite, no running work, daily window), owner approval for production, deploy through the repo script or an errand with Env Catalog accounts, post-deploy check, and a rollback offer if the check fails.",
-    "ru": "Предполётная проверка (чистый запушенный HEAD, зелёный набор, нет идущей работы, дневное окно), подтверждение владельца для продакшна, выкат скриптом репозитория или errand с доступами из Env Catalog, проверка после, предложение отката при провале."
+    "en": "Preflight (clean pushed HEAD, green suite, no running work), owner approval for production, deploy through the repo script or an errand with Env Catalog accounts, post-deploy check, and a rollback offer if the check fails.",
+    "ru": "Предполётная проверка (чистый запушенный HEAD, зелёный набор, нет идущей работы), подтверждение владельца для продакшна, выкат скриптом репозитория или errand с доступами из Env Catalog, проверка после, предложение отката при провале."
   },
   "examples": {
     "ru": [
@@ -63,11 +63,6 @@
     },
     "health_url": {
       "type": "string"
-    },
-    "incident": {
-      "type": "string",
-      "note": "причина для повторного дневного выката плагина; становится LP_DEPLOY_INCIDENT",
-      "default": ""
     }
   },
   "outputs": {
@@ -103,33 +98,14 @@
       "id": "preflight",
       "type": "action",
       "action": "lp.preflight",
-      "rule": "git tree clean, HEAD equals the pushed ref, on main; lp.run_status: no running attempts, gate ok; for lane-pilot-plugin also deploys.log: already deployed today?",
+      "rule": "git tree clean, HEAD equals the pushed ref, on main; lp.run_status: no running attempts, gate ok",
       "out": {
         "clean": "bool",
         "pushed": "bool",
         "head": "string",
         "running_attempts": "int",
         "gate_ok": "bool",
-        "deployed_today": "bool",
         "last_version": "string"
-      }
-    },
-    {
-      "id": "ask_incident",
-      "type": "human",
-      "role": "owner",
-      "title": {
-        "en": "Already deployed today",
-        "ru": "Сегодня уже выкатывали"
-      },
-      "prompt": "Lane Pilot is deployed at most once a day. A second deploy needs an incident reason (becomes LP_DEPLOY_INCIDENT). Give the reason or abort.",
-      "out": {
-        "answer": "string",
-        "answer_kind": "reason|abort|timeout"
-      },
-      "guards": {
-        "maxVisits": 1,
-        "timeoutMin": 120
       }
     },
     {
@@ -184,9 +160,6 @@
       "action": "shell.repo_script",
       "script": "infrastructure/plugin-deploy/bb-plugin-push",
       "args": "lane-pilot",
-      "env": {
-        "LP_DEPLOY_INCIDENT": "{{$inputs.incident}}"
-      },
       "test_mode": "echo dry-run, no push",
       "out": {
         "ok": "bool",
@@ -361,11 +334,6 @@
       "when": "approve.answer_kind == 'timeout'"
     },
     {
-      "from": "ask_incident",
-      "to": "aborted",
-      "when": "ask_incident.answer_kind == 'timeout'"
-    },
-    {
       "from": "preflight",
       "to": "blocked",
       "pass": "artifact",
@@ -373,24 +341,7 @@
     },
     {
       "from": "preflight",
-      "to": "ask_incident",
-      "pass": "artifact",
-      "when": "$inputs.target == 'lane-pilot-plugin' && preflight.deployed_today && $inputs.incident == ''"
-    },
-    {
-      "from": "preflight",
       "to": "tests",
-      "pass": "artifact"
-    },
-    {
-      "from": "ask_incident",
-      "to": "tests",
-      "pass": "artifact",
-      "when": "ask_incident.answer_kind == 'reason'"
-    },
-    {
-      "from": "ask_incident",
-      "to": "aborted",
       "pass": "artifact"
     },
     {
@@ -493,8 +444,7 @@
     "sim": {
       "input": {
         "target": "lane-pilot-plugin",
-        "environment": "prod",
-        "incident": ""
+        "environment": "prod"
       },
       "stubs": {
         "preflight": {
@@ -502,7 +452,6 @@
           "pushed": true,
           "running_attempts": 0,
           "gate_ok": true,
-          "deployed_today": false,
           "last_version": "0.1.182"
         },
         "tests": {
