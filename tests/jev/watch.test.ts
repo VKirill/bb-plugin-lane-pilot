@@ -1,6 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { openDatabase } from "../../src/rooms/storage/database";
+import { openDatabase } from "../../src/rooms/plugin-db";
 import { insertReceipt, jevWatch, renderWatch, watchMorningLine } from "@lane-pilot/jev";
 
 const DAY = 86_400_000;

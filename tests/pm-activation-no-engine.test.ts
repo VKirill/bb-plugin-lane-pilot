@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import plugin from "../server";
 import { TARGET_SHA } from "../src/rooms/runs/constants";
-import { openDatabase, savePrototypeConfig } from "../src/rooms/storage/database";
+import { openDatabase, savePrototypeConfig } from "../src/rooms/plugin-db";
 
 // Live 2026-10-30: after the Claude Lane cleanup every PM activation outside the composer (the drill, automations) stopped on
 // «no compatible engine was found»: activation still asked the host for an installed Claude Lane engine. Lane Pilot needs none.

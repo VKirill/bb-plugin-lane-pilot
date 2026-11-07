@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { WorkflowEngine, parseWorkflow } from "@lane-pilot/workflow-engine";
-import { HARNESS_VERSION } from "../src/rooms/storage";
-import { createAttempt, createRun, openDatabase, saveProjectSetting } from "../src/rooms/storage/database";
+import { HARNESS_VERSION } from "../src/rooms/plugin-db";
+import { createAttempt, createRun, openDatabase, saveProjectSetting } from "../src/rooms/plugin-db";
 import { QA_HOST_KEY } from "../src/rooms/qa/qa-host";
 import { builtinWorkflow } from "../src/rooms/workflow/builtin";
 import { recordStage } from "../src/rooms/runs/server";

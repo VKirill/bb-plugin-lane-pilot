@@ -1,7 +1,7 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { openDatabase, saveProjectSetting } from "../../src/rooms/storage/database";
+import { openDatabase, saveProjectSetting } from "../../src/rooms/plugin-db";
 import { createCore } from "../../src/rooms/core/server/core";
 import { jevProviderRpc } from "../../src/rooms/secrets/server";
 

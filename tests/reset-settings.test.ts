@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { openDatabase, saveProjectSetting, listSettingRows, casResetSettings, casUpsertSettings, casUpsertSetting, getSettingVersions } from "../src/rooms/storage/database";
+import { openDatabase, saveProjectSetting, listSettingRows, casResetSettings, casUpsertSettings, casUpsertSetting, getSettingVersions } from "../src/rooms/plugin-db";
 import plugin from "../server";
 
 describe("explicit settings reset", () => {

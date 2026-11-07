@@ -1,5 +1,5 @@
 /**
- * «Waiting for the owner» (SMA D0-3). Three small tables, appended at the end of `migrations` (storage/database.ts):
+ * «Waiting for the owner» (SMA D0-3). Three small tables, appended at the end of `migrations` (rooms/migrations.ts):
  *  - `lane_pilot_owner_item`: the inbox of things only the owner can decide that no other table already holds. The night loop writes its
  *    proposals, walls and backlog escalations here with `postOwnerItem` (the stable shape of items.ts); nothing else writes it.
  *  - `lane_pilot_owner_push`: which item keys went to Telegram, so one waiting is one message.

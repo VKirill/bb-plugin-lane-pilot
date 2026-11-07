@@ -1,4 +1,4 @@
-import { countAttempts } from "../src/rooms/storage/database";
+import { countAttempts } from "../src/rooms/plugin-db";
 import { createHash } from "node:crypto";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it, vi } from "vitest";
@@ -19,7 +19,7 @@ import {
   setAttemptDirtBefore,
   setRunThread,
   transitionAttempt,
-} from "../src/rooms/storage/database";
+} from "../src/rooms/plugin-db";
 import type { TaskV2 } from "../src/rooms/contracts";
 import { validateAcceptanceV2 } from "../src/rooms/tasks/acceptance-v2";
 import { familyDirtBaseline } from "../src/rooms/writer/server/verify";

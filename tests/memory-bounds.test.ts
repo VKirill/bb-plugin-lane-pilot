@@ -7,7 +7,7 @@ import { acceptedRules, assertRuleScope, scopeApplies, upsertLessonProposal } fr
 import { demoteUnusedPromotions, enrichMemoryContext } from "../src/rooms/memory-tiers/server";
 import { createMemoryConflicts } from "../src/rooms/memory/server/memory-conflicts";
 import { sessionMemoryRpc } from "../src/rooms/memory/server/session-memory";
-import { createAttempt, createRun, createTask, openDatabase, transitionAttempt } from "../src/rooms/storage/database";
+import { createAttempt, createRun, createTask, openDatabase, transitionAttempt } from "../src/rooms/plugin-db";
 import type { ServerCore } from "../src/rooms/core/server/core";
 import type { Services } from "../src/rooms/core/server/services";
 
@@ -226,7 +226,7 @@ describe("audience boundary (regression)", () => {
 describe("maintainer recurrence gate (arXiv #5)", () => {
   it("is due once every-N accepted receipts piled up since the last real maintenance", async () => {
     const { memoryRecurrenceDue } = await import("../src/rooms/memory/server/memory");
-    const { createRun, createTask, openDatabase } = await import("../src/rooms/storage/database");
+    const { createRun, createTask, openDatabase } = await import("../src/rooms/plugin-db");
     const { createFakePluginHost } = await import("@get-bb/plugin-sdk/testing");
     const db = openDatabase(createFakePluginHost({ pluginId: "lane-pilot" }).bb);
     const run = (id: string) => { createRun(db, id, "P", "bb", "/w"); createTask(db, { id: `t-${id}`, runId: id, kind: "bb", contract: {} as never }); };

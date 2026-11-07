@@ -1,7 +1,7 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import { readThreadLive } from "../src/rooms/runs/server/thread-live";
-import { createAttempt, createRun, createTask, openDatabase, setRunThread } from "../src/rooms/storage/database";
+import { createAttempt, createRun, createTask, openDatabase, setRunThread } from "../src/rooms/plugin-db";
 
 /** The thread's info panel asks what Lane Pilot does for a chat: a PM sees its tasks, a writer its own task, any other thread nothing. */
 describe("what Lane Pilot does for a thread", () => {

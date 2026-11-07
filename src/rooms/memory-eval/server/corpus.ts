@@ -1,6 +1,6 @@
 import Database from "better-sqlite3";
 import { addToIndexes, memoryRecordId, trigramReady } from "@lane-pilot/memory-core";
-import { migrations } from "../../storage";
+import { migrations } from "../../migrations";
 import { OFFTOPIC, candidateQuestions, classify, folderKey, fileKey, notesNaming, queryOf, type EvalQuestion } from "./questions";
 import type { EvalData, RawNote } from "./source";
 

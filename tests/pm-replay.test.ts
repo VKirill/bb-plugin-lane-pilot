@@ -3,7 +3,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { decideReplay, type ArmVerdict } from "../src/rooms/pm-replay/decide";
 import { importScenarios, parseHarvested } from "../src/rooms/pm-replay/harvest";
 import { insertResult, insertScenario, latestVerdicts, listScenarios, replayStats, linkScenariosToRule, retireScenario } from "../src/rooms/pm-replay/store";
-import { migrations, openDatabase } from "../src/rooms/storage/database";
+import { migrations, openDatabase } from "../src/rooms/plugin-db";
 
 const NOW = Date.now();
 

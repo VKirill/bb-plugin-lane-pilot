@@ -2,7 +2,7 @@
  *   npx tsx scripts/print-live-stability.ts --db <lane-pilot data.db> --core <bb.db> --days 1 --floor 0.1.389
  */
 import Database from "better-sqlite3";
-import { statsEpochMs, STATS_EPOCH_SETTING } from "../src/rooms/storage";
+import { statsEpochMs, STATS_EPOCH_SETTING } from "../src/rooms/plugin-db";
 import { liveStability, renderLiveStability, type LiveAttempt } from "../src/rooms/bench/live-rate";
 
 const flag = (name: string): string => {

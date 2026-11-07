@@ -1,7 +1,7 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import { registerQueueTool } from "../../src/rooms/tasks/server/queue-tool";
-import { createAttempt, createRun, createTask, openDatabase, setRunThread, transitionAttempt } from "../../src/rooms/storage/database";
+import { createAttempt, createRun, createTask, openDatabase, setRunThread, transitionAttempt } from "../../src/rooms/plugin-db";
 
 // [Gemini F-008.3] the PM records the owner's word with lane_pilot_queue {action:"word"} while the task's latest attempt is
 // still running — that attempt is the one waiting for the word in finish.ts and lands by itself within a minute. Telling the

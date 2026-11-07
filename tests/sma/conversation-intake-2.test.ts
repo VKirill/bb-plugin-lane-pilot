@@ -8,7 +8,7 @@ import { backlogReadCommand, parseBacklogOutput } from "../../src/rooms/backlog"
 import { BACKLOG_MARK } from "../../src/rooms/backlog/logic";
 import { nextAction, type Phase } from "../../src/rooms/phase/logic";
 import { rubricLine } from "../../src/rooms/phase/stages";
-import { openDatabase } from "../../src/rooms/storage";
+import { openDatabase } from "../../src/rooms/plugin-db";
 import { queryTokenUsage, syncTokenUsage, utcDay } from "../../src/rooms/usage/server/token-usage";
 
 const discussion = {

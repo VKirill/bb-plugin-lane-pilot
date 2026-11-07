@@ -1,7 +1,7 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
-import { loadProjectSettings, openDatabase, saveProjectSetting } from "../../src/rooms/storage";
+import { loadProjectSettings, openDatabase, saveProjectSetting } from "../../src/rooms/plugin-db";
 
 /**
  * The restart-only list is gone (owner's rule: no UI setting needs a plugin reload): every one of the old three is read at

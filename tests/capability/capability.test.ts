@@ -2,7 +2,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import { adapterVersions, capabilityTable, dueProbes, listReceipts, providersInUse } from "../../src/rooms/capability";
 import { BASE_PROVIDERS, createCapabilities, runCapabilityCli } from "../../src/rooms/capability/server";
-import { createRun, openDatabase, setRunThread } from "../../src/rooms/storage/database";
+import { createRun, openDatabase, setRunThread } from "../../src/rooms/plugin-db";
 
 describe("the capability table", () => {
   it("knows the providers in use from settings, then the base ones, and their adapter versions", () => {

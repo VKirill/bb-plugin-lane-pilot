@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { detectGateCommand } from "../../src/rooms/verification/server/gate-detect";
 import { IntegrationGateRunner } from "../../src/rooms/verification/server/integration-gate";
-import { openDatabase, saveProjectSetting } from "../../src/rooms/storage/database";
+import { openDatabase, saveProjectSetting } from "../../src/rooms/plugin-db";
 import * as hostHandlers from "../../src/rooms/host-worker/host-handlers";
 import type { ServerCore } from "../../src/rooms/core/server/core";
 import type { Services } from "../../src/rooms/core/server/services";

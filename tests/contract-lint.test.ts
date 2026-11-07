@@ -4,7 +4,7 @@ import plugin from "../server";
 import type { TaskV2 } from "../src/rooms/contracts";
 import {
   createAttempt, createRun, createTask, listAttemptsForTask, openDatabase, recordCheckDuration, saveProjectSetting, savePrototypeConfig, setRunThread, transitionAttempt,
-} from "../src/rooms/storage/database";
+} from "../src/rooms/plugin-db";
 import { postMergeRepair } from "../src/rooms/writer/server/finish";
 import { lintContract, lintProbePaths, lintReply, runnerFilterArgs, siblingTestFolders, type LintInput, type PathKind } from "../src/rooms/tasks/server/contract-lint";
 

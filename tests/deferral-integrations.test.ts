@@ -10,7 +10,7 @@ import { deferralMigrations } from "../src/rooms/deferral";
 import { pmDeferralLines } from "../src/rooms/deferral/server";
 import { insertDeferral, type Deferral } from "../src/rooms/deferral/store";
 import { createRelay, TASK_NOTICE, type RelayItem } from "../src/rooms/relay/server/relay";
-import { openDatabase, type TaskOutcome } from "../src/rooms/storage/database";
+import { openDatabase, type TaskOutcome } from "../src/rooms/plugin-db";
 
 // SMA rule 5, "turns red by itself": the drill, the PM's task-result message and the daily Telegram line read the register.
 const drill = fileURLToPath(new URL("../scripts/lp-drill.py", import.meta.url));

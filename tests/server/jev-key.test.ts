@@ -1,7 +1,7 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
 import { describe, expect, it } from "vitest";
-import { openDatabase, saveProjectSetting } from "../../src/rooms/storage/database";
+import { openDatabase, saveProjectSetting } from "../../src/rooms/plugin-db";
 import { createCore } from "../../src/rooms/core/server/core";
 
 const CLASSIFIED = { hostId:"h", status:"ok", effort:"low", reason:null, planSha256:"a", sentPlanSha256:"a", sourceLength:1, sentLength:1 };

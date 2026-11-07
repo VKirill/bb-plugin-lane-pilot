@@ -5,7 +5,7 @@ import type { EventLike, ThreadLike } from "../src/rooms/anamnesis";
 import { SEED_ENTRIES } from "../src/rooms/deferral/seed";
 import { createDeferrals, noTermDeferralsOf, runDeferralCli } from "../src/rooms/deferral/server";
 import { parseOwnerRef, sha256Text, verifyOwnerMessage, type OwnerMessagePort } from "../src/rooms/deferral/verify";
-import { migrations, openDatabase } from "../src/rooms/storage/database";
+import { migrations, openDatabase } from "../src/rooms/plugin-db";
 
 // SMA rule 5: a deferral's term is the owner's date, read from a real message of the owner; an agent cannot make one up or move one.
 const T0 = Date.parse("2026-10-22T10:00:00Z");

@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { reconcile, reconcileCursor } from "../src/rooms/stability";
 import type { IdempotencyTriple, ReconcilePort } from "../src/rooms/stability/reconcile";
 import { closeOrphanWriterStages, recordStage } from "../src/rooms/runs/server/stage-records";
-import { createAttempt, createRun, getAttempt, openDatabase, saveTaskPlan, transitionAttempt } from "../src/rooms/storage/database";
+import { createAttempt, createRun, getAttempt, openDatabase, saveTaskPlan, transitionAttempt } from "../src/rooms/plugin-db";
 
 const key: IdempotencyTriple = { lanePilotRunId: "run", lanePilotTaskId: "T1", attemptId: "a1" };
 

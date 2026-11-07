@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { setJevForTests } from "@lane-pilot/jev";
 import { answerDecision, openDecision } from "../../src/rooms/lead/server/journal";
 import { MEMORY_EXAM_MIN_PROBES, formatMemoryExam, runMemoryExam } from "../../src/rooms/lead/server/memory-exam";
-import { openDatabase } from "../../src/rooms/storage/database";
+import { openDatabase } from "../../src/rooms/plugin-db";
 
 const world = () => { const { bb } = createFakePluginHost({ pluginId: "lane-pilot" }); return { bb, db: openDatabase(bb) }; };
 afterEach(() => setJevForTests(null));

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { createRun, createTask, openDatabase, saveTaskGitBase } from "../../src/rooms/storage/database";
+import { createRun, createTask, openDatabase, saveTaskGitBase } from "../../src/rooms/plugin-db";
 import type { ExecResult, HostPort } from "../../src/rooms/bench/ports";
 
 /** A HostPort that runs the command in this machine's shell: the warm-up and the checkout are tested on real git repositories. */

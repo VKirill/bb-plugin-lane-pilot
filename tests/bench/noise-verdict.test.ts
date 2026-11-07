@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { openDatabase } from "../../src/rooms/storage/database";
+import { openDatabase } from "../../src/rooms/plugin-db";
 import { latestNoise, saveNoise, saveVerdict, listRuns } from "../../src/rooms/bench/store";
 import { createBench } from "../../src/rooms/bench/service";
 import { runSeries } from "../../src/rooms/bench/runner";

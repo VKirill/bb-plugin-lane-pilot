@@ -1,7 +1,7 @@
 /**
  * The register of deferrals (SMA rule 5): a mandatory check, a skipped test, a gate or a plan decision that is put off
  * is written here, with a term the OWNER gave in his own message. Append only; the table is created by these statements, spread
- * at the end of `migrations` in storage/database.ts.
+ * at the end of `migrations` in rooms/migrations.ts.
  *
  * state: `open` (a term in the future), `overdue` (the term passed: the drill is red), `closed` (closed_by holds the evidence),
  * `needs_owner_term` (it exists, nobody has a term from the owner yet: shown in the morning list, never counted overdue).

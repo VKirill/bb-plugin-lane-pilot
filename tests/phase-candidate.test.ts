@@ -8,7 +8,7 @@ import { autoInputs } from "../src/rooms/phase/server/auto-stages";
 import { candidateOn, planSignature, type PlanItem } from "../src/rooms/phase/logic";
 import { recordStage } from "../src/rooms/runs/server";
 import { listParts, savePhase } from "../src/rooms/phase/store";
-import { createAttempt, createRun, createTask, openDatabase } from "../src/rooms/storage";
+import { createAttempt, createRun, createTask, openDatabase } from "../src/rooms/plugin-db";
 
 // SMA p6_prepared → p6_authorized → p6_merge (2026-10-29 conformance audit, C-03): the pieces of a phase merged into main one by one and
 // the phase was verified after; now they collect on phase/<id>, the verdict reads that tree and main gets it only once accepted.

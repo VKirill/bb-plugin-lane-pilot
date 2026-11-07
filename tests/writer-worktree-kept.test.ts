@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { createRun, openDatabase, registerWorktree } from "../src/rooms/storage/database";
+import { createRun, openDatabase, registerWorktree } from "../src/rooms/plugin-db";
 import { reconcileWorktreeRegistry } from "../src/rooms/stability/server/worktree-janitor";
 import { writerLeftWorktree } from "../src/rooms/writer/server/left-worktree";
 

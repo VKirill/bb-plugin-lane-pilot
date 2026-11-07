@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { blindVerdict } from "../../src/rooms/phase/logic";
 import { goalFailedText, goalVerdict, runReady } from "../../src/rooms/run-goal";
 import { createRunGoal } from "../../src/rooms/run-goal/server";
-import { createAttempt, createRun, createTask, openDatabase, setRunThread, transitionAttempt } from "../../src/rooms/storage/database";
+import { createAttempt, createRun, createTask, openDatabase, setRunThread, transitionAttempt } from "../../src/rooms/plugin-db";
 import { runRunGoalCli } from "../../src/rooms/run-goal/server";
 
 describe("when a run is done and what its checks together mean", () => {

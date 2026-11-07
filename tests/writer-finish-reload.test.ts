@@ -1,7 +1,7 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it, vi } from "vitest";
 import type { PrototypeConfig, TaskV2 } from "../src/rooms/contracts";
-import { createAttempt, createRun, createTask, openDatabase, saveReasoningTrace, transitionAttempt } from "../src/rooms/storage/database";
+import { createAttempt, createRun, createTask, openDatabase, saveReasoningTrace, transitionAttempt } from "../src/rooms/plugin-db";
 import { createWriterFinish } from "../src/rooms/writer/server/finish";
 import incident from "./fixtures/writer-finish-reload-2026-11-01.json";
 

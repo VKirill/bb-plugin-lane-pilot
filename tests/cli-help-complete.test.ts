@@ -1,6 +1,6 @@
 import { it, expect } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { openDatabase } from "../src/rooms/storage/database";
+import { openDatabase } from "../src/rooms/plugin-db";
 import { createCore } from "../src/rooms/core/server/core";
 import { registerCli } from "../src/rooms/tools/server/cli";
 import type { Services } from "../src/rooms/core/server/services";

@@ -7,7 +7,7 @@ import { answerDecision, askDecision, examRows, getDecision, labelDecision, list
 import { backtest } from "../../src/rooms/lead/server/backtest";
 import { answerPhaseWord, answerTaskWord, askPhaseWord, askTaskWord, phaseDecisionId, wordDecisionId } from "../../src/rooms/lead/server/surfaces";
 import { insertPhase, savePhase } from "../../src/rooms/phase/store";
-import { createRun, createTask, openDatabase } from "../../src/rooms/storage/database";
+import { createRun, createTask, openDatabase } from "../../src/rooms/plugin-db";
 import { recordTaskWord } from "../../src/rooms/tasks/words";
 
 const world = () => { const { bb } = createFakePluginHost({ pluginId: "lane-pilot" }); return { bb, db: openDatabase(bb) }; };

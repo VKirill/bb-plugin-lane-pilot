@@ -11,7 +11,7 @@ import { approvalSuggestions, excavate, htmlReport } from "../src/rooms/self-imp
 import { taskEventBody } from "../src/rooms/outbound";
 import { screenFor, unusedReads } from "../src/rooms/cockpit/ui/registry";
 import { manifest, preship, receiptChain, verifyChain } from "../src/rooms/receipts";
-import { createRun, openDatabase } from "../src/rooms/storage/database";
+import { createRun, openDatabase } from "../src/rooms/plugin-db";
 
 const item = (id: string, extra: Partial<PlanItem> = {}, task: Record<string, unknown> = {}): PlanItem => ({
   id, title: id, wave: 1, promise: { given: "g", when: "w", then: "t" }, task: { id, owns_paths: [`src/${id}.ts`], verification: [{ command: `npm test -- ${id}` }], ...task }, ...extra,

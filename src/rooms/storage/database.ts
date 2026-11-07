@@ -5,14 +5,12 @@ import type { PrototypeConfig, StageId, StageState } from "@lane-pilot/contracts
 import { parseDirtSnapshots, type DirtSnapshot } from "../dirt-snapshot";
 import { FREE_CLASSES, failureClass, isOwnerDecision, isPreStartStop, isWaitingSecret, isWriterSilent, taskFamily } from "../failure-class";
 import { IllegalTransitionError, isLegalMove } from "../state-machine";
-import { validateSettingValue, validateSettingsObject, type SettingValidationError } from "../setting-validation";
+import { settingValidator, type SettingValidationError } from "../setting-validation";
 import { sha256Buffer } from "@lane-pilot/kit";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
 import { dropMemoryIndexes, hideRecord, noteRefutedByCheck, recordMemoryAccepted } from "@lane-pilot/memory-core";
-import { migrations as lanePilotMigrations } from "../migrations";
 import packageJson from "../../../package.json";
 
-export { migrations } from "../migrations";
 export { searchMemoryRecords, storeMemoryRecords } from "@lane-pilot/memory-core";
 
 export type LanePilotDatabase = Database.Database;
@@ -20,10 +18,10 @@ export type LanePilotDatabase = Database.Database;
 /** The Lane Pilot version that creates attempts; stored on each attempt (harness_version) to tell which build ran it. */
 export const HARNESS_VERSION: string = packageJson.version;
 
-export function openDatabase(bb: BbPluginApi, migrations: string[] = lanePilotMigrations): LanePilotDatabase {
+export function openDatabase(bb: BbPluginApi, migrations: readonly string[]): LanePilotDatabase {
   const db = bb.storage.database();
   db.pragma("foreign_keys = ON");
-  bb.storage.migrate(db, migrations);
+  bb.storage.migrate(db, [...migrations]);
   return db;
 }
 
@@ -1086,6 +1084,7 @@ export function casUpsertSetting(
   // that an older catalog no longer lists (the global writer.provider «acp-cursor») must not refuse every other save of the project
   // (live 2026-10-27: saving writer.model failed on writer.provider).
   const PAIR = new Set(["writer.provider", "writer.reasoning_effort"]);
+  const { validateSettingsObject } = settingValidator();
   const validation = validateSettingsObject(settings).find((error) => error.key === args.key || (PAIR.has(args.key) && PAIR.has(error.key)));
   if (validation) {
     let value: unknown = current?.value ?? null;
@@ -1165,6 +1164,7 @@ export function casUpsertSettings(
     }
     for (const change of args.changes) settings[change.key] = change.value;
     const nativeWriterKeys = new Set(["writer.provider", "writer.model", "writer.reasoning_effort", "writer.service_tier"]);
+    const { validateSettingValue, validateSettingsObject } = settingValidator();
     const validation = (options.nativeWriterSelection
       ? Object.entries(settings).flatMap(([key, value]) => nativeWriterKeys.has(key) ? [] : [validateSettingValue(key, value)]).filter((item) => item != null)
       : validateSettingsObject(settings))[0];

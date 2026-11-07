@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { createRun, createTask, listStageReceipts, openDatabase } from "../../src/rooms/storage/database";
+import { createRun, createTask, listStageReceipts, openDatabase } from "../../src/rooms/plugin-db";
 import { recordStage } from "../../src/rooms/runs/server/stage-records";
 import { createQaStages } from "../../src/rooms/qa/server/qa";
 import type { ServerCore } from "../../src/rooms/core/server/core";

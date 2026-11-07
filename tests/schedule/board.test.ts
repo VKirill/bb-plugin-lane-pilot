@@ -1,7 +1,7 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, describe, expect, it } from "vitest";
 import plugin from "../../server";
-import { createRun, openDatabase, saveProjectSetting, setRunThread } from "../../src/rooms/storage/database";
+import { createRun, openDatabase, saveProjectSetting, setRunThread } from "../../src/rooms/plugin-db";
 import { sweepOwnerItems } from "../../src/rooms/owner-waiting/items";
 
 /**

@@ -6,7 +6,7 @@ import { builtinWorkflow } from "../../src/rooms/workflow/builtin";
 import { listRuleProposals } from "@lane-pilot/run-insights";
 import { nightWorld } from "./world";
 import { createWriterHost } from "../../src/rooms/writer/server/writer-host";
-import { savePrototypeConfig } from "../../src/rooms/storage/database";
+import { savePrototypeConfig } from "../../src/rooms/plugin-db";
 import { noteProviderStartFailure } from "../../src/rooms/core/server/spawn-model";
 import incident from "../fixtures/learning-stale-binding-2026-10-30.json";
 

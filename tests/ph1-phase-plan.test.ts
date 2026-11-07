@@ -5,7 +5,7 @@ import { createPhaseDriver } from "../src/rooms/phase/server/driver";
 import { type Phase, type PhaseRecord } from "../src/rooms/phase/logic";
 import { autoDue, autoInputs, createAutoStages } from "../src/rooms/phase/server/auto-stages";
 import { phaseToolParams } from "../src/rooms/phase/server/tool";
-import { openDatabase } from "../src/rooms/storage";
+import { openDatabase } from "../src/rooms/plugin-db";
 import { savePhase } from "../src/rooms/phase/store";
 
 // PH1: the plan a PM of ph_f16b2b8b06 sent four times and got only «items: Invalid input» — covers inside the task, no project_cwd.

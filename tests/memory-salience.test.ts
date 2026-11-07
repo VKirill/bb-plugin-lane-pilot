@@ -17,7 +17,7 @@ describe("salience-gated admission (SLICE-Mem)", () => {
 
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { storeMemoryRecords } from "../packages/memory-core/src";
-import { openDatabase } from "../src/rooms/storage/database";
+import { openDatabase } from "../src/rooms/plugin-db";
 
 // #9 authority scope-note: a record shows whose authority it is and where it applies; a reader in another
 // section does not get it (the isolation half is proven in memory-bounds.test.ts F03).

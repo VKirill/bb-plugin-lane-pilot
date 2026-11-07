@@ -8,28 +8,49 @@ import { fileURLToPath } from "node:url";
 
 export function roomGraph(root) {
   const roomsDir = join(root, "src", "rooms");
-  const rooms = readdirSync(roomsDir).filter((n) => statSync(join(roomsDir, n)).isDirectory());
+  const entries = readdirSync(roomsDir);
+  const isTs = (n) => /\.(ts|tsx)$/.test(n) && !/\.test\.tsx?$/.test(n);
+  // Loose files directly under src/rooms/ are graph nodes of their own, named @<file>:
+  // a cycle through them (e.g. storage -> ../migrations -> owner rooms -> storage) must show up.
+  const looseFiles = new Set(entries.filter((n) => statSync(join(roomsDir, n)).isFile() && isTs(n)));
+  const rooms = [
+    ...entries.filter((n) => statSync(join(roomsDir, n)).isDirectory()),
+    ...[...looseFiles].map((n) => `@${n}`),
+  ];
+  const nodeNames = new Set(rooms);
+  const roomDirs = new Set(rooms.filter((r) => !r.startsWith("@")));
 
   function* files(dir) {
     for (const n of readdirSync(dir)) {
       const p = join(dir, n);
       if (statSync(p).isDirectory()) yield* files(p);
-      else if (/\.(ts|tsx)$/.test(n) && !/\.test\.tsx?$/.test(n)) yield p;
+      else if (isTs(n)) yield p;
     }
   }
   const roomOf = (abs) => {
     const rel = relative(roomsDir, abs);
-    return rel.startsWith("..") ? null : rel.split(sep)[0];
+    if (rel.startsWith("..")) return null;
+    const parts = rel.split(sep);
+    if (parts.length > 1) return parts[0];
+    const base = parts[0];
+    if (roomDirs.has(base)) return base;
+    for (const cand of [base, `${base}.ts`, `${base}.tsx`]) {
+      if (looseFiles.has(cand)) return `@${cand}`;
+    }
+    return null;
   };
 
   const edges = new Map(rooms.map((r) => [r, new Set()]));
   const importRe = /(?:import|export)\s[^'";]*?from\s*["']([^"']+)["']|import\(\s*["']([^"']+)["']\s*\)|^\s*import\s*["']([^"']+)["']/gm;
-  for (const room of rooms) for (const f of files(join(roomsDir, room))) {
-    for (const m of readFileSync(f, "utf8").matchAll(importRe)) {
-      const spec = m[1] ?? m[2] ?? m[3];
-      if (!spec.startsWith(".")) continue;
-      const to = roomOf(resolve(dirname(f), spec));
-      if (to && to !== room && edges.has(to)) edges.get(room).add(to);
+  for (const room of rooms) {
+    const scanned = room.startsWith("@") ? [join(roomsDir, room.slice(1))] : [...files(join(roomsDir, room))];
+    for (const f of scanned) {
+      for (const m of readFileSync(f, "utf8").matchAll(importRe)) {
+        const spec = m[1] ?? m[2] ?? m[3];
+        if (!spec.startsWith(".")) continue;
+        const to = roomOf(resolve(dirname(f), spec));
+        if (to && to !== room && nodeNames.has(to)) edges.get(room).add(to);
+      }
     }
   }
 

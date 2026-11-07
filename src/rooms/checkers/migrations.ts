@@ -1,6 +1,6 @@
 /**
  * Checking the checkers (src/rooms/checkers): a run plants known defects in accepted candidates and records, for every checker, whether it
- * caught each one. Spread at the end of `migrations` in storage/database.ts.
+ * caught each one. Spread at the end of `migrations` in rooms/migrations.ts.
  *
  * - `lane_pilot_checker_run`: one scoring run (its source, settings and spend).
  * - `lane_pilot_checker_result`: one row per planted defect (or clean control) and checker; the scorecard is built from these rows.

@@ -6,7 +6,7 @@ import { HARNESS_DEFAULTS, createHarness } from "../../src/rooms/harness/server/
 import { activeHarness, getHarness, insertHarness, teachingKeys } from "../../src/rooms/harness/server/store";
 import { decideTrial, TRIAL_DEFAULTS } from "../../src/rooms/harness/server/trial";
 import type { ArmAttempt } from "../../src/rooms/harness/server/store";
-import { createRun, createTask, openDatabase } from "../../src/rooms/storage/database";
+import { createRun, createTask, openDatabase } from "../../src/rooms/plugin-db";
 
 const DAY = 86_400_000;
 const WRITER = "codex/gpt-6-luna";

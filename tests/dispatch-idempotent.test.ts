@@ -7,7 +7,7 @@ import type { TaskV2 } from "../src/rooms/contracts";
 import {
   createAttempt, createRun, createTask, getAttempt, listAttemptsForTask, listStageReceipts, openDatabase,
   saveProjectSetting, savePrototypeConfig, saveTaskPlan, setRunThread,
-} from "../src/rooms/storage/database";
+} from "../src/rooms/plugin-db";
 
 const projectId = "project-test";
 const pmThreadId = "pm-thread";

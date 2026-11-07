@@ -14,7 +14,7 @@ import {
   allFailuresAreTimeouts,
   buildRecheckGateCommand,
 } from "../src/rooms/verification/server/integration-gate";
-import { openDatabase, createTask, saveStageReceipt, saveProjectSetting } from "../src/rooms/storage/database";
+import { openDatabase, createTask, saveStageReceipt, saveProjectSetting } from "../src/rooms/plugin-db";
 import * as hostHandlers from "../src/rooms/host-worker/host-handlers";
 import type { ServerCore } from "../src/rooms/core/server/core";
 import type { Services } from "../src/rooms/core/server/services";

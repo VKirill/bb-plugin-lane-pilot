@@ -2,7 +2,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import { briefMode, briefParts } from "../../src/rooms/hypotheses";
 import { createHypotheses, runHypothesisCli } from "../../src/rooms/hypotheses/server";
-import { loadProjectSettings, openDatabase } from "../../src/rooms/storage/database";
+import { loadProjectSettings, openDatabase } from "../../src/rooms/plugin-db";
 
 describe("the writer's brief mode (SMA P2-11, contracts between roles)", () => {
   it("narrow keeps only the contract side: no memory, no rules, no PM read summary; full is the default", () => {

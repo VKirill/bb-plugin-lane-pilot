@@ -14,7 +14,7 @@ import { createLeadService } from "../src/rooms/lead/server/service";
 import { architectPrompt, graphlessErrands, hubSnapshot, processPartsOf, processStemOf, proposalDecisionId, proposalItemKey, registerLeadTickActions, seedForm, tickBrief } from "../src/rooms/lead/server/tick";
 import { errandStem } from "../src/rooms/errands";
 import { postOwnerItem } from "../src/rooms/owner-waiting";
-import { openDatabase, saveProjectSetting } from "../src/rooms/storage/database";
+import { openDatabase, saveProjectSetting } from "../src/rooms/plugin-db";
 
 const NOW = Date.now();
 let dir = "";

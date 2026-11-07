@@ -5,7 +5,7 @@ import { WorkflowEngine } from "@lane-pilot/workflow-engine";
 import plugin from "../../server";
 import { QA_HOST_KEY } from "../../src/rooms/qa/qa-host";
 import type { TaskV2 } from "../../src/rooms/contracts";
-import { createRun, getAttempt, getRun, listStageReceipts, openDatabase, saveProjectSetting, savePrototypeConfig, setRunThread } from "../../src/rooms/storage/database";
+import { createRun, getAttempt, getRun, listStageReceipts, openDatabase, saveProjectSetting, savePrototypeConfig, setRunThread } from "../../src/rooms/plugin-db";
 
 /**
  * The dispatch pipeline runs on the workflow engine and nowhere else. Each scenario states what the dispatch must answer, which

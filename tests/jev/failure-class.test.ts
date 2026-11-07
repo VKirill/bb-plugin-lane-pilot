@@ -1,6 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { openDatabase } from "../../src/rooms/storage/database";
+import { openDatabase } from "../../src/rooms/plugin-db";
 import { classifyFailure } from "../../src/rooms/runs/failure-class";
 import { judgedFailureClass } from "../../src/rooms/runs/failure-class-model";
 import { failureClassJudgment } from "../../src/rooms/runs/failure-class-judgment";
@@ -89,7 +89,7 @@ describe("J-4 failure.class", () => {
 describe("failure.class outcome labels", () => {
   it("the run's terminal state labels the receipt: accepted agrees, a dead run confirms only a task reading", async () => {
     const { createFakePluginHost } = await import("@get-bb/plugin-sdk/testing");
-    const { openDatabase } = await import("../../src/rooms/storage/database");
+    const { openDatabase } = await import("../../src/rooms/plugin-db");
     const { insertReceipt, recordOutcome } = await import("@lane-pilot/jev");
     const { sweepFailureClassOutcomes } = await import("../../src/rooms/runs/failure-class-model");
     const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
@@ -108,7 +108,7 @@ describe("failure.class outcome labels", () => {
 describe("invoice.check outcome labels", () => {
   it("the owner's decision labels the receipt: a sent match agrees, a stopped run denies a match", async () => {
     const { createFakePluginHost } = await import("@get-bb/plugin-sdk/testing");
-    const { openDatabase } = await import("../../src/rooms/storage/database");
+    const { openDatabase } = await import("../../src/rooms/plugin-db");
     const { insertReceipt } = await import("@lane-pilot/jev");
     const { sweepInvoiceCheckOutcomes } = await import("../../src/rooms/runs/failure-class-model");
     const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
@@ -126,7 +126,7 @@ describe("invoice.check outcome labels", () => {
 describe("route.workflow outcome labels", () => {
   it("a confident pick is labeled by the graph it started: terminal success agrees, failure or a reroute disagrees", async () => {
     const { createFakePluginHost } = await import("@get-bb/plugin-sdk/testing");
-    const { openDatabase } = await import("../../src/rooms/storage/database");
+    const { openDatabase } = await import("../../src/rooms/plugin-db");
     const { insertReceipt } = await import("@lane-pilot/jev");
     const { sweepRouteWorkflowOutcomes } = await import("../../src/rooms/runs/failure-class-model");
     const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
@@ -145,7 +145,7 @@ describe("route.workflow outcome labels", () => {
 describe("plan.fact outcome labels", () => {
   it("an accepted task labels the shadow read: matching items agree, a differing item disagrees", async () => {
     const { createFakePluginHost } = await import("@get-bb/plugin-sdk/testing");
-    const { openDatabase } = await import("../../src/rooms/storage/database");
+    const { openDatabase } = await import("../../src/rooms/plugin-db");
     const { insertReceipt } = await import("@lane-pilot/jev");
     const { sweepPlanFactOutcomes } = await import("../../src/rooms/runs/failure-class-model");
     const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });

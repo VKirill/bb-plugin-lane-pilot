@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import plugin from "../server";
 import { recordEmployeeLesson } from "../src/rooms/critique/server";
-import { openDatabase } from "../src/rooms/storage/database";
+import { openDatabase } from "../src/rooms/plugin-db";
 import { withRoleLines } from "../src/rooms/native-agent";
 
 const cleanup: Array<() => Promise<void>> = [];

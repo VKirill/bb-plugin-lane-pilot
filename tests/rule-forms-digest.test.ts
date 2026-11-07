@@ -5,7 +5,7 @@ import { promotionDigest, promotionMorningLine, proposePromotions, runRulesCli }
 import { acceptPromotion, dismissPromotion } from "../src/rooms/rule-forms";
 import { crossProjectRuleCandidates } from "../src/rooms/rule-forms/promotion-service";
 
-import { migrations } from "../src/rooms/storage/database";
+import { migrations } from "../src/rooms/plugin-db";
 
 function openDb() {
   const db = new Database(":memory:");
@@ -56,7 +56,7 @@ describe("promotion digest (weekly top-10 + text/mechanism counter)", () => {
   });
 });
 
-import { claimActivation, createRun, getRun, setRunThread } from "../src/rooms/storage";
+import { claimActivation, createRun, getRun, setRunThread } from "../src/rooms/plugin-db";
 import { dispatchPromotion, settlePromotionTask } from "../src/rooms/rule-forms";
 
 const pmSetup = (db: Database.Database, projectId: string) => {

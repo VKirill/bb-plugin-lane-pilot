@@ -25,7 +25,7 @@ import { DEFAULT_BENCH_WRITER, defaultProjectName } from "../src/rooms/bench/run
 import { createBench } from "../src/rooms/bench/service";
 import { isSandboxProjectName } from "../src/rooms/stability/server";
 import { attemptMetrics } from "../src/rooms/usage/server/attempt-metrics";
-import { openDatabase } from "../src/rooms/storage/database";
+import { openDatabase } from "../src/rooms/plugin-db";
 
 const HOME = process.env.LP_BENCH_HOME ?? join(homedir(), "lp-bench");
 const HUB = process.env.LP_BENCH_HUB ?? "ubuntu@10.8.0.1";

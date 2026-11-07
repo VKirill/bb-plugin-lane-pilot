@@ -4,7 +4,7 @@ import { createCore } from "../../src/rooms/core/server/core";
 import { cancelAttemptById } from "../../src/rooms/runs/server/cancel";
 import { createRollback } from "../../src/rooms/rollback/server/rollback";
 import { createReconcile } from "../../src/rooms/stability/server/reconcile";
-import { createAttempt, createRun, createTask, getAttempt, openDatabase, transitionAttempt } from "../../src/rooms/storage/database";
+import { createAttempt, createRun, createTask, getAttempt, openDatabase, transitionAttempt } from "../../src/rooms/plugin-db";
 
 // The 2026-10-29 full-code audit (Аудит GPT), probes A-004, A-005 and A-006, kept as regressions.
 function runningAttempt(bb: Parameters<typeof openDatabase>[0]) {

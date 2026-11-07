@@ -6,7 +6,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import { backlogBoard, backlogReadCommand, parseBacklogOutput, parseTodoMeta } from "../../src/rooms/backlog";
 import { createBacklog, runBacklogCli } from "../../src/rooms/backlog/server";
-import { createRun, openDatabase, savePrototypeConfig, setRunThread } from "../../src/rooms/storage/database";
+import { createRun, openDatabase, savePrototypeConfig, setRunThread } from "../../src/rooms/plugin-db";
 import { collectOwnerWaiting, postOwnerItem } from "../../src/rooms/owner-waiting";
 
 const meta = (id: string, extra: string) => `id: ${id}\ntitle: "Item ${id}"\ncreated: 2026-10-${id.slice(-2)}T10:00:00+02:00\n${extra}\n`;

@@ -1,6 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { openDatabase } from "../../src/rooms/storage/database";
+import { openDatabase } from "../../src/rooms/plugin-db";
 import { NONE, cardText, closedInputs, routeWorkflow } from "../../src/rooms/workflow/route-workflow";
 import { createJevRouterModel } from "../../src/rooms/workflow/route-model";
 import { choiceOf, type Answers } from "@lane-pilot/jev";

@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import plugin from "../server";
 import * as handlers from "../src/rooms/host-worker/host-handlers";
 import type { TaskV2 } from "../src/rooms/contracts";
-import { createRun, getAttempt, getTask, getTaskPlan, listAttemptsForTask, listStageReceipts, openDatabase, saveProjectSetting, savePrototypeConfig, setRunThread } from "../src/rooms/storage/database";
+import { createRun, getAttempt, getTask, getTaskPlan, listAttemptsForTask, listStageReceipts, openDatabase, saveProjectSetting, savePrototypeConfig, setRunThread } from "../src/rooms/plugin-db";
 
 const projectId = "project-umbrella";
 const pmThreadId = "pm-umbrella";

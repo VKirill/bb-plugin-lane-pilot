@@ -4,7 +4,7 @@ import { createCore } from "../src/rooms/core/server/core";
 import { createPhaseDriver } from "../src/rooms/phase/server/driver";
 import { acceptanceKey, acceptanceLines, nextAction, sha256, type Phase, type PhaseRecord } from "../src/rooms/phase/logic";
 import { listParts, savePhase } from "../src/rooms/phase/store";
-import { createRun, openDatabase } from "../src/rooms/storage";
+import { createRun, openDatabase } from "../src/rooms/plugin-db";
 import { phaseDecisionId } from "../src/rooms/lead/server/surfaces";
 import { isOwnerAnswer } from "../src/rooms/lead/logic";
 

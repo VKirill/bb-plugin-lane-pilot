@@ -1,7 +1,7 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, describe, expect, it } from "vitest";
 import plugin from "../../server";
-import { createRun, openDatabase, setRunThread } from "../../src/rooms/storage/database";
+import { createRun, openDatabase, setRunThread } from "../../src/rooms/plugin-db";
 import { tokensFrom } from "../../src/rooms/native-agent/native-session";
 import { insertPhase, savePhase } from "../../src/rooms/phase/store";
 

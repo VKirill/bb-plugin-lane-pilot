@@ -1,6 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { openDatabase } from "../src/rooms/storage/database";
+import { openDatabase } from "../src/rooms/plugin-db";
 import { waitSpecialistRun, startSpecialistRun } from "../src/rooms/critique/server/specialist-graph";
 import { EMPLOYEES } from "../src/rooms/native-agent/employee-manifest";
 import { EMPLOYEE_VALIDATORS } from "../src/rooms/critique/server/specialists";

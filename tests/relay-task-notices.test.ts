@@ -4,7 +4,7 @@ import { createRelay, TASK_NOTICE, type RelayItem } from "../src/rooms/relay/ser
 import {
   createAttempt, createRun, listUnreportedTaskOutcomes, markTaskOutcomesReported, openDatabase, pmHasTasksAtWork, setRunThread, transitionAttempt,
   type TaskOutcome,
-} from "../src/rooms/storage/database";
+} from "../src/rooms/plugin-db";
 
 /**
  * 2026-10-12 (Клиенты, thr_k3ry5we546): the PM had to set a reminder per batch to learn its tasks' results, 37 such wakes a day
@@ -289,7 +289,7 @@ describe("task results wait for Lane Pilot's own commit", () => {
 
 describe("pmBookkeepingPending", () => {
   it("is pending while project life runs for an accepted attempt, or has not started a minute and a half after it", async () => {
-    const { pmBookkeepingPending } = await import("../src/rooms/storage/database");
+    const { pmBookkeepingPending } = await import("../src/rooms/plugin-db");
     const db = openDatabase(createFakePluginHost({ pluginId:"lane-pilot" }).bb);
     const row = { attemptId:"att_x", taskId:"t", state:"accepted", at:1_000 };
     expect(pmBookkeepingPending(db, [row], 1_000 + 30_000)).toBe(true);
@@ -316,7 +316,7 @@ describe("an outcome Lane Pilot already told the PM directly", () => {
 
 describe("toldPmDirectly", () => {
   it("covers every transition up to the time the PM had the news, and a notice sent just ahead of one", async () => {
-    const { noteToldPmDirectly, toldPmDirectly } = await import("../src/rooms/storage/database");
+    const { noteToldPmDirectly, toldPmDirectly } = await import("../src/rooms/plugin-db");
     noteToldPmDirectly("pm-told", "t", 10_000_000);
     expect(toldPmDirectly("pm-told", "t", 9_000_000)).toBe(true);
     expect(toldPmDirectly("pm-told", "t", 10_000_000 + 10 * 60_000)).toBe(true);

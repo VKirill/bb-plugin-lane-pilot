@@ -3,7 +3,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, describe, expect, it } from "vitest";
 import plugin from "../../server";
 import { acceptedRules } from "@lane-pilot/run-insights";
-import { createRun, createTask, openDatabase, saveProjectSetting, savePrototypeConfig, saveStageReceipt, searchMemoryRecords, setRunThread } from "../../src/rooms/storage/database";
+import { createRun, createTask, openDatabase, saveProjectSetting, savePrototypeConfig, saveStageReceipt, searchMemoryRecords, setRunThread } from "../../src/rooms/plugin-db";
 import { adoptRuleProposal, sweepLessons } from "../../src/rooms/self-repair/server/insights";
 import { createCore } from "../../src/rooms/core/server/core";
 

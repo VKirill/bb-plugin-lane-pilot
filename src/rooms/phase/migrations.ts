@@ -1,6 +1,6 @@
 /**
  * The phase and its book (SMA map: Phase graph, «Phase book», «Chain of book parts», «Book after every decision»). Spread at the END of
- * `migrations` in storage/database.ts.
+ * `migrations` in rooms/migrations.ts.
  *
  * lane_pilot_phase: one row per phase. A phase is the owner's goal taken through seven stages on rails (discussion, planning, design,
  * execution, verification, acceptance, lessons): the phase driver (server/driver.ts) moves it only when the stage's gates pass in code and

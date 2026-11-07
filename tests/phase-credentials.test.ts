@@ -21,7 +21,7 @@ describe("a phase goal carries no credential", () => {
 
   it("is applied where a phase is stored and read", async () => {
     const { createFakePluginHost } = await import("@get-bb/plugin-sdk/testing");
-    const { openDatabase } = await import("../src/rooms/storage");
+    const { openDatabase } = await import("../src/rooms/plugin-db");
     const { insertPhase, getPhase } = await import("../src/rooms/phase/store");
     const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
     const db = openDatabase(bb);

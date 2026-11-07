@@ -7,7 +7,7 @@ import { createCheckers, runCheckersCli } from "../../src/rooms/checkers/api";
 import type { CommandRun, ModelPort, Subject, VerificationSession } from "../../src/rooms/checkers/checkers";
 import { buildFixture, type Fixture } from "../../src/rooms/checkers/fixture";
 import { runScore } from "../../src/rooms/checkers/service";
-import { openDatabase } from "../../src/rooms/storage/database";
+import { openDatabase } from "../../src/rooms/plugin-db";
 
 /** A stand-in for the clone: a check fails when the written files hold what a planted defect leaves behind. */
 const fakeSession = (): VerificationSession => ({

@@ -1,7 +1,7 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import { attemptMetrics, renderAttemptMetrics } from "../src/rooms/usage/server/attempt-metrics";
-import { createRun, openDatabase } from "../src/rooms/storage/database";
+import { createRun, openDatabase } from "../src/rooms/plugin-db";
 
 const NOW = 10 * 86_400_000;
 

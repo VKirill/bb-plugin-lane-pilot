@@ -5,10 +5,10 @@ import type { PlanFactFacts } from "../src/rooms/tasks/plan-fact";
 import { writerBriefSegments, stickyTurnPrompt, previousAttemptBrief } from "../src/rooms/writer/server/writer-task";
 import { recheckPlanFact, runPlanFactStage, planFactMode, tableFromAnswers } from "../src/rooms/writer/server/plan-fact";
 import { recordStage } from "../src/rooms/runs/server";
-import { getStageReceiptResult } from "../src/rooms/storage";
+import { getStageReceiptResult } from "../src/rooms/plugin-db";
 import { buildAcceptanceCard } from "../src/rooms/acceptance/card";
 import { applyCodeCriticDefault, resolveCodeCriticDefault } from "../src/rooms/critique/quality-mode";
-import { createAttempt, createRun, createTask, openDatabase, saveTaskGitBase } from "../src/rooms/storage/database";
+import { createAttempt, createRun, createTask, openDatabase, saveTaskGitBase } from "../src/rooms/plugin-db";
 import { taskV2Schema } from "../src/rooms/contracts";
 import { upsertAttemptChange } from "../src/rooms/rollback/store";
 

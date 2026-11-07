@@ -5,7 +5,7 @@ import { basename, join } from "node:path";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import { createRollback } from "../../src/rooms/rollback/server";
-import { createAttempt, createRun, createTask, openDatabase } from "../../src/rooms/storage/database";
+import { createAttempt, createRun, createTask, openDatabase } from "../../src/rooms/plugin-db";
 import { createWorktree, integrateWorktree, removeLaneWorktree } from "../../src/rooms/verification/git-integrate";
 import { mergeInfo, revertCommitsInWorktree, worktreeState } from "../../src/rooms/verification/git-rollback";
 import { resolveGitOwnershipBase } from "../../src/rooms/verification/git-ownership";

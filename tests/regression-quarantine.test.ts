@@ -1,7 +1,7 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { expect, it } from "vitest";
 import { pinsPackageVersion } from "../src/rooms/baseline/server/regress";
-import { createRun, openDatabase } from "../src/rooms/storage/database";
+import { createRun, openDatabase } from "../src/rooms/plugin-db";
 import { quarantiningRegression } from "../src/rooms/writer/server/start";
 
 // BB-сервис, 2026-10-30: office-viewer's open release check (found 10-23) held every magicseo task touching package.json.

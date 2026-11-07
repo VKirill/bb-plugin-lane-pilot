@@ -1,7 +1,7 @@
 import { timelineArgs } from "../src/rooms/tools/server/cli";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { appendGateEvaluation, createAttempt, createRun, createTask, openDatabase, transitionAttempt } from "../src/rooms/storage/database";
+import { appendGateEvaluation, createAttempt, createRun, createTask, openDatabase, transitionAttempt } from "../src/rooms/plugin-db";
 import { recordStage } from "../src/rooms/runs/server";
 import { renderTimeline, taskTimeline } from "../src/rooms/runs";
 

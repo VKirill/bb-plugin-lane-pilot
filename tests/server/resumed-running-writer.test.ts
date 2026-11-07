@@ -9,7 +9,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, expect, it, vi } from "vitest";
 import { noOptionalPlugins } from "../optional-plugin-stubs";
 import type { PrototypeConfig, TaskV2 } from "../../src/rooms/contracts";
-import { createAttempt, createRun, createTask, getAttempt, openDatabase, savePrototypeConfig, saveTaskPlan, setAttemptWorkspace, setRunThread, transitionAttempt } from "../../src/rooms/storage/database";
+import { createAttempt, createRun, createTask, getAttempt, openDatabase, savePrototypeConfig, saveTaskPlan, setAttemptWorkspace, setRunThread, transitionAttempt } from "../../src/rooms/plugin-db";
 import { createCore } from "../../src/rooms/core/server/core";
 import type { Services } from "../../src/rooms/core/server/services";
 import { createReconcile } from "../../src/rooms/stability/server/reconcile";

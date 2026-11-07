@@ -1,7 +1,7 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import packageJson from "../../package.json";
-import { createAttempt, createRun, openDatabase } from "../../src/rooms/storage/database";
+import { createAttempt, createRun, openDatabase } from "../../src/rooms/plugin-db";
 import { CANARY_MAX_ATTEMPTS, REASON_SCAN_CHARS, canaryAlertText, canaryReport, createCanary, rollbackCommand } from "../../src/rooms/stability/server/canary";
 
 const VERSION: string = packageJson.version;

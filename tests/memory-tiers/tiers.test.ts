@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { hideRecord, searchMemoryRecords, storeMemoryRecords } from "../../packages/memory-core/src";
 import { queryWords } from "../../src/rooms/memory-tiers";
 import { enrichMemoryContext, tierReport } from "../../src/rooms/memory-tiers/server";
-import { createAttempt, createRun, createTask, openDatabase, transitionAttempt } from "../../src/rooms/storage/database";
+import { createAttempt, createRun, createTask, openDatabase, transitionAttempt } from "../../src/rooms/plugin-db";
 
 const NOW = Date.parse("2026-10-23T10:00:00Z");
 const DAY = 86_400_000;

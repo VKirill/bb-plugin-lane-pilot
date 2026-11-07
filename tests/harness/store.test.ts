@@ -1,6 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { createRun, createTask, openDatabase, saveStageReceipt } from "../../src/rooms/storage/database";
+import { createRun, createTask, openDatabase, saveStageReceipt } from "../../src/rooms/plugin-db";
 import {
   activeHarness, assignAttemptHarness, getHarness, insertHarness, listExperiences, saveExperience, setHarnessState, teachingKeys, trialAttempts, trialHarness,
 } from "../../src/rooms/harness/server/store";

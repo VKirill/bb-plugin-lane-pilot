@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { LEAD_DEFAULTS, parseLeadSettings } from "../../src/rooms/lead/settings";
 import { addRoad, getRoad } from "../../src/rooms/lead/server/road";
 import { hubSnapshot, projectRoot, proposalProblem, tickBrief, type HubSnapshot } from "../../src/rooms/lead/server/tick";
-import { openDatabase } from "../../src/rooms/storage/database";
+import { openDatabase } from "../../src/rooms/plugin-db";
 import { out, pathOf } from "../workflow/chain-helpers";
 import { runSim } from "../workflow/chain-harness";
 

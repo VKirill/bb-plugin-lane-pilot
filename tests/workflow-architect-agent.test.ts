@@ -4,7 +4,7 @@ import { createFakePluginHost, makePluginAgentConfigurationContext } from "@get-
 import plugin from "../server";
 import { agentPickerLabel } from "../src/rooms/native-agent/agent-display";
 import { compileMainAgentProfile, MAIN_AGENT_PROFILE_IDS } from "../src/rooms/native-agent/agent-profile";
-import { createRun, openDatabase, savePrototypeConfig, setRunThread } from "../src/rooms/storage/database";
+import { createRun, openDatabase, savePrototypeConfig, setRunThread } from "../src/rooms/plugin-db";
 import { BB_AGENT_SUMMARIES, LANE_PILOT_PM_SESSION, laneSessionOverlayPrompt, overlaySessionTools } from "../src/rooms/native-agent/native-agent-overlay";
 import { finalizeNativeLaneBinding } from "../src/rooms/native-agent/native-run";
 import { NATIVE_LP_BRIDGE_ARCHITECT_TOOLS, NATIVE_LP_BRIDGE_PM_TOOLS, NATIVE_LP_BRIDGE_TOOLS } from "../src/rooms/native-agent/native-session-hooks";

@@ -3,7 +3,7 @@ import { LP_DEFAULTS_KEY } from "@lane-pilot/settings-catalog";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { PrototypeConfig, TaskV2 } from "../src/rooms/contracts";
 import { runPmRead } from "../src/rooms/critique/server/critique-runs";
-import { createAttempt, createRun, createTask, listStageReceipts, openDatabase, saveProjectSetting, setRunThread } from "../src/rooms/storage/database";
+import { createAttempt, createRun, createTask, listStageReceipts, openDatabase, saveProjectSetting, setRunThread } from "../src/rooms/plugin-db";
 import { createWriterSticky } from "../src/rooms/writer/server/sticky";
 
 vi.mock("@lane-pilot/thread-observe", async (importOriginal) => ({

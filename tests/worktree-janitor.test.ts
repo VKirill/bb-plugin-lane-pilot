@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { openDatabase } from "../src/rooms/storage/database";
+import { openDatabase } from "../src/rooms/plugin-db";
 import { sweepLaneWorktrees } from "../src/rooms/verification/worktree-janitor";
 import { worktreeJanitor } from "../src/rooms/host-worker/host-handlers";
 import { runWorktreeJanitor } from "../src/rooms/stability/server/worktree-janitor";

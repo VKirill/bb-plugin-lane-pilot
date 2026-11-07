@@ -6,7 +6,7 @@ vi.mock("../../src/rooms/memory/server", () => ({ taskMemoryContext: (_db: unkno
 
 import Database from "better-sqlite3";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { createRun, openDatabase, setRunThread } from "../../src/rooms/storage/database";
+import { createRun, openDatabase, setRunThread } from "../../src/rooms/plugin-db";
 import { createScheduleExecutors } from "../../src/rooms/schedule/server/schedule-executors";
 import { normalizeSchedule } from "../../src/rooms/schedule/model";
 import { AGENT_OUTCOME_FORMAT, agentHistoryBlock, alreadyHandedOver, handOverTrailer, parseAgentOutcome, parseHandOver } from "../../src/rooms/schedule/outcome";

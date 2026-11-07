@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { filterSkillHub, firstSentence, formatSkillList, parseSkillHub, type SkillHub } from "../src/rooms/writer/server/skill-tree";
 import { pmSkillName, pmSkillUseCounts, recordPmSkillUse, runPmSkillsCli, runPmSkillUseCli } from "../src/rooms/native-agent/server/pm-skill-use";
 import { pmSkillUseOf } from "../src/rooms/session-hooks/logic";
-import { openDatabase } from "../src/rooms/storage/database";
+import { openDatabase } from "../src/rooms/plugin-db";
 
 const HUB: SkillHub = {
   sections: [

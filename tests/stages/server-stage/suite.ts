@@ -6,7 +6,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, describe, expect, it as vitestIt } from "vitest";
 import plugin from "../../../server";
 import { runBrowserQaOnHost, type BrowserQaInput } from "../../../src/rooms/qa/browser-qa";
-import { appendAcceptedFact, claimActivation, countChargedAttempts, createAttempt, createRun, createTask, getAttempt, getRun, listAcceptedFacts, listGateEvents, listPendingAcceptedFacts, listStageReceipts, loadProjectSettings, openDatabase, saveProjectSetting, savePrototypeConfig, saveStageReceipt, saveTaskPlan, setAttemptHolderThread, setRunThread, setRunWorkspace, storeMemoryRecords, transitionAttempt } from "../../../src/rooms/storage/database";
+import { appendAcceptedFact, claimActivation, countChargedAttempts, createAttempt, createRun, createTask, getAttempt, getRun, listAcceptedFacts, listGateEvents, listPendingAcceptedFacts, listStageReceipts, loadProjectSettings, openDatabase, saveProjectSetting, savePrototypeConfig, saveStageReceipt, saveTaskPlan, setAttemptHolderThread, setRunThread, setRunWorkspace, storeMemoryRecords, transitionAttempt } from "../../../src/rooms/plugin-db";
 import { memoryRecordId } from "../../../src/rooms/memory/memory";
 import type { TaskV2 } from "../../../src/rooms/contracts";
 import { buildRunPolicy } from "../../../src/rooms/tasks/run-policy";
@@ -616,9 +616,9 @@ describe("stage → native writer → receipt", () => {
     expect(dispatched.state).toBe("queued");
     const result=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:3},{threadId:pmThreadId,projectId})));
     expect(result.state).toBe("accepted");
-    expect(JSON.parse((await import("../../../src/rooms/storage/database")).getRun(db,"stage-run")!.run_policy_json))
+    expect(JSON.parse((await import("../../../src/rooms/plugin-db")).getRun(db,"stage-run")!.run_policy_json))
       .toEqual({schemaVersion:1,pools:{provider:15,verification:2}});
-    const receipt=(await import("../../../src/rooms/storage/database")).listStageReceipts(db,"stage-run",task.id)
+    const receipt=(await import("../../../src/rooms/plugin-db")).listStageReceipts(db,"stage-run",task.id)
       .find((row)=>row.stageId==="writer-agent")?.result as {runV2?:unknown};
     expect(receipt.runV2).toMatchObject({schemaVersion:1,pools:{provider:15,verification:2},score:2,risk:"low",sourceRisk:"low"});
     expect((listStageReceipts(db,"stage-run",task.id).find((row)=>row.stageId==="writer-agent")?.result as {produced?:string[]})?.produced)

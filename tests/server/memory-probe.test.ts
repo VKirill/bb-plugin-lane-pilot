@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { openDatabase, saveProjectSetting } from "../../src/rooms/storage/database";
+import { openDatabase, saveProjectSetting } from "../../src/rooms/plugin-db";
 import { MEMORY_PATHS } from "../../src/rooms/memory";
 import { createMemoryProbe, judge } from "../../src/rooms/memory-probe/server/memory-probe";
 import { memoryProbeRpc } from "../../src/rooms/core/server/rpc-memory-probe";

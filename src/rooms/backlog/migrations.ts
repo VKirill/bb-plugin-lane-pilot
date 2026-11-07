@@ -1,5 +1,5 @@
 /**
- * Backlog items issued to a PM (src/rooms/backlog). One table, spread at the END of `migrations` in storage/database.ts.
+ * Backlog items issued to a PM (src/rooms/backlog). One table, spread at the END of `migrations` in rooms/migrations.ts.
  *
  * lane_pilot_backlog_issue: one row per todo item handed to a project's PM, so it is never handed twice; the daily caps count these rows.
  */

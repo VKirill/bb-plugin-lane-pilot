@@ -1,5 +1,5 @@
 /**
- * Memory tiers (src/rooms/memory-tiers). Two tables, spread at the END of `migrations` in storage/database.ts.
+ * Memory tiers (src/rooms/memory-tiers). Two tables, spread at the END of `migrations` in rooms/migrations.ts.
  *
  * lane_pilot_memory_promotion: a note of the cold tier (expired for idleness, no date of its own) that a PM query needed again and that was
  * brought back to the active corpus — the measure of «demotion instead of forgetting».

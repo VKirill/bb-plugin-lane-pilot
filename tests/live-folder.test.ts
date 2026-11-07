@@ -6,7 +6,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { runCommandOnHost } from "../src/rooms/writer/cli-run";
 import { attemptProduced } from "../src/rooms/writer/cli-outcome";
-import { createRun, openDatabase } from "../src/rooms/storage/database";
+import { createRun, openDatabase } from "../src/rooms/plugin-db";
 import {
   chunkPaths, classifyFolderProbe, liveOwnedFiles, liveOwnedRoots, LIVE_BACKUP_SCRIPT, LIVE_DELETED_SHA, LIVE_FOLDER_BIG_BYTES, LIVE_FOLDER_FILE_CAP, LIVE_SNAPSHOT_SCRIPT, LIVE_SNAPSHOT_SKIP_DIRS,
   LIVE_SNAPSHOT_OUTPUT_BYTES, LIVE_SNAPSHOT_SKIP_PATHS, liveSnapshotCommand, parseLiveSnapshot, pythonCommand,

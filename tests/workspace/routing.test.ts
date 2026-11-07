@@ -3,7 +3,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { UI_CATALOG } from "@lane-pilot/settings-catalog";
 import { classifyManagedWorkspace, parseWorkspaceMode, requireManagedWorktreeProvider, resolveAttemptWorkspace, resolveManagedWorkspace, usesManagedWorktree, waitManagedWorktreeReady } from "../../src/rooms/verification/routing";
 import plugin from "../../server";
-import { getRun, openDatabase, saveProjectSetting, savePrototypeConfig } from "../../src/rooms/storage/database";
+import { getRun, openDatabase, saveProjectSetting, savePrototypeConfig } from "../../src/rooms/plugin-db";
 
 describe("workspace routing", () => {
   it("defaults to auto and defers isolation until task risk is available", () => {

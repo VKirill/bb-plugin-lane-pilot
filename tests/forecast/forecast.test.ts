@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { TaskV2 } from "../../src/rooms/contracts";
 import { calibrate, calibrationLine, scoreForecast } from "../../src/rooms/forecast";
 import { forecastReport, runForecastCli } from "../../src/rooms/forecast/server";
-import { createAttempt, createRun, createTask, openDatabase, transitionAttempt } from "../../src/rooms/storage/database";
+import { createAttempt, createRun, createTask, openDatabase, transitionAttempt } from "../../src/rooms/plugin-db";
 
 const NOW = Date.parse("2026-10-23T10:00:00Z");
 

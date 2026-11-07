@@ -4,7 +4,7 @@ import { WorkflowEngine } from "@lane-pilot/workflow-engine";
 import { createAfterAcceptStarter, registerAfterAcceptExecutors, afterAcceptKey } from "../../src/rooms/workflow/server/after-accept";
 import { AFTER_ACCEPT, builtinWorkflow } from "../../src/rooms/workflow/builtin";
 import { maybeNotifyWorkflowRun } from "../../src/rooms/workflow/server/pm-notice";
-import { createAttempt, createRun, listStageReceipts, openDatabase, setRunThread } from "../../src/rooms/storage/database";
+import { createAttempt, createRun, listStageReceipts, openDatabase, setRunThread } from "../../src/rooms/plugin-db";
 import { recordStage } from "../../src/rooms/runs/server";
 import { collectEntries } from "../../src/rooms/wall/journal";
 import lifeReceipt from "../fixtures/stage-left-open/T1.4.json";

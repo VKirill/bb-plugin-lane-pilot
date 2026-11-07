@@ -1,7 +1,7 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import { EMBED_DIM, DENSE_FLOOR, pendingVectors, rememberQueryVector, relevantRecords, searchMemoryRecords, storeMemoryRecords, storeVectors } from "../packages/memory-core/src";
-import { openDatabase } from "../src/rooms/storage/database";
+import { openDatabase } from "../src/rooms/plugin-db";
 import { embedPending, embedQuery, setEmbedder } from "../src/rooms/memory/server/embeddings";
 
 /** The meaning search (vectors.ts): a question that shares no word with the record still finds it; without vectors it is the word search. */

@@ -6,7 +6,7 @@ import { conveyorState, setConveyor } from "../../src/rooms/conveyor";
 import { isHeld } from "../../src/rooms/runs/server";
 import { setRunPaused } from "../../src/rooms/runs/server";
 import { waitWhileRunPaused } from "../../src/rooms/runs/server";
-import { openDatabase } from "../../src/rooms/storage/database";
+import { openDatabase } from "../../src/rooms/plugin-db";
 
 const NOW = Date.parse("2026-10-23T10:00:00Z");
 

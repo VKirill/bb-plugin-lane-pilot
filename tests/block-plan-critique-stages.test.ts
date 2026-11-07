@@ -2,7 +2,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { expect, it } from "vitest";
 import { registerDispatchExecutors } from "../src/rooms/writer/server/dispatch-workflow";
 import { recordStage } from "../src/rooms/runs/server";
-import { createAttempt, createRun, createTask, getAttempt, listStageReceipts, openDatabase } from "../src/rooms/storage";
+import { createAttempt, createRun, createTask, getAttempt, listStageReceipts, openDatabase } from "../src/rooms/plugin-db";
 
 // MagicSEO replay concert-scheduler (wfrun_c3df9f4b, 2026-10-31): plan critique and specialist review passed, the PM changed the
 // plan, the new critique blocked, and the block step threw «illegal stage transition specialist-review: passed -> skipped»:

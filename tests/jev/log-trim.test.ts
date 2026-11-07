@@ -1,6 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { openDatabase } from "../../src/rooms/storage/database";
+import { openDatabase } from "../../src/rooms/plugin-db";
 import { createJev } from "@lane-pilot/jev";
 import type { JevClient } from "@lane-pilot/jev";
 import { joinTrimmedChunks, logTrimJudgment, pinnedChunks, splitLogChunks, trimCheckLogsIn, trimFailedCheckLog, PINNED_LINE } from "../../src/rooms/writer/log-trim";

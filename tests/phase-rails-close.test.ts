@@ -7,7 +7,7 @@ import { phaseToolParams } from "../src/rooms/phase/server/tool";
 import { contextSignature, acceptanceLines, planSignature, type PlanItem } from "../src/rooms/phase/logic";
 import { recordStage } from "../src/rooms/runs/server";
 import { listParts, savePhase } from "../src/rooms/phase/store";
-import { createAttempt, createRun, createTask, openDatabase } from "../src/rooms/storage";
+import { createAttempt, createRun, createTask, openDatabase } from "../src/rooms/plugin-db";
 
 function driver(status = "idle") {
   const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });

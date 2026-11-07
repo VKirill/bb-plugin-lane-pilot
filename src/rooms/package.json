@@ -27,6 +27,7 @@
     "./runs/index.ts",
     "./schedule/errand-kind-judgment.ts",
     "./session-hooks/cli.ts",
+    "./settings/setting-validation.ts",
     "./tasks/index.ts",
     "./tasks/plan-fact-judgment.ts",
     "./verification/test-hint.ts",

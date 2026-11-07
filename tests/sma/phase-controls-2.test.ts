@@ -5,7 +5,7 @@ import { createPhaseDriver } from "../../src/rooms/phase/server/driver";
 import { contextSignature, planSignature, sha256, type PlanItem } from "../../src/rooms/phase/logic";
 import { listParts, savePhase } from "../../src/rooms/phase/store";
 import { issuedContract, piecePlan } from "../../src/rooms/phase/stages";
-import { createAttempt, createRun, createTask, openDatabase } from "../../src/rooms/storage";
+import { createAttempt, createRun, createTask, openDatabase } from "../../src/rooms/plugin-db";
 
 const item = (id = "piece"): PlanItem => ({
   id, title: id, wave: 1, promise: { given: "g", when: "w", then: "t" },

@@ -1,7 +1,7 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import { mountPermits } from "../../src/rooms/permits";
-import { createAttempt, createRun, createTask, openDatabase, transitionAttempt } from "../../src/rooms/storage/database";
+import { createAttempt, createRun, createTask, openDatabase, transitionAttempt } from "../../src/rooms/plugin-db";
 
 describe("permit decision", () => {
   it("[sma:wb_decision] allow and deny are written for that ticket, and the writer is told in the same session", async () => {

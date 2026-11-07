@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { createCore } from "../src/rooms/core/server/core";
 import { cancelAttemptById } from "../src/rooms/runs/server/cancel";
 import { cancelRejection } from "../src/rooms/runs/server/run-finish";
-import { createAttempt, createRun, createTask, getAttempt, openDatabase, setRunState, transitionAttempt } from "../src/rooms/storage/database";
+import { createAttempt, createRun, createTask, getAttempt, openDatabase, setRunState, transitionAttempt } from "../src/rooms/plugin-db";
 
 // Live drill 2026-10-27: a drill run ended `blocked` with three attempts still `spawn_requested`. `lane-pilot finish` refused while
 // attempts were open, `lane-pilot cancel` refused «cancel is not legal for blocked run», and the stuck run held the project's

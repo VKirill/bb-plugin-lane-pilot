@@ -1,7 +1,7 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, describe, expect, it } from "vitest";
 import { createJev, setJevForTests, type JevClient } from "@lane-pilot/jev";
-import { openDatabase } from "../src/rooms/storage/database";
+import { openDatabase } from "../src/rooms/plugin-db";
 import { PROCESS_KEY_JUDGMENT_ID, chooseProcessKey, nearestKeys, pairwiseF1, processKeyJudgment } from "../src/rooms/errands";
 import { processKeyEval, runErrandsCli, wordJudge } from "../src/rooms/errands";
 import gold from "./fixtures/errand-gold.json";

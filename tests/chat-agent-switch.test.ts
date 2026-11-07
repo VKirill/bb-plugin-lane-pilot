@@ -1,7 +1,7 @@
 import { afterEach, expect, it } from "vitest";
 import { createFakePluginHost, makeMessageDispatchHookContext } from "@get-bb/plugin-sdk/testing";
 import plugin from "../server";
-import { claimActivation, createAttempt, createTask, findOpenNativeRun, getActivation, getRun, listUnreportedTaskOutcomes, openDatabase, savePrototypeConfig, transitionAttempt } from "../src/rooms/storage/database";
+import { claimActivation, createAttempt, createTask, findOpenNativeRun, getActivation, getRun, listUnreportedTaskOutcomes, openDatabase, savePrototypeConfig, transitionAttempt } from "../src/rooms/plugin-db";
 import { insertPhase, savePhase } from "../src/rooms/phase/store";
 import { createWorkflowTriggers } from "../src/rooms/workflow/server/workflow-triggers";
 import { nativeSelectionMarker } from "../src/rooms/native-agent/native-session";

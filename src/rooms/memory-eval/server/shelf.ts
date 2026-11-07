@@ -3,7 +3,7 @@ import {
   memoryUsefulness, recordMemoryAccepted, recordMemoryMixed, searchMemoryRecords, storeMemoryRecords, trigramReady,
   type MemoryCandidate, type MemoryRecord,
 } from "@lane-pilot/memory-core";
-import { migrations } from "../../storage";
+import { migrations } from "../../migrations";
 import { pathAnchors } from "../../writer";
 import { candidateQuestions, classify, queryOf, type Classified } from "./questions";
 import type { EvalData, RawNote } from "./source";

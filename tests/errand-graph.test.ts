@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { WorkflowEngine, registerPureActions } from "@lane-pilot/workflow-engine";
-import { createRun, openDatabase, setRunThread } from "../src/rooms/storage/database";
+import { createRun, openDatabase, setRunThread } from "../src/rooms/plugin-db";
 import { mountErrands } from "../src/rooms/qa/server/errands";
 import { builtinWorkflow } from "../src/rooms/workflow/builtin";
 import { validateWorkflow } from "@lane-pilot/workflow-engine";

@@ -6,7 +6,7 @@ import { setSandboxProjects } from "../../src/rooms/owner-waiting";
 import { answerDecision, getDecision, listDecisions } from "../../src/rooms/lead/server/journal";
 import { addRoad, decideRoad, getRoad, listRoad, proposeRoad, rejectRoad } from "../../src/rooms/lead/server/road";
 import { projectRoot, registerLeadTickActions } from "../../src/rooms/lead/server/tick";
-import { openDatabase, saveProjectSetting } from "../../src/rooms/storage/database";
+import { openDatabase, saveProjectSetting } from "../../src/rooms/plugin-db";
 
 /**
  * Executor-level tests of `lp.lead_propose` and `lp.lead_act`: a tiny engine that only stores the registered executors,

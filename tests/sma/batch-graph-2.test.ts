@@ -5,7 +5,7 @@ import { PhaseRefusal, createPhaseDriver } from "../../src/rooms/phase/server/dr
 import { contextSignature, designDecision, executionGate, issuable, pieceProblems, pieceSha, planSignature, type PhaseRecord, type PlanItem, type TaskFact } from "../../src/rooms/phase/logic";
 import { getPhase, listParts, savePhase } from "../../src/rooms/phase/store";
 import { pauseRun } from "../../src/rooms/runs/server/runs-pause";
-import { createAttempt, createRun, createTask, openDatabase } from "../../src/rooms/storage";
+import { createAttempt, createRun, createTask, openDatabase } from "../../src/rooms/plugin-db";
 
 const piece = (id: string, wave = 1): PlanItem => ({
   id, title: id, wave, promise: { given: "a cell", when: "the sum runs", then: "the cell is skipped" },

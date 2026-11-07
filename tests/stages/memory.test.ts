@@ -1,6 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { migrations, openDatabase, searchMemoryRecords, storeMemoryRecords } from "../../src/rooms/storage/database";
+import { migrations, openDatabase, searchMemoryRecords, storeMemoryRecords } from "../../src/rooms/plugin-db";
 import { memoryContext, memoryRecordId, parseMemoryCandidates, parseMemorySettings } from "../../src/rooms/memory/memory";
 
 describe("project memory stage", () => {

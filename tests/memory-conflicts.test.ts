@@ -5,7 +5,7 @@ import { disagreement, findConflicts, holdConflict, searchMemoryRecords, storeMe
 import { createDeferrals } from "../src/rooms/deferral/server";
 import { deferralKindMigrations, deferralMigrations } from "../src/rooms/deferral/migrations";
 import { createMemoryConflicts, runMemoryConflictCli } from "../src/rooms/memory/server";
-import { openDatabase } from "../src/rooms/storage/database";
+import { openDatabase } from "../src/rooms/plugin-db";
 
 // SMA block 4, P2-7: two notes that disagree are settled at once, the newer one kept; nobody is asked.
 const limits = { sourceSha256: "a".repeat(64), audience: "subagent" as const, coreBudget: 99_999, noteBudget: 99_999, indexBudget: 999_999 };

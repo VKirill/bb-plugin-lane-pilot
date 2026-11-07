@@ -8,7 +8,7 @@ import { roleSpec } from "../../src/rooms/workflow/server/workflow-agent";
 import { createWorkflowArchitect } from "../../src/rooms/workflow/server/workflow-architect";
 import type { ArchitectDeps } from "../../src/rooms/workflow/server/workflow-architect";
 import type { Services } from "../../src/rooms/core/server/services";
-import { migrations } from "../../src/rooms/storage/database";
+import { migrations } from "../../src/rooms/plugin-db";
 
 /** A node `role: "specialist:<id>"` names any bundled specialist or agent the owner created; one that does not exist fails validation. */
 const workflow = (role: string) => parseWorkflow({

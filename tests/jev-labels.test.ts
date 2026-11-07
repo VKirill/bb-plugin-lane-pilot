@@ -1,6 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { openDatabase } from "../src/rooms/storage/database";
+import { openDatabase } from "../src/rooms/plugin-db";
 // The worktree's own jev package by relative path: `@lane-pilot/jev` resolves to the main checkout (shared node_modules),
 // and these tests pin what this branch adds to the package (the merge brings the same code to the main checkout).
 import { insertReceipt } from "@lane-pilot/jev";

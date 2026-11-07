@@ -1,7 +1,7 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import { storeMemoryRecords } from "../packages/memory-core/src";
-import { openDatabase, saveProjectSetting, createRun } from "../src/rooms/storage/database";
+import { openDatabase, saveProjectSetting, createRun } from "../src/rooms/plugin-db";
 import { threadMemoryBlock, THREAD_MEMORY_RULE } from "../src/rooms/memory/server/thread-block";
 
 /**

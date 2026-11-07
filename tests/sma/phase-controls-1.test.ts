@@ -4,7 +4,7 @@ import { createCore } from "../../src/rooms/core/server/core";
 import { PhaseRefusal, createPhaseDriver } from "../../src/rooms/phase/server/driver";
 import { planSignature, sha256 } from "../../src/rooms/phase/logic";
 import { listParts, savePhase } from "../../src/rooms/phase/store";
-import { createAttempt, createRun, createTask, openDatabase } from "../../src/rooms/storage";
+import { createAttempt, createRun, createTask, openDatabase } from "../../src/rooms/plugin-db";
 
 const item = {
   id: "piece", title: "one piece", wave: 1,

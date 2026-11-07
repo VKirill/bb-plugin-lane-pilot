@@ -1,6 +1,6 @@
 /**
  * LP-Bench (SMA plan P0-1): a fixed set of real past tasks with a known right result, run again on a changed arm and compared in
- * pairs. Spread at the end of `migrations` in storage/database.ts.
+ * pairs. Spread at the end of `migrations` in rooms/migrations.ts.
  *
  * - `lane_pilot_bench_set`/`lane_pilot_bench_task`: a set version and its tasks. Never changed after it is written («набор не меняешь»):
  *   the triggers refuse UPDATE and DELETE; a different set is a new version. `manifest_sha256` is the hash of the tasks (contract,

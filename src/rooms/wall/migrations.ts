@@ -1,5 +1,5 @@
 /**
- * The wall journal and the night loop. Spread at the END of `migrations` in storage/database.ts; never renumbered.
+ * The wall journal and the night loop. Spread at the END of `migrations` in rooms/migrations.ts; never renumbered.
  *
  * - lane_pilot_wall_entry: the journal. One row per night and (class, LP version, project): how many failures, in how many tasks, which
  *   sources saw it (attempt / triage / gate event / stage receipt / plugin log), the gates and the stages it broke in, a few sample attempts.

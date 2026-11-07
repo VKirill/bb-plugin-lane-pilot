@@ -4,7 +4,7 @@ import type { TaskV2 } from "../src/rooms/contracts";
 import { createCore } from "../src/rooms/core/server/core";
 import type { Services } from "../src/rooms/core/server/services";
 import { recordStage } from "../src/rooms/runs/server/stage-records";
-import { countChargedAttempts, createAttempt, createRun, createTask, getAttempt, listUnansweredWriterQuestions, openDatabase, savePrototypeConfig, saveProjectSetting, saveTaskPlan, setRunThread } from "../src/rooms/storage/database";
+import { countChargedAttempts, createAttempt, createRun, createTask, getAttempt, listUnansweredWriterQuestions, openDatabase, savePrototypeConfig, saveProjectSetting, saveTaskPlan, setRunThread } from "../src/rooms/plugin-db";
 import { collectOwnerWaiting } from "../src/rooms/owner-waiting";
 import { listReturns } from "../src/rooms/stage-return";
 import { SAFE_DEFAULT_ANSWER, WRITER_QUESTION_WAIT_MS, wasAnsweredByDefault } from "../src/rooms/writer/server/question-default";

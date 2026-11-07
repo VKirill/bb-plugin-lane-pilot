@@ -5,7 +5,7 @@ import type { Services } from "../src/rooms/core/server/services";
 import { createPhaseDriver } from "../src/rooms/phase/server/driver";
 import { planSignature, type PlanItem } from "../src/rooms/phase/logic";
 import { savePhase } from "../src/rooms/phase/store";
-import { createRun, createTask, openDatabase } from "../src/rooms/storage";
+import { createRun, createTask, openDatabase } from "../src/rooms/plugin-db";
 
 const piece = (acceptance: string[]): PlanItem => ({ id: "notes", title: "Notes", wave: 1, promise: { given: "g", when: "w", then: "t" },
   task: { id: "notes", owns_paths: ["src/**"], verification: [{ command: "node --test" }], acceptance } });

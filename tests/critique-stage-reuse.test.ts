@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { runCodeCritique, runPlanCritique, runPmRead } from "../src/rooms/critique/server/critique-runs";
 import { recordStage, resetHelperStages } from "../src/rooms/runs/server/stage-records";
 import { createJev, setJevForTests, type JevClient } from "@lane-pilot/jev";
-import { createAttempt, createRun, createTask, listStageReceipts, openDatabase, saveProjectSetting } from "../src/rooms/storage";
+import { createAttempt, createRun, createTask, listStageReceipts, openDatabase, saveProjectSetting } from "../src/rooms/plugin-db";
 
 // 2026-10-29 audit (lane-pilot-roast F-001, F-003): quick paid the catalog and the coverage scan for a critic it skipped; pm-read
 // handed back the summary of the old read_first; a resumed dispatch bought a passed plan critique again. A receipt also kept the

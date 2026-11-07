@@ -6,7 +6,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { vi } from "vitest";
 import { createBaselineRoom, type BaselineApi, type RegressionApi } from "../../src/rooms/baseline/server";
 import { createRollback, type RollbackApi } from "../../src/rooms/rollback/server";
-import { createAttempt, createRun, createTask, loadProjectSettings, openDatabase, saveProjectSetting } from "../../src/rooms/storage/database";
+import { createAttempt, createRun, createTask, loadProjectSettings, openDatabase, saveProjectSetting } from "../../src/rooms/plugin-db";
 import { createWorktree, integrateWorktree, removeLaneWorktree } from "../../src/rooms/verification/git-integrate";
 import { mergeInfo, revertCommitsInWorktree, worktreeState } from "../../src/rooms/verification/git-rollback";
 import { bisectGateOnHost, runGateOnHost } from "../../src/rooms/verification/integration-gate-host";

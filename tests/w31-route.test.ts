@@ -1,6 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { createAttempt, createRun, createTask, openDatabase, transitionAttempt } from "../src/rooms/storage/database";
+import { createAttempt, createRun, createTask, openDatabase, transitionAttempt } from "../src/rooms/plugin-db";
 import { attemptMetrics, queueWaitMs, runQueueWaits } from "../src/rooms/usage/server/attempt-metrics";
 import { markCancelCode, cancelAttemptById, CANCEL_CODES } from "../src/rooms/runs/server/cancel";
 import { sweepWriterModelOutcomes } from "../src/rooms/runs/failure-class-model";

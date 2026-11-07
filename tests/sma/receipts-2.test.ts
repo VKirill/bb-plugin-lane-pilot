@@ -4,7 +4,7 @@ import { baselineVerdict, type BaselineCheck } from "../../src/rooms/baseline/lo
 import { calibrationLine, calibrate, scoreForecast } from "../../src/rooms/forecast/logic";
 import { prPassport } from "../../src/rooms/receipts";
 import { recordStage } from "../../src/rooms/runs/server/stage-records";
-import { createRun, createTask, openDatabase } from "../../src/rooms/storage";
+import { createRun, createTask, openDatabase } from "../../src/rooms/plugin-db";
 import { brokenWireReason, readWires, wiresCommand } from "../../src/rooms/wires";
 
 const check = (status: BaselineCheck["status"], command = "npm test"): BaselineCheck => ({

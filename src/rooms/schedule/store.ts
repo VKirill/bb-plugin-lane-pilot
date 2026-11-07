@@ -64,7 +64,7 @@ export const scheduleMigrations: string[] = [
 /**
  * 0.1.338: the `agent` kind. SQLite cannot change a CHECK, so both tables are rebuilt (the run table first: it holds the foreign key, and
  * dropping the parent with `foreign_keys=ON` would cascade-delete its runs). Every row and id is copied. Appended at the very END of
- * `migrations` in src/rooms/storage/database.ts (the hub records migrations by index), never into `scheduleMigrations`.
+ * `migrations` in src/rooms/migrations.ts (the hub records migrations by index), never into `scheduleMigrations`.
  */
 export const scheduleAgentMigrations: string[] = [
   `CREATE TABLE lane_pilot_schedule_next (

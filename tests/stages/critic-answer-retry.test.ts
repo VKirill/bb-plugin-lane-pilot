@@ -4,7 +4,7 @@ vi.mock("@lane-pilot/thread-observe", async (original) => ({ ...(await original<
 
 const { readCodeCritique } = await import("../../src/rooms/critique/server/critique-runs");
 const { recordStage } = await import("../../src/rooms/runs/server");
-const { createRun, createTask, listStageReceipts, openDatabase } = await import("../../src/rooms/storage");
+const { createRun, createTask, listStageReceipts, openDatabase } = await import("../../src/rooms/plugin-db");
 const { createFakePluginHost } = await import("@get-bb/plugin-sdk/testing");
 
 // selfystudio 2026-10-30: a code critic's «pass» with an unescaped quote in its evidence was unreadable and the finished task was
