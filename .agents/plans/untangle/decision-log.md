@@ -107,3 +107,8 @@ Audit B: the 64-room SCC holds by three causes (core barrel imported by 43 rooms
 - G5 (writer/workflow ports) and G7c (runs split, critique/tasks/verification owner APIs) wait for F3 (writer failure fields) to merge — they touch the same files.
 - G1+G2 merged 40d604d5 (review Grok: parity holds; one hidden link). Hidden link: platform re-exported `Services` type-only from server.ts, invisible to the graph. Fix in two parts: (a) room-graph counts code files outside src/rooms as ^nodes (c9d36c99) — honest numbers base 64/94 → now 70/56 (^server.ts in the SCC); (b) stream S thr_grk9acdh47 replaces the 87-field bag with per-function narrow deps typed by owner rooms.
 - G4+G7a (plugin-contracts.ts at repo root) has the same shape; its review (Gemini) checks it with the new graph.
+
+## Final audit A (Argon) → R1–R10, mapped
+R1≈G1/G4 (done / in review), R2≈G5/G7c (after F3), R3≈G3+G6 (running), R5≈F3 (running).
+New streams: R6+R9 hardcodes + duplicates → thr_pv7gnv9vqy (LongCat 2.5); R8 swallowed errors → thr_kzf5nymycm (SWE-2 Flash high).
+Queued: R4 table ownership + database.ts split (after F3/G47 — same file), R7 micro-room merge (last: moves directories), R10 substring tests + 423 todos (last: tests are the safety net).
