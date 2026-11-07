@@ -125,3 +125,9 @@ Streams never commit README.md / docs/atlas.md / docs/map/index.html; the merge 
 
 ## 2026-11-07 — merges so far today
 F3 66e0fc30, R8 7961622a, R6+R9 ef504db7, R4a 43d4c51e, G5 50d5865b, R8c (this). Graph 43/46/712. A stream's own "main" graph numbers are not trusted: the merger runs room-graph on main and on the branch (G7b's first rebase silently reverted G4 and S and reported SCC 70 as "main").
+
+## Final audit 2 (f470d5b7) → wave W
+- Four fresh read-only auditors: special cases (Grok), surplus (Grok), needless links (Gemini), hidden links (Gemini). Reports copied to audit2-*.md here.
+- Taken: all of special cases and surplus; hidden links groups 1–8, 10; needless links 1–15, 19, 20, 24, 25, 40.
+- Rejected: hidden-links group 9 (new thread-registry table, out of scope); needless links 16–18, 21–39 (pass functions instead of a narrow per-file Services — contradicts stream S convention, removes no edge).
+- Streams: W-surplus (LongCat), W-special (SWE-2 high), W-hidden (SWE-2 high); needless 1, 2, 5, 6, 7, 11, 14 folded into G8a because they hold the last SCC.
