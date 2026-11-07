@@ -1,8 +1,8 @@
-import { parseIntegrationGateSettings } from "../../contracts/integration-gate";
+import { parseIntegrationGateSettings, type ResolvedGate } from "../../contracts/integration-gate";
 import type { IntegrationGateSettings, GateWhen } from "../../contracts/integration-gate";
 import type { TaskV2, PrototypeConfig } from "../../contracts";
-import type { LanePilotDatabase, StageReceiptRow } from "../../storage";
-import { getRun, getRunSettingsScopes, getTask, listStageReceipts, loadProjectSettings, transitionAttempt } from "../../storage";
+import type { GateRunRow, GateRunState, LanePilotDatabase, StageReceiptRow } from "../../storage";
+import { finishGateRun, getRun, getRunSettingsScopes, getTask, getTaskContractJson, latestGateRun, latestGateRunForTask, listStageReceipts, listTaskIdsForRun, loadProjectSettings, noteGateRunStart, transitionAttempt } from "../../storage";
 import { recordGateEvaluation } from "../../runs/server/stage-records";
 import { bestEffort, stringAt, stripAnsi } from "@lane-pilot/kit";
 import type { ServerCore } from "../../contracts/server";
@@ -10,7 +10,6 @@ import type { ServerCore } from "../../contracts/server";
 import { isEnvironmentCheckFailure } from "../../contracts/failure-class";
 import { isMainfixTask, readCheckRun } from "../../tasks";
 import { gateLabel, gateResolverFor } from "./gate-detect"
-import { type ResolvedGate } from "../../contracts/integration-gate";
 import { continuesEpisode, type GateEpisode } from "./gate-episode";
 import { closeOwnerItemsByPrefix, postOwnerItem } from "../../owner-waiting";
 import type { LeadRoadApi } from "../../contracts";
@@ -52,51 +51,7 @@ export type MergedTaskInfo = {
  * The durable record of one integration-gate run (lane_pilot_gate_run): «all tasks accepted» alone never said what
  * main's own check did after the merge — still running, red, never ran, or green, and on which commit (Astra F1).
  */
-export type GateRunState = "running" | "passed" | "failed" | "not_run";
-export type GateRunRow = {
-  id: number;
-  projectId: string;
-  runId: string;
-  scopeKey: string;
-  command: string;
-  state: GateRunState;
-  /** The main commit the run's verdict belongs to (`gateRun`'s head). */
-  head: string | null;
-  /** `failed`: the first failing evidence; `not_run`: why it never ran. */
-  reason: string | null;
-  batch: Array<{ taskId: string; commitSha: string }>;
-  updatedAt: number;
-};
-
 const GATE_RUN_STALE_MS = 35 * 60_000; // gate timeout (30 min) + slack
-
-type GateRunDb = { prepare(sql: string): { get(...args: unknown[]): unknown; run(...args: unknown[]): { lastInsertRowid: number | bigint } } };
-
-function gateRunRow(raw: Record<string, unknown>): GateRunRow {
-  let batch: GateRunRow["batch"] = [];
-  try { batch = JSON.parse(raw.batch_json as string) as GateRunRow["batch"]; } catch { /* empty */ }
-  return {
-    id: raw.id as number, projectId: raw.project_id as string, runId: raw.run_id as string,
-    scopeKey: raw.scope_key as string, command: raw.command as string, state: raw.state as GateRunState,
-    head: (raw.head as string | null) ?? null, reason: (raw.reason as string | null) ?? null,
-    batch: Array.isArray(batch) ? batch : [], updatedAt: raw.updated_at as number,
-  };
-}
-
-/** The gate run started: a `running` row the PM can already see; finished by `finishGateRun`. Returns the row id. */
-export function noteGateRunStart(db: GateRunDb, input: {
-  projectId: string; runId: string; scopeKey: string; command: string; batch: MergedTaskInfo[];
-}): number {
-  return Number(db.prepare(`INSERT INTO lane_pilot_gate_run (project_id,run_id,scope_key,command,state,batch_json,updated_at)
-    VALUES (?,?,?,?,'running',?,?)`)
-    .run(input.projectId, input.runId, input.scopeKey, input.command,
-      JSON.stringify(input.batch.map((task) => ({ taskId: task.taskId, commitSha: task.commitSha }))), Date.now()).lastInsertRowid);
-}
-
-export function finishGateRun(db: GateRunDb, id: number, state: Exclude<GateRunState, "running">, fields: { head?: string | null; reason?: string | null }): void {
-  db.prepare("UPDATE lane_pilot_gate_run SET state=?, head=?, reason=?, updated_at=? WHERE id=?")
-    .run(state, fields.head ?? null, fields.reason ?? null, Date.now(), id);
-}
 
 /** A run left `running` past the gate's own timeout died with it (a reload kills the in-flight call): it ran no verdict. */
 function gateRunEffective(row: GateRunRow, now = Date.now()): { state: GateRunState; reason: string | null } {
@@ -104,22 +59,6 @@ function gateRunEffective(row: GateRunRow, now = Date.now()): { state: GateRunSt
     return { state: "not_run", reason: "the gate run was interrupted (timeout or reload)" };
   }
   return { state: row.state, reason: row.reason };
-}
-
-/** The latest gate run that checked a merge of this task (its task id rides the batch), per project. */
-export function latestGateRunForTask(db: GateRunDb, projectId: string, taskId: string): GateRunRow | undefined {
-  const raw = db.prepare(`SELECT * FROM lane_pilot_gate_run WHERE project_id=? AND EXISTS (
-      SELECT 1 FROM json_each(lane_pilot_gate_run.batch_json) WHERE json_extract(value,'$.taskId')=?)
-    ORDER BY id DESC LIMIT 1`).get(projectId, taskId) as Record<string, unknown> | undefined;
-  return raw ? gateRunRow(raw) : undefined;
-}
-
-/** The newest gate run of the project — what preship measures the head being shipped against. */
-export function latestGateRun(db: GateRunDb, projectId?: string): GateRunRow | undefined {
-  const raw = (projectId
-    ? db.prepare("SELECT * FROM lane_pilot_gate_run WHERE project_id=? ORDER BY id DESC LIMIT 1").get(projectId)
-    : db.prepare("SELECT * FROM lane_pilot_gate_run ORDER BY id DESC LIMIT 1").get()) as Record<string, unknown> | undefined;
-  return raw ? gateRunRow(raw) : undefined;
 }
 
 /**
@@ -482,10 +421,9 @@ export class IntegrationGateRunner {
     const lastMerged = batch[batch.length - 1];
     let runTaskId = lastMerged?.taskId;
     if (!runTaskId) {
-      const existingTask = db.prepare("SELECT id FROM lane_pilot_task WHERE run_id=? LIMIT 1").get(runId) as { id: string } | undefined;
-      runTaskId = existingTask?.id ?? "integration-gate";
+      runTaskId = listTaskIdsForRun(db, runId)[0] ?? "integration-gate";
     }
-    const hasTaskInDb = Boolean(db.prepare("SELECT 1 FROM lane_pilot_task WHERE id=?").get(runTaskId));
+    const hasTaskInDb = getTaskContractJson(db, runTaskId) !== null;
 
     this.ctx.log(`integration-gate: running \`${gateCommand}\` on ${basePath}`);
     // The machine the gate runs on, read right before a run (never during it): a timeout that passes on the recheck is called «load» only on a reading.

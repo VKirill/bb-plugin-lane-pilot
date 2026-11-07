@@ -1,6 +1,6 @@
 import { setTimeout as sleep } from "node:timers/promises";
+import { getRun, openAttemptsForPause } from "../../storage";
 import { pollPause } from "@lane-pilot/kit";
-import { getRun } from "../../storage";
 import { isRunPaused, runPausedSince, setRunPaused } from "./runs-halt";
 import { conveyorState } from "../conveyor";
 import type { ServerCore } from "../../contracts/server";
@@ -70,8 +70,7 @@ export async function pauseRun(ctx: Pick<ServerCore, "bb" | "db">, runId: string
   const before = await isRunPaused(bb.storage.kv as never, runId);
   if (action !== "status") await setRunPaused(bb.storage.kv as never, runId, action === "pause");
   const since = await runPausedSince(bb.storage.kv as never, runId);
-  const rows = db.prepare("SELECT id, task_id, state FROM lane_pilot_attempt WHERE run_id=? AND state IN ('queued','spawn_requested','spawn_unknown','running','cancel_requested') ORDER BY created_at")
-    .all(runId) as Array<{ id: string; task_id: string; state: string }>;
+  const rows = openAttemptsForPause(db, runId) as Array<{ id: string; task_id: string; state: string }>;
   return {
     runId, paused: since !== null, since: since === null ? null : new Date(since).toISOString(), changed: before !== (since !== null),
     running: rows.filter((row) => row.state !== "queued").map((row) => ({ attemptId: row.id, taskId: row.task_id, state: row.state })),

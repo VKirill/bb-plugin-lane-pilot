@@ -2,10 +2,9 @@ import type Database from "better-sqlite3";
 import { classifyFailure, type FailureClass } from "../contracts/failure-class";
 import { failureClassJudgment, FAILURE_CLASS_ID, type FailureClassDecision } from "./failure-class-judgment";
 import { logFindJudgment } from "@lane-pilot/jev/judgments/log-find";
-import { recordOutcome, type Jev, type JevSettings } from "@lane-pilot/jev";
+import { countJudgmentReceipts, labeledOutcomes, recordOutcome, registerOutcomeSweep, type Jev, type JevSettings, unlabeledJevReceipts, unlabeledJevSubjectReceipts, unlabeledRunReceipts, unlabeledSubjectReceipts } from "@lane-pilot/jev";
 import { INVOICE_CHECK_ID } from "@lane-pilot/jev/judgments/invoice-check";
 import { PLAN_FACT_JEV_ID, ROUTE_WORKFLOW_ID, WRITER_MODEL_JUDGMENT_ID, writerRouteKey } from "../contracts";
-import { registerOutcomeSweep } from "@lane-pilot/jev";
 
 /**
  * The class of a failure with J-4 behind the rules: the rules first, and only a reason they have no confident match for goes to
@@ -23,6 +22,9 @@ export type JudgedFailureDeps = {
   kv?: { get(key: string): Promise<unknown>; set(key: string, value: unknown): Promise<void> } | null;
 };
 
+import { getRun, hasAcceptedAttempt, hasLiveAttempt, getStageReceiptResult } from "../storage";
+import { wfEarliestLinkedRun } from "@lane-pilot/workflow-engine";
+
 /**
  * The label `calibrate` reads for `failure.class`: the run's terminal state is the stronger judge. Accepted means the class —
  * whatever it blamed — did not kill the work (agree). A dead run confirms a `task` reading and denies a `provider`/`infra`
@@ -30,9 +32,10 @@ export type JudgedFailureDeps = {
  * Jev would have made, so they are labeled the same way.
  */
 export function sweepFailureClassOutcomes(db: Database.Database): number {
-  const rows = db.prepare(`SELECT r.id, r.decision, run.state AS run_state FROM lane_pilot_jev_receipt r
-    JOIN lane_pilot_run run ON run.id = r.run_id
-    WHERE r.judgment = ? AND r.outcome IS NULL AND r.status = 'ok' AND r.decision IS NOT NULL AND run.state IN ('accepted','blocked','closed')`).all(FAILURE_CLASS_ID) as Array<{ id: number; decision: string; run_state: string }>;
+  const rows = unlabeledRunReceipts(db, FAILURE_CLASS_ID)
+    .map((row) => ({ ...row, run_state: row.run_id ? getRun(db, row.run_id)?.state : undefined }))
+    .filter((row): row is { id: number; run_id: string | null; decision: string; run_state: string } =>
+      row.run_state === "accepted" || row.run_state === "blocked" || row.run_state === "closed");
   for (const row of rows) recordOutcome(db, row.id, row.run_state === "accepted" ? "agree" : row.decision === "task" ? "agree" : "disagree");
   return rows.length;
 }
@@ -43,9 +46,10 @@ export function sweepFailureClassOutcomes(db: Database.Database): number {
  * did not let through. Runs the receipt cannot see (a workflow run outside lane_pilot_run, or one still going) stay unlabeled.
  */
 export function sweepInvoiceCheckOutcomes(db: Database.Database): number {
-  const rows = db.prepare(`SELECT r.id, r.decision, run.state AS run_state FROM lane_pilot_jev_receipt r
-    JOIN lane_pilot_run run ON run.id = r.run_id
-    WHERE r.judgment = ? AND r.outcome IS NULL AND r.status = 'ok' AND r.decision IS NOT NULL AND run.state IN ('accepted','blocked','closed')`).all(INVOICE_CHECK_ID) as Array<{ id: number; decision: string; run_state: string }>;
+  const rows = unlabeledRunReceipts(db, INVOICE_CHECK_ID)
+    .map((row) => ({ ...row, run_state: row.run_id ? getRun(db, row.run_id)?.state : undefined }))
+    .filter((row): row is { id: number; run_id: string | null; decision: string; run_state: string } =>
+      row.run_state === "accepted" || row.run_state === "blocked" || row.run_state === "closed");
   for (const row of rows) recordOutcome(db, row.id, (row.run_state === "accepted") === (row.decision === "match") ? "agree" : "disagree");
   return rows.length;
 }
@@ -59,14 +63,11 @@ const ROUTE_OUTCOME_WINDOW_MS = 30 * 60_000;
  * or the PM rerouted) → disagree. Routes still running and receipts with no linked run stay unlabeled.
  */
 export function sweepRouteWorkflowOutcomes(db: Database.Database): number {
-  const receipts = db.prepare(`SELECT id, run_id, decision, at FROM lane_pilot_jev_receipt
-    WHERE judgment = ? AND outcome IS NULL AND status = 'ok' AND decided_by = 'jev' AND decision IS NOT NULL`).all(ROUTE_WORKFLOW_ID) as Array<{ id: number; run_id: string | null; decision: string; at: number }>;
+  const receipts = unlabeledJevReceipts(db, ROUTE_WORKFLOW_ID);
   let labeled = 0;
   for (const receipt of receipts) {
     if (!receipt.run_id) continue;
-    const run = db.prepare(`SELECT workflow_id, status FROM lane_pilot_wf_run
-      WHERE link_run_id = ? AND created_at >= ? AND created_at <= ? ORDER BY created_at LIMIT 1`)
-      .get(receipt.run_id, receipt.at, receipt.at + ROUTE_OUTCOME_WINDOW_MS) as { workflow_id: string; status: string } | undefined;
+    const run = wfEarliestLinkedRun(db, receipt.run_id, receipt.at, receipt.at + ROUTE_OUTCOME_WINDOW_MS);
     if (!run || run.status === "running" || run.status === "waiting") continue;
     const choice = receipt.decision.replace(/\s*\(\d+\)\s*$/, "");
     const agree = run.status === "succeeded" && run.workflow_id === choice;
@@ -83,16 +84,14 @@ export function sweepRouteWorkflowOutcomes(db: Database.Database): number {
  * receipts where the stage stored no jev verdict stay unlabeled.
  */
 export function sweepPlanFactOutcomes(db: Database.Database): number {
-  const receipts = db.prepare(`SELECT r.id, r.run_id, r.subject FROM lane_pilot_jev_receipt r
-    WHERE r.judgment = ? AND r.outcome IS NULL AND r.status = 'ok' AND r.decision IS NOT NULL`).all(PLAN_FACT_JEV_ID) as Array<{ id: number; run_id: string | null; subject: string | null }>;
+  const receipts = unlabeledSubjectReceipts(db, PLAN_FACT_JEV_ID);
   let labeled = 0;
   for (const receipt of receipts) {
     if (!receipt.run_id || !receipt.subject) continue;
-    const accepted = db.prepare("SELECT 1 FROM lane_pilot_attempt WHERE run_id=? AND task_id=? AND state='accepted' LIMIT 1").get(receipt.run_id, receipt.subject);
+    const accepted = hasAcceptedAttempt(db, receipt.run_id, receipt.subject);
     if (!accepted) continue;
-    const stage = db.prepare("SELECT result_json FROM lane_pilot_stage_receipt WHERE run_id=? AND task_id=? AND stage_id='plan-fact'").get(receipt.run_id, receipt.subject) as { result_json: string | null } | undefined;
-    let result: { items?: Array<{ item: number; verdict: string }>; jev?: Record<string, string> } | null = null;
-    try { result = stage?.result_json ? JSON.parse(stage.result_json) : null; } catch { /* unreadable */ }
+    const stage = getStageReceiptResult(db, receipt.run_id, receipt.subject, "plan-fact");
+    const result = stage.result as { items?: Array<{ item: number; verdict: string }>; jev?: Record<string, string> } | null;
     if (!result?.jev || !result.items?.length) continue;
     const code = Object.fromEntries(result.items.map((item) => [String(item.item), item.verdict === "proven" ? "done" : "not_done"]));
     const agreed = Object.entries(result.jev).filter(([item, verdict]) => verdict !== "unseen" && code[item] !== undefined).every(([item, verdict]) => verdict === code[item]);
@@ -110,18 +109,15 @@ export type LabeledOutcome = { receiptId: number; runId: string; taskId: string;
  * write the same outcome into the task's `writer-route` KV record.
  */
 export function sweepWriterModelOutcomes(db: Database.Database): LabeledOutcome[] {
-  const receipts = db.prepare(`SELECT id, run_id, subject FROM lane_pilot_jev_receipt
-    WHERE judgment = ? AND outcome IS NULL AND status = 'ok' AND decided_by = 'jev' AND decision IS NOT NULL
-      AND run_id IS NOT NULL AND subject IS NOT NULL`).all(WRITER_MODEL_JUDGMENT_ID) as Array<{ id: number; run_id: string; subject: string }>;
+  const receipts = unlabeledJevSubjectReceipts(db, WRITER_MODEL_JUDGMENT_ID);
   const labeled: LabeledOutcome[] = [];
   for (const receipt of receipts) {
     let outcome: "agree" | "disagree" | null = null;
-    if (db.prepare("SELECT 1 FROM lane_pilot_attempt WHERE run_id=? AND task_id=? AND state='accepted' LIMIT 1").get(receipt.run_id, receipt.subject)) {
+    if (hasAcceptedAttempt(db, receipt.run_id, receipt.subject)) {
       outcome = "agree";
     } else {
-      const open = db.prepare(`SELECT 1 FROM lane_pilot_attempt WHERE run_id=? AND task_id=?
-        AND state IN ('queued','spawn_requested','spawn_unknown','running','cancel_requested') LIMIT 1`).get(receipt.run_id, receipt.subject);
-      const run = db.prepare("SELECT state, closed_at FROM lane_pilot_run WHERE id=?").get(receipt.run_id) as { state: string; closed_at: number | null } | undefined;
+      const open = hasLiveAttempt(db, receipt.run_id, receipt.subject);
+      const run = getRun(db, receipt.run_id);
       if (!open && (!run || run.closed_at !== null || run.state !== "running")) outcome = "disagree";
     }
     if (!outcome) continue;
@@ -189,19 +185,19 @@ let gateCheckedAt = 0, gateLive = false;
 export function failureClassLive(db: Database.Database): boolean {
   if (Date.now() - gateCheckedAt < 60_000) return gateLive;
   gateCheckedAt = Date.now();
-  const rows = db.prepare(`SELECT outcome FROM lane_pilot_jev_receipt WHERE judgment=? AND status='ok' AND outcome IS NOT NULL AND decision IS NOT NULL`).all(FAILURE_CLASS_ID) as Array<{ outcome: string }>;
-  const agree = rows.filter((row) => row.outcome.startsWith("agree")).length;
-  const disagree = rows.filter((row) => row.outcome.startsWith("disagree")).length;
+  const outcomes = labeledOutcomes(db, FAILURE_CLASS_ID);
+  const agree = outcomes.filter((outcome) => outcome.startsWith("agree")).length;
+  const disagree = outcomes.filter((outcome) => outcome.startsWith("disagree")).length;
   gateLive = agree + disagree >= 10 && agree / (agree + disagree) >= 0.75;
   return gateLive;
 }
 
 /** Why `failure.class` is or is not live: the labeled sample it would need, as the `jev failure` report prints it. */
 export function failureClassReport(db: Database.Database): { calls: number; labeled: number; agree: number; disagree: number; accuracy: number | null; live: boolean; reason: string } {
-  const calls = (db.prepare(`SELECT COUNT(*) AS n FROM lane_pilot_jev_receipt WHERE judgment=?`).get(FAILURE_CLASS_ID) as { n: number }).n;
-  const rows = db.prepare(`SELECT outcome FROM lane_pilot_jev_receipt WHERE judgment=? AND status='ok' AND outcome IS NOT NULL AND decision IS NOT NULL`).all(FAILURE_CLASS_ID) as Array<{ outcome: string }>;
-  const agree = rows.filter((row) => row.outcome.startsWith("agree")).length;
-  const disagree = rows.filter((row) => row.outcome.startsWith("disagree")).length;
+  const calls = countJudgmentReceipts(db, FAILURE_CLASS_ID);
+  const outcomes = labeledOutcomes(db, FAILURE_CLASS_ID);
+  const agree = outcomes.filter((outcome) => outcome.startsWith("agree")).length;
+  const disagree = outcomes.filter((outcome) => outcome.startsWith("disagree")).length;
   const labeled = agree + disagree;
   const accuracy = labeled ? agree / labeled : null;
   const live = labeled >= 10 && accuracy !== null && accuracy >= 0.75;

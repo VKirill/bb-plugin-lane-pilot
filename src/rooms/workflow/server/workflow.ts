@@ -1,14 +1,10 @@
-import { HARNESS_VERSION } from "../../storage";
+import { HARNESS_VERSION, createStatusResolver } from "../../storage";
 import type { VerificationGatePort } from "../../contracts/integration-gate";
 import type { IsTaskSatisfied } from "../../contracts";
 import { LP_ALL_PROJECTS } from "@lane-pilot/ui-kit/realtime-channel";
 ;
-import { createWorkflowCatalog } from "@lane-pilot/workflow-engine";
-import { ENGINE_COMPAT_VERSION, TERMINAL_RUN, WorkflowEngine } from "@lane-pilot/workflow-engine";
+import { ENGINE_COMPAT_VERSION, TERMINAL_RUN, WorkflowEngine, createWorkflowCatalog, registerPureActions, registerReducers, wfRunProjectId, wfRunRow } from "@lane-pilot/workflow-engine";
 import type { RunRow } from "../../storage";
-import { createStatusResolver } from "../../storage";
-import { registerPureActions } from "@lane-pilot/workflow-engine";
-import { registerReducers } from "@lane-pilot/workflow-engine";
 import { createWorkflowAgents } from "./workflow-agent";
 import { SPECIALIST_ROLES } from "../../critique/server";
 import { isEmployeeSpecialist } from "../../contracts/employee-manifest";
@@ -20,8 +16,7 @@ import type { LeadRoadApi } from "../../contracts";
 import { createAfterAcceptStarter, mountWorkflowAttemptFinished, registerAfterAcceptExecutors, type OnAttemptFinished } from "./after-accept";
 import { registerInvoiceActions } from "./workflow-invoice";
 import { registerTelegramActions } from "./workflow-telegram";
-import { registerAnamnesisActions } from "../../anamnesis";
-import { anamnesisFor } from "../../anamnesis";
+import { anamnesisFor, registerAnamnesisActions } from "../../anamnesis";
 import type { ServerCore } from "../../contracts/server";
 
 import type { HarnessApi } from "../../harness/server/harness";
@@ -72,11 +67,11 @@ export function createWorkflowEngine(ctx: ServerCore, services: Services) {
   const engineRef: { current: WorkflowEngine | null } = { current: null };
   const onEvent = (runId: string) => {
     if (projectOf.size > 500) projectOf.clear();
-    if (!projectOf.has(runId)) projectOf.set(runId, (db.prepare("SELECT project_id FROM lane_pilot_wf_run WHERE id=?").get(runId) as { project_id: string | null } | undefined)?.project_id ?? null);
+    if (!projectOf.has(runId)) projectOf.set(runId, wfRunProjectId(db, runId));
     const project = projectOf.get(runId);
     if (project) ctx.realtime.notify(project, "workflow", undefined, runId);
     ctx.realtime.notify(LP_ALL_PROJECTS, "workflow", undefined, runId);
-    const run = db.prepare("SELECT * FROM lane_pilot_wf_run WHERE id=?").get(runId) as RunRow | undefined;
+    const run = wfRunRow(db, runId);
     if (!run) return;
     const unmet = engineRef.current?.lastAudit(runId)?.unmet.map((entry) => entry.id);
     void notifyWorkflowIfEnded({ bb: ctx.bb, db, leadRoad: services.leadRoad, log: (message) => ctx.log(message), run, unmetGoalIds: unmet }).catch((cause: unknown) => {

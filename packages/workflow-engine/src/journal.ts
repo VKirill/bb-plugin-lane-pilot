@@ -294,3 +294,129 @@ export function wfFailedStepOfRun(db: WfReadDb, runId: string): { node_id: strin
   return db.prepare("SELECT node_id, error FROM lane_pilot_wf_step WHERE run_id=? AND state IN ('failed','interrupted') ORDER BY updated_at DESC LIMIT 1")
     .get(runId) as { node_id: string; error: string | null } | undefined;
 }
+
+// ---- room-facing read/write helpers over the wf tables (raw SQL lives here, callers take named rows) ----
+
+/** The run's workflow id (an errand check compares it to the errand graph's id). */
+export function wfWorkflowIdOfRun(db: WfReadDb, runId: string): string | null {
+  return (db.prepare("SELECT workflow_id FROM lane_pilot_wf_run WHERE id=?").get(runId) as { workflow_id: string } | undefined)?.workflow_id ?? null;
+}
+
+/** The run's idempotency key and parent (a walk climbs parents to find a phase or schedule key). */
+export function wfRunIdemParent(db: WfReadDb, runId: string): { idem_key: string | null; parent_run_id: string | null } | undefined {
+  return db.prepare("SELECT idem_key, parent_run_id FROM lane_pilot_wf_run WHERE id=?").get(runId) as { idem_key: string | null; parent_run_id: string | null } | undefined;
+}
+
+/** The status of the run an idempotency key points at (a retry key is taken only when the prior run ended badly). */
+export function wfStatusByIdemKey(db: WfReadDb, idemKey: string): string | null {
+  return (db.prepare("SELECT status FROM lane_pilot_wf_run WHERE idem_key=?").get(idemKey) as { status: string } | undefined)?.status ?? null;
+}
+
+/** The earliest workflow run a Lane Pilot run linked inside a window (a route's outcome is the graph it started). */
+export function wfEarliestLinkedRun(db: WfReadDb, linkRunId: string, from: number, to: number): { workflow_id: string; status: string } | undefined {
+  return db.prepare(`SELECT workflow_id, status FROM lane_pilot_wf_run
+    WHERE link_run_id = ? AND created_at >= ? AND created_at <= ? ORDER BY created_at LIMIT 1`)
+    .get(linkRunId, from, to) as { workflow_id: string; status: string } | undefined;
+}
+
+/** The child runs a subworkflow node spawned, in order (the run snapshot's children). */
+export function wfChildRuns(db: WfReadDb, runId: string): Array<{ id: string; parent_step_key: string; workflow_id: string; status: string }> {
+  return db.prepare("SELECT id, parent_step_key, workflow_id, status FROM lane_pilot_wf_run WHERE parent_run_id=? ORDER BY created_at, rowid")
+    .all(runId) as Array<{ id: string; parent_step_key: string; workflow_id: string; status: string }>;
+}
+
+/** Every run of a workflow (optionally of a project) for the outcome tally. */
+export function wfRunOutcomeRows(db: WfReadDb, workflowId: string, projectId?: string): Array<{ status: string; output_json: string | null; definition_json: string | null; created_at: number }> {
+  const where = projectId ? "workflow_id=? AND project_id=?" : "workflow_id=?";
+  const args = projectId ? [workflowId, projectId] : [workflowId];
+  return db.prepare(`SELECT status, output_json, definition_json, created_at FROM lane_pilot_wf_run WHERE ${where}`)
+    .all(...args) as Array<{ status: string; output_json: string | null; definition_json: string | null; created_at: number }>;
+}
+
+/** The newest run of a workflow (optionally of a project). */
+export function wfLastRun(db: WfReadDb, workflowId: string, projectId?: string): { id: string; status: string; created_at: number } | undefined {
+  const where = projectId ? "workflow_id=? AND project_id=?" : "workflow_id=?";
+  const args = projectId ? [workflowId, projectId] : [workflowId];
+  return db.prepare(`SELECT id, status, created_at FROM lane_pilot_wf_run WHERE ${where} ORDER BY created_at DESC, rowid DESC LIMIT 1`)
+    .get(...args) as { id: string; status: string; created_at: number } | undefined;
+}
+
+/** The workflow's recent runs, newest first (the library card's run list). */
+export function wfRecentRuns(db: WfReadDb, workflowId: string, projectId: string | undefined, limit: number): Array<{ id: string; status: string; reason: string | null; mode: string | null; created_at: number; updated_at: number; tokens_used: number; cost_micro_usd: number; parent_run_id: string | null }> {
+  return db.prepare(`SELECT id, status, reason, mode, created_at, updated_at, tokens_used, cost_micro_usd, parent_run_id FROM lane_pilot_wf_run
+    WHERE workflow_id=?${projectId ? " AND project_id=?" : ""} ORDER BY created_at DESC, rowid DESC LIMIT ?`)
+    .all(...(projectId ? [workflowId, projectId, limit] : [workflowId, limit])) as Array<{ id: string; status: string; reason: string | null; mode: string | null; created_at: number; updated_at: number; tokens_used: number; cost_micro_usd: number; parent_run_id: string | null }>;
+}
+
+/** A page of a workflow's runs, newest first (the workflow_runs RPC; `before` pages backwards). */
+export function wfRunPage(db: WfReadDb, input: { workflowId: string; projectId?: string; before?: number; limit: number }): Array<{ id: string; status: string; reason: string | null; mode: string | null; created_at: number; updated_at: number; tokens_used: number; cost_micro_usd: number; parent_run_id: string | null; steps_used: number }> {
+  const args: unknown[] = [input.workflowId];
+  let where = "workflow_id=?";
+  if (input.projectId) { where += " AND project_id=?"; args.push(input.projectId); }
+  if (input.before !== undefined) { where += " AND created_at<?"; args.push(input.before); }
+  return db.prepare(`SELECT id, status, reason, mode, created_at, updated_at, tokens_used, cost_micro_usd, parent_run_id, steps_used FROM lane_pilot_wf_run
+    WHERE ${where} ORDER BY created_at DESC, rowid DESC LIMIT ?`).all(...args, input.limit + 1) as Array<{ id: string; status: string; reason: string | null; mode: string | null; created_at: number;
+    updated_at: number; tokens_used: number; cost_micro_usd: number; parent_run_id: string | null; steps_used: number }>;
+}
+
+/** Schedule bindings of a workflow across projects (the library card's schedules). */
+export function wfTriggersOfWorkflow(db: WfReadDb, workflowId: string): Array<{ project_id: string; slot: number; automation_id: string }> {
+  return db.prepare("SELECT project_id, slot, automation_id FROM lane_pilot_wf_trigger WHERE workflow_id=? ORDER BY project_id, slot")
+    .all(workflowId) as Array<{ project_id: string; slot: number; automation_id: string }>;
+}
+
+/** Schedule bindings of a project (the sync compares them to the workflows' desired schedules). */
+export function wfTriggersOfProject(db: WfReadDb, projectId: string): Array<{ workflow_id: string; slot: number; automation_id: string; signature: string }> {
+  return db.prepare("SELECT workflow_id, slot, automation_id, signature FROM lane_pilot_wf_trigger WHERE project_id=?")
+    .all(projectId) as Array<{ workflow_id: string; slot: number; automation_id: string; signature: string }>;
+}
+
+/** Every project that has a workflow schedule (the hourly sweep re-checks each). */
+export function wfScheduledProjectIds(db: WfReadDb): string[] {
+  return (db.prepare("SELECT DISTINCT project_id FROM lane_pilot_wf_trigger").all() as Array<{ project_id: string }>).map((row) => row.project_id);
+}
+
+/** Record the automation a schedule slot was synced to. */
+export function wfUpsertTrigger(db: WfReadDb, row: { workflowId: string; projectId: string; slot: number; automationId: string; signature: string; now: number }): void {
+  db.prepare("INSERT OR REPLACE INTO lane_pilot_wf_trigger(workflow_id, project_id, slot, automation_id, signature, created_at, updated_at) VALUES (?,?,?,?,?,?,?)")
+    .run(row.workflowId, row.projectId, row.slot, row.automationId, row.signature, row.now, row.now);
+}
+
+/** Point a slot at the automation that was (re)created for it. */
+export function wfSetTriggerAutomation(db: WfReadDb, automationId: string, key: { workflowId: string; projectId: string; slot: number }): void {
+  db.prepare("UPDATE lane_pilot_wf_trigger SET automation_id=? WHERE workflow_id=? AND project_id=? AND slot=?")
+    .run(automationId, key.workflowId, key.projectId, key.slot);
+}
+
+/** Record the signature the slot was last synced at. */
+export function wfSetTriggerSignature(db: WfReadDb, signature: string, now: number, key: { workflowId: string; projectId: string; slot: number }): void {
+  db.prepare("UPDATE lane_pilot_wf_trigger SET signature=?, updated_at=? WHERE workflow_id=? AND project_id=? AND slot=?")
+    .run(signature, now, key.workflowId, key.projectId, key.slot);
+}
+
+/** Drop a schedule slot the workflow no longer wants. */
+export function wfDeleteTrigger(db: WfReadDb, key: { workflowId: string; projectId: string; slot: number }): void {
+  db.prepare("DELETE FROM lane_pilot_wf_trigger WHERE workflow_id=? AND project_id=? AND slot=?")
+    .run(key.workflowId, key.projectId, key.slot);
+}
+
+/** Events of one kind on a run (a new audit's spawn key counts the earlier audits). */
+export function wfCountRunEvents(db: WfReadDb, runId: string, kind: string): number {
+  return (db.prepare("SELECT COUNT(*) AS n FROM lane_pilot_wf_event WHERE run_id=? AND kind=?").get(runId, kind) as { n: number }).n;
+}
+
+/** The workflow run whose done `errand.spawn` effect named this helper thread. */
+export function wfErrandSpawnRunOfThread(db: WfReadDb, threadId: string): string | null {
+  return (db.prepare("SELECT run_id FROM lane_pilot_wf_effect WHERE kind='errand.spawn' AND state='done' AND json_extract(result_json,'$.threadId')=?")
+    .get(threadId) as { run_id: string } | undefined)?.run_id ?? null;
+}
+
+/** Whether the workflow run exists (a tool call's idempotence check). */
+export function wfRunExists(db: WfReadDb, runId: string): boolean {
+  return Boolean(db.prepare("SELECT 1 FROM lane_pilot_wf_run WHERE id=?").get(runId));
+}
+
+/** Whether the step exists in the run. */
+export function wfStepExists(db: WfReadDb, runId: string, stepKey: string): boolean {
+  return Boolean(db.prepare("SELECT 1 FROM lane_pilot_wf_step WHERE run_id=? AND step_key=?").get(runId, stepKey));
+}

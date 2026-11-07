@@ -120,3 +120,37 @@ export function listCheckDurations(db: LanePilotDatabase, projectId: string, che
   return (db.prepare("SELECT duration_ms FROM lane_pilot_check_duration WHERE project_id=? AND command_key IN (?,?) AND exit_code=0 ORDER BY at DESC, rowid DESC LIMIT ?")
     .all(projectId, sha256Hex(checkHistoryKey(check)), legacyCheckKey(check.command), limit) as Array<{ duration_ms: number }>).map((row) => row.duration_ms);
 }
+
+/** Whether any Env Catalog secret was ever handed to this task (a retry then scans its diff for a leaked value). */
+export function secretIssuedForTask(db: LanePilotDatabase, taskId: string): boolean {
+  return Boolean(db.prepare("SELECT 1 FROM lane_pilot_secret_issuance WHERE task_id=? LIMIT 1").get(taskId));
+}
+
+/** One skill-switch metric row of an attempt (which skills the writer was offered, how many it swapped, the outcome). */
+export function recordSkillMetric(db: LanePilotDatabase, record: {
+  id: string; attemptId: string; taskId: string; runId: string | null; projectId: string;
+  skillCount: number; switchCount: number; skillsJson: string; outcome: string; recordedAt: number;
+}): void {
+  db.prepare(`
+    INSERT OR REPLACE INTO lane_pilot_skill_metric
+      (id, attempt_id, task_id, run_id, project_id, skill_count, switch_count, skills_json, outcome, recorded_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    record.id, record.attemptId, record.taskId, record.runId, record.projectId,
+    record.skillCount, record.switchCount, record.skillsJson, record.outcome, record.recordedAt,
+  );
+}
+
+/** Skill-switch rows of a window (switch count + outcome feed the "does switching hurt" stat). */
+export function listSkillMetrics(db: LanePilotDatabase, sinceMs: number, untilMs: number): Array<{ switch_count: number; outcome: string }> {
+  return db.prepare(`
+    SELECT switch_count, outcome
+    FROM lane_pilot_skill_metric
+    WHERE recorded_at >= ? AND recorded_at <= ?
+  `).all(sinceMs, untilMs) as Array<{ switch_count: number; outcome: string }>;
+}
+
+/** How many lane_pilot_* tables the database carries (the manifest's table count). */
+export function countLanePilotTables(db: LanePilotDatabase): number {
+  return (db.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE type='table' AND name LIKE 'lane_pilot_%'").get() as { n: number }).n;
+}

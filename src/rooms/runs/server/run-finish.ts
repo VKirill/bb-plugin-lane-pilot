@@ -1,5 +1,5 @@
 import { pluginStopped } from "../../contracts/errors";
-import { closeRun, getAttempt, getRun, listOpenAttempts, openDatabase, releaseActivation } from "../../storage";
+import { attemptEnvironmentRows, closeRun, getAttempt, getRun, listLiveRuns, listOpenAttempts, listOpenLaneRuns, openDatabase, releaseActivation, runEnvironmentIds, stickyWorktreeAttemptRows } from "../../storage";
 import { stringAt, valueAt, orMiss, isNotFound } from "@lane-pilot/kit";
 import { RETRY_ELIGIBLE } from "../../contracts/state-machine";
 import { STICKY_WINDOW_MS } from "../../platform/server";
@@ -25,8 +25,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  * chats are left alone, as is any run with an open attempt or a chat that could not be read.
  */
 export async function closeAbandonedRuns(bb: BbPluginApi, db: ReturnType<typeof openDatabase>, now = Date.now(), signal?: AbortSignal, onlyPmThreadId?: string): Promise<string[]> {
-  const rows = (db.prepare("SELECT id,project_id,pm_thread_id,created_at FROM lane_pilot_run WHERE closed_at IS NULL AND state IN ('pending','running')")
-    .all() as Array<{ id: string; project_id: string; pm_thread_id: string | null; created_at: number }>)
+  const rows = (listOpenLaneRuns(db) as Array<{ id: string; project_id: string; pm_thread_id: string | null; created_at: number }>)
     .filter((row) => onlyPmThreadId === undefined || row.pm_thread_id === onlyPmThreadId);
   const busy = new Set(listOpenAttempts(db).map((attempt) => attempt.run_id));
   const closed: string[] = [];
@@ -60,8 +59,7 @@ export const STALE_BLOCKED_MS = 72 * 60 * 60 * 1000;
  * A run with an open attempt stays. Hub rows are not touched here; the next sweep on the hub applies it.
  */
 export async function closeStaleRuns(bb: BbPluginApi, db: ReturnType<typeof openDatabase>, now = Date.now(), signal?: AbortSignal): Promise<string[]> {
-  const rows = db.prepare("SELECT id, project_id, state, pm_thread_id, updated_at FROM lane_pilot_run WHERE closed_at IS NULL AND state IN ('running', 'blocked')")
-    .all() as Array<{ id: string; project_id: string; state: string; pm_thread_id: string | null; updated_at: number }>;
+  const rows = listLiveRuns(db) as Array<{ id: string; project_id: string; state: string; pm_thread_id: string | null; updated_at: number }>;
   const closed: string[] = [];
   for (const row of rows) {
     signal?.throwIfAborted();
@@ -82,7 +80,7 @@ export async function closeStaleRuns(bb: BbPluginApi, db: ReturnType<typeof open
  */
 export async function cleanupRunEnvironments(bb: BbPluginApi, db: ReturnType<typeof openDatabase>, runId: string): Promise<string[]> {
   const run = getRun(db, runId);
-  const rows = db.prepare("SELECT DISTINCT environment_id FROM lane_pilot_attempt WHERE run_id=? AND environment_id IS NOT NULL").all(runId) as Array<{ environment_id: string }>;
+  const rows = runEnvironmentIds(db, runId).map((environment_id) => ({ environment_id })) as Array<{ environment_id: string }>;
   const removed: string[] = [];
   for (const { environment_id: environmentId } of rows) {
     if (environmentId === run?.writer_environment_id) continue;
@@ -118,11 +116,7 @@ export type WorktreeSnapshot = (hostId:string, worktreePath:string, name:string)
  * The worktree of an area's last accepted task stays for the sticky window: the area's next task continues there.
  */
 export async function cleanupFinishedAttemptEnvironments(bb: BbPluginApi, db: ReturnType<typeof openDatabase>, snapshot: WorktreeSnapshot, now = Date.now(), signal?: AbortSignal): Promise<string[]> {
-  const rows = db.prepare(`SELECT a.environment_id AS environmentId, a.holder_thread_id AS holderThreadId, a.state, a.updated_at AS updatedAt, a.run_id AS runId,
-      r.writer_environment_id AS runEnvironmentId, json_extract(t.contract_json,'$.area') AS area,
-      EXISTS(SELECT 1 FROM lane_pilot_attempt b WHERE b.run_id=a.run_id AND b.task_id=a.task_id AND (b.created_at>a.created_at OR (b.created_at=a.created_at AND b.rowid>a.rowid))) AS superseded
-    FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id LEFT JOIN lane_pilot_task t ON t.id=a.task_id
-    WHERE a.environment_id IS NOT NULL OR a.holder_thread_id IS NOT NULL`).all() as Array<{
+  const rows = attemptEnvironmentRows(db) as Array<{
       environmentId:string|null; holderThreadId:string|null; state:string; updatedAt:number; runId:string; runEnvironmentId:string|null; superseded:number; area:string|null }>;
   const done = (row:(typeof rows)[number]) => FINAL.has(row.state) || ((RETRY_ELIGIBLE as string[]).includes(row.state) && row.superseded === 1);
   const groups = new Map<string, typeof rows>();
@@ -175,11 +169,7 @@ export async function cleanupFinishedAttemptEnvironments(bb: BbPluginApi, db: Re
  * Returns the removed paths.
  */
 export async function cleanupStickyLaneWorktrees(db: ReturnType<typeof openDatabase>, remove:(hostId:string, basePath:string, worktreePath:string) => Promise<boolean>, released:Set<string>, now = Date.now(), signal?: AbortSignal): Promise<string[]> {
-  const rows = db.prepare(`SELECT a.workspace_path AS path, r.writer_workspace_path AS base, r.writer_host_id AS hostId, a.state, a.updated_at AS updatedAt,
-      json_extract(t.contract_json,'$.area') IS NOT NULL AS area,
-      EXISTS(SELECT 1 FROM lane_pilot_attempt b WHERE b.run_id=a.run_id AND b.task_id=a.task_id AND (b.created_at>a.created_at OR (b.created_at=a.created_at AND b.rowid>a.rowid))) AS superseded
-    FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id JOIN lane_pilot_task t ON t.id=a.task_id
-    WHERE a.environment_id IS NULL AND a.workspace_path IS NOT NULL AND a.workspace_path<>r.writer_workspace_path`).all() as Array<{
+  const rows = stickyWorktreeAttemptRows(db) as Array<{
       path:string; base:string|null; hostId:string|null; state:string; updatedAt:number; area:number; superseded:number }>;
   const groups = new Map<string, typeof rows>();
   for (const row of rows) groups.set(row.path, [...(groups.get(row.path) ?? []), row]);

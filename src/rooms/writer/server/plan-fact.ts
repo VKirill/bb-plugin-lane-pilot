@@ -1,10 +1,11 @@
 import { taskFamily } from "@lane-pilot/contracts";
+import { mergedAttemptChanges } from "../../rollback/server";
 import { runOnHost } from "@lane-pilot/host-calls";
 import { bestEffort, isNotFound, orMiss, parseJsonOr } from "@lane-pilot/kit";
 import { readWires, wiresCommand } from "../../wires";
 import type { TaskV2 } from "../../contracts";
 import type { ServerCore } from "../../contracts/server";
-import { deleteStageReceipt, getRunSettingsScopes, getStageReceiptResult, getTask, getTaskGitBase, loadProjectSettings } from "../../storage";
+import { deleteStageReceipt, getRunSettingsScopes, getStageReceiptResult, getTask, getTaskGitBase, loadProjectSettings, acceptedTaskIdsOfRun, listStageReceipts } from "../../storage";
 import { recordStage } from "../../runs/server";
 import { NO_CODE_KINDS, PLAN_FACT_RULES, blindPlanFact, clipDiff, planFactJudgment, diffHunksCommand, existsCommand, existsFromCommandOutput, hunksFromCommandOutput, parsePlanFact, planFactOutcome, sha256, untouchedCitations } from "../../tasks";
 import type { ItemVerdict, PlanFactCheck, PlanFactFacts, PlanFactTable } from "../../tasks";
@@ -38,8 +39,7 @@ export function tableFromAnswers(answers: readonly string[]): PlanFactTable {
 function familyBase(db: ServerCore["db"], runId: string, taskId: string) {
   const family = taskFamily(taskId);
   if (family === taskId) return undefined;
-  const first = (db.prepare("SELECT DISTINCT task_id FROM lane_pilot_attempt WHERE run_id=? AND state='accepted' ORDER BY created_at").all(runId) as Array<{ task_id: string }>)
-    .map((row) => row.task_id).find((id) => id !== taskId && taskFamily(id) === family);
+  const first = acceptedTaskIdsOfRun(db, runId).find((id) => id !== taskId && taskFamily(id) === family);
   return first ? getTaskGitBase(db, first) : undefined;
 }
 
@@ -51,7 +51,7 @@ function familyBase(db: ServerCore["db"], runId: string, taskId: string) {
 function familyPaths(db: ServerCore["db"], runId: string, taskId: string): string[] {
   const family = taskFamily(taskId);
   if (family === taskId) return [];
-  const rows = db.prepare("SELECT task_id, changed_json FROM lane_pilot_attempt_change WHERE run_id=? AND outcome='merged'").all(runId) as Array<{ task_id: string; changed_json: string }>;
+  const rows = mergedAttemptChanges(db, runId);
   const paths = new Set<string>();
   for (const row of rows) {
     if (row.task_id === taskId || taskFamily(row.task_id) !== family) continue;
@@ -154,7 +154,7 @@ export function tableFromItems(items: ReadonlyArray<Pick<ItemVerdict, "item" | "
  * the new one carries the current rules. Null when there is nothing to weigh again.
  */
 export async function recheckPlanFact(ctx: ServerCore, input: { projectId: string; runId: string; taskId: string; hostId: string }): Promise<"passed" | "failed" | "skipped" | null> {
-  const row = ctx.db.prepare("SELECT state, attempt FROM lane_pilot_stage_receipt WHERE run_id=? AND task_id=? AND stage_id='plan-fact'").get(input.runId, input.taskId) as { state: string; attempt: number } | undefined;
+  const row = listStageReceipts(ctx.db, input.runId, input.taskId).find((receipt) => receipt.stageId === "plan-fact") as { state: string; attempt: number } | undefined;
   if (row?.state !== "failed") return null;
   const old = getStageReceiptResult(ctx.db, input.runId, input.taskId, "plan-fact").result as { rules?: number; table?: string; items?: ItemVerdict[] } | null;
   if (!old || (old.rules ?? 1) >= PLAN_FACT_RULES || old.table !== "ok" || !old.items?.length) return null;

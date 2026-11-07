@@ -153,3 +153,70 @@ export function listRunTaskSummaries(db: LanePilotDatabase, runId: string, limit
     FROM lane_pilot_task t WHERE t.run_id=? ORDER BY t.created_at DESC LIMIT ?`).all(runId, limit) as
     Array<{ taskId: string; title: string; state: string | null }>;
 }
+
+/** The task's timeline header row: its run, birth, arrival and the PM's closing words. `runId` pins it to one run. */
+export function taskTimelineRow(db: LanePilotDatabase, taskId: string, runId?: string): { run_id: string; birth: string | null; created_at: number; closed_words: string | null } | undefined {
+  return (runId
+    ? db.prepare("SELECT run_id, birth, created_at, closed_words FROM lane_pilot_task WHERE id=? AND run_id=?").get(taskId, runId)
+    : db.prepare("SELECT run_id, birth, created_at, closed_words FROM lane_pilot_task WHERE id=? ORDER BY created_at DESC LIMIT 1").get(taskId)) as
+    { run_id: string; birth: string | null; created_at: number; closed_words: string | null } | undefined;
+}
+
+/** The run's bb tasks with stored contracts, newest first (a revive looks for the canceled member of a family). */
+export function listBbTaskRowsForRun(db: LanePilotDatabase, runId: string): Array<{ id: string; contract_json: string }> {
+  return db.prepare("SELECT id, contract_json FROM lane_pilot_task WHERE run_id=? AND kind='bb' ORDER BY created_at DESC, rowid DESC")
+    .all(runId) as Array<{ id: string; contract_json: string }>;
+}
+
+/** The PM's closing words go with the cancellation: a revived task shows none. */
+export function clearTaskClosedWords(db: LanePilotDatabase, taskId: string): void {
+  db.prepare("UPDATE lane_pilot_task SET closed_words=NULL WHERE id=?").run(taskId);
+}
+
+/** The task's dispatch time (the wall-clock cap measures age from it). */
+export function taskCreatedAt(db: LanePilotDatabase, taskId: string): number | null {
+  const row = db.prepare("SELECT created_at FROM lane_pilot_task WHERE id=?").get(taskId) as { created_at: number } | undefined;
+  return typeof row?.created_at === "number" ? row.created_at : null;
+}
+
+/** The run's task cards: each task with its latest attempt's state, thread and workspace (the run card RPC). */
+export function runTaskCardRows(db: LanePilotDatabase, runId: string): Array<{ id: string; contract_json: string; state: string | null; thread_id: string | null; workspace_path: string | null }> {
+  return db.prepare(`
+    SELECT t.id, t.contract_json, a.state, a.thread_id, a.workspace_path
+    FROM lane_pilot_task t
+    LEFT JOIN lane_pilot_attempt a ON a.run_id=t.run_id AND a.task_id=t.id
+      AND a.id=(SELECT b.id FROM lane_pilot_attempt b WHERE b.run_id=t.run_id AND b.task_id=t.id
+        ORDER BY b.attempt_no DESC, b.created_at DESC, b.id DESC LIMIT 1)
+    WHERE t.run_id=? ORDER BY t.created_at, t.id
+  `).all(runId) as Array<{ id: string; contract_json: string; state: string | null; thread_id: string | null; workspace_path: string | null }>;
+}
+
+/** The task graph's rows: each task, its highest-numbered attempt and its writer-agent receipt (the dependency graph RPC). */
+export function taskGraphRows(db: LanePilotDatabase, runId: string): Array<{ id: string; contract_json: string; state: string; thread_id: string | null; stage_state: string | null; stage_reason: string | null }> {
+  return db.prepare(`SELECT t.id, t.contract_json, a.state, a.thread_id, s.state AS stage_state, s.reason AS stage_reason
+    FROM lane_pilot_task t
+    JOIN lane_pilot_attempt a ON a.run_id=t.run_id AND a.task_id=t.id
+      AND a.attempt_no=(SELECT MAX(b.attempt_no) FROM lane_pilot_attempt b WHERE b.run_id=a.run_id AND b.task_id=a.task_id)
+    LEFT JOIN lane_pilot_stage_receipt s ON s.run_id=t.run_id AND s.task_id=t.id AND s.stage_id='writer-agent'
+    WHERE t.run_id=? ORDER BY t.created_at`).all(runId) as Array<{
+    id: string; contract_json: string; state: string; thread_id: string | null; stage_state: string | null; stage_reason: string | null;
+  }>;
+}
+
+/** The run's tasks whose latest dispatch still works: task id, contract and the newest attempt's state (the PM's "current" answer). */
+export function openIntakeTaskRows(db: LanePilotDatabase, runId: string, openStates: readonly string[], limit = 10): Array<{ task_id: string; contract_json: string; state: string }> {
+  return db.prepare(`SELECT t.id AS task_id, t.contract_json, a.state FROM lane_pilot_task t JOIN lane_pilot_attempt a ON a.task_id=t.id AND a.run_id=t.run_id WHERE t.run_id=? AND a.state IN (${openStates.map(() => "?").join(",")}) ORDER BY a.attempt_no DESC LIMIT ?`)
+    .all(runId, ...openStates, limit) as Array<{ task_id: string; contract_json: string; state: string }>;
+}
+
+/** The run's last finished tasks: contract, end state, reason and writer thread (the PM's "results" answer). */
+export function finishedIntakeTaskRows(db: LanePilotDatabase, runId: string, openStates: readonly string[], limit = 3): Array<{ contract_json: string; state: string; reason: string | null; thread_id: string | null }> {
+  return db.prepare(`SELECT t.contract_json, a.state, a.reason, a.thread_id FROM lane_pilot_task t JOIN lane_pilot_attempt a ON a.task_id=t.id AND a.run_id=t.run_id WHERE t.run_id=? AND a.state NOT IN (${openStates.map(() => "?").join(",")}) ORDER BY a.updated_at DESC LIMIT ?`)
+    .all(runId, ...openStates, limit) as Array<{ contract_json: string; state: string; reason: string | null; thread_id: string | null }>;
+}
+
+/** The run's open attempts with their task contracts (owner-cancel matches the named task). */
+export function openIntakeAttemptRows(db: LanePilotDatabase, runId: string, openStates: readonly string[]): Array<{ attempt_id: string; contract_json: string }> {
+  return db.prepare(`SELECT a.id AS attempt_id, t.contract_json FROM lane_pilot_task t JOIN lane_pilot_attempt a ON a.task_id=t.id AND a.run_id=t.run_id WHERE t.run_id=? AND a.state IN (${openStates.map(() => "?").join(",")})`)
+    .all(runId, ...openStates) as Array<{ attempt_id: string; contract_json: string }>;
+}

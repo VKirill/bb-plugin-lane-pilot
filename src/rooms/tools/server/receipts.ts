@@ -1,9 +1,10 @@
 import { createHash } from "node:crypto";
+import { openRegressionBriefs } from "../../baseline";
 import type Database from "better-sqlite3";
 import packageJson from "../../../../package.json";
-import { gateRunVerdict, latestGateRun } from "../../verification/server"
+import { gateRunVerdict } from "../../verification/server"
 import { parseIntegrationGateSettings } from "../../contracts";
-import { loadProjectSettings } from "../../storage";
+import { getAttempt, getReasoningTraceJson, getTaskContractJson, listStageReceipts, loadProjectSettings, openAttemptBriefs, latestGateRun, countLanePilotTables } from "../../storage";
 
 /**
  * Receipts and evidence (SMA map: Receipts and evidence). Read-only assemblies over what the stages left:
@@ -13,7 +14,6 @@ import { loadProjectSettings } from "../../storage";
  * - preship: what is still open before a release — unmerged work, open regressions, open deferrals — each with its disposition;
  * - PR passport: the body of a pull request assembled from the task's receipts (PR passport assembler).
  */
-import { getAttempt, getReasoningTraceJson, getTaskContractJson, listStageReceipts, openAttemptBriefs } from "../../storage";
 import { listOpenDeferralBriefs } from "../../deferral/server";
 
 type Db = Database.Database;
@@ -32,7 +32,7 @@ export function passport(db: Db, attemptId: string) {
 }
 
 export function manifest(db: Db) {
-  const tables = (db.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE type='table' AND name LIKE 'lane_pilot_%'").get() as { n: number }).n;
+  const tables = countLanePilotTables(db);
   return { name: packageJson.name, version: packageJson.version, tables, builtAt: new Date().toISOString() };
 }
 
@@ -48,10 +48,8 @@ export const verifyChain = (db: Db, runId: string, taskId: string, tip: string) 
 
 /** Preship / disposition: what is open before a release, and the disposition each needs (merge, fix, defer with a term). */
 export function preship(db: Db, projectId?: string) {
-  const where = projectId ? "AND r.project_id=?" : "";
-  const args = projectId ? [projectId] : [];
   const open = openAttemptBriefs(db, { projectId: projectId ?? null });
-  const regressions = db.prepare(`SELECT task_id AS taskId, state FROM lane_pilot_regression WHERE state NOT IN ('closed','fixed') ${projectId ? "AND project_id=?" : ""} LIMIT 50`).all(...args);
+  const regressions = openRegressionBriefs(db, projectId);
   const deferrals = listOpenDeferralBriefs(db, projectId);
   const items = [
     ...(open as Array<{ taskId: string; state: string }>).map((row) => ({ what: `task ${row.taskId} is ${row.state}`, disposition: row.state === "validation_failed" ? "fix or cancel" : "let it finish or cancel" })),

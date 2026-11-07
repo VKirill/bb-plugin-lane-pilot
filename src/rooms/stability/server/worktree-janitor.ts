@@ -1,11 +1,9 @@
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
-import { listQaHosts } from "../../platform/server";
-import { scheduleIsolated } from "../../platform/server";
+import { attemptWorkspacePaths, listOpenWorktrees, loadProjectSettings, recordJanitorSweep, registerWorktree, releaseWorktreeById, writerBaseForWorkspace } from "../../storage";
+import { STICKY_WINDOW_MS, listQaHosts, scheduleIsolated } from "../../platform/server";
 import { configuredSetting } from "../../contracts/server";
 import type { ServerCore } from "../../contracts/server";
-import { loadProjectSettings, registerWorktree } from "../../storage";
 import { OPEN_ATTEMPT_STATES, RETRY_ELIGIBLE, isOpenAttemptState } from "../../contracts/state-machine";
-import { STICKY_WINDOW_MS } from "../../platform/server";
 import { DOCS_WORKTREE_PREFIX, docsWorktreeKey, REGRESS_MARKER_TTL_MS, REGRESS_WORKTREE_PREFIX, regressWorktreeKey, regressWorktreePath, SELF_REPAIR_STATE_KEY, selfRepairWorktrees } from "../../contracts";
 import { bestEffort } from "@lane-pilot/kit";
 
@@ -43,13 +41,11 @@ function worktreeGraceMs(db: ServerCore["db"]): number {
 export async function protectedWorktreePaths(ctx: Pick<ServerCore, "bb" | "db">, now = Date.now()): Promise<Set<string>> {
   const { db } = ctx;
   const paths = new Set<string>();
-  const placeholders = JANITOR_OPEN_STATES.map(() => "?").join(",");
-  for (const row of db.prepare(`SELECT workspace_path AS p FROM lane_pilot_attempt WHERE workspace_path IS NOT NULL AND state IN (${placeholders})`).all(...JANITOR_OPEN_STATES) as Array<{ p: string }>) paths.add(row.p);
-  const reopenable = JANITOR_REOPENABLE_STATES.map(() => "?").join(",");
-  for (const row of db.prepare(`SELECT workspace_path AS p FROM lane_pilot_attempt WHERE workspace_path IS NOT NULL AND state IN (${reopenable}) AND updated_at>=?`).all(...JANITOR_REOPENABLE_STATES, now - worktreeGraceMs(db)) as Array<{ p: string }>) paths.add(row.p);
+  for (const p2 of attemptWorkspacePaths(db, JANITOR_OPEN_STATES)) paths.add(p2);
+  for (const p2 of attemptWorkspacePaths(db, JANITOR_REOPENABLE_STATES, now - worktreeGraceMs(db))) paths.add(p2);
   // The registry is the primary source: every open row is a copy its process still owns. Copies the deployed build
   // made before the registry are adopted into it once at boot (adoptLegacyWorktrees), so no KV read lives here.
-  for (const row of db.prepare("SELECT path FROM lane_pilot_worktree WHERE released_at IS NULL").all() as Array<{ path: string }>) paths.add(row.path);
+  for (const row of listOpenWorktrees(db)) paths.add(row.path);
   return paths;
 }
 
@@ -85,8 +81,7 @@ export async function runWorktreeJanitor(ctx: Pick<ServerCore, "bb" | "db" | "lo
     removed += out.removed?.length ?? 0;
     freedBytes += (out.freedBytes ?? 0) + (out.tmpFreedBytes ?? 0);
     kept += keptRows.length;
-    db.prepare("INSERT INTO lane_pilot_janitor(at,host,removed,freed_bytes,tmp_removed,tmp_freed_bytes,kept_json) VALUES (?,?,?,?,?,?,?)")
-      .run(now, machine.id, out.removed?.length ?? 0, Math.round(out.freedBytes ?? 0), out.tmpRemoved?.length ?? 0, Math.round(out.tmpFreedBytes ?? 0), JSON.stringify(keptRows.slice(0, 50).map((row) => `${row.path} (${row.reason})`)));
+    recordJanitorSweep(db, { at: now, host: machine.id, removed: out.removed?.length ?? 0, freedBytes: Math.round(out.freedBytes ?? 0), tmpRemoved: out.tmpRemoved?.length ?? 0, tmpFreedBytes: Math.round(out.tmpFreedBytes ?? 0), keptJson: JSON.stringify(keptRows.slice(0, 50).map((row) => `${row.path} (${row.reason})`)) });
     if (keptRows.length) ctx.log(`Lane Pilot janitor kept ${keptRows.length} worktree(s) on ${machine.name ?? machine.id}: ${keptRows.map((row) => `${row.path} (${row.reason})`).join(", ").slice(0, 400)}`);
   }
   return { removed: removed + swept.length + envSwept.length, freedBytes, kept };
@@ -144,7 +139,7 @@ async function ownerAlive(ctx: Pick<ServerCore, "bb" | "db">, row: { owner_kind:
  */
 export async function adoptLegacyWorktrees(ctx: Pick<ServerCore, "bb" | "db">, now = Date.now()): Promise<number> {
   const { bb, db } = ctx;
-  const open = new Set((db.prepare("SELECT host, path FROM lane_pilot_worktree WHERE released_at IS NULL").all() as Array<{ host: string; path: string }>)
+  const open = new Set((listOpenWorktrees(db).map((row) => ({ host: row.host, path: row.path })) as Array<{ host: string; path: string }>)
     .map((row) => JSON.stringify([row.host, row.path])));
   let adopted = 0;
   const adopt = (host: string | undefined, path: string | undefined, ownerKind: string, ownerId: string | null, branch: string | null = null, at?: number) => {
@@ -188,16 +183,15 @@ export async function ensureLegacyWorktreesAdopted(ctx: Pick<ServerCore, "bb" | 
 /** At plugin start (after a reload that killed every pass's finally): copies whose owner is dead go now, not hourly. */
 export async function reconcileWorktreeRegistry(ctx: Pick<ServerCore, "bb" | "db" | "log" | "isDisposed" | "host">, now = Date.now()): Promise<number> {
   const { db } = ctx;
-  const dead = (db.prepare("SELECT id,host,path,branch,owner_kind,owner_id,created_at FROM lane_pilot_worktree WHERE released_at IS NULL").all() as Array<{ id: number; host: string; path: string; branch: string | null; owner_kind: string; owner_id: string | null; created_at: number }>);
+  const dead = (listOpenWorktrees(db) as Array<{ id: number; host: string; path: string; branch: string | null; owner_kind: string; owner_id: string | null; created_at: number }>);
   let removed = 0;
   for (const row of dead) {
     if (ctx.isDisposed()) break;
     if (await ownerAlive(ctx, row, now)) continue;
     // The host call needs the base checkout the copy came from; the attempt's run knows it, others take it from the worktree itself.
-    const known = db.prepare("SELECT writer_workspace_path AS p FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id WHERE a.workspace_path=? LIMIT 1").get(row.path) as { p?: string } | undefined;
-    const basePath = known?.p ?? row.path;
+    const basePath = writerBaseForWorkspace(db, row.path) ?? row.path;
     const out = await ctx.host.call("gitRemoveWorktree", { requestedHostId: row.host, basePath, worktreePath: row.path, release: true }, { hostId: row.host, timeoutMs: 120_000 }).catch((cause: unknown) => { ctx.log(`Lane Pilot reconcile: worktree removal on ${row.host} failed: ${cause instanceof Error ? cause.message : String(cause)}`); return null; }) as { removed?: boolean } | null;
-    if (out?.removed === true) { db.prepare("UPDATE lane_pilot_worktree SET released_at=? WHERE id=?").run(now, row.id); removed++; }
+    if (out?.removed === true) { releaseWorktreeById(db, row.id, now); removed++; }
   }
   if (removed) ctx.log(`Lane Pilot reconcile: removed ${removed} worktree copies whose owner is gone`);
   return removed;

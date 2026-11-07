@@ -3,3 +3,4 @@ export { ROLLBACK_USAGE, runRollbackCli } from "./cli";
 export { createRollback } from "./rollback";
 export type { RollbackApi, RollbackItem, RollbackResult, RollbackTarget } from "./rollback";
 export { rollbackRpc } from "./rpc";
+export { mergedAttemptChanges, acceptedChangeProofRows, medianTaskSize } from "../store";

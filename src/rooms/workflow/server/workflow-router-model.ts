@@ -1,4 +1,4 @@
-import { outputContract, agentPrompt } from "@lane-pilot/workflow-engine";
+import { outputContract, agentPrompt, wfStatusByIdemKey } from "@lane-pilot/workflow-engine";
 import type { NodeExecutor, RouterModel, RouterModelOutput, WorkflowEngine } from "@lane-pilot/workflow-engine";
 import type { Field } from "@lane-pilot/workflow-engine";
 import type { WorkflowAgents } from "./workflow-agent";
@@ -69,8 +69,8 @@ export function createRouterModel(rt: ChainRuntime, engine: WorkflowEngine): Rou
     const base = `route:${sha256Hex(`route|${rt.runId}|${input.intent}|${input.context ?? ""}`).slice(0, 32)}`;
     let key = base;
     for (let attempt = 1; attempt < 20; attempt += 1) {
-      const prior = rt.ctx.db.prepare("SELECT status FROM lane_pilot_wf_run WHERE idem_key=?").get(key) as { status: string } | undefined;
-      if (!prior || !["failed", "blocked", "interrupted", "canceled"].includes(prior.status)) break;
+      const prior = wfStatusByIdemKey(rt.ctx.db, key);
+      if (!prior || !["failed", "blocked", "interrupted", "canceled"].includes(prior)) break;
       key = `${base}:${attempt}`;
     }
     // Not linked to the Lane Pilot run: the run's end must not post a notice to the PM chat that is waiting on this very call.

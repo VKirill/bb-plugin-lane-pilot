@@ -1,4 +1,6 @@
 import type Database from "better-sqlite3";
+import { parseJsonOr } from "@lane-pilot/kit";
+import { TASK_SIZE_MIN_SAMPLE, type TaskSizeMedian } from "../tasks";
 
 export type RollbackDb = Pick<Database.Database, "prepare">;
 
@@ -92,4 +94,52 @@ export function listTaskReceipts(db: RollbackDb, taskId: string, kind?: TaskRece
     id: row.id, at: row.at, kind: row.kind, projectId: row.project_id, runId: row.run_id, taskId: row.task_id, attemptId: row.attempt_id, baseSha: row.base_sha,
     changeSha: row.change_sha, resultCommit: row.result_commit, state: row.state, summary: row.summary, detail: json<unknown>(row.detail_json, {}),
   }));
+}
+
+// ---- cross-room readers: the change ledger other rooms may only read through these ----
+
+/** Merged change rows of a run (a redo family's earlier members' file lists). */
+export function mergedAttemptChanges(db: RollbackDb, runId: string): Array<{ task_id: string; changed_json: string }> {
+  return db.prepare("SELECT task_id, changed_json FROM lane_pilot_attempt_change WHERE run_id=? AND outcome='merged'")
+    .all(runId) as Array<{ task_id: string; changed_json: string }>;
+}
+
+/** Merge commits of a run's accepted attempts (the phase's proof-of-work records). */
+export function acceptedChangeProofRows(db: RollbackDb, runId: string): Array<{ task_id: string; merge_commit: string; changed_json: string }> {
+  return db.prepare(`SELECT c.task_id AS task_id, c.merge_commit AS merge_commit, c.changed_json AS changed_json FROM lane_pilot_attempt_change c
+    JOIN lane_pilot_attempt a ON a.id=c.attempt_id WHERE c.run_id=? AND a.state='accepted' AND c.merge_commit IS NOT NULL ORDER BY a.updated_at, a.rowid`)
+    .all(runId) as Array<{ task_id: string; merge_commit: string; changed_json: string }>;
+}
+
+/** Accepted attempts' size evidence (created, finished, changed files, attempt count) for the median task size. */
+export function acceptedAttemptSizeRows(db: RollbackDb, projectId: string): Array<{ created: number | null; finished: number; changed: string; attempts: number }> {
+  return db.prepare(
+    `SELECT a.created_at AS created, a.updated_at AS finished, c.changed_json AS changed,
+       (SELECT count(*) FROM lane_pilot_attempt x WHERE x.task_id=a.task_id) AS attempts
+     FROM lane_pilot_attempt a JOIN lane_pilot_attempt_change c ON c.attempt_id=a.id
+     JOIN lane_pilot_run r ON r.id=a.run_id
+     WHERE a.state='accepted' AND r.project_id=? ORDER BY a.updated_at DESC LIMIT 200`,
+  ).all(projectId) as Array<{ created: number | null; finished: number; changed: string; attempts: number }>;
+}
+
+/**
+ * The median accepted-task size of the project, from `lane_pilot_attempt` joins `lane_pilot_attempt_change`
+ * (accepted attempts only, finished last). Null under TASK_SIZE_MIN_SAMPLE: too few accepted tasks to judge a grain.
+ */
+export function medianTaskSize(db: RollbackDb, projectId: string): TaskSizeMedian | null {
+  const rows = acceptedAttemptSizeRows(db, projectId);
+  if (rows.length < TASK_SIZE_MIN_SAMPLE) return null;
+  const files: number[] = [], minutes: number[] = [], attempts: number[] = [];
+  for (const row of rows) {
+    const changed = parseJsonOr(row.changed, []) as Array<{ path: string }>;
+    files.push(changed.length);
+    attempts.push(Math.max(1, row.attempts));
+    if (row.created != null) minutes.push(Math.max(0, Math.round((row.finished - row.created) / 60_000)));
+  }
+  const median = (values: readonly number[]): number => {
+    const sorted = [...values].sort((a, b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+    return Math.round(sorted.length % 2 ? sorted[mid]! : (sorted[mid - 1]! + sorted[mid]!) / 2);
+  };
+  return { files: median(files), lines: 0, minutes: minutes.length ? median(minutes) : 0, attempts: median(attempts), n: rows.length };
 }

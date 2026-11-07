@@ -27,3 +27,14 @@ export function releaseWorktree(db: LanePilotDatabase, host: string, path: strin
 export function listOpenWorktrees(db: LanePilotDatabase): WorktreeRow[] {
   return db.prepare("SELECT id,host,path,branch,owner_kind,owner_id,created_at,released_at FROM lane_pilot_worktree WHERE released_at IS NULL").all() as WorktreeRow[];
 }
+
+/** One hourly janitor sweep's receipt row per host (the morning list reads these). */
+export function recordJanitorSweep(db: LanePilotDatabase, row: { at: number; host: string; removed: number; freedBytes: number; tmpRemoved: number; tmpFreedBytes: number; keptJson: string }): void {
+  db.prepare("INSERT INTO lane_pilot_janitor(at,host,removed,freed_bytes,tmp_removed,tmp_freed_bytes,kept_json) VALUES (?,?,?,?,?,?,?)")
+    .run(row.at, row.host, row.removed, row.freedBytes, row.tmpRemoved, row.tmpFreedBytes, row.keptJson);
+}
+
+/** Mark one registry row released (the reconcile removed the copy on the host). */
+export function releaseWorktreeById(db: LanePilotDatabase, id: number, at: number): void {
+  db.prepare("UPDATE lane_pilot_worktree SET released_at=? WHERE id=?").run(at, id);
+}

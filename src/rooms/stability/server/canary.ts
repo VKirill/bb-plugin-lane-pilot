@@ -1,4 +1,5 @@
 import packageJson from "../../../../package.json";
+import { canaryAttemptRows, previousHarnessVersion } from "../../storage";
 import { setSandboxProjects } from "../../owner-waiting";
 import { failureClass } from "../../contracts/failure-class";
 import { DRILL_SANDBOX_PROJECT_IDS, FAILED_ATTEMPT_STATES, isDrillTask, isSandboxProjectName } from "../../contracts";
@@ -52,30 +53,26 @@ const asFault = (row: Row): boolean => row.state !== "accepted" && failureClass(
  */
 export const REASON_SCAN_CHARS = 4000;
 
-function selectFinished(db: LanePilotDatabase, where: string, args: unknown[], sandboxProjects: ReadonlySet<string> = new Set()): Row[] {
-  return (db.prepare(`SELECT a.id, a.run_id, a.task_id, a.state, substr(a.reason, 1, ${REASON_SCAN_CHARS}) AS reason, r.project_id, r.pm_thread_id FROM lane_pilot_attempt a
-    JOIN lane_pilot_run r ON r.id=a.run_id WHERE a.state IN ('accepted',${FAILED_ATTEMPT_STATES.map(() => "?").join(",")}) AND ${where} ORDER BY a.created_at`)
-    .all(...FAILED_ATTEMPT_STATES, ...args) as Row[])
-    .filter((row) => !DRILL_SANDBOX_PROJECT_IDS.includes(row.project_id) && !sandboxProjects.has(row.project_id) && !isDrillTask(row.task_id));
-}
+
 
 /** The canary of `version` since it first ran. */
 export function canaryReport(db: LanePilotDatabase, input: { version: string; since: number; now: number; sandboxProjects?: ReadonlySet<string> }): CanaryReport {
   const { version, since, now, sandboxProjects } = input;
-  const own = selectFinished(db, "a.harness_version=? AND a.created_at>=?", [version, since], sandboxProjects).slice(0, CANARY_MAX_ATTEMPTS);
+  const own = canaryAttemptRows(db, FAILED_ATTEMPT_STATES, REASON_SCAN_CHARS, version, since)
+    .filter((row) => !DRILL_SANDBOX_PROJECT_IDS.includes(row.project_id) && !(sandboxProjects ?? new Set()).has(row.project_id) && !isDrillTask(row.task_id))
+    .slice(0, CANARY_MAX_ATTEMPTS);
   const faultRows = own.filter(asFault);
   const minutes = Math.floor((now - since) / 60_000);
   const rate = own.length ? faultRows.length / own.length : 0;
-  const previous = db.prepare("SELECT harness_version FROM lane_pilot_attempt WHERE harness_version IS NOT NULL AND harness_version<>? AND created_at<? ORDER BY created_at DESC LIMIT 1")
-    .get(version, since) as { harness_version: string } | undefined;
+  const previous = previousHarnessVersion(db, version, since);
   const tripped = faultRows.length >= CANARY_MIN_FAULTS && rate > CANARY_FAULT_LIMIT;
   return {
     version, since,
     window: { open: own.length < CANARY_MAX_ATTEMPTS && minutes < CANARY_MAX_MINUTES, attempts: own.length, minutes, maxAttempts: CANARY_MAX_ATTEMPTS, maxMinutes: CANARY_MAX_MINUTES },
     faults: faultRows.length, rate, tripped,
     samples: faultRows.slice(0, 5).map((row) => ({ projectId: row.project_id, runId: row.run_id, taskId: row.task_id, pmThreadId: row.pm_thread_id, reason: (row.reason ?? row.state).slice(0, 200) })),
-    previousVersion: previous?.harness_version ?? null,
-    rollback: previous ? rollbackCommand(previous.harness_version) : null,
+    previousVersion: previous,
+    rollback: previous ? rollbackCommand(previous) : null,
   };
 }
 

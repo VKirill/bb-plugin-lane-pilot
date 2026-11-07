@@ -1,10 +1,10 @@
 import type { DirtSnapshot } from "../cli-outcome";
 import { isLiveDecision } from "../live-folder";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
-import { getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, loadProjectSettings, saveReasoningTrace, setAttemptDirtBefore, setAttemptWorkspace, transitionAttempt, taskBasePath } from "../../storage";
+import { getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, loadProjectSettings, saveReasoningTrace, setAttemptDirtBefore, setAttemptWorkspace, transitionAttempt, taskBasePath, countThreadAttempts, countThreadTaskAttempts, getTaskContractJson } from "../../storage";
 import { SESSION_MAX_TURNS, failureClass } from "../../contracts/failure-class";
 import { stringAt, orMiss, isNotFound, bestEffort } from "@lane-pilot/kit";
-import { sleepUntilThreadSignal, threadWatchMark } from "@lane-pilot/thread-observe";
+import { listThreadEventsRaw, sleepUntilThreadSignal, threadWatchMark } from "@lane-pilot/thread-observe";
 import { resolve } from "node:path";
 import type { ServerCore } from "../../contracts/server";
 
@@ -15,7 +15,6 @@ import { writerLeftWorktree } from "./left-worktree";
 import { buildCapsule, capsuleRestored } from "../../session-hooks";
 import { judgeSessionDigest } from "../session-digest";
 import { jev } from "@lane-pilot/jev";
-import { listThreadEventsRaw } from "@lane-pilot/thread-observe";
 
 import type { HarnessApi } from "../../harness/server/harness";
 import type { RollbackApi } from "../../rollback/server/rollback";
@@ -131,10 +130,7 @@ export type HotWriter = { threadId: string; attemptId: string; workspacePath: st
 export function createWriterSticky(ctx: ServerCore, services: Services) {
   const { bb, db, host } = ctx;
 
-  function threadTurns(threadId: string): number {
-    const row = db.prepare("SELECT COUNT(*) count FROM lane_pilot_attempt WHERE thread_id=?").get(threadId) as { count: number };
-    return row.count;
-  }
+  const threadTurns = (threadId: string): number => countThreadAttempts(db, threadId);
 
   /**
    * The thread and its workspace are still there, idle, and not used up. A task's own session is bounded by its turn cap
@@ -188,10 +184,7 @@ export function createWriterSticky(ctx: ServerCore, services: Services) {
   }
 
   /** Turns the failed attempt's thread took for its task: its first answer and every feedback turn after it. */
-  function sessionTurns(failed: { thread_id: string | null; task_id: string }): number {
-    const row = db.prepare("SELECT COUNT(*) count FROM lane_pilot_attempt WHERE thread_id=? AND task_id=?").get(failed.thread_id, failed.task_id) as { count: number };
-    return row.count;
-  }
+  const sessionTurns = (failed: { thread_id: string | null; task_id: string }): number => failed.thread_id ? countThreadTaskAttempts(db, failed.thread_id, failed.task_id) : 0;
 
   /** Why a failed attempt gets no more feedback turns in its writer's thread (the turn cap); null while it may. */
   function sessionLimit(failedAttemptId: string, maxTurns = SESSION_MAX_TURNS): string | null {
@@ -291,9 +284,9 @@ export function createWriterSticky(ctx: ServerCore, services: Services) {
       // check of 2026-10-19 found the second task of a writer thread without a tree and without the tree's check.
       const previousDispatch = (trace?.dispatchContext ?? null) as { writerKey?:string; harness?:unknown } | null;
       const projectId = getRun(db, input.runId)?.project_id ?? "";
-      const contract = db.prepare("SELECT contract_json FROM lane_pilot_task WHERE id=?").get(input.taskId) as { contract_json?:string } | undefined;
+      const contractJson = getTaskContractJson(db, input.taskId);
       let area:string|null = null;
-      try { area = (JSON.parse(contract?.contract_json ?? "{}") as { area?:unknown }).area as string | null ?? null; } catch { area = null; }
+      try { area = (JSON.parse(contractJson ?? "{}") as { area?:unknown }).area as string | null ?? null; } catch { area = null; }
       const writerKey = previousDispatch?.writerKey ?? `${input.config.writerProviderId}/${input.config.writerModel}`;
       const harness = projectId && services.harness ? await bestEffort(ctx.log, "sticky harness for attempt", services.harness.forAttempt({ projectId, area, writerKey, attemptId:input.attemptId }), null) : null;
       const harnessFiles = harness && (harness.skillNames.length || harness.checkNames.length || "hooks.json" in harness.tree)

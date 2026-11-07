@@ -1,4 +1,5 @@
 import type { ServerCore } from "../../contracts/server";
+import { wfScheduledProjectIds } from "@lane-pilot/workflow-engine";
 
 import { realDeps } from "./workflow-architect";
 import { createWorkflowLibrary } from "./workflow-library";
@@ -43,7 +44,7 @@ export function createWorkflowTriggersService(ctx: ServerCore, services: Service
   }
 
   /** Every project that has a schedule from this plugin: the sweep re-checks them, so a file edited outside the tab loses or gains its schedule within the hour. */
-  const scheduledProjects = (): string[] => (ctx.db.prepare("SELECT DISTINCT project_id FROM lane_pilot_wf_trigger").all() as Array<{ project_id: string }>).map((row) => row.project_id);
+  const scheduledProjects = (): string[] => wfScheduledProjectIds(ctx.db);
 
   return { workflowTriggers: { ...triggers, syncSoon, scheduledProjects } };
 }

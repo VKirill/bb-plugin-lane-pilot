@@ -1,8 +1,7 @@
-import { isTaskSatisfied, loadBlockedBy } from "../../runs/server";
+import { closeWriterStages, isTaskSatisfied, loadBlockedBy, recordStage, resetHelperStages, setRunHalted } from "../../runs/server";
 import type { VerificationGatePort } from "../../contracts/integration-gate";
 import type { IsTaskSatisfied } from "../../contracts";
 import type { StageHelperSettings, WorkflowEngineApi } from "../../platform/server";
-import { setRunHalted } from "../../runs/server";
 import { isLiveDecision } from "../live-folder";
 import { DISPATCH_IDEMPOTENT_WINDOW_MS, DISPATCH_STAGES_PENDING } from "../../runs";
 import { taskV2Schema } from "../../contracts";
@@ -13,19 +12,17 @@ import type { CodeCriticDefault } from "../../contracts/task-enums";
 import { saveCriticCodeDefault } from "./critic-override";
 import { wfLivePipelineRun, wfRunInputsByKey } from "@lane-pilot/workflow-engine";
 import { getRunObjective, setRunObjective, createAttempt, createTask, freeTaskId, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getRunWriterHost, getTask, getTaskGitBase, getTaskPlan, latestTaskAttemptState, getTaskRow, hasFailedStageReceipt, listAttemptsForTask, listAttemptsUpdatedSince, listOpenAttempts, listRunsWithAttempts, listRunTaskRows, listStageReceipts, listTaskKinds, listTaskTerminalStates, loadProjectSettings, saveTaskPlan, setRunState, taskBasePath, transitionAttempt } from "../../storage";
-import { sha256 , spendReserve, type BirthKind } from "../../tasks";
+import { commonTaskFolder, isMainfixTask, isTaskBase, parseRepoTop, planWithOutsideReads, repoTopCommand, rerootTask, sha256 , spendReserve, type BirthKind } from "../../tasks";
 import { liveFolderLockNote, nextStep } from "../../contracts/failure-class"
 import { taskFamily } from "@lane-pilot/contracts";
-import { commonTaskFolder, isMainfixTask, isTaskBase, parseRepoTop, planWithOutsideReads, repoTopCommand, rerootTask } from "../../tasks";
 import { validateTaskV2 } from "../../tasks/task-v2";
-import { lintReply } from "../../tasks/server";
+import { createTaskLinter, lintReply } from "../../tasks/server";
 import type { LintFinding } from "../../tasks/server";
-import { createTaskLinter } from "../../tasks/server";
-import { closeWriterStages, recordStage, resetHelperStages } from "../../runs/server";
-import { id, stringAt, valueAt } from "@lane-pilot/kit";
+import { bestEffort, id, parseJsonOr, pollPause, stringAt, valueAt } from "@lane-pilot/kit";
 import { dispatchReply, dispatchRunKey, startDispatchRun, pipelineUnavailable } from "./dispatch-workflow";
 import { suggestTests, testHintLine } from "../../verification";
-import { gateResolverFor, gateRunVerdict, latestGateRunForTask } from "../../verification/server"
+import { gateResolverFor, gateRunVerdict } from "../../verification/server"
+import { latestGateRunForTask } from "../../storage"
 import { parseIntegrationGateSettings } from "../../contracts/integration-gate";
 import { jev } from "@lane-pilot/jev";
 import { batchAdviceFor, topicLoopGuard } from "./dispatch-guards";
@@ -35,7 +32,6 @@ import { isAbsolute, relative, resolve } from "node:path";
 import type { ServerCore } from "../../contracts/server";
 
 import { runOnHost } from "@lane-pilot/host-calls";
-import { pollPause, bestEffort, parseJsonOr } from "@lane-pilot/kit";
 import { pmRulesOf } from "../../learning";
 import { logRulesShown } from "@lane-pilot/run-insights";
 

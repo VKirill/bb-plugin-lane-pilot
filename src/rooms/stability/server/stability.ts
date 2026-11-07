@@ -1,10 +1,10 @@
 import { SETTING_WRITER_CAPACITY_WAIT_MAX_MIN } from "@lane-pilot/settings-catalog";
+import { adoptableBlockedAttempts, createAttempt, getAttempt, getRun, getRunSettingsScopes, latestAttemptByRowid, listOpenAttempts, loadProjectSettings, recentWriterHostIds, stemAttemptRows, transitionAttempt } from "../../storage";
 import { PARKED_KEY } from "../../contracts";
 import type { ParkedTask } from "../../contracts";
 import packageJson from "../../../../package.json";
 import { PARKED_CLASSES, failureClass, failureFingerprint, isCapacitySaturated, isWaitingSecret, type FailureClass } from "../../contracts/failure-class";
 import { allowedSecretNames, secretProblem, waitingSecretNote, WAITING_SECRET_PREFIX } from "../../secrets/server";
-import { createAttempt, getAttempt, getRun, getRunSettingsScopes, listOpenAttempts, loadProjectSettings, transitionAttempt } from "../../storage";
 import { bestEffort, id } from "@lane-pilot/kit";
 import { reopenWriterStages } from "../../runs/server/stage-records";
 import { isRunHalted, isRunPaused } from "../../runs/server/runs-halt";
@@ -187,8 +187,7 @@ export function createStability(ctx:ServerCore, services:Services) {
     for (const open of listOpenAttempts(db).filter((row) => row.task_id === input.taskId)) {
       try { transitionAttempt(db, open.id, "blocked", { reason:`parked (${klass}): ${input.reason.slice(0, 200)}` }); } catch { /* already closed */ }
     }
-    const latest = db.prepare("SELECT id, state FROM lane_pilot_attempt WHERE run_id=? AND task_id=? ORDER BY rowid DESC LIMIT 1")
-      .get(input.runId, input.taskId) as { id:string; state:string } | undefined;
+    const latest = latestAttemptByRowid(db, input.runId, input.taskId) as { id:string; state:string } | undefined;
     if (latest && !["accepted","blocked","canceled","superseded"].includes(latest.state)) {
       try { transitionAttempt(db, latest.id, "blocked", { reason:`parked (${klass}): ${input.reason.slice(0, 200)}` }); } catch { /* not a legal end; the row is already closed */ }
     }
@@ -213,8 +212,7 @@ export function createStability(ctx:ServerCore, services:Services) {
   function superseded(row:ParkedTask):boolean {
     const stem = taskStem(row.taskId);
     const since = row.since ?? row.at;
-    const rows = db.prepare(`SELECT a.task_id, a.state, a.created_at FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
-      WHERE r.project_id=? AND (a.task_id=? OR a.task_id LIKE ? ESCAPE '\\')`).all(row.projectId, stem, `${stem.replace(/[\\%_]/g, "\\$&")}%`) as
+    const rows = stemAttemptRows(db, row.projectId, stem, `${stem.replace(/[\\%_]/g, "\\$&")}%`) as
       Array<{ task_id:string; state:string; created_at:number }>;
     return rows.some((other) => taskStem(other.task_id) === stem && (
       (other.task_id !== row.taskId && (other.state === "accepted" || other.created_at > since))
@@ -320,11 +318,7 @@ export function createStability(ctx:ServerCore, services:Services) {
    */
   async function adoptBlockedByFaults(now = Date.now()):Promise<string[]> {
     // By when the attempt started: a cleanup that touched an old attempt yesterday made a 2-day-old task look recent.
-    const rows = db.prepare(`SELECT a.run_id, a.task_id, a.state, a.reason, a.created_at, a.updated_at, a.harness_version, r.project_id, r.pm_thread_id
-      FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
-      WHERE a.state='blocked' AND a.created_at>? AND r.closed_at IS NULL
-        AND a.created_at=(SELECT MAX(b.created_at) FROM lane_pilot_attempt b WHERE b.run_id=a.run_id AND b.task_id=a.task_id)`)
-      .all(now - 24 * 3600_000) as Array<{ run_id:string; task_id:string; state:string; reason:string|null; created_at:number; updated_at:number; harness_version:string|null; project_id:string; pm_thread_id:string|null }>;
+    const rows = adoptableBlockedAttempts(db, now - 24 * 3600_000) as Array<{ run_id:string; task_id:string; state:string; reason:string|null; created_at:number; updated_at:number; harness_version:string|null; project_id:string; pm_thread_id:string|null }>;
     const list = await loadParked();
     const adopted:string[] = [];
     for (const row of rows) {
@@ -353,8 +347,7 @@ export function createStability(ctx:ServerCore, services:Services) {
    * cut off midway must still work there. The outcome is kept for the self-repair watcher, which takes a failure on.
    */
   async function drill(now = Date.now(), signal?:AbortSignal):Promise<Record<string, DrillOutcome>> {
-    const hosts = (db.prepare(`SELECT DISTINCT writer_host_id FROM lane_pilot_run WHERE writer_host_id IS NOT NULL AND created_at > ?`)
-      .all(now - 7 * 86400_000) as Array<{ writer_host_id:string }>).map((row) => row.writer_host_id);
+    const hosts = recentWriterHostIds(db, now - 7 * 86400_000);
     const outcome:Record<string, DrillOutcome> = {};
     for (const hostId of hosts) {
       signal?.throwIfAborted();

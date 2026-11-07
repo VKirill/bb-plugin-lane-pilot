@@ -1,4 +1,5 @@
 import { taskRedispatchBase } from "@lane-pilot/contracts";
+import { taskGraphRows } from "../../storage";
 import type { LanePilotDatabase } from "../../storage";
 
 /** Why a task waits for another: its depends_on, the same files (owns_paths or area), one writer per folder without git, an unanswered question. */
@@ -19,12 +20,7 @@ const kindOfWait = (why: string): TaskGraphEdgeKind =>
  * a shown task waits for it (it holds the chain until it is sent again).
  */
 export function buildTaskGraph(db: LanePilotDatabase, runId: string): TaskGraph {
-  const rows = db.prepare(`SELECT t.id, t.contract_json, a.state, a.thread_id, s.state AS stage_state, s.reason AS stage_reason
-    FROM lane_pilot_task t
-    JOIN lane_pilot_attempt a ON a.run_id=t.run_id AND a.task_id=t.id
-      AND a.attempt_no=(SELECT MAX(b.attempt_no) FROM lane_pilot_attempt b WHERE b.run_id=a.run_id AND b.task_id=a.task_id)
-    LEFT JOIN lane_pilot_stage_receipt s ON s.run_id=t.run_id AND s.task_id=t.id AND s.stage_id='writer-agent'
-    WHERE t.run_id=? ORDER BY t.created_at`).all(runId) as Array<{
+  const rows = taskGraphRows(db, runId) as Array<{
     id: string; contract_json: string; state: string; thread_id: string | null; stage_state: string | null; stage_reason: string | null;
   }>;
   const contract = (json: string): { title?: unknown; depends_on?: unknown } => { try { return JSON.parse(json) as never; } catch { return {}; } };

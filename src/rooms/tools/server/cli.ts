@@ -1,8 +1,8 @@
 import { prototypeConfigSchema, taskV2Schema } from "../../contracts";
-import { getActivation, getAttempt, getRun, getRunWriterHost, getTask, importSettingsOnce, inspectAttempt, inspectState, listAttemptReasonsSince, listRunsWithAttempts, loadProjectSettings, loadPrototypeConfig, savePrototypeConfig, saveProjectSetting, transitionAttempt, failureFieldsOf } from "../../storage";
+import { taskBaselineEntries } from "../../baseline";
+import { failureFieldsOf, getActivation, getAttempt, getRun, getRunWriterHost, getTask, importSettingsOnce, inspectAttempt, inspectState, listAttemptReasonsSince, listRunsWithAttempts, loadProjectSettings, loadPrototypeConfig, markCancelCode, saveProjectSetting, savePrototypeConfig, transitionAttempt } from "../../storage";
 import { cancelRejection, confirmWriterStopped, finishRunSafely, pauseRun } from "../../runs/server";
-import { markCancelCode } from "../../storage";
-import { renderTimeline, taskTimeline } from "../../runs";
+import { conveyorState, renderTimeline, setConveyor, taskTimeline, unknownReasons } from "../../runs";
 import {bestEffort, isNotFound, orMiss, outputText, stringAt, valueAt} from "@lane-pilot/kit";
 import { PAIR_ROLE_SPECS } from "@lane-pilot/models";
 import {runSkillsCli, SKILLS_USAGE} from "../../platform/server";
@@ -10,17 +10,15 @@ import { THREAD_WATCH_EVENT_TYPES, decideThreadCompletion, eventsListQueryLabel,
 import type { InsightsApi, ScheduleAgentApi } from "../../contracts";
 import type { ServerCore } from "../../contracts/server";
 import { RUN_BUDGET_SETTINGS, runHealth } from "../../stability/server";
-import { configuredSetting } from "../../contracts/server";
+import { ERRAND_EPISODE_TRACE_EVENTS, configuredSetting } from "../../contracts/server";
 import { getCouncilSession } from "@lane-pilot/council";
 import { SCHEDULE_USAGE, runScheduleCli, scheduleFailureSweep } from "../../schedule/server";
 import { answerWorkflowQuestion } from "../../workflow/server";
 import { AGENTS_USAGE, agentRegistry, PM_SKILLS_USAGE, runAgentsCli, runPmSkillsCli, runPmSkillUseCli } from "../../native-agent/server";
 
-import { ANAMNESIS_USAGE } from "../../anamnesis";
-import { anamnesisFor } from "../../anamnesis";
-import { LEARNING_USAGE, runLearningCli } from "../../learning";
+import { ANAMNESIS_USAGE, anamnesisFor } from "../../anamnesis";
+import { LEARNING_USAGE, learningFor, runLearningCli } from "../../learning";
 import { PM_REPLAY_USAGE, runPmReplayCli, listScenarios } from "../../pm-replay";
-import { learningFor } from "../../learning";
 import { attemptMetrics, renderAttemptMetrics } from "../../usage/server";
 import { DEFERRAL_USAGE, runDeferralCli } from "../../deferral/server";
 import { MEMORY_EVAL_USAGE, runMemoryEvalCommand } from "../../memory-eval/server";
@@ -35,21 +33,17 @@ import { OUTAGE_USAGE, runOutageCli } from "../../outage/server";
 import { BACKLOG_USAGE, runBacklogCli } from "../../backlog/server";
 import { runHypothesisCli } from "../../hypotheses/server";
 import { tierReport } from "../../memory-tiers/server";
-import { conveyorState, setConveyor } from "../../runs";
 import { WALL_USAGE, runWallCli } from "../../wall/server";
 import { CHECKERS_USAGE, runCheckersCli } from "../../checkers/server";
-import { POLICY_USAGE, runPolicyCli } from "../../policy";
+import { POLICY_USAGE, loadLiveExam, runPolicyCli } from "../../policy";
 import { WAITING_USAGE, runWaitingCli } from "../../owner-waiting/server";
 import { LEAD_USAGE, runLeadCli } from "../../lead/server";
 import { COVERAGE_USAGE, runCoverageCli } from "../../coverage";
-import { SMA_MAP_USAGE, runSmaLiveCli, runSmaMapCli } from "../../sma-map";
+import { SMA_MAP_USAGE, runSmaLiveCli, runSmaMapCli, smaCheckedPercent, smaCounts, smaDonePercent, smaRows } from "../../sma-map";
 import { designJournalLines, readinessWords, trainedConditions, trainingRatios } from "../../design-eval";
 import { PHASE_USAGE, phaseWordSweep, runPhaseCli } from "../../phase/server";
-import { unknownReasons } from "../../runs";
 import { manifest, passport, preship, prPassport, receiptChain, verifyChain } from "./receipts";
 import { EXCAVATE_LOG_ARGS, approvalSuggestions, costPerVerified, excavate, htmlReport, missCurriculum } from "./self-improve";
-import { smaCheckedPercent, smaCounts, smaDonePercent, smaRows } from "../../sma-map";
-import { loadLiveExam } from "../../policy";
 import { RULES_USAGE, runRulesCli } from "../../rule-forms";
 import { JEV_USAGE, runJevCli } from "../../jev";
 import { ERRANDS_USAGE, runErrandsCli } from "../../errands";
@@ -58,7 +52,6 @@ import { ROLLBACK_USAGE, runRollbackCli } from "../../rollback/server";
 import { isCodeCriticDefault } from "../../contracts/task-enums"
 import { CODE_CRITIC_DEFAULTS } from "../../contracts/task-enums";
 import { runSkillLintCli } from "../../forge";
-import { ERRAND_EPISODE_TRACE_EVENTS } from "../../contracts/server";
 import { EPISODES_USAGE, runEpisodesCli } from "../../errands/server";
 import { episodeSweepDeps } from "../../night-graphs/server";
 
@@ -491,7 +484,7 @@ ${ERRANDS_USAGE}` },
         if (command === "timeline") {
           const { taskId, runId } = timelineArgs(args);
           if (!taskId) return { exitCode:1, stderr:"usage: bb lane-pilot timeline <task-id> [--run <run-id>] [--json]" };
-          const timeline = taskTimeline(db, taskId, runId);
+          const timeline = taskTimeline(db, taskId, runId, taskBaselineEntries);
           if (!timeline.runId) return { exitCode:1, stderr:renderTimeline(timeline) };
           return { exitCode:0, stdout:args.includes("--json") ? JSON.stringify(timeline, null, 2) : renderTimeline(timeline) };
         }

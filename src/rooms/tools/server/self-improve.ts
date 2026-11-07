@@ -1,4 +1,7 @@
 import type Database from "better-sqlite3";
+import { acceptedTaskCountsByProject } from "../../storage";
+import { projectTokenTotalsSince } from "../../usage";
+import { listMemoryMisses } from "../../memory-tiers";
 
 /**
  * Self-improvement and measurement (SMA map: Self-improvement and measurement):
@@ -11,7 +14,7 @@ import type Database from "better-sqlite3";
 type Db = Pick<Database.Database, "prepare">;
 
 export function missCurriculum(db: Db, days = 30, now = Date.now()) {
-  const rows = db.prepare("SELECT project_id AS projectId, query FROM lane_pilot_memory_miss WHERE at >= ?").all(now - days * 86_400_000) as Array<{ projectId: string; query: string }>;
+  const rows = listMemoryMisses(db, now - days * 86_400_000);
   const by = new Map<string, { projectId: string; query: string; count: number }>();
   for (const row of rows) {
     const key = `${row.projectId}\n${row.query.toLowerCase().replace(/\s+/g, " ").trim()}`;
@@ -47,8 +50,8 @@ export function approvalSuggestions(items: ReadonlyArray<{ descriptor?: { kind?:
 /** Cost per verified result: tokens of a project's writers per accepted task, by kind, over the last days. */
 export function costPerVerified(db: Db, days = 30, now = Date.now()) {
   const since = now - days * 86_400_000;
-  const tokens = db.prepare("SELECT project_id AS projectId, SUM(total_tokens) AS tokens FROM lane_pilot_token_daily WHERE day >= ? GROUP BY project_id").all(new Date(since).toISOString().slice(0, 10)) as Array<{ projectId: string; tokens: number }>;
-  const accepted = db.prepare(`SELECT r.project_id AS projectId, COUNT(DISTINCT a.task_id) AS n FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id WHERE a.state='accepted' AND a.updated_at >= ? GROUP BY r.project_id`).all(since) as Array<{ projectId: string; n: number }>;
+  const tokens = projectTokenTotalsSince(db, new Date(since).toISOString().slice(0, 10));
+  const accepted = acceptedTaskCountsByProject(db as never, since);
   return tokens.map((row) => { const n = accepted.find((entry) => entry.projectId === row.projectId)?.n ?? 0; return { projectId: row.projectId, tokens: row.tokens, accepted: n, tokensPerAccepted: n ? Math.round(row.tokens / n) : null }; })
     .sort((a, b) => (b.tokens ?? 0) - (a.tokens ?? 0));
 }

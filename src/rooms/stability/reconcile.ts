@@ -1,4 +1,5 @@
 import type { ReconcileResult } from "../contracts/stability-api";
+import { reconcileCursorPage, saveReconcileCursor, clearReconcileCursor, hasReconcileCursor } from "../storage";
 export type IdempotencyTriple = { lanePilotRunId:string; lanePilotTaskId:string; attemptId:string };
 export type HolderIdentity = { lanePilotRunId:string; lanePilotTaskId:string; workspaceAttemptId:string };
 export type ThreadSummary = { id:string };
@@ -13,23 +14,15 @@ export type ReconcilePort = {
 };
 /** The page already scanned for one attempt. Null when this scan has not started. Kept in the database, so a new process continues. */
 export type ReconcileCursor = { read(): number | null; save(page: number): void; clear(): void };
-type CursorDb = { prepare(sql: string): { get(...args: unknown[]): unknown; run(...args: unknown[]): unknown } };
+import type { LanePilotDatabase } from "../storage";
 
 /** One row per attempt and scan kind (`writer` or `holder`). `read` is null until the first page is saved. */
-export function reconcileCursor(db: CursorDb, attemptId: string, kind: "writer" | "holder"): ReconcileCursor {
+export function reconcileCursor(db: LanePilotDatabase, attemptId: string, kind: "writer" | "holder"): ReconcileCursor {
   const scanKey = `${kind}:${attemptId}`;
   return {
-    read() {
-      const row = db.prepare("SELECT page FROM lane_pilot_reconcile_cursor WHERE scan_key=?").get(scanKey) as { page: number } | undefined;
-      return row ? row.page : null;
-    },
-    save(page: number) {
-      db.prepare(`INSERT INTO lane_pilot_reconcile_cursor(scan_key, attempt_id, page, updated_at) VALUES (?, ?, ?, ?)
-        ON CONFLICT(scan_key) DO UPDATE SET page=excluded.page, updated_at=excluded.updated_at`).run(scanKey, attemptId, page, Date.now());
-    },
-    clear() {
-      db.prepare("DELETE FROM lane_pilot_reconcile_cursor WHERE scan_key=?").run(scanKey);
-    },
+    read() { return reconcileCursorPage(db, scanKey) ?? null; },
+    save(page: number) { saveReconcileCursor(db, scanKey, attemptId, page, Date.now()); },
+    clear() { clearReconcileCursor(db, scanKey); },
   };
 }
 
@@ -124,6 +117,6 @@ export async function reconcileCritic(
 }
 
 /** Whether a reconcile scan is still in flight for the attempt (its cursor is saved mid-page). */
-export function reconcileScanOpen(db: CursorDb, attemptId: string): boolean {
-  return Boolean(db.prepare("SELECT 1 AS n FROM lane_pilot_reconcile_cursor WHERE attempt_id=? LIMIT 1").get(attemptId));
+export function reconcileScanOpen(db: LanePilotDatabase, attemptId: string): boolean {
+  return hasReconcileCursor(db, attemptId);
 }

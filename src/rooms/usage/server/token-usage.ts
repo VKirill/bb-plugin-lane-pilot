@@ -590,3 +590,11 @@ export function tokenCursorRow(db: LanePilotDatabase, threadId: string): { provi
   return db.prepare("SELECT provider_id, last_provider, last_model, total_json FROM lane_pilot_token_cursor WHERE thread_id = ?")
     .get(threadId) as { provider_id: string; last_provider: string; last_model: string; total_json: string } | undefined;
 }
+
+// ---- cross-room readers ----
+
+/** Total tokens per project since a day (YYYY-MM-DD), the cost report's spend side. */
+export function projectTokenTotalsSince(db: { prepare(sql: string): { all(...args: unknown[]): unknown[] } }, day: string): Array<{ projectId: string; tokens: number }> {
+  return db.prepare("SELECT project_id AS projectId, SUM(total_tokens) AS tokens FROM lane_pilot_token_daily WHERE day >= ? GROUP BY project_id")
+    .all(day) as Array<{ projectId: string; tokens: number }>;
+}

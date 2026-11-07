@@ -1,32 +1,26 @@
-import { SETTING_WORKER_STRICT_USER, SETTING_WORKER_USER } from "@lane-pilot/settings-catalog";
+import { SETTING_WORKER_STRICT_USER, SETTING_WORKER_USER, bookkeepingSetting, filterOwnershipNoise } from "@lane-pilot/settings-catalog";
 import { runOnHost } from "@lane-pilot/host-calls";
 import { isAbsolute, relative, resolve } from "node:path";
-import { acceptanceArtifactDir, bbWriterReportMarkdown, buildAcceptanceV2, validateAcceptanceV2 } from "../../tasks";
+import { acceptanceArtifactDir, bbWriterReportMarkdown, buildAcceptanceV2, buildRunExecutionProfile, buildRunPolicy, classifyWriterOutput, isOutputPath, mapBounded, sha256, trustedToolingHint, validateAcceptanceV2 } from "../../tasks";
 import { attemptProduced } from "../cli-outcome";
 import { taskV2Schema } from "../../contracts";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
-import { recordCheckDuration, recordSecretIssuance, getAttempt, getReasoningTrace, getRunSettingsScopes, getTaskGitBase, listTasksForRun, loadProjectSettings, saveProjectSetting, taskBasePath } from "../../storage";
+import { recordCheckDuration, recordSecretIssuance, getAttempt, getReasoningTrace, getRunSettingsScopes, getTaskGitBase, listTasksForRun, loadProjectSettings, saveProjectSetting, taskBasePath, otherAttemptsOfRun, attemptedTaskIdsOfRun } from "../../storage";
 import { checkTimeoutSec, orderChecksForFailFast } from "../check-timing";
-import { sha256 } from "../../tasks";
 import { parseReadFirstHints } from "../../tasks/read-first";
-import { buildRunExecutionProfile, buildRunPolicy, mapBounded } from "../../tasks";
-import { classifyWriterOutput, isOutputPath, trustedToolingHint } from "../../tasks";
 import {cleanCheckOutput, outputText, pollPause} from "@lane-pilot/kit";
-import { redactKnown, redactSecrets } from "@lane-pilot/kit";
+import { bestEffort, fileAllowedByOwns, fileBlockedByNeverTouch, isNotFound, orMiss, redactKnown, redactSecrets, stringAt } from "@lane-pilot/kit";
 import { SecretsNotReadyError, allowedSecretNames, secretProblem } from "../../secrets/server";
 import type { VerifyResult } from "../../tasks";
-import { fileAllowedByOwns, fileBlockedByNeverTouch } from "@lane-pilot/kit";
 import { isLiveDecision, LIVE_FOLDER_RECEIPT } from "../live-folder";
 import { beginChecks, checksMoved } from "../../runs"
 import { taskFamily } from "@lane-pilot/contracts";
-import { bookkeepingSetting, filterOwnershipNoise } from "@lane-pilot/settings-catalog";
 import { DEFAULT_WORKER, flakyEvidence as machineEvidence, outputTail, readingFrom } from "../../verification"
 import { dropSatellites, findUnownedChanges, findUnownedRunChanges, resolveRunOwnershipScope } from "../../contracts/ownership";
 import type { FlakyEvidence, MachineReading } from "../../contracts/machine-pressure";
 import { hollowRerun, noTestRanReason, testSummaries } from "../../tasks/server";
 import { recordGateEvaluation } from "../../runs/server";
 import { listThreadEventsRaw } from "@lane-pilot/thread-observe";
-import { stringAt, bestEffort, isNotFound, orMiss } from "@lane-pilot/kit";
 import {writerPatchFromOutput} from "./writer-task";
 import type { ServerCore } from "../../contracts/server";
 import type { FailureCode } from "../../contracts/failure-class";
@@ -375,8 +369,7 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
     // A folder without git rolls a failed attempt back, so no leftover of an earlier attempt exists to count; a file
     // that sat in the folder before this attempt is no output of it either, however the contract names it.
     const liveFolder = isLiveDecision(getAttempt(db, input.attemptId)?.workspace_decision);
-    if (!liveFolder) for (const row of db.prepare("SELECT id, task_id FROM lane_pilot_attempt WHERE run_id=? AND id<>?")
-      .all(input.runId, input.attemptId) as Array<{ id:string; task_id:string }>) {
+    if (!liveFolder) for (const row of otherAttemptsOfRun(db, input.runId, input.attemptId)) {
       if (taskFamily(row.task_id) !== taskFamily(input.taskId)) continue;
       const saved = await bestEffort(bb.log, "verification produced files read", bb.storage.kv.get(`writer-produced:${row.id}`), null);
       if (Array.isArray(saved)) for (const path of saved) if (typeof path === "string") familyProduced.add(path);
@@ -427,7 +420,7 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
     void bestEffort(bb.log, "verification produced files record", bb.storage.kv.set(`writer-produced:${input.attemptId}`, produced as never), undefined);
     // A task rejected before it ever ran (preflight, plan critique) claims no files; its contract may even be unsafe
     // («../other-repo/» in owns_paths), and kept in the scope it failed every later task of the run (BB-сервис 2026-10-05).
-    const attempted = new Set((db.prepare("SELECT DISTINCT task_id FROM lane_pilot_attempt WHERE run_id=?").all(input.runId) as Array<{ task_id:string }>).map((row) => row.task_id));
+    const attempted = new Set(attemptedTaskIdsOfRun(db, input.runId));
     const runTasks = listTasksForRun(db,input.runId).filter((row) => row.id === input.taskId || attempted.has(row.id));
     const runOwnershipTasks = runTasks.flatMap((row) => {
       if (row.kind !== "bb") return [];

@@ -1,13 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { orMiss, isNotFound } from "@lane-pilot/kit";
-import { getActivation, getRun } from "../../storage";
+import { getActivation, getRun, sha256, listOpenCliRuns } from "../../storage";
 import { cronProblem, localTimezone, timezoneProblem } from "@lane-pilot/workflow-engine/ui";
-import { sha256 } from "../../storage";
 import { loadPushConfig } from "../../owner-waiting";
-import { preflightRefusal } from "@lane-pilot/workflow-engine";
+import { isPipeline, preflightRefusal, wfDeleteTrigger, wfSetTriggerAutomation, wfSetTriggerSignature, wfTriggersOfProject, wfUpsertTrigger } from "@lane-pilot/workflow-engine";
 import type { PreflightResult } from "@lane-pilot/workflow-engine";
-import { isPipeline } from "@lane-pilot/workflow-engine";
 import type { Workflow } from "@lane-pilot/workflow-engine";
 import type { StoredWorkflow, WorkflowStore } from "../../storage";
 import type { ServerCore } from "../../contracts/server";
@@ -115,7 +113,7 @@ export function createWorkflowTriggers(ctx: ServerCore, services: Pick<Services,
     const activation = getActivation(db, projectId);
     const active = activation ? getRun(db, activation.run_id) : undefined;
     if (active && !active.closed_at && active.pm_thread_id) return { pmThreadId: active.pm_thread_id, runId: active.id };
-    const rows = db.prepare("SELECT id, pm_thread_id FROM lane_pilot_run WHERE kind='cli' AND project_id=? AND closed_at IS NULL AND pm_thread_id IS NOT NULL ORDER BY created_at DESC LIMIT 20").all(projectId) as Array<{ id: string; pm_thread_id: string }>;
+    const rows = listOpenCliRuns(db, projectId);
     // A workflow architect's chat has an open run and the role pm too (its tools need it), marked by architectProjectId: a scheduled
     // report sent there was read as someone else's (live, 2026-10-25). Only the owner's PM chat takes a run.
     let unknown = false;
@@ -217,7 +215,7 @@ export function createWorkflowTriggers(ctx: ServerCore, services: Pick<Services,
     result.complete = complete;
     // A trigger without a zone runs in the owner's, not in the hub's (UTC).
     const wanted = desiredSchedules(store.list(), projectId, loadPushConfig(db).timezone);
-    const rows = db.prepare("SELECT workflow_id, slot, automation_id, signature FROM lane_pilot_wf_trigger WHERE project_id=?").all(projectId) as Array<{ workflow_id: string; slot: number; automation_id: string; signature: string }>;
+    const rows = wfTriggersOfProject(db, projectId);
     const same = (row: { workflow_id: string; slot: number }, item: DesiredSchedule) => row.workflow_id === item.workflow.id && row.slot === item.slot;
     for (const item of wanted) {
       const row = rows.find((candidate) => same(candidate, item));
@@ -225,7 +223,7 @@ export function createWorkflowTriggers(ctx: ServerCore, services: Pick<Services,
       try {
         if (!row) {
           const made = await port.create(spec);
-          db.prepare("INSERT OR REPLACE INTO lane_pilot_wf_trigger(workflow_id, project_id, slot, automation_id, signature, created_at, updated_at) VALUES (?,?,?,?,?,?,?)").run(item.workflow.id, projectId, item.slot, made.id, item.signature, now(), now());
+          wfUpsertTrigger(db, { workflowId: item.workflow.id, projectId, slot: item.slot, automationId: made.id, signature: item.signature, now: now() });
           result.created += 1;
         } else if (row.signature !== item.signature) {
           try { await port.update({ ...spec, automationId: row.automation_id }); }
@@ -233,9 +231,9 @@ export function createWorkflowTriggers(ctx: ServerCore, services: Pick<Services,
             // The owner deleted it in the Automations tab: make it again.
             if (!isGone(cause)) throw cause;
             const made = await port.create(spec);
-            db.prepare("UPDATE lane_pilot_wf_trigger SET automation_id=? WHERE workflow_id=? AND project_id=? AND slot=?").run(made.id, item.workflow.id, projectId, item.slot);
+            wfSetTriggerAutomation(db, made.id, { workflowId: item.workflow.id, projectId, slot: item.slot });
           }
-          db.prepare("UPDATE lane_pilot_wf_trigger SET signature=?, updated_at=? WHERE workflow_id=? AND project_id=? AND slot=?").run(item.signature, now(), item.workflow.id, projectId, item.slot);
+          wfSetTriggerSignature(db, item.signature, now(), { workflowId: item.workflow.id, projectId, slot: item.slot });
           result.updated += 1;
         }
       } catch (cause) { result.failed.push(`${item.workflow.id}: ${cause instanceof Error ? cause.message : String(cause)}`); }
@@ -244,7 +242,7 @@ export function createWorkflowTriggers(ctx: ServerCore, services: Pick<Services,
     for (const row of rows.filter((candidate) => !wanted.some((item) => same(candidate, item)) && (complete || store.get(candidate.workflow_id) !== null))) {
       try {
         await port.remove({ projectId, automationId: row.automation_id }).catch((cause: unknown) => { if (!isGone(cause)) throw cause; });
-        db.prepare("DELETE FROM lane_pilot_wf_trigger WHERE workflow_id=? AND project_id=? AND slot=?").run(row.workflow_id, projectId, row.slot);
+        wfDeleteTrigger(db, { workflowId: row.workflow_id, projectId, slot: row.slot });
         result.removed += 1;
       } catch (cause) { result.failed.push(`${row.workflow_id}: ${cause instanceof Error ? cause.message : String(cause)}`); }
     }

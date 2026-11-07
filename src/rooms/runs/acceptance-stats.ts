@@ -1,4 +1,5 @@
 import { taskFamily } from "@lane-pilot/contracts";
+import { acceptanceAttemptRows } from "../storage";
 import { failureClass } from "../contracts/failure-class";
 
 type Db = { prepare(sql:string):{ all(...args:unknown[]):unknown[] } };
@@ -85,12 +86,7 @@ const toTotals = (accum:Accum):AcceptanceTotals => ({
 /** First-try acceptance, redispatches and failure causes per project and ISO week, read-only. */
 export function acceptanceStats(db:Db, days:number, projectId?:string):AcceptanceStats {
   const since = Date.now() - days * 86_400_000;
-  const rows = db.prepare(`SELECT r.project_id AS projectId, a.run_id AS runId, a.task_id AS taskId, a.state AS state, a.reason AS reason, a.created_at AS at,
-      EXISTS(SELECT 1 FROM lane_pilot_attempt_transition t WHERE t.attempt_id=a.id AND t.reason LIKE 'waiting_writer:%') AS held
-    FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
-    WHERE a.created_at>=? ${projectId ? "AND r.project_id=?" : ""}
-    ORDER BY r.project_id, a.run_id, a.task_id, a.created_at`)
-    .all(...(projectId ? [since, projectId] : [since])) as
+  const rows = acceptanceAttemptRows(db as never, since, projectId) as
     Array<{ projectId:string; runId:string; taskId:string; state:string; reason:string|null; at:number; held:number }>;
 
   const byTask = new Map<string, typeof rows>();

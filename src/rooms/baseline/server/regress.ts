@@ -1,5 +1,5 @@
 import { relative } from "node:path";
-import { getAttempt, getTask, listCheckDurations, listStageReceipts, taskBasePath } from "../../storage";
+import { getAttempt, getTask, listCheckDurations, listStageReceipts, taskBasePath, acceptedAttemptTaskRefs, acceptedAttemptProjectIds } from "../../storage";
 import type { RollbackApi, RollbackItem, RollbackTarget } from "../../rollback/server";
 import { scheduleIsolated } from "../../platform/server";
 import { bestEffort } from "@lane-pilot/kit";
@@ -136,11 +136,9 @@ export function createRegression(ctx: ServerCore, services: Services) {
   }
 
   async function candidatesOf(projectId: string, settings: RegressSettings, now: number, tasks: TaskReport[], runId: string | undefined, mode: "cheap" | "full"): Promise<Candidate[]> {
-    const rows = (runId
-      ? db.prepare(`SELECT a.id AS attempt_id, a.task_id AS task_id FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
-          WHERE r.project_id=? AND a.run_id=? AND a.state='accepted' ORDER BY a.updated_at DESC, a.rowid DESC`).all(projectId, runId)
-      : db.prepare(`SELECT a.id AS attempt_id, a.task_id AS task_id FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
-          WHERE r.project_id=? AND a.state='accepted' AND a.updated_at>=? ORDER BY a.updated_at DESC, a.rowid DESC`).all(projectId, now - settings.days * DAY)) as Array<{ attempt_id: string; task_id: string }>;
+    const rows = runId
+      ? acceptedAttemptTaskRefs(db, projectId, { runId })
+      : acceptedAttemptTaskRefs(db, projectId, { updatedSince: now - settings.days * DAY });
     const seen = new Set<string>();
     const picked: Array<{ attempt_id: string; task_id: string }> = [];
     for (const row of rows) {
@@ -378,8 +376,7 @@ export function createRegression(ctx: ServerCore, services: Services) {
     const now = options.now ?? Date.now();
     await sweepLeftovers(Date.now()).catch((cause: unknown) => log(`regress: leftover sweep skipped: ${cause instanceof Error ? cause.message : String(cause)}`));
     const days = options.days ?? 365;
-    const projects = options.projectId ? [options.projectId]
-      : (db.prepare("SELECT DISTINCT r.project_id AS id FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id WHERE a.state='accepted' AND a.updated_at>=? ORDER BY r.project_id").all(now - days * DAY) as Array<{ id: string }>).map((row) => row.id);
+    const projects = options.projectId ? [options.projectId] : acceptedAttemptProjectIds(db, now - days * DAY);
     const deadline = now + 4 * 3_600_000;
     const passes: ProjectPass[] = [];
     for (const projectId of projects) {
@@ -405,7 +402,7 @@ export function createRegression(ctx: ServerCore, services: Services) {
   /** The nightly pass: every project, the settings of each decide (regress.nightly off skips a project). */
   async function nightly(signal?: AbortSignal): Promise<void> {
     const now = Date.now();
-    const ids = (db.prepare("SELECT DISTINCT r.project_id AS id FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id WHERE a.state='accepted' AND a.updated_at>=? ORDER BY r.project_id").all(now - 60 * DAY) as Array<{ id: string }>).map((row) => row.id);
+    const ids = acceptedAttemptProjectIds(db, now - 60 * DAY);
     for (const projectId of ids) {
       if (signal?.aborted || ctx.isDisposed()) return;
       try {

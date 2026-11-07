@@ -194,3 +194,46 @@ export function latestStageWorkForThread(db: LanePilotDatabase, threadId: string
     WHERE s.thread_id=? ORDER BY s.updated_at DESC LIMIT 1`).get(threadId) as
     { run_id: string; task_id: string; project_id: string; pm_thread_id: string | null } | undefined;
 }
+
+/** Stage receipts of one stage still running and last touched before a time (a reload resumes them). */
+export function staleStageReceipts(db: LanePilotDatabase, stageId: string, updatedBefore: number): Array<{ run_id: string; task_id: string }> {
+  return db.prepare(`SELECT run_id, task_id FROM lane_pilot_stage_receipt WHERE stage_id=? AND state='running' AND updated_at < ?`)
+    .all(stageId, updatedBefore) as Array<{ run_id: string; task_id: string }>;
+}
+
+/** Receipt rows whose result mentions a check log path (the run card links each to its host file). */
+export function taskCheckLogRows(db: LanePilotDatabase, runId: string): Array<{ task_id: string; result_json: string | null }> {
+  return db.prepare("SELECT task_id, result_json FROM lane_pilot_stage_receipt WHERE run_id=? AND result_json LIKE '%checkLogPath%'")
+    .all(runId) as Array<{ task_id: string; result_json: string | null }>;
+}
+
+/** Failed or blocked background stages of the run (the card shows them next to an accepted task, not under it). */
+export function failedBackgroundStageRows(db: LanePilotDatabase, runId: string): Array<{ task_id: string; stage_id: string }> {
+  return db.prepare(`SELECT task_id, stage_id FROM lane_pilot_stage_receipt WHERE run_id=? AND state IN ('failed','blocked')
+    AND stage_id IN ('memory-maintenance','project-life','docs-maintenance') ORDER BY stage_id`).all(runId) as Array<{ task_id: string; stage_id: string }>;
+}
+
+/** The task's stage events, oldest first (the task timeline's stage lines). */
+export function stageEventsForTimeline(db: LanePilotDatabase, runId: string, taskId: string): Array<{ stage_id: string; state: string; attempt: number; occurred_at: number }> {
+  return db.prepare("SELECT stage_id, state, attempt, occurred_at FROM lane_pilot_stage_event WHERE run_id=? AND task_id=? ORDER BY occurred_at, id")
+    .all(runId, taskId) as Array<{ stage_id: string; state: string; attempt: number; occurred_at: number }>;
+}
+
+/** The task's gate events, oldest first (the task timeline's gate lines). */
+export function gateEventsForTask(db: LanePilotDatabase, runId: string, taskId: string): Array<{ gate: string; status: string; attempt: number; occurred_at: number }> {
+  return db.prepare("SELECT gate, status, attempt, occurred_at FROM lane_pilot_gate_event WHERE run_id=? AND task_id=? ORDER BY occurred_at, id")
+    .all(runId, taskId) as Array<{ gate: string; status: string; attempt: number; occurred_at: number }>;
+}
+
+/** The task's receipts by last touch (the task timeline's "stages now" block). */
+export function stageReceiptsForTimeline(db: LanePilotDatabase, runId: string, taskId: string): Array<{ stage_id: string; state: string; attempt: number; reason: string | null; updated_at: number }> {
+  return db.prepare("SELECT stage_id, state, attempt, reason, updated_at FROM lane_pilot_stage_receipt WHERE run_id=? AND task_id=? ORDER BY updated_at")
+    .all(runId, taskId) as Array<{ stage_id: string; state: string; attempt: number; reason: string | null; updated_at: number }>;
+}
+
+/** Verification gate failures/rejections of the task (the max-passes cap counts them). */
+export function countVerificationGateFailures(db: LanePilotDatabase, runId: string, taskId: string): number {
+  return (db.prepare(
+    "SELECT COUNT(*) AS n FROM lane_pilot_gate_event WHERE run_id=? AND task_id=? AND gate='verification' AND status IN ('failed','rejected')",
+  ).get(runId, taskId) as { n: number }).n;
+}

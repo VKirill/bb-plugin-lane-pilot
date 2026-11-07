@@ -1,8 +1,7 @@
-import { agentPrompt, dataBlock, outputContract } from "@lane-pilot/workflow-engine";
+import { agentPrompt, dataBlock, goalsSha, outputContract, wfCountRunEvents } from "@lane-pilot/workflow-engine";
 import type { VerificationGatePort } from "../../contracts/integration-gate";
 import type { IsTaskSatisfied } from "../../contracts";
 import type { EngineOptions } from "@lane-pilot/workflow-engine";
-import { goalsSha } from "@lane-pilot/workflow-engine";
 import type { GoalAudit } from "@lane-pilot/workflow-engine";
 import type { Field } from "@lane-pilot/workflow-engine";
 import { redactKnown, parseJsonOr } from "@lane-pilot/kit";
@@ -66,7 +65,7 @@ export function createGoalAuditor(ctx: ServerCore, services: Services, agents: W
       inputs: {},
     }) + `\n\n${dataBlock("goals", goals, 8000)}\n\n${dataBlock("run-output", output, 12_000)}\n\n${dataBlock("steps", steps.filter((step) => step.state !== "pending").map(stepLine), 16_000)}`;
     // The same audit (this run, these goals, this many audits before it) is the same helper thread after a reload; a new audit is a new thread.
-    const earlier = (ctx.db.prepare("SELECT COUNT(*) AS n FROM lane_pilot_wf_event WHERE run_id=? AND kind='goal_audit'").get(run.id) as { n: number }).n;
+    const earlier = wfCountRunEvents(ctx.db, run.id, 'goal_audit');
     const result = await agents.run({ rt, workflowRunId: run.id, stepKey: "$goal-audit", nodeId: "goal-audit", spawnKey: `goal-audit:${run.id}:${goalsSha(goals)}:${earlier}`, role: "auditor", title: "goal audit", prompt, fields: FIELDS, signal });
     const verdicts = Array.isArray(result.output.verdicts) ? result.output.verdicts as Array<Record<string, unknown>> : [];
     const met: string[] = [], unmet: GoalAudit["unmet"] = [];

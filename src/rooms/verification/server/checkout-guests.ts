@@ -1,4 +1,5 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
+import { activeRunForWorkspacePath } from "../../storage";
 import { isNotFound, orMiss } from "@lane-pilot/kit";
 import type { LanePilotDatabase } from "../../storage";
 import { resolve } from "node:path";
@@ -18,10 +19,7 @@ type Kv = BbPluginApi["storage"]["kv"];
 
 /** The open Lane Pilot run that merges into this folder, if any. */
 export function activeRunFor(db: LanePilotDatabase, path: string): { id: string; pmThreadId: string | null } | null {
-  const row = db.prepare(`SELECT r.id, r.pm_thread_id AS pmThreadId FROM lane_pilot_run r
-    WHERE r.closed_at IS NULL AND r.writer_workspace_path=? AND EXISTS(
-      SELECT 1 FROM lane_pilot_attempt a WHERE a.run_id=r.id AND a.updated_at > ?)
-    ORDER BY r.updated_at DESC LIMIT 1`).get(resolve(path), Date.now() - 24 * 3600_000) as { id: string; pmThreadId: string | null } | undefined;
+  const row = activeRunForWorkspacePath(db, resolve(path), Date.now() - 24 * 3600_000);
   return row ?? null;
 }
 

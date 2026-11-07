@@ -1,5 +1,5 @@
 import { observeStageChild, waitThreadIdle } from "@lane-pilot/thread-observe";
-import { isOffered, routeIntent, type NodeExecutor, type StepContext, type Workflow } from "@lane-pilot/workflow-engine";
+import { isOffered, routeIntent, type NodeExecutor, type StepContext, type Workflow, wfErrandSpawnRunOfThread, wfWorkflowIdOfRun } from "@lane-pilot/workflow-engine";
 import { bestEffort, redactKnown } from "@lane-pilot/kit";
 import { z } from "zod";
 
@@ -216,10 +216,9 @@ export function mountErrandGraph(ctx: ServerCore, services: Services, core: Erra
   }
   /** The errand run whose helper thread this is; null for a thread no errand run made (one an earlier version started). */
   function runOfThread(threadId: string): string | null {
-    const row = db.prepare("SELECT run_id FROM lane_pilot_wf_effect WHERE kind='errand.spawn' AND state='done' AND json_extract(result_json,'$.threadId')=?").get(threadId) as { run_id: string } | undefined;
-    return row?.run_id ?? null;
+    return wfErrandSpawnRunOfThread(db, threadId);
   }
-  const isErrandRun = (runId: string): boolean => (db.prepare("SELECT workflow_id FROM lane_pilot_wf_run WHERE id=?").get(runId) as { workflow_id: string } | undefined)?.workflow_id === ERRAND_WORKFLOW;
+  const isErrandRun = (runId: string): boolean => wfWorkflowIdOfRun(db, runId) === ERRAND_WORKFLOW;
 
   registerObservedTool(bb.agents, {
     name: "lane_pilot_errand", startsWork: true,
