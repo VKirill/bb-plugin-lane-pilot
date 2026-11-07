@@ -36,6 +36,9 @@ import { MERGE_TRIES, createRepairWorktree, placeThread, releaseWorktree, settle
 import { readRepairRecord, selfRepairStatus, STATE_KEY } from "./report";
 import type { Incident, PmLastOwnerAt, RepairWorktree, SelfRepairConfig, SelfRepairState, SignatureRecord, Verdict } from "./types";
 import {SELF_REPAIR} from "../../contracts";
+import { attemptRunAndThread, listFailedAttemptRows, listRecentFailedAttemptRows, listStaleAttemptsInState, listStaleOpenStages, listStaleQueuedAttempts, runPmThreadId } from "../../storage";
+import { listOkTriageOrigins, listOrchestratorTriages } from "@lane-pilot/run-insights";
+import { wfRunStatus } from "@lane-pilot/workflow-engine";
 
 /**
  * Self-repair: every 15 minutes Lane Pilot looks for failures that are its own fault (triage origin
@@ -73,6 +76,7 @@ const PM_TELL_RULE = "Tell a PM thread only when that PM has to do something now
 const STAGE_MS = 3_600_000;
 const REPEAT_TASKS = 3;
 /** An attempt at work for the queued-attempt check: every holding state but a queued one. */
+const WORKING_ATTEMPT_STATE_LIST = OPEN_ATTEMPT_STATES.filter((state) => state !== "queued");
 const WORKING_ATTEMPT_STATES = OPEN_ATTEMPT_STATES.filter((state) => state !== "queued").map((state) => `'${state}'`).join(",");
 const FAILED_STATES = FAILED_ATTEMPT_STATES.map((state) => `'${state}'`).join(",");
 /** Stops by design: a question for the PM, a dependency that ended blocked, or a turn the provider cut off (writer_stream_error). */
@@ -263,7 +267,7 @@ export function createSelfRepair(ctx: ServerCore, deps: RepairDeps, engineOf?: (
   /** Whether the graph run of a repair is still going: while it is, the watcher's own passes leave the record alone. */
   function runIsLive(runId: string | null | undefined): boolean {
     if (!runId) return false;
-    try { const row = db.prepare("SELECT status FROM lane_pilot_wf_run WHERE id=?").get(runId) as { status: string } | undefined; return row?.status === "running" || row?.status === "waiting"; }
+    try { const status = wfRunStatus(db as never, runId); return status === "running" || status === "waiting"; }
     catch { return false; }
   }
 
@@ -286,24 +290,21 @@ export function createSelfRepair(ctx: ServerCore, deps: RepairDeps, engineOf?: (
   async function collect(since: number, cfg: SelfRepairConfig): Promise<Incident[]> {
     const ignored = new Set([...cfg.ignoreProjects, ...DRILL_SANDBOX_PROJECT_IDS]);
     const out: Incident[] = [];
-    const runPm = (runId: string) => (db.prepare("SELECT pm_thread_id FROM lane_pilot_run WHERE id=?").get(runId) as { pm_thread_id: string | null } | undefined)?.pm_thread_id ?? null;
-    const triage = db.prepare(`SELECT t.project_id, t.run_id, t.task_id, t.attempt_id, t.reason, t.triaged_at, t.failed_at, a.thread_id FROM lane_pilot_failure_triage t
-      LEFT JOIN lane_pilot_attempt a ON a.id=t.attempt_id WHERE t.origin='orchestrator' AND t.status='ok' AND t.triaged_at > ?`).all(since) as Array<{ project_id: string; run_id: string; task_id: string; attempt_id: string; reason: string; triaged_at: number; failed_at: number; thread_id: string | null }>;
+    const runPm = (runId: string) => runPmThreadId(db, runId);
+    const triage = listOrchestratorTriages(db as never, since).map((row) => ({ ...row, thread_id: attemptRunAndThread(db, row.attempt_id)?.thread_id ?? null }));
     for (const row of triage) {
       if (ignored.has(row.project_id) || NOT_A_FAULT.test(row.reason)) continue;
       out.push({ signature: reasonSignature("triage", row.reason), kind: "triage", projectId: row.project_id, runId: row.run_id, taskId: row.task_id,
         attemptId: row.attempt_id, pmThreadId: runPm(row.run_id), writerThreadId: row.thread_id, reason: row.reason, at: row.failed_at });
     }
-    const blocked = db.prepare(`SELECT a.id, a.run_id, a.task_id, a.thread_id, a.reason, a.updated_at, r.project_id FROM lane_pilot_attempt a
-      JOIN lane_pilot_run r ON r.id=a.run_id WHERE a.state IN (${FAILED_STATES}) AND a.updated_at > ?`).all(since) as Array<{ id: string; run_id: string; task_id: string; thread_id: string | null; reason: string | null; updated_at: number; project_id: string }>;
+    const blocked = listFailedAttemptRows(db, FAILED_ATTEMPT_STATES, since);
     for (const row of blocked) {
       if (ignored.has(row.project_id) || !row.reason || !SYSTEM_REASON.test(row.reason)) continue;
       if (out.some((item) => item.attemptId === row.id)) continue;
       out.push({ signature: reasonSignature("blocked", row.reason), kind: "blocked", projectId: row.project_id, runId: row.run_id, taskId: row.task_id,
         attemptId: row.id, pmThreadId: runPm(row.run_id), writerThreadId: row.thread_id, reason: row.reason, at: row.updated_at });
     }
-    const running = db.prepare(`SELECT a.id, a.run_id, a.task_id, a.thread_id, a.updated_at, r.project_id FROM lane_pilot_attempt a
-      JOIN lane_pilot_run r ON r.id=a.run_id WHERE a.state='running' AND a.updated_at < ?`).all(Date.now() - STUCK_MS) as Array<{ id: string; run_id: string; task_id: string; thread_id: string | null; updated_at: number; project_id: string }>;
+    const running = listStaleAttemptsInState(db, "running", Date.now() - STUCK_MS);
     const now = Date.now();
     for (const row of running) {
       if (ignored.has(row.project_id) || !row.thread_id) continue;
@@ -326,12 +327,7 @@ export function createSelfRepair(ctx: ServerCore, deps: RepairDeps, engineOf?: (
     // Nothing has run for hours, not only at this pass: an attempt that ended within the window freed the queue, whose
     // dispatch still runs the baseline with the attempt «queued» (Vampirism Fire 2026-10-24/26: six attempts queued behind
     // a depends_on or an owns_paths overlap were reported 1–4 min after that attempt was accepted, and ran minutes later).
-    const queued = db.prepare(`SELECT a.id, a.run_id, a.task_id, a.updated_at, r.project_id, t.contract_json FROM lane_pilot_attempt a
-      JOIN lane_pilot_run r ON r.id=a.run_id LEFT JOIN lane_pilot_task t ON t.id=a.task_id
-      WHERE a.state='queued' AND a.updated_at < ? AND r.state='running'
-        AND NOT EXISTS (SELECT 1 FROM lane_pilot_attempt b WHERE b.run_id=a.run_id AND b.state IN (${WORKING_ATTEMPT_STATES}))
-        AND NOT EXISTS (SELECT 1 FROM lane_pilot_attempt b WHERE b.run_id=a.run_id AND b.state<>'queued' AND b.updated_at >= ?)`)
-      .all(now - QUEUED_MS, now - QUEUED_MS) as Array<{ id: string; run_id: string; task_id: string; updated_at: number; project_id: string; contract_json: string | null }>;
+    const queued = listStaleQueuedAttempts(db, now - QUEUED_MS, WORKING_ATTEMPT_STATE_LIST) as Array<{ id: string; run_id: string; task_id: string; updated_at: number; project_id: string; contract_json: string | null }>;
     for (const row of queued) {
       if (ignored.has(row.project_id)) continue;
       // A task that waits for a depends_on that ended blocked waits for the PM to send it again, by design up to six hours
@@ -344,10 +340,7 @@ export function createSelfRepair(ctx: ServerCore, deps: RepairDeps, engineOf?: (
     }
     // A stage still pending or running an hour after its task's last attempt ended: nobody will finish it. An attempt
     // being spawned or canceled has not ended: its stages waited in the queue with it.
-    const stages = db.prepare(`SELECT s.run_id, s.task_id, s.stage_id, s.state, s.updated_at, r.project_id FROM lane_pilot_stage_receipt s JOIN lane_pilot_run r ON r.id=s.run_id
-      WHERE s.state IN ('pending','running') AND s.updated_at < ? AND r.state='running'
-        AND NOT EXISTS (SELECT 1 FROM lane_pilot_attempt a WHERE a.run_id=s.run_id AND a.task_id=s.task_id AND a.state IN (${OPEN_ATTEMPT_STATES.map((state) => `'${state}'`).join(",")}))
-        AND EXISTS (SELECT 1 FROM lane_pilot_attempt a WHERE a.run_id=s.run_id AND a.task_id=s.task_id)`).all(now - STAGE_MS) as Array<{ run_id: string; task_id: string; stage_id: string; state: string; updated_at: number; project_id: string }>;
+    const stages = listStaleOpenStages(db, now - STAGE_MS, OPEN_ATTEMPT_STATES);
     for (const row of stages) {
       if (ignored.has(row.project_id)) continue;
       out.push({ signature: reasonSignature("stage", "stage left open after its task's attempts ended"), kind: "stage", projectId: row.project_id,
@@ -409,10 +402,8 @@ export function createSelfRepair(ctx: ServerCore, deps: RepairDeps, engineOf?: (
     // moved down the writer chain by design (proj_acpiaqf4wq 2026-10-11: three grok-4.6 «Plan usage at 100%» hand-offs,
     // each followed by an accepted fallback attempt, raised a repair).
     // A writer's own stray files and its own red checks are its work, told in its thread (writerStrayFiles, writerRedCheck).
-    const recent = db.prepare(`SELECT a.id, a.run_id, a.task_id, a.thread_id, a.reason, a.failure_code, a.updated_at, r.project_id, t.contract_json, ft.origin AS triage_origin FROM lane_pilot_attempt a
-      JOIN lane_pilot_run r ON r.id=a.run_id LEFT JOIN lane_pilot_task t ON t.id=a.task_id
-      LEFT JOIN lane_pilot_failure_triage ft ON ft.attempt_id=a.id AND ft.project_id=r.project_id AND ft.status='ok'
-      WHERE a.state IN (${FAILED_STATES}) AND a.updated_at > ?`).all(now - 86_400_000) as Array<{ id: string; run_id: string; task_id: string; thread_id: string | null; reason: string | null; failure_code: string | null; updated_at: number; project_id: string; contract_json: string | null; triage_origin: string | null }>;
+    const triages = new Map(listOkTriageOrigins(db as never).map((row) => [`${row.project_id}|${row.attempt_id}`, row.origin]));
+    const recent = listRecentFailedAttemptRows(db, FAILED_ATTEMPT_STATES, now - 86_400_000).map((row) => ({ ...row, triage_origin: triages.get(`${row.project_id}|${row.id}`) ?? null }));
     const patterns = new Map<string, typeof recent>();
     for (const row of recent) {
       if (ignored.has(row.project_id) || !row.reason || SYSTEM_REASON.test(row.reason) || NOT_A_FAULT.test(row.reason)

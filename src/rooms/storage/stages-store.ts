@@ -249,3 +249,54 @@ export function stageReceiptAttemptState(db: LanePilotDatabase, runId: string, t
   return db.prepare("SELECT state, attempt FROM lane_pilot_stage_receipt WHERE run_id=? AND task_id=? AND stage_id=?")
     .get(runId, taskId, stageId) as { state: string; attempt: number } | undefined;
 }
+
+export function latestStageResultJson(db: LanePilotDatabase, runId: string, taskId: string, stageId: string): string | null {
+  return (db.prepare("SELECT result_json FROM lane_pilot_stage_receipt WHERE run_id=? AND task_id=? AND stage_id=? ORDER BY updated_at DESC LIMIT 1")
+    .get(runId, taskId, stageId) as { result_json: string | null } | undefined)?.result_json ?? null;
+}
+
+export function listStageReceiptsForProject(db: LanePilotDatabase, projectId: string, stageId: string, since: number): Array<{ task_id: string; state: string; decision: string | null; model: string }> {
+  return db.prepare(`SELECT s.task_id, s.state, json_extract(s.result_json,'$.decision') decision,
+      COALESCE(NULLIF(s.model,''), json_extract(s.result_json,'$.reviewer.model'), 'unknown') model
+    FROM lane_pilot_stage_receipt s JOIN lane_pilot_run r ON r.id=s.run_id WHERE r.project_id=? AND s.stage_id=? AND s.updated_at>=?`)
+    .all(projectId, stageId, since) as Array<{ task_id: string; state: string; decision: string | null; model: string }>;
+}
+
+export function listReviewStageRows(db: LanePilotDatabase, runId: string, taskId: string): Array<{ stage_id: string; state: string; reason: string | null; result_json: string | null }> {
+  return db.prepare(`SELECT stage_id, state, reason, result_json FROM lane_pilot_stage_receipt
+    WHERE run_id=? AND task_id=? AND stage_id IN ('plan-critique','code-critique','night-review','verification')`)
+    .all(runId, taskId) as Array<{ stage_id: string; state: string; reason: string | null; result_json: string | null }>;
+}
+
+export function listFailedStageReceipts(db: LanePilotDatabase, runId: string, taskId: string): Array<{ stage_id: string; state: string; reason: string | null }> {
+  return db.prepare("SELECT stage_id, state, reason FROM lane_pilot_stage_receipt WHERE run_id=? AND task_id=? AND state IN ('failed','blocked')")
+    .all(runId, taskId) as Array<{ stage_id: string; state: string; reason: string | null }>;
+}
+
+export function listStageReceiptStates(db: LanePilotDatabase, runId: string, taskId: string): Array<{ stage_id: string; state: string; input_sha256: string }> {
+  return db.prepare("SELECT stage_id, state, input_sha256 FROM lane_pilot_stage_receipt WHERE run_id=? AND task_id=?")
+    .all(runId, taskId) as Array<{ stage_id: string; state: string; input_sha256: string }>;
+}
+
+export function listStaleOpenStages(db: LanePilotDatabase, updatedBefore: number, openAttemptStates: readonly string[]): Array<{ run_id: string; task_id: string; stage_id: string; state: string; updated_at: number; project_id: string }> {
+  return db.prepare(`SELECT s.run_id, s.task_id, s.stage_id, s.state, s.updated_at, r.project_id FROM lane_pilot_stage_receipt s JOIN lane_pilot_run r ON r.id=s.run_id
+    WHERE s.state IN ('pending','running') AND s.updated_at < ? AND r.state='running'
+      AND NOT EXISTS (SELECT 1 FROM lane_pilot_attempt a WHERE a.run_id=s.run_id AND a.task_id=s.task_id AND a.state IN (${openAttemptStates.map(() => "?").join(",")}))
+      AND EXISTS (SELECT 1 FROM lane_pilot_attempt a WHERE a.run_id=s.run_id AND a.task_id=s.task_id)`)
+    .all(updatedBefore, ...openAttemptStates) as Array<{ run_id: string; task_id: string; stage_id: string; state: string; updated_at: number; project_id: string }>;
+}
+
+export function listProjectsWithCriticReceipts(db: LanePilotDatabase, since: number): string[] {
+  return (db.prepare(`SELECT DISTINCT r.project_id AS id FROM lane_pilot_stage_receipt s JOIN lane_pilot_run r ON r.id=s.run_id
+    WHERE s.updated_at>=? AND s.stage_id IN ('plan-critique','code-critique','specialist-review')`).all(since) as Array<{ id: string }>).map((row) => row.id);
+}
+
+export function gateEventFailureCounts(db: LanePilotDatabase, runId: string, taskId: string): Array<{ gate: string; status: string; n: number }> {
+  return db.prepare("SELECT gate, status, count(*) AS n FROM lane_pilot_gate_event WHERE run_id=? AND task_id=? AND status IN ('rejected','failed') GROUP BY gate, status")
+    .all(runId, taskId) as Array<{ gate: string; status: string; n: number }>;
+}
+
+export function failedStageCounts(db: LanePilotDatabase, runId: string, taskId: string): Array<{ stage_id: string; n: number }> {
+  return db.prepare("SELECT stage_id, count(*) AS n FROM lane_pilot_stage_receipt WHERE run_id=? AND task_id=? AND state IN ('failed','blocked') GROUP BY stage_id")
+    .all(runId, taskId) as Array<{ stage_id: string; n: number }>;
+}

@@ -1,14 +1,12 @@
 type StatsDb = { prepare(sql:string):{ all(...args:unknown[]):unknown[] } };
+import { listAttemptBriefRows } from "../storage";
 
 /**
  * How briefs and their outcomes compare over a period: brief size, tasks accepted on their first attempt, attempts
  * rejected for touching paths outside owns_paths. Run it for a period before and after a brief change.
  */
 export function writerBriefStats(db:StatsDb, projectId:string, since:number, until:number) {
-  const rows = db.prepare(`SELECT a.id, a.run_id, a.task_id, a.state, a.reason, a.attempt_no, t.trace_json FROM lane_pilot_attempt a
-    JOIN lane_pilot_run r ON r.id=a.run_id LEFT JOIN lane_pilot_attempt_reasoning t ON t.attempt_id=a.id
-    WHERE r.project_id=? AND a.created_at>=? AND a.created_at<? ORDER BY a.created_at`).all(projectId, since, until) as Array<{
-      id:string; run_id:string; task_id:string; state:string; reason:string|null; attempt_no:number; trace_json:string|null }>;
+  const rows = listAttemptBriefRows(db as never, projectId, since, until);
   const contexts:number[] = [], prompts:number[] = [];
   for (const row of rows) {
     let trace:{ dispatchContext?:{ memoryText?:string; pmReadContext?:string; executionPacket?:string; rulesText?:string; promptChars?:number } } | null = null;

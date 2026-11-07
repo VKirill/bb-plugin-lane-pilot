@@ -403,3 +403,42 @@ export function listMemory(db: MemoryDatabase, projectId: string, filter: { kind
   return (db.prepare(`SELECT ${cols("m.")} FROM lane_pilot_memory m WHERE m.project_id=? AND m.audience=? AND m.personal_bot=? ${where.map((part) => `AND ${part}`).join(" ")} AND ${visibility(db, "m", options)}
     ORDER BY m.created_at DESC LIMIT ?`).all(projectId, audience, personalBot, ...args, limit) as Row[]).map(toRecord);
 }
+
+// ---- foreign-SQL reads moved home from the rooms (same SQL text, named) ----
+
+/** Fill of every project's memory shelf, by kind (the learning housekeeping's budget report). */
+export function memoryFillRows(db: Database.Database): Array<{ projectId: string; kind: string; n: number; bytes: number | null; used: number | null }> {
+  return db.prepare(`SELECT project_id AS projectId, kind, count(*) AS n, sum(length(CAST(content AS BLOB))) AS bytes, sum(CASE WHEN use_count>0 THEN 1 ELSE 0 END) AS used
+    FROM lane_pilot_memory WHERE status='active' GROUP BY project_id, kind`).all() as Array<{ projectId: string; kind: string; n: number; bytes: number | null; used: number | null }>;
+}
+
+/** Hidden memory rows of every project, by status (the same report's shadow count). */
+export function memoryHiddenRows(db: Database.Database): Array<{ projectId: string; status: string; n: number }> {
+  return db.prepare("SELECT project_id AS projectId, status, count(*) AS n FROM lane_pilot_memory WHERE status<>'active' GROUP BY project_id, status").all() as Array<{ projectId: string; status: string; n: number }>;
+}
+
+/** The oldest maintainer core record no one accepted yet and that is not a rule (the insights' unused-convention pick). */
+export function firstUnusedCoreRecordId(db: Database.Database, projectId: string): string | null {
+  return (db.prepare(`SELECT id FROM lane_pilot_memory WHERE project_id=? AND kind='core' AND status='active' AND origin='maintainer'
+    AND accepted_count=0 AND concepts_json NOT LIKE '%"rule"%' ORDER BY created_at, id LIMIT 1`).get(projectId) as { id: string } | undefined)?.id ?? null;
+}
+
+/** Removes a record and its indexes (the rules' delete keeps them together). */
+export function deleteMemoryRecord(db: Database.Database, projectId: string, id: string): void {
+  dropMemoryIndexes(db, projectId, id);
+  db.prepare("DELETE FROM lane_pilot_memory WHERE project_id=? AND id=?").run(projectId, id);
+}
+
+/** Active records of a project, newest first (the records tab's list). */
+export function listActiveMemoryRows(db: Database.Database, projectId: string, limit: number): Array<{
+  id: string; kind: "core" | "note"; audience: string; content: string; concepts_json: string; created_at: number;
+  use_count: number; accepted_count: number; origin_task_id: string | null; origin: string; scope_json: string | null; sources: number;
+}> {
+  return db.prepare("SELECT id, kind, audience, content, concepts_json, created_at, use_count, accepted_count, origin_task_id, origin, scope_json, json_array_length(COALESCE(verification_json,'[]')) AS sources FROM lane_pilot_memory WHERE project_id=? AND status='active' ORDER BY created_at DESC LIMIT ?")
+    .all(projectId, limit) as Array<{ id: string; kind: "core" | "note"; audience: string; content: string; concepts_json: string; created_at: number; use_count: number; accepted_count: number; origin_task_id: string | null; origin: string; scope_json: string | null; sources: number }>;
+}
+
+/** A record's concepts_json (the delete guard reads it for the rule tag). */
+export function memoryConceptsJson(db: Database.Database, projectId: string, id: string): string | null {
+  return (db.prepare("SELECT concepts_json FROM lane_pilot_memory WHERE project_id=? AND id=?").get(projectId, id) as { concepts_json: string } | undefined)?.concepts_json ?? null;
+}

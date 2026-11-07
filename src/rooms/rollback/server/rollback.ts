@@ -13,6 +13,7 @@ import {
 } from "../store";
 
 import type { RunVerification } from "../../platform/server";
+import { listAcceptedAttemptsForTask, listAttemptStatesForTask } from "../../storage";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {
@@ -171,7 +172,7 @@ export function createRollback(ctx: ServerCore, services: Services) {
 
   /** The task's accepted attempts, newest first. */
   function acceptedAttempts(taskId: string): Array<{ id: string; updatedAt: number }> {
-    return (db.prepare("SELECT id, updated_at AS updatedAt FROM lane_pilot_attempt WHERE task_id=? AND state='accepted' ORDER BY updated_at DESC, rowid DESC").all(taskId) as Array<{ id: string; updatedAt: number }>);
+    return listAcceptedAttemptsForTask(db, taskId);
   }
 
   type Change = { attemptId: string; mergeCommit: string; mergeParent: string | null; changed: ChangedFile[] };
@@ -410,7 +411,7 @@ export function createRollback(ctx: ServerCore, services: Services) {
   function status(ref: string) {
     const attempt = getAttempt(db, ref);
     const taskId = attempt ? attempt.task_id : ref;
-    const attempts = (db.prepare("SELECT id, state FROM lane_pilot_attempt WHERE task_id=? ORDER BY attempt_no").all(taskId) as Array<{ id: string; state: string }>)
+    const attempts = listAttemptStatesForTask(db, taskId)
       .map((row) => ({ ...row, change: getAttemptChange(db, row.id) ?? null }));
     return { taskId, attempts, receipts: listTaskReceipts(db, taskId) };
   }

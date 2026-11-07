@@ -2,6 +2,7 @@ import { maskPii } from "../anamnesis";
 import { defineJudgment, noul, noulOf, score } from "@lane-pilot/jev";
 import type { Jev } from "@lane-pilot/jev";
 import { DAY_MS, insertSignal, listSignals, type Db } from "./store";
+import { listAcceptedAttemptsWithThread, listComplexTaskRows } from "../storage";
 
 /**
  * Other things Jev can read from what Lane Pilot already has (T8, the table of section 4 of the design). Each is an observation:
@@ -82,9 +83,8 @@ export type SignalDeps = {
 export async function scanPromises(deps: SignalDeps, limit = 20): Promise<{ read: number; found: number }> {
   const jev = deps.jev(), now = deps.now?.() ?? Date.now();
   if (!jev || !jev.enabled() || !deps.finalAnswer) return { read: 0, found: 0 };
-  const rows = deps.db.prepare(`SELECT a.id, a.thread_id AS threadId, r.project_id AS projectId FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
-    WHERE a.state='accepted' AND a.thread_id IS NOT NULL AND a.updated_at>=? AND NOT EXISTS (SELECT 1 FROM lane_pilot_learning_signal s WHERE s.kind='unkept_promise' AND s.ref=a.id)
-    ORDER BY a.updated_at DESC LIMIT ?`).all(now - 2 * DAY_MS, limit) as Array<{ id: string; threadId: string; projectId: string }>;
+  const seen = new Set((deps.db.prepare("SELECT ref FROM lane_pilot_learning_signal WHERE kind='unkept_promise'").all() as Array<{ ref: string }>).map((row) => row.ref));
+  const rows = listAcceptedAttemptsWithThread(deps.db as never, now - 2 * DAY_MS).filter((row) => !seen.has(row.id)).slice(0, limit);
   let read = 0, found = 0;
   for (const row of rows) {
     const answer = await deps.finalAnswer(row.threadId).catch((cause: unknown) => { deps.log?.(`learning: final answer of ${row.threadId} unreadable, skipped: ${cause instanceof Error ? cause.message : String(cause)}`); return undefined; });
@@ -117,12 +117,8 @@ export async function noteOwnerQuestion(deps: SignalDeps, input: { projectId: st
 export async function scanComplexity(deps: SignalDeps, limit = 20): Promise<{ read: number }> {
   const jev = deps.jev(), now = deps.now?.() ?? Date.now();
   if (!jev || !jev.enabled()) return { read: 0 };
-  const rows = deps.db.prepare(`SELECT t.id, t.contract_json AS contract, r.project_id AS projectId, count(a.id) AS attempts, min(a.created_at) AS first, max(a.updated_at) AS last
-    FROM lane_pilot_task t JOIN lane_pilot_run r ON r.id=t.run_id JOIN lane_pilot_attempt a ON a.run_id=t.run_id AND a.task_id=t.id
-    WHERE t.created_at>=? AND NOT EXISTS (SELECT 1 FROM lane_pilot_learning_signal s WHERE s.kind='complexity' AND s.ref=t.id)
-      AND EXISTS (SELECT 1 FROM lane_pilot_attempt b WHERE b.run_id=t.run_id AND b.task_id=t.id AND b.state='accepted')
-      AND NOT EXISTS (SELECT 1 FROM lane_pilot_attempt c WHERE c.run_id=t.run_id AND c.task_id=t.id AND c.state IN ('queued','spawn_requested','running','cancel_requested'))
-    GROUP BY t.id ORDER BY t.created_at DESC LIMIT ?`).all(now - 7 * DAY_MS, limit) as Array<{ id: string; contract: string; projectId: string; attempts: number; first: number; last: number }>;
+  const seen = new Set((deps.db.prepare("SELECT ref FROM lane_pilot_learning_signal WHERE kind='complexity'").all() as Array<{ ref: string }>).map((row) => row.ref));
+  const rows = listComplexTaskRows(deps.db as never, now - 7 * DAY_MS).filter((row) => !seen.has(row.id)).slice(0, limit);
   let read = 0;
   for (const row of rows) {
     let contract: Record<string, unknown> = {};

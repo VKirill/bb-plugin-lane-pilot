@@ -3,6 +3,8 @@ import type { LanePilotDatabase } from "../storage";
 import { ERRAND_EPISODE_TABLE } from "../contracts/server";
 import { errandStem, errandTitle, kindOf, routeConfidence } from "./logic";
 import { errandOutcome, type ErrandOutcome, type ErrandVerifiedOutcome } from "../contracts/server";
+import { latestErrandEpisodeRows, listErrandEpisodeRunIds } from "../storage";
+import { listWfRunsByIdsOrdered, listWfRunsSince } from "@lane-pilot/workflow-engine";
 
 /**
  * The errand diagnosis (stage-1 stream F, plan R7): what the errands of a period came to, what they cost, where they
@@ -88,12 +90,16 @@ function diagRuns(db: Db, input: { days: number; projectId?: string | undefined 
   const episodeSelect = episodeCols.length ? `, ${episodeCols.map((name) => `e.${name}`).join(", ")}` : "";
   const select = episodeSelect;
   const routed = columns.size ? "OR e.run_id IS NOT NULL" : "";
-  const rows = db.prepare(`
-    SELECT r.id, r.project_id, r.workflow_id, r.status, r.reason, r.inputs_json, r.output_json, r.tokens_used, r.cost_micro_usd, r.created_at, r.updated_at${select}
-    FROM lane_pilot_wf_run r ${join}
-    WHERE r.created_at>=? AND (r.workflow_id='errand' ${routed})
-      ${input.projectId ? "AND r.project_id=?" : ""}
-    ORDER BY r.created_at ASC`).all(since, ...(input.projectId ? [input.projectId] : [])) as RunDiagRow[];
+  const errandRows = listWfRunsSince(db as never, { since, projectId: input.projectId ?? null });
+  const errandIds = new Set(errandRows.map((row) => row.id));
+  const routedIds = columns.size ? [...listErrandEpisodeRunIds(db as never)].filter((id) => !errandIds.has(id)) : [];
+  const all = [...errandRows, ...listWfRunsByIdsOrdered(db as never, routedIds, input.projectId ?? null).filter((row) => row.created_at >= since)].sort((a, b) => a.created_at - b.created_at);
+  const episodes = columns.size ? latestErrandEpisodeRows(db as never, all.map((row) => row.id)) : new Map<string, Record<string, unknown>>();
+  const rows = all.map((row) => {
+    const episode = episodes.get(row.id);
+    const extra = Object.fromEntries(episodeCols.map((name) => [name, episode?.[name] ?? null]));
+    return { ...row, ...extra } as unknown as RunDiagRow;
+  });
   return { rows, columns };
 }
 

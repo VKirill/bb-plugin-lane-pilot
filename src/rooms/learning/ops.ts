@@ -2,6 +2,7 @@ import { loadConfig, parseConfigWords, saveConfig, type LearningConfig } from ".
 import { DECISIONS_USD_PER_MILLION_INPUT } from "./opinion";
 import { OWNER_MESSAGE_JUDGMENT_ID } from "./judgment";
 import { DAY_MS, agreementReport, labelObservation, listItems, listSignals, reviewSample, reviewStats, signalCounts, startOfDay, usageToday, type Db, type Item, type ItemKind, type ItemState } from "./store";
+import { jevCostStats } from "@lane-pilot/jev";
 
 /**
  * What the owner (or the PM, asked by the owner) reads and changes: the status of the learning with the evidence for switching it on,
@@ -26,7 +27,7 @@ export function createOps(deps: OpsDeps) {
   const now = deps.now ?? Date.now;
 
   function jevCost(since: number) {
-    const row = deps.db.prepare(`SELECT count(*) AS n, sum(tokens_in) AS tin, avg(latency_ms) AS ms FROM lane_pilot_jev_receipt WHERE judgment=? AND at>=?`).get(OWNER_MESSAGE_JUDGMENT_ID, since) as { n: number; tin: number | null; ms: number | null };
+    const row = jevCostStats(deps.db as never, OWNER_MESSAGE_JUDGMENT_ID, since);
     return { requests: row.n, tokensIn: row.tin ?? 0, avgLatencyMs: row.ms === null ? null : Math.round(row.ms) };
   }
 

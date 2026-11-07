@@ -168,3 +168,16 @@ export function openRegressionBriefs(db: BaselineDb, projectId?: string): Array<
   return db.prepare(`SELECT task_id AS taskId, state FROM lane_pilot_regression WHERE state NOT IN ('closed','fixed') ${projectId ? "AND project_id=?" : ""} LIMIT 50`)
     .all(...(projectId ? [projectId] : [])) as Array<{ taskId: string; state: string }>;
 }
+
+export function hasRegressionForTask(db: BaselineDb, taskId: string): boolean {
+  return Boolean(db.prepare("SELECT 1 FROM lane_pilot_regression WHERE kind = 'regression' AND (task_id = ? OR culprit_task = ?) LIMIT 1").get(taskId, taskId));
+}
+
+export function listOpenRegressionRows(db: BaselineDb, limit: number): Array<{ task_id: string; culprit_commit: string | null; culprit_task: string | null }> {
+  return db.prepare("SELECT task_id, culprit_commit, culprit_task FROM lane_pilot_regression WHERE state='open' AND kind='regression' ORDER BY id LIMIT ?")
+    .all(limit) as Array<{ task_id: string; culprit_commit: string | null; culprit_task: string | null }>;
+}
+
+export function countOpenRegressions(db: BaselineDb): number {
+  return (db.prepare("SELECT count(*) AS n FROM lane_pilot_regression WHERE state='open' AND kind='regression'").get() as { n: number }).n;
+}

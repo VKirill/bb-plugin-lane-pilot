@@ -218,3 +218,9 @@ export function listSignals(db: Db, filter: { kind?: string; since?: number; lim
 export function signalCounts(db: Db, since: number): Array<{ kind: string; n: number }> {
   return db.prepare("SELECT kind, count(*) AS n FROM lane_pilot_learning_signal WHERE at>=? GROUP BY kind ORDER BY kind").all(since) as Array<{ kind: string; n: number }>;
 }
+
+/** Reviewed non-sensitive observations of a window (the policy live exam's labeled rows). */
+export function listReviewedObservations(db: Db, since: number): Array<{ id: string; review: "ok" | "wrong"; reviewed_at: number; kind: string | null; final_route: string | null; excerpt: string | null }> {
+  return db.prepare("SELECT id, review, reviewed_at, kind, final_route, excerpt FROM lane_pilot_learning_obs WHERE review IN ('ok','wrong') AND sensitive=0 AND reviewed_at>? ORDER BY reviewed_at")
+    .all(since) as Array<{ id: string; review: "ok" | "wrong"; reviewed_at: number; kind: string | null; final_route: string | null; excerpt: string | null }>;
+}

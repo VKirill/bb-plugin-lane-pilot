@@ -1,4 +1,5 @@
 import type { Db } from "./store";
+import { memoryFillRows, memoryHiddenRows } from "@lane-pilot/memory-core";
 
 /**
  * Housekeeping of the memory the learning feeds (T7).
@@ -25,9 +26,8 @@ export type ShelfFill = {
 const tokensOf = (bytes: number | null) => Math.ceil((bytes ?? 0) / 4);
 
 export function memoryFill(db: Db, budgets: (projectId: string) => { noteBudget: number; coreBudget: number }): ShelfFill[] {
-  const rows = db.prepare(`SELECT project_id AS projectId, kind, count(*) AS n, sum(length(CAST(content AS BLOB))) AS bytes, sum(CASE WHEN use_count>0 THEN 1 ELSE 0 END) AS used
-    FROM lane_pilot_memory WHERE status='active' GROUP BY project_id, kind`).all() as Array<{ projectId: string; kind: string; n: number; bytes: number | null; used: number | null }>;
-  const hidden = db.prepare("SELECT project_id AS projectId, status, count(*) AS n FROM lane_pilot_memory WHERE status<>'active' GROUP BY project_id, status").all() as Array<{ projectId: string; status: string; n: number }>;
+  const rows = memoryFillRows(db as never);
+  const hidden = memoryHiddenRows(db as never);
   const byProject = new Map<string, ShelfFill>();
   const shelf = (projectId: string): ShelfFill => {
     let value = byProject.get(projectId);

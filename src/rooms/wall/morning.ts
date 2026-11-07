@@ -1,5 +1,6 @@
 import { darkTableNames } from "../sma-map";
 import type { WallDb } from "./journal";
+import { cancelCodeCounts } from "../storage";
 
 /**
  * What the night loop did, in three lines for the morning summary (`bb lane-pilot wall morning`, the daily report). Nothing here waits for the
@@ -38,8 +39,7 @@ export function composeWallMorning(db: WallDb, now: number = Date.now(), windowM
  * Codes written before 0.1.396 (NULL) count as `unknown`.
  */
 export function cancelParetoLine(db: WallDb, now: number = Date.now(), windowMs: number = WALL_MORNING_WINDOW_MS): string | null {
-  const rows = db.prepare(`SELECT COALESCE(cancel_code, 'unknown') AS code, COUNT(*) AS n FROM lane_pilot_attempt
-    WHERE state='canceled' AND updated_at>=? GROUP BY code ORDER BY n DESC, code LIMIT 5`).all(now - windowMs) as Array<{ code: string; n: number }>;
+  const rows = cancelCodeCounts(db as never, now - windowMs, 5);
   if (!rows.length) return null;
   return `Отмены за сутки: ${rows.map((row) => `${row.code} ${row.n}`).join(", ")}.`;
 }

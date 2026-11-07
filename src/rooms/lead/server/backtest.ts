@@ -4,6 +4,7 @@ import { listTasksForRun, type LanePilotDatabase } from "../../storage";
 import { TASK_WORDS_KEY, type TaskWord } from "../../tasks";
 import { answerDecision, listDecisions, openDecision, predictDecision } from "./journal";
 import { phaseDecisionId, phaseSituation, WORD_OPTIONS, wordDecisionId, wordSituation } from "./surfaces";
+import { runProjectId } from "../../storage";
 
 /**
  * The backtest (roadmap WP2 acceptance): the decisions the owner already made before the journal existed — his words on tasks
@@ -36,7 +37,7 @@ export async function backtest(db: LanePilotDatabase, kv: Kv, now: number = Date
     const contract = task?.contract as { title?: string; risk?: string; objective?: string; invariants?: string[] } | undefined;
     if (!contract?.title) { skipped.push(`${key}: task not on the hub`); continue; }
     const spec = { ...contract, title: contract.title };
-    const project = (db.prepare("SELECT project_id FROM lane_pilot_run WHERE id=?").get(runId) as { project_id: string } | undefined)?.project_id ?? null;
+    const project = runProjectId(db, runId);
     await replay(wordDecisionId(runId, family), () => openDecision(db, { id: wordDecisionId(runId, family), surface: "words", class: "landing", risk: spec.risk ?? null, projectId: project, runId,
       situation: wordSituation(spec, family), options: WORD_OPTIONS, split: "backtest", createdAt: word.at }, word.at), word.decision, word.text, word.at);
   }

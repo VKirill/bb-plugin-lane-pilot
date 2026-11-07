@@ -1,11 +1,10 @@
 import { z } from "zod";
-import { dropMemoryIndexes, hideRecord, memoryRecordId, parseMemorySettings, searchMemoryRecords, storeMemoryRecords, type MemoryCandidate, type MemorySettings } from "@lane-pilot/memory-core";
+import { deleteMemoryRecord as deleteMemoryRecordCore, dropMemoryIndexes, firstUnusedCoreRecordId, hideRecord, memoryRecordId, parseMemorySettings, searchMemoryRecords, storeMemoryRecords, type MemoryCandidate, type MemorySettings } from "@lane-pilot/memory-core";
 import {
   collectLessonSources, decideRuleProposal, getRuleProposal, lessonCandidates, listRuleProposals, logRuleEvent, parseGoldenCases, repeatedLessons,
   reviseAdoptedRule, reviseRuleProposal, routingHint, runGoldenEval, setRuleTrial, upsertRuleProposals, writerAcceptanceStats, type RuleProposal,
-  upsertLessonProposal, ruleTrialStats,
-} from "@lane-pilot/run-insights";
-import { loadProjectSettings, type LanePilotDatabase } from "../../storage";
+  upsertLessonProposal, ruleTrialStats, listProposalProjectIds } from "@lane-pilot/run-insights";
+import { loadProjectSettings, listActiveProjectIds, type LanePilotDatabase } from "../../storage";
 import { configuredSetting } from "../../contracts/server";
 import { memorySettingsFor } from "../../memory/server";
 import type { InsightsDeps } from "./deps";
@@ -139,9 +138,7 @@ const MAX_CONVENTIONS_EVICTED = 5;
 
 /** The oldest core convention of the memory maintainer that no accepted brief carried: the one a rule may take the room of. */
 function unusedConvention(db: LanePilotDatabase, projectId: string): string | null {
-  const row = db.prepare(`SELECT id FROM lane_pilot_memory WHERE project_id=? AND kind='core' AND status='active' AND origin='maintainer'
-    AND accepted_count=0 AND concepts_json NOT LIKE '%"rule"%' ORDER BY created_at, id LIMIT 1`).get(projectId) as { id: string } | undefined;
-  return row?.id ?? null;
+  return firstUnusedCoreRecordId(db as never, projectId);
 }
 
 /** The night policy (policy/night-policy.json, `rule_trial_apply`) says whether a rule may go on trial without the owner; today it proposes, so the rule waits on the Rules tab. */
@@ -150,9 +147,9 @@ export const nightMayAdopt = (): boolean => authorize({ kind: "rule_adopt" }).ti
 /** Every waiting rule of every project tries to go on trial again, under the same night policy as the scan (Astra F-008 remainder: the start-up pass used to skip it). */
 export function adoptWaitingRules(db: LanePilotDatabase, now = Date.now(), mayAdopt: () => boolean = nightMayAdopt): number {
   if (!mayAdopt()) return 0;
-  const projects = db.prepare("SELECT DISTINCT project_id FROM lane_pilot_rule_proposal WHERE state='proposed'").all() as Array<{ project_id: string }>;
+  const projects = listProposalProjectIds(db, "proposed");
   let adopted = 0;
-  for (const { project_id } of projects) {
+  for (const project_id of projects) {
     for (const row of listRuleProposals(db, project_id, { state: "proposed", limit: 100 })) if (adoptRuleProposal(db, project_id, row.id, now)) adopted++;
   }
   return adopted;
@@ -217,8 +214,7 @@ export function revokeRule(db: LanePilotDatabase, projectId: string, id: string)
 }
 
 export function deleteMemoryRecord(db: LanePilotDatabase, projectId: string, memoryId: string): void {
-  dropMemoryIndexes(db, projectId, memoryId);
-  db.prepare("DELETE FROM lane_pilot_memory WHERE project_id=? AND id=?").run(projectId, memoryId);
+  deleteMemoryRecordCore(db as never, projectId, memoryId);
 }
 
 /**
@@ -258,8 +254,7 @@ export async function sweepLessons(ctx: InsightContext, projectId: string, now =
 }
 
 function activeProjects(db: LanePilotDatabase, since: number): string[] {
-  const rows = db.prepare("SELECT DISTINCT project_id FROM lane_pilot_run WHERE updated_at>=?").all(since) as Array<{ project_id: string }>;
-  return rows.map((row) => row.project_id);
+  return listActiveProjectIds(db, since);
 }
 
 export function mountInsights(ctx: InsightContext, deps: InsightsDeps): void {

@@ -167,6 +167,8 @@ export type RunHistoryRow = {
 };
 
 /** How much of an attempt's reason the run list carries; the full reason stays in the database. */
+export const RUN_TABLE = "lane_pilot_run";
+
 export const SCREEN_REASON_CHARS = 4000;
 
 /** A page of a project's runs, newest first, with their attempts; `pinOpen` adds the runs that are still open beyond the page. */
@@ -268,4 +270,56 @@ export function activeRunForWorkspacePath(db: LanePilotDatabase, path: string, s
     WHERE r.closed_at IS NULL AND r.writer_workspace_path=? AND EXISTS(
       SELECT 1 FROM lane_pilot_attempt a WHERE a.run_id=r.id AND a.updated_at > ?)
     ORDER BY r.updated_at DESC LIMIT 1`).get(path, since) as { id: string; pmThreadId: string | null } | undefined;
+}
+
+export function listActiveProjectIds(db: LanePilotDatabase, since: number): string[] {
+  return (db.prepare("SELECT DISTINCT project_id FROM lane_pilot_run WHERE updated_at>=?").all(since) as Array<{ project_id: string }>).map((row) => row.project_id);
+}
+
+export function runPmThreadId(db: LanePilotDatabase, runId: string): string | null {
+  return (db.prepare("SELECT pm_thread_id FROM lane_pilot_run WHERE id=?").get(runId) as { pm_thread_id: string | null } | undefined)?.pm_thread_id ?? null;
+}
+
+export function runProjectId(db: LanePilotDatabase, runId: string): string | null {
+  return (db.prepare("SELECT project_id FROM lane_pilot_run WHERE id=?").get(runId) as { project_id: string } | undefined)?.project_id ?? null;
+}
+
+export function runClosedAt(db: LanePilotDatabase, runId: string): number | null {
+  return (db.prepare("SELECT closed_at FROM lane_pilot_run WHERE id=?").get(runId) as { closed_at: number | null } | undefined)?.closed_at ?? null;
+}
+
+export function latestOpenPmThreadForProject(db: LanePilotDatabase, projectId: string): string | null {
+  return (db.prepare("SELECT pm_thread_id FROM lane_pilot_run WHERE project_id=? AND closed_at IS NULL AND pm_thread_id IS NOT NULL ORDER BY updated_at DESC LIMIT 1")
+    .get(projectId) as { pm_thread_id: string } | undefined)?.pm_thread_id ?? null;
+}
+
+export function runIdForPmThread(db: LanePilotDatabase, threadId: string): string | null {
+  return (db.prepare("SELECT id FROM lane_pilot_run WHERE pm_thread_id=? LIMIT 1").get(threadId) as { id: string } | undefined)?.id ?? null;
+}
+
+export function latestRunIdForPmThread(db: LanePilotDatabase, threadId: string): string | null {
+  return (db.prepare("SELECT id FROM lane_pilot_run WHERE pm_thread_id=? ORDER BY created_at DESC LIMIT 1").get(threadId) as { id: string } | undefined)?.id ?? null;
+}
+
+export function openRunIdForPmThread(db: LanePilotDatabase, threadId: string): string | null {
+  return (db.prepare("SELECT id FROM lane_pilot_run WHERE pm_thread_id=? AND closed_at IS NULL LIMIT 1").get(threadId) as { id: string } | undefined)?.id ?? null;
+}
+
+export function projectIdForPmThread(db: LanePilotDatabase, threadId: string): string | null {
+  return (db.prepare("SELECT project_id FROM lane_pilot_run WHERE pm_thread_id=? LIMIT 1").get(threadId) as { project_id: string } | undefined)?.project_id ?? null;
+}
+
+export function runStateCounts(db: LanePilotDatabase, projectId: string): Record<string, number> {
+  return Object.fromEntries((db.prepare("SELECT state, COUNT(*) AS n FROM lane_pilot_run WHERE project_id=? GROUP BY state")
+    .all(projectId) as Array<{ state: string; n: number }>).map((row) => [row.state, row.n]));
+}
+
+export function latestAreaWriterBinding(db: LanePilotDatabase, projectId: string, area: string): { hostId: string | null; path: string | null } | undefined {
+  return db.prepare(`SELECT r.writer_host_id AS hostId, r.writer_workspace_path AS path FROM lane_pilot_run r JOIN lane_pilot_task t ON t.run_id=r.id
+    WHERE r.project_id=? AND r.writer_workspace_path IS NOT NULL AND r.writer_host_id IS NOT NULL AND COALESCE(json_extract(t.contract_json,'$.area'),'')=?
+    ORDER BY r.updated_at DESC LIMIT 1`).get(projectId, area) as { hostId: string | null; path: string | null } | undefined;
+}
+
+export function listRunIdsForProject(db: LanePilotDatabase, projectId: string): string[] {
+  return (db.prepare("SELECT id FROM lane_pilot_run WHERE project_id=?").all(projectId) as Array<{ id: string }>).map((row) => row.id);
 }

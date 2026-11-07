@@ -6,5 +6,5 @@ export { ERRAND_KINDS, errandKindRole, hintedErrandKind, isErrandKind } from "./
 export type { ErrandKind, ErrandKindHints } from "./errand-kinds";
 export { ERRAND_KIND_ID, classifyErrand, errandKindJudgment } from "./errand-kind-judgment";
 export type { ErrandKindPick } from "./errand-kind-judgment";
-export { createScheduleStore, scheduleAgentMigrations, scheduleMigrations, taskOf } from "./store";
+export { createScheduleStore, scheduleAgentMigrations, scheduleMigrations, scheduleNameOf, taskOf } from "./store";
 export { fireTimes } from "./time";

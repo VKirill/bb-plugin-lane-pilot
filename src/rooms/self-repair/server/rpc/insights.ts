@@ -1,3 +1,4 @@
+import { listActiveMemoryRows, memoryConceptsJson } from "@lane-pilot/memory-core";
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import { getRuleProposal, listRuleEvents, listRuleProposals, ruleTrialStatsMany, routingHint, setRuleAudience, writerAcceptanceStats, type RuleProposal } from "@lane-pilot/run-insights";
 import { acceptanceStats } from "../../../runs";
@@ -74,8 +75,7 @@ export function insightsRpc(ctx: ServerCore, services: InsightsServices) {
     },
     /** Each folder of the project on each machine: does it keep docs, why, how often, and when tasks last read them. */
     memory_records_list: async ({ projectId }) => {
-      const rows = db.prepare("SELECT id, kind, audience, content, concepts_json, created_at, use_count, accepted_count, origin_task_id, origin, scope_json, json_array_length(COALESCE(verification_json,'[]')) AS sources FROM lane_pilot_memory WHERE project_id=? AND status='active' ORDER BY created_at DESC LIMIT 500")
-        .all(projectId) as Array<{ id: string; kind: "core" | "note"; audience: string; content: string; concepts_json: string; created_at: number; use_count: number; accepted_count: number; origin_task_id: string | null; origin: string; scope_json: string | null; sources: number }>;
+      const rows = listActiveMemoryRows(db as never, projectId, 500);
       return { records: rows.map((row) => {
         let concepts: string[] = [];
         try { concepts = JSON.parse(row.concepts_json) as string[]; } catch { concepts = []; }
@@ -84,9 +84,9 @@ export function insightsRpc(ctx: ServerCore, services: InsightsServices) {
     },
     // A rule's record is removed with the rule (the Rules tab), so the rule never stays «accepted» without reaching writers.
     memory_record_delete: async ({ projectId, id }) => {
-      const row = db.prepare("SELECT concepts_json FROM lane_pilot_memory WHERE project_id=? AND id=?").get(projectId, id) as { concepts_json: string } | undefined;
-      if (!row) return { deleted: false, reason: "not_found" };
-      if (row.concepts_json.includes('"rule"')) return { deleted: false, reason: "rule" };
+      const conceptsJson = memoryConceptsJson(db as never, projectId, id);
+      if (conceptsJson === null) return { deleted: false, reason: "not_found" };
+      if (conceptsJson.includes('"rule"')) return { deleted: false, reason: "rule" };
       deleteMemoryRecord(db, projectId, id);
       return { deleted: true, reason: null };
     },

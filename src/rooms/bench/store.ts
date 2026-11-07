@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type Database from "better-sqlite3";
+import { listBenchStabilityMarks, saveBenchStabilityMarks } from "../storage";
 import { manifestHash, type ManifestTask, type Rejection } from "./types";
 
 export type BenchDb = Pick<Database.Database, "prepare" | "transaction">;
@@ -173,16 +174,11 @@ export type BenchMark = { setId: string; taskId: string; mark: "regression" | "f
  */
 export function saveStabilityMarks(db: BenchDb, input: { setId: string; marks: ReadonlyMap<string, BenchMark["mark"]>; dropIds: readonly string[]; detail?: Record<string, unknown>; now?: number }): void {
   const now = input.now ?? Date.now();
-  const detail = JSON.stringify(input.detail ?? {});
-  const upsert = db.prepare("INSERT INTO lane_pilot_bench_mark(set_id,task_id,mark,detail_json,marked_at) VALUES(?,?,?,?,?) ON CONFLICT(set_id,task_id) DO UPDATE SET mark=excluded.mark, detail_json=excluded.detail_json, marked_at=excluded.marked_at");
-  for (const [taskId, mark] of input.marks) upsert.run(input.setId, taskId, mark, detail, now);
-  const drop = db.prepare("DELETE FROM lane_pilot_bench_mark WHERE set_id=? AND task_id=?");
-  for (const taskId of input.dropIds) drop.run(input.setId, taskId);
+  saveBenchStabilityMarks(db as never, { setId: input.setId, marks: input.marks, dropIds: input.dropIds, detail: input.detail, now });
 }
 
 export function listStabilityMarks(db: BenchDb, setId: string): Map<string, BenchMark["mark"]> {
-  const rows = db.prepare("SELECT task_id, mark FROM lane_pilot_bench_mark WHERE set_id=?").all(setId) as Array<{ task_id: string; mark: BenchMark["mark"] }>;
-  return new Map(rows.map((row) => [row.task_id, row.mark]));
+  return listBenchStabilityMarks(db as never, setId) as Map<string, BenchMark["mark"]>;
 }
 
 export type BenchVerdict = { id: string; setId: string; armA: string; armB: string; harnessId: string | null; passed: boolean; report: unknown; createdAt: number };

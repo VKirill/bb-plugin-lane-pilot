@@ -30,6 +30,7 @@ import {
 import { OPEN_REPAIR_STATES, type NightSummary, type WallClass } from "./types";
 import { jev, type Jev, type JevSettings } from "@lane-pilot/jev";
 import { wallFilterJudgment, type WallFilterDecision, type WallFilterInput } from "./wall-filter-judgment";
+import { acceptedAttemptCiting, acceptedFamilyAttemptId, listVersionedAttemptRows, settingValue } from "../storage";
 
 /** The graph that runs the hunters and the analysis of a wall. */
 export const WALL_HUNT_WORKFLOW = "lp.wall-hunt";
@@ -42,7 +43,7 @@ type Rollback = { attempts: number; lastError: string; lastAt: number; reason: s
 
 /** stats.epoch: walls, reruns and repairs count only records after it (default 2026-10-31); older rows stay but are not counted. */
 const statsEpoch = (db: WallDb): number =>
-  statsEpochMs((db.prepare("SELECT value FROM lane_pilot_project_settings WHERE project_id=? AND key=?").get("*", STATS_EPOCH_SETTING) as { value:string } | undefined)?.value);
+  statsEpochMs(settingValue(db as never, "*", STATS_EPOCH_SETTING) ?? undefined);
 
 export type Scope = { isReal(projectId: string, taskId: string): boolean; scopeOf(projectId: string): RerunScope };
 export type ThreadRun = { text: string | null; tokens: number };
@@ -372,8 +373,8 @@ export function createWall(deps: WallDeps) {
       if (wall.key.startsWith(LOOP_PREFIX)) continue;
       const pack = wall.pack as EvidencePack | null;
       const family = pack?.meta?.family;
-      const accepted = family && pack?.meta?.runId ? (db.prepare("SELECT id FROM lane_pilot_attempt WHERE run_id=? AND (task_id=? OR task_id LIKE ?) AND state='accepted' AND updated_at>? LIMIT 1")
-        .get(pack.meta.runId, family, `${family}.%`, wall.createdAt) as { id: string } | undefined) : undefined;
+      const acceptedId = family && pack?.meta?.runId ? acceptedFamilyAttemptId(db as never, pack.meta.runId, family, wall.createdAt) : null;
+      const accepted = acceptedId ? { id: acceptedId } : undefined;
       if (accepted) {
         updateWall(db, wall.key, { state: "closed", closedAt: now, closedBy: `accepted attempt ${accepted.id}` }, now);
         if (wall.deferralId) { try { ports.deferrals.close(wall.deferralId, `an attempt of the family was accepted: ${accepted.id}`); } catch { /* already closed */ } }
@@ -443,11 +444,10 @@ export function createWall(deps: WallDeps) {
     for (const wall of listWalls(db, { kind: "task", states: ["backlog"] })) {
       const runId = (wall.pack as EvidencePack | null)?.meta?.runId;
       if (!wall.key.startsWith(`${LOOP_PREFIX}topic:`) || !runId) continue;
-      const accepted = db.prepare("SELECT a.id FROM lane_pilot_attempt a JOIN lane_pilot_task t ON t.id=a.task_id WHERE t.run_id=? AND a.state='accepted' AND a.updated_at>? AND instr(t.contract_json, ?)>0 LIMIT 1")
-        .get(runId, wall.createdAt, wall.key) as { id: string } | undefined;
-      if (!accepted) continue;
-      updateWall(db, wall.key, { state: "closed", closedAt: now, closedBy: `accepted attempt ${accepted.id} of the new try that cites it` }, now);
-      notes.push(`closed ${wall.key} by ${accepted.id}`);
+      const acceptedId = acceptedAttemptCiting(db as never, runId, wall.createdAt, wall.key);
+      if (!acceptedId) continue;
+      updateWall(db, wall.key, { state: "closed", closedAt: now, closedBy: `accepted attempt ${acceptedId} of the new try that cites it` }, now);
+      notes.push(`closed ${wall.key} by ${acceptedId}`);
     }
     for (const wall of listWalls(db, { kind: "task", states: ["stopped"] })) {
       const pack = wall.pack as EvidencePack | null;
@@ -807,8 +807,7 @@ export function createWall(deps: WallDeps) {
   function recurrenceOn(classKey: string, version: string, since: number): { failures: number; attempts: number; exposed: boolean } | null {
     const graph = graphRecurrence(db, classKey, version, since);
     if (graph !== undefined) return graph;
-    const rows = db.prepare(`SELECT a.state, a.reason, a.failure_code, r.project_id FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id WHERE a.harness_version=? AND a.created_at>=? AND a.state NOT IN ('queued','spawn_requested','spawn_unknown','running','cancel_requested','canceled')`)
-      .all(version, since) as Array<{ state: string; reason: string | null; failure_code: string | null; project_id: string }>;
+    const rows = listVersionedAttemptRows(db as never, version, since);
     const projects = new Set((db.prepare("SELECT DISTINCT project_id FROM lane_pilot_wall_entry WHERE class_key=?").all(classKey) as Array<{ project_id: string }>).map((row) => row.project_id));
     const failed = (row: { state: string; reason: string | null; failure_code: string | null }) => row.state !== "accepted" && wallSignature(row.state, row.reason, row.failure_code).classKey === classKey;
     const scope = projects.size ? rows.filter((row) => projects.has(row.project_id) || failed(row)) : rows;

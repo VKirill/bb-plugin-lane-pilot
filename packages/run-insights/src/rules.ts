@@ -651,3 +651,75 @@ export function decideRuleTrial(rule: Pick<RuleProposal, "trialState" | "revisio
   if (rule.trialState === "trial" && stats.applied >= RULE_TRIAL.confirmAfterApplied && stats.recurrences.length === 0 && stats.appliedAccepted / stats.applied >= RULE_TRIAL.confirmMinAcceptedRate) return { action: "confirm" };
   return { action: "keep" };
 }
+
+// ---- foreign-SQL reads moved home from the rooms (same SQL text, named) ----
+
+/** Projects that hold a proposal in a state (the night scan's adopt pass). */
+export function listProposalProjectIds(db: RulesDatabase, state: RuleProposalState): string[] {
+  return (db.prepare("SELECT DISTINCT project_id FROM lane_pilot_rule_proposal WHERE state=?").all(state) as Array<{ project_id: string }>).map((row) => row.project_id);
+}
+
+/** A proposal's stored row, unparsed (the live exam's descriptor fields). */
+export function ruleProposalRow(db: RulesDatabase, projectId: string, id: string): { rule: string; always_on: number } | undefined {
+  return db.prepare("SELECT rule, always_on FROM lane_pilot_rule_proposal WHERE project_id=? AND id=?").get(projectId, id) as { rule: string; always_on: number } | undefined;
+}
+
+/** Rule events with their proposal's text, by action, since a time (the live exam's owner decisions). */
+export function listRuleDecisionEvents(db: RulesDatabase, actions: readonly string[], since: number): Array<{ event_id: number; project_id: string; rule_id: string; action: string; detail: string | null; at: number; rule: string; always_on: number }> {
+  return db.prepare(`SELECT e.id AS event_id, e.project_id, e.rule_id, e.action, e.detail, e.at, p.rule, p.always_on
+    FROM lane_pilot_rule_event e JOIN lane_pilot_rule_proposal p ON p.project_id=e.project_id AND p.id=e.rule_id
+    WHERE e.action IN (${actions.map(() => "?").join(",")}) AND e.at>? ORDER BY e.at`).all(...actions, since) as
+    Array<{ event_id: number; project_id: string; rule_id: string; action: string; detail: string | null; at: number; rule: string; always_on: number }>;
+}
+
+/** Trial rules adopted by the night and left standing past their window without an owner override (the live exam's silent adoptions). */
+export function listStandingRuleTrials(db: RulesDatabase, standingMs: number, since: number, now: number): Array<{ project_id: string; rule_id: string; at: number; rule: string; always_on: number }> {
+  return db.prepare(`SELECT e.project_id, e.rule_id, e.at, p.rule, p.always_on FROM lane_pilot_rule_event e
+    JOIN lane_pilot_rule_proposal p ON p.project_id=e.project_id AND p.id=e.rule_id
+    WHERE e.action='adopted' AND p.state='accepted' AND e.at+?>? AND e.at+?<=?
+      AND NOT EXISTS (SELECT 1 FROM lane_pilot_rule_event o WHERE o.project_id=e.project_id AND o.rule_id=e.rule_id AND o.action IN ('owner_rejected','owner_revoked'))
+    ORDER BY e.at`).all(standingMs, since, standingMs, now) as Array<{ project_id: string; rule_id: string; at: number; rule: string; always_on: number }>;
+}
+
+/** One more occurrence for a proposal (the owner's confirm). */
+export function bumpRuleProposal(db: RulesDatabase, projectId: string, id: string, now = Date.now()): void {
+  db.prepare("UPDATE lane_pilot_rule_proposal SET occurrences=occurrences+1, last_seen_at=?, updated_at=? WHERE project_id=? AND id=?").run(now, now, projectId, id);
+}
+
+/** Sweep-authored proposals still waiting (the scan's pre-triage clear). */
+export function deleteSweepProposals(db: RulesDatabase, projectId: string): void {
+  db.prepare("DELETE FROM lane_pilot_rule_proposal WHERE project_id=? AND author='sweep' AND state='proposed'").run(projectId);
+}
+
+/** Rules proven on trial or by the owner, with their projects (the cross-project sweep's pool). */
+export function listProvenRules(db: RulesDatabase): Array<{ project_id: string; rule: string; audience: string }> {
+  return db.prepare(`SELECT project_id, rule, audience FROM lane_pilot_rule_proposal
+    WHERE state='accepted' AND (trial_state='confirmed' OR decided_by='owner')`).all() as Array<{ project_id: string; rule: string; audience: string }>;
+}
+
+/** Live rule texts of a project (the sweep's same-rule check). */
+export function listLiveRuleTexts(db: RulesDatabase, projectId: string): string[] {
+  return (db.prepare("SELECT rule FROM lane_pilot_rule_proposal WHERE project_id=? AND state IN ('proposed','accepted')").all(projectId) as Array<{ rule: string }>).map((row) => row.rule);
+}
+
+/** A cross-project candidate, once per project (the weekly sweep's insert). */
+export function insertSweepProposal(db: RulesDatabase, input: {
+  id: string; projectId: string; signature: string; rule: string; occurrences: number; taskCount: number;
+  examplesJson: string; evidenceJson: string; audience: string; now: number;
+}): number {
+  return db.prepare(`INSERT INTO lane_pilot_rule_proposal
+    (id,project_id,signature,rule,author,state,occurrences,task_count,examples_json,evidence_json,memory_id,first_seen_at,last_seen_at,updated_at,decided_at,scope_json,audience)
+    VALUES (?,?,?,?,'sweep','proposed',?,?,?, '[]', NULL,?,?,?,NULL,'[]',?)
+    ON CONFLICT(project_id,id) DO NOTHING`)
+    .run(input.id, input.projectId, input.signature, input.rule, input.occurrences, input.taskCount, input.examplesJson, input.now, input.now, input.now, input.audience).changes;
+}
+
+/** Proposals waiting for a decision, counted (the morning line). */
+export function countProposedRules(db: RulesDatabase): number {
+  return (db.prepare("SELECT count(*) AS n FROM lane_pilot_rule_proposal WHERE state='proposed'").get() as { n: number }).n;
+}
+
+/** Rule events of an action since a time, counted (the morning line). */
+export function countRuleEvents(db: RulesDatabase, action: RuleEventAction, since: number): number {
+  return (db.prepare("SELECT count(*) AS n FROM lane_pilot_rule_event WHERE action=? AND at>=?").get(action, since) as { n: number }).n;
+}

@@ -1,3 +1,6 @@
+import { getAttemptChange, listTaskReceipts } from "../rollback";
+import { hasRegressionForTask } from "../baseline";
+import { hasTask, listAcceptedJoinRows } from "../storage";
 import { matchOwnsPath } from "@lane-pilot/kit";
 import type { HostPort } from "./ports";
 import { q } from "./ports";
@@ -29,18 +32,17 @@ const rate = (count: number, of: number) => (of ? Math.round((count / of) * 1000
 export async function baselineMetrics(db: BenchDb, host: HostPort | null, opts: { days?: number; projectId?: string; now?: number; log?: (message: string) => void } = {}): Promise<BaselineMetrics> {
   const until = opts.now ?? Date.now();
   const since = until - (opts.days ?? 14) * 86_400_000;
-  const rows = db.prepare(`SELECT a.id AS attemptId, a.task_id AS taskId, r.project_id AS projectId, r.writer_host_id AS hostId, r.writer_workspace_path AS workspace,
-      t.contract_json AS contract, c.merge_commit AS mergeCommit, c.changed_json AS changed
-    FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id = a.run_id JOIN lane_pilot_task t ON t.id = a.task_id
-    LEFT JOIN lane_pilot_attempt_change c ON c.attempt_id = a.id
-    WHERE a.state = 'accepted' AND a.updated_at >= ? AND a.updated_at < ? AND (? IS NULL OR r.project_id = ?)`).all(since, until, opts.projectId ?? null, opts.projectId ?? null) as Row[];
+  const rows = listAcceptedJoinRows(db as never, { since, until, projectId: opts.projectId ?? null }).map((row) => {
+    const change = getAttemptChange(db as never, row.attemptId);
+    return { ...row, mergeCommit: change?.mergeCommit ?? null, changed: change ? JSON.stringify(change.changed) : null } satisfies Row;
+  });
   const tasks = [...new Set(rows.map((row) => row.taskId))];
 
   const contradicted = new Set<string>();
   for (const id of tasks) {
-    const regression = db.prepare("SELECT 1 FROM lane_pilot_regression WHERE kind = 'regression' AND (task_id = ? OR culprit_task = ?) LIMIT 1").get(id, id);
-    const revert = db.prepare("SELECT 1 FROM lane_pilot_task_receipt WHERE kind = 'revert' AND state = 'merged' AND task_id = ? LIMIT 1").get(id);
-    const mainfix = db.prepare("SELECT 1 FROM lane_pilot_task WHERE id = ? LIMIT 1").get(`${id}-mainfix`);
+    const regression = hasRegressionForTask(db as never, id);
+    const revert = listTaskReceipts(db as never, id, "revert").some((row) => row.state === "merged");
+    const mainfix = hasTask(db as never, `${id}-mainfix`);
     if (regression || revert || mainfix) contradicted.add(id);
   }
 

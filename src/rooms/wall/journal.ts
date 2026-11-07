@@ -3,6 +3,9 @@ import { wfRunsOfWorkflow } from "@lane-pilot/workflow-engine";
 import { FAILED_ATTEMPT_STATES, OPEN_ATTEMPT_STATES } from "../contracts";
 import { classKeyOf, logOrigin, logSignature, originOf, wallSignature, wfSignature } from "./signature";
 import { EMPTY_SOURCES, RUNGS, type Sources, type WallClass } from "./types";
+import { failedStageCounts, gateEventFailureCounts, listFinishedAttemptRows, listHarnessVersionTimeline, listJournalAttemptRows } from "../storage";
+import { listOkTriageOrigins } from "@lane-pilot/run-insights";
+import { listFailedWfRuns } from "@lane-pilot/workflow-engine";
 
 export type WallDb = Pick<Database.Database, "prepare" | "transaction">;
 
@@ -45,13 +48,10 @@ type FailedRow = { id: string; run_id: string; task_id: string; state: string; r
  * its failure triage (the origin), the gate events and the stage receipts of its task (where it broke), and the plugin log's failure lines.
  */
 export function collectEntries(db: WallDb, options: JournalOptions): Entry[] {
-  const rows = db.prepare(`SELECT a.id, a.run_id, a.task_id, a.state, a.reason, a.failure_code, a.updated_at, a.harness_version, r.project_id, t.origin AS triage_origin
-    FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
-    LEFT JOIN lane_pilot_failure_triage t ON t.attempt_id=a.id AND t.project_id=r.project_id AND t.status='ok'
-    WHERE a.updated_at>=? AND a.updated_at<? AND a.state IN (${quoted(FAILED_ATTEMPT_STATES)})
-    ORDER BY a.updated_at`).all(options.since, options.until) as FailedRow[];
-  const gates = db.prepare("SELECT gate, status, count(*) AS n FROM lane_pilot_gate_event WHERE run_id=? AND task_id=? AND status IN ('rejected','failed') GROUP BY gate, status");
-  const stages = db.prepare("SELECT stage_id, count(*) AS n FROM lane_pilot_stage_receipt WHERE run_id=? AND task_id=? AND state IN ('failed','blocked') GROUP BY stage_id");
+  const triages = new Map(listOkTriageOrigins(db as never).map((row) => [`${row.project_id}|${row.attempt_id}`, row.origin]));
+  const rows = listJournalAttemptRows(db as never, FAILED_ATTEMPT_STATES, options.since, options.until).map((row) => ({ ...row, triage_origin: triages.get(`${row.project_id}|${row.id}`) ?? null })) as FailedRow[];
+  const gates = { all: (runId: string, taskId: string) => gateEventFailureCounts(db as never, runId, taskId) };
+  const stages = { all: (runId: string, taskId: string) => failedStageCounts(db as never, runId, taskId) };
   const night = nightOf(options.until - 1);
   const map = new Map<string, Entry & { taskSet: Set<string> }>();
   const slot = (key: EntryKey, make: () => Omit<Entry, "n" | "tasks" | "sources" | "gates" | "stages" | "samples" | "night" | "firstAt" | "lastAt">, at: number) => {
@@ -84,14 +84,7 @@ export function collectEntries(db: WallDb, options: JournalOptions): Entry[] {
     for (const stage of stageRows) entry.stages[stage.stage_id] = (entry.stages[stage.stage_id] ?? 0) + stage.n;
   }
   // Graph runs that ended failed, blocked or interrupted. A run whose child run failed is left to the child, which names the cause: one failure, one count.
-  const wfRows = db.prepare(`SELECT r.id, r.workflow_id, r.status, r.reason, r.updated_at, r.harness_version, r.project_id, r.link_task_id
-    FROM lane_pilot_wf_run r
-    WHERE r.updated_at>=? AND r.updated_at<? AND r.status IN (${quoted(WF_FAILED)}) AND r.workflow_id NOT IN (${quoted(WF_SKIPPED)})
-      -- A red browser-check verdict is the product's (the page failed its cases), not Lane Pilot's: it is the task's failure, not a class
-      -- for the night repair. A check that could not run (no browser machine, a crash) still comes through.
-      AND NOT (r.workflow_id='lp.browser-qa' AND COALESCE(r.reason,'') LIKE 'step_failed:verdict%')
-      AND NOT EXISTS (SELECT 1 FROM lane_pilot_wf_run c WHERE c.parent_run_id=r.id AND c.status IN (${quoted(WF_FAILED)}))
-    ORDER BY r.updated_at`).all(options.since, options.until) as Array<{ id: string; workflow_id: string; status: string; reason: string | null; updated_at: number; harness_version: string | null; project_id: string | null; link_task_id: string | null }>;
+  const wfRows = listFailedWfRuns(db as never, { since: options.since, until: options.until, failed: WF_FAILED, skipped: WF_SKIPPED });
   for (const row of wfRows) {
     const projectId = row.project_id ?? "-";
     if (!options.isReal(projectId, row.link_task_id ?? "")) continue;
@@ -105,7 +98,7 @@ export function collectEntries(db: WallDb, options: JournalOptions): Entry[] {
   }
   // The version a log line was written under: the newest attempt started before it (one read of the recent attempts, not one per line).
   const timeline = options.logLines?.length
-    ? (db.prepare("SELECT created_at, harness_version FROM lane_pilot_attempt WHERE harness_version IS NOT NULL AND created_at<=? ORDER BY created_at DESC LIMIT 2000").all(options.until) as Array<{ created_at: number; harness_version: string }>).reverse()
+    ? listHarnessVersionTimeline(db as never, options.until, 2000)
     : [];
   const versionAt = (at: number): string => {
     let found = "";
@@ -171,11 +164,9 @@ type AttemptRow = { id: string; run_id: string; task_id: string; state: string; 
 export function refreshClasses(db: WallDb, options: { now: number; isReal: JournalOptions["isReal"]; lookbackDays?: number }): WallClass[] {
   const { now } = options;
   const since = now - (options.lookbackDays ?? 30) * DAY;
-  const finished = db.prepare(`SELECT a.id, a.run_id, a.task_id, a.state, a.reason, a.failure_code, a.updated_at, r.project_id, t.origin AS triage_origin
-    FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
-    LEFT JOIN lane_pilot_failure_triage t ON t.attempt_id=a.id AND t.project_id=r.project_id AND t.status='ok'
-    WHERE a.updated_at<=? AND a.state NOT IN (${quoted([...OPEN_ATTEMPT_STATES, "canceled"])})
-    ORDER BY a.updated_at DESC LIMIT 4000`).all(now) as AttemptRow[];
+  const triages = new Map(listOkTriageOrigins(db as never).map((row) => [`${row.project_id}|${row.attempt_id}`, row.origin]));
+  const finished = listFinishedAttemptRows(db as never, [...OPEN_ATTEMPT_STATES, "canceled"], now, 4000)
+    .map((row) => ({ ...row, triage_origin: triages.get(`${row.project_id}|${row.id}`) ?? null })) as AttemptRow[];
   const real: Array<AttemptRow & { classKey: string | null; failureClass: string; reasonNorm: string; origin: string }> = [];
   for (const row of finished) {
     if (real.length >= RUNGS[2].window && row.updated_at < since) break;

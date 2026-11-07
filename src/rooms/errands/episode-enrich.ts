@@ -12,6 +12,8 @@ import { errandOutcome } from "../contracts/server";
 import { errandStem, errandTitle } from "./logic";
 import type { KnownProcessKey } from "./process-key";
 import { ERRAND_FAILURE_CLASSES, ERRAND_FAILURE_ID, type ErrandFailureClass, type ErrandFailureInput } from "./failure-judgment";
+import { listErrandEpisodeStates, listErrandProcessKeys, listPendingErrandEpisodes } from "../storage";
+import { listErrandRuns, listWfRunsByIdsOrdered } from "@lane-pilot/workflow-engine";
 
 /**
  * Errand episodes, phase B (the crystallization foundation, stream R5): the hourly sweep that adds meaning to the
@@ -47,15 +49,7 @@ export type PendingEpisode = {
 
 /** The oldest pending episodes whose last attempt is outside the backoff window, at most `limit`. */
 export function pendingEpisodes(db: Db, now: number, limit: number): PendingEpisode[] {
-  const rows = db.prepare(`
-    SELECT e.run_id, e.project_id, e.status, e.outcome, e.verified, e.thread_id, e.model, e.skills_offered_json,
-      e.trace_json, e.trace_stats_json, r.reason AS run_reason, r.inputs_json AS run_inputs
-    FROM ${ERRAND_EPISODE_TABLE} e JOIN lane_pilot_wf_run r ON r.id=e.run_id
-    WHERE (e.enrichment_state='pending' AND (e.enriched_at IS NULL OR e.enriched_at < ?))
-      -- A row is held from before masking until the model answers; a reload in between left it held for good
-      -- (3 rows on 2026-11-06). Masking is deterministic, so a real mask failure is held again without a model call.
-      OR (e.enrichment_state='held' AND e.updated_at < ?)
-    ORDER BY e.created_at ASC LIMIT ?`).all(now - EPISODE_ENRICH_BACKOFF_MS, now - EPISODE_ENRICH_BACKOFF_MS, limit) as Array<Record<string, unknown>>;
+  const rows = listPendingErrandEpisodes(db as never, now - EPISODE_ENRICH_BACKOFF_MS, limit);
   return rows.map((row) => ({
     runId: String(row.run_id), projectId: (row.project_id as string | null) ?? null, status: String(row.status), outcome: String(row.outcome),
     verified: row.verified === null || row.verified === undefined ? null : parse<string | null>(String(row.verified), null),
@@ -312,8 +306,7 @@ export async function enrichEpisode(row: PendingEpisode, deps: EpisodeEnrichDeps
 
 /** The keys already chosen, each with up to 5 titles of its errands: the `known` list R6 ranks the candidate against. */
 export function knownProcessKeys(db: Db): KnownProcessKey[] {
-  const rows = db.prepare(`SELECT e.process_key AS key, r.inputs_json FROM ${ERRAND_EPISODE_TABLE} e JOIN lane_pilot_wf_run r ON r.id=e.run_id
-    WHERE e.process_key IS NOT NULL ORDER BY e.created_at DESC LIMIT 2000`).all() as Array<{ key: string; inputs_json: string | null }>;
+  const rows = listErrandProcessKeys(db as never, 2000);
   const byKey = new Map<string, string[]>();
   for (const row of rows) {
     const titles = byKey.get(row.key) ?? [];
@@ -376,12 +369,14 @@ export async function episodesBackfill(
 ): Promise<BackfillResult> {
   const { db } = deps;
   const limit = Math.max(1, Math.min(options.limit ?? 30, 200));
-  const rows = db.prepare(`
-    SELECT r.id, r.project_id, r.status, r.reason, r.output_json, r.inputs_json, r.created_at
-    FROM lane_pilot_wf_run r
-    WHERE (r.workflow_id='errand' OR EXISTS (SELECT 1 FROM ${ERRAND_EPISODE_TABLE} e WHERE e.run_id=r.id AND e.status='running'))
-      AND NOT EXISTS (SELECT 1 FROM ${ERRAND_EPISODE_TABLE} e WHERE e.run_id=r.id AND e.status != 'running')
-    ORDER BY r.created_at DESC`).all() as Array<Record<string, unknown>>;
+  const epStates = new Map<string, Set<string>>();
+  for (const row of listErrandEpisodeStates(db as never)) epStates.set(row.run_id, new Set([...(epStates.get(row.run_id) ?? []), row.status]));
+  const errandRuns = listErrandRuns(db as never);
+  const errandIds = new Set(errandRuns.map((row) => row.id));
+  const routedIds = [...epStates.entries()].filter(([id, states]) => !errandIds.has(id) && states.has("running") && states.size === 1).map(([id]) => id);
+  const rows = [...errandRuns, ...listWfRunsByIdsOrdered(db as never, routedIds)]
+    .filter((row) => { const states = epStates.get(row.id); return !states || [...states].every((state) => state === "running"); })
+    .sort((a, b) => b.created_at - a.created_at) as Array<Record<string, unknown>>;
   type Candidate = { runId: string; stem: string; outcome: string; at: number };
   const candidates: Candidate[] = [];
   for (const row of rows) {

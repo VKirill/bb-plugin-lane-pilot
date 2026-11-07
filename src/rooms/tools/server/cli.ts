@@ -1,3 +1,4 @@
+import { listReviewedObservations } from "../../learning";
 import { prototypeConfigSchema, taskV2Schema } from "../../contracts";
 import { taskBaselineEntries } from "../../baseline";
 import { failureFieldsOf, getActivation, getAttempt, getRun, getRunWriterHost, getTask, importSettingsOnce, inspectAttempt, inspectState, listAttemptReasonsSince, listRunsWithAttempts, loadProjectSettings, loadPrototypeConfig, markCancelCode, saveProjectSetting, savePrototypeConfig, transitionAttempt } from "../../storage";
@@ -360,7 +361,7 @@ ${ERRANDS_USAGE}` },
           return learning ? await runLearningCli(learning, args) : { exitCode:1, stderr:"learning is not mounted" };
         }
         if (command === "policy-exam" || command === "policy") {
-          return await runPolicyCli({ db, kv:bb.storage.kv as never, ownerSweeps: OWNER_ITEM_SWEEPS }, command, args);
+          return await runPolicyCli({ db, kv:bb.storage.kv as never, ownerSweeps: OWNER_ITEM_SWEEPS, reviewedObs: listReviewedObservations as never }, command, args);
         }
         if (command === "coverage") {
           return runCoverageCli(args);

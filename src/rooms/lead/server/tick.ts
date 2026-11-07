@@ -33,6 +33,8 @@ import type { PhaseIntake } from "../../phase/server/intake";
 import type { ScheduleService } from "../../schedule/server/schedule-service";
 
 import type { WorkflowEngineApi, WorkflowTriggersApi } from "../../platform/server";
+import { errandEpisodeColumns, listErrandEpisodeFacts, listErrandEpisodeTraces, runStateCounts, countProjectTasksSince, countAcceptedForProject } from "../../storage";
+import { listGraphlessErrandRows, wfRunUsage } from "@lane-pilot/workflow-engine";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 const OWNER_ITEM_SWEEPS = [writerQuestionSweep, runGoalSweep, phaseWordSweep, scheduleFailureSweep];
@@ -172,7 +174,7 @@ type EpisodeColumns = { processKey: boolean; processKeyProposed: boolean; provid
 function episodeColumns(db: LanePilotDatabase): EpisodeColumns {
   const none: EpisodeColumns = { processKey: false, processKeyProposed: false, provider: false, model: false, trace: false };
   try {
-    const names = new Set((db.prepare("PRAGMA table_info(lane_pilot_errand_episode)").all() as Array<{ name: string }>).map((column) => column.name));
+    const names = errandEpisodeColumns(db);
     return { processKey: names.has("process_key"), processKeyProposed: names.has("process_key_proposed"), provider: names.has("provider_id"), model: names.has("model"), trace: names.has("trace_json") };
   } catch { return none; }
 }
@@ -186,7 +188,7 @@ function episodeFacts(db: LanePilotDatabase, runIds: string[], columns: EpisodeC
   const fields = ["run_id", ...(columns.processKey ? ["process_key"] : []), ...(columns.processKeyProposed ? ["process_key_proposed"] : []), ...(columns.provider ? ["provider_id"] : []), ...(columns.model ? ["model"] : [])];
   for (let at = 0; at < runIds.length; at += 400) {
     const chunk = runIds.slice(at, at + 400);
-    const rows = db.prepare(`SELECT ${fields.join(", ")} FROM lane_pilot_errand_episode WHERE run_id IN (${chunk.map(() => "?").join(",")})`).all(...chunk) as Array<Record<string, string | null>>;
+    const rows = [...listErrandEpisodeFacts(db, chunk, columns).entries()].map(([, row]) => row);
     for (const row of rows) {
       const runId = row.run_id;
       if (typeof runId !== "string" || facts.has(runId)) continue;
@@ -206,7 +208,7 @@ function episodeTraces(db: LanePilotDatabase, runIds: string[], columns: Episode
   if (!columns.trace) return traces;
   for (let at = 0; at < runIds.length; at += 400) {
     const chunk = runIds.slice(at, at + 400);
-    const rows = db.prepare(`SELECT run_id, trace_json FROM lane_pilot_errand_episode WHERE run_id IN (${chunk.map(() => "?").join(",")})`).all(...chunk) as Array<{ run_id: string; trace_json: string | null }>;
+    const rows = [...listErrandEpisodeTraces(db, chunk).entries()].map(([run_id, trace_json]) => ({ run_id, trace_json }));
     for (const row of rows) {
       if (traces.has(row.run_id)) continue;
       try { traces.set(row.run_id, row.trace_json ? (JSON.parse(row.trace_json) as ThreadToolTraceEntry[]) : null); } catch { traces.set(row.run_id, null); }
@@ -240,9 +242,7 @@ function processKeyActive(db: LanePilotDatabase): boolean {
 
 /** Errand runs of the last 30 days in the lead's zone with no route or a route under 90 confidence, grouped by (kind, process key); groups of one are dropped. */
 export function graphlessErrands(db: LanePilotDatabase, zoneIds: ReadonlySet<string>, since: number): GraphlessRow[] {
-  const rows = db.prepare(`SELECT r.id, r.project_id, r.inputs_json, r.cost_micro_usd,
-      (SELECT json_extract(e.result_json,'$.threadId') FROM lane_pilot_wf_effect e WHERE e.run_id=r.id AND e.kind='errand.spawn' AND e.state='done' LIMIT 1) AS thread_id
-    FROM lane_pilot_wf_run r WHERE r.workflow_id='errand' AND r.created_at>=?`).all(since) as
+  const rows = listGraphlessErrandRows(db as never, since) as
     Array<{ id: string; project_id: string | null; inputs_json: string; cost_micro_usd: number | null; thread_id: string | null }>;
   const candidates: Array<{ runId: string; projectId: string | null; kind: string; title: string; cost: number; threadId: string | null }> = [];
   for (const row of rows) {
@@ -392,9 +392,9 @@ export async function hubSnapshot(ctx: Pick<ServerCore, "db" | "bb">, settings: 
   const omitted = ordered.length - windowed.length;
   const zoneIds = new Set(inZone.map((project) => project.id));
   const projects = windowed.map((project) => {
-    const runs = Object.fromEntries((db.prepare("SELECT state, COUNT(*) AS n FROM lane_pilot_run WHERE project_id=? GROUP BY state").all(project.id) as Array<{ state: string; n: number }>).map((row) => [row.state, row.n]));
-    const tasks30d = (db.prepare("SELECT COUNT(*) AS n FROM lane_pilot_task t JOIN lane_pilot_run r ON r.id=t.run_id WHERE r.project_id=? AND t.created_at>=?").get(project.id, since30) as { n: number }).n;
-    const accepted30d = (db.prepare("SELECT COUNT(*) AS n FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id WHERE r.project_id=? AND a.state='accepted' AND a.updated_at>=?").get(project.id, since30) as { n: number }).n;
+    const runs = runStateCounts(db, project.id);
+    const tasks30d = countProjectTasksSince(db, project.id, since30);
+    const accepted30d = countAcceptedForProject(db, project.id, since30);
     const livePhases = listPhases(db, { projectId: project.id, live: true, limit: 5 }).map((phase) => ({ id: phase.id, title: clip(phase.title, 120), stage: phase.stage }));
     const memory = clip(taskMemoryContext(db, project.id, null, "what the project should do next; open problems; the owner's priorities"), 1_500);
     return { id: project.id, name: project.name, priority: rankOf(project.id), runs, tasks30d, accepted30d, livePhases, memory };
@@ -655,7 +655,7 @@ export function registerLeadTickActions(engine: WorkflowEngine, ctx: ServerCore,
       const acted = Number(maybe("act.acted") ?? 0) || 0;
       const parse = (ref: string) => { try { return JSON.parse(text(maybe(ref)) || "[]") as unknown[]; } catch { return []; } };
       const deferred = { lead: clip(text(maybe("think.deferred")), 2_000), dropped: parse("propose.dropped_json"), notActed: parse("act.deferred_json") };
-      const usage = db.prepare("SELECT tokens_used, cost_micro_usd FROM lane_pilot_wf_run WHERE id=?").get(c.runId) as { tokens_used: number; cost_micro_usd: number } | undefined;
+      const usage = wfRunUsage(db as never, c.runId);
       try {
         patchTick(db, tickId, { deferred_json: JSON.stringify(deferred), tokens: usage?.tokens_used ?? null, cost_micro_usd: usage?.cost_micro_usd ?? null });
         closeTickRow(db, tickId, status, now);

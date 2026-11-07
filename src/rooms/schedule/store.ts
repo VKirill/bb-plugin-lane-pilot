@@ -261,3 +261,8 @@ export function scheduleAgentApi(): import("../contracts/schedule-agents").Sched
         .map((row) => ({ id: row.id, name: row.name, task: taskOf(row) as { agentId?: string } })),
   };
 }
+
+/** The schedule's name by id (the errand list's schedule column). */
+export function scheduleNameOf(db: Db, id: string): string | null {
+  return (db.prepare("SELECT name FROM lane_pilot_schedule WHERE id=?").get(id) as { name: string } | undefined)?.name ?? null;
+}

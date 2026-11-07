@@ -7,6 +7,9 @@ import { type ServerCore } from "../../contracts/server";
 import type { ChainRuntime } from "../../contracts/server";
 
 import type { WorkflowEngineApi } from "../../platform/server";
+import { listJevRebenchReceipts } from "@lane-pilot/jev";
+import { attemptStateForTaskRun, modelRebenchSummary, saveModelRebench } from "../../storage";
+import { wfTerminalByIdemKey } from "@lane-pilot/workflow-engine";
 
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
@@ -57,23 +60,8 @@ export function evaluateModelRouting(
 
   // One receipt is one decision: the task's outcome is its accepted attempt, else its latest, in the receipt's own run. A join on
   // task id alone multiplied a receipt by the task's attempts and by every run that reused the id (Gemini F-011).
-  const query = options.projectId
-    ? db.prepare(`
-        SELECT r.id, r.judgment, r.decision, r.decided_by, r.model, r.subject, r.project_id, r.outcome,
-          (SELECT a.state FROM lane_pilot_attempt a WHERE a.task_id = r.subject AND a.run_id = r.run_id
-             ORDER BY (a.state = 'accepted') DESC, a.created_at DESC LIMIT 1) AS attempt_state
-        FROM lane_pilot_jev_receipt r
-        WHERE r.judgment IN ('writer.model', 'route.workflow') AND r.at >= ? AND r.project_id = ?
-        ORDER BY r.at DESC
-      `).all(since, options.projectId) as any[]
-    : db.prepare(`
-        SELECT r.id, r.judgment, r.decision, r.decided_by, r.model, r.subject, r.project_id, r.outcome,
-          (SELECT a.state FROM lane_pilot_attempt a WHERE a.task_id = r.subject AND a.run_id = r.run_id
-             ORDER BY (a.state = 'accepted') DESC, a.created_at DESC LIMIT 1) AS attempt_state
-        FROM lane_pilot_jev_receipt r
-        WHERE r.judgment IN ('writer.model', 'route.workflow') AND r.at >= ?
-        ORDER BY r.at DESC
-      `).all(since) as any[];
+  const query = listJevRebenchReceipts(db as never, ["writer.model", "route.workflow"], since, options.projectId ?? null)
+    .map((row) => ({ ...row, attempt_state: attemptStateForTaskRun(db as never, row.subject ?? "", row.run_id) }));
 
   let evaluated = 0;
   let agreed = 0;
@@ -155,20 +143,7 @@ export function saveModelRebenchResult(
   metrics: ModelRebenchMetrics,
   now: number = Date.now(),
 ): void {
-  db.prepare(`
-    INSERT OR REPLACE INTO lane_pilot_model_rebench
-      (id, project_id, month, evaluated_count, accuracy, win_rate, report_json, recorded_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    runId,
-    projectId,
-    metrics.month,
-    metrics.evaluatedDecisions,
-    metrics.accuracy,
-    metrics.winRate,
-    JSON.stringify(metrics),
-    now,
-  );
+  saveModelRebench(db as never, { runId, projectId, month: metrics.month, evaluatedCount: metrics.evaluatedDecisions, accuracy: metrics.accuracy, winRate: metrics.winRate, report: metrics, recordedAt: now });
 }
 
 export function latestModelRebenchSummary(
@@ -177,15 +152,7 @@ export function latestModelRebenchSummary(
   now: number = Date.now(),
 ): { evaluated: number; accuracy: number; winRate: number; count: number } | null {
   try {
-    const row = db.prepare(`
-      SELECT
-        COUNT(*) as count,
-        COALESCE(SUM(evaluated_count), 0) as evaluated,
-        AVG(accuracy) as avg_accuracy,
-        AVG(win_rate) as avg_win_rate
-      FROM lane_pilot_model_rebench
-      WHERE recorded_at >= ? AND recorded_at <= ?
-    `).get(sinceMs, now) as {
+    const row = modelRebenchSummary(db as never, sinceMs, now) as {
       count: number;
       evaluated: number;
       avg_accuracy: number | null;
@@ -275,7 +242,7 @@ export function mountModelRebenchGraph(ctx: ServerCore, services: Services): voi
     if (!workflow) return;
     const month = monthOf(Date.now());
     const key = `model-rebench:global:${month}`;
-    const prior = ctx.db.prepare("SELECT status FROM lane_pilot_wf_run WHERE idem_key=?").get(key) as { status: string } | undefined;
+    const prior = wfTerminalByIdemKey(ctx.db as never, key);
     if (prior) return;
 
     await engine.start({

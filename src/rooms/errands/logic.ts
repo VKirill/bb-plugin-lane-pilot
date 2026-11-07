@@ -1,6 +1,10 @@
 import { errandOutcome, type ErrandOutcome, type ErrandVerifiedOutcome } from "../contracts/server";
 import { resolveRoleModel } from "@lane-pilot/models";
 import { ERRAND_KINDS, ERRAND_KIND_ID, errandRoleFor, type ErrandKind } from "../schedule";
+import { jevDecisionCounts } from "@lane-pilot/jev";
+import { listErrandKindRows, listErrandWfRuns } from "@lane-pilot/workflow-engine";
+import { runPmThreadId } from "../storage";
+import { scheduleNameOf } from "../schedule";
 
 /**
  * The «Errands» page (owner, 2026-11-01: «a tab where I see which errands the system has and can grow them»): the kinds with the model each
@@ -47,16 +51,10 @@ type RunRow = {
 export function listErrands(db: Db, input: { days: number; kind?: string | undefined; projectId?: string | undefined; limit?: number | undefined }): ErrandRow[] {
   const since = Date.now() - input.days * DAY_MS;
   const kind = input.kind && input.kind !== "all" ? input.kind : null;
-  const rows = db.prepare(`
-    SELECT r.id, r.project_id, r.status, r.reason, r.inputs_json, r.output_json, r.tokens_used, r.cost_micro_usd, r.created_at, r.updated_at,
-      (SELECT json_extract(e.result_json,'$.threadId') FROM lane_pilot_wf_effect e WHERE e.run_id=r.id AND e.kind='errand.spawn' AND e.state='done' LIMIT 1) AS thread_id,
-      (SELECT x.pm_thread_id FROM lane_pilot_run x WHERE x.id=r.link_run_id) AS pm_thread_id,
-      (SELECT s.name FROM lane_pilot_schedule s WHERE s.id=json_extract(r.inputs_json,'$.scheduleId')) AS schedule_name
-    FROM lane_pilot_wf_run r
-    WHERE r.workflow_id='errand' AND r.created_at>=?
-      ${input.projectId ? "AND r.project_id=?" : ""}
-      ${kind ? "AND COALESCE(NULLIF(json_extract(r.inputs_json,'$.kind'),''),'none')=?" : ""}
-    ORDER BY r.created_at DESC LIMIT ?`).all(since, ...(input.projectId ? [input.projectId] : []), ...(kind ? [kind] : []), input.limit ?? 200) as RunRow[];
+  const rows = listErrandWfRuns(db as never, { since, projectId: input.projectId ?? null, kind, limit: input.limit ?? 200 }).map((row) => {
+    const sid = (parse<Record<string, unknown>>(row.inputs_json, {}) as { scheduleId?: unknown }).scheduleId;
+    return { ...row, pm_thread_id: row.link_run_id ? runPmThreadId(db as never, row.link_run_id) : null, schedule_name: typeof sid === "string" ? scheduleNameOf(db as never, sid) : null } satisfies RunRow;
+  });
   return rows.map((row) => {
     const inputs = parse<Record<string, unknown>>(row.inputs_json, {});
     const output = parse<{ state?: unknown; reason?: unknown; verified?: unknown } | null>(row.output_json, null);
@@ -75,7 +73,7 @@ export function listErrands(db: Db, input: { days: number; kind?: string | undef
 /** What Jev would have named in the period, by decision (`errand.kind` in shadow writes a receipt per classified brief and runs nothing). */
 function jevShadowCounts(db: Db, since: number): Record<string, number> {
   try {
-    const rows = db.prepare("SELECT decision, count(*) AS n FROM lane_pilot_jev_receipt WHERE judgment=? AND at>=? AND decision IS NOT NULL GROUP BY decision").all(ERRAND_KIND_ID, since) as Array<{ decision: string; n: number }>;
+    const rows = jevDecisionCounts(db as never, ERRAND_KIND_ID, since);
     return Object.fromEntries(rows.map((row) => [row.decision, row.n]));
   } catch { return {}; }
 }
@@ -83,8 +81,7 @@ function jevShadowCounts(db: Db, since: number): Record<string, number> {
 /** One line per kind: the row of the role table and the model in force at the global level, and the period's runs, outcomes and cost. */
 export function kindsOverview(db: Db, settings: Record<string, unknown>, days: number): KindSummary[] {
   const since = Date.now() - days * DAY_MS;
-  const runs = db.prepare("SELECT COALESCE(NULLIF(json_extract(inputs_json,'$.kind'),''),'none') AS kind, status, reason, output_json, cost_micro_usd FROM lane_pilot_wf_run WHERE workflow_id='errand' AND created_at>=?")
-    .all(since) as Array<{ kind: string; status: string; reason: string | null; output_json: string | null; cost_micro_usd: number }>;
+  const runs = listErrandKindRows(db as never, since);
   const jev = jevShadowCounts(db, since);
   return ERRAND_KINDS_WITH_NONE.map((kind) => {
     const role = errandRoleFor(kind === "none" ? null : kind, settings);

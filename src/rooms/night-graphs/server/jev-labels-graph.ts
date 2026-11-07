@@ -12,6 +12,8 @@ import "../../runs";
 
 import type { RuleScanApi } from "../../self-repair/server/rule-scan";
 import type { WorkflowEngineApi, WriterHostApi } from "../../platform/server";
+import { jevReceiptDecision, jevMaturedJudgmentCount } from "@lane-pilot/jev";
+import { wfTerminalByIdemKey } from "@lane-pilot/workflow-engine";
 
 /** The fields of the services bag this file reads, typed by the rooms that own them. */
 interface Services {
@@ -78,7 +80,7 @@ export function mountJevLabelsGraph(ctx: ServerCore, services: Services): void {
             spawn: (graph) => services.ruleScan.graph.spawnAnalyzer(
               { projectId, title: `jev relabel ${job.judgment} #${job.receiptId}`, prompt, place: placeResolved, analyzer, metadata: { judgment: job.judgment, receiptId: job.receiptId } }, graph),
           });
-          const decision = (ctx.db.prepare("SELECT decision FROM lane_pilot_jev_receipt WHERE id=?").get(job.receiptId) as { decision: string | null } | undefined)?.decision ?? null;
+          const decision = jevReceiptDecision(ctx.db as never, job.receiptId);
           const outcome = compareModelDecision(judgment, job.input, run.text, decision);
           if (outcome) recordOutcome(ctx.db as never, job.receiptId, outcome);
           results.push({ receiptId: job.receiptId, judgment: job.judgment, outcome });
@@ -97,7 +99,7 @@ export function mountJevLabelsGraph(ctx: ServerCore, services: Services): void {
       const outcomeCounts = c.resolve("outcome.counts") as Record<string, unknown> | undefined;
       const outcomeLabeled = num(c.resolve("outcome.labeled"));
       const modelLabeled = num(c.resolve("model.labeled"));
-      const matured = (ctx.db.prepare(`SELECT judgment, COUNT(*) AS n FROM lane_pilot_jev_receipt WHERE outcome IS NOT NULL AND (outcome LIKE 'agree%' OR outcome LIKE 'disagree%') GROUP BY judgment HAVING n >= 50`).all() as Array<{ judgment: string }>).length;
+      const matured = jevMaturedJudgmentCount(ctx.db as never);
       const byJudgment = Object.entries(outcomeCounts ?? {}).filter(([, n]) => num(n) > 0).map(([id, n]) => `${id} ${num(n)}`).join(", ");
       const summary = `labels: ${outcomeLabeled} outcome${byJudgment ? ` (${byJudgment})` : ""}, ${modelLabeled} model, ${matured} judgments now ≥ 50 labels`;
       ctx.log(summary);
@@ -111,7 +113,7 @@ export function mountJevLabelsGraph(ctx: ServerCore, services: Services): void {
     const workflow = services.workflowEngine.resolveWorkflow(JEV_LABELS_WORKFLOW);
     if (!workflow) return;
     const key = `jev-labels:${new Date().toISOString().slice(0, 10)}`;
-    const prior = ctx.db.prepare("SELECT status FROM lane_pilot_wf_run WHERE idem_key=?").get(key) as { status: string } | undefined;
+    const prior = wfTerminalByIdemKey(ctx.db as never, key);
     if (prior) return;
     await engine.start({
       workflow, key, link: { projectId: "*" },

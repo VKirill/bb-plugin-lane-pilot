@@ -420,3 +420,98 @@ export function wfRunExists(db: WfReadDb, runId: string): boolean {
 export function wfStepExists(db: WfReadDb, runId: string, stepKey: string): boolean {
   return Boolean(db.prepare("SELECT 1 FROM lane_pilot_wf_step WHERE run_id=? AND step_key=?").get(runId, stepKey));
 }
+
+export const WF_RUN_TABLE = "lane_pilot_wf_run";
+
+export function wfRunStatusByIdemKey(db: WfReadDb, key: string): string | undefined {
+  return (db.prepare("SELECT status FROM lane_pilot_wf_run WHERE idem_key=?").get(key) as { status: string } | undefined)?.status;
+}
+
+export function wfLiveRun(db: WfReadDb, workflowId: string, projectId: string): boolean {
+  return Boolean(db.prepare("SELECT 1 FROM lane_pilot_wf_run WHERE workflow_id=? AND project_id=? AND status IN ('running','waiting') LIMIT 1").get(workflowId, projectId));
+}
+
+export function wfRunUsage(db: WfReadDb, runId: string): { tokens_used: number; cost_micro_usd: number } | undefined {
+  return db.prepare("SELECT tokens_used, cost_micro_usd FROM lane_pilot_wf_run WHERE id=?").get(runId) as { tokens_used: number; cost_micro_usd: number } | undefined;
+}
+
+export function wfEffectResultJson(db: WfReadDb, runId: string, kind: string): string | null {
+  return (db.prepare("SELECT result_json FROM lane_pilot_wf_effect WHERE run_id=? AND kind=? AND state='done'").get(runId, kind) as { result_json: string | null } | undefined)?.result_json ?? null;
+}
+
+export function wfEffectThreadId(db: WfReadDb, runId: string, kind: string): string | null {
+  return (db.prepare("SELECT json_extract(result_json,'$.threadId') AS thread_id FROM lane_pilot_wf_effect WHERE run_id=? AND kind=? AND state='done' LIMIT 1")
+    .get(runId, kind) as { thread_id: string | null } | undefined)?.thread_id ?? null;
+}
+
+export function listErrandWfRuns(db: WfReadDb, input: { since: number; projectId?: string | null; kind?: string | null; limit: number }): Array<{
+  id: string; project_id: string | null; status: string; reason: string | null; inputs_json: string; output_json: string | null;
+  tokens_used: number; cost_micro_usd: number; created_at: number; updated_at: number; thread_id: string | null; link_run_id: string | null;
+}> {
+  return db.prepare(`
+    SELECT r.id, r.project_id, r.status, r.reason, r.inputs_json, r.output_json, r.tokens_used, r.cost_micro_usd, r.created_at, r.updated_at,
+      (SELECT json_extract(e.result_json,'$.threadId') FROM lane_pilot_wf_effect e WHERE e.run_id=r.id AND e.kind='errand.spawn' AND e.state='done' LIMIT 1) AS thread_id,
+      r.link_run_id
+    FROM lane_pilot_wf_run r
+    WHERE r.workflow_id='errand' AND r.created_at>=?
+      ${input.projectId ? "AND r.project_id=?" : ""}
+      ${input.kind ? "AND COALESCE(NULLIF(json_extract(r.inputs_json,'$.kind'),''),'none')=?" : ""}
+    ORDER BY r.created_at DESC LIMIT ?`).all(input.since, ...(input.projectId ? [input.projectId] : []), ...(input.kind ? [input.kind] : []), input.limit) as Array<{
+    id: string; project_id: string | null; status: string; reason: string | null; inputs_json: string; output_json: string | null;
+    tokens_used: number; cost_micro_usd: number; created_at: number; updated_at: number; thread_id: string | null; link_run_id: string | null;
+  }>;
+}
+
+export function listErrandKindRows(db: WfReadDb, since: number): Array<{ kind: string; status: string; reason: string | null; output_json: string | null; cost_micro_usd: number }> {
+  return db.prepare("SELECT COALESCE(NULLIF(json_extract(inputs_json,'$.kind'),''),'none') AS kind, status, reason, output_json, cost_micro_usd FROM lane_pilot_wf_run WHERE workflow_id='errand' AND created_at>=?")
+    .all(since) as Array<{ kind: string; status: string; reason: string | null; output_json: string | null; cost_micro_usd: number }>;
+}
+
+export function listGraphlessErrandRows(db: WfReadDb, since: number): Array<{ id: string; project_id: string | null; inputs_json: string; cost_micro_usd: number | null; thread_id: string | null }> {
+  return db.prepare(`SELECT r.id, r.project_id, r.inputs_json, r.cost_micro_usd,
+      (SELECT json_extract(e.result_json,'$.threadId') FROM lane_pilot_wf_effect e WHERE e.run_id=r.id AND e.kind='errand.spawn' AND e.state='done' LIMIT 1) AS thread_id
+    FROM lane_pilot_wf_run r WHERE r.workflow_id='errand' AND r.created_at>=?`).all(since) as
+    Array<{ id: string; project_id: string | null; inputs_json: string; cost_micro_usd: number | null; thread_id: string | null }>;
+}
+
+export function listFailedWfRuns(db: WfReadDb, input: { since: number; until: number; failed: readonly string[]; skipped: readonly string[] }): Array<{
+  id: string; workflow_id: string; status: string; reason: string | null; updated_at: number; harness_version: string | null; project_id: string | null; link_task_id: string | null;
+}> {
+  return db.prepare(`SELECT r.id, r.workflow_id, r.status, r.reason, r.updated_at, r.harness_version, r.project_id, r.link_task_id
+    FROM lane_pilot_wf_run r
+    WHERE r.updated_at>=? AND r.updated_at<? AND r.status IN (${input.failed.map(() => "?").join(",")}) AND r.workflow_id NOT IN (${input.skipped.map(() => "?").join(",")})
+      AND NOT (r.workflow_id='lp.browser-qa' AND COALESCE(r.reason,'') LIKE 'step_failed:verdict%')
+      AND NOT EXISTS (SELECT 1 FROM lane_pilot_wf_run c WHERE c.parent_run_id=r.id AND c.status IN (${input.failed.map(() => "?").join(",")}))
+    ORDER BY r.updated_at`).all(input.since, input.until, ...input.failed, ...input.skipped, ...input.failed) as Array<{
+    id: string; workflow_id: string; status: string; reason: string | null; updated_at: number; harness_version: string | null; project_id: string | null; link_task_id: string | null;
+  }>;
+}
+
+export function listErrandRuns(db: WfReadDb): Array<{ id: string; project_id: string | null; status: string; reason: string | null; output_json: string | null; inputs_json: string; created_at: number }> {
+  return db.prepare(`SELECT r.id, r.project_id, r.status, r.reason, r.output_json, r.inputs_json, r.created_at
+    FROM lane_pilot_wf_run r WHERE r.workflow_id='errand' ORDER BY r.created_at DESC`).all() as
+    Array<{ id: string; project_id: string | null; status: string; reason: string | null; output_json: string | null; inputs_json: string; created_at: number }>;
+}
+
+export function listWfRunsSince(db: WfReadDb, input: { since: number; projectId?: string | null }): RunRow[] {
+  return db.prepare(`
+    SELECT r.* FROM lane_pilot_wf_run r
+    WHERE r.created_at>=? AND r.workflow_id='errand'
+      ${input.projectId ? "AND r.project_id=?" : ""}
+    ORDER BY r.created_at ASC`).all(input.since, ...(input.projectId ? [input.projectId] : [])) as RunRow[];
+}
+
+export function listWfRunsByIdsOrdered(db: WfReadDb, ids: readonly string[], projectId?: string | null): RunRow[] {
+  const rows: RunRow[] = [];
+  for (let at = 0; at < ids.length; at += 400) {
+    const chunk = ids.slice(at, at + 400);
+    if (!chunk.length) break;
+    rows.push(...(db.prepare(`SELECT r.* FROM lane_pilot_wf_run r WHERE r.id IN (${chunk.map(() => "?").join(",")}) ${projectId ? "AND r.project_id=?" : ""}`)
+      .all(...chunk, ...(projectId ? [projectId] : [])) as RunRow[]));
+  }
+  return rows.sort((a, b) => a.created_at - b.created_at);
+}
+
+export function wfTerminalByIdemKey(db: WfReadDb, key: string): { status: string } | undefined {
+  return db.prepare("SELECT status FROM lane_pilot_wf_run WHERE idem_key=?").get(key) as { status: string } | undefined;
+}
